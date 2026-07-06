@@ -297,7 +297,7 @@ GET /export → application/json（Content-Disposition 附件）
 ## 5. 子 feature 清单
 
 1. **platform-skeleton** — Go+React 脚手架、单账号登录、账号上下文与 repository 基座（强制账号过滤）、错误封套、健康检查、build/test/lint 命令基线、§4 契约固化为 OpenAPI + 双端 codegen
-   - 所属模块：platform ｜ 依赖：无 ｜ 状态：planned ｜ 对应 feature：未启动
+   - 所属模块：platform ｜ 依赖：无 ｜ 状态：done ｜ 对应 feature：2026-07-06-platform-skeleton
    - 备注：greenfield 安全网条目——建立后续全部 feature 的验证入口（`make check` 或等价全绿）；完成信号：登录取 token → `GET /api/v1/me` 返回账号；跨账号过滤有基座级测试；OpenAPI 文件与 §4 一致且 codegen 可跑。代码组织按 Gin + 轻量 DDD（见 §4 头注）。**外部依赖前置验证**：本条内完成 TG bot 申请 + `sendMessage` 冒烟（脚本级发一条测试消息即可），提前杀死条目 8 的外部依赖风险；token 凭证规则落 attention.md
 2. **customer-core** — 30 秒建档最小闭环：POST /customers（昵称+身份+渠道三项必填）、列表搜索（昵称/handle）、详情页
    - 所属模块：customer + webapp ｜ 依赖：platform-skeleton ｜ 状态：planned ｜ 对应 feature：未启动

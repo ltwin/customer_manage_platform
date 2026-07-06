@@ -1,0 +1,12 @@
+# 构建上下文只需要 frontend / backend 源码
+.git
+.claude
+.codestable
+.env
+node_modules
+frontend/node_modules
+frontend/dist
+backend/bin
+backend/internal/platform/webui/dist
+docs
+scripts

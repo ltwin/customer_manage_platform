@@ -1,0 +1,15 @@
+# 凭证红线：.env 永不入 git（CLAUDE.md 硬规则 4）
+.env
+
+node_modules/
+frontend/dist/
+backend/bin/
+# 杂散 go build -o server 产物（构建输出统一进 backend/bin/，见 Makefile）
+/backend/server
+backend/internal/platform/webui/dist/*
+!backend/internal/platform/webui/dist/.gitkeep
+
+# Claude Code 执行 worktree
+.claude/worktrees/
+
+.DS_Store
