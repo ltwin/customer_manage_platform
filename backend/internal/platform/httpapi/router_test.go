@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -87,14 +88,19 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 	}
 }
 
-// 非 API 路径不适用封套（S9 起由 SPA fallback 承接）。
+// 非 API 路径不适用封套（S9 起由 go:embed SPA fallback 承接）：
+// 产物已同步 → 200 text/html；产物未同步（空 dist）→ 纯 404，两者都不是 JSON 封套。
 func TestNonAPIPathNotEnveloped(t *testing.T) {
 	rec := doRequest(t, newTestRouter(t, fakePinger{}), http.MethodGet, "/no-such-page")
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("want 404, got %d", rec.Code)
+	if rec.Code != http.StatusOK && rec.Code != http.StatusNotFound {
+		t.Fatalf("want 200 (SPA fallback) or 404 (dist not synced), got %d", rec.Code)
 	}
-	if json.Valid(rec.Body.Bytes()) && rec.Body.Len() > 0 {
-		t.Fatalf("non-API 404 should not be a JSON envelope, got %s", rec.Body.String())
+	var env httpapi.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err == nil && env.Error.Code != "" {
+		t.Fatalf("non-API path must not return a JSON envelope, got %s", rec.Body.String())
+	}
+	if rec.Code == http.StatusOK && !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("SPA fallback should serve text/html, got %s", rec.Header().Get("Content-Type"))
 	}
 }
 

@@ -3,6 +3,28 @@
 # - 全容器模式：cp .env.example .env && docker compose up -d --wait（app 服务在 S9 接线）
 # 凭证一律经 .env / 环境注入，本文件不硬编码任何凭证。
 services:
+  app:
+    build: .
+    image: crm:local
+    env_file:
+      - path: .env
+        required: false # 单起 postgres（make db-up）时无需 .env
+    environment:
+      # 全容器模式下 app 直连 postgres 服务；凭证经 .env 注入（cp .env.example .env）
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm-dev-password}@postgres:5432/${POSTGRES_DB:-crm}?sslmode=disable
+      HTTP_ADDR: ":8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # healthz 就绪语义：migrate 先于监听，running ≠ 已就绪（design D6，支撑 --wait）
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   postgres:
     image: postgres:17-alpine
     environment:

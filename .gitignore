@@ -3,6 +3,9 @@
 
 node_modules/
 frontend/dist/
+backend/bin/
+backend/internal/platform/webui/dist/*
+!backend/internal/platform/webui/dist/.gitkeep
 
 # Claude Code 执行 worktree
 .claude/worktrees/

@@ -1,16 +1,24 @@
 # 命令基线：make check 是全 roadmap 后续 feature 的验证入口（roadmap §6）。
 
-.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install
+.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync
 
 check: build lint test generate-check
 
 build: backend-build frontend-build
 
-backend-build:
+# 顺序约束（design 2.2）：前端构建先于后端编译（go:embed 输入）
+backend-build: webui-sync
 	cd backend && go build ./...
+	cd backend && go build -o bin/server ./cmd/server
 
 frontend-build: frontend/node_modules
 	cd frontend && npm run build
+
+# 把前端构建产物同步进 go:embed 输入目录（产物不入 git，.gitkeep 除外）
+webui-sync: frontend-build
+	rm -rf backend/internal/platform/webui/dist
+	cp -R frontend/dist backend/internal/platform/webui/dist
+	touch backend/internal/platform/webui/dist/.gitkeep
 
 frontend/node_modules: frontend/package-lock.json
 	cd frontend && npm ci

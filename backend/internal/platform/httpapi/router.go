@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
 )
 
 // Pinger 是健康检查所需的最小数据库探测面（测试注入失败用）。
@@ -45,16 +47,38 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.GET("/me", h.GetMe)
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
-	// 非 API 路径由 go:embed 静态 + SPA fallback 承接（S9 接线前先纯 404）
+	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）
+	serveStatic := staticHandler(webui.Dist())
 	r.NoRoute(func(c *gin.Context) {
 		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
 			abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
 			return
 		}
-		c.Status(http.StatusNotFound)
+		serveStatic(c)
 	})
 
 	return r
+}
+
+// staticHandler 托管 go:embed 静态产物：命中文件直接服务，其余路径 SPA fallback 到 index.html；
+// 产物未同步（仅 .gitkeep 的空 dist）时非 API 路径纯 404。
+func staticHandler(dist fs.FS) gin.HandlerFunc {
+	httpFS := http.FS(dist)
+	return func(c *gin.Context) {
+		path := strings.TrimPrefix(c.Request.URL.Path, "/")
+		if path != "" && path != "index.html" {
+			if info, err := fs.Stat(dist, path); err == nil && !info.IsDir() {
+				c.FileFromFS(path, httpFS)
+				return
+			}
+		}
+		index, err := fs.ReadFile(dist, "index.html")
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", index)
+	}
 }
 
 // healthzHandler 探测数据库可达性：可达 200 ok，不可达 503 degraded。
