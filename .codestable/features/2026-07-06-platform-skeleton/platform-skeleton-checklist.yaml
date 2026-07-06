@@ -22,7 +22,7 @@ steps:
     status: done
   - action: "前端垂直切片（dev 走 Vite dev server proxy /api）：登录页（空态/加载/错误态）、token 存储、守卫路由骨架（/login + 受保护根路由）、/me 账号信息展示、生成 TS 类型 + 封套错误处理接入 API client"
     exit_signal: "浏览器手工路径截图齐三段：错密码有提示、正确登录进入看到账号信息、未登录访问受保护路由跳回登录页"
-    status: pending
+    status: done
   - action: "TG 冒烟：scripts/telegram-smoke.sh（env 注入 TELEGRAM_BOT_TOKEN，getUpdates 取 chat_id 后 sendMessage）；仅依赖 owner 前置动作（BotFather 建 bot + 给 bot 发一条消息），失败不阻塞后续步骤"
     exit_signal: "owner 真机收到测试消息（截图归档 feature 目录）"
     status: pending
