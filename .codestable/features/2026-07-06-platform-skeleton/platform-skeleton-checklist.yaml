@@ -31,7 +31,7 @@ steps:
     status: done
   - action: "harden 收尾与终验：凭证反查（CMD-005/006）、.env.example 对照挂载点表 env key 清单核对完整、清洁度清扫（无调试输出/TODO/注释代码/死 import）、README 开发段（起服务双轨/环境变量/备份建议/token 轮换/seed 后可移除变量与改密现状）、make check 终验"
     exit_signal: "CMD-005 与 CMD-006 通过；.env.example 覆盖全部 env key；README 开发段落盘；`make check` 终验退出码 0"
-    status: pending
+    status: done
 
 checks:
   - item: "业务域端点零实现：除 healthz / auth/login / me 外无路由注册；请求 /api/v1/customers 返回 404"
