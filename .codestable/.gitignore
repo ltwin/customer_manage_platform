@@ -1,2 +1,16 @@
 **/__pycache__/
 **/*.pyc
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+.directory
+.cache
+.config
+.local

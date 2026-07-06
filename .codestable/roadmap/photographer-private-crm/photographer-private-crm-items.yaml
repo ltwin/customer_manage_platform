@@ -1,0 +1,91 @@
+roadmap: photographer-private-crm
+created: 2026-07-05
+
+items:
+  - slug: platform-skeleton
+    description: Go+React 脚手架、单账号登录、账号上下文与 repository 基座（强制账号过滤）、错误封套、健康检查、build/test/lint 命令基线、§4 契约固化为 OpenAPI + 双端 codegen
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: greenfield 安全网条目；完成信号：make check 全绿、登录取 token 后 GET /api/v1/me 返回账号、跨账号过滤有基座级测试、OpenAPI 与 §4 一致且 codegen 可跑；代码组织 Gin+轻量 DDD（roadmap §4 头注）；外部依赖前置：TG bot 申请 + sendMessage 冒烟（脚本级），token 凭证规则落 attention.md；拍板包已全部落定（2026-07-05）：Go+Gin+React+PostgreSQL+OpenAPI-first、阿里云 ECS 自部署
+
+  - slug: customer-core
+    description: 30 秒建档最小闭环：建客户（昵称+社交身份+渠道三项必填）、列表搜索、详情页
+    depends_on: [platform-skeleton]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: 完成信号：新建到保存 ≤30 秒计时演示；列表按 q/channel 过滤用例通过
+
+  - slug: customer-profile-complete
+    description: 档案补全：社交身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
+    depends_on: [customer-core]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: merge/归档语义按 roadmap 4.2；design 阶段按 merge、归档、notes、referral、渐进字段分片验收；落地后评估 req customer-profile draft→current；含客户的页面 ≤2 步追加备注
+
+  - slug: package-catalog
+    description: 套系 CRUD 与归档：拍摄类型/定价方式/张数时长底片精修参数，归档后不出现在选择列表
+    depends_on: [platform-skeleton]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 完成信号：按 Package shape 建/改/归档用例通过；?status=active 过滤正确
+
+  - slug: order-tracking
+    description: 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、shot_at/delivered_at 自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
+    depends_on: [customer-core, package-catalog]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖理由：订单挂 Customer、引用 Package；完成信号：跃迁矩阵测试全过（含时间戳自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、merge 迁移订单用例、引用归档客户 409 customer_archived
+
+  - slug: schedule-calendar
+    description: 档期：月/周日历、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
+    depends_on: [order-tracking]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖理由：type=shoot 的 slot 必须挂订单；完成信号：overlaps 用例通过、建/删 slot 不改订单状态（反向联动禁止用例）、日历答复某天占用 ≤10 秒演示
+
+  - slug: reminder-engine
+    description: 提醒引擎：/admin/reminders/scan 幂等生成生日/回访/流失三类提醒、done/dismiss、参数可配置（按拍摄类型流失阈值、账号时区）
+    depends_on: [customer-profile-complete, order-tracking]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖理由：生日规则要 birthday 字段（customer-profile-complete）、回访/流失要订单状态时间戳（order-tracking）；硬验收：同日双跑扫描零新增、时区日界用例、时间戳缺失跳过、零成交不告警、merge 迁移提醒用例
+
+  - slug: telegram-digest
+    description: TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
+    depends_on: [reminder-engine, schedule-calendar]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖理由：摘要 = 提醒 + 当日档期；bot token 已在 platform-skeleton 冒烟验证；完成信号：真机收到含真实数据摘要（截图）、未绑定时系统正常
+
+  - slug: dashboard
+    description: 首页面板：今日待办、今日档期、待收尾款、流失预警、本月概览（roadmap 4.3 dashboard 契约）
+    depends_on: [order-tracking, schedule-calendar, reminder-engine]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 完成信号：五卡片与各域列表交叉一致核对用例；登录后默认落地页
+
+  - slug: data-export
+    description: 全量 JSON 导出（roadmap 4.6 契约）：一键导出全部实体 + counts 核对
+    depends_on: [customer-profile-complete, package-catalog, order-tracking, schedule-calendar, reminder-engine]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖理由：导出范围 = 4.2 全部实体，各域落地后才有内容可导；完成信号：counts 与数组长度一致自动化用例、导出文件抽查 PII 字段完整
+
+  - slug: v1-hardening
+    description: 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
+    depends_on: [telegram-digest, dashboard, data-export]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 完成信号：375px 三条轻路径可完成、回归清单打勾归档、README 覆盖部署/备份/凭证操作

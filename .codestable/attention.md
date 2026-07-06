@@ -22,4 +22,6 @@ CodeStable 所有落盘产出的正文用**中文**：plan / design、plan revie
 
 ### 环境变量与凭证
 
+- TG bot token 等一切凭证只经环境变量注入，不入库、不入 git（roadmap §4.5；2026-07-05 拍板）。
+
 ### 其他

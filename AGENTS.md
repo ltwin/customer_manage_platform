@@ -49,3 +49,7 @@ Skills directory: /Users/samson/.claude/skills
 <!-- SKILLS_TABLE_END -->
 
 </skills_system>
+
+## Project
+
+项目规则手册与文档索引见 [CLAUDE.md](CLAUDE.md)；CodeStable 工作流启动必读 `.codestable/attention.md`。
