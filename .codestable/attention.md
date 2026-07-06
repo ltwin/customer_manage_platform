@@ -27,3 +27,4 @@ CodeStable 所有落盘产出的正文用**中文**：plan / design、plan revie
 ### 其他
 
 - Git 按 GitFlow：日常从 `develop` 拉 `feat/` `fix/` `refactor/` 分支，`main` 只收发布合并（详见 CLAUDE.md「Git 约定」）。
+- 在开发之前必须提问用户是在当前branch开发还是使用worktree新开branch，单feature开发倾向于不开worktree，而并行开发则只能使用worktree
