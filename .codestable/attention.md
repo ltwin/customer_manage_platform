@@ -25,3 +25,5 @@ CodeStable 所有落盘产出的正文用**中文**：plan / design、plan revie
 - TG bot token 等一切凭证只经环境变量注入，不入库、不入 git（roadmap §4.5；2026-07-05 拍板）。
 
 ### 其他
+
+- Git 按 GitFlow：日常从 `develop` 拉 `feat/` `fix/` `refactor/` 分支，`main` 只收发布合并（详见 CLAUDE.md「Git 约定」）。
