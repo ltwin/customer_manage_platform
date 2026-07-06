@@ -25,7 +25,7 @@ steps:
     status: done
   - action: "TG 冒烟：scripts/telegram-smoke.sh（env 注入 TELEGRAM_BOT_TOKEN，getUpdates 取 chat_id 后 sendMessage）；仅依赖 owner 前置动作（BotFather 建 bot + 给 bot 发一条消息），失败不阻塞后续步骤"
     exit_signal: "owner 真机收到测试消息（截图归档 feature 目录）"
-    status: pending
+    status: done
   - action: "部署工件双轨：多阶段 Dockerfile（前端构建产物经 go:embed 打进二进制）+ compose app 服务接线（含 healthz healthcheck 使 --wait 就绪语义成立；凭证一律经 env_file 注入不硬编码）+ 非 API 路径 SPA fallback；支持三形态——二进制直跑接现有 PG / 二进制 + compose PG / 全容器。前置：cp .env.example .env（占位值即本地可跑 dev 值）"
     exit_signal: "CMD-007 docker build 成功；CMD-008 compose 全容器模式 healthz 200；二进制直跑访问 / 返回登录页（go:embed 生效，截图）"
     status: done
