@@ -49,6 +49,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger: logger,
 		DB:     s,
+		Auth:   auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 )
 
 // Pinger 是健康检查所需的最小数据库探测面（测试注入失败用）。
@@ -18,10 +20,11 @@ type Pinger interface {
 type RouterDeps struct {
 	Logger *slog.Logger
 	DB     Pinger
+	Auth   *auth.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
-// recovery → 请求日志 → 封套渲染 → auth（healthz 与 login 豁免；auth 见 S6 路由组）。
+// recovery → 请求日志 → 封套渲染 → auth（healthz 与 login 豁免）。
 func NewRouter(deps RouterDeps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
@@ -33,6 +36,13 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 
 	// 运维端点：无鉴权、不进 OpenAPI、不套业务封套（design 2.1）
 	r.GET("/healthz", healthzHandler(deps.DB))
+
+	// API 路由：handlers 实现 codegen ServerInterface；login 豁免 auth，其余一律先过 auth
+	h := &handlers{logger: deps.Logger, auth: deps.Auth}
+	api := r.Group("/api/v1")
+	api.POST("/auth/login", h.Login)
+	protected := api.Group("", authMiddleware(deps.Auth))
+	protected.GET("/me", h.GetMe)
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径由 go:embed 静态 + SPA fallback 承接（S9 接线前先纯 404）

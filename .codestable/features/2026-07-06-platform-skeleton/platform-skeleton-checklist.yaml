@@ -19,7 +19,7 @@ steps:
     status: done
   - action: "登录与账号上下文：bcrypt 校验、JWT 签发/解析、auth 中间件注入 AccountContext、GET /me（不含 password_hash）；handler 薄层约束落地"
     exit_signal: "集成测试绿：登录→token→/me 往返 200；错密码/缺 password/无 token/篡改 token/过期 token 各返回对应封套；depguard 断言 domain/service 层无 gin import 且 lint 通过"
-    status: pending
+    status: done
   - action: "前端垂直切片（dev 走 Vite dev server proxy /api）：登录页（空态/加载/错误态）、token 存储、守卫路由骨架（/login + 受保护根路由）、/me 账号信息展示、生成 TS 类型 + 封套错误处理接入 API client"
     exit_signal: "浏览器手工路径截图齐三段：错密码有提示、正确登录进入看到账号信息、未登录访问受保护路由跳回登录页"
     status: pending
