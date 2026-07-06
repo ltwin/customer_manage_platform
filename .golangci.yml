@@ -1,0 +1,32 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        # ADR-003 handler 薄层：gin 等路由框架只允许出现在 httpapi 适配层，
+        # domain / service / store 层出现即 lint 失败。
+        no-gin-outside-httpapi:
+          files:
+            - $all
+            - "!**/httpapi/**"
+          deny:
+            - pkg: github.com/gin-gonic/gin
+              desc: gin 只允许 httpapi 薄适配层 import（ADR-003 handler 薄层约束）
+        # ADR-001 账号隔离：数据库驱动只允许 store 系包 import，
+        # 业务代码必须经 AccountScope 基座访问数据。
+        pgx-only-in-store:
+          files:
+            - $all
+            - "!**/store/**"
+          deny:
+            - pkg: github.com/jackc/pgx
+              desc: pgx 仅 store 系包可 import（ADR-001 账号隔离基座强制）
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

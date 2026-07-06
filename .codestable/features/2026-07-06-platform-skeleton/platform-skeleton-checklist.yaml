@@ -4,7 +4,7 @@ created: 2026-07-06
 steps:
   - action: "工程骨架与命令基线：backend Go module + frontend Vite/React/TS 脚手架 + 根级 Makefile（check/build/lint/test/generate/db-up）+ .golangci.yml（按 compound go-uber-style-guide，含 depguard 依赖方向断言：domain/service 禁 gin、pgx 仅 store 系包）+ docker-compose.yml 的 postgres 服务（make db-up 起本地 dev 库）+ .env.example"
     exit_signal: "空骨架上 `make check` 退出码 0（build+lint+test 全绿）；`make db-up` 起出可连接的本地 PG"
-    status: pending
+    status: done
   - action: "契约固化与双端 codegen：api/openapi.yaml 忠实转写 §4 全部 HTTP 端点（§4.1 login + §4.3 各域清单 + §4.6 export）∪ 白名单 {GET /me}；oapi-codegen 按 tag（本条仅 auth tag，login 与 me 同挂）生成 Go 服务端类型；openapi-typescript 生成 TS 全量类型；漂移检查进 make check"
     exit_signal: "`make generate && git diff --exit-code` 干净且双端编译通过；openapi.yaml 端点集合与 §4.1+§4.3+§4.6 ∪ {GET /me} 双向核对无差集"
     status: pending

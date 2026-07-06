@@ -1,0 +1,10 @@
+# oapi-codegen 配置：Go 服务端按 tag 过滤只生成已实现域（design D4）。
+# 后续域 feature 落地时把对应 tag 加进 include-tags。
+package: httpapi
+output: internal/platform/httpapi/api.gen.go
+generate:
+  models: true
+  gin-server: true
+output-options:
+  include-tags:
+    - auth

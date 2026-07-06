@@ -1,0 +1,23 @@
+# 部署双轨（design D6）：
+# - 只起本地 dev 库：make db-up（= docker compose up -d --wait postgres）
+# - 全容器模式：cp .env.example .env && docker compose up -d --wait（app 服务在 S9 接线）
+# 凭证一律经 .env / 环境注入，本文件不硬编码任何凭证。
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm-dev-password}
+      POSTGRES_DB: ${POSTGRES_DB:-crm}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-crm} -d $${POSTGRES_DB:-crm}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
