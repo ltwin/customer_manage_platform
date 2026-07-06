@@ -1,6 +1,6 @@
 # 命令基线：make check 是全 roadmap 后续 feature 的验证入口（roadmap §6）。
 
-.PHONY: check build lint test generate generate-check db-up backend-build frontend-build frontend-install
+.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install
 
 check: build lint test generate-check
 
@@ -37,3 +37,7 @@ generate-check: generate
 # 本地 dev 库：单起 compose 的 postgres 服务（全容器模式见 docker-compose.yml 注释）
 db-up:
 	docker compose up -d --wait postgres
+
+# schema 迁移手动入口（CMD-003）；服务启动时也会自动执行同一迁移
+migrate-up:
+	cd backend && go run ./cmd/migrate

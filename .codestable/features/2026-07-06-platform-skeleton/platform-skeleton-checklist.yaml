@@ -10,7 +10,7 @@ steps:
     status: done
   - action: "数据库迁移与默认账号 seed：golang-migrate 接入、0001 accounts 表、启动时 ensure 默认账号（读 SEED_ADMIN_PASSWORD，幂等；空库缺该变量则 fail-fast）、测试用一次性 PG 容器基建"
     exit_signal: "测试绿三分支：空库 migrate up 成功；连续启动两次后 accounts 有且仅有 1 条默认账号；空库且缺 SEED_ADMIN_PASSWORD 时启动失败并输出明确错误"
-    status: pending
+    status: done
   - action: "AccountScope 隔离基座：scope 只能由 AccountContext 构造、业务表查询强制 account_id 过滤、测试专用探针表（含 account_id 外键，经同一迁移机制建于测试库，不进生产迁移序列）+ 双账号交叉读写基座级测试"
     exit_signal: "双账号隔离测试绿：A 写入探针表的数据经 B 的 scope 查询不可见，反向同理"
     status: pending
