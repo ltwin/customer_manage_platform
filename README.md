@@ -57,7 +57,7 @@ cp .env.example .env   # 生产环境改为真实值
 docker compose up -d --wait   # postgres + app；app 就绪以 healthz 为准
 ```
 
-只接现有 PG 时：`docker compose up -d --wait app`（`DATABASE_URL` 指过去）。
+只接现有 PG 时：在 `.env` 设 `APP_DATABASE_URL` 指向现有库，然后 `docker compose up -d --no-deps --wait app`（`--no-deps` 避免把 compose 内 postgres 一并拉起）。
 
 ## 环境变量
 

@@ -10,8 +10,10 @@ services:
       - path: .env
         required: false # 单起 postgres（make db-up）时无需 .env
     environment:
-      # 全容器模式下 app 直连 postgres 服务；凭证经 .env 注入（cp .env.example .env）
-      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm-dev-password}@postgres:5432/${POSTGRES_DB:-crm}?sslmode=disable
+      # 缺省 = 全容器模式直连 compose 内 postgres 服务；接现有 PG 时在 .env 设
+      # APP_DATABASE_URL 指过去并用 `docker compose up -d --no-deps --wait app`
+      # 只起 app（review REV-005）。凭证经 .env 注入（cp .env.example .env）。
+      DATABASE_URL: ${APP_DATABASE_URL:-postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm-dev-password}@postgres:5432/${POSTGRES_DB:-crm}?sslmode=disable}
       HTTP_ADDR: ":8080"
     ports:
       - "8080:8080"

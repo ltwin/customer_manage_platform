@@ -4,6 +4,8 @@
 node_modules/
 frontend/dist/
 backend/bin/
+# 杂散 go build -o server 产物（构建输出统一进 backend/bin/，见 Makefile）
+/backend/server
 backend/internal/platform/webui/dist/*
 !backend/internal/platform/webui/dist/.gitkeep
 

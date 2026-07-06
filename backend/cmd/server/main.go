@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
@@ -53,5 +54,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
-	return http.ListenAndServe(cfg.HTTPAddr, router)
+	// 公网直挂无反代（design D6），ReadHeaderTimeout 防 Slowloris 慢连接耗尽 fd；
+	// 优雅停机留 v1-hardening（review REV-004）。
+	server := &http.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	return server.ListenAndServe()
 }
