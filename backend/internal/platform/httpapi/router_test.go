@@ -76,6 +76,9 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 		{http.MethodGet, "/api/v1/no-such"},     // 未注册路径
 		{http.MethodGet, "/api/v1/probe"},       // 方法不匹配
 		{http.MethodDelete, "/api/v1/probe/xx"}, // 未注册子路径
+		{http.MethodGet, "/api/v1/me/"},         // Gin 尾斜杠不应自动 301 绕过封套
+		{http.MethodGet, "/api"},                // API 前缀本身也不落入 SPA fallback
+		{http.MethodGet, "//api/v1/me"},         // 双斜杠 API 路径不落入 SPA fallback
 	}
 	for _, tc := range cases {
 		rec := doRequest(t, r, tc.method, tc.path)
@@ -85,6 +88,21 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 		if env := decodeEnvelope(t, rec); env.Error.Code != "not_found" {
 			t.Fatalf("%s %s: want not_found envelope, got %+v", tc.method, tc.path, env)
 		}
+	}
+}
+
+// 非 API fallback 只承接浏览器 GET/HEAD 导航；POST 等非导航请求不返回 SPA。
+func TestNonAPINonNavigationRequestDoesNotServeSPA(t *testing.T) {
+	rec := doRequest(t, newTestRouter(t, fakePinger{}), http.MethodPost, "/whatever")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("non-API POST should not serve SPA fallback, got %d", rec.Code)
+	}
+	if strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("non-API POST should not serve SPA HTML, got %s", rec.Header().Get("Content-Type"))
+	}
+	var env httpapi.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err == nil && env.Error.Code != "" {
+		t.Fatalf("non-API POST must not return a JSON envelope, got %s", rec.Body.String())
 	}
 }
 

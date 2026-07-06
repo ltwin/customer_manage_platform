@@ -36,130 +36,130 @@ steps:
 checks:
   - item: "业务域端点零实现：除 healthz / auth/login / me 外无路由注册；请求 /api/v1/customers 返回 404"
     source: 范围守护
-    status: pending
+    status: passed
   - item: "无注册 / 账号管理 / 改密码 API 实现"
     source: 范围守护
-    status: pending
+    status: passed
   - item: "迁移 SQL 无 RLS（grep 无 POLICY / ROW LEVEL SECURITY）"
     source: 范围守护
-    status: pending
+    status: passed
   - item: "服务端无 telegram 依赖；TG 代码仅存在于 scripts/"
     source: 范围守护
-    status: pending
+    status: passed
   - item: "frontend/package.json 无 UI 组件库依赖（antd / mui / chakra 等）"
     source: 范围守护
-    status: pending
+    status: passed
   - item: "无 CI 服务配置与云端 provisioning：无 .github/workflows、无 ansible/terraform/云 API 脚本（Dockerfile / compose 属部署工件不在此列）"
     source: 范围守护
-    status: pending
+    status: passed
   - item: "凭证不入库不入 git：CMD-005 裸 token 反查零命中 + CMD-006 .env 被 gitignore 且未被 git 跟踪；三个凭证 env key 的真实值核查走 code review 人工口径"
     source: 范围守护
-    status: pending
+    status: passed
   - item: "ErrorEnvelope 是唯一 /api/v1/** 非 2xx 响应结构，错误码集合与 §4.1 一致不自造；方法不匹配复用 404 not_found；非 API 路径走 SPA fallback 不适用封套"
     source: 名词契约
-    status: pending
+    status: passed
   - item: "POST /auth/login 输入输出与错误路径符合 design 2.1 示例"
     source: 名词契约
-    status: pending
+    status: passed
   - item: "GET /me 返回账号信息（id, created_at），永不含 password_hash"
     source: 名词契约
-    status: pending
+    status: passed
   - item: "accounts 表 shape：id, password_hash, created_at；不带 account_id 列"
     source: 名词契约
-    status: pending
+    status: passed
   - item: "api/openapi.yaml 端点集合 == §4.1+§4.3+§4.6 ∪ {GET /me}（双向无差集）且字段与 §4.2 一致"
     source: 名词契约
-    status: pending
+    status: passed
   - item: "中间件链顺序：recovery → 请求日志 → 封套渲染 → auth（healthz 与 login 豁免）"
     source: 编排骨架
-    status: pending
+    status: passed
   - item: "启动序：加载配置 → migrate up → ensure 默认账号（空库缺 seed 密码 fail-fast）→ HTTP 监听"
     source: 编排骨架
-    status: pending
+    status: passed
   - item: "契约线：make generate 驱动双端 codegen（Go 按 auth tag / TS 全量），漂移检查纳入 make check"
     source: 编排骨架
-    status: pending
+    status: passed
   - item: "非 API 路径恒由二进制内 go:embed 静态 + SPA fallback 承接（编译期恒定，无运行时模式开关）；dev 期前端流量走 Vite dev server 不经二进制"
     source: 编排骨架
-    status: pending
+    status: passed
   - item: "鉴权不变量：/api/v1/** 除 login 外未认证一律 401"
     source: 流程级约束
-    status: pending
+    status: passed
   - item: "ensure 默认账号幂等：重复启动零新增"
     source: 流程级约束
-    status: pending
+    status: passed
   - item: "slog 结构化请求日志：method / path / status / 耗时 / account_id；500 记 error 级含堆栈"
     source: 流程级约束
-    status: pending
+    status: passed
   - item: "domain / service 层无 gin import；pgx 仅 store 系包 import（depguard 机器断言，ADR-003 薄 handler 约束）"
     source: 流程级约束
-    status: pending
+    status: passed
   - item: "路由注册：/healthz、/api/v1/auth/login、/api/v1/me"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "前端路由表：/login + 受保护根路由（守卫骨架）"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "数据库 schema：迁移目录 + 0001 accounts 表"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "命令基线：根级 Makefile check/build/lint/test/generate/db-up 目标"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "契约与 codegen 配置：api/openapi.yaml + oapi-codegen / openapi-typescript 配置"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "环境变量 key：DATABASE_URL / AUTH_TOKEN_SECRET / SEED_ADMIN_PASSWORD / HTTP_ADDR / TELEGRAM_BOT_TOKEN（仅冒烟）；清单以 .env.example 落盘且覆盖全部 key"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "部署工件：Dockerfile（多阶段 + go:embed）+ docker-compose.yml（postgres + app 服务）"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "冒烟脚本：scripts/telegram-smoke.sh"
     source: 挂载点
-    status: pending
+    status: passed
   - item: "A1：make check 全绿退出码 0"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A2：正确密码登录返回 200 {token}"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A3：错误密码返回 401 unauthorized 封套"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A4：缺 password 返回 400 validation_failed 封套"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A5：有效 token GET /me 返回 200 账号信息（不含 password_hash）"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A6：无 token / 篡改 / 过期 token GET /me 均 401 封套"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A7：healthz 无鉴权 200、DB 不可达 503；未注册 API 路径或方法不匹配 404 not_found 封套"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A8：handler panic 返回 500 internal 封套且进程不退出"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A9：双账号隔离——A 写入探针表的数据经 B 的 AccountScope 不可见，反向同理"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A10：空库 migrate up + 连续两次启动 accounts 有且仅有 1 条默认账号；空库缺 SEED_ADMIN_PASSWORD 启动失败有明确错误"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A11：openapi.yaml 端点集合与 §4.1+§4.3+§4.6 ∪ {GET /me} 双向核对无差集；make generate 后 git diff 零漂移"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A12：TG 冒烟 owner 真机收到消息（截图归档）"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A13：浏览器三段路径截图——错密码提示 / 登录成功见账号 / 未登录跳回登录页"
     source: 验收场景
-    status: pending
+    status: passed
   - item: "A14：部署双轨——docker build 成功；compose 全容器模式 healthz 200；二进制直跑访问 / 返回登录页（go:embed 生效）"
     source: 验收场景
-    status: pending
+    status: passed
 
 dod:
   commands:

@@ -30,6 +30,7 @@ type RouterDeps struct {
 func NewRouter(deps RouterDeps) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
+	r.RedirectTrailingSlash = false
 	r.Use(
 		recoveryMiddleware(deps.Logger),
 		requestLogMiddleware(deps.Logger),
@@ -50,14 +51,26 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）
 	serveStatic := staticHandler(webui.Dist())
 	r.NoRoute(func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+		if isAPIPath(c.Request.URL.Path) {
 			abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
+			return
+		}
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			c.Status(http.StatusNotFound)
 			return
 		}
 		serveStatic(c)
 	})
 
 	return r
+}
+
+func isAPIPath(path string) bool {
+	cleaned := path
+	for strings.HasPrefix(cleaned, "//") {
+		cleaned = strings.TrimPrefix(cleaned, "/")
+	}
+	return cleaned == "/api" || strings.HasPrefix(cleaned, "/api/")
 }
 
 // staticHandler 托管 go:embed 静态产物：命中文件直接服务，其余路径 SPA fallback 到 index.html；
