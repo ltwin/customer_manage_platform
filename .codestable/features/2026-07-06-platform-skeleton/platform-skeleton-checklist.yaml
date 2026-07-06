@@ -16,7 +16,7 @@ steps:
     status: done
   - action: "HTTP 编排骨架与错误封套：Gin server、中间件链（recovery→请求日志→封套→auth 豁免表）、/healthz（DB ping，失败 503）、未注册 API 路径与方法不匹配一律 404、panic 封套化"
     exit_signal: "集成测试绿：healthz 200 无鉴权且 DB 不可达时 503（单测注入）；未注册 API 路径与方法不匹配均 404 not_found 封套；handler panic 返回 500 internal 封套且进程存活"
-    status: pending
+    status: done
   - action: "登录与账号上下文：bcrypt 校验、JWT 签发/解析、auth 中间件注入 AccountContext、GET /me（不含 password_hash）；handler 薄层约束落地"
     exit_signal: "集成测试绿：登录→token→/me 往返 200；错密码/缺 password/无 token/篡改 token/过期 token 各返回对应封套；depguard 断言 domain/service 层无 gin import 且 lint 通过"
     status: pending
