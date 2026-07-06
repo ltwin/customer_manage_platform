@@ -1,0 +1,204 @@
+feature: 2026-07-06-platform-skeleton
+created: 2026-07-06
+
+steps:
+  - action: "工程骨架与命令基线：backend Go module + frontend Vite/React/TS 脚手架 + 根级 Makefile（check/build/lint/test/generate/db-up）+ .golangci.yml（按 compound go-uber-style-guide，含 depguard 依赖方向断言：domain/service 禁 gin、pgx 仅 store 系包）+ docker-compose.yml 的 postgres 服务（make db-up 起本地 dev 库）+ .env.example"
+    exit_signal: "空骨架上 `make check` 退出码 0（build+lint+test 全绿）；`make db-up` 起出可连接的本地 PG"
+    status: pending
+  - action: "契约固化与双端 codegen：api/openapi.yaml 忠实转写 §4 全部 HTTP 端点（§4.1 login + §4.3 各域清单 + §4.6 export）∪ 白名单 {GET /me}；oapi-codegen 按 tag（本条仅 auth tag，login 与 me 同挂）生成 Go 服务端类型；openapi-typescript 生成 TS 全量类型；漂移检查进 make check"
+    exit_signal: "`make generate && git diff --exit-code` 干净且双端编译通过；openapi.yaml 端点集合与 §4.1+§4.3+§4.6 ∪ {GET /me} 双向核对无差集"
+    status: pending
+  - action: "数据库迁移与默认账号 seed：golang-migrate 接入、0001 accounts 表、启动时 ensure 默认账号（读 SEED_ADMIN_PASSWORD，幂等；空库缺该变量则 fail-fast）、测试用一次性 PG 容器基建"
+    exit_signal: "测试绿三分支：空库 migrate up 成功；连续启动两次后 accounts 有且仅有 1 条默认账号；空库且缺 SEED_ADMIN_PASSWORD 时启动失败并输出明确错误"
+    status: pending
+  - action: "AccountScope 隔离基座：scope 只能由 AccountContext 构造、业务表查询强制 account_id 过滤、测试专用探针表（含 account_id 外键，经同一迁移机制建于测试库，不进生产迁移序列）+ 双账号交叉读写基座级测试"
+    exit_signal: "双账号隔离测试绿：A 写入探针表的数据经 B 的 scope 查询不可见，反向同理"
+    status: pending
+  - action: "HTTP 编排骨架与错误封套：Gin server、中间件链（recovery→请求日志→封套→auth 豁免表）、/healthz（DB ping，失败 503）、未注册 API 路径与方法不匹配一律 404、panic 封套化"
+    exit_signal: "集成测试绿：healthz 200 无鉴权且 DB 不可达时 503（单测注入）；未注册 API 路径与方法不匹配均 404 not_found 封套；handler panic 返回 500 internal 封套且进程存活"
+    status: pending
+  - action: "登录与账号上下文：bcrypt 校验、JWT 签发/解析、auth 中间件注入 AccountContext、GET /me（不含 password_hash）；handler 薄层约束落地"
+    exit_signal: "集成测试绿：登录→token→/me 往返 200；错密码/缺 password/无 token/篡改 token/过期 token 各返回对应封套；depguard 断言 domain/service 层无 gin import 且 lint 通过"
+    status: pending
+  - action: "前端垂直切片（dev 走 Vite dev server proxy /api）：登录页（空态/加载/错误态）、token 存储、守卫路由骨架（/login + 受保护根路由）、/me 账号信息展示、生成 TS 类型 + 封套错误处理接入 API client"
+    exit_signal: "浏览器手工路径截图齐三段：错密码有提示、正确登录进入看到账号信息、未登录访问受保护路由跳回登录页"
+    status: pending
+  - action: "TG 冒烟：scripts/telegram-smoke.sh（env 注入 TELEGRAM_BOT_TOKEN，getUpdates 取 chat_id 后 sendMessage）；仅依赖 owner 前置动作（BotFather 建 bot + 给 bot 发一条消息），失败不阻塞后续步骤"
+    exit_signal: "owner 真机收到测试消息（截图归档 feature 目录）"
+    status: pending
+  - action: "部署工件双轨：多阶段 Dockerfile（前端构建产物经 go:embed 打进二进制）+ compose app 服务接线（含 healthz healthcheck 使 --wait 就绪语义成立；凭证一律经 env_file 注入不硬编码）+ 非 API 路径 SPA fallback；支持三形态——二进制直跑接现有 PG / 二进制 + compose PG / 全容器。前置：cp .env.example .env（占位值即本地可跑 dev 值）"
+    exit_signal: "CMD-007 docker build 成功；CMD-008 compose 全容器模式 healthz 200；二进制直跑访问 / 返回登录页（go:embed 生效，截图）"
+    status: pending
+  - action: "harden 收尾与终验：凭证反查（CMD-005/006）、.env.example 对照挂载点表 env key 清单核对完整、清洁度清扫（无调试输出/TODO/注释代码/死 import）、README 开发段（起服务双轨/环境变量/备份建议/token 轮换/seed 后可移除变量与改密现状）、make check 终验"
+    exit_signal: "CMD-005 与 CMD-006 通过；.env.example 覆盖全部 env key；README 开发段落盘；`make check` 终验退出码 0"
+    status: pending
+
+checks:
+  - item: "业务域端点零实现：除 healthz / auth/login / me 外无路由注册；请求 /api/v1/customers 返回 404"
+    source: 范围守护
+    status: pending
+  - item: "无注册 / 账号管理 / 改密码 API 实现"
+    source: 范围守护
+    status: pending
+  - item: "迁移 SQL 无 RLS（grep 无 POLICY / ROW LEVEL SECURITY）"
+    source: 范围守护
+    status: pending
+  - item: "服务端无 telegram 依赖；TG 代码仅存在于 scripts/"
+    source: 范围守护
+    status: pending
+  - item: "frontend/package.json 无 UI 组件库依赖（antd / mui / chakra 等）"
+    source: 范围守护
+    status: pending
+  - item: "无 CI 服务配置与云端 provisioning：无 .github/workflows、无 ansible/terraform/云 API 脚本（Dockerfile / compose 属部署工件不在此列）"
+    source: 范围守护
+    status: pending
+  - item: "凭证不入库不入 git：CMD-005 裸 token 反查零命中 + CMD-006 .env 被 gitignore 且未被 git 跟踪；三个凭证 env key 的真实值核查走 code review 人工口径"
+    source: 范围守护
+    status: pending
+  - item: "ErrorEnvelope 是唯一 /api/v1/** 非 2xx 响应结构，错误码集合与 §4.1 一致不自造；方法不匹配复用 404 not_found；非 API 路径走 SPA fallback 不适用封套"
+    source: 名词契约
+    status: pending
+  - item: "POST /auth/login 输入输出与错误路径符合 design 2.1 示例"
+    source: 名词契约
+    status: pending
+  - item: "GET /me 返回账号信息（id, created_at），永不含 password_hash"
+    source: 名词契约
+    status: pending
+  - item: "accounts 表 shape：id, password_hash, created_at；不带 account_id 列"
+    source: 名词契约
+    status: pending
+  - item: "api/openapi.yaml 端点集合 == §4.1+§4.3+§4.6 ∪ {GET /me}（双向无差集）且字段与 §4.2 一致"
+    source: 名词契约
+    status: pending
+  - item: "中间件链顺序：recovery → 请求日志 → 封套渲染 → auth（healthz 与 login 豁免）"
+    source: 编排骨架
+    status: pending
+  - item: "启动序：加载配置 → migrate up → ensure 默认账号（空库缺 seed 密码 fail-fast）→ HTTP 监听"
+    source: 编排骨架
+    status: pending
+  - item: "契约线：make generate 驱动双端 codegen（Go 按 auth tag / TS 全量），漂移检查纳入 make check"
+    source: 编排骨架
+    status: pending
+  - item: "非 API 路径恒由二进制内 go:embed 静态 + SPA fallback 承接（编译期恒定，无运行时模式开关）；dev 期前端流量走 Vite dev server 不经二进制"
+    source: 编排骨架
+    status: pending
+  - item: "鉴权不变量：/api/v1/** 除 login 外未认证一律 401"
+    source: 流程级约束
+    status: pending
+  - item: "ensure 默认账号幂等：重复启动零新增"
+    source: 流程级约束
+    status: pending
+  - item: "slog 结构化请求日志：method / path / status / 耗时 / account_id；500 记 error 级含堆栈"
+    source: 流程级约束
+    status: pending
+  - item: "domain / service 层无 gin import；pgx 仅 store 系包 import（depguard 机器断言，ADR-003 薄 handler 约束）"
+    source: 流程级约束
+    status: pending
+  - item: "路由注册：/healthz、/api/v1/auth/login、/api/v1/me"
+    source: 挂载点
+    status: pending
+  - item: "前端路由表：/login + 受保护根路由（守卫骨架）"
+    source: 挂载点
+    status: pending
+  - item: "数据库 schema：迁移目录 + 0001 accounts 表"
+    source: 挂载点
+    status: pending
+  - item: "命令基线：根级 Makefile check/build/lint/test/generate/db-up 目标"
+    source: 挂载点
+    status: pending
+  - item: "契约与 codegen 配置：api/openapi.yaml + oapi-codegen / openapi-typescript 配置"
+    source: 挂载点
+    status: pending
+  - item: "环境变量 key：DATABASE_URL / AUTH_TOKEN_SECRET / SEED_ADMIN_PASSWORD / HTTP_ADDR / TELEGRAM_BOT_TOKEN（仅冒烟）；清单以 .env.example 落盘且覆盖全部 key"
+    source: 挂载点
+    status: pending
+  - item: "部署工件：Dockerfile（多阶段 + go:embed）+ docker-compose.yml（postgres + app 服务）"
+    source: 挂载点
+    status: pending
+  - item: "冒烟脚本：scripts/telegram-smoke.sh"
+    source: 挂载点
+    status: pending
+  - item: "A1：make check 全绿退出码 0"
+    source: 验收场景
+    status: pending
+  - item: "A2：正确密码登录返回 200 {token}"
+    source: 验收场景
+    status: pending
+  - item: "A3：错误密码返回 401 unauthorized 封套"
+    source: 验收场景
+    status: pending
+  - item: "A4：缺 password 返回 400 validation_failed 封套"
+    source: 验收场景
+    status: pending
+  - item: "A5：有效 token GET /me 返回 200 账号信息（不含 password_hash）"
+    source: 验收场景
+    status: pending
+  - item: "A6：无 token / 篡改 / 过期 token GET /me 均 401 封套"
+    source: 验收场景
+    status: pending
+  - item: "A7：healthz 无鉴权 200、DB 不可达 503；未注册 API 路径或方法不匹配 404 not_found 封套"
+    source: 验收场景
+    status: pending
+  - item: "A8：handler panic 返回 500 internal 封套且进程不退出"
+    source: 验收场景
+    status: pending
+  - item: "A9：双账号隔离——A 写入探针表的数据经 B 的 AccountScope 不可见，反向同理"
+    source: 验收场景
+    status: pending
+  - item: "A10：空库 migrate up + 连续两次启动 accounts 有且仅有 1 条默认账号；空库缺 SEED_ADMIN_PASSWORD 启动失败有明确错误"
+    source: 验收场景
+    status: pending
+  - item: "A11：openapi.yaml 端点集合与 §4.1+§4.3+§4.6 ∪ {GET /me} 双向核对无差集；make generate 后 git diff 零漂移"
+    source: 验收场景
+    status: pending
+  - item: "A12：TG 冒烟 owner 真机收到消息（截图归档）"
+    source: 验收场景
+    status: pending
+  - item: "A13：浏览器三段路径截图——错密码提示 / 登录成功见账号 / 未登录跳回登录页"
+    source: 验收场景
+    status: pending
+  - item: "A14：部署双轨——docker build 成功；compose 全容器模式 healthz 200；二进制直跑访问 / 返回登录页（go:embed 生效）"
+    source: 验收场景
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "make migrate-up"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "bash scripts/telegram-smoke.sh"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "! git grep -nE '[0-9]{6,}:[A-Za-z0-9_-]{30,}' -- ':!.codestable'"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "git check-ignore -q .env && ! git ls-files --error-unmatch .env 2>/dev/null"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-007
+      command: "docker build -t crm:local ."
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-008
+      command: "docker compose up -d --wait && curl -fsS http://localhost:8080/healthz; rc=$?; docker compose down; exit $rc"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, screenshots, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    exceptions: "slog 结构化请求日志与错误日志是功能本身"
+    todo_fixme: forbidden-unless-tracked
+    commented_out_code: forbidden
+    unused_imports: forbidden
