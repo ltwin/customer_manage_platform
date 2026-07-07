@@ -15,6 +15,7 @@
 4. **凭证红线**：TG bot token 等一切凭证只经环境变量注入，不入库、不入 git。
 5. **术语**：按 `.codestable/requirements/CONTEXT.md`；「用户」是禁用词（说「账号」= 摄影师，「客户」= 拍摄对象）。
 6. **Go 编码规范（2026-07-06 拍板）**：Uber Go Style Guide（中文参考 <https://github.com/xxjwxc/uber_go_guide_cn>）；code review 按 `docs/go-style-checklist.md` 逐项检查，工具可查项交给 gofmt / golangci-lint。
+7. **前端编码规范（2026-07-07 拍板）**：工具链优先——TS `strict: true` + typescript-eslint strict + react-hooks + Prettier；code review 按 `docs/frontend-style-checklist.md` 逐项检查；API 类型一律引用 openapi-typescript 生成的 `schema.d.ts`，禁手写重复 DTO。
 
 ## Git 约定（GitFlow，2026-07-06 拍板）
 
@@ -34,3 +35,4 @@
 | 规划与接口契约（硬约束） | `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` |
 | 需求讨论原始记录 | `.codestable/brainstorms/photographer-private-crm/brainstorm.md` |
 | Go 编码规范 checklist | `docs/go-style-checklist.md`（决策：`.codestable/compound/2026-07-06-decision-go-uber-style-guide.md`） |
+| 前端编码规范 checklist | `docs/frontend-style-checklist.md`（决策：`.codestable/compound/2026-07-07-decision-frontend-toolchain-first-standard.md`） |
