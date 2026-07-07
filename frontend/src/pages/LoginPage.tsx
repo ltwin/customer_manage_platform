@@ -32,18 +32,19 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="page">
+    <main className="page login-page">
       <h1>摄影师 CRM</h1>
       <form onSubmit={onSubmit} className="card">
         <label htmlFor="password">登录密码</label>
         <input
           id="password"
+          className="input"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           autoFocus
         />
-        <button type="submit" disabled={submitting}>
+        <button className="btn btn-primary" type="submit" disabled={submitting}>
           {submitting ? '登录中…' : '登录'}
         </button>
         {error && <p role="alert" className="error">{error}</p>}
