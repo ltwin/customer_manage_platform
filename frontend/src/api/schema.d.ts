@@ -45,7 +45,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 客户列表（q 匹配 display_name/real_name/identity.handle） */
+        /** 客户列表（q 匹配 display_name/real_name/phone/identity.handle） */
         get: operations["listCustomers"];
         put?: never;
         /** 30 秒建档端点（仅 3-4 项必填） */
@@ -410,7 +410,7 @@ export interface components {
         /** @enum {string} */
         CustomerStatus: "active" | "merged" | "archived";
         /** @enum {string} */
-        SocialPlatform: "wechat" | "qq" | "telegram" | "other";
+        SocialPlatform: "wechat" | "qq" | "telegram" | "xiaohongshu" | "douyin" | "weibo" | "other";
         /** @enum {string} */
         ShootType: "portrait" | "cosplay" | "other";
         /** @enum {string} */
@@ -444,6 +444,39 @@ export interface components {
             status: components["schemas"]["CustomerStatus"];
             readonly merged_into_customer_id?: string;
         };
+        CustomerListItem: components["schemas"]["Customer"] & {
+            /** @description 非 cancelled 订单计数；order 域未落地前恒为 0 */
+            orders_count: number;
+            /**
+             * Format: date
+             * @description 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
+             */
+            last_shot_at: string | null;
+        };
+        CustomerSummary: {
+            id: string;
+            display_name: string;
+            channel: components["schemas"]["CustomerChannel"];
+            status: components["schemas"]["CustomerStatus"];
+        };
+        CustomerStats: {
+            /** @description 非 cancelled 订单计数；order 域未落地前恒为 0 */
+            orders_count: number;
+            /** @description 分；非 cancelled 订单 price 之和；order 域未落地前恒为 0 */
+            total_order_amount: number;
+            /**
+             * Format: date
+             * @description 口径同 CustomerListItem.last_shot_at
+             */
+            last_shot_at: string | null;
+        };
+        CustomerDetail: components["schemas"]["Customer"] & {
+            identities: components["schemas"]["SocialIdentity"][];
+            /** @description 倒序 */
+            notes: components["schemas"]["CustomerNote"][];
+            referrer: components["schemas"]["CustomerSummary"] | null;
+            stats: components["schemas"]["CustomerStats"];
+        };
         SocialIdentity: {
             readonly id: string;
             /** @description 服务端由账号上下文写入，客户端永不传（ADR-001） */
@@ -476,6 +509,7 @@ export interface components {
             raw_delivery_count?: number;
             /** @description 0=不含精修 */
             retouch_count?: number;
+            note?: string;
         };
         Package: components["schemas"]["PackageInput"] & {
             readonly id: string;
@@ -484,6 +518,10 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
             status: components["schemas"]["PackageStatus"];
+        };
+        PackageListItem: components["schemas"]["Package"] & {
+            /** @description 引用本套系的非 cancelled 订单计数；order 域未落地前恒为 0 */
+            orders_count: number;
         };
         Order: {
             readonly id: string;
@@ -693,7 +731,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Customer"][];
+                        items: components["schemas"]["CustomerListItem"][];
                         total: number;
                     };
                 };
@@ -717,10 +755,11 @@ export interface operations {
                     channel: components["schemas"]["CustomerChannel"];
                     /** @description channel=referral 时必填 */
                     referrer_customer_id?: string;
-                    identity: {
+                    identities: {
                         platform: components["schemas"]["SocialPlatform"];
                         handle: string;
-                    };
+                        remark?: string;
+                    }[];
                 };
             };
         };
@@ -736,6 +775,7 @@ export interface operations {
             };
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["Internal"];
         };
     };
@@ -756,13 +796,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Customer"] & {
-                        identities: components["schemas"]["SocialIdentity"][];
-                        /** @description 倒序 */
-                        notes: components["schemas"]["CustomerNote"][];
-                        /** @description referrer 摘要（§4.3；字段由 customer-core feature 细化） */
-                        referrer?: Record<string, never>;
-                    };
+                    "application/json": components["schemas"]["CustomerDetail"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -959,7 +993,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Package"][];
+                        items: components["schemas"]["PackageListItem"][];
                         total: number;
                     };
                 };
@@ -1296,6 +1330,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["ReminderStatus"];
+                customer_id?: string;
                 due_before?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
@@ -1541,7 +1576,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        /** @description due_date ≤ 账号时区今日且 pending */
+                        /** @description due_date ≤ 账号时区今日+2 天且 pending（近 3 天窗口含逾期） */
                         due_reminders: components["schemas"]["Reminder"][];
                         /** @description 今日档期（含订单+客户摘要，字段由 dashboard-today feature 细化） */
                         today_slots: components["schemas"]["ScheduleSlot"][];
@@ -1552,10 +1587,12 @@ export interface operations {
                         };
                         /** @description type=churn 且 pending */
                         churn_alerts: components["schemas"]["Reminder"][];
-                        month_stats: {
+                        recent_stats: {
+                            /** @description 近 30 天内按 created_at 统计，含全部状态 */
                             orders_created: number;
+                            /** @description 近 30 天内按 delivered_at 统计，排除当前 status=cancelled */
                             orders_delivered: number;
-                            /** @description 分；balance_paid=true 订单 price 之和 */
+                            /** @description 分；近 30 天 delivered_at 落窗口、balance_paid=true 且当前非 cancelled 的订单 price 之和 */
                             revenue_confirmed: number;
                         };
                     };

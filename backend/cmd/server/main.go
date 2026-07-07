@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
@@ -48,9 +49,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Logger: logger,
-		DB:     s,
-		Auth:   auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
+		Logger:       logger,
+		DB:           s,
+		ScopeFactory: s,
+		Auth:         auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
+		Customer:     customer.NewService(customer.NewPostgresRepository()),
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

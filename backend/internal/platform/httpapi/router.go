@@ -9,7 +9,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
 )
 
@@ -18,11 +20,18 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// ScopeFactory 是业务路由获取账号隔离数据库句柄的最小依赖。
+type ScopeFactory interface {
+	ScopeFor(auth.AccountContext) store.AccountScope
+}
+
 // RouterDeps 是路由骨架的全部依赖。
 type RouterDeps struct {
-	Logger *slog.Logger
-	DB     Pinger
-	Auth   *auth.Service
+	Logger       *slog.Logger
+	DB           Pinger
+	ScopeFactory ScopeFactory
+	Auth         *auth.Service
+	Customer     *customerdomain.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -41,11 +50,19 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	r.GET("/healthz", healthzHandler(deps.DB))
 
 	// API 路由：handlers 实现 codegen ServerInterface；login 豁免 auth，其余一律先过 auth
-	h := &handlers{logger: deps.Logger, auth: deps.Auth}
+	h := &handlers{
+		logger:       deps.Logger,
+		auth:         deps.Auth,
+		scopeFactory: deps.ScopeFactory,
+		customer:     deps.Customer,
+	}
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", h.Login)
 	protected := api.Group("", authMiddleware(deps.Auth))
 	protected.GET("/me", h.GetMe)
+	protected.GET("/customers", h.listCustomersRoute)
+	protected.POST("/customers", h.CreateCustomer)
+	protected.GET("/customers/:id", h.getCustomerRoute)
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）

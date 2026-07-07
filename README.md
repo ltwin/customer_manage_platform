@@ -25,7 +25,9 @@ set -a && source .env && set +a
 cd backend && go run ./cmd/server
 
 # 终端 2：前端（Vite dev server，/api 代理到 :8080）
-cd frontend && npm run dev   # 打开 http://localhost:5173
+cd frontend
+npm ci                       # 首次启动或依赖缺失时先安装；否则会出现 sh: vite: command not found
+npm run dev                  # 打开 http://localhost:5173
 ```
 
 启动序：加载配置 → migrate up → ensure 默认账号 → HTTP 监听。首次启动（accounts 为空）必须提供 `SEED_ADMIN_PASSWORD`，否则 fail-fast；**seed 完成后可从环境移除该变量**。

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 )
 
@@ -34,8 +35,10 @@ func authMiddleware(svc *auth.Service) gin.HandlerFunc {
 
 // handlers 实现 codegen 的 ServerInterface：薄适配层，领域逻辑在 auth.Service（ADR-003）。
 type handlers struct {
-	logger *slog.Logger
-	auth   *auth.Service
+	logger       *slog.Logger
+	auth         *auth.Service
+	scopeFactory ScopeFactory
+	customer     *customerdomain.Service
 }
 
 var _ ServerInterface = (*handlers)(nil)

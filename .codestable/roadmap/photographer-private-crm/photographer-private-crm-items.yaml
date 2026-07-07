@@ -11,15 +11,15 @@ items:
     notes: greenfield 安全网条目；完成信号：make check 全绿、登录取 token 后 GET /api/v1/me 返回账号、跨账号过滤有基座级测试、OpenAPI 与 §4 一致且 codegen 可跑；代码组织 Gin+轻量 DDD（roadmap §4 头注）；外部依赖前置：TG bot 申请 + sendMessage 冒烟（脚本级），token 凭证规则落 attention.md；拍板包已全部落定（2026-07-05）：Go+Gin+React+PostgreSQL+OpenAPI-first、阿里云 ECS 自部署
 
   - slug: customer-core
-    description: 30 秒建档最小闭环：建客户（昵称+社交身份+渠道三项必填）、列表搜索、详情页
+    description: 30 秒建档最小闭环：建客户（昵称+至少 1 个社交身份+渠道必填，建档时可录入多个身份）、列表搜索、详情页
     depends_on: [platform-skeleton]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-07-customer-core
     minimal_loop: true
-    notes: 完成信号：新建到保存 ≤30 秒计时演示；列表按 q/channel 过滤用例通过（q 匹配含 phone，2026-07-06 契约更新）；列表/详情聚合字段（orders_count/last_shot_at/stats）按 §4.3 下发，order 域未落地前恒 0/null；启动时收编 OpenAPI 契约增量与 GET /me 白名单（roadmap §7 观察项）
+    notes: 完成信号：新建到保存 ≤30 秒计时演示（覆盖 2 个社交身份输入）；POST /customers 接收 identities[1..N]，至少 1 个社交身份是硬性条件，identities 为空返回 400 validation_failed，不允许生成无身份客户；同事务写入客户与全部社交身份；列表按 q/channel 过滤用例通过（q 匹配含 phone，2026-07-06 契约更新）；列表/详情聚合字段（orders_count/last_shot_at/stats）按 §4.3 下发，order 域未落地前恒 0/null；启动时收编 OpenAPI 契约增量与 GET /me 白名单（roadmap §7 观察项）
 
   - slug: customer-profile-complete
-    description: 档案补全：社交身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
+    description: 档案补全：建档后社交身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
     depends_on: [customer-core]
     status: planned
     feature: null

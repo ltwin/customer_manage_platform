@@ -18,10 +18,12 @@ security:
 tags:
   - name: auth
     description: 登录与当前账号（platform-skeleton 已实现）
+  - name: customer-core
+    description: 后端 codegen 切片标签（customer-core 已实现的客户三操作）
   - name: customers
-    description: 客户域（customer-core / customer-merge，未实现）
+    description: 客户域（customer-core / customer-profile-complete）
   - name: packages
-    description: 套系域（package-price，未实现）
+    description: 套系域（package-catalog，未实现）
   - name: orders
     description: 订单域（order-tracking，未实现）
   - name: schedule
@@ -31,7 +33,7 @@ tags:
   - name: settings
     description: 设置（settings-foundation，未实现）
   - name: dashboard
-    description: dashboard 聚合（dashboard-today，未实现）
+    description: dashboard 聚合（dashboard，未实现）
   - name: export
     description: 全量导出（data-export，未实现）
 
@@ -89,7 +91,7 @@ paths:
 
   /customers:
     post:
-      tags: [customers]
+      tags: [customers, customer-core]
       operationId: createCustomer
       summary: 30 秒建档端点（仅 3-4 项必填）
       requestBody:
@@ -98,7 +100,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [display_name, channel, identity]
+              required: [display_name, channel, identities]
               properties:
                 display_name:
                   type: string
@@ -107,14 +109,19 @@ paths:
                 referrer_customer_id:
                   type: string
                   description: channel=referral 时必填
-                identity:
-                  type: object
-                  required: [platform, handle]
-                  properties:
-                    platform:
-                      $ref: "#/components/schemas/SocialPlatform"
-                    handle:
-                      type: string
+                identities:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [platform, handle]
+                    properties:
+                      platform:
+                        $ref: "#/components/schemas/SocialPlatform"
+                      handle:
+                        type: string
+                      remark:
+                        type: string
       responses:
         "201":
           description: 已建档
@@ -126,12 +133,14 @@ paths:
           $ref: "#/components/responses/ValidationFailed"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/Internal"
     get:
-      tags: [customers]
+      tags: [customers, customer-core]
       operationId: listCustomers
-      summary: 客户列表（q 匹配 display_name/real_name/identity.handle）
+      summary: 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
       parameters:
         - name: q
           in: query
@@ -161,7 +170,7 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: "#/components/schemas/Customer"
+                      $ref: "#/components/schemas/CustomerListItem"
                   total:
                     type: integer
         "400":
@@ -173,7 +182,7 @@ paths:
 
   /customers/{id}:
     get:
-      tags: [customers]
+      tags: [customers, customer-core]
       operationId: getCustomer
       summary: 客户详情（含 identities、notes 倒序、referrer 摘要）
       parameters:
@@ -184,23 +193,7 @@ paths:
           content:
             application/json:
               schema:
-                allOf:
-                  - $ref: "#/components/schemas/Customer"
-                  - type: object
-                    required: [identities, notes]
-                    properties:
-                      identities:
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/SocialIdentity"
-                      notes:
-                        description: 倒序
-                        type: array
-                        items:
-                          $ref: "#/components/schemas/CustomerNote"
-                      referrer:
-                        type: object
-                        description: referrer 摘要（§4.3；字段由 customer-core feature 细化）
+                $ref: "#/components/schemas/CustomerDetail"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
@@ -429,7 +422,7 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: "#/components/schemas/Package"
+                      $ref: "#/components/schemas/PackageListItem"
                   total:
                     type: integer
         "400":
@@ -778,6 +771,10 @@ paths:
           in: query
           schema:
             $ref: "#/components/schemas/ReminderStatus"
+        - name: customer_id
+          in: query
+          schema:
+            type: string
         - name: due_before
           in: query
           schema:
@@ -1014,10 +1011,10 @@ paths:
               schema:
                 type: object
                 required:
-                  [due_reminders, today_slots, unpaid_orders, churn_alerts, month_stats]
+                  [due_reminders, today_slots, unpaid_orders, churn_alerts, recent_stats]
                 properties:
                   due_reminders:
-                    description: due_date ≤ 账号时区今日且 pending
+                    description: due_date ≤ 账号时区今日+2 天且 pending（近 3 天窗口含逾期）
                     type: array
                     items:
                       $ref: "#/components/schemas/Reminder"
@@ -1042,17 +1039,19 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Reminder"
-                  month_stats:
+                  recent_stats:
                     type: object
                     required: [orders_created, orders_delivered, revenue_confirmed]
                     properties:
                       orders_created:
+                        description: 近 30 天内按 created_at 统计，含全部状态
                         type: integer
                       orders_delivered:
+                        description: 近 30 天内按 delivered_at 统计，排除当前 status=cancelled
                         type: integer
                       revenue_confirmed:
                         type: integer
-                        description: 分；balance_paid=true 订单 price 之和
+                        description: 分；近 30 天 delivered_at 落窗口、balance_paid=true 且当前非 cancelled 的订单 price 之和
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -1233,7 +1232,7 @@ components:
 
     SocialPlatform:
       type: string
-      enum: [wechat, qq, telegram, other]
+      enum: [wechat, qq, telegram, xiaohongshu, douyin, weibo, other]
 
     ShootType:
       type: string
@@ -1297,6 +1296,72 @@ components:
         merged_into_customer_id:
           type: string
           readOnly: true
+
+    CustomerListItem:
+      allOf:
+        - $ref: "#/components/schemas/Customer"
+        - type: object
+          required: [orders_count, last_shot_at]
+          properties:
+            orders_count:
+              type: integer
+              description: 非 cancelled 订单计数；order 域未落地前恒为 0
+            last_shot_at:
+              type: string
+              format: date
+              nullable: true
+              description: 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
+
+    CustomerSummary:
+      type: object
+      required: [id, display_name, channel, status]
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        channel:
+          $ref: "#/components/schemas/CustomerChannel"
+        status:
+          $ref: "#/components/schemas/CustomerStatus"
+
+    CustomerStats:
+      type: object
+      required: [orders_count, total_order_amount, last_shot_at]
+      properties:
+        orders_count:
+          type: integer
+          description: 非 cancelled 订单计数；order 域未落地前恒为 0
+        total_order_amount:
+          type: integer
+          description: 分；非 cancelled 订单 price 之和；order 域未落地前恒为 0
+        last_shot_at:
+          type: string
+          format: date
+          nullable: true
+          description: 口径同 CustomerListItem.last_shot_at
+
+    CustomerDetail:
+      allOf:
+        - $ref: "#/components/schemas/Customer"
+        - type: object
+          required: [identities, notes, referrer, stats]
+          properties:
+            identities:
+              type: array
+              items:
+                $ref: "#/components/schemas/SocialIdentity"
+            notes:
+              description: 倒序
+              type: array
+              items:
+                $ref: "#/components/schemas/CustomerNote"
+            referrer:
+              nullable: true
+              allOf:
+                - $ref: "#/components/schemas/CustomerSummary"
+            stats:
+              $ref: "#/components/schemas/CustomerStats"
 
     SocialIdentity:
       type: object
@@ -1367,6 +1432,9 @@ components:
         retouch_count:
           type: integer
           description: 0=不含精修
+        note:
+          type: string
+          maxLength: 500
 
     Package:
       allOf:
@@ -1387,6 +1455,16 @@ components:
               readOnly: true
             status:
               $ref: "#/components/schemas/PackageStatus"
+
+    PackageListItem:
+      allOf:
+        - $ref: "#/components/schemas/Package"
+        - type: object
+          required: [orders_count]
+          properties:
+            orders_count:
+              type: integer
+              description: 引用本套系的非 cancelled 订单计数；order 域未落地前恒为 0
 
     Order:
       type: object

@@ -1,0 +1,159 @@
+feature: 2026-07-07-customer-core
+created: 2026-07-07
+
+steps:
+  - action: "契约同步：收编 roadmap §7 点名的全部 OpenAPI 漂移（客户/套系聚合字段、q 匹配 phone、reminders customer_id、Package.note、SocialPlatform 枚举、dashboard 近 3 天/近 30 天口径、POST /customers referral 404）并给 create/list/detail 三个操作增加后端 codegen 可选标签；未实现域只同步契约不注册路由"
+    exit_signal: "`make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts` 退出码 0，且 Go server interface 只新增 create/list/detail 三个 customer-core 操作；未实现档案补全/其他业务域端点仍不注册"
+    status: done
+  - action: "AccountScope 扩展：按 fail-loud 约束增加 tx-aware scope 与客户列表所需的受控复杂读模型能力，覆盖同事务写入 1..N 个身份、返回插入 id、count、身份 handle 搜索和 referrer 可见性，不接受请求派生 SQL 片段"
+    exit_signal: "测试证明 Customer+1..N SocialIdentity 同事务提交/回滚；双账号测试证明列表、count、详情、referrer 查验均只看当前账号；非法查询片段被拒绝"
+    status: done
+  - action: "客户域持久化：新增 customers/social_identities schema、客户实体校验、创建客户+1..N 个社交身份事务、列表和详情读模型"
+    exit_signal: "service/repository 测试覆盖创建成功（至少 2 个身份）、校验失败回滚、referral 可见/缺失/跨账号、q/channel/status/page 查询、聚合零值 shape"
+    status: done
+  - action: "HTTP 垂直切片：注册受保护 POST /customers、GET /customers、GET /customers/{id}，接入 ErrorEnvelope、AccountContext 和 customer service"
+    exit_signal: "API 集成测试覆盖 201/200/400/401/404 路径；patch/identities/notes/merge 仍返回 404"
+    status: done
+  - action: "前端静态结构：新增 /customers、/customers/new、/customers/:id 受保护页面骨架，包含列表筛选、新建表单、详情基础信息区和空态"
+    exit_signal: "浏览器在无真实数据或占位数据下能看到三页完整布局；长昵称/handle 不撑破主要容器"
+    status: done
+  - action: "前端状态接入：接通 API client、列表筛选、创建保存、成功跳详情、错误提示、401 回登录，并保留表单输入"
+    exit_signal: "浏览器计时演示：登录后 30 秒内完成含 2 个社交身份的建档并在列表/详情可查；API 错误和未认证路径可见"
+    status: done
+  - action: "harden 与终验：补 UI polish（loading/error/empty/disabled/small screen/focus/keyboard/contrast）、范围守护、清洁度清扫和命令终验"
+    exit_signal: "`make check` 退出码 0；A11/A12 截图或录屏归档；范围守护和清洁度 grep/diff review 通过"
+    status: done
+
+checks:
+  - item: "POST /customers 只要求 display_name、channel、identities[1..N]{platform,handle,remark?}，channel=referral 时额外要求当前账号可见 referrer_customer_id"
+    source: 名词契约
+    status: passed
+  - item: "建档至少 1 个有效社交身份是硬性条件；identities 缺失、为空或全部无效时返回 400 validation_failed，且不得写入 Customer"
+    source: 名词契约
+    status: passed
+  - item: "GET /customers 的 q 匹配 display_name / real_name / phone / identity.handle，channel/status/page/page_size 过滤与分页 total 可核对"
+    source: 名词契约
+    status: passed
+  - item: "列表项从本 feature 起返回 orders_count=0 与 last_shot_at=null，后续 order-tracking 不破坏 shape"
+    source: 名词契约
+    status: passed
+  - item: "GET /customers/{id} 返回 identities[]、notes[] 空数组、referrer?、stats{orders_count,total_order_amount,last_shot_at}"
+    source: 名词契约
+    status: passed
+  - item: "SocialPlatform 枚举包含 wechat/qq/telegram/xiaohongshu/douyin/weibo/other"
+    source: 名词契约
+    status: passed
+  - item: "customer service/repository 不 import gin，handler 只做 HTTP 适配"
+    source: 编排骨架
+    status: passed
+  - item: "tx-aware AccountScope 支持创建客户与全部 SocialIdentity 同事务，失败不留下无身份客户或半数身份"
+    source: 流程级约束
+    status: passed
+  - item: "所有客户读写由 AccountScope 派生；客户端永不传 account_id；跨账号数据表现为 404 或不可见"
+    source: 流程级约束
+    status: passed
+  - item: "AccountScope 扩展遵守 compound fail-loud：事务与受控复杂读模型有双账号/回滚测试，不绕开 scope"
+    source: 流程级约束
+    status: passed
+  - item: "OpenAPI 收编 roadmap §7 全部契约漂移；/me 白名单按 compound 机制显式保留或清理；生成物零漂移"
+    source: 编排骨架
+    status: passed
+  - item: "挂载点：OpenAPI/customer-core tag 与 oapi-codegen include-tags"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：customers/social_identities 数据库 schema"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：POST/GET /api/v1/customers 与 GET /api/v1/customers/{id}"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：后端 customer 域模块接入 platform Store / AccountScope"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：前端 /customers、/customers/new、/customers/:id 与 API client 方法"
+    source: 挂载点
+    status: passed
+  - item: "不实现 PATCH /customers/{id}、建档后身份增删、notes、merge、归档；这些端点和 UI 入口仍不存在"
+    source: 范围守护
+    status: passed
+  - item: "不实现订单 / 套系 / 档期 / 提醒 / dashboard 行为，聚合字段本轮恒 0/null"
+    source: 范围守护
+    status: passed
+  - item: "不做重复身份自动去重、合并建议或导入聊天软件好友"
+    source: 范围守护
+    status: passed
+  - item: "不做渠道转化分析、线索池、客户画像"
+    source: 范围守护
+    status: passed
+  - item: "不引入 UI 组件库"
+    source: 范围守护
+    status: passed
+  - item: "A1：make check 退出码 0"
+    source: 验收场景
+    status: passed
+  - item: "A2：make generate 后 Go/TS 生成物零漂移，Go server interface 只新增 customer-core 三操作，TS 全量 schema 含 roadmap §7 增量"
+    source: 验收场景
+    status: passed
+  - item: "A3：POST /customers 成功写 Customer 与 1..N 个 SocialIdentity，至少覆盖 2 个身份"
+    source: 验收场景
+    status: passed
+  - item: "A4：创建缺字段、identities 为空、部分身份非法或非法枚举返回 400 且无半成品"
+    source: 验收场景
+    status: passed
+  - item: "A5：referral 可见时创建成功，缺失返回 400，不存在或跨账号返回 404"
+    source: 验收场景
+    status: passed
+  - item: "A6：GET /customers 非法 page/page_size 返回 400 validation_failed"
+    source: 验收场景
+    status: passed
+  - item: "A7：GET /customers 默认只返回当前账号 active 客户，created_at desc，聚合零值 shape 存在"
+    source: 验收场景
+    status: passed
+  - item: "A8：q/channel 查询与分页 total 正确"
+    source: 验收场景
+    status: passed
+  - item: "A9：GET /customers/{id} 返回详情完整 shape"
+    source: 验收场景
+    status: passed
+  - item: "A10：跨账号列表、详情、referrer 查验不可见"
+    source: 验收场景
+    status: passed
+  - item: "A11：浏览器 30 秒内完成 2 个社交身份建档后列表和详情可查，失败保留输入并提示"
+    source: 验收场景
+    status: passed
+  - item: "A12：空态、加载、错误、401、长文本、小屏、focus/keyboard/contrast 可观察"
+    source: 验收场景
+    status: passed
+  - item: "A13：明确不做端点仍 404 且无 UI 入口"
+    source: 验收场景
+    status: passed
+  - item: "A14：无其他业务域实现、无调试输出/TODO/注释代码/真实 PII"
+    source: 验收场景
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./..."
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run build"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, api_response, screenshots, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    exceptions: "platform 既有结构化日志是功能本身；不得记录手机号/handle 明文到错误日志"
+    todo_fixme: forbidden-unless-tracked
+    commented_out_code: forbidden
+    unused_imports: forbidden
+    real_pii: forbidden

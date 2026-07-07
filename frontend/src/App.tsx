@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage'
 import AppShell from './components/AppShell'
 import CalendarPage from './pages/CalendarPage'
 import CustomerDetailPage from './pages/CustomerDetailPage'
+import CustomerNewPage from './pages/CustomerNewPage'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
 import PackagesPage from './pages/PackagesPage'
@@ -32,7 +33,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/customers/new" element={<CustomersPage />} />
+        <Route path="/customers/new" element={<CustomerNewPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/packages" element={<PackagesPage />} />

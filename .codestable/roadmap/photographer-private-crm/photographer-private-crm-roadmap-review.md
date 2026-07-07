@@ -1,14 +1,16 @@
 ---
 doc_type: roadmap-review
 roadmap: photographer-private-crm
-status: passed
+status: stale
 reviewed: 2026-07-06
 round: 3
+stale_reason: 2026-07-07 owner review changed customer-core POST /customers to identities[1..N]; rerun roadmap-review before treating latest roadmap as reviewed
 ---
 
 # photographer-private-crm roadmap 审查报告（round 3 · 2026-07-06 update）
 
 > 本轮针对 2026-07-06 update（设计原型比对后的契约增量），非全量首轮审查；round 1/2（2026-07-05，changes-requested → passed，Codex 异构独立审查）结论对未触碰部分继续有效。
+> 2026-07-07 变更备注：最新 roadmap 已把 `customer-core` 建档契约从单个 `identity` 改为 `identities[1..N]`。该变更不在本 round 3 审查范围内；本报告保留历史结论，但不再作为最新 roadmap 的 passed gate。
 
 ## 1. Scope And Inputs
 

@@ -49,7 +49,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 | 为什么不是 single feature | 七个模块、十一条可独立交付的子 feature、跨模块接口契约（实体模型 / API / 提醒规则 / TG 协议 / 导出）、依赖构成 DAG，单 feature 装不下 |
 | 为什么不是 brainstorm | 脑暴已完成（2026-07-05），定位 / 形态 / 优先级 / 边界均已拍板，目标与完成信号可写成可证伪条目 |
 | roadmap 边界 | 只覆盖首版"先治忘"范围（上表）；画像分析、产品化、选片交付明确不做 |
-| 最小闭环 | 第 2 条 `customer-core` 完成后：登录 → 30 秒建档（含渠道）→ 列表 / 详情可查——"治忘"的第一块地基端到端可演示 |
+| 最小闭环 | 第 2 条 `customer-core` 完成后：登录 → 30 秒建档（含渠道、1 个或多个社交身份）→ 列表 / 详情可查——"治忘"的第一块地基端到端可演示 |
 
 ## 3. 模块拆分（概设）
 
@@ -183,8 +183,10 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 ```
 客户域
   POST   /customers                 {display_name, channel, referrer_customer_id?,
-                                     identity:{platform, handle}}     → 201 Customer
-                                    （30 秒建档端点：仅此 3-4 项必填）
+                                     identities:[{platform, handle, remark?}]} → 201 Customer
+                                    （30 秒建档端点：display_name/channel/identities[1..N] 为硬性必填；
+                                      identities 为空 → 400 validation_failed；
+                                      channel=referral 时额外必填 referrer_customer_id）
   GET    /customers?q=&channel=&status=&page=      q 匹配 display_name/real_name/phone/identity.handle
                                     status 缺省 active
                                     列表项附聚合: orders_count(int, 非 cancelled 订单计数),
@@ -315,10 +317,10 @@ GET /export → application/json（Content-Disposition 附件）
 1. **platform-skeleton** — Go+React 脚手架、单账号登录、账号上下文与 repository 基座（强制账号过滤）、错误封套、健康检查、build/test/lint 命令基线、§4 契约固化为 OpenAPI + 双端 codegen
    - 所属模块：platform ｜ 依赖：无 ｜ 状态：done ｜ 对应 feature：2026-07-06-platform-skeleton
    - 备注：greenfield 安全网条目——建立后续全部 feature 的验证入口（`make check` 或等价全绿）；完成信号：登录取 token → `GET /api/v1/me` 返回账号；跨账号过滤有基座级测试；OpenAPI 文件与 §4 一致且 codegen 可跑。代码组织按 Gin + 轻量 DDD（见 §4 头注）。**外部依赖前置验证**：本条内完成 TG bot 申请 + `sendMessage` 冒烟（脚本级发一条测试消息即可），提前杀死条目 8 的外部依赖风险；token 凭证规则落 attention.md
-2. **customer-core** — 30 秒建档最小闭环：POST /customers（昵称+身份+渠道三项必填）、列表搜索（昵称/handle）、详情页
-   - 所属模块：customer + webapp ｜ 依赖：platform-skeleton ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：**最小闭环**；完成信号：新建到保存 ≤30 秒（计时演示）、列表按 q/channel 过滤正确
-3. **customer-profile-complete** — 档案补全：身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
+2. **customer-core** — 30 秒建档最小闭环：POST /customers（昵称+至少 1 个社交身份+渠道必填，建档时可录入多个身份）、列表搜索（昵称/handle）、详情页
+   - 所属模块：customer + webapp ｜ 依赖：platform-skeleton ｜ 状态：done ｜ 对应 feature：2026-07-07-customer-core
+   - 备注：**最小闭环**；完成信号：新建到保存 ≤30 秒（计时演示，覆盖 2 个社交身份输入）；无社交身份创建返回 400；列表按 q/channel 过滤正确
+3. **customer-profile-complete** — 档案补全：建档后身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
    - 所属模块：customer + webapp ｜ 依赖：customer-core ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：merge / 归档语义按 4.2；design 阶段按 merge、归档、notes、referral、渐进字段分片验收（防单片过大）；完成信号：合并后 source 状态 merged 且身份/备注归并；归档客户默认列表隐藏；任意含客户的页面 ≤2 步追加备注；落地后评估 req customer-profile draft→current
 4. **package-catalog** — 套系 CRUD 与归档：类型/定价方式/张数时长底片精修参数，归档后不出现在选择列表
@@ -346,13 +348,13 @@ GET /export → application/json（Content-Disposition 附件）
     - 所属模块：跨模块 ｜ 依赖：telegram-digest, dashboard, data-export ｜ 状态：planned ｜ 对应 feature：未启动
     - 备注：完成信号：375px 宽度下三条轻路径可完成；回归清单逐条打勾归档；README 覆盖部署/备份/凭证操作
 
-**最小闭环**：第 2 条 `customer-core` 做完后，登录 → 30 秒建一个带渠道的客户 → 列表搜到、详情看到——端到端最窄路径可演示。
+**最小闭环**：第 2 条 `customer-core` 做完后，登录 → 30 秒建一个带渠道、1 个或多个社交身份的客户 → 列表搜到、详情看到——端到端最窄路径可演示。
 
 ### Goal Coverage Matrix
 
 | Goal / completion signal | Covered by | Verification entry | Evidence type | Core? |
 |---|---|---|---|---|
-| 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3 | 计时演示 + merge/归档用例测试 | test + screenshot | yes |
+| 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3 | 多身份建档计时演示 + merge/归档用例测试 | test + screenshot | yes |
 | 渠道归因：每个客户带来源渠道可筛选 | 2 | GET /customers?channel= 用例 | test | yes |
 | 再也不忘：三类提醒准确且不重复，主动送达 | 7, 8, 9 | 幂等双跑测试 + 时区日界用例 + TG 真机截图 + dashboard | test + screenshot | yes |
 | 档期 10 秒可答、与客户套系关联 | 6, 9 | 日历页演示 + overlaps 用例 | test + screenshot | yes |
@@ -392,10 +394,12 @@ GET /export → application/json（Content-Disposition 附件）
 - 剩余四份 req（提醒引擎/档期/订单/套系）尚未起草，建议各条目进 feature-design 时触发 `cs-req draft`。
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
-- **OpenAPI 同步待办**：本次 §4 契约增量（客户/套系聚合字段、q 匹配范围加 phone、reminders customer_id 过滤、Package.note、SocialIdentity 枚举扩展、dashboard 近 3 天 / 近 30 天口径）尚未同步 `api/openapi.yaml`——建议 customer-core feature 启动时统一收编（连同 `GET /me` 白名单收编，按 compound `2026-07-06-openapi-roadmap-bidirectional-check` 做双向核对）；收编时聚合字段与 detail.stats 建议标 required（恒 0/null 阶段即返回，order 域接通后 shape 不变，前端无需两套判空）；注意前端 schema.d.ts 为全量生成，收编会产生跨域大 diff，customer-core design 里预告。
+- ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量（客户/套系聚合字段、q 匹配范围加 phone、reminders customer_id 过滤、Package.note、SocialPlatform 枚举扩展、dashboard 近 3 天 / 近 30 天口径），并按 `customer-core` tag 只注册已实现的客户三操作；`GET /me` 仍为 platform-skeleton 白名单债，后续另走 `cs-roadmap update` 收编到 roadmap 语义层。
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
 
 ## 8. 变更日志
+
+- 2026-07-07：根据 owner review 调整 `customer-core` 建档契约：`POST /customers` 从单个 `identity` 改为 `identities[1..N]`，30 秒建档硬性要求至少 1 个社交身份、允许同次录入多个私域账号；无社交身份创建必须 400，不允许生成无身份客户；建档后的身份增删仍归 `customer-profile-complete`。
 
 - 2026-07-06：依据「影约 CRM」设计原型（Open Design 高保真原型，5 页面）与 roadmap 全量比对后的 update（owner 三项拍板：A 契约补齐 / B 超范围项只记录 / C 组合流程拍板）。
   - **接口契约变化（§4.1 / §4.2 / §4.3）**：

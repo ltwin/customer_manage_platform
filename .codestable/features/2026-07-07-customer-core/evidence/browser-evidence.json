@@ -1,0 +1,43 @@
+{
+  "baseURL": "http://localhost:18080",
+  "screenshots": [
+    "customers-empty-desktop.png",
+    "customer-detail-desktop.png",
+    "customers-search-desktop.png",
+    "customer-new-error-desktop.png",
+    "customer-detail-mobile-375.png",
+    "customers-unauth-mobile.png"
+  ],
+  "checks": {
+    "redirectedToLogin": true,
+    "customersLoaded": true,
+    "emptyStateVisible": true,
+    "identityItemCount": 2,
+    "createUnder30s": true,
+    "detailShowsTwoIdentities": true,
+    "detailShowsLongHandle": true,
+    "searchFindsCreatedCustomer": true,
+    "apiErrorVisible": "介绍人必填",
+    "formInputPreservedOnError": true,
+    "mobileViewportWidth": 375,
+    "mobileDocumentScrollWidth": 375,
+    "mobileNoGlobalOverflow": true,
+    "initialFocusId": "displayName",
+    "focusAfterTab": {
+      "tag": "SELECT",
+      "id": "channel",
+      "text": "小红书抖音微博客户介绍其他",
+      "className": "input"
+    },
+    "unauthRedirectsToLogin": true
+  },
+  "customerName": "验收客户-很长很长昵称-ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-31226",
+  "createdDetailPath": "/customers/cus_9d6328c9-2970-4ed6-9028-752c67443ed4",
+  "elapsedCreateMs": 186,
+  "rangeGuardStatuses": {
+    "patchCustomer": 404,
+    "addIdentity": 404,
+    "notes": 404,
+    "merge": 404
+  }
+}

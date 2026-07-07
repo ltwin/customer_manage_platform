@@ -8,3 +8,4 @@ generate:
 output-options:
   include-tags:
     - auth
+    - customer-core

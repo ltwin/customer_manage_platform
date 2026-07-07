@@ -4,19 +4,239 @@
 package httpapi
 
 import (
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for CustomerChannel.
+const (
+	CustomerChannelDouyin      CustomerChannel = "douyin"
+	CustomerChannelOther       CustomerChannel = "other"
+	CustomerChannelReferral    CustomerChannel = "referral"
+	CustomerChannelWeibo       CustomerChannel = "weibo"
+	CustomerChannelXiaohongshu CustomerChannel = "xiaohongshu"
+)
+
+// Valid indicates whether the value is a known member of the CustomerChannel enum.
+func (e CustomerChannel) Valid() bool {
+	switch e {
+	case CustomerChannelDouyin:
+		return true
+	case CustomerChannelOther:
+		return true
+	case CustomerChannelReferral:
+		return true
+	case CustomerChannelWeibo:
+		return true
+	case CustomerChannelXiaohongshu:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CustomerStatus.
+const (
+	CustomerStatusActive   CustomerStatus = "active"
+	CustomerStatusArchived CustomerStatus = "archived"
+	CustomerStatusMerged   CustomerStatus = "merged"
+)
+
+// Valid indicates whether the value is a known member of the CustomerStatus enum.
+func (e CustomerStatus) Valid() bool {
+	switch e {
+	case CustomerStatusActive:
+		return true
+	case CustomerStatusArchived:
+		return true
+	case CustomerStatusMerged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SocialPlatform.
+const (
+	SocialPlatformDouyin      SocialPlatform = "douyin"
+	SocialPlatformOther       SocialPlatform = "other"
+	SocialPlatformQq          SocialPlatform = "qq"
+	SocialPlatformTelegram    SocialPlatform = "telegram"
+	SocialPlatformWechat      SocialPlatform = "wechat"
+	SocialPlatformWeibo       SocialPlatform = "weibo"
+	SocialPlatformXiaohongshu SocialPlatform = "xiaohongshu"
+)
+
+// Valid indicates whether the value is a known member of the SocialPlatform enum.
+func (e SocialPlatform) Valid() bool {
+	switch e {
+	case SocialPlatformDouyin:
+		return true
+	case SocialPlatformOther:
+		return true
+	case SocialPlatformQq:
+		return true
+	case SocialPlatformTelegram:
+		return true
+	case SocialPlatformWechat:
+		return true
+	case SocialPlatformWeibo:
+		return true
+	case SocialPlatformXiaohongshu:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCustomersParamsStatus.
+const (
+	ListCustomersParamsStatusActive   ListCustomersParamsStatus = "active"
+	ListCustomersParamsStatusAll      ListCustomersParamsStatus = "all"
+	ListCustomersParamsStatusArchived ListCustomersParamsStatus = "archived"
+	ListCustomersParamsStatusMerged   ListCustomersParamsStatus = "merged"
+)
+
+// Valid indicates whether the value is a known member of the ListCustomersParamsStatus enum.
+func (e ListCustomersParamsStatus) Valid() bool {
+	switch e {
+	case ListCustomersParamsStatusActive:
+		return true
+	case ListCustomersParamsStatusAll:
+		return true
+	case ListCustomersParamsStatusArchived:
+		return true
+	case ListCustomersParamsStatusMerged:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account 账号（摄影师）；永不含 password_hash
 type Account struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 	Id        *string    `json:"id,omitempty"`
+}
+
+// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+type Birthday = string
+
+// Customer defines model for Customer.
+type Customer struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string `json:"account_id,omitempty"`
+
+	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+	Birthday             *Birthday       `json:"birthday,omitempty"`
+	Channel              CustomerChannel `json:"channel"`
+	CreatedAt            *time.Time      `json:"created_at,omitempty"`
+	DisplayName          string          `json:"display_name"`
+	Id                   *string         `json:"id,omitempty"`
+	MergedIntoCustomerId *string         `json:"merged_into_customer_id,omitempty"`
+	Phone                *string         `json:"phone,omitempty"`
+	RealName             *string         `json:"real_name,omitempty"`
+
+	// ReferrerCustomerId channel=referral 时必填
+	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
+	Status             CustomerStatus `json:"status"`
+}
+
+// CustomerChannel defines model for CustomerChannel.
+type CustomerChannel string
+
+// CustomerDetail defines model for CustomerDetail.
+type CustomerDetail struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string `json:"account_id,omitempty"`
+
+	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+	Birthday             *Birthday        `json:"birthday,omitempty"`
+	Channel              CustomerChannel  `json:"channel"`
+	CreatedAt            *time.Time       `json:"created_at,omitempty"`
+	DisplayName          string           `json:"display_name"`
+	Id                   *string          `json:"id,omitempty"`
+	Identities           []SocialIdentity `json:"identities"`
+	MergedIntoCustomerId *string          `json:"merged_into_customer_id,omitempty"`
+
+	// Notes 倒序
+	Notes    []CustomerNote   `json:"notes"`
+	Phone    *string          `json:"phone,omitempty"`
+	RealName *string          `json:"real_name,omitempty"`
+	Referrer *CustomerSummary `json:"referrer"`
+
+	// ReferrerCustomerId channel=referral 时必填
+	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
+	Stats              CustomerStats  `json:"stats"`
+	Status             CustomerStatus `json:"status"`
+}
+
+// CustomerListItem defines model for CustomerListItem.
+type CustomerListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string `json:"account_id,omitempty"`
+
+	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+	Birthday    *Birthday       `json:"birthday,omitempty"`
+	Channel     CustomerChannel `json:"channel"`
+	CreatedAt   *time.Time      `json:"created_at,omitempty"`
+	DisplayName string          `json:"display_name"`
+	Id          *string         `json:"id,omitempty"`
+
+	// LastShotAt 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
+	LastShotAt           *openapi_types.Date `json:"last_shot_at"`
+	MergedIntoCustomerId *string             `json:"merged_into_customer_id,omitempty"`
+
+	// OrdersCount 非 cancelled 订单计数；order 域未落地前恒为 0
+	OrdersCount int     `json:"orders_count"`
+	Phone       *string `json:"phone,omitempty"`
+	RealName    *string `json:"real_name,omitempty"`
+
+	// ReferrerCustomerId channel=referral 时必填
+	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
+	Status             CustomerStatus `json:"status"`
+}
+
+// CustomerNote defines model for CustomerNote.
+type CustomerNote struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId  *string    `json:"account_id,omitempty"`
+	Content    string     `json:"content"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	CustomerId string     `json:"customer_id"`
+	Id         *string    `json:"id,omitempty"`
+}
+
+// CustomerStats defines model for CustomerStats.
+type CustomerStats struct {
+	// LastShotAt 口径同 CustomerListItem.last_shot_at
+	LastShotAt *openapi_types.Date `json:"last_shot_at"`
+
+	// OrdersCount 非 cancelled 订单计数；order 域未落地前恒为 0
+	OrdersCount int `json:"orders_count"`
+
+	// TotalOrderAmount 分；非 cancelled 订单 price 之和；order 域未落地前恒为 0
+	TotalOrderAmount int `json:"total_order_amount"`
+}
+
+// CustomerStatus defines model for CustomerStatus.
+type CustomerStatus string
+
+// CustomerSummary defines model for CustomerSummary.
+type CustomerSummary struct {
+	Channel     CustomerChannel `json:"channel"`
+	DisplayName string          `json:"display_name"`
+	Id          string          `json:"id"`
+	Status      CustomerStatus  `json:"status"`
 }
 
 // ErrorEnvelope 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
@@ -27,8 +247,35 @@ type ErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// SocialIdentity defines model for SocialIdentity.
+type SocialIdentity struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId  *string        `json:"account_id,omitempty"`
+	CreatedAt  *time.Time     `json:"created_at,omitempty"`
+	CustomerId string         `json:"customer_id"`
+	Handle     string         `json:"handle"`
+	Id         *string        `json:"id,omitempty"`
+	Platform   SocialPlatform `json:"platform"`
+	Remark     *string        `json:"remark,omitempty"`
+}
+
+// SocialPlatform defines model for SocialPlatform.
+type SocialPlatform string
+
+// Id defines model for Id.
+type Id = string
+
+// Page defines model for Page.
+type Page = int
+
+// PageSize defines model for PageSize.
+type PageSize = int
+
 // Internal 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
 type Internal = ErrorEnvelope
+
+// NotFound 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+type NotFound = ErrorEnvelope
 
 // Unauthorized 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
 type Unauthorized = ErrorEnvelope
@@ -44,14 +291,54 @@ type LoginJSONBody struct {
 	Password string `json:"password"`
 }
 
+// ListCustomersParams defines parameters for ListCustomers.
+type ListCustomersParams struct {
+	Q       *string          `form:"q,omitempty" json:"q,omitempty"`
+	Channel *CustomerChannel `form:"channel,omitempty" json:"channel,omitempty"`
+
+	// Status 缺省 active；可显式查 archived/all（§4.2 归档语义）
+	Status   *ListCustomersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Page     *Page                      `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize                  `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// ListCustomersParamsStatus defines parameters for ListCustomers.
+type ListCustomersParamsStatus string
+
+// CreateCustomerJSONBody defines parameters for CreateCustomer.
+type CreateCustomerJSONBody struct {
+	Channel     CustomerChannel `json:"channel"`
+	DisplayName string          `json:"display_name"`
+	Identities  []struct {
+		Handle   string         `json:"handle"`
+		Platform SocialPlatform `json:"platform"`
+		Remark   *string        `json:"remark,omitempty"`
+	} `json:"identities"`
+
+	// ReferrerCustomerId channel=referral 时必填
+	ReferrerCustomerId *string `json:"referrer_customer_id,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
+
+// CreateCustomerJSONRequestBody defines body for CreateCustomer for application/json ContentType.
+type CreateCustomerJSONRequestBody CreateCustomerJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// 单账号密码登录，签发 Bearer token
 	// (POST /auth/login)
 	Login(c *gin.Context)
+	// 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
+	// (GET /customers)
+	ListCustomers(c *gin.Context, params ListCustomersParams)
+	// 30 秒建档端点（仅 3-4 项必填）
+	// (POST /customers)
+	CreateCustomer(c *gin.Context)
+	// 客户详情（含 identities、notes 倒序、referrer 摘要）
+	// (GET /customers/{id})
+	GetCustomer(c *gin.Context, id Id)
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
@@ -77,6 +364,109 @@ func (siw *ServerInterfaceWrapper) Login(c *gin.Context) {
 	}
 
 	siw.Handler.Login(c)
+}
+
+// ListCustomers operation middleware
+func (siw *ServerInterfaceWrapper) ListCustomers(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCustomersParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "channel" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "channel", c.Request.URL.Query(), &params.Channel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter channel: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCustomers(c, params)
+}
+
+// CreateCustomer operation middleware
+func (siw *ServerInterfaceWrapper) CreateCustomer(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCustomer(c)
+}
+
+// GetCustomer operation middleware
+func (siw *ServerInterfaceWrapper) GetCustomer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCustomer(c, id)
 }
 
 // GetMe operation middleware
@@ -122,5 +512,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.POST(options.BaseURL+"/auth/login", wrapper.Login)
+	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
+	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
+	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
 }

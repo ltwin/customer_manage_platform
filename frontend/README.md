@@ -2,6 +2,17 @@
 
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
+## Development
+
+Install dependencies before starting the Vite dev server:
+
+```bash
+npm ci
+npm run dev
+```
+
+If `npm run dev` reports `sh: vite: command not found`, the frontend dependencies are not installed yet. Run `npm ci` from this `frontend` directory, then run `npm run dev` again.
+
 Currently, two official plugins are available:
 
 - [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
