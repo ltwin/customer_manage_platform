@@ -16,7 +16,7 @@ items:
     status: planned
     feature: null
     minimal_loop: true
-    notes: 完成信号：新建到保存 ≤30 秒计时演示；列表按 q/channel 过滤用例通过
+    notes: 完成信号：新建到保存 ≤30 秒计时演示；列表按 q/channel 过滤用例通过（q 匹配含 phone，2026-07-06 契约更新）；列表/详情聚合字段（orders_count/last_shot_at/stats）按 §4.3 下发，order 域未落地前恒 0/null；启动时收编 OpenAPI 契约增量与 GET /me 白名单（roadmap §7 观察项）
 
   - slug: customer-profile-complete
     description: 档案补全：社交身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
@@ -40,7 +40,7 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 依赖理由：订单挂 Customer、引用 Package；完成信号：跃迁矩阵测试全过（含时间戳自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、merge 迁移订单用例、引用归档客户 409 customer_archived
+    notes: 依赖理由：订单挂 Customer、引用 Package；完成信号：跃迁矩阵测试全过（含时间戳自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、merge 迁移订单用例、引用归档客户 409 customer_archived；落地时接通 customers/packages 聚合字段真实计算（orders_count/last_shot_at/total_order_amount，2026-07-06 契约更新）
 
   - slug: schedule-calendar
     description: 档期：月/周日历、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
@@ -48,7 +48,7 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 依赖理由：type=shoot 的 slot 必须挂订单；完成信号：overlaps 用例通过、建/删 slot 不改订单状态（反向联动禁止用例）、日历答复某天占用 ≤10 秒演示
+    notes: 依赖理由：type=shoot 的 slot 必须挂订单；完成信号：overlaps 用例通过、建/删 slot 不改订单状态（反向联动禁止用例）、日历答复某天占用 ≤10 秒演示；组合流程拍板（2026-07-06）：前端「新建拍摄档期」弹窗（含客户档案页新约单入口）隐式先 POST /orders 再 POST /schedule/slots 挂 order_id，不新增组合端点——design 硬约束；design 必答：①两步失败处理（订单已建、slot 失败的提示与补救，注意悬挂 consulting 订单会抑制该客户 churn 预警）②保存成功后是否隐式第三步 PATCH /orders {status:scheduled} 还是接受日历有 shoot slot 的 consulting 订单常态
 
   - slug: reminder-engine
     description: 提醒引擎：/admin/reminders/scan 幂等生成生日/回访/流失三类提醒、done/dismiss、参数可配置（按拍摄类型流失阈值、账号时区）
@@ -56,7 +56,7 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 依赖理由：生日规则要 birthday 字段（customer-profile-complete）、回访/流失要订单状态时间戳（order-tracking）；硬验收：同日双跑扫描零新增、时区日界用例、时间戳缺失跳过、零成交不告警、merge 迁移提醒用例
+    notes: 依赖理由：生日规则要 birthday 字段（customer-profile-complete）、回访/流失要订单状态时间戳（order-tracking）；硬验收：同日双跑扫描零新增、时区日界用例、时间戳缺失跳过、零成交不告警、merge 迁移提醒用例；GET /reminders 支持 customer_id 过滤（2026-07-06 契约更新，客户档案提醒 tab 数据源）
 
   - slug: telegram-digest
     description: TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
@@ -67,7 +67,7 @@ items:
     notes: 依赖理由：摘要 = 提醒 + 当日档期；bot token 已在 platform-skeleton 冒烟验证；完成信号：真机收到含真实数据摘要（截图）、未绑定时系统正常
 
   - slug: dashboard
-    description: 首页面板：今日待办、今日档期、待收尾款、流失预警、本月概览（roadmap 4.3 dashboard 契约）
+    description: 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（roadmap 4.3 dashboard 契约，2026-07-06 口径更新）
     depends_on: [order-tracking, schedule-calendar, reminder-engine]
     status: planned
     feature: null

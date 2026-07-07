@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: photographer-private-crm
 status: active
 created: 2026-07-05
-last_reviewed: 2026-07-05
+last_reviewed: 2026-07-06
 tags: [crm, photographer, mvp, reminder, scheduling]
 related_requirements: [customer-profile]
 related_architecture: []
@@ -123,8 +123,8 @@ Base:      /api/v1
            409 conflict（子码见各域）| 500 internal
 分页:      ?page=1&page_size=20 → { "items": [...], "total": int }
 时间:      ISO 8601 UTC（"2026-07-05T09:00:00Z"）；生日特例 "MM-DD" 或 "YYYY-MM-DD"（年份可缺）
-时区:      存储一律 UTC；所有 date-only 字段（due_date / birthday）、"今日 / 当日 / 逾期"判定、
-           digest_hour、月度统计窗口，一律按 Settings.timezone（IANA，默认 Asia/Shanghai）计算
+时区:      存储一律 UTC；所有 date-only 字段（due_date / birthday / last_shot_at）、"今日 / 当日 / 逾期"判定、
+           digest_hour、统计滚动窗口（dashboard recent_stats），一律按 Settings.timezone（IANA，默认 Asia/Shanghai）计算
 ID:        string（引擎无关；服务端生成）
 ```
 
@@ -141,12 +141,14 @@ Customer:        display_name*, real_name?, phone?, birthday?("MM-DD"|"YYYY-MM-D
                  channel*(xiaohongshu|douyin|weibo|referral|other),
                  referrer_customer_id?(channel=referral 时必填),
                  status*(active|merged|archived), merged_into_customer_id?
-SocialIdentity:  customer_id*, platform*(wechat|qq|telegram|other), handle*, remark?
+SocialIdentity:  customer_id*, platform*(wechat|qq|telegram|xiaohongshu|douyin|weibo|other),
+                 handle*, remark?
+                 （枚举含来源平台：小红书/抖音/微博账号也是真实私域身份，2026-07-06 原型比对拍板）
 CustomerNote:    customer_id*, content*(≤500字)
 Package:         name*, shoot_type*(portrait|cosplay|other),
                  pricing_mode*(per_duration|per_photo|fixed), base_price*(分, int),
                  duration_minutes?, shot_count_min?, shot_count_max?,
-                 raw_delivery_count?, retouch_count?(0=不含精修),
+                 raw_delivery_count?, retouch_count?(0=不含精修), note?(≤500字),
                  status*(active|archived)
 Order:           customer_id*, package_id?, title?,
                  status*(consulting|scheduled|shot|selected|retouching|delivered|closed|cancelled),
@@ -183,9 +185,15 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
   POST   /customers                 {display_name, channel, referrer_customer_id?,
                                      identity:{platform, handle}}     → 201 Customer
                                     （30 秒建档端点：仅此 3-4 项必填）
-  GET    /customers?q=&channel=&status=&page=      q 匹配 display_name/real_name/identity.handle
+  GET    /customers?q=&channel=&status=&page=      q 匹配 display_name/real_name/phone/identity.handle
                                     status 缺省 active
+                                    列表项附聚合: orders_count(int, 非 cancelled 订单计数),
+                                    last_shot_at?(date, 非 cancelled 订单 max(shot_at) 按账号时区截断)
+                                    （order 域未落地前恒为 0/null，字段自始存在防契约破坏性变更；
+                                      聚合同 4.4 为同进程读模型，在 repository/service 层完成，不在 handler 拼装）
   GET    /customers/{id}            → Customer + identities[] + notes[](倒序) + referrer摘要
+                                    + stats{ orders_count(非 cancelled), total_order_amount(分, 非 cancelled
+                                      订单 price 之和), last_shot_at?(口径同列表) }（客龄由 created_at 前端推导）
   PATCH  /customers/{id}            渐进补全任意字段；{status:archived} 即归档（语义见 4.2）
   POST   /customers/{id}/identities {platform, handle, remark?}        → 201
   DELETE /customers/{id}/identities/{identity_id}
@@ -195,6 +203,8 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 套系域
   POST/GET/PATCH /packages…         GET ?status=active 供下单选择；归档：PATCH {status:archived}
                                     归档无 in-use 校验——存量订单继续引用历史套系，仅从选择列表消失
+                                    GET 列表项附聚合: orders_count(int, 引用本套系的非 cancelled 订单计数；
+                                    order 域未落地前恒为 0)
 订单域
   POST   /orders                    {customer_id, package_id?, title?, price?} → 201（status=consulting）
                                     引用 merged/archived 客户 → 409 customer_archived
@@ -209,7 +219,7 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                     重叠不阻止，返回 overlaps 由前端提示（hold 双留是真实业务）
   PATCH/DELETE /schedule/slots/{id}
 提醒域
-  GET    /reminders?status=pending&due_before=&page=
+  GET    /reminders?status=pending&customer_id=&due_before=&page=
   POST   /reminders                 {type:custom, customer_id?, due_date, content} → 201
   POST   /reminders/{id}/done | /dismiss
   POST   /admin/reminders/scan      {date?("YYYY-MM-DD", 缺省=账号时区今日)}
@@ -220,13 +230,18 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
   POST   /settings/telegram/bind-token → { token, deep_link }   （绑定流程见 4.5）
 dashboard
   GET    /dashboard →
-         { due_reminders: Reminder[](due_date ≤ 账号时区今日, pending),
+         { due_reminders: Reminder[](due_date ≤ 账号时区今日+2 天, pending——近 3 天窗口含逾期，
+                          2026-07-06 原型比对拍板),
            today_slots: Slot[](含订单+客户摘要),
            unpaid_orders: { count, items: Order[](status=delivered 且 balance_paid=false；
                             closed 必已结清故不出现) },
            churn_alerts: Reminder[](type=churn, pending),
-           month_stats: { orders_created, orders_delivered, revenue_confirmed(分,
-                          balance_paid=true 订单 price 之和) } }
+           recent_stats: { orders_created(按 created_at, 含全部状态),
+                           orders_delivered(按 delivered_at, 排除当前 status=cancelled),
+                           revenue_confirmed(分, delivered_at 落窗口内且 balance_paid=true
+                           且当前非 cancelled 的订单 price 之和) } }
+         （recent_stats 窗口 = 账号时区自然日 [今日-29, 今日] 含今日共 30 天；替代原"本月"口径，
+           cancelled 归属与 total_order_amount 对齐，2026-07-06 原型比对拍板）
 ```
 
 **Interface 设计检查**：dashboard 聚合做在服务端（一次请求 vs 前端拼五个列表）——Design-It-Twice 比较过"前端自行组合"（省一个端点但移动端五连击、口径散落前端）与"服务端聚合"（口径单点、移动友好），选后者；depth：聚合口径（何为"待收尾款"）藏在服务端一处。
@@ -266,6 +281,7 @@ Port:   TelegramPort { sendMessage(chat_id, text) error }
         用户点 deep_link → bot 收 /start {token} → 校验 → 存 chat_id 到 Settings → 回执消息
 命令:   /today → 即时发送当日摘要（与每日推送同一生成函数）
 摘要:   ① 今日+逾期 pending 提醒（按 due_date 升序，≤20 条，超出计数）
+        （摘要窗口有意保持"今日"口径，不随 dashboard due_reminders 的近 3 天窗口——推送只推当日可行动项，2026-07-06 确认）
         ② 今日档期（时间+客户+套系）
         ③ 待收尾款订单计数
 失败:   发送失败重试 3 次（间隔 1/5/30min）；仍失败只记日志——dashboard 是兜底展示（A+D 冗余设计），
@@ -310,17 +326,17 @@ GET /export → application/json（Content-Disposition 附件）
    - 备注：完成信号：按 4.2 Package shape 建/改/归档各一条通过；?status=active 过滤正确
 5. **order-tracking** — 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、时间戳自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
    - 所属模块：order + webapp ｜ 依赖：customer-core, package-catalog ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含 shot_at/delivered_at 自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409
+   - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含 shot_at/delivered_at 自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409、**接通 customers/packages 聚合字段真实计算**（orders_count/last_shot_at/total_order_amount，4.3，2026-07-06 契约更新）
 6. **schedule-calendar** — 档期：月/周日历视图、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
    - 所属模块：schedule + webapp ｜ 依赖：order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——type=shoot 的 slot 必须挂订单；完成信号：重叠创建返回 overlaps 且前端提示；建/删 slot 不改订单状态（反向联动禁止用例）；日历页答复"某天有没有档"≤10 秒（演示）
+   - 备注：依赖理由——type=shoot 的 slot 必须挂订单；完成信号：重叠创建返回 overlaps 且前端提示；建/删 slot 不改订单状态（反向联动禁止用例）；日历页答复"某天有没有档"≤10 秒（演示）；**组合流程拍板（2026-07-06）**：前端「新建拍摄档期」弹窗（含客户档案页「＋新约单」入口）隐式先 POST /orders（选客户+套系）再 POST /schedule/slots 挂 order_id——不新增组合端点，两步失败处理（订单已建、slot 失败时的提示与补救）在本条 feature design 内定义，此流程是 design 硬约束；**design 必答清单**：①保存成功后是否隐式第三步 `PATCH /orders {status:scheduled}`（合法，显式驱动，不违反"slot 不反向改状态"不变量）还是接受"日历有 shoot slot 的 consulting 订单"常态；②slot 失败留下的悬挂 consulting 订单按 4.4 属"非终态订单"会抑制该客户 churn 预警，补救策略须覆盖
 7. **reminder-engine** — 提醒引擎：/admin/reminders/scan 幂等生成三类提醒、done/dismiss、参数可配置（含按拍摄类型流失阈值、账号时区）
    - 所属模块：reminder ｜ 依赖：customer-profile-complete, order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 5）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**
+   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 5）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**；GET /reminders 支持 customer_id 过滤（4.3，2026-07-06 契约更新）
 8. **telegram-digest** — TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
    - 所属模块：reminder（TelegramPort）｜ 依赖：reminder-engine, schedule-calendar ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——摘要内容 = 提醒（条目 7）+ 当日档期（条目 6）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到含真实数据的摘要（截图）；未绑定时系统全功能正常
-9. **dashboard** — 首页面板：今日待办、今日档期、待收尾款、流失预警、本月概览（4.3 dashboard 契约）
+9. **dashboard** — 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（4.3 dashboard 契约）
    - 所属模块：webapp ｜ 依赖：order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：完成信号：五卡片数据与各域列表页交叉一致（核对用例）；登录后默认落地页
 10. **data-export** — 全量 JSON 导出（4.6 契约）：一键导出全部实体 + counts 核对
@@ -375,4 +391,21 @@ GET /export → application/json（Content-Disposition 附件）
 - ✅ 「渠道」「线索」已补入 CONTEXT.md（2026-07-06，cs-domain；线索定义为"无成交订单的客户"）；技术栈已落 ADR-002（PostgreSQL）与 ADR-003（Gin + JSON/OpenAPI）。
 - 剩余四份 req（提醒引擎/档期/订单/套系）尚未起草，建议各条目进 feature-design 时触发 `cs-req draft`。
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
+- **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
+- **OpenAPI 同步待办**：本次 §4 契约增量（客户/套系聚合字段、q 匹配范围加 phone、reminders customer_id 过滤、Package.note、SocialIdentity 枚举扩展、dashboard 近 3 天 / 近 30 天口径）尚未同步 `api/openapi.yaml`——建议 customer-core feature 启动时统一收编（连同 `GET /me` 白名单收编，按 compound `2026-07-06-openapi-roadmap-bidirectional-check` 做双向核对）；收编时聚合字段与 detail.stats 建议标 required（恒 0/null 阶段即返回，order 域接通后 shape 不变，前端无需两套判空）；注意前端 schema.d.ts 为全量生成，收编会产生跨域大 diff，customer-core design 里预告。
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
+
+## 8. 变更日志
+
+- 2026-07-06：依据「影约 CRM」设计原型（Open Design 高保真原型，5 页面）与 roadmap 全量比对后的 update（owner 三项拍板：A 契约补齐 / B 超范围项只记录 / C 组合流程拍板）。
+  - **接口契约变化（§4.1 / §4.2 / §4.3）**：
+    1. `GET /customers` 列表项附聚合字段 `orders_count` / `last_shot_at?`；`q` 匹配范围加 `phone`；`GET /customers/{id}` 附 `stats{orders_count, total_order_amount, last_shot_at?}`（客龄由 created_at 前端推导）。聚合字段在 order 域未落地前恒 0/null，字段自始存在避免破坏性变更
+    2. `GET /packages` 列表项附聚合 `orders_count`
+    3. `GET /reminders` 新增 `customer_id=` 过滤（客户档案页「提醒」tab 数据源）
+    4. `Package` 增加 `note?(≤500字)` 字段（棚租说明 / 加拍规则等）
+    5. `SocialIdentity.platform` 枚举扩展：加 `xiaohongshu|douyin|weibo`（来源平台账号是真实私域身份）
+    6. dashboard 口径对齐原型：`due_reminders` 窗口 = 账号时区今日+2 天（近 3 天含逾期）；`month_stats` 改为 `recent_stats`（近 30 天滚动窗口，orders_created 按 created_at、orders_delivered / revenue_confirmed 按 delivered_at 判窗）；§4.1 时区条目同步措辞
+  - **范围记录（§7 观察项）**：拍摄回顾 / 选片相册、多层人脉链与转介绍金额归因——超出首版，记二期候选（与渠道转化分析同批），原型中对应卡片首版不实现
+  - **组合流程拍板（§5 条目 6 备注）**：日历新建拍摄档期 = 前端隐式先 `POST /orders` 再 `POST /schedule/slots`，不新增组合端点，两步失败处理归 schedule-calendar feature design
+  - **受影响的已启动 / 完成 feature**：platform-skeleton（done）——其交付的登录 / me / healthz 端点不受本次变化影响，无需返工；但 `api/openapi.yaml` 为 §4 全量固化，本次增量产生文档级漂移，收编责任落 customer-core 启动时（见 §7「OpenAPI 同步待办」）。其余条目均 planned，直接按新契约执行
+  - **roadmap-review（round 3）复核后补充的口径闭合**：recent_stats 窗口定义为账号时区自然日 [今日-29, 今日]、orders_delivered/revenue_confirmed 排除当前 cancelled（与 total_order_amount 对齐）、orders_created 含全部状态；聚合字段 orders_count/last_shot_at 统一"非 cancelled"口径，last_shot_at 补入 §4.1 date-only 时区枚举；聚合明确为同进程读模型（repository/service 层完成）；§4.5 注明 TG 摘要有意保持"今日"窗口不随 dashboard 近 3 天；条目 6 备注补 design 必答清单（隐式第三步 PATCH scheduled 与悬挂 consulting 订单对 churn 的抑制）

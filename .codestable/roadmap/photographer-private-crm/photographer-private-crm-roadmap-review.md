@@ -2,108 +2,108 @@
 doc_type: roadmap-review
 roadmap: photographer-private-crm
 status: passed
-reviewed: 2026-07-05
-round: 2
+reviewed: 2026-07-06
+round: 3
 ---
 
-# photographer-private-crm roadmap 审查报告
+# photographer-private-crm roadmap 审查报告（round 3 · 2026-07-06 update）
+
+> 本轮针对 2026-07-06 update（设计原型比对后的契约增量），非全量首轮审查；round 1/2（2026-07-05，changes-requested → passed，Codex 异构独立审查）结论对未触碰部分继续有效。
 
 ## 1. Scope And Inputs
 
-- Roadmap: `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md`
+- Roadmap: `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md`（§4.1/§4.2/§4.3/§4.5/§5/§7/§8 本次变更部分）
 - Items: `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`
-- Related docs: `requirements/customer-profile.md`、`requirements/CONTEXT.md`、`requirements/adrs/001-account-scoped-data-model.md`、`brainstorms/photographer-private-crm/brainstorm.md`、`attention.md`
-- Code facts checked: none（greenfield 仓库，无业务代码；roadmap 未声称复用任何现有代码，已核实仓库确为空）
-- Compound 检索：`.codestable/compound/` 为空（仅 .gitkeep），无相关沉淀
+- Related docs: `.codestable/attention.md`、`requirements/CONTEXT.md`、ADR-001/003、compound `2026-07-06-openapi-roadmap-bidirectional-check.md`、`2026-07-06-accountscope-fail-loud.md`
+- Code facts checked: `api/openapi.yaml`（month_stats L1045、reminders 参数 L777、SocialPlatform schema——漂移声明属实）、`backend/internal/platform/httpapi/`（router.go / auth.go / api.gen.go——platform-skeleton 已交付端点仅 healthz/login/me）、`backend/oapi-codegen.yaml`（include-tags 过滤）、`Makefile`（前端全量 codegen）
+- 变更依据素材：Open Design 高保真原型 5 页面（dashboard / customers / customer-detail / calendar / packages + js/data.js 共享示例数据，实体模型自称对齐 §4.2）
 
 ### Independent Review
 
 - Status: completed
-- Detection: native-agent（宿主 Codex MCP，read-only sandbox）——异构 provider，非同类 agent，无降级
-- Provider / agent: codex exec（SESSION_ID 019f35cb-b759-7283-a70b-6a07a1b58bf9）
-- Raw output: 已回传主 agent（2 blocking / 5 important / 1 nit / 1 suggestion / 4 praise / 3 residual-risk，verdict 建议 changes-requested）
-- Merge policy: 主 agent 已逐条对照 roadmap/items/req/ADR 原文核验，全部 finding 事实成立，无需驳回；与主 agent 本地审查发现（状态语义、merge 跨域生长、churn 噪音）合并去重
-- Gate effect: round 1 verdict = changes-requested；修复后进入 round 2 复核
+- Detection: native-agent（本轮无 Paseo 工具，用宿主原生 Task agent；同类 agent 降级已记录，残余风险 = 非异构视角，见第 6 节）
+- Provider / agent: Claude general-purpose subagent（只读审查）
+- Raw output: 已回传结构化审查（0 blocking / 3 important / 3 nit / 2 suggestion / 2 residual-risk / 1 learning / 3 praise）
+- Merge policy: 主 agent 逐条对照 roadmap/items/openapi/代码事实核验后合并；全部 important/nit/suggestion 判定成立并已在本轮修复或采纳
+- Gate effect: none（reviewer 已 completed，findings 已处置）
 
 ## 2. Roadmap Summary
 
-- Goal completion signal: 全链路演示（建档→套系→订单→档期→定金→次日 TG 摘要→dashboard 五卡有数）+ 全部 items 终态；软信号（两周留存）明确排除在门槛外
-- Module split: 7 模块（platform/customer/package/order/schedule/reminder/webapp），无 pass-through（通知刻意并入 reminder 域）
-- Interface contracts: §4.1-4.6 六份契约，字段/错误码/幂等键/时区口径级
-- Items: 11 条，minimal_loop = customer-core；风险热点 = reminder-engine（幂等+时区）与 platform-skeleton（基线+外部依赖前置）
-- Dependency shape: DAG 无环（validate-yaml 通过 + 人工核对），最长链 1→2→3→7→8→11
+- Goal completion signal: 未变——全链路演示（建档→套系→订单→档期→定金→TG 摘要→dashboard 五卡）+ 全部 items done/dropped
+- Module split: 未变（7 模块）；本次为 §4 契约增量 + 拍板记录，不动模块边界
+- Interface contracts: 增量七项——客户/套系聚合字段（口径含 cancelled 排除规则与读模型归属）、q 匹配加 phone、reminders customer_id 过滤、Package.note、SocialIdentity 平台枚举扩展、dashboard 近 3 天待办窗口 + recent_stats 近 30 天口径（窗口边界与 cancelled 归属已闭合）、schedule-calendar 组合流程拍板（含 design 必答清单）
+- Items: 11 条不增不减；minimal_loop 仍为 customer-core；依赖边零变化
+- Dependency shape: DAG 无环（独立 reviewer 复核 items.yaml 与 §5 完全一致）
 
 ## 3. Findings
 
-> round 1 发现（RMR-001~009 来自独立审查，RMR-010/011 来自主 agent 本地审查）；round 2 已逐条复核修复落点。
-
 ### blocking
 
-- [x] RMR-001 `roadmap.md#4.1/4.2/4.4` 业务日期与时区契约缺失（生日/今日/digest_hour 无日界口径）
-  - Evidence: round 1 文本只有"ISO 8601 UTC"，Settings 无 timezone
-  - Impact: 提醒跨日错位，"治忘"核心不可验收
-  - Resolution: ✅ 4.1 增时区总约定；Settings 增 `timezone*(IANA, 默认 Asia/Shanghai)`；4.4 扫描/日界、dashboard"今日"、月度统计全部绑定该口径
-- [x] RMR-002 `roadmap.md#4.2/4.4` 订单状态时间戳与提醒规则联动未定义（shot_at/delivered_at 可选但规则依赖）
-  - Evidence: round 1 PATCH /orders 未定义自动写入；follow_up/churn 依赖这两个字段
-  - Impact: 回访/流失提醒无法稳定验收，跨模块语义漏洞
-  - Resolution: ✅ 4.2 新增"订单状态语义与跃迁"块：进入 shot/delivered 自动写时间戳（可覆盖修正）、未结清禁 closed（409 unpaid_balance）、slot 不反向联动订单状态、扫描遇时间戳缺失跳过并记日志；items 5/6/7 验收信号同步
+none
 
-### important
+### important（本轮发现，已全部修复）
 
-- [x] RMR-003 部署形态与 PII 边界未进拍板项 → ✅ 第 7 节新增"条目 1 启动前拍板包"（技术栈/存储引擎/部署与 PII 三项一次定）；4.6 明确导出文件 PII 责任；item 11 README 覆盖部署/备份/凭证
-- [x] RMR-004 v1-hardening 塞导出、原子性弱 → ✅ 拆出独立条目 `data-export` + 新增 4.6 导出契约（counts 核对为验收点）；hardening 收窄为纯收口
-- [x] RMR-005 扫描手动触发"命令/端点均可"含糊 → ✅ 4.3 定义唯一入口 `POST /admin/reminders/scan {date?} → {created, skipped, auto_dismissed}`
-- [x] RMR-006 TG 外部依赖验证过晚（第 8 条才碰真机） → ✅ item 1 前置 bot 申请 + sendMessage 脚本级冒烟；token 凭证规则写入 4.5 并落 attention
-- [x] RMR-007 Customer.archived 有字段无 API/行为定义 → ✅ 4.2 归档语义（不参与扫描/不可下单 409 customer_archived/默认列表隐藏）+ 4.3 端点行为 + item 3 范围补"归档"
-- [x] RMR-010（本地）closed 语义与 unpaid 口径矛盾风险 → ✅ 并入 RMR-002 修复：closed=服务与收款均完成，dashboard unpaid 口径改为 status=delivered 且 balance_paid=false
-- [x] RMR-011（本地）merge 契约随域生长会静默失效（order/reminder 晚于 merge 落地） → ✅ 4.2 写明"后落地域必须补 merge 迁移本域实体用例"；items 5/7 验收信号各加对应用例
+- [x] RMR-301 `roadmap.md#4.3 dashboard` recent_stats 口径不可测试（窗口边界与 cancelled 归属未定义）
+  - Evidence: 修复前仅写"近 30 天滚动，按账号时区"；§4.2 允许 delivered→cancelled，delivered_at 落窗的 cancelled 订单归属两可；与 total_order_amount 的"非 cancelled"口径不对齐
+  - Impact: dashboard 条目完成信号"五卡片交叉一致核对"写不出唯一期望值
+  - Resolution: 窗口 = 账号时区自然日 [今日-29, 今日] 含今日；orders_delivered/revenue_confirmed 排除当前 cancelled；orders_created 含全部状态——已写入 §4.3
+- [x] RMR-302 `roadmap.md#4.3` 聚合字段 orders_count / last_shot_at 口径未到可执行级
+  - Evidence: 修复前未定义是否含 cancelled；last_shot_at 标 date 而 Order.shot_at 是 date-time，截断时区未挂到 §4.1 date-only 枚举
+  - Impact: customer-core 收编 OpenAPI 时写得出 shape 写不出语义；order-tracking 接通真实计算会产生实现分歧
+  - Resolution: 统一"非 cancelled"口径；last_shot_at = 非 cancelled 订单 max(shot_at) 按账号时区截断，并补入 §4.1 date-only 枚举——已写入
+- [x] RMR-303 `roadmap.md#5 条目6` 组合流程后订单 consulting→scheduled 跃迁责任悬空
+  - Evidence: 拍板只归属"两步失败处理"给 design；POST /orders 落 consulting，走完两步订单状态与日历事实不符；悬挂 consulting 订单会抑制 churn 预警（4.4"当前无非终态订单"条件）
+  - Impact: 状态与日历长期不符、流失预警被静默抑制
+  - Resolution: 条目 6 备注（roadmap + items.yaml 双侧）补 design 必答清单：①是否隐式第三步 PATCH scheduled；②悬挂 consulting 订单对 churn 的抑制须被补救策略覆盖——决策权留给 feature design，roadmap 不越位拍板
 
-### nit
+### nit（已修复）
 
-- [x] RMR-008 `roadmap.md#4.3 套系域` "409 package_in_use 不存在"表述易误读 → ✅ 改写为"归档无 in-use 校验——存量订单继续引用历史套系"
+- [x] RMR-304 §5 条目 5/7 完成信号与 items.yaml notes 单侧承载——主文档已同步聚合接通与 customer_id 过滤
+- [x] RMR-305 §7 OpenAPI 待办枚举漏"q 匹配加 phone"——已补全
+- [x] RMR-306 §4.5 TG 摘要与 dashboard 待办窗口分叉未注明有意——已加"有意保持今日口径"说明
 
-### suggestion
+### suggestion（已采纳）
 
-- [x] RMR-009 customer-profile-complete 偏大 → 保持单条（同域内聚），item notes 增加"design 阶段按 merge/归档/notes/referral/渐进字段分片验收"
+- [x] RMR-307 聚合读的架构归属：§4.3 已引用 4.4 同措辞（同进程读模型，repository/service 层完成，不在 handler 拼装）
+- [x] RMR-308 收编 OpenAPI 时聚合字段与 detail.stats 标 required（恒 0/null 阶段即返回，接通后 shape 不变）——已写入 §7 待办
 
 ### learning
 
-- churn 规则对零成交客户的噪音问题（本地发现，round 1 修复）：首版 churn 仅对有成交史客户生效，零成交线索跟进移入"明确不做+二期候选"——提醒类功能的初版宁可少报不可噪音刷屏，这是"治忘"工具的信任前提。
+- include-tags 策略（`backend/oapi-codegen.yaml`）使 openapi.yaml 可安全领先实现：收编契约增量不触碰后端生成物、不破坏 `make check` 的 generate-check。候选沉淀 compound，建议 customer-core acceptance 时落盘。
 
 ### praise
 
-- 范围边界具体（支付/选片/微信自动化/多账号/客户侧全部点名不做），能有效防 scope creep
-- 通知不独立成模块、TG 作 reminder 域内 injected port——避免了单通道下的 pass-through 假 seam
-- ADR-001 正确贯穿：account_id 客户端永不传、过滤在基座强制、任何新表带归属
-- 最小闭环（customer-core）选择正确：最快验证"登录→建档→可查"的第一块价值
+- platform-skeleton 影响评估经代码核验无水分（已交付端点仅 healthz/login/me，均不受本次增量影响；api.gen.go 因 include-tags 不含受影响域）。
+- OpenAPI 漂移处理规范：不静默改机器契约，观察项待办 + 收编时机 + compound 双向核对机制齐全。
+- 「聚合字段自始存在恒 0/null」与「不新增组合端点」两个拍板符合项目反预支复杂度的一贯口径。
 
 ## 4. User Review Focus
 
-- **用户需要重点拍板**：① 条目 1 启动前拍板包——技术栈确认（Go+React 为推断）、存储引擎（MongoDB vs SQLite）、部署形态与 PII 边界；② 条目 3 与 4 的先后顺序（无技术依赖，纯产品偏好）；③ 默认参数初始值（生日前 3 天/回访 7 天/流失 180 天/摘要 9 点）
-- **后续 feature-design 需重点复核**：4.2 merge 语义在 order/reminder 域落地时的用例补齐；4.4 时区日界用例；30 秒建档的交互实测
-- **不能靠 roadmap review 完全确认的点**：`make check` 基线要到条目 1 才真实存在；TG 可达性要到条目 1 冒烟才证实
+- 用户需要重点拍板：①recent_stats 的 cancelled 排除与 [今日-29, 今日] 窗口定义（review 按"与 total_order_amount 对齐"的最小惊讶原则代拟，需 owner 确认）；②orders_created 含全部状态的口径；③二期候选记录措辞（拍摄回顾 / 人脉链金额归因）是否符合预期
+- 后续 feature-design 需要重点复核：schedule-calendar 的 design 必答清单两项；customer-core 收编 OpenAPI 时按 §7 待办清单逐项核对 + compound 双向核对；聚合字段 required 策略
+- 不能靠 roadmap review 完全确认的点：见第 6 节
 
 ## 5. Evidence Confidence Ledger
 
 | Check | Verdict | Evidence Class | Basis | Follow-up |
 |---|---|---|---|---|
-| Granularity Gate | pass | E | roadmap §2 表格：7 模块/11 items/DAG/契约，非单 feature 可装 | none |
-| Goal Coverage Matrix | pass | E | §5 矩阵 8 行全部映射 item + 验证入口 + 证据类型 | none |
-| DAG and minimal loop | pass | E | validate-yaml 通过 + 人工遍历无环；minimal_loop 唯一（customer-core） | none |
-| Interface contract usability | pass | E/C | §4.1-4.6 字段/错误码/幂等键级；与 req/ADR/CONTEXT 无冲突 | feature-design 首条落地时回验 |
-| Module interface depth | pass | C | 各模块 Depth 判断成文；无 pass-through（通知并入 reminder 有明确理由）；独立审查 praise 佐证 | none |
-| 与 req/ADR/术语一致性 | pass | C | customer-profile 用户故事/边界逐条对照；ADR-001 约束进 4.1；术语用「订单/账号/客户」无禁用词 | none |
+| Granularity Gate | pass | E | §2 表未变，本次 update 不触碰 | none |
+| Goal Coverage Matrix | pass | E | 八行覆盖未受影响；dashboard 行验证入口在 RMR-301 闭合后可执行 | none |
+| DAG and minimal loop | pass | E | items.yaml 依赖边零变化，独立 reviewer 复核无环；customer-core 因"恒 0/null"约定不新增对 order 域依赖 | none |
+| Interface contract usability | pass | E | 增量七项全部到字段/口径/时区级；RMR-301/302 修复后可直接作 OpenAPI 收编依据 | customer-core 收编时双向核对 |
+| Module interface depth | pass | C | 聚合归属读模型措辞与 4.4 一致；无新 seam / 无假 adapter；组合流程拒绝 BFF 端点 | none |
+| platform-skeleton 影响评估 | pass | C | router.go / auth.go / api.gen.go 代码事实核验 | none |
+| OpenAPI 漂移声明 | pass | E | openapi.yaml L1045 month_stats、L777 reminders 参数与 §4 新文不一致，漂移属实且已记待办 | customer-core 启动时收编 |
 
-Summary: E=3, C=2, E/C=1, H=0, H-only core checks=none。
+Summary: E=5, C=2, H=0, H-only core checks=none。
 
 ## 6. Residual Risk
 
-- 技术栈与存储引擎未拍板前，items 描述中的"Go+React"是假设——条目 1 不得在拍板前启动（已写入 item 1 notes 启动前提）
-- 除 customer-profile 外四份 req 未起草，roadmap 契约暂时承担部分需求职责——各条目 feature-design 时触发 cs-req draft 化解
-- greenfield：验证策略当前只是规划可信，真实基线从条目 1 开始建立；条目 1 的 acceptance 质量决定全 roadmap 的验证可信度
-- 独立审查与主审查虽为异构 provider，但输入材料同源（全部为本仓库文档）；契约与真实业务的偏差要靠 owner review 与首两条 feature 实践反馈
+- **聚合 join 的账号隔离**：orders_count / last_shot_at / recent_stats 全是跨表聚合，子查询漏 account_id 过滤不报错、单账号阶段测不出——order-tracking / dashboard 的 code review 检查口径须显式包含"join/子查询逐个核对 AccountScope 覆盖"（compound `accountscope-fail-loud` 的基座对 join 场景的覆盖在 design 时确认）。
+- **schema.d.ts 跨域大 diff**：前端 codegen 全量生成（Makefile 无 include-tags 过滤），customer-core 收编后其 PR 携带无关域 schema 变更——review 噪音，已在 §7 待办预告，customer-core design 里再明示。
+- **本轮独立 review 为同类 agent**（native Claude subagent，非 round 1/2 的 Codex 异构 provider）——本轮为契约增量复审、全部核心检查有 E/C 级证据，残余风险有限；下次全量 review 建议恢复异构。
 
 ## 7. Verdict
 
-- Status: **passed**（round 2）
-- Next: 交给用户 review——round 1 全部 blocking/important 已修复并复核；用户确认后主文档 status 改 active
+- Status: passed
+- Next: 交给用户 review（重点拍板项见第 4 节）；用户确认后更新主文档 `last_reviewed: 2026-07-06`
