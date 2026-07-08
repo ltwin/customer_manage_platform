@@ -1,6 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
-import { ApiError, createCustomer } from '../api/client'
+import { useEffect, useState } from 'react'
+import { ApiError, createCustomer, listCustomers } from '../api/client'
+import type { CustomerListResponse } from '../api/client'
 import { channelOptions, platformOptions } from './customerLabels'
 import type { CustomerChannel, SocialPlatform } from './customerLabels'
 import { useShell } from '../components/shellContext'
@@ -11,6 +12,8 @@ type IdentityDraft = {
   remark: string
 }
 
+type ReferrerOption = CustomerListResponse['items'][number]
+
 const blankIdentity = (): IdentityDraft => ({ platform: 'wechat', handle: '', remark: '' })
 
 export default function CustomerNewPage() {
@@ -19,6 +22,9 @@ export default function CustomerNewPage() {
   const [displayName, setDisplayName] = useState('')
   const [channel, setChannel] = useState<CustomerChannel>('xiaohongshu')
   const [referrerCustomerID, setReferrerCustomerID] = useState('')
+  const [referrerOptions, setReferrerOptions] = useState<ReferrerOption[]>([])
+  const [referrerLoading, setReferrerLoading] = useState(false)
+  const [referrerError, setReferrerError] = useState<string | null>(null)
   const [identities, setIdentities] = useState<IdentityDraft[]>([blankIdentity()])
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -38,10 +44,48 @@ export default function CustomerNewPage() {
     setIdentities((current) => current.length === 1 ? current : current.filter((_, itemIndex) => itemIndex !== index))
   }
 
+  useEffect(() => {
+    if (channel !== 'referral') {
+      setReferrerCustomerID('')
+      setReferrerError(null)
+      return
+    }
+    let active = true
+    setReferrerLoading(true)
+    setReferrerError(null)
+    listCustomers({ status: 'active', page: 1, pageSize: 100 })
+      .then((result) => {
+        if (!active) return
+        setReferrerOptions(result.items)
+        setReferrerCustomerID((current) => (
+          result.items.some((customer) => customer.id === current) ? current : ''
+        ))
+      })
+      .catch((err: unknown) => {
+        if (!active) return
+        if (err instanceof ApiError && err.status === 401) {
+          navigate('/login', { replace: true })
+          return
+        }
+        setReferrerOptions([])
+        setReferrerError(err instanceof Error ? err.message : '介绍人列表加载失败')
+      })
+      .finally(() => {
+        if (active) setReferrerLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [channel, navigate])
+
   async function submit() {
     setSubmitted(true)
     setError(null)
-    if (!displayName.trim() || identities.some((identity) => !identity.handle.trim())) return
+    if (
+      !displayName.trim()
+      || identities.some((identity) => !identity.handle.trim())
+      || (channel === 'referral' && !referrerCustomerID)
+    ) return
     setSaving(true)
     try {
       const created = await createCustomer({
@@ -66,6 +110,12 @@ export default function CustomerNewPage() {
       setSaving(false)
     }
   }
+
+  const referrerPlaceholder = referrerLoading
+    ? '正在加载介绍人…'
+    : referrerOptions.length === 0
+      ? '暂无可选介绍人'
+      : '请选择介绍人'
 
   return (
     <>
@@ -103,14 +153,24 @@ export default function CustomerNewPage() {
           </div>
 
           {channel === 'referral' && (
-            <div className="field">
-              <label htmlFor="referrerCustomerID">介绍人客户 ID</label>
-              <input
+            <div className={`field${submitted && !referrerCustomerID ? ' show-err' : ''}`}>
+              <label htmlFor="referrerCustomerID">介绍人</label>
+              <select
                 id="referrerCustomerID"
-                className="input"
+                className={`input${submitted && !referrerCustomerID ? ' invalid' : ''}`}
                 value={referrerCustomerID}
                 onChange={(event) => setReferrerCustomerID(event.target.value)}
-              />
+                disabled={referrerLoading || referrerOptions.length === 0}
+              >
+                <option value="">{referrerPlaceholder}</option>
+                {referrerOptions.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {formatCustomerSelectLabel(customer)}
+                  </option>
+                ))}
+              </select>
+              <div className="err">请选择介绍人</div>
+              {referrerError && <div className="hint danger-text">{referrerError}</div>}
             </div>
           )}
 
@@ -164,4 +224,12 @@ export default function CustomerNewPage() {
       </main>
     </>
   )
+}
+
+function formatCustomerSelectLabel(customer: ReferrerOption) {
+  return `${customer.display_name} · UID ${shortCustomerID(customer.id ?? '')}`
+}
+
+function shortCustomerID(id: string) {
+  return `#${id.replace(/^cus_/, '').slice(-6)}`
 }

@@ -26,6 +26,14 @@ items:
     minimal_loop: false
     notes: merge/归档语义按 roadmap 4.2；design 阶段按 merge、归档、notes、referral、渐进字段分片验收；落地后评估 req customer-profile draft→current；含客户的页面 ≤2 步追加备注
 
+  - slug: customer-avatar
+    description: 客户头像：可选设置/替换/移除头像；列表、详情、转介绍下拉、merge 对话框等客户选择面显示头像缩略图，未设置时使用默认首字头像
+    depends_on: [customer-profile-complete]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: 依赖理由：头像属于客户档案补全后的展示增强，不阻塞 30 秒建档；完成信号：头像字段/API 与前端选择组件联动，上传/替换/移除用例通过，未设置头像 fallback 稳定；不强制客户必须设置头像
+
   - slug: package-catalog
     description: 套系 CRUD 与归档：拍摄类型/定价方式/张数时长底片精修参数，归档后不出现在选择列表
     depends_on: [platform-skeleton]
@@ -76,7 +84,7 @@ items:
 
   - slug: data-export
     description: 全量 JSON 导出（roadmap 4.6 契约）：一键导出全部实体 + counts 核对
-    depends_on: [customer-profile-complete, package-catalog, order-tracking, schedule-calendar, reminder-engine]
+    depends_on: [customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine]
     status: planned
     feature: null
     minimal_loop: false
@@ -84,7 +92,7 @@ items:
 
   - slug: v1-hardening
     description: 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
-    depends_on: [telegram-digest, dashboard, data-export]
+    depends_on: [customer-avatar, telegram-digest, dashboard, data-export]
     status: planned
     feature: null
     minimal_loop: false

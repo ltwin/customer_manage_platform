@@ -46,7 +46,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 
 | 判断项 | 结论 |
 |---|---|
-| 为什么不是 single feature | 七个模块、十一条可独立交付的子 feature、跨模块接口契约（实体模型 / API / 提醒规则 / TG 协议 / 导出）、依赖构成 DAG，单 feature 装不下 |
+| 为什么不是 single feature | 七个模块、十二条可独立交付的子 feature、跨模块接口契约（实体模型 / API / 提醒规则 / TG 协议 / 导出）、依赖构成 DAG，单 feature 装不下 |
 | 为什么不是 brainstorm | 脑暴已完成（2026-07-05），定位 / 形态 / 优先级 / 边界均已拍板，目标与完成信号可写成可证伪条目 |
 | roadmap 边界 | 只覆盖首版"先治忘"范围（上表）；画像分析、产品化、选片交付明确不做 |
 | 最小闭环 | 第 2 条 `customer-core` 完成后：登录 → 30 秒建档（含渠道、1 个或多个社交身份）→ 列表 / 详情可查——"治忘"的第一块地基端到端可演示 |
@@ -72,7 +72,7 @@ photographer-private-crm
 
 ### customer · 客户域
 - **职责**：客户聚合根的全生命周期：建档、社交身份增删、渠道、转介绍、备注、渐进字段、合并、归档。不管订单 / 档期 / 提醒（它们反向引用客户）。
-- **承载的子 feature**：customer-core、customer-profile-complete
+- **承载的子 feature**：customer-core、customer-profile-complete、customer-avatar
 - **触碰的现有代码**：无
 - **Depth 判断**：deep——"合并客户迁移全部关联资源"这类复杂度藏在域内，对外只是一个 merge 端点。
 
@@ -140,7 +140,7 @@ ID:        string（引擎无关；服务端生成）
 Customer:        display_name*, real_name?, phone?, birthday?("MM-DD"|"YYYY-MM-DD"),
                  channel*(xiaohongshu|douyin|weibo|referral|other),
                  referrer_customer_id?(channel=referral 时必填),
-                 status*(active|merged|archived), merged_into_customer_id?
+                 status*(active|merged|archived), merged_into_customer_id?, avatar_url?
 SocialIdentity:  customer_id*, platform*(wechat|qq|telegram|xiaohongshu|douyin|weibo|other),
                  handle*, remark?
                  （枚举含来源平台：小红书/抖音/微博账号也是真实私域身份，2026-07-06 原型比对拍板）
@@ -207,6 +207,8 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
   POST   /customers/{id}/notes      {content}                          → 201
   POST   /customers/{id}/merge      {source_customer_id}               → 200 target Customer
                                     409 merge_conflict（source 非 active）
+  PUT    /customers/{id}/avatar     multipart/form-data file            → 200 Customer
+  DELETE /customers/{id}/avatar                                          → 200 Customer
 套系域
   POST/GET/PATCH /packages…         GET ?status=active 供下单选择；归档：PATCH {status:archived}
                                     归档无 in-use 校验——存量订单继续引用历史套系，仅从选择列表消失
@@ -321,36 +323,39 @@ GET /export → application/json（Content-Disposition 附件）
 
 1. **platform-skeleton** — Go+React 脚手架、单账号登录、账号上下文与 repository 基座（强制账号过滤）、错误封套、健康检查、build/test/lint 命令基线、§4 契约固化为 OpenAPI + 双端 codegen
    - 所属模块：platform ｜ 依赖：无 ｜ 状态：done ｜ 对应 feature：2026-07-06-platform-skeleton
-   - 备注：greenfield 安全网条目——建立后续全部 feature 的验证入口（`make check` 或等价全绿）；完成信号：登录取 token → `GET /api/v1/me` 返回账号；跨账号过滤有基座级测试；OpenAPI 文件与 §4 一致且 codegen 可跑。代码组织按 Gin + 轻量 DDD（见 §4 头注）。**外部依赖前置验证**：本条内完成 TG bot 申请 + `sendMessage` 冒烟（脚本级发一条测试消息即可），提前杀死条目 8 的外部依赖风险；token 凭证规则落 attention.md
+   - 备注：greenfield 安全网条目——建立后续全部 feature 的验证入口（`make check` 或等价全绿）；完成信号：登录取 token → `GET /api/v1/me` 返回账号；跨账号过滤有基座级测试；OpenAPI 文件与 §4 一致且 codegen 可跑。代码组织按 Gin + 轻量 DDD（见 §4 头注）。**外部依赖前置验证**：本条内完成 TG bot 申请 + `sendMessage` 冒烟（脚本级发一条测试消息即可），提前杀死条目 9 的外部依赖风险；token 凭证规则落 attention.md
 2. **customer-core** — 30 秒建档最小闭环：POST /customers（昵称+至少 1 个社交身份+渠道必填，建档时可录入多个身份）、列表搜索（昵称/handle）、详情页
    - 所属模块：customer + webapp ｜ 依赖：platform-skeleton ｜ 状态：done ｜ 对应 feature：2026-07-07-customer-core
    - 备注：**最小闭环**；完成信号：新建到保存 ≤30 秒（计时演示，覆盖 2 个社交身份输入）；无社交身份创建返回 400；列表按 q/channel 过滤正确
 3. **customer-profile-complete** — 档案补全：建档后身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
    - 所属模块：customer + webapp ｜ 依赖：customer-core ｜ 状态：done ｜ 对应 feature：2026-07-07-customer-profile-complete
    - 备注：merge / 归档语义按 4.2；design 阶段按 merge、归档、notes、referral、渐进字段分片验收（防单片过大）；完成信号：合并后 source 状态 merged 且身份/备注归并；归档客户默认列表隐藏；任意含客户的页面 ≤2 步追加备注；落地后评估 req customer-profile draft→current
-4. **package-catalog** — 套系 CRUD 与归档：类型/定价方式/张数时长底片精修参数，归档后不出现在选择列表
+4. **customer-avatar** — 客户头像：可选设置 / 替换 / 移除头像；列表、详情、转介绍下拉、merge 对话框等客户选择面显示头像缩略图，未设置时使用默认首字头像
+   - 所属模块：customer + webapp ｜ 依赖：customer-profile-complete ｜ 状态：planned ｜ 对应 feature：未启动
+   - 备注：头像不作为建档必填项；完成信号：头像字段/API 与前端客户选择组件联动，上传/替换/移除用例通过，未设置头像 fallback 稳定；设计阶段需明确头像文件存储、大小/格式限制、删除后的对象清理策略
+5. **package-catalog** — 套系 CRUD 与归档：类型/定价方式/张数时长底片精修参数，归档后不出现在选择列表
    - 所属模块：package + webapp ｜ 依赖：platform-skeleton ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：完成信号：按 4.2 Package shape 建/改/归档各一条通过；?status=active 过滤正确
-5. **order-tracking** — 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、时间戳自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
+6. **order-tracking** — 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、时间戳自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
    - 所属模块：order + webapp ｜ 依赖：customer-core, package-catalog ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含 shot_at/delivered_at 自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409、**接通 customers/packages 聚合字段真实计算**（orders_count/last_shot_at/total_order_amount，4.3，2026-07-06 契约更新）
-6. **schedule-calendar** — 档期：月/周日历视图、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
+7. **schedule-calendar** — 档期：月/周日历视图、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
    - 所属模块：schedule + webapp ｜ 依赖：order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——type=shoot 的 slot 必须挂订单；完成信号：重叠创建返回 overlaps 且前端提示；建/删 slot 不改订单状态（反向联动禁止用例）；日历页答复"某天有没有档"≤10 秒（演示）；**组合流程拍板（2026-07-06）**：前端「新建拍摄档期」弹窗（含客户档案页「＋新约单」入口）隐式先 POST /orders（选客户+套系）再 POST /schedule/slots 挂 order_id——不新增组合端点，两步失败处理（订单已建、slot 失败时的提示与补救）在本条 feature design 内定义，此流程是 design 硬约束；**design 必答清单**：①保存成功后是否隐式第三步 `PATCH /orders {status:scheduled}`（合法，显式驱动，不违反"slot 不反向改状态"不变量）还是接受"日历有 shoot slot 的 consulting 订单"常态；②slot 失败留下的悬挂 consulting 订单按 4.4 属"非终态订单"会抑制该客户 churn 预警，补救策略须覆盖
-7. **reminder-engine** — 提醒引擎：/admin/reminders/scan 幂等生成三类提醒、done/dismiss、参数可配置（含按拍摄类型流失阈值、账号时区）
+8. **reminder-engine** — 提醒引擎：/admin/reminders/scan 幂等生成三类提醒、done/dismiss、参数可配置（含按拍摄类型流失阈值、账号时区）
    - 所属模块：reminder ｜ 依赖：customer-profile-complete, order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 5）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**；GET /reminders 支持 customer_id 过滤（4.3，2026-07-06 契约更新）
-8. **telegram-digest** — TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
+   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 6）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**；GET /reminders 支持 customer_id 过滤（4.3，2026-07-06 契约更新）
+9. **telegram-digest** — TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
    - 所属模块：reminder（TelegramPort）｜ 依赖：reminder-engine, schedule-calendar ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——摘要内容 = 提醒（条目 7）+ 当日档期（条目 6）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到含真实数据的摘要（截图）；未绑定时系统全功能正常
-9. **dashboard** — 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（4.3 dashboard 契约）
+   - 备注：依赖理由——摘要内容 = 提醒（条目 8）+ 当日档期（条目 7）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到含真实数据的摘要（截图）；未绑定时系统全功能正常
+10. **dashboard** — 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（4.3 dashboard 契约）
    - 所属模块：webapp ｜ 依赖：order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：完成信号：五卡片数据与各域列表页交叉一致（核对用例）；登录后默认落地页
-10. **data-export** — 全量 JSON 导出（4.6 契约）：一键导出全部实体 + counts 核对
-    - 所属模块：platform ｜ 依赖：customer-profile-complete, package-catalog, order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
+11. **data-export** — 全量 JSON 导出（4.6 契约）：一键导出全部实体 + counts 核对
+    - 所属模块：platform ｜ 依赖：customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
     - 备注：依赖理由——导出范围 = 4.2 全部实体，各域落地后才有内容可导；完成信号：counts 与数组长度一致的自动化用例；导出文件手工抽查含 PII 字段完整
-11. **v1-hardening** — 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
-    - 所属模块：跨模块 ｜ 依赖：telegram-digest, dashboard, data-export ｜ 状态：planned ｜ 对应 feature：未启动
+12. **v1-hardening** — 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
+    - 所属模块：跨模块 ｜ 依赖：customer-avatar, telegram-digest, dashboard, data-export ｜ 状态：planned ｜ 对应 feature：未启动
     - 备注：完成信号：375px 宽度下三条轻路径可完成；回归清单逐条打勾归档；README 覆盖部署/备份/凭证操作
 
 **最小闭环**：第 2 条 `customer-core` 做完后，登录 → 30 秒建一个带渠道、1 个或多个社交身份的客户 → 列表搜到、详情看到——端到端最窄路径可演示。
@@ -359,24 +364,24 @@ GET /export → application/json（Content-Disposition 附件）
 
 | Goal / completion signal | Covered by | Verification entry | Evidence type | Core? |
 |---|---|---|---|---|
-| 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3 | 多身份建档计时演示 + merge/归档用例测试 | test + screenshot | yes |
+| 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3, 4 | 多身份建档计时演示 + merge/归档用例测试 + 头像选择面截图 | test + screenshot | yes |
 | 渠道归因：每个客户带来源渠道可筛选 | 2 | GET /customers?channel= 用例 | test | yes |
-| 再也不忘：三类提醒准确且不重复，主动送达 | 7, 8, 9 | 幂等双跑测试 + 时区日界用例 + TG 真机截图 + dashboard | test + screenshot | yes |
-| 档期 10 秒可答、与客户套系关联 | 6, 9 | 日历页演示 + overlaps 用例 | test + screenshot | yes |
-| 订单状态与定金尾款不漏 | 5, 9 | 跃迁矩阵测试（含时间戳/unpaid_balance）+ 筛选核对 | test | yes |
-| 套系参数有结构化的家 | 4 | CRUD + 归档过滤用例 | test | yes |
-| 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 10, 11 | make check（或等价）+ 基座过滤测试 + 导出 counts 核对 | command + test | yes |
+| 再也不忘：三类提醒准确且不重复，主动送达 | 8, 9, 10 | 幂等双跑测试 + 时区日界用例 + TG 真机截图 + dashboard | test + screenshot | yes |
+| 档期 10 秒可答、与客户套系关联 | 6, 7 | 日历页演示 + overlaps 用例 | test + screenshot | yes |
+| 订单状态与定金尾款不漏 | 6, 10 | 跃迁矩阵测试（含时间戳/unpaid_balance）+ 筛选核对 | test | yes |
+| 套系参数有结构化的家 | 5 | CRUD + 归档过滤用例 | test | yes |
+| 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 11, 12 | make check（或等价）+ 基座过滤测试 + 导出 counts 核对 | command + test | yes |
 | 首版整体完成信号 | 全部 | 一条链路演示：建档→套系→订单→档期→标定金→次日 TG 摘要→dashboard 五卡有数 | acceptance report | yes |
 
 ## 6. 排期思路与深度规划底稿
 
-**为什么这么拆**：先基座（greenfield 必须先有验证入口和 ADR-001 执行点，并前置杀死 TG 外部依赖风险），再沿"先治忘"价值主线（客户 → 档案完整）铺数据地基（套系 → 订单 → 档期），让提醒引擎在真实数据上运转（引擎 → TG → dashboard），导出与收口断后。1-2 之后、3-4 可并行、4 与 3 顺序可按 owner 意愿调换（无技术依赖）。
+**为什么这么拆**：先基座（greenfield 必须先有验证入口和 ADR-001 执行点，并前置杀死 TG 外部依赖风险），再沿"先治忘"价值主线（客户 → 档案完整）铺数据地基（套系 → 订单 → 档期），让提醒引擎在真实数据上运转（引擎 → TG → dashboard），导出与收口断后。1-2 之后，3 与 5 可并行；4 跟随 3 作为客户选择面的识别增强，不阻塞订单/档期主线。
 
 **目标完成信号**（roadmap 级）：上表末行的全链路演示在 owner 真机跑通 + 全部 items done/dropped。"owner 真实使用两周不弃用"是软信号，记观察项由 owner 主观判定，不作为 completed 门槛。
 
 **Top 3 风险与缓解**：
-1. **录入成本超 30 秒 → 工具弃用**（产品级最大风险）——缓解：契约 4.3 把"三项必填建档端点"写死；条目 2 验收含计时演示；条目 11 移动轻路径专项。
-2. **提醒重复 / 漏发 / 跨日错位 → "治忘"卖点直接失信**——缓解：4.4 幂等键 + 4.1 时区单一口径写进契约；条目 7 硬验收"双跑零新增 + 时区日界用例"；TG 失败不影响生成，dashboard 兜底（A+D 冗余）。
+1. **录入成本超 30 秒 → 工具弃用**（产品级最大风险）——缓解：契约 4.3 把"三项必填建档端点"写死；条目 2 验收含计时演示；条目 12 移动轻路径专项。
+2. **提醒重复 / 漏发 / 跨日错位 → "治忘"卖点直接失信**——缓解：4.4 幂等键 + 4.1 时区单一口径写进契约；条目 8 硬验收"双跑零新增 + 时区日界用例"；TG 失败不影响生成，dashboard 兜底（A+D 冗余）。
 3. **greenfield 无基线 → 后续 feature 无法可信验证**——缓解：条目 1 是安全网条目，交付全绿命令基线 + 账号过滤基座测试 + TG 冒烟，后续每条 feature 的 DoD 挂在这套命令上。
 
 **非显然依赖**：TG bot token 需 owner 向 BotFather 申请（条目 1 前置冒烟，凭证走环境变量，规则落 attention.md）；**条目 1 启动前拍板包**（见第 7 节）：技术栈确认、存储引擎、部署形态与 PII 边界；生日年份可缺（"MM-DD"）导致年龄不可算——契约已按可缺设计。
@@ -385,7 +390,7 @@ GET /export → application/json（Content-Disposition 附件）
 
 **基线与验证入口**：条目 1 交付 `make check`（或等价：build + test + lint 一键）作为全 roadmap 验证入口；UI 类条目另加浏览器手工路径（截图证据）；TG 类条目加真机截图。
 
-**交付物落点**：每条 feature 落在代码 + 测试 + items.yaml 状态回写 + acceptance 报告；条目 3 完成时评估 req customer-profile draft→current；条目 11 落 README 与回归清单文档。
+**交付物落点**：每条 feature 落在代码 + 测试 + items.yaml 状态回写 + acceptance 报告；条目 3 完成时评估 req customer-profile draft→current；条目 12 落 README 与回归清单文档。
 
 **知识回写点**（acceptance 时触发对应沉淀）：验证命令与本地起服务方式 → attention.md（cs-note）；技术栈与存储引擎落地 → ADR（cs-domain）；TG bot 申请与绑定坑 → compound（cs-keep）；渠道/线索术语 → CONTEXT.md（cs-domain）。
 
@@ -404,6 +409,8 @@ GET /export → application/json（Content-Disposition 附件）
 
 ## 8. 变更日志
 
+- 2026-07-08：根据 owner 反馈新增 `customer-avatar` planned 子 feature：客户头像可选设置/替换/移除，用于列表、详情、转介绍下拉、merge 对话框等客户选择面辅助识别；同时明确客户选择展示不拼社交账号/来源渠道，短 UID 负责消歧，头像作为后续增强。
+
 - 2026-07-07（customer-profile-complete design 启动时拍板）：§4.2 补「转介绍指针语义」——merge 时 referrer 指向 source 的批量重定向 target（自指清空）；归档不清洗既有 referrer；介绍人候选仅 active（只约束新写入）；channel 可 PATCH 修正且与 referrer 联动（改为 referral 必带介绍人、改走 referral 自动清空）。承接 customer-core review 遗留 REV-006。
 
 - 2026-07-07：根据 owner review 调整 `customer-core` 建档契约：`POST /customers` 从单个 `identity` 改为 `identities[1..N]`，30 秒建档硬性要求至少 1 个社交身份、允许同次录入多个私域账号；无社交身份创建必须 400，不允许生成无身份客户；建档后的身份增删仍归 `customer-profile-complete`。
@@ -417,6 +424,6 @@ GET /export → application/json（Content-Disposition 附件）
     5. `SocialIdentity.platform` 枚举扩展：加 `xiaohongshu|douyin|weibo`（来源平台账号是真实私域身份）
     6. dashboard 口径对齐原型：`due_reminders` 窗口 = 账号时区今日+2 天（近 3 天含逾期）；`month_stats` 改为 `recent_stats`（近 30 天滚动窗口，orders_created 按 created_at、orders_delivered / revenue_confirmed 按 delivered_at 判窗）；§4.1 时区条目同步措辞
   - **范围记录（§7 观察项）**：拍摄回顾 / 选片相册、多层人脉链与转介绍金额归因——超出首版，记二期候选（与渠道转化分析同批），原型中对应卡片首版不实现
-  - **组合流程拍板（§5 条目 6 备注）**：日历新建拍摄档期 = 前端隐式先 `POST /orders` 再 `POST /schedule/slots`，不新增组合端点，两步失败处理归 schedule-calendar feature design
+  - **组合流程拍板（§5 条目 7 备注）**：日历新建拍摄档期 = 前端隐式先 `POST /orders` 再 `POST /schedule/slots`，不新增组合端点，两步失败处理归 schedule-calendar feature design
   - **受影响的已启动 / 完成 feature**：platform-skeleton（done）——其交付的登录 / me / healthz 端点不受本次变化影响，无需返工；但 `api/openapi.yaml` 为 §4 全量固化，本次增量产生文档级漂移，收编责任落 customer-core 启动时（见 §7「OpenAPI 同步待办」）。其余条目均 planned，直接按新契约执行
-  - **roadmap-review（round 3）复核后补充的口径闭合**：recent_stats 窗口定义为账号时区自然日 [今日-29, 今日]、orders_delivered/revenue_confirmed 排除当前 cancelled（与 total_order_amount 对齐）、orders_created 含全部状态；聚合字段 orders_count/last_shot_at 统一"非 cancelled"口径，last_shot_at 补入 §4.1 date-only 时区枚举；聚合明确为同进程读模型（repository/service 层完成）；§4.5 注明 TG 摘要有意保持"今日"窗口不随 dashboard 近 3 天；条目 6 备注补 design 必答清单（隐式第三步 PATCH scheduled 与悬挂 consulting 订单对 churn 的抑制）
+  - **roadmap-review（round 3）复核后补充的口径闭合**：recent_stats 窗口定义为账号时区自然日 [今日-29, 今日]、orders_delivered/revenue_confirmed 排除当前 cancelled（与 total_order_amount 对齐）、orders_created 含全部状态；聚合字段 orders_count/last_shot_at 统一"非 cancelled"口径，last_shot_at 补入 §4.1 date-only 时区枚举；聚合明确为同进程读模型（repository/service 层完成）；§4.5 注明 TG 摘要有意保持"今日"窗口不随 dashboard 近 3 天；条目 7 备注补 design 必答清单（隐式第三步 PATCH scheduled 与悬挂 consulting 订单对 churn 的抑制）

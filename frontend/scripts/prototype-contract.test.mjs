@@ -35,3 +35,15 @@ test('migrated design system exposes shell, dashboard, list, detail, calendar, a
   }
   assert.match(css, /\[data-theme="dark"\]/)
 })
+
+test('new customer referral picks from active customers instead of manual id input', async () => {
+  const page = await read('src/pages/CustomerNewPage.tsx')
+
+  assert.match(page, /listCustomers\(\{\s*status: 'active',\s*page: 1,\s*pageSize: 100,?\s*\}\)/s)
+  assert.match(page, /<select\s+id="referrerCustomerID"/)
+  assert.match(page, /formatCustomerSelectLabel\(customer\)/)
+  assert.match(page, /shortCustomerID\(customer\.id/)
+  assert.match(page, /请选择介绍人/)
+  assert.doesNotMatch(page, /介绍人客户 ID/)
+  assert.doesNotMatch(page, /channelLabels\[customer\.channel\]/)
+})
