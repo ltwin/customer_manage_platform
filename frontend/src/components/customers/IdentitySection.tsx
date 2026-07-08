@@ -72,13 +72,13 @@ export default function IdentitySection({ customer, onChanged, onUnauthorized }:
       <div className="card-title">私域账号 <span className="count">· {customer.identities.length}</span></div>
       {error && <div className="form-error">{error}</div>}
       {customer.identities.map((identity) => (
-        <div className="identity-item" key={identity.id}>
+        <div className="identity-item identity-account-item" key={identity.id}>
           <span className="plat">{platformLabels[identity.platform]}</span>
           <span className="handle">{identity.handle}</span>
           <span className="rmk">{identity.remark}</span>
           {!readonly && (
             <button
-              className="btn btn-ghost identity-remove"
+              className="btn btn-danger identity-remove"
               type="button"
               onClick={() => { void remove(identity.id ?? '') }}
               disabled={busy}

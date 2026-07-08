@@ -193,6 +193,8 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .btn:active { transform: translateY(0.5px); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: white; }
 .btn-primary:hover { background: var(--accent-hover); }
+.btn-danger { background: oklch(40% 0.13 25); border-color: oklch(40% 0.13 25); color: white; }
+.btn-danger:hover { background: oklch(46% 0.14 25); border-color: oklch(46% 0.14 25); }
 .btn-ghost { border-color: transparent; color: var(--muted); }
 .btn-ghost:hover { color: var(--fg); background: var(--bg); }
 .btn-sm { padding: 5px 10px; min-height: 30px; font-size: 12.5px; }
@@ -518,6 +520,10 @@ table.data tbody tr:hover { background: var(--bg); }
 .identity-item .plat { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 99px; flex: none; min-width: 52px; text-align: center; }
 .identity-item .handle { font-family: var(--font-mono); font-weight: 550; min-width: 0; flex: 1 1 160px; overflow-wrap: anywhere; }
 .identity-item .rmk { font-size: 11.5px; color: var(--muted); margin-left: auto; overflow-wrap: anywhere; }
+.identity-account-item { display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(0, auto) auto; gap: 10px; align-items: center; flex-wrap: nowrap; }
+.identity-account-item .handle { flex: none; }
+.identity-account-item .rmk { margin-left: 0; max-width: 92px; text-align: right; }
+.identity-account-item .identity-remove { margin: 0; min-height: 30px; padding: 5px 12px; border-radius: var(--radius-s); white-space: nowrap; }
 .shot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .shot-thumb { position: relative; aspect-ratio: 3 / 4; border-radius: var(--radius-s); overflow: hidden; border: 1px solid var(--border); cursor: pointer; background: linear-gradient(160deg, oklch(93% 0.006 250), oklch(88% 0.008 250)); text-align: left; color: inherit; }
 .shot-thumb .tag { position: absolute; left: 0; right: 0; bottom: 0; padding: 5px 8px; font-size: 10.5px; line-height: 1.35; color: var(--muted); background: color-mix(in oklch, var(--surface) 88%, transparent); border-top: 1px solid var(--border); }
