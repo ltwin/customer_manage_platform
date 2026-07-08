@@ -1,8 +1,18 @@
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import { ApiError, fetchCustomer } from '../api/client'
+import { useCallback, useEffect, useState } from 'react'
+import { ApiError, fetchCustomer, updateCustomer } from '../api/client'
 import type { CustomerDetail } from '../api/client'
-import { channelLabels, platformLabels } from './customerLabels'
+import { channelLabels } from './customerLabels'
+import CustomerProfileForm from '../components/customers/CustomerProfileForm'
+import IdentitySection from '../components/customers/IdentitySection'
+import NotesPanel from '../components/customers/NotesPanel'
+import MergeDialog from '../components/customers/MergeDialog'
+
+const statusLabels: Record<string, string> = {
+  active: '活跃',
+  archived: '已归档',
+  merged: '已合并',
+}
 
 export default function CustomerDetailPage() {
   const { id = '' } = useParams()
@@ -10,6 +20,26 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editing, setEditing] = useState(false)
+  const [merging, setMerging] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const goLogin = useCallback(() => {
+    navigate('/login', { replace: true })
+  }, [navigate])
+
+  const reload = useCallback(() => {
+    if (!id) return
+    fetchCustomer(id)
+      .then(setCustomer)
+      .catch((err: unknown) => {
+        if (err instanceof ApiError && err.status === 401) {
+          goLogin()
+          return
+        }
+        setActionError(err instanceof Error ? err.message : '档案刷新失败')
+      })
+  }, [goLogin, id])
 
   useEffect(() => {
     if (!id) return
@@ -23,7 +53,7 @@ export default function CustomerDetailPage() {
       .catch((err: unknown) => {
         if (!active) return
         if (err instanceof ApiError && err.status === 401) {
-          navigate('/login', { replace: true })
+          goLogin()
           return
         }
         setCustomer(null)
@@ -35,7 +65,23 @@ export default function CustomerDetailPage() {
     return () => {
       active = false
     }
-  }, [id, navigate])
+  }, [goLogin, id])
+
+  async function toggleArchive() {
+    if (!customer) return
+    setActionError(null)
+    const next = customer.status === 'archived' ? 'active' : 'archived'
+    try {
+      await updateCustomer(customer.id ?? '', { status: next })
+      reload()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        goLogin()
+        return
+      }
+      setActionError(err instanceof Error ? err.message : '操作失败')
+    }
+  }
 
   if (loading) {
     return (
@@ -65,6 +111,9 @@ export default function CustomerDetailPage() {
     )
   }
 
+  const isMerged = customer.status === 'merged'
+  const isArchived = customer.status === 'archived'
+
   return (
     <>
       <header className="topbar">
@@ -73,47 +122,82 @@ export default function CustomerDetailPage() {
           <h1>{customer.display_name}</h1>
         </div>
         <div className="topbar-actions">
+          {!isMerged && (
+            <>
+              <button className="btn" type="button" onClick={() => setEditing(true)}>编辑档案</button>
+              <button className="btn" type="button" onClick={() => { void toggleArchive() }}>
+                {isArchived ? '恢复经营' : '归档'}
+              </button>
+              {customer.status === 'active' && (
+                <button className="btn" type="button" onClick={() => setMerging(true)}>合并重复档案</button>
+              )}
+            </>
+          )}
           <Link className="btn" to="/customers">返回列表</Link>
         </div>
       </header>
 
       <main className="content">
+        {actionError && <div className="form-error">{actionError}</div>}
+        {isMerged && (
+          <div className="form-error">
+            该客户已合并，档案只读。
+            {customer.merged_into_customer_id && (
+              <>
+                {' '}
+                <Link to={`/customers/${customer.merged_into_customer_id}`}>查看合并后的档案 →</Link>
+              </>
+            )}
+          </div>
+        )}
         <div className="detail-grid">
           <div className="detail-side">
-            <section className="card">
-              <div className="profile-head">
-                <div className="avatar">{customer.display_name[0]}</div>
-                <div>
-                  <h2>{customer.display_name}</h2>
-                  <div className="sub">
-                    <span className={customer.status === 'active' ? 'badge badge-success' : 'badge badge-muted'}>{customer.status === 'active' ? '活跃' : customer.status}</span>　建档 {shortDate(customer.created_at)}
+            {editing ? (
+              <CustomerProfileForm
+                customer={customer}
+                onSaved={() => {
+                  setEditing(false)
+                  reload()
+                }}
+                onCancel={() => setEditing(false)}
+                onUnauthorized={goLogin}
+              />
+            ) : (
+              <section className="card">
+                <div className="profile-head">
+                  <div className="avatar">{customer.display_name[0]}</div>
+                  <div>
+                    <h2>{customer.display_name}</h2>
+                    <div className="sub">
+                      <span className={customer.status === 'active' ? 'badge badge-success' : 'badge badge-muted'}>
+                        {statusLabels[customer.status] ?? customer.status}
+                      </span>　建档 {shortDate(customer.created_at)}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="value-strip">
-                <div className="vs"><div className="n">{customer.stats.total_order_amount}</div><div className="l">累计消费</div></div>
-                <div className="vs"><div className="n">{customer.stats.orders_count}</div><div className="l">约单</div></div>
-                <div className="vs"><div className="n">{customer.stats.last_shot_at ?? '暂无'}</div><div className="l">最近拍摄</div></div>
-              </div>
-              <div className="kv">
-                <span className="k">真实姓名</span><span className="v">{customer.real_name ?? '未填写'}</span>
-                <span className="k">手机号</span><span className="v num">{customer.phone ?? '未填写'}</span>
-                <span className="k">生日</span><span className="v num">{customer.birthday ?? '未填写'}</span>
-                <span className="k">来源渠道</span><span className="v">{channelLabels[customer.channel]}</span>
-                <span className="k">介绍人</span><span className="v">{customer.referrer?.display_name ?? '无'}</span>
-              </div>
-            </section>
-
-            <section className="card">
-              <div className="card-title">私域账号 <span className="count">· {customer.identities.length}</span></div>
-              {customer.identities.map((identity) => (
-                <div className="identity-item" key={identity.id}>
-                  <span className="plat">{platformLabels[identity.platform]}</span>
-                  <span className="handle">{identity.handle}</span>
-                  <span className="rmk">{identity.remark}</span>
+                <div className="value-strip">
+                  <div className="vs"><div className="n">{customer.stats.total_order_amount}</div><div className="l">累计消费</div></div>
+                  <div className="vs"><div className="n">{customer.stats.orders_count}</div><div className="l">约单</div></div>
+                  <div className="vs"><div className="n">{customer.stats.last_shot_at ?? '暂无'}</div><div className="l">最近拍摄</div></div>
                 </div>
-              ))}
-            </section>
+                <div className="kv">
+                  <span className="k">真实姓名</span><span className="v">{customer.real_name ?? '未填写'}</span>
+                  <span className="k">手机号</span><span className="v num">{customer.phone ?? '未填写'}</span>
+                  <span className="k">生日</span><span className="v num">{customer.birthday ?? '未填写'}</span>
+                  <span className="k">来源渠道</span><span className="v">{channelLabels[customer.channel]}</span>
+                  <span className="k">介绍人</span>
+                  <span className="v">
+                    {customer.referrer
+                      ? customer.referrer.display_name
+                      : customer.channel === 'referral'
+                        ? '介绍人已失效'
+                        : '无'}
+                  </span>
+                </div>
+              </section>
+            )}
+
+            <IdentitySection customer={customer} onChanged={reload} onUnauthorized={goLogin} />
           </div>
 
           <section className="card">
@@ -122,10 +206,24 @@ export default function CustomerDetailPage() {
               <button className="tab" type="button">提醒 · 0</button>
               <button className="tab" type="button">约单 · {customer.stats.orders_count}</button>
             </div>
-            {customer.notes.length === 0 ? <div className="empty">暂无备注</div> : null}
+            <NotesPanel customer={customer} onChanged={reload} onUnauthorized={goLogin} />
           </section>
         </div>
       </main>
+
+      {merging && (
+        <MergeDialog
+          targetId={customer.id ?? ''}
+          targetName={customer.display_name}
+          onMerged={() => {
+            setMerging(false)
+            reload()
+          }}
+          onConflict={reload}
+          onClose={() => setMerging(false)}
+          onUnauthorized={goLogin}
+        />
+      )}
     </>
   )
 }

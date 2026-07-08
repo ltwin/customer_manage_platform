@@ -8,6 +8,11 @@ const (
 	CodeUnauthorized     = "unauthorized"
 	CodeNotFound         = "not_found"
 	CodeInternal         = "internal"
+
+	// customer-profile-complete 的 409 conflict 子码（design D3/D4/D5）
+	CodeCustomerMerged = "customer_merged"
+	CodeLastIdentity   = "last_identity"
+	CodeMergeConflict  = "merge_conflict"
 )
 
 // newErrorEnvelope 构造统一错误封套（类型用 codegen 产物，保证与契约同源）。

@@ -2,9 +2,9 @@
 doc_type: requirement
 slug: customer-profile
 pitch: 把散落在微信、QQ、Telegram 里的客户收进一份 30 秒建好的档案，谁介绍的、哪个平台来的，从此有迹可循
-status: draft
-last_reviewed: 2026-07-05
-implemented_by: []
+status: current
+last_reviewed: 2026-07-08
+implemented_by: [2026-07-07-customer-profile-complete]
 tags: [customer, profile, private-domain, channel]
 ---
 
@@ -33,3 +33,7 @@ tags: [customer, profile, private-domain, channel]
 - 不做独立的线索池——咨询未成交的人一样建档，零订单的客户就是线索，不需要第二套管理入口。
 - 渠道转化分析（哪个平台成交率高）不在此列——初版只负责把渠道记对，分析是数据积累之后的二期视图。
 - 不是给客户用的——客户不登录系统，也看不到自己的档案。
+
+## 变更日志
+
+- 2026-07-08：`2026-07-07-customer-profile-complete` 落地后，本需求从 `draft` 升级为 `current`；已覆盖渐进字段、建档后身份增删、备注、归档/恢复、客户合并与转介绍关联。

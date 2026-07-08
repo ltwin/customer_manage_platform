@@ -17,6 +17,13 @@ import (
 )
 
 func startPostgres(t *testing.T) string {
+	url, _ := startPostgresContainer(t)
+	return url
+}
+
+// startPostgresContainer 同时返回容器句柄，供需要容器内 psql 注入的测试使用
+// （pgx 直连被 depguard 限制在 store 系包内，ADR-001 基座守护）。
+func startPostgresContainer(t *testing.T) (string, *tcpostgres.PostgresContainer) {
 	t.Helper()
 	ctx := context.Background()
 	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
@@ -39,7 +46,7 @@ func startPostgres(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("container connection string: %v", err)
 	}
-	return url
+	return url, ctr
 }
 
 func openStore(t *testing.T) *store.Store {

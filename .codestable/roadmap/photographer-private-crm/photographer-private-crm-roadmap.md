@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: photographer-private-crm
 status: active
 created: 2026-07-05
-last_reviewed: 2026-07-06
+last_reviewed: 2026-07-08
 tags: [crm, photographer, mvp, reminder, scheduling]
 related_requirements: [customer-profile]
 related_architecture: []
@@ -176,6 +176,11 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 - merge：source 必须 `status=active`；source 的 SocialIdentity / CustomerNote / Order / Reminder 全部改挂 target，source `status=merged` + `merged_into_customer_id`，不物理删除。**order / reminder 域晚于 merge 落地，其 feature 验收必须各自补"merge 迁移本域实体"用例**（契约随域生长，不静默失效）
 - 归档：`PATCH /customers/{id} {status:archived}`；归档客户不参与提醒扫描、不可被新订单引用（`409 customer_archived`）、默认列表隐藏（`?status` 缺省 active，可显式查 archived/all）
 
+**转介绍指针语义**（2026-07-07 拍板，随 customer-profile-complete 落地）：
+- merge 时其他客户 `referrer_customer_id` 指向 source 的，同事务批量重定向到 target；重定向后 target 的介绍人若变成自身则清空（介绍链跟人走，不指向 merged 壳）
+- 归档**不**清洗既有 referrer 指针——介绍关系是历史事实，与经营状态无关；「仅 `status=active` 客户可被选为介绍人」只约束新写入（建档与 PATCH），不回溯
+- `channel` 可 PATCH 修正：改为 `referral` 必须同请求携带 `referrer_customer_id`（否则 400）；从 `referral` 改为其他渠道时服务端自动清空 `referrer_customer_id`
+
 ### 4.3 各域资源 API
 
 **方向**：webapp → 各域　**形式**：HTTP API（总约定见 4.1，实体 shape 见 4.2，此处只列端点与特有字段）
@@ -321,7 +326,7 @@ GET /export → application/json（Content-Disposition 附件）
    - 所属模块：customer + webapp ｜ 依赖：platform-skeleton ｜ 状态：done ｜ 对应 feature：2026-07-07-customer-core
    - 备注：**最小闭环**；完成信号：新建到保存 ≤30 秒（计时演示，覆盖 2 个社交身份输入）；无社交身份创建返回 400；列表按 q/channel 过滤正确
 3. **customer-profile-complete** — 档案补全：建档后身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
-   - 所属模块：customer + webapp ｜ 依赖：customer-core ｜ 状态：planned ｜ 对应 feature：未启动
+   - 所属模块：customer + webapp ｜ 依赖：customer-core ｜ 状态：done ｜ 对应 feature：2026-07-07-customer-profile-complete
    - 备注：merge / 归档语义按 4.2；design 阶段按 merge、归档、notes、referral、渐进字段分片验收（防单片过大）；完成信号：合并后 source 状态 merged 且身份/备注归并；归档客户默认列表隐藏；任意含客户的页面 ≤2 步追加备注；落地后评估 req customer-profile draft→current
 4. **package-catalog** — 套系 CRUD 与归档：类型/定价方式/张数时长底片精修参数，归档后不出现在选择列表
    - 所属模块：package + webapp ｜ 依赖：platform-skeleton ｜ 状态：planned ｜ 对应 feature：未启动
@@ -398,6 +403,8 @@ GET /export → application/json（Content-Disposition 附件）
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
 
 ## 8. 变更日志
+
+- 2026-07-07（customer-profile-complete design 启动时拍板）：§4.2 补「转介绍指针语义」——merge 时 referrer 指向 source 的批量重定向 target（自指清空）；归档不清洗既有 referrer；介绍人候选仅 active（只约束新写入）；channel 可 PATCH 修正且与 referrer 联动（改为 referral 必带介绍人、改走 referral 自动清空）。承接 customer-core review 遗留 REV-006。
 
 - 2026-07-07：根据 owner review 调整 `customer-core` 建档契约：`POST /customers` 从单个 `identity` 改为 `identities[1..N]`，30 秒建档硬性要求至少 1 个社交身份、允许同次录入多个私域账号；无社交身份创建必须 400，不允许生成无身份客户；建档后的身份增删仍归 `customer-profile-complete`。
 

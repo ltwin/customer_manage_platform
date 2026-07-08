@@ -6,6 +6,9 @@ generate:
   models: true
   gin-server: true
 output-options:
+  # nullable-type: PATCH null 三态（未传/传值/传 null）由生成类型直接表达（design D9）。
+  nullable-type: true
   include-tags:
     - auth
     - customer-core
+    - customer-profile-complete

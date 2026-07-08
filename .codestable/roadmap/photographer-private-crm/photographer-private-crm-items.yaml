@@ -21,8 +21,8 @@ items:
   - slug: customer-profile-complete
     description: 档案补全：建档后社交身份增删、客户合并、归档、生日/手机/真名渐进字段、随手备注、转介绍关联
     depends_on: [customer-core]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-07-customer-profile-complete
     minimal_loop: false
     notes: merge/归档语义按 roadmap 4.2；design 阶段按 merge、归档、notes、referral、渐进字段分片验收；落地后评估 req customer-profile draft→current；含客户的页面 ≤2 步追加备注
 

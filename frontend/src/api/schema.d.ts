@@ -753,7 +753,7 @@ export interface operations {
                 "application/json": {
                     display_name: string;
                     channel: components["schemas"]["CustomerChannel"];
-                    /** @description channel=referral 时必填 */
+                    /** @description channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理 */
                     referrer_customer_id?: string;
                     identities: {
                         platform: components["schemas"]["SocialPlatform"];
@@ -816,13 +816,22 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description 不可清空（不接受 null） */
                     display_name?: string;
-                    real_name?: string;
-                    phone?: string;
-                    birthday?: components["schemas"]["Birthday"];
+                    /** @description 显式传 null 清空 */
+                    real_name?: string | null;
+                    /** @description 显式传 null 清空 */
+                    phone?: string | null;
+                    /** @description 显式传 null 清空 */
+                    birthday?: components["schemas"]["Birthday"] | null;
                     channel?: components["schemas"]["CustomerChannel"];
+                    /** @description channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理；不得为本客户自身（400） */
                     referrer_customer_id?: string;
-                    status?: components["schemas"]["CustomerStatus"];
+                    /**
+                     * @description merged 是 merge 端点专属终态，不可经 PATCH 设置
+                     * @enum {string}
+                     */
+                    status?: "active" | "archived";
                 };
             };
         };
@@ -839,6 +848,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -873,6 +891,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -897,6 +924,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读）| last_identity（非 merged 客户至少保留 1 个社交身份） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -929,6 +965,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -961,7 +1006,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description merge_conflict（source 非 active） */
+            /** @description merge_conflict（source 或 target 非 active） */
             409: {
                 headers: {
                     [name: string]: unknown;

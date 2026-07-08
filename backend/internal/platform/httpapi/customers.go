@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/oapi-codegen/nullable"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
@@ -123,6 +124,12 @@ func (h *handlers) abortCustomerError(c *gin.Context, err error) bool {
 		abortError(c, http.StatusBadRequest, CodeValidationFailed, customerMessage(err))
 	case errors.Is(err, customerdomain.ErrNotFound):
 		abortError(c, http.StatusNotFound, CodeNotFound, customerMessage(err))
+	case errors.Is(err, customerdomain.ErrCustomerMerged):
+		abortError(c, http.StatusConflict, CodeCustomerMerged, customerMessage(err))
+	case errors.Is(err, customerdomain.ErrLastIdentity):
+		abortError(c, http.StatusConflict, CodeLastIdentity, customerMessage(err))
+	case errors.Is(err, customerdomain.ErrMergeConflict):
+		abortError(c, http.StatusConflict, CodeMergeConflict, customerMessage(err))
 	default:
 		_ = c.Error(err)
 	}
@@ -206,7 +213,7 @@ func toAPICustomerListItem(item customerdomain.ListItem) CustomerListItem {
 		CreatedAt:            timePointer(item.CreatedAt),
 		DisplayName:          item.DisplayName,
 		Id:                   stringPointer(item.ID),
-		LastShotAt:           datePointer(item.LastShotAt),
+		LastShotAt:           nullableDate(item.LastShotAt),
 		MergedIntoCustomerId: item.MergedIntoCustomerID,
 		OrdersCount:          item.OrdersCount,
 		Phone:                item.Phone,
@@ -229,14 +236,19 @@ func toAPICustomerDetail(detail customerdomain.Detail) CustomerDetail {
 			Remark:     identity.Remark,
 		})
 	}
-	var referrer *CustomerSummary
+	notes := make([]CustomerNote, 0, len(detail.Notes))
+	for _, note := range detail.Notes {
+		notes = append(notes, toAPICustomerNote(note))
+	}
+	var referrer nullable.Nullable[CustomerSummary]
+	referrer.SetNull()
 	if detail.Referrer != nil {
-		referrer = &CustomerSummary{
+		referrer.Set(CustomerSummary{
 			Channel:     CustomerChannel(detail.Referrer.Channel),
 			DisplayName: detail.Referrer.DisplayName,
 			Id:          detail.Referrer.ID,
 			Status:      CustomerStatus(detail.Referrer.Status),
-		}
+		})
 	}
 	return CustomerDetail{
 		AccountId:            stringPointer(detail.AccountID),
@@ -247,13 +259,13 @@ func toAPICustomerDetail(detail customerdomain.Detail) CustomerDetail {
 		Id:                   stringPointer(detail.ID),
 		Identities:           identities,
 		MergedIntoCustomerId: detail.MergedIntoCustomerID,
-		Notes:                []CustomerNote{},
+		Notes:                notes,
 		Phone:                detail.Phone,
 		RealName:             detail.RealName,
 		Referrer:             referrer,
 		ReferrerCustomerId:   detail.ReferrerCustomerID,
 		Stats: CustomerStats{
-			LastShotAt:       datePointer(detail.Stats.LastShotAt),
+			LastShotAt:       nullableDate(detail.Stats.LastShotAt),
 			OrdersCount:      detail.Stats.OrdersCount,
 			TotalOrderAmount: detail.Stats.TotalOrderAmount,
 		},
@@ -263,6 +275,16 @@ func toAPICustomerDetail(detail customerdomain.Detail) CustomerDetail {
 
 func stringPointer(value string) *string {
 	return &value
+}
+
+func toAPICustomerNote(note customerdomain.CustomerNote) CustomerNote {
+	return CustomerNote{
+		AccountId:  stringPointer(note.AccountID),
+		Content:    note.Content,
+		CreatedAt:  timePointer(note.CreatedAt),
+		CustomerId: note.CustomerID,
+		Id:         stringPointer(note.ID),
+	}
 }
 
 func timePointer(value time.Time) *time.Time {
@@ -278,4 +300,14 @@ func datePointer(value *string) *openapi_types.Date {
 		return nil
 	}
 	return &openapi_types.Date{Time: parsed}
+}
+
+// nullableDate 把领域层的可空日期映射为契约的 required+nullable 字段（缺失即显式 null）。
+func nullableDate(value *string) nullable.Nullable[openapi_types.Date] {
+	var result nullable.Nullable[openapi_types.Date]
+	result.SetNull()
+	if parsed := datePointer(value); parsed != nil {
+		result.Set(*parsed)
+	}
+	return result
 }

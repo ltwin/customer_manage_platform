@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/oapi-codegen/nullable"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
@@ -122,6 +123,24 @@ func (e ListCustomersParamsStatus) Valid() bool {
 	}
 }
 
+// Defines values for UpdateCustomerJSONBodyStatus.
+const (
+	Active   UpdateCustomerJSONBodyStatus = "active"
+	Archived UpdateCustomerJSONBodyStatus = "archived"
+)
+
+// Valid indicates whether the value is a known member of the UpdateCustomerJSONBodyStatus enum.
+func (e UpdateCustomerJSONBodyStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Archived:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account 账号（摄影师）；永不含 password_hash
 type Account struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
@@ -169,10 +188,10 @@ type CustomerDetail struct {
 	MergedIntoCustomerId *string          `json:"merged_into_customer_id,omitempty"`
 
 	// Notes 倒序
-	Notes    []CustomerNote   `json:"notes"`
-	Phone    *string          `json:"phone,omitempty"`
-	RealName *string          `json:"real_name,omitempty"`
-	Referrer *CustomerSummary `json:"referrer"`
+	Notes    []CustomerNote                     `json:"notes"`
+	Phone    *string                            `json:"phone,omitempty"`
+	RealName *string                            `json:"real_name,omitempty"`
+	Referrer nullable.Nullable[CustomerSummary] `json:"referrer"`
 
 	// ReferrerCustomerId channel=referral 时必填
 	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
@@ -193,8 +212,8 @@ type CustomerListItem struct {
 	Id          *string         `json:"id,omitempty"`
 
 	// LastShotAt 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
-	LastShotAt           *openapi_types.Date `json:"last_shot_at"`
-	MergedIntoCustomerId *string             `json:"merged_into_customer_id,omitempty"`
+	LastShotAt           nullable.Nullable[openapi_types.Date] `json:"last_shot_at"`
+	MergedIntoCustomerId *string                               `json:"merged_into_customer_id,omitempty"`
 
 	// OrdersCount 非 cancelled 订单计数；order 域未落地前恒为 0
 	OrdersCount int     `json:"orders_count"`
@@ -219,7 +238,7 @@ type CustomerNote struct {
 // CustomerStats defines model for CustomerStats.
 type CustomerStats struct {
 	// LastShotAt 口径同 CustomerListItem.last_shot_at
-	LastShotAt *openapi_types.Date `json:"last_shot_at"`
+	LastShotAt nullable.Nullable[openapi_types.Date] `json:"last_shot_at"`
 
 	// OrdersCount 非 cancelled 订单计数；order 域未落地前恒为 0
 	OrdersCount int `json:"orders_count"`
@@ -315,8 +334,50 @@ type CreateCustomerJSONBody struct {
 		Remark   *string        `json:"remark,omitempty"`
 	} `json:"identities"`
 
-	// ReferrerCustomerId channel=referral 时必填
+	// ReferrerCustomerId channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理
 	ReferrerCustomerId *string `json:"referrer_customer_id,omitempty"`
+}
+
+// UpdateCustomerJSONBody defines parameters for UpdateCustomer.
+type UpdateCustomerJSONBody struct {
+	// Birthday 显式传 null 清空
+	Birthday nullable.Nullable[Birthday] `json:"birthday,omitempty"`
+	Channel  *CustomerChannel            `json:"channel,omitempty"`
+
+	// DisplayName 不可清空（不接受 null）
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// Phone 显式传 null 清空
+	Phone nullable.Nullable[string] `json:"phone,omitempty"`
+
+	// RealName 显式传 null 清空
+	RealName nullable.Nullable[string] `json:"real_name,omitempty"`
+
+	// ReferrerCustomerId channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理；不得为本客户自身（400）
+	ReferrerCustomerId *string `json:"referrer_customer_id,omitempty"`
+
+	// Status merged 是 merge 端点专属终态，不可经 PATCH 设置
+	Status *UpdateCustomerJSONBodyStatus `json:"status,omitempty"`
+}
+
+// UpdateCustomerJSONBodyStatus defines parameters for UpdateCustomer.
+type UpdateCustomerJSONBodyStatus string
+
+// AddCustomerIdentityJSONBody defines parameters for AddCustomerIdentity.
+type AddCustomerIdentityJSONBody struct {
+	Handle   string         `json:"handle"`
+	Platform SocialPlatform `json:"platform"`
+	Remark   *string        `json:"remark,omitempty"`
+}
+
+// MergeCustomerJSONBody defines parameters for MergeCustomer.
+type MergeCustomerJSONBody struct {
+	SourceCustomerId string `json:"source_customer_id"`
+}
+
+// AddCustomerNoteJSONBody defines parameters for AddCustomerNote.
+type AddCustomerNoteJSONBody struct {
+	Content string `json:"content"`
 }
 
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
@@ -324,6 +385,18 @@ type LoginJSONRequestBody LoginJSONBody
 
 // CreateCustomerJSONRequestBody defines body for CreateCustomer for application/json ContentType.
 type CreateCustomerJSONRequestBody CreateCustomerJSONBody
+
+// UpdateCustomerJSONRequestBody defines body for UpdateCustomer for application/json ContentType.
+type UpdateCustomerJSONRequestBody UpdateCustomerJSONBody
+
+// AddCustomerIdentityJSONRequestBody defines body for AddCustomerIdentity for application/json ContentType.
+type AddCustomerIdentityJSONRequestBody AddCustomerIdentityJSONBody
+
+// MergeCustomerJSONRequestBody defines body for MergeCustomer for application/json ContentType.
+type MergeCustomerJSONRequestBody MergeCustomerJSONBody
+
+// AddCustomerNoteJSONRequestBody defines body for AddCustomerNote for application/json ContentType.
+type AddCustomerNoteJSONRequestBody AddCustomerNoteJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -339,6 +412,21 @@ type ServerInterface interface {
 	// 客户详情（含 identities、notes 倒序、referrer 摘要）
 	// (GET /customers/{id})
 	GetCustomer(c *gin.Context, id Id)
+	// 渐进补全任意字段；{status:archived} 即归档（§4.2）
+	// (PATCH /customers/{id})
+	UpdateCustomer(c *gin.Context, id Id)
+	// 追加社交身份
+	// (POST /customers/{id}/identities)
+	AddCustomerIdentity(c *gin.Context, id Id)
+	// 删除社交身份
+	// (DELETE /customers/{id}/identities/{identity_id})
+	DeleteCustomerIdentity(c *gin.Context, id Id, identityId string)
+	// 把 source 客户 merge 进当前客户（语义见 §4.2）
+	// (POST /customers/{id}/merge)
+	MergeCustomer(c *gin.Context, id Id)
+	// 追加客户备注
+	// (POST /customers/{id}/notes)
+	AddCustomerNote(c *gin.Context, id Id)
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
@@ -469,6 +557,150 @@ func (siw *ServerInterfaceWrapper) GetCustomer(c *gin.Context) {
 	siw.Handler.GetCustomer(c, id)
 }
 
+// UpdateCustomer operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCustomer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateCustomer(c, id)
+}
+
+// AddCustomerIdentity operation middleware
+func (siw *ServerInterfaceWrapper) AddCustomerIdentity(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AddCustomerIdentity(c, id)
+}
+
+// DeleteCustomerIdentity operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCustomerIdentity(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "identity_id" -------------
+	var identityId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identity_id", c.Param("identity_id"), &identityId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter identity_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCustomerIdentity(c, id, identityId)
+}
+
+// MergeCustomer operation middleware
+func (siw *ServerInterfaceWrapper) MergeCustomer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MergeCustomer(c, id)
+}
+
+// AddCustomerNote operation middleware
+func (siw *ServerInterfaceWrapper) AddCustomerNote(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AddCustomerNote(c, id)
+}
+
 // GetMe operation middleware
 func (siw *ServerInterfaceWrapper) GetMe(c *gin.Context) {
 
@@ -515,5 +747,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
 	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)
+	router.PATCH(options.BaseURL+"/customers/:id", wrapper.UpdateCustomer)
+	router.POST(options.BaseURL+"/customers/:id/identities", wrapper.AddCustomerIdentity)
+	router.DELETE(options.BaseURL+"/customers/:id/identities/:identity_id", wrapper.DeleteCustomerIdentity)
+	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)
+	router.POST(options.BaseURL+"/customers/:id/notes", wrapper.AddCustomerNote)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
 }

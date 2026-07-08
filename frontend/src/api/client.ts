@@ -13,6 +13,17 @@ export type CreateCustomerBody =
   paths['/customers']['post']['requestBody']['content']['application/json']
 export type Customer =
   paths['/customers']['post']['responses']['201']['content']['application/json']
+export type UpdateCustomerBody =
+  paths['/customers/{id}']['patch']['requestBody']['content']['application/json']
+export type AddIdentityBody =
+  paths['/customers/{id}/identities']['post']['requestBody']['content']['application/json']
+export type SocialIdentity =
+  paths['/customers/{id}/identities']['post']['responses']['201']['content']['application/json']
+export type CustomerNote =
+  paths['/customers/{id}/notes']['post']['responses']['201']['content']['application/json']
+export type CustomerListStatus = NonNullable<
+  paths['/customers']['get']['parameters']['query']
+>['status']
 
 type ErrorEnvelope = { error: { code: string; message: string } }
 
@@ -48,6 +59,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(res.status, code, envelope?.error.message ?? `请求失败（${res.status}）`)
   }
+  if (res.status === 204) {
+    return undefined as T
+  }
   return (await res.json()) as T
 }
 
@@ -65,12 +79,14 @@ export function fetchMe(): Promise<Me> {
 export function listCustomers(params: {
   q?: string
   channel?: string
+  status?: CustomerListStatus
   page?: number
   pageSize?: number
 } = {}): Promise<CustomerListResponse> {
   const search = new URLSearchParams()
   if (params.q) search.set('q', params.q)
   if (params.channel) search.set('channel', params.channel)
+  if (params.status) search.set('status', params.status)
   if (params.page) search.set('page', String(params.page))
   if (params.pageSize) search.set('page_size', String(params.pageSize))
   const suffix = search.toString() ? `?${search.toString()}` : ''
@@ -86,4 +102,39 @@ export function createCustomer(body: CreateCustomerBody): Promise<Customer> {
 
 export function fetchCustomer(id: string): Promise<CustomerDetail> {
   return request<CustomerDetail>(`/customers/${encodeURIComponent(id)}`)
+}
+
+export function updateCustomer(id: string, body: UpdateCustomerBody): Promise<Customer> {
+  return request<Customer>(`/customers/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function addCustomerIdentity(id: string, body: AddIdentityBody): Promise<SocialIdentity> {
+  return request<SocialIdentity>(`/customers/${encodeURIComponent(id)}/identities`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteCustomerIdentity(id: string, identityId: string): Promise<void> {
+  return request<void>(
+    `/customers/${encodeURIComponent(id)}/identities/${encodeURIComponent(identityId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+export function addCustomerNote(id: string, content: string): Promise<CustomerNote> {
+  return request<CustomerNote>(`/customers/${encodeURIComponent(id)}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+}
+
+export function mergeCustomer(id: string, sourceCustomerId: string): Promise<Customer> {
+  return request<Customer>(`/customers/${encodeURIComponent(id)}/merge`, {
+    method: 'POST',
+    body: JSON.stringify({ source_customer_id: sourceCustomerId }),
+  })
 }

@@ -20,6 +20,8 @@ tags:
     description: 登录与当前账号（platform-skeleton 已实现）
   - name: customer-core
     description: 后端 codegen 切片标签（customer-core 已实现的客户三操作）
+  - name: customer-profile-complete
+    description: 后端 codegen 切片标签（customer-profile-complete 的档案五操作）
   - name: customers
     description: 客户域（customer-core / customer-profile-complete）
   - name: packages
@@ -108,7 +110,7 @@ paths:
                   $ref: "#/components/schemas/CustomerChannel"
                 referrer_customer_id:
                   type: string
-                  description: channel=referral 时必填
+                  description: channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理
                 identities:
                   type: array
                   minItems: 1
@@ -201,7 +203,7 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
     patch:
-      tags: [customers]
+      tags: [customers, customer-profile-complete]
       operationId: updateCustomer
       summary: 渐进补全任意字段；{status:archived} 即归档（§4.2）
       parameters:
@@ -215,18 +217,29 @@ paths:
               properties:
                 display_name:
                   type: string
+                  description: 不可清空（不接受 null）
                 real_name:
                   type: string
+                  nullable: true
+                  description: 显式传 null 清空
                 phone:
                   type: string
+                  nullable: true
+                  description: 显式传 null 清空
                 birthday:
-                  $ref: "#/components/schemas/Birthday"
+                  nullable: true
+                  allOf:
+                    - $ref: "#/components/schemas/Birthday"
+                  description: 显式传 null 清空
                 channel:
                   $ref: "#/components/schemas/CustomerChannel"
                 referrer_customer_id:
                   type: string
+                  description: channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理；不得为本客户自身（400）
                 status:
-                  $ref: "#/components/schemas/CustomerStatus"
+                  type: string
+                  enum: [active, archived]
+                  description: merged 是 merge 端点专属终态，不可经 PATCH 设置
       responses:
         "200":
           description: 更新后的客户
@@ -240,12 +253,18 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: customer_merged（merged 客户档案只读）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/Internal"
 
   /customers/{id}/identities:
     post:
-      tags: [customers]
+      tags: [customers, customer-profile-complete]
       operationId: addCustomerIdentity
       summary: 追加社交身份
       parameters:
@@ -277,12 +296,18 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: customer_merged（merged 客户档案只读）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/Internal"
 
   /customers/{id}/identities/{identity_id}:
     delete:
-      tags: [customers]
+      tags: [customers, customer-profile-complete]
       operationId: deleteCustomerIdentity
       summary: 删除社交身份
       parameters:
@@ -299,12 +324,18 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: customer_merged（merged 客户档案只读）| last_identity（非 merged 客户至少保留 1 个社交身份）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/Internal"
 
   /customers/{id}/notes:
     post:
-      tags: [customers]
+      tags: [customers, customer-profile-complete]
       operationId: addCustomerNote
       summary: 追加客户备注
       parameters:
@@ -333,12 +364,18 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: customer_merged（merged 客户档案只读）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/Internal"
 
   /customers/{id}/merge:
     post:
-      tags: [customers]
+      tags: [customers, customer-profile-complete]
       operationId: mergeCustomer
       summary: 把 source 客户 merge 进当前客户（语义见 §4.2）
       parameters:
@@ -367,7 +404,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: merge_conflict（source 非 active）
+          description: merge_conflict（source 或 target 非 active）
           content:
             application/json:
               schema:

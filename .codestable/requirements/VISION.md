@@ -4,11 +4,11 @@
 
 ## draft（愿景已定，尚未实现）
 
-- **[customer-profile](customer-profile.md)** — 把散落在微信、QQ、Telegram 里的客户收进一份 30 秒建好的档案，谁介绍的、哪个平台来的，从此有迹可循
+（暂无）
 
 ## current（系统正在满足）
 
-（暂无）
+- **[customer-profile](customer-profile.md)** — 把散落在微信、QQ、Telegram 里的客户收进一份 30 秒建好的档案，谁介绍的、哪个平台来的，从此有迹可循
 
 ## outdated（已移除或不再维护）
 

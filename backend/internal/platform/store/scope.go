@@ -135,6 +135,24 @@ func (sc AccountScope) QueryRow(ctx context.Context, table, columns, cond string
 	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
 }
 
+// QueryRowForUpdate 同 QueryRow，但对命中行加 FOR UPDATE 行锁：
+// 供「先锁父行、再查数改写」的同事务不变量守护使用（如客户末位身份守护），
+// 只应在 WithinTx 内调用，锁随事务结束释放。
+func (sc AccountScope) QueryRowForUpdate(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	if sc.accountID == "" {
+		return errRow{err: ErrEmptyAccountScope}
+	}
+	if err := validateIdents(table, strings.Split(columns, ",")...); err != nil {
+		return errRow{err: err}
+	}
+	sql := fmt.Sprintf(`SELECT %s FROM %s WHERE account_id = $1`, columns, table)
+	if cond != "" {
+		sql += " AND (" + cond + ")"
+	}
+	sql += " FOR UPDATE"
+	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
+}
+
 // QueryPage 查询业务表并在数据库侧完成排序与分页（review REV-001）：
 // orderBy 必须是编译期常量的列名标识符序列（如 "created_at DESC, id DESC" 由
 // 调用方拆成 [{col, desc}]），limit / offset 走占位符参数，

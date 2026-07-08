@@ -63,6 +63,14 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.GET("/customers", h.listCustomersRoute)
 	protected.POST("/customers", h.CreateCustomer)
 	protected.GET("/customers/:id", h.getCustomerRoute)
+	// customer-profile-complete：档案五操作
+	protected.PATCH("/customers/:id", func(c *gin.Context) { h.UpdateCustomer(c, c.Param("id")) })
+	protected.POST("/customers/:id/identities", func(c *gin.Context) { h.AddCustomerIdentity(c, c.Param("id")) })
+	protected.DELETE("/customers/:id/identities/:identity_id", func(c *gin.Context) {
+		h.DeleteCustomerIdentity(c, c.Param("id"), c.Param("identity_id"))
+	})
+	protected.POST("/customers/:id/notes", func(c *gin.Context) { h.AddCustomerNote(c, c.Param("id")) })
+	protected.POST("/customers/:id/merge", func(c *gin.Context) { h.MergeCustomer(c, c.Param("id")) })
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）

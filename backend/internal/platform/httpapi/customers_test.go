@@ -134,7 +134,7 @@ func TestCustomerAPIRoundtrip(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
 		t.Fatalf("decode list: %v", err)
 	}
-	if list.Total != 1 || len(list.Items) != 1 || list.Items[0].OrdersCount != 0 || list.Items[0].LastShotAt != nil {
+	if list.Total != 1 || len(list.Items) != 1 || list.Items[0].OrdersCount != 0 || !list.Items[0].LastShotAt.IsNull() {
 		t.Fatalf("list aggregate shape mismatch: %+v", list)
 	}
 
@@ -146,10 +146,10 @@ func TestCustomerAPIRoundtrip(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
 		t.Fatalf("decode detail: %v", err)
 	}
-	if len(detail.Identities) != 2 || len(detail.Notes) != 0 || detail.Referrer != nil {
+	if len(detail.Identities) != 2 || len(detail.Notes) != 0 || !detail.Referrer.IsNull() {
 		t.Fatalf("detail relation shape mismatch: %+v", detail)
 	}
-	if detail.Stats.OrdersCount != 0 || detail.Stats.TotalOrderAmount != 0 || detail.Stats.LastShotAt != nil {
+	if detail.Stats.OrdersCount != 0 || detail.Stats.TotalOrderAmount != 0 || !detail.Stats.LastShotAt.IsNull() {
 		t.Fatalf("detail stats should be zero shape, got %+v", detail.Stats)
 	}
 }

@@ -72,13 +72,13 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 	r.POST("/api/v1/probe", func(c *gin.Context) {})
 
 	cases := []struct{ method, path string }{
-		{http.MethodPatch, "/api/v1/customers/cus_1"}, // 本轮不做的档案补全端点
-		{http.MethodGet, "/api/v1/no-such"},           // 未注册路径
-		{http.MethodGet, "/api/v1/probe"},             // 方法不匹配
-		{http.MethodDelete, "/api/v1/probe/xx"},       // 未注册子路径
-		{http.MethodGet, "/api/v1/me/"},               // Gin 尾斜杠不应自动 301 绕过封套
-		{http.MethodGet, "/api"},                      // API 前缀本身也不落入 SPA fallback
-		{http.MethodGet, "//api/v1/me"},               // 双斜杠 API 路径不落入 SPA fallback
+		{http.MethodPost, "/api/v1/packages"},   // 未实现域端点（package-catalog）
+		{http.MethodGet, "/api/v1/no-such"},     // 未注册路径
+		{http.MethodGet, "/api/v1/probe"},       // 方法不匹配
+		{http.MethodDelete, "/api/v1/probe/xx"}, // 未注册子路径
+		{http.MethodGet, "/api/v1/me/"},         // Gin 尾斜杠不应自动 301 绕过封套
+		{http.MethodGet, "/api"},                // API 前缀本身也不落入 SPA fallback
+		{http.MethodGet, "//api/v1/me"},         // 双斜杠 API 路径不落入 SPA fallback
 	}
 	for _, tc := range cases {
 		rec := doRequest(t, r, tc.method, tc.path)
