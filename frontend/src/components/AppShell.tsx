@@ -6,6 +6,7 @@ import type { ShellContext } from './shellContext'
 const navItems = [
   { key: 'dashboard', label: '仪表盘', to: '/dashboard', icon: DashboardIcon },
   { key: 'customers', label: '客户', to: '/customers', icon: CustomersIcon },
+  { key: 'orders', label: '订单', to: '/orders', icon: OrdersIcon },
   { key: 'calendar', label: '档期', to: '/calendar', icon: CalendarIcon },
   { key: 'packages', label: '套系', to: '/packages', icon: PackageIcon },
 ]
@@ -129,6 +130,15 @@ function CalendarIcon() {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3.5" y="5" width="17" height="16" rx="2" />
       <path d="M3.5 10h17M8 3v4M16 3v4" />
+    </svg>
+  )
+}
+
+function OrdersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 4h10a2 2 0 0 1 2 2v14l-3-1.8L12 20l-4-1.8L5 20V6a2 2 0 0 1 2-2z" />
+      <path d="M8.5 8h7M8.5 12h7M8.5 16H13" />
     </svg>
   )
 }

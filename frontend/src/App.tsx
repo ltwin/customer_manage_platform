@@ -7,6 +7,7 @@ import CustomerDetailPage from './pages/CustomerDetailPage'
 import CustomerNewPage from './pages/CustomerNewPage'
 import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
+import OrdersPage from './pages/OrdersPage'
 import PackagesPage from './pages/PackagesPage'
 import { getToken } from './auth/token'
 
@@ -35,6 +36,7 @@ export default function App() {
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/new" element={<CustomerNewPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
+        <Route path="/orders" element={<OrdersPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/packages" element={<PackagesPage />} />
       </Route>

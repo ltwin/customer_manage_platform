@@ -35,6 +35,18 @@ export type UpdatePackageBody =
 export type PackageListStatus = NonNullable<
   paths['/packages']['get']['parameters']['query']
 >['status']
+export type OrderListResponse =
+  paths['/orders']['get']['responses']['200']['content']['application/json']
+export type OrderListItem = OrderListResponse['items'][number]
+export type CreateOrderBody =
+  paths['/orders']['post']['requestBody']['content']['application/json']
+export type Order =
+  paths['/orders']['post']['responses']['201']['content']['application/json']
+export type UpdateOrderBody =
+  paths['/orders/{id}']['patch']['requestBody']['content']['application/json']
+export type OrderStatus = NonNullable<
+  paths['/orders']['get']['parameters']['query']
+>['status']
 
 type ErrorEnvelope = { error: { code: string; message: string } }
 
@@ -179,4 +191,39 @@ export function updatePackage(id: string, body: UpdatePackageBody): Promise<Pack
 
 export function deletePackage(id: string): Promise<void> {
   return request<void>(`/packages/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function listOrders(params: {
+  customerId?: string
+  status?: OrderStatus
+  unpaidBalance?: boolean
+  page?: number
+  pageSize?: number
+} = {}): Promise<OrderListResponse> {
+  const search = new URLSearchParams()
+  if (params.customerId) search.set('customer_id', params.customerId)
+  if (params.status) search.set('status', params.status)
+  if (params.unpaidBalance) search.set('unpaid_balance', 'true')
+  if (params.page) search.set('page', String(params.page))
+  if (params.pageSize) search.set('page_size', String(params.pageSize))
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return request<OrderListResponse>(`/orders${suffix}`)
+}
+
+export function createOrder(body: CreateOrderBody): Promise<Order> {
+  return request<Order>('/orders', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateOrder(id: string, body: UpdateOrderBody): Promise<Order> {
+  return request<Order>(`/orders/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteOrder(id: string): Promise<void> {
+  return request<void>(`/orders/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

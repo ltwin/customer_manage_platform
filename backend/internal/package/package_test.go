@@ -285,35 +285,35 @@ func TestUpdateStatusAndDeleteIsolation(t *testing.T) {
 
 func TestDeletePackageInUseWhenOrdersTableExists(t *testing.T) {
 	ctx := context.Background()
-	s, ctr := openStore(t)
+	s, _ := openStore(t)
 	scope := createAccount(t, s, "acct-a")
 	svc := packageService()
-
-	execSQL := func(statement string) {
-		code, output, err := ctr.Exec(ctx, []string{"psql", "-U", "crm_test", "-d", "crm_test", "-c", statement})
-		if err != nil || code != 0 {
-			t.Fatalf("exec %q: code=%d err=%v output=%v", statement, code, err, output)
-		}
-	}
-	execSQL(`CREATE TABLE orders (
-		id TEXT PRIMARY KEY,
-		account_id TEXT NOT NULL REFERENCES accounts (id),
-		package_id TEXT NOT NULL,
-		status TEXT NOT NULL,
-		FOREIGN KEY (account_id, package_id) REFERENCES packages (account_id, id)
-	)`)
+	seedCustomer(t, scope, "cus_order")
 
 	for _, tc := range []struct {
-		name   string
-		status string
+		name          string
+		status        string
+		wantListCount int
 	}{
-		{name: "scheduled order", status: "scheduled"},
-		{name: "cancelled order", status: "cancelled"},
+		{name: "scheduled order", status: "scheduled", wantListCount: 1},
+		{name: "cancelled order", status: "cancelled", wantListCount: 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			created := createPackage(t, svc, scope, tc.name)
-			if err := scope.Insert(ctx, "orders", []string{"id", "package_id", "status"}, "ord_"+tc.status, created.ID, tc.status); err != nil {
-				t.Fatalf("seed order reference: %v", err)
+			seedOrder(t, scope, seedOrderInput{
+				ID:         "ord_" + tc.status,
+				CustomerID: "cus_order",
+				PackageID:  created.ID,
+				Status:     tc.status,
+			})
+
+			list, err := svc.List(ctx, scope, pkgcatalog.ListFilter{Status: pkgcatalog.StatusAll})
+			if err != nil {
+				t.Fatalf("list packages: %v", err)
+			}
+			item := findPackageItem(t, list, created.ID)
+			if item.OrdersCount != tc.wantListCount {
+				t.Fatalf("list orders_count = %d, want %d", item.OrdersCount, tc.wantListCount)
 			}
 
 			if err := svc.Delete(ctx, scope, created.ID); !errors.Is(err, pkgcatalog.ErrPackageInUse) {
@@ -321,6 +321,17 @@ func TestDeletePackageInUseWhenOrdersTableExists(t *testing.T) {
 			}
 		})
 	}
+}
+
+func findPackageItem(t *testing.T, result pkgcatalog.ListResult, id string) pkgcatalog.ListItem {
+	t.Helper()
+	for _, item := range result.Items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("package %s not found in %+v", id, result)
+	return pkgcatalog.ListItem{}
 }
 
 func createPackage(t *testing.T, svc *pkgcatalog.Service, scope store.AccountScope, name string) pkgcatalog.Package {
@@ -356,6 +367,33 @@ func seedPackage(t *testing.T, scope store.AccountScope, input seedPackageInput)
 		input.ID, input.Name, pkgcatalog.ShootTypePortrait, pkgcatalog.PricingModeFixed, 10000, input.Status, input.CreatedAt,
 	); err != nil {
 		t.Fatalf("seed package %s: %v", input.ID, err)
+	}
+}
+
+func seedCustomer(t *testing.T, scope store.AccountScope, id string) {
+	t.Helper()
+	if err := scope.Insert(context.Background(), "customers",
+		[]string{"id", "display_name", "channel", "status"},
+		id, "订单客户", "other", "active",
+	); err != nil {
+		t.Fatalf("seed customer %s: %v", id, err)
+	}
+}
+
+type seedOrderInput struct {
+	ID         string
+	CustomerID string
+	PackageID  string
+	Status     string
+}
+
+func seedOrder(t *testing.T, scope store.AccountScope, input seedOrderInput) {
+	t.Helper()
+	if err := scope.Insert(context.Background(), "orders",
+		[]string{"id", "customer_id", "package_id", "status"},
+		input.ID, input.CustomerID, input.PackageID, input.Status,
+	); err != nil {
+		t.Fatalf("seed order %s: %v", input.ID, err)
 	}
 }
 

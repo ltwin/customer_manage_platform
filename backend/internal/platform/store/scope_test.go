@@ -2,8 +2,10 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -276,5 +278,83 @@ func TestAccountScopeRejectsEmptyAccount(t *testing.T) {
 	}
 	if err := sc.QueryRow(context.Background(), "probe_items", "note", "").Scan(new(string)); !errors.Is(err, store.ErrEmptyAccountScope) {
 		t.Fatalf("want ErrEmptyAccountScope, got: %v", err)
+	}
+}
+
+func TestAccountScopeScalarAggregate(t *testing.T) {
+	url := startPostgres(t)
+	s := openMigrated(t, url)
+	if err := store.MigrateProbeUpForTest(url); err != nil {
+		t.Fatalf("migrate probe table: %v", err)
+	}
+	ctx := context.Background()
+
+	for _, id := range []string{"acct-a", "acct-b"} {
+		if err := s.CreateAccount(ctx, id, "test-hash"); err != nil {
+			t.Fatalf("create account %s: %v", id, err)
+		}
+	}
+	scopeA := s.ScopeFor(auth.AccountContext{AccountID: "acct-a"})
+	scopeB := s.ScopeFor(auth.AccountContext{AccountID: "acct-b"})
+	createdOld := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)
+	createdNew := time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC)
+
+	if err := scopeA.Insert(ctx, "probe_items", []string{"id", "note", "score", "created_at"}, "p-a1", "A-one", 7, createdOld); err != nil {
+		t.Fatalf("insert A item 1: %v", err)
+	}
+	if err := scopeA.Insert(ctx, "probe_items", []string{"id", "note", "score", "created_at"}, "p-a2", "A-two", 3, createdNew); err != nil {
+		t.Fatalf("insert A item 2: %v", err)
+	}
+	if err := scopeB.Insert(ctx, "probe_items", []string{"id", "note", "score", "created_at"}, "p-b1", "B-one", 100, createdNew.Add(24*time.Hour)); err != nil {
+		t.Fatalf("insert B item: %v", err)
+	}
+
+	var count int64
+	if err := scopeA.ScalarAggregate(ctx, "probe_items", store.AggregateCount, "id", "").Scan(&count); err != nil {
+		t.Fatalf("count A: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("count A = %d, want 2", count)
+	}
+	if err := scopeB.ScalarAggregate(ctx, "probe_items", store.AggregateCount, "id", "").Scan(&count); err != nil {
+		t.Fatalf("count B: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count B = %d, want 1", count)
+	}
+
+	var sum int64
+	if err := scopeA.ScalarAggregate(ctx, "probe_items", store.AggregateSum, "score", "").Scan(&sum); err != nil {
+		t.Fatalf("sum A: %v", err)
+	}
+	if sum != 10 {
+		t.Fatalf("sum A = %d, want 10", sum)
+	}
+	if err := scopeA.ScalarAggregate(ctx, "probe_items", store.AggregateSum, "score", "note = $2", "missing").Scan(&sum); err != nil {
+		t.Fatalf("empty sum A: %v", err)
+	}
+	if sum != 0 {
+		t.Fatalf("empty sum A = %d, want 0", sum)
+	}
+
+	var maxCreated sql.NullTime
+	if err := scopeA.ScalarAggregate(ctx, "probe_items", store.AggregateMax, "created_at", "").Scan(&maxCreated); err != nil {
+		t.Fatalf("max A: %v", err)
+	}
+	if !maxCreated.Valid || !maxCreated.Time.Equal(createdNew) {
+		t.Fatalf("max A = %+v, want %v", maxCreated, createdNew)
+	}
+	if err := scopeA.ScalarAggregate(ctx, "probe_items", store.AggregateMax, "created_at", "note = $2", "missing").Scan(&maxCreated); err != nil {
+		t.Fatalf("empty max A: %v", err)
+	}
+	if maxCreated.Valid {
+		t.Fatalf("empty max should be NULL, got %+v", maxCreated)
+	}
+
+	if err := scopeA.ScalarAggregate(ctx, "probe_items", "avg", "score", "").Scan(&sum); err == nil {
+		t.Fatal("invalid aggregate op should fail")
+	}
+	if err := scopeA.ScalarAggregate(ctx, "probe_items", store.AggregateSum, "score + 1", "").Scan(&sum); err == nil {
+		t.Fatal("invalid aggregate column should fail")
 	}
 }

@@ -66,6 +66,42 @@ func (e CustomerStatus) Valid() bool {
 	}
 }
 
+// Defines values for OrderStatus.
+const (
+	Cancelled  OrderStatus = "cancelled"
+	Closed     OrderStatus = "closed"
+	Consulting OrderStatus = "consulting"
+	Delivered  OrderStatus = "delivered"
+	Retouching OrderStatus = "retouching"
+	Scheduled  OrderStatus = "scheduled"
+	Selected   OrderStatus = "selected"
+	Shot       OrderStatus = "shot"
+)
+
+// Valid indicates whether the value is a known member of the OrderStatus enum.
+func (e OrderStatus) Valid() bool {
+	switch e {
+	case Cancelled:
+		return true
+	case Closed:
+		return true
+	case Consulting:
+		return true
+	case Delivered:
+		return true
+	case Retouching:
+		return true
+	case Scheduled:
+		return true
+	case Selected:
+		return true
+	case Shot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PackageStatus.
 const (
 	PackageStatusActive   PackageStatus = "active"
@@ -347,6 +383,67 @@ type ErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// Order defines model for Order.
+type Order struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId   *string    `json:"account_id,omitempty"`
+	BalancePaid bool       `json:"balance_paid"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	CustomerId  string     `json:"customer_id"`
+
+	// DeliveredAt 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid bool       `json:"deposit_paid"`
+	Id          *string    `json:"id,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+	PackageId   *string    `json:"package_id,omitempty"`
+
+	// Price 分
+	Price *int `json:"price,omitempty"`
+
+	// ShotAt 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status 语义与合法跃迁见 §4.2 订单状态机
+	Status OrderStatus `json:"status"`
+	Title  *string     `json:"title,omitempty"`
+}
+
+// OrderListItem defines model for OrderListItem.
+type OrderListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId   *string    `json:"account_id,omitempty"`
+	BalancePaid bool       `json:"balance_paid"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+
+	// CustomerDisplayName 引用客户的 display_name（列表可读性摘要，§4.3 2026-07-09 update）
+	CustomerDisplayName string `json:"customer_display_name"`
+	CustomerId          string `json:"customer_id"`
+
+	// DeliveredAt 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid bool       `json:"deposit_paid"`
+	Id          *string    `json:"id,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+	PackageId   *string    `json:"package_id,omitempty"`
+
+	// PackageName 引用套系的 name；未引用套系时缺省
+	PackageName *string `json:"package_name,omitempty"`
+
+	// Price 分
+	Price *int `json:"price,omitempty"`
+
+	// ShotAt 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status 语义与合法跃迁见 §4.2 订单状态机
+	Status OrderStatus `json:"status"`
+	Title  *string     `json:"title,omitempty"`
+}
+
+// OrderStatus 语义与合法跃迁见 §4.2 订单状态机
+type OrderStatus string
+
 // Package defines model for Package.
 type Package struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
@@ -536,6 +633,55 @@ type AddCustomerNoteJSONBody struct {
 	Content string `json:"content"`
 }
 
+// ListOrdersParams defines parameters for ListOrders.
+type ListOrdersParams struct {
+	CustomerId *string      `form:"customer_id,omitempty" json:"customer_id,omitempty"`
+	Status     *OrderStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// UnpaidBalance true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径）
+	UnpaidBalance *bool     `form:"unpaid_balance,omitempty" json:"unpaid_balance,omitempty"`
+	Page          *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize      *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// CreateOrderJSONBody defines parameters for CreateOrder.
+type CreateOrderJSONBody struct {
+	BalancePaid *bool  `json:"balance_paid,omitempty"`
+	CustomerId  string `json:"customer_id"`
+
+	// DeliveredAt 补录用；仅目标状态已到达 delivered 时可给
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid *bool      `json:"deposit_paid,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+	PackageId   *string    `json:"package_id,omitempty"`
+
+	// Price 分
+	Price *int `json:"price,omitempty"`
+
+	// ShotAt 补录用；仅目标状态已到达 shot 时可给
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status 补录直达目标状态；≥shot 须显式给 shot_at、≥delivered（含 closed）须显式给 delivered_at，closed 须 balance_paid=true（§4.2 不变量）
+	Status *OrderStatus `json:"status,omitempty"`
+	Title  *string      `json:"title,omitempty"`
+}
+
+// UpdateOrderJSONBody defines parameters for UpdateOrder.
+type UpdateOrderJSONBody struct {
+	BalancePaid *bool      `json:"balance_paid,omitempty"`
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid *bool      `json:"deposit_paid,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+
+	// Price 分
+	Price  *int       `json:"price,omitempty"`
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status 语义与合法跃迁见 §4.2 订单状态机
+	Status *OrderStatus `json:"status,omitempty"`
+	Title  *string      `json:"title,omitempty"`
+}
+
 // ListPackagesParams defines parameters for ListPackages.
 type ListPackagesParams struct {
 	// Status 缺省 active；可显式查 archived/all（§4.3 套系上架/下架语义）
@@ -583,6 +729,12 @@ type MergeCustomerJSONRequestBody MergeCustomerJSONBody
 // AddCustomerNoteJSONRequestBody defines body for AddCustomerNote for application/json ContentType.
 type AddCustomerNoteJSONRequestBody AddCustomerNoteJSONBody
 
+// CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
+type CreateOrderJSONRequestBody CreateOrderJSONBody
+
+// UpdateOrderJSONRequestBody defines body for UpdateOrder for application/json ContentType.
+type UpdateOrderJSONRequestBody UpdateOrderJSONBody
+
 // CreatePackageJSONRequestBody defines body for CreatePackage for application/json ContentType.
 type CreatePackageJSONRequestBody = PackageInput
 
@@ -621,6 +773,18 @@ type ServerInterface interface {
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
+	// 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3）
+	// (GET /orders)
+	ListOrders(c *gin.Context, params ListOrdersParams)
+	// 新建订单（status 缺省 consulting；带 status 为补录直达，规则见 §4.3 2026-07-09）
+	// (POST /orders)
+	CreateOrder(c *gin.Context)
+	// 物理删除终态订单（closed/cancelled，§4.3 2026-07-09）
+	// (DELETE /orders/{id})
+	DeleteOrder(c *gin.Context, id Id)
+	// 状态跃迁与字段修正（状态机语义见 §4.2）
+	// (PATCH /orders/{id})
+	UpdateOrder(c *gin.Context, id Id)
 	// 套系列表（?status=active 供下单选择）
 	// (GET /packages)
 	ListPackages(c *gin.Context, params ListPackagesParams)
@@ -919,6 +1083,136 @@ func (siw *ServerInterfaceWrapper) GetMe(c *gin.Context) {
 	siw.Handler.GetMe(c)
 }
 
+// ListOrders operation middleware
+func (siw *ServerInterfaceWrapper) ListOrders(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOrdersParams
+
+	// ------------- Optional query parameter "customer_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "customer_id", c.Request.URL.Query(), &params.CustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter customer_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "unpaid_balance" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "unpaid_balance", c.Request.URL.Query(), &params.UnpaidBalance, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter unpaid_balance: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListOrders(c, params)
+}
+
+// CreateOrder operation middleware
+func (siw *ServerInterfaceWrapper) CreateOrder(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateOrder(c)
+}
+
+// DeleteOrder operation middleware
+func (siw *ServerInterfaceWrapper) DeleteOrder(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteOrder(c, id)
+}
+
+// UpdateOrder operation middleware
+func (siw *ServerInterfaceWrapper) UpdateOrder(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateOrder(c, id)
+}
+
 // ListPackages operation middleware
 func (siw *ServerInterfaceWrapper) ListPackages(c *gin.Context) {
 
@@ -1070,6 +1364,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)
 	router.POST(options.BaseURL+"/customers/:id/notes", wrapper.AddCustomerNote)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
+	router.GET(options.BaseURL+"/orders", wrapper.ListOrders)
+	router.POST(options.BaseURL+"/orders", wrapper.CreateOrder)
+	router.DELETE(options.BaseURL+"/orders/:id", wrapper.DeleteOrder)
+	router.PATCH(options.BaseURL+"/orders/:id", wrapper.UpdateOrder)
 	router.GET(options.BaseURL+"/packages", wrapper.ListPackages)
 	router.POST(options.BaseURL+"/packages", wrapper.CreatePackage)
 	router.DELETE(options.BaseURL+"/packages/:id", wrapper.DeletePackage)

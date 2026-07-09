@@ -15,6 +15,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
@@ -79,6 +80,7 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		ScopeFactory: s,
 		Auth:         auth.NewService(s, tokens),
 		Customer:     customerdomain.NewService(customerdomain.NewPostgresRepository()),
+		Orders:       orderdomain.NewService(orderdomain.NewPostgresRepository()),
 		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
 	})
 	return router, s, tokens, ctr

@@ -338,6 +338,71 @@ func TestListPaginationStableAcrossPages(t *testing.T) {
 	}
 }
 
+func TestOrderAggregatesAndMergeMigration(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t)
+	scope := createAccount(t, s, "acct-a")
+	svc := customerService()
+
+	target, err := svc.Create(ctx, scope, customer.CreateInput{
+		DisplayName: "目标客户",
+		Channel:     customer.ChannelOther,
+		Identities:  []customer.IdentityInput{{Platform: customer.PlatformWechat, Handle: "target"}},
+	})
+	if err != nil {
+		t.Fatalf("create target: %v", err)
+	}
+	source, err := svc.Create(ctx, scope, customer.CreateInput{
+		DisplayName: "源客户",
+		Channel:     customer.ChannelOther,
+		Identities:  []customer.IdentityInput{{Platform: customer.PlatformWechat, Handle: "source"}},
+	})
+	if err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+
+	shotEarly := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	shotShanghaiNextDay := time.Date(2026, 7, 1, 18, 0, 0, 0, time.UTC)
+	cancelledShot := time.Date(2026, 7, 5, 8, 0, 0, 0, time.UTC)
+	seedOrder(t, scope, seedOrderInput{ID: "ord_paid", CustomerID: source.ID, Status: "delivered", Price: intPtr(68000), ShotAt: &shotEarly})
+	seedOrder(t, scope, seedOrderInput{ID: "ord_null_price", CustomerID: source.ID, Status: "shot", ShotAt: &shotShanghaiNextDay})
+	seedOrder(t, scope, seedOrderInput{ID: "ord_cancelled", CustomerID: source.ID, Status: "cancelled", Price: intPtr(99000), ShotAt: &cancelledShot})
+
+	list, err := svc.List(ctx, scope, customer.ListFilter{Status: customer.StatusAll})
+	if err != nil {
+		t.Fatalf("list customers: %v", err)
+	}
+	sourceItem := findCustomerItem(t, list, source.ID)
+	if sourceItem.OrdersCount != 2 || sourceItem.LastShotAt == nil || *sourceItem.LastShotAt != "2026-07-02" {
+		t.Fatalf("source aggregate mismatch: %+v", sourceItem)
+	}
+	detail, err := svc.Detail(ctx, scope, source.ID)
+	if err != nil {
+		t.Fatalf("detail source: %v", err)
+	}
+	if detail.Stats.OrdersCount != 2 || detail.Stats.TotalOrderAmount != 68000 || detail.Stats.LastShotAt == nil || *detail.Stats.LastShotAt != "2026-07-02" {
+		t.Fatalf("detail stats mismatch: %+v", detail.Stats)
+	}
+
+	if _, err := svc.Merge(ctx, scope, target.ID, source.ID); err != nil {
+		t.Fatalf("merge customers: %v", err)
+	}
+	sourceOrders, err := scope.Count(ctx, "orders", "customer_id = $2", source.ID)
+	if err != nil {
+		t.Fatalf("count source orders: %v", err)
+	}
+	if sourceOrders != 0 {
+		t.Fatalf("source should have no orders after merge, got %d", sourceOrders)
+	}
+	targetDetail, err := svc.Detail(ctx, scope, target.ID)
+	if err != nil {
+		t.Fatalf("detail target: %v", err)
+	}
+	if targetDetail.Stats.OrdersCount != 2 || targetDetail.Stats.TotalOrderAmount != 68000 {
+		t.Fatalf("target stats should include migrated orders, got %+v", targetDetail.Stats)
+	}
+}
+
 type seedCustomerInput struct {
 	ID          string
 	DisplayName string
@@ -366,6 +431,39 @@ func seedCustomer(t *testing.T, scope store.AccountScope, input seedCustomerInpu
 	}
 }
 
+func findCustomerItem(t *testing.T, result customer.ListResult, id string) customer.ListItem {
+	t.Helper()
+	for _, item := range result.Items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("customer %s not found in %+v", id, result)
+	return customer.ListItem{}
+}
+
+type seedOrderInput struct {
+	ID         string
+	CustomerID string
+	Status     string
+	Price      *int
+	ShotAt     *time.Time
+}
+
+func seedOrder(t *testing.T, scope store.AccountScope, input seedOrderInput) {
+	t.Helper()
+	if err := scope.Insert(context.Background(), "orders",
+		[]string{"id", "customer_id", "status", "price", "shot_at"},
+		input.ID, input.CustomerID, input.Status, nullableInt(input.Price), nullableTime(input.ShotAt),
+	); err != nil {
+		t.Fatalf("seed order %s: %v", input.ID, err)
+	}
+}
+
+func intPtr(value int) *int {
+	return &value
+}
+
 func strPtr(value string) *string {
 	return &value
 }
@@ -375,4 +473,18 @@ func nullableString(value string) any {
 		return nil
 	}
 	return value
+}
+
+func nullableInt(value *int) any {
+	if value == nil {
+		return nil
+	}
+	return *value
+}
+
+func nullableTime(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }

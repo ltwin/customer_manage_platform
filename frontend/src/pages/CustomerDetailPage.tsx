@@ -7,6 +7,7 @@ import CustomerProfileForm from '../components/customers/CustomerProfileForm'
 import IdentitySection from '../components/customers/IdentitySection'
 import NotesPanel from '../components/customers/NotesPanel'
 import MergeDialog from '../components/customers/MergeDialog'
+import OrderWorkspace from '../components/orders/OrderWorkspace'
 
 const statusLabels: Record<string, string> = {
   active: '活跃',
@@ -23,6 +24,7 @@ export default function CustomerDetailPage() {
   const [editing, setEditing] = useState(false)
   const [merging, setMerging] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'notes' | 'reminders' | 'orders'>('notes')
 
   const goLogin = useCallback(() => {
     navigate('/login', { replace: true })
@@ -202,11 +204,13 @@ export default function CustomerDetailPage() {
 
           <section className="card">
             <div className="tabs">
-              <button className="tab active" type="button">备注 · {customer.notes.length}</button>
-              <button className="tab" type="button">提醒 · 0</button>
-              <button className="tab" type="button">约单 · {customer.stats.orders_count}</button>
+              <button className={`tab${activeTab === 'notes' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('notes')}>备注 · {customer.notes.length}</button>
+              <button className={`tab${activeTab === 'reminders' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('reminders')}>提醒 · 0</button>
+              <button className={`tab${activeTab === 'orders' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('orders')}>约单 · {customer.stats.orders_count}</button>
             </div>
-            <NotesPanel customer={customer} onChanged={reload} onUnauthorized={goLogin} />
+            {activeTab === 'notes' && <NotesPanel customer={customer} onChanged={reload} onUnauthorized={goLogin} />}
+            {activeTab === 'reminders' && <div className="empty inline-empty">暂无提醒</div>}
+            {activeTab === 'orders' && <OrderWorkspace customer={customer} onChanged={reload} />}
           </section>
         </div>
       </main>

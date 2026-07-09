@@ -1,0 +1,57 @@
+project: customer_manage_platform
+entry_type: endpoint
+source_root: .
+last_scanned: 2026-07-09
+
+entries:
+  - entry: auth
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/auth.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/auth.md
+    status: pending
+    note: "待生成"
+  - entry: customers
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/customers.go
+      - backend/internal/platform/httpapi/customers_profile.go
+      - backend/internal/customer/model.go
+      - backend/internal/customer/service.go
+      - backend/internal/customer/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/customers.md
+    status: pending
+    note: "待生成"
+  - entry: packages
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/packages.go
+      - backend/internal/package/model.go
+      - backend/internal/package/service.go
+      - backend/internal/package/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/packages.md
+    status: pending
+    note: "待生成"
+  - entry: orders
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/orders.go
+      - backend/internal/order/model.go
+      - backend/internal/order/service.go
+      - backend/internal/order/state_machine.go
+      - backend/internal/order/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/orders.md
+    status: current
+    note: "order-tracking 验收后生成的首个 API reference 条目"

@@ -169,9 +169,14 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 
 **订单状态语义与跃迁**：
 - 语义：consulting 咨询中 ｜ scheduled 已定档 ｜ shot 已拍摄 ｜ selected 已选片 ｜ retouching 精修中 ｜ delivered 已交付（照片已给客户）｜ closed 完结（服务与收款均完成）｜ cancelled 取消（含坏账，note 写原因）
-- 合法跃迁：consulting→scheduled→shot→selected→retouching→delivered→closed；任意非终态→cancelled；不允许跳步回退（回退场景走 cancelled + 新订单）。非法跃迁 → `409 invalid_status_transition`
+- 合法跃迁：consulting→scheduled→shot→selected→retouching→delivered→closed；**前跳边 shot→delivered、selected→delivered**（跳过选片/精修——直出底片、`retouch_count=0` 套系的单不必伪造中间态，对齐 Package 商品形态，2026-07-09 拍板）；任意非终态→cancelled；除上述前跳边外不允许跳步、一律不允许回退（回退场景走 cancelled + 新订单）。非法跃迁 → `409 invalid_status_transition`
+- **补录直达**（2026-07-09 拍板）：`POST /orders` 可带 `status` 直接以八态任意值建单（历史订单补录不必逐级跃迁），规则见 §4.3；创建路径与跃迁/字段修正同守下方不变量
 - **时间戳自动写入**：进入 shot 时服务端自动写 `shot_at`（请求显式提供则用请求值，事后可 PATCH 修正）；进入 delivered 同理写 `delivered_at`。提醒规则依赖这两个字段，此规则是 order-tracking 的硬验收项
 - `balance_paid=false` 时进入 closed → `409 unpaid_balance`（坏账场景走 cancelled）
+- **字段修正不变量**（2026-07-09 拍板，与跃迁门禁同为硬验收——状态机不变量必须在创建（补录直达）、跃迁、字段修正三条路径同样成立，不能只守进门）：
+  1. closed 订单恒 `balance_paid=true`：任何使 closed 订单 `balance_paid` 变 false 的 PATCH → `409 unpaid_balance`（进门门禁推广为恒成立不变量）；
+  2. `shot_at`/`delivered_at` 仅在订单已到达对应状态（含随本次请求进入）时可写；已写入后可修正、不可置空；未到达时传入 → `400 validation_failed`（保护 last_shot_at 聚合与 follow_up/churn 规则的数据基础）；
+  3. 终态订单（closed/cancelled）仅可修正 `note`/`title`/`price`/时间戳（受规则 2 约束）；`deposit_paid`/`balance_paid` 在终态不可变更（cancelled 的标记留作坏账证据）→ `400 validation_failed`
 - 创建 / 删除 ScheduleSlot **不**自动变更订单状态；状态只由 `PATCH /orders/{id}` 显式驱动
 
 **客户 merge / 归档语义**：
@@ -224,12 +229,42 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                     GET 列表项附聚合: orders_count(int, 引用本套系的非 cancelled 订单计数；
                                     order 域未落地前恒为 0)
 订单域
-  POST   /orders                    {customer_id, package_id?, title?, price?} → 201（status=consulting）
+  POST   /orders                    {customer_id, package_id?, title?, price?,
+                                     status?, deposit_paid?, balance_paid?, shot_at?, delivered_at?, note?}
+                                    → 201（status 缺省 consulting）
                                     引用 merged/archived 客户 → 409 customer_archived
+                                    补录直达（2026-07-09 拍板）：status 可为八态任意值，建单即直达目标
+                                      状态、不必逐级跃迁；创建与跃迁/字段修正同守 §4.2 不变量——
+                                      目标状态 ≥ shot 必须显式给 shot_at、≥ delivered（含 closed）必须
+                                      显式给 delivered_at（补录是历史事实，缺省 now 必错 → 400 fail loud）；
+                                      status=closed 必须 balance_paid=true（否则 409 unpaid_balance）；
+                                      cancelled 可直建（时间戳可选，建议 note 写原因）
+                                    套系引用规则分叉：status 缺省/consulting（新业务）只允许 active 套系
+                                      （archived → 400）；status 为其他值（补录历史）允许引用 archived
+                                      套系（历史真实性优先，仍须同账号存在，不存在/跨账号 → 404）
   GET    /orders?customer_id=&status=&unpaid_balance=true&page=
+                                    列表项附引用摘要: customer_display_name(string),
+                                      package_name?(string, 引用套系时返回)——全局订单页可读性依赖，
+                                      同"列表项附聚合"既有模式（2026-07-09 update）
+                                    unpaid_balance=true 口径 = balance_paid=false 且
+                                      status ∈ {shot, selected, retouching, delivered}（"已进入交付链条
+                                      且未结清"；consulting/scheduled 未到收款环节、cancelled 已取消、
+                                      closed 恒已结清，均不出现——比 dashboard unpaid_orders 的
+                                      delivered-only 口径宽，2026-07-09 拍板）
+                                    默认排序 created_at DESC（同值按 id DESC，保证分页稳定；
+                                      不提供 sort 参数，待真实需求另扩）
   PATCH  /orders/{id}               {status?|deposit_paid?|balance_paid?|shot_at?|delivered_at?|…}
                                     非法跃迁 → 409 invalid_status_transition
-                                    未结清进 closed → 409 unpaid_balance
+                                    未结清进 closed / closed 试图取消结清标记 → 409 unpaid_balance
+                                    字段修正不变量违反（时间戳预写/置空、终态改标记）→ 400（见 §4.2）
+  DELETE /orders/{id}               仅终态（closed/cancelled）可物理删除 → 204（2026-07-09 拍板）
+                                    非终态 → 409 order_not_terminal（进行中订单先 cancel）
+                                    删除即从实时聚合/统计消失（删 closed 单会减少 orders_count 与
+                                      营收类统计，UI 删除确认须明示）；破坏性操作，与套系 DELETE 同级
+                                    引用拦截随域生长：被 type=shoot 的 slot 引用 → 409 order_in_use
+                                      （schedule-calendar 落地时接通，落地前无 slot 可引用、只受终态
+                                      门禁约束）；reminder 引用不拦截删除——引用已删订单的 pending
+                                      提醒由 reminder-engine 定义自动 dismiss/跳过（其 design 细化）
 档期域
   GET    /schedule/slots?from=&to=  区间查询（含跨界 slot）
   POST   /schedule/slots            {start_at, end_at, type, order_id?, note?}
@@ -346,14 +381,14 @@ GET /export → application/json（Content-Disposition 附件）
    - 所属模块：package + webapp ｜ 依赖：platform-skeleton ｜ 状态：done ｜ 对应 feature：2026-07-08-package-catalog
    - 备注：商品心智（2026-07-08 owner 拍板，§4.2/§4.3 update）——active=上架、archived=下架、DELETE=删除；完成信号：按 4.2 Package shape 建/改/下架/上架各一条通过；?status=active 过滤正确；DELETE 无引用套系 204、被引用套系 409 package_in_use（order 域未落地前无订单可引用、删除恒放行，真实 409 由 order-tracking 接通）
 6. **order-tracking** — 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、时间戳自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
-   - 所属模块：order + webapp ｜ 依赖：customer-core, package-catalog ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含 shot_at/delivered_at 自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409、**接通 customers/packages 聚合字段真实计算**（orders_count/last_shot_at/total_order_amount，4.3，2026-07-06 契约更新）、**接通套系删除 in-use 校验**（删除被订单引用的套系返回 409 package_in_use，§4.3 契约随域生长，2026-07-08 update）
+   - 所属模块：order + webapp ｜ 依赖：customer-core, package-catalog ｜ 状态：done ｜ 对应 feature：2026-07-08-order-tracking
+   - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含前跳边、shot_at/delivered_at 自动写入、409 unpaid_balance、字段修正不变量）、unpaid_balance 筛选正确（收窄口径）、列表附引用摘要（customer_display_name/package_name）与默认排序稳定、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409、**接通 customers/packages 聚合字段真实计算**（orders_count/last_shot_at/total_order_amount，4.3，2026-07-06 契约更新）、**接通套系删除 in-use 校验**（删除被订单引用的套系返回 409 package_in_use，§4.3 契约随域生长，2026-07-08 update）；**2026-07-09 契约 update**（design PM review + owner 追加拍板，见 §8）：前跳边 / 字段修正不变量 / 列表引用摘要 / unpaid_balance 口径 / 默认排序 / POST 补录直达 / DELETE 终态物理删除
 7. **schedule-calendar** — 档期：月/周日历视图、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
    - 所属模块：schedule + webapp ｜ 依赖：order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——type=shoot 的 slot 必须挂订单；完成信号：重叠创建返回 overlaps 且前端提示；建/删 slot 不改订单状态（反向联动禁止用例）；日历页答复"某天有没有档"≤10 秒（演示）；**组合流程拍板（2026-07-06）**：前端「新建拍摄档期」弹窗（含客户档案页「＋新约单」入口）隐式先 POST /orders（选客户+套系）再 POST /schedule/slots 挂 order_id——不新增组合端点，两步失败处理（订单已建、slot 失败时的提示与补救）在本条 feature design 内定义，此流程是 design 硬约束；**design 必答清单**：①保存成功后是否隐式第三步 `PATCH /orders {status:scheduled}`（合法，显式驱动，不违反"slot 不反向改状态"不变量）还是接受"日历有 shoot slot 的 consulting 订单"常态；②slot 失败留下的悬挂 consulting 订单按 4.4 属"非终态订单"会抑制该客户 churn 预警，补救策略须覆盖
+   - 备注：依赖理由——type=shoot 的 slot 必须挂订单；完成信号：重叠创建返回 overlaps 且前端提示；建/删 slot 不改订单状态（反向联动禁止用例）；日历页答复"某天有没有档"≤10 秒（演示）；**接通订单物理删除的 slot 引用拦截**（被 shoot slot 引用的终态订单 DELETE → 409 order_in_use，§4.3 随域生长，2026-07-09——验收须补该用例）；**组合流程拍板（2026-07-06）**：前端「新建拍摄档期」弹窗（含客户档案页「＋新约单」入口）隐式先 POST /orders（选客户+套系）再 POST /schedule/slots 挂 order_id——不新增组合端点，两步失败处理（订单已建、slot 失败时的提示与补救）在本条 feature design 内定义，此流程是 design 硬约束；**design 必答清单**：①保存成功后是否隐式第三步 `PATCH /orders {status:scheduled}`（合法，显式驱动，不违反"slot 不反向改状态"不变量）还是接受"日历有 shoot slot 的 consulting 订单"常态；②slot 失败留下的悬挂 consulting 订单按 4.4 属"非终态订单"会抑制该客户 churn 预警，补救策略须覆盖
 8. **reminder-engine** — 提醒引擎：/admin/reminders/scan 幂等生成三类提醒、done/dismiss、参数可配置（含按拍摄类型流失阈值、账号时区）
    - 所属模块：reminder ｜ 依赖：customer-profile-complete, order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 6）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**；GET /reminders 支持 customer_id 过滤（4.3，2026-07-06 契约更新）
+   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 6）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**；GET /reminders 支持 customer_id 过滤（4.3，2026-07-06 契约更新）；**订单可物理删除（2026-07-09）**：引用已删订单的 pending reminder 处理（自动 dismiss/跳过）细则在本条 design 定义并验收
 9. **telegram-digest** — TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
    - 所属模块：reminder（TelegramPort）｜ 依赖：reminder-engine, schedule-calendar ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——摘要内容 = 提醒（条目 8）+ 当日档期（条目 7）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到含真实数据的摘要（截图）；未绑定时系统全功能正常
@@ -418,6 +453,17 @@ GET /export → application/json（Content-Disposition 附件）
 
 ## 8. 变更日志
 
+- 2026-07-09（order-tracking design round-2 review 后 owner 追加拍板）：订单域契约再 update 两项，§4.2/§4.3 同步：
+  - **§4.3 POST /orders 补录直达**：POST 扩为全 shape（status/deposit_paid/balance_paid/shot_at/delivered_at/note 均可选），status 可直达八态任意值、不必逐级跃迁——历史订单补录是上线刚需（老客户 last_shot_at/churn 基线，否则 reminder-engine 上线即误报），逐级跳既伪造流程又笨重。创建与跃迁/字段修正三条路径同守 §4.2 不变量：目标状态 ≥shot 须显式 shot_at、≥delivered 须显式 delivered_at（补录缺省 now 必错，fail loud 400）、closed 须已结清（409 unpaid_balance）；补录（status≠consulting）允许引用 archived 套系（历史真实性优先），新业务建单仍只允许 active（原 FDR-003 规则不变）。原「reminder-engine 启动前决策补录」观察项就此消解。
+  - **§4.3 新增 DELETE /orders/{id} 终态物理删除**：仅 closed/cancelled 可删 → 204；非终态 → 409 order_not_terminal（先 cancel）。动因：误操作产生的 cancelled 垃圾单若不可清理，会永久阻塞套系删除（delete in-use 为 any-reference 口径）且污染订单列表；owner 单人工具，删除权在 owner。删除即从实时聚合消失（删 closed 单会减少 orders_count/营收类统计，UI 确认须明示）；被 shoot slot 引用 → 409 order_in_use 随 schedule-calendar 生长接通；reminder 引用不拦截（引用已删订单的 pending 提醒由 reminder-engine 自动 dismiss/跳过，其 design 细化）。原「订单只 cancel 不物理删」的 order-tracking design 约束同步推翻。
+  - **受影响条目**：`order-tracking`（本 feature 落地 POST 补录与 DELETE，OpenAPI 已同步收编）；`schedule-calendar`（接通 order_in_use 拦截，验收补用例）；`reminder-engine`（已删订单的 reminder 处理细则）。
+- 2026-07-09（order-tracking design PM 视角评审后 owner 拍板）：订单域契约 update 五项，§4.2/§4.3 同步：
+  - **§4.2 跃迁表加前跳边**：`shot→delivered`、`selected→delivered`（跳过选片/精修）。动因：Package 契约本就支持 `retouch_count=0`（不含精修）与 `raw_delivery_count`（底片直出）的商品形态，强制线性会迫使直出单伪造 selected/retouching 假状态；仍禁一切回退与其余跳步。
+  - **§4.2 字段修正不变量**：状态机不变量从"跃迁时刻检查"升级为"恒成立"——closed 恒结清（PATCH `balance_paid=false` 于 closed 订单 → 409 unpaid_balance）；shot_at/delivered_at 仅已到达对应状态可写、写入后不可置空（未到达传入 → 400）；终态仅可修正 note/title/price/时间戳，付款标记不可变更。堵住"字段修正路径绕过门禁产生矛盾态（closed 未结清、shot 无 shot_at、consulting 带 shot_at 污染 last_shot_at）"的漏洞。
+  - **§4.3 GET /orders 列表项附引用摘要**：`customer_display_name`（必返）、`package_name?`（引用套系时）——Order shape 只有 id 引用，无摘要则全局订单页不可读，前端将被迫 N+1 或拉全量客户；沿用客户/套系"列表项附聚合"既有模式。
+  - **§4.3 unpaid_balance 口径收窄**：`balance_paid=false AND status ∈ {shot, selected, retouching, delivered}`（"已进入交付链条且未结清"）。原设计假设的宽口径（仅排除 cancelled）会把 consulting/scheduled 常态未结清单混入"未收尾款"视图，名实不符、信号噪音大。
+  - **§4.3 默认排序钉死**：`created_at DESC, id DESC`（稳定分页前提）；不加 sort 参数。
+  - **受影响条目**：`order-tracking`（本次 design 即按新契约执行，OpenAPI 于 design 阶段同步收编：新增 `OrderListItem` schema、listOrders 响应与参数描述）。其余条目不受影响；dashboard `unpaid_orders` 卡仍为 delivered-only 窄口径，两口径分工不变。
 - 2026-07-08（package-catalog design 启动时 owner 拍板）：套系从"静态定义 + 归档"改为**商品心智的上架/下架/删除**三操作，§4.2/§4.3 接口契约同步 update：
   - **§4.2**：Package `status(active|archived)` 语义明确为 active=上架中、archived=下架停售（两态为持久状态）；套系无 merged 态（区别于 Customer）。
   - **§4.3**：套系域端点从 `POST/GET/PATCH` 扩为 `POST/GET/PATCH/DELETE`。下架 = PATCH {status:archived}（无 in-use 校验，存量订单继续引用，语义不变，仅措辞对齐商品心智），恢复上架 = PATCH {status:active}；**新增删除** DELETE /packages/{id} → 204，**带 in-use 校验**：被任一订单引用时拒绝返回 `409 package_in_use`（保护 Order.package_id 引用完整性），无引用才物理删除。删除是破坏性操作、非持久状态。

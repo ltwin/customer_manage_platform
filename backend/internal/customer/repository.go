@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/oapi-codegen/nullable"
@@ -79,7 +80,15 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 		if err != nil {
 			return ListResult{}, err
 		}
-		items = append(items, ListItem{Customer: customer})
+		stats, err := orderStatsForCustomer(ctx, scope, customer.ID)
+		if err != nil {
+			return ListResult{}, err
+		}
+		items = append(items, ListItem{
+			Customer:    customer,
+			OrdersCount: stats.OrdersCount,
+			LastShotAt:  stats.LastShotAt,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return ListResult{}, err
@@ -113,12 +122,16 @@ func (PostgresRepository) Detail(ctx context.Context, scope store.AccountScope, 
 			Status:      ref.Status,
 		}
 	}
+	stats, err := orderStatsForCustomer(ctx, scope, id)
+	if err != nil {
+		return Detail{}, err
+	}
 	return Detail{
 		Customer:   customer,
 		Identities: identities,
 		Notes:      notes,
 		Referrer:   referrer,
-		Stats:      CustomerStats{},
+		Stats:      stats,
 	}, nil
 }
 
@@ -335,6 +348,9 @@ func (PostgresRepository) Merge(ctx context.Context, scope store.AccountScope, t
 		if _, err := tx.Update(ctx, "customer_notes", "customer_id = $2", "customer_id = $3", targetID, sourceID); err != nil {
 			return err
 		}
+		if _, err := tx.Update(ctx, "orders", "customer_id = $2", "customer_id = $3", targetID, sourceID); err != nil {
+			return err
+		}
 		// 转介绍指针批量重定向（D1）：指向 source 的改指 target；target 自指清空。
 		if _, err := tx.Update(ctx, "customers", "referrer_customer_id = $2", "referrer_customer_id = $3", targetID, sourceID); err != nil {
 			return err
@@ -506,6 +522,36 @@ func listNotes(ctx context.Context, scope store.AccountScope, customerID string)
 		return notes[i].CreatedAt.After(notes[j].CreatedAt)
 	})
 	return notes, nil
+}
+
+func orderStatsForCustomer(ctx context.Context, scope store.AccountScope, customerID string) (CustomerStats, error) {
+	const nonCancelledOrders = "customer_id = $2 AND status <> $3"
+	var count int64
+	if err := scope.ScalarAggregate(ctx, "orders", store.AggregateCount, "id", nonCancelledOrders, customerID, "cancelled").Scan(&count); err != nil {
+		return CustomerStats{}, err
+	}
+	var total int64
+	if err := scope.ScalarAggregate(ctx, "orders", store.AggregateSum, "price", nonCancelledOrders, customerID, "cancelled").Scan(&total); err != nil {
+		return CustomerStats{}, err
+	}
+	var lastShot sql.NullTime
+	if err := scope.ScalarAggregate(ctx, "orders", store.AggregateMax, "shot_at", nonCancelledOrders, customerID, "cancelled").Scan(&lastShot); err != nil {
+		return CustomerStats{}, err
+	}
+	return CustomerStats{
+		OrdersCount:      int(count),
+		TotalOrderAmount: int(total),
+		LastShotAt:       shotDate(lastShot),
+	}, nil
+}
+
+func shotDate(value sql.NullTime) *string {
+	if !value.Valid {
+		return nil
+	}
+	const shanghaiOffset = 8 * 60 * 60
+	date := value.Time.In(time.FixedZone("Asia/Shanghai", shanghaiOffset)).Format("2006-01-02")
+	return &date
 }
 
 func buildCustomerFilter(filter ListFilter) (string, []any) {

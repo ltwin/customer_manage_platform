@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -33,6 +34,7 @@ type RouterDeps struct {
 	ScopeFactory ScopeFactory
 	Auth         *auth.Service
 	Customer     *customerdomain.Service
+	Orders       *orderdomain.Service
 	Packages     *pkgcatalog.Service
 }
 
@@ -57,6 +59,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		auth:         deps.Auth,
 		scopeFactory: deps.ScopeFactory,
 		customer:     deps.Customer,
+		orders:       deps.Orders,
 		packages:     deps.Packages,
 	}
 	api := r.Group("/api/v1")
@@ -74,6 +77,10 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	})
 	protected.POST("/customers/:id/notes", func(c *gin.Context) { h.AddCustomerNote(c, c.Param("id")) })
 	protected.POST("/customers/:id/merge", func(c *gin.Context) { h.MergeCustomer(c, c.Param("id")) })
+	protected.GET("/orders", h.listOrdersRoute)
+	protected.POST("/orders", h.CreateOrder)
+	protected.PATCH("/orders/:id", func(c *gin.Context) { h.UpdateOrder(c, c.Param("id")) })
+	protected.DELETE("/orders/:id", func(c *gin.Context) { h.DeleteOrder(c, c.Param("id")) })
 	protected.GET("/packages", h.listPackagesRoute)
 	protected.POST("/packages", h.CreatePackage)
 	protected.PATCH("/packages/:id", func(c *gin.Context) { h.UpdatePackage(c, c.Param("id")) })

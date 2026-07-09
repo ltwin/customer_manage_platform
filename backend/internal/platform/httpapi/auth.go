@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 )
@@ -40,6 +41,7 @@ type handlers struct {
 	auth         *auth.Service
 	scopeFactory ScopeFactory
 	customer     *customerdomain.Service
+	orders       *orderdomain.Service
 	packages     *pkgcatalog.Service
 }
 

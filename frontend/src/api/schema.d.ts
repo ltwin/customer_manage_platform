@@ -185,10 +185,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 订单列表 */
+        /** 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3） */
         get: operations["listOrders"];
         put?: never;
-        /** 新建订单（status=consulting） */
+        /** 新建订单（status 缺省 consulting；带 status 为补录直达，规则见 §4.3 2026-07-09） */
         post: operations["createOrder"];
         delete?: never;
         options?: never;
@@ -206,7 +206,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** 物理删除终态订单（closed/cancelled，§4.3 2026-07-09） */
+        delete: operations["deleteOrder"];
         options?: never;
         head?: never;
         /** 状态跃迁与字段修正（状态机语义见 §4.2） */
@@ -551,6 +552,12 @@ export interface components {
              */
             delivered_at?: string;
             note?: string;
+        };
+        OrderListItem: components["schemas"]["Order"] & {
+            /** @description 引用客户的 display_name（列表可读性摘要，§4.3 2026-07-09 update） */
+            customer_display_name: string;
+            /** @description 引用套系的 name；未引用套系时缺省 */
+            package_name?: string;
         };
         ScheduleSlot: {
             readonly id: string;
@@ -1158,6 +1165,7 @@ export interface operations {
             query?: {
                 customer_id?: string;
                 status?: components["schemas"]["OrderStatus"];
+                /** @description true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径） */
                 unpaid_balance?: boolean;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
@@ -1175,7 +1183,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Order"][];
+                        items: components["schemas"]["OrderListItem"][];
                         total: number;
                     };
                 };
@@ -1200,6 +1208,23 @@ export interface operations {
                     title?: string;
                     /** @description 分 */
                     price?: number;
+                    /** @description 补录直达目标状态；≥shot 须显式给 shot_at、≥delivered（含 closed）须显式给 delivered_at，closed 须 balance_paid=true（§4.2 不变量） */
+                    status?: components["schemas"]["OrderStatus"];
+                    /** @default false */
+                    deposit_paid?: boolean;
+                    /** @default false */
+                    balance_paid?: boolean;
+                    /**
+                     * Format: date-time
+                     * @description 补录用；仅目标状态已到达 shot 时可给
+                     */
+                    shot_at?: string;
+                    /**
+                     * Format: date-time
+                     * @description 补录用；仅目标状态已到达 delivered 时可给
+                     */
+                    delivered_at?: string;
+                    note?: string;
                 };
             };
         };
@@ -1216,7 +1241,39 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description customer_archived（引用 merged/archived 客户） */
+            /** @description customer_archived（引用 merged/archived 客户）| unpaid_balance（补录 status=closed 且 balance_paid≠true） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    deleteOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除，无响应体；实时聚合/统计即时反映（删 closed 单会减少 orders_count 与营收类统计） */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description order_not_terminal（非终态订单不可删除，先 cancel）| order_in_use（被 type=shoot 的 slot 引用——schedule 域落地后接通，§4.3 随域生长） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1267,7 +1324,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description invalid_status_transition（非法跃迁）| unpaid_balance（未结清进 closed） */
+            /** @description invalid_status_transition（非法跃迁）| unpaid_balance（未结清进 closed / closed 订单试图取消结清标记，字段修正不变量见 §4.2） */
             409: {
                 headers: {
                     [name: string]: unknown;

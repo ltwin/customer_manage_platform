@@ -45,8 +45,8 @@ items:
   - slug: order-tracking
     description: 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、shot_at/delivered_at 自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
     depends_on: [customer-core, package-catalog]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-08-order-tracking
     minimal_loop: false
     notes: 依赖理由：订单挂 Customer、引用 Package；完成信号：跃迁矩阵测试全过（含时间戳自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、merge 迁移订单用例、引用归档客户 409 customer_archived；落地时接通 customers/packages 聚合字段真实计算（orders_count/last_shot_at/total_order_amount，2026-07-06 契约更新）；接通套系删除 in-use 校验（删除被订单引用的套系返回 409 package_in_use，§4.3 契约随域生长，2026-07-08 update，package-catalog 已留领域方法查引用数、order 域接通真实订单表）
 

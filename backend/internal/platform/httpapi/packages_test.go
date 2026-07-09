@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
@@ -135,21 +136,24 @@ func TestPackageAPIRoundtrip(t *testing.T) {
 }
 
 func TestPackageAPIErrorPathsAndScope(t *testing.T) {
-	h, s, issuer, ctr := newCustomerAPIRouterWithContainer(t)
+	h, s, issuer := newCustomerAPIRouter(t)
 	tokenA := issueToken(t, issuer, testAcctID)
 	ctx := context.Background()
-	execSQL := func(statement string) {
-		code, output, err := ctr.Exec(ctx, []string{"psql", "-U", "crm_test", "-d", "crm_test", "-c", statement})
-		if err != nil || code != 0 {
-			t.Fatalf("exec %q: code=%d err=%v output=%v", statement, code, err, output)
-		}
-	}
 	hash, err := auth.HashPassword("second-password")
 	if err != nil {
 		t.Fatalf("hash second account password: %v", err)
 	}
 	if err := s.CreateAccount(ctx, "acct-b", hash); err != nil {
 		t.Fatalf("create second account: %v", err)
+	}
+	scopeA := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	customerA, err := customerdomain.NewService(customerdomain.NewPostgresRepository()).Create(ctx, scopeA, customerdomain.CreateInput{
+		DisplayName: "A 账号客户",
+		Channel:     customerdomain.ChannelOther,
+		Identities:  []customerdomain.IdentityInput{{Platform: customerdomain.PlatformWechat, Handle: "a-package-test"}},
+	})
+	if err != nil {
+		t.Fatalf("create A customer: %v", err)
 	}
 	scopeB := s.ScopeFor(auth.AccountContext{AccountID: "acct-b"})
 	otherPackage, err := pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()).Create(ctx, scopeB, pkgcatalog.CreateInput{
@@ -258,15 +262,7 @@ func TestPackageAPIErrorPathsAndScope(t *testing.T) {
 		t.Fatalf("cross-account delete should be 404, got %d %s", rec.Code, rec.Body.String())
 	}
 
-	execSQL(`CREATE TABLE orders (
-		id TEXT PRIMARY KEY,
-		account_id TEXT NOT NULL REFERENCES accounts (id),
-		package_id TEXT NOT NULL,
-		status TEXT NOT NULL,
-		FOREIGN KEY (account_id, package_id) REFERENCES packages (account_id, id)
-	)`)
-	scopeA := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
-	if err := scopeA.Insert(ctx, "orders", []string{"id", "package_id", "status"}, "ord_package_in_use", *created.Id, "scheduled"); err != nil {
+	if err := scopeA.Insert(ctx, "orders", []string{"id", "customer_id", "package_id", "status"}, "ord_package_in_use", customerA.ID, *created.Id, "scheduled"); err != nil {
 		t.Fatalf("seed package reference: %v", err)
 	}
 	rec = authenticatedRequest(t, h, http.MethodDelete, "/api/v1/packages/"+*created.Id, tokenA, nil)
@@ -279,8 +275,8 @@ func TestPackageAPIErrorPathsAndScope(t *testing.T) {
 		t.Fatalf("missing auth should be 401, got %d %s", rec.Code, rec.Body.String())
 	}
 
-	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", tokenA, []byte(`{}`))
+	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/schedule/slots", tokenA, []byte(`{}`))
 	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
-		t.Fatalf("orders endpoint should stay 404, got %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("unimplemented schedule endpoint should stay 404, got %d %s", rec.Code, rec.Body.String())
 	}
 }

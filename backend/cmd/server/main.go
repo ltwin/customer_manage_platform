@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
+	"github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
@@ -55,6 +56,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		ScopeFactory: s,
 		Auth:         auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
 		Customer:     customer.NewService(customer.NewPostgresRepository()),
+		Orders:       order.NewService(order.NewPostgresRepository()),
 		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
 	})
 

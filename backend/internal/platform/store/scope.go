@@ -200,6 +200,12 @@ type OrderBy struct {
 	Desc   bool
 }
 
+const (
+	AggregateCount = "count"
+	AggregateMax   = "max"
+	AggregateSum   = "sum"
+)
+
 // Count 返回当前账号可见的业务表行数；cond 占位符从 $2 起编号。
 func (sc AccountScope) Count(ctx context.Context, table, cond string, args ...any) (int64, error) {
 	if sc.accountID == "" {
@@ -217,6 +223,33 @@ func (sc AccountScope) Count(ctx context.Context, table, cond string, args ...an
 		return 0, fmt.Errorf("scoped count %s: %w", table, err)
 	}
 	return count, nil
+}
+
+// ScalarAggregate 返回当前账号 scope 内的受控标量聚合；cond 占位符从 $2 起编号。
+// op 仅允许 count/max/sum，table/column 必须是标识符字面量；不支持 GROUP BY。
+func (sc AccountScope) ScalarAggregate(ctx context.Context, table, op, column, cond string, args ...any) pgx.Row {
+	if sc.accountID == "" {
+		return errRow{err: ErrEmptyAccountScope}
+	}
+	if err := validateIdents(table, column); err != nil {
+		return errRow{err: err}
+	}
+	var expr string
+	switch op {
+	case AggregateCount:
+		expr = fmt.Sprintf("count(%s)", column)
+	case AggregateMax:
+		expr = fmt.Sprintf("max(%s)", column)
+	case AggregateSum:
+		expr = fmt.Sprintf("COALESCE(sum(%s), 0)", column)
+	default:
+		return errRow{err: fmt.Errorf("scoped aggregate %s: unsupported op %q", table, op)}
+	}
+	sql := fmt.Sprintf(`SELECT %s FROM %s WHERE account_id = $1`, expr, table)
+	if cond != "" {
+		sql += " AND (" + cond + ")"
+	}
+	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
 }
 
 // Exists 判断当前账号 scope 内是否存在匹配行；cond 占位符从 $2 起编号。

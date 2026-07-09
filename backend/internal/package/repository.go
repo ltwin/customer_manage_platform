@@ -74,7 +74,11 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 		if err != nil {
 			return ListResult{}, err
 		}
-		items = append(items, ListItem{Package: pkg, OrdersCount: 0})
+		ordersCount, err := countActiveOrderReferences(ctx, scope, pkg.ID)
+		if err != nil {
+			return ListResult{}, err
+		}
+		items = append(items, ListItem{Package: pkg, OrdersCount: int(ordersCount)})
 	}
 	if err := rows.Err(); err != nil {
 		return ListResult{}, err
@@ -204,6 +208,10 @@ func countOrderReferences(ctx context.Context, scope store.AccountScope, package
 		return 0, nil
 	}
 	return scope.Count(ctx, "orders", "package_id = $2", packageID)
+}
+
+func countActiveOrderReferences(ctx context.Context, scope store.AccountScope, packageID string) (int64, error) {
+	return scope.Count(ctx, "orders", "package_id = $2 AND status <> $3", packageID, "cancelled")
 }
 
 func isUndefinedTable(err error) bool {

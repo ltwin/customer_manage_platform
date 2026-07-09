@@ -13,3 +13,4 @@ output-options:
     - customer-core
     - customer-profile-complete
     - packages
+    - orders

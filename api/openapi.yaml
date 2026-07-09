@@ -27,7 +27,7 @@ tags:
   - name: packages
     description: 套系域（package-catalog）
   - name: orders
-    description: 订单域（order-tracking，未实现）
+    description: 订单域（order-tracking）
   - name: schedule
     description: 档期域（schedule-slots，未实现）
   - name: reminders
@@ -560,7 +560,7 @@ paths:
     post:
       tags: [orders]
       operationId: createOrder
-      summary: 新建订单（status=consulting）
+      summary: 新建订单（status 缺省 consulting；带 status 为补录直达，规则见 §4.3 2026-07-09）
       requestBody:
         required: true
         content:
@@ -578,6 +578,26 @@ paths:
                 price:
                   type: integer
                   description: 分
+                status:
+                  allOf:
+                    - $ref: "#/components/schemas/OrderStatus"
+                  description: 补录直达目标状态；≥shot 须显式给 shot_at、≥delivered（含 closed）须显式给 delivered_at，closed 须 balance_paid=true（§4.2 不变量）
+                deposit_paid:
+                  type: boolean
+                  default: false
+                balance_paid:
+                  type: boolean
+                  default: false
+                shot_at:
+                  type: string
+                  format: date-time
+                  description: 补录用；仅目标状态已到达 shot 时可给
+                delivered_at:
+                  type: string
+                  format: date-time
+                  description: 补录用；仅目标状态已到达 delivered 时可给
+                note:
+                  type: string
       responses:
         "201":
           description: 已创建
@@ -592,7 +612,7 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: customer_archived（引用 merged/archived 客户）
+          description: customer_archived（引用 merged/archived 客户）| unpaid_balance（补录 status=closed 且 balance_paid≠true）
           content:
             application/json:
               schema:
@@ -602,7 +622,7 @@ paths:
     get:
       tags: [orders]
       operationId: listOrders
-      summary: 订单列表
+      summary: 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3）
       parameters:
         - name: customer_id
           in: query
@@ -614,6 +634,7 @@ paths:
             $ref: "#/components/schemas/OrderStatus"
         - name: unpaid_balance
           in: query
+          description: true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径）
           schema:
             type: boolean
         - $ref: "#/components/parameters/Page"
@@ -630,7 +651,7 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: "#/components/schemas/Order"
+                      $ref: "#/components/schemas/OrderListItem"
                   total:
                     type: integer
         "400":
@@ -687,7 +708,28 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          description: invalid_status_transition（非法跃迁）| unpaid_balance（未结清进 closed）
+          description: invalid_status_transition（非法跃迁）| unpaid_balance（未结清进 closed / closed 订单试图取消结清标记，字段修正不变量见 §4.2）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      tags: [orders]
+      operationId: deleteOrder
+      summary: 物理删除终态订单（closed/cancelled，§4.3 2026-07-09）
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: 已删除，无响应体；实时聚合/统计即时反映（删 closed 单会减少 orders_count 与营收类统计）
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: order_not_terminal（非终态订单不可删除，先 cancel）| order_in_use（被 type=shoot 的 slot 引用——schedule 域落地后接通，§4.3 随域生长）
           content:
             application/json:
               schema:
@@ -1605,6 +1647,19 @@ components:
           description: 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
         note:
           type: string
+
+    OrderListItem:
+      allOf:
+        - $ref: "#/components/schemas/Order"
+        - type: object
+          required: [customer_display_name]
+          properties:
+            customer_display_name:
+              type: string
+              description: 引用客户的 display_name（列表可读性摘要，§4.3 2026-07-09 update）
+            package_name:
+              type: string
+              description: 引用套系的 name；未引用套系时缺省
 
     ScheduleSlot:
       type: object
