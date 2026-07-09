@@ -66,6 +66,66 @@ func (e CustomerStatus) Valid() bool {
 	}
 }
 
+// Defines values for PackageStatus.
+const (
+	PackageStatusActive   PackageStatus = "active"
+	PackageStatusArchived PackageStatus = "archived"
+)
+
+// Valid indicates whether the value is a known member of the PackageStatus enum.
+func (e PackageStatus) Valid() bool {
+	switch e {
+	case PackageStatusActive:
+		return true
+	case PackageStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PricingMode.
+const (
+	PricingModeFixed       PricingMode = "fixed"
+	PricingModePerDuration PricingMode = "per_duration"
+	PricingModePerPhoto    PricingMode = "per_photo"
+)
+
+// Valid indicates whether the value is a known member of the PricingMode enum.
+func (e PricingMode) Valid() bool {
+	switch e {
+	case PricingModeFixed:
+		return true
+	case PricingModePerDuration:
+		return true
+	case PricingModePerPhoto:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShootType.
+const (
+	ShootTypeCosplay  ShootType = "cosplay"
+	ShootTypeOther    ShootType = "other"
+	ShootTypePortrait ShootType = "portrait"
+)
+
+// Valid indicates whether the value is a known member of the ShootType enum.
+func (e ShootType) Valid() bool {
+	switch e {
+	case ShootTypeCosplay:
+		return true
+	case ShootTypeOther:
+		return true
+	case ShootTypePortrait:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SocialPlatform.
 const (
 	SocialPlatformDouyin      SocialPlatform = "douyin"
@@ -135,6 +195,27 @@ func (e UpdateCustomerJSONBodyStatus) Valid() bool {
 	case Active:
 		return true
 	case Archived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPackagesParamsStatus.
+const (
+	ListPackagesParamsStatusActive   ListPackagesParamsStatus = "active"
+	ListPackagesParamsStatusAll      ListPackagesParamsStatus = "all"
+	ListPackagesParamsStatusArchived ListPackagesParamsStatus = "archived"
+)
+
+// Valid indicates whether the value is a known member of the ListPackagesParamsStatus enum.
+func (e ListPackagesParamsStatus) Valid() bool {
+	switch e {
+	case ListPackagesParamsStatusActive:
+		return true
+	case ListPackagesParamsStatusAll:
+		return true
+	case ListPackagesParamsStatusArchived:
 		return true
 	default:
 		return false
@@ -266,6 +347,81 @@ type ErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// Package defines model for Package.
+type Package struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string `json:"account_id,omitempty"`
+
+	// BasePrice 分
+	BasePrice        int         `json:"base_price"`
+	CreatedAt        *time.Time  `json:"created_at,omitempty"`
+	DurationMinutes  *int        `json:"duration_minutes,omitempty"`
+	Id               *string     `json:"id,omitempty"`
+	Name             string      `json:"name"`
+	Note             *string     `json:"note,omitempty"`
+	PricingMode      PricingMode `json:"pricing_mode"`
+	RawDeliveryCount *int        `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount *int          `json:"retouch_count,omitempty"`
+	ShootType    ShootType     `json:"shoot_type"`
+	ShotCountMax *int          `json:"shot_count_max,omitempty"`
+	ShotCountMin *int          `json:"shot_count_min,omitempty"`
+	Status       PackageStatus `json:"status"`
+}
+
+// PackageInput defines model for PackageInput.
+type PackageInput struct {
+	// BasePrice 分
+	BasePrice        int         `json:"base_price"`
+	DurationMinutes  *int        `json:"duration_minutes,omitempty"`
+	Name             string      `json:"name"`
+	Note             *string     `json:"note,omitempty"`
+	PricingMode      PricingMode `json:"pricing_mode"`
+	RawDeliveryCount *int        `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount *int      `json:"retouch_count,omitempty"`
+	ShootType    ShootType `json:"shoot_type"`
+	ShotCountMax *int      `json:"shot_count_max,omitempty"`
+	ShotCountMin *int      `json:"shot_count_min,omitempty"`
+}
+
+// PackageListItem defines model for PackageListItem.
+type PackageListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string `json:"account_id,omitempty"`
+
+	// BasePrice 分
+	BasePrice       int        `json:"base_price"`
+	CreatedAt       *time.Time `json:"created_at,omitempty"`
+	DurationMinutes *int       `json:"duration_minutes,omitempty"`
+	Id              *string    `json:"id,omitempty"`
+	Name            string     `json:"name"`
+	Note            *string    `json:"note,omitempty"`
+
+	// OrdersCount 引用本套系的非 cancelled 订单计数；order 域未落地前恒为 0
+	OrdersCount      int         `json:"orders_count"`
+	PricingMode      PricingMode `json:"pricing_mode"`
+	RawDeliveryCount *int        `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount *int          `json:"retouch_count,omitempty"`
+	ShootType    ShootType     `json:"shoot_type"`
+	ShotCountMax *int          `json:"shot_count_max,omitempty"`
+	ShotCountMin *int          `json:"shot_count_min,omitempty"`
+	Status       PackageStatus `json:"status"`
+}
+
+// PackageStatus defines model for PackageStatus.
+type PackageStatus string
+
+// PricingMode defines model for PricingMode.
+type PricingMode string
+
+// ShootType defines model for ShootType.
+type ShootType string
+
 // SocialIdentity defines model for SocialIdentity.
 type SocialIdentity struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
@@ -380,6 +536,35 @@ type AddCustomerNoteJSONBody struct {
 	Content string `json:"content"`
 }
 
+// ListPackagesParams defines parameters for ListPackages.
+type ListPackagesParams struct {
+	// Status 缺省 active；可显式查 archived/all（§4.3 套系上架/下架语义）
+	Status   *ListPackagesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Page     *Page                     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize                 `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// ListPackagesParamsStatus defines parameters for ListPackages.
+type ListPackagesParamsStatus string
+
+// UpdatePackageJSONBody defines parameters for UpdatePackage.
+type UpdatePackageJSONBody struct {
+	// BasePrice 分
+	BasePrice        *int                   `json:"base_price,omitempty"`
+	DurationMinutes  nullable.Nullable[int] `json:"duration_minutes,omitempty"`
+	Name             *string                `json:"name,omitempty"`
+	Note             *string                `json:"note,omitempty"`
+	PricingMode      *PricingMode           `json:"pricing_mode,omitempty"`
+	RawDeliveryCount nullable.Nullable[int] `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount nullable.Nullable[int] `json:"retouch_count,omitempty"`
+	ShootType    *ShootType             `json:"shoot_type,omitempty"`
+	ShotCountMax nullable.Nullable[int] `json:"shot_count_max,omitempty"`
+	ShotCountMin nullable.Nullable[int] `json:"shot_count_min,omitempty"`
+	Status       *PackageStatus         `json:"status,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
@@ -397,6 +582,12 @@ type MergeCustomerJSONRequestBody MergeCustomerJSONBody
 
 // AddCustomerNoteJSONRequestBody defines body for AddCustomerNote for application/json ContentType.
 type AddCustomerNoteJSONRequestBody AddCustomerNoteJSONBody
+
+// CreatePackageJSONRequestBody defines body for CreatePackage for application/json ContentType.
+type CreatePackageJSONRequestBody = PackageInput
+
+// UpdatePackageJSONRequestBody defines body for UpdatePackage for application/json ContentType.
+type UpdatePackageJSONRequestBody UpdatePackageJSONBody
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -430,6 +621,18 @@ type ServerInterface interface {
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
+	// 套系列表（?status=active 供下单选择）
+	// (GET /packages)
+	ListPackages(c *gin.Context, params ListPackagesParams)
+	// 新建套系
+	// (POST /packages)
+	CreatePackage(c *gin.Context)
+	// 删除套系；被订单引用时返回 package_in_use（§4.3）
+	// (DELETE /packages/{id})
+	DeletePackage(c *gin.Context, id Id)
+	// 更新套系；归档 = PATCH {status:archived}（无 in-use 校验，§4.3）
+	// (PATCH /packages/{id})
+	UpdatePackage(c *gin.Context, id Id)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -716,6 +919,120 @@ func (siw *ServerInterfaceWrapper) GetMe(c *gin.Context) {
 	siw.Handler.GetMe(c)
 }
 
+// ListPackages operation middleware
+func (siw *ServerInterfaceWrapper) ListPackages(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPackagesParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListPackages(c, params)
+}
+
+// CreatePackage operation middleware
+func (siw *ServerInterfaceWrapper) CreatePackage(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreatePackage(c)
+}
+
+// DeletePackage operation middleware
+func (siw *ServerInterfaceWrapper) DeletePackage(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeletePackage(c, id)
+}
+
+// UpdatePackage operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePackage(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdatePackage(c, id)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -753,4 +1070,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)
 	router.POST(options.BaseURL+"/customers/:id/notes", wrapper.AddCustomerNote)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
+	router.GET(options.BaseURL+"/packages", wrapper.ListPackages)
+	router.POST(options.BaseURL+"/packages", wrapper.CreatePackage)
+	router.DELETE(options.BaseURL+"/packages/:id", wrapper.DeletePackage)
+	router.PATCH(options.BaseURL+"/packages/:id", wrapper.UpdatePackage)
 }

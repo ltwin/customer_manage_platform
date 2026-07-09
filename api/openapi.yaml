@@ -25,7 +25,7 @@ tags:
   - name: customers
     description: 客户域（customer-core / customer-profile-complete）
   - name: packages
-    description: 套系域（package-catalog，未实现）
+    description: 套系域（package-catalog）
   - name: orders
     description: 订单域（order-tracking，未实现）
   - name: schedule
@@ -443,8 +443,14 @@ paths:
       parameters:
         - name: status
           in: query
+          description: 缺省 active；可显式查 archived/all（§4.3 套系上架/下架语义）
           schema:
-            $ref: "#/components/schemas/PackageStatus"
+            type: string
+            enum: [active, archived, all]
+            x-enum-varnames:
+              - ListPackagesParamsStatusActive
+              - ListPackagesParamsStatusArchived
+              - ListPackagesParamsStatusAll
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -494,15 +500,23 @@ paths:
                   description: 分
                 duration_minutes:
                   type: integer
+                  nullable: true
                 shot_count_min:
                   type: integer
+                  nullable: true
                 shot_count_max:
                   type: integer
+                  nullable: true
                 raw_delivery_count:
                   type: integer
+                  nullable: true
                 retouch_count:
                   type: integer
+                  nullable: true
                   description: 0=不含精修
+                note:
+                  type: string
+                  maxLength: 500
                 status:
                   $ref: "#/components/schemas/PackageStatus"
       responses:
@@ -518,6 +532,27 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      tags: [packages]
+      operationId: deletePackage
+      summary: 删除套系；被订单引用时返回 package_in_use（§4.3）
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: 已删除，无响应体
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: package_in_use（套系已被订单引用，不可删除）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -1262,6 +1297,12 @@ components:
     CustomerChannel:
       type: string
       enum: [xiaohongshu, douyin, weibo, referral, other]
+      x-enum-varnames:
+        - CustomerChannelXiaohongshu
+        - CustomerChannelDouyin
+        - CustomerChannelWeibo
+        - CustomerChannelReferral
+        - CustomerChannelOther
 
     CustomerStatus:
       type: string
@@ -1270,18 +1311,37 @@ components:
     SocialPlatform:
       type: string
       enum: [wechat, qq, telegram, xiaohongshu, douyin, weibo, other]
+      x-enum-varnames:
+        - SocialPlatformWechat
+        - SocialPlatformQq
+        - SocialPlatformTelegram
+        - SocialPlatformXiaohongshu
+        - SocialPlatformDouyin
+        - SocialPlatformWeibo
+        - SocialPlatformOther
 
     ShootType:
       type: string
       enum: [portrait, cosplay, other]
+      x-enum-varnames:
+        - ShootTypePortrait
+        - ShootTypeCosplay
+        - ShootTypeOther
 
     PricingMode:
       type: string
       enum: [per_duration, per_photo, fixed]
+      x-enum-varnames:
+        - PricingModePerDuration
+        - PricingModePerPhoto
+        - PricingModeFixed
 
     PackageStatus:
       type: string
       enum: [active, archived]
+      x-enum-varnames:
+        - PackageStatusActive
+        - PackageStatusArchived
 
     OrderStatus:
       description: 语义与合法跃迁见 §4.2 订单状态机

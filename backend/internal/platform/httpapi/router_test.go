@@ -72,7 +72,7 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 	r.POST("/api/v1/probe", func(c *gin.Context) {})
 
 	cases := []struct{ method, path string }{
-		{http.MethodPost, "/api/v1/packages"},   // 未实现域端点（package-catalog）
+		{http.MethodPost, "/api/v1/orders"},     // 未实现域端点（order-tracking）
 		{http.MethodGet, "/api/v1/no-such"},     // 未注册路径
 		{http.MethodGet, "/api/v1/probe"},       // 方法不匹配
 		{http.MethodDelete, "/api/v1/probe/xx"}, // 未注册子路径

@@ -13,6 +13,7 @@ const (
 	CodeCustomerMerged = "customer_merged"
 	CodeLastIdentity   = "last_identity"
 	CodeMergeConflict  = "merge_conflict"
+	CodePackageInUse   = "package_in_use"
 )
 
 // newErrorEnvelope 构造统一错误封套（类型用 codegen 产物，保证与契约同源）。

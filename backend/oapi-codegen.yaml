@@ -12,3 +12,4 @@ output-options:
     - auth
     - customer-core
     - customer-profile-complete
+    - packages

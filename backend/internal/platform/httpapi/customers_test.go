@@ -15,12 +15,13 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-func startCustomerPostgres(t *testing.T) string {
+func startCustomerPostgres(t *testing.T) (string, *tcpostgres.PostgresContainer) {
 	t.Helper()
 	ctx := context.Background()
 	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
@@ -43,12 +44,18 @@ func startCustomerPostgres(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("container connection string: %v", err)
 	}
-	return url
+	return url, ctr
 }
 
 func newCustomerAPIRouter(t *testing.T) (http.Handler, *store.Store, *auth.TokenIssuer) {
 	t.Helper()
-	url := startCustomerPostgres(t)
+	router, s, tokens, _ := newCustomerAPIRouterWithContainer(t)
+	return router, s, tokens
+}
+
+func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store, *auth.TokenIssuer, *tcpostgres.PostgresContainer) {
+	t.Helper()
+	url, ctr := startCustomerPostgres(t)
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
@@ -72,8 +79,9 @@ func newCustomerAPIRouter(t *testing.T) (http.Handler, *store.Store, *auth.Token
 		ScopeFactory: s,
 		Auth:         auth.NewService(s, tokens),
 		Customer:     customerdomain.NewService(customerdomain.NewPostgresRepository()),
+		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
 	})
-	return router, s, tokens
+	return router, s, tokens, ctr
 }
 
 func authenticatedRequest(t *testing.T, h http.Handler, method, path, token string, body []byte) *httptest.ResponseRecorder {

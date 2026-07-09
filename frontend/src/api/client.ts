@@ -24,6 +24,17 @@ export type CustomerNote =
 export type CustomerListStatus = NonNullable<
   paths['/customers']['get']['parameters']['query']
 >['status']
+export type PackageListResponse =
+  paths['/packages']['get']['responses']['200']['content']['application/json']
+export type CreatePackageBody =
+  paths['/packages']['post']['requestBody']['content']['application/json']
+export type Package =
+  paths['/packages']['post']['responses']['201']['content']['application/json']
+export type UpdatePackageBody =
+  paths['/packages/{id}']['patch']['requestBody']['content']['application/json']
+export type PackageListStatus = NonNullable<
+  paths['/packages']['get']['parameters']['query']
+>['status']
 
 type ErrorEnvelope = { error: { code: string; message: string } }
 
@@ -137,4 +148,35 @@ export function mergeCustomer(id: string, sourceCustomerId: string): Promise<Cus
     method: 'POST',
     body: JSON.stringify({ source_customer_id: sourceCustomerId }),
   })
+}
+
+export function listPackages(params: {
+  status?: PackageListStatus
+  page?: number
+  pageSize?: number
+} = {}): Promise<PackageListResponse> {
+  const search = new URLSearchParams()
+  if (params.status) search.set('status', params.status)
+  if (params.page) search.set('page', String(params.page))
+  if (params.pageSize) search.set('page_size', String(params.pageSize))
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return request<PackageListResponse>(`/packages${suffix}`)
+}
+
+export function createPackage(body: CreatePackageBody): Promise<Package> {
+  return request<Package>('/packages', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updatePackage(id: string, body: UpdatePackageBody): Promise<Package> {
+  return request<Package>(`/packages/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deletePackage(id: string): Promise<void> {
+  return request<void>(`/packages/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

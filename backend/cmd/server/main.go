@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
+	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
@@ -54,6 +55,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		ScopeFactory: s,
 		Auth:         auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
 		Customer:     customer.NewService(customer.NewPostgresRepository()),
+		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

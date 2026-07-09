@@ -485,17 +485,18 @@ table.data tbody tr:hover { background: var(--bg); }
 .form-error { margin-top: 10px; color: var(--danger); font-size: 12.5px; font-weight: 600; }
 
 .pkg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-.pkg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.load-more { display: flex; justify-content: center; margin-top: 16px; }
+.pkg-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-m); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .pkg-card.archived { opacity: 0.62; }
-.pkg-head { display: flex; align-items: flex-start; gap: 10px; }
-.pkg-head h3 { font-size: 15px; flex: 1; }
+.pkg-head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.pkg-head h3 { font-size: 15px; flex: 1; min-width: 140px; overflow-wrap: anywhere; }
 .pkg-price { font-family: var(--font-mono); font-size: 22px; font-weight: 700; letter-spacing: 0; }
 .pkg-price small { font-size: 12px; font-weight: 500; color: var(--muted); font-family: var(--font-body); }
 .pkg-specs { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 12px; font-size: 12.5px; }
 .pkg-specs .k { color: var(--muted); }
-.pkg-specs .v { font-weight: 550; text-align: right; font-variant-numeric: tabular-nums; }
-.pkg-foot { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; border-top: 1px solid var(--border); }
-.pkg-note { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 10px; }
+.pkg-specs .v { font-weight: 550; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pkg-foot { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.pkg-note { font-size: 12px; color: var(--muted); border-top: 1px dashed var(--border); padding-top: 10px; overflow-wrap: anywhere; }
 .mode-hint { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
 .mode-hint .m { padding: 10px 13px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface); font-size: 12px; color: var(--muted); }
 .mode-hint .m b { display: block; color: var(--fg); font-size: 12.5px; margin-bottom: 2px; }

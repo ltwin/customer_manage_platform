@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 )
 
@@ -39,6 +40,7 @@ type handlers struct {
 	auth         *auth.Service
 	scopeFactory ScopeFactory
 	customer     *customerdomain.Service
+	packages     *pkgcatalog.Service
 }
 
 var _ ServerInterface = (*handlers)(nil)

@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
@@ -32,6 +33,7 @@ type RouterDeps struct {
 	ScopeFactory ScopeFactory
 	Auth         *auth.Service
 	Customer     *customerdomain.Service
+	Packages     *pkgcatalog.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -55,6 +57,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		auth:         deps.Auth,
 		scopeFactory: deps.ScopeFactory,
 		customer:     deps.Customer,
+		packages:     deps.Packages,
 	}
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", h.Login)
@@ -71,6 +74,10 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	})
 	protected.POST("/customers/:id/notes", func(c *gin.Context) { h.AddCustomerNote(c, c.Param("id")) })
 	protected.POST("/customers/:id/merge", func(c *gin.Context) { h.MergeCustomer(c, c.Param("id")) })
+	protected.GET("/packages", h.listPackagesRoute)
+	protected.POST("/packages", h.CreatePackage)
+	protected.PATCH("/packages/:id", func(c *gin.Context) { h.UpdatePackage(c, c.Param("id")) })
+	protected.DELETE("/packages/:id", func(c *gin.Context) { h.DeletePackage(c, c.Param("id")) })
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）

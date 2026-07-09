@@ -23,7 +23,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 
 - 平台基座：单账号登录、账号维度数据隔离、前后端脚手架与验证基线（greenfield，从零建）
 - 客户档案：30 秒建档、多平台身份、渠道归因、转介绍、偏好备注、归档与合并（对应 req `customer-profile`）
-- 套系管理：静态定义（类型 / 定价方式 / 交付参数）
+- 套系管理：商品定义（类型 / 定价方式 / 交付参数）+ 上下架 + 删除（引用完整性保护）
 - 订单记录：状态流转 + 定金 / 尾款标记（轻量，不碰支付）
 - 档期管理：日历视图、订单关联、重叠提示
 - 提醒引擎：生日 / 拍后回访 / 流失预警，幂等生成，参数可配置
@@ -57,7 +57,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 photographer-private-crm
 ├── platform   平台基座：认证、账号上下文、HTTP 框架、错误封套、数据访问基座、全量导出
 ├── customer   客户域：客户聚合（身份 / 渠道 / 转介绍 / 备注 / 渐进字段 / 合并 / 归档）
-├── package    套系域：拍摄服务商品的静态定义与归档
+├── package    套系域：拍摄服务商品的静态定义、上下架与删除
 ├── order      订单域：订单状态机 + 定金尾款标记
 ├── schedule   档期域：时间段占用、日历查询、重叠提示
 ├── reminder   提醒与触达域：规则扫描、幂等提醒生成、TG Bot 绑定与推送
@@ -77,10 +77,10 @@ photographer-private-crm
 - **Depth 判断**：deep——"合并客户迁移全部关联资源"这类复杂度藏在域内，对外只是一个 merge 端点。
 
 ### package · 套系域
-- **职责**：套系静态定义（拍摄类型 / 定价方式 / 张数时长底片精修参数）与归档。不含库存、不含订单逻辑。
+- **职责**：套系静态定义（拍摄类型 / 定价方式 / 张数时长底片精修参数）、上下架（active/archived）与删除（带引用完整性保护）。商品心智：上架供下单、下架停售存量仍引用、删除仅限无引用套系。不含库存、不含订单逻辑。
 - **承载的子 feature**：package-catalog
 - **触碰的现有代码**：无
-- **Depth 判断**：浅但独立成域合理——它是订单与流失阈值（按拍摄类型）的引用源，不是 pass-through（有自己的校验与归档语义）。
+- **Depth 判断**：浅但独立成域合理——它是订单与流失阈值（按拍摄类型）的引用源，不是 pass-through（有自己的校验、上下架与删除引用完整性语义）。
 
 ### order · 订单域
 - **职责**：订单创建、八态状态机（含非法跃迁拒绝、状态时间戳自动写入）、定金 / 尾款标记、按客户与全局查询。不碰支付、不管档期时间（引用 slot 由档期域管）。
@@ -150,6 +150,8 @@ Package:         name*, shoot_type*(portrait|cosplay|other),
                  duration_minutes?, shot_count_min?, shot_count_max?,
                  raw_delivery_count?, retouch_count?(0=不含精修), note?(≤500字),
                  status*(active|archived)
+                 （套系是商品心智：active=上架中、archived=下架停售；两态为持久状态。
+                   "删除"是破坏性操作不是状态，见 §4.3 DELETE；套系无 merged 态，区别于 Customer）
 Order:           customer_id*, package_id?, title?,
                  status*(consulting|scheduled|shot|selected|retouching|delivered|closed|cancelled),
                  price?(分), deposit_paid*(bool, 默认 false), balance_paid*(bool, 默认 false),
@@ -210,8 +212,15 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
   PUT    /customers/{id}/avatar     multipart/form-data file            → 200 Customer
   DELETE /customers/{id}/avatar                                          → 200 Customer
 套系域
-  POST/GET/PATCH /packages…         GET ?status=active 供下单选择；归档：PATCH {status:archived}
-                                    归档无 in-use 校验——存量订单继续引用历史套系，仅从选择列表消失
+  POST/GET/PATCH/DELETE /packages…  GET ?status=active 供下单选择（上架中）
+                                    下架（停售）：PATCH {status:archived}——无 in-use 校验，存量订单继续引用
+                                      历史套系，仅从下单选择列表消失；恢复上架 PATCH {status:active}
+                                    删除：DELETE /packages/{id} → 204；带 in-use 校验——被任一订单引用时
+                                      拒绝，返回 409 package_in_use（保护 Order.package_id 引用完整性，见 §4.2 头注）；
+                                      无引用才物理删除。删除是破坏性操作，非持久状态（区别于下架 archived）
+                                      （in-use 校验语义随域生长：order 域未落地前无订单可引用，删除恒放行；
+                                       真实 409 package_in_use 由 order-tracking 接通订单表引用检查，
+                                       其 feature 验收须补"删除被引用套系 409"用例，同 orders_count 真实计数一并接通）
                                     GET 列表项附聚合: orders_count(int, 引用本套系的非 cancelled 订单计数；
                                     order 域未落地前恒为 0)
 订单域
@@ -333,12 +342,12 @@ GET /export → application/json（Content-Disposition 附件）
 4. **customer-avatar** — 客户头像：可选设置 / 替换 / 移除头像；列表、详情、转介绍下拉、merge 对话框等客户选择面显示头像缩略图，未设置时使用默认首字头像
    - 所属模块：customer + webapp ｜ 依赖：customer-profile-complete ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：头像不作为建档必填项；完成信号：头像字段/API 与前端客户选择组件联动，上传/替换/移除用例通过，未设置头像 fallback 稳定；设计阶段需明确头像文件存储、大小/格式限制、删除后的对象清理策略
-5. **package-catalog** — 套系 CRUD 与归档：类型/定价方式/张数时长底片精修参数，归档后不出现在选择列表
-   - 所属模块：package + webapp ｜ 依赖：platform-skeleton ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：完成信号：按 4.2 Package shape 建/改/归档各一条通过；?status=active 过滤正确
+5. **package-catalog** — 套系 CRUD、上下架与删除：类型/定价方式/张数时长底片精修参数；下架后不出现在选择列表，删除受引用完整性保护
+   - 所属模块：package + webapp ｜ 依赖：platform-skeleton ｜ 状态：done ｜ 对应 feature：2026-07-08-package-catalog
+   - 备注：商品心智（2026-07-08 owner 拍板，§4.2/§4.3 update）——active=上架、archived=下架、DELETE=删除；完成信号：按 4.2 Package shape 建/改/下架/上架各一条通过；?status=active 过滤正确；DELETE 无引用套系 204、被引用套系 409 package_in_use（order 域未落地前无订单可引用、删除恒放行，真实 409 由 order-tracking 接通）
 6. **order-tracking** — 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、时间戳自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
    - 所属模块：order + webapp ｜ 依赖：customer-core, package-catalog ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含 shot_at/delivered_at 自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409、**接通 customers/packages 聚合字段真实计算**（orders_count/last_shot_at/total_order_amount，4.3，2026-07-06 契约更新）
+   - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含 shot_at/delivered_at 自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409、**接通 customers/packages 聚合字段真实计算**（orders_count/last_shot_at/total_order_amount，4.3，2026-07-06 契约更新）、**接通套系删除 in-use 校验**（删除被订单引用的套系返回 409 package_in_use，§4.3 契约随域生长，2026-07-08 update）
 7. **schedule-calendar** — 档期：月/周日历视图、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
    - 所属模块：schedule + webapp ｜ 依赖：order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——type=shoot 的 slot 必须挂订单；完成信号：重叠创建返回 overlaps 且前端提示；建/删 slot 不改订单状态（反向联动禁止用例）；日历页答复"某天有没有档"≤10 秒（演示）；**组合流程拍板（2026-07-06）**：前端「新建拍摄档期」弹窗（含客户档案页「＋新约单」入口）隐式先 POST /orders（选客户+套系）再 POST /schedule/slots 挂 order_id——不新增组合端点，两步失败处理（订单已建、slot 失败时的提示与补救）在本条 feature design 内定义，此流程是 design 硬约束；**design 必答清单**：①保存成功后是否隐式第三步 `PATCH /orders {status:scheduled}`（合法，显式驱动，不违反"slot 不反向改状态"不变量）还是接受"日历有 shoot slot 的 consulting 订单"常态；②slot 失败留下的悬挂 consulting 订单按 4.4 属"非终态订单"会抑制该客户 churn 预警，补救策略须覆盖
@@ -369,7 +378,7 @@ GET /export → application/json（Content-Disposition 附件）
 | 再也不忘：三类提醒准确且不重复，主动送达 | 8, 9, 10 | 幂等双跑测试 + 时区日界用例 + TG 真机截图 + dashboard | test + screenshot | yes |
 | 档期 10 秒可答、与客户套系关联 | 6, 7 | 日历页演示 + overlaps 用例 | test + screenshot | yes |
 | 订单状态与定金尾款不漏 | 6, 10 | 跃迁矩阵测试（含时间戳/unpaid_balance）+ 筛选核对 | test | yes |
-| 套系参数有结构化的家 | 5 | CRUD + 归档过滤用例 | test | yes |
+| 套系参数有结构化的家 | 5 | CRUD + 上下架过滤 + 删除引用完整性用例 | test | yes |
 | 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 11, 12 | make check（或等价）+ 基座过滤测试 + 导出 counts 核对 | command + test | yes |
 | 首版整体完成信号 | 全部 | 一条链路演示：建档→套系→订单→档期→标定金→次日 TG 摘要→dashboard 五卡有数 | acceptance report | yes |
 
@@ -409,6 +418,11 @@ GET /export → application/json（Content-Disposition 附件）
 
 ## 8. 变更日志
 
+- 2026-07-08（package-catalog design 启动时 owner 拍板）：套系从"静态定义 + 归档"改为**商品心智的上架/下架/删除**三操作，§4.2/§4.3 接口契约同步 update：
+  - **§4.2**：Package `status(active|archived)` 语义明确为 active=上架中、archived=下架停售（两态为持久状态）；套系无 merged 态（区别于 Customer）。
+  - **§4.3**：套系域端点从 `POST/GET/PATCH` 扩为 `POST/GET/PATCH/DELETE`。下架 = PATCH {status:archived}（无 in-use 校验，存量订单继续引用，语义不变，仅措辞对齐商品心智），恢复上架 = PATCH {status:active}；**新增删除** DELETE /packages/{id} → 204，**带 in-use 校验**：被任一订单引用时拒绝返回 `409 package_in_use`（保护 Order.package_id 引用完整性），无引用才物理删除。删除是破坏性操作、非持久状态。
+  - **契约随域生长**：in-use 校验需查订单表，但 orders 表在 order-tracking 才建；package-catalog 落地时无订单可引用、删除恒放行，真实 `409 package_in_use` 由 order-tracking 接通订单引用检查（其验收补"删除被引用套系 409"用例，与 orders_count 真实计数一并接通）——与 orders_count 恒 0→真实计算同一模式，字段/校验从第一天存在不破坏 shape。
+  - **受影响条目**：`package-catalog`（本次落地删除操作与上下架语义）；`order-tracking`（补删除 in-use 接通用例）。§4.2/§4.3 其余契约不变。
 - 2026-07-08：根据 owner 反馈新增 `customer-avatar` planned 子 feature：客户头像可选设置/替换/移除，用于列表、详情、转介绍下拉、merge 对话框等客户选择面辅助识别；同时明确客户选择展示不拼社交账号/来源渠道，短 UID 负责消歧，头像作为后续增强。
 
 - 2026-07-07（customer-profile-complete design 启动时拍板）：§4.2 补「转介绍指针语义」——merge 时 referrer 指向 source 的批量重定向 target（自指清空）；归档不清洗既有 referrer；介绍人候选仅 active（只约束新写入）；channel 可 PATCH 修正且与 referrer 联动（改为 referral 必带介绍人、改走 referral 自动清空）。承接 customer-core review 遗留 REV-006。

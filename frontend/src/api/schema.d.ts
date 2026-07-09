@@ -170,7 +170,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** 删除套系；被订单引用时返回 package_in_use（§4.3） */
+        delete: operations["deletePackage"];
         options?: never;
         head?: never;
         /** 更新套系；归档 = PATCH {status:archived}（无 in-use 校验，§4.3） */
@@ -1021,7 +1022,8 @@ export interface operations {
     listPackages: {
         parameters: {
             query?: {
-                status?: components["schemas"]["PackageStatus"];
+                /** @description 缺省 active；可显式查 archived/all（§4.3 套系上架/下架语义） */
+                status?: "active" | "archived" | "all";
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -1075,6 +1077,38 @@ export interface operations {
             500: components["responses"]["Internal"];
         };
     };
+    deletePackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除，无响应体 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description package_in_use（套系已被订单引用，不可删除） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
     updatePackage: {
         parameters: {
             query?: never;
@@ -1092,12 +1126,13 @@ export interface operations {
                     pricing_mode?: components["schemas"]["PricingMode"];
                     /** @description 分 */
                     base_price?: number;
-                    duration_minutes?: number;
-                    shot_count_min?: number;
-                    shot_count_max?: number;
-                    raw_delivery_count?: number;
+                    duration_minutes?: number | null;
+                    shot_count_min?: number | null;
+                    shot_count_max?: number | null;
+                    raw_delivery_count?: number | null;
                     /** @description 0=不含精修 */
-                    retouch_count?: number;
+                    retouch_count?: number | null;
+                    note?: string;
                     status?: components["schemas"]["PackageStatus"];
                 };
             };
