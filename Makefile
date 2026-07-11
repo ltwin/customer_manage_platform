@@ -33,6 +33,8 @@ lint:
 test:
 	cd backend && go test ./...
 	cd frontend && npm run test:package-price
+	cd frontend && npm run test:api-client
+	cd frontend && npm run test:schedule
 
 # 契约线（design 2.2）：api/openapi.yaml -> Go 服务端类型（按 tag）+ TS 全量类型
 generate: frontend/node_modules

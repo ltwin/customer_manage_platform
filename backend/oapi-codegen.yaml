@@ -14,3 +14,4 @@ output-options:
     - customer-profile-complete
     - packages
     - orders
+    - schedule

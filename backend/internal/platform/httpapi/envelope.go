@@ -19,6 +19,10 @@ const (
 	CodeInvalidStatusTransition = "invalid_status_transition"
 	CodeUnpaidBalance           = "unpaid_balance"
 	CodeOrderNotTerminal        = "order_not_terminal"
+	CodeOrderInUse              = "order_in_use"
+	CodeOrderAlreadyScheduled   = "order_already_scheduled"
+	CodeCustomerChanged         = "customer_changed"
+	CodeIdempotencyConflict     = "idempotency_conflict"
 )
 
 // newErrorEnvelope 构造统一错误封套（类型用 codegen 产物，保证与契约同源）。
@@ -32,4 +36,15 @@ func newErrorEnvelope(code, message string) ErrorEnvelope {
 // abortError 以错误封套终止请求：一切 /api/v1/** 非 2xx 响应的唯一出口。
 func abortError(c *gin.Context, status int, code, message string) {
 	c.AbortWithStatusJSON(status, newErrorEnvelope(code, message))
+}
+
+func abortErrorWithDetails(
+	c *gin.Context,
+	status int,
+	code, message string,
+	details ScheduleConflictDetails,
+) {
+	env := newErrorEnvelope(code, message)
+	env.Error.Details = &details
+	c.AbortWithStatusJSON(status, env)
 }

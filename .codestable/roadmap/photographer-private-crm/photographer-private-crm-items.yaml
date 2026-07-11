@@ -51,12 +51,12 @@ items:
     notes: 依赖理由：订单挂 Customer、引用 Package；完成信号：跃迁矩阵测试全过（含时间戳自动写入、409 unpaid_balance）、unpaid_balance 筛选正确、merge 迁移订单用例、引用归档客户 409 customer_archived；落地时接通 customers/packages 聚合字段真实计算（orders_count/last_shot_at/total_order_amount，2026-07-06 契约更新）；接通套系删除 in-use 校验（删除被订单引用的套系返回 409 package_in_use，§4.3 契约随域生长，2026-07-08 update，package-catalog 已留领域方法查引用数、order 域接通真实订单表）
 
   - slug: schedule-calendar
-    description: 档期：月/周日历、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
+    description: 档期：月历、跨日/全天 slot CRUD、客户与订单关联、可行动重叠提示、独立忙碌块与异常恢复
     depends_on: [order-tracking]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-09-schedule-calendar
     minimal_loop: false
-    notes: 依赖理由：type=shoot 的 slot 必须挂订单；完成信号：overlaps 用例通过、建/删 slot 不改订单状态（反向联动禁止用例）、日历答复某天占用 ≤10 秒演示；组合流程拍板（2026-07-06）：前端「新建拍摄档期」弹窗（含客户档案页新约单入口）隐式先 POST /orders 再 POST /schedule/slots 挂 order_id，不新增组合端点——design 硬约束；design 必答：①两步失败处理（订单已建、slot 失败的提示与补救，注意悬挂 consulting 订单会抑制该客户 churn 预警）②保存成功后是否隐式第三步 PATCH /orders {status:scheduled} 还是接受日历有 shoot slot 的 consulting 订单常态
+    notes: 依赖理由：type=shoot 的 slot 必须挂订单；本条增量 owner 覆盖 platform+order+schedule+webapp。完成信号：月历与客户档案共用「新建拍摄档期」流程；月历查指定日期/重叠≤10秒、客户档案建单+挂档≤30秒；周一首列的固定6周网格内跨日/全天按相交自然日显示，密集日按display_start/id稳定排序且冲突数按当日参与重叠的唯一slot计；保存前展示重叠，成功后刷新确认；组合流程用128-bit flow_id的per-step attempt Idempotency-Key+session journal，服务端operation固定order.create.v1/schedule-slot.create.v1，重复点击/响应丢失/5xx/硬刷新不重复写，24小时过期禁自动重放；历史无候选跳转backfill时，schedule_draft只允许历史可排期六态，默认shot并按账号时区预填档期开始日，POST order先进入backfill_order pending phase，结果未知不重复补录；只有unknown结果持续阻塞且不可清理，明确失败/资源已知可保留现状或补偿后结束；路径A先新建consulting，所有consulting均先成功建slot并刷新日历，以刷新后ScheduleSlotListItem.customer_id修正journal再同步scheduled，status_sync unknown保留恢复入口，明确失败可重试/删slot/保留异常现状并结束；shoot写与归档/merge共用customer→order锁序并按先提交者线性化，无死锁/悬空引用，customer_changed保留表单/已知订单并清旧候选后重拉确认；POST orders用creation_mode区分新业务/补录，GET orders用schedulable_at复用订单+客户未来/历史矩阵，未来服务端要求active客户、历史允许active/archived、merged永拒；GET /me timezone驱动日界并覆盖schedule_draft OrderWorkspace历史时间/DST，加载失败不回退浏览器时区且禁写入；ScheduleSlotListItem为type判别union，shoot必返order/customer/status摘要并可直达客户档案订单tab，客户归档/订单取消后仍显示文本警示；order_in_use/order_already_scheduled typed details可直达slot；无header/creation_mode/schedulable_at的既有新业务调用与列表排序/total回归不变；首版仅月视图，移动端只保证查档期，不做周视图/拖拽/周期重复；无组合端点。
 
   - slug: reminder-engine
     description: 提醒引擎：/admin/reminders/scan 幂等生成生日/回访/流失三类提醒、done/dismiss、参数可配置（按拍摄类型流失阈值、账号时区）

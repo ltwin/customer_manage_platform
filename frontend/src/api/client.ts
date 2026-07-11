@@ -1,6 +1,6 @@
 // API client：类型来自契约 codegen（src/api/schema.d.ts），错误统一走封套（§4.1）。
-import type { paths } from './schema'
-import { clearToken, getToken } from '../auth/token'
+import type { components, paths } from './schema'
+import { clearToken, getToken } from '../auth/token.ts'
 
 export type LoginResponse =
   paths['/auth/login']['post']['responses']['200']['content']['application/json']
@@ -47,17 +47,30 @@ export type UpdateOrderBody =
 export type OrderStatus = NonNullable<
   paths['/orders']['get']['parameters']['query']
 >['status']
+export type ScheduleSlotList =
+  paths['/schedule/slots']['get']['responses']['200']['content']['application/json']
+export type ScheduleSlotListItem = ScheduleSlotList[number]
+export type CreateScheduleSlotBody =
+  paths['/schedule/slots']['post']['requestBody']['content']['application/json']
+export type CreateScheduleSlotResponse =
+  paths['/schedule/slots']['post']['responses']['201']['content']['application/json']
+export type ScheduleSlot = CreateScheduleSlotResponse['slot']
+export type UpdateScheduleSlotBody =
+  paths['/schedule/slots/{id}']['patch']['requestBody']['content']['application/json']
 
-type ErrorEnvelope = { error: { code: string; message: string } }
+type ErrorEnvelope = components['schemas']['ErrorEnvelope']
+export type ApiErrorDetails = NonNullable<ErrorEnvelope['error']['details']>
 
 export class ApiError extends Error {
   readonly code: string
   readonly status: number
+  readonly details?: ApiErrorDetails
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: ApiErrorDetails) {
     super(message)
     this.code = code
     this.status = status
+    this.details = details
   }
 }
 
@@ -80,7 +93,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (res.status === 401) {
       clearToken()
     }
-    throw new ApiError(res.status, code, envelope?.error.message ?? `请求失败（${res.status}）`)
+    throw new ApiError(
+      res.status,
+      code,
+      envelope?.error.message ?? `请求失败（${res.status}）`,
+      envelope?.error.details,
+    )
   }
   if (res.status === 204) {
     return undefined as T
@@ -197,6 +215,7 @@ export function listOrders(params: {
   customerId?: string
   status?: OrderStatus
   unpaidBalance?: boolean
+  schedulableAt?: string
   page?: number
   pageSize?: number
 } = {}): Promise<OrderListResponse> {
@@ -204,15 +223,19 @@ export function listOrders(params: {
   if (params.customerId) search.set('customer_id', params.customerId)
   if (params.status) search.set('status', params.status)
   if (params.unpaidBalance) search.set('unpaid_balance', 'true')
+  if (params.schedulableAt) search.set('schedulable_at', params.schedulableAt)
   if (params.page) search.set('page', String(params.page))
   if (params.pageSize) search.set('page_size', String(params.pageSize))
   const suffix = search.toString() ? `?${search.toString()}` : ''
   return request<OrderListResponse>(`/orders${suffix}`)
 }
 
-export function createOrder(body: CreateOrderBody): Promise<Order> {
+export function createOrder(body: CreateOrderBody, idempotencyKey?: string): Promise<Order> {
+  const headers = new Headers()
+  if (idempotencyKey) headers.set('Idempotency-Key', idempotencyKey)
   return request<Order>('/orders', {
     method: 'POST',
+    headers,
     body: JSON.stringify(body),
   })
 }
@@ -226,4 +249,33 @@ export function updateOrder(id: string, body: UpdateOrderBody): Promise<Order> {
 
 export function deleteOrder(id: string): Promise<void> {
   return request<void>(`/orders/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function listScheduleSlots(from: string, to: string): Promise<ScheduleSlotList> {
+  const search = new URLSearchParams({ from, to })
+  return request<ScheduleSlotList>(`/schedule/slots?${search.toString()}`)
+}
+
+export function createScheduleSlot(
+  body: CreateScheduleSlotBody,
+  idempotencyKey?: string,
+): Promise<CreateScheduleSlotResponse> {
+  const headers = new Headers()
+  if (idempotencyKey) headers.set('Idempotency-Key', idempotencyKey)
+  return request<CreateScheduleSlotResponse>('/schedule/slots', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateScheduleSlot(id: string, body: UpdateScheduleSlotBody): Promise<ScheduleSlot> {
+  return request<ScheduleSlot>(`/schedule/slots/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteScheduleSlot(id: string): Promise<void> {
+  return request<void>(`/schedule/slots/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }

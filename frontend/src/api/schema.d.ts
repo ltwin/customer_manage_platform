@@ -188,7 +188,7 @@ export interface paths {
         /** 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3） */
         get: operations["listOrders"];
         put?: never;
-        /** 新建订单（status 缺省 consulting；带 status 为补录直达，规则见 §4.3 2026-07-09） */
+        /** 新建订单（creation_mode=new 为新业务，backfill 为历史补录） */
         post: operations["createOrder"];
         delete?: never;
         options?: never;
@@ -210,7 +210,7 @@ export interface paths {
         delete: operations["deleteOrder"];
         options?: never;
         head?: never;
-        /** 状态跃迁与字段修正（状态机语义见 §4.2） */
+        /** 状态跃迁与字段修正（状态机语义见 §4.2；status 等于当前状态时为 200 no-op） */
         patch: operations["updateOrder"];
         trace?: never;
     };
@@ -224,7 +224,7 @@ export interface paths {
         /** 档期区间查询（含跨界 slot） */
         get: operations["listScheduleSlots"];
         put?: never;
-        /** 新建档期（重叠不阻止，返回 overlaps 由前端提示） */
+        /** 新建档期（支持跨日；重叠不阻止；同一订单最多一条 shoot slot） */
         post: operations["createScheduleSlot"];
         delete?: never;
         options?: never;
@@ -246,7 +246,7 @@ export interface paths {
         delete: operations["deleteScheduleSlot"];
         options?: never;
         head?: never;
-        /** 更新档期 */
+        /** 更新档期；时间/type/order 变化重验订单与客户矩阵，note-only 不重验外部状态 */
         patch: operations["updateScheduleSlot"];
         trace?: never;
     };
@@ -397,13 +397,22 @@ export interface components {
             error: {
                 code: string;
                 message: string;
+                details?: components["schemas"]["ScheduleConflictDetails"];
             };
+        };
+        /** @description order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返 */
+        ScheduleConflictDetails: {
+            schedule_slot_id: string;
+            /** Format: date-time */
+            schedule_start_at: string;
         };
         /** @description 账号（摄影师）；永不含 password_hash */
         Account: {
             readonly id: string;
             /** Format: date-time */
             readonly created_at: string;
+            /** @description IANA 时区；Settings 未落地前返回 Asia/Shanghai，日历不得使用浏览器时区替代 */
+            timezone: string;
         };
         /** @description 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1） */
         Birthday: string;
@@ -424,6 +433,8 @@ export interface components {
          * @enum {string}
          */
         OrderStatus: "consulting" | "scheduled" | "shot" | "selected" | "retouching" | "delivered" | "closed" | "cancelled";
+        /** @enum {string} */
+        OrderCreationMode: "new" | "backfill";
         /** @enum {string} */
         SlotType: "shoot" | "hold" | "busy";
         /** @enum {string} */
@@ -573,10 +584,62 @@ export interface components {
              */
             end_at: string;
             type: components["schemas"]["SlotType"];
-            /** @description type=shoot 时必填 */
+            /** @description type=shoot 时必填；同一订单最多关联一条 shoot slot */
             order_id?: string;
             note?: string;
         };
+        ScheduleSlotListItemBase: {
+            readonly id: string;
+            /** @description 服务端由账号上下文写入，客户端永不传（ADR-001） */
+            readonly account_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            start_at: string;
+            /**
+             * Format: date-time
+             * @description 必须 > start_at
+             */
+            end_at: string;
+            note?: string;
+        };
+        ShootScheduleSlotListItem: components["schemas"]["ScheduleSlotListItemBase"] & {
+            /** @enum {string} */
+            type: "shoot";
+            /** @description shoot slot 必返的关联订单 id */
+            order_id: string;
+            /** @description 引用订单的当前客户 id；merge 后返回 target id，供恢复流程与客户档案订单 tab 使用 */
+            customer_id: string;
+            /** @description 引用订单的当前客户名 */
+            customer_display_name: string;
+            /** @description 当前客户状态；客户归档后仍返回，供文本警示 */
+            customer_status: components["schemas"]["CustomerStatus"];
+            /** @description 引用订单的标题；无标题时缺省，由前端按套系/客户兜底 */
+            order_title?: string;
+            /** @description 引用订单所选套系名；未选套系时缺省 */
+            package_name?: string;
+            order_status: components["schemas"]["OrderStatus"];
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "shoot";
+        };
+        NonShootScheduleSlotListItem: components["schemas"]["ScheduleSlotListItemBase"] & {
+            /**
+             * @description hold/busy 不带订单或客户引用摘要
+             * @enum {string}
+             */
+            type: "hold" | "busy";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "hold" | "busy";
+        };
+        ScheduleSlotListItem: components["schemas"]["ShootScheduleSlotListItem"] | components["schemas"]["NonShootScheduleSlotListItem"];
         Reminder: {
             readonly id: string;
             /** @description 服务端由账号上下文写入，客户端永不传（ADR-001） */
@@ -653,6 +716,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
+        IdempotencyKey: string;
         Id: string;
         Page: number;
         PageSize: number;
@@ -1167,6 +1232,8 @@ export interface operations {
                 status?: components["schemas"]["OrderStatus"];
                 /** @description true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径） */
                 unpaid_balance?: boolean;
+                /** @description 目标 slot 的 end_at；服务端按它相对当前时刻应用与 POST/PATCH 相同的订单/客户未来历史矩阵并排除已有 shoot slot：未来要求客户 active，历史允许 active/archived，merged 永不允许；可与 customer_id 组合 */
+                schedulable_at?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -1196,19 +1263,27 @@ export interface operations {
     createOrder: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
+                    /**
+                     * @description new=新业务，只允许 consulting/scheduled 且只能引用 active 客户/套系；backfill=历史补录，可按状态不变量直达并允许 active/archived 客户与套系，merged 客户仍拒绝
+                     * @default new
+                     */
+                    creation_mode?: components["schemas"]["OrderCreationMode"];
                     customer_id: string;
                     package_id?: string;
                     title?: string;
                     /** @description 分 */
                     price?: number;
-                    /** @description 补录直达目标状态；≥shot 须显式给 shot_at、≥delivered（含 closed）须显式给 delivered_at，closed 须 balance_paid=true（§4.2 不变量） */
+                    /** @description creation_mode=new 时缺省 consulting 且仅允许 consulting/scheduled；backfill 时可直达八态，≥shot 须显式 shot_at、≥delivered（含 closed）须显式 delivered_at，closed 须 balance_paid=true */
                     status?: components["schemas"]["OrderStatus"];
                     /** @default false */
                     deposit_paid?: boolean;
@@ -1241,7 +1316,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description customer_archived（引用 merged/archived 客户）| unpaid_balance（补录 status=closed 且 balance_paid≠true） */
+            /** @description customer_archived（new 引用 merged/archived 客户，或 backfill 引用 merged 客户）| unpaid_balance（补录 status=closed 且 balance_paid≠true）| idempotency_conflict（已成功绑定的同 key 使用不同请求体） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1273,7 +1348,7 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description order_not_terminal（非终态订单不可删除，先 cancel）| order_in_use（被 type=shoot 的 slot 引用——schedule 域落地后接通，§4.3 随域生长） */
+            /** @description order_not_terminal（非终态订单不可删除，先 cancel）| order_in_use（被 type=shoot 的 slot 引用；details 必返 schedule_slot_id/schedule_start_at） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1339,7 +1414,9 @@ export interface operations {
     listScheduleSlots: {
         parameters: {
             query: {
+                /** @description 半开区间 [from,to) 的 UTC 起点；月历传完整 6 周可见网格的账号本地日界 */
                 from: string;
+                /** @description 半开区间 [from,to) 的 UTC 终点 */
                 to: string;
             };
             header?: never;
@@ -1354,7 +1431,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ScheduleSlot"][];
+                    "application/json": components["schemas"]["ScheduleSlotListItem"][];
                 };
             };
             400: components["responses"]["ValidationFailed"];
@@ -1365,7 +1442,10 @@ export interface operations {
     createScheduleSlot: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -1377,7 +1457,7 @@ export interface operations {
                     /** Format: date-time */
                     end_at: string;
                     type: components["schemas"]["SlotType"];
-                    /** @description type=shoot 时必填 */
+                    /** @description type=shoot 时必填；未来/进行中只允许 consulting/scheduled 且客户须 active；历史补录允许 scheduled/shot/selected/retouching/delivered/closed 且客户可 active/archived；cancelled 或 merged 客户永不允许 */
                     order_id?: string;
                     note?: string;
                 };
@@ -1399,6 +1479,16 @@ export interface operations {
             };
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description order_already_scheduled（订单已有 shoot slot，details 返回现有 slot）| customer_archived（未来档期的客户已归档/合并）| customer_changed（并发 merge 导致订单客户连续变化，需重拉候选）| idempotency_conflict（已成功绑定的同 key 使用不同请求体） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -1442,8 +1532,10 @@ export interface operations {
                     /** Format: date-time */
                     end_at?: string;
                     type?: components["schemas"]["SlotType"];
-                    order_id?: string;
-                    note?: string;
+                    /** @description 显式 null 清空关联；省略表示不改 */
+                    order_id?: string | null;
+                    /** @description 显式 null 清空备注；省略表示不改 */
+                    note?: string | null;
                 };
             };
         };
@@ -1460,6 +1552,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description order_already_scheduled（目标订单已有另一条 shoot slot，details 返回现有 slot）| customer_archived（未来档期的客户已归档/合并）| customer_changed（并发 merge 导致订单客户连续变化，需重拉候选） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };

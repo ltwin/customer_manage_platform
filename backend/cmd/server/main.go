@@ -15,7 +15,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 )
 
 func main() {
@@ -58,6 +60,8 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Customer:     customer.NewService(customer.NewPostgresRepository()),
 		Orders:       order.NewService(order.NewPostgresRepository()),
 		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
+		Idempotency:  idempotency.NewExecutor(),
+		Schedule:     schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

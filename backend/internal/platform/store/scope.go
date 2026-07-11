@@ -20,6 +20,18 @@ var ErrEmptyAccountScope = errors.New("AccountScope 缺 account_id，拒绝执�
 // ErrNoRows 暴露 store 边界内的空结果哨兵，避免业务域直接 import pgx。
 var ErrNoRows = pgx.ErrNoRows
 
+// Row 暴露 store 查询的最小扫描结果类型，业务域无需直接 import pgx。
+type Row = pgx.Row
+
+// Rows 暴露 store 多行查询的扫描结果类型，业务域无需直接 import pgx。
+type Rows = pgx.Rows
+
+func IsUniqueViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505" &&
+		(constraint == "" || pgErr.ConstraintName == constraint)
+}
+
 // identPattern：table / columns 标识符白名单（review REV-006）；
 // 拦截把请求派生字符串误传进 SQL 片段位的低级错误。
 var identPattern = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
@@ -49,6 +61,12 @@ type AccountScope struct {
 	accountID string
 }
 
+// TxAccountScope 是已开启事务内的账号隔离句柄。它刻意不暴露开启事务的方法，
+// 避免幂等创建 callback 意外把业务写放进另一个事务。
+type TxAccountScope struct {
+	scope AccountScope
+}
+
 type scopedRunner interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	Query(context.Context, string, ...any) (pgx.Rows, error)
@@ -68,8 +86,19 @@ func (sc AccountScope) execRunner() scopedRunner {
 	return sc.pool
 }
 
-// WithinTx 在同一账号 scope 内执行事务；fn 返回错误时整体回滚。
+// WithinTx 保留既有领域代码的事务入口；新建的跨资源创建编排使用 WithTxScope。
 func (sc AccountScope) WithinTx(ctx context.Context, fn func(AccountScope) error) error {
+	return sc.withinTx(ctx, fn)
+}
+
+// WithTxScope 是 TxAccountScope 的唯一生产构造入口。
+func (sc AccountScope) WithTxScope(ctx context.Context, fn func(TxAccountScope) error) error {
+	return sc.withinTx(ctx, func(tx AccountScope) error {
+		return fn(TxAccountScope{scope: tx})
+	})
+}
+
+func (sc AccountScope) withinTx(ctx context.Context, fn func(AccountScope) error) error {
 	if sc.accountID == "" {
 		return ErrEmptyAccountScope
 	}
@@ -98,6 +127,59 @@ func (sc AccountScope) WithinTx(ctx context.Context, fn func(AccountScope) error
 		return fmt.Errorf("commit scoped tx: %w", err)
 	}
 	return nil
+}
+
+func (sc TxAccountScope) Query(ctx context.Context, table, columns, cond string, args ...any) (pgx.Rows, error) {
+	return sc.scope.Query(ctx, table, columns, cond, args...)
+}
+
+func (sc TxAccountScope) QueryRow(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.scope.QueryRow(ctx, table, columns, cond, args...)
+}
+
+func (sc TxAccountScope) QueryRowForUpdate(ctx context.Context, table, columns, cond string, args ...any) pgx.Row {
+	return sc.scope.QueryRowForUpdate(ctx, table, columns, cond, args...)
+}
+
+func (sc TxAccountScope) QueryPage(ctx context.Context, table, columns, cond string, order []OrderBy, limit, offset int, args ...any) (pgx.Rows, error) {
+	return sc.scope.QueryPage(ctx, table, columns, cond, order, limit, offset, args...)
+}
+
+func (sc TxAccountScope) Count(ctx context.Context, table, cond string, args ...any) (int64, error) {
+	return sc.scope.Count(ctx, table, cond, args...)
+}
+
+func (sc TxAccountScope) ScalarAggregate(ctx context.Context, table, op, column, cond string, args ...any) pgx.Row {
+	return sc.scope.ScalarAggregate(ctx, table, op, column, cond, args...)
+}
+
+func (sc TxAccountScope) Exists(ctx context.Context, table, cond string, args ...any) (bool, error) {
+	return sc.scope.Exists(ctx, table, cond, args...)
+}
+
+func (sc TxAccountScope) Insert(ctx context.Context, table string, cols []string, args ...any) error {
+	return sc.scope.Insert(ctx, table, cols, args...)
+}
+
+func (sc TxAccountScope) InsertReturningID(ctx context.Context, table string, cols []string, args ...any) (string, error) {
+	return sc.scope.InsertReturningID(ctx, table, cols, args...)
+}
+
+func (sc TxAccountScope) InsertOnConflictDoNothingReturning(
+	ctx context.Context,
+	table string,
+	cols, conflictCols, returningCols []string,
+	args ...any,
+) pgx.Row {
+	return sc.scope.InsertOnConflictDoNothingReturning(ctx, table, cols, conflictCols, returningCols, args...)
+}
+
+func (sc TxAccountScope) Update(ctx context.Context, table, setClause, cond string, args ...any) (int64, error) {
+	return sc.scope.Update(ctx, table, setClause, cond, args...)
+}
+
+func (sc TxAccountScope) Delete(ctx context.Context, table, cond string, args ...any) (int64, error) {
+	return sc.scope.Delete(ctx, table, cond, args...)
 }
 
 // Query 查询业务表：基座拼接 WHERE account_id = $1；
@@ -317,6 +399,59 @@ func (sc AccountScope) InsertReturningID(ctx context.Context, table string, cols
 		return "", fmt.Errorf("scoped insert returning id %s: %w", table, err)
 	}
 	return id, nil
+}
+
+// InsertOnConflictDoNothingReturning 尝试在当前账号内 claim 一行；唯一冲突返回
+// ErrNoRows，且 ON CONFLICT DO NOTHING 保证事务仍可继续。
+func (sc AccountScope) InsertOnConflictDoNothingReturning(
+	ctx context.Context,
+	table string,
+	cols, conflictCols, returningCols []string,
+	args ...any,
+) pgx.Row {
+	if sc.accountID == "" {
+		return errRow{err: ErrEmptyAccountScope}
+	}
+	idents := make([]string, 0, len(cols)+len(conflictCols)+len(returningCols))
+	idents = append(idents, cols...)
+	idents = append(idents, conflictCols...)
+	idents = append(idents, returningCols...)
+	if err := validateIdents(table, idents...); err != nil {
+		return errRow{err: err}
+	}
+	if len(cols) != len(args) {
+		return errRow{err: fmt.Errorf("scoped insert on conflict %s: %d columns but %d values", table, len(cols), len(args))}
+	}
+	if len(returningCols) == 0 {
+		return errRow{err: fmt.Errorf("scoped insert on conflict %s: returning columns required", table)}
+	}
+	if len(conflictCols) > 0 {
+		hasAccountID := false
+		for _, column := range conflictCols {
+			if column == "account_id" {
+				hasAccountID = true
+				break
+			}
+		}
+		if !hasAccountID {
+			return errRow{err: fmt.Errorf("scoped insert on conflict %s: conflict target must include account_id", table)}
+		}
+	}
+	placeholders := make([]string, 0, len(args)+1)
+	for i := range len(args) + 1 {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+	}
+	sql := fmt.Sprintf(
+		`INSERT INTO %s (account_id, %s) VALUES (%s) ON CONFLICT`,
+		table,
+		strings.Join(cols, ", "),
+		strings.Join(placeholders, ", "),
+	)
+	if len(conflictCols) > 0 {
+		sql += fmt.Sprintf(" (%s)", strings.Join(conflictCols, ", "))
+	}
+	sql += fmt.Sprintf(" DO NOTHING RETURNING %s", strings.Join(returningCols, ", "))
+	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
 }
 
 // Update 更新业务表：基座拼接 WHERE account_id = $1；

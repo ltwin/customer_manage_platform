@@ -1,5 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
+import { ApiError, fetchMe } from '../api/client'
 import { PrototypeProvider } from '../crm/PrototypeStore'
 import type { ShellContext } from './shellContext'
 
@@ -12,8 +13,41 @@ const navItems = [
 ]
 
 export default function AppShell() {
-  const [theme, setTheme] = useState(() => readTheme())
-  const [toast, setToast] = useState<string | null>(null)
+	const navigate = useNavigate()
+	const [theme, setTheme] = useState(() => readTheme())
+	const [toast, setToast] = useState<string | null>(null)
+	const [timezone, setTimezone] = useState<string | null>(null)
+	const [timezoneError, setTimezoneError] = useState<string | null>(null)
+	const [timezoneLoading, setTimezoneLoading] = useState(true)
+	const [timezoneReloadTick, setTimezoneReloadTick] = useState(0)
+
+	useEffect(() => {
+		let active = true
+		setTimezone(null)
+		setTimezoneError(null)
+		setTimezoneLoading(true)
+		fetchMe()
+			.then((account) => {
+				if (!active) return
+				setTimezone(account.timezone)
+				setTimezoneError(null)
+			})
+			.catch((error: unknown) => {
+				if (!active) return
+				if (error instanceof ApiError && error.status === 401) {
+					navigate('/login', { replace: true })
+					return
+				}
+				setTimezone(null)
+				setTimezoneError(error instanceof Error ? error.message : '账号时区加载失败')
+			})
+			.finally(() => {
+				if (active) setTimezoneLoading(false)
+			})
+		return () => {
+			active = false
+		}
+	}, [navigate, timezoneReloadTick])
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -26,11 +60,20 @@ export default function AppShell() {
     return () => window.clearTimeout(timer)
   }, [toast])
 
-  const context = useMemo<ShellContext>(() => ({
-    notify(message: string) {
-      setToast(message)
-    },
-  }), [])
+	const context = useMemo<ShellContext>(
+		() => ({
+			timezone,
+			timezoneError,
+			timezoneLoading,
+			retryTimezone() {
+				setTimezoneReloadTick((current) => current + 1)
+			},
+			notify(message: string) {
+				setToast(message)
+			},
+		}),
+		[timezone, timezoneError, timezoneLoading],
+	)
 
   return (
     <PrototypeProvider>
@@ -53,8 +96,16 @@ export default function AppShell() {
           <div className="nav-foot">工作室单账号 · 数据可随时导出</div>
         </aside>
 
-        <div className="main">
-          <Outlet context={context} />
+	        <div className="main">
+	          {timezoneError && (
+	            <div className="form-error calendar-load-error" role="alert">
+	              <span>账号时区加载失败：{timezoneError}</span>
+	              <button className="btn btn-sm" type="button" disabled={timezoneLoading} onClick={() => setTimezoneReloadTick((current) => current + 1)}>
+	                {timezoneLoading ? '重试中' : '重试账号时区'}
+	              </button>
+	            </div>
+	          )}
+	          <Outlet context={context} />
         </div>
       </div>
 

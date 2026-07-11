@@ -36,6 +36,10 @@ func (f fakeAccounts) AccountByID(_ context.Context, id string) (auth.Account, e
 }
 
 func newAuthRouter(t *testing.T) http.Handler {
+	return newAuthRouterWithTimezone(t, nil)
+}
+
+func newAuthRouterWithTimezone(t *testing.T, timezone httpapi.AccountTimezoneProvider) http.Handler {
 	t.Helper()
 	hash, err := auth.HashPassword(testPassword)
 	if err != nil {
@@ -43,10 +47,19 @@ func newAuthRouter(t *testing.T) http.Handler {
 	}
 	svc := auth.NewService(fakeAccounts{hash: hash}, auth.NewTokenIssuer(testSecret))
 	return httpapi.NewRouter(httpapi.RouterDeps{
-		Logger: slog.New(slog.DiscardHandler),
-		DB:     fakePinger{},
-		Auth:   svc,
+		Logger:          slog.New(slog.DiscardHandler),
+		DB:              fakePinger{},
+		Auth:            svc,
+		AccountTimezone: timezone,
 	})
+}
+
+type fakeTimezoneProvider struct {
+	timezone string
+}
+
+func (p fakeTimezoneProvider) TimezoneForAccount(context.Context, string) (string, error) {
+	return p.timezone, nil
 }
 
 func postLogin(t *testing.T, h http.Handler, body string) *httptest.ResponseRecorder {
@@ -91,15 +104,37 @@ func TestLoginMeRoundtrip(t *testing.T) {
 	var me struct {
 		ID        string    `json:"id"`
 		CreatedAt time.Time `json:"created_at"`
+		Timezone  string    `json:"timezone"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil {
 		t.Fatalf("decode /me: %v", err)
 	}
-	if me.ID != testAcctID || me.CreatedAt.IsZero() {
-		t.Fatalf("/me should return account id and created_at, got %s", rec.Body.String())
+	if me.ID != testAcctID || me.CreatedAt.IsZero() || me.Timezone != "Asia/Shanghai" {
+		t.Fatalf("/me should return account id, created_at, and timezone, got %s", rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "password_hash") {
 		t.Fatalf("/me must never contain password_hash: %s", rec.Body.String())
+	}
+}
+
+func TestMeUsesInjectedAccountTimezoneProvider(t *testing.T) {
+	h := newAuthRouterWithTimezone(t, fakeTimezoneProvider{timezone: "America/New_York"})
+	rec := postLogin(t, h, `{"password":"`+testPassword+`"}`)
+	var loginResp struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &loginResp); err != nil || loginResp.Token == "" {
+		t.Fatalf("login response: %s err=%v", rec.Body.String(), err)
+	}
+	rec = getMe(t, h, "Bearer "+loginResp.Token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/me with injected timezone: %d %s", rec.Code, rec.Body.String())
+	}
+	var me struct {
+		Timezone string `json:"timezone"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil || me.Timezone != "America/New_York" {
+		t.Fatalf("injected timezone mismatch: %s err=%v", rec.Body.String(), err)
 	}
 }
 

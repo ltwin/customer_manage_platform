@@ -1,108 +1,203 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { DICT, TODAY } from '../crm/prototypeData'
-import type { Slot, SlotType } from '../crm/prototypeData'
-import type { SlotInput } from '../crm/prototypeStoreContext'
-import { byId, formatPrice, packagePricingText, slotLabel, slotOverlapIds } from '../crm/model'
-import { usePrototypeStore } from '../crm/prototypeStoreContext'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+
+import {
+  ApiError,
+  deleteScheduleSlot,
+  listScheduleSlots,
+} from '../api/client'
+import type { ScheduleSlotListItem } from '../api/client'
+import ScheduleSlotDialog from '../components/schedule/ScheduleSlotDialog'
+import { buildCalendarDays } from '../components/schedule/calendarModel'
+import { scheduleDrawerShouldOpen } from '../components/schedule/flow'
+import { readPendingSchedule } from '../components/schedule/journal'
+import {
+  accountToday,
+  instantToLocalDateTime,
+  isValidDate,
+  localDayRange,
+  monthGrid,
+} from '../components/schedule/timezone'
 import { useShell } from '../components/shellContext'
+import { useFocusTrap } from '../components/useFocusTrap'
 
-const dows = ['一', '二', '三', '四', '五', '六', '日']
-
-const emptyDraft: SlotInput = {
-  type: 'shoot',
-  date: TODAY,
-  start: '14:00',
-  end: '16:00',
-  note: '',
-  orderId: null,
-}
+const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
 export default function CalendarPage() {
-  const store = usePrototypeStore()
-  const { notify } = useShell()
-  const [selectedDate, setSelectedDate] = useState<string | null>(TODAY)
-  const [drawerOpen, setDrawerOpen] = useState(false)
+  const { notify, timezone } = useShell()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const today = timezone ? accountToday(timezone) : ''
+  const queryDate = searchParams.get('date') ?? ''
+  const querySlot = searchParams.get('slot') ?? ''
+  const queryScheduleDraft = searchParams.get('schedule_draft') ?? ''
+  const [month, setMonth] = useState(() => isValidDate(queryDate) ? queryDate.slice(0, 7) : today.slice(0, 7))
+  const [selectedDate, setSelectedDate] = useState(() => isValidDate(queryDate) ? queryDate : today)
+  const [slots, setSlots] = useState<ScheduleSlotListItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [queryError, setQueryError] = useState<string | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(Boolean(queryDate || querySlot))
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [draft, setDraft] = useState<SlotInput>(emptyDraft)
-  const [slotError, setSlotError] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [editingSlot, setEditingSlot] = useState<ScheduleSlotListItem | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ScheduleSlotListItem | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [lastDeletedShoot, setLastDeletedShoot] = useState<ScheduleSlotListItem | null>(null)
+  const scheduleReturnFocusRef = useRef<HTMLElement | null>(null)
 
-  const cells = useMemo(() => {
-    const value: Array<{ date: string; n: number; other: boolean }> = [
-      { date: '2026-06-29', n: 29, other: true },
-      { date: '2026-06-30', n: 30, other: true },
-    ]
-    for (let i = 1; i <= 31; i += 1) {
-      value.push({ date: `2026-07-${String(i).padStart(2, '0')}`, n: i, other: false })
+  const gridDates = useMemo(() => month ? monthGrid(month) : [], [month])
+  const range = useMemo(() => {
+    if (!timezone || gridDates.length !== 42) return null
+    return {
+      from: localDayRange(gridDates[0] ?? '', timezone).start,
+      to: localDayRange(gridDates[41] ?? '', timezone).end,
     }
-    value.push({ date: '2026-08-01', n: 1, other: true }, { date: '2026-08-02', n: 2, other: true })
-    return value
-  }, [])
+  }, [gridDates, timezone])
 
-  const selectedSlots = selectedDate ? store.slots.filter((slot) => slot.date === selectedDate).sort((a, b) => a.start.localeCompare(b.start)) : []
-  const selectableOrders = store.orders.filter((order) => order.status !== 'cancelled')
-  const hasConflict = store.slots.some((slot) => slot.id !== draft.id && slot.date === draft.date && slot.start < draft.end && draft.start < slot.end)
+  const loadSlots = useCallback(async () => {
+    if (!range || !timezone) return
+    setLoading(true)
+    setLoadError(null)
+    try {
+      setSlots(await listScheduleSlots(range.from, range.to))
+    } catch (reason) {
+      setLoadError(errorMessage(reason, '档期加载失败'))
+    } finally {
+      setLoading(false)
+    }
+  }, [range, timezone])
+
+  useEffect(() => { void loadSlots() }, [loadSlots])
+
+  useEffect(() => {
+    if (!today || month) return
+    setMonth(today.slice(0, 7))
+    setSelectedDate(today)
+  }, [month, today])
+
+  useEffect(() => {
+    const onFocus = () => { void loadSlots() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [loadSlots])
+
+  useEffect(() => {
+    if (!timezone) return
+    if (queryDate) {
+      try {
+        if (!isValidDate(queryDate)) throw new Error('invalid query date')
+        localDayRange(queryDate, timezone)
+        setMonth(queryDate.slice(0, 7))
+        setSelectedDate(queryDate)
+        setDrawerOpen(true)
+      } catch {
+        setQueryError('链接中的日期无效，已返回当前月份')
+        setMonth(today.slice(0, 7))
+        setSelectedDate(today)
+      }
+    }
+  }, [queryDate, timezone, today])
+
+  useEffect(() => {
+    if (!querySlot || !timezone || loading || loadError) return
+    const target = slots.find((slot) => slot.id === querySlot)
+    if (!target) {
+      setQueryError('链接指向的档期已不存在')
+      return
+    }
+    const local = instantToLocalDateTime(target.start_at, timezone)
+    setQueryError(null)
+    setMonth(local.date.slice(0, 7))
+    setSelectedDate(local.date)
+    setDrawerOpen(true)
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.querySelector<HTMLElement>(`[data-slot-id="${CSS.escape(querySlot)}"]`)
+      element?.scrollIntoView({ block: 'center' })
+      element?.focus({ preventScroll: true })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [loadError, loading, querySlot, slots, timezone])
+
+  useEffect(() => {
+    try {
+      if (readPendingSchedule() || queryScheduleDraft) setDialogOpen(true)
+    } catch (reason) {
+      setQueryError(errorMessage(reason, '恢复记录读取失败'))
+    }
+  }, [queryScheduleDraft])
+
+  useEffect(() => {
+    if (dialogOpen) setDrawerOpen(false)
+  }, [dialogOpen])
+
+  const days = useMemo(
+    () => timezone ? buildCalendarDays(slots, gridDates, timezone) : [],
+    [gridDates, slots, timezone],
+  )
+  const selectedDay = days.find((day) => day.date === selectedDate)
+  const drawerVisible = scheduleDrawerShouldOpen(drawerOpen, dialogOpen)
+  const drawerRef = useFocusTrap<HTMLElement>(drawerVisible, () => setDrawerOpen(false))
+  const deleteDialogRef = useFocusTrap<HTMLElement>(Boolean(deleteTarget), () => setDeleteTarget(null))
 
   function openDay(date: string) {
     setSelectedDate(date)
     setDrawerOpen(true)
+    setSearchParams({ date })
   }
 
-  function openNewSlot(date = selectedDate ?? TODAY) {
-    setDraft({ ...emptyDraft, date, orderId: selectableOrders[0]?.id ?? null })
-    setSlotError(null)
+  function openCreate(date = selectedDate || today) {
+    rememberScheduleReturnFocus()
+    setSelectedDate(date)
+    setEditingSlot(null)
     setDialogOpen(true)
   }
 
-  function editSlot(slot: Slot) {
-    setDraft({
-      id: slot.id,
-      type: slot.type,
-      date: slot.date,
-      start: slot.start,
-      end: slot.end,
-      note: slot.note,
-      orderId: slot.order_id,
+  function openEdit(slot: ScheduleSlotListItem) {
+    rememberScheduleReturnFocus()
+    setEditingSlot(slot)
+    setDialogOpen(true)
+  }
+
+  function rememberScheduleReturnFocus() {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    scheduleReturnFocusRef.current = drawerVisible || active?.closest('.drawer')
+      ? document.querySelector<HTMLElement>('.cal-cell.selected')
+      : active
+  }
+
+  function closeScheduleDialog() {
+    setDialogOpen(false)
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const target = scheduleReturnFocusRef.current
+        if (target?.isConnected) target.focus({ preventScroll: true })
+      })
     })
-    setSlotError(null)
-    setDialogOpen(true)
   }
 
-  function saveSlot() {
-    if (!draft.date || !draft.start || !draft.end) {
-      setSlotError('请填写完整日期和时间')
-      return
-    }
-    if (draft.start >= draft.end) {
-      setSlotError('结束时间必须晚于开始时间')
-      return
-    }
-    if (draft.type === 'shoot' && !draft.orderId) {
-      setSlotError('拍摄档期需要关联一笔订单')
-      return
-    }
-    store.upsertSlot(draft)
-    setDialogOpen(false)
-    setSlotError(null)
-    setSelectedDate(draft.date)
-    notify(draft.id ? '档期已更新' : '档期已保存')
+  function navigateMonth(delta: number) {
+    setMonth((current) => shiftMonth(current, delta))
+    setDrawerOpen(false)
+    setQueryError(null)
   }
 
-  function closeDialog() {
-    setDialogOpen(false)
-    setSlotError(null)
+  function goToday() {
+    if (!today) return
+    setMonth(today.slice(0, 7))
+    openDay(today)
   }
 
-  function deleteSlot(slotId: string) {
-    if (confirmDelete !== slotId) {
-      setConfirmDelete(slotId)
-      window.setTimeout(() => setConfirmDelete(null), 3000)
-      return
+  async function confirmDelete() {
+    if (!deleteTarget?.id) return
+    setDeleteError(null)
+    try {
+      await deleteScheduleSlot(deleteTarget.id)
+      if (deleteTarget.type === 'shoot') setLastDeletedShoot(deleteTarget)
+      setDeleteTarget(null)
+      notify('档期已删除，订单和订单状态保持不变')
+      await loadSlots()
+    } catch (reason) {
+      setDeleteError(errorMessage(reason, '档期删除失败'))
     }
-    store.deleteSlot(slotId)
-    setConfirmDelete(null)
-    notify('档期已删除')
   }
 
   return (
@@ -110,154 +205,194 @@ export default function CalendarPage() {
       <header className="topbar">
         <div>
           <h1>档期</h1>
-          <div className="sub">点击日期查看当天安排 · 重叠档期会标出提醒</div>
+          <div className="sub">时间按 {timezone ?? '账号时区不可用'}</div>
         </div>
-        <div className="topbar-actions">
-          <button className="btn btn-primary" type="button" onClick={() => openNewSlot()}>＋ 新建档期</button>
+        <div className="topbar-actions desktop-schedule-actions">
+          <button className="btn btn-primary" type="button" disabled={!timezone} onClick={() => openCreate()}>新建档期</button>
         </div>
       </header>
 
-      <main className="content">
+      <main className="content calendar-content">
+        {queryError && <div className="form-error">{queryError}</div>}
         <div className="cal-head">
-          <button className="btn btn-sm" type="button" onClick={() => notify('上一月将在真实日历能力中接入')} aria-label="上一月">‹</button>
-          <h2>2026 年 7 月</h2>
-          <button className="btn btn-sm" type="button" onClick={() => notify('下一月将在真实日历能力中接入')} aria-label="下一月">›</button>
-          <div className="cal-legend">
+          <button className="icon-btn" type="button" onClick={() => navigateMonth(-1)} aria-label="上一月">‹</button>
+          <h2>{formatMonth(month)}</h2>
+          <button className="icon-btn" type="button" onClick={() => navigateMonth(1)} aria-label="下一月">›</button>
+          <button className="btn btn-sm" type="button" disabled={!today} onClick={goToday}>今天</button>
+          <div className="cal-legend" aria-label="档期类型图例">
             <span><span className="dot slot-shoot" />拍摄</span>
             <span><span className="dot slot-hold" />预留</span>
-            <span><span className="dot slot-busy" />占用/休假</span>
+            <span><span className="dot slot-busy" />个人占用</span>
           </div>
         </div>
-        <div className="cal-grid">
-          {dows.map((dow) => <div className="cal-dow" key={dow}>周{dow}</div>)}
-          {cells.map((cell) => {
-            const daySlots = store.slots.filter((slot) => slot.date === cell.date)
+
+        {loadError && (
+          <div className="form-error calendar-load-error">
+            <span>{loadError}</span>
+            <button className="btn btn-sm" type="button" onClick={() => { void loadSlots() }}>重试</button>
+          </div>
+        )}
+
+        <div className={`cal-grid${loading ? ' is-loading' : ''}`} aria-busy={loading}>
+          {weekdayLabels.map((label) => <div className="cal-dow" key={label}>{label}</div>)}
+          {gridDates.map((date, index) => {
+            const day = days[index]
+            const visible = day?.slots.slice(0, 3) ?? []
+            const extra = Math.max(0, (day?.slots.length ?? 0) - visible.length)
+            const other = date.slice(0, 7) !== month
             return (
               <button
                 type="button"
-                className={`cal-cell${cell.other ? ' other' : ''}${cell.date === TODAY ? ' today' : ''}${cell.date === selectedDate ? ' selected' : ''}`}
-                key={cell.date}
-                onClick={() => openDay(cell.date)}
+                className={`cal-cell${other ? ' other' : ''}${date === today ? ' today' : ''}${date === selectedDate ? ' selected' : ''}`}
+                key={date}
+                onClick={() => openDay(date)}
+                aria-label={`${date}，${day?.slots.length ?? 0} 条档期，${day?.conflictCount ?? 0} 条冲突档期`}
               >
-                <span className="cal-date">{cell.n}</span>
+                <span className="cal-date">{Number(date.slice(8, 10))}</span>
                 <span className="cal-events">
-                  {daySlots.map((slot) => (
-                    <span className={`cal-event ${slot.type}${slotOverlapIds(store.slots, slot).length ? ' overlap' : ''}`} key={slot.id}>
-                      {slot.start} {slotLabel(slot, store.orders, store.customers)}
+                  {loading ? (
+                    <><span className="cal-event-skeleton" /><span className="cal-event-skeleton short" /></>
+                  ) : visible.map((entry) => (
+                    <span
+                      className={`cal-event ${entry.slot.type}${entry.conflicting ? ' overlap' : ''}`}
+                      key={entry.slot.id}
+                      title={slotSummary(entry.slot)}
+                    >
+                      {entry.allDay ? '全天' : entry.displayStart} {slotSummary(entry.slot)}
                     </span>
                   ))}
+                  {!loading && extra > 0 && <span className="cal-more">还有 {extra} 条</span>}
                 </span>
-                <span className="cal-count">{daySlots.map((slot) => <i className={`slot-${slot.type}`} key={slot.id} />)}</span>
+                <span className="cal-count" aria-hidden="true">
+                  {day?.slots.map((entry) => <i className={`slot-${entry.slot.type}`} key={entry.slot.id} />)}
+                </span>
               </button>
             )
           })}
         </div>
       </main>
 
-      <div className={`drawer-overlay${drawerOpen ? ' open' : ''}`} onClick={() => setDrawerOpen(false)} />
-      <aside className={`drawer${drawerOpen ? ' open' : ''}`}>
+      <div className={`drawer-overlay${drawerVisible ? ' open' : ''}`} onClick={() => setDrawerOpen(false)} />
+      <aside
+        ref={drawerRef}
+        className={`drawer${drawerVisible ? ' open' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="scheduleDrawerTitle"
+        aria-hidden={!drawerVisible}
+        tabIndex={-1}
+      >
         <div className="drawer-head">
-          <h2>{selectedDate ? `${Number(selectedDate.slice(5, 7))} 月 ${Number(selectedDate.slice(8, 10))} 日` : '当天安排'}</h2>
+          <h2 id="scheduleDrawerTitle">{formatDay(selectedDate)}</h2>
           <button className="icon-btn" type="button" onClick={() => setDrawerOpen(false)} aria-label="关闭">×</button>
         </div>
         <div className="drawer-body">
-          {selectedSlots.length === 0 ? <div className="empty">这天还没有安排，档期空闲</div> : selectedSlots.map((slot) => {
-            const order = byId(store.orders, slot.order_id)
-            const customer = order ? byId(store.customers, order.customer_id) : null
-            const pkg = order ? byId(store.packages, order.package_id) : null
-            const overlapIds = slotOverlapIds(store.slots, slot)
-            return (
-              <div className="slot-entry" key={slot.id}>
-                <div className="head">
-                  <span className={`dot slot-${slot.type}`} />
-                  <span className="badge badge-muted">{DICT.slotType[slot.type]}</span>
-                  <span className="time">{slot.start}–{slot.end}</span>
-                </div>
-                <div className="body">{order && customer ? `${customer.display_name} · ${order.title}` : slot.note}</div>
-                <div className="meta">{order && pkg ? `${pkg.name} · ${formatPrice(order.price)} · ${slot.note}` : ''}</div>
-                <div className="slot-actions">
-                  {customer && <Link className="btn btn-sm" to={`/customers/${customer.id}`}>查看客户档案</Link>}
-                  <button className="btn btn-sm" type="button" onClick={() => editSlot(slot)}>编辑</button>
-                  <button className="btn btn-sm btn-danger-ghost" type="button" onClick={() => deleteSlot(slot.id)}>{confirmDelete === slot.id ? '确认删除？' : '删除'}</button>
-                </div>
-                {overlapIds.length > 0 && <div className="conflict-tip">与当天另一条档期时间重叠，请确认是否改期</div>}
+          {lastDeletedShoot?.type === 'shoot' && (
+            <div className="schedule-preview-clear">
+              档期已删除，订单仍保留。
+              <Link to={`/customers/${lastDeletedShoot.customer_id}?tab=orders&order=${lastDeletedShoot.order_id}`}>查看订单</Link>
+            </div>
+          )}
+          {!selectedDay || selectedDay.slots.length === 0 ? (
+            <div className="empty">这天暂无档期</div>
+          ) : selectedDay.slots.map((entry) => (
+            <div className="slot-entry" key={entry.slot.id} data-slot-id={entry.slot.id} tabIndex={-1}>
+              <div className="head">
+                <span className={`dot slot-${entry.slot.type}`} />
+                <span className="badge badge-muted">{slotTypeLabel(entry.slot.type)}</span>
+                <span className="time">{entry.allDay ? '全天' : `${entry.displayStart} - ${entry.displayEnd}`}</span>
               </div>
-            )
-          })}
+              <div className="body">{slotSummary(entry.slot)}</div>
+              {entry.slot.type === 'shoot' && (
+                <div className="meta">
+                  {entry.slot.package_name ?? '未选套系'} · {orderStatusLabel(entry.slot.order_status)}
+                  {entry.slot.customer_status === 'archived' && <span className="warning-text"> · 客户已归档</span>}
+                  {entry.slot.order_status === 'cancelled' && <span className="danger-text"> · 订单已取消，档期仍保留</span>}
+                </div>
+              )}
+              {entry.slot.note && <div className="meta">{entry.slot.note}</div>}
+              {entry.conflicting && <div className="conflict-tip">与当天其他档期存在时间重叠</div>}
+              <div className="slot-actions desktop-schedule-actions">
+                {entry.slot.type === 'shoot' && (
+                  <Link className="btn btn-sm" to={`/customers/${entry.slot.customer_id}?tab=orders&order=${entry.slot.order_id}`}>查看订单</Link>
+                )}
+                <button className="btn btn-sm" type="button" onClick={() => openEdit(entry.slot)}>编辑</button>
+                <button className="btn btn-sm btn-danger-ghost" type="button" onClick={() => { setDeleteError(null); setDeleteTarget(entry.slot) }}>删除</button>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="drawer-foot">
           <button className="btn" type="button" onClick={() => setDrawerOpen(false)}>关闭</button>
-          <button className="btn btn-primary" type="button" onClick={() => openNewSlot()}>＋ 在这天加档期</button>
+          <button className="btn btn-primary desktop-schedule-actions" type="button" disabled={!timezone} onClick={() => openCreate(selectedDate)}>在这天加档期</button>
         </div>
       </aside>
 
-      <div className={`overlay${dialogOpen ? ' open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) closeDialog() }}>
-        <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="slotDialogTitle">
-          <h2 id="slotDialogTitle">{draft.id ? '编辑档期' : '新建档期'}</h2>
-          <div className="dialog-sub">拍摄档期可关联现有订单；预留/占用只需时间和备注</div>
+      <ScheduleSlotDialog
+        open={dialogOpen}
+        timezone={timezone}
+        initialDate={selectedDate || today}
+        slot={editingSlot}
+        scheduleDraftId={queryScheduleDraft || undefined}
+        onClose={closeScheduleDialog}
+        onChanged={loadSlots}
+        onCompleted={(date) => {
+          setSelectedDate(date)
+          setDrawerOpen(true)
+          setSearchParams({ date })
+        }}
+      />
 
-          <div className="field">
-            <label htmlFor="slotType">类型</label>
-            <select
-              id="slotType"
-              className="input"
-              value={draft.type}
-              onChange={(event) => {
-                const type = event.target.value as SlotType
-                setDraft({ ...draft, type, orderId: type === 'shoot' ? draft.orderId ?? selectableOrders[0]?.id ?? null : null })
-                setSlotError(null)
-              }}
-            >
-              <option value="shoot">拍摄（关联客户与套系）</option>
-              <option value="hold">预留（意向占位）</option>
-              <option value="busy">占用（个人事务/休假）</option>
-            </select>
-          </div>
-
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="slotDate">日期</label>
-              <input id="slotDate" className="input" type="date" value={draft.date} onChange={(event) => setDraft({ ...draft, date: event.target.value })} />
+      {deleteTarget && (
+        <div className="overlay open" onClick={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null) }}>
+          <section ref={deleteDialogRef} className="dialog" role="dialog" aria-modal="true" aria-labelledby="deleteScheduleTitle" tabIndex={-1}>
+            <h2 id="deleteScheduleTitle">删除档期</h2>
+            <p className="dialog-sub">只删除日历档期，订单和订单状态都会保留。</p>
+            {deleteError && <div className="form-error">{deleteError}</div>}
+            <div className="dialog-actions">
+              <button className="btn" type="button" onClick={() => setDeleteTarget(null)}>取消</button>
+              <button className="btn btn-danger" type="button" onClick={() => { void confirmDelete() }}>确认删除</button>
             </div>
-            <div className="field">
-              <label>时间</label>
-              <div className="inline-inputs">
-                <input className="input" type="time" value={draft.start} onChange={(event) => setDraft({ ...draft, start: event.target.value })} />
-                <span>–</span>
-                <input className="input" type="time" value={draft.end} onChange={(event) => setDraft({ ...draft, end: event.target.value })} />
-              </div>
-            </div>
-          </div>
-
-          {draft.type === 'shoot' && (
-            <div className="field">
-              <label htmlFor="slotOrder">关联订单</label>
-              <select id="slotOrder" className="input" value={draft.orderId ?? ''} onChange={(event) => { setDraft({ ...draft, orderId: event.target.value || null }); setSlotError(null) }}>
-                <option value="">请选择订单</option>
-                {selectableOrders.map((order) => {
-                  const customer = byId(store.customers, order.customer_id)
-                  const pkg = byId(store.packages, order.package_id)
-                  return <option key={order.id} value={order.id}>{customer?.display_name ?? '未知客户'} · {order.title} · {pkg ? packagePricingText(pkg) : '未选套系'}</option>
-                })}
-              </select>
-              <div className="hint">客户与套系来自所选订单，正式创建订单流程会在 order-tracking 接入。</div>
-            </div>
-          )}
-
-          <div className="field">
-            <label htmlFor="slotNote">备注</label>
-            <input id="slotNote" className="input" value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} placeholder="场地、造型、注意事项…" />
-          </div>
-
-          {hasConflict && <div className="conflict-tip">与当天已有档期时间重叠，保存后会在日历上标出</div>}
-          {slotError && <p role="alert" className="form-error">{slotError}</p>}
-
-          <div className="dialog-actions">
-            <button className="btn" type="button" onClick={closeDialog}>取消</button>
-            <button className="btn btn-primary" type="button" onClick={saveSlot}>{draft.id ? '保存修改' : '保存档期'}</button>
-          </div>
+          </section>
         </div>
-      </div>
+      )}
     </>
   )
+}
+
+function slotSummary(slot: ScheduleSlotListItem): string {
+  if (slot.type !== 'shoot') return slot.note || slotTypeLabel(slot.type)
+  return `${slot.customer_display_name} · ${slot.order_title ?? slot.package_name ?? '未命名订单'}`
+}
+
+function slotTypeLabel(type: string): string {
+  return { shoot: '拍摄', hold: '预留', busy: '个人占用' }[type] ?? type
+}
+
+function orderStatusLabel(status: string): string {
+  return {
+    consulting: '咨询', scheduled: '定档', shot: '已拍摄', selected: '已选片',
+    retouching: '精修中', delivered: '已交付', closed: '完结', cancelled: '取消',
+  }[status] ?? status
+}
+
+function shiftMonth(value: string, delta: number): string {
+  const [year, month] = value.split('-').map(Number)
+  const date = new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1 + delta, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+function formatMonth(value: string): string {
+  const [year, month] = value.split('-')
+  return `${year} 年 ${Number(month)} 月`
+}
+
+function formatDay(value: string): string {
+  if (!value) return '当天档期'
+  return `${Number(value.slice(5, 7))} 月 ${Number(value.slice(8, 10))} 日`
+}
+
+function errorMessage(reason: unknown, fallback: string): string {
+  if (reason instanceof ApiError || reason instanceof Error) return reason.message
+  return fallback
 }

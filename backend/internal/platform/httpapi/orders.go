@@ -14,6 +14,7 @@ import (
 
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -27,7 +28,15 @@ func (h *handlers) listOrdersRoute(c *gin.Context) {
 	h.ListOrders(c, params)
 }
 
-func (h *handlers) CreateOrder(c *gin.Context) {
+func (h *handlers) createOrderRoute(c *gin.Context) {
+	params := CreateOrderParams{}
+	if key := c.GetHeader("Idempotency-Key"); key != "" {
+		params.IdempotencyKey = &key
+	}
+	h.CreateOrder(c, params)
+}
+
+func (h *handlers) CreateOrder(c *gin.Context, params CreateOrderParams) {
 	scope, ok := h.orderScope(c)
 	if !ok {
 		return
@@ -39,25 +48,64 @@ func (h *handlers) CreateOrder(c *gin.Context) {
 		return
 	}
 	input := orderdomain.CreateInput{
-		CustomerID:  body.CustomerId,
-		PackageID:   body.PackageId,
-		Title:       body.Title,
-		Price:       body.Price,
-		DepositPaid: body.DepositPaid,
-		BalancePaid: body.BalancePaid,
-		ShotAt:      body.ShotAt,
-		DeliveredAt: body.DeliveredAt,
-		Note:        body.Note,
+		CreationMode: stringValue(body.CreationMode),
+		CustomerID:   body.CustomerId,
+		PackageID:    body.PackageId,
+		Title:        body.Title,
+		Price:        body.Price,
+		DepositPaid:  body.DepositPaid,
+		BalancePaid:  body.BalancePaid,
+		ShotAt:       body.ShotAt,
+		DeliveredAt:  body.DeliveredAt,
+		Note:         body.Note,
 	}
 	if body.Status != nil {
 		status := string(*body.Status)
 		input.Status = &status
 	}
-	created, err := h.orders.Create(c.Request.Context(), scope, input)
+	if params.IdempotencyKey == nil {
+		created, err := h.orders.Create(c.Request.Context(), scope, input)
+		if h.abortOrderError(c, err) {
+			return
+		}
+		c.JSON(http.StatusCreated, toAPIOrder(created))
+		return
+	}
+	if h.idempotency == nil {
+		_ = c.Error(errors.New("idempotency dependency missing"))
+		return
+	}
+	prepared, err := h.orders.PrepareCreate(input)
 	if h.abortOrderError(c, err) {
 		return
 	}
-	c.JSON(http.StatusCreated, toAPIOrder(created))
+	canonical, err := json.Marshal(prepared.Input)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	response, err := h.idempotency.ExecuteCreate(
+		c.Request.Context(),
+		scope,
+		idempotency.OperationOrderCreate,
+		*params.IdempotencyKey,
+		canonical,
+		func(tx store.TxAccountScope) (idempotency.StoredResponse, error) {
+			created, err := h.orders.CreatePreparedInScope(c.Request.Context(), tx, prepared)
+			if err != nil {
+				return idempotency.StoredResponse{}, err
+			}
+			body, err := json.Marshal(toAPIOrder(created))
+			if err != nil {
+				return idempotency.StoredResponse{}, err
+			}
+			return idempotency.StoredResponse{Status: http.StatusCreated, Body: body}, nil
+		},
+	)
+	if h.abortOrderError(c, err) {
+		return
+	}
+	c.Data(response.Status, "application/json", response.Body)
 }
 
 func (h *handlers) ListOrders(c *gin.Context, params ListOrdersParams) {
@@ -75,6 +123,7 @@ func (h *handlers) ListOrders(c *gin.Context, params ListOrdersParams) {
 	if params.UnpaidBalance != nil {
 		filter.UnpaidBalance = *params.UnpaidBalance
 	}
+	filter.SchedulableAt = params.SchedulableAt
 	if params.Page != nil {
 		filter.Page = int(*params.Page)
 	}
@@ -163,6 +212,20 @@ func (h *handlers) abortOrderError(c *gin.Context, err error) bool {
 		abortError(c, http.StatusConflict, CodeUnpaidBalance, orderMessage(err))
 	case errors.Is(err, orderdomain.ErrOrderNotTerminal):
 		abortError(c, http.StatusConflict, CodeOrderNotTerminal, orderMessage(err))
+	case errors.Is(err, orderdomain.ErrOrderInUse):
+		var details orderdomain.OrderInUseError
+		if !errors.As(err, &details) {
+			_ = c.Error(err)
+			break
+		}
+		abortErrorWithDetails(c, http.StatusConflict, CodeOrderInUse, orderMessage(err), ScheduleConflictDetails{
+			ScheduleSlotId:  details.SlotID,
+			ScheduleStartAt: details.StartAt,
+		})
+	case errors.Is(err, idempotency.ErrConflict):
+		abortError(c, http.StatusConflict, CodeIdempotencyConflict, orderMessage(err))
+	case errors.Is(err, idempotency.ErrValidation):
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, orderMessage(err))
 	default:
 		_ = c.Error(err)
 	}
@@ -185,6 +248,14 @@ func bindListOrdersParams(c *gin.Context) (ListOrdersParams, bool) {
 			return ListOrdersParams{}, false
 		}
 		params.UnpaidBalance = &value
+	}
+	if raw := strings.TrimSpace(c.Query("schedulable_at")); raw != "" {
+		value, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			abortError(c, http.StatusBadRequest, CodeValidationFailed, "schedulable_at 必须是 RFC3339 date-time")
+			return ListOrdersParams{}, false
+		}
+		params.SchedulableAt = &value
 	}
 	page, ok := bindOptionalPageParam(c, "page")
 	if !ok {
@@ -272,6 +343,13 @@ func orderMessage(err error) string {
 		return parts[1]
 	}
 	return msg
+}
+
+func stringValue(value *OrderCreationMode) string {
+	if value == nil {
+		return ""
+	}
+	return string(*value)
 }
 
 func toAPIOrder(o orderdomain.Order) Order {

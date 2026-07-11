@@ -3,12 +3,14 @@ doc_type: requirement
 slug: order-tracking
 pitch: 把每次约单从咨询到交付收尾记清楚，状态、尾款和历史记录都有据可查
 status: current
-last_reviewed: 2026-07-09
-implemented_by: [2026-07-08-order-tracking]
+last_reviewed: 2026-07-10
+implemented_by: [2026-07-08-order-tracking, 2026-07-09-schedule-calendar]
 tags: [order, crm, delivery, payment-marker]
 ---
 
 # 订单记录：约单状态与收款收尾
+
+> 2026-07-10 `schedule-calendar` 增量已落地：本 requirement 的主体能力保持 current；creation_mode、幂等、schedulable_at 与 order_in_use 扩展已由 `2026-07-09-schedule-calendar` 实现并验收。
 
 ## 用户故事
 
@@ -32,8 +34,10 @@ tags: [order, crm, delivery, payment-marker]
 - 不自动生成提醒或 dashboard 卡片——它只把状态和时间记准，提醒扫描和首页聚合由后续能力消费。
 - 不做在线选片、云盘交付或客户自助入口——"已选片 / 已交付"只是摄影师记录的状态。
 - 不做批量导入——首版支持逐单补录历史订单，CSV / 批量迁移等到真实需要时再设计。
+- 新业务与历史补录必须显式区分：新业务只能引用 active 客户和套系；历史 backfill 可引用 active/archived 客户与套系以保留真实记录，但 merged 客户永不允许。
 - 不提供随意回退状态——录错的进行中订单先取消再新建；只有已完结或已取消的终态订单允许删除。
 
 ## 变更日志
 
+- 2026-07-10：`2026-07-09-schedule-calendar` 已落地兼容增量：订单创建增加 `creation_mode` 与幂等键；new 只接 active 客户/套系，backfill 可接 active/archived 客户/套系但拒 merged；列表增加按目标 slot 时间计算的 `schedulable_at` 候选过滤；被 shoot 档期引用的终态订单删除返回可行动的 `order_in_use`。
 - 2026-07-09：`2026-07-08-order-tracking` 落地后 backfill 为 current 能力；已覆盖建单、补录历史订单、状态推进、定金 / 尾款标记、未收尾款筛选、客户 / 套系聚合接通、客户合并迁移、套系引用校验与终态订单删除。

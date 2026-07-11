@@ -3,9 +3,9 @@ doc_type: roadmap
 slug: photographer-private-crm
 status: active
 created: 2026-07-05
-last_reviewed: 2026-07-08
+last_reviewed: 2026-07-10
 tags: [crm, photographer, mvp, reminder, scheduling]
-related_requirements: [customer-profile]
+related_requirements: [customer-profile, package-catalog, order-tracking, schedule-calendar]
 related_architecture: []
 ---
 
@@ -25,7 +25,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 - 客户档案：30 秒建档、多平台身份、渠道归因、转介绍、偏好备注、归档与合并（对应 req `customer-profile`）
 - 套系管理：商品定义（类型 / 定价方式 / 交付参数）+ 上下架 + 删除（引用完整性保护）
 - 订单记录：状态流转 + 定金 / 尾款标记（轻量，不碰支付）
-- 档期管理：日历视图、订单关联、重叠提示
+- 档期管理：月历视图、客户 / 订单关联、跨日与全天占用、重叠提示和异常恢复
 - 提醒引擎：生日 / 拍后回访 / 流失预警，幂等生成，参数可配置
 - 触达：Telegram Bot 绑定与每日摘要 + dashboard 今日待办
 - 数据资产可带走：全量 JSON 导出（4.6 契约）
@@ -89,7 +89,7 @@ photographer-private-crm
 - **Depth 判断**：deep——状态机合法跃迁与时间戳规则藏在域内，callers 只调 PATCH 并处理 409。
 
 ### schedule · 档期域
-- **职责**：时间段（slot）创建 / 查询 / 重叠检测；slot 可关联订单也可为独立忙碌块。不管订单状态（创建 / 删除 slot 不反向改订单）。
+- **职责**：时间段（slot）创建 / 查询 / 重叠检测；slot 可关联订单也可为独立忙碌块，支持跨日与全天占用并按账号时区落到相交自然日。不管订单状态（创建 / 删除 slot 不反向改订单）。
 - **承载的子 feature**：schedule-calendar
 - **触碰的现有代码**：无
 - **Depth 判断**：deep——重叠检测与区间查询藏在域内。
@@ -118,7 +118,7 @@ photographer-private-crm
 ```
 Base:      /api/v1
 认证:      Authorization: Bearer {token}（POST /api/v1/auth/login {password} → {token}；首版单账号）
-错误封套:  { "error": { "code": string, "message": string } }
+错误封套:  { "error": { "code": string, "message": string, "details"?: object } }
 错误码:    400 validation_failed | 401 unauthorized | 404 not_found
            409 conflict（子码见各域）| 500 internal
 分页:      ?page=1&page_size=20 → { "items": [...], "total": int }
@@ -126,11 +126,20 @@ Base:      /api/v1
 时区:      存储一律 UTC；所有 date-only 字段（due_date / birthday / last_shot_at）、"今日 / 当日 / 逾期"判定、
            digest_hour、统计滚动窗口（dashboard recent_stats），一律按 Settings.timezone（IANA，默认 Asia/Shanghai）计算
 ID:        string（引擎无关；服务端生成）
+幂等:      POST /orders 与 POST /schedule/slots 接受 Idempotency-Key；组合流程及从档期跳转的历史订单补录必须传。
+           静态校验先于 claim；仅成功 2xx 持久化。24 小时内同账号+同操作+同 key+
+           同规范化请求重放返回首次成功结果；成功绑定后的同 key 异请求 → 409
+           idempotency_conflict。事务结果明确的 4xx/业务409/callback error 回滚且不绑定 key；
+           客户端收到带 key 创建的任意 5xx 均按结果未知，用原 body/key 重放；未传 key 仍按原非幂等行为。
 ```
 
 **约束**：所有资源端点隐式按当前账号过滤，客户端**永不**传 `account_id`（ADR-001：过滤在 repository 基座强制，遗漏视为缺陷）。**Handler 薄层约束**：领域逻辑（状态机 / merge / 提醒规则等）不得 import 路由框架，`gin.Context` 等框架类型不下穿到 service / repository 层——这是将来若微服务化时框架层可低成本置换的前提，进 code review 检查口径。
 
-**Interface 设计检查**：platform 暴露；invariant = 未认证一律 401、跨账号数据不可见、日界判定单一口径（timezone 只在 Settings 一处定义）；seam 放在 HTTP API 层——webapp 与集成测试都穿过它取数；dependency strategy：webapp→API 为 remote-owned（自有服务）；存储为 local-substitutable（repository 接口 + 测试内存/容器替身，production 单 adapter 不算假 seam——替身用于测试面）。
+**幂等执行接口（schedule-calendar 增量）**：`platform/idempotency.ExecuteCreate(ctx, scope, operation, key, normalizedRequest, func(txScope store.TxAccountScope) (StoredResponse, error)) (StoredResponse, error)` 是唯一事务 owner。`operation` 为持久化协议类型，首版固定 `order.create.v1` / `schedule-slot.create.v1` 两个 typed 常量；不得使用路由名、函数名或 handler 临时字符串，新增语义版本只能新增常量并由 migration/contract test 固定。`store.TxAccountScope` 只暴露账号限定的读写能力，不暴露 `WithinTx`；`AccountScope.WithTxScope` 是唯一构造入口，避免 callback 误开第二个事务。store 扩展受控、自动注入 account_id 且校验标识符的 `InsertOnConflictDoNothingReturning`：首次 claim 插入成功；冲突请求等待后返回未插入，再以 `QueryRowForUpdate` 完成同 hash replay、异 hash 409 或过期接管，禁止用普通 INSERT 的唯一键错误把事务置为 aborted。order/schedule service 先 `PrepareCreate`，同一 normalized input 同时用于 canonical hash 与 callback；repository 提供消费 `TxAccountScope` 的 `CreatePreparedInScope`，handler 不复制领域校验，原无 key 路径通过 `WithTxScope` 复用同一节点。`idempotency.TxRunner` 是内部 commit seam，production adapter 调 `WithTxScope`，测试 adapter 可脚本化 committed-but-error / rolled-back-error。首个请求写业务资源与已序列化成功响应记录后一起 commit；事务结果明确的 4xx/业务409/callback error 回滚且不绑定 key；commit 结果未知时原 key/body 安全重试；过期行由 `SELECT FOR UPDATE` 单 owner 接管。只缓存 2xx；HTTP 5xx 不缓存，但客户端无法由此证明事务回滚，必须原 key/body 确认。
+
+**时区读取接口（schedule-calendar 增量）**：`GET /me` 返回 `timezone`。Settings 未落地前由单一 `AccountTimezoneProvider` 返回 Asia/Shanghai；日历只读该值，不使用浏览器时区。provider 可注入 IANA 时区用于 DST 测试，后续 Settings 落地时替换实现而不改前端契约。
+
+**Interface 设计检查**：platform 暴露；invariant = 未认证一律 401、跨账号数据不可见、日界判定单一口径、带 key 的创建只有一个事务 owner；seam 放在 HTTP API 与 platform helper 层。webapp→API 为 remote-owned；存储为 local-substitutable。幂等 callback 只暴露不含事务启动能力的 `TxAccountScope`，不暴露 pgx/Gin；order/schedule repository 需提供消费该 scope 的内部写路径。
 
 ### 4.2 共享实体逻辑模型
 
@@ -181,7 +190,7 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 
 **客户 merge / 归档语义**：
 - merge：source 必须 `status=active`；source 的 SocialIdentity / CustomerNote / Order / Reminder 全部改挂 target，source `status=merged` + `merged_into_customer_id`，不物理删除。**order / reminder 域晚于 merge 落地，其 feature 验收必须各自补"merge 迁移本域实体"用例**（契约随域生长，不静默失效）
-- 归档：`PATCH /customers/{id} {status:archived}`；归档客户不参与提醒扫描、不可被新订单引用（`409 customer_archived`）、默认列表隐藏（`?status` 缺省 active，可显式查 archived/all）
+- 归档：`PATCH /customers/{id} {status:archived}`；归档客户不参与提醒扫描、不可被 `creation_mode=new` 新业务引用（`409 customer_archived`）、默认列表隐藏（`?status` 缺省 active，可显式查 archived/all）；`creation_mode=backfill` 为保留历史真实性可引用 archived 客户，merged 永远拒绝
 
 **转介绍指针语义**（2026-07-07 拍板，随 customer-profile-complete 落地）：
 - merge 时其他客户 `referrer_customer_id` 指向 source 的，同事务批量重定向到 target；重定向后 target 的介绍人若变成自身则清空（介绍链跟人走，不指向 merged 壳）
@@ -193,6 +202,9 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 **方向**：webapp → 各域　**形式**：HTTP API（总约定见 4.1，实体 shape 见 4.2，此处只列端点与特有字段）
 
 ```
+平台
+  GET    /me                        → Account{id, created_at, timezone}
+                                    timezone 为 IANA；Settings 未落地前固定 Asia/Shanghai
 客户域
   POST   /customers                 {display_name, channel, referrer_customer_id?,
                                      identities:[{platform, handle, remark?}]} → 201 Customer
@@ -229,20 +241,24 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                     GET 列表项附聚合: orders_count(int, 引用本套系的非 cancelled 订单计数；
                                     order 域未落地前恒为 0)
 订单域
-  POST   /orders                    {customer_id, package_id?, title?, price?,
-                                     status?, deposit_paid?, balance_paid?, shot_at?, delivered_at?, note?}
-                                    → 201（status 缺省 consulting）
-                                    引用 merged/archived 客户 → 409 customer_archived
-                                    补录直达（2026-07-09 拍板）：status 可为八态任意值，建单即直达目标
+  POST   /orders                    Header: Idempotency-Key?；Body: {creation_mode?=new,
+                                    customer_id, package_id?, title?, price?, status?, deposit_paid?,
+                                     balance_paid?, shot_at?, delivered_at?, note?}
+                                    → 201；creation_mode=new 缺省 status=consulting
+                                    new：status 只允许 consulting/scheduled，客户与套系都只允许 active；
+                                      merged/archived 客户 → 409 customer_archived；
+                                      schedule-calendar 路径 A 用 new+consulting，slot 成功并刷新日历后
+                                      再显式 PATCH scheduled；候选加载后套系下架仍由服务端拒绝，
+                                      前端过滤不是安全边界。new+scheduled 保留为一般 API 能力
+                                    backfill：status 可为八态任意值，建单即直达目标
                                       状态、不必逐级跃迁；创建与跃迁/字段修正同守 §4.2 不变量——
                                       目标状态 ≥ shot 必须显式给 shot_at、≥ delivered（含 closed）必须
                                       显式给 delivered_at（补录是历史事实，缺省 now 必错 → 400 fail loud）；
                                       status=closed 必须 balance_paid=true（否则 409 unpaid_balance）；
                                       cancelled 可直建（时间戳可选，建议 note 写原因）
-                                    套系引用规则分叉：status 缺省/consulting（新业务）只允许 active 套系
-                                      （archived → 400）；status 为其他值（补录历史）允许引用 archived
-                                      套系（历史真实性优先，仍须同账号存在，不存在/跨账号 → 404）
-  GET    /orders?customer_id=&status=&unpaid_balance=true&page=
+                                    历史引用规则：backfill 允许 active/archived 客户与套系，merged 客户
+                                      仍 → 409 customer_archived；引用仍须同账号存在，不存在/跨账号→404
+  GET    /orders?customer_id=&status=&unpaid_balance=true&schedulable_at=&page=
                                     列表项附引用摘要: customer_display_name(string),
                                       package_name?(string, 引用套系时返回)——全局订单页可读性依赖，
                                       同"列表项附聚合"既有模式（2026-07-09 update）
@@ -253,9 +269,15 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                       delivered-only 口径宽，2026-07-09 拍板）
                                     默认排序 created_at DESC（同值按 id DESC，保证分页稳定；
                                       不提供 sort 参数，待真实需求另扩）
+                                    schedulable_at=<slot_end_at>：按该时刻相对服务端 now 应用与
+                                      schedule POST/PATCH 相同的订单+客户未来/历史矩阵：未来客户须
+                                      active，历史可 active/archived，merged 永拒；并排除已有 shoot
+                                      slot；可与 customer_id 组合，服务端完整分页过滤，前端不得只取
+                                      第一页自行筛选
   PATCH  /orders/{id}               {status?|deposit_paid?|balance_paid?|shot_at?|delivered_at?|…}
                                     非法跃迁 → 409 invalid_status_transition
                                     未结清进 closed / closed 试图取消结清标记 → 409 unpaid_balance
+                                    status 等于当前状态视为幂等字段修正/no-op → 200，供结果未知重放
                                     字段修正不变量违反（时间戳预写/置空、终态改标记）→ 400（见 §4.2）
   DELETE /orders/{id}               仅终态（closed/cancelled）可物理删除 → 204（2026-07-09 拍板）
                                     非终态 → 409 order_not_terminal（进行中订单先 cancel）
@@ -263,14 +285,42 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                       营收类统计，UI 删除确认须明示）；破坏性操作，与套系 DELETE 同级
                                     引用拦截随域生长：被 type=shoot 的 slot 引用 → 409 order_in_use
                                       （schedule-calendar 落地时接通，落地前无 slot 可引用、只受终态
-                                      门禁约束）；reminder 引用不拦截删除——引用已删订单的 pending
+                                      门禁约束），error.details 必返 schedule_slot_id/schedule_start_at
+                                      供订单页直达关联日期；reminder 引用不拦截删除——引用已删订单的 pending
                                       提醒由 reminder-engine 定义自动 dismiss/跳过（其 design 细化）
 档期域
-  GET    /schedule/slots?from=&to=  区间查询（含跨界 slot）
-  POST   /schedule/slots            {start_at, end_at, type, order_id?, note?}
-                                    → 201 { slot: Slot, overlaps: [slot_id] }
-                                    重叠不阻止，返回 overlaps 由前端提示（hold 双留是真实业务）
-  PATCH/DELETE /schedule/slots/{id}
+  GET    /schedule/slots?from=&to=  区间查询（半开区间 [from,to)，含跨界 slot）；月历传完整
+                                    6 周可见网格的账号本地日界再转 UTC，不只查自然月
+                                    列表项为以 type 判别的 ScheduleSlotListItem union：shoot variant
+                                      必返 order_id/customer_id/customer_display_name/customer_status/
+                                      order_status，order_title/package_name 因源字段可空而可选；
+                                      hold/busy variant 无引用摘要（repository batch 组装，禁 N+1）
+  POST   /schedule/slots            Header: Idempotency-Key?；Body:
+                                    {start_at, end_at, type, order_id?, note?}
+                                    → 201 { slot: ScheduleSlot, overlaps: [slot_id] }
+                                    重叠不阻止；响应 overlaps 是事务内快照，不承诺捕获并发另一事务。
+                                    单次成功后前端立即重拉；多个在途写全部完成后统一重拉，并在窗口
+                                    重新聚焦时 revalidate，按刷新结果给当前冲突提示；同 key
+                                    重放返回首次成功结果。跨日合法，前端把 slot 显示在每个相交本地自然日；
+                                    「全天」是账号本地 [00:00, 次日00:00) 的输入快捷方式
+                                    type=shoot 引用规则：
+                                    - end_at > 请求时刻（未来/进行中）只允许 consulting/scheduled；
+                                    - end_at <= 请求时刻（历史补录）允许
+                                      scheduled/shot/selected/retouching/delivered/closed；
+                                    - 未来客户须 active，历史可 active/archived，merged 永不允许；
+                                      归档先提交的未来写 → 409 customer_archived；shoot 先提交则
+                                      后续归档合法，列表保留 slot 并返回 archived 警示；
+                                    - cancelled 永不允许；同一订单最多一条 shoot slot，冲突 →
+                                      409 order_already_scheduled，error.details 必返现有 slot id/start_at
+                                    create/改挂 shoot 统一先读 order.customer_id，再按 customer→order
+                                      加行锁并复核；merge 改挂则回滚并以新 id 自动重试一次，再次
+                                      变化 → 409 customer_changed 并由前端重拉候选。归档/merge
+                                      先提交时写入重验并拒绝或改挂，shoot 先提交时后续客户状态变化
+                                      合法且列表显示最新状态；任一顺序不得死锁或产生悬空引用
+  PATCH  /schedule/slots/{id}       start_at?/end_at?/type?/order_id?/note?；order_id 与 note
+                                    支持显式 null 清空，省略表示不改；时间/type/order 变化重跑矩阵
+                                      与唯一性校验，note-only 不因客户/订单后来变态而拒绝
+  DELETE /schedule/slots/{id}       → 204；只删档期，不改变或删除订单，UI 必须明示
 提醒域
   GET    /reminders?status=pending&customer_id=&due_before=&page=
   POST   /reminders                 {type:custom, customer_id?, due_date, content} → 201
@@ -383,9 +433,9 @@ GET /export → application/json（Content-Disposition 附件）
 6. **order-tracking** — 订单记录：创建（客户+套系）、八态状态机（非法跃迁 409、时间戳自动写入、未结清禁 closed）、定金/尾款标记、按客户/全局/未收尾款查询
    - 所属模块：order + webapp ｜ 依赖：customer-core, package-catalog ｜ 状态：done ｜ 对应 feature：2026-07-08-order-tracking
    - 备注：依赖理由——订单必须挂客户并引用套系；完成信号：跃迁矩阵测试全过（含前跳边、shot_at/delivered_at 自动写入、409 unpaid_balance、字段修正不变量）、unpaid_balance 筛选正确（收窄口径）、列表附引用摘要（customer_display_name/package_name）与默认排序稳定、**merge 迁移订单用例**（4.2 契约随域生长）、引用归档客户 409、**接通 customers/packages 聚合字段真实计算**（orders_count/last_shot_at/total_order_amount，4.3，2026-07-06 契约更新）、**接通套系删除 in-use 校验**（删除被订单引用的套系返回 409 package_in_use，§4.3 契约随域生长，2026-07-08 update）；**2026-07-09 契约 update**（design PM review + owner 追加拍板，见 §8）：前跳边 / 字段修正不变量 / 列表引用摘要 / unpaid_balance 口径 / 默认排序 / POST 补录直达 / DELETE 终态物理删除
-7. **schedule-calendar** — 档期：月/周日历视图、slot CRUD、订单关联、重叠返回 overlaps 提示、独立忙碌块
-   - 所属模块：schedule + webapp ｜ 依赖：order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——type=shoot 的 slot 必须挂订单；完成信号：重叠创建返回 overlaps 且前端提示；建/删 slot 不改订单状态（反向联动禁止用例）；日历页答复"某天有没有档"≤10 秒（演示）；**接通订单物理删除的 slot 引用拦截**（被 shoot slot 引用的终态订单 DELETE → 409 order_in_use，§4.3 随域生长，2026-07-09——验收须补该用例）；**组合流程拍板（2026-07-06）**：前端「新建拍摄档期」弹窗（含客户档案页「＋新约单」入口）隐式先 POST /orders（选客户+套系）再 POST /schedule/slots 挂 order_id——不新增组合端点，两步失败处理（订单已建、slot 失败时的提示与补救）在本条 feature design 内定义，此流程是 design 硬约束；**design 必答清单**：①保存成功后是否隐式第三步 `PATCH /orders {status:scheduled}`（合法，显式驱动，不违反"slot 不反向改状态"不变量）还是接受"日历有 shoot slot 的 consulting 订单"常态；②slot 失败留下的悬挂 consulting 订单按 4.4 属"非终态订单"会抑制该客户 churn 预警，补救策略须覆盖
+7. **schedule-calendar** — 档期：月历、跨日/全天 slot CRUD、订单关联、可行动的重叠提示、独立忙碌块与异常恢复
+   - 所属模块：platform + order + schedule + webapp ｜ 依赖：order-tracking ｜ 状态：done ｜ 对应 feature：2026-07-09-schedule-calendar
+   - 备注：依赖理由——type=shoot 的 slot 必须挂订单。完成信号：①日历页与客户档案页共用「新建拍摄档期」流程，客户档案入口预选当前客户；②桌面端从客户档案到建单+挂档 ≤30 秒，月历查指定日期安排与重叠 ≤10 秒；③月历周一首列并查询固定 6 周网格，跨日/全天 slot 在每个相交本地自然日可见，密集日以 display_start/id 稳定排序且冲突数按当日参与重叠的唯一 slot 计；④保存前展示具体重叠对象但允许继续，成功后重拉给当前冲突提示，多在途写全部完成后统一重拉；⑤组合流程使用 128-bit flow_id 的 per-step attempt Idempotency-Key 和 session flow journal，服务端 operation 固定为 typed `order.create.v1`/`schedule-slot.create.v1`，重复点击/响应丢失/5xx/硬刷新不产生重复订单或 slot，24 小时过期后禁自动重放；历史无候选跳转 backfill 时，schedule_draft 只允许历史可排期六态，默认 shot 并按账号时区预填档期开始日，POST order 前升级为同一 pending journal 的 `backfill_order` phase，结果未知不得重复补录；只有 unknown 结果持续阻塞且不可清理，明确失败或资源已知时可保留现状/补偿后结束；⑥新建订单先落 consulting，所有 consulting 订单都在 slot 成功并刷新日历后再显式推进 scheduled，刷新返回的 ScheduleSlotListItem.customer_id 覆盖 journal 旧值后才进入状态同步，状态同步 unknown 保留恢复入口，明确失败可重试、删除 slot 或保留异常现状并结束，不产生无档期的已定档订单；⑦shoot 写与归档/merge 共用 customer→order 锁序，按先提交者线性化且无死锁/悬空引用；连续 merge 返回 customer_changed 时保留表单与已知订单、清旧候选后重拉确认；ScheduleSlotListItem 为 type 判别 union，shoot 必返订单/客户/状态摘要；⑧建/删 slot 不自动改订单状态，删 slot 明示订单保留并可直达客户档案订单 tab；⑨接通被 shoot slot 引用订单 DELETE → 409 order_in_use，并用 typed details 直达关联档期；⑩creation_mode 与 schedulable_at 服务端复用订单+客户时间矩阵，未来要求 active 客户、历史允许 active/archived、merged 永拒，缺 header、缺候选过滤的既有订单调用/排序/total 不变；⑪GET /me timezone 驱动日界，含 schedule_draft OrderWorkspace 历史时间、非默认 DST 用例，加载失败禁用写入而不回退浏览器时区；⑫首版仅月视图，移动端只验收查档期轻路径，不做周视图/拖拽/重复档期。组合流程仍是前端显式调用订单与档期两个独立端点，不新增聚合端点。
 8. **reminder-engine** — 提醒引擎：/admin/reminders/scan 幂等生成三类提醒、done/dismiss、参数可配置（含按拍摄类型流失阈值、账号时区）
    - 所属模块：reminder ｜ 依赖：customer-profile-complete, order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 6）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**；GET /reminders 支持 customer_id 过滤（4.3，2026-07-06 契约更新）；**订单可物理删除（2026-07-09）**：引用已删订单的 pending reminder 处理（自动 dismiss/跳过）细则在本条 design 定义并验收
@@ -411,7 +461,7 @@ GET /export → application/json（Content-Disposition 附件）
 | 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3, 4 | 多身份建档计时演示 + merge/归档用例测试 + 头像选择面截图 | test + screenshot | yes |
 | 渠道归因：每个客户带来源渠道可筛选 | 2 | GET /customers?channel= 用例 | test | yes |
 | 再也不忘：三类提醒准确且不重复，主动送达 | 8, 9, 10 | 幂等双跑测试 + 时区日界用例 + TG 真机截图 + dashboard | test + screenshot | yes |
-| 档期 10 秒可答、与客户套系关联 | 6, 7 | 日历页演示 + overlaps 用例 | test + screenshot | yes |
+| 档期 10 秒可答、30 秒可靠排期、与客户套系关联 | 6, 7 | 月历/客户档案两入口计时演示 + 跨日/全天 + overlaps 明细 + 幂等重放/结果未知恢复用例 | test + screenshot | yes |
 | 订单状态与定金尾款不漏 | 6, 10 | 跃迁矩阵测试（含时间戳/unpaid_balance）+ 筛选核对 | test | yes |
 | 套系参数有结构化的家 | 5 | CRUD + 上下架过滤 + 删除引用完整性用例 | test | yes |
 | 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 11, 12 | make check（或等价）+ 基座过滤测试 + 导出 counts 核对 | command + test | yes |
@@ -445,14 +495,15 @@ GET /export → application/json（Content-Disposition 附件）
   2. ✅ 存储引擎：PostgreSQL（2026-07-05 owner 拍板，理由见第 4 节头注；大数据类需求二期按需引入专用存储）；待 cs-domain 落 ADR-002
   3. ✅ 部署形态与 PII 边界：阿里云 ECS 自部署（应用 + PostgreSQL 均自装，2026-07-05 owner 拍板）；备份与导出文件保管策略在 platform-skeleton / v1-hardening 细化（建议 pg_dump 定时 + 异地副本）；TG token 走环境变量已写入 4.5
 - ✅ 「渠道」「线索」已补入 CONTEXT.md（2026-07-06，cs-domain；线索定义为"无成交订单的客户"）；技术栈已落 ADR-002（PostgreSQL）与 ADR-003（Gin + JSON/OpenAPI）。
-- 剩余四份 req（提醒引擎/档期/订单/套系）尚未起草，建议各条目进 feature-design 时触发 `cs-req draft`。
+- 剩余未起草 req 仅提醒引擎；档期已由 `2026-07-09-schedule-calendar` 落地并在验收后升级为 current，订单/套系也已随已完成 feature 回填 current。
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
-- ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量（客户/套系聚合字段、q 匹配范围加 phone、reminders customer_id 过滤、Package.note、SocialPlatform 枚举扩展、dashboard 近 3 天 / 近 30 天口径），并按 `customer-core` tag 只注册已实现的客户三操作；`GET /me` 仍为 platform-skeleton 白名单债，后续另走 `cs-roadmap update` 收编到 roadmap 语义层。
+- ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量；2026-07-10 schedule-calendar update 同时把 `GET /me` 收编为平台契约并增加 timezone，消解原白名单债。
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
 
 ## 8. 变更日志
 
+- 2026-07-10（schedule-calendar 产品评审与独立 review 后 owner 授权优化）：档期契约与条目 7 同步 update。首版从「月/周」收窄为周一首列的固定 6 周月视图；补客户档案页共用入口、跨日/全天、稳定排序与唯一 slot 冲突计数、保存前重叠明细、成功后刷新确认、失败/过期恢复和删除引导；POST /orders 与 POST /schedule/slots 增可选 Idempotency-Key，固化 typed operation 常量、唯一事务 owner、只缓存 2xx、128-bit flow/per-step attempt 与 24 小时重放边界，历史排期跳转 backfill 的订单创建也纳入同一 pending journal；POST /orders 增 creation_mode 显式区分新业务/历史补录；GET /orders 增时间感知 schedulable_at；路径 A 新建 consulting，所有 consulting 订单都先成功建 slot 并刷新日历再同步 scheduled，且使用刷新后 slot 摘要的 customer_id 修正 merge 竞态；shoot 写与归档/merge 统一 customer→order 锁序；GET /me 增 timezone 且加载失败禁止按浏览器时区写入；GET slot 列表升级为 type 判别 union，shoot 必返订单/客户/状态摘要并落到客户档案订单 tab；shoot 按订单+客户未来/历史矩阵分流并限制一订单一 shoot；PATCH 明确 nullable 三态；order_in_use/order_already_scheduled details 可直达现有 slot。受影响：已完成 order-tracking 由条目 7 承担兼容增量，无 header、无 creation_mode、无 schedulable_at 的既有新业务调用保持默认行为/列表排序/total；现有补录 UI 同步显式传 backfill。旧 roadmap/design review 因实质变化失效并重跑。
 - 2026-07-09（order-tracking design round-2 review 后 owner 追加拍板）：订单域契约再 update 两项，§4.2/§4.3 同步：
   - **§4.3 POST /orders 补录直达**：POST 扩为全 shape（status/deposit_paid/balance_paid/shot_at/delivered_at/note 均可选），status 可直达八态任意值、不必逐级跃迁——历史订单补录是上线刚需（老客户 last_shot_at/churn 基线，否则 reminder-engine 上线即误报），逐级跳既伪造流程又笨重。创建与跃迁/字段修正三条路径同守 §4.2 不变量：目标状态 ≥shot 须显式 shot_at、≥delivered 须显式 delivered_at（补录缺省 now 必错，fail loud 400）、closed 须已结清（409 unpaid_balance）；补录（status≠consulting）允许引用 archived 套系（历史真实性优先），新业务建单仍只允许 active（原 FDR-003 规则不变）。原「reminder-engine 启动前决策补录」观察项就此消解。
   - **§4.3 新增 DELETE /orders/{id} 终态物理删除**：仅 closed/cancelled 可删 → 204；非终态 → 409 order_not_terminal（先 cancel）。动因：误操作产生的 cancelled 垃圾单若不可清理，会永久阻塞套系删除（delete in-use 为 any-reference 口径）且污染订单列表；owner 单人工具，删除权在 owner。删除即从实时聚合消失（删 closed 单会减少 orders_count/营收类统计，UI 确认须明示）；被 shoot slot 引用 → 409 order_in_use 随 schedule-calendar 生长接通；reminder 引用不拦截（引用已删订单的 pending 提醒由 reminder-engine 自动 dismiss/跳过，其 design 细化）。原「订单只 cancel 不物理删」的 order-tracking design 约束同步推翻。

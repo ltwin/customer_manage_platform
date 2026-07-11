@@ -199,7 +199,7 @@ func TestApplyUpdateInputRejectsTimestampPrewriteOnCancel(t *testing.T) {
 
 func TestApplyCreateInputBackfillInvariants(t *testing.T) {
 	status := StatusDelivered
-	_, err := ApplyCreateInput(CreateInput{Status: &status})
+	_, err := ApplyCreateInput(CreateInput{CreationMode: CreationModeBackfill, Status: &status})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("backfill delivered without timestamps error = %v, want ErrValidation", err)
 	}
@@ -207,19 +207,19 @@ func TestApplyCreateInputBackfillInvariants(t *testing.T) {
 	status = StatusClosed
 	shotAt := time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC)
 	deliveredAt := time.Date(2026, 6, 9, 8, 0, 0, 0, time.UTC)
-	_, err = ApplyCreateInput(CreateInput{Status: &status, ShotAt: &shotAt, DeliveredAt: &deliveredAt})
+	_, err = ApplyCreateInput(CreateInput{CreationMode: CreationModeBackfill, Status: &status, ShotAt: &shotAt, DeliveredAt: &deliveredAt})
 	if !errors.Is(err, ErrUnpaidBalance) {
 		t.Fatalf("backfill closed unpaid error = %v, want ErrUnpaidBalance", err)
 	}
 
 	status = StatusConsulting
-	_, err = ApplyCreateInput(CreateInput{Status: &status, ShotAt: &shotAt})
+	_, err = ApplyCreateInput(CreateInput{CreationMode: CreationModeBackfill, Status: &status, ShotAt: &shotAt})
 	if !errors.Is(err, ErrValidation) {
 		t.Fatalf("consulting with shot_at error = %v, want ErrValidation", err)
 	}
 
 	status = StatusCancelled
-	created, err := ApplyCreateInput(CreateInput{Status: &status, Note: testStringPtr("取消")})
+	created, err := ApplyCreateInput(CreateInput{CreationMode: CreationModeBackfill, Status: &status, Note: testStringPtr("取消")})
 	if err != nil {
 		t.Fatalf("cancelled backfill returned error: %v", err)
 	}

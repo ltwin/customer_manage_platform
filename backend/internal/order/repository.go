@@ -19,57 +19,63 @@ func NewPostgresRepository() PostgresRepository {
 	return PostgresRepository{}
 }
 
-func (PostgresRepository) Create(ctx context.Context, scope store.AccountScope, input CreateInput) (Order, error) {
-	initial, err := ApplyCreateInput(input)
-	if err != nil {
-		return Order{}, err
-	}
-	id := "ord_" + uuid.NewString()
+func (r PostgresRepository) Create(ctx context.Context, scope store.AccountScope, prepared PreparedCreate) (Order, error) {
 	var created Order
-	err = scope.WithinTx(ctx, func(tx store.AccountScope) error {
-		if err := requireActiveCustomer(ctx, tx, input.CustomerID); err != nil {
-			return err
-		}
-		if input.PackageID != nil {
-			if err := requireUsablePackage(ctx, tx, *input.PackageID, isBackfillCreate(input)); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.InsertReturningID(ctx, "orders",
-			[]string{
-				"id",
-				"customer_id",
-				"package_id",
-				"title",
-				"status",
-				"price",
-				"deposit_paid",
-				"balance_paid",
-				"shot_at",
-				"delivered_at",
-				"note",
-			},
-			id,
-			input.CustomerID,
-			nullableStringArg(input.PackageID),
-			nullableStringArg(input.Title),
-			initial.Status,
-			nullableIntArg(input.Price),
-			initial.DepositPaid,
-			initial.BalancePaid,
-			nullableTimeArg(initial.ShotAt),
-			nullableTimeArg(initial.DeliveredAt),
-			nullableStringArg(input.Note),
-		); err != nil {
-			return err
-		}
-		created, err = findOrder(ctx, tx, id)
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		created, err = r.CreatePreparedInScope(ctx, tx, prepared)
 		return err
 	})
 	if err != nil {
 		return Order{}, err
 	}
 	return created, nil
+}
+
+func (PostgresRepository) CreatePreparedInScope(
+	ctx context.Context,
+	scope store.TxAccountScope,
+	prepared PreparedCreate,
+) (Order, error) {
+	input := prepared.Input
+	if err := requireUsableCustomer(ctx, scope, input.CustomerID, input.CreationMode); err != nil {
+		return Order{}, err
+	}
+	if input.PackageID != nil {
+		if err := requireUsablePackage(ctx, scope, *input.PackageID, input.CreationMode); err != nil {
+			return Order{}, err
+		}
+	}
+	id := "ord_" + uuid.NewString()
+	if _, err := scope.InsertReturningID(ctx, "orders",
+		[]string{
+			"id",
+			"customer_id",
+			"package_id",
+			"title",
+			"status",
+			"price",
+			"deposit_paid",
+			"balance_paid",
+			"shot_at",
+			"delivered_at",
+			"note",
+		},
+		id,
+		input.CustomerID,
+		nullableStringArg(input.PackageID),
+		nullableStringArg(input.Title),
+		prepared.initial.Status,
+		nullableIntArg(input.Price),
+		prepared.initial.DepositPaid,
+		prepared.initial.BalancePaid,
+		nullableTimeArg(prepared.initial.ShotAt),
+		nullableTimeArg(prepared.initial.DeliveredAt),
+		nullableStringArg(input.Note),
+	); err != nil {
+		return Order{}, err
+	}
+	return findOrder(ctx, scope, id)
 }
 
 func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, filter ListFilter) (ListResult, error) {
@@ -175,6 +181,21 @@ func (PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, 
 		if !terminalStatus(current.Status) {
 			return fmt.Errorf("%w: 非终态订单不可删除", ErrOrderNotTerminal)
 		}
+		var slotID string
+		var slotStartAt time.Time
+		err = tx.QueryRow(
+			ctx,
+			"schedule_slots",
+			"id, start_at",
+			"type = 'shoot' AND order_id = $2",
+			id,
+		).Scan(&slotID, &slotStartAt)
+		if err == nil {
+			return OrderInUseError{SlotID: slotID, StartAt: slotStartAt}
+		}
+		if !errors.Is(err, store.ErrNoRows) {
+			return err
+		}
 		rows, err := tx.Delete(ctx, "orders", "id = $2", id)
 		if err != nil {
 			return err
@@ -186,7 +207,7 @@ func (PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, 
 	})
 }
 
-func requireActiveCustomer(ctx context.Context, scope store.AccountScope, customerID string) error {
+func requireUsableCustomer(ctx context.Context, scope rowScope, customerID, mode string) error {
 	var status string
 	err := scope.QueryRowForUpdate(ctx, "customers", "status", "id = $2", customerID).Scan(&status)
 	if errors.Is(err, store.ErrNoRows) {
@@ -195,13 +216,14 @@ func requireActiveCustomer(ctx context.Context, scope store.AccountScope, custom
 	if err != nil {
 		return err
 	}
-	if status != "active" {
+	if status == "merged" || (mode == CreationModeNew && status != "active") ||
+		(mode == CreationModeBackfill && status != "active" && status != "archived") {
 		return fmt.Errorf("%w: 客户已归档或合并", ErrCustomerArchived)
 	}
 	return nil
 }
 
-func requireUsablePackage(ctx context.Context, scope store.AccountScope, packageID string, backfill bool) error {
+func requireUsablePackage(ctx context.Context, scope rowScope, packageID, mode string) error {
 	var status string
 	err := scope.QueryRowForUpdate(ctx, "packages", "status", "id = $2", packageID).Scan(&status)
 	if errors.Is(err, store.ErrNoRows) {
@@ -210,14 +232,13 @@ func requireUsablePackage(ctx context.Context, scope store.AccountScope, package
 	if err != nil {
 		return err
 	}
-	if !backfill && status != "active" {
+	if mode == CreationModeNew && status != "active" {
 		return ValidationError{Message: "下架套系不可用于新建订单"}
 	}
+	if mode == CreationModeBackfill && status != "active" && status != "archived" {
+		return ValidationError{Message: "套系状态不可用于历史补录"}
+	}
 	return nil
-}
-
-func isBackfillCreate(input CreateInput) bool {
-	return input.Status != nil && *input.Status != StatusConsulting
 }
 
 const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note"
@@ -226,7 +247,12 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-func findOrder(ctx context.Context, scope store.AccountScope, id string) (Order, error) {
+type rowScope interface {
+	QueryRow(context.Context, string, string, string, ...any) store.Row
+	QueryRowForUpdate(context.Context, string, string, string, ...any) store.Row
+}
+
+func findOrder(ctx context.Context, scope rowScope, id string) (Order, error) {
 	order, err := scanOrder(scope.QueryRow(ctx, "orders", orderColumns, "id = $2", id))
 	if errors.Is(err, store.ErrNoRows) {
 		return Order{}, fmt.Errorf("%w: 订单不存在", ErrNotFound)
@@ -234,7 +260,7 @@ func findOrder(ctx context.Context, scope store.AccountScope, id string) (Order,
 	return order, err
 }
 
-func findOrderForUpdate(ctx context.Context, scope store.AccountScope, id string) (Order, error) {
+func findOrderForUpdate(ctx context.Context, scope rowScope, id string) (Order, error) {
 	order, err := scanOrder(scope.QueryRowForUpdate(ctx, "orders", orderColumns, "id = $2", id))
 	if errors.Is(err, store.ErrNoRows) {
 		return Order{}, fmt.Errorf("%w: 订单不存在", ErrNotFound)
@@ -274,8 +300,8 @@ func scanOrder(row scanner) (Order, error) {
 }
 
 func buildOrderFilter(filter ListFilter) (string, []any) {
-	conds := make([]string, 0, 3)
-	args := make([]any, 0, 3)
+	conds := make([]string, 0, 4)
+	args := make([]any, 0, 5)
 	if filter.CustomerID != "" {
 		args = append(args, filter.CustomerID)
 		conds = append(conds, fmt.Sprintf("customer_id = $%d", len(args)+1))
@@ -286,6 +312,27 @@ func buildOrderFilter(filter ListFilter) (string, []any) {
 	}
 	if filter.UnpaidBalance {
 		conds = append(conds, "balance_paid = false AND status IN ('shot', 'selected', 'retouching', 'delivered')")
+	}
+	if filter.SchedulableAt != nil {
+		orderStatuses, customerStatuses := schedulableStatuses(*filter.SchedulableAt, filter.schedulableNow)
+		args = append(args, orderStatuses)
+		orderStatusesPlaceholder := len(args) + 1
+		args = append(args, customerStatuses)
+		customerStatusesPlaceholder := len(args) + 1
+		conds = append(conds, fmt.Sprintf(`
+status = ANY($%d::text[])
+AND EXISTS (
+	SELECT 1 FROM customers AS schedule_customer
+	WHERE schedule_customer.account_id = orders.account_id
+	  AND schedule_customer.id = orders.customer_id
+	  AND schedule_customer.status = ANY($%d::text[])
+)
+AND NOT EXISTS (
+	SELECT 1 FROM schedule_slots AS schedule_slot
+	WHERE schedule_slot.account_id = orders.account_id
+	  AND schedule_slot.order_id = orders.id
+	  AND schedule_slot.type = 'shoot'
+)`, orderStatusesPlaceholder, customerStatusesPlaceholder))
 	}
 	return strings.Join(conds, " AND "), args
 }

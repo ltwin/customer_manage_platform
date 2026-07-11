@@ -16,6 +16,7 @@ import (
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 )
 
 func startPostgres(t *testing.T) string {
@@ -140,13 +141,14 @@ func TestCreateBackfillReferencesAndValidation(t *testing.T) {
 	status := orderdomain.StatusDelivered
 	paid := true
 	backfilled, err := svc.Create(ctx, scopeA, orderdomain.CreateInput{
-		CustomerID:  "cus_active",
-		PackageID:   strPtr("pkg_archived"),
-		Status:      &status,
-		ShotAt:      &shotAt,
-		DeliveredAt: &deliveredAt,
-		DepositPaid: &paid,
-		BalancePaid: &paid,
+		CreationMode: orderdomain.CreationModeBackfill,
+		CustomerID:   "cus_active",
+		PackageID:    strPtr("pkg_archived"),
+		Status:       &status,
+		ShotAt:       &shotAt,
+		DeliveredAt:  &deliveredAt,
+		DepositPaid:  &paid,
+		BalancePaid:  &paid,
 	})
 	if err != nil {
 		t.Fatalf("backfill delivered with archived package: %v", err)
@@ -156,12 +158,62 @@ func TestCreateBackfillReferencesAndValidation(t *testing.T) {
 	}
 
 	status = orderdomain.StatusShot
-	if _, err := svc.Create(ctx, scopeA, orderdomain.CreateInput{CustomerID: "cus_active", Status: &status}); !errors.Is(err, orderdomain.ErrValidation) {
+	if _, err := svc.Create(ctx, scopeA, orderdomain.CreateInput{CreationMode: orderdomain.CreationModeBackfill, CustomerID: "cus_active", Status: &status}); !errors.Is(err, orderdomain.ErrValidation) {
 		t.Fatalf("backfill shot without shot_at: want validation, got %v", err)
 	}
 	status = orderdomain.StatusClosed
-	if _, err := svc.Create(ctx, scopeA, orderdomain.CreateInput{CustomerID: "cus_active", Status: &status, ShotAt: &shotAt, DeliveredAt: &deliveredAt}); !errors.Is(err, orderdomain.ErrUnpaidBalance) {
+	if _, err := svc.Create(ctx, scopeA, orderdomain.CreateInput{CreationMode: orderdomain.CreationModeBackfill, CustomerID: "cus_active", Status: &status, ShotAt: &shotAt, DeliveredAt: &deliveredAt}); !errors.Is(err, orderdomain.ErrUnpaidBalance) {
 		t.Fatalf("backfill closed unpaid: want unpaid_balance, got %v", err)
+	}
+}
+
+func TestPreparedCreateUsesNormalizedInputAndCallerTransaction(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t)
+	scope := createAccount(t, s, "acct-a")
+	seedCustomer(t, scope, "cus_active", "小美", "active")
+
+	svc := orderService()
+	prepared, err := svc.PrepareCreate(orderdomain.CreateInput{
+		CustomerID: "  cus_active  ",
+		Title:      strPtr("  事务内订单  "),
+	})
+	if err != nil {
+		t.Fatalf("prepare create: %v", err)
+	}
+	if prepared.Input.CustomerID != "cus_active" || prepared.Input.Title == nil || *prepared.Input.Title != "事务内订单" {
+		t.Fatalf("prepared input should be normalized once, got %+v", prepared.Input)
+	}
+
+	wantRollback := errors.New("rollback prepared create")
+	var rolledBack orderdomain.Order
+	err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		rolledBack, err = svc.CreatePreparedInScope(ctx, tx, prepared)
+		if err != nil {
+			return err
+		}
+		return wantRollback
+	})
+	if !errors.Is(err, wantRollback) {
+		t.Fatalf("outer transaction rollback: %v", err)
+	}
+	exists, err := scope.Exists(ctx, "orders", "id = $2", rolledBack.ID)
+	if err != nil {
+		t.Fatalf("query rolled back order: %v", err)
+	}
+	if exists {
+		t.Fatal("prepared create must not commit outside the caller transaction")
+	}
+
+	var committed orderdomain.Order
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		committed, err = svc.CreatePreparedInScope(ctx, tx, prepared)
+		return err
+	}); err != nil {
+		t.Fatalf("commit prepared create: %v", err)
+	}
+	if committed.ID == "" || committed.CustomerID != "cus_active" || committed.Title == nil || *committed.Title != "事务内订单" {
+		t.Fatalf("committed prepared order mismatch: %+v", committed)
 	}
 }
 
@@ -537,6 +589,269 @@ func TestListFiltersSummariesAndStableSorting(t *testing.T) {
 	}
 }
 
+func TestCreationModesAndSchedulablePagination(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t)
+	scope := createAccount(t, s, "acct-schedulable")
+	now := time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC)
+	svc := orderdomain.NewServiceWithClock(orderdomain.NewPostgresRepository(), func() time.Time { return now })
+
+	seedCustomer(t, scope, "cus-active", "正常客户", "active")
+	seedCustomer(t, scope, "cus-archived", "归档客户", "archived")
+	seedCustomer(t, scope, "cus-merged", "合并客户", "merged")
+	seedPackage(t, scope, "pkg-active", "在架套系", "active")
+	seedPackage(t, scope, "pkg-archived", "下架套系", "archived")
+
+	createdAt := time.Date(2026, 7, 1, 8, 0, 0, 0, time.UTC)
+	seedOrder(t, scope, seedOrderInput{ID: "ord-future-1", CustomerID: "cus-active", Status: orderdomain.StatusConsulting, CreatedAt: createdAt})
+	seedOrder(t, scope, seedOrderInput{ID: "ord-future-2", CustomerID: "cus-active", Status: orderdomain.StatusScheduled, CreatedAt: createdAt})
+	seedOrder(t, scope, seedOrderInput{ID: "ord-archived", CustomerID: "cus-archived", Status: orderdomain.StatusScheduled, CreatedAt: createdAt})
+	seedOrder(t, scope, seedOrderInput{ID: "ord-shot", CustomerID: "cus-active", Status: orderdomain.StatusShot, ShotAt: &createdAt, CreatedAt: createdAt})
+	seedOrder(t, scope, seedOrderInput{ID: "ord-cancelled", CustomerID: "cus-active", Status: orderdomain.StatusCancelled, CreatedAt: createdAt})
+	seedOrder(t, scope, seedOrderInput{ID: "ord-merged", CustomerID: "cus-merged", Status: orderdomain.StatusScheduled, CreatedAt: createdAt})
+	seedOrder(t, scope, seedOrderInput{ID: "ord-used", CustomerID: "cus-active", Status: orderdomain.StatusScheduled, CreatedAt: createdAt})
+	if err := scope.Insert(ctx, "schedule_slots",
+		[]string{"id", "start_at", "end_at", "type", "order_id"},
+		"slot-used", now.Add(time.Hour), now.Add(2*time.Hour), "shoot", "ord-used",
+	); err != nil {
+		t.Fatalf("seed used shoot slot: %v", err)
+	}
+
+	future := now.Add(time.Hour)
+	first, err := svc.List(ctx, scope, orderdomain.ListFilter{SchedulableAt: &future, Page: 1, PageSize: 1})
+	if err != nil {
+		t.Fatalf("list future schedulable page 1: %v", err)
+	}
+	second, err := svc.List(ctx, scope, orderdomain.ListFilter{SchedulableAt: &future, Page: 2, PageSize: 1})
+	if err != nil {
+		t.Fatalf("list future schedulable page 2: %v", err)
+	}
+	if first.Total != 2 || second.Total != 2 || len(first.Items) != 1 || len(second.Items) != 1 ||
+		first.Items[0].ID != "ord-future-2" || second.Items[0].ID != "ord-future-1" {
+		t.Fatalf("future schedulable pagination mismatch: first=%+v second=%+v", first, second)
+	}
+
+	history := now
+	historical, err := svc.List(ctx, scope, orderdomain.ListFilter{SchedulableAt: &history, PageSize: 100})
+	if err != nil {
+		t.Fatalf("list historical schedulable: %v", err)
+	}
+	if historical.Total != 3 || len(historical.Items) != 3 {
+		t.Fatalf("historical schedulable matrix mismatch: %+v", historical)
+	}
+	for _, item := range historical.Items {
+		if item.ID != "ord-future-2" && item.ID != "ord-archived" && item.ID != "ord-shot" {
+			t.Fatalf("historical list contains ineligible order: %+v", item)
+		}
+	}
+	archivedHistory, err := svc.List(ctx, scope, orderdomain.ListFilter{
+		CustomerID:    "cus-archived",
+		SchedulableAt: &history,
+		PageSize:      100,
+	})
+	if err != nil || archivedHistory.Total != 1 || len(archivedHistory.Items) != 1 || archivedHistory.Items[0].ID != "ord-archived" {
+		t.Fatalf("customer plus schedulable_at filter mismatch: list=%+v err=%v", archivedHistory, err)
+	}
+
+	delivered := orderdomain.StatusDelivered
+	shotAt := now.Add(-48 * time.Hour)
+	deliveredAt := now.Add(-24 * time.Hour)
+	if _, err := svc.Create(ctx, scope, orderdomain.CreateInput{
+		CreationMode: orderdomain.CreationModeNew,
+		CustomerID:   "cus-active",
+		Status:       &delivered,
+		ShotAt:       &shotAt,
+		DeliveredAt:  &deliveredAt,
+	}); !errors.Is(err, orderdomain.ErrValidation) {
+		t.Fatalf("new mode delivered: want validation, got %v", err)
+	}
+	backfilled, err := svc.Create(ctx, scope, orderdomain.CreateInput{
+		CreationMode: orderdomain.CreationModeBackfill,
+		CustomerID:   "cus-archived",
+		PackageID:    strPtr("pkg-archived"),
+		Status:       &delivered,
+		ShotAt:       &shotAt,
+		DeliveredAt:  &deliveredAt,
+	})
+	if err != nil || backfilled.Status != orderdomain.StatusDelivered {
+		t.Fatalf("backfill archived references: order=%+v err=%v", backfilled, err)
+	}
+	if _, err := svc.Create(ctx, scope, orderdomain.CreateInput{
+		CreationMode: orderdomain.CreationModeBackfill,
+		CustomerID:   "cus-merged",
+	}); !errors.Is(err, orderdomain.ErrCustomerArchived) {
+		t.Fatalf("backfill merged customer: want customer_archived, got %v", err)
+	}
+}
+
+func TestDeleteOrderInUseReturnsTypedDetails(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t)
+	scope := createAccount(t, s, "acct-order-in-use")
+	svc := orderService()
+	seedCustomer(t, scope, "cus-in-use", "有关联档期客户", "active")
+	startAt := time.Date(2026, 6, 1, 8, 0, 0, 0, time.UTC)
+	seedOrder(t, scope, seedOrderInput{ID: "ord-in-use", CustomerID: "cus-in-use", Status: orderdomain.StatusCancelled, CreatedAt: startAt})
+	if err := scope.Insert(ctx, "schedule_slots",
+		[]string{"id", "start_at", "end_at", "type", "order_id"},
+		"slot-in-use", startAt, startAt.Add(time.Hour), "shoot", "ord-in-use",
+	); err != nil {
+		t.Fatalf("seed shoot slot: %v", err)
+	}
+
+	err := svc.Delete(ctx, scope, "ord-in-use")
+	if !errors.Is(err, orderdomain.ErrOrderInUse) {
+		t.Fatalf("delete referenced order: want order_in_use, got %v", err)
+	}
+	var details orderdomain.OrderInUseError
+	if !errors.As(err, &details) || details.SlotID != "slot-in-use" || !details.StartAt.Equal(startAt) {
+		t.Fatalf("order_in_use typed details mismatch: %+v", details)
+	}
+	if exists, err := scope.Exists(ctx, "orders", "id = $2", "ord-in-use"); err != nil || !exists {
+		t.Fatalf("referenced order must remain: exists=%v err=%v", exists, err)
+	}
+}
+
+func TestScheduleWritesAndOrderDeleteLinearizeWithoutDeadlock(t *testing.T) {
+	ctx := context.Background()
+	s, databaseURL := openStoreWithURL(t)
+	scope := createAccount(t, s, "acct-delete-race")
+	now := time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC)
+	orders := orderdomain.NewServiceWithClock(orderdomain.NewPostgresRepository(), func() time.Time { return now })
+	schedule := scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(func() time.Time { return now }))
+	seedCustomer(t, scope, "cus-delete-race", "删除并发客户", "active")
+
+	t.Run("delete commits before shoot create", func(t *testing.T) {
+		seedOrder(t, scope, closedOrderSeed("ord-delete-first", "cus-delete-race", now))
+		db := openObserverDB(t, databaseURL)
+		locker, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("begin customer locker: %v", err)
+		}
+		if _, err := locker.ExecContext(ctx, `
+	SELECT id FROM customers WHERE account_id = $1 AND id = $2 FOR UPDATE
+`, "acct-delete-race", "cus-delete-race"); err != nil {
+			t.Fatalf("lock customer: %v", err)
+		}
+
+		createDone := make(chan error, 1)
+		go func() {
+			_, err := schedule.Create(ctx, scope, scheduledomain.CreateInput{
+				StartAt: now.Add(-2 * time.Hour),
+				EndAt:   now.Add(-time.Hour),
+				Type:    scheduledomain.TypeShoot,
+				OrderID: strPtr("ord-delete-first"),
+			})
+			createDone <- err
+		}()
+		waitForBlockedForUpdate(t, databaseURL, "customers")
+		if err := orders.Delete(ctx, scope, "ord-delete-first"); err != nil {
+			t.Fatalf("delete should commit while create waits on customer: %v", err)
+		}
+		if err := locker.Commit(); err != nil {
+			t.Fatalf("release customer locker: %v", err)
+		}
+		if err := <-createDone; !errors.Is(err, scheduledomain.ErrNotFound) {
+			t.Fatalf("shoot after delete: want not_found, got %v", err)
+		}
+		if count, err := scope.Count(ctx, "schedule_slots", "order_id = $2", "ord-delete-first"); err != nil || count != 0 {
+			t.Fatalf("delete-first must leave no slot: count=%d err=%v", count, err)
+		}
+	})
+
+	t.Run("shoot create commits before delete", func(t *testing.T) {
+		seedOrder(t, scope, closedOrderSeed("ord-create-first", "cus-delete-race", now))
+		db := openObserverDB(t, databaseURL)
+		locker, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("begin table locker: %v", err)
+		}
+		if _, err := locker.ExecContext(ctx, "LOCK TABLE schedule_slots IN ACCESS EXCLUSIVE MODE"); err != nil {
+			t.Fatalf("lock schedule_slots: %v", err)
+		}
+
+		createDone := make(chan error, 1)
+		go func() {
+			_, err := schedule.Create(ctx, scope, scheduledomain.CreateInput{
+				StartAt: now.Add(-2 * time.Hour),
+				EndAt:   now.Add(-time.Hour),
+				Type:    scheduledomain.TypeShoot,
+				OrderID: strPtr("ord-create-first"),
+			})
+			createDone <- err
+		}()
+		waitForBlockedQuery(t, databaseURL, "schedule_slots")
+		deleteDone := make(chan error, 1)
+		go func() { deleteDone <- orders.Delete(ctx, scope, "ord-create-first") }()
+		waitForBlockedForUpdate(t, databaseURL, "orders")
+		if err := locker.Commit(); err != nil {
+			t.Fatalf("release schedule_slots table: %v", err)
+		}
+		if err := <-createDone; err != nil {
+			t.Fatalf("shoot create should commit: %v", err)
+		}
+		if err := <-deleteDone; !errors.Is(err, orderdomain.ErrOrderInUse) {
+			t.Fatalf("delete after shoot create: want order_in_use, got %v", err)
+		}
+	})
+
+	t.Run("shoot update commits before delete", func(t *testing.T) {
+		seedOrder(t, scope, closedOrderSeed("ord-update-first", "cus-delete-race", now))
+		hold, err := schedule.Create(ctx, scope, scheduledomain.CreateInput{
+			StartAt: now.Add(-4 * time.Hour),
+			EndAt:   now.Add(-3 * time.Hour),
+			Type:    scheduledomain.TypeHold,
+		})
+		if err != nil {
+			t.Fatalf("seed hold slot: %v", err)
+		}
+		db := openObserverDB(t, databaseURL)
+		if _, err := db.ExecContext(ctx, `
+	CREATE FUNCTION block_schedule_update_for_test() RETURNS trigger AS $$
+	BEGIN
+		PERFORM pg_advisory_xact_lock(9042105);
+		RETURN NEW;
+	END;
+	$$ LANGUAGE plpgsql;
+	CREATE TRIGGER block_schedule_update_for_test
+	BEFORE UPDATE ON schedule_slots
+	FOR EACH ROW EXECUTE FUNCTION block_schedule_update_for_test();
+`); err != nil {
+			t.Fatalf("install schedule update barrier: %v", err)
+		}
+		locker, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatalf("begin advisory locker: %v", err)
+		}
+		if _, err := locker.ExecContext(ctx, "SELECT pg_advisory_xact_lock(9042105)"); err != nil {
+			t.Fatalf("lock update advisory key: %v", err)
+		}
+
+		updateDone := make(chan error, 1)
+		go func() {
+			shoot := scheduledomain.TypeShoot
+			_, err := schedule.Update(ctx, scope, hold.Slot.ID, scheduledomain.UpdateInput{
+				Type:    &shoot,
+				OrderID: nullable.NewNullableWithValue("ord-update-first"),
+			})
+			updateDone <- err
+		}()
+		waitForBlockedQuery(t, databaseURL, "UPDATE schedule_slots")
+		deleteDone := make(chan error, 1)
+		go func() { deleteDone <- orders.Delete(ctx, scope, "ord-update-first") }()
+		waitForBlockedForUpdate(t, databaseURL, "orders")
+		if err := locker.Commit(); err != nil {
+			t.Fatalf("release update advisory key: %v", err)
+		}
+		if err := <-updateDone; err != nil {
+			t.Fatalf("shoot update should commit: %v", err)
+		}
+		if err := <-deleteDone; !errors.Is(err, orderdomain.ErrOrderInUse) {
+			t.Fatalf("delete after shoot update: want order_in_use, got %v", err)
+		}
+	})
+}
+
 func createOrder(t *testing.T, svc *orderdomain.Service, scope store.AccountScope, input orderdomain.CreateInput) orderdomain.Order {
 	t.Helper()
 	created, err := svc.Create(context.Background(), scope, input)
@@ -600,6 +915,20 @@ func seedOrder(t *testing.T, scope store.AccountScope, input seedOrderInput) {
 		input.ID, input.CustomerID, nullableString(input.PackageID), input.Status, nullableInt(input.Price), input.BalancePaid, nullableTime(input.ShotAt), nullableTime(input.DeliveredAt), input.CreatedAt,
 	); err != nil {
 		t.Fatalf("seed order %s: %v", input.ID, err)
+	}
+}
+
+func closedOrderSeed(id, customerID string, now time.Time) seedOrderInput {
+	shotAt := now.Add(-48 * time.Hour)
+	deliveredAt := now.Add(-24 * time.Hour)
+	return seedOrderInput{
+		ID:          id,
+		CustomerID:  customerID,
+		Status:      orderdomain.StatusClosed,
+		BalancePaid: true,
+		ShotAt:      &shotAt,
+		DeliveredAt: &deliveredAt,
+		CreatedAt:   now.Add(-72 * time.Hour),
 	}
 }
 
@@ -671,4 +1000,49 @@ SELECT EXISTS (
 		case <-ticker.C:
 		}
 	}
+}
+
+func waitForBlockedQuery(t *testing.T, databaseURL, queryFragment string) {
+	t.Helper()
+	db := openObserverDB(t, databaseURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		var blocked bool
+		err := db.QueryRowContext(ctx, `
+SELECT EXISTS (
+	SELECT 1
+	FROM pg_stat_activity
+	WHERE datname = current_database()
+	  AND wait_event_type = 'Lock'
+	  AND query LIKE '%' || $1 || '%'
+)`, queryFragment).Scan(&blocked)
+		if err != nil {
+			t.Fatalf("observe blocked query: %v", err)
+		}
+		if blocked {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for blocked query containing %q", queryFragment)
+		case <-ticker.C:
+		}
+	}
+}
+
+func openObserverDB(t *testing.T, databaseURL string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		t.Fatalf("open observer db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Logf("close observer db: %v", err)
+		}
+	})
+	return db
 }

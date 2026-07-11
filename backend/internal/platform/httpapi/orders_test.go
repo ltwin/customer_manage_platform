@@ -1,9 +1,11 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
+	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 )
 
 func TestOrderAPIRoundtripAndErrorPaths(t *testing.T) {
@@ -168,6 +171,7 @@ func TestOrderAPIRoundtripAndErrorPaths(t *testing.T) {
 	shotAt := time.Date(2026, 6, 1, 9, 0, 0, 0, time.UTC).Format(time.RFC3339)
 	deliveredAt := time.Date(2026, 6, 10, 9, 0, 0, 0, time.UTC).Format(time.RFC3339)
 	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", tokenA, []byte(`{
+		"creation_mode":"backfill",
 		"customer_id":"`+customerA.ID+`",
 		"status":"delivered",
 		"shot_at":"`+shotAt+`",
@@ -188,4 +192,69 @@ func TestOrderAPIRoundtripAndErrorPaths(t *testing.T) {
 	if rec.Code != http.StatusConflict || decodeEnvelope(t, rec).Error.Code != "unpaid_balance" {
 		t.Fatalf("close unpaid order should be 409 unpaid_balance, got %d %s", rec.Code, rec.Body.String())
 	}
+
+	idempotentBody := []byte(`{"creation_mode":"new","customer_id":"` + customerA.ID + `","title":"幂等订单"}`)
+	first := authenticatedOrderCreate(t, h, tokenA, "order-idempotency-key", idempotentBody)
+	second := authenticatedOrderCreate(t, h, tokenA, "order-idempotency-key", idempotentBody)
+	if first.Code != http.StatusCreated || second.Code != http.StatusCreated || first.Body.String() != second.Body.String() {
+		t.Fatalf("idempotent create replay mismatch: first=%d %s second=%d %s", first.Code, first.Body.String(), second.Code, second.Body.String())
+	}
+	changed := authenticatedOrderCreate(t, h, tokenA, "order-idempotency-key", []byte(`{"creation_mode":"new","customer_id":"`+customerA.ID+`","title":"修改后的请求"}`))
+	if changed.Code != http.StatusConflict || decodeEnvelope(t, changed).Error.Code != "idempotency_conflict" {
+		t.Fatalf("same key different body: want idempotency_conflict, got %d %s", changed.Code, changed.Body.String())
+	}
+
+	future := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/orders?schedulable_at="+future+"&page=1&page_size=1", tokenA, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("schedulable_at list: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || list.Total != 1 || len(list.Items) != 1 || list.Items[0].Status != "consulting" {
+		t.Fatalf("schedulable_at should filter before pagination: list=%+v err=%v", list, err)
+	}
+	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/orders?schedulable_at=not-a-time", tokenA, nil)
+	if rec.Code != http.StatusBadRequest || decodeEnvelope(t, rec).Error.Code != "validation_failed" {
+		t.Fatalf("invalid schedulable_at: want validation_failed, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	schedule := scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(func() time.Time {
+		return time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC)
+	}))
+	slotStart := time.Date(2026, 6, 20, 8, 0, 0, 0, time.UTC)
+	slot, err := schedule.Create(ctx, scopeA, scheduledomain.CreateInput{
+		StartAt: slotStart,
+		EndAt:   slotStart.Add(time.Hour),
+		Type:    scheduledomain.TypeShoot,
+		OrderID: delivered.Id,
+	})
+	if err != nil {
+		t.Fatalf("attach historical shoot: %v", err)
+	}
+	rec = authenticatedRequest(t, h, http.MethodPatch, "/api/v1/orders/"+*delivered.Id, tokenA, []byte(`{"status":"cancelled"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cancel referenced order: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = authenticatedRequest(t, h, http.MethodDelete, "/api/v1/orders/"+*delivered.Id, tokenA, nil)
+	env := decodeEnvelope(t, rec)
+	if rec.Code != http.StatusConflict || env.Error.Code != "order_in_use" || env.Error.Details == nil ||
+		env.Error.Details.ScheduleSlotId != slot.Slot.ID || !env.Error.Details.ScheduleStartAt.Equal(slotStart) {
+		t.Fatalf("order_in_use details mismatch: status=%d envelope=%+v", rec.Code, env)
+	}
+}
+
+func authenticatedOrderCreate(
+	t *testing.T,
+	h http.Handler,
+	token string,
+	idempotencyKey string,
+	body []byte,
+) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/orders", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Idempotency-Key", idempotencyKey)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
 }

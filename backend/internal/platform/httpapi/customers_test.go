@@ -19,7 +19,9 @@ import (
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 )
 
 func startCustomerPostgres(t *testing.T) (string, *tcpostgres.PostgresContainer) {
@@ -82,6 +84,8 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		Customer:     customerdomain.NewService(customerdomain.NewPostgresRepository()),
 		Orders:       orderdomain.NewService(orderdomain.NewPostgresRepository()),
 		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
+		Idempotency:  idempotency.NewExecutor(),
+		Schedule:     scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(time.Now)),
 	})
 	return router, s, tokens, ctr
 }

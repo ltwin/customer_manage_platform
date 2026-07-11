@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -176,6 +177,73 @@ func TestAccountScopeTransactionCommitAndRollback(t *testing.T) {
 	}
 	if exists {
 		t.Fatal("panicked tx row must not be visible")
+	}
+}
+
+func TestTxAccountScopeClaimConflictKeepsTransactionUsableAndScoped(t *testing.T) {
+	url := startPostgres(t)
+	s := openMigrated(t, url)
+	ctx := context.Background()
+	for _, id := range []string{"acct-a", "acct-b"} {
+		if err := s.CreateAccount(ctx, id, "test-hash"); err != nil {
+			t.Fatalf("create account %s: %v", id, err)
+		}
+	}
+
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	for _, accountID := range []string{"acct-a", "acct-b"} {
+		scope := s.ScopeFor(auth.AccountContext{AccountID: accountID})
+		err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			var operation string
+			err := tx.InsertOnConflictDoNothingReturning(
+				ctx,
+				"idempotency_records",
+				[]string{"operation", "key", "request_hash", "expires_at"},
+				[]string{"account_id", "operation", "key"},
+				[]string{"operation"},
+				"order.create.v1",
+				"same-key",
+				"hash-a",
+				expiresAt,
+			).Scan(&operation)
+			if err != nil || operation != "order.create.v1" {
+				return fmt.Errorf("first claim: operation=%q err=%w", operation, err)
+			}
+
+			err = tx.InsertOnConflictDoNothingReturning(
+				ctx,
+				"idempotency_records",
+				[]string{"operation", "key", "request_hash", "expires_at"},
+				[]string{"account_id", "operation", "key"},
+				[]string{"operation"},
+				"order.create.v1",
+				"same-key",
+				"hash-a",
+				expiresAt,
+			).Scan(&operation)
+			if !errors.Is(err, store.ErrNoRows) {
+				return fmt.Errorf("duplicate claim should return no rows: %w", err)
+			}
+
+			var requestHash string
+			if err := tx.QueryRowForUpdate(
+				ctx,
+				"idempotency_records",
+				"request_hash",
+				"operation = $2 AND key = $3",
+				"order.create.v1",
+				"same-key",
+			).Scan(&requestHash); err != nil {
+				return fmt.Errorf("query claim after conflict: %w", err)
+			}
+			if requestHash != "hash-a" {
+				return fmt.Errorf("request hash = %q", requestHash)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("claim transaction for %s: %v", accountID, err)
+		}
 	}
 }
 

@@ -3,6 +3,7 @@ package order
 import (
 	"context"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/oapi-codegen/nullable"
@@ -16,7 +17,8 @@ const (
 )
 
 type Repository interface {
-	Create(context.Context, store.AccountScope, CreateInput) (Order, error)
+	Create(context.Context, store.AccountScope, PreparedCreate) (Order, error)
+	CreatePreparedInScope(context.Context, store.TxAccountScope, PreparedCreate) (Order, error)
 	List(context.Context, store.AccountScope, ListFilter) (ListResult, error)
 	Update(context.Context, store.AccountScope, string, UpdateInput) (Order, error)
 	Delete(context.Context, store.AccountScope, string) error
@@ -24,24 +26,59 @@ type Repository interface {
 
 type Service struct {
 	repo Repository
+	now  func() time.Time
 }
 
 func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+	return NewServiceWithClock(repo, time.Now)
+
+}
+
+func NewServiceWithClock(repo Repository, now func() time.Time) *Service {
+	if now == nil {
+		now = time.Now
+	}
+	return &Service{repo: repo, now: now}
 }
 
 func (s *Service) Create(ctx context.Context, scope store.AccountScope, input CreateInput) (Order, error) {
-	normalized, err := normalizeCreateInput(input)
+	prepared, err := s.PrepareCreate(input)
 	if err != nil {
 		return Order{}, err
 	}
-	return s.repo.Create(ctx, scope, normalized)
+	return s.repo.Create(ctx, scope, prepared)
+}
+
+func (s *Service) PrepareCreate(input CreateInput) (PreparedCreate, error) {
+	normalized, err := normalizeCreateInput(input)
+	if err != nil {
+		return PreparedCreate{}, err
+	}
+	initial, err := ApplyCreateInput(normalized)
+	if err != nil {
+		return PreparedCreate{}, err
+	}
+	return PreparedCreate{Input: normalized, initial: initial}, nil
+}
+
+func (s *Service) CreatePreparedInScope(
+	ctx context.Context,
+	scope store.TxAccountScope,
+	prepared PreparedCreate,
+) (Order, error) {
+	if prepared.initial.Status == "" {
+		return Order{}, ValidationError{Message: "订单创建输入未准备"}
+	}
+	return s.repo.CreatePreparedInScope(ctx, scope, prepared)
 }
 
 func (s *Service) List(ctx context.Context, scope store.AccountScope, filter ListFilter) (ListResult, error) {
 	normalized, err := normalizeListFilter(filter)
 	if err != nil {
 		return ListResult{}, err
+	}
+	if normalized.SchedulableAt != nil {
+		normalized.schedulableNow = s.now().UTC()
 	}
 	return s.repo.List(ctx, scope, normalized)
 }
@@ -67,6 +104,13 @@ func (s *Service) Delete(ctx context.Context, scope store.AccountScope, id strin
 }
 
 func normalizeCreateInput(input CreateInput) (CreateInput, error) {
+	input.CreationMode = strings.TrimSpace(input.CreationMode)
+	if input.CreationMode == "" {
+		input.CreationMode = CreationModeNew
+	}
+	if input.CreationMode != CreationModeNew && input.CreationMode != CreationModeBackfill {
+		return CreateInput{}, ValidationError{Message: "creation_mode 非法"}
+	}
 	input.CustomerID = strings.TrimSpace(input.CustomerID)
 	input.PackageID = trimmedPtr(input.PackageID)
 	input.Title = trimmedPtr(input.Title)
@@ -82,9 +126,6 @@ func normalizeCreateInput(input CreateInput) (CreateInput, error) {
 		return CreateInput{}, err
 	}
 	if err := validateNote(input.Note); err != nil {
-		return CreateInput{}, err
-	}
-	if _, err := ApplyCreateInput(input); err != nil {
 		return CreateInput{}, err
 	}
 	return input, nil
@@ -133,6 +174,10 @@ func normalizeListFilter(filter ListFilter) (ListFilter, error) {
 	}
 	if filter.Status != "" && !validStatus(filter.Status) {
 		return ListFilter{}, ValidationError{Message: "status 非法"}
+	}
+	if filter.SchedulableAt != nil {
+		value := filter.SchedulableAt.UTC()
+		filter.SchedulableAt = &value
 	}
 	return filter, nil
 }

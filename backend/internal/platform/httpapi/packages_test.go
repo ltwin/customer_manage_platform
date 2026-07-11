@@ -275,8 +275,8 @@ func TestPackageAPIErrorPathsAndScope(t *testing.T) {
 		t.Fatalf("missing auth should be 401, got %d %s", rec.Code, rec.Body.String())
 	}
 
-	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/schedule/slots", tokenA, []byte(`{}`))
+	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/reminders", tokenA, nil)
 	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
-		t.Fatalf("unimplemented schedule endpoint should stay 404, got %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("unimplemented reminder endpoint should stay 404, got %d %s", rec.Code, rec.Body.String())
 	}
 }

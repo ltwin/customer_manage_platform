@@ -8,6 +8,9 @@ import (
 )
 
 const (
+	CreationModeNew      = "new"
+	CreationModeBackfill = "backfill"
+
 	StatusConsulting = "consulting"
 	StatusScheduled  = "scheduled"
 	StatusShot       = "shot"
@@ -25,6 +28,7 @@ var (
 	ErrInvalidStatusTransition = errors.New("invalid_status_transition")
 	ErrUnpaidBalance           = errors.New("unpaid_balance")
 	ErrOrderNotTerminal        = errors.New("order_not_terminal")
+	ErrOrderInUse              = errors.New("order_in_use")
 )
 
 type ValidationError struct {
@@ -55,17 +59,36 @@ type Order struct {
 	Note        *string
 }
 
+type OrderInUseError struct {
+	SlotID  string
+	StartAt time.Time
+}
+
+func (e OrderInUseError) Error() string {
+	return "订单仍被拍摄档期引用"
+}
+
+func (e OrderInUseError) Unwrap() error {
+	return ErrOrderInUse
+}
+
 type CreateInput struct {
-	CustomerID  string
-	PackageID   *string
-	Title       *string
-	Price       *int
-	Status      *string
-	DepositPaid *bool
-	BalancePaid *bool
-	ShotAt      *time.Time
-	DeliveredAt *time.Time
-	Note        *string
+	CreationMode string
+	CustomerID   string
+	PackageID    *string
+	Title        *string
+	Price        *int
+	Status       *string
+	DepositPaid  *bool
+	BalancePaid  *bool
+	ShotAt       *time.Time
+	DeliveredAt  *time.Time
+	Note         *string
+}
+
+type PreparedCreate struct {
+	Input   CreateInput
+	initial Order
 }
 
 type UpdateInput struct {
@@ -80,11 +103,13 @@ type UpdateInput struct {
 }
 
 type ListFilter struct {
-	CustomerID    string
-	Status        string
-	UnpaidBalance bool
-	Page          int
-	PageSize      int
+	CustomerID     string
+	Status         string
+	UnpaidBalance  bool
+	SchedulableAt  *time.Time
+	Page           int
+	PageSize       int
+	schedulableNow time.Time
 }
 
 type ListItem struct {

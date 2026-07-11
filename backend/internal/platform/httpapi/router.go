@@ -13,8 +13,10 @@ import (
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
+	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 )
 
 // Pinger 是健康检查所需的最小数据库探测面（测试注入失败用）。
@@ -29,13 +31,16 @@ type ScopeFactory interface {
 
 // RouterDeps 是路由骨架的全部依赖。
 type RouterDeps struct {
-	Logger       *slog.Logger
-	DB           Pinger
-	ScopeFactory ScopeFactory
-	Auth         *auth.Service
-	Customer     *customerdomain.Service
-	Orders       *orderdomain.Service
-	Packages     *pkgcatalog.Service
+	Logger          *slog.Logger
+	DB              Pinger
+	ScopeFactory    ScopeFactory
+	Auth            *auth.Service
+	Customer        *customerdomain.Service
+	Orders          *orderdomain.Service
+	Packages        *pkgcatalog.Service
+	Idempotency     *idempotency.Executor
+	AccountTimezone AccountTimezoneProvider
+	Schedule        *scheduledomain.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -54,6 +59,10 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	r.GET("/healthz", healthzHandler(deps.DB))
 
 	// API 路由：handlers 实现 codegen ServerInterface；login 豁免 auth，其余一律先过 auth
+	timezone := deps.AccountTimezone
+	if timezone == nil {
+		timezone = defaultTimezoneProvider{}
+	}
 	h := &handlers{
 		logger:       deps.Logger,
 		auth:         deps.Auth,
@@ -61,6 +70,9 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		customer:     deps.Customer,
 		orders:       deps.Orders,
 		packages:     deps.Packages,
+		idempotency:  deps.Idempotency,
+		timezone:     timezone,
+		schedule:     deps.Schedule,
 	}
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", h.Login)
@@ -78,9 +90,13 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.POST("/customers/:id/notes", func(c *gin.Context) { h.AddCustomerNote(c, c.Param("id")) })
 	protected.POST("/customers/:id/merge", func(c *gin.Context) { h.MergeCustomer(c, c.Param("id")) })
 	protected.GET("/orders", h.listOrdersRoute)
-	protected.POST("/orders", h.CreateOrder)
+	protected.POST("/orders", h.createOrderRoute)
 	protected.PATCH("/orders/:id", func(c *gin.Context) { h.UpdateOrder(c, c.Param("id")) })
 	protected.DELETE("/orders/:id", func(c *gin.Context) { h.DeleteOrder(c, c.Param("id")) })
+	protected.GET("/schedule/slots", h.listScheduleSlotsRoute)
+	protected.POST("/schedule/slots", h.createScheduleSlotRoute)
+	protected.PATCH("/schedule/slots/:id", func(c *gin.Context) { h.UpdateScheduleSlot(c, c.Param("id")) })
+	protected.DELETE("/schedule/slots/:id", func(c *gin.Context) { h.DeleteScheduleSlot(c, c.Param("id")) })
 	protected.GET("/packages", h.listPackagesRoute)
 	protected.POST("/packages", h.CreatePackage)
 	protected.PATCH("/packages/:id", func(c *gin.Context) { h.UpdatePackage(c, c.Param("id")) })

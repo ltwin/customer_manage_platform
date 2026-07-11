@@ -1,4 +1,4 @@
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, fetchCustomer, updateCustomer } from '../api/client'
 import type { CustomerDetail } from '../api/client'
@@ -8,6 +8,11 @@ import IdentitySection from '../components/customers/IdentitySection'
 import NotesPanel from '../components/customers/NotesPanel'
 import MergeDialog from '../components/customers/MergeDialog'
 import OrderWorkspace from '../components/orders/OrderWorkspace'
+import ScheduleSlotDialog from '../components/schedule/ScheduleSlotDialog'
+import { scheduleDialogShouldOpen } from '../components/schedule/flow'
+import { readPendingSchedule } from '../components/schedule/journal'
+import { accountToday } from '../components/schedule/timezone'
+import { useShell } from '../components/shellContext'
 
 const statusLabels: Record<string, string> = {
   active: '活跃',
@@ -18,13 +23,17 @@ const statusLabels: Record<string, string> = {
 export default function CustomerDetailPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const { notify, timezone } = useShell()
   const [customer, setCustomer] = useState<CustomerDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [merging, setMerging] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'notes' | 'reminders' | 'orders'>('notes')
+  const [activeTab, setActiveTab] = useState<'notes' | 'reminders' | 'orders'>(() => searchParams.get('tab') === 'orders' ? 'orders' : 'notes')
+  const [scheduleOpen, setScheduleOpen] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState<string | null>(null)
 
   const goLogin = useCallback(() => {
     navigate('/login', { replace: true })
@@ -68,6 +77,23 @@ export default function CustomerDetailPage() {
       active = false
     }
   }, [goLogin, id])
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'orders') setActiveTab('orders')
+  }, [searchParams])
+
+  useEffect(() => {
+    try {
+      const pending = readPendingSchedule()
+      setScheduleOpen(scheduleDialogShouldOpen(
+        pending?.phase,
+        searchParams.get('schedule_draft') ?? undefined,
+        searchParams.get('mode') ?? undefined,
+      ))
+    } catch {
+      // The dialog reports malformed recovery state when explicitly opened.
+    }
+  }, [searchParams])
 
   async function toggleArchive() {
     if (!customer) return
@@ -131,7 +157,10 @@ export default function CustomerDetailPage() {
                 {isArchived ? '恢复经营' : '归档'}
               </button>
               {customer.status === 'active' && (
-                <button className="btn" type="button" onClick={() => setMerging(true)}>合并重复档案</button>
+                <>
+                  <button className="btn btn-primary" type="button" disabled={!timezone} onClick={() => setScheduleOpen(true)}>新建拍摄档期</button>
+                  <button className="btn" type="button" onClick={() => setMerging(true)}>合并重复档案</button>
+                </>
               )}
             </>
           )}
@@ -210,7 +239,15 @@ export default function CustomerDetailPage() {
             </div>
             {activeTab === 'notes' && <NotesPanel customer={customer} onChanged={reload} onUnauthorized={goLogin} />}
             {activeTab === 'reminders' && <div className="empty inline-empty">暂无提醒</div>}
-            {activeTab === 'orders' && <OrderWorkspace customer={customer} onChanged={reload} />}
+            {activeTab === 'orders' && (
+              <OrderWorkspace
+                customer={customer}
+                onChanged={reload}
+                focusOrderId={searchParams.get('order') ?? undefined}
+                scheduleDraftId={searchParams.get('schedule_draft') ?? undefined}
+                scheduleMode={searchParams.get('mode') ?? undefined}
+              />
+            )}
           </section>
         </div>
       </main>
@@ -227,6 +264,35 @@ export default function CustomerDetailPage() {
           onClose={() => setMerging(false)}
           onUnauthorized={goLogin}
         />
+      )}
+
+      <ScheduleSlotDialog
+        open={scheduleOpen}
+        timezone={timezone}
+        initialDate={timezone ? accountToday(timezone) : ''}
+        scheduleDraftId={searchParams.get('schedule_draft') ?? undefined}
+        fixedType="shoot"
+        fixedCustomer={{
+          id: customer.id ?? id,
+          display_name: customer.display_name,
+          status: customer.status,
+        }}
+        source="customer"
+        onClose={() => setScheduleOpen(false)}
+        onChanged={async () => { reload() }}
+        onCompleted={(date) => {
+          setScheduledDate(date)
+          setSearchParams({ tab: 'orders' }, { replace: true })
+          notify('拍摄档期已保存')
+        }}
+      />
+
+      {scheduledDate && (
+        <div className="schedule-complete-bar" role="status">
+          拍摄档期已保存
+          <Link to={`/calendar?date=${scheduledDate}`}>查看该日档期</Link>
+          <button className="icon-btn" type="button" aria-label="关闭" onClick={() => setScheduledDate(null)}>×</button>
+        </div>
       )}
     </>
   )

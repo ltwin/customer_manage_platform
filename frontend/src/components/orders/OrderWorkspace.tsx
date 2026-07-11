@@ -19,8 +19,33 @@ import type {
   UpdateOrderBody,
 } from '../../api/client'
 import { useShell } from '../shellContext'
+import { useFocusTrap } from '../useFocusTrap'
 import {
-  isPackagePriceYuanInputAllowed,
+	accountDateAtNoonToInstant,
+	accountToday,
+	instantToLocalDateTime,
+	isValidAccountDate,
+} from '../schedule/timezone'
+import {
+  clearPendingSchedule,
+  clearScheduleDraft,
+  pendingScheduleExpired,
+  readPendingSchedule,
+  scheduleAttemptKey,
+} from '../schedule/journal'
+import type { PendingScheduleFlow, ScheduleDraft } from '../schedule/journal'
+import { backfillTimestampFields } from '../schedule/backfill'
+import {
+  BackfillPersistenceError,
+  claimPendingFlow,
+  completeBackfillOrder,
+  orderInUseScheduleAction,
+  pendingAfterDeterministicFailure,
+  readScheduleBackfillContext,
+  scheduleCreateFailureKind,
+} from '../schedule/flow'
+import {
+	isPackagePriceYuanInputAllowed,
   packagePriceYuanToCents,
   validatePackagePriceYuan,
 } from '../../pages/packagePrice'
@@ -69,6 +94,9 @@ const statusOrder: OrderStatusValue[] = [
   'cancelled',
 ]
 const backfillStatusOrder = statusOrder.filter((item) => item !== 'consulting')
+const scheduleDraftStatusOrder: OrderStatusValue[] = [
+  'scheduled', 'shot', 'selected', 'retouching', 'delivered', 'closed',
+]
 
 const statusLabels: Record<OrderStatusValue, string> = {
   consulting: '咨询',
@@ -96,12 +124,18 @@ const statusFilters: Array<[StatusFilter, string]> = [
 export default function OrderWorkspace({
   customer,
   onChanged,
+  focusOrderId,
+  scheduleDraftId,
+  scheduleMode,
 }: {
   customer?: FixedCustomer
   onChanged?: () => void
+  focusOrderId?: string
+  scheduleDraftId?: string
+  scheduleMode?: string
 }) {
   const navigate = useNavigate()
-  const { notify } = useShell()
+	const { notify, timezone } = useShell()
   const fixedCustomerId = customer?.id ?? ''
   const [items, setItems] = useState<OrderListItem[]>([])
   const [total, setTotal] = useState(0)
@@ -111,6 +145,7 @@ export default function OrderWorkspace({
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorAction, setErrorAction] = useState<{ href: string; label: string } | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [draft, setDraft] = useState<OrderDraft>(() => defaultDraft(fixedCustomerId))
@@ -124,6 +159,12 @@ export default function OrderWorkspace({
   const [cancelTarget, setCancelTarget] = useState<OrderListItem | null>(null)
   const [cancelNote, setCancelNote] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<OrderListItem | null>(null)
+  const [focusMissing, setFocusMissing] = useState(false)
+  const [scheduleContext, setScheduleContext] = useState<ScheduleDraft | null>(null)
+  const [schedulePending, setSchedulePending] = useState<PendingScheduleFlow | null>(null)
+  const [failedSchedulePending, setFailedSchedulePending] = useState<PendingScheduleFlow | null>(null)
+  const [knownOrderInMemory, setKnownOrderInMemory] = useState<string | null>(null)
+  const [scheduleIdempotencyConflict, setScheduleIdempotencyConflict] = useState(false)
 
   const goLogin = useCallback(() => {
     navigate('/login', { replace: true })
@@ -146,14 +187,20 @@ export default function OrderWorkspace({
     let active = true
     setLoading(true)
     setError(null)
+    setErrorAction(null)
     setItems([])
     setTotal(0)
     setPage(1)
-    listOrders(requestParams)
+    const load = focusOrderId
+      ? loadThroughOrder(focusOrderId, fixedCustomerId)
+      : listOrders(requestParams).then((result) => ({ ...result, found: true, page: 1 }))
+    load
       .then((result) => {
         if (!active) return
         setItems(result.items)
         setTotal(result.total)
+        setPage(result.page)
+        setFocusMissing(!result.found)
       })
       .catch((err: unknown) => {
         if (!active) return
@@ -169,7 +216,52 @@ export default function OrderWorkspace({
     return () => {
       active = false
     }
-  }, [goLogin, reloadTick, requestParams])
+  }, [fixedCustomerId, focusOrderId, goLogin, reloadTick, requestParams])
+
+  useEffect(() => {
+    if (!focusOrderId) return
+    setStatus('')
+    setUnpaidOnly(false)
+  }, [focusOrderId])
+
+  useEffect(() => {
+    if (!focusOrderId || focusMissing || loading) return
+    const target = document.querySelector<HTMLElement>(`[data-order-id="${CSS.escape(focusOrderId)}"]`)
+    target?.scrollIntoView({ block: 'center' })
+    target?.focus({ preventScroll: true })
+  }, [focusMissing, focusOrderId, items, loading])
+
+  useEffect(() => {
+    if (!scheduleDraftId || scheduleMode !== 'backfill') return
+    try {
+      const { draft: context, pending: matchingPending } = readScheduleBackfillContext(scheduleDraftId)
+      if (!context || (fixedCustomerId && context.customer_id !== fixedCustomerId)) {
+        setError('排期补录草稿已过期或不属于当前客户')
+        return
+      }
+      if (!timezone) {
+        setError('账号时区不可用，暂不能恢复历史补录')
+        return
+      }
+      setScheduleContext(context)
+      setSchedulePending(matchingPending)
+      setFailedSchedulePending(null)
+      setScheduleIdempotencyConflict(false)
+      const localStart = instantToLocalDateTime(context.start_at, timezone)
+      const next = defaultDraft(fixedCustomerId || context.customer_id)
+      next.backfill = true
+      next.status = 'shot'
+      next.shotDate = localStart.date
+      next.note = context.note ?? ''
+      if (matchingPending) applyCreateBodyToDraft(next, matchingPending.normalized_body as CreateOrderBody, timezone)
+      setDraft(next)
+      setSubmitted(false)
+      setFormError(matchingPending && pendingScheduleExpired(matchingPending) ? '恢复记录已超过 24 小时，请人工核对后再放弃' : null)
+      setDialogOpen(true)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '排期补录草稿读取失败')
+    }
+  }, [fixedCustomerId, scheduleDraftId, scheduleMode, timezone])
 
   useEffect(() => {
     if (fixedCustomerId) return
@@ -213,6 +305,7 @@ export default function OrderWorkspace({
     setDraft(defaultDraft(fixedCustomerId))
     setSubmitted(false)
     setFormError(null)
+    setErrorAction(null)
     setDialogOpen(true)
   }
 
@@ -220,6 +313,7 @@ export default function OrderWorkspace({
     const nextPage = page + 1
     setLoadingMore(true)
     setError(null)
+    setErrorAction(null)
     try {
       const result = await listOrders({ ...requestParams, page: nextPage })
       setItems((current) => [...current, ...result.items])
@@ -244,9 +338,22 @@ export default function OrderWorkspace({
       setFormError(validation)
       return
     }
+    if (draft.backfill && !timezone) {
+      setFormError('账号时区不可用，暂不能补录历史日期')
+      return
+    }
+    if (scheduleContext && !scheduleDraftStatusOrder.includes(draft.status)) {
+      setFormError('排期补录只允许 scheduled 到 closed 的六种状态')
+      return
+    }
     setSaving(true)
     try {
-      await createOrder(toCreateBody(draft))
+      const body = toCreateBody(draft, timezone)
+      if (scheduleContext) {
+        await saveScheduleBackfill(body)
+        return
+      }
+      await createOrder(body)
       notify('订单已创建')
       setDialogOpen(false)
       reloadOrders()
@@ -261,9 +368,120 @@ export default function OrderWorkspace({
     }
   }
 
+  async function saveScheduleBackfill(body: CreateOrderBody) {
+    if (!scheduleContext || !timezone) return
+    let pending = schedulePending
+    if (!pending) {
+      pending = failedSchedulePending
+        ? {
+            ...pendingAfterDeterministicFailure(failedSchedulePending, body),
+            created_at: new Date().toISOString(),
+          }
+        : {
+            flow_id: scheduleContext.draft_id,
+            phase: 'backfill_order',
+            source_draft_id: scheduleContext.draft_id,
+            normalized_body: body,
+            attempt_key: scheduleAttemptKey(scheduleContext.draft_id, 'order', 1),
+            known_customer_id: scheduleContext.customer_id,
+            created_at: new Date().toISOString(),
+          }
+      const existing = claimPendingFlow(pending)
+      if (existing) {
+        if (existing.phase === 'backfill_order' && existing.source_draft_id === scheduleContext.draft_id) {
+          setSchedulePending(existing)
+        }
+        setFormError('当前标签页已有待恢复排期，请先确认原流程')
+        return
+      }
+      setSchedulePending(pending)
+      setFailedSchedulePending(null)
+    }
+    if (pendingScheduleExpired(pending)) {
+      setFormError('恢复记录已超过 24 小时，禁止自动重放')
+      return
+    }
+    try {
+      const completed = await completeBackfillOrder(
+        pending,
+        scheduleContext,
+        createOrder,
+        knownOrderInMemory ?? undefined,
+      )
+      setSchedulePending(null)
+      setFailedSchedulePending(null)
+      setKnownOrderInMemory(null)
+      setScheduleIdempotencyConflict(false)
+      setScheduleContext(completed.draft)
+      setDialogOpen(false)
+      reloadOrders()
+      const separator = scheduleContext.return_to.includes('?') ? '&' : '?'
+      navigate(`${scheduleContext.return_to}${separator}schedule_draft=${scheduleContext.draft_id}`)
+    } catch (reason) {
+      if (reason instanceof BackfillPersistenceError) {
+        setKnownOrderInMemory(reason.knownOrderID)
+        setSchedulePending(readPendingSchedule() ?? pending)
+        setFormError('订单已创建，本地收口失败；重试只会写本地记录')
+        return
+      }
+      const failureKind = scheduleCreateFailureKind(
+        reason instanceof ApiError ? reason : null,
+        false,
+      )
+      if (failureKind === 'idempotency_conflict') {
+        setSchedulePending(readPendingSchedule() ?? pending)
+        setScheduleIdempotencyConflict(true)
+        setFormError('原请求 key 已绑定其他成功请求，禁止自动重放、修改请求或换 key；请先人工核对客户订单')
+        return
+      }
+      if (failureKind === 'deterministic' && reason instanceof ApiError) {
+        clearPendingSchedule()
+        setSchedulePending(null)
+        setFailedSchedulePending(pending)
+        setScheduleIdempotencyConflict(false)
+        setFormError(reason.message)
+        return
+      }
+      setFormError('补录结果未知，必须保留原 body/key 再次确认')
+    }
+  }
+
+  function abandonScheduleDraft() {
+    if (!scheduleContext || schedulePending) return
+    try {
+      clearScheduleDraft(scheduleContext.draft_id)
+      setScheduleContext(null)
+      setFailedSchedulePending(null)
+      setDraft((current) => ({ ...current, status: 'delivered' }))
+      setFormError(null)
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : '放弃排期失败')
+    }
+  }
+
+  function abandonExpiredScheduleRecovery() {
+    if (!scheduleContext || !schedulePending || !pendingScheduleExpired(schedulePending)) return
+    try {
+      clearPendingSchedule()
+      clearScheduleDraft(scheduleContext.draft_id)
+      const customerID = schedulePending.known_customer_id ?? scheduleContext.customer_id
+      setSchedulePending(null)
+      setScheduleContext(null)
+      setFailedSchedulePending(null)
+      setKnownOrderInMemory(null)
+      setScheduleIdempotencyConflict(false)
+      setFormError(null)
+      setDialogOpen(false)
+      navigate(`/customers/${customerID}?tab=orders`, { replace: true })
+    } catch (reason) {
+      setFormError(reason instanceof Error ? reason.message : '放弃恢复记录失败')
+    }
+  }
+
   async function applyUpdate(order: OrderListItem, body: UpdateOrderBody, message: string) {
     setActionId(order.id)
     setError(null)
+    setErrorAction(null)
     try {
       await updateOrder(order.id, body)
       notify(message)
@@ -279,28 +497,33 @@ export default function OrderWorkspace({
     }
   }
 
-  function requestProgress(order: OrderListItem, next: OrderStatusValue) {
+	function requestProgress(order: OrderListItem, next: OrderStatusValue) {
+    setErrorAction(null)
     if (next === 'closed' && !order.balance_paid) {
       setError('完结前需要先标记尾款')
       return
     }
-    if (next === 'shot' || next === 'delivered') {
-      setError(null)
-      setProgressTarget({ order, status: next, date: todayDate() })
+		if (next === 'shot' || next === 'delivered') {
+			if (!timezone) {
+				setError('账号时区不可用，暂不能写入日期')
+				return
+			}
+			setError(null)
+			setProgressTarget({ order, status: next, date: accountToday(timezone) })
       return
     }
     void applyUpdate(order, { status: next }, `订单已推进到${statusLabels[next]}`)
   }
 
-  function confirmProgress() {
-    if (!progressTarget) return
-    if (!isValidDateInput(progressTarget.date)) {
+	function confirmProgress() {
+		if (!progressTarget) return
+		if (!timezone || !isValidAccountDate(progressTarget.date, timezone)) {
       setError('请选择有效日期')
       return
     }
     const body: UpdateOrderBody = { status: progressTarget.status }
-    if (progressTarget.status === 'shot') body.shot_at = dateToAPI(progressTarget.date)
-    if (progressTarget.status === 'delivered') body.delivered_at = dateToAPI(progressTarget.date)
+		if (progressTarget.status === 'shot') body.shot_at = accountDateAtNoonToInstant(progressTarget.date, timezone)
+		if (progressTarget.status === 'delivered') body.delivered_at = accountDateAtNoonToInstant(progressTarget.date, timezone)
     void applyUpdate(progressTarget.order, body, `订单已推进到${statusLabels[progressTarget.status]}`)
     setProgressTarget(null)
   }
@@ -317,6 +540,7 @@ export default function OrderWorkspace({
     if (!deleteTarget) return
     setActionId(deleteTarget.id)
     setError(null)
+    setErrorAction(null)
     try {
       await deleteOrder(deleteTarget.id)
       notify('订单已删除')
@@ -327,13 +551,26 @@ export default function OrderWorkspace({
         goLogin()
         return
       }
+      setErrorAction(err instanceof ApiError ? orderInUseScheduleAction(err, timezone) : null)
       setError(err instanceof Error ? err.message : '删除失败')
     } finally {
       setActionId(null)
     }
   }
 
-  return (
+  const schedulePendingIsExpired = Boolean(schedulePending && pendingScheduleExpired(schedulePending))
+  const scheduleRecoveryCustomerID = schedulePending?.known_customer_id ?? scheduleContext?.customer_id
+  const scheduleRecoveryOrderID = schedulePending?.known_order_id ?? knownOrderInMemory
+  const scheduleRecoveryAction = (schedulePendingIsExpired || scheduleIdempotencyConflict) && scheduleRecoveryCustomerID
+    ? {
+        href: scheduleRecoveryOrderID
+          ? `/customers/${scheduleRecoveryCustomerID}?tab=orders&order=${scheduleRecoveryOrderID}`
+          : `/customers/${scheduleRecoveryCustomerID}?tab=orders`,
+        label: scheduleRecoveryOrderID ? '查看已知订单' : '前往客户订单核对',
+      }
+    : null
+
+	  return (
     <div className="order-workspace">
       <div className="order-toolbar">
         <div className="chips">
@@ -358,7 +595,13 @@ export default function OrderWorkspace({
         <button className="btn btn-primary" type="button" onClick={openCreate}>＋ 新建订单</button>
       </div>
 
-      {error && <div className="form-error">{error}</div>}
+	      {error && (
+          <div className="form-error">
+            {error}
+            {errorAction && <> <Link to={errorAction.href}>{errorAction.label}</Link></>}
+          </div>
+        )}
+	      {focusMissing && <div className="form-error">目标订单已不存在，当前客户上下文仍保留。</div>}
 
       {loading ? (
         <div className="empty">加载中</div>
@@ -371,6 +614,7 @@ export default function OrderWorkspace({
               <OrderRow
                 key={order.id}
                 order={order}
+                focused={focusOrderId === order.id}
                 fixedCustomer={Boolean(fixedCustomerId)}
                 busy={actionId === order.id}
                 onProgress={requestProgress}
@@ -400,18 +644,33 @@ export default function OrderWorkspace({
         customers={customers}
         fixedCustomer={customer}
         submitted={submitted}
-        saving={saving}
-        formError={formError}
-        onClose={() => setDialogOpen(false)}
-        onDraft={setDraft}
-        onSave={() => { void saveOrder() }}
+	        saving={saving}
+			formError={formError}
+			timezone={timezone}
+			scheduleDraft={Boolean(scheduleContext)}
+			schedulePending={Boolean(schedulePending)}
+			schedulePendingExpired={schedulePendingIsExpired}
+			scheduleIdempotencyConflict={scheduleIdempotencyConflict}
+			scheduleRecoveryAction={scheduleRecoveryAction}
+	        onClose={() => {
+				if (schedulePending) {
+					setFormError('补录请求已发出，必须先确认结果，不能关闭恢复记录')
+					return
+				}
+				setDialogOpen(false)
+			}}
+	        onDraft={setDraft}
+	        onSave={() => { void saveOrder() }}
+			onAbandonSchedule={abandonScheduleDraft}
+			onAbandonExpiredSchedule={abandonExpiredScheduleRecovery}
       />
 
       {progressTarget && (
         <div className="overlay open" onClick={(event) => { if (event.target === event.currentTarget) setProgressTarget(null) }}>
           <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="progressOrderTitle">
             <h2 id="progressOrderTitle">确认{statusLabels[progressTarget.status]}日期</h2>
-            <p className="dialog-sub">{orderTitle(progressTarget.order)}</p>
+			<p className="dialog-sub">{orderTitle(progressTarget.order)}</p>
+			<div className="hint">账号时区：{timezone}</div>
             <div className="field">
               <label htmlFor="progressDate">{progressTarget.status === 'shot' ? '拍摄日期' : '交付日期'}</label>
               <input
@@ -425,7 +684,7 @@ export default function OrderWorkspace({
             </div>
             <div className="dialog-actions">
               <button className="btn" type="button" onClick={() => setProgressTarget(null)}>取消</button>
-              <button className="btn btn-primary" type="button" disabled={!isValidDateInput(progressTarget.date)} onClick={confirmProgress}>确认推进</button>
+				<button className="btn btn-primary" type="button" disabled={!timezone || !isValidAccountDate(progressTarget.date, timezone)} onClick={confirmProgress}>确认推进</button>
             </div>
           </section>
         </div>
@@ -483,6 +742,7 @@ export default function OrderWorkspace({
 
 function OrderRow({
   order,
+  focused,
   fixedCustomer,
   busy,
   onProgress,
@@ -491,6 +751,7 @@ function OrderRow({
   onUpdate,
 }: {
   order: OrderListItem
+  focused: boolean
   fixedCustomer: boolean
   busy: boolean
   onProgress(order: OrderListItem, next: OrderStatusValue): void
@@ -502,7 +763,7 @@ function OrderRow({
   const canSkipDelivered = order.status === 'shot' || order.status === 'selected'
   const terminal = isTerminal(order.status)
   return (
-    <article className={`order-card status-${order.status}`}>
+	    <article className={`order-card status-${order.status}`} data-order-id={order.id} tabIndex={focused ? -1 : undefined}>
       <div className="order-main">
         <div className="order-title-line">
           <span className={`badge ${statusBadge(order.status)}`}>{statusLabels[order.status]}</span>
@@ -572,10 +833,18 @@ function OrderDialog({
   fixedCustomer,
   submitted,
   saving,
-  formError,
+	formError,
+	timezone,
+	scheduleDraft,
+	schedulePending,
+  schedulePendingExpired,
+  scheduleIdempotencyConflict,
+  scheduleRecoveryAction,
   onClose,
   onDraft,
   onSave,
+	onAbandonSchedule,
+	onAbandonExpiredSchedule,
 }: {
   open: boolean
   draft: OrderDraft
@@ -584,19 +853,43 @@ function OrderDialog({
   fixedCustomer?: FixedCustomer
   submitted: boolean
   saving: boolean
-  formError: string | null
+	formError: string | null
+	timezone: string | null
+	scheduleDraft: boolean
+	schedulePending: boolean
+  schedulePendingExpired: boolean
+  scheduleIdempotencyConflict: boolean
+  scheduleRecoveryAction: { href: string; label: string } | null
   onClose(): void
   onDraft(next: OrderDraft): void
   onSave(): void
+	onAbandonSchedule(): void
+	onAbandonExpiredSchedule(): void
 }) {
   const needsShotAt = draft.backfill && reached(draft.status, 'shot') && draft.status !== 'cancelled'
   const needsDeliveredAt = draft.backfill && reached(draft.status, 'delivered') && draft.status !== 'cancelled'
+  const dialogRef = useFocusTrap<HTMLElement>(open, onClose, !saving)
   return (
     <div className={`overlay${open ? ' open' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <section className="dialog order-dialog" role="dialog" aria-modal="true" aria-labelledby="orderDialogTitle">
-        <h2 id="orderDialogTitle">新建订单</h2>
-        <div className="dialog-sub">订单会写入当前账号，客户与套系均由服务端校验</div>
+      <section ref={dialogRef} className="dialog order-dialog" role="dialog" aria-modal="true" aria-labelledby="orderDialogTitle" tabIndex={-1} autoFocus>
+	        <h2 id="orderDialogTitle">{scheduleDraft ? '补录历史订单后返回排期' : '新建订单'}</h2>
+	        <div className="dialog-sub">{scheduleDraft ? '仅可选择能继续历史排期的订单状态' : '订单会写入当前账号，客户与套系均由服务端校验'}</div>
         {formError && <div className="form-error">{formError}</div>}
+        {schedulePending && (schedulePendingExpired || scheduleIdempotencyConflict) && (
+          <div className="schedule-recovery">
+            <div className="conflict-tip">
+              <strong>{schedulePendingExpired ? '恢复记录已超过 24 小时' : '幂等记录与当前请求不一致'}</strong>
+              <div>{schedulePendingExpired
+                ? '自动重放已禁用。请先核对客户订单，再显式放弃恢复记录。'
+                : '原 key 已绑定其他成功请求，当前记录禁止自动重放、修改 body 或换 key。请先核对客户订单。'}</div>
+            </div>
+            {scheduleRecoveryAction && (
+              <div className="schedule-resource-links">
+                <Link className="btn btn-sm" to={scheduleRecoveryAction.href} target="_blank" rel="noreferrer">{scheduleRecoveryAction.label}</Link>
+              </div>
+            )}
+          </div>
+        )}
 
         {fixedCustomer ? (
           <div className="field">
@@ -654,18 +947,19 @@ function OrderDialog({
           <input id="orderTitle" className="input" value={draft.title} onChange={(event) => onDraft({ ...draft, title: event.target.value })} placeholder="如：春日外景写真" />
         </div>
 
-        <label className="check-line">
-          <input type="checkbox" checked={draft.backfill} onChange={(event) => onDraft({ ...draft, backfill: event.target.checked, status: event.target.checked ? 'delivered' : 'consulting', packageId: '' })} />
-          补录历史订单
+	        <label className="check-line">
+	          <input type="checkbox" disabled={scheduleDraft} checked={draft.backfill} onChange={(event) => onDraft({ ...draft, backfill: event.target.checked, status: event.target.checked ? 'delivered' : 'consulting', packageId: '' })} />
+	          补录历史订单
         </label>
 
-        {draft.backfill && (
-          <>
+		{draft.backfill && (
+			<>
+				<div className="hint">账号时区：{timezone ?? '不可用'}</div>
             <div className="field-row">
               <div className="field">
                 <label htmlFor="orderStatus">状态</label>
                 <select id="orderStatus" className="input" value={draft.status} onChange={(event) => onDraft({ ...draft, status: event.target.value as OrderStatusValue })}>
-                  {backfillStatusOrder.map((item) => <option key={item} value={item}>{statusLabels[item]}</option>)}
+	                  {(scheduleDraft ? scheduleDraftStatusOrder : backfillStatusOrder).map((item) => <option key={item} value={item}>{statusLabels[item]}</option>)}
                 </select>
               </div>
               <div className="field">
@@ -699,9 +993,11 @@ function OrderDialog({
           </label>
         </div>
 
-        <div className="dialog-actions">
-          <button className="btn" type="button" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" type="button" disabled={saving} onClick={onSave}>
+		        <div className="dialog-actions">
+			{scheduleDraft && !schedulePending && <button className="btn btn-danger-ghost" type="button" onClick={onAbandonSchedule}>放弃本次排期</button>}
+			{scheduleDraft && schedulePendingExpired && <button className="btn btn-danger-ghost" type="button" disabled={saving} onClick={onAbandonExpiredSchedule}>已人工核对，放弃恢复记录</button>}
+		          <button className="btn" type="button" onClick={onClose}>{scheduleDraft ? '返回' : '取消'}</button>
+          <button className="btn btn-primary" type="button" disabled={saving || schedulePendingExpired || scheduleIdempotencyConflict} onClick={onSave}>
             {saving ? '保存中' : '保存'}
           </button>
         </div>
@@ -758,19 +1054,63 @@ async function fetchAllPages<T>(loadPage: (page: number) => Promise<{ items: T[]
   }
 }
 
-function toCreateBody(draft: OrderDraft): CreateOrderBody {
-  const body: CreateOrderBody = { customer_id: draft.customerId }
+async function loadThroughOrder(orderID: string, customerID: string): Promise<{
+  items: OrderListItem[]
+  total: number
+  page: number
+  found: boolean
+}> {
+  const items: OrderListItem[] = []
+  for (let page = 1; ; page += 1) {
+    const result = await listOrders({
+      customerId: customerID || undefined,
+      page,
+      pageSize: orderPageSize,
+    })
+    items.push(...result.items)
+    if (items.some((item) => item.id === orderID)) {
+      return { items, total: result.total, page, found: true }
+    }
+    if (items.length >= result.total || result.items.length === 0) {
+      return { items, total: result.total, page, found: false }
+    }
+  }
+}
+
+function applyCreateBodyToDraft(draft: OrderDraft, body: CreateOrderBody, timezone: string) {
+  draft.customerId = body.customer_id
+  draft.packageId = body.package_id ?? ''
+  draft.title = body.title ?? ''
+  draft.priceYuan = body.price == null ? '' : String(body.price / 100)
+  draft.backfill = body.creation_mode === 'backfill'
+  draft.status = (body.status ?? 'consulting') as OrderStatusValue
+  draft.depositPaid = body.deposit_paid ?? false
+  draft.balancePaid = body.balance_paid ?? false
+  draft.note = body.note ?? ''
+  draft.shotDate = body.shot_at ? instantToLocalDateTime(body.shot_at, timezone).date : ''
+  draft.deliveredDate = body.delivered_at ? instantToLocalDateTime(body.delivered_at, timezone).date : ''
+}
+
+function toCreateBody(draft: OrderDraft, timezone: string | null): CreateOrderBody {
+  const body: CreateOrderBody = {
+    creation_mode: draft.backfill ? 'backfill' : 'new',
+    customer_id: draft.customerId,
+  }
   if (draft.packageId) body.package_id = draft.packageId
   if (draft.title.trim()) body.title = draft.title.trim()
   if (draft.priceYuan.trim()) body.price = packagePriceYuanToCents(draft.priceYuan)
   if (draft.depositPaid) body.deposit_paid = true
   if (draft.balancePaid) body.balance_paid = true
   if (draft.note.trim()) body.note = draft.note.trim()
-  if (draft.backfill) {
-    body.status = draft.status
-    if (draft.shotDate) body.shot_at = dateToAPI(draft.shotDate)
-    if (draft.deliveredDate) body.delivered_at = dateToAPI(draft.deliveredDate)
-  }
+		if (draft.backfill) {
+			if (!timezone) throw new Error('account timezone required for backfill')
+			body.status = draft.status
+			Object.assign(body, backfillTimestampFields(
+				draft.status,
+				draft.shotDate ? accountDateAtNoonToInstant(draft.shotDate, timezone) : undefined,
+				draft.deliveredDate ? accountDateAtNoonToInstant(draft.deliveredDate, timezone) : undefined,
+			))
+		  }
   return body
 }
 
@@ -809,19 +1149,4 @@ function formatPrice(cents: number | undefined): string {
 
 function shortDate(value: string | undefined): string {
   return value ? value.slice(0, 10) : '暂无'
-}
-
-function todayDate(): string {
-  const now = new Date()
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 10)
-}
-
-function dateToAPI(date: string): string {
-  return new Date(`${date}T12:00:00+08:00`).toISOString()
-}
-
-function isValidDateInput(date: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
-  return !Number.isNaN(new Date(`${date}T12:00:00+08:00`).getTime())
 }

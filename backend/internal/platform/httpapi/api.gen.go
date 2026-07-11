@@ -4,6 +4,8 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -60,6 +62,42 @@ func (e CustomerStatus) Valid() bool {
 	case CustomerStatusArchived:
 		return true
 	case CustomerStatusMerged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NonShootScheduleSlotListItemType.
+const (
+	NonShootScheduleSlotListItemTypeBusy NonShootScheduleSlotListItemType = "busy"
+	NonShootScheduleSlotListItemTypeHold NonShootScheduleSlotListItemType = "hold"
+)
+
+// Valid indicates whether the value is a known member of the NonShootScheduleSlotListItemType enum.
+func (e NonShootScheduleSlotListItemType) Valid() bool {
+	switch e {
+	case NonShootScheduleSlotListItemTypeBusy:
+		return true
+	case NonShootScheduleSlotListItemTypeHold:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderCreationMode.
+const (
+	Backfill OrderCreationMode = "backfill"
+	New      OrderCreationMode = "new"
+)
+
+// Valid indicates whether the value is a known member of the OrderCreationMode enum.
+func (e OrderCreationMode) Valid() bool {
+	switch e {
+	case Backfill:
+		return true
+	case New:
 		return true
 	default:
 		return false
@@ -141,6 +179,21 @@ func (e PricingMode) Valid() bool {
 	}
 }
 
+// Defines values for ShootScheduleSlotListItemType.
+const (
+	Shoot ShootScheduleSlotListItemType = "shoot"
+)
+
+// Valid indicates whether the value is a known member of the ShootScheduleSlotListItemType enum.
+func (e ShootScheduleSlotListItemType) Valid() bool {
+	switch e {
+	case Shoot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ShootType.
 const (
 	ShootTypeCosplay  ShootType = "cosplay"
@@ -156,6 +209,27 @@ func (e ShootType) Valid() bool {
 	case ShootTypeOther:
 		return true
 	case ShootTypePortrait:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlotType.
+const (
+	SlotTypeBusy  SlotType = "busy"
+	SlotTypeHold  SlotType = "hold"
+	SlotTypeShoot SlotType = "shoot"
+)
+
+// Valid indicates whether the value is a known member of the SlotType enum.
+func (e SlotType) Valid() bool {
+	switch e {
+	case SlotTypeBusy:
+		return true
+	case SlotTypeHold:
+		return true
+	case SlotTypeShoot:
 		return true
 	default:
 		return false
@@ -262,6 +336,9 @@ func (e ListPackagesParamsStatus) Valid() bool {
 type Account struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 	Id        *string    `json:"id,omitempty"`
+
+	// Timezone IANA 时区；Settings 未落地前返回 Asia/Shanghai，日历不得使用浏览器时区替代
+	Timezone string `json:"timezone"`
 }
 
 // Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
@@ -378,10 +455,32 @@ type CustomerSummary struct {
 // ErrorEnvelope 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
 type ErrorEnvelope struct {
 	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code string `json:"code"`
+
+		// Details order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
+		Details *ScheduleConflictDetails `json:"details,omitempty"`
+		Message string                   `json:"message"`
 	} `json:"error"`
 }
+
+// NonShootScheduleSlotListItem defines model for NonShootScheduleSlotListItem.
+type NonShootScheduleSlotListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// EndAt 必须 > start_at
+	EndAt   time.Time `json:"end_at"`
+	Id      *string   `json:"id,omitempty"`
+	Note    *string   `json:"note,omitempty"`
+	StartAt time.Time `json:"start_at"`
+
+	// Type hold/busy 不带订单或客户引用摘要
+	Type NonShootScheduleSlotListItemType `json:"type"`
+}
+
+// NonShootScheduleSlotListItemType hold/busy 不带订单或客户引用摘要
+type NonShootScheduleSlotListItemType string
 
 // Order defines model for Order.
 type Order struct {
@@ -408,6 +507,9 @@ type Order struct {
 	Status OrderStatus `json:"status"`
 	Title  *string     `json:"title,omitempty"`
 }
+
+// OrderCreationMode defines model for OrderCreationMode.
+type OrderCreationMode string
 
 // OrderListItem defines model for OrderListItem.
 type OrderListItem struct {
@@ -516,8 +618,90 @@ type PackageStatus string
 // PricingMode defines model for PricingMode.
 type PricingMode string
 
+// ScheduleConflictDetails order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
+type ScheduleConflictDetails struct {
+	ScheduleSlotId  string    `json:"schedule_slot_id"`
+	ScheduleStartAt time.Time `json:"schedule_start_at"`
+}
+
+// ScheduleSlot defines model for ScheduleSlot.
+type ScheduleSlot struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// EndAt 必须 > start_at
+	EndAt time.Time `json:"end_at"`
+	Id    *string   `json:"id,omitempty"`
+	Note  *string   `json:"note,omitempty"`
+
+	// OrderId type=shoot 时必填；同一订单最多关联一条 shoot slot
+	OrderId *string   `json:"order_id,omitempty"`
+	StartAt time.Time `json:"start_at"`
+	Type    SlotType  `json:"type"`
+}
+
+// ScheduleSlotListItem defines model for ScheduleSlotListItem.
+type ScheduleSlotListItem struct {
+	union json.RawMessage
+}
+
+// ScheduleSlotListItemBase defines model for ScheduleSlotListItemBase.
+type ScheduleSlotListItemBase struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// EndAt 必须 > start_at
+	EndAt   time.Time `json:"end_at"`
+	Id      *string   `json:"id,omitempty"`
+	Note    *string   `json:"note,omitempty"`
+	StartAt time.Time `json:"start_at"`
+}
+
+// ShootScheduleSlotListItem defines model for ShootScheduleSlotListItem.
+type ShootScheduleSlotListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// CustomerDisplayName 引用订单的当前客户名
+	CustomerDisplayName string `json:"customer_display_name"`
+
+	// CustomerId 引用订单的当前客户 id；merge 后返回 target id，供恢复流程与客户档案订单 tab 使用
+	CustomerId string `json:"customer_id"`
+
+	// CustomerStatus 当前客户状态；客户归档后仍返回，供文本警示
+	CustomerStatus CustomerStatus `json:"customer_status"`
+
+	// EndAt 必须 > start_at
+	EndAt time.Time `json:"end_at"`
+	Id    *string   `json:"id,omitempty"`
+	Note  *string   `json:"note,omitempty"`
+
+	// OrderId shoot slot 必返的关联订单 id
+	OrderId string `json:"order_id"`
+
+	// OrderStatus 语义与合法跃迁见 §4.2 订单状态机
+	OrderStatus OrderStatus `json:"order_status"`
+
+	// OrderTitle 引用订单的标题；无标题时缺省，由前端按套系/客户兜底
+	OrderTitle *string `json:"order_title,omitempty"`
+
+	// PackageName 引用订单所选套系名；未选套系时缺省
+	PackageName *string                       `json:"package_name,omitempty"`
+	StartAt     time.Time                     `json:"start_at"`
+	Type        ShootScheduleSlotListItemType `json:"type"`
+}
+
+// ShootScheduleSlotListItemType defines model for ShootScheduleSlotListItem.Type.
+type ShootScheduleSlotListItemType string
+
 // ShootType defines model for ShootType.
 type ShootType string
+
+// SlotType defines model for SlotType.
+type SlotType string
 
 // SocialIdentity defines model for SocialIdentity.
 type SocialIdentity struct {
@@ -536,6 +720,9 @@ type SocialPlatform string
 
 // Id defines model for Id.
 type Id = string
+
+// IdempotencyKey defines model for IdempotencyKey.
+type IdempotencyKey = string
 
 // Page defines model for Page.
 type Page = int
@@ -639,15 +826,21 @@ type ListOrdersParams struct {
 	Status     *OrderStatus `form:"status,omitempty" json:"status,omitempty"`
 
 	// UnpaidBalance true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径）
-	UnpaidBalance *bool     `form:"unpaid_balance,omitempty" json:"unpaid_balance,omitempty"`
-	Page          *Page     `form:"page,omitempty" json:"page,omitempty"`
-	PageSize      *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
+	UnpaidBalance *bool `form:"unpaid_balance,omitempty" json:"unpaid_balance,omitempty"`
+
+	// SchedulableAt 目标 slot 的 end_at；服务端按它相对当前时刻应用与 POST/PATCH 相同的订单/客户未来历史矩阵并排除已有 shoot slot：未来要求客户 active，历史允许 active/archived，merged 永不允许；可与 customer_id 组合
+	SchedulableAt *time.Time `form:"schedulable_at,omitempty" json:"schedulable_at,omitempty"`
+	Page          *Page      `form:"page,omitempty" json:"page,omitempty"`
+	PageSize      *PageSize  `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // CreateOrderJSONBody defines parameters for CreateOrder.
 type CreateOrderJSONBody struct {
-	BalancePaid *bool  `json:"balance_paid,omitempty"`
-	CustomerId  string `json:"customer_id"`
+	BalancePaid *bool `json:"balance_paid,omitempty"`
+
+	// CreationMode new=新业务，只允许 consulting/scheduled 且只能引用 active 客户/套系；backfill=历史补录，可按状态不变量直达并允许 active/archived 客户与套系，merged 客户仍拒绝
+	CreationMode *OrderCreationMode `json:"creation_mode,omitempty"`
+	CustomerId   string             `json:"customer_id"`
 
 	// DeliveredAt 补录用；仅目标状态已到达 delivered 时可给
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
@@ -661,9 +854,15 @@ type CreateOrderJSONBody struct {
 	// ShotAt 补录用；仅目标状态已到达 shot 时可给
 	ShotAt *time.Time `json:"shot_at,omitempty"`
 
-	// Status 补录直达目标状态；≥shot 须显式给 shot_at、≥delivered（含 closed）须显式给 delivered_at，closed 须 balance_paid=true（§4.2 不变量）
+	// Status creation_mode=new 时缺省 consulting 且仅允许 consulting/scheduled；backfill 时可直达八态，≥shot 须显式 shot_at、≥delivered（含 closed）须显式 delivered_at，closed 须 balance_paid=true
 	Status *OrderStatus `json:"status,omitempty"`
 	Title  *string      `json:"title,omitempty"`
+}
+
+// CreateOrderParams defines parameters for CreateOrder.
+type CreateOrderParams struct {
+	// IdempotencyKey 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
 }
 
 // UpdateOrderJSONBody defines parameters for UpdateOrder.
@@ -711,6 +910,45 @@ type UpdatePackageJSONBody struct {
 	Status       *PackageStatus         `json:"status,omitempty"`
 }
 
+// ListScheduleSlotsParams defines parameters for ListScheduleSlots.
+type ListScheduleSlotsParams struct {
+	// From 半开区间 [from,to) 的 UTC 起点；月历传完整 6 周可见网格的账号本地日界
+	From time.Time `form:"from" json:"from"`
+
+	// To 半开区间 [from,to) 的 UTC 终点
+	To time.Time `form:"to" json:"to"`
+}
+
+// CreateScheduleSlotJSONBody defines parameters for CreateScheduleSlot.
+type CreateScheduleSlotJSONBody struct {
+	EndAt time.Time `json:"end_at"`
+	Note  *string   `json:"note,omitempty"`
+
+	// OrderId type=shoot 时必填；未来/进行中只允许 consulting/scheduled 且客户须 active；历史补录允许 scheduled/shot/selected/retouching/delivered/closed 且客户可 active/archived；cancelled 或 merged 客户永不允许
+	OrderId *string   `json:"order_id,omitempty"`
+	StartAt time.Time `json:"start_at"`
+	Type    SlotType  `json:"type"`
+}
+
+// CreateScheduleSlotParams defines parameters for CreateScheduleSlot.
+type CreateScheduleSlotParams struct {
+	// IdempotencyKey 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// UpdateScheduleSlotJSONBody defines parameters for UpdateScheduleSlot.
+type UpdateScheduleSlotJSONBody struct {
+	EndAt *time.Time `json:"end_at,omitempty"`
+
+	// Note 显式 null 清空备注；省略表示不改
+	Note nullable.Nullable[string] `json:"note,omitempty"`
+
+	// OrderId 显式 null 清空关联；省略表示不改
+	OrderId nullable.Nullable[string] `json:"order_id,omitempty"`
+	StartAt *time.Time                `json:"start_at,omitempty"`
+	Type    *SlotType                 `json:"type,omitempty"`
+}
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
@@ -740,6 +978,99 @@ type CreatePackageJSONRequestBody = PackageInput
 
 // UpdatePackageJSONRequestBody defines body for UpdatePackage for application/json ContentType.
 type UpdatePackageJSONRequestBody UpdatePackageJSONBody
+
+// CreateScheduleSlotJSONRequestBody defines body for CreateScheduleSlot for application/json ContentType.
+type CreateScheduleSlotJSONRequestBody CreateScheduleSlotJSONBody
+
+// UpdateScheduleSlotJSONRequestBody defines body for UpdateScheduleSlot for application/json ContentType.
+type UpdateScheduleSlotJSONRequestBody UpdateScheduleSlotJSONBody
+
+// AsShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a ShootScheduleSlotListItem
+func (t ScheduleSlotListItem) AsShootScheduleSlotListItem() (ShootScheduleSlotListItem, error) {
+	var body ShootScheduleSlotListItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromShootScheduleSlotListItem overwrites any union data inside the ScheduleSlotListItem as the provided ShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) FromShootScheduleSlotListItem(v ShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeShootScheduleSlotListItem performs a merge with any union data inside the ScheduleSlotListItem, using the provided ShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) MergeShootScheduleSlotListItem(v ShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsNonShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a NonShootScheduleSlotListItem
+func (t ScheduleSlotListItem) AsNonShootScheduleSlotListItem() (NonShootScheduleSlotListItem, error) {
+	var body NonShootScheduleSlotListItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromNonShootScheduleSlotListItem overwrites any union data inside the ScheduleSlotListItem as the provided NonShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) FromNonShootScheduleSlotListItem(v NonShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeNonShootScheduleSlotListItem performs a merge with any union data inside the ScheduleSlotListItem, using the provided NonShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) MergeNonShootScheduleSlotListItem(v NonShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ScheduleSlotListItem) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"type"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t ScheduleSlotListItem) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "busy":
+		return t.AsNonShootScheduleSlotListItem()
+	case "hold":
+		return t.AsNonShootScheduleSlotListItem()
+	case "shoot":
+		return t.AsShootScheduleSlotListItem()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t ScheduleSlotListItem) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ScheduleSlotListItem) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -776,13 +1107,13 @@ type ServerInterface interface {
 	// 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3）
 	// (GET /orders)
 	ListOrders(c *gin.Context, params ListOrdersParams)
-	// 新建订单（status 缺省 consulting；带 status 为补录直达，规则见 §4.3 2026-07-09）
+	// 新建订单（creation_mode=new 为新业务，backfill 为历史补录）
 	// (POST /orders)
-	CreateOrder(c *gin.Context)
+	CreateOrder(c *gin.Context, params CreateOrderParams)
 	// 物理删除终态订单（closed/cancelled，§4.3 2026-07-09）
 	// (DELETE /orders/{id})
 	DeleteOrder(c *gin.Context, id Id)
-	// 状态跃迁与字段修正（状态机语义见 §4.2）
+	// 状态跃迁与字段修正（状态机语义见 §4.2；status 等于当前状态时为 200 no-op）
 	// (PATCH /orders/{id})
 	UpdateOrder(c *gin.Context, id Id)
 	// 套系列表（?status=active 供下单选择）
@@ -797,6 +1128,18 @@ type ServerInterface interface {
 	// 更新套系；归档 = PATCH {status:archived}（无 in-use 校验，§4.3）
 	// (PATCH /packages/{id})
 	UpdatePackage(c *gin.Context, id Id)
+	// 档期区间查询（含跨界 slot）
+	// (GET /schedule/slots)
+	ListScheduleSlots(c *gin.Context, params ListScheduleSlotsParams)
+	// 新建档期（支持跨日；重叠不阻止；同一订单最多一条 shoot slot）
+	// (POST /schedule/slots)
+	CreateScheduleSlot(c *gin.Context, params CreateScheduleSlotParams)
+	// 删除档期（不自动变更订单状态，§4.2）
+	// (DELETE /schedule/slots/{id})
+	DeleteScheduleSlot(c *gin.Context, id Id)
+	// 更新档期；时间/type/order 变化重验订单与客户矩阵，note-only 不重验外部状态
+	// (PATCH /schedule/slots/{id})
+	UpdateScheduleSlot(c *gin.Context, id Id)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1118,6 +1461,14 @@ func (siw *ServerInterfaceWrapper) ListOrders(c *gin.Context) {
 		return
 	}
 
+	// ------------- Optional query parameter "schedulable_at" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "schedulable_at", c.Request.URL.Query(), &params.SchedulableAt, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter schedulable_at: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	// ------------- Optional query parameter "page" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
@@ -1147,7 +1498,34 @@ func (siw *ServerInterfaceWrapper) ListOrders(c *gin.Context) {
 // CreateOrder operation middleware
 func (siw *ServerInterfaceWrapper) CreateOrder(c *gin.Context) {
 
+	var err error
+	_ = err
+
 	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateOrderParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
 
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
@@ -1156,7 +1534,7 @@ func (siw *ServerInterfaceWrapper) CreateOrder(c *gin.Context) {
 		}
 	}
 
-	siw.Handler.CreateOrder(c)
+	siw.Handler.CreateOrder(c, params)
 }
 
 // DeleteOrder operation middleware
@@ -1327,6 +1705,139 @@ func (siw *ServerInterfaceWrapper) UpdatePackage(c *gin.Context) {
 	siw.Handler.UpdatePackage(c, id)
 }
 
+// ListScheduleSlots operation middleware
+func (siw *ServerInterfaceWrapper) ListScheduleSlots(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListScheduleSlotsParams
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", c.Request.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter from: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", c.Request.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter to: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListScheduleSlots(c, params)
+}
+
+// CreateScheduleSlot operation middleware
+func (siw *ServerInterfaceWrapper) CreateScheduleSlot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateScheduleSlotParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateScheduleSlot(c, params)
+}
+
+// DeleteScheduleSlot operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScheduleSlot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteScheduleSlot(c, id)
+}
+
+// UpdateScheduleSlot operation middleware
+func (siw *ServerInterfaceWrapper) UpdateScheduleSlot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateScheduleSlot(c, id)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -1372,4 +1883,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/packages", wrapper.CreatePackage)
 	router.DELETE(options.BaseURL+"/packages/:id", wrapper.DeletePackage)
 	router.PATCH(options.BaseURL+"/packages/:id", wrapper.UpdatePackage)
+	router.GET(options.BaseURL+"/schedule/slots", wrapper.ListScheduleSlots)
+	router.POST(options.BaseURL+"/schedule/slots", wrapper.CreateScheduleSlot)
+	router.DELETE(options.BaseURL+"/schedule/slots/:id", wrapper.DeleteScheduleSlot)
+	router.PATCH(options.BaseURL+"/schedule/slots/:id", wrapper.UpdateScheduleSlot)
 }

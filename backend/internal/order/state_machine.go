@@ -38,12 +38,22 @@ func canTransition(from, to string) bool {
 }
 
 func ApplyCreateInput(input CreateInput) (Order, error) {
+	mode := input.CreationMode
+	if mode == "" {
+		mode = CreationModeNew
+	}
+	if mode != CreationModeNew && mode != CreationModeBackfill {
+		return Order{}, ValidationError{Message: "creation_mode 非法"}
+	}
 	status := StatusConsulting
 	if input.Status != nil {
 		status = *input.Status
 	}
 	if !validStatus(status) {
 		return Order{}, ValidationError{Message: "status 非法"}
+	}
+	if mode == CreationModeNew && status != StatusConsulting && status != StatusScheduled {
+		return Order{}, ValidationError{Message: "new 模式只允许 consulting 或 scheduled"}
 	}
 	order := Order{
 		CustomerID:  input.CustomerID,
