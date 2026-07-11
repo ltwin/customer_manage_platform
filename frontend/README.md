@@ -1,43 +1,33 @@
-# React + TypeScript + Vite
+# CRM 前端
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite 单页应用。开发和部署总览见仓库根 `README.md`；接口语义以 `../api/openapi.yaml` 为机器契约。
 
-## Development
-
-Install dependencies before starting the Vite dev server:
+## 本地开发
 
 ```bash
 npm ci
 npm run dev
 ```
 
-If `npm run dev` reports `sh: vite: command not found`, the frontend dependencies are not installed yet. Run `npm ci` from this `frontend` directory, then run `npm run dev` again.
+Vite 开发服务器默认打开 `http://localhost:5173`，并把 `/api` 代理到后端 `:8080`。若提示 `vite: command not found`，先在本目录执行 `npm ci`。
 
-Currently, two official plugins are available:
+## 验证与生成
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm run lint
+npm run build
+npm run test:package-price
+npm run test:api-client
+npm run test:schedule
+npm run test:avatar-layout
+npm run generate
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+仓库级聚合门禁仍使用根目录的 `make check`。`npm run generate` 从 `../api/openapi.yaml` 生成 `src/api/schema.d.ts`。
+
+## 约束
+
+- API DTO 必须引用 `src/api/schema.d.ts` 的生成类型，不手写重复 DTO。
+- HTTP 调用统一收口在 `src/api/client.ts`，组件不直接拼 URL。
+- 账号时区来自 `GET /me.timezone`；日历和历史时间表单不使用浏览器时区兜底。
+- 编码与 review 口径见 `../docs/frontend-style-checklist.md`。

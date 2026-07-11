@@ -2,6 +2,8 @@
 
 Go + Gin + React + PostgreSQL 单体，阿里云 ECS 自部署。规格与流程见 `.codestable/`（规划权威源：`roadmap §4` 契约 + `api/openapi.yaml` 机器形式）。
 
+当前已落地客户档案、套系、订单与月历档期；能力现状见 `.codestable/requirements/VISION.md`，roadmap 执行状态见 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`。
+
 ## 开发
 
 ### 前置依赖
@@ -81,8 +83,8 @@ docker compose exec postgres pg_dump -U crm crm > backup-$(date +%F).sql
 
 ```
 api/        OpenAPI 契约（roadmap §4 的机器形式，双端 codegen 输入）
-backend/    Go 单体（cmd/server 入口；internal/platform = auth / config / httpapi / store / webui）
-frontend/   Vite + React + TS（dev 走 Vite proxy；构建产物 go:embed 进二进制）
+backend/    Go 单体（cmd/server 入口；internal 下含 customer / package / order / schedule 领域与 platform 基座）
+frontend/   Vite + React + TS（dev 走 Vite proxy；API 类型由 OpenAPI 生成；构建产物 go:embed 进二进制）
 scripts/    运维脚本（TG 冒烟）
-docs/       Go 编码规范 checklist 等
+docs/       编码规范 checklist 与 HTTP API 参考（清单见 docs/api/manifest.yaml）
 ```

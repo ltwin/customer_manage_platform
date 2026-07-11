@@ -8,13 +8,15 @@ source_files:
   - backend/internal/platform/httpapi/orders.go
   - backend/internal/order/model.go
   - backend/internal/order/service.go
+  - backend/internal/order/schedulability.go
   - backend/internal/order/state_machine.go
   - backend/internal/order/repository.go
+  - backend/internal/platform/idempotency/idempotency.go
   - frontend/src/api/client.ts
   - frontend/src/api/schema.d.ts
-summary: 订单 endpoint 族，覆盖建单、列表、状态跃迁、字段修正和终态删除。
+summary: 订单 endpoint 族，覆盖新业务/历史补录、幂等创建、可排期筛选、状态跃迁、字段修正和终态删除。
 tags: [orders, order-tracking, http-api]
-last_reviewed: 2026-07-09
+last_reviewed: 2026-07-11
 ---
 
 ## 概述
@@ -89,6 +91,7 @@ last_reviewed: 2026-07-09
 | `customer_id` | `string` | 无 | 只看某个客户的订单 |
 | `status` | `OrderStatus` | 无 | 按状态过滤 |
 | `unpaid_balance` | `boolean` | `false` | `true` 表示 `balance_paid=false` 且状态在 `shot`、`selected`、`retouching`、`delivered` |
+| `schedulable_at` | RFC3339 `date-time` | 无 | 按目标 slot 的 `end_at` 应用未来/历史可排期矩阵，并排除已有 shoot slot；可与 `customer_id` 组合 |
 | `page` | `integer` | `1` | 必须大于 0 |
 | `page_size` | `integer` | `20` | 范围 `1..100` |
 
@@ -110,6 +113,7 @@ listOrders(params?: {
   customerId?: string
   status?: OrderStatus
   unpaidBalance?: boolean
+  schedulableAt?: string
   page?: number
   pageSize?: number
 }): Promise<OrderListResponse>
@@ -117,14 +121,21 @@ listOrders(params?: {
 
 ### `POST /orders`
 
-新建订单。`customer_id` 必填，`status` 不传时默认为 `consulting`。
+新建订单。`customer_id` 必填；`creation_mode` 缺省为 `new`。组合排期流程和从档期跳转的历史补录必须传 `Idempotency-Key`。
+
+可选 Header：
+
+| Header | 说明 |
+|---|---|
+| `Idempotency-Key` | 24 小时内按账号、操作、key 与规范化请求安全重放；同 key 异请求返回 `409 idempotency_conflict`；收到任意 5xx 时必须用原 body/key 确认 |
 
 请求体：
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|
-| `customer_id` | `string` | 是 | 只能引用当前账号下 active 客户 |
-| `package_id` | `string` | 否 | 常规建单只能引用 active 套系；补录建单可引用 archived 套系 |
+| `creation_mode` | `new \| backfill` | 否 | 默认 `new`；显式区分新业务和历史补录 |
+| `customer_id` | `string` | 是 | `new` 只允许 active 客户；`backfill` 允许 active/archived；merged 永远拒绝 |
+| `package_id` | `string` | 否 | `new` 只允许 active 套系；`backfill` 可引用 active/archived 套系 |
 | `title` | `string` | 否 | 前后空白会被裁剪，空字符串按未传处理 |
 | `price` | `integer` | 否 | 单位分，必须大于等于 0 |
 | `status` | `OrderStatus` | 否 | 补录直达目标状态 |
@@ -136,24 +147,25 @@ listOrders(params?: {
 
 响应 `201`：`Order`。
 
-补录规则：
+创建模式与状态规则：
 
-| 目标状态 | 额外要求 |
+| 模式 / 目标状态 | 额外要求 |
 |---|---|
-| `shot`, `selected`, `retouching` | 必须提供 `shot_at` |
-| `delivered` | 必须提供 `shot_at` 与 `delivered_at` |
-| `closed` | 必须提供 `shot_at`、`delivered_at`，且 `balance_paid=true` |
-| `cancelled` | 不要求拍摄或交付时间 |
+| `new` | 状态只允许 `consulting` / `scheduled`；缺省为 `consulting` |
+| `backfill` + `shot`, `selected`, `retouching` | 必须提供 `shot_at` |
+| `backfill` + `delivered` | 必须提供 `shot_at` 与 `delivered_at` |
+| `backfill` + `closed` | 必须提供 `shot_at`、`delivered_at`，且 `balance_paid=true` |
+| `backfill` + `cancelled` | 不要求拍摄或交付时间 |
 
 前端封装：
 
 ```ts
-createOrder(body: CreateOrderBody): Promise<Order>
+createOrder(body: CreateOrderBody, idempotencyKey?: string): Promise<Order>
 ```
 
 ### `PATCH /orders/{id}`
 
-更新订单字段或推进状态。请求体可同时携带 `status` 与字段修正；服务端在同一事务内计算最终订单，再校验状态机和不变量。
+更新订单字段或推进状态。请求体可同时携带 `status` 与字段修正；服务端在同一事务内计算最终订单，再校验状态机和不变量。`status` 等于当前状态时返回 `200` no-op，供结果未知的状态同步安全重放。
 
 请求体：
 
@@ -188,7 +200,7 @@ updateOrder(id: string, body: UpdateOrderBody): Promise<Order>
 
 物理删除订单。只有 `closed` 或 `cancelled` 终态订单可以删除。
 
-响应 `204`：无响应体。
+响应 `204`：无响应体。订单被 `type=shoot` 的档期引用时返回 `409 order_in_use`，`error.details` 必返 `schedule_slot_id` 与 `schedule_start_at`，供客户端直达关联档期。
 
 前端封装：
 
@@ -203,28 +215,36 @@ deleteOrder(id: string): Promise<void>
 ```json
 {
   "error": {
-    "code": "validation_failed",
-    "message": "错误说明"
+    "code": "order_in_use",
+    "message": "订单已关联拍摄档期",
+    "details": {
+      "schedule_slot_id": "slot-id",
+      "schedule_start_at": "2026-07-11T02:00:00Z"
+    }
   }
 }
 ```
+
+`details` 仅在错误需要提供可行动上下文时出现；普通错误只有 `code` 与 `message`。
 
 | HTTP | `error.code` | 常见来源 |
 |---|---|---|
 | `400` | `validation_failed` | 请求体格式错误、分页参数越界、非法状态值、负数价格、备注超过 500 字、时间戳与状态不一致、终态收款标记修改 |
 | `401` | `unauthorized` | 未认证或 token 无效 |
 | `404` | `not_found` | 订单、客户或套系不存在 |
-| `409` | `customer_archived` | 新建订单引用 archived 或 merged 客户 |
+| `409` | `customer_archived` | `new` 引用 archived 客户，或任意模式引用 merged 客户 |
+| `409` | `idempotency_conflict` | 已成功绑定的 Idempotency-Key 被用于不同的规范化请求 |
 | `409` | `invalid_status_transition` | `PATCH` 状态跃迁不在状态机允许范围内 |
 | `409` | `unpaid_balance` | 进入或保持 `closed` 时 `balance_paid` 不是 `true` |
 | `409` | `order_not_terminal` | 删除非终态订单 |
+| `409` | `order_in_use` | 删除被 shoot 档期引用的终态订单；details 提供关联档期 |
 
 ## 注意事项
 
 - 请求体最大 1 MiB，超过后按请求体格式错误返回 `400 validation_failed`。
 - `created_at`、`id`、`account_id` 均由服务端写入，客户端传入无效。
 - `listOrders({ unpaidBalance: false })` 不会生成 `unpaid_balance=false` 查询参数；该过滤只在传 `true` 时启用。
-- OpenAPI 当前在删除响应里保留了 future-facing 的 `order_in_use` 描述；现有 `httpapi` 错误映射尚未暴露该错误码，schedule 域接入前不应依赖它。
+- 带 Idempotency-Key 的创建只缓存成功 2xx；客户端不能用一次 5xx 推断事务已经回滚。
 
 ## 相关条目
 

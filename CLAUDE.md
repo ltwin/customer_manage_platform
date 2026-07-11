@@ -1,11 +1,13 @@
 # CLAUDE.md
 
-摄影师私域客户经营系统（CRM）：Go + Gin + React + PostgreSQL，阿里云 ECS 自部署。截至 2026-07-06 规划层已完成（roadmap active），业务代码尚未开工。
+摄影师私域客户经营系统（CRM）：Go + Gin + React + PostgreSQL，阿里云 ECS 自部署。项目处于首版实现期；已完成能力与待办状态以 roadmap items 为准。
 
 ## 工作流
 
 - 本项目用 CodeStable 管理规格与流程；任何 CodeStable 技能启动前先读 `.codestable/attention.md`。
 - 功能实现从 roadmap 取条目：`.codestable/roadmap/photographer-private-crm/`（12 条子 feature，依赖序）。
+- 当前执行状态以 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml` 为准；不要从旧 feature 报告或对话推断进度。
+- 聚合验证入口是 `make check`；OpenAPI 变更后运行 `make generate` 并提交 Go/TS 两份生成物。
 
 ## 硬规则（写代码必须遵守）
 
@@ -22,7 +24,7 @@
 - 长期分支：`main` = 生产（受 CodeStable branch-guard 保护，只收 `release/*` / `hotfix/*` 合并）；`develop` = 集成基线，日常工作分支从这里拉出、合回。
 - 工作分支沿用 CodeStable 类型前缀：`feat/*`（新功能，≈ GitFlow feature）、`fix/*`（缺陷修复）、`refactor/*`（重构）——不要用 `feature/*` 命名，branch-guard 认的是 `feat/`。
 - `release/*` / `hotfix/*` 保留给发布节奏出现之后；首版迭代期 `develop` → `main` 直接走发布合并即可，不为不存在的发布流程预支分支。
-- 仓库初始化 `develop` 分支在 platform-skeleton 开工时完成。
+- `develop` 是当前集成基线；工作分支完成后按 scoped commit 合回，不在 `main` 上直接开发。
 
 ## 文档索引
 
@@ -33,6 +35,8 @@
 | 已拍板决策（ADR 001-003） | `.codestable/requirements/adrs/` |
 | 能力愿景索引 | `.codestable/requirements/VISION.md` |
 | 规划与接口契约（硬约束） | `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` |
+| Roadmap 当前执行状态 | `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml` |
 | 需求讨论原始记录 | `.codestable/brainstorms/photographer-private-crm/brainstorm.md` |
+| HTTP API 参考清单 | `docs/api/manifest.yaml`（已有条目见 `docs/api/`，机器契约仍以 `api/openapi.yaml` 为准） |
 | Go 编码规范 checklist | `docs/go-style-checklist.md`（决策：`.codestable/compound/2026-07-06-decision-go-uber-style-guide.md`） |
 | 前端编码规范 checklist | `docs/frontend-style-checklist.md`（决策：`.codestable/compound/2026-07-07-decision-frontend-toolchain-first-standard.md`） |

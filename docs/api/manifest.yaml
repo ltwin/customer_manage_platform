@@ -1,7 +1,7 @@
 project: customer_manage_platform
 entry_type: endpoint
 source_root: .
-last_scanned: 2026-07-09
+last_scanned: 2026-07-11
 
 entries:
   - entry: auth
@@ -48,10 +48,26 @@ entries:
       - backend/internal/platform/httpapi/orders.go
       - backend/internal/order/model.go
       - backend/internal/order/service.go
+      - backend/internal/order/schedulability.go
       - backend/internal/order/state_machine.go
       - backend/internal/order/repository.go
+      - backend/internal/platform/idempotency/idempotency.go
       - frontend/src/api/client.ts
       - frontend/src/api/schema.d.ts
     doc_path: docs/api/orders.md
     status: current
-    note: "order-tracking 验收后生成的首个 API reference 条目"
+    note: "2026-07-11 已同步 schedule-calendar 带来的 creation_mode、Idempotency-Key、schedulable_at、details 与 order_in_use 增量"
+
+  - entry: schedule
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/schedule.go
+      - backend/internal/schedule/model.go
+      - backend/internal/schedule/service.go
+      - backend/internal/schedule/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/schedule.md
+    status: pending
+    note: "schedule-calendar 已落地，待走 cs-doc-api 生成完整参考"
