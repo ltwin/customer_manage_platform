@@ -10,6 +10,7 @@
 		"test:package-price": "node --test --experimental-transform-types scripts/package-price.test.ts",
 		"test:api-client": "node --test --experimental-transform-types scripts/api-client.test.ts",
 		"test:schedule": "node --test --experimental-transform-types scripts/schedule.test.ts",
+		"test:avatar-layout": "node --test scripts/avatar-layout.test.mjs",
     "test:prototype": "node --test scripts/prototype-contract.test.mjs",
     "preview": "vite preview",
     "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts"
