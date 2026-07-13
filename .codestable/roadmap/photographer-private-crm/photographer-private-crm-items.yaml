@@ -61,10 +61,10 @@ items:
   - slug: reminder-engine
     description: 提醒引擎：/admin/reminders/scan 幂等生成生日/回访/流失三类提醒、done/dismiss、参数可配置（按拍摄类型流失阈值、账号时区）
     depends_on: [customer-profile-complete, order-tracking]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-12-reminder-engine
     minimal_loop: false
-    notes: 依赖理由：生日规则要 birthday 字段（customer-profile-complete）、回访/流失要订单状态时间戳（order-tracking）；硬验收：同日双跑扫描零新增、时区日界用例、时间戳缺失跳过、零成交不告警、merge 迁移提醒用例；GET /reminders 支持 customer_id 过滤（2026-07-06 契约更新，客户档案提醒 tab 数据源）
+    notes: 依赖理由：生日规则要 birthday 字段（customer-profile-complete）、回访/流失要订单状态时间戳（order-tracking）。Settings 独立归 backend/internal/settings 域包，供 reminder、GET /me 与后续 telegram-digest 消费。完成证据：同日双跑零新增、三规则正反边界、时区日界、时间戳缺失跳过、零成交不告警、阈值生效、merge 迁移、已删订单 auto-dismiss、customer_id 过滤、runner 每本地日一次与前端三路径均已通过 review/QA。已知边界：digest_hour 早于跨日扫描完成时由 telegram-digest 推送前补扫；复购 dismiss 后再取消可能因既有 dedup 行静默；时区西移导致检查点暂时领先后续自然日自愈。
 
   - slug: telegram-digest
     description: TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志

@@ -292,7 +292,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 提醒列表 */
+        /**
+         * 提醒列表
+         * @description 默认按 due_date ASC, id ASC 稳定排序
+         */
         get: operations["listReminders"];
         put?: never;
         /** 手工创建自定义提醒 */

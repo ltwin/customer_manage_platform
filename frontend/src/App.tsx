@@ -10,6 +10,8 @@ import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
 import OrdersPage from './pages/OrdersPage'
 import PackagesPage from './pages/PackagesPage'
+import RemindersPage from './pages/RemindersPage'
+import SettingsPage from './pages/SettingsPage'
 import { getToken, getTokenSnapshot, subscribeToken } from './auth/token'
 
 // 守卫路由骨架：后续域 feature 的受保护页面都挂在 RequireAuth 之下（design 2.2 扩展点）
@@ -41,6 +43,8 @@ export default function App() {
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/packages" element={<PackagesPage />} />
+        <Route path="/reminders" element={<RemindersPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

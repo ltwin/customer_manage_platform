@@ -16,3 +16,4 @@ output-options:
     - packages
     - orders
     - schedule
+    - reminder-engine

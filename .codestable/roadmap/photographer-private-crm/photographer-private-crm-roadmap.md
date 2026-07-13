@@ -95,9 +95,9 @@ photographer-private-crm
 - **Depth 判断**：deep——重叠检测与区间查询藏在域内。
 
 ### reminder · 提醒与触达域
-- **职责**：按规则（生日 / 回访 / 流失）每日扫描客户与订单数据、幂等生成提醒；提醒完成 / 忽略；TG Bot 绑定与每日摘要推送。**刻意不拆独立"通知模块"**——首版单通道（TG），拆出来是 pass-through 假 seam；TG 以 injected port 形式存在于本域内（见 4.5）。
+- **职责**：按规则（生日 / 回访 / 流失）每日扫描客户与订单数据、幂等生成提醒；提醒完成 / 忽略；账号级 Settings（时区、提醒参数、digest_hour、telegram_chat_id）归 `backend/internal/settings` 域包，作为 reminder、`GET /me` 与后续 telegram-digest 的配置来源；TG Bot 绑定与每日摘要推送仍由后续条目实现。**刻意不拆独立"通知模块"**——首版单通道（TG），拆出来是 pass-through 假 seam；TG 以 injected port 形式存在于本域内（见 4.5）。
 - **承载的子 feature**：reminder-engine、telegram-digest
-- **触碰的现有代码**：无
+- **触碰的现有代码**：backend reminder/settings 域包、platform store/httpapi 与 server composition root、customer merge、webapp 提醒/设置页及客户档案提醒 tab
 - **Depth 判断**：deep——规则参数、幂等键、扫描窗口全部藏在域内，对外只有 Reminder 资源和摘要推送。
 
 ### webapp · Web 前端
@@ -368,6 +368,7 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
   DELETE /schedule/slots/{id}       → 204；只删档期，不改变或删除订单，UI 必须明示
 提醒域
   GET    /reminders?status=pending&customer_id=&due_before=&page=
+                                    默认稳定排序 due_date ASC, id ASC
   POST   /reminders                 {type:custom, customer_id?, due_date, content} → 201
   POST   /reminders/{id}/done | /dismiss
   POST   /admin/reminders/scan      {date?("YYYY-MM-DD", 缺省=账号时区今日)}
@@ -469,7 +470,7 @@ object_key = avatars/{account_id}/customers/{customer_id}/{avatar_version}/{avat
        全量扫描必须幂等
 规则:
   birthday   触发: customer.birthday 距今 ≤ birthday_lead_days 且未过（按账号时区判日界）
-             dedup_key = "birthday:{customer_id}:{当年年份}"
+             dedup_key = "birthday:{customer_id}:{生日发生日年份}"
   follow_up  触发: order.status=delivered 且 delivered_at + follow_up_after_days ≤ 今日
              dedup_key = "follow_up:{order_id}"
   churn      触发: 客户至少有一单 delivered|closed、当前无非终态订单，且最近一单 shot_at
@@ -477,6 +478,7 @@ object_key = avatars/{account_id}/customers/{customer_id}/{avatar_version}/{avat
                    （零成交客户不生成 churn——线索跟进规则记二期，防提醒噪音）
              dedup_key = "churn:{customer_id}:{最近一单 order_id}"
              （客户再下单后旧 churn 提醒自动 dismissed）
+  custom     手工创建；dedup_key = "custom:{reminder_id}"
 ```
 
 **约束**：dedup_key 唯一冲突 = 静默跳过（不报错不重复）；重复扫描零新增是 reminder-engine 的硬验收；status=merged/archived 客户不参与扫描；follow_up/churn 扫描遇 `delivered_at`/`shot_at` 缺失（历史数据）→ 跳过该条并记日志，不报错。
@@ -548,8 +550,8 @@ GET /export → application/json（Content-Disposition 附件）
    - 所属模块：platform + order + schedule + webapp ｜ 依赖：order-tracking ｜ 状态：done ｜ 对应 feature：2026-07-09-schedule-calendar
    - 备注：依赖理由——type=shoot 的 slot 必须挂订单。完成信号：①日历页与客户档案页共用「新建拍摄档期」流程，客户档案入口预选当前客户；②桌面端从客户档案到建单+挂档 ≤30 秒，月历查指定日期安排与重叠 ≤10 秒；③月历周一首列并查询固定 6 周网格，跨日/全天 slot 在每个相交本地自然日可见，密集日以 display_start/id 稳定排序且冲突数按当日参与重叠的唯一 slot 计；④保存前展示具体重叠对象但允许继续，成功后重拉给当前冲突提示，多在途写全部完成后统一重拉；⑤组合流程使用 128-bit flow_id 的 per-step attempt Idempotency-Key 和 session flow journal，服务端 operation 固定为 typed `order.create.v1`/`schedule-slot.create.v1`，重复点击/响应丢失/5xx/硬刷新不产生重复订单或 slot，24 小时过期后禁自动重放；历史无候选跳转 backfill 时，schedule_draft 只允许历史可排期六态，默认 shot 并按账号时区预填档期开始日，POST order 前升级为同一 pending journal 的 `backfill_order` phase，结果未知不得重复补录；只有 unknown 结果持续阻塞且不可清理，明确失败或资源已知时可保留现状/补偿后结束；⑥新建订单先落 consulting，所有 consulting 订单都在 slot 成功并刷新日历后再显式推进 scheduled，刷新返回的 ScheduleSlotListItem.customer_id 覆盖 journal 旧值后才进入状态同步，状态同步 unknown 保留恢复入口，明确失败可重试、删除 slot 或保留异常现状并结束，不产生无档期的已定档订单；⑦shoot 写与归档/merge 共用 customer→order 锁序，按先提交者线性化且无死锁/悬空引用；连续 merge 返回 customer_changed 时保留表单与已知订单、清旧候选后重拉确认；ScheduleSlotListItem 为 type 判别 union，shoot 必返订单/客户/状态摘要；⑧建/删 slot 不自动改订单状态，删 slot 明示订单保留并可直达客户档案订单 tab；⑨接通被 shoot slot 引用订单 DELETE → 409 order_in_use，并用 typed details 直达关联档期；⑩creation_mode 与 schedulable_at 服务端复用订单+客户时间矩阵，未来要求 active 客户、历史允许 active/archived、merged 永拒，缺 header、缺候选过滤的既有订单调用/排序/total 不变；⑪GET /me timezone 驱动日界，含 schedule_draft OrderWorkspace 历史时间、非默认 DST 用例，加载失败禁用写入而不回退浏览器时区；⑫首版仅月视图，移动端只验收查档期轻路径，不做周视图/拖拽/重复档期。组合流程仍是前端显式调用订单与档期两个独立端点，不新增聚合端点。
 8. **reminder-engine** — 提醒引擎：/admin/reminders/scan 幂等生成三类提醒、done/dismiss、参数可配置（含按拍摄类型流失阈值、账号时区）
-   - 所属模块：reminder ｜ 依赖：customer-profile-complete, order-tracking ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 6）；完成信号：同日双跑扫描零新增；三规则正/反用例（含时区日界、时间戳缺失跳过、零成交不告警）；改阈值后下轮扫描生效；**merge 迁移提醒用例**；GET /reminders 支持 customer_id 过滤（4.3，2026-07-06 契约更新）；**订单可物理删除（2026-07-09）**：引用已删订单的 pending reminder 处理（自动 dismiss/跳过）细则在本条 design 定义并验收
+   - 所属模块：reminder + webapp ｜ 依赖：customer-profile-complete, order-tracking ｜ 状态：done ｜ 对应 feature：2026-07-12-reminder-engine
+   - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 6）。Settings 独立归 `backend/internal/settings` 域包，提供有效默认值、提醒参数与账号时区，供 reminder、`GET /me` 和后续 telegram-digest 消费。完成证据：同日双跑零新增；三规则正/反/边界、时区日界、时间戳缺失跳过、零成交不告警、改阈值生效、merge 迁移、已删订单 auto-dismiss、customer_id 过滤、runner 每本地日一次与前端三路径均已通过 review/QA。
 9. **telegram-digest** — TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
    - 所属模块：reminder（TelegramPort）｜ 依赖：reminder-engine, schedule-calendar ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——摘要内容 = 提醒（条目 8）+ 当日档期（条目 7）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到含真实数据的摘要（截图）；未绑定时系统全功能正常
@@ -608,6 +610,7 @@ GET /export → application/json（Content-Disposition 附件）
 - ✅ 「渠道」「线索」已补入 CONTEXT.md（2026-07-06，cs-domain；线索定义为"无成交订单的客户"）；技术栈已落 ADR-002（PostgreSQL）与 ADR-003（Gin + JSON/OpenAPI）。
 - 剩余未起草 req 仅提醒引擎；档期已由 `2026-07-09-schedule-calendar` 落地并在验收后升级为 current，订单/套系也已随已完成 feature 回填 current。
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
+- **reminder-engine 已知边界（2026-07-13 acceptance）**：① `digest_hour` 早于每日 runner 首次跨日扫描完成时刻时可能出现摘要空窗，telegram-digest 应在推送前顺带触发幂等扫描；② 复购触发旧 churn 自动 dismissed 后若新订单再取消，既有 churn dedup 行不会回到 pending，可能静默到产生新的最近成交单；③ 账号时区向西修改可能让检查点暂时领先本地日期，后续自然日推进后自愈。三项均不改变本 feature 已验收边界，后续消费/迭代需显式读取。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
 - ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量；2026-07-10 schedule-calendar update 同时把 `GET /me` 收编为平台契约并增加 timezone，消解原白名单债。
 - **头像与全量导出决策 gate**：`customer-avatar` 只保证 Customer JSON 带可用 `avatar_revision/avatar_version/avatar_url` 与本地卷可做一致备份；当前 §4.6 仍是实体 JSON。`data-export` design 启动前必须由 owner 二选一：reference-only JSON（明确不承诺头像便携恢复），或先把 §4.6 update 为媒体文件 + exact-generation manifest/key/count/checksum 的便携包。未拍板不得启动/完成该条；不得把鉴权 URL 冒充可携带资产。
@@ -615,6 +618,7 @@ GET /export → application/json（Content-Disposition 附件）
 
 ## 8. 变更日志
 
+- 2026-07-13（reminder-engine acceptance）：条目 8 完成；Settings 明确归 `backend/internal/settings`，`GET /reminders` 固定 `due_date ASC,id ASC`，birthday dedup 年份明确为生日发生日年份，custom dedup 固定为 `custom:{reminder_id}`；记录 digest 空窗、复购取消后 churn 静默和时区西移检查点自愈三项已知边界。
 - 2026-07-13（customer-avatar owner 选择）：merged source 默认保留合并时的头像且 GET 可读，但 PUT 继续 `409 customer_merged`，DELETE 改为唯一 cleanup-only PII 清理例外；它只能清 pointer 并进入精确代次 GC，不恢复 merged 档案其他编辑能力。owner 同时接受首版 GC 默认值：24h grace、每小时 runner、每账号每 tick 各一页 object inventory/current-pointer audit +100 due。
 - 2026-07-13（customer-avatar roadmap round 10 收敛）：generation 模型继续补齐四个边界。① 新增独立 `avatar_revision=ar-{非负 bigint}`，PUT/DELETE If-Match 用 revision，content v/ETag 继续用 checksum，关闭 A→B→A ABA；② pre-current generation 只要出现 GC row 就永久烧毁并换 fresh object_id，避免 DB session 丢失后的在途 Delete 与原 PUT 重新晋升同一 key；③ desired=current 只有完整验证实际 generation 后才 no-op 200，缺失/损坏走 revision CAS 的 fresh generation 修复；④ 一致备份/OSS copy 改为 exact-generation manifest/key/object_id 核验，并把 signal-aware root context、HTTP graceful shutdown 与 runner 有界退出纳入本 feature。
 - 2026-07-13（customer-avatar roadmap round 9 修正）：独立 review 证明 transaction-scoped advisory lock 会在 PostgreSQL session 丢失时提前释放，而已发出的 filesystem/OSS Delete 仍可能迟到，故移除 `AvatarObjectFence`。改为公开 checksum version + 永不复用的随机 `avatar_object_id` 双层模型，五字段 current pointer 指向完整 generation，GC 只删精确旧 object_id；同 checksum 再发布必用新 key，因此迟到 Delete 在存储侧天然隔离。保留 pending enqueue、MaintenanceRunner cadence/single-flight/shutdown、require-mount attestation 与固定摘要 CustomerAvatar 约束。

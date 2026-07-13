@@ -23,7 +23,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
+	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
 
 func main() {
@@ -67,6 +69,16 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	avatarApp := customer.NewAvatarApplication(avatarRepo, objects)
 	maintenance := customer.NewAvatarMaintenanceRunner(s, avatarRepo, objects, logger)
 
+	settingsSvc := settings.NewService(settings.NewPostgresRepository()).WithScopeFactory(func(accountID string) store.AccountScope {
+		return s.ScopeFor(auth.AccountContext{AccountID: accountID})
+	})
+	reminderSvc := reminder.NewService(
+		reminder.NewPostgresRepository(),
+		reminder.NewSettingsAdapter(settingsSvc),
+		logger,
+	)
+	reminderRunner := reminder.NewScanRunner(s, reminderSvc, settingsSvc, logger)
+
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:          logger,
 		DB:              s,
@@ -76,9 +88,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Orders:          order.NewService(order.NewPostgresRepository()),
 		Packages:        pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
 		Idempotency:     idempotency.NewExecutor(),
+		AccountTimezone: settingsSvc,
 		Schedule:        schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
 		Avatar:          avatarApp,
 		AvatarProcessor: avatarimage.NewProcessor(),
+		Settings:        settingsSvc,
+		Reminders:       reminderSvc,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -92,7 +107,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	defer cancel()
 	runnerDone := make(chan struct{})
 	go func() {
-		maintenance.Run(runCtx)
+		// 两个 runner 共享同一 lifecycle；任一退出都算 runner 结束（有界退出）。
+		done := make(chan struct{}, 2)
+		go func() { maintenance.Run(runCtx); done <- struct{}{} }()
+		go func() { reminderRunner.Run(runCtx); done <- struct{}{} }()
+		<-done
+		<-done
 		close(runnerDone)
 	}()
 	serverResult := make(chan error, 1)
@@ -148,6 +168,6 @@ func waitForRunner(ctx context.Context, runnerDone <-chan struct{}) error {
 	case <-runnerDone:
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("avatar maintenance shutdown timeout: %w", ctx.Err())
+		return fmt.Errorf("background runner shutdown timeout: %w", ctx.Err())
 	}
 }

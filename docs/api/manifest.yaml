@@ -85,3 +85,35 @@ entries:
     doc_path: docs/api/schedule.md
     status: pending
     note: "schedule-calendar 已落地，待走 cs-doc-api 生成完整参考"
+
+  - entry: reminders
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/reminders.go
+      - backend/internal/platform/httpapi/router.go
+      - backend/internal/reminder/model.go
+      - backend/internal/reminder/service.go
+      - backend/internal/reminder/repository.go
+      - backend/internal/reminder/runner.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/reminders.md
+    status: current
+    note: "2026-07-13 reminder-engine API 参考已通过 owner review"
+
+  - entry: settings
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/settings.go
+      - backend/internal/platform/httpapi/auth.go
+      - backend/internal/platform/httpapi/router.go
+      - backend/internal/settings/model.go
+      - backend/internal/settings/service.go
+      - backend/internal/settings/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/settings.md
+    status: current
+    note: "2026-07-13 Settings API 参考已通过 owner review"

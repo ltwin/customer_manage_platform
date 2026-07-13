@@ -24,6 +24,8 @@ tags:
     description: 后端 codegen 切片标签（customer-profile-complete 的档案五操作）
   - name: customer-avatar
     description: 后端 codegen 切片标签（客户头像条件写与鉴权读取）
+  - name: reminder-engine
+    description: 后端 codegen 切片标签（reminder-engine 的提醒五操作 + 设置读写）
   - name: customers
     description: 客户域（customer-core / customer-profile-complete）
   - name: packages
@@ -33,9 +35,9 @@ tags:
   - name: schedule
     description: 档期域（schedule-slots，未实现）
   - name: reminders
-    description: 提醒域（reminder-engine，未实现）
+    description: 提醒域（reminder-engine）
   - name: settings
-    description: 设置（settings-foundation，未实现）
+    description: 设置（GET/PATCH 归 reminder-engine；telegram 绑定归 telegram-digest，未实现）
   - name: dashboard
     description: dashboard 聚合（dashboard，未实现）
   - name: export
@@ -1061,9 +1063,10 @@ paths:
 
   /reminders:
     get:
-      tags: [reminders]
+      tags: [reminders, reminder-engine]
       operationId: listReminders
       summary: 提醒列表
+      description: 默认按 due_date ASC, id ASC 稳定排序
       parameters:
         - name: status
           in: query
@@ -1102,7 +1105,7 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
     post:
-      tags: [reminders]
+      tags: [reminders, reminder-engine]
       operationId: createReminder
       summary: 手工创建自定义提醒
       requestBody:
@@ -1139,7 +1142,7 @@ paths:
 
   /reminders/{id}/done:
     post:
-      tags: [reminders]
+      tags: [reminders, reminder-engine]
       operationId: markReminderDone
       summary: 标记提醒完成
       parameters:
@@ -1160,7 +1163,7 @@ paths:
 
   /reminders/{id}/dismiss:
     post:
-      tags: [reminders]
+      tags: [reminders, reminder-engine]
       operationId: dismissReminder
       summary: 忽略提醒
       parameters:
@@ -1181,7 +1184,7 @@ paths:
 
   /admin/reminders/scan:
     post:
-      tags: [reminders]
+      tags: [reminders, reminder-engine]
       operationId: scanReminders
       summary: 提醒扫描唯一手动触发入口（每日定时与手动共用，鉴权同 §4.1）
       requestBody:
@@ -1219,7 +1222,7 @@ paths:
 
   /settings:
     get:
-      tags: [settings]
+      tags: [settings, reminder-engine]
       operationId: getSettings
       summary: 读取设置
       responses:
@@ -1234,7 +1237,7 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
     patch:
-      tags: [settings]
+      tags: [settings, reminder-engine]
       operationId: updateSettings
       summary: 更新设置
       requestBody:

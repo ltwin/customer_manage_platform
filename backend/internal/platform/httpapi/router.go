@@ -16,7 +16,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
+	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
 
 // Pinger 是健康检查所需的最小数据库探测面（测试注入失败用）。
@@ -43,6 +45,8 @@ type RouterDeps struct {
 	Schedule        *scheduledomain.Service
 	Avatar          *customerdomain.AvatarApplication
 	AvatarProcessor AvatarProcessor
+	Settings        *settings.Service
+	Reminders       *reminder.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -77,6 +81,8 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		schedule:        deps.Schedule,
 		avatar:          deps.Avatar,
 		avatarProcessor: deps.AvatarProcessor,
+		settings:        deps.Settings,
+		reminders:       deps.Reminders,
 	}
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", h.Login)
@@ -108,6 +114,14 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.POST("/packages", h.CreatePackage)
 	protected.PATCH("/packages/:id", func(c *gin.Context) { h.UpdatePackage(c, c.Param("id")) })
 	protected.DELETE("/packages/:id", func(c *gin.Context) { h.DeletePackage(c, c.Param("id")) })
+	// reminder-engine：提醒五操作 + 设置读写
+	protected.GET("/reminders", h.listRemindersRoute)
+	protected.POST("/reminders", h.CreateReminder)
+	protected.POST("/reminders/:id/done", func(c *gin.Context) { h.MarkReminderDone(c, c.Param("id")) })
+	protected.POST("/reminders/:id/dismiss", func(c *gin.Context) { h.DismissReminder(c, c.Param("id")) })
+	protected.POST("/admin/reminders/scan", h.ScanReminders)
+	protected.GET("/settings", h.GetSettings)
+	protected.PATCH("/settings", h.UpdateSettings)
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）

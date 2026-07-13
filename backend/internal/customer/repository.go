@@ -353,6 +353,10 @@ func (PostgresRepository) Merge(ctx context.Context, scope store.AccountScope, t
 		if _, err := tx.Update(ctx, "orders", "customer_id = $2", "customer_id = $3", targetID, sourceID); err != nil {
 			return err
 		}
+		// 提醒改挂 target（reminder-engine §4.2；D6 原样改挂含 pending/done）。
+		if _, err := tx.Update(ctx, "reminders", "customer_id = $2", "customer_id = $3", targetID, sourceID); err != nil {
+			return err
+		}
 		// 转介绍指针批量重定向（D1）：指向 source 的改指 target；target 自指清空。
 		if _, err := tx.Update(ctx, "customers", "referrer_customer_id = $2", "referrer_customer_id = $3", targetID, sourceID); err != nil {
 			return err

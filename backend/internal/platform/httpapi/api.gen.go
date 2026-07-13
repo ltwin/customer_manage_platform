@@ -179,6 +179,51 @@ func (e PricingMode) Valid() bool {
 	}
 }
 
+// Defines values for ReminderStatus.
+const (
+	Dismissed ReminderStatus = "dismissed"
+	Done      ReminderStatus = "done"
+	Pending   ReminderStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ReminderStatus enum.
+func (e ReminderStatus) Valid() bool {
+	switch e {
+	case Dismissed:
+		return true
+	case Done:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReminderType.
+const (
+	ReminderTypeBirthday ReminderType = "birthday"
+	ReminderTypeChurn    ReminderType = "churn"
+	ReminderTypeCustom   ReminderType = "custom"
+	ReminderTypeFollowUp ReminderType = "follow_up"
+)
+
+// Valid indicates whether the value is a known member of the ReminderType enum.
+func (e ReminderType) Valid() bool {
+	switch e {
+	case ReminderTypeBirthday:
+		return true
+	case ReminderTypeChurn:
+		return true
+	case ReminderTypeCustom:
+		return true
+	case ReminderTypeFollowUp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ShootScheduleSlotListItemType.
 const (
 	Shoot ShootScheduleSlotListItemType = "shoot"
@@ -308,6 +353,21 @@ func (e ListPackagesParamsStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreateReminderJSONBodyType.
+const (
+	CreateReminderJSONBodyTypeCustom CreateReminderJSONBodyType = "custom"
+)
+
+// Valid indicates whether the value is a known member of the CreateReminderJSONBodyType enum.
+func (e CreateReminderJSONBodyType) Valid() bool {
+	switch e {
+	case CreateReminderJSONBodyTypeCustom:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account 账号（摄影师）；永不含 password_hash
 type Account struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
@@ -325,6 +385,12 @@ type AvatarVersion = string
 
 // Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
 type Birthday = string
+
+// ChurnThreshold defines model for ChurnThreshold.
+type ChurnThreshold struct {
+	Days      int       `json:"days"`
+	ShootType ShootType `json:"shoot_type"`
+}
 
 // Customer defines model for Customer.
 type Customer struct {
@@ -618,6 +684,29 @@ type PackageStatus string
 // PricingMode defines model for PricingMode.
 type PricingMode string
 
+// Reminder defines model for Reminder.
+type Reminder struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId  *string    `json:"account_id,omitempty"`
+	Content    string     `json:"content"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	CustomerId *string    `json:"customer_id,omitempty"`
+
+	// DedupKey unique per account（规则见 §4.4）
+	DedupKey string             `json:"dedup_key"`
+	DueDate  openapi_types.Date `json:"due_date"`
+	Id       *string            `json:"id,omitempty"`
+	OrderId  *string            `json:"order_id,omitempty"`
+	Status   ReminderStatus     `json:"status"`
+	Type     ReminderType       `json:"type"`
+}
+
+// ReminderStatus defines model for ReminderStatus.
+type ReminderStatus string
+
+// ReminderType defines model for ReminderType.
+type ReminderType string
+
 // ScheduleConflictDetails order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
 type ScheduleConflictDetails struct {
 	ScheduleSlotId  string    `json:"schedule_slot_id"`
@@ -657,6 +746,22 @@ type ScheduleSlotListItemBase struct {
 	Id      *string   `json:"id,omitempty"`
 	Note    *string   `json:"note,omitempty"`
 	StartAt time.Time `json:"start_at"`
+}
+
+// Settings defines model for Settings.
+type Settings struct {
+	BirthdayLeadDays int `json:"birthday_lead_days"`
+
+	// ChurnThresholds 默认全类型 180
+	ChurnThresholds []ChurnThreshold `json:"churn_thresholds"`
+
+	// DigestHour 按 timezone
+	DigestHour        int     `json:"digest_hour"`
+	FollowUpAfterDays int     `json:"follow_up_after_days"`
+	TelegramChatId    *string `json:"telegram_chat_id,omitempty"`
+
+	// Timezone IANA，默认 Asia/Shanghai；所有 date-only 判定按此时区（§4.1）
+	Timezone string `json:"timezone"`
 }
 
 // ShootScheduleSlotListItem defines model for ShootScheduleSlotListItem.
@@ -747,6 +852,12 @@ type ValidationFailed = ErrorEnvelope
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
+
+// ScanRemindersJSONBody defines parameters for ScanReminders.
+type ScanRemindersJSONBody struct {
+	// Date 缺省=账号时区今日
+	Date *openapi_types.Date `json:"date,omitempty"`
+}
 
 // LoginJSONBody defines parameters for Login.
 type LoginJSONBody struct {
@@ -933,6 +1044,26 @@ type UpdatePackageJSONBody struct {
 	Status       *PackageStatus         `json:"status,omitempty"`
 }
 
+// ListRemindersParams defines parameters for ListReminders.
+type ListRemindersParams struct {
+	Status     *ReminderStatus     `form:"status,omitempty" json:"status,omitempty"`
+	CustomerId *string             `form:"customer_id,omitempty" json:"customer_id,omitempty"`
+	DueBefore  *openapi_types.Date `form:"due_before,omitempty" json:"due_before,omitempty"`
+	Page       *Page               `form:"page,omitempty" json:"page,omitempty"`
+	PageSize   *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// CreateReminderJSONBody defines parameters for CreateReminder.
+type CreateReminderJSONBody struct {
+	Content    string                     `json:"content"`
+	CustomerId *string                    `json:"customer_id,omitempty"`
+	DueDate    openapi_types.Date         `json:"due_date"`
+	Type       CreateReminderJSONBodyType `json:"type"`
+}
+
+// CreateReminderJSONBodyType defines parameters for CreateReminder.
+type CreateReminderJSONBodyType string
+
 // ListScheduleSlotsParams defines parameters for ListScheduleSlots.
 type ListScheduleSlotsParams struct {
 	// From 半开区间 [from,to) 的 UTC 起点；月历传完整 6 周可见网格的账号本地日界
@@ -972,6 +1103,20 @@ type UpdateScheduleSlotJSONBody struct {
 	Type    *SlotType                 `json:"type,omitempty"`
 }
 
+// UpdateSettingsJSONBody defines parameters for UpdateSettings.
+type UpdateSettingsJSONBody struct {
+	BirthdayLeadDays  *int              `json:"birthday_lead_days,omitempty"`
+	ChurnThresholds   *[]ChurnThreshold `json:"churn_thresholds,omitempty"`
+	DigestHour        *int              `json:"digest_hour,omitempty"`
+	FollowUpAfterDays *int              `json:"follow_up_after_days,omitempty"`
+
+	// Timezone IANA 时区
+	Timezone *string `json:"timezone,omitempty"`
+}
+
+// ScanRemindersJSONRequestBody defines body for ScanReminders for application/json ContentType.
+type ScanRemindersJSONRequestBody ScanRemindersJSONBody
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
@@ -1005,11 +1150,17 @@ type CreatePackageJSONRequestBody = PackageInput
 // UpdatePackageJSONRequestBody defines body for UpdatePackage for application/json ContentType.
 type UpdatePackageJSONRequestBody UpdatePackageJSONBody
 
+// CreateReminderJSONRequestBody defines body for CreateReminder for application/json ContentType.
+type CreateReminderJSONRequestBody CreateReminderJSONBody
+
 // CreateScheduleSlotJSONRequestBody defines body for CreateScheduleSlot for application/json ContentType.
 type CreateScheduleSlotJSONRequestBody CreateScheduleSlotJSONBody
 
 // UpdateScheduleSlotJSONRequestBody defines body for UpdateScheduleSlot for application/json ContentType.
 type UpdateScheduleSlotJSONRequestBody UpdateScheduleSlotJSONBody
+
+// UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
+type UpdateSettingsJSONRequestBody UpdateSettingsJSONBody
 
 // AsShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a ShootScheduleSlotListItem
 func (t ScheduleSlotListItem) AsShootScheduleSlotListItem() (ShootScheduleSlotListItem, error) {
@@ -1100,6 +1251,9 @@ func (t *ScheduleSlotListItem) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// 提醒扫描唯一手动触发入口（每日定时与手动共用，鉴权同 §4.1）
+	// (POST /admin/reminders/scan)
+	ScanReminders(c *gin.Context)
 	// 单账号密码登录，签发 Bearer token
 	// (POST /auth/login)
 	Login(c *gin.Context)
@@ -1163,6 +1317,18 @@ type ServerInterface interface {
 	// 更新套系；归档 = PATCH {status:archived}（无 in-use 校验，§4.3）
 	// (PATCH /packages/{id})
 	UpdatePackage(c *gin.Context, id Id)
+	// 提醒列表
+	// (GET /reminders)
+	ListReminders(c *gin.Context, params ListRemindersParams)
+	// 手工创建自定义提醒
+	// (POST /reminders)
+	CreateReminder(c *gin.Context)
+	// 忽略提醒
+	// (POST /reminders/{id}/dismiss)
+	DismissReminder(c *gin.Context, id Id)
+	// 标记提醒完成
+	// (POST /reminders/{id}/done)
+	MarkReminderDone(c *gin.Context, id Id)
 	// 档期区间查询（含跨界 slot）
 	// (GET /schedule/slots)
 	ListScheduleSlots(c *gin.Context, params ListScheduleSlotsParams)
@@ -1175,6 +1341,12 @@ type ServerInterface interface {
 	// 更新档期；时间/type/order 变化重验订单与客户矩阵，note-only 不重验外部状态
 	// (PATCH /schedule/slots/{id})
 	UpdateScheduleSlot(c *gin.Context, id Id)
+	// 读取设置
+	// (GET /settings)
+	GetSettings(c *gin.Context)
+	// 更新设置
+	// (PATCH /settings)
+	UpdateSettings(c *gin.Context)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -1185,6 +1357,21 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// ScanReminders operation middleware
+func (siw *ServerInterfaceWrapper) ScanReminders(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ScanReminders(c)
+}
 
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(c *gin.Context) {
@@ -1907,6 +2094,136 @@ func (siw *ServerInterfaceWrapper) UpdatePackage(c *gin.Context) {
 	siw.Handler.UpdatePackage(c, id)
 }
 
+// ListReminders operation middleware
+func (siw *ServerInterfaceWrapper) ListReminders(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRemindersParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "customer_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "customer_id", c.Request.URL.Query(), &params.CustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter customer_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "due_before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "due_before", c.Request.URL.Query(), &params.DueBefore, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter due_before: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListReminders(c, params)
+}
+
+// CreateReminder operation middleware
+func (siw *ServerInterfaceWrapper) CreateReminder(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateReminder(c)
+}
+
+// DismissReminder operation middleware
+func (siw *ServerInterfaceWrapper) DismissReminder(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DismissReminder(c, id)
+}
+
+// MarkReminderDone operation middleware
+func (siw *ServerInterfaceWrapper) MarkReminderDone(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MarkReminderDone(c, id)
+}
+
 // ListScheduleSlots operation middleware
 func (siw *ServerInterfaceWrapper) ListScheduleSlots(c *gin.Context) {
 
@@ -2040,6 +2357,36 @@ func (siw *ServerInterfaceWrapper) UpdateScheduleSlot(c *gin.Context) {
 	siw.Handler.UpdateScheduleSlot(c, id)
 }
 
+// GetSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetSettings(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSettings(c)
+}
+
+// UpdateSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSettings(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateSettings(c)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -2067,6 +2414,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/admin/reminders/scan", wrapper.ScanReminders)
 	router.POST(options.BaseURL+"/auth/login", wrapper.Login)
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
@@ -2088,8 +2436,14 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/packages", wrapper.CreatePackage)
 	router.DELETE(options.BaseURL+"/packages/:id", wrapper.DeletePackage)
 	router.PATCH(options.BaseURL+"/packages/:id", wrapper.UpdatePackage)
+	router.GET(options.BaseURL+"/reminders", wrapper.ListReminders)
+	router.POST(options.BaseURL+"/reminders", wrapper.CreateReminder)
+	router.POST(options.BaseURL+"/reminders/:id/dismiss", wrapper.DismissReminder)
+	router.POST(options.BaseURL+"/reminders/:id/done", wrapper.MarkReminderDone)
 	router.GET(options.BaseURL+"/schedule/slots", wrapper.ListScheduleSlots)
 	router.POST(options.BaseURL+"/schedule/slots", wrapper.CreateScheduleSlot)
 	router.DELETE(options.BaseURL+"/schedule/slots/:id", wrapper.DeleteScheduleSlot)
 	router.PATCH(options.BaseURL+"/schedule/slots/:id", wrapper.UpdateScheduleSlot)
+	router.GET(options.BaseURL+"/settings", wrapper.GetSettings)
+	router.PATCH(options.BaseURL+"/settings", wrapper.UpdateSettings)
 }

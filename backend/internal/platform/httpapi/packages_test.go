@@ -275,8 +275,13 @@ func TestPackageAPIErrorPathsAndScope(t *testing.T) {
 		t.Fatalf("missing auth should be 401, got %d %s", rec.Code, rec.Body.String())
 	}
 
-	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/reminders", tokenA, nil)
+	// bind-token / dashboard 仍未实现，保持 404（reminder-engine 范围守护）。
+	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/settings/telegram/bind-token", tokenA, []byte(`{}`))
 	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
-		t.Fatalf("unimplemented reminder endpoint should stay 404, got %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("unimplemented bind-token should stay 404, got %d %s", rec.Code, rec.Body.String())
+	}
+	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/dashboard", tokenA, nil)
+	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
+		t.Fatalf("unimplemented dashboard should stay 404, got %d %s", rec.Code, rec.Body.String())
 	}
 }

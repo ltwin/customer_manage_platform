@@ -14,7 +14,9 @@ import (
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
+	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
 
 const defaultAccountTimezone = "Asia/Shanghai"
@@ -63,6 +65,8 @@ type handlers struct {
 	schedule        *scheduledomain.Service
 	avatar          *customerdomain.AvatarApplication
 	avatarProcessor AvatarProcessor
+	settings        *settings.Service
+	reminders       *reminder.Service
 }
 
 var _ ServerInterface = (*handlers)(nil)

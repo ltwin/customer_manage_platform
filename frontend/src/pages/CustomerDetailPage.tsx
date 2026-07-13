@@ -7,7 +7,9 @@ import CustomerProfileForm from '../components/customers/CustomerProfileForm'
 import IdentitySection from '../components/customers/IdentitySection'
 import NotesPanel from '../components/customers/NotesPanel'
 import MergeDialog from '../components/customers/MergeDialog'
+import CustomerRemindersPanel from '../components/CustomerRemindersPanel'
 import OrderWorkspace from '../components/orders/OrderWorkspace'
+import { listReminders } from '../api/client'
 import ScheduleSlotDialog from '../components/schedule/ScheduleSlotDialog'
 import { scheduleDialogShouldOpen } from '../components/schedule/flow'
 import { readPendingSchedule } from '../components/schedule/journal'
@@ -35,6 +37,8 @@ export default function CustomerDetailPage() {
   const [activeTab, setActiveTab] = useState<'notes' | 'reminders' | 'orders'>(() => searchParams.get('tab') === 'orders' ? 'orders' : 'notes')
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduledDate, setScheduledDate] = useState<string | null>(null)
+  const [reminderCount, setReminderCount] = useState(0)
+  const [reminderTick, setReminderTick] = useState(0)
 	const avatarInputRef = useRef<HTMLInputElement>(null)
 	const [avatarBusy, setAvatarBusy] = useState(false)
 
@@ -84,6 +88,21 @@ export default function CustomerDetailPage() {
   useEffect(() => {
     if (searchParams.get('tab') === 'orders') setActiveTab('orders')
   }, [searchParams])
+
+  useEffect(() => {
+    if (!id) return
+    let active = true
+    listReminders({ customerId: id, page: 1, pageSize: 1 })
+      .then((res) => {
+        if (active) setReminderCount(res.total)
+      })
+      .catch(() => {
+        if (active) setReminderCount(0)
+      })
+    return () => {
+      active = false
+    }
+  }, [id, reminderTick])
 
   useEffect(() => {
     try {
@@ -305,11 +324,17 @@ export default function CustomerDetailPage() {
           <section className="card">
             <div className="tabs">
               <button className={`tab${activeTab === 'notes' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('notes')}>备注 · {customer.notes.length}</button>
-              <button className={`tab${activeTab === 'reminders' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('reminders')}>提醒 · 0</button>
+              <button className={`tab${activeTab === 'reminders' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('reminders')}>提醒 · {reminderCount}</button>
               <button className={`tab${activeTab === 'orders' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('orders')}>约单 · {customer.stats.orders_count}</button>
             </div>
             {activeTab === 'notes' && <NotesPanel customer={customer} onChanged={reload} onUnauthorized={goLogin} />}
-            {activeTab === 'reminders' && <div className="empty inline-empty">暂无提醒</div>}
+            {activeTab === 'reminders' && (
+              <CustomerRemindersPanel
+                customerId={customer.id ?? id}
+                onUnauthorized={goLogin}
+                onChanged={() => setReminderTick((n) => n + 1)}
+              />
+            )}
             {activeTab === 'orders' && (
               <OrderWorkspace
                 customer={customer}

@@ -332,3 +332,70 @@ export function updateScheduleSlot(id: string, body: UpdateScheduleSlotBody): Pr
 export function deleteScheduleSlot(id: string): Promise<void> {
   return request<void>(`/schedule/slots/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
+
+export type Reminder = components['schemas']['Reminder']
+export type ReminderStatus = components['schemas']['ReminderStatus']
+export type ReminderType = components['schemas']['ReminderType']
+export type Settings = components['schemas']['Settings']
+export type ChurnThreshold = components['schemas']['ChurnThreshold']
+export type ReminderListResponse =
+  paths['/reminders']['get']['responses']['200']['content']['application/json']
+export type CreateReminderBody =
+  paths['/reminders']['post']['requestBody']['content']['application/json']
+export type ScanRemindersBody = NonNullable<
+  paths['/admin/reminders/scan']['post']['requestBody']
+>['content']['application/json']
+export type ScanRemindersResult =
+  paths['/admin/reminders/scan']['post']['responses']['200']['content']['application/json']
+export type UpdateSettingsBody =
+  paths['/settings']['patch']['requestBody']['content']['application/json']
+
+export function listReminders(params: {
+  status?: ReminderStatus
+  customerId?: string
+  dueBefore?: string
+  page?: number
+  pageSize?: number
+} = {}): Promise<ReminderListResponse> {
+  const search = new URLSearchParams()
+  if (params.status) search.set('status', params.status)
+  if (params.customerId) search.set('customer_id', params.customerId)
+  if (params.dueBefore) search.set('due_before', params.dueBefore)
+  if (params.page) search.set('page', String(params.page))
+  if (params.pageSize) search.set('page_size', String(params.pageSize))
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  return request<ReminderListResponse>(`/reminders${suffix}`)
+}
+
+export function createReminder(body: CreateReminderBody): Promise<Reminder> {
+  return request<Reminder>('/reminders', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function markReminderDone(id: string): Promise<Reminder> {
+  return request<Reminder>(`/reminders/${encodeURIComponent(id)}/done`, { method: 'POST' })
+}
+
+export function dismissReminder(id: string): Promise<Reminder> {
+  return request<Reminder>(`/reminders/${encodeURIComponent(id)}/dismiss`, { method: 'POST' })
+}
+
+export function scanReminders(body: ScanRemindersBody = {}): Promise<ScanRemindersResult> {
+  return request<ScanRemindersResult>('/admin/reminders/scan', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function getSettings(): Promise<Settings> {
+  return request<Settings>('/settings')
+}
+
+export function updateSettings(body: UpdateSettingsBody): Promise<Settings> {
+  return request<Settings>('/settings', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}

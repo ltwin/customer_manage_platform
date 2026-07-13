@@ -1,0 +1,117 @@
+feature: 2026-07-12-reminder-engine
+created: 2026-07-12
+
+steps:
+  - action: "契约切片：OpenAPI 对 7 个 reminder/settings operation 加 reminder-engine feature tag 并更新两条 tag description，oapi-codegen include-tags 增量，make generate 再生成双端"
+    exit_signal: "make generate 后 api.gen.go 含 7 个新 operation、schema.d.ts 零漂移；bind-token 与 dashboard 端点 404 测试通过"
+    status: done
+  - action: "迁移与名词层：0009_settings / 0010_reminders(+reminder_scan_state) 迁移，settings 与 reminder 实体 + repository 基座"
+    exit_signal: "迁移 up/down 测试通过；reminders 唯一约束 (account_id, dedup_key) 生效；跨账号过滤有基座级用例"
+    status: done
+  - action: "settings 域纵切：Service 默认值叠加与校验、GET/PATCH handler、timezone provider 替换装配"
+    exit_signal: "GET 无行返回纯默认、PATCH 校验矩阵（IANA/digest_hour/days/shoot_type 重复）用例通过；PATCH timezone 后 GET /me 返回新时区"
+    status: done
+  - action: "扫描引擎：auto-dismiss 前置 + birthday/follow_up/churn 三规则 + 幂等写入与 created/skipped/auto_dismissed 计数"
+    exit_signal: "三规则正/反/边界矩阵（含 02-29、跨年、时区/DST 注入、缺时间戳跳过、零成交、merged/archived 排除、已删订单与复购 auto-dismiss）单测通过；同日双跑 created=0"
+    status: done
+  - action: "reminder API 面：list（过滤/分页/稳定排序）、create custom、done/dismiss handler"
+    exit_signal: "契约用例通过：过滤组合正确、跨账号 404、done/dismiss 幂等 200、custom dedup_key=custom:{id}"
+    status: done
+  - action: "每日调度：ReminderScanRunner（小时 tick + 检查点 + single-flight）+ cmd/server 装配并入 serverLifecycle"
+    exit_signal: "注入 clock 单测证明同本地日恰一次、跨日触发、重启补扫；SIGTERM 有界退出用例通过"
+    status: done
+  - action: "customer merge 增量：merge 事务内 reminders 改挂 target"
+    exit_signal: "merge 用例通过：source 全部提醒（含 pending/done）改挂 target，事务原子"
+    status: done
+  - action: "前端垂直切片：客户档案提醒 tab 接真实数据（计数/列表/done/dismiss/新增 custom）、全局提醒页（筛选+操作+手动扫描）、设置页（参数+时区编辑校验）；空/加载/错误态收尾"
+    exit_signal: "三条浏览器路径逐条截图通过；make check 全绿；生成物零漂移"
+    status: done
+
+checks:
+  - item: "settings 表行可缺省，读取叠加默认值且细化到 churn_thresholds entry 级；默认值单点在 settings 域（D1）"
+    source: 名词契约
+    status: passed
+  - item: "reminders 表 UNIQUE(account_id, dedup_key)；customer_id 复合外键、order_id 无外键（D5）"
+    source: 名词契约
+    status: passed
+  - item: "Reminder/Settings API shape 与 OpenAPI 一致；GET /reminders 排序 due_date ASC, id ASC（A3；acceptance 时走 cs-roadmap update 回写 §4.3，OpenAPI description 同步）"
+    source: 名词契约
+    status: passed
+  - item: "扫描 pipeline：auto-dismiss → birthday → follow_up → churn，单账号单事务，计数原子"
+    source: 编排骨架
+    status: passed
+  - item: "runner：小时 tick、检查点 last_scan_date 判日、single-flight、失败不推检查点、账号间隔离"
+    source: 编排骨架
+    status: passed
+  - item: "幂等写入唯一路径 = InsertOnConflictDoNothingReturning，冲突计入 skipped"
+    source: 流程级约束
+    status: passed
+  - item: "所有 date-only 判定经账号时区单点（AccountClock），不出现第二处时区换算"
+    source: 流程级约束
+    status: passed
+  - item: "merged/archived 客户 SQL 层排除生成；auto-dismiss 按提醒行评估不看客户 status；缺时间戳跳过 + 日志不报错"
+    source: 流程级约束
+    status: passed
+  - item: "churn 候选取数走每账号批量查询+内存组合（D3），无 per-customer N+1、无 cond 藏子查询"
+    source: 流程级约束
+    status: passed
+  - item: "薄 handler：规则/校验在 service，gin.Context 不下穿；扫描查询全经 AccountScope 直查外域表（D3）"
+    source: 流程级约束
+    status: passed
+  - item: "挂载点 1：迁移 0009/0010 存在且 down 可回滚"
+    source: 挂载点
+    status: passed
+  - item: "挂载点 2+3：router.go 只注册 7 个新端点；include-tags 只增 reminder-engine；bind-token/dashboard 仍 404"
+    source: 挂载点
+    status: passed
+  - item: "挂载点 4：main.go 装配 timezone provider 替换 + runner 并入 serverLifecycle"
+    source: 挂载点
+    status: passed
+  - item: "挂载点 5+6：App.tsx 两新路由；CustomerDetailPage 占位替换为真实面板"
+    source: 挂载点
+    status: passed
+  - item: "不做：无 Telegram 生产代码（grep 反查）、无 PATCH /reminders、零成交不告警、归档客户既有 pending 非孤儿提醒不清理"
+    source: 范围守护
+    status: passed
+  - item: "场景 1-2：双跑零新增 + date 缺省/非法处理"
+    source: 验收场景
+    status: passed
+  - item: "场景 3-6：birthday 窗口/双格式/跨年/时区 DST 矩阵"
+    source: 验收场景
+    status: passed
+  - item: "场景 7-8：follow_up 到期/缺时间戳矩阵"
+    source: 验收场景
+    status: passed
+  - item: "场景 9-12：churn 阈值/零成交/按类型（含 entry 级叠加缺项回默认）/复购 auto-dismiss 矩阵"
+    source: 验收场景
+    status: passed
+  - item: "场景 13-15：排除面 + merge 迁移 + 已删订单 auto-dismiss"
+    source: 验收场景
+    status: passed
+  - item: "场景 16-19：API 过滤分页幂等 + Settings 校验 + /me 时区跟随"
+    source: 验收场景
+    status: passed
+  - item: "场景 20：调度注入 clock 用例 + 有界退出"
+    source: 验收场景
+    status: passed
+  - item: "场景 21-23：前端三路径截图 + 空/加载/错误态"
+    source: 验收场景
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./... -count=1 -parallel=1"
+      core: false
+      failure_handling: document-baseline
+  evidence_required: [command_output, diff_summary, screenshots]
+  cleanliness:
+    debug_output: forbidden-except-slog-scan-skip-scan-summary-and-runner-errors

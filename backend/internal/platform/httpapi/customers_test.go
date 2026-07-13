@@ -23,7 +23,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	reminderdomain "github.com/samson/customer-manage-platform/backend/internal/reminder"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
+	settingsdomain "github.com/samson/customer-manage-platform/backend/internal/settings"
 )
 
 func startCustomerPostgres(t *testing.T) (string, *tcpostgres.PostgresContainer) {
@@ -83,6 +85,14 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		t.Fatalf("new avatar store: %v", err)
 	}
 	avatarRepo := customerdomain.NewPostgresAvatarRepository()
+	settingsSvc := settingsdomain.NewService(settingsdomain.NewPostgresRepository()).WithScopeFactory(func(accountID string) store.AccountScope {
+		return s.ScopeFor(auth.AccountContext{AccountID: accountID})
+	})
+	reminderSvc := reminderdomain.NewService(
+		reminderdomain.NewPostgresRepository(),
+		reminderdomain.NewSettingsAdapter(settingsSvc),
+		slog.New(slog.DiscardHandler),
+	)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:          slog.New(slog.DiscardHandler),
 		DB:              s,
@@ -92,9 +102,12 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		Orders:          orderdomain.NewService(orderdomain.NewPostgresRepository()),
 		Packages:        pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
 		Idempotency:     idempotency.NewExecutor(),
+		AccountTimezone: settingsSvc,
 		Schedule:        scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(time.Now)),
 		Avatar:          customerdomain.NewAvatarApplication(avatarRepo, objects),
 		AvatarProcessor: avatarimage.NewProcessor(),
+		Settings:        settingsSvc,
+		Reminders:       reminderSvc,
 	})
 	return router, s, tokens, ctr
 }
