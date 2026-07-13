@@ -3,10 +3,10 @@ doc_type: roadmap
 slug: photographer-private-crm
 status: active
 created: 2026-07-05
-last_reviewed: 2026-07-10
+last_reviewed: 2026-07-13
 tags: [crm, photographer, mvp, reminder, scheduling]
 related_requirements: [customer-profile, package-catalog, order-tracking, schedule-calendar]
-related_architecture: []
+related_architecture: [001-account-scoped-data-model, 002-postgresql-as-primary-store, 003-monolith-first-gin-openapi]
 ---
 
 # 摄影师私域客户经营系统 · 首版路线
@@ -55,7 +55,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 
 ```
 photographer-private-crm
-├── platform   平台基座：认证、账号上下文、HTTP 框架、错误封套、数据访问基座、全量导出
+├── platform   平台基座：认证、账号上下文、HTTP 框架、错误封套、数据/对象访问基座、全量导出
 ├── customer   客户域：客户聚合（身份 / 渠道 / 转介绍 / 备注 / 渐进字段 / 合并 / 归档）
 ├── package    套系域：拍摄服务商品的静态定义、上下架与删除
 ├── order      订单域：订单状态机 + 定金尾款标记
@@ -65,16 +65,16 @@ photographer-private-crm
 ```
 
 ### platform · 平台基座
-- **职责**：单账号登录发 token；请求中携带账号上下文；错误封套与校验；数据访问基座强制账号过滤（ADR-001 的执行点）；全量导出（跨域读，归口基座避免各域各写一半）。不含任何业务实体。
-- **承载的子 feature**：platform-skeleton、data-export（+ v1-hardening 部分）
-- **触碰的现有代码**：无（greenfield 全新）
-- **Depth 判断**：deep——账号隔离、鉴权、错误封套全部藏在中间件与 repository 基座内，业务域代码不重复写 `account_id` 过滤；删掉它复杂度会散到所有域，通过 deletion test。
+- **职责**：单账号登录发 token；请求中携带账号上下文；错误封套与校验；数据访问基座强制账号过滤（ADR-001 的执行点）；提供业务域拥有的对象存储 port 所需的基础设施 adapter、配置与后台维护装配；全量导出（跨域读，归口基座避免各域各写一半）。不含任何业务实体，也不决定头像业务生命周期。
+- **承载的子 feature**：platform-skeleton、customer-avatar（基础设施增量）、data-export（+ v1-hardening 部分）
+- **触碰的现有代码**：platform config/httpapi/store、server composition root、Docker/README；customer-avatar 只在此落 provider adapter、后台维护和部署装配，不下放业务 pointer 规则。
+- **Depth 判断**：deep——账号隔离、鉴权、错误封套与 provider I/O 装配藏在中间件、repository 基座和 adapter 内，业务域代码不重复写 `account_id` 过滤或本地/OSS 调用；删掉它复杂度会散到所有域，通过 deletion test。
 
 ### customer · 客户域
-- **职责**：客户聚合根的全生命周期：建档、社交身份增删、渠道、转介绍、备注、渐进字段、合并、归档。不管订单 / 档期 / 提醒（它们反向引用客户）。
+- **职责**：客户聚合根的全生命周期：建档、社交身份增删、渠道、转介绍、备注、渐进字段、头像元数据与生命周期、合并、归档。不管订单 / 档期 / 提醒（它们反向引用客户）；头像二进制经 injected `AvatarObjectStore` port 持久化，客户域不感知本地路径或 OSS SDK。
 - **承载的子 feature**：customer-core、customer-profile-complete、customer-avatar
-- **触碰的现有代码**：无
-- **Depth 判断**：deep——"合并客户迁移全部关联资源"这类复杂度藏在域内，对外只是一个 merge 端点。
+- **触碰的现有代码**：backend customer model/service/repository、客户 schema migration 与 customer HTTP 契约；customer-avatar 增 current pointer、条件写、GC 生命周期编排。
+- **Depth 判断**：deep——"合并客户迁移全部关联资源"与“不可变头像对象 + 当前 pointer + 条件写/延迟回收”藏在域内，对外只是稳定的 Customer 与 merge/avatar 端点。
 
 ### package · 套系域
 - **职责**：套系静态定义（拍摄类型 / 定价方式 / 张数时长底片精修参数）、上下架（active/archived）与删除（带引用完整性保护）。商品心智：上架供下单、下架停售存量仍引用、删除仅限无引用套系。不含库存、不含订单逻辑。
@@ -101,7 +101,7 @@ photographer-private-crm
 - **Depth 判断**：deep——规则参数、幂等键、扫描窗口全部藏在域内，对外只有 Reminder 资源和摘要推送。
 
 ### webapp · Web 前端
-- **职责**：所有域的页面 + dashboard 聚合面板 + 移动轻路径（查档期 / 搜客户 / 记备注）。只消费 4.1 定义的 HTTP API，无后端私有耦合。
+- **职责**：所有域的页面 + dashboard 聚合面板 + 移动轻路径（查档期 / 搜客户 / 记备注）；CustomerAvatar/CustomerPicker 收口跨页面的鉴权头像与客户选择体验。只消费 4.1 定义的 HTTP API，无后端私有耦合。
 - **承载的子 feature**：跨条目（每条子 feature 交付各自的 UI 垂直切片），dashboard 单列一条
 - **Depth 判断**：不适用（展示层）；约束是"只经 API seam 取数"。
 
@@ -126,6 +126,10 @@ Base:      /api/v1
 时区:      存储一律 UTC；所有 date-only 字段（due_date / birthday / last_shot_at）、"今日 / 当日 / 逾期"判定、
            digest_hour、统计滚动窗口（dashboard recent_stats），一律按 Settings.timezone（IANA，默认 Asia/Shanghai）计算
 ID:        string（引擎无关；服务端生成）
+头像媒体:  Customer.avatar_url 固定为同源应用相对 URL
+           /api/v1/customers/{id}/avatar/content?v={avatar_version}，不是本地路径、对象存储 key 或厂商 URL；
+           读取仍须 Bearer 鉴权。前端统一通过带鉴权的媒体 client 获取 Blob 后展示，禁止把 token 放
+           query string，也不开放匿名头像目录；v 是当前版本的强校验条件，不是“忽略即可”的装饰缓存键。
 幂等:      POST /orders 与 POST /schedule/slots 接受 Idempotency-Key；组合流程及从档期跳转的历史订单补录必须传。
            静态校验先于 claim；仅成功 2xx 持久化。24 小时内同账号+同操作+同 key+
            同规范化请求重放返回首次成功结果；成功绑定后的同 key 异请求 → 409
@@ -149,7 +153,20 @@ ID:        string（引擎无关；服务端生成）
 Customer:        display_name*, real_name?, phone?, birthday?("MM-DD"|"YYYY-MM-DD"),
                  channel*(xiaohongshu|douyin|weibo|referral|other),
                  referrer_customer_id?(channel=referral 时必填),
-                 status*(active|merged|archived), merged_into_customer_id?, avatar_url?
+                 status*(active|merged|archived), merged_into_customer_id?,
+                 avatar_revision*(readOnly, "ar-" + 非负十进制 bigint),
+                 avatar_version?(readOnly), avatar_url?(readOnly)
+                 （avatar_revision 始终返回，初始 ar-0，每次成功切换或清空 pointer 后原子 +1；no-op 不变，
+                   专供 If-Match 防 ABA。无头像时 avatar_version/avatar_url 缺省；持久化 current pointer 保存
+                   storage-neutral 的 avatar_version / avatar_object_id / avatar_media_type / avatar_size /
+                   avatar_updated_at 五字段。avatar_object_id 是内部 128-bit 随机代际、永不下发；对象 key
+                   按 account/customer/avatar_version/avatar_object_id 派生，永不保存本地绝对路径、bucket
+                   或 OSS 签名 URL）
+CustomerSummary:  id*, display_name*, channel*, status*, avatar_revision*(readOnly),
+                  avatar_version?(readOnly), avatar_url?(readOnly)
+                 （保留既有 id/display_name/channel/status，只增头像投影；用于 referrer 等嵌套客户摘要，
+                   与 Customer 使用同一头像投影规则，使既有 archived/merged 关系也能显示当前头像，
+                   不要求前端额外 GET detail）
 SocialIdentity:  customer_id*, platform*(wechat|qq|telegram|xiaohongshu|douyin|weibo|other),
                  handle*, remark?
                  （枚举含来源平台：小红书/抖音/微博账号也是真实私域身份，2026-07-06 原型比对拍板）
@@ -190,12 +207,14 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 
 **客户 merge / 归档语义**：
 - merge：source 必须 `status=active`；source 的 SocialIdentity / CustomerNote / Order / Reminder 全部改挂 target，source `status=merged` + `merged_into_customer_id`，不物理删除。**order / reminder 域晚于 merge 落地，其 feature 验收必须各自补"merge 迁移本域实体"用例**（契约随域生长，不静默失效）
+- avatar 是 Customer 自身属性，不在 merge 迁移面：target 保留自身头像，source 默认保留原头像；merged source 禁止设置/替换头像，但 owner 可在合并后显式执行 cleanup-only DELETE 清空其头像，避免 PII 永久不可删除。该例外只允许 object→none，不恢复 merged 档案的其他编辑能力；本 feature 不做“无头像 target 自动继承 source 头像”等隐式选择。
 - 归档：`PATCH /customers/{id} {status:archived}`；归档客户不参与提醒扫描、不可被 `creation_mode=new` 新业务引用（`409 customer_archived`）、默认列表隐藏（`?status` 缺省 active，可显式查 archived/all）；`creation_mode=backfill` 为保留历史真实性可引用 archived 客户，merged 永远拒绝
 
 **转介绍指针语义**（2026-07-07 拍板，随 customer-profile-complete 落地）：
 - merge 时其他客户 `referrer_customer_id` 指向 source 的，同事务批量重定向到 target；重定向后 target 的介绍人若变成自身则清空（介绍链跟人走，不指向 merged 壳）
 - 归档**不**清洗既有 referrer 指针——介绍关系是历史事实，与经营状态无关；「仅 `status=active` 客户可被选为介绍人」只约束新写入（建档与 PATCH），不回溯
 - `channel` 可 PATCH 修正：改为 `referral` 必须同请求携带 `referrer_customer_id`（否则 400）；从 `referral` 改为其他渠道时服务端自动清空 `referrer_customer_id`
+- 编辑页若既有 referrer 后来变为 archived/merged，前端可把它作为 pinned 当前值显示并原样保留，但不得混入 active 新候选；若要清除，必须同请求把 `channel` 改为非 referral（由服务端联动清空），否则 required 校验阻止保存，不得放宽 `channel=referral` 必有 referrer 的不变量
 
 ### 4.3 各域资源 API
 
@@ -212,7 +231,9 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                       identities 为空 → 400 validation_failed；
                                       channel=referral 时额外必填 referrer_customer_id）
   GET    /customers?q=&channel=&status=&page=      q 匹配 display_name/real_name/phone/identity.handle
-                                    status 缺省 active
+                                    status 缺省 active；兼容单值并扩为逗号分隔集合
+                                      active|archived|merged（或 all），服务端先按完整 status 集合+q
+                                      过滤再做稳定分页，禁止前端取一页后排除 merged；重复/非法值 400
                                     列表项附聚合: orders_count(int, 非 cancelled 订单计数),
                                     last_shot_at?(date, 非 cancelled 订单 max(shot_at) 按账号时区截断)
                                     （order 域未落地前恒为 0/null，字段自始存在防契约破坏性变更；
@@ -226,8 +247,32 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
   POST   /customers/{id}/notes      {content}                          → 201
   POST   /customers/{id}/merge      {source_customer_id}               → 200 target Customer
                                     409 merge_conflict（source 非 active）
-  PUT    /customers/{id}/avatar     multipart/form-data file            → 200 Customer
-  DELETE /customers/{id}/avatar                                          → 200 Customer
+  PUT    /customers/{id}/avatar     Header: If-Match: "{avatar_revision}"；
+                                    multipart/form-data file            → 200 Customer
+                                    active/archived 可设置或替换，merged → 409 customer_merged；
+                                    仅接收 JPEG/PNG/WebP，原始文件 ≤5 MiB、解码后宽高各 ≤4096；
+                                    服务端校正方向、去元数据并生成最长边 ≤512、编码后 ≤5 MiB 的非动画栅格图；
+                                    MIME/魔数/解码/尺寸任一不符或 If-Match 缺失/格式错误
+                                      → 400 validation_failed；
+                                    规范化字节 checksum 已等于当前 avatar_version 且当前物理 generation
+                                      通过完整字节校验 → 直接 200（结果未知重放，不改 revision）；
+                                    同 checksum 但对象缺失/损坏 → 发布 fresh generation 修复；
+                                    其余需要改变 pointer 且当前 avatar_revision 与 If-Match 不同
+                                      → 409 avatar_revision_conflict
+  GET    /customers/{id}/avatar/content?v={avatar_version}               → 200 image/* 二进制
+                                    标准 Bearer 鉴权 + 账号隔离；v 缺失/格式错 → 400 validation_failed；
+                                    DB 无当前头像 → 404 not_found；v 与当前 pointer 不同
+                                      → 409 avatar_version_stale，绝不返回新版本字节；
+                                    DB pointer 对应对象缺失或 checksum/size/media type 不符 → 500 internal
+                                      并记录 integrity failure；If-None-Match 命中 → 304；成功响应固定：
+                                      ETag="{avatar_version}"、Cache-Control="private, no-cache"、
+                                      Vary=Authorization、X-Content-Type-Options=nosniff
+  DELETE /customers/{id}/avatar    Header: If-Match: "{avatar_revision}" → 200 Customer
+                                    active/archived 可正常移除；merged 仅允许 cleanup-only 移除既有头像，
+                                      不因此获得 PUT 或其他档案编辑能力；
+                                    header 缺失/格式错 → 400 validation_failed；当前已无头像直接 200；
+                                    当前有头像且 revision 不同 → 409 avatar_revision_conflict；成功只原子清当前
+                                    pointer、avatar_revision +1 并登记延迟 GC，不在 DB commit 前物理删对象
 套系域
   POST/GET/PATCH/DELETE /packages…  GET ?status=active 供下单选择（上架中）
                                     下架（停售）：PATCH {status:archived}——无 in-use 校验，存量订单继续引用
@@ -349,6 +394,72 @@ dashboard
 
 **Interface 设计检查**：dashboard 聚合做在服务端（一次请求 vs 前端拼五个列表）——Design-It-Twice 比较过"前端自行组合"（省一个端点但移动端五连击、口径散落前端）与"服务端聚合"（口径单点、移动友好），选后者；depth：聚合口径（何为"待收尾款"）藏在服务端一处。
 
+### 4.3a 客户头像存储与交付协议
+
+**方向**：customer 应用编排 → storage adapter　**形式**：injected port；首版本地文件，后续可替换私有 OSS
+
+```
+AvatarObjectStore
+  PutImmutable(ctx, object_key, replayable_body, expected_meta) → PutResult{meta, created}
+  Open(ctx, object_key)                             → ObjectStream{body, meta}
+  Stat(ctx, object_key)                             → ObjectMeta
+  List(ctx, prefix, cursor, limit)                  → ObjectPage{items, next_cursor?, done}
+  Delete(ctx, object_key)                           → error
+
+ObjectMeta = { media_type, size, checksum, modified_at }
+PutResult  = { meta:ObjectMeta, created:bool }
+ObjectItem = { key, meta:ObjectMeta }
+ObjectRef  = { avatar_version, avatar_object_id }
+replayable_body = 最终规范化的只读精确字节（≤5 MiB）；caller 持有，adapter 不保留/不关闭
+avatar_version   = "sha256-" + sha256(最终规范化字节)的 64 位小写十六进制
+avatar_object_id = 服务端 crypto-random 128-bit 的 32 位小写十六进制；一次发布生成一次，离开 current 后永不复用
+object_key = avatars/{account_id}/customers/{customer_id}/{avatar_version}/{avatar_object_id}
+```
+
+**不变量**：
+
+- `avatar_version` 与 `ObjectMeta.checksum` 是最终规范化编码后精确字节的 SHA-256；它是 API/ETag 内容版本。物理对象还带不可复用 `avatar_object_id`：同内容再次发布可有相同 version，但必须使用新 object_id/key；对象一旦成功写入就不可覆盖。`PutImmutable.created=true` 表示本次首次发布，已存在且完整性相同则返回 `created=false`；只有同一请求在结果未知后的内部重试可接受 false，fresh ID 首次调用得到 false 必按随机碰撞处理并换新 ID。
+- `avatar_revision` 是 Customer 行上的独立写 revision，数据库保存非负 bigint，API 编码为 `ar-{decimal}`。它初始为 0，每次 current pointer 从 none→object、object→object 或 object→none 成功提交时原子 +1；desired=current / already-none no-op 不变。PUT/DELETE 的 `If-Match` 只比较 revision，内容 URL 与 ETag 仍只使用 checksum version，从而同时避免 ABA 与 provider identity 泄漏。
+- 图片规范化不得写入时间戳、随机数等非确定 metadata；同一构建对同一输入必须生成相同精确字节与 checksum，保证 storage timeout / commit unknown 的原请求重放可收敛。
+- `object_key` 只由应用从已鉴权账号、已查得客户与 ObjectRef(avatar_version+avatar_object_id) 派生，请求不能传；adapter 必须拒绝路径逃逸。数据库与 API 不出现本地绝对路径、bucket、endpoint、SDK 类型或临时签名参数。
+- PostgreSQL 是 Customer 与 current pointer 的 system of record；local/OSS 是 binary durable adjunct。DB 保存 `avatar_version/avatar_object_id/avatar_media_type/avatar_size/avatar_updated_at`，当前物理 key 可纯派生；API 不暴露 object_id。
+- port 错误至少归类 `ErrObjectNotFound`、`ErrInvalidObjectKey`、`ErrIntegrityMismatch`、`ErrTemporary` 与其余 internal I/O error。规范化输出上限 5 MiB，`PutImmutable` 的 replayable_body 必须能在同一应用操作内以完全相同字节重复读取，caller 保持所有权，adapter 不保留也不负责 close。`Delete` 对不存在对象归一为成功，但成功返回的后置条件必须是同一 adapter 随后的 `Stat(key)` 已稳定为 not-found，不能在 provider 仍可能异步完成删除时提前确认；无法建立该 barrier 时返回 Temporary。`ObjectStream.body` 必须可关闭，每个直接调用 `Open` 的 application caller（鉴权 READ、same-content 完整性检查、current-pointer audit）都必须在成功、错误、取消路径 close；HTTP handler 不直接调用 store。
+- `GET /avatar/content` 的 customer application read service 始终先用 AccountScope 读取 DB 当前 pointer，再严格校验 v，随后 `Stat/Open`。由于规范化头像上限仍为 5 MiB，该 service 必须完整读取（超上限即失败）、重新识别 media type、计算实际 size/checksum 并与 DB pointer/ObjectMeta 核对，成功后才向 HTTP 层返回 ≤5 MiB 的 validated bytes + media metadata。HTTP handler 只做鉴权上下文、query/header 与 binary/JSON 响应适配：在 service 验证成功前不得发送任何 200/304 header；If-None-Match 命中也只能基于已验证结果返回 304，不得跳过字节完整性校验。旧版本 URL 永不返回新字节。首轮迁移 OSS 后仍走此鉴权端点，所以业务层、前端和 HTTP 契约不变；预签名 URL 是后续媒体交付优化，不是替换 adapter 的前提。
+- `List` 的 reconciliation 扫描域固定为账号级 prefix `avatars/{account_id}/customers/`，在该 prefix 内按完整 key 升序稳定返回 `ObjectItem`；cursor 是该账号排序域内由 adapter 生成的 opaque exclusive cursor，limit 必须受配置上限约束。对扫描期间不变的对象集不得重复/跳过；并发插入到已越过 key 区间的对象允许留到下一完整 cycle，但不能永久饥饿。
+
+**PUT 状态机**：
+
+1. 先校验 If-Match 存在且是合法 quoted `avatar_revision`，并用 AccountScope 非锁定读取确认 Customer 属于当前账号；不存在/跨账号先返回 404，不能为任意 URL id 写 orphan。
+2. 在客户锁外限流、解码、方向校正、规范化并计算 checksum。
+3. 若非锁定快照显示 desired checksum 已是 current，先开短事务锁 Customer，按账号重验存在性与状态；merged 必须先返回 `409 customer_merged`，不得借 no-op 快路径绕过写状态矩阵。active/archived 再重验 checksum，并在 5 MiB 上限内 `Stat/Open` 完整读取当前 ObjectRef，重识别 media type、size、checksum。实际 generation 完整时不写对象、直接 200（commit unknown 重放快路径，允许旧 revision 因为没有状态变化）；对象缺失/损坏时不得返回 200，If-Match revision 失配先返回 409，匹配则退出短事务并进入 fresh generation 修复流程。
+4. 其余情况生成新的、永不复用的 avatar_object_id，以完整 generation key 调 `PutImmutable`；单次请求内 storage timeout 可用同 object_id 重试，跨 HTTP 重试可生成新 id，旧 generation 由 reconciliation 回收。
+5. 唯一 transaction owner 为 `AccountScope.WithTxScope`；callback 用 TxAccountScope 锁 Customer，再锁**新 object_id** 对应 GC row。只要该 row 已存在，就把 generation 视为已进入回收生命周期：不得取消、不得晋升 current，回滚并用**全新 object_id** bounded 重做 publish。无 GC row 才做 final Stat/完整性核对；对象缺失也回滚并换全新 object_id。物理 object_id 绝不复用，目标 key 已存在但不是本次内部重试时按碰撞处理并换新 ID。
+6. 锁内若并发请求已把相同 desired checksum 设为 current，必须先对该 current ObjectRef 做与第 3 步相同的完整字节校验；有效时把本次未引用 generation 入 pending GC 并返回 200。若 current 缺失/损坏，则本次新 generation 只能在 If-Match revision 仍匹配时用于修复；其余需要改变 pointer 的路径都校验 If-Match revision，失配 generation 由 reconciliation 入队并返回 `409 avatar_revision_conflict`。
+7. 原子切换 current pointer 的 version+object_id+metadata，并令 avatar_revision +1；旧 ObjectRef 同事务首次入 pending GC。DB 失败最多留下可发现 orphan，旧 current 与旧 revision 完好。
+
+**DELETE 状态机**：
+
+1. 校验 quoted avatar_revision 格式后开事务，按账号锁定 Customer，并重验状态、current pointer 与 revision。
+2. active/archived 执行正常移除；merged 只开放本 DELETE 作为 cleanup-only PII 清理例外，PUT 与其他档案 mutator 仍保持拒绝。当前已无头像直接 200（no-op，不改 revision）。
+3. 当前存在且 If-Match revision 失配返回 `409 avatar_revision_conflict`；匹配时同一事务清空 current pointer、avatar_revision +1 并登记旧 ObjectRef 的 `avatar_object_gc`，commit 后返回 200。禁止在 commit 前物理删除当前对象。
+
+**GC / reconciliation**：
+
+- `avatar_object_gc` 是 account-scoped pending 队列，对 `(account_id, customer_id, avatar_object_id)` 唯一，并保存 avatar_version、not_before、next_attempt_at、attempts、last_error；初始 grace period 为 24 小时。
+- pointer 替换/清空首次入队取 `not_before=now+grace`；reconciliation 首次发现 orphan 也取 `now+grace`。重复 enqueue 使用 `ON CONFLICT DO NOTHING`（或等价“保留已有最早 not_before 与全部 retry metadata”），不得每小时把 due time 向后推，也不得缩短既有 grace；失败退避只更新 `next_attempt_at/attempts/last_error`。
+- GC worker 对每个对象使用独立事务，锁 Customer row + GC row 后复核 current pointer：若 `avatar_object_id` 等于待删 generation，说明 PUT/reconciliation 竞态留下了 stale queue row，只删该 row 并 commit，绝不调用 storage Delete；不等时才对精确 generation key 调有超时的幂等 Delete，成功删 row并 commit。Delete 失败先 rollback 主事务，再以同一 GC row identity 在独立短事务条件更新 `next_attempt_at/attempts/last_error`，row 已不存在时不得重建；commit unknown 则保留 row 并由下轮幂等重试。即使 DB/session 丢失后旧 Delete 迟到，它也只能删除不可复用的旧 object_id；同 checksum 新 current 使用另一 key，存储侧代际保证安全。
+- reconciliation 只从 platform 提供的可信 server-side `AccountScopeEnumerator` 获取账号并构造与 HTTP 相同 fail-loud 的 AccountScope；客户端永不传 account_id。`avatar_reconciliation_checkpoint` 对每账号分别保存 object inventory 的 opaque exclusive cursor/cycle 与 current-pointer audit 的 customer-id exclusive cursor/cycle。object 方向按账号级 key prefix 扫一页，把未被五字段 pointer 引用的 generation 入 pending；pending insert 与 object cursor advance 同一 DB 事务，崩溃后可重放。pointer 方向按 Customer id 稳定分页一页，对每个非空 ObjectRef 执行与 GET 相同的 ≤5 MiB 完整 Stat/Open/media/size/checksum 校验；缺失/损坏是已完成的 integrity finding，结构化记录后允许 pointer cursor 前进，但不得清 pointer或入 GC；单项 Temporary/internal I/O 做本 tick 有限重试，仍失败则结构化记录 audit-temporary 并推进 cursor，下一完整 cycle 再访，不能让一个 key 永久饿死后页。两个方向到 done 才各自清 cursor开下一 cycle。reconciliation 只入队或报告，**不得直接物理删除或静默改成“无头像”**。
+- composition root 挂载唯一 `AvatarMaintenanceRunner`：依赖迁移、storage readiness 与 mount attestation 成功后启动；立即跑一轮，之后每小时 single-flight tick。首版固定每账号每 tick 最多一页 object inventory + 一页 current-pointer audit + 100 条 due GC，重叠 tick 合并/跳过；clock/ticker 可注入。现有 server 使用 `context.Background()` 且未做 graceful shutdown，本 feature 必须引入 OS signal-aware root context：signal 后停止新 tick、取消在途 storage I/O、有界等待 runner，并完成 HTTP graceful shutdown 后退出，不能把该生产装配继续推迟到 v1-hardening。GC row 的 Delete 失败按 `next_attempt_at` 退避重试；reconciliation 单项失败按上一条 cursor/cycle 语义记录并推进或留待下一完整 cycle 再访，不为 audit 另造退避 row；后台暂时失败不关闭 HTTP 服务。多实例重复 runner 由 Customer/GC row 锁、队列唯一约束、幂等 Delete 与不可复用 generation key 保证正确性。
+- local adapter 在最终 generation 同父目录创建自有 temp：写 content 与 metadata、分别 file fsync、temp directory fsync、原子 rename 到完整 avatar_version/avatar_object_id key、再 parent directory fsync；只清理自有命名且超过 1 小时的 stale temp，不碰最终对象或无关文件。
+
+**部署、备份与未来 OSS 迁移**：
+
+- production adapter = 配置根目录下的 local filesystem；test adapter = in-memory fake；未来 OSS adapter 实现同一不可变 key、metadata、List 与幂等 Delete 语义。配置新增 `AVATAR_LOCAL_REQUIRE_MOUNT`：二进制直跑缺省 false；容器/production compose 固定 true。为 true 时，应用在可写性检查前解析真实路径并通过 Linux mount table 验证 `AVATAR_LOCAL_ROOT` 是独立 mountpoint；缺 mount、平台不支持验证或身份不符均启动失败。镜像可预建目录，但不能仅靠“目录存在且可写”声称卷已挂载。
+- 本地一致备份须：freeze 所有头像 mutator（API PUT/DELETE、GC/reconciliation；首版优先直接停 app）→ `pg_dump` → 归档头像 volume → 生成 exact-generation manifest。manifest 对每个 current pointer 至少记录 account_id、customer_id、avatar_version、avatar_object_id、derived object key、media_type、size、实际 SHA-256，并另列全部物理 generation 的 key/count/checksum 汇总；恢复须同时恢复 DB+volume，逐 current 精确 key 与实际字节核验通过后才重新开放写入。只比 object count/checksum 不足以区分同 checksum 的多个 object_id。头像目录与备份按 PII 处理，使用最小文件权限、访问控制与加密。cleanup-only DELETE 只清在线 pointer并按 24h+runner 节奏回收活动存储，不会追溯擦除已经生成的历史备份；恢复旧备份可能重新带回该 PII，备份 retention/销毁策略须在运维说明中明确，UI/文档不得宣称“从所有备份彻底删除”。
+- 首轮 local→OSS 迁移另起 feature，倾向短时 write freeze：freeze → copy → exact key/object_id/count/checksum 核对 → 切 adapter → smoke → unfreeze。若 unfreeze 后回滚，必须把 OSS 期间新增写入反向同步回 local；“保留本地副本”本身不是完整 rollback。也可在届时另选 dual-write 或增量补拷，但不得只改 driver 配置。
+
+**Interface 设计检查**：port 由 customer 侧拥有，caller 只知道 immutable ObjectRef 语义；avatar_revision 是 provider-neutral 写 CAS，checksum 是公开内容版本，object_id 是内部物理 generation，三者分工关闭 ABA/stale Delete 且不泄漏 provider generation/versionId。pointer/条件写/生命周期由 customer application 编排，本地/OSS I/O 集中在 platform adapter；删除 seam 会让路径、完整性、物理代次隔离与 OSS 调用散回 service/handler。local + in-memory 为 local-substitutable，未来 OSS 为 true external；Stat/List/runner 都有当前用途。
+
 ### 4.4 提醒引擎规则契约
 
 **方向**：reminder 域 ← customer / order 域数据（同进程读模型，in-process 依赖）　**形式**：内部规则 + Reminder 资源
@@ -425,8 +536,8 @@ GET /export → application/json（Content-Disposition 附件）
    - 所属模块：customer + webapp ｜ 依赖：customer-core ｜ 状态：done ｜ 对应 feature：2026-07-07-customer-profile-complete
    - 备注：merge / 归档语义按 4.2；design 阶段按 merge、归档、notes、referral、渐进字段分片验收（防单片过大）；完成信号：合并后 source 状态 merged 且身份/备注归并；归档客户默认列表隐藏；任意含客户的页面 ≤2 步追加备注；落地后评估 req customer-profile draft→current
 4. **customer-avatar** — 客户头像：可选设置 / 替换 / 移除头像；列表、详情、转介绍下拉、merge 对话框等客户选择面显示头像缩略图，未设置时使用默认首字头像
-   - 所属模块：customer + webapp ｜ 依赖：customer-profile-complete ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：头像不作为建档必填项；完成信号：头像字段/API 与前端客户选择组件联动，上传/替换/移除用例通过，未设置头像 fallback 稳定；设计阶段需明确头像文件存储、大小/格式限制、删除后的对象清理策略
+   - 所属模块：customer + platform + webapp ｜ 依赖：customer-profile-complete, order-tracking, schedule-calendar ｜ 状态：done ｜ 对应 feature：2026-07-11-customer-avatar
+   - 备注：依赖理由——头像属于档案增强，而“订单/档期客户选择面必须带头像”是本条硬范围，故待其既有 UI 落地后再做兼容增量；已 done 的 customer/order/schedule 条目状态不回退，由 customer-avatar 自己承担 caller 回归。头像不进入 30 秒建档表单。2026-07-11 owner 拍板首版使用 ECS/local persistent volume，经 `AvatarObjectStore` 隔离并预留后续 OSS adapter；2026-07-13 owner 拍板 merged 禁止 PUT 但允许 cleanup-only DELETE，并接受 24h grace、每小时、每账号每 tick 各一页 inventory/audit +100 due 的 GC 默认值。完成信号：① avatar_revision If-Match 的 PUT/DELETE、强内容版本鉴权 GET、跨账号/merged cleanup/非法文件与缓存矩阵通过；② 不可复用 object_id generation + PostgreSQL revision/五字段 pointer 在 rollback/commit unknown/ABA/并发写下不覆盖新头像；③ generation 一旦进入 GC 就不再晋升，历史与 pre-current 精确 generation Delete 在 DB/session 丢失、迟到和同 checksum 重发时仍不伤新 current，pending enqueue 不推迟 due，signal-aware MaintenanceRunner/reconciliation 可回收并报告 integrity；④ 全客户展示/选择/固定摘要统一头像或 fallback；⑤ production require-mount 能证明缺卷启动失败，volume recreate 与停 app 一致备份/恢复+exact-generation manifest 可核对；⑥ `make check` 全绿。OSS adapter、存量搬迁与预签名直读不在本条实现。
 5. **package-catalog** — 套系 CRUD、上下架与删除：类型/定价方式/张数时长底片精修参数；下架后不出现在选择列表，删除受引用完整性保护
    - 所属模块：package + webapp ｜ 依赖：platform-skeleton ｜ 状态：done ｜ 对应 feature：2026-07-08-package-catalog
    - 备注：商品心智（2026-07-08 owner 拍板，§4.2/§4.3 update）——active=上架、archived=下架、DELETE=删除；完成信号：按 4.2 Package shape 建/改/下架/上架各一条通过；?status=active 过滤正确；DELETE 无引用套系 204、被引用套系 409 package_in_use（order 域未落地前无订单可引用、删除恒放行，真实 409 由 order-tracking 接通）
@@ -447,7 +558,7 @@ GET /export → application/json（Content-Disposition 附件）
    - 备注：完成信号：五卡片数据与各域列表页交叉一致（核对用例）；登录后默认落地页
 11. **data-export** — 全量 JSON 导出（4.6 契约）：一键导出全部实体 + counts 核对
     - 所属模块：platform ｜ 依赖：customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
-    - 备注：依赖理由——导出范围 = 4.2 全部实体，各域落地后才有内容可导；完成信号：counts 与数组长度一致的自动化用例；导出文件手工抽查含 PII 字段完整
+    - 备注：依赖理由——导出范围 = 4.2 全部实体，各域落地后才有内容可导。**design 启动 gate**：owner 必须先二选一拍板，① 保持 §4.6 reference-only JSON，并明确不承诺离开本系统后便携恢复头像；或 ② 先 update roadmap §4.6 为包含媒体文件、exact-generation manifest/key/object count/checksum 的便携包。未完成该决策不得进入 design、不得标 done。选定后的完成信号还须包含 counts/manifest 与实际内容一致的自动化核对及 PII 保管说明。
 12. **v1-hardening** — 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
     - 所属模块：跨模块 ｜ 依赖：customer-avatar, telegram-digest, dashboard, data-export ｜ 状态：planned ｜ 对应 feature：未启动
     - 备注：完成信号：375px 宽度下三条轻路径可完成；回归清单逐条打勾归档；README 覆盖部署/备份/凭证操作
@@ -458,18 +569,18 @@ GET /export → application/json（Content-Disposition 附件）
 
 | Goal / completion signal | Covered by | Verification entry | Evidence type | Core? |
 |---|---|---|---|---|
-| 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3, 4 | 多身份建档计时演示 + merge/归档用例测试 + 头像选择面截图 | test + screenshot | yes |
+| 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3, 4 | 多身份建档计时演示 + merge/归档测试 + 头像条件写/并发/恢复 API 证据 + 全选择面截图 | test + API + screenshot | yes |
 | 渠道归因：每个客户带来源渠道可筛选 | 2 | GET /customers?channel= 用例 | test | yes |
 | 再也不忘：三类提醒准确且不重复，主动送达 | 8, 9, 10 | 幂等双跑测试 + 时区日界用例 + TG 真机截图 + dashboard | test + screenshot | yes |
 | 档期 10 秒可答、30 秒可靠排期、与客户套系关联 | 6, 7 | 月历/客户档案两入口计时演示 + 跨日/全天 + overlaps 明细 + 幂等重放/结果未知恢复用例 | test + screenshot | yes |
 | 订单状态与定金尾款不漏 | 6, 10 | 跃迁矩阵测试（含时间戳/unpaid_balance）+ 筛选核对 | test | yes |
 | 套系参数有结构化的家 | 5 | CRUD + 上下架过滤 + 删除引用完整性用例 | test | yes |
-| 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 11, 12 | make check（或等价）+ 基座过滤测试 + 导出 counts 核对 | command + test | yes |
+| 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 11, 12 | make check + 基座过滤测试 + data-export owner 决策记录；reference-only 则核对 JSON counts/边界，媒体包则核对 exact-generation manifest/key/object count/checksum | command + test + decision | yes |
 | 首版整体完成信号 | 全部 | 一条链路演示：建档→套系→订单→档期→标定金→次日 TG 摘要→dashboard 五卡有数 | acceptance report | yes |
 
 ## 6. 排期思路与深度规划底稿
 
-**为什么这么拆**：先基座（greenfield 必须先有验证入口和 ADR-001 执行点，并前置杀死 TG 外部依赖风险），再沿"先治忘"价值主线（客户 → 档案完整）铺数据地基（套系 → 订单 → 档期），让提醒引擎在真实数据上运转（引擎 → TG → dashboard），导出与收口断后。1-2 之后，3 与 5 可并行；4 跟随 3 作为客户选择面的识别增强，不阻塞订单/档期主线。
+**为什么这么拆**：先基座（greenfield 必须先有验证入口和 ADR-001 执行点，并前置杀死 TG 外部依赖风险），再沿"先治忘"价值主线（客户 → 档案完整）铺数据地基（套系 → 订单 → 档期），让提醒引擎在真实数据上运转（引擎 → TG → dashboard），导出与收口断后。1-2 之后，3 与 5 可并行；头像不阻塞订单/档期业务能力，待 6/7 的真实客户选择面落地后由条目 4 一次承担 customer/order/schedule UI 兼容增量。
 
 **目标完成信号**（roadmap 级）：上表末行的全链路演示在 owner 真机跑通 + 全部 items done/dropped。"owner 真实使用两周不弃用"是软信号，记观察项由 owner 主观判定，不作为 completed 门槛。
 
@@ -478,9 +589,9 @@ GET /export → application/json（Content-Disposition 附件）
 2. **提醒重复 / 漏发 / 跨日错位 → "治忘"卖点直接失信**——缓解：4.4 幂等键 + 4.1 时区单一口径写进契约；条目 8 硬验收"双跑零新增 + 时区日界用例"；TG 失败不影响生成，dashboard 兜底（A+D 冗余）。
 3. **greenfield 无基线 → 后续 feature 无法可信验证**——缓解：条目 1 是安全网条目，交付全绿命令基线 + 账号过滤基座测试 + TG 冒烟，后续每条 feature 的 DoD 挂在这套命令上。
 
-**非显然依赖**：TG bot token 需 owner 向 BotFather 申请（条目 1 前置冒烟，凭证走环境变量，规则落 attention.md）；**条目 1 启动前拍板包**（见第 7 节）：技术栈确认、存储引擎、部署形态与 PII 边界；生日年份可缺（"MM-DD"）导致年龄不可算——契约已按可缺设计。
+**非显然依赖**：TG bot token 需 owner 向 BotFather 申请（条目 1 前置冒烟，凭证走环境变量，规则落 attention.md）；**条目 1 启动前拍板包**（见第 7 节）：技术栈确认、存储引擎、部署形态与 PII 边界；生日年份可缺（"MM-DD"）导致年龄不可算——契约已按可缺设计。customer-avatar 增加 PostgreSQL 之外的持久化卷：一致备份必须在头像写 freeze/停 app 下同时取得 `pg_dump`、头像 volume archive 与逐 current ObjectRef 的 exact-generation manifest，恢复后先按精确 key/实际字节核验再开放写；未来切 OSS 是单独迁移，不得直接切配置丢失本地对象。
 
-**关键假设**（review 时可精确反驳）：① ~~技术栈假设~~ 已拍板：Go + React + PostgreSQL（2026-07-05，owner；待 cs-domain 落 ADR-002）；② owner 的 TG 可正常收 bot 消息（条目 1 冒烟即证实/证伪）；③ 默认参数（生日前 3 天、拍后 7 天、流失 180 天、摘要 9 点、时区 Asia/Shanghai）作为初始值合理，均可配置。
+**关键假设**（review 时可精确反驳）：① 技术栈已拍板并落 ADR：Go + React + PostgreSQL（2026-07-05，owner；ADR-002/003）；② owner 的 TG 可正常收 bot 消息（条目 1 冒烟即证实/证伪）；③ 默认参数（生日前 3 天、拍后 7 天、流失 180 天、摘要 9 点、时区 Asia/Shanghai）作为初始值合理，均可配置。
 
 **基线与验证入口**：条目 1 交付 `make check`（或等价：build + test + lint 一键）作为全 roadmap 验证入口；UI 类条目另加浏览器手工路径（截图证据）；TG 类条目加真机截图。
 
@@ -492,17 +603,23 @@ GET /export → application/json（Content-Disposition 附件）
 
 - **条目 1 启动前拍板包**：
   1. ✅ 技术栈：Go + React（2026-07-05 owner 确认）
-  2. ✅ 存储引擎：PostgreSQL（2026-07-05 owner 拍板，理由见第 4 节头注；大数据类需求二期按需引入专用存储）；待 cs-domain 落 ADR-002
+  2. ✅ 存储引擎：PostgreSQL（2026-07-05 owner 拍板，理由见第 4 节头注；已落 ADR-002；大数据类需求二期按需引入专用存储）
   3. ✅ 部署形态与 PII 边界：阿里云 ECS 自部署（应用 + PostgreSQL 均自装，2026-07-05 owner 拍板）；备份与导出文件保管策略在 platform-skeleton / v1-hardening 细化（建议 pg_dump 定时 + 异地副本）；TG token 走环境变量已写入 4.5
 - ✅ 「渠道」「线索」已补入 CONTEXT.md（2026-07-06，cs-domain；线索定义为"无成交订单的客户"）；技术栈已落 ADR-002（PostgreSQL）与 ADR-003（Gin + JSON/OpenAPI）。
 - 剩余未起草 req 仅提醒引擎；档期已由 `2026-07-09-schedule-calendar` 落地并在验收后升级为 current，订单/套系也已随已完成 feature 回填 current。
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
 - ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量；2026-07-10 schedule-calendar update 同时把 `GET /me` 收编为平台契约并增加 timezone，消解原白名单债。
+- **头像与全量导出决策 gate**：`customer-avatar` 只保证 Customer JSON 带可用 `avatar_revision/avatar_version/avatar_url` 与本地卷可做一致备份；当前 §4.6 仍是实体 JSON。`data-export` design 启动前必须由 owner 二选一：reference-only JSON（明确不承诺头像便携恢复），或先把 §4.6 update 为媒体文件 + exact-generation manifest/key/count/checksum 的便携包。未拍板不得启动/完成该条；不得把鉴权 URL 冒充可携带资产。
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
 
 ## 8. 变更日志
 
+- 2026-07-13（customer-avatar owner 选择）：merged source 默认保留合并时的头像且 GET 可读，但 PUT 继续 `409 customer_merged`，DELETE 改为唯一 cleanup-only PII 清理例外；它只能清 pointer 并进入精确代次 GC，不恢复 merged 档案其他编辑能力。owner 同时接受首版 GC 默认值：24h grace、每小时 runner、每账号每 tick 各一页 object inventory/current-pointer audit +100 due。
+- 2026-07-13（customer-avatar roadmap round 10 收敛）：generation 模型继续补齐四个边界。① 新增独立 `avatar_revision=ar-{非负 bigint}`，PUT/DELETE If-Match 用 revision，content v/ETag 继续用 checksum，关闭 A→B→A ABA；② pre-current generation 只要出现 GC row 就永久烧毁并换 fresh object_id，避免 DB session 丢失后的在途 Delete 与原 PUT 重新晋升同一 key；③ desired=current 只有完整验证实际 generation 后才 no-op 200，缺失/损坏走 revision CAS 的 fresh generation 修复；④ 一致备份/OSS copy 改为 exact-generation manifest/key/object_id 核验，并把 signal-aware root context、HTTP graceful shutdown 与 runner 有界退出纳入本 feature。
+- 2026-07-13（customer-avatar roadmap round 9 修正）：独立 review 证明 transaction-scoped advisory lock 会在 PostgreSQL session 丢失时提前释放，而已发出的 filesystem/OSS Delete 仍可能迟到，故移除 `AvatarObjectFence`。改为公开 checksum version + 永不复用的随机 `avatar_object_id` 双层模型，五字段 current pointer 指向完整 generation，GC 只删精确旧 object_id；同 checksum 再发布必用新 key，因此迟到 Delete 在存储侧天然隔离。保留 pending enqueue、MaintenanceRunner cadence/single-flight/shutdown、require-mount attestation 与固定摘要 CustomerAvatar 约束。
+- 2026-07-12（customer-avatar 独立 roadmap review 后收敛）：保留 owner 拍板的“首版 ECS/local persistent volume、后期 OSS adapter”方向，但将覆盖式 current key 修订为 checksum 不可变对象 + PostgreSQL current pointer；补 `PutImmutable/Open/Stat/List/Delete`、If-Match 条件写、强版本 GET/ETag/304、延迟 GC/reconciliation、local fsync/atomic rename、一致备份与 future OSS freeze-copy-verify-switch 边界。原因：DDD 隔离能稳定上层接口，但不会自动解决 PostgreSQL 与 filesystem/OSS 间的分布式一致性。`customer-avatar` 模块归属改为 customer+platform+webapp，显式依赖已完成的 order/schedule 并承担其 UI 兼容增量，不回退已 done 状态；data-export 增 owner 决策 gate；acceptance 提示为 PostgreSQL pointer + 二进制 durable adjunct 补充 ADR，不直接改 ADR-002。
+- 2026-07-11（customer-avatar design 启动，owner 拍板本地优先 / OSS 可替换）：补齐头像媒体读取与存储 seam。`Customer.avatar_url` 固定为同源鉴权媒体 URL，新增 `GET /customers/{id}/avatar/content`；上传限制为 JPEG/PNG/WebP、≤5 MiB、解码边界 4096、规范化最长边 ≤512 并去元数据。首版 local persistent volume + in-memory fake，未来 OSS adapter 保持应用层与前端契约不变，存量搬迁另起 migration。merge 不迁移头像；data-export 的二进制便携性留条目 11 启动前回 roadmap 决策。本条最初使用覆盖式 stable key，已被 2026-07-12 收敛记录取代。
 - 2026-07-10（schedule-calendar 产品评审与独立 review 后 owner 授权优化）：档期契约与条目 7 同步 update。首版从「月/周」收窄为周一首列的固定 6 周月视图；补客户档案页共用入口、跨日/全天、稳定排序与唯一 slot 冲突计数、保存前重叠明细、成功后刷新确认、失败/过期恢复和删除引导；POST /orders 与 POST /schedule/slots 增可选 Idempotency-Key，固化 typed operation 常量、唯一事务 owner、只缓存 2xx、128-bit flow/per-step attempt 与 24 小时重放边界，历史排期跳转 backfill 的订单创建也纳入同一 pending journal；POST /orders 增 creation_mode 显式区分新业务/历史补录；GET /orders 增时间感知 schedulable_at；路径 A 新建 consulting，所有 consulting 订单都先成功建 slot 并刷新日历再同步 scheduled，且使用刷新后 slot 摘要的 customer_id 修正 merge 竞态；shoot 写与归档/merge 统一 customer→order 锁序；GET /me 增 timezone 且加载失败禁止按浏览器时区写入；GET slot 列表升级为 type 判别 union，shoot 必返订单/客户/状态摘要并落到客户档案订单 tab；shoot 按订单+客户未来/历史矩阵分流并限制一订单一 shoot；PATCH 明确 nullable 三态；order_in_use/order_already_scheduled details 可直达现有 slot。受影响：已完成 order-tracking 由条目 7 承担兼容增量，无 header、无 creation_mode、无 schedulable_at 的既有新业务调用保持默认行为/列表排序/total；现有补录 UI 同步显式传 backfill。旧 roadmap/design review 因实质变化失效并重跑。
 - 2026-07-09（order-tracking design round-2 review 后 owner 追加拍板）：订单域契约再 update 两项，§4.2/§4.3 同步：
   - **§4.3 POST /orders 补录直达**：POST 扩为全 shape（status/deposit_paid/balance_paid/shot_at/delivered_at/note 均可选），status 可直达八态任意值、不必逐级跃迁——历史订单补录是上线刚需（老客户 last_shot_at/churn 基线，否则 reminder-engine 上线即误报），逐级跳既伪造流程又笨重。创建与跃迁/字段修正三条路径同守 §4.2 不变量：目标状态 ≥shot 须显式 shot_at、≥delivered 须显式 delivered_at（补录缺省 now 必错，fail loud 400）、closed 须已结清（409 unpaid_balance）；补录（status≠consulting）允许引用 archived 套系（历史真实性优先），新业务建单仍只允许 active（原 FDR-003 规则不变）。原「reminder-engine 启动前决策补录」观察项就此消解。

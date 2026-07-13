@@ -149,7 +149,9 @@ func TestCustomerProfileAPIArchiveListFilter(t *testing.T) {
 	token := issueToken(t, issuer, testAcctID)
 	kept := createCustomerAPI(t, h, token, "kept")
 	archived := createCustomerAPI(t, h, token, "tobearchived")
-	_ = kept
+	if kept.AvatarRevision == nil || *kept.AvatarRevision != "ar-0" || kept.AvatarVersion != nil || kept.AvatarUrl != nil {
+		t.Fatalf("new customer avatar projection mismatch: %+v", kept)
+	}
 
 	rec := authenticatedRequest(t, h, http.MethodPatch, "/api/v1/customers/"+*archived.Id, token,
 		[]byte(`{"status":"archived"}`))
@@ -176,6 +178,14 @@ func TestCustomerProfileAPIArchiveListFilter(t *testing.T) {
 	assertTotal("/api/v1/customers", 1)
 	assertTotal("/api/v1/customers?status=archived", 1)
 	assertTotal("/api/v1/customers?status=all", 2)
+	assertTotal("/api/v1/customers?status=active,archived", 2)
+
+	for _, status := range []string{"active,active", "all,active", "active,unknown"} {
+		rec := authenticatedRequest(t, h, http.MethodGet, "/api/v1/customers?status="+status, token, nil)
+		if rec.Code != http.StatusBadRequest || errorCode(t, rec.Body.Bytes()) != "validation_failed" {
+			t.Fatalf("status=%s: want 400 validation_failed, got %d %s", status, rec.Code, rec.Body.String())
+		}
+	}
 }
 
 // A7/A8/A9 HTTP 面：身份增删（末位守护 409）与备注（400 边界、详情倒序）。

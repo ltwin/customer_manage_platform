@@ -4,14 +4,12 @@ import {
   ApiError,
   createOrder,
   deleteOrder,
-  listCustomers,
   listOrders,
   listPackages,
   updateOrder,
 } from '../../api/client'
 import type {
   CreateOrderBody,
-  CustomerListResponse,
   OrderListItem,
   OrderStatus,
   PackageListStatus,
@@ -49,15 +47,19 @@ import {
   packagePriceYuanToCents,
   validatePackagePriceYuan,
 } from '../../pages/packagePrice'
+import CustomerAvatar from '../customers/CustomerAvatar'
+import CustomerPicker from '../customers/CustomerPicker'
 
 type OrderStatusValue = NonNullable<OrderStatus> & string
 type StatusFilter = OrderStatusValue | ''
-type CustomerOption = CustomerListResponse['items'][number]
 type PackageOption = PackageListResponse['items'][number]
 
 interface FixedCustomer {
   id?: string
   display_name: string
+  status: string
+  avatar_revision: string
+  avatar_url?: string
 }
 
 interface OrderDraft {
@@ -153,7 +155,6 @@ export default function OrderWorkspace({
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [packages, setPackages] = useState<PackageOption[]>([])
-  const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [actionId, setActionId] = useState<string | null>(null)
   const [progressTarget, setProgressTarget] = useState<ProgressTarget | null>(null)
   const [cancelTarget, setCancelTarget] = useState<OrderListItem | null>(null)
@@ -262,25 +263,6 @@ export default function OrderWorkspace({
       setError(reason instanceof Error ? reason.message : '排期补录草稿读取失败')
     }
   }, [fixedCustomerId, scheduleDraftId, scheduleMode, timezone])
-
-  useEffect(() => {
-    if (fixedCustomerId) return
-    let active = true
-    fetchCustomerOptions()
-      .then((result) => {
-        if (active) setCustomers(result)
-      })
-      .catch((err: unknown) => {
-        if (err instanceof ApiError && err.status === 401) {
-          goLogin()
-          return
-        }
-        if (active) setError(err instanceof Error ? err.message : '客户列表加载失败')
-      })
-    return () => {
-      active = false
-    }
-  }, [fixedCustomerId, goLogin, reloadTick])
 
   useEffect(() => {
     if (!dialogOpen) return
@@ -641,7 +623,6 @@ export default function OrderWorkspace({
         open={dialogOpen}
         draft={draft}
         packages={packages}
-        customers={customers}
         fixedCustomer={customer}
         submitted={submitted}
 	        saving={saving}
@@ -829,7 +810,6 @@ function OrderDialog({
   open,
   draft,
   packages,
-  customers,
   fixedCustomer,
   submitted,
   saving,
@@ -849,7 +829,6 @@ function OrderDialog({
   open: boolean
   draft: OrderDraft
   packages: PackageOption[]
-  customers: CustomerOption[]
   fixedCustomer?: FixedCustomer
   submitted: boolean
   saving: boolean
@@ -894,23 +873,27 @@ function OrderDialog({
         {fixedCustomer ? (
           <div className="field">
             <label>客户</label>
-            <div className="readonly-field">{fixedCustomer.display_name}</div>
+            <div className="readonly-field customer-summary">
+              <CustomerAvatar
+                customerId={fixedCustomer.id ?? ''}
+                displayName={fixedCustomer.display_name}
+                avatarRevision={fixedCustomer.avatar_revision}
+                avatarUrl={fixedCustomer.avatar_url}
+                size="sm"
+                decorative
+              />
+              <span>{fixedCustomer.display_name}</span>
+            </div>
           </div>
         ) : (
           <div className={`field${submitted && !draft.customerId ? ' show-err' : ''}`}>
-            <label htmlFor="orderCustomer">客户 *</label>
-            <select
-              id="orderCustomer"
-              className={`input${submitted && !draft.customerId ? ' invalid' : ''}`}
+            <CustomerPicker
+              label="客户 *"
+              candidateStatuses={['active']}
               value={draft.customerId}
-              onChange={(event) => onDraft({ ...draft, customerId: event.target.value })}
-              autoFocus
-            >
-              <option value="">选择客户</option>
-              {customers.map((item) => (
-                <option key={item.id} value={item.id}>{item.display_name}</option>
-              ))}
-            </select>
+              required
+              onChange={(choice) => onDraft({ ...draft, customerId: choice?.id ?? '' })}
+            />
             <div className="err">请选择客户</div>
           </div>
         )}
@@ -1035,10 +1018,6 @@ function validateDraft(draft: OrderDraft, fixedCustomer: boolean): string | null
   if (draft.backfill && draft.status === 'consulting') return '请选择补录状态'
   if (draft.backfill && draft.status === 'closed' && !draft.balancePaid) return '完结订单必须标记尾款已收'
   return null
-}
-
-async function fetchCustomerOptions(): Promise<CustomerOption[]> {
-  return fetchAllPages((page) => listCustomers({ page, pageSize: optionPageSize }))
 }
 
 async function fetchPackageOptions(status: PackageListStatus): Promise<PackageOption[]> {

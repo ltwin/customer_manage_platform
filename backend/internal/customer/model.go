@@ -63,6 +63,18 @@ type Customer struct {
 	ReferrerCustomerID   *string
 	Status               string
 	MergedIntoCustomerID *string
+	AvatarMetadata
+}
+
+// AvatarMetadata 是 PostgreSQL 上的当前头像 pointer 与独立写 revision。
+// 五个 pointer 字段必须全空或全非空；对象 key 由账号、客户与 ObjectRef 派生而不落库。
+type AvatarMetadata struct {
+	AvatarRevision  int64
+	AvatarVersion   *string
+	AvatarObjectID  *string
+	AvatarMediaType *string
+	AvatarSize      *int64
+	AvatarUpdatedAt *time.Time
 }
 
 type IdentityInput struct {
@@ -130,10 +142,12 @@ type ListResult struct {
 }
 
 type CustomerSummary struct {
-	ID          string
-	DisplayName string
-	Channel     string
-	Status      string
+	ID             string
+	DisplayName    string
+	Channel        string
+	Status         string
+	AvatarRevision int64
+	AvatarVersion  *string
 }
 
 type CustomerStats struct {

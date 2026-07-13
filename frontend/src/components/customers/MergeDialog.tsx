@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ApiError, mergeCustomer } from '../../api/client'
 import type { Customer } from '../../api/client'
+import CustomerPicker from './CustomerPicker'
 
 type Props = {
   targetId: string
@@ -54,14 +55,16 @@ export default function MergeDialog({ targetId, targetName, onMerged, onConflict
         </p>
         {error && <div className="form-error">{error}</div>}
         <div className="field">
-          <label htmlFor="merge-source-id">来源客户 ID *（将被合并的重复档案）</label>
-          <input
-            id="merge-source-id"
-            className="input"
-            value={sourceId}
-            autoFocus
-            onChange={(event) => setSourceId(event.target.value)}
-          />
+          <label>来源客户 *（将被合并的重复档案）</label>
+		  <CustomerPicker
+			value={sourceId}
+			candidateStatuses={['active']}
+			excludeCustomerIds={[targetId]}
+			onChange={(choice) => setSourceId(choice?.id ?? '')}
+			onUnauthorized={onUnauthorized}
+			required
+			label="来源客户"
+		  />
         </div>
         <div className="dialog-actions">
           <button className="btn" type="button" onClick={onClose} disabled={merging}>取消</button>

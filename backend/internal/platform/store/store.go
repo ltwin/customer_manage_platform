@@ -14,6 +14,11 @@ type Store struct {
 	pool *pgxpool.Pool
 }
 
+type ScopedAccount struct {
+	AccountID string
+	Scope     AccountScope
+}
+
 // Open 建立连接池并 ping 确认可达。
 func Open(ctx context.Context, databaseURL string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, databaseURL)
@@ -54,4 +59,28 @@ func (s *Store) CreateAccount(ctx context.Context, id, passwordHash string) erro
 		return fmt.Errorf("insert account: %w", err)
 	}
 	return nil
+}
+
+// AccountScopes 是后台维护任务唯一的账号枚举入口；账号标识来自服务端 accounts 表。
+func (s *Store) AccountScopes(ctx context.Context) ([]ScopedAccount, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM accounts ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("list account scopes: %w", err)
+	}
+	defer rows.Close()
+	result := make([]ScopedAccount, 0)
+	for rows.Next() {
+		var accountID string
+		if err := rows.Scan(&accountID); err != nil {
+			return nil, fmt.Errorf("scan account scope: %w", err)
+		}
+		result = append(result, ScopedAccount{
+			AccountID: accountID,
+			Scope:     AccountScope{pool: s.pool, runner: s.pool, accountID: accountID},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list account scopes: %w", err)
+	}
+	return result, nil
 }

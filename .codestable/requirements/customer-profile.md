@@ -3,8 +3,8 @@ doc_type: requirement
 slug: customer-profile
 pitch: 把散落在微信、QQ、Telegram 里的客户收进一份 30 秒建好的档案，谁介绍的、哪个平台来的，从此有迹可循
 status: current
-last_reviewed: 2026-07-08
-implemented_by: [2026-07-07-customer-profile-complete]
+last_reviewed: 2026-07-13
+implemented_by: [2026-07-07-customer-profile-complete, 2026-07-11-customer-avatar]
 tags: [customer, profile, private-domain, channel]
 ---
 
@@ -36,4 +36,5 @@ tags: [customer, profile, private-domain, channel]
 
 ## 变更日志
 
+- 2026-07-13：`2026-07-11-customer-avatar` 落地；客户档案增加可选头像设置/替换/移除与统一展示/选择面，不改变既有建档边界与用户故事。
 - 2026-07-08：`2026-07-07-customer-profile-complete` 落地后，本需求从 `draft` 升级为 `current`；已覆盖渐进字段、建档后身份增删、备注、归档/恢复、客户合并与转介绍关联。

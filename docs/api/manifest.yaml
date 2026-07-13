@@ -1,7 +1,7 @@
 project: customer_manage_platform
 entry_type: endpoint
 source_root: .
-last_scanned: 2026-07-11
+last_scanned: 2026-07-13
 
 entries:
   - entry: auth
@@ -27,7 +27,21 @@ entries:
       - frontend/src/api/schema.d.ts
     doc_path: docs/api/customers.md
     status: pending
-    note: "待生成"
+    note: "待生成；头像三端点与投影字段见 customer-avatar 条目"
+  - entry: customer-avatar
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/customer_avatar.go
+      - backend/internal/platform/httpapi/router.go
+      - backend/internal/customer/avatar_application.go
+      - backend/internal/customer/avatar_store.go
+      - backend/internal/customer/model.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/customer-avatar.md
+    status: current
+    note: "2026-07-13 customer-avatar feature 落地：条件 PUT/DELETE、强版本 GET、Customer 头像投影"
   - entry: packages
     category: HTTP API
     source_files:

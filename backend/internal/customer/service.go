@@ -220,10 +220,11 @@ func normalizeCreateInput(input CreateInput) (CreateInput, error) {
 func normalizeListFilter(filter ListFilter) (ListFilter, error) {
 	filter.Q = strings.TrimSpace(filter.Q)
 	filter.Channel = strings.TrimSpace(filter.Channel)
-	filter.Status = strings.TrimSpace(filter.Status)
-	if filter.Status == "" {
-		filter.Status = StatusActive
+	status, err := normalizeStatusSet(filter.Status)
+	if err != nil {
+		return ListFilter{}, err
 	}
+	filter.Status = status
 	if filter.Page == 0 {
 		filter.Page = 1
 	}
@@ -239,10 +240,36 @@ func normalizeListFilter(filter ListFilter) (ListFilter, error) {
 	if filter.Channel != "" && !validChannel(filter.Channel) {
 		return ListFilter{}, ValidationError{Message: "channel 非法"}
 	}
-	if !validStatus(filter.Status) {
-		return ListFilter{}, ValidationError{Message: "status 非法"}
-	}
 	return filter, nil
+}
+
+func normalizeStatusSet(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return StatusActive, nil
+	}
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]bool, len(parts))
+	for _, part := range parts {
+		status := strings.TrimSpace(part)
+		if status == "" || !validStatus(status) || seen[status] {
+			return "", ValidationError{Message: "status 非法"}
+		}
+		seen[status] = true
+	}
+	if seen[StatusAll] {
+		if len(seen) != 1 {
+			return "", ValidationError{Message: "status=all 不能与其他状态混用"}
+		}
+		return StatusAll, nil
+	}
+	ordered := make([]string, 0, len(seen))
+	for _, status := range []string{StatusActive, StatusArchived, StatusMerged} {
+		if seen[status] {
+			ordered = append(ordered, status)
+		}
+	}
+	return strings.Join(ordered, ","), nil
 }
 
 func validChannel(channel string) bool {

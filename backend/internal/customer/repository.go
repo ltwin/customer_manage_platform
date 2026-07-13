@@ -116,10 +116,12 @@ func (PostgresRepository) Detail(ctx context.Context, scope store.AccountScope, 
 			return Detail{}, err
 		}
 		referrer = &CustomerSummary{
-			ID:          ref.ID,
-			DisplayName: ref.DisplayName,
-			Channel:     ref.Channel,
-			Status:      ref.Status,
+			ID:             ref.ID,
+			DisplayName:    ref.DisplayName,
+			Channel:        ref.Channel,
+			Status:         ref.Status,
+			AvatarRevision: ref.AvatarRevision,
+			AvatarVersion:  ref.AvatarVersion,
 		}
 	}
 	stats, err := orderStatsForCustomer(ctx, scope, id)
@@ -420,7 +422,7 @@ func findIdentity(ctx context.Context, scope store.AccountScope, customerID, ide
 	return identity, nil
 }
 
-const customerColumns = "id, account_id, created_at, display_name, real_name, phone, birthday, channel, referrer_customer_id, status, merged_into_customer_id"
+const customerColumns = "id, account_id, created_at, display_name, real_name, phone, birthday, channel, referrer_customer_id, status, merged_into_customer_id, avatar_revision, avatar_version, avatar_object_id, avatar_media_type, avatar_size, avatar_updated_at"
 const identityColumns = "id, account_id, created_at, customer_id, platform, handle, remark"
 const noteColumns = "id, account_id, created_at, customer_id, content"
 
@@ -439,6 +441,9 @@ func findCustomer(ctx context.Context, scope store.AccountScope, id string) (Cus
 func scanCustomer(row scanner) (Customer, error) {
 	var customer Customer
 	var realName, phone, birthday, referrer, merged sql.NullString
+	var avatarVersion, avatarObjectID, avatarMediaType sql.NullString
+	var avatarSize sql.NullInt64
+	var avatarUpdatedAt sql.NullTime
 	if err := row.Scan(
 		&customer.ID,
 		&customer.AccountID,
@@ -451,6 +456,12 @@ func scanCustomer(row scanner) (Customer, error) {
 		&referrer,
 		&customer.Status,
 		&merged,
+		&customer.AvatarRevision,
+		&avatarVersion,
+		&avatarObjectID,
+		&avatarMediaType,
+		&avatarSize,
+		&avatarUpdatedAt,
 	); err != nil {
 		return Customer{}, err
 	}
@@ -459,6 +470,11 @@ func scanCustomer(row scanner) (Customer, error) {
 	customer.Birthday = stringPtr(birthday)
 	customer.ReferrerCustomerID = stringPtr(referrer)
 	customer.MergedIntoCustomerID = stringPtr(merged)
+	customer.AvatarVersion = stringPtr(avatarVersion)
+	customer.AvatarObjectID = stringPtr(avatarObjectID)
+	customer.AvatarMediaType = stringPtr(avatarMediaType)
+	customer.AvatarSize = int64Ptr(avatarSize)
+	customer.AvatarUpdatedAt = timePtr(avatarUpdatedAt)
 	return customer, nil
 }
 
@@ -558,8 +574,8 @@ func buildCustomerFilter(filter ListFilter) (string, []any) {
 	conds := make([]string, 0, 3)
 	args := make([]any, 0, 3)
 	if filter.Status != StatusAll {
-		args = append(args, filter.Status)
-		conds = append(conds, fmt.Sprintf("status = $%d", len(args)+1))
+		args = append(args, strings.Split(filter.Status, ","))
+		conds = append(conds, fmt.Sprintf("status = ANY($%d::text[])", len(args)+1))
 	}
 	if filter.Channel != "" {
 		args = append(args, filter.Channel)
@@ -588,6 +604,20 @@ func stringPtr(value sql.NullString) *string {
 		return nil
 	}
 	return &value.String
+}
+
+func int64Ptr(value sql.NullInt64) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Int64
+}
+
+func timePtr(value sql.NullTime) *time.Time {
+	if !value.Valid {
+		return nil
+	}
+	return &value.Time
 }
 
 func nullableArg(value *string) any {

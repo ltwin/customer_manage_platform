@@ -269,42 +269,18 @@ func (e SocialPlatform) Valid() bool {
 	}
 }
 
-// Defines values for ListCustomersParamsStatus.
-const (
-	ListCustomersParamsStatusActive   ListCustomersParamsStatus = "active"
-	ListCustomersParamsStatusAll      ListCustomersParamsStatus = "all"
-	ListCustomersParamsStatusArchived ListCustomersParamsStatus = "archived"
-	ListCustomersParamsStatusMerged   ListCustomersParamsStatus = "merged"
-)
-
-// Valid indicates whether the value is a known member of the ListCustomersParamsStatus enum.
-func (e ListCustomersParamsStatus) Valid() bool {
-	switch e {
-	case ListCustomersParamsStatusActive:
-		return true
-	case ListCustomersParamsStatusAll:
-		return true
-	case ListCustomersParamsStatusArchived:
-		return true
-	case ListCustomersParamsStatusMerged:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for UpdateCustomerJSONBodyStatus.
 const (
-	Active   UpdateCustomerJSONBodyStatus = "active"
-	Archived UpdateCustomerJSONBodyStatus = "archived"
+	UpdateCustomerJSONBodyStatusActive   UpdateCustomerJSONBodyStatus = "active"
+	UpdateCustomerJSONBodyStatusArchived UpdateCustomerJSONBodyStatus = "archived"
 )
 
 // Valid indicates whether the value is a known member of the UpdateCustomerJSONBodyStatus enum.
 func (e UpdateCustomerJSONBodyStatus) Valid() bool {
 	switch e {
-	case Active:
+	case UpdateCustomerJSONBodyStatusActive:
 		return true
-	case Archived:
+	case UpdateCustomerJSONBodyStatusArchived:
 		return true
 	default:
 		return false
@@ -341,13 +317,24 @@ type Account struct {
 	Timezone string `json:"timezone"`
 }
 
+// AvatarRevision defines model for AvatarRevision.
+type AvatarRevision = string
+
+// AvatarVersion defines model for AvatarVersion.
+type AvatarVersion = string
+
 // Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
 type Birthday = string
 
 // Customer defines model for Customer.
 type Customer struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
-	AccountId *string `json:"account_id,omitempty"`
+	AccountId      *string         `json:"account_id,omitempty"`
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+
+	// AvatarUrl 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version
+	AvatarUrl     *string        `json:"avatar_url,omitempty"`
+	AvatarVersion *AvatarVersion `json:"avatar_version,omitempty"`
 
 	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
 	Birthday             *Birthday       `json:"birthday,omitempty"`
@@ -370,7 +357,12 @@ type CustomerChannel string
 // CustomerDetail defines model for CustomerDetail.
 type CustomerDetail struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
-	AccountId *string `json:"account_id,omitempty"`
+	AccountId      *string         `json:"account_id,omitempty"`
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+
+	// AvatarUrl 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version
+	AvatarUrl     *string        `json:"avatar_url,omitempty"`
+	AvatarVersion *AvatarVersion `json:"avatar_version,omitempty"`
 
 	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
 	Birthday             *Birthday        `json:"birthday,omitempty"`
@@ -396,7 +388,12 @@ type CustomerDetail struct {
 // CustomerListItem defines model for CustomerListItem.
 type CustomerListItem struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
-	AccountId *string `json:"account_id,omitempty"`
+	AccountId      *string         `json:"account_id,omitempty"`
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+
+	// AvatarUrl 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version
+	AvatarUrl     *string        `json:"avatar_url,omitempty"`
+	AvatarVersion *AvatarVersion `json:"avatar_version,omitempty"`
 
 	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
 	Birthday    *Birthday       `json:"birthday,omitempty"`
@@ -446,10 +443,13 @@ type CustomerStatus string
 
 // CustomerSummary defines model for CustomerSummary.
 type CustomerSummary struct {
-	Channel     CustomerChannel `json:"channel"`
-	DisplayName string          `json:"display_name"`
-	Id          string          `json:"id"`
-	Status      CustomerStatus  `json:"status"`
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+	AvatarUrl      *string         `json:"avatar_url,omitempty"`
+	AvatarVersion  *AvatarVersion  `json:"avatar_version,omitempty"`
+	Channel        CustomerChannel `json:"channel"`
+	DisplayName    string          `json:"display_name"`
+	Id             string          `json:"id"`
+	Status         CustomerStatus  `json:"status"`
 }
 
 // ErrorEnvelope 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
@@ -718,6 +718,9 @@ type SocialIdentity struct {
 // SocialPlatform defines model for SocialPlatform.
 type SocialPlatform string
 
+// AvatarIfMatch defines model for AvatarIfMatch.
+type AvatarIfMatch = string
+
 // Id defines model for Id.
 type Id = string
 
@@ -755,14 +758,11 @@ type ListCustomersParams struct {
 	Q       *string          `form:"q,omitempty" json:"q,omitempty"`
 	Channel *CustomerChannel `form:"channel,omitempty" json:"channel,omitempty"`
 
-	// Status 缺省 active；可显式查 archived/all（§4.2 归档语义）
-	Status   *ListCustomersParamsStatus `form:"status,omitempty" json:"status,omitempty"`
-	Page     *Page                      `form:"page,omitempty" json:"page,omitempty"`
-	PageSize *PageSize                  `form:"page_size,omitempty" json:"page_size,omitempty"`
+	// Status 缺省 active；兼容单值/all，也接受逗号分隔的 active/archived/merged 状态集合；重复值、未知值或 all 与其他值混用均为 400；过滤发生在分页前
+	Status   *string   `form:"status,omitempty" json:"status,omitempty"`
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
-
-// ListCustomersParamsStatus defines parameters for ListCustomers.
-type ListCustomersParamsStatus string
 
 // CreateCustomerJSONBody defines parameters for CreateCustomer.
 type CreateCustomerJSONBody struct {
@@ -802,6 +802,29 @@ type UpdateCustomerJSONBody struct {
 
 // UpdateCustomerJSONBodyStatus defines parameters for UpdateCustomer.
 type UpdateCustomerJSONBodyStatus string
+
+// DeleteCustomerAvatarParams defines parameters for DeleteCustomerAvatar.
+type DeleteCustomerAvatarParams struct {
+	// IfMatch 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+	IfMatch AvatarIfMatch `json:"If-Match"`
+}
+
+// PutCustomerAvatarMultipartBody defines parameters for PutCustomerAvatar.
+type PutCustomerAvatarMultipartBody struct {
+	File openapi_types.File `json:"file"`
+}
+
+// PutCustomerAvatarParams defines parameters for PutCustomerAvatar.
+type PutCustomerAvatarParams struct {
+	// IfMatch 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+	IfMatch AvatarIfMatch `json:"If-Match"`
+}
+
+// GetCustomerAvatarContentParams defines parameters for GetCustomerAvatarContent.
+type GetCustomerAvatarContentParams struct {
+	V           AvatarVersion `form:"v" json:"v"`
+	IfNoneMatch *string       `json:"If-None-Match,omitempty"`
+}
 
 // AddCustomerIdentityJSONBody defines parameters for AddCustomerIdentity.
 type AddCustomerIdentityJSONBody struct {
@@ -958,6 +981,9 @@ type CreateCustomerJSONRequestBody CreateCustomerJSONBody
 // UpdateCustomerJSONRequestBody defines body for UpdateCustomer for application/json ContentType.
 type UpdateCustomerJSONRequestBody UpdateCustomerJSONBody
 
+// PutCustomerAvatarMultipartRequestBody defines body for PutCustomerAvatar for multipart/form-data ContentType.
+type PutCustomerAvatarMultipartRequestBody PutCustomerAvatarMultipartBody
+
 // AddCustomerIdentityJSONRequestBody defines body for AddCustomerIdentity for application/json ContentType.
 type AddCustomerIdentityJSONRequestBody AddCustomerIdentityJSONBody
 
@@ -1089,6 +1115,15 @@ type ServerInterface interface {
 	// 渐进补全任意字段；{status:archived} 即归档（§4.2）
 	// (PATCH /customers/{id})
 	UpdateCustomer(c *gin.Context, id Id)
+	// 条件移除客户头像；merged 仅开放本 cleanup-only 操作
+	// (DELETE /customers/{id}/avatar)
+	DeleteCustomerAvatar(c *gin.Context, id Id, params DeleteCustomerAvatarParams)
+	// 条件设置或替换客户头像；active/archived 可写，merged 恒为 customer_merged
+	// (PUT /customers/{id}/avatar)
+	PutCustomerAvatar(c *gin.Context, id Id, params PutCustomerAvatarParams)
+	// 经账号鉴权读取当前强版本头像内容
+	// (GET /customers/{id}/avatar/content)
+	GetCustomerAvatarContent(c *gin.Context, id Id, params GetCustomerAvatarContentParams)
 	// 追加社交身份
 	// (POST /customers/{id}/identities)
 	AddCustomerIdentity(c *gin.Context, id Id)
@@ -1292,6 +1327,173 @@ func (siw *ServerInterfaceWrapper) UpdateCustomer(c *gin.Context) {
 	}
 
 	siw.Handler.UpdateCustomer(c, id)
+}
+
+// DeleteCustomerAvatar operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCustomerAvatar(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCustomerAvatarParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch AvatarIfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter If-Match is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCustomerAvatar(c, id, params)
+}
+
+// PutCustomerAvatar operation middleware
+func (siw *ServerInterfaceWrapper) PutCustomerAvatar(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutCustomerAvatarParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch AvatarIfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter If-Match is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutCustomerAvatar(c, id, params)
+}
+
+// GetCustomerAvatarContent operation middleware
+func (siw *ServerInterfaceWrapper) GetCustomerAvatarContent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCustomerAvatarContentParams
+
+	// ------------- Required query parameter "v" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "v", c.Request.URL.Query(), &params.V, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter v: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCustomerAvatarContent(c, id, params)
 }
 
 // AddCustomerIdentity operation middleware
@@ -1870,6 +2072,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
 	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)
 	router.PATCH(options.BaseURL+"/customers/:id", wrapper.UpdateCustomer)
+	router.DELETE(options.BaseURL+"/customers/:id/avatar", wrapper.DeleteCustomerAvatar)
+	router.PUT(options.BaseURL+"/customers/:id/avatar", wrapper.PutCustomerAvatar)
+	router.GET(options.BaseURL+"/customers/:id/avatar/content", wrapper.GetCustomerAvatarContent)
 	router.POST(options.BaseURL+"/customers/:id/identities", wrapper.AddCustomerIdentity)
 	router.DELETE(options.BaseURL+"/customers/:id/identities/:identity_id", wrapper.DeleteCustomerIdentity)
 	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)

@@ -130,6 +130,10 @@ func (h *handlers) abortCustomerError(c *gin.Context, err error) bool {
 		abortError(c, http.StatusConflict, CodeLastIdentity, customerMessage(err))
 	case errors.Is(err, customerdomain.ErrMergeConflict):
 		abortError(c, http.StatusConflict, CodeMergeConflict, customerMessage(err))
+	case errors.Is(err, customerdomain.ErrAvatarRevisionConflict):
+		abortError(c, http.StatusConflict, "avatar_revision_conflict", customerMessage(err))
+	case errors.Is(err, customerdomain.ErrAvatarVersionStale):
+		abortError(c, http.StatusConflict, "avatar_version_stale", customerMessage(err))
 	default:
 		_ = c.Error(err)
 	}
@@ -146,7 +150,7 @@ func bindListCustomersParams(c *gin.Context) (ListCustomersParams, bool) {
 		params.Channel = &value
 	}
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
-		value := ListCustomersParamsStatus(status)
+		value := status
 		params.Status = &value
 	}
 	page, ok := bindOptionalPageParam(c, "page")
@@ -190,8 +194,12 @@ func customerMessage(err error) string {
 }
 
 func toAPICustomer(c customerdomain.Customer) Customer {
+	avatarRevision, avatarVersion, avatarURL := avatarAPIFields(c.ID, c.AvatarRevision, c.AvatarVersion)
 	return Customer{
 		AccountId:            stringPointer(c.AccountID),
+		AvatarRevision:       avatarRevision,
+		AvatarUrl:            avatarURL,
+		AvatarVersion:        avatarVersion,
 		Birthday:             c.Birthday,
 		Channel:              CustomerChannel(c.Channel),
 		CreatedAt:            timePointer(c.CreatedAt),
@@ -206,8 +214,12 @@ func toAPICustomer(c customerdomain.Customer) Customer {
 }
 
 func toAPICustomerListItem(item customerdomain.ListItem) CustomerListItem {
+	avatarRevision, avatarVersion, avatarURL := avatarAPIFields(item.ID, item.AvatarRevision, item.AvatarVersion)
 	return CustomerListItem{
 		AccountId:            stringPointer(item.AccountID),
+		AvatarRevision:       avatarRevision,
+		AvatarUrl:            avatarURL,
+		AvatarVersion:        avatarVersion,
 		Birthday:             item.Birthday,
 		Channel:              CustomerChannel(item.Channel),
 		CreatedAt:            timePointer(item.CreatedAt),
@@ -243,15 +255,27 @@ func toAPICustomerDetail(detail customerdomain.Detail) CustomerDetail {
 	var referrer nullable.Nullable[CustomerSummary]
 	referrer.SetNull()
 	if detail.Referrer != nil {
+		avatarRevision, avatarVersion, avatarURL := avatarAPIFields(
+			detail.Referrer.ID,
+			detail.Referrer.AvatarRevision,
+			detail.Referrer.AvatarVersion,
+		)
 		referrer.Set(CustomerSummary{
-			Channel:     CustomerChannel(detail.Referrer.Channel),
-			DisplayName: detail.Referrer.DisplayName,
-			Id:          detail.Referrer.ID,
-			Status:      CustomerStatus(detail.Referrer.Status),
+			AvatarRevision: avatarRevision,
+			AvatarUrl:      avatarURL,
+			AvatarVersion:  avatarVersion,
+			Channel:        CustomerChannel(detail.Referrer.Channel),
+			DisplayName:    detail.Referrer.DisplayName,
+			Id:             detail.Referrer.ID,
+			Status:         CustomerStatus(detail.Referrer.Status),
 		})
 	}
+	avatarRevision, avatarVersion, avatarURL := avatarAPIFields(detail.ID, detail.AvatarRevision, detail.AvatarVersion)
 	return CustomerDetail{
 		AccountId:            stringPointer(detail.AccountID),
+		AvatarRevision:       avatarRevision,
+		AvatarUrl:            avatarURL,
+		AvatarVersion:        avatarVersion,
 		Birthday:             detail.Birthday,
 		Channel:              CustomerChannel(detail.Channel),
 		CreatedAt:            timePointer(detail.CreatedAt),
@@ -271,6 +295,16 @@ func toAPICustomerDetail(detail customerdomain.Detail) CustomerDetail {
 		},
 		Status: CustomerStatus(detail.Status),
 	}
+}
+
+func avatarAPIFields(id string, revision int64, version *string) (*AvatarRevision, *AvatarVersion, *string) {
+	revisionValue := AvatarRevision("ar-" + strconv.FormatInt(revision, 10))
+	if version == nil {
+		return &revisionValue, nil, nil
+	}
+	versionValue := AvatarVersion(*version)
+	url := "/api/v1/customers/" + id + "/avatar/content?v=" + *version
+	return &revisionValue, &versionValue, &url
 }
 
 func stringPointer(value string) *string {
