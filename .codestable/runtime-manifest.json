@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "plugin": "codestable",
+  "plugin_version": "unknown",
+  "runtime_version": "unknown",
+  "tool_runtime": "skill-global",
+  "managed_paths": [
+    ".codestable/gates",
+    ".codestable/reference",
+    ".codestable/.gitignore",
+    ".codestable/runtime-manifest.json"
+  ],
+  "updated_by": "codestable-runtime-sync"
+}

@@ -26,7 +26,7 @@ onboard 完成后骨架（`cs-onboard` 负责搭建）：
 │       ├── adrs/           子 context 特定 ADR
 │       └── {capability}.md 归属本 context 的能力
 ├── roadmap/               规划层（"接下来怎么做这块大需求 + 模块怎么切 + 接口怎么定"）
-│   └── {slug}/            一个大需求一个子目录（cs-roadmap 产出）
+│   └── {slug}/            一个大需求一个子目录（cs-epic 产出）
 │       ├── {slug}-roadmap.md   主文档：背景 / 范围 / 模块拆分 / 接口契约 / 子 feature 清单 / 排期
 │       ├── {slug}-items.yaml   机器可读子 feature 清单，acceptance 回写状态
 │       ├── {slug}-roadmap-review.md 人工确认前的规划审查报告
@@ -58,11 +58,18 @@ onboard 完成后骨架（`cs-onboard` 负责搭建）：
 │       ├── {slug}-refactor-design.md
 │       ├── {slug}-checklist.yaml
 │       └── {slug}-apply-notes.md
+├── feedback/              CodeStable skill 使用反馈和上报证据
+│   └── YYYY-MM-DD-{slug}/
+│       ├── {slug}-report.md
+│       ├── evidence.json              local-private observations
+│       ├── triage.json                local-private assessments + quality
+│       ├── public-issue-context.json  allowlist preview，可选
+│       ├── github-issue.md            用户确认后可上传，可选
+│       └── regression-candidate.json  local-private eval 交接，可选
 ├── compound/              沉淀类文档统一目录（cs-keep 产出）
 │   └── YYYY-MM-DD-{slug}.md
 │                          纯 markdown，无 frontmatter，grep 检索
 ├── gates/                 workflow gate 配置（onboard 从技能包释放）
-├── tools/                 跨工作流共享脚本（onboard 从技能包释放）
 └── reference/             共享参考文档（onboard 从技能包释放）
 ```
 
@@ -73,10 +80,11 @@ onboard 完成后骨架（`cs-onboard` 负责搭建）：
 - 需求文档：`requirements/{slug}.md`（能力愿景，不带日期前缀，扁平不分组）；中心索引 `requirements/VISION.md`
 - roadmap：`roadmap/{slug}/`（不带日期前缀，平铺不嵌套）
 - feature / issue / refactor 目录：带日期前缀 `YYYY-MM-DD-{slug}`
+- feedback 目录：带日期前缀 `YYYY-MM-DD-{slug}`，保存 report、local-private evidence/triage/candidate 与用户确认的 public preview
 - 沉淀类：`compound/YYYY-MM-DD-{slug}.md`，日期用**归档当天**，纯 markdown 无 frontmatter（cs-keep 产出）
 - 领域术语：`requirements/CONTEXT.md`（单 context）或 `requirements/{ctx}/CONTEXT.md`（多 context）；cs-domain lazy 创建
 - 架构决策：`requirements/adrs/NNN-{slug}.md`（系统级）或 `requirements/{ctx}/adrs/NNN-{slug}.md`（子 context）；3 位编号，cs-domain 产出
-- 项目注意事项入口固定为 `.codestable/attention.md`，所有 CodeStable 子技能启动前必须读取；不再兼容 `AGENTS.md` / `CLAUDE.md` 等外部入口
+- 项目注意事项入口固定为 `.codestable/attention.md`，所有 CodeStable 子技能启动前必须读取；不要用 `AGENTS.md` / `CLAUDE.md` 等外部入口代替它
 
 ### 单 context ↔ 多 context 拓扑
 
@@ -86,13 +94,13 @@ onboard 完成后骨架（`cs-onboard` 负责搭建）：
 
 ### 改目录结构
 
-改 `cs-onboard/reference/shared-conventions.md` 模板，新项目 onboard 时带上新版本；已有项目手动同步 `.codestable/reference/shared-conventions.md`。
+改 `plugins/codestable/skills/cs-onboard/references/shared-conventions.md` 模板，新项目 onboard 时带上新版本；已有项目手动同步 `.codestable/reference/shared-conventions.md`。
 
 ---
 
 ## 1. 共享元数据口径
 
-**feature spec**：brainstorm / design / design-review / review / QA / acceptance 共用 `doc_type` / `feature` / `status` / `summary` / `tags`。子技能只补特有字段。`status`：brainstorm = `confirmed`（落盘即确认无 draft）；design = `draft` / `approved`；design-review / review / QA / acceptance 见对应技能。
+**feature spec**：brainstorm / design / design-review / review / QA / acceptance 共用 `doc_type` / `feature` / `status` / `summary` / `tags`。`cs-feat` 的各阶段只补特有字段。`status`：brainstorm = `confirmed`（落盘即确认无 draft）；design = `draft` / `approved`；design-review / review / QA / acceptance 见对应阶段协议。
 
 新增 feature gate 的 `doc_type`：`feature-design-review`（status: `passed` / `changes-requested` / `blocked`）、`feature-review`（status: `passed` / `changes-requested` / `blocked`）、`feature-qa`（status: `passed` / `failed` / `blocked`）、`feature-acceptance`（status: `passed` / `blocked`）。review / QA 报告是后续 gate 的输入，不替用户批准 design，也不替 acceptance 做最终验收。
 
@@ -100,7 +108,9 @@ onboard 完成后骨架（`cs-onboard` 负责搭建）：
 
 **归档类（compound）**：由 `cs-keep` 统一产出，写到 `.codestable/compound/YYYY-MM-DD-{slug}.md`。纯 markdown，**无 frontmatter**。三段足够：背景 / 结论 / 证据。检索靠 grep。
 
-**外部读者文档**（cs-doc-tutorial / cs-doc-api）：frontmatter 由各自子技能定义。无特殊说明：`draft` = 待 review，`current` = 当前有效，`outdated` = 代码已变更待同步。
+**反馈类（feedback）**：由 `cs-feedback` 显式调用后产出，写到 `.codestable/feedback/YYYY-MM-DD-{slug}/`。`evidence.json` 保存脱敏 observation/incident，`triage.json` 保存 assessment 与 readiness，二者及 candidate 均为 local-private；`github-issue.md` 只能从 public allowlist 渲染并在上传前让用户确认。
+
+**外部读者文档**（`cs-docs` tutorial / api mode）：frontmatter 由对应模式定义。无特殊说明：`draft` = 待 review，`current` = 当前有效，`outdated` = 代码已变更待同步。
 
 **写作约束**：子技能提字段时优先写"额外字段"或"阶段状态变化"，不重复展开整套通用字段。
 
@@ -109,8 +119,8 @@ onboard 完成后骨架（`cs-onboard` 负责搭建）：
 ## 2. {slug}-checklist.yaml 生命周期
 
 - 是 feature 工作流的唯一执行清单
-- 由 `cs-feat-design` 在 draft design 成型后先生成 `steps` + `checks`，供 `cs-feat-design-review` 和用户 review；用户确认后随 design 一起进入实现
-- `cs-feat-ff` **不生成** checklist（也不写 design / acceptance），是跳过 spec 流程直接写代码的超轻量通道；唯一留下的痕迹是动手后回写的 `{slug}-ff-note.md`（轻量回顾，参与 scoped-commit、可被 cs-req / cs-domain backfill 检索到）
+- 由 `cs-feat` design 阶段在 draft design 成型后先生成 `steps` + `checks`，供 design-review 阶段和用户 review；用户确认后随 design 一起进入实现
+- `cs-feat` fastforward mode **不生成** checklist（也不写 design / acceptance），是跳过 spec 流程直接写代码的超轻量通道；唯一留下的痕迹是动手后回写的 `{slug}-ff-note.md`（轻量回顾，参与 scoped-commit、可被 cs-req / cs-domain backfill 检索到）
 
 `steps` 的粒度是 **编排-计算分离维度的切片策略**——按"先编排骨架、后计算节点、最后持久化与测试"写（最简 Workflow 先行 → 逐个节点填充），**不下沉到 file:line / 函数级**。具体改哪个文件由 implement 阶段决定。
 
@@ -138,28 +148,28 @@ onboard 完成后骨架（`cs-onboard` 负责搭建）：
 **items.yaml 状态机**：
 
 ```
-planned  → in-progress  （cs-feat-design 启动 feature 时改）
-in-progress → done      （cs-feat-accept 验收完成时改）
-planned  → dropped      （cs-roadmap update 模式，用户决定不做时改）
+planned  → in-progress  （cs-feat design 阶段启动 feature 时改）
+in-progress → done      （cs-feat acceptance 阶段验收完成时改）
+planned  → dropped      （cs-epic planning update 模式，用户决定不做时改）
 ```
 
 `done` / `dropped` 是终态。需要回退重做的新加一条 slug 略改的条目，不改终态。
 
-**cs-roadmap 的职责**：生成和维护 roadmap 主文档 + items.yaml；把 `planned` 改 `dropped`（用户放弃时）；不改 `in-progress` / `done`（feature 技能负责）。
+**cs-epic planning 阶段的职责**：生成和维护 roadmap 主文档 + items.yaml；把 `planned` 改 `dropped`（用户放弃时）；不改 `in-progress` / `done`（feature 流程负责）。第一版内部仍使用 `.codestable/roadmap/`。
 
-**cs-roadmap-review 的职责**：在人审前只读审查 roadmap 主文档 + items.yaml + 相关事实，写 `{slug}-roadmap-review.md`；不修改 roadmap，不替用户批准。
+**cs-epic review 阶段的职责**：在人审前只读审查 roadmap 主文档 + items.yaml + 相关事实，写 `{slug}-roadmap-review.md`；不修改 roadmap，不替用户批准。
 
-**cs-feat-design 的职责**（从 roadmap 起头时）：
+**cs-feat design 阶段的职责**（从 roadmap 起头时）：
 
 1. design.md frontmatter 加 `roadmap: {roadmap-slug}` + `roadmap_item: {子 feature slug}`
 2. items.yaml 对应条目 `status: in-progress` + `feature: YYYY-MM-DD-{slug}`
 3. 校验 yaml
 
-**cs-feat-design-review 的职责**：在人审前只读审查 design + checklist + 相关事实，写 `{slug}-design-review.md`；不修改 design/checklist，不替用户批准。
+**cs-feat design-review 阶段的职责**：在人审前只读审查 design + checklist + 相关事实，写 `{slug}-design-review.md`；不修改 design/checklist，不替用户批准。
 
 直接起 feature（非 roadmap 来）两字段留空，不触发 roadmap 写。
 
-**cs-feat-accept 的职责**：
+**cs-feat acceptance 阶段的职责**：
 
 1. 读 design frontmatter `roadmap` / `roadmap_item`
 2. 空 → 跳过
@@ -176,8 +186,8 @@ planned  → dropped      （cs-roadmap update 模式，用户决定不做时改
 **feature-acceptance** 收尾按顺序判断：
 
 1. `cs-keep`：沉淀坑点 / 技巧 / 长期约束 / 选型
-2. `cs-doc-tutorial`：开发者 / 用户指南
-3. `cs-doc-api`：公开 API 参考
+2. `cs-docs` tutorial mode：开发者 / 用户指南
+3. `cs-docs` api mode：公开 API 参考
 4. `cs-docs-neat`：阶段 / 里程碑收尾时同步 `.codestable/`、README/docs、`CLAUDE.md` / `AGENTS.md` 和 agent 记忆
 5. `scoped-commit`
 
@@ -193,10 +203,10 @@ planned  → dropped      （cs-roadmap update 模式，用户决定不做时改
 2. `cs-docs-neat`：快速改动影响 README/docs 或 agent 入口时同步
 3. `scoped-commit`
 
-**roadmap** 收尾按顺序判断：
+**epic / roadmap** 收尾按顺序判断：
 
 1. `cs-docs-neat`：roadmap 确认落盘或整个 roadmap goal 完成后，同步 `.codestable/`、README/docs、`CLAUDE.md` / `AGENTS.md` 和 agent 记忆
-2. 后续若要自动推进整份 roadmap，再走 `cs-roadmap-impl-goal`
+2. 后续若要自动推进整份 roadmap，再走 `cs-epic` goal-package 阶段
 
 **统一规则**：一律一句话提示；用户说"不用"立即跳过；不强制；上游主动提示，下游承接执行。
 
@@ -217,9 +227,9 @@ acceptance / issue-fix 走完后把本次产物提交为一个 commit：
 
 ## 5. 归档检索规则
 
-feature-design / issue-analyze / issue-fix 动手前到 `.codestable/compound/` 搜已有沉淀：
+feature-design / issue-analyze / issue-fix 动手前到 `.codestable/compound/` 搜已有沉淀，遵守上下文幂等（首次读、已载复用）：
 
-- 总是先搜 `requirements/CONTEXT.md`、`requirements/adrs/`、`compound/`
+- **首次进入该工作项**时搜 `requirements/CONTEXT.md`、`requirements/adrs/`、`compound/`（防术语冲突、防违反已拍板决策）；若本会话/本阶段已加载过这些全局输入，则复用已读摘要，不重复 Glob+Read。`epic_child_batch: true` 时这些全局输入已由 `cs-epic` 在批量开始时统一加载，子 feature 直接复用、不重扫
 - `compound/` 直接 `grep -r "关键词" .codestable/compound/`（纯 markdown，无 schema）
 - 搜到的结果只作参考输入，不盲目套用——可能已过时或不适合当前上下文
 - 搜到和当前方向冲突的决策类沉淀 → **必须**正面回应"为什么仍然这么做"或调整方向
@@ -240,7 +250,7 @@ feature-design / issue-analyze / issue-fix 动手前到 `.codestable/compound/` 
 
 ## 7. 写代码时的反射检查
 
-`cs-feat-impl`、`cs-feat-ff`、`cs-issue-fix`、`cs-refactor-ff` 共用。AI 默认会往"大函数 / 大文件 / god class / 处处特殊分支"漂，这一节把漂移截在发生那一刻。
+`cs-feat` implementation / fastforward、`cs-issue` fix、`cs-refactor` apply / fastforward 共用。AI 默认会往"大函数 / 大文件 / god class / 处处特殊分支"漂，这一节把漂移截在发生那一刻。（这里截"往复杂漂"的结构膨胀；选型层"往省事漂"的实现降级——最小闭环 / fake / 正则凑——见 `.codestable/reference/solution-depth-conventions.md` 的方案深度 pre-pass。）
 
 ### 第一性原则 pre-pass
 
@@ -269,8 +279,6 @@ feature-design / issue-analyze / issue-fix 动手前到 `.codestable/compound/` 
 - 机器状态（YAML / JSON / `state.yaml` / frontmatter 字段）保持机读格式不翻译，不从不同语言的叙述反推状态。
 - 默认只写 canonical 报告文件；只有 attention 明确要求多语言副本时，才额外写 `{name}.{lang}.md`。
 
-## 9. 执行约定与 worktree
+## 9. 执行约定
 
-实现执行拓扑、worktree gate、code review、finish gate、context packet 和 Task agent 选择拆在 `.codestable/reference/execution-conventions.md`，approval 报告口径在 `approval-conventions.md`。
-
-- **不要让 AI 在主协调检出里 `git switch` / `git checkout`**——需要执行分支时用 git worktree；可用 `branch-guard-hooks.md` 配 command hook 硬拦在 `main`/`master` 上的直接实现。
+preflight 和 runtime 恢复在 `.codestable/reference/execution-conventions.md`；Task agent 与 Goal driver 在 `agent-conventions.md`；approval 报告口径在 `approval-conventions.md`；context packet、commit planning 和 backlog 工具在 `tools-context.md`。

@@ -1,109 +1,89 @@
 # CodeStable 体系总览
 
-本文档介绍 CodeStable 工作流家族整体——有哪些子技能、各管什么场景、产物怎么组织。无论是 AI 在运行时读到这个文件，还是人打开来看，都能对整个体系有个完整印象。
+本文档介绍 CodeStable 工作流家族整体：有哪些推荐主入口、各管什么场景、产物怎么组织。
 
-AI 辅助开发里，有几类场景会反复出现——加新功能、修 bug、遇到值得沉淀的经验、做技术选型、摸新模块的代码、接入新仓库。每种场景如果每次从零处理，都会出各自的典型问题：AI 给功能起的术语跟老代码冲突、bug 改完没人记得当时怎么诊断的、上周刚踩过的坑下周又踩一遍。
-
-CodeStable 把这几类场景各配一套子技能，产物放进统一的目录结构、带统一的 YAML frontmatter,互相之间可以检索引用。
-
+CodeStable 把常见开发活动各配一套流程，产物放进统一的 `.codestable/` 目录结构，带统一命名和状态，方便人和 AI 在后续会话里检索复用。
 
 ## 技能分成四部分
 
-**根入口**——开放式诉求 / 不知道走哪个时的统一入口:
+**根入口**
 
-- `cs` — 介绍体系全貌 + 把诉求路由到正确的 cs-* 子技能。本技能不做事,只做分诊和提示
+- `cs` — 先判入口模式；行动请求同轮直转，咨询请求只给建议；介绍与歧义请求不误启动下游流程。
 
-**做事**——从一段模糊想法走到上线的功能、或者从一份错误报告走到修好的 bug:
+**做事主入口**
 
-- `cs-feat` — 新功能,design → design-review → implement → code-review → QA → acceptance（想法还模糊时先走讨论层 `cs-brainstorm` 做分诊，不属于 feature 流程内部）
-- `cs-goal` — 目标达成,限定起点/终点 → interview/grill 写起点报告 → 自主迭代实现/验证 → 完成前 Task agent 功能验收
-- `cs-issue` — 修 bug,report → analyze → fix
-- `cs-refactor` — 代码优化(行为不变、结构/性能/可读性变),scan → design → apply
-- `cs-code-review` — 各执行流末端、commit 前的横切独立 diff 评审（质量门禁）
+- `cs-feat` — 新功能端到端：design → design-review → implementation → code-review → QA → acceptance。想法模糊时先走 `cs-brainstorm`。
+- `cs-issue` — 修 bug 端到端：report → analyze → fix → code-review。
+- `cs-refactor` — 行为不变的结构/性能/可读性优化：标准模式或 fastforward mode。
+- `cs-epic` — 大需求端到端：规划、规划审查、子 feature design、goal 执行包。用户叫 epic；内部第一版仍用 roadmap 目录/doc_type。
+- `cs-goal` — 限定起点/终点后自主迭代实现、验证，完成前做 Task agent 功能验收。
+- `cs-code-review` — 各执行流末端、commit 前的横切独立 diff 评审。
 
-两类都不直接让 AI 写代码,而是先产出 spec(功能方案 / 问题分析),用户 review 后再动手,代码和 doc 一起交付。针对的是术语冲突、范围失控、改完不留存档这三种 AI 默认会出的问题。
+**沉淀**
 
-**沉淀**——把做事过程产生的知识存下来,下次遇到同类问题直接复用:
+- `cs-keep` — 把坑点、技巧、决策、调研沉淀到 `.codestable/compound/`。
+- `cs-note` — 把一两行启动必读项目注意事项追加到 `.codestable/attention.md`。
 
-- `cs-keep` — 把坑点 / 技巧 / 决策 / 调研沉淀到 `.codestable/compound/`，纯 markdown，grep 检索
-- `cs-note` — 把一两行启动必读的项目注意事项追加到 `.codestable/attention.md`
+**讨论与辅助**
 
-**讨论层**——想法还模糊时的统一入口,不直接产出设计或代码:
+- `cs-brainstorm` — 想法模糊时分诊到 feature、epic 或 brainstorm note。
+- `cs-onboard` — 把新仓库接入 CodeStable 目录结构。
+- `cs-req` — 起草或刷新 `.codestable/requirements/` 下的需求文档。
+- `cs-domain` — 维护 CONTEXT.md 术语、ADR 决策和单/多 context 拓扑。
+- `cs-audit` — 主动扫描 bug、安全、性能、可维护性和架构偏离。
+- `cs-feedback` — 显式调用后把当前会话整理为 local-private incident/triage；公开预览经用户确认后才可上报。
+- `cs-docs` — 写给外部读者的开发者指南、用户指南或 API 参考。
+- `cs-docs-neat` — 阶段/里程碑收尾时整理 `.codestable/`、README/docs、`CLAUDE.md` / `AGENTS.md` 和 agent 记忆。
 
-- `cs-brainstorm` — 和用户对话做分诊:case 1(已经够清楚,直接 feature-design)、case 2(小需求,在 feature 里继续讨论并落 `{slug}-brainstorm.md`)、case 3(大需求,移交给 roadmap)
-
-**辅助**——围着前几类转的周边工具:
-
-- `cs-onboard` — 把新仓库接入 CodeStable 目录结构
-- `cs-req` — 起草或刷新 `.codestable/requirements/` 下的需求文档——系统的能力愿景层，覆盖过去/现在/未来
-- `cs-domain` — 领域模型一站式：CONTEXT.md 术语维护 + ADR 决策记录（守门 3 判据 + Nygard 四节）+ 单/多 context 拓扑管理
-- `cs-roadmap` — 把一块装不进单个 feature 的大需求拆成带依赖和状态的子 feature 清单,作为后续多次 feature 流程的种子和排期依据;独立于需求 / 架构档案
-- `cs-roadmap-review` — roadmap 人工确认前的只读规划审查 gate
-- `cs-roadmap-impl-goal` — 把已确认 roadmap 编排成可直接运行的 goal,逐个 feature 衔接 design / impl / review / QA / accept
-- `cs-feat-design-review` — feature design 人工确认前的只读方案审查 gate
-- `cs-doc-tutorial` — 写给外部读者的开发者指南 / 用户指南（任务导向）
-- `cs-doc-api` — 为公开 API 逐条目生成参考文档（从源码反推）
-- `cs-docs-neat` — 阶段 / 里程碑收尾时，全局整理 `.codestable/`、README/docs、`CLAUDE.md` / `AGENTS.md` 和 agent 记忆，做反膨胀、补漏和冲突修正
-- `codestable-maintainer` — 维护 CodeStable 自身技能库 / harness / verifier / installed copy（源仓分支验证 + main-only 同步）
-
+旧阶段技能仍长期可用，但只是兼容入口；共享文档只写主入口和阶段，不把旧入口作为推荐路径。
 
 ## 场景路由
 
-仓库里还没有 `.codestable/` 目录,先用 `cs-onboard` 搭骨架。
+仓库还没有 `.codestable/` 目录时，明确行动请求由 `cs` 串行进入 `cs-onboard` gate，完成后继续原目标；只咨询时不自动搭骨架。
 
-| 场景 | 子技能 |
+| 场景 | 主入口 |
 |---|---|
-| 想法还模糊 / "有个想法没想清楚" / "先聊聊" | `cs-brainstorm`(分诊后路由到 design / feature-brainstorm 落盘 / roadmap) |
+| 想法还模糊 / 先聊聊 | `cs-brainstorm` |
 | 新功能 / 新能力 | `cs-feat` |
-| 限定起点/终点的目标达成 / "自主迭代直到完成" | `cs-goal` |
+| 限定起点/终点的目标达成 | `cs-goal` |
 | BUG / 异常 / 文档错误 | `cs-issue` |
-| 代码优化 / 重构 / 重写(行为不变) | `cs-refactor` |
-| 合并前代码评审 / "code review" / 准备 PR / merge | `cs-code-review` |
-| 摸代码、提问调研 / 踩坑回顾 / 技术选型沉淀 / 可复用模式 | `cs-keep` |
+| 代码优化 / 重构 / 重写，且行为不变 | `cs-refactor` |
+| 大需求拆解 / 系统级能力 / 执行整个 roadmap | `cs-epic` |
+| 合并前代码评审 / 准备 PR | `cs-code-review` |
+| CodeStable skill 跑偏 / 规则没讲清 / 工具失败 | `cs-feedback` |
+| 摸代码、踩坑回顾、技术选型、可复用模式 | `cs-keep` |
 | 补 / 更新需求文档 | `cs-req` |
-| 拍板技术决策 / 加术语 / 项目要分子系统 | `cs-domain` |
-| 大需求拆解 / 排期规划 | `cs-roadmap` |
-| roadmap 人审前规划审查 | `cs-roadmap-review` |
-| 推进已有 roadmap / 执行整个 roadmap | `cs-roadmap-impl-goal` |
-| feature design 人审前方案审查 | `cs-feat-design-review` |
-| 开发者指南 / 用户指南 | `cs-doc-tutorial` |
-| 库 API 参考 | `cs-doc-api` |
-| 阶段收尾 / 整理文档 / 同步 agent 入口 / 新人交接 | `cs-docs-neat` |
+| 拍板技术决策 / 加术语 / 分 context | `cs-domain` |
+| 开发者指南 / 用户指南 / API 参考 | `cs-docs` |
+| 阶段收尾 / 同步 agent 入口 / 新人交接 | `cs-docs-neat` |
 
-完整的操作手册、退出条件、和其他工作流的关系,各子技能里讲。
+## 档案分层
 
+- **愿景档案**（requirements）：用户需要什么、系统提供什么能力。
+- **领域档案**（CONTEXT.md / adrs）：项目术语和结构性决策。
+- **规划档案**（roadmap）：`cs-epic` 的内部存储模型，描述大需求分步实现。
+- **单次动作**（feature / issue / refactor）：本次要做的一件具体事情的 spec 和验证记录。
 
-## 愿景档案 vs 结构档案 vs 规划档案 vs 单次动作
+用户说“我想要一个 X 系统”这种大需求，走 `cs-epic` 拆成若干子 feature，再逐条走 `cs-feat`。直接起 feature 容易变成巨型 design。
 
-四类文档各管一段时间尺度,不要混:
+## 阶段不可跳
 
-- **愿景档案**(requirements)——描述"用户需要什么、系统提供什么能力来满足"。`status` 区分三个时间深度：`draft`（未来愿景）、`current`（现在的能力）、`outdated`（过去的痕迹）。draft req 可独立于实现存在——先把愿景定下来，后续 roadmap 排期和 design 实现才有稳定对齐基准
-- **领域档案**(CONTEXT.md / adrs/)——描述"项目用什么术语、为什么做出这些结构性决策"。术语跟着 capability 引入；ADR 严格 3 判据，不每个决定都记。cs-domain 维护
-- **规划档案**(roadmap)——描述"接下来打算怎么分步实现"。独立于愿景和领域档案,改动不牵连 requirements。所有条目 done / dropped 后 roadmap 进入 `completed` 状态,作为历史档案留存
-- **单次动作**(feature / issue / refactor)——本次要做的一件具体事情的 spec。动作走完后,相关沉淀提炼进愿景档案、结构档案和 compound
+主入口会自动判断阶段，但不会跳过 gate：
 
-用户说"我想要一个 X 系统"这种大需求,先走 roadmap 拆成若干子 feature,再一条一条走 feature 流程。直接起 feature 会变成巨型 design 塞不下、拆了又没有追踪抓手。
+- feature：design → design-review → implementation → code-review → QA → acceptance。
+- issue：report → analyze → fix → code-review；简单问题可走快速通道但仍写 fix-note。
+- refactor：标准模式必须 scan → design → apply → code-review；fastforward 必须行为不变、范围小、可自证。
+- epic：planning → review → 用户确认 → 子 feature design/review → 用户确认 → goal 包。
 
-
-## feature 和 issue 的阶段不可跳
-
-feature 走 brainstorm(可选) → design → design-review → implement → code-review → QA → acceptance,issue 走 report → analyze → fix。每个阶段有退出条件,上一个没满足,下一个不开始。
-
-AI 最常见的问题是一口气铺几百行代码才让人看——等发现问题已经很难中止。阶段间的人工 checkpoint 就是为了早一步中止。每个 checkpoint 具体检查什么,对应子技能里讲。
-
-例外两种:issue 根因一眼确定时走快速通道,跳过 analyze 直接 fix;feature 范围小时走 `cs-feat-ff`,写完 spec 直接进实现。
-
+每个 checkpoint 的详细规则在对应主入口及其 `references/` 中。
 
 ## 进一步参考
 
-- `.codestable/reference/shared-conventions.md` — 目录结构、YAML frontmatter 口径、`{slug}-checklist.yaml` 生命周期、收尾 commit 约定、cs-keep 守护规则
-- `.codestable/reference/tools.md` — `search-yaml.py` / `validate-yaml.py` 用法（compound 不用这俩，直接 grep）
-- `.codestable/reference/maintainer-notes.md` — 断点恢复、新增子工作流的登记
+- `.codestable/reference/shared-conventions.md` — 目录结构、frontmatter 口径、checklist 生命周期和收尾约定。
+- `.codestable/reference/execution-conventions.md` — CodeStable preflight、runtime 恢复和按需规则索引。
+- `.codestable/reference/agent-conventions.md` — Task agent 选择、生命周期和 Goal driver 派发。
+- `.codestable/reference/tools.md` — `search-yaml.py`、`validate-yaml.py` 和 workflow gate 工具用法。
+- `.codestable/reference/tools-context.md` — context packet、commit planning 和 backlog 工具用法。
+- `.codestable/reference/maintainer-notes.md` — 断点恢复和新增子工作流登记。
 
-目录结构(requirements/、roadmap/、features/、issues/、compound/、tools/、reference/)的权威定义在 `shared-conventions.md`。要改目录先改那里——方法是改 `cs-onboard/reference/shared-conventions.md` 这个模板,新项目 onboard 时会带上新版本。
-
-
-## 相关
-
-- `.codestable/attention.md` — CodeStable 技能启动必读的项目注意事项
-- `.codestable/requirements/CONTEXT.md` — 项目领域术语表（cs-domain，lazy 创建）
+目录结构权威定义在 `shared-conventions.md`。要改目录先改 `plugins/codestable/skills/cs-onboard/references/shared-conventions.md` 模板，新项目 onboard 时会带上新版本。
