@@ -32,7 +32,7 @@
 |---|---|
 | 启动必读注意事项 | `.codestable/attention.md` |
 | 领域术语表 | `.codestable/requirements/CONTEXT.md` |
-| 已拍板决策（ADR 001-003） | `.codestable/requirements/adrs/` |
+| 已拍板决策（ADR 001-004） | `.codestable/requirements/adrs/` |
 | 能力愿景索引 | `.codestable/requirements/VISION.md` |
 | 规划与接口契约（硬约束） | `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` |
 | Roadmap 当前执行状态 | `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml` |
