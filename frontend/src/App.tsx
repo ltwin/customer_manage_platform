@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import LoginPage from './pages/LoginPage'
 import AppShell from './components/AppShell'
@@ -9,11 +10,12 @@ import CustomersPage from './pages/CustomersPage'
 import DashboardPage from './pages/DashboardPage'
 import OrdersPage from './pages/OrdersPage'
 import PackagesPage from './pages/PackagesPage'
-import { getToken } from './auth/token'
+import { getToken, getTokenSnapshot, subscribeToken } from './auth/token'
 
 // 守卫路由骨架：后续域 feature 的受保护页面都挂在 RequireAuth 之下（design 2.2 扩展点）
 function RequireAuth({ children }: { children: ReactElement }) {
   const location = useLocation()
+	useSyncExternalStore(subscribeToken, getTokenSnapshot)
   if (!getToken()) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }

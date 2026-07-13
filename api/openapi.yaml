@@ -22,6 +22,8 @@ tags:
     description: 后端 codegen 切片标签（customer-core 已实现的客户三操作）
   - name: customer-profile-complete
     description: 后端 codegen 切片标签（customer-profile-complete 的档案五操作）
+  - name: customer-avatar
+    description: 后端 codegen 切片标签（客户头像条件写与鉴权读取）
   - name: customers
     description: 客户域（customer-core / customer-profile-complete）
   - name: packages
@@ -154,10 +156,10 @@ paths:
             $ref: "#/components/schemas/CustomerChannel"
         - name: status
           in: query
-          description: 缺省 active；可显式查 archived/all（§4.2 归档语义）
+          description: 缺省 active；兼容单值/all，也接受逗号分隔的 active/archived/merged 状态集合；重复值、未知值或 all 与其他值混用均为 400；过滤发生在分页前
           schema:
             type: string
-            enum: [active, merged, archived, all]
+            pattern: "^(all|(active|merged|archived)(,(active|merged|archived))*)$"
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -262,6 +264,151 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /customers/{id}/avatar:
+    put:
+      tags: [customers, customer-avatar]
+      operationId: putCustomerAvatar
+      summary: 条件设置或替换客户头像；active/archived 可写，merged 恒为 customer_merged
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/AvatarIfMatch"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 设置后的客户；same-content 完整对象重放为 no-op
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: customer_merged | avatar_revision_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      tags: [customers, customer-avatar]
+      operationId: deleteCustomerAvatar
+      summary: 条件移除客户头像；merged 仅开放本 cleanup-only 操作
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/AvatarIfMatch"
+      responses:
+        "200":
+          description: 移除后的客户；已无头像时为 no-op
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Customer"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: avatar_revision_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /customers/{id}/avatar/content:
+    get:
+      tags: [customers, customer-avatar]
+      operationId: getCustomerAvatarContent
+      summary: 经账号鉴权读取当前强版本头像内容
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: v
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/AvatarVersion"
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: '^"sha256-[0-9a-f]{64}"$'
+      responses:
+        "200":
+          description: 完整性已验证的当前头像字节
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+            Vary:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: 完整性验证通过且 If-None-Match 命中
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+            Vary:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: avatar_version_stale
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
   /customers/{id}/identities:
     post:
       tags: [customers, customer-profile-complete]
@@ -1293,6 +1440,14 @@ components:
       bearerFormat: JWT
 
   parameters:
+    AvatarIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+      schema:
+        type: string
+        pattern: '^"ar-(0|[1-9][0-9]*)"$'
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1413,6 +1568,17 @@ components:
       type: string
       enum: [active, merged, archived]
 
+    AvatarRevision:
+      type: string
+      readOnly: true
+      pattern: "^ar-(0|[1-9][0-9]*)$"
+      example: ar-0
+
+    AvatarVersion:
+      type: string
+      readOnly: true
+      pattern: "^sha256-[0-9a-f]{64}$"
+
     SocialPlatform:
       type: string
       enum: [wechat, qq, telegram, xiaohongshu, douyin, weibo, other]
@@ -1471,7 +1637,7 @@ components:
 
     Customer:
       type: object
-      required: [id, account_id, created_at, display_name, channel, status]
+      required: [id, account_id, created_at, display_name, channel, status, avatar_revision]
       properties:
         id:
           type: string
@@ -1502,6 +1668,14 @@ components:
         merged_into_customer_id:
           type: string
           readOnly: true
+        avatar_revision:
+          $ref: "#/components/schemas/AvatarRevision"
+        avatar_version:
+          $ref: "#/components/schemas/AvatarVersion"
+        avatar_url:
+          type: string
+          readOnly: true
+          description: 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version
 
     CustomerListItem:
       allOf:
@@ -1520,7 +1694,7 @@ components:
 
     CustomerSummary:
       type: object
-      required: [id, display_name, channel, status]
+      required: [id, display_name, channel, status, avatar_revision]
       properties:
         id:
           type: string
@@ -1530,6 +1704,13 @@ components:
           $ref: "#/components/schemas/CustomerChannel"
         status:
           $ref: "#/components/schemas/CustomerStatus"
+        avatar_revision:
+          $ref: "#/components/schemas/AvatarRevision"
+        avatar_version:
+          $ref: "#/components/schemas/AvatarVersion"
+        avatar_url:
+          type: string
+          readOnly: true
 
     CustomerStats:
       type: object

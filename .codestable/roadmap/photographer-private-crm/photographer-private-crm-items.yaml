@@ -28,11 +28,11 @@ items:
 
   - slug: customer-avatar
     description: 客户头像：可选设置/替换/移除头像；列表、详情、转介绍下拉、merge 对话框等客户选择面显示头像缩略图，未设置时使用默认首字头像
-    depends_on: [customer-profile-complete]
-    status: planned
-    feature: null
+    depends_on: [customer-profile-complete, order-tracking, schedule-calendar]
+    status: done
+    feature: 2026-07-11-customer-avatar
     minimal_loop: false
-    notes: 依赖理由：头像属于客户档案补全后的展示增强，不阻塞 30 秒建档；完成信号：头像字段/API 与前端选择组件联动，上传/替换/移除用例通过，未设置头像 fallback 稳定；不强制客户必须设置头像
+    notes: 依赖理由：头像属于客户档案增强；订单/档期客户选择面带头像是本条硬范围，故显式依赖已完成的 order-tracking/schedule-calendar，本条承担其 UI 兼容增量且不回退 done 状态。2026-07-11 owner 拍板首版 ECS/local persistent volume，经 AvatarObjectStore 隔离并预留 OSS adapter；2026-07-13 owner 拍板 merged 禁止PUT但允许cleanup-only DELETE，并接受24h grace、每小时、每账号每tick各1页inventory/audit+100 due的GC默认值。完成信号：avatar_revision If-Match PUT/DELETE、强内容版本 GET、安全/非法输入/merged cleanup通过，不可复用 object_id generation+PG revision/五字段 pointer 在结果未知/ABA/并发下正确，进入GC的代次不再晋升且精确旧 generation Delete 在 DB/session 丢失与同checksum重发下不伤新current，pending due不被重复扫描推迟，signal-aware MaintenanceRunner/reconciliation可回收并报告integrity，全部展示/选择/固定摘要有头像或fallback，production require-mount缺卷失败、volume recreate/停app备份恢复+exact-generation manifest可核对，make check全绿；不实现OSS adapter/搬迁/预签名
 
   - slug: package-catalog
     description: 套系 CRUD、上下架与删除：拍摄类型/定价方式/张数时长底片精修参数；下架后不出现在选择列表，删除受引用完整性保护
@@ -88,7 +88,7 @@ items:
     status: planned
     feature: null
     minimal_loop: false
-    notes: 依赖理由：导出范围 = 4.2 全部实体，各域落地后才有内容可导；完成信号：counts 与数组长度一致自动化用例、导出文件抽查 PII 字段完整
+    notes: 依赖理由：导出范围 = 4.2 全部实体，各域落地后才有内容可导；design 启动 gate：owner 必须先拍板 reference-only JSON（明确不承诺头像便携恢复），或先 update roadmap §4.6 为媒体文件+exact-generation manifest/key/count/checksum 的便携包，未决不得进入 design/标 done；选定后完成信号含 counts/manifest 自动化核对与 PII 保管说明
 
   - slug: v1-hardening
     description: 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明

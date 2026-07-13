@@ -2,7 +2,9 @@
 
 Go + Gin + React + PostgreSQL 单体，阿里云 ECS 自部署。规格与流程见 `.codestable/`（规划权威源：`roadmap §4` 契约 + `api/openapi.yaml` 机器形式）。
 
-当前已落地客户档案、套系、订单与月历档期；能力现状见 `.codestable/requirements/VISION.md`，roadmap 执行状态见 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`。
+当前已落地客户档案（含可选头像）、套系、订单与月历档期；能力现状见 `.codestable/requirements/VISION.md`，roadmap 执行状态见 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`。
+
+用户操作见 `docs/user/customer-avatar.md`；开发接入见 `docs/dev/customer-avatar.md`；HTTP 参考见 `docs/api/customer-avatar.md`。
 
 ## 开发
 
@@ -71,13 +73,70 @@ docker compose up -d --wait   # postgres + app；app 就绪以 healthz 为准
 - **改密现状**：首版无改密 API；改密 = 清空 accounts 表后用新 `SEED_ADMIN_PASSWORD` 重启 seed（或直接 UPDATE password_hash）。
 - **TELEGRAM_BOT_TOKEN** 仅 `scripts/telegram-smoke.sh` 使用，服务端不读取。
 
-## 备份建议（v1-hardening 前的手动方案）
+## 客户头像持久卷与一致备份
+
+production compose 将头像放在独立 named volume `avatar_data`，容器内固定挂载到
+`/var/lib/crm/avatars`，并以 `AVATAR_LOCAL_REQUIRE_MOUNT=true` 启动；缺卷、只落容器层、
+不可写或无法从 Linux mount table 证明为独立挂载点时，app 会 fail-fast。二进制直跑可使用
+普通目录；`AVATAR_LOCAL_REQUIRE_MOUNT` 未设置时缺省为 `false`，也可显式设置为
+`false`。完整配置键见 `.env.example`。
+
+头像备份必须同时包含 PostgreSQL、整个头像 volume 和 exact-generation manifest。为冻结 API 与
+maintenance runner，先停 app；备份或恢复期间不要开放写流量：
 
 ```bash
-docker compose exec postgres pg_dump -U crm crm > backup-$(date +%F).sql
+set -eu
+umask 077
+BACKUP_DIR="backup-$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir "$BACKUP_DIR"
+
+docker compose stop app
+docker compose run --rm --no-deps \
+  --entrypoint /usr/local/bin/avatar-manifest app generate \
+  > "$BACKUP_DIR/avatar-manifest.json"
+docker compose exec -T postgres \
+  pg_dump -U "${POSTGRES_USER:-crm}" "${POSTGRES_DB:-crm}" \
+  > "$BACKUP_DIR/database.sql"
+docker compose run --rm --no-deps --entrypoint tar app \
+  -C /var/lib/crm/avatars -czf - . \
+  > "$BACKUP_DIR/avatar-volume.tgz"
+docker compose start app
 ```
 
-建议每日 cron + 异地留存；脚本化与恢复演练归 v1-hardening。
+manifest 会逐个 current pointer 记录 `account_id/customer_id/avatar_version/avatar_object_id/key/
+media_type/size/actual_sha256`，并保存全部物理 generation 的 key、count 和 checksum 汇总。
+仅比较对象数量或内容 checksum 不够：同内容但不同 `avatar_object_id` 是不同物理代次。
+
+恢复会替换目标数据库和头像 volume。先停 app，确认备份来源与保留策略，再执行；最后一条 verify
+成功前不得启动 app：
+
+```bash
+set -eu
+BACKUP_DIR=backup-YYYYMMDDTHHMMSSZ
+
+docker compose stop app
+docker compose exec -T postgres \
+  dropdb -U "${POSTGRES_USER:-crm}" --if-exists --force "${POSTGRES_DB:-crm}"
+docker compose exec -T postgres \
+  createdb -U "${POSTGRES_USER:-crm}" "${POSTGRES_DB:-crm}"
+docker compose exec -T postgres \
+  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-crm}" "${POSTGRES_DB:-crm}" \
+  < "$BACKUP_DIR/database.sql"
+docker compose run --rm --no-deps \
+  -v "$PWD/$BACKUP_DIR:/backup:ro" --entrypoint sh app -c \
+  'find /var/lib/crm/avatars -mindepth 1 -maxdepth 1 -exec rm -rf {} + && tar -xzf /backup/avatar-volume.tgz -C /var/lib/crm/avatars'
+docker compose run --rm --no-deps \
+  -v "$PWD/$BACKUP_DIR:/backup:ro" \
+  --entrypoint /usr/local/bin/avatar-manifest app \
+  --manifest /backup/avatar-manifest.json verify
+docker compose start app
+```
+
+备份目录含数据库凭证派生数据和客户头像 PII：保持 `0700/0600` 权限，使用受控账号、加密介质和
+异地加密传输，并按独立 retention/销毁策略管理。在线“移除头像”（包括 merged 客户的隐私清理）
+只清理当前 pointer 与活动存储中的对象，不会追溯擦除已经生成的历史备份；恢复旧备份可能重新带回
+头像 PII，因此恢复前必须评估备份年龄、合法保留范围与是否应先销毁该备份。UI 不承诺跨历史备份的
+彻底擦除。
 
 ## 目录
 
@@ -86,5 +145,6 @@ api/        OpenAPI 契约（roadmap §4 的机器形式，双端 codegen 输入
 backend/    Go 单体（cmd/server 入口；internal 下含 customer / package / order / schedule 领域与 platform 基座）
 frontend/   Vite + React + TS（dev 走 Vite proxy；API 类型由 OpenAPI 生成；构建产物 go:embed 进二进制）
 scripts/    运维脚本（TG 冒烟）
-docs/       编码规范 checklist 与 HTTP API 参考（清单见 docs/api/manifest.yaml）
+docs/       用户/开发指南、编码规范 checklist 与 HTTP API 参考（清单见 docs/api/manifest.yaml）
 ```
+

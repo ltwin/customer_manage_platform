@@ -50,3 +50,31 @@ func migrateUpFS(databaseURL string, fsys embed.FS, dir, migrationsTable string)
 	}
 	return nil
 }
+
+func migrateStepsFS(databaseURL string, fsys embed.FS, dir, migrationsTable string, steps int) error {
+	src, err := iofs.New(fsys, dir)
+	if err != nil {
+		return fmt.Errorf("load migrations: %w", err)
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
+		return fmt.Errorf("open database for migrate: %w", err)
+	}
+	driver, err := migratepg.WithInstance(db, &migratepg.Config{MigrationsTable: migrationsTable})
+	if err != nil {
+		_ = db.Close()
+		return fmt.Errorf("init migrate driver: %w", err)
+	}
+	m, err := migrate.NewWithInstance("iofs", src, "postgres", driver)
+	if err != nil {
+		_ = db.Close()
+		return fmt.Errorf("init migrate: %w", err)
+	}
+	defer func() {
+		_, _ = m.Close()
+	}()
+	if err := m.Steps(steps); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("migrate %d steps: %w", steps, err)
+	}
+	return nil
+}

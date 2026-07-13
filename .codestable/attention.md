@@ -16,6 +16,8 @@ CodeStable 所有落盘产出的正文用**中文**：plan / design、plan revie
 
 ### 测试
 
+- 本机 Docker Desktop 下默认高并行 `go test ./...`（Testcontainers）可能偶发 `port "5432/tcp" not found`；包内串行更稳：`go test ./... -count=1 -parallel=1`（customer-avatar QA/验收 2026-07-13）。
+
 ### 命令与脚本陷阱
 
 ### 路径与目录约定

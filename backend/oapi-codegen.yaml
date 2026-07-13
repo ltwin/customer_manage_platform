@@ -12,6 +12,7 @@ output-options:
     - auth
     - customer-core
     - customer-profile-complete
+    - customer-avatar
     - packages
     - orders
     - schedule

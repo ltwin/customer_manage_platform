@@ -5,6 +5,7 @@ import type { CustomerListResponse, CustomerListStatus } from '../api/client'
 import { channelLabels, channelOptions } from './customerLabels'
 import type { CustomerChannel } from './customerLabels'
 import QuickNote from '../components/customers/QuickNote'
+import CustomerAvatar from '../components/customers/CustomerAvatar'
 
 type CustomerListItem = CustomerListResponse['items'][number]
 
@@ -148,7 +149,13 @@ export default function CustomersPage() {
                   <tr key={customer.id} onClick={() => navigate(`/customers/${customer.id}`)}>
                     <td>
                       <div className="cell-name">
-                        <div className="avatar">{customer.display_name[0]}</div>
+                        <CustomerAvatar
+							customerId={customer.id ?? ''}
+							displayName={customer.display_name}
+							avatarRevision={customer.avatar_revision}
+							avatarUrl={customer.avatar_url}
+							decorative
+						/>
                         <div>
                           <div className="nm">{customer.display_name}</div>
                           <div className="rn num">{shortDate(customer.created_at)}</div>

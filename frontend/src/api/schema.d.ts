@@ -74,6 +74,41 @@ export interface paths {
         patch: operations["updateCustomer"];
         trace?: never;
     };
+    "/customers/{id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 条件设置或替换客户头像；active/archived 可写，merged 恒为 customer_merged */
+        put: operations["putCustomerAvatar"];
+        post?: never;
+        /** 条件移除客户头像；merged 仅开放本 cleanup-only 操作 */
+        delete: operations["deleteCustomerAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/avatar/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 经账号鉴权读取当前强版本头像内容 */
+        get: operations["getCustomerAvatarContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/customers/{id}/identities": {
         parameters: {
             query?: never;
@@ -420,6 +455,9 @@ export interface components {
         CustomerChannel: "xiaohongshu" | "douyin" | "weibo" | "referral" | "other";
         /** @enum {string} */
         CustomerStatus: "active" | "merged" | "archived";
+        /** @example ar-0 */
+        AvatarRevision: string;
+        AvatarVersion: string;
         /** @enum {string} */
         SocialPlatform: "wechat" | "qq" | "telegram" | "xiaohongshu" | "douyin" | "weibo" | "other";
         /** @enum {string} */
@@ -456,6 +494,10 @@ export interface components {
             referrer_customer_id?: string;
             status: components["schemas"]["CustomerStatus"];
             readonly merged_into_customer_id?: string;
+            avatar_revision: components["schemas"]["AvatarRevision"];
+            avatar_version?: components["schemas"]["AvatarVersion"];
+            /** @description 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version */
+            readonly avatar_url?: string;
         };
         CustomerListItem: components["schemas"]["Customer"] & {
             /** @description 非 cancelled 订单计数；order 域未落地前恒为 0 */
@@ -471,6 +513,9 @@ export interface components {
             display_name: string;
             channel: components["schemas"]["CustomerChannel"];
             status: components["schemas"]["CustomerStatus"];
+            avatar_revision: components["schemas"]["AvatarRevision"];
+            avatar_version?: components["schemas"]["AvatarVersion"];
+            readonly avatar_url?: string;
         };
         CustomerStats: {
             /** @description 非 cancelled 订单计数；order 域未落地前恒为 0 */
@@ -716,6 +761,8 @@ export interface components {
         };
     };
     parameters: {
+        /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+        AvatarIfMatch: string;
         /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
         IdempotencyKey: string;
         Id: string;
@@ -786,8 +833,8 @@ export interface operations {
             query?: {
                 q?: string;
                 channel?: components["schemas"]["CustomerChannel"];
-                /** @description 缺省 active；可显式查 archived/all（§4.2 归档语义） */
-                status?: "active" | "merged" | "archived" | "all";
+                /** @description 缺省 active；兼容单值/all，也接受逗号分隔的 active/archived/merged 状态集合；重复值、未知值或 all 与其他值混用均为 400；过滤发生在分页前 */
+                status?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -922,6 +969,145 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             /** @description customer_merged（merged 客户档案只读） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    putCustomerAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+                "If-Match": components["parameters"]["AvatarIfMatch"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 设置后的客户；same-content 完整对象重放为 no-op */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description customer_merged | avatar_revision_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    deleteCustomerAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+                "If-Match": components["parameters"]["AvatarIfMatch"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 移除后的客户；已无头像时为 no-op */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description avatar_revision_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    getCustomerAvatarContent: {
+        parameters: {
+            query: {
+                v: components["schemas"]["AvatarVersion"];
+            };
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 完整性已验证的当前头像字节 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    "Cache-Control"?: string;
+                    Vary?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description 完整性验证通过且 If-None-Match 命中 */
+            304: {
+                headers: {
+                    ETag?: string;
+                    "Cache-Control"?: string;
+                    Vary?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description avatar_version_stale */
             409: {
                 headers: {
                     [name: string]: unknown;

@@ -15,6 +15,8 @@ import (
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
+	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
@@ -76,16 +78,23 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		t.Fatalf("create default account: %v", err)
 	}
 	tokens := auth.NewTokenIssuer(testSecret)
+	objects, err := avatarstore.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatalf("new avatar store: %v", err)
+	}
+	avatarRepo := customerdomain.NewPostgresAvatarRepository()
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Logger:       slog.New(slog.DiscardHandler),
-		DB:           s,
-		ScopeFactory: s,
-		Auth:         auth.NewService(s, tokens),
-		Customer:     customerdomain.NewService(customerdomain.NewPostgresRepository()),
-		Orders:       orderdomain.NewService(orderdomain.NewPostgresRepository()),
-		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
-		Idempotency:  idempotency.NewExecutor(),
-		Schedule:     scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(time.Now)),
+		Logger:          slog.New(slog.DiscardHandler),
+		DB:              s,
+		ScopeFactory:    s,
+		Auth:            auth.NewService(s, tokens),
+		Customer:        customerdomain.NewService(customerdomain.NewPostgresRepository()),
+		Orders:          orderdomain.NewService(orderdomain.NewPostgresRepository()),
+		Packages:        pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
+		Idempotency:     idempotency.NewExecutor(),
+		Schedule:        scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(time.Now)),
+		Avatar:          customerdomain.NewAvatarApplication(avatarRepo, objects),
+		AvatarProcessor: avatarimage.NewProcessor(),
 	})
 	return router, s, tokens, ctr
 }

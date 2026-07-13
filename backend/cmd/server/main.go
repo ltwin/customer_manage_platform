@@ -4,12 +4,18 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
+	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
+	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
 	"github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
@@ -22,7 +28,9 @@ import (
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := run(context.Background(), logger); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, logger); err != nil {
 		logger.Error("启动失败", slog.Any("error", err))
 		os.Exit(1)
 	}
@@ -51,26 +59,95 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if created {
 		logger.Info("已创建默认账号（seed 完成后可从环境移除 SEED_ADMIN_PASSWORD）")
 	}
+	objects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
+	if err != nil {
+		return err
+	}
+	avatarRepo := customer.NewPostgresAvatarRepository()
+	avatarApp := customer.NewAvatarApplication(avatarRepo, objects)
+	maintenance := customer.NewAvatarMaintenanceRunner(s, avatarRepo, objects, logger)
 
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Logger:       logger,
-		DB:           s,
-		ScopeFactory: s,
-		Auth:         auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
-		Customer:     customer.NewService(customer.NewPostgresRepository()),
-		Orders:       order.NewService(order.NewPostgresRepository()),
-		Packages:     pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
-		Idempotency:  idempotency.NewExecutor(),
-		Schedule:     schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
+		Logger:          logger,
+		DB:              s,
+		ScopeFactory:    s,
+		Auth:            auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
+		Customer:        customer.NewService(customer.NewPostgresRepository()),
+		Orders:          order.NewService(order.NewPostgresRepository()),
+		Packages:        pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
+		Idempotency:     idempotency.NewExecutor(),
+		Schedule:        schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
+		Avatar:          avatarApp,
+		AvatarProcessor: avatarimage.NewProcessor(),
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
-	// 公网直挂无反代（design D6），ReadHeaderTimeout 防 Slowloris 慢连接耗尽 fd；
-	// 优雅停机留 v1-hardening（review REV-004）。
+	// 公网直挂无反代（design D6），ReadHeaderTimeout 防 Slowloris 慢连接耗尽 fd。
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	return server.ListenAndServe()
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	runnerDone := make(chan struct{})
+	go func() {
+		maintenance.Run(runCtx)
+		close(runnerDone)
+	}()
+	serverResult := make(chan error, 1)
+	go func() { serverResult <- server.ListenAndServe() }()
+	lifecycle := serverLifecycle{
+		timeout:      10 * time.Second,
+		cancel:       cancel,
+		shutdown:     server.Shutdown,
+		serverResult: serverResult,
+		runnerDone:   runnerDone,
+	}
+	return lifecycle.wait(ctx)
+}
+
+type serverLifecycle struct {
+	timeout      time.Duration
+	cancel       context.CancelFunc
+	shutdown     func(context.Context) error
+	serverResult <-chan error
+	runnerDone   <-chan struct{}
+}
+
+func (l serverLifecycle) wait(ctx context.Context) error {
+	select {
+	case err := <-l.serverResult:
+		l.cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), l.timeout)
+		defer shutdownCancel()
+		if waitErr := waitForRunner(shutdownCtx, l.runnerDone); waitErr != nil {
+			return waitErr
+		}
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		l.cancel()
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), l.timeout)
+		defer shutdownCancel()
+		shutdownErr := l.shutdown(shutdownCtx)
+		if waitErr := waitForRunner(shutdownCtx, l.runnerDone); waitErr != nil {
+			return waitErr
+		}
+		if shutdownErr != nil {
+			return shutdownErr
+		}
+		return nil
+	}
+}
+
+func waitForRunner(ctx context.Context, runnerDone <-chan struct{}) error {
+	select {
+	case <-runnerDone:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("avatar maintenance shutdown timeout: %w", ctx.Err())
+	}
 }

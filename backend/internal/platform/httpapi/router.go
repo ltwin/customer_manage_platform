@@ -41,6 +41,8 @@ type RouterDeps struct {
 	Idempotency     *idempotency.Executor
 	AccountTimezone AccountTimezoneProvider
 	Schedule        *scheduledomain.Service
+	Avatar          *customerdomain.AvatarApplication
+	AvatarProcessor AvatarProcessor
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -64,15 +66,17 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		timezone = defaultTimezoneProvider{}
 	}
 	h := &handlers{
-		logger:       deps.Logger,
-		auth:         deps.Auth,
-		scopeFactory: deps.ScopeFactory,
-		customer:     deps.Customer,
-		orders:       deps.Orders,
-		packages:     deps.Packages,
-		idempotency:  deps.Idempotency,
-		timezone:     timezone,
-		schedule:     deps.Schedule,
+		logger:          deps.Logger,
+		auth:            deps.Auth,
+		scopeFactory:    deps.ScopeFactory,
+		customer:        deps.Customer,
+		orders:          deps.Orders,
+		packages:        deps.Packages,
+		idempotency:     deps.Idempotency,
+		timezone:        timezone,
+		schedule:        deps.Schedule,
+		avatar:          deps.Avatar,
+		avatarProcessor: deps.AvatarProcessor,
 	}
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", h.Login)
@@ -81,6 +85,9 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.GET("/customers", h.listCustomersRoute)
 	protected.POST("/customers", h.CreateCustomer)
 	protected.GET("/customers/:id", h.getCustomerRoute)
+	protected.PUT("/customers/:id/avatar", h.putCustomerAvatarRoute)
+	protected.DELETE("/customers/:id/avatar", h.deleteCustomerAvatarRoute)
+	protected.GET("/customers/:id/avatar/content", h.getCustomerAvatarContentRoute)
 	// customer-profile-complete：档案五操作
 	protected.PATCH("/customers/:id", func(c *gin.Context) { h.UpdateCustomer(c, c.Param("id")) })
 	protected.POST("/customers/:id/identities", func(c *gin.Context) { h.AddCustomerIdentity(c, c.Param("id")) })

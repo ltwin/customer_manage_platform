@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { useCallback, useEffect, useState } from 'react'
-import { ApiError, fetchCustomer, updateCustomer } from '../api/client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ApiError, deleteCustomerAvatar, fetchCustomer, putCustomerAvatar, updateCustomer } from '../api/client'
 import type { CustomerDetail } from '../api/client'
 import { channelLabels } from './customerLabels'
 import CustomerProfileForm from '../components/customers/CustomerProfileForm'
@@ -13,6 +13,7 @@ import { scheduleDialogShouldOpen } from '../components/schedule/flow'
 import { readPendingSchedule } from '../components/schedule/journal'
 import { accountToday } from '../components/schedule/timezone'
 import { useShell } from '../components/shellContext'
+import CustomerAvatar from '../components/customers/CustomerAvatar'
 
 const statusLabels: Record<string, string> = {
   active: '活跃',
@@ -34,6 +35,8 @@ export default function CustomerDetailPage() {
   const [activeTab, setActiveTab] = useState<'notes' | 'reminders' | 'orders'>(() => searchParams.get('tab') === 'orders' ? 'orders' : 'notes')
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduledDate, setScheduledDate] = useState<string | null>(null)
+	const avatarInputRef = useRef<HTMLInputElement>(null)
+	const [avatarBusy, setAvatarBusy] = useState(false)
 
   const goLogin = useCallback(() => {
     navigate('/login', { replace: true })
@@ -110,6 +113,47 @@ export default function CustomerDetailPage() {
       setActionError(err instanceof Error ? err.message : '操作失败')
     }
   }
+
+	async function uploadAvatar(file: File | undefined) {
+		if (!customer || !file) return
+		setAvatarBusy(true)
+		setActionError(null)
+		try {
+			await putCustomerAvatar(customer.id ?? id, file, customer.avatar_revision)
+			reload()
+			notify(customer.avatar_url ? '客户头像已替换' : '客户头像已设置')
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 401) {
+				goLogin()
+				return
+			}
+			if (err instanceof ApiError && err.code === 'avatar_revision_conflict') reload()
+			setActionError(err instanceof Error ? err.message : '头像上传失败')
+		} finally {
+			setAvatarBusy(false)
+			if (avatarInputRef.current) avatarInputRef.current.value = ''
+		}
+	}
+
+	async function removeAvatar() {
+		if (!customer) return
+		setAvatarBusy(true)
+		setActionError(null)
+		try {
+			await deleteCustomerAvatar(customer.id ?? id, customer.avatar_revision)
+			reload()
+			notify('客户头像已移除')
+		} catch (err) {
+			if (err instanceof ApiError && err.status === 401) {
+				goLogin()
+				return
+			}
+			if (err instanceof ApiError && err.code === 'avatar_revision_conflict') reload()
+			setActionError(err instanceof Error ? err.message : '头像移除失败')
+		} finally {
+			setAvatarBusy(false)
+		}
+	}
 
   if (loading) {
     return (
@@ -196,7 +240,13 @@ export default function CustomerDetailPage() {
             ) : (
               <section className="card">
                 <div className="profile-head">
-                  <div className="avatar">{customer.display_name[0]}</div>
+                  <CustomerAvatar
+					customerId={customer.id ?? id}
+					displayName={customer.display_name}
+					avatarRevision={customer.avatar_revision}
+					avatarUrl={customer.avatar_url}
+					size="lg"
+				/>
                   <div>
                     <h2>{customer.display_name}</h2>
                     <div className="sub">
@@ -206,6 +256,27 @@ export default function CustomerDetailPage() {
                     </div>
                   </div>
                 </div>
+				<div className="avatar-actions">
+					{!isMerged && (
+						<>
+							<input
+								ref={avatarInputRef}
+								type="file"
+								accept="image/jpeg,image/png,image/webp"
+								hidden
+								onChange={(event) => { void uploadAvatar(event.target.files?.[0]) }}
+							/>
+							<button className="btn btn-sm" type="button" disabled={avatarBusy} onClick={() => avatarInputRef.current?.click()}>
+								{avatarBusy ? '处理中' : customer.avatar_url ? '替换头像' : '设置头像'}
+							</button>
+						</>
+					)}
+					{customer.avatar_url && (
+						<button className="btn btn-sm" type="button" disabled={avatarBusy} onClick={() => { void removeAvatar() }}>
+							{isMerged ? '移除头像（隐私清理）' : '移除头像'}
+						</button>
+					)}
+				</div>
                 <div className="value-strip">
                   <div className="vs"><div className="n">{customer.stats.total_order_amount}</div><div className="l">累计消费</div></div>
                   <div className="vs"><div className="n">{customer.stats.orders_count}</div><div className="l">约单</div></div>
@@ -276,6 +347,8 @@ export default function CustomerDetailPage() {
           id: customer.id ?? id,
           display_name: customer.display_name,
           status: customer.status,
+          avatar_revision: customer.avatar_revision,
+          avatar_url: customer.avatar_url,
         }}
         source="customer"
         onClose={() => setScheduleOpen(false)}

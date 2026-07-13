@@ -3,6 +3,7 @@ import { ApiError, updateCustomer } from '../../api/client'
 import type { Customer, CustomerDetail, UpdateCustomerBody } from '../../api/client'
 import { channelOptions } from '../../pages/customerLabels'
 import type { CustomerChannel } from '../../pages/customerLabels'
+import CustomerPicker from './CustomerPicker'
 
 type Props = {
   customer: CustomerDetail
@@ -129,13 +130,17 @@ export default function CustomerProfileForm({ customer, onSaved, onCancel, onUna
       </div>
       {channel === 'referral' && (
         <div className="field">
-          <label htmlFor="edit-referrer">介绍人客户 ID *（须为经营中客户）</label>
-          <input
-            id="edit-referrer"
-            className="input"
-            value={referrerCustomerID}
-            onChange={(event) => setReferrerCustomerID(event.target.value)}
-          />
+          <label>介绍人 *</label>
+		  <CustomerPicker
+			value={referrerCustomerID}
+			candidateStatuses={['active']}
+			selectedCustomer={customer.referrer ?? undefined}
+			excludeCustomerIds={[customer.id ?? '']}
+			onChange={(choice) => setReferrerCustomerID(choice?.id ?? '')}
+			onUnauthorized={onUnauthorized}
+			required
+			label="介绍人"
+		  />
         </div>
       )}
       <div className="topbar-actions">

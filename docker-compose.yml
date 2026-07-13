@@ -15,8 +15,13 @@ services:
       # 只起 app（review REV-005）。凭证经 .env 注入（cp .env.example .env）。
       DATABASE_URL: ${APP_DATABASE_URL:-postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm-dev-password}@postgres:5432/${POSTGRES_DB:-crm}?sslmode=disable}
       HTTP_ADDR: ":8080"
+      AVATAR_STORAGE_DRIVER: local
+      AVATAR_LOCAL_ROOT: /var/lib/crm/avatars
+      AVATAR_LOCAL_REQUIRE_MOUNT: "true"
     ports:
       - "8080:8080"
+    volumes:
+      - avatar_data:/var/lib/crm/avatars
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,3 +50,4 @@ services:
 
 volumes:
   pgdata:
+  avatar_data:

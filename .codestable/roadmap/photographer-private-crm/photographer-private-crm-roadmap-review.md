@@ -2,101 +2,96 @@
 doc_type: roadmap-review
 roadmap: photographer-private-crm
 status: passed
-reviewed: 2026-07-10
-round: 7
+reviewed: 2026-07-13
+round: 12
 ---
 
 # photographer-private-crm roadmap 审查报告
 
 ## 1. Scope And Inputs
 
-- Roadmap: `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md`
-- Items: `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`
-- Related docs: schedule-calendar / order-tracking requirements、CONTEXT、ADR-001/003、相关 compound、schedule design/checklist
-- Code facts checked: customer Merge/Update、order Create/Delete、AccountScope、OrderWorkspace 日期/补录状态、OpenAPI 双端临时生成
+- Roadmap：`.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md`
+- Items：`.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`
+- 当前 feature：`.codestable/features/2026-07-11-customer-avatar/customer-avatar-design.md` 与 `customer-avatar-checklist.yaml`
+- Related docs：customer-profile requirement、CONTEXT、ADR-001/002/003、AccountScope/OpenAPI 相关 compound
+- Code facts checked：现有 Customer merge 行锁、CustomerSummary/OpenAPI、server lifecycle、AccountScope、客户选择入口与部署配置
 
 ### Independent Review
 
-- Status: completed
-- Detection: native-agent
-- Provider / agent: 宿主原生 Codex subagent `schedule_roadmap_review_r6`
-- Raw output: round 6 `changes-requested`（1 blocking / 3 important / 1 nit），修订后 round 7 多次聚焦复核，最终 `blocking: none / important: none / passed`
-- Merge policy: 主 agent 逐条核验代码和契约事实；成立项同步 roadmap/items/requirements/OpenAPI/design/checklist，并让同一独立 reviewer 复核最终增量
-- Gate effect: none
+- Status：completed
+- Detection：native-agent
+- Provider / agent：宿主原生 Codex subagent `avatar_roadmap_review`（Ptolemy）
+- Raw output：最终增量复核 `passed`；`blocking/important/nit = none`；旧 round 11 冻结 verdict 已作废
+- Frozen inputs：roadmap `c8e5c82d`；items `8b496c95`；design `991230dd`；checklist `311e5778`
+- Merge policy：主 agent 逐条核验 owner 决策、状态矩阵、并发、PII/备份边界、DAG 和机器校验
+- Gate effect：none
 
 ## 2. Roadmap Summary
 
-- Goal completion signal: 全链路可演示且全部 item done/dropped；本轮只强化 schedule-calendar 的可靠排期闭环。
-- Module split: 既有 7 模块不变；schedule-calendar 合理跨 platform + order + schedule + webapp。
-- Interface contracts: Idempotency-Key、typed operation、creation_mode、schedulable_at、timezone、ScheduleSlotListItem union、typed conflict details、nullable PATCH。
-- Items: 12 条；唯一 minimal loop 为 customer-core；schedule-calendar 为 in-progress。
-- Dependency shape: DAG，无未知依赖、无环。
+- Goal completion signal：安全设置/替换/鉴权读取/移除头像；merged 只允许 cleanup-only DELETE；不可复用 generation、双向 reconciliation、可验证本地卷与 exact-generation 备份恢复。
+- Module split：customer 拥有头像生命周期与 `AvatarObjectStore` port；platform 提供 provider adapter、配置和 runner 装配；webapp 用 CustomerAvatar/CustomerPicker 收口展示和选择。
+- Interface contracts：`avatar_revision` 负责写 CAS，`avatar_version` 负责内容 URL/ETag，`avatar_object_id` 负责不可复用物理代次；application ReadContent 完整验证后才由薄 handler 返回。
+- Owner decisions：merged PUT 恒 409，GET 可读，DELETE 是唯一 object→none 清理例外；GC 默认值为 24h grace、每小时、每账号每 tick 各一页 inventory/audit +100 due。
+- Items：12 条，`6 done / 1 in-progress / 5 planned`；customer-avatar 绑定 `2026-07-11-customer-avatar`。
+- Dependency shape：DAG 无未知节点、自依赖或环；唯一 minimal loop 为 customer-core。
 
 ## 3. Findings
 
 ### blocking
 
-- [x] RMR-R6-001 `schedule create/PATCH × customer archive/merge` 缺少统一并发锁协议。
-  - Resolution: 固化 customer→order 锁序、customer_id 复核和一次自动重试；连续变化返回 customer_changed。两种提交顺序线性化且保留既有 slot 历史事实。
+none
 
 ### important
 
-- [x] RMR-R6-002 幂等 operation 是持久化命名空间却可由 handler 自由命名。
-  - Resolution: 固定 typed `order.create.v1` / `schedule-slot.create.v1`，由 contract test 守值。
-- [x] RMR-R6-003 shoot 摘要“必返”未进入 OpenAPI 机器契约。
-  - Resolution: ScheduleSlotListItem 改为 discriminator union；shoot 必填订单/客户/状态摘要，non-shoot 无引用字段。
-- [x] RMR-R6-004 merge 后恢复仍可能使用过期 known_customer_id。
-  - Resolution: post-slot refresh 回写最新 customer_id；未命中先重拉 slot，再用无 customer 稳定分页兜底。
-- [x] RMR-R7-001 handoff 可补录不可排期状态、使用浏览器时区，且成功后的本地写序不完整。
-  - Resolution: schedule_draft 限定历史六态，默认 shot/账号时区预填；pending→draft→clear 分阶段恢复；unknown 与明确结果使用不同退出规则。
-- [x] RMR-R7-002 默认 shot 后状态切换会发送隐藏时间戳。
-  - Resolution: canonical body 按最终状态裁剪；A19/step 7 覆盖 shot→scheduled、delivered→shot。
+none
 
 ### nit
 
-- [x] RMR-R6-005 密集月历的冲突数和同时间排序不可复现；已定义 display_start/id 稳定排序及“当日参与重叠的唯一 slot 数”。
+none
 
 ### suggestion
 
-- [x] 将 creation_mode 矩阵与 slot 时间矩阵收敛为 design 权威表，降低跨文档漂移。
-- [x] schedule_draft 默认 shot 并预填账号本地开始日。
+none
 
 ### learning
 
-- 先提交者线性化比“归档竞态一律 409”更符合既有产品规则：shoot 先提交后归档时 slot 应保留并显示 archived 警示。
-- 稳定 offset 分页不是快照，只能作为极窄恢复兜底；规模增长后应补按订单 ID 查询或 cursor。
+- 将 merged DELETE 收窄为 object→none 的 PII 清理例外，可以复用 revision CAS、pointer 清空和精确代次 GC，而不恢复 merged 的通用编辑能力。
+- DDD 保持上层契约稳定，但跨 PostgreSQL 与对象存储的一致性、存量迁移和回滚仍须由 generation、reconciliation 与迁移流程显式处理。
 
 ### praise
 
-- `new/backfill`、未来/历史 shoot 矩阵、consulting-first 与 post-slot status_sync 已形成同一条经营事实链。
-- roadmap 没有用组合后端端点掩盖失败恢复，而是让独立端点保持可复用并用幂等/journal 收口。
+- Owner 决策已同步到 roadmap、items、design、checklist、A10/A12/A16 和变更日志，而不是只改产品措辞。
+- 历史备份边界已明确：在线 cleanup 不等于跨备份彻底擦除。
 
 ## 4. User Review Focus
 
-- 用户需要重点确认：只做月视图、移动端只读、重叠不阻止、历史六态补录和可保留异常现状结束。
-- 后续 feature-design / implementation 重点：锁序、typed operation、双端 union、账号时区和 pending 恢复写序。
-- 不能靠 roadmap review 完全确认：DST 控件可用性、关闭 tab 恢复、服务端 TTL 时钟边界、idempotency 物理清理。
+- 已拍板：merged 禁止 PUT，但允许显式 cleanup-only DELETE；GET 仍可读取清理前的既有头像。
+- 已拍板：24h grace、每小时 runner、每账号每 tick 各一页 inventory/current-pointer audit +100 due。
+- 待整稿批准：是否接受当前 Roadmap/Design/Checklist 作为实现契约。
+- 延后 gate：data-export 的 reference-only JSON 或媒体便携包选择，留到 data-export design 启动前。
+- implement/QA 重点：真实 DB session loss、迟到 Delete、commit unknown、浏览器 Blob 生命周期、signal shutdown、mount recreate 与 exact-generation restore。
 
 ## 5. Evidence Confidence Ledger
 
 | Check | Verdict | Evidence Class | Basis | Follow-up |
 |---|---|---|---|---|
-| Granularity Gate | pass | E | schedule-calendar 跨四层且含独立验收闭环 | none |
-| Goal Coverage Matrix | pass | E | 条目 7 完成信号与 design A1-A26 对齐 | acceptance 取证 |
-| DAG and minimal loop | pass | E | 12 items 无未知依赖/无环；唯一 minimal loop=customer-core | none |
-| Interface contract usability | pass | E+C | roadmap §4 + OpenAPI + 临时 codegen 可执行 | 实现后零漂移 |
-| Module interface depth | pass | E+C | idempotency、timezone、跨域锁与读模型 seam 有代码事实 | code review 复核 |
+| Granularity Gate | pass | E | 跨 customer/platform/webapp，含 API、存储、后台任务、部署和 UI 闭环 | none |
+| Goal Coverage Matrix | pass | E | A1-A24 覆盖功能、安全、并发、恢复、UI 和运维 | acceptance 取证 |
+| DAG and minimal loop | pass | E | 12 items 图校验通过，customer-core 为唯一 minimal loop | none |
+| Interface contract usability | pass | E+C | 字段、错误、状态机、port、GC 与迁移语义可执行并有代码 seam | 实现零漂移 |
+| Module interface depth | pass | E+C | customer 隐藏生命周期，platform 隐藏 provider I/O，handler 不直连 store | code review |
+| PII/backup boundary | pass | E+C | 在线 cleanup、活动存储、历史备份和恢复边界均显式 | 运维 retention/销毁 |
 
-Summary: E=3，E+C=2，H=0；H-only core checks=none。
+Summary：E=3，E+C=3，H=0；H-only core checks=none。
 
 ## 6. Residual Risk
 
-- sessionStorage 关闭 tab 后丢失；当前承诺只覆盖硬刷新，unknown 关闭 tab 需人工核对。
-- 客户端 24 小时与服务端 TTL 可能因时钟漂移出现边界差异。
-- 跨 tab 冲突只在写后和重新聚焦时收敛，不是实时推送。
-- DST 重复/不存在时间需成熟 IANA/Temporal 实现；验收已定义，具体引擎留实现期选择。
+- Cleanup DELETE 只清在线 pointer，并按 24h+runner 节奏回收活动存储；不追溯擦除历史备份，恢复旧备份可能重新带回 PII。
+- Owner 接受的 runner 上限使 GC、orphan 发现和 integrity audit 非即时；积压时延取决于对象量和失败率。
+- 鉴权读取在发送 200/304 前最多缓冲 5 MiB，实现期仍须观察并发内存峰值。
+- mountpoint attestation 不等于持久性证明，最终依赖 container recreate 和 exact-generation 备份恢复证据。
 
 ## 7. Verdict
 
-- Status: passed
-- Next: 交给用户整体 review；schedule-calendar 可在用户确认 design 后进入实现
+- Status：passed
+- Next：进入 owner 的 feature design 整体 review；design 保持 `draft`，owner 明确批准整稿后才可改为 `approved`

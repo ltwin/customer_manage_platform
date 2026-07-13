@@ -293,6 +293,18 @@ func TestListFiltersAndPagination(t *testing.T) {
 	if allXHS.Total != 2 {
 		t.Fatalf("status=all should include archived same-account customers, got %+v", allXHS)
 	}
+	statusSet, err := svc.List(ctx, scopeA, customer.ListFilter{
+		Channel:  customer.ChannelXiaohongshu,
+		Status:   customer.StatusActive + "," + customer.StatusArchived,
+		Page:     1,
+		PageSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("list active+archived status set: %v", err)
+	}
+	if statusSet.Total != 2 || len(statusSet.Items) != 1 || statusSet.Items[0].ID != "cus_archived" {
+		t.Fatalf("status set must filter before stable pagination, got %+v", statusSet)
+	}
 
 	if _, err := svc.List(ctx, scopeA, customer.ListFilter{Page: -1}); !errors.Is(err, customer.ErrValidation) {
 		t.Fatalf("invalid page should validate, got %v", err)

@@ -180,6 +180,59 @@ export function mergeCustomer(id: string, sourceCustomerId: string): Promise<Cus
   })
 }
 
+export async function putCustomerAvatar(id: string, file: File, avatarRevision: string): Promise<Customer> {
+	const form = new FormData()
+	form.set('file', file)
+	return mediaJSONRequest<Customer>(`/customers/${encodeURIComponent(id)}/avatar`, {
+		method: 'PUT',
+		headers: { 'If-Match': `"${avatarRevision}"` },
+		body: form,
+	})
+}
+
+export function deleteCustomerAvatar(id: string, avatarRevision: string): Promise<Customer> {
+	return request<Customer>(`/customers/${encodeURIComponent(id)}/avatar`, {
+		method: 'DELETE',
+		headers: { 'If-Match': `"${avatarRevision}"` },
+	})
+}
+
+export async function fetchAvatarBlob(url: string, signal: AbortSignal): Promise<Blob> {
+	const headers = new Headers()
+	const token = getToken()
+	if (token) headers.set('Authorization', `Bearer ${token}`)
+	const response = await fetch(url, { headers, signal })
+	if (!response.ok) {
+		throw await apiErrorFromResponse(response)
+	}
+	return response.blob()
+}
+
+async function mediaJSONRequest<T>(path: string, init: RequestInit): Promise<T> {
+	const headers = new Headers(init.headers)
+	const token = getToken()
+	if (token) headers.set('Authorization', `Bearer ${token}`)
+	const response = await fetch(`/api/v1${path}`, { ...init, headers })
+	if (!response.ok) throw await apiErrorFromResponse(response)
+	return (await response.json()) as T
+}
+
+async function apiErrorFromResponse(response: Response): Promise<ApiError> {
+	let envelope: ErrorEnvelope | null = null
+	try {
+		envelope = (await response.json()) as ErrorEnvelope
+	} catch {
+		envelope = null
+	}
+	if (response.status === 401) clearToken()
+	return new ApiError(
+		response.status,
+		envelope?.error.code ?? 'internal',
+		envelope?.error.message ?? `请求失败（${response.status}）`,
+		envelope?.error.details,
+	)
+}
+
 export function listPackages(params: {
   status?: PackageListStatus
   page?: number

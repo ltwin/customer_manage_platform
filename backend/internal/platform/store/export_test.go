@@ -12,3 +12,8 @@ var probeMigrationsFS embed.FS
 func MigrateProbeUpForTest(databaseURL string) error {
 	return migrateUpFS(databaseURL, probeMigrationsFS, "testmigrations", "schema_migrations_probe")
 }
+
+// MigrateDownOneForTest 回滚生产迁移序列的最后一步，仅供 migration up/down 测试。
+func MigrateDownOneForTest(databaseURL string) error {
+	return migrateStepsFS(databaseURL, migrationsFS, "migrations", "schema_migrations", -1)
+}

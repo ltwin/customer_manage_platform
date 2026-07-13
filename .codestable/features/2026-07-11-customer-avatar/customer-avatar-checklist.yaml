@@ -1,0 +1,125 @@
+feature: 2026-07-11-customer-avatar
+created: 2026-07-11
+
+steps:
+  - action: "契约地基：同步 OpenAPI，落 avatar_revision+五字段 current pointer、按 account+customer+avatar_object_id 唯一的 pending GC/checkpoint 与 driver/root/require-mount 配置"
+    exit_signal: "生成物一致；migration up/down 通过；revision编码/原子递增/no-op不增、customer status单值/all兼容+合法set分页前过滤+重复/unknown/all混用400、object_id格式/唯一性、全空全非空pointer与object/pointer双cursor约束固定；未知driver/缺root及require-mount无真实mount均fail-fast，direct-binary轨可用"
+    status: done
+  - action: "编排骨架：以AccountScope.WithTxScope为唯一事务owner，用TxAccountScope/repository fake跑通revision CAS、新generation先落、进入GC即烧毁、五字段pointer后切、merged cleanup-only DELETE、merge共锁与Customer→GC row锁序"
+    exit_signal: "无嵌套事务；typed errors、结果未知、A→B→A、same-content完整性修复、PUT/DELETE/merge线性化；merged PUT恒409而匹配revision的DELETE只清pointer，历史与pre-current generation的迟到Delete均不能删除新current"
+    status: done
+  - action: "计算节点：识别并规范化 JPEG/PNG/WebP，执行大小/解码维度/方向/去元数据/最长边/checksum 规则"
+    exit_signal: "合法三格式与损坏、伪 MIME、空、禁用格式、>5MiB、4097 边界 fixture 测试全部给出 design A3/A6/A7 规定结果"
+    status: done
+  - action: "持久化节点：接通 local store、精确 generation pending GC/reconciliation、signal-aware server lifecycle 与 AvatarMaintenanceRunner"
+    exit_signal: "durable I/O、历史/pre-current DB session丢失后旧Delete恢复仍隔离、重复enqueue不改not_before/retry、object/pointer双cursor及current integrity主动报告、立即+小时single-flight、每账号各1页+100 due上限、重叠tick/OS signal取消/有界退出/退避与A4/A8-A11/A23/A24全绿"
+    status: done
+  - action: "HTTP 垂直切片：挂载条件 PUT/DELETE 与强版本 GET；application READ service 在发 200/304 header 前完整缓冲并验证实际字节，handler只做协议适配，接入 typed errors、缓存和媒体 client"
+    exit_signal: "API 测试覆盖 A3-A14；HTTP handler不直接调用store，含 If-None-Match 命中时 sidecar正常/实际字节损坏仍先500，ETag/304/private,no-cache/Vary/nosniff、stale/conflict、跨账号/无token正确"
+    status: done
+  - action: "展示组件：CustomerAvatar 接管鉴权 Blob、首 grapheme fallback、object URL 回收，并接入列表/详情与头像设置/替换/移除"
+    exit_signal: "A15/A16 浏览器与组件测试通过；真实头像/no-url/load-error/emoji fallback可见，同URL revision变化会重取；active/archived三操作齐全，merged有图仅cleanup移除且无设置/替换，均用当前revision并处理conflict/loading/error/disabled"
+    status: done
+  - action: "选择组件：CustomerPicker 接入可交互 referral/merge/订单/档期候选；CustomerAvatar 接入订单/档期固定客户摘要"
+    exit_signal: "A17/A18 的active-only/active+archived/merged-never、既有非active pinned selected原样保留且仅随channel改为非referral才可清除、服务端q+status-set分页与组件exclude空页续取/跨页选择通过；FixedCustomer/FixedScheduleCustomer扩展avatar_revision/avatar_url props并显示CustomerAvatar，不渲染picker"
+    status: done
+  - action: "终验收口：完成输入/路径 harden、UI、mount/volume、停app备份恢复+exact-generation manifest、备份PII保留边界、inventory清洁度和全量验证"
+    exit_signal: "A19-A22/A24证据落盘；逐current ObjectRef恢复核验通过；cleanup仅清在线pointer/活动存储且文档不承诺跨历史备份擦除；所有无引用对象已被pending/reconciliation追踪并可随注入时钟到期清零；允许grace内pending，无untracked orphan/stale temp"
+    status: done
+
+checks:
+  - item: "范围守护：POST /customers 与 30 秒建档 UI 无头像字段或文件输入，头像始终可选"
+    source: 范围守护
+    status: passed
+  - item: "范围守护：无 OSS SDK/OSS env key/预签名实现/客户端直传；avatar_url 保持同源鉴权 /api/v1 URL"
+    source: 范围守护
+    status: passed
+  - item: "范围守护：无裁剪、人脸、相册、原图、GIF/SVG/HEIC 支持；无 JSON export 二进制内嵌"
+    source: 范围守护
+    status: passed
+  - item: "范围守护：merge 操作本身不迁移/继承/删除 source/target 头像 pointer 或对象；merged 仅开放显式cleanup-only DELETE且不恢复PUT/其他编辑；frontend无新增UI组件库"
+    source: 范围守护
+    status: passed
+  - item: "名词契约：Customer/CustomerListItem/CustomerSummary均投影始终avatar_revision=ar-{非负bigint}+成对可选avatar_version/avatar_url，CustomerSummary保留既有id/display_name/channel/status且只增头像字段；If-Match只用revision，URL/v/ETag只用content version，不暴露object_id/路径/bucket/key/签名参数；GET customers status兼容单值/all，合法set分页前过滤，重复/unknown/all混用400"
+    source: 名词契约
+    status: passed
+  - item: "名词契约：PostgreSQL avatar_revision初始0且pointer每次变更原子+1/no-op不增；version/object_id/media_type/size/updated_at五字段全空或全非空；checksum为最终规范化字节sha256-64lowerhex，object_id为每次发布随机128-bit/32lowerhex且永不复用"
+    source: 名词契约
+    status: passed
+  - item: "名词契约：AvatarContent为caller-owned≤5MiB只读可重放精确字节，application ReadContent返回完整性已验证的AvatarContent且HTTP handler不直接调用store；ObjectRef={avatar_version,avatar_object_id}且key按account/customer/avatar_version/avatar_object_id派生；AvatarObjectStore暴露PutImmutable/Open/Stat/List/Delete，PutResult.created区分首次发布/已存在完整对象，fresh ID首次created=false按碰撞换ID；每个Open application caller负责close，Delete成功后Stat必须稳定not-found否则Temporary；List稳定key升序+opaque exclusive cursor+bounded limit；同generation key不覆盖、错误分类完整"
+    source: 名词契约
+    status: passed
+  - item: "名词契约：上传仅 JPEG/PNG/WebP、≤5MiB、宽高≤4096；方向校正、去元数据、最长边≤512、非动画、不留原图"
+    source: 名词契约
+    status: passed
+  - item: "名词契约：CustomerAvatar统一鉴权Blob/fallback/a11y、in-view、auth-generation+URL+avatar_revision去重与消费者引用计数（最后一个才abort/revoke），同URL revision变化重取，401/logout全清；CustomerPicker用candidateStatuses+selectedCustomer表达caller矩阵并保持服务端搜索分页，既有非active referrer仅作pinned当前值，原样保留或随channel改为非referral后清除"
+    source: 名词契约
+    status: passed
+  - item: "编排骨架：PUT的desired=current与并发同checksum快路径都先锁Customer重验状态，merged优先409，active/archived再完整读取验证实际generation；损坏时走revision CAS修复；fresh object_id锁外PutImmutable后按Customer→新object_id GC row加锁，任何GC row都烧毁ID，缺失/碰撞也用fresh ID有界重发；状态变化时才校验revision并切完整pointer+revision+1/入队旧ObjectRef"
+    source: 编排骨架
+    status: passed
+  - item: "编排骨架：application READ service强校验v后在≤5MiB内完整读并重识别media type/size/checksum，返回validated bytes+meta后handler才可发200/304；DELETE锁内清pointer+入GC，不预删"
+    source: 编排骨架
+    status: passed
+  - item: "流程级约束：active/archived可PUT/DELETE，merged PUT含same-content恒409但已有头像可GET且匹配revision的DELETE可cleanup-only清空；同客户PUT/DELETE/merge共锁线性化，avatar_revision关闭A→B→A ABA，stale状态变更返回avatar_revision_conflict，same-desired/already-none无状态no-op可200，不同客户可并行"
+    source: 流程级约束
+    status: passed
+  - item: "流程级约束：跨账号三方法404、无 token 401、无匿名目录/token query/path traversal；日志无图片/路径/token/PII"
+    source: 流程级约束
+    status: passed
+  - item: "流程级约束：缺v 400、旧v 409且不返回新字节；当前v支持quoted ETag/304/private,no-cache/Vary Authorization/nosniff，URL或avatar_revision变化均回收旧Blob并按需重取"
+    source: 流程级约束
+    status: passed
+  - item: "流程级约束：GC在独立DB transaction锁Customer+GC row；object_id等于current时只删stale row且不调storage Delete，不等时才删精确旧generation；失败先rollback再按同row identity条件更新退避且不重建缺失row，commit unknown幂等重试；DB/session丢失后的迟到Delete仍无害；重复enqueue保留最早not_before/retry"
+    source: 流程级约束
+    status: passed
+  - item: "流程级约束：AvatarMaintenanceRunner ready后立即一轮+每小时single-flight，首版固定每账号各1页object inventory/current-pointer audit+100 due，双cursor不饿死；pointer audit完整读current并报告missing/corrupt，单项Temporary有限重试后记录并推进、下cycle再访且不改pointer；重叠tick跳过，生产OS signal取消统一root context、HTTP graceful shutdown与runner有界退出；只经AccountScopeEnumerator"
+    source: 流程级约束
+    status: passed
+  - item: "挂载点：OpenAPI+三路由、avatar_revision+五字段pointer+按object_id唯一的GC+checkpoint、require-mount+volume+signal-aware runner/exact-generation backup、全部客户展示/选择 UI 齐备且可卸载"
+    source: 挂载点
+    status: passed
+  - item: "验收场景：A1-A14与A23/A24的revision CAS/ABA、图片、缓存、same-content repair、durable store、同checksum多generation、历史/pre-current DB session丢失后迟到Delete、双向reconciliation/GC/process restart、状态、隔离与integrity均有自动化/API证据"
+    source: 验收场景
+    status: passed
+  - item: "验收场景：A15-A20 的列表/详情/条件写操作/六类 picker/375px/键盘/头像布局均有组件与浏览器证据"
+    source: 验收场景
+    status: passed
+  - item: "验收场景：A21 require-mount无卷失败/挂卷成功/recreate保留+停app exact-generation备份恢复且错误object_id核验失败，并明确cleanup不追溯擦除历史备份/恢复可能带回PII；A22无untracked orphan/stale temp，grace内pending可核验"
+    source: 验收场景
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./..."
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run build && npm run test:customer-avatar"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "cd frontend && npm run test:avatar-layout"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "docker compose config"
+      core: false
+      failure_handling: fix-or-block
+  evidence_required: [command_output, test_results, api_responses, revision_aba, concurrency, fault_injection, db_session_loss, exact_generation_delete, process_shutdown, restart_reconciliation, screenshots, volume_restore, exact_pointer_manifest, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    todo_fixme: forbidden
+    commented_code: forbidden
+    unused_imports: forbidden
+    credentials: forbidden
+    pii_fixtures: forbidden

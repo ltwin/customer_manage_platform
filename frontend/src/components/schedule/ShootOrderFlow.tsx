@@ -2,24 +2,25 @@ import { useEffect, useMemo, useState } from 'react'
 
 import {
   ApiError,
-  listCustomers,
   listOrders,
   listPackages,
 } from '../../api/client'
 import type {
-  CustomerListResponse,
   OrderListItem,
   PackageListResponse,
 } from '../../api/client'
 import { missingSelectedOrderOption } from './flow'
+import CustomerAvatar from '../customers/CustomerAvatar'
+import CustomerPicker from '../customers/CustomerPicker'
 
-type CustomerOption = CustomerListResponse['items'][number]
 type PackageOption = PackageListResponse['items'][number]
 
 export interface FixedScheduleCustomer {
   id: string
   display_name: string
   status: string
+  avatar_revision: string
+  avatar_url?: string
 }
 
 export interface ShootOrderDraft {
@@ -49,27 +50,10 @@ export default function ShootOrderFlow({
 }) {
   const historical = Boolean(targetEndAt && Date.parse(targetEndAt) <= Date.now())
   const [includeArchived, setIncludeArchived] = useState(false)
-  const [customers, setCustomers] = useState<CustomerOption[]>([])
   const [orders, setOrders] = useState<OrderListItem[]>([])
   const [packages, setPackages] = useState<PackageOption[]>([])
   const [loadingOrders, setLoadingOrders] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (fixedCustomer) {
-      setCustomers([fixedCustomer as CustomerOption])
-      return
-    }
-    let active = true
-    loadAll((page) => listCustomers({
-      status: historical && includeArchived ? 'all' : 'active',
-      page,
-      pageSize: 100,
-    }))
-      .then((items) => { if (active) setCustomers(items.filter((item) => item.status !== 'merged')) })
-      .catch((reason: unknown) => { if (active) setError(errorMessage(reason, '客户候选加载失败')) })
-    return () => { active = false }
-  }, [fixedCustomer, historical, includeArchived])
 
   useEffect(() => {
     if (!value.customerId || !targetEndAt) {
@@ -148,26 +132,29 @@ export default function ShootOrderFlow({
       <div className="field">
         <label htmlFor="scheduleCustomer">客户</label>
         {fixedCustomer ? (
-          <div className="readonly-field">{fixedCustomer.display_name}</div>
+          <div className="readonly-field customer-summary">
+            <CustomerAvatar
+              customerId={fixedCustomer.id}
+              displayName={fixedCustomer.display_name}
+              avatarRevision={fixedCustomer.avatar_revision}
+              avatarUrl={fixedCustomer.avatar_url}
+              size="sm"
+              decorative
+            />
+            <span>{fixedCustomer.display_name}</span>
+          </div>
         ) : (
-          <select
-            id="scheduleCustomer"
-            className="input"
+          <CustomerPicker
+            label="客户"
+            candidateStatuses={historical && includeArchived ? ['active', 'archived'] : ['active']}
             value={value.customerId}
-            onChange={(event) => onChange({
+            onChange={(choice) => onChange({
               ...value,
-              customerId: event.target.value,
+              customerId: choice?.id ?? '',
               orderId: '',
               orderStatus: undefined,
             })}
-          >
-            <option value="">选择客户</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.display_name}{customer.status === 'archived' ? '（已归档）' : ''}
-              </option>
-            ))}
-          </select>
+          />
         )}
       </div>
 
