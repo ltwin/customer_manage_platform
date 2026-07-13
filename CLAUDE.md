@@ -34,10 +34,12 @@
 | 领域术语表 | `.codestable/requirements/CONTEXT.md` |
 | 已拍板决策（ADR 001-004） | `.codestable/requirements/adrs/` |
 | 能力愿景索引 | `.codestable/requirements/VISION.md` |
+| 提醒引擎能力与边界 | `.codestable/requirements/reminder-engine.md`（实现细节与已知边界见 roadmap 的 reminder 章节） |
 | 规划与接口契约（硬约束） | `.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md` |
 | Roadmap 当前执行状态 | `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml` |
 | 需求讨论原始记录 | `.codestable/brainstorms/photographer-private-crm/brainstorm.md` |
 | HTTP API 参考清单 | `docs/api/manifest.yaml`（已有条目见 `docs/api/`，机器契约仍以 `api/openapi.yaml` 为准） |
+| Reminder / Settings API 参考 | `docs/api/reminders.md`、`docs/api/settings.md` |
 | 客户头像用户/开发/API 指南 | `docs/user/customer-avatar.md`、`docs/dev/customer-avatar.md`、`docs/api/customer-avatar.md` |
 | 头像 generation 模式沉淀 | `.codestable/compound/2026-07-13-avatar-immutable-generation-pattern.md` |
 | Go 编码规范 checklist | `docs/go-style-checklist.md`（决策：`.codestable/compound/2026-07-06-decision-go-uber-style-guide.md`） |

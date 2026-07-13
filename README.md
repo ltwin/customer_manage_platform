@@ -2,9 +2,9 @@
 
 Go + Gin + React + PostgreSQL 单体，阿里云 ECS 自部署。规格与流程见 `.codestable/`（规划权威源：`roadmap §4` 契约 + `api/openapi.yaml` 机器形式）。
 
-当前已落地客户档案（含可选头像）、套系、订单与月历档期；能力现状见 `.codestable/requirements/VISION.md`，roadmap 执行状态见 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`。
+当前已落地客户档案（含可选头像）、套系、订单、月历档期、提醒引擎与账号级提醒设置；能力现状见 `.codestable/requirements/VISION.md`，roadmap 执行状态见 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml`。
 
-用户操作见 `docs/user/customer-avatar.md`；开发接入见 `docs/dev/customer-avatar.md`；HTTP 参考见 `docs/api/customer-avatar.md`。
+客户头像操作与开发接入见 `docs/user/customer-avatar.md`、`docs/dev/customer-avatar.md`；HTTP 参考清单见 `docs/api/manifest.yaml`，已同步的 Reminder 与 Settings 参考见 `docs/api/reminders.md`、`docs/api/settings.md`。
 
 ## 开发
 
@@ -44,6 +44,15 @@ npm run dev                  # 打开 http://localhost:5173
 | `make generate` | OpenAPI → Go 服务端类型（按 tag）+ TS 全量类型 |
 | `make db-up` | 起本地 dev 库 |
 | `make migrate-up` | 手动执行 schema 迁移（服务启动时也会自动执行） |
+
+## 提醒与账号设置
+
+- `/reminders` 提供生日、拍后回访、流失与自定义提醒的查看、完成、忽略和手动扫描；客户详情的提醒区域可直接创建关联当前客户的自定义提醒。
+- `/settings` 配置 IANA 账号时区、生日提前天数、交付后回访天数、按拍摄类型区分的流失阈值与摘要小时。日期边界按账号时区解释，不按浏览器时区兜底。
+- 服务启动后，进程内 reminder runner 会立即检查一次，之后每小时检查；同一账号在同一本地自然日只自动扫描一次。手动扫描依靠幂等键避免重复提醒，且不推进自动扫描检查点。
+- 当前能力只生成和管理提醒，不会自动联系客户；Telegram 每日摘要与 dashboard 今日待办仍是后续 roadmap 条目。
+
+字段、默认值、过滤条件、错误码和手动扫描请求见 `docs/api/reminders.md` 与 `docs/api/settings.md`。
 
 ## 部署（双轨，配置只经环境变量）
 
@@ -142,9 +151,8 @@ docker compose start app
 
 ```
 api/        OpenAPI 契约（roadmap §4 的机器形式，双端 codegen 输入）
-backend/    Go 单体（cmd/server 入口；internal 下含 customer / package / order / schedule 领域与 platform 基座）
+backend/    Go 单体（cmd/server 入口；internal 下含 customer / package / order / schedule / reminder / settings 领域与 platform 基座）
 frontend/   Vite + React + TS（dev 走 Vite proxy；API 类型由 OpenAPI 生成；构建产物 go:embed 进二进制）
 scripts/    运维脚本（TG 冒烟）
 docs/       用户/开发指南、编码规范 checklist 与 HTTP API 参考（清单见 docs/api/manifest.yaml）
 ```
-

@@ -5,7 +5,7 @@ status: active
 created: 2026-07-05
 last_reviewed: 2026-07-13
 tags: [crm, photographer, mvp, reminder, scheduling]
-related_requirements: [customer-profile, package-catalog, order-tracking, schedule-calendar]
+related_requirements: [customer-profile, package-catalog, order-tracking, schedule-calendar, reminder-engine]
 related_architecture: [001-account-scoped-data-model, 002-postgresql-as-primary-store, 003-monolith-first-gin-openapi]
 ---
 
