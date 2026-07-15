@@ -17,6 +17,7 @@ import (
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
+	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
@@ -108,6 +109,7 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		AvatarProcessor: avatarimage.NewProcessor(),
 		Settings:        settingsSvc,
 		Reminders:       reminderSvc,
+		Dashboard:       dashboarddomain.NewService(dashboarddomain.NewPostgresRepository(), settingsSvc),
 	})
 	return router, s, tokens, ctr
 }

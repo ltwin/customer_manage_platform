@@ -72,7 +72,6 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 	r.POST("/api/v1/probe", func(c *gin.Context) {})
 
 	cases := []struct{ method, path string }{
-		{http.MethodGet, "/api/v1/dashboard"},                     // 未实现域端点（dashboard）
 		{http.MethodPost, "/api/v1/settings/telegram/bind-token"}, // 未实现（telegram-digest）
 		{http.MethodGet, "/api/v1/export"},                        // 未实现域端点
 		{http.MethodGet, "/api/v1/no-such"},                       // 未注册路径

@@ -57,6 +57,11 @@ export type CreateScheduleSlotResponse =
 export type ScheduleSlot = CreateScheduleSlotResponse['slot']
 export type UpdateScheduleSlotBody =
   paths['/schedule/slots/{id}']['patch']['requestBody']['content']['application/json']
+export type Dashboard =
+  paths['/dashboard']['get']['responses']['200']['content']['application/json']
+export type DashboardSlot = Dashboard['today_slots'][number]
+export type DashboardUnpaidOrder = Dashboard['unpaid_orders']['items'][number]
+export type DashboardReminder = Dashboard['due_reminders'][number]
 
 type ErrorEnvelope = components['schemas']['ErrorEnvelope']
 export type ApiErrorDetails = NonNullable<ErrorEnvelope['error']['details']>
@@ -331,6 +336,10 @@ export function updateScheduleSlot(id: string, body: UpdateScheduleSlotBody): Pr
 
 export function deleteScheduleSlot(id: string): Promise<void> {
   return request<void>(`/schedule/slots/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function fetchDashboard(): Promise<Dashboard> {
+  return request<Dashboard>('/dashboard')
 }
 
 export type Reminder = components['schemas']['Reminder']

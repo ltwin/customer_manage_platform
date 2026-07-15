@@ -1,0 +1,58 @@
+feature: "dashboard"
+status: passed
+baseline_ref: "19d5161c8ce51fa98980b677e3e37946028b7689"
+stage: complete
+driver_kind: native
+driver_id: "goal-resume-qa-20260714"
+handoff_reason: ""
+handoff_next: ""
+design: ".codestable/features/2026-07-14-dashboard/dashboard-design.md"
+checklist: ".codestable/features/2026-07-14-dashboard/dashboard-checklist.yaml"
+review: ".codestable/features/2026-07-14-dashboard/dashboard-review.md"
+qa: ".codestable/features/2026-07-14-dashboard/dashboard-qa.md"
+acceptance: ".codestable/features/2026-07-14-dashboard/dashboard-acceptance.md"
+ledger:
+  - at: "2026-07-14T15:06:00+08:00"
+    stage: implementation
+    status: running
+    note: "goal driver 启动；branch feat/dashboard 已确认"
+  - at: "2026-07-14T15:10:00+08:00"
+    stage: implementation
+    status: running
+    note: "step1 契约：§4.3 ListItem 措辞 + OpenAPI + include-tags + make generate"
+  - at: "2026-07-14T15:25:00+08:00"
+    stage: implementation
+    status: running
+    note: "steps 2–7 实现完成；证据见 dashboard-impl-evidence.md；checks 保持 pending 待 acceptance"
+  - at: "2026-07-14T15:30:00+08:00"
+    stage: review
+    status: ready
+    note: "implementation gates 通过（targeted dashboard/httpapi tests + go test 全绿）；进入独立 code review"
+  - at: "2026-07-14T17:04:00+08:00"
+    stage: review
+    status: passed
+    note: "dashboard-review.md status=passed round 1；独立 Task reviewer"
+  - at: "2026-07-14T17:21:00+08:00"
+    stage: qa
+    status: ready
+    note: "原 driver Connection failed；按仓库事实续跑 QA（review 已 passed；qa-screenshots 有部分产物）"
+  - at: "2026-07-14T17:24:30+08:00"
+    stage: qa
+    status: running
+    note: "goal resume：driver_kind=native；从 QA 续跑；核验既有 dashboard-api.json 并补齐 browser/QA 报告"
+  - at: "2026-07-14T18:01:00+08:00"
+    stage: qa
+    status: passed
+    note: "dashboard-qa.md status=passed round 1；浏览器 S1/S4/S7/S8/S14 + API/单测覆盖 S2–S13"
+  - at: "2026-07-14T18:01:30+08:00"
+    stage: acceptance
+    status: running
+    note: "进入 acceptance：回写 checklist/items/req；不自动 commit"
+  - at: "2026-07-14T18:12:00+08:00"
+    stage: acceptance
+    status: passed
+    note: "dashboard-acceptance.md passed；checklist checks 全 passed；items dashboard done；req current"
+  - at: "2026-07-14T18:12:30+08:00"
+    stage: complete
+    status: passed
+    note: "goal complete：review/QA/acceptance 均 passed；无 handoff"

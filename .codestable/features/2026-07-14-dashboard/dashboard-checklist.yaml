@@ -1,0 +1,112 @@
+feature: 2026-07-14-dashboard
+created: 2026-07-14
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, api_response, browser_screenshot, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    commented_out_code: forbidden
+
+steps:
+  - action: "契约权威源+机器形式：cs-roadmap update §4.3 ListItem 措辞，OpenAPI 改形，include-tags 追加 dashboard，make generate"
+    exit_signal: "roadmap 与 OpenAPI 一致且生成物可引用 Dashboard 响应与 ListItem 字段？"
+    status: done
+  - action: "编排骨架+日界共享：下沉 AccountClock 供 reminder/dashboard 同源引用，空五块 Service/Repository，D9 时区注入，注册 GET /dashboard"
+    exit_signal: "共享 clock 被两包引用且 reminder 既有日界测绿；鉴权 GET 200 五键空值；dashboard 不 import httpapi？"
+    status: done
+  - action: "计算节点·提醒：实现 due 近3天窗（含逾期与全部类型）与 churn 全量 pending 查询排序"
+    exit_signal: "单测覆盖窗内/窗外/逾期/同条 churn 双卡出现？"
+    status: done
+  - action: "计算节点·今日档期：账号本地日界相交 + D8 导出 schedule 摘要装配（首选）"
+    exit_signal: "跨日相交用例通过，且 S13 摘要字段与排序均与 GET /schedule/slots 一致？"
+    status: done
+  - action: "计算节点·尾款与 recent_stats：delivered 未结清列表+三统计（含 price=NULL）"
+    exit_signal: "与宽 unpaid_balance 差异、cancelled/窗口边界、NULL price 单测通过？"
+    status: done
+  - action: "前端接真：脱离原型 TODAY/byId，fetchDashboard 渲染五卡（尾款按笔数），完成/忽略/收讫后重拉，档期行可跳转"
+    exit_signal: "浏览器五卡为真实 API、动作后交叉一致、无 price/2 推算、档期可进日历/客户？"
+    status: done
+  - action: "polish/harden：空态加载错误、401、时区失败500、非默认时区日界、小屏可滚动；make check"
+    exit_signal: "验收场景 S1–S14 均有证据且 make check 绿？"
+    status: done
+
+checks:
+  - item: "GET /dashboard 返回 due_reminders/today_slots/unpaid_orders/churn_alerts/recent_stats 五键"
+    source: 名词契约
+    status: passed
+  - item: "today_slots 项为 ScheduleSlotListItem（shoot 含客户/订单摘要）"
+    source: 名词契约
+    status: passed
+  - item: "unpaid_orders.items 为 OrderListItem 且 count==len(items)；UI 以笔数为统计主指标、禁止 price/2"
+    source: 名词契约
+    status: passed
+  - item: "due_reminders = pending ∧ due_date≤今日+2（含逾期与 churn/custom）"
+    source: 流程级约束
+    status: passed
+  - item: "churn_alerts = type=churn ∧ pending（无日期窗）"
+    source: 流程级约束
+    status: passed
+  - item: "unpaid = status=delivered ∧ balance_paid=false（窄于 unpaid_balance）"
+    source: 流程级约束
+    status: passed
+  - item: "recent_stats 窗口=[今日-29,今日]；created 含全状态；delivered/revenue 排除 cancelled；NULL price 按 0 计入 revenue"
+    source: 流程级约束
+    status: passed
+  - item: "日界一律 Settings timezone（D9 注入），失败 500 且不瞎算，不用浏览器时区"
+    source: 流程级约束
+    status: passed
+  - item: "today_slots 摘要与 GET /schedule/slots 同 slot 字段一致（D8）"
+    source: 流程级约束
+    status: passed
+  - item: "聚合查询经 AccountScope，不注入他域 Go 服务假 seam；dashboard 不 import httpapi"
+    source: 编排骨架
+    status: passed
+  - item: "router 手工注册 GET /dashboard；oapi include-tags 含 dashboard；§4.3 已先于 OpenAPI 更新"
+    source: 挂载点
+    status: passed
+  - item: "frontend fetchDashboard（paths 派生类型）+ DashboardPage 接真；默认 / → /dashboard 保持"
+    source: 挂载点
+    status: passed
+  - item: "不做 TG/导出/五请求拼页/宽 unpaid/看板自定义/v1-hardening 收口"
+    source: 范围守护
+    status: passed
+  - item: "台上写只复用 reminders done/dismiss 与 PATCH order balance_paid"
+    source: 范围守护
+    status: passed
+  - item: "S1 登录默认落地经营台"
+    source: 验收场景
+    status: passed
+  - item: "S2/S3 due 窗与 churn 双卡重叠"
+    source: 验收场景
+    status: passed
+  - item: "S4 今日档期跨日相交+摘要+跳转"
+    source: 验收场景
+    status: passed
+  - item: "S5/S6/S14 尾款窄口径笔数展示与 recent_stats（含 NULL price）"
+    source: 验收场景
+    status: passed
+  - item: "S7/S8 台上动作后刷新一致"
+    source: 验收场景
+    status: passed
+  - item: "S9/S10 401 与范围守护"
+    source: 验收场景
+    status: passed
+  - item: "S11/S12 非默认时区日界与时区失败 500"
+    source: 验收场景
+    status: passed
+  - item: "S13 today_slots 与 schedule list 摘要字段及排序 parity"
+    source: 验收场景
+    status: passed
+  - item: "AccountClock（或等价）已下沉共享，reminder 与 dashboard 同源引用日界"
+    source: 流程级约束
+    status: passed

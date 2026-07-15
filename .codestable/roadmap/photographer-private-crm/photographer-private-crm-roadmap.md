@@ -380,18 +380,21 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 dashboard
   GET    /dashboard →
          { due_reminders: Reminder[](due_date ≤ 账号时区今日+2 天, pending——近 3 天窗口含逾期，
-                          2026-07-06 原型比对拍板),
-           today_slots: Slot[](含订单+客户摘要),
-           unpaid_orders: { count, items: Order[](status=delivered 且 balance_paid=false；
-                            closed 必已结清故不出现) },
-           churn_alerts: Reminder[](type=churn, pending),
+                          含全部 type（含 churn）；2026-07-06 原型比对拍板),
+           today_slots: ScheduleSlotListItem[](与本地今日半开日界相交；shoot 含订单+客户摘要，
+                          摘要语义与 GET /schedule/slots 一致),
+           unpaid_orders: { count, items: OrderListItem[](status=delivered 且 balance_paid=false；
+                            closed 必已结清故不出现；count == len(items)；窄于 orders?unpaid_balance) },
+           churn_alerts: Reminder[](type=churn, pending；无日期窗口，可与 due_reminders 重叠),
            recent_stats: { orders_created(按 created_at, 含全部状态),
                            orders_delivered(按 delivered_at, 排除当前 status=cancelled),
                            revenue_confirmed(分, delivered_at 落窗口内且 balance_paid=true
-                           且当前非 cancelled 的订单 price 之和) } }
+                           且当前非 cancelled 的订单 price 之和；price IS NULL 按 0) } }
          （recent_stats 窗口 = 账号时区自然日 [今日-29, 今日] 含今日共 30 天；替代原"本月"口径，
-           cancelled 归属与 total_order_amount 对齐，2026-07-06 原型比对拍板）
+           cancelled 归属与 total_order_amount 对齐，2026-07-06 原型比对拍板；
+           ListItem 形由 dashboard feature 2026-07-14 钉死，与 OpenAPI 一致）
 ```
+
 
 **Interface 设计检查**：dashboard 聚合做在服务端（一次请求 vs 前端拼五个列表）——Design-It-Twice 比较过"前端自行组合"（省一个端点但移动端五连击、口径散落前端）与"服务端聚合"（口径单点、移动友好），选后者；depth：聚合口径（何为"待收尾款"）藏在服务端一处。
 
@@ -556,8 +559,8 @@ GET /export → application/json（Content-Disposition 附件）
    - 所属模块：reminder（TelegramPort）｜ 依赖：reminder-engine, schedule-calendar ｜ 状态：planned ｜ 对应 feature：未启动
    - 备注：依赖理由——摘要内容 = 提醒（条目 8）+ 当日档期（条目 7）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到含真实数据的摘要（截图）；未绑定时系统全功能正常
 10. **dashboard** — 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（4.3 dashboard 契约）
-   - 所属模块：webapp ｜ 依赖：order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：完成信号：五卡片数据与各域列表页交叉一致（核对用例）；登录后默认落地页
+   - 所属模块：webapp + dashboard ｜ 依赖：order-tracking, schedule-calendar, reminder-engine ｜ 状态：done ｜ 对应 feature：2026-07-14-dashboard
+   - 备注：完成信号：五卡片数据与各域列表页交叉一致（核对用例）；登录后默认落地页。§4.3 ListItem 形与 OpenAPI 已由本 feature 钉死；台上写复用 reminders done/dismiss 与 PATCH order balance_paid。
 11. **data-export** — 全量 JSON 导出（4.6 契约）：一键导出全部实体 + counts 核对
     - 所属模块：platform ｜ 依赖：customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
     - 备注：依赖理由——导出范围 = 4.2 全部实体，各域落地后才有内容可导。**design 启动 gate**：owner 必须先二选一拍板，① 保持 §4.6 reference-only JSON，并明确不承诺离开本系统后便携恢复头像；或 ② 先 update roadmap §4.6 为包含媒体文件、exact-generation manifest/key/object count/checksum 的便携包。未完成该决策不得进入 design、不得标 done。选定后的完成信号还须包含 counts/manifest 与实际内容一致的自动化核对及 PII 保管说明。

@@ -1290,6 +1290,9 @@ type ServerInterface interface {
 	// 追加客户备注
 	// (POST /customers/{id}/notes)
 	AddCustomerNote(c *gin.Context, id Id)
+	// 今日经营台聚合（口径单点在服务端，§4.3）
+	// (GET /dashboard)
+	GetDashboard(c *gin.Context)
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
@@ -1798,6 +1801,21 @@ func (siw *ServerInterfaceWrapper) AddCustomerNote(c *gin.Context) {
 	}
 
 	siw.Handler.AddCustomerNote(c, id)
+}
+
+// GetDashboard operation middleware
+func (siw *ServerInterfaceWrapper) GetDashboard(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetDashboard(c)
 }
 
 // GetMe operation middleware
@@ -2427,6 +2445,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.DELETE(options.BaseURL+"/customers/:id/identities/:identity_id", wrapper.DeleteCustomerIdentity)
 	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)
 	router.POST(options.BaseURL+"/customers/:id/notes", wrapper.AddCustomerNote)
+	router.GET(options.BaseURL+"/dashboard", wrapper.GetDashboard)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
 	router.GET(options.BaseURL+"/orders", wrapper.ListOrders)
 	router.POST(options.BaseURL+"/orders", wrapper.CreateOrder)

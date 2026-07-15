@@ -39,7 +39,7 @@ tags:
   - name: settings
     description: 设置（GET/PATCH 归 reminder-engine；telegram 绑定归 telegram-digest，未实现）
   - name: dashboard
-    description: dashboard 聚合（dashboard，未实现）
+    description: dashboard 聚合（dashboard）
   - name: export
     description: 全量导出（data-export，未实现）
 
@@ -1315,26 +1315,27 @@ paths:
                   [due_reminders, today_slots, unpaid_orders, churn_alerts, recent_stats]
                 properties:
                   due_reminders:
-                    description: due_date ≤ 账号时区今日+2 天且 pending（近 3 天窗口含逾期）
+                    description: due_date ≤ 账号时区今日+2 天且 pending（近 3 天窗口含逾期；含全部 type，含 churn）
                     type: array
                     items:
                       $ref: "#/components/schemas/Reminder"
                   today_slots:
-                    description: 今日档期（含订单+客户摘要，字段由 dashboard-today feature 细化）
+                    description: 与账号本地今日半开日界相交的档期；shoot 含订单+客户摘要，语义与 GET /schedule/slots 一致
                     type: array
                     items:
-                      $ref: "#/components/schemas/ScheduleSlot"
+                      $ref: "#/components/schemas/ScheduleSlotListItem"
                   unpaid_orders:
                     type: object
                     required: [count, items]
                     properties:
                       count:
                         type: integer
+                        description: 与 items 长度一致（不截断）
                       items:
-                        description: status=delivered 且 balance_paid=false（closed 必已结清故不出现）
+                        description: status=delivered 且 balance_paid=false（closed 必已结清故不出现；窄于 unpaid_balance）
                         type: array
                         items:
-                          $ref: "#/components/schemas/Order"
+                          $ref: "#/components/schemas/OrderListItem"
                   churn_alerts:
                     description: type=churn 且 pending
                     type: array

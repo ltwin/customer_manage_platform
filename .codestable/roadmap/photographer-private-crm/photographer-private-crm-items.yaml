@@ -77,8 +77,8 @@ items:
   - slug: dashboard
     description: 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（roadmap 4.3 dashboard 契约，2026-07-06 口径更新）
     depends_on: [order-tracking, schedule-calendar, reminder-engine]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-14-dashboard
     minimal_loop: false
     notes: 完成信号：五卡片与各域列表交叉一致核对用例；登录后默认落地页
 

@@ -5,61 +5,47 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/samson/customer-manage-platform/backend/internal/platform/clock"
 )
 
-// AccountClock 是账号时区 date-only 判定的唯一入口（design 流程级约束）。
-type AccountClock struct {
-	loc *time.Location
-}
+// 日界 date-only 工具下沉到 platform/clock，reminder 与 dashboard 同源引用（design D9）。
+// 以下别名 / 转发保留 reminder 既有内部与测试 API 不变。
 
-// NewAccountClock 加载 IANA 时区；非法时区返回 error。
+// AccountClock 复用共享 date-only clock。
+type AccountClock = clock.AccountClock
+
+// NewAccountClock 加载账号时区 clock。
 func NewAccountClock(timezone string) (AccountClock, error) {
-	if timezone == "" {
-		timezone = "Asia/Shanghai"
-	}
-	loc, err := time.LoadLocation(timezone)
-	if err != nil {
-		return AccountClock{}, fmt.Errorf("load timezone %q: %w", timezone, err)
-	}
-	return AccountClock{loc: loc}, nil
+	return clock.NewAccountClock(timezone)
 }
 
-// LocalDate 把瞬时时间截成账号本地 date-only（UTC 午夜表示）。
-func (c AccountClock) LocalDate(t time.Time) time.Time {
-	local := t.In(c.loc)
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, time.UTC)
-}
-
-// ParseDate 解析 "YYYY-MM-DD" 为 date-only。
+// ParseDate 解析 "YYYY-MM-DD"；沿用 reminder 校验错误语义（400 validation_failed）。
 func ParseDate(s string) (time.Time, error) {
-	s = strings.TrimSpace(s)
-	t, err := time.ParseInLocation("2006-01-02", s, time.UTC)
+	d, err := clock.ParseDate(s)
 	if err != nil {
 		return time.Time{}, ValidationError{Message: "date 格式须为 YYYY-MM-DD"}
 	}
-	return t, nil
+	return d, nil
 }
 
 // FormatDate 输出 YYYY-MM-DD。
 func FormatDate(d time.Time) string {
-	return d.UTC().Format("2006-01-02")
+	return clock.FormatDate(d)
 }
 
 // AddDays 在 date-only 上加天数。
 func AddDays(d time.Time, days int) time.Time {
-	return d.AddDate(0, 0, days)
+	return clock.AddDays(d, days)
 }
 
 // DaysBetween 返回 b - a 的整天数（date-only）。
 func DaysBetween(a, b time.Time) int {
-	a = dateOnly(a)
-	b = dateOnly(b)
-	return int(b.Sub(a).Hours() / 24)
+	return clock.DaysBetween(a, b)
 }
 
 func dateOnly(t time.Time) time.Time {
-	u := t.UTC()
-	return time.Date(u.Year(), u.Month(), u.Day(), 0, 0, 0, 0, time.UTC)
+	return clock.DateOnly(t)
 }
 
 // NextBirthdayOccurrence 计算扫描日视角下的下一次生日发生日。

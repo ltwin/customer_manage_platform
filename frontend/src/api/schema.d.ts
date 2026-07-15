@@ -2003,14 +2003,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        /** @description due_date ≤ 账号时区今日+2 天且 pending（近 3 天窗口含逾期） */
+                        /** @description due_date ≤ 账号时区今日+2 天且 pending（近 3 天窗口含逾期；含全部 type，含 churn） */
                         due_reminders: components["schemas"]["Reminder"][];
-                        /** @description 今日档期（含订单+客户摘要，字段由 dashboard-today feature 细化） */
-                        today_slots: components["schemas"]["ScheduleSlot"][];
+                        /** @description 与账号本地今日半开日界相交的档期；shoot 含订单+客户摘要，语义与 GET /schedule/slots 一致 */
+                        today_slots: components["schemas"]["ScheduleSlotListItem"][];
                         unpaid_orders: {
+                            /** @description 与 items 长度一致（不截断） */
                             count: number;
-                            /** @description status=delivered 且 balance_paid=false（closed 必已结清故不出现） */
-                            items: components["schemas"]["Order"][];
+                            /** @description status=delivered 且 balance_paid=false（closed 必已结清故不出现；窄于 unpaid_balance） */
+                            items: components["schemas"]["OrderListItem"][];
                         };
                         /** @description type=churn 且 pending */
                         churn_alerts: components["schemas"]["Reminder"][];

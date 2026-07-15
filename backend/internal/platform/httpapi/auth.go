@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
@@ -67,6 +68,7 @@ type handlers struct {
 	avatarProcessor AvatarProcessor
 	settings        *settings.Service
 	reminders       *reminder.Service
+	dashboard       *dashboarddomain.Service
 }
 
 var _ ServerInterface = (*handlers)(nil)

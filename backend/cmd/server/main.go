@@ -16,6 +16,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
+	"github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	"github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
@@ -78,6 +79,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		logger,
 	)
 	reminderRunner := reminder.NewScanRunner(s, reminderSvc, settingsSvc, logger)
+	dashboardSvc := dashboard.NewService(dashboard.NewPostgresRepository(), settingsSvc)
 
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:          logger,
@@ -94,6 +96,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		AvatarProcessor: avatarimage.NewProcessor(),
 		Settings:        settingsSvc,
 		Reminders:       reminderSvc,
+		Dashboard:       dashboardSvc,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

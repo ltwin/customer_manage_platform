@@ -1,0 +1,10 @@
+## S14 grep evidence
+```
+$ rg -n "price\s*/\s*2|price/2" frontend/src/pages/DashboardPage.tsx || echo NO_MATCH
+NO_MATCH
+
+$ rg -n "待收尾款|笔" frontend/src/pages/DashboardPage.tsx
+200:          <StatCard tone="warning" label="待收尾款" value={String(unpaid.count)} delta={`${unpaid.count} 笔 · 已交付未结清`} />
+250:              待收尾款订单 <span className="count">· {unpaid.count}</span>
+254:                <div className="empty">没有待收尾款，账都收齐了</div>
+```

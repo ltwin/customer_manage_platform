@@ -144,6 +144,17 @@ func (r PostgresRepository) List(
 	scope store.AccountScope,
 	filter ListFilter,
 ) ([]ListItem, error) {
+	return AssembleListItems(ctx, scope, filter)
+}
+
+// AssembleListItems 按半开区间 [from, to) 相交查询档期、稳定排序、批量装配 shoot 摘要，
+// 返回列表项。schedule 列表与 dashboard 今日档期共用本函数，保证摘要字段与排序语义
+// 单一来源、不漂移（design D8）。签名只吃 store.AccountScope，不引入 schedule.Service 注入。
+func AssembleListItems(
+	ctx context.Context,
+	scope store.AccountScope,
+	filter ListFilter,
+) ([]ListItem, error) {
 	rows, err := scope.Query(
 		ctx,
 		"schedule_slots",
