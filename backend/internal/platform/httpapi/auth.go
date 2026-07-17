@@ -15,7 +15,9 @@ import (
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
@@ -24,6 +26,10 @@ const defaultAccountTimezone = "Asia/Shanghai"
 
 type AccountTimezoneProvider interface {
 	TimezoneForAccount(context.Context, string) (string, error)
+}
+
+type TelegramBindingIssuer interface {
+	IssueBindToken(context.Context, store.AccountScope) (digest.BindLink, error)
 }
 
 type defaultTimezoneProvider struct{}
@@ -69,6 +75,7 @@ type handlers struct {
 	settings        *settings.Service
 	reminders       *reminder.Service
 	dashboard       *dashboarddomain.Service
+	telegramBinding TelegramBindingIssuer
 }
 
 var _ ServerInterface = (*handlers)(nil)

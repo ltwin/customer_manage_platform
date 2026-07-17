@@ -25,6 +25,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	reminderdomain "github.com/samson/customer-manage-platform/backend/internal/reminder"
+	digestdomain "github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 	settingsdomain "github.com/samson/customer-manage-platform/backend/internal/settings"
 )
@@ -94,6 +95,13 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		reminderdomain.NewSettingsAdapter(settingsSvc),
 		slog.New(slog.DiscardHandler),
 	)
+	digestRepo := digestdomain.NewPostgresBindingRepository()
+	bindingSvc := digestdomain.NewBindingService(
+		digestRepo,
+		digestdomain.NewBindTokenResolver(s, digestRepo),
+		digestdomain.NewRecipientGate(),
+		"studio_digest_bot",
+	)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:          slog.New(slog.DiscardHandler),
 		DB:              s,
@@ -110,6 +118,7 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		Settings:        settingsSvc,
 		Reminders:       reminderSvc,
 		Dashboard:       dashboarddomain.NewService(dashboarddomain.NewPostgresRepository(), settingsSvc),
+		TelegramBinding: bindingSvc,
 	})
 	return router, s, tokens, ctr
 }

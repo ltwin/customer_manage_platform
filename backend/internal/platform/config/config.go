@@ -22,6 +22,8 @@ type Config struct {
 	AvatarStorageDriver     string // AVATAR_STORAGE_DRIVER（首版仅 local）
 	AvatarLocalRoot         string // AVATAR_LOCAL_ROOT（local 对象根目录）
 	AvatarLocalRequireMount bool   // AVATAR_LOCAL_REQUIRE_MOUNT（production 必须为 true）
+	TelegramBotToken        string // TELEGRAM_BOT_TOKEN（可选，仅服务端环境）
+	TelegramBotUsername     string // TELEGRAM_BOT_USERNAME（可选，不含 @）
 }
 
 // 启动期 fail-fast 错误：必填项缺失时进程不得继续。
@@ -43,6 +45,8 @@ func Load() (Config, error) {
 		HTTPAddr:            os.Getenv("HTTP_ADDR"),
 		AvatarStorageDriver: strings.TrimSpace(os.Getenv("AVATAR_STORAGE_DRIVER")),
 		AvatarLocalRoot:     strings.TrimSpace(os.Getenv("AVATAR_LOCAL_ROOT")),
+		TelegramBotToken:    os.Getenv("TELEGRAM_BOT_TOKEN"),
+		TelegramBotUsername: strings.TrimSpace(os.Getenv("TELEGRAM_BOT_USERNAME")),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, ErrDatabaseURLMissing
@@ -73,6 +77,34 @@ func Load() (Config, error) {
 	}
 	cfg.AvatarLocalRoot = root
 	return cfg, nil
+}
+
+// TelegramStatus 返回 Telegram 外部能力是否可启动。配置问题不阻断主应用启动。
+func (c Config) TelegramStatus() (bool, error) {
+	tokenSet := c.TelegramBotToken != ""
+	usernameSet := c.TelegramBotUsername != ""
+	if !tokenSet && !usernameSet {
+		return false, nil
+	}
+	if !tokenSet || !usernameSet {
+		return false, errors.New("telegram 配置不完整")
+	}
+	if !validTelegramBotUsername(c.TelegramBotUsername) {
+		return false, errors.New("TELEGRAM_BOT_USERNAME 非法")
+	}
+	return true, nil
+}
+
+func validTelegramBotUsername(value string) bool {
+	if len(value) < 5 || len(value) > 32 || !strings.HasSuffix(strings.ToLower(value), "bot") {
+		return false
+	}
+	for _, r := range value {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func parseRequiredBool(name, raw string) (bool, error) {

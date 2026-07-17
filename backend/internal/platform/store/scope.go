@@ -174,6 +174,15 @@ func (sc TxAccountScope) InsertOnConflictDoNothingReturning(
 	return sc.scope.InsertOnConflictDoNothingReturning(ctx, table, cols, conflictCols, returningCols, args...)
 }
 
+func (sc TxAccountScope) Upsert(
+	ctx context.Context,
+	table string,
+	cols, conflictCols, updateCols []string,
+	args ...any,
+) error {
+	return sc.scope.Upsert(ctx, table, cols, conflictCols, updateCols, args...)
+}
+
 func (sc TxAccountScope) Update(ctx context.Context, table, setClause, cond string, args ...any) (int64, error) {
 	return sc.scope.Update(ctx, table, setClause, cond, args...)
 }
@@ -452,6 +461,59 @@ func (sc AccountScope) InsertOnConflictDoNothingReturning(
 	}
 	sql += fmt.Sprintf(" DO NOTHING RETURNING %s", strings.Join(returningCols, ", "))
 	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
+}
+
+// Upsert inserts an account-owned row and only updates the explicitly owned columns on conflict.
+func (sc AccountScope) Upsert(
+	ctx context.Context,
+	table string,
+	cols, conflictCols, updateCols []string,
+	args ...any,
+) error {
+	if sc.accountID == "" {
+		return ErrEmptyAccountScope
+	}
+	idents := make([]string, 0, len(cols)+len(conflictCols)+len(updateCols))
+	idents = append(idents, cols...)
+	idents = append(idents, conflictCols...)
+	idents = append(idents, updateCols...)
+	if err := validateIdents(table, idents...); err != nil {
+		return err
+	}
+	if len(cols) != len(args) || len(conflictCols) == 0 || len(updateCols) == 0 {
+		return fmt.Errorf("scoped upsert %s: invalid columns or values", table)
+	}
+	hasAccountConflict := false
+	for _, col := range conflictCols {
+		if col == "account_id" {
+			hasAccountConflict = true
+			break
+		}
+	}
+	if !hasAccountConflict {
+		return fmt.Errorf("scoped upsert %s: conflict columns must include account_id", table)
+	}
+	placeholders := make([]string, 0, len(args)+1)
+	for i := range len(args) + 1 {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+	}
+	updates := make([]string, 0, len(updateCols))
+	for _, col := range updateCols {
+		updates = append(updates, fmt.Sprintf("%s = EXCLUDED.%s", col, col))
+	}
+	insertCols := append([]string{"account_id"}, cols...)
+	sql := fmt.Sprintf(
+		"INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s",
+		table,
+		strings.Join(insertCols, ", "),
+		strings.Join(placeholders, ", "),
+		strings.Join(conflictCols, ", "),
+		strings.Join(updates, ", "),
+	)
+	if _, err := sc.execRunner().Exec(ctx, sql, append([]any{sc.accountID}, args...)...); err != nil {
+		return fmt.Errorf("scoped upsert %s: %w", table, err)
+	}
+	return nil
 }
 
 // Update 更新业务表：基座拼接 WHERE account_id = $1；

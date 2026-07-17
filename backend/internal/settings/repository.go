@@ -59,51 +59,22 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 	if err != nil {
 		return Settings{}, err
 	}
-	// 先查后写：有行则 Update，无行则 Insert（主键 = account_id）。
-	_, found, err := PostgresRepository{}.Get(ctx, scope)
-	if err != nil {
-		return Settings{}, err
-	}
 	now := time.Now().UTC()
-	var chat any
-	if settings.TelegramChatID != nil {
-		chat = *settings.TelegramChatID
+	ownedColumns := []string{
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "updated_at",
 	}
-	if found {
-		if _, err := scope.Update(ctx, "settings",
-			"timezone = $2, birthday_lead_days = $3, follow_up_after_days = $4, churn_thresholds = $5, digest_hour = $6, telegram_chat_id = $7, updated_at = $8",
-			"",
-			settings.Timezone,
-			settings.BirthdayLeadDays,
-			settings.FollowUpAfterDays,
-			thresholds,
-			settings.DigestHour,
-			chat,
-			now,
-		); err != nil {
-			return Settings{}, err
-		}
-	} else {
-		if err := scope.Insert(ctx, "settings",
-			[]string{
-				"timezone",
-				"birthday_lead_days",
-				"follow_up_after_days",
-				"churn_thresholds",
-				"digest_hour",
-				"telegram_chat_id",
-				"updated_at",
-			},
-			settings.Timezone,
-			settings.BirthdayLeadDays,
-			settings.FollowUpAfterDays,
-			thresholds,
-			settings.DigestHour,
-			chat,
-			now,
-		); err != nil {
-			return Settings{}, err
-		}
+	if err := scope.Upsert(ctx, "settings",
+		ownedColumns,
+		[]string{"account_id"},
+		ownedColumns,
+		settings.Timezone,
+		settings.BirthdayLeadDays,
+		settings.FollowUpAfterDays,
+		thresholds,
+		settings.DigestHour,
+		now,
+	); err != nil {
+		return Settings{}, err
 	}
 	saved, _, err := PostgresRepository{}.Get(ctx, scope)
 	if err != nil {

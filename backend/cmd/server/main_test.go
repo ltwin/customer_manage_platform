@@ -5,7 +5,40 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 )
+
+func TestBuildTelegramIntegrationHonorsOptionalConfiguration(t *testing.T) {
+	tests := []struct {
+		name        string
+		cfg         config.Config
+		wantEnabled bool
+		wantErr     bool
+	}{
+		{name: "disabled", cfg: config.Config{}},
+		{name: "partial", cfg: config.Config{TelegramBotToken: "synthetic-token"}, wantErr: true},
+		{
+			name:        "active",
+			cfg:         config.Config{TelegramBotToken: "synthetic-token", TelegramBotUsername: "synthetic_bot"},
+			wantEnabled: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			binding, runner, err := buildTelegramIntegration(tt.cfg, nil, nil, nil, nil)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error: got %v, wantErr=%v", err, tt.wantErr)
+			}
+			if got := binding != nil && runner != nil; got != tt.wantEnabled {
+				t.Fatalf("enabled: got %v, want %v", got, tt.wantEnabled)
+			}
+			if !tt.wantEnabled && (binding != nil || runner != nil) {
+				t.Fatal("disabled or invalid config must not expose a partial Telegram integration")
+			}
+		})
+	}
+}
 
 func TestWaitForRunnerUsesCallerDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)

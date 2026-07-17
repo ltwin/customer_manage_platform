@@ -1,0 +1,44 @@
+{
+  "gate_id": "dod-runner",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [
+    "Vite reports the existing/general minified chunk >500kB warning; build exits 0."
+  ],
+  "evidence": [
+    {
+      "id": "CMD-001",
+      "command": "make check",
+      "exit_code": 0,
+      "core": true,
+      "note": "Second post-hardening run passed with serialized Testcontainers."
+    },
+    {
+      "id": "CMD-002",
+      "command": "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts",
+      "exit_code": 0,
+      "core": true
+    },
+    {
+      "id": "CMD-003",
+      "command": "cd backend && go test ./internal/reminder/... ./internal/settings/... ./internal/platform/config/... ./internal/platform/httpapi/... ./cmd/server/... -count=1 -parallel=1",
+      "exit_code": 0,
+      "core": true
+    },
+    {
+      "id": "CMD-004",
+      "command": "cd frontend && npm run test:telegram-digest",
+      "exit_code": 0,
+      "core": true,
+      "note": "4/4 tests passed."
+    },
+    {
+      "id": "CMD-005",
+      "command": "git diff --check",
+      "exit_code": 0,
+      "core": true
+    }
+  ],
+  "providers": {}
+}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,9 +26,13 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
+	telegramapi "github.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
+
+const telegramAPIBaseURL = "https://api.telegram.org"
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -80,6 +85,20 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	)
 	reminderRunner := reminder.NewScanRunner(s, reminderSvc, settingsSvc, logger)
 	dashboardSvc := dashboard.NewService(dashboard.NewPostgresRepository(), settingsSvc)
+	telegramBinding, telegramRunner, telegramErr := buildTelegramIntegration(
+		cfg,
+		s,
+		settingsSvc,
+		reminderSvc,
+		logger,
+	)
+	if telegramErr != nil {
+		logger.Warn("telegram integration unavailable", slog.String("status", "invalid_config"), slog.Any("error", telegramErr))
+	} else if telegramRunner == nil {
+		logger.Info("telegram integration disabled", slog.String("status", "disabled"))
+	} else {
+		logger.Info("telegram integration enabled", slog.String("status", "active"))
+	}
 
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:          logger,
@@ -97,6 +116,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Settings:        settingsSvc,
 		Reminders:       reminderSvc,
 		Dashboard:       dashboardSvc,
+		TelegramBinding: telegramBinding,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -109,13 +129,22 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	runnerDone := make(chan struct{})
+	runners := []backgroundRunner{maintenance, reminderRunner}
+	if telegramRunner != nil {
+		runners = append(runners, telegramRunner)
+	}
 	go func() {
-		// 两个 runner 共享同一 lifecycle；任一退出都算 runner 结束（有界退出）。
-		done := make(chan struct{}, 2)
-		go func() { maintenance.Run(runCtx); done <- struct{}{} }()
-		go func() { reminderRunner.Run(runCtx); done <- struct{}{} }()
-		<-done
-		<-done
+		// 所有后台任务共享同一 lifecycle，并在返回前全部响应 cancellation。
+		var running sync.WaitGroup
+		running.Add(len(runners))
+		for _, runner := range runners {
+			runner := runner
+			go func() {
+				defer running.Done()
+				runner.Run(runCtx)
+			}()
+		}
+		running.Wait()
 		close(runnerDone)
 	}()
 	serverResult := make(chan error, 1)
@@ -128,6 +157,47 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		runnerDone:   runnerDone,
 	}
 	return lifecycle.wait(ctx)
+}
+
+type backgroundRunner interface {
+	Run(context.Context)
+}
+
+func buildTelegramIntegration(
+	cfg config.Config,
+	accounts *store.Store,
+	settingsSvc *settings.Service,
+	reminderSvc *reminder.Service,
+	logger *slog.Logger,
+) (httpapi.TelegramBindingIssuer, *digest.TelegramRunner, error) {
+	enabled, err := cfg.TelegramStatus()
+	if err != nil || !enabled {
+		return nil, nil, err
+	}
+
+	gate := digest.NewRecipientGate()
+	integrationState := digest.NewIntegrationState(logger)
+	bindingRepo := digest.NewPostgresBindingRepository()
+	tokenResolver := digest.NewBindTokenResolver(accounts, bindingRepo)
+	binding := digest.NewBindingService(bindingRepo, tokenResolver, gate, cfg.TelegramBotUsername)
+	targets := digest.NewSettingsTargetProvider(settingsSvc)
+	scan := digest.NewReminderScanEnsurer(reminderSvc)
+	chatResolver := digest.NewChatAccountResolver(accounts, bindingRepo)
+	updateHandler := digest.NewUpdateHandler(binding, chatResolver, scan, targets, bindingRepo)
+	telegramClient := telegramapi.NewClient(cfg.TelegramBotToken, telegramAPIBaseURL, nil)
+	poller := digest.NewPoller(telegramClient, updateHandler).WithIntegrationState(integrationState)
+
+	snapshots := digest.NewPostgresSnapshotRepository()
+	messages := digest.NewDigestMessageBuilder(snapshots, digest.NewRenderer())
+	recipients := digest.NewSettingsRecipientResolver(settingsSvc)
+	deliveryRepo := digest.NewPostgresDeliveryRepository()
+	sender := digest.NewDeliverySender(deliveryRepo, gate, recipients, messages, telegramClient).
+		WithIntegrationState(integrationState)
+	senderRunner := digest.NewDeliverySenderRunner(accounts, sender).WithIntegrationState(integrationState)
+	daily := digest.NewDailyScheduler(accounts, targets, scan, digest.NewPostgresDailyRepository(), logger)
+
+	guardedBinding := digest.NewGuardedBindingIssuer(binding, integrationState)
+	return guardedBinding, digest.NewTelegramRunner(poller, daily, senderRunner, logger), nil
 }
 
 type serverLifecycle struct {

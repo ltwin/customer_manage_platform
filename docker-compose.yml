@@ -6,6 +6,13 @@ services:
   app:
     build: .
     image: crm:local
+    # Telegram long polling 首版只允许一个进程；发布必须 stop-first，禁止旧新容器重叠。
+    stop_grace_period: 12s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
     env_file:
       - path: .env
         required: false # 单起 postgres（make db-up）时无需 .env
@@ -18,6 +25,8 @@ services:
       AVATAR_STORAGE_DRIVER: local
       AVATAR_LOCAL_ROOT: /var/lib/crm/avatars
       AVATAR_LOCAL_REQUIRE_MOUNT: "true"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
     ports:
       - "8080:8080"
     volumes:

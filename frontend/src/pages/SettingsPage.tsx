@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ApiError, getSettings, updateSettings } from '../api/client'
+import { ApiError, createTelegramBindToken, getSettings, updateSettings } from '../api/client'
 import type { ChurnThreshold, Settings } from '../api/client'
 import { useShell } from '../components/shellContext'
+import { openTelegramDeepLink } from '../components/telegramBinding'
 
 const shootTypeLabels: Record<ChurnThreshold['shoot_type'], string> = {
   portrait: '写真',
@@ -18,12 +19,26 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [binding, setBinding] = useState(false)
+  const [bindingError, setBindingError] = useState<string | null>(null)
+  const [blockedDeepLink, setBlockedDeepLink] = useState<string | null>(null)
+  const bindExpiryTimer = useRef<number | null>(null)
 
   const [timezone, setTimezone] = useState('Asia/Shanghai')
   const [birthdayLead, setBirthdayLead] = useState(3)
   const [followUp, setFollowUp] = useState(7)
   const [digestHour, setDigestHour] = useState(9)
   const [thresholds, setThresholds] = useState<ChurnThreshold[]>([])
+
+  const clearPendingLink = useCallback(() => {
+    if (bindExpiryTimer.current !== null) {
+      window.clearTimeout(bindExpiryTimer.current)
+      bindExpiryTimer.current = null
+    }
+    setBlockedDeepLink(null)
+  }, [])
+
+  useEffect(() => clearPendingLink, [clearPendingLink])
 
   useEffect(() => {
     setLoading(true)
@@ -46,6 +61,38 @@ export default function SettingsPage() {
       })
       .finally(() => setLoading(false))
   }, [navigate])
+
+  async function onBindTelegram() {
+    clearPendingLink()
+    setBindingError(null)
+    setBinding(true)
+    try {
+      const { deep_link: deepLink } = await createTelegramBindToken()
+      if (openTelegramDeepLink(deepLink)) {
+        notify('已打开 Telegram，请在私聊中确认绑定')
+        return
+      }
+      setBlockedDeepLink(deepLink)
+      setBindingError('弹窗被浏览器拦截，请使用下方按钮再次打开 Telegram')
+      bindExpiryTimer.current = window.setTimeout(clearPendingLink, 10 * 60 * 1000)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+      setBindingError(err instanceof Error ? err.message : '生成 Telegram 绑定链接失败')
+    } finally {
+      setBinding(false)
+    }
+  }
+
+  function retryBlockedPopup() {
+    if (blockedDeepLink && openTelegramDeepLink(blockedDeepLink)) {
+      clearPendingLink()
+      setBindingError(null)
+      notify('已打开 Telegram，请在私聊中确认绑定')
+    }
+  }
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault()
@@ -128,7 +175,39 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="content">
+      <main className="content settings-stack">
+        <section className="card telegram-binding-card" aria-labelledby="telegramBindingTitle">
+          <div>
+            <h2 id="telegramBindingTitle">Telegram 每日经营摘要</h2>
+            <p className="sub">
+              {settings.telegram_chat_id
+                ? '已绑定；摘要会发送到当前私聊。'
+                : '尚未绑定；绑定后可接收每日摘要并使用 /today。'}
+            </p>
+          </div>
+          <div className="telegram-binding-actions">
+            <span className={`badge ${settings.telegram_chat_id ? 'badge-success' : 'badge-muted'}`}>
+              {settings.telegram_chat_id ? '已绑定' : '未绑定'}
+            </span>
+            <button className="btn btn-primary" type="button" disabled={binding} onClick={onBindTelegram}>
+              {binding
+                ? '正在生成绑定链接…'
+                : settings.telegram_chat_id
+                  ? '重新绑定'
+                  : '绑定 Telegram'}
+            </button>
+          </div>
+          {bindingError && (
+            <div className="form-error" role="alert">
+              {bindingError}
+            </div>
+          )}
+          {blockedDeepLink && (
+            <button className="btn" type="button" onClick={retryBlockedPopup}>
+              再次打开 Telegram
+            </button>
+          )}
+        </section>
         <form className="card form-stack" onSubmit={onSave}>
           <label>
             账号时区（IANA）

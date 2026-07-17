@@ -49,6 +49,7 @@ type RouterDeps struct {
 	Settings        *settings.Service
 	Reminders       *reminder.Service
 	Dashboard       *dashboarddomain.Service
+	TelegramBinding TelegramBindingIssuer
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -86,6 +87,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		settings:        deps.Settings,
 		reminders:       deps.Reminders,
 		dashboard:       deps.Dashboard,
+		telegramBinding: deps.TelegramBinding,
 	}
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", h.Login)
@@ -125,6 +127,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.POST("/admin/reminders/scan", h.ScanReminders)
 	protected.GET("/settings", h.GetSettings)
 	protected.PATCH("/settings", h.UpdateSettings)
+	protected.POST("/settings/telegram/bind-token", h.CreateTelegramBindToken)
 	// dashboard：登录后默认落地经营台聚合（D7 手工注册，不走全量 RegisterHandlers）
 	protected.GET("/dashboard", h.GetDashboard)
 

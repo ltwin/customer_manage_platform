@@ -358,6 +358,8 @@ export type ScanRemindersResult =
   paths['/admin/reminders/scan']['post']['responses']['200']['content']['application/json']
 export type UpdateSettingsBody =
   paths['/settings']['patch']['requestBody']['content']['application/json']
+export type CreateTelegramBindTokenResponse =
+  paths['/settings/telegram/bind-token']['post']['responses']['200']['content']['application/json']
 
 export function listReminders(params: {
   status?: ReminderStatus
@@ -406,5 +408,11 @@ export function updateSettings(body: UpdateSettingsBody): Promise<Settings> {
   return request<Settings>('/settings', {
     method: 'PATCH',
     body: JSON.stringify(body),
+  })
+}
+
+export function createTelegramBindToken(): Promise<CreateTelegramBindTokenResponse> {
+  return request<CreateTelegramBindTokenResponse>('/settings/telegram/bind-token', {
+    method: 'POST',
   })
 }

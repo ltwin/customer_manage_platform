@@ -69,10 +69,10 @@ items:
   - slug: telegram-digest
     description: TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
     depends_on: [reminder-engine, schedule-calendar]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-15-telegram-digest
     minimal_loop: false
-    notes: 依赖理由：摘要 = 提醒 + 当日档期；bot token 已在 platform-skeleton 冒烟验证；完成信号：真机收到含真实数据摘要（截图）、未绑定时系统正常
+    notes: 依赖理由：摘要 = 提醒 + 当日档期；bot token 已在 platform-skeleton 冒烟验证；完成信号：owner 真机绑定并收到基于 synthetic fixture 的真实端到端摘要（截图裁剪/脱敏），未绑定时系统正常。2026-07-17 done：owner 确认真机 binding/daily//today 通过（S19 owner-attested，无截图归档）；code review round 2 passed，QA passed，CMD-001~005 全绿；入站失败安全提示 REV-002 延后为单独设计决策。
 
   - slug: dashboard
     description: 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（roadmap 4.3 dashboard 契约，2026-07-06 口径更新）

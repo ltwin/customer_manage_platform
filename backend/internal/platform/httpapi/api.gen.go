@@ -1350,6 +1350,9 @@ type ServerInterface interface {
 	// 更新设置
 	// (PATCH /settings)
 	UpdateSettings(c *gin.Context)
+	// 生成 TG 绑定 token 与 deep link（绑定流程见 §4.5）
+	// (POST /settings/telegram/bind-token)
+	CreateTelegramBindToken(c *gin.Context)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -2405,6 +2408,21 @@ func (siw *ServerInterfaceWrapper) UpdateSettings(c *gin.Context) {
 	siw.Handler.UpdateSettings(c)
 }
 
+// CreateTelegramBindToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateTelegramBindToken(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateTelegramBindToken(c)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -2465,4 +2483,5 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.PATCH(options.BaseURL+"/schedule/slots/:id", wrapper.UpdateScheduleSlot)
 	router.GET(options.BaseURL+"/settings", wrapper.GetSettings)
 	router.PATCH(options.BaseURL+"/settings", wrapper.UpdateSettings)
+	router.POST(options.BaseURL+"/settings/telegram/bind-token", wrapper.CreateTelegramBindToken)
 }

@@ -18,3 +18,4 @@ output-options:
     - schedule
     - reminder-engine
     - dashboard
+    - telegram-digest

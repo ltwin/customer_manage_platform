@@ -80,3 +80,42 @@ func TestLoadAvatarStorageFailsFast(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadTelegramConfigurationIsOptional(t *testing.T) {
+	tests := []struct {
+		name       string
+		token      string
+		username   string
+		wantActive bool
+		wantIssue  bool
+	}{
+		{name: "disabled when both values are absent"},
+		{name: "enabled when both values are valid", token: "test-token", username: "studio_digest_bot", wantActive: true},
+		{name: "incomplete token only", token: "test-token", wantIssue: true},
+		{name: "incomplete username only", username: "studio_digest_bot", wantIssue: true},
+		{name: "invalid username", token: "test-token", username: "not a bot", wantIssue: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setRequiredEnvironment(t)
+			t.Setenv("TELEGRAM_BOT_TOKEN", tt.token)
+			t.Setenv("TELEGRAM_BOT_USERNAME", tt.username)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load must keep the main application available: %v", err)
+			}
+			active, issue := cfg.TelegramStatus()
+			if active != tt.wantActive {
+				t.Fatalf("active: want %v, got %v", tt.wantActive, active)
+			}
+			if (issue != nil) != tt.wantIssue {
+				t.Fatalf("issue presence: want %v, got %v", tt.wantIssue, issue)
+			}
+			if cfg.TelegramBotToken != tt.token || cfg.TelegramBotUsername != tt.username {
+				t.Fatal("Telegram values were not loaded verbatim from the environment")
+			}
+		})
+	}
+}

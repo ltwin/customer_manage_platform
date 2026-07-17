@@ -12,6 +12,7 @@
 		"test:schedule": "node --test --experimental-transform-types scripts/schedule.test.ts",
 		"test:avatar-layout": "node --test scripts/avatar-layout.test.mjs",
 		"test:customer-avatar": "node --test --experimental-transform-types scripts/customer-avatar.test.ts",
+		"test:telegram-digest": "node --test --experimental-transform-types scripts/telegram-digest.test.ts",
     "test:prototype": "node --test scripts/prototype-contract.test.mjs",
     "preview": "vite preview",
     "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts"

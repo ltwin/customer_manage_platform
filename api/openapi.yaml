@@ -37,7 +37,7 @@ tags:
   - name: reminders
     description: 提醒域（reminder-engine）
   - name: settings
-    description: 设置（GET/PATCH 归 reminder-engine；telegram 绑定归 telegram-digest，未实现）
+    description: 设置（GET/PATCH 归 reminder-engine；telegram 绑定归 telegram-digest）
   - name: dashboard
     description: dashboard 聚合（dashboard）
   - name: export
@@ -1278,7 +1278,7 @@ paths:
 
   /settings/telegram/bind-token:
     post:
-      tags: [settings]
+      tags: [settings, telegram-digest]
       operationId: createTelegramBindToken
       summary: 生成 TG 绑定 token 与 deep link（绑定流程见 §4.5）
       responses:

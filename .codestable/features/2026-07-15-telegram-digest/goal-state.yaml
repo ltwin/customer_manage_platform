@@ -1,0 +1,86 @@
+feature: "telegram-digest"
+status: complete
+baseline_ref: "8420d4f1445eeaec2171445d63aa01a0bf123f6f"
+stage: acceptance
+driver_kind: native
+driver_id: "/root/telegram_digest_goal_driver"
+handoff_reason: ""
+handoff_next: ""
+design: ".codestable/features/2026-07-15-telegram-digest/telegram-digest-design.md"
+checklist: ".codestable/features/2026-07-15-telegram-digest/telegram-digest-checklist.yaml"
+review: ".codestable/features/2026-07-15-telegram-digest/telegram-digest-review.md"
+qa: ".codestable/features/2026-07-15-telegram-digest/telegram-digest-qa.md"
+acceptance: ".codestable/features/2026-07-15-telegram-digest/telegram-digest-acceptance.md"
+ledger:
+  - at: "2026-07-15"
+    stage: implementation
+    status: ready-to-dispatch
+    note: "goal package generated；owner 已接受 design；等待 attention.md 要求的 branch/worktree 选择后再派发 driver"
+  - at: "2026-07-15"
+    stage: implementation
+    status: running
+    note: "owner 选择当前工作区；已切换到 codex/feat/telegram-digest；原生可见 Goal driver /root/telegram_digest_goal_driver 已派发"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-001
+    note: "OpenAPI/config/migration 契约骨架完成；配置与迁移 TDD、CMD-002、PostgreSQL up/down/约束验证通过；生成物已单独暂存但未 commit"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-002
+    note: "digest ports/types、production/fake Telegram adapter、RecipientGate、PostgreSQL DeliveryRepository 与 DeliverySender seam 完成；claim/fence/finalize/release/cleanup/recipient/superseded 全包 VERIFY 通过"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-003
+    note: "安全绑定完成；opaque token、private start、scoped token/chat resolver、原子 rebind/ack supersede、chat unique、列级 Settings PATCH 与 bind-token HTTP 验证通过"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-004
+    note: "冻结 target date/timezone 的 Snapshot/Renderer 完成；Reminder 20+overflow、shoot parity、窄 unpaid、空态、DST、跨午夜与 3500 code point 验证通过"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-005
+    note: "getUpdates durable-prefix offset、/today scan→kind→claim、replay kind freeze、2×8 error policy 与 adapter classification 完成；全 digest VERIFY 通过"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-006
+    note: "daily scan-before-enqueue/local-date once/restart catchup 与 DeliverySender retry/cancel/invalid-auth/account fairness 完成；全 digest VERIFY 通过"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-007
+    note: "Settings Telegram 绑定卡片、generated API、内存 deep-link、popup/loading/error/focus/mobile 契约完成；隔离 DB+8081 的 375px synthetic UI 与 role=alert 实证、frontend test/build/lint 通过"
+  - at: "2026-07-15"
+    stage: implementation
+    status: step-complete
+    step: STEP-008
+    note: "单 TelegramRunner composition/lifecycle、共享 invalid_auth suspension、claim/result unknown repair、S23 reclaim barrier、disabled/SIGTERM 实证、replicas=1+stop-first runbook 与 CMD-001～005 完成；真 Bot 三图明确留待 QA owner-stop，不冒充本地证据"
+  - at: "2026-07-15"
+    stage: review
+    status: ready
+    note: "implementation.before_review gates 全绿；范围/凭证/唯一 sender caller 清扫通过；等待独立 cs-code-review 分别判定 spec compliance 与 code quality"
+  - at: "2026-07-16"
+    stage: review
+    status: changes-requested
+    note: "独立 subagent+ocr 复审：REV-001 blocking（生产 client 取消误分类为 network，Fake 假绿）+ REV-002~007 important；verdict 要求修完 blocking 重跑 cs-code-review 不得直接进 QA"
+  - at: "2026-07-17"
+    stage: implementation
+    status: review-fix
+    note: "review-fix round 1：REV-001（client 保留 context.Canceled + 生产 client×sender 端到端取消集成测试）、REV-003（DailyScheduler 注入 slog + 脱敏结构化日志测试）、REV-004（Build 移出 gate 临界区回到 D7 顺序）、REV-005（parseCommand 规范化 /start@bot + 单测）、REV-006（finalize 仅 FinalizeApplied 成功 + stale+nil 重试测试）、REV-007（OpenAPI 去除未实现，codegen 无 drift）修复完成；REV-002 owner 决定延后写入 residual。CMD-001~005 全绿"
+  - at: "2026-07-17"
+    stage: review
+    status: passed
+    note: "round 2 独立 subagent 复审 PASS：六项 actionable REV 全部 CONFIRMED-FIXED/合法延后，0 新 blocking/important，仅 2 条非阻塞 suggestion；独立重跑 build/vet/digest+cmd-server 测试全绿。进入 QA，真机 S19 为 owner-gated QA 项"
+  - at: "2026-07-17"
+    stage: qa
+    status: passed
+    note: "QA 报告 passed：功能性核心路径（绑定 S1/3/4、resolver S18/28、摘要 S6/7/8/11/22、daily S9/10/21、/today S5/14/30、重试 S12/13/25、并发 S23/24/26、生命周期 S20、降级 S15、脱敏 S29、migration、bind-token HTTP、前端 S16/17）全部有运行证据；CMD-001~005 全绿。唯一 owner-gated 项 QA-024 真 Bot S19 三图未落盘（owner 已口头确认真机通过，不得用 fake 冒充），作为 residual 交 acceptance 记录 owner 决策"
+  - at: "2026-07-17"
+    stage: acceptance
+    status: passed
+    note: "验收 9 节 + final audit 完成，56 checks 全 passed。owner 两项决策：S19 记为 owner-attested residual（不伪造截图）；授权回写。已执行 requirement telegram-digest draft→current（含变更日志/implemented_by）、roadmap items.yaml + 主文档 telegram-digest in-progress→done（YAML 校验通过）。最终审计聚合命令重跑全绿；唯一剩余动作为 owner 指示下的 git commit（未自动提交）。cs-feat 工作流走完"

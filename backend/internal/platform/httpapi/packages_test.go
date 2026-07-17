@@ -275,9 +275,9 @@ func TestPackageAPIErrorPathsAndScope(t *testing.T) {
 		t.Fatalf("missing auth should be 401, got %d %s", rec.Code, rec.Body.String())
 	}
 
-	// bind-token 仍未实现，保持 404（reminder-engine 范围守护）。dashboard 已实现，其行为见 dashboard_test.go。
+	// telegram-digest 已接管独立 bind-token 路由；package 行为不能遮蔽该挂载点。
 	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/settings/telegram/bind-token", tokenA, []byte(`{}`))
-	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
-		t.Fatalf("unimplemented bind-token should stay 404, got %d %s", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("telegram bind-token route should remain mounted, got %d %s", rec.Code, rec.Body.String())
 	}
 }

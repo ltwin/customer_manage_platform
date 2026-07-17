@@ -503,7 +503,7 @@ Port:   TelegramPort { sendMessage(chat_id, text) error }
         （摘要窗口有意保持"今日"口径，不随 dashboard due_reminders 的近 3 天窗口——推送只推当日可行动项，2026-07-06 确认）
         ② 今日档期（时间+客户+套系）
         ③ 待收尾款订单计数
-失败:   发送失败重试 3 次（间隔 1/5/30min）；仍失败只记日志——dashboard 是兜底展示（A+D 冗余设计），
+失败:   初次发送失败后再重试 3 次（间隔 1/5/30min，总 attempt=4）；仍失败只记日志——dashboard 是兜底展示（A+D 冗余设计），
         推送失败不得影响 Reminder 生成
 凭证:   bot token 只经环境变量注入，不入库、不入 git（规则落 attention.md）
 ```
@@ -556,8 +556,8 @@ GET /export → application/json（Content-Disposition 附件）
    - 所属模块：reminder + webapp ｜ 依赖：customer-profile-complete, order-tracking ｜ 状态：done ｜ 对应 feature：2026-07-12-reminder-engine
    - 备注：依赖理由——生日规则要 birthday 字段（条目 3），回访/流失规则要订单状态时间戳（条目 6）。Settings 独立归 `backend/internal/settings` 域包，提供有效默认值、提醒参数与账号时区，供 reminder、`GET /me` 和后续 telegram-digest 消费。完成证据：同日双跑零新增；三规则正/反/边界、时区日界、时间戳缺失跳过、零成交不告警、改阈值生效、merge 迁移、已删订单 auto-dismiss、customer_id 过滤、runner 每本地日一次与前端三路径均已通过 review/QA。
 9. **telegram-digest** — TG Bot：bind-token 绑定流程、每日摘要推送、/today 命令、失败重试与日志
-   - 所属模块：reminder（TelegramPort）｜ 依赖：reminder-engine, schedule-calendar ｜ 状态：planned ｜ 对应 feature：未启动
-   - 备注：依赖理由——摘要内容 = 提醒（条目 8）+ 当日档期（条目 7）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到含真实数据的摘要（截图）；未绑定时系统全功能正常
+   - 所属模块：reminder（TelegramPort）｜ 依赖：reminder-engine, schedule-calendar ｜ 状态：done ｜ 对应 feature：2026-07-15-telegram-digest
+   - 备注：依赖理由——摘要内容 = 提醒（条目 8）+ 当日档期（条目 7）；bot token 已在条目 1 冒烟验证；完成信号：owner 真机绑定并收到基于 synthetic fixture 的真实端到端摘要（截图裁剪/脱敏），未绑定时系统全功能正常。2026-07-17 done：owner 确认真机 binding/daily//today 通过（S19 owner-attested，无截图归档）；code review round 2 passed、QA passed、CMD-001~005 全绿；入站失败安全提示（REV-002）延后为单独设计决策。
 10. **dashboard** — 首页面板：待办提醒（近 3 天窗口）、今日档期、待收尾款、流失预警、近 30 天概览（4.3 dashboard 契约）
    - 所属模块：webapp + dashboard ｜ 依赖：order-tracking, schedule-calendar, reminder-engine ｜ 状态：done ｜ 对应 feature：2026-07-14-dashboard
    - 备注：完成信号：五卡片数据与各域列表页交叉一致（核对用例）；登录后默认落地页。§4.3 ListItem 形与 OpenAPI 已由本 feature 钉死；台上写复用 reminders done/dismiss 与 PATCH order balance_paid。

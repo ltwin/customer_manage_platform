@@ -4,7 +4,7 @@
 
 ## draft（愿景已定，尚未实现）
 
-（暂无）
+- **[telegram-digest](telegram-digest.md)** — 每天把该处理的提醒、档期和待收尾款送到 Telegram，忙起来也不用反复打开系统查漏项
 
 ## current（系统正在满足）
 
