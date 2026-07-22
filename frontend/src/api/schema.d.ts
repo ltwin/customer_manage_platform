@@ -724,6 +724,30 @@ export interface components {
             digest_hour: number;
             telegram_chat_id?: string;
         };
+        ExportCounts: {
+            customers: number;
+            social_identities: number;
+            customer_notes: number;
+            packages: number;
+            orders: number;
+            schedule_slots: number;
+            reminders: number;
+        };
+        ExportDocument: {
+            /** Format: date-time */
+            exported_at: string;
+            /** @enum {integer} */
+            schema_version: 1;
+            counts: components["schemas"]["ExportCounts"];
+            customers: components["schemas"]["Customer"][];
+            social_identities: components["schemas"]["SocialIdentity"][];
+            customer_notes: components["schemas"]["CustomerNote"][];
+            packages: components["schemas"]["Package"][];
+            orders: components["schemas"]["Order"][];
+            schedule_slots: components["schemas"]["ScheduleSlot"][];
+            reminders: components["schemas"]["Reminder"][];
+            settings: components["schemas"]["Settings"];
+        };
     };
     responses: {
         /** @description 400 validation_failed */
@@ -2042,32 +2066,16 @@ export interface operations {
             /** @description 全量导出文件（Content-Disposition 附件） */
             200: {
                 headers: {
+                    /** @description 安全 UTC 文件名的附件声明 */
+                    "Content-Disposition"?: string;
+                    /** @description 完整预序列化 JSON bytes 长度 */
+                    "Content-Length"?: number;
+                    "Cache-Control"?: "no-store";
+                    "X-Content-Type-Options"?: "nosniff";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: date-time */
-                        exported_at: string;
-                        /** @enum {integer} */
-                        schema_version: 1;
-                        counts: {
-                            customers: number;
-                            social_identities: number;
-                            customer_notes: number;
-                            packages: number;
-                            orders: number;
-                            schedule_slots: number;
-                            reminders: number;
-                        };
-                        customers: components["schemas"]["Customer"][];
-                        social_identities: components["schemas"]["SocialIdentity"][];
-                        customer_notes: components["schemas"]["CustomerNote"][];
-                        packages: components["schemas"]["Package"][];
-                        orders: components["schemas"]["Order"][];
-                        schedule_slots: components["schemas"]["ScheduleSlot"][];
-                        reminders: components["schemas"]["Reminder"][];
-                        settings: components["schemas"]["Settings"];
-                    };
+                    "application/json": components["schemas"]["ExportDocument"];
                 };
             };
             401: components["responses"]["Unauthorized"];

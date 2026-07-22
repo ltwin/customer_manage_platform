@@ -38,6 +38,7 @@ test:
 	cd frontend && npm run test:schedule
 	cd frontend && npm run test:avatar-layout
 	cd frontend && npm run test:telegram-digest
+	cd frontend && npm run test:data-export
 
 # 契约线（design 2.2）：api/openapi.yaml -> Go 服务端类型（按 tag）+ TS 全量类型
 generate: frontend/node_modules

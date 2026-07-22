@@ -1,0 +1,179 @@
+feature: 2026-07-21-data-export
+created: 2026-07-21
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./internal/platform/store/... ./internal/dataexport/... ./internal/platform/httpapi/... ./cmd/server/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run test:data-export && npm run build"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, api_response, response_headers, postgres_integration, browser_screenshot, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    commented_out_code: forbidden
+    sensitive_payload_artifact: forbidden
+
+steps:
+  - id: STEP-001
+    action: "结构微重构：把 AccountScope 事务类型、入口与 TxAccountScope delegates 纯移动到独立事务文件，不改签名或行为"
+    exit_signal: "store 既有测试全绿、公开 Go 签名与 SQL 行为零变化，diff 只有 move/import 调整？"
+    status: done
+  - id: STEP-002
+    action: "契约与隔离编排骨架：把 /export 匿名 response 提升为 OpenAPI ExportDocument/ExportCounts 命名 component（保持字段/required、禁止额外属性、counts minimum=0），让响应经 $ref 引用，细化 headers、启用 export tag/codegen，并建立 dataexport interface 与未挂生产 route 的 handler 隔离测试"
+    exit_signal: "生成物出现可命名的 ExportDocument/ExportCounts 顶层类型且零漂移；handler fake 返回 schema_version=1、七个空数组和零 counts；router/composition root 仍未暴露伪空生产导出？"
+    status: done
+  - id: STEP-003
+    action: "一致快照与全量计算节点：实现窄 ReadTxAccountScope + REPEATABLE READ READ ONLY 快照、七类 allowlist 批量查询、有效 settings、repository 稳定排序与 len-derived counts；真实 repository 完成后才挂生产 route/composition root"
+    exit_signal: "真实 PostgreSQL fixture 与空账号通过 A2–A4、A8、A16–A18；同一事务 session 独立证明 transaction_isolation=repeatable read、transaction_read_only=on，且 production ReadTxAccountScope 无写方法；生产 route 无 token 401、有效 token 读取真实数据？"
+    status: done
+  - id: STEP-004
+    action: "安全与失败 harden：补跨账号、敏感字段排除、依赖/空 scope、发送前 JSON 预序列化与 context cancel、headers 后 transport 边界、headers/文件名与脱敏日志证据"
+    exit_signal: "A5–A11 负向测试通过，JSON key 扫描无内部 generation、凭证或运行状态？"
+    status: done
+  - id: STEP-005
+    action: "前端下载 client：实现 Bearer Blob fetch、严格 MIME media-type 解析、精确 whole-string filename regex/fallback、ApiError/401 与可释放 object URL；补 body/blob 读取拒绝边界，新增 npm run test:data-export 并接入 Makefile test"
+    exit_signal: "定向脚本覆盖 token、成功 Blob、application/json 合法参数、错误 base type/substring/+json、精确文件名、500/401 与 response.blob() rejection；读取拒绝时 client 无结果、无 object URL/download且呈现可重试错误；make test 实际运行该脚本？"
+    status: done
+  - id: STEP-006
+    action: "设置页交互：挂入独立 DataExportCard，补 loading/error/retry、具体敏感信息/reference-only 文案、Settings 加载失败独立可用、键盘与 375px 状态"
+    exit_signal: "桌面与 375px 均能一次点击下载可解析 JSON；Settings 加载失败不隐藏卡片，导出失败可重试且无横向溢出或重复请求？"
+    status: done
+  - id: STEP-007
+    action: "全链路验证与范围清扫：运行 CMD-001～004，保存 API header/JSON 与浏览器证据，确认显式不做项未进入 diff"
+    exit_signal: "全部核心场景有证据、make check 全绿，且无临时或敏感产物残留？"
+    status: done
+
+checks:
+  - id: CHK-001
+    item: "GET /export 响应 $ref 到命名 ExportDocument；ExportDocument/ExportCounts 保持现有字段与 required、additionalProperties=false，counts 字段 minimum=0；生成顶层 Go 类型，文档固定 exported_at/schema_version=1/counts/七类数组/settings且 counts 从最终数组 len 派生"
+    source: 名词契约
+    trace: [D1, D4, D6, A2, A3]
+    status: passed
+  - id: CHK-002
+    item: "Customer 只含公开 avatar_revision/avatar_version/avatar_url；头像字节、avatar_object_id、object key、manifest/GC/reconciliation 永不导出"
+    source: 名词契约
+    trace: [D1, D6, A6]
+    status: passed
+  - id: CHK-003
+    item: "settings 为有效设置且与 GET /settings 一致；无行返回默认；telegram_chat_id 按契约可选导出"
+    source: 名词契约
+    trace: [D5, A3, A16]
+    status: passed
+  - id: CHK-004
+    item: "dataexport 专用 read-model repository 直接经 AccountScope 读 allowlist 表，不注入七个领域 Service、不用通用数据库 dump；七类表与 settings 各至多一次批量读取，无逐实体查询/N+1，counts 不另查 count(*)"
+    source: 编排骨架
+    trace: [D2, A2, A7, A17]
+    status: passed
+  - id: CHK-005
+    item: "所有实体读取共享一个 REPEATABLE READ、READ ONLY 的窄 ReadTxAccountScope；类型不暴露写 delegate，数据库模式再次拒绝误写，不使用 READ COMMITTED 多次查询或业务行锁"
+    source: 流程级约束
+    trace: [D3, A8, A18]
+    status: passed
+  - id: CHK-006
+    item: "每类数组 created_at ASC、id ASC，包含全部历史/终态，空集合编码为 []"
+    source: 流程级约束
+    trace: [D4, A3, A4, A11]
+    status: passed
+  - id: CHK-007
+    item: "Build/scan/settings/commit/mapping/JSON 预序列化与发送前 context 失败时不发成功 headers；成功 bytes 后才发 200/Content-Length；headers 后 transport 失败只记脱敏失败且不尝试第二封套"
+    source: 流程级约束
+    trace: [D7, A9]
+    status: passed
+  - id: CHK-008
+    item: "成功响应带 JSON、正确 Content-Length、与 exported_at 同时点的安全 UTC attachment 文件名、no-store、nosniff；文件名无账号或客户 PII"
+    source: 名词契约
+    trace: [D8, A10]
+    status: passed
+  - id: CHK-009
+    item: "export tag 进入 Go include-tags，router 仅在受保护 group 手工注册 GET /export，未知 API 继续 404"
+    source: 挂载点
+    trace: [D9, MOUNT-1, MOUNT-2, A5, A15]
+    status: passed
+  - id: CHK-010
+    item: "前端 fetchDataExport 经 Bearer 与 MIME media-type parser 只接受 base type 精确为 application/json（合法参数可忽略，不用 substring、不接受任意 +json）；文件名只接受整串 ^photographer-crm-export-[0-9]{8}T[0-9]{6}Z\\.json$，其余 fallback；body/blob 读取拒绝时 reject 且无 {blob, filename}；错误复用 ApiError且不手写重复 Export DTO"
+    source: 名词契约
+    trace: [D10, A12]
+    status: passed
+  - id: CHK-011
+    item: "SettingsPage 挂入独立 DataExportCard；普通 Settings 加载失败不隐藏卡片；loading 禁用、500/读取中断可重试、401 转登录；body/blob 失败不创建 object URL/不触发下载，成功路径释放 object URL"
+    source: 挂载点
+    trace: [D10, MOUNT-3, A13]
+    status: passed
+  - id: CHK-012
+    item: "导出卡片列出姓名、手机号、社交身份、备注、Telegram chat ID 等敏感信息并提示受控保管/及时删除；头像图片不包含且 JSON 不承诺便携恢复；桌面/375px/键盘可用"
+    source: 验收场景
+    trace: [D1, D10, A14]
+    status: passed
+  - id: CHK-013
+    item: "账号隔离与依赖 fail closed：无 token 401、B 看不到 A、客户端无 account_id 切换面、无裸 pool query；空 scope 或缺 Service/Repository/ScopeFactory/Clock 无 panic、无 fallback、无假空 200"
+    source: 流程级约束
+    trace: [D3, D11, A5, A9]
+    status: passed
+  - id: CHK-014
+    item: "日志只允许结果/失败阶段/耗时/序列化字节数/counts，不含 payload、姓名、手机、handle、备注、chat_id 或 token"
+    source: 流程级约束
+    trace: [D11, A7]
+    status: passed
+  - id: CHK-015
+    item: "schema_version 是导出文档版本而非 migration；破坏性变化不得静默进入 v1"
+    source: 名词契约
+    trace: [D12, A2]
+    status: passed
+  - id: CHK-016
+    item: "不做头像媒体包、import/restore、分页/filter、zip、async/history/progress/断点续传"
+    source: 范围守护
+    trace: [A6, A15]
+    status: passed
+  - id: CHK-017
+    item: "解析 JSON 结构键 allowlist + 唯一哨兵值双重证明不导出 password_hash/JWT/bot token/bind token/idempotency/checkpoint/Telegram delivery/update/log 等内部或凭证状态"
+    source: 范围守护
+    trace: [A7]
+    status: passed
+  - id: CHK-018
+    item: "服务端不持久化导出临时文件；浏览器不写 localStorage/sessionStorage/IndexedDB"
+    source: 范围守护
+    trace: [D7, D11, A13, A15]
+    status: passed
+  - id: CHK-019
+    item: "STEP-001 只搬既有 TxAccountScope 代码且不改行为；窄 ReadTxAccountScope/read snapshot 只在纯移动验证后新增"
+    source: 流程级约束
+    trace: [A1]
+    status: passed
+  - id: CHK-020
+    item: "A2/A4/A17 全实体、全状态、counts 与无 N+1 场景通过"
+    source: 验收场景
+    trace: [A2, A4, A17]
+    status: passed
+  - id: CHK-021
+    item: "A3/A16 空账号与 settings parity 场景通过"
+    source: 验收场景
+    trace: [A3, A16]
+    status: passed
+  - id: CHK-022
+    item: "A5–A11 安全、snapshot、错误与 headers 场景，以及 A18 事务 isolation/read-only 属性场景通过"
+    source: 验收场景
+    trace: [A5, A6, A7, A8, A9, A10, A11, A18]
+    status: passed
+  - id: CHK-023
+    item: "A12–A15 前端下载、可访问性、PII 文案与范围守护场景通过"
+    source: 验收场景
+    trace: [A12, A13, A14, A15]
+    status: passed
+  - id: CHK-024
+    item: "npm run test:data-export 已存在并被 Makefile test / make check 持续执行；CMD-004 保留为定向证据"
+    source: 流程级约束
+    trace: [A1, A12, A13]
+    status: passed

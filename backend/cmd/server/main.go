@@ -18,6 +18,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
 	"github.com/samson/customer-manage-platform/backend/internal/dashboard"
+	"github.com/samson/customer-manage-platform/backend/internal/dataexport"
 	"github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
@@ -85,6 +86,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	)
 	reminderRunner := reminder.NewScanRunner(s, reminderSvc, settingsSvc, logger)
 	dashboardSvc := dashboard.NewService(dashboard.NewPostgresRepository(), settingsSvc)
+	dataExportSvc := dataexport.NewService(dataexport.NewPostgresRepository(), dataexport.ClockFunc(time.Now))
 	telegramBinding, telegramRunner, telegramErr := buildTelegramIntegration(
 		cfg,
 		s,
@@ -116,6 +118,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Settings:        settingsSvc,
 		Reminders:       reminderSvc,
 		Dashboard:       dashboardSvc,
+		DataExport:      dataExportSvc,
 		TelegramBinding: telegramBinding,
 	})
 

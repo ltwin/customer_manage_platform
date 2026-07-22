@@ -61,21 +61,24 @@ func authMiddleware(svc *auth.Service) gin.HandlerFunc {
 
 // handlers 实现 codegen 的 ServerInterface：薄适配层，领域逻辑在 auth.Service（ADR-003）。
 type handlers struct {
-	logger          *slog.Logger
-	auth            *auth.Service
-	scopeFactory    ScopeFactory
-	customer        *customerdomain.Service
-	orders          *orderdomain.Service
-	packages        *pkgcatalog.Service
-	idempotency     *idempotency.Executor
-	timezone        AccountTimezoneProvider
-	schedule        *scheduledomain.Service
-	avatar          *customerdomain.AvatarApplication
-	avatarProcessor AvatarProcessor
-	settings        *settings.Service
-	reminders       *reminder.Service
-	dashboard       *dashboarddomain.Service
-	telegramBinding TelegramBindingIssuer
+	logger           *slog.Logger
+	auth             *auth.Service
+	scopeFactory     ScopeFactory
+	customer         *customerdomain.Service
+	orders           *orderdomain.Service
+	packages         *pkgcatalog.Service
+	idempotency      *idempotency.Executor
+	timezone         AccountTimezoneProvider
+	schedule         *scheduledomain.Service
+	avatar           *customerdomain.AvatarApplication
+	avatarProcessor  AvatarProcessor
+	settings         *settings.Service
+	reminders        *reminder.Service
+	dashboard        *dashboarddomain.Service
+	dataExport       DataExportService
+	dataExportMap    dataExportProjector
+	dataExportEncode dataExportEncoder
+	telegramBinding  TelegramBindingIssuer
 }
 
 var _ ServerInterface = (*handlers)(nil)

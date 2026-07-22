@@ -42,7 +42,7 @@ func (s *Service) Get(ctx context.Context, scope store.AccountScope) (Settings, 
 	if !found {
 		return DefaultSettings(), nil
 	}
-	return mergeWithDefaults(stored), nil
+	return EffectiveSettings(stored), nil
 }
 
 // Patch 校验后 upsert；返回叠加默认后的有效设置。
@@ -89,7 +89,7 @@ func (s *Service) Patch(ctx context.Context, scope store.AccountScope, input Pat
 	if err != nil {
 		return Settings{}, err
 	}
-	return mergeWithDefaults(saved), nil
+	return EffectiveSettings(saved), nil
 }
 
 // TimezoneForAccount 实现 httpapi.AccountTimezoneProvider。
@@ -155,8 +155,8 @@ func overlayChurnThresholds(base, overrides []ChurnThreshold) []ChurnThreshold {
 	return out
 }
 
-// mergeWithDefaults 保证读取时 churn 数组 entry 级完整。
-func mergeWithDefaults(stored Settings) Settings {
+// EffectiveSettings returns the stored row overlaid with all read defaults.
+func EffectiveSettings(stored Settings) Settings {
 	def := DefaultSettings()
 	if stored.Timezone == "" {
 		stored.Timezone = def.Timezone

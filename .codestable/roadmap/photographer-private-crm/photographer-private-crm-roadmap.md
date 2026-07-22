@@ -562,8 +562,8 @@ GET /export → application/json（Content-Disposition 附件）
    - 所属模块：webapp + dashboard ｜ 依赖：order-tracking, schedule-calendar, reminder-engine ｜ 状态：done ｜ 对应 feature：2026-07-14-dashboard
    - 备注：完成信号：五卡片数据与各域列表页交叉一致（核对用例）；登录后默认落地页。§4.3 ListItem 形与 OpenAPI 已由本 feature 钉死；台上写复用 reminders done/dismiss 与 PATCH order balance_paid。
 11. **data-export** — 全量 JSON 导出（4.6 契约）：一键导出全部实体 + counts 核对
-    - 所属模块：platform ｜ 依赖：customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine ｜ 状态：planned ｜ 对应 feature：未启动
-    - 备注：依赖理由——导出范围 = 4.2 全部实体，各域落地后才有内容可导。**design 启动 gate**：owner 必须先二选一拍板，① 保持 §4.6 reference-only JSON，并明确不承诺离开本系统后便携恢复头像；或 ② 先 update roadmap §4.6 为包含媒体文件、exact-generation manifest/key/object count/checksum 的便携包。未完成该决策不得进入 design、不得标 done。选定后的完成信号还须包含 counts/manifest 与实际内容一致的自动化核对及 PII 保管说明。
+    - 所属模块：platform ｜ 依赖：customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine ｜ 状态：done ｜ 对应 feature：2026-07-21-data-export
+    - 备注：依赖理由——导出范围 = 4.2 全部实体，各域落地后才有内容可导。2026-07-21 owner 已选择 §4.6 reference-only JSON：在同一账号一致快照中导出七类实体与有效 Settings；counts 必须逐项等于最终数组长度；内部字段、凭证、头像二进制/object_id/object key/GC/reconciliation 均排除；设置页必须常驻 PII 保管与头像只含当前部署引用、不可便携恢复说明。exact-generation manifest 仅属于媒体便携包分支，本 feature 不交付且完成核对为 N/A。
 12. **v1-hardening** — 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
     - 所属模块：跨模块 ｜ 依赖：customer-avatar, telegram-digest, dashboard, data-export ｜ 状态：planned ｜ 对应 feature：未启动
     - 备注：完成信号：375px 宽度下三条轻路径可完成；回归清单逐条打勾归档；README 覆盖部署/备份/凭证操作
@@ -616,7 +616,7 @@ GET /export → application/json（Content-Disposition 附件）
 - **reminder-engine 已知边界（2026-07-13 acceptance）**：① `digest_hour` 早于每日 runner 首次跨日扫描完成时刻时可能出现摘要空窗，telegram-digest 应在推送前顺带触发幂等扫描；② 复购触发旧 churn 自动 dismissed 后若新订单再取消，既有 churn dedup 行不会回到 pending，可能静默到产生新的最近成交单；③ 账号时区向西修改可能让检查点暂时领先本地日期，后续自然日推进后自愈。三项均不改变本 feature 已验收边界，后续消费/迭代需显式读取。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
 - ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量；2026-07-10 schedule-calendar update 同时把 `GET /me` 收编为平台契约并增加 timezone，消解原白名单债。
-- **头像与全量导出决策 gate**：`customer-avatar` 只保证 Customer JSON 带可用 `avatar_revision/avatar_version/avatar_url` 与本地卷可做一致备份；当前 §4.6 仍是实体 JSON。`data-export` design 启动前必须由 owner 二选一：reference-only JSON（明确不承诺头像便携恢复），或先把 §4.6 update 为媒体文件 + exact-generation manifest/key/count/checksum 的便携包。未拍板不得启动/完成该条；不得把鉴权 URL 冒充可携带资产。
+- **头像与全量导出决策 gate**：`customer-avatar` 只保证 Customer JSON 带可用 `avatar_revision/avatar_version/avatar_url` 与本地卷可做一致备份；当前 §4.6 仍是实体 JSON。`data-export` design 启动前必须由 owner 二选一：reference-only JSON（明确不承诺头像便携恢复），或先把 §4.6 update 为媒体文件 + exact-generation manifest/key/count/checksum 的便携包。未拍板不得启动/完成该条；不得把鉴权 URL 冒充可携带资产。**2026-07-21 resolved**：owner 已选择 reference-only JSON；只导出公开头像引用元数据，不含头像二进制、内部 object_id 或 manifest，不承诺跨环境便携恢复；§4.6 JSON 契约保持不变，启动 gate 已解除。
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
 
 ## 8. 变更日志

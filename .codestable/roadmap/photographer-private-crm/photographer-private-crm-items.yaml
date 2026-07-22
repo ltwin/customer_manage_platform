@@ -85,10 +85,10 @@ items:
   - slug: data-export
     description: 全量 JSON 导出（roadmap 4.6 契约）：一键导出全部实体 + counts 核对
     depends_on: [customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine]
-    status: planned
-    feature: null
+    status: done
+    feature: 2026-07-21-data-export
     minimal_loop: false
-    notes: 依赖理由：导出范围 = 4.2 全部实体，各域落地后才有内容可导；design 启动 gate：owner 必须先拍板 reference-only JSON（明确不承诺头像便携恢复），或先 update roadmap §4.6 为媒体文件+exact-generation manifest/key/count/checksum 的便携包，未决不得进入 design/标 done；选定后完成信号含 counts/manifest 自动化核对与 PII 保管说明
+    notes: 依赖理由：导出范围 = 4.2 全部实体，各域落地后才有内容可导；2026-07-21 owner 已拍板 reference-only JSON：保留公开头像引用元数据，不包含头像二进制/object_id/manifest，不承诺跨环境便携恢复，design 启动 gate 已解除；完成信号：账号级一致快照、counts 与数组长度自动化核对、内部/凭证字段排除、设置页一键下载与 PII/头像限制说明
 
   - slug: v1-hardening
     description: 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明

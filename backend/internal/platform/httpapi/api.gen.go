@@ -68,6 +68,21 @@ func (e CustomerStatus) Valid() bool {
 	}
 }
 
+// Defines values for ExportDocumentSchemaVersion.
+const (
+	N1 ExportDocumentSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the ExportDocumentSchemaVersion enum.
+func (e ExportDocumentSchemaVersion) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for NonShootScheduleSlotListItemType.
 const (
 	NonShootScheduleSlotListItemTypeBusy NonShootScheduleSlotListItemType = "busy"
@@ -528,6 +543,35 @@ type ErrorEnvelope struct {
 		Message string                   `json:"message"`
 	} `json:"error"`
 }
+
+// ExportCounts defines model for ExportCounts.
+type ExportCounts struct {
+	CustomerNotes    int `json:"customer_notes"`
+	Customers        int `json:"customers"`
+	Orders           int `json:"orders"`
+	Packages         int `json:"packages"`
+	Reminders        int `json:"reminders"`
+	ScheduleSlots    int `json:"schedule_slots"`
+	SocialIdentities int `json:"social_identities"`
+}
+
+// ExportDocument defines model for ExportDocument.
+type ExportDocument struct {
+	Counts           ExportCounts                `json:"counts"`
+	CustomerNotes    []CustomerNote              `json:"customer_notes"`
+	Customers        []Customer                  `json:"customers"`
+	ExportedAt       time.Time                   `json:"exported_at"`
+	Orders           []Order                     `json:"orders"`
+	Packages         []Package                   `json:"packages"`
+	Reminders        []Reminder                  `json:"reminders"`
+	ScheduleSlots    []ScheduleSlot              `json:"schedule_slots"`
+	SchemaVersion    ExportDocumentSchemaVersion `json:"schema_version"`
+	Settings         Settings                    `json:"settings"`
+	SocialIdentities []SocialIdentity            `json:"social_identities"`
+}
+
+// ExportDocumentSchemaVersion defines model for ExportDocument.SchemaVersion.
+type ExportDocumentSchemaVersion int
 
 // NonShootScheduleSlotListItem defines model for NonShootScheduleSlotListItem.
 type NonShootScheduleSlotListItem struct {
@@ -1293,6 +1337,9 @@ type ServerInterface interface {
 	// 今日经营台聚合（口径单点在服务端，§4.3）
 	// (GET /dashboard)
 	GetDashboard(c *gin.Context)
+	// 全量导出（application/json 附件；counts 必须与各数组长度一致，§4.6）
+	// (GET /export)
+	ExportAll(c *gin.Context)
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
@@ -1819,6 +1866,21 @@ func (siw *ServerInterfaceWrapper) GetDashboard(c *gin.Context) {
 	}
 
 	siw.Handler.GetDashboard(c)
+}
+
+// ExportAll operation middleware
+func (siw *ServerInterfaceWrapper) ExportAll(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExportAll(c)
 }
 
 // GetMe operation middleware
@@ -2464,6 +2526,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)
 	router.POST(options.BaseURL+"/customers/:id/notes", wrapper.AddCustomerNote)
 	router.GET(options.BaseURL+"/dashboard", wrapper.GetDashboard)
+	router.GET(options.BaseURL+"/export", wrapper.ExportAll)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
 	router.GET(options.BaseURL+"/orders", wrapper.ListOrders)
 	router.POST(options.BaseURL+"/orders", wrapper.CreateOrder)

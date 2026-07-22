@@ -72,7 +72,6 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 	r.POST("/api/v1/probe", func(c *gin.Context) {})
 
 	cases := []struct{ method, path string }{
-		{http.MethodGet, "/api/v1/export"},      // 未实现域端点
 		{http.MethodGet, "/api/v1/no-such"},     // 未注册路径
 		{http.MethodGet, "/api/v1/probe"},       // 方法不匹配
 		{http.MethodDelete, "/api/v1/probe/xx"}, // 未注册子路径
@@ -88,6 +87,16 @@ func TestUnregisteredAPIPathsReturn404Envelope(t *testing.T) {
 		if env := decodeEnvelope(t, rec); env.Error.Code != "not_found" {
 			t.Fatalf("%s %s: want not_found envelope, got %+v", tc.method, tc.path, env)
 		}
+	}
+}
+
+func TestDataExportRequiresAuthentication(t *testing.T) {
+	rec := doRequest(t, newAuthRouter(t), http.MethodGet, "/api/v1/export")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("GET /api/v1/export without token: want 401, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if env := decodeEnvelope(t, rec); env.Error.Code != "unauthorized" {
+		t.Fatalf("GET /api/v1/export without token: want unauthorized, got %+v", env)
 	}
 }
 

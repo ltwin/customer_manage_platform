@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError, createTelegramBindToken, getSettings, updateSettings } from '../api/client'
 import type { ChurnThreshold, Settings } from '../api/client'
+import DataExportCard from '../components/DataExportCard'
 import { useShell } from '../components/shellContext'
 import { openTelegramDeepLink } from '../components/telegramBinding'
 
@@ -138,13 +139,16 @@ export default function SettingsPage() {
     }
   }
 
+  const dataExportCard = <DataExportCard onUnauthorized={() => navigate('/login', { replace: true })} />
+
   if (loading) {
     return (
       <>
         <header className="topbar">
           <h1>设置</h1>
         </header>
-        <main className="content">
+        <main className="content settings-stack">
+          {dataExportCard}
           <div className="empty">加载中…</div>
         </main>
       </>
@@ -157,7 +161,8 @@ export default function SettingsPage() {
         <header className="topbar">
           <h1>设置</h1>
         </header>
-        <main className="content">
+        <main className="content settings-stack">
+          {dataExportCard}
           <div className="form-error" role="alert">
             {error ?? '无数据'}
           </div>
@@ -176,6 +181,7 @@ export default function SettingsPage() {
       </header>
 
       <main className="content settings-stack">
+        {dataExportCard}
         <section className="card telegram-binding-card" aria-labelledby="telegramBindingTitle">
           <div>
             <h2 id="telegramBindingTitle">Telegram 每日经营摘要</h2>

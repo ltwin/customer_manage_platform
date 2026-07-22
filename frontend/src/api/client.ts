@@ -213,6 +213,105 @@ export async function fetchAvatarBlob(url: string, signal: AbortSignal): Promise
 	return response.blob()
 }
 
+export type DataExportDownload = {
+	blob: Blob
+	filename: string
+}
+
+const dataExportFilenamePattern = /^photographer-crm-export-[0-9]{8}T[0-9]{6}Z\.json$/
+const mediaTypeTokenPattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+
+export async function fetchDataExport(): Promise<DataExportDownload> {
+	const headers = new Headers({ Accept: 'application/json' })
+	const token = getToken()
+	if (token) headers.set('Authorization', `Bearer ${token}`)
+	const response = await fetch('/api/v1/export', { headers })
+	if (!response.ok) throw await apiErrorFromResponse(response)
+	if (!isJSONMediaType(response.headers.get('Content-Type'))) {
+		throw new ApiError(502, 'invalid_export_response', '导出响应不是有效的 application/json')
+	}
+	const filename = exportFilenameFromDisposition(response.headers.get('Content-Disposition'))
+	const blob = await response.blob()
+	return { blob, filename }
+}
+
+function isJSONMediaType(raw: string | null): boolean {
+	if (raw === null) return false
+	const segments = splitMediaType(raw)
+	if (segments === null || segments.length === 0 || segments[0]?.trim().toLowerCase() !== 'application/json') {
+		return false
+	}
+	for (const rawParameter of segments.slice(1)) {
+		const parameter = rawParameter.trim()
+		const equals = parameter.indexOf('=')
+		if (equals < 1) return false
+		const name = parameter.slice(0, equals).trim()
+		const value = parameter.slice(equals + 1).trim()
+		if (!mediaTypeTokenPattern.test(name) || !validMediaTypeParameterValue(value)) return false
+	}
+	return true
+}
+
+function splitMediaType(raw: string): string[] | null {
+	const segments: string[] = []
+	let start = 0
+	let quoted = false
+	let escaped = false
+	for (let index = 0; index < raw.length; index += 1) {
+		const char = raw[index]
+		if (escaped) {
+			escaped = false
+			continue
+		}
+		if (quoted && char === '\\') {
+			escaped = true
+			continue
+		}
+		if (char === '"') {
+			quoted = !quoted
+			continue
+		}
+		if (!quoted && char === ';') {
+			segments.push(raw.slice(start, index))
+			start = index + 1
+		}
+	}
+	if (quoted || escaped) return null
+	segments.push(raw.slice(start))
+	return segments
+}
+
+function validMediaTypeParameterValue(value: string): boolean {
+	if (mediaTypeTokenPattern.test(value)) return true
+	if (value.length < 2 || value[0] !== '"' || value.at(-1) !== '"') return false
+	let escaped = false
+	for (const char of value.slice(1, -1)) {
+		const code = char.charCodeAt(0)
+		if (escaped) {
+			if (code !== 9 && (code < 32 || code > 126)) return false
+			escaped = false
+			continue
+		}
+		if (char === '\\') {
+			escaped = true
+			continue
+		}
+		if (char === '"' || (code !== 9 && (code < 32 || code > 126))) return false
+	}
+	return !escaped
+}
+
+function exportFilenameFromDisposition(disposition: string | null): string {
+	const match = disposition?.match(/^\s*attachment\s*;\s*filename\s*=\s*"([^"]+)"\s*$/i)
+	const candidate = match?.[1] ?? ''
+	return dataExportFilenamePattern.test(candidate) ? candidate : localDataExportFilename()
+}
+
+function localDataExportFilename(now = new Date()): string {
+	const iso = now.toISOString()
+	return `photographer-crm-export-${iso.slice(0, 10).replaceAll('-', '')}T${iso.slice(11, 19).replaceAll(':', '')}Z.json`
+}
+
 async function mediaJSONRequest<T>(path: string, init: RequestInit): Promise<T> {
 	const headers = new Headers(init.headers)
 	const token = getToken()

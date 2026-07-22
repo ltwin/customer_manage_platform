@@ -41,7 +41,7 @@ tags:
   - name: dashboard
     description: dashboard 聚合（dashboard）
   - name: export
-    description: 全量导出（data-export，未实现）
+    description: 全量导出（data-export）
 
 paths:
   /auth/login:
@@ -1367,70 +1367,29 @@ paths:
       responses:
         "200":
           description: 全量导出文件（Content-Disposition 附件）
+          headers:
+            Content-Disposition:
+              description: 安全 UTC 文件名的附件声明
+              schema:
+                type: string
+                pattern: '^attachment; filename="photographer-crm-export-[0-9]{8}T[0-9]{6}Z\.json"$'
+            Content-Length:
+              description: 完整预序列化 JSON bytes 长度
+              schema:
+                type: integer
+                minimum: 0
+            Cache-Control:
+              schema:
+                type: string
+                enum: [no-store]
+            X-Content-Type-Options:
+              schema:
+                type: string
+                enum: [nosniff]
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  [exported_at, schema_version, counts, customers, social_identities,
-                   customer_notes, packages, orders, schedule_slots, reminders, settings]
-                properties:
-                  exported_at:
-                    type: string
-                    format: date-time
-                  schema_version:
-                    type: integer
-                    enum: [1]
-                  counts:
-                    type: object
-                    required:
-                      [customers, social_identities, customer_notes, packages, orders,
-                       schedule_slots, reminders]
-                    properties:
-                      customers:
-                        type: integer
-                      social_identities:
-                        type: integer
-                      customer_notes:
-                        type: integer
-                      packages:
-                        type: integer
-                      orders:
-                        type: integer
-                      schedule_slots:
-                        type: integer
-                      reminders:
-                        type: integer
-                  customers:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Customer"
-                  social_identities:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/SocialIdentity"
-                  customer_notes:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/CustomerNote"
-                  packages:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Package"
-                  orders:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Order"
-                  schedule_slots:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/ScheduleSlot"
-                  reminders:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/Reminder"
-                  settings:
-                    $ref: "#/components/schemas/Settings"
+                $ref: "#/components/schemas/ExportDocument"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "500":
@@ -2091,3 +2050,78 @@ components:
           description: 按 timezone
         telegram_chat_id:
           type: string
+
+    ExportCounts:
+      type: object
+      additionalProperties: false
+      required:
+        [customers, social_identities, customer_notes, packages, orders,
+         schedule_slots, reminders]
+      properties:
+        customers:
+          type: integer
+          minimum: 0
+        social_identities:
+          type: integer
+          minimum: 0
+        customer_notes:
+          type: integer
+          minimum: 0
+        packages:
+          type: integer
+          minimum: 0
+        orders:
+          type: integer
+          minimum: 0
+        schedule_slots:
+          type: integer
+          minimum: 0
+        reminders:
+          type: integer
+          minimum: 0
+
+    ExportDocument:
+      type: object
+      additionalProperties: false
+      required:
+        [exported_at, schema_version, counts, customers, social_identities,
+         customer_notes, packages, orders, schedule_slots, reminders, settings]
+      properties:
+        exported_at:
+          type: string
+          format: date-time
+        schema_version:
+          type: integer
+          enum: [1]
+        counts:
+          $ref: "#/components/schemas/ExportCounts"
+        customers:
+          type: array
+          items:
+            $ref: "#/components/schemas/Customer"
+        social_identities:
+          type: array
+          items:
+            $ref: "#/components/schemas/SocialIdentity"
+        customer_notes:
+          type: array
+          items:
+            $ref: "#/components/schemas/CustomerNote"
+        packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Package"
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+        schedule_slots:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScheduleSlot"
+        reminders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Reminder"
+        settings:
+          $ref: "#/components/schemas/Settings"

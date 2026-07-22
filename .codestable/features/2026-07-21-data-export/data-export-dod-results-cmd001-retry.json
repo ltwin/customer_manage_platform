@@ -1,0 +1,21 @@
+{
+  "gate_id": "dod-runner",
+  "stage": "implementation.before_review.retry",
+  "status": "failed",
+  "blocking": [
+    "CMD-001: command failed with exit 2"
+  ],
+  "warnings": [],
+  "evidence": [
+    {
+      "command": "make check",
+      "exit_code": 2,
+      "stdout": "cd frontend && npm run build\n\n> frontend@0.0.0 build\n> tsc -b && vite build\n\nvite v8.1.3 building client environment for production...\n\u001b[2K\ntransforming...✓ 69 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                   0.75 kB │ gzip:   0.44 kB\ndist/assets/index-xL3zlJ_T.css   31.42 kB │ gzip:   6.89 kB\ndist/assets/index-Dup2l4HW.js   555.35 kB │ gzip: 163.95 kB\n\n✓ built in 128ms\nrm -rf backend/internal/platform/webui/dist\ncp -R frontend/dist backend/internal/platform/webui/dist\ntouch backend/internal/platform/webui/dist/.gitkeep\ncd backend && go build ./...\ncd backend && go build -o bin/server ./cmd/server\ncd backend && golangci-lint run ./...\n0 issues.\ncd frontend && npm run lint\n\n> frontend@0.0.0 lint\n> oxlint\n\n# Testcontainers 逐包并发会偶发丢失 PostgreSQL mapped port；串行 package/test 保持门禁稳定。\ncd backend && go test -p=1 ./... -count=1 -parallel=1\n?   \tgithub.com/samson/customer-manage-platform/backend/cmd/avatar-manifest\t[no test files]\n?   \tgithub.com/samson/customer-manage-platform/backend/cmd/migrate\t[no test files]\nok  \tgithub.com/samson/customer-manage-platform/backend/cmd/server\t0.507s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/customer\t49.854s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/customer/avatarbackup\t0.215s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/customer/avatarimage\t0.277s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/customer/avatarstore\t1.095s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/dashboard\t2.856s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/dataexport\t6.377s\n--- FAIL: TestListFiltersSummariesAndStableSorting (12.60s)\n    order_test.go:554: container connection string: port \"5432/tcp\" not found\nFAIL\nFAIL\tgithub.com/samson/customer-manage-platform/backend/internal/order\t27.275s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/package\t7.971s\n?   \tgithub.com/samson/customer-manage-platform/backend/internal/platform/auth\t[no test files]\n?   \tgithub.com/samson/customer-manage-platform/backend/internal/platform/clock\t[no test files]\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/config\t0.294s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/httpapi\t25.634s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/idempotency\t2.570s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/store\t23.988s\n?   \tgithub.com/samson/customer-manage-platform/backend/internal/platform/webui\t[no test files]\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/reminder\t10.939s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/reminder/digest\t29.117s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram\t0.271s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/schedule\t6.373s\n?   \tgithub.com/samson/customer-manage-platform/backend/internal/settings\t[no test files]\nFAIL\n",
+      "stderr": "[plugin builtin:vite-reporter] \n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\nmake: *** [test] Error 1\n",
+      "id": "CMD-001",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    }
+  ],
+  "providers": {}
+}

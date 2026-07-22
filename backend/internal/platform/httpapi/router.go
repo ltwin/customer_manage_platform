@@ -49,6 +49,7 @@ type RouterDeps struct {
 	Settings        *settings.Service
 	Reminders       *reminder.Service
 	Dashboard       *dashboarddomain.Service
+	DataExport      DataExportService
 	TelegramBinding TelegramBindingIssuer
 }
 
@@ -87,6 +88,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		settings:        deps.Settings,
 		reminders:       deps.Reminders,
 		dashboard:       deps.Dashboard,
+		dataExport:      deps.DataExport,
 		telegramBinding: deps.TelegramBinding,
 	}
 	api := r.Group("/api/v1")
@@ -130,6 +132,8 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.POST("/settings/telegram/bind-token", h.CreateTelegramBindToken)
 	// dashboard：登录后默认落地经营台聚合（D7 手工注册，不走全量 RegisterHandlers）
 	protected.GET("/dashboard", h.GetDashboard)
+	// data-export：真实 read-model repository 完成后才暴露受保护附件路由。
+	protected.GET("/export", h.ExportAll)
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）
