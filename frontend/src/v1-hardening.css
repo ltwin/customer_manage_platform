@@ -1,0 +1,206 @@
+.state-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.state-notice-loading,
+.state-notice-empty {
+  justify-content: center;
+  min-height: 72px;
+  border-style: dashed;
+}
+
+.state-notice-error,
+.state-notice-refresh-error {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--border));
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.state-notice-refresh-error {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+  color: var(--fg);
+}
+
+.customer-mobile-results {
+  display: none;
+}
+
+.customer-result-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+
+.customer-result-open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.customer-result-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.customer-result-identity {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.customer-result-identity strong {
+  overflow-wrap: anywhere;
+}
+
+.customer-result-identity .num,
+.customer-result-facts dt {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.customer-result-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.customer-result-facts > div,
+.customer-result-facts dd {
+  min-width: 0;
+}
+
+.customer-result-facts dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.customer-result-action {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.note-feedback {
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .customers-desktop-results {
+    display: none;
+  }
+
+  .customer-mobile-results {
+    display: grid;
+    gap: 12px;
+  }
+
+  .customer-result-open,
+  .customer-result-action .btn {
+    min-height: 44px;
+  }
+
+  .customer-result-action,
+  .customer-result-action .quick-note {
+    width: 100%;
+  }
+
+  .customer-result-action .quick-note:not(.quick-note-closed) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .customer-result-action .quick-note .input {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .customer-result-action .quick-note .form-error {
+    grid-column: 1 / -1;
+  }
+
+  .calendar-content,
+  .cal-head,
+  .cal-grid,
+  .cal-cell,
+  .drawer,
+  .drawer-body,
+  .slot-entry {
+    min-width: 0;
+  }
+
+  .calendar-content {
+    overflow-x: clip;
+  }
+
+  .cal-grid {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
+  .cal-count {
+    max-width: calc(100% - 8px);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .desktop-schedule-actions {
+    display: none;
+  }
+
+  .drawer {
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .drawer-body {
+    overscroll-behavior: contain;
+  }
+
+  .drawer-foot {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+
+  .slot-entry .body,
+  .slot-entry .meta,
+  .conflict-tip,
+  .schedule-preview-clear {
+    overflow-wrap: anywhere;
+  }
+
+  .state-notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 768px) and (pointer: coarse) {
+  .bottom-nav a,
+  .cal-head .icon-btn,
+  .drawer .icon-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

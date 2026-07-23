@@ -3,6 +3,9 @@ import { ApiError } from '../../api/client.ts'
 import CustomerAvatar from './CustomerAvatar'
 import {
 	loadVisibleCustomerPage,
+	customerPickerActiveDescendant,
+	customerPickerShouldClose,
+	nextCustomerPickerIndex,
 	resolveCurrentCustomer,
 } from './customerPickerModel.ts'
 import type { CustomerChoice, CustomerSelection } from './customerPickerModel.ts'
@@ -39,7 +42,8 @@ export default function CustomerPicker({
 	const [loading, setLoading] = useState(false)
 	const [error, setError] = useState<string | null>(null)
 	const [open, setOpen] = useState(false)
-	const [activeIndex, setActiveIndex] = useState(0)
+	const [activeIndex, setActiveIndex] = useState<number | null>(null)
+	const [reloadTick, setReloadTick] = useState(0)
 	const unauthorizedRef = useRef(onUnauthorized)
 	unauthorizedRef.current = onUnauthorized
 	const excludeKey = excludeCustomerIds.join('\u0000')
@@ -52,29 +56,50 @@ export default function CustomerPicker({
 		let active = true
 		setLoading(true)
 		setError(null)
+		setOptions([])
+		setActiveIndex(null)
 		loadVisibleCustomerPage(query.trim(), statuses, excluded)
 			.then((items) => {
 				if (!active) return
 				setOptions(items)
-				setActiveIndex(0)
+				setActiveIndex(items.length > 0 ? 0 : null)
 			})
 			.catch((reason: unknown) => {
 				if (!active) return
-				if (reason instanceof ApiError && reason.status === 401) unauthorizedRef.current?.()
+				setActiveIndex(null)
+				if (reason instanceof ApiError && reason.status === 401) {
+					unauthorizedRef.current?.()
+					return
+				}
 				setError(reason instanceof Error ? reason.message : '客户候选加载失败')
 			})
 			.finally(() => { if (active) setLoading(false) })
 		return () => { active = false }
-	}, [disabled, excluded, open, query, statuses])
+	}, [disabled, excluded, open, query, reloadTick, statuses])
 
 	function choose(choice: CustomerChoice) {
 		onChange(choice)
 		setQuery('')
 		setOpen(false)
+		setActiveIndex(null)
 	}
 
+	const activeDescendant = open
+		? customerPickerActiveDescendant(listboxID, activeIndex, options.length)
+		: undefined
+
 	return (
-		<div className="customer-picker">
+		<div
+			className="customer-picker"
+			onBlurCapture={(event) => {
+				const focusStillInside = event.relatedTarget instanceof Node
+					&& event.currentTarget.contains(event.relatedTarget)
+				if (customerPickerShouldClose(focusStillInside)) {
+					setOpen(false)
+					setActiveIndex(null)
+				}
+			}}
+		>
 			<div className="customer-picker-control">
 				{current && (
 					<CustomerAvatar
@@ -93,22 +118,30 @@ export default function CustomerPicker({
 					aria-controls={listboxID}
 					aria-expanded={open}
 					aria-autocomplete="list"
+					aria-activedescendant={activeDescendant}
 					value={open ? query : current?.display_name ?? ''}
 					placeholder={current ? undefined : `搜索并选择${label}`}
 					disabled={disabled}
 					onFocus={() => setOpen(true)}
-					onChange={(event) => { setQuery(event.target.value); setOpen(true) }}
+					onChange={(event) => {
+						setQuery(event.target.value)
+						setActiveIndex(null)
+						setOpen(true)
+					}}
 					onKeyDown={(event) => {
-						if (event.key === 'Escape') setOpen(false)
+						if (event.key === 'Escape' || event.key === 'Tab') {
+							setOpen(false)
+							setActiveIndex(null)
+						}
 						if (event.key === 'ArrowDown') {
 							event.preventDefault()
-							setActiveIndex((index) => Math.min(index + 1, options.length - 1))
+							setActiveIndex((index) => nextCustomerPickerIndex(index, options.length, 'next'))
 						}
 						if (event.key === 'ArrowUp') {
 							event.preventDefault()
-							setActiveIndex((index) => Math.max(index - 1, 0))
+							setActiveIndex((index) => nextCustomerPickerIndex(index, options.length, 'previous'))
 						}
-						if (event.key === 'Enter' && options[activeIndex]) {
+						if (event.key === 'Enter' && activeIndex !== null && options[activeIndex]) {
 							event.preventDefault()
 							choose(options[activeIndex])
 						}
@@ -121,11 +154,19 @@ export default function CustomerPicker({
 			{open && (
 				<div id={listboxID} className="customer-picker-list" role="listbox">
 					{loading && <div className="customer-picker-state">加载中</div>}
-					{error && <div className="customer-picker-state danger-text">{error}</div>}
+					{error && (
+						<div className="customer-picker-state danger-text" role="alert">
+							<div>{error}</div>
+							<button className="btn btn-sm" type="button" onClick={() => setReloadTick((tick) => tick + 1)}>
+								重试
+							</button>
+						</div>
+					)}
 					{!loading && !error && options.length === 0 && <div className="customer-picker-state">暂无匹配客户</div>}
 					{options.map((choice, index) => (
 						<button
 							key={choice.id}
+							id={`${listboxID}-option-${index}`}
 							className={`customer-picker-option${activeIndex === index ? ' active' : ''}`}
 							type="button"
 							role="option"

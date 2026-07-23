@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
   ApiError,
@@ -20,11 +20,23 @@ import {
 } from '../components/schedule/timezone'
 import { useShell } from '../components/shellContext'
 import { useFocusTrap } from '../components/useFocusTrap'
+import StateNotice from '../components/StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  terminalPageReadError,
+  type PageReadState,
+} from '../components/pageReadState'
 
 const weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+const emptyScheduleSlots: ScheduleSlotListItem[] = []
 
 export default function CalendarPage() {
-  const { notify, timezone } = useShell()
+  const navigate = useNavigate()
+  const { notify, timezone, timezoneError, timezoneLoading } = useShell()
   const [searchParams, setSearchParams] = useSearchParams()
   const today = timezone ? accountToday(timezone) : ''
   const queryDate = searchParams.get('date') ?? ''
@@ -32,9 +44,12 @@ export default function CalendarPage() {
   const queryScheduleDraft = searchParams.get('schedule_draft') ?? ''
   const [month, setMonth] = useState(() => isValidDate(queryDate) ? queryDate.slice(0, 7) : today.slice(0, 7))
   const [selectedDate, setSelectedDate] = useState(() => isValidDate(queryDate) ? queryDate : today)
-  const [slots, setSlots] = useState<ScheduleSlotListItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
+  const [readState, setReadState] = useState<PageReadState<ScheduleSlotListItem[]>>({
+    kind: 'loading',
+    message: '正在加载档期',
+  })
+  const [readReloadTick, setReadReloadTick] = useState(0)
+  const loadedRangeRef = useRef('')
   const [queryError, setQueryError] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(Boolean(queryDate || querySlot))
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -52,21 +67,44 @@ export default function CalendarPage() {
       to: localDayRange(gridDates[41] ?? '', timezone).end,
     }
   }, [gridDates, timezone])
+  const slots = readyPageData(readState) ?? emptyScheduleSlots
+  const readPresentation = pageReadPresentation(readState)
+  const loading = readState.kind === 'loading'
+  const loadError = readPresentation.notice?.kind === 'error' || readPresentation.notice?.kind === 'refresh-error'
+    ? readPresentation.notice.message
+    : null
 
   const loadSlots = useCallback(async () => {
     if (!range || !timezone) return
-    setLoading(true)
-    setLoadError(null)
+    const rangeKey = `${range.from}:${range.to}`
+    const preserveReady = loadedRangeRef.current === rangeKey
+    loadedRangeRef.current = rangeKey
+    setReadState((current) => beginPageRead(current, '正在加载档期', preserveReady))
     try {
-      setSlots(await listScheduleSlots(range.from, range.to))
+      const result = await listScheduleSlots(range.from, range.to)
+      setReadState(completePageRead(result, false, ''))
     } catch (reason) {
-      setLoadError(errorMessage(reason, '档期加载失败'))
-    } finally {
-      setLoading(false)
+      if (reason instanceof ApiError && reason.status === 401) {
+        setReadState({ kind: 'unauthorized' })
+        navigate('/login', { replace: true })
+        return
+      }
+      setReadState((current) => failPageRead(
+        current,
+        errorMessage(reason, '档期加载失败'),
+        () => setReadReloadTick((value) => value + 1),
+      ))
     }
-  }, [range, timezone])
+  }, [navigate, range, timezone])
 
-  useEffect(() => { void loadSlots() }, [loadSlots])
+  useEffect(() => { void loadSlots() }, [loadSlots, readReloadTick])
+
+  useEffect(() => {
+    if (timezoneLoading || timezone) return
+    setReadState(terminalPageReadError(
+      timezoneError ? '账号时区加载失败，修复后才能读取档期' : '账号时区不可用，暂不能读取档期',
+    ))
+  }, [timezone, timezoneError, timezoneLoading])
 
   useEffect(() => {
     if (!today || month) return
@@ -226,14 +264,9 @@ export default function CalendarPage() {
           </div>
         </div>
 
-        {loadError && (
-          <div className="form-error calendar-load-error">
-            <span>{loadError}</span>
-            <button className="btn btn-sm" type="button" onClick={() => { void loadSlots() }}>重试</button>
-          </div>
-        )}
+        {readPresentation.notice && <StateNotice {...readPresentation.notice} />}
 
-        <div className={`cal-grid${loading ? ' is-loading' : ''}`} aria-busy={loading}>
+        {(loading || readPresentation.showReadyData) && <div className={`cal-grid${loading ? ' is-loading' : ''}`} aria-busy={loading}>
           {weekdayLabels.map((label) => <div className="cal-dow" key={label}>{label}</div>)}
           {gridDates.map((date, index) => {
             const day = days[index]
@@ -269,7 +302,7 @@ export default function CalendarPage() {
               </button>
             )
           })}
-        </div>
+        </div>}
       </main>
 
       <div className={`drawer-overlay${drawerVisible ? ' open' : ''}`} onClick={() => setDrawerOpen(false)} />

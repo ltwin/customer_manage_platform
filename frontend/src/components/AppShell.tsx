@@ -3,6 +3,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { ApiError, fetchMe } from '../api/client'
 import { PrototypeProvider } from '../crm/PrototypeStore'
 import type { ShellContext } from './shellContext'
+import StateNotice from './StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  type PageReadState,
+} from './pageReadState'
 
 const navItems = [
   { key: 'dashboard', label: '仪表盘', to: '/dashboard', icon: DashboardIcon },
@@ -18,38 +27,44 @@ export default function AppShell() {
 	const navigate = useNavigate()
 	const [theme, setTheme] = useState(() => readTheme())
 	const [toast, setToast] = useState<string | null>(null)
-	const [timezone, setTimezone] = useState<string | null>(null)
-	const [timezoneError, setTimezoneError] = useState<string | null>(null)
-	const [timezoneLoading, setTimezoneLoading] = useState(true)
-	const [timezoneReloadTick, setTimezoneReloadTick] = useState(0)
+		const [timezoneState, setTimezoneState] = useState<PageReadState<string>>({
+			kind: 'loading',
+			message: '正在加载账号时区',
+		})
+		const [timezoneReloadTick, setTimezoneReloadTick] = useState(0)
 
 	useEffect(() => {
 		let active = true
-		setTimezone(null)
-		setTimezoneError(null)
-		setTimezoneLoading(true)
-		fetchMe()
-			.then((account) => {
-				if (!active) return
-				setTimezone(account.timezone)
-				setTimezoneError(null)
-			})
+			setTimezoneState((current) => beginPageRead(current, '正在加载账号时区', true))
+			fetchMe()
+				.then((account) => {
+					if (!active) return
+					setTimezoneState(completePageRead(account.timezone, false, ''))
+				})
 			.catch((error: unknown) => {
-				if (!active) return
-				if (error instanceof ApiError && error.status === 401) {
-					navigate('/login', { replace: true })
-					return
-				}
-				setTimezone(null)
-				setTimezoneError(error instanceof Error ? error.message : '账号时区加载失败')
-			})
-			.finally(() => {
-				if (active) setTimezoneLoading(false)
-			})
+					if (!active) return
+					if (error instanceof ApiError && error.status === 401) {
+						setTimezoneState({ kind: 'unauthorized' })
+						navigate('/login', { replace: true })
+						return
+					}
+					setTimezoneState((current) => failPageRead(
+						current,
+						error instanceof Error ? error.message : '账号时区加载失败',
+						() => setTimezoneReloadTick((value) => value + 1),
+					))
+				})
 		return () => {
 			active = false
 		}
-	}, [navigate, timezoneReloadTick])
+		}, [navigate, timezoneReloadTick])
+
+		const timezonePresentation = pageReadPresentation(timezoneState)
+		const timezone = readyPageData(timezoneState)
+		const timezoneError = timezonePresentation.notice?.kind === 'error' || timezonePresentation.notice?.kind === 'refresh-error'
+			? timezonePresentation.notice.message
+			: null
+		const timezoneLoading = timezoneState.kind === 'loading'
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -74,7 +89,7 @@ export default function AppShell() {
 				setToast(message)
 			},
 		}),
-		[timezone, timezoneError, timezoneLoading],
+			[timezone, timezoneError, timezoneLoading],
 	)
 
   return (
@@ -99,15 +114,8 @@ export default function AppShell() {
         </aside>
 
 	        <div className="main">
-	          {timezoneError && (
-	            <div className="form-error calendar-load-error" role="alert">
-	              <span>账号时区加载失败：{timezoneError}</span>
-	              <button className="btn btn-sm" type="button" disabled={timezoneLoading} onClick={() => setTimezoneReloadTick((current) => current + 1)}>
-	                {timezoneLoading ? '重试中' : '重试账号时区'}
-	              </button>
-	            </div>
-	          )}
-	          <Outlet context={context} />
+		          {timezonePresentation.notice && <StateNotice {...timezonePresentation.notice} />}
+		          <Outlet context={context} />
         </div>
       </div>
 

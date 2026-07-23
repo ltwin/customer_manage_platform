@@ -159,7 +159,7 @@ test('DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-s
 
   const settingsPage = await readFile(new URL('../src/pages/SettingsPage.tsx', import.meta.url), 'utf8')
   assert.match(settingsPage, /<DataExportCard/)
-  assert.match(settingsPage, /const dataExportCard[\s\S]*if \(loading\)/)
+  assert.match(settingsPage, /const dataExportCard[\s\S]*if \(!presentation\.showReadyData \|\| !settings\)/)
   assert.match(settingsPage, /settings-stack/)
 })
 

@@ -565,7 +565,7 @@ GET /export → application/json（Content-Disposition 附件）
     - 所属模块：platform ｜ 依赖：customer-profile-complete, customer-avatar, package-catalog, order-tracking, schedule-calendar, reminder-engine ｜ 状态：done ｜ 对应 feature：2026-07-21-data-export
     - 备注：依赖理由——导出范围 = 4.2 全部实体，各域落地后才有内容可导。2026-07-21 owner 已选择 §4.6 reference-only JSON：在同一账号一致快照中导出七类实体与有效 Settings；counts 必须逐项等于最终数组长度；内部字段、凭证、头像二进制/object_id/object key/GC/reconciliation 均排除；设置页必须常驻 PII 保管与头像只含当前部署引用、不可便携恢复说明。exact-generation manifest 仅属于媒体便携包分支，本 feature 不交付且完成核对为 N/A。
 12. **v1-hardening** — 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
-    - 所属模块：跨模块 ｜ 依赖：customer-avatar, telegram-digest, dashboard, data-export ｜ 状态：planned ｜ 对应 feature：未启动
+    - 所属模块：跨模块 ｜ 依赖：customer-avatar, telegram-digest, dashboard, data-export ｜ 状态：in-progress ｜ 对应 feature：2026-07-22-v1-hardening
     - 备注：完成信号：375px 宽度下三条轻路径可完成；回归清单逐条打勾归档；README 覆盖部署/备份/凭证操作
 
 **最小闭环**：第 2 条 `customer-core` 做完后，登录 → 30 秒建一个带渠道、1 个或多个社交身份的客户 → 列表搜到、详情看到——端到端最窄路径可演示。

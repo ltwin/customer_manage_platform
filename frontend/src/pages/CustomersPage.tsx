@@ -1,13 +1,26 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, listCustomers } from '../api/client'
-import type { CustomerListResponse, CustomerListStatus } from '../api/client'
+import type { CustomerListStatus } from '../api/client'
 import { channelLabels, channelOptions } from './customerLabels'
 import type { CustomerChannel } from './customerLabels'
 import QuickNote from '../components/customers/QuickNote'
 import CustomerAvatar from '../components/customers/CustomerAvatar'
-
-type CustomerListItem = CustomerListResponse['items'][number]
+import CustomerResult from '../components/customers/CustomerResult'
+import {
+  customerStatusBadge,
+  shortCustomerDate,
+  type CustomerListItem,
+} from '../components/customers/customerResultModel'
+import StateNotice from '../components/StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  type PageReadState,
+} from '../components/pageReadState'
 
 const statusFilters: Array<[CustomerListStatus & string, string]> = [
   ['active', '经营中'],
@@ -15,22 +28,17 @@ const statusFilters: Array<[CustomerListStatus & string, string]> = [
   ['all', '全部'],
 ]
 
-const statusBadges: Record<string, [string, string]> = {
-  active: ['badge badge-success', '活跃'],
-  archived: ['badge badge-muted', '已归档'],
-  merged: ['badge badge-muted', '已合并'],
-}
-
 export default function CustomersPage() {
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [channel, setChannel] = useState<'all' | CustomerChannel>('all')
   const [status, setStatus] = useState<CustomerListStatus & string>('active')
-  const [items, setItems] = useState<CustomerListItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [readState, setReadState] = useState<PageReadState<{
+    items: CustomerListItem[]
+    total: number
+  }>>({ kind: 'loading', message: '正在加载客户' })
   const [reloadTick, setReloadTick] = useState(0)
+  const loadedParamsRef = useRef('')
 
   const params = useMemo(() => ({
     q: query.trim(),
@@ -44,29 +52,42 @@ export default function CustomersPage() {
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setError(null)
+    const paramsKey = JSON.stringify(params)
+    const preserveReady = loadedParamsRef.current === paramsKey
+    loadedParamsRef.current = paramsKey
+    setReadState((current) => beginPageRead(current, '正在加载客户', preserveReady))
     listCustomers({ q: params.q, channel: params.channel, status: params.status, page: 1, pageSize: 20 })
       .then((result) => {
         if (!active) return
-        setItems(result.items)
-        setTotal(result.total)
+        const filterContext = params.q ? `搜索“${params.q}”` : '当前筛选'
+        setReadState(completePageRead(
+          { items: result.items, total: result.total },
+          result.items.length === 0,
+          `${filterContext}下暂无客户`,
+        ))
       })
       .catch((err: unknown) => {
         if (!active) return
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           goLogin()
           return
         }
-        setError(err instanceof Error ? err.message : '客户列表加载失败')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '客户列表加载失败',
+          () => setReloadTick((tick) => tick + 1),
+        ))
       })
     return () => {
       active = false
     }
-  }, [goLogin, params.channel, params.q, params.status, reloadTick])
+  }, [goLogin, params, reloadTick])
+
+  const presentation = pageReadPresentation(readState)
+  const data = readyPageData(readState)
+  const items = data?.items ?? []
+  const total = data?.total ?? 0
 
   return (
     <>
@@ -125,8 +146,8 @@ export default function CustomersPage() {
           </div>
         </div>
 
-        {error && <div className="form-error">{error}</div>}
-        <div className="table-wrap">
+        {presentation.notice && <StateNotice {...presentation.notice} />}
+        {presentation.showReadyData && <div className="table-wrap customers-desktop-results">
           <table className="data">
             <thead>
               <tr>
@@ -139,12 +160,8 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                <tr><td colSpan={6}><div className="empty inline-empty">加载中</div></td></tr>
-              ) : items.length === 0 ? (
-                <tr><td colSpan={6}><div className="empty inline-empty">暂无客户</div></td></tr>
-              ) : items.map((customer) => {
-                const [badgeClass, badgeLabel] = statusBadges[customer.status] ?? ['badge badge-muted', customer.status]
+              {items.map((customer) => {
+                const [badgeClass, badgeLabel] = customerStatusBadge(customer.status)
                 return (
                   <tr key={customer.id} onClick={() => navigate(`/customers/${customer.id}`)}>
                     <td>
@@ -158,7 +175,7 @@ export default function CustomersPage() {
 						/>
                         <div>
                           <div className="nm">{customer.display_name}</div>
-                          <div className="rn num">{shortDate(customer.created_at)}</div>
+                          <div className="rn num">{shortCustomerDate(customer.created_at)}</div>
                         </div>
                       </div>
                     </td>
@@ -180,13 +197,22 @@ export default function CustomersPage() {
               })}
             </tbody>
           </table>
-        </div>
-        <div className="result-meta">显示 {items.length} / {total} 位客户</div>
+        </div>}
+        {presentation.showReadyData && (
+          <div className="customer-mobile-results">
+            {items.map((customer) => (
+              <CustomerResult
+                key={customer.id}
+                customer={customer}
+                onOpen={() => navigate(`/customers/${customer.id}`)}
+                onQuickNoteSaved={() => setReloadTick((tick) => tick + 1)}
+                onUnauthorized={goLogin}
+              />
+            ))}
+          </div>
+        )}
+        {presentation.showReadyData && <div className="result-meta">显示 {items.length} / {total} 位客户</div>}
       </main>
     </>
   )
-}
-
-function shortDate(value: string) {
-  return value.slice(0, 10)
 }

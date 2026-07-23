@@ -1,0 +1,2700 @@
+schema_version: 1
+feature: 2026-07-22-v1-hardening
+cases:
+- case_id: OPS-PF-BIN-INIT-OK
+  scenario_ids: &id001
+  - A18
+  fixture: case=OPS-PF-BIN-INIT-OK; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-BIN-INIT-OK fixture/fault and assert: binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id002 []
+    cleanup_objects: &id003 []
+    forbidden_side_effects: &id004 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-BIN-EMPTY-OK
+  scenario_ids: *id001
+  fixture: case=OPS-PF-BIN-EMPTY-OK; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-BIN-EMPTY-OK fixture/fault and assert: binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id002
+    cleanup_objects: *id003
+    forbidden_side_effects: *id004
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-BIN-LOOPBACK-WARN
+  scenario_ids: *id001
+  fixture: case=OPS-PF-BIN-LOOPBACK-WARN; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-BIN-LOOPBACK-WARN fixture/fault and assert: binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id002
+    cleanup_objects: *id003
+    forbidden_side_effects: *id004
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-BIN-IGNORED-WARN
+  scenario_ids: *id001
+  fixture: case=OPS-PF-BIN-IGNORED-WARN; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-BIN-IGNORED-WARN fixture/fault and assert: binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id002
+    cleanup_objects: *id003
+    forbidden_side_effects: *id004
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-HTTP-BIN-PUBLIC-WARN
+  scenario_ids: *id001
+  fixture: case=OPS-PF-HTTP-BIN-PUBLIC-WARN; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-HTTP-BIN-PUBLIC-WARN fixture/fault and assert: binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id002
+    cleanup_objects: *id003
+    forbidden_side_effects: *id004
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-BIN-MOUNT-FALSE-WARN
+  scenario_ids: *id001
+  fixture: case=OPS-PF-AVATAR-BIN-MOUNT-FALSE-WARN; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AVATAR-BIN-MOUNT-FALSE-WARN fixture/fault and assert: binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id002
+    cleanup_objects: *id003
+    forbidden_side_effects: *id004
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-BIN-REPO-WARN
+  scenario_ids: *id001
+  fixture: case=OPS-PF-AVATAR-BIN-REPO-WARN; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AVATAR-BIN-REPO-WARN fixture/fault and assert: binary 两 seed 状态、loopback/public-bind/avatar durability warning、APP/POSTGRES ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id002
+    cleanup_objects: *id003
+    forbidden_side_effects: *id004
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-INIT-OK
+  scenario_ids: &id005
+  - A18
+  fixture: case=OPS-PF-MANAGED-INIT-OK; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed 两 seed 状态与 DATABASE_URL ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-INIT-OK fixture/fault and assert: managed 两 seed 状态与 DATABASE_URL ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id006 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id007 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-EMPTY-OK
+  scenario_ids: *id005
+  fixture: case=OPS-PF-MANAGED-EMPTY-OK; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed 两 seed 状态与 DATABASE_URL ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-EMPTY-OK fixture/fault and assert: managed 两 seed 状态与 DATABASE_URL ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id006
+    cleanup_objects: *id003
+    forbidden_side_effects: *id007
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-IGNORED-DB
+  scenario_ids: *id005
+  fixture: case=OPS-PF-MANAGED-IGNORED-DB; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed 两 seed 状态与 DATABASE_URL ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-IGNORED-DB fixture/fault and assert: managed 两 seed 状态与 DATABASE_URL ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id006
+    cleanup_objects: *id003
+    forbidden_side_effects: *id007
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-EXTERNAL-INIT-OK
+  scenario_ids: &id008
+  - A18
+  fixture: case=OPS-PF-EXTERNAL-INIT-OK; deployment_mode=compose-external-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=external 两 seed 状态与 POSTGRES_* ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-external-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-EXTERNAL-INIT-OK fixture/fault and assert: external 两 seed 状态与 POSTGRES_* ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id009 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id010 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-EXTERNAL-EMPTY-OK
+  scenario_ids: *id008
+  fixture: case=OPS-PF-EXTERNAL-EMPTY-OK; deployment_mode=compose-external-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=external 两 seed 状态与 POSTGRES_* ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-external-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-EXTERNAL-EMPTY-OK fixture/fault and assert: external 两 seed 状态与 POSTGRES_* ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id009
+    cleanup_objects: *id003
+    forbidden_side_effects: *id010
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-EXTERNAL-IGNORED-POSTGRES
+  scenario_ids: *id008
+  fixture: case=OPS-PF-EXTERNAL-IGNORED-POSTGRES; deployment_mode=compose-external-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=external 两 seed 状态与 POSTGRES_* ignored; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-external-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-EXTERNAL-IGNORED-POSTGRES fixture/fault and assert: external 两 seed 状态与 POSTGRES_* ignored.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id009
+    cleanup_objects: *id003
+    forbidden_side_effects: *id010
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-TG-DISABLED-OK
+  scenario_ids: &id011
+  - A18
+  fixture: case=OPS-PF-TG-DISABLED-OK; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=TG fixture 固定为 binary；两空 disabled 与成对 enabled; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-TG-DISABLED-OK fixture/fault and assert: TG fixture 固定为 binary；两空 disabled 与成对 enabled.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id012 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id013 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-TG-ENABLED-OK
+  scenario_ids: *id011
+  fixture: case=OPS-PF-TG-ENABLED-OK; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=TG fixture 固定为 binary；两空 disabled 与成对 enabled; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-TG-ENABLED-OK fixture/fault and assert: TG fixture 固定为 binary；两空 disabled 与成对 enabled.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id012
+    cleanup_objects: *id003
+    forbidden_side_effects: *id013
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-LOCAL-ALIAS
+  scenario_ids: &id014
+  - A18
+  fixture: case=OPS-PF-SELECTOR-LOCAL-ALIAS; deployment_mode=compose-managed-db; selector=two explicit local Unix context/source aliases resolving to one Engine/project; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=local alias 同 Engine/hash；所有后续 argv 使用同一 pinned host; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-LOCAL-ALIAS fixture/fault and assert: local alias 同 Engine/hash；所有后续 argv 使用同一 pinned host.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id015 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id016 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-ARGV-PINNED
+  scenario_ids: *id014
+  fixture: case=OPS-PF-SELECTOR-ARGV-PINNED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=local alias 同 Engine/hash；所有后续 argv 使用同一 pinned host; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-ARGV-PINNED fixture/fault and assert: local alias 同 Engine/hash；所有后续 argv 使用同一 pinned host.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFC
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id015
+    cleanup_objects: *id003
+    forbidden_side_effects: *id016
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-ENV-INJECTION-DATA
+  scenario_ids:
+  - A18
+  fixture: case=OPS-PF-ENV-INJECTION-DATA; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=`$()`/反引号只作 data，command-marker 不得出现; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-ENV-INJECTION-DATA fixture/fault and assert: `$()`/反引号只作 data，command-marker 不得出现.'
+  oracle_class: pre-mutation-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: PFB
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects:
+    - command-marker
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-USAGE-MISSING-MODE
+  scenario_ids:
+  - A18
+  fixture: case=OPS-PF-USAGE-MISSING-MODE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=缺 mode; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-USAGE-MISSING-MODE fixture/fault and assert: 缺 mode.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: usage
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-USAGE-MISSING-CONTEXT
+  scenario_ids:
+  - A18
+  fixture: case=OPS-PF-USAGE-MISSING-CONTEXT; deployment_mode=compose-managed-db; selector=missing required explicit Docker context; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=compose 缺显式 context，不读 active/default; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-USAGE-MISSING-CONTEXT fixture/fault and assert: compose 缺显式 context，不读 active/default.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-ENV-READ
+  scenario_ids: &id017
+  - A18
+  fixture: case=OPS-PF-ENV-READ; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=env 不可读、重复、非法 key、引号未闭合; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-ENV-READ fixture/fault and assert: env 不可读、重复、非法 key、引号未闭合.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 3
+    terminal_stage: env-parse
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id018 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id019 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-ENV-DUPLICATE
+  scenario_ids: *id017
+  fixture: case=OPS-PF-ENV-DUPLICATE; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=env 不可读、重复、非法 key、引号未闭合; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-ENV-DUPLICATE fixture/fault and assert: env 不可读、重复、非法 key、引号未闭合.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 3
+    terminal_stage: env-parse
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id018
+    cleanup_objects: *id003
+    forbidden_side_effects: *id019
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-ENV-INVALID-KEY
+  scenario_ids: *id017
+  fixture: case=OPS-PF-ENV-INVALID-KEY; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=env 不可读、重复、非法 key、引号未闭合; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-ENV-INVALID-KEY fixture/fault and assert: env 不可读、重复、非法 key、引号未闭合.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 3
+    terminal_stage: env-parse
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id018
+    cleanup_objects: *id003
+    forbidden_side_effects: *id019
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-ENV-UNCLOSED-QUOTE
+  scenario_ids: *id017
+  fixture: case=OPS-PF-ENV-UNCLOSED-QUOTE; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=env 不可读、重复、非法 key、引号未闭合; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-ENV-UNCLOSED-QUOTE fixture/fault and assert: env 不可读、重复、非法 key、引号未闭合.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 3
+    terminal_stage: env-parse
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id018
+    cleanup_objects: *id003
+    forbidden_side_effects: *id019
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-REMOTE-TCP
+  scenario_ids: &id020
+  - A18
+  fixture: case=OPS-PF-SELECTOR-REMOTE-TCP; deployment_mode=compose-managed-db; selector=explicit TCP Docker context rejected before Engine call; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=remote context 与所有 selector env/conflict 在 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-REMOTE-TCP fixture/fault and assert: remote context 与所有 selector env/conflict 在 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id021 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id022 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-REMOTE-SSH
+  scenario_ids: *id020
+  fixture: case=OPS-PF-SELECTOR-REMOTE-SSH; deployment_mode=compose-managed-db; selector=explicit remote Docker context rejected before Engine call; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=remote context 与所有 selector env/conflict 在 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-REMOTE-SSH fixture/fault and assert: remote context 与所有 selector env/conflict 在 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id021
+    cleanup_objects: *id003
+    forbidden_side_effects: *id022
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-DOCKER-HOST-TCP
+  scenario_ids: *id020
+  fixture: case=OPS-PF-SELECTOR-DOCKER-HOST-TCP; deployment_mode=compose-managed-db; selector=DOCKER_HOST=tcp selector conflict; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=remote context 与所有 selector env/conflict 在 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-DOCKER-HOST-TCP fixture/fault and assert: remote context 与所有 selector env/conflict 在 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id021
+    cleanup_objects: *id003
+    forbidden_side_effects: *id022
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-DOCKER-HOST-SSH
+  scenario_ids: *id020
+  fixture: case=OPS-PF-SELECTOR-DOCKER-HOST-SSH; deployment_mode=compose-managed-db; selector=DOCKER_HOST=ssh selector conflict; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=remote context 与所有 selector env/conflict 在 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-DOCKER-HOST-SSH fixture/fault and assert: remote context 与所有 selector env/conflict 在 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id021
+    cleanup_objects: *id003
+    forbidden_side_effects: *id022
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-DOCKER-CONTEXT
+  scenario_ids: *id020
+  fixture: case=OPS-PF-SELECTOR-DOCKER-CONTEXT; deployment_mode=compose-managed-db; selector=DOCKER_CONTEXT selector conflict; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=remote context 与所有 selector env/conflict 在 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-DOCKER-CONTEXT fixture/fault and assert: remote context 与所有 selector env/conflict 在 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id021
+    cleanup_objects: *id003
+    forbidden_side_effects: *id022
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-DOCKER-TLS
+  scenario_ids: *id020
+  fixture: case=OPS-PF-SELECTOR-DOCKER-TLS; deployment_mode=compose-managed-db; selector=Docker TLS selector conflict; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=remote context 与所有 selector env/conflict 在 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SELECTOR-DOCKER-TLS fixture/fault and assert: remote context 与所有 selector env/conflict 在 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id021
+    cleanup_objects: *id003
+    forbidden_side_effects: *id022
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SELECTOR-FLAG-ENV-CONFLICT
+  scenario_ids: *id020
+  fixture: case=OPS-PF-SELECTOR-FLAG-ENV-CONFLICT; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=remote context 与所有 selector env/conflict 在 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-SELECTOR-FLAG-ENV-CONFLICT fixture/fault and assert: remote context 与所有 selector env/conflict 在 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id021
+    cleanup_objects: *id003
+    forbidden_side_effects: *id022
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-COMPOSE-VERSION
+  scenario_ids:
+  - A18
+  fixture: case=OPS-PF-COMPOSE-VERSION; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=Compose <2.24; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-COMPOSE-VERSION fixture/fault and assert: Compose <2.24.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: compose-version
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-COMPOSE-RENDER
+  scenario_ids: &id023
+  - A18
+  fixture: case=OPS-PF-COMPOSE-RENDER; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=render 失败、缺 service/volume、app env_file 偷换; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-COMPOSE-RENDER fixture/fault and assert: render 失败、缺 service/volume、app env_file 偷换.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: compose-render
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id024 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id025 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-COMPOSE-SERVICE
+  scenario_ids: *id023
+  fixture: case=OPS-PF-COMPOSE-SERVICE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=render 失败、缺 service/volume、app env_file 偷换; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-COMPOSE-SERVICE fixture/fault and assert: render 失败、缺 service/volume、app env_file 偷换.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: compose-render
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id024
+    cleanup_objects: *id003
+    forbidden_side_effects: *id025
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-COMPOSE-VOLUME
+  scenario_ids: *id023
+  fixture: case=OPS-PF-COMPOSE-VOLUME; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=render 失败、缺 service/volume、app env_file 偷换; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-COMPOSE-VOLUME fixture/fault and assert: render 失败、缺 service/volume、app env_file 偷换.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: compose-render
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id024
+    cleanup_objects: *id003
+    forbidden_side_effects: *id025
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-COMPOSE-ENVFILE
+  scenario_ids: *id023
+  fixture: case=OPS-PF-COMPOSE-ENVFILE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=render 失败、缺 service/volume、app env_file 偷换; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-COMPOSE-ENVFILE fixture/fault and assert: render 失败、缺 service/volume、app env_file 偷换.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: compose-render
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id024
+    cleanup_objects: *id003
+    forbidden_side_effects: *id025
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SEED-EMPTY-MISSING
+  scenario_ids: &id026
+  - A18
+  fixture: case=OPS-PF-SEED-EMPTY-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=seed empty/initialized 反例; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SEED-EMPTY-MISSING fixture/fault and assert: seed empty/initialized 反例.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id027 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id028 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SEED-EMPTY-SHORT
+  scenario_ids: *id026
+  fixture: case=OPS-PF-SEED-EMPTY-SHORT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=seed empty/initialized 反例; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SEED-EMPTY-SHORT fixture/fault and assert: seed empty/initialized 反例.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id027
+    cleanup_objects: *id003
+    forbidden_side_effects: *id028
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SEED-EMPTY-SENTINEL
+  scenario_ids: *id026
+  fixture: case=OPS-PF-SEED-EMPTY-SENTINEL; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=seed empty/initialized 反例; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SEED-EMPTY-SENTINEL fixture/fault and assert: seed empty/initialized 反例.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id027
+    cleanup_objects: *id003
+    forbidden_side_effects: *id028
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-SEED-INIT-NONEMPTY
+  scenario_ids: *id026
+  fixture: case=OPS-PF-SEED-INIT-NONEMPTY; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=seed empty/initialized 反例; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-SEED-INIT-NONEMPTY fixture/fault and assert: seed empty/initialized 反例.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id027
+    cleanup_objects: *id003
+    forbidden_side_effects: *id028
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-BIN-DATABASE-MISSING
+  scenario_ids: &id029
+  - A18
+  fixture: case=OPS-PF-BIN-DATABASE-MISSING; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary DATABASE_URL required/sentinel/remote SSL，禁止 Engine call; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-BIN-DATABASE-MISSING fixture/fault and assert: binary DATABASE_URL required/sentinel/remote SSL，禁止 Engine call.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id030 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id031 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-BIN-DATABASE-DEV
+  scenario_ids: *id029
+  fixture: case=OPS-PF-BIN-DATABASE-DEV; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary DATABASE_URL required/sentinel/remote SSL，禁止 Engine call; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-BIN-DATABASE-DEV fixture/fault and assert: binary DATABASE_URL required/sentinel/remote SSL，禁止 Engine call.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id030
+    cleanup_objects: *id003
+    forbidden_side_effects: *id031
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-BIN-DATABASE-REMOTE-NOSSL
+  scenario_ids: *id029
+  fixture: case=OPS-PF-BIN-DATABASE-REMOTE-NOSSL; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary DATABASE_URL required/sentinel/remote SSL，禁止 Engine call; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-BIN-DATABASE-REMOTE-NOSSL fixture/fault and assert: binary DATABASE_URL required/sentinel/remote SSL，禁止 Engine call.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id030
+    cleanup_objects: *id003
+    forbidden_side_effects: *id031
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-APPDB-NONEMPTY
+  scenario_ids: &id032
+  - A18
+  fixture: case=OPS-PF-MANAGED-APPDB-NONEMPTY; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed APP_DATABASE_URL forbidden 与 POSTGRES_*; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-APPDB-NONEMPTY fixture/fault and assert: managed APP_DATABASE_URL forbidden 与 POSTGRES_*.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id033 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id034 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-PGUSER-MISSING
+  scenario_ids: *id032
+  fixture: case=OPS-PF-MANAGED-PGUSER-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed APP_DATABASE_URL forbidden 与 POSTGRES_*; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-PGUSER-MISSING fixture/fault and assert: managed APP_DATABASE_URL forbidden 与 POSTGRES_*.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id033
+    cleanup_objects: *id003
+    forbidden_side_effects: *id034
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-PGDB-MISSING
+  scenario_ids: *id032
+  fixture: case=OPS-PF-MANAGED-PGDB-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed APP_DATABASE_URL forbidden 与 POSTGRES_*; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-PGDB-MISSING fixture/fault and assert: managed APP_DATABASE_URL forbidden 与 POSTGRES_*.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id033
+    cleanup_objects: *id003
+    forbidden_side_effects: *id034
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-PGPASSWORD-MISSING
+  scenario_ids: *id032
+  fixture: case=OPS-PF-MANAGED-PGPASSWORD-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed APP_DATABASE_URL forbidden 与 POSTGRES_*; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-PGPASSWORD-MISSING fixture/fault and assert: managed APP_DATABASE_URL forbidden 与 POSTGRES_*.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id033
+    cleanup_objects: *id003
+    forbidden_side_effects: *id034
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-MANAGED-PGPASSWORD-DEV
+  scenario_ids: *id032
+  fixture: case=OPS-PF-MANAGED-PGPASSWORD-DEV; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=managed APP_DATABASE_URL forbidden 与 POSTGRES_*; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-MANAGED-PGPASSWORD-DEV fixture/fault and assert: managed APP_DATABASE_URL forbidden 与 POSTGRES_*.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id033
+    cleanup_objects: *id003
+    forbidden_side_effects: *id034
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-EXTERNAL-APPDB-MISSING
+  scenario_ids: &id035
+  - A18
+  fixture: case=OPS-PF-EXTERNAL-APPDB-MISSING; deployment_mode=compose-external-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=external APP_DATABASE_URL required/sentinel/SSL; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-external-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-EXTERNAL-APPDB-MISSING fixture/fault and assert: external APP_DATABASE_URL required/sentinel/SSL.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id036 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id037 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-EXTERNAL-APPDB-DEV
+  scenario_ids: *id035
+  fixture: case=OPS-PF-EXTERNAL-APPDB-DEV; deployment_mode=compose-external-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=external APP_DATABASE_URL required/sentinel/SSL; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-external-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-EXTERNAL-APPDB-DEV fixture/fault and assert: external APP_DATABASE_URL required/sentinel/SSL.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id036
+    cleanup_objects: *id003
+    forbidden_side_effects: *id037
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-EXTERNAL-APPDB-REMOTE-NOSSL
+  scenario_ids: *id035
+  fixture: case=OPS-PF-EXTERNAL-APPDB-REMOTE-NOSSL; deployment_mode=compose-external-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=external APP_DATABASE_URL required/sentinel/SSL; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-external-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-EXTERNAL-APPDB-REMOTE-NOSSL fixture/fault and assert: external APP_DATABASE_URL required/sentinel/SSL.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id036
+    cleanup_objects: *id003
+    forbidden_side_effects: *id037
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AUTH-MISSING
+  scenario_ids: &id038
+  - A18
+  fixture: case=OPS-PF-AUTH-MISSING; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=auth secret 与 compose HTTP_ADDR; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AUTH-MISSING fixture/fault and assert: auth secret 与 compose HTTP_ADDR.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id039 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id040 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AUTH-SHORT
+  scenario_ids: *id038
+  fixture: case=OPS-PF-AUTH-SHORT; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=auth secret 与 compose HTTP_ADDR; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AUTH-SHORT fixture/fault and assert: auth secret 与 compose HTTP_ADDR.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id039
+    cleanup_objects: *id003
+    forbidden_side_effects: *id040
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AUTH-SENTINEL
+  scenario_ids: *id038
+  fixture: case=OPS-PF-AUTH-SENTINEL; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=auth secret 与 compose HTTP_ADDR; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AUTH-SENTINEL fixture/fault and assert: auth secret 与 compose HTTP_ADDR.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id039
+    cleanup_objects: *id003
+    forbidden_side_effects: *id040
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-HTTP-COMPOSE-ADDR
+  scenario_ids: *id038
+  fixture: case=OPS-PF-HTTP-COMPOSE-ADDR; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=auth secret 与 compose HTTP_ADDR; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-HTTP-COMPOSE-ADDR fixture/fault and assert: auth secret 与 compose HTTP_ADDR.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id039
+    cleanup_objects: *id003
+    forbidden_side_effects: *id040
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-DRIVER
+  scenario_ids: &id041
+  - A18
+  fixture: case=OPS-PF-AVATAR-DRIVER; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary fixture 的 driver/root/read-write 反例，禁止 Engine call; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AVATAR-DRIVER fixture/fault and assert: binary fixture 的 driver/root/read-write 反例，禁止 Engine call.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id042 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id043 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-BIN-ROOT-RELATIVE
+  scenario_ids: *id041
+  fixture: case=OPS-PF-AVATAR-BIN-ROOT-RELATIVE; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary fixture 的 driver/root/read-write 反例，禁止 Engine call; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AVATAR-BIN-ROOT-RELATIVE fixture/fault and assert: binary fixture 的 driver/root/read-write 反例，禁止 Engine call.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id042
+    cleanup_objects: *id003
+    forbidden_side_effects: *id043
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-BIN-ROOT-MISSING
+  scenario_ids: *id041
+  fixture: case=OPS-PF-AVATAR-BIN-ROOT-MISSING; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary fixture 的 driver/root/read-write 反例，禁止 Engine call; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AVATAR-BIN-ROOT-MISSING fixture/fault and assert: binary fixture 的 driver/root/read-write 反例，禁止 Engine call.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id042
+    cleanup_objects: *id003
+    forbidden_side_effects: *id043
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-BIN-ROOT-PERMISSION
+  scenario_ids: *id041
+  fixture: case=OPS-PF-AVATAR-BIN-ROOT-PERMISSION; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=binary fixture 的 driver/root/read-write 反例，禁止 Engine call; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-AVATAR-BIN-ROOT-PERMISSION fixture/fault and assert: binary fixture 的 driver/root/read-write 反例，禁止 Engine call.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id042
+    cleanup_objects: *id003
+    forbidden_side_effects: *id043
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-COMPOSE-ROOT
+  scenario_ids: &id044
+  - A18
+  fixture: case=OPS-PF-AVATAR-COMPOSE-ROOT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=compose root/mount/require-mount 反例; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-AVATAR-COMPOSE-ROOT fixture/fault and assert: compose root/mount/require-mount 反例.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: &id045 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id046 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-COMPOSE-MOUNT
+  scenario_ids: *id044
+  fixture: case=OPS-PF-AVATAR-COMPOSE-MOUNT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=compose root/mount/require-mount 反例; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-AVATAR-COMPOSE-MOUNT fixture/fault and assert: compose root/mount/require-mount 反例.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id045
+    cleanup_objects: *id003
+    forbidden_side_effects: *id046
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-AVATAR-COMPOSE-REQUIRE-MOUNT
+  scenario_ids: *id044
+  fixture: case=OPS-PF-AVATAR-COMPOSE-REQUIRE-MOUNT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=compose root/mount/require-mount 反例; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode compose-managed-db --seed-state initialized --env-file <synthetic-env> --compose-file <synthetic-compose> --docker-context <local-context> --project-name crm-v1-smoke; apply the OPS-PF-AVATAR-COMPOSE-REQUIRE-MOUNT fixture/fault and assert: compose root/mount/require-mount 反例.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: *id045
+    cleanup_objects: *id003
+    forbidden_side_effects: *id046
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-TG-HALF
+  scenario_ids: &id047
+  - A18
+  fixture: case=OPS-PF-TG-HALF; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=TG 半配置、username、示例 token; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-TG-HALF fixture/fault and assert: TG 半配置、username、示例 token.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id048 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id049 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-TG-USERNAME
+  scenario_ids: *id047
+  fixture: case=OPS-PF-TG-USERNAME; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=TG 半配置、username、示例 token; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-TG-USERNAME fixture/fault and assert: TG 半配置、username、示例 token.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id048
+    cleanup_objects: *id003
+    forbidden_side_effects: *id049
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-TG-TOKEN-EXAMPLE
+  scenario_ids: *id047
+  fixture: case=OPS-PF-TG-TOKEN-EXAMPLE; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=TG 半配置、username、示例 token; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-TG-TOKEN-EXAMPLE fixture/fault and assert: TG 半配置、username、示例 token.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 4
+    terminal_stage: config-matrix
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id048
+    cleanup_objects: *id003
+    forbidden_side_effects: *id049
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-PF-CMD-MISSING
+  scenario_ids:
+  - A18
+  fixture: case=OPS-PF-CMD-MISSING; deployment_mode=binary; selector=Engine selector N/A; Docker calls forbidden; app_engine_state=N/A (preflight does not mutate application state); target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=preflight 必需本机命令缺失，首个 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/production-preflight.sh --mode binary --seed-state initialized --env-file <synthetic-env>; apply the OPS-PF-CMD-MISSING fixture/fault and assert: preflight 必需本机命令缺失，首个 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 6
+    terminal_stage: dependency-check
+    stage_plan: DEP
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-SUCCESS-RUNNING
+  scenario_ids:
+  - A19
+  fixture: case=OPS-BK-SUCCESS-RUNNING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=running backup 必须 stop/pipeline/package-verify/state-restore/health/publish，business before=after; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-SUCCESS-RUNNING and assert: running backup 必须 stop/pipeline/package-verify/state-restore/health/publish，business before=after.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: BKR
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: &id050
+    - lock-containers
+    - ops-helpers
+    - private-staging
+    - temp-package
+    forbidden_side_effects: []
+    backup_package_expectation: published-valid
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-SUCCESS-EXITED
+  scenario_ids:
+  - A19
+  fixture: case=OPS-BK-SUCCESS-EXITED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=exited; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=exited backup 必须 pipeline/package-verify/publish，不 stop/start，business before=after; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-SUCCESS-EXITED and assert: exited backup 必须 pipeline/package-verify/publish，不 stop/start，business before=after.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: BKE
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: published-valid
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-CMD-MISSING
+  scenario_ids:
+  - A20
+  fixture: case=OPS-BK-CMD-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 必需本机命令缺失，首个 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-CMD-MISSING and assert: backup 必需本机命令缺失，首个 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 6
+    terminal_stage: dependency-check
+    stage_plan: DEP
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-EMPTY
+  scenario_ids: &id051
+  - A20
+  fixture: case=OPS-BK-PATH-EMPTY; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-EMPTY and assert: output lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id052 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id053 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-ROOT
+  scenario_ids: *id051
+  fixture: case=OPS-BK-PATH-ROOT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-ROOT and assert: output lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id052
+    cleanup_objects: *id003
+    forbidden_side_effects: *id053
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-PROJECT-ROOT
+  scenario_ids: *id051
+  fixture: case=OPS-BK-PATH-PROJECT-ROOT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-PROJECT-ROOT and assert: output lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id052
+    cleanup_objects: *id003
+    forbidden_side_effects: *id053
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-PARENT-MISSING
+  scenario_ids: *id051
+  fixture: case=OPS-BK-PATH-PARENT-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-PARENT-MISSING and assert: output lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id052
+    cleanup_objects: *id003
+    forbidden_side_effects: *id053
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-LEAF-EXISTS
+  scenario_ids: *id051
+  fixture: case=OPS-BK-PATH-LEAF-EXISTS; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-LEAF-EXISTS and assert: output lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id052
+    cleanup_objects: *id003
+    forbidden_side_effects: *id053
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-SYMLINK
+  scenario_ids: *id051
+  fixture: case=OPS-BK-PATH-SYMLINK; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-SYMLINK and assert: output lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id052
+    cleanup_objects: *id003
+    forbidden_side_effects: *id053
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-SPECIAL
+  scenario_ids: *id051
+  fixture: case=OPS-BK-PATH-SPECIAL; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-SPECIAL and assert: output lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id052
+    cleanup_objects: *id003
+    forbidden_side_effects: *id053
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-PATH-AVATAR-OVERLAP
+  scenario_ids: &id054
+  - A20
+  fixture: case=OPS-BK-PATH-AVATAR-OVERLAP; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-AVATAR-OVERLAP and assert: output 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id055
+    - owner
+    cleanup_objects: &id056
+    - lock-containers
+    - ops-helpers
+    forbidden_side_effects: &id057 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-PATH-PG-OVERLAP
+  scenario_ids: *id054
+  fixture: case=OPS-BK-PATH-PG-OVERLAP; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf uses the named invalid/overlapping form; fault_or_race_setup=output 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-PATH-PG-OVERLAP and assert: output 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id055
+    cleanup_objects: *id056
+    forbidden_side_effects: *id057
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-FAIL-PGDUMP
+  scenario_ids:
+  - A20
+  fixture: case=OPS-BK-FAIL-PGDUMP; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=pg_dump 注入失败，无 published package，原 running 恢复; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-FAIL-PGDUMP and assert: pg_dump 注入失败，无 published package，原 running 恢复.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 8
+    terminal_stage: backup-pg-dump
+    stage_plan: BKF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: not-published-clean
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-FAIL-AVATAR-TAR
+  scenario_ids:
+  - A20
+  fixture: case=OPS-BK-FAIL-AVATAR-TAR; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=avatar tar 注入失败，无 published package，原 running 恢复; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-FAIL-AVATAR-TAR and assert: avatar tar 注入失败，无 published package，原 running 恢复.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 8
+    terminal_stage: backup-avatar-tar
+    stage_plan: BKF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: not-published-clean
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-FAIL-MANIFEST
+  scenario_ids:
+  - A20
+  fixture: case=OPS-BK-FAIL-MANIFEST; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=manifest 注入失败，无 published package，原 running 恢复; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-FAIL-MANIFEST and assert: manifest 注入失败，无 published package，原 running 恢复.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 8
+    terminal_stage: backup-manifest
+    stage_plan: BKF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: not-published-clean
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-FAIL-HEALTH
+  scenario_ids:
+  - A20
+  fixture: case=OPS-BK-FAIL-HEALTH; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=原 running 已恢复 Engine predicate 但 health oracle 失败，不 publish; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-FAIL-HEALTH and assert: 原 running 已恢复 Engine predicate 但 health oracle 失败，不 publish.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 8
+    terminal_stage: backup-health
+    stage_plan: BKF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: not-published-clean
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-FAIL-PUBLISH
+  scenario_ids: &id058
+  - A20
+  fixture: case=OPS-BK-FAIL-PUBLISH; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=原子发布失败/半包清理，无 final package/temp residual; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-FAIL-PUBLISH and assert: 原子发布失败/半包清理，无 final package/temp residual.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 8
+    terminal_stage: backup-publish
+    stage_plan: BKF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles: &id059
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: &id060 []
+    backup_package_expectation: not-published-clean
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-HALF-PACKAGE-CLEANUP
+  scenario_ids: *id058
+  fixture: case=OPS-BK-HALF-PACKAGE-CLEANUP; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=原子发布失败/半包清理，无 final package/temp residual; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-HALF-PACKAGE-CLEANUP and assert: 原子发布失败/半包清理，无 final package/temp residual.'
+  oracle_class: backup-readonly
+  expected:
+    exit_code: 8
+    terminal_stage: backup-publish
+    stage_plan: BKF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles: *id059
+    cleanup_objects: *id050
+    forbidden_side_effects: *id060
+    backup_package_expectation: not-published-clean
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-APP-ABSENT
+  scenario_ids: &id061
+  - A20
+  fixture: case=OPS-BK-APP-ABSENT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=absent; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-APP-ABSENT and assert: backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id062
+    - owner
+    cleanup_objects: *id056
+    forbidden_side_effects: &id063 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-APP-CREATED
+  scenario_ids: *id061
+  fixture: case=OPS-BK-APP-CREATED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=created; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-APP-CREATED and assert: backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id062
+    cleanup_objects: *id056
+    forbidden_side_effects: *id063
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-APP-PAUSED
+  scenario_ids: *id061
+  fixture: case=OPS-BK-APP-PAUSED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=paused; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-APP-PAUSED and assert: backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id062
+    cleanup_objects: *id056
+    forbidden_side_effects: *id063
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-APP-RESTARTING
+  scenario_ids: *id061
+  fixture: case=OPS-BK-APP-RESTARTING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=restarting; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-APP-RESTARTING and assert: backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id062
+    cleanup_objects: *id056
+    forbidden_side_effects: *id063
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-APP-REMOVING
+  scenario_ids: *id061
+  fixture: case=OPS-BK-APP-REMOVING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=removing; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-APP-REMOVING and assert: backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id062
+    cleanup_objects: *id056
+    forbidden_side_effects: *id063
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-APP-DEAD
+  scenario_ids: *id061
+  fixture: case=OPS-BK-APP-DEAD; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=dead; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-APP-DEAD and assert: backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id062
+    cleanup_objects: *id056
+    forbidden_side_effects: *id063
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-APP-UNKNOWN
+  scenario_ids: *id061
+  fixture: case=OPS-BK-APP-UNKNOWN; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=unknown-or-inconsistent; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-APP-UNKNOWN and assert: backup 对 absent/created/paused/restarting/removing/dead/unknown-or-inconsistent 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: BKP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id062
+    cleanup_objects: *id056
+    forbidden_side_effects: *id063
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-LOCK-IMAGE-VOLUME
+  scenario_ids:
+  - A20
+  fixture: case=OPS-LOCK-IMAGE-VOLUME; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=Config.Volumes 非空，create 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-IMAGE-VOLUME and assert: Config.Volumes 非空，create 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: image-safety
+    stage_plan: BKP
+    engine_call_policy: readonly
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-LOCK-NETWORK-DEFAULT
+  scenario_ids: &id064
+  - A20
+  fixture: case=OPS-LOCK-NETWORK-DEFAULT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=post-create network/mount/label/state 失败，仅按 ID 清理; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-NETWORK-DEFAULT and assert: post-create network/mount/label/state 失败，仅按 ID 清理.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-post-inspect
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id065
+    - invalid-candidate
+    cleanup_objects: *id056
+    forbidden_side_effects: &id066 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      invalid-candidate: owner
+- case_id: OPS-LOCK-MOUNT-INVALID
+  scenario_ids: *id064
+  fixture: case=OPS-LOCK-MOUNT-INVALID; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=post-create network/mount/label/state 失败，仅按 ID 清理; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-MOUNT-INVALID and assert: post-create network/mount/label/state 失败，仅按 ID 清理.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-post-inspect
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id065
+    cleanup_objects: *id056
+    forbidden_side_effects: *id066
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      invalid-candidate: owner
+- case_id: OPS-LOCK-LABEL-INVALID
+  scenario_ids: *id064
+  fixture: case=OPS-LOCK-LABEL-INVALID; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=post-create network/mount/label/state 失败，仅按 ID 清理; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-LABEL-INVALID and assert: post-create network/mount/label/state 失败，仅按 ID 清理.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-post-inspect
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id065
+    cleanup_objects: *id056
+    forbidden_side_effects: *id066
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      invalid-candidate: owner
+- case_id: OPS-LOCK-STATE-INVALID
+  scenario_ids: *id064
+  fixture: case=OPS-LOCK-STATE-INVALID; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=post-create network/mount/label/state 失败，仅按 ID 清理; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-STATE-INVALID and assert: post-create network/mount/label/state 失败，仅按 ID 清理.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-post-inspect
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id065
+    cleanup_objects: *id056
+    forbidden_side_effects: *id066
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      invalid-candidate: owner
+- case_id: OPS-LOCK-BUSY
+  scenario_ids: &id067
+  - A20
+  fixture: case=OPS-LOCK-BUSY; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=busy、PID live、helper present 不破锁; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-BUSY and assert: busy、PID live、helper present 不破锁.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id068
+    - existing-owner
+    - contender
+    cleanup_objects: *id056
+    forbidden_side_effects: &id069 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      existing-owner: none
+      contender: none
+- case_id: OPS-LOCK-STALE-LIVEPID
+  scenario_ids: *id067
+  fixture: case=OPS-LOCK-STALE-LIVEPID; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=busy、PID live、helper present 不破锁; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-STALE-LIVEPID and assert: busy、PID live、helper present 不破锁.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id068
+    cleanup_objects: *id056
+    forbidden_side_effects: *id069
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      existing-owner: none
+      contender: none
+- case_id: OPS-LOCK-STALE-HELPER
+  scenario_ids: *id067
+  fixture: case=OPS-LOCK-STALE-HELPER; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=busy、PID live、helper present 不破锁; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-STALE-HELPER and assert: busy、PID live、helper present 不破锁.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id068
+    cleanup_objects: *id056
+    forbidden_side_effects: *id069
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      existing-owner: none
+      contender: none
+- case_id: OPS-LOCK-STALE-BREAK-OK
+  scenario_ids:
+  - A20
+  fixture: case=OPS-LOCK-STALE-BREAK-OK; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=authorized breaker 只删 candidate ID，再正常 acquire/release; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-STALE-BREAK-OK and assert: authorized breaker 只删 candidate ID，再正常 acquire/release.'
+  oracle_class: cleanup-only
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: LCO
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles:
+    - stale-candidate
+    - new-owner
+    cleanup_objects: *id056
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      stale-candidate: authorized-breaker
+      new-owner: owner
+- case_id: OPS-LOCK-RACE-DOUBLE-BREAKER
+  scenario_ids: &id070
+  - A20
+  fixture: case=OPS-LOCK-RACE-DOUBLE-BREAKER; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=loser 不得删除 winner ID; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-RACE-DOUBLE-BREAKER and assert: loser 不得删除 winner ID.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id071
+    - stale-candidate
+    - winner
+    - loser
+    cleanup_objects: *id056
+    forbidden_side_effects: &id072 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      stale-candidate: authorized-breaker
+      winner: owner
+      loser: none
+- case_id: OPS-LOCK-RACE-BREAKER-ACQUIRE
+  scenario_ids: *id070
+  fixture: case=OPS-LOCK-RACE-BREAKER-ACQUIRE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=loser 不得删除 winner ID; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-RACE-BREAKER-ACQUIRE and assert: loser 不得删除 winner ID.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id071
+    cleanup_objects: *id056
+    forbidden_side_effects: *id072
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      stale-candidate: authorized-breaker
+      winner: owner
+      loser: none
+- case_id: OPS-LOCK-RACE-RELEASE-NEW
+  scenario_ids:
+  - A20
+  fixture: case=OPS-LOCK-RACE-RELEASE-NEW; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=old release/trap 不得删除 new owner ID; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-RACE-RELEASE-NEW and assert: old release/trap 不得删除 new owner ID.'
+  oracle_class: cleanup-only
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: LCO
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles:
+    - old-owner
+    - new-owner
+    cleanup_objects: *id056
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      old-owner: owner
+      new-owner: owner
+- case_id: OPS-LOCK-RACE-DELAYED-HELPER
+  scenario_ids:
+  - A20
+  - A22
+  fixture: case=OPS-LOCK-RACE-DELAYED-HELPER; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=no-helper 查询后才到 daemon 的旧 helper fence 不得进入 target operation，新 owner 最多 fail-closed; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-RACE-DELAYED-HELPER and assert: no-helper 查询后才到 daemon 的旧 helper fence 不得进入 target operation，新 owner 最多 fail-closed.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: helper-fence
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles:
+    - old-helper
+    - new-owner
+    cleanup_objects: *id056
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      old-helper: none
+      new-owner: owner
+- case_id: OPS-LOCK-ALIAS-BK-BK
+  scenario_ids: &id073
+  - A20
+  fixture: case=OPS-LOCK-ALIAS-BK-BK; deployment_mode=compose-managed-db; selector=two explicit local Unix context/source aliases resolving to one Engine/project; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=首个 backup 持锁，alternate realpath 第二操作被拒; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-ALIAS-BK-BK and assert: 首个 backup 持锁，alternate realpath 第二操作被拒.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id074
+    - owner
+    - contender
+    cleanup_objects: *id056
+    forbidden_side_effects: &id075 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+      contender: none
+- case_id: OPS-LOCK-ALIAS-BK-RS
+  scenario_ids: *id073
+  fixture: case=OPS-LOCK-ALIAS-BK-RS; deployment_mode=compose-managed-db; selector=two explicit local Unix context/source aliases resolving to one Engine/project; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=首个 backup 持锁，alternate realpath 第二操作被拒; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-LOCK-ALIAS-BK-RS and assert: 首个 backup 持锁，alternate realpath 第二操作被拒.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id074
+    cleanup_objects: *id056
+    forbidden_side_effects: *id075
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+      contender: none
+- case_id: OPS-CLEANUP-RESIDUAL
+  scenario_ids:
+  - A20
+  - A22
+  fixture: case=OPS-CLEANUP-RESIDUAL; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=operation cleanup 预期 fail/oracle pass，harness 清空，不掩盖 production 泄漏; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-CLEANUP-RESIDUAL and assert: operation cleanup 预期 fail/oracle pass，harness 清空，不掩盖 production 泄漏.'
+  oracle_class: cleanup-only
+  expected:
+    exit_code: 11
+    terminal_stage: cleanup
+    stage_plan: COR
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: fail
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-SUCCESS-RUNNING
+  scenario_ids:
+  - A21
+  fixture: case=OPS-RS-SUCCESS-RUNNING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=after=package oracle，stop/replace/verify/start/health 全部完成; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SUCCESS-RUNNING and assert: after=package oracle，stop/replace/verify/start/health 全部完成.'
+  oracle_class: restore-success
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: RSR
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-SUCCESS-EXITED
+  scenario_ids:
+  - A21
+  fixture: case=OPS-RS-SUCCESS-EXITED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=exited; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=after=package oracle，原 exited 不 stop/start/health，最终仍 exited; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SUCCESS-EXITED and assert: after=package oracle，原 exited 不 stop/start/health，最终仍 exited.'
+  oracle_class: restore-success
+  expected:
+    exit_code: 0
+    terminal_stage: complete
+    stage_plan: RSE
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-CMD-MISSING
+  scenario_ids:
+  - A22
+  fixture: case=OPS-RS-CMD-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 必需本机命令缺失，首个 Engine call 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-CMD-MISSING and assert: restore 必需本机命令缺失，首个 Engine call 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 6
+    terminal_stage: dependency-check
+    stage_plan: DEP
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: []
+    cleanup_objects: *id003
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PATH-EMPTY
+  scenario_ids: &id076
+  - A22
+  fixture: case=OPS-RS-PATH-EMPTY; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input path uses the named invalid/overlapping form; fault_or_race_setup=input lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-EMPTY and assert: input lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id077 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id078 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PATH-ROOT
+  scenario_ids: *id076
+  fixture: case=OPS-RS-PATH-ROOT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input path uses the named invalid/overlapping form; fault_or_race_setup=input lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-ROOT and assert: input lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id077
+    cleanup_objects: *id003
+    forbidden_side_effects: *id078
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PATH-PROJECT-ROOT
+  scenario_ids: *id076
+  fixture: case=OPS-RS-PATH-PROJECT-ROOT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input path uses the named invalid/overlapping form; fault_or_race_setup=input lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-PROJECT-ROOT and assert: input lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id077
+    cleanup_objects: *id003
+    forbidden_side_effects: *id078
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PATH-MISSING
+  scenario_ids: *id076
+  fixture: case=OPS-RS-PATH-MISSING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input path uses the named invalid/overlapping form; fault_or_race_setup=input lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-MISSING and assert: input lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id077
+    cleanup_objects: *id003
+    forbidden_side_effects: *id078
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PATH-SYMLINK
+  scenario_ids: *id076
+  fixture: case=OPS-RS-PATH-SYMLINK; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input package containing a symlink artifact; fault_or_race_setup=input lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-SYMLINK and assert: input lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id077
+    cleanup_objects: *id003
+    forbidden_side_effects: *id078
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PATH-SPECIAL
+  scenario_ids: *id076
+  fixture: case=OPS-RS-PATH-SPECIAL; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input path uses the named invalid/overlapping form; fault_or_race_setup=input lexical/filesystem 路径反例在 Engine 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-SPECIAL and assert: input lexical/filesystem 路径反例在 Engine 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: path-validate
+    stage_plan: PATH
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id077
+    cleanup_objects: *id003
+    forbidden_side_effects: *id078
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PATH-AVATAR-OVERLAP
+  scenario_ids: &id079
+  - A22
+  fixture: case=OPS-RS-PATH-AVATAR-OVERLAP; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with the named unsafe tar entry; fault_or_race_setup=input 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-AVATAR-OVERLAP and assert: input 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id080
+    - owner
+    cleanup_objects: *id056
+    forbidden_side_effects: &id081 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-PATH-PG-OVERLAP
+  scenario_ids: *id079
+  fixture: case=OPS-RS-PATH-PG-OVERLAP; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input path uses the named invalid/overlapping form; fault_or_race_setup=input 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PATH-PG-OVERLAP and assert: input 与 runtime source avatar/pg volume mount 重叠，持锁查询后但 target mutation 前拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id080
+    cleanup_objects: *id056
+    forbidden_side_effects: *id081
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-CHECKSUM
+  scenario_ids: &id082
+  - A22
+  fixture: case=OPS-RS-CHECKSUM; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with checksum mismatch; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-CHECKSUM and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id083
+    - owner
+    cleanup_objects: &id084
+    - lock-containers
+    - ops-helpers
+    - private-staging
+    forbidden_side_effects: &id085 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-SCHEMA
+  scenario_ids: *id082
+  fixture: case=OPS-RS-SCHEMA; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with unsupported metadata schema; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SCHEMA and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id083
+    cleanup_objects: *id084
+    forbidden_side_effects: *id085
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-SYMLINK
+  scenario_ids: *id082
+  fixture: case=OPS-RS-SYMLINK; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input package containing a symlink artifact; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SYMLINK and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id083
+    cleanup_objects: *id084
+    forbidden_side_effects: *id085
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-TAR-ABSOLUTE
+  scenario_ids: *id082
+  fixture: case=OPS-RS-TAR-ABSOLUTE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with the named unsafe tar entry; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-TAR-ABSOLUTE and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id083
+    cleanup_objects: *id084
+    forbidden_side_effects: *id085
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-TAR-DOTDOT
+  scenario_ids: *id082
+  fixture: case=OPS-RS-TAR-DOTDOT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with the named unsafe tar entry; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-TAR-DOTDOT and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id083
+    cleanup_objects: *id084
+    forbidden_side_effects: *id085
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-TAR-LINK
+  scenario_ids: *id082
+  fixture: case=OPS-RS-TAR-LINK; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with the named unsafe tar entry; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-TAR-LINK and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id083
+    cleanup_objects: *id084
+    forbidden_side_effects: *id085
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-TAR-DEVICE
+  scenario_ids: *id082
+  fixture: case=OPS-RS-TAR-DEVICE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with the named unsafe tar entry; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-TAR-DEVICE and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id083
+    cleanup_objects: *id084
+    forbidden_side_effects: *id085
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-INPUT-CHANGED
+  scenario_ids: *id082
+  fixture: case=OPS-RS-INPUT-CHANGED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=input package changed while private staging snapshot is copied; fault_or_race_setup=staged package checksum/schema/file/tar/input-race 全拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-INPUT-CHANGED and assert: staged package checksum/schema/file/tar/input-race 全拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id083
+    cleanup_objects: *id084
+    forbidden_side_effects: *id085
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-CONFIRM
+  scenario_ids: &id086
+  - A22
+  fixture: case=OPS-RS-CONFIRM; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=valid package with mismatched typed project confirmation; fault_or_race_setup=typed confirm/project 可在 Engine 前判定; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-CONFIRM and assert: typed confirm/project 可在 Engine 前判定.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id087 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id088 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-PROJECT
+  scenario_ids: *id086
+  fixture: case=OPS-RS-PROJECT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=valid package with mismatched typed project confirmation; fault_or_race_setup=typed confirm/project 可在 Engine 前判定; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-PROJECT and assert: typed confirm/project 可在 Engine 前判定.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 9
+    terminal_stage: package-validate
+    stage_plan: RSP
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id087
+    cleanup_objects: *id003
+    forbidden_side_effects: *id088
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-SOURCE-IMAGE
+  scenario_ids: &id089
+  - A22
+  fixture: case=OPS-RS-SOURCE-IMAGE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=source/runtime image/mount mismatch; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SOURCE-IMAGE and assert: source/runtime image/mount mismatch.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id090
+    - owner
+    cleanup_objects: *id056
+    forbidden_side_effects: &id091 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-SOURCE-MOUNT
+  scenario_ids: *id089
+  fixture: case=OPS-RS-SOURCE-MOUNT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=source/runtime image/mount mismatch; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SOURCE-MOUNT and assert: source/runtime image/mount mismatch.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id090
+    cleanup_objects: *id056
+    forbidden_side_effects: *id091
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-APP-ABSENT
+  scenario_ids: &id092
+  - A22
+  fixture: case=OPS-RS-APP-ABSENT; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=absent; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 对全部 unsupported Engine state 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-APP-ABSENT and assert: restore 对全部 unsupported Engine state 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id093
+    - owner
+    cleanup_objects: *id056
+    forbidden_side_effects: &id094 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-APP-CREATED
+  scenario_ids: *id092
+  fixture: case=OPS-RS-APP-CREATED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=created; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 对全部 unsupported Engine state 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-APP-CREATED and assert: restore 对全部 unsupported Engine state 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id093
+    cleanup_objects: *id056
+    forbidden_side_effects: *id094
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-APP-PAUSED
+  scenario_ids: *id092
+  fixture: case=OPS-RS-APP-PAUSED; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=paused; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 对全部 unsupported Engine state 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-APP-PAUSED and assert: restore 对全部 unsupported Engine state 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id093
+    cleanup_objects: *id056
+    forbidden_side_effects: *id094
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-APP-RESTARTING
+  scenario_ids: *id092
+  fixture: case=OPS-RS-APP-RESTARTING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=restarting; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 对全部 unsupported Engine state 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-APP-RESTARTING and assert: restore 对全部 unsupported Engine state 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id093
+    cleanup_objects: *id056
+    forbidden_side_effects: *id094
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-APP-REMOVING
+  scenario_ids: *id092
+  fixture: case=OPS-RS-APP-REMOVING; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=removing; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 对全部 unsupported Engine state 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-APP-REMOVING and assert: restore 对全部 unsupported Engine state 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id093
+    cleanup_objects: *id056
+    forbidden_side_effects: *id094
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-APP-DEAD
+  scenario_ids: *id092
+  fixture: case=OPS-RS-APP-DEAD; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=dead; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 对全部 unsupported Engine state 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-APP-DEAD and assert: restore 对全部 unsupported Engine state 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id093
+    cleanup_objects: *id056
+    forbidden_side_effects: *id094
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-APP-UNKNOWN
+  scenario_ids: *id092
+  fixture: case=OPS-RS-APP-UNKNOWN; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=unknown-or-inconsistent; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore 对全部 unsupported Engine state 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-APP-UNKNOWN and assert: restore 对全部 unsupported Engine state 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 5
+    terminal_stage: target-identity
+    stage_plan: RSP
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id093
+    cleanup_objects: *id056
+    forbidden_side_effects: *id094
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-BK-SELECTOR-REMOTE
+  scenario_ids: &id095
+  - A20
+  fixture: case=OPS-BK-SELECTOR-REMOTE; deployment_mode=compose-managed-db; selector=explicit remote Docker context rejected before Engine call; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup remote/env selector pre-Engine 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-SELECTOR-REMOTE and assert: backup remote/env selector pre-Engine 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id096 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id097 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-BK-SELECTOR-CONFLICT
+  scenario_ids: *id095
+  fixture: case=OPS-BK-SELECTOR-CONFLICT; deployment_mode=compose-managed-db; selector=explicit context plus forbidden selector environment conflict; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=new output leaf under an existing synthetic parent; no published package before action; fault_or_race_setup=backup remote/env selector pre-Engine 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/backup-compose.sh with explicit env/compose/context/project/output; inject/orchestrate OPS-BK-SELECTOR-CONFLICT and assert: backup remote/env selector pre-Engine 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id096
+    cleanup_objects: *id003
+    forbidden_side_effects: *id097
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-SELECTOR-REMOTE
+  scenario_ids: &id098
+  - A22
+  fixture: case=OPS-RS-SELECTOR-REMOTE; deployment_mode=compose-managed-db; selector=explicit remote Docker context rejected before Engine call; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore remote/env selector pre-Engine 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SELECTOR-REMOTE and assert: restore remote/env selector pre-Engine 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: &id099 []
+    cleanup_objects: *id003
+    forbidden_side_effects: &id100 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-SELECTOR-CONFLICT
+  scenario_ids: *id098
+  fixture: case=OPS-RS-SELECTOR-CONFLICT; deployment_mode=compose-managed-db; selector=explicit context plus forbidden selector environment conflict; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=restore remote/env selector pre-Engine 拒绝; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-SELECTOR-CONFLICT and assert: restore remote/env selector pre-Engine 拒绝.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 2
+    terminal_stage: endpoint-select
+    stage_plan: PFR
+    engine_call_policy: forbidden
+    target_mutation_allowed: false
+    required_lock_roles: *id099
+    cleanup_objects: *id003
+    forbidden_side_effects: *id100
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers: {}
+- case_id: OPS-RS-FAIL-DB-REPLACE
+  scenario_ids:
+  - A22
+  fixture: case=OPS-RS-FAIL-DB-REPLACE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=DB replace 失败，failure-stop 证明 app exited，data envelope 如实可读/缺失/不可读; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-FAIL-DB-REPLACE and assert: DB replace 失败，failure-stop 证明 app exited，data envelope 如实可读/缺失/不可读.'
+  oracle_class: restore-destructive-failure
+  expected:
+    exit_code: 10
+    terminal_stage: restore-db-replace
+    stage_plan: RSF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-FAIL-AVATAR-REPLACE
+  scenario_ids:
+  - A22
+  fixture: case=OPS-RS-FAIL-AVATAR-REPLACE; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=staged package with the named unsafe tar entry; fault_or_race_setup=avatar replace 失败，failure-stop 证明 app exited，data envelope 如实记录; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-FAIL-AVATAR-REPLACE and assert: avatar replace 失败，failure-stop 证明 app exited，data envelope 如实记录.'
+  oracle_class: restore-destructive-failure
+  expected:
+    exit_code: 10
+    terminal_stage: restore-avatar-replace
+    stage_plan: RSF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-FAIL-VERIFY
+  scenario_ids:
+  - A22
+  fixture: case=OPS-RS-FAIL-VERIFY; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=exact-generation verify 失败，failure-stop 证明 app exited，data envelope 如实记录; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-FAIL-VERIFY and assert: exact-generation verify 失败，failure-stop 证明 app exited，data envelope 如实记录.'
+  oracle_class: restore-destructive-failure
+  expected:
+    exit_code: 10
+    terminal_stage: restore-verify
+    stage_plan: RSF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-FAIL-START
+  scenario_ids:
+  - A22
+  fixture: case=OPS-RS-FAIL-START; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=data verify 通过但 start 失败，再 stop/inspect 到 exited，不报成功; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-FAIL-START and assert: data verify 通过但 start 失败，再 stop/inspect 到 exited，不报成功.'
+  oracle_class: restore-destructive-failure
+  expected:
+    exit_code: 10
+    terminal_stage: restore-start
+    stage_plan: RSF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-RS-FAIL-HEALTH
+  scenario_ids:
+  - A22
+  fixture: case=OPS-RS-FAIL-HEALTH; deployment_mode=compose-managed-db; selector=explicit synthetic local Unix Docker context with pinned host; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=complete five-file schema-v1 package from a prior synthetic generation; fault_or_race_setup=data verify/start 通过但 health 失败，再 stop/inspect 到 exited，不报成功; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-RS-FAIL-HEALTH and assert: data verify/start 通过但 health 失败，再 stop/inspect 到 exited，不报成功.'
+  oracle_class: restore-destructive-failure
+  expected:
+    exit_code: 10
+    terminal_stage: restore-health
+    stage_plan: RSF
+    engine_call_policy: target-operation
+    target_mutation_allowed: true
+    required_lock_roles:
+    - owner
+    cleanup_objects: *id050
+    forbidden_side_effects: []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+- case_id: OPS-LOCK-ALIAS-RS-BK
+  scenario_ids: &id101
+  - A22
+  fixture: case=OPS-LOCK-ALIAS-RS-BK; deployment_mode=compose-managed-db; selector=two explicit local Unix context/source aliases resolving to one Engine/project; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=首个 restore 持锁，alternate realpath 第二操作被拒; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-LOCK-ALIAS-RS-BK and assert: 首个 restore 持锁，alternate realpath 第二操作被拒.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: &id102
+    - owner
+    - contender
+    cleanup_objects: *id056
+    forbidden_side_effects: &id103 []
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+      contender: none
+- case_id: OPS-LOCK-ALIAS-RS-RS
+  scenario_ids: *id101
+  fixture: case=OPS-LOCK-ALIAS-RS-RS; deployment_mode=compose-managed-db; selector=two explicit local Unix context/source aliases resolving to one Engine/project; app_engine_state=running unless the named fault/race fixture overrides it; target_or_package=N/A (case does not consume or publish a backup package); fault_or_race_setup=首个 restore 持锁，alternate realpath 第二操作被拒; generation uses a unique synthetic project and immutable IDs where applicable.
+  action: 'Invoke ./scripts/restore-compose.sh with explicit env/compose/context/project/input and --confirm-project crm-v1-smoke; inject/orchestrate OPS-LOCK-ALIAS-RS-RS and assert: 首个 restore 持锁，alternate realpath 第二操作被拒.'
+  oracle_class: pre-mutation-reject
+  expected:
+    exit_code: 7
+    terminal_stage: lock-acquire
+    stage_plan: LCK
+    engine_call_policy: lock-metadata
+    target_mutation_allowed: false
+    required_lock_roles: *id102
+    cleanup_objects: *id056
+    forbidden_side_effects: *id103
+    backup_package_expectation: none
+    operation_cleanup_expected: pass
+    allowed_operation_removers:
+      owner: owner
+      contender: none

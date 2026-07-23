@@ -6,6 +6,8 @@ export type CustomerSelection = Pick<CustomerChoice, 'id' | 'display_name' | 'st
 
 const pageSize = 20
 
+export type CustomerPickerDirection = 'next' | 'previous'
+
 export function resolveCurrentCustomer(
 	options: CustomerChoice[],
 	value: string,
@@ -20,4 +22,31 @@ export async function loadVisibleCustomerPage(query: string, statuses: string, e
 		const visible = result.items.filter((item) => !excluded.has(item.id ?? '') && item.status !== 'merged')
 		if (visible.length > 0 || page * pageSize >= result.total || result.items.length === 0) return visible
 	}
+}
+
+export function nextCustomerPickerIndex(
+	activeIndex: number | null,
+	optionCount: number,
+	direction: CustomerPickerDirection,
+): number | null {
+	if (optionCount <= 0) return null
+	if (activeIndex === null || activeIndex < 0 || activeIndex >= optionCount) {
+		return direction === 'next' ? 0 : optionCount - 1
+	}
+	return direction === 'next'
+		? Math.min(activeIndex + 1, optionCount - 1)
+		: Math.max(activeIndex - 1, 0)
+}
+
+export function customerPickerActiveDescendant(
+	listboxID: string,
+	activeIndex: number | null,
+	optionCount: number,
+): string | undefined {
+	if (activeIndex === null || activeIndex < 0 || activeIndex >= optionCount) return undefined
+	return `${listboxID}-option-${activeIndex}`
+}
+
+export function customerPickerShouldClose(focusStillInside: boolean): boolean {
+	return !focusStillInside
 }

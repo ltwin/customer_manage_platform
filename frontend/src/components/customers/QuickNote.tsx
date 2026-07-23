@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ApiError, addCustomerNote } from '../../api/client'
+import { createNoteSubmitGate, noteInputAction } from './noteInteraction'
 
 type Props = {
   customerId: string
@@ -13,17 +14,27 @@ export default function QuickNote({ customerId, onSaved, onUnauthorized }: Props
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const submitGateRef = useRef(createNoteSubmitGate())
+
+  function cancelAndReturnFocus() {
+    setOpen(false)
+    setContent('')
+    setError(null)
+    requestAnimationFrame(() => triggerRef.current?.focus())
+  }
 
   async function submit() {
-    // in-flight 守护：Enter 连按不产生重复备注（review REV-002）。
-    if (saving) return
     setError(null)
     if (!content.trim()) return
+    if (!submitGateRef.current.tryStart()) return
     setSaving(true)
     try {
       await addCustomerNote(customerId, content.trim())
       setContent('')
       setOpen(false)
+      setFeedback('备注已保存')
       onSaved()
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -32,22 +43,28 @@ export default function QuickNote({ customerId, onSaved, onUnauthorized }: Props
       }
       setError(err instanceof Error ? err.message : '备注保存失败')
     } finally {
+      submitGateRef.current.finish()
       setSaving(false)
     }
   }
 
   if (!open) {
     return (
-      <button
-        className="btn btn-ghost"
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          setOpen(true)
-        }}
-      >
-        记备注
-      </button>
+      <span className="quick-note quick-note-closed" onClick={(event) => event.stopPropagation()}>
+        <button
+          ref={triggerRef}
+          className="btn btn-ghost"
+          type="button"
+          onClick={() => {
+            setError(null)
+            setFeedback(null)
+            setOpen(true)
+          }}
+        >
+          记备注
+        </button>
+        {feedback && <span className="note-feedback" role="status">{feedback}</span>}
+      </span>
     )
   }
 
@@ -59,16 +76,22 @@ export default function QuickNote({ customerId, onSaved, onUnauthorized }: Props
         value={content}
         placeholder="随手记一条…"
         autoFocus
-        onChange={(event) => setContent(event.target.value)}
+        onChange={(event) => {
+          setContent(event.target.value)
+          setError(null)
+        }}
         onKeyDown={(event) => {
-          // isComposing：中文输入法确认候选词的 Enter 不触发提交（review REV-003）。
-          if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+          const action = noteInputAction({
+            key: event.key,
+            isComposing: event.nativeEvent.isComposing,
+          })
+          if (action === 'submit') {
             event.preventDefault()
             void submit()
           }
-          if (event.key === 'Escape') {
-            setOpen(false)
-            setContent('')
+          if (action === 'cancel') {
+            event.preventDefault()
+            cancelAndReturnFocus()
           }
         }}
       />
@@ -80,7 +103,7 @@ export default function QuickNote({ customerId, onSaved, onUnauthorized }: Props
       >
         存
       </button>
-      {error && <span className="form-error">{error}</span>}
+      {error && <span className="form-error" role="alert">{error}</span>}
     </span>
   )
 }

@@ -5,6 +5,15 @@ import type { ChurnThreshold, Settings } from '../api/client'
 import DataExportCard from '../components/DataExportCard'
 import { useShell } from '../components/shellContext'
 import { openTelegramDeepLink } from '../components/telegramBinding'
+import StateNotice from '../components/StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  type PageReadState,
+} from '../components/pageReadState'
 
 const shootTypeLabels: Record<ChurnThreshold['shoot_type'], string> = {
   portrait: '写真',
@@ -15,9 +24,11 @@ const shootTypeLabels: Record<ChurnThreshold['shoot_type'], string> = {
 export default function SettingsPage() {
   const navigate = useNavigate()
   const { notify, retryTimezone } = useShell()
-  const [settings, setSettings] = useState<Settings | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [readState, setReadState] = useState<PageReadState<Settings>>({
+    kind: 'loading',
+    message: '正在加载设置',
+  })
+  const [reloadTick, setReloadTick] = useState(0)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [binding, setBinding] = useState(false)
@@ -42,11 +53,10 @@ export default function SettingsPage() {
   useEffect(() => clearPendingLink, [clearPendingLink])
 
   useEffect(() => {
-    setLoading(true)
-    setError(null)
+    setReadState((current) => beginPageRead(current, '正在加载设置', true))
     getSettings()
       .then((s) => {
-        setSettings(s)
+        setReadState(completePageRead(s, false, ''))
         setTimezone(s.timezone)
         setBirthdayLead(s.birthday_lead_days)
         setFollowUp(s.follow_up_after_days)
@@ -55,13 +65,17 @@ export default function SettingsPage() {
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           navigate('/login', { replace: true })
           return
         }
-        setError(err instanceof Error ? err.message : '加载设置失败')
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '加载设置失败',
+          () => setReloadTick((value) => value + 1),
+        ))
       })
-      .finally(() => setLoading(false))
-  }, [navigate])
+  }, [navigate, reloadTick])
 
   async function onBindTelegram() {
     clearPendingLink()
@@ -125,7 +139,7 @@ export default function SettingsPage() {
         digest_hour: digestHour,
         churn_thresholds: thresholds,
       })
-      setSettings(next)
+      setReadState(completePageRead(next, false, ''))
       notify('设置已保存')
       retryTimezone()
     } catch (err) {
@@ -140,8 +154,11 @@ export default function SettingsPage() {
   }
 
   const dataExportCard = <DataExportCard onUnauthorized={() => navigate('/login', { replace: true })} />
+  const presentation = pageReadPresentation(readState)
+  const settings = readyPageData(readState)
+  const settingsStale = readState.kind === 'ready' && readState.freshness === 'stale'
 
-  if (loading) {
+  if (!presentation.showReadyData || !settings) {
     return (
       <>
         <header className="topbar">
@@ -149,23 +166,7 @@ export default function SettingsPage() {
         </header>
         <main className="content settings-stack">
           {dataExportCard}
-          <div className="empty">加载中…</div>
-        </main>
-      </>
-    )
-  }
-
-  if (error || !settings) {
-    return (
-      <>
-        <header className="topbar">
-          <h1>设置</h1>
-        </header>
-        <main className="content settings-stack">
-          {dataExportCard}
-          <div className="form-error" role="alert">
-            {error ?? '无数据'}
-          </div>
+          {presentation.notice && <StateNotice {...presentation.notice} />}
         </main>
       </>
     )
@@ -182,6 +183,7 @@ export default function SettingsPage() {
 
       <main className="content settings-stack">
         {dataExportCard}
+        {presentation.notice && <StateNotice {...presentation.notice} />}
         <section className="card telegram-binding-card" aria-labelledby="telegramBindingTitle">
           <div>
             <h2 id="telegramBindingTitle">Telegram 每日经营摘要</h2>
@@ -275,7 +277,7 @@ export default function SettingsPage() {
           )}
 
           <div className="topbar-actions">
-            <button className="btn btn-primary" type="submit" disabled={saving}>
+            <button className="btn btn-primary" type="submit" disabled={saving || settingsStale}>
               {saving ? '保存中…' : '保存'}
             </button>
           </div>

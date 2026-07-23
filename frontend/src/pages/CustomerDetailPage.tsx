@@ -16,6 +16,16 @@ import { readPendingSchedule } from '../components/schedule/journal'
 import { accountToday } from '../components/schedule/timezone'
 import { useShell } from '../components/shellContext'
 import CustomerAvatar from '../components/customers/CustomerAvatar'
+import StateNotice from '../components/StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  terminalPageReadError,
+  type PageReadState,
+} from '../components/pageReadState'
 
 const statusLabels: Record<string, string> = {
   active: '活跃',
@@ -28,9 +38,12 @@ export default function CustomerDetailPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { notify, timezone } = useShell()
-  const [customer, setCustomer] = useState<CustomerDetail | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [readState, setReadState] = useState<PageReadState<CustomerDetail>>({
+    kind: 'loading',
+    message: '正在加载客户档案',
+  })
+  const [detailReloadTick, setDetailReloadTick] = useState(0)
+  const loadedCustomerIDRef = useRef('')
   const [editing, setEditing] = useState(false)
   const [merging, setMerging] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -48,42 +61,54 @@ export default function CustomerDetailPage() {
 
   const reload = useCallback(() => {
     if (!id) return
+    setReadState((current) => beginPageRead(current, '正在刷新客户档案', true))
     fetchCustomer(id)
-      .then(setCustomer)
+      .then((result) => setReadState(completePageRead(result, false, '')))
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           goLogin()
           return
         }
-        setActionError(err instanceof Error ? err.message : '档案刷新失败')
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '档案刷新失败',
+          () => setDetailReloadTick((value) => value + 1),
+        ))
       })
   }, [goLogin, id])
 
   useEffect(() => {
     if (!id) return
     let active = true
-    setLoading(true)
-    setError(null)
+    const preserveReady = loadedCustomerIDRef.current === id
+    loadedCustomerIDRef.current = id
+    setReadState((current) => beginPageRead(current, '正在加载客户档案', preserveReady))
     fetchCustomer(id)
       .then((result) => {
-        if (active) setCustomer(result)
+        if (active) setReadState(completePageRead(result, false, ''))
       })
       .catch((err: unknown) => {
         if (!active) return
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           goLogin()
           return
         }
-        setCustomer(null)
-        setError(err instanceof Error ? err.message : '客户档案加载失败')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
+        if (err instanceof ApiError && err.status === 404) {
+          setReadState(terminalPageReadError('没有找到这份客户档案'))
+          return
+        }
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '客户档案加载失败',
+          () => setDetailReloadTick((value) => value + 1),
+        ))
       })
     return () => {
       active = false
     }
-  }, [goLogin, id])
+  }, [detailReloadTick, goLogin, id])
 
   useEffect(() => {
     if (searchParams.get('tab') === 'orders') setActiveTab('orders')
@@ -174,30 +199,21 @@ export default function CustomerDetailPage() {
 		}
 	}
 
-  if (loading) {
-    return (
-      <>
-        <header className="topbar">
-          <div>
-            <div className="crumb"><Link to="/customers">客户</Link> / 档案</div>
-            <h1>加载中</h1>
-          </div>
-        </header>
-        <main className="content"><div className="empty">加载中</div></main>
-      </>
-    )
-  }
+  const presentation = pageReadPresentation(readState)
+  const customer = readyPageData(readState)
 
-  if (!customer) {
+  if (!presentation.showReadyData || !customer) {
     return (
       <>
         <header className="topbar">
           <div>
             <div className="crumb"><Link to="/customers">客户</Link> / 档案</div>
-            <h1>客户不存在</h1>
+            <h1>客户档案</h1>
           </div>
         </header>
-        <main className="content"><div className="empty">{error ?? '没有找到这份客户档案'}</div></main>
+        <main className="content">
+          {presentation.notice && <StateNotice {...presentation.notice} />}
+        </main>
       </>
     )
   }
@@ -232,6 +248,7 @@ export default function CustomerDetailPage() {
       </header>
 
       <main className="content">
+        {presentation.notice && <StateNotice {...presentation.notice} />}
         {actionError && <div className="form-error">{actionError}</div>}
         {isMerged && (
           <div className="form-error">

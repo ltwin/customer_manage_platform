@@ -3,48 +3,116 @@
 本文件由 `cs-onboard` 复制到 `.codestable/reference/agent-conventions.md`。
 需要独立 review、QA runner、acceptance auditor、功能验收或 goal driver 时读取。
 
-## Task Agent 选择规则
+## Task Agent gate
 
-`Task agent` 指为隔离 review、QA、audit、acceptance 或功能验收而启动的工作
-agent。选择顺序：
+`Task agent` 用于隔离 review、QA、audit、acceptance 或功能验收；Reviewer 的
+provider/model 与启动方式按宿主当前暴露的多 Agent 能力发现。
 
-1. Paseo subagent：首选；用户可见 agent id、状态、日志、权限和取消入口。
-2. 当前宿主原生 Codex / Claude Task / Agent：只有宿主暴露可查看的 run id / 状态 /
-   transcript 时使用。
-3. 都不可用或未获授权：记录限制，按对应 gate 的 fallback / owner-stop 处理。
+```haskell
+data TaskRole = Review | QA | Audit | Acceptance
+data Isolation = Heterogeneous | Independent
+data ReadOnlyControl = EnforcedReadOnly | VerifiedNoWrite
+data AgentCapability = AgentCapability HostAgentAdapter Isolation ReadOnlyControl
+data AgentConfig = Inherit | Explicit Provider Model Settings
+data AgentSelection
+  = Start AgentCapability AgentConfig
+  | SelectionNeedsOwnerApproval Reason
+  | SelectionBlocked Reason
+data AgentRun = NotStarted | Active AgentRef | Finished Findings | Failed Reason
+data OwnerApproval = ApproveLocalOnly
+data AgentDecision
+  = Launch AgentCapability AgentConfig
+  | Await AgentRef | MergeVerified Findings | LocalReview
+  | NeedOwnerApproval Reason | Blocked Reason
+data ReviewLane = IndependentLane | OwnerApprovedLocalLane
+data ReviewVerdict = Passed | ChangesRequested | ReviewBlocked Reason
 
-只给 Task agent 原始产物、审查范围和期望输出；不要泄露主 agent 的结论。主 agent 负责核验
-返回 findings，并负责最终状态写入。
+eligible :: AgentCapability -> Bool
+eligible c = separateContext c && observableRun c && readOnlyControlled c
 
-review gate（roadmap review、feature design review、implementation code review）在
-Task agent 可用时必须启动。赶时间、批量处理、主 agent 已自查或认为风险低，都不是
-local-only 降级理由。local-only 只在确无 Task agent 能力、provider 不可用且无法配置，
-或 owner 明确批准降级时有效；否则报告 `blocked` / `independent-review-pending`，
-不要写 `passed`。
+reviewRank :: AgentCapability -> Int
+reviewRank (AgentCapability _ Heterogeneous EnforcedReadOnly) = 0
+reviewRank (AgentCapability _ Heterogeneous VerifiedNoWrite)  = 1
+reviewRank (AgentCapability _ Independent EnforcedReadOnly)   = 2
+reviewRank (AgentCapability _ Independent VerifiedNoWrite)    = 3
 
-**启动 mode**：review / QA / audit / acceptance / 功能验收这类只读隔离 Task agent 用该
-provider 的 **plan / read-only 等价 mode** 启动——mode 表达的是只读审查意图，具体 modeId
-启动前按 provider capability 发现，不硬编码 mode 名（不同 provider 未必有同名 mode，例如
-Claude 有 plan mode、codex 只有 auto / full-access）；provider 没有只读等价 mode 时，记录
-降级并用严格只读 prompt + gate fallback 兜底。只读隔离最终以 provider sandbox / permission
-实际结果为准，不假设 mode 名本身保证文件隔离。一步到位，不要先用默认 mode 起一次再改 mode
-重起（同一 Task agent 重复创建）。Goal driver 例外：它执行实现落盘，按「Goal Driver 派发」
-用可写 mode。
+bestFit :: TaskRole -> AgentConfig -> [AgentCapability] -> Maybe AgentCapability
+bestFit Review config agents = headMaybe (sortOn reviewRank (matching config agents))
+bestFit _      config agents = headMaybe (matching config agents)
+
+selectTaskAgent :: TaskRole -> AgentEnv -> AgentSelection
+selectTaskAgent r e
+  | Just agent <- bestFit r config (filter eligible (hostAgentCapabilities r e))
+                                                = Start agent config
+  | isExplicit config                           = SelectionBlocked ExplicitConfigUnavailable
+  | otherwise                                   = SelectionNeedsOwnerApproval IndependentAgentUnavailable
+  where config = fromMaybe Inherit (attentionConfig r <|> ownerConfig r)
+
+reviewGate :: AgentSelection -> AgentRun -> Maybe OwnerApproval -> AgentDecision
+reviewGate _ (Finished findings) _ = MergeVerified findings
+reviewGate _ (Active ref) _ = Await ref
+reviewGate selection (Failed reason) (Just ApproveLocalOnly)
+  | explicitPinBlocksLocal selection = Blocked (ExplicitConfigRunFailed reason)
+  | otherwise                        = LocalReview
+reviewGate _ (Failed reason) _ = Blocked reason
+reviewGate (SelectionBlocked reason) NotStarted _ = Blocked reason
+reviewGate (SelectionNeedsOwnerApproval _) NotStarted (Just ApproveLocalOnly) = LocalReview
+reviewGate (SelectionNeedsOwnerApproval reason) NotStarted _ = NeedOwnerApproval reason
+reviewGate (Start agent config) NotStarted _ = Launch agent config
+
+explicitPinBlocksLocal :: AgentSelection -> Bool
+explicitPinBlocksLocal (Start _ config) = isExplicit config
+explicitPinBlocksLocal (SelectionBlocked ExplicitConfigUnavailable) = True
+explicitPinBlocksLocal _ = False
+
+toReviewLane :: AgentDecision -> Either Reason ReviewLane
+toReviewLane (MergeVerified _) = Right IndependentLane
+toReviewLane LocalReview = Right OwnerApprovedLocalLane
+toReviewLane (Launch _ _) = Left LaneNotStarted
+toReviewLane (Await _) = Left AgentLaneNotReturned
+toReviewLane (NeedOwnerApproval reason) = Left reason
+toReviewLane (Blocked reason) = Left reason
+
+reviewVerdict :: Either Reason ReviewLane -> Findings -> ReviewVerdict
+reviewVerdict (Left reason) _ = ReviewBlocked reason
+reviewVerdict (Right _) findings
+  | hasBlocking findings = ChangesRequested
+  | otherwise            = Passed
+```
+
+宿主能力可以来自原生 Agent、已安装的 MCP 或其他当前可用 adapter；skill 只依赖行为事实，
+不依赖 backend 产品名或工具名。候选必须有独立上下文、可观察的 id / 状态 / result，以及
+可核验的只读控制。宿主没有强制只读 mode 时，先记录 workspace baseline，完成后验证无写入，
+才可记为 `VerifiedNoWrite`。
+
+review 优先选择与主 agent provider 或 model family 不同的 `Heterogeneous` 候选；只有差异事实
+可证明时才这样标记，未知配置仍算 `Independent`。异构候选不可用不阻塞独立 review，继续使用
+隔离的同类 reviewer。prompt 不带主 agent 结论；findings 经本地事实核验后才写 verdict。
+
+`SelectionBlocked ExplicitConfigUnavailable` 表示 owner 显式 pin 的配置当前不可满足；已按显式
+配置启动但运行失败时同样由 `explicitPinBlocksLocal` 保留这个约束。`ApproveLocalOnly` 不覆盖
+上述配置事实，owner 需要先修改或清除显式配置再重新选择；共享 gate 的直接消费者也不得绕过。
+
+每轮 review 都调用同一 `selectTaskAgent` / `reviewGate`。批量、赶时间、已自查或自评低风险
+都不构成 `ApproveLocalOnly`；降级前按 `approval-conventions.md` 取得 owner 明确授权。
+`Launch` 成功后必须先持久化宿主返回的 `AgentRef` 为 `Active ref`；只有该状态可恢复为
+`Await ref`。缺 id 的旧 blocked/pending 状态不能证明已有运行，不得据此等待、消费结果或重复启动。
 
 ## Task Agent 生命周期
 
-主 agent 启动 Task agent 后记录 `agent_id` / `run_id`、用途和查看方式。Task agent 返回
-final result 后，先消费并落盘结果，再调用宿主提供的 `close_agent` 或等价关闭动作。关闭失败
-不改变已核验 verdict，但必须在报告里记录 warning、agent 标识和人工清理提示。
+```haskell
+data CreateRecovery = RetryCreate | CreateBlocked Reason
 
-不要关闭 still-running、pending、permission-needed、结果尚未消费、或仍需用户查看权限请求的
-Task agent。用户取消、owner-stop 或 handoff 时，按宿主取消 / 关闭语义处理，并在报告写明
-哪些 agent 仍保留给用户接管。
+mayClose :: AgentRunState -> Bool
+mayClose s = terminal s && resultConsumed s && not (permissionPending s)
 
-不要预先批量清理旧 agent。只有 create / spawn 因 `agent thread limit reached`、capacity
-exhausted 或等价容量错误失败时，才执行容量恢复：列出当前会话中已完成且结果已消费或不再需要的
-旧 Task agent，按最老优先关闭一小批，再重试本次 create / spawn 一次。仍失败时才进入该
-gate 的 `blocked` / owner-stop，并报告已关闭哪些 agent、仍保留哪些 agent 和重试结果。
+recoverCreate :: Reason -> CreateRecovery
+recoverCreate CapacityExhausted = closeOldest mayClose >> RetryCreate
+recoverCreate reason            = CreateBlocked reason
+```
+
+记录 agent id、用途与查看方式；关闭失败只记 warning，不改已核验 verdict。用户取消、
+owner-stop 或 handoff 时保留未消费/待授权 agent，交给用户接管。
 
 ## Goal Driver 派发
 
@@ -52,22 +120,19 @@ gate 的 `blocked` / owner-stop，并报告已关闭哪些 agent、仍保留哪�
 reviewer，不批准 design；它只按 goal 包协议执行 implementation / review / QA /
 acceptance，并把证据写回仓库。
 
-启动前置：
+Goal driver 需要可写、可观察，并且能在自身执行环境内再次启动独立 reviewer。宿主 adapter
+只要满足这些行为事实即可参与选择。
 
-- goal 包已落盘，含 goal-plan、goal-state、goal-protocol 和可粘贴 `/goal` 指令。
-- 用户已确认对应 design gate：单 feature 是 feature design；epic 是 roadmap 和全部子
-  feature design。
-- 当前工作区基线可追踪；goal-state 记录 baseline，协议写明 complete / handoff 标记。
+```haskell
+data DriverDecision = StartHostDriver | PrintGoal Command | DriverBlocked Reason
 
-选择顺序：
-
-1. Paseo subagent：首选，用户能看见并接管长程执行。
-2. 宿主原生 Task / Agent：只有同时满足两条才可用：
-   - 宿主显式暴露用户可见的 run id、状态、日志、取消或最终 transcript。
-   - 宿主显式支持 driver 在其运行环境内再启动独立 Task agent reviewer；review gate
-     必须能跑，不能靠 driver 自审。
-3. 任一条件不能确认、driver 不可见或派发失败：不要静默后台运行，直接回退打印 fenced
-   `/goal`，让用户粘贴到新 agent 会话。
+selectGoalDriver :: GoalPackageState -> AgentEnv -> DriverDecision
+selectGoalDriver s e
+  | not (goalPackagePersisted s && designApproved s && baselineTracked s)
+                                                  = DriverBlocked GoalPackageNotReady
+  | visibleHostDriver e && canSpawnReviewer e     = StartHostDriver
+  | otherwise                                     = PrintGoal "/goal"
+```
 
 派发 prompt 必须使用 goal 包协议生成的同一条 literal `/goal` 指令作为 driver 初始任务。
 不要改写成普通“执行/实现这个 feature”的自然语言任务；那会绕开 goal 模式接管语义，导致
@@ -75,7 +140,7 @@ driver 在 implementation / review / QA / acceptance 普通 checkpoint 被截停
 指令本身外，只能附加查看方式、agent id 写回要求和 complete / handoff 标记说明。
 
 派发成功后立即把 driver 形态与标识写回对应 `goal-state.yaml`（`driver_kind:
-paseo|native`、`driver_id`）。重入时先读 goal-state：状态为 running 且该 driver 仍可见时，
+host-agent`、`driver_id`）。重入时先读 goal-state：状态为 running 且该 driver 仍可见时，
 汇报进度和查看方式，不重复派发；driver 已不可见时，以仓库事实修正 state，再续跑或重派。
 driver 完成或 handoff 且结果已被主流程消费后，按 Task Agent 生命周期关闭。
 

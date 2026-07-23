@@ -14,6 +14,15 @@ import type {
   DashboardUnpaidOrder,
 } from '../api/client'
 import { useShell } from '../components/shellContext'
+import StateNotice from '../components/StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  type PageReadState,
+} from '../components/pageReadState'
 
 const reminderTypeLabel: Record<DashboardReminder['type'], string> = {
   birthday: '生日',
@@ -80,25 +89,29 @@ function slotTitle(slot: DashboardSlot): string {
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { notify, timezone } = useShell()
-  const [data, setData] = useState<Dashboard | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [readState, setReadState] = useState<PageReadState<Dashboard>>({
+    kind: 'loading',
+    message: '正在加载仪表盘',
+  })
   const [actionId, setActionId] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
 
   const load = useCallback(() => {
-    setLoading(true)
-    setError(null)
+    setReadState((current) => beginPageRead(current, '正在加载仪表盘', true))
     fetchDashboard()
-      .then(setData)
+      .then((result) => setReadState(completePageRead(result, false, '')))
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           navigate('/login', { replace: true })
           return
         }
-        setError(err instanceof Error ? err.message : '加载失败')
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '仪表盘加载失败',
+          () => setTick((value) => value + 1),
+        ))
       })
-      .finally(() => setLoading(false))
   }, [navigate])
 
   useEffect(() => {
@@ -145,23 +158,13 @@ export default function DashboardPage() {
     }
   }
 
-  if (loading && !data) {
-    return (
-      <main className="content">
-        <div className="empty">加载中…</div>
-      </main>
-    )
-  }
+  const presentation = pageReadPresentation(readState)
+  const data = readyPageData(readState)
 
-  if (error && !data) {
+  if (!presentation.showReadyData) {
     return (
       <main className="content">
-        <div className="form-error" role="alert">
-          {error}
-          <button className="btn btn-sm" type="button" onClick={refetch}>
-            重试
-          </button>
-        </div>
+        {presentation.notice && <StateNotice {...presentation.notice} />}
       </main>
     )
   }
@@ -194,6 +197,7 @@ export default function DashboardPage() {
       </header>
 
       <main className="content">
+        {presentation.notice && <StateNotice {...presentation.notice} />}
         <div className="stat-grid">
           <StatCard tone="danger" label="待办提醒" value={String(due.length)} delta="近 3 天 · 含逾期提醒" />
           <StatCard tone="accent" label="今日档期" value={String(slots.length)} delta="拍摄 / 预留 / 占用集中查看" />

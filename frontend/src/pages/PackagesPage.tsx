@@ -21,6 +21,15 @@ import {
   packagePriceYuanToCents,
   validatePackagePriceYuan,
 } from './packagePrice'
+import StateNotice from '../components/StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  type PageReadState,
+} from '../components/pageReadState'
 
 type PackageItem = PackageListResponse['items'][number]
 type NumberDraft = number | ''
@@ -82,12 +91,13 @@ export default function PackagesPage() {
   const navigate = useNavigate()
   const { notify } = useShell()
   const [status, setStatus] = useState<PackageListStatus & string>('active')
-  const [items, setItems] = useState<PackageItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
+  const [readState, setReadState] = useState<PageReadState<{
+    items: PackageItem[]
+    total: number
+    page: number
+  }>>({ kind: 'loading', message: '正在加载套系' })
   const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<PackageItem | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -98,7 +108,13 @@ export default function PackagesPage() {
   const [actionId, setActionId] = useState<string | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
   const statusRef = useRef(status)
+  const loadedStatusRef = useRef<PackageListStatus & string | null>(null)
   const loadMoreRequestSeq = useRef(0)
+  const presentation = pageReadPresentation(readState)
+  const readData = readyPageData(readState)
+  const items = readData?.items ?? []
+  const total = readData?.total ?? 0
+  const page = readData?.page ?? 1
 
   const invalidateLoadMore = useCallback(() => {
     loadMoreRequestSeq.current += 1
@@ -112,28 +128,31 @@ export default function PackagesPage() {
   useEffect(() => {
     let active = true
     invalidateLoadMore()
-    setLoading(true)
-    setError(null)
-    setItems([])
-    setTotal(0)
-    setPage(1)
+    const preserveReady = loadedStatusRef.current === status
+    loadedStatusRef.current = status
+    setReadState((current) => beginPageRead(current, '正在加载套系', preserveReady))
+    setActionError(null)
     listPackages({ status, page: 1, pageSize: packagePageSize })
       .then((result) => {
         if (!active) return
-        setItems(result.items)
-        setTotal(result.total)
-        setPage(1)
+        setReadState(completePageRead(
+          { items: result.items, total: result.total, page: 1 },
+          result.items.length === 0,
+          `${statusFilters.find(([key]) => key === status)?.[1] ?? '当前筛选'}下暂无套系`,
+        ))
       })
       .catch((err: unknown) => {
         if (!active) return
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           goLogin()
           return
         }
-        setError(err instanceof Error ? err.message : '套系列表加载失败')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '套系列表加载失败',
+          () => setReloadTick((tick) => tick + 1),
+        ))
       })
     return () => {
       active = false
@@ -218,20 +237,30 @@ export default function PackagesPage() {
     const requestStillCurrent = () =>
       loadMoreRequestSeq.current === requestSeq && statusRef.current === requestStatus
     setLoadingMore(true)
-    setError(null)
+    setActionError(null)
     try {
       const result = await listPackages({ status: requestStatus, page: nextPage, pageSize: packagePageSize })
       if (!requestStillCurrent()) return
-      setItems((current) => [...current, ...result.items])
-      setTotal(result.total)
-      setPage(nextPage)
+      setReadState((current) => {
+        const data = readyPageData(current)
+        if (!data) return current
+        return completePageRead({
+          items: [...data.items, ...result.items],
+          total: result.total,
+          page: nextPage,
+        }, false, '')
+      })
     } catch (err) {
       if (!requestStillCurrent()) return
       if (err instanceof ApiError && err.status === 401) {
         goLogin()
         return
       }
-      setError(err instanceof Error ? err.message : '加载更多失败')
+      setReadState((current) => failPageRead(
+        current,
+        err instanceof Error ? err.message : '加载更多失败，显示上次成功数据',
+        () => { void loadMorePackages() },
+      ))
     } finally {
       if (requestStillCurrent()) setLoadingMore(false)
     }
@@ -279,7 +308,7 @@ export default function PackagesPage() {
   async function changeStatus(pkg: PackageItem, next: 'active' | 'archived') {
     if (!pkg.id) return
     setActionId(pkg.id)
-    setError(null)
+    setActionError(null)
     try {
       await updatePackage(pkg.id, { status: next })
       notify(next === 'active' ? '已重新上架' : '已下架')
@@ -289,7 +318,7 @@ export default function PackagesPage() {
         goLogin()
         return
       }
-      setError(err instanceof Error ? err.message : '操作失败')
+      setActionError(err instanceof Error ? err.message : '操作失败')
     } finally {
       setActionId(null)
     }
@@ -298,7 +327,7 @@ export default function PackagesPage() {
   async function confirmDelete() {
     if (!deleteTarget?.id) return
     setActionId(deleteTarget.id)
-    setError(null)
+    setActionError(null)
     setDeleteError(null)
     try {
       await deletePackage(deleteTarget.id)
@@ -344,7 +373,8 @@ export default function PackagesPage() {
           </div>
         </div>
 
-        {error && <div className="form-error">{error}</div>}
+        {actionError && <div className="form-error" role="alert">{actionError}</div>}
+        {presentation.notice && <StateNotice {...presentation.notice} />}
 
         <div className="mode-hint">
           <div className="m"><b>按时长</b>基础价对应约定时长，超时另计</div>
@@ -352,11 +382,7 @@ export default function PackagesPage() {
           <div className="m"><b>一口价</b>打包价含棚租/灯光等固定成本</div>
         </div>
 
-        {loading ? (
-          <div className="empty">加载中</div>
-        ) : items.length === 0 ? (
-          <div className="empty">暂无套系</div>
-        ) : (
+        {presentation.showReadyData && (
           <>
             <div className="pkg-grid">
               {items.map((pkg) => {

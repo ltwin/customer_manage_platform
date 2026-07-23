@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ApiError, addCustomerNote } from '../../api/client'
 import type { CustomerDetail } from '../../api/client'
+import { createNoteSubmitGate, noteInputAction } from './noteInteraction'
 
 type Props = {
   customer: CustomerDetail
@@ -13,17 +14,19 @@ export default function NotesPanel({ customer, onChanged, onUnauthorized }: Prop
   const [content, setContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const submitGateRef = useRef(createNoteSubmitGate())
   const readonly = customer.status === 'merged'
 
   async function submit() {
-    // in-flight 守护：Enter 连按不产生重复备注（review REV-002）。
-    if (saving) return
     setError(null)
     if (!content.trim()) return
+    if (!submitGateRef.current.tryStart()) return
     setSaving(true)
     try {
       await addCustomerNote(customer.id ?? '', content.trim())
       setContent('')
+      setFeedback('备注已保存')
       onChanged()
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -32,6 +35,7 @@ export default function NotesPanel({ customer, onChanged, onUnauthorized }: Prop
       }
       setError(err instanceof Error ? err.message : '备注保存失败')
     } finally {
+      submitGateRef.current.finish()
       setSaving(false)
     }
   }
@@ -47,10 +51,19 @@ export default function NotesPanel({ customer, onChanged, onUnauthorized }: Prop
             rows={2}
             maxLength={500}
             value={content}
-            onChange={(event) => setContent(event.target.value)}
+            onChange={(event) => {
+              setContent(event.target.value)
+              setError(null)
+              setFeedback(null)
+            }}
             onKeyDown={(event) => {
-              // isComposing：中文输入法确认候选词的 Enter 不触发提交（review REV-003）。
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              const action = noteInputAction({
+                key: event.key,
+                shiftKey: event.shiftKey,
+                isComposing: event.nativeEvent.isComposing,
+                multiline: true,
+              })
+              if (action === 'submit') {
                 event.preventDefault()
                 void submit()
               }
@@ -68,7 +81,8 @@ export default function NotesPanel({ customer, onChanged, onUnauthorized }: Prop
           </div>
         </div>
       )}
-      {error && <div className="form-error">{error}</div>}
+      {error && <div className="form-error" role="alert">{error}</div>}
+      {feedback && <div className="note-feedback" role="status">{feedback}</div>}
       {customer.notes.length === 0 ? (
         <div className="empty">暂无备注</div>
       ) : (

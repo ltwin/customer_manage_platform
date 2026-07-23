@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ApiError,
@@ -9,6 +9,15 @@ import {
 } from '../api/client'
 import type { Reminder, ReminderStatus, ScanRemindersResult } from '../api/client'
 import { useShell } from '../components/shellContext'
+import StateNotice from '../components/StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  type PageReadState,
+} from '../components/pageReadState'
 
 const statusFilters: Array<[ReminderStatus | 'all', string]> = [
   ['pending', '待办'],
@@ -28,35 +37,44 @@ export default function RemindersPage() {
   const navigate = useNavigate()
   const { notify } = useShell()
   const [status, setStatus] = useState<ReminderStatus | 'all'>('pending')
-  const [items, setItems] = useState<Reminder[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [readState, setReadState] = useState<PageReadState<{ items: Reminder[]; total: number }>>({
+    kind: 'loading',
+    message: '正在加载提醒',
+  })
   const [actionId, setActionId] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
   const [scanResult, setScanResult] = useState<ScanRemindersResult | null>(null)
   const [tick, setTick] = useState(0)
+  const loadedStatusRef = useRef<ReminderStatus | 'all' | null>(null)
 
   const load = useCallback(() => {
-    setLoading(true)
-    setError(null)
+    const preserveReady = loadedStatusRef.current === status
+    loadedStatusRef.current = status
+    setReadState((current) => beginPageRead(current, '正在加载提醒', preserveReady))
     listReminders({
       status: status === 'all' ? undefined : status,
       page: 1,
       pageSize: 50,
     })
       .then((res) => {
-        setItems(res.items)
-        setTotal(res.total)
+        setReadState(completePageRead(
+          { items: res.items, total: res.total },
+          res.items.length === 0,
+          `${statusFilters.find(([key]) => key === status)?.[1] ?? '当前筛选'}下暂无提醒`,
+        ))
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           navigate('/login', { replace: true })
           return
         }
-        setError(err instanceof Error ? err.message : '加载失败')
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '提醒加载失败',
+          () => setTick((value) => value + 1),
+        ))
       })
-      .finally(() => setLoading(false))
   }, [navigate, status])
 
   useEffect(() => {
@@ -100,6 +118,11 @@ export default function RemindersPage() {
     }
   }
 
+  const presentation = pageReadPresentation(readState)
+  const data = readyPageData(readState)
+  const items = data?.items ?? []
+  const total = data?.total ?? 0
+
   return (
     <>
       <header className="topbar">
@@ -135,17 +158,8 @@ export default function RemindersPage() {
           </div>
         )}
 
-        {loading && <div className="empty">加载中…</div>}
-        {error && (
-          <div className="form-error" role="alert">
-            {error}
-            <button className="btn btn-sm" type="button" onClick={() => setTick((n) => n + 1)}>
-              重试
-            </button>
-          </div>
-        )}
-        {!loading && !error && items.length === 0 && <div className="empty">暂无提醒</div>}
-        {!loading && !error && items.length > 0 && (
+        {presentation.notice && <StateNotice {...presentation.notice} />}
+        {presentation.showReadyData && items.length > 0 && (
           <section className="card">
             <ul className="reminder-list">
               {items.map((item) => (

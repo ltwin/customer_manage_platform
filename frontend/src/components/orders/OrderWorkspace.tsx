@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiError,
   createOrder,
@@ -49,6 +49,15 @@ import {
 } from '../../pages/packagePrice'
 import CustomerAvatar from '../customers/CustomerAvatar'
 import CustomerPicker from '../customers/CustomerPicker'
+import StateNotice from '../StateNotice'
+import {
+  beginPageRead,
+  completePageRead,
+  failPageRead,
+  pageReadPresentation,
+  readyPageData,
+  type PageReadState,
+} from '../pageReadState'
 
 type OrderStatusValue = NonNullable<OrderStatus> & string
 type StatusFilter = OrderStatusValue | ''
@@ -84,6 +93,7 @@ interface ProgressTarget {
 
 const orderPageSize = 30
 const optionPageSize = 100
+const emptyOrderItems: OrderListItem[] = []
 
 const statusOrder: OrderStatusValue[] = [
   'consulting',
@@ -139,14 +149,15 @@ export default function OrderWorkspace({
   const navigate = useNavigate()
 	const { notify, timezone } = useShell()
   const fixedCustomerId = customer?.id ?? ''
-  const [items, setItems] = useState<OrderListItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
+  const [readState, setReadState] = useState<PageReadState<{
+    items: OrderListItem[]
+    total: number
+    page: number
+  }>>({ kind: 'loading', message: '正在加载订单' })
   const [status, setStatus] = useState<StatusFilter>('')
   const [unpaidOnly, setUnpaidOnly] = useState(false)
-  const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [errorAction, setErrorAction] = useState<{ href: string; label: string } | null>(null)
   const [reloadTick, setReloadTick] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -166,6 +177,13 @@ export default function OrderWorkspace({
   const [failedSchedulePending, setFailedSchedulePending] = useState<PendingScheduleFlow | null>(null)
   const [knownOrderInMemory, setKnownOrderInMemory] = useState<string | null>(null)
   const [scheduleIdempotencyConflict, setScheduleIdempotencyConflict] = useState(false)
+  const loadedRequestKeyRef = useRef('')
+  const presentation = pageReadPresentation(readState)
+  const readData = readyPageData(readState)
+  const items = readData?.items ?? emptyOrderItems
+  const total = readData?.total ?? 0
+  const page = readData?.page ?? 1
+  const loading = readState.kind === 'loading'
 
   const goLogin = useCallback(() => {
     navigate('/login', { replace: true })
@@ -186,33 +204,37 @@ export default function OrderWorkspace({
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setError(null)
+    const requestKey = JSON.stringify({ focusOrderId, requestParams })
+    const preserveReady = loadedRequestKeyRef.current === requestKey
+    loadedRequestKeyRef.current = requestKey
+    setReadState((current) => beginPageRead(current, '正在加载订单', preserveReady))
+    setActionError(null)
     setErrorAction(null)
-    setItems([])
-    setTotal(0)
-    setPage(1)
     const load = focusOrderId
       ? loadThroughOrder(focusOrderId, fixedCustomerId)
       : listOrders(requestParams).then((result) => ({ ...result, found: true, page: 1 }))
     load
       .then((result) => {
         if (!active) return
-        setItems(result.items)
-        setTotal(result.total)
-        setPage(result.page)
+        setReadState(completePageRead(
+          { items: result.items, total: result.total, page: result.page },
+          result.items.length === 0,
+          '当前筛选下暂无订单',
+        ))
         setFocusMissing(!result.found)
       })
       .catch((err: unknown) => {
         if (!active) return
         if (err instanceof ApiError && err.status === 401) {
+          setReadState({ kind: 'unauthorized' })
           goLogin()
           return
         }
-        setError(err instanceof Error ? err.message : '订单加载失败')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
+        setReadState((current) => failPageRead(
+          current,
+          err instanceof Error ? err.message : '订单加载失败',
+          () => setReloadTick((tick) => tick + 1),
+        ))
       })
     return () => {
       active = false
@@ -237,11 +259,11 @@ export default function OrderWorkspace({
     try {
       const { draft: context, pending: matchingPending } = readScheduleBackfillContext(scheduleDraftId)
       if (!context || (fixedCustomerId && context.customer_id !== fixedCustomerId)) {
-        setError('排期补录草稿已过期或不属于当前客户')
+        setActionError('排期补录草稿已过期或不属于当前客户')
         return
       }
       if (!timezone) {
-        setError('账号时区不可用，暂不能恢复历史补录')
+        setActionError('账号时区不可用，暂不能恢复历史补录')
         return
       }
       setScheduleContext(context)
@@ -260,7 +282,7 @@ export default function OrderWorkspace({
       setFormError(matchingPending && pendingScheduleExpired(matchingPending) ? '恢复记录已超过 24 小时，请人工核对后再放弃' : null)
       setDialogOpen(true)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : '排期补录草稿读取失败')
+      setActionError(reason instanceof Error ? reason.message : '排期补录草稿读取失败')
     }
   }, [fixedCustomerId, scheduleDraftId, scheduleMode, timezone])
 
@@ -294,19 +316,29 @@ export default function OrderWorkspace({
   async function loadMore() {
     const nextPage = page + 1
     setLoadingMore(true)
-    setError(null)
+    setActionError(null)
     setErrorAction(null)
     try {
       const result = await listOrders({ ...requestParams, page: nextPage })
-      setItems((current) => [...current, ...result.items])
-      setTotal(result.total)
-      setPage(nextPage)
+      setReadState((current) => {
+        const data = readyPageData(current)
+        if (!data) return current
+        return completePageRead({
+          items: [...data.items, ...result.items],
+          total: result.total,
+          page: nextPage,
+        }, false, '')
+      })
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         goLogin()
         return
       }
-      setError(err instanceof Error ? err.message : '加载更多失败')
+      setReadState((current) => failPageRead(
+        current,
+        err instanceof Error ? err.message : '加载更多失败，显示上次成功数据',
+        () => { void loadMore() },
+      ))
     } finally {
       setLoadingMore(false)
     }
@@ -462,7 +494,7 @@ export default function OrderWorkspace({
 
   async function applyUpdate(order: OrderListItem, body: UpdateOrderBody, message: string) {
     setActionId(order.id)
-    setError(null)
+    setActionError(null)
     setErrorAction(null)
     try {
       await updateOrder(order.id, body)
@@ -473,7 +505,7 @@ export default function OrderWorkspace({
         goLogin()
         return
       }
-      setError(err instanceof Error ? err.message : '操作失败')
+      setActionError(err instanceof Error ? err.message : '操作失败')
     } finally {
       setActionId(null)
     }
@@ -482,15 +514,15 @@ export default function OrderWorkspace({
 	function requestProgress(order: OrderListItem, next: OrderStatusValue) {
     setErrorAction(null)
     if (next === 'closed' && !order.balance_paid) {
-      setError('完结前需要先标记尾款')
+      setActionError('完结前需要先标记尾款')
       return
     }
 		if (next === 'shot' || next === 'delivered') {
 			if (!timezone) {
-				setError('账号时区不可用，暂不能写入日期')
+				setActionError('账号时区不可用，暂不能写入日期')
 				return
 			}
-			setError(null)
+			setActionError(null)
 			setProgressTarget({ order, status: next, date: accountToday(timezone) })
       return
     }
@@ -500,7 +532,7 @@ export default function OrderWorkspace({
 	function confirmProgress() {
 		if (!progressTarget) return
 		if (!timezone || !isValidAccountDate(progressTarget.date, timezone)) {
-      setError('请选择有效日期')
+      setActionError('请选择有效日期')
       return
     }
     const body: UpdateOrderBody = { status: progressTarget.status }
@@ -521,7 +553,7 @@ export default function OrderWorkspace({
   async function confirmDelete() {
     if (!deleteTarget) return
     setActionId(deleteTarget.id)
-    setError(null)
+    setActionError(null)
     setErrorAction(null)
     try {
       await deleteOrder(deleteTarget.id)
@@ -534,7 +566,7 @@ export default function OrderWorkspace({
         return
       }
       setErrorAction(err instanceof ApiError ? orderInUseScheduleAction(err, timezone) : null)
-      setError(err instanceof Error ? err.message : '删除失败')
+      setActionError(err instanceof Error ? err.message : '删除失败')
     } finally {
       setActionId(null)
     }
@@ -577,19 +609,16 @@ export default function OrderWorkspace({
         <button className="btn btn-primary" type="button" onClick={openCreate}>＋ 新建订单</button>
       </div>
 
-	      {error && (
-          <div className="form-error">
-            {error}
+	      {actionError && (
+          <div className="form-error" role="alert">
+            {actionError}
             {errorAction && <> <Link to={errorAction.href}>{errorAction.label}</Link></>}
           </div>
         )}
 	      {focusMissing && <div className="form-error">目标订单已不存在，当前客户上下文仍保留。</div>}
+	      {presentation.notice && <StateNotice {...presentation.notice} />}
 
-      {loading ? (
-        <div className="empty">加载中</div>
-      ) : items.length === 0 ? (
-        <div className="empty">暂无订单</div>
-      ) : (
+      {presentation.showReadyData && (
         <>
           <div className="order-list">
             {items.map((order) => (

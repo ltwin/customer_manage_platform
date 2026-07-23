@@ -25,6 +25,36 @@ evidence、consequence 和 next action，就可以满足此规则。例如：
 
 需要上下文的决策，不要只问裸多选题。
 
+## Spec
+
+```haskell
+data ApprovalTrigger
+  = InterviewCheckpoint | RouteChoice | ReviewAuthorization
+  | RuntimeOverride | GateOverride | DestructiveAction | SecretUse
+  | ExternalPurchase | MergeOrDeploy | RiskAcceptance | BlockerDecision
+  | RepairOrDeferDecision
+data ApprovalStatus = Pending | Approved | Rejected | Superseded
+data ApprovalSurface = CanonicalStageReport Path | ApprovalReport Path | NeedUnitIdentity
+data ApprovalRef = ApprovalRef Path DecisionId
+
+selectSurface :: Unit -> Maybe StageReport -> ApprovalSurface
+selectSurface unit stageReport
+  | coversDecisionContract stageReport = CanonicalStageReport (path stageReport)
+  | Just path <- approvalPath unit      = ApprovalReport path
+  | otherwise                          = NeedUnitIdentity
+
+recordAnswer :: ApprovalReport -> OwnerAnswer -> Date -> ApprovalReport
+recordAnswer report answer date = report
+  { status = decisionStatus answer
+  , decisionHistory = appendDecision answer date (decisionHistory report)
+  , pendingSections = nextDecisionOrEmpty report answer
+  }
+
+approvalRefValid :: Unit -> ApprovalReport -> ApprovalRef -> Bool
+approvalRefValid unit report (ApprovalRef path decision) =
+  path == unit / "approval-report.md" && namedApproval report decision == Approved
+```
+
 正文语言遵守 `.codestable/attention.md` 的报告语言策略。若 attention 没有报告语言策略，
 使用 owner 当前对话语言。标题名保持稳定，便于 agent 可靠解析。
 
@@ -45,14 +75,8 @@ evidence、consequence 和 next action，就可以满足此规则。例如：
 
 ## 触发条件
 
-以下情况写 `approval-report.md`：
-
-- 答案会改变 route、scope 或 next work 的 interview / grill checkpoint。
-- 在多个可行 workflow 或 canonical spec 之间做 route choice。
-- review authorization、implementation Task agent authorization 或 inline-review fallback。
-- 执行环境 override、gate override、破坏性操作、secrets、外部购买、merge、deploy 或风险接受。
-- blocker / owner-stop 决策。
-- 选择要修复、延期、丢弃、迁移或修复历史文档的内容。
+命中任一 `ApprovalTrigger` 就调用 `selectSurface`。已有 canonical stage report 只有完整包含
+decision、互斥 options、recommendation、tradeoffs、evidence、consequence 和 next action 时才可复用。
 
 ## 模板
 
@@ -62,6 +86,8 @@ doc_type: approval-report
 unit: {unit path or slug}
 status: pending
 reason: {interview | route-choice | review-authorization | risk | merge | blocker | other}
+approvals: {} # 可被 runtime 消费的命名决策，例如 goal-acceptance: approved
+approval_groups: {} # 一次 owner answer 原子覆盖多个 named decision 时记录 group/status/confirmation_id/decisions
 created_at: YYYY-MM-DD
 ---
 
@@ -90,14 +116,19 @@ created_at: YYYY-MM-DD
 推荐选项。`Non-Automatic Actions` 必须说明哪些动作不会自动发生，例如 commit、merge、
 deploy、重写长期 specs 或接受风险。
 
+需要被 runtime 消费的授权使用 `approval-report.md#<decision-id>`；fragment 是 `approvals`
+中的 key，不是聊天标签。只有同 unit 的 canonical 文件且对应值为 `approved` 才有效；状态字段
+只写 `approved`、ref 非空、路径越界或文件缺失都不能放行。
+
+一次 owner answer 同时授权多个仍需分别核验的 named decision 时，使用 `approval_groups.<group-id>`
+记录 `status`、唯一 `confirmation_id` 和完整 `decisions` 列表，并用一次 atomic replace 同时更新 group
+与所有成员 decision。该 approval report 是 durable commit point；下游 state 只缓存相同
+`confirmation_id` 和各自 ref，可以从 group 幂等修复，但不能反向用 state 构造 owner approval。
+
 ## Approval 之后
 
-owner 回答后：
-
-1. 把 `status` 更新为 `approved`、`rejected` 或 `superseded`。
-2. 记录选中的 option 和 answer date。
-3. 从 `After You Answer` 继续。
-4. 保留报告作为历史，不要删除。
+owner 回答后按 `recordAnswer` 更新状态、选择项、日期与历史，再从 `After You Answer` 继续；
+报告作为历史保留，不删除。
 
 如果同一个 unit 后续还需要 approval，复用 `approval-report.md` 作为唯一 approval 表面：
 先为旧回答添加带日期的 decision-history 记录，再用新决策替换 pending sections。不要静默

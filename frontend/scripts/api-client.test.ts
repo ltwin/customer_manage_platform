@@ -5,9 +5,11 @@ import {
   ApiError,
   createOrder,
   createScheduleSlot,
+  listCustomers,
   listOrders,
   listScheduleSlots,
 } from '../src/api/client.ts'
+import { getToken, setToken } from '../src/auth/token.ts'
 
 const storage = new Map<string, string>()
 Object.defineProperty(globalThis, 'localStorage', {
@@ -93,4 +95,17 @@ test('schedule client sends range and per-attempt key', async () => {
 
   assert.match(requests[0]?.url ?? '', /schedule\/slots\?from=/)
   assert.equal(new Headers(requests[1]?.init?.headers).get('Idempotency-Key'), 'slot-attempt-key')
+})
+
+test('a protected 401 clears the token before the page handles navigation', async () => {
+  setToken('synthetic-token')
+  globalThis.fetch = async () => Response.json({
+    error: { code: 'unauthorized', message: '未认证' },
+  }, { status: 401 })
+
+  await assert.rejects(
+    listCustomers({ page: 1, pageSize: 20 }),
+    (error: unknown) => error instanceof ApiError && error.status === 401,
+  )
+  assert.equal(getToken(), null)
 })
