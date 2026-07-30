@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { CalendarRange, ChevronLeft, ChevronRight, Plus, X } from 'lucide-react'
 
 import {
   ApiError,
@@ -21,6 +22,7 @@ import {
 import { useShell } from '../components/shellContext'
 import { useFocusTrap } from '../components/useFocusTrap'
 import StateNotice from '../components/StateNotice'
+import EmptyState from '../components/EmptyState'
 import {
   beginPageRead,
   completePageRead,
@@ -246,16 +248,19 @@ export default function CalendarPage() {
           <div className="sub">时间按 {timezone ?? '账号时区不可用'}</div>
         </div>
         <div className="topbar-actions desktop-schedule-actions">
-          <button className="btn btn-primary" type="button" disabled={!timezone} onClick={() => openCreate()}>新建档期</button>
+          <button className="btn btn-primary" type="button" disabled={!timezone} onClick={() => openCreate()}>
+            <Plus aria-hidden="true" strokeWidth={2.2} />
+            新建档期
+          </button>
         </div>
       </header>
 
       <main className="content calendar-content">
         {queryError && <div className="form-error">{queryError}</div>}
         <div className="cal-head">
-          <button className="icon-btn" type="button" onClick={() => navigateMonth(-1)} aria-label="上一月">‹</button>
+          <button className="icon-btn" type="button" onClick={() => navigateMonth(-1)} aria-label="上一月"><ChevronLeft aria-hidden="true" strokeWidth={2} /></button>
           <h2>{formatMonth(month)}</h2>
-          <button className="icon-btn" type="button" onClick={() => navigateMonth(1)} aria-label="下一月">›</button>
+          <button className="icon-btn" type="button" onClick={() => navigateMonth(1)} aria-label="下一月"><ChevronRight aria-hidden="true" strokeWidth={2} /></button>
           <button className="btn btn-sm" type="button" disabled={!today} onClick={goToday}>今天</button>
           <div className="cal-legend" aria-label="档期类型图例">
             <span><span className="dot slot-shoot" />拍摄</span>
@@ -317,7 +322,7 @@ export default function CalendarPage() {
       >
         <div className="drawer-head">
           <h2 id="scheduleDrawerTitle">{formatDay(selectedDate)}</h2>
-          <button className="icon-btn" type="button" onClick={() => setDrawerOpen(false)} aria-label="关闭">×</button>
+          <button className="icon-btn" type="button" onClick={() => setDrawerOpen(false)} aria-label="关闭"><X aria-hidden="true" strokeWidth={2} /></button>
         </div>
         <div className="drawer-body">
           {lastDeletedShoot?.type === 'shoot' && (
@@ -327,7 +332,7 @@ export default function CalendarPage() {
             </div>
           )}
           {!selectedDay || selectedDay.slots.length === 0 ? (
-            <div className="empty">这天暂无档期</div>
+            <EmptyState icon={CalendarRange} title="这天暂无档期" hint="点下方按钮给这天加一场拍摄" inline />
           ) : selectedDay.slots.map((entry) => (
             <div className="slot-entry" key={entry.slot.id} data-slot-id={entry.slot.id} tabIndex={-1}>
               <div className="head">

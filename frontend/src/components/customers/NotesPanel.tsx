@@ -1,4 +1,6 @@
 import { useRef, useState } from 'react'
+import { StickyNote } from 'lucide-react'
+import EmptyState from '../EmptyState'
 import { ApiError, addCustomerNote } from '../../api/client'
 import type { CustomerDetail } from '../../api/client'
 import { createNoteSubmitGate, noteInputAction } from './noteInteraction'
@@ -84,7 +86,7 @@ export default function NotesPanel({ customer, onChanged, onUnauthorized }: Prop
       {error && <div className="form-error" role="alert">{error}</div>}
       {feedback && <div className="note-feedback" role="status">{feedback}</div>}
       {customer.notes.length === 0 ? (
-        <div className="empty">暂无备注</div>
+        <EmptyState icon={StickyNote} title="暂无备注" hint="记一条沟通要点，下次开单不用回忆" inline />
       ) : (
         customer.notes.map((note) => (
           <div className="identity-item" key={note.id}>

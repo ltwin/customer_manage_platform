@@ -1,6 +1,16 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BanknoteArrowUp,
+  Check,
+  MoreHorizontal,
+  Plus,
+  Trash2,
+  TruckIcon,
+  Wallet,
+  XCircle,
+} from 'lucide-react'
+import {
   ApiError,
   createOrder,
   deleteOrder,
@@ -121,17 +131,17 @@ const statusLabels: Record<OrderStatusValue, string> = {
   cancelled: '取消',
 }
 
-const statusFilters: Array<[StatusFilter, string]> = [
-  ['', '全部'],
-  ['consulting', '咨询'],
-  ['scheduled', '定档'],
-  ['shot', '拍摄后'],
-  ['selected', '已选片'],
-  ['retouching', '精修中'],
-  ['delivered', '已交付'],
-  ['closed', '完结'],
-  ['cancelled', '取消'],
-]
+	/** 主流程状态（互斥单选）；「取消」是旁支，单独放 */
+	const pipelineStatusFilters: Array<[StatusFilter, string]> = [
+	  ['', '全部'],
+	  ['consulting', '咨询'],
+	  ['scheduled', '定档'],
+	  ['shot', '拍摄后'],
+	  ['selected', '已选片'],
+	  ['retouching', '精修中'],
+	  ['delivered', '已交付'],
+	  ['closed', '完结'],
+	]
 
 export default function OrderWorkspace({
   customer,
@@ -572,7 +582,7 @@ export default function OrderWorkspace({
     }
   }
 
-  const schedulePendingIsExpired = Boolean(schedulePending && pendingScheduleExpired(schedulePending))
+	const schedulePendingIsExpired = Boolean(schedulePending && pendingScheduleExpired(schedulePending))
   const scheduleRecoveryCustomerID = schedulePending?.known_customer_id ?? scheduleContext?.customer_id
   const scheduleRecoveryOrderID = schedulePending?.known_order_id ?? knownOrderInMemory
   const scheduleRecoveryAction = (schedulePendingIsExpired || scheduleIdempotencyConflict) && scheduleRecoveryCustomerID
@@ -584,29 +594,90 @@ export default function OrderWorkspace({
       }
     : null
 
+  const statusFilterLabel = status === ''
+    ? null
+    : status === 'cancelled'
+      ? '取消'
+      : statusLabels[status]
+  const hasActiveFilters = status !== '' || unpaidOnly
+
+  function clearFilters() {
+    setStatus('')
+    setUnpaidOnly(false)
+  }
+
 	  return (
     <div className="order-workspace">
       <div className="order-toolbar">
-        <div className="chips">
-          {statusFilters.map(([key, label]) => (
+        <div className="order-filters">
+          <div className="order-filter-row">
+            <div className="status-track" role="group" aria-label="按状态筛选">
+              {pipelineStatusFilters.map(([key, label]) => (
+                <button
+                  key={key || 'all'}
+                  className={`chip${status === key ? ' active' : ''}`}
+                  type="button"
+                  aria-pressed={status === key}
+                  onClick={() => setStatus(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <button
-              key={key || 'all'}
-              className={`chip${status === key ? ' active' : ''}`}
+              className={`chip chip-side${status === 'cancelled' ? ' active' : ''}`}
               type="button"
-              onClick={() => setStatus(key)}
+              aria-pressed={status === 'cancelled'}
+              onClick={() => setStatus('cancelled')}
             >
-              {label}
+              取消
             </button>
-          ))}
-          <button
-            className={`chip${unpaidOnly ? ' active' : ''}`}
-            type="button"
-            onClick={() => setUnpaidOnly((current) => !current)}
-          >
-            未收尾款
-          </button>
+            <button
+              className={`filter-toggle${unpaidOnly ? ' active' : ''}`}
+              type="button"
+              aria-pressed={unpaidOnly}
+              title="可与状态筛选叠加"
+              onClick={() => setUnpaidOnly((current) => !current)}
+            >
+              <Wallet aria-hidden="true" strokeWidth={2.1} />
+              <span>未收尾款</span>
+            </button>
+          </div>
+          {hasActiveFilters && (
+            <div className="filter-summary" aria-live="polite">
+              <span className="filter-summary-label">筛选</span>
+              {statusFilterLabel && (
+                <button
+                  className="filter-tag"
+                  type="button"
+                  onClick={() => setStatus('')}
+                  title="清除状态筛选"
+                >
+                  {statusFilterLabel}
+                  <XCircle aria-hidden="true" strokeWidth={2} />
+                </button>
+              )}
+              {unpaidOnly && (
+                <button
+                  className="filter-tag filter-tag-warning"
+                  type="button"
+                  onClick={() => setUnpaidOnly(false)}
+                  title="清除尾款筛选"
+                >
+                  未收尾款
+                  <XCircle aria-hidden="true" strokeWidth={2} />
+                </button>
+              )}
+              <button className="filter-clear" type="button" onClick={clearFilters}>
+                清除
+              </button>
+            </div>
+          )}
         </div>
-        <button className="btn btn-primary" type="button" onClick={openCreate}>＋ 新建订单</button>
+        <button className="btn btn-primary" type="button" onClick={openCreate}>
+          <Plus aria-hidden="true" strokeWidth={2.2} />
+          新建订单
+        </button>
       </div>
 
 	      {actionError && (
@@ -772,63 +843,131 @@ function OrderRow({
   const next = nextStatus(order)
   const canSkipDelivered = order.status === 'shot' || order.status === 'selected'
   const terminal = isTerminal(order.status)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
+
+  // 菜单开启期间接管 Escape 与外部点击，避免多张卡同时展开
+  useEffect(() => {
+    if (!menuOpen) return
+    function onPointerDown(event: MouseEvent) {
+      if (!moreRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menuOpen])
+
+  function runAction(action: () => void) {
+    setMenuOpen(false)
+    action()
+  }
+
+  // 主动作只留一个：能推进就推进，终态则无主动作
+  const primary = next
+    ? {
+        label: `推进到${statusLabels[next]}`,
+        disabled: busy || (next === 'closed' && !order.balance_paid),
+        run: () => onProgress(order, next),
+      }
+    : null
+
+  const overflow: {
+    key: string
+    label: string
+    icon: typeof Check
+    danger?: boolean
+    disabled?: boolean
+    run: () => void
+  }[] = []
+  if (!terminal && !order.deposit_paid) {
+    overflow.push({ key: 'deposit', label: '标记定金', icon: Wallet, run: () => onUpdate(order, { deposit_paid: true }, '已标记定金') })
+  }
+  if (!terminal && !order.balance_paid) {
+    overflow.push({ key: 'balance', label: '标记尾款', icon: BanknoteArrowUp, run: () => onUpdate(order, { balance_paid: true }, '已标记尾款') })
+  }
+  if (canSkipDelivered) {
+    overflow.push({ key: 'deliver', label: '直接交付', icon: TruckIcon, run: () => onProgress(order, 'delivered') })
+  }
+  if (!terminal) {
+    overflow.push({ key: 'cancel', label: '取消订单', icon: XCircle, danger: true, run: () => onCancel(order) })
+  }
+  if (terminal) {
+    overflow.push({ key: 'delete', label: '删除订单', icon: Trash2, danger: true, run: () => onDelete(order) })
+  }
+
   return (
 	    <article className={`order-card status-${order.status}`} data-order-id={order.id} tabIndex={focused ? -1 : undefined}>
       <div className="order-main">
         <div className="order-title-line">
           <span className={`badge ${statusBadge(order.status)}`}>{statusLabels[order.status]}</span>
           <h3>{orderTitle(order)}</h3>
-          <span className="order-price">{formatPrice(order.price)}</span>
         </div>
         <div className="order-meta">
           {!fixedCustomer && (
             <Link to={`/customers/${order.customer_id}`}>{order.customer_display_name}</Link>
           )}
           {fixedCustomer && <span>{order.customer_display_name}</span>}
-          <span>{order.package_name ?? '未选套系'}</span>
+          <span className="sep" aria-hidden="true">·</span>
+          <span className="pkg">{order.package_name ?? '未选套系'}</span>
+        </div>
+        <div className="order-dates">
           <span>建单 {shortDate(order.created_at)}</span>
           {order.shot_at && <span>拍摄 {shortDate(order.shot_at)}</span>}
           {order.delivered_at && <span>交付 {shortDate(order.delivered_at)}</span>}
         </div>
+        {/* 只在「已收」这类需要确认的情况显示，未收是常态不占版面 */}
         <div className="payment-flags">
-          <span className={order.deposit_paid ? 'badge badge-success' : 'badge badge-warning'}>
-            {order.deposit_paid ? '定金已收' : '定金未收'}
-          </span>
-          <span className={order.balance_paid ? 'badge badge-success' : 'badge badge-muted'}>
-            {order.balance_paid ? '尾款已收' : '尾款未收'}
-          </span>
+          {order.deposit_paid && <span className="badge badge-success">定金已收</span>}
+          {order.balance_paid && <span className="badge badge-success">尾款已收</span>}
+          {!terminal && !order.deposit_paid && !order.balance_paid && (
+            <span className="badge badge-warning">未收款</span>
+          )}
         </div>
       </div>
+      <div className="order-price">{formatPrice(order.price)}</div>
       <div className="order-actions">
-        {!terminal && !order.deposit_paid && (
-          <button className="btn btn-sm" type="button" disabled={busy} onClick={() => onUpdate(order, { deposit_paid: true }, '已标记定金')}>
-            标记定金
+        {primary && (
+          <button className="btn btn-sm btn-primary" type="button" disabled={primary.disabled} onClick={primary.run}>
+            {primary.label}
           </button>
         )}
-        {!terminal && !order.balance_paid && (
-          <button className="btn btn-sm" type="button" disabled={busy} onClick={() => onUpdate(order, { balance_paid: true }, '已标记尾款')}>
-            标记尾款
-          </button>
-        )}
-        {next && (
-          <button className="btn btn-sm btn-primary" type="button" disabled={busy || (next === 'closed' && !order.balance_paid)} onClick={() => onProgress(order, next)}>
-            推进到{statusLabels[next]}
-          </button>
-        )}
-        {canSkipDelivered && (
-          <button className="btn btn-sm" type="button" disabled={busy} onClick={() => onProgress(order, 'delivered')}>
-            直接交付
-          </button>
-        )}
-        {!terminal && (
-          <button className="btn btn-sm btn-ghost" type="button" disabled={busy} onClick={() => onCancel(order)}>
-            取消订单
-          </button>
-        )}
-        {terminal && (
-          <button className="btn btn-sm btn-danger-ghost" type="button" disabled={busy} onClick={() => onDelete(order)}>
-            删除
-          </button>
+        {overflow.length > 0 && (
+          <div className="order-more" ref={moreRef}>
+            <button
+              className="btn btn-sm"
+              type="button"
+              disabled={busy}
+              aria-label={`${orderTitle(order)} 的更多操作`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <MoreHorizontal aria-hidden="true" strokeWidth={2} />
+            </button>
+            {menuOpen && (
+              <div className="order-more-menu" role="menu">
+                {overflow.map(({ key, label, icon: Icon, danger, disabled, run }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="menuitem"
+                    className={danger ? 'danger' : undefined}
+                    disabled={busy || disabled}
+                    onClick={() => runAction(run)}
+                  >
+                    <Icon aria-hidden="true" strokeWidth={2} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
     </article>

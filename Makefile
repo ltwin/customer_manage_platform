@@ -33,6 +33,7 @@ lint:
 test:
 	# Testcontainers 逐包并发会偶发丢失 PostgreSQL mapped port；串行 package/test 保持门禁稳定。
 	cd backend && go test -p=1 ./... -count=1 -parallel=1
+	cd frontend && npm run test:customer-money
 	cd frontend && npm run test:package-price
 	cd frontend && npm run test:api-client
 	cd frontend && npm run test:schedule

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
+  CalendarOff,
+  Check,
+  ClipboardCheck,
+  ShieldCheck,
+  Wallet,
+  X,
+} from 'lucide-react'
+import {
   ApiError,
   dismissReminder,
   fetchDashboard,
@@ -15,6 +23,7 @@ import type {
 } from '../api/client'
 import { useShell } from '../components/shellContext'
 import StateNotice from '../components/StateNotice'
+import EmptyState from '../components/EmptyState'
 import {
   beginPageRead,
   completePageRead,
@@ -215,7 +224,7 @@ export default function DashboardPage() {
             </h2>
             <div className="row-list">
               {due.length === 0 ? (
-                <div className="empty">待办已清空，今天可以专心拍摄了</div>
+                <EmptyState icon={ClipboardCheck} title="待办已清空" hint="今天可以专心拍摄了" />
               ) : (
                 due.map((reminder) => (
                   <ReminderRow
@@ -240,7 +249,7 @@ export default function DashboardPage() {
             </h2>
             <div className="row-list">
               {slots.length === 0 ? (
-                <div className="empty">今天没有档期</div>
+                <EmptyState icon={CalendarOff} title="今天没有档期" hint="去日历里挑一天开新单" />
               ) : (
                 slots.map((slot) => <SlotRow key={slot.id} slot={slot} timezone={timezone} />)
               )}
@@ -255,7 +264,7 @@ export default function DashboardPage() {
             </h2>
             <div className="row-list">
               {unpaid.items.length === 0 ? (
-                <div className="empty">没有待收尾款，账都收齐了</div>
+                <EmptyState icon={Wallet} title="没有待收尾款" hint="账都收齐了" />
               ) : (
                 unpaid.items.map((order) => (
                   <UnpaidRow
@@ -276,7 +285,7 @@ export default function DashboardPage() {
             </h2>
             <div className="row-list">
               {churn.length === 0 ? (
-                <div className="empty">暂无流失预警</div>
+                <EmptyState icon={ShieldCheck} title="暂无流失预警" hint="老客户都还在联系中" />
               ) : (
                 churn.map((reminder) => (
                   <div className="row-item" key={reminder.id}>
@@ -333,9 +342,11 @@ function ReminderRow({
         </div>
       </div>
       <button className="btn btn-sm" type="button" disabled={busy} onClick={onDone}>
+        <Check aria-hidden="true" strokeWidth={2} />
         完成
       </button>
       <button className="btn btn-sm btn-ghost" type="button" disabled={busy} onClick={onDismiss}>
+        <X aria-hidden="true" strokeWidth={2} />
         忽略
       </button>
     </div>
@@ -424,7 +435,7 @@ function StatCard({
   delta: string
 }) {
   return (
-    <div className="stat">
+    <div className={`stat stat-${tone}`}>
       <div className="label">
         <span className={`dot tone-${tone}`} />
         {label}

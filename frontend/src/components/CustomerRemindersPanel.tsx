@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { BellRing } from 'lucide-react'
+import EmptyState from './EmptyState'
 import {
   ApiError,
   createReminder,
@@ -150,7 +152,7 @@ export default function CustomerRemindersPanel({ customerId, onUnauthorized, onC
       )}
 
       {items.length === 0 ? (
-        <div className="empty inline-empty">暂无提醒</div>
+        <EmptyState icon={BellRing} title="暂无提醒" hint="生日与回访会自动生成，也可手动添加" inline />
       ) : (
         <ul className="reminder-list">
           {items.map((item) => (

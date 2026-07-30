@@ -1,8 +1,11 @@
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowLeft, CalendarPlus, GitMerge, Pencil, Archive, ArchiveRestore } from 'lucide-react'
+import clsx from 'clsx'
 import { ApiError, deleteCustomerAvatar, fetchCustomer, putCustomerAvatar, updateCustomer } from '../api/client'
 import type { CustomerDetail } from '../api/client'
 import { channelLabels } from './customerLabels'
+import { formatCustomerTotalSpend } from './customerDetailMoney'
 import CustomerProfileForm from '../components/customers/CustomerProfileForm'
 import IdentitySection from '../components/customers/IdentitySection'
 import NotesPanel from '../components/customers/NotesPanel'
@@ -33,6 +36,10 @@ const statusLabels: Record<string, string> = {
   merged: '已合并',
 }
 
+type CustomerTabKey = 'notes' | 'reminders' | 'orders'
+
+const customerTabKeys: CustomerTabKey[] = ['notes', 'reminders', 'orders']
+
 export default function CustomerDetailPage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
@@ -47,7 +54,7 @@ export default function CustomerDetailPage() {
   const [editing, setEditing] = useState(false)
   const [merging, setMerging] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'notes' | 'reminders' | 'orders'>(() => searchParams.get('tab') === 'orders' ? 'orders' : 'notes')
+  const [activeTab, setActiveTab] = useState<CustomerTabKey>(() => searchParams.get('tab') === 'orders' ? 'orders' : 'notes')
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [scheduledDate, setScheduledDate] = useState<string | null>(null)
   const [reminderCount, setReminderCount] = useState(0)
@@ -199,6 +206,18 @@ export default function CustomerDetailPage() {
 		}
 	}
 
+  // 左右方向键在 tablist 内切换，是 role="tablist" 的键盘契约
+  function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    const offset = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+    if (offset === 0) return
+    event.preventDefault()
+    const index = customerTabKeys.indexOf(activeTab)
+    const next = customerTabKeys[(index + offset + customerTabKeys.length) % customerTabKeys.length]
+    if (!next) return
+    setActiveTab(next)
+    document.getElementById(`customerTab-${next}`)?.focus()
+  }
+
   const presentation = pageReadPresentation(readState)
   const customer = readyPageData(readState)
 
@@ -220,6 +239,11 @@ export default function CustomerDetailPage() {
 
   const isMerged = customer.status === 'merged'
   const isArchived = customer.status === 'archived'
+  const tabItems: { key: CustomerTabKey; label: string }[] = [
+    { key: 'notes', label: `备注 · ${customer.notes.length}` },
+    { key: 'reminders', label: `提醒 · ${reminderCount}` },
+    { key: 'orders', label: `约单 · ${customer.stats.orders_count}` },
+  ]
 
   return (
     <>
@@ -231,19 +255,34 @@ export default function CustomerDetailPage() {
         <div className="topbar-actions">
           {!isMerged && (
             <>
-              <button className="btn" type="button" onClick={() => setEditing(true)}>编辑档案</button>
+              <button className="btn" type="button" onClick={() => setEditing(true)}>
+                <Pencil aria-hidden="true" strokeWidth={2} />
+                编辑档案
+              </button>
               <button className="btn" type="button" onClick={() => { void toggleArchive() }}>
+                {isArchived
+                  ? <ArchiveRestore aria-hidden="true" strokeWidth={2} />
+                  : <Archive aria-hidden="true" strokeWidth={2} />}
                 {isArchived ? '恢复经营' : '归档'}
               </button>
               {customer.status === 'active' && (
                 <>
-                  <button className="btn btn-primary" type="button" disabled={!timezone} onClick={() => setScheduleOpen(true)}>新建拍摄档期</button>
-                  <button className="btn" type="button" onClick={() => setMerging(true)}>合并重复档案</button>
+                  <button className="btn btn-primary" type="button" disabled={!timezone} onClick={() => setScheduleOpen(true)}>
+                    <CalendarPlus aria-hidden="true" strokeWidth={2.2} />
+                    新建拍摄档期
+                  </button>
+                  <button className="btn" type="button" onClick={() => setMerging(true)}>
+                    <GitMerge aria-hidden="true" strokeWidth={2} />
+                    合并重复档案
+                  </button>
                 </>
               )}
             </>
           )}
-          <Link className="btn" to="/customers">返回列表</Link>
+          <Link className="btn" to="/customers">
+            <ArrowLeft aria-hidden="true" strokeWidth={2} />
+            返回列表
+          </Link>
         </div>
       </header>
 
@@ -314,7 +353,7 @@ export default function CustomerDetailPage() {
 					)}
 				</div>
                 <div className="value-strip">
-                  <div className="vs"><div className="n">{customer.stats.total_order_amount}</div><div className="l">累计消费</div></div>
+                  <div className="vs"><div className="n">{formatCustomerTotalSpend(customer.stats.total_order_amount)}</div><div className="l">累计消费</div></div>
                   <div className="vs"><div className="n">{customer.stats.orders_count}</div><div className="l">约单</div></div>
                   <div className="vs"><div className="n">{customer.stats.last_shot_at ?? '暂无'}</div><div className="l">最近拍摄</div></div>
                 </div>
@@ -339,20 +378,40 @@ export default function CustomerDetailPage() {
           </div>
 
           <section className="card">
-            <div className="tabs">
-              <button className={`tab${activeTab === 'notes' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('notes')}>备注 · {customer.notes.length}</button>
-              <button className={`tab${activeTab === 'reminders' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('reminders')}>提醒 · {reminderCount}</button>
-              <button className={`tab${activeTab === 'orders' ? ' active' : ''}`} type="button" onClick={() => setActiveTab('orders')}>约单 · {customer.stats.orders_count}</button>
+            <div className="tabs" role="tablist" aria-label="客户资料分区">
+              {tabItems.map(({ key, label }) => (
+                <button
+                  key={key}
+                  id={`customerTab-${key}`}
+                  className={clsx('tab', activeTab === key && 'active')}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  aria-controls={`customerPanel-${key}`}
+                  tabIndex={activeTab === key ? 0 : -1}
+                  onKeyDown={onTabKeyDown}
+                  onClick={() => setActiveTab(key)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-            {activeTab === 'notes' && <NotesPanel customer={customer} onChanged={reload} onUnauthorized={goLogin} />}
+            {activeTab === 'notes' && (
+              <div className="tab-panel active" id="customerPanel-notes" role="tabpanel" aria-labelledby="customerTab-notes" tabIndex={0}>
+                <NotesPanel customer={customer} onChanged={reload} onUnauthorized={goLogin} />
+              </div>
+            )}
             {activeTab === 'reminders' && (
-              <CustomerRemindersPanel
-                customerId={customer.id ?? id}
-                onUnauthorized={goLogin}
-                onChanged={() => setReminderTick((n) => n + 1)}
-              />
+              <div className="tab-panel active" id="customerPanel-reminders" role="tabpanel" aria-labelledby="customerTab-reminders" tabIndex={0}>
+                <CustomerRemindersPanel
+                  customerId={customer.id ?? id}
+                  onUnauthorized={goLogin}
+                  onChanged={() => setReminderTick((n) => n + 1)}
+                />
+              </div>
             )}
             {activeTab === 'orders' && (
+              <div className="tab-panel active" id="customerPanel-orders" role="tabpanel" aria-labelledby="customerTab-orders" tabIndex={0}>
               <OrderWorkspace
                 customer={customer}
                 onChanged={reload}
@@ -360,6 +419,7 @@ export default function CustomerDetailPage() {
                 scheduleDraftId={searchParams.get('schedule_draft') ?? undefined}
                 scheduleMode={searchParams.get('mode') ?? undefined}
               />
+              </div>
             )}
           </section>
         </div>

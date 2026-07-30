@@ -15,3 +15,7 @@ backend/internal/platform/webui/dist/*
 .DS_Store
 
 var/
+
+.od-skills/
+
+frontend/browser/
