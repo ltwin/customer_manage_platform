@@ -1,0 +1,356 @@
+feature: 2026-07-15-telegram-digest
+created: 2026-07-15
+
+steps:
+  - id: STEP-001
+    action: "契约骨架：收编 bind-token feature tag、双端 codegen、Telegram 可选配置与账号级 bind/delivery migration shape"
+    exit_signal: "CMD-002 通过；migration up/down、chat 唯一、token/delivery 账号约束的 PostgreSQL 测试全部通过"
+    status: done
+  - id: STEP-002
+    action: "模块骨架：建立 reminder/digest 应用边界、typed TelegramError、sender/update ports、production/fake adapter 与 bind/delivery transaction seam"
+    exit_signal: "无外网 fake 跑通 claim lease→gate→call-boundary fence→Send→finalize；DeliveryRepository assert-callable/result/release、独立2秒cleanup、recipient/superseded与gate契约通过"
+    status: done
+  - id: STEP-003
+    action: "安全绑定：实现 43-char opaque 10 分钟单次 token、private /start、scoped token/chat resolvers、chat 唯一/重绑与 HTTP handler"
+    exit_signal: "正常、过期、篡改、重放、群聊、token/chat resolver 0/1/>1、并发 Issue/Consume/PATCH/rebind、历史 pending ack supersede/最新 ack 唯一测试通过；客户端 payload 从不构造 scope且无敏感泄漏"
+    status: done
+  - id: STEP-004
+    action: "摘要计算：实现冻结 target date/timezone、三块跨域 Snapshot 与 ≤3500 Unicode code point 的确定性 Renderer"
+    exit_signal: "提醒 20+overflow、shoot slot parity、窄 unpaid、空态、DST、跨午夜/改时区与文本边界测试全部通过"
+    status: done
+  - id: STEP-005
+    action: "入站命令：接通 getUpdates 30 秒 long polling、durable handling→offset ack、/today EnsureScan→message_kind→claim 与 poll error state machine"
+    exit_signal: "fetch/scan/claim/批次 crash、claim rollback/commit-unknown、update 重投、八类 TelegramError 的 operation×kind 状态转换、terminal poison update、context 取消测试全部通过；失败项不确认连续后缀，重投不重复 Delivery 或改变 message_kind"
+    status: done
+  - id: STEP-006
+    action: "每日投递：接通 scan-before-send、每分钟 tick、daily local-date once、重启补发与持久 1/5/30 分钟 retry"
+    exit_signal: "时区/scan/retry通过；双claim、resolver后/send前fence、pre-send/send-started cancel、cleanup失败/unknown、lease/stale result通过；gate优先取消跨账号与recipient退避公平唤醒通过"
+    status: done
+  - id: STEP-007
+    action: "设置页交互：接入 Telegram 绑定卡片、deep-link 内存生命周期、重新绑定及 loading/error/popup-blocked 状态，并纳入 Makefile test"
+    exit_signal: "CMD-004 单独通过且 CMD-001 执行该脚本；桌面/375px/键盘/focus/错误恢复通过；DOM/storage/bundle 不展示或持久化 Bind token"
+    status: done
+  - id: STEP-008
+    action: "端到端 harden：装配单 TelegramRunner、真 Bot synthetic 冒烟、凭证/单 replica/无 webhook 运维文档、范围清扫与全量回归"
+    exit_signal: "脱敏真机 binding/daily/today 截图齐全；Telegram disabled/suspended 不影响 Web；CMD-001～005 全绿且 N1～N7 scoped review 无违规"
+    status: done
+
+checks:
+  - id: CHK-001
+    item: "bind-token 保持 200 {token,deep_link}/401/500 契约并进入 Go/TS codegen"
+    source: 名词契约
+    trace: [D2, S1]
+    status: passed
+  - id: CHK-002
+    item: "Bind token 为 32-byte→43-char opaque base64url、10 分钟、单次、hash-only；逐 AccountScope 匹配且客户端 payload 不构造 scope"
+    source: 名词契约
+    trace: [D3, S1, S3]
+    status: passed
+  - id: CHK-003
+    item: "ConsumeAndBind 在 account recipient gate 内同事务消费 token、列级更新 chat、supersede 旧 pending ack、创建最新 ack并唤醒 recipient-error Delivery；普通 Settings PATCH 永不覆写 Telegram 字段"
+    source: 流程级约束
+    trace: [D3, S23]
+    status: passed
+  - id: CHK-004
+    item: "Settings.telegram_chat_id 是唯一绑定结果；PATCH 不可直接写；一个 chat 同时最多归一个账号"
+    source: 名词契约
+    trace: [D3, A7, S4]
+    status: passed
+  - id: CHK-005
+    item: "TelegramSender/UpdateSource + typed TelegramError 为 production/fake 共用最小接口；Kind 穷尽 network/timeout/server_error/rate_limited/webhook_conflict/invalid_auth/client_error/protocol_error，无 Retryable 第二真相源，按 operation×kind 唯一策略处理"
+    source: 名词契约
+    trace: [D6, S12, S25, S29]
+    status: passed
+  - id: CHK-006
+    item: "DigestSnapshot 口径为今日及逾期 pending、今日 shoot 档期、delivered 未结清计数"
+    source: 名词契约
+    trace: [D4, S6, S7, S8]
+    status: passed
+  - id: CHK-007
+    item: "Delivery claim/30秒lease；call-boundary 验 ctx/current claim/pending/≥12秒预算，过期 owner 不调用 Telegram；result 持 gate CAS，stale no-op；2秒 cleanup 失败等 lease；recipient 5分钟退避"
+    source: 名词契约
+    trace: [D7, A11, S23]
+    status: passed
+  - id: CHK-008
+    item: "BindTokenResolver/ChatAccountResolver 都只用 AccountScopeEnumerator 逐账号 scoped match，返回 0/1/>1 typed outcome"
+    source: 流程级约束
+    trace: [D6, S18, S28]
+    status: passed
+  - id: CHK-009
+    item: "long polling 仅在 durable terminal outcome 后推进 next offset；/today 先 EnsureScan 定 message_kind 再 claim；rollback/commit-unknown 不确认并停止连续后缀，重投读取既有或重新 claim 且不重复/换 kind"
+    source: 编排骨架
+    trace: [D6, S14, S24]
+    status: passed
+  - id: CHK-010
+    item: "daily 按账号时区/digest_hour/local-date once，并在 snapshot 前 scan-before-send"
+    source: 编排骨架
+    trace: [D5, S9, S10, S21]
+    status: passed
+  - id: CHK-011
+    item: "attempts=consumed failure budget：0起步，仅 current claim 六类失败 CAS +1，第四次写4+failed；pre-send/send-started cancel、invalid_auth、recipient、lease recovery不烧且 outcome unknown 不立即重发"
+    source: 流程级约束
+    trace: [D7, A6, S12, S13]
+    status: passed
+  - id: CHK-012
+    item: "poll network/timeout/server_error 按 1s/5s/30s/60s cap、rate_limited 尊重 retry_after；webhook 只暂停 poll，invalid_auth 全局 suspended，client/protocol fail-visible 暂停并 5 分钟探测，context 可取消且无热循环"
+    source: 流程级约束
+    trace: [D6, S20, S25]
+    status: passed
+  - id: CHK-013
+    item: "Renderer 同 Snapshot 同文本，≤3500 Unicode code point，稳定截断且 UTF-8 完整"
+    source: 流程级约束
+    trace: [D4, S22]
+    status: passed
+  - id: CHK-014
+    item: "Bot token 不进前端；Bind token 仅短存认证响应/组件内存/start payload，不持久化/展示/记录"
+    source: 流程级约束
+    trace: [D3, D8, D9, S1, S16, S29]
+    status: passed
+  - id: CHK-015
+    item: "HTTP/OpenAPI bind-token 路由/tag 可完整卸载"
+    source: 挂载点
+    trace: [MOUNT-1]
+    status: passed
+  - id: CHK-016
+    item: "bind/delivery schema、chat_id 唯一约束与列级 settings mutation 可完整卸载"
+    source: 挂载点
+    trace: [MOUNT-2]
+    status: passed
+  - id: CHK-017
+    item: "TELEGRAM_BOT_TOKEN/USERNAME 配置与 env/compose/docs 可完整卸载"
+    source: 挂载点
+    trace: [MOUNT-3, S15]
+    status: passed
+  - id: CHK-018
+    item: "单 TelegramRunner可卸载；poll/daily/command只入队，唯一DeliverySender；gate/lease响应取消，DB-only cleanup用独立2秒context且计入10秒shutdown"
+    source: 挂载点
+    trace: [MOUNT-4, S20]
+    status: passed
+  - id: CHK-019
+    item: "SettingsPage Telegram 绑定卡片与 API action 可完整卸载"
+    source: 挂载点
+    trace: [MOUNT-5, S16, S17]
+    status: passed
+  - id: CHK-020
+    item: "不向客户或 SocialIdentity 发送 Telegram 消息"
+    source: 范围守护
+    trace: [N1]
+    status: passed
+  - id: CHK-021
+    item: "不做多会话、多 Bot、多通道、群聊绑定、Webhook 或通用通知模块"
+    source: 范围守护
+    trace: [N2, N7]
+    status: passed
+  - id: CHK-022
+    item: "摘要不修改 Reminder/订单/档期/收款状态"
+    source: 范围守护
+    trace: [N3]
+    status: passed
+  - id: CHK-023
+    item: "Telegram Reminder 窗口不复用 dashboard today+2，hold/busy 不扩入摘要"
+    source: 范围守护
+    trace: [N4, D4]
+    status: passed
+  - id: CHK-024
+    item: "Telegram disabled/suspended/send 或 recipient 解析失败不阻断启动、Reminder、HTTP、dashboard 或其他账号 Delivery"
+    source: 范围守护
+    trace: [N5, S13, S15]
+    status: passed
+  - id: CHK-025
+    item: "生产绑定不复用 smoke 的最新 update 猜 chat_id 逻辑"
+    source: 范围守护
+    trace: [N6]
+    status: passed
+  - id: CHK-026
+    item: "首版 replicas=1+Recreate/no-overlap；RecipientGate cancellation-aware/rebind-priority，禁嵌套/多账号持锁且gate→scope；不做选主/exactly-once"
+    source: 范围守护
+    trace: [A4, N7]
+    status: passed
+  - id: CHK-027
+    item: "S1 bind-token 签发、旧 token 失效与浏览器短期生命周期"
+    source: 验收场景
+    trace: [S1, STEP-003]
+    status: passed
+  - id: CHK-028
+    item: "S2 private /start 成功绑定与 synthetic 真机回执"
+    source: 验收场景
+    trace: [S2, STEP-003, STEP-008]
+    status: passed
+  - id: CHK-029
+    item: "S3 过期/篡改/重放/群聊 token 拒绝"
+    source: 验收场景
+    trace: [S3, STEP-003]
+    status: passed
+  - id: CHK-030
+    item: "S4 chat 跨账号冲突与同账号重绑"
+    source: 验收场景
+    trace: [S4, STEP-003]
+    status: passed
+  - id: CHK-031
+    item: "S5 /today 先扫描再发送同 renderer 摘要"
+    source: 验收场景
+    trace: [S5, STEP-005, STEP-006]
+    status: passed
+  - id: CHK-032
+    item: "S6 Reminder 前 20 条、稳定排序、overflow 与未来排除"
+    source: 验收场景
+    trace: [S6, STEP-004]
+    status: passed
+  - id: CHK-033
+    item: "S7 非默认时区/DST/跨日 shoot parity 与 hold/busy 排除"
+    source: 验收场景
+    trace: [S7, STEP-004]
+    status: passed
+  - id: CHK-034
+    item: "S8 待收尾款仅 delivered 且 balance_paid=false"
+    source: 验收场景
+    trace: [S8, STEP-004]
+    status: passed
+  - id: CHK-035
+    item: "S9 digest_hour 前置扫描与一次 daily"
+    source: 验收场景
+    trace: [S9, STEP-006]
+    status: passed
+  - id: CHK-036
+    item: "S10 重启补发、重复 tick 与改 hour 不重发"
+    source: 验收场景
+    trace: [S10, STEP-006]
+    status: passed
+  - id: CHK-037
+    item: "S11 全空仍发送存活摘要"
+    source: 验收场景
+    trace: [S11, STEP-004, STEP-006]
+    status: passed
+  - id: CHK-038
+    item: "S12 send network/timeout/server_error/client_error/protocol_error/rate_limited 重试与 invalid_auth 不烧 attempt 矩阵"
+    source: 验收场景
+    trace: [S12, STEP-006]
+    status: passed
+  - id: CHK-039
+    item: "S13 最终发送失败只影响 Delivery 并有脱敏日志"
+    source: 验收场景
+    trace: [S13, STEP-006]
+    status: passed
+  - id: CHK-040
+    item: "S14 update 重投不重复 command Delivery"
+    source: 验收场景
+    trace: [S14, STEP-005]
+    status: passed
+  - id: CHK-041
+    item: "S15 空/部分/非法 Bot 配置或 poll/send invalid_auth 下主应用可用且 pending Delivery 可恢复"
+    source: 验收场景
+    trace: [S15, STEP-001, STEP-008]
+    status: passed
+  - id: CHK-042
+    item: "S16 设置页绑定状态、失败恢复、popup 与 token 内存清理"
+    source: 验收场景
+    trace: [S16, STEP-007]
+    status: passed
+  - id: CHK-043
+    item: "S17 375px、键盘、focus 与 role=alert"
+    source: 验收场景
+    trace: [S17, STEP-007]
+    status: passed
+  - id: CHK-044
+    item: "S18 token/chat/update/delivery 跨账号隔离"
+    source: 验收场景
+    trace: [S18, STEP-003, STEP-004, STEP-006]
+    status: passed
+  - id: CHK-045
+    item: "S19 synthetic 真 Bot binding/daily/today 脱敏截图"
+    source: 验收场景
+    trace: [S19, STEP-008]
+    status: passed
+  - id: CHK-046
+    item: "S20 SIGTERM 下 long poll/runner 有界退出"
+    source: 验收场景
+    trace: [S20, STEP-005, STEP-008]
+    status: passed
+  - id: CHK-047
+    item: "S21 scan 失败不发不完整 daily，/today claim temporary_unavailable"
+    source: 验收场景
+    trace: [S21, S30, STEP-006]
+    status: passed
+  - id: CHK-048
+    item: "S22 超长文本按 code point 稳定截断"
+    source: 验收场景
+    trace: [S22, STEP-004]
+    status: passed
+  - id: CHK-049
+    item: "S23 resolver后/send前 lease+ctx fence、pre-send/send-started cancel、cleanup error/unknown、双claim/lease/stale result与gate barrier；四source+kind组合、旧ack superseded、recipient退避公平唤醒"
+    source: 验收场景
+    trace: [A11, S23, STEP-002, STEP-003, STEP-006]
+    status: passed
+  - id: CHK-050
+    item: "S24 poll crash、claim rollback error/commit outcome unknown 均不确认并停止连续后缀；重投已提交则读既有、未提交则重 claim，且不重复 Delivery/改变 message_kind"
+    source: 验收场景
+    trace: [S24, STEP-005]
+    status: passed
+  - id: CHK-051
+    item: "S25 八类 TelegramError 的 poll/send 穷尽 operation×kind 策略、webhook getUpdates-only/防御归一、suspended 状态、attempt 预算与无热循环/日志风暴"
+    source: 验收场景
+    trace: [S25, STEP-005]
+    status: passed
+  - id: CHK-052
+    item: "S26 retry 跨午夜/改时区仍使用 enqueue target"
+    source: 验收场景
+    trace: [S26, STEP-004, STEP-006]
+    status: passed
+  - id: CHK-053
+    item: "S27 43-char opaque Bind token、无 account route 与 possession capability residual risk"
+    source: 验收场景
+    trace: [S27, STEP-003, STEP-008]
+    status: passed
+  - id: CHK-054
+    item: "S28 token/chat resolvers 0/1/>1/DB error typed outcome"
+    source: 验收场景
+    trace: [S28, STEP-003]
+    status: passed
+  - id: CHK-055
+    item: "S29 TelegramError/URL/slog 不泄漏 Bot token 或业务正文"
+    source: 验收场景
+    trace: [S29, STEP-002, STEP-008]
+    status: passed
+  - id: CHK-056
+    item: "S30 /today 先 EnsureScan 再原子 claim 最终 message_kind，同 update 不偷换摘要"
+    source: 验收场景
+    trace: [S30, STEP-005, STEP-006]
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./internal/reminder/... ./internal/settings/... ./internal/platform/config/... ./internal/platform/httpapi/... ./cmd/server/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run test:telegram-digest"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "git diff --check"
+      core: false
+      failure_handling: fix-or-block
+  evidence_required:
+    - command_output
+    - diff_summary
+    - api_response
+    - browser_screenshot
+    - telegram_screenshot
+    - sanitized_log_excerpt
+    - owner_decision_record
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo_fixme: forbidden
+    commented_out_code: forbidden
+    unused_imports: forbidden
+    credential_or_pii_logs: forbidden
+    real_customer_evidence: forbidden

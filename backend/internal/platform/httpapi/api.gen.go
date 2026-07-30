@@ -4,31 +4,889 @@
 package httpapi
 
 import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/oapi-codegen/nullable"
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for CustomerChannel.
+const (
+	CustomerChannelDouyin      CustomerChannel = "douyin"
+	CustomerChannelOther       CustomerChannel = "other"
+	CustomerChannelReferral    CustomerChannel = "referral"
+	CustomerChannelWeibo       CustomerChannel = "weibo"
+	CustomerChannelXiaohongshu CustomerChannel = "xiaohongshu"
+)
+
+// Valid indicates whether the value is a known member of the CustomerChannel enum.
+func (e CustomerChannel) Valid() bool {
+	switch e {
+	case CustomerChannelDouyin:
+		return true
+	case CustomerChannelOther:
+		return true
+	case CustomerChannelReferral:
+		return true
+	case CustomerChannelWeibo:
+		return true
+	case CustomerChannelXiaohongshu:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CustomerStatus.
+const (
+	CustomerStatusActive   CustomerStatus = "active"
+	CustomerStatusArchived CustomerStatus = "archived"
+	CustomerStatusMerged   CustomerStatus = "merged"
+)
+
+// Valid indicates whether the value is a known member of the CustomerStatus enum.
+func (e CustomerStatus) Valid() bool {
+	switch e {
+	case CustomerStatusActive:
+		return true
+	case CustomerStatusArchived:
+		return true
+	case CustomerStatusMerged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExportDocumentSchemaVersion.
+const (
+	N1 ExportDocumentSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the ExportDocumentSchemaVersion enum.
+func (e ExportDocumentSchemaVersion) Valid() bool {
+	switch e {
+	case N1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NonShootScheduleSlotListItemType.
+const (
+	NonShootScheduleSlotListItemTypeBusy NonShootScheduleSlotListItemType = "busy"
+	NonShootScheduleSlotListItemTypeHold NonShootScheduleSlotListItemType = "hold"
+)
+
+// Valid indicates whether the value is a known member of the NonShootScheduleSlotListItemType enum.
+func (e NonShootScheduleSlotListItemType) Valid() bool {
+	switch e {
+	case NonShootScheduleSlotListItemTypeBusy:
+		return true
+	case NonShootScheduleSlotListItemTypeHold:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderCreationMode.
+const (
+	Backfill OrderCreationMode = "backfill"
+	New      OrderCreationMode = "new"
+)
+
+// Valid indicates whether the value is a known member of the OrderCreationMode enum.
+func (e OrderCreationMode) Valid() bool {
+	switch e {
+	case Backfill:
+		return true
+	case New:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderStatus.
+const (
+	Cancelled  OrderStatus = "cancelled"
+	Closed     OrderStatus = "closed"
+	Consulting OrderStatus = "consulting"
+	Delivered  OrderStatus = "delivered"
+	Retouching OrderStatus = "retouching"
+	Scheduled  OrderStatus = "scheduled"
+	Selected   OrderStatus = "selected"
+	Shot       OrderStatus = "shot"
+)
+
+// Valid indicates whether the value is a known member of the OrderStatus enum.
+func (e OrderStatus) Valid() bool {
+	switch e {
+	case Cancelled:
+		return true
+	case Closed:
+		return true
+	case Consulting:
+		return true
+	case Delivered:
+		return true
+	case Retouching:
+		return true
+	case Scheduled:
+		return true
+	case Selected:
+		return true
+	case Shot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PackageStatus.
+const (
+	PackageStatusActive   PackageStatus = "active"
+	PackageStatusArchived PackageStatus = "archived"
+)
+
+// Valid indicates whether the value is a known member of the PackageStatus enum.
+func (e PackageStatus) Valid() bool {
+	switch e {
+	case PackageStatusActive:
+		return true
+	case PackageStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PricingMode.
+const (
+	PricingModeFixed       PricingMode = "fixed"
+	PricingModePerDuration PricingMode = "per_duration"
+	PricingModePerPhoto    PricingMode = "per_photo"
+)
+
+// Valid indicates whether the value is a known member of the PricingMode enum.
+func (e PricingMode) Valid() bool {
+	switch e {
+	case PricingModeFixed:
+		return true
+	case PricingModePerDuration:
+		return true
+	case PricingModePerPhoto:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReminderStatus.
+const (
+	Dismissed ReminderStatus = "dismissed"
+	Done      ReminderStatus = "done"
+	Pending   ReminderStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the ReminderStatus enum.
+func (e ReminderStatus) Valid() bool {
+	switch e {
+	case Dismissed:
+		return true
+	case Done:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReminderType.
+const (
+	ReminderTypeBirthday ReminderType = "birthday"
+	ReminderTypeChurn    ReminderType = "churn"
+	ReminderTypeCustom   ReminderType = "custom"
+	ReminderTypeFollowUp ReminderType = "follow_up"
+)
+
+// Valid indicates whether the value is a known member of the ReminderType enum.
+func (e ReminderType) Valid() bool {
+	switch e {
+	case ReminderTypeBirthday:
+		return true
+	case ReminderTypeChurn:
+		return true
+	case ReminderTypeCustom:
+		return true
+	case ReminderTypeFollowUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShootScheduleSlotListItemType.
+const (
+	Shoot ShootScheduleSlotListItemType = "shoot"
+)
+
+// Valid indicates whether the value is a known member of the ShootScheduleSlotListItemType enum.
+func (e ShootScheduleSlotListItemType) Valid() bool {
+	switch e {
+	case Shoot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShootType.
+const (
+	ShootTypeCosplay  ShootType = "cosplay"
+	ShootTypeOther    ShootType = "other"
+	ShootTypePortrait ShootType = "portrait"
+)
+
+// Valid indicates whether the value is a known member of the ShootType enum.
+func (e ShootType) Valid() bool {
+	switch e {
+	case ShootTypeCosplay:
+		return true
+	case ShootTypeOther:
+		return true
+	case ShootTypePortrait:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SlotType.
+const (
+	SlotTypeBusy  SlotType = "busy"
+	SlotTypeHold  SlotType = "hold"
+	SlotTypeShoot SlotType = "shoot"
+)
+
+// Valid indicates whether the value is a known member of the SlotType enum.
+func (e SlotType) Valid() bool {
+	switch e {
+	case SlotTypeBusy:
+		return true
+	case SlotTypeHold:
+		return true
+	case SlotTypeShoot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SocialPlatform.
+const (
+	SocialPlatformDouyin      SocialPlatform = "douyin"
+	SocialPlatformOther       SocialPlatform = "other"
+	SocialPlatformQq          SocialPlatform = "qq"
+	SocialPlatformTelegram    SocialPlatform = "telegram"
+	SocialPlatformWechat      SocialPlatform = "wechat"
+	SocialPlatformWeibo       SocialPlatform = "weibo"
+	SocialPlatformXiaohongshu SocialPlatform = "xiaohongshu"
+)
+
+// Valid indicates whether the value is a known member of the SocialPlatform enum.
+func (e SocialPlatform) Valid() bool {
+	switch e {
+	case SocialPlatformDouyin:
+		return true
+	case SocialPlatformOther:
+		return true
+	case SocialPlatformQq:
+		return true
+	case SocialPlatformTelegram:
+		return true
+	case SocialPlatformWechat:
+		return true
+	case SocialPlatformWeibo:
+		return true
+	case SocialPlatformXiaohongshu:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UpdateCustomerJSONBodyStatus.
+const (
+	UpdateCustomerJSONBodyStatusActive   UpdateCustomerJSONBodyStatus = "active"
+	UpdateCustomerJSONBodyStatusArchived UpdateCustomerJSONBodyStatus = "archived"
+)
+
+// Valid indicates whether the value is a known member of the UpdateCustomerJSONBodyStatus enum.
+func (e UpdateCustomerJSONBodyStatus) Valid() bool {
+	switch e {
+	case UpdateCustomerJSONBodyStatusActive:
+		return true
+	case UpdateCustomerJSONBodyStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListPackagesParamsStatus.
+const (
+	ListPackagesParamsStatusActive   ListPackagesParamsStatus = "active"
+	ListPackagesParamsStatusAll      ListPackagesParamsStatus = "all"
+	ListPackagesParamsStatusArchived ListPackagesParamsStatus = "archived"
+)
+
+// Valid indicates whether the value is a known member of the ListPackagesParamsStatus enum.
+func (e ListPackagesParamsStatus) Valid() bool {
+	switch e {
+	case ListPackagesParamsStatusActive:
+		return true
+	case ListPackagesParamsStatusAll:
+		return true
+	case ListPackagesParamsStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateReminderJSONBodyType.
+const (
+	CreateReminderJSONBodyTypeCustom CreateReminderJSONBodyType = "custom"
+)
+
+// Valid indicates whether the value is a known member of the CreateReminderJSONBodyType enum.
+func (e CreateReminderJSONBodyType) Valid() bool {
+	switch e {
+	case CreateReminderJSONBodyTypeCustom:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account 账号（摄影师）；永不含 password_hash
 type Account struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
 	Id        *string    `json:"id,omitempty"`
+
+	// Timezone IANA 时区；Settings 未落地前返回 Asia/Shanghai，日历不得使用浏览器时区替代
+	Timezone string `json:"timezone"`
+}
+
+// AvatarRevision defines model for AvatarRevision.
+type AvatarRevision = string
+
+// AvatarVersion defines model for AvatarVersion.
+type AvatarVersion = string
+
+// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+type Birthday = string
+
+// ChurnThreshold defines model for ChurnThreshold.
+type ChurnThreshold struct {
+	Days      int       `json:"days"`
+	ShootType ShootType `json:"shoot_type"`
+}
+
+// Customer defines model for Customer.
+type Customer struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId      *string         `json:"account_id,omitempty"`
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+
+	// AvatarUrl 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version
+	AvatarUrl     *string        `json:"avatar_url,omitempty"`
+	AvatarVersion *AvatarVersion `json:"avatar_version,omitempty"`
+
+	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+	Birthday             *Birthday       `json:"birthday,omitempty"`
+	Channel              CustomerChannel `json:"channel"`
+	CreatedAt            *time.Time      `json:"created_at,omitempty"`
+	DisplayName          string          `json:"display_name"`
+	Id                   *string         `json:"id,omitempty"`
+	MergedIntoCustomerId *string         `json:"merged_into_customer_id,omitempty"`
+	Phone                *string         `json:"phone,omitempty"`
+	RealName             *string         `json:"real_name,omitempty"`
+
+	// ReferrerCustomerId channel=referral 时必填
+	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
+	Status             CustomerStatus `json:"status"`
+}
+
+// CustomerChannel defines model for CustomerChannel.
+type CustomerChannel string
+
+// CustomerDetail defines model for CustomerDetail.
+type CustomerDetail struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId      *string         `json:"account_id,omitempty"`
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+
+	// AvatarUrl 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version
+	AvatarUrl     *string        `json:"avatar_url,omitempty"`
+	AvatarVersion *AvatarVersion `json:"avatar_version,omitempty"`
+
+	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+	Birthday             *Birthday        `json:"birthday,omitempty"`
+	Channel              CustomerChannel  `json:"channel"`
+	CreatedAt            *time.Time       `json:"created_at,omitempty"`
+	DisplayName          string           `json:"display_name"`
+	Id                   *string          `json:"id,omitempty"`
+	Identities           []SocialIdentity `json:"identities"`
+	MergedIntoCustomerId *string          `json:"merged_into_customer_id,omitempty"`
+
+	// Notes 倒序
+	Notes    []CustomerNote                     `json:"notes"`
+	Phone    *string                            `json:"phone,omitempty"`
+	RealName *string                            `json:"real_name,omitempty"`
+	Referrer nullable.Nullable[CustomerSummary] `json:"referrer"`
+
+	// ReferrerCustomerId channel=referral 时必填
+	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
+	Stats              CustomerStats  `json:"stats"`
+	Status             CustomerStatus `json:"status"`
+}
+
+// CustomerListItem defines model for CustomerListItem.
+type CustomerListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId      *string         `json:"account_id,omitempty"`
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+
+	// AvatarUrl 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version
+	AvatarUrl     *string        `json:"avatar_url,omitempty"`
+	AvatarVersion *AvatarVersion `json:"avatar_version,omitempty"`
+
+	// Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
+	Birthday    *Birthday       `json:"birthday,omitempty"`
+	Channel     CustomerChannel `json:"channel"`
+	CreatedAt   *time.Time      `json:"created_at,omitempty"`
+	DisplayName string          `json:"display_name"`
+	Id          *string         `json:"id,omitempty"`
+
+	// LastShotAt 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
+	LastShotAt           nullable.Nullable[openapi_types.Date] `json:"last_shot_at"`
+	MergedIntoCustomerId *string                               `json:"merged_into_customer_id,omitempty"`
+
+	// OrdersCount 非 cancelled 订单计数；order 域未落地前恒为 0
+	OrdersCount int     `json:"orders_count"`
+	Phone       *string `json:"phone,omitempty"`
+	RealName    *string `json:"real_name,omitempty"`
+
+	// ReferrerCustomerId channel=referral 时必填
+	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
+	Status             CustomerStatus `json:"status"`
+}
+
+// CustomerNote defines model for CustomerNote.
+type CustomerNote struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId  *string    `json:"account_id,omitempty"`
+	Content    string     `json:"content"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	CustomerId string     `json:"customer_id"`
+	Id         *string    `json:"id,omitempty"`
+}
+
+// CustomerStats defines model for CustomerStats.
+type CustomerStats struct {
+	// LastShotAt 口径同 CustomerListItem.last_shot_at
+	LastShotAt nullable.Nullable[openapi_types.Date] `json:"last_shot_at"`
+
+	// OrdersCount 非 cancelled 订单计数；order 域未落地前恒为 0
+	OrdersCount int `json:"orders_count"`
+
+	// TotalOrderAmount 分；非 cancelled 订单 price 之和；order 域未落地前恒为 0
+	TotalOrderAmount int `json:"total_order_amount"`
+}
+
+// CustomerStatus defines model for CustomerStatus.
+type CustomerStatus string
+
+// CustomerSummary defines model for CustomerSummary.
+type CustomerSummary struct {
+	AvatarRevision *AvatarRevision `json:"avatar_revision,omitempty"`
+	AvatarUrl      *string         `json:"avatar_url,omitempty"`
+	AvatarVersion  *AvatarVersion  `json:"avatar_version,omitempty"`
+	Channel        CustomerChannel `json:"channel"`
+	DisplayName    string          `json:"display_name"`
+	Id             string          `json:"id"`
+	Status         CustomerStatus  `json:"status"`
 }
 
 // ErrorEnvelope 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
 type ErrorEnvelope struct {
 	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
+		Code string `json:"code"`
+
+		// Details order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
+		Details *ScheduleConflictDetails `json:"details,omitempty"`
+		Message string                   `json:"message"`
 	} `json:"error"`
 }
 
+// ExportCounts defines model for ExportCounts.
+type ExportCounts struct {
+	CustomerNotes    int `json:"customer_notes"`
+	Customers        int `json:"customers"`
+	Orders           int `json:"orders"`
+	Packages         int `json:"packages"`
+	Reminders        int `json:"reminders"`
+	ScheduleSlots    int `json:"schedule_slots"`
+	SocialIdentities int `json:"social_identities"`
+}
+
+// ExportDocument defines model for ExportDocument.
+type ExportDocument struct {
+	Counts           ExportCounts                `json:"counts"`
+	CustomerNotes    []CustomerNote              `json:"customer_notes"`
+	Customers        []Customer                  `json:"customers"`
+	ExportedAt       time.Time                   `json:"exported_at"`
+	Orders           []Order                     `json:"orders"`
+	Packages         []Package                   `json:"packages"`
+	Reminders        []Reminder                  `json:"reminders"`
+	ScheduleSlots    []ScheduleSlot              `json:"schedule_slots"`
+	SchemaVersion    ExportDocumentSchemaVersion `json:"schema_version"`
+	Settings         Settings                    `json:"settings"`
+	SocialIdentities []SocialIdentity            `json:"social_identities"`
+}
+
+// ExportDocumentSchemaVersion defines model for ExportDocument.SchemaVersion.
+type ExportDocumentSchemaVersion int
+
+// NonShootScheduleSlotListItem defines model for NonShootScheduleSlotListItem.
+type NonShootScheduleSlotListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// EndAt 必须 > start_at
+	EndAt   time.Time `json:"end_at"`
+	Id      *string   `json:"id,omitempty"`
+	Note    *string   `json:"note,omitempty"`
+	StartAt time.Time `json:"start_at"`
+
+	// Type hold/busy 不带订单或客户引用摘要
+	Type NonShootScheduleSlotListItemType `json:"type"`
+}
+
+// NonShootScheduleSlotListItemType hold/busy 不带订单或客户引用摘要
+type NonShootScheduleSlotListItemType string
+
+// Order defines model for Order.
+type Order struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId   *string    `json:"account_id,omitempty"`
+	BalancePaid bool       `json:"balance_paid"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	CustomerId  string     `json:"customer_id"`
+
+	// DeliveredAt 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid bool       `json:"deposit_paid"`
+	Id          *string    `json:"id,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+	PackageId   *string    `json:"package_id,omitempty"`
+
+	// Price 分
+	Price *int `json:"price,omitempty"`
+
+	// ShotAt 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status 语义与合法跃迁见 §4.2 订单状态机
+	Status OrderStatus `json:"status"`
+	Title  *string     `json:"title,omitempty"`
+}
+
+// OrderCreationMode defines model for OrderCreationMode.
+type OrderCreationMode string
+
+// OrderListItem defines model for OrderListItem.
+type OrderListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId   *string    `json:"account_id,omitempty"`
+	BalancePaid bool       `json:"balance_paid"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+
+	// CustomerDisplayName 引用客户的 display_name（列表可读性摘要，§4.3 2026-07-09 update）
+	CustomerDisplayName string `json:"customer_display_name"`
+	CustomerId          string `json:"customer_id"`
+
+	// DeliveredAt 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid bool       `json:"deposit_paid"`
+	Id          *string    `json:"id,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+	PackageId   *string    `json:"package_id,omitempty"`
+
+	// PackageName 引用套系的 name；未引用套系时缺省
+	PackageName *string `json:"package_name,omitempty"`
+
+	// Price 分
+	Price *int `json:"price,omitempty"`
+
+	// ShotAt 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status 语义与合法跃迁见 §4.2 订单状态机
+	Status OrderStatus `json:"status"`
+	Title  *string     `json:"title,omitempty"`
+}
+
+// OrderStatus 语义与合法跃迁见 §4.2 订单状态机
+type OrderStatus string
+
+// Package defines model for Package.
+type Package struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string `json:"account_id,omitempty"`
+
+	// BasePrice 分
+	BasePrice        int         `json:"base_price"`
+	CreatedAt        *time.Time  `json:"created_at,omitempty"`
+	DurationMinutes  *int        `json:"duration_minutes,omitempty"`
+	Id               *string     `json:"id,omitempty"`
+	Name             string      `json:"name"`
+	Note             *string     `json:"note,omitempty"`
+	PricingMode      PricingMode `json:"pricing_mode"`
+	RawDeliveryCount *int        `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount *int          `json:"retouch_count,omitempty"`
+	ShootType    ShootType     `json:"shoot_type"`
+	ShotCountMax *int          `json:"shot_count_max,omitempty"`
+	ShotCountMin *int          `json:"shot_count_min,omitempty"`
+	Status       PackageStatus `json:"status"`
+}
+
+// PackageInput defines model for PackageInput.
+type PackageInput struct {
+	// BasePrice 分
+	BasePrice        int         `json:"base_price"`
+	DurationMinutes  *int        `json:"duration_minutes,omitempty"`
+	Name             string      `json:"name"`
+	Note             *string     `json:"note,omitempty"`
+	PricingMode      PricingMode `json:"pricing_mode"`
+	RawDeliveryCount *int        `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount *int      `json:"retouch_count,omitempty"`
+	ShootType    ShootType `json:"shoot_type"`
+	ShotCountMax *int      `json:"shot_count_max,omitempty"`
+	ShotCountMin *int      `json:"shot_count_min,omitempty"`
+}
+
+// PackageListItem defines model for PackageListItem.
+type PackageListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string `json:"account_id,omitempty"`
+
+	// BasePrice 分
+	BasePrice       int        `json:"base_price"`
+	CreatedAt       *time.Time `json:"created_at,omitempty"`
+	DurationMinutes *int       `json:"duration_minutes,omitempty"`
+	Id              *string    `json:"id,omitempty"`
+	Name            string     `json:"name"`
+	Note            *string    `json:"note,omitempty"`
+
+	// OrdersCount 引用本套系的非 cancelled 订单计数；order 域未落地前恒为 0
+	OrdersCount      int         `json:"orders_count"`
+	PricingMode      PricingMode `json:"pricing_mode"`
+	RawDeliveryCount *int        `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount *int          `json:"retouch_count,omitempty"`
+	ShootType    ShootType     `json:"shoot_type"`
+	ShotCountMax *int          `json:"shot_count_max,omitempty"`
+	ShotCountMin *int          `json:"shot_count_min,omitempty"`
+	Status       PackageStatus `json:"status"`
+}
+
+// PackageStatus defines model for PackageStatus.
+type PackageStatus string
+
+// PricingMode defines model for PricingMode.
+type PricingMode string
+
+// Reminder defines model for Reminder.
+type Reminder struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId  *string    `json:"account_id,omitempty"`
+	Content    string     `json:"content"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
+	CustomerId *string    `json:"customer_id,omitempty"`
+
+	// DedupKey unique per account（规则见 §4.4）
+	DedupKey string             `json:"dedup_key"`
+	DueDate  openapi_types.Date `json:"due_date"`
+	Id       *string            `json:"id,omitempty"`
+	OrderId  *string            `json:"order_id,omitempty"`
+	Status   ReminderStatus     `json:"status"`
+	Type     ReminderType       `json:"type"`
+}
+
+// ReminderStatus defines model for ReminderStatus.
+type ReminderStatus string
+
+// ReminderType defines model for ReminderType.
+type ReminderType string
+
+// ScheduleConflictDetails order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
+type ScheduleConflictDetails struct {
+	ScheduleSlotId  string    `json:"schedule_slot_id"`
+	ScheduleStartAt time.Time `json:"schedule_start_at"`
+}
+
+// ScheduleSlot defines model for ScheduleSlot.
+type ScheduleSlot struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// EndAt 必须 > start_at
+	EndAt time.Time `json:"end_at"`
+	Id    *string   `json:"id,omitempty"`
+	Note  *string   `json:"note,omitempty"`
+
+	// OrderId type=shoot 时必填；同一订单最多关联一条 shoot slot
+	OrderId *string   `json:"order_id,omitempty"`
+	StartAt time.Time `json:"start_at"`
+	Type    SlotType  `json:"type"`
+}
+
+// ScheduleSlotListItem defines model for ScheduleSlotListItem.
+type ScheduleSlotListItem struct {
+	union json.RawMessage
+}
+
+// ScheduleSlotListItemBase defines model for ScheduleSlotListItemBase.
+type ScheduleSlotListItemBase struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// EndAt 必须 > start_at
+	EndAt   time.Time `json:"end_at"`
+	Id      *string   `json:"id,omitempty"`
+	Note    *string   `json:"note,omitempty"`
+	StartAt time.Time `json:"start_at"`
+}
+
+// Settings defines model for Settings.
+type Settings struct {
+	BirthdayLeadDays int `json:"birthday_lead_days"`
+
+	// ChurnThresholds 默认全类型 180
+	ChurnThresholds []ChurnThreshold `json:"churn_thresholds"`
+
+	// DigestHour 按 timezone
+	DigestHour        int     `json:"digest_hour"`
+	FollowUpAfterDays int     `json:"follow_up_after_days"`
+	TelegramChatId    *string `json:"telegram_chat_id,omitempty"`
+
+	// Timezone IANA，默认 Asia/Shanghai；所有 date-only 判定按此时区（§4.1）
+	Timezone string `json:"timezone"`
+}
+
+// ShootScheduleSlotListItem defines model for ShootScheduleSlotListItem.
+type ShootScheduleSlotListItem struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId *string    `json:"account_id,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+
+	// CustomerDisplayName 引用订单的当前客户名
+	CustomerDisplayName string `json:"customer_display_name"`
+
+	// CustomerId 引用订单的当前客户 id；merge 后返回 target id，供恢复流程与客户档案订单 tab 使用
+	CustomerId string `json:"customer_id"`
+
+	// CustomerStatus 当前客户状态；客户归档后仍返回，供文本警示
+	CustomerStatus CustomerStatus `json:"customer_status"`
+
+	// EndAt 必须 > start_at
+	EndAt time.Time `json:"end_at"`
+	Id    *string   `json:"id,omitempty"`
+	Note  *string   `json:"note,omitempty"`
+
+	// OrderId shoot slot 必返的关联订单 id
+	OrderId string `json:"order_id"`
+
+	// OrderStatus 语义与合法跃迁见 §4.2 订单状态机
+	OrderStatus OrderStatus `json:"order_status"`
+
+	// OrderTitle 引用订单的标题；无标题时缺省，由前端按套系/客户兜底
+	OrderTitle *string `json:"order_title,omitempty"`
+
+	// PackageName 引用订单所选套系名；未选套系时缺省
+	PackageName *string                       `json:"package_name,omitempty"`
+	StartAt     time.Time                     `json:"start_at"`
+	Type        ShootScheduleSlotListItemType `json:"type"`
+}
+
+// ShootScheduleSlotListItemType defines model for ShootScheduleSlotListItem.Type.
+type ShootScheduleSlotListItemType string
+
+// ShootType defines model for ShootType.
+type ShootType string
+
+// SlotType defines model for SlotType.
+type SlotType string
+
+// SocialIdentity defines model for SocialIdentity.
+type SocialIdentity struct {
+	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
+	AccountId  *string        `json:"account_id,omitempty"`
+	CreatedAt  *time.Time     `json:"created_at,omitempty"`
+	CustomerId string         `json:"customer_id"`
+	Handle     string         `json:"handle"`
+	Id         *string        `json:"id,omitempty"`
+	Platform   SocialPlatform `json:"platform"`
+	Remark     *string        `json:"remark,omitempty"`
+}
+
+// SocialPlatform defines model for SocialPlatform.
+type SocialPlatform string
+
+// AvatarIfMatch defines model for AvatarIfMatch.
+type AvatarIfMatch = string
+
+// Id defines model for Id.
+type Id = string
+
+// IdempotencyKey defines model for IdempotencyKey.
+type IdempotencyKey = string
+
+// Page defines model for Page.
+type Page = int
+
+// PageSize defines model for PageSize.
+type PageSize = int
+
 // Internal 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
 type Internal = ErrorEnvelope
+
+// NotFound 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+type NotFound = ErrorEnvelope
 
 // Unauthorized 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
 type Unauthorized = ErrorEnvelope
@@ -39,22 +897,509 @@ type ValidationFailed = ErrorEnvelope
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
 
+// ScanRemindersJSONBody defines parameters for ScanReminders.
+type ScanRemindersJSONBody struct {
+	// Date 缺省=账号时区今日
+	Date *openapi_types.Date `json:"date,omitempty"`
+}
+
 // LoginJSONBody defines parameters for Login.
 type LoginJSONBody struct {
 	Password string `json:"password"`
 }
 
+// ListCustomersParams defines parameters for ListCustomers.
+type ListCustomersParams struct {
+	Q       *string          `form:"q,omitempty" json:"q,omitempty"`
+	Channel *CustomerChannel `form:"channel,omitempty" json:"channel,omitempty"`
+
+	// Status 缺省 active；兼容单值/all，也接受逗号分隔的 active/archived/merged 状态集合；重复值、未知值或 all 与其他值混用均为 400；过滤发生在分页前
+	Status   *string   `form:"status,omitempty" json:"status,omitempty"`
+	Page     *Page     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// CreateCustomerJSONBody defines parameters for CreateCustomer.
+type CreateCustomerJSONBody struct {
+	Channel     CustomerChannel `json:"channel"`
+	DisplayName string          `json:"display_name"`
+	Identities  []struct {
+		Handle   string         `json:"handle"`
+		Platform SocialPlatform `json:"platform"`
+		Remark   *string        `json:"remark,omitempty"`
+	} `json:"identities"`
+
+	// ReferrerCustomerId channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理
+	ReferrerCustomerId *string `json:"referrer_customer_id,omitempty"`
+}
+
+// UpdateCustomerJSONBody defines parameters for UpdateCustomer.
+type UpdateCustomerJSONBody struct {
+	// Birthday 显式传 null 清空
+	Birthday nullable.Nullable[Birthday] `json:"birthday,omitempty"`
+	Channel  *CustomerChannel            `json:"channel,omitempty"`
+
+	// DisplayName 不可清空（不接受 null）
+	DisplayName *string `json:"display_name,omitempty"`
+
+	// Phone 显式传 null 清空
+	Phone nullable.Nullable[string] `json:"phone,omitempty"`
+
+	// RealName 显式传 null 清空
+	RealName nullable.Nullable[string] `json:"real_name,omitempty"`
+
+	// ReferrerCustomerId channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理；不得为本客户自身（400）
+	ReferrerCustomerId *string `json:"referrer_customer_id,omitempty"`
+
+	// Status merged 是 merge 端点专属终态，不可经 PATCH 设置
+	Status *UpdateCustomerJSONBodyStatus `json:"status,omitempty"`
+}
+
+// UpdateCustomerJSONBodyStatus defines parameters for UpdateCustomer.
+type UpdateCustomerJSONBodyStatus string
+
+// DeleteCustomerAvatarParams defines parameters for DeleteCustomerAvatar.
+type DeleteCustomerAvatarParams struct {
+	// IfMatch 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+	IfMatch AvatarIfMatch `json:"If-Match"`
+}
+
+// PutCustomerAvatarMultipartBody defines parameters for PutCustomerAvatar.
+type PutCustomerAvatarMultipartBody struct {
+	File openapi_types.File `json:"file"`
+}
+
+// PutCustomerAvatarParams defines parameters for PutCustomerAvatar.
+type PutCustomerAvatarParams struct {
+	// IfMatch 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+	IfMatch AvatarIfMatch `json:"If-Match"`
+}
+
+// GetCustomerAvatarContentParams defines parameters for GetCustomerAvatarContent.
+type GetCustomerAvatarContentParams struct {
+	V           AvatarVersion `form:"v" json:"v"`
+	IfNoneMatch *string       `json:"If-None-Match,omitempty"`
+}
+
+// AddCustomerIdentityJSONBody defines parameters for AddCustomerIdentity.
+type AddCustomerIdentityJSONBody struct {
+	Handle   string         `json:"handle"`
+	Platform SocialPlatform `json:"platform"`
+	Remark   *string        `json:"remark,omitempty"`
+}
+
+// MergeCustomerJSONBody defines parameters for MergeCustomer.
+type MergeCustomerJSONBody struct {
+	SourceCustomerId string `json:"source_customer_id"`
+}
+
+// AddCustomerNoteJSONBody defines parameters for AddCustomerNote.
+type AddCustomerNoteJSONBody struct {
+	Content string `json:"content"`
+}
+
+// ListOrdersParams defines parameters for ListOrders.
+type ListOrdersParams struct {
+	CustomerId *string      `form:"customer_id,omitempty" json:"customer_id,omitempty"`
+	Status     *OrderStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// UnpaidBalance true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径）
+	UnpaidBalance *bool `form:"unpaid_balance,omitempty" json:"unpaid_balance,omitempty"`
+
+	// SchedulableAt 目标 slot 的 end_at；服务端按它相对当前时刻应用与 POST/PATCH 相同的订单/客户未来历史矩阵并排除已有 shoot slot：未来要求客户 active，历史允许 active/archived，merged 永不允许；可与 customer_id 组合
+	SchedulableAt *time.Time `form:"schedulable_at,omitempty" json:"schedulable_at,omitempty"`
+	Page          *Page      `form:"page,omitempty" json:"page,omitempty"`
+	PageSize      *PageSize  `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// CreateOrderJSONBody defines parameters for CreateOrder.
+type CreateOrderJSONBody struct {
+	BalancePaid *bool `json:"balance_paid,omitempty"`
+
+	// CreationMode new=新业务，只允许 consulting/scheduled 且只能引用 active 客户/套系；backfill=历史补录，可按状态不变量直达并允许 active/archived 客户与套系，merged 客户仍拒绝
+	CreationMode *OrderCreationMode `json:"creation_mode,omitempty"`
+	CustomerId   string             `json:"customer_id"`
+
+	// DeliveredAt 补录用；仅目标状态已到达 delivered 时可给
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid *bool      `json:"deposit_paid,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+	PackageId   *string    `json:"package_id,omitempty"`
+
+	// Price 分
+	Price *int `json:"price,omitempty"`
+
+	// ShotAt 补录用；仅目标状态已到达 shot 时可给
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status creation_mode=new 时缺省 consulting 且仅允许 consulting/scheduled；backfill 时可直达八态，≥shot 须显式 shot_at、≥delivered（含 closed）须显式 delivered_at，closed 须 balance_paid=true
+	Status *OrderStatus `json:"status,omitempty"`
+	Title  *string      `json:"title,omitempty"`
+}
+
+// CreateOrderParams defines parameters for CreateOrder.
+type CreateOrderParams struct {
+	// IdempotencyKey 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// UpdateOrderJSONBody defines parameters for UpdateOrder.
+type UpdateOrderJSONBody struct {
+	BalancePaid *bool      `json:"balance_paid,omitempty"`
+	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
+	DepositPaid *bool      `json:"deposit_paid,omitempty"`
+	Note        *string    `json:"note,omitempty"`
+
+	// Price 分
+	Price  *int       `json:"price,omitempty"`
+	ShotAt *time.Time `json:"shot_at,omitempty"`
+
+	// Status 语义与合法跃迁见 §4.2 订单状态机
+	Status *OrderStatus `json:"status,omitempty"`
+	Title  *string      `json:"title,omitempty"`
+}
+
+// ListPackagesParams defines parameters for ListPackages.
+type ListPackagesParams struct {
+	// Status 缺省 active；可显式查 archived/all（§4.3 套系上架/下架语义）
+	Status   *ListPackagesParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Page     *Page                     `form:"page,omitempty" json:"page,omitempty"`
+	PageSize *PageSize                 `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// ListPackagesParamsStatus defines parameters for ListPackages.
+type ListPackagesParamsStatus string
+
+// UpdatePackageJSONBody defines parameters for UpdatePackage.
+type UpdatePackageJSONBody struct {
+	// BasePrice 分
+	BasePrice        *int                   `json:"base_price,omitempty"`
+	DurationMinutes  nullable.Nullable[int] `json:"duration_minutes,omitempty"`
+	Name             *string                `json:"name,omitempty"`
+	Note             *string                `json:"note,omitempty"`
+	PricingMode      *PricingMode           `json:"pricing_mode,omitempty"`
+	RawDeliveryCount nullable.Nullable[int] `json:"raw_delivery_count,omitempty"`
+
+	// RetouchCount 0=不含精修
+	RetouchCount nullable.Nullable[int] `json:"retouch_count,omitempty"`
+	ShootType    *ShootType             `json:"shoot_type,omitempty"`
+	ShotCountMax nullable.Nullable[int] `json:"shot_count_max,omitempty"`
+	ShotCountMin nullable.Nullable[int] `json:"shot_count_min,omitempty"`
+	Status       *PackageStatus         `json:"status,omitempty"`
+}
+
+// ListRemindersParams defines parameters for ListReminders.
+type ListRemindersParams struct {
+	Status     *ReminderStatus     `form:"status,omitempty" json:"status,omitempty"`
+	CustomerId *string             `form:"customer_id,omitempty" json:"customer_id,omitempty"`
+	DueBefore  *openapi_types.Date `form:"due_before,omitempty" json:"due_before,omitempty"`
+	Page       *Page               `form:"page,omitempty" json:"page,omitempty"`
+	PageSize   *PageSize           `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// CreateReminderJSONBody defines parameters for CreateReminder.
+type CreateReminderJSONBody struct {
+	Content    string                     `json:"content"`
+	CustomerId *string                    `json:"customer_id,omitempty"`
+	DueDate    openapi_types.Date         `json:"due_date"`
+	Type       CreateReminderJSONBodyType `json:"type"`
+}
+
+// CreateReminderJSONBodyType defines parameters for CreateReminder.
+type CreateReminderJSONBodyType string
+
+// ListScheduleSlotsParams defines parameters for ListScheduleSlots.
+type ListScheduleSlotsParams struct {
+	// From 半开区间 [from,to) 的 UTC 起点；月历传完整 6 周可见网格的账号本地日界
+	From time.Time `form:"from" json:"from"`
+
+	// To 半开区间 [from,to) 的 UTC 终点
+	To time.Time `form:"to" json:"to"`
+}
+
+// CreateScheduleSlotJSONBody defines parameters for CreateScheduleSlot.
+type CreateScheduleSlotJSONBody struct {
+	EndAt time.Time `json:"end_at"`
+	Note  *string   `json:"note,omitempty"`
+
+	// OrderId type=shoot 时必填；未来/进行中只允许 consulting/scheduled 且客户须 active；历史补录允许 scheduled/shot/selected/retouching/delivered/closed 且客户可 active/archived；cancelled 或 merged 客户永不允许
+	OrderId *string   `json:"order_id,omitempty"`
+	StartAt time.Time `json:"start_at"`
+	Type    SlotType  `json:"type"`
+}
+
+// CreateScheduleSlotParams defines parameters for CreateScheduleSlot.
+type CreateScheduleSlotParams struct {
+	// IdempotencyKey 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key
+	IdempotencyKey *IdempotencyKey `json:"Idempotency-Key,omitempty"`
+}
+
+// UpdateScheduleSlotJSONBody defines parameters for UpdateScheduleSlot.
+type UpdateScheduleSlotJSONBody struct {
+	EndAt *time.Time `json:"end_at,omitempty"`
+
+	// Note 显式 null 清空备注；省略表示不改
+	Note nullable.Nullable[string] `json:"note,omitempty"`
+
+	// OrderId 显式 null 清空关联；省略表示不改
+	OrderId nullable.Nullable[string] `json:"order_id,omitempty"`
+	StartAt *time.Time                `json:"start_at,omitempty"`
+	Type    *SlotType                 `json:"type,omitempty"`
+}
+
+// UpdateSettingsJSONBody defines parameters for UpdateSettings.
+type UpdateSettingsJSONBody struct {
+	BirthdayLeadDays  *int              `json:"birthday_lead_days,omitempty"`
+	ChurnThresholds   *[]ChurnThreshold `json:"churn_thresholds,omitempty"`
+	DigestHour        *int              `json:"digest_hour,omitempty"`
+	FollowUpAfterDays *int              `json:"follow_up_after_days,omitempty"`
+
+	// Timezone IANA 时区
+	Timezone *string `json:"timezone,omitempty"`
+}
+
+// ScanRemindersJSONRequestBody defines body for ScanReminders for application/json ContentType.
+type ScanRemindersJSONRequestBody ScanRemindersJSONBody
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
+// CreateCustomerJSONRequestBody defines body for CreateCustomer for application/json ContentType.
+type CreateCustomerJSONRequestBody CreateCustomerJSONBody
+
+// UpdateCustomerJSONRequestBody defines body for UpdateCustomer for application/json ContentType.
+type UpdateCustomerJSONRequestBody UpdateCustomerJSONBody
+
+// PutCustomerAvatarMultipartRequestBody defines body for PutCustomerAvatar for multipart/form-data ContentType.
+type PutCustomerAvatarMultipartRequestBody PutCustomerAvatarMultipartBody
+
+// AddCustomerIdentityJSONRequestBody defines body for AddCustomerIdentity for application/json ContentType.
+type AddCustomerIdentityJSONRequestBody AddCustomerIdentityJSONBody
+
+// MergeCustomerJSONRequestBody defines body for MergeCustomer for application/json ContentType.
+type MergeCustomerJSONRequestBody MergeCustomerJSONBody
+
+// AddCustomerNoteJSONRequestBody defines body for AddCustomerNote for application/json ContentType.
+type AddCustomerNoteJSONRequestBody AddCustomerNoteJSONBody
+
+// CreateOrderJSONRequestBody defines body for CreateOrder for application/json ContentType.
+type CreateOrderJSONRequestBody CreateOrderJSONBody
+
+// UpdateOrderJSONRequestBody defines body for UpdateOrder for application/json ContentType.
+type UpdateOrderJSONRequestBody UpdateOrderJSONBody
+
+// CreatePackageJSONRequestBody defines body for CreatePackage for application/json ContentType.
+type CreatePackageJSONRequestBody = PackageInput
+
+// UpdatePackageJSONRequestBody defines body for UpdatePackage for application/json ContentType.
+type UpdatePackageJSONRequestBody UpdatePackageJSONBody
+
+// CreateReminderJSONRequestBody defines body for CreateReminder for application/json ContentType.
+type CreateReminderJSONRequestBody CreateReminderJSONBody
+
+// CreateScheduleSlotJSONRequestBody defines body for CreateScheduleSlot for application/json ContentType.
+type CreateScheduleSlotJSONRequestBody CreateScheduleSlotJSONBody
+
+// UpdateScheduleSlotJSONRequestBody defines body for UpdateScheduleSlot for application/json ContentType.
+type UpdateScheduleSlotJSONRequestBody UpdateScheduleSlotJSONBody
+
+// UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
+type UpdateSettingsJSONRequestBody UpdateSettingsJSONBody
+
+// AsShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a ShootScheduleSlotListItem
+func (t ScheduleSlotListItem) AsShootScheduleSlotListItem() (ShootScheduleSlotListItem, error) {
+	var body ShootScheduleSlotListItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromShootScheduleSlotListItem overwrites any union data inside the ScheduleSlotListItem as the provided ShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) FromShootScheduleSlotListItem(v ShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeShootScheduleSlotListItem performs a merge with any union data inside the ScheduleSlotListItem, using the provided ShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) MergeShootScheduleSlotListItem(v ShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsNonShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a NonShootScheduleSlotListItem
+func (t ScheduleSlotListItem) AsNonShootScheduleSlotListItem() (NonShootScheduleSlotListItem, error) {
+	var body NonShootScheduleSlotListItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromNonShootScheduleSlotListItem overwrites any union data inside the ScheduleSlotListItem as the provided NonShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) FromNonShootScheduleSlotListItem(v NonShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeNonShootScheduleSlotListItem performs a merge with any union data inside the ScheduleSlotListItem, using the provided NonShootScheduleSlotListItem
+func (t *ScheduleSlotListItem) MergeNonShootScheduleSlotListItem(v NonShootScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ScheduleSlotListItem) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"type"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t ScheduleSlotListItem) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "busy":
+		return t.AsNonShootScheduleSlotListItem()
+	case "hold":
+		return t.AsNonShootScheduleSlotListItem()
+	case "shoot":
+		return t.AsShootScheduleSlotListItem()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t ScheduleSlotListItem) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ScheduleSlotListItem) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// 提醒扫描唯一手动触发入口（每日定时与手动共用，鉴权同 §4.1）
+	// (POST /admin/reminders/scan)
+	ScanReminders(c *gin.Context)
 	// 单账号密码登录，签发 Bearer token
 	// (POST /auth/login)
 	Login(c *gin.Context)
+	// 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
+	// (GET /customers)
+	ListCustomers(c *gin.Context, params ListCustomersParams)
+	// 30 秒建档端点（仅 3-4 项必填）
+	// (POST /customers)
+	CreateCustomer(c *gin.Context)
+	// 客户详情（含 identities、notes 倒序、referrer 摘要）
+	// (GET /customers/{id})
+	GetCustomer(c *gin.Context, id Id)
+	// 渐进补全任意字段；{status:archived} 即归档（§4.2）
+	// (PATCH /customers/{id})
+	UpdateCustomer(c *gin.Context, id Id)
+	// 条件移除客户头像；merged 仅开放本 cleanup-only 操作
+	// (DELETE /customers/{id}/avatar)
+	DeleteCustomerAvatar(c *gin.Context, id Id, params DeleteCustomerAvatarParams)
+	// 条件设置或替换客户头像；active/archived 可写，merged 恒为 customer_merged
+	// (PUT /customers/{id}/avatar)
+	PutCustomerAvatar(c *gin.Context, id Id, params PutCustomerAvatarParams)
+	// 经账号鉴权读取当前强版本头像内容
+	// (GET /customers/{id}/avatar/content)
+	GetCustomerAvatarContent(c *gin.Context, id Id, params GetCustomerAvatarContentParams)
+	// 追加社交身份
+	// (POST /customers/{id}/identities)
+	AddCustomerIdentity(c *gin.Context, id Id)
+	// 删除社交身份
+	// (DELETE /customers/{id}/identities/{identity_id})
+	DeleteCustomerIdentity(c *gin.Context, id Id, identityId string)
+	// 把 source 客户 merge 进当前客户（语义见 §4.2）
+	// (POST /customers/{id}/merge)
+	MergeCustomer(c *gin.Context, id Id)
+	// 追加客户备注
+	// (POST /customers/{id}/notes)
+	AddCustomerNote(c *gin.Context, id Id)
+	// 今日经营台聚合（口径单点在服务端，§4.3）
+	// (GET /dashboard)
+	GetDashboard(c *gin.Context)
+	// 全量导出（application/json 附件；counts 必须与各数组长度一致，§4.6）
+	// (GET /export)
+	ExportAll(c *gin.Context)
 	// 当前账号信息（永不含 password_hash）
 	// (GET /me)
 	GetMe(c *gin.Context)
+	// 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3）
+	// (GET /orders)
+	ListOrders(c *gin.Context, params ListOrdersParams)
+	// 新建订单（creation_mode=new 为新业务，backfill 为历史补录）
+	// (POST /orders)
+	CreateOrder(c *gin.Context, params CreateOrderParams)
+	// 物理删除终态订单（closed/cancelled，§4.3 2026-07-09）
+	// (DELETE /orders/{id})
+	DeleteOrder(c *gin.Context, id Id)
+	// 状态跃迁与字段修正（状态机语义见 §4.2；status 等于当前状态时为 200 no-op）
+	// (PATCH /orders/{id})
+	UpdateOrder(c *gin.Context, id Id)
+	// 套系列表（?status=active 供下单选择）
+	// (GET /packages)
+	ListPackages(c *gin.Context, params ListPackagesParams)
+	// 新建套系
+	// (POST /packages)
+	CreatePackage(c *gin.Context)
+	// 删除套系；被订单引用时返回 package_in_use（§4.3）
+	// (DELETE /packages/{id})
+	DeletePackage(c *gin.Context, id Id)
+	// 更新套系；归档 = PATCH {status:archived}（无 in-use 校验，§4.3）
+	// (PATCH /packages/{id})
+	UpdatePackage(c *gin.Context, id Id)
+	// 提醒列表
+	// (GET /reminders)
+	ListReminders(c *gin.Context, params ListRemindersParams)
+	// 手工创建自定义提醒
+	// (POST /reminders)
+	CreateReminder(c *gin.Context)
+	// 忽略提醒
+	// (POST /reminders/{id}/dismiss)
+	DismissReminder(c *gin.Context, id Id)
+	// 标记提醒完成
+	// (POST /reminders/{id}/done)
+	MarkReminderDone(c *gin.Context, id Id)
+	// 档期区间查询（含跨界 slot）
+	// (GET /schedule/slots)
+	ListScheduleSlots(c *gin.Context, params ListScheduleSlotsParams)
+	// 新建档期（支持跨日；重叠不阻止；同一订单最多一条 shoot slot）
+	// (POST /schedule/slots)
+	CreateScheduleSlot(c *gin.Context, params CreateScheduleSlotParams)
+	// 删除档期（不自动变更订单状态，§4.2）
+	// (DELETE /schedule/slots/{id})
+	DeleteScheduleSlot(c *gin.Context, id Id)
+	// 更新档期；时间/type/order 变化重验订单与客户矩阵，note-only 不重验外部状态
+	// (PATCH /schedule/slots/{id})
+	UpdateScheduleSlot(c *gin.Context, id Id)
+	// 读取设置
+	// (GET /settings)
+	GetSettings(c *gin.Context)
+	// 更新设置
+	// (PATCH /settings)
+	UpdateSettings(c *gin.Context)
+	// 生成 TG 绑定 token 与 deep link（绑定流程见 §4.5）
+	// (POST /settings/telegram/bind-token)
+	CreateTelegramBindToken(c *gin.Context)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -65,6 +1410,21 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// ScanReminders operation middleware
+func (siw *ServerInterfaceWrapper) ScanReminders(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ScanReminders(c)
+}
 
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(c *gin.Context) {
@@ -77,6 +1437,450 @@ func (siw *ServerInterfaceWrapper) Login(c *gin.Context) {
 	}
 
 	siw.Handler.Login(c)
+}
+
+// ListCustomers operation middleware
+func (siw *ServerInterfaceWrapper) ListCustomers(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCustomersParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "channel" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "channel", c.Request.URL.Query(), &params.Channel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter channel: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCustomers(c, params)
+}
+
+// CreateCustomer operation middleware
+func (siw *ServerInterfaceWrapper) CreateCustomer(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCustomer(c)
+}
+
+// GetCustomer operation middleware
+func (siw *ServerInterfaceWrapper) GetCustomer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCustomer(c, id)
+}
+
+// UpdateCustomer operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCustomer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateCustomer(c, id)
+}
+
+// DeleteCustomerAvatar operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCustomerAvatar(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCustomerAvatarParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch AvatarIfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter If-Match is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCustomerAvatar(c, id, params)
+}
+
+// PutCustomerAvatar operation middleware
+func (siw *ServerInterfaceWrapper) PutCustomerAvatar(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutCustomerAvatarParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch AvatarIfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter If-Match is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutCustomerAvatar(c, id, params)
+}
+
+// GetCustomerAvatarContent operation middleware
+func (siw *ServerInterfaceWrapper) GetCustomerAvatarContent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCustomerAvatarContentParams
+
+	// ------------- Required query parameter "v" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "v", c.Request.URL.Query(), &params.V, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter v: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCustomerAvatarContent(c, id, params)
+}
+
+// AddCustomerIdentity operation middleware
+func (siw *ServerInterfaceWrapper) AddCustomerIdentity(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AddCustomerIdentity(c, id)
+}
+
+// DeleteCustomerIdentity operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCustomerIdentity(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "identity_id" -------------
+	var identityId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identity_id", c.Param("identity_id"), &identityId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter identity_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCustomerIdentity(c, id, identityId)
+}
+
+// MergeCustomer operation middleware
+func (siw *ServerInterfaceWrapper) MergeCustomer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MergeCustomer(c, id)
+}
+
+// AddCustomerNote operation middleware
+func (siw *ServerInterfaceWrapper) AddCustomerNote(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AddCustomerNote(c, id)
+}
+
+// GetDashboard operation middleware
+func (siw *ServerInterfaceWrapper) GetDashboard(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetDashboard(c)
+}
+
+// ExportAll operation middleware
+func (siw *ServerInterfaceWrapper) ExportAll(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ExportAll(c)
 }
 
 // GetMe operation middleware
@@ -92,6 +1896,593 @@ func (siw *ServerInterfaceWrapper) GetMe(c *gin.Context) {
 	}
 
 	siw.Handler.GetMe(c)
+}
+
+// ListOrders operation middleware
+func (siw *ServerInterfaceWrapper) ListOrders(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOrdersParams
+
+	// ------------- Optional query parameter "customer_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "customer_id", c.Request.URL.Query(), &params.CustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter customer_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "unpaid_balance" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "unpaid_balance", c.Request.URL.Query(), &params.UnpaidBalance, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter unpaid_balance: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "schedulable_at" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "schedulable_at", c.Request.URL.Query(), &params.SchedulableAt, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter schedulable_at: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListOrders(c, params)
+}
+
+// CreateOrder operation middleware
+func (siw *ServerInterfaceWrapper) CreateOrder(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateOrderParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateOrder(c, params)
+}
+
+// DeleteOrder operation middleware
+func (siw *ServerInterfaceWrapper) DeleteOrder(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteOrder(c, id)
+}
+
+// UpdateOrder operation middleware
+func (siw *ServerInterfaceWrapper) UpdateOrder(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateOrder(c, id)
+}
+
+// ListPackages operation middleware
+func (siw *ServerInterfaceWrapper) ListPackages(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListPackagesParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListPackages(c, params)
+}
+
+// CreatePackage operation middleware
+func (siw *ServerInterfaceWrapper) CreatePackage(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreatePackage(c)
+}
+
+// DeletePackage operation middleware
+func (siw *ServerInterfaceWrapper) DeletePackage(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeletePackage(c, id)
+}
+
+// UpdatePackage operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePackage(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdatePackage(c, id)
+}
+
+// ListReminders operation middleware
+func (siw *ServerInterfaceWrapper) ListReminders(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListRemindersParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", c.Request.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter status: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "customer_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "customer_id", c.Request.URL.Query(), &params.CustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter customer_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "due_before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "due_before", c.Request.URL.Query(), &params.DueBefore, runtime.BindQueryParameterOptions{Type: "string", Format: "date"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter due_before: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page", c.Request.URL.Query(), &params.Page, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListReminders(c, params)
+}
+
+// CreateReminder operation middleware
+func (siw *ServerInterfaceWrapper) CreateReminder(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateReminder(c)
+}
+
+// DismissReminder operation middleware
+func (siw *ServerInterfaceWrapper) DismissReminder(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DismissReminder(c, id)
+}
+
+// MarkReminderDone operation middleware
+func (siw *ServerInterfaceWrapper) MarkReminderDone(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MarkReminderDone(c, id)
+}
+
+// ListScheduleSlots operation middleware
+func (siw *ServerInterfaceWrapper) ListScheduleSlots(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListScheduleSlotsParams
+
+	// ------------- Required query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "from", c.Request.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter from: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Required query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "to", c.Request.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter to: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListScheduleSlots(c, params)
+}
+
+// CreateScheduleSlot operation middleware
+func (siw *ServerInterfaceWrapper) CreateScheduleSlot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateScheduleSlotParams
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateScheduleSlot(c, params)
+}
+
+// DeleteScheduleSlot operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScheduleSlot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteScheduleSlot(c, id)
+}
+
+// UpdateScheduleSlot operation middleware
+func (siw *ServerInterfaceWrapper) UpdateScheduleSlot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateScheduleSlot(c, id)
+}
+
+// GetSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetSettings(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSettings(c)
+}
+
+// UpdateSettings operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSettings(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateSettings(c)
+}
+
+// CreateTelegramBindToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateTelegramBindToken(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateTelegramBindToken(c)
 }
 
 // GinServerOptions provides options for the Gin server.
@@ -121,6 +2512,39 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.POST(options.BaseURL+"/admin/reminders/scan", wrapper.ScanReminders)
 	router.POST(options.BaseURL+"/auth/login", wrapper.Login)
+	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
+	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
+	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)
+	router.PATCH(options.BaseURL+"/customers/:id", wrapper.UpdateCustomer)
+	router.DELETE(options.BaseURL+"/customers/:id/avatar", wrapper.DeleteCustomerAvatar)
+	router.PUT(options.BaseURL+"/customers/:id/avatar", wrapper.PutCustomerAvatar)
+	router.GET(options.BaseURL+"/customers/:id/avatar/content", wrapper.GetCustomerAvatarContent)
+	router.POST(options.BaseURL+"/customers/:id/identities", wrapper.AddCustomerIdentity)
+	router.DELETE(options.BaseURL+"/customers/:id/identities/:identity_id", wrapper.DeleteCustomerIdentity)
+	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)
+	router.POST(options.BaseURL+"/customers/:id/notes", wrapper.AddCustomerNote)
+	router.GET(options.BaseURL+"/dashboard", wrapper.GetDashboard)
+	router.GET(options.BaseURL+"/export", wrapper.ExportAll)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
+	router.GET(options.BaseURL+"/orders", wrapper.ListOrders)
+	router.POST(options.BaseURL+"/orders", wrapper.CreateOrder)
+	router.DELETE(options.BaseURL+"/orders/:id", wrapper.DeleteOrder)
+	router.PATCH(options.BaseURL+"/orders/:id", wrapper.UpdateOrder)
+	router.GET(options.BaseURL+"/packages", wrapper.ListPackages)
+	router.POST(options.BaseURL+"/packages", wrapper.CreatePackage)
+	router.DELETE(options.BaseURL+"/packages/:id", wrapper.DeletePackage)
+	router.PATCH(options.BaseURL+"/packages/:id", wrapper.UpdatePackage)
+	router.GET(options.BaseURL+"/reminders", wrapper.ListReminders)
+	router.POST(options.BaseURL+"/reminders", wrapper.CreateReminder)
+	router.POST(options.BaseURL+"/reminders/:id/dismiss", wrapper.DismissReminder)
+	router.POST(options.BaseURL+"/reminders/:id/done", wrapper.MarkReminderDone)
+	router.GET(options.BaseURL+"/schedule/slots", wrapper.ListScheduleSlots)
+	router.POST(options.BaseURL+"/schedule/slots", wrapper.CreateScheduleSlot)
+	router.DELETE(options.BaseURL+"/schedule/slots/:id", wrapper.DeleteScheduleSlot)
+	router.PATCH(options.BaseURL+"/schedule/slots/:id", wrapper.UpdateScheduleSlot)
+	router.GET(options.BaseURL+"/settings", wrapper.GetSettings)
+	router.PATCH(options.BaseURL+"/settings", wrapper.UpdateSettings)
+	router.POST(options.BaseURL+"/settings/telegram/bind-token", wrapper.CreateTelegramBindToken)
 }

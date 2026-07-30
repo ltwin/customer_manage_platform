@@ -1,0 +1,162 @@
+feature: 2026-07-08-package-catalog
+created: 2026-07-08
+
+steps:
+  - action: "契约同步：补 OpenAPI PATCH /packages/{id} requestBody 的 note 字段 + 新增 DELETE /packages/{id} 端点（204/404/409 package_in_use，落实 §4.3 2026-07-08 update），并把 packages 加进 backend/oapi-codegen.yaml 的 include-tags；未实现的订单/档期域仍只同步契约不注册路由"
+    exit_signal: "`make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts` 退出码 0，且 Go server interface 新增 createPackage/listPackages/updatePackage/deletePackage 四个操作；订单/档期端点仍不注册"
+    status: done
+  - action: "套系域持久化：新增 packages 迁移与 pkgcatalog 域（实体、创建校验、status 过滤列表查询、按 id 读取、PATCH 部分更新、删除含 in-use 引用检查领域方法），复用既有 AccountScope 不扩展基座"
+    exit_signal: "service/repository 测试覆盖创建成功（含 base_price=0 合法）、校验失败（枚举/base_price<0 负数/缺必填）、PATCH 只改单字段/交付参数 null 清空、status=active/archived/all 过滤、双账号隔离、orders_count=0 shape、删除无引用放行（in-use 方法查引用数返回 0 而非空桩）"
+    status: done
+  - action: "HTTP 垂直切片：新增 packages.go handler，注册受保护 POST /packages、GET /packages、PATCH /packages/{id}、DELETE /packages/{id}，接入 ErrorEnvelope、AccountContext 和 package service"
+    exit_signal: "API 集成测试覆盖 201/200/204/400/401/404 路径；删除无引用套系 204、跨账号 404；订单/档期端点仍返回 404"
+    status: done
+  - action: "前端 API client：新增 listPackages/createPackage/updatePackage/deletePackage 方法，类型引用 schema.d.ts，不手写 DTO"
+    exit_signal: "`cd frontend && npm run build` 类型检查通过；client 方法类型全部来自 paths[...]"
+    status: done
+  - action: "前端 PackagesPage 迁移：从原型内存桩改真 API，接通列表 loading/error/empty、元↔分单位换算、status 过滤、新建/编辑/上下架/删除（二次确认）接线；移除原型桩 import"
+    exit_signal: "浏览器演示：新建套系→列表可见→编辑改价（显示价与录入价一致）→下架后 active 列表消失/archived 可见→删除录错套系（二次确认后移除）；PackagesPage grep 无 usePrototypeStore/prototypeStoreContext import"
+    status: done
+  - action: "harden 与终验：补 UI polish（loading/error/empty/长名称/375px/focus/keyboard/下架态视觉/删除确认弹窗）、范围守护、清洁度清扫和命令终验"
+    exit_signal: "`make check` 退出码 0；A11/A12 截图或录屏归档；范围守护（下架无 in-use、删除 in-use 领域方法非空桩、无订单实现）和清洁度 grep/diff review 通过"
+    status: done
+
+checks:
+  - item: "POST /packages 必填 name/shoot_type/pricing_mode/base_price(≥0，允许 0 元套系，挡负数)；shoot_type∈{portrait,cosplay,other}、pricing_mode∈{per_duration,per_photo,fixed}；交付参数可选且非负"
+    source: 名词契约
+    status: passed
+  - item: "GET /packages 的 status 缺省 active，支持 archived/all；page/page_size 分页与 total 可核对；列表项含 orders_count=0"
+    source: 名词契约
+    status: passed
+  - item: "PATCH /packages/{id} 未传字段不动、交付参数传 null 清空；status 可改 active↔archived（上架↔下架）；note 字段可改（含 OpenAPI 同步）"
+    source: 名词契约
+    status: passed
+  - item: "DELETE /packages/{id} 无引用 204 物理删、被引用 409 package_in_use（本轮无 orders 表恒放行）；含 OpenAPI DELETE 端点定义"
+    source: 名词契约
+    status: passed
+  - item: "列表项从本 feature 起返回 orders_count=0，后续 order-tracking 不破坏 shape"
+    source: 名词契约
+    status: passed
+  - item: "PackageStatus 枚举只有 active(上架)/archived(下架)；套系无 merged 态；删除是操作非状态"
+    source: 名词契约
+    status: passed
+  - item: "package service/repository 不 import gin，handler 只做 HTTP 适配（ADR-003）"
+    source: 编排骨架
+    status: passed
+  - item: "所有套系读写由 AccountScope 派生；客户端永不传 account_id；跨账号数据表现为 404 或不可见（删除跨账号套系 404）"
+    source: 流程级约束
+    status: passed
+  - item: "下架无 in-use 校验：PATCH status=archived 不查询订单引用，存量订单继续引用（§4.3）"
+    source: 流程级约束
+    status: passed
+  - item: "删除 in-use 校验：删除领域方法查订单引用数（本轮无表恒 0→放行），是可运行实现非 TODO 空桩；真实 409 由 order-tracking 接通，方法签名预留事务 scope 防 TOCTOU"
+    source: 流程级约束
+    status: passed
+  - item: "OpenAPI 补 PATCH note + DELETE 端点属机器形式落实 §4.3 update；生成物零漂移；packages tag 切片按 compound 模式"
+    source: 编排骨架
+    status: passed
+  - item: "挂载点：OpenAPI PATCH note + DELETE 端点与 oapi-codegen include-tags 加 packages"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：packages 数据库 schema 迁移"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：POST/GET /api/v1/packages 与 PATCH/DELETE /api/v1/packages/{id}"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：后端 package 域模块（含删除 in-use 领域方法）接入 platform Store / AccountScope"
+    source: 挂载点
+    status: passed
+  - item: "挂载点：前端 client 套系方法（含 deletePackage）与 PackagesPage 真 API 迁移"
+    source: 挂载点
+    status: passed
+  - item: "不实现订单 / 档期域行为；orders_count 恒 0"
+    source: 范围守护
+    status: passed
+  - item: "下架无 in-use 校验（区别于删除）"
+    source: 范围守护
+    status: passed
+  - item: "删除 in-use 本轮不查真实订单表；in-use 领域方法查引用数返回 0 放行、非空桩；真实 409 留 order-tracking"
+    source: 范围守护
+    status: passed
+  - item: "不做促销 / 折扣 / 阶梯定价 / 套系复制"
+    source: 范围守护
+    status: passed
+  - item: "PackagesPage 迁移后不残留原型桩 import（usePrototypeStore / prototypeStoreContext）"
+    source: 范围守护
+    status: passed
+  - item: "不引入 UI 组件库"
+    source: 范围守护
+    status: passed
+  - item: "A1：make check 退出码 0"
+    source: 验收场景
+    status: passed
+  - item: "A2：make generate 后 Go/TS 生成物零漂移，Go server interface 新增套系四操作"
+    source: 验收场景
+    status: passed
+  - item: "A3：POST /packages 成功写 Package，status=active，account_id 由服务端写入"
+    source: 验收场景
+    status: passed
+  - item: "A4：创建缺 name、非法枚举、base_price<0 负数返回 400 且无写入；base_price=0 可成功创建（0 元套系合法）"
+    source: 验收场景
+    status: passed
+  - item: "A5：PATCH 只传 base_price 只改价；交付参数传 null 清空；其余字段保持"
+    source: 验收场景
+    status: passed
+  - item: "A6：PATCH status=archived 下架成功无 in-use 拦截，status=active 恢复上架"
+    source: 验收场景
+    status: passed
+  - item: "A7：GET /packages 默认只返回当前账号 active 套系，created_at desc，orders_count=0"
+    source: 验收场景
+    status: passed
+  - item: "A8：status=archived/all 过滤正确；非法 page/page_size 返回 400"
+    source: 验收场景
+    status: passed
+  - item: "A9：PATCH/GET/DELETE 不存在或跨账号 id 返回 404"
+    source: 验收场景
+    status: passed
+  - item: "A10：跨账号列表不可见、PATCH/DELETE 对方套系 404"
+    source: 验收场景
+    status: passed
+  - item: "A11：浏览器新建→列表可见→编辑改价（元↔分换算正确）→下架后 active 消失/archived 可见→删除录错套系（二次确认），失败保留输入"
+    source: 验收场景
+    status: passed
+  - item: "A12：空态、加载、错误、401、长名称、375px、focus/keyboard、删除确认弹窗可观察"
+    source: 验收场景
+    status: passed
+  - item: "A13：下架无 in-use、删除 in-use 领域方法非空桩、无订单实现、PackagesPage 无残留原型桩"
+    source: 验收场景
+    status: passed
+  - item: "A14：无调试输出/TODO/注释代码/真实凭证"
+    source: 验收场景
+    status: passed
+  - item: "A15：DELETE 无引用套系 204 物理删；in-use 领域方法查引用数（本轮返回 0 放行），order 域接通后被引用 409 package_in_use"
+    source: 验收场景
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./..."
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run build"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, api_response, screenshots, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    exceptions: "platform 既有结构化日志是功能本身；删除 in-use 领域方法必须可运行实现，不得写 TODO 空桩"
+    todo_fixme: forbidden-unless-tracked
+    commented_out_code: forbidden
+    unused_imports: forbidden
+    real_pii: forbidden

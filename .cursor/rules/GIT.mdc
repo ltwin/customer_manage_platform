@@ -1,0 +1,6 @@
+---
+alwaysApply: true
+---
+
+- 请优先使用普通branch开发，只有在并发开发多个feature的情况下，才考虑使用worktree
+- 检查当前分支，对于main、master、dev、develop、release、test、staging等这类受保护分支，不允许直接开发，必须停下询问owner是否切新分支

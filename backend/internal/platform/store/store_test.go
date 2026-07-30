@@ -2,10 +2,12 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -13,6 +15,96 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
+
+func TestCustomerAvatarMigrationUpDownAndConstraints(t *testing.T) {
+	url := startPostgres(t)
+	if err := store.MigrateUp(url); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `INSERT INTO accounts (id, password_hash) VALUES ('acc_avatar', 'hash')`); err != nil {
+		t.Fatalf("insert account: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `INSERT INTO customers (id, account_id, display_name, channel) VALUES ('cus_avatar', 'acc_avatar', '头像客户', 'other')`); err != nil {
+		t.Fatalf("insert customer: %v", err)
+	}
+	var revision int64
+	if err := db.QueryRowContext(ctx, `SELECT avatar_revision FROM customers WHERE id = 'cus_avatar'`).Scan(&revision); err != nil {
+		t.Fatalf("read initial revision: %v", err)
+	}
+	if revision != 0 {
+		t.Fatalf("initial avatar revision: want 0, got %d", revision)
+	}
+
+	version := "sha256-" + "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	objectID := "0123456789abcdef0123456789abcdef"
+	if err := db.QueryRowContext(ctx, `
+		UPDATE customers
+		SET avatar_revision = avatar_revision + 1,
+		    avatar_version = $1,
+		    avatar_object_id = $2,
+		    avatar_media_type = 'image/jpeg',
+		    avatar_size = 123,
+		    avatar_updated_at = now()
+		WHERE id = 'cus_avatar'
+		RETURNING avatar_revision`, version, objectID).Scan(&revision); err != nil {
+		t.Fatalf("write complete pointer: %v", err)
+	}
+	if revision != 1 {
+		t.Fatalf("incremented avatar revision: want 1, got %d", revision)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE customers SET avatar_object_id = NULL WHERE id = 'cus_avatar'`); err == nil {
+		t.Fatal("partial avatar pointer should violate completeness constraint")
+	}
+
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO avatar_object_gc (
+			account_id, customer_id, avatar_version, avatar_object_id, not_before, next_attempt_at
+		) VALUES ('acc_avatar', 'cus_avatar', $1, $2, now(), now())`, version, objectID); err != nil {
+		t.Fatalf("insert GC row: %v", err)
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO avatar_object_gc (
+			account_id, customer_id, avatar_version, avatar_object_id, not_before, next_attempt_at
+		) VALUES ('acc_avatar', 'cus_avatar', $1, $2, now(), now())`, version, objectID); err == nil {
+		t.Fatal("duplicate account/customer/object_id GC row should fail")
+	}
+	if _, err := db.ExecContext(ctx, `
+		INSERT INTO avatar_reconciliation_checkpoint (account_id, object_inventory_cycle, pointer_cycle)
+		VALUES ('acc_avatar', -1, 0)`); err == nil {
+		t.Fatal("negative reconciliation cycle should fail")
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatalf("close before down migration: %v", err)
+	}
+	// avatar 是 0008，需连续回滚 telegram(0011)+reminders(0010)+settings(0009)+avatar(0008)。
+	for i, label := range []string{"telegram", "reminders", "settings", "avatar"} {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatalf("migrate down one (%s step %d): %v", label, i+1, err)
+		}
+	}
+	db, err = sql.Open("pgx", url)
+	if err != nil {
+		t.Fatalf("reopen after down: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	var avatarColumns int
+	if err := db.QueryRowContext(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'customers' AND column_name LIKE 'avatar_%'`).Scan(&avatarColumns); err != nil {
+		t.Fatalf("inspect down migration: %v", err)
+	}
+	if avatarColumns != 0 {
+		t.Fatalf("down migration left %d avatar customer columns", avatarColumns)
+	}
+}
 
 // startPostgres 起一个一次性 PG 容器并返回连接串（测试与 dev 库互不干扰，design D5）。
 func startPostgres(t *testing.T) string {

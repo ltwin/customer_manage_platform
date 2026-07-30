@@ -1,0 +1,71 @@
+{
+  "gate_id": "scope-gate",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "changed_files": [
+        "backend/cmd/server/main.go",
+        "backend/cmd/server/main_test.go",
+        ".codestable/features/2026-07-15-telegram-digest/evidence/settings-telegram-375-error.jpg",
+        ".codestable/features/2026-07-15-telegram-digest/goal-plan.md",
+        ".codestable/features/2026-07-15-telegram-digest/goal-protocol.md",
+        ".codestable/features/2026-07-15-telegram-digest/goal-state.yaml",
+        ".codestable/features/2026-07-15-telegram-digest/telegram-digest-checklist.yaml",
+        ".codestable/features/2026-07-15-telegram-digest/telegram-digest-design-review.md",
+        ".codestable/features/2026-07-15-telegram-digest/telegram-digest-design.md",
+        ".codestable/features/2026-07-15-telegram-digest/telegram-digest-implementation.md",
+        "backend/internal/reminder/digest/adapters.go",
+        "backend/internal/reminder/digest/binding.go",
+        "backend/internal/reminder/digest/binding_repository.go",
+        "backend/internal/reminder/digest/binding_test.go",
+        "backend/internal/reminder/digest/cleanup_test.go",
+        "backend/internal/reminder/digest/daily.go",
+        "backend/internal/reminder/digest/daily_test.go",
+        "backend/internal/reminder/digest/fake.go",
+        "backend/internal/reminder/digest/gate.go",
+        "backend/internal/reminder/digest/gate_test.go",
+        "backend/internal/reminder/digest/integration_state.go",
+        "backend/internal/reminder/digest/integration_state_test.go",
+        "backend/internal/reminder/digest/message_builder.go",
+        "backend/internal/reminder/digest/message_builder_test.go",
+        "backend/internal/reminder/digest/model.go",
+        "backend/internal/reminder/digest/policy.go",
+        "backend/internal/reminder/digest/policy_test.go",
+        "backend/internal/reminder/digest/poller.go",
+        "backend/internal/reminder/digest/poller_test.go",
+        "backend/internal/reminder/digest/renderer.go",
+        "backend/internal/reminder/digest/repository.go",
+        "backend/internal/reminder/digest/repository_test.go",
+        "backend/internal/reminder/digest/resolver_test.go",
+        "backend/internal/reminder/digest/retry_test.go",
+        "backend/internal/reminder/digest/runner.go",
+        "backend/internal/reminder/digest/runner_test.go",
+        "backend/internal/reminder/digest/sender.go",
+        "backend/internal/reminder/digest/sender_runner.go",
+        "backend/internal/reminder/digest/sender_runner_test.go",
+        "backend/internal/reminder/digest/sender_test.go",
+        "backend/internal/reminder/digest/snapshot.go",
+        "backend/internal/reminder/digest/snapshot_test.go",
+        "backend/internal/reminder/digest/telegram.go",
+        "backend/internal/reminder/digest/telegram/client.go",
+        "backend/internal/reminder/digest/telegram/client_test.go",
+        "backend/internal/reminder/digest/telegram_test.go",
+        "backend/internal/reminder/digest/update_handler.go",
+        "backend/internal/reminder/digest/update_handler_test.go"
+      ],
+      "ignored_machine_artifacts": [
+        ".codestable/features/2026-07-15-telegram-digest/telegram-digest-dod-results.json",
+        ".codestable/features/2026-07-15-telegram-digest/telegram-digest-gate-results.json"
+      ],
+      "allowed_prefixes": [
+        ".codestable/features/2026-07-15-telegram-digest",
+        "backend/internal/reminder/digest",
+        "backend/cmd/server"
+      ]
+    }
+  ],
+  "providers": {}
+}

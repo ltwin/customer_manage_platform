@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -8,8 +9,34 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
+	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
+	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
+	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
+	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
+
+const defaultAccountTimezone = "Asia/Shanghai"
+
+type AccountTimezoneProvider interface {
+	TimezoneForAccount(context.Context, string) (string, error)
+}
+
+type TelegramBindingIssuer interface {
+	IssueBindToken(context.Context, store.AccountScope) (digest.BindLink, error)
+}
+
+type defaultTimezoneProvider struct{}
+
+func (defaultTimezoneProvider) TimezoneForAccount(context.Context, string) (string, error) {
+	return defaultAccountTimezone, nil
+}
 
 // authMiddleware 校验 Bearer token 并注入 AccountContext；
 // 缺失 / 无效 / 过期一律 401 封套（鉴权不变量，design 2.2）。
@@ -34,8 +61,24 @@ func authMiddleware(svc *auth.Service) gin.HandlerFunc {
 
 // handlers 实现 codegen 的 ServerInterface：薄适配层，领域逻辑在 auth.Service（ADR-003）。
 type handlers struct {
-	logger *slog.Logger
-	auth   *auth.Service
+	logger           *slog.Logger
+	auth             *auth.Service
+	scopeFactory     ScopeFactory
+	customer         *customerdomain.Service
+	orders           *orderdomain.Service
+	packages         *pkgcatalog.Service
+	idempotency      *idempotency.Executor
+	timezone         AccountTimezoneProvider
+	schedule         *scheduledomain.Service
+	avatar           *customerdomain.AvatarApplication
+	avatarProcessor  AvatarProcessor
+	settings         *settings.Service
+	reminders        *reminder.Service
+	dashboard        *dashboarddomain.Service
+	dataExport       DataExportService
+	dataExportMap    dataExportProjector
+	dataExportEncode dataExportEncoder
+	telegramBinding  TelegramBindingIssuer
 }
 
 var _ ServerInterface = (*handlers)(nil)
@@ -71,5 +114,14 @@ func (h *handlers) GetMe(c *gin.Context) {
 		_ = c.Error(err)
 		return
 	}
-	c.JSON(http.StatusOK, Account{Id: &acct.ID, CreatedAt: &acct.CreatedAt})
+	timezone, err := h.timezone.TimezoneForAccount(c.Request.Context(), ac.AccountID)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, Account{
+		Id:        &acct.ID,
+		CreatedAt: &acct.CreatedAt,
+		Timezone:  timezone,
+	})
 }

@@ -1,0 +1,139 @@
+feature: 2026-07-09-schedule-calendar
+created: 2026-07-09
+
+steps:
+  - action: "契约与生成物：确认requirements/CONTEXT、roadmap/items、OpenAPI与design同口径；OpenAPI固化GET /me timezone、OrderCreationMode、Idempotency-Key、GET /orders?schedulable_at、以type判别且shoot摘要必返的ScheduleSlotListItem union、typed details、schedule 409与nullable PATCH；include-tags加schedule，make generate，补四个最小schedule handler桩保持ServerInterface编译，并同步既有order/me handler与前端类型"
+    exit_signal: "requirement/roadmap/OpenAPI/design/checklist口径一致；生成Go/TS类型可按slot type收窄且shoot必返order/customer/status摘要；二次生成零漂移；未注册schedule路由时httpapi仍编译且范围守护保持404；无header/creation_mode/schedulable_at的既有新业务调用和订单列表排序/total回归绿"
+    status: done
+  - action: "幂等安全网：新增0006_idempotency_records与platform/idempotency ExecuteCreate(...func(store.TxAccountScope)(StoredResponse,error))；operation为稳定typed常量order.create.v1/schedule-slot.create.v1，handler禁拼字符串；TxAccountScope不暴露WithinTx，由AccountScope.WithTxScope唯一构造；扩受控且账号限定的InsertOnConflictDoNothingReturning+QueryRowForUpdate claim原语；内部TxRunner seam生产调WithTxScope、测试可脚本化commit结果；静态校验先行，只缓存prepare后canonical请求的已序列化2xx；同hash等待/replay、成功后异hash409、明确失败回滚、过期单owner；order service拆PrepareCreate+repository CreatePreparedInScope供无key路径复用，本步不依赖schedule repository"
+    exit_signal: "store测试覆盖claim原语标识符校验/账号隔离/冲突不abort及TxAccountScope无嵌套事务入口；migration/contract test固定两个operation值；平台测试覆盖同hash串行/并发、成功后异hash、确定失败不留claim、资源/response同事务、TxRunner的committed-but-error与rolled-back-error均原key收敛、过期单owner；order prepare输入同时用于hash/写入且handler无重复校验，原无key回归绿；不引用schedule表/包"
+    status: done
+  - action: "档期计算节点：实现半开区间重叠、POST/PATCH 最终实体的未来/历史 shoot 状态矩阵、固定 clock、一订单一 shoot、账号本地自然日/42日网格/跨日全天投影；抽账号timezone helper替换schedule_draft OrderWorkspace的todayDate/dateToAPI/isValidDateInput浏览器日界/+08:00；新增前端 test:schedule 并接入 make check"
+    exit_signal: "后端/前端纯函数测试覆盖端点相接/包含/跨类型/自身排除，end_at==now、历史↔未来、换order/type，22:00→次日00:00、跨月、全天、浏览器异时区、schedule_draft历史日期转UTC、America/New_York DST 23/25小时、不存在线时间拒绝与重复时间offset选择"
+    status: done
+  - action: "schedule持久化与服务：新增0007_schedule_slots与schedule service PrepareCreate/repository CreatePreparedInScope；shoot create/update先读order.customer_id，再按customer→order锁行并复核，merge改挂则回滚后按新id自动重试一次、再次变化返回customer_changed；交付CRUD、区间、discriminated摘要batch、幂等创建、隔离、部分唯一索引和typed conflict details；POST overlaps仅事务快照；本步不提前依赖order_in_use映射"
+    exit_signal: "Testcontainers覆盖CRUD/矩阵/唯一性/区间/摘要/隔离/幂等及customer→order锁序；archive/merge与shoot create/update barrier用例证明两种提交顺序线性化、customer_id变化重验且无死锁/悬空引用；shoot摘要必填且无N+1；order_already_scheduled details完整；不要求尚未在step5接通的Order Delete并发错误语义"
+    status: done
+  - action: "order/platform增量：POST orders增creation_mode(new/backfill)并把已拆PrepareCreate/CreatePreparedInScope接入幂等，现有补录UI显式传backfill；GET orders增schedulable_at时间感知分页；Delete接order_in_use typed details，并与shoot的customer→order、Delete的order-only门做并发验证；GET /me通过可注入AccountTimezoneProvider返回timezone；ApiError透传generated details"
+    exit_signal: "new模式的consulting/scheduled只接active客户/套系；backfill允许active/archived客户与套系但拒merged，现有补录UI显式mode回归；schedule路径A使用new+consulting；schedulable_at与customer/page完整且复用订单+客户矩阵；无筛选列表回归；create/改挂shoot与Delete order并发无悬空引用/死锁且错误映射正确；order_in_use details完整；/me默认与注入时区正确；ApiError details测试绿"
+    status: done
+  - action: "HTTP 垂直切片：填实 schedule handler，注册四条受保护路由，解析 Idempotency-Key 与 nullable PATCH，返回 201/200/204/400/401/404/409；翻转旧 schedule 404 守护，保留未实现域 404"
+    exit_signal: "httpapi集成测试覆盖四端点、idempotency_conflict、order_already_scheduled、customer_archived、customer_changed、order_in_use、nullable三态、鉴权和双账号；reminder/dashboard/settings/export仍404"
+    status: done
+  - action: "桌面端共享流程：ScheduleSlotDialog+ShootOrderFlow供两页复用，日历类型分段创建shoot/hold/busy、客户页锁定shoot/customer；写前时间校验/冲突预览；实现creation_mode、schedulable_at、128-bit flow/per-step key、tab唯一pending journal、硬刷新/过期恢复；路径A先consulting，所有consulting先slot+刷新，以最新ScheduleSlotListItem.customer_id回写journal再scheduled；历史无候选用2小时draft handoff往返backfill，schedule_draft只允许历史可排期六态并默认shot/按账号时区预填draft开始日，toCreateBody按最终状态裁剪时间戳，POST前升级为backfill_order pending phase并带独立key，补录时间使用账号timezone，成功后按pending→draft→clear顺序收口；实现删除语义、客户订单与typed details双向深链；未来仅active客户、历史可含archived"
+    exit_signal: "桌面UAT覆盖A12-A23：两入口/30秒排期、普通/密集日10秒查档、周一起始/今天/3条+更多稳定格高、历史未来候选、active/archived backfill六态往返不丢时间且重拉、schedule_draft拒绝cancelled/consulting并可明确放弃排期、默认shot→scheduled及delivered→shot切换不携带无效时间戳、补录timezone fail-closed、backfill重复点击/响应丢失/5xx/硬刷新不重复订单、known_order_id写pending失败时页面内只重试本地写且刷新后原key重放同id、known id持久化后draft/clear失败零网络、customer_changed保留时间/note/known_order并清旧候选后重拉确认、加载失败、冲突刷新、order/slot/hold/busy响应丢失或5xx+硬刷新、unknown时另一入口不覆盖且不可清理、明确失败可保留现状/补偿后结束、24小时过期、body改动换step key、slot与status_sync间customer merge后按刷新customer_id确认、路径A/B/status_sync失败、撤销、删除、第二页双向深链与fallback"
+    status: done
+  - action: "移动轻路径与终验：375px 只交付切月、日期档期数量/冲突、当天抽屉与摘要；补 dialog/drawer 焦点管理、Escape、焦点返回和非颜色提示；跑全量命令、清洁度与截图归档"
+    exit_signal: "375px 动作型 UAT 与键盘 UAT 通过；make check、生成物零漂移、后端目标测试、前端 build/lint、validate-yaml、git diff --check 全绿；桌面/375px 截图与计时证据齐全"
+    status: done
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./internal/platform/idempotency/... ./internal/schedule/... ./internal/order/... ./internal/platform/httpapi/..."
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run test:schedule && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "python3 .codestable/tools/validate-yaml.py --file .codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml --yaml-only && python3 .codestable/tools/validate-yaml.py --file .codestable/features/2026-07-09-schedule-calendar/schedule-calendar-checklist.yaml --yaml-only && git diff --check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, diff_summary, automated_tests, screenshots, timing_record]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    commented_code: forbidden
+    unused_import: forbidden
+    prototype_stub_import: forbidden
+    handwritten_api_dto: forbidden
+
+checks:
+  - item: "A1 CRUD 基线：POST shoot/hold/busy→201 {slot,overlaps}；end≤start、shoot 无 order、非 shoot 带 order、note>500→400"
+    source: 名词契约
+    status: passed
+  - item: "A2 POST及影响时间/type/order的PATCH按end_at+固定clock验证订单/客户矩阵：未来consulting/scheduled+active可用，历史scheduled到closed+active/archived可用，cancelled/merged永拒；覆盖end_at==now、历史↔未来、换order/type、候选后归档与不存在/跨账号404；archive/merge与shoot写按customer→order锁序线性化，customer_id首次变化自动重试、再次变化409 customer_changed；前端保留时间/note/known_order，清旧候选/冲突确认后重拉并再次确认，不重建订单；shoot先提交则后续状态变化合法且列表更新，无死锁/悬空引用"
+    source: 名词契约
+    status: passed
+  - item: "A3 同一订单最多一条shoot：POST/PATCH冲突→409 order_already_scheduled且typed details必返现有slot；PATCH自身排除，并发靠部分唯一索引兜底"
+    source: 名词契约
+    status: passed
+  - item: "A4 order_id 不存在/跨账号→404；所有 slot GET/PATCH/DELETE 经 AccountScope，跨账号不可见"
+    source: 流程级约束
+    status: passed
+  - item: "A5 PATCH省略不改、order_id:null/note:null显式清空；shoot→hold省略order_id因最终实体非法400，显式null才成功；hold→shoot同请求给order；DELETE不改订单"
+    source: 名词契约
+    status: passed
+  - item: "A6 order_in_use typed details必返；非终态先order_not_terminal；slot后订单可cancelled/客户可archived，列表仍返order_status/customer_status文本警示且不联动；note-only PATCH可用，改时间/order重验；删slot后才可删订单"
+    source: 编排骨架
+    status: passed
+  - item: "A7 GET 使用半开区间 start_at<to AND end_at>from，含跨界；缺参或 from≥to→400"
+    source: 名词契约
+    status: passed
+  - item: "A8 ScheduleSlotListItem以不含order_id的专用base建type判别union：shoot机器契约必返order_id/customer_id/客户名/customer_status/order_status，order_title/package_name可选，hold/busy机器类型不含order_id/引用摘要；Go/TS可判别收窄，HTTP契约测试拒绝shoot缺字段及non-shoot携带order_id/摘要；repository batch组装禁N+1；可直达客户档案订单tab并聚焦order"
+    source: 名词契约
+    status: passed
+  - item: "A9 重叠严格 <：端点相接不算、包含/部分相交/跨类型算、PATCH 排除自身；重叠不阻止"
+    source: 计算契约
+    status: passed
+  - item: "A10 月历周一首列、固定42日；跨月/跨午夜/多日中间全天正确；22:00→次日00:00只显示开始日；按display_start ASC,id ASC稳定排序；单日5+条/长标题固定格高，前3条+还有N条；冲突数为当日参与真实重叠的唯一slot数，跨日只在重叠区间与当日相交时计数；抽屉完整"
+    source: 体验契约
+    status: passed
+  - item: "A11 月历/ScheduleSlotDialog/schedule_draft OrderWorkspace可见显示账号timezone；全天与补录shot_at/delivered_at按/me.timezone转UTC，浏览器异时区不漂移且handoff无硬编码+08:00；America/New_York覆盖DST 23/25小时、不存在线时间拒绝、重复时间显式选择带offset的第一次/第二次"
+    source: 时间契约
+    status: passed
+  - item: "A12 任何写入前列冲突并允许保存，预览加载失败禁写入且可重试；POST overlaps仅事务快照；两个不同key并发重叠创建均完成后统一重拉，刷新结果显示双方冲突；窗口重新聚焦revalidate；不只靠颜色"
+    source: 体验契约
+    status: passed
+  - item: "A13 ExecuteCreate只接受稳定operation常量order.create.v1/schedule-slot.create.v1且handler禁拼字符串；同hash串行/并发只写一次；成功后异hash409；静态400/引用404/业务409及结果明确的callback error不留claim；过期并发单owner接管"
+    source: 幂等契约
+    status: passed
+  - item: "A14 order/slot资源与成功记录同事务；响应丢失或5xx用原key/body重放；TxRunner脚本化committed-but-error/rolled-back-error，重试最终0或1份"
+    source: 幂等契约
+    status: passed
+  - item: "A15 请求前写tab唯一pending，存储失败零请求；连续流程flow/key不同；hold/busy与历史handoff的backfill_order也走独立step key；unknown时另一入口只开恢复且不覆盖/不可清理，明确失败或已知资源可按A16终止；order/slot/backfill响应丢失或5xx后硬刷新原body/key确认；仅确定性未绑定失败且改body才轮换；普通draft 2小时过期不得清除已发请求，unknown满24小时禁自动重放，人工核对后才可丢弃"
+    source: 失败恢复契约
+    status: passed
+  - item: "A16 unknown禁终止/撤销；路径B slot明确失败可结束清pending；路径A确定失败可保留consulting并结束或撤销；任一consulting均在slot成功并立即刷新后，以最新list item.customer_id回写journal再同步scheduled；覆盖slot/status_sync间customer merge，按customer未命中先重拉slot并按新id重试一次，仍未命中用无customer过滤的稳定分页兜底并回写customer_id；status_sync unknown继续阻塞，明确失败/consulting/cancelled可重试、查看订单、删slot或保留现状并结束，结束后清pending但保留异常文本；cancel+delete可恢复，delete404视为已清理"
+    source: 失败恢复契约
+    status: passed
+  - item: "A17 日历新建档期用类型分段进入shoot/hold/busy，hold/busy无订单字段；未来shoot选active客户+在架套系，new+consulting建单→挂slot并刷新→scheduled，≤30秒完成；历史隐藏新建订单，不会先建consulting再400；套系并发下架/客户归档仍服务端拒绝"
+    source: 核心路径
+    status: passed
+  - item: "A18 客户档案入口复用同一弹窗并预选锁定当前客户；成功留在客户页并提供查看该日档期深链"
+    source: 核心路径
+    status: passed
+  - item: "A19 先填时间再按customer+schedulable_at分页；未来仅active，历史可含archived、merged永不出现；consulting先slot再scheduled，历史后续态不改；后续页不漏/已有shoot不出现；历史无候选存2小时draft handoff，active/archived可backfill；schedule_draft只允许scheduled/shot/selected/retouching/delivered/closed，默认shot并按账号时区预填draft开始日，拒绝cancelled/consulting且可明确放弃排期后退出；补录历史时间按/me.timezone且未知禁写；状态切换后toCreateBody按最终状态裁剪时间戳，scheduled无时间戳、shot/selected/retouching仅shot_at、delivered/closed两者都有；POST前升级backfill_order pending并带独立Idempotency-Key，重复点击/5xx/响应丢失/硬刷新不重复订单；成功按pending known_order_id→draft known_order_id→clear pending收口，第一写失败页面内只重试本地写、若刷新则原key/body重放同id，known id已持久化后draft/clear失败零网络；返回不丢时间且重拉候选/冲突，未发请求可取消/过期，已发请求须先确认结果"
+    source: 核心路径
+    status: passed
+  - item: "A20 删shoot明示订单保留并直达customers/{id}?tab=orders&order={id}；目标在第2页仍清筛选/顺序分页并聚焦；ApiError透传typed details直达date/slot；details异常降级，目标已删保留上下文提示不存在"
+    source: 体验契约
+    status: passed
+  - item: "A21 桌面普通日与5+档期密集日查安排/冲突≤10秒；客户档案到可靠排期≤30秒；slot失败保留原月可重试，timezone未知不渲染伪日界且禁写入，有计时/动作证据"
+    source: 成功标准
+    status: passed
+  - item: "A22 375px可切月、读日期档期数量/冲突、开当天抽屉读完整摘要；长文本/5+档期不重叠撑破；不要求创建/编辑/删除"
+    source: 移动边界
+    status: passed
+  - item: "A23 客户档案页仅active客户可见排期入口，archived/merged隐藏或禁用并解释，日历历史补录显式含archived不受限；键盘支持Escape/focus trap/焦点返回；日期/冲突有可访问名称"
+    source: 可访问性
+    status: passed
+  - item: "A24 范围守护：无组合端点、周视图、拖拽、周期重复、第三方日历库"
+    source: 明确不做
+    status: passed
+  - item: "A25 schedule 域无 orders 写；reminder/dashboard/settings/export 未注册且路由仍404"
+    source: 范围守护
+    status: passed
+  - item: "A26 CalendarPage 无 prototype store/data import，API DTO 全部引用 schema.d.ts 生成类型"
+    source: 前端规范
+    status: passed

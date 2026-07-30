@@ -1,0 +1,94 @@
+feature: 2026-07-07-customer-profile-complete
+created: 2026-07-07
+
+steps:
+  - action: "微重构（只搬不改行为）：按 design 2.5 把 backend/internal/customer/customer.go 拆为 model.go / service.go / repository.go"
+    exit_signal: "go build ./... 与 go test ./... 全绿；对外符号零变化；make generate 生成物零 diff；diff 仅为同包文件间移动"
+    status: done
+  - action: "契约与数据地基：OpenAPI 给 5 个 profile 操作补 customer-profile-complete tag、按 D4/D5 错误矩阵逐端点补 409（updateCustomer/addCustomerIdentity/addCustomerNote 补 customer_merged，DELETE identity 补 customer_merged/last_identity，merge 描述补 target 非 active）、可清空字段 nullable、PATCH status 收窄为 [active, archived]、referrer 描述注明非 active 按 404；include-tags 扩容；新增 customer_notes 迁移（up/down）"
+    exit_signal: "make generate 后生成物零漂移且 Go server 只新增 5 个操作；5 端点响应集含 D4/D5 矩阵对应的 409；PATCH body 生成类型含 null 三态与子集 status 枚举；迁移 up/down 在测试数据库可往返执行"
+    status: done
+  - action: "计算节点·渐进字段与归档：实现 Update（字段更新、显式 null 清空三态、channel↔referrer 联动、自指与单独传 referrer 拒绝、状态矩阵 active/archived/merged）；Create 的 referrer 校验收紧为 active（D8）"
+    exit_signal: "service/repository 单测覆盖 A3-A6 与 A4b 对应的正常、清空、联动、自指、建档收紧、状态矩阵与归档列表用例并全绿"
+    status: done
+  - action: "计算节点·身份与备注：实现 AddIdentity / DeleteIdentity（末位守护同事务防并发删穿）/ AddNote / 详情 notes 倒序（created_at DESC, id DESC）"
+    exit_signal: "单测覆盖 A7-A9：合法增删、409 last_identity、备注长度边界与含并列时间戳的倒序断言全绿"
+    status: done
+  - action: "计算节点·merge：WithinTx 内迁移身份/备注、referrer 批量重定向（自指清空，target 保持 channel 不变可留 referral+空 referrer 历史态）、source 置 merged；错误矩阵（merge_conflict / 400 / 404）"
+    exit_signal: "单测覆盖 A10-A11 含自指清空终态与双账号越界用例全绿；事务失败整体回滚有断言"
+    status: done
+  - action: "HTTP 垂直切片：注册 5 条受保护路由，错误映射含 customer_merged / last_identity / merge_conflict 封套"
+    exit_signal: "API 集成测试覆盖 A3-A12 全绿；未实现域端点仍 404"
+    status: done
+  - action: "前端·档案编辑与备注：详情页字段编辑、身份管理、备注 tab 可写；列表页行内快捷备注；新组件落 components/customers/"
+    exit_signal: "浏览器完成字段补全、身份增删与两处 ≤2 步备注演示（A13 编辑部分 + A14）"
+    status: done
+  - action: "前端·merge / 归档 / 筛选：merge 对话框、归档与恢复入口、列表 status 筛选"
+    exit_signal: "浏览器完成 merge 全流程与归档→筛选查回→恢复演示（A13 其余部分 + A6 前端面）"
+    status: done
+  - action: "harden 与 polish 终验：UI 状态清扫（空/加载/错误/401/长文本/375px/keyboard）、范围守护 grep、make check 终验"
+    exit_signal: "A15-A16 证据落盘；CMD-001~004 全绿"
+    status: done
+
+checks:
+  - item: "范围守护：merge 事务不触碰 orders / reminders 表；无 Order/Reminder 归档联动实现"
+    source: 范围守护
+    status: passed
+  - item: "范围守护：无重复身份自动去重 / 合并建议代码与 UI；无人脉链视图与 referral 聚合端点"
+    source: 范围守护
+    status: passed
+  - item: "范围守护：无 DELETE /customers 路由（不物理删除）；frontend/package.json 无新增 UI 组件库"
+    source: 范围守护
+    status: passed
+  - item: "名词契约：CustomerNote 实体落库（content ≤500、created_at），详情 notes 倒序返回，替换 []string 占位"
+    source: 名词契约
+    status: passed
+  - item: "名词契约：PATCH 支持渐进字段与显式 null 清空（三态经生成类型表达，禁手写 DTO）；display_name 不可清空；birthday 兼容 MM-DD 与 YYYY-MM-DD"
+    source: 名词契约
+    status: passed
+  - item: "名词契约：channel 改 referral 必带可见 active referrer（缺 400、非 active/跨账号 404）；referrer 不得自指（400）；channel 非 referral 时单独传 referrer 400；改走 referral 服务端清空 referrer；Create 建档 referrer 校验同口径收紧为 active"
+    source: 名词契约
+    status: passed
+  - item: "名词契约：状态矩阵——active↔archived 可 PATCH；PATCH status 枚举收窄为 [active, archived]；merged 客户一切写操作 409 customer_merged；archived 可继续编辑"
+    source: 名词契约
+    status: passed
+  - item: "编排骨架：merge 同事务完成身份/备注迁移、referrer 重定向（自指清空，target 可留 referral+空 referrer 合法历史态）、source 置 merged+指针，任一步失败整体回滚"
+    source: 编排骨架
+    status: passed
+  - item: "流程级约束：删除非 merged 客户最后一个身份 409 last_identity，查数与删除同事务；merge 双方须 active（否则 409 merge_conflict），source==target 400"
+    source: 流程级约束
+    status: passed
+  - item: "流程级约束：全部操作经 AccountScope，跨账号统一 404；merge 批量 UPDATE 带账号过滤；日志不含 handle/手机号明文"
+    source: 流程级约束
+    status: passed
+  - item: "挂载点：OpenAPI tag/错误矩阵/nullable/status 子集枚举增量 + include-tags、0003_customer_notes 迁移、5 条受保护路由、前端详情/列表 UI 注入点——四处齐备且删除后回到 customer-core 状态"
+    source: 挂载点
+    status: passed
+  - item: "验收场景：A1-A16（含 A4b）全部有对应证据（命令 / 测试 / API 响应 / 浏览器截图与计步演示）"
+    source: 验收场景
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test ./..."
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run build"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, test_results, screenshots, api_responses, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    todo_fixme: forbidden
+    commented_code: forbidden
+    unused_imports: forbidden

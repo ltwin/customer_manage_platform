@@ -9,8 +9,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
+	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
+	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder"
+	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
+	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
 
 // Pinger 是健康检查所需的最小数据库探测面（测试注入失败用）。
@@ -18,11 +27,30 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// ScopeFactory 是业务路由获取账号隔离数据库句柄的最小依赖。
+type ScopeFactory interface {
+	ScopeFor(auth.AccountContext) store.AccountScope
+}
+
 // RouterDeps 是路由骨架的全部依赖。
 type RouterDeps struct {
-	Logger *slog.Logger
-	DB     Pinger
-	Auth   *auth.Service
+	Logger          *slog.Logger
+	DB              Pinger
+	ScopeFactory    ScopeFactory
+	Auth            *auth.Service
+	Customer        *customerdomain.Service
+	Orders          *orderdomain.Service
+	Packages        *pkgcatalog.Service
+	Idempotency     *idempotency.Executor
+	AccountTimezone AccountTimezoneProvider
+	Schedule        *scheduledomain.Service
+	Avatar          *customerdomain.AvatarApplication
+	AvatarProcessor AvatarProcessor
+	Settings        *settings.Service
+	Reminders       *reminder.Service
+	Dashboard       *dashboarddomain.Service
+	DataExport      DataExportService
+	TelegramBinding TelegramBindingIssuer
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -41,11 +69,71 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	r.GET("/healthz", healthzHandler(deps.DB))
 
 	// API 路由：handlers 实现 codegen ServerInterface；login 豁免 auth，其余一律先过 auth
-	h := &handlers{logger: deps.Logger, auth: deps.Auth}
+	timezone := deps.AccountTimezone
+	if timezone == nil {
+		timezone = defaultTimezoneProvider{}
+	}
+	h := &handlers{
+		logger:          deps.Logger,
+		auth:            deps.Auth,
+		scopeFactory:    deps.ScopeFactory,
+		customer:        deps.Customer,
+		orders:          deps.Orders,
+		packages:        deps.Packages,
+		idempotency:     deps.Idempotency,
+		timezone:        timezone,
+		schedule:        deps.Schedule,
+		avatar:          deps.Avatar,
+		avatarProcessor: deps.AvatarProcessor,
+		settings:        deps.Settings,
+		reminders:       deps.Reminders,
+		dashboard:       deps.Dashboard,
+		dataExport:      deps.DataExport,
+		telegramBinding: deps.TelegramBinding,
+	}
 	api := r.Group("/api/v1")
 	api.POST("/auth/login", h.Login)
 	protected := api.Group("", authMiddleware(deps.Auth))
 	protected.GET("/me", h.GetMe)
+	protected.GET("/customers", h.listCustomersRoute)
+	protected.POST("/customers", h.CreateCustomer)
+	protected.GET("/customers/:id", h.getCustomerRoute)
+	protected.PUT("/customers/:id/avatar", h.putCustomerAvatarRoute)
+	protected.DELETE("/customers/:id/avatar", h.deleteCustomerAvatarRoute)
+	protected.GET("/customers/:id/avatar/content", h.getCustomerAvatarContentRoute)
+	// customer-profile-complete：档案五操作
+	protected.PATCH("/customers/:id", func(c *gin.Context) { h.UpdateCustomer(c, c.Param("id")) })
+	protected.POST("/customers/:id/identities", func(c *gin.Context) { h.AddCustomerIdentity(c, c.Param("id")) })
+	protected.DELETE("/customers/:id/identities/:identity_id", func(c *gin.Context) {
+		h.DeleteCustomerIdentity(c, c.Param("id"), c.Param("identity_id"))
+	})
+	protected.POST("/customers/:id/notes", func(c *gin.Context) { h.AddCustomerNote(c, c.Param("id")) })
+	protected.POST("/customers/:id/merge", func(c *gin.Context) { h.MergeCustomer(c, c.Param("id")) })
+	protected.GET("/orders", h.listOrdersRoute)
+	protected.POST("/orders", h.createOrderRoute)
+	protected.PATCH("/orders/:id", func(c *gin.Context) { h.UpdateOrder(c, c.Param("id")) })
+	protected.DELETE("/orders/:id", func(c *gin.Context) { h.DeleteOrder(c, c.Param("id")) })
+	protected.GET("/schedule/slots", h.listScheduleSlotsRoute)
+	protected.POST("/schedule/slots", h.createScheduleSlotRoute)
+	protected.PATCH("/schedule/slots/:id", func(c *gin.Context) { h.UpdateScheduleSlot(c, c.Param("id")) })
+	protected.DELETE("/schedule/slots/:id", func(c *gin.Context) { h.DeleteScheduleSlot(c, c.Param("id")) })
+	protected.GET("/packages", h.listPackagesRoute)
+	protected.POST("/packages", h.CreatePackage)
+	protected.PATCH("/packages/:id", func(c *gin.Context) { h.UpdatePackage(c, c.Param("id")) })
+	protected.DELETE("/packages/:id", func(c *gin.Context) { h.DeletePackage(c, c.Param("id")) })
+	// reminder-engine：提醒五操作 + 设置读写
+	protected.GET("/reminders", h.listRemindersRoute)
+	protected.POST("/reminders", h.CreateReminder)
+	protected.POST("/reminders/:id/done", func(c *gin.Context) { h.MarkReminderDone(c, c.Param("id")) })
+	protected.POST("/reminders/:id/dismiss", func(c *gin.Context) { h.DismissReminder(c, c.Param("id")) })
+	protected.POST("/admin/reminders/scan", h.ScanReminders)
+	protected.GET("/settings", h.GetSettings)
+	protected.PATCH("/settings", h.UpdateSettings)
+	protected.POST("/settings/telegram/bind-token", h.CreateTelegramBindToken)
+	// dashboard：登录后默认落地经营台聚合（D7 手工注册，不走全量 RegisterHandlers）
+	protected.GET("/dashboard", h.GetDashboard)
+	// data-export：真实 read-model repository 完成后才暴露受保护附件路由。
+	protected.GET("/export", h.ExportAll)
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）

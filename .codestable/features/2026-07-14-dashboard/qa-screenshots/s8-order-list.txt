@@ -1,0 +1,4 @@
+## S8 order list after 标记收讫
+ord_e3aa5f84-cee1-46d1-b79b-581e3c910fff balance_paid=True status=delivered price=128000
+dashboard unpaid_orders.count=0
+recent_stats.revenue_confirmed=196000 (68000+128000)

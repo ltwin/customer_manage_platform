@@ -1,0 +1,95 @@
+CMD-004: ./scripts/test-v1-ops-contract.sh && docker build -t crm:v1-hardening .
+captured_at: 2026-07-28
+execution_note: 首次沙箱内执行在 Docker socket 权限处被拒绝；以下为同一命令的沙箱外 canonical retry。
+
+v1 ops catalog contract: passed (148 cases; negative corpus rejected)
+v1 ops results contract: passed (148 cases)
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.13kB 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:24-alpine
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/alpine:3.22
+#3 DONE 2.3s
+
+#4 [internal] load metadata for docker.io/library/golang:1.25-alpine
+#4 DONE 2.3s
+
+#5 [internal] load .dockerignore
+#5 transferring context: 236B done
+#5 DONE 0.0s
+
+#6 [backend 1/7] FROM docker.io/library/golang:1.25-alpine@sha256:56961d79ea8129efddcc0b8643fd8a5416b4e6228cfd477e3fd61deb2672c587
+#6 resolve docker.io/library/golang:1.25-alpine@sha256:56961d79ea8129efddcc0b8643fd8a5416b4e6228cfd477e3fd61deb2672c587 0.0s done
+#6 DONE 0.0s
+
+#7 [webui 1/6] FROM docker.io/library/node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd
+#7 resolve docker.io/library/node:24-alpine@sha256:a0b9bf06e4e6193cf7a0f58816cc935ff8c2a908f81e6f1a95432d679c54fbfd 0.0s done
+#7 DONE 0.0s
+
+#8 [stage-2 1/4] FROM docker.io/library/alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+#8 resolve docker.io/library/alpine:3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce 0.0s done
+#8 DONE 0.0s
+
+#9 [internal] load build context
+#9 transferring context: 288.56kB 0.0s done
+#9 DONE 0.0s
+
+#10 [stage-2 2/4] RUN apk add --no-cache ca-certificates tzdata     && adduser -D app     && mkdir -p /var/lib/crm/avatars     && chown -R app:app /var/lib/crm
+#10 CACHED
+
+#11 [backend 6/7] COPY --from=webui /src/frontend/dist ./backend/internal/platform/webui/dist
+#11 CACHED
+
+#12 [webui 4/6] RUN npm ci
+#12 CACHED
+
+#13 [webui 2/6] WORKDIR /src/frontend
+#13 CACHED
+
+#14 [backend 2/7] WORKDIR /src
+#14 CACHED
+
+#15 [webui 5/6] COPY frontend/ ./
+#15 CACHED
+
+#16 [backend 5/7] COPY backend/ ./backend/
+#16 CACHED
+
+#17 [backend 4/7] RUN cd backend && go mod download
+#17 CACHED
+
+#18 [webui 6/6] RUN npm run build
+#18 CACHED
+
+#19 [stage-2 3/4] COPY --from=backend /out/server /usr/local/bin/server
+#19 CACHED
+
+#20 [backend 7/7] RUN cd backend && CGO_ENABLED=0 go build -o /out/server ./cmd/server     && CGO_ENABLED=0 go build -o /out/avatar-manifest ./cmd/avatar-manifest
+#20 CACHED
+
+#21 [backend 3/7] COPY backend/go.mod backend/go.sum ./backend/
+#21 CACHED
+
+#22 [webui 3/6] COPY frontend/package.json frontend/package-lock.json ./
+#22 CACHED
+
+#23 [stage-2 4/4] COPY --from=backend /out/avatar-manifest /usr/local/bin/avatar-manifest
+#23 CACHED
+
+#24 exporting to image
+#24 exporting layers done
+#24 exporting manifest sha256:a729e6e67e451735319cb48b0a073e37f33c37017e14ce6bf848824497123324 done
+#24 exporting config sha256:047bf999c893c49b9b37f1dc14075b39e5a712d9e755904a3f384352936f1e93 done
+#24 exporting attestation manifest sha256:35ad5e62b8ece611bd26faccb0d48fd0c9d787b16dd8de6719ed030be73ddaa1 0.0s done
+#24 exporting manifest list sha256:76a13ef5afb4c36fe0e5525f3adf80c34a47fd47d2e948390bbc752a63b51579
+#24 exporting manifest list sha256:76a13ef5afb4c36fe0e5525f3adf80c34a47fd47d2e948390bbc752a63b51579 done
+#24 naming to docker.io/library/crm:v1-hardening done
+#24 unpacking to docker.io/library/crm:v1-hardening done
+#24 DONE 0.0s
+
+exit_code: 0

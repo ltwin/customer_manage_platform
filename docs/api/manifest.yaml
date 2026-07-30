@@ -1,0 +1,119 @@
+project: customer_manage_platform
+entry_type: endpoint
+source_root: .
+last_scanned: 2026-07-13
+
+entries:
+  - entry: auth
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/auth.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/auth.md
+    status: pending
+    note: "待生成"
+  - entry: customers
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/customers.go
+      - backend/internal/platform/httpapi/customers_profile.go
+      - backend/internal/customer/model.go
+      - backend/internal/customer/service.go
+      - backend/internal/customer/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/customers.md
+    status: pending
+    note: "待生成；头像三端点与投影字段见 customer-avatar 条目"
+  - entry: customer-avatar
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/customer_avatar.go
+      - backend/internal/platform/httpapi/router.go
+      - backend/internal/customer/avatar_application.go
+      - backend/internal/customer/avatar_store.go
+      - backend/internal/customer/model.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/customer-avatar.md
+    status: current
+    note: "2026-07-13 customer-avatar feature 落地：条件 PUT/DELETE、强版本 GET、Customer 头像投影"
+  - entry: packages
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/packages.go
+      - backend/internal/package/model.go
+      - backend/internal/package/service.go
+      - backend/internal/package/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/packages.md
+    status: pending
+    note: "待生成"
+  - entry: orders
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/orders.go
+      - backend/internal/order/model.go
+      - backend/internal/order/service.go
+      - backend/internal/order/schedulability.go
+      - backend/internal/order/state_machine.go
+      - backend/internal/order/repository.go
+      - backend/internal/platform/idempotency/idempotency.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/orders.md
+    status: current
+    note: "2026-07-11 已同步 schedule-calendar 带来的 creation_mode、Idempotency-Key、schedulable_at、details 与 order_in_use 增量"
+
+  - entry: schedule
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/schedule.go
+      - backend/internal/schedule/model.go
+      - backend/internal/schedule/service.go
+      - backend/internal/schedule/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/schedule.md
+    status: pending
+    note: "schedule-calendar 已落地，待走 cs-doc-api 生成完整参考"
+
+  - entry: reminders
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/reminders.go
+      - backend/internal/platform/httpapi/router.go
+      - backend/internal/reminder/model.go
+      - backend/internal/reminder/service.go
+      - backend/internal/reminder/repository.go
+      - backend/internal/reminder/runner.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/reminders.md
+    status: current
+    note: "2026-07-13 reminder-engine API 参考已通过 owner review"
+
+  - entry: settings
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/settings.go
+      - backend/internal/platform/httpapi/auth.go
+      - backend/internal/platform/httpapi/router.go
+      - backend/internal/settings/model.go
+      - backend/internal/settings/service.go
+      - backend/internal/settings/repository.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/settings.md
+    status: current
+    note: "2026-07-13 Settings API 参考已通过 owner review"

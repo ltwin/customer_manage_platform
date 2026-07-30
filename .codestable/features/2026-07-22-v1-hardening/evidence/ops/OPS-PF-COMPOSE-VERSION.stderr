@@ -1,0 +1,1 @@
+error code=5 stage=compose-version key=COMPOSE_VERSION remediation=install-compose-2-24-or-newer

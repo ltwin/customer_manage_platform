@@ -1,0 +1,1 @@
+error code=5 stage=compose-render key=APP_ENV_FILE remediation=select-same-canonical-env-file

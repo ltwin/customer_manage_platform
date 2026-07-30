@@ -1,0 +1,141 @@
+roadmap: photographer-private-crm
+status: handoff
+baseline_ref: f27d4296edfc86e8f4cceef0553ba4f1dd41a0c9
+driver_kind: native
+driver_id: "/root/photographer_private_crm_goal_resume"
+execution_confirmation_id: "89e1d9c5-4956-4ee3-9fd7-0cdb7a19f995"
+acceptance_authorization: approved
+acceptance_authorization_ref: "approval-report.md#goal-acceptance"
+commit_authorization: approved
+commit_authorization_ref: "approval-report.md#goal-commits"
+current_feature_index: 11
+handoff_reason: "CoreEvidenceUnavailable: A23 production/operator attestation、A24 owner fresh main-chain walkthrough 与其同 fixture A27 export 尚无真实证据"
+handoff_next: "先完成 A23 的 ECS/TLS/network/offsite/migration 只读审计与 A24 owner walkthrough；随后在同一 fixture 执行 A27 export，恢复 Goal driver 从 STEP-007 继续 implementation.before_review gates"
+ledger:
+  - step: v1-hardening/STEP-001
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-002
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-003
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-004
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-005
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-006
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+features:
+  - slug: platform-skeleton
+    roadmap_item: platform-skeleton
+    feature_dir: .codestable/features/2026-07-06-platform-skeleton
+    design: .codestable/features/2026-07-06-platform-skeleton/platform-skeleton-design.md
+    checklist: .codestable/features/2026-07-06-platform-skeleton/platform-skeleton-checklist.yaml
+    review: .codestable/features/2026-07-06-platform-skeleton/platform-skeleton-review.md
+    qa: .codestable/features/2026-07-06-platform-skeleton/platform-skeleton-qa.md
+    acceptance: .codestable/features/2026-07-06-platform-skeleton/platform-skeleton-acceptance.md
+    status: accepted
+  - slug: customer-core
+    roadmap_item: customer-core
+    feature_dir: .codestable/features/2026-07-07-customer-core
+    design: .codestable/features/2026-07-07-customer-core/customer-core-design.md
+    checklist: .codestable/features/2026-07-07-customer-core/customer-core-checklist.yaml
+    review: .codestable/features/2026-07-07-customer-core/customer-core-review.md
+    qa: .codestable/features/2026-07-07-customer-core/customer-core-qa.md
+    acceptance: .codestable/features/2026-07-07-customer-core/customer-core-acceptance.md
+    status: accepted
+  - slug: package-catalog
+    roadmap_item: package-catalog
+    feature_dir: .codestable/features/2026-07-08-package-catalog
+    design: .codestable/features/2026-07-08-package-catalog/package-catalog-design.md
+    checklist: .codestable/features/2026-07-08-package-catalog/package-catalog-checklist.yaml
+    review: .codestable/features/2026-07-08-package-catalog/package-catalog-review.md
+    qa: .codestable/features/2026-07-08-package-catalog/package-catalog-qa.md
+    acceptance: .codestable/features/2026-07-08-package-catalog/package-catalog-acceptance.md
+    status: accepted
+  - slug: customer-profile-complete
+    roadmap_item: customer-profile-complete
+    feature_dir: .codestable/features/2026-07-07-customer-profile-complete
+    design: .codestable/features/2026-07-07-customer-profile-complete/customer-profile-complete-design.md
+    checklist: .codestable/features/2026-07-07-customer-profile-complete/customer-profile-complete-checklist.yaml
+    review: .codestable/features/2026-07-07-customer-profile-complete/customer-profile-complete-review.md
+    qa: .codestable/features/2026-07-07-customer-profile-complete/customer-profile-complete-qa.md
+    acceptance: .codestable/features/2026-07-07-customer-profile-complete/customer-profile-complete-acceptance.md
+    status: accepted
+  - slug: order-tracking
+    roadmap_item: order-tracking
+    feature_dir: .codestable/features/2026-07-08-order-tracking
+    design: .codestable/features/2026-07-08-order-tracking/order-tracking-design.md
+    checklist: .codestable/features/2026-07-08-order-tracking/order-tracking-checklist.yaml
+    review: .codestable/features/2026-07-08-order-tracking/order-tracking-review.md
+    qa: .codestable/features/2026-07-08-order-tracking/order-tracking-qa.md
+    acceptance: .codestable/features/2026-07-08-order-tracking/order-tracking-acceptance.md
+    status: accepted
+  - slug: schedule-calendar
+    roadmap_item: schedule-calendar
+    feature_dir: .codestable/features/2026-07-09-schedule-calendar
+    design: .codestable/features/2026-07-09-schedule-calendar/schedule-calendar-design.md
+    checklist: .codestable/features/2026-07-09-schedule-calendar/schedule-calendar-checklist.yaml
+    review: .codestable/features/2026-07-09-schedule-calendar/schedule-calendar-review.md
+    qa: .codestable/features/2026-07-09-schedule-calendar/schedule-calendar-qa.md
+    acceptance: .codestable/features/2026-07-09-schedule-calendar/schedule-calendar-acceptance.md
+    status: accepted
+  - slug: reminder-engine
+    roadmap_item: reminder-engine
+    feature_dir: .codestable/features/2026-07-12-reminder-engine
+    design: .codestable/features/2026-07-12-reminder-engine/reminder-engine-design.md
+    checklist: .codestable/features/2026-07-12-reminder-engine/reminder-engine-checklist.yaml
+    review: .codestable/features/2026-07-12-reminder-engine/reminder-engine-review.md
+    qa: .codestable/features/2026-07-12-reminder-engine/reminder-engine-qa.md
+    acceptance: .codestable/features/2026-07-12-reminder-engine/reminder-engine-acceptance.md
+    status: accepted
+  - slug: customer-avatar
+    roadmap_item: customer-avatar
+    feature_dir: .codestable/features/2026-07-11-customer-avatar
+    design: .codestable/features/2026-07-11-customer-avatar/customer-avatar-design.md
+    checklist: .codestable/features/2026-07-11-customer-avatar/customer-avatar-checklist.yaml
+    review: .codestable/features/2026-07-11-customer-avatar/customer-avatar-review.md
+    qa: .codestable/features/2026-07-11-customer-avatar/customer-avatar-qa.md
+    acceptance: .codestable/features/2026-07-11-customer-avatar/customer-avatar-acceptance.md
+    status: accepted
+  - slug: telegram-digest
+    roadmap_item: telegram-digest
+    feature_dir: .codestable/features/2026-07-15-telegram-digest
+    design: .codestable/features/2026-07-15-telegram-digest/telegram-digest-design.md
+    checklist: .codestable/features/2026-07-15-telegram-digest/telegram-digest-checklist.yaml
+    review: .codestable/features/2026-07-15-telegram-digest/telegram-digest-review.md
+    qa: .codestable/features/2026-07-15-telegram-digest/telegram-digest-qa.md
+    acceptance: .codestable/features/2026-07-15-telegram-digest/telegram-digest-acceptance.md
+    status: accepted
+  - slug: dashboard
+    roadmap_item: dashboard
+    feature_dir: .codestable/features/2026-07-14-dashboard
+    design: .codestable/features/2026-07-14-dashboard/dashboard-design.md
+    checklist: .codestable/features/2026-07-14-dashboard/dashboard-checklist.yaml
+    review: .codestable/features/2026-07-14-dashboard/dashboard-review.md
+    qa: .codestable/features/2026-07-14-dashboard/dashboard-qa.md
+    acceptance: .codestable/features/2026-07-14-dashboard/dashboard-acceptance.md
+    status: accepted
+  - slug: data-export
+    roadmap_item: data-export
+    feature_dir: .codestable/features/2026-07-21-data-export
+    design: .codestable/features/2026-07-21-data-export/data-export-design.md
+    checklist: .codestable/features/2026-07-21-data-export/data-export-checklist.yaml
+    review: .codestable/features/2026-07-21-data-export/data-export-review.md
+    qa: .codestable/features/2026-07-21-data-export/data-export-qa.md
+    acceptance: .codestable/features/2026-07-21-data-export/data-export-acceptance.md
+    status: accepted
+  - slug: v1-hardening
+    roadmap_item: v1-hardening
+    feature_dir: .codestable/features/2026-07-22-v1-hardening
+    design: .codestable/features/2026-07-22-v1-hardening/v1-hardening-design.md
+    checklist: .codestable/features/2026-07-22-v1-hardening/v1-hardening-checklist.yaml
+    review: .codestable/features/2026-07-22-v1-hardening/v1-hardening-review.md
+    qa: .codestable/features/2026-07-22-v1-hardening/v1-hardening-qa.md
+    acceptance: .codestable/features/2026-07-22-v1-hardening/v1-hardening-acceptance.md
+    status: implementing

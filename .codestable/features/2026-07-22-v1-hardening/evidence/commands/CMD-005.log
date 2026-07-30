@@ -1,0 +1,7 @@
+CMD-005: ./scripts/v1-ops-smoke.sh
+captured_at: 2026-07-28
+execution_note: 首次执行发现新公开入口缺 executable bit（exit 126）；已修正文件模式，以下为 canonical retry。
+
+v1 ops results contract: passed (148 cases)
+
+exit_code: 0

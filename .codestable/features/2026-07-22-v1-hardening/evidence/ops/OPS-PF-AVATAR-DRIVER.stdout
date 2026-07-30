@@ -1,0 +1,5 @@
+dependency-check/commands=ok
+env-parse/file=ok
+config-matrix/DATABASE_URL=network-boundary-attention
+config-matrix/AUTH_TOKEN_SECRET=ok
+config-matrix/SEED_ADMIN_PASSWORD=ok

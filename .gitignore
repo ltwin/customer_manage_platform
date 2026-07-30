@@ -13,3 +13,5 @@ backend/internal/platform/webui/dist/*
 .claude/worktrees/
 
 .DS_Store
+
+var/

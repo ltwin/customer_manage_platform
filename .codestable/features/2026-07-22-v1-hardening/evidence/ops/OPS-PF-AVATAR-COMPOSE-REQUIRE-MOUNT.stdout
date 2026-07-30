@@ -1,0 +1,10 @@
+dependency-check/commands=ok
+env-parse/file=ok
+endpoint-select/context=ok
+compose-render/ENGINE_ID=ok
+compose-version/cli=ok
+compose-render/model=ok
+config-matrix/AUTH_TOKEN_SECRET=ok
+config-matrix/SEED_ADMIN_PASSWORD=ok
+config-matrix/TELEGRAM=disabled
+config-matrix/HTTP_ADDR=public-bind-attention

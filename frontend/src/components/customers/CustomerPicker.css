@@ -1,0 +1,10 @@
+.customer-picker { position: relative; }
+.customer-picker-control { display: flex; align-items: center; gap: 8px; }
+.customer-picker-control .input { flex: 1; min-width: 0; }
+.customer-picker-list { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; max-height: 260px; overflow: auto; padding: 4px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface); box-shadow: var(--shadow); }
+.customer-picker-option { width: 100%; border: 0; background: transparent; color: var(--fg); display: flex; align-items: center; gap: 9px; padding: 8px; border-radius: 6px; text-align: left; cursor: pointer; }
+.customer-picker-option:hover, .customer-picker-option.active { background: var(--accent-weak); }
+.customer-picker-option span { min-width: 0; display: grid; }
+.customer-picker-option strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.customer-picker-option small { color: var(--muted); }
+.customer-picker-state { padding: 12px; color: var(--muted); text-align: center; }

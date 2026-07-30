@@ -1,0 +1,52 @@
+feature: "reminder-engine"
+status: passed
+baseline_ref: "7549150ae4da89929e27f00fdf18587267364019"
+stage: complete
+design: ".codestable/features/2026-07-12-reminder-engine/reminder-engine-design.md"
+checklist: ".codestable/features/2026-07-12-reminder-engine/reminder-engine-checklist.yaml"
+review: ".codestable/features/2026-07-12-reminder-engine/reminder-engine-review.md"
+qa: ".codestable/features/2026-07-12-reminder-engine/reminder-engine-qa.md"
+acceptance: ".codestable/features/2026-07-12-reminder-engine/reminder-engine-acceptance.md"
+ledger:
+  - step: S0-driver-recovery
+    status: done
+  - step: S1
+    status: done
+  - step: S2
+    status: done
+  - step: S3
+    status: done
+  - step: S4
+    status: done
+  - step: S5
+    status: done
+  - step: S6
+    status: done
+  - step: S7
+    status: done
+  - step: S8
+    status: done
+  - step: review-round-1
+    status: done
+    note: "changes-requested REV-001 isOpenStatus missed delivered"
+  - step: review-fix
+    status: done
+    note: "isNonTerminalStatus + tests + follow_up package name + SetStatus gate + UI tab sync"
+  - step: review-round-2
+    status: done
+    note: "passed; blocking cleared"
+  - step: qa-round-1
+    status: done
+    note: "blocked; QA-012 lacked browser runtime evidence"
+  - step: qa-round-2
+    status: done
+    note: "passed; three screenshots plus live browser operations, full automated verification, and idempotent generation evidence"
+  - step: acceptance-preflight
+    status: done
+    note: "owner approved Option A; minimal requirement delta applied"
+  - step: acceptance-audit
+    status: done
+    note: "passed; 23 checks passed, roadmap/requirement/API manifest synchronized, final make check green"
+  - step: acceptance-owner-signoff
+    status: done
+    note: "owner confirmed reminder-engine-acceptance.md on 2026-07-13"

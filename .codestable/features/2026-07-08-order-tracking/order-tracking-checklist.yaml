@@ -1,0 +1,114 @@
+feature: 2026-07-08-order-tracking
+created: 2026-07-08
+
+steps:
+  - action: "契约切片 + 骨架：把 orders 加进 backend/oapi-codegen.yaml 的 include-tags，make generate 生成 order server interface（createOrder/listOrders/updateOrder/deleteOrder）；OpenAPI 契约已在 design 阶段按 2026-07-09 roadmap update 收编完毕（OrderListItem 引用摘要、unpaid_balance 收窄口径、默认排序描述、POST 补录直达全 shape、DELETE 终态删除端点）并生成同步，实现期不再改契约；schedule/reminder/dashboard 等未实现 tag 仍不进 include-tags"
+    exit_signal: "`make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts` 退出码 0，且 Go server interface 新增 createOrder/listOrders/updateOrder/deleteOrder；schedule/reminder/dashboard 仍无 server interface"
+    status: done
+  - action: "状态机计算节点：order domain 层实现合法跃迁邻接表（14 条合法边：线性 6 + 前跳 shot→delivered/selected→delivered 2 + 非终态→cancelled 6）+ canTransition 纯函数 + 时间戳副作用（进入 shot/delivered 写时间戳，含经前跳边进入）+ closed 未结清门禁 + D6b 字段修正不变量校验（closed 恒结清/时间戳与状态一致/终态修正面），全部不 import gin/pgx"
+    exit_signal: "domain 8x8 跃迁矩阵单测全绿（14 条合法边逐条通过、其余全部拒绝），不依赖 DB 可跑；进入 shot/delivered 触发时间戳写入、closed 门禁与 D6b 三条不变量在纯函数层可测"
+    status: done
+  - action: "持久化 + 域服务：新增 migrations/0005_orders 迁移（八态 CHECK、金额非负 CHECK、(account_id,customer_id) 与 (account_id,package_id) 复合外键，package_id 可空）+ order repository/service（建单校验含 price≥0 与套系规则分叉（常规只 active/补录放行 archived）、补录直达校验（≥shot 须 shot_at、≥delivered 须 delivered_at、closed 须结清，复用 D6b 校验器）、PATCH 先字段后不变量后跃迁且 409/400 全回滚编排、查询过滤 + 缺省排序 created_at DESC,id DESC + 列表引用摘要 customer_display_name/package_name 禁 N+1、终态删除（非终态 ErrOrderNotTerminal））+ 受控扩展 AccountScope.ScalarAggregate（op 白名单 count/max/sum + 列名字面量校验 + cond 占位符 + NULL-safe，不支持 GROUP BY）"
+    exit_signal: "order service/repository 集成测试（Testcontainers）覆盖：建单 201 默认值、最小建单、补录直达各状态 201/缺时间戳 400/closed 未结清 409/套系分叉（A1f-A1h）、引用 archived/merged 客户 409 customer_archived、引用不存在/跨账号 404、常规建单引用 archived 套系 400、price 负数 400、合法跃迁含前跳边、非法跃迁 409、时间戳自动写入、未结清 closed 409 unpaid_balance、closed 恒结清不变量 409（A7b）、时间戳预写/置空 400（A6c）、终态修正面（A9c）、混合 PATCH 409 后字段不落库、一步结清完结、unpaid_balance 收窄口径过滤、列表引用摘要正确、排序稳定翻页、终态删除 204 + 聚合即时减少 + 非终态 409（A29/A30）、双账号隔离；ScalarAggregate 有 op×空集/有值/跨账号单测矩阵"
+    status: done
+  - action: "聚合接通 + merge 迁移 + in-use 双口径（桩→真）：customer repository ListItem/CustomerStats 改真实计算（orders_count 非 cancelled Count、last_shot_at max 按 Asia/Shanghai 截断、total_order_amount sum 非 cancelled）；package list orders_count 用独立非 cancelled 聚合（不复用 delete 的 countOrderReferences）；package delete in-use 保持 any-reference 口径；customer merge 事务加订单 customer_id 迁移；package_test.go 手工建表改依赖真实迁移"
+    exit_signal: "三域测试绿：customer 列表/详情聚合真实值（cancelled 不计、last_shot_at Asia/Shanghai 截断）、package list orders_count 非 cancelled、package delete 被任一订单（含 cancelled）引用 409 package_in_use、无引用 204、同套系仅 cancelled 引用时 list count=0 但 delete 仍 409（双口径分离）、merge 迁移订单、原 orders_count==0 桩断言已改真实值断言"
+    status: done
+  - action: "HTTP 垂直切片：新增 httpapi/orders.go（照搬 packages.go 的 scope 获取 + error 映射 + bind params），RouterDeps 加 Orders 依赖，router.go 注册受保护 POST /orders、GET /orders、PATCH /orders/{id}、DELETE /orders/{id} 四条路由，error 映射四个 409 子码（customer_archived/invalid_status_transition/unpaid_balance/order_not_terminal）+ 400/404"
+    exit_signal: "httpapi 集成测试覆盖 201/200/204/400/401/404/409（customer_archived/invalid_status_transition/unpaid_balance/order_not_terminal）全路径；范围守护：/schedule /reminders /dashboard /settings 仍 404"
+    status: done
+  - action: "前端垂直切片：api/client.ts 加 listOrders/createOrder/updateOrder/deleteOrder（类型引 schema.d.ts 含 OrderListItem 不手写 DTO）；客户详情约单 tab 从静态计数改为订单列表 + 建单（套系下拉只请求 ?status=active；「补录历史订单」模式开关展开状态选择与对应日期/收款字段、补录时套系下拉含下架标注）+ 状态推进（只暴露下一态/跳过精修直接交付/取消三个合法动作；推进到 shot/delivered 弹日期确认默认今天；取消二次确认 + 原因 note 引导）+ 收款标记 + 终态删除入口（二次确认，closed 单明示统计影响）；新增 OrdersPage（行显示客户名/套系名，客户名可点跳详情）+ App.tsx /orders 路由 + AppShell 订单 nav 入口"
+    exit_signal: "浏览器演示：客户详情约单 tab 建单→列表新增→orders_count 更新→推进状态徽章变化（含日期确认弹层）→标记尾款→补录一个历史已完结订单一步到位→删除终态单后列表与聚合更新；/orders 全局页显示全量订单含客户名/套系名 + unpaid_balance 筛选生效（consulting/scheduled 未结清单不出现）；nav 有订单入口；client 方法类型全部来自 paths[...]"
+    status: done
+  - action: "harden + 终验：补 UI polish（空态/加载态/错误态/终态订单禁用推进/取消确认/「定金未收」弱提示徽章/未命名订单兜底文案/长标题截断/375px/focus/键盘）、范围守护、清洁度清扫（无调试输出/TODO/注释代码/无用 import/原型桩残留）、make check 终验、截图归档、items.yaml 回写"
+    exit_signal: "`make check` 退出码 0；A21-A23 截图（桌面 + 375px）归档；范围守护（明确不做 A24-A28）与清洁度 grep/diff review 通过；items.yaml order-tracking 回写 in-progress + feature"
+    status: done
+
+checks:
+  - item: "POST /orders 必填 customer_id，可选 package_id/title/price；建单默认 status=consulting、deposit_paid=false、balance_paid=false、shot_at/delivered_at 为空（A1/A1b）"
+    source: 名词契约
+    status: passed
+  - item: "建单引用 merged/archived 客户返回 409 customer_archived；引用不存在/跨账号客户返回 404（A1c/A1d）"
+    source: 名词契约
+    status: passed
+  - item: "建单引用套系分叉：常规建单（status 缺省/consulting）active 放行、archived 拒绝 400 validation_failed；补录（status 为其他值）archived 放行（历史真实性，D15）；不存在/跨账号套系一律 404（A1e/A1h）"
+    source: 名词契约
+    status: passed
+  - item: "补录直达（D15）：POST 带 status 直达目标状态；≥shot 未给 shot_at / ≥delivered 未给 delivered_at → 400（不静默 now）；status=closed 且 balance_paid≠true → 409 unpaid_balance；目标态 <shot 带 shot_at → 400；cancelled 可直建时间戳可选（A1f/A1g）"
+    source: 名词契约
+    status: passed
+  - item: "终态删除（D16）：DELETE /orders/{id} 仅 closed/cancelled → 204，聚合/统计即时减少，删除唯一 cancelled 引用单后原 409 套系可删（链路）；非终态 → 409 order_not_terminal；跨账号/不存在 → 404（A29/A30）"
+    source: 名词契约
+    status: passed
+  - item: "price 若给必须 ≥ 0，负数在 service 层拦 400 validation_failed（不靠 DB CHECK 变 500）；建单与 PATCH 同口径（A9b）"
+    source: 名词契约
+    status: passed
+  - item: "合法跃迁 consulting→scheduled→shot→selected→retouching→delivered→closed 逐跳放行；前跳边 shot→delivered、selected→delivered 放行且触发 delivered_at 副作用（A2/A2b，§4.2 2026-07-09 update）"
+    source: 名词契约
+    status: passed
+  - item: "非法跃迁（前跳边之外的跳步/回退/终态跃出）返回 409 invalid_status_transition；8x8 矩阵 14 条合法边集合外全部拒绝（A3）"
+    source: 名词契约
+    status: passed
+  - item: "任意非终态可跃迁到 cancelled 放行；closed/cancelled 终态不可再跃出（A4）"
+    source: 名词契约
+    status: passed
+  - item: "进入 shot 自动写 shot_at（请求显式给用请求值）、进入 delivered 自动写 delivered_at；事后 PATCH 时间戳不改状态、不重复触发副作用（A5/A6/A6b，D7）"
+    source: 名词契约
+    status: passed
+  - item: "balance_paid=false 进入 closed 返回 409 unpaid_balance；同请求 {status:closed, balance_paid:true} 先写标记后判门禁一步可达；混合 PATCH 触发任何 409/400 时字段整体回滚不落库（A7/A8/A8b，D6 失败原子性）"
+    source: 名词契约
+    status: passed
+  - item: "D6b 字段修正不变量三条全覆盖：closed 订单 PATCH balance_paid=false → 409 unpaid_balance（A7b 恒结清）；时间戳未到达状态不可预写、已到达不可置空 → 400（A6c）；终态仅可修正 note/title/price/时间戳，付款标记不可变更 → 400（A9c）——字段修正路径与跃迁路径同套不变量（PMR-001，§4.2 2026-07-09 update）"
+    source: 名词契约
+    status: passed
+  - item: "GET /orders 支持 customer_id/status/unpaid_balance 过滤与分页；unpaid_balance=true 口径 = balance_paid=false AND status IN (shot,selected,retouching,delivered)（已进入交付链条且未结清，收窄口径）；total 与匹配数一致（A10-A13，D10/PMR-003）"
+    source: 名词契约
+    status: passed
+  - item: "GET /orders 列表项附引用摘要 customer_display_name（必返）/package_name（引用套系时），join 或页内 IN 批量实现、禁逐行 N+1；缺省排序 created_at DESC, id DESC 翻页稳定（A10b/A13，D13/D14）"
+    source: 名词契约
+    status: passed
+  - item: "customer 列表 orders_count/last_shot_at 与详情 stats（orders_count/total_order_amount/last_shot_at）按非 cancelled 口径真实计算；cancelled 不计；price null 计 0；last_shot_at 本轮硬编码 Asia/Shanghai 日界截断（A15/A16，D8/FDR-001）"
+    source: 名词契约
+    status: passed
+  - item: "package list orders_count（非 cancelled 口径）与 delete in-use（任一订单含 cancelled 口径）是两个独立实现两套测试，不复用同一 helper；同套系仅 cancelled 引用时 list count=0 但 delete 仍 409（A17/A17b，D8/FDR-002）"
+    source: 名词契约
+    status: passed
+  - item: "PATCH 混合语义应用顺序：先写非 status 字段（含付款标记）→ D6b 不变量校验（读生效后的值 + 待跃迁状态）→ 再判状态跃迁与门禁（D6/D6b）"
+    source: 编排骨架
+    status: passed
+  - item: "状态机为 domain 层纯函数（14 边邻接表 canTransition + 时间戳副作用 + closed 门禁 + D6b 不变量校验），不 import gin/pgx（ADR-003）"
+    source: 编排骨架
+    status: passed
+  - item: "order service/repository 不 import gin，handler 只做 HTTP 适配；gin.Context 不下穿 service/repository（ADR-003）"
+    source: 编排骨架
+    status: passed
+  - item: "跨域聚合走各域 repository 内查 orders 表 + AccountScope 受控聚合方法，不抽 order 域 Go 接口注入（D3/D11 同进程读模型）"
+    source: 编排骨架
+    status: passed
+  - item: "所有订单读写经 AccountScope 派生；客户端永不传 account_id；跨账号订单不可见（GET 看不到、PATCH 返回 404）（A14，ADR-001）"
+    source: 流程级约束
+    status: passed
+  - item: "AccountScope.ScalarAggregate 守 fail-loud：op 仅 count/max/sum 白名单、列名字面量校验、cond 占位符、NULL-safe、不支持 GROUP BY，附 op×空集/有值/跨账号单测矩阵（D11/FDR-004，compound accountscope-fail-loud）"
+    source: 流程级约束
+    status: passed
+  - item: "orders 表带 (account_id,customer_id) 与 (account_id,package_id) 复合外键防跨账号引用；package_id 可空；八态与金额非负 CHECK（D12）"
+    source: 流程级约束
+    status: passed
+  - item: "merge 迁移订单：source 订单 customer_id 同事务改挂 target，履行 §4.2 契约随域生长（A18）"
+    source: 流程级约束
+    status: passed
+  - item: "套系删除 in-use 接通真实 orders 表（any-reference 口径含 cancelled）：被引用 409 package_in_use、无引用 204；package_test.go 手工建表改依赖真实迁移（A19/A20）"
+    source: 流程级约束
+    status: passed
+  - item: "OpenAPI 契约已在 design 阶段按 2026-07-09 roadmap update 收编（OrderListItem/unpaid_balance 口径/默认排序/POST 补录直达/DELETE 端点）并生成同步，实现期不再改契约；仅 include-tags 加 orders；router.go 只注册 orders 四端点；schedule/reminder/dashboard/settings 仍 404（A27，compound openapi-feature-tag-slicing）"
+    source: 流程级约束
+    status: passed
+  - item: "明确不做反向核对：无支付集成、无档期联动、无提醒生成、无批量操作/批量导入；订单删除仅限终态、非终态无删除路径（A24/A25/A26/A28/A30）"
+    source: 流程级约束
+    status: passed
+  - item: "前端约单 tab + OrdersPage 覆盖可见状态：空态/加载态/错误态/终态禁用推进/推进只暴露合法动作（下一态/跳过精修直接交付/取消）/推进 shot・delivered 日期确认默认今天/取消二次确认 + 原因 note 引导/补录模式（状态选择 + 动态必填日期收款字段 + 下架套系标注）/删除入口仅终态 + 二次确认（closed 明示统计影响）/「定金未收」弱提示徽章/未命名订单兜底/长标题/375px/focus/键盘（A21-A23，交互契约 9 项）"
+    source: 名词契约
+    status: passed
+  - item: "前端 API 类型一律引用 schema.d.ts 生成类型，不手写重复 DTO；约单 tab 迁移后无原型桩残留 import（前端规范）"
+    source: 流程级约束
+    status: passed

@@ -1,0 +1,9 @@
+---
+alwaysApply: true
+---
+
+子代理派发最高优先级：
+- 后端开发：Cursor Grok 4.5 High
+- 前端开发：Cursor Grok 4.5 High
+- 方案审计：Opus 4.8 Extra High
+- 代码审计：gpt5.6 sol Extra High

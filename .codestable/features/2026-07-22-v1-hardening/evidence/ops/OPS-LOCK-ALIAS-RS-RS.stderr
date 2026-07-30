@@ -1,0 +1,1 @@
+error code=7 stage=lock-acquire key=lock action=busy-or-not-authorized

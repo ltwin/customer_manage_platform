@@ -1,0 +1,251 @@
+schema_version: 1
+feature: 2026-07-22-v1-hardening
+
+route_matrix:
+  - surface: AppShell
+    initial_read: "GET /me account timezone"
+    states: [loading, error, ready-current, ready-stale, unauthorized]
+    empty: not-applicable
+    result: pass
+  - surface: /login
+    initial_read: not-applicable
+    states: [action-idle, action-busy, action-error]
+    empty: not-applicable
+    result: pass
+  - surface: /dashboard
+    initial_read: dashboard-aggregate
+    states: [loading, error, ready-current, ready-stale, unauthorized]
+    empty: not-applicable-zero-cards-are-ready
+    result: pass
+  - surface: /customers
+    initial_read: customer-list
+    states: [loading, empty, error, ready-current, ready-stale, unauthorized]
+    result: pass
+  - surface: /customers/new
+    initial_read: not-applicable-picker-is-subregion
+    states: [action-idle, action-error, unauthorized]
+    empty: not-applicable
+    result: pass
+  - surface: /customers/:id
+    initial_read: customer-detail
+    states: [loading, terminal-error, retryable-error, ready-current, ready-stale, unauthorized]
+    empty: not-applicable-404-is-terminal-error
+    result: pass
+  - surface: /orders
+    initial_read: order-list
+    states: [loading, empty, error, ready-current, ready-stale, unauthorized]
+    result: pass
+  - surface: /calendar
+    initial_read: account-timezone-and-42-day-slots
+    states: [loading, terminal-error, retryable-error, ready-current, ready-stale, unauthorized]
+    empty: ready-day-drawer-only
+    result: pass
+  - surface: /packages
+    initial_read: package-list
+    states: [loading, empty, error, ready-current, ready-stale, unauthorized]
+    result: pass
+  - surface: /reminders
+    initial_read: reminder-list
+    states: [loading, empty, error, ready-current, ready-stale, unauthorized]
+    result: pass
+  - surface: /settings
+    initial_read: settings-singleton
+    states: [loading, error, ready-current, ready-stale, unauthorized]
+    empty: not-applicable
+    result: pass
+  - surface: redirects
+    routes: [/, "*"]
+    states: [redirect]
+    empty: not-applicable
+    result: pass
+
+scenarios:
+  - scenario_id: A1
+    precondition: "fresh checkout with supported Go, Node, Docker and Compose toolchain"
+    action: "run CMD-001 and validate canonical regression/catalog/gate artifact identities"
+    expected: "build, lint, serialized tests and codegen pass; v1 frontend and ops-contract tests are present in the log"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log", "v1-hardening-dod-contract-results.json"]
+    notes: "core; existing Vite chunk warning is tracked separately"
+  - scenario_id: A2
+    precondition: "AppShell and every formal screen route have controlled initial-read fixtures"
+    action: "observe each route while its initial request is pending"
+    expected: "loading is observable without empty or old-success content; N/A routes are explicit"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log", "v1-hardening-implementation.md"]
+    notes: core
+  - scenario_id: A3
+    precondition: "each collection route returns a successful empty collection"
+    action: "open each collection surface with its current filter context"
+    expected: "empty appears only after successful read and includes filter context; singleton/redirect surfaces remain N/A"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log", "v1-hardening-implementation.md"]
+    notes: core
+  - scenario_id: A4
+    precondition: "formal reads can return first-load 500/network failure; detail can return 404"
+    action: "trigger retryable and terminal failures, then retry the recoverable cases"
+    expected: "retryable errors use alert plus retry and recover to current; terminal errors have no false retry; neither renders empty"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log", "v1-hardening-implementation.md"]
+    notes: core
+  - scenario_id: A5
+    precondition: "a route has previously loaded current data"
+    action: "fail the next refresh and then retry it"
+    expected: "old data remains visible as stale with refresh alert and retry; it is never labeled current or empty"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log", "v1-hardening-implementation.md"]
+    notes: core
+  - scenario_id: A6
+    precondition: "a protected request returns 401 while a token exists"
+    action: "observe token storage and route transition"
+    expected: "token is cleared before redirect to /login and protected old data/unauthorized notice is not rendered"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log", "v1-hardening-implementation.md"]
+    notes: core
+  - scenario_id: A7
+    precondition: "authenticated synthetic account at 375 CSS px"
+    action: "open AppShell and navigate directly to Customers and Calendar"
+    expected: "no page overflow; direct nav, visible focus, safe area and 44px core targets hold"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "evidence/browser/A11-customers-375-coarse.png", "evidence/browser/A08-calendar-375-coarse.png"]
+    notes: core-browser
+  - scenario_id: A8
+    precondition: "375 CSS px Calendar with empty and populated synthetic dates"
+    action: "change month, return to today and select dates"
+    expected: "42-day grid is readable and drawer shows empty or stably ordered slots"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "evidence/browser/A08-calendar-375-coarse.png", "evidence/browser/A08-calendar-375-textzoom200.png"]
+    notes: core-browser
+  - scenario_id: A9
+    precondition: "Calendar has dense, cross-day, long-note, conflicting and archived/cancelled fixtures"
+    action: "inspect grid summaries and the selected-day drawer"
+    expected: "layout remains usable and all conflict/status warnings remain distinguishable and scrollable"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "v1-hardening-implementation.md"]
+    notes: core-browser
+  - scenario_id: A10
+    precondition: "Calendar supports controlled initial and refresh failures"
+    action: "fail load with and without old slots, retry, and inspect mobile focusability"
+    expected: "initial failure is not success; old slots are stale; retry recovers; mobile write controls are invisible and unfocusable"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "evidence/browser/A08-calendar-375-coarse.png", "v1-hardening-implementation.md"]
+    notes: core-browser
+  - scenario_id: A11
+    precondition: "375 CSS px Customers has nickname, phone and identity-handle fixtures"
+    action: "search each value and open a result"
+    expected: "mobile cards appear after loading and open detail without horizontal scrolling"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "evidence/browser/A11-customers-375-coarse.png"]
+    notes: core-browser
+  - scenario_id: A12
+    precondition: "Customers has no-match, long-name, multi-channel and controlled 500 fixtures"
+    action: "search, trigger failure, and retry without clearing filters"
+    expected: "contextual empty, resilient long text, preserved filters and successful recovery"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "v1-hardening-implementation.md"]
+    notes: core-browser
+  - scenario_id: A13
+    precondition: "a customer mobile card is visible"
+    action: "open QuickNote, enter a note and save"
+    expected: "exactly one note is created; confirmation appears; input clears and list context remains"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "evidence/commands/CMD-002.log"]
+    notes: core-browser-api
+  - scenario_id: A14
+    precondition: "QuickNote supports controlled 500/401 and keyboard composition"
+    action: "exercise repeat Enter, composing Enter, Escape, 500 and 401"
+    expected: "no duplicate/composition submit; 500 preserves text; Escape restores focus; 401 returns to login"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log", "evidence/commands/CMD-002.log", "v1-hardening-implementation.md"]
+    notes: core
+  - scenario_id: A15
+    precondition: "CustomerPicker search has zero options"
+    action: "press ArrowDown, Tab, blur and close"
+    expected: "no invalid active index/aria-activedescendant and close/focus behavior is stable"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-002.log", "v1-hardening-implementation.md"]
+    notes: core-keyboard
+  - scenario_id: A16
+    precondition: "server construction and graceful shutdown tests are available"
+    action: "construct the HTTP server and exercise idle/shutdown behavior"
+    expected: "ReadHeaderTimeout stays 5s, IdleTimeout is 60s and graceful shutdown does not regress"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log"]
+    notes: core-go
+  - scenario_id: A17
+    precondition: "server startup receives controlled config/avatar path failures"
+    action: "capture startup error output"
+    expected: "operation/key/error class remain while secrets, URLs, tokens and raw local paths are absent"
+    result: pass
+    evidence_paths: ["evidence/commands/CMD-001.log"]
+    notes: core-go
+  - scenario_id: A18
+    precondition: "synthetic env, command and Docker selector fixtures cover the frozen preflight inventory"
+    action: "execute all 66 A18 catalog cases across binary, managed and external modes"
+    expected: "strict parsing, key matrix, exit 0/2/3/4/5/6, Engine policy, compose identity and pinned-host observations equal catalog expectations"
+    result: pass
+    evidence_paths: ["evidence/ops/v1-ops-smoke-results.json", "evidence/ops/v1-ops-smoke.log", "evidence/commands/CMD-005.log"]
+    notes: core-ops
+  - scenario_id: A19
+    precondition: "local Unix-context initialized app-present synthetic target and isolated sentinel exist"
+    action: "backup both running and Engine-exited supported predicates"
+    expected: "freeze pipeline publishes a verified five-file package, restores original state, preserves business data and leaves sentinel unchanged"
+    result: pass
+    evidence_paths: ["evidence/ops/v1-ops-smoke-results.json", "evidence/commands/CMD-005.log"]
+    notes: core-ops
+  - scenario_id: A20
+    precondition: "backup failure, path, Engine state, lock and race fixtures cover the frozen inventory"
+    action: "execute every A20 case including cleanup masking and realpath alias contention"
+    expected: "all failures close at their frozen boundary, do not publish half packages, preserve target oracle and cannot delete a later owner"
+    result: pass
+    evidence_paths: ["evidence/ops/v1-ops-smoke-results.json", "evidence/ops/v1-ops-smoke-docker.jsonl", "evidence/commands/CMD-005.log"]
+    notes: core-ops
+  - scenario_id: A21
+    precondition: "a valid staged backup package and mutated initialized target are available"
+    action: "restore with exact typed project confirmation for running and exited targets"
+    expected: "DB/avatar envelopes equal package oracle and original supported app predicate is restored"
+    result: pass
+    evidence_paths: ["evidence/ops/v1-ops-smoke-results.json", "evidence/commands/CMD-005.log"]
+    notes: core-ops
+  - scenario_id: A22
+    precondition: "restore path/package/state/identity/race/destructive-failure fixtures cover the frozen inventory"
+    action: "execute every A22 case including start/health failure and cleanup masking"
+    expected: "pre-mutation rejects leave target unchanged; destructive failures stop at Engine exited with truthful data envelopes; later owners remain intact"
+    result: pass
+    evidence_paths: ["evidence/ops/v1-ops-smoke-results.json", "evidence/ops/v1-ops-smoke-docker.jsonl", "evidence/commands/CMD-005.log"]
+    notes: core-ops
+  - scenario_id: A23
+    precondition: "README and production environment attestation checklist are available"
+    action: "walk binary/managed/external deployment, credentials, Telegram, backup/restore and JSON-export boundaries"
+    expected: "commands match implementation and unsupported targets have explicit equivalent-backup responsibility plus TLS/network/durability attestations"
+    result: blocked
+    evidence_paths: ["README.md", "evidence/commands/CMD-004.log", "evidence/ops/v1-ops-smoke-results.json"]
+    notes: "本地 README/CLI/synthetic restore 已通过；仍缺生产 ECS mount/write/fsync/dir-sync、TLS、network、offsite-medium attestation 与获授权 operator 的外部 migration/DDL 只读审计，不能由 synthetic 结果代替"
+  - scenario_id: A24
+    precondition: "fresh synthetic customer/package/order/slot/reminder fixture IDs are recorded"
+    action: "owner walks identity customer -> package -> order -> slot -> deposit -> next-day digest -> dashboard five cards"
+    expected: "IDs remain traceable, digest scheduling/payload is fresh and every dashboard card cross-checks its domain API"
+    result: blocked
+    evidence_paths: ["../../roadmap/photographer-private-crm/approval-report.md", "../../features/2026-07-15-telegram-digest/telegram-digest-acceptance.md"]
+    notes: "H2 的 2026-07-17 true-external transport/binding 复用已批准；仍缺 owner 对 fresh 同 fixture 的 customer→package→order→slot→deposit→next-day digest→dashboard 五卡逐节点 walkthrough 与 payload/调度关联证明"
+  - scenario_id: A25
+    precondition: "H1 is approved and implementation diff is complete"
+    action: "audit scope, authentication residual intake, secrets and workspace cleanliness"
+    expected: "no API/schema/auth expansion or excluded debt; open auth-hardening intake exists; no secret, PII or temporary residue"
+    result: pass
+    evidence_paths: ["../../issues/2026-07-22-auth-hardening/auth-hardening-report.md", "evidence/commands/CMD-006.log", "v1-hardening-implementation.md"]
+    notes: core-scope
+  - scenario_id: A26
+    precondition: "one customer fixture is available at 375, 768, 769, desktop and 375 plus 200% text zoom"
+    action: "compare projections, actions, network requests and focus/scroll reachability"
+    expected: "cards only through 768, table from 769, equivalent fields/actions, one list request and zoom-safe controls"
+    result: pass
+    evidence_paths: ["evidence/browser/viewport-metadata.json", "evidence/browser/A26-customers-375-textzoom200.png", "evidence/commands/CMD-002.log"]
+    notes: core-browser
+  - scenario_id: A27
+    precondition: "the A24 fixture is complete"
+    action: "run reference-only JSON export and compare entity/settings counts"
+    expected: "counts match; avatar data is public reference only; no binary/object/key/manifest/secret; export does not replace A24"
+    result: blocked
+    evidence_paths: ["evidence/commands/CMD-001.log", "../../features/2026-07-21-data-export/data-export-acceptance.md"]
+    notes: "reference-only export 自动化 8/8 与既有 feature acceptance 已通过；但 A24 fresh fixture 尚未建立/attest，无法执行同 fixture counts 与边界交叉核对，因此不能宣称本场景 pass"

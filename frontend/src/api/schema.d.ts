@@ -45,7 +45,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 客户列表（q 匹配 display_name/real_name/identity.handle） */
+        /** 客户列表（q 匹配 display_name/real_name/phone/identity.handle） */
         get: operations["listCustomers"];
         put?: never;
         /** 30 秒建档端点（仅 3-4 项必填） */
@@ -72,6 +72,41 @@ export interface paths {
         head?: never;
         /** 渐进补全任意字段；{status:archived} 即归档（§4.2） */
         patch: operations["updateCustomer"];
+        trace?: never;
+    };
+    "/customers/{id}/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 条件设置或替换客户头像；active/archived 可写，merged 恒为 customer_merged */
+        put: operations["putCustomerAvatar"];
+        post?: never;
+        /** 条件移除客户头像；merged 仅开放本 cleanup-only 操作 */
+        delete: operations["deleteCustomerAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/avatar/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 经账号鉴权读取当前强版本头像内容 */
+        get: operations["getCustomerAvatarContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/customers/{id}/identities": {
@@ -170,7 +205,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** 删除套系；被订单引用时返回 package_in_use（§4.3） */
+        delete: operations["deletePackage"];
         options?: never;
         head?: never;
         /** 更新套系；归档 = PATCH {status:archived}（无 in-use 校验，§4.3） */
@@ -184,10 +220,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 订单列表 */
+        /** 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3） */
         get: operations["listOrders"];
         put?: never;
-        /** 新建订单（status=consulting） */
+        /** 新建订单（creation_mode=new 为新业务，backfill 为历史补录） */
         post: operations["createOrder"];
         delete?: never;
         options?: never;
@@ -205,10 +241,11 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** 物理删除终态订单（closed/cancelled，§4.3 2026-07-09） */
+        delete: operations["deleteOrder"];
         options?: never;
         head?: never;
-        /** 状态跃迁与字段修正（状态机语义见 §4.2） */
+        /** 状态跃迁与字段修正（状态机语义见 §4.2；status 等于当前状态时为 200 no-op） */
         patch: operations["updateOrder"];
         trace?: never;
     };
@@ -222,7 +259,7 @@ export interface paths {
         /** 档期区间查询（含跨界 slot） */
         get: operations["listScheduleSlots"];
         put?: never;
-        /** 新建档期（重叠不阻止，返回 overlaps 由前端提示） */
+        /** 新建档期（支持跨日；重叠不阻止；同一订单最多一条 shoot slot） */
         post: operations["createScheduleSlot"];
         delete?: never;
         options?: never;
@@ -244,7 +281,7 @@ export interface paths {
         delete: operations["deleteScheduleSlot"];
         options?: never;
         head?: never;
-        /** 更新档期 */
+        /** 更新档期；时间/type/order 变化重验订单与客户矩阵，note-only 不重验外部状态 */
         patch: operations["updateScheduleSlot"];
         trace?: never;
     };
@@ -255,7 +292,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 提醒列表 */
+        /**
+         * 提醒列表
+         * @description 默认按 due_date ASC, id ASC 稳定排序
+         */
         get: operations["listReminders"];
         put?: never;
         /** 手工创建自定义提醒 */
@@ -395,13 +435,22 @@ export interface components {
             error: {
                 code: string;
                 message: string;
+                details?: components["schemas"]["ScheduleConflictDetails"];
             };
+        };
+        /** @description order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返 */
+        ScheduleConflictDetails: {
+            schedule_slot_id: string;
+            /** Format: date-time */
+            schedule_start_at: string;
         };
         /** @description 账号（摄影师）；永不含 password_hash */
         Account: {
             readonly id: string;
             /** Format: date-time */
             readonly created_at: string;
+            /** @description IANA 时区；Settings 未落地前返回 Asia/Shanghai，日历不得使用浏览器时区替代 */
+            timezone: string;
         };
         /** @description 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1） */
         Birthday: string;
@@ -409,8 +458,11 @@ export interface components {
         CustomerChannel: "xiaohongshu" | "douyin" | "weibo" | "referral" | "other";
         /** @enum {string} */
         CustomerStatus: "active" | "merged" | "archived";
+        /** @example ar-0 */
+        AvatarRevision: string;
+        AvatarVersion: string;
         /** @enum {string} */
-        SocialPlatform: "wechat" | "qq" | "telegram" | "other";
+        SocialPlatform: "wechat" | "qq" | "telegram" | "xiaohongshu" | "douyin" | "weibo" | "other";
         /** @enum {string} */
         ShootType: "portrait" | "cosplay" | "other";
         /** @enum {string} */
@@ -422,6 +474,8 @@ export interface components {
          * @enum {string}
          */
         OrderStatus: "consulting" | "scheduled" | "shot" | "selected" | "retouching" | "delivered" | "closed" | "cancelled";
+        /** @enum {string} */
+        OrderCreationMode: "new" | "backfill";
         /** @enum {string} */
         SlotType: "shoot" | "hold" | "busy";
         /** @enum {string} */
@@ -443,6 +497,46 @@ export interface components {
             referrer_customer_id?: string;
             status: components["schemas"]["CustomerStatus"];
             readonly merged_into_customer_id?: string;
+            avatar_revision: components["schemas"]["AvatarRevision"];
+            avatar_version?: components["schemas"]["AvatarVersion"];
+            /** @description 仅当前有头像时存在；同源鉴权相对 URL，v 等于 avatar_version */
+            readonly avatar_url?: string;
+        };
+        CustomerListItem: components["schemas"]["Customer"] & {
+            /** @description 非 cancelled 订单计数；order 域未落地前恒为 0 */
+            orders_count: number;
+            /**
+             * Format: date
+             * @description 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
+             */
+            last_shot_at: string | null;
+        };
+        CustomerSummary: {
+            id: string;
+            display_name: string;
+            channel: components["schemas"]["CustomerChannel"];
+            status: components["schemas"]["CustomerStatus"];
+            avatar_revision: components["schemas"]["AvatarRevision"];
+            avatar_version?: components["schemas"]["AvatarVersion"];
+            readonly avatar_url?: string;
+        };
+        CustomerStats: {
+            /** @description 非 cancelled 订单计数；order 域未落地前恒为 0 */
+            orders_count: number;
+            /** @description 分；非 cancelled 订单 price 之和；order 域未落地前恒为 0 */
+            total_order_amount: number;
+            /**
+             * Format: date
+             * @description 口径同 CustomerListItem.last_shot_at
+             */
+            last_shot_at: string | null;
+        };
+        CustomerDetail: components["schemas"]["Customer"] & {
+            identities: components["schemas"]["SocialIdentity"][];
+            /** @description 倒序 */
+            notes: components["schemas"]["CustomerNote"][];
+            referrer: components["schemas"]["CustomerSummary"] | null;
+            stats: components["schemas"]["CustomerStats"];
         };
         SocialIdentity: {
             readonly id: string;
@@ -476,6 +570,7 @@ export interface components {
             raw_delivery_count?: number;
             /** @description 0=不含精修 */
             retouch_count?: number;
+            note?: string;
         };
         Package: components["schemas"]["PackageInput"] & {
             readonly id: string;
@@ -484,6 +579,10 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
             status: components["schemas"]["PackageStatus"];
+        };
+        PackageListItem: components["schemas"]["Package"] & {
+            /** @description 引用本套系的非 cancelled 订单计数；order 域未落地前恒为 0 */
+            orders_count: number;
         };
         Order: {
             readonly id: string;
@@ -513,6 +612,12 @@ export interface components {
             delivered_at?: string;
             note?: string;
         };
+        OrderListItem: components["schemas"]["Order"] & {
+            /** @description 引用客户的 display_name（列表可读性摘要，§4.3 2026-07-09 update） */
+            customer_display_name: string;
+            /** @description 引用套系的 name；未引用套系时缺省 */
+            package_name?: string;
+        };
         ScheduleSlot: {
             readonly id: string;
             /** @description 服务端由账号上下文写入，客户端永不传（ADR-001） */
@@ -527,10 +632,62 @@ export interface components {
              */
             end_at: string;
             type: components["schemas"]["SlotType"];
-            /** @description type=shoot 时必填 */
+            /** @description type=shoot 时必填；同一订单最多关联一条 shoot slot */
             order_id?: string;
             note?: string;
         };
+        ScheduleSlotListItemBase: {
+            readonly id: string;
+            /** @description 服务端由账号上下文写入，客户端永不传（ADR-001） */
+            readonly account_id: string;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            start_at: string;
+            /**
+             * Format: date-time
+             * @description 必须 > start_at
+             */
+            end_at: string;
+            note?: string;
+        };
+        ShootScheduleSlotListItem: components["schemas"]["ScheduleSlotListItemBase"] & {
+            /** @enum {string} */
+            type: "shoot";
+            /** @description shoot slot 必返的关联订单 id */
+            order_id: string;
+            /** @description 引用订单的当前客户 id；merge 后返回 target id，供恢复流程与客户档案订单 tab 使用 */
+            customer_id: string;
+            /** @description 引用订单的当前客户名 */
+            customer_display_name: string;
+            /** @description 当前客户状态；客户归档后仍返回，供文本警示 */
+            customer_status: components["schemas"]["CustomerStatus"];
+            /** @description 引用订单的标题；无标题时缺省，由前端按套系/客户兜底 */
+            order_title?: string;
+            /** @description 引用订单所选套系名；未选套系时缺省 */
+            package_name?: string;
+            order_status: components["schemas"]["OrderStatus"];
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "shoot";
+        };
+        NonShootScheduleSlotListItem: components["schemas"]["ScheduleSlotListItemBase"] & {
+            /**
+             * @description hold/busy 不带订单或客户引用摘要
+             * @enum {string}
+             */
+            type: "hold" | "busy";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "hold" | "busy";
+        };
+        ScheduleSlotListItem: components["schemas"]["ShootScheduleSlotListItem"] | components["schemas"]["NonShootScheduleSlotListItem"];
         Reminder: {
             readonly id: string;
             /** @description 服务端由账号上下文写入，客户端永不传（ADR-001） */
@@ -566,6 +723,30 @@ export interface components {
              */
             digest_hour: number;
             telegram_chat_id?: string;
+        };
+        ExportCounts: {
+            customers: number;
+            social_identities: number;
+            customer_notes: number;
+            packages: number;
+            orders: number;
+            schedule_slots: number;
+            reminders: number;
+        };
+        ExportDocument: {
+            /** Format: date-time */
+            exported_at: string;
+            /** @enum {integer} */
+            schema_version: 1;
+            counts: components["schemas"]["ExportCounts"];
+            customers: components["schemas"]["Customer"][];
+            social_identities: components["schemas"]["SocialIdentity"][];
+            customer_notes: components["schemas"]["CustomerNote"][];
+            packages: components["schemas"]["Package"][];
+            orders: components["schemas"]["Order"][];
+            schedule_slots: components["schemas"]["ScheduleSlot"][];
+            reminders: components["schemas"]["Reminder"][];
+            settings: components["schemas"]["Settings"];
         };
     };
     responses: {
@@ -607,6 +788,10 @@ export interface components {
         };
     };
     parameters: {
+        /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+        AvatarIfMatch: string;
+        /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
+        IdempotencyKey: string;
         Id: string;
         Page: number;
         PageSize: number;
@@ -675,8 +860,8 @@ export interface operations {
             query?: {
                 q?: string;
                 channel?: components["schemas"]["CustomerChannel"];
-                /** @description 缺省 active；可显式查 archived/all（§4.2 归档语义） */
-                status?: "active" | "merged" | "archived" | "all";
+                /** @description 缺省 active；兼容单值/all，也接受逗号分隔的 active/archived/merged 状态集合；重复值、未知值或 all 与其他值混用均为 400；过滤发生在分页前 */
+                status?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -693,7 +878,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Customer"][];
+                        items: components["schemas"]["CustomerListItem"][];
                         total: number;
                     };
                 };
@@ -715,12 +900,13 @@ export interface operations {
                 "application/json": {
                     display_name: string;
                     channel: components["schemas"]["CustomerChannel"];
-                    /** @description channel=referral 时必填 */
+                    /** @description channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理 */
                     referrer_customer_id?: string;
-                    identity: {
+                    identities: {
                         platform: components["schemas"]["SocialPlatform"];
                         handle: string;
-                    };
+                        remark?: string;
+                    }[];
                 };
             };
         };
@@ -736,6 +922,7 @@ export interface operations {
             };
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["Internal"];
         };
     };
@@ -756,13 +943,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Customer"] & {
-                        identities: components["schemas"]["SocialIdentity"][];
-                        /** @description 倒序 */
-                        notes: components["schemas"]["CustomerNote"][];
-                        /** @description referrer 摘要（§4.3；字段由 customer-core feature 细化） */
-                        referrer?: Record<string, never>;
-                    };
+                    "application/json": components["schemas"]["CustomerDetail"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -782,13 +963,22 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": {
+                    /** @description 不可清空（不接受 null） */
                     display_name?: string;
-                    real_name?: string;
-                    phone?: string;
-                    birthday?: components["schemas"]["Birthday"];
+                    /** @description 显式传 null 清空 */
+                    real_name?: string | null;
+                    /** @description 显式传 null 清空 */
+                    phone?: string | null;
+                    /** @description 显式传 null 清空 */
+                    birthday?: components["schemas"]["Birthday"] | null;
                     channel?: components["schemas"]["CustomerChannel"];
+                    /** @description channel=referral 时必填；介绍人须 active 且本账号可见，非 active 或跨账号按 404 处理；不得为本客户自身（400） */
                     referrer_customer_id?: string;
-                    status?: components["schemas"]["CustomerStatus"];
+                    /**
+                     * @description merged 是 merge 端点专属终态，不可经 PATCH 设置
+                     * @enum {string}
+                     */
+                    status?: "active" | "archived";
                 };
             };
         };
@@ -805,6 +995,154 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    putCustomerAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+                "If-Match": components["parameters"]["AvatarIfMatch"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 设置后的客户；same-content 完整对象重放为 no-op */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description customer_merged | avatar_revision_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    deleteCustomerAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+                "If-Match": components["parameters"]["AvatarIfMatch"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 移除后的客户；已无头像时为 no-op */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description avatar_revision_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    getCustomerAvatarContent: {
+        parameters: {
+            query: {
+                v: components["schemas"]["AvatarVersion"];
+            };
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 完整性已验证的当前头像字节 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    "Cache-Control"?: string;
+                    Vary?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description 完整性验证通过且 If-None-Match 命中 */
+            304: {
+                headers: {
+                    ETag?: string;
+                    "Cache-Control"?: string;
+                    Vary?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description avatar_version_stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -839,6 +1177,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -863,6 +1210,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读）| last_identity（非 merged 客户至少保留 1 个社交身份） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -895,6 +1251,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_merged（merged 客户档案只读） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -927,7 +1292,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description merge_conflict（source 非 active） */
+            /** @description merge_conflict（source 或 target 非 active） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -942,7 +1307,8 @@ export interface operations {
     listPackages: {
         parameters: {
             query?: {
-                status?: components["schemas"]["PackageStatus"];
+                /** @description 缺省 active；可显式查 archived/all（§4.3 套系上架/下架语义） */
+                status?: "active" | "archived" | "all";
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -959,7 +1325,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Package"][];
+                        items: components["schemas"]["PackageListItem"][];
                         total: number;
                     };
                 };
@@ -996,6 +1362,38 @@ export interface operations {
             500: components["responses"]["Internal"];
         };
     };
+    deletePackage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除，无响应体 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description package_in_use（套系已被订单引用，不可删除） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
     updatePackage: {
         parameters: {
             query?: never;
@@ -1013,12 +1411,13 @@ export interface operations {
                     pricing_mode?: components["schemas"]["PricingMode"];
                     /** @description 分 */
                     base_price?: number;
-                    duration_minutes?: number;
-                    shot_count_min?: number;
-                    shot_count_max?: number;
-                    raw_delivery_count?: number;
+                    duration_minutes?: number | null;
+                    shot_count_min?: number | null;
+                    shot_count_max?: number | null;
+                    raw_delivery_count?: number | null;
                     /** @description 0=不含精修 */
-                    retouch_count?: number;
+                    retouch_count?: number | null;
+                    note?: string;
                     status?: components["schemas"]["PackageStatus"];
                 };
             };
@@ -1044,7 +1443,10 @@ export interface operations {
             query?: {
                 customer_id?: string;
                 status?: components["schemas"]["OrderStatus"];
+                /** @description true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径） */
                 unpaid_balance?: boolean;
+                /** @description 目标 slot 的 end_at；服务端按它相对当前时刻应用与 POST/PATCH 相同的订单/客户未来历史矩阵并排除已有 shoot slot：未来要求客户 active，历史允许 active/archived，merged 永不允许；可与 customer_id 组合 */
+                schedulable_at?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -1061,7 +1463,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["Order"][];
+                        items: components["schemas"]["OrderListItem"][];
                         total: number;
                     };
                 };
@@ -1074,18 +1476,43 @@ export interface operations {
     createOrder: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
                 "application/json": {
+                    /**
+                     * @description new=新业务，只允许 consulting/scheduled 且只能引用 active 客户/套系；backfill=历史补录，可按状态不变量直达并允许 active/archived 客户与套系，merged 客户仍拒绝
+                     * @default new
+                     */
+                    creation_mode?: components["schemas"]["OrderCreationMode"];
                     customer_id: string;
                     package_id?: string;
                     title?: string;
                     /** @description 分 */
                     price?: number;
+                    /** @description creation_mode=new 时缺省 consulting 且仅允许 consulting/scheduled；backfill 时可直达八态，≥shot 须显式 shot_at、≥delivered（含 closed）须显式 delivered_at，closed 须 balance_paid=true */
+                    status?: components["schemas"]["OrderStatus"];
+                    /** @default false */
+                    deposit_paid?: boolean;
+                    /** @default false */
+                    balance_paid?: boolean;
+                    /**
+                     * Format: date-time
+                     * @description 补录用；仅目标状态已到达 shot 时可给
+                     */
+                    shot_at?: string;
+                    /**
+                     * Format: date-time
+                     * @description 补录用；仅目标状态已到达 delivered 时可给
+                     */
+                    delivered_at?: string;
+                    note?: string;
                 };
             };
         };
@@ -1102,7 +1529,39 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description customer_archived（引用 merged/archived 客户） */
+            /** @description customer_archived（new 引用 merged/archived 客户，或 backfill 引用 merged 客户）| unpaid_balance（补录 status=closed 且 balance_paid≠true）| idempotency_conflict（已成功绑定的同 key 使用不同请求体） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    deleteOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已删除，无响应体；实时聚合/统计即时反映（删 closed 单会减少 orders_count 与营收类统计） */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description order_not_terminal（非终态订单不可删除，先 cancel）| order_in_use（被 type=shoot 的 slot 引用；details 必返 schedule_slot_id/schedule_start_at） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1153,7 +1612,7 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            /** @description invalid_status_transition（非法跃迁）| unpaid_balance（未结清进 closed） */
+            /** @description invalid_status_transition（非法跃迁）| unpaid_balance（未结清进 closed / closed 订单试图取消结清标记，字段修正不变量见 §4.2） */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1168,7 +1627,9 @@ export interface operations {
     listScheduleSlots: {
         parameters: {
             query: {
+                /** @description 半开区间 [from,to) 的 UTC 起点；月历传完整 6 周可见网格的账号本地日界 */
                 from: string;
+                /** @description 半开区间 [from,to) 的 UTC 终点 */
                 to: string;
             };
             header?: never;
@@ -1183,7 +1644,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ScheduleSlot"][];
+                    "application/json": components["schemas"]["ScheduleSlotListItem"][];
                 };
             };
             400: components["responses"]["ValidationFailed"];
@@ -1194,7 +1655,10 @@ export interface operations {
     createScheduleSlot: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -1206,7 +1670,7 @@ export interface operations {
                     /** Format: date-time */
                     end_at: string;
                     type: components["schemas"]["SlotType"];
-                    /** @description type=shoot 时必填 */
+                    /** @description type=shoot 时必填；未来/进行中只允许 consulting/scheduled 且客户须 active；历史补录允许 scheduled/shot/selected/retouching/delivered/closed 且客户可 active/archived；cancelled 或 merged 客户永不允许 */
                     order_id?: string;
                     note?: string;
                 };
@@ -1228,6 +1692,16 @@ export interface operations {
             };
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description order_already_scheduled（订单已有 shoot slot，details 返回现有 slot）| customer_archived（未来档期的客户已归档/合并）| customer_changed（并发 merge 导致订单客户连续变化，需重拉候选）| idempotency_conflict（已成功绑定的同 key 使用不同请求体） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -1271,8 +1745,10 @@ export interface operations {
                     /** Format: date-time */
                     end_at?: string;
                     type?: components["schemas"]["SlotType"];
-                    order_id?: string;
-                    note?: string;
+                    /** @description 显式 null 清空关联；省略表示不改 */
+                    order_id?: string | null;
+                    /** @description 显式 null 清空备注；省略表示不改 */
+                    note?: string | null;
                 };
             };
         };
@@ -1289,6 +1765,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description order_already_scheduled（目标订单已有另一条 shoot slot，details 返回现有 slot）| customer_archived（未来档期的客户已归档/合并）| customer_changed（并发 merge 导致订单客户连续变化，需重拉候选） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -1296,6 +1781,7 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["ReminderStatus"];
+                customer_id?: string;
                 due_before?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
@@ -1541,21 +2027,24 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        /** @description due_date ≤ 账号时区今日且 pending */
+                        /** @description due_date ≤ 账号时区今日+2 天且 pending（近 3 天窗口含逾期；含全部 type，含 churn） */
                         due_reminders: components["schemas"]["Reminder"][];
-                        /** @description 今日档期（含订单+客户摘要，字段由 dashboard-today feature 细化） */
-                        today_slots: components["schemas"]["ScheduleSlot"][];
+                        /** @description 与账号本地今日半开日界相交的档期；shoot 含订单+客户摘要，语义与 GET /schedule/slots 一致 */
+                        today_slots: components["schemas"]["ScheduleSlotListItem"][];
                         unpaid_orders: {
+                            /** @description 与 items 长度一致（不截断） */
                             count: number;
-                            /** @description status=delivered 且 balance_paid=false（closed 必已结清故不出现） */
-                            items: components["schemas"]["Order"][];
+                            /** @description status=delivered 且 balance_paid=false（closed 必已结清故不出现；窄于 unpaid_balance） */
+                            items: components["schemas"]["OrderListItem"][];
                         };
                         /** @description type=churn 且 pending */
                         churn_alerts: components["schemas"]["Reminder"][];
-                        month_stats: {
+                        recent_stats: {
+                            /** @description 近 30 天内按 created_at 统计，含全部状态 */
                             orders_created: number;
+                            /** @description 近 30 天内按 delivered_at 统计，排除当前 status=cancelled */
                             orders_delivered: number;
-                            /** @description 分；balance_paid=true 订单 price 之和 */
+                            /** @description 分；近 30 天 delivered_at 落窗口、balance_paid=true 且当前非 cancelled 的订单 price 之和 */
                             revenue_confirmed: number;
                         };
                     };
@@ -1577,32 +2066,16 @@ export interface operations {
             /** @description 全量导出文件（Content-Disposition 附件） */
             200: {
                 headers: {
+                    /** @description 安全 UTC 文件名的附件声明 */
+                    "Content-Disposition"?: string;
+                    /** @description 完整预序列化 JSON bytes 长度 */
+                    "Content-Length"?: number;
+                    "Cache-Control"?: "no-store";
+                    "X-Content-Type-Options"?: "nosniff";
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        /** Format: date-time */
-                        exported_at: string;
-                        /** @enum {integer} */
-                        schema_version: 1;
-                        counts: {
-                            customers: number;
-                            social_identities: number;
-                            customer_notes: number;
-                            packages: number;
-                            orders: number;
-                            schedule_slots: number;
-                            reminders: number;
-                        };
-                        customers: components["schemas"]["Customer"][];
-                        social_identities: components["schemas"]["SocialIdentity"][];
-                        customer_notes: components["schemas"]["CustomerNote"][];
-                        packages: components["schemas"]["Package"][];
-                        orders: components["schemas"]["Order"][];
-                        schedule_slots: components["schemas"]["ScheduleSlot"][];
-                        reminders: components["schemas"]["Reminder"][];
-                        settings: components["schemas"]["Settings"];
-                    };
+                    "application/json": components["schemas"]["ExportDocument"];
                 };
             };
             401: components["responses"]["Unauthorized"];

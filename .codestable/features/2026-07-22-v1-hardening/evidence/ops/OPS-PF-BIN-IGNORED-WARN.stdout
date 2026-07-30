@@ -1,0 +1,15 @@
+dependency-check/commands=ok
+env-parse/file=ok
+config-matrix/DATABASE_URL=network-boundary-attention
+config-matrix/AUTH_TOKEN_SECRET=ok
+config-matrix/SEED_ADMIN_PASSWORD=ok
+config-matrix/AVATAR_LOCAL_REQUIRE_MOUNT=durability-attention
+config-matrix/AVATAR_LOCAL_ROOT=ok
+config-matrix/AVATAR_STORAGE_DRIVER=ok
+config-matrix/TELEGRAM=disabled
+config-matrix/HTTP_ADDR=ok
+config-matrix/APP_DATABASE_URL=ignored-attention
+config-matrix/POSTGRES_USER=ignored-attention
+config-matrix/POSTGRES_PASSWORD=ignored-attention
+config-matrix/POSTGRES_DB=ignored-attention
+complete/preflight=ok

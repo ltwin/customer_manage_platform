@@ -1,0 +1,1 @@
+error code=10 stage=restore-health key=app action=failure-stop-complete

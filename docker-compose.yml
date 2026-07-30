@@ -6,8 +6,15 @@ services:
   app:
     build: .
     image: crm:local
+    # Telegram long polling 首版只允许一个进程；发布必须 stop-first，禁止旧新容器重叠。
+    stop_grace_period: 12s
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
     env_file:
-      - path: .env
+      - path: ${CRM_ENV_FILE:-.env}
         required: false # 单起 postgres（make db-up）时无需 .env
     environment:
       # 缺省 = 全容器模式直连 compose 内 postgres 服务；接现有 PG 时在 .env 设
@@ -15,8 +22,15 @@ services:
       # 只起 app（review REV-005）。凭证经 .env 注入（cp .env.example .env）。
       DATABASE_URL: ${APP_DATABASE_URL:-postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm-dev-password}@postgres:5432/${POSTGRES_DB:-crm}?sslmode=disable}
       HTTP_ADDR: ":8080"
+      AVATAR_STORAGE_DRIVER: local
+      AVATAR_LOCAL_ROOT: /var/lib/crm/avatars
+      AVATAR_LOCAL_REQUIRE_MOUNT: "true"
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
     ports:
       - "8080:8080"
+    volumes:
+      - avatar_data:/var/lib/crm/avatars
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,3 +59,4 @@ services:
 
 volumes:
   pgdata:
+  avatar_data:

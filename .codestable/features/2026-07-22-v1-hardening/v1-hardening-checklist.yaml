@@ -1,0 +1,339 @@
+feature: 2026-07-22-v1-hardening
+created: 2026-07-22
+
+owner_checkpoints:
+  - id: H1
+    decision: "认证 residual：当前 V1 接受并落独立 auth-hardening follow-up intake，或退回当前 design 扩范围"
+    recommended: "接受当前 V1 residual，并在 goal package 前落 .codestable/issues/2026-07-22-auth-hardening/auth-hardening-report.md"
+    selected: "H1-A：接受当前 V1 residual，并创建独立 auth-hardening open-risk intake"
+    answered_at: 2026-07-22
+    status: approved
+  - id: H2
+    decision: "roadmap 最终链路的 TG true-external transport：复用 2026-07-17 owner-attested 证据，或 fresh 脱敏真机复跑"
+    recommended: "复用既有 true-external transport；fresh 验证同一 synthetic fixture 的次日 digest payload/调度关联"
+    selected: "H2-A：复用既有 true-external transport；fresh 验证同一 synthetic fixture 的次日 digest payload/调度关联与完整 A24 主链"
+    answered_at: 2026-07-22
+    status: approved
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd frontend && npm run test:v1-hardening"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "bash -n scripts/*.sh"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "./scripts/test-v1-ops-contract.sh && docker build -t crm:v1-hardening ."
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "./scripts/v1-ops-smoke.sh"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "git diff --check"
+      core: false
+      failure_handling: fix-or-block
+  evidence_required:
+    - "v1-hardening-design-review.md"
+    - "v1-hardening-regression.yaml"
+    - "v1-hardening-ops-case-catalog.yaml"
+    - "evidence/browser/viewport-metadata.json"
+    - "evidence/browser/<scenario-id>-<slug>.png"
+    - "evidence/commands/CMD-001.log..CMD-006.log"
+    - "evidence/ops/v1-ops-smoke.log"
+    - "evidence/ops/v1-ops-smoke-results.json"
+    - "v1-hardening-implementation.md"
+    - "v1-hardening-review.md"
+    - "v1-hardening-qa.md"
+    - "v1-hardening-acceptance.md"
+    - "v1-hardening-evidence-pack.md"
+    - "v1-hardening-evidence-pack-results.json"
+    - "v1-hardening-dod-contract-results.json"
+    - "v1-hardening-dod-results.json"
+    - "v1-hardening-gate-results.json"
+    - "H1=接受时：../../issues/2026-07-22-auth-hardening/auth-hardening-report.md"
+  cleanliness:
+    debug_output: forbidden
+    temporary_todos: forbidden
+    commented_code: forbidden
+    secrets_and_pii: forbidden
+    partial_backup_artifacts: forbidden
+    test_compose_residue: forbidden
+    implicit_compose_target: forbidden
+
+steps:
+  - id: STEP-001
+    action: "状态与证据契约骨架：建立 discriminated page state、StateNotice、逐 route matrix、canonical regression/artifact 骨架；按 D8 frozen inventory 逐项物化 ops case catalog；创建 test:v1-hardening，固定 frontend+ops-contract 接入 Makefile"
+    exit_signal: "loading/empty/error/ready(current|stale)/401 可独立观察；A1-A27 各有唯一 pending record；catalog 148 个 ID 与 D8 inventory 集合完全相等，scenario/oracle/expected/stage-plan/fixture/action 物化合法且无重复；design-review/dod-contract/dod/gate 全部使用 canonical path；make check 日志真实执行 frontend 与 ops-contract 定向测试"
+    trace: [D1, D8, A1, A2, A3, A4, A5, A6]
+    status: done
+  - id: STEP-002
+    action: "页面状态接入：逐个正式 route/surface 收口初始加载、成功空态、terminal/retryable error、stale refresh 与 401 分流"
+    exit_signal: "route matrix 无 error 冒充 empty、无 retryable initial error 缺 retry、无 stale 当 current、无未处理 401"
+    trace: [D1, A2, A3, A4, A5, A6]
+    status: done
+  - id: STEP-003
+    action: "客户移动垂直切片：同一查询结果接 desktop table/mobile cards，并收口搜索、详情与 QuickNote/NotesPanel 成功失败和焦点"
+    exit_signal: "375 核心路径通过；375/768/769/desktop 同 fixture 的边界、内容/动作等价和单请求通过；200% 字体放大仍可完成；CustomerPicker 空 options 的 ArrowDown 无非法 index/aria-activedescendant，Tab/blur/close 后焦点和关闭稳定"
+    trace: [D2, D4, A11, A12, A13, A14, A15, A26]
+    status: done
+  - id: STEP-004
+    action: "档期与 shell 移动收口：验证底部导航、42 日月历、drawer、空/密集/冲突/长文本、错误、字体放大和只读边界"
+    exit_signal: "375 下 Customers/Calendar 直接可达、查档期无整页横向溢出、焦点/触控区合格；200% 字体仍可滚达；移动写入口不可见不可聚焦"
+    trace: [D3, D4, A7, A8, A9, A10, A26]
+    status: done
+  - id: STEP-005
+    action: "平台运行 hardening：补 60 秒 IdleTimeout、启动日志脱敏、三 mode production preflight 与 compose env-file 显式选择"
+    exit_signal: "Go/config/进程测试与 A18 catalog 66 个 required cases 集合完全执行；逐 key/parser/exit 0-6/binary Engine=forbidden/Compose/context/pinned-host/initialized seed 的 expected=observed，无 missing/unknown/duplicate；输出不含 secret/path value"
+    trace: [D5, A16, A17, A18]
+    status: done
+  - id: STEP-006
+    action: "备份恢复与文档：实现 target/lock/versioned package/validate-before-destructive restore、sentinel 隔离 ops smoke，并更新 README"
+    exit_signal: "A19-A22 catalog required cases 集合完全执行；local synthetic target 的 backup stage-plan/package observation、restore package oracle/data envelope、全部 Engine state、static/source-overlap path、realpath/immutable-ID/helper-fence race、image/staging/start/health/failure structured observed=expected，无 missing/unknown/duplicate；operation cleanup 不被 harness 掩盖，sentinel/tar/半包/匿名 volume/破坏后 exited 按 oracle 通过；ops results 顶层 pass；README 可执行"
+    trace: [D5, D6, A19, A20, A21, A22, A23]
+    status: done
+  - id: STEP-007
+    action: "全量收口：运行 CMD-001～006、浏览器矩阵、roadmap 精确链路、独立 export、H1/H2/ECS attestation 与范围清洁度审计，归档 canonical evidence"
+    exit_signal: "A1-A27 全部 terminal；A24 精确链 pass、A27 export pass、H1/H2 有 owner 决策；无 unresolved blocking/important，acceptance 可据事实回写 roadmap"
+    trace: [D7, D8, H1, H2, A1, A23, A24, A25, A27, ROADMAP-V1-CLOSE]
+    status: pending
+
+checks:
+  - id: CHK-001
+    item: "页面基础状态只含 loading/empty/error/ready/unauthorized；ready 明确区分 current 与 stale-refresh-error"
+    trace: [D1, A2, A3, A4, A5]
+    source: "页面状态契约"
+    status: pending
+  - id: CHK-002
+    item: "StateNotice 使用 discriminated props；retryable/refresh-error 必有 onRetry，terminal error 无伪 retry；不拥有请求、ready 数据、token 或路由"
+    trace: [D1, A4, A5]
+    source: "StateNotice interface"
+    status: pending
+  - id: CHK-003
+    item: "渲染优先级固定 unauthorized→initial loading→initial error→empty→ready(current|stale)，首次 error 不与 empty/ready 混淆"
+    trace: [D1, A2, A3, A4, A5, A6]
+    source: "页面状态编排"
+    status: pending
+  - id: CHK-004
+    item: "AppShell 与 /login、/dashboard、/customers、/customers/new、/customers/:id、/orders、/calendar、/packages、/reminders、/settings 的 route matrix 逐项 terminal；redirect 明确 N/A"
+    trace: [D1, A2, A3, A4, A5, A6]
+    source: "正式 route matrix"
+    status: pending
+  - id: CHK-005
+    item: "受保护请求 401 先清 token 再回登录，业务页不渲染 unauthorized notice 或旧数据"
+    trace: [D1, A6]
+    source: "unauthorized 编排"
+    status: pending
+  - id: CHK-006
+    item: "CustomersPage 是查询/筛选单一状态所有者；desktop table 与 mobile cards 不重复请求、不手写 DTO"
+    trace: [D2, A11, A12, A26]
+    source: "客户投影契约"
+    status: pending
+  - id: CHK-007
+    item: "375/768 只显示 cards，769/desktop 只显示 table；同 fixture 的字段、详情、记备注动作等价且只发一次列表请求"
+    trace: [D2, A26]
+    source: "响应式 breakpoint"
+    status: pending
+  - id: CHK-008
+    item: "375 + 200% 字体放大时三条轻路径核心动作仍可见、可聚焦、可滚达；viewport metadata 记录放大方法"
+    trace: [D4, A7, A8, A11, A26]
+    source: "响应式可用性"
+    status: pending
+  - id: CHK-009
+    item: "QuickNote/NotesPanel 成功可感知；500 保留输入；重复/IME Enter 不重复提交；Escape 返回焦点；401 回登录"
+    trace: [D2, A13, A14]
+    source: "备注流程"
+    status: pending
+  - id: CHK-010
+    item: "移动 Calendar 保持只读；创建/编辑/删除不可见且不可聚焦；不改 schedule journal、幂等或桌面写流程"
+    trace: [D3, A8, A9, A10]
+    source: "档期范围"
+    status: pending
+  - id: CHK-011
+    item: "375 主页面无横向 overflow，核心触控区≥44 CSS px、焦点可见、bottom-nav safe area 成立"
+    trace: [D4, A7, A11]
+    source: "移动 shell"
+    status: pending
+  - id: CHK-012
+    item: "http.Server 保留 5 秒 ReadHeaderTimeout、新增 60 秒 IdleTimeout，graceful shutdown 不回退"
+    trace: [A16]
+    source: "平台 HTTP"
+    status: pending
+  - id: CHK-013
+    item: "启动错误只保留 operation/config key/error class，不含 secret、DATABASE_URL、Bot API URL、客户正文或原始本机路径"
+    trace: [A17]
+    source: "日志脱敏"
+    status: pending
+  - id: CHK-014
+    item: "preflight env parser 把 RHS 当 data；不 source/eval；拒绝重复/非法 key、未闭合引号和语法错误"
+    trace: [D5, A18]
+    source: "preflight parser"
+    status: pending
+  - id: CHK-015
+    item: "binary mode 覆盖 DATABASE_URL、AUTH、seed-state、avatar dir/mount、TG 与远程 DB SSL 的逐 key 正反例"
+    trace: [D5, A18]
+    source: "preflight matrix"
+    status: pending
+  - id: CHK-016
+    item: "compose-managed-db mode 要求 APP_DATABASE_URL 为空、POSTGRES_* 非 dev、AUTH/seed 合法，并核对 app/postgres/avatar_data/pgdata 与 require-mount"
+    trace: [D5, A18]
+    source: "preflight matrix"
+    status: pending
+  - id: CHK-017
+    item: "compose-external-db mode 要求 APP_DATABASE_URL 合法且远程 SSL 不禁用；明确 backup/restore CLI 不支持该 DB 轨"
+    trace: [D5, D6, A18, A23]
+    source: "preflight/ops 支持边界"
+    status: pending
+  - id: CHK-018
+    item: "seed-state=empty 时 seed 密码必填非 sentinel，initialized 时必须缺失；backup/restore 固定字面调用 compose-managed-db+initialized 且非空 seed 一律失败；Telegram 两空合法、半配置非法"
+    trace: [D5, A18, A19, A21]
+    source: "preflight conditional matrix"
+    status: pending
+  - id: CHK-019
+    item: "preflight exit 0/2/3/4/5/6 分类稳定；必需本机命令缺失在首个 Engine call 前 dependency-check exit 6；binary 正反例均 Engine=forbidden；stdout/stderr 只含 stage/key/status/code/remediation，不含 value/path"
+    trace: [D5, A18]
+    source: "CLI 可观察契约"
+    status: pending
+  - id: CHK-020
+    item: "Compose v2.24+；app env_file 可显式选择；同一 canonical env 同时用于 interpolation/app；compose mode 必填 --docker-context，selector env 非空/remote 拒绝，只解析一次 local Unix socket 后清空 selector 并让每个 docker/compose argv 显式 pin 同一 host，local alias 得到同 Engine/hash"
+    trace: [D5, A18, A19]
+    source: "compose target"
+    status: pending
+  - id: CHK-021
+    item: "backup/restore 显式 env/compose/context/project 与 typed confirm/break flag；只支持 local Unix、initialized、唯一 app/postgres/volumes；app running 仅 Status=running 且 Running=true/Paused=Restarting=Dead=false，stopped 仅 Status=exited 且其余 false；created/paused/restarting/removing/dead/unknown/inconsistent/absent、source-runtime mismatch 在 target mutation 前 exit 5；不依赖默认 target/context"
+    trace: [D5, A19, A20, A21, A22]
+    source: "target descriptor"
+    status: pending
+  - id: CHK-022
+    item: "lock name/helper label 统一使用 Engine ID+project+固定 namespace 的 physical-target-hash，path/context/client-local/source hash 不参与；app image 必须已存在且 Config.Volumes 空，lock 与 target-wide deterministic helper fence 都 create --network none/no mount，绑定 lock-ID/nonce generation 并按完整 immutable ID post-inspect；任何 target/helper start 前再核验 lock/fence，delayed old helper 要么 name conflict 要么 generation recheck 失败；release/stale-break/race 只删所核验旧 ID，绝不按 name 删除，新 owner ID 不受旧 cleanup 影响；public break 还需 dead local PID+no helper/fence"
+    trace: [D5, A20, A22]
+    source: "运维并发"
+    status: pending
+  - id: CHK-023
+    item: "backup 只接受精确 running/exited predicate，BKR/BKE/BKF stage-plan 按原状态要求 stop/pipeline/package-verify/state-restore/health/publish 或 not-run；成功 backup_package 必须是 metadata v1+五件套+SHA/manifest/self-check 的 published-valid，失败必须 not-published-clean；no-op exit0/complete 不得通过；所有其他 Engine state 逐项 pre-mutation reject；业务 before=after"
+    trace: [D5, A19, A20]
+    source: "backup 编排"
+    status: pending
+  - id: CHK-024
+    item: "一致包恰含 database.sql、avatar-volume.tgz、avatar-manifest.json、metadata.json、SHA256SUMS；前三项同 freeze window，SHA 覆盖其余四件"
+    trace: [D5, A19, A21]
+    source: "备份包契约"
+    status: pending
+  - id: CHK-025
+    item: "metadata schema_version=1，含 UTC、payload filename/hash、manifest version、project/compose/image/PG identity、app_was_running，严格排除 secret/正文/绝对路径"
+    trace: [D5, A19, A21]
+    source: "metadata schema"
+    status: pending
+  - id: CHK-026
+    item: "owner 可显式选择仓库外 backup parent；backup output 的 empty/root/project-root/parent-missing/existing-leaf/symlink/special 在 Engine 前 path-validate exit2，restore input 对应反例 exit9；与 runtime avatar/pg source volume overlap 在持锁 identity 查询后但 target mutation 前 exit5；artifact 必须 regular"
+    trace: [D5, A19, A22]
+    source: "路径安全"
+    status: pending
+  - id: CHK-027
+    item: "restore 接受精确 running/exited predicate；持锁/target identity 后物化 private staging snapshot并验证 schema/SHA/regular/no-symlink/tar/typed confirm，后续只读 staging；unsupported state/package reject before=after；RSF 的 replace/verify/start/health 任一失败都必须 failure-stop 并 inspect 到 logical stopped+Engine exited；target_after 不得为 null，DB counts/marker/manifest 逐项用 observed|absent|unreadable envelope 如实记录，不虚构 rollback/value"
+    trace: [D5, A21, A22]
+    source: "restore fail-closed"
+    status: pending
+  - id: CHK-028
+    item: "restore exact-generation verify 后 after 三个 data envelope 都必须 observed 且 value 等于 package_oracle；原正常 running 在 start+health 后恢复同一 predicate，原 exited 保持 exited；start/health 失败必须 exit10 并回到 exited；created/paused/restarting/removing/dead/unknown/inconsistent/absent 全在破坏前拒绝"
+    trace: [D5, A21, A22]
+    source: "restore 运行状态"
+    status: pending
+  - id: CHK-029
+    item: "v1-ops-smoke 按 148-ID frozen catalog 全量执行 required-command/path/selector、image/network/mount、immutable-ID+delayed-helper race、backup/restore 每个 unsupported Engine state、staged package、restore start/health 与 realpath 四组合；sentinel 全 case 不变；target 按 structured expected/observed/stage-plan/backup-package/data-envelope 与 pre-mutation deep-equal、backup readonly、restore after=package、destructive failure stopped+exited oracle 判定"
+    trace: [D5, A19, A20, A21, A22]
+    source: "隔离 smoke"
+    status: pending
+  - id: CHK-030
+    item: "每 case 先记 operation_cleanup 再记 harness_cleanup；正常 operation-owned lock/helper/fence 必须由 expected role 的 owner/authorized-breaker 按 immutable ID 清理，若 harness-finalizer 才清掉则 operation 必须 fail，不得因最终 residual 空而伪报 pass；只有 COR 预期 operation fail/oracle pass，随后 harness 仍必须 pass；suite 清 project/volume/temp env/compose/backup，不按 name 猜删后来者"
+    trace: [D5, A20, A22, A25]
+    source: "隔离清理"
+    status: pending
+  - id: CHK-031
+    item: "README 覆盖三种 mode、显式 docker-context/pinned local endpoint、managed initialized+app-present ops 支持边界、binary/external/app-absent/remote 等价备份责任、TLS/网络/凭证/TG/JSON 非备份与 Compose 2.24+"
+    trace: [D6, A23]
+    source: "README 契约"
+    status: pending
+  - id: CHK-032
+    item: "生产 mount/write/fsync/dir-sync probe、恢复演练与 ECS durability/TLS/网络/异地介质 owner attestation 有 canonical 记录"
+    trace: [D6, A23]
+    source: "环境 residual"
+    status: pending
+  - id: CHK-033
+    item: "npm run test:v1-hardening 与 scripts/test-v1-ops-contract.sh 存在并接入 Makefile test；CMD-001 日志真实包含两者，CMD-004 独立复跑 ops validator 反例后才 build image"
+    trace: [D8, A1]
+    source: "长期测试基线"
+    status: pending
+  - id: CHK-034
+    item: "v1-hardening-regression.yaml schema_version=1，A1-A27 各唯一一项并含 precondition/action/expected/result/evidence_paths/notes"
+    trace: [D8, A1, A24]
+    source: "canonical regression"
+    status: pending
+  - id: CHK-035
+    item: "regression/ops-case-catalog/browser/commands/ops 与 design-review/implementation/review/QA/acceptance/evidence-pack/evidence-pack-results/dod-contract-results/dod-results/gate-results 使用 D8 canonical paths；v1-hardening-dod-contract-results.json status 为 passed|generated 且能被当前 goal consistency gate 消费；无未命名 catalog/results；ops catalog/results 由 CHK-045 约束"
+    trace: [D8, A1, A18, A19, A20, A21, A22, A25]
+    source: "canonical artifacts"
+    status: pending
+  - id: CHK-036
+    item: "owner 真机逐节点确认 A24：带 identity 建档→套系→订单→档期→标定金→下一账号日摘要→dashboard 五卡有数；主链 ID 贯穿兼容节点，时间互斥所需辅助 fixture 显式标 ID/用途且不替代主链"
+    trace: [A24, ROADMAP-V1-CLOSE]
+    source: "roadmap completion signal"
+    status: pending
+  - id: CHK-037
+    item: "H2 明确 true-external 采用 prior owner-attested 或 fresh；无论选择，A24 同 fixture digest payload/调度关联必须 fresh"
+    trace: [H2, A24, ROADMAP-V1-CLOSE]
+    source: "TG 证据组合"
+    status: pending
+  - id: CHK-038
+    item: "A27 在 A24 fixture 独立复跑 reference-only export，counts/边界正确且不替代 A24 任一节点"
+    trace: [A27, ROADMAP-V1-CLOSE]
+    source: "export 额外回归"
+    status: pending
+  - id: CHK-039
+    item: "H1 在 design approval 前明确；接受 residual 时 goal package 前落 .codestable/issues/2026-07-22-auth-hardening/auth-hardening-report.md（open risk），不接受时先扩 design/roadmap 并重审"
+    trace: [D7, H1, A25]
+    source: "认证 residual 分流"
+    status: pending
+  - id: CHK-040
+    item: "不改 HTTP API/OpenAPI/generated DTO/数据库 schema/领域状态机/账号隔离，不引入 UI/data-fetch/PWA 库或移动完整 CRUD"
+    trace: [A25]
+    source: "范围守护"
+    status: pending
+  - id: CHK-041
+    item: "H1 延后时不实现登录限速/锁定、cookie auth、JWT TTL/吊销、改密 API；不在应用内 TLS"
+    trace: [D7, H1, A25]
+    source: "认证范围守护"
+    status: pending
+  - id: CHK-042
+    item: "不修改 owner 已接受的 PostgreSQL 端口策略，不混入 Telegram 入站回复、chunk 拆分、N+1、idempotency cleanup、头像 TOCTOU/双 runner"
+    trace: [A25]
+    source: "历史债分流"
+    status: pending
+  - id: CHK-043
+    item: "不把 reference-only JSON 说成头像备份，不承诺线上删除追溯历史备份"
+    trace: [D6, A23, A27]
+    source: "数据边界"
+    status: pending
+  - id: CHK-044
+    item: "脚本/日志/evidence 无真实 secret/PII/绝对路径/半包/测试 compose 残留；运行时外部 backup path 不写入仓库"
+    trace: [D5, D8, A25]
+    source: "清洁度"
+    status: pending
+  - id: CHK-045
+    item: "v1-hardening-ops-case-catalog.yaml 的 148 个 ID/scenario/oracle/expected 等于 D8 frozen inventory，fixture/action 满足物化规则且 result 深相等；results 含 catalog sha/required IDs、executed/missing/unknown/duplicate coverage、suite_cleanup 与逐 case structured expected/observed、exact stage-plan operation/oracle、Engine state、backup package、restore data envelope、lock allowed-remover、operation/harness cleanup；required=executed、coverage 空、全 oracle+各层 cleanup pass 才可顶层 pass；CMD-004 必测 backup no-op、finalizer masking、destructive after null/伪造等反例，CMD-005 实跑"
+    trace: [D8, A18, A19, A20, A21, A22]
+    source: "ops machine results schema"
+    status: pending
+  - id: CHK-046
+    item: "CustomerPicker 空 options 时 ArrowDown 不设置非法 index/aria-activedescendant；Tab、blur 与 close 的关闭/焦点行为稳定，同时有 frontend keyboard test 与 canonical browser evidence"
+    trace: [D2, A15]
+    source: "CustomerPicker keyboard residual"
+    status: pending

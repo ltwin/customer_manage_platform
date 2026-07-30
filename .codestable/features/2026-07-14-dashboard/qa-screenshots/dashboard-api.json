@@ -1,0 +1,53 @@
+{
+    "due_reminders": [
+        {
+            "account_id": "b620525c-bb17-4c8d-8056-17dd196b72b7",
+            "content": "QA-dashboard due today",
+            "created_at": "2026-07-14T17:34:38.292025+08:00",
+            "customer_id": "cus_dba1679a-7491-45d5-ae38-c1d0f88796a2",
+            "dedup_key": "custom:rem_1aa3da95-66a3-4d22-9d98-3a15f758888a",
+            "due_date": "2026-07-14",
+            "id": "rem_1aa3da95-66a3-4d22-9d98-3a15f758888a",
+            "status": "pending",
+            "type": "custom"
+        }
+    ],
+    "today_slots": [
+        {
+            "account_id": "b620525c-bb17-4c8d-8056-17dd196b72b7",
+            "created_at": "2026-07-14T17:33:12.507198+08:00",
+            "end_at": "2026-07-14T16:00:00+08:00",
+            "id": "slot_2b426d0f-8d36-4bae-b445-d493083b8260",
+            "note": "QA-dashboard today hold",
+            "start_at": "2026-07-14T14:00:00+08:00",
+            "type": "hold"
+        }
+    ],
+    "unpaid_orders": {
+        "count": 1,
+        "items": [
+            {
+                "account_id": "b620525c-bb17-4c8d-8056-17dd196b72b7",
+                "balance_paid": false,
+                "created_at": "2026-07-14T17:32:39.803336+08:00",
+                "customer_display_name": "S6\u6f14\u793a\u5ba2\u6237185257",
+                "customer_id": "cus_dba1679a-7491-45d5-ae38-c1d0f88796a2",
+                "delivered_at": "2026-07-13T17:32:39+08:00",
+                "deposit_paid": true,
+                "id": "ord_e3aa5f84-cee1-46d1-b79b-581e3c910fff",
+                "package_id": "pkg_f565f849-a567-4653-bf58-591d6a7e9904",
+                "package_name": "S6\u8f7b\u5199\u771f185310",
+                "price": 128000,
+                "shot_at": "2026-07-11T17:32:39+08:00",
+                "status": "delivered",
+                "title": "QA-dashboard unpaid"
+            }
+        ]
+    },
+    "churn_alerts": [],
+    "recent_stats": {
+        "orders_created": 6,
+        "orders_delivered": 2,
+        "revenue_confirmed": 68000
+    }
+}

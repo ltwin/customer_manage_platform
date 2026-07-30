@@ -31,7 +31,20 @@ lint:
 	cd frontend && npm run lint
 
 test:
-	cd backend && go test ./...
+	# Testcontainers 逐包并发会偶发丢失 PostgreSQL mapped port；串行 package/test 保持门禁稳定。
+	cd backend && go test -p=1 ./... -count=1 -parallel=1
+	cd frontend && npm run test:package-price
+	cd frontend && npm run test:api-client
+	cd frontend && npm run test:schedule
+	cd frontend && npm run test:avatar-layout
+	cd frontend && npm run test:telegram-digest
+	cd frontend && npm run test:data-export
+	cd frontend && npm run test:v1-hardening
+	./scripts/test-production-preflight.sh
+	bash ./scripts/test-v1-ops-common.sh
+	python3 ./scripts/lib/v1-ops-package-selftest.py
+	bash ./scripts/test-v1-ops-backup-restore-safety.sh
+	./scripts/test-v1-ops-contract.sh
 
 # 契约线（design 2.2）：api/openapi.yaml -> Go 服务端类型（按 tag）+ TS 全量类型
 generate: frontend/node_modules

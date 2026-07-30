@@ -1,0 +1,102 @@
+feature: "data-export"
+status: passed
+baseline_ref: "3a02be57a80eeac1d192685825bcbeaab3fbf50d"
+stage: complete
+driver_kind: native
+driver_id: "/root/data_export_goal_driver_resume"
+handoff_reason: ""
+handoff_next: ""
+design: ".codestable/features/2026-07-21-data-export/data-export-design.md"
+checklist: ".codestable/features/2026-07-21-data-export/data-export-checklist.yaml"
+review: ".codestable/features/2026-07-21-data-export/data-export-review.md"
+qa: ".codestable/features/2026-07-21-data-export/data-export-qa.md"
+acceptance: ".codestable/features/2026-07-21-data-export/data-export-acceptance.md"
+ledger:
+  - at: "2026-07-21"
+    stage: implementation
+    status: ready-to-dispatch
+    note: "owner 已批准完整 design；goal package 已生成；按 attention.md 等待 owner 选择当前工作区 feature branch 或新 worktree 后再派发 driver"
+  - at: "2026-07-21"
+    stage: implementation
+    status: running
+    note: "owner 同意推荐开发位置；当前工作区已从 develop 创建并切换到 codex/feat/data-export；可见原生 Goal driver /root/data_export_goal_driver 已派发"
+  - at: "2026-07-21"
+    stage: implementation
+    status: step-done
+    note: "STEP-001 done；TDD exception: behavior-preserving move；TxAccountScope 类型、事务入口与既有 delegates 纯移动到 scope_tx.go；移动前/后 store 测试通过，公开签名一致，未新增 read snapshot"
+  - at: "2026-07-21"
+    stage: implementation
+    status: step-done
+    note: "STEP-002 done；OpenAPI /export 已引用命名 ExportDocument/ExportCounts，export tag 双端 codegen 成功；Service 与未挂生产 route 的 ExportAll handler 均完成 RED/GREEN/VERIFY，router 仍把 /api/v1/export 视为未注册 404"
+  - at: "2026-07-21"
+    stage: implementation
+    status: step-done
+    note: "STEP-003 done；ReadTxAccountScope/REPEATABLE READ READ ONLY、七类批量读取、有效 Settings、稳定排序、len-derived counts 与生产 route/composition 已完成；A2–A4/A8/A16–A18 的真实 PostgreSQL 与 HTTP 证据通过"
+  - at: "2026-07-21"
+    stage: implementation
+    status: step-done
+    note: "STEP-004 done；账号隔离、reference-only 结构/哨兵负向扫描、缺依赖/空 scope/Settings decode/commit/映射/序列化/context/transport fault、附件 headers 与脱敏日志证据通过"
+  - at: "2026-07-21"
+    stage: implementation
+    status: step-done
+    note: "STEP-005 done；Bearer Blob client、严格 MIME parser、精确 filename/fallback、ApiError、body/blob rejection 与单次下载/revoke 协作均 RED/GREEN/VERIFY；test:data-export 已接入 Makefile test"
+  - at: "2026-07-21"
+    stage: implementation
+    status: step-done
+    note: "STEP-006 done；独立 DataExportCard、loading/error/retry/401、Settings 失败独立可用、PII/reference-only 文案完成；真实浏览器桌面/375px/键盘与错误态证据通过并保存截图"
+  - at: "2026-07-21"
+    stage: implementation
+    status: step-done
+    note: "STEP-007 done；CMD-001～004、DoD contract、scope、YAML、diff/cleanliness 全部通过；完整 make check 曾命中既有 Docker port flake，受影响用例单跑与完整重跑均通过，原始 runner 失败结果保留"
+  - at: "2026-07-21"
+    stage: review
+    status: ready
+    note: "7/7 implementation steps done；implementation evidence、DoD/gate/API/browser artifacts 已落盘；进入独立 cs-code-review"
+  - at: "2026-07-21"
+    stage: review
+    status: fixing
+    note: "round 1 独立 code review changes-requested：0 blocking、3 important、1 nit；本 Goal 将 CR-DE-001～CR-DE-004 作为 review-fix 目标，未清零前不进入 QA"
+  - at: "2026-07-21"
+    stage: review
+    status: ready
+    note: "round 1 review-fix 完成：CR-DE-001/002 按 RED→GREEN 修复；CR-DE-003 补全完整 middleware、全实体全字段、Settings parity、七类真实 route/稳定性与证据分级；CR-DE-004 已修；CMD-001～004、DoD contract、scope、YAML、diff 与 evidence pack passed；等待同一独立 reviewer round 2 复审"
+  - at: "2026-07-21"
+    stage: review
+    status: fixing
+    note: "round 2 独立 code review changes-requested：0 blocking、1 important、2 nit；CR-DE-001 仍会把 active request 的孤立 canceled/deadline error 吞成空 200；CR-DE-005/006 为 tie-break fixture 与 evidence pack 口径；未清零前不进入 QA"
+  - at: "2026-07-21"
+    stage: review
+    status: ready
+    note: "round 2 review-fix 完成：CR-DE-001 四象限 RED→GREEN，以 request context 为取消权威；CR-DE-005 逆序/乱序 fixture；CR-DE-006 evidence residual 风险口径；第二轮正式 DoD runner CMD-001～004、contract/scope/evidence/YAML/diff passed；等待同一独立 reviewer round 3 复审"
+  - at: "2026-07-21"
+    stage: review
+    status: passed
+    note: "round 3 独立 code review passed：Spec Compliance passed、Code Quality passed、0 unresolved blocking/important/nit；CR-DE-001～006 全部 resolved；允许进入 QA"
+  - at: "2026-07-21"
+    stage: qa
+    status: ready
+    note: "已读取 cs-feat QA protocol；feature 判定为 functional；进入 QA，核心路径覆盖 A1～A18，重点真实执行 A13 React/browser、A14 精确 viewport/键盘/截图元数据与实际下载文件解析"
+  - at: "2026-07-22"
+    stage: qa
+    status: ready
+    note: "原 Goal driver 已不可见，按仓库事实恢复为 QA ready 并清空 stale driver metadata；owner 明确授权在 review/QA/acceptance/final gates 全部通过后做一次本 feature 正常 commit；不含 .workflow/、install-cpamp.sh，不授权 --no-verify 或 push"
+  - at: "2026-07-22"
+    stage: qa
+    status: ready
+    note: "可见原生 resume Goal driver /root/data_export_goal_driver_resume 已派发；从 QA ready 续跑，不重复 implementation 或已 passed 的 round 3 code review"
+  - at: "2026-07-22"
+    stage: qa
+    status: passed
+    note: "QA round 1 passed：A1～A18、CMD-001～004、真实 PostgreSQL/API 与隔离浏览器均通过；覆盖成功下载解析、1280/375/键盘、单请求防重、Settings 失败独立 card、500/retry、401 与 body interruption；0 failed/blocked"
+  - at: "2026-07-22"
+    stage: acceptance
+    status: ready
+    note: "QA passed；进入 acceptance，等待核对 24 checks、reference-only 边界、roadmap done、最终清洁度、commit gate"
+  - at: "2026-07-22"
+    stage: acceptance
+    status: passed
+    note: "acceptance round 1 passed：24/24 checks、MOUNT-1～3 反向核对与拔除沙盘、requirement/architecture 结论、roadmap done、CMD-001～004 与最终 scope/YAML/diff cleanliness 全部通过；进入 owner 已授权的单次 scoped commit gate"
+  - at: "2026-07-22"
+    stage: complete
+    status: passed
+    note: "review round 3、QA round 1、acceptance round 1 与全部 final gates 均 passed；owner 已授权一次正常 feature commit，本终态由同一 scoped commit 记录，不使用 --no-verify，不 push"

@@ -2,7 +2,9 @@
 
 本文件由 `cs-onboard` 复制到项目的 `.codestable/reference/tools.md`，所有 CodeStable 子技能用项目相对路径 `.codestable/reference/tools.md` 引用。
 
-`.codestable/tools/` 下共享脚本的完整用法参考。子技能里只写本技能特有的 1-2 行典型查询；完整语法和示例看这里。
+当前 `cs-onboard` skill 包 `tools/` 下共享脚本的完整用法参考。子技能里只写本技能特有的 1-2 行典型查询；完整语法和示例看这里。
+
+命令里的 `<cs-onboard skill 目录>` 是当前加载的 `cs-onboard/SKILL.md` 所在目录。新版 CodeStable 从这个全局 skill 包运行工具；旧项目已有 `.codestable/tools/` 只作兼容副本，不作为新版技能入口。
 
 ---
 
@@ -13,7 +15,7 @@
 ### 基本语法
 
 ```bash
-python3 .codestable/tools/search-yaml.py --dir {目录} [--filter key=value]... [--query "全文关键词"] [--sort-by FIELD [--order asc|desc]] [--full] [--json]
+python3 <cs-onboard skill 目录>/tools/search-yaml.py --dir {目录} [--filter key=value]... [--query "全文关键词"] [--sort-by FIELD [--order asc|desc]] [--full] [--json]
 ```
 
 ### filter 语法
@@ -30,7 +32,7 @@ python3 .codestable/tools/search-yaml.py --dir {目录} [--filter key=value]... 
 
 ### 常用命令
 
-`search-yaml.py` 用于扫**带 frontmatter 的产物**——feature spec / issue spec / requirements / adrs / guides / library-docs。
+`search-yaml.py` 用于扫**带 frontmatter 的产物**——feature spec / issue spec / requirements / adrs / `docs/dev|user|api`。
 
 `.codestable/compound/` 由 `cs-keep` 写纯 markdown（无 frontmatter），**不用 search-yaml**，直接 grep：
 
@@ -44,15 +46,15 @@ ls -lt .codestable/compound/ | head        # 看最近沉淀
 
 ```bash
 # 搜索 feature 方案 doc
-python3 .codestable/tools/search-yaml.py --dir .codestable/features --filter doc_type=feature-design --filter status=approved
+python3 <cs-onboard skill 目录>/tools/search-yaml.py --dir .codestable/features --filter doc_type=feature-design --filter status=approved
 
 # 按时间排序
-python .codestable/tools/search-yaml.py --dir .codestable/library-docs --sort-by last_reviewed --order asc         # 最久没 review 的在前（找陈旧文档）
-python .codestable/tools/search-yaml.py --dir .codestable/guides --filter status=current --sort-by last_reviewed --order asc
+python3 <cs-onboard skill 目录>/tools/search-yaml.py --dir docs/api --sort-by last_reviewed --order asc
+python3 <cs-onboard skill 目录>/tools/search-yaml.py --dir docs/dev --filter status=current --sort-by last_reviewed --order asc
 
 # 输出控制
-python .codestable/tools/search-yaml.py --dir .codestable/features --filter status=approved --full
-python .codestable/tools/search-yaml.py --dir .codestable/features --filter tags~=llm --json
+python3 <cs-onboard skill 目录>/tools/search-yaml.py --dir .codestable/features --filter status=approved --full
+python3 <cs-onboard skill 目录>/tools/search-yaml.py --dir .codestable/features --filter tags~=llm --json
 ```
 
 ### 典型使用场景
@@ -72,139 +74,78 @@ YAML 语法校验工具。用于验证 frontmatter 语法和必填字段。
 
 ```bash
 # 纯 YAML：checklist/items/goal-state 等逐文件校验
-python3 .codestable/tools/validate-yaml.py --file {文件路径}.yaml --yaml-only
+python3 <cs-onboard skill 目录>/tools/validate-yaml.py --file {文件路径}.yaml --yaml-only
 
 # Markdown frontmatter：单文件或目录校验必填字段
-python3 .codestable/tools/validate-yaml.py --file {文件路径}.md --require doc_type --require status
-python3 .codestable/tools/validate-yaml.py --dir .codestable/features --require doc_type --require status
+python3 <cs-onboard skill 目录>/tools/validate-yaml.py --file {文件路径}.md --require doc_type --require status
+python3 <cs-onboard skill 目录>/tools/validate-yaml.py --dir .codestable/features --require doc_type --require status
 ```
 
-目录模式默认只校验 `.md` frontmatter；要批量校验纯 YAML 目录必须显式加 `--yaml-only`。不要对混有 checklist/items/goal-state 的目录直接加 `--require doc_type --require status`；纯 YAML 没有 Markdown frontmatter 字段，会造成假失败。若目录里有 `worktree-override.md` 这类无 frontmatter 的人工说明，改用单文件校验或只校验生命周期文档所在子集。
+目录模式默认只校验 `.md` frontmatter；要批量校验纯 YAML 目录必须显式加 `--yaml-only`。不要对混有 checklist/items/goal-state 的目录直接加 `--require doc_type --require status`；纯 YAML 没有 Markdown frontmatter 字段，会造成假失败。
 
 ---
 
-## 3. validate-implementation-review.py
+## 3. Roadmap Goal Gates
 
-实现完成门禁。用于 Stop hook 或手动检查：有实现代码变更时应在 linked worktree 内执行；已完成的 feature / issue / refactor 要有 `{slug}-review.md`，且默认必须声明 Task agent reviewer。
-
-```bash
-python3 .codestable/tools/validate-implementation-review.py --root . --json
-```
-
-若用户明确要求直接在主 checkout 改代码，可临时显式 override：
+`cs-onboard` 会把技能包里的 `gates/` 释放到项目 `.codestable/`；gate 脚本从当前 `cs-onboard` skill 包的 `tools/` 目录运行。这些 gate 不是全局 PreToolUse 拦截器，而是由 `cs-epic` / `cs-feat` 等主入口在阶段边界显式调用。
 
 ```bash
-CODESTABLE_ALLOW_MAIN_CHECKOUT_IMPLEMENTATION=1 python3 .codestable/tools/validate-implementation-review.py --root .
-
-# 只有平台确实没有 Task agent 能力时，才允许 self-review fallback
-CODESTABLE_ALLOW_SELF_REVIEW_FALLBACK=1 python3 .codestable/tools/validate-implementation-review.py --root .
-```
-
-配到 Codex / Claude Stop hook 时，可调用 `.codestable/tools/codestable-implementation-gate.sh`。
-
----
-
-## 4. Roadmap Goal Gates
-
-`cs-onboard` 会把技能包里的 `gates/` 和 gate 脚本释放到项目 `.codestable/`，并清理 `__pycache__` / `*.pyc`。这些 gate 不是全局 PreToolUse 拦截器，而是由 `cs-roadmap-impl-goal` / `cs-feat-*` 在阶段边界显式调用。
-
-```bash
-python3 .codestable/tools/validate-yaml.py --file .codestable/gates/roadmap-goal-gates.yaml --yaml-only
-python3 .codestable/tools/codestable-dod-contract-gate.py --design .codestable/features/YYYY-MM-DD-{slug}/{slug}-design.md
-python3 .codestable/tools/codestable-dod-runner.py --checklist .codestable/features/YYYY-MM-DD-{slug}/{slug}-checklist.yaml
-python3 .codestable/tools/codestable-evidence-pack.py --feature {slug} --design {design} --checklist {checklist} --out {slug}-evidence-pack.md
-python3 .codestable/tools/codestable-goal-consistency-gate.py --roadmap .codestable/roadmap/{slug}
+python3 <cs-onboard skill 目录>/tools/codestable-workflow-next.py epic --roadmap .codestable/roadmap/{slug} --json
+python3 <cs-onboard skill 目录>/tools/codestable-workflow-next.py feature --feature .codestable/features/YYYY-MM-DD-{slug} --epic-child-batch --json
+python3 <cs-onboard skill 目录>/tools/codestable-workflow-next.py feature --feature .codestable/features/YYYY-MM-DD-{slug} --require-implementation-ready --json
+python3 <cs-onboard skill 目录>/tools/validate-yaml.py --file .codestable/gates/roadmap-goal-gates.yaml --yaml-only
+python3 <cs-onboard skill 目录>/tools/codestable-dod-contract-gate.py --design .codestable/features/YYYY-MM-DD-{slug}/{slug}-design.md
+python3 <cs-onboard skill 目录>/tools/codestable-dod-runner.py --checklist .codestable/features/YYYY-MM-DD-{slug}/{slug}-checklist.yaml
+python3 <cs-onboard skill 目录>/tools/codestable-evidence-pack.py --feature {slug} --design {design} --checklist {checklist} --dod-results {dod-results} --gate-results {gate-results} --out {slug}-evidence-pack.md
+python3 <cs-onboard skill 目录>/tools/codestable-goal-consistency-gate.py --roadmap .codestable/roadmap/{slug}
 ```
 
 `roadmap-goal-gates.yaml` 是阶段配置入口；`codestable-scope-gate.py`、`codestable-dod-runner.py` 和 `codestable-evidence-pack.py` 是 implementation.before_review 的最小 runtime。`status: protocol-only` 的 gate 只表示协议占位，由 review / QA / acceptance / audit 技能读取证据后执行，不代表已有独立脚本。
-`codestable-goal-consistency-gate.py` 是 roadmap_audit.before_complete 的 runtime，检查 goal-state、items、每个 feature 的 review/QA/acceptance/evidence/gate/DoD 产物和 checklist 状态，防止 goal-state 早于证据推进。
+四个 executable feature gate 的 JSON 顶层都写 canonical `feature: YYYY-MM-DD-slug` 与 repo-relative `inputs`；文件型 inputs 同时写 SHA-256。最终 gate 核验 `status=passed`、`gate_id`、stage allowlist、feature identity、实际 design/checklist/feature_dir/out 路径及当前内容摘要，旧结果缺 identity/input/digest 时必须重跑，不能只改文件名或在 gate 后替换内容。
+artifact YAML/JSON 无法解析或顶层不是 mapping 时，executable gate 必须输出结构化 failed/blocked JSON；严格 gate loader 缺少 PyYAML 时也 fail-closed，不使用宽松 fallback 猜测状态。scope gate 无法完成 `git status` 也必须失败，不得把检查错误当成空变更。
+`codestable-goal-consistency-gate.py` 是 roadmap_audit.before_complete 的 runtime，先机械证明每个非 dropped item 与 accepted feature 一一对应，再检查 canonical feature 路径、frontmatter identity、两份独立 Goal authorization、approved design、review/QA/acceptance/evidence/gate/DoD 产物和 checklist 状态；它先于 goal-audit 报告执行，防止空 feature、重复 feature 或跨 feature 证据复用。
+`codestable-workflow-next.py` 是只读下一步解析器，输出 `next_action`、`must_continue` 和 `final_answer_allowed`；`cs-epic` / `cs-feat` 在 child design batch 边界必须按它的 JSON 继续或停 gate。Epic child batch 先校验完整 DAG，再按拓扑选择 design-ready item：依赖为 `done`、`dropped` 或 design-review `passed` 可继续设计；missing/cycle/重复依赖立即结构化阻断，dropped 依赖在 goal package 前必须修订或放弃下游 item。实现前用 `--require-implementation-ready` 机械要求依赖严格全为 `done`，不能把 design readiness 冒充 implementation readiness。单 feature 按仓库事实恢复：feature goal-state 优先为 Goal；design 的完整 roadmap metadata 经 parent items 唯一证明，或被 parent items / roadmap goal-state 反向唯一认领的 child 交回 Epic；显式 feature 指针具有权威性，目录回退按精确 feature slug，多 claim 与错误 owner 结构/路径 fail-closed；ff-note 或 design 的 `execution_lane: quick` 恢复 Quick；旧 design 缺 lane 时恢复 Standard。Quick/Standard 的 passed review 必须有独立 reviewer 锚点，Quick 不得吞掉既有非 passed QA/acceptance；损坏的 YAML/frontmatter 或合法 YAML 中错误的路径/容器在 `--json` 下返回含具体路径的结构化 `blocked`，不得输出 traceback。
+如果 skill 包缺少这些 runtime 脚本，说明本机 CodeStable 安装不完整；先更新 / 重装 CodeStable。项目缺少 `gates/` 或 `reference/` 时运行 runtime sync。
 
 ---
 
-## 5. codestable-doctor.py
+## 4. codestable-doctor.py
 
 CodeStable 生命周期状态检查工具。只读，不修改文件。用于开始工作、恢复上下文、最终汇报前判断当前仓库是否还有阻塞项。
 
 ```bash
-python3 .codestable/tools/codestable-doctor.py --root . --json
+python3 <cs-onboard skill 目录>/tools/codestable-doctor.py --root . --json
 ```
 
 JSON 关键字段：
 
 - `status`：`idle` / `planning-safe` / `dirty` / `implementation-active` / `attention-needed` / `blocked`
-- `checkout`：当前分支、默认分支、是否 linked worktree
+- `tooling.runtime`：repo-local runtime 与 skill-global tool 静态体检；`runtime-drift` / `version-mismatch` 时运行 runtime sync，`version-unavailable` 时先重装或更新 `cs-onboard`
+- `tooling.runtime.drifted_paths`：内容不同、缺失或仅存在于项目端的 package-owned runtime 路径；allowlist 中的 legacy 路径不计入
+- runtime sync 删除 target-only package-owned 路径后再复制模板；source 目录缺失时不删除项目副本，managed directory / `.gitignore` / manifest symlink 先解除再恢复，且不得沿链接改写外部内容
+- `tooling.runtime.capabilities`：`base` / `workflow-next` / `goal-gates` 的 `repo_paths`、`skill_tool_paths` 和缺失列表
+- `checkout`：当前分支、默认分支
 - `dirty_buckets`：按 `code` / `tests` / `docs` / `migrations` / `data` / `logs` / `codestable` / `unknown` 分组的 dirty paths
-- `implementation_changes`：会触发 worktree 约束的实现文件
+- `implementation_changes`：当前 dirty tree 中的实现文件
 - `backlog`：`needs-human-review`、`Follow-up`、accepted/deferred P2、`attention.md` candidates 等待处理项；canonical lifecycle 文件里 `status: canceled/cancelled/abandoned` 的 feature / issue / refactor 单元会被当作历史记录跳过
-- `post_baseline_blocks`：工作树干净但默认分支在 gate baseline 之后出现实现变更的阻塞项
 - `findings`：按严重度列出的阻塞或待处理问题
 - `next_action`：下一步建议
 
 典型用法：
 
 ```bash
-# 汇报前确认没有遗漏的人审 / follow-up / worktree 阻塞
-python3 .codestable/tools/codestable-doctor.py --root . --json
+# 汇报前确认没有遗漏的人审 / follow-up / runtime 阻塞
+python3 <cs-onboard skill 目录>/tools/codestable-doctor.py --root . --json
 ```
 
 ---
 
-## 6. codestable-worktree-gate.py
-
-CodeStable worktree 生命周期门禁。用于实现开始前、提交前、以及误在协调检出开工后的恢复规划。
-
-### start
-
-实现开始前运行。feature / issue / refactor 这类实现单元必须在 linked execution worktree 中开始；如果用户明确批准在主检出中实现，单元目录下必须有 `worktree-override.md`，并写明 reason、scope、approval。dogfood / 一次性隔离仓库也必须写 override，reason 用 `dogfood-ephemeral-repo`。
-
-```bash
-python3 .codestable/tools/codestable-worktree-gate.py --root . --json start --unit .codestable/features/YYYY-MM-DD-slug
-```
-
-通过后 gate 会把 baseline 写入 Git 私有路径，不污染工作树。
-
-### commit
-
-提交或最终汇报前运行。它会阻止：
-
-- 默认分支上 staged implementation changes；
-- 工作树干净但默认分支在 start baseline 后已经出现 implementation commits；
-- 完成的 implementation unit 缺少 Task agent implementation review。
-
-```bash
-python3 .codestable/tools/codestable-worktree-gate.py --root . --json commit --unit .codestable/features/YYYY-MM-DD-slug
-```
-
-如果 staged 文件横跨 code / docs / data / logs / migrations 等多个 bucket，命令会给出 P2 warning；它不会替你 stage、unstage 或 commit。
-
-### quarantine
-
-误在主协调检出开始实现时，用 quarantine 先生成恢复计划。默认 dry-run，不创建分支、不创建 worktree、不移动文件、不改 index。
-
-```bash
-python3 .codestable/tools/codestable-worktree-gate.py --root . --json quarantine --unit .codestable/features/YYYY-MM-DD-slug
-```
-
-只有同时满足以下条件才允许创建 quarantine worktree：
-
-- 显式传 `--apply`
-- 单元目录存在带 reason / scope / approval 的 `worktree-override.md`
-- 没有未跟踪的 `.env`、token、secret 等敏感文件
-
-```bash
-python3 .codestable/tools/codestable-worktree-gate.py --root . --json quarantine --unit .codestable/features/YYYY-MM-DD-slug --apply
-```
-
-Phase 1 只创建安全 execution worktree，不自动搬 dirty 文件；文件迁移仍由 owner 显式处理。
-
----
-
-## 7. build-review-packet.py
+## 5. build-review-packet.py
 
 独立 Task agent review 的输入包生成器。它把本次 unit 文档、diff stat、聚焦 diff、验证结果和风险提示整理成一份可发给 reviewer 的 Markdown，并自动隐藏 `.env` / token / secret 类路径和值。`--stage` 用来区分 review 目的，默认 `implementation` 兼容旧调用。
 
 ```bash
-python3 .codestable/tools/build-review-packet.py --root . --unit .codestable/features/YYYY-MM-DD-{slug} --stage quality --output /tmp/codestable-review.md \
+python3 <cs-onboard skill 目录>/tools/build-review-packet.py --root . --unit .codestable/features/YYYY-MM-DD-{slug} --stage quality --output /tmp/codestable-review.md \
   --validation "uv run pytest -> passed" \
   --validation "CLI smoke -> passed"
 ```
@@ -228,14 +169,12 @@ python3 .codestable/tools/build-review-packet.py --root . --unit .codestable/fea
 
 ---
 
-## 8. Context / Finish / Commit Tools
+## 6. Context / Commit Tools
 
 For these tools, see `.codestable/reference/tools-context.md`:
 
 - `build-context-packet.py`
 - `check-context-sufficiency.py`
-- `codestable-finish-worktree.py`
-- `codestable-worktree-inbox.py`
 - `plan-commits.py`
 - `codestable-backlog.py`
 

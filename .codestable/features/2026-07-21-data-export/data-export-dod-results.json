@@ -1,0 +1,46 @@
+{
+  "gate_id": "dod-runner",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "command": "make check",
+      "exit_code": 0,
+      "stdout": "est result knowledge follows the persisted phase facts (0.052084ms)\n✔ create failure classification never treats an idempotency binding conflict as a new attempt (0.039167ms)\n✔ deterministic failure rotates only the changed current step attempt (0.180792ms)\n✔ backfill completion persists pending id, then draft id, then clears pending (0.126209ms)\n✔ backfill local persistence retries do not repeat a known order request (0.21775ms)\n✔ schedule backfill timestamps are pruned by the final order status (0.056083ms)\n✔ completed handoff restores the original local range, note, customer, and order (0.154083ms)\n✔ schedule dialog stays closed during backfill handoff and reopens on return (0.033708ms)\n✔ calendar drawer cannot cover an open schedule dialog (0.023208ms)\n✔ recovery actions distinguish unknown, customer change, and status sync (0.070417ms)\n✔ only path A can compensate its created order and expired recovery only abandons (0.044542ms)\n✔ editing keeps the current scheduled order visible when it is excluded from candidates (0.035833ms)\n✔ status sync searches refreshed customer pages before stable unfiltered fallback (0.134708ms)\n✔ scheduled and later non-cancelled states satisfy status sync (0.03425ms)\nℹ tests 32\nℹ suites 0\nℹ pass 32\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 142.516667\ncd frontend && npm run test:avatar-layout\n\n> frontend@0.0.0 test:avatar-layout\n> node --test scripts/avatar-layout.test.mjs\n\n✔ customer profile flex growth excludes the avatar (0.445167ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 35.420916\ncd frontend && npm run test:telegram-digest\n\n> frontend@0.0.0 test:telegram-digest\n> node --test --experimental-transform-types scripts/telegram-digest.test.ts\n\n(node:34226) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ bind-token API wrapper posts to the generated contract and never persists response (9.761ms)\n✔ deep-link opener uses noopener,noreferrer and reports popup blocking (0.112875ms)\n✔ Settings page exposes binding states without rendering secrets or storage/log sinks (2.386459ms)\n✔ Telegram binding card keeps mobile wrapping and keyboard focus contracts (0.523667ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 100.818792\ncd frontend && npm run test:data-export\n\n> frontend@0.0.0 test:data-export\n> node --test --experimental-transform-types scripts/data-export.test.ts\n\n(node:34278) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ fetchDataExport sends Bearer and returns a complete JSON Blob with the exact server filename (11.802958ms)\n✔ fetchDataExport accepts only application/json base media type with legal parameters (1.823792ms)\n✔ fetchDataExport accepts only the whole fixed filename and otherwise uses a safe UTC fallback (2.572167ms)\n✔ fetchDataExport reuses ApiError for 500 and 401 responses (0.409042ms)\n✔ body/blob rejection returns no result and download collaboration creates no object URL (0.157041ms)\n✔ download collaboration triggers once and always releases its object URL (0.37ms)\n✔ DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-safe contracts (1.324708ms)\n✔ DataExportCard relies on native button keyboard behavior and shared mobile-safe styles (0.495625ms)\nℹ tests 8\nℹ suites 0\nℹ pass 8\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 105.164834\ncd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml\ncd frontend && npm run generate\n\n> frontend@0.0.0 generate\n> openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts\n\n✨ openapi-typescript 7.13.0\n🚀 ../api/openapi.yaml → src/api/schema.d.ts [67.6ms]\ngit diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts\n",
+      "stderr": "[plugin builtin:vite-reporter] \n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\n",
+      "id": "CMD-001",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts",
+      "exit_code": 0,
+      "stdout": "cd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml\ncd frontend && npm run generate\n\n> frontend@0.0.0 generate\n> openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts\n\n✨ openapi-typescript 7.13.0\n🚀 ../api/openapi.yaml → src/api/schema.d.ts [115.8ms]\n",
+      "stderr": "",
+      "id": "CMD-002",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "cd backend && go test ./internal/platform/store/... ./internal/dataexport/... ./internal/platform/httpapi/... ./cmd/server/... -count=1 -parallel=1",
+      "exit_code": 0,
+      "stdout": "ok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/store\t59.191s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/dataexport\t36.969s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/httpapi\t73.700s\nok  \tgithub.com/samson/customer-manage-platform/backend/cmd/server\t1.018s\n",
+      "stderr": "",
+      "id": "CMD-003",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "cd frontend && npm run test:data-export && npm run build",
+      "exit_code": 0,
+      "stdout": "\n> frontend@0.0.0 test:data-export\n> node --test --experimental-transform-types scripts/data-export.test.ts\n\n(node:36070) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ fetchDataExport sends Bearer and returns a complete JSON Blob with the exact server filename (34.492ms)\n✔ fetchDataExport accepts only application/json base media type with legal parameters (3.746958ms)\n✔ fetchDataExport accepts only the whole fixed filename and otherwise uses a safe UTC fallback (50.202709ms)\n✔ fetchDataExport reuses ApiError for 500 and 401 responses (2.813166ms)\n✔ body/blob rejection returns no result and download collaboration creates no object URL (1.220667ms)\n✔ download collaboration triggers once and always releases its object URL (1.144666ms)\n✔ DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-safe contracts (5.131208ms)\n✔ DataExportCard relies on native button keyboard behavior and shared mobile-safe styles (6.354042ms)\nℹ tests 8\nℹ suites 0\nℹ pass 8\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 327.555209\n\n> frontend@0.0.0 build\n> tsc -b && vite build\n\nvite v8.1.3 building client environment for production...\n\u001b[2K\ntransforming...✓ 69 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                   0.75 kB │ gzip:   0.44 kB\ndist/assets/index-xL3zlJ_T.css   31.42 kB │ gzip:   6.89 kB\ndist/assets/index-Dup2l4HW.js   555.35 kB │ gzip: 163.95 kB\n\n✓ built in 278ms\n",
+      "stderr": "[plugin builtin:vite-reporter] \n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\n",
+      "id": "CMD-004",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    }
+  ],
+  "providers": {}
+}

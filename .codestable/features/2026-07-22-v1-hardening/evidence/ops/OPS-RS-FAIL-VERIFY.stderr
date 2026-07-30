@@ -1,0 +1,1 @@
+error code=10 stage=restore-verify key=exact-generation action=failure-stop-required

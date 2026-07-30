@@ -1,0 +1,1 @@
+error code=4 stage=config-matrix key=AVATAR_LOCAL_ROOT remediation=use-fixed-compose-avatar-mount

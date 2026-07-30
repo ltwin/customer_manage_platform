@@ -1,0 +1,1 @@
+error code=10 stage=restore-db-replace key=dropdb action=failure-stop-required
