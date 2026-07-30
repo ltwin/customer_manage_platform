@@ -45,16 +45,28 @@ npm run dev                  # 打开 http://localhost:5173
 | `make db-up` | 起本地 dev 库 |
 | `make migrate-up` | 手动执行 schema 迁移（服务启动时也会自动执行） |
 
-## 提醒与账号设置
+## 最短使用路径
 
-- `/reminders` 提供生日、拍后回访、流失与自定义提醒的查看、完成、忽略和手动扫描；客户详情的提醒区域可直接创建关联当前客户的自定义提醒。
-- `/settings` 配置 IANA 账号时区、生日提前天数、交付后回访天数、按拍摄类型区分的流失阈值与摘要小时。日期边界按账号时区解释，不按浏览器时区兜底。
-- 服务启动后，进程内 reminder runner 会立即检查一次，之后每小时检查；同一账号在同一本地自然日只自动扫描一次。手动扫描依靠幂等键避免重复提醒，且不推进自动扫描检查点。
-- 当前能力只生成和管理提醒，不会自动联系客户；Telegram 每日摘要与 dashboard 今日待办仍是后续 roadmap 条目。
+首次启动时，空数据库必须通过 `SEED_ADMIN_PASSWORD` 创建唯一的初始账号；登录成功并确认
+`/healthz` 为 `{"status":"ok"}` 后立即从运行环境删除该 seed 密码，再以
+`--seed-state initialized` 运行生产预检。日常经营的最短路径是：
 
-字段、默认值、过滤条件、错误码和手动扫描请求见 `docs/api/reminders.md` 与 `docs/api/settings.md`。
+1. 在「客户」建立客户档案，可补充社交身份、备注与头像。
+2. 在「套系」维护报价，再在「订单」关联客户与套系并推进状态、尾款。
+3. 在「档期」登记拍摄/占用时段；「经营台」汇总近期提醒、今日档期、待收尾款、流失预警和近 30 天统计。
+4. 在「提醒」查看、完成或忽略生日、拍后回访、流失和自定义提醒；「设置」维护 IANA 时区、阈值与每日摘要时间。
+5. 在「设置」绑定 Telegram 并下载 reference-only JSON 导出。JSON 只用于查阅，**不是数据库与头像备份**。
 
-## 部署（双轨，配置只经环境变量）
+服务端会运行 reminder scan 与 Telegram 每日摘要。Telegram long polling 生产环境只允许一个
+app replica；`TELEGRAM_BOT_TOKEN` 与 `TELEGRAM_BOT_USERNAME` 必须同时设置或同时为空。
+字段、默认值和错误码见 `docs/api/reminders.md` 与 `docs/api/settings.md`。
+
+## 生产部署与预检
+
+最低依赖为 Docker Engine 与 Docker Compose v2.24+。生产配置只经权限为 `0600` 的环境文件
+注入；不要 `source` 不可信 env 文件。公网入口必须由 TLS 终止的反向代理承接，并用安全组/
+防火墙限制 PostgreSQL 和 Docker socket；应用自身的 `/healthz` 只证明进程与数据库可达，
+不证明 TLS、防火墙、磁盘持久性或异地备份已经合格。
 
 ### 轨 A：二进制直跑
 
@@ -63,16 +75,50 @@ make build             # 前端构建 → go:embed → backend/bin/server 单工
 ./backend/bin/server   # DATABASE_URL 指向现有 PG 或 compose 起的 PG
 ```
 
-生产建议 systemd `EnvironmentFile=/etc/crm/env`（chmod 600）注入环境变量。
+生产建议 systemd `EnvironmentFile=/etc/crm/env`（chmod 600）注入环境变量。上线前执行：
+
+```bash
+./scripts/production-preflight.sh \
+  --mode binary \
+  --seed-state initialized \
+  --env-file /etc/crm/env
+```
 
 ### 轨 B：全容器
 
 ```bash
-cp .env.example .env   # 生产环境改为真实值
-docker compose up -d --wait   # postgres + app；app 就绪以 healthz 为准
+CRM_ENV_FILE=/etc/crm/env docker compose \
+  --env-file /etc/crm/env \
+  -f ./docker-compose.yml \
+  -p crm-prod \
+  up -d --wait
 ```
 
-只接现有 PG 时：在 `.env` 设 `APP_DATABASE_URL` 指向现有库，然后 `docker compose up -d --no-deps --wait app`（`--no-deps` 避免把 compose 内 postgres 一并拉起）。
+compose 内置 PostgreSQL 与外部 PostgreSQL 分别运行：
+
+```bash
+./scripts/production-preflight.sh \
+  --mode compose-managed-db \
+  --seed-state initialized \
+  --env-file /etc/crm/env \
+  --compose-file ./docker-compose.yml \
+  --docker-context local-production \
+  --project-name crm-prod
+
+./scripts/production-preflight.sh \
+  --mode compose-external-db \
+  --seed-state initialized \
+  --env-file /etc/crm/env \
+  --compose-file ./docker-compose.yml \
+  --docker-context local-production \
+  --project-name crm-prod
+```
+
+所有 compose 命令必须显式给出 env、compose file、Docker context 和 project。运维脚本拒绝
+`DOCKER_HOST`、`DOCKER_CONTEXT`、TLS selector 环境变量以及 TCP/SSH endpoint，只接受显式
+context 解析出的本机绝对 Unix socket；解析后每个 Engine 调用都固定到同一 endpoint，绝不读取
+active/default context。`CRM_ENV_FILE=/etc/crm/env` 让 compose interpolation 与 app
+`env_file` 使用同一文件，避免暗中回退到仓库 `.env`。
 
 ## 环境变量
 
@@ -80,9 +126,12 @@ docker compose up -d --wait   # postgres + app；app 就绪以 healthz 为准
 
 - **token 轮换**：更换 `AUTH_TOKEN_SECRET` 并重启即吊销全部已发 token（JWT 有效期 30 天）。
 - **改密现状**：首版无改密 API；改密 = 清空 accounts 表后用新 `SEED_ADMIN_PASSWORD` 重启 seed（或直接 UPDATE password_hash）。
-- **TELEGRAM_BOT_TOKEN** 仅 `scripts/telegram-smoke.sh` 使用，服务端不读取。
+- **DATABASE_URL / APP_DATABASE_URL / POSTGRES_PASSWORD**：用密码管理器生成并保存；数据库密码轮换需同步连接串并滚动重启。远程 PostgreSQL 必须启用 TLS，不能使用 `sslmode=disable`。
+- **AUTH_TOKEN_SECRET**：至少 32 个随机字符；轮换并重启会吊销所有现有 token。
+- **SEED_ADMIN_PASSWORD**：只在空数据库首次启动短暂注入，seed 后必须删除；已初始化环境保留非空值会被预检拒绝。
+- **TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_USERNAME**：服务端真实读取；BotFather 撤销/轮换 token 后同步环境并重启。禁用时两项都清空。
 
-## 客户头像持久卷与一致备份
+## 一致备份与恢复
 
 production compose 将头像放在独立 named volume `avatar_data`，容器内固定挂载到
 `/var/lib/crm/avatars`，并以 `AVATAR_LOCAL_REQUIRE_MOUNT=true` 启动；缺卷、只落容器层、
@@ -90,56 +139,54 @@ production compose 将头像放在独立 named volume `avatar_data`，容器内�
 普通目录；`AVATAR_LOCAL_REQUIRE_MOUNT` 未设置时缺省为 `false`，也可显式设置为
 `false`。完整配置键见 `.env.example`。
 
-头像备份必须同时包含 PostgreSQL、整个头像 volume 和 exact-generation manifest。为冻结 API 与
-maintenance runner，先停 app；备份或恢复期间不要开放写流量：
+公开 backup/restore 脚本只支持以下目标：`compose-managed-db`、已经 seed、app/postgres 和
+`avatar_data`/`pgdata` 都唯一存在、app 精确处于正常 `running` 或 Engine `exited`、本机 Unix
+Docker endpoint。binary、外部 PostgreSQL、远程 Engine、app absent 或 created/paused/
+restarting/dead 等异常态不在脚本支持范围内，V1 上线前必须由 operator 提供等价的
+“停 app → 数据库备份 → 头像目录/卷 → manifest → 恢复验证”演练记录，否则上线清单阻塞。
+
+备份输出必须是尚不存在的新目录；可位于仓库外的加密介质：
 
 ```bash
-set -eu
-umask 077
-BACKUP_DIR="backup-$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir "$BACKUP_DIR"
-
-docker compose stop app
-docker compose run --rm --no-deps \
-  --entrypoint /usr/local/bin/avatar-manifest app generate \
-  > "$BACKUP_DIR/avatar-manifest.json"
-docker compose exec -T postgres \
-  pg_dump -U "${POSTGRES_USER:-crm}" "${POSTGRES_DB:-crm}" \
-  > "$BACKUP_DIR/database.sql"
-docker compose run --rm --no-deps --entrypoint tar app \
-  -C /var/lib/crm/avatars -czf - . \
-  > "$BACKUP_DIR/avatar-volume.tgz"
-docker compose start app
+./scripts/backup-compose.sh \
+  --env-file /etc/crm/env \
+  --compose-file ./docker-compose.yml \
+  --docker-context local-production \
+  --project-name crm-prod \
+  --output /srv/crm-backups/2026-07-27T020000Z
 ```
 
-manifest 会逐个 current pointer 记录 `account_id/customer_id/avatar_version/avatar_object_id/key/
-media_type/size/actual_sha256`，并保存全部物理 generation 的 key、count 和 checksum 汇总。
-仅比较对象数量或内容 checksum 不够：同内容但不同 `avatar_object_id` 是不同物理代次。
-
-恢复会替换目标数据库和头像 volume。先停 app，确认备份来源与保留策略，再执行；最后一条 verify
-成功前不得启动 app：
+发布包固定且只包含 `database.sql`、`avatar-volume.tgz`、`avatar-manifest.json`、
+`metadata.json`、`SHA256SUMS`。前三项在同一 freeze window 取得；metadata v1 同时保存固定表的
+逐表数据库行数。脚本在发布前验证四文件 checksum、manifest 完整 schema，并逐个比较 manifest
+inventory 与 tar 中实际 regular file 的路径、大小和内容 SHA-256；最终使用“不替换已存在 leaf”的
+原子 rename 发布。恢复会**替换目标数据库和头像卷**，必须
+逐字输入目标 project：
 
 ```bash
-set -eu
-BACKUP_DIR=backup-YYYYMMDDTHHMMSSZ
-
-docker compose stop app
-docker compose exec -T postgres \
-  dropdb -U "${POSTGRES_USER:-crm}" --if-exists --force "${POSTGRES_DB:-crm}"
-docker compose exec -T postgres \
-  createdb -U "${POSTGRES_USER:-crm}" "${POSTGRES_DB:-crm}"
-docker compose exec -T postgres \
-  psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER:-crm}" "${POSTGRES_DB:-crm}" \
-  < "$BACKUP_DIR/database.sql"
-docker compose run --rm --no-deps \
-  -v "$PWD/$BACKUP_DIR:/backup:ro" --entrypoint sh app -c \
-  'find /var/lib/crm/avatars -mindepth 1 -maxdepth 1 -exec rm -rf {} + && tar -xzf /backup/avatar-volume.tgz -C /var/lib/crm/avatars'
-docker compose run --rm --no-deps \
-  -v "$PWD/$BACKUP_DIR:/backup:ro" \
-  --entrypoint /usr/local/bin/avatar-manifest app \
-  --manifest /backup/avatar-manifest.json verify
-docker compose start app
+./scripts/restore-compose.sh \
+  --env-file /etc/crm/env \
+  --compose-file ./docker-compose.yml \
+  --docker-context local-production \
+  --project-name crm-prod \
+  --input /srv/crm-backups/2026-07-27T020000Z \
+  --confirm-project crm-prod
 ```
+
+两脚本以 Docker Engine ID + project 构造物理 target hash，并用 daemon-side immutable-ID lock 与
+helper fence 阻止同目标并发操作。只有确认本机旧 owner PID 已消失且无同 generation helper 时，
+operator 才可在原命令末尾显式追加 `--break-stale-lock`；绝不能按容器名手工猜删锁。
+
+restore 会先复制私有 staging snapshot，验证五件套、checksum、非空数据库 dump、manifest 完整
+schema、manifest↔tar 精确内容、tar traversal/link/device 和 typed project，再停止/替换。数据库
+导入与头像 exact-generation verify 后，还会把每张固定表的实际行数逐项与 metadata oracle 比较。
+破坏开始后的任一失败（包括 INT/TERM）都执行 failure-stop 并保持 app 为 Engine `exited`，不会伪造 rollback；
+operator 应保留日志、检查当前 DB/头像 after-state，修复后从可信包重跑。成功 exact-generation
+verify 后，仅当操作前 app 正常 running 才启动并等待 health；原 exited 始终保持 exited。
+
+至少每日备份并定期执行隔离恢复演练；保留一份与 ECS 不同故障域的加密副本，定义 retention 和
+可验证销毁。生产上线还必须由 owner 留存 mount/write/fsync/dir-sync probe、ECS 磁盘持久性、TLS、
+网络边界和异地介质 attestation；脚本 exit 0 不替代这些人工/云侧证据。
 
 备份目录含数据库凭证派生数据和客户头像 PII：保持 `0700/0600` 权限，使用受控账号、加密介质和
 异地加密传输，并按独立 retention/销毁策略管理。在线“移除头像”（包括 merged 客户的隐私清理）

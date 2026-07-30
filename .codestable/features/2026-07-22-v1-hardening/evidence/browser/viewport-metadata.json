@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-07-28T15:36:11+08:00",
+  "target": {
+    "kind": "isolated-synthetic-compose",
+    "project": "codex-v1-browser-0727",
+    "base_url": "http://127.0.0.1:18081",
+    "existing_projects_touched": []
+  },
+  "emulation": {
+    "browser": "Google Chrome DevTools device toolbar",
+    "viewport_css_px": {
+      "width": 375,
+      "height": 812
+    },
+    "device_pixel_ratio": 1,
+    "pointer_coarse": true,
+    "hover_none": true,
+    "text_zoom_200_method": "Isolated localhost response proxy injected html { font-size: 32px !important } into HTML only; the production bundle and repository source were not modified.",
+    "text_zoom_root_font_before": "16px",
+    "text_zoom_root_font_after": "32px",
+    "text_zoom_injection_marker_observed": true
+  },
+  "scenarios": [
+    {
+      "id": "A11-customers-375-coarse",
+      "route": "/customers",
+      "root_font_size": "16px",
+      "viewport": {
+        "inner_width": 375,
+        "inner_height": 812,
+        "client_width": 375,
+        "scroll_width": 375
+      },
+      "observations": {
+        "horizontal_overflow": false,
+        "customer_detail_button_css_px": {
+          "width": 321,
+          "height": 49
+        },
+        "quick_note_button_css_px": {
+          "width": 69,
+          "height": 44
+        },
+        "bottom_calendar_link_css_px": {
+          "width": 51.2890625,
+          "height": 51.2734375
+        },
+        "quick_note_enter_save_status": "备注已保存",
+        "quick_note_escape_focus_returned_to": "记备注"
+      },
+      "screenshot": "A11-customers-375-coarse.png"
+    },
+    {
+      "id": "A08-calendar-375-coarse",
+      "route": "/calendar",
+      "root_font_size": "16px",
+      "viewport": {
+        "inner_width": 375,
+        "inner_height": 812,
+        "client_width": 375,
+        "scroll_width": 375
+      },
+      "observations": {
+        "horizontal_overflow": false,
+        "calendar_day_button_count": 42,
+        "minimum_day_button_css_px": {
+          "width": 49,
+          "height": 64
+        },
+        "visible_focusable_create_edit_delete_controls": [],
+        "read_only_boundary": true
+      },
+      "screenshot": "A08-calendar-375-coarse.png"
+    },
+    {
+      "id": "A26-customers-375-textzoom200",
+      "route": "/customers",
+      "root_font_size": "32px",
+      "viewport": {
+        "inner_width": 375,
+        "inner_height": 812,
+        "client_width": 375,
+        "scroll_width": 375
+      },
+      "observations": {
+        "horizontal_overflow": false,
+        "customer_detail_button_css_px": {
+          "width": 321,
+          "height": 49
+        },
+        "quick_note_button_css_px": {
+          "width": 69,
+          "height": 44
+        },
+        "quick_note_input_focused": true,
+        "quick_note_input_css_px": {
+          "width": 272,
+          "height": 38
+        },
+        "quick_note_escape_focus_returned_to": "记备注",
+        "bottom_customers_link_visible": true,
+        "bottom_calendar_link_visible": true,
+        "bottom_link_css_px": {
+          "width": 51.2890625,
+          "height": 51.2734375
+        }
+      },
+      "screenshot": "A26-customers-375-textzoom200.png"
+    },
+    {
+      "id": "A08-calendar-375-textzoom200",
+      "route": "/calendar",
+      "root_font_size": "32px",
+      "viewport": {
+        "inner_width": 375,
+        "inner_height": 812,
+        "client_width": 375,
+        "scroll_width": 375
+      },
+      "observations": {
+        "horizontal_overflow": false,
+        "calendar_day_button_count": 42,
+        "minimum_day_button_css_px": {
+          "width": 49,
+          "height": 64
+        },
+        "visible_focusable_create_edit_delete_controls": [],
+        "read_only_boundary": true,
+        "bottom_customers_link_visible": true,
+        "bottom_calendar_link_visible": true
+      },
+      "screenshot": "A08-calendar-375-textzoom200.png"
+    }
+  ]
+}

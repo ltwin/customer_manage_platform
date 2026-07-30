@@ -1,0 +1,1 @@
+error code=2 stage=endpoint-select key=DOCKER_CONTEXT remediation=use-existing-local-unix-context

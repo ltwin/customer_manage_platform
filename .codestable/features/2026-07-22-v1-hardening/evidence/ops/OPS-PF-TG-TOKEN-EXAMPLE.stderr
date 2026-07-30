@@ -1,0 +1,1 @@
+error code=4 stage=config-matrix key=TELEGRAM_BOT_TOKEN remediation=replace-example-token

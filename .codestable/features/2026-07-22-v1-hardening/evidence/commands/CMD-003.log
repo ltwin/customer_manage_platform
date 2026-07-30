@@ -1,0 +1,4 @@
+CMD-003: bash -n scripts/*.sh
+captured_at: 2026-07-28
+
+exit_code: 0

@@ -14,7 +14,7 @@ services:
         parallelism: 1
         order: stop-first
     env_file:
-      - path: .env
+      - path: ${CRM_ENV_FILE:-.env}
         required: false # 单起 postgres（make db-up）时无需 .env
     environment:
       # 缺省 = 全容器模式直连 compose 内 postgres 服务；接现有 PG 时在 .env 设

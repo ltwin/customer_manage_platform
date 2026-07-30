@@ -1,0 +1,1 @@
+error code=4 stage=config-matrix key=AUTH_TOKEN_SECRET remediation=set-strong-non-sentinel-secret

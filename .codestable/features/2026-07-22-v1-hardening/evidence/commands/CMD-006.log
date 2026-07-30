@@ -1,0 +1,5 @@
+CMD-006: git diff --check
+captured_at: 2026-07-28
+execution_note: 首次执行发现 CMD-001 的 Vite 生成输出含一个尾随空格；已规范化日志，以下为 canonical retry。
+
+exit_code: 0

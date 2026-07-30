@@ -1,0 +1,1 @@
+error code=2 stage=endpoint-select key=DOCKER_HOST action=clear-docker-selector-environment

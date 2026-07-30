@@ -31,6 +31,8 @@ func TestPrepareAvatarLocalRootRejectsReadOnlyDirectory(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
 	if _, err := prepareAvatarLocalRoot(root, false); err == nil {
 		t.Fatal("read-only avatar root must fail writable attestation")
+	} else if !errors.Is(err, ErrAvatarLocalRootUnavailable) {
+		t.Fatalf("avatar root failure must retain a stable class: %v", err)
 	}
 }
 

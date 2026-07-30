@@ -1,0 +1,1 @@
+error code=2 stage=endpoint-select key=DOCKER_CERT_PATH remediation=unset-selector-environment

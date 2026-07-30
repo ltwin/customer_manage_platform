@@ -1,13 +1,78 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 )
+
+func TestNewHTTPServerUsesProductionConnectionTimeouts(t *testing.T) {
+	server := newHTTPServer(":0", http.NewServeMux())
+
+	if server.ReadHeaderTimeout != 5*time.Second {
+		t.Fatalf("ReadHeaderTimeout: got %v, want 5s", server.ReadHeaderTimeout)
+	}
+	if server.IdleTimeout != 60*time.Second {
+		t.Fatalf("IdleTimeout: got %v, want 60s", server.IdleTimeout)
+	}
+}
+
+func TestStartupFailureLogUsesStableClassificationWithoutRawValues(t *testing.T) {
+	const (
+		secretValue = "postgres://crm:secret-value@db.example/crm?sslmode=disable"
+		localPath   = "/private/deployment/customer-avatar-root"
+	)
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	failure := newStartupFailure(
+		"avatar-store-init",
+		"AVATAR_LOCAL_ROOT",
+		"filesystem",
+		fmt.Errorf("open %s using %s", localPath, secretValue),
+	)
+
+	logStartupFailure(logger, failure)
+
+	logged := output.String()
+	for _, expected := range []string{
+		`"operation":"avatar-store-init"`,
+		`"config_key":"AVATAR_LOCAL_ROOT"`,
+		`"error_class":"filesystem"`,
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("startup log missing %q: %s", expected, logged)
+		}
+	}
+	for _, forbidden := range []string{secretValue, localPath, "secret-value", "DATABASE_URL"} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("startup log leaked forbidden value %q: %s", forbidden, logged)
+		}
+	}
+}
+
+func TestClassifyConfigStartupFailureUsesConfigKeyAndStableClass(t *testing.T) {
+	failure := classifyConfigStartupFailure(fmt.Errorf(
+		"%w: %s",
+		config.ErrAvatarLocalRootUnavailable,
+		"/private/deployment/customer-avatar-root",
+	))
+
+	var classified *startupFailure
+	if !errors.As(failure, &classified) {
+		t.Fatalf("failure is not classified: %T", failure)
+	}
+	if classified.operation != "config-load" || classified.configKey != "AVATAR_LOCAL_ROOT" || classified.errorClass != "filesystem" {
+		t.Fatalf("unexpected classification: %+v", classified)
+	}
+}
 
 func TestBuildTelegramIntegrationHonorsOptionalConfiguration(t *testing.T) {
 	tests := []struct {

@@ -1,0 +1,2 @@
+error code=5 stage=target-identity key=image action=source-runtime-mismatch
+error code=11 stage=cleanup key=residual action=inspect-immutable-ids

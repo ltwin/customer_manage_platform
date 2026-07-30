@@ -1,16 +1,16 @@
 roadmap: photographer-private-crm
-status: ready-to-dispatch
+status: handoff
 baseline_ref: f27d4296edfc86e8f4cceef0553ba4f1dd41a0c9
 driver_kind: native
-driver_id: "/root/photographer_private_crm_goal_driver"
+driver_id: "/root/photographer_private_crm_goal_resume"
 execution_confirmation_id: "89e1d9c5-4956-4ee3-9fd7-0cdb7a19f995"
 acceptance_authorization: approved
 acceptance_authorization_ref: "approval-report.md#goal-acceptance"
 commit_authorization: approved
 commit_authorization_ref: "approval-report.md#goal-commits"
-handoff_reason: ""
-handoff_next: ""
 current_feature_index: 11
+handoff_reason: "CoreEvidenceUnavailable: A23 production/operator attestation、A24 owner fresh main-chain walkthrough 与其同 fixture A27 export 尚无真实证据"
+handoff_next: "先完成 A23 的 ECS/TLS/network/offsite/migration 只读审计与 A24 owner walkthrough；随后在同一 fixture 执行 A27 export，恢复 Goal driver 从 STEP-007 继续 implementation.before_review gates"
 ledger:
   - step: v1-hardening/STEP-001
     commit_scope: "current feature scoped commit; pending acceptance"
@@ -19,6 +19,15 @@ ledger:
     commit_scope: "current feature scoped commit; pending acceptance"
     status: done
   - step: v1-hardening/STEP-003
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-004
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-005
+    commit_scope: "current feature scoped commit; pending acceptance"
+    status: done
+  - step: v1-hardening/STEP-006
     commit_scope: "current feature scoped commit; pending acceptance"
     status: done
 features:

@@ -89,17 +89,17 @@ steps:
     action: "档期与 shell 移动收口：验证底部导航、42 日月历、drawer、空/密集/冲突/长文本、错误、字体放大和只读边界"
     exit_signal: "375 下 Customers/Calendar 直接可达、查档期无整页横向溢出、焦点/触控区合格；200% 字体仍可滚达；移动写入口不可见不可聚焦"
     trace: [D3, D4, A7, A8, A9, A10, A26]
-    status: pending
+    status: done
   - id: STEP-005
     action: "平台运行 hardening：补 60 秒 IdleTimeout、启动日志脱敏、三 mode production preflight 与 compose env-file 显式选择"
     exit_signal: "Go/config/进程测试与 A18 catalog 66 个 required cases 集合完全执行；逐 key/parser/exit 0-6/binary Engine=forbidden/Compose/context/pinned-host/initialized seed 的 expected=observed，无 missing/unknown/duplicate；输出不含 secret/path value"
     trace: [D5, A16, A17, A18]
-    status: pending
+    status: done
   - id: STEP-006
     action: "备份恢复与文档：实现 target/lock/versioned package/validate-before-destructive restore、sentinel 隔离 ops smoke，并更新 README"
     exit_signal: "A19-A22 catalog required cases 集合完全执行；local synthetic target 的 backup stage-plan/package observation、restore package oracle/data envelope、全部 Engine state、static/source-overlap path、realpath/immutable-ID/helper-fence race、image/staging/start/health/failure structured observed=expected，无 missing/unknown/duplicate；operation cleanup 不被 harness 掩盖，sentinel/tar/半包/匿名 volume/破坏后 exited 按 oracle 通过；ops results 顶层 pass；README 可执行"
     trace: [D5, D6, A19, A20, A21, A22, A23]
-    status: pending
+    status: done
   - id: STEP-007
     action: "全量收口：运行 CMD-001～006、浏览器矩阵、roadmap 精确链路、独立 export、H1/H2/ECS attestation 与范围清洁度审计，归档 canonical evidence"
     exit_signal: "A1-A27 全部 terminal；A24 精确链 pass、A27 export pass、H1/H2 有 owner 决策；无 unresolved blocking/important，acceptance 可据事实回写 roadmap"

@@ -2,8 +2,8 @@
 doc_type: feature-implementation
 feature: 2026-07-22-v1-hardening
 status: in-progress
-current_step: STEP-004
-updated: 2026-07-23
+current_step: STEP-007
+updated: 2026-07-28
 ---
 
 # v1-hardening 实现记录
@@ -110,7 +110,7 @@ updated: 2026-07-23
 - 768：cards=10、table=0；769 与 1280：cards=0、table=1；同一页面显示 10/10 条结果。
 - QuickNote：Escape 后 active element 为文本“记备注”的 BUTTON，草稿输入关闭；真实保存后 DOM 出现 `role=status` 的“备注已保存”，列表/筛选上下文未丢失。
 - CustomerPicker：空结果时 ArrowDown 后 `aria-activedescendant=null`、expanded=true；Tab 后 listbox=0、expanded=false、active descendant=null，焦点自然前移到下一 SELECT。
-- 浏览器控制面无法改变 Chrome text zoom，故本轮未伪造 200% 终态；A26 的 375+200% canonical evidence 继续保持 pending，必须在 STEP-007 用可记录 text zoom 的环境补跑后才能判 `passed`。
+- 该次 STEP-003 会话未取得 text zoom；后续 STEP-004 补证已按 design D4 允许的 32px 根字号等价方法完成，方法与指标见第 6 节和 canonical viewport metadata。
 
 ### 完整验证与清洁度
 
@@ -118,7 +118,7 @@ updated: 2026-07-23
 - 构建仅保留 approved design 已接受的约 560.60 kB chunk warning；不扩为方案外拆包。
 - `git diff --check` 通过；STEP-003 文件未命中 `console.log/error`、`debugger`、`TODO/FIXME/XXX`，无 secret、PII、临时 Docker 资源或合成备注残留。
 
-## 6. STEP-004 档期与 shell 移动收口（进行中）
+## 6. STEP-004 档期与 shell 移动收口
 
 退出信号：375px 下 Customers/Calendar 直接可达，42 日网格与 drawer 无整页横向溢出，移动写入口不可见且不可聚焦，核心触控区与长文本/密集内容稳定；200% 字体可滚达证据终态成立。
 
@@ -138,12 +138,98 @@ updated: 2026-07-23
 - `npm run build` 与 lint 通过；构建只有既有约 560.60 kB chunk warning；`git diff --check` 通过。
 - 清洁度：新增规则/测试未命中 debug 输出、TODO/FIXME/XXX；未修改 schedule journal、幂等编排、API/schema 或桌面写流程。
 
-### 尚未完成，禁止标 done
+### 浏览器证据
 
-- 尚需新的浏览器会话对 Calendar 做 375px 切月/今天/选日、42 格、空/密集/冲突/长文本 drawer、current/stale error、写控件不可见/不可聚焦与页面/抽屉 scroll metrics。
-- 200% text zoom 仍需可记录的真实方法；不得以截图缩放或普通 375px 结果冒充。
-- 因上述浏览器证据未完成，checklist `STEP-004`、A7～A10/A26 与所有 checks 保持 `pending`，Goal ledger 不追加 STEP-004。
+- 2026-07-23 新浏览器会话已完成 375x812 的 Calendar 主体矩阵：底部导航中 Customers/Calendar 直接可达；月历固定 42 格，前后切月、从 6 月回今天、选日和空日均通过；合成密集日显示 6 条档期和 6 条冲突档期，drawer 同时呈现跨日、长客户名、长套系/备注、归档客户和取消订单警示。
+- 375px DOM 指标：`body/root scrollWidth=clientWidth=375`，日历宽 351px、七列各 49px；dense drawer `clientWidth=scrollWidth=375`，drawer body `clientWidth=scrollWidth=360`、`clientHeight=678`、`scrollHeight=1116`、`overflow-y:auto`，长文本与内部滚动未造成整页横向溢出。
+- 移动写入口的全部祖先链均命中 `display:none`，矩形为 0；真实 Tab 顺序只在 drawer 顶部/底部两个“关闭”按钮间循环，新建、查看订单、编辑、删除和“在这天加档期”均未进入焦点环。底部七个直接导航项实测约 51.28x51.27 CSS px。
+- current/initial error + retry 已补齐：在 42 格、已有 ready 数据的 7 月页停止隔离后端，再切换到 8 月触发首次读取失败；页面显示 `role=alert` 的“请求失败（502）”和一个真实“重试”按钮，网格不可见、cell count=0，没有把失败冒充 empty/ready。重启后端并点击页面“重试”后，8 月恢复 42 格、alert=0、`aria-busy=false`。
+- stale refresh error + retry 已补齐：使用仅作用于隔离环境的透明代理，在 UI 真实删除合成档期成功（后端 DELETE 204）后，只让随后的同范围 GET 返回一次 502。页面保留 7 月 42 格与旧的“2026-07-24，1 条档期”投影，同时显示 `role=alert` 的“合成刷新失败”和真实“重试”，证明 refresh failure 是 stale 而非 error/empty。点击“重试”后真实 GET 200，alert 清零，投影更新为“2026-07-24，0 条档期”。
+- 补证使用 Chrome DevTools 375×812 device toolbar，实测 `(pointer:coarse)=true`、`(hover:none)=true`；Customers 详情/备注、Calendar 日格和底部导航核心触控区均达到至少 44 CSS px，两个页面都没有整页横向溢出。
+- 200% 字体证据采用 design D4 明确允许的等价方法：仅在隔离 localhost response proxy 返回的 HTML 中注入 `html { font-size:32px!important }`，把根字号从 16px 提升到 32px；仓库 source 与 production bundle 未修改。证据没有宣称这是 Chrome 原生页面 zoom，也没有把截图缩放冒充字体放大。
+- 32px 根字号下 Customers 的详情、记备注、输入焦点与 Escape 焦点归还均可完成；Calendar 保持 42 日、移动写入口不可见且不可聚焦；Customers/Calendar 直接入口仍可见，两个页面 `scrollWidth=clientWidth=375`。
+- canonical 证据为 `evidence/browser/viewport-metadata.json`、`A08-calendar-375-coarse.png`、`A08-calendar-375-textzoom200.png`、`A11-customers-375-coarse.png`、`A26-customers-375-textzoom200.png`。
+- 环境安全记录：仓库现有 `.env` 的 `DATABASE_URL` 存在且 host 脱敏分类为非 loopback；本轮未 source `.env`、未输出任何 URL/host/用户名/密码，也未连接该外部数据库。启动代码顺序是 `config.Load → store.MigrateUp → store.Open → EnsureDefaultAccount → HTTP ListenAndServe`；此前外部目标启动已到达 HTTP 监听并成功响应 `/me`，只能证明 `MigrateUp` 返回成功，现有本地日志无法区分 `migrate.ErrNoChange` 与实际应用过 migration。外部 schema 是否变化只能由获授权 operator 做只读核验。
+- 本轮补证完全使用合成隔离环境：临时 PostgreSQL、后端、透明代理与 Vite 分别使用 15432、18081、18080、15173；没有生产客户数据。补证结束后 UI 删除的合成档期已由重试确认不存在；全部进程、容器、临时 Vite/proxy 文件和 avatar 目录均已清理，四个端口均确认空闲。机器上既有的 8080/5173 进程未触碰。
+- 外部数据库 migration/DDL 只读核验仍是获授权 operator 的独立生产审计项；本轮没有读取或 `source` 仓库 `.env`，也没有连接外部数据库。它不改变 STEP-004 的本地移动退出信号，不能被上述 synthetic/browser 证据冒充完成。
+- STEP-004 退出信号已满足，checklist 与 Goal ledger 已按顺序记为 `done`；acceptance checks 仍保持 `pending`。
 
-## 7. 下一步
+## 7. STEP-005 平台运行 hardening
 
-恢复 STEP-004：启动同一 local synthetic fixture，完成 Calendar/browser 矩阵并清理本地资源；证据真实通过后才把 STEP-004 标 `done` 并进入 STEP-005。无需新的设计或执行授权。
+退出信号：Go/config/进程测试与 A18 的 66 个 required cases 全量执行，逐 key/parser/exit/Engine/Compose/context/pinned-host/initialized-seed 的 structured expected=observed，且输出不含 secret 或原始路径值。
+
+### 变更
+
+- `http.Server` 保留 5 秒 `ReadHeaderTimeout`，新增 60 秒 `IdleTimeout`；graceful shutdown 编排保持不变。
+- server 初始化与配置错误改为按 operation、配置 key 和稳定错误类别输出，不再透出底层原始路径或配置值；Go 测试覆盖 timeout 构造和启动错误脱敏。
+- 新增 `production-preflight.sh` 与公共 shell helper：strict dotenv parser 只把 RHS 当数据，不 `source`/`eval`；覆盖 binary、compose-managed-db、compose-external-db 三种模式、seed/TG/DB/avatar/auth 矩阵及稳定 exit 0～6。
+- compose app `env_file` 改为显式 `${CRM_ENV_FILE:-.env}`；脚本把同一个 canonical env file 同时用于 interpolation 与 app env_file，并拒绝隐式/远程 Docker selector。
+- local Docker context 只解析一次 absolute Unix socket，后续每次 Docker/Compose 调用都显式 pin 同一 host；同 Engine 的 context alias 不产生第二物理 target identity。
+
+### 验证与证据
+
+- A18 的 66 个 `OPS-PF-*` case 全部真实执行并通过；missing/unknown/duplicate 均为空。
+- `bash scripts/test-production-preflight.sh`、Go server/config 定向测试、`bash -n scripts/*.sh` 与 shell common fixture 均通过。
+- 缺命令反例使用最小 PATH 进入脚本自身 dependency gate，确认 exit 6、terminal stage=`dependency-check` 且 Engine calls=0；env 注入 payload 未被执行或回显。
+- STEP-005 退出信号已满足，checklist 与 Goal ledger 已按顺序记为 `done`。
+
+## 8. STEP-006 备份恢复、隔离 smoke 与 README
+
+退出信号：A19～A22 对应的 backup/restore/lock/cleanup frozen case 全量执行；package、target identity、Engine state、staging、race、failure-stop 与分层 cleanup 的 structured observed=expected；results 顶层 pass 且 README 可执行。
+
+### 变更
+
+- 新增 `backup-compose.sh`、`restore-compose.sh`、`v1-ops-smoke.sh` 及公共 ops helper，完整实现 pinned Engine、physical target hash、daemon-side lock、helper fence、immutable-ID ownership 与 stale-break/race 守护。
+- backup 固定生成并自校验五件套，按原 app running/exited predicate 恢复状态；失败不发布半包。
+- restore 先复制 `umask 077` 私有 staging snapshot，再验证 schema、checksum、regular/no-symlink、tar traversal/link/device、typed project 和 input race；破坏后任一失败都执行 failure-stop 并证明 app 精确为 Engine exited，同时忠实记录 DB/avatar after-state envelope。
+- restore helper 显式使用 root helper 用户读取安全策略固定为 0600 的 staged artifacts、替换 root-owned avatar volume entry；app/postgres 容器自身权限未放宽。
+- README 补齐最短使用路径、三种生产预检轨、凭证轮换、显式 compose target、一致备份/恢复、stale lock、失败恢复、异地介质与 ECS/TLS/network/durability attestation 边界。
+- `v1_ops_results.py` 对 exact stage order/set/outcome、coverage、operation/harness cleanup、lock remover、backup 五件套、restore package oracle/data envelope 和 destructive failure stopped+exited 做严格校验，并带可证明会改变输入的 self-test 负例。
+
+### 实现中发现并修复的问题
+
+- STEP-007 首次按公开命令执行 `./scripts/v1-ops-smoke.sh` 时发现新文件缺 executable bit，真实返回 exit 126；补齐可执行权限后从同一公开入口重跑 canonical smoke。
+- production `v1_candidate_is_alone` 原来用 `docker ps -aq` 的短 ID 与完整 candidate ID 比较，会让合法 stale break 永远误判存在其他 helper；改为 `docker ps -aq --no-trunc`，runner 的资源归属查询同步使用完整 ID。
+- runner 原先用内存 NUL 计算 target hash，而 production 使用字面 `\\0` bytes；现已与 production 的 canonical bytes 逐字一致，避免测试与真实锁域产生不同 identity。
+- lock label/state invalid 反例的详细 mismatch 保留在 Docker JSONL；冻结 schema 的 projection 使用 `state:null`，不把 schema 禁止的异常 state 写成合法 observed。
+- cleanup residual case 证明 operation cleanup failure 不能被 harness 最终清空掩盖：terminal stage=`cleanup`、exit 11，operation fail 而 harness cleanup pass。
+
+### 全量验证
+
+- canonical smoke：`executed=148`、`passed=148`、failed=[]；按 ID 前缀为 preflight 66、backup 27、restore 37、lock 17、cleanup 1。
+- coverage：missing=[]、unknown=[]、duplicate=[]；`suite_cleanup=pass`，residual resources=[]。
+- 独立 validator：`python3 scripts/v1_ops_results.py ... --self-test` 输出 `v1 ops results contract: passed (148 cases)`。
+- Docker 结束态：查询 `label=com.photographer-crm.ops=true` 无任何 container 残留。
+- 静态/安全回归：Python compile、`bash -n`、package self-test、common fixture 15 cases、backup/restore safety test 与 `git diff --check` 均通过。
+- STEP-006 退出信号已满足，checklist 与 Goal ledger 已按顺序记为 `done`；checks 仍留待 acceptance 更新。
+
+## 9. 下一步
+
+STEP-007 的本地可执行部分已完成，但三个 core 场景仍缺 owner/operator 事实，因此本 step 不标 `done`，也不提前运行要求“全部 steps done”的 implementation.before_review gates。
+
+### 聚合命令
+
+- CMD-001 `make check`：canonical retry 通过；Go build/lint/串行 Testcontainers、前端 build/lint/全部定向测试、preflight/common/package/backup-restore/ops-contract 与 OpenAPI 漂移检查全绿。仅保留 approved design 已接受的 560.60 kB chunk warning。
+- CMD-002 `npm run test:v1-hardening`：9/9 通过。
+- CMD-003 `bash -n scripts/*.sh`：通过。
+- CMD-004 ops contract + `docker build -t crm:v1-hardening .`：148-case positive/negative contract 通过，镜像构建通过。
+- CMD-005 `./scripts/v1-ops-smoke.sh`：修正入口 executable bit 后从公开命令 fresh 重跑，148/148 通过，coverage 全空，suite cleanup 通过。
+- CMD-006 `git diff --check`：规范化 Vite 生成日志的一处尾随空格后 canonical retry 通过。
+- 六份日志均位于 `evidence/commands/CMD-001.log`～`CMD-006.log`，末行 `exit_code: 0`。
+
+### 范围与清洁度
+
+- CodeStable runtime 1.0.4 `--check --json` 为 `status=ok`，base/goal-gates/workflow-next capabilities 无缺失或 drift。
+- regression route matrix 12/12 为 `pass`；A1～A27 已全部 terminal：24 pass、A23/A24/A27 blocked、0 pending。
+- `api/openapi.yaml`、Go generated API 与前端 `schema.d.ts` 零 diff；没有 API/schema/auth 模型扩张。
+- task code 未命中 `console.log/error`、`debugger`、`TODO/FIXME/XXX`、`fmt.Print`；`__pycache__` 已清理；Docker ops label 无残留，results 的 residual resources 为空。
+- `.workflow/` 与 `install-cpamp.sh` 仍是任务外 untracked 文件，本轮没有读取、修改、stage 或删除。
+- evidence 只出现配置 key 与脱敏 status，没有原始 secret、PII、外部数据库连接串或本机绝对生产路径；本轮没有读取/`source` 仓库 `.env`，也没有连接外部数据库。
+
+### 当前三个 core 阻塞
+
+- A23：README、CLI、synthetic backup/restore 已通过；仍缺生产 ECS mount/write/fsync/dir-sync、TLS、network、offsite-medium attestation，以及获授权 operator 对此前外部数据库启动窗口的 migration/DDL 只读审计。
+- A24：H2 已批准复用 2026-07-17 owner-attested Telegram true-external transport/binding；仍缺 owner 对 fresh 同 fixture 的 customer→package→order→slot→deposit→next-day digest→dashboard 五卡逐节点 walkthrough 与 payload/调度关联证明。
+- A27：reference-only export 自动化 8/8 和既有 feature acceptance 已通过；但必须在 A24 同一 fresh fixture 上复核 counts/边界，当前不能用独立测试替代。
+
+只有 A23/A24/A27 取得真实证据并改为 `pass` 后，才能把 STEP-007 标 `done`，随后按 Goal 协议运行 scope-gate、dod-runner、evidence-pack 和独立 code review。当前不会为了进入 review/commit gate 把 blocked 改成 pass。

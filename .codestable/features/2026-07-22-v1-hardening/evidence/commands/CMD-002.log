@@ -1,0 +1,28 @@
+CMD-002: cd frontend && npm run test:v1-hardening
+captured_at: 2026-07-28
+
+
+> frontend@0.0.0 test:v1-hardening
+> node --test --experimental-transform-types scripts/v1-hardening.test.ts
+
+(node:74479) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ page read states have one observable presentation in the fixed priority order (0.775959ms)
+✔ page-owned data becomes stale on refresh failure without becoming empty (0.10675ms)
+✔ initial failure and successful empty remain mutually exclusive (0.053917ms)
+✔ customer results keep one page-owned query across the 768/769 responsive boundary (0.933334ms)
+✔ note keyboard actions separate submit, IME composition, multiline, and cancel (0.09725ms)
+✔ note submission gate rejects a repeated submit until the active request settles (0.068708ms)
+✔ empty customer picker keyboard navigation never exposes an invalid active option (0.09ms)
+✔ mobile calendar keeps write actions hidden while dense and long drawer content stays bounded (0.519375ms)
+✔ mobile shell keeps Customers and Calendar direct with safe-area and touch-size contracts (0.734708ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 100.070875
+
+exit_code: 0

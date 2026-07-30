@@ -40,6 +40,10 @@ test:
 	cd frontend && npm run test:telegram-digest
 	cd frontend && npm run test:data-export
 	cd frontend && npm run test:v1-hardening
+	./scripts/test-production-preflight.sh
+	bash ./scripts/test-v1-ops-common.sh
+	python3 ./scripts/lib/v1-ops-package-selftest.py
+	bash ./scripts/test-v1-ops-backup-restore-safety.sh
 	./scripts/test-v1-ops-contract.sh
 
 # 契约线（design 2.2）：api/openapi.yaml -> Go 服务端类型（按 tag）+ TS 全量类型

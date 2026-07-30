@@ -1,0 +1,2 @@
+v1-ops-helper error key=contract
+error code=7 stage=lock-post-inspect key=lock-invariant action=inspect-lock-metadata

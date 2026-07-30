@@ -40,37 +40,98 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, logger); err != nil {
-		logger.Error("启动失败", slog.Any("error", err))
+		logStartupFailure(logger, err)
 		os.Exit(1)
 	}
+}
+
+type startupFailure struct {
+	operation  string
+	configKey  string
+	errorClass string
+	cause      error
+}
+
+func newStartupFailure(operation, configKey, errorClass string, cause error) error {
+	return &startupFailure{
+		operation:  operation,
+		configKey:  configKey,
+		errorClass: errorClass,
+		cause:      cause,
+	}
+}
+
+func (e *startupFailure) Error() string { return "application startup failed" }
+
+func (e *startupFailure) Unwrap() error { return e.cause }
+
+func logStartupFailure(logger *slog.Logger, err error) {
+	failure := &startupFailure{
+		operation:  "application-start",
+		configKey:  "none",
+		errorClass: "internal",
+	}
+	var classified *startupFailure
+	if errors.As(err, &classified) {
+		failure = classified
+	}
+	logger.Error(
+		"startup failed",
+		slog.String("operation", failure.operation),
+		slog.String("config_key", failure.configKey),
+		slog.String("error_class", failure.errorClass),
+	)
+}
+
+func classifyConfigStartupFailure(err error) error {
+	key := "CONFIGURATION"
+	errorClass := "invalid_config"
+	switch {
+	case errors.Is(err, config.ErrDatabaseURLMissing):
+		key = "DATABASE_URL"
+	case errors.Is(err, config.ErrAuthTokenSecretMissing):
+		key = "AUTH_TOKEN_SECRET"
+	case errors.Is(err, config.ErrAvatarStorageDriverInvalid):
+		key = "AVATAR_STORAGE_DRIVER"
+	case errors.Is(err, config.ErrAvatarLocalRootMissing),
+		errors.Is(err, config.ErrAvatarLocalRootNotMount),
+		errors.Is(err, config.ErrAvatarLocalRootUnavailable):
+		key = "AVATAR_LOCAL_ROOT"
+		if errors.Is(err, config.ErrAvatarLocalRootUnavailable) {
+			errorClass = "filesystem"
+		}
+	case errors.Is(err, config.ErrAvatarLocalRequireMountInvalid):
+		key = "AVATAR_LOCAL_REQUIRE_MOUNT"
+	}
+	return newStartupFailure("config-load", key, errorClass, err)
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
-		return err
+		return classifyConfigStartupFailure(err)
 	}
 
 	if err := store.MigrateUp(cfg.DatabaseURL); err != nil {
-		return err
+		return newStartupFailure("database-migrate", "DATABASE_URL", "database", err)
 	}
 
 	s, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return err
+		return newStartupFailure("database-open", "DATABASE_URL", "database", err)
 	}
 	defer s.Close()
 
 	created, err := auth.EnsureDefaultAccount(ctx, s, cfg.SeedAdminPassword)
 	if err != nil {
-		return err
+		return newStartupFailure("account-seed", "SEED_ADMIN_PASSWORD", "database", err)
 	}
 	if created {
 		logger.Info("已创建默认账号（seed 完成后可从环境移除 SEED_ADMIN_PASSWORD）")
 	}
 	objects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
 	if err != nil {
-		return err
+		return newStartupFailure("avatar-store-init", "AVATAR_LOCAL_ROOT", "filesystem", err)
 	}
 	avatarRepo := customer.NewPostgresAvatarRepository()
 	avatarApp := customer.NewAvatarApplication(avatarRepo, objects)
@@ -95,7 +156,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		logger,
 	)
 	if telegramErr != nil {
-		logger.Warn("telegram integration unavailable", slog.String("status", "invalid_config"), slog.Any("error", telegramErr))
+		logger.Warn(
+			"telegram integration unavailable",
+			slog.String("status", "invalid_config"),
+			slog.String("config_key", "TELEGRAM_BOT_TOKEN/TELEGRAM_BOT_USERNAME"),
+			slog.String("error_class", "invalid_config"),
+		)
 	} else if telegramRunner == nil {
 		logger.Info("telegram integration disabled", slog.String("status", "disabled"))
 	} else {
@@ -124,11 +190,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
 	// 公网直挂无反代（design D6），ReadHeaderTimeout 防 Slowloris 慢连接耗尽 fd。
-	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           router,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	server := newHTTPServer(cfg.HTTPAddr, router)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	runnerDone := make(chan struct{})
@@ -159,7 +221,19 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		serverResult: serverResult,
 		runnerDone:   runnerDone,
 	}
-	return lifecycle.wait(ctx)
+	if err := lifecycle.wait(ctx); err != nil {
+		return newStartupFailure("http-serve", "HTTP_ADDR", "network", err)
+	}
+	return nil
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 }
 
 type backgroundRunner interface {

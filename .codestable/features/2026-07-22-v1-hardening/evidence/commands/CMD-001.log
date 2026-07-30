@@ -1,6 +1,6 @@
 CMD-001: make check
-captured_at: 2026-07-23
-exit_code: 0
+captured_at: 2026-07-28
+execution_note: 首次沙箱内执行被 Go build cache 写权限拒绝；以下为同一命令的沙箱外 canonical retry。
 
 cd frontend && npm run build
 
@@ -8,14 +8,14 @@ cd frontend && npm run build
 > tsc -b && vite build
 
 vite v8.1.3 building client environment for production...
-[2Ktransforming...✓ 69 modules transformed.
+[2Ktransforming...✓ 75 modules transformed.
 rendering chunks...
 computing gzip size...
 dist/index.html                   0.75 kB │ gzip:   0.44 kB
-dist/assets/index-xL3zlJ_T.css   31.42 kB │ gzip:   6.89 kB
-dist/assets/index-Dup2l4HW.js   555.35 kB │ gzip: 163.95 kB
+dist/assets/index-CVM6Xpvu.css   34.29 kB │ gzip:   7.39 kB
+dist/assets/index-Dv9GfesZ.js   560.60 kB │ gzip: 165.85 kB
 
-✓ built in 123ms
+✓ built in 191ms
 [plugin builtin:vite-reporter]
 (!) Some chunks are larger than 500 kB after minification. Consider:
 - Using dynamic import() to code-split the application
@@ -37,38 +37,38 @@ cd frontend && npm run lint
 cd backend && go test -p=1 ./... -count=1 -parallel=1
 ?   	github.com/samson/customer-manage-platform/backend/cmd/avatar-manifest	[no test files]
 ?   	github.com/samson/customer-manage-platform/backend/cmd/migrate	[no test files]
-ok  	github.com/samson/customer-manage-platform/backend/cmd/server	0.546s
-ok  	github.com/samson/customer-manage-platform/backend/internal/customer	49.815s
-ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarbackup	0.581s
-ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage	0.483s
-ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore	1.357s
-ok  	github.com/samson/customer-manage-platform/backend/internal/dashboard	2.790s
-ok  	github.com/samson/customer-manage-platform/backend/internal/dataexport	7.210s
-ok  	github.com/samson/customer-manage-platform/backend/internal/order	16.600s
-ok  	github.com/samson/customer-manage-platform/backend/internal/package	7.865s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/server	0.515s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer	63.889s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarbackup	0.589s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage	0.495s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore	1.403s
+ok  	github.com/samson/customer-manage-platform/backend/internal/dashboard	3.226s
+ok  	github.com/samson/customer-manage-platform/backend/internal/dataexport	7.496s
+ok  	github.com/samson/customer-manage-platform/backend/internal/order	18.499s
+ok  	github.com/samson/customer-manage-platform/backend/internal/package	7.226s
 ?   	github.com/samson/customer-manage-platform/backend/internal/platform/auth	[no test files]
 ?   	github.com/samson/customer-manage-platform/backend/internal/platform/clock	[no test files]
-ok  	github.com/samson/customer-manage-platform/backend/internal/platform/config	0.495s
-ok  	github.com/samson/customer-manage-platform/backend/internal/platform/httpapi	24.346s
-ok  	github.com/samson/customer-manage-platform/backend/internal/platform/idempotency	1.813s
-ok  	github.com/samson/customer-manage-platform/backend/internal/platform/store	19.581s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/config	0.622s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/httpapi	29.822s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/idempotency	1.939s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/store	21.817s
 ?   	github.com/samson/customer-manage-platform/backend/internal/platform/webui	[no test files]
-ok  	github.com/samson/customer-manage-platform/backend/internal/reminder	7.881s
-ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest	27.956s
-ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram	0.469s
-ok  	github.com/samson/customer-manage-platform/backend/internal/schedule	6.232s
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder	10.300s
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest	30.485s
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram	0.566s
+ok  	github.com/samson/customer-manage-platform/backend/internal/schedule	6.846s
 ?   	github.com/samson/customer-manage-platform/backend/internal/settings	[no test files]
 cd frontend && npm run test:package-price
 
 > frontend@0.0.0 test:package-price
 > node --test --experimental-transform-types scripts/package-price.test.ts
 
-(node:84894) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(node:72525) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-✔ package price input accepts cents precision only (0.361458ms)
-✔ package price validation rejects unsupported precision (0.12925ms)
-✔ package price conversion does not round invalid precision (0.182542ms)
-✔ package price cents display preserves editable decimal text (0.05375ms)
+✔ package price input accepts cents precision only (0.334917ms)
+✔ package price validation rejects unsupported precision (0.107375ms)
+✔ package price conversion does not round invalid precision (0.179584ms)
+✔ package price cents display preserves editable decimal text (0.053166ms)
 ℹ tests 4
 ℹ suites 0
 ℹ pass 4
@@ -76,64 +76,65 @@ cd frontend && npm run test:package-price
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 83.005541
+ℹ duration_ms 84.290166
 cd frontend && npm run test:api-client
 
 > frontend@0.0.0 test:api-client
 > node --test --experimental-transform-types scripts/api-client.test.ts
 
-(node:84919) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(node:72549) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-✔ ApiError preserves generated typed details (10.069666ms)
-✔ order client sends schedulable_at and Idempotency-Key (0.493042ms)
-✔ schedule client sends range and per-attempt key (0.315209ms)
-ℹ tests 3
+✔ ApiError preserves generated typed details (16.122041ms)
+✔ order client sends schedulable_at and Idempotency-Key (0.465583ms)
+✔ schedule client sends range and per-attempt key (0.75525ms)
+✔ a protected 401 clears the token before the page handles navigation (0.268375ms)
+ℹ tests 4
 ℹ suites 0
-ℹ pass 3
+ℹ pass 4
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 138.830541
+ℹ duration_ms 98.164375
 cd frontend && npm run test:schedule
 
 > frontend@0.0.0 test:schedule
 > node --test --experimental-transform-types scripts/schedule.test.ts
 
-(node:84944) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(node:72572) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-✔ month grid starts Monday and always contains 42 days (2.527875ms)
-✔ calendar query dates require a real calendar date, not only a matching shape (0.581833ms)
-✔ slot projection preserves half-open local day membership (5.775125ms)
-✔ account natural day follows 23 and 25 hour DST transitions (0.82325ms)
-✔ nonexistent local time is rejected and repeated time requires occurrence (1.201084ms)
-✔ account dates convert without browser timezone assumptions (0.25875ms)
-✔ calendar model sorts stably and counts unique conflicts inside each local day (1.603542ms)
-✔ pending journal and handoff draft use separate expiry boundaries (0.552875ms)
-✔ a sent backfill request preserves its draft between the 2 and 24 hour boundaries (0.171875ms)
-✔ an unrelated pending flow does not extend an expired backfill draft (0.5925ms)
-✔ order_in_use details produce an account-timezone calendar deep link (0.189625ms)
-✔ known slot recovery links include the account-local date for cross-month navigation (0.105166ms)
-✔ status sync recovery derives the known slot date from its source draft (0.083959ms)
-✔ malformed order_in_use details fall back to the calendar without guessing a date (0.032459ms)
-✔ pending storage failure prevents the create request (0.18725ms)
-✔ an existing tab flow blocks a second flow without overwriting it (0.066958ms)
-✔ automatic replay keeps the original normalized body and attempt key (0.046792ms)
-✔ expired pending flow cannot replay automatically (0.070375ms)
-✔ request result knowledge follows the persisted phase facts (0.05725ms)
-✔ create failure classification never treats an idempotency binding conflict as a new attempt (0.0375ms)
-✔ deterministic failure rotates only the changed current step attempt (0.19425ms)
-✔ backfill completion persists pending id, then draft id, then clears pending (0.13175ms)
-✔ backfill local persistence retries do not repeat a known order request (0.224ms)
-✔ schedule backfill timestamps are pruned by the final order status (0.068709ms)
-✔ completed handoff restores the original local range, note, customer, and order (0.211083ms)
-✔ schedule dialog stays closed during backfill handoff and reopens on return (0.053125ms)
-✔ calendar drawer cannot cover an open schedule dialog (0.030375ms)
-✔ recovery actions distinguish unknown, customer change, and status sync (0.081209ms)
-✔ only path A can compensate its created order and expired recovery only abandons (0.051917ms)
-✔ editing keeps the current scheduled order visible when it is excluded from candidates (0.045375ms)
-✔ status sync searches refreshed customer pages before stable unfiltered fallback (0.144417ms)
-✔ scheduled and later non-cancelled states satisfy status sync (0.039625ms)
+✔ month grid starts Monday and always contains 42 days (2.567542ms)
+✔ calendar query dates require a real calendar date, not only a matching shape (0.593167ms)
+✔ slot projection preserves half-open local day membership (5.270334ms)
+✔ account natural day follows 23 and 25 hour DST transitions (0.62875ms)
+✔ nonexistent local time is rejected and repeated time requires occurrence (1.014833ms)
+✔ account dates convert without browser timezone assumptions (0.229167ms)
+✔ calendar model sorts stably and counts unique conflicts inside each local day (1.744292ms)
+✔ pending journal and handoff draft use separate expiry boundaries (0.488291ms)
+✔ a sent backfill request preserves its draft between the 2 and 24 hour boundaries (0.138417ms)
+✔ an unrelated pending flow does not extend an expired backfill draft (0.507667ms)
+✔ order_in_use details produce an account-timezone calendar deep link (0.192167ms)
+✔ known slot recovery links include the account-local date for cross-month navigation (0.1165ms)
+✔ status sync recovery derives the known slot date from its source draft (0.085833ms)
+✔ malformed order_in_use details fall back to the calendar without guessing a date (0.0385ms)
+✔ pending storage failure prevents the create request (0.147917ms)
+✔ an existing tab flow blocks a second flow without overwriting it (0.042542ms)
+✔ automatic replay keeps the original normalized body and attempt key (0.03525ms)
+✔ expired pending flow cannot replay automatically (0.061792ms)
+✔ request result knowledge follows the persisted phase facts (0.048625ms)
+✔ create failure classification never treats an idempotency binding conflict as a new attempt (0.037292ms)
+✔ deterministic failure rotates only the changed current step attempt (0.200666ms)
+✔ backfill completion persists pending id, then draft id, then clears pending (0.124833ms)
+✔ backfill local persistence retries do not repeat a known order request (0.232417ms)
+✔ schedule backfill timestamps are pruned by the final order status (0.066917ms)
+✔ completed handoff restores the original local range, note, customer, and order (0.156167ms)
+✔ schedule dialog stays closed during backfill handoff and reopens on return (0.05325ms)
+✔ calendar drawer cannot cover an open schedule dialog (0.033667ms)
+✔ recovery actions distinguish unknown, customer change, and status sync (0.082875ms)
+✔ only path A can compensate its created order and expired recovery only abandons (0.053417ms)
+✔ editing keeps the current scheduled order visible when it is excluded from candidates (0.044083ms)
+✔ status sync searches refreshed customer pages before stable unfiltered fallback (0.153417ms)
+✔ scheduled and later non-cancelled states satisfy status sync (0.079875ms)
 ℹ tests 32
 ℹ suites 0
 ℹ pass 32
@@ -141,13 +142,13 @@ cd frontend && npm run test:schedule
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 155.901666
+ℹ duration_ms 159.37275
 cd frontend && npm run test:avatar-layout
 
 > frontend@0.0.0 test:avatar-layout
 > node --test scripts/avatar-layout.test.mjs
 
-✔ customer profile flex growth excludes the avatar (0.455042ms)
+✔ customer profile flex growth excludes the avatar (0.45875ms)
 ℹ tests 1
 ℹ suites 0
 ℹ pass 1
@@ -155,18 +156,18 @@ cd frontend && npm run test:avatar-layout
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 36.882958
+ℹ duration_ms 36.051959
 cd frontend && npm run test:telegram-digest
 
 > frontend@0.0.0 test:telegram-digest
 > node --test --experimental-transform-types scripts/telegram-digest.test.ts
 
-(node:85067) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(node:72648) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-✔ bind-token API wrapper posts to the generated contract and never persists response (9.312083ms)
-✔ deep-link opener uses noopener,noreferrer and reports popup blocking (0.105416ms)
-✔ Settings page exposes binding states without rendering secrets or storage/log sinks (2.505667ms)
-✔ Telegram binding card keeps mobile wrapping and keyboard focus contracts (0.444625ms)
+✔ bind-token API wrapper posts to the generated contract and never persists response (9.279333ms)
+✔ deep-link opener uses noopener,noreferrer and reports popup blocking (0.142292ms)
+✔ Settings page exposes binding states without rendering secrets or storage/log sinks (3.054417ms)
+✔ Telegram binding card keeps mobile wrapping and keyboard focus contracts (0.523708ms)
 ℹ tests 4
 ℹ suites 0
 ℹ pass 4
@@ -174,22 +175,22 @@ cd frontend && npm run test:telegram-digest
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 92.103125
+ℹ duration_ms 92.616334
 cd frontend && npm run test:data-export
 
 > frontend@0.0.0 test:data-export
 > node --test --experimental-transform-types scripts/data-export.test.ts
 
-(node:85093) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(node:72671) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-✔ fetchDataExport sends Bearer and returns a complete JSON Blob with the exact server filename (11.602125ms)
-✔ fetchDataExport accepts only application/json base media type with legal parameters (2.161208ms)
-✔ fetchDataExport accepts only the whole fixed filename and otherwise uses a safe UTC fallback (2.656917ms)
-✔ fetchDataExport reuses ApiError for 500 and 401 responses (0.482791ms)
-✔ body/blob rejection returns no result and download collaboration creates no object URL (0.152833ms)
-✔ download collaboration triggers once and always releases its object URL (0.350292ms)
-✔ DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-safe contracts (1.286333ms)
-✔ DataExportCard relies on native button keyboard behavior and shared mobile-safe styles (0.652459ms)
+✔ fetchDataExport sends Bearer and returns a complete JSON Blob with the exact server filename (12.590666ms)
+✔ fetchDataExport accepts only application/json base media type with legal parameters (1.805291ms)
+✔ fetchDataExport accepts only the whole fixed filename and otherwise uses a safe UTC fallback (4.874ms)
+✔ fetchDataExport reuses ApiError for 500 and 401 responses (0.4425ms)
+✔ body/blob rejection returns no result and download collaboration creates no object URL (0.150083ms)
+✔ download collaboration triggers once and always releases its object URL (0.349042ms)
+✔ DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-safe contracts (1.571041ms)
+✔ DataExportCard relies on native button keyboard behavior and shared mobile-safe styles (0.638958ms)
 ℹ tests 8
 ℹ suites 0
 ℹ pass 8
@@ -197,25 +198,45 @@ cd frontend && npm run test:data-export
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 113.891542
+ℹ duration_ms 107.955709
 cd frontend && npm run test:v1-hardening
 
 > frontend@0.0.0 test:v1-hardening
 > node --test --experimental-transform-types scripts/v1-hardening.test.ts
 
-(node:85121) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(node:72694) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-✔ page read states have one observable presentation in the fixed priority order (0.566958ms)
-ℹ tests 1
+✔ page read states have one observable presentation in the fixed priority order (0.819125ms)
+✔ page-owned data becomes stale on refresh failure without becoming empty (0.101959ms)
+✔ initial failure and successful empty remain mutually exclusive (0.053667ms)
+✔ customer results keep one page-owned query across the 768/769 responsive boundary (0.980959ms)
+✔ note keyboard actions separate submit, IME composition, multiline, and cancel (0.068666ms)
+✔ note submission gate rejects a repeated submit until the active request settles (0.056625ms)
+✔ empty customer picker keyboard navigation never exposes an invalid active option (0.085375ms)
+✔ mobile calendar keeps write actions hidden while dense and long drawer content stays bounded (0.946542ms)
+✔ mobile shell keeps Customers and Calendar direct with safe-area and touch-size contracts (0.808917ms)
+ℹ tests 9
 ℹ suites 0
-ℹ pass 1
+ℹ pass 9
 ℹ fail 0
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 72.514667
+ℹ duration_ms 98.706292
+./scripts/test-production-preflight.sh
+production preflight fixture tests: passed (22 cases)
+bash ./scripts/test-v1-ops-common.sh
+v1 ops common fixture tests: passed (15 cases)
+python3 ./scripts/lib/v1-ops-package-selftest.py
+v1 ops package helper self-test: passed
+bash ./scripts/test-v1-ops-backup-restore-safety.sh
+v1 ops package helper self-test: passed
+stage/restore-failure-stop=pass
+stage/restore-failure-stop=pass
+v1 ops backup/restore safety test: passed
 ./scripts/test-v1-ops-contract.sh
 v1 ops catalog contract: passed (148 cases; negative corpus rejected)
+v1 ops results contract: passed (148 cases)
 cd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
 cd frontend && npm run generate
 
@@ -223,5 +244,7 @@ cd frontend && npm run generate
 > openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts
 
 ✨ openapi-typescript 7.13.0
-🚀 ../api/openapi.yaml → src/api/schema.d.ts [43.8ms]
+🚀 ../api/openapi.yaml → src/api/schema.d.ts [71ms]
 git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts
+
+exit_code: 0

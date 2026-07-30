@@ -34,6 +34,7 @@ var (
 	ErrAvatarLocalRootMissing         = errors.New("AVATAR_LOCAL_ROOT 未设置")
 	ErrAvatarLocalRequireMountInvalid = errors.New("AVATAR_LOCAL_REQUIRE_MOUNT 必须是 true 或 false")
 	ErrAvatarLocalRootNotMount        = errors.New("AVATAR_LOCAL_ROOT 不是可验证的独立挂载点")
+	ErrAvatarLocalRootUnavailable     = errors.New("AVATAR_LOCAL_ROOT 不可用")
 )
 
 // Load 读取环境变量并校验必填项。
@@ -124,14 +125,14 @@ func parseRequiredBool(name, raw string) (bool, error) {
 func prepareAvatarLocalRoot(root string, requireMount bool) (string, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return "", fmt.Errorf("resolve AVATAR_LOCAL_ROOT: %w", err)
+		return "", fmt.Errorf("%w: resolve: %w", ErrAvatarLocalRootUnavailable, err)
 	}
 	if err := os.MkdirAll(absRoot, 0o750); err != nil {
-		return "", fmt.Errorf("create AVATAR_LOCAL_ROOT: %w", err)
+		return "", fmt.Errorf("%w: create: %w", ErrAvatarLocalRootUnavailable, err)
 	}
 	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
-		return "", fmt.Errorf("resolve real AVATAR_LOCAL_ROOT: %w", err)
+		return "", fmt.Errorf("%w: resolve real path: %w", ErrAvatarLocalRootUnavailable, err)
 	}
 	if requireMount {
 		mounted, err := isLinuxMountPoint(realRoot)
@@ -143,7 +144,7 @@ func prepareAvatarLocalRoot(root string, requireMount bool) (string, error) {
 		}
 	}
 	if err := verifyAvatarLocalRootWritable(realRoot); err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: writable attestation: %w", ErrAvatarLocalRootUnavailable, err)
 	}
 	return realRoot, nil
 }
