@@ -12,6 +12,7 @@ import OrdersPage from './pages/OrdersPage'
 import PackagesPage from './pages/PackagesPage'
 import RemindersPage from './pages/RemindersPage'
 import SettingsPage from './pages/SettingsPage'
+import WelcomePage from './pages/WelcomePage'
 import { getToken, getTokenSnapshot, subscribeToken } from './auth/token'
 
 // 守卫路由骨架：后续域 feature 的受保护页面都挂在 RequireAuth 之下（design 2.2 扩展点）
@@ -24,10 +25,20 @@ function RequireAuth({ children }: { children: ReactElement }) {
   return children
 }
 
+// 根路径按登录态分流：未登录看欢迎页，已登录直接进经营台
+function RootEntry() {
+  useSyncExternalStore(subscribeToken, getTokenSnapshot)
+  if (getToken()) {
+    return <Navigate to="/dashboard" replace />
+  }
+  return <WelcomePage />
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={<RootEntry />} />
       <Route
         element={
           <RequireAuth>
@@ -35,7 +46,6 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/new" element={<CustomerNewPage />} />
