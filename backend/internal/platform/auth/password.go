@@ -8,6 +8,9 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// 固定 dummy bcrypt 路径用于不存在邮箱，避免账号枚举的显著计算差异。
+const dummyPasswordHash = "$2y$10$lNULji2xZgvMjtVuxKtdzu2hilYXd60KQGiqPajFBpzuQXY9usGSS"
+
 // HashPassword 生成 bcrypt 派生验证子；入库的是它而非明文（硬规则 4）。
 func HashPassword(password string) (string, error) {
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

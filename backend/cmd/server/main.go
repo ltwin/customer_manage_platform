@@ -1,5 +1,5 @@
 // Command server 是 CRM 单体后端入口。
-// 启动序（design 2.2）：加载 env 配置 → migrate up → ensure 默认账号 → HTTP 监听。
+// 启动序（design 2.2）：加载 env 配置 → migrate up → HTTP 监听。
 package main
 
 import (
@@ -22,6 +22,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/authmail"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
@@ -91,6 +92,14 @@ func classifyConfigStartupFailure(err error) error {
 		key = "DATABASE_URL"
 	case errors.Is(err, config.ErrAuthTokenSecretMissing):
 		key = "AUTH_TOKEN_SECRET"
+	case errors.Is(err, config.ErrPublicBaseURLMissing), errors.Is(err, config.ErrPublicBaseURLInvalid):
+		key = "PUBLIC_BASE_URL"
+	case errors.Is(err, config.ErrAuthPublicRegistrationInvalid):
+		key = "AUTH_PUBLIC_REGISTRATION_ENABLED"
+	case errors.Is(err, config.ErrAuthMailDriverInvalid):
+		key = "AUTH_MAIL_DRIVER"
+	case errors.Is(err, config.ErrResendAPIKeyMissing):
+		key = "RESEND_API_KEY"
 	case errors.Is(err, config.ErrAvatarStorageDriverInvalid):
 		key = "AVATAR_STORAGE_DRIVER"
 	case errors.Is(err, config.ErrAvatarLocalRootMissing),
@@ -122,13 +131,6 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	defer s.Close()
 
-	created, err := auth.EnsureDefaultAccount(ctx, s, cfg.SeedAdminPassword)
-	if err != nil {
-		return newStartupFailure("account-seed", "SEED_ADMIN_PASSWORD", "database", err)
-	}
-	if created {
-		logger.Info("已创建默认账号（seed 完成后可从环境移除 SEED_ADMIN_PASSWORD）")
-	}
 	objects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
 	if err != nil {
 		return newStartupFailure("avatar-store-init", "AVATAR_LOCAL_ROOT", "filesystem", err)
@@ -168,24 +170,38 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		logger.Info("telegram integration enabled", slog.String("status", "active"))
 	}
 
+	tokenIssuer := auth.NewTokenIssuer(cfg.AuthTokenSecret).WithIdentity(cfg.AuthTokenIssuer, "photographer-crm-web")
+	authOptions := []auth.ServiceOption{auth.WithPublicBaseURL(cfg.PublicBaseURL)}
+	switch cfg.AuthMailDriver {
+	case "sink":
+		authOptions = append(authOptions, auth.WithAuthMailSender(authmail.NewSink(logger, time.Now)))
+	case "resend":
+		authOptions = append(authOptions, auth.WithAuthMailSender(
+			authmail.NewResend(cfg.ResendAPIKey, cfg.AuthMailFrom, logger),
+		))
+	}
+	authService := auth.NewService(s, tokenIssuer, authOptions...)
+	authReplayRunner := newAuthReplaySweepRunner(authService, logger)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Logger:          logger,
-		DB:              s,
-		ScopeFactory:    s,
-		Auth:            auth.NewService(s, auth.NewTokenIssuer(cfg.AuthTokenSecret)),
-		Customer:        customer.NewService(customer.NewPostgresRepository()),
-		Orders:          order.NewService(order.NewPostgresRepository()),
-		Packages:        pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
-		Idempotency:     idempotency.NewExecutor(),
-		AccountTimezone: settingsSvc,
-		Schedule:        schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
-		Avatar:          avatarApp,
-		AvatarProcessor: avatarimage.NewProcessor(),
-		Settings:        settingsSvc,
-		Reminders:       reminderSvc,
-		Dashboard:       dashboardSvc,
-		DataExport:      dataExportSvc,
-		TelegramBinding: telegramBinding,
+		Logger:                    logger,
+		DB:                        s,
+		ScopeFactory:              s,
+		Auth:                      authService,
+		PublicBaseURL:             cfg.PublicBaseURL,
+		PublicRegistrationEnabled: cfg.AuthPublicRegistrationEnabled,
+		Customer:                  customer.NewService(customer.NewPostgresRepository()),
+		Orders:                    order.NewService(order.NewPostgresRepository()),
+		Packages:                  pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
+		Idempotency:               idempotency.NewExecutor(),
+		AccountTimezone:           settingsSvc,
+		Schedule:                  schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
+		Avatar:                    avatarApp,
+		AvatarProcessor:           avatarimage.NewProcessor(),
+		Settings:                  settingsSvc,
+		Reminders:                 reminderSvc,
+		Dashboard:                 dashboardSvc,
+		DataExport:                dataExportSvc,
+		TelegramBinding:           telegramBinding,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -194,7 +210,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	runnerDone := make(chan struct{})
-	runners := []backgroundRunner{maintenance, reminderRunner}
+	runners := []backgroundRunner{maintenance, reminderRunner, authReplayRunner}
 	if telegramRunner != nil {
 		runners = append(runners, telegramRunner)
 	}

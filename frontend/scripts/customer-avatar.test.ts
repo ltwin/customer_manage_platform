@@ -28,7 +28,12 @@ Object.defineProperty(URL, 'revokeObjectURL', {
 
 const media = await import('../src/components/customers/customerAvatarMedia.ts')
 const picker = await import('../src/components/customers/customerPickerModel.ts')
-const token = await import('../src/auth/token.ts')
+const session = await import('../src/auth/session.ts')
+const authAccount = {
+	id: 'account-fixture', email: 'fixture@example.invalid',
+	created_at: '2026-07-31T00:00:00Z', timezone: 'Asia/Shanghai',
+}
+const access = (token: string) => ({ access_token: token, token_type: 'Bearer' as const, expires_in: 600 as const })
 
 test('grapheme fallback keeps emoji sequences intact', () => {
 	assert.equal(media.firstGrapheme('👩‍🎨 小茶'), '👩‍🎨')
@@ -37,7 +42,7 @@ test('grapheme fallback keeps emoji sequences intact', () => {
 })
 
 test('media cache deduplicates consumers and revokes only after the final release', async () => {
-	token.setToken('token-a')
+	session.setAuthenticated(access('token-a'), authAccount)
 	const first = media.acquireAvatarMedia('/api/v1/customers/c/avatar/content?v=sha256-a', 'ar-1')
 	const second = media.acquireAvatarMedia('/api/v1/customers/c/avatar/content?v=sha256-a', 'ar-1')
 	assert.equal(await first.url, await second.url)
@@ -52,7 +57,7 @@ test('revision and auth generation changes do not reuse prior media', async () =
 	const revision = media.acquireAvatarMedia('/api/v1/customers/c/avatar/content?v=sha256-a', 'ar-2')
 	await revision.url
 	assert.equal(fetches, 2)
-	token.clearToken()
+	session.setAnonymous()
 	assert.equal(revoked.length, 2)
 	const nextAuth = media.acquireAvatarMedia('/api/v1/customers/c/avatar/content?v=sha256-a', 'ar-2')
 	await nextAuth.url

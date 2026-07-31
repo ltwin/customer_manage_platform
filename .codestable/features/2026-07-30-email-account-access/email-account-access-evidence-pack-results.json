@@ -1,0 +1,40 @@
+{
+  "gate_id": "evidence-pack",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "out": ".codestable/features/2026-07-30-email-account-access/email-account-access-evidence-pack.md",
+      "providers": {
+        "archguard": {
+          "status": "skipped",
+          "reason": "archguard collection disabled",
+          "warnings": []
+        },
+        "meta_cc": {
+          "status": "skipped",
+          "reason": "meta-cc collection disabled",
+          "warnings": []
+        }
+      }
+    }
+  ],
+  "providers": {},
+  "feature": "2026-07-30-email-account-access",
+  "inputs": {
+    "design": ".codestable/features/2026-07-30-email-account-access/email-account-access-design.md",
+    "checklist": ".codestable/features/2026-07-30-email-account-access/email-account-access-checklist.yaml",
+    "out": ".codestable/features/2026-07-30-email-account-access/email-account-access-evidence-pack.md",
+    "dod_results": ".codestable/features/2026-07-30-email-account-access/email-account-access-dod-results.json",
+    "gate_results": ".codestable/features/2026-07-30-email-account-access/email-account-access-gate-results.json"
+  },
+  "input_digests": {
+    "design": "948bcb7a4665b5b5acd8f86e333dd11ea0f65f0cd4e884d3a9e51de30e887b2d",
+    "checklist": "c0b7d24be3aa1d6ea581a07f01c87c542ba2a889df854ab2deb92bf2890113c8",
+    "dod_results": "8952a06ac9492cb8431d51f1ec26b91707bb5fd7b272734afc6e52627e03acae",
+    "gate_results": "fb996b37f6cf17204e9e1e03240d341fd15a3e074e4774636bb4c4141eb07720",
+    "out": "74e6e8a87dbaa9d073761fda7050db4f18703a8cc514fb23c41af9ec79cce6c5"
+  }
+}

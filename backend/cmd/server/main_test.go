@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,6 +23,101 @@ func TestNewHTTPServerUsesProductionConnectionTimeouts(t *testing.T) {
 	}
 	if server.IdleTimeout != 60*time.Second {
 		t.Fatalf("IdleTimeout: got %v, want 60s", server.IdleTimeout)
+	}
+}
+
+func TestServerStartupDoesNotReferenceLegacySeed(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read server composition root: %v", err)
+	}
+	for _, forbidden := range []string{"EnsureDefaultAccount", "SEED_ADMIN_PASSWORD", "account-seed"} {
+		if strings.Contains(string(source), forbidden) {
+			t.Fatalf("server startup still references retired seed path %q", forbidden)
+		}
+	}
+}
+
+func TestServerComposesAuthReplaySweepRunner(t *testing.T) {
+	t.Parallel()
+	source, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("read server composition root: %v", err)
+	}
+	if !strings.Contains(string(source), "newAuthReplaySweepRunner(authService") {
+		t.Fatal("server startup does not compose the auth replay ciphertext sweep runner")
+	}
+}
+
+func TestAuthReplaySweepRunnerStartsImmediatelyRepeatsAndStopsOnCancel(t *testing.T) {
+	sweeper := &replaySweepStub{calls: make(chan int, 3)}
+	runner := newAuthReplaySweepRunner(sweeper, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
+	ticks := make(chan time.Time)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.run(ctx, ticks)
+	}()
+
+	assertSweepBatch(t, sweeper.calls)
+	ticks <- time.Now()
+	assertSweepBatch(t, sweeper.calls)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("auth replay sweep runner did not stop after cancellation")
+	}
+}
+
+func TestAuthReplaySweepRunnerLogsOnlyStableFailureFields(t *testing.T) {
+	const sensitive = "ciphertext-or-database-value"
+	var output bytes.Buffer
+	runner := newAuthReplaySweepRunner(
+		&replaySweepStub{err: errors.New(sensitive)},
+		slog.New(slog.NewJSONHandler(&output, nil)),
+	)
+
+	runner.sweep(context.Background())
+
+	logged := output.String()
+	for _, expected := range []string{
+		`"event":"auth.replay_ciphertext_sweep"`,
+		`"result":"failed"`,
+		`"failure_class":"internal"`,
+	} {
+		if !strings.Contains(logged, expected) {
+			t.Fatalf("auth replay sweep log missing %q: %s", expected, logged)
+		}
+	}
+	if strings.Contains(logged, sensitive) {
+		t.Fatalf("auth replay sweep log leaked raw error: %s", logged)
+	}
+}
+
+type replaySweepStub struct {
+	calls chan int
+	err   error
+}
+
+func (s *replaySweepStub) SweepExpiredReplayCiphertexts(context.Context, int) (int64, error) {
+	if s.calls != nil {
+		s.calls <- authReplaySweepBatch
+	}
+	return 0, s.err
+}
+
+func assertSweepBatch(t *testing.T, calls <-chan int) {
+	t.Helper()
+	select {
+	case batch := <-calls:
+		if batch != authReplaySweepBatch {
+			t.Fatalf("sweep batch: got %d, want %d", batch, authReplaySweepBatch)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("auth replay sweep was not called")
 	}
 }
 

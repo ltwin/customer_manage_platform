@@ -1,5 +1,5 @@
 import { fetchAvatarBlob } from '../../api/client.ts'
-import { getAuthGeneration, subscribeToken } from '../../auth/token.ts'
+import { getAuthGeneration, subscribeAuth } from '../../auth/session.ts'
 
 type Entry = {
 	refs: number
@@ -65,7 +65,7 @@ export function clearAvatarMediaCache(): void {
 	entries.clear()
 }
 
-subscribeToken(clearAvatarMediaCache)
+subscribeAuth(clearAvatarMediaCache)
 
 export function firstGrapheme(value: string): string {
 	const normalized = value.trim()

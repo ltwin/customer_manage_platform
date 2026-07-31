@@ -4,10 +4,14 @@ import "github.com/gin-gonic/gin"
 
 // 错误码集合以 §4.1 为准，不自造；conflict 子码随各域 feature 生长。
 const (
-	CodeValidationFailed = "validation_failed"
-	CodeUnauthorized     = "unauthorized"
-	CodeNotFound         = "not_found"
-	CodeInternal         = "internal"
+	CodeValidationFailed          = "validation_failed"
+	CodeUnauthorized              = "unauthorized"
+	CodeNotFound                  = "not_found"
+	CodeInternal                  = "internal"
+	CodeForbidden                 = "forbidden"
+	CodeEmailVerificationRequired = "email_verification_required"
+	CodeInvalidOrExpiredToken     = "invalid_or_expired_token"
+	CodeRegistrationDisabled      = "registration_disabled"
 
 	// customer-profile-complete 的 409 conflict 子码（design D3/D4/D5）
 	CodeCustomerMerged = "customer_merged"

@@ -34,7 +34,7 @@ npm ci                       # 首次启动或依赖缺失时先安装；否则�
 npm run dev                  # 打开 http://localhost:5173
 ```
 
-启动序：加载配置 → migrate up → ensure 默认账号 → HTTP 监听。首次启动（accounts 为空）必须提供 `SEED_ADMIN_PASSWORD`，否则 fail-fast；**seed 完成后可从环境移除该变量**。
+启动序：加载配置 → migrate up → HTTP 监听。空数据库允许直接启动，server 不再创建默认账号，也不读取 `SEED_ADMIN_PASSWORD`。首账号必须经下面的受信 `accountctl auth bootstrap` 创建。
 
 ### 常用命令
 
@@ -47,9 +47,21 @@ npm run dev                  # 打开 http://localhost:5173
 
 ## 最短使用路径
 
-首次启动时，空数据库必须通过 `SEED_ADMIN_PASSWORD` 创建唯一的初始账号；登录成功并确认
-`/healthz` 为 `{"status":"ok"}` 后立即从运行环境删除该 seed 密码，再以
-`--seed-state initialized` 运行生产预检。日常经营的最短路径是：
+首次启动时先让 server 完成 migrate，再在同一受控环境中创建首账号。密码只通过临时环境变量
+注入，不能进入 argv、shell 历史或日志；先 dry-run，再正式执行：
+
+```bash
+cd backend
+export ACCOUNTCTL_AUTH_PASSWORD='由密码管理器临时注入的强密码'
+go run ./cmd/accountctl auth bootstrap --email owner@example.com --dry-run
+go run ./cmd/accountctl auth bootstrap --email owner@example.com
+unset ACCOUNTCTL_AUTH_PASSWORD
+```
+
+Dry-run 只返回脱敏计划，不写库、不生成 token、不发邮件；正式命令会在数据库 admission guard
+内重新检查零账号条件，并发送验证邮件。投递失败时账号会保持 pending，检查 provider 后调用
+`/api/v1/auth/email/resend`，不要重跑 bootstrap。已有任何账号时命令固定拒绝，应改走公开注册或
+legacy claim。owner 完成邮件验证并确认 `/healthz` 为 `{"status":"ok"}` 后，日常经营的最短路径是：
 
 1. 在「客户」建立客户档案，可补充社交身份、备注与头像。
 2. 在「套系」维护报价，再在「订单」关联客户与套系并推进状态、尾款。
@@ -120,15 +132,39 @@ context 解析出的本机绝对 Unix socket；解析后每个 Engine 调用都�
 active/default context。`CRM_ENV_FILE=/etc/crm/env` 让 compose interpolation 与 app
 `env_file` 使用同一文件，避免暗中回退到仓库 `.env`。
 
+`--seed-state empty|initialized` 暂时作为旧运维调用的兼容参数保留，但两种状态都要求
+`SEED_ADMIN_PASSWORD` 缺失或为空。当前 `email-account-access` 阶段的 production preflight
+还会在 `AUTH_PUBLIC_REGISTRATION_ENABLED=true` 时固定失败并返回
+`public-auth-hardening-not-complete`；只有后续安全加固验收完成后才能解除该锁。
+
+### 旧账号认领与回滚演练
+
+升级前已有 seed 账号使用原地认领，不创建新 account、不改业务表 `account_id` 或头像 object：
+
+```bash
+cd backend
+go run ./cmd/accountctl auth claim-legacy --email owner@example.com --dry-run
+go run ./cmd/accountctl auth claim-legacy --email owner@example.com
+```
+
+正式命令只允许恰好一个 `legacy_unclaimed` 目标；同邮箱失败重试会替换旧 claim token。投递失败
+时检查 provider 后重跑相同 claim。验证完成后 `/me` 仍返回原 account ID。仓库内的
+`./scripts/test-auth-legacy-cutover.sh` 会用 synthetic PostgreSQL fixture 对比客户、订单、档期、
+提醒、设置、checkpoint 和头像 checksum，并演练 migration 0012 回滚：legacy-only 数据可以
+安全 down；只要存在新式 `password_hash IS NULL` 账号就固定以
+`auth_schema_down_blocked_new_accounts` 阻断。仓库不提供生产 down 命令；真实 cutover/rollback
+仍需独立授权。旧 binary 无法使用新式账号，这是明确的降级边界。
+
 ## 环境变量
 
 清单见 `.env.example`（key 全集 + 注释）。凭证红线：真实值只经环境注入，不入库、不入 git。
 
-- **token 轮换**：更换 `AUTH_TOKEN_SECRET` 并重启即吊销全部已发 token（JWT 有效期 30 天）。
-- **改密现状**：首版无改密 API；改密 = 清空 accounts 表后用新 `SEED_ADMIN_PASSWORD` 重启 seed（或直接 UPDATE password_hash）。
+- **token 轮换**：Access JWT 有效期 10 分钟；refresh session 在服务端 rotation。更换 `AUTH_TOKEN_SECRET` 会使旧 access/replay 密文失效，真实轮换仍需独立 runbook 与授权。
+- **改密现状**：本阶段尚未开放改密 API；禁止通过清空 accounts、恢复 seed 或直接 UPDATE hash 代替。密码恢复/修改由 `public-auth-hardening` 交付。
 - **DATABASE_URL / APP_DATABASE_URL / POSTGRES_PASSWORD**：用密码管理器生成并保存；数据库密码轮换需同步连接串并滚动重启。远程 PostgreSQL 必须启用 TLS，不能使用 `sslmode=disable`。
 - **AUTH_TOKEN_SECRET**：至少 32 个随机字符；轮换并重启会吊销所有现有 token。
-- **SEED_ADMIN_PASSWORD**：只在空数据库首次启动短暂注入，seed 后必须删除；已初始化环境保留非空值会被预检拒绝。
+- **ACCOUNTCTL_AUTH_PASSWORD**：仅在 bootstrap 命令进程内临时注入，不能写入 `.env`、argv 或日志；命令结束立即清除。
+- **SEED_ADMIN_PASSWORD**：已退役；server 不读取，production preflight 对任何非空值都拒绝。
 - **TELEGRAM_BOT_TOKEN / TELEGRAM_BOT_USERNAME**：服务端真实读取；BotFather 撤销/轮换 token 后同步环境并重启。禁用时两项都清空。
 
 ## 一致备份与恢复
@@ -139,7 +175,7 @@ production compose 将头像放在独立 named volume `avatar_data`，容器内�
 普通目录；`AVATAR_LOCAL_REQUIRE_MOUNT` 未设置时缺省为 `false`，也可显式设置为
 `false`。完整配置键见 `.env.example`。
 
-公开 backup/restore 脚本只支持以下目标：`compose-managed-db`、已经 seed、app/postgres 和
+公开 backup/restore 脚本只支持以下目标：`compose-managed-db`、已经完成账号初始化、app/postgres 和
 `avatar_data`/`pgdata` 都唯一存在、app 精确处于正常 `running` 或 Engine `exited`、本机 Unix
 Docker endpoint。binary、外部 PostgreSQL、远程 Engine、app absent 或 created/paused/
 restarting/dead 等异常态不在脚本支持范围内，V1 上线前必须由 operator 提供等价的

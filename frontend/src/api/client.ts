@@ -1,9 +1,18 @@
 // API client：类型来自契约 codegen（src/api/schema.d.ts），错误统一走封套（§4.1）。
 import type { components, paths } from './schema'
-import { clearToken, getToken } from '../auth/token.ts'
+import { authorizedFetch } from '../auth/session.ts'
+import { ApiError, publicRequest, request } from './transport.ts'
+import type { ErrorEnvelope } from './transport.ts'
+
+export { ApiError } from './transport.ts'
+export type { ApiErrorDetails } from './transport.ts'
 
 export type LoginResponse =
   paths['/auth/login']['post']['responses']['200']['content']['application/json']
+export type AuthCapabilities =
+  paths['/auth/capabilities']['get']['responses']['200']['content']['application/json']
+export type VerificationDispatch =
+  paths['/auth/register']['post']['responses']['202']['content']['application/json']
 export type Me = paths['/me']['get']['responses']['200']['content']['application/json']
 export type CustomerListResponse =
   paths['/customers']['get']['responses']['200']['content']['application/json']
@@ -63,58 +72,35 @@ export type DashboardSlot = Dashboard['today_slots'][number]
 export type DashboardUnpaidOrder = Dashboard['unpaid_orders']['items'][number]
 export type DashboardReminder = Dashboard['due_reminders'][number]
 
-type ErrorEnvelope = components['schemas']['ErrorEnvelope']
-export type ApiErrorDetails = NonNullable<ErrorEnvelope['error']['details']>
-
-export class ApiError extends Error {
-  readonly code: string
-  readonly status: number
-  readonly details?: ApiErrorDetails
-
-  constructor(status: number, code: string, message: string, details?: ApiErrorDetails) {
-    super(message)
-    this.code = code
-    this.status = status
-    this.details = details
-  }
+export function fetchAuthCapabilities(): Promise<AuthCapabilities> {
+  return publicRequest<AuthCapabilities>('/auth/capabilities')
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  headers.set('Content-Type', 'application/json')
-  const token = getToken()
-  if (token) {
-    headers.set('Authorization', `Bearer ${token}`)
-  }
-  const res = await fetch(`/api/v1${path}`, { ...init, headers })
-  if (!res.ok) {
-    let envelope: ErrorEnvelope | null = null
-    try {
-      envelope = (await res.json()) as ErrorEnvelope
-    } catch {
-      envelope = null
-    }
-    const code = envelope?.error.code ?? 'internal'
-    if (res.status === 401) {
-      clearToken()
-    }
-    throw new ApiError(
-      res.status,
-      code,
-      envelope?.error.message ?? `请求失败（${res.status}）`,
-      envelope?.error.details,
-    )
-  }
-  if (res.status === 204) {
-    return undefined as T
-  }
-  return (await res.json()) as T
-}
-
-export function login(password: string): Promise<LoginResponse> {
-  return request<LoginResponse>('/auth/login', {
+export function registerAccount(email: string, password: string): Promise<VerificationDispatch> {
+  return publicRequest<VerificationDispatch>('/auth/register', {
     method: 'POST',
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ email, password }),
+  })
+}
+
+export function resendVerification(email: string): Promise<VerificationDispatch> {
+  return publicRequest<VerificationDispatch>('/auth/email/resend', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function verifyEmail(token: string): Promise<LoginResponse> {
+  return publicRequest<LoginResponse>('/auth/email/verify', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
+}
+
+export function login(email: string, password: string): Promise<LoginResponse> {
+  return publicRequest<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
   })
 }
 
@@ -203,10 +189,7 @@ export function deleteCustomerAvatar(id: string, avatarRevision: string): Promis
 }
 
 export async function fetchAvatarBlob(url: string, signal: AbortSignal): Promise<Blob> {
-	const headers = new Headers()
-	const token = getToken()
-	if (token) headers.set('Authorization', `Bearer ${token}`)
-	const response = await fetch(url, { headers, signal })
+	const response = await authorizedFetch(url, { signal })
 	if (!response.ok) {
 		throw await apiErrorFromResponse(response)
 	}
@@ -223,9 +206,7 @@ const mediaTypeTokenPattern = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
 export async function fetchDataExport(): Promise<DataExportDownload> {
 	const headers = new Headers({ Accept: 'application/json' })
-	const token = getToken()
-	if (token) headers.set('Authorization', `Bearer ${token}`)
-	const response = await fetch('/api/v1/export', { headers })
+	const response = await authorizedFetch('/api/v1/export', { headers })
 	if (!response.ok) throw await apiErrorFromResponse(response)
 	if (!isJSONMediaType(response.headers.get('Content-Type'))) {
 		throw new ApiError(502, 'invalid_export_response', '导出响应不是有效的 application/json')
@@ -314,9 +295,7 @@ function localDataExportFilename(now = new Date()): string {
 
 async function mediaJSONRequest<T>(path: string, init: RequestInit): Promise<T> {
 	const headers = new Headers(init.headers)
-	const token = getToken()
-	if (token) headers.set('Authorization', `Bearer ${token}`)
-	const response = await fetch(`/api/v1${path}`, { ...init, headers })
+	const response = await authorizedFetch(`/api/v1${path}`, { ...init, headers })
 	if (!response.ok) throw await apiErrorFromResponse(response)
 	return (await response.json()) as T
 }
@@ -328,7 +307,6 @@ async function apiErrorFromResponse(response: Response): Promise<ApiError> {
 	} catch {
 		envelope = null
 	}
-	if (response.status === 401) clearToken()
 	return new ApiError(
 		response.status,
 		envelope?.error.code ?? 'internal',

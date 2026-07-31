@@ -3,6 +3,8 @@ package digest
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -10,6 +12,7 @@ import (
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
+	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -43,11 +46,47 @@ func startDigestPostgres(t *testing.T) (*store.Store, store.ScopedAccount) {
 	if err := db.CreateAccount(ctx, "acc_digest", "hash"); err != nil {
 		t.Fatalf("create account: %v", err)
 	}
+	activateLegacyTestAccount(t, db, "acc_digest")
 	accounts, err := db.AccountScopes(ctx)
 	if err != nil || len(accounts) != 1 {
 		t.Fatalf("account scopes: len=%d err=%v", len(accounts), err)
 	}
 	return db, accounts[0]
+}
+
+func activateLegacyTestAccount(t *testing.T, db *store.Store, id string) {
+	t.Helper()
+	mail := &activationMailSender{}
+	service := auth.NewService(
+		db,
+		auth.NewTokenIssuer("digest-test-account-activation-root"),
+		auth.WithAuthMailSender(mail),
+		auth.WithPublicBaseURL("https://digest.test"),
+	)
+	result, err := service.BeginLegacyClaim(context.Background(), id+"@digest.test", false)
+	if err != nil || result.State != auth.LegacyClaimReady || mail.wire == "" {
+		t.Fatalf("begin legacy test-account activation: state=%s err=%v", result.State, err)
+	}
+	if _, err := service.VerifyEmail(context.Background(), mail.wire); err != nil {
+		t.Fatalf("verify legacy test-account activation: %v", err)
+	}
+}
+
+type activationMailSender struct {
+	wire string
+}
+
+func (s *activationMailSender) Send(_ context.Context, mail auth.AuthMail) (auth.MailReceipt, error) {
+	actionURL, err := url.Parse(mail.ActionURL)
+	if err != nil {
+		return auth.MailReceipt{}, fmt.Errorf("parse activation action URL: %w", err)
+	}
+	fragment, err := url.ParseQuery(actionURL.Fragment)
+	if err != nil {
+		return auth.MailReceipt{}, fmt.Errorf("parse activation action fragment: %w", err)
+	}
+	s.wire = fragment.Get("token")
+	return auth.MailReceipt{ProviderMessageID: "digest-test-activation", AcceptedAt: time.Now().UTC()}, nil
 }
 
 func insertDelivery(t *testing.T, scope store.AccountScope, id, sourceKey string, now time.Time) {

@@ -77,8 +77,10 @@ func TestTelegramDigestMigrationUpDownAndConstraints(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("close before down migration: %v", err)
 	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("migrate down Telegram digest: %v", err)
+	for index, label := range []string{"account-auth", "Telegram digest"} {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatalf("migrate down %s (step %d): %v", label, index+1, err)
+		}
 	}
 	db, err = sql.Open("pgx", url)
 	if err != nil {

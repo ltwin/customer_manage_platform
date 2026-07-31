@@ -36,11 +36,13 @@ test:
 	cd frontend && npm run test:customer-money
 	cd frontend && npm run test:package-price
 	cd frontend && npm run test:api-client
+	cd frontend && npm run test:auth
 	cd frontend && npm run test:schedule
 	cd frontend && npm run test:avatar-layout
 	cd frontend && npm run test:telegram-digest
 	cd frontend && npm run test:data-export
 	cd frontend && npm run test:v1-hardening
+	./scripts/test-auth-legacy-cutover.sh
 	./scripts/test-production-preflight.sh
 	bash ./scripts/test-v1-ops-common.sh
 	python3 ./scripts/lib/v1-ops-package-selftest.py
@@ -52,9 +54,17 @@ generate: frontend/node_modules
 	cd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
 	cd frontend && npm run generate
 
-# 漂移检查：生成物必须与契约同步提交（CMD-002 / A11）
-generate-check: generate
-	git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts
+# 漂移检查：比较生成前后内容，允许 feature 在提交前验证已同步的生成物（CMD-002 / A11）
+generate-check: frontend/node_modules
+	@tmp_dir="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp_dir"' EXIT; \
+	cp backend/internal/platform/httpapi/api.gen.go "$$tmp_dir/api.gen.go"; \
+	cp frontend/src/api/schema.d.ts "$$tmp_dir/schema.d.ts"; \
+	$(MAKE) generate; \
+	cmp -s "$$tmp_dir/api.gen.go" backend/internal/platform/httpapi/api.gen.go \
+		|| { echo "Go OpenAPI 生成物存在漂移" >&2; exit 1; }; \
+	cmp -s "$$tmp_dir/schema.d.ts" frontend/src/api/schema.d.ts \
+		|| { echo "TypeScript OpenAPI 生成物存在漂移" >&2; exit 1; }
 
 # 本地 dev 库：单起 compose 的 postgres 服务（全容器模式见 docker-compose.yml 注释）
 db-up:

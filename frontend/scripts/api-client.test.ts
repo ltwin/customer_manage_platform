@@ -9,7 +9,13 @@ import {
   listOrders,
   listScheduleSlots,
 } from '../src/api/client.ts'
-import { getToken, setToken } from '../src/auth/token.ts'
+import { getAccessToken, setAuthenticated } from '../src/auth/session.ts'
+
+const authAccount = {
+  id: 'account-fixture', email: 'fixture@example.invalid',
+  created_at: '2026-07-31T00:00:00Z', timezone: 'Asia/Shanghai',
+}
+const access = (token: string) => ({ access_token: token, token_type: 'Bearer' as const, expires_in: 600 as const })
 
 const storage = new Map<string, string>()
 Object.defineProperty(globalThis, 'localStorage', {
@@ -97,15 +103,20 @@ test('schedule client sends range and per-attempt key', async () => {
   assert.equal(new Headers(requests[1]?.init?.headers).get('Idempotency-Key'), 'slot-attempt-key')
 })
 
-test('a protected 401 clears the token before the page handles navigation', async () => {
-  setToken('synthetic-token')
-  globalThis.fetch = async () => Response.json({
-    error: { code: 'unauthorized', message: '未认证' },
-  }, { status: 401 })
+test('a protected 401 refreshes once and becomes anonymous when refresh also fails', async () => {
+  setAuthenticated(access('synthetic-token'), authAccount)
+  let refreshCalls = 0
+  globalThis.fetch = async (input) => {
+    if (String(input).endsWith('/auth/refresh')) refreshCalls += 1
+    return Response.json({
+      error: { code: 'unauthorized', message: '未认证' },
+    }, { status: 401 })
+  }
 
   await assert.rejects(
     listCustomers({ page: 1, pageSize: 20 }),
     (error: unknown) => error instanceof ApiError && error.status === 401,
   )
-  assert.equal(getToken(), null)
+  assert.equal(refreshCalls, 1)
+  assert.equal(getAccessToken(), null)
 })

@@ -53,17 +53,33 @@ func (s *Store) AccountCount(ctx context.Context) (int64, error) {
 
 // CreateAccount 写入一个账号。
 func (s *Store) CreateAccount(ctx context.Context, id, passwordHash string) error {
-	_, err := s.pool.Exec(ctx,
-		`INSERT INTO accounts (id, password_hash) VALUES ($1, $2)`, id, passwordHash)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("begin insert account: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, accountAdmissionLockSQL); err != nil {
+		return fmt.Errorf("lock account admission: %w", err)
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO accounts (id, password_hash) VALUES ($1, $2)`, id, passwordHash); err != nil {
 		return fmt.Errorf("insert account: %w", err)
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO password_credentials (account_id, password_hash)
+		VALUES ($1, $2)`, id, passwordHash)
+	if err != nil {
+		return fmt.Errorf("insert account credential: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit insert account: %w", err)
 	}
 	return nil
 }
 
 // AccountScopes 是后台维护任务唯一的账号枚举入口；账号标识来自服务端 accounts 表。
 func (s *Store) AccountScopes(ctx context.Context) ([]ScopedAccount, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id FROM accounts ORDER BY id`)
+	rows, err := s.pool.Query(ctx, `SELECT id FROM accounts WHERE status = 'active' ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("list account scopes: %w", err)
 	}

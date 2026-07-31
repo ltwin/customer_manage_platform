@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -9,6 +9,7 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
+import { fetchAuthCapabilities } from '../api/client'
 import './WelcomePage.css'
 
 type PreviewTab = 'customers' | 'calendar' | 'packages'
@@ -21,6 +22,16 @@ const previewTabs: { key: PreviewTab; label: string; icon: typeof Users }[] = [
 
 export default function WelcomePage() {
   const [tab, setTab] = useState<PreviewTab>('customers')
+  const [registrationOpen, setRegistrationOpen] = useState(false)
+  const capabilityRequested = useRef(false)
+
+  useEffect(() => {
+    if (capabilityRequested.current) return
+    capabilityRequested.current = true
+    void fetchAuthCapabilities()
+      .then((response) => setRegistrationOpen(response.public_registration_enabled))
+      .catch(() => setRegistrationOpen(false))
+  }, [])
 
   function onTabKeyDown(event: React.KeyboardEvent<HTMLButtonElement>, index: number) {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
@@ -52,9 +63,15 @@ export default function WelcomePage() {
             <Link className="btn btn-ghost" to="/login" data-od-id="nav-login">
               登录
             </Link>
-            <a className="btn btn-primary" href="#cta" data-od-id="nav-apply">
-              申请开通
-            </a>
+            {registrationOpen ? (
+              <Link className="btn btn-primary" to="/register" data-od-id="nav-register">
+                立即注册
+              </Link>
+            ) : (
+              <a className="btn btn-primary" href="#cta" data-od-id="nav-apply">
+                申请开通
+              </a>
+            )}
           </div>
         </div>
       </nav>
@@ -589,14 +606,24 @@ export default function WelcomePage() {
             <div className="wp-cta-card">
               <span className="wp-eyebrow">现在开始</span>
               <h2>下一单之前，先把上一单的客户记住</h2>
-              <p>已开通的账号直接登录；还没有账号的话，说明你的拍摄类型与客户量，我们手动为你开通。</p>
+              <p>
+                {registrationOpen
+                  ? '自助注册已开放；创建账号并完成邮箱验证后即可进入经营台。'
+                  : '已开通的账号直接登录；自助注册未开放或状态暂时不可确认。'}
+              </p>
               <div className="wp-cta-actions">
                 <Link className="btn btn-primary btn-lg" to="/login" data-od-id="cta-login">
                   登录经营台
                 </Link>
-                <Link className="btn btn-lg" to="/login" data-od-id="cta-apply">
-                  申请开通账号
-                </Link>
+                {registrationOpen ? (
+                  <Link className="btn btn-lg" to="/register" data-od-id="cta-register">
+                    创建账号
+                  </Link>
+                ) : (
+                  <span className="btn btn-lg wp-disabled-action" aria-disabled="true" data-od-id="cta-closed">
+                    自助注册暂未开放
+                  </span>
+                )}
               </div>
               <p className="wp-cta-fine">
                 客户资料仅存于你自己的账号，不做跨账号共享，可随时整包导出。

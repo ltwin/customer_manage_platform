@@ -117,6 +117,7 @@ func TestBindingServiceRejectsGroupTamperExpiredAndCrossAccountChat(t *testing.T
 	if err := db.CreateAccount(context.Background(), "acc-other", "hash"); err != nil {
 		t.Fatalf("create second account: %v", err)
 	}
+	activateLegacyTestAccount(t, db, "acc-other")
 	accounts, err := db.AccountScopes(context.Background())
 	if err != nil || len(accounts) != 2 {
 		t.Fatalf("account scopes: len=%d err=%v", len(accounts), err)

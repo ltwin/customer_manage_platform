@@ -1,8 +1,8 @@
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
-import LoginPage from './pages/LoginPage'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AppShell from './components/AppShell'
+import { getAuthSnapshot, restoreSession, subscribeAuth } from './auth/session'
 import CalendarPage from './pages/CalendarPage'
 import CustomerDetailPage from './pages/CustomerDetailPage'
 import CustomerNewPage from './pages/CustomerNewPage'
@@ -13,35 +13,69 @@ import PackagesPage from './pages/PackagesPage'
 import RemindersPage from './pages/RemindersPage'
 import SettingsPage from './pages/SettingsPage'
 import WelcomePage from './pages/WelcomePage'
-import { getToken, getTokenSnapshot, subscribeToken } from './auth/token'
+import LoginPage from './pages/auth/LoginPage'
+import RegisterPage from './pages/auth/RegisterPage'
+import VerifyEmailPage from './pages/auth/VerifyEmailPage'
 
-// 守卫路由骨架：后续域 feature 的受保护页面都挂在 RequireAuth 之下（design 2.2 扩展点）
-function RequireAuth({ children }: { children: ReactElement }) {
+type AuthStatus = ReturnType<typeof getAuthSnapshot>['status']
+
+function RequireAuth({ children, status }: { children: ReactElement; status: AuthStatus }) {
   const location = useLocation()
-	useSyncExternalStore(subscribeToken, getTokenSnapshot)
-  if (!getToken()) {
+  if (status !== 'authenticated') {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
   return children
 }
 
-// 根路径按登录态分流：未登录看欢迎页，已登录直接进经营台
-function RootEntry() {
-  useSyncExternalStore(subscribeToken, getTokenSnapshot)
-  if (getToken()) {
-    return <Navigate to="/dashboard" replace />
-  }
-  return <WelcomePage />
+function AnonymousEntry({ children, status }: { children: ReactElement; status: AuthStatus }) {
+  return status === 'authenticated' ? <Navigate to="/dashboard" replace /> : children
+}
+
+function RootEntry({ status }: { status: AuthStatus }) {
+  return status === 'authenticated' ? <Navigate to="/dashboard" replace /> : <WelcomePage />
 }
 
 export default function App() {
+  const location = useLocation()
+  const auth = useSyncExternalStore(subscribeAuth, getAuthSnapshot)
+  const isVerificationRoute = location.pathname === '/verify-email'
+
+  useEffect(() => {
+    if (!isVerificationRoute && auth.status === 'restoring') void restoreSession()
+  }, [auth.status, isVerificationRoute])
+
+  if (!isVerificationRoute && auth.status === 'restoring') {
+    return (
+      <main className="auth-restore" role="status" aria-live="polite">
+        <span className="auth-restore-spinner" aria-hidden="true" />
+        <p>正在恢复安全会话…</p>
+      </main>
+    )
+  }
+
   return (
     <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/" element={<RootEntry />} />
+      <Route
+        path="/login"
+        element={
+          <AnonymousEntry status={auth.status}>
+            <LoginPage />
+          </AnonymousEntry>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <AnonymousEntry status={auth.status}>
+            <RegisterPage />
+          </AnonymousEntry>
+        }
+      />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/" element={<RootEntry status={auth.status} />} />
       <Route
         element={
-          <RequireAuth>
+          <RequireAuth status={auth.status}>
             <AppShell />
           </RequireAuth>
         }

@@ -1,0 +1,63 @@
+roadmap: self-service-account-system
+status: handoff
+baseline_ref: 411bbb1fc5bfc35e5617718cd8a0e5f242ad648f
+driver_kind: host-agent
+driver_id: "/root/self_service_account_goal_driver"
+execution_confirmation_id: "a2f3d9ac-c7b1-4da7-b6a4-2a245f576741"
+acceptance_authorization: approved
+acceptance_authorization_ref: "approval-report.md#goal-acceptance"
+commit_authorization: approved
+commit_authorization_ref: "approval-report.md#goal-commits"
+handoff_reason: "owner-stop: REV-001～005 已完成定向修复验证，但 owner 要求不再进行下一轮 review；canonical review 仍 blocked，OCR skip 命名决策仍 pending"
+handoff_next: "保持 email-account-access 为 implementing，不进入 QA/acceptance/commit/public-auth-hardening；未来只有 owner 明确恢复当前 review gate 后才能继续"
+current_feature_index: 0
+workspace:
+  mode: current-branch
+  branch: feature/userCenter
+  owner_confirmed_at: 2026-07-31
+  protected_paths:
+    - .codestable/brainstorms/creative-shoot-planning/
+    - .codestable/brainstorms/welcome-login-design/
+    - frontend/image.png
+  protected_stash_status: restored-verified
+  protected_stash_ref: "46909636d376b1b2ded1a30a88c3c44458ba44c9"
+  protected_restore_verified_at: 2026-07-31
+  protected_restore_file_count: 7
+  protected_stash_preserved: true
+external_checkpoints:
+  mail_provider:
+    step: email-account-access/STEP-004
+    status: receipt-verified
+    provider: "resend"
+    transport: "https-api"
+    secret_ref: "file:/Users/samson/workspace/my_project/customer_manage_platform/.env#RESEND_API_KEY"
+    recipient_ref: "file:/Users/samson/workspace/my_project/customer_manage_platform/.env#AUTH_MAIL_ACCEPTANCE_RECIPIENT"
+    receipt_allowlist: [provider_message_id, accepted_at]
+    provider_neutral_evidence:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/auth_test.go
+      - backend/internal/platform/authmail/sink_test.go
+      - backend/internal/platform/config/config_test.go
+      - .codestable/features/2026-07-30-email-account-access/email-account-access-implementation.md
+    verification_evidence:
+      - .codestable/features/2026-07-30-email-account-access/email-account-access-mail-checkpoint.md
+    resume_action: "resume email-account-access STEP-004 true-external-adapter"
+features:
+  - slug: email-account-access
+    roadmap_item: email-account-access
+    feature_dir: .codestable/features/2026-07-30-email-account-access
+    design: .codestable/features/2026-07-30-email-account-access/email-account-access-design.md
+    checklist: .codestable/features/2026-07-30-email-account-access/email-account-access-checklist.yaml
+    review: .codestable/features/2026-07-30-email-account-access/email-account-access-review.md
+    qa: .codestable/features/2026-07-30-email-account-access/email-account-access-qa.md
+    acceptance: .codestable/features/2026-07-30-email-account-access/email-account-access-acceptance.md
+    status: implementing
+  - slug: public-auth-hardening
+    roadmap_item: public-auth-hardening
+    feature_dir: .codestable/features/2026-07-30-public-auth-hardening
+    design: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-design.md
+    checklist: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-checklist.yaml
+    review: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-review.md
+    qa: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-qa.md
+    acceptance: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-acceptance.md
+    status: pending

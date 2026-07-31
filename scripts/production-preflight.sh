@@ -228,12 +228,8 @@ is_dev_sentinel() {
 
 validate_seed() {
   get_value "SEED_ADMIN_PASSWORD"
-  if [[ "$SEED_STATE" == "empty" ]]; then
-    if [[ "$FOUND" != "true" || ${#VALUE} -lt 12 ]] || is_dev_sentinel "$VALUE"; then
-      fail "$EXIT_CONFIG" "config-matrix" "SEED_ADMIN_PASSWORD" "set-non-sentinel-seed-secret"
-    fi
-  elif [[ "$FOUND" == "true" && -n "$VALUE" ]]; then
-    fail "$EXIT_CONFIG" "config-matrix" "SEED_ADMIN_PASSWORD" "remove-seed-secret-after-initialization"
+  if [[ "$FOUND" == "true" && -n "$VALUE" ]]; then
+    fail "$EXIT_CONFIG" "config-matrix" "SEED_ADMIN_PASSWORD" "remove-retired-seed-secret"
   fi
   status "config-matrix" "SEED_ADMIN_PASSWORD" "ok"
 }
@@ -244,6 +240,102 @@ validate_auth() {
     fail "$EXIT_CONFIG" "config-matrix" "AUTH_TOKEN_SECRET" "set-strong-non-sentinel-secret"
   fi
   status "config-matrix" "AUTH_TOKEN_SECRET" "ok"
+}
+
+validate_account_auth_profile() {
+  local public_base_url=""
+  local base_policy=""
+  local registration_enabled=""
+  local mail_driver=""
+  local mail_key=""
+  local mail_from=""
+
+  get_value "AUTH_TOKEN_ISSUER"
+  if [[ "$FOUND" != "true" || -z "$VALUE" ]]; then
+    fail "$EXIT_CONFIG" "config-matrix" "AUTH_TOKEN_ISSUER" "set-stable-auth-token-issuer"
+  fi
+  status "config-matrix" "AUTH_TOKEN_ISSUER" "ok"
+
+  get_value "PUBLIC_BASE_URL"
+  public_base_url="$VALUE"
+  base_policy="$(PREFLIGHT_PUBLIC_BASE_URL="$public_base_url" python3 -c '
+import os
+from urllib.parse import urlparse
+try:
+    raw = os.environ["PREFLIGHT_PUBLIC_BASE_URL"]
+    parsed = urlparse(raw)
+    canonical = "https://" + (parsed.netloc or "").lower()
+    valid = (
+        parsed.scheme == "https"
+        and bool(parsed.hostname)
+        and parsed.port != 443
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path == ""
+        and not parsed.params
+        and not parsed.query
+        and not parsed.fragment
+        and raw == canonical
+    )
+    print("ok" if valid else "invalid")
+except Exception:
+    print("invalid")
+' 2>/dev/null)" || base_policy="invalid"
+  if [[ "$FOUND" != "true" || "$base_policy" != "ok" ]]; then
+    fail "$EXIT_CONFIG" "config-matrix" "PUBLIC_BASE_URL" "use-canonical-https-origin"
+  fi
+  status "config-matrix" "PUBLIC_BASE_URL" "ok"
+
+  get_value "AUTH_PUBLIC_REGISTRATION_ENABLED"
+  registration_enabled="$VALUE"
+  if [[ "$registration_enabled" == "true" ]]; then
+    fail "$EXIT_CONFIG" "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "public-auth-hardening-not-complete"
+  fi
+  if [[ "$FOUND" != "true" || "$registration_enabled" != "false" ]]; then
+    fail "$EXIT_CONFIG" "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "set-explicit-false-until-hardening-complete"
+  fi
+  status "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "locked"
+
+  get_value "AUTH_MAIL_DRIVER"
+  mail_driver="$VALUE"
+  [[ "$FOUND" == "true" && "$mail_driver" == "resend" ]] || \
+    fail "$EXIT_CONFIG" "config-matrix" "AUTH_MAIL_DRIVER" "use-verified-production-mail-adapter"
+  get_value "RESEND_API_KEY"
+  mail_key="$VALUE"
+  [[ "$FOUND" == "true" && -n "$mail_key" ]] || \
+    fail "$EXIT_CONFIG" "config-matrix" "RESEND_API_KEY" "set-production-mail-credential"
+  get_value "AUTH_MAIL_FROM"
+  mail_from="$VALUE"
+  [[ "$FOUND" == "true" && -n "$mail_from" ]] || \
+    fail "$EXIT_CONFIG" "config-matrix" "AUTH_MAIL_FROM" "set-verified-production-sender"
+  status "config-matrix" "AUTH_MAIL_DRIVER" "ok"
+}
+
+validate_cookie_profile() {
+  local source="$REPO_ROOT/backend/internal/platform/httpapi/auth.go"
+  if python3 - "$source" <<'PY' >/dev/null 2>&1
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+required = (
+    'const refreshCookieName = "__Host-crm_refresh"',
+    'if session.RefreshAbsoluteAt.Before(expiresAt)',
+    'Path: "/", Expires: expiresAt.UTC(), MaxAge: maxAge',
+    'HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode',
+    'Expires: time.Unix(1, 0).UTC(), MaxAge: -1',
+)
+if any(marker not in source for marker in required):
+    raise SystemExit(1)
+cookie_block = source.split("func (h *handlers) setRefreshCookie", 1)[1].split("func (h *handlers) writeAuthError", 1)[0]
+if "Domain:" in cookie_block:
+    raise SystemExit(1)
+PY
+  then
+    status "config-matrix" "REFRESH_COOKIE_PROFILE" "ok"
+  else
+    fail "$EXIT_CONFIG" "config-matrix" "REFRESH_COOKIE_PROFILE" "restore-host-http-only-secure-strict-cookie-contract"
+  fi
 }
 
 validate_telegram() {
@@ -361,6 +453,8 @@ validate_binary() {
   validate_database_url "DATABASE_URL" "$database_url"
   validate_auth
   validate_seed
+  validate_account_auth_profile
+  validate_cookie_profile
   validate_binary_avatar
   validate_telegram
   get_value "HTTP_ADDR"
@@ -544,6 +638,8 @@ raise SystemExit(0 if matched else 1)
 
 validate_auth
 validate_seed
+validate_account_auth_profile
+validate_cookie_profile
 validate_telegram
 
 render_env_value "app" "HTTP_ADDR"

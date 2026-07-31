@@ -1,0 +1,197 @@
+feature: 2026-07-30-email-account-access
+created: 2026-07-30
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "cd backend && go test -p=1 ./internal/platform/auth/... ./internal/platform/store/... ./internal/platform/httpapi/... ./cmd/accountctl/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd frontend && npm run test:auth && npm run test:api-client && npm run build"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "./scripts/test-auth-legacy-cutover.sh"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "./scripts/test-production-preflight.sh"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, postgres_integration, concurrency_result, outcome_mapping, kdf_aead_result, api_response, response_headers, browser_screenshot, storage_inspection, checkpoint_state, mail_receipt, migration_report, rollback_report, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    commented_out_code: forbidden
+    sensitive_payload_artifact: forbidden
+    production_test_adapter_default: forbidden
+
+steps:
+  - id: STEP-001
+    action: "认证前端结构微重构：Gate A 先创建长期 test:auth characterization 并接入 package/Makefile；Gate B 只移动 LoginPage/CSS；Gate C 只原样移动 ErrorEnvelope/ApiErrorDetails/ApiError/JSON request 并从 client.ts re-export"
+    exit_signal: "A/B/C 每个 gate 后 npm run test:auth、test:api-client、test:prototype、build 均全绿并保存限定 diff；password-only submit、/login、localStorage、导航、headers、401、error parsing 均不变，且未移动/去重 apiErrorFromResponse？"
+    status: done
+  - id: STEP-002
+    action: "Schema／migration safety：建立账号状态、登录身份、密码凭证、action token 与 refresh family/generation 模型，并交付空库／legacy fixture 的可回滚迁移骨架"
+    exit_signal: "迁移重复 up 与 legacy-only down、唯一约束和旧 seed fixture 通过，原 account_id/业务引用不变；存在任一新式 null legacy hash 账号时 down 固定 fail closed 且不填 hash/删账号？"
+    status: done
+  - id: STEP-003
+    action: "Identity／action／session 深模块：实现 public/bootstrap registration modes、原子 admission guard、operation outcome/error table、CurrentAccount、versioned HKDF/AES-GCM、refresh rotation/reuse 与 logout"
+    exit_signal: "真实 PG + deterministic clock 覆盖 bootstrap-vs-bootstrap 与 public-vs-bootstrap 双向 barrier、bootstrap dry-run 零副作用、24h token、CurrentAccount、generic outcome、10m access、14d/30d refresh、固定 KDF/envelope/AAD、10s replay/无流量 sweep、cookie absolute expiry、logout missing/expired/revoked/valid/post-logout；raw root/bearer secret 不入库日志？"
+    status: done
+  - id: STEP-004
+    action: "Mail／OpenAPI／HTTP：先接 typed failure absorption、fake/sink、no-store/Referrer-Policy/Origin response matrix/tag/item1 routes，持久化 goal-state mail checkpoint 后再接 owner 选择的真实 adapter"
+    exit_signal: "codegen 零漂移；verify/login/refresh/logout 与 item2 reset/change 的 403 machine contract 正确、item2 Go/route 未暴露且 404；checkpoint 可从 awaiting-owner 恢复到 receipt-verified 且无 secret/完整邮箱；真实 adapter 有 bounded deadline + 脱敏 receipt/event？"
+    status: done
+  - id: STEP-005
+    action: "Webapp 全请求路径：接入内存 AuthState、startup restore、注册/验证/email login 页面、Welcome capability CTA 与 JSON/multipart/avatar/export 统一 401 single-flight recovery"
+    exit_signal: "四类 request path 均最多 refresh/重放一次，其他错误不循环；action fragment 即读即删；桌面/375px/键盘通过；最终 test:auth 持续接入 Makefile 且 Web Storage/后续 URL/log 无 bearer secret？"
+    status: done
+  - id: STEP-006
+    action: "Legacy claim／bootstrap／preflight：交付受信命令、repo-pinned Go rollback harness + test-auth-legacy-cutover.sh、cutover/rollback report、legacy password-only shape/JWT/seed negative 与 production 注册锁"
+    exit_signal: "认领前后同 ID/counts/avatar；PlanBootstrap dry-run 脱敏且零写/零 token/零邮件，正式 bootstrap 重查 guard，跨进程仅一赢家；synthetic legacy-only down 与新式账号 fail-closed 可重放且报告脱敏；password-only body 400 无 cookie；CMD-004 纳入 make check；production true 固定 public-auth-hardening-not-complete 且 cookie profile 合规？"
+    status: done
+  - id: STEP-007
+    action: "E2E／全域隔离 harden：覆盖注册到退出主链、异常/并发/Origin/redaction、两个 verified account 全域隔离及明确不做范围"
+    exit_signal: "A1–A18 均有可观察证据，pending/unclaimed 从 AccountScopes 及全部后台消费者缺席，item2/phone/OAuth 等入口未暴露，日志与产物通过敏感字段 allowlist 扫描？"
+    status: done
+  - id: STEP-008
+    action: "完整门禁与证据包：运行 CMD-001～006，保存真实外部邮件、API、浏览器、migration/legacy 与 diff 证据并清理临时资源"
+    exit_signal: "所有 core command 全绿、证据可由 reviewer/QA 重放，工作树无 secret、临时 debug/TODO、测试 adapter 生产默认或残留资源？"
+    status: done
+
+checks:
+  - id: CHK-001
+    item: "账号、AccountIdentity、PasswordCredential、AuthActionToken 与 RefreshSessionFamily 分工符合 ADR-005/006；只有 active 账号可建立 session/AccountContext 并进入 AccountScopes 后台枚举，客户端永不提交 account_id"
+    source: 名词契约
+    trace: [D1, A2, A6, A7, A16]
+    status: pending
+  - id: CHK-002
+    item: "Register/PlanBootstrap/Resend/Verify/Login/Refresh/Logout/CurrentAccount/BeginLegacyClaim/InspectLegacyState/SweepExpiredReplayCiphertexts 是唯一应用入口；public/bootstrap mode 仅 composition root 可选，HTTP/CLI/maintenance 不读 store；PlanBootstrap 只读脱敏，CurrentAccount 投影 id/email/created_at，timezone 由既有 provider 组合；caller 只按 typed error/outcome 映射"
+    source: 名词契约
+    trace: [D2, D9, A2, A5, A6, A7, A8, A13]
+    status: pending
+  - id: CHK-003
+    item: "Capabilities 200、registration disabled 503 与 enabled register 202 均 Cache-Control:no-store；false 时任意 body 固定 503，在 parse/validation/未来 limiter/DB/mail 前零副作用；已有 login/resend/verify/refresh 仍可用"
+    source: 流程级约束
+    trace: [D3, A1]
+    status: pending
+  - id: CHK-004
+    item: "邮箱按 trim + ASCII lowercase 规范化并限 254 bytes；密码不 trim 且限 12–72 UTF-8 bytes；数据库唯一约束收口并发同邮箱注册"
+    source: 名词契约
+    trace: [D1, A4]
+    status: pending
+  - id: CHK-005
+    item: "Operation outcome table 固定：Register 新邮箱与 Resend pending 新 token 后 Attempted=true，Register 冲突及 Resend no-target/non-pending 为 false；errors.Is cancel/deadline 优先于 typed delivery class，其余才 temporary；各格断言 result/error/HTTP/CLI/event，HTTP 保持 generic 202，ClassifiedDeliveryError 不穿过 application boundary"
+    source: 流程级约束
+    trace: [D5, D9, A2, A3, A5, A13, A14]
+    status: pending
+  - id: CHK-006
+    item: "Action token wire=<selector>.<32-byte-CSPRNG-secret> 且 DB 只存 hash；purpose 隔离、单次消费、verification/legacy TTL=24h 刚过期可证伪；新 token 使旧 token 失效，激活与首 session 同一 transaction"
+    source: 流程级约束
+    trace: [D1, A5, A6, A11]
+    status: pending
+  - id: CHK-007
+    item: "Access JWT 固定 HS256、ver/iss/aud/sub/sid/jti/iat/exp 和 10m TTL，只使用 HKDF-SHA-256 label crm-auth/v1/access-signing 派生 key；middleware 拒绝旧 claim shape，业务请求不查 refresh 表"
+    source: 名词契约
+    trace: [D4, D10, A7, A15]
+    status: pending
+  - id: CHK-008
+    item: "Refresh DB 只存 hash；idle=14d/absolute=30d 不延长；HKDF 固定 IKM env bytes/salt=nil/ASCII label/32 bytes；AES-256-GCM envelope=0x01|nonce[12]|ciphertext+tag，AAD 固定 version+length-prefixed canonical IDs+UTC epoch seconds；未知/短包/tamper/wrong label/key 固定 401+同事务 revoke；10s same successor、无流量有界 sweep 物理清列、reuse revoke 均有证据"
+    source: 编排骨架
+    trace: [D4, D10, A8]
+    status: pending
+  - id: CHK-009
+    item: "OpenAPI 为 verify/login/refresh/logout 及 item2 reset/change 声明 403 forbidden；缺失/错误 Origin 不调用 app/不变更 cookie；可信 Origin 下 verify/login/refresh cookie 为 __Host-crm_refresh/HttpOnly/Secure/Strict/Path=/、无 Domain，Max-Age/Expires 不超过 RefreshExpiresAt/absolute deadline；logout/invalid refresh 以 Max-Age=0+past Expires 清除；production preflight 核验 canonical HTTPS origin 与 cookie profile"
+    source: 流程级约束
+    trace: [D4, A6, A7, A8, A9]
+    status: pending
+  - id: CHK-010
+    item: "AuthMailSender failure 仅 cancelled/timeout/provider_rejected/temporarily_unavailable/misconfigured 且只在 account-auth 内吸收；真实 adapter 有 bounded deadline，fake/sink 不成默认；goal-state checkpoint 记录 status/provider/transport/secret_ref/recipient_ref/evidence/resume_action，不含 secret/完整邮箱，receipt-verified 才完成"
+    source: 名词契约
+    trace: [D5, D9, A2, A3, A5, A13, A14]
+    status: pending
+  - id: CHK-011
+    item: "OpenAPI 全量同步；item1 operations 用 email-account-access tag 进入 Go include-tags，router 只挂 item1，item2 Go interface/route 仍未暴露且请求 404"
+    source: 挂载点
+    trace: [D6, A18]
+    status: pending
+  - id: CHK-012
+    item: "webapp-auth 只暴露 AuthState/actions/authorized transport；startup restoring、/me、401 single-flight 与最多一次 replay 集中实现，页面不处理 refresh cookie"
+    source: 编排骨架
+    trace: [D7, A10]
+    status: pending
+  - id: CHK-013
+    item: "JSON、multipart、avatar Blob、export 四条请求路径共享认证恢复协议；网络/403/429/5xx/已重放请求不自动 refresh 循环，auth generation 变化清头像缓存"
+    source: 流程级约束
+    trace: [D7, A10]
+    status: pending
+  - id: CHK-014
+    item: "Access/refresh 不进入 storage/URL/log；verify 页面 Referrer-Policy:no-referrer，action token 仅首次在同源 fragment并立即 history replace，不进 query/referrer/storage/log/后续 URL；旧 crm_token 退役"
+    source: 范围守护
+    trace: [D7, A11, A15]
+    status: pending
+  - id: CHK-015
+    item: "Welcome CTA 与 /register 只消费 backend capability；unknown/error/false fail closed，true 才启用表单；Login/Verify 页面覆盖 loading/error/disabled/键盘/375px"
+    source: 挂载点
+    trace: [D3, D7, A1, A12]
+    status: pending
+  - id: CHK-016
+    item: "Legacy migration 保留原 account_id、业务外键、Settings/checkpoint/avatar object；dry-run 零写零邮件，正式 claim 只认唯一 target；legacy-only down 可演练，发现新式 null legacy hash 账号时固定 fail closed"
+    source: 编排骨架
+    trace: [D1, D8, A13]
+    status: pending
+  - id: CHK-017
+    item: "accountctl bootstrap --dry-run 只经 PlanBootstrap 复用规范化/验证/eligibility，返回脱敏快照且零写/零 token/零邮件；正式执行以 bootstrap_first_account mode 复用 Register 并重查 guard；bootstrap-vs-bootstrap 仅一赢家，public-vs-bootstrap 双向 barrier 证明所有 creation 共用 PG xact guard；loser/非空 exit3，delivery failure exit4 且 pending 改走 resend；密码不经 argv/log"
+    source: 挂载点
+    trace: [D2, A14]
+    status: pending
+  - id: CHK-018
+    item: "Cutover/preflight 证明无 legacy_unclaimed/pending claim；同一 POST /auth/login 的 password-only body 固定 400 validation_failed 且无 session/Set-Cookie，旧 JWT 失败、SEED 不参与启动；item1 production true 固定拒绝；check 名为 legacy_password_only_shape_rejected"
+    source: 挂载点
+    trace: [D8, A15]
+    status: pending
+  - id: CHK-019
+    item: "两个真实 verified account 在客户、订单、档期、提醒、头像、设置、导出上全域隔离；AccountScopes 及 reminder/avatar maintenance/Telegram digest 消费者只枚举 active，所有业务读取继续经 AccountScope"
+    source: 验收场景
+    trace: [D1, A16]
+    status: pending
+  - id: CHK-020
+    item: "auth.login/email_verified/refresh_reuse/mail_delivery/legacy_claim 事件只含固定 allowlist；完整 email/IP、密码、token/cookie/Authorization/provider body 不出现在日志或证据"
+    source: 流程级约束
+    trace: [A17]
+    status: pending
+  - id: CHK-021
+    item: "STEP-001 先加 test-only characterization，再按 page/transport 两个独立 move gate 推进；禁止去重或改变 login/localStorage/headers/401/error parsing，每 gate 有绿色命令和限定 diff"
+    source: 结构健康度
+    trace: ["§2.5"]
+    status: pending
+  - id: CHK-022
+    item: "不实现 forgot/reset/change password、persistent limiter/monitor、phone/SMS/OAuth/SSO/device center/email change/account deletion，不拆新的技术层 feature"
+    source: 范围守护
+    trace: ["§1.2", A18]
+    status: pending
+  - id: CHK-023
+    item: "不执行生产 provider 采购/DNS/credential、owner 邮箱绑定、migration/cutover/secret rotation/deploy；这些外部动作需要独立授权"
+    source: 范围守护
+    trace: ["§1.2", A13, A15]
+    status: pending
+  - id: CHK-024
+    item: "CMD-001～006 全部通过且 make check 实际执行 test:auth/CMD-004；证据含 mixed admission/dry-run、outcome table、KDF/envelope/AAD/无流量 sweep、cookie expiry/clear headers、checkpoint state、脱敏 mail、repo-contained rollback、API/browser/migration/diff；无 debug/TODO/FIXME/commented code/secret/完整测试邮箱/production test adapter default"
+    source: 验收场景
+    trace: [A1, A2, A6, A8, A10, A13, A16, A17, A18]
+    status: pending
+  - id: CHK-025
+    item: "Logout 矩阵：可信 Origin 下 missing/expired/already-revoked/valid 均 204+clear，valid 首次撤销 family且旧 refresh 随后 401+clear；不可信 Origin 403 且无 account-auth/cookie mutation"
+    source: 验收场景
+    trace: [D4, A9]
+    status: pending

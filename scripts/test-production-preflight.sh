@@ -22,6 +22,12 @@ write_binary_env() {
   {
     printf '%s\n' 'DATABASE_URL=postgres://crm:production-password@localhost:5432/crm?sslmode=disable'
     printf '%s\n' 'AUTH_TOKEN_SECRET=0123456789abcdef0123456789abcdef'
+	printf '%s\n' 'AUTH_TOKEN_ISSUER=photographer-crm'
+	printf '%s\n' 'PUBLIC_BASE_URL=https://app.example.invalid'
+	printf '%s\n' 'AUTH_PUBLIC_REGISTRATION_ENABLED=false'
+	printf '%s\n' 'AUTH_MAIL_DRIVER=resend'
+	printf '%s\n' 'RESEND_API_KEY=synthetic-production-mail-key'
+	printf '%s\n' 'AUTH_MAIL_FROM=CRM <auth@example.invalid>'
     printf 'SEED_ADMIN_PASSWORD=%s\n' "$seed_password"
     printf '%s\n' 'HTTP_ADDR=127.0.0.1:8080'
     printf '%s\n' 'AVATAR_STORAGE_DRIVER=local'
@@ -62,6 +68,12 @@ write_managed_env() {
     printf '%s\n' 'POSTGRES_PASSWORD=managed-production-password'
     printf '%s\n' 'POSTGRES_DB=crm'
     printf '%s\n' 'AUTH_TOKEN_SECRET=0123456789abcdef0123456789abcdef'
+	printf '%s\n' 'AUTH_TOKEN_ISSUER=photographer-crm'
+	printf '%s\n' 'PUBLIC_BASE_URL=https://app.example.invalid'
+	printf '%s\n' 'AUTH_PUBLIC_REGISTRATION_ENABLED=false'
+	printf '%s\n' 'AUTH_MAIL_DRIVER=resend'
+	printf '%s\n' 'RESEND_API_KEY=synthetic-production-mail-key'
+	printf '%s\n' 'AUTH_MAIL_FROM=CRM <auth@example.invalid>'
     printf 'SEED_ADMIN_PASSWORD=%s\n' "$seed_password"
     printf '%s\n' 'TELEGRAM_BOT_TOKEN='
     printf '%s\n' 'TELEGRAM_BOT_USERNAME='
@@ -77,6 +89,12 @@ write_external_env() {
     printf '%s\n' 'POSTGRES_PASSWORD=ignored'
     printf '%s\n' 'POSTGRES_DB=ignored'
     printf '%s\n' 'AUTH_TOKEN_SECRET=0123456789abcdef0123456789abcdef'
+	printf '%s\n' 'AUTH_TOKEN_ISSUER=photographer-crm'
+	printf '%s\n' 'PUBLIC_BASE_URL=https://app.example.invalid'
+	printf '%s\n' 'AUTH_PUBLIC_REGISTRATION_ENABLED=false'
+	printf '%s\n' 'AUTH_MAIL_DRIVER=resend'
+	printf '%s\n' 'RESEND_API_KEY=synthetic-production-mail-key'
+	printf '%s\n' 'AUTH_MAIL_FROM=CRM <auth@example.invalid>'
     printf '%s\n' 'SEED_ADMIN_PASSWORD='
     printf '%s\n' 'TELEGRAM_BOT_TOKEN='
     printf '%s\n' 'TELEGRAM_BOT_USERNAME='
@@ -149,7 +167,7 @@ run_preflight env-injection-data 0 \
 
 seed_missing_env="$work_dir/seed-missing.env"
 write_binary_env "$seed_missing_env"
-run_preflight seed-empty-missing 4 \
+run_preflight seed-empty-missing 0 \
   --mode binary --seed-state empty --env-file "$seed_missing_env"
 
 seed_sentinel_env="$work_dir/seed-sentinel.env"
@@ -161,6 +179,37 @@ seed_retained_env="$work_dir/seed-retained.env"
 write_binary_env "$seed_retained_env" 'production-seed-password'
 run_preflight seed-initialized-nonempty 4 \
   --mode binary --seed-state initialized --env-file "$seed_retained_env"
+
+registration_enabled_env="$work_dir/registration-enabled.env"
+sed 's/^AUTH_PUBLIC_REGISTRATION_ENABLED=false$/AUTH_PUBLIC_REGISTRATION_ENABLED=true/' \
+  "$valid_env" >"$registration_enabled_env"
+run_preflight registration-enabled-before-hardening 4 \
+  --mode binary --seed-state initialized --env-file "$registration_enabled_env"
+grep -q 'public-auth-hardening-not-complete' "$work_dir/registration-enabled-before-hardening.err"
+
+http_public_base_env="$work_dir/http-public-base.env"
+sed 's#^PUBLIC_BASE_URL=https://app.example.invalid$#PUBLIC_BASE_URL=http://app.example.invalid#' \
+  "$valid_env" >"$http_public_base_env"
+run_preflight public-base-http 4 \
+  --mode binary --seed-state initialized --env-file "$http_public_base_env"
+
+default_port_public_base_env="$work_dir/default-port-public-base.env"
+sed 's#^PUBLIC_BASE_URL=https://app.example.invalid$#PUBLIC_BASE_URL=https://app.example.invalid:443#' \
+  "$valid_env" >"$default_port_public_base_env"
+run_preflight public-base-explicit-default-port 4 \
+  --mode binary --seed-state initialized --env-file "$default_port_public_base_env"
+
+nondefault_port_public_base_env="$work_dir/nondefault-port-public-base.env"
+sed 's#^PUBLIC_BASE_URL=https://app.example.invalid$#PUBLIC_BASE_URL=https://app.example.invalid:8443#' \
+  "$valid_env" >"$nondefault_port_public_base_env"
+run_preflight public-base-nondefault-port 0 \
+  --mode binary --seed-state initialized --env-file "$nondefault_port_public_base_env"
+
+ipv6_public_base_env="$work_dir/ipv6-public-base.env"
+sed 's#^PUBLIC_BASE_URL=https://app.example.invalid$#PUBLIC_BASE_URL=https://[2001:db8::1]:8443#' \
+  "$valid_env" >"$ipv6_public_base_env"
+run_preflight public-base-ipv6-nondefault-port 0 \
+  --mode binary --seed-state initialized --env-file "$ipv6_public_base_env"
 
 remote_db_env="$work_dir/remote-db.env"
 write_binary_env "$remote_db_env"

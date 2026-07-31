@@ -12,6 +12,7 @@ func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("AUTH_TOKEN_SECRET", "test-secret")
+	t.Setenv("PUBLIC_BASE_URL", "https://app.example.invalid")
 	t.Setenv("AVATAR_STORAGE_DRIVER", "local")
 	t.Setenv("AVATAR_LOCAL_ROOT", filepath.Join(t.TempDir(), "avatars"))
 	t.Setenv("AVATAR_LOCAL_REQUIRE_MOUNT", "false")
@@ -119,5 +120,143 @@ func TestLoadTelegramConfigurationIsOptional(t *testing.T) {
 				t.Fatal("Telegram values were not loaded verbatim from the environment")
 			}
 		})
+	}
+}
+
+func TestLoadAuthPublicConfiguration(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("PUBLIC_BASE_URL", "HTTPS://APP.Example.Invalid/")
+	t.Setenv("AUTH_TOKEN_ISSUER", "crm-test-issuer")
+	t.Setenv("AUTH_PUBLIC_REGISTRATION_ENABLED", "true")
+	t.Setenv("AUTH_MAIL_DRIVER", "unavailable")
+	t.Setenv("TRUSTED_PROXY_CIDRS", "192.0.2.0/24")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load auth configuration: %v", err)
+	}
+	if cfg.PublicBaseURL != "https://app.example.invalid" || !cfg.AuthPublicRegistrationEnabled ||
+		cfg.AuthTokenIssuer != "crm-test-issuer" || cfg.AuthMailDriver != "unavailable" ||
+		cfg.TrustedProxyCIDRs != "192.0.2.0/24" {
+		t.Fatalf("auth public configuration mismatch: base=%q enabled=%t issuer=%q mail=%q proxies=%q",
+			cfg.PublicBaseURL, cfg.AuthPublicRegistrationEnabled, cfg.AuthTokenIssuer,
+			cfg.AuthMailDriver, cfg.TrustedProxyCIDRs)
+	}
+}
+
+func TestLoadAuthSinkRequiresLoopbackPublicBase(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("AUTH_MAIL_DRIVER", "sink")
+	if _, err := Load(); !errors.Is(err, ErrAuthMailDriverInvalid) {
+		t.Fatalf("non-loopback sink must fail: %v", err)
+	}
+	t.Setenv("PUBLIC_BASE_URL", "http://localhost:8080")
+	cfg, err := Load()
+	if err != nil || cfg.AuthMailDriver != "sink" {
+		t.Fatalf("localhost sink configuration: driver=%q err=%v", cfg.AuthMailDriver, err)
+	}
+}
+
+func TestLoadAuthResendConfiguration(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("AUTH_MAIL_DRIVER", "resend")
+	t.Setenv("RESEND_API_KEY", "test-resend-key")
+	t.Setenv("AUTH_MAIL_FROM", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load Resend configuration: %v", err)
+	}
+	if cfg.AuthMailDriver != "resend" || cfg.ResendAPIKey != "test-resend-key" ||
+		cfg.AuthMailFrom != "Photographer CRM <onboarding@resend.dev>" {
+		t.Fatal("Resend configuration mismatch")
+	}
+}
+
+func TestLoadAuthResendRequiresAPIKey(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("AUTH_MAIL_DRIVER", "resend")
+	t.Setenv("RESEND_API_KEY", "")
+	if _, err := Load(); !errors.Is(err, ErrResendAPIKeyMissing) {
+		t.Fatalf("missing Resend API key must fail fast: %v", err)
+	}
+}
+
+func TestLoadAuthPublicConfigurationDefaultsFailClosed(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("AUTH_TOKEN_ISSUER", "")
+	t.Setenv("AUTH_PUBLIC_REGISTRATION_ENABLED", "")
+	t.Setenv("AUTH_MAIL_DRIVER", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load default auth configuration: %v", err)
+	}
+	if cfg.AuthPublicRegistrationEnabled || cfg.AuthTokenIssuer != "photographer-crm" || cfg.AuthMailDriver != "unavailable" {
+		t.Fatalf("auth defaults must fail closed: enabled=%t issuer=%q mail=%q",
+			cfg.AuthPublicRegistrationEnabled, cfg.AuthTokenIssuer, cfg.AuthMailDriver)
+	}
+}
+
+func TestLoadAuthPublicConfigurationRejectsUnsafeValues(t *testing.T) {
+	tests := []struct {
+		name    string
+		base    string
+		enabled string
+		want    error
+	}{
+		{name: "missing public base", want: ErrPublicBaseURLMissing},
+		{name: "non-local HTTP", base: "http://app.example.invalid", want: ErrPublicBaseURLInvalid},
+		{name: "userinfo", base: "https://name@app.example.invalid", want: ErrPublicBaseURLInvalid},
+		{name: "path", base: "https://app.example.invalid/path", want: ErrPublicBaseURLInvalid},
+		{name: "query", base: "https://app.example.invalid?x=1", want: ErrPublicBaseURLInvalid},
+		{name: "fragment", base: "https://app.example.invalid#fragment", want: ErrPublicBaseURLInvalid},
+		{name: "invalid registration bool", base: "https://app.example.invalid", enabled: "yes", want: ErrAuthPublicRegistrationInvalid},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			setRequiredEnvironment(t)
+			t.Setenv("PUBLIC_BASE_URL", test.base)
+			t.Setenv("AUTH_PUBLIC_REGISTRATION_ENABLED", test.enabled)
+			_, err := Load()
+			if !errors.Is(err, test.want) {
+				t.Fatalf("want %v, got %v", test.want, err)
+			}
+		})
+	}
+}
+
+func TestCanonicalPublicBaseURLAllowsExplicitLocalhostHTTP(t *testing.T) {
+	for _, raw := range []string{"http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"} {
+		canonical, err := canonicalPublicBaseURL(raw)
+		if err != nil || canonical != raw {
+			t.Fatalf("canonical localhost URL: raw=%q canonical=%q err=%v", raw, canonical, err)
+		}
+	}
+}
+
+func TestCanonicalPublicBaseURLRejectsExplicitDefaultPorts(t *testing.T) {
+	for _, raw := range []string{
+		"https://app.example.invalid:443",
+		"https://[2001:db8::1]:443",
+		"http://localhost:80",
+		"http://127.0.0.1:80",
+		"http://[::1]:80",
+	} {
+		if _, err := canonicalPublicBaseURL(raw); !errors.Is(err, ErrPublicBaseURLInvalid) {
+			t.Errorf("canonicalPublicBaseURL(%q) error = %v; want invalid", raw, err)
+		}
+	}
+}
+
+func TestCanonicalPublicBaseURLPreservesNonDefaultPortsAndIPv6(t *testing.T) {
+	for _, raw := range []string{
+		"https://app.example.invalid:8443",
+		"https://[2001:db8::1]:8443",
+		"http://localhost:8080",
+		"http://[::1]:8080",
+	} {
+		canonical, err := canonicalPublicBaseURL(raw)
+		if err != nil || canonical != raw {
+			t.Errorf("canonicalPublicBaseURL(%q) = %q, %v", raw, canonical, err)
+		}
 	}
 }

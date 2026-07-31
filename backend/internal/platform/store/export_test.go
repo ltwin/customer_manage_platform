@@ -17,3 +17,8 @@ func MigrateProbeUpForTest(databaseURL string) error {
 func MigrateDownOneForTest(databaseURL string) error {
 	return migrateStepsFS(databaseURL, migrationsFS, "migrations", "schema_migrations", -1)
 }
+
+// MigrateStepsForTest 只供 migration fixture 把生产序列推进到指定步数。
+func MigrateStepsForTest(databaseURL string, steps int) error {
+	return migrateStepsFS(databaseURL, migrationsFS, "migrations", "schema_migrations", steps)
+}

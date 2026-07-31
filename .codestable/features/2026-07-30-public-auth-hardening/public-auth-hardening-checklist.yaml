@@ -1,0 +1,189 @@
+feature: 2026-07-30-public-auth-hardening
+created: 2026-07-30
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "cd backend && go test -p=1 ./internal/platform/auth/... ./internal/platform/store/... ./internal/platform/httpapi/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd backend && go test -p=1 ./cmd/accountctl/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd frontend && npm run test:auth && npm run test:api-client && npm run build"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "./scripts/test-production-preflight.sh"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "./scripts/test-auth-security-catalog.sh"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-007
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required: [command_output, postgres_integration, password_session_matrix, limiter_budget_report, timing_report, api_response, response_headers, browser_screenshot, storage_inspection, event_redaction_report, monitor_exit_matrix, preflight_report, rotation_report, rollback_catalog, isolation_report, diff_summary]
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    commented_out_code: forbidden
+    sleep_timing_test: forbidden
+    sensitive_payload_artifact: forbidden
+    production_fake_or_memory_limiter: forbidden
+    automatic_production_effect: forbidden
+
+steps:
+  - id: STEP-001
+    action: "依赖与 limiter 骨架：核验 email-account-access contract，落地 PostgreSQL AttemptLimiter、versioned limiter-hmac digest、trusted proxy 与 deterministic clock"
+    exit_signal: "login/change、register/resend/forgot、verify/reset 的 subject/source 预算在并发、窗口边界、restart/multi-instance 下可重复；account-auth从ClientMeta/selector/accountID派生digest，registration=false零消费；XFF-only代理链矩阵通过且DB/log无完整email/IP？"
+    status: pending
+  - id: STEP-002
+    action: "Password transaction：实现 BeginPasswordReset/ResetPassword/ChangePassword、30m single-use token、bcrypt 更新与账号全部 refresh family 同事务撤销"
+    exit_signal: "forgot generic 202；token 重发/过期/purpose/重复固定；reset/change 成功原子更新 credential+tokens+all families，所有设备 refresh 401+clear，access residual 不超过 10m？"
+    status: pending
+  - id: STEP-003
+    action: "防枚举与 timing：把 limiter、dummy bcrypt、public response floor/jitter、Retry-After 与 allowlisted result/event 接入全部公开认证 action"
+    exit_signal: "目标存在/不存在/状态不匹配/provider failure 的 shape/header/event一致，login 恰好一次 same-cost bcrypt；20 warmup+200 交错样本满足 median/p95/ratio 阈值，429 不泄露维度且 limiter error fail closed？"
+    status: pending
+  - id: STEP-004
+    action: "HTTP/OpenAPI/Web/Mail：挂载 public-auth-hardening tag 与 forgot/reset/change routes，接 reset mail、Origin/cookie 清理、AuthState actions 和三个 password 页面"
+    exit_signal: "codegen/router 零漂移；reset/change untrusted Origin 403零副作用，trusted只有success 204 clear，validation/429/invalid/wrong-password/500均无Set-Cookie；fragment即读即删+no-referrer+无storage/log，desktop/375px/loading/error/429/keyboard通过？"
+    status: pending
+  - id: STEP-005
+    action: "Events/monitor：固定认证事件 allowlist，交付 accountctl auth monitor 的 JSONL/journald、阈值窗口、损坏行隔离与 degraded 退出码"
+    exit_signal: "reuse/rate-limit/mail每个阈值刚低于/刚达到正确；legacy dry_run=false失败在cutover-mode off warning/active high；空/告警/损坏/组合exit 0/1/2/3，损坏后继续且stderr只有line number+fixed class，canary secret扫描为零？"
+    status: pending
+  - id: STEP-006
+    action: "Preflight/rotation/rollback：聚合 mail/secret/issuer/base/proxy/cookie/limiter/cutover/security evidence，交付 synthetic root rotation runbook 与 repo-contained rollback case catalog"
+    exit_signal: "registration=true只有live checks与versioned artifact envelope匹配current revision/schema/config fingerprint且24h/7d/future-skew freshness通过才enable-ready；任一unknown/missing/stale失败，root/rollback可重放且未执行任何生产动作？"
+    status: pending
+  - id: STEP-007
+    action: "Security E2E 与全域隔离：运行公开攻击矩阵、两个 verified account 全业务/后台隔离、CMD-001～007 和完整证据包"
+    exit_signal: "A1～A18 全部有证据、两账号客户/订单/档期/提醒/头像/设置/导出/后台无串号，所有 core command 全绿且无 secret/debug/TODO/fake production default/自动 deploy-cutover-rotation？"
+    status: pending
+
+checks:
+  - id: CHK-001
+    item: "严格依赖 email-account-access 的 AccountIdentity/PasswordCredential/AuthActionToken/RefreshFamily/AuthMailSender/AuthState/Origin-cookie/KDF contract；不建平行 auth store、handler state machine 或 client token transport"
+    source: 依赖边界
+    trace: [D1, A18]
+    status: pending
+  - id: CHK-002
+    item: "BeginPasswordReset 对 active verified 生成 30m password_reset token并失效旧 token；missing/pending/legacy/state mismatch/delivery failure 均同一 202 accepted shape，只有内部 fixed outcome 区分"
+    source: password contract
+    trace: [D2, A1]
+    status: pending
+  - id: CHK-003
+    item: "Reset token selector.32-byte-secret 只存 hash；30m刚过期、wrong purpose、tamper、重复/旧 token统一 invalid_or_expired_token且零 credential/session副作用"
+    source: token contract
+    trace: [D2, A2]
+    status: pending
+  - id: CHK-004
+    item: "ResetPassword接收ClientMeta，account-auth以token selector/source派生limiter digest；成功同事务消费/失效全部reset token、更新bcrypt、撤销账号全部refresh family、记录allowlisted password_changed；所有设备旧refresh 401+clear，access不加blacklist且最多剩10m"
+    source: transaction contract
+    trace: [D2, A3]
+    status: pending
+  - id: CHK-005
+    item: "ChangePassword只接AccountContext+ClientMeta，account-auth以accountID/source派生limiter digest，wrong current统一401；成功执行与reset相同的credential/token/all-family transaction，HTTP与frontend清当前cookie/内存auth"
+    source: transaction contract
+    trace: [D2, A4]
+    status: pending
+  - id: CHK-006
+    item: "AttemptLimiter是唯一production seam且由account-auth拥有编排，HTTP只传ClientMeta、不直接访问limiter/store；PostgreSQL原子持久化且Testcontainers走同一interface，不允许memory fallback，store error固定fail closed 500"
+    source: limiter contract
+    trace: [D3, A6]
+    status: pending
+  - id: CHK-007
+    item: "预算固定：login/change attempt 5/30/15m；register/resend/forgot 3/20/1h；verify/reset token attempt 10/30/15m，half-open window、并发、restart/multi-instance边界均可证伪"
+    source: limiter contract
+    trace: [D3, A6]
+    status: pending
+  - id: CHK-008
+    item: "limiter key 固定 HKDF-SHA256 env bytes/salt=nil/ASCII crm-auth/v1/limiter-hmac/32 bytes；email/selector/source 的versioned HMAC framing固定，DB/event/log无完整email/IP/raw token"
+    source: digest contract
+    trace: [D4, A9]
+    status: pending
+  - id: CHK-009
+    item: "source只用X-Forwarded-For并忽略Forwarded；direct peer不可信则忽略XFF，可信时按<=1024bytes/16hops严格ParseAddr并从右向左剥离trusted hops取首个untrusted；全trusted取最左，任一非法/空/端口/引号/超限整链回退direct且不记录原文"
+    source: source contract
+    trace: [D4, A9]
+    status: pending
+  - id: CHK-010
+    item: "registration=false在parse/validation/limiter/DB/mail前固定503 no-store且limiter零消费；所有action成功/失败都Consume source且不重置source，成功login/change只Reset各自subject，成功verify/reset不reset；Retry-After=ceil秒且至少1，正文不暴露维度/次数"
+    source: limiter orchestration
+    trace: [D3, A6, A7, A8]
+    status: pending
+  - id: CHK-011
+    item: "login存在/不存在均恰好一次production-cost bcrypt compare，dummy hash启动时校验且不在请求生成；不存在/错密response/event/timing不区分"
+    source: anti-enumeration
+    trace: [D5, A10]
+    status: pending
+  - id: CHK-012
+    item: "mail action 1000ms floor+0-50ms CSPRNG jitter且provider total deadline<=900ms；login/token 300ms floor+0-25ms；injected time tests与20 warmup+200交错样本满足median<=15ms、p95<=30ms、ratio<=1.25"
+    source: timing contract
+    trace: [D5, A1, A10]
+    status: pending
+  - id: CHK-013
+    item: "Forgot不新增Origin gate；reset/change缺失/错误Origin固定403且不调用account-auth/limiter、不清cookie；可信Origin只有success 204用Max-Age=0+past Expires清cookie，validation/429/reset-invalid/change-wrong/500均无Set-Cookie且业务副作用按machine matrix固定"
+    source: HTTP security
+    trace: [D6, A5]
+    status: pending
+  - id: CHK-014
+    item: "OpenAPI/TS/Go/router加入public-auth-hardening tag的forgot/reset/change并保持item1 owner；codegen零漂移，未经收敛gate不回退通用auth tag"
+    source: API挂载
+    trace: [D6, A11]
+    status: pending
+  - id: CHK-015
+    item: "Forgot/Reset/Change页面覆盖loading/error/rate-limited/expired/disabled/focus/keyboard/375px；reset fragment首读后history replace，Referrer-Policy:no-referrer，不进query/referrer/storage/log；成功后anonymous/login"
+    source: Web挂载
+    trace: [D6, A11, A12]
+    status: pending
+  - id: CHK-016
+    item: "auth.login/email_verified/rate_limited/refresh_reuse/mail_delivery/password_changed/legacy_claim事件只含allowlist，legacy_claim额外只允许boolean dry_run；完整email/IP/password/token/cookie/Authorization/provider body及raw parse line canary为零"
+    source: event contract
+    trace: [D7, A13]
+    status: pending
+  - id: CHK-017
+    item: "Monitor阈值：任一reuse high；5m rate-limit global>=20或source>=5；mail连续失败>=5或15m样本>=10且失败率>20%；legacy dry_run=false失败在cutover-mode=off为warning、active为high，dry-run不触发；刚低于/刚达到均测试"
+    source: monitor contract
+    trace: [D7, A14]
+    status: pending
+  - id: CHK-018
+    item: "Monitor JSONL/journald 损坏行隔离后继续，只输出line number+fixed parse class；exit0无告警无损坏、1告警、2损坏、3两者，空输入0，source读取失败为operational exit2"
+    source: monitor contract
+    trace: [D7, A15]
+    status: pending
+  - id: CHK-019
+    item: "production preflight在registration=true时核验live config/limiter/cutover，并要求外部evidence envelope含version/generated_at/build_revision/schema/config_fingerprint/environment/status；mail/monitor/security<=24h、rollback/rotation<=7d、future skew<=5m且revision/schema/fingerprint匹配，unknown/missing/stale全部fail closed"
+    source: release gate
+    trace: [D8, A16]
+    status: pending
+  - id: CHK-020
+    item: "registration=false只报告secure-baseline-ready；enable-ready不修改env/开关、不迁移/deploy/cutover，README明确owner独立授权链"
+    source: effect boundary
+    trace: [D8, A16, A18]
+    status: pending
+  - id: CHK-021
+    item: "root rotation runbook固定关闭注册/维护窗/全family revoke/切root+三key/旧token与namespace negative/preflight/另行恢复；新token签发后不长期dual-key，真实rotation无自动入口"
+    source: secret rotation
+    trace: [D9, A17]
+    status: pending
+  - id: CHK-022
+    item: "repo-contained security catalog覆盖migration/limiter rollback、legacy-only/新式账号/旧binary边界、root old-new、cookie/Origin、reuse race、public shape/timing；只用synthetic数据且不依赖系统migrate/benchmark工具"
+    source: rollback catalog
+    trace: [D9, A17]
+    status: pending
+  - id: CHK-023
+    item: "两个verified account在客户/订单/档期/提醒/头像/设置/导出与AccountScopes后台消费者全域隔离；客户端不提交account_id；CMD-001～007全绿且无自动production effect或范围外MFA/OAuth/设备管理实现"
+    source: E2E范围守护
+    trace: [A18, S7]
+    status: pending

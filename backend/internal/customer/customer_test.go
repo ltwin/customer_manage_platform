@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -72,7 +73,43 @@ func createAccount(t *testing.T, s *store.Store, id string) store.AccountScope {
 	if err := s.CreateAccount(context.Background(), id, "test-hash"); err != nil {
 		t.Fatalf("create account %s: %v", id, err)
 	}
+	activateLegacyTestAccount(t, s, id)
 	return s.ScopeFor(auth.AccountContext{AccountID: id})
+}
+
+func activateLegacyTestAccount(t *testing.T, s *store.Store, id string) {
+	t.Helper()
+	mail := &activationMailSender{}
+	service := auth.NewService(
+		s,
+		auth.NewTokenIssuer("customer-test-account-activation-root"),
+		auth.WithAuthMailSender(mail),
+		auth.WithPublicBaseURL("https://customer.test"),
+	)
+	result, err := service.BeginLegacyClaim(context.Background(), id+"@customer.test", false)
+	if err != nil || result.State != auth.LegacyClaimReady || mail.wire == "" {
+		t.Fatalf("begin legacy test-account activation: state=%s err=%v", result.State, err)
+	}
+	if _, err := service.VerifyEmail(context.Background(), mail.wire); err != nil {
+		t.Fatalf("verify legacy test-account activation: %v", err)
+	}
+}
+
+type activationMailSender struct {
+	wire string
+}
+
+func (s *activationMailSender) Send(_ context.Context, mail auth.AuthMail) (auth.MailReceipt, error) {
+	actionURL, err := url.Parse(mail.ActionURL)
+	if err != nil {
+		return auth.MailReceipt{}, fmt.Errorf("parse activation action URL: %w", err)
+	}
+	fragment, err := url.ParseQuery(actionURL.Fragment)
+	if err != nil {
+		return auth.MailReceipt{}, fmt.Errorf("parse activation action fragment: %w", err)
+	}
+	s.wire = fragment.Get("token")
+	return auth.MailReceipt{ProviderMessageID: "customer-test-activation", AcceptedAt: time.Now().UTC()}, nil
 }
 
 func TestCreateListAndDetail(t *testing.T) {

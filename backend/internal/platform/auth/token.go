@@ -1,59 +1,113 @@
 package auth
 
 import (
-	"errors"
+	"crypto/rand"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// tokenTTL：JWT 有效期 30 天（design D3）；吊销 = 轮换 AUTH_TOKEN_SECRET。
-const tokenTTL = 30 * 24 * time.Hour
+const accessTokenTTL = 10 * time.Minute
 
-// ErrInvalidToken：缺失 / 篡改 / 过期 token 的统一解析失败错误（对外一律 401）。
-var ErrInvalidToken = errors.New("token 无效或已过期")
+type accessClaims struct {
+	Version int    `json:"ver"`
+	Session string `json:"sid"`
+	jwt.RegisteredClaims
+}
 
-// TokenIssuer 负责 JWT（HS256）签发与解析；secret 只经环境变量注入（硬规则 4）。
 type TokenIssuer struct {
-	secret []byte
-	ttl    time.Duration
-	now    func() time.Time
+	key       []byte
+	replayKey []byte
+	issuer    string
+	audience  string
+	ttl       time.Duration
+	now       func() time.Time
+	random    io.Reader
 }
 
-// NewTokenIssuer 用注入的 secret 构造签发器。
 func NewTokenIssuer(secret string) *TokenIssuer {
-	return &TokenIssuer{secret: []byte(secret), ttl: tokenTTL, now: time.Now}
+	key := deriveKey(secret, accessSigningLabel)
+	return &TokenIssuer{
+		key: key, replayKey: deriveKey(secret, replayAEADLabel),
+		issuer: "photographer-crm", audience: "photographer-crm-web",
+		ttl: accessTokenTTL, now: time.Now, random: rand.Reader,
+	}
 }
 
-// Issue 为账号签发 token（claims: sub=account_id, iat, exp）。
+func (ti *TokenIssuer) ReplayCipher(random io.Reader) (*ReplayCipher, error) {
+	return newReplayCipher(ti.replayKey, random)
+}
+
+func (ti *TokenIssuer) WithClock(now func() time.Time) *TokenIssuer {
+	if now != nil {
+		ti.now = now
+	}
+	return ti
+}
+
+func (ti *TokenIssuer) WithRandom(random io.Reader) *TokenIssuer {
+	if random != nil {
+		ti.random = random
+	}
+	return ti
+}
+
+func (ti *TokenIssuer) WithIdentity(issuer, audience string) *TokenIssuer {
+	if issuer != "" {
+		ti.issuer = issuer
+	}
+	if audience != "" {
+		ti.audience = audience
+	}
+	return ti
+}
+
+// Issue 保留给现有内部测试/工具；生产认证流程使用 IssueForSession。
 func (ti *TokenIssuer) Issue(accountID string) (string, error) {
-	now := ti.now()
-	claims := jwt.RegisteredClaims{
-		Subject:   accountID,
-		IssuedAt:  jwt.NewNumericDate(now),
-		ExpiresAt: jwt.NewNumericDate(now.Add(ti.ttl)),
-	}
-	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(ti.secret)
-	if err != nil {
-		return "", fmt.Errorf("sign token: %w", err)
-	}
-	return signed, nil
+	token, _, err := ti.IssueForSession(accountID, accountID)
+	return token, err
 }
 
-// Parse 校验签名与有效期，返回 token 归属的 account_id。
-func (ti *TokenIssuer) Parse(token string) (string, error) {
-	var claims jwt.RegisteredClaims
-	_, err := jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (any, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method %v", t.Header["alg"])
-		}
-		return ti.secret, nil
-	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithTimeFunc(ti.now))
+func (ti *TokenIssuer) IssueForSession(accountID, sessionID string) (string, time.Time, error) {
+	now := ti.now().UTC()
+	jti, err := randomID(ti.random)
 	if err != nil {
-		return "", ErrInvalidToken
+		return "", time.Time{}, err
 	}
-	if claims.Subject == "" {
+	expiresAt := now.Add(ti.ttl)
+	claims := accessClaims{
+		Version: 2,
+		Session: sessionID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer: ti.issuer, Subject: accountID,
+			Audience: jwt.ClaimStrings{ti.audience}, ID: jti,
+			IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(expiresAt),
+		},
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(ti.key)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("sign access token: %w", err)
+	}
+	return signed, expiresAt, nil
+}
+
+func (ti *TokenIssuer) Parse(token string) (string, error) {
+	var claims accessClaims
+	_, err := jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (any, error) {
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, ErrInvalidToken
+		}
+		return ti.key, nil
+	},
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		jwt.WithIssuer(ti.issuer), jwt.WithAudience(ti.audience), jwt.WithTimeFunc(ti.now),
+		jwt.WithExpirationRequired(), jwt.WithIssuedAt(),
+	)
+	if err != nil || claims.Version != 2 || claims.Subject == "" || claims.Session == "" || claims.ID == "" ||
+		claims.IssuedAt == nil || claims.ExpiresAt == nil || claims.Issuer != ti.issuer ||
+		len(claims.Audience) != 1 || claims.Audience[0] != ti.audience {
 		return "", ErrInvalidToken
 	}
 	return claims.Subject, nil

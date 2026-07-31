@@ -10,6 +10,7 @@
     "test:customer-money": "node --test --experimental-transform-types scripts/customer-money.test.ts",
     "test:package-price": "node --test --experimental-transform-types scripts/package-price.test.ts",
     "test:api-client": "node --test --experimental-transform-types scripts/api-client.test.ts",
+    "test:auth": "node --test --experimental-transform-types scripts/auth.test.ts",
     "test:schedule": "node --test --experimental-transform-types scripts/schedule.test.ts",
     "test:avatar-layout": "node --test scripts/avatar-layout.test.mjs",
     "test:customer-avatar": "node --test --experimental-transform-types scripts/customer-avatar.test.ts",

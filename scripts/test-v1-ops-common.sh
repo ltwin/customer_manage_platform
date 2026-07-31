@@ -452,12 +452,18 @@ test_preflight_pinned_host_skips_context_resolution() {
     printf '%s\n' 'POSTGRES_PASSWORD=managed-production-password'
     printf '%s\n' 'POSTGRES_DB=crm'
     printf '%s\n' 'AUTH_TOKEN_SECRET=0123456789abcdef0123456789abcdef'
+    printf '%s\n' 'AUTH_TOKEN_ISSUER=photographer-crm'
+    printf '%s\n' 'PUBLIC_BASE_URL=https://crm.example.invalid'
+    printf '%s\n' 'AUTH_PUBLIC_REGISTRATION_ENABLED=false'
+    printf '%s\n' 'AUTH_MAIL_DRIVER=resend'
+    printf '%s\n' 'RESEND_API_KEY=synthetic-resend-key'
+    printf '%s\n' 'AUTH_MAIL_FROM=CRM Fixture <fixture@crm.example.invalid>'
     printf '%s\n' 'SEED_ADMIN_PASSWORD='
     printf '%s\n' 'TELEGRAM_BOT_TOKEN='
     printf '%s\n' 'TELEGRAM_BOT_USERNAME='
   } >"$env_file"
   printf '%s\n' 'services: {}' >"$compose_file"
-  printf '%s\n' '{"services":{"app":{"image":"crm:local","environment":{"AUTH_TOKEN_SECRET":"0123456789abcdef0123456789abcdef","HTTP_ADDR":":8080","AVATAR_STORAGE_DRIVER":"local","AVATAR_LOCAL_ROOT":"/var/lib/crm/avatars","AVATAR_LOCAL_REQUIRE_MOUNT":"true","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"","DATABASE_URL":"postgres://crm:managed-production-password@postgres:5432/crm?sslmode=disable"},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"}]},"postgres":{"image":"postgres:17-alpine","environment":{"POSTGRES_USER":"crm","POSTGRES_DB":"crm"},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"pgdata":{}}}' >"$render_file"
+  printf '%s\n' '{"services":{"app":{"image":"crm:local","environment":{"AUTH_TOKEN_SECRET":"0123456789abcdef0123456789abcdef","AUTH_TOKEN_ISSUER":"photographer-crm","PUBLIC_BASE_URL":"https://crm.example.invalid","AUTH_PUBLIC_REGISTRATION_ENABLED":"false","AUTH_MAIL_DRIVER":"resend","RESEND_API_KEY":"synthetic-resend-key","AUTH_MAIL_FROM":"CRM Fixture <fixture@crm.example.invalid>","HTTP_ADDR":":8080","AVATAR_STORAGE_DRIVER":"local","AVATAR_LOCAL_ROOT":"/var/lib/crm/avatars","AVATAR_LOCAL_REQUIRE_MOUNT":"true","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"","DATABASE_URL":"postgres://crm:managed-production-password@postgres:5432/crm?sslmode=disable"},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"}]},"postgres":{"image":"postgres:17-alpine","environment":{"POSTGRES_USER":"crm","POSTGRES_DB":"crm"},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"pgdata":{}}}' >"$render_file"
   {
     printf '%s\n' '#!/usr/bin/env bash'
     printf '%s\n' 'printf "%s\n" "$*" >>"$V1_TEST_DOCKER_LOG"'

@@ -547,3 +547,8 @@
 @media (prefers-reduced-motion: reduce) {
   .wp * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+.wp-disabled-action {
+  opacity: 0.62;
+  cursor: not-allowed;
+  box-shadow: none;
+}

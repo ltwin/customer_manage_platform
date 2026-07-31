@@ -1,13 +1,13 @@
 # 摄影师私域客户经营系统（CRM）HTTP API 契约。
 # 语义权威源：.codestable/roadmap/photographer-private-crm/photographer-private-crm-roadmap.md §4；
 # 本文件是其机器可执行形式（忠实转写，不做再设计）。发现契约问题回 cs-roadmap update，不在此私改。
-# 端点集合 = §4.1 platform（login/me）+ §4.3 各域清单 + §4.6 export；GET /me 已于 2026-07-10 收编并增加 timezone。
+# 端点集合 = self-service-account-system §4.4 认证 + 既有各域清单；GET /me 保留 timezone 并增加 verified email。
 # /healthz 为运维端点，不进本契约。
 openapi: 3.0.3
 info:
   title: Photographer Private CRM API
   version: 0.1.0
-  description: 首版单账号；所有资源端点隐式按当前账号过滤，客户端永不传 account_id（ADR-001）。
+  description: 多账号自助认证；所有资源端点隐式按当前账号过滤，客户端永不传 account_id（ADR-001）。
 
 servers:
   - url: /api/v1
@@ -16,8 +16,10 @@ security:
   - bearerAuth: []
 
 tags:
-  - name: auth
-    description: 登录与当前账号（platform-skeleton 已实现）
+  - name: email-account-access
+    description: 邮箱注册验证、登录、refresh、logout 与当前账号
+  - name: public-auth-hardening
+    description: 密码找回、重置与修改；仅机器契约，当前 Go server/router 不挂载
   - name: customer-core
     description: 后端 codegen 切片标签（customer-core 已实现的客户三操作）
   - name: customer-profile-complete
@@ -44,11 +46,32 @@ tags:
     description: 全量导出（data-export）
 
 paths:
-  /auth/login:
+  /auth/capabilities:
+    get:
+      tags: [email-account-access]
+      operationId: getAuthCapabilities
+      summary: 读取公开注册能力
+      security: []
+      responses:
+        "200":
+          description: 当前公开注册能力；不得缓存
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: 固定 no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthCapabilities"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/register:
     post:
-      tags: [auth]
-      operationId: login
-      summary: 单账号密码登录，签发 Bearer token
+      tags: [email-account-access]
+      operationId: register
+      summary: 注册 pending_verification 账号并尝试发送验证邮件
       security: []
       requestBody:
         required: true
@@ -56,31 +79,320 @@ paths:
           application/json:
             schema:
               type: object
-              required: [password]
+              additionalProperties: false
+              required: [email, password]
               properties:
+                email:
+                  type: string
+                  maxLength: 254
                 password:
                   type: string
+                  minLength: 12
+                  maxLength: 72
       responses:
-        "200":
-          description: 登录成功
+        "202":
+          description: 固定公开结果；不得据此判断账号或投递状态
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: 固定 no-store
           content:
             application/json:
               schema:
-                type: object
-                required: [token]
-                properties:
-                  token:
-                    type: string
+                $ref: "#/components/schemas/VerificationDispatch"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/RegistrationDisabled"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/email/resend:
+    post:
+      tags: [email-account-access]
+      operationId: resendVerification
+      summary: 以 generic outcome 重发验证邮件
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  maxLength: 254
+      responses:
+        "202":
+          description: 固定公开结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationDispatch"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/email/verify:
+    post:
+      tags: [email-account-access]
+      operationId: verifyEmail
+      summary: 消费 verification／legacy claim token 并建立首个 session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token]
+              properties:
+                token:
+                  type: string
+      responses:
+        "200":
+          description: 已验证并建立 session
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: __Host-crm_refresh；HttpOnly、Secure、Strict、Path=/、无 Domain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
+        "400":
+          $ref: "#/components/responses/InvalidOrExpiredToken"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/login:
+    post:
+      tags: [email-account-access]
+      operationId: login
+      summary: 邮箱密码登录并建立 refresh session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  maxLength: 254
+                password:
+                  type: string
+                  minLength: 12
+                  maxLength: 72
+      responses:
+        "200":
+          description: 登录成功
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: __Host-crm_refresh；HttpOnly、Secure、Strict、Path=/、无 Domain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
         "400":
           $ref: "#/components/responses/ValidationFailed"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: forbidden（Origin）或 email_verification_required（密码正确但未验证）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/refresh:
+    post:
+      tags: [email-account-access]
+      operationId: refresh
+      summary: 使用 HttpOnly refresh cookie 轮换 session generation
+      security: []
+      responses:
+        "200":
+          description: refresh 成功
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: rotated __Host-crm_refresh cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessTokenResponse"
+        "401":
+          description: unauthorized；同时清除 refresh cookie
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Max-Age=0 且 Expires 为过去时间
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/logout:
+    post:
+      tags: [email-account-access]
+      operationId: logout
+      summary: 幂等撤销 refresh family 并清 cookie
+      security: []
+      responses:
+        "204":
+          description: 已退出；missing／expired／revoked 同样成功
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: Max-Age=0 且 Expires 为过去时间
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/password/forgot:
+    post:
+      tags: [public-auth-hardening]
+      operationId: forgotPassword
+      summary: 请求密码重置邮件（当前仅机器契约，route 未挂载）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  maxLength: 254
+      responses:
+        "202":
+          description: 固定公开结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [accepted]
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/password/reset:
+    post:
+      tags: [public-auth-hardening]
+      operationId: resetPassword
+      summary: 以 action token 重置密码（当前仅机器契约，route 未挂载）
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 12
+                  maxLength: 72
+      responses:
+        "204":
+          description: 密码已更新、refresh sessions 已撤销且 cookie 已清除
+        "400":
+          description: validation_failed 或 invalid_or_expired_token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /auth/password/change:
+    post:
+      tags: [public-auth-hardening]
+      operationId: changePassword
+      summary: 已认证账号修改密码（当前仅机器契约，route 未挂载）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 12
+                  maxLength: 72
+      responses:
+        "204":
+          description: 密码已更新、refresh sessions 已撤销且 cookie 已清除
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
         "500":
           $ref: "#/components/responses/Internal"
 
   /me:
     get:
-      tags: [auth]
+      tags: [email-account-access]
       operationId: getMe
       summary: 当前账号信息（永不含 password_hash）
       responses:
@@ -1455,6 +1767,35 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
+    Forbidden:
+      description: 403 forbidden（Origin 缺失或与 PUBLIC_BASE_URL 不一致）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    InvalidOrExpiredToken:
+      description: 400 invalid_or_expired_token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    RateLimited:
+      description: 429 rate_limited
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: 固定秒数；不暴露 limiter 维度
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    RegistrationDisabled:
+      description: 503 registration_disabled
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
     NotFound:
       description: 404 not_found
       content:
@@ -1469,8 +1810,39 @@ components:
             $ref: "#/components/schemas/ErrorEnvelope"
 
   schemas:
+    AuthCapabilities:
+      type: object
+      additionalProperties: false
+      required: [public_registration_enabled]
+      properties:
+        public_registration_enabled:
+          type: boolean
+
+    VerificationDispatch:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [verification_required]
+
+    AccessTokenResponse:
+      type: object
+      additionalProperties: false
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_in:
+          type: integer
+          enum: [600]
+
     ErrorEnvelope:
-      description: 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+      description: 统一错误封套；含认证错误码与既有业务 conflict 子码
       type: object
       required: [error]
       properties:
@@ -1499,7 +1871,7 @@ components:
     Account:
       description: 账号（摄影师）；永不含 password_hash
       type: object
-      required: [id, created_at, timezone]
+      required: [id, email, created_at, timezone]
       properties:
         id:
           type: string
@@ -1507,6 +1879,9 @@ components:
         created_at:
           type: string
           format: date-time
+          readOnly: true
+        email:
+          type: string
           readOnly: true
         timezone:
           type: string

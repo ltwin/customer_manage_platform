@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -23,6 +25,8 @@ import (
 )
 
 const defaultAccountTimezone = "Asia/Shanghai"
+
+const refreshCookieName = "__Host-crm_refresh"
 
 type AccountTimezoneProvider interface {
 	TimezoneForAccount(context.Context, string) (string, error)
@@ -61,45 +65,137 @@ func authMiddleware(svc *auth.Service) gin.HandlerFunc {
 
 // handlers 实现 codegen 的 ServerInterface：薄适配层，领域逻辑在 auth.Service（ADR-003）。
 type handlers struct {
-	logger           *slog.Logger
-	auth             *auth.Service
-	scopeFactory     ScopeFactory
-	customer         *customerdomain.Service
-	orders           *orderdomain.Service
-	packages         *pkgcatalog.Service
-	idempotency      *idempotency.Executor
-	timezone         AccountTimezoneProvider
-	schedule         *scheduledomain.Service
-	avatar           *customerdomain.AvatarApplication
-	avatarProcessor  AvatarProcessor
-	settings         *settings.Service
-	reminders        *reminder.Service
-	dashboard        *dashboarddomain.Service
-	dataExport       DataExportService
-	dataExportMap    dataExportProjector
-	dataExportEncode dataExportEncoder
-	telegramBinding  TelegramBindingIssuer
+	logger              *slog.Logger
+	auth                *auth.Service
+	scopeFactory        ScopeFactory
+	customer            *customerdomain.Service
+	orders              *orderdomain.Service
+	packages            *pkgcatalog.Service
+	idempotency         *idempotency.Executor
+	timezone            AccountTimezoneProvider
+	schedule            *scheduledomain.Service
+	avatar              *customerdomain.AvatarApplication
+	avatarProcessor     AvatarProcessor
+	settings            *settings.Service
+	reminders           *reminder.Service
+	dashboard           *dashboarddomain.Service
+	dataExport          DataExportService
+	dataExportMap       dataExportProjector
+	dataExportEncode    dataExportEncoder
+	telegramBinding     TelegramBindingIssuer
+	publicBaseURL       string
+	registrationEnabled bool
+	now                 func() time.Time
 }
 
 var _ ServerInterface = (*handlers)(nil)
 
+func (h *handlers) GetAuthCapabilities(c *gin.Context) {
+	setNoStore(c)
+	c.JSON(http.StatusOK, AuthCapabilities{PublicRegistrationEnabled: h.registrationEnabled})
+}
+
+func (h *handlers) Register(c *gin.Context) {
+	setNoStore(c)
+	if !h.registrationEnabled {
+		abortError(c, http.StatusServiceUnavailable, CodeRegistrationDisabled, "注册暂未开放")
+		return
+	}
+	var body RegisterJSONRequestBody
+	if err := bindStrictJSON(c, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+		return
+	}
+	if _, err := h.auth.Register(c.Request.Context(), body.Email, body.Password); err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, VerificationDispatch{Status: VerificationRequired})
+}
+
+func (h *handlers) ResendVerification(c *gin.Context) {
+	setNoStore(c)
+	var body ResendVerificationJSONRequestBody
+	if err := bindStrictJSON(c, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+		return
+	}
+	if _, err := h.auth.ResendVerification(c.Request.Context(), body.Email); err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, VerificationDispatch{Status: VerificationRequired})
+}
+
+func (h *handlers) VerifyEmail(c *gin.Context) {
+	setNoStore(c)
+	if !h.requireTrustedOrigin(c) {
+		return
+	}
+	var body VerifyEmailJSONRequestBody
+	if err := bindStrictJSON(c, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+		return
+	}
+	session, err := h.auth.VerifyEmail(c.Request.Context(), body.Token)
+	h.logAuthSessionEvent(c.Request.Context(), "auth.email_verified", session, err)
+	if err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+	h.writeSession(c, session)
+}
+
 // Login 处理 POST /auth/login（契约见 api/openapi.yaml）。
 func (h *handlers) Login(c *gin.Context) {
+	setNoStore(c)
+	if !h.requireTrustedOrigin(c) {
+		return
+	}
 	var body LoginJSONRequestBody
-	if err := c.ShouldBindJSON(&body); err != nil || body.Password == "" {
-		abortError(c, http.StatusBadRequest, CodeValidationFailed, "password 必填")
+	if err := bindStrictJSON(c, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
 		return
 	}
-	token, err := h.auth.Login(c.Request.Context(), body.Password)
-	if errors.Is(err, auth.ErrInvalidPassword) {
-		abortError(c, http.StatusUnauthorized, CodeUnauthorized, "密码错误")
-		return
-	}
+	session, err := h.auth.Login(c.Request.Context(), body.Email, body.Password)
+	h.logAuthSessionEvent(c.Request.Context(), "auth.login", session, err)
 	if err != nil {
-		_ = c.Error(err) // 由封套渲染中间件统一化为 500 internal
+		h.writeAuthError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"token": token})
+	h.writeSession(c, session)
+}
+
+func (h *handlers) Refresh(c *gin.Context) {
+	setNoStore(c)
+	if !h.requireTrustedOrigin(c) {
+		return
+	}
+	wire, _ := c.Cookie(refreshCookieName)
+	session, err := h.auth.Refresh(c.Request.Context(), wire)
+	if err != nil {
+		h.logRefreshReuseEvent(c.Request.Context(), err)
+		if auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+			h.clearRefreshCookie(c)
+		}
+		h.writeAuthError(c, err)
+		return
+	}
+	h.writeSession(c, session)
+}
+
+func (h *handlers) Logout(c *gin.Context) {
+	setNoStore(c)
+	if !h.requireTrustedOrigin(c) {
+		return
+	}
+	wire, _ := c.Cookie(refreshCookieName)
+	if err := h.auth.Logout(c.Request.Context(), wire); err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+	h.clearRefreshCookie(c)
+	c.Status(http.StatusNoContent)
 }
 
 // GetMe 处理 GET /me：返回账号信息，永不含 password_hash。
@@ -109,7 +205,7 @@ func (h *handlers) GetMe(c *gin.Context) {
 		abortError(c, http.StatusUnauthorized, CodeUnauthorized, "未认证")
 		return
 	}
-	acct, err := h.auth.AccountByID(c.Request.Context(), ac.AccountID)
+	acct, err := h.auth.CurrentAccount(c.Request.Context(), ac.AccountID)
 	if err != nil {
 		_ = c.Error(err)
 		return
@@ -121,7 +217,81 @@ func (h *handlers) GetMe(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, Account{
 		Id:        &acct.ID,
+		Email:     &acct.Email,
 		CreatedAt: &acct.CreatedAt,
 		Timezone:  timezone,
 	})
+}
+
+func (h *handlers) requireTrustedOrigin(c *gin.Context) bool {
+	if c.GetHeader("Origin") != h.publicBaseURL {
+		abortError(c, http.StatusForbidden, CodeForbidden, "请求来源不受信任")
+		return false
+	}
+	return true
+}
+
+func (h *handlers) writeSession(c *gin.Context, session auth.Session) {
+	h.setRefreshCookie(c, session)
+	c.JSON(http.StatusOK, AccessTokenResponse{
+		AccessToken: session.AccessToken,
+		ExpiresIn:   AccessTokenResponseExpiresIn(600),
+		TokenType:   AccessTokenResponseTokenType("Bearer"),
+	})
+}
+
+func (h *handlers) setRefreshCookie(c *gin.Context, session auth.Session) {
+	expiresAt := session.RefreshExpiresAt
+	if session.RefreshAbsoluteAt.Before(expiresAt) {
+		expiresAt = session.RefreshAbsoluteAt
+	}
+	now := h.now().UTC()
+	maxAge := int(expiresAt.Sub(now) / time.Second)
+	if maxAge < 0 {
+		maxAge = 0
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: refreshCookieName, Value: session.RefreshToken,
+		Path: "/", Expires: expiresAt.UTC(), MaxAge: maxAge,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func (h *handlers) clearRefreshCookie(c *gin.Context) {
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name: refreshCookieName, Value: "", Path: "/",
+		Expires: time.Unix(1, 0).UTC(), MaxAge: -1,
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func (h *handlers) writeAuthError(c *gin.Context, err error) {
+	switch {
+	case auth.IsAuthError(err, auth.AuthErrorValidation):
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+	case auth.IsAuthError(err, auth.AuthErrorUnauthorized):
+		abortError(c, http.StatusUnauthorized, CodeUnauthorized, "认证失败")
+	case auth.IsAuthError(err, auth.AuthErrorEmailVerificationRequired):
+		abortError(c, http.StatusForbidden, CodeEmailVerificationRequired, "邮箱尚未验证")
+	case auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken):
+		abortError(c, http.StatusBadRequest, CodeInvalidOrExpiredToken, "token 无效或已过期")
+	default:
+		_ = c.Error(err)
+	}
+}
+
+func bindStrictJSON(c *gin.Context, target any) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+func setNoStore(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 }

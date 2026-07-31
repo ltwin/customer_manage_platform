@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -34,23 +35,26 @@ type ScopeFactory interface {
 
 // RouterDeps 是路由骨架的全部依赖。
 type RouterDeps struct {
-	Logger          *slog.Logger
-	DB              Pinger
-	ScopeFactory    ScopeFactory
-	Auth            *auth.Service
-	Customer        *customerdomain.Service
-	Orders          *orderdomain.Service
-	Packages        *pkgcatalog.Service
-	Idempotency     *idempotency.Executor
-	AccountTimezone AccountTimezoneProvider
-	Schedule        *scheduledomain.Service
-	Avatar          *customerdomain.AvatarApplication
-	AvatarProcessor AvatarProcessor
-	Settings        *settings.Service
-	Reminders       *reminder.Service
-	Dashboard       *dashboarddomain.Service
-	DataExport      DataExportService
-	TelegramBinding TelegramBindingIssuer
+	Logger                    *slog.Logger
+	DB                        Pinger
+	ScopeFactory              ScopeFactory
+	Auth                      *auth.Service
+	Customer                  *customerdomain.Service
+	Orders                    *orderdomain.Service
+	Packages                  *pkgcatalog.Service
+	Idempotency               *idempotency.Executor
+	AccountTimezone           AccountTimezoneProvider
+	Schedule                  *scheduledomain.Service
+	Avatar                    *customerdomain.AvatarApplication
+	AvatarProcessor           AvatarProcessor
+	Settings                  *settings.Service
+	Reminders                 *reminder.Service
+	Dashboard                 *dashboarddomain.Service
+	DataExport                DataExportService
+	TelegramBinding           TelegramBindingIssuer
+	PublicBaseURL             string
+	PublicRegistrationEnabled bool
+	Now                       func() time.Time
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -73,26 +77,39 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	if timezone == nil {
 		timezone = defaultTimezoneProvider{}
 	}
+	now := deps.Now
+	if now == nil {
+		now = time.Now
+	}
 	h := &handlers{
-		logger:          deps.Logger,
-		auth:            deps.Auth,
-		scopeFactory:    deps.ScopeFactory,
-		customer:        deps.Customer,
-		orders:          deps.Orders,
-		packages:        deps.Packages,
-		idempotency:     deps.Idempotency,
-		timezone:        timezone,
-		schedule:        deps.Schedule,
-		avatar:          deps.Avatar,
-		avatarProcessor: deps.AvatarProcessor,
-		settings:        deps.Settings,
-		reminders:       deps.Reminders,
-		dashboard:       deps.Dashboard,
-		dataExport:      deps.DataExport,
-		telegramBinding: deps.TelegramBinding,
+		logger:              deps.Logger,
+		auth:                deps.Auth,
+		scopeFactory:        deps.ScopeFactory,
+		customer:            deps.Customer,
+		orders:              deps.Orders,
+		packages:            deps.Packages,
+		idempotency:         deps.Idempotency,
+		timezone:            timezone,
+		schedule:            deps.Schedule,
+		avatar:              deps.Avatar,
+		avatarProcessor:     deps.AvatarProcessor,
+		settings:            deps.Settings,
+		reminders:           deps.Reminders,
+		dashboard:           deps.Dashboard,
+		dataExport:          deps.DataExport,
+		telegramBinding:     deps.TelegramBinding,
+		publicBaseURL:       deps.PublicBaseURL,
+		registrationEnabled: deps.PublicRegistrationEnabled,
+		now:                 now,
 	}
 	api := r.Group("/api/v1")
+	api.GET("/auth/capabilities", h.GetAuthCapabilities)
+	api.POST("/auth/register", h.Register)
+	api.POST("/auth/email/resend", h.ResendVerification)
+	api.POST("/auth/email/verify", h.VerifyEmail)
 	api.POST("/auth/login", h.Login)
+	api.POST("/auth/refresh", h.Refresh)
+	api.POST("/auth/logout", h.Logout)
 	protected := api.Group("", authMiddleware(deps.Auth))
 	protected.GET("/me", h.GetMe)
 	protected.GET("/customers", h.listCustomersRoute)
@@ -167,6 +184,9 @@ func staticHandler(dist fs.FS) gin.HandlerFunc {
 	httpFS := http.FS(dist)
 	return func(c *gin.Context) {
 		path := strings.TrimPrefix(c.Request.URL.Path, "/")
+		if strings.Trim(path, "/") == "verify-email" {
+			c.Header("Referrer-Policy", "no-referrer")
+		}
 		if path != "" && path != "index.html" {
 			if info, err := fs.Stat(dist, path); err == nil && !info.IsDir() {
 				c.FileFromFS(path, httpFS)

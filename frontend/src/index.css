@@ -84,6 +84,28 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .right-actions { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
+.auth-restore {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  color: var(--muted);
+  background: var(--bg);
+}
+.auth-restore-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-pill);
+  animation: auth-restore-spin 620ms linear infinite;
+}
+@keyframes auth-restore-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-restore-spinner { animation-duration: 0.01ms !important; }
+}
+
 .app-shell { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 100vh; }
 .sidebar {
   border-right: 1px solid var(--border);

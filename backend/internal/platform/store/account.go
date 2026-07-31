@@ -9,8 +9,7 @@ import (
 
 // 编译期校验：Store 同时满足 seed 与认证的仓储面。
 var (
-	_ auth.AccountStore  = (*Store)(nil)
-	_ auth.AccountReader = (*Store)(nil)
+	_ auth.AccountStore = (*Store)(nil)
 )
 
 // FirstAccount 返回唯一账号的认证信息（首版单账号；按创建时间取最早一条）。

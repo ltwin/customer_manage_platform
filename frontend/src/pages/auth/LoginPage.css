@@ -1,4 +1,4 @@
-/* 登录页样式：左品牌氛围 / 右表单。
+/* 认证页面样式：左品牌氛围 / 右表单。
    颜色与阴影全部消费 index.css 的 token，跟随 data-theme 暗色切换。 */
 
 .auth-shell { display: grid; grid-template-columns: 1.05fr 1fr; min-height: 100vh; }
@@ -144,62 +144,6 @@
 .auth-card h2 { font-size: 22px; letter-spacing: -0.01em; }
 .auth-card > header p { color: var(--muted); font-size: 13px; margin-top: 5px; }
 
-.auth-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  padding: 3px;
-  gap: 3px;
-  margin-bottom: 20px;
-}
-.auth-tab {
-  position: relative;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 7px 10px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 550;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-}
-.auth-tab:hover:not(:disabled) { color: var(--fg); }
-.auth-tab[aria-selected='true'] {
-  background: var(--surface);
-  color: var(--accent);
-  font-weight: 600;
-  box-shadow: var(--shadow-1);
-}
-.auth-tab[aria-selected='true']::after {
-  content: '';
-  position: absolute;
-  bottom: 3px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 16px;
-  height: 2.5px;
-  border-radius: 3px;
-  background: var(--accent2);
-}
-/* 验证码通道后端尚未提供接口，禁用并保留位置 */
-.auth-tab:disabled { opacity: 0.55; cursor: not-allowed; }
-.auth-tab-soon {
-  display: inline-block;
-  margin-left: 5px;
-  font-family: var(--font-mono);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
-  padding: 1px 5px;
-  vertical-align: 1px;
-}
-
 .auth-alert {
   display: flex;
   align-items: flex-start;
@@ -220,32 +164,6 @@
   color: oklch(42% 0.12 158);
 }
 [data-theme='dark'] .auth-alert.auth-alert-ok { color: oklch(83% 0.12 158); }
-
-.auth-row-between {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: -2px 0 18px;
-}
-.auth-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12.5px;
-  color: var(--muted);
-  cursor: pointer;
-}
-.auth-checkbox input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
-.auth-link-quiet {
-  font-size: 12.5px;
-  color: var(--accent);
-  font-weight: 550;
-  background: none;
-  border: 0;
-  padding: 0;
-}
-.auth-link-quiet:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 2px; }
 
 .auth-btn-block { width: 100%; min-height: 44px; font-size: 14px; font-weight: 600; }
 
@@ -278,6 +196,23 @@
   line-height: 1.7;
 }
 .auth-soon-note b { color: var(--fg); font-weight: 600; }
+.auth-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.auth-field-hint {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
 
 /* ── 响应式 ── */
 @media (max-width: 1000px) {

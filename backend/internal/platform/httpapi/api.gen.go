@@ -20,6 +20,36 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for AccessTokenResponseExpiresIn.
+const (
+	N600 AccessTokenResponseExpiresIn = 600
+)
+
+// Valid indicates whether the value is a known member of the AccessTokenResponseExpiresIn enum.
+func (e AccessTokenResponseExpiresIn) Valid() bool {
+	switch e {
+	case N600:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccessTokenResponseTokenType.
+const (
+	Bearer AccessTokenResponseTokenType = "Bearer"
+)
+
+// Valid indicates whether the value is a known member of the AccessTokenResponseTokenType enum.
+func (e AccessTokenResponseTokenType) Valid() bool {
+	switch e {
+	case Bearer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CustomerChannel.
 const (
 	CustomerChannelDouyin      CustomerChannel = "douyin"
@@ -329,6 +359,21 @@ func (e SocialPlatform) Valid() bool {
 	}
 }
 
+// Defines values for VerificationDispatchStatus.
+const (
+	VerificationRequired VerificationDispatchStatus = "verification_required"
+)
+
+// Valid indicates whether the value is a known member of the VerificationDispatchStatus enum.
+func (e VerificationDispatchStatus) Valid() bool {
+	switch e {
+	case VerificationRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateCustomerJSONBodyStatus.
 const (
 	UpdateCustomerJSONBodyStatusActive   UpdateCustomerJSONBodyStatus = "active"
@@ -383,13 +428,32 @@ func (e CreateReminderJSONBodyType) Valid() bool {
 	}
 }
 
+// AccessTokenResponse defines model for AccessTokenResponse.
+type AccessTokenResponse struct {
+	AccessToken string                       `json:"access_token"`
+	ExpiresIn   AccessTokenResponseExpiresIn `json:"expires_in"`
+	TokenType   AccessTokenResponseTokenType `json:"token_type"`
+}
+
+// AccessTokenResponseExpiresIn defines model for AccessTokenResponse.ExpiresIn.
+type AccessTokenResponseExpiresIn int
+
+// AccessTokenResponseTokenType defines model for AccessTokenResponse.TokenType.
+type AccessTokenResponseTokenType string
+
 // Account 账号（摄影师）；永不含 password_hash
 type Account struct {
 	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Email     *string    `json:"email,omitempty"`
 	Id        *string    `json:"id,omitempty"`
 
 	// Timezone IANA 时区；Settings 未落地前返回 Asia/Shanghai，日历不得使用浏览器时区替代
 	Timezone string `json:"timezone"`
+}
+
+// AuthCapabilities defines model for AuthCapabilities.
+type AuthCapabilities struct {
+	PublicRegistrationEnabled bool `json:"public_registration_enabled"`
 }
 
 // AvatarRevision defines model for AvatarRevision.
@@ -533,7 +597,7 @@ type CustomerSummary struct {
 	Status         CustomerStatus  `json:"status"`
 }
 
-// ErrorEnvelope 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+// ErrorEnvelope 统一错误封套；含认证错误码与既有业务 conflict 子码
 type ErrorEnvelope struct {
 	Error struct {
 		Code string `json:"code"`
@@ -867,6 +931,14 @@ type SocialIdentity struct {
 // SocialPlatform defines model for SocialPlatform.
 type SocialPlatform string
 
+// VerificationDispatch defines model for VerificationDispatch.
+type VerificationDispatch struct {
+	Status VerificationDispatchStatus `json:"status"`
+}
+
+// VerificationDispatchStatus defines model for VerificationDispatch.Status.
+type VerificationDispatchStatus string
+
 // AvatarIfMatch defines model for AvatarIfMatch.
 type AvatarIfMatch = string
 
@@ -882,16 +954,28 @@ type Page = int
 // PageSize defines model for PageSize.
 type PageSize = int
 
-// Internal 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+// Forbidden 统一错误封套；含认证错误码与既有业务 conflict 子码
+type Forbidden = ErrorEnvelope
+
+// Internal 统一错误封套；含认证错误码与既有业务 conflict 子码
 type Internal = ErrorEnvelope
 
-// NotFound 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+// InvalidOrExpiredToken 统一错误封套；含认证错误码与既有业务 conflict 子码
+type InvalidOrExpiredToken = ErrorEnvelope
+
+// NotFound 统一错误封套；含认证错误码与既有业务 conflict 子码
 type NotFound = ErrorEnvelope
 
-// Unauthorized 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+// RateLimited 统一错误封套；含认证错误码与既有业务 conflict 子码
+type RateLimited = ErrorEnvelope
+
+// RegistrationDisabled 统一错误封套；含认证错误码与既有业务 conflict 子码
+type RegistrationDisabled = ErrorEnvelope
+
+// Unauthorized 统一错误封套；含认证错误码与既有业务 conflict 子码
 type Unauthorized = ErrorEnvelope
 
-// ValidationFailed 统一错误封套（§4.1）；错误码 validation_failed | unauthorized | not_found | conflict 子码 | internal
+// ValidationFailed 统一错误封套；含认证错误码与既有业务 conflict 子码
 type ValidationFailed = ErrorEnvelope
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
@@ -903,8 +987,25 @@ type ScanRemindersJSONBody struct {
 	Date *openapi_types.Date `json:"date,omitempty"`
 }
 
+// ResendVerificationJSONBody defines parameters for ResendVerification.
+type ResendVerificationJSONBody struct {
+	Email string `json:"email"`
+}
+
+// VerifyEmailJSONBody defines parameters for VerifyEmail.
+type VerifyEmailJSONBody struct {
+	Token string `json:"token"`
+}
+
 // LoginJSONBody defines parameters for Login.
 type LoginJSONBody struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// RegisterJSONBody defines parameters for Register.
+type RegisterJSONBody struct {
+	Email    string `json:"email"`
 	Password string `json:"password"`
 }
 
@@ -1161,8 +1262,17 @@ type UpdateSettingsJSONBody struct {
 // ScanRemindersJSONRequestBody defines body for ScanReminders for application/json ContentType.
 type ScanRemindersJSONRequestBody ScanRemindersJSONBody
 
+// ResendVerificationJSONRequestBody defines body for ResendVerification for application/json ContentType.
+type ResendVerificationJSONRequestBody ResendVerificationJSONBody
+
+// VerifyEmailJSONRequestBody defines body for VerifyEmail for application/json ContentType.
+type VerifyEmailJSONRequestBody VerifyEmailJSONBody
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
+
+// RegisterJSONRequestBody defines body for Register for application/json ContentType.
+type RegisterJSONRequestBody RegisterJSONBody
 
 // CreateCustomerJSONRequestBody defines body for CreateCustomer for application/json ContentType.
 type CreateCustomerJSONRequestBody CreateCustomerJSONBody
@@ -1298,9 +1408,27 @@ type ServerInterface interface {
 	// 提醒扫描唯一手动触发入口（每日定时与手动共用，鉴权同 §4.1）
 	// (POST /admin/reminders/scan)
 	ScanReminders(c *gin.Context)
-	// 单账号密码登录，签发 Bearer token
+	// 读取公开注册能力
+	// (GET /auth/capabilities)
+	GetAuthCapabilities(c *gin.Context)
+	// 以 generic outcome 重发验证邮件
+	// (POST /auth/email/resend)
+	ResendVerification(c *gin.Context)
+	// 消费 verification／legacy claim token 并建立首个 session
+	// (POST /auth/email/verify)
+	VerifyEmail(c *gin.Context)
+	// 邮箱密码登录并建立 refresh session
 	// (POST /auth/login)
 	Login(c *gin.Context)
+	// 幂等撤销 refresh family 并清 cookie
+	// (POST /auth/logout)
+	Logout(c *gin.Context)
+	// 使用 HttpOnly refresh cookie 轮换 session generation
+	// (POST /auth/refresh)
+	Refresh(c *gin.Context)
+	// 注册 pending_verification 账号并尝试发送验证邮件
+	// (POST /auth/register)
+	Register(c *gin.Context)
 	// 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
 	// (GET /customers)
 	ListCustomers(c *gin.Context, params ListCustomersParams)
@@ -1426,6 +1554,45 @@ func (siw *ServerInterfaceWrapper) ScanReminders(c *gin.Context) {
 	siw.Handler.ScanReminders(c)
 }
 
+// GetAuthCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetAuthCapabilities(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAuthCapabilities(c)
+}
+
+// ResendVerification operation middleware
+func (siw *ServerInterfaceWrapper) ResendVerification(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ResendVerification(c)
+}
+
+// VerifyEmail operation middleware
+func (siw *ServerInterfaceWrapper) VerifyEmail(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.VerifyEmail(c)
+}
+
 // Login operation middleware
 func (siw *ServerInterfaceWrapper) Login(c *gin.Context) {
 
@@ -1437,6 +1604,45 @@ func (siw *ServerInterfaceWrapper) Login(c *gin.Context) {
 	}
 
 	siw.Handler.Login(c)
+}
+
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.Logout(c)
+}
+
+// Refresh operation middleware
+func (siw *ServerInterfaceWrapper) Refresh(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.Refresh(c)
+}
+
+// Register operation middleware
+func (siw *ServerInterfaceWrapper) Register(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.Register(c)
 }
 
 // ListCustomers operation middleware
@@ -2513,7 +2719,13 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	}
 
 	router.POST(options.BaseURL+"/admin/reminders/scan", wrapper.ScanReminders)
+	router.GET(options.BaseURL+"/auth/capabilities", wrapper.GetAuthCapabilities)
+	router.POST(options.BaseURL+"/auth/email/resend", wrapper.ResendVerification)
+	router.POST(options.BaseURL+"/auth/email/verify", wrapper.VerifyEmail)
 	router.POST(options.BaseURL+"/auth/login", wrapper.Login)
+	router.POST(options.BaseURL+"/auth/logout", wrapper.Logout)
+	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
+	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
 	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)

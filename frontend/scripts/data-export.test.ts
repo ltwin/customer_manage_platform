@@ -16,13 +16,18 @@ Object.defineProperty(globalThis, 'localStorage', {
 })
 
 const client = await import('../src/api/client.ts')
-const token = await import('../src/auth/token.ts')
+const session = await import('../src/auth/session.ts')
 const download = await import('../src/components/dataExportDownload.ts')
 
 const exactFilename = 'photographer-crm-export-20260721T083015Z.json'
+const authAccount = {
+  id: 'account-fixture', email: 'fixture@example.invalid',
+  created_at: '2026-07-31T00:00:00Z', timezone: 'Asia/Shanghai',
+}
+const access = (token: string) => ({ access_token: token, token_type: 'Bearer' as const, expires_in: 600 as const })
 
 test('fetchDataExport sends Bearer and returns a complete JSON Blob with the exact server filename', async () => {
-  token.setToken('fixture-token')
+  session.setAuthenticated(access('fixture-token'), authAccount)
   let authorization = ''
   globalThis.fetch = async (_input, init) => {
     authorization = new Headers(init?.headers).get('Authorization') ?? ''
@@ -84,15 +89,16 @@ test('fetchDataExport accepts only the whole fixed filename and otherwise uses a
 })
 
 test('fetchDataExport reuses ApiError for 500 and 401 responses', async () => {
-  token.setToken('fixture-token')
+  session.setAuthenticated(access('fixture-token'), authAccount)
   globalThis.fetch = async () => Response.json({ error: { code: 'internal', message: 'fixture failure' } }, { status: 500 })
   await assert.rejects(client.fetchDataExport(), (error: unknown) =>
     error instanceof client.ApiError && error.status === 500 && error.code === 'internal')
 
+  session.setAuthenticated(access('fixture-token'), authAccount)
   globalThis.fetch = async () => Response.json({ error: { code: 'unauthorized', message: '未认证' } }, { status: 401 })
   await assert.rejects(client.fetchDataExport(), (error: unknown) =>
     error instanceof client.ApiError && error.status === 401)
-  assert.equal(token.getToken(), null)
+  assert.equal(session.getAccessToken(), null)
 })
 
 test('body/blob rejection returns no result and download collaboration creates no object URL', async () => {
