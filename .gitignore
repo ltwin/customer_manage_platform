@@ -11,6 +11,7 @@ backend/internal/platform/webui/dist/*
 
 # Claude Code 执行 worktree
 .claude/worktrees/
+.worktrees/
 
 .DS_Store
 
