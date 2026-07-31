@@ -1,5 +1,5 @@
 import type { components } from './schema'
-import { authorizedFetch } from '../auth/session.ts'
+import { authorizedFetch, authorizedFetchOnce } from '../auth/session.ts'
 
 export type ErrorEnvelope = components['schemas']['ErrorEnvelope']
 export type ApiErrorDetails = NonNullable<ErrorEnvelope['error']['details']>
@@ -33,6 +33,13 @@ export async function publicRequest<T>(path: string, init: RequestInit = {}): Pr
     headers,
   })
   return responseBody<T>(res)
+}
+
+export async function requestWithoutAuthRetry<T>(path: string, init: RequestInit = {}): Promise<T> {
+	const headers = new Headers(init.headers)
+	headers.set('Content-Type', 'application/json')
+	const res = await authorizedFetchOnce(`/api/v1${path}`, { ...init, headers })
+	return responseBody<T>(res)
 }
 
 async function responseBody<T>(res: Response): Promise<T> {

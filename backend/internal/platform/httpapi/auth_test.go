@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -36,14 +38,26 @@ type fakeAccounts struct {
 
 type authSpyRepository struct {
 	*fakeAccounts
-	registerCalls   int
-	findCalls       int
-	consumeCalls    int
-	rotateCalls     int
-	revokeCalls     int
-	registerCreated bool
-	consumeAccount  auth.Account
-	rotateErr       error
+	registerCalls       int
+	findCalls           int
+	consumeCalls        int
+	rotateCalls         int
+	revokeCalls         int
+	limiterCalls        int
+	resetPasswordCalls  int
+	credentialCalls     int
+	changePasswordCalls int
+	registerCreated     bool
+	consumeAccount      auth.Account
+	rotateErr           error
+	limiterRetryAfter   time.Duration
+	limiterAllowed      bool
+	limiterErr          error
+	limiterAction       auth.AuthAction
+	limiterSourceDigest string
+	resetPasswordErr    error
+	credentialErr       error
+	changePasswordErr   error
 }
 
 func (r *authSpyRepository) RegisterAccount(ctx context.Context, mode auth.RegistrationAdmissionMode, record auth.RegistrationRecord) (bool, error) {
@@ -81,8 +95,40 @@ func (r *authSpyRepository) RevokeRefresh(context.Context, auth.RefreshProof, ti
 	return nil
 }
 
+func (r *authSpyRepository) Consume(
+	_ context.Context,
+	action auth.AuthAction,
+	_, sourceDigest string,
+	_ time.Time,
+) (time.Duration, bool, error) {
+	r.limiterCalls++
+	r.limiterAction = action
+	r.limiterSourceDigest = sourceDigest
+	return r.limiterRetryAfter, r.limiterAllowed, r.limiterErr
+}
+
+func (r *authSpyRepository) ResetSubject(context.Context, auth.AuthAction, string) error { return nil }
+
+func (r *authSpyRepository) ResetPassword(
+	context.Context, auth.ActionProof, string, time.Time,
+) (string, error) {
+	r.resetPasswordCalls++
+	return r.record.Account.ID, r.resetPasswordErr
+}
+
+func (r *authSpyRepository) PasswordCredential(context.Context, string) (string, error) {
+	r.credentialCalls++
+	return r.record.PasswordHash, r.credentialErr
+}
+
+func (r *authSpyRepository) ChangePassword(context.Context, auth.PasswordChangeCommand) error {
+	r.changePasswordCalls++
+	return r.changePasswordErr
+}
+
 func (r *authSpyRepository) Calls() int {
-	return r.registerCalls + r.findCalls + r.consumeCalls + r.rotateCalls + r.revokeCalls
+	return r.registerCalls + r.findCalls + r.consumeCalls + r.rotateCalls + r.revokeCalls + r.limiterCalls +
+		r.resetPasswordCalls + r.credentialCalls + r.changePasswordCalls
 }
 
 type testMailSender struct {
@@ -135,6 +181,7 @@ func newAuthHTTPFixture(t *testing.T, registrationEnabled bool) authHTTPFixture 
 			current: account,
 		},
 		consumeAccount: account,
+		limiterAllowed: true,
 	}
 	mail := &testMailSender{}
 	logs := &bytes.Buffer{}
@@ -144,6 +191,8 @@ func newAuthHTTPFixture(t *testing.T, registrationEnabled bool) authHTTPFixture 
 		auth.WithAuthClock(func() time.Time { return now }),
 		auth.WithAuthMailSender(mail),
 		auth.WithPublicBaseURL(testOrigin),
+		auth.WithAttemptLimiter(repo),
+		auth.WithAuthResponseDelay(func(context.Context, time.Duration) error { return nil }),
 	)
 	handler := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger: logger, DB: fakePinger{}, Auth: service,
@@ -160,9 +209,23 @@ func (f *fakeAccounts) RegisterAccount(context.Context, auth.RegistrationAdmissi
 func (f *fakeAccounts) ReplaceVerificationToken(context.Context, string, string, []byte, time.Time, time.Time) (bool, error) {
 	return false, nil
 }
+func (f *fakeAccounts) ReplacePasswordResetToken(context.Context, string, string, []byte, time.Time, time.Time) (bool, error) {
+	return false, nil
+}
 func (f *fakeAccounts) ConsumeActionAndActivate(context.Context, auth.ActionProof, auth.RefreshSeed, time.Time) (auth.Account, error) {
 	return auth.Account{}, auth.ErrInvalidOrExpiredActionToken
 }
+func (f *fakeAccounts) ResetPassword(context.Context, auth.ActionProof, string, time.Time) (string, error) {
+	return f.record.Account.ID, nil
+}
+func (f *fakeAccounts) PasswordCredential(context.Context, string) (string, error) {
+	return f.record.PasswordHash, nil
+}
+func (f *fakeAccounts) ChangePassword(context.Context, auth.PasswordChangeCommand) error { return nil }
+func (f *fakeAccounts) Consume(context.Context, auth.AuthAction, string, string, time.Time) (time.Duration, bool, error) {
+	return 0, true, nil
+}
+func (f *fakeAccounts) ResetSubject(context.Context, auth.AuthAction, string) error { return nil }
 func (f *fakeAccounts) FindLoginRecord(_ context.Context, email string) (auth.LoginRecord, bool, error) {
 	if email != f.record.Account.Email {
 		return auth.LoginRecord{}, false, nil
@@ -209,7 +272,13 @@ func newAuthRouterWithTimezone(t *testing.T, timezone httpapi.AccountTimezonePro
 		CreatedAt: time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC),
 	}
 	repo := &fakeAccounts{record: auth.LoginRecord{Account: account, PasswordHash: hash}, current: account}
-	svc := auth.NewService(repo, auth.NewTokenIssuer(testSecret), auth.WithPublicBaseURL(testOrigin))
+	svc := auth.NewService(
+		repo,
+		auth.NewTokenIssuer(testSecret),
+		auth.WithPublicBaseURL(testOrigin),
+		auth.WithAttemptLimiter(repo),
+		auth.WithAuthResponseDelay(func(context.Context, time.Duration) error { return nil }),
+	)
 	return httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:          slog.New(slog.DiscardHandler),
 		DB:              fakePinger{},
@@ -436,6 +505,59 @@ func TestAuthCapabilitiesAndRegistrationGate(t *testing.T) {
 	}
 }
 
+func TestRateLimitedResponseAndEventExposeOnlyAllowlistedMetadata(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name       string
+		retryAfter time.Duration
+		wantHeader string
+	}{
+		{name: "ceil seconds", retryAfter: 1250 * time.Millisecond, wantHeader: "2"},
+		{name: "minimum one", retryAfter: 0, wantHeader: "1"},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			fixture := newAuthHTTPFixture(t, true)
+			fixture.repo.limiterAllowed = false
+			fixture.repo.limiterRetryAfter = test.retryAfter
+			rec := authRequest(
+				t,
+				fixture.handler,
+				http.MethodPost,
+				"/api/v1/auth/login",
+				`{"email":"`+testEmail()+`","password":"`+testPassword+`"}`,
+				testOrigin,
+				"",
+			)
+			if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != test.wantHeader {
+				t.Fatalf("rate limited response: status=%d retry_after=%q", rec.Code, rec.Header().Get("Retry-After"))
+			}
+			if env := decodeEnvelope(t, rec); env.Error.Code != httpapi.CodeRateLimited {
+				t.Fatalf("rate limited code=%q", env.Error.Code)
+			}
+			body := rec.Body.String()
+			for _, forbidden := range []string{"subject", "source", "remaining", "deadline"} {
+				if strings.Contains(body, forbidden) {
+					t.Fatalf("rate limited body leaked limiter metadata %q: %s", forbidden, body)
+				}
+			}
+			logged := fixture.logs.String()
+			if !strings.Contains(logged, `"event":"auth.rate_limited"`) ||
+				!strings.Contains(logged, `"action":"login"`) ||
+				fixture.repo.limiterSourceDigest == "" ||
+				!strings.Contains(logged, `"source_digest":"`+fixture.repo.limiterSourceDigest+`"`) {
+				t.Fatalf("rate limited event missing allowlisted fields: %s", logged)
+			}
+			for _, forbidden := range []string{testEmail(), "192.0.2.1", "subject_digest", testPassword} {
+				if strings.Contains(logged, forbidden) {
+					t.Fatalf("rate limited event leaked %q", forbidden)
+				}
+			}
+		})
+	}
+}
+
 func TestCookieMutatingAuthEndpointsRejectUntrustedOriginBeforeApplication(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -546,9 +668,16 @@ func TestAuthStructuredEventsUseAllowlistAndRedactedReferences(t *testing.T) {
 		t.Fatalf("refresh reuse status=%d", reuse.Code)
 	}
 
+	changed := authRequestWithAccess(t, fixture.handler, http.MethodPost, "/api/v1/auth/password/change",
+		`{"current_password":"`+testPassword+`","new_password":"updated-password-123"}`,
+		testOrigin, "", access.AccessToken)
+	if changed.Code != http.StatusNoContent {
+		t.Fatalf("change password status=%d body=%s", changed.Code, changed.Body.String())
+	}
+
 	records := authEventRecords(t, fixture.logs.String())
-	if len(records) != 3 {
-		t.Fatalf("auth event count=%d want=3", len(records))
+	if len(records) != 4 {
+		t.Fatalf("auth event count=%d want=4", len(records))
 	}
 	byEvent := make(map[string]map[string]any, len(records))
 	for _, record := range records {
@@ -556,19 +685,20 @@ func TestAuthStructuredEventsUseAllowlistAndRedactedReferences(t *testing.T) {
 		byEvent[event] = record
 		for key := range record {
 			switch key {
-			case "time", "level", "msg", "event", "result", "failure_class", "account_ref", "session_ref":
+			case "time", "level", "msg", "event", "result", "failure_class", "account_ref", "session_ref", "family_ref", "action", "source_digest", "provider_message_id", "dry_run":
 			default:
 				t.Fatalf("event %q emitted non-allowlisted key %q", event, key)
 			}
 		}
 	}
-	for _, event := range []string{"auth.login", "auth.email_verified", "auth.refresh_reuse"} {
+	for _, event := range []string{"auth.login", "auth.email_verified", "auth.refresh_reuse", "auth.password_changed"} {
 		if byEvent[event] == nil {
 			t.Fatalf("missing structured event %q", event)
 		}
 	}
 	if byEvent["auth.login"]["result"] != "success" || byEvent["auth.email_verified"]["result"] != "success" ||
-		byEvent["auth.refresh_reuse"]["failure_class"] != "reuse" {
+		byEvent["auth.refresh_reuse"]["failure_class"] != "reuse" ||
+		byEvent["auth.password_changed"]["action"] != "change_password" {
 		t.Fatalf("event outcomes do not match fixed contract: %#v", byEvent)
 	}
 	for _, event := range []string{"auth.login", "auth.email_verified"} {
@@ -579,13 +709,17 @@ func TestAuthStructuredEventsUseAllowlistAndRedactedReferences(t *testing.T) {
 		}
 	}
 
-	logged := fixture.logs.String()
+	loggedBytes, err := json.Marshal(records)
+	if err != nil {
+		t.Fatalf("encode auth event records: %v", err)
+	}
+	logged := string(loggedBytes)
 	for _, forbidden := range []string{
 		testEmail(), testPassword, testAcctID, access.AccessToken, refreshCookie.Value, syntheticBearerWire(),
 		"Authorization", "__Host-crm_refresh",
 	} {
 		if forbidden != "" && strings.Contains(logged, forbidden) {
-			t.Fatalf("structured auth log contains forbidden sensitive value")
+			t.Fatalf("structured auth log contains forbidden synthetic marker %q", forbidden)
 		}
 	}
 }
@@ -608,7 +742,7 @@ func authEventRecords(t *testing.T, logged string) []map[string]any {
 	return records
 }
 
-func TestAuthTypedErrorsItem2ScopeAndVerifyReferrerPolicy(t *testing.T) {
+func TestAuthTypedErrorsAndActionPageReferrerPolicy(t *testing.T) {
 	fixture := newAuthHTTPFixture(t, true)
 	fixture.repo.record.Account.Status = auth.AccountPendingVerification
 	rec := authRequest(t, fixture.handler, http.MethodPost, "/api/v1/auth/login",
@@ -620,19 +754,228 @@ func TestAuthTypedErrorsItem2ScopeAndVerifyReferrerPolicy(t *testing.T) {
 		t.Fatal("pending login must not set refresh cookie")
 	}
 
-	for _, path := range []string{"/api/v1/auth/password/forgot", "/api/v1/auth/password/reset", "/api/v1/auth/password/change"} {
-		rec = authRequest(t, fixture.handler, http.MethodPost, path, `{}`, testOrigin, "")
-		if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
-			t.Fatalf("item2 route %s must remain 404: status=%d", path, rec.Code)
+	for _, path := range []string{"/verify-email", "/reset-password"} {
+		rec = authRequest(t, fixture.handler, http.MethodGet, path, "", "", "")
+		if rec.Header().Get("Referrer-Policy") != "no-referrer" {
+			t.Fatalf("%s referrer policy=%q", path, rec.Header().Get("Referrer-Policy"))
 		}
 	}
-	rec = authRequest(t, fixture.handler, http.MethodGet, "/verify-email", "", "", "")
-	if rec.Header().Get("Referrer-Policy") != "no-referrer" {
-		t.Fatalf("verify page referrer policy=%q", rec.Header().Get("Referrer-Policy"))
+}
+
+func TestPasswordRoutesOriginCookieAndErrorMatrix(t *testing.T) {
+	t.Parallel()
+	t.Run("forgot has no Origin gate and never mutates cookie", func(t *testing.T) {
+		fixture := newAuthHTTPFixture(t, true)
+		rec := authRequest(t, fixture.handler, http.MethodPost, "/api/v1/auth/password/forgot",
+			`{"email":"`+testEmail()+`"}`, "", syntheticBearerWire())
+		if rec.Code != http.StatusAccepted || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("forgot response: status=%d cache=%q", rec.Code, rec.Header().Get("Cache-Control"))
+		}
+		var body struct {
+			Status string `json:"status"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Status != "accepted" {
+			t.Fatalf("forgot body=%s err=%v", rec.Body.String(), err)
+		}
+		if len(rec.Result().Cookies()) != 0 {
+			t.Fatal("forgot mutated refresh cookie")
+		}
+	})
+
+	for _, operation := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "reset", path: "/api/v1/auth/password/reset", body: `{"token":"` + syntheticBearerWire() + `","new_password":"new-password-1"}`},
+		{name: "change", path: "/api/v1/auth/password/change", body: `{"current_password":"` + testPassword + `","new_password":"new-password-1"}`},
+	} {
+		operation := operation
+		for _, origin := range []string{"", "https://wrong.example.invalid"} {
+			t.Run(operation.name+"/origin="+origin, func(t *testing.T) {
+				fixture := newAuthHTTPFixture(t, true)
+				access := loginAccess(t, fixture)
+				before := fixture.repo.Calls()
+				rec := authRequestWithAccess(
+					t, fixture.handler, http.MethodPost, operation.path, operation.body, origin,
+					syntheticBearerWire(), access,
+				)
+				if rec.Code != http.StatusForbidden || decodeEnvelope(t, rec).Error.Code != "forbidden" {
+					t.Fatalf("untrusted origin response: status=%d body=%s", rec.Code, rec.Body.String())
+				}
+				if fixture.repo.Calls() != before || len(rec.Result().Cookies()) != 0 {
+					t.Fatalf("untrusted origin crossed boundary: calls=%d/%d cookies=%d",
+						fixture.repo.Calls(), before, len(rec.Result().Cookies()))
+				}
+			})
+		}
+	}
+
+	t.Run("reset outcomes", func(t *testing.T) {
+		tests := []struct {
+			name          string
+			body          string
+			configure     func(*authHTTPFixture)
+			wantStatus    int
+			wantCode      string
+			wantResetCall int
+			wantCookie    bool
+		}{
+			{name: "validation", body: `{"token":"` + syntheticBearerWire() + `","new_password":"short"}`, wantStatus: 400, wantCode: "validation_failed"},
+			{name: "limited", body: `{"token":"` + syntheticBearerWire() + `","new_password":"new-password-1"}`, configure: func(f *authHTTPFixture) { f.repo.limiterAllowed = false }, wantStatus: 429, wantCode: "rate_limited"},
+			{name: "invalid", body: `{"token":"` + syntheticBearerWire() + `","new_password":"new-password-1"}`, configure: func(f *authHTTPFixture) { f.repo.resetPasswordErr = auth.ErrInvalidOrExpiredActionToken }, wantStatus: 400, wantCode: "invalid_or_expired_token", wantResetCall: 1},
+			{name: "internal", body: `{"token":"` + syntheticBearerWire() + `","new_password":"new-password-1"}`, configure: func(f *authHTTPFixture) { f.repo.limiterErr = errors.New("limiter unavailable") }, wantStatus: 500, wantCode: "internal"},
+			{name: "success", body: `{"token":"` + syntheticBearerWire() + `","new_password":"new-password-1"}`, wantStatus: 204, wantResetCall: 1, wantCookie: true},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				fixture := newAuthHTTPFixture(t, true)
+				if test.configure != nil {
+					test.configure(&fixture)
+				}
+				rec := authRequest(t, fixture.handler, http.MethodPost, "/api/v1/auth/password/reset",
+					test.body, testOrigin, syntheticBearerWire())
+				assertPasswordMutationResponse(t, rec, test.wantStatus, test.wantCode, test.wantCookie, fixture.now)
+				if fixture.repo.resetPasswordCalls != test.wantResetCall {
+					t.Fatalf("reset calls=%d want=%d", fixture.repo.resetPasswordCalls, test.wantResetCall)
+				}
+			})
+		}
+	})
+
+	t.Run("change outcomes", func(t *testing.T) {
+		tests := []struct {
+			name           string
+			body           string
+			configure      func(*authHTTPFixture)
+			wantStatus     int
+			wantCode       string
+			wantChangeCall int
+			wantCookie     bool
+		}{
+			{name: "validation", body: `{"current_password":"short","new_password":"new-password-1"}`, wantStatus: 400, wantCode: "validation_failed"},
+			{name: "limited", body: `{"current_password":"` + testPassword + `","new_password":"new-password-1"}`, configure: func(f *authHTTPFixture) { f.repo.limiterAllowed = false }, wantStatus: 429, wantCode: "rate_limited"},
+			{name: "wrong current", body: `{"current_password":"incorrect-pass","new_password":"new-password-1"}`, wantStatus: 401, wantCode: "unauthorized"},
+			{name: "internal", body: `{"current_password":"` + testPassword + `","new_password":"new-password-1"}`, configure: func(f *authHTTPFixture) { f.repo.limiterErr = errors.New("limiter unavailable") }, wantStatus: 500, wantCode: "internal"},
+			{name: "success", body: `{"current_password":"` + testPassword + `","new_password":"new-password-1"}`, wantStatus: 204, wantChangeCall: 1, wantCookie: true},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				fixture := newAuthHTTPFixture(t, true)
+				access := loginAccess(t, fixture)
+				if test.configure != nil {
+					test.configure(&fixture)
+				}
+				rec := authRequestWithAccess(t, fixture.handler, http.MethodPost, "/api/v1/auth/password/change",
+					test.body, testOrigin, syntheticBearerWire(), access)
+				assertPasswordMutationResponse(t, rec, test.wantStatus, test.wantCode, test.wantCookie, fixture.now)
+				if fixture.repo.changePasswordCalls != test.wantChangeCall {
+					t.Fatalf("change calls=%d want=%d", fixture.repo.changePasswordCalls, test.wantChangeCall)
+				}
+			})
+		}
+	})
+}
+
+func TestPublicAuthRejectsOversizedBodiesBeforeApplication(t *testing.T) {
+	t.Parallel()
+	fixture := newAuthHTTPFixture(t, true)
+	body := `{"token":"` + syntheticBearerWire() + `","new_password":"new-password-1"}` + strings.Repeat(" ", 8<<10)
+	rec := authRequest(
+		t, fixture.handler, http.MethodPost, "/api/v1/auth/password/reset", body, testOrigin, syntheticBearerWire(),
+	)
+	if rec.Code != http.StatusBadRequest || decodeEnvelope(t, rec).Error.Code != "validation_failed" {
+		t.Fatalf("oversized auth body response: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if fixture.repo.Calls() != 0 || len(rec.Result().Cookies()) != 0 {
+		t.Fatalf("oversized auth body crossed application boundary: calls=%d cookies=%d",
+			fixture.repo.Calls(), len(rec.Result().Cookies()))
+	}
+}
+
+func TestMalformedActionTokensDoNotReachLimiterOrRepository(t *testing.T) {
+	t.Parallel()
+	secret := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("s", 32)))
+	for _, token := range []string{
+		strings.Repeat("a", 31) + "." + secret,
+		strings.Repeat("a", 33) + "." + secret,
+		strings.Repeat("A", 32) + "." + secret,
+		strings.Repeat("g", 32) + "." + secret,
+		strings.Repeat("a", 32) + "." + secret[:len(secret)-1],
+		strings.Repeat("a", 32) + "." + secret + "A",
+	} {
+		token := token
+		t.Run(fmt.Sprintf("wire_length_%d", len(token)), func(t *testing.T) {
+			t.Parallel()
+			fixture := newAuthHTTPFixture(t, true)
+			body, err := json.Marshal(map[string]string{"token": token, "new_password": "new-password-1"})
+			if err != nil {
+				t.Fatalf("encode malformed token body: %v", err)
+			}
+			rec := authRequest(
+				t, fixture.handler, http.MethodPost, "/api/v1/auth/password/reset", string(body), testOrigin, "",
+			)
+			if rec.Code != http.StatusBadRequest || decodeEnvelope(t, rec).Error.Code != "invalid_or_expired_token" {
+				t.Fatalf("malformed token response: status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if fixture.repo.Calls() != 0 || len(rec.Result().Cookies()) != 0 {
+				t.Fatalf("malformed token crossed protected boundary: calls=%d cookies=%d",
+					fixture.repo.Calls(), len(rec.Result().Cookies()))
+			}
+		})
+	}
+}
+
+func loginAccess(t *testing.T, fixture authHTTPFixture) string {
+	t.Helper()
+	rec := authRequest(t, fixture.handler, http.MethodPost, "/api/v1/auth/login",
+		`{"email":"`+testEmail()+`","password":"`+testPassword+`"}`, testOrigin, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login for access status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response httpapi.AccessTokenResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil || response.AccessToken == "" {
+		t.Fatalf("decode login access: %v", err)
+	}
+	return response.AccessToken
+}
+
+func assertPasswordMutationResponse(
+	t *testing.T,
+	rec *httptest.ResponseRecorder,
+	wantStatus int,
+	wantCode string,
+	wantCookie bool,
+	now time.Time,
+) {
+	t.Helper()
+	if rec.Code != wantStatus {
+		t.Fatalf("status=%d want=%d body=%s", rec.Code, wantStatus, rec.Body.String())
+	}
+	if wantCode != "" && decodeEnvelope(t, rec).Error.Code != wantCode {
+		t.Fatalf("code=%q want=%q", decodeEnvelope(t, rec).Error.Code, wantCode)
+	}
+	if !wantCookie {
+		if len(rec.Result().Cookies()) != 0 || rec.Header().Get("Set-Cookie") != "" {
+			t.Fatalf("non-success response mutated cookie: %q", rec.Header().Get("Set-Cookie"))
+		}
+		return
+	}
+	cookie := requireRefreshCookie(t, rec)
+	if cookie.MaxAge >= 0 || !cookie.Expires.Before(now) {
+		t.Fatalf("success did not clear cookie: max_age=%d expires=%s", cookie.MaxAge, cookie.Expires)
 	}
 }
 
 func authRequest(t *testing.T, handler http.Handler, method, path, body, origin, refresh string) *httptest.ResponseRecorder {
+	return authRequestWithAccess(t, handler, method, path, body, origin, refresh, "")
+}
+
+func authRequestWithAccess(
+	t *testing.T,
+	handler http.Handler,
+	method, path, body, origin, refresh, access string,
+) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if body != "" {
@@ -643,6 +986,9 @@ func authRequest(t *testing.T, handler http.Handler, method, path, body, origin,
 	}
 	if refresh != "" {
 		req.AddCookie(&http.Cookie{Name: "__Host-crm_refresh", Value: refresh})
+	}
+	if access != "" {
+		req.Header.Set("Authorization", "Bearer "+access)
 	}
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

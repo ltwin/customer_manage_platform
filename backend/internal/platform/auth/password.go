@@ -24,3 +24,14 @@ func HashPassword(password string) (string, error) {
 func VerifyPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
+
+func validateDummyPasswordHash() error {
+	cost, err := bcrypt.Cost([]byte(dummyPasswordHash))
+	if err != nil {
+		return fmt.Errorf("parse dummy password hash: %w", err)
+	}
+	if cost != bcrypt.DefaultCost {
+		return fmt.Errorf("dummy password cost %d does not match production cost %d", cost, bcrypt.DefaultCost)
+	}
+	return nil
+}

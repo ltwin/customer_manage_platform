@@ -305,11 +305,29 @@ test('verification action token is consumed from fragment and removed before use
 })
 
 test('auth routes and pages are mounted without the legacy storage token contract', async () => {
-  const [app, loginPage, registerPage, verifyPage, welcomePage, sessionSource, makefile] = await Promise.all([
+  const [
+    app,
+    loginPage,
+    registerPage,
+    verifyPage,
+    forgotPage,
+    resetPage,
+    changePage,
+    appShell,
+    settingsPage,
+    welcomePage,
+    sessionSource,
+    makefile,
+  ] = await Promise.all([
     readFile('src/App.tsx', 'utf8'),
     readFile('src/pages/auth/LoginPage.tsx', 'utf8'),
     readFile('src/pages/auth/RegisterPage.tsx', 'utf8'),
     readFile('src/pages/auth/VerifyEmailPage.tsx', 'utf8'),
+    readFile('src/pages/auth/ForgotPasswordPage.tsx', 'utf8'),
+    readFile('src/pages/auth/ResetPasswordPage.tsx', 'utf8'),
+    readFile('src/pages/auth/ChangePasswordPage.tsx', 'utf8'),
+    readFile('src/components/AppShell.tsx', 'utf8'),
+    readFile('src/pages/SettingsPage.tsx', 'utf8'),
     readFile('src/pages/WelcomePage.tsx', 'utf8'),
     readFile('src/auth/session.ts', 'utf8'),
     readFile('../Makefile', 'utf8'),
@@ -317,18 +335,34 @@ test('auth routes and pages are mounted without the legacy storage token contrac
 
   assert.match(app, /path="\/register"/)
   assert.match(app, /path="\/verify-email"/)
+  assert.match(app, /path="\/forgot-password"/)
+  assert.match(app, /path="\/reset-password"/)
+  assert.match(app, /path="\/change-password"/)
   assert.match(loginPage, /login\(email, password\)/)
+  assert.match(loginPage, /to="\/forgot-password"/)
   assert.doesNotMatch(loginPage, /手机号|短信|验证码/)
   assert.match(registerPage, /fetchAuthCapabilities/)
   assert.match(registerPage, /capability === 'open' && !submitted/)
   assert.match(verifyPage, /consumeActionToken/)
   assert.match(verifyPage, /useLayoutEffect/)
+  assert.match(forgotPage, /forgotPassword\(email\)/)
+  assert.match(forgotPage, /如果该邮箱可用于密码恢复/)
+  assert.match(resetPage, /consumeActionToken/)
+  assert.match(resetPage, /useLayoutEffect/)
+  assert.match(resetPage, /if \(started\.current\) return/)
+  assert.match(resetPage, /resetPassword\(tokenRef\.current, password\)/)
+  assert.match(changePage, /changePassword\(currentPassword, password\)/)
+  assert.match(changePage, /setAnonymous\(\)/)
+  assert.match(appShell, /logoutSession\(\)/)
+  assert.match(settingsPage, /to="\/change-password"/)
+  assert.match(settingsPage, /logoutSession\(\)/)
   assert.match(welcomePage, /fetchAuthCapabilities/)
   assert.match(welcomePage, /to="\/register"/)
   assert.match(makefile, /npm run test:auth/)
   assert.doesNotMatch(
-    [app, loginPage, registerPage, verifyPage, welcomePage, sessionSource].join('\n'),
+    [app, loginPage, registerPage, verifyPage, forgotPage, resetPage, changePage, appShell, settingsPage, welcomePage, sessionSource].join('\n'),
     /crm_token/,
   )
+  assert.doesNotMatch([forgotPage, resetPage, changePage].join('\n'), /localStorage|sessionStorage|indexedDB|console\./)
   assert.doesNotMatch(sessionSource, /localStorage|sessionStorage|indexedDB/)
 })

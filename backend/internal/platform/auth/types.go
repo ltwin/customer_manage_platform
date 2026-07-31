@@ -1,6 +1,10 @@
 package auth
 
-import "time"
+import (
+	"context"
+	"net/netip"
+	"time"
+)
 
 type AccountStatus string
 
@@ -17,11 +21,34 @@ const (
 	RegistrationBootstrapFirstAccount RegistrationAdmissionMode = "bootstrap_first_account"
 )
 
+type ClientMeta struct {
+	SourceIP  netip.Addr
+	UserAgent string
+}
+
+type AuthAction string
+
+const (
+	AuthActionRegister           AuthAction = "register"
+	AuthActionResendVerification AuthAction = "resend_verification"
+	AuthActionLogin              AuthAction = "login"
+	AuthActionForgotPassword     AuthAction = "forgot_password"
+	AuthActionVerifyToken        AuthAction = "verify_token"
+	AuthActionResetToken         AuthAction = "reset_token"
+	AuthActionChangePassword     AuthAction = "change_password"
+)
+
+type AttemptLimiter interface {
+	Consume(ctx context.Context, action AuthAction, subjectDigest, sourceDigest string, now time.Time) (retryAfter time.Duration, allowed bool, err error)
+	ResetSubject(ctx context.Context, action AuthAction, subjectDigest string) error
+}
+
 type ActionPurpose string
 
 const (
 	ActionEmailVerification ActionPurpose = "email_verification"
 	ActionLegacyClaim       ActionPurpose = "legacy_claim"
+	ActionPasswordReset     ActionPurpose = "password_reset"
 )
 
 type Account struct {
@@ -73,6 +100,13 @@ type Session struct {
 type LoginRecord struct {
 	Account      Account
 	PasswordHash string
+}
+
+type PasswordChangeCommand struct {
+	AccountID            string
+	ExpectedPasswordHash string
+	PasswordHash         string
+	ChangedAt            time.Time
 }
 
 type RegistrationRecord struct {

@@ -1,7 +1,7 @@
 // API client：类型来自契约 codegen（src/api/schema.d.ts），错误统一走封套（§4.1）。
 import type { components, paths } from './schema'
 import { authorizedFetch } from '../auth/session.ts'
-import { ApiError, publicRequest, request } from './transport.ts'
+import { ApiError, publicRequest, request, requestWithoutAuthRetry } from './transport.ts'
 import type { ErrorEnvelope } from './transport.ts'
 
 export { ApiError } from './transport.ts'
@@ -13,6 +13,8 @@ export type AuthCapabilities =
   paths['/auth/capabilities']['get']['responses']['200']['content']['application/json']
 export type VerificationDispatch =
   paths['/auth/register']['post']['responses']['202']['content']['application/json']
+export type ForgotPasswordResponse =
+  paths['/auth/password/forgot']['post']['responses']['202']['content']['application/json']
 export type Me = paths['/me']['get']['responses']['200']['content']['application/json']
 export type CustomerListResponse =
   paths['/customers']['get']['responses']['200']['content']['application/json']
@@ -101,6 +103,27 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   return publicRequest<LoginResponse>('/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  })
+}
+
+export function forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+  return publicRequest<ForgotPasswordResponse>('/auth/password/forgot', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
+}
+
+export function resetPassword(token: string, newPassword: string): Promise<void> {
+  return publicRequest<void>('/auth/password/reset', {
+    method: 'POST',
+    body: JSON.stringify({ token, new_password: newPassword }),
+  })
+}
+
+export function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  return requestWithoutAuthRetry<void>('/auth/password/change', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
   })
 }
 

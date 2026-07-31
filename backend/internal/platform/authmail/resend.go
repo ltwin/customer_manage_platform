@@ -16,14 +16,15 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/authevent"
 )
 
 const (
 	resendEndpoint       = "https://api.resend.com/emails"
 	resendUserAgent      = "photographer-crm/1.0"
-	resendAttemptTimeout = 4 * time.Second
-	resendTotalTimeout   = 5 * time.Second
-	resendRetryDelay     = 100 * time.Millisecond
+	resendAttemptTimeout = 400 * time.Millisecond
+	resendTotalTimeout   = 850 * time.Millisecond
+	resendRetryDelay     = 25 * time.Millisecond
 	resendMaxAttempts    = 2
 	resendResponseLimit  = 64 << 10
 )
@@ -188,6 +189,8 @@ func renderAuthMail(mail auth.AuthMail) (string, string, string, error) {
 		subject, action = "验证你的 Photographer CRM 邮箱", "验证邮箱"
 	case auth.ActionLegacyClaim:
 		subject, action = "认领你的 Photographer CRM 账号", "认领账号"
+	case auth.ActionPasswordReset:
+		subject, action = "重置你的 Photographer CRM 密码", "重置密码"
 	default:
 		return "", "", "", auth.NewDeliveryError(auth.DeliveryMisconfigured)
 	}
@@ -219,24 +222,19 @@ func waitForRetry(ctx context.Context, delay time.Duration) error {
 }
 
 func (s *Resend) logAccepted(ctx context.Context, purpose auth.ActionPurpose, receipt auth.MailReceipt) {
-	s.logger.InfoContext(ctx, "auth mail delivery",
-		slog.String("event", "auth.mail_delivery"),
-		slog.String("provider", "resend"),
-		slog.String("purpose", string(purpose)),
-		slog.String("status", "accepted"),
-		slog.String("provider_message_id", receipt.ProviderMessageID),
-		slog.Time("accepted_at", receipt.AcceptedAt),
-	)
+	record := authevent.Event{
+		Name: authevent.MailDelivery, Result: authevent.ResultSuccess,
+		Action: string(purpose), ProviderMessageID: receipt.ProviderMessageID,
+	}
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "auth mail delivery", record.Attrs()...)
 }
 
 func (s *Resend) logFailure(ctx context.Context, purpose auth.ActionPurpose, err error) {
-	s.logger.WarnContext(ctx, "auth mail delivery",
-		slog.String("event", "auth.mail_delivery"),
-		slog.String("provider", "resend"),
-		slog.String("purpose", string(purpose)),
-		slog.String("status", "failed"),
-		slog.String("failure_class", resendFailureClass(err)),
-	)
+	record := authevent.Event{
+		Name: authevent.MailDelivery, Result: authevent.ResultFailure,
+		Action: string(purpose), FailureClass: resendFailureClass(err),
+	}
+	s.logger.LogAttrs(ctx, slog.LevelWarn, "auth mail delivery", record.Attrs()...)
 }
 
 func resendFailureClass(err error) string {

@@ -12,6 +12,7 @@ const (
 	CodeEmailVerificationRequired = "email_verification_required"
 	CodeInvalidOrExpiredToken     = "invalid_or_expired_token"
 	CodeRegistrationDisabled      = "registration_disabled"
+	CodeRateLimited               = "rate_limited"
 
 	// customer-profile-complete 的 409 conflict 子码（design D3/D4/D5）
 	CodeCustomerMerged = "customer_merged"

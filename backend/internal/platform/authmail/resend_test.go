@@ -73,8 +73,14 @@ func TestResendAcceptsMailWithIdempotencyAndRedactedEvent(t *testing.T) {
 	logged := logs.String()
 	if !strings.Contains(logged, `"event":"auth.mail_delivery"`) ||
 		!strings.Contains(logged, `"provider_message_id":"provider-message-123"`) ||
-		!strings.Contains(logged, `"status":"accepted"`) {
+		!strings.Contains(logged, `"result":"success"`) ||
+		!strings.Contains(logged, `"action":"email_verification"`) {
 		t.Fatal("accepted delivery event is incomplete")
+	}
+	for _, forbiddenKey := range []string{`"provider":`, `"purpose":`, `"status":`, `"accepted_at":`} {
+		if strings.Contains(logged, forbiddenKey) {
+			t.Fatalf("delivery event emitted non-allowlisted key %s", forbiddenKey)
+		}
 	}
 	for _, forbidden := range []string{"owner@example.invalid", "synthetic-secret", "test-api-key", "verify-email"} {
 		if strings.Contains(logged, forbidden) {
@@ -101,6 +107,37 @@ func TestResendRetriesTemporaryFailureAtMostOnce(t *testing.T) {
 	_, err := sender.Send(context.Background(), syntheticAuthMail())
 	if err != nil || attempts.Load() != 2 {
 		t.Fatalf("temporary retry mismatch: attempts=%d err=%v", attempts.Load(), err)
+	}
+}
+
+func TestResendFailureEventUsesFixedAllowlist(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, `{"message":"provider-body-canary"}`)
+	}))
+	t.Cleanup(server.Close)
+
+	var logs bytes.Buffer
+	sender := testResendSender(server, &logs, time.Date(2026, 7, 31, 12, 0, 0, 0, time.UTC))
+	if _, err := sender.Send(context.Background(), syntheticAuthMail()); err == nil {
+		t.Fatal("provider rejection unexpectedly succeeded")
+	}
+	logged := logs.String()
+	for _, required := range []string{
+		`"event":"auth.mail_delivery"`, `"result":"failure"`,
+		`"failure_class":"provider_rejected"`, `"action":"email_verification"`,
+	} {
+		if !strings.Contains(logged, required) {
+			t.Fatalf("failure event omitted %s: %s", required, logged)
+		}
+	}
+	for _, forbidden := range []string{
+		"provider-body-canary", `"provider":`, `"purpose":`, `"status":`, `"accepted_at":`,
+	} {
+		if strings.Contains(logged, forbidden) {
+			t.Fatalf("failure event leaked non-allowlisted value %q", forbidden)
+		}
 	}
 }
 
@@ -169,6 +206,24 @@ func TestResendBoundsTheWholeOperationByDeadline(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("whole-operation deadline was not bounded: %s", elapsed)
+	}
+}
+
+func TestResendProductionDeadlineFitsPublicMailResponseBudget(t *testing.T) {
+	t.Parallel()
+	sender := NewResend("synthetic-key", "Photographer CRM <onboarding@resend.dev>", nil)
+	if sender.totalTimeout <= 0 || sender.totalTimeout > 900*time.Millisecond {
+		t.Fatalf("total timeout = %s, want (0,900ms]", sender.totalTimeout)
+	}
+	if sender.client.Timeout <= 0 || sender.client.Timeout >= sender.totalTimeout {
+		t.Fatalf("attempt timeout = %s, total = %s", sender.client.Timeout, sender.totalTimeout)
+	}
+	if sender.maxAttempts != 2 || sender.retryDelay < 0 ||
+		2*sender.client.Timeout+sender.retryDelay > sender.totalTimeout {
+		t.Fatalf(
+			"retry budget does not fit: attempts=%d attempt=%s delay=%s total=%s",
+			sender.maxAttempts, sender.client.Timeout, sender.retryDelay, sender.totalTimeout,
+		)
 	}
 }
 

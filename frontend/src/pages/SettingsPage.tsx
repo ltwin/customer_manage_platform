@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { ApiError, createTelegramBindToken, getSettings, updateSettings } from '../api/client'
+import { logoutSession } from '../auth/session'
 import type { ChurnThreshold, Settings } from '../api/client'
 import DataExportCard from '../components/DataExportCard'
 import { useShell } from '../components/shellContext'
@@ -30,6 +31,7 @@ export default function SettingsPage() {
   })
   const [reloadTick, setReloadTick] = useState(0)
   const [saving, setSaving] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [binding, setBinding] = useState(false)
   const [bindingError, setBindingError] = useState<string | null>(null)
@@ -153,7 +155,32 @@ export default function SettingsPage() {
     }
   }
 
+  async function onLogout() {
+    if (loggingOut) return
+    setLoggingOut(true)
+    try {
+      await logoutSession()
+    } finally {
+      navigate('/login', { replace: true })
+      setLoggingOut(false)
+    }
+  }
+
   const dataExportCard = <DataExportCard onUnauthorized={() => navigate('/login', { replace: true })} />
+  const accountSecurityCard = (
+    <section className="card account-security-card" aria-labelledby="accountSecurityTitle">
+      <div>
+        <h2 id="accountSecurityTitle">账号安全</h2>
+        <p className="sub">修改密码会撤销所有设备的刷新会话；退出登录只撤销当前会话。</p>
+      </div>
+      <div className="topbar-actions">
+        <Link className="btn" to="/change-password">修改密码</Link>
+        <button className="btn btn-danger-ghost" type="button" disabled={loggingOut} onClick={onLogout}>
+          {loggingOut ? '正在退出…' : '退出登录'}
+        </button>
+      </div>
+    </section>
+  )
   const presentation = pageReadPresentation(readState)
   const settings = readyPageData(readState)
   const settingsStale = readState.kind === 'ready' && readState.freshness === 'stale'
@@ -165,6 +192,7 @@ export default function SettingsPage() {
           <h1>设置</h1>
         </header>
         <main className="content settings-stack">
+          {accountSecurityCard}
           {dataExportCard}
           {presentation.notice && <StateNotice {...presentation.notice} />}
         </main>
@@ -182,6 +210,7 @@ export default function SettingsPage() {
       </header>
 
       <main className="content settings-stack">
+        {accountSecurityCard}
         {dataExportCard}
         {presentation.notice && <StateNotice {...presentation.notice} />}
         <section className="card telegram-binding-card" aria-labelledby="telegramBindingTitle">

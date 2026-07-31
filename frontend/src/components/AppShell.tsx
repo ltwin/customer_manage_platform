@@ -4,14 +4,17 @@ import {
   Bell,
   CalendarDays,
   LayoutDashboard,
+  LogOut,
   Moon,
   Package,
+  KeyRound,
   ReceiptText,
   Settings,
   Sun,
   Users,
 } from 'lucide-react'
 import { ApiError, fetchMe } from '../api/client'
+import { logoutSession } from '../auth/session'
 import { PrototypeProvider } from '../crm/PrototypeStore'
 import type { ShellContext } from './shellContext'
 import StateNotice from './StateNotice'
@@ -38,6 +41,7 @@ export default function AppShell() {
 	const navigate = useNavigate()
 	const [theme, setTheme] = useState(() => readTheme())
 	const [toast, setToast] = useState<string | null>(null)
+	const [loggingOut, setLoggingOut] = useState(false)
 		const [timezoneState, setTimezoneState] = useState<PageReadState<string>>({
 			kind: 'loading',
 			message: '正在加载账号时区',
@@ -88,6 +92,17 @@ export default function AppShell() {
     return () => window.clearTimeout(timer)
   }, [toast])
 
+	async function onLogout() {
+		if (loggingOut) return
+		setLoggingOut(true)
+		try {
+			await logoutSession()
+		} finally {
+			navigate('/login', { replace: true })
+			setLoggingOut(false)
+		}
+	}
+
 	const context = useMemo<ShellContext>(
 		() => ({
 			timezone,
@@ -121,6 +136,16 @@ export default function AppShell() {
             )
           })}
           <div className="nav-spacer" />
+          <div className="nav-account-actions" aria-label="账号安全">
+            <NavLink className="nav-item" to="/change-password">
+              <KeyRound aria-hidden="true" strokeWidth={1.8} />
+              修改密码
+            </NavLink>
+            <button className="nav-item nav-action" type="button" disabled={loggingOut} onClick={onLogout}>
+              <LogOut aria-hidden="true" strokeWidth={1.8} />
+              {loggingOut ? '正在退出…' : '退出登录'}
+            </button>
+          </div>
           <div className="nav-foot">工作室单账号 · 数据可随时导出</div>
         </aside>
 

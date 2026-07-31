@@ -9,13 +9,15 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM golang:1.25-alpine AS backend
+ARG BUILD_REVISION=development
 WORKDIR /src
 COPY backend/go.mod backend/go.sum ./backend/
 RUN cd backend && go mod download
 COPY backend/ ./backend/
 COPY --from=webui /src/frontend/dist ./backend/internal/platform/webui/dist
 RUN cd backend && CGO_ENABLED=0 go build -o /out/server ./cmd/server \
-    && CGO_ENABLED=0 go build -o /out/avatar-manifest ./cmd/avatar-manifest
+    && CGO_ENABLED=0 go build -o /out/avatar-manifest ./cmd/avatar-manifest \
+    && CGO_ENABLED=0 go build -ldflags "-X main.runtimeBuildRevision=${BUILD_REVISION}" -o /out/accountctl ./cmd/accountctl
 
 FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata \
@@ -25,5 +27,6 @@ RUN apk add --no-cache ca-certificates tzdata \
 USER app
 COPY --from=backend /out/server /usr/local/bin/server
 COPY --from=backend /out/avatar-manifest /usr/local/bin/avatar-manifest
+COPY --from=backend /out/accountctl /usr/local/bin/accountctl
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/server"]

@@ -5,6 +5,7 @@ import (
 	"crypto/hkdf"
 	"crypto/sha256"
 	"encoding/hex"
+	"net/netip"
 	"testing"
 	"time"
 )
@@ -31,6 +32,39 @@ func TestDeriveKeyMatchesVersionedHKDFProtocol(t *testing.T) {
 	}
 	if bytes.Equal(deriveKey(root, accessSigningLabel), deriveKey(root, replayAEADLabel)) {
 		t.Fatal("versioned labels must derive distinct keys")
+	}
+}
+
+func TestLimiterDigesterMatchesVersionedProtocol(t *testing.T) {
+	t.Parallel()
+	digester := NewLimiterDigester("synthetic-root")
+
+	if got, want := digester.Subject(AuthActionLogin, []byte("owner@example.test")), "v1:A7_G3sRfkbn-OE_woV3IMCDA6GDF8zUndcpF8vcSCSU"; got != want {
+		t.Fatalf("subject digest = %q, want %q", got, want)
+	}
+	if got, want := digester.Source(AuthActionLogin, netip.MustParseAddr("2001:db8::1")), "v1:FaJOOyq0aYb9s5Lux4GHSYPaP_oywEedyOpr0gOfl_8"; got != want {
+		t.Fatalf("source digest = %q, want %q", got, want)
+	}
+	if got := digester.Source(AuthActionLogin, netip.MustParseAddr("::ffff:192.0.2.1")); got != digester.Source(AuthActionLogin, netip.MustParseAddr("192.0.2.1")) {
+		t.Fatalf("IPv4-mapped source must use canonical Unmap bytes: %q", got)
+	}
+	if digester.Subject(AuthActionRegister, []byte("owner@example.test")) == digester.Subject(AuthActionLogin, []byte("owner@example.test")) {
+		t.Fatal("different actions must have distinct digest namespaces")
+	}
+}
+
+func TestRootRotationChangesLimiterNamespace(t *testing.T) {
+	t.Parallel()
+	subject := []byte("synthetic-subject")
+	source := netip.MustParseAddr("192.0.2.10")
+	oldNamespace := NewLimiterDigester("synthetic-old-root")
+	newNamespace := NewLimiterDigester("synthetic-new-root")
+
+	if oldNamespace.Subject(AuthActionLogin, subject) == newNamespace.Subject(AuthActionLogin, subject) {
+		t.Fatal("root rotation must invalidate the old limiter subject namespace")
+	}
+	if oldNamespace.Source(AuthActionLogin, source) == newNamespace.Source(AuthActionLogin, source) {
+		t.Fatal("root rotation must invalidate the old limiter source namespace")
 	}
 }
 

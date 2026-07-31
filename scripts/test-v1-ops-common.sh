@@ -485,7 +485,7 @@ test_preflight_pinned_host_skips_context_resolution() {
       --env-file "$env_file" --compose-file "$compose_file" \
       --docker-context must-not-be-inspected --pinned-host "unix://$socket_path" \
       --project-name synthetic-project >"$root/out" 2>"$root/err"
-  grep -qx 'complete/preflight=ok' "$root/out"
+  grep -qx 'complete/preflight=secure-baseline-ready' "$root/out"
   ! grep -q '^context ' "$docker_log"
   grep -q "^--host unix://$socket_path " "$docker_log"
   pass_case

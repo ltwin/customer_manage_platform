@@ -62,7 +62,7 @@ func TestResendLiveAcceptedReceipt(t *testing.T) {
 	}
 	logged := logs.String()
 	if !strings.Contains(logged, `"event":"auth.mail_delivery"`) ||
-		!strings.Contains(logged, `"status":"accepted"`) ||
+		!strings.Contains(logged, `"result":"success"`) ||
 		!strings.Contains(logged, receipt.ProviderMessageID) {
 		t.Fatal("live accepted event is incomplete")
 	}

@@ -4,7 +4,10 @@
 # 凭证一律经 .env / 环境注入，本文件不硬编码任何凭证。
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        BUILD_REVISION: ${BUILD_REVISION:-development}
     image: crm:local
     # Telegram long polling 首版只允许一个进程；发布必须 stop-first，禁止旧新容器重叠。
     stop_grace_period: 12s

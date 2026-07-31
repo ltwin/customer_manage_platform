@@ -10,6 +10,7 @@ output-options:
   nullable-type: true
   include-tags:
     - email-account-access
+    - public-auth-hardening
     - customer-core
     - customer-profile-complete
     - customer-avatar

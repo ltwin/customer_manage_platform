@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -54,6 +55,7 @@ type RouterDeps struct {
 	TelegramBinding           TelegramBindingIssuer
 	PublicBaseURL             string
 	PublicRegistrationEnabled bool
+	TrustedProxyCIDRs         []netip.Prefix
 	Now                       func() time.Time
 }
 
@@ -100,6 +102,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		telegramBinding:     deps.TelegramBinding,
 		publicBaseURL:       deps.PublicBaseURL,
 		registrationEnabled: deps.PublicRegistrationEnabled,
+		trustedProxyCIDRs:   append([]netip.Prefix(nil), deps.TrustedProxyCIDRs...),
 		now:                 now,
 	}
 	api := r.Group("/api/v1")
@@ -110,8 +113,11 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	api.POST("/auth/login", h.Login)
 	api.POST("/auth/refresh", h.Refresh)
 	api.POST("/auth/logout", h.Logout)
+	api.POST("/auth/password/forgot", h.ForgotPassword)
+	api.POST("/auth/password/reset", h.ResetPassword)
 	protected := api.Group("", authMiddleware(deps.Auth))
 	protected.GET("/me", h.GetMe)
+	protected.POST("/auth/password/change", h.ChangePassword)
 	protected.GET("/customers", h.listCustomersRoute)
 	protected.POST("/customers", h.CreateCustomer)
 	protected.GET("/customers/:id", h.getCustomerRoute)
@@ -184,7 +190,7 @@ func staticHandler(dist fs.FS) gin.HandlerFunc {
 	httpFS := http.FS(dist)
 	return func(c *gin.Context) {
 		path := strings.TrimPrefix(c.Request.URL.Path, "/")
-		if strings.Trim(path, "/") == "verify-email" {
+		if actionPath := strings.Trim(path, "/"); actionPath == "verify-email" || actionPath == "reset-password" {
 			c.Header("Referrer-Policy", "no-referrer")
 		}
 		if path != "" && path != "index.html" {

@@ -18,22 +18,27 @@ type accessClaims struct {
 }
 
 type TokenIssuer struct {
-	key       []byte
-	replayKey []byte
-	issuer    string
-	audience  string
-	ttl       time.Duration
-	now       func() time.Time
-	random    io.Reader
+	key        []byte
+	replayKey  []byte
+	limiterKey []byte
+	issuer     string
+	audience   string
+	ttl        time.Duration
+	now        func() time.Time
+	random     io.Reader
 }
 
 func NewTokenIssuer(secret string) *TokenIssuer {
 	key := deriveKey(secret, accessSigningLabel)
 	return &TokenIssuer{
-		key: key, replayKey: deriveKey(secret, replayAEADLabel),
+		key: key, replayKey: deriveKey(secret, replayAEADLabel), limiterKey: deriveKey(secret, limiterHMACLabel),
 		issuer: "photographer-crm", audience: "photographer-crm-web",
 		ttl: accessTokenTTL, now: time.Now, random: rand.Reader,
 	}
+}
+
+func (ti *TokenIssuer) LimiterDigester() *LimiterDigester {
+	return newLimiterDigester(ti.limiterKey)
 }
 
 func (ti *TokenIssuer) ReplayCipher(random io.Reader) (*ReplayCipher, error) {

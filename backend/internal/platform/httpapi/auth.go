@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +29,8 @@ import (
 const defaultAccountTimezone = "Asia/Shanghai"
 
 const refreshCookieName = "__Host-crm_refresh"
+
+const maxAuthJSONBodyBytes = 4 << 10
 
 type AccountTimezoneProvider interface {
 	TimezoneForAccount(context.Context, string) (string, error)
@@ -85,6 +89,7 @@ type handlers struct {
 	telegramBinding     TelegramBindingIssuer
 	publicBaseURL       string
 	registrationEnabled bool
+	trustedProxyCIDRs   []netip.Prefix
 	now                 func() time.Time
 }
 
@@ -106,7 +111,7 @@ func (h *handlers) Register(c *gin.Context) {
 		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
 		return
 	}
-	if _, err := h.auth.Register(c.Request.Context(), body.Email, body.Password); err != nil {
+	if _, err := h.auth.Register(c.Request.Context(), body.Email, body.Password, clientMeta(c, h.trustedProxyCIDRs)); err != nil {
 		h.writeAuthError(c, err)
 		return
 	}
@@ -120,7 +125,7 @@ func (h *handlers) ResendVerification(c *gin.Context) {
 		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
 		return
 	}
-	if _, err := h.auth.ResendVerification(c.Request.Context(), body.Email); err != nil {
+	if _, err := h.auth.ResendVerification(c.Request.Context(), body.Email, clientMeta(c, h.trustedProxyCIDRs)); err != nil {
 		h.writeAuthError(c, err)
 		return
 	}
@@ -137,7 +142,7 @@ func (h *handlers) VerifyEmail(c *gin.Context) {
 		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
 		return
 	}
-	session, err := h.auth.VerifyEmail(c.Request.Context(), body.Token)
+	session, err := h.auth.VerifyEmail(c.Request.Context(), body.Token, clientMeta(c, h.trustedProxyCIDRs))
 	h.logAuthSessionEvent(c.Request.Context(), "auth.email_verified", session, err)
 	if err != nil {
 		h.writeAuthError(c, err)
@@ -157,7 +162,7 @@ func (h *handlers) Login(c *gin.Context) {
 		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
 		return
 	}
-	session, err := h.auth.Login(c.Request.Context(), body.Email, body.Password)
+	session, err := h.auth.Login(c.Request.Context(), body.Email, body.Password, clientMeta(c, h.trustedProxyCIDRs))
 	h.logAuthSessionEvent(c.Request.Context(), "auth.login", session, err)
 	if err != nil {
 		h.writeAuthError(c, err)
@@ -172,7 +177,7 @@ func (h *handlers) Refresh(c *gin.Context) {
 		return
 	}
 	wire, _ := c.Cookie(refreshCookieName)
-	session, err := h.auth.Refresh(c.Request.Context(), wire)
+	session, err := h.auth.Refresh(c.Request.Context(), wire, clientMeta(c, h.trustedProxyCIDRs))
 	if err != nil {
 		h.logRefreshReuseEvent(c.Request.Context(), err)
 		if auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
@@ -194,6 +199,70 @@ func (h *handlers) Logout(c *gin.Context) {
 		h.writeAuthError(c, err)
 		return
 	}
+	h.clearRefreshCookie(c)
+	c.Status(http.StatusNoContent)
+}
+
+func (h *handlers) ForgotPassword(c *gin.Context) {
+	setNoStore(c)
+	var body ForgotPasswordJSONRequestBody
+	if err := bindStrictJSON(c, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+		return
+	}
+	if _, err := h.auth.BeginPasswordReset(
+		c.Request.Context(), body.Email, clientMeta(c, h.trustedProxyCIDRs),
+	); err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"status": Accepted})
+}
+
+func (h *handlers) ResetPassword(c *gin.Context) {
+	setNoStore(c)
+	if !h.requireTrustedOrigin(c) {
+		return
+	}
+	var body ResetPasswordJSONRequestBody
+	if err := bindStrictJSON(c, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+		return
+	}
+	if err := h.auth.ResetPassword(
+		c.Request.Context(), body.Token, body.NewPassword, clientMeta(c, h.trustedProxyCIDRs),
+	); err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+	h.logPasswordChangedEvent(c.Request.Context(), auth.AuthActionResetToken, "")
+	h.clearRefreshCookie(c)
+	c.Status(http.StatusNoContent)
+}
+
+func (h *handlers) ChangePassword(c *gin.Context) {
+	setNoStore(c)
+	if !h.requireTrustedOrigin(c) {
+		return
+	}
+	account, ok := auth.AccountContextFrom(c.Request.Context())
+	if !ok {
+		abortError(c, http.StatusUnauthorized, CodeUnauthorized, "未认证")
+		return
+	}
+	var body ChangePasswordJSONRequestBody
+	if err := bindStrictJSON(c, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+		return
+	}
+	if err := h.auth.ChangePassword(
+		c.Request.Context(), account, body.CurrentPassword, body.NewPassword,
+		clientMeta(c, h.trustedProxyCIDRs),
+	); err != nil {
+		h.writeAuthError(c, err)
+		return
+	}
+	h.logPasswordChangedEvent(c.Request.Context(), auth.AuthActionChangePassword, account.AccountID)
 	h.clearRefreshCookie(c)
 	c.Status(http.StatusNoContent)
 }
@@ -275,12 +344,22 @@ func (h *handlers) writeAuthError(c *gin.Context, err error) {
 		abortError(c, http.StatusForbidden, CodeEmailVerificationRequired, "邮箱尚未验证")
 	case auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken):
 		abortError(c, http.StatusBadRequest, CodeInvalidOrExpiredToken, "token 无效或已过期")
+	case auth.IsAuthError(err, auth.AuthErrorRateLimited):
+		h.logRateLimitedEvent(c.Request.Context(), err)
+		retryAfter, _ := auth.AuthRetryAfter(err)
+		seconds := int64((retryAfter + time.Second - 1) / time.Second)
+		if seconds < 1 {
+			seconds = 1
+		}
+		c.Header("Retry-After", strconv.FormatInt(seconds, 10))
+		abortError(c, http.StatusTooManyRequests, CodeRateLimited, "请求过于频繁，请稍后重试")
 	default:
 		_ = c.Error(err)
 	}
 }
 
 func bindStrictJSON(c *gin.Context, target any) error {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxAuthJSONBodyBytes)
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {

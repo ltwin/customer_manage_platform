@@ -1,0 +1,40 @@
+{
+  "gate_id": "evidence-pack",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "out": ".codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-evidence-pack.md",
+      "providers": {
+        "archguard": {
+          "status": "skipped",
+          "reason": "archguard collection disabled",
+          "warnings": []
+        },
+        "meta_cc": {
+          "status": "skipped",
+          "reason": "meta-cc collection disabled",
+          "warnings": []
+        }
+      }
+    }
+  ],
+  "providers": {},
+  "feature": "2026-07-30-public-auth-hardening",
+  "inputs": {
+    "design": ".codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-design.md",
+    "checklist": ".codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-checklist.yaml",
+    "out": ".codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-evidence-pack.md",
+    "dod_results": ".codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-dod-results.json",
+    "gate_results": ".codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-gate-results.json"
+  },
+  "input_digests": {
+    "design": "062662e2e05d836c19de7aeea1530a54fd80a958e0ad69dc891e74b64abda977",
+    "checklist": "b63fde7ea2e5c927d74d513ebc447818c27f36188b4d802c524f8031f828253b",
+    "dod_results": "4f49dc95cc692f7ba6d7c451f946bf20eb7b21a54f67586d46b52e00fe144b73",
+    "gate_results": "804cee470cbfcccfb9dbe6c149501dee4c04a80deb480aedfb7fa48243457d73",
+    "out": "b732ae179a579acc7e9e0ff60003716ede5e168c60ae04eebde085697115a59c"
+  }
+}

@@ -87,6 +87,9 @@ func TestAccountAuthMigrationPreservesLegacyAccountAndRollsBack(t *testing.T) {
 		t.Fatalf("close before auth down migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("limiter down migration: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("legacy-only auth down migration: %v", err)
 	}
 	db, err = sql.Open("pgx", url)
@@ -126,6 +129,9 @@ func TestAccountAuthDownMigrationRejectsNewStyleAccount(t *testing.T) {
 		t.Fatalf("close before blocked down migration: %v", err)
 	}
 
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("limiter down migration: %v", err)
+	}
 	err = store.MigrateDownOneForTest(url)
 	if err == nil || !strings.Contains(err.Error(), "auth_schema_down_blocked_new_accounts") {
 		t.Fatalf("down migration error = %v, want fail-closed marker", err)

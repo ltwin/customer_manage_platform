@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"strings"
 	"time"
 )
@@ -18,8 +19,13 @@ import (
 const (
 	accessSigningLabel = "crm-auth/v1/access-signing"
 	replayAEADLabel    = "crm-auth/v1/refresh-replay-aead"
+	limiterHMACLabel   = "crm-auth/v1/limiter-hmac"
 	replayEnvelopeV1   = byte(1)
+	limiterDigestV1    = byte(1)
 	authSecretBytes    = 32
+	actionSelectorSize = 32
+	actionSecretSize   = 43
+	actionTokenSize    = actionSelectorSize + 1 + actionSecretSize
 )
 
 func deriveKey(rootSecret, label string) []byte {
@@ -38,6 +44,54 @@ func deriveKey(rootSecret, label string) []byte {
 		panic("auth: HMAC expand counter write failed")
 	}
 	return expand.Sum(nil)
+}
+
+type LimiterDigester struct {
+	key []byte
+}
+
+func NewLimiterDigester(rootSecret string) *LimiterDigester {
+	return &LimiterDigester{key: deriveKey(rootSecret, limiterHMACLabel)}
+}
+
+func newLimiterDigester(key []byte) *LimiterDigester {
+	return &LimiterDigester{key: append([]byte(nil), key...)}
+}
+
+func (d *LimiterDigester) Subject(action AuthAction, subject []byte) string {
+	return d.digest(action, subject)
+}
+
+func (d *LimiterDigester) Source(action AuthAction, source netip.Addr) string {
+	if !source.IsValid() {
+		return ""
+	}
+	source = source.Unmap()
+	family := byte(6)
+	if source.Is4() {
+		family = 4
+	}
+	value := append([]byte{family}, source.AsSlice()...)
+	return d.digest(action, value)
+}
+
+func (d *LimiterDigester) digest(action AuthAction, value []byte) string {
+	actionBytes := []byte(action)
+	frame := make([]byte, 1+2+len(actionBytes)+4+len(value))
+	frame[0] = limiterDigestV1
+	offset := 1
+	binary.BigEndian.PutUint16(frame[offset:offset+2], uint16(len(actionBytes)))
+	offset += 2
+	copy(frame[offset:], actionBytes)
+	offset += len(actionBytes)
+	binary.BigEndian.PutUint32(frame[offset:offset+4], uint32(len(value)))
+	offset += 4
+	copy(frame[offset:], value)
+	digest := hmac.New(sha256.New, d.key)
+	if _, err := digest.Write(frame); err != nil {
+		panic("auth: limiter HMAC write failed")
+	}
+	return "v1:" + base64.RawURLEncoding.EncodeToString(digest.Sum(nil))
 }
 
 func randomID(reader io.Reader) (string, error) {
@@ -63,8 +117,12 @@ func newBearerToken(reader io.Reader) (wire, selector string, hash []byte, err e
 }
 
 func parseBearerToken(wire string) (string, []byte, error) {
+	if len(wire) != actionTokenSize {
+		return "", nil, ErrInvalidOrExpiredActionToken
+	}
 	selector, encoded, found := strings.Cut(wire, ".")
-	if !found || selector == "" || encoded == "" || strings.Contains(encoded, ".") {
+	if !found || len(selector) != actionSelectorSize || len(encoded) != actionSecretSize ||
+		strings.Contains(encoded, ".") || !isLowerHex(selector) {
 		return "", nil, ErrInvalidOrExpiredActionToken
 	}
 	secret, err := base64.RawURLEncoding.DecodeString(encoded)
@@ -73,6 +131,15 @@ func parseBearerToken(wire string) (string, []byte, error) {
 	}
 	digest := sha256.Sum256(secret)
 	return selector, digest[:], nil
+}
+
+func isLowerHex(value string) bool {
+	for _, char := range value {
+		if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 type ReplayCipher struct {

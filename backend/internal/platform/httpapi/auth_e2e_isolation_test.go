@@ -3,8 +3,12 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -39,6 +43,7 @@ type verifiedHTTPAccount struct {
 type accountAccessE2EFixture struct {
 	handler http.Handler
 	store   *store.Store
+	objects customerdomain.AvatarObjectStore
 	mail    *testMailSender
 	logs    *bytes.Buffer
 	now     time.Time
@@ -68,9 +73,9 @@ func TestAccountAccessHTTPPostgresE2EAndFullIsolation(t *testing.T) {
 	accountA.refreshToken = refreshedCookie.Value
 	assertCurrentAccount(t, fixture.handler, accountA)
 
-	seedAccountIsolationData(t, fixture.store, accountA.accountID, "a")
-	seedAccountIsolationData(t, fixture.store, accountB.accountID, "b")
-	assertFullAccountIsolation(t, fixture.handler, fixture.store, accountA, accountB)
+	avatarA := seedAccountIsolationData(t, fixture.store, fixture.objects, accountA.accountID, "a")
+	avatarB := seedAccountIsolationData(t, fixture.store, fixture.objects, accountB.accountID, "b")
+	assertFullAccountIsolation(t, fixture.handler, fixture.store, accountA, accountB, avatarA, avatarB)
 
 	pending := authRequest(t, fixture.handler, http.MethodPost, "/api/v1/auth/register",
 		`{"email":"`+syntheticHTTPEmail("pending")+`","password":"`+testPassword+`"}`, "", "")
@@ -141,8 +146,10 @@ func newAccountAccessE2EFixture(t *testing.T) accountAccessE2EFixture {
 	authService := auth.NewService(database, tokens,
 		auth.WithAuthClock(func() time.Time { return now }),
 		auth.WithAuthMailSender(mail),
+		auth.WithAttemptLimiter(database),
 		auth.WithRegistrationAdmissionMode(auth.RegistrationPublic),
 		auth.WithPublicBaseURL(testOrigin),
+		auth.WithAuthResponseDelay(func(context.Context, time.Duration) error { return nil }),
 	)
 	objects, err := avatarstore.NewLocal(t.TempDir())
 	if err != nil {
@@ -187,7 +194,7 @@ func newAccountAccessE2EFixture(t *testing.T) accountAccessE2EFixture {
 		PublicRegistrationEnabled: true,
 		Now:                       func() time.Time { return now },
 	})
-	return accountAccessE2EFixture{handler: handler, store: database, mail: mail, logs: logs, now: now}
+	return accountAccessE2EFixture{handler: handler, store: database, objects: objects, mail: mail, logs: logs, now: now}
 }
 
 func registerAndVerifyHTTPAccount(t *testing.T, fixture accountAccessE2EFixture, email string) verifiedHTTPAccount {
@@ -238,18 +245,36 @@ func assertCurrentAccount(t *testing.T, handler http.Handler, account verifiedHT
 	return *current.Id
 }
 
-func seedAccountIsolationData(t *testing.T, database *store.Store, accountID, marker string) {
+func seedAccountIsolationData(
+	t *testing.T,
+	database *store.Store,
+	objects customerdomain.AvatarObjectStore,
+	accountID, marker string,
+) []byte {
 	t.Helper()
 	ctx := context.Background()
 	scope := database.ScopeFor(auth.AccountContext{AccountID: accountID})
 	customerID := "isolation-customer-" + marker
 	orderID := "isolation-order-" + marker
-	avatarVersion := "sha256-" + strings.Repeat(marker, 64)
+	avatarContent := syntheticAvatarContent(t, marker)
+	avatarBody := avatarContent.Bytes()
+	avatarVersion := avatarContent.Checksum()
 	avatarObjectID := strings.Repeat(marker, 32)
 	createdAt := time.Date(2026, time.July, 31, 9, 0, 0, 0, time.UTC)
+	avatarKey, err := customerdomain.AvatarObjectKey(accountID, customerID, customerdomain.ObjectRef{
+		AvatarVersion: avatarVersion, AvatarObjectID: avatarObjectID,
+	})
+	if err != nil {
+		t.Fatalf("build isolated avatar key: %v", err)
+	}
+	if _, err := objects.PutImmutable(ctx, avatarKey, avatarContent, customerdomain.ObjectMeta{
+		MediaType: "image/png", Size: avatarContent.Size(), Checksum: avatarVersion, ModifiedAt: createdAt,
+	}); err != nil {
+		t.Fatalf("seed isolated avatar object: %v", err)
+	}
 	if err := scope.Insert(ctx, "customers",
 		[]string{"id", "created_at", "display_name", "channel", "status", "avatar_revision", "avatar_version", "avatar_object_id", "avatar_media_type", "avatar_size", "avatar_updated_at"},
-		customerID, createdAt, "isolation-marker-"+marker, "other", "active", 1, avatarVersion, avatarObjectID, "image/png", 16, createdAt); err != nil {
+		customerID, createdAt, "isolation-marker-"+marker, "other", "active", 1, avatarVersion, avatarObjectID, "image/png", avatarContent.Size(), createdAt); err != nil {
 		t.Fatalf("seed isolated customer: %v", err)
 	}
 	if err := scope.Insert(ctx, "orders",
@@ -275,6 +300,28 @@ func seedAccountIsolationData(t *testing.T, database *store.Store, accountID, ma
 		map[string]int{"a": 11, "b": 22}[marker], map[string]int{"a": 33, "b": 44}[marker], createdAt); err != nil {
 		t.Fatalf("seed isolated avatar checkpoint: %v", err)
 	}
+	return avatarBody
+}
+
+func syntheticAvatarContent(t *testing.T, marker string) customerdomain.AvatarContent {
+	t.Helper()
+	digest := sha256.Sum256([]byte(marker))
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	fill := color.NRGBA{R: digest[0], G: digest[1], B: digest[2], A: 255}
+	for y := range 2 {
+		for x := range 2 {
+			img.SetNRGBA(x, y, fill)
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatalf("encode isolated avatar content: %v", err)
+	}
+	content, err := customerdomain.NewAvatarContent(encoded.Bytes(), "image/png")
+	if err != nil {
+		t.Fatalf("create isolated avatar content: %v", err)
+	}
+	return content
 }
 
 func assertFullAccountIsolation(
@@ -283,27 +330,15 @@ func assertFullAccountIsolation(
 	database *store.Store,
 	accountA verifiedHTTPAccount,
 	accountB verifiedHTTPAccount,
+	avatarA []byte,
+	avatarB []byte,
 ) {
 	t.Helper()
-	exported := authenticatedRequest(t, handler, http.MethodGet, "/api/v1/export", accountA.accessToken, nil)
-	if exported.Code != http.StatusOK {
-		t.Fatalf("account A export status=%d", exported.Code)
-	}
-	body := exported.Body.String()
-	for _, required := range []string{
-		"isolation-marker-a", "isolation-order-marker-a", "isolation-slot-marker-a", "isolation-reminder-marker-a", "Asia/Tokyo",
-	} {
-		if !strings.Contains(body, required) {
-			t.Fatalf("account A export omitted required domain marker")
-		}
-	}
-	for _, forbidden := range []string{
-		"isolation-marker-b", "isolation-order-marker-b", "isolation-slot-marker-b", "isolation-reminder-marker-b", "Europe/Paris", accountB.accountID,
-	} {
-		if strings.Contains(body, forbidden) {
-			t.Fatal("account A export contains account B data")
-		}
-	}
+	assertAccountDomainReads(t, handler, accountA, "a", "b", "Asia/Tokyo", "Europe/Paris", accountB.accountID)
+	assertAccountDomainReads(t, handler, accountB, "b", "a", "Europe/Paris", "Asia/Tokyo", accountA.accountID)
+
+	assertOwnAvatarContent(t, handler, accountA, "a", avatarA)
+	assertOwnAvatarContent(t, handler, accountB, "b", avatarB)
 
 	crossAccountRequests := []struct {
 		method string
@@ -328,6 +363,69 @@ func assertFullAccountIsolation(
 	err := scopeA.QueryRow(context.Background(), "avatar_reconciliation_checkpoint", "object_inventory_cycle", "object_inventory_cycle = $2", 22).Scan(&visibleBCheckpoint)
 	if !errors.Is(err, store.ErrNoRows) {
 		t.Fatal("account A scope exposed account B avatar checkpoint")
+	}
+}
+
+func assertAccountDomainReads(
+	t *testing.T,
+	handler http.Handler,
+	account verifiedHTTPAccount,
+	ownMarker, foreignMarker, ownTimezone, foreignTimezone, foreignAccountID string,
+) {
+	t.Helper()
+	from := time.Date(2026, time.July, 31, 8, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	to := time.Date(2026, time.July, 31, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	reads := []struct {
+		name      string
+		path      string
+		required  string
+		forbidden string
+	}{
+		{name: "customers", path: "/api/v1/customers?page=1&page_size=50", required: "isolation-marker-" + ownMarker, forbidden: "isolation-marker-" + foreignMarker},
+		{name: "orders", path: "/api/v1/orders?page=1&page_size=50", required: "isolation-order-marker-" + ownMarker, forbidden: "isolation-order-marker-" + foreignMarker},
+		{name: "schedule", path: "/api/v1/schedule/slots?from=" + url.QueryEscape(from) + "&to=" + url.QueryEscape(to), required: "isolation-slot-marker-" + ownMarker, forbidden: "isolation-slot-marker-" + foreignMarker},
+		{name: "reminders", path: "/api/v1/reminders?page=1&page_size=50", required: "isolation-reminder-marker-" + ownMarker, forbidden: "isolation-reminder-marker-" + foreignMarker},
+		{name: "settings", path: "/api/v1/settings", required: ownTimezone, forbidden: foreignTimezone},
+		{name: "export", path: "/api/v1/export", required: "isolation-marker-" + ownMarker, forbidden: "isolation-marker-" + foreignMarker},
+	}
+	for _, read := range reads {
+		response := authenticatedRequest(t, handler, http.MethodGet, read.path, account.accessToken, nil)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s read status=%d body=%s", read.name, response.Code, response.Body.String())
+		}
+		body := response.Body.String()
+		if !strings.Contains(body, read.required) {
+			t.Fatalf("%s read omitted own account marker", read.name)
+		}
+		if strings.Contains(body, read.forbidden) || strings.Contains(body, foreignAccountID) {
+			t.Fatalf("%s read exposed foreign account data", read.name)
+		}
+	}
+}
+
+func assertOwnAvatarContent(
+	t *testing.T,
+	handler http.Handler,
+	account verifiedHTTPAccount,
+	marker string,
+	want []byte,
+) {
+	t.Helper()
+	version := ""
+	customer := authenticatedRequest(t, handler, http.MethodGet, "/api/v1/customers/isolation-customer-"+marker, account.accessToken, nil)
+	if customer.Code != http.StatusOK {
+		t.Fatalf("own avatar customer status=%d", customer.Code)
+	}
+	var detail httpapi.CustomerDetail
+	if err := json.Unmarshal(customer.Body.Bytes(), &detail); err != nil || detail.AvatarVersion == nil {
+		t.Fatalf("decode own avatar customer: %v", err)
+	}
+	version = *detail.AvatarVersion
+	content := authenticatedRequest(t, handler, http.MethodGet,
+		"/api/v1/customers/isolation-customer-"+marker+"/avatar/content?v="+url.QueryEscape(version),
+		account.accessToken, nil)
+	if content.Code != http.StatusOK || !bytes.Equal(content.Body.Bytes(), want) {
+		t.Fatalf("own avatar content status=%d body=%q", content.Code, content.Body.Bytes())
 	}
 }
 

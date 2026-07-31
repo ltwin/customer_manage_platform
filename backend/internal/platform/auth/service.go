@@ -15,6 +15,7 @@ import (
 
 const (
 	actionTokenTTL      = 24 * time.Hour
+	passwordResetTTL    = 30 * time.Minute
 	refreshIdleTTL      = 14 * 24 * time.Hour
 	refreshAbsoluteTTL  = 30 * 24 * time.Hour
 	refreshReplayWindow = 10 * time.Second
@@ -26,7 +27,11 @@ type Repository interface {
 	AccountCount(context.Context) (int64, error)
 	RegisterAccount(context.Context, RegistrationAdmissionMode, RegistrationRecord) (bool, error)
 	ReplaceVerificationToken(context.Context, string, string, []byte, time.Time, time.Time) (bool, error)
+	ReplacePasswordResetToken(context.Context, string, string, []byte, time.Time, time.Time) (bool, error)
 	ConsumeActionAndActivate(context.Context, ActionProof, RefreshSeed, time.Time) (Account, error)
+	ResetPassword(context.Context, ActionProof, string, time.Time) (string, error)
+	PasswordCredential(context.Context, string) (string, error)
+	ChangePassword(context.Context, PasswordChangeCommand) error
 	FindLoginRecord(context.Context, string) (LoginRecord, bool, error)
 	CreateRefreshSession(context.Context, string, RefreshSeed) error
 	RotateRefresh(context.Context, RefreshProof, RefreshSeed, *ReplayCipher, time.Time) (RefreshRotation, error)
@@ -39,14 +44,19 @@ type Repository interface {
 }
 
 type Service struct {
-	repo          Repository
-	tokens        *TokenIssuer
-	replay        *ReplayCipher
-	mail          AuthMailSender
-	mode          RegistrationAdmissionMode
-	now           func() time.Time
-	random        io.Reader
-	publicBaseURL string
+	repo            Repository
+	tokens          *TokenIssuer
+	replay          *ReplayCipher
+	mail            AuthMailSender
+	mode            RegistrationAdmissionMode
+	now             func() time.Time
+	random          io.Reader
+	publicBaseURL   string
+	limiterDigest   *LimiterDigester
+	limiter         AttemptLimiter
+	responseDelay   func(context.Context, time.Duration) error
+	timingRandom    io.Reader
+	passwordMatches func(string, string) bool
 }
 
 type ServiceOption func(*Service)
@@ -89,15 +99,81 @@ func WithPublicBaseURL(publicBaseURL string) ServiceOption {
 	}
 }
 
+func WithAttemptLimiter(limiter AttemptLimiter) ServiceOption {
+	return func(service *Service) {
+		if limiter != nil {
+			service.limiter = limiter
+		}
+	}
+}
+
+func WithAuthResponseDelay(delay func(context.Context, time.Duration) error) ServiceOption {
+	return func(service *Service) {
+		if delay != nil {
+			service.responseDelay = delay
+		}
+	}
+}
+
+func WithAuthTimingRandom(random io.Reader) ServiceOption {
+	return func(service *Service) {
+		if random != nil {
+			service.timingRandom = random
+		}
+	}
+}
+
 func NewService(repo Repository, tokens *TokenIssuer, options ...ServiceOption) *Service {
+	if err := validateDummyPasswordHash(); err != nil {
+		panic(fmt.Sprintf("auth: invalid dummy password hash: %v", err))
+	}
 	service := &Service{
 		repo: repo, tokens: tokens, replay: requiredReplayCipher(tokens, rand.Reader), mail: unavailableMailSender{},
-		mode: RegistrationPublic, now: time.Now, random: rand.Reader,
+		mode: RegistrationPublic, now: time.Now, random: rand.Reader, limiterDigest: tokens.LimiterDigester(),
+		limiter: unavailableAttemptLimiter{}, responseDelay: waitForAuthResponse,
+		timingRandom: rand.Reader, passwordMatches: VerifyPassword,
 	}
 	for _, option := range options {
 		option(service)
 	}
 	return service
+}
+
+type unavailableAttemptLimiter struct{}
+
+func (unavailableAttemptLimiter) Consume(context.Context, AuthAction, string, string, time.Time) (time.Duration, bool, error) {
+	return 0, false, fmt.Errorf("attempt limiter unavailable")
+}
+
+func (unavailableAttemptLimiter) ResetSubject(context.Context, AuthAction, string) error {
+	return fmt.Errorf("attempt limiter unavailable")
+}
+
+func (s *Service) attemptDigests(action AuthAction, subject []byte, meta ClientMeta) (string, string, error) {
+	if s.limiterDigest == nil || len(subject) == 0 || !meta.SourceIP.IsValid() {
+		return "", "", classifyAuthFailure("derive auth attempt digest", fmt.Errorf("invalid limiter input"))
+	}
+	subjectDigest := s.limiterDigest.Subject(action, subject)
+	sourceDigest := s.limiterDigest.Source(action, meta.SourceIP)
+	if subjectDigest == "" || sourceDigest == "" {
+		return "", "", classifyAuthFailure("derive auth attempt digest", fmt.Errorf("empty limiter digest"))
+	}
+	return subjectDigest, sourceDigest, nil
+}
+
+func (s *Service) consumeAttempt(ctx context.Context, action AuthAction, subject []byte, meta ClientMeta) (string, error) {
+	subjectDigest, sourceDigest, err := s.attemptDigests(action, subject, meta)
+	if err != nil {
+		return "", err
+	}
+	retryAfter, allowed, err := s.limiter.Consume(ctx, action, subjectDigest, sourceDigest, s.now().UTC())
+	if err != nil {
+		return "", classifyAuthFailure("consume auth attempt", err)
+	}
+	if !allowed {
+		return "", newRateLimitedError(action, sourceDigest, retryAfter)
+	}
+	return subjectDigest, nil
 }
 
 func requiredReplayCipher(tokens *TokenIssuer, random io.Reader) *ReplayCipher {
@@ -124,7 +200,7 @@ func (s *Service) PlanBootstrap(ctx context.Context, email, password string) (Bo
 	return BootstrapPlan{Eligible: count == 0, RecipientRef: recipientReference(normalized)}, nil
 }
 
-func (s *Service) Register(ctx context.Context, email, password string) (DispatchResult, error) {
+func (s *Service) Register(ctx context.Context, email, password string, meta ClientMeta) (DispatchResult, error) {
 	if s.mode != RegistrationPublic && s.mode != RegistrationBootstrapFirstAccount {
 		return DispatchResult{}, classifyAuthFailure("register admission mode", fmt.Errorf("unsupported configuration"))
 	}
@@ -132,112 +208,237 @@ func (s *Service) Register(ctx context.Context, email, password string) (Dispatc
 	if err != nil {
 		return DispatchResult{}, err
 	}
-	passwordHash, err := HashPassword(password)
-	if err != nil {
-		return DispatchResult{}, classifyAuthFailure("register password", err)
+	run := func() (DispatchResult, error) {
+		if s.mode == RegistrationPublic {
+			if _, err := s.consumeAttempt(ctx, AuthActionRegister, []byte(normalized), meta); err != nil {
+				return DispatchResult{}, err
+			}
+		}
+		passwordHash, err := HashPassword(password)
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("register password", err)
+		}
+		wire, selector, tokenHash, err := newBearerToken(s.random)
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("register action token", err)
+		}
+		accountID, err := randomID(s.random)
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("register account id", err)
+		}
+		identityID, err := randomID(s.random)
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("register identity id", err)
+		}
+		now := s.now().UTC()
+		created, err := s.repo.RegisterAccount(ctx, s.mode, RegistrationRecord{
+			AccountID: accountID, IdentityID: identityID, NormalizedEmail: normalized,
+			PasswordHash: passwordHash, ActionSelector: selector, ActionSecretHash: tokenHash,
+			ActionExpiresAt: now.Add(actionTokenTTL), CreatedAt: now,
+		})
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("register", err)
+		}
+		if !created {
+			return DispatchResult{}, nil
+		}
+		return DispatchResult{Attempted: true, Delivery: s.deliverAction(
+			ctx, ActionEmailVerification, normalized, wire, now.Add(actionTokenTTL),
+		)}, nil
 	}
-	wire, selector, tokenHash, err := newBearerToken(s.random)
-	if err != nil {
-		return DispatchResult{}, classifyAuthFailure("register action token", err)
+	if s.mode == RegistrationBootstrapFirstAccount {
+		return run()
 	}
-	accountID, err := randomID(s.random)
-	if err != nil {
-		return DispatchResult{}, classifyAuthFailure("register account id", err)
-	}
-	identityID, err := randomID(s.random)
-	if err != nil {
-		return DispatchResult{}, classifyAuthFailure("register identity id", err)
-	}
-	now := s.now().UTC()
-	created, err := s.repo.RegisterAccount(ctx, s.mode, RegistrationRecord{
-		AccountID: accountID, IdentityID: identityID, NormalizedEmail: normalized,
-		PasswordHash: passwordHash, ActionSelector: selector, ActionSecretHash: tokenHash,
-		ActionExpiresAt: now.Add(actionTokenTTL), CreatedAt: now,
-	})
-	if err != nil {
-		return DispatchResult{}, classifyAuthFailure("register", err)
-	}
-	if !created {
-		return DispatchResult{}, nil
-	}
-	return DispatchResult{Attempted: true, Delivery: s.deliverAction(
-		ctx, ActionEmailVerification, normalized, wire, now.Add(actionTokenTTL),
-	)}, nil
+	return withAuthResponseBudget(ctx, s, mailResponseBudget, run)
 }
 
-func (s *Service) ResendVerification(ctx context.Context, email string) (DispatchResult, error) {
+func (s *Service) ResendVerification(ctx context.Context, email string, meta ClientMeta) (DispatchResult, error) {
 	normalized, err := normalizeEmail(email)
 	if err != nil {
 		return DispatchResult{}, classifyAuthFailure("resend verification token", err)
 	}
-	wire, selector, tokenHash, err := newBearerToken(s.random)
+	return withAuthResponseBudget(ctx, s, mailResponseBudget, func() (DispatchResult, error) {
+		if _, err := s.consumeAttempt(ctx, AuthActionResendVerification, []byte(normalized), meta); err != nil {
+			return DispatchResult{}, err
+		}
+		wire, selector, tokenHash, err := newBearerToken(s.random)
+		if err != nil {
+			return DispatchResult{}, err
+		}
+		now := s.now().UTC()
+		replaced, err := s.repo.ReplaceVerificationToken(ctx, normalized, selector, tokenHash, now.Add(actionTokenTTL), now)
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("resend verification", err)
+		}
+		if !replaced {
+			return DispatchResult{}, nil
+		}
+		return DispatchResult{Attempted: true, Delivery: s.deliverAction(
+			ctx, ActionEmailVerification, normalized, wire, now.Add(actionTokenTTL),
+		)}, nil
+	})
+}
+
+func (s *Service) BeginPasswordReset(ctx context.Context, email string, meta ClientMeta) (DispatchResult, error) {
+	normalized, err := normalizeEmail(email)
 	if err != nil {
 		return DispatchResult{}, err
 	}
-	now := s.now().UTC()
-	replaced, err := s.repo.ReplaceVerificationToken(ctx, normalized, selector, tokenHash, now.Add(actionTokenTTL), now)
-	if err != nil {
-		return DispatchResult{}, classifyAuthFailure("resend verification", err)
-	}
-	if !replaced {
-		return DispatchResult{}, nil
-	}
-	return DispatchResult{Attempted: true, Delivery: s.deliverAction(
-		ctx, ActionEmailVerification, normalized, wire, now.Add(actionTokenTTL),
-	)}, nil
+	return withAuthResponseBudget(ctx, s, mailResponseBudget, func() (DispatchResult, error) {
+		if _, err := s.consumeAttempt(ctx, AuthActionForgotPassword, []byte(normalized), meta); err != nil {
+			return DispatchResult{}, err
+		}
+		wire, selector, tokenHash, err := newBearerToken(s.random)
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("password reset action token", err)
+		}
+		now := s.now().UTC()
+		replaced, err := s.repo.ReplacePasswordResetToken(
+			ctx, normalized, selector, tokenHash, now.Add(passwordResetTTL), now,
+		)
+		if err != nil {
+			return DispatchResult{}, classifyAuthFailure("begin password reset", err)
+		}
+		if !replaced {
+			return DispatchResult{}, nil
+		}
+		return DispatchResult{Attempted: true, Delivery: s.deliverAction(
+			ctx, ActionPasswordReset, normalized, wire, now.Add(passwordResetTTL),
+		)}, nil
+	})
 }
 
-func (s *Service) VerifyEmail(ctx context.Context, wire string) (Session, error) {
-	selector, tokenHash, err := parseBearerToken(wire)
-	if err != nil {
-		return Session{}, ErrInvalidOrExpiredActionToken
+func (s *Service) ResetPassword(ctx context.Context, wire, newPassword string, meta ClientMeta) error {
+	if !validPassword(newPassword) {
+		return newAuthError(AuthErrorValidation)
 	}
-	now := s.now().UTC()
-	seed, err := s.newRefreshSeed(now)
-	if err != nil {
-		return Session{}, classifyAuthFailure("verify email refresh seed", err)
-	}
-	account, err := s.repo.ConsumeActionAndActivate(ctx, ActionProof{
-		Selector: selector, SecretHash: tokenHash,
-	}, seed, now)
-	if err != nil {
-		return Session{}, classifyAuthFailure("verify email", err)
-	}
-	return s.sessionFor(account.ID, seed)
+	_, err := withAuthResponseBudget(ctx, s, authResponseBudget, func() (struct{}, error) {
+		selector, tokenHash, err := parseBearerToken(wire)
+		if err != nil {
+			return struct{}{}, ErrInvalidOrExpiredActionToken
+		}
+		if _, err := s.consumeAttempt(ctx, AuthActionResetToken, []byte(selector), meta); err != nil {
+			return struct{}{}, err
+		}
+		passwordHash, err := HashPassword(newPassword)
+		if err != nil {
+			return struct{}{}, classifyAuthFailure("reset password hash", err)
+		}
+		_, err = s.repo.ResetPassword(ctx, ActionProof{
+			Selector: selector, SecretHash: tokenHash, Purpose: ActionPasswordReset,
+		}, passwordHash, s.now().UTC())
+		if err != nil {
+			return struct{}{}, classifyAuthFailure("reset password", err)
+		}
+		return struct{}{}, nil
+	})
+	return err
 }
 
-func (s *Service) Login(ctx context.Context, email, password string) (Session, error) {
+func (s *Service) ChangePassword(
+	ctx context.Context,
+	account AccountContext,
+	currentPassword, newPassword string,
+	meta ClientMeta,
+) error {
+	if account.AccountID == "" || !validPassword(currentPassword) || !validPassword(newPassword) {
+		return newAuthError(AuthErrorValidation)
+	}
+	_, err := withAuthResponseBudget(ctx, s, authResponseBudget, func() (struct{}, error) {
+		subjectDigest, err := s.consumeAttempt(ctx, AuthActionChangePassword, []byte(account.AccountID), meta)
+		if err != nil {
+			return struct{}{}, err
+		}
+		currentHash, err := s.repo.PasswordCredential(ctx, account.AccountID)
+		if err != nil {
+			return struct{}{}, classifyAuthFailure("change password credential", err)
+		}
+		if !s.passwordMatches(currentHash, currentPassword) {
+			return struct{}{}, ErrInvalidPassword
+		}
+		passwordHash, err := HashPassword(newPassword)
+		if err != nil {
+			return struct{}{}, classifyAuthFailure("change password hash", err)
+		}
+		if err := s.limiter.ResetSubject(ctx, AuthActionChangePassword, subjectDigest); err != nil {
+			return struct{}{}, classifyAuthFailure("reset change password attempts", err)
+		}
+		if err := s.repo.ChangePassword(ctx, PasswordChangeCommand{
+			AccountID: account.AccountID, ExpectedPasswordHash: currentHash,
+			PasswordHash: passwordHash, ChangedAt: s.now().UTC(),
+		}); err != nil {
+			return struct{}{}, classifyAuthFailure("change password", err)
+		}
+		return struct{}{}, nil
+	})
+	return err
+}
+
+func (s *Service) VerifyEmail(ctx context.Context, wire string, meta ClientMeta) (Session, error) {
+	return withAuthResponseBudget(ctx, s, authResponseBudget, func() (Session, error) {
+		selector, tokenHash, err := parseBearerToken(wire)
+		if err != nil {
+			return Session{}, ErrInvalidOrExpiredActionToken
+		}
+		if _, err := s.consumeAttempt(ctx, AuthActionVerifyToken, []byte(selector), meta); err != nil {
+			return Session{}, err
+		}
+		now := s.now().UTC()
+		seed, err := s.newRefreshSeed(now)
+		if err != nil {
+			return Session{}, classifyAuthFailure("verify email refresh seed", err)
+		}
+		account, err := s.repo.ConsumeActionAndActivate(ctx, ActionProof{
+			Selector: selector, SecretHash: tokenHash,
+		}, seed, now)
+		if err != nil {
+			return Session{}, classifyAuthFailure("verify email", err)
+		}
+		return s.sessionFor(account.ID, seed)
+	})
+}
+
+func (s *Service) Login(ctx context.Context, email, password string, meta ClientMeta) (Session, error) {
 	normalized, err := normalizeEmail(email)
 	if err != nil || !validPassword(password) {
 		return Session{}, newAuthError(AuthErrorValidation)
 	}
-	record, found, err := s.repo.FindLoginRecord(ctx, normalized)
-	if err != nil {
-		return Session{}, classifyAuthFailure("login", err)
-	}
-	hash := dummyPasswordHash
-	if found {
-		hash = record.PasswordHash
-	}
-	passwordOK := VerifyPassword(hash, password)
-	if !found || !passwordOK {
-		return Session{}, ErrInvalidPassword
-	}
-	if record.Account.Status != AccountActive {
-		return Session{}, ErrEmailVerificationRequired
-	}
-	now := s.now().UTC()
-	seed, err := s.newRefreshSeed(now)
-	if err != nil {
-		return Session{}, classifyAuthFailure("login refresh seed", err)
-	}
-	if err := s.repo.CreateRefreshSession(ctx, record.Account.ID, seed); err != nil {
-		return Session{}, classifyAuthFailure("login create refresh session", err)
-	}
-	return s.sessionFor(record.Account.ID, seed)
+	return withAuthResponseBudget(ctx, s, authResponseBudget, func() (Session, error) {
+		subjectDigest, err := s.consumeAttempt(ctx, AuthActionLogin, []byte(normalized), meta)
+		if err != nil {
+			return Session{}, err
+		}
+		record, found, err := s.repo.FindLoginRecord(ctx, normalized)
+		if err != nil {
+			return Session{}, classifyAuthFailure("login", err)
+		}
+		hash := dummyPasswordHash
+		if found {
+			hash = record.PasswordHash
+		}
+		passwordOK := s.passwordMatches(hash, password)
+		if !found || !passwordOK {
+			return Session{}, ErrInvalidPassword
+		}
+		if record.Account.Status != AccountActive {
+			return Session{}, ErrEmailVerificationRequired
+		}
+		if err := s.limiter.ResetSubject(ctx, AuthActionLogin, subjectDigest); err != nil {
+			return Session{}, classifyAuthFailure("reset login attempts", err)
+		}
+		now := s.now().UTC()
+		seed, err := s.newRefreshSeed(now)
+		if err != nil {
+			return Session{}, classifyAuthFailure("login refresh seed", err)
+		}
+		if err := s.repo.CreateRefreshSession(ctx, record.Account.ID, seed); err != nil {
+			return Session{}, classifyAuthFailure("login create refresh session", err)
+		}
+		return s.sessionFor(record.Account.ID, seed)
+	})
 }
 
-func (s *Service) Refresh(ctx context.Context, wire string) (Session, error) {
+func (s *Service) Refresh(ctx context.Context, wire string, _ ClientMeta) (Session, error) {
 	if s.replay == nil {
 		return Session{}, newAuthError(AuthErrorInternal)
 	}
@@ -355,7 +556,7 @@ func (s *Service) deliverAction(
 	recipient, wire string,
 	expiresAt time.Time,
 ) DeliveryOutcome {
-	actionURL, err := s.actionURL(wire)
+	actionURL, err := s.actionURL(purpose, wire)
 	if err != nil {
 		return DeliveryOutcome{Attempted: true, FailureClass: DeliveryMisconfigured}
 	}
@@ -365,12 +566,16 @@ func (s *Service) deliverAction(
 	return deliveryOutcome(sendErr, receipt)
 }
 
-func (s *Service) actionURL(wire string) (string, error) {
+func (s *Service) actionURL(purpose ActionPurpose, wire string) (string, error) {
 	base, err := url.Parse(s.publicBaseURL)
 	if err != nil || base.Scheme == "" || base.Host == "" {
 		return "", fmt.Errorf("public base URL is unavailable")
 	}
-	target := base.ResolveReference(&url.URL{Path: "/verify-email"})
+	path := "/verify-email"
+	if purpose == ActionPasswordReset {
+		path = "/reset-password"
+	}
+	target := base.ResolveReference(&url.URL{Path: path})
 	target.Fragment = url.Values{"token": []string{wire}}.Encode()
 	return target.String(), nil
 }

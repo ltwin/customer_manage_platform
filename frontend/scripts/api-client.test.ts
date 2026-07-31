@@ -3,11 +3,14 @@ import test from 'node:test'
 
 import {
   ApiError,
+  changePassword,
   createOrder,
   createScheduleSlot,
+  forgotPassword,
   listCustomers,
   listOrders,
   listScheduleSlots,
+  resetPassword,
 } from '../src/api/client.ts'
 import { getAccessToken, setAuthenticated } from '../src/auth/session.ts'
 
@@ -49,6 +52,61 @@ test('ApiError preserves generated typed details', async () => {
       error.details?.schedule_slot_id === 'slot-1' &&
       error.details.schedule_start_at === '2026-07-10T08:00:00Z',
   )
+})
+
+test('password recovery clients follow public/protected transport boundaries', async () => {
+  setAuthenticated(access('password-change-access'), authAccount)
+  const requests: Array<{ url: string; init?: RequestInit }> = []
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), init })
+    if (String(input).endsWith('/forgot')) return Response.json({ status: 'accepted' }, { status: 202 })
+    return new Response(null, { status: 204 })
+  }
+
+  await forgotPassword('owner@example.invalid')
+  await resetPassword('selector.synthetic-secret', 'new-password-1')
+  await changePassword('current-pass-1', 'new-password-1')
+
+  assert.deepEqual(requests.map((request) => request.url), [
+    '/api/v1/auth/password/forgot',
+    '/api/v1/auth/password/reset',
+    '/api/v1/auth/password/change',
+  ])
+  assert.deepEqual(JSON.parse(String(requests[0]?.init?.body)), { email: 'owner@example.invalid' })
+  assert.deepEqual(JSON.parse(String(requests[1]?.init?.body)), {
+    token: 'selector.synthetic-secret',
+    new_password: 'new-password-1',
+  })
+  assert.deepEqual(JSON.parse(String(requests[2]?.init?.body)), {
+    current_password: 'current-pass-1',
+    new_password: 'new-password-1',
+  })
+  assert.equal(new Headers(requests[0]?.init?.headers).get('Authorization'), null)
+  assert.equal(new Headers(requests[1]?.init?.headers).get('Authorization'), null)
+  assert.equal(new Headers(requests[2]?.init?.headers).get('Authorization'), 'Bearer password-change-access')
+})
+
+test('wrong current password never refreshes and replays the credential mutation', async () => {
+  setAuthenticated(access('password-change-access'), authAccount)
+  let changeCalls = 0
+  let refreshCalls = 0
+  globalThis.fetch = async (input) => {
+    const url = String(input)
+    if (url.endsWith('/auth/refresh')) {
+      refreshCalls += 1
+      return Response.json(access('unexpected-refreshed-access'))
+    }
+    changeCalls += 1
+    return Response.json({ error: { code: 'unauthorized', message: '认证失败' } }, { status: 401 })
+  }
+
+  await assert.rejects(
+    changePassword('wrong-current-password', 'new-password-1'),
+    (error: unknown) => error instanceof ApiError && error.status === 401,
+  )
+  assert.equal(changeCalls, 1)
+  assert.equal(refreshCalls, 0)
+  assert.equal(getAccessToken(), 'password-change-access')
 })
 
 test('order client sends schedulable_at and Idempotency-Key', async () => {

@@ -2,6 +2,8 @@
 
 .PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync
 
+BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || printf development)
+
 check: build lint test generate-check
 
 build: backend-build frontend-build
@@ -10,6 +12,7 @@ build: backend-build frontend-build
 backend-build: webui-sync
 	cd backend && go build ./...
 	cd backend && go build -o bin/server ./cmd/server
+	cd backend && go build -ldflags "-X main.runtimeBuildRevision=$(BUILD_REVISION)" -o bin/accountctl ./cmd/accountctl
 
 frontend-build: frontend/node_modules
 	cd frontend && npm run build
@@ -43,7 +46,7 @@ test:
 	cd frontend && npm run test:data-export
 	cd frontend && npm run test:v1-hardening
 	./scripts/test-auth-legacy-cutover.sh
-	./scripts/test-production-preflight.sh
+	./scripts/test-auth-security-catalog.sh
 	bash ./scripts/test-v1-ops-common.sh
 	python3 ./scripts/lib/v1-ops-package-selftest.py
 	bash ./scripts/test-v1-ops-backup-restore-safety.sh

@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const notice = (location.state as { notice?: string } | null)?.notice
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -58,11 +59,14 @@ export default function LoginPage() {
       subtitle="使用已验证的邮箱和密码登录。"
       footer={
         <p className="auth-foot">
+          <Link to="/forgot-password">忘记密码？</Link>
+          <br />
           还没有账号？<Link to="/register">查看是否开放注册</Link>
         </p>
       }
     >
       <form onSubmit={onSubmit} noValidate data-od-id="form-email-password">
+        {notice && <p className="auth-alert auth-alert-ok" role="status">{notice}</p>}
         {formError && (
           <p className="auth-alert" role="alert">
             <AlertCircle aria-hidden="true" strokeWidth={2.2} />

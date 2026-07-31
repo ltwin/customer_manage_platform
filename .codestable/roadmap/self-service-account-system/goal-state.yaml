@@ -1,5 +1,5 @@
 roadmap: self-service-account-system
-status: handoff
+status: running
 baseline_ref: 411bbb1fc5bfc35e5617718cd8a0e5f242ad648f
 driver_kind: host-agent
 driver_id: "/root/self_service_account_goal_driver"
@@ -8,9 +8,46 @@ acceptance_authorization: approved
 acceptance_authorization_ref: "approval-report.md#goal-acceptance"
 commit_authorization: approved
 commit_authorization_ref: "approval-report.md#goal-commits"
-handoff_reason: "owner-stop: REV-001～005 已完成定向修复验证，但 owner 要求不再进行下一轮 review；canonical review 仍 blocked，OCR skip 命名决策仍 pending"
-handoff_next: "保持 email-account-access 为 implementing，不进入 QA/acceptance/commit/public-auth-hardening；未来只有 owner 明确恢复当前 review gate 后才能继续"
 current_feature_index: 0
+owner_overrides:
+  - id: public-auth-hardening-dependency-admission
+    approved_at: 2026-07-31
+    status: approved
+    reason: "owner要求保留email-account-access真实未验收状态，但先完成剩余public-auth-hardening，以形成完整认证闭环"
+    effect: "跳过本次implementation admission的dependency=done流程阻塞；不把email-account-access伪造成done，不授权生产动作"
+ledger:
+  - feature: public-auth-hardening
+    step: STEP-001
+    status: done
+    scope: "PostgreSQL attempt limiter、limiter-hmac digest、trusted XFF source、CIDR config validation"
+  - feature: public-auth-hardening
+    step: STEP-002
+    status: done
+    scope: "forgot/reset/change password、30m token、credential/token/all refresh family transaction"
+  - feature: public-auth-hardening
+    step: STEP-003
+    status: done
+    scope: "persistent limiter orchestration、dummy bcrypt、public response budget、Retry-After、rate-limit event"
+  - feature: public-auth-hardening
+    step: STEP-004
+    status: done
+    scope: "password HTTP/OpenAPI/Web/Mail routes、Origin/cookie matrix、fragment one-shot consumption、visible logout/password UI"
+  - feature: public-auth-hardening
+    step: STEP-005
+    status: done
+    scope: "seven-event allowlist、password/legacy/mail event producers、JSONL/file/journald monitor、threshold and degraded exit matrix"
+  - feature: public-auth-hardening
+    step: STEP-006
+    status: done
+    scope: "fail-closed production evidence gate、live readiness probe、synthetic root rotation、rollback catalog and runbook"
+  - feature: public-auth-hardening
+    step: STEP-007
+    status: done
+    scope: "A1～A18 security catalog、two verified account full-domain isolation、AccountScopes consumers、CMD-001～007"
+  - feature: public-auth-hardening
+    step: acceptance
+    status: done
+    scope: "23 checks passed、feature acceptance passed、roadmap item done；Goal继续等待email-account-access真实完成"
 workspace:
   mode: current-branch
   branch: feature/userCenter
@@ -60,4 +97,4 @@ features:
     review: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-review.md
     qa: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-qa.md
     acceptance: .codestable/features/2026-07-30-public-auth-hardening/public-auth-hardening-acceptance.md
-    status: pending
+    status: accepted

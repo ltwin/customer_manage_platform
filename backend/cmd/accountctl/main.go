@@ -9,8 +9,10 @@ import (
 	"flag"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/authmail"
@@ -28,9 +30,11 @@ const (
 	accountctlPasswordEnv = "ACCOUNTCTL_AUTH_PASSWORD"
 )
 
+var runtimeBuildRevision = "development"
+
 type authApplication interface {
 	PlanBootstrap(context.Context, string, string) (auth.BootstrapPlan, error)
-	Register(context.Context, string, string) (auth.DispatchResult, error)
+	Register(context.Context, string, string, auth.ClientMeta) (auth.DispatchResult, error)
 	BeginLegacyClaim(context.Context, string, bool) (auth.LegacyClaimResult, error)
 }
 
@@ -41,14 +45,18 @@ type applicationFactory func(
 ) (authApplication, func(), error)
 
 type commandDeps struct {
-	stdout         io.Writer
-	stderr         io.Writer
-	getenv         func(string) string
-	newApplication applicationFactory
+	stdin             io.Reader
+	stdout            io.Writer
+	stderr            io.Writer
+	getenv            func(string) string
+	openFile          func(string) (io.ReadCloser, error)
+	now               func() time.Time
+	newApplication    applicationFactory
+	newReadinessProbe readinessProbeFactory
+	buildRevision     string
 }
 
 type commandReport struct {
-	Event             string                    `json:"event,omitempty"`
 	Operation         string                    `json:"operation"`
 	DryRun            bool                      `json:"dry_run"`
 	Status            string                    `json:"status"`
@@ -64,15 +72,23 @@ type commandReport struct {
 
 func main() {
 	deps := commandDeps{
-		stdout:         os.Stdout,
-		stderr:         os.Stderr,
-		getenv:         os.Getenv,
-		newApplication: newAuthApplication,
+		stdin:             os.Stdin,
+		stdout:            os.Stdout,
+		stderr:            os.Stderr,
+		getenv:            os.Getenv,
+		openFile:          func(path string) (io.ReadCloser, error) { return os.Open(path) },
+		now:               time.Now,
+		newApplication:    newAuthApplication,
+		newReadinessProbe: newStoreReadinessProbe,
+		buildRevision:     runtimeBuildRevision,
 	}
 	os.Exit(run(context.Background(), os.Args[1:], deps))
 }
 
 func run(ctx context.Context, args []string, deps commandDeps) int {
+	if deps.stdin == nil {
+		deps.stdin = strings.NewReader("")
+	}
 	if deps.stdout == nil {
 		deps.stdout = io.Discard
 	}
@@ -82,19 +98,35 @@ func run(ctx context.Context, args []string, deps commandDeps) int {
 	if deps.getenv == nil {
 		deps.getenv = os.Getenv
 	}
+	if deps.openFile == nil {
+		deps.openFile = func(path string) (io.ReadCloser, error) { return os.Open(path) }
+	}
+	if deps.now == nil {
+		deps.now = time.Now
+	}
 	if deps.newApplication == nil {
 		deps.newApplication = newAuthApplication
 	}
+	if deps.newReadinessProbe == nil {
+		deps.newReadinessProbe = newStoreReadinessProbe
+	}
+	if deps.buildRevision == "" {
+		deps.buildRevision = runtimeBuildRevision
+	}
 	if len(args) < 2 || args[0] != "auth" {
-		return writeFailure(deps.stderr, "unknown", exitInvalidInput, "invalid_input", "使用 auth bootstrap 或 auth claim-legacy")
+		return writeFailure(deps.stderr, "unknown", exitInvalidInput, "invalid_input", "使用 auth bootstrap、auth claim-legacy、auth monitor 或 auth readiness")
 	}
 	switch args[1] {
 	case "bootstrap":
 		return runBootstrap(ctx, args[2:], deps)
 	case "claim-legacy":
 		return runLegacyClaim(ctx, args[2:], deps)
+	case "monitor":
+		return runAuthMonitor(ctx, args[2:], deps)
+	case "readiness":
+		return runAuthReadiness(ctx, args[2:], deps)
 	default:
-		return writeFailure(deps.stderr, "unknown", exitInvalidInput, "invalid_input", "使用 auth bootstrap 或 auth claim-legacy")
+		return writeFailure(deps.stderr, "unknown", exitInvalidInput, "invalid_input", "使用 auth bootstrap、auth claim-legacy、auth monitor 或 auth readiness")
 	}
 }
 
@@ -134,7 +166,7 @@ func runBootstrap(ctx context.Context, args []string, deps commandDeps) int {
 		return writeReport(deps.stdout, report, exitCode)
 	}
 
-	dispatch, err := application.Register(ctx, email, password)
+	dispatch, err := application.Register(ctx, email, password, auth.ClientMeta{SourceIP: netip.MustParseAddr("127.0.0.1")})
 	if err != nil {
 		return writeAuthFailure(deps.stderr, "bootstrap", err)
 	}
@@ -161,16 +193,25 @@ func runLegacyClaim(ctx context.Context, args []string, deps commandDeps) int {
 	}
 	application, closeApplication, err := deps.newApplication(ctx, auth.RegistrationPublic, deps.stderr)
 	if err != nil {
+		if writeLegacyClaimEvent(deps.stderr, deps.now(), dryRun, auth.LegacyClaimResult{}, err) != nil {
+			return exitInternal
+		}
 		return writeFailure(deps.stderr, "claim-legacy", exitInternal, "internal", "检查 accountctl 运行配置")
 	}
 	defer closeApplication()
 
 	result, err := application.BeginLegacyClaim(ctx, email, dryRun)
 	if err != nil {
+		if writeLegacyClaimEvent(deps.stderr, deps.now(), dryRun, result, err) != nil {
+			return exitInternal
+		}
 		return writeAuthFailure(deps.stderr, "claim-legacy", err)
 	}
+	if writeLegacyClaimEvent(deps.stderr, deps.now(), dryRun, result, nil) != nil {
+		return exitInternal
+	}
 	report := commandReport{
-		Event: "auth.legacy_claim", Operation: "claim-legacy", DryRun: dryRun,
+		Operation: "claim-legacy", DryRun: dryRun,
 		Status: deliveryStatus(result.Delivery), State: result.State,
 		AccountRef: result.AccountIDRedacted, EmailRef: result.EmailRedacted,
 		LegacyCount: result.LegacyCount, PendingClaimCount: result.PendingClaimCount,
@@ -269,6 +310,7 @@ func newAuthApplication(
 	logger := slog.New(slog.NewJSONHandler(logOutput, nil))
 	options := []auth.ServiceOption{
 		auth.WithPublicBaseURL(cfg.PublicBaseURL),
+		auth.WithAttemptLimiter(database),
 		auth.WithRegistrationAdmissionMode(mode),
 	}
 	switch cfg.AuthMailDriver {

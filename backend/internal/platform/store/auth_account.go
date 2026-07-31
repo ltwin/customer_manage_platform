@@ -113,6 +113,162 @@ func (s *Store) ReplaceVerificationToken(
 	return true, nil
 }
 
+func (s *Store) ReplacePasswordResetToken(
+	ctx context.Context,
+	email, selector string,
+	secretHash []byte,
+	expiresAt, now time.Time,
+) (bool, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin replace password reset token: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var accountID string
+	err = tx.QueryRow(ctx, `
+		SELECT a.id
+		FROM account_identities i
+		JOIN accounts a ON a.id = i.account_id
+		WHERE i.kind = 'email' AND i.normalized_value = $1
+		  AND i.verified_at IS NOT NULL AND a.status = 'active'
+		FOR UPDATE OF a, i`, email).Scan(&accountID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("find password reset identity: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM auth_action_tokens
+		WHERE account_id = $1 AND purpose = 'password_reset'`, accountID); err != nil {
+		return false, fmt.Errorf("delete prior password reset token: %w", err)
+	}
+	if err := insertActionToken(
+		ctx, tx, accountID, auth.ActionPasswordReset, selector, secretHash, expiresAt, now,
+	); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit replace password reset token: %w", err)
+	}
+	return true, nil
+}
+
+func (s *Store) ResetPassword(
+	ctx context.Context,
+	proof auth.ActionProof,
+	passwordHash string,
+	now time.Time,
+) (string, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin reset password: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var accountID string
+	var purpose auth.ActionPurpose
+	var storedHash []byte
+	var expiresAt time.Time
+	var consumedAt *time.Time
+	err = tx.QueryRow(ctx, `
+		SELECT account_id, purpose, secret_hash, expires_at, consumed_at
+		FROM auth_action_tokens
+		WHERE selector = $1
+		FOR UPDATE`, proof.Selector).Scan(&accountID, &purpose, &storedHash, &expiresAt, &consumedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", auth.ErrInvalidOrExpiredActionToken
+		}
+		return "", fmt.Errorf("lock password reset token: %w", err)
+	}
+	if purpose != auth.ActionPasswordReset || proof.Purpose != auth.ActionPasswordReset || consumedAt != nil ||
+		!now.Before(expiresAt) || subtle.ConstantTimeCompare(storedHash, proof.SecretHash) != 1 {
+		return "", auth.ErrInvalidOrExpiredActionToken
+	}
+	if err := applyPasswordChange(ctx, tx, accountID, "", passwordHash, now); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit reset password: %w", err)
+	}
+	return accountID, nil
+}
+
+func (s *Store) PasswordCredential(ctx context.Context, accountID string) (string, error) {
+	var passwordHash string
+	err := s.pool.QueryRow(ctx, `
+		SELECT pc.password_hash
+		FROM password_credentials pc
+		JOIN accounts a ON a.id = pc.account_id
+		WHERE pc.account_id = $1 AND a.status = 'active'`, accountID).Scan(&passwordHash)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return "", auth.ErrInvalidPassword
+		}
+		return "", fmt.Errorf("find password credential: %w", err)
+	}
+	return passwordHash, nil
+}
+
+func (s *Store) ChangePassword(ctx context.Context, command auth.PasswordChangeCommand) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin change password: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := applyPasswordChange(
+		ctx, tx, command.AccountID, command.ExpectedPasswordHash, command.PasswordHash, command.ChangedAt,
+	); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit change password: %w", err)
+	}
+	return nil
+}
+
+func applyPasswordChange(
+	ctx context.Context,
+	tx pgx.Tx,
+	accountID, expectedPasswordHash, passwordHash string,
+	now time.Time,
+) error {
+	var storedHash string
+	err := tx.QueryRow(ctx, `
+		SELECT pc.password_hash
+		FROM password_credentials pc
+		JOIN accounts a ON a.id = pc.account_id
+		WHERE pc.account_id = $1 AND a.status = 'active'
+		FOR UPDATE OF pc, a`, accountID).Scan(&storedHash)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return auth.ErrInvalidPassword
+		}
+		return fmt.Errorf("lock password credential: %w", err)
+	}
+	if expectedPasswordHash != "" && subtle.ConstantTimeCompare([]byte(storedHash), []byte(expectedPasswordHash)) != 1 {
+		return auth.ErrInvalidPassword
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE password_credentials
+		SET password_hash = $2, updated_at = $3
+		WHERE account_id = $1`, accountID, passwordHash, now); err != nil {
+		return fmt.Errorf("update password credential: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM auth_action_tokens
+		WHERE account_id = $1 AND purpose = 'password_reset'`, accountID); err != nil {
+		return fmt.Errorf("invalidate password reset tokens: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE refresh_session_families
+		SET revoked_at = COALESCE(revoked_at, $2)
+		WHERE account_id = $1`, accountID, now); err != nil {
+		return fmt.Errorf("revoke account refresh families: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) ConsumeActionAndActivate(
 	ctx context.Context,
 	proof auth.ActionProof,

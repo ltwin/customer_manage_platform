@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -25,6 +26,7 @@ type Config struct {
 	AuthMailFrom                  string // AUTH_MAIL_FROM（真实 adapter 的 sender）
 	ResendAPIKey                  string // RESEND_API_KEY（仅 AUTH_MAIL_DRIVER=resend 时必填）
 	TrustedProxyCIDRs             string // TRUSTED_PROXY_CIDRS（预留给统一 source 解析）
+	TrustedProxyPrefixes          []netip.Prefix
 	HTTPAddr                      string // HTTP_ADDR（默认 :8080）
 	AvatarStorageDriver           string // AVATAR_STORAGE_DRIVER（首版仅 local）
 	AvatarLocalRoot               string // AVATAR_LOCAL_ROOT（local 对象根目录）
@@ -45,6 +47,7 @@ type AccountAuthConfig struct {
 	AuthMailFrom                  string
 	ResendAPIKey                  string
 	TrustedProxyCIDRs             string
+	TrustedProxyPrefixes          []netip.Prefix
 }
 
 // 启动期 fail-fast 错误：必填项缺失时进程不得继续。
@@ -56,6 +59,7 @@ var (
 	ErrAuthPublicRegistrationInvalid  = errors.New("AUTH_PUBLIC_REGISTRATION_ENABLED 必须是 true 或 false")
 	ErrAuthMailDriverInvalid          = errors.New("AUTH_MAIL_DRIVER 非法或不适用于当前 PUBLIC_BASE_URL")
 	ErrResendAPIKeyMissing            = errors.New("RESEND_API_KEY 未设置")
+	ErrTrustedProxyCIDRsInvalid       = errors.New("TRUSTED_PROXY_CIDRS 必须是逗号分隔的 canonical CIDR")
 	ErrAvatarStorageDriverInvalid     = errors.New("AVATAR_STORAGE_DRIVER 非法：首版仅支持 local")
 	ErrAvatarLocalRootMissing         = errors.New("AVATAR_LOCAL_ROOT 未设置")
 	ErrAvatarLocalRequireMountInvalid = errors.New("AVATAR_LOCAL_REQUIRE_MOUNT 必须是 true 或 false")
@@ -79,6 +83,7 @@ func Load() (Config, error) {
 		AuthMailFrom:                  authConfig.AuthMailFrom,
 		ResendAPIKey:                  authConfig.ResendAPIKey,
 		TrustedProxyCIDRs:             authConfig.TrustedProxyCIDRs,
+		TrustedProxyPrefixes:          authConfig.TrustedProxyPrefixes,
 		HTTPAddr:                      os.Getenv("HTTP_ADDR"),
 		AvatarStorageDriver:           strings.TrimSpace(os.Getenv("AVATAR_STORAGE_DRIVER")),
 		AvatarLocalRoot:               strings.TrimSpace(os.Getenv("AVATAR_LOCAL_ROOT")),
@@ -144,6 +149,11 @@ func LoadAccountAuth() (AccountAuthConfig, error) {
 		return AccountAuthConfig{}, err
 	}
 	cfg.AuthPublicRegistrationEnabled = registrationEnabled
+	trustedProxyPrefixes, err := parseTrustedProxyCIDRs(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return AccountAuthConfig{}, err
+	}
+	cfg.TrustedProxyPrefixes = trustedProxyPrefixes
 	if cfg.AuthMailDriver == "" {
 		cfg.AuthMailDriver = "unavailable"
 	}
@@ -165,6 +175,26 @@ func LoadAccountAuth() (AccountAuthConfig, error) {
 		return AccountAuthConfig{}, ErrAuthMailDriverInvalid
 	}
 	return cfg, nil
+}
+
+func parseTrustedProxyCIDRs(raw string) ([]netip.Prefix, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	result := make([]netip.Prefix, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, ErrTrustedProxyCIDRsInvalid
+		}
+		prefix, err := netip.ParsePrefix(part)
+		if err != nil || prefix != prefix.Masked() {
+			return nil, ErrTrustedProxyCIDRsInvalid
+		}
+		result = append(result, prefix)
+	}
+	return result, nil
 }
 
 func parseAuthPublicRegistrationEnabled(raw string) (bool, error) {

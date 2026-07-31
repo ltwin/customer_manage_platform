@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/url"
 	"sync"
 	"testing"
@@ -15,6 +16,134 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
+
+func TestPasswordResetAndChangeRevokeAllRefreshFamilies(t *testing.T) {
+	url := startPostgres(t)
+	database := resetAuthDatabase(t, url)
+	now := time.Date(2026, 7, 31, 10, 0, 0, 0, time.UTC)
+	mail := &capturingAuthMail{}
+	service := newTestAuthService(database, &now, mail, 1, auth.RegistrationPublic, "synthetic-root")
+	email := syntheticEmail("password-owner")
+	meta := auth.ClientMeta{SourceIP: netip.MustParseAddr("198.51.100.7")}
+
+	if _, err := service.Register(context.Background(), email, "original-password", testClientMeta()); err != nil {
+		t.Fatalf("register password owner: %v", err)
+	}
+	firstSession, err := service.VerifyEmail(context.Background(), actionTokenFromMail(t, mail.Last()), testClientMeta())
+	if err != nil {
+		t.Fatalf("verify password owner: %v", err)
+	}
+	secondSession, err := service.Login(context.Background(), email, "original-password", testClientMeta())
+	if err != nil {
+		t.Fatalf("create second password session: %v", err)
+	}
+
+	firstDispatch, err := service.BeginPasswordReset(context.Background(), email, meta)
+	if err != nil || !firstDispatch.Attempted || !firstDispatch.Delivery.Accepted {
+		t.Fatalf("begin first password reset: %#v err=%v", firstDispatch, err)
+	}
+	firstResetToken := actionTokenFromMail(t, mail.Last())
+	secondDispatch, err := service.BeginPasswordReset(context.Background(), email, meta)
+	if err != nil || !secondDispatch.Attempted || !secondDispatch.Delivery.Accepted {
+		t.Fatalf("begin second password reset: %#v err=%v", secondDispatch, err)
+	}
+	secondResetToken := actionTokenFromMail(t, mail.Last())
+	if err := service.ResetPassword(context.Background(), firstResetToken, "replacement-password", meta); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		t.Fatalf("replaced reset token must be invalid: %v", err)
+	}
+	if err := service.ResetPassword(context.Background(), secondResetToken, "replacement-password", meta); err != nil {
+		t.Fatalf("reset password: %v", err)
+	}
+	if _, err := service.Login(context.Background(), email, "original-password", testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		t.Fatalf("old password must be unauthorized: %v", err)
+	}
+	if _, err := service.Refresh(context.Background(), firstSession.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		t.Fatalf("first refresh family must be revoked: %v", err)
+	}
+	if _, err := service.Refresh(context.Background(), secondSession.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		t.Fatalf("second refresh family must be revoked: %v", err)
+	}
+	if accountID, err := service.ParseToken(firstSession.AccessToken); err != nil || accountID != firstSession.AccountID {
+		t.Fatalf("existing access keeps the accepted TTL risk window: account=%q err=%v", accountID, err)
+	}
+
+	thirdSession, err := service.Login(context.Background(), email, "replacement-password", testClientMeta())
+	if err != nil {
+		t.Fatalf("login with replacement password: %v", err)
+	}
+	account := auth.AccountContext{AccountID: thirdSession.AccountID}
+	if err := service.ChangePassword(context.Background(), account, "wrong-current-password", "final-password", meta); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		t.Fatalf("wrong current password must be unauthorized: %v", err)
+	}
+	thirdSession, err = service.Refresh(context.Background(), thirdSession.RefreshToken, testClientMeta())
+	if err != nil {
+		t.Fatalf("wrong current password must not revoke refresh family: %v", err)
+	}
+	if err := service.ChangePassword(context.Background(), account, "replacement-password", "final-password", meta); err != nil {
+		t.Fatalf("change password: %v", err)
+	}
+	if _, err := service.Refresh(context.Background(), thirdSession.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		t.Fatalf("change password must revoke current refresh family: %v", err)
+	}
+	if _, err := service.Login(context.Background(), email, "final-password", testClientMeta()); err != nil {
+		t.Fatalf("login with final password: %v", err)
+	}
+
+	if _, err := service.BeginPasswordReset(context.Background(), email, meta); err != nil {
+		t.Fatalf("begin expiring reset: %v", err)
+	}
+	expiringToken := actionTokenFromMail(t, mail.Last())
+	now = now.Add(30 * time.Minute)
+	if err := service.ResetPassword(context.Background(), expiringToken, "expired-password", meta); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		t.Fatalf("reset token at exact 30m boundary must be expired: %v", err)
+	}
+}
+
+func TestBeginPasswordResetIsGenericAndResetTokensArePurposeBound(t *testing.T) {
+	url := startPostgres(t)
+	database := resetAuthDatabase(t, url)
+	now := time.Date(2026, 7, 31, 11, 0, 0, 0, time.UTC)
+	mail := &capturingAuthMail{}
+	service := newTestAuthService(database, &now, mail, 71, auth.RegistrationPublic, "synthetic-root")
+	meta := auth.ClientMeta{SourceIP: netip.MustParseAddr("198.51.100.8")}
+
+	missing, err := service.BeginPasswordReset(context.Background(), syntheticEmail("missing"), meta)
+	if err != nil || missing.Attempted || mail.Count() != 0 {
+		t.Fatalf("missing forgot outcome must be generic: %#v err=%v mail=%d", missing, err, mail.Count())
+	}
+	pendingEmail := syntheticEmail("pending-password")
+	if _, err := service.Register(context.Background(), pendingEmail, "original-password", testClientMeta()); err != nil {
+		t.Fatalf("register pending account: %v", err)
+	}
+	verificationToken := actionTokenFromMail(t, mail.Last())
+	pending, err := service.BeginPasswordReset(context.Background(), pendingEmail, meta)
+	if err != nil || pending.Attempted || mail.Count() != 1 {
+		t.Fatalf("pending forgot outcome must be generic: %#v err=%v mail=%d", pending, err, mail.Count())
+	}
+	if err := service.ResetPassword(context.Background(), verificationToken, "replacement-password", meta); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		t.Fatalf("verification token must not reset password: %v", err)
+	}
+
+	if _, err := service.VerifyEmail(context.Background(), verificationToken, testClientMeta()); err != nil {
+		t.Fatalf("verify active reset fixture: %v", err)
+	}
+	mail.SetError(auth.NewDeliveryError(auth.DeliveryTemporarilyUnavailable))
+	dispatch, err := service.BeginPasswordReset(context.Background(), pendingEmail, meta)
+	if err != nil || !dispatch.Attempted || dispatch.Delivery.Accepted ||
+		dispatch.Delivery.FailureClass != auth.DeliveryTemporarilyUnavailable {
+		t.Fatalf("delivery failure must preserve generic reset state: %#v err=%v", dispatch, err)
+	}
+	resetToken := actionTokenFromMail(t, mail.Last())
+	if err := service.ResetPassword(context.Background(), resetToken+"tamper", "replacement-password", meta); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		t.Fatalf("tampered reset token must be invalid: %v", err)
+	}
+	if err := service.ResetPassword(context.Background(), resetToken, "replacement-password", meta); err != nil {
+		t.Fatalf("valid reset token after delivery failure: %v", err)
+	}
+	if err := service.ResetPassword(context.Background(), resetToken, "another-password", meta); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		t.Fatalf("consumed reset token must be invalid: %v", err)
+	}
+}
 
 func TestAccountAuthApplicationPostgres(t *testing.T) {
 	url := startPostgres(t)
@@ -34,23 +163,23 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 			t.Fatal("bootstrap dry-run attempted mail delivery")
 		}
 
-		dispatch, err := service.Register(context.Background(), email, "twelve-bytes")
+		dispatch, err := service.Register(context.Background(), email, "twelve-bytes", testClientMeta())
 		if err != nil || !dispatch.Attempted || !dispatch.Delivery.Accepted {
 			t.Fatalf("register dispatch: %#v err=%v", dispatch, err)
 		}
-		duplicate, err := service.Register(context.Background(), email, "twelve-bytes")
+		duplicate, err := service.Register(context.Background(), email, "twelve-bytes", testClientMeta())
 		if err != nil || duplicate.Attempted || mail.Count() != 1 {
 			t.Fatalf("duplicate register must be generic no-dispatch: %#v err=%v mail=%d", duplicate, err, mail.Count())
 		}
-		if _, err := service.Login(context.Background(), email, "wrong-password"); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		if _, err := service.Login(context.Background(), email, "wrong-password", testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
 			t.Fatalf("wrong password should be unauthorized: %v", err)
 		}
-		if _, err := service.Login(context.Background(), email, "twelve-bytes"); !auth.IsAuthError(err, auth.AuthErrorEmailVerificationRequired) {
+		if _, err := service.Login(context.Background(), email, "twelve-bytes", testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorEmailVerificationRequired) {
 			t.Fatalf("pending account should require verification after password match: %v", err)
 		}
 
 		verification := actionTokenFromMail(t, mail.Last())
-		session, err := service.VerifyEmail(context.Background(), verification)
+		session, err := service.VerifyEmail(context.Background(), verification, testClientMeta())
 		if err != nil {
 			t.Fatalf("verify email: %v", err)
 		}
@@ -60,7 +189,7 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 			t.Fatalf("session TTL contract mismatch: access=%s idle=%s absolute=%s",
 				session.AccessExpiresAt, session.RefreshExpiresAt, session.RefreshAbsoluteAt)
 		}
-		if _, err := service.VerifyEmail(context.Background(), verification); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		if _, err := service.VerifyEmail(context.Background(), verification, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
 			t.Fatalf("consumed action token should be rejected: %v", err)
 		}
 		accountID, err := service.ParseToken(session.AccessToken)
@@ -71,7 +200,7 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 		if err != nil || account.ID != accountID || account.Email != email || account.Status != auth.AccountActive {
 			t.Fatalf("current account: %#v err=%v", account, err)
 		}
-		if _, err := service.Login(context.Background(), email, "twelve-bytes"); err != nil {
+		if _, err := service.Login(context.Background(), email, "twelve-bytes", testClientMeta()); err != nil {
 			t.Fatalf("active account login: %v", err)
 		}
 		if err := database.CreateAccount(context.Background(), "legacy-account", "legacy-hash"); err != nil {
@@ -92,12 +221,12 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 		now := time.Date(2026, 7, 31, 3, 4, 5, 0, time.UTC)
 		mail := &capturingAuthMail{}
 		service := newTestAuthService(database, &now, mail, 17, auth.RegistrationPublic, "synthetic-root")
-		if _, err := service.Register(context.Background(), syntheticEmail("expiring"), "twelve-bytes"); err != nil {
+		if _, err := service.Register(context.Background(), syntheticEmail("expiring"), "twelve-bytes", testClientMeta()); err != nil {
 			t.Fatalf("register expiring account: %v", err)
 		}
 		expiringToken := actionTokenFromMail(t, mail.Last())
 		now = now.Add(24 * time.Hour)
-		if _, err := service.VerifyEmail(context.Background(), expiringToken); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		if _, err := service.VerifyEmail(context.Background(), expiringToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
 			t.Fatalf("token at exact 24h boundary should be expired: %v", err)
 		}
 
@@ -138,10 +267,10 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 			t.Fatal("legacy retry must replace the prior action token")
 		}
 		mail.sendErr = nil
-		if _, err := service.VerifyEmail(context.Background(), firstToken); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		if _, err := service.VerifyEmail(context.Background(), firstToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
 			t.Fatalf("replaced legacy token should be invalid: %v", err)
 		}
-		if _, err := service.VerifyEmail(context.Background(), secondToken); err != nil {
+		if _, err := service.VerifyEmail(context.Background(), secondToken, testClientMeta()); err != nil {
 			t.Fatalf("verify retried legacy claim: %v", err)
 		}
 		state, err := service.InspectLegacyState(context.Background())
@@ -194,12 +323,12 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 		mail := &capturingAuthMail{}
 		service := newTestAuthService(database, &now, mail, 41, auth.RegistrationPublic, "synthetic-root")
 		email := syntheticEmail("resend")
-		if _, err := service.Register(context.Background(), email, "twelve-bytes"); err != nil {
+		if _, err := service.Register(context.Background(), email, "twelve-bytes", testClientMeta()); err != nil {
 			t.Fatalf("register resend account: %v", err)
 		}
 		firstToken := actionTokenFromMail(t, mail.Last())
 		mail.SetError(auth.NewDeliveryError(auth.DeliveryProviderRejected))
-		dispatch, err := service.ResendVerification(context.Background(), email)
+		dispatch, err := service.ResendVerification(context.Background(), email, testClientMeta())
 		if err != nil || !dispatch.Attempted || dispatch.Delivery.FailureClass != auth.DeliveryProviderRejected {
 			t.Fatalf("resend delivery failure should be absorbed: attempted=%t class=%q err=%v",
 				dispatch.Attempted, dispatch.Delivery.FailureClass, err)
@@ -208,15 +337,15 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 		if secondToken == firstToken {
 			t.Fatal("resend must replace the prior verification token")
 		}
-		if _, err := service.VerifyEmail(context.Background(), firstToken); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
+		if _, err := service.VerifyEmail(context.Background(), firstToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken) {
 			t.Fatalf("replaced verification token should be invalid: %v", err)
 		}
-		if _, err := service.VerifyEmail(context.Background(), secondToken); err != nil {
+		if _, err := service.VerifyEmail(context.Background(), secondToken, testClientMeta()); err != nil {
 			t.Fatalf("replacement token must remain usable after delivery failure: %v", err)
 		}
 		before := mail.Count()
 		for _, target := range []string{email, syntheticEmail("missing")} {
-			result, err := service.ResendVerification(context.Background(), target)
+			result, err := service.ResendVerification(context.Background(), target, testClientMeta())
 			if err != nil || result.Attempted {
 				t.Fatalf("resend non-pending target must be generic no-dispatch: attempted=%t err=%v", result.Attempted, err)
 			}
@@ -232,35 +361,35 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 		mail := &capturingAuthMail{}
 		service := newTestAuthService(database, &now, mail, 49, auth.RegistrationPublic, "synthetic-root")
 		email := syntheticEmail("refresh")
-		if _, err := service.Register(context.Background(), email, "twelve-bytes"); err != nil {
+		if _, err := service.Register(context.Background(), email, "twelve-bytes", testClientMeta()); err != nil {
 			t.Fatalf("register refresh account: %v", err)
 		}
-		initial, err := service.VerifyEmail(context.Background(), actionTokenFromMail(t, mail.Last()))
+		initial, err := service.VerifyEmail(context.Background(), actionTokenFromMail(t, mail.Last()), testClientMeta())
 		if err != nil {
 			t.Fatalf("verify refresh account: %v", err)
 		}
 		now = now.Add(time.Second)
-		rotated, err := service.Refresh(context.Background(), initial.RefreshToken)
+		rotated, err := service.Refresh(context.Background(), initial.RefreshToken, testClientMeta())
 		if err != nil {
 			t.Fatalf("first refresh: %v", err)
 		}
 		now = now.Add(10 * time.Second)
-		grace, err := service.Refresh(context.Background(), initial.RefreshToken)
+		grace, err := service.Refresh(context.Background(), initial.RefreshToken, testClientMeta())
 		if err != nil || grace.RefreshToken != rotated.RefreshToken || grace.RefreshGeneration != rotated.RefreshGeneration {
 			t.Fatalf("grace replay must return the same successor: same_token=%t same_generation=%t err=%v",
 				grace.RefreshToken == rotated.RefreshToken, grace.RefreshGeneration == rotated.RefreshGeneration, err)
 		}
 		now = now.Add(time.Microsecond)
-		if _, err := service.Refresh(context.Background(), initial.RefreshToken); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		if _, err := service.Refresh(context.Background(), initial.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
 			t.Fatalf("refresh reuse outside grace should revoke family: %v", err)
 		}
-		if _, err := service.Refresh(context.Background(), rotated.RefreshToken); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		if _, err := service.Refresh(context.Background(), rotated.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
 			t.Fatalf("successor from revoked family should be invalid: %v", err)
 		}
 
 		sweepParent := mustLogin(t, service, email)
 		now = now.Add(time.Minute)
-		if _, err := service.Refresh(context.Background(), sweepParent.RefreshToken); err != nil {
+		if _, err := service.Refresh(context.Background(), sweepParent.RefreshToken, testClientMeta()); err != nil {
 			t.Fatalf("create sweep replay envelope: %v", err)
 		}
 		now = now.Add(11 * time.Second)
@@ -275,7 +404,7 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 
 		tamperParent := mustLogin(t, service, email)
 		now = now.Add(time.Minute)
-		if _, err := service.Refresh(context.Background(), tamperParent.RefreshToken); err != nil {
+		if _, err := service.Refresh(context.Background(), tamperParent.RefreshToken, testClientMeta()); err != nil {
 			t.Fatalf("create tamper replay envelope: %v", err)
 		}
 		if _, err := queryAuthDB(t, url).Exec(`
@@ -285,18 +414,18 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 			WHERE id = $1`, tamperParent.RefreshGeneration); err != nil {
 			t.Fatalf("tamper replay envelope: %v", err)
 		}
-		if _, err := service.Refresh(context.Background(), tamperParent.RefreshToken); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		if _, err := service.Refresh(context.Background(), tamperParent.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
 			t.Fatalf("tampered replay should be unauthorized: %v", err)
 		}
 		assertFamilyRevoked(t, url, tamperParent.RefreshSessionID)
 
 		keyRotationParent := mustLogin(t, service, email)
 		now = now.Add(time.Minute)
-		if _, err := service.Refresh(context.Background(), keyRotationParent.RefreshToken); err != nil {
+		if _, err := service.Refresh(context.Background(), keyRotationParent.RefreshToken, testClientMeta()); err != nil {
 			t.Fatalf("create key-rotation replay envelope: %v", err)
 		}
 		rotatedRootService := newTestAuthService(database, &now, &capturingAuthMail{}, 113, auth.RegistrationPublic, "rotated-synthetic-root")
-		if _, err := rotatedRootService.Refresh(context.Background(), keyRotationParent.RefreshToken); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		if _, err := rotatedRootService.Refresh(context.Background(), keyRotationParent.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
 			t.Fatalf("old replay under rotated root should be unauthorized: %v", err)
 		}
 		assertFamilyRevoked(t, url, keyRotationParent.RefreshSessionID)
@@ -316,7 +445,7 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 				absolute.RefreshExpiresAt, absolute.RefreshAbsoluteAt, absoluteStart.Add(30*24*time.Hour))
 		}
 		now = absoluteStart.Add(30 * 24 * time.Hour)
-		if _, err := service.Refresh(context.Background(), absolute.RefreshToken); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		if _, err := service.Refresh(context.Background(), absolute.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
 			t.Fatalf("refresh at absolute expiry should be unauthorized: %v", err)
 		}
 
@@ -330,7 +459,7 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 		if err := service.Logout(context.Background(), logout.RefreshToken); err != nil {
 			t.Fatalf("logout already revoked token: %v", err)
 		}
-		if _, err := service.Refresh(context.Background(), logout.RefreshToken); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
+		if _, err := service.Refresh(context.Background(), logout.RefreshToken, testClientMeta()); !auth.IsAuthError(err, auth.AuthErrorUnauthorized) {
 			t.Fatalf("post-logout refresh should be unauthorized: %v", err)
 		}
 	})
@@ -352,7 +481,7 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 			index, service := index, service
 			go func() {
 				<-start
-				dispatch, err := service.Register(context.Background(), syntheticEmail(string(rune('a'+index))), "twelve-bytes")
+				dispatch, err := service.Register(context.Background(), syntheticEmail(string(rune('a'+index))), "twelve-bytes", testClientMeta())
 				results <- result{dispatch: dispatch, err: err}
 			}()
 		}
@@ -388,7 +517,7 @@ func TestAccountAuthApplicationPostgres(t *testing.T) {
 			service := service
 			go func() {
 				<-start
-				dispatch, err := service.Register(context.Background(), syntheticEmail("same"), "twelve-bytes")
+				dispatch, err := service.Register(context.Background(), syntheticEmail("same"), "twelve-bytes", testClientMeta())
 				results <- registrationResult{dispatch: dispatch, err: err}
 			}()
 		}
@@ -480,14 +609,14 @@ func runMixedAdmissionBarrier(
 
 	holderResult := make(chan registrationResult, 1)
 	go func() {
-		dispatch, err := holderService.Register(ctx, syntheticEmail("barrier-holder"), "twelve-bytes")
+		dispatch, err := holderService.Register(ctx, syntheticEmail("barrier-holder"), "twelve-bytes", testClientMeta())
 		holderResult <- registrationResult{dispatch: dispatch, err: err}
 	}()
 	waitForAdvisoryWait(t, databaseURL, "auth_barrier_holder")
 
 	contenderResult := make(chan registrationResult, 1)
 	go func() {
-		dispatch, err := contenderService.Register(ctx, syntheticEmail("barrier-contender"), "twelve-bytes")
+		dispatch, err := contenderService.Register(ctx, syntheticEmail("barrier-contender"), "twelve-bytes", testClientMeta())
 		contenderResult <- registrationResult{dispatch: dispatch, err: err}
 	}()
 	waitForAdvisoryWait(t, databaseURL, "auth_barrier_contender")
@@ -589,8 +718,10 @@ func newTestAuthService(
 		auth.WithAuthClock(func() time.Time { return *now }),
 		auth.WithAuthRandom(&incrementingReader{next: randomStart}),
 		auth.WithAuthMailSender(mail),
+		auth.WithAttemptLimiter(database),
 		auth.WithRegistrationAdmissionMode(mode),
 		auth.WithPublicBaseURL("https://app.example.invalid"),
+		auth.WithAuthResponseDelay(func(context.Context, time.Duration) error { return nil }),
 	)
 }
 
@@ -677,7 +808,7 @@ func assertFamilyRevoked(t *testing.T, url, familyID string) {
 
 func mustLogin(t *testing.T, service *auth.Service, email string) auth.Session {
 	t.Helper()
-	session, err := service.Login(context.Background(), email, "twelve-bytes")
+	session, err := service.Login(context.Background(), email, "twelve-bytes", testClientMeta())
 	if err != nil {
 		t.Fatalf("login active account: %v", err)
 	}
@@ -686,7 +817,7 @@ func mustLogin(t *testing.T, service *auth.Service, email string) auth.Session {
 
 func mustRefresh(t *testing.T, service *auth.Service, wire string) auth.Session {
 	t.Helper()
-	session, err := service.Refresh(context.Background(), wire)
+	session, err := service.Refresh(context.Background(), wire, testClientMeta())
 	if err != nil {
 		t.Fatalf("refresh active session: %v", err)
 	}
@@ -695,6 +826,10 @@ func mustRefresh(t *testing.T, service *auth.Service, wire string) auth.Session 
 
 func syntheticEmail(local string) string {
 	return local + "@" + "example.invalid"
+}
+
+func testClientMeta() auth.ClientMeta {
+	return auth.ClientMeta{SourceIP: netip.MustParseAddr("198.51.100.254")}
 }
 
 func actionTokenFromMail(t *testing.T, mail auth.AuthMail) string {

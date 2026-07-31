@@ -16,6 +16,9 @@ import WelcomePage from './pages/WelcomePage'
 import LoginPage from './pages/auth/LoginPage'
 import RegisterPage from './pages/auth/RegisterPage'
 import VerifyEmailPage from './pages/auth/VerifyEmailPage'
+import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
+import ResetPasswordPage from './pages/auth/ResetPasswordPage'
+import ChangePasswordPage from './pages/auth/ChangePasswordPage'
 
 type AuthStatus = ReturnType<typeof getAuthSnapshot>['status']
 
@@ -38,13 +41,13 @@ function RootEntry({ status }: { status: AuthStatus }) {
 export default function App() {
   const location = useLocation()
   const auth = useSyncExternalStore(subscribeAuth, getAuthSnapshot)
-  const isVerificationRoute = location.pathname === '/verify-email'
+  const isActionTokenRoute = location.pathname === '/verify-email' || location.pathname === '/reset-password'
 
   useEffect(() => {
-    if (!isVerificationRoute && auth.status === 'restoring') void restoreSession()
-  }, [auth.status, isVerificationRoute])
+    if (!isActionTokenRoute && auth.status === 'restoring') void restoreSession()
+  }, [auth.status, isActionTokenRoute])
 
-  if (!isVerificationRoute && auth.status === 'restoring') {
+  if (!isActionTokenRoute && auth.status === 'restoring') {
     return (
       <main className="auth-restore" role="status" aria-live="polite">
         <span className="auth-restore-spinner" aria-hidden="true" />
@@ -72,6 +75,23 @@ export default function App() {
         }
       />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route
+        path="/forgot-password"
+        element={
+          <AnonymousEntry status={auth.status}>
+            <ForgotPasswordPage />
+          </AnonymousEntry>
+        }
+      />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route
+        path="/change-password"
+        element={
+          <RequireAuth status={auth.status}>
+            <ChangePasswordPage />
+          </RequireAuth>
+        }
+      />
       <Route path="/" element={<RootEntry status={auth.status} />} />
       <Route
         element={

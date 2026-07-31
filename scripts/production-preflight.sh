@@ -6,6 +6,9 @@ readonly EXIT_ENV=3
 readonly EXIT_CONFIG=4
 readonly EXIT_COMPOSE=5
 readonly EXIT_DEPENDENCY=6
+readonly AUTH_SCHEMA_VERSION=13
+readonly AUTH_COOKIE_PROFILE='__Host-crm_refresh|HttpOnly|Secure|SameSite=Strict|Path=/|no-domain'
+readonly AUTH_LIMITER_KDF_VERSION='crm-auth/v1/limiter-hmac@v1'
 
 MODE=""
 SEED_STATE=""
@@ -14,12 +17,23 @@ COMPOSE_FILE=""
 DOCKER_CONTEXT_NAME=""
 PROJECT_NAME=""
 PINNED_HOST=""
+EVIDENCE_DIR=""
+ACCOUNTCTL_BIN=""
+BUILD_REVISION=""
+PREFLIGHT_NOW=""
 RENDER_FILE=""
 TEMP_DIR=""
 ENV_KEYS=()
 ENV_VALUES=()
 VALUE=""
 FOUND="false"
+PUBLIC_REGISTRATION_ENABLED=""
+AUTH_TOKEN_ISSUER_VALUE=""
+PUBLIC_BASE_URL_VALUE=""
+AUTH_MAIL_DRIVER_VALUE=""
+AUTH_MAIL_FROM_VALUE=""
+TRUSTED_PROXY_CIDRS_VALUE=""
+AUTH_TOKEN_SECRET_VERSION_VALUE=""
 CANONICAL_PATH=""
 SCRIPT_DIR="$(cd "${BASH_SOURCE[0]%/*}" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
@@ -86,6 +100,26 @@ while [[ $# -gt 0 ]]; do
       PINNED_HOST="$2"
       shift 2
       ;;
+    --evidence-dir)
+      [[ $# -ge 2 ]] || usage_failure
+      EVIDENCE_DIR="$2"
+      shift 2
+      ;;
+    --accountctl-bin)
+      [[ $# -ge 2 ]] || usage_failure
+      ACCOUNTCTL_BIN="$2"
+      shift 2
+      ;;
+    --build-revision)
+      [[ $# -ge 2 ]] || usage_failure
+      BUILD_REVISION="$2"
+      shift 2
+      ;;
+    --now)
+      [[ $# -ge 2 ]] || usage_failure
+      PREFLIGHT_NOW="$2"
+      shift 2
+      ;;
     *)
       usage_failure
       ;;
@@ -142,6 +176,18 @@ canonical_existing_file() {
 import os, sys
 p = os.path.realpath(sys.argv[1])
 if not os.path.isfile(p) or not os.access(p, os.R_OK):
+    raise SystemExit(1)
+print(p)
+' "$input" 2>/dev/null)" || return 1
+  [[ -n "$CANONICAL_PATH" ]]
+}
+
+canonical_existing_directory() {
+  local input="$1"
+  CANONICAL_PATH="$(python3 -c '
+import os, sys
+p = os.path.realpath(sys.argv[1])
+if not os.path.isdir(p) or not os.access(p, os.R_OK | os.X_OK):
     raise SystemExit(1)
 print(p)
 ' "$input" 2>/dev/null)" || return 1
@@ -254,6 +300,7 @@ validate_account_auth_profile() {
   if [[ "$FOUND" != "true" || -z "$VALUE" ]]; then
     fail "$EXIT_CONFIG" "config-matrix" "AUTH_TOKEN_ISSUER" "set-stable-auth-token-issuer"
   fi
+  AUTH_TOKEN_ISSUER_VALUE="$VALUE"
   status "config-matrix" "AUTH_TOKEN_ISSUER" "ok"
 
   get_value "PUBLIC_BASE_URL"
@@ -284,17 +331,20 @@ except Exception:
   if [[ "$FOUND" != "true" || "$base_policy" != "ok" ]]; then
     fail "$EXIT_CONFIG" "config-matrix" "PUBLIC_BASE_URL" "use-canonical-https-origin"
   fi
+  PUBLIC_BASE_URL_VALUE="$public_base_url"
   status "config-matrix" "PUBLIC_BASE_URL" "ok"
 
   get_value "AUTH_PUBLIC_REGISTRATION_ENABLED"
   registration_enabled="$VALUE"
+  if [[ "$FOUND" != "true" || ( "$registration_enabled" != "true" && "$registration_enabled" != "false" ) ]]; then
+    fail "$EXIT_CONFIG" "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "set-explicit-boolean"
+  fi
+  PUBLIC_REGISTRATION_ENABLED="$registration_enabled"
   if [[ "$registration_enabled" == "true" ]]; then
-    fail "$EXIT_CONFIG" "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "public-auth-hardening-not-complete"
+    status "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "enabled-requested"
+  else
+    status "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "disabled"
   fi
-  if [[ "$FOUND" != "true" || "$registration_enabled" != "false" ]]; then
-    fail "$EXIT_CONFIG" "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "set-explicit-false-until-hardening-complete"
-  fi
-  status "config-matrix" "AUTH_PUBLIC_REGISTRATION_ENABLED" "locked"
 
   get_value "AUTH_MAIL_DRIVER"
   mail_driver="$VALUE"
@@ -308,7 +358,97 @@ except Exception:
   mail_from="$VALUE"
   [[ "$FOUND" == "true" && -n "$mail_from" ]] || \
     fail "$EXIT_CONFIG" "config-matrix" "AUTH_MAIL_FROM" "set-verified-production-sender"
+  AUTH_MAIL_DRIVER_VALUE="$mail_driver"
+  AUTH_MAIL_FROM_VALUE="$mail_from"
+
+  get_value "TRUSTED_PROXY_CIDRS"
+  TRUSTED_PROXY_CIDRS_VALUE="$VALUE"
+
+  get_value "AUTH_TOKEN_SECRET_VERSION"
+  AUTH_TOKEN_SECRET_VERSION_VALUE="$VALUE"
   status "config-matrix" "AUTH_MAIL_DRIVER" "ok"
+}
+
+complete_auth_readiness() {
+  local config_fingerprint=""
+  local database_url=""
+  local live_report="$TEMP_DIR/auth-readiness-live.json"
+  local evidence_error="$TEMP_DIR/auth-readiness-evidence.err"
+
+  if [[ "$PUBLIC_REGISTRATION_ENABLED" != "true" ]]; then
+    status "readiness" "registration" "secure-baseline-ready"
+    status "complete" "preflight" "secure-baseline-ready"
+    return
+  fi
+
+  if [[ -z "$EVIDENCE_DIR" || -z "$BUILD_REVISION" || -z "$AUTH_TOKEN_SECRET_VERSION_VALUE" ]]; then
+    fail "$EXIT_CONFIG" "readiness" "AUTH_READINESS_EVIDENCE" "provide-complete-current-evidence"
+  fi
+  if [[ "$MODE" == "binary" && -z "$ACCOUNTCTL_BIN" ]]; then
+    fail "$EXIT_CONFIG" "readiness" "AUTH_READINESS_EVIDENCE" "provide-complete-current-evidence"
+  fi
+  if [[ "$MODE" != "binary" && -n "$ACCOUNTCTL_BIN" ]]; then
+    usage_failure
+  fi
+  canonical_existing_directory "$EVIDENCE_DIR" || \
+    fail "$EXIT_CONFIG" "readiness" "AUTH_READINESS_EVIDENCE" "provide-complete-current-evidence"
+  EVIDENCE_DIR="$CANONICAL_PATH"
+  if [[ -z "$PREFLIGHT_NOW" ]]; then
+    PREFLIGHT_NOW="$(python3 -c 'from datetime import datetime, timezone; print(datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')" || \
+      fail "$EXIT_DEPENDENCY" "readiness" "CLOCK" "provide-working-python-runtime"
+  fi
+
+  config_fingerprint="$(python3 "$SCRIPT_DIR/lib/auth-preflight-evidence.py" fingerprint \
+    --mail-driver "$AUTH_MAIL_DRIVER_VALUE" \
+    --mail-provider "$AUTH_MAIL_DRIVER_VALUE" \
+    --mail-from "$AUTH_MAIL_FROM_VALUE" \
+    --issuer "$AUTH_TOKEN_ISSUER_VALUE" \
+    --public-base-url "$PUBLIC_BASE_URL_VALUE" \
+    --proxy-cidrs "$TRUSTED_PROXY_CIDRS_VALUE" \
+    --cookie-profile "$AUTH_COOKIE_PROFILE" \
+    --limiter-kdf-version "$AUTH_LIMITER_KDF_VERSION" \
+    --secret-version-ref "$AUTH_TOKEN_SECRET_VERSION_VALUE" 2>/dev/null)" || \
+      fail "$EXIT_CONFIG" "readiness" "AUTH_CONFIG_FINGERPRINT" "fix-non-secret-auth-config"
+  status "readiness" "config_fingerprint" "$config_fingerprint"
+
+  if [[ "$MODE" == "binary" ]]; then
+    canonical_existing_file "$ACCOUNTCTL_BIN" || \
+      fail "$EXIT_DEPENDENCY" "readiness" "ACCOUNTCTL" "provide-current-accountctl-binary"
+    ACCOUNTCTL_BIN="$CANONICAL_PATH"
+    [[ -x "$ACCOUNTCTL_BIN" ]] || \
+      fail "$EXIT_DEPENDENCY" "readiness" "ACCOUNTCTL" "provide-current-accountctl-binary"
+    get_value "DATABASE_URL"
+    database_url="$VALUE"
+    if ! (umask 077; env -i PATH="$PATH" DATABASE_URL="$database_url" \
+      "$ACCOUNTCTL_BIN" auth readiness \
+      --build-revision "$BUILD_REVISION" \
+      --config-fingerprint "$config_fingerprint" >"$live_report") 2>/dev/null; then
+      fail "$EXIT_CONFIG" "readiness" "AUTH_LIVE_CHECK" "fix-limiter-schema-or-legacy-cutover"
+    fi
+  else
+    if ! (umask 077; compose_pinned run --rm --no-deps \
+      --entrypoint /usr/local/bin/accountctl app auth readiness \
+      --build-revision "$BUILD_REVISION" \
+      --config-fingerprint "$config_fingerprint" >"$live_report") 2>/dev/null; then
+      fail "$EXIT_CONFIG" "readiness" "AUTH_LIVE_CHECK" "fix-limiter-schema-or-legacy-cutover"
+    fi
+  fi
+
+  if ! python3 "$SCRIPT_DIR/lib/auth-preflight-evidence.py" verify \
+    --evidence-dir "$EVIDENCE_DIR" \
+    --live-report "$live_report" \
+    --build-revision "$BUILD_REVISION" \
+    --schema-version "$AUTH_SCHEMA_VERSION" \
+    --config-fingerprint "$config_fingerprint" \
+    --now "$PREFLIGHT_NOW" \
+    --mail-provider "$AUTH_MAIL_DRIVER_VALUE" \
+    --secret-version-ref "$AUTH_TOKEN_SECRET_VERSION_VALUE" \
+    2>"$evidence_error"; then
+    sed -n '1p' "$evidence_error" >&2
+    fail "$EXIT_CONFIG" "readiness" "AUTH_READINESS_EVIDENCE" "refresh-or-regenerate-evidence"
+  fi
+  status "readiness" "registration" "enable-ready"
+  status "complete" "preflight" "enable-ready"
 }
 
 validate_cookie_profile() {
@@ -475,7 +615,7 @@ validate_binary() {
       status "config-matrix" "$ignored_key" "ignored-attention"
     fi
   done
-  status "complete" "preflight" "ok"
+  complete_auth_readiness
 }
 
 if [[ "$MODE" == "binary" ]]; then
@@ -711,4 +851,4 @@ else
   status "support-boundary" "backup-restore" "unsupported"
 fi
 
-status "complete" "preflight" "ok"
+complete_auth_readiness

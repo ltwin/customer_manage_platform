@@ -132,7 +132,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 请求密码重置邮件（当前仅机器契约，route 未挂载） */
+        /** 请求密码重置邮件 */
         post: operations["forgotPassword"];
         delete?: never;
         options?: never;
@@ -149,7 +149,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 以 action token 重置密码（当前仅机器契约，route 未挂载） */
+        /** 以 action token 重置密码 */
         post: operations["resetPassword"];
         delete?: never;
         options?: never;
@@ -166,7 +166,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 已认证账号修改密码（当前仅机器契约，route 未挂载） */
+        /** 已认证账号修改密码 */
         post: operations["changePassword"];
         delete?: never;
         options?: never;

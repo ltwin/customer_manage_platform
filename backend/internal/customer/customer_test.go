@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"net/url"
 	"testing"
 	"time"
@@ -84,13 +85,14 @@ func activateLegacyTestAccount(t *testing.T, s *store.Store, id string) {
 		s,
 		auth.NewTokenIssuer("customer-test-account-activation-root"),
 		auth.WithAuthMailSender(mail),
+		auth.WithAttemptLimiter(s),
 		auth.WithPublicBaseURL("https://customer.test"),
 	)
 	result, err := service.BeginLegacyClaim(context.Background(), id+"@customer.test", false)
 	if err != nil || result.State != auth.LegacyClaimReady || mail.wire == "" {
 		t.Fatalf("begin legacy test-account activation: state=%s err=%v", result.State, err)
 	}
-	if _, err := service.VerifyEmail(context.Background(), mail.wire); err != nil {
+	if _, err := service.VerifyEmail(context.Background(), mail.wire, auth.ClientMeta{SourceIP: netip.MustParseAddr("127.0.0.1")}); err != nil {
 		t.Fatalf("verify legacy test-account activation: %v", err)
 	}
 }

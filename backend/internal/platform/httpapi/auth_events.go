@@ -8,37 +8,60 @@ import (
 	"log/slog"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/authevent"
 )
 
 func (h *handlers) logAuthSessionEvent(ctx context.Context, event string, session auth.Session, err error) {
 	if h.logger == nil {
 		return
 	}
-	attrs := []slog.Attr{
-		slog.String("event", event),
-		slog.String("result", "success"),
-	}
+	record := authevent.Event{Name: authevent.Name(event), Result: authevent.ResultSuccess}
 	if err != nil {
-		attrs[1] = slog.String("result", "failure")
-		attrs = append(attrs, slog.String("failure_class", authFailureClass(err)))
+		record.Result = authevent.ResultFailure
+		record.FailureClass = authFailureClass(err)
 	} else {
-		attrs = append(attrs,
-			slog.String("account_ref", redactedAuthRef("account", session.AccountID)),
-			slog.String("session_ref", redactedAuthRef("session", session.RefreshSessionID)),
-		)
+		record.AccountRef = redactedAuthRef("account", session.AccountID)
+		record.SessionRef = redactedAuthRef("session", session.RefreshSessionID)
 	}
-	h.logger.LogAttrs(ctx, slog.LevelInfo, "auth event", attrs...)
+	h.logger.LogAttrs(ctx, slog.LevelInfo, "auth event", record.Attrs()...)
 }
 
 func (h *handlers) logRefreshReuseEvent(ctx context.Context, err error) {
 	if h.logger == nil || !errors.Is(err, auth.ErrRefreshReuse) {
 		return
 	}
-	h.logger.LogAttrs(ctx, slog.LevelWarn, "auth event",
-		slog.String("event", "auth.refresh_reuse"),
-		slog.String("result", "failure"),
-		slog.String("failure_class", "reuse"),
-	)
+	record := authevent.Event{
+		Name: authevent.RefreshReuse, Result: authevent.ResultFailure, FailureClass: "reuse",
+	}
+	h.logger.LogAttrs(ctx, slog.LevelWarn, "auth event", record.Attrs()...)
+}
+
+func (h *handlers) logRateLimitedEvent(ctx context.Context, err error) {
+	if h.logger == nil {
+		return
+	}
+	action, sourceDigest, ok := auth.AuthRateLimitDetails(err)
+	if !ok {
+		return
+	}
+	record := authevent.Event{
+		Name: authevent.RateLimited, Result: authevent.ResultFailure,
+		FailureClass: string(auth.AuthErrorRateLimited), Action: string(action), SourceDigest: sourceDigest,
+	}
+	h.logger.LogAttrs(ctx, slog.LevelWarn, "auth event", record.Attrs()...)
+}
+
+func (h *handlers) logPasswordChangedEvent(ctx context.Context, action auth.AuthAction, accountID string) {
+	if h.logger == nil {
+		return
+	}
+	record := authevent.Event{
+		Name: authevent.PasswordChanged, Result: authevent.ResultSuccess, Action: string(action),
+	}
+	if accountID != "" {
+		record.AccountRef = redactedAuthRef("account", accountID)
+	}
+	h.logger.LogAttrs(ctx, slog.LevelInfo, "auth event", record.Attrs()...)
 }
 
 func authFailureClass(err error) string {
@@ -51,6 +74,8 @@ func authFailureClass(err error) string {
 		return string(auth.AuthErrorEmailVerificationRequired)
 	case auth.IsAuthError(err, auth.AuthErrorInvalidOrExpiredToken):
 		return string(auth.AuthErrorInvalidOrExpiredToken)
+	case auth.IsAuthError(err, auth.AuthErrorRateLimited):
+		return string(auth.AuthErrorRateLimited)
 	default:
 		return string(auth.AuthErrorInternal)
 	}

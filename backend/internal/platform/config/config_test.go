@@ -143,6 +143,29 @@ func TestLoadAuthPublicConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadAuthTrustedProxyCIDRsAreValidatedAndParsed(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("TRUSTED_PROXY_CIDRS", "192.0.2.0/24, 2001:db8:1::/48")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load trusted proxy configuration: %v", err)
+	}
+	if len(cfg.TrustedProxyPrefixes) != 2 || cfg.TrustedProxyPrefixes[0].String() != "192.0.2.0/24" ||
+		cfg.TrustedProxyPrefixes[1].String() != "2001:db8:1::/48" {
+		t.Fatalf("trusted proxy prefixes = %#v", cfg.TrustedProxyPrefixes)
+	}
+
+	for _, invalid := range []string{"192.0.2.1/24", "192.0.2.0/24,,2001:db8::/32", "not-a-cidr"} {
+		t.Run(invalid, func(t *testing.T) {
+			setRequiredEnvironment(t)
+			t.Setenv("TRUSTED_PROXY_CIDRS", invalid)
+			if _, err := Load(); !errors.Is(err, ErrTrustedProxyCIDRsInvalid) {
+				t.Fatalf("trusted proxy error = %v", err)
+			}
+		})
+	}
+}
+
 func TestLoadAuthSinkRequiresLoopbackPublicBase(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("AUTH_MAIL_DRIVER", "sink")

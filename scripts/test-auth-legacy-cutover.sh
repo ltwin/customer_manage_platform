@@ -41,6 +41,7 @@ grep -q '"legacy_unclaimed_count":0' "$report_file"
 grep -q '"pending_claim_count":0' "$report_file"
 grep -q '"report":"auth_legacy_rollback"' "$report_file"
 grep -q '"legacy_down_passed":true' "$report_file"
+grep -q '"limiter_schema_rollback":true' "$report_file"
 grep -q '"new_style_down_blocked":true' "$report_file"
 grep -q '"new_style_account_preserved":true' "$report_file"
 

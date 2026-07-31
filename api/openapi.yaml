@@ -19,7 +19,7 @@ tags:
   - name: email-account-access
     description: 邮箱注册验证、登录、refresh、logout 与当前账号
   - name: public-auth-hardening
-    description: 密码找回、重置与修改；仅机器契约，当前 Go server/router 不挂载
+    description: 密码找回、重置与修改
   - name: customer-core
     description: 后端 codegen 切片标签（customer-core 已实现的客户三操作）
   - name: customer-profile-complete
@@ -159,6 +159,9 @@ paths:
               properties:
                 token:
                   type: string
+                  minLength: 76
+                  maxLength: 76
+                  pattern: '^[0-9a-f]{32}\.[A-Za-z0-9_-]{43}$'
       responses:
         "200":
           description: 已验证并建立 session
@@ -286,7 +289,7 @@ paths:
     post:
       tags: [public-auth-hardening]
       operationId: forgotPassword
-      summary: 请求密码重置邮件（当前仅机器契约，route 未挂载）
+      summary: 请求密码重置邮件
       security: []
       requestBody:
         required: true
@@ -323,7 +326,7 @@ paths:
     post:
       tags: [public-auth-hardening]
       operationId: resetPassword
-      summary: 以 action token 重置密码（当前仅机器契约，route 未挂载）
+      summary: 以 action token 重置密码
       security: []
       requestBody:
         required: true
@@ -336,6 +339,9 @@ paths:
               properties:
                 token:
                   type: string
+                  minLength: 76
+                  maxLength: 76
+                  pattern: '^[0-9a-f]{32}\.[A-Za-z0-9_-]{43}$'
                 new_password:
                   type: string
                   minLength: 12
@@ -360,7 +366,7 @@ paths:
     post:
       tags: [public-auth-hardening]
       operationId: changePassword
-      summary: 已认证账号修改密码（当前仅机器契约，route 未挂载）
+      summary: 已认证账号修改密码
       requestBody:
         required: true
         content:
@@ -372,6 +378,8 @@ paths:
               properties:
                 current_password:
                   type: string
+                  minLength: 12
+                  maxLength: 72
                 new_password:
                   type: string
                   minLength: 12

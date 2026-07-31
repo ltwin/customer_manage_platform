@@ -100,6 +100,8 @@ func classifyConfigStartupFailure(err error) error {
 		key = "AUTH_MAIL_DRIVER"
 	case errors.Is(err, config.ErrResendAPIKeyMissing):
 		key = "RESEND_API_KEY"
+	case errors.Is(err, config.ErrTrustedProxyCIDRsInvalid):
+		key = "TRUSTED_PROXY_CIDRS"
 	case errors.Is(err, config.ErrAvatarStorageDriverInvalid):
 		key = "AVATAR_STORAGE_DRIVER"
 	case errors.Is(err, config.ErrAvatarLocalRootMissing),
@@ -171,7 +173,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 
 	tokenIssuer := auth.NewTokenIssuer(cfg.AuthTokenSecret).WithIdentity(cfg.AuthTokenIssuer, "photographer-crm-web")
-	authOptions := []auth.ServiceOption{auth.WithPublicBaseURL(cfg.PublicBaseURL)}
+	authOptions := []auth.ServiceOption{auth.WithPublicBaseURL(cfg.PublicBaseURL), auth.WithAttemptLimiter(s)}
 	switch cfg.AuthMailDriver {
 	case "sink":
 		authOptions = append(authOptions, auth.WithAuthMailSender(authmail.NewSink(logger, time.Now)))
@@ -189,6 +191,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Auth:                      authService,
 		PublicBaseURL:             cfg.PublicBaseURL,
 		PublicRegistrationEnabled: cfg.AuthPublicRegistrationEnabled,
+		TrustedProxyCIDRs:         cfg.TrustedProxyPrefixes,
 		Customer:                  customer.NewService(customer.NewPostgresRepository()),
 		Orders:                    order.NewService(order.NewPostgresRepository()),
 		Packages:                  pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),

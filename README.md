@@ -83,7 +83,7 @@ app replica；`TELEGRAM_BOT_TOKEN` 与 `TELEGRAM_BOT_USERNAME` 必须同时设�
 ### 轨 A：二进制直跑
 
 ```bash
-make build             # 前端构建 → go:embed → backend/bin/server 单工件
+BUILD_REVISION=<40位Git提交SHA> make build # 同时构建 server 与带 revision attestation 的 accountctl
 ./backend/bin/server   # DATABASE_URL 指向现有 PG 或 compose 起的 PG
 ```
 
@@ -93,12 +93,21 @@ make build             # 前端构建 → go:embed → backend/bin/server 单工
 ./scripts/production-preflight.sh \
   --mode binary \
   --seed-state initialized \
-  --env-file /etc/crm/env
+  --env-file /etc/crm/env \
+  --accountctl-bin ./backend/bin/accountctl \
+  --build-revision <40位Git提交SHA> \
+  --evidence-dir /var/lib/crm/auth-readiness-evidence
 ```
 
 ### 轨 B：全容器
 
 ```bash
+CRM_ENV_FILE=/etc/crm/env docker compose \
+  --env-file /etc/crm/env \
+  -f ./docker-compose.yml \
+  -p crm-prod \
+  build --build-arg BUILD_REVISION=<40位Git提交SHA>
+
 CRM_ENV_FILE=/etc/crm/env docker compose \
   --env-file /etc/crm/env \
   -f ./docker-compose.yml \
@@ -115,7 +124,9 @@ compose 内置 PostgreSQL 与外部 PostgreSQL 分别运行：
   --env-file /etc/crm/env \
   --compose-file ./docker-compose.yml \
   --docker-context local-production \
-  --project-name crm-prod
+  --project-name crm-prod \
+  --build-revision <40位Git提交SHA> \
+  --evidence-dir /var/lib/crm/auth-readiness-evidence
 
 ./scripts/production-preflight.sh \
   --mode compose-external-db \
@@ -123,7 +134,9 @@ compose 内置 PostgreSQL 与外部 PostgreSQL 分别运行：
   --env-file /etc/crm/env \
   --compose-file ./docker-compose.yml \
   --docker-context local-production \
-  --project-name crm-prod
+  --project-name crm-prod \
+  --build-revision <40位Git提交SHA> \
+  --evidence-dir /var/lib/crm/auth-readiness-evidence
 ```
 
 所有 compose 命令必须显式给出 env、compose file、Docker context 和 project。运维脚本拒绝
@@ -132,10 +145,24 @@ context 解析出的本机绝对 Unix socket；解析后每个 Engine 调用都�
 active/default context。`CRM_ENV_FILE=/etc/crm/env` 让 compose interpolation 与 app
 `env_file` 使用同一文件，避免暗中回退到仓库 `.env`。
 
-`--seed-state empty|initialized` 暂时作为旧运维调用的兼容参数保留，但两种状态都要求
-`SEED_ADMIN_PASSWORD` 缺失或为空。当前 `email-account-access` 阶段的 production preflight
-还会在 `AUTH_PUBLIC_REGISTRATION_ENABLED=true` 时固定失败并返回
-`public-auth-hardening-not-complete`；只有后续安全加固验收完成后才能解除该锁。
+`--seed-state empty|initialized` 作为旧运维调用的兼容参数保留，但两种状态都要求
+`SEED_ADMIN_PASSWORD` 缺失或为空。`AUTH_PUBLIC_REGISTRATION_ENABLED=false` 时，preflight 完成所有基础配置
+检查后只输出 `complete/preflight=secure-baseline-ready`，不声称公开注册已经开启。值为 `true` 时，必须同时满足：
+
+- 当前 `accountctl auth readiness` 真实读取的数据库可达、schema version 13、limiter schema 和 legacy cutover 全绿；
+- `mail-accepted.json`、`monitor.json`、`security.json` 在 24 小时内生成；
+- `rollback.json`、`rotation.json` 在 7 天内生成；
+- 每份 evidence 的 `version=1`、UTC `generated_at`、`build_revision`、`schema_version`、
+  `config_fingerprint`、`environment=production`、`status=passed` 和 `evidence_path` 完整，且与本次运行一致；
+- evidence 时间不能比当前时间晚超过 5 分钟；任一字段缺失、未知字段、过期、future skew 或 revision/schema/
+  fingerprint mismatch 都 fail closed；
+- mail receipt 额外只允许脱敏 `recipient_ref`、provider message ID、provider 和
+  `AUTH_TOKEN_SECRET_VERSION` 引用，不能包含完整收件地址、secret 或 provider response body。
+
+全部通过才输出 `complete/preflight=enable-ready`。该结果只表示配置与证据具备开启条件；脚本不会修改 env、
+切换开关、迁移、启动服务、deploy、cutover 或轮换密钥。真实公开注册仍需 owner 独立授权。证据目录应位于受控运维
+存储，不提交真实 recipient、连接串或凭证。开发阶段可继续保持 `false`；Resend 的 `onboarding@resend.dev`
+仅适合受控测试，正式开放前应使用已验证的真实发件域名和对应 fresh accepted receipt。
 
 ### 旧账号认领与回滚演练
 
@@ -155,12 +182,18 @@ go run ./cmd/accountctl auth claim-legacy --email owner@example.com
 `auth_schema_down_blocked_new_accounts` 阻断。仓库不提供生产 down 命令；真实 cutover/rollback
 仍需独立授权。旧 binary 无法使用新式账号，这是明确的降级边界。
 
+认证 root secret 的人工轮换顺序、safe point 和失败恢复见
+[`docs/ops/auth-root-rotation.md`](docs/ops/auth-root-rotation.md)。仓库内
+`./scripts/test-auth-rotation-rollback.sh` 只做 synthetic rehearsal，不触碰生产环境。
+
 ## 环境变量
 
 清单见 `.env.example`（key 全集 + 注释）。凭证红线：真实值只经环境注入，不入库、不入 git。
 
-- **token 轮换**：Access JWT 有效期 10 分钟；refresh session 在服务端 rotation。更换 `AUTH_TOKEN_SECRET` 会使旧 access/replay 密文失效，真实轮换仍需独立 runbook 与授权。
-- **改密现状**：本阶段尚未开放改密 API；禁止通过清空 accounts、恢复 seed 或直接 UPDATE hash 代替。密码恢复/修改由 `public-auth-hardening` 交付。
+- **token 轮换**：Access JWT 有效期 10 分钟；refresh session 在服务端 rotation。更换 `AUTH_TOKEN_SECRET` 会使旧 access/replay/limiter namespace 失效，但切换前仍须撤销全部 refresh family；真实轮换按 runbook 另行授权。
+- **AUTH_TOKEN_SECRET_VERSION**：非秘密的 root secret 版本引用，进入 production config fingerprint；不得填写 secret 值。
+- **BUILD_REVISION**：容器构建时嵌入 `accountctl` 的 40 位 Git revision；binary 轨由 `make BUILD_REVISION=... build` 嵌入。preflight 会拒绝运行时 binary 与 evidence revision 不一致。
+- **密码与登出**：已提供忘记密码、30 分钟单次 reset token、登录后修改密码和退出登录。reset/change 成功会撤销该账号全部 refresh family并清当前客户端状态；不要通过清空 accounts、恢复 seed 或直接 UPDATE hash 代替。
 - **DATABASE_URL / APP_DATABASE_URL / POSTGRES_PASSWORD**：用密码管理器生成并保存；数据库密码轮换需同步连接串并滚动重启。远程 PostgreSQL 必须启用 TLS，不能使用 `sslmode=disable`。
 - **AUTH_TOKEN_SECRET**：至少 32 个随机字符；轮换并重启会吊销所有现有 token。
 - **ACCOUNTCTL_AUTH_PASSWORD**：仅在 bootstrap 命令进程内临时注入，不能写入 `.env`、argv 或日志；命令结束立即清除。

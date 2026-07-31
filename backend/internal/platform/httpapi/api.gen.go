@@ -374,6 +374,21 @@ func (e VerificationDispatchStatus) Valid() bool {
 	}
 }
 
+// Defines values for ForgotPassword202JSONResponseBodyStatus.
+const (
+	Accepted ForgotPassword202JSONResponseBodyStatus = "accepted"
+)
+
+// Valid indicates whether the value is a known member of the ForgotPassword202JSONResponseBodyStatus enum.
+func (e ForgotPassword202JSONResponseBodyStatus) Valid() bool {
+	switch e {
+	case Accepted:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateCustomerJSONBodyStatus.
 const (
 	UpdateCustomerJSONBodyStatusActive   UpdateCustomerJSONBodyStatus = "active"
@@ -1003,6 +1018,26 @@ type LoginJSONBody struct {
 	Password string `json:"password"`
 }
 
+// ChangePasswordJSONBody defines parameters for ChangePassword.
+type ChangePasswordJSONBody struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// ForgotPasswordJSONBody defines parameters for ForgotPassword.
+type ForgotPasswordJSONBody struct {
+	Email string `json:"email"`
+}
+
+// ForgotPassword202JSONResponseBodyStatus defines parameters for ForgotPassword.
+type ForgotPassword202JSONResponseBodyStatus string
+
+// ResetPasswordJSONBody defines parameters for ResetPassword.
+type ResetPasswordJSONBody struct {
+	NewPassword string `json:"new_password"`
+	Token       string `json:"token"`
+}
+
 // RegisterJSONBody defines parameters for Register.
 type RegisterJSONBody struct {
 	Email    string `json:"email"`
@@ -1271,6 +1306,15 @@ type VerifyEmailJSONRequestBody VerifyEmailJSONBody
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
+// ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
+type ChangePasswordJSONRequestBody ChangePasswordJSONBody
+
+// ForgotPasswordJSONRequestBody defines body for ForgotPassword for application/json ContentType.
+type ForgotPasswordJSONRequestBody ForgotPasswordJSONBody
+
+// ResetPasswordJSONRequestBody defines body for ResetPassword for application/json ContentType.
+type ResetPasswordJSONRequestBody ResetPasswordJSONBody
+
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody RegisterJSONBody
 
@@ -1423,6 +1467,15 @@ type ServerInterface interface {
 	// 幂等撤销 refresh family 并清 cookie
 	// (POST /auth/logout)
 	Logout(c *gin.Context)
+	// 已认证账号修改密码
+	// (POST /auth/password/change)
+	ChangePassword(c *gin.Context)
+	// 请求密码重置邮件
+	// (POST /auth/password/forgot)
+	ForgotPassword(c *gin.Context)
+	// 以 action token 重置密码
+	// (POST /auth/password/reset)
+	ResetPassword(c *gin.Context)
 	// 使用 HttpOnly refresh cookie 轮换 session generation
 	// (POST /auth/refresh)
 	Refresh(c *gin.Context)
@@ -1617,6 +1670,47 @@ func (siw *ServerInterfaceWrapper) Logout(c *gin.Context) {
 	}
 
 	siw.Handler.Logout(c)
+}
+
+// ChangePassword operation middleware
+func (siw *ServerInterfaceWrapper) ChangePassword(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ChangePassword(c)
+}
+
+// ForgotPassword operation middleware
+func (siw *ServerInterfaceWrapper) ForgotPassword(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ForgotPassword(c)
+}
+
+// ResetPassword operation middleware
+func (siw *ServerInterfaceWrapper) ResetPassword(c *gin.Context) {
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ResetPassword(c)
 }
 
 // Refresh operation middleware
@@ -2724,6 +2818,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/email/verify", wrapper.VerifyEmail)
 	router.POST(options.BaseURL+"/auth/login", wrapper.Login)
 	router.POST(options.BaseURL+"/auth/logout", wrapper.Logout)
+	router.POST(options.BaseURL+"/auth/password/change", wrapper.ChangePassword)
+	router.POST(options.BaseURL+"/auth/password/forgot", wrapper.ForgotPassword)
+	router.POST(options.BaseURL+"/auth/password/reset", wrapper.ResetPassword)
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)

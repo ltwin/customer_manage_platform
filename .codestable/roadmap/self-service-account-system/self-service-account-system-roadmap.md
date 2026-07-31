@@ -599,7 +599,7 @@ monitor 对损坏行采用“隔离后继续扫描 + degraded”策略：不把�
 2. **public-auth-hardening** — 在邮箱账号访问闭环上补齐密码恢复／修改、全 refresh session 撤销、持久化限速／防枚举和公开上线安全回归
    - 所属模块：account-auth、auth-http、auth-mail、auth-ops、webapp-auth
    - 依赖：email-account-access；因为恢复、撤销与限速复用其 identity、action token、refresh family、邮件 port 和前端 AuthState 契约
-   - 状态：planned
+   - 状态：done
    - 对应 feature：未启动
    - 备注：同样保持全栈闭环，不另拆“找回密码”“限速”“可观测性”“安全测试”小 feature。完成信号：忘记／重置／改密全路径通过且撤销全部 refresh session；login/register/resend/forgot/token 预算边界与 `Retry-After` 可重复验证；账号枚举、rotation race/reuse、cookie/Origin、旧 JWT、跨账号数据与 migration/rollback case catalog 全绿；固定认证事件、monitor 阈值和 redaction 验收通过；production preflight 和 README 覆盖邮件、auth secret/issuer、PUBLIC_BASE_URL、proxy、公开注册闸门、SEED 退役与 cutover。
 

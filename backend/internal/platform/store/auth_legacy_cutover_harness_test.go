@@ -43,6 +43,7 @@ type legacyRollbackHarnessReport struct {
 	MigrationChecksum            string `json:"migration_checksum"`
 	LegacySchemaVersionBefore    uint   `json:"legacy_schema_version_before"`
 	LegacySchemaVersionAfter     uint   `json:"legacy_schema_version_after"`
+	LimiterSchemaRollback        bool   `json:"limiter_schema_rollback"`
 	LegacyDownPassed             bool   `json:"legacy_down_passed"`
 	LegacyDataPreserved          bool   `json:"legacy_data_preserved"`
 	NewStyleDownBlocked          bool   `json:"new_style_down_blocked"`
@@ -100,7 +101,7 @@ func runLegacyCutoverFixture(t *testing.T, url string) legacyCutoverHarnessRepor
 	if err != nil || claim.State != auth.LegacyClaimReady || !claim.Delivery.Accepted {
 		t.Fatalf("legacy claim: state=%q accepted=%t err=%v", claim.State, claim.Delivery.Accepted, err)
 	}
-	if _, err := service.VerifyEmail(ctx, actionTokenFromMail(t, mail.Last())); err != nil {
+	if _, err := service.VerifyEmail(ctx, actionTokenFromMail(t, mail.Last()), testClientMeta()); err != nil {
 		t.Fatalf("verify legacy claim: %v", err)
 	}
 	after := readLegacyBusinessSnapshot(t, url, accountID, avatarPath)
@@ -140,6 +141,10 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatalf("migrate rollback legacy fixture up: %v", err)
 	}
+	fullVersion := migrationVersion(t, url)
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("limiter schema down: %v", err)
+	}
 	versionBefore := migrationVersion(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("legacy-only auth down: %v", err)
@@ -159,6 +164,9 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 
 	resetAuthSchema(t, url)
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("prepare new-style auth down: %v", err)
+	}
 	db = openSQLDatabase(t, url)
 	if _, err := db.ExecContext(ctx, `INSERT INTO accounts (id, status, password_hash)
 		VALUES ('rollback-new-style', 'pending_verification', NULL)`); err != nil {
@@ -186,6 +194,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	return legacyRollbackHarnessReport{
 		Report: "auth_legacy_rollback", MigrationChecksum: "sha256:" + hex.EncodeToString(digest[:]),
 		LegacySchemaVersionBefore: versionBefore, LegacySchemaVersionAfter: versionAfter,
+		LimiterSchemaRollback:        fullVersion == 13 && versionBefore == 12,
 		LegacyDownPassed:             versionBefore == 12 && versionAfter == 11,
 		LegacyDataPreserved:          legacyHash == "deprecated-hash" && customerCount == 1,
 		NewStyleDownBlocked:          downErr != nil && strings.Contains(downErr.Error(), "auth_schema_down_blocked_new_accounts"),

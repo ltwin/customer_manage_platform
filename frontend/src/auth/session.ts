@@ -169,6 +169,13 @@ export async function authorizedFetch(
   return replay
 }
 
+export function authorizedFetchOnce(
+	input: RequestInfo | URL,
+	init: RequestInit = {},
+): Promise<Response> {
+	return fetchWithAccess(input, init)
+}
+
 export async function logoutSession(): Promise<void> {
   const priorMutations = [...cookieMutationFlights]
   const epoch = advanceSessionEpoch()
