@@ -371,6 +371,11 @@
 }
 
 .calendar-v2-week-corner {
+  left: 0;
+  z-index: 7;
+}
+
+.calendar-v2-week-corner {
   display: grid;
   place-items: center;
   color: var(--muted);
@@ -431,16 +436,27 @@
   padding: 4px;
 }
 
+.calendar-v2-all-day-label,
+.calendar-v2-time-axis {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+}
+
 .calendar-v2-time-axis,
 .calendar-v2-day-track {
-  position: relative;
   height: var(--calendar-timeline-height);
+}
+
+.calendar-v2-day-track {
+  position: relative;
 }
 
 .calendar-v2-time-axis {
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 9.5px;
+  box-shadow: 1px 0 0 var(--border);
 }
 
 .calendar-v2-time-axis span {
