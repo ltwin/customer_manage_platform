@@ -106,6 +106,10 @@ func (r PostgresRepository) CreatePreparedInScope(
 	if err != nil {
 		return CreateResult{}, err
 	}
+	overlaps, err = excludeCancelledShootOverlaps(ctx, tx, overlaps)
+	if err != nil {
+		return CreateResult{}, err
+	}
 	var insertedID string
 	err = tx.InsertOnConflictDoNothingReturning(
 		ctx,
@@ -168,21 +172,47 @@ func AssembleListItems(
 	}
 	defer rows.Close()
 	slots := make([]Slot, 0)
-	orderIDs := make([]string, 0)
 	for rows.Next() {
 		slot, err := scanSlot(rows)
 		if err != nil {
 			return nil, err
 		}
 		slots = append(slots, slot)
-		if slot.OrderID != nil {
-			orderIDs = append(orderIDs, *slot.OrderID)
-		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	sortSlots(slots)
+	return assembleListItems(ctx, scope, slots)
+}
+
+func (r PostgresRepository) Get(
+	ctx context.Context,
+	scope store.AccountScope,
+	id string,
+) (ListItem, error) {
+	slot, err := findSlot(ctx, scope, id, false)
+	if err != nil {
+		return ListItem{}, err
+	}
+	items, err := assembleListItems(ctx, scope, []Slot{slot})
+	if err != nil {
+		return ListItem{}, err
+	}
+	return items[0], nil
+}
+
+func assembleListItems(
+	ctx context.Context,
+	scope store.AccountScope,
+	slots []Slot,
+) ([]ListItem, error) {
+	orderIDs := make([]string, 0, len(slots))
+	for _, slot := range slots {
+		if slot.OrderID != nil {
+			orderIDs = append(orderIDs, *slot.OrderID)
+		}
+	}
 	summaries, err := fetchOrderSummaries(ctx, scope, uniqueStrings(orderIDs))
 	if err != nil {
 		return nil, err
@@ -200,7 +230,11 @@ func AssembleListItems(
 			item.CustomerStatus = summary.CustomerStatus
 			item.OrderStatus = summary.OrderStatus
 			item.OrderTitle = summary.OrderTitle
+			item.OrderPrice = summary.OrderPrice
+			item.OrderDepositPaid = summary.OrderDepositPaid
+			item.OrderBalancePaid = summary.OrderBalancePaid
 			item.PackageName = summary.PackageName
+			item.PackageShootType = summary.PackageShootType
 		}
 		items = append(items, item)
 	}
@@ -455,6 +489,53 @@ func findOverlaps(ctx context.Context, scope queryScope, candidate Slot) ([]Slot
 	return slots, nil
 }
 
+func excludeCancelledShootOverlaps(ctx context.Context, scope queryScope, slots []Slot) ([]Slot, error) {
+	orderIDs := make([]string, 0, len(slots))
+	for _, slot := range slots {
+		if slot.Type == TypeShoot && slot.OrderID != nil {
+			orderIDs = append(orderIDs, *slot.OrderID)
+		}
+	}
+	orderIDs = uniqueStrings(orderIDs)
+	if len(orderIDs) == 0 {
+		return slots, nil
+	}
+
+	rows, err := scope.Query(ctx, "orders", "id, status", "id = ANY($2::text[])", orderIDs)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make(map[string]string, len(orderIDs))
+	for rows.Next() {
+		var id, status string
+		if err := rows.Scan(&id, &status); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		statuses[id] = status
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+
+	result := make([]Slot, 0, len(slots))
+	for _, slot := range slots {
+		if slot.Type == TypeShoot && slot.OrderID != nil {
+			status, ok := statuses[*slot.OrderID]
+			if !ok {
+				return nil, fmt.Errorf("shoot slot %s 引用订单状态缺失", slot.ID)
+			}
+			if status == orderdomain.StatusCancelled {
+				continue
+			}
+		}
+		result = append(result, slot)
+	}
+	return result, nil
+}
+
 func newOrderConflict(slot Slot) error {
 	return OrderAlreadyScheduledError{SlotID: slot.ID, StartAt: slot.StartAt}
 }
@@ -482,15 +563,22 @@ type orderSummary struct {
 	CustomerStatus      string
 	OrderStatus         string
 	OrderTitle          *string
+	OrderPrice          *int
+	OrderDepositPaid    bool
+	OrderBalancePaid    bool
 	PackageName         *string
+	PackageShootType    *string
 }
 
 type orderRow struct {
-	ID         string
-	CustomerID string
-	PackageID  *string
-	Title      *string
-	Status     string
+	ID          string
+	CustomerID  string
+	PackageID   *string
+	Title       *string
+	Status      string
+	Price       *int
+	DepositPaid bool
+	BalancePaid bool
 }
 
 func fetchOrderSummaries(
@@ -504,7 +592,7 @@ func fetchOrderSummaries(
 	rows, err := scope.Query(
 		ctx,
 		"orders",
-		"id, customer_id, package_id, title, status",
+		"id, customer_id, package_id, title, status, price, deposit_paid, balance_paid",
 		"id = ANY($2::text[])",
 		orderIDs,
 	)
@@ -517,12 +605,23 @@ func fetchOrderSummaries(
 	for rows.Next() {
 		var order orderRow
 		var packageID, title sql.NullString
-		if err := rows.Scan(&order.ID, &order.CustomerID, &packageID, &title, &order.Status); err != nil {
+		var price sql.NullInt64
+		if err := rows.Scan(
+			&order.ID,
+			&order.CustomerID,
+			&packageID,
+			&title,
+			&order.Status,
+			&price,
+			&order.DepositPaid,
+			&order.BalancePaid,
+		); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		order.PackageID = stringPtr(packageID)
 		order.Title = stringPtr(title)
+		order.Price = intPtr(price)
 		orders = append(orders, order)
 		customerIDs = append(customerIDs, order.CustomerID)
 		if order.PackageID != nil {
@@ -555,10 +654,16 @@ func fetchOrderSummaries(
 			CustomerStatus:      customer.Status,
 			OrderStatus:         order.Status,
 			OrderTitle:          order.Title,
+			OrderPrice:          order.Price,
+			OrderDepositPaid:    order.DepositPaid,
+			OrderBalancePaid:    order.BalancePaid,
 		}
 		if order.PackageID != nil {
-			if name, ok := packages[*order.PackageID]; ok {
+			if pkg, ok := packages[*order.PackageID]; ok {
+				name := pkg.Name
+				shootType := pkg.ShootType
 				summary.PackageName = &name
+				summary.PackageShootType = &shootType
 			}
 		}
 		summaries[order.ID] = summary
@@ -592,22 +697,28 @@ func fetchCustomers(ctx context.Context, scope store.AccountScope, ids []string)
 	return result, rows.Err()
 }
 
-func fetchPackages(ctx context.Context, scope store.AccountScope, ids []string) (map[string]string, error) {
-	result := make(map[string]string, len(ids))
+type packageSummary struct {
+	Name      string
+	ShootType string
+}
+
+func fetchPackages(ctx context.Context, scope store.AccountScope, ids []string) (map[string]packageSummary, error) {
+	result := make(map[string]packageSummary, len(ids))
 	if len(ids) == 0 {
 		return result, nil
 	}
-	rows, err := scope.Query(ctx, "packages", "id, name", "id = ANY($2::text[])", ids)
+	rows, err := scope.Query(ctx, "packages", "id, name, shoot_type", "id = ANY($2::text[])", ids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var id, name string
-		if err := rows.Scan(&id, &name); err != nil {
+		var id string
+		var summary packageSummary
+		if err := rows.Scan(&id, &summary.Name, &summary.ShootType); err != nil {
 			return nil, err
 		}
-		result[id] = name
+		result[id] = summary
 	}
 	return result, rows.Err()
 }
@@ -637,4 +748,12 @@ func stringPtr(value sql.NullString) *string {
 		return nil
 	}
 	return &value.String
+}
+
+func intPtr(value sql.NullInt64) *int {
+	if !value.Valid {
+		return nil
+	}
+	converted := int(value.Int64)
+	return &converted
 }

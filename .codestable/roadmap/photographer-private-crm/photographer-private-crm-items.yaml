@@ -97,3 +97,11 @@ items:
     feature: 2026-07-22-v1-hardening
     minimal_loop: false
     notes: 完成信号：375px 三条轻路径可完成、回归清单打勾归档、README 覆盖部署/备份/凭证操作
+
+  - slug: calendar-v2-redesign
+    description: 档期工作台增量：月/周双视图、真实可约空档、转场提醒、订单款项/套系摘要和移动端完整 CRUD
+    depends_on: [schedule-calendar, reminder-engine, dashboard, data-export]
+    status: done
+    feature: 2026-07-31-calendar-v2-redesign
+    minimal_loop: false
+    notes: 新增量不回退或改写已 done 的 schedule-calendar/data-export 历史。完成信号：Settings availability migration+strict PATCH+有效默认+schema-v2 export parity，shoot slot 批量款项/套系摘要与 dashboard 回归无 N+1，月/周/空档文案/利用率/转场/取消降级与桌面移动 CRUD 完成，ScheduleSlotDialog journal/幂等/unknown recovery 保持且 conflict preview generation 正确，DST 与 1600/1280/375 workspace/layout/focus/overflow 证据通过；不新增 openings/overview/book、拖拽、重复规则、多窗口、自助预约或主动消息发送。

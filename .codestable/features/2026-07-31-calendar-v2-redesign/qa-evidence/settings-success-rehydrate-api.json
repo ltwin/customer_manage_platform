@@ -1,0 +1,182 @@
+{
+  "evidence_id": "API-SETTINGS-SUCCESS-001",
+  "captured_at": "2026-08-01T12:21:13.742Z",
+  "assertions": {
+    "pending_settings_patches": 0,
+    "response_rehydrated_timezone": "America/New_York",
+    "response_rehydrated_min_opening_minutes": 140,
+    "preserved_birthday_lead_days": 5,
+    "failed_save_did_not_mutate_server": true
+  },
+  "request_patch": {
+    "timezone": "Asia/Tokyo",
+    "birthday_lead_days": 5,
+    "follow_up_after_days": 8,
+    "digest_hour": 10,
+    "churn_thresholds": [
+      {
+        "shoot_type": "portrait",
+        "days": 181
+      },
+      {
+        "shoot_type": "cosplay",
+        "days": 182
+      },
+      {
+        "shoot_type": "other",
+        "days": 183
+      }
+    ],
+    "availability": {
+      "weekly": {
+        "1": {
+          "start": "08:30",
+          "end": "17:30"
+        },
+        "2": {
+          "start": "10:00",
+          "end": "19:00"
+        },
+        "3": null,
+        "4": {
+          "start": "11:00",
+          "end": "20:00"
+        },
+        "5": {
+          "start": "10:00",
+          "end": "18:00"
+        },
+        "6": {
+          "start": "09:00",
+          "end": "20:00"
+        },
+        "7": {
+          "start": "09:00",
+          "end": "20:00"
+        }
+      },
+      "min_opening_minutes": 130,
+      "turnaround_minutes": 55
+    }
+  },
+  "server_after_release": {
+    "timezone": "America/New_York",
+    "birthday_lead_days": 5,
+    "follow_up_after_days": 8,
+    "churn_thresholds": [
+      {
+        "shoot_type": "portrait",
+        "days": 181
+      },
+      {
+        "shoot_type": "cosplay",
+        "days": 182
+      },
+      {
+        "shoot_type": "other",
+        "days": 183
+      }
+    ],
+    "digest_hour": 10,
+    "telegram_chat_id": "qa-chat",
+    "availability": {
+      "weekly": {
+        "1": {
+          "start": "08:30",
+          "end": "17:30"
+        },
+        "2": {
+          "start": "10:00",
+          "end": "19:00"
+        },
+        "3": null,
+        "4": {
+          "start": "11:00",
+          "end": "20:00"
+        },
+        "5": {
+          "start": "10:00",
+          "end": "18:00"
+        },
+        "6": {
+          "start": "09:00",
+          "end": "20:00"
+        },
+        "7": {
+          "start": "09:00",
+          "end": "20:00"
+        }
+      },
+      "min_opening_minutes": 140,
+      "turnaround_minutes": 55
+    }
+  },
+  "request_log": [
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:15:10.042Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:15:10.043Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/fail-next-settings-patch",
+      "search": "",
+      "at": "2026-08-01T12:15:28.665Z"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:15:45.242Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/defer-next-settings-patch",
+      "search": "",
+      "at": "2026-08-01T12:16:06.463Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/override-next-settings-response",
+      "search": "",
+      "at": "2026-08-01T12:16:06.471Z"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:19:43.759Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/__qa/state",
+      "search": "",
+      "at": "2026-08-01T12:19:58.861Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/release-settings-patch",
+      "search": "",
+      "at": "2026-08-01T12:20:45.104Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/__qa/state",
+      "search": "",
+      "at": "2026-08-01T12:20:45.116Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/__qa/state",
+      "search": "",
+      "at": "2026-08-01T12:21:13.736Z"
+    }
+  ]
+}

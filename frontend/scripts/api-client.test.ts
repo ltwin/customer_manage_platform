@@ -7,6 +7,8 @@ import {
   createOrder,
   createScheduleSlot,
   forgotPassword,
+  getSettings,
+  getScheduleSlot,
   listCustomers,
   listOrders,
   listScheduleSlots,
@@ -150,7 +152,9 @@ test('schedule client sends range and per-attempt key', async () => {
     return new Response('[]', { status: 200 })
   }
 
-  await listScheduleSlots('2026-07-01T00:00:00Z', '2026-08-01T00:00:00Z')
+  const controller = new AbortController()
+  await listScheduleSlots('2026-07-01T00:00:00Z', '2026-08-01T00:00:00Z', controller.signal)
+  await getSettings(controller.signal)
   await createScheduleSlot({
     start_at: '2026-07-10T08:00:00Z',
     end_at: '2026-07-10T09:00:00Z',
@@ -158,7 +162,29 @@ test('schedule client sends range and per-attempt key', async () => {
   }, 'slot-attempt-key')
 
   assert.match(requests[0]?.url ?? '', /schedule\/slots\?from=/)
-  assert.equal(new Headers(requests[1]?.init?.headers).get('Idempotency-Key'), 'slot-attempt-key')
+  assert.strictEqual(requests[0]?.init?.signal, controller.signal)
+  assert.strictEqual(requests[1]?.init?.signal, controller.signal)
+  assert.equal(new Headers(requests[2]?.init?.headers).get('Idempotency-Key'), 'slot-attempt-key')
+})
+
+test('schedule client reads one account-scoped slot for deep-link location', async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = []
+  globalThis.fetch = async (input, init) => {
+    requests.push({ url: String(input), init })
+    return Response.json({
+      id: 'slot/deep-link',
+      start_at: '2026-11-01T05:30:00Z',
+      end_at: '2026-11-01T06:30:00Z',
+      type: 'hold',
+    })
+  }
+
+  const controller = new AbortController()
+  const item = await getScheduleSlot('slot/deep-link', controller.signal)
+
+  assert.equal(item.id, 'slot/deep-link')
+  assert.equal(requests[0]?.url, '/api/v1/schedule/slots/slot%2Fdeep-link')
+  assert.strictEqual(requests[0]?.init?.signal, controller.signal)
 })
 
 test('a protected 401 refreshes once and becomes anonymous when refresh also fails', async () => {

@@ -85,6 +85,12 @@ func (s *Service) Patch(ctx context.Context, scope store.AccountScope, input Pat
 		// entry 级叠加：以默认全类型为底，再被 PATCH 条目覆盖。
 		next.ChurnThresholds = overlayChurnThresholds(defaultChurnThresholds(), normalized)
 	}
+	if input.Availability != nil {
+		if err := ValidateScheduleAvailability(*input.Availability); err != nil {
+			return Settings{}, err
+		}
+		next.Availability = *input.Availability
+	}
 	saved, err := s.repo.Upsert(ctx, scope, next)
 	if err != nil {
 		return Settings{}, err
@@ -171,5 +177,8 @@ func EffectiveSettings(stored Settings) Settings {
 		stored.DigestHour = def.DigestHour
 	}
 	stored.ChurnThresholds = overlayChurnThresholds(def.ChurnThresholds, stored.ChurnThresholds)
+	if isZeroScheduleAvailability(stored.Availability) {
+		stored.Availability = def.Availability
+	}
 	return stored
 }

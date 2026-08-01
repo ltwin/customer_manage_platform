@@ -161,19 +161,29 @@ test('empty customer picker keyboard navigation never exposes an invalid active 
   assert.equal(customerPickerShouldClose(false), true)
 })
 
-test('mobile calendar keeps write actions hidden while dense and long drawer content stays bounded', () => {
-  const calendarSource = readFileSync(new URL('../src/pages/CalendarPage.tsx', import.meta.url), 'utf8')
-  const cssSource = readFileSync(new URL('../src/v1-hardening.css', import.meta.url), 'utf8')
+test('mobile calendar keeps v2 write actions reachable while dense detail content stays bounded', () => {
+  const workspaceSource = readFileSync(new URL('../src/pages/calendar/CalendarWorkspace.tsx', import.meta.url), 'utf8')
+  const detailSource = readFileSync(new URL('../src/pages/calendar/DayDetailPanel.tsx', import.meta.url), 'utf8')
+  const calendarCssSource = readFileSync(new URL('../src/pages/calendar/calendar.css', import.meta.url), 'utf8')
+  const hardeningCssSource = readFileSync(new URL('../src/v1-hardening.css', import.meta.url), 'utf8')
 
-  assert.equal((calendarSource.match(/desktop-schedule-actions/g) ?? []).length, 3)
+  assert.match(workspaceSource, /className="calendar-v2-fab"[\s\S]*onClick=\{\(\) => onCreate\(createDate\)\}/)
+  assert.match(detailSource, /onClick=\{onCreate\}[\s\S]*在这天加档期/)
+  assert.match(detailSource, /onClick=\{\(\) => onEdit\(slot\)\}>编辑<\/button>/)
+  assert.match(detailSource, /onClick=\{\(\) => onDelete\(slot\)\}>删除<\/button>/)
+  assert.doesNotMatch(workspaceSource, /desktop-schedule-actions/)
+  assert.doesNotMatch(detailSource, /desktop-schedule-actions/)
   assert.match(
-    cssSource,
-    /@media \(max-width: 768px\)[\s\S]*\.desktop-schedule-actions\s*\{\s*display:\s*none;/,
+    calendarCssSource,
+    /\.calendar-v2-workspace\[data-layout-mode="bottom-sheet"\] \.calendar-v2-detail\s*\{[\s\S]*max-height:\s*min\(78vh, 720px\);/,
   )
-  assert.match(cssSource, /\.slot-entry \.body,[\s\S]*overflow-wrap:\s*anywhere;/)
-  assert.match(cssSource, /\.cal-count\s*\{[\s\S]*flex-wrap:\s*wrap;/)
+  assert.match(calendarCssSource, /\.calendar-v2-detail-body,[\s\S]*overflow-y:\s*auto;/)
   assert.match(
-    cssSource,
+    calendarCssSource,
+    /\.calendar-v2-workspace\[data-layout-mode="bottom-sheet"\] \.calendar-v2-fab\s*\{[\s\S]*right:\s*max\(72px, env\(safe-area-inset-right\)\);[\s\S]*display:\s*grid;/,
+  )
+  assert.match(
+    hardeningCssSource,
     /@media \(max-width: 768px\) and \(pointer: coarse\)[\s\S]*min-height:\s*44px;[\s\S]*min-width:\s*44px;/,
   )
 })

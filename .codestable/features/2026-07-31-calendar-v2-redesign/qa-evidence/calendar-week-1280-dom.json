@@ -1,0 +1,66 @@
+{
+  "active": {
+    "ariaLabel": "关闭当日详情",
+    "tag": "BUTTON",
+    "text": ""
+  },
+  "detail": {
+    "ariaLabelledby": "calendarV2DetailTitle",
+    "ariaModal": "true",
+    "className": "calendar-v2-detail open",
+    "role": "dialog"
+  },
+  "document": {
+    "bodyClientWidth": 1280,
+    "bodyScrollWidth": 1280,
+    "clientWidth": 1280,
+    "scrollWidth": 1280
+  },
+  "events": [
+    {
+      "ariaLabel": null,
+      "height": 27,
+      "role": null,
+      "text": "全天外出",
+      "width": 123.5703125,
+      "x": 858.28125,
+      "y": 360.90625
+    },
+    {
+      "ariaLabel": null,
+      "height": 110,
+      "role": null,
+      "text": "10:00–12:30林夏 · 夏日写真",
+      "width": 61.78125,
+      "x": 326,
+      "y": 839.90625
+    },
+    {
+      "ariaLabel": null,
+      "height": 66,
+      "role": null,
+      "text": "11:30–13:00器材维护",
+      "width": 61.78125,
+      "x": 391.78125,
+      "y": 905.90625
+    },
+    {
+      "ariaLabel": null,
+      "height": 88,
+      "role": null,
+      "text": "09:00–11:00品牌预留",
+      "width": 127.5703125,
+      "x": 591.140625,
+      "y": 795.90625
+    }
+  ],
+  "viewport": {
+    "height": 900,
+    "width": 1280
+  },
+  "workspace": {
+    "clientWidth": 988,
+    "layoutMode": "bottom-sheet",
+    "scrollWidth": 988
+  }
+}

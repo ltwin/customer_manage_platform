@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -96,6 +97,18 @@ func TestScheduleAPIEndpointsIdempotencyNullableAndIsolation(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &shootResult); err != nil || shootResult.Slot.Id == nil || len(shootResult.Overlaps) != 1 || shootResult.Overlaps[0] != *holdResult.Slot.Id {
 		t.Fatalf("shoot overlap result: %+v err=%v", shootResult, err)
 	}
+	rec = scheduleRequest(t, h, http.MethodGet, "/api/v1/schedule/slots/"+*shootResult.Slot.Id, tokenA, nil, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get shoot by id: %d %s", rec.Code, rec.Body.String())
+	}
+	var shootItem map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &shootItem); err != nil ||
+		shootItem["id"] != *shootResult.Slot.Id ||
+		shootItem["type"] != "shoot" ||
+		shootItem["customer_id"] != customerA.ID ||
+		shootItem["order_id"] != orderA.ID {
+		t.Fatalf("get shoot summary: %+v err=%v", shootItem, err)
+	}
 
 	rec = scheduleRequest(t, h, http.MethodPost, "/api/v1/schedule/slots", tokenA,
 		[]byte(`{"start_at":"`+end.Add(time.Hour).Format(time.RFC3339)+`","end_at":"`+end.Add(2*time.Hour).Format(time.RFC3339)+`","type":"shoot","order_id":"`+orderA.ID+`"}`), "")
@@ -164,14 +177,28 @@ func TestScheduleAPIEndpointsIdempotencyNullableAndIsolation(t *testing.T) {
 	for _, item := range items {
 		switch item["type"] {
 		case "shoot":
-			for _, required := range []string{"order_id", "customer_id", "customer_display_name", "customer_status", "order_status"} {
+			for _, required := range []string{
+				"order_id", "customer_id", "customer_display_name", "customer_status", "order_status",
+				"order_deposit_paid", "order_balance_paid",
+			} {
 				if _, ok := item[required]; !ok {
 					t.Fatalf("shoot summary missing %s: %+v", required, item)
 				}
 			}
+			if _, ok := item["order_price"]; ok {
+				t.Fatalf("shoot without a price must omit order_price: %+v", item)
+			}
+			if _, ok := item["package_shoot_type"]; ok {
+				t.Fatalf("shoot without a package must omit package_shoot_type: %+v", item)
+			}
 		case "hold", "busy":
-			if _, ok := item["order_id"]; ok {
-				t.Fatalf("non-shoot list item leaked order_id: %+v", item)
+			for _, forbidden := range []string{
+				"order_id", "customer_id", "customer_display_name", "customer_status", "order_status",
+				"order_price", "order_deposit_paid", "order_balance_paid", "package_shoot_type",
+			} {
+				if _, ok := item[forbidden]; ok {
+					t.Fatalf("non-shoot list item leaked %s: %+v", forbidden, item)
+				}
 			}
 		default:
 			t.Fatalf("unexpected list item: %+v", item)
@@ -192,6 +219,10 @@ func TestScheduleAPIEndpointsIdempotencyNullableAndIsolation(t *testing.T) {
 	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
 		t.Fatalf("cross-account patch: %d %s", rec.Code, rec.Body.String())
 	}
+	rec = scheduleRequest(t, h, http.MethodGet, "/api/v1/schedule/slots/"+foreignSlotID, tokenA, nil, "")
+	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
+		t.Fatalf("cross-account get: %d %s", rec.Code, rec.Body.String())
+	}
 	rec = scheduleRequest(t, h, http.MethodDelete, "/api/v1/schedule/slots/"+foreignSlotID, tokenA, nil, "")
 	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
 		t.Fatalf("cross-account delete: %d %s", rec.Code, rec.Body.String())
@@ -203,6 +234,65 @@ func TestScheduleAPIEndpointsIdempotencyNullableAndIsolation(t *testing.T) {
 	rec = scheduleRequest(t, h, http.MethodDelete, "/api/v1/schedule/slots/"+*holdResult.Slot.Id, tokenA, nil, "")
 	if rec.Code != http.StatusNotFound || decodeEnvelope(t, rec).Error.Code != "not_found" {
 		t.Fatalf("delete missing hold: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestScheduleAPICreateOverlapsExcludeCancelledShoot(t *testing.T) {
+	h, s, issuer := newCustomerAPIRouter(t)
+	ctx := context.Background()
+	token := issueToken(t, issuer, testAcctID)
+	scope := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	if err := scope.Insert(ctx, "customers",
+		[]string{"id", "display_name", "channel", "status"},
+		"cus-http-overlap", "HTTP 重叠客户", "other", "active",
+	); err != nil {
+		t.Fatalf("seed overlap customer: %v", err)
+	}
+	for _, order := range []struct{ id, status string }{
+		{id: "ord-http-overlap-active", status: "scheduled"},
+		{id: "ord-http-overlap-cancelled", status: "cancelled"},
+	} {
+		if err := scope.Insert(ctx, "orders",
+			[]string{"id", "customer_id", "title", "status"},
+			order.id, "cus-http-overlap", order.id, order.status,
+		); err != nil {
+			t.Fatalf("seed %s: %v", order.id, err)
+		}
+	}
+
+	start := time.Date(2026, 8, 2, 2, 0, 0, 0, time.UTC)
+	end := start.Add(2 * time.Hour)
+	for _, fixture := range []struct {
+		id, slotType string
+		orderID      any
+	}{
+		{id: "slot-http-active-shoot", slotType: "shoot", orderID: "ord-http-overlap-active"},
+		{id: "slot-http-cancelled-shoot", slotType: "shoot", orderID: "ord-http-overlap-cancelled"},
+		{id: "slot-http-hold", slotType: "hold", orderID: nil},
+		{id: "slot-http-busy", slotType: "busy", orderID: nil},
+	} {
+		if err := scope.Insert(ctx, "schedule_slots",
+			[]string{"id", "start_at", "end_at", "type", "order_id"},
+			fixture.id, start, end, fixture.slotType, fixture.orderID,
+		); err != nil {
+			t.Fatalf("seed %s: %v", fixture.id, err)
+		}
+	}
+
+	body := []byte(`{"start_at":"` + start.Add(30*time.Minute).Format(time.RFC3339) + `","end_at":"` + end.Add(-30*time.Minute).Format(time.RFC3339) + `","type":"hold"}`)
+	rec := scheduleRequest(t, h, http.MethodPost, "/api/v1/schedule/slots", token, body, "")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create overlapping hold: %d %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Overlaps []string `json:"overlaps"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := []string{"slot-http-active-shoot", "slot-http-busy", "slot-http-hold"}
+	if !slices.Equal(response.Overlaps, want) {
+		t.Fatalf("overlaps=%v want=%v", response.Overlaps, want)
 	}
 }
 

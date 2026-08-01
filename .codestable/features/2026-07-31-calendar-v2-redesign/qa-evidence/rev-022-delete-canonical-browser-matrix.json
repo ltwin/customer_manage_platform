@@ -1,0 +1,137 @@
+{
+  "feature": "2026-07-31-calendar-v2-redesign",
+  "finding": "REV-022 / QA-015",
+  "tested_on": "2026-08-01",
+  "app": "http://127.0.0.1:5174",
+  "fixture": "http://127.0.0.1:18080",
+  "initial_shell_timezone": "Asia/Shanghai",
+  "settled_settings_timezone": "America/New_York",
+  "deleted_slot": {
+    "id": "hold-1",
+    "start_at": "2026-08-05T01:00:00Z",
+    "date_in_initial_timezone": "2026-08-05",
+    "date_in_settled_timezone": "2026-08-04"
+  },
+  "range_contract": {
+    "obsolete_asia_shanghai": "from=2026-07-26T16:00:00Z&to=2026-09-06T16:00:00Z",
+    "current_america_new_york": "from=2026-07-27T04:00:00Z&to=2026-09-07T04:00:00Z"
+  },
+  "scenarios": [
+    {
+      "name": "slot-only, same turn, release settings then delete",
+      "release_endpoint": "/api/v1/__qa/release-settings-get-and-delete",
+      "final": {
+        "url": "/calendar?date=2026-08-04",
+        "detail_title": "8 月 4 日",
+        "month": "2026-08",
+        "focus_aria_label": "2026-08-04",
+        "timezone": "America/New_York",
+        "hold_dom_count": 0,
+        "hold_server_present": false,
+        "alert": null
+      },
+      "range_requests_after_release": [
+        "from=2026-07-27T04:00:00Z&to=2026-09-07T04:00:00Z"
+      ],
+      "obsolete_range_request_count": 0,
+      "deleted_slot_lookup_request_count": 0
+    },
+    {
+      "name": "slot-only, same turn, release delete then settings",
+      "release_endpoint": "/api/v1/__qa/release-delete-and-settings-get",
+      "final": {
+        "url": "/calendar?date=2026-08-04",
+        "detail_title": "8 月 4 日",
+        "month": "2026-08",
+        "focus_aria_label": "2026-08-04",
+        "timezone": "America/New_York",
+        "hold_dom_count": 0,
+        "hold_server_present": false,
+        "alert": null
+      },
+      "range_requests_after_release": [
+        "from=2026-07-27T04:00:00Z&to=2026-09-07T04:00:00Z"
+      ],
+      "obsolete_range_request_count": 0,
+      "deleted_slot_lookup_request_count": 0
+    },
+    {
+      "name": "invalid date plus slot, same turn",
+      "initial_url": "/calendar?date=not-a-date&slot=hold-1",
+      "release_endpoint": "/api/v1/__qa/release-settings-get-and-delete",
+      "final": {
+        "url": "/calendar?date=2026-08-04",
+        "detail_title": "8 月 4 日",
+        "month": "2026-08",
+        "focus_aria_label": "2026-08-04",
+        "timezone": "America/New_York",
+        "hold_dom_count": 0,
+        "hold_server_present": false,
+        "alert": null
+      },
+      "range_requests_after_release": [
+        "from=2026-07-27T04:00:00Z&to=2026-09-07T04:00:00Z"
+      ],
+      "obsolete_range_request_count": 0,
+      "deleted_slot_lookup_request_count": 0
+    },
+    {
+      "name": "valid date plus slot, settings settles before delete",
+      "initial_url": "/calendar?date=2026-08-05&slot=hold-1",
+      "release_sequence": [
+        "/api/v1/__qa/release-settings-get",
+        "/api/v1/__qa/release-delete"
+      ],
+      "intermediate": {
+        "timezone": "America/New_York",
+        "delete_ui_pending": true,
+        "url": "/calendar?date=2026-08-05&slot=hold-1"
+      },
+      "final": {
+        "url": "/calendar?date=2026-08-05",
+        "detail_title": "8 月 5 日",
+        "month": "2026-08",
+        "focus_aria_label": "2026-08-05",
+        "timezone": "America/New_York",
+        "hold_dom_count": 0,
+        "hold_server_present": false,
+        "alert": null
+      },
+      "range_requests_after_first_release": [
+        "from=2026-07-27T04:00:00Z&to=2026-09-07T04:00:00Z",
+        "from=2026-07-27T04:00:00Z&to=2026-09-07T04:00:00Z"
+      ],
+      "obsolete_range_request_count": 0
+    },
+    {
+      "name": "slot-only, delete settles before settings",
+      "release_sequence": [
+        "/api/v1/__qa/release-delete",
+        "/api/v1/__qa/release-settings-get"
+      ],
+      "intermediate": {
+        "timezone": "Asia/Shanghai",
+        "delete_ui_pending": true,
+        "url": "/calendar?slot=hold-1",
+        "hold_server_present": false,
+        "range_requests": []
+      },
+      "final": {
+        "url": "/calendar?date=2026-08-04",
+        "detail_title": "8 月 4 日",
+        "month": "2026-08",
+        "focus_aria_label": "2026-08-04",
+        "timezone": "America/New_York",
+        "hold_dom_count": 0,
+        "hold_server_present": false,
+        "alert": null
+      },
+      "range_requests_after_settings_release": [
+        "from=2026-07-27T04:00:00Z&to=2026-09-07T04:00:00Z"
+      ],
+      "obsolete_range_request_count": 0,
+      "deleted_slot_lookup_request_count": 0
+    }
+  ],
+  "verdict": "pass"
+}

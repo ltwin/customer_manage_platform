@@ -57,6 +57,23 @@ func (h *handlers) ListScheduleSlots(c *gin.Context, params ListScheduleSlotsPar
 	c.JSON(http.StatusOK, response)
 }
 
+func (h *handlers) GetScheduleSlot(c *gin.Context, id Id) {
+	scope, ok := h.scheduleScope(c)
+	if !ok {
+		return
+	}
+	item, err := h.schedule.Get(c.Request.Context(), scope, id)
+	if h.abortScheduleError(c, err) {
+		return
+	}
+	response, err := toAPIScheduleListItem(item)
+	if err != nil {
+		_ = c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
 func (h *handlers) CreateScheduleSlot(c *gin.Context, params CreateScheduleSlotParams) {
 	scope, ok := h.scheduleScope(c)
 	if !ok {
@@ -282,6 +299,11 @@ func toAPIScheduleListItem(item scheduledomain.ListItem) (ScheduleSlotListItem, 
 		if item.OrderID == nil {
 			return result, errors.New("shoot schedule list item missing order id")
 		}
+		var packageShootType *ShootType
+		if item.PackageShootType != nil {
+			value := ShootType(*item.PackageShootType)
+			packageShootType = &value
+		}
 		err := result.FromShootScheduleSlotListItem(ShootScheduleSlotListItem{
 			AccountId:           stringPointer(item.AccountID),
 			CreatedAt:           timePointer(item.CreatedAt),
@@ -292,9 +314,13 @@ func toAPIScheduleListItem(item scheduledomain.ListItem) (ScheduleSlotListItem, 
 			Id:                  stringPointer(item.ID),
 			Note:                item.Note,
 			OrderId:             *item.OrderID,
+			OrderPrice:          item.OrderPrice,
+			OrderDepositPaid:    item.OrderDepositPaid,
+			OrderBalancePaid:    item.OrderBalancePaid,
 			OrderStatus:         OrderStatus(item.OrderStatus),
 			OrderTitle:          item.OrderTitle,
 			PackageName:         item.PackageName,
+			PackageShootType:    packageShootType,
 			StartAt:             item.StartAt,
 			Type:                Shoot,
 		})

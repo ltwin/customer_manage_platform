@@ -1,0 +1,19 @@
+{
+  "gate_id": "dod-runner",
+  "stage": "implementation.before_review.retry",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "command": "cd backend && go test -p=1 ./internal/settings/... ./internal/schedule/... ./internal/dataexport/... ./internal/dashboard/... ./internal/platform/store/... ./internal/platform/httpapi/... -count=1 -parallel=1",
+      "exit_code": 0,
+      "stdout": "ok  \tgithub.com/samson/customer-manage-platform/backend/internal/settings\t0.215s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/schedule\t6.810s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/dataexport\t6.903s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/dashboard\t2.825s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/store\t34.156s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/httpapi\t28.633s\n",
+      "stderr": "",
+      "id": "CMD-002",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    }
+  ],
+  "providers": {}
+}

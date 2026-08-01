@@ -61,6 +61,8 @@ export type OrderStatus = NonNullable<
 export type ScheduleSlotList =
   paths['/schedule/slots']['get']['responses']['200']['content']['application/json']
 export type ScheduleSlotListItem = ScheduleSlotList[number]
+export type ScheduleSlotByID =
+  paths['/schedule/slots/{id}']['get']['responses']['200']['content']['application/json']
 export type CreateScheduleSlotBody =
   paths['/schedule/slots']['post']['requestBody']['content']['application/json']
 export type CreateScheduleSlotResponse =
@@ -409,9 +411,13 @@ export function deleteOrder(id: string): Promise<void> {
   return request<void>(`/orders/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-export function listScheduleSlots(from: string, to: string): Promise<ScheduleSlotList> {
+export function listScheduleSlots(from: string, to: string, signal?: AbortSignal): Promise<ScheduleSlotList> {
   const search = new URLSearchParams({ from, to })
-  return request<ScheduleSlotList>(`/schedule/slots?${search.toString()}`)
+  return request<ScheduleSlotList>(`/schedule/slots?${search.toString()}`, { signal })
+}
+
+export function getScheduleSlot(id: string, signal?: AbortSignal): Promise<ScheduleSlotByID> {
+  return request<ScheduleSlotByID>(`/schedule/slots/${encodeURIComponent(id)}`, { signal })
 }
 
 export function createScheduleSlot(
@@ -446,6 +452,9 @@ export type Reminder = components['schemas']['Reminder']
 export type ReminderStatus = components['schemas']['ReminderStatus']
 export type ReminderType = components['schemas']['ReminderType']
 export type Settings = components['schemas']['Settings']
+export type ScheduleAvailability = components['schemas']['ScheduleAvailability']
+export type ScheduleAvailabilityWeekly = components['schemas']['ScheduleAvailabilityWeekly']
+export type ScheduleAvailabilityWindow = components['schemas']['ScheduleAvailabilityWindow']
 export type ChurnThreshold = components['schemas']['ChurnThreshold']
 export type ReminderListResponse =
   paths['/reminders']['get']['responses']['200']['content']['application/json']
@@ -500,8 +509,8 @@ export function scanReminders(body: ScanRemindersBody = {}): Promise<ScanReminde
   })
 }
 
-export function getSettings(): Promise<Settings> {
-  return request<Settings>('/settings')
+export function getSettings(signal?: AbortSignal): Promise<Settings> {
+  return request<Settings>('/settings', { signal })
 }
 
 export function updateSettings(body: UpdateSettingsBody): Promise<Settings> {

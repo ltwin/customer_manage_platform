@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import {
@@ -23,6 +23,10 @@ import { useFocusTrap } from '../useFocusTrap'
 import ShootOrderFlow from './ShootOrderFlow'
 import type { FixedScheduleCustomer, ShootOrderDraft } from './ShootOrderFlow'
 import { overlappingSlots } from './calendarModel'
+import {
+  conflictPreviewRequestKey,
+  isCurrentConflictPreviewRequest,
+} from './conflictPreview'
 import {
   clearPendingSchedule,
   clearScheduleDraft,
@@ -100,23 +104,32 @@ export default function ScheduleSlotDialog({
   const navigate = useNavigate()
   const [draft, setDraft] = useState<SlotDraft>(() => emptyDraft(initialDate, fixedType, fixedCustomer))
   const [preview, setPreview] = useState<ScheduleSlotListItem[] | null>(null)
+  const [previewKey, setPreviewKey] = useState<string | null>(null)
+  const previewRequestRef = useRef<{
+    key: string
+    generation: number
+    controller: AbortController | null
+  }>({ key: '', generation: 0, controller: null })
   const [pending, setPending] = useState<PendingScheduleFlow | null>(null)
   const [flowID, setFlowID] = useState(() => newScheduleFlowID())
   const [orderAttempt, setOrderAttempt] = useState(1)
   const [slotAttempt, setSlotAttempt] = useState(1)
   const [candidateReloadToken, setCandidateReloadToken] = useState(0)
   const [customerRefreshRequired, setCustomerRefreshRequired] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [mutationSaving, setMutationSaving] = useState(false)
+  const mutationInFlightRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const [recoveryMode, setRecoveryMode] = useState<ScheduleRecoveryMode>(null)
   const [resumedDraft, setResumedDraft] = useState<ScheduleDraft | null>(null)
   const [failedFlow, setFailedFlow] = useState<PendingScheduleFlow | null>(null)
-  const dialogRef = useFocusTrap<HTMLElement>(open, onClose, !saving)
+  const busy = previewLoading || mutationSaving
+  const dialogRef = useFocusTrap<HTMLElement>(open, closeDialog, !mutationSaving)
 
   useEffect(() => {
     if (!open) return
-    setPreview(null)
+    invalidateConflictPreview()
     setError(null)
     setRecoveryMessage(null)
     setRecoveryMode(null)
@@ -177,6 +190,8 @@ export default function ScheduleSlotDialog({
     }
   }, [open, slot, scheduleDraftId, initialDate, fixedType, fixedCustomer, timezone])
 
+  useEffect(() => () => previewRequestRef.current.controller?.abort(), [])
+
   const resolved = useMemo(() => {
     if (!timezone) return null
     try {
@@ -196,8 +211,49 @@ export default function ScheduleSlotDialog({
 
   function changeDraft(next: SlotDraft) {
     setDraft(next)
-    setPreview(null)
+    invalidateConflictPreview()
     setError(null)
+  }
+
+  function invalidateConflictPreview() {
+    const current = previewRequestRef.current
+    const previewWasLoading = current.controller !== null
+    current.controller?.abort()
+    previewRequestRef.current = {
+      key: '',
+      generation: current.generation + 1,
+      controller: null,
+    }
+    setPreview(null)
+    setPreviewKey(null)
+    if (previewWasLoading) setPreviewLoading(false)
+  }
+
+  function closeDialog() {
+    if (mutationInFlightRef.current) return
+    invalidateConflictPreview()
+    onClose()
+  }
+
+  function beginMutation(): boolean {
+    if (mutationInFlightRef.current) return false
+    mutationInFlightRef.current = true
+    setMutationSaving(true)
+    return true
+  }
+
+  function endMutation(): void {
+    mutationInFlightRef.current = false
+    setMutationSaving(false)
+  }
+
+  async function runMutation(operation: () => Promise<void>): Promise<void> {
+    if (!beginMutation()) return
+    try {
+      await operation()
+    } finally {
+      endMutation()
+    }
   }
 
   async function checkConflicts() {
@@ -213,20 +269,38 @@ export default function ScheduleSlotDialog({
       setError(errorMessage(reason, '档期输入无效'))
       return
     }
-    setSaving(true)
+    const key = conflictPreviewRequestKey(range.startAt, range.endAt, slot?.id)
+    const previous = previewRequestRef.current
+    previous.controller?.abort()
+    const controller = new AbortController()
+    const request = {
+      key,
+      generation: previous.generation + 1,
+      controller,
+    }
+    previewRequestRef.current = request
+    setPreviewLoading(true)
     setError(null)
     try {
-      const items = await listScheduleSlots(range.startAt, range.endAt)
+      const items = await listScheduleSlots(range.startAt, range.endAt, controller.signal)
+      if (!isCurrentConflictPreviewRequest(previewRequestRef.current, request)) return
       setPreview(overlappingSlots(items, range.startAt, range.endAt, slot?.id))
+      setPreviewKey(key)
     } catch (reason) {
+      if (!isCurrentConflictPreviewRequest(previewRequestRef.current, request)) return
       setPreview(null)
+      setPreviewKey(null)
       setError(errorMessage(reason, '冲突预览加载失败，请重试'))
     } finally {
-      setSaving(false)
+      if (isCurrentConflictPreviewRequest(previewRequestRef.current, request)) {
+        previewRequestRef.current = { ...request, controller: null }
+        setPreviewLoading(false)
+      }
     }
   }
 
   async function save() {
+    if (mutationInFlightRef.current) return
     if (!timezone || !resolved) {
       setError('账号时区不可用或日期时间无效')
       return
@@ -237,7 +311,8 @@ export default function ScheduleSlotDialog({
       setError(errorMessage(reason, '档期输入无效'))
       return
     }
-    if (preview === null) {
+    const currentPreviewKey = conflictPreviewRequestKey(resolved.startAt, resolved.endAt, slot?.id)
+    if (preview === null || previewKey !== currentPreviewKey) {
       await checkConflicts()
       return
     }
@@ -249,7 +324,7 @@ export default function ScheduleSlotDialog({
   }
 
   async function saveExisting(id: string, range: { startAt: string; endAt: string }) {
-    setSaving(true)
+    if (!beginMutation()) return
     setError(null)
     const body: UpdateScheduleSlotBody = {
       start_at: range.startAt,
@@ -278,7 +353,7 @@ export default function ScheduleSlotDialog({
         setError(errorMessage(reason, '档期更新失败'))
       }
     } finally {
-      setSaving(false)
+      endMutation()
     }
   }
 
@@ -307,19 +382,19 @@ export default function ScheduleSlotDialog({
 
   async function retryEditedSlotCustomerRefresh() {
     if (!slot?.id || !resolved) return
-    setSaving(true)
+    if (!beginMutation()) return
     try {
       await refreshEditedSlotCustomer(slot.id, resolved)
       setError('客户与订单候选已刷新，请重新检查冲突后确认')
     } catch {
       setError('最新客户与订单候选仍加载失败，请稍后重试')
     } finally {
-      setSaving(false)
+      endMutation()
     }
   }
 
   async function beginCreate(range: { startAt: string; endAt: string }) {
-    setSaving(true)
+    if (!beginMutation()) return
     setError(null)
     try {
       const existing = readPendingSchedule()
@@ -389,7 +464,7 @@ export default function ScheduleSlotDialog({
     } catch (reason) {
       handleFlowFailure(reason)
     } finally {
-      setSaving(false)
+      endMutation()
     }
   }
 
@@ -647,7 +722,7 @@ export default function ScheduleSlotDialog({
 
   async function compensateOrder() {
     if (!pending?.known_order_id) return
-    setSaving(true)
+    if (!beginMutation()) return
     try {
       await updateOrder(pending.known_order_id, { status: 'cancelled' })
       try {
@@ -659,20 +734,20 @@ export default function ScheduleSlotDialog({
     } catch (reason) {
       setError(errorMessage(reason, '撤销订单失败，可选择保留订单并结束'))
     } finally {
-      setSaving(false)
+      endMutation()
     }
   }
 
   async function removeKnownSlot() {
     if (!pending?.known_slot_id) return
-    setSaving(true)
+    if (!beginMutation()) return
     try {
       await deleteScheduleSlot(pending.known_slot_id)
       await keepAndEnd()
     } catch (reason) {
       setError(errorMessage(reason, '删除档期失败'))
     } finally {
-      setSaving(false)
+      endMutation()
     }
   }
 
@@ -680,7 +755,7 @@ export default function ScheduleSlotDialog({
     if (!pending || !timezone) return
     const body = pending.phase === 'slot' ? pending.normalized_body as CreateScheduleSlotBody : null
     if (!body) return
-    setSaving(true)
+    if (!beginMutation()) return
     try {
       const start = instantToLocalDateTime(body.start_at, timezone)
       const end = instantToLocalDateTime(body.end_at, timezone)
@@ -737,7 +812,7 @@ export default function ScheduleSlotDialog({
     } catch (reason) {
       setError(errorMessage(reason, '恢复候选失败'))
     } finally {
-      setSaving(false)
+      endMutation()
     }
   }
 
@@ -768,7 +843,7 @@ export default function ScheduleSlotDialog({
 
   const expired = pending ? pendingScheduleExpired(pending) : false
   return (
-    <div className="overlay open" onClick={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
+    <div className="overlay open" onClick={(event) => { if (event.target === event.currentTarget) closeDialog() }}>
       <section ref={dialogRef} className="dialog schedule-dialog" role="dialog" aria-modal="true" aria-labelledby="scheduleDialogTitle" tabIndex={-1} autoFocus>
         <h2 id="scheduleDialogTitle">{slot ? '编辑档期' : '新建档期'}</h2>
         <div className="dialog-sub">时间按 {timezone ?? '账号时区不可用'}</div>
@@ -781,19 +856,24 @@ export default function ScheduleSlotDialog({
             expired={expired}
             mode={recoveryMode}
             message={recoveryMessage}
-            saving={saving}
+            saving={mutationSaving}
             onResume={() => {
-              setSaving(true)
-              executePending(pending).catch((reason) => handleFlowFailure(reason, pending)).finally(() => setSaving(false))
+              void runMutation(async () => {
+                try {
+                  await executePending(pending)
+                } catch (reason) {
+                  handleFlowFailure(reason, pending)
+                }
+              })
             }}
             onReset={() => { void resetCustomerChanged() }}
-            onKeep={() => { void keepAndEnd() }}
+            onKeep={() => { void runMutation(keepAndEnd) }}
             onCompensate={() => { void compensateOrder() }}
             onDeleteSlot={() => { void removeKnownSlot() }}
-            onAbandon={() => { void keepAndEnd() }}
+            onAbandon={() => { void runMutation(keepAndEnd) }}
           />
         ) : (
-          <>
+          <fieldset className="schedule-dialog-fields" disabled={mutationSaving}>
             {!fixedType && !slot && (
               <div className="segmented" aria-label="档期类型">
                 {(['shoot', 'hold', 'busy'] as const).map((type) => (
@@ -859,18 +939,18 @@ export default function ScheduleSlotDialog({
             {customerRefreshRequired && (
               <div className="schedule-empty-action">
                 <span>必须先刷新最新客户与订单候选，不能继续提交旧候选。</span>
-                <button className="btn btn-sm" type="button" disabled={saving} onClick={() => { void retryEditedSlotCustomerRefresh() }}>
+                <button className="btn btn-sm" type="button" disabled={busy} onClick={() => { void retryEditedSlotCustomerRefresh() }}>
                   重新加载客户与候选
                 </button>
               </div>
             )}
             <div className="dialog-actions">
-              <button className="btn" type="button" disabled={saving} onClick={onClose}>取消</button>
-              <button className="btn btn-primary" type="button" disabled={saving || !timezone || customerRefreshRequired} onClick={() => { void save() }}>
-                {saving ? '处理中' : preview === null ? '检查冲突' : preview.length ? '仍然保存' : slot ? '保存修改' : '保存档期'}
+              <button className="btn" type="button" disabled={mutationSaving} onClick={closeDialog}>取消</button>
+              <button className="btn btn-primary" type="button" disabled={busy || !timezone || customerRefreshRequired} onClick={() => { void save() }}>
+                {busy ? '处理中' : preview === null ? '检查冲突' : preview.length ? '仍然保存' : slot ? '保存修改' : '保存档期'}
               </button>
             </div>
-          </>
+          </fieldset>
         )}
       </section>
     </div>

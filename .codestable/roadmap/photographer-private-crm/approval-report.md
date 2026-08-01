@@ -5,11 +5,17 @@ status: approved
 reason: other
 approvals:
   all-feature-designs: approved
+  calendar-v2-design: approved
   v1-hardening-auth-residual: approved
   v1-hardening-telegram-evidence: approved
   goal-acceptance: approved
   goal-commits: approved
 approval_groups:
+  calendar-v2-design-confirmation:
+    status: approved
+    confirmation_id: "bcf1b5e3-2884-475f-83e1-89543b1dad50"
+    decisions:
+      - calendar-v2-design
   v1-hardening-design-confirmation:
     status: approved
     confirmation_id: "47299893-6531-4ce7-91ad-58f47c895ea1"
@@ -25,8 +31,10 @@ approval_groups:
       - goal-commits
 created_at: 2026-07-22
 answered_at: 2026-07-23
+calendar_v2_design_answered_at: 2026-07-31
 selected_options:
   all-feature-designs: D1-A
+  calendar-v2-design: Option A
   v1-hardening-auth-residual: H1-A
   v1-hardening-telegram-evidence: H2-A
   goal-execution: Option A
@@ -36,12 +44,61 @@ selected_options:
 
 ## Decision History
 
+- 2026-07-31：owner 明确回答“批准 Option A，确认更新后的 13 个 child design baseline；仅将 calendar-v2-redesign design 标记为 approved。”本次确认 ID 为 `bcf1b5e3-2884-475f-83e1-89543b1dad50`；calendar v2 design 已机械升级为 `approved`，既有 Goal execution、commit 与 parent handoff 未扩权或改写。
+- 2026-07-31：新增第 13 个 `calendar-v2-redesign` 后，第四轮独立 design review 已通过；parent resolver 返回 `all-feature-designs-confirmation`。此前 12 个 child 的批准保持原样，本报告新增 `calendar-v2-design` pending decision，等待 owner 对更新后的 13-child design baseline 做统一确认。
 - 2026-07-23：owner 回答“批准”，按推荐 Option A 以一次 owner answer 原子批准 `goal-acceptance` 与 `goal-commits`；Goal execution confirmation ID 为 `89e1d9c5-4956-4ee3-9fd7-0cdb7a19f995`。
 - 2026-07-22：owner 回答“按推荐项批准”，一次性批准 `D1-A + H1-A + H2-A`；confirmation ID 为 `47299893-6531-4ce7-91ad-58f47c895ea1`。
 - D1-A：完整 `v1-hardening` design/checklist 已批准，design 已从 `draft` 机械升级为 `approved`。
 - H1-A：当前 V1 接受无登录限速、30 天 JWT、localStorage Bearer、无改密 API 四项 residual；canonical `auth-hardening-report.md` 已创建为 `open`。
 - H2-A：复用 2026-07-17 owner-attested TG true-external transport/binding；本轮仍 fresh 验证同一 synthetic fixture 的次日 digest payload、调度关联与完整 A24 主链。
 - 上述设计确认不会自动授权 Goal acceptance、自动 commit、push、merge 或部署；本节作为 durable history 保留。
+
+## Calendar V2 Design Confirmation
+
+### Decision Recorded
+
+owner 已选择 Option A：统一确认更新后的 13 个 child design baseline。前 12 个已批准 design 保持不变，仅把通过第四轮独立评审的 `calendar-v2-redesign` 从 `draft` 机械升级为 `approved`。
+
+### Why Now
+
+- `.codestable/features/2026-07-31-calendar-v2-redesign/calendar-v2-redesign-design-review.md` 已为 round 4 `passed`，无 unresolved blocking / important finding。
+- `codestable-workflow-next.py feature --epic-child-batch` 返回 `return-to-cs-epic-batch-loop`。
+- Parent `codestable-workflow-next.py epic` 返回唯一 user gate：`all-feature-designs-confirmation`。
+- 旧 `all-feature-designs` durable history 只覆盖当时的 12 个 child，不能自动扩大到 2026-07-31 新增的第 13 个 child。
+
+### Confirmation Scope
+
+- 批准 `.codestable/features/2026-07-31-calendar-v2-redesign/calendar-v2-redesign-design.md` 与 checklist 的最终范围：Settings availability、export schema v2、shoot 批量摘要、月/周双视图、空档/概览纯计算、移动 CRUD、冲突预览 generation 与响应式工作区。
+- 保持前 12 个 child 的 approved/accepted 历史不变；不回退或重写旧 `schedule-calendar`、`data-export`、`v1-hardening` 证据。
+- 仅把 `calendar-v2-redesign` design 从 `draft` 改为 `approved`，并把 `approvals.calendar-v2-design` 与对应 group 记为 `approved`。
+- 保留 parent `status: handoff`、`current_feature_index: 11` 与 `v1-hardening` implementing 状态；由后续 workflow resolver 决定 GoalPackage/implementation 是否可推进。
+
+### Options
+
+#### Option A — 批准更新后的全部 child design（推荐）
+
+批准当前 calendar v2 design，并将更新后的 13-child design baseline 记为统一确认；随后重跑 parent resolver。
+
+#### Option B — 要求修改 calendar v2 design
+
+保持 `calendar-v2-design` pending、design 为 `draft`，回 `cs-feat` design 阶段按 owner 指定内容修订并重新评审。
+
+### Non-Automatic Actions
+
+本设计确认不会自动授权或执行：
+
+- 修改 parent handoff/current feature index；
+- Goal acceptance 或 scoped commit 对第 13 个 child 的扩权；
+- 创建 commit、push、PR 或 merge；
+- deploy、migration 执行、promotion 或 production cutover；
+- 主动发送消息、修改云资源或真实生产数据。
+
+### Applied Result
+
+- `approvals.calendar-v2-design: approved`。
+- `approval_groups.calendar-v2-design-confirmation.status: approved`，confirmation ID 为 `bcf1b5e3-2884-475f-83e1-89543b1dad50`。
+- calendar v2 design frontmatter 为 `status: approved`。
+- 未修改 parent handoff、current feature index、既有 Goal authorization projection 或任何业务代码；下一动作由 workflow resolver 决定。
 
 ## Decision Recorded
 

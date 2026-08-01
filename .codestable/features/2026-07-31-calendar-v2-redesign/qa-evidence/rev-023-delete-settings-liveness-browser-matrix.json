@@ -1,0 +1,80 @@
+{
+  "feature": "2026-07-31-calendar-v2-redesign",
+  "review_finding": "REV-023",
+  "reviewed_at": "2026-08-01",
+  "branch": "feat/calendar-v2-redesign",
+  "head": "3c28495dbcdc24d33ef4ade71f9baa154d0b51be",
+  "worktree": "/Users/samson/workspace/my_project/customer_manage_platform/.worktrees/calendar-v2-redesign",
+  "browser_origin": "http://127.0.0.1:5174",
+  "mock_origin": "http://127.0.0.1:18080",
+  "wait_contract_ms": 1000,
+  "scenarios": [
+    {
+      "id": "settings-never-settles-then-late-tz2",
+      "start_url": "/calendar?slot=hold-1",
+      "shell_timezone": "Asia/Shanghai",
+      "deferred_settings_timezone": "America/New_York",
+      "observation_after_confirm_ms": 1250,
+      "before_settings_release": {
+        "url": "/calendar?date=2026-08-05",
+        "delete_dialog_present": false,
+        "settings_still_pending": true,
+        "hold_dom_count": 0,
+        "hold_server_present": false,
+        "focus_aria_label": "2026-08-05",
+        "alert_count": 0,
+        "delete_request_count": 1,
+        "old_shanghai_range_gets_after_delete": 0,
+        "extra_settings_gets_after_url_replace": 0
+      },
+      "after_settings_release": {
+        "url": "/calendar?date=2026-08-04",
+        "detail_heading": "8 月 4 日",
+        "focus_aria_label": "2026-08-04",
+        "timezone": "America/New_York",
+        "hold_dom_count": 0,
+        "alert_count": 0,
+        "delete_request_count": 1,
+        "new_york_range_gets": 1,
+        "new_york_range": {
+          "from": "2026-07-27T04:00:00Z",
+          "to": "2026-09-07T04:00:00Z"
+        },
+        "old_shanghai_range_gets_after_delete": 0,
+        "deleted_slot_lookups_after_delete": 0
+      },
+      "verdict": "pass"
+    },
+    {
+      "id": "navigate-away-while-settings-wait-is-active",
+      "start_url": "/calendar?slot=hold-1",
+      "navigation_target": "/customers",
+      "settings_release_after_navigation": true,
+      "final_url": "/customers",
+      "delete_request_count": 1,
+      "calendar_range_or_deleted_slot_gets_after_delete": 0,
+      "stale_calendar_navigation_or_dialog": false,
+      "note": "Customers API 404 alert is an intentional fixture limitation and unrelated to Calendar continuation; URL and request log prove Calendar unmounted and discarded the pending waiter.",
+      "verdict": "pass"
+    },
+    {
+      "id": "settings-401-auth-refresh-never-settles",
+      "start_url": "/calendar?date=2026-08-05&slot=hold-1",
+      "shell_timezone": "Asia/Shanghai",
+      "auth_refresh_pending": true,
+      "observation_after_confirm_ms": 1250,
+      "final_url_while_refresh_pending": "/calendar?date=2026-08-05",
+      "delete_dialog_present": false,
+      "settings_still_pending": true,
+      "hold_dom_count": 0,
+      "hold_server_present": false,
+      "focus_aria_label": "2026-08-05",
+      "alert_count": 0,
+      "delete_request_count": 1,
+      "calendar_range_gets_after_delete": 0,
+      "pending_auth_refreshes": 1,
+      "verdict": "pass"
+    }
+  ],
+  "overall_verdict": "pass"
+}

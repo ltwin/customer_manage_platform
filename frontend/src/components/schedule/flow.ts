@@ -114,13 +114,6 @@ export function scheduleDialogShouldOpen(
   return Boolean(pendingPhase || scheduleDraftID)
 }
 
-export function scheduleDrawerShouldOpen(
-  drawerOpen: boolean,
-  dialogOpen: boolean,
-): boolean {
-  return drawerOpen && !dialogOpen
-}
-
 export function scheduleRecoveryActions(
   flow: PendingScheduleFlow,
   expired: boolean,

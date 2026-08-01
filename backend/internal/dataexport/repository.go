@@ -25,7 +25,7 @@ const packageColumns = "id, account_id, created_at, name, shoot_type, pricing_mo
 const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note"
 const slotColumns = "id, account_id, created_at, start_at, end_at, type, order_id, note"
 const reminderColumns = "id, account_id, created_at, type, customer_id, order_id, due_date, content, status, dedup_key"
-const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, updated_at"
+const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, availability, updated_at"
 
 // PostgresRepository loads the export allowlist without going through paginated domain services.
 type PostgresRepository struct{}
@@ -322,6 +322,7 @@ func loadCustomers(ctx context.Context, scope store.ReadTxAccountScope) ([]custo
 func loadEffectiveSettings(ctx context.Context, scope store.ReadTxAccountScope) (settings.Settings, error) {
 	var stored settings.Settings
 	var thresholds []byte
+	var availability []byte
 	var chatID sql.NullString
 	err := scope.QueryRow(ctx, "settings", settingsColumns, "").Scan(
 		&stored.Timezone,
@@ -330,6 +331,7 @@ func loadEffectiveSettings(ctx context.Context, scope store.ReadTxAccountScope) 
 		&thresholds,
 		&stored.DigestHour,
 		&chatID,
+		&availability,
 		&stored.UpdatedAt,
 	)
 	if errors.Is(err, store.ErrNoRows) {
@@ -341,6 +343,11 @@ func loadEffectiveSettings(ctx context.Context, scope store.ReadTxAccountScope) 
 	if err := json.Unmarshal(thresholds, &stored.ChurnThresholds); err != nil {
 		return settings.Settings{}, err
 	}
+	decodedAvailability, err := settings.DecodeScheduleAvailabilityJSON(availability)
+	if err != nil {
+		return settings.Settings{}, fmt.Errorf("decode stored settings availability: %v", err)
+	}
+	stored.Availability = decodedAvailability
 	stored.TelegramChatID = nullStringPointer(chatID)
 	return settings.EffectiveSettings(stored), nil
 }

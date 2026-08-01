@@ -463,6 +463,17 @@ table.data tbody tr:hover { background: var(--surface-2); }
 .dialog .dialog-sub { font-size: 12.5px; color: var(--muted); margin-bottom: 18px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .schedule-dialog { max-width: 760px; }
+.schedule-dialog-fields,
+.settings-edit-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-edit-fields {
+  display: grid;
+  gap: 14px;
+}
 .schedule-date-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .segmented {
   display: inline-grid;

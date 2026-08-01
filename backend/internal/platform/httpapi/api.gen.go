@@ -100,13 +100,13 @@ func (e CustomerStatus) Valid() bool {
 
 // Defines values for ExportDocumentSchemaVersion.
 const (
-	N1 ExportDocumentSchemaVersion = 1
+	N2 ExportDocumentSchemaVersion = 2
 )
 
 // Valid indicates whether the value is a known member of the ExportDocumentSchemaVersion enum.
 func (e ExportDocumentSchemaVersion) Valid() bool {
 	switch e {
-	case N1:
+	case N2:
 		return true
 	default:
 		return false
@@ -830,6 +830,33 @@ type ReminderStatus string
 // ReminderType defines model for ReminderType.
 type ReminderType string
 
+// ScheduleAvailability defines model for ScheduleAvailability.
+type ScheduleAvailability struct {
+	MinOpeningMinutes int                        `json:"min_opening_minutes"`
+	TurnaroundMinutes int                        `json:"turnaround_minutes"`
+	Weekly            ScheduleAvailabilityWeekly `json:"weekly"`
+}
+
+// ScheduleAvailabilityWeekly defines model for ScheduleAvailabilityWeekly.
+type ScheduleAvailabilityWeekly struct {
+	N1 nullable.Nullable[ScheduleAvailabilityWindow] `json:"1"`
+	N2 nullable.Nullable[ScheduleAvailabilityWindow] `json:"2"`
+	N3 nullable.Nullable[ScheduleAvailabilityWindow] `json:"3"`
+	N4 nullable.Nullable[ScheduleAvailabilityWindow] `json:"4"`
+	N5 nullable.Nullable[ScheduleAvailabilityWindow] `json:"5"`
+	N6 nullable.Nullable[ScheduleAvailabilityWindow] `json:"6"`
+	N7 nullable.Nullable[ScheduleAvailabilityWindow] `json:"7"`
+}
+
+// ScheduleAvailabilityWindow defines model for ScheduleAvailabilityWindow.
+type ScheduleAvailabilityWindow struct {
+	// End 账号时区的本地结束时间，HH:MM；必须晚于 start
+	End string `json:"end"`
+
+	// Start 账号时区的本地开始时间，HH:MM
+	Start string `json:"start"`
+}
+
 // ScheduleConflictDetails order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
 type ScheduleConflictDetails struct {
 	ScheduleSlotId  string    `json:"schedule_slot_id"`
@@ -873,7 +900,8 @@ type ScheduleSlotListItemBase struct {
 
 // Settings defines model for Settings.
 type Settings struct {
-	BirthdayLeadDays int `json:"birthday_lead_days"`
+	Availability     ScheduleAvailability `json:"availability"`
+	BirthdayLeadDays int                  `json:"birthday_lead_days"`
 
 	// ChurnThresholds 默认全类型 180
 	ChurnThresholds []ChurnThreshold `json:"churn_thresholds"`
@@ -907,8 +935,17 @@ type ShootScheduleSlotListItem struct {
 	Id    *string   `json:"id,omitempty"`
 	Note  *string   `json:"note,omitempty"`
 
+	// OrderBalancePaid 订单尾款是否已收
+	OrderBalancePaid bool `json:"order_balance_paid"`
+
+	// OrderDepositPaid 订单定金是否已收
+	OrderDepositPaid bool `json:"order_deposit_paid"`
+
 	// OrderId shoot slot 必返的关联订单 id
 	OrderId string `json:"order_id"`
+
+	// OrderPrice 订单价格，单位为分；订单未设置价格时缺省
+	OrderPrice *int `json:"order_price,omitempty"`
 
 	// OrderStatus 语义与合法跃迁见 §4.2 订单状态机
 	OrderStatus OrderStatus `json:"order_status"`
@@ -917,9 +954,12 @@ type ShootScheduleSlotListItem struct {
 	OrderTitle *string `json:"order_title,omitempty"`
 
 	// PackageName 引用订单所选套系名；未选套系时缺省
-	PackageName *string                       `json:"package_name,omitempty"`
-	StartAt     time.Time                     `json:"start_at"`
-	Type        ShootScheduleSlotListItemType `json:"type"`
+	PackageName *string `json:"package_name,omitempty"`
+
+	// PackageShootType 订单所选套系的拍摄类型；未选套系时缺省
+	PackageShootType *ShootType                    `json:"package_shoot_type,omitempty"`
+	StartAt          time.Time                     `json:"start_at"`
+	Type             ShootScheduleSlotListItemType `json:"type"`
 }
 
 // ShootScheduleSlotListItemType defines model for ShootScheduleSlotListItem.Type.
@@ -945,6 +985,18 @@ type SocialIdentity struct {
 
 // SocialPlatform defines model for SocialPlatform.
 type SocialPlatform string
+
+// UpdateSettingsBody defines model for UpdateSettingsBody.
+type UpdateSettingsBody struct {
+	Availability      *ScheduleAvailability `json:"availability,omitempty"`
+	BirthdayLeadDays  *int                  `json:"birthday_lead_days,omitempty"`
+	ChurnThresholds   *[]ChurnThreshold     `json:"churn_thresholds,omitempty"`
+	DigestHour        *int                  `json:"digest_hour,omitempty"`
+	FollowUpAfterDays *int                  `json:"follow_up_after_days,omitempty"`
+
+	// Timezone IANA 时区
+	Timezone *string `json:"timezone,omitempty"`
+}
 
 // VerificationDispatch defines model for VerificationDispatch.
 type VerificationDispatch struct {
@@ -1283,17 +1335,6 @@ type UpdateScheduleSlotJSONBody struct {
 	Type    *SlotType                 `json:"type,omitempty"`
 }
 
-// UpdateSettingsJSONBody defines parameters for UpdateSettings.
-type UpdateSettingsJSONBody struct {
-	BirthdayLeadDays  *int              `json:"birthday_lead_days,omitempty"`
-	ChurnThresholds   *[]ChurnThreshold `json:"churn_thresholds,omitempty"`
-	DigestHour        *int              `json:"digest_hour,omitempty"`
-	FollowUpAfterDays *int              `json:"follow_up_after_days,omitempty"`
-
-	// Timezone IANA 时区
-	Timezone *string `json:"timezone,omitempty"`
-}
-
 // ScanRemindersJSONRequestBody defines body for ScanReminders for application/json ContentType.
 type ScanRemindersJSONRequestBody ScanRemindersJSONBody
 
@@ -1358,7 +1399,7 @@ type CreateScheduleSlotJSONRequestBody CreateScheduleSlotJSONBody
 type UpdateScheduleSlotJSONRequestBody UpdateScheduleSlotJSONBody
 
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
-type UpdateSettingsJSONRequestBody UpdateSettingsJSONBody
+type UpdateSettingsJSONRequestBody = UpdateSettingsBody
 
 // AsShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a ShootScheduleSlotListItem
 func (t ScheduleSlotListItem) AsShootScheduleSlotListItem() (ShootScheduleSlotListItem, error) {
@@ -1569,6 +1610,9 @@ type ServerInterface interface {
 	// 删除档期（不自动变更订单状态，§4.2）
 	// (DELETE /schedule/slots/{id})
 	DeleteScheduleSlot(c *gin.Context, id Id)
+	// 按账号范围读取单条档期及展示摘要；用于 slot 深链定位
+	// (GET /schedule/slots/{id})
+	GetScheduleSlot(c *gin.Context, id Id)
 	// 更新档期；时间/type/order 变化重验订单与客户矩阵，note-only 不重验外部状态
 	// (PATCH /schedule/slots/{id})
 	UpdateScheduleSlot(c *gin.Context, id Id)
@@ -2713,6 +2757,33 @@ func (siw *ServerInterfaceWrapper) DeleteScheduleSlot(c *gin.Context) {
 	siw.Handler.DeleteScheduleSlot(c, id)
 }
 
+// GetScheduleSlot operation middleware
+func (siw *ServerInterfaceWrapper) GetScheduleSlot(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetScheduleSlot(c, id)
+}
+
 // UpdateScheduleSlot operation middleware
 func (siw *ServerInterfaceWrapper) UpdateScheduleSlot(c *gin.Context) {
 
@@ -2852,6 +2923,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/schedule/slots", wrapper.ListScheduleSlots)
 	router.POST(options.BaseURL+"/schedule/slots", wrapper.CreateScheduleSlot)
 	router.DELETE(options.BaseURL+"/schedule/slots/:id", wrapper.DeleteScheduleSlot)
+	router.GET(options.BaseURL+"/schedule/slots/:id", wrapper.GetScheduleSlot)
 	router.PATCH(options.BaseURL+"/schedule/slots/:id", wrapper.UpdateScheduleSlot)
 	router.GET(options.BaseURL+"/settings", wrapper.GetSettings)
 	router.PATCH(options.BaseURL+"/settings", wrapper.UpdateSettings)

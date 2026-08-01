@@ -5,7 +5,7 @@
 ## 工作流
 
 - 本项目用 CodeStable 管理规格与流程；任何 CodeStable 技能启动前先读 `.codestable/attention.md`。
-- 功能实现从 roadmap 取条目：`.codestable/roadmap/photographer-private-crm/`（12 条子 feature，依赖序）。
+- 功能实现从 roadmap 取条目：`.codestable/roadmap/photographer-private-crm/`（13 条子 feature，依赖序）。
 - 当前执行状态以 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml` 为准；不要从旧 feature 报告或对话推断进度。
 - 聚合验证入口是 `make check`；OpenAPI 变更后运行 `make generate` 并提交 Go/TS 两份生成物。
 

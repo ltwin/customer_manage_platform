@@ -66,7 +66,11 @@ type ListItem struct {
 	CustomerStatus      string
 	OrderStatus         string
 	OrderTitle          *string
+	OrderPrice          *int
+	OrderDepositPaid    bool
+	OrderBalancePaid    bool
 	PackageName         *string
+	PackageShootType    *string
 }
 
 type CustomerChangedError struct {

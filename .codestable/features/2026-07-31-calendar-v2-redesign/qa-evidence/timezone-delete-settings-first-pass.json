@@ -1,0 +1,185 @@
+{
+  "evidence_id": "TRACE-TZ-DELETE-SETTINGS-FIRST-002",
+  "captured_at": "2026-08-01T12:30:50.502Z",
+  "scenario": "QA-fix retest: Settings TZ2 resolves before deferred DELETE",
+  "expected": {
+    "url": "?date=2026-08-05",
+    "selected_date": "2026-08-05",
+    "focus": "2026-08-05",
+    "timezone": "America/New_York",
+    "old_tz1_refresh_after_delete": 0
+  },
+  "actual": {
+    "url": "http://127.0.0.1:5174/calendar?date=2026-08-05",
+    "activeLabel": "2026-08-05",
+    "activeText": "周三5",
+    "detailHeading": "8 月 5 日",
+    "hasHold": false,
+    "headerTimezone": "时间按 America/New_York",
+    "schedule_gets": [
+      {
+        "method": "GET",
+        "path": "/api/v1/schedule/slots",
+        "search": "?from=2026-07-26T16%3A00%3A00Z&to=2026-09-06T16%3A00%3A00Z",
+        "at": "2026-08-01T12:29:52.186Z"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/schedule/slots",
+        "search": "?from=2026-07-27T04%3A00%3A00Z&to=2026-09-07T04%3A00%3A00Z",
+        "at": "2026-08-01T12:30:16.353Z"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/schedule/slots",
+        "search": "?from=2026-07-27T04%3A00%3A00Z&to=2026-09-07T04%3A00%3A00Z",
+        "at": "2026-08-01T12:30:16.582Z"
+      }
+    ],
+    "server_slots": [
+      "shoot-1",
+      "busy-1",
+      "shoot-cancelled",
+      "busy-all-day"
+    ],
+    "pending": {
+      "settings": 0,
+      "deletes": 0,
+      "schedule": 0
+    }
+  },
+  "request_log": [
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/fail-next-settings-get",
+      "search": "",
+      "at": "2026-08-01T12:29:45.534Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "search": "",
+      "at": "2026-08-01T12:29:52.075Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "search": "",
+      "at": "2026-08-01T12:29:52.076Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:29:52.098Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "search": "",
+      "at": "2026-08-01T12:29:52.098Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:29:52.099Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "search": "",
+      "at": "2026-08-01T12:29:52.099Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:29:52.186Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots",
+      "search": "?from=2026-07-26T16%3A00%3A00Z&to=2026-09-06T16%3A00%3A00Z",
+      "at": "2026-08-01T12:29:52.186Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots/hold-1",
+      "search": "",
+      "at": "2026-08-01T12:29:52.187Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/defer-next-settings-get",
+      "search": "",
+      "at": "2026-08-01T12:29:59.184Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/set-settings",
+      "search": "",
+      "at": "2026-08-01T12:29:59.192Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/defer-next-delete",
+      "search": "",
+      "at": "2026-08-01T12:29:59.200Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:30:06.356Z"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/schedule/slots/hold-1",
+      "search": "",
+      "at": "2026-08-01T12:30:07.037Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/release-settings-get",
+      "search": "",
+      "at": "2026-08-01T12:30:16.214Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots",
+      "search": "?from=2026-07-27T04%3A00%3A00Z&to=2026-09-07T04%3A00%3A00Z",
+      "at": "2026-08-01T12:30:16.353Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots/hold-1",
+      "search": "",
+      "at": "2026-08-01T12:30:16.353Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/release-delete",
+      "search": "",
+      "at": "2026-08-01T12:30:16.536Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots",
+      "search": "?from=2026-07-27T04%3A00%3A00Z&to=2026-09-07T04%3A00%3A00Z",
+      "at": "2026-08-01T12:30:16.582Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/__qa/state",
+      "search": "",
+      "at": "2026-08-01T12:30:39.597Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/__qa/state",
+      "search": "",
+      "at": "2026-08-01T12:30:50.500Z"
+    }
+  ]
+}

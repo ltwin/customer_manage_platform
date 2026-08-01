@@ -139,3 +139,12 @@ features:
     qa: .codestable/features/2026-07-22-v1-hardening/v1-hardening-qa.md
     acceptance: .codestable/features/2026-07-22-v1-hardening/v1-hardening-acceptance.md
     status: implementing
+  - slug: calendar-v2-redesign
+    roadmap_item: calendar-v2-redesign
+    feature_dir: .codestable/features/2026-07-31-calendar-v2-redesign
+    design: .codestable/features/2026-07-31-calendar-v2-redesign/calendar-v2-redesign-design.md
+    checklist: .codestable/features/2026-07-31-calendar-v2-redesign/calendar-v2-redesign-checklist.yaml
+    review: .codestable/features/2026-07-31-calendar-v2-redesign/calendar-v2-redesign-review.md
+    qa: .codestable/features/2026-07-31-calendar-v2-redesign/calendar-v2-redesign-qa.md
+    acceptance: .codestable/features/2026-07-31-calendar-v2-redesign/calendar-v2-redesign-acceptance.md
+    status: accepted

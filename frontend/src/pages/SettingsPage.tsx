@@ -7,6 +7,13 @@ import DataExportCard from '../components/DataExportCard'
 import { useShell } from '../components/shellContext'
 import { openTelegramDeepLink } from '../components/telegramBinding'
 import StateNotice from '../components/StateNotice'
+import AvailabilityEditor from './settings/AvailabilityEditor'
+import {
+  applyAvailabilityDraft,
+  fromSettings,
+  validateAvailabilityDraft,
+  type AvailabilitySettingsDraft,
+} from './settings/availabilityDraft'
 import {
   beginPageRead,
   completePageRead,
@@ -37,12 +44,23 @@ export default function SettingsPage() {
   const [bindingError, setBindingError] = useState<string | null>(null)
   const [blockedDeepLink, setBlockedDeepLink] = useState<string | null>(null)
   const bindExpiryTimer = useRef<number | null>(null)
+  const settingsSaveInFlightRef = useRef(false)
 
   const [timezone, setTimezone] = useState('Asia/Shanghai')
   const [birthdayLead, setBirthdayLead] = useState(3)
   const [followUp, setFollowUp] = useState(7)
   const [digestHour, setDigestHour] = useState(9)
   const [thresholds, setThresholds] = useState<ChurnThreshold[]>([])
+  const [availabilityDraft, setAvailabilityDraft] = useState<AvailabilitySettingsDraft | null>(null)
+
+  const hydrateSettingsForm = useCallback((settings: Settings) => {
+    setTimezone(settings.timezone)
+    setBirthdayLead(settings.birthday_lead_days)
+    setFollowUp(settings.follow_up_after_days)
+    setDigestHour(settings.digest_hour)
+    setThresholds(settings.churn_thresholds)
+    setAvailabilityDraft(fromSettings(settings))
+  }, [])
 
   const clearPendingLink = useCallback(() => {
     if (bindExpiryTimer.current !== null) {
@@ -59,11 +77,7 @@ export default function SettingsPage() {
     getSettings()
       .then((s) => {
         setReadState(completePageRead(s, false, ''))
-        setTimezone(s.timezone)
-        setBirthdayLead(s.birthday_lead_days)
-        setFollowUp(s.follow_up_after_days)
-        setDigestHour(s.digest_hour)
-        setThresholds(s.churn_thresholds)
+        hydrateSettingsForm(s)
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -77,7 +91,7 @@ export default function SettingsPage() {
           () => setReloadTick((value) => value + 1),
         ))
       })
-  }, [navigate, reloadTick])
+  }, [hydrateSettingsForm, navigate, reloadTick])
 
   async function onBindTelegram() {
     clearPendingLink()
@@ -113,6 +127,7 @@ export default function SettingsPage() {
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault()
+    if (settingsSaveInFlightRef.current) return
     setFormError(null)
     if (!timezone.trim()) {
       setFormError('时区必填')
@@ -132,16 +147,28 @@ export default function SettingsPage() {
         return
       }
     }
+    if (!availabilityDraft) {
+      setFormError('可约时段尚未加载完成')
+      return
+    }
+    const availabilityValidation = validateAvailabilityDraft(availabilityDraft)
+    if (availabilityValidation.ok === false) {
+      setFormError(availabilityValidation.message)
+      return
+    }
+    settingsSaveInFlightRef.current = true
     setSaving(true)
     try {
-      const next = await updateSettings({
+      const currentBody = {
         timezone: timezone.trim(),
         birthday_lead_days: birthdayLead,
         follow_up_after_days: followUp,
         digest_hour: digestHour,
         churn_thresholds: thresholds,
-      })
+      }
+      const next = await updateSettings(applyAvailabilityDraft(currentBody, availabilityDraft))
       setReadState(completePageRead(next, false, ''))
+      hydrateSettingsForm(next)
       notify('设置已保存')
       retryTimezone()
     } catch (err) {
@@ -151,6 +178,7 @@ export default function SettingsPage() {
       }
       setFormError(err instanceof Error ? err.message : '保存失败')
     } finally {
+      settingsSaveInFlightRef.current = false
       setSaving(false)
     }
   }
@@ -246,10 +274,20 @@ export default function SettingsPage() {
           )}
         </section>
         <form className="card form-stack" onSubmit={onSave}>
+          <fieldset className="settings-edit-fields" disabled={saving || settingsStale}>
           <label>
             账号时区（IANA）
             <input value={timezone} onChange={(e) => setTimezone(e.target.value)} required />
           </label>
+          {availabilityDraft ? (
+            <AvailabilityEditor
+              draft={availabilityDraft}
+              disabled={saving || settingsStale}
+              onChange={setAvailabilityDraft}
+            />
+          ) : (
+            <StateNotice kind="loading" message="正在准备可约时段" />
+          )}
           <label>
             生日提前提醒天数
             <input
@@ -306,10 +344,11 @@ export default function SettingsPage() {
           )}
 
           <div className="topbar-actions">
-            <button className="btn btn-primary" type="submit" disabled={saving || settingsStale}>
+            <button className="btn btn-primary" type="submit" disabled={saving || settingsStale || !availabilityDraft}>
               {saving ? '保存中…' : '保存'}
             </button>
           </div>
+          </fieldset>
         </form>
       </main>
     </>

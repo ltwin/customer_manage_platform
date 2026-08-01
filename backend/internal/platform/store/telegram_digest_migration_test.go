@@ -77,7 +77,7 @@ func TestTelegramDigestMigrationUpDownAndConstraints(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("close before down migration: %v", err)
 	}
-	for index, label := range []string{"auth-attempt-limiter", "account-auth", "Telegram digest"} {
+	for index, label := range []string{"settings-availability", "auth-attempt-limiter", "account-auth", "Telegram digest"} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("migrate down %s (step %d): %v", label, index+1, err)
 		}

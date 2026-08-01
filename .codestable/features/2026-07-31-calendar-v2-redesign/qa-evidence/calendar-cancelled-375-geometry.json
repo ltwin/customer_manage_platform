@@ -1,0 +1,55 @@
+{
+  "events": [
+    {
+      "bottom": 416.90625,
+      "cancelled": false,
+      "height": 27,
+      "right": 697,
+      "text": "全天外出",
+      "width": 117,
+      "x": 580,
+      "y": 389.90625
+    },
+    {
+      "bottom": 978.90625,
+      "cancelled": false,
+      "height": 110,
+      "right": 132.5,
+      "text": "10:00–12:30林夏 · 夏日写真",
+      "width": 58.5,
+      "x": 74,
+      "y": 868.90625
+    },
+    {
+      "bottom": 1000.90625,
+      "cancelled": false,
+      "height": 66,
+      "right": 195,
+      "text": "11:30–13:00器材维护",
+      "width": 58.5,
+      "x": 136.5,
+      "y": 934.90625
+    },
+    {
+      "bottom": 912.90625,
+      "cancelled": false,
+      "height": 88,
+      "right": 384.5,
+      "text": "09:00–11:00品牌预留",
+      "width": 58.5,
+      "x": 326,
+      "y": 824.90625
+    },
+    {
+      "bottom": 956.90625,
+      "cancelled": true,
+      "height": 88,
+      "right": 447,
+      "text": "10:00–12:00周宁 · 已取消棚拍",
+      "width": 58.5,
+      "x": 388.5,
+      "y": 868.90625
+    }
+  ],
+  "holdCancelledOverlap": 0
+}

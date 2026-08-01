@@ -56,7 +56,18 @@ export function overlappingSlots(
   const start = Date.parse(startAt)
   const end = Date.parse(endAt)
   return slots.filter((slot) =>
-    slot.id !== excludeID && Date.parse(slot.start_at) < end && start < Date.parse(slot.end_at))
+    slot.id !== excludeID &&
+    occupiesSchedule(slot) &&
+    Date.parse(slot.start_at) < end &&
+    start < Date.parse(slot.end_at))
+}
+
+export function isCancelledShoot(slot: ScheduleSlotListItem): boolean {
+  return slot.type === 'shoot' && slot.order_status === 'cancelled'
+}
+
+export function occupiesSchedule(slot: ScheduleSlotListItem): boolean {
+  return !isCancelledShoot(slot)
 }
 
 function conflictingSlotIDsForDay(
@@ -73,6 +84,7 @@ function conflictingSlotIDsForDay(
       const a = slots[left]
       const b = slots[right]
       if (!a || !b) continue
+      if (!occupiesSchedule(a) || !occupiesSchedule(b)) continue
       const overlapStart = Math.max(Date.parse(a.start_at), Date.parse(b.start_at), dayStart)
       const overlapEnd = Math.min(Date.parse(a.end_at), Date.parse(b.end_at), dayEnd)
       if (overlapStart >= overlapEnd) continue

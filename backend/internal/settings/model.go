@@ -45,6 +45,7 @@ type Settings struct {
 	ChurnThresholds   []ChurnThreshold
 	DigestHour        int
 	TelegramChatID    *string
+	Availability      ScheduleAvailability
 	UpdatedAt         time.Time
 }
 
@@ -55,6 +56,7 @@ type PatchInput struct {
 	FollowUpAfterDays *int
 	ChurnThresholds   *[]ChurnThreshold
 	DigestHour        *int
+	Availability      *ScheduleAvailability
 }
 
 // DefaultSettings 返回无存储行时的纯默认值（entry 级 churn 默认）。
@@ -65,6 +67,7 @@ func DefaultSettings() Settings {
 		FollowUpAfterDays: DefaultFollowUpAfterDays,
 		ChurnThresholds:   defaultChurnThresholds(),
 		DigestHour:        DefaultDigestHour,
+		Availability:      DefaultScheduleAvailability(),
 	}
 }
 

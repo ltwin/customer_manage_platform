@@ -1,10 +1,13 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/oapi-codegen/nullable"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -36,8 +39,13 @@ func (h *handlers) UpdateSettings(c *gin.Context) {
 		abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
 		return
 	}
+	var rawBody map[string]json.RawMessage
+	if err := c.ShouldBindBodyWith(&rawBody, binding.JSON); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求体格式错误")
+		return
+	}
 	var body UpdateSettingsJSONRequestBody
-	if err := c.ShouldBindJSON(&body); err != nil {
+	if err := c.ShouldBindBodyWith(&body, binding.JSON); err != nil {
 		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求体格式错误")
 		return
 	}
@@ -56,6 +64,13 @@ func (h *handlers) UpdateSettings(c *gin.Context) {
 			})
 		}
 		input.ChurnThresholds = &entries
+	}
+	if rawAvailability, ok := rawBody["availability"]; ok {
+		availability, err := settings.DecodeScheduleAvailabilityJSON(rawAvailability)
+		if h.abortSettingsError(c, err) {
+			return
+		}
+		input.Availability = &availability
 	}
 	s, err := h.settings.Patch(c.Request.Context(), scope, input)
 	if h.abortSettingsError(c, err) {
@@ -109,5 +124,29 @@ func toAPISettings(s settings.Settings) Settings {
 		ChurnThresholds:   thresholds,
 		DigestHour:        s.DigestHour,
 		TelegramChatId:    s.TelegramChatID,
+		Availability:      toAPIScheduleAvailability(s.Availability),
 	}
+}
+
+func toAPIScheduleAvailability(value settings.ScheduleAvailability) ScheduleAvailability {
+	return ScheduleAvailability{
+		Weekly: ScheduleAvailabilityWeekly{
+			N1: toAPIScheduleAvailabilityWindow(value.Weekly.Monday),
+			N2: toAPIScheduleAvailabilityWindow(value.Weekly.Tuesday),
+			N3: toAPIScheduleAvailabilityWindow(value.Weekly.Wednesday),
+			N4: toAPIScheduleAvailabilityWindow(value.Weekly.Thursday),
+			N5: toAPIScheduleAvailabilityWindow(value.Weekly.Friday),
+			N6: toAPIScheduleAvailabilityWindow(value.Weekly.Saturday),
+			N7: toAPIScheduleAvailabilityWindow(value.Weekly.Sunday),
+		},
+		MinOpeningMinutes: value.MinOpeningMinutes,
+		TurnaroundMinutes: value.TurnaroundMinutes,
+	}
+}
+
+func toAPIScheduleAvailabilityWindow(value *settings.ScheduleAvailabilityWindow) nullable.Nullable[ScheduleAvailabilityWindow] {
+	if value == nil {
+		return nullable.NewNullNullable[ScheduleAvailabilityWindow]()
+	}
+	return nullable.NewNullableWithValue(ScheduleAvailabilityWindow{Start: value.Start, End: value.End})
 }

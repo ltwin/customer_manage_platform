@@ -138,6 +138,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.DELETE("/orders/:id", func(c *gin.Context) { h.DeleteOrder(c, c.Param("id")) })
 	protected.GET("/schedule/slots", h.listScheduleSlotsRoute)
 	protected.POST("/schedule/slots", h.createScheduleSlotRoute)
+	protected.GET("/schedule/slots/:id", func(c *gin.Context) { h.GetScheduleSlot(c, c.Param("id")) })
 	protected.PATCH("/schedule/slots/:id", func(c *gin.Context) { h.UpdateScheduleSlot(c, c.Param("id")) })
 	protected.DELETE("/schedule/slots/:id", func(c *gin.Context) { h.DeleteScheduleSlot(c, c.Param("id")) })
 	protected.GET("/packages", h.listPackagesRoute)

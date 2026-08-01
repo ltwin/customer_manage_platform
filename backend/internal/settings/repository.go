@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, updated_at"
+const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, availability, updated_at"
 
 // PostgresRepository 实现 settings.Repository。
 type PostgresRepository struct{}
@@ -21,10 +22,11 @@ func NewPostgresRepository() PostgresRepository {
 
 func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Settings, bool, error) {
 	var (
-		s          Settings
-		thresholds []byte
-		chatID     sql.NullString
-		updatedAt  time.Time
+		s            Settings
+		thresholds   []byte
+		availability []byte
+		chatID       sql.NullString
+		updatedAt    time.Time
 	)
 	err := scope.QueryRow(ctx, "settings", settingsColumns, "").Scan(
 		&s.Timezone,
@@ -33,6 +35,7 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 		&thresholds,
 		&s.DigestHour,
 		&chatID,
+		&availability,
 		&updatedAt,
 	)
 	if errors.Is(err, store.ErrNoRows) {
@@ -46,6 +49,11 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 			return Settings{}, false, err
 		}
 	}
+	decodedAvailability, err := DecodeScheduleAvailabilityJSON(availability)
+	if err != nil {
+		return Settings{}, false, fmt.Errorf("decode stored settings availability: %v", err)
+	}
+	s.Availability = decodedAvailability
 	if chatID.Valid {
 		v := chatID.String
 		s.TelegramChatID = &v
@@ -59,9 +67,13 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 	if err != nil {
 		return Settings{}, err
 	}
+	availability, err := encodeScheduleAvailabilityJSON(settings.Availability)
+	if err != nil {
+		return Settings{}, err
+	}
 	now := time.Now().UTC()
 	ownedColumns := []string{
-		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "updated_at",
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "availability", "updated_at",
 	}
 	if err := scope.Upsert(ctx, "settings",
 		ownedColumns,
@@ -72,6 +84,7 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 		settings.FollowUpAfterDays,
 		thresholds,
 		settings.DigestHour,
+		availability,
 		now,
 	); err != nil {
 		return Settings{}, err

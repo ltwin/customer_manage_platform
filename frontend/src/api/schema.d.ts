@@ -427,7 +427,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 按账号范围读取单条档期及展示摘要；用于 slot 深链定位 */
+        get: operations["getScheduleSlot"];
         put?: never;
         post?: never;
         /** 删除档期（不自动变更订单状态，§4.2） */
@@ -835,6 +836,14 @@ export interface components {
             /** @description 引用订单所选套系名；未选套系时缺省 */
             package_name?: string;
             order_status: components["schemas"]["OrderStatus"];
+            /** @description 订单价格，单位为分；订单未设置价格时缺省 */
+            order_price?: number;
+            /** @description 订单定金是否已收 */
+            order_deposit_paid: boolean;
+            /** @description 订单尾款是否已收 */
+            order_balance_paid: boolean;
+            /** @description 订单所选套系的拍摄类型；未选套系时缺省 */
+            package_shoot_type?: components["schemas"]["ShootType"];
         } & {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -876,6 +885,26 @@ export interface components {
             shoot_type: components["schemas"]["ShootType"];
             days: number;
         };
+        ScheduleAvailabilityWindow: {
+            /** @description 账号时区的本地开始时间，HH:MM */
+            start: string;
+            /** @description 账号时区的本地结束时间，HH:MM；必须晚于 start */
+            end: string;
+        };
+        ScheduleAvailabilityWeekly: {
+            1: components["schemas"]["ScheduleAvailabilityWindow"] | null;
+            2: components["schemas"]["ScheduleAvailabilityWindow"] | null;
+            3: components["schemas"]["ScheduleAvailabilityWindow"] | null;
+            4: components["schemas"]["ScheduleAvailabilityWindow"] | null;
+            5: components["schemas"]["ScheduleAvailabilityWindow"] | null;
+            6: components["schemas"]["ScheduleAvailabilityWindow"] | null;
+            7: components["schemas"]["ScheduleAvailabilityWindow"] | null;
+        };
+        ScheduleAvailability: {
+            weekly: components["schemas"]["ScheduleAvailabilityWeekly"];
+            min_opening_minutes: number;
+            turnaround_minutes: number;
+        };
         Settings: {
             /** @description IANA，默认 Asia/Shanghai；所有 date-only 判定按此时区（§4.1） */
             timezone: string;
@@ -891,6 +920,16 @@ export interface components {
              */
             digest_hour: number;
             telegram_chat_id?: string;
+            availability: components["schemas"]["ScheduleAvailability"];
+        };
+        UpdateSettingsBody: {
+            /** @description IANA 时区 */
+            timezone?: string;
+            birthday_lead_days?: number;
+            follow_up_after_days?: number;
+            churn_thresholds?: components["schemas"]["ChurnThreshold"][];
+            digest_hour?: number;
+            availability?: components["schemas"]["ScheduleAvailability"];
         };
         ExportCounts: {
             customers: number;
@@ -905,7 +944,7 @@ export interface components {
             /** Format: date-time */
             exported_at: string;
             /** @enum {integer} */
-            schema_version: 1;
+            schema_version: 2;
             counts: components["schemas"]["ExportCounts"];
             customers: components["schemas"]["Customer"][];
             social_identities: components["schemas"]["SocialIdentity"][];
@@ -2195,6 +2234,31 @@ export interface operations {
             500: components["responses"]["Internal"];
         };
     };
+    getScheduleSlot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 单条档期展示摘要 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleSlotListItem"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
     deleteScheduleSlot: {
         parameters: {
             query?: never;
@@ -2451,14 +2515,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    /** @description IANA 时区 */
-                    timezone?: string;
-                    birthday_lead_days?: number;
-                    follow_up_after_days?: number;
-                    churn_thresholds?: components["schemas"]["ChurnThreshold"][];
-                    digest_hour?: number;
-                };
+                "application/json": components["schemas"]["UpdateSettingsBody"];
             };
         };
         responses: {

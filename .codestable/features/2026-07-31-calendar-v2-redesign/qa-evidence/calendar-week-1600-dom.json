@@ -1,0 +1,23 @@
+{
+  "active": {
+    "tag": "BUTTON",
+    "text": ""
+  },
+  "dialog": null,
+  "document": {
+    "bodyClientWidth": 1600,
+    "bodyScrollWidth": 1600,
+    "clientWidth": 1600,
+    "scrollWidth": 1600
+  },
+  "events": [],
+  "viewport": {
+    "height": 1000,
+    "width": 1600
+  },
+  "workspace": {
+    "clientWidth": 1308,
+    "layoutMode": "side-panel",
+    "scrollWidth": 1308
+  }
+}

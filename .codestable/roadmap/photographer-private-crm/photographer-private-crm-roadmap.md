@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: photographer-private-crm
 status: active
 created: 2026-07-05
-last_reviewed: 2026-07-13
+last_reviewed: 2026-07-31
 tags: [crm, photographer, mvp, reminder, scheduling]
 related_requirements: [customer-profile, package-catalog, order-tracking, schedule-calendar, reminder-engine]
 related_architecture: [001-account-scoped-data-model, 002-postgresql-as-primary-store, 003-monolith-first-gin-openapi]
@@ -25,7 +25,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 - 客户档案：30 秒建档、多平台身份、渠道归因、转介绍、偏好备注、归档与合并（对应 req `customer-profile`）
 - 套系管理：商品定义（类型 / 定价方式 / 交付参数）+ 上下架 + 删除（引用完整性保护）
 - 订单记录：状态流转 + 定金 / 尾款标记（轻量，不碰支付）
-- 档期管理：月历视图、客户 / 订单关联、跨日与全天占用、重叠提示和异常恢复
+- 档期管理：月/周双视图、客户 / 订单关联、跨日与全天占用、重叠与转场提示、可约空档回答、移动端完整操作和异常恢复
 - 提醒引擎：生日 / 拍后回访 / 流失预警，幂等生成，参数可配置
 - 触达：Telegram Bot 绑定与每日摘要 + dashboard 今日待办
 - 数据资产可带走：全量 JSON 导出（4.6 契约）
@@ -46,7 +46,7 @@ Owner 是摄影师，客户全部来自私域（微信 / QQ / Telegram），客�
 
 | 判断项 | 结论 |
 |---|---|
-| 为什么不是 single feature | 七个模块、十二条可独立交付的子 feature、跨模块接口契约（实体模型 / API / 提醒规则 / TG 协议 / 导出）、依赖构成 DAG，单 feature 装不下 |
+| 为什么不是 single feature | 七个模块、十三条可独立交付的子 feature、跨模块接口契约（实体模型 / API / 提醒规则 / TG 协议 / 导出）、依赖构成 DAG，单 feature 装不下 |
 | 为什么不是 brainstorm | 脑暴已完成（2026-07-05），定位 / 形态 / 优先级 / 边界均已拍板，目标与完成信号可写成可证伪条目 |
 | roadmap 边界 | 只覆盖首版"先治忘"范围（上表）；画像分析、产品化、选片交付明确不做 |
 | 最小闭环 | 第 2 条 `customer-core` 完成后：登录 → 30 秒建档（含渠道、1 个或多个社交身份）→ 列表 / 详情可查——"治忘"的第一块地基端到端可演示 |
@@ -59,9 +59,9 @@ photographer-private-crm
 ├── customer   客户域：客户聚合（身份 / 渠道 / 转介绍 / 备注 / 渐进字段 / 合并 / 归档）
 ├── package    套系域：拍摄服务商品的静态定义、上下架与删除
 ├── order      订单域：订单状态机 + 定金尾款标记
-├── schedule   档期域：时间段占用、日历查询、重叠提示
+├── schedule   档期域：时间段占用、日历查询、重叠提示与展示读模型
 ├── reminder   提醒与触达域：规则扫描、幂等提醒生成、TG Bot 绑定与推送
-└── webapp     Web 前端：各域页面 + dashboard + 移动轻路径
+└── webapp     Web 前端：各域页面 + dashboard + 响应式完整操作路径
 ```
 
 ### platform · 平台基座
@@ -89,19 +89,19 @@ photographer-private-crm
 - **Depth 判断**：deep——状态机合法跃迁与时间戳规则藏在域内，callers 只调 PATCH 并处理 409。
 
 ### schedule · 档期域
-- **职责**：时间段（slot）创建 / 查询 / 重叠检测；slot 可关联订单也可为独立忙碌块，支持跨日与全天占用并按账号时区落到相交自然日。不管订单状态（创建 / 删除 slot 不反向改订单）。
-- **承载的子 feature**：schedule-calendar
+- **职责**：时间段（slot）创建 / 查询 / 重叠检测；slot 可关联订单也可为独立忙碌块，支持跨日与全天占用并按账号时区落到相交自然日；为档期展示批量装配订单、客户与套系摘要。不管订单状态（创建 / 删除 slot 不反向改订单），可约空档与周/月布局由 webapp 基于 slots + Settings 纯派生。
+- **承载的子 feature**：schedule-calendar、calendar-v2-redesign
 - **触碰的现有代码**：无
 - **Depth 判断**：deep——重叠检测与区间查询藏在域内。
 
 ### reminder · 提醒与触达域
-- **职责**：按规则（生日 / 回访 / 流失）每日扫描客户与订单数据、幂等生成提醒；提醒完成 / 忽略；账号级 Settings（时区、提醒参数、digest_hour、telegram_chat_id）归 `backend/internal/settings` 域包，作为 reminder、`GET /me` 与后续 telegram-digest 的配置来源；TG Bot 绑定与每日摘要推送仍由后续条目实现。**刻意不拆独立"通知模块"**——首版单通道（TG），拆出来是 pass-through 假 seam；TG 以 injected port 形式存在于本域内（见 4.5）。
+- **职责**：按规则（生日 / 回访 / 流失）每日扫描客户与订单数据、幂等生成提醒；提醒完成 / 忽略；账号级 Settings（时区、提醒参数、digest_hour、telegram_chat_id、可约作息与转场缓冲）归 `backend/internal/settings` 域包，作为 reminder、`GET /me`、calendar 与 telegram-digest 的配置来源；TG Bot 绑定与每日摘要推送仍由后续条目实现。**刻意不拆独立"通知模块"**——首版单通道（TG），拆出来是 pass-through 假 seam；TG 以 injected port 形式存在于本域内（见 4.5）。
 - **承载的子 feature**：reminder-engine、telegram-digest
 - **触碰的现有代码**：backend reminder/settings 域包、platform store/httpapi 与 server composition root、customer merge、webapp 提醒/设置页及客户档案提醒 tab
 - **Depth 判断**：deep——规则参数、幂等键、扫描窗口全部藏在域内，对外只有 Reminder 资源和摘要推送。
 
 ### webapp · Web 前端
-- **职责**：所有域的页面 + dashboard 聚合面板 + 移动轻路径（查档期 / 搜客户 / 记备注）；CustomerAvatar/CustomerPicker 收口跨页面的鉴权头像与客户选择体验。只消费 4.1 定义的 HTTP API，无后端私有耦合。
+- **职责**：所有域的页面 + dashboard 聚合面板 + 响应式操作路径；档期页在桌面与移动端都支持查询和 CRUD，周/月布局、可约空档、利用率与转场提示由生成 API DTO 纯派生；CustomerAvatar/CustomerPicker 收口跨页面的鉴权头像与客户选择体验。只消费 4.1 定义的 HTTP API，无后端私有耦合。
 - **承载的子 feature**：跨条目（每条子 feature 交付各自的 UI 垂直切片），dashboard 单列一条
 - **Depth 判断**：不适用（展示层）；约束是"只经 API seam 取数"。
 
@@ -190,8 +190,15 @@ Reminder:        type*(birthday|follow_up|churn|custom), customer_id?, order_id?
 Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                  birthday_lead_days*(默认 3), follow_up_after_days*(默认 7),
                  churn_thresholds*: [{shoot_type, days}](默认全类型 180),
-                 digest_hour*(0-23, 默认 9, 按 timezone), telegram_chat_id?
+                 digest_hour*(0-23, 默认 9, 按 timezone), telegram_chat_id?,
+                 availability*: {
+                   weekly*: {"1".."7": {start*(HH:MM), end*(HH:MM)} | null},
+                   min_opening_minutes*(15..480, 默认 120),
+                   turnaround_minutes*(0..240, 默认 60)
+                 }
 ```
+
+**可约偏好语义（calendar-v2-redesign 增量）**：`weekly` 使用 ISO 星期 `"1"`（周一）到 `"7"`（周日）的七个完整必填 key，禁止额外 key；每天只有一个本地时间窗口或 `null`，`end > start`。默认周一至周五 `10:00–19:00`、周六周日 `09:00–20:00`，时区只读同一 Settings.timezone。可约空档 = 工作窗口减去未取消的 shoot/hold/busy；短于 `min_opening_minutes` 的碎片不对外报告。`turnaround_minutes` 只产生软提醒，不阻止保存、不计硬冲突。recurring 本地时间按 Temporal `compatible`（fold earlier、gap 向后平移）解释；解析后 `end <= start` 的自然日 fail-closed，不生成空档或利用率。
 
 **订单状态语义与跃迁**：
 - 语义：consulting 咨询中 ｜ scheduled 已定档 ｜ shot 已拍摄 ｜ selected 已选片 ｜ retouching 精修中 ｜ delivered 已交付（照片已给客户）｜ closed 完结（服务与收款均完成）｜ cancelled 取消（含坏账，note 写原因）
@@ -338,7 +345,9 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                     6 周可见网格的账号本地日界再转 UTC，不只查自然月
                                     列表项为以 type 判别的 ScheduleSlotListItem union：shoot variant
                                       必返 order_id/customer_id/customer_display_name/customer_status/
-                                      order_status，order_title/package_name 因源字段可空而可选；
+                                      order_status/order_deposit_paid/order_balance_paid，
+                                      order_title/order_price/package_name/package_shoot_type 因源字段
+                                      可空而可选；
                                       hold/busy variant 无引用摘要（repository batch 组装，禁 N+1）
   POST   /schedule/slots            Header: Idempotency-Key?；Body:
                                     {start_at, end_at, type, order_id?, note?}
@@ -375,7 +384,12 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                     → { created: int, skipped: int, auto_dismissed: int }
                                     （鉴权同 4.1；每日定时任务与手动触发唯一共用入口）
 设置
-  GET/PATCH /settings               （shape 见 4.2 Settings）
+  GET/PATCH /settings               （shape 见 4.2 Settings）；GET 对无存储行返回含完整
+                                    availability 的服务端有效默认值。PATCH 的 availability 是整体
+                                    替换；weekly 缺键、额外键、坏 HH:MM、end<=start 或阈值越界
+                                    → 400 validation_failed 且旧值不变。Settings handler 对该嵌套
+                                    对象使用局部 strict decode/原始 JSON 校验，不依赖普通 binding
+                                    静默丢弃未知键；损坏的持久化 JSON fail-closed → 500，不回落默认。
   POST   /settings/telegram/bind-token → { token, deep_link }   （绑定流程见 4.5）
 dashboard
   GET    /dashboard →
@@ -516,14 +530,14 @@ Port:   TelegramPort { sendMessage(chat_id, text) error }
 
 ```
 GET /export → application/json（Content-Disposition 附件）
-{ exported_at, schema_version: 1,
+{ exported_at, schema_version: 2,
   counts: { customers, social_identities, customer_notes, packages, orders,
             schedule_slots, reminders },
   customers[], social_identities[], customer_notes[], packages[], orders[],
   schedule_slots[], reminders[], settings }        // 各数组 shape 全部按 4.2
 ```
 
-**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。
+**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。
 
 ### 4.x 共享数据结构 / 状态
 
@@ -567,6 +581,9 @@ GET /export → application/json（Content-Disposition 附件）
 12. **v1-hardening** — 首版收口：空态/错误态/加载态清扫、移动轻路径（查档期/搜客户/记备注）、回归清单、README 使用说明
     - 所属模块：跨模块 ｜ 依赖：customer-avatar, telegram-digest, dashboard, data-export ｜ 状态：in-progress ｜ 对应 feature：2026-07-22-v1-hardening
     - 备注：完成信号：375px 宽度下三条轻路径可完成；回归清单逐条打勾归档；README 覆盖部署/备份/凭证操作
+13. **calendar-v2-redesign** — 档期工作台增量：月/周双视图、真实可约空档、转场提醒、订单款项/套系摘要和移动端完整 CRUD
+    - 所属模块：platform + reminder/settings + schedule + webapp ｜ 依赖：schedule-calendar, reminder-engine, dashboard, data-export ｜ 状态：done ｜ 对应 feature：2026-07-31-calendar-v2-redesign
+    - 备注：本条是新增量，不回退或改写已 done 的 `schedule-calendar` / `data-export` 历史。完成信号：Settings availability 迁移、严格 PATCH、有效默认与 schema-v2 导出 parity 通过；shoot slot 在 schedule repository 内批量装配价格/收款/套系拍摄类型且 dashboard 回归无 N+1；月/周视图、未来 14 天空档（最多展示 8 天、复制前 5 天）、shoot+hold 利用率、转场软提醒、取消降级和桌面/移动 CRUD 可用；周日默认 09:00–20:00、单日单窗口、Temporal compatible DST 语义有确定性测试；复用 ScheduleSlotDialog 的 journal/幂等/unknown recovery，并以 conflict preview generation 保证确认范围与保存范围一致；1600/1280/375 记录实际 workspace 宽度、layout mode、DOM/focus 与 overflow 证据；不新增 openings/overview/book、拖拽、重复规则、多窗口、自助预约或主动消息发送。
 
 **最小闭环**：第 2 条 `customer-core` 做完后，登录 → 30 秒建一个带渠道、1 个或多个社交身份的客户 → 列表搜到、详情看到——端到端最窄路径可演示。
 
@@ -577,10 +594,10 @@ GET /export → application/json（Content-Disposition 附件）
 | 客户集中建档、30 秒录入、多平台归一（req customer-profile） | 2, 3, 4 | 多身份建档计时演示 + merge/归档测试 + 头像条件写/并发/恢复 API 证据 + 全选择面截图 | test + API + screenshot | yes |
 | 渠道归因：每个客户带来源渠道可筛选 | 2 | GET /customers?channel= 用例 | test | yes |
 | 再也不忘：三类提醒准确且不重复，主动送达 | 8, 9, 10 | 幂等双跑测试 + 时区日界用例 + TG 真机截图 + dashboard | test + screenshot | yes |
-| 档期 10 秒可答、30 秒可靠排期、与客户套系关联 | 6, 7 | 月历/客户档案两入口计时演示 + 跨日/全天 + overlaps 明细 + 幂等重放/结果未知恢复用例 | test + screenshot | yes |
+| 档期一眼可答、30 秒可靠排期、与客户套系关联 | 6, 7, 13 | 月历/周历/空档文案与客户档案两入口演示 + 跨日/全天 + overlaps/转场明细 + 幂等重放/结果未知恢复用例 | test + API + screenshot | yes |
 | 订单状态与定金尾款不漏 | 6, 10 | 跃迁矩阵测试（含时间戳/unpaid_balance）+ 筛选核对 | test | yes |
 | 套系参数有结构化的家 | 5 | CRUD + 上下架过滤 + 删除引用完整性用例 | test | yes |
-| 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 11, 12 | make check + 基座过滤测试 + data-export owner 决策记录；reference-only 则核对 JSON counts/边界，媒体包则核对 exact-generation manifest/key/object count/checksum | command + test + decision | yes |
+| 可持续基线：账号隔离 + 全绿验证命令 + 数据可带走 | 1, 11, 12, 13 | make check + 基座过滤测试 + schema-v2 Settings 导出 parity；reference-only 核对 JSON counts/边界 | command + test + decision | yes |
 | 首版整体完成信号 | 全部 | 一条链路演示：建档→套系→订单→档期→标定金→次日 TG 摘要→dashboard 五卡有数 | acceptance report | yes |
 
 ## 6. 排期思路与深度规划底稿
@@ -611,7 +628,7 @@ GET /export → application/json（Content-Disposition 附件）
   2. ✅ 存储引擎：PostgreSQL（2026-07-05 owner 拍板，理由见第 4 节头注；已落 ADR-002；大数据类需求二期按需引入专用存储）
   3. ✅ 部署形态与 PII 边界：阿里云 ECS 自部署（应用 + PostgreSQL 均自装，2026-07-05 owner 拍板）；备份与导出文件保管策略在 platform-skeleton / v1-hardening 细化（建议 pg_dump 定时 + 异地副本）；TG token 走环境变量已写入 4.5
 - ✅ 「渠道」「线索」已补入 CONTEXT.md（2026-07-06，cs-domain；线索定义为"无成交订单的客户"）；技术栈已落 ADR-002（PostgreSQL）与 ADR-003（Gin + JSON/OpenAPI）。
-- 剩余未起草 req 仅提醒引擎；档期已由 `2026-07-09-schedule-calendar` 落地并在验收后升级为 current，订单/套系也已随已完成 feature 回填 current。
+- 剩余未起草 req 仅提醒引擎；档期主体已由 `2026-07-09-schedule-calendar` 落地并升级为 current，2026-07-31 owner 另批准 `calendar-v2-redesign` 增量，不改写首版完成历史。
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
 - **reminder-engine 已知边界（2026-07-13 acceptance）**：① `digest_hour` 早于每日 runner 首次跨日扫描完成时刻时可能出现摘要空窗，telegram-digest 应在推送前顺带触发幂等扫描；② 复购触发旧 churn 自动 dismissed 后若新订单再取消，既有 churn dedup 行不会回到 pending，可能静默到产生新的最近成交单；③ 账号时区向西修改可能让检查点暂时领先本地日期，后续自然日推进后自愈。三项均不改变本 feature 已验收边界，后续消费/迭代需显式读取。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
@@ -621,6 +638,7 @@ GET /export → application/json（Content-Disposition 附件）
 
 ## 8. 变更日志
 
+- 2026-07-31（calendar-v2-redesign owner 批准）：新增条目 13 作为 roadmap-owned 增量，不回退旧 `schedule-calendar` / `data-export` done 状态。§2/§3 收编月/周双视图、可约空档回答、转场软提醒和移动端完整 CRUD；§4.2 给 Settings 增严格 ISO weekday availability（周日默认 09:00–20:00、单日单窗口、最小空档 120 分钟、转场 60 分钟、Temporal compatible DST）；§4.3 扩 shoot slot 批量摘要为价格/定金/尾款/套系拍摄类型并要求 Settings 局部 strict decode；§4.6 因 required availability 把导出 schema_version 升到 2 并要求非默认 Settings parity。openings/overview 继续由 webapp 对短窗口纯计算，不新增聚合端点；旧可靠写流程保留并补 conflict preview generation。
 - 2026-07-13（reminder-engine acceptance）：条目 8 完成；Settings 明确归 `backend/internal/settings`，`GET /reminders` 固定 `due_date ASC,id ASC`，birthday dedup 年份明确为生日发生日年份，custom dedup 固定为 `custom:{reminder_id}`；记录 digest 空窗、复购取消后 churn 静默和时区西移检查点自愈三项已知边界。
 - 2026-07-13（customer-avatar owner 选择）：merged source 默认保留合并时的头像且 GET 可读，但 PUT 继续 `409 customer_merged`，DELETE 改为唯一 cleanup-only PII 清理例外；它只能清 pointer 并进入精确代次 GC，不恢复 merged 档案其他编辑能力。owner 同时接受首版 GC 默认值：24h grace、每小时 runner、每账号每 tick 各一页 object inventory/current-pointer audit +100 due。
 - 2026-07-13（customer-avatar roadmap round 10 收敛）：generation 模型继续补齐四个边界。① 新增独立 `avatar_revision=ar-{非负 bigint}`，PUT/DELETE If-Match 用 revision，content v/ETag 继续用 checksum，关闭 A→B→A ABA；② pre-current generation 只要出现 GC row 就永久烧毁并换 fresh object_id，避免 DB session 丢失后的在途 Delete 与原 PUT 重新晋升同一 key；③ desired=current 只有完整验证实际 generation 后才 no-op 200，缺失/损坏走 revision CAS 的 fresh generation 修复；④ 一致备份/OSS copy 改为 exact-generation manifest/key/object_id 核验，并把 signal-aware root context、HTTP graceful shutdown 与 runner 有界退出纳入本 feature。

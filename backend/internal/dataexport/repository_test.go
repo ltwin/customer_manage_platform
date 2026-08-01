@@ -170,8 +170,10 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 		}
 	}
 	if err := scope.Insert(ctx, "settings",
-		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "telegram_chat_id", "updated_at"},
-		"Asia/Tokyo", 5, 9, []byte(`[{"shoot_type":"portrait","days":90}]`), 7, "fixture-chat", createdAt); err != nil {
+		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "telegram_chat_id", "availability", "updated_at"},
+		"Asia/Tokyo", 5, 9, []byte(`[{"shoot_type":"portrait","days":90}]`), 7, "fixture-chat",
+		[]byte(`{"weekly":{"1":{"start":"08:30","end":"17:30"},"2":null,"3":{"start":"10:00","end":"19:00"},"4":{"start":"10:00","end":"19:00"},"5":{"start":"10:00","end":"19:00"},"6":{"start":"09:00","end":"20:00"},"7":null},"min_opening_minutes":90,"turnaround_minutes":30}`),
+		createdAt); err != nil {
 		t.Fatalf("insert settings: %v", err)
 	}
 
@@ -229,7 +231,20 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 			},
 			DigestHour:     7,
 			TelegramChatID: testPointer("fixture-chat"),
-			UpdatedAt:      createdAt,
+			Availability: settings.ScheduleAvailability{
+				Weekly: settings.ScheduleAvailabilityWeekly{
+					Monday:    testAvailabilityWindow("08:30", "17:30"),
+					Tuesday:   nil,
+					Wednesday: testAvailabilityWindow("10:00", "19:00"),
+					Thursday:  testAvailabilityWindow("10:00", "19:00"),
+					Friday:    testAvailabilityWindow("10:00", "19:00"),
+					Saturday:  testAvailabilityWindow("09:00", "20:00"),
+					Sunday:    nil,
+				},
+				MinOpeningMinutes: 90,
+				TurnaroundMinutes: 30,
+			},
+			UpdatedAt: createdAt,
 		},
 	}
 	if got, want := canonicalSnapshotTimes(snapshot), canonicalSnapshotTimes(expected); !reflect.DeepEqual(got, want) {
@@ -242,6 +257,10 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 	if got, want := canonicalSettingsTime(snapshot.Settings), canonicalSettingsTime(settingsView); !reflect.DeepEqual(got, want) {
 		t.Fatalf("export settings differ from settings service: export=%+v service=%+v", snapshot.Settings, settingsView)
 	}
+}
+
+func testAvailabilityWindow(start, end string) *settings.ScheduleAvailabilityWindow {
+	return &settings.ScheduleAvailabilityWindow{Start: start, End: end}
 }
 
 func TestPostgresRepositoryUsesOneBatchReadPerExportTableAndNoCountQuery(t *testing.T) {

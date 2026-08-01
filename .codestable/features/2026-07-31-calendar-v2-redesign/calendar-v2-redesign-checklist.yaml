@@ -1,0 +1,107 @@
+feature: 2026-07-31-calendar-v2-redesign
+created: 2026-07-31
+
+steps:
+  - action: "S1 契约基线：对齐 requirement、roadmap、OpenAPI 与 ExportDocument 版本策略，并生成 Go/TypeScript 契约类型"
+    exit_signal: "周/月视图、移动写操作、Settings availability、shoot 摘要字段与 data export compatibility 均有权威来源，make generate-check 通过"
+    status: done
+  - action: "S2 Settings 持久化、API 与导出：交付 availability migration、有效默认值、整体更新校验、账号隔离和 dataexport 显式投影"
+    exit_signal: "无行、旧行、合法/非法更新、损坏 JSON、双账号和非默认导出 parity 测试全部通过"
+    status: done
+  - action: "S3 schedule 展示读模型：批量装配订单款项与套系拍摄类型摘要"
+    exit_signal: "shoot list item 返回新增摘要，hold/busy union 不泄漏字段，HTTP/dashboard 回归通过且无逐行查询"
+    status: done
+  - action: "S4 日历纯计算模型：实现取消排除、周泳道、转场、空档与月度概览"
+    exit_signal: "DST、跨日、全天、端点相接、重叠簇、取消和阈值边界的确定性测试全部通过"
+    status: done
+  - action: "S5 工作区结构与交互：完成月/周、筛选、导航、详情面板、空档弹层和容器 layout-mode seam"
+    exit_signal: "静态 fixture 下 side-panel/bottom-sheet DOM 语义可切换，1600/1280 无页面级横向溢出"
+    status: done
+  - action: "S6 真实状态与写流程接线：接入 Settings/slots、深链、既有 ScheduleSlotDialog、删除与重拉，并保护 conflict preview generation"
+    exit_signal: "真实 API 下 CRUD、历史补录、unknown recovery、customer_changed、取消降级和错误重试保持语义，旧 preview 不覆盖新范围"
+    status: done
+  - action: "S7 Settings UI 与体验收尾：交付独立 availability draft/validator/serializer、test:settings package script 并注册进 make check，再接入可约编辑、响应式、键盘、focus、主题及加载/错误/空态，不重构 SettingsPage 其他区域"
+    exit_signal: "npm run test:settings 证明七天/null hydrate、校验及合并不丢其他可写字段且 make check 实际调用它；浏览器证明失败保草稿、成功按服务端响应 rehydrate，三档实际 workspace mode 有证据，移动 CRUD 全可达"
+    status: done
+  - action: "S8 全量回归与证据归档：执行核心门禁并反向核对范围守护"
+    exit_signal: "make check 与 generate-check 通过，review/QA/截图/API 证据齐全且无禁止项"
+    status: done
+
+checks:
+  - item: "Settings.availability 使用 ISO 星期完整映射、单窗口或 null、局部 strict decoder、服务端有效默认与整体 PATCH 语义"
+    source: 名词契约
+    status: passed
+  - item: "ShootScheduleSlotListItem 批量返回 order_price、收款标记与可选 package_shoot_type，non-shoot 不返回"
+    source: 名词契约
+    status: passed
+  - item: "空档、概览、硬重叠、转场与周布局是前端纯派生读模型，不建立持久化副本"
+    source: 编排骨架
+    status: passed
+  - item: "生产写操作继续复用 ScheduleSlotDialog 的 journal、Idempotency-Key、历史补录与 unknown recovery"
+    source: 流程级约束
+    status: passed
+  - item: "Settings 失败时不伪造可约结论，但已有档期查看与 CRUD 仍可用"
+    source: 流程级约束
+    status: passed
+  - item: "settings.availability 数据库 key、OpenAPI 生成契约、/settings、/calendar、Settings 页面与 dataexport 六个挂载点可反向核对"
+    source: 挂载点
+    status: passed
+  - item: "ExportDocument.settings 与 GET /settings 的非默认 availability 一致，schema_version 固定为 2 且 v1 其余边界不变"
+    source: 挂载点与验收场景
+    status: passed
+  - item: "不新增 openings/overview/book、外部消息发送、第三方日历、拖拽、重复规则或多工作窗口"
+    source: 范围守护
+    status: passed
+  - item: "A1–A3 配置默认/校验/隔离与 shoot 批量摘要场景通过"
+    source: 验收场景
+    status: passed
+  - item: "A4–A8 月周布局、冲突/转场、空档文案与概览口径场景通过"
+    source: 验收场景
+    status: passed
+  - item: "A9–A11 当日详情、生产写流程与移动端完整操作场景通过"
+    source: 验收场景
+    status: passed
+  - item: "ScheduleSlotDialog conflict preview 使用当前范围 key/generation，迟到响应不得确认或保存新范围"
+    source: 流程级约束与 A10
+    status: passed
+  - item: "A12–A15 时区、加载错误、导航深链、响应式与可访问性场景通过"
+    source: 验收场景
+    status: passed
+  - item: "A13 的请求 generation/迟到响应、A16 导出一致性与 A17 Settings 编辑场景通过"
+    source: 验收场景
+    status: passed
+  - item: "AvailabilitySettingsDraft 仅在首次读取和保存成功后从服务端响应 hydrate；validator/serializer 的 npm run test:settings 覆盖失败不重置约束与其他 Settings 可写字段保持不变"
+    source: Interface seam、S7 与 A17
+    status: passed
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd backend && go test -p=1 ./internal/settings/... ./internal/schedule/... ./internal/dataexport/... ./internal/dashboard/... ./internal/platform/store/... ./internal/platform/httpapi/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd frontend && npm run test:schedule && npm run test:settings && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required:
+    - command_output
+    - diff_summary
+    - api_response
+    - browser_screenshots
+    - review_report
+    - qa_report
+    - acceptance_report
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    prototype_runtime_dependency: forbidden
+    handwritten_api_dto: forbidden

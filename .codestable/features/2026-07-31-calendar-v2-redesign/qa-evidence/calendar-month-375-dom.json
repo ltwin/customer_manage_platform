@@ -1,0 +1,23 @@
+{
+  "cancelledMarker": true,
+  "cellCount": 42,
+  "document": {
+    "clientWidth": 375,
+    "scrollWidth": 375
+  },
+  "grid": {
+    "ariaLabel": "月历",
+    "clientWidth": 349,
+    "scrollWidth": 349
+  },
+  "selectedCells": 1,
+  "viewport": {
+    "height": 812,
+    "width": 375
+  },
+  "workspace": {
+    "clientWidth": 351,
+    "layoutMode": "bottom-sheet",
+    "scrollWidth": 351
+  }
+}

@@ -1,0 +1,168 @@
+{
+  "evidence_id": "TRACE-TZ-DELETE-SETTINGS-FIRST-001",
+  "captured_at": "2026-08-01T12:27:04.420Z",
+  "branch": "feat/calendar-v2-redesign",
+  "head": "3c28495dbcdc24d33ef4ade71f9baa154d0b51be",
+  "scenario": "TZ1=Asia/Shanghai initial Settings failure; retry returns TZ2=America/New_York before deferred DELETE completes",
+  "expected": {
+    "url_date": "2026-08-05",
+    "selected_date": "2026-08-05",
+    "old_tz1_refresh_after_delete": 0,
+    "current_timezone": "America/New_York",
+    "deleted_slot_absent": true,
+    "focus": "2026-08-05"
+  },
+  "actual": {
+    "url": "http://127.0.0.1:5174/calendar?date=2026-08-05",
+    "detail_heading": "8 月 4 日",
+    "active_label": "2026-08-05",
+    "current_timezone": "时间按 America/New_York",
+    "deleted_slot_absent": true
+  },
+  "request_log": [
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/fail-next-settings-get",
+      "search": "",
+      "at": "2026-08-01T12:24:53.983Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "search": "",
+      "at": "2026-08-01T12:25:01.453Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "search": "",
+      "at": "2026-08-01T12:25:01.455Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:25:01.478Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "search": "",
+      "at": "2026-08-01T12:25:01.478Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:25:01.480Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/me",
+      "search": "",
+      "at": "2026-08-01T12:25:01.480Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:25:01.561Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots",
+      "search": "?from=2026-07-26T16%3A00%3A00Z&to=2026-09-06T16%3A00%3A00Z",
+      "at": "2026-08-01T12:25:01.562Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots/hold-1",
+      "search": "",
+      "at": "2026-08-01T12:25:01.563Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/defer-next-settings-get",
+      "search": "",
+      "at": "2026-08-01T12:25:22.826Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/settings",
+      "search": "",
+      "at": "2026-08-01T12:25:27.557Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/set-settings",
+      "search": "",
+      "at": "2026-08-01T12:25:36.126Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/defer-next-delete",
+      "search": "",
+      "at": "2026-08-01T12:25:36.134Z"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/schedule/slots/hold-1",
+      "search": "",
+      "at": "2026-08-01T12:25:41.566Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/__qa/state",
+      "search": "",
+      "at": "2026-08-01T12:26:00.328Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/release-settings-get",
+      "search": "",
+      "at": "2026-08-01T12:26:06.390Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots",
+      "search": "?from=2026-07-27T04%3A00%3A00Z&to=2026-09-07T04%3A00%3A00Z",
+      "at": "2026-08-01T12:26:06.549Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots/hold-1",
+      "search": "",
+      "at": "2026-08-01T12:26:06.549Z"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/__qa/release-delete",
+      "search": "",
+      "at": "2026-08-01T12:26:21.406Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/schedule/slots",
+      "search": "?from=2026-07-27T04%3A00%3A00Z&to=2026-09-07T04%3A00%3A00Z",
+      "at": "2026-08-01T12:26:21.451Z"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/__qa/state",
+      "search": "",
+      "at": "2026-08-01T12:27:04.419Z"
+    }
+  ],
+  "pending": {
+    "settings": 0,
+    "deletes": 0,
+    "schedule": 0
+  },
+  "server_slots": [
+    "shoot-1",
+    "busy-1",
+    "shoot-cancelled",
+    "busy-all-day"
+  ],
+  "finding": "URL/focus preserve 2026-08-05 but detail remains 8 月 4 日 after slot-local date changed under TZ2; URL and selected detail are out of sync."
+}

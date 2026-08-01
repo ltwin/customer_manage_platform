@@ -1,0 +1,10 @@
+{
+  "active": {
+    "ariaLabel": "关闭当日详情",
+    "tag": "BUTTON",
+    "text": ""
+  },
+  "deletedStillPresent": false,
+  "notices": [],
+  "url": "http://127.0.0.1:5174/calendar?date=2026-08-05"
+}

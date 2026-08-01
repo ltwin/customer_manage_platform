@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -29,6 +30,11 @@ func TestScheduleCRUDRangeSummaryIsolationAndIdempotency(t *testing.T) {
 	seedScheduleCustomer(t, scopeB, "cus-b", "客户 B", "active")
 	seedSchedulePackage(t, scopeA, "pkg-a", "婚礼跟拍")
 	seedScheduleOrder(t, scopeA, "ord-a", "cus-a", "pkg-a", "婚礼订单", "consulting")
+	if _, err := scopeA.Update(ctx, "orders",
+		"price = $2, deposit_paid = $3, balance_paid = $4", "id = $5",
+		88000, true, false, "ord-a"); err != nil {
+		t.Fatalf("seed order money summary: %v", err)
+	}
 	seedScheduleOrder(t, scopeA, "ord-b", "cus-idempotent", "", "写真订单", "scheduled")
 
 	now := time.Date(2026, 7, 10, 8, 0, 0, 0, time.UTC)
@@ -81,10 +87,14 @@ func TestScheduleCRUDRangeSummaryIsolationAndIdempotency(t *testing.T) {
 	if items[0].CustomerID != "cus-a" || items[0].CustomerDisplayName != "客户 A" ||
 		items[0].CustomerStatus != "active" || items[0].OrderStatus != "consulting" ||
 		items[0].OrderTitle == nil || *items[0].OrderTitle != "婚礼订单" ||
-		items[0].PackageName == nil || *items[0].PackageName != "婚礼跟拍" {
+		items[0].PackageName == nil || *items[0].PackageName != "婚礼跟拍" ||
+		items[0].OrderPrice == nil || *items[0].OrderPrice != 88000 ||
+		!items[0].OrderDepositPaid || items[0].OrderBalancePaid ||
+		items[0].PackageShootType == nil || *items[0].PackageShootType != "portrait" {
 		t.Fatalf("shoot list summary: %+v", items[0])
 	}
-	if items[1].CustomerID != "" || items[1].OrderStatus != "" {
+	if items[1].CustomerID != "" || items[1].OrderStatus != "" || items[1].OrderPrice != nil ||
+		items[1].OrderDepositPaid || items[1].OrderBalancePaid || items[1].PackageShootType != nil {
 		t.Fatalf("non-shoot must not carry reference summary: %+v", items[1])
 	}
 	crossing, err := svc.List(ctx, scopeA, scheduledomain.ListFilter{From: now.Add(3*time.Hour + 30*time.Minute), To: now.Add(4 * time.Hour)})
@@ -169,6 +179,60 @@ func TestScheduleCRUDRangeSummaryIsolationAndIdempotency(t *testing.T) {
 	}
 	if err := svc.Delete(ctx, scopeB, busy.Slot.ID); !errors.Is(err, scheduledomain.ErrNotFound) {
 		t.Fatalf("cross-account delete: want not found, got %v", err)
+	}
+}
+
+func TestScheduleCreateOverlapsExcludeCancelledShoot(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openScheduleStore(t)
+	scope := createScheduleAccount(t, s, "acct-overlap-cancelled")
+	seedScheduleCustomer(t, scope, "cus-overlap", "重叠客户", "active")
+	seedScheduleOrder(t, scope, "ord-overlap-active", "cus-overlap", "", "有效订单", "scheduled")
+	seedScheduleOrder(t, scope, "ord-overlap-cancelled", "cus-overlap", "", "取消订单", "cancelled")
+
+	start := time.Date(2026, 8, 2, 2, 0, 0, 0, time.UTC)
+	end := start.Add(2 * time.Hour)
+	for _, fixture := range []struct {
+		id       string
+		slotType string
+		orderID  any
+	}{
+		{id: "slot-active-shoot", slotType: scheduledomain.TypeShoot, orderID: "ord-overlap-active"},
+		{id: "slot-cancelled-shoot", slotType: scheduledomain.TypeShoot, orderID: "ord-overlap-cancelled"},
+		{id: "slot-hold", slotType: scheduledomain.TypeHold, orderID: nil},
+		{id: "slot-busy", slotType: scheduledomain.TypeBusy, orderID: nil},
+	} {
+		if err := scope.Insert(ctx, "schedule_slots",
+			[]string{"id", "start_at", "end_at", "type", "order_id"},
+			fixture.id, start, end, fixture.slotType, fixture.orderID,
+		); err != nil {
+			t.Fatalf("seed %s: %v", fixture.id, err)
+		}
+	}
+
+	svc := scheduledomain.NewService(
+		scheduledomain.NewPostgresRepository(),
+		scheduledomain.ClockFunc(func() time.Time { return start }),
+	)
+	created, err := svc.Create(ctx, scope, scheduledomain.CreateInput{
+		StartAt: start.Add(30 * time.Minute),
+		EndAt:   end.Add(-30 * time.Minute),
+		Type:    scheduledomain.TypeHold,
+	})
+	if err != nil {
+		t.Fatalf("create overlapping hold: %v", err)
+	}
+	if want := []string{"slot-active-shoot", "slot-busy", "slot-hold"}; !slices.Equal(created.Overlaps, want) {
+		t.Fatalf("overlaps=%v want=%v", created.Overlaps, want)
+	}
+
+	touching, err := svc.Create(ctx, scope, scheduledomain.CreateInput{
+		StartAt: end,
+		EndAt:   end.Add(time.Hour),
+		Type:    scheduledomain.TypeBusy,
+	})
+	if err != nil || len(touching.Overlaps) != 0 {
+		t.Fatalf("half-open boundary changed: result=%+v err=%v", touching, err)
 	}
 }
 

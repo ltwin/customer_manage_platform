@@ -14,6 +14,7 @@ type Repository interface {
 	LookupOrderCustomerID(context.Context, store.AccountScope, PreparedCreate) (string, error)
 	LookupOrderCustomerIDInScope(context.Context, store.TxAccountScope, PreparedCreate) (string, error)
 	List(context.Context, store.AccountScope, ListFilter) ([]ListItem, error)
+	Get(context.Context, store.AccountScope, string) (ListItem, error)
 	Update(context.Context, store.AccountScope, string, UpdateInput, time.Time) (Slot, error)
 	Delete(context.Context, store.AccountScope, string) error
 }
@@ -89,6 +90,14 @@ func (s *Service) List(ctx context.Context, scope store.AccountScope, filter Lis
 		return nil, ValidationError{Message: "to 必须晚于 from"}
 	}
 	return s.repo.List(ctx, scope, filter)
+}
+
+func (s *Service) Get(ctx context.Context, scope store.AccountScope, id string) (ListItem, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ListItem{}, ValidationError{Message: "档期 id 必填"}
+	}
+	return s.repo.Get(ctx, scope, id)
 }
 
 func (s *Service) Update(

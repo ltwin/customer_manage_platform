@@ -1,0 +1,47 @@
+{
+  "active": {
+    "ariaLabel": "关闭当日详情",
+    "tag": "BUTTON",
+    "text": ""
+  },
+  "detail": {
+    "ariaModal": "true",
+    "className": "calendar-v2-detail open",
+    "rect": {
+      "height": 590.046875,
+      "width": 375,
+      "x": 0,
+      "y": 221.953125
+    },
+    "role": "dialog"
+  },
+  "document": {
+    "bodyClientWidth": 375,
+    "bodyScrollWidth": 375,
+    "clientWidth": 375,
+    "scrollWidth": 375
+  },
+  "fab": {
+    "disabled": false,
+    "rect": {
+      "height": 52,
+      "width": 52,
+      "x": 251,
+      "y": 682
+    },
+    "text": ""
+  },
+  "viewport": {
+    "height": 812,
+    "width": 375
+  },
+  "weekScroll": {
+    "clientWidth": 349,
+    "scrollWidth": 940
+  },
+  "workspace": {
+    "clientWidth": 351,
+    "layoutMode": "bottom-sheet",
+    "scrollWidth": 351
+  }
+}
