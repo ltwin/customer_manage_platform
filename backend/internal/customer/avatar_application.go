@@ -1,22 +1,16 @@
 package customer
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
-	"regexp"
-	"strings"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
-	_ "golang.org/x/image/webp"
 )
 
 const (
@@ -28,7 +22,6 @@ var (
 	ErrAvatarRevisionConflict = errors.New("avatar_revision_conflict")
 	ErrAvatarVersionStale     = errors.New("avatar_version_stale")
 	errRetryFreshGeneration   = errors.New("retry with fresh avatar generation")
-	avatarKeySegmentPattern   = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
 type AvatarApplication struct {
@@ -282,7 +275,7 @@ func (a *AvatarApplication) publishAndSwitch(
 
 func (a *AvatarApplication) putFreshGeneration(
 	ctx context.Context,
-	key string,
+	key avatarmedia.Key,
 	content AvatarContent,
 	meta ObjectMeta,
 ) (PutResult, error) {
@@ -355,44 +348,26 @@ func (a *AvatarApplication) loadCurrentContent(ctx context.Context, customer Cus
 	if fmt.Sprintf("sha256-%x", digest) != expected.Checksum {
 		return AvatarContent{}, false, nil
 	}
-	_, format, err := image.DecodeConfig(bytes.NewReader(content))
-	if err != nil || imageMediaTypes[format] != expected.MediaType {
-		return AvatarContent{}, false, nil
-	}
-	validated, err := NewAvatarContent(content, expected.MediaType)
-	if err != nil {
+	validated, ok := avatarmedia.ConfirmIntegrity(content, expected.MediaType)
+	if !ok {
 		return AvatarContent{}, false, nil
 	}
 	return validated, true, nil
 }
 
-var imageMediaTypes = map[string]string{"jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}
-
-func AvatarObjectKey(accountID, customerID string, ref ObjectRef) (string, error) {
-	if !avatarKeySegmentPattern.MatchString(accountID) || !avatarKeySegmentPattern.MatchString(customerID) ||
-		!avatarVersionPattern.MatchString(ref.AvatarVersion) || !avatarObjectIDPattern.MatchString(ref.AvatarObjectID) {
-		return "", ErrAvatarObjectKey
-	}
-	return fmt.Sprintf("avatars/%s/customers/%s/%s/%s", accountID, customerID, ref.AvatarVersion, ref.AvatarObjectID), nil
+// AvatarObjectKey 构建客户头像 canonical key（字节与历史路径保持兼容）。
+func AvatarObjectKey(accountID, customerID string, ref ObjectRef) (avatarmedia.Key, error) {
+	return avatarmedia.CustomerKey(accountID, customerID, ref)
 }
 
+// ParseAvatarObjectKey 仅接受 customer 主体 key；account-profile 与未知路径 fail closed。
 func ParseAvatarObjectKey(key string) (accountID, customerID string, ref ObjectRef, err error) {
-	parts := strings.Split(key, "/")
-	if len(parts) != 6 || parts[0] != "avatars" || parts[2] != "customers" {
+	parsed, parseErr := avatarmedia.ParseKey(key)
+	if parseErr != nil || parsed.SubjectKind != avatarmedia.SubjectCustomer {
 		return "", "", ObjectRef{}, ErrAvatarObjectKey
 	}
-	ref = ObjectRef{AvatarVersion: parts[4], AvatarObjectID: parts[5]}
-	canonical, buildErr := AvatarObjectKey(parts[1], parts[3], ref)
-	if buildErr != nil || canonical != key {
-		return "", "", ObjectRef{}, ErrAvatarObjectKey
-	}
-	return parts[1], parts[3], ref, nil
+	return parsed.AccountID, parsed.SubjectID, parsed.Ref, nil
 }
-
-var (
-	avatarVersionPattern  = regexp.MustCompile(`^sha256-[0-9a-f]{64}$`)
-	avatarObjectIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
-)
 
 func newAvatarObjectID() (string, error) {
 	var value [16]byte
@@ -415,5 +390,5 @@ func objectRefFromCustomer(customer Customer) ObjectRef {
 }
 
 func sameObjectMeta(left, right ObjectMeta) bool {
-	return left.MediaType == right.MediaType && left.Size == right.Size && left.Checksum == right.Checksum
+	return avatarmedia.SameObjectMeta(left, right)
 }

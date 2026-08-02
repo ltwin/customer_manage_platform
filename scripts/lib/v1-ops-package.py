@@ -40,9 +40,13 @@ UTC_RFC3339 = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2
 AVATAR_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 AVATAR_OBJECT_ID = re.compile(r"^[0-9a-f]{32}$")
 AVATAR_MEDIA_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MANIFEST_FORMAT_V1 = "customer-avatar-exact-generation-v1"
+MANIFEST_FORMAT_V2 = "avatar-exact-generation-v2"
+MANIFEST_FORMAT_ALLOWLIST = frozenset({MANIFEST_FORMAT_V1, MANIFEST_FORMAT_V2})
 MAX_AVATAR_CONTENT_BYTES = 5 * 1024 * 1024
 MAX_AVATAR_METADATA_BYTES = 4096
-DATABASE_COUNT_TABLES = (
+# BASELINE_V1：历史 16 表强制下界；OPTIONAL_ACCOUNT_PROFILE 为兼容扩展。
+BASELINE_V1 = (
     "accounts",
     "avatar_object_gc",
     "avatar_reconciliation_checkpoint",
@@ -60,6 +64,13 @@ DATABASE_COUNT_TABLES = (
     "telegram_bind_tokens",
     "telegram_deliveries",
 )
+OPTIONAL_ACCOUNT_PROFILE = (
+    "account_profiles",
+    "account_profile_avatar_gc",
+)
+SQL_COUNT_TABLES = tuple(sorted(set(BASELINE_V1) | set(OPTIONAL_ACCOUNT_PROFILE)))
+# 兼容旧引用名：完整可计数集合（含可选表）。
+DATABASE_COUNT_TABLES = SQL_COUNT_TABLES
 METADATA_FIELDS = {
     "schema_version",
     "created_at",
@@ -120,11 +131,17 @@ def parse_utc_timestamp(value: Any, key: str) -> None:
 
 
 def validate_database_counts(value: Any) -> dict[str, int]:
-    if not isinstance(value, dict) or set(value) != set(DATABASE_COUNT_TABLES):
+    """键集合必须 ⊆ SQL_COUNT_TABLES 且 ⊇ BASELINE_V1（16/18 键均合法）。"""
+    if not isinstance(value, dict):
+        raise ContractError("database-counts-schema")
+    keys = set(value)
+    allowed = set(SQL_COUNT_TABLES)
+    baseline = set(BASELINE_V1)
+    if not keys.issubset(allowed) or not baseline.issubset(keys):
         raise ContractError("database-counts-schema")
     return {
         table: require_int(value[table], "database-counts-value")
-        for table in DATABASE_COUNT_TABLES
+        for table in sorted(keys)
     }
 
 
@@ -137,20 +154,48 @@ def validate_relative_key(value: Any, key: str) -> str:
     return value
 
 
-def parse_avatar_object_key(value: Any, error_key: str) -> tuple[str, str, str, str]:
+def parse_avatar_object_key(value: Any, error_key: str) -> tuple[str, str, str, str, str]:
+    """Return (account_id, subject_kind, subject_id, version, object_id)."""
     key = validate_relative_key(value, error_key)
     parts = key.split("/")
     if (
-        len(parts) != 6
-        or parts[0] != "avatars"
-        or parts[2] != "customers"
-        or not AVATAR_SEGMENT.fullmatch(parts[1])
-        or not AVATAR_SEGMENT.fullmatch(parts[3])
-        or not re.fullmatch(r"sha256-[0-9a-f]{64}", parts[4])
-        or not AVATAR_OBJECT_ID.fullmatch(parts[5])
+        len(parts) == 6
+        and parts[0] == "avatars"
+        and parts[2] == "customers"
+        and AVATAR_SEGMENT.fullmatch(parts[1])
+        and AVATAR_SEGMENT.fullmatch(parts[3])
+        and re.fullmatch(r"sha256-[0-9a-f]{64}", parts[4])
+        and AVATAR_OBJECT_ID.fullmatch(parts[5])
     ):
-        raise ContractError(error_key)
-    return parts[1], parts[3], parts[4], parts[5]
+        return parts[1], "customer", parts[3], parts[4], parts[5]
+    if (
+        len(parts) == 5
+        and parts[0] == "avatars"
+        and parts[2] == "account-profile"
+        and AVATAR_SEGMENT.fullmatch(parts[1])
+        and re.fullmatch(r"sha256-[0-9a-f]{64}", parts[3])
+        and AVATAR_OBJECT_ID.fullmatch(parts[4])
+    ):
+        return parts[1], "account_profile", parts[1], parts[3], parts[4]
+    raise ContractError(error_key)
+
+
+def load_json_reject_duplicate_keys(path: Path) -> Any:
+    raw = path.read_text(encoding="utf-8")
+    decoder = json.JSONDecoder(object_pairs_hook=_reject_duplicate_pairs)
+    value, index = decoder.raw_decode(raw)
+    if raw[index:].strip():
+        raise ContractError("manifest-trailing")
+    return value
+
+
+def _reject_duplicate_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ContractError("manifest-duplicate-key")
+        result[key] = value
+    return result
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -344,7 +389,7 @@ def tar_inventory(path: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str,
             if len(parts) < 2 or parts[-1] not in {"content", "metadata.json"}:
                 raise ContractError("tar-object-leaf")
             object_key = "/".join(parts[:-1])
-            _, _, version, _ = parse_avatar_object_key(object_key, "tar-object-key")
+            _, _, _, version, _ = parse_avatar_object_key(object_key, "tar-object-key")
             stream = archive.extractfile(member)
             if stream is None:
                 raise ContractError("tar-read")
@@ -393,7 +438,9 @@ def tar_inventory(path: Path) -> tuple[list[dict[str, Any]], dict[str, dict[str,
 
 
 def validate_manifest(package: Path, expected_format: str) -> dict[str, Any]:
-    manifest = load_one_json(package / "avatar-manifest.json")
+    if expected_format not in MANIFEST_FORMAT_ALLOWLIST:
+        raise ContractError("manifest-format")
+    manifest = load_json_reject_duplicate_keys(package / "avatar-manifest.json")
     if not isinstance(manifest, dict) or set(manifest) != {"format", "generated_at", "current", "inventory"}:
         raise ContractError("manifest-schema")
     if manifest.get("format") != expected_format:
@@ -412,7 +459,11 @@ def validate_manifest(package: Path, expected_format: str) -> dict[str, Any]:
         if not isinstance(item, dict) or set(item) != {"key", "size", "actual_sha256"}:
             raise ContractError("manifest-object-schema")
         object_key = validate_relative_key(item.get("key"), "manifest-object-key")
-        _, _, object_version, _ = parse_avatar_object_key(object_key, "manifest-object-key")
+        account_id, subject_kind, _, object_version, _ = parse_avatar_object_key(
+            object_key, "manifest-object-key",
+        )
+        if expected_format == MANIFEST_FORMAT_V1 and subject_kind != "customer":
+            raise ContractError("manifest-object-key")
         if previous and object_key <= previous:
             raise ContractError("manifest-object-order")
         previous = object_key
@@ -422,6 +473,7 @@ def validate_manifest(package: Path, expected_format: str) -> dict[str, Any]:
             raise ContractError("manifest-object-checksum")
         if object_version != f"sha256-{checksum}":
             raise ContractError("manifest-object-version")
+        _ = account_id
         normalized.append({"key": object_key, "size": size, "actual_sha256": checksum})
     if require_int(inventory.get("count"), "manifest-inventory-count") != len(normalized):
         raise ContractError("manifest-inventory-count")
@@ -438,19 +490,66 @@ def validate_manifest(package: Path, expected_format: str) -> dict[str, Any]:
     if not isinstance(current, list):
         raise ContractError("manifest-current")
     inventory_by_key = {item["key"]: item for item in normalized}
-    previous_identity: tuple[str, str] | None = None
+    if expected_format == MANIFEST_FORMAT_V1:
+        previous_identity: tuple[Any, ...] | None = None
+        for item in current:
+            fields = {
+                "account_id", "customer_id", "avatar_version", "avatar_object_id",
+                "key", "media_type", "size", "actual_sha256",
+            }
+            if not isinstance(item, dict) or set(item) != fields:
+                raise ContractError("manifest-current-schema")
+            for field in ("account_id", "customer_id", "avatar_object_id", "media_type"):
+                if not isinstance(item.get(field), str) or not item[field]:
+                    raise ContractError("manifest-current-value")
+            object_key = validate_relative_key(item.get("key"), "manifest-current-key")
+            account_id, subject_kind, subject_id, object_version, object_id = parse_avatar_object_key(
+                object_key, "manifest-current-key",
+            )
+            if subject_kind != "customer":
+                raise ContractError("manifest-current-key")
+            checksum = item.get("actual_sha256")
+            if not isinstance(checksum, str) or not HEX64.fullmatch(checksum):
+                raise ContractError("manifest-current-checksum")
+            if item.get("avatar_version") != f"sha256-{checksum}":
+                raise ContractError("manifest-current-version")
+            if (
+                account_id != item["account_id"]
+                or subject_id != item["customer_id"]
+                or object_version != item["avatar_version"]
+                or object_id != item["avatar_object_id"]
+            ):
+                raise ContractError("manifest-current-key-identity")
+            size = require_int(item.get("size"), "manifest-current-size")
+            identity = (item["account_id"], item["customer_id"])
+            if previous_identity is not None and identity <= previous_identity:
+                raise ContractError("manifest-current-order")
+            previous_identity = identity
+            physical = inventory_by_key.get(object_key)
+            if physical is None or physical["size"] != size or physical["actual_sha256"] != checksum:
+                raise ContractError("manifest-current-inventory")
+            if metadata_by_key[object_key]["media_type"] != item["media_type"]:
+                raise ContractError("manifest-current-media-type")
+        return manifest
+
+    previous_identity = None
+    seen_subjects: set[tuple[str, str, str]] = set()
     for item in current:
         fields = {
-            "account_id", "customer_id", "avatar_version", "avatar_object_id",
+            "account_id", "subject_kind", "subject_id", "avatar_version", "avatar_object_id",
             "key", "media_type", "size", "actual_sha256",
         }
         if not isinstance(item, dict) or set(item) != fields:
             raise ContractError("manifest-current-schema")
-        for field in ("account_id", "customer_id", "avatar_object_id", "media_type"):
+        if "customer_id" in item:
+            raise ContractError("manifest-current-schema")
+        for field in ("account_id", "subject_kind", "subject_id", "avatar_object_id", "media_type"):
             if not isinstance(item.get(field), str) or not item[field]:
                 raise ContractError("manifest-current-value")
+        if item["subject_kind"] not in {"customer", "account_profile"}:
+            raise ContractError("manifest-current-subject-kind")
         object_key = validate_relative_key(item.get("key"), "manifest-current-key")
-        account_id, customer_id, object_version, object_id = parse_avatar_object_key(
+        account_id, subject_kind, subject_id, object_version, object_id = parse_avatar_object_key(
             object_key, "manifest-current-key",
         )
         checksum = item.get("actual_sha256")
@@ -460,16 +559,23 @@ def validate_manifest(package: Path, expected_format: str) -> dict[str, Any]:
             raise ContractError("manifest-current-version")
         if (
             account_id != item["account_id"]
-            or customer_id != item["customer_id"]
+            or subject_kind != item["subject_kind"]
+            or subject_id != item["subject_id"]
             or object_version != item["avatar_version"]
             or object_id != item["avatar_object_id"]
         ):
             raise ContractError("manifest-current-key-identity")
+        if subject_kind == "account_profile" and subject_id != account_id:
+            raise ContractError("manifest-current-subject-id")
         size = require_int(item.get("size"), "manifest-current-size")
-        identity = (item["account_id"], item["customer_id"])
+        identity = (item["account_id"], item["subject_kind"], item["subject_id"], item["key"])
         if previous_identity is not None and identity <= previous_identity:
             raise ContractError("manifest-current-order")
         previous_identity = identity
+        subject = (item["account_id"], item["subject_kind"], item["subject_id"])
+        if subject in seen_subjects:
+            raise ContractError("manifest-current-duplicate-subject")
+        seen_subjects.add(subject)
         physical = inventory_by_key.get(object_key)
         if physical is None or physical["size"] != size or physical["actual_sha256"] != checksum:
             raise ContractError("manifest-current-inventory")
@@ -550,7 +656,11 @@ def validate_metadata(package: Path, project: str) -> dict[str, Any]:
             raise ContractError("metadata-payload-value")
         if record["sha256"] != sha256_file(package / filename):
             raise ContractError("metadata-payload-checksum")
-    if metadata.get("manifest_schema_version") != "customer-avatar-exact-generation-v1":
+    manifest_schema = metadata.get("manifest_schema_version")
+    if manifest_schema not in MANIFEST_FORMAT_ALLOWLIST:
+        raise ContractError("metadata-manifest-schema")
+    manifest = load_json_reject_duplicate_keys(package / "avatar-manifest.json")
+    if not isinstance(manifest, dict) or manifest.get("format") != manifest_schema:
         raise ContractError("metadata-manifest-schema")
     if not HEX64.fullmatch(str(metadata.get("compose_file_sha256", ""))):
         raise ContractError("metadata-compose-sha")
@@ -647,11 +757,19 @@ def cmd_validate(args: argparse.Namespace) -> None:
 
 
 def cmd_db_counts_sql(_: argparse.Namespace) -> None:
+    # 无参：恒定输出 SQL_COUNT_TABLES；缺表时 to_regclass 守卫计 0（禁止跳过）。
     pairs = ",\n  ".join(
-        f"'{table}', (SELECT count(*) FROM public.{table})"
-        for table in DATABASE_COUNT_TABLES
+        (
+            f"'{table}', CASE WHEN to_regclass('public.{table}') IS NULL THEN 0 "
+            f"ELSE (SELECT count(*)::bigint FROM public.{table}) END"
+        )
+        for table in SQL_COUNT_TABLES
     )
     print(f"SELECT json_build_object(\n  {pairs}\n)::text;")
+
+
+def project_counts_to_keys(counts: dict[str, int], keys: set[str]) -> dict[str, int]:
+    return {table: counts[table] for table in sorted(keys) if table in counts}
 
 
 def cmd_verify_db_counts(args: argparse.Namespace) -> None:
@@ -659,8 +777,15 @@ def cmd_verify_db_counts(args: argparse.Namespace) -> None:
     if not isinstance(metadata, dict):
         raise ContractError("metadata-schema")
     expected = validate_database_counts(metadata.get("database_counts"))
-    actual = validate_database_counts(load_one_json(args.actual))
-    if actual != expected:
+    actual_raw = load_one_json(args.actual)
+    if not isinstance(actual_raw, dict):
+        raise ContractError("database-counts-schema")
+    # actual 可含额外可选键；只按包自述键比对。
+    actual_projected = project_counts_to_keys(
+        {table: require_int(actual_raw[table], "database-counts-value") for table in actual_raw if table in set(SQL_COUNT_TABLES)},
+        set(expected),
+    )
+    if set(actual_projected) != set(expected) or actual_projected != expected:
         raise ContractError("database-counts-mismatch")
 
 
@@ -713,6 +838,16 @@ def cmd_publish(args: argparse.Namespace) -> None:
     rename_no_replace(source, destination)
 
 
+def derive_manifest_schema_version(package: Path) -> str:
+    manifest = load_json_reject_duplicate_keys(package / "avatar-manifest.json")
+    if not isinstance(manifest, dict):
+        raise ContractError("manifest-schema")
+    format_name = manifest.get("format")
+    if format_name not in MANIFEST_FORMAT_ALLOWLIST:
+        raise ContractError("manifest-format")
+    return str(format_name)
+
+
 def cmd_metadata(args: argparse.Namespace) -> None:
     package = args.output.parent
     database_counts = validate_database_counts(load_one_json(args.db_counts_file))
@@ -724,7 +859,7 @@ def cmd_metadata(args: argparse.Namespace) -> None:
         "schema_version": 1,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "payloads": payloads,
-        "manifest_schema_version": "customer-avatar-exact-generation-v1",
+        "manifest_schema_version": derive_manifest_schema_version(package),
         "source_compose_project": args.project,
         "compose_file_sha256": args.compose_sha256,
         "images": {

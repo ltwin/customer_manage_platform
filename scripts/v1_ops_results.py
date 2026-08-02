@@ -49,6 +49,16 @@ PACKAGE_FIELDS = {
 }
 RESULT_VALUES = {"pending", "pass", "fail", "blocked"}
 OPERATION_VALUES = {"not-run", "ok", "failed", "blocked"}
+# D15：hardening 日后扩展时拒绝未知 oracle_class（非 A17 前置依赖）。
+ORACLE_CLASS_ALLOWLIST = {
+    "pre-mutation-readonly",
+    "pre-mutation-reject",
+    "backup-readonly",
+    "cleanup-only",
+    "restore-success",
+    "restore-reject",
+    "restore-destructive-failure",
+}
 POLICY_RANK = {"forbidden": 0, "readonly": 1, "lock-metadata": 2, "target-operation": 3}
 ENGINE_STATUS = {"created", "running", "paused", "restarting", "removing", "exited", "dead", "absent", "unknown"}
 LOGICAL_STATUS = {"running", "stopped", "rejected", "absent"}
@@ -356,6 +366,9 @@ def validate_locks(case: dict[str, Any], errors: list[str]) -> None:
 def validate_oracle(case: dict[str, Any], errors: list[str]) -> None:
     case_id = case["case_id"]
     oracle = case["oracle_class"]
+    if oracle not in ORACLE_CLASS_ALLOWLIST:
+        error(errors, case_id, f"unknown oracle_class {oracle!r}")
+        return
     before, after = case["target_before"], case["target_after"]
     validate_target(before, "target_before", errors, case_id)
     validate_target(after, "target_after", errors, case_id)
@@ -373,7 +386,18 @@ def validate_oracle(case: dict[str, Any], errors: list[str]) -> None:
         else:
             for key in package_oracle:
                 envelope = after[key]
-                if envelope.get("status") != "observed" or envelope.get("value") != package_oracle[key]:
+                if not isinstance(envelope, dict) or envelope.get("status") != "observed":
+                    error(errors, case_id, f"restore target_after.{key} differs from package oracle")
+                    continue
+                actual = envelope.get("value")
+                expected = package_oracle[key]
+                if key == "db_counts":
+                    # actual 可含可选扩展键；只按包自述键投影后再比。
+                    if not isinstance(actual, dict) or not isinstance(expected, dict):
+                        error(errors, case_id, f"restore target_after.{key} differs from package oracle")
+                    elif any(actual.get(table) != count for table, count in expected.items()):
+                        error(errors, case_id, f"restore target_after.{key} differs from package oracle")
+                elif actual != expected:
                     error(errors, case_id, f"restore target_after.{key} differs from package oracle")
             if isinstance(before, dict) and before.get("app_state") != after.get("app_state"):
                 error(errors, case_id, "restore success did not restore the original supported app predicate")

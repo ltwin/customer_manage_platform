@@ -1,10 +1,10 @@
 // Command avatar-manifest generates or verifies the stopped application's
-// exact-generation customer avatar backup manifest.
+// exact-generation avatar backup manifest.
 package main
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +13,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
+	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarbackup"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -53,34 +55,32 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 		return err
 	}
 	repository := customerdomain.PostgresAvatarRepository{}
+	profileRepo := accountprofile.NewPostgresRepository()
+	profileSource := accountprofile.NewPointerSource(profileRepo)
 	if flags.Arg(0) == "generate" {
-		manifest, err := avatarbackup.Generate(ctx, accounts, repository, objects, time.Now())
+		manifest, err := avatarbackup.Generate(ctx, accounts, repository, profileSource, objects, time.Now())
 		if err != nil {
 			return err
 		}
-		encoder := json.NewEncoder(output)
-		encoder.SetIndent("", "  ")
-		return encoder.Encode(manifest)
+		return avatarmedia.EncodeManifestCanonical(output, manifest)
 	}
 	if *manifestPath == "" {
 		return errors.New("verify requires --manifest FILE")
 	}
-	file, err := os.Open(*manifestPath)
+	raw, err := os.ReadFile(*manifestPath)
 	if err != nil {
 		return fmt.Errorf("open manifest: %w", err)
 	}
-	defer func() { _ = file.Close() }()
-	decoder := json.NewDecoder(file)
-	decoder.DisallowUnknownFields()
-	var expected avatarbackup.Manifest
-	if err := decoder.Decode(&expected); err != nil {
-		return fmt.Errorf("decode manifest: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("manifest must contain exactly one JSON document")
-	}
-	if err := avatarbackup.Verify(ctx, expected, accounts, repository, objects); err != nil {
+	format, v1, v2, err := avatarmedia.DecodeStrictManifest(raw)
+	if err != nil {
 		return err
+	}
+	if err := avatarbackup.Verify(ctx, format, v1, v2, accounts, repository, profileSource, objects); err != nil {
+		return err
+	}
+	// 禁止尾随空白以外的额外字节（DecodeStrictManifest 已校验单文档）。
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return errors.New("manifest empty")
 	}
 	_, err = fmt.Fprintln(output, "avatar exact-generation manifest verified")
 	return err

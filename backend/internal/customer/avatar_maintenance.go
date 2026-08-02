@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -99,13 +100,17 @@ func (r *AvatarMaintenanceRunner) reconcileAccount(ctx context.Context, account 
 	if err != nil {
 		return err
 	}
-	page, err := r.objects.List(ctx, "avatars/"+account.AccountID, checkpoint.ObjectCursor, reconciliationPageSize)
+	prefix, err := avatarmedia.AccountPrefix(account.AccountID)
+	if err != nil {
+		return err
+	}
+	page, err := r.objects.List(ctx, prefix, avatarmedia.CursorFromRaw(checkpoint.ObjectCursor), reconciliationPageSize)
 	if err != nil {
 		return err
 	}
 	err = account.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		for _, item := range page.Items {
-			objectAccountID, customerID, ref, err := ParseAvatarObjectKey(item.Key)
+			objectAccountID, customerID, ref, err := ParseAvatarObjectKey(item.Key.String())
 			if err != nil || objectAccountID != account.AccountID {
 				continue
 			}
@@ -128,7 +133,7 @@ func (r *AvatarMaintenanceRunner) reconcileAccount(ctx context.Context, account 
 			checkpoint.ObjectCursor = ""
 			checkpoint.ObjectCycle++
 		} else {
-			checkpoint.ObjectCursor = page.NextCursor
+			checkpoint.ObjectCursor = page.NextCursor.String()
 		}
 		return r.repo.SaveCheckpoint(ctx, tx, checkpoint, r.now().UTC())
 	})

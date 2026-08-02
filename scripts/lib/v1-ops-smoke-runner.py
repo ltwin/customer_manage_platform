@@ -1516,12 +1516,21 @@ v1_status complete pass
     def target_data_matches(target: Any, oracle: dict[str, Any]) -> bool:
         if not isinstance(target, dict):
             return False
-        return all(
-            isinstance(target.get(key), dict)
-            and target[key].get("status") == "observed"
-            and target[key].get("value") == value
-            for key, value in oracle.items()
-        )
+        for key, value in oracle.items():
+            envelope = target.get(key)
+            if not isinstance(envelope, dict) or envelope.get("status") != "observed":
+                return False
+            actual = envelope.get("value")
+            if key == "db_counts":
+                # actual 可含可选扩展键；只按包自述键投影比对。
+                if not isinstance(actual, dict) or not isinstance(value, dict):
+                    return False
+                if any(actual.get(table) != expected for table, expected in value.items()):
+                    return False
+                continue
+            if actual != value:
+                return False
+        return True
 
     def oracle_matches(self, source: dict[str, Any], before: Any, after: Any, package_oracle: Any) -> bool:
         oracle = source["oracle_class"]

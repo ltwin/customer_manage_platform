@@ -332,8 +332,151 @@ def main() -> int:
         else:
             raise AssertionError("changed database counts were accepted")
 
+        golden = Path(__file__).with_name("testdata") / "avatar-media-golden" / "dual-keys.json"
+        golden_keys = json.loads(golden.read_text(encoding="utf-8"))
+        account_id, subject_kind, subject_id, version, object_id = ops.parse_avatar_object_key(
+            golden_keys["customer_key"], "golden-customer",
+        )
+        if (
+            subject_kind != "customer"
+            or account_id != "account-golden"
+            or subject_id != "customer-golden"
+            or f"{version}/{object_id}" not in golden_keys["customer_key"]
+        ):
+            raise AssertionError("python dual key codec drifted from Go golden customer key")
+        account_id, subject_kind, subject_id, version, object_id = ops.parse_avatar_object_key(
+            golden_keys["account_profile_key"], "golden-profile",
+        )
+        if subject_kind != "account_profile" or subject_id != account_id or account_id != "account-golden":
+            raise AssertionError("python dual key codec drifted from Go golden account-profile key")
+        try:
+            ops.parse_avatar_object_key("avatars/account-golden/unknown/x/y/z", "bad-key")
+        except ops.ContractError:
+            pass
+        else:
+            raise AssertionError("unknown subject path was accepted")
+
+        v2 = root / "v2-package"
+        write_v2_package(v2)
+        ops.validate_package(v2, "synthetic-project")
+        metadata = json.loads((v2 / "metadata.json").read_text(encoding="utf-8"))
+        if metadata.get("manifest_schema_version") != ops.MANIFEST_FORMAT_V2:
+            raise AssertionError("v2 backup metadata must derive avatar-exact-generation-v2")
+
+        forged = root / "forged-format"
+        write_package(forged)
+        metadata = json.loads((forged / "metadata.json").read_text(encoding="utf-8"))
+        metadata["manifest_schema_version"] = "avatar-exact-generation-v999"
+        (forged / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+        rewrite_checksums(forged)
+        must_reject("forged-manifest-schema", forged)
+
+        mismatched = root / "metadata-format-mismatch"
+        write_v2_package(mismatched)
+        metadata = json.loads((mismatched / "metadata.json").read_text(encoding="utf-8"))
+        metadata["manifest_schema_version"] = ops.MANIFEST_FORMAT_V1
+        (mismatched / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+        rewrite_checksums(mismatched)
+        must_reject("metadata-format-mismatch", mismatched)
+
+        duplicate = root / "duplicate-json-key"
+        write_package(duplicate)
+        # Insert a duplicate top-level key after format.
+        raw = (duplicate / "avatar-manifest.json").read_text(encoding="utf-8")
+        raw = raw.replace('"format":', '"format":', 1).replace(
+            '"generated_at":', '"format": "customer-avatar-exact-generation-v1", "generated_at":', 1,
+        )
+        (duplicate / "avatar-manifest.json").write_text(raw, encoding="utf-8")
+        metadata = json.loads((duplicate / "metadata.json").read_text(encoding="utf-8"))
+        metadata["payloads"]["avatar-manifest.json"]["sha256"] = ops.sha256_file(duplicate / "avatar-manifest.json")
+        (duplicate / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+        rewrite_checksums(duplicate)
+        must_reject("manifest-duplicate-json-key", duplicate)
+
+        # A13b：无参 db-counts-sql 功能性调用（含 to_regclass 守卫）+ 16/18 键双向校验。
+        import io
+        from contextlib import redirect_stdout
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            ops.cmd_db_counts_sql(Namespace())
+        sql = buf.getvalue()
+        if "to_regclass" not in sql or "account_profiles" not in sql or "account_profile_avatar_gc" not in sql:
+            raise AssertionError("db-counts-sql must emit to_regclass-guarded SQL_COUNT_TABLES")
+        for table in ops.BASELINE_V1:
+            if f"'{table}'" not in sql:
+                raise AssertionError(f"db-counts-sql missing baseline table {table}")
+
+        ops.validate_database_counts(DB_COUNTS)
+        counts_18 = dict(DB_COUNTS)
+        counts_18["account_profiles"] = 0
+        counts_18["account_profile_avatar_gc"] = 0
+        ops.validate_database_counts(counts_18)
+        try:
+            ops.validate_database_counts({"accounts": 1})
+        except ops.ContractError:
+            pass
+        else:
+            raise AssertionError("incomplete baseline counts were accepted")
+
+        meta_16 = root / "meta-16.json"
+        meta_16.write_text(json.dumps({"database_counts": DB_COUNTS}), encoding="utf-8")
+        actual_18 = root / "actual-18.json"
+        actual_18.write_text(json.dumps(counts_18), encoding="utf-8")
+        ops.cmd_verify_db_counts(Namespace(metadata=meta_16, actual=actual_18))
+
+        meta_18 = root / "meta-18.json"
+        meta_18.write_text(json.dumps({"database_counts": counts_18}), encoding="utf-8")
+        ops.cmd_verify_db_counts(Namespace(metadata=meta_18, actual=actual_18))
+
     print("v1 ops package helper self-test: passed")
     return 0
+
+
+def write_v2_package(path: Path, project: str = "synthetic-project") -> None:
+    path.mkdir(mode=0o700)
+    (path / "database.sql").write_text(
+        "CREATE TABLE synthetic (id integer);\nCOPY synthetic (id) FROM stdin;\n1\n\\.\n",
+        encoding="utf-8",
+    )
+    write_tar(path / "avatar-volume.tgz")
+    inventory_sha = ops.hashlib.sha256(
+        f"{AVATAR_KEY}\0{len(AVATAR_PAYLOAD)}\0{AVATAR_SHA}\n".encode()
+    ).hexdigest()
+    (path / "avatar-manifest.json").write_text(json.dumps({
+        "format": "avatar-exact-generation-v2",
+        "generated_at": "2026-08-02T00:00:00Z",
+        "current": [{
+            "account_id": "account-1",
+            "subject_kind": "customer",
+            "subject_id": "customer-1",
+            "avatar_version": AVATAR_VERSION,
+            "avatar_object_id": AVATAR_OBJECT_ID,
+            "key": AVATAR_KEY,
+            "media_type": "image/jpeg",
+            "size": len(AVATAR_PAYLOAD),
+            "actual_sha256": AVATAR_SHA,
+        }],
+        "inventory": {
+            "count": 1,
+            "actual_sha256": inventory_sha,
+            "objects": [{
+                "key": AVATAR_KEY,
+                "size": len(AVATAR_PAYLOAD),
+                "actual_sha256": AVATAR_SHA,
+            }],
+        },
+    }) + "\n", encoding="utf-8")
+    counts = path / "database-counts.json"
+    counts.write_text(json.dumps(DB_COUNTS) + "\n", encoding="utf-8")
+    ops.cmd_metadata(Namespace(
+        output=path / "metadata.json", project=project, compose_sha256="1" * 64,
+        app_image_id="sha256:app", pg_image_id="sha256:postgres",
+        app_repo_digest="", pg_repo_digest="", pg_major="17", app_was_running="true",
+        db_counts_file=counts,
+    ))
+    counts.unlink()
+    rewrite_checksums(path)
 
 
 if __name__ == "__main__":

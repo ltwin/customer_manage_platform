@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 )
 
@@ -77,7 +78,7 @@ func TestAvatarApplicationSetNoOpReplaceAndABA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new object key: %v", err)
 	}
-	if err := objects.Delete(ctx, oldKey); err != nil || !objects.hasExactKey(newKey) {
+	if err := objects.Delete(ctx, oldKey); err != nil || !objects.hasExactKey(newKey.String()) {
 		t.Fatalf("late delete of historical A must not delete new A generation: err=%v", err)
 	}
 	if _, err := app.Remove(ctx, scope, "cus_avatar_flow", 1); !errors.Is(err, customerdomain.ErrAvatarRevisionConflict) {
@@ -321,22 +322,23 @@ func newMemoryAvatarStore() *memoryAvatarStore {
 	return &memoryAvatarStore{objects: make(map[string]memoryAvatarObject)}
 }
 
-func (s *memoryAvatarStore) PutImmutable(_ context.Context, key string, body customerdomain.AvatarContent, expected customerdomain.ObjectMeta) (customerdomain.PutResult, error) {
+func (s *memoryAvatarStore) PutImmutable(_ context.Context, key avatarmedia.Key, body customerdomain.AvatarContent, expected customerdomain.ObjectMeta) (customerdomain.PutResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if current, ok := s.objects[key]; ok {
+	raw := key.String()
+	if current, ok := s.objects[raw]; ok {
 		if current.meta != expected || !bytes.Equal(current.body, body.Bytes()) {
 			return customerdomain.PutResult{}, customerdomain.ErrAvatarObjectIntegrity
 		}
 		return customerdomain.PutResult{Meta: current.meta, Created: false}, nil
 	}
 	s.puts++
-	s.objects[key] = memoryAvatarObject{body: body.Bytes(), meta: expected}
+	s.objects[raw] = memoryAvatarObject{body: body.Bytes(), meta: expected}
 	hook := s.afterFirstCreate
 	if hook != nil {
 		s.afterFirstCreate = nil
 		s.mu.Unlock()
-		hook(key, expected)
+		hook(raw, expected)
 		s.mu.Lock()
 	}
 	if s.temporaryAfterCreateOnce {
@@ -346,34 +348,34 @@ func (s *memoryAvatarStore) PutImmutable(_ context.Context, key string, body cus
 	return customerdomain.PutResult{Meta: expected, Created: true}, nil
 }
 
-func (s *memoryAvatarStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
+func (s *memoryAvatarStore) Open(_ context.Context, key avatarmedia.Key) (io.ReadCloser, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	object, ok := s.objects[key]
+	object, ok := s.objects[key.String()]
 	if !ok {
 		return nil, customerdomain.ErrAvatarObjectNotFound
 	}
 	return io.NopCloser(bytes.NewReader(append([]byte(nil), object.body...))), nil
 }
 
-func (s *memoryAvatarStore) Stat(_ context.Context, key string) (customerdomain.ObjectMeta, error) {
+func (s *memoryAvatarStore) Stat(_ context.Context, key avatarmedia.Key) (customerdomain.ObjectMeta, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	object, ok := s.objects[key]
+	object, ok := s.objects[key.String()]
 	if !ok {
 		return customerdomain.ObjectMeta{}, customerdomain.ErrAvatarObjectNotFound
 	}
 	return object.meta, nil
 }
 
-func (*memoryAvatarStore) List(context.Context, string, string, int) (customerdomain.ObjectPage, error) {
+func (*memoryAvatarStore) List(context.Context, avatarmedia.Prefix, avatarmedia.Cursor, int) (customerdomain.ObjectPage, error) {
 	return customerdomain.ObjectPage{Done: true}, nil
 }
 
-func (s *memoryAvatarStore) Delete(_ context.Context, key string) error {
+func (s *memoryAvatarStore) Delete(_ context.Context, key avatarmedia.Key) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.objects, key)
+	delete(s.objects, key.String())
 	return nil
 }
 

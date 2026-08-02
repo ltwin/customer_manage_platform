@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
 	platformstore "github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -269,7 +270,7 @@ func TestAvatarMaintenancePointerAuditRetriesTemporaryAndRevisitsNextCycle(t *te
 	if _, err := app.Set(ctx, scope, "cus_avatar_audit_retry_later", 0, mustAvatarContent(t, "image/png", "audit-later")); err != nil {
 		t.Fatalf("set later current avatar: %v", err)
 	}
-	temporary := &temporaryStatStore{AvatarObjectStore: delegate, key: key}
+	temporary := &temporaryStatStore{AvatarObjectStore: delegate, key: key.String()}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(&logs, nil))
 	runner := customerdomain.NewAvatarMaintenanceRunner(database, repo, temporary, logger)
@@ -419,7 +420,7 @@ func TestAvatarMaintenanceA23ThreePageRestartSingleFlightDueLimitAndBackoff(t *t
 		}
 		if index == 0 {
 			failedItem = customerdomain.AvatarGCItem{CustomerID: customerID, Ref: ref}
-			failedKey = key
+			failedKey = key.String()
 		}
 	}
 	failing := &failingDeleteStore{AvatarObjectStore: objects, key: failedKey}
@@ -450,8 +451,8 @@ type temporaryStatStore struct {
 	otherCalls atomic.Int32
 }
 
-func (s *temporaryStatStore) Stat(ctx context.Context, key string) (customerdomain.ObjectMeta, error) {
-	if key == s.key {
+func (s *temporaryStatStore) Stat(ctx context.Context, key avatarmedia.Key) (customerdomain.ObjectMeta, error) {
+	if key.String() == s.key {
 		s.calls.Add(1)
 		return customerdomain.ObjectMeta{}, customerdomain.ErrAvatarObjectTemporary
 	}
@@ -476,7 +477,7 @@ type blockingListStore struct {
 	once    sync.Once
 }
 
-func (s *blockingListStore) List(ctx context.Context, prefix, cursor string, limit int) (customerdomain.ObjectPage, error) {
+func (s *blockingListStore) List(ctx context.Context, prefix avatarmedia.Prefix, cursor avatarmedia.Cursor, limit int) (customerdomain.ObjectPage, error) {
 	s.once.Do(func() {
 		close(s.started)
 		select {
@@ -492,8 +493,8 @@ type failingDeleteStore struct {
 	key string
 }
 
-func (s *failingDeleteStore) Delete(ctx context.Context, key string) error {
-	if key == s.key {
+func (s *failingDeleteStore) Delete(ctx context.Context, key avatarmedia.Key) error {
+	if key.String() == s.key {
 		return customerdomain.ErrAvatarObjectTemporary
 	}
 	return s.AvatarObjectStore.Delete(ctx, key)
@@ -501,13 +502,13 @@ func (s *failingDeleteStore) Delete(ctx context.Context, key string) error {
 
 type blockingDeleteStore struct {
 	customerdomain.AvatarObjectStore
-	blockKey string
+	blockKey avatarmedia.Key
 	started  chan struct{}
 	release  chan struct{}
 	once     sync.Once
 }
 
-func (s *blockingDeleteStore) Delete(ctx context.Context, key string) error {
+func (s *blockingDeleteStore) Delete(ctx context.Context, key avatarmedia.Key) error {
 	if key == s.blockKey {
 		s.once.Do(func() { close(s.started) })
 		select {
@@ -541,15 +542,15 @@ func newPreCurrentRaceStore(delegate customerdomain.AvatarObjectStore) *preCurre
 
 func (s *preCurrentRaceStore) PutImmutable(
 	ctx context.Context,
-	key string,
+	key avatarmedia.Key,
 	body customerdomain.AvatarContent,
 	meta customerdomain.ObjectMeta,
 ) (customerdomain.PutResult, error) {
 	result, err := s.AvatarObjectStore.PutImmutable(ctx, key, body, meta)
 	if err == nil && result.Created {
 		s.putOnce.Do(func() {
-			s.firstKey = key
-			_, _, ref, _ := customerdomain.ParseAvatarObjectKey(key)
+			s.firstKey = key.String()
+			_, _, ref, _ := customerdomain.ParseAvatarObjectKey(key.String())
 			s.firstObjectID = ref.AvatarObjectID
 			close(s.putStarted)
 			<-s.putRelease
@@ -558,8 +559,8 @@ func (s *preCurrentRaceStore) PutImmutable(
 	return result, err
 }
 
-func (s *preCurrentRaceStore) Delete(ctx context.Context, key string) error {
-	if key == s.firstKey {
+func (s *preCurrentRaceStore) Delete(ctx context.Context, key avatarmedia.Key) error {
+	if key.String() == s.firstKey {
 		s.deleteOnce.Do(func() {
 			close(s.deleteStarted)
 			<-s.deleteRelease

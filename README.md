@@ -208,6 +208,21 @@ production compose 将头像放在独立 named volume `avatar_data`，容器内�
 普通目录；`AVATAR_LOCAL_REQUIRE_MOUNT` 未设置时缺省为 `false`，也可显式设置为
 `false`。完整配置键见 `.env.example`。
 
+### Manifest 格式与脚本×镜像配对
+
+| 组件 | v1（历史） | v2（现行 generate） |
+|---|---|---|
+| `avatar-manifest.json` `format` | `customer-avatar-exact-generation-v1` | `avatar-exact-generation-v2` |
+| `metadata.json` `manifest_schema_version` | 必须 ∈ allowlist 且 **等于** 包内 manifest.format（派生，禁止自创 format） | 同左 |
+| `avatar-manifest generate`（maintenance binary） | 不再写出 | **只**生成 customer-only v2；有 account_profile pointer 时用 mixed writer |
+| `avatar-manifest verify` | 严格 decode + 内部 v1 投影比对（排除 account-profile key；未知 key fail closed） | 对象级 exact verify；mixed 校验 customer＋account_profile |
+| ops `backup-compose` / `restore-compose` / `v1-ops-package.py` | 可读／可恢复历史 v1 包 | 可读／可校验现行 v2 包 |
+| `database_counts`（metadata） | **16 键** `BASELINE_V1`（无 profile 表计数） | **16 或 18 键**：`BASELINE_V1 ∪ {account_profiles, account_profile_avatar_gc}`；`db-counts-sql` 无参恒出 18 键，缺表以 `to_regclass` 计 0；校验／verify 按包自述键（旧 16 键包在新脚本下仍绿） |
+
+**正向部署顺序**：ops 脚本**不得晚于**镜像切到 v2 generate。先上 dual-reader／typed inventory 的 maintenance／ops，再让 backup 产出 v2。
+
+**回滚**：已生成 v2 包之后回滚应用时，须保留新版 maintenance／ops binary 处理 v2 验证／恢复，或改用启用 v2 前已验证的 v1 备份；禁止在存在 account-profile pointer／GC 行时做破坏性 down migration（见 ADR-004 补充与 roadmap §4.4）。
+
 公开 backup/restore 脚本只支持以下目标：`compose-managed-db`、已经完成账号初始化、app/postgres 和
 `avatar_data`/`pgdata` 都唯一存在、app 精确处于正常 `running` 或 Engine `exited`、本机 Unix
 Docker endpoint。binary、外部 PostgreSQL、远程 Engine、app absent 或 created/paused/

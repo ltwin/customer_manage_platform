@@ -1,0 +1,28 @@
+{
+  "format": "avatar-exact-generation-v2",
+  "generated_at": "2026-08-02T12:00:00Z",
+  "current": [
+    {
+      "account_id": "account-golden",
+      "subject_kind": "customer",
+      "subject_id": "customer-golden",
+      "avatar_version": "sha256-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "avatar_object_id": "abcdef0123456789abcdef0123456789",
+      "key": "avatars/account-golden/customers/customer-golden/sha256-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/abcdef0123456789abcdef0123456789",
+      "media_type": "image/png",
+      "size": 12,
+      "actual_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    }
+  ],
+  "inventory": {
+    "count": 1,
+    "actual_sha256": "7bd1ae79cd4dcdb345fc57ee419da611c194c2bb1a9fc2b81fe6af40b3db2ca6",
+    "objects": [
+      {
+        "key": "avatars/account-golden/customers/customer-golden/sha256-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/abcdef0123456789abcdef0123456789",
+        "size": 12,
+        "actual_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    ]
+  }
+}
