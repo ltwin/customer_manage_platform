@@ -117,3 +117,19 @@ entries:
     doc_path: docs/api/settings.md
     status: current
     note: "2026-07-13 Settings API 参考已通过 owner review"
+
+  - entry: account-profile
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/account_profile.go
+      - backend/internal/platform/httpapi/router.go
+      - backend/internal/accountprofile/service.go
+      - backend/internal/accountprofile/repository.go
+      - backend/internal/accountprofile/maintenance.go
+      - frontend/src/api/client.ts
+      - frontend/src/api/schema.d.ts
+      - frontend/src/account/AccountCenterContext.tsx
+    doc_path: docs/api/account-profile.md
+    status: pending
+    note: "2026-08-02 account-profile-center：/api/v1/account/profile*；共享 DecodeConfirm 原始字节；export schema v3；待 cs-docs 生成参考"

@@ -1,0 +1,7 @@
+stage=bootstrap project=avatar-wipe-58954 image=crm:local context=desktop-linux
+stage=a14-pass
+marker_physical=/var/folders/fk/q5kmlsv14jx_s1grp9pcqjs80000gn/T//avatar-media-wipe.NMyWfX/avatar-host/avatars/wipe-account/account-profile/sha256-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/dddddddddddddddddddddddddddddddd
+stage=restore-invoke
+v1-ops-helper error key=contract
+error code=5 stage=compose-render key=compose-identity action=fix-fixed-services-volumes
+BLOCKED: restore-compose exited 5; package-validate/A14 evidence written. Full A15 needs migrate-capable compose target + real pg_dump fixture (see /Users/samson/workspace/my_project/customer_manage_platform/.codestable/features/2026-08-02-avatar-media-safety-net/evidence/restore_fixture_log).

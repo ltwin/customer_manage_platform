@@ -1,0 +1,9 @@
+assert_dual_key_codec=pass
+stage=bootstrap project=avatar-v2-mixed-58862 image=crm:local context=desktop-linux
+stage=v2-mixed-package-validate-pass
+customer_key=avatars/mixed-account/customers/mixed-customer/sha256-6ff53c044b7910d7daa2b9a7ff29081d7e0239b474c63a62fbd4c990b688c423/cccccccccccccccccccccccccccccccc
+account_profile_key=avatars/mixed-account/account-profile/sha256-a49aa1daa8b646d7ea856b26701d54a54a9cf148c7b543812f17cfc11f142c66/dddddddddddddddddddddddddddddddd
+stage=restore-invoke
+v1-ops-helper error key=contract
+error code=5 stage=compose-render key=compose-identity action=fix-fixed-services-volumes
+BLOCKED: restore-compose exited 5; v2 package-validate evidence written. Full A7b needs migrate-capable compose target (see /Users/samson/workspace/my_project/customer_manage_platform/.codestable/features/2026-08-02-account-center-hardening/evidence/restore_fixture_log).

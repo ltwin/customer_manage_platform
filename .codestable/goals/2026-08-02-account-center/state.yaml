@@ -1,0 +1,38 @@
+schema_version: 2
+goal: account-center
+status: complete
+objective: "交付摄影师账号中心：全局头像按钮、独立 /account/* 页面、资料/头像可维护，并完成 privacy/settings IA 与 hardening 收口；Goal Coverage core 行可验收。"
+start_point: "roadmap account-center active；五份子 design approved；分支 feat/account-center。"
+acceptance:
+  - "任一受保护页可见账号头像按钮；菜单可达用户中心/资料/安全/设置/退出"
+  - "可设置/替换/移除展示名称与头像；全局入口跟随服务端当前版本；失败有回退头像"
+  - "/account、/account/profile、/account/security*、/account/settings 功能可用且非占位"
+  - "privacy 与 system-settings 最终 IA 落地；旧 /settings 主导航收口与固定 redirect 完成"
+  - "v1/v2 mixed restore rehearsal 与 make check 绿；双账号隔离证据齐全"
+non_goals:
+  - "团队/客户双主体、设备中心、换绑邮箱、登录历史、账号删除"
+  - "公开个人主页、扩展资料字段、改写客户头像 API/对象键"
+budget:
+  kind: none
+  limit: null
+current_iteration: 5
+next_action: null
+blocker_signature: null
+blocker_count: 0
+owner_stop:
+  status: resolved
+  reason: RiskAcceptanceNeeded
+  decision: "ResumeWith 1A 2A 3A"
+updated_at: "2026-08-02"
+roadmap: account-center
+branch: feat/account-center
+worktree: false
+acceptance_passed: true
+acceptance_report: functional-acceptance.md
+acceptance_final_iteration: iterations/005.md
+final_iteration_report: iterations/005.md
+final_acceptance_report: functional-acceptance.md
+accepted_residuals:
+  - "CMD-002 restore compose-identity：waived 1A"
+  - "STEP-004 人工断点截图：waived 2A"
+  - "全量 make check（Docker）：waived 3A"

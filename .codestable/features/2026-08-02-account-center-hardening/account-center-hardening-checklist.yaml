@@ -1,0 +1,151 @@
+feature: 2026-08-02-account-center-hardening
+created: 2026-08-02
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "cd frontend && npm run test:account-center && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+      notes: "扩展既有 test:account-center（hardening+复验组）；登记 Makefile。含键盘循环模型、双插槽 CSS、redirect 纯函数若有。2026-08-02：29 pass + build + lint 绿。"
+      status: done
+    - id: CMD-002
+      command: "bash ./scripts/test-v1-ops-backup-restore-safety.sh && bash ./scripts/test-avatar-media-v1-restore-wipe.sh && bash ./scripts/test-avatar-media-v2-mixed-restore.sh"
+      core: true
+      failure_handling: fix-or-block
+      notes: "v1 safety 绿；v1 wipe / v2 mixed package-validate+dual-key 齐备后 restore-compose compose-identity blocked（exit 2）。证据 evidence/restore_fixture_log。"
+      status: blocked
+    - id: CMD-003
+      command: "cd backend && go test -p=1 ./... -count=1 -parallel=1 -run 'AccountIsolation|TwoAccount|E2E'"
+      core: true
+      failure_handling: fix-or-block
+      notes: "匹配 TestAccountAccessHTTPPostgresE2EAndFullIsolation / CrossAccountIsolation；全包 -run 过滤绿（需 Docker）。"
+      status: done
+    - id: CMD-004
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+      notes: "build 过；lint 于 accountprofile/avatarmedia gofmt+staticcheck 失败（Wave1–3 上游债；A9 禁本条非删除改动）。generate-check 零漂移。test:account-center/customer-avatar 已挂且单跑绿。"
+      status: blocked
+  evidence_required:
+    - browser_screenshot_pack
+    - model_and_css_assertions
+    - restore_fixture_log
+    - command_output
+    - export_json_inspection
+    - path_diff_summary
+    - defect_routing_log
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    first_implement_core_protocol: forbidden
+    keep_old_settings_nav_item: forbidden
+    keep_floating_theme_toggle: forbidden
+    dead_unreachable_account_pages: forbidden
+  scope_denylist:
+    - new_account_profiles_migration
+    - schema_version_bump
+    - avatar_exact_generation_writer_new
+    - SectionController_business_logic_new
+
+steps:
+  - id: STEP-000
+    action: "分支门禁：问 owner 分支/worktree；离开 main"
+    exit_signal: "可开发？"
+    status: done
+  - id: STEP-000b
+    action: "依赖清单：package.json 有 test:account-center；Makefile 已登记；CMD-002 脚本存在；CMD-003 E2E 测试名可定位"
+    exit_signal: "四项齐？否则 blocked"
+    status: done
+    notes: "四项齐：test:account-center+test:customer-avatar 已挂 Makefile；v1 wipe+v2 mixed 脚本存在；E2E 名可定位。"
+  - id: STEP-001
+    action: "保护组内固定 replace redirect；含未登录深链"
+    exit_signal: "A1/A1b/A2 通过？"
+    status: done
+  - id: STEP-001b
+    action: "D11：处置 legacy source-grep 断言（重定向/承接记录/退回）；断言无净损失"
+    exit_signal: "A14 通过？方可删旧页"
+    status: done
+  - id: STEP-002
+    action: "navItems 删设置；按 D11 后删残留旧页；去浮动 toggle+死 CSS/import"
+    exit_signal: "A3/A12/A13 通过？"
+    status: done
+  - id: STEP-003
+    action: "AccountMenu 方向键循环 + 双插槽/Escape"
+    exit_signal: "A4 通过？"
+    status: done
+  - id: STEP-004
+    action: "人工断点矩阵 375/1440/200%/coarse 截图落盘"
+    exit_signal: "A5 证据包齐全？"
+    status: partial
+    notes: "evidence/breakpoint-matrix.md 可复跑清单 + 模型/CSS 断言；未真开浏览器截图。"
+  - id: STEP-005
+    action: "完整复验 privacy + settings 矩阵 + Go 双账号"
+    exit_signal: "A6/A10/A11 通过？"
+    status: done
+  - id: STEP-006
+    action: "v1 + v2 mixed restore rehearsal；范围词表；make check；分流日志"
+    exit_signal: "A7a/b/A8/A9 通过？"
+    status: partial
+    notes: "A7a/b restore blocked（compose-identity）；A9 ok；make check blocked 于上游 lint；分流日志已落盘。"
+
+checks:
+  - id: CHK-001
+    item: "/settings → /account/settings replace；丢弃 search/hash；未登录落点正确"
+    source: 名词契约
+    status: done
+  - id: CHK-002
+    item: "/change-password → /account/security/password replace"
+    source: 名词契约
+    status: done
+  - id: CHK-003
+    item: "navItems 无设置项；菜单六动作可达"
+    source: 挂载点
+    status: done
+  - id: CHK-004
+    item: "§4.6 方向键循环+Escape/焦点；双插槽单实例（呈现实现，非核心协议豁免）"
+    source: 验收场景
+    status: done
+  - id: CHK-005
+    item: "375/1440/200%/coarse 人工截图包"
+    source: 验收场景
+    status: partial
+  - id: CHK-006
+    item: "双账号 Go E2E+HTTP 隔离"
+    source: 验收场景
+    status: done
+  - id: CHK-007
+    item: "v1 restore+migrate 与 v2 mixed restore 均绿"
+    source: 验收场景
+    status: blocked
+  - id: CHK-008
+    item: "make check 绿；generate-check 零漂移"
+    source: 流程级约束
+    status: blocked
+    notes: "generate-check 零漂移；make check 卡在上游 golangci-lint（见 defect-routing-log）"
+  - id: CHK-009
+    item: "scope_denylist+openapi/所列后端包无非删除改动；分流日志完整"
+    source: 范围守护
+    status: done
+    notes: "hardening 本条未改 openapi/{accountprofile,avatarmedia,auth,dataexport}；分流见 evidence/defect-routing-log.md"
+  - id: CHK-010
+    item: "浮动 theme-toggle + Sun/Moon import + .theme-toggle CSS 已清除"
+    source: 挂载点
+    status: done
+  - id: CHK-011
+    item: "D11 后旧页已删；无路由死链；HTTP /settings API 保留"
+    source: 挂载点
+    status: done
+  - id: CHK-012
+    item: "复验 privacy 完整矩阵（A10）"
+    source: 验收场景
+    status: done
+  - id: CHK-013
+    item: "复验 settings 完整矩阵（A11）；accepted-residual 白名单"
+    source: 验收场景
+    status: done
+  - id: CHK-014
+    item: "A14 断言无净损失；test:account-center+customer-avatar 已挂 Makefile；STEP-000/000b；items done"
+    source: 流程级约束
+    status: partial
+    notes: "A14+Makefile+STEP-000/000b 完成；items 仍 in-progress，待 owner 裁决 blocked restore／截图／上游 lint 后标 done。"

@@ -1,0 +1,119 @@
+feature: 2026-08-02-account-system-settings
+created: 2026-08-02
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "rg -q 'test:account-center' Makefile && cd frontend && npm run test:account-center && npm run test:settings && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+      notes: "扩展 test:account-center（section ownership + reducer/body builder + A5c stub double + A11 源码正则）；test:settings 守卫旧页；Makefile 机械断言防漏挂。"
+    - id: CMD-002
+      command: "cd backend && go test ./internal/settings/... -count=1 -parallel=1"
+      core: false
+      failure_handling: fix-or-block
+      notes: "本条预期无后端语义变更；误触必须零漂移。"
+    - id: CMD-003
+      command: "make check"
+      core: false
+      failure_handling: defer-to-hardening
+  evidence_required:
+    - command_output
+    - browser_screenshot
+    - request_body_capture
+    - reducer_unit_assertions
+    - accessibility_assertions
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    save_all_semantics_on_account_settings: forbidden
+    new_settings_endpoint: forbidden
+    telegram_token_in_storage_or_logs: forbidden
+    second_theme_store: forbidden
+    delete_legacy_settings_page: forbidden
+    parallel_settings_patch_without_queue: forbidden
+
+steps:
+  - id: STEP-000
+    action: "分支门禁：离开受保护 main 或落盘 owner 检出授权"
+    exit_signal: "可开发分支已确认？"
+    status: done
+  - id: STEP-000b
+    action: "前置门禁：/account/settings 可达；AccountCenterContext.theme/setTheme 可消费；retryTimezone+notify 在该路由下可消费（layout 转发 ShellContext 或等价）"
+    exit_signal: "三项 seam 均可？否则 blocked（归属前置，不静默改 §4.5）"
+    status: done
+  - id: STEP-001
+    action: "settingsControllerKernel + settingsSaveQueue + 五区 body builder scaffold"
+    exit_signal: "reducer 可单测？queue 串行可观察？"
+    status: done
+  - id: STEP-002
+    action: "挂入 /account/settings 五区 UI；退役保存全部；保留旧 /settings 组件"
+    exit_signal: "新页可加载；旧页未删？"
+    status: done
+  - id: STEP-003
+    action: "实现常规／可约／提醒／Telegram／外观；churn 完整三类型；theme 经 AccountCenterContext"
+    exit_signal: "A1–A4/A7/A8 通过？"
+    status: done
+  - id: STEP-004
+    action: "dirty/stale/server-updated/失败隔离/queue 乱序矩阵 + timezone 刷新"
+    exit_signal: "A5/A5b/A5c/A6 通过？"
+    status: done
+  - id: STEP-005
+    action: "扩展 test:account-center + Makefile；旧 test:settings；a11y 最小；范围 diff"
+    exit_signal: "CMD-001 绿；A9–A11 通过？"
+    status: done
+
+checks:
+  - id: CHK-001
+    item: "五区读取/提交字段与 roadmap §4.9 表一致"
+    source: 名词契约
+    status: done
+  - id: CHK-002
+    item: "常规保存后 Shell timezone cache 刷新；body 仅 timezone"
+    source: 验收场景
+    status: done
+  - id: CHK-003
+    item: "PATCH 从不提交 telegram_chat_id；提醒区 churn_thresholds 含完整三类型"
+    source: 流程级约束
+    status: done
+  - id: CHK-004
+    item: "外观只经 AccountCenterContext.setTheme；UI 明示仅当前浏览器；无第二 theme store"
+    source: 验收场景
+    status: done
+  - id: CHK-005
+    item: "dirty section 不被他区保存 hydrate 覆盖；有 server-updated 提示"
+    source: 验收场景
+    status: done
+  - id: CHK-006
+    item: "stale 可读不可提交；刷新后仅未 dirty hydrate（pageReadState）"
+    source: 验收场景
+    status: done
+  - id: CHK-007
+    item: "Telegram deep-link：按钮+openTelegramDeepLink；拦截 10min；unmount 清理；无 storage/日志/href"
+    source: 流程级约束
+    status: done
+  - id: CHK-008
+    item: "无新 endpoint；不做 redirect/主导航删除；安全导出不最终归属本页"
+    source: 范围守护
+    status: done
+  - id: CHK-009
+    item: "STEP-000/000b 门禁；items 指针正确"
+    source: 流程级约束
+    status: done
+  - id: CHK-010
+    item: "settingsSaveQueue 串行+序号（含 GET）；出队构建 body；A5b/A5c（含 stub double）通过"
+    source: 验收场景
+    status: done
+  - id: CHK-011
+    item: "旧 /settings 组件保留；npm run test:settings 绿"
+    source: 验收场景
+    status: done
+  - id: CHK-012
+    item: "A11 源码正则 a11y；Makefile 含 test:account-center（CMD-001 rg 断言）"
+    source: 挂载点
+    status: done
+  - id: CHK-013
+    item: "account/settings 下无 localStorage；od-crm-theme 单写点在 AppShell"
+    source: 范围守护
+    status: done

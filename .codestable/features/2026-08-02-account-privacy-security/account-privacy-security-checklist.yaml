@@ -1,0 +1,108 @@
+feature: 2026-08-02-account-privacy-security
+created: 2026-08-02
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "cd frontend && npm run test:account-center && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+      notes: "追加本条用例到 profile-center 拥有的 test:account-center；须已登记 Makefile test。覆盖 A2 no-auth-retry、notice 渲染、导出文案守卫。"
+      status: pass
+    - id: CMD-002
+      command: "cd backend && go test ./internal/platform/auth/... ./internal/platform/httpapi/... ./internal/dataexport/... -count=1 -parallel=1"
+      core: false
+      failure_handling: fix-or-block
+      notes: "本条预期后端零改动；整包零漂移哨兵（不使用窄 -run 过滤）。"
+      status: deferred
+    - id: CMD-003
+      command: "make check"
+      core: false
+      failure_handling: defer-to-hardening
+      status: deferred
+
+  evidence_required:
+    - browser_screenshot
+    - network_no_refresh_on_bad_password
+    - api_response
+    - export_json_inspection
+    - path_diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    new_security_endpoint: forbidden
+    device_center_controls: forbidden
+    export_v3_first_implementation: forbidden
+    change_password_via_authorized_fetch: forbidden
+    readd_security_card_to_legacy_settings: forbidden
+
+steps:
+  - id: STEP-000
+    action: "分支门禁：问 owner 当前分支或 worktree；离开受保护 main"
+    exit_signal: "可开发分支已确认？"
+    status: done
+  - id: STEP-000b
+    action: "前置基线清单：/account/security 可达；共享改密 form 已抽出；SettingsPage 不再渲染安全/导出；test:account-center 已在 package.json+Makefile"
+    exit_signal: "四项均可观测？否则 blocked"
+    status: done
+  - id: STEP-001
+    action: "最终 IA：身份卡、分区、边界文案、导出 v3 文案"
+    exit_signal: "A1/A6/A7 通过？（A6 取消取证前开启下载前询问）"
+    status: done
+    notes: "代码与 test:account-center 守卫已绿；浏览器截图／导出取消取证属 residual。"
+  - id: STEP-002
+    action: "固化改密 no-auth-retry；先 A2 单次取证再 A3 限速（避免同桶污染）；成功 notice；多会话第二 jar refresh 401"
+    exit_signal: "A2/A3/A4 通过？"
+    status: done
+    notes: "unit 固化 no-auth-retry＋notice queue；A3 限速／A4 第二 cookie jar 需浏览器取证。"
+  - id: STEP-003
+    action: "退出当前登录 A5；旧 /change-password A9；最终页 footer→/account/security；范围 path diff A8"
+    exit_signal: "A5/A8/A9 通过？"
+    status: done
+    notes: "本条前端 delta 未改 auth/dataexport/openapi；旧页 footer→/account/security；A5 浏览器 residual。"
+  - id: STEP-004
+    action: "扩展 test:account-center；清洁度；提交需人工同意"
+    exit_signal: "CMD-001 绿？"
+    status: done
+
+checks:
+  - id: CHK-001
+    item: "身份卡只读邮箱＋静态已验证；消费 AccountCenterContext.account；无第二套收窄"
+    source: 名词契约
+    status: done
+  - id: CHK-002
+    item: "改密继续 requestWithoutAuthRetry；A2 无 refresh 且仍登录；401/429/204 映射保持"
+    source: 验收场景
+    status: done
+  - id: CHK-003
+    item: "改密成功：登录页渲染 notice；第二会话 refresh 401"
+    source: 验收场景
+    status: partial
+    notes: "notice queue＋LoginPage 渲染路径已固化；第二 jar refresh 401 待浏览器。"
+  - id: CHK-004
+    item: "当前退出语义保持；导出取消/失败/成功判据可观测；文案符合 v3"
+    source: 验收场景
+    status: partial
+    notes: "logoutSession 语义保持；v3 文案守卫绿；取消/成功浏览器取证 residual。"
+  - id: CHK-005
+    item: "本条不重做迁入；只升级最终 IA；不把安全卡加回旧 Settings"
+    source: 范围守护
+    status: done
+  - id: CHK-006
+    item: "边界词表含设备中心/换绑/删号/登录历史/OAuth/GC/备份"
+    source: 流程级约束
+    status: done
+  - id: CHK-007
+    item: "auth/dataexport/openapi 路径零改动；无 redirect/主导航删除"
+    source: 范围守护
+    status: done
+    notes: "本条前端实现未改这些路径；工作区既有 profile-center 相关 backend/openapi diff 属前置 item。"
+  - id: CHK-008
+    item: "旧 /change-password 仍可成功改密（A9）"
+    source: 验收场景
+    status: done
+    notes: "路由仍挂载＋共享 form＋footer→/account/security；成功改密浏览器 residual。"
+  - id: CHK-009
+    item: "STEP-000/000b；test:account-center+Makefile；items 指针"
+    source: 流程级约束
+    status: done

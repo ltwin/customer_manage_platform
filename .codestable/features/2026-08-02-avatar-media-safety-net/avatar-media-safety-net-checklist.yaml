@@ -1,0 +1,172 @@
+feature: 2026-08-02-avatar-media-safety-net
+created: 2026-08-02
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "cd backend && go test ./internal/customer/... ./internal/platform/httpapi/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+      notes: "STEP-002 基线用此命令（尚无 avatarmedia）。STEP-003 之后追加 ./internal/avatarmedia/...（包名以落点为准）。勿对不存在的包 pattern 报 matched no packages。"
+    - id: CMD-002
+      command: "python3 scripts/lib/v1-ops-package-selftest.py"
+      core: true
+      failure_handling: fix-or-block
+      notes: "消费已提交 golden；覆盖 v1/v2 validate、metadata allowlist+派生、dual key、重复 JSON key。含于 CMD-003，保留作快速回路。"
+    - id: CMD-003
+      command: "scripts/test-v1-ops-backup-restore-safety.sh"
+      core: true
+      failure_handling: fix-or-block
+      notes: "含 selftest；覆盖 A12–A14 相关 package/backup/restore 安全断言。"
+    - id: CMD-004
+      command: "scripts/test-avatar-media-v1-restore-wipe.sh"
+      core: true
+      failure_handling: fix-or-block
+      notes: "本 feature 自有脚本（名以 implement 为准）。调用真实 restore-compose/v1-ops-package；前置：Docker Desktop desktop-linux + 可用 app 镜像（notes 写明 tag/构建命令）。产出 restore_fixture_log。断言：DB 多余行消失（counts=包）且 avatars/*/account-profile/** 不存在；禁止要求 v2 generate manifest_sha256==v1 包摘要。不修改 v1-hardening catalog。"
+    - id: CMD-005
+      command: "scripts/check-avatar-media-safety-net-scope.sh"
+      core: true
+      failure_handling: fix-or-block
+      notes: "A16 范围守护脚本（本条新增，名以 implement 为准）。必须：(1) git diff --name-only --diff-filter=d $(merge-base)...HEAD；(2) 并上 git ls-files --others --exclude-standard；(3) 排除本 feature 目录与 roadmap 规划文；(4) 对列表 rg 词表，命中 exit 1，无命中 exit 0；禁止 || true；fixture 例外路径写死在脚本 allowlist 并打印。"
+    - id: CMD-006
+      command: "make generate-check"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-007
+      command: "make check"
+      core: false
+      failure_handling: fix-or-block
+      notes: "已含 CMD-002/003；全仓回归可选。"
+  evidence_required:
+    - command_output
+    - golden_key_manifest_bytes
+    - go_python_fixture_parity
+    - restore_fixture_log
+    - scope_grep_log
+    - runbook_diff
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    commented_out_code: forbidden
+    product_profile_migration: forbidden
+    product_profile_api_or_ui: forbidden
+    customer_png_normalize_in_shared_decode: forbidden
+
+steps:
+  - id: STEP-000
+    action: "分支门禁：离开受保护 main，或 approval-report 记录 owner 对检出环境的明确授权"
+    exit_signal: "当前分支可开发（非 main/master/develop/release/test/staging）或授权已落盘？"
+    status: done
+  - id: STEP-001
+    action: "ADR-004 补充（D12）：共享 primitives；主体 pointer/GC；双格式；整包 restore；ops 脚本不晚于镜像切 v2；回滚保留新 binary"
+    exit_signal: "ADR 与 roadmap §4.4 无双重权威？"
+    status: done
+  - id: STEP-002
+    action: "Characterization + golden（key/manifest/HTTP/GC/.avatar-tmp；NewLocal 后种 tmp）"
+    exit_signal: "golden 可比对；CMD-001（无 avatarmedia）全绿？"
+    status: done
+  - id: STEP-003
+    action: "中性化：typed ObjectStore/Local + 共享 decode confirm；customer normalize 留在 customer；读路径 decode 迁入共享；ValidationError 映射零漂移"
+    exit_signal: "CMD-001（含 avatarmedia）与 A18 通过；客户 PNG 归一化语义不变？"
+    status: done
+  - id: STEP-004
+    action: "Dual key Go + Python；Local/ops 走 typed parse"
+    exit_signal: "A3–A5/A10 通过？"
+    status: done
+  - id: STEP-005
+    action: "Manifest：strict v1/v2；v2 customer-only writer；内部 v1 投影供 verify；PointerSource(customer)；Go 写 golden 供 Python 消费"
+    exit_signal: "A6–A9/A7 通过？"
+    status: done
+  - id: STEP-006
+    action: "Ops 双格式：allowlist+派生 metadata；backup v2 包可 validate；伪造 format 拒"
+    exit_signal: "A12/A13 通过？"
+    status: done
+  - id: STEP-007
+    action: "交付 wipe 脚本 + A14/A15；可选 D15 oracle allowlist；不改 hardening catalog"
+    exit_signal: "CMD-003/004 产出 restore_fixture_log；物理+DB marker 断言成立？"
+    status: done
+    notes: "脚本与 A14 预检已交付；CMD-004 完整 A15 因本机 Docker engine 不可用记 blocked，需 owner 环境复跑。"
+  - id: STEP-008
+    action: "Runbook（v1/v2、正向顺序、回滚、配对表）+ CMD-005 范围守护 + 清洁度"
+    exit_signal: "A16/A17 通过；核心 CMD 绿？"
+    status: done
+
+checks:
+  - id: CHK-001
+    item: "avatarmedia 共享 decode/ObjectStore/Local；customer 保留 PNG normalize；account-profile 不得 import customer domain"
+    source: 名词契约
+    status: done
+  - id: CHK-002
+    item: "Go 与 Python 各有唯一 dual key codec；golden 交叉验证"
+    source: 名词契约
+    status: done
+  - id: CHK-003
+    item: "v2 schema/排序/digest/generated_at/subject 唯一；禁 null、额外字段、重复 JSON key、customer_id"
+    source: 名词契约
+    status: done
+  - id: CHK-004
+    item: "对外 generate 仅 v2 customer-only；内部 v1 投影仅供 verify；PointerSource 仅 customer 实现"
+    source: 编排骨架
+    status: done
+  - id: CHK-005
+    item: "typed inventory + .avatar-tmp integrity；ObjectStore 使用 typed Key/Prefix/Cursor"
+    source: 名词契约
+    status: done
+  - id: CHK-006
+    item: "v1 reader 排除合法 account-profile key；未知 key fail closed（双边）"
+    source: 流程级约束
+    status: done
+  - id: CHK-007
+    item: "ops metadata allowlist {v1,v2} 且等于 manifest.format；backup v2 可 validate"
+    source: 流程级约束
+    status: done
+  - id: CHK-008
+    item: "restore 阶段序正确；verify 仅在替换后；PG major 判据沿用"
+    source: 流程级约束
+    status: done
+  - id: CHK-009
+    item: "A14/A15：真实 wipe 脚本；DB 计数字表多余行与物理 account-profile 对象均不保留；不误用 restore-success 的 v1≡v2 manifest 摘要"
+    source: 验收场景
+    status: pending
+    notes: "脚本已交付；A14 package-validate 拒坏包在 CMD-002/004 预检覆盖；完整 A15 Docker restore 待 desktop-linux + crm:local 复跑。"
+  - id: CHK-010
+    item: "customer key/bytes/HTTP/revision/GC 经 golden 零漂移"
+    source: 验收场景
+    status: done
+  - id: CHK-011
+    item: "挂载点可按 §2.3 卸载；A17 不依赖修改 v1-hardening catalog"
+    source: 挂载点
+    status: done
+  - id: CHK-012
+    item: "明确不做产品 profile；A16 范围守护命令可失败"
+    source: 范围守护
+    status: done
+  - id: CHK-013
+    item: "STEP-000 分支门禁与 STEP-001 ADR（含正向部署顺序）完成后方可写业务代码"
+    source: 流程级约束
+    status: done
+  - id: CHK-014
+    item: "runbook 含 v1/v2、脚本不晚于镜像、回滚保留新 binary、配对表"
+    source: 挂载点
+    status: done
+  - id: CHK-015
+    item: "items.yaml feature 指针正确；roadmap §5 对应条目状态与 items 同步"
+    source: 挂载点
+    status: done
+  - id: CHK-016
+    item: "共享 decode 不强制单一 media type；customer normalize 仍为 PNG≤512"
+    source: 名词契约
+    status: done
+  - id: CHK-017
+    item: "ValidationError/读路径 decode 中性化后客户错误映射零漂移"
+    source: 流程级约束
+    status: done
+  - id: CHK-018
+    item: "A18 共享 vs customer normalize 分离有单测证据"
+    source: 验收场景
+    status: done
+  - id: CHK-019
+    item: "A12b：v2 verify 缺对象／多对象／metadata mismatch 均 fail closed（v1 视图同规则）"
+    source: 验收场景
+    status: done

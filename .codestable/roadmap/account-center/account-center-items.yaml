@@ -1,0 +1,49 @@
+roadmap: account-center
+created: 2026-08-02
+
+items:
+  - slug: avatar-media-safety-net
+    description: 中性化头像对象 seam并建立双 key codec、v1/v2 manifest 与 restore 兼容安全网
+    depends_on: []
+    status: done
+    feature: 2026-08-02-avatar-media-safety-net
+    minimal_loop: false
+    notes: >-
+      done（goal 验收 2026-08-02）。CMD-001/002/003/005 绿。Residual waived／挂账：CMD-004 wipe 真机 Docker 复跑（见 goal approval 1A 相关 ops 债）。
+
+  - slug: account-profile-center
+    description: 交付可维护的摄影师账号资料、强版本账号头像、用户中心路由骨架和全局头像菜单
+    depends_on: [avatar-media-safety-net]
+    status: done
+    feature: 2026-08-02-account-profile-center
+    minimal_loop: true
+    notes: >-
+      done（goal 验收 2026-08-02）。最小闭环产品面已验收。Residual：CMD-005 wipe+migrate 真机；account_profiles 专属双账号 E2E 断言 follow-up。
+
+  - slug: account-privacy-security
+    description: 把只读登录身份、改密、当前会话退出和完整数据导出集中到隐私与安全板块
+    depends_on: [account-profile-center]
+    status: done
+    feature: 2026-08-02-account-privacy-security
+    minimal_loop: false
+    notes: >-
+      done（goal 验收 2026-08-02）。最终 IA + CMD-001 绿。浏览器矩阵部分证据 defer／waived 见 hardening 2A。
+
+  - slug: account-system-settings
+    description: 把现有账号设置迁入五个独立保存分区并固化字段所有权与陈旧草稿保护
+    depends_on: [account-profile-center]
+    status: done
+    feature: 2026-08-02-account-system-settings
+    minimal_loop: false
+    notes: >-
+      done（goal 验收 2026-08-02）。五区 + CMD-001 绿。accepted-residual：跨标签页丢更新。
+
+  - slug: account-center-hardening
+    description: 完成旧路由与业务导航收口、跨板块集成、真实恢复演练和多断点可访问性回归
+    depends_on: [account-privacy-security, account-system-settings]
+    status: done
+    feature: 2026-08-02-account-center-hardening
+    minimal_loop: false
+    notes: >-
+      done（goal 验收 2026-08-02，owner 1A/2A/3A）。redirect／nav／D11／键盘循环／CMD-001/003 绿。
+      Waived：CMD-002 全量 restore compose-identity；断点截图；依赖 Docker 的全量 make check。

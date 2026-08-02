@@ -1,0 +1,220 @@
+feature: 2026-08-02-account-profile-center
+created: 2026-08-02
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "cd backend && go test ./internal/accountprofile/... ./internal/platform/store/... ./internal/platform/httpapi/... ./internal/platform/dataexport/... ./internal/avatarmedia/... ./internal/customer/... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+      notes: "包路径以 implement 落点为准；须覆盖 column-local CAS、GC maintenance、export v3、display_name grapheme、guarded down、customer 零漂移与 mixed PointerSource 相关 Go 测。"
+    - id: CMD-002
+      command: "make generate && make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd frontend && npm run test:account-center && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+      notes: "须覆盖 A8 模型+CSS、A17 全局同步、A18 cache 清理；脚本必须写入 package.json 且登记进 Makefile test 目标。"
+    - id: CMD-004
+      command: "python3 scripts/lib/v1-ops-package-selftest.py && scripts/test-v1-ops-backup-restore-safety.sh"
+      core: true
+      failure_handling: fix-or-block
+      notes: "selftest 须功能性调用无参 db-counts-sql（缺表→可选键0）+ 16/18 键双向包校验 + verify 按包自述键比对；不得仅靠 grep。需本机 Docker 的部分仍以既有 safety 脚本为准。"
+    - id: CMD-005
+      command: "scripts/test-avatar-media-v1-restore-wipe.sh --with-profile-migration"
+      core: true
+      failure_handling: fix-or-block
+      notes: "依赖 safety-net D14 脚本落盘；未落盘则本 CMD blocked。目标固定 stopped；断言：旧包 restore-verify 绿后显式 forward migrate，profile/GC 空且无 account-profile 对象。"
+    - id: CMD-005b
+      command: "cd backend && go run ./cmd/avatar-manifest generate --help >/dev/null 2>&1; go test ./internal/customer/avatarbackup/... ./internal/avatarmedia/... -count=1 -run 'Mixed|AccountProfile|PointerSource' -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+      notes: "A12 mixed 证据：go test ./internal/customer/avatarbackup/... -run Mixed；avatar-manifest generate --help；PointerSource 经 cmd/avatar-manifest 接线。"
+    - id: CMD-006
+      command: "make check"
+      core: false
+      failure_handling: defer-to-hardening
+      notes: "全仓回归由 account-center-hardening 兜底；本条不因 make check 单独 blocking。"
+  evidence_required:
+    - command_output
+    - api_response
+    - browser_screenshot
+    - model_and_css_assertions
+    - export_json_inspection
+    - restore_fixture_log
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo: forbidden
+    commented_out_code: forbidden
+    placeholder_account_pages: forbidden
+    customer_png_normalize_on_account_avatar: forbidden
+    second_account_narrowing: forbidden
+  scope_denylist:
+    - member
+    - invite
+    - role
+    - studio_brand
+    - thumbnail
+    - resize
+    - SectionController
+    - email_verified_writable
+
+steps:
+  - id: STEP-000
+    action: "分支门禁：离开受保护 main 或落盘 owner 检出授权"
+    exit_signal: "可开发分支已确认？"
+    status: done
+  - id: STEP-001
+    action: "Migration：account_profiles + account_profile_avatar_gc + guarded down"
+    exit_signal: "空库/重复 up 通过；A-DOWN 通过？"
+    status: done
+  - id: STEP-002
+    action: "ops counts 兼容：无参 db-counts-sql=SQL_COUNT_TABLES+to_regclass计0；validate 16/18；verify/restore-success 按包自述键；selftest 功能性调用"
+    exit_signal: "A13a/A13b 绿？backup/restore/smoke 签名不变？"
+    status: done
+  - id: STEP-003
+    action: "accountprofile.Service：虚拟 Get、column-local Patch/SetAvatar/RemoveAvatar/ReadAvatar、共享 decode（原始字节）、display_name grapheme"
+    exit_signal: "A1–A5/A16/A-NAME 单测通过？"
+    status: done
+  - id: STEP-004
+    action: "GC maintenance runner（仅 grace+orphan，无 checkpoint 表）；composition 注册 backgroundRunner"
+    exit_signal: "A-GC-1/A-GC-2 通过？"
+    status: done
+  - id: STEP-005
+    action: "OpenAPI + HTTP adapter + codegen；A6a/A6b 响应头与 avatar_url"
+    exit_signal: "CMD-002 零漂移；A3–A6b HTTP 通过？"
+    status: done
+  - id: STEP-006
+    action: "dataexport schema v3 + 同事务 profile projection；双账号不可见"
+    exit_signal: "A11/A14 export 证据通过？"
+    status: done
+  - id: STEP-007
+    action: "PointerSource(account_profile) + v2 mixed generate/verify/restore 接线"
+    exit_signal: "A12 + CMD-005b 通过？customer 零漂移？"
+    status: done
+  - id: STEP-008
+    action: "前端 AccountCenterContext（消费 Shell theme/notify + snapshot.account）+ auth-generation 头像缓存；登记 test:account-center 进 Makefile"
+    exit_signal: "A9/A17/A18 通过？无第二套收窄？Makefile 已挂载？"
+    status: done
+  - id: STEP-009a
+    action: "AccountCenterLayout + 全部最终 /account/* 路由骨架"
+    exit_signal: "路由可挂载、无占位死链？"
+    status: done
+  - id: STEP-009b
+    action: "AccountMenu 双插槽 + AppShell 插槽替换；§4.6 ARIA 结构 + Escape/焦点归还最小集"
+    exit_signal: "A8 模型+CSS 通过？"
+    status: done
+  - id: STEP-009c
+    action: "兼容安全面 + 剥离安全块的设置面 + 共享改密 form（新旧路由共用）"
+    exit_signal: "A7/A10 通过？settings 兼容面无双份导出？"
+    status: done
+  - id: STEP-010
+    action: "扩展 wipe/restore（stopped 目标）：旧包绿 + forward migrate 空表；runbook counts 配对行；范围词表；清洁度"
+    exit_signal: "CMD-004/005 绿；A13a/A13/A15 通过？前置脚本已落盘？"
+    status: blocked
+    notes: "脚本与断言已落盘；CMD-004 绿；CMD-005 Docker Desktop unavailable → blocked（exit 0 BLOCKED）。"
+
+checks:
+  - id: CHK-001
+    item: "account_profiles/GC 不变量与 column-local CAS 符合 roadmap §4.1"
+    source: 名词契约
+    status: done
+  - id: CHK-002
+    item: "Service/错误分类符合 §4.2；account-profile 不 import customer domain"
+    source: 名词契约
+    status: done
+  - id: CHK-003
+    item: "HTTP/OpenAPI 符合 §4.3（含 304/响应头/quoted ETag/avatar_url）；类型只引 schema.d.ts"
+    source: 名词契约
+    status: done
+  - id: CHK-004
+    item: "账号头像使用共享 decode 原始字节，不套用 customer PNG 归一化"
+    source: 流程级约束
+    status: done
+  - id: CHK-005
+    item: "幂等 no-op 先于 stale CAS；指针五字段全空或全有"
+    source: 流程级约束
+    status: done
+  - id: CHK-006
+    item: "全部最终 /account/* 功能可用；菜单只指新 URL；无占位页；兼容 settings 已剥离安全/导出"
+    source: 挂载点
+    status: done
+  - id: CHK-007
+    item: "AccountMenu 双插槽单可访问实例 + Escape/焦点归还（完整键盘矩阵归 hardening）"
+    source: 验收场景
+    status: done
+  - id: CHK-008
+    item: "消费 snapshot.account 单点收窄；不导出/复制 parseAccount；全仓无第二处非空校验；theme/notify 消费 ShellContext"
+    source: 名词契约
+    status: done
+  - id: CHK-009
+    item: "改密/退出/导出兼容面保持既有安全语义；改密共享 form"
+    source: 验收场景
+    status: done
+  - id: CHK-010
+    item: "export schema v3 + 同事务投影；无 bytes/object_id/url；counts 仍七 collection"
+    source: 名词契约
+    status: done
+  - id: CHK-011
+    item: "mixed v2 generate/verify 可用（CMD-005b）"
+    source: 流程级约束
+    status: done
+  - id: CHK-012
+    item: "stopped 目标 v1 restore + 显式 forward migration 后真实 profile/GC 空且无 account-profile 对象"
+    source: 验收场景
+    status: blocked
+  - id: CHK-013
+    item: "双 active 账号资料/头像/export 隔离"
+    source: 验收场景
+    status: done
+  - id: CHK-014
+    item: "明确不做：无团队/换绑/缩略图/五区 Settings/旧导航退役 redirect/reconciliation checkpoint 表；scope_denylist 无命中"
+    source: 范围守护
+    status: done
+  - id: CHK-015
+    item: "STEP-000 分支门禁完成后方可写业务代码"
+    source: 流程级约束
+    status: done
+  - id: CHK-016
+    item: "display_name grapheme 校验与 A-NAME 全覆盖；go.mod 显式依赖"
+    source: 验收场景
+    status: done
+  - id: CHK-017
+    item: "A17：mutation 后全局入口立即跟服务端版本；旧 object URL revoke"
+    source: 验收场景
+    status: done
+  - id: CHK-018
+    item: "A18：auth generation 变化清空头像缓存；test:account-center 已挂 Makefile"
+    source: 挂载点
+    status: done
+  - id: CHK-019
+    item: "A-GC-1：24h grace 后旧 generation 删除"
+    source: 验收场景
+    status: done
+  - id: CHK-020
+    item: "A-GC-2：CAS 失败 orphan 可证明清理；runner 已挂 composition；无第三张 checkpoint 表"
+    source: 挂载点
+    status: done
+  - id: CHK-021
+    item: "A13a：旧包 16 键在新脚本下 package-validate/restore/restore-verify 全绿"
+    source: 流程级约束
+    status: done
+  - id: CHK-022
+    item: "migration guarded down：非空失败、皆空成功；items 指针正确"
+    source: 流程级约束
+    status: done
+  - id: CHK-023
+    item: "A13b：无参 db-counts-sql+to_regclass 计0；verify/restore-success 按包自述键；runbook counts 配对行"
+    source: 流程级约束
+    status: done
+  - id: CHK-024
+    item: "菜单过渡期 ARIA 结构符合 §4.6；仅方向键循环延后 hardening"
+    source: 验收场景
+    status: done
+  - id: CHK-025
+    item: "A4b：mutation 409 后前端重读资料且保留未提交本地输入；不自动覆盖服务端新版本"
+    source: 验收场景
+    status: done
