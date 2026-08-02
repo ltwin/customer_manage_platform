@@ -1,6 +1,9 @@
 # 凭证红线：.env 永不入 git（CLAUDE.md 硬规则 4）
 .env
 
+# python
+__pycache__/
+
 node_modules/
 frontend/dist/
 backend/bin/
@@ -16,3 +19,6 @@ backend/internal/platform/webui/dist/*
 .DS_Store
 
 var/
+
+# AI Agents
+.reasonix/
