@@ -75,6 +75,11 @@ func (PostgresRepository) LoadSnapshot(ctx context.Context, scope store.AccountS
 			return fmt.Errorf("load settings: %w", err)
 		}
 		snapshot.Settings = effective
+		profile, err := loadAccountProfile(ctx, readScope)
+		if err != nil {
+			return fmt.Errorf("load account profile: %w", err)
+		}
+		snapshot.AccountProfile = profile
 		return nil
 	})
 	if err != nil {
@@ -350,6 +355,44 @@ func loadEffectiveSettings(ctx context.Context, scope store.ReadTxAccountScope) 
 	stored.Availability = decodedAvailability
 	stored.TelegramChatID = nullStringPointer(chatID)
 	return settings.EffectiveSettings(stored), nil
+}
+
+func loadAccountProfile(ctx context.Context, scope store.ReadTxAccountScope) (AccountProfileExport, error) {
+	var (
+		displayName   sql.NullString
+		profileRev    int64
+		avatarRev     int64
+		avatarVersion sql.NullString
+		mediaType     sql.NullString
+		size          sql.NullInt64
+		avatarAt      sql.NullTime
+		updatedAt     sql.NullTime
+	)
+	err := scope.QueryRow(ctx, "account_profiles",
+		"display_name, profile_revision, avatar_revision, avatar_version, avatar_media_type, avatar_size, avatar_updated_at, updated_at",
+		"",
+	).Scan(&displayName, &profileRev, &avatarRev, &avatarVersion, &mediaType, &size, &avatarAt, &updatedAt)
+	if errors.Is(err, store.ErrNoRows) {
+		return VirtualAccountProfile(), nil
+	}
+	if err != nil {
+		return AccountProfileExport{}, err
+	}
+	out := AccountProfileExport{
+		DisplayName:     nullStringPointer(displayName),
+		ProfileRevision: profileRev,
+		AvatarRevision:  avatarRev,
+		UpdatedAt:       nullTimePointer(updatedAt),
+	}
+	if avatarVersion.Valid && mediaType.Valid && size.Valid && avatarAt.Valid {
+		out.Avatar = &AccountProfileAvatarExport{
+			Version:   avatarVersion.String,
+			MediaType: mediaType.String,
+			Size:      size.Int64,
+			UpdatedAt: avatarAt.Time.UTC(),
+		}
+	}
+	return out, nil
 }
 
 func nullStringPointer(value sql.NullString) *string {

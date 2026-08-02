@@ -111,10 +111,13 @@ func TestDataExportRouteReturnsRealAccountData(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); err != nil {
 		t.Fatalf("decode export: %v", err)
 	}
-	if document.SchemaVersion != 2 || len(document.Customers) != 1 || len(document.SocialIdentities) != 1 ||
+	if document.SchemaVersion != 3 || len(document.Customers) != 1 || len(document.SocialIdentities) != 1 ||
 		len(document.CustomerNotes) != 1 || len(document.Packages) != 1 || len(document.Orders) != 1 ||
 		len(document.ScheduleSlots) != 1 || len(document.Reminders) != 1 {
 		t.Fatalf("export did not include real account data: %+v", document)
+	}
+	if document.AccountProfile.ProfileRevision != "pr-0" || document.AccountProfile.AvatarRevision != "ar-0" {
+		t.Fatalf("export account_profile virtual default mismatch: %+v", document.AccountProfile)
 	}
 	if document.Counts.Customers != len(document.Customers) ||
 		document.Counts.SocialIdentities != len(document.SocialIdentities) ||
@@ -191,7 +194,7 @@ func assertCompleteRouteExportJSON(
 	}
 	expected := map[string]any{
 		"exported_at":    exportedAt,
-		"schema_version": float64(2),
+		"schema_version": float64(3),
 		"counts": map[string]any{
 			"customers": float64(1), "social_identities": float64(1), "customer_notes": float64(1),
 			"packages": float64(1), "orders": float64(1), "schedule_slots": float64(1), "reminders": float64(1),
@@ -254,6 +257,13 @@ func assertCompleteRouteExportJSON(
 				"min_opening_minutes": float64(90),
 				"turnaround_minutes":  float64(30),
 			},
+		},
+		"account_profile": map[string]any{
+			"display_name":     nil,
+			"profile_revision": "pr-0",
+			"avatar_revision":  "ar-0",
+			"avatar":           nil,
+			"updated_at":       nil,
 		},
 	}
 	if !reflect.DeepEqual(document, expected) {

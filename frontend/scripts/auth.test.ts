@@ -305,6 +305,7 @@ test('verification action token is consumed from fragment and removed before use
 })
 
 test('auth routes and pages are mounted without the legacy storage token contract', async () => {
+  // D11：ChangePasswordPage/SettingsPage → ChangePasswordForm / AccountSecurityPage / AccountMenu
   const [
     app,
     loginPage,
@@ -312,9 +313,10 @@ test('auth routes and pages are mounted without the legacy storage token contrac
     verifyPage,
     forgotPage,
     resetPage,
-    changePage,
+    changeForm,
+    accountMenu,
+    securityPage,
     appShell,
-    settingsPage,
     welcomePage,
     sessionSource,
     makefile,
@@ -325,9 +327,10 @@ test('auth routes and pages are mounted without the legacy storage token contrac
     readFile('src/pages/auth/VerifyEmailPage.tsx', 'utf8'),
     readFile('src/pages/auth/ForgotPasswordPage.tsx', 'utf8'),
     readFile('src/pages/auth/ResetPasswordPage.tsx', 'utf8'),
-    readFile('src/pages/auth/ChangePasswordPage.tsx', 'utf8'),
+    readFile('src/account/ChangePasswordForm.tsx', 'utf8'),
+    readFile('src/account/AccountMenu.tsx', 'utf8'),
+    readFile('src/account/AccountSecurityPage.tsx', 'utf8'),
     readFile('src/components/AppShell.tsx', 'utf8'),
-    readFile('src/pages/SettingsPage.tsx', 'utf8'),
     readFile('src/pages/WelcomePage.tsx', 'utf8'),
     readFile('src/auth/session.ts', 'utf8'),
     readFile('../Makefile', 'utf8'),
@@ -338,6 +341,7 @@ test('auth routes and pages are mounted without the legacy storage token contrac
   assert.match(app, /path="\/forgot-password"/)
   assert.match(app, /path="\/reset-password"/)
   assert.match(app, /path="\/change-password"/)
+  assert.match(app, /Navigate to="\/account\/security\/password" replace/)
   assert.match(loginPage, /login\(email, password\)/)
   assert.match(loginPage, /to="\/forgot-password"/)
   assert.doesNotMatch(loginPage, /手机号|短信|验证码/)
@@ -351,18 +355,18 @@ test('auth routes and pages are mounted without the legacy storage token contrac
   assert.match(resetPage, /useLayoutEffect/)
   assert.match(resetPage, /if \(started\.current\) return/)
   assert.match(resetPage, /resetPassword\(tokenRef\.current, password\)/)
-  assert.match(changePage, /changePassword\(currentPassword, password\)/)
-  assert.match(changePage, /setAnonymous\(\)/)
-  assert.match(appShell, /logoutSession\(\)/)
-  assert.match(settingsPage, /to="\/change-password"/)
-  assert.match(settingsPage, /logoutSession\(\)/)
+  assert.match(changeForm, /changePassword\(currentPassword, password\)/)
+  assert.match(changeForm, /setAnonymous\(\)/)
+  assert.match(accountMenu, /logoutSession\(\)/)
+  assert.match(securityPage, /to="\/account\/security\/password"/)
+  assert.match(securityPage, /logoutSession\(\)/)
   assert.match(welcomePage, /fetchAuthCapabilities/)
   assert.match(welcomePage, /to="\/register"/)
   assert.match(makefile, /npm run test:auth/)
   assert.doesNotMatch(
-    [app, loginPage, registerPage, verifyPage, forgotPage, resetPage, changePage, appShell, settingsPage, welcomePage, sessionSource].join('\n'),
+    [app, loginPage, registerPage, verifyPage, forgotPage, resetPage, changeForm, accountMenu, securityPage, appShell, welcomePage, sessionSource].join('\n'),
     /crm_token/,
   )
-  assert.doesNotMatch([forgotPage, resetPage, changePage].join('\n'), /localStorage|sessionStorage|indexedDB|console\./)
+  assert.doesNotMatch([forgotPage, resetPage, changeForm].join('\n'), /localStorage|sessionStorage|indexedDB|console\./)
   assert.doesNotMatch(sessionSource, /localStorage|sessionStorage|indexedDB/)
 })

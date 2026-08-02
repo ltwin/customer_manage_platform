@@ -17,6 +17,7 @@
     "test:customer-avatar": "node --test --experimental-transform-types scripts/customer-avatar.test.ts",
     "test:telegram-digest": "node --test --experimental-transform-types scripts/telegram-digest.test.ts",
     "test:data-export": "node --test --experimental-transform-types scripts/data-export.test.ts",
+    "test:account-center": "node --test --experimental-transform-types scripts/account-center.test.ts",
     "test:v1-hardening": "node --test --experimental-transform-types scripts/v1-hardening.test.ts",
     "test:prototype": "node --test scripts/prototype-contract.test.mjs",
     "preview": "vite preview",

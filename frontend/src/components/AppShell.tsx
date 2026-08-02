@@ -4,17 +4,13 @@ import {
   Bell,
   CalendarDays,
   LayoutDashboard,
-  LogOut,
-  Moon,
   Package,
-  KeyRound,
   ReceiptText,
-  Settings,
-  Sun,
   Users,
 } from 'lucide-react'
 import { ApiError, fetchMe } from '../api/client'
-import { logoutSession } from '../auth/session'
+import { AccountCenterProvider } from '../account/AccountCenterContext.tsx'
+import AccountMenu from '../account/AccountMenu.tsx'
 import { PrototypeProvider } from '../crm/PrototypeStore'
 import type { ShellContext } from './shellContext'
 import StateNotice from './StateNotice'
@@ -34,14 +30,12 @@ const navItems = [
   { key: 'calendar', label: '档期', to: '/calendar', icon: CalendarDays },
   { key: 'packages', label: '套系', to: '/packages', icon: Package },
   { key: 'reminders', label: '提醒', to: '/reminders', icon: Bell },
-  { key: 'settings', label: '设置', to: '/settings', icon: Settings },
 ]
 
 export default function AppShell() {
 	const navigate = useNavigate()
 	const [theme, setTheme] = useState(() => readTheme())
 	const [toast, setToast] = useState<string | null>(null)
-	const [loggingOut, setLoggingOut] = useState(false)
 		const [timezoneState, setTimezoneState] = useState<PageReadState<string>>({
 			kind: 'loading',
 			message: '正在加载账号时区',
@@ -92,16 +86,11 @@ export default function AppShell() {
     return () => window.clearTimeout(timer)
   }, [toast])
 
-	async function onLogout() {
-		if (loggingOut) return
-		setLoggingOut(true)
-		try {
-			await logoutSession()
-		} finally {
-			navigate('/login', { replace: true })
-			setLoggingOut(false)
+	const notify = useMemo(() => {
+		return (message: string) => {
+			setToast(message)
 		}
-	}
+	}, [])
 
 	const context = useMemo<ShellContext>(
 		() => ({
@@ -111,14 +100,13 @@ export default function AppShell() {
 			retryTimezone() {
 				setTimezoneReloadTick((current) => current + 1)
 			},
-			notify(message: string) {
-				setToast(message)
-			},
+			notify,
 		}),
-			[timezone, timezoneError, timezoneLoading],
+			[timezone, timezoneError, timezoneLoading, notify],
 	)
 
   return (
+    <AccountCenterProvider theme={theme} setTheme={setTheme} notify={notify}>
     <PrototypeProvider>
       <div className="app-shell">
         <aside className="sidebar">
@@ -136,22 +124,15 @@ export default function AppShell() {
             )
           })}
           <div className="nav-spacer" />
-          <div className="nav-account-actions" aria-label="账号安全">
-            <NavLink className="nav-item" to="/change-password">
-              <KeyRound aria-hidden="true" strokeWidth={1.8} />
-              修改密码
-            </NavLink>
-            <button className="nav-item nav-action" type="button" disabled={loggingOut} onClick={onLogout}>
-              <LogOut aria-hidden="true" strokeWidth={1.8} />
-              {loggingOut ? '正在退出…' : '退出登录'}
-            </button>
+          <div className="nav-account-actions" aria-label="账号菜单">
+            <AccountMenu slot="desktop" />
           </div>
-          <div className="nav-foot">工作室单账号 · 数据可随时导出</div>
+          <div className="nav-foot">演示单账号 · 数据可随时导出</div>
         </aside>
 
-	        <div className="main">
-		          {timezonePresentation.notice && <StateNotice {...timezonePresentation.notice} />}
-		          <Outlet context={context} />
+			        <div className="main">
+				          {timezonePresentation.notice && <StateNotice {...timezonePresentation.notice} />}
+				          <Outlet context={context} />
         </div>
       </div>
 
@@ -167,20 +148,13 @@ export default function AppShell() {
         })}
       </nav>
 
-      <button
-        type="button"
-        className="theme-toggle icon-btn"
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-        aria-label={theme === 'dark' ? '切换到浅色模式' : '切换到暗色模式'}
-        title={theme === 'dark' ? '切换到浅色模式' : '切换到暗色模式'}
-      >
-        {theme === 'dark' ? <Sun aria-hidden="true" strokeWidth={1.8} /> : <Moon aria-hidden="true" strokeWidth={1.8} />}
-      </button>
+      <AccountMenu slot="mobile" />
 
       <div id="toast" className={toast ? 'show' : ''} role="status" aria-live="polite">
         {toast}
       </div>
     </PrototypeProvider>
+    </AccountCenterProvider>
   )
 }
 

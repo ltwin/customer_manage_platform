@@ -43,15 +43,15 @@ test('deep-link opener uses noopener,noreferrer and reports popup blocking', () 
   assert.equal(openTelegramDeepLink('https://t.me/example_bot?start=opaque', () => null), false)
 })
 
-test('Settings page exposes binding states without rendering secrets or storage/log sinks', async () => {
-  const source = await readFile(new URL('../src/pages/SettingsPage.tsx', import.meta.url), 'utf8')
+test('Account settings page exposes binding states without rendering secrets or storage/log sinks', async () => {
+  // D11：重定向到 AccountSettingsPage（旧 SettingsPage 已删）
+  const source = await readFile(new URL('../src/account/settings/AccountSettingsPage.tsx', import.meta.url), 'utf8')
   for (const label of ['绑定 Telegram', '重新绑定', '正在生成绑定链接', '弹窗被浏览器拦截', 'role="alert"']) {
     assert.match(source, new RegExp(label))
   }
-  assert.match(
-    source,
-    /<button className="btn btn-primary" type="button" disabled=\{binding\} onClick=\{onBindTelegram\}>/,
-  )
+  assert.match(source, /className="btn btn-primary"/)
+  assert.match(source, /disabled=\{binding\}/)
+  assert.match(source, /onClick=\{\(\) => void onBindTelegram\(\)\}/)
   assert.doesNotMatch(source, /localStorage|sessionStorage|console\.(?:log|error)/)
   assert.doesNotMatch(source, /\{\s*(?:bind)?token\s*\}/i)
   assert.doesNotMatch(source, /href=\{[^}]*deepLink/i)

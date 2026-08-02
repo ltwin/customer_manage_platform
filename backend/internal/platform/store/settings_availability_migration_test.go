@@ -56,8 +56,10 @@ func TestSettingsAvailabilityMigrationBackfillsExistingRowsAndRollsBack(t *testi
 	if err := db.Close(); err != nil {
 		t.Fatalf("close before down migration: %v", err)
 	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("down availability migration: %v", err)
+	for index, label := range []string{"account profiles", "settings availability"} {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatalf("%s down migration (step %d): %v", label, index+1, err)
+		}
 	}
 	db, err = sql.Open("pgx", url)
 	if err != nil {

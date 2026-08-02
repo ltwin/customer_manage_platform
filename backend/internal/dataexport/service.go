@@ -48,7 +48,7 @@ func (s *Service) Build(ctx context.Context, scope store.AccountScope) (Document
 	normalizeSnapshot(&snapshot)
 	return Document{
 		ExportedAt:       exportedAt,
-		SchemaVersion:    2,
+		SchemaVersion:    3,
 		Counts:           countsFor(snapshot),
 		Customers:        snapshot.Customers,
 		SocialIdentities: snapshot.SocialIdentities,
@@ -58,6 +58,7 @@ func (s *Service) Build(ctx context.Context, scope store.AccountScope) (Document
 		ScheduleSlots:    snapshot.ScheduleSlots,
 		Reminders:        snapshot.Reminders,
 		Settings:         snapshot.Settings,
+		AccountProfile:   snapshot.AccountProfile,
 	}, nil
 }
 

@@ -73,6 +73,11 @@ func (s *Store) ScopeFor(ac auth.AccountContext) AccountScope {
 	return AccountScope{pool: s.pool, runner: s.pool, accountID: ac.AccountID}
 }
 
+// AccountID 返回当前隔离句柄绑定的账号标识（来自认证上下文，非客户端参数）。
+func (sc AccountScope) AccountID() string {
+	return sc.accountID
+}
+
 func (sc AccountScope) execRunner() scopedRunner {
 	if sc.runner != nil {
 		return sc.runner

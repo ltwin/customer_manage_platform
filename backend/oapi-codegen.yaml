@@ -21,3 +21,4 @@ output-options:
     - dashboard
     - telegram-digest
     - export
+    - account-profile

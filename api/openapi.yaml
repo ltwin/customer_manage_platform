@@ -1718,6 +1718,186 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /account/profile:
+    get:
+      tags: [account-profile]
+      operationId: getAccountProfile
+      summary: 读取当前账号资料（无行时返回虚拟默认）
+      responses:
+        "200":
+          description: 当前账号资料
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+    patch:
+      tags: [account-profile]
+      operationId: patchAccountProfile
+      summary: 条件更新展示名称
+      parameters:
+        - $ref: "#/components/parameters/ProfileIfMatch"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [display_name]
+              properties:
+                display_name:
+                  type: string
+                  nullable: true
+      responses:
+        "200":
+          description: 更新后的账号资料
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountProfile"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: profile_revision_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /account/profile/avatar:
+    put:
+      tags: [account-profile]
+      operationId: putAccountProfileAvatar
+      summary: 条件设置或替换账号头像（原始合规字节，非客户 PNG 归一化）
+      parameters:
+        - $ref: "#/components/parameters/AvatarIfMatch"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 设置后的账号资料；same-content 完整对象重放为 no-op
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountProfile"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: avatar_revision_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+    delete:
+      tags: [account-profile]
+      operationId: deleteAccountProfileAvatar
+      summary: 条件移除账号头像
+      parameters:
+        - $ref: "#/components/parameters/AvatarIfMatch"
+      responses:
+        "200":
+          description: 移除后的账号资料；已无头像时为 no-op
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountProfile"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: avatar_revision_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /account/profile/avatar/content:
+    get:
+      tags: [account-profile]
+      operationId: getAccountProfileAvatarContent
+      summary: 经账号鉴权读取当前强版本账号头像内容
+      parameters:
+        - name: v
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/AvatarVersion"
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+            pattern: '^"sha256-[0-9a-f]{64}"$'
+      responses:
+        "200":
+          description: 完整性已验证的当前头像字节
+          headers:
+            ETag:
+              schema:
+                type: string
+            Cache-Control:
+              schema:
+                type: string
+            Vary:
+              schema:
+                type: string
+            X-Content-Type-Options:
+              schema:
+                type: string
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "304":
+          description: If-None-Match 命中当前完整对象
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: avatar_version_stale
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1730,10 +1910,18 @@ components:
       name: If-Match
       in: header
       required: true
-      description: 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+      description: 当前 avatar_revision 的 quoted token，例如 "ar-3"
       schema:
         type: string
         pattern: '^"ar-(0|[1-9][0-9]*)"$'
+    ProfileIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: 当前 AccountProfile.profile_revision 的 quoted token，例如 "pr-3"
+      schema:
+        type: string
+        pattern: '^"pr-(0|[1-9][0-9]*)"$'
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2570,19 +2758,87 @@ components:
           type: integer
           minimum: 0
 
+    AccountProfile:
+      type: object
+      additionalProperties: false
+      required: [display_name, profile_revision, avatar_revision]
+      properties:
+        display_name:
+          type: string
+          nullable: true
+        profile_revision:
+          type: string
+          pattern: '^pr-(0|[1-9][0-9]*)$'
+        avatar_revision:
+          type: string
+          pattern: '^ar-(0|[1-9][0-9]*)$'
+        avatar_version:
+          $ref: "#/components/schemas/AvatarVersion"
+        avatar_url:
+          type: string
+          description: 同源鉴权相对 URL；查询参数 v 等于当前强版本
+        avatar_updated_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ExportAccountProfileAvatar:
+      type: object
+      additionalProperties: false
+      required: [version, media_type, size, updated_at]
+      properties:
+        version:
+          $ref: "#/components/schemas/AvatarVersion"
+        media_type:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+        size:
+          type: integer
+          minimum: 1
+          maximum: 5242880
+        updated_at:
+          type: string
+          format: date-time
+
+    ExportAccountProfile:
+      type: object
+      additionalProperties: false
+      required: [display_name, profile_revision, avatar_revision, avatar, updated_at]
+      properties:
+        display_name:
+          type: string
+          nullable: true
+        profile_revision:
+          type: string
+          pattern: '^pr-(0|[1-9][0-9]*)$'
+        avatar_revision:
+          type: string
+          pattern: '^ar-(0|[1-9][0-9]*)$'
+        avatar:
+          allOf:
+            - $ref: "#/components/schemas/ExportAccountProfileAvatar"
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
     ExportDocument:
       type: object
       additionalProperties: false
       required:
         [exported_at, schema_version, counts, customers, social_identities,
-         customer_notes, packages, orders, schedule_slots, reminders, settings]
+         customer_notes, packages, orders, schedule_slots, reminders, settings,
+         account_profile]
       properties:
         exported_at:
           type: string
           format: date-time
         schema_version:
           type: integer
-          enum: [2]
+          enum: [3]
         counts:
           $ref: "#/components/schemas/ExportCounts"
         customers:
@@ -2615,3 +2871,5 @@ components:
             $ref: "#/components/schemas/Reminder"
         settings:
           $ref: "#/components/schemas/Settings"
+        account_profile:
+          $ref: "#/components/schemas/ExportAccountProfile"

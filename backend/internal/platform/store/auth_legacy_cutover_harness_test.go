@@ -143,6 +143,9 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 	fullVersion := migrationVersion(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("account profiles down: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("settings availability down: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -167,6 +170,9 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 
 	resetAuthSchema(t, url)
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("prepare account profiles down: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("prepare settings availability down: %v", err)
 	}
@@ -200,7 +206,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	return legacyRollbackHarnessReport{
 		Report: "auth_legacy_rollback", MigrationChecksum: "sha256:" + hex.EncodeToString(digest[:]),
 		LegacySchemaVersionBefore: versionBefore, LegacySchemaVersionAfter: versionAfter,
-		LimiterSchemaRollback:        fullVersion == 14 && versionBefore == 12,
+		LimiterSchemaRollback:        fullVersion == 15 && versionBefore == 12,
 		LegacyDownPassed:             versionBefore == 12 && versionAfter == 11,
 		LegacyDataPreserved:          legacyHash == "deprecated-hash" && customerCount == 1,
 		NewStyleDownBlocked:          downErr != nil && strings.Contains(downErr.Error(), "auth_schema_down_blocked_new_accounts"),

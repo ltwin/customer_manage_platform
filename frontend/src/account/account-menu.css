@@ -1,0 +1,160 @@
+.account-menu-slot {
+  position: relative;
+}
+
+.account-menu-slot-desktop {
+  display: block;
+  width: 100%;
+}
+
+.account-menu-slot-mobile {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .account-menu-slot-desktop {
+    display: none;
+  }
+
+  .account-menu-slot-mobile {
+    display: block;
+    position: fixed;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 40;
+  }
+}
+
+.account-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.account-menu-slot-mobile .account-menu-trigger {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.account-menu-slot-mobile .account-menu-trigger-text {
+  display: none;
+}
+
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: #5b7c99;
+  color: #fff;
+  flex: 0 0 auto;
+}
+
+.account-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.account-avatar.tone-0 { background: #5b7c99; }
+.account-avatar.tone-1 { background: #6a8f6b; }
+.account-avatar.tone-2 { background: #8a6d5b; }
+.account-avatar.tone-3 { background: #6d6a8f; }
+.account-avatar.tone-4 { background: #8f6a7a; }
+.account-avatar.tone-5 { background: #5b8a8f; }
+
+.account-menu-trigger-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.account-menu-name,
+.account-menu-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-menu-email {
+  font-size: 0.75rem;
+  opacity: 0.72;
+}
+
+.account-menu-panel {
+  position: absolute;
+  bottom: calc(100% + 0.4rem);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.4rem;
+  border-radius: 0.85rem;
+  background: var(--surface, #fff);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.14);
+  z-index: 50;
+}
+
+.account-menu-slot-mobile .account-menu-panel {
+  bottom: auto;
+  top: calc(100% + 0.4rem);
+  left: auto;
+  right: 0;
+  width: min(18rem, calc(100vw - 1.5rem));
+}
+
+.account-menu-identity,
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 40px;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+  text-decoration: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-menu-identity strong,
+.account-menu-identity small {
+  display: block;
+}
+
+.account-menu-identity small {
+  opacity: 0.72;
+  font-size: 0.75rem;
+}
+
+.account-menu-item:hover,
+.account-menu-identity:hover,
+.account-menu-item:focus-visible,
+.account-menu-identity:focus-visible {
+  background: rgb(0 0 0 / 0.06);
+  outline: none;
+}
+
+.account-menu-danger {
+  color: #a33;
+}

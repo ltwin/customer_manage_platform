@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import {
@@ -146,17 +145,5 @@ test('availability serializer replaces only availability in the current writable
   assert.equal(currentBody.availability?.weekly[2], null)
 })
 
-test('settings freezes the entire writable form while save or stale rehydrate is pending', () => {
-  const source = readFileSync(new URL('../src/pages/SettingsPage.tsx', import.meta.url), 'utf8')
-  assert.match(source, /fieldset className="settings-edit-fields" disabled=\{saving \|\| settingsStale\}/)
-  assert.match(source, /const next = await updateSettings/)
-  assert.match(source, /hydrateSettingsForm\(next\)/)
-})
-
-test('settings save has a synchronous re-entry guard', () => {
-  const source = readFileSync(new URL('../src/pages/SettingsPage.tsx', import.meta.url), 'utf8')
-  assert.match(source, /const settingsSaveInFlightRef = useRef\(false\)/)
-  assert.match(source, /if \(settingsSaveInFlightRef\.current\) return/)
-  assert.match(source, /settingsSaveInFlightRef\.current = true/)
-  assert.match(source, /settingsSaveInFlightRef\.current = false/)
-})
+// D11（account-center-hardening）：旧 SettingsPage 整表 freeze / settingsSaveInFlightRef
+// 断言已删除；由 test:account-center 的 A6/A11 fieldset disabled 与 A5c settingsSaveQueue 承接。

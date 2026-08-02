@@ -86,7 +86,7 @@ func TestAccountAuthMigrationPreservesLegacyAccountAndRollsBack(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("close before auth down migration: %v", err)
 	}
-	for index, label := range []string{"settings availability", "limiter", "legacy-only auth"} {
+	for index, label := range []string{"account profiles", "settings availability", "limiter", "legacy-only auth"} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("%s down migration (step %d): %v", label, index+1, err)
 		}
@@ -128,7 +128,7 @@ func TestAccountAuthDownMigrationRejectsNewStyleAccount(t *testing.T) {
 		t.Fatalf("close before blocked down migration: %v", err)
 	}
 
-	for index, label := range []string{"settings availability", "limiter"} {
+	for index, label := range []string{"account profiles", "settings availability", "limiter"} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("%s down migration (step %d): %v", label, index+1, err)
 		}

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -140,6 +141,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	avatarRepo := customer.NewPostgresAvatarRepository()
 	avatarApp := customer.NewAvatarApplication(avatarRepo, objects)
 	maintenance := customer.NewAvatarMaintenanceRunner(s, avatarRepo, objects, logger)
+	profileRepo := accountprofile.NewPostgresRepository()
+	profileSvc := accountprofile.NewService(profileRepo, objects)
+	profileMaintenance := accountprofile.NewMaintenanceRunner(s, profileRepo, objects, logger)
 
 	settingsSvc := settings.NewService(settings.NewPostgresRepository()).WithScopeFactory(func(accountID string) store.AccountScope {
 		return s.ScopeFor(auth.AccountContext{AccountID: accountID})
@@ -200,6 +204,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Schedule:                  schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
 		Avatar:                    avatarApp,
 		AvatarProcessor:           avatarimage.NewProcessor(),
+		AccountProfile:            profileSvc,
 		Settings:                  settingsSvc,
 		Reminders:                 reminderSvc,
 		Dashboard:                 dashboardSvc,
@@ -213,7 +218,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	runnerDone := make(chan struct{})
-	runners := []backgroundRunner{maintenance, reminderRunner, authReplayRunner}
+	runners := []backgroundRunner{maintenance, profileMaintenance, reminderRunner, authReplayRunner}
 	if telegramRunner != nil {
 		runners = append(runners, telegramRunner)
 	}

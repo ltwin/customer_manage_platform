@@ -51,7 +51,7 @@ func TestAttemptLimiterMigrationCreatesVersionedBudgetTable(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("close before limiter down migration: %v", err)
 	}
-	for index, label := range []string{"settings availability", "limiter"} {
+	for index, label := range []string{"account profiles", "settings availability", "limiter"} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("%s down migration (step %d): %v", label, index+1, err)
 		}
@@ -78,7 +78,7 @@ func TestAuthReadinessInspectsCurrentLimiterSchemaAndLegacyCutover(t *testing.T)
 	if err != nil {
 		t.Fatalf("inspect current auth readiness: %v", err)
 	}
-	if state.SchemaVersion != 14 || !state.DatabaseReady || !state.LimiterSchemaReady || !state.LegacyCutoverReady {
+	if state.SchemaVersion != 15 || !state.DatabaseReady || !state.LimiterSchemaReady || !state.LegacyCutoverReady {
 		t.Fatalf("current readiness = %#v", state)
 	}
 
@@ -151,7 +151,7 @@ func TestAuthReadinessInspectsCurrentLimiterSchemaAndLegacyCutover(t *testing.T)
 	if _, err := db.ExecContext(ctx, `DELETE FROM accounts WHERE id = 'readiness-legacy'`); err != nil {
 		t.Fatalf("delete legacy readiness fixture: %v", err)
 	}
-	for index, label := range []string{"settings availability", "limiter"} {
+	for index, label := range []string{"account profiles", "settings availability", "limiter"} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("rollback %s schema (step %d): %v", label, index+1, err)
 		}

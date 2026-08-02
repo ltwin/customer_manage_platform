@@ -140,6 +140,7 @@ func toAPIExportDocument(doc dataexport.Document) ExportDocument {
 		reminders = append(reminders, toAPIReminder(item))
 	}
 	return ExportDocument{
+		AccountProfile: toAPIExportAccountProfile(doc.AccountProfile),
 		Counts: ExportCounts{
 			CustomerNotes:    doc.Counts.CustomerNotes,
 			Customers:        doc.Counts.Customers,
@@ -160,4 +161,30 @@ func toAPIExportDocument(doc dataexport.Document) ExportDocument {
 		Settings:         toAPISettings(doc.Settings),
 		SocialIdentities: identities,
 	}
+}
+
+func toAPIExportAccountProfile(profile dataexport.AccountProfileExport) ExportAccountProfile {
+	out := ExportAccountProfile{
+		ProfileRevision: fmt.Sprintf("pr-%d", profile.ProfileRevision),
+		AvatarRevision:  fmt.Sprintf("ar-%d", profile.AvatarRevision),
+	}
+	out.DisplayName.SetNull()
+	if profile.DisplayName != nil {
+		out.DisplayName.Set(*profile.DisplayName)
+	}
+	out.UpdatedAt.SetNull()
+	if profile.UpdatedAt != nil {
+		out.UpdatedAt.Set(profile.UpdatedAt.UTC())
+	}
+	out.Avatar.SetNull()
+	if profile.Avatar != nil {
+		version := AvatarVersion(profile.Avatar.Version)
+		out.Avatar.Set(ExportAccountProfileAvatar{
+			Version:   &version,
+			MediaType: ExportAccountProfileAvatarMediaType(profile.Avatar.MediaType),
+			Size:      int(profile.Avatar.Size),
+			UpdatedAt: profile.Avatar.UpdatedAt.UTC(),
+		})
+	}
+	return out
 }

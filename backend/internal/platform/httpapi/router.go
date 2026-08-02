@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
@@ -48,6 +49,7 @@ type RouterDeps struct {
 	Schedule                  *scheduledomain.Service
 	Avatar                    *customerdomain.AvatarApplication
 	AvatarProcessor           AvatarProcessor
+	AccountProfile            *accountprofile.Service
 	Settings                  *settings.Service
 	Reminders                 *reminder.Service
 	Dashboard                 *dashboarddomain.Service
@@ -95,6 +97,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		schedule:            deps.Schedule,
 		avatar:              deps.Avatar,
 		avatarProcessor:     deps.AvatarProcessor,
+		accountProfile:      deps.AccountProfile,
 		settings:            deps.Settings,
 		reminders:           deps.Reminders,
 		dashboard:           deps.Dashboard,
@@ -158,6 +161,12 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.GET("/dashboard", h.GetDashboard)
 	// data-export：真实 read-model repository 完成后才暴露受保护附件路由。
 	protected.GET("/export", h.ExportAll)
+	// account-profile：账号资料与头像
+	protected.GET("/account/profile", h.GetAccountProfile)
+	protected.PATCH("/account/profile", h.patchAccountProfileRoute)
+	protected.PUT("/account/profile/avatar", h.putAccountProfileAvatarRoute)
+	protected.DELETE("/account/profile/avatar", h.deleteAccountProfileAvatarRoute)
+	protected.GET("/account/profile/avatar/content", h.getAccountProfileAvatarContentRoute)
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）

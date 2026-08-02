@@ -16,6 +16,7 @@ export type VerificationDispatch =
 export type ForgotPasswordResponse =
   paths['/auth/password/forgot']['post']['responses']['202']['content']['application/json']
 export type Me = paths['/me']['get']['responses']['200']['content']['application/json']
+export type AccountProfile = components['schemas']['AccountProfile']
 export type CustomerListResponse =
   paths['/customers']['get']['responses']['200']['content']['application/json']
 export type CustomerDetail =
@@ -203,6 +204,41 @@ export async function putCustomerAvatar(id: string, file: File, avatarRevision: 
 		method: 'PUT',
 		headers: { 'If-Match': `"${avatarRevision}"` },
 		body: form,
+	})
+}
+
+export function fetchAccountProfile(): Promise<AccountProfile> {
+	return request<AccountProfile>('/account/profile')
+}
+
+export function patchAccountProfile(
+	profileRevision: string,
+	displayName: string | null,
+): Promise<AccountProfile> {
+	return request<AccountProfile>('/account/profile', {
+		method: 'PATCH',
+		headers: { 'If-Match': `"${profileRevision}"` },
+		body: JSON.stringify({ display_name: displayName }),
+	})
+}
+
+export async function putAccountProfileAvatar(
+	file: File,
+	avatarRevision: string,
+): Promise<AccountProfile> {
+	const form = new FormData()
+	form.set('file', file)
+	return mediaJSONRequest<AccountProfile>('/account/profile/avatar', {
+		method: 'PUT',
+		headers: { 'If-Match': `"${avatarRevision}"` },
+		body: form,
+	})
+}
+
+export function deleteAccountProfileAvatar(avatarRevision: string): Promise<AccountProfile> {
+	return request<AccountProfile>('/account/profile/avatar', {
+		method: 'DELETE',
+		headers: { 'If-Match': `"${avatarRevision}"` },
 	})
 }
 

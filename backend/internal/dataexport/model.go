@@ -22,6 +22,29 @@ type Snapshot struct {
 	ScheduleSlots    []schedule.Slot
 	Reminders        []reminder.Reminder
 	Settings         settings.Settings
+	AccountProfile   AccountProfileExport
+}
+
+// AccountProfileAvatarExport 是导出用头像引用（无 bytes／object_id／url）。
+type AccountProfileAvatarExport struct {
+	Version   string
+	MediaType string
+	Size      int64
+	UpdatedAt time.Time
+}
+
+// AccountProfileExport 是 schema v3 顶层 account_profile 投影。
+type AccountProfileExport struct {
+	DisplayName     *string
+	ProfileRevision int64
+	AvatarRevision  int64
+	Avatar          *AccountProfileAvatarExport
+	UpdatedAt       *time.Time
+}
+
+// VirtualAccountProfile 返回无行时的虚拟默认投影。
+func VirtualAccountProfile() AccountProfileExport {
+	return AccountProfileExport{ProfileRevision: 0, AvatarRevision: 0}
 }
 
 // EmptySnapshot returns non-nil collections and effective default settings.
@@ -35,6 +58,7 @@ func EmptySnapshot() Snapshot {
 		ScheduleSlots:    make([]schedule.Slot, 0),
 		Reminders:        make([]reminder.Reminder, 0),
 		Settings:         settings.DefaultSettings(),
+		AccountProfile:   VirtualAccountProfile(),
 	}
 }
 
@@ -62,4 +86,5 @@ type Document struct {
 	ScheduleSlots    []schedule.Slot
 	Reminders        []reminder.Reminder
 	Settings         settings.Settings
+	AccountProfile   AccountProfileExport
 }

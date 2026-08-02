@@ -580,6 +580,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取当前账号资料（无行时返回虚拟默认） */
+        get: operations["getAccountProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 条件更新展示名称 */
+        patch: operations["patchAccountProfile"];
+        trace?: never;
+    };
+    "/account/profile/avatar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** 条件设置或替换账号头像（原始合规字节，非客户 PNG 归一化） */
+        put: operations["putAccountProfileAvatar"];
+        post?: never;
+        /** 条件移除账号头像 */
+        delete: operations["deleteAccountProfileAvatar"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account/profile/avatar/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 经账号鉴权读取当前强版本账号头像内容 */
+        get: operations["getAccountProfileAvatarContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -940,11 +993,39 @@ export interface components {
             schedule_slots: number;
             reminders: number;
         };
+        AccountProfile: {
+            display_name: string | null;
+            profile_revision: string;
+            avatar_revision: string;
+            avatar_version?: components["schemas"]["AvatarVersion"];
+            /** @description 同源鉴权相对 URL；查询参数 v 等于当前强版本 */
+            avatar_url?: string;
+            /** Format: date-time */
+            avatar_updated_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        ExportAccountProfileAvatar: {
+            version: components["schemas"]["AvatarVersion"];
+            /** @enum {string} */
+            media_type: "image/jpeg" | "image/png" | "image/webp";
+            size: number;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ExportAccountProfile: {
+            display_name: string | null;
+            profile_revision: string;
+            avatar_revision: string;
+            avatar: components["schemas"]["ExportAccountProfileAvatar"] | null;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
         ExportDocument: {
             /** Format: date-time */
             exported_at: string;
             /** @enum {integer} */
-            schema_version: 2;
+            schema_version: 3;
             counts: components["schemas"]["ExportCounts"];
             customers: components["schemas"]["Customer"][];
             social_identities: components["schemas"]["SocialIdentity"][];
@@ -954,6 +1035,7 @@ export interface components {
             schedule_slots: components["schemas"]["ScheduleSlot"][];
             reminders: components["schemas"]["Reminder"][];
             settings: components["schemas"]["Settings"];
+            account_profile: components["schemas"]["ExportAccountProfile"];
         };
     };
     responses: {
@@ -1033,8 +1115,10 @@ export interface components {
         };
     };
     parameters: {
-        /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+        /** @description 当前 avatar_revision 的 quoted token，例如 "ar-3" */
         AvatarIfMatch: string;
+        /** @description 当前 AccountProfile.profile_revision 的 quoted token，例如 "pr-3" */
+        ProfileIfMatch: string;
         /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
         IdempotencyKey: string;
         Id: string;
@@ -1540,7 +1624,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+                /** @description 当前 avatar_revision 的 quoted token，例如 "ar-3" */
                 "If-Match": components["parameters"]["AvatarIfMatch"];
             };
             path: {
@@ -1585,7 +1669,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
-                /** @description 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3" */
+                /** @description 当前 avatar_revision 的 quoted token，例如 "ar-3" */
                 "If-Match": components["parameters"]["AvatarIfMatch"];
             };
             path: {
@@ -2626,6 +2710,196 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    getAccountProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前账号资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountProfile"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    patchAccountProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前 AccountProfile.profile_revision 的 quoted token，例如 "pr-3" */
+                "If-Match": components["parameters"]["ProfileIfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    display_name: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description 更新后的账号资料 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountProfile"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            /** @description profile_revision_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    putAccountProfileAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前 avatar_revision 的 quoted token，例如 "ar-3" */
+                "If-Match": components["parameters"]["AvatarIfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 设置后的账号资料；same-content 完整对象重放为 no-op */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountProfile"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            /** @description avatar_revision_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    deleteAccountProfileAvatar: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 当前 avatar_revision 的 quoted token，例如 "ar-3" */
+                "If-Match": components["parameters"]["AvatarIfMatch"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 移除后的账号资料；已无头像时为 no-op */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountProfile"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            /** @description avatar_revision_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    getAccountProfileAvatarContent: {
+        parameters: {
+            query: {
+                v: components["schemas"]["AvatarVersion"];
+            };
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 完整性已验证的当前头像字节 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    "Cache-Control"?: string;
+                    Vary?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                    "image/png": string;
+                    "image/webp": string;
+                };
+            };
+            /** @description If-None-Match 命中当前完整对象 */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description avatar_version_stale */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };

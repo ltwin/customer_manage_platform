@@ -98,15 +98,36 @@ func (e CustomerStatus) Valid() bool {
 	}
 }
 
+// Defines values for ExportAccountProfileAvatarMediaType.
+const (
+	Imagejpeg ExportAccountProfileAvatarMediaType = "image/jpeg"
+	Imagepng  ExportAccountProfileAvatarMediaType = "image/png"
+	Imagewebp ExportAccountProfileAvatarMediaType = "image/webp"
+)
+
+// Valid indicates whether the value is a known member of the ExportAccountProfileAvatarMediaType enum.
+func (e ExportAccountProfileAvatarMediaType) Valid() bool {
+	switch e {
+	case Imagejpeg:
+		return true
+	case Imagepng:
+		return true
+	case Imagewebp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ExportDocumentSchemaVersion.
 const (
-	N2 ExportDocumentSchemaVersion = 2
+	N3 ExportDocumentSchemaVersion = 3
 )
 
 // Valid indicates whether the value is a known member of the ExportDocumentSchemaVersion enum.
 func (e ExportDocumentSchemaVersion) Valid() bool {
 	switch e {
-	case N2:
+	case N3:
 		return true
 	default:
 		return false
@@ -466,6 +487,19 @@ type Account struct {
 	Timezone string `json:"timezone"`
 }
 
+// AccountProfile defines model for AccountProfile.
+type AccountProfile struct {
+	AvatarRevision  string     `json:"avatar_revision"`
+	AvatarUpdatedAt *time.Time `json:"avatar_updated_at,omitempty"`
+
+	// AvatarUrl 同源鉴权相对 URL；查询参数 v 等于当前强版本
+	AvatarUrl       *string                   `json:"avatar_url,omitempty"`
+	AvatarVersion   *AvatarVersion            `json:"avatar_version,omitempty"`
+	DisplayName     nullable.Nullable[string] `json:"display_name"`
+	ProfileRevision string                    `json:"profile_revision"`
+	UpdatedAt       *time.Time                `json:"updated_at,omitempty"`
+}
+
 // AuthCapabilities defines model for AuthCapabilities.
 type AuthCapabilities struct {
 	PublicRegistrationEnabled bool `json:"public_registration_enabled"`
@@ -623,6 +657,26 @@ type ErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// ExportAccountProfile defines model for ExportAccountProfile.
+type ExportAccountProfile struct {
+	Avatar          nullable.Nullable[ExportAccountProfileAvatar] `json:"avatar"`
+	AvatarRevision  string                                        `json:"avatar_revision"`
+	DisplayName     nullable.Nullable[string]                     `json:"display_name"`
+	ProfileRevision string                                        `json:"profile_revision"`
+	UpdatedAt       nullable.Nullable[time.Time]                  `json:"updated_at"`
+}
+
+// ExportAccountProfileAvatar defines model for ExportAccountProfileAvatar.
+type ExportAccountProfileAvatar struct {
+	MediaType ExportAccountProfileAvatarMediaType `json:"media_type"`
+	Size      int                                 `json:"size"`
+	UpdatedAt time.Time                           `json:"updated_at"`
+	Version   *AvatarVersion                      `json:"version,omitempty"`
+}
+
+// ExportAccountProfileAvatarMediaType defines model for ExportAccountProfileAvatar.MediaType.
+type ExportAccountProfileAvatarMediaType string
+
 // ExportCounts defines model for ExportCounts.
 type ExportCounts struct {
 	CustomerNotes    int `json:"customer_notes"`
@@ -636,6 +690,7 @@ type ExportCounts struct {
 
 // ExportDocument defines model for ExportDocument.
 type ExportDocument struct {
+	AccountProfile   ExportAccountProfile        `json:"account_profile"`
 	Counts           ExportCounts                `json:"counts"`
 	CustomerNotes    []CustomerNote              `json:"customer_notes"`
 	Customers        []Customer                  `json:"customers"`
@@ -1021,6 +1076,9 @@ type Page = int
 // PageSize defines model for PageSize.
 type PageSize = int
 
+// ProfileIfMatch defines model for ProfileIfMatch.
+type ProfileIfMatch = string
+
 // Forbidden 统一错误封套；含认证错误码与既有业务 conflict 子码
 type Forbidden = ErrorEnvelope
 
@@ -1047,6 +1105,40 @@ type ValidationFailed = ErrorEnvelope
 
 // bearerAuthContextKey is the context key for bearerAuth security scheme
 type bearerAuthContextKey string
+
+// PatchAccountProfileJSONBody defines parameters for PatchAccountProfile.
+type PatchAccountProfileJSONBody struct {
+	DisplayName nullable.Nullable[string] `json:"display_name"`
+}
+
+// PatchAccountProfileParams defines parameters for PatchAccountProfile.
+type PatchAccountProfileParams struct {
+	// IfMatch 当前 AccountProfile.profile_revision 的 quoted token，例如 "pr-3"
+	IfMatch ProfileIfMatch `json:"If-Match"`
+}
+
+// DeleteAccountProfileAvatarParams defines parameters for DeleteAccountProfileAvatar.
+type DeleteAccountProfileAvatarParams struct {
+	// IfMatch 当前 avatar_revision 的 quoted token，例如 "ar-3"
+	IfMatch AvatarIfMatch `json:"If-Match"`
+}
+
+// PutAccountProfileAvatarMultipartBody defines parameters for PutAccountProfileAvatar.
+type PutAccountProfileAvatarMultipartBody struct {
+	File openapi_types.File `json:"file"`
+}
+
+// PutAccountProfileAvatarParams defines parameters for PutAccountProfileAvatar.
+type PutAccountProfileAvatarParams struct {
+	// IfMatch 当前 avatar_revision 的 quoted token，例如 "ar-3"
+	IfMatch AvatarIfMatch `json:"If-Match"`
+}
+
+// GetAccountProfileAvatarContentParams defines parameters for GetAccountProfileAvatarContent.
+type GetAccountProfileAvatarContentParams struct {
+	V           AvatarVersion `form:"v" json:"v"`
+	IfNoneMatch *string       `json:"If-None-Match,omitempty"`
+}
 
 // ScanRemindersJSONBody defines parameters for ScanReminders.
 type ScanRemindersJSONBody struct {
@@ -1148,7 +1240,7 @@ type UpdateCustomerJSONBodyStatus string
 
 // DeleteCustomerAvatarParams defines parameters for DeleteCustomerAvatar.
 type DeleteCustomerAvatarParams struct {
-	// IfMatch 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+	// IfMatch 当前 avatar_revision 的 quoted token，例如 "ar-3"
 	IfMatch AvatarIfMatch `json:"If-Match"`
 }
 
@@ -1159,7 +1251,7 @@ type PutCustomerAvatarMultipartBody struct {
 
 // PutCustomerAvatarParams defines parameters for PutCustomerAvatar.
 type PutCustomerAvatarParams struct {
-	// IfMatch 当前 Customer.avatar_revision 的 quoted token，例如 "ar-3"
+	// IfMatch 当前 avatar_revision 的 quoted token，例如 "ar-3"
 	IfMatch AvatarIfMatch `json:"If-Match"`
 }
 
@@ -1335,6 +1427,12 @@ type UpdateScheduleSlotJSONBody struct {
 	Type    *SlotType                 `json:"type,omitempty"`
 }
 
+// PatchAccountProfileJSONRequestBody defines body for PatchAccountProfile for application/json ContentType.
+type PatchAccountProfileJSONRequestBody PatchAccountProfileJSONBody
+
+// PutAccountProfileAvatarMultipartRequestBody defines body for PutAccountProfileAvatar for multipart/form-data ContentType.
+type PutAccountProfileAvatarMultipartRequestBody PutAccountProfileAvatarMultipartBody
+
 // ScanRemindersJSONRequestBody defines body for ScanReminders for application/json ContentType.
 type ScanRemindersJSONRequestBody ScanRemindersJSONBody
 
@@ -1490,6 +1588,21 @@ func (t *ScheduleSlotListItem) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// 读取当前账号资料（无行时返回虚拟默认）
+	// (GET /account/profile)
+	GetAccountProfile(c *gin.Context)
+	// 条件更新展示名称
+	// (PATCH /account/profile)
+	PatchAccountProfile(c *gin.Context, params PatchAccountProfileParams)
+	// 条件移除账号头像
+	// (DELETE /account/profile/avatar)
+	DeleteAccountProfileAvatar(c *gin.Context, params DeleteAccountProfileAvatarParams)
+	// 条件设置或替换账号头像（原始合规字节，非客户 PNG 归一化）
+	// (PUT /account/profile/avatar)
+	PutAccountProfileAvatar(c *gin.Context, params PutAccountProfileAvatarParams)
+	// 经账号鉴权读取当前强版本账号头像内容
+	// (GET /account/profile/avatar/content)
+	GetAccountProfileAvatarContent(c *gin.Context, params GetAccountProfileAvatarContentParams)
 	// 提醒扫描唯一手动触发入口（每日定时与手动共用，鉴权同 §4.1）
 	// (POST /admin/reminders/scan)
 	ScanReminders(c *gin.Context)
@@ -1635,6 +1748,206 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(c *gin.Context)
+
+// GetAccountProfile operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountProfile(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAccountProfile(c)
+}
+
+// PatchAccountProfile operation middleware
+func (siw *ServerInterfaceWrapper) PatchAccountProfile(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PatchAccountProfileParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch ProfileIfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter If-Match is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PatchAccountProfile(c, params)
+}
+
+// DeleteAccountProfileAvatar operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAccountProfileAvatar(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteAccountProfileAvatarParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch AvatarIfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter If-Match is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteAccountProfileAvatar(c, params)
+}
+
+// PutAccountProfileAvatar operation middleware
+func (siw *ServerInterfaceWrapper) PutAccountProfileAvatar(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutAccountProfileAvatarParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "If-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-Match")]; found {
+		var IfMatch AvatarIfMatch
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-Match", valueList[0], &IfMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfMatch = IfMatch
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter If-Match is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutAccountProfileAvatar(c, params)
+}
+
+// GetAccountProfileAvatarContent operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountProfileAvatarContent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetAccountProfileAvatarContentParams
+
+	// ------------- Required query parameter "v" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "v", c.Request.URL.Query(), &params.V, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter v: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "If-None-Match" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("If-None-Match")]; found {
+		var IfNoneMatch string
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for If-None-Match, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "If-None-Match", valueList[0], &IfNoneMatch, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter If-None-Match: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IfNoneMatch = &IfNoneMatch
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetAccountProfileAvatarContent(c, params)
+}
 
 // ScanReminders operation middleware
 func (siw *ServerInterfaceWrapper) ScanReminders(c *gin.Context) {
@@ -2883,6 +3196,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
+	router.GET(options.BaseURL+"/account/profile", wrapper.GetAccountProfile)
+	router.PATCH(options.BaseURL+"/account/profile", wrapper.PatchAccountProfile)
+	router.DELETE(options.BaseURL+"/account/profile/avatar", wrapper.DeleteAccountProfileAvatar)
+	router.PUT(options.BaseURL+"/account/profile/avatar", wrapper.PutAccountProfileAvatar)
+	router.GET(options.BaseURL+"/account/profile/avatar/content", wrapper.GetAccountProfileAvatarContent)
 	router.POST(options.BaseURL+"/admin/reminders/scan", wrapper.ScanReminders)
 	router.GET(options.BaseURL+"/auth/capabilities", wrapper.GetAuthCapabilities)
 	router.POST(options.BaseURL+"/auth/email/resend", wrapper.ResendVerification)

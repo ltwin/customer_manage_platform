@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { AlertCircle } from 'lucide-react'
 import { ApiError, login } from '../../api/client'
+import { takeLoginNotice } from '../../account/security/loginNotice.ts'
 import { establishSession } from '../../auth/session'
 import AuthPageShell from './AuthPageShell'
 import './LoginPage.css'
@@ -15,7 +16,11 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const notice = (location.state as { notice?: string } | null)?.notice
+  const [notice] = useState(() => {
+    const fromState = (location.state as { notice?: string } | null)?.notice
+    const pending = takeLoginNotice()
+    return fromState ?? pending ?? null
+  })
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()

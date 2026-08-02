@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
@@ -80,6 +81,7 @@ type handlers struct {
 	schedule            *scheduledomain.Service
 	avatar              *customerdomain.AvatarApplication
 	avatarProcessor     AvatarProcessor
+	accountProfile      *accountprofile.Service
 	settings            *settings.Service
 	reminders           *reminder.Service
 	dashboard           *dashboarddomain.Service

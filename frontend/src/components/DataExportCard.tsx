@@ -1,6 +1,7 @@
 import { useState } from 'react'
 
 import { ApiError } from '../api/client.ts'
+import { EXPORT_SECTION } from '../account/security/securityCopy.ts'
 import { requestAndDownloadDataExport } from './dataExportDownload.ts'
 
 type Props = {
@@ -22,7 +23,7 @@ export default function DataExportCard({ onUnauthorized }: Props) {
 				onUnauthorized()
 				return
 			}
-			setError('导出失败，请重试。未完整读取的文件不会保存。')
+			setError(EXPORT_SECTION.failure)
 		} finally {
 			setDownloading(false)
 		}
@@ -31,14 +32,9 @@ export default function DataExportCard({ onUnauthorized }: Props) {
 	return (
 		<section className="card form-stack" aria-labelledby="dataExportTitle">
 			<div>
-				<h2 id="dataExportTitle">导出全部 JSON 数据</h2>
-				<p className="sub">
-					文件包含姓名、手机号、社交身份、备注、Telegram chat ID 等敏感信息，
-					只应保存到受控位置，并在不再需要时及时删除。
-				</p>
-				<p className="sub">
-					头像图片未包含；文件只有当前系统的公开头像引用，不可跨部署恢复头像。
-				</p>
+				<h2 id="dataExportTitle">{EXPORT_SECTION.title}</h2>
+				<p className="sub">{EXPORT_SECTION.piiHint}</p>
+				<p className="sub">{EXPORT_SECTION.avatarHint}</p>
 			</div>
 			{error && (
 				<div className="form-error" role="alert">
@@ -47,7 +43,7 @@ export default function DataExportCard({ onUnauthorized }: Props) {
 			)}
 			<div className="topbar-actions">
 				<button className="btn btn-primary" type="button" disabled={downloading} onClick={onExport}>
-					{downloading ? '正在准备导出…' : '导出全部 JSON 数据'}
+					{downloading ? EXPORT_SECTION.preparing : EXPORT_SECTION.button}
 				</button>
 			</div>
 		</section>

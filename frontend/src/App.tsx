@@ -11,21 +11,33 @@ import DashboardPage from './pages/DashboardPage'
 import OrdersPage from './pages/OrdersPage'
 import PackagesPage from './pages/PackagesPage'
 import RemindersPage from './pages/RemindersPage'
-import SettingsPage from './pages/SettingsPage'
 import WelcomePage from './pages/WelcomePage'
 import LoginPage from './pages/auth/LoginPage'
 import RegisterPage from './pages/auth/RegisterPage'
 import VerifyEmailPage from './pages/auth/VerifyEmailPage'
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage'
 import ResetPasswordPage from './pages/auth/ResetPasswordPage'
-import ChangePasswordPage from './pages/auth/ChangePasswordPage'
+import AccountCenterLayout from './account/AccountCenterLayout.tsx'
+import AccountOverviewPage from './account/AccountOverviewPage.tsx'
+import AccountProfilePage from './account/AccountProfilePage.tsx'
+import AccountSecurityPage from './account/AccountSecurityPage.tsx'
+import AccountPasswordPage from './account/AccountPasswordPage.tsx'
+import AccountSettingsPage from './account/settings/AccountSettingsPage.tsx'
+import { peekLoginNotice } from './account/security/loginNotice.ts'
 
 type AuthStatus = ReturnType<typeof getAuthSnapshot>['status']
 
 function RequireAuth({ children, status }: { children: ReactElement; status: AuthStatus }) {
   const location = useLocation()
   if (status !== 'authenticated') {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+    const notice = peekLoginNotice()
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={notice ? { from: location.pathname, notice } : { from: location.pathname }}
+      />
+    )
   }
   return children
 }
@@ -84,14 +96,6 @@ export default function App() {
         }
       />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route
-        path="/change-password"
-        element={
-          <RequireAuth status={auth.status}>
-            <ChangePasswordPage />
-          </RequireAuth>
-        }
-      />
       <Route path="/" element={<RootEntry status={auth.status} />} />
       <Route
         element={
@@ -108,7 +112,15 @@ export default function App() {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/reminders" element={<RemindersPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings" element={<Navigate to="/account/settings" replace />} />
+        <Route path="/change-password" element={<Navigate to="/account/security/password" replace />} />
+        <Route path="/account" element={<AccountCenterLayout />}>
+          <Route index element={<AccountOverviewPage />} />
+          <Route path="profile" element={<AccountProfilePage />} />
+          <Route path="security" element={<AccountSecurityPage />} />
+          <Route path="security/password" element={<AccountPasswordPage />} />
+          <Route path="settings" element={<AccountSettingsPage />} />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

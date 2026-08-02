@@ -146,6 +146,7 @@ test('download collaboration triggers once and always releases its object URL', 
 
 test('DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-safe contracts', async () => {
   const card = await readFile(new URL('../src/components/DataExportCard.tsx', import.meta.url), 'utf8')
+  const copy = await readFile(new URL('../src/account/security/securityCopy.ts', import.meta.url), 'utf8')
   for (const contract of [
     '导出全部 JSON 数据',
     '正在准备导出…',
@@ -153,20 +154,24 @@ test('DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-s
     '受控位置',
     '及时删除',
     '头像图片未包含',
-    '不可跨部署恢复',
+    'avatar_url',
     'role="alert"',
   ]) {
-    assert.match(card, new RegExp(contract))
+    assert.match(`${card}\n${copy}`, new RegExp(contract))
   }
+  assert.match(copy, /version、media_type、size、updated_at/)
+  assert.doesNotMatch(copy, /公开头像引用/)
   assert.match(card, /disabled=\{downloading\}/)
   assert.match(card, /if \(downloading\) return/)
   assert.match(card, /error instanceof ApiError && error\.status === 401/)
   assert.doesNotMatch(card, /localStorage|sessionStorage|indexedDB|console\.(?:log|error)/)
 
-  const settingsPage = await readFile(new URL('../src/pages/SettingsPage.tsx', import.meta.url), 'utf8')
-  assert.match(settingsPage, /<DataExportCard/)
-  assert.match(settingsPage, /const dataExportCard[\s\S]*if \(!presentation\.showReadyData \|\| !settings\)/)
-  assert.match(settingsPage, /settings-stack/)
+  const securityPage = await readFile(new URL('../src/account/AccountSecurityPage.tsx', import.meta.url), 'utf8')
+  // D11：重定向到 AccountSettingsPage（旧 SettingsPage 已删）
+  const settingsPage = await readFile(new URL('../src/account/settings/AccountSettingsPage.tsx', import.meta.url), 'utf8')
+  assert.match(securityPage, /<DataExportCard/)
+  assert.match(securityPage, /settings-stack/)
+  assert.doesNotMatch(settingsPage, /DataExportCard/)
 })
 
 test('DataExportCard relies on native button keyboard behavior and shared mobile-safe styles', async () => {

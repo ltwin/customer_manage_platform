@@ -45,6 +45,8 @@ test:
 	cd frontend && npm run test:avatar-layout
 	cd frontend && npm run test:telegram-digest
 	cd frontend && npm run test:data-export
+	cd frontend && npm run test:account-center
+	cd frontend && npm run test:customer-avatar
 	cd frontend && npm run test:v1-hardening
 	./scripts/test-auth-legacy-cutover.sh
 	./scripts/test-auth-security-catalog.sh
