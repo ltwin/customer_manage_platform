@@ -1,0 +1,192 @@
+roadmap: creative-shoot-intelligence
+created: 2026-08-04
+last_updated: 2026-08-04
+
+# 全局 dispatch barrier：任何 item 进入 child design 前，都必须满足：
+#   1) 本 roadmap review=passed 且 roadmap-plan named approval=approved；
+#   2) creative-shoot-planning 首版完成；
+#   3) approval-report.md#upstream-evidence-go=approved（G4）。
+# 本 epic 不得作为首版 DAG 的自动后续批次。
+
+items:
+  - slug: project-knowledge-packs
+    description: 围绕真实策划建立租户内作品、角色、视觉约束和摄影转译项目研究包，保留来源、版本、权利与冲突
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      只创建 account_id NOT NULL 的 project scope schema，不创建 nullable account 或 platform repository。
+      KnowledgeSource/Version/Claim/Conflict/ResearchRequest 带 source_class、作品/角色/剧情时期、引用、
+      rights、effective uses、withdraw generation 和 exact asset binding；同字段冲突并列保留，不静默覆盖。
+      摄影师、客户反馈经摄影师采纳后可形成项目输入；缺口由摄影师主动标记或后续 AI 结果触发，不预建全量
+      百科。上下文快照 scope-first 过滤、跨账号不可见、撤回 fail-closed。原作媒体沿用首版 display-only，
+      研究包只传文字化事实和允许用途的 opaque refs。
+
+  - slug: project-research-operations
+    description: 交付后台人员响应项目知识缺口的 submission-bound 研究队列、履约工作台和可审计回写
+    depends_on: [project-knowledge-packs]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      解决冷门角色无法靠通用模型认识的问题。摄影师显式提交 ResearchSubmission，冻结允许 operator 查看
+      的 request、选定来源片段和素材 refs；operator 只能通过 knowledge.operator capability 读取 submission
+      bundle，不能浏览其它租户内容。队列拥有 claim/lease、超时释放、来源检索记录、draft、摄影师复核、
+      publish-to-project、reject 与 audit；撤销 submission consent 后 operator 下一请求 fail-closed，已由摄影师
+      采纳的项目版本保持有效，只有其 source rights 撤回才按 rights fence 停止新使用。实现前须用 cs-domain
+      记录 ADR-001 的 submission-bound 窄例外。首版不做
+      自动网页抓取或后台任意直写租户知识；operator 回写仍需摄影师采纳。
+
+  - slug: ai-gap-check
+    description: 使用项目研究包交付可追溯的 AI 缺口检查，知识不足时明确停机而非盲生成
+    depends_on: [project-knowledge-packs, project-research-operations]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: >-
+      本 epic 的唯一最小闭环是“缺口提交→后台补录→项目研究包→shot list 缺口检查→摄影师处理结果”。
+      immutable RunInputSnapshot 保存 plan/shot revision、KnowledgeUseRef、source/version、rights generation、
+      opaque asset access refs、prompt/model/provider config hash；dispatch/retry/open 每次复核 lifecycle、consent、
+      binding 与限额。deterministic/fault provider 下 run 幂等、重启、cancel/result terminal-CAS、429/timeout/
+      content refusal/outcome_unknown、日志脱敏和 needs_knowledge 停机通过。输出只做可忽略检查：缺标志性动作、
+      场地/灯光冲突、无人负责道具等，不阻塞 ShootPlan 状态（H1）。live provider 只在 owner 明确批准凭证和
+      成本后运行；本条不生成主题、脚本、镜头或图片。
+
+  - slug: account-knowledge-curation
+    description: 把跨项目重复知识和摄影经验显式晋升为账号私有知识，提供版本、冲突、撤回和回用
+    depends_on: [project-knowledge-packs, ai-gap-check]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      同一 claim 在三个不同项目重复出现只产生 promotion candidate，不自动晋升；摄影师确认后复制为新的
+      account generation，保留 lineage。account scope 可包含 canon_fact、visual_identity、
+      photography_guidance、style_preference；普通 AccountScope 只读写本账号。冲突规则为项目明确覆盖 >
+      账号私有 > 平台公共，但事实冲突仍并列展示来源，不静默改写真伪。撤回、supersede、exact generation、
+      source rights 和 context assembler 快照可重算；不从未采用 AI 输出、客户隐私或原始照片自动学习。
+
+  - slug: platform-knowledge-catalog
+    description: 交付受运营审核的平台公共事实与视觉目录、显式 consent 晋升、物理隔离存储和窄权限访问
+    depends_on: [account-knowledge-curation, project-research-operations, ai-gap-check]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      实现前须由 cs-domain 批准 ADR-001 platform published catalog、operator capability 和 submission review
+      窄例外。kind×scope allowlist：platform 只允许 canon_fact|visual_identity；photography_guidance|
+      style_preference|private_production_experience 一律禁止。Submission 创建、operator approve、repository
+      write 三层均返回稳定 forbidden_kind_for_scope 错误；普通账号不能写 platform 或读他号知识。
+      tenant→platform 复制独立 immutable generation，带 version-bound sharing consent、rights、lineage、审核、
+      reject、withdraw；operator 也可从公开来源直接创建 PlatformCatalogDraft，但不得引用未提交的租户内容，
+      必须附来源/rights 并走同一审核与审计。platform media 只发布符合 display/run 用途的独立对象，不复用
+      私有 object generation。历史非法组合隔离为 quarantined，不进入 assembler。
+
+  - slug: photographer-style-statistics
+    description: 从首版 completed shot list 的规范标签统计账号私有风格画像，摄影师无需填表
+    depends_on: [ai-gap-check]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      不依赖 AI proposal；输入是首版 Shot canonical tags、taxonomy_version、completed/live provenance。
+      输出统计 framing、lighting_direction/quality、palette、shot_type、每场镜头数；unknown 单列且不进入偏好
+      分母。最小样本数和时间窗版本化，不足返回 insufficient。所谓“从不拍”改名为 unobserved_in_sample，
+      只相对于同 taxonomy_version 有限全集，不做永久偏好推断。统计同输入同输出、account-only、跨账号隔离、
+      lineage 可追溯；摄影师可 dismiss/restore facet，但不需要维护表单，不读取客户隐私、未采用输出或照片像素。
+
+  - slug: ai-planning-proposals
+    description: 在项目、账号、平台知识和风格统计稳定后交付异步主题、脚本与镜头文本提案及显式 apply/reject
+    depends_on:
+      - ai-gap-check
+      - account-knowledge-curation
+      - platform-knowledge-catalog
+      - photographer-style-statistics
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      检查类先于生成类，生成不能绕过 needs_knowledge/rights blocking。ProposalSet 一次性 immutable，选择以
+      plan revision CAS 原子 apply，apply/reject 单赢家、重放 receipt、stale 拒绝和失败恢复通过。
+      ProposalProvenance 必须记录 proposal_id→resulting_entity_type/id/path/applied_revision；后续编辑保留 lineage，
+      删除使采用失效，复制产生新 lineage edge。采用率分母是所有进入 open ProposalSet、实际展示给摄影师
+      的 distinct Shot proposal（包括最终 reject/stale），分子是经 lineage 指向最终仍存在且被
+      capture_mode=live 标为 captured 的 resulting Shot；unknown/backfill 不算完成。
+      指标只进产品观测。原作图/设定截图不进生成上下文；generation assets 只接受服务端核验 owned|licensed
+      且用途允许的素材。知识有/无 A/B 只作诊断 eval，不是唯一 completion signal。
+
+  - slug: ai-storyboard-generation
+    description: 为单个镜头生成带知识引用、素材用途门禁、provider 元数据和 AI 标签的分镜候选
+    depends_on: [ai-planning-proposals, platform-knowledge-catalog]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      路线末端的生成能力，复用 RunInputSnapshot/ProposalSet/provider port 与首版 planningmedia。
+      effective rights/revocation 在 reserve、dispatch、publish、open 均复核；text/image provider 分离；取消、失败、
+      outcome_unknown 需持久化 acknowledgement 后才允许 fresh replacement。输出作为新的 AI generation/binding，
+      带 provider/model/prompt/context hash、引用和显著 AI 标签；候选选择 CAS、防 stale shot、lease/GC、跨账号、
+      桌面/移动对比通过。分镜不自动覆盖 Shot，不进入客户作品交付，也不允许原作 display-only 图片作生成参考。
+
+  - slug: ai-evaluation-operations
+    description: 建立版本化语料、rubric、跨 provider/model/prompt/context 对比和质量、成本、漂移运营视图
+    depends_on: [ai-storyboard-generation, photographer-style-statistics]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      corpus 只含 synthetic|owned|licensed|operator_curated；租户数据另需 opt-in、脱敏、purpose 和 retention。
+      覆盖热门、冷门有知识、缺口、冲突、rights 禁止和现实不可执行场景；rubric 统计引用正确、角色忠实、
+      约束遵循、可执行性、多样性、采用率、失败率、延迟和成本。provider/model/prompt/context 版本可回放；
+      live checkpoint 需 owner 成本授权。A/B 是诊断证据，不能替代真实采用率；各 AI feature 的鉴权、限额、
+      熔断和失败恢复不能拖到本条。
+
+  - slug: creative-intelligence-account-export
+    description: 扩展账号导出以诚实携带知识、风格和 AI lineage 元数据，同时明确二进制与快照不可携带边界
+    depends_on:
+      - account-knowledge-curation
+      - platform-knowledge-catalog
+      - ai-planning-proposals
+      - photographer-style-statistics
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      作为独立可验收事务边界，不与部署备份混合。账号 JSON additive 新版本包含 project/account knowledge、
+      source/consent/lineage、style stats、proposal/apply provenance 和引用；不导出 token secret、RunInputSnapshot、
+      provider secret、platform catalog bytes 或媒体 bytes。明确 media_portability=references_only、
+      binary_included=false、platform citation not_self_contained、run replayable=false；在原 account-scoped 单事务
+      snapshot 中读取，schema/required/null/counts 与旧 reader 拒绝策略有 fixture。
+
+  - slug: creative-intelligence-ops-retention
+    description: 扩展部署备份恢复与 retention/GC，覆盖知识版本、AI 输入引用、生成媒体和 operator 审计
+    depends_on:
+      - project-research-operations
+      - platform-knowledge-catalog
+      - ai-storyboard-generation
+      - ai-evaluation-operations
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      作为独立运维事务边界，在首版 PG+avatar+planning-media schema-v2 上 additive 演进 schema-v3；保留
+      v1/v2 reader 兼容和 strict dispatch。manifest 覆盖 tenant/platform generation、AI output、binding/lease、
+      consent/withdraw、operator audit 和 retention class；RunInputSnapshot 的恢复/到期、迟到删除、孤儿/缺失/
+      损坏、scope counts、legal/policy hold 与 exact restore 矩阵通过。账号 export 不能替代部署恢复；发布/回滚
+      必须携带匹配 v3 restore 工具并完成真实 rehearsal。
+
+  - slug: creative-intelligence-release-hardening
+    description: 收口知识与 AI 跨模块 E2E、组合故障、权限/版权门禁、响应式、可访问性和发布证据
+    depends_on:
+      - ai-evaluation-operations
+      - creative-intelligence-account-export
+      - creative-intelligence-ops-retention
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      不首次实现核心协议。完成真实冷门角色“缺口提交→operator 履约→项目包→gap check→账号/平台晋升→
+      风格统计→文本 proposal→live 采用→分镜候选”E2E；kind×scope、source×rights×purpose、consent revoke、
+      provider/DB/object/restart/outcome_unknown、账号隔离与 operator submission-bound matrix 通过。证明 AI 关闭或
+      provider 不可用时首版策划完全可用。1600/1280/375、键盘/读屏、成本预算、eval drift、schema-v3 restore
+      和全仓 make check 通过；live provider 仍需单独 owner checkpoint。

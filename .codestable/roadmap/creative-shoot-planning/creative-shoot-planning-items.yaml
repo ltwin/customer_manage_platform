@@ -1,0 +1,153 @@
+roadmap: creative-shoot-planning
+created: 2026-08-02
+last_updated: 2026-08-04
+
+# 首版硬约束：
+#   H1 策划是非强制辅助工具；既有 CRM 不因缺策划而阻塞、警告或降级，观测指标不向摄影师外化。
+#   H2 客户协作与定价彻底解耦；所有匿名客户响应零价格、成本、加价与工时信号。
+#   H3 本 epic 不依赖 AI 或知识库；后置能力位于独立 draft roadmap creative-shoot-intelligence。
+#   H4 客户自动消息不进首版；分工提醒只发送给摄影师账号所有者。
+
+items:
+  - slug: shoot-plan-core
+    description: 交付独立 ShootPlan 聚合、可选执行时间窗、结构化镜头、revision、就绪状态与独立 run mode
+    depends_on: []
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      完成信号：独立 draft 可在没有 customer_id/order_id 时创建；CreativeBrief、Shot 顺序与可选
+      canonical shot tags、PlanExecutionWindow、RunModeSession、ShotCapture 均有
+      OpenAPI/领域契约。进入 run mode 不要求订单：执行时间窗可由摄影师手动设置，后续也可由未来 shoot
+      ScheduleSlot 投影；无时间窗仍允许执行但观测记 unknown。服务端按 session 打开时刻与时间窗派生
+      live|backfill|unknown，客户端不得声明；captured/skipped 持久化 checked_at，skipped 必须带结构化
+      skip_reason（含 preparation_missing）。375px 独立路由支持逐镜操作，状态×mutation、revision CAS、
+      重放幂等和跨账号矩阵通过。RunModeSession.open 是 G1 的权威事实，时间戳聚集仅作诊断。
+      本条不含媒体、摄取、CRM、匿名协作、经营反推、AI 或知识库；无策划案不得影响任何既有流程。
+
+  - slug: planning-reference-assets
+    description: 交付策划参考图的 typed store、来源权利与用途矩阵、binding/lease、鉴权读取和模块级恢复
+    depends_on: [shoot-plan-core]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      完成信号：PlanAsset 的 source_class、rights_basis、purpose 由服务端矩阵校验；official/fan/
+      screenshot 只能 moodboard_display|shot_reference_display，只有 owned|licensed 且授权覆盖生成用途的素材
+      才可 generation_reference。上传、binding、permit、lease reserve 四层均拒绝非法组合，不能信任客户端
+      permitted_uses。plan/shot attach/detach、exact generation、opaque AssetAccessRef、跨账号、stale/
+      released/corrupt、迟到删除、binding/lease liveness、GC 与模块 inventory/adapter restore fixture 通过。
+      planningmedia 不复用 avatar 领域生命周期；生产 PG+avatar+planning-media 包由 v1-hardening 升级并演练。
+
+  - slug: plan-ingestion-capture
+    description: 交付聊天记录、参考链接和图片的低成本摄取，形成可编辑候选并原子写入可现场执行的 shot list
+    depends_on: [shoot-plan-core, planning-reference-assets]
+    status: planned
+    feature: null
+    minimal_loop: true
+    notes: >-
+      本条是唯一最小闭环：其依赖完成后打通“摄取建案→shot list→run mode→现场打勾→完成率”。
+      IngestionSession 管理一次候选预览与 atomic commit；另由 PlanBuildObservation 从第一次粘贴/导入开始，
+      到首次 ready 或 abandon 结束，按服务端收到的去重 activity tick 累计 active_duration，连续超过 5 分钟
+      的 idle 区间不计。保存 started_at/first_ready_at/active_seconds/plan_id/rule_version，UI 不展示排名或
+      进度。确定性拆条产生 ShotCandidate、ReferenceLinkCandidate、DroppedCandidate：纯链接不抓取但保留
+      为 reference_link，不得静默 dropped；参考图可批量挂载到 plan/shot；候选可编辑、合并、归类、丢弃，
+      commit 以 expected plan revision 一次事务写入，失败全回滚且幂等重放。空行、超长、emoji、重复链接、
+      超限和中断恢复有明确 fixture。固定样本及真实 G2 样本的 build active_duration 中位数不超过 10 分钟；不做 AI 拆句、OCR、
+      网页抓取或 PDF/视频解析。
+
+  - slug: shoot-plan-crm-integration
+    description: 把策划与客户、订单和未来拍摄档期弱耦合关联，并提供无 N+1 的入口、摘要和一致性规则
+    depends_on: [shoot-plan-core, plan-ingestion-capture]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      design admission 不受真实样本 gate 阻塞；所有 child design 可在统一 batch 中完成。goal execution 到本条
+      implementation dispatch 前，必须由 planning-evidence-dispatch-gate 机械核验
+      approval-report.md#stage-1-evidence-go=approved；pending 时 goal-state 保持当前 index 并 handoff，不进入实现。
+      以 additive migration/OpenAPI 引入可空 customer_id/order_id 和 linked_order_snapshot；一个订单可有多份
+      策划。未来 type=shoot 且 order_id 匹配的 ScheduleSlot.StartAt/EndAt 是拍摄时间事实，Order.shot_at
+      仅是历史状态时间，不得用于拍前提醒。关联/解绑、customer merge、order delete/in-use、cancelled/
+      archived 警示、日历/订单/客户批量 planning_summary 通过；slot 变化同步 PlanExecutionWindow 的
+      schedule_projection，手动时间窗保留来源并可显式覆盖。策划不得自动修改订单状态或档期；无策划时
+      order/customer/schedule 页面零提示零阻塞。
+
+  - slug: plan-share-collaboration
+    description: 交付免登录 proposal/full 分层分享、token-bound moodboard、反馈与 full-only 逐条协作，客户侧零价格信号
+    depends_on: [shoot-plan-core, planning-reference-assets, shoot-plan-crm-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      服务端根据订单状态签发不可变 view_level 快照：未关联订单或订单为 consulting|cancelled 时仅允许
+      proposal，请求 full 确定性返回 409 full_view_not_eligible；scheduled|shot|selected|retouching|
+      delivered|closed 才可签发 full。订单后续变化不自动升级旧 token，摄影师须显式 rotate/reissue；
+      失去资格时 full token fail-closed。proposal 仅含创作意图、moodboard、风格方向、镜头规模概览和
+      整案反馈；禁止逐条 shot 读取/反馈与 assignment。full 才允许逐条读取、反馈、认领；所有匿名投影
+      精确白名单且永不含价格、成本、工时、adjustment/draft 字段。SharedAssetAccessRef 与
+      GET /api/v1/shared/plans/{token}/assets/{ref}/content?v={checksum} 每次校验 token、plan、view level、
+      purpose、binding 和 exact generation，不暴露 object key/asset id。token 高熵仅存 hash，过期、撤销、
+      轮换和 plan archived 统一 404；URL token 在 access/error/analytics 日志中脱敏，页面使用 no-referrer、
+      no-store 和禁止第三方资源的 CSP；匿名写入按 token+IP 限流并用 Idempotency-Key。分享观测按 distinct
+      plan/shoot 归因并去重；本条不创建客户账号、不做实时多人编辑。
+      摄影师 Bearer 侧拥有 feedback/assignment 列表、adopt|ignore 和撤销 seam；匿名撤销要求当前 full token
+      + 一次性 claim receipt。两侧 mutation 均有 expected revision、幂等重放及统一 404/409 语义。
+
+  - slug: plan-assignment-reminders
+    description: 把 full 分享中的客户认领项接入提醒引擎，按未来拍摄档期向摄影师生成检查清单
+    depends_on: [plan-share-collaboration, shoot-plan-crm-integration]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      due 基准只来自同账号、同 order 的未来 type=shoot ScheduleSlot.StartAt，可按 assignment 的
+      preparation_lead_days 提前；slot 改期/删除、订单取消、策划归档或认领撤销时幂等重算/撤回。
+      无 slot 时保持 unscheduled，不产生伪 due。新增 reminder kind 的 recipient 始终是摄影师账号所有者，
+      通过现有站内/TG digest；claimed_by_display_name 只是清单文案，绝不作为外部收件人身份。文案零价格
+      信号且不催“策划未完成”。首版不向客户自动发送 TG/短信/邮件；客户直达必须另立 opt-in、身份绑定、
+      同意/退订与 delivery 状态能力。token rotate/revoke 只切断匿名访问，不删除既有 assignment；assignment
+      有独立状态与审计；摄影师可撤销，匿名认领返回一次性 claim receipt secret（服务端只存 hash），
+      后续撤销需当前 full token + receipt，不能用昵称证明身份。
+
+  - slug: plan-business-feedback
+    description: 由可选结构化复杂度事实生成仅摄影师可见的成本、订单价格调整与档期时长草稿
+    depends_on: [shoot-plan-crm-integration, plan-ingestion-capture, plan-assignment-reminders]
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      该 reminders 依赖只表达价值实验/goal 执行顺序，不允许 business 模块读取 share 或 reminder 数据，H2
+      仍保持技术解耦。design admission 不受真实样本 gate 阻塞；goal execution 到本条 implementation dispatch
+      前，planning-evidence-dispatch-gate 必须机械核验 approval-report.md#stage-2-evidence-go=approved；pending
+      时 goal-state 保持当前 index 并 handoff。PlanningBusinessFacts 至少覆盖 look_count、rented_location_count、assistant_count、
+      retouched_photo_count、estimated_duration_minutes；shot_count 由聚合派生。字段均可空，unknown 不得
+      当作 0；规则版本、账号覆盖系数、公式和来源进入解释结果。OrderAdjustmentDraft 包含 plan/revision、
+      order_id/target_fingerprint、base_price、typed adjustment lines、proposed_total、expires/stale reason；
+      target_fingerprint 覆盖当前订单的 customer/package/status/price。确认时同事务锁定订单行、重算 fingerprint，
+      匹配后才写 OrderPriceAdjustment 审计并更新 price。ScheduleDurationDraft 支持 update_existing（保存
+      slot_id/target_fingerprint、原 start/end/type/order、建议 end）或 create_new（只把 order 与 basis_minutes
+      带入现有日历创建流程，由摄影师选择 start）；更新时锁定 slot 并重算。plan revision、target fingerprint、关联
+      或规则版本变化使草稿 stale；不要求先给现有 Order/Schedule 全局加 revision。所有端点仅 Bearer+AccountScope 可达，share token 返回 404，
+      SharedPlanView 类型根本不表达这些字段。无策划的报价和排期流程不变；不做自动定价或客户议价。
+
+  - slug: creative-planning-v1-hardening
+    description: 收口首版跨模块 E2E、观测口径、媒体生产备份恢复、组合失效、响应式、可访问性和发布门禁
+    depends_on:
+      - plan-ingestion-capture
+      - shoot-plan-crm-integration
+      - planning-reference-assets
+      - plan-share-collaboration
+      - plan-assignment-reminders
+      - plan-business-feedback
+    status: planned
+    feature: null
+    minimal_loop: false
+    notes: >-
+      只做集成与发布收口，不首次补核心领域/安全契约。完成真实“摄取→shot list→live run→客户 full
+      协作→摄影师提醒→经营草稿”E2E；H1 无策划零提示零阻塞、H2 所有匿名响应精确字段、proposal/full
+      mutation、shared asset、DB/object/restart/late-delete 组合矩阵通过。现有 PG+avatar 五文件 schema-v1
+      strict reader 保持兼容；新增 schema-v2 planning-media volume+manifest，固定顺序 exact restore，
+      新 reader 读 v1/v2、旧 reader 明确拒绝 v2，发布/回滚保留匹配 restore 工具并完成真实 rehearsal。
+      1600/1280/375、coarse pointer、200% zoom、键盘/读屏、empty/loading/error/stale 与全仓 make check
+      通过。产出版本化 G1-G3 evidence report；指标只在内部观测面，不进入摄影师 UI。
