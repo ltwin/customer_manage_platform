@@ -1,0 +1,40 @@
+{
+  "gate_id": "evidence-pack",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "out": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-evidence-pack.md",
+      "providers": {
+        "archguard": {
+          "status": "unavailable",
+          "reason": "archguard binary not found on PATH",
+          "warnings": []
+        },
+        "meta_cc": {
+          "status": "unavailable",
+          "reason": "meta-cc summary not found; realtime session collection is out of scope",
+          "warnings": []
+        }
+      }
+    }
+  ],
+  "providers": {},
+  "feature": "2026-08-05-shoot-plan-core",
+  "inputs": {
+    "design": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-design.md",
+    "checklist": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-checklist.yaml",
+    "out": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-evidence-pack.md",
+    "dod_results": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-dod-results.json",
+    "gate_results": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-gate-results.json"
+  },
+  "input_digests": {
+    "design": "153c6c4a7501fe593a82078618a2ec9397290c92571d3e41339603e81a0be83b",
+    "checklist": "d7a02e7a6298cb15ae30bec2152dadb595dcdedc6385b2b3c70d8578cd001a66",
+    "dod_results": "9d6f3323607088cd2d356cc6f19db941d145b7dddea33723fcb9216c0a5ac40a",
+    "gate_results": "13c6fdd8e6c16ed99e2651e9a2d29ed4050ccb5bf6b56e57de1cbd3d58bfa750",
+    "out": "2c5a9763ac816311a4ff5e56a13898a96206d51596ef913a302a94660af563bc"
+  }
+}

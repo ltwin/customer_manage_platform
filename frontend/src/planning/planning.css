@@ -1,0 +1,99 @@
+.planning-content { max-width: 1440px; }
+.planning-eyebrow { color: var(--accent); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.planning-ledger-head, .planning-section-head, .planning-panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+.planning-ledger-head { margin-bottom: 22px; }
+.planning-ledger-head h2, .planning-section-head h2 { font-size: 22px; margin: 3px 0 5px; }
+.planning-ledger-head p, .planning-section-head p, .planning-panel-head p { color: var(--muted); font-size: 12.5px; }
+.planning-filter { width: 180px; display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11.5px; }
+.planning-plan-list, .planning-shot-list, .planning-readiness-list, .planning-history-list { display: flex; flex-direction: column; gap: 12px; }
+.planning-plan-card { width: 100%; display: flex; align-items: center; gap: 18px; padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius-m); background: var(--surface); color: var(--fg); text-align: left; transition: border-color .12s, background .12s, transform .12s; }
+.planning-plan-card:hover { border-color: color-mix(in oklch, var(--accent) 42%, var(--border)); background: color-mix(in oklch, var(--surface) 88%, var(--accent-weak)); transform: translateY(-1px); }
+.planning-plan-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.planning-plan-main { flex: 1; min-width: 0; }
+.planning-title-line { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; min-width: 0; }
+.planning-title-line h3 { font-size: 15px; overflow-wrap: anywhere; }
+.planning-plan-main > p { color: var(--muted); margin: 3px 0 9px; }
+.planning-meta { display: flex; gap: 6px 14px; flex-wrap: wrap; color: var(--muted); font-size: 11.5px; }
+.planning-open-hint { color: var(--accent); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.planning-dialog { max-width: 560px; }
+.planning-shot-dialog { max-width: 840px; }
+.planning-inline-error, .planning-action-error { color: var(--danger); font-size: 12px; font-weight: 650; }
+.planning-inline-error { padding: 9px 11px; margin-top: 10px; border-left: 3px solid var(--danger); background: var(--danger-weak); }
+.planning-feedback { padding: 9px 12px; margin-bottom: 14px; border-left: 3px solid var(--accent); background: var(--accent-weak); color: var(--accent); font-size: 12px; font-weight: 650; }
+.planning-summary-strip { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; padding: 11px 14px; margin-bottom: 16px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface); color: var(--muted); font-size: 12px; }
+.planning-tabs { scrollbar-width: thin; }
+.planning-status-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.planning-action-error { flex-basis: 100%; text-align: right; }
+.planning-panel-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(330px, .85fr); gap: 16px; align-items: start; }
+.planning-side-stack { display: flex; flex-direction: column; gap: 16px; }
+.planning-panel { padding: 20px; }
+.planning-panel-head { margin-bottom: 18px; }
+.planning-panel-head h2 { font-size: 16px; margin-bottom: 3px; }
+.planning-brief-text { min-height: 180px !important; }
+.planning-readonly-stat { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: var(--radius-s); background: var(--bg); color: var(--muted); }
+.planning-readonly-stat strong { color: var(--fg); font-family: var(--font-mono); font-size: 17px; }
+.planning-form-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.planning-section { min-width: 0; }
+.planning-section-head { margin-bottom: 18px; }
+.planning-empty-card { padding: 32px 20px; border: 1px dashed var(--border); border-radius: var(--radius-m); color: var(--muted); text-align: center; background: color-mix(in oklch, var(--surface) 70%, transparent); }
+.planning-shot-card { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 14px; align-items: start; }
+.planning-shot-position { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-weak); color: var(--accent); font-family: var(--font-mono); font-weight: 750; }
+.planning-shot-body { min-width: 0; }
+.planning-shot-copy { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 18px; margin: 12px 0; }
+.planning-shot-copy p { min-width: 0; color: var(--fg); font-size: 12.5px; overflow-wrap: anywhere; }
+.planning-shot-copy strong { display: inline-block; min-width: 42px; margin-right: 7px; color: var(--muted); font-size: 11px; }
+.planning-card-actions { display: flex; align-items: flex-start; justify-content: flex-end; gap: 6px; flex-wrap: wrap; max-width: 220px; }
+.planning-links { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.planning-links > span { color: var(--muted); font-size: 11.5px; }
+.planning-links .chip { min-height: 28px; padding: 4px 9px; }
+.planning-taxonomy-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 12px; }
+.planning-readiness-summary { display: inline-flex; align-items: baseline; gap: 10px; margin: 0 0 15px; padding: 10px 13px; border-radius: var(--radius-s); background: var(--accent-weak); color: var(--accent); }
+.planning-readiness-summary strong { font-family: var(--font-mono); font-size: 18px; }
+.planning-readiness-summary span { font-size: 12px; font-weight: 650; }
+.planning-readiness-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 13px; align-items: center; }
+.planning-check { min-width: 44px; min-height: 44px; display: grid; place-items: center; cursor: pointer; }
+.planning-check input { width: 20px; height: 20px; accent-color: var(--accent); }
+.planning-readiness-main { min-width: 0; }
+.planning-linked-shots { margin-top: 8px; color: var(--muted); font-size: 11.5px; }
+.planning-history-item { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 13px; align-items: center; }
+.planning-history-void { border-left: 3px solid var(--danger); }
+.planning-history-seq { color: var(--muted); font-family: var(--font-mono); font-size: 12px; }
+.planning-history-main { min-width: 0; }
+.planning-history-main > p { margin: 6px 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.planning-finalizations { display: flex; flex-direction: column; gap: 10px; margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--border); }
+.planning-finalizations > h2 { font-size: 16px; }
+
+@media (max-width: 1100px) {
+  .planning-panel-grid { grid-template-columns: 1fr; }
+  .planning-side-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+
+@media (max-width: 768px) {
+  .bottom-nav { overflow-x: auto; justify-content: flex-start; }
+  .bottom-nav a { min-width: 58px; }
+  .planning-ledger-head, .planning-section-head { flex-direction: column; align-items: stretch; }
+  .planning-filter { width: 100%; }
+  .planning-plan-card { align-items: flex-start; }
+  .planning-open-hint { display: none; }
+  .planning-side-stack { grid-template-columns: 1fr; }
+  .planning-shot-card, .planning-readiness-card, .planning-history-item { grid-template-columns: auto minmax(0, 1fr); }
+  .planning-shot-card > .planning-card-actions, .planning-readiness-card > .planning-card-actions, .planning-history-item > .btn { grid-column: 2; justify-content: flex-start; max-width: none; }
+  .planning-shot-copy { grid-template-columns: 1fr; }
+  .planning-taxonomy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 430px) {
+  .planning-plan-card { padding: 14px; }
+  .planning-status-actions { justify-content: flex-start; width: 100%; }
+  .planning-status-actions .btn { flex: 1 1 auto; }
+  .planning-summary-strip { align-items: flex-start; }
+  .planning-shot-card, .planning-readiness-card, .planning-history-item { padding: 13px; gap: 10px; }
+  .planning-shot-position { width: 30px; height: 30px; }
+  .planning-card-actions .btn { min-height: 44px; }
+  .planning-taxonomy-grid { grid-template-columns: 1fr; }
+  .planning-shot-dialog { padding: 18px 14px; }
+}
+
+@media (pointer: coarse) {
+  .planning-plan-card, .planning-check, .planning-links .chip, .planning-tabs .tab { min-height: 44px; }
+}

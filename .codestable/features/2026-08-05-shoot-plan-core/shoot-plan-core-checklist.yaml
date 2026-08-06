@@ -5,79 +5,79 @@ steps:
   - id: S1
     action: "契约与领域骨架：固化 roadmap 字段映射、shoot-planning OpenAPI、PlanCommand/Transition closed union、生成类型、状态机、双 revision 与纯 event replay 规则；handler 仅进入 compile harness"
     exit_signal: "make generate-check 通过；E1/E2/E3 result/void truth-table fixture 与状态机覆盖正常/非法序列；generated ServerInterface 可编译且 runtime 尚未注册 placeholder route"
-    status: pending
+    status: done
   - id: S2
     action: "账号隔离与neutral基础持久化：落 account-scoped plan schema、repository、稳定分页、软移出、PlanningReminderAccountGeneration/work、sealed two-phase fence，以及无account_id的deployment metadata singleton PlanningArchiveCapabilityState、fresh-install bootstrap、transaction-bound reader与release-only promoter；固定core-only/share-enabled migration composition和reciprocal FK owner/up-down顺序"
     exit_signal: "真实 PostgreSQL 测试证明 create/list/detail、跨账号404、CAS、查询上界、历史不被级联删除；fresh install同migration tx得到planning-archive-v1/core-v1/revision=1/non-null bootstrap timestamp，show/startup/tx reader一致，重复migration不覆盖已提升marker，corrupt/missing marker与promoter repair均fail closed；空库core/share up-down round-trip成功，planshare down以core work→share source event固定SHARE table lock排斥writer后才检查/DDL，writer先提交时稳定拒绝并全保留，down先锁时writer旧路径整体rollback且无core work orphan，reset/restore后re-up成功；LockCurrentAccount返回same-tx opaque token，material后reserve、same-value 0 advance、multi-plan排序连续reserve、duplicate/cross-tx/account fail-closed、rollback无gap/orphan、contiguous applied watermark成立；sealed ArchiveCapabilityTxView在current tx以共享锁读取，release-only planningctl按deployment-bound readiness digest/expected revision做相邻CAS与authoritative readback"
-    status: pending
+    status: done
   - id: S3
     action: "聚合命令与生命周期：逐项接通 PlanCommand/Transition typed union、Execute/ExecuteInScope、generic ExecuteInCapability probe、CommitPlanBatch prepared-in-scope、brief/subject、Shot、Readiness/link、PublicPlanScale 与 manual window"
     exit_signal: "每个variant有route/method/A证据；三个archive variant projection/version/TTL、transaction-bound marker reader、shared-lock promotion线性化、durable capability相邻提升、planningctl readiness/CAS/readback、降级阻断、mixed-version promotion与caller-owned reminder participant wiring可机械校验；core只以fake probe证明reminder variant的fence→participant completion proof→MarkApplied→ledger whole-tx rollback，真实撤回与lifecycle_applied resolution归后置feature；remove readiness fake guard锁后fail-closed且不依赖真实planshare；三个executor入口复用唯一ledger算法/单physical tx；core batch唯一，旧wrapper不变"
-    status: pending
+    status: done
   - id: S4
     action: "执行历史与完成快照：接通 RunModeSession mode、captured/skipped/cleared、void、server seq、current projection、completion snapshot 与 reopen/re-complete"
     exit_signal: "固定事件时间线可重放；并发 capture/void/complete 只有合法写成功；旧 snapshot 保留且新 finalization revision 成为 current"
-    status: pending
+    status: done
   - id: S5
     action: "HTTP 与 composition harden：完成 Bearer/AccountScope、统一错误封套、幂等 operation、route→application coverage 与 server wiring，此时才注册 runtime route"
     exit_signal: "每条 route 穿过指定 application method；400/401/404/409/500、跨账号与 request-schema negative matrix 通过；无固定空 2xx、501、panic 或 placeholder handler"
-    status: pending
+    status: done
   - id: S6
     action: "策划台账与工作台：实现 AppShell 导航、列表、brief、镜头、准备项、公开规模、时间窗、执行历史与 revision conflict 恢复"
     exit_signal: "真实 API 数据可编辑；empty/loading/error/stale、破坏性确认和 1600/1280/375 布局可观察；未实现后续分区不显示假入口"
-    status: pending
+    status: done
   - id: S7
     action: "独立 Run Mode：实现登录保护但脱离 AppShell 的 session open、逐镜导航、capture/skip/clear、断网失败与重试，并验证现场可读性"
     exit_signal: "375px/coarse pointer/键盘/200% zoom 下常用逐镜动作可完成且关键操作不被双向滚动遮挡；触控目标至少 44px；浅色高对比强光截图可辨；未收到 2xx 不显示已保存；DOM 无结构编辑控件"
-    status: pending
+    status: done
   - id: S8
     action: "全面验证与交付审计：覆盖 A1-A18、field/route/application 矩阵、固定 allowlist 范围守护、查询上界、浏览器证据、全仓回归与清洁度"
     exit_signal: "CMD-001至CMD-005全绿；A1-A18均有证据；request DTO不接受account_id/capture_mode，core只允许archive acknowledgement三个closed variants/六个exact effect enum与typed generation participant例外，无匿名route/token/secret/feedback/assignment/provider/price/business/media surface；无stub/调试/临时产物"
-    status: pending
+    status: done
 
 checks:
   - item: "Roadmap 字段映射保留必填 subject、Shot.readiness_item_ids、window source/source_ref、lighting_direction、结构 revision、timezone、session lifecycle/idempotency 与 event plan_revision；固定枚举一致"
     source: "design §2.1 Roadmap 字段映射、A12"
-    status: pending
+    status: passed
   - item: "PlanCommand/Transition是typed closed union；operation→constructor→canonical→response唯一；Execute/ExecuteInScope/generic ExecuteInCapability委托同一ledger算法；test capability probe证明单physical tx/双视图/三断点原子，真实share adapter归share S1"
     source: "design §2.1 Application/repository、PlanCommand、通用幂等协议package ownership、A2"
-    status: pending
+    status: passed
   - item: "结构 command 经过 AccountScope、resource-aware frame、Execute/ExecuteInScope、plan 行锁、revision CAS 与单事务持久化；order/schedule compatibility wrapper 不回归"
     source: "design D11、§2.1 通用幂等协议、A2"
-    status: pending
+    status: passed
   - item: "planningreminder.FenceTxView只接受trusted transaction派生、不可序列化且绑定current account；LockCurrentAccount返回same-tx opaque LockedFenceTx，Bearer TxAccountScope与sealed ShareTxScope均无通用scope转换/HTTP account输入；首次INSERT-ON-CONFLICT+FOR-UPDATE建立同一0/0账号行；受支持repository/application路径以typed orchestration、depguard/compile fixture、锁序trace与双连接PG证明account row先于business locks，sealed API只对cross-tx/account、reserve-before-lock与same-fact duplicate作runtime fail-closed，不宣称侦测任意直接SQL；material fact才reserve，same-value不推进，MarkApplied只连续推进watermark；mutation_kind为跨模块closed enum，assignment_*要求source_event_id、其他kind禁止该字段，多plan按ID连续reserve；planshare拥有两个固定名reciprocal deferred composite FK并包含plan_id，保证assignment work/event account+generation+plan+ID+kind成对；rollback无gap/orphan"
     source: "design §2.1 neutral planning-reminder mutation fence、A18"
-    status: pending
+    status: passed
   - item: "result/void 共用服务端 shot_event_seq，E1/E2/E3 truth table 可重放 latest_effective_event/current projection，completion 冻结 plan/execution fact revision"
     source: "design §2.2 replay 纯函数、A7-A11"
-    status: pending
+    status: passed
   - item: "request DTO 不提交 account_id/capture_mode；跨账号统一 404；同 resource+body 重放，同 operation 跨 resource/异 body 冲突，不同 operation 不交叉重放"
     source: "design §2.1 通用幂等协议、A1-A2、A6、A16"
-    status: pending
+    status: passed
   - item: "migration、OpenAPI/routes/composition、planningcapability transaction reader、release-only planningctl、AppShell planning route/nav、独立 Run Mode 挂载点齐全且可卸载；route 无 placeholder"
     source: "design §2.3、Route→application coverage、A16"
-    status: pending
+    status: passed
   - item: "不关联CRM、不处理媒体/摄取/share业务/reminder/business/AI；core只允许required_archive_acknowledgement三个closed variants、六个exact effect enum与typed archive participant/fence，仍禁止anonymous route/token/secret/feedback/assignment DTO及planshare/reminder repository依赖"
     source: "design §1.2、§3.2、A16"
-    status: pending
+    status: passed
   - item: "A1-A4/A17覆盖title+subject建案、projection/隔离/幂等CAS；core以fake guard证明lock→guard→remove与rollback，disabled/required wiring fail-closed；真实active assignment双连接归share A20"
     source: "design A1-A4、A17、§2.1 ReadinessRemovalGuard"
-    status: pending
+    status: passed
   - item: "A5-A8 覆盖 Run Mode admission、capture mode、cleared/void truth table、回退与并发 conflict"
     source: "design A5-A8"
-    status: pending
+    status: passed
   - item: "A9-A12覆盖软移出/finalization/reopen、field fixture、brief presence、single typed ArchiveAcknowledgementRegistry驱动required projection/whole-array validator与三个variant exact effects JSON golden；PlanningArchiveCapabilityState是无account_id的deployment singleton，core up同tx确定seed planning-archive-v1/core-v1/revision=1且promoted_at为bootstrap DB时间，fresh show/startup/tx exact一致，重复migration/restore不覆盖已提升marker，缺失/corrupt marker及promoter upsert repair均fail closed；application只拿same-tx sealed ArchiveCapabilityTxView且不暴露raw Store/SQL，startup/detail/archive复用唯一decoder，archive tx reader持共享锁；store→planningcapability单向依赖且后者不import store/pgx；只有release-only planningctl promoter可按绑定environment/deployment/schema hash/build/wiring/provenance/expiry的trusted readiness digest、expected revision做相邻CAS并authoritative readback；additive schema→兼容binary→旧进程退出→marker promotion→真实writer/participant顺序、在途旧marker archive与promotion线性化及lower wiring进程fail-closed有fixture；重复/缺失/额外/乱序拒绝，旧version不原位扩写；unexpired旧成功replay 2xx，24h TTL过期后archived_read_only"
     source: "design A9-A12、§2.1 Transition closed union"
-    status: pending
+    status: passed
   - item: "A13-A14 覆盖工作台可见状态、execution-only、coarse pointer、200% zoom、强光高对比、断网失败与重试"
     source: "design A13-A14"
-    status: pending
+    status: passed
   - item: "A15-A16覆盖无N+1与结构化negative allowlist；archive三个closed variants/六个effect enum与typed generation participant是唯一share/reminder结构化例外，不能用raw substring全局豁免"
     source: "design A15-A16"
-    status: pending
+    status: passed
   - item: "planning-share-reminder-v1 first callback按account generation fence→transaction内读取capability marker→plan→session→caller-owned reminder participant→completion proof→MarkApplied顺序执行；core fake probe证明source_generation/work、plan archived、session close、participant写、applied watermark与ledger success同tx且任一注入失败全部回滚；share失效由archived状态驱动不要求share participant，真实reminder withdrawal与PlanningReminderGenerationResolution(lifecycle_applied)归后置reminder S3/A9；durable capability只单调提升且非法降级/高marker低wiring在startup与request均fail closed"
     source: "design §2.1 Transition closed union、A12"
-    status: pending
+    status: passed
 
 dod:
   commands:

@@ -44,6 +44,8 @@ tags:
     description: dashboard 聚合（dashboard）
   - name: export
     description: 全量导出（data-export）
+  - name: shoot-planning
+    description: 独立创作型拍摄策划、现场执行与审计历史
 
 paths:
   /auth/capabilities:
@@ -1898,6 +1900,265 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /shoot-plans:
+    get:
+      tags: [shoot-planning]
+      operationId: listShootPlans
+      summary: 稳定分页列出当前账号的拍摄策划
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ShootPlanStatus"
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: 拍摄策划分页列表
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShootPlanList"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      tags: [shoot-planning]
+      operationId: createShootPlan
+      summary: 创建不依赖客户、订单或档期的拍摄策划
+      parameters:
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShootPlanInput"
+      responses:
+        "201":
+          description: 策划已创建
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShootPlanDetail"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [shoot-planning]
+      operationId: getShootPlan
+      summary: 读取拍摄策划当前投影，可选择执行历史
+      parameters:
+        - name: include
+          in: query
+          schema:
+            type: string
+            enum: [execution_history]
+      responses:
+        "200":
+          description: 拍摄策划详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShootPlanDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    patch:
+      tags: [shoot-planning]
+      operationId: applyShootPlanCommand
+      summary: 应用一个 typed 聚合命令
+      parameters:
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanCommand"
+      responses:
+        "200":
+          description: 命令结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanMutationResult"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/transitions:
+    post:
+      tags: [shoot-planning]
+      operationId: transitionShootPlan
+      summary: 执行策划状态转换
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanTransition"
+      responses:
+        "200":
+          description: 状态转换结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanTransitionResult"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/run-sessions:
+    post:
+      tags: [shoot-planning]
+      operationId: openShootPlanRunSession
+      summary: 打开 execution-only Run Mode 会话
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_revision]
+              properties:
+                expected_revision:
+                  type: integer
+                  format: int64
+                  minimum: 1
+      responses:
+        "201":
+          description: Run Mode 会话已打开
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenRunSessionResult"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/shots/{shotId}/capture:
+    post:
+      tags: [shoot-planning]
+      operationId: appendShootPlanShotResult
+      summary: 追加 captured、skipped 或 cleared 结果事实
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: shotId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppendShotResultInput"
+      responses:
+        "201":
+          description: 执行结果已追加
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppendShotResultResponse"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/execution-events/{eventId}/void:
+    post:
+      tags: [shoot-planning]
+      operationId: voidShootPlanExecutionEvent
+      summary: 追加一个指向结果事实的作废事实
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VoidExecutionEventInput"
+      responses:
+        "201":
+          description: 作废事实已追加
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoidExecutionEventResponse"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1927,6 +2188,16 @@ components:
       in: header
       required: false
       description: 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
+    RequiredIdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
       schema:
         type: string
         minLength: 8
@@ -2003,6 +2274,12 @@ components:
             $ref: "#/components/schemas/ErrorEnvelope"
     Internal:
       description: 500 internal
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Conflict:
+      description: 409 typed conflict
       content:
         application/json:
           schema:
@@ -2873,3 +3150,1172 @@ components:
           $ref: "#/components/schemas/Settings"
         account_profile:
           $ref: "#/components/schemas/ExportAccountProfile"
+    ShootPlanStatus:
+      type: string
+      enum: [draft, ready, in_progress, completed, archived]
+
+    ShootPlanCaptureMode:
+      type: string
+      enum: [live, backfill, unknown]
+
+    ShootPlanShotResult:
+      type: string
+      enum: [captured, skipped, cleared]
+
+    ShootPlanSkipReason:
+      type: string
+      enum:
+        [preparation_missing, time_insufficient, location_unavailable,
+         subject_unavailable, creative_change, technical_failure, other]
+
+    CreativeBrief:
+      type: object
+      additionalProperties: false
+      properties:
+        work_title:
+          type: string
+          nullable: true
+          maxLength: 120
+        character_name:
+          type: string
+          nullable: true
+          maxLength: 120
+        theme_statement:
+          type: string
+          nullable: true
+          maxLength: 2000
+        mood:
+          type: string
+          nullable: true
+          maxLength: 500
+        visual_keywords:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+
+    PublicPlanScale:
+      type: object
+      additionalProperties: false
+      required: [planned_shot_count]
+      properties:
+        planned_look_count:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 999
+        planned_scene_count:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 999
+        planned_shot_count:
+          type: integer
+          readOnly: true
+          minimum: 0
+
+    PlanExecutionWindow:
+      type: object
+      additionalProperties: false
+      required:
+        [source, starts_at, ends_at, timezone, live_window_starts_at,
+         live_window_ends_at, rule_version, revision]
+      properties:
+        source:
+          type: string
+          enum: [manual, schedule_slot]
+        source_ref:
+          type: string
+          nullable: true
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 255
+        live_window_starts_at:
+          type: string
+          format: date-time
+        live_window_ends_at:
+          type: string
+          format: date-time
+        rule_version:
+          type: integer
+          enum: [1]
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+
+    ShootPlanCurrentOutcome:
+      type: object
+      additionalProperties: false
+      required: [event_id, result, checked_at, capture_mode]
+      properties:
+        event_id:
+          type: string
+        result:
+          type: string
+          enum: [captured, skipped]
+        skip_reason:
+          $ref: "#/components/schemas/ShootPlanSkipReason"
+        checked_at:
+          type: string
+          format: date-time
+        capture_mode:
+          $ref: "#/components/schemas/ShootPlanCaptureMode"
+
+    ShootPlanShot:
+      type: object
+      additionalProperties: false
+      required:
+        [id, plan_id, position, title, taxonomy_version, revision,
+         execution_revision, readiness_item_ids]
+      properties:
+        id:
+          type: string
+          readOnly: true
+        plan_id:
+          type: string
+          readOnly: true
+        position:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        scene:
+          type: string
+          nullable: true
+          maxLength: 1000
+        action:
+          type: string
+          nullable: true
+          maxLength: 1000
+        expression:
+          type: string
+          nullable: true
+          maxLength: 1000
+        composition:
+          type: string
+          nullable: true
+          maxLength: 1000
+        lighting_text:
+          type: string
+          nullable: true
+          maxLength: 1000
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        framing_tag:
+          type: string
+          nullable: true
+          enum: [extreme_closeup, closeup, medium_closeup, medium, full, wide, extreme_wide, other]
+        lighting_direction_tag:
+          type: string
+          nullable: true
+          enum: [front, side, back, top, bottom, mixed, natural, other]
+        lighting_quality_tag:
+          type: string
+          nullable: true
+          enum: [hard, soft, mixed, natural, other]
+        palette_tag:
+          type: string
+          nullable: true
+          enum: [warm, cool, neutral, monochrome, high_saturation, low_saturation, mixed, other]
+        shot_type_tag:
+          type: string
+          nullable: true
+          enum: [portrait, action, interaction, environment, detail, silhouette, narrative, other]
+        taxonomy_version:
+          type: integer
+          enum: [1]
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        execution_revision:
+          type: integer
+          format: int64
+          minimum: 0
+        readiness_item_ids:
+          type: array
+          items:
+            type: string
+        current_outcome:
+          allOf:
+            - $ref: "#/components/schemas/ShootPlanCurrentOutcome"
+          nullable: true
+
+    ShootPlanReadinessItem:
+      type: object
+      additionalProperties: false
+      required:
+        [id, plan_id, category, title, requirement, preflight_status,
+         responsibility_hint, revision]
+      properties:
+        id:
+          type: string
+          readOnly: true
+        plan_id:
+          type: string
+          readOnly: true
+        category:
+          type: string
+          enum: [styling, location, prop_equipment, other]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        requirement:
+          type: string
+          enum: [required, optional]
+        preflight_status:
+          type: string
+          enum: [unchecked, checked]
+        responsibility_hint:
+          type: string
+          enum: [photographer, customer, unassigned]
+        default_preparation_lead_days:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 365
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+
+    CoreArchiveAcknowledgement:
+      type: object
+      additionalProperties: false
+      required: [version, effects]
+      properties:
+        version:
+          type: string
+          enum: [core-v1]
+        effects:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: string
+            enum: [plan_becomes_read_only, execution_history_retained]
+
+    PlanningShareArchiveAcknowledgement:
+      type: object
+      additionalProperties: false
+      required: [version, effects]
+      properties:
+        version:
+          type: string
+          enum: [planning-share-v1]
+        effects:
+          type: array
+          minItems: 5
+          maxItems: 5
+          items:
+            type: string
+            enum:
+              [plan_becomes_read_only, execution_history_retained,
+               active_share_links_become_unavailable, share_feedback_retained,
+               share_assignments_retained]
+
+    PlanningShareReminderArchiveAcknowledgement:
+      type: object
+      additionalProperties: false
+      required: [version, effects]
+      properties:
+        version:
+          type: string
+          enum: [planning-share-reminder-v1]
+        effects:
+          type: array
+          minItems: 6
+          maxItems: 6
+          items:
+            type: string
+            enum:
+              [plan_becomes_read_only, execution_history_retained,
+               active_share_links_become_unavailable, share_feedback_retained,
+               share_assignments_retained, active_assignment_reminders_withdrawn]
+
+    ArchiveAcknowledgement:
+      oneOf:
+        - $ref: "#/components/schemas/CoreArchiveAcknowledgement"
+        - $ref: "#/components/schemas/PlanningShareArchiveAcknowledgement"
+        - $ref: "#/components/schemas/PlanningShareReminderArchiveAcknowledgement"
+      discriminator:
+        propertyName: version
+        mapping:
+          core-v1: "#/components/schemas/CoreArchiveAcknowledgement"
+          planning-share-v1: "#/components/schemas/PlanningShareArchiveAcknowledgement"
+          planning-share-reminder-v1: "#/components/schemas/PlanningShareReminderArchiveAcknowledgement"
+
+    ShootPlanListItem:
+      type: object
+      additionalProperties: false
+      required:
+        [id, title, subject, status, public_scale, revision,
+         execution_fact_revision, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        subject:
+          type: string
+        status:
+          $ref: "#/components/schemas/ShootPlanStatus"
+        public_scale:
+          $ref: "#/components/schemas/PublicPlanScale"
+        revision:
+          type: integer
+          format: int64
+        execution_fact_revision:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ShootPlanList:
+      type: object
+      additionalProperties: false
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShootPlanListItem"
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+
+    ShootPlanDetail:
+      type: object
+      additionalProperties: false
+      required:
+        [id, title, subject, status, creative_brief, public_scale, revision,
+         execution_fact_revision, shots, readiness_items,
+         required_archive_acknowledgement, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        subject:
+          type: string
+        status:
+          $ref: "#/components/schemas/ShootPlanStatus"
+        creative_brief:
+          $ref: "#/components/schemas/CreativeBrief"
+        public_scale:
+          $ref: "#/components/schemas/PublicPlanScale"
+        execution_window:
+          allOf:
+            - $ref: "#/components/schemas/PlanExecutionWindow"
+          nullable: true
+        revision:
+          type: integer
+          format: int64
+        execution_fact_revision:
+          type: integer
+          format: int64
+        shots:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShootPlanShot"
+        readiness_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShootPlanReadinessItem"
+        required_archive_acknowledgement:
+          $ref: "#/components/schemas/ArchiveAcknowledgement"
+        execution_history:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShotExecutionFact"
+        finalizations:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanFinalizationSnapshot"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateShootPlanInput:
+      type: object
+      additionalProperties: false
+      required: [title, subject]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        subject:
+          type: string
+          minLength: 1
+          maxLength: 240
+
+    PlanCommandBase:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, operation]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        operation:
+          type: string
+
+    CreativeBriefPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        work_title:
+          type: string
+          nullable: true
+          maxLength: 120
+        character_name:
+          type: string
+          nullable: true
+          maxLength: 120
+        theme_statement:
+          type: string
+          nullable: true
+          maxLength: 2000
+        mood:
+          type: string
+          nullable: true
+          maxLength: 500
+        visual_keywords:
+          type: array
+          nullable: true
+          maxItems: 20
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 40
+
+    ShotWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 160
+        scene:
+          type: string
+          nullable: true
+          maxLength: 1000
+        action:
+          type: string
+          nullable: true
+          maxLength: 1000
+        expression:
+          type: string
+          nullable: true
+          maxLength: 1000
+        composition:
+          type: string
+          nullable: true
+          maxLength: 1000
+        lighting_text:
+          type: string
+          nullable: true
+          maxLength: 1000
+        notes:
+          type: string
+          nullable: true
+          maxLength: 2000
+        framing_tag:
+          type: string
+          nullable: true
+          enum: [extreme_closeup, closeup, medium_closeup, medium, full, wide, extreme_wide, other]
+        lighting_direction_tag:
+          type: string
+          nullable: true
+          enum: [front, side, back, top, bottom, mixed, natural, other]
+        lighting_quality_tag:
+          type: string
+          nullable: true
+          enum: [hard, soft, mixed, natural, other]
+        palette_tag:
+          type: string
+          nullable: true
+          enum: [warm, cool, neutral, monochrome, high_saturation, low_saturation, mixed, other]
+        shot_type_tag:
+          type: string
+          nullable: true
+          enum: [portrait, action, interaction, environment, detail, silhouette, narrative, other]
+
+    ReadinessWrite:
+      type: object
+      additionalProperties: false
+      properties:
+        category:
+          type: string
+          enum: [styling, location, prop_equipment, other]
+        title:
+          type: string
+          minLength: 1
+          maxLength: 240
+        requirement:
+          type: string
+          enum: [required, optional]
+        preflight_status:
+          type: string
+          enum: [unchecked, checked]
+        responsibility_hint:
+          type: string
+          enum: [photographer, customer, unassigned]
+        default_preparation_lead_days:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 365
+
+    UpdateBriefPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          properties:
+            operation:
+              type: string
+              enum: [update_brief]
+            title:
+              type: string
+              maxLength: 160
+            subject:
+              type: string
+              maxLength: 240
+            creative_brief:
+              $ref: "#/components/schemas/CreativeBriefPatch"
+
+    UpsertShotPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [shot]
+          properties:
+            operation:
+              type: string
+              enum: [upsert_shot]
+            shot_id:
+              type: string
+            shot:
+              $ref: "#/components/schemas/ShotWrite"
+            insert_after_shot_id:
+              type: string
+              nullable: true
+
+    ReorderShotsPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [ordered_shot_ids]
+          properties:
+            operation:
+              type: string
+              enum: [reorder_shots]
+            ordered_shot_ids:
+              type: array
+              uniqueItems: true
+              items:
+                type: string
+
+    RemoveShotPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [shot_id, acknowledge_execution_history]
+          properties:
+            operation:
+              type: string
+              enum: [remove_shot]
+            shot_id:
+              type: string
+            acknowledge_execution_history:
+              type: boolean
+
+    UpsertReadinessPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [item]
+          properties:
+            operation:
+              type: string
+              enum: [upsert_readiness]
+            readiness_id:
+              type: string
+            item:
+              $ref: "#/components/schemas/ReadinessWrite"
+
+    RemoveReadinessPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [readiness_id]
+          properties:
+            operation:
+              type: string
+              enum: [remove_readiness]
+            readiness_id:
+              type: string
+
+    SetPreflightPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [readiness_id, preflight_status]
+          properties:
+            operation:
+              type: string
+              enum: [set_preflight]
+            readiness_id:
+              type: string
+            preflight_status:
+              type: string
+              enum: [unchecked, checked]
+
+    LinkReadinessPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [shot_id, readiness_id]
+          properties:
+            operation:
+              type: string
+              enum: [link_readiness]
+            shot_id:
+              type: string
+            readiness_id:
+              type: string
+
+    UnlinkReadinessPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [shot_id, readiness_id]
+          properties:
+            operation:
+              type: string
+              enum: [unlink_readiness]
+            shot_id:
+              type: string
+            readiness_id:
+              type: string
+
+    SetPublicScalePlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          properties:
+            operation:
+              type: string
+              enum: [set_public_scale]
+            planned_look_count:
+              type: integer
+              nullable: true
+              minimum: 1
+              maximum: 999
+            planned_scene_count:
+              type: integer
+              nullable: true
+              minimum: 1
+              maximum: 999
+
+    SetExecutionWindowPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [starts_at, ends_at, timezone, live_window_starts_at, live_window_ends_at]
+          properties:
+            operation:
+              type: string
+              enum: [set_execution_window]
+            starts_at:
+              type: string
+              format: date-time
+            ends_at:
+              type: string
+              format: date-time
+            timezone:
+              type: string
+            live_window_starts_at:
+              type: string
+              format: date-time
+            live_window_ends_at:
+              type: string
+              format: date-time
+
+    ClearExecutionWindowPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          properties:
+            operation:
+              type: string
+              enum: [clear_execution_window]
+
+    PlanCommand:
+      oneOf:
+        - $ref: "#/components/schemas/UpdateBriefPlanCommand"
+        - $ref: "#/components/schemas/UpsertShotPlanCommand"
+        - $ref: "#/components/schemas/ReorderShotsPlanCommand"
+        - $ref: "#/components/schemas/RemoveShotPlanCommand"
+        - $ref: "#/components/schemas/UpsertReadinessPlanCommand"
+        - $ref: "#/components/schemas/RemoveReadinessPlanCommand"
+        - $ref: "#/components/schemas/SetPreflightPlanCommand"
+        - $ref: "#/components/schemas/LinkReadinessPlanCommand"
+        - $ref: "#/components/schemas/UnlinkReadinessPlanCommand"
+        - $ref: "#/components/schemas/SetPublicScalePlanCommand"
+        - $ref: "#/components/schemas/SetExecutionWindowPlanCommand"
+        - $ref: "#/components/schemas/ClearExecutionWindowPlanCommand"
+      discriminator:
+        propertyName: operation
+        mapping:
+          update_brief: "#/components/schemas/UpdateBriefPlanCommand"
+          upsert_shot: "#/components/schemas/UpsertShotPlanCommand"
+          reorder_shots: "#/components/schemas/ReorderShotsPlanCommand"
+          remove_shot: "#/components/schemas/RemoveShotPlanCommand"
+          upsert_readiness: "#/components/schemas/UpsertReadinessPlanCommand"
+          remove_readiness: "#/components/schemas/RemoveReadinessPlanCommand"
+          set_preflight: "#/components/schemas/SetPreflightPlanCommand"
+          link_readiness: "#/components/schemas/LinkReadinessPlanCommand"
+          unlink_readiness: "#/components/schemas/UnlinkReadinessPlanCommand"
+          set_public_scale: "#/components/schemas/SetPublicScalePlanCommand"
+          set_execution_window: "#/components/schemas/SetExecutionWindowPlanCommand"
+          clear_execution_window: "#/components/schemas/ClearExecutionWindowPlanCommand"
+
+    PlanMutationResult:
+      type: object
+      additionalProperties: false
+      required: [plan_id, revision, status, changed_projection]
+      properties:
+        plan_id:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/ShootPlanStatus"
+        changed_projection:
+          type: object
+          additionalProperties: true
+
+    EmptyTransitionPayload:
+      type: object
+      additionalProperties: false
+
+    CompleteTransitionPayload:
+      type: object
+      additionalProperties: false
+      required: [expected_execution_fact_revision]
+      properties:
+        expected_execution_fact_revision:
+          type: integer
+          format: int64
+          minimum: 0
+
+    MarkReadyPlanTransition:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, transition, payload]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+        transition:
+          type: string
+          enum: [mark_ready]
+        payload:
+          $ref: "#/components/schemas/EmptyTransitionPayload"
+
+    StartPlanTransition:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, transition, payload]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+        transition:
+          type: string
+          enum: [start]
+        payload:
+          $ref: "#/components/schemas/EmptyTransitionPayload"
+
+    CompletePlanTransition:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, transition, payload]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+        transition:
+          type: string
+          enum: [complete]
+        payload:
+          $ref: "#/components/schemas/CompleteTransitionPayload"
+
+    ReopenPlanTransition:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, transition, payload]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+        transition:
+          type: string
+          enum: [reopen]
+        payload:
+          $ref: "#/components/schemas/EmptyTransitionPayload"
+
+    ArchivePlanTransition:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, transition, payload]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+        transition:
+          type: string
+          enum: [archive]
+        payload:
+          $ref: "#/components/schemas/ArchiveAcknowledgement"
+
+    PlanTransition:
+      oneOf:
+        - $ref: "#/components/schemas/MarkReadyPlanTransition"
+        - $ref: "#/components/schemas/StartPlanTransition"
+        - $ref: "#/components/schemas/CompletePlanTransition"
+        - $ref: "#/components/schemas/ReopenPlanTransition"
+        - $ref: "#/components/schemas/ArchivePlanTransition"
+      discriminator:
+        propertyName: transition
+        mapping:
+          mark_ready: "#/components/schemas/MarkReadyPlanTransition"
+          start: "#/components/schemas/StartPlanTransition"
+          complete: "#/components/schemas/CompletePlanTransition"
+          reopen: "#/components/schemas/ReopenPlanTransition"
+          archive: "#/components/schemas/ArchivePlanTransition"
+
+    PlanTransitionResult:
+      type: object
+      additionalProperties: false
+      required: [plan_id, revision, status]
+      properties:
+        plan_id:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        status:
+          $ref: "#/components/schemas/ShootPlanStatus"
+        finalization_revision:
+          type: integer
+          format: int64
+          nullable: true
+
+    RunModeSession:
+      type: object
+      additionalProperties: false
+      required: [id, plan_id, opened_at, last_active_at, capture_mode]
+      properties:
+        id:
+          type: string
+        plan_id:
+          type: string
+        execution_window_revision:
+          type: integer
+          format: int64
+          nullable: true
+        opened_at:
+          type: string
+          format: date-time
+        last_active_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+          nullable: true
+        capture_mode:
+          $ref: "#/components/schemas/ShootPlanCaptureMode"
+
+    RunInputSnapshot:
+      type: object
+      additionalProperties: false
+      required: [plan_id, plan_revision, execution_fact_revision, shots, readiness_items]
+      properties:
+        plan_id:
+          type: string
+        plan_revision:
+          type: integer
+          format: int64
+        execution_fact_revision:
+          type: integer
+          format: int64
+        shots:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShootPlanShot"
+        readiness_items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShootPlanReadinessItem"
+
+    OpenRunSessionResult:
+      type: object
+      additionalProperties: false
+      required: [session, plan_revision, input]
+      properties:
+        session:
+          $ref: "#/components/schemas/RunModeSession"
+        plan_revision:
+          type: integer
+          format: int64
+        input:
+          $ref: "#/components/schemas/RunInputSnapshot"
+
+    AppendShotResultInput:
+      type: object
+      additionalProperties: false
+      required: [expected_execution_revision, result]
+      properties:
+        expected_execution_revision:
+          type: integer
+          format: int64
+          minimum: 0
+        session_id:
+          type: string
+          nullable: true
+        result:
+          $ref: "#/components/schemas/ShootPlanShotResult"
+        skip_reason:
+          $ref: "#/components/schemas/ShootPlanSkipReason"
+        notes:
+          type: string
+          nullable: true
+          maxLength: 1000
+        supersedes_event_id:
+          type: string
+          nullable: true
+
+    ShotExecutionResultEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [kind, id, plan_id, shot_id, shot_event_seq, plan_revision,
+         result, checked_at, capture_mode, revision]
+      properties:
+        kind:
+          type: string
+          enum: [result]
+        id:
+          type: string
+        plan_id:
+          type: string
+        shot_id:
+          type: string
+        session_id:
+          type: string
+          nullable: true
+        shot_event_seq:
+          type: integer
+          format: int64
+        plan_revision:
+          type: integer
+          format: int64
+        result:
+          $ref: "#/components/schemas/ShootPlanShotResult"
+        skip_reason:
+          $ref: "#/components/schemas/ShootPlanSkipReason"
+        notes:
+          type: string
+          nullable: true
+        checked_at:
+          type: string
+          format: date-time
+        capture_mode:
+          $ref: "#/components/schemas/ShootPlanCaptureMode"
+        supersedes_event_id:
+          type: string
+          nullable: true
+        revision:
+          type: integer
+          format: int64
+
+    ShotExecutionVoidEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [kind, id, plan_id, shot_id, target_event_id, shot_event_seq,
+         reason, voided_at, revision]
+      properties:
+        kind:
+          type: string
+          enum: [void]
+        id:
+          type: string
+        plan_id:
+          type: string
+        shot_id:
+          type: string
+        target_event_id:
+          type: string
+        shot_event_seq:
+          type: integer
+          format: int64
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+        voided_at:
+          type: string
+          format: date-time
+        revision:
+          type: integer
+          format: int64
+
+    ShotExecutionFact:
+      oneOf:
+        - $ref: "#/components/schemas/ShotExecutionResultEvent"
+        - $ref: "#/components/schemas/ShotExecutionVoidEvent"
+      discriminator:
+        propertyName: kind
+        mapping:
+          result: "#/components/schemas/ShotExecutionResultEvent"
+          void: "#/components/schemas/ShotExecutionVoidEvent"
+
+    AppendShotResultResponse:
+      type: object
+      additionalProperties: false
+      required: [event, execution_revision, execution_fact_revision]
+      properties:
+        event:
+          $ref: "#/components/schemas/ShotExecutionResultEvent"
+        current_outcome:
+          allOf:
+            - $ref: "#/components/schemas/ShootPlanCurrentOutcome"
+          nullable: true
+        execution_revision:
+          type: integer
+          format: int64
+        execution_fact_revision:
+          type: integer
+          format: int64
+
+    VoidExecutionEventInput:
+      type: object
+      additionalProperties: false
+      required: [expected_execution_revision, reason]
+      properties:
+        expected_execution_revision:
+          type: integer
+          format: int64
+          minimum: 0
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    VoidExecutionEventResponse:
+      type: object
+      additionalProperties: false
+      required: [void_event, execution_revision, execution_fact_revision]
+      properties:
+        void_event:
+          $ref: "#/components/schemas/ShotExecutionVoidEvent"
+        current_outcome:
+          allOf:
+            - $ref: "#/components/schemas/ShootPlanCurrentOutcome"
+          nullable: true
+        execution_revision:
+          type: integer
+          format: int64
+        execution_fact_revision:
+          type: integer
+          format: int64
+
+    PlanFinalizationSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        [id, plan_id, finalization_revision, plan_revision, current_shot_ids,
+         outcome_event_refs, preparation_missing_event_ids,
+         execution_fact_revision, finalized_at]
+      properties:
+        id:
+          type: string
+        plan_id:
+          type: string
+        finalization_revision:
+          type: integer
+          format: int64
+        plan_revision:
+          type: integer
+          format: int64
+        current_shot_ids:
+          type: array
+          items:
+            type: string
+        outcome_event_refs:
+          type: array
+          items:
+            type: string
+        preparation_missing_event_ids:
+          type: array
+          items:
+            type: string
+        execution_fact_revision:
+          type: integer
+          format: int64
+        finalized_at:
+          type: string
+          format: date-time

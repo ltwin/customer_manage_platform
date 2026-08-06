@@ -633,6 +633,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/shoot-plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 稳定分页列出当前账号的拍摄策划 */
+        get: operations["listShootPlans"];
+        put?: never;
+        /** 创建不依赖客户、订单或档期的拍摄策划 */
+        post: operations["createShootPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** 读取拍摄策划当前投影，可选择执行历史 */
+        get: operations["getShootPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 应用一个 typed 聚合命令 */
+        patch: operations["applyShootPlanCommand"];
+        trace?: never;
+    };
+    "/shoot-plans/{id}/transitions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 执行策划状态转换 */
+        post: operations["transitionShootPlan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/run-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 打开 execution-only Run Mode 会话 */
+        post: operations["openShootPlanRunSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/shots/{shotId}/capture": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 追加 captured、skipped 或 cleared 结果事实 */
+        post: operations["appendShootPlanShotResult"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/execution-events/{eventId}/void": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 追加一个指向结果事实的作废事实 */
+        post: operations["voidShootPlanExecutionEvent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1037,6 +1143,557 @@ export interface components {
             settings: components["schemas"]["Settings"];
             account_profile: components["schemas"]["ExportAccountProfile"];
         };
+        /** @enum {string} */
+        ShootPlanStatus: "draft" | "ready" | "in_progress" | "completed" | "archived";
+        /** @enum {string} */
+        ShootPlanCaptureMode: "live" | "backfill" | "unknown";
+        /** @enum {string} */
+        ShootPlanShotResult: "captured" | "skipped" | "cleared";
+        /** @enum {string} */
+        ShootPlanSkipReason: "preparation_missing" | "time_insufficient" | "location_unavailable" | "subject_unavailable" | "creative_change" | "technical_failure" | "other";
+        CreativeBrief: {
+            work_title?: string | null;
+            character_name?: string | null;
+            theme_statement?: string | null;
+            mood?: string | null;
+            visual_keywords?: string[];
+        };
+        PublicPlanScale: {
+            planned_look_count?: number | null;
+            planned_scene_count?: number | null;
+            readonly planned_shot_count: number;
+        };
+        PlanExecutionWindow: {
+            /** @enum {string} */
+            source: "manual" | "schedule_slot";
+            source_ref?: string | null;
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            timezone: string;
+            /** Format: date-time */
+            live_window_starts_at: string;
+            /** Format: date-time */
+            live_window_ends_at: string;
+            /** @enum {integer} */
+            rule_version: 1;
+            /** Format: int64 */
+            revision: number;
+        };
+        ShootPlanCurrentOutcome: {
+            event_id: string;
+            /** @enum {string} */
+            result: "captured" | "skipped";
+            skip_reason?: components["schemas"]["ShootPlanSkipReason"];
+            /** Format: date-time */
+            checked_at: string;
+            capture_mode: components["schemas"]["ShootPlanCaptureMode"];
+        };
+        ShootPlanShot: {
+            readonly id: string;
+            readonly plan_id: string;
+            position: number;
+            title: string;
+            scene?: string | null;
+            action?: string | null;
+            expression?: string | null;
+            composition?: string | null;
+            lighting_text?: string | null;
+            notes?: string | null;
+            /** @enum {string|null} */
+            framing_tag?: "extreme_closeup" | "closeup" | "medium_closeup" | "medium" | "full" | "wide" | "extreme_wide" | "other" | null;
+            /** @enum {string|null} */
+            lighting_direction_tag?: "front" | "side" | "back" | "top" | "bottom" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            lighting_quality_tag?: "hard" | "soft" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            palette_tag?: "warm" | "cool" | "neutral" | "monochrome" | "high_saturation" | "low_saturation" | "mixed" | "other" | null;
+            /** @enum {string|null} */
+            shot_type_tag?: "portrait" | "action" | "interaction" | "environment" | "detail" | "silhouette" | "narrative" | "other" | null;
+            /** @enum {integer} */
+            taxonomy_version: 1;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            execution_revision: number;
+            readiness_item_ids: string[];
+            current_outcome?: components["schemas"]["ShootPlanCurrentOutcome"] | null;
+        };
+        ShootPlanReadinessItem: {
+            readonly id: string;
+            readonly plan_id: string;
+            /** @enum {string} */
+            category: "styling" | "location" | "prop_equipment" | "other";
+            title: string;
+            /** @enum {string} */
+            requirement: "required" | "optional";
+            /** @enum {string} */
+            preflight_status: "unchecked" | "checked";
+            /** @enum {string} */
+            responsibility_hint: "photographer" | "customer" | "unassigned";
+            default_preparation_lead_days?: number | null;
+            /** Format: int64 */
+            revision: number;
+        };
+        CoreArchiveAcknowledgement: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            version: "core-v1";
+            effects: ("plan_becomes_read_only" | "execution_history_retained")[];
+        };
+        PlanningShareArchiveAcknowledgement: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            version: "planning-share-v1";
+            effects: ("plan_becomes_read_only" | "execution_history_retained" | "active_share_links_become_unavailable" | "share_feedback_retained" | "share_assignments_retained")[];
+        };
+        PlanningShareReminderArchiveAcknowledgement: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            version: "planning-share-reminder-v1";
+            effects: ("plan_becomes_read_only" | "execution_history_retained" | "active_share_links_become_unavailable" | "share_feedback_retained" | "share_assignments_retained" | "active_assignment_reminders_withdrawn")[];
+        };
+        ArchiveAcknowledgement: components["schemas"]["CoreArchiveAcknowledgement"] | components["schemas"]["PlanningShareArchiveAcknowledgement"] | components["schemas"]["PlanningShareReminderArchiveAcknowledgement"];
+        ShootPlanListItem: {
+            id: string;
+            title: string;
+            subject: string;
+            status: components["schemas"]["ShootPlanStatus"];
+            public_scale: components["schemas"]["PublicPlanScale"];
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            execution_fact_revision: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ShootPlanList: {
+            items: components["schemas"]["ShootPlanListItem"][];
+            /** Format: int64 */
+            total: number;
+        };
+        ShootPlanDetail: {
+            id: string;
+            title: string;
+            subject: string;
+            status: components["schemas"]["ShootPlanStatus"];
+            creative_brief: components["schemas"]["CreativeBrief"];
+            public_scale: components["schemas"]["PublicPlanScale"];
+            execution_window?: components["schemas"]["PlanExecutionWindow"] | null;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            execution_fact_revision: number;
+            shots: components["schemas"]["ShootPlanShot"][];
+            readiness_items: components["schemas"]["ShootPlanReadinessItem"][];
+            required_archive_acknowledgement: components["schemas"]["ArchiveAcknowledgement"];
+            execution_history?: components["schemas"]["ShotExecutionFact"][];
+            finalizations?: components["schemas"]["PlanFinalizationSnapshot"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            completed_at?: string | null;
+            /** Format: date-time */
+            archived_at?: string | null;
+        };
+        CreateShootPlanInput: {
+            title: string;
+            subject: string;
+        };
+        PlanCommandBase: {
+            /** Format: int64 */
+            expected_revision: number;
+            operation: string;
+        };
+        CreativeBriefPatch: {
+            work_title?: string | null;
+            character_name?: string | null;
+            theme_statement?: string | null;
+            mood?: string | null;
+            visual_keywords?: string[] | null;
+        };
+        ShotWrite: {
+            title?: string;
+            scene?: string | null;
+            action?: string | null;
+            expression?: string | null;
+            composition?: string | null;
+            lighting_text?: string | null;
+            notes?: string | null;
+            /** @enum {string|null} */
+            framing_tag?: "extreme_closeup" | "closeup" | "medium_closeup" | "medium" | "full" | "wide" | "extreme_wide" | "other" | null;
+            /** @enum {string|null} */
+            lighting_direction_tag?: "front" | "side" | "back" | "top" | "bottom" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            lighting_quality_tag?: "hard" | "soft" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            palette_tag?: "warm" | "cool" | "neutral" | "monochrome" | "high_saturation" | "low_saturation" | "mixed" | "other" | null;
+            /** @enum {string|null} */
+            shot_type_tag?: "portrait" | "action" | "interaction" | "environment" | "detail" | "silhouette" | "narrative" | "other" | null;
+        };
+        ReadinessWrite: {
+            /** @enum {string} */
+            category?: "styling" | "location" | "prop_equipment" | "other";
+            title?: string;
+            /** @enum {string} */
+            requirement?: "required" | "optional";
+            /** @enum {string} */
+            preflight_status?: "unchecked" | "checked";
+            /** @enum {string} */
+            responsibility_hint?: "photographer" | "customer" | "unassigned";
+            default_preparation_lead_days?: number | null;
+        };
+        UpdateBriefPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "update_brief";
+            title?: string;
+            subject?: string;
+            creative_brief?: components["schemas"]["CreativeBriefPatch"];
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "update_brief";
+        };
+        UpsertShotPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "upsert_shot";
+            shot_id?: string;
+            shot: components["schemas"]["ShotWrite"];
+            insert_after_shot_id?: string | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "upsert_shot";
+        };
+        ReorderShotsPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "reorder_shots";
+            ordered_shot_ids: string[];
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "reorder_shots";
+        };
+        RemoveShotPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "remove_shot";
+            shot_id: string;
+            acknowledge_execution_history: boolean;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "remove_shot";
+        };
+        UpsertReadinessPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "upsert_readiness";
+            readiness_id?: string;
+            item: components["schemas"]["ReadinessWrite"];
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "upsert_readiness";
+        };
+        RemoveReadinessPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "remove_readiness";
+            readiness_id: string;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "remove_readiness";
+        };
+        SetPreflightPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "set_preflight";
+            readiness_id: string;
+            /** @enum {string} */
+            preflight_status: "unchecked" | "checked";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "set_preflight";
+        };
+        LinkReadinessPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "link_readiness";
+            shot_id: string;
+            readiness_id: string;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "link_readiness";
+        };
+        UnlinkReadinessPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "unlink_readiness";
+            shot_id: string;
+            readiness_id: string;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "unlink_readiness";
+        };
+        SetPublicScalePlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "set_public_scale";
+            planned_look_count?: number | null;
+            planned_scene_count?: number | null;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "set_public_scale";
+        };
+        SetExecutionWindowPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "set_execution_window";
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            timezone: string;
+            /** Format: date-time */
+            live_window_starts_at: string;
+            /** Format: date-time */
+            live_window_ends_at: string;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "set_execution_window";
+        };
+        ClearExecutionWindowPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "clear_execution_window";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "clear_execution_window";
+        };
+        PlanCommand: components["schemas"]["UpdateBriefPlanCommand"] | components["schemas"]["UpsertShotPlanCommand"] | components["schemas"]["ReorderShotsPlanCommand"] | components["schemas"]["RemoveShotPlanCommand"] | components["schemas"]["UpsertReadinessPlanCommand"] | components["schemas"]["RemoveReadinessPlanCommand"] | components["schemas"]["SetPreflightPlanCommand"] | components["schemas"]["LinkReadinessPlanCommand"] | components["schemas"]["UnlinkReadinessPlanCommand"] | components["schemas"]["SetPublicScalePlanCommand"] | components["schemas"]["SetExecutionWindowPlanCommand"] | components["schemas"]["ClearExecutionWindowPlanCommand"];
+        PlanMutationResult: {
+            plan_id: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["ShootPlanStatus"];
+            changed_projection: {
+                [key: string]: unknown;
+            };
+        };
+        EmptyTransitionPayload: Record<string, never>;
+        CompleteTransitionPayload: {
+            /** Format: int64 */
+            expected_execution_fact_revision: number;
+        };
+        MarkReadyPlanTransition: {
+            /** Format: int64 */
+            expected_revision: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            transition: "mark_ready";
+            payload: components["schemas"]["EmptyTransitionPayload"];
+        };
+        StartPlanTransition: {
+            /** Format: int64 */
+            expected_revision: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            transition: "start";
+            payload: components["schemas"]["EmptyTransitionPayload"];
+        };
+        CompletePlanTransition: {
+            /** Format: int64 */
+            expected_revision: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            transition: "complete";
+            payload: components["schemas"]["CompleteTransitionPayload"];
+        };
+        ReopenPlanTransition: {
+            /** Format: int64 */
+            expected_revision: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            transition: "reopen";
+            payload: components["schemas"]["EmptyTransitionPayload"];
+        };
+        ArchivePlanTransition: {
+            /** Format: int64 */
+            expected_revision: number;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            transition: "archive";
+            payload: components["schemas"]["ArchiveAcknowledgement"];
+        };
+        PlanTransition: components["schemas"]["MarkReadyPlanTransition"] | components["schemas"]["StartPlanTransition"] | components["schemas"]["CompletePlanTransition"] | components["schemas"]["ReopenPlanTransition"] | components["schemas"]["ArchivePlanTransition"];
+        PlanTransitionResult: {
+            plan_id: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["ShootPlanStatus"];
+            /** Format: int64 */
+            finalization_revision?: number | null;
+        };
+        RunModeSession: {
+            id: string;
+            plan_id: string;
+            /** Format: int64 */
+            execution_window_revision?: number | null;
+            /** Format: date-time */
+            opened_at: string;
+            /** Format: date-time */
+            last_active_at: string;
+            /** Format: date-time */
+            closed_at?: string | null;
+            capture_mode: components["schemas"]["ShootPlanCaptureMode"];
+        };
+        RunInputSnapshot: {
+            plan_id: string;
+            /** Format: int64 */
+            plan_revision: number;
+            /** Format: int64 */
+            execution_fact_revision: number;
+            shots: components["schemas"]["ShootPlanShot"][];
+            readiness_items: components["schemas"]["ShootPlanReadinessItem"][];
+        };
+        OpenRunSessionResult: {
+            session: components["schemas"]["RunModeSession"];
+            /** Format: int64 */
+            plan_revision: number;
+            input: components["schemas"]["RunInputSnapshot"];
+        };
+        AppendShotResultInput: {
+            /** Format: int64 */
+            expected_execution_revision: number;
+            session_id?: string | null;
+            result: components["schemas"]["ShootPlanShotResult"];
+            skip_reason?: components["schemas"]["ShootPlanSkipReason"];
+            notes?: string | null;
+            supersedes_event_id?: string | null;
+        };
+        ShotExecutionResultEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "result";
+            id: string;
+            plan_id: string;
+            shot_id: string;
+            session_id?: string | null;
+            /** Format: int64 */
+            shot_event_seq: number;
+            /** Format: int64 */
+            plan_revision: number;
+            result: components["schemas"]["ShootPlanShotResult"];
+            skip_reason?: components["schemas"]["ShootPlanSkipReason"];
+            notes?: string | null;
+            /** Format: date-time */
+            checked_at: string;
+            capture_mode: components["schemas"]["ShootPlanCaptureMode"];
+            supersedes_event_id?: string | null;
+            /** Format: int64 */
+            revision: number;
+        };
+        ShotExecutionVoidEvent: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "void";
+            id: string;
+            plan_id: string;
+            shot_id: string;
+            target_event_id: string;
+            /** Format: int64 */
+            shot_event_seq: number;
+            reason: string;
+            /** Format: date-time */
+            voided_at: string;
+            /** Format: int64 */
+            revision: number;
+        };
+        ShotExecutionFact: components["schemas"]["ShotExecutionResultEvent"] | components["schemas"]["ShotExecutionVoidEvent"];
+        AppendShotResultResponse: {
+            event: components["schemas"]["ShotExecutionResultEvent"];
+            current_outcome?: components["schemas"]["ShootPlanCurrentOutcome"] | null;
+            /** Format: int64 */
+            execution_revision: number;
+            /** Format: int64 */
+            execution_fact_revision: number;
+        };
+        VoidExecutionEventInput: {
+            /** Format: int64 */
+            expected_execution_revision: number;
+            reason: string;
+        };
+        VoidExecutionEventResponse: {
+            void_event: components["schemas"]["ShotExecutionVoidEvent"];
+            current_outcome?: components["schemas"]["ShootPlanCurrentOutcome"] | null;
+            /** Format: int64 */
+            execution_revision: number;
+            /** Format: int64 */
+            execution_fact_revision: number;
+        };
+        PlanFinalizationSnapshot: {
+            id: string;
+            plan_id: string;
+            /** Format: int64 */
+            finalization_revision: number;
+            /** Format: int64 */
+            plan_revision: number;
+            current_shot_ids: string[];
+            outcome_event_refs: string[];
+            preparation_missing_event_ids: string[];
+            /** Format: int64 */
+            execution_fact_revision: number;
+            /** Format: date-time */
+            finalized_at: string;
+        };
     };
     responses: {
         /** @description 400 validation_failed */
@@ -1113,6 +1770,15 @@ export interface components {
                 "application/json": components["schemas"]["ErrorEnvelope"];
             };
         };
+        /** @description 409 typed conflict */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
     };
     parameters: {
         /** @description 当前 avatar_revision 的 quoted token，例如 "ar-3" */
@@ -1121,6 +1787,8 @@ export interface components {
         ProfileIfMatch: string;
         /** @description 可选安全重放键；组合流程及从档期跳转的历史订单补录必须传。只持久化成功 2xx；24 小时内同账号、同操作、同 key、同规范化请求返回首次成功结果；成功绑定后的同 key 异请求返回 409 idempotency_conflict；客户端收到任意 5xx 时必须用原 body/key 重放确认，不得换 key */
         IdempotencyKey: string;
+        /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+        RequiredIdempotencyKey: string;
         Id: string;
         Page: number;
         PageSize: number;
@@ -2900,6 +3568,267 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            500: components["responses"]["Internal"];
+        };
+    };
+    listShootPlans: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["ShootPlanStatus"];
+                archived?: boolean;
+                page?: components["parameters"]["Page"];
+                page_size?: components["parameters"]["PageSize"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 拍摄策划分页列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShootPlanList"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    createShootPlan: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateShootPlanInput"];
+            };
+        };
+        responses: {
+            /** @description 策划已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShootPlanDetail"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    getShootPlan: {
+        parameters: {
+            query?: {
+                include?: "execution_history";
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 拍摄策划详情 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShootPlanDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    applyShootPlanCommand: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanCommand"];
+            };
+        };
+        responses: {
+            /** @description 命令结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanMutationResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    transitionShootPlan: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanTransition"];
+            };
+        };
+        responses: {
+            /** @description 状态转换结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanTransitionResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    openShootPlanRunSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: int64 */
+                    expected_revision: number;
+                };
+            };
+        };
+        responses: {
+            /** @description Run Mode 会话已打开 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenRunSessionResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    appendShootPlanShotResult: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                shotId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppendShotResultInput"];
+            };
+        };
+        responses: {
+            /** @description 执行结果已追加 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppendShotResultResponse"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    voidShootPlanExecutionEvent: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoidExecutionEventInput"];
+            };
+        };
+        responses: {
+            /** @description 作废事实已追加 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoidExecutionEventResponse"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             500: components["responses"]["Internal"];
         };
     };

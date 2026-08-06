@@ -20,6 +20,10 @@ type ReadTxAccountScope struct {
 	scope AccountScope
 }
 
+// AccountID returns the authenticated account bound to this physical transaction.
+// It never accepts or derives an account identifier from request input.
+func (sc TxAccountScope) AccountID() string { return sc.scope.accountID }
+
 // WithinTx 保留既有领域代码的事务入口；新建的跨资源创建编排使用 WithTxScope。
 func (sc AccountScope) WithinTx(ctx context.Context, fn func(AccountScope) error) error {
 	return sc.withinTx(ctx, fn)

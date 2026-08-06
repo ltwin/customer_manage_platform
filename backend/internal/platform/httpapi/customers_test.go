@@ -29,6 +29,7 @@ import (
 	digestdomain "github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 	settingsdomain "github.com/samson/customer-manage-platform/backend/internal/settings"
+	shootplanningdomain "github.com/samson/customer-manage-platform/backend/internal/shootplanning"
 )
 
 func startCustomerPostgres(t *testing.T) (string, *tcpostgres.PostgresContainer) {
@@ -103,6 +104,11 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		digestdomain.NewRecipientGate(),
 		"studio_digest_bot",
 	)
+	idempotencyExecutor := idempotency.NewExecutor()
+	shootPlanningApp, err := shootplanningdomain.NewApplication(shootplanningdomain.NewPostgresRepository(), idempotencyExecutor)
+	if err != nil {
+		t.Fatalf("new shoot planning application: %v", err)
+	}
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:          slog.New(slog.DiscardHandler),
 		DB:              s,
@@ -111,7 +117,7 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		Customer:        customerdomain.NewService(customerdomain.NewPostgresRepository()),
 		Orders:          orderdomain.NewService(orderdomain.NewPostgresRepository()),
 		Packages:        pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
-		Idempotency:     idempotency.NewExecutor(),
+		Idempotency:     idempotencyExecutor,
 		AccountTimezone: settingsSvc,
 		Schedule:        scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(time.Now)),
 		Avatar:          customerdomain.NewAvatarApplication(avatarRepo, objects),
@@ -121,6 +127,7 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		Dashboard:       dashboarddomain.NewService(dashboarddomain.NewPostgresRepository(), settingsSvc),
 		DataExport:      dataexport.NewService(dataexport.NewPostgresRepository(), dataexport.ClockFunc(time.Now)),
 		TelegramBinding: bindingSvc,
+		ShootPlanning:   shootPlanningApp,
 	})
 	return router, s, tokens, ctr
 }

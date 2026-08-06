@@ -10,7 +10,7 @@ commit_authorization: approved
 commit_authorization_ref: "approval-report.md#goal-commits"
 handoff_reason: ""
 handoff_next: ""
-current_feature_index: 0
+current_feature_index: 1
 workspace:
   mode: new-worktree-from-develop
   current_branch: feat/creative-shoot-planning
@@ -21,15 +21,15 @@ workspace:
 external_checkpoints:
   stage-1-evidence-go:
     before_feature: shoot-plan-crm-integration
-    status: pending
+    status: implementing
     runner: .codestable/roadmap/creative-shoot-planning/goal-tools/planning-evidence-dispatch-gate.py
   stage-2-evidence-go:
     before_feature: plan-business-feedback
-    status: pending
+    status: implementing
     runner: .codestable/roadmap/creative-shoot-planning/goal-tools/planning-evidence-dispatch-gate.py
   production-shaped-rehearsal:
     before_feature_acceptance: creative-planning-v1-hardening
-    status: pending
+    status: implementing
     reason: "需要owner提供受控非生产环境与独立操作授权；Goal execution不包含production动作"
 features:
   - slug: shoot-plan-core
@@ -40,7 +40,7 @@ features:
     review: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-review.md
     qa: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-qa.md
     acceptance: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-acceptance.md
-    status: pending
+    status: accepted
   - slug: planning-reference-assets
     roadmap_item: planning-reference-assets
     feature_dir: .codestable/features/2026-08-05-planning-reference-assets

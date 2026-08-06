@@ -12,14 +12,22 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/txcap"
 )
 
 type Operation string
 
 const (
-	OperationOrderCreate        Operation = "order.create.v1"
-	OperationScheduleSlotCreate Operation = "schedule-slot.create.v1"
-	defaultTTL                            = 24 * time.Hour
+	OperationOrderCreate         Operation = "order.create.v1"
+	OperationScheduleSlotCreate  Operation = "schedule-slot.create.v1"
+	OperationShootPlanCreate     Operation = "shoot-plan.create.v1"
+	OperationShootPlanCommand    Operation = "shoot-plan.command.v1"
+	OperationShootPlanTransition Operation = "shoot-plan.transition.v1"
+	OperationRunSessionOpen      Operation = "shoot-plan.run-session.open.v1"
+	OperationShotCapture         Operation = "shoot-plan.shot.capture.v1"
+	OperationExecutionEventVoid  Operation = "shoot-plan.execution-event.void.v1"
+	OperationShootPlanBatch      Operation = "shoot-plan.batch-commit.v1"
+	defaultTTL                             = 24 * time.Hour
 )
 
 var (
@@ -32,6 +40,41 @@ var (
 type StoredResponse struct {
 	Status int
 	Body   []byte
+}
+
+type ResourceIdentity struct {
+	kind        string
+	primaryID   string
+	secondaryID string
+}
+
+type Request struct {
+	Operation        Operation
+	Key              string
+	ResourceIdentity ResourceIdentity
+	CanonicalBody    []byte
+}
+
+func PlanCollectionResource() ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan-collection"}
+}
+func PlanResource(planID string) ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan", primaryID: planID}
+}
+func TransitionResource(planID string) ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan-transition", primaryID: planID}
+}
+func RunSessionResource(planID string) ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan-run-session", primaryID: planID}
+}
+func ShotCaptureResource(planID, shotID string) ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan-shot", primaryID: planID, secondaryID: shotID}
+}
+func EventVoidResource(planID, eventID string) ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan-event", primaryID: planID, secondaryID: eventID}
+}
+func BatchResource(planID string) ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan-batch", primaryID: planID}
 }
 
 type transactionRunner interface {
@@ -73,73 +116,167 @@ func (e *Executor) ExecuteCreate(
 	if err := validateRequest(operation, key, canonicalRequest, callback); err != nil {
 		return StoredResponse{}, err
 	}
-	if e == nil || e.runner == nil || e.now == nil || e.ttl <= 0 {
-		return StoredResponse{}, fmt.Errorf("%w: executor 未正确配置", ErrValidation)
+	return e.executeWithRunner(ctx, scope, operation, key, hashRequest(canonicalRequest), callback)
+}
+
+func (e *Executor) Execute(
+	ctx context.Context,
+	scope store.AccountScope,
+	request Request,
+	callback func(store.TxAccountScope) (StoredResponse, error),
+) (StoredResponse, error) {
+	requestHash, err := validateAndHashTypedRequest(request)
+	if err != nil || callback == nil {
+		if err == nil {
+			err = fmt.Errorf("%w: callback 必填", ErrValidation)
+		}
+		return StoredResponse{}, err
 	}
+	return e.executeWithRunner(ctx, scope, request.Operation, request.Key, requestHash, callback)
+}
 
-	requestHash := hashRequest(canonicalRequest)
+func (e *Executor) ExecuteInScope(
+	ctx context.Context,
+	tx store.TxAccountScope,
+	request Request,
+	callback func(store.TxAccountScope) (StoredResponse, error),
+) (StoredResponse, error) {
+	requestHash, err := validateAndHashTypedRequest(request)
+	if err != nil || callback == nil {
+		if err == nil {
+			err = fmt.Errorf("%w: callback 必填", ErrValidation)
+		}
+		return StoredResponse{}, err
+	}
+	if err := e.validateConfigured(false); err != nil {
+		return StoredResponse{}, err
+	}
+	return e.executeInTransaction(ctx, tx.IdempotencyLedgerView(), request.Operation, request.Key, requestHash, func() (StoredResponse, error) {
+		return callback(tx)
+	})
+}
+
+func ExecuteInCapability[T any](
+	ctx context.Context,
+	executor *Executor,
+	runner txcap.TransactionRunner[T],
+	capability txcap.ShareTransactionCapability,
+	request Request,
+	callback func(T) (StoredResponse, error),
+) (StoredResponse, error) {
+	requestHash, err := validateAndHashTypedRequest(request)
+	if err != nil || executor == nil || runner == nil || capability == nil || callback == nil {
+		if err == nil {
+			err = fmt.Errorf("%w: capability executor 参数不完整", ErrValidation)
+		}
+		return StoredResponse{}, err
+	}
+	if err := executor.validateConfigured(false); err != nil {
+		return StoredResponse{}, err
+	}
 	var response StoredResponse
-	err := e.runner.Run(ctx, scope, func(tx store.TxAccountScope) error {
-		now := e.now().UTC()
-		owner := false
-		for !owner {
-			var err error
-			owner, err = claim(ctx, tx, operation, key, requestHash, now.Add(e.ttl))
-			if err != nil {
-				return err
-			}
-			if owner {
-				break
-			}
-			record, err := loadRecordForUpdate(ctx, tx, operation, key)
-			if errors.Is(err, store.ErrNoRows) {
-				if err := ctx.Err(); err != nil {
-					return err
-				}
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if !record.ExpiresAt.After(now) {
-				if err := replaceExpiredClaim(ctx, tx, operation, key, requestHash, now.Add(e.ttl)); err != nil {
-					return err
-				}
-				owner = true
-			} else {
-				if record.RequestHash != requestHash {
-					return fmt.Errorf("%w: key 已绑定其他请求", ErrConflict)
-				}
-				if !record.ResponseStatus.Valid || len(record.ResponseBody) == 0 {
-					return errors.New("idempotency record 缺成功响应")
-				}
-				response = StoredResponse{
-					Status: int(record.ResponseStatus.Int64),
-					Body:   append([]byte(nil), record.ResponseBody...),
-				}
-				return nil
-			}
-		}
-
-		if owner {
-			created, err := callback(tx)
-			if err != nil {
-				return err
-			}
-			if created.Status < 200 || created.Status >= 300 || !json.Valid(created.Body) {
-				return ErrInvalidResponse
-			}
-			if err := storeSuccess(ctx, tx, operation, key, requestHash, created, now.Add(e.ttl)); err != nil {
-				return err
-			}
-			response = StoredResponse{Status: created.Status, Body: append([]byte(nil), created.Body...)}
-		}
-		return nil
+	err = runner.Run(ctx, capability, func(ledger txcap.LedgerTxView, scope T) error {
+		var runErr error
+		response, runErr = executor.executeInTransaction(ctx, ledger, request.Operation, request.Key, requestHash, func() (StoredResponse, error) {
+			return callback(scope)
+		})
+		return runErr
 	})
 	if err != nil {
 		return StoredResponse{}, err
 	}
 	return response, nil
+}
+
+func (e *Executor) executeWithRunner(
+	ctx context.Context,
+	scope store.AccountScope,
+	operation Operation,
+	key, requestHash string,
+	callback func(store.TxAccountScope) (StoredResponse, error),
+) (StoredResponse, error) {
+	if err := e.validateConfigured(true); err != nil {
+		return StoredResponse{}, err
+	}
+	var response StoredResponse
+	err := e.runner.Run(ctx, scope, func(tx store.TxAccountScope) error {
+		var err error
+		response, err = e.executeInTransaction(ctx, tx.IdempotencyLedgerView(), operation, key, requestHash, func() (StoredResponse, error) {
+			return callback(tx)
+		})
+		return err
+	})
+	if err != nil {
+		return StoredResponse{}, err
+	}
+	return response, nil
+}
+
+func (e *Executor) executeInTransaction(
+	ctx context.Context,
+	ledger txcap.LedgerTxView,
+	operation Operation,
+	key, requestHash string,
+	callback func() (StoredResponse, error),
+) (StoredResponse, error) {
+	if ledger == nil {
+		return StoredResponse{}, fmt.Errorf("%w: ledger transaction view 缺失", ErrValidation)
+	}
+	now := e.now().UTC()
+	owner := false
+	for !owner {
+		var err error
+		owner, err = claim(ctx, ledger, operation, key, requestHash, now.Add(e.ttl))
+		if err != nil {
+			return StoredResponse{}, err
+		}
+		if owner {
+			break
+		}
+		record, err := loadRecordForUpdate(ctx, ledger, operation, key)
+		if errors.Is(err, store.ErrNoRows) {
+			if err := ctx.Err(); err != nil {
+				return StoredResponse{}, err
+			}
+			continue
+		}
+		if err != nil {
+			return StoredResponse{}, err
+		}
+		if !record.ExpiresAt.After(now) {
+			if err := replaceExpiredClaim(ctx, ledger, operation, key, requestHash, now.Add(e.ttl)); err != nil {
+				return StoredResponse{}, err
+			}
+			owner = true
+			continue
+		}
+		if record.RequestHash != requestHash {
+			return StoredResponse{}, fmt.Errorf("%w: key 已绑定其他请求", ErrConflict)
+		}
+		if !record.ResponseStatus.Valid || len(record.ResponseBody) == 0 {
+			return StoredResponse{}, errors.New("idempotency record 缺成功响应")
+		}
+		return StoredResponse{Status: int(record.ResponseStatus.Int64), Body: append([]byte(nil), record.ResponseBody...)}, nil
+	}
+
+	created, err := callback()
+	if err != nil {
+		return StoredResponse{}, err
+	}
+	if created.Status < 200 || created.Status >= 300 || !json.Valid(created.Body) {
+		return StoredResponse{}, ErrInvalidResponse
+	}
+	if err := storeSuccess(ctx, ledger, operation, key, requestHash, created, now.Add(e.ttl)); err != nil {
+		return StoredResponse{}, err
+	}
+	return StoredResponse{Status: created.Status, Body: append([]byte(nil), created.Body...)}, nil
+}
+
+func (e *Executor) validateConfigured(requireRunner bool) error {
+	if e == nil || e.now == nil || e.ttl <= 0 || requireRunner && e.runner == nil {
+		return fmt.Errorf("%w: executor 未正确配置", ErrValidation)
+	}
+	return nil
 }
 
 func validateRequest(
@@ -163,6 +300,67 @@ func validateRequest(
 	return nil
 }
 
+func validateAndHashTypedRequest(request Request) (string, error) {
+	if len(request.Key) < 8 || len(request.Key) > 128 || !keyPattern.MatchString(request.Key) {
+		return "", fmt.Errorf("%w: key 非法", ErrValidation)
+	}
+	if !json.Valid(request.CanonicalBody) {
+		return "", fmt.Errorf("%w: canonical body 必须是 JSON", ErrValidation)
+	}
+	if !resourceMatchesOperation(request.Operation, request.ResourceIdentity) {
+		return "", fmt.Errorf("%w: operation 与 resource identity 不匹配", ErrValidation)
+	}
+	frame := struct {
+		FrameVersion int             `json:"frame_version"`
+		Operation    Operation       `json:"operation"`
+		Resource     resourceFrame   `json:"resource"`
+		Body         json.RawMessage `json:"body"`
+	}{
+		FrameVersion: 1,
+		Operation:    request.Operation,
+		Resource: resourceFrame{
+			Kind:        request.ResourceIdentity.kind,
+			PrimaryID:   request.ResourceIdentity.primaryID,
+			SecondaryID: request.ResourceIdentity.secondaryID,
+		},
+		Body: json.RawMessage(request.CanonicalBody),
+	}
+	canonical, err := json.Marshal(frame)
+	if err != nil {
+		return "", fmt.Errorf("%w: canonical frame: %v", ErrValidation, err)
+	}
+	return hashRequest(canonical), nil
+}
+
+type resourceFrame struct {
+	Kind        string `json:"kind"`
+	PrimaryID   string `json:"primary_id,omitempty"`
+	SecondaryID string `json:"secondary_id,omitempty"`
+}
+
+func resourceMatchesOperation(operation Operation, identity ResourceIdentity) bool {
+	primary := identity.primaryID != ""
+	secondary := identity.secondaryID != ""
+	switch operation {
+	case OperationShootPlanCreate:
+		return identity.kind == "shoot-plan-collection" && !primary && !secondary
+	case OperationShootPlanCommand:
+		return identity.kind == "shoot-plan" && primary && !secondary
+	case OperationShootPlanTransition:
+		return identity.kind == "shoot-plan-transition" && primary && !secondary
+	case OperationRunSessionOpen:
+		return identity.kind == "shoot-plan-run-session" && primary && !secondary
+	case OperationShotCapture:
+		return identity.kind == "shoot-plan-shot" && primary && secondary
+	case OperationExecutionEventVoid:
+		return identity.kind == "shoot-plan-event" && primary && secondary
+	case OperationShootPlanBatch:
+		return identity.kind == "shoot-plan-batch" && primary && !secondary
+	default:
+		return false
+	}
+}
+
 func hashRequest(canonicalRequest []byte) string {
 	sum := sha256.Sum256(canonicalRequest)
 	return hex.EncodeToString(sum[:])
@@ -170,7 +368,7 @@ func hashRequest(canonicalRequest []byte) string {
 
 func claim(
 	ctx context.Context,
-	tx store.TxAccountScope,
+	tx txcap.LedgerTxView,
 	operation Operation,
 	key, requestHash string,
 	expiresAt time.Time,
@@ -205,7 +403,7 @@ type storedRecord struct {
 
 func loadRecordForUpdate(
 	ctx context.Context,
-	tx store.TxAccountScope,
+	tx txcap.LedgerTxView,
 	operation Operation,
 	key string,
 ) (storedRecord, error) {
@@ -226,7 +424,7 @@ func loadRecordForUpdate(
 
 func replaceExpiredClaim(
 	ctx context.Context,
-	tx store.TxAccountScope,
+	tx txcap.LedgerTxView,
 	operation Operation,
 	key, requestHash string,
 	expiresAt time.Time,
@@ -256,7 +454,7 @@ func replaceExpiredClaim(
 
 func storeSuccess(
 	ctx context.Context,
-	tx store.TxAccountScope,
+	tx txcap.LedgerTxView,
 	operation Operation,
 	key, requestHash string,
 	response StoredResponse,

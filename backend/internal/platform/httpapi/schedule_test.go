@@ -113,7 +113,11 @@ func TestScheduleAPIEndpointsIdempotencyNullableAndIsolation(t *testing.T) {
 	rec = scheduleRequest(t, h, http.MethodPost, "/api/v1/schedule/slots", tokenA,
 		[]byte(`{"start_at":"`+end.Add(time.Hour).Format(time.RFC3339)+`","end_at":"`+end.Add(2*time.Hour).Format(time.RFC3339)+`","type":"shoot","order_id":"`+orderA.ID+`"}`), "")
 	env := decodeEnvelope(t, rec)
-	if rec.Code != http.StatusConflict || env.Error.Code != "order_already_scheduled" || env.Error.Details == nil || env.Error.Details.ScheduleSlotId != *shootResult.Slot.Id {
+	var details httpapi.ScheduleConflictDetails
+	if env.Error.Details != nil {
+		details, err = env.Error.Details.AsScheduleConflictDetails()
+	}
+	if rec.Code != http.StatusConflict || env.Error.Code != "order_already_scheduled" || env.Error.Details == nil || err != nil || details.ScheduleSlotId != *shootResult.Slot.Id {
 		t.Fatalf("duplicate shoot details: status=%d env=%+v", rec.Code, env)
 	}
 	archivedCustomer, err := customers.Create(ctx, scopeA, customerdomain.CreateInput{

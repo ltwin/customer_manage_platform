@@ -1,6 +1,6 @@
 roadmap: creative-shoot-planning
 created: 2026-08-02
-last_updated: 2026-08-05
+last_updated: 2026-08-06
 
 # 首版硬约束：
 #   H1 策划是非强制辅助工具；既有 CRM 不因缺策划而阻塞、警告或降级，观测指标不向摄影师外化。
@@ -12,7 +12,7 @@ items:
   - slug: shoot-plan-core
     description: 交付独立 ShootPlan 聚合、准备项、公开规模、可选执行时间窗、结构化镜头、可审计执行历史与独立 run mode
     depends_on: []
-    status: in-progress
+    status: done
     feature: 2026-08-05-shoot-plan-core
     minimal_loop: false
     notes: >-

@@ -16,6 +16,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/txcap"
 )
 
 var errScriptedTransactionOutcome = errors.New("scripted transaction outcome unknown")
@@ -23,6 +24,107 @@ var errScriptedTransactionOutcome = errors.New("scripted transaction outcome unk
 type scriptedRunner struct {
 	mode  string
 	calls atomic.Int32
+}
+
+func TestTypedExecuteFramesResourceAndOperation(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	scope, customerID := createTestAccount(t, s, "acct-typed-frame")
+	executor := NewExecutor()
+	var callbacks atomic.Int32
+	callback := probeCreateCallback("typed", customerID, &callbacks)
+
+	request := Request{
+		Operation: OperationShootPlanCommand, Key: "typed-frame-key",
+		ResourceIdentity: PlanResource("plan-a"), CanonicalBody: []byte(`{"expected_revision":1}`),
+	}
+	first, err := executor.Execute(ctx, scope, request, callback)
+	if err != nil {
+		t.Fatalf("typed execute: %v", err)
+	}
+	replay, err := executor.Execute(ctx, scope, request, callback)
+	if err != nil || string(replay.Body) != string(first.Body) || callbacks.Load() != 1 {
+		t.Fatalf("typed replay response=%s err=%v callbacks=%d", replay.Body, err, callbacks.Load())
+	}
+	request.ResourceIdentity = PlanResource("plan-b")
+	if _, err := executor.Execute(ctx, scope, request, callback); !errors.Is(err, ErrConflict) {
+		t.Fatalf("same operation/key across resource error=%v", err)
+	}
+	request.Operation = OperationShootPlanTransition
+	request.ResourceIdentity = TransitionResource("plan-b")
+	if _, err := executor.Execute(ctx, scope, request, callback); err != nil {
+		t.Fatalf("different operation may reuse key: %v", err)
+	}
+	if callbacks.Load() != 2 {
+		t.Fatalf("callbacks=%d want 2", callbacks.Load())
+	}
+}
+
+type capabilityProbeScope struct{ tx store.TxAccountScope }
+
+type capabilityProbeRunner struct {
+	scope  store.AccountScope
+	begins atomic.Int32
+}
+
+func (r *capabilityProbeRunner) Run(
+	ctx context.Context,
+	_ txcap.ShareTransactionCapability,
+	callback func(txcap.LedgerTxView, capabilityProbeScope) error,
+) error {
+	r.begins.Add(1)
+	return r.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		return callback(tx.IdempotencyLedgerView(), capabilityProbeScope{tx: tx})
+	})
+}
+
+func TestExecuteInScopeAndCapabilityUseOnePhysicalTransaction(t *testing.T) {
+	ctx := context.Background()
+	s := openTestStore(t)
+	scope, customerID := createTestAccount(t, s, "acct-capability-probe")
+	executor := NewExecutor()
+
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		_, err := executor.ExecuteInScope(ctx, tx, Request{
+			Operation: OperationShootPlanBatch, Key: "in-scope-probe",
+			ResourceIdentity: BatchResource("plan-a"), CanonicalBody: []byte(`{"candidates":[]}`),
+		}, func(bound store.TxAccountScope) (StoredResponse, error) {
+			if err := insertProbeOrder(ctx, bound, "ord_in_scope", customerID); err != nil {
+				return StoredResponse{}, err
+			}
+			return StoredResponse{Status: 200, Body: []byte(`{"id":"ord_in_scope"}`)}, nil
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("execute in scope: %v", err)
+	}
+
+	runner := &capabilityProbeRunner{scope: scope}
+	capability := txcap.NewShareTransactionCapability(txcap.NewValidatedShareContext("selector-fingerprint"))
+	callbackCalls := atomic.Int32{}
+	request := Request{
+		Operation: OperationExecutionEventVoid, Key: "capability-probe",
+		ResourceIdentity: EventVoidResource("plan-a", "event-a"), CanonicalBody: []byte(`{"reason":"mistake"}`),
+	}
+	callback := func(probe capabilityProbeScope) (StoredResponse, error) {
+		callbackCalls.Add(1)
+		if err := insertProbeOrder(ctx, probe.tx, "ord_capability", customerID); err != nil {
+			return StoredResponse{}, err
+		}
+		return StoredResponse{Status: 201, Body: []byte(`{"id":"ord_capability"}`)}, nil
+	}
+	if _, err := ExecuteInCapability(ctx, executor, runner, capability, request, callback); err != nil {
+		t.Fatalf("capability execute: %v", err)
+	}
+	if _, err := ExecuteInCapability(ctx, executor, runner, capability, request, callback); err != nil {
+		t.Fatalf("capability replay: %v", err)
+	}
+	if runner.begins.Load() != 2 || callbackCalls.Load() != 1 {
+		t.Fatalf("begins=%d callbacks=%d", runner.begins.Load(), callbackCalls.Load())
+	}
+	assertCount(t, scope, "orders", 2)
+	assertCount(t, scope, "idempotency_records", 2)
 }
 
 func (r *scriptedRunner) Run(

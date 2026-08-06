@@ -1,13 +1,5 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
-import {
-  Bell,
-  CalendarDays,
-  LayoutDashboard,
-  Package,
-  ReceiptText,
-  Users,
-} from 'lucide-react'
 import { ApiError, fetchMe } from '../api/client'
 import { AccountCenterProvider } from '../account/AccountCenterContext.tsx'
 import AccountMenu from '../account/AccountMenu.tsx'
@@ -24,12 +16,14 @@ import {
 } from './pageReadState'
 
 const navItems = [
-  { key: 'dashboard', label: '仪表盘', to: '/dashboard', icon: LayoutDashboard },
-  { key: 'customers', label: '客户', to: '/customers', icon: Users },
-  { key: 'orders', label: '订单', to: '/orders', icon: ReceiptText },
-  { key: 'calendar', label: '档期', to: '/calendar', icon: CalendarDays },
-  { key: 'packages', label: '套系', to: '/packages', icon: Package },
-  { key: 'reminders', label: '提醒', to: '/reminders', icon: Bell },
+  { key: 'dashboard', label: '仪表盘', to: '/dashboard', icon: DashboardIcon },
+  { key: 'customers', label: '客户', to: '/customers', icon: CustomersIcon },
+  { key: 'orders', label: '订单', to: '/orders', icon: OrdersIcon },
+  { key: 'calendar', label: '档期', to: '/calendar', icon: CalendarIcon },
+  { key: 'planning', label: '策划', to: '/shoot-plans', icon: PlanningIcon },
+  { key: 'packages', label: '套系', to: '/packages', icon: PackageIcon },
+  { key: 'reminders', label: '提醒', to: '/reminders', icon: ReminderIcon },
+  { key: 'settings', label: '设置', to: '/settings', icon: SettingsIcon },
 ]
 
 export default function AppShell() {
@@ -172,4 +166,98 @@ function saveTheme(theme: 'light' | 'dark') {
   } catch {
     // 预览沙箱可能禁用 localStorage，本页主题仍可正常切换。
   }
+}
+
+function DashboardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="9" rx="1.5" />
+      <rect x="14" y="3" width="7" height="5" rx="1.5" />
+      <rect x="14" y="12" width="7" height="9" rx="1.5" />
+      <rect x="3" y="16" width="7" height="5" rx="1.5" />
+    </svg>
+  )
+}
+
+function CustomersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19c.7-3 2.9-4.5 5.5-4.5S13.8 16 14.5 19" />
+      <circle cx="17" cy="9" r="2.4" />
+      <path d="M16.2 14.7c2.3.1 3.9 1.5 4.4 3.8" />
+    </svg>
+  )
+}
+
+function CalendarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="16" rx="2" />
+      <path d="M3.5 10h17M8 3v4M16 3v4" />
+    </svg>
+  )
+}
+
+function PlanningIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="4" y="3.5" width="16" height="17" rx="2" />
+      <path d="M8 8h8M8 12h5M8 16h7" />
+      <path d="M16.5 11.5l2 2-4.5 4.5H12v-2z" />
+    </svg>
+  )
+}
+
+function OrdersIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 4h10a2 2 0 0 1 2 2v14l-3-1.8L12 20l-4-1.8L5 20V6a2 2 0 0 1 2-2z" />
+      <path d="M8.5 8h7M8.5 12h7M8.5 16H13" />
+    </svg>
+  )
+}
+
+function PackageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+      <path d="M4 7.5l8 4.5 8-4.5M12 12v9" />
+    </svg>
+  )
+}
+
+function ReminderIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 4a6 6 0 0 0-6 6v3.2L4.5 16h15L18 13.2V10a6 6 0 0 0-6-6z" />
+      <path d="M10 18a2 2 0 0 0 4 0" />
+    </svg>
+  )
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9c.3.6.9 1 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </svg>
+  )
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20.2 14.2A8.2 8.2 0 0 1 9.8 3.8a8.2 8.2 0 1 0 10.4 10.4z" />
+    </svg>
+  )
+}
+
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="4.2" />
+      <path d="M12 2.5v2.6M12 18.9v2.6M2.5 12h2.6M18.9 12h2.6M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M18.7 5.3l-1.8 1.8M7.1 16.9l-1.8 1.8" />
+    </svg>
+  )
 }

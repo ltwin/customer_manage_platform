@@ -23,6 +23,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
 )
 
 // Pinger 是健康检查所需的最小数据库探测面（测试注入失败用）。
@@ -59,6 +60,7 @@ type RouterDeps struct {
 	PublicRegistrationEnabled bool
 	TrustedProxyCIDRs         []netip.Prefix
 	Now                       func() time.Time
+	ShootPlanning             *shootplanning.Application
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -167,6 +169,9 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.PUT("/account/profile/avatar", h.putAccountProfileAvatarRoute)
 	protected.DELETE("/account/profile/avatar", h.deleteAccountProfileAvatarRoute)
 	protected.GET("/account/profile/avatar/content", h.getAccountProfileAvatarContentRoute)
+	if deps.ShootPlanning != nil {
+		registerShootPlanningHandlers(protected, deps.ShootPlanning, deps.ScopeFactory)
+	}
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；
 	// 非 API 路径恒由 go:embed 静态 + SPA fallback 承接（D7，不适用封套）

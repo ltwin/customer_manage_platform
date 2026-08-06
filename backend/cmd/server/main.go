@@ -27,12 +27,14 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
 	telegramapi "github.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
 )
 
 const telegramAPIBaseURL = "https://api.telegram.org"
@@ -133,6 +135,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return newStartupFailure("database-open", "DATABASE_URL", "database", err)
 	}
 	defer s.Close()
+	idempotencyExecutor := idempotency.NewExecutor()
+	shootPlanningApp, err := composeShootPlanningApplication(ctx, s.ArchiveCapabilityStartupReader(), idempotencyExecutor)
+	if err != nil {
+		return err
+	}
 
 	objects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
 	if err != nil {
@@ -210,6 +217,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Dashboard:                 dashboardSvc,
 		DataExport:                dataExportSvc,
 		TelegramBinding:           telegramBinding,
+		ShootPlanning:             shootPlanningApp,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -258,6 +266,32 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+}
+
+type archiveCapabilityStartupReader interface {
+	Current(context.Context) (planningcapability.ArchiveCapabilityState, error)
+}
+
+func composeShootPlanningApplication(
+	ctx context.Context,
+	startupReader archiveCapabilityStartupReader,
+	executor *idempotency.Executor,
+) (*shootplanning.Application, error) {
+	if startupReader == nil {
+		return nil, errors.New("shoot planning archive capability startup reader is required")
+	}
+	archiveCapability, err := startupReader.Current(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read shoot planning archive capability at startup: %w", err)
+	}
+	if archiveCapability.Capability != planningcapability.ArchiveCapabilityCore {
+		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", archiveCapability.Capability)
+	}
+	application, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), executor)
+	if err != nil {
+		return nil, fmt.Errorf("compose shoot planning application: %w", err)
+	}
+	return application, nil
 }
 
 type backgroundRunner interface {

@@ -157,7 +157,7 @@ python3 /Users/samson/.agents/skills/cs-onboard/tools/codestable-goal-consistenc
 
 - Design：approved design + passed design-review + parseable checklist + Acceptance Coverage Matrix + DoD Contract。
 - Implementation：当前 feature 全部 steps done；scope-gate、dod-runner、evidence-pack passed；core 命令有真实日志；无未解释范围外 diff。
-- Review/QA closure：独立 Task agent review 与 QA 必须消费 evidence/gates 并给出可追踪结论；同一 feature 的审核/修复循环最多 3 轮（首轮 + 最多两轮修订），第 3 轮后非阻塞项转 residual risk，仍有 blocking 则 handoff。
+- Review：独立 Task agent review passed、无 unresolved blocking、消费 evidence/gates 并给 QA focus；遵守同一 feature review 最多 3 轮的项目规则。
 - QA：passed；覆盖关键场景、DoD、review focus 与真实 API/browser/CLI/PG/volume 路径，不把核心缺口降为 residual。
 - Acceptance：`goal-acceptance` 命名授权有效；checks 全 passed；canonical artifacts/gates/results 完整；items/roadmap/requirements 按设计回写。
 - Scoped commit：`goal-commits` 命名授权有效；只包含当前 feature 代码/spec/evidence/review/QA/acceptance、必要 shared roadmap/goal-state 更新；不 push、不绕过 hooks。
@@ -172,7 +172,7 @@ python3 /Users/samson/.agents/skills/cs-onboard/tools/codestable-goal-consistenc
 - acceptance.before_done：acceptance-dod-gate。
 - roadmap_audit.before_complete：goal-consistency-gate + goal-audit-gate。
 - stage-1/stage-2 dispatch gate 是 implementation admission 的额外 executable gate，不替代上述通用 gates。
-- 同一 feature 审核/修复循环三轮仍失败时持久化 handoff，不循环伪修；design review 本轮不再重开，额外复审必须 owner 明确授权。
+- 同一 blocking 三轮仍失败时持久化 handoff，不循环伪修；design review 本轮不再重开。
 
 ## 13. Provider Policy
 

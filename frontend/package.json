@@ -19,6 +19,7 @@
     "test:data-export": "node --test --experimental-transform-types scripts/data-export.test.ts",
     "test:account-center": "node --test --experimental-transform-types scripts/account-center.test.ts",
     "test:v1-hardening": "node --test --experimental-transform-types scripts/v1-hardening.test.ts",
+    "test:shoot-planning": "node --test --experimental-transform-types scripts/shoot-planning.test.ts",
     "test:prototype": "node --test scripts/prototype-contract.test.mjs",
     "preview": "vite preview",
     "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts"

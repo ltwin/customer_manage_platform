@@ -24,6 +24,9 @@ import AccountSecurityPage from './account/AccountSecurityPage.tsx'
 import AccountPasswordPage from './account/AccountPasswordPage.tsx'
 import AccountSettingsPage from './account/settings/AccountSettingsPage.tsx'
 import { peekLoginNotice } from './account/security/loginNotice.ts'
+import ShootPlansPage from './planning/ShootPlansPage'
+import ShootPlanWorkspacePage from './planning/ShootPlanWorkspacePage'
+import ShootPlanRunPage from './planning/ShootPlanRunPage'
 
 type AuthStatus = ReturnType<typeof getAuthSnapshot>['status']
 
@@ -110,6 +113,8 @@ export default function App() {
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/shoot-plans" element={<ShootPlansPage />} />
+        <Route path="/shoot-plans/:id" element={<ShootPlanWorkspacePage />} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/reminders" element={<RemindersPage />} />
         <Route path="/settings" element={<Navigate to="/account/settings" replace />} />
@@ -122,6 +127,7 @@ export default function App() {
           <Route path="settings" element={<AccountSettingsPage />} />
         </Route>
       </Route>
+      <Route path="/shoot-plans/:id/run" element={<RequireAuth status={auth.status}><ShootPlanRunPage /></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

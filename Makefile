@@ -48,6 +48,7 @@ test:
 	cd frontend && npm run test:account-center
 	cd frontend && npm run test:customer-avatar
 	cd frontend && npm run test:v1-hardening
+	cd frontend && npm run test:shoot-planning
 	./scripts/test-auth-legacy-cutover.sh
 	./scripts/test-auth-security-catalog.sh
 	bash ./scripts/test-v1-ops-common.sh
@@ -58,6 +59,7 @@ test:
 # 契约线（design 2.2）：api/openapi.yaml -> Go 服务端类型（按 tag）+ TS 全量类型
 generate: frontend/node_modules
 	cd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
+	cd backend/internal/shootplanning/httpcontract && go tool oapi-codegen -config oapi-codegen.yaml ../../../../api/openapi.yaml
 	cd frontend && npm run generate
 
 # 漂移检查：比较生成前后内容，允许 feature 在提交前验证已同步的生成物（CMD-002 / A11）
@@ -65,10 +67,13 @@ generate-check: frontend/node_modules
 	@tmp_dir="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp_dir"' EXIT; \
 	cp backend/internal/platform/httpapi/api.gen.go "$$tmp_dir/api.gen.go"; \
+	cp backend/internal/shootplanning/httpcontract/api.gen.go "$$tmp_dir/shootplanning.gen.go"; \
 	cp frontend/src/api/schema.d.ts "$$tmp_dir/schema.d.ts"; \
 	$(MAKE) generate; \
 	cmp -s "$$tmp_dir/api.gen.go" backend/internal/platform/httpapi/api.gen.go \
 		|| { echo "Go OpenAPI 生成物存在漂移" >&2; exit 1; }; \
+	cmp -s "$$tmp_dir/shootplanning.gen.go" backend/internal/shootplanning/httpcontract/api.gen.go \
+		|| { echo "shootplanning Go OpenAPI 生成物存在漂移" >&2; exit 1; }; \
 	cmp -s "$$tmp_dir/schema.d.ts" frontend/src/api/schema.d.ts \
 		|| { echo "TypeScript OpenAPI 生成物存在漂移" >&2; exit 1; }
 

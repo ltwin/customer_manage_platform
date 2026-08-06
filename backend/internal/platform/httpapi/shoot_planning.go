@@ -1,0 +1,749 @@
+package httpapi
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/oapi-codegen/nullable"
+
+	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	shootplanningapi "github.com/samson/customer-manage-platform/backend/internal/shootplanning/httpcontract"
+)
+
+const maxShootPlanningRequestBytes = 1 << 20
+const shootPlanningRawBodyKey = "shoot-planning-raw-body"
+
+type shootPlanningHandlers struct {
+	app          *shootplanning.Application
+	scopeFactory ScopeFactory
+}
+
+var _ shootplanningapi.ServerInterface = (*shootPlanningHandlers)(nil)
+
+func (h *shootPlanningHandlers) ListShootPlans(c *gin.Context, params shootplanningapi.ListShootPlansParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	if !onlyQueryParameters(c, "status", "archived", "page", "page_size") ||
+		(params.Status != nil && !params.Status.Valid()) {
+		abortShootPlanningValidation(c)
+		return
+	}
+	filter := shootplanning.ListPlansFilter{Page: 1, PageSize: 20}
+	if params.Status != nil {
+		status := shootplanning.PlanStatus(*params.Status)
+		filter.Status = &status
+	}
+	if params.Archived != nil {
+		filter.ArchivedOnly = *params.Archived
+	}
+	if params.Page != nil {
+		filter.Page = *params.Page
+	}
+	if params.PageSize != nil {
+		filter.PageSize = *params.PageSize
+	}
+	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 100 {
+		abortShootPlanningValidation(c)
+		return
+	}
+	result, err := h.app.ListPlans(c.Request.Context(), scope, filter)
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *shootPlanningHandlers) CreateShootPlan(c *gin.Context, params shootplanningapi.CreateShootPlanParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	var body shootplanningapi.CreateShootPlanInput
+	if err := decodeStrictRequest(c, &body, "title", "subject"); err != nil {
+		abortShootPlanningValidation(c)
+		return
+	}
+	detail, err := h.app.CreatePlan(c.Request.Context(), scope, params.IdempotencyKey, shootplanning.CreatePlanInput{
+		Title: body.Title, Subject: body.Subject,
+	})
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusCreated, detail)
+}
+
+func (h *shootPlanningHandlers) GetShootPlan(c *gin.Context, id shootplanningapi.Id, params shootplanningapi.GetShootPlanParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	if !onlyQueryParameters(c, "include") || (params.Include != nil && !params.Include.Valid()) {
+		abortShootPlanningValidation(c)
+		return
+	}
+	includeHistory := params.Include != nil && *params.Include == shootplanningapi.ExecutionHistory
+	detail, err := h.app.GetPlan(c.Request.Context(), scope, id, includeHistory)
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, detail)
+}
+
+func (h *shootPlanningHandlers) ApplyShootPlanCommand(c *gin.Context, id shootplanningapi.Id, params shootplanningapi.ApplyShootPlanCommandParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	expectedRevision, command, err := decodePlanCommand(c)
+	if err != nil {
+		abortShootPlanningValidation(c)
+		return
+	}
+	result, err := h.app.ApplyPlanCommand(c.Request.Context(), scope, params.IdempotencyKey, id, expectedRevision, command)
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *shootPlanningHandlers) VoidShootPlanExecutionEvent(c *gin.Context, id shootplanningapi.Id, eventID string, params shootplanningapi.VoidShootPlanExecutionEventParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	var body shootplanningapi.VoidExecutionEventInput
+	if err := decodeStrictRequest(c, &body, "expected_execution_revision", "reason"); err != nil {
+		abortShootPlanningValidation(c)
+		return
+	}
+	result, err := h.app.VoidExecutionEvent(c.Request.Context(), scope, params.IdempotencyKey, id, eventID, shootplanning.VoidExecutionEventInput{
+		ExpectedExecutionRevision: body.ExpectedExecutionRevision,
+		Reason:                    body.Reason,
+	})
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+func (h *shootPlanningHandlers) OpenShootPlanRunSession(c *gin.Context, id shootplanningapi.Id, params shootplanningapi.OpenShootPlanRunSessionParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	var body shootplanningapi.OpenShootPlanRunSessionJSONBody
+	if err := decodeStrictRequest(c, &body, "expected_revision"); err != nil {
+		abortShootPlanningValidation(c)
+		return
+	}
+	result, err := h.app.OpenRunSession(c.Request.Context(), scope, params.IdempotencyKey, id, body.ExpectedRevision)
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+func (h *shootPlanningHandlers) AppendShootPlanShotResult(c *gin.Context, id shootplanningapi.Id, shotID string, params shootplanningapi.AppendShootPlanShotResultParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	var body shootplanningapi.AppendShotResultInput
+	if err := decodeStrictRequest(c, &body, "expected_execution_revision", "result"); err != nil ||
+		rejectNullRequestFields(c, "skip_reason") != nil || !body.Result.Valid() ||
+		(body.SkipReason != nil && !body.SkipReason.Valid()) {
+		abortShootPlanningValidation(c)
+		return
+	}
+	result, err := h.app.AppendShotResult(c.Request.Context(), scope, params.IdempotencyKey, id, shotID, shootplanning.AppendShotResultInput{
+		ExpectedExecutionRevision: body.ExpectedExecutionRevision,
+		SessionID:                 nullablePointer(body.SessionId),
+		Result:                    shootplanning.ShotResult(body.Result),
+		SkipReason:                enumPointer(body.SkipReason),
+		Notes:                     nullablePointer(body.Notes),
+		SupersedesEventID:         nullablePointer(body.SupersedesEventId),
+	})
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+func (h *shootPlanningHandlers) TransitionShootPlan(c *gin.Context, id shootplanningapi.Id, params shootplanningapi.TransitionShootPlanParams) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	transition, err := decodePlanTransition(c)
+	if err != nil {
+		abortShootPlanningValidation(c)
+		return
+	}
+	result, err := h.app.TransitionPlan(c.Request.Context(), scope, params.IdempotencyKey, id, transition)
+	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *shootPlanningHandlers) scope(c *gin.Context) (store.AccountScope, bool) {
+	account, ok := auth.AccountContextFrom(c.Request.Context())
+	if !ok {
+		abortError(c, http.StatusUnauthorized, CodeUnauthorized, "未认证")
+		return store.AccountScope{}, false
+	}
+	if h.app == nil || h.scopeFactory == nil {
+		_ = c.Error(errors.New("shoot planning route dependencies missing"))
+		return store.AccountScope{}, false
+	}
+	return h.scopeFactory.ScopeFor(account), true
+}
+
+func (h *shootPlanningHandlers) abortError(c *gin.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	var acknowledgementError *shootplanning.ArchiveAcknowledgementRequiredError
+	if errors.As(err, &acknowledgementError) {
+		details, detailsErr := archiveAcknowledgementErrorDetails(acknowledgementError.Required)
+		if detailsErr != nil {
+			_ = c.Error(detailsErr)
+			return true
+		}
+		abortErrorWithTypedDetails(c, http.StatusConflict, CodeArchiveAcknowledgementRequired,
+			"归档影响确认已变化，请刷新后重新确认", details)
+		return true
+	}
+	type conflict struct {
+		err     error
+		code    string
+		message string
+	}
+	conflicts := []conflict{
+		{shootplanning.ErrPlanRevisionConflict, CodePlanRevisionConflict, "策划版本已变化，请刷新后重试"},
+		{shootplanning.ErrExecutionRevisionConflict, CodeExecutionRevisionConflict, "镜头执行版本已变化，请刷新后重试"},
+		{shootplanning.ErrInvalidPlanTransition, CodeInvalidPlanTransition, "当前状态不允许此操作"},
+		{shootplanning.ErrReadinessIncomplete, CodeReadinessIncomplete, "必需准备项尚未完成"},
+		{shootplanning.ErrReadinessAssignmentActive, CodeReadinessAssignmentActive, "准备项仍有关联中的认领"},
+		{shootplanning.ErrShotsIncomplete, CodeShotsIncomplete, "仍有镜头未记录执行结果"},
+		{shootplanning.ErrArchivedReadOnly, CodeArchivedReadOnly, "已归档策划不可修改"},
+		{shootplanning.ErrReopenRequired, CodeReopenRequired, "已完成策划需重新打开后才能修改"},
+		{shootplanning.ErrExecutionHistoryAckRequired, CodeExecutionHistoryAckRequired, "移除前需确认保留执行历史"},
+		{shootplanning.ErrExecutionEventAlreadyVoid, CodeExecutionEventAlreadyVoid, "执行事实已作废"},
+		{shootplanning.ErrSupersedesMismatch, CodeSupersedesEventMismatch, "被替代事实与当前结果不一致"},
+		{idempotency.ErrConflict, CodeIdempotencyConflict, "幂等键已被其他请求使用"},
+	}
+	for _, item := range conflicts {
+		if errors.Is(err, item.err) {
+			abortError(c, http.StatusConflict, item.code, item.message)
+			return true
+		}
+	}
+	if errors.Is(err, shootplanning.ErrPlanNotFound) || errors.Is(err, shootplanning.ErrShotNotFound) ||
+		errors.Is(err, shootplanning.ErrReadinessNotFound) || errors.Is(err, shootplanning.ErrRunSessionNotFound) ||
+		errors.Is(err, shootplanning.ErrExecutionEventNotFound) {
+		abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
+		return true
+	}
+	if errors.Is(err, shootplanning.ErrValidation) || errors.Is(err, idempotency.ErrValidation) {
+		abortShootPlanningValidation(c)
+		return true
+	}
+	_ = c.Error(fmt.Errorf("shoot planning request: %w", err))
+	return true
+}
+
+func archiveAcknowledgementErrorDetails(required shootplanning.ArchiveAcknowledgement) (ErrorDetails, error) {
+	body, err := json.Marshal(required)
+	if err != nil {
+		return ErrorDetails{}, err
+	}
+	var acknowledgement ArchiveAcknowledgement
+	if err := json.Unmarshal(body, &acknowledgement); err != nil {
+		return ErrorDetails{}, err
+	}
+	var details ErrorDetails
+	err = details.FromArchiveAcknowledgementRequiredDetails(ArchiveAcknowledgementRequiredDetails{
+		RequiredArchiveAcknowledgement: acknowledgement,
+	})
+	return details, err
+}
+
+func abortShootPlanningValidation(c *gin.Context) {
+	abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求参数不合法")
+}
+
+func onlyQueryParameters(c *gin.Context, allowed ...string) bool {
+	allow := make(map[string]struct{}, len(allowed))
+	for _, name := range allowed {
+		allow[name] = struct{}{}
+	}
+	for name, values := range c.Request.URL.Query() {
+		if _, ok := allow[name]; !ok || len(values) != 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func decodeStrictRequest(c *gin.Context, destination any, required ...string) error {
+	if c.ContentType() != "application/json" {
+		return errors.New("content type must be application/json")
+	}
+	body, err := readRequestBody(c)
+	if err != nil {
+		return err
+	}
+	c.Set(shootPlanningRawBodyKey, body)
+	if err := requireJSONFields(body, required...); err != nil {
+		return err
+	}
+	return decodeStrictJSON(body, destination)
+}
+
+func readRequestBody(c *gin.Context) ([]byte, error) {
+	reader := http.MaxBytesReader(c.Writer, c.Request.Body, maxShootPlanningRequestBytes)
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, errors.New("request body is required")
+	}
+	return body, nil
+}
+
+func decodeStrictJSON(body []byte, destination any) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("multiple JSON values are not allowed")
+		}
+		return err
+	}
+	return nil
+}
+
+func requireJSONFields(body []byte, names ...string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return err
+	}
+	if object == nil {
+		return errors.New("JSON object is required")
+	}
+	for _, name := range names {
+		value, ok := object[name]
+		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return fmt.Errorf("field %s is required", name)
+		}
+	}
+	return nil
+}
+
+func rejectNullFields(body []byte, names ...string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return err
+	}
+	for _, name := range names {
+		if value, ok := object[name]; ok && bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return fmt.Errorf("field %s cannot be null", name)
+		}
+	}
+	return nil
+}
+
+func rejectNullRequestFields(c *gin.Context, names ...string) error {
+	value, ok := c.Get(shootPlanningRawBodyKey)
+	if !ok {
+		return errors.New("request body is unavailable")
+	}
+	body, ok := value.([]byte)
+	if !ok {
+		return errors.New("request body has invalid type")
+	}
+	return rejectNullFields(body, names...)
+}
+
+func jsonObjectField(body []byte, name string) ([]byte, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return nil, err
+	}
+	value, ok := object[name]
+	if !ok {
+		return nil, fmt.Errorf("field %s is required", name)
+	}
+	return value, nil
+}
+
+func decodePlanCommand(c *gin.Context) (int64, shootplanning.PlanCommand, error) {
+	if c.ContentType() != "application/json" {
+		return 0, nil, errors.New("content type must be application/json")
+	}
+	body, err := readRequestBody(c)
+	if err != nil {
+		return 0, nil, err
+	}
+	if err := requireJSONFields(body, "expected_revision", "operation"); err != nil {
+		return 0, nil, err
+	}
+	var discriminator struct {
+		Operation string `json:"operation"`
+	}
+	if err := json.Unmarshal(body, &discriminator); err != nil {
+		return 0, nil, err
+	}
+	switch discriminator.Operation {
+	case "update_brief":
+		if err := rejectNullFields(body, "title", "subject", "creative_brief"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.UpdateBriefPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.UpdateBrief {
+			return 0, nil, invalidUnion(err)
+		}
+		if request.Title == nil && request.Subject == nil && request.CreativeBrief == nil {
+			return 0, nil, errors.New("empty brief patch")
+		}
+		if request.CreativeBrief != nil && !creativeBriefPatchSpecified(*request.CreativeBrief) {
+			return 0, nil, errors.New("empty creative brief patch")
+		}
+		return request.ExpectedRevision, shootplanning.UpdateBriefCommand{
+			Title: request.Title, Subject: request.Subject, CreativeBrief: creativeBriefPatch(request.CreativeBrief),
+		}, nil
+	case "upsert_shot":
+		if err := requireJSONFields(body, "shot"); err != nil {
+			return 0, nil, err
+		}
+		if err := rejectNullFields(body, "shot_id"); err != nil {
+			return 0, nil, err
+		}
+		shotBody, err := jsonObjectField(body, "shot")
+		if err != nil {
+			return 0, nil, err
+		}
+		if err := rejectNullFields(shotBody, "title"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.UpsertShotPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.UpsertShot {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.UpsertShotCommand{
+			ShotID: request.ShotId, Shot: shotWrite(request.Shot), InsertAfterShotID: nullablePointer(request.InsertAfterShotId),
+		}, nil
+	case "reorder_shots":
+		if err := requireJSONFields(body, "ordered_shot_ids"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.ReorderShotsPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.ReorderShots {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.ReorderShotsCommand{OrderedShotIDs: request.OrderedShotIds}, nil
+	case "remove_shot":
+		if err := requireJSONFields(body, "shot_id", "acknowledge_execution_history"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.RemoveShotPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.RemoveShot {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.RemoveShotCommand{ShotID: request.ShotId, AcknowledgeExecutionHistory: request.AcknowledgeExecutionHistory}, nil
+	case "upsert_readiness":
+		if err := requireJSONFields(body, "item"); err != nil {
+			return 0, nil, err
+		}
+		if err := rejectNullFields(body, "readiness_id"); err != nil {
+			return 0, nil, err
+		}
+		itemBody, err := jsonObjectField(body, "item")
+		if err != nil {
+			return 0, nil, err
+		}
+		if err := rejectNullFields(itemBody, "category", "title", "requirement", "preflight_status", "responsibility_hint"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.UpsertReadinessPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.UpsertReadiness {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.UpsertReadinessCommand{ReadinessID: request.ReadinessId, Item: readinessWrite(request.Item)}, nil
+	case "remove_readiness":
+		if err := requireJSONFields(body, "readiness_id"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.RemoveReadinessPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.RemoveReadiness {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.RemoveReadinessCommand{ReadinessID: request.ReadinessId}, nil
+	case "set_preflight":
+		if err := requireJSONFields(body, "readiness_id", "preflight_status"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.SetPreflightPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.SetPreflight {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.SetPreflightCommand{ReadinessID: request.ReadinessId, PreflightStatus: string(request.PreflightStatus)}, nil
+	case "link_readiness":
+		if err := requireJSONFields(body, "shot_id", "readiness_id"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.LinkReadinessPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.LinkReadiness {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.LinkReadinessCommand{ShotID: request.ShotId, ReadinessID: request.ReadinessId}, nil
+	case "unlink_readiness":
+		if err := requireJSONFields(body, "shot_id", "readiness_id"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.UnlinkReadinessPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.UnlinkReadiness {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.UnlinkReadinessCommand{ShotID: request.ShotId, ReadinessID: request.ReadinessId}, nil
+	case "set_public_scale":
+		var request shootplanningapi.SetPublicScalePlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.SetPublicScale {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.SetPublicScaleCommand{
+			PlannedLookCount: optionalValue(request.PlannedLookCount), PlannedSceneCount: optionalValue(request.PlannedSceneCount),
+		}, nil
+	case "set_execution_window":
+		if err := requireJSONFields(body, "starts_at", "ends_at", "timezone", "live_window_starts_at", "live_window_ends_at"); err != nil {
+			return 0, nil, err
+		}
+		var request shootplanningapi.SetExecutionWindowPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.SetExecutionWindow {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.SetExecutionWindowCommand{
+			StartsAt: request.StartsAt, EndsAt: request.EndsAt, Timezone: request.Timezone,
+			LiveWindowStartsAt: request.LiveWindowStartsAt, LiveWindowEndsAt: request.LiveWindowEndsAt,
+		}, nil
+	case "clear_execution_window":
+		var request shootplanningapi.ClearExecutionWindowPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.ClearExecutionWindow {
+			return 0, nil, invalidUnion(err)
+		}
+		return request.ExpectedRevision, shootplanning.ClearExecutionWindowCommand{}, nil
+	default:
+		return 0, nil, errors.New("unknown plan command discriminator")
+	}
+}
+
+func decodePlanTransition(c *gin.Context) (shootplanning.PlanTransition, error) {
+	if c.ContentType() != "application/json" {
+		return shootplanning.PlanTransition{}, errors.New("content type must be application/json")
+	}
+	body, err := readRequestBody(c)
+	if err != nil {
+		return shootplanning.PlanTransition{}, err
+	}
+	if err := requireJSONFields(body, "expected_revision", "transition", "payload"); err != nil {
+		return shootplanning.PlanTransition{}, err
+	}
+	var discriminator struct {
+		Transition string          `json:"transition"`
+		Payload    json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(body, &discriminator); err != nil {
+		return shootplanning.PlanTransition{}, err
+	}
+	switch discriminator.Transition {
+	case "mark_ready":
+		var request shootplanningapi.MarkReadyPlanTransition
+		if err := decodeStrictJSON(body, &request); err != nil || request.Transition != shootplanningapi.MarkReady {
+			return shootplanning.PlanTransition{}, invalidUnion(err)
+		}
+		if len(request.Payload) != 0 {
+			return shootplanning.PlanTransition{}, errors.New("mark_ready payload must be empty")
+		}
+		return shootplanning.PlanTransition{ExpectedRevision: request.ExpectedRevision, Kind: shootplanning.TransitionMarkReady}, nil
+	case "start":
+		var request shootplanningapi.StartPlanTransition
+		if err := decodeStrictJSON(body, &request); err != nil || request.Transition != shootplanningapi.Start {
+			return shootplanning.PlanTransition{}, invalidUnion(err)
+		}
+		if len(request.Payload) != 0 {
+			return shootplanning.PlanTransition{}, errors.New("start payload must be empty")
+		}
+		return shootplanning.PlanTransition{ExpectedRevision: request.ExpectedRevision, Kind: shootplanning.TransitionStart}, nil
+	case "complete":
+		var request shootplanningapi.CompletePlanTransition
+		if err := decodeStrictJSON(body, &request); err != nil || request.Transition != shootplanningapi.Complete {
+			return shootplanning.PlanTransition{}, invalidUnion(err)
+		}
+		if err := requireJSONFields(discriminator.Payload, "expected_execution_fact_revision"); err != nil {
+			return shootplanning.PlanTransition{}, err
+		}
+		executionRevision := request.Payload.ExpectedExecutionFactRevision
+		return shootplanning.PlanTransition{ExpectedRevision: request.ExpectedRevision, Kind: shootplanning.TransitionComplete, ExpectedExecutionFactRevision: &executionRevision}, nil
+	case "reopen":
+		var request shootplanningapi.ReopenPlanTransition
+		if err := decodeStrictJSON(body, &request); err != nil || request.Transition != shootplanningapi.Reopen {
+			return shootplanning.PlanTransition{}, invalidUnion(err)
+		}
+		if len(request.Payload) != 0 {
+			return shootplanning.PlanTransition{}, errors.New("reopen payload must be empty")
+		}
+		return shootplanning.PlanTransition{ExpectedRevision: request.ExpectedRevision, Kind: shootplanning.TransitionReopen}, nil
+	case "archive":
+		var request shootplanningapi.ArchivePlanTransition
+		if err := decodeStrictJSON(body, &request); err != nil || request.Transition != shootplanningapi.Archive {
+			return shootplanning.PlanTransition{}, invalidUnion(err)
+		}
+		acknowledgement, err := decodeArchiveAcknowledgement(discriminator.Payload)
+		if err != nil {
+			return shootplanning.PlanTransition{}, err
+		}
+		return shootplanning.PlanTransition{ExpectedRevision: request.ExpectedRevision, Kind: shootplanning.TransitionArchive, ArchiveAcknowledgement: &acknowledgement}, nil
+	default:
+		return shootplanning.PlanTransition{}, errors.New("unknown transition discriminator")
+	}
+}
+
+func decodeArchiveAcknowledgement(body []byte) (shootplanning.ArchiveAcknowledgement, error) {
+	if err := requireJSONFields(body, "version", "effects"); err != nil {
+		return shootplanning.ArchiveAcknowledgement{}, err
+	}
+	var discriminator struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &discriminator); err != nil {
+		return shootplanning.ArchiveAcknowledgement{}, err
+	}
+	acknowledgement := shootplanning.ArchiveAcknowledgement{Version: discriminator.Version}
+	switch discriminator.Version {
+	case "core-v1":
+		var value shootplanningapi.CoreArchiveAcknowledgement
+		if err := decodeStrictJSON(body, &value); err != nil || !value.Version.Valid() {
+			return shootplanning.ArchiveAcknowledgement{}, invalidUnion(err)
+		}
+		for _, effect := range value.Effects {
+			acknowledgement.Effects = append(acknowledgement.Effects, string(effect))
+		}
+	case "planning-share-v1":
+		var value shootplanningapi.PlanningShareArchiveAcknowledgement
+		if err := decodeStrictJSON(body, &value); err != nil || !value.Version.Valid() {
+			return shootplanning.ArchiveAcknowledgement{}, invalidUnion(err)
+		}
+		for _, effect := range value.Effects {
+			acknowledgement.Effects = append(acknowledgement.Effects, string(effect))
+		}
+	case "planning-share-reminder-v1":
+		var value shootplanningapi.PlanningShareReminderArchiveAcknowledgement
+		if err := decodeStrictJSON(body, &value); err != nil || !value.Version.Valid() {
+			return shootplanning.ArchiveAcknowledgement{}, invalidUnion(err)
+		}
+		for _, effect := range value.Effects {
+			acknowledgement.Effects = append(acknowledgement.Effects, string(effect))
+		}
+	default:
+		return shootplanning.ArchiveAcknowledgement{}, errors.New("unknown archive acknowledgement version")
+	}
+	return acknowledgement, nil
+}
+
+func invalidUnion(err error) error {
+	if err != nil {
+		return err
+	}
+	return errors.New("union discriminator does not match body")
+}
+
+func creativeBriefPatchSpecified(value shootplanningapi.CreativeBriefPatch) bool {
+	return value.WorkTitle.IsSpecified() || value.CharacterName.IsSpecified() || value.ThemeStatement.IsSpecified() ||
+		value.Mood.IsSpecified() || value.VisualKeywords.IsSpecified()
+}
+
+func creativeBriefPatch(value *shootplanningapi.CreativeBriefPatch) *shootplanning.CreativeBriefPatch {
+	if value == nil {
+		return nil
+	}
+	return &shootplanning.CreativeBriefPatch{
+		WorkTitle: optionalValue(value.WorkTitle), CharacterName: optionalValue(value.CharacterName),
+		ThemeStatement: optionalValue(value.ThemeStatement), Mood: optionalValue(value.Mood),
+		VisualKeywords: optionalValue(value.VisualKeywords),
+	}
+}
+
+func shotWrite(value shootplanningapi.ShotWrite) shootplanning.ShotWrite {
+	return shootplanning.ShotWrite{
+		Title: value.Title, Scene: optionalValue(value.Scene), Action: optionalValue(value.Action),
+		Expression: optionalValue(value.Expression), Composition: optionalValue(value.Composition),
+		Lighting: optionalValue(value.LightingText), Notes: optionalValue(value.Notes),
+		FramingTag: optionalString(value.FramingTag), LightingDirectionTag: optionalString(value.LightingDirectionTag),
+		LightingQualityTag: optionalString(value.LightingQualityTag), PaletteTag: optionalString(value.PaletteTag),
+		ShotTypeTag: optionalString(value.ShotTypeTag),
+	}
+}
+
+func readinessWrite(value shootplanningapi.ReadinessWrite) shootplanning.ReadinessWrite {
+	return shootplanning.ReadinessWrite{
+		Category: enumPointer(value.Category), Title: value.Title, Requirement: enumPointer(value.Requirement),
+		PreflightStatus: enumPointer(value.PreflightStatus), ResponsibilityHint: enumPointer(value.ResponsibilityHint),
+		DefaultPreparationLeadDays: optionalValue(value.DefaultPreparationLeadDays),
+	}
+}
+
+func optionalValue[T any](value nullable.Nullable[T]) shootplanning.Optional[T] {
+	result := shootplanning.Optional[T]{Specified: value.IsSpecified(), Null: value.IsNull()}
+	if concrete, err := value.Get(); err == nil {
+		result.Value = concrete
+	}
+	return result
+}
+
+func optionalString[T ~string](value nullable.Nullable[T]) shootplanning.Optional[string] {
+	result := shootplanning.Optional[string]{Specified: value.IsSpecified(), Null: value.IsNull()}
+	if concrete, err := value.Get(); err == nil {
+		result.Value = string(concrete)
+	}
+	return result
+}
+
+func nullablePointer[T any](value nullable.Nullable[T]) *T {
+	concrete, err := value.Get()
+	if err != nil {
+		return nil
+	}
+	return &concrete
+}
+
+func enumPointer[T ~string](value *T) *string {
+	if value == nil {
+		return nil
+	}
+	converted := string(*value)
+	return &converted
+}
+
+func registerShootPlanningHandlers(router gin.IRouter, app *shootplanning.Application, scopeFactory ScopeFactory) {
+	shootplanningapi.RegisterHandlersWithOptions(router, &shootPlanningHandlers{app: app, scopeFactory: scopeFactory}, shootplanningapi.GinServerOptions{
+		ErrorHandler: func(c *gin.Context, _ error, _ int) {
+			abortShootPlanningValidation(c)
+		},
+	})
+}

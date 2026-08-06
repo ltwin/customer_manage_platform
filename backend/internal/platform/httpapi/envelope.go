@@ -1,6 +1,10 @@
 package httpapi
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
 
 // 错误码集合以 §4.1 为准，不自造；conflict 子码随各域 feature 生长。
 const (
@@ -28,6 +32,20 @@ const (
 	CodeOrderAlreadyScheduled   = "order_already_scheduled"
 	CodeCustomerChanged         = "customer_changed"
 	CodeIdempotencyConflict     = "idempotency_conflict"
+
+	// shoot-plan-core 的 409 conflict 子码。
+	CodePlanRevisionConflict           = "plan_revision_conflict"
+	CodeExecutionRevisionConflict      = "execution_revision_conflict"
+	CodeInvalidPlanTransition          = "invalid_plan_transition"
+	CodeReadinessIncomplete            = "readiness_incomplete"
+	CodeReadinessAssignmentActive      = "readiness_assignment_active"
+	CodeShotsIncomplete                = "shots_incomplete"
+	CodeArchiveAcknowledgementRequired = "archive_acknowledgement_required"
+	CodeArchivedReadOnly               = "archived_read_only"
+	CodeReopenRequired                 = "reopen_required"
+	CodeExecutionHistoryAckRequired    = "execution_history_ack_required"
+	CodeExecutionEventAlreadyVoid      = "execution_event_already_void"
+	CodeSupersedesEventMismatch        = "supersedes_event_mismatch"
 )
 
 // newErrorEnvelope 构造统一错误封套（类型用 codegen 产物，保证与契约同源）。
@@ -48,6 +66,20 @@ func abortErrorWithDetails(
 	status int,
 	code, message string,
 	details ScheduleConflictDetails,
+) {
+	var union ErrorDetails
+	if err := union.FromScheduleConflictDetails(details); err != nil {
+		abortError(c, http.StatusInternalServerError, CodeInternal, "内部错误")
+		return
+	}
+	abortErrorWithTypedDetails(c, status, code, message, union)
+}
+
+func abortErrorWithTypedDetails(
+	c *gin.Context,
+	status int,
+	code, message string,
+	details ErrorDetails,
 ) {
 	env := newErrorEnvelope(code, message)
 	env.Error.Details = &details

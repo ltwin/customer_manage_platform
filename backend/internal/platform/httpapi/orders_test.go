@@ -236,8 +236,12 @@ func TestOrderAPIRoundtripAndErrorPaths(t *testing.T) {
 	}
 	rec = authenticatedRequest(t, h, http.MethodDelete, "/api/v1/orders/"+*delivered.Id, tokenA, nil)
 	env := decodeEnvelope(t, rec)
-	if rec.Code != http.StatusConflict || env.Error.Code != "order_in_use" || env.Error.Details == nil ||
-		env.Error.Details.ScheduleSlotId != slot.Slot.ID || !env.Error.Details.ScheduleStartAt.Equal(slotStart) {
+	var details httpapi.ScheduleConflictDetails
+	if env.Error.Details != nil {
+		details, err = env.Error.Details.AsScheduleConflictDetails()
+	}
+	if rec.Code != http.StatusConflict || env.Error.Code != "order_in_use" || env.Error.Details == nil || err != nil ||
+		details.ScheduleSlotId != slot.Slot.ID || !details.ScheduleStartAt.Equal(slotStart) {
 		t.Fatalf("order_in_use details mismatch: status=%d envelope=%+v", rec.Code, env)
 	}
 }

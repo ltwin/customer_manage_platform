@@ -1,0 +1,35 @@
+{
+  "gate_id": "dod-contract-gate",
+  "stage": "feature_design.before_approve",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "design": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-design.md",
+      "checked_block": "DoD Contract",
+      "structure_checks": {
+        "validation command id": [
+          "CMD-"
+        ],
+        "command core marker": [
+          "core",
+          "核心性"
+        ],
+        "failure handling marker": [
+          "failure_handling",
+          "失败处理"
+        ]
+      },
+      "strength": "minimal DoD Contract section check"
+    }
+  ],
+  "providers": {},
+  "feature": "2026-08-05-shoot-plan-core",
+  "inputs": {
+    "design": ".codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-design.md"
+  },
+  "input_digests": {
+    "design": "153c6c4a7501fe593a82078618a2ec9397290c92571d3e41339603e81a0be83b"
+  }
+}
