@@ -41,6 +41,13 @@
 .run-shot-facts > div { padding-top: 13px; border-top: 1px solid var(--run-border); }
 .run-shot-facts span { display: block; margin-bottom: 4px; color: var(--run-muted); font-size: 12px; font-weight: 800; }
 .run-shot-facts p { font-size: clamp(17px, 3.5vw, 22px); line-height: 1.55; overflow-wrap: anywhere; }
+.run-reference-sheet { margin-top: 18px; padding: 13px; border: 1px solid var(--run-border); border-radius: 14px; background: #f7f8fb; }
+.run-reference-heading { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.run-reference-heading span, .run-reference-note { color: var(--run-muted); font-size: 12px; }
+.run-reference-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.run-reference-image, .run-reference-placeholder { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 9px; background: #e9edf3; }
+.run-reference-placeholder { display: grid; place-items: center; color: var(--run-muted); font-size: 12px; }
+.run-reference-note { display: block; margin-top: 8px; }
 .run-readiness { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; padding-top: 18px; border-top: 2px solid var(--run-border); }
 .run-readiness strong { flex-basis: 100%; }
 .run-readiness span { padding: 7px 9px; border-radius: 8px; font-size: 14px; font-weight: 750; }
@@ -72,6 +79,7 @@
   .run-shot-heading { align-items: stretch; flex-direction: column; }
   .run-outcome { align-self: flex-start; }
   .run-skip-row { grid-template-columns: 1fr; }
+  .run-reference-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (pointer: coarse) {

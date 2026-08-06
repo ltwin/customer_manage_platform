@@ -50,6 +50,60 @@ func (e AccessTokenResponseTokenType) Valid() bool {
 	}
 }
 
+// Defines values for AssetBindingHolderKind.
+const (
+	AssetBindingHolderKindPlan AssetBindingHolderKind = "plan"
+	AssetBindingHolderKindShot AssetBindingHolderKind = "shot"
+)
+
+// Valid indicates whether the value is a known member of the AssetBindingHolderKind enum.
+func (e AssetBindingHolderKind) Valid() bool {
+	switch e {
+	case AssetBindingHolderKindPlan:
+		return true
+	case AssetBindingHolderKindShot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssetBindingState.
+const (
+	AssetBindingStateActive   AssetBindingState = "active"
+	AssetBindingStateReleased AssetBindingState = "released"
+)
+
+// Valid indicates whether the value is a known member of the AssetBindingState enum.
+func (e AssetBindingState) Valid() bool {
+	switch e {
+	case AssetBindingStateActive:
+		return true
+	case AssetBindingStateReleased:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateAssetBindingInputHolderKind.
+const (
+	CreateAssetBindingInputHolderKindPlan CreateAssetBindingInputHolderKind = "plan"
+	CreateAssetBindingInputHolderKindShot CreateAssetBindingInputHolderKind = "shot"
+)
+
+// Valid indicates whether the value is a known member of the CreateAssetBindingInputHolderKind enum.
+func (e CreateAssetBindingInputHolderKind) Valid() bool {
+	switch e {
+	case CreateAssetBindingInputHolderKindPlan:
+		return true
+	case CreateAssetBindingInputHolderKindShot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CustomerChannel.
 const (
 	CustomerChannelDouyin      CustomerChannel = "douyin"
@@ -100,19 +154,19 @@ func (e CustomerStatus) Valid() bool {
 
 // Defines values for ExportAccountProfileAvatarMediaType.
 const (
-	Imagejpeg ExportAccountProfileAvatarMediaType = "image/jpeg"
-	Imagepng  ExportAccountProfileAvatarMediaType = "image/png"
-	Imagewebp ExportAccountProfileAvatarMediaType = "image/webp"
+	ExportAccountProfileAvatarMediaTypeImagejpeg ExportAccountProfileAvatarMediaType = "image/jpeg"
+	ExportAccountProfileAvatarMediaTypeImagepng  ExportAccountProfileAvatarMediaType = "image/png"
+	ExportAccountProfileAvatarMediaTypeImagewebp ExportAccountProfileAvatarMediaType = "image/webp"
 )
 
 // Valid indicates whether the value is a known member of the ExportAccountProfileAvatarMediaType enum.
 func (e ExportAccountProfileAvatarMediaType) Valid() bool {
 	switch e {
-	case Imagejpeg:
+	case ExportAccountProfileAvatarMediaTypeImagejpeg:
 		return true
-	case Imagepng:
+	case ExportAccountProfileAvatarMediaTypeImagepng:
 		return true
-	case Imagewebp:
+	case ExportAccountProfileAvatarMediaTypeImagewebp:
 		return true
 	default:
 		return false
@@ -218,6 +272,183 @@ func (e PackageStatus) Valid() bool {
 	case PackageStatusActive:
 		return true
 	case PackageStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanAssetGcRuleVersion.
+const (
+	PlanAssetGcRuleVersionN1 PlanAssetGcRuleVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the PlanAssetGcRuleVersion enum.
+func (e PlanAssetGcRuleVersion) Valid() bool {
+	switch e {
+	case PlanAssetGcRuleVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanAssetState.
+const (
+	PlanAssetStateActive    PlanAssetState = "active"
+	PlanAssetStateCorrupt   PlanAssetState = "corrupt"
+	PlanAssetStateDeleted   PlanAssetState = "deleted"
+	PlanAssetStateGcPending PlanAssetState = "gc_pending"
+	PlanAssetStateStaged    PlanAssetState = "staged"
+)
+
+// Valid indicates whether the value is a known member of the PlanAssetState enum.
+func (e PlanAssetState) Valid() bool {
+	switch e {
+	case PlanAssetStateActive:
+		return true
+	case PlanAssetStateCorrupt:
+		return true
+	case PlanAssetStateDeleted:
+		return true
+	case PlanAssetStateGcPending:
+		return true
+	case PlanAssetStateStaged:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanAssetRenditionKind.
+const (
+	Display  PlanAssetRenditionKind = "display"
+	Original PlanAssetRenditionKind = "original"
+)
+
+// Valid indicates whether the value is a known member of the PlanAssetRenditionKind enum.
+func (e PlanAssetRenditionKind) Valid() bool {
+	switch e {
+	case Display:
+		return true
+	case Original:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanAssetRightsDeclarationMatrixVersion.
+const (
+	PlanAssetRightsDeclarationMatrixVersionN1 PlanAssetRightsDeclarationMatrixVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the PlanAssetRightsDeclarationMatrixVersion enum.
+func (e PlanAssetRightsDeclarationMatrixVersion) Valid() bool {
+	switch e {
+	case PlanAssetRightsDeclarationMatrixVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningMediaPurpose.
+const (
+	GenerationReference  PlanningMediaPurpose = "generation_reference"
+	MoodboardDisplay     PlanningMediaPurpose = "moodboard_display"
+	ShotReferenceDisplay PlanningMediaPurpose = "shot_reference_display"
+)
+
+// Valid indicates whether the value is a known member of the PlanningMediaPurpose enum.
+func (e PlanningMediaPurpose) Valid() bool {
+	switch e {
+	case GenerationReference:
+		return true
+	case MoodboardDisplay:
+		return true
+	case ShotReferenceDisplay:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningMediaRightsBasis.
+const (
+	CitationOrDisplay PlanningMediaRightsBasis = "citation_or_display"
+	DisplayConsent    PlanningMediaRightsBasis = "display_consent"
+	LicenseRecorded   PlanningMediaRightsBasis = "license_recorded"
+	OwnershipAttested PlanningMediaRightsBasis = "ownership_attested"
+)
+
+// Valid indicates whether the value is a known member of the PlanningMediaRightsBasis enum.
+func (e PlanningMediaRightsBasis) Valid() bool {
+	switch e {
+	case CitationOrDisplay:
+		return true
+	case DisplayConsent:
+		return true
+	case LicenseRecorded:
+		return true
+	case OwnershipAttested:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningMediaSourceClass.
+const (
+	AnimeScreenshot   PlanningMediaSourceClass = "anime_screenshot"
+	CustomerSupplied  PlanningMediaSourceClass = "customer_supplied"
+	Fan               PlanningMediaSourceClass = "fan"
+	Licensed          PlanningMediaSourceClass = "licensed"
+	Official          PlanningMediaSourceClass = "official"
+	PhotographerOwned PlanningMediaSourceClass = "photographer_owned"
+	SettingBook       PlanningMediaSourceClass = "setting_book"
+	UnknownWeb        PlanningMediaSourceClass = "unknown_web"
+)
+
+// Valid indicates whether the value is a known member of the PlanningMediaSourceClass enum.
+func (e PlanningMediaSourceClass) Valid() bool {
+	switch e {
+	case AnimeScreenshot:
+		return true
+	case CustomerSupplied:
+		return true
+	case Fan:
+		return true
+	case Licensed:
+		return true
+	case Official:
+		return true
+	case PhotographerOwned:
+		return true
+	case SettingBook:
+		return true
+	case UnknownWeb:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningMediaUploadFormDeclaredMediaType.
+const (
+	PlanningMediaUploadFormDeclaredMediaTypeImagejpeg PlanningMediaUploadFormDeclaredMediaType = "image/jpeg"
+	PlanningMediaUploadFormDeclaredMediaTypeImagepng  PlanningMediaUploadFormDeclaredMediaType = "image/png"
+	PlanningMediaUploadFormDeclaredMediaTypeImagewebp PlanningMediaUploadFormDeclaredMediaType = "image/webp"
+)
+
+// Valid indicates whether the value is a known member of the PlanningMediaUploadFormDeclaredMediaType enum.
+func (e PlanningMediaUploadFormDeclaredMediaType) Valid() bool {
+	switch e {
+	case PlanningMediaUploadFormDeclaredMediaTypeImagejpeg:
+		return true
+	case PlanningMediaUploadFormDeclaredMediaTypeImagepng:
+		return true
+	case PlanningMediaUploadFormDeclaredMediaTypeImagewebp:
 		return true
 	default:
 		return false
@@ -500,6 +731,33 @@ type AccountProfile struct {
 	UpdatedAt       *time.Time                `json:"updated_at,omitempty"`
 }
 
+// AssetBinding defines model for AssetBinding.
+type AssetBinding struct {
+	AssetId    string                 `json:"asset_id"`
+	CreatedAt  time.Time              `json:"created_at"`
+	Generation int                    `json:"generation"`
+	HolderId   string                 `json:"holder_id"`
+	HolderKind AssetBindingHolderKind `json:"holder_kind"`
+	Id         string                 `json:"id"`
+	PlanId     string                 `json:"plan_id"`
+	Purpose    PlanningMediaPurpose   `json:"purpose"`
+	ReleasedAt *time.Time             `json:"released_at,omitempty"`
+	Revision   int64                  `json:"revision"`
+	State      AssetBindingState      `json:"state"`
+}
+
+// AssetBindingHolderKind defines model for AssetBinding.HolderKind.
+type AssetBindingHolderKind string
+
+// AssetBindingState defines model for AssetBinding.State.
+type AssetBindingState string
+
+// AssetBindingResult defines model for AssetBindingResult.
+type AssetBindingResult struct {
+	Asset   PlanAsset    `json:"asset"`
+	Binding AssetBinding `json:"binding"`
+}
+
 // AuthCapabilities defines model for AuthCapabilities.
 type AuthCapabilities struct {
 	PublicRegistrationEnabled bool `json:"public_registration_enabled"`
@@ -519,6 +777,19 @@ type ChurnThreshold struct {
 	Days      int       `json:"days"`
 	ShootType ShootType `json:"shoot_type"`
 }
+
+// CreateAssetBindingInput defines model for CreateAssetBindingInput.
+type CreateAssetBindingInput struct {
+	ExpectedAssetRevision int64                             `json:"expected_asset_revision"`
+	ExpectedPlanRevision  int64                             `json:"expected_plan_revision"`
+	Generation            int                               `json:"generation"`
+	HolderId              string                            `json:"holder_id"`
+	HolderKind            CreateAssetBindingInputHolderKind `json:"holder_kind"`
+	Purpose               PlanningMediaPurpose              `json:"purpose"`
+}
+
+// CreateAssetBindingInputHolderKind defines model for CreateAssetBindingInput.HolderKind.
+type CreateAssetBindingInputHolderKind string
 
 // Customer defines model for Customer.
 type Customer struct {
@@ -859,8 +1130,116 @@ type PackageListItem struct {
 // PackageStatus defines model for PackageStatus.
 type PackageStatus string
 
+// PlanAsset defines model for PlanAsset.
+type PlanAsset struct {
+	CreatedAt           time.Time              `json:"created_at"`
+	CurrentGeneration   int                    `json:"current_generation"`
+	DeletedAt           *time.Time             `json:"deleted_at,omitempty"`
+	DisplayChecksum     *string                `json:"display_checksum,omitempty"`
+	DisplayName         string                 `json:"display_name"`
+	GcEligibleAt        *time.Time             `json:"gc_eligible_at,omitempty"`
+	GcRuleVersion       PlanAssetGcRuleVersion `json:"gc_rule_version"`
+	Id                  string                 `json:"id"`
+	Revision            int64                  `json:"revision"`
+	State               PlanAssetState         `json:"state"`
+	UpdatedAt           time.Time              `json:"updated_at"`
+	UploadContextPlanId string                 `json:"upload_context_plan_id"`
+}
+
+// PlanAssetGcRuleVersion defines model for PlanAsset.GcRuleVersion.
+type PlanAssetGcRuleVersion int
+
+// PlanAssetState defines model for PlanAsset.State.
+type PlanAssetState string
+
+// PlanAssetAccessRef defines model for PlanAssetAccessRef.
+type PlanAssetAccessRef struct {
+	AssetId         string `json:"asset_id"`
+	DisplayChecksum string `json:"display_checksum"`
+	DisplayName     string `json:"display_name"`
+	Generation      int    `json:"generation"`
+}
+
+// PlanAssetGeneration defines model for PlanAssetGeneration.
+type PlanAssetGeneration struct {
+	AssetId          string                     `json:"asset_id"`
+	CreatedAt        time.Time                  `json:"created_at"`
+	DisplayChecksum  string                     `json:"display_checksum"`
+	Generation       int                        `json:"generation"`
+	OriginalChecksum string                     `json:"original_checksum"`
+	Rights           PlanAssetRightsDeclaration `json:"rights"`
+}
+
+// PlanAssetPage defines model for PlanAssetPage.
+type PlanAssetPage struct {
+	Done       bool        `json:"done"`
+	Items      []PlanAsset `json:"items"`
+	NextCursor *string     `json:"next_cursor,omitempty"`
+}
+
+// PlanAssetRendition defines model for PlanAssetRendition.
+type PlanAssetRendition struct {
+	AssetId    string                 `json:"asset_id"`
+	ByteSize   int64                  `json:"byte_size"`
+	Checksum   string                 `json:"checksum"`
+	Generation int                    `json:"generation"`
+	Height     int                    `json:"height"`
+	Kind       PlanAssetRenditionKind `json:"kind"`
+	MediaType  string                 `json:"media_type"`
+	Width      int                    `json:"width"`
+}
+
+// PlanAssetRenditionKind defines model for PlanAssetRendition.Kind.
+type PlanAssetRenditionKind string
+
+// PlanAssetRightsDeclaration defines model for PlanAssetRightsDeclaration.
+type PlanAssetRightsDeclaration struct {
+	AssetId                           string                                  `json:"asset_id"`
+	DeclaredAt                        time.Time                               `json:"declared_at"`
+	EvidenceSummary                   *string                                 `json:"evidence_summary,omitempty"`
+	Generation                        int                                     `json:"generation"`
+	Id                                string                                  `json:"id"`
+	LicenseGenerationReferenceGranted bool                                    `json:"license_generation_reference_granted"`
+	MatrixVersion                     PlanAssetRightsDeclarationMatrixVersion `json:"matrix_version"`
+	RightsBasis                       PlanningMediaRightsBasis                `json:"rights_basis"`
+	SourceClass                       PlanningMediaSourceClass                `json:"source_class"`
+}
+
+// PlanAssetRightsDeclarationMatrixVersion defines model for PlanAssetRightsDeclaration.MatrixVersion.
+type PlanAssetRightsDeclarationMatrixVersion int
+
+// PlanningMediaPurpose defines model for PlanningMediaPurpose.
+type PlanningMediaPurpose string
+
+// PlanningMediaRightsBasis defines model for PlanningMediaRightsBasis.
+type PlanningMediaRightsBasis string
+
+// PlanningMediaSourceClass defines model for PlanningMediaSourceClass.
+type PlanningMediaSourceClass string
+
+// PlanningMediaUploadForm defines model for PlanningMediaUploadForm.
+type PlanningMediaUploadForm struct {
+	DeclaredMediaType    PlanningMediaUploadFormDeclaredMediaType `json:"declared_media_type"`
+	ExpectedPlanRevision int64                                    `json:"expected_plan_revision"`
+	Image                openapi_types.File                       `json:"image"`
+	IntendedPurpose      PlanningMediaPurpose                     `json:"intended_purpose"`
+
+	// Rights PlanningMediaRightsDeclaration 的严格 JSON 字符串
+	Rights string `json:"rights"`
+}
+
+// PlanningMediaUploadFormDeclaredMediaType defines model for PlanningMediaUploadForm.DeclaredMediaType.
+type PlanningMediaUploadFormDeclaredMediaType string
+
 // PricingMode defines model for PricingMode.
 type PricingMode string
+
+// ReleaseAssetBindingInput defines model for ReleaseAssetBindingInput.
+type ReleaseAssetBindingInput struct {
+	ExpectedAssetRevision   int64 `json:"expected_asset_revision"`
+	ExpectedBindingRevision int64 `json:"expected_binding_revision"`
+	ExpectedPlanRevision    int64 `json:"expected_plan_revision"`
+}
 
 // Reminder defines model for Reminder.
 type Reminder struct {
@@ -1053,6 +1432,16 @@ type UpdateSettingsBody struct {
 	Timezone *string `json:"timezone,omitempty"`
 }
 
+// UploadPlanAssetResult defines model for UploadPlanAssetResult.
+type UploadPlanAssetResult struct {
+	AccessRef   PlanAssetAccessRef  `json:"access_ref"`
+	Asset       PlanAsset           `json:"asset"`
+	Display     PlanAssetRendition  `json:"display"`
+	Generation  PlanAssetGeneration `json:"generation"`
+	Original    PlanAssetRendition  `json:"original"`
+	StagedUntil time.Time           `json:"staged_until"`
+}
+
 // VerificationDispatch defines model for VerificationDispatch.
 type VerificationDispatch struct {
 	Status VerificationDispatchStatus `json:"status"`
@@ -1079,6 +1468,12 @@ type PageSize = int
 // ProfileIfMatch defines model for ProfileIfMatch.
 type ProfileIfMatch = string
 
+// RequiredIdempotencyKey defines model for RequiredIdempotencyKey.
+type RequiredIdempotencyKey = string
+
+// Conflict 统一错误封套；含认证错误码与既有业务 conflict 子码
+type Conflict = ErrorEnvelope
+
 // Forbidden 统一错误封套；含认证错误码与既有业务 conflict 子码
 type Forbidden = ErrorEnvelope
 
@@ -1091,14 +1486,23 @@ type InvalidOrExpiredToken = ErrorEnvelope
 // NotFound 统一错误封套；含认证错误码与既有业务 conflict 子码
 type NotFound = ErrorEnvelope
 
+// PayloadTooLarge 统一错误封套；含认证错误码与既有业务 conflict 子码
+type PayloadTooLarge = ErrorEnvelope
+
 // RateLimited 统一错误封套；含认证错误码与既有业务 conflict 子码
 type RateLimited = ErrorEnvelope
 
 // RegistrationDisabled 统一错误封套；含认证错误码与既有业务 conflict 子码
 type RegistrationDisabled = ErrorEnvelope
 
+// ServiceUnavailable 统一错误封套；含认证错误码与既有业务 conflict 子码
+type ServiceUnavailable = ErrorEnvelope
+
 // Unauthorized 统一错误封套；含认证错误码与既有业务 conflict 子码
 type Unauthorized = ErrorEnvelope
+
+// UnsupportedMediaType 统一错误封套；含认证错误码与既有业务 conflict 子码
+type UnsupportedMediaType = ErrorEnvelope
 
 // ValidationFailed 统一错误封套；含认证错误码与既有业务 conflict 子码
 type ValidationFailed = ErrorEnvelope
@@ -1427,6 +1831,35 @@ type UpdateScheduleSlotJSONBody struct {
 	Type    *SlotType                 `json:"type,omitempty"`
 }
 
+// ListShootPlanAssetsParams defines parameters for ListShootPlanAssets.
+type ListShootPlanAssetsParams struct {
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	PageSize *int    `form:"page_size,omitempty" json:"page_size,omitempty"`
+}
+
+// UploadShootPlanAssetParams defines parameters for UploadShootPlanAsset.
+type UploadShootPlanAssetParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateShootPlanAssetBindingParams defines parameters for CreateShootPlanAssetBinding.
+type CreateShootPlanAssetBindingParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ReleaseShootPlanAssetBindingParams defines parameters for ReleaseShootPlanAssetBinding.
+type ReleaseShootPlanAssetBindingParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// GetShootPlanAssetContentParams defines parameters for GetShootPlanAssetContent.
+type GetShootPlanAssetContentParams struct {
+	V string `form:"v" json:"v"`
+}
+
 // PatchAccountProfileJSONRequestBody defines body for PatchAccountProfile for application/json ContentType.
 type PatchAccountProfileJSONRequestBody PatchAccountProfileJSONBody
 
@@ -1498,6 +1931,15 @@ type UpdateScheduleSlotJSONRequestBody UpdateScheduleSlotJSONBody
 
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
 type UpdateSettingsJSONRequestBody = UpdateSettingsBody
+
+// UploadShootPlanAssetMultipartRequestBody defines body for UploadShootPlanAsset for multipart/form-data ContentType.
+type UploadShootPlanAssetMultipartRequestBody = PlanningMediaUploadForm
+
+// CreateShootPlanAssetBindingJSONRequestBody defines body for CreateShootPlanAssetBinding for application/json ContentType.
+type CreateShootPlanAssetBindingJSONRequestBody = CreateAssetBindingInput
+
+// ReleaseShootPlanAssetBindingJSONRequestBody defines body for ReleaseShootPlanAssetBinding for application/json ContentType.
+type ReleaseShootPlanAssetBindingJSONRequestBody = ReleaseAssetBindingInput
 
 // AsShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a ShootScheduleSlotListItem
 func (t ScheduleSlotListItem) AsShootScheduleSlotListItem() (ShootScheduleSlotListItem, error) {
@@ -1738,6 +2180,21 @@ type ServerInterface interface {
 	// 生成 TG 绑定 token 与 deep link（绑定流程见 §4.5）
 	// (POST /settings/telegram/bind-token)
 	CreateTelegramBindToken(c *gin.Context)
+	// 列出策划参考素材
+	// (GET /shoot-plans/{id}/assets)
+	ListShootPlanAssets(c *gin.Context, id Id, params ListShootPlanAssetsParams)
+	// 上传策划参考素材
+	// (POST /shoot-plans/{id}/assets)
+	UploadShootPlanAsset(c *gin.Context, id Id, params UploadShootPlanAssetParams)
+	// 绑定参考素材到策划或镜头
+	// (POST /shoot-plans/{id}/assets/{assetId}/bindings)
+	CreateShootPlanAssetBinding(c *gin.Context, id Id, assetId string, params CreateShootPlanAssetBindingParams)
+	// 释放参考素材绑定
+	// (DELETE /shoot-plans/{id}/assets/{assetId}/bindings/{bindingId})
+	ReleaseShootPlanAssetBinding(c *gin.Context, id Id, assetId string, bindingId string, params ReleaseShootPlanAssetBindingParams)
+	// 读取展示版本参考素材
+	// (GET /shoot-plans/{id}/assets/{assetId}/content)
+	GetShootPlanAssetContent(c *gin.Context, id Id, assetId string, params GetShootPlanAssetContentParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -3169,6 +3626,288 @@ func (siw *ServerInterfaceWrapper) CreateTelegramBindToken(c *gin.Context) {
 	siw.Handler.CreateTelegramBindToken(c)
 }
 
+// ListShootPlanAssets operation middleware
+func (siw *ServerInterfaceWrapper) ListShootPlanAssets(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListShootPlanAssetsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "page_size" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "page_size", c.Request.URL.Query(), &params.PageSize, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter page_size: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListShootPlanAssets(c, id, params)
+}
+
+// UploadShootPlanAsset operation middleware
+func (siw *ServerInterfaceWrapper) UploadShootPlanAsset(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UploadShootPlanAssetParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UploadShootPlanAsset(c, id, params)
+}
+
+// CreateShootPlanAssetBinding operation middleware
+func (siw *ServerInterfaceWrapper) CreateShootPlanAssetBinding(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "assetId" -------------
+	var assetId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "assetId", c.Param("assetId"), &assetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter assetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateShootPlanAssetBindingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateShootPlanAssetBinding(c, id, assetId, params)
+}
+
+// ReleaseShootPlanAssetBinding operation middleware
+func (siw *ServerInterfaceWrapper) ReleaseShootPlanAssetBinding(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "assetId" -------------
+	var assetId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "assetId", c.Param("assetId"), &assetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter assetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "bindingId" -------------
+	var bindingId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bindingId", c.Param("bindingId"), &bindingId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter bindingId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReleaseShootPlanAssetBindingParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReleaseShootPlanAssetBinding(c, id, assetId, bindingId, params)
+}
+
+// GetShootPlanAssetContent operation middleware
+func (siw *ServerInterfaceWrapper) GetShootPlanAssetContent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "assetId" -------------
+	var assetId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "assetId", c.Param("assetId"), &assetId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter assetId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetShootPlanAssetContentParams
+
+	// ------------- Required query parameter "v" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "v", c.Request.URL.Query(), &params.V, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter v: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetShootPlanAssetContent(c, id, assetId, params)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -3246,4 +3985,9 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/settings", wrapper.GetSettings)
 	router.PATCH(options.BaseURL+"/settings", wrapper.UpdateSettings)
 	router.POST(options.BaseURL+"/settings/telegram/bind-token", wrapper.CreateTelegramBindToken)
+	router.GET(options.BaseURL+"/shoot-plans/:id/assets", wrapper.ListShootPlanAssets)
+	router.POST(options.BaseURL+"/shoot-plans/:id/assets", wrapper.UploadShootPlanAsset)
+	router.POST(options.BaseURL+"/shoot-plans/:id/assets/:assetId/bindings", wrapper.CreateShootPlanAssetBinding)
+	router.DELETE(options.BaseURL+"/shoot-plans/:id/assets/:assetId/bindings/:bindingId", wrapper.ReleaseShootPlanAssetBinding)
+	router.GET(options.BaseURL+"/shoot-plans/:id/assets/:assetId/content", wrapper.GetShootPlanAssetContent)
 }

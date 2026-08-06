@@ -45,8 +45,12 @@ func TestShootPlanningCoreMigrationSeedIsStableAndDownIsComplete(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("migrate planning down: %v", err)
+	// planning-media(0017) is the latest planning migration and must be rolled back
+	// before the core planning migration(0016).
+	for _, label := range []string{"planning-media", "planning"} {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatalf("migrate %s down: %v", label, err)
+		}
 	}
 	db, err = sql.Open("pgx", url)
 	if err != nil {

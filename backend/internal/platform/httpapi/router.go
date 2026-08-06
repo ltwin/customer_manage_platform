@@ -16,6 +16,7 @@ import (
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
+	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -61,6 +62,7 @@ type RouterDeps struct {
 	TrustedProxyCIDRs         []netip.Prefix
 	Now                       func() time.Time
 	ShootPlanning             *shootplanning.Application
+	PlanningMedia             *planningmedia.Application
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -109,6 +111,9 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		registrationEnabled: deps.PublicRegistrationEnabled,
 		trustedProxyCIDRs:   append([]netip.Prefix(nil), deps.TrustedProxyCIDRs...),
 		now:                 now,
+	}
+	if deps.PlanningMedia != nil {
+		h.planningMedia = &planningMediaHandlers{app: deps.PlanningMedia, scopeFactory: deps.ScopeFactory}
 	}
 	api := r.Group("/api/v1")
 	api.GET("/auth/capabilities", h.GetAuthCapabilities)
@@ -171,6 +176,9 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.GET("/account/profile/avatar/content", h.getAccountProfileAvatarContentRoute)
 	if deps.ShootPlanning != nil {
 		registerShootPlanningHandlers(protected, deps.ShootPlanning, deps.ScopeFactory)
+	}
+	if deps.PlanningMedia != nil {
+		registerPlanningMediaHandlers(protected, deps.PlanningMedia, deps.ScopeFactory)
 	}
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；

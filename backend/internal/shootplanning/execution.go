@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -138,6 +139,24 @@ func (a *Application) openRunSessionInScope(
 	shots, err := loadShots(ctx, tx, planID)
 	if err != nil {
 		return OpenRunSessionResult{}, err
+	}
+	if a.mediaProjector != nil {
+		shotIDs := make([]string, 0, len(shots))
+		for _, shot := range shots {
+			shotIDs = append(shotIDs, shot.ID)
+		}
+		refs, refErr := a.mediaProjector.BatchShotAccessRefsInScope(ctx, tx, planID, shotIDs)
+		if errors.Is(refErr, planningmedia.ErrProjectionUnavailable) {
+			refs = make(map[string][]planningmedia.AssetAccessRef, len(shotIDs))
+		} else if refErr != nil {
+			return OpenRunSessionResult{}, refErr
+		}
+		for index := range shots {
+			shots[index].AssetAccessRefs = refs[shots[index].ID]
+			if shots[index].AssetAccessRefs == nil {
+				shots[index].AssetAccessRefs = []planningmedia.AssetAccessRef{}
+			}
+		}
 	}
 	readiness, err := loadReadiness(ctx, tx, planID)
 	if err != nil {

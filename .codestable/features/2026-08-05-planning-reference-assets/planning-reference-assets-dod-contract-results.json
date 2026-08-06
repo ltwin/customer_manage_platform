@@ -1,0 +1,35 @@
+{
+  "gate_id": "dod-contract-gate",
+  "stage": "acceptance",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "design": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-design.md",
+      "checked_block": "DoD Contract",
+      "structure_checks": {
+        "validation command id": [
+          "CMD-"
+        ],
+        "command core marker": [
+          "core",
+          "核心性"
+        ],
+        "failure handling marker": [
+          "failure_handling",
+          "失败处理"
+        ]
+      },
+      "strength": "minimal DoD Contract section check"
+    }
+  ],
+  "providers": {},
+  "feature": "2026-08-05-planning-reference-assets",
+  "inputs": {
+    "design": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-design.md"
+  },
+  "input_digests": {
+    "design": "c0365cc101ac75e87938a8a7005d61fab7711d0ab3e8ffdb43b1548a9ffcc59a"
+  }
+}

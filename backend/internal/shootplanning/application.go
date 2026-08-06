@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -32,6 +33,10 @@ func validationError(message string) error {
 
 type ReadinessRemovalGuard interface {
 	AssertRemovableInScope(context.Context, store.TxAccountScope, string, string) error
+}
+
+type ShotAccessRefProjector interface {
+	BatchShotAccessRefsInScope(context.Context, store.TxAccountScope, string, []string) (map[string][]planningmedia.AssetAccessRef, error)
 }
 
 type DisabledReadinessRemovalGuard struct{}
@@ -135,6 +140,11 @@ type Application struct {
 	archivePolicy      ArchiveImpactPolicy
 	archiveParticipant PlanArchiveReminderParticipant
 	now                func() time.Time
+	mediaProjector     ShotAccessRefProjector
+}
+
+func WithShotAccessRefProjector(projector ShotAccessRefProjector) ApplicationOption {
+	return func(app *Application) error { app.mediaProjector = projector; return nil }
 }
 
 func NewApplication(repo PostgresRepository, executor *idempotency.Executor, options ...ApplicationOption) (*Application, error) {

@@ -406,6 +406,24 @@ original 成功而 display 失败时上传失败，不落业务行；对已发�
 - migration/domain/application/repository/store/inventory/GC/OpenAPI/HTTP/frontend/Run projection 均接真实路径；无 placeholder、静态目录或第二套 ledger。
 - avatar characterization 证明共享 primitive 重构无行为漂移；图片 pipeline 与 physical orphan 有故障注入证据。
 
+#### Validation Commands
+
+| id | command | core | failure_handling |
+|---|---|---|---|
+| CMD-001 | `make generate-check` | true | fix-or-block |
+| CMD-002 | `cd backend && go test -p=1 ./internal/planningmedia ./internal/platform/immutablefs ./internal/customer/avatarstore ./internal/customer/avatarimage ./internal/customer ./internal/shootplanning ./internal/platform/idempotency ./internal/platform/httpapi -count=1 -parallel=1` | true | fix-or-block |
+| CMD-003 | `cd backend && go test -p=1 ./internal/planningmedia -run 'TestPostgres|TestSharedTx|TestGC|TestRestore|TestUploadFaults' -count=1 -parallel=1` | true | fix-or-block |
+| CMD-004 | `cd frontend && npm run test:planning-media` | true | fix-or-block |
+| CMD-005 | `cd frontend && npm run build && npm run lint` | true | fix-or-block |
+| CMD-006 | `make check` | true | fix-or-block |
+
+#### Required Artifacts
+
+- Required Artifacts: rights matrix fixture、adversarial image corpus、avatar characterization diff。
+- PostgreSQL/object-store concurrency and fault-injection evidence、idempotency replay matrix、inventory/restore manifest。
+- API response/header/error matrix、query-count evidence、Run Mode 375px browser evidence、scope negative guard、diff summary。
+- scope-gate、DoD-runner、evidence-pack 与对应 JSON results；review、QA、acceptance 报告。
+
 #### Review
 
 - 独立 code review 重点检查 path/symlink、image bomb、TOCTOU、tx/FS 边界、rights bypass、跨账号、checksum、GC race、日志泄露和 avatar regression。

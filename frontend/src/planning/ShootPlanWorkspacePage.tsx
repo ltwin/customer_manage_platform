@@ -26,12 +26,13 @@ import BriefPanel from './panels/BriefPanel'
 import ShotsPanel from './panels/ShotsPanel'
 import ReadinessPanel from './panels/ReadinessPanel'
 import ExecutionHistoryPanel from './panels/ExecutionHistoryPanel'
+import PlanningMediaPanel from './panels/PlanningMediaPanel'
 import './planning.css'
 
 export type CommandRunner = (command: PlanCommand, scope: string) => Promise<void>
 export type TransitionRunner = (transition: PlanTransition, scope: string) => Promise<void>
 
-type WorkspaceTab = 'brief' | 'shots' | 'readiness' | 'history'
+type WorkspaceTab = 'brief' | 'shots' | 'readiness' | 'assets' | 'history'
 
 export default function ShootPlanWorkspacePage() {
   const { id = '' } = useParams()
@@ -153,12 +154,14 @@ export default function ShootPlanWorkspacePage() {
               <TabButton active={tab === 'brief'} onClick={() => setTab('brief')}>创作 brief</TabButton>
               <TabButton active={tab === 'shots'} onClick={() => setTab('shots')}>镜头表 {plan.shots.length}</TabButton>
               <TabButton active={tab === 'readiness'} onClick={() => setTab('readiness')}>准备项 {plan.readiness_items.length}</TabButton>
+              <TabButton active={tab === 'assets'} onClick={() => setTab('assets')}>参考素材</TabButton>
               <TabButton active={tab === 'history'} onClick={() => setTab('history')}>执行历史</TabButton>
             </div>
             <div className="tab-panel active">
               {tab === 'brief' && <BriefPanel plan={plan} busy={busy} runCommand={runCommand} />}
               {tab === 'shots' && <ShotsPanel plan={plan} busy={busy} runCommand={runCommand} />}
               {tab === 'readiness' && <ReadinessPanel plan={plan} busy={busy} runCommand={runCommand} />}
+              {tab === 'assets' && <PlanningMediaPanel planID={plan.id} planRevision={plan.revision} readOnly={plan.status === 'archived'} />}
               {tab === 'history' && <ExecutionHistoryPanel plan={plan} busy={busy} onReload={() => load(true).then(() => undefined)} />}
             </div>
           </>

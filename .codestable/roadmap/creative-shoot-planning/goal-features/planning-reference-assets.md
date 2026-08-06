@@ -4,7 +4,7 @@ roadmap: creative-shoot-planning
 feature: 2026-08-05-planning-reference-assets
 roadmap_item: planning-reference-assets
 nature: mixed
-status: pending
+status: accepted
 created: 2026-08-06
 ---
 
@@ -17,6 +17,9 @@ created: 2026-08-06
 - Review / QA / acceptance：`planning-reference-assets-review.md` / `planning-reference-assets-qa.md` / `planning-reference-assets-acceptance.md`
 - Dependencies：`shoot-plan-core` 必须严格 `done`
 - Nature：mixed
+
+- Acceptance：已通过；3 轮 review cap 已消费，REV-016 由 owner-cap 窄修复和独立 QA closure 验证；accepted 状态与 scoped commit 在本次 feature 收尾中同批持久化。
+- Residual：REV-017、真实 HTTP multipart negative fixture、projection boundary、浏览器极端尺寸证据与外部 production checkpoints 仍按 acceptance 报告保留。
 
 ## 2. Deliverable And Core Runtime Path
 

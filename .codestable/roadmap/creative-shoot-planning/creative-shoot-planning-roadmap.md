@@ -3,7 +3,7 @@ doc_type: roadmap
 slug: creative-shoot-planning
 status: active
 created: 2026-08-02
-last_reviewed: 2026-08-05
+last_reviewed: 2026-08-06
 last_updated: 2026-08-06
 confirmed_at: 2026-08-05
 confirmation_id: "80e741c3-06ba-407e-8d4c-5a9b71b66702"
@@ -531,7 +531,7 @@ GET    /api/v1/shared/plans/{token}/assets/{ref}/content?v={checksum}
 YAML `depends_on` 是 implementation 顺序和运行依赖权威。标准 `cs-epic` 必须先完成全部 child design batch，因此 G1–G3 不阻止设计；它们在 goal execution 的指定 feature implementation dispatch 前通过 canonical approval ref 停顿。
 
 1. `shoot-plan-core`（done）：稳定聚合、readiness、public scale、run session、append-only execution history/current projection 与观测地基；已完成 implementation、独立 code review、QA 与 acceptance。
-2. `planning-reference-assets`：建立参考素材和用途红线。
+2. `planning-reference-assets`（done）：建立参考素材和用途红线；已完成 implementation、3 轮独立 review（含 owner-cap 窄修复 closure）、QA、acceptance，详见 feature implementation/review/QA/acceptance 报告。
 3. `plan-ingestion-capture`：依赖前两条，摄取 Shot/Readiness 候选并形成唯一最小闭环。
 4. `shoot-plan-crm-integration`：设计可提前完成；implementation 前要求 `approval-report.md#stage-1-evidence-go`。
 5. `plan-share-collaboration`：依赖 core、media、CRM。

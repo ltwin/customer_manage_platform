@@ -739,10 +739,218 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/shoot-plans/{id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 列出策划参考素材 */
+        get: operations["listShootPlanAssets"];
+        put?: never;
+        /** 上传策划参考素材 */
+        post: operations["uploadShootPlanAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/assets/{assetId}/bindings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 绑定参考素材到策划或镜头 */
+        post: operations["createShootPlanAssetBinding"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/assets/{assetId}/bindings/{bindingId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 释放参考素材绑定 */
+        delete: operations["releaseShootPlanAssetBinding"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/assets/{assetId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取展示版本参考素材 */
+        get: operations["getShootPlanAssetContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @enum {string} */
+        PlanningMediaSourceClass: "official" | "anime_screenshot" | "setting_book" | "fan" | "unknown_web" | "photographer_owned" | "licensed" | "customer_supplied";
+        /** @enum {string} */
+        PlanningMediaRightsBasis: "citation_or_display" | "ownership_attested" | "license_recorded" | "display_consent";
+        /** @enum {string} */
+        PlanningMediaPurpose: "moodboard_display" | "shot_reference_display" | "generation_reference";
+        PlanningMediaRightsDeclaration: {
+            source_class: components["schemas"]["PlanningMediaSourceClass"];
+            rights_basis: components["schemas"]["PlanningMediaRightsBasis"];
+            evidence_summary?: string;
+            license_generation_reference_granted: boolean;
+        };
+        PlanningMediaUploadForm: {
+            /** Format: binary */
+            image: string;
+            /** @description PlanningMediaRightsDeclaration 的严格 JSON 字符串 */
+            rights: string;
+            /** Format: int64 */
+            expected_plan_revision: number;
+            intended_purpose: components["schemas"]["PlanningMediaPurpose"];
+            /** @enum {string} */
+            declared_media_type: "image/jpeg" | "image/png" | "image/webp";
+        };
+        PlanAsset: {
+            id: string;
+            upload_context_plan_id: string;
+            display_name: string;
+            display_checksum?: string;
+            /** @enum {string} */
+            state: "staged" | "active" | "gc_pending" | "deleted" | "corrupt";
+            current_generation: number;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            gc_eligible_at?: string;
+            /** @enum {integer} */
+            gc_rule_version: 1;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            deleted_at?: string;
+        };
+        PlanAssetAccessRef: {
+            asset_id: string;
+            generation: number;
+            display_checksum: string;
+            display_name: string;
+        };
+        PlanAssetRendition: {
+            asset_id: string;
+            generation: number;
+            /** @enum {string} */
+            kind: "original" | "display";
+            media_type: string;
+            /** Format: int64 */
+            byte_size: number;
+            width: number;
+            height: number;
+            checksum: string;
+        };
+        PlanAssetGeneration: {
+            asset_id: string;
+            generation: number;
+            rights: components["schemas"]["PlanAssetRightsDeclaration"];
+            original_checksum: string;
+            display_checksum: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        PlanAssetRightsDeclaration: {
+            id: string;
+            asset_id: string;
+            generation: number;
+            source_class: components["schemas"]["PlanningMediaSourceClass"];
+            rights_basis: components["schemas"]["PlanningMediaRightsBasis"];
+            evidence_summary?: string;
+            license_generation_reference_granted: boolean;
+            /** @enum {integer} */
+            matrix_version: 1;
+            /** Format: date-time */
+            declared_at: string;
+        };
+        UploadPlanAssetResult: {
+            asset: components["schemas"]["PlanAsset"];
+            generation: components["schemas"]["PlanAssetGeneration"];
+            access_ref: components["schemas"]["PlanAssetAccessRef"];
+            /** Format: date-time */
+            staged_until: string;
+            original: components["schemas"]["PlanAssetRendition"];
+            display: components["schemas"]["PlanAssetRendition"];
+        };
+        PlanAssetPage: {
+            items: components["schemas"]["PlanAsset"][];
+            next_cursor?: string;
+            done: boolean;
+        };
+        CreateAssetBindingInput: {
+            generation: number;
+            /** @enum {string} */
+            holder_kind: "plan" | "shot";
+            holder_id: string;
+            purpose: components["schemas"]["PlanningMediaPurpose"];
+            /** Format: int64 */
+            expected_plan_revision: number;
+            /** Format: int64 */
+            expected_asset_revision: number;
+        };
+        ReleaseAssetBindingInput: {
+            /** Format: int64 */
+            expected_plan_revision: number;
+            /** Format: int64 */
+            expected_asset_revision: number;
+            /** Format: int64 */
+            expected_binding_revision: number;
+        };
+        AssetBinding: {
+            id: string;
+            asset_id: string;
+            generation: number;
+            /** @enum {string} */
+            holder_kind: "plan" | "shot";
+            holder_id: string;
+            plan_id: string;
+            purpose: components["schemas"]["PlanningMediaPurpose"];
+            /** @enum {string} */
+            state: "active" | "released";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            released_at?: string;
+        };
+        AssetBindingResult: {
+            asset: components["schemas"]["PlanAsset"];
+            binding: components["schemas"]["AssetBinding"];
+        };
         AuthCapabilities: {
             public_registration_enabled: boolean;
         };
@@ -1218,6 +1426,7 @@ export interface components {
             /** Format: int64 */
             execution_revision: number;
             readiness_item_ids: string[];
+            asset_access_refs: components["schemas"]["PlanAssetAccessRef"][];
             current_outcome?: components["schemas"]["ShootPlanCurrentOutcome"] | null;
         };
         ShootPlanReadinessItem: {
@@ -1772,6 +1981,33 @@ export interface components {
         };
         /** @description 409 typed conflict */
         Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description 413 payload_too_large */
+        PayloadTooLarge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description 415 unsupported_media_type */
+        UnsupportedMediaType: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["ErrorEnvelope"];
+            };
+        };
+        /** @description 503 asset_corrupt */
+        ServiceUnavailable: {
             headers: {
                 [name: string]: unknown;
             };
@@ -3830,6 +4066,178 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             500: components["responses"]["Internal"];
+        };
+    };
+    listShootPlanAssets: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 素材列表 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanAssetPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    uploadShootPlanAsset: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["PlanningMediaUploadForm"];
+            };
+        };
+        responses: {
+            /** @description 素材已上传 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadPlanAssetResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createShootPlanAssetBinding: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                assetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateAssetBindingInput"];
+            };
+        };
+        responses: {
+            /** @description 绑定结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetBindingResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    releaseShootPlanAssetBinding: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                assetId: string;
+                bindingId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReleaseAssetBindingInput"];
+            };
+        };
+        responses: {
+            /** @description 释放结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetBindingResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getShootPlanAssetContent: {
+        parameters: {
+            query: {
+                v: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                assetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 展示版本图片 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    "Cache-Control"?: string;
+                    "Content-Length"?: number;
+                    "X-Content-Type-Options"?: "nosniff";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
 }

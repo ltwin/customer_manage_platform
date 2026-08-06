@@ -93,9 +93,33 @@ type handlers struct {
 	registrationEnabled bool
 	trustedProxyCIDRs   []netip.Prefix
 	now                 func() time.Time
+	planningMedia       *planningMediaHandlers
 }
 
 var _ ServerInterface = (*handlers)(nil)
+
+// Generated OpenAPI keeps planning-media in the platform contract. Runtime
+// routing uses the dedicated multipart/streaming adapter below; these forwards
+// preserve one generated interface without duplicating request parsing.
+func (h *handlers) ListShootPlanAssets(c *gin.Context, _ Id, _ ListShootPlanAssetsParams) {
+	h.planningMedia.list(c)
+}
+
+func (h *handlers) UploadShootPlanAsset(c *gin.Context, _ Id, _ UploadShootPlanAssetParams) {
+	h.planningMedia.upload(c)
+}
+
+func (h *handlers) CreateShootPlanAssetBinding(c *gin.Context, _ Id, _ string, _ CreateShootPlanAssetBindingParams) {
+	h.planningMedia.bind(c)
+}
+
+func (h *handlers) ReleaseShootPlanAssetBinding(c *gin.Context, _ Id, _ string, _ string, _ ReleaseShootPlanAssetBindingParams) {
+	h.planningMedia.release(c)
+}
+
+func (h *handlers) GetShootPlanAssetContent(c *gin.Context, _ Id, _ string, _ GetShootPlanAssetContentParams) {
+	h.planningMedia.content(c)
+}
 
 func (h *handlers) GetAuthCapabilities(c *gin.Context) {
 	setNoStore(c)

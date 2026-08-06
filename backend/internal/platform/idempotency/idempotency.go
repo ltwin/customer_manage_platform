@@ -18,16 +18,21 @@ import (
 type Operation string
 
 const (
-	OperationOrderCreate         Operation = "order.create.v1"
-	OperationScheduleSlotCreate  Operation = "schedule-slot.create.v1"
-	OperationShootPlanCreate     Operation = "shoot-plan.create.v1"
-	OperationShootPlanCommand    Operation = "shoot-plan.command.v1"
-	OperationShootPlanTransition Operation = "shoot-plan.transition.v1"
-	OperationRunSessionOpen      Operation = "shoot-plan.run-session.open.v1"
-	OperationShotCapture         Operation = "shoot-plan.shot.capture.v1"
-	OperationExecutionEventVoid  Operation = "shoot-plan.execution-event.void.v1"
-	OperationShootPlanBatch      Operation = "shoot-plan.batch-commit.v1"
-	defaultTTL                             = 24 * time.Hour
+	OperationOrderCreate                 Operation = "order.create.v1"
+	OperationScheduleSlotCreate          Operation = "schedule-slot.create.v1"
+	OperationShootPlanCreate             Operation = "shoot-plan.create.v1"
+	OperationShootPlanCommand            Operation = "shoot-plan.command.v1"
+	OperationShootPlanTransition         Operation = "shoot-plan.transition.v1"
+	OperationRunSessionOpen              Operation = "shoot-plan.run-session.open.v1"
+	OperationShotCapture                 Operation = "shoot-plan.shot.capture.v1"
+	OperationExecutionEventVoid          Operation = "shoot-plan.execution-event.void.v1"
+	OperationShootPlanBatch              Operation = "shoot-plan.batch-commit.v1"
+	OperationPlanningMediaUpload         Operation = "planning-media.upload.v1"
+	OperationPlanningMediaBindingCreate  Operation = "planning-media.binding.create.v1"
+	OperationPlanningMediaBindingRelease Operation = "planning-media.binding.release.v1"
+	OperationPlanningMediaLeaseReserve   Operation = "planning-media.lease.reserve.v1"
+	OperationPlanningMediaLeaseRelease   Operation = "planning-media.lease.release.v1"
+	defaultTTL                                     = 24 * time.Hour
 )
 
 var (
@@ -75,6 +80,13 @@ func EventVoidResource(planID, eventID string) ResourceIdentity {
 }
 func BatchResource(planID string) ResourceIdentity {
 	return ResourceIdentity{kind: "shoot-plan-batch", primaryID: planID}
+}
+
+func PlanningMediaUploadResource(planID string) ResourceIdentity {
+	return ResourceIdentity{kind: "planning-media-upload", primaryID: planID}
+}
+func PlanningMediaBindingResource(planID, assetID string) ResourceIdentity {
+	return ResourceIdentity{kind: "planning-media-binding", primaryID: planID, secondaryID: assetID}
 }
 
 type transactionRunner interface {
@@ -356,6 +368,11 @@ func resourceMatchesOperation(operation Operation, identity ResourceIdentity) bo
 		return identity.kind == "shoot-plan-event" && primary && secondary
 	case OperationShootPlanBatch:
 		return identity.kind == "shoot-plan-batch" && primary && !secondary
+	case OperationPlanningMediaUpload:
+		return identity.kind == "planning-media-upload" && primary && !secondary
+	case OperationPlanningMediaBindingCreate, OperationPlanningMediaBindingRelease,
+		OperationPlanningMediaLeaseReserve, OperationPlanningMediaLeaseRelease:
+		return identity.kind == "planning-media-binding" && primary && secondary
 	default:
 		return false
 	}

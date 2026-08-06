@@ -10,7 +10,7 @@ commit_authorization: approved
 commit_authorization_ref: "approval-report.md#goal-commits"
 handoff_reason: ""
 handoff_next: ""
-current_feature_index: 1
+current_feature_index: 2
 workspace:
   mode: new-worktree-from-develop
   current_branch: feat/creative-shoot-planning
@@ -21,15 +21,15 @@ workspace:
 external_checkpoints:
   stage-1-evidence-go:
     before_feature: shoot-plan-crm-integration
-    status: implementing
+    status: pending
     runner: .codestable/roadmap/creative-shoot-planning/goal-tools/planning-evidence-dispatch-gate.py
   stage-2-evidence-go:
     before_feature: plan-business-feedback
-    status: implementing
+    status: pending
     runner: .codestable/roadmap/creative-shoot-planning/goal-tools/planning-evidence-dispatch-gate.py
   production-shaped-rehearsal:
     before_feature_acceptance: creative-planning-v1-hardening
-    status: implementing
+    status: pending
     reason: "需要owner提供受控非生产环境与独立操作授权；Goal execution不包含production动作"
 features:
   - slug: shoot-plan-core
@@ -49,7 +49,7 @@ features:
     review: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-review.md
     qa: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-qa.md
     acceptance: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-acceptance.md
-    status: pending
+    status: accepted
   - slug: plan-ingestion-capture
     roadmap_item: plan-ingestion-capture
     feature_dir: .codestable/features/2026-08-05-plan-ingestion-capture

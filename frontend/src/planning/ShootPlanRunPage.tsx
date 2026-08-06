@@ -10,6 +10,7 @@ import {
   type OpenRunSessionResult,
   type ShootPlanSkipReason,
 } from './api'
+import { fetchPlanAssetDisplay } from './api'
 import { planningErrorMessage } from './presentation'
 import { applySavedShotResult, completedShotCount, nextPendingShotIndex } from './runState'
 import './run.css'
@@ -166,6 +167,7 @@ export default function ShootPlanRunPage() {
               <RunFact label="构图" value={shot.composition} />
               <RunFact label="打光" value={shot.lighting_text} />
             </div>
+            <ReferenceSheet planID={id} refs={shot.asset_access_refs ?? []} />
             <ReadinessSummary shotID={shot.id} input={input} />
           </article>
 
@@ -187,6 +189,20 @@ export default function ShootPlanRunPage() {
       {allDone && <section className="run-complete" role="status"><strong>全部镜头已有结果</strong><span>可以返回工作台检查执行历史并标记完成。</span></section>}
     </main>
   )
+}
+
+function ReferenceSheet({ planID, refs }: { planID: string; refs: OpenRunSessionResult['input']['shots'][number]['asset_access_refs'] }) {
+  const [failed, setFailed] = useState(0)
+  const reportFailure = useCallback(() => setFailed((value) => value + 1), [])
+  useEffect(() => { setFailed(0) }, [planID, refs])
+  if (!refs || refs.length === 0) return null
+  return <section className="run-reference-sheet" aria-label="本镜参考素材"><div className="run-reference-heading"><strong>本镜参考</strong><span>{refs.length} 张</span></div><div className="run-reference-grid">{refs.map((ref) => <ReferenceImage key={`${ref.asset_id}-${ref.generation}`} planID={planID} ref={ref} onFail={reportFailure} />)}</div>{failed > 0 && <small className="run-reference-note">部分参考素材暂不可用，不影响现场记录。</small>}</section>
+}
+
+function ReferenceImage({ planID, ref, onFail }: { planID: string; ref: NonNullable<OpenRunSessionResult['input']['shots'][number]['asset_access_refs']>[number]; onFail: () => void }) {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => { let active = true; let url = ''; fetchPlanAssetDisplay(planID, ref.asset_id, ref.display_checksum).then((blob) => { if (active) { url = URL.createObjectURL(blob); setSrc(url) } }).catch(() => { if (active) onFail() }); return () => { active = false; if (url) URL.revokeObjectURL(url) } }, [planID, ref.asset_id, ref.display_checksum, onFail])
+  return src ? <img className="run-reference-image" src={src} alt={ref.display_name || '参考素材'} /> : <div className="run-reference-placeholder">参考图加载中</div>
 }
 
 function RunFact({ label, value }: { label: string; value?: string | null }) {

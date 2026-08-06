@@ -46,6 +46,8 @@ tags:
     description: 全量导出（data-export）
   - name: shoot-planning
     description: 独立创作型拍摄策划、现场执行与审计历史
+  - name: planning-media
+    description: 拍摄策划参考素材的上传、绑定、展示与生命周期管理
 
 paths:
   /auth/capabilities:
@@ -2159,6 +2161,138 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /shoot-plans/{id}/assets:
+    get:
+      tags: [planning-media]
+      operationId: listShootPlanAssets
+      summary: 列出策划参考素材
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - name: page_size
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 40}
+      responses:
+        "200":
+          description: 素材列表
+          content: {application/json: {schema: {$ref: "#/components/schemas/PlanAssetPage"}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "500": {$ref: "#/components/responses/Internal"}
+    post:
+      tags: [planning-media]
+      operationId: uploadShootPlanAsset
+      summary: 上传策划参考素材
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema: {$ref: "#/components/schemas/PlanningMediaUploadForm"}
+      responses:
+        "201":
+          description: 素材已上传
+          content: {application/json: {schema: {$ref: "#/components/schemas/UploadPlanAssetResult"}}}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "415": {$ref: "#/components/responses/UnsupportedMediaType"}
+        "500": {$ref: "#/components/responses/Internal"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+
+  /shoot-plans/{id}/assets/{assetId}/bindings:
+    post:
+      tags: [planning-media]
+      operationId: createShootPlanAssetBinding
+      summary: 绑定参考素材到策划或镜头
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: assetId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/CreateAssetBindingInput"}}}
+      responses:
+        "200":
+          description: 绑定结果
+          content: {application/json: {schema: {$ref: "#/components/schemas/AssetBindingResult"}}}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "500": {$ref: "#/components/responses/Internal"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+
+  /shoot-plans/{id}/assets/{assetId}/bindings/{bindingId}:
+    delete:
+      tags: [planning-media]
+      operationId: releaseShootPlanAssetBinding
+      summary: 释放参考素材绑定
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: assetId
+          in: path
+          required: true
+          schema: {type: string}
+        - name: bindingId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/ReleaseAssetBindingInput"}}}
+      responses:
+        "200":
+          description: 释放结果
+          content: {application/json: {schema: {$ref: "#/components/schemas/AssetBindingResult"}}}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "500": {$ref: "#/components/responses/Internal"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+
+  /shoot-plans/{id}/assets/{assetId}/content:
+    get:
+      tags: [planning-media]
+      operationId: getShootPlanAssetContent
+      summary: 读取展示版本参考素材
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: assetId
+          in: path
+          required: true
+          schema: {type: string}
+        - name: v
+          in: query
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: 展示版本图片
+          headers:
+            ETag: {schema: {type: string}}
+            Cache-Control: {schema: {type: string}}
+            Content-Length: {schema: {type: integer, format: int64}}
+            X-Content-Type-Options: {schema: {type: string, enum: [nosniff]}}
+          content:
+            image/png: {schema: {type: string, format: binary}}
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "503": {$ref: "#/components/responses/ServiceUnavailable"}
+
 components:
   securitySchemes:
     bearerAuth:
@@ -2285,7 +2419,177 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
 
+    PayloadTooLarge:
+      description: 413 payload_too_large
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+    UnsupportedMediaType:
+      description: 415 unsupported_media_type
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+    ServiceUnavailable:
+      description: 503 asset_corrupt
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   schemas:
+    PlanningMediaSourceClass:
+      type: string
+      enum: [official, anime_screenshot, setting_book, fan, unknown_web, photographer_owned, licensed, customer_supplied]
+    PlanningMediaRightsBasis:
+      type: string
+      enum: [citation_or_display, ownership_attested, license_recorded, display_consent]
+    PlanningMediaPurpose:
+      type: string
+      enum: [moodboard_display, shot_reference_display, generation_reference]
+    PlanningMediaRightsDeclaration:
+      type: object
+      additionalProperties: false
+      required: [source_class, rights_basis, license_generation_reference_granted]
+      properties:
+        source_class: {$ref: "#/components/schemas/PlanningMediaSourceClass"}
+        rights_basis: {$ref: "#/components/schemas/PlanningMediaRightsBasis"}
+        evidence_summary: {type: string, maxLength: 500}
+        license_generation_reference_granted: {type: boolean}
+    PlanningMediaUploadForm:
+      type: object
+      additionalProperties: false
+      required: [image, rights, expected_plan_revision, intended_purpose, declared_media_type]
+      properties:
+        image: {type: string, format: binary}
+        rights:
+          type: string
+          description: PlanningMediaRightsDeclaration 的严格 JSON 字符串
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        intended_purpose: {$ref: "#/components/schemas/PlanningMediaPurpose"}
+        declared_media_type: {type: string, enum: [image/jpeg, image/png, image/webp]}
+    PlanAsset:
+      type: object
+      additionalProperties: false
+      required: [id, upload_context_plan_id, display_name, state, current_generation, revision, gc_rule_version, created_at, updated_at]
+      properties:
+        id: {type: string}
+        upload_context_plan_id: {type: string}
+        display_name: {type: string}
+        display_checksum: {type: string}
+        state: {type: string, enum: [staged, active, gc_pending, deleted, corrupt]}
+        current_generation: {type: integer}
+        revision: {type: integer, format: int64}
+        gc_eligible_at: {type: string, format: date-time}
+        gc_rule_version: {type: integer, enum: [1]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        deleted_at: {type: string, format: date-time}
+    PlanAssetAccessRef:
+      type: object
+      additionalProperties: false
+      required: [asset_id, generation, display_checksum, display_name]
+      properties:
+        asset_id: {type: string}
+        generation: {type: integer, minimum: 1}
+        display_checksum: {type: string}
+        display_name: {type: string}
+    PlanAssetRendition:
+      type: object
+      additionalProperties: false
+      required: [asset_id, generation, kind, media_type, byte_size, width, height, checksum]
+      properties:
+        asset_id: {type: string}
+        generation: {type: integer}
+        kind: {type: string, enum: [original, display]}
+        media_type: {type: string}
+        byte_size: {type: integer, format: int64}
+        width: {type: integer}
+        height: {type: integer}
+        checksum: {type: string}
+    PlanAssetGeneration:
+      type: object
+      additionalProperties: false
+      required: [asset_id, generation, rights, original_checksum, display_checksum, created_at]
+      properties:
+        asset_id: {type: string}
+        generation: {type: integer, minimum: 1}
+        rights: {$ref: "#/components/schemas/PlanAssetRightsDeclaration"}
+        original_checksum: {type: string}
+        display_checksum: {type: string}
+        created_at: {type: string, format: date-time}
+    PlanAssetRightsDeclaration:
+      type: object
+      additionalProperties: false
+      required: [id, asset_id, generation, source_class, rights_basis, license_generation_reference_granted, matrix_version, declared_at]
+      properties:
+        id: {type: string}
+        asset_id: {type: string}
+        generation: {type: integer, minimum: 1}
+        source_class: {$ref: "#/components/schemas/PlanningMediaSourceClass"}
+        rights_basis: {$ref: "#/components/schemas/PlanningMediaRightsBasis"}
+        evidence_summary: {type: string, maxLength: 500}
+        license_generation_reference_granted: {type: boolean}
+        matrix_version: {type: integer, enum: [1]}
+        declared_at: {type: string, format: date-time}
+    UploadPlanAssetResult:
+      type: object
+      additionalProperties: false
+      required: [asset, generation, access_ref, staged_until, original, display]
+      properties:
+        asset: {$ref: "#/components/schemas/PlanAsset"}
+        generation: {$ref: "#/components/schemas/PlanAssetGeneration"}
+        access_ref: {$ref: "#/components/schemas/PlanAssetAccessRef"}
+        staged_until: {type: string, format: date-time}
+        original: {$ref: "#/components/schemas/PlanAssetRendition"}
+        display: {$ref: "#/components/schemas/PlanAssetRendition"}
+    PlanAssetPage:
+      type: object
+      additionalProperties: false
+      required: [items, done]
+      properties:
+        items: {type: array, items: {$ref: "#/components/schemas/PlanAsset"}}
+        next_cursor: {type: string}
+        done: {type: boolean}
+    CreateAssetBindingInput:
+      type: object
+      additionalProperties: false
+      required: [generation, holder_kind, holder_id, purpose, expected_plan_revision, expected_asset_revision]
+      properties:
+        generation: {type: integer, minimum: 1}
+        holder_kind: {type: string, enum: [plan, shot]}
+        holder_id: {type: string}
+        purpose: {$ref: "#/components/schemas/PlanningMediaPurpose"}
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        expected_asset_revision: {type: integer, format: int64, minimum: 1}
+    ReleaseAssetBindingInput:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_revision, expected_asset_revision, expected_binding_revision]
+      properties:
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        expected_asset_revision: {type: integer, format: int64, minimum: 1}
+        expected_binding_revision: {type: integer, format: int64, minimum: 1}
+    AssetBinding:
+      type: object
+      additionalProperties: false
+      required: [id, asset_id, generation, holder_kind, holder_id, plan_id, purpose, state, revision, created_at]
+      properties:
+        id: {type: string}
+        asset_id: {type: string}
+        generation: {type: integer}
+        holder_kind: {type: string, enum: [plan, shot]}
+        holder_id: {type: string}
+        plan_id: {type: string}
+        purpose: {$ref: "#/components/schemas/PlanningMediaPurpose"}
+        state: {type: string, enum: [active, released]}
+        revision: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        released_at: {type: string, format: date-time}
+    AssetBindingResult:
+      type: object
+      additionalProperties: false
+      required: [asset, binding]
+      properties:
+        asset: {$ref: "#/components/schemas/PlanAsset"}
+        binding: {$ref: "#/components/schemas/AssetBinding"}
     AuthCapabilities:
       type: object
       additionalProperties: false
@@ -3277,7 +3581,7 @@ components:
       additionalProperties: false
       required:
         [id, plan_id, position, title, taxonomy_version, revision,
-         execution_revision, readiness_item_ids]
+         execution_revision, readiness_item_ids, asset_access_refs]
       properties:
         id:
           type: string
@@ -3351,6 +3655,10 @@ components:
           type: array
           items:
             type: string
+        asset_access_refs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanAssetAccessRef"
         current_outcome:
           allOf:
             - $ref: "#/components/schemas/ShootPlanCurrentOutcome"

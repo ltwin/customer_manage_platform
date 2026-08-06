@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"time"
+
+	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 )
 
 type PlanStatus string
@@ -76,28 +78,29 @@ type ShootPlan struct {
 }
 
 type Shot struct {
-	ID                   string          `json:"id"`
-	PlanID               string          `json:"plan_id"`
-	Position             int             `json:"position"`
-	Title                string          `json:"title"`
-	Scene                *string         `json:"scene"`
-	Action               *string         `json:"action"`
-	Expression           *string         `json:"expression"`
-	Composition          *string         `json:"composition"`
-	Lighting             *string         `json:"lighting_text"`
-	Notes                *string         `json:"notes"`
-	FramingTag           *string         `json:"framing_tag"`
-	LightingDirectionTag *string         `json:"lighting_direction_tag"`
-	LightingQualityTag   *string         `json:"lighting_quality_tag"`
-	PaletteTag           *string         `json:"palette_tag"`
-	ShotTypeTag          *string         `json:"shot_type_tag"`
-	TaxonomyVersion      int             `json:"taxonomy_version"`
-	Revision             int64           `json:"revision"`
-	ExecutionRevision    int64           `json:"execution_revision"`
-	NextEventSequence    int64           `json:"-"`
-	ReadinessItemIDs     []string        `json:"readiness_item_ids"`
-	CurrentOutcome       *CurrentOutcome `json:"current_outcome"`
-	RemovedAt            *time.Time      `json:"-"`
+	ID                   string                         `json:"id"`
+	PlanID               string                         `json:"plan_id"`
+	Position             int                            `json:"position"`
+	Title                string                         `json:"title"`
+	Scene                *string                        `json:"scene"`
+	Action               *string                        `json:"action"`
+	Expression           *string                        `json:"expression"`
+	Composition          *string                        `json:"composition"`
+	Lighting             *string                        `json:"lighting_text"`
+	Notes                *string                        `json:"notes"`
+	FramingTag           *string                        `json:"framing_tag"`
+	LightingDirectionTag *string                        `json:"lighting_direction_tag"`
+	LightingQualityTag   *string                        `json:"lighting_quality_tag"`
+	PaletteTag           *string                        `json:"palette_tag"`
+	ShotTypeTag          *string                        `json:"shot_type_tag"`
+	TaxonomyVersion      int                            `json:"taxonomy_version"`
+	Revision             int64                          `json:"revision"`
+	ExecutionRevision    int64                          `json:"execution_revision"`
+	NextEventSequence    int64                          `json:"-"`
+	ReadinessItemIDs     []string                       `json:"readiness_item_ids"`
+	CurrentOutcome       *CurrentOutcome                `json:"current_outcome"`
+	AssetAccessRefs      []planningmedia.AssetAccessRef `json:"asset_access_refs"`
+	RemovedAt            *time.Time                     `json:"-"`
 }
 
 type ReadinessItem struct {

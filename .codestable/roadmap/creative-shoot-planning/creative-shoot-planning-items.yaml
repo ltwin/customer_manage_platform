@@ -46,7 +46,7 @@ items:
   - slug: planning-reference-assets
     description: 交付策划参考图的 typed store、来源权利与用途矩阵、binding/lease、鉴权读取和模块级恢复
     depends_on: [shoot-plan-core]
-    status: in-progress
+    status: done
     feature: 2026-08-05-planning-reference-assets
     minimal_loop: false
     notes: >-

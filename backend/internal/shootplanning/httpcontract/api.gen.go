@@ -1264,6 +1264,14 @@ type OpenRunSessionResult struct {
 	Session      RunModeSession   `json:"session"`
 }
 
+// PlanAssetAccessRef defines model for PlanAssetAccessRef.
+type PlanAssetAccessRef struct {
+	AssetId         string `json:"asset_id"`
+	DisplayChecksum string `json:"display_checksum"`
+	DisplayName     string `json:"display_name"`
+	Generation      int    `json:"generation"`
+}
+
 // PlanCommand defines model for PlanCommand.
 type PlanCommand struct {
 	union json.RawMessage
@@ -1571,6 +1579,7 @@ type ShootPlanReadinessItemResponsibilityHint string
 // ShootPlanShot defines model for ShootPlanShot.
 type ShootPlanShot struct {
 	Action               nullable.Nullable[string]                            `json:"action,omitempty"`
+	AssetAccessRefs      []PlanAssetAccessRef                                 `json:"asset_access_refs"`
 	Composition          nullable.Nullable[string]                            `json:"composition,omitempty"`
 	CurrentOutcome       nullable.Nullable[ShootPlanCurrentOutcome]           `json:"current_outcome,omitempty"`
 	ExecutionRevision    int64                                                `json:"execution_revision"`

@@ -61,6 +61,10 @@ type AccountScope struct {
 	accountID string
 }
 
+// AccountID returns the authenticated account bound to this scope. It is
+// supplied by the auth context and is never accepted from an HTTP payload.
+func (sc AccountScope) AccountID() string { return sc.accountID }
+
 type scopedRunner interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 	Query(context.Context, string, ...any) (pgx.Rows, error)
@@ -71,11 +75,6 @@ type scopedRunner interface {
 // 保证账号标识来自 auth 中间件而非客户端参数。
 func (s *Store) ScopeFor(ac auth.AccountContext) AccountScope {
 	return AccountScope{pool: s.pool, runner: s.pool, accountID: ac.AccountID}
-}
-
-// AccountID 返回当前隔离句柄绑定的账号标识（来自认证上下文，非客户端参数）。
-func (sc AccountScope) AccountID() string {
-	return sc.accountID
 }
 
 func (sc AccountScope) execRunner() scopedRunner {

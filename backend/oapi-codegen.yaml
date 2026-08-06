@@ -22,3 +22,4 @@ output-options:
     - telegram-digest
     - export
     - account-profile
+    - planning-media

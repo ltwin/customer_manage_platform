@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -22,11 +23,13 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/dataexport"
 	"github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
+	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/authmail"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
@@ -136,7 +139,17 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	defer s.Close()
 	idempotencyExecutor := idempotency.NewExecutor()
-	shootPlanningApp, err := composeShootPlanningApplication(ctx, s.ArchiveCapabilityStartupReader(), idempotencyExecutor)
+	planningMediaObjects, err := immutablefs.NewLocal(filepath.Join(filepath.Dir(cfg.AvatarLocalRoot), "planning-media"))
+	if err != nil {
+		return newStartupFailure("planning-media-store-init", "AVATAR_LOCAL_ROOT", "filesystem", err)
+	}
+	planningMediaApp := planningmedia.NewApplication(
+		planningmedia.Repository{},
+		idempotencyExecutor,
+		planningMediaObjects,
+		planningmedia.WithHolderAuthorizer(shootplanning.NewMediaHolderAuthorizer(shootplanning.NewPostgresRepository())),
+	)
+	shootPlanningApp, err := composeShootPlanningApplication(ctx, s.ArchiveCapabilityStartupReader(), idempotencyExecutor, planningMediaApp)
 	if err != nil {
 		return err
 	}
@@ -218,6 +231,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		DataExport:                dataExportSvc,
 		TelegramBinding:           telegramBinding,
 		ShootPlanning:             shootPlanningApp,
+		PlanningMedia:             planningMediaApp,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -276,6 +290,7 @@ func composeShootPlanningApplication(
 	ctx context.Context,
 	startupReader archiveCapabilityStartupReader,
 	executor *idempotency.Executor,
+	projectors ...shootplanning.ShotAccessRefProjector,
 ) (*shootplanning.Application, error) {
 	if startupReader == nil {
 		return nil, errors.New("shoot planning archive capability startup reader is required")
@@ -287,7 +302,11 @@ func composeShootPlanningApplication(
 	if archiveCapability.Capability != planningcapability.ArchiveCapabilityCore {
 		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", archiveCapability.Capability)
 	}
-	application, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), executor)
+	options := make([]shootplanning.ApplicationOption, 0, 1)
+	if len(projectors) > 0 && projectors[0] != nil {
+		options = append(options, shootplanning.WithShotAccessRefProjector(projectors[0]))
+	}
+	application, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), executor, options...)
 	if err != nil {
 		return nil, fmt.Errorf("compose shoot planning application: %w", err)
 	}

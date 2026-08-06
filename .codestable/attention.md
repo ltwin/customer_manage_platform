@@ -39,4 +39,4 @@ CodeStable 所有落盘产出的正文用**中文**：plan / design、plan revie
 - Git 按 GitFlow：日常从 `develop` 拉 `feat/` `fix/` `refactor/` 分支，`main` 只收发布合并（详见 CLAUDE.md「Git 约定」）。
 - 在开发之前必须提问用户是在当前branch开发还是使用worktree新开branch，单feature开发倾向于不开worktree，而并行开发则只能使用worktree
 - 除非必要，否则最好一个featue一个提交，且提交代码必需经过人工同意，不能自动进行，这是为了在后续执行review的时候更加精准。
-- 同一 feature design 默认最多 3 轮完整独立复审（首轮 + 最多两轮修订复审）；第 3 轮后不得自动加轮，非阻塞项转为 residual risk，仍有 blocking 则停在 owner checkpoint，额外复审须 owner 明确授权。
+- 同一 feature 的实现/设计审核与修复循环默认最多 3 轮（含独立 review/QA closure）；第 3 轮后非阻塞项转为 residual risk，仍有 blocking 则停在 owner checkpoint，额外复审须 owner 明确授权。

@@ -1,0 +1,40 @@
+{
+  "gate_id": "evidence-pack",
+  "stage": "acceptance",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "out": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-evidence-pack.md",
+      "providers": {
+        "archguard": {
+          "status": "skipped",
+          "reason": "archguard collection disabled",
+          "warnings": []
+        },
+        "meta_cc": {
+          "status": "skipped",
+          "reason": "meta-cc collection disabled",
+          "warnings": []
+        }
+      }
+    }
+  ],
+  "providers": {},
+  "feature": "2026-08-05-planning-reference-assets",
+  "inputs": {
+    "design": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-design.md",
+    "checklist": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-checklist.yaml",
+    "out": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-evidence-pack.md",
+    "dod_results": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-dod-results.json",
+    "gate_results": ".codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-gate-results.json"
+  },
+  "input_digests": {
+    "design": "c0365cc101ac75e87938a8a7005d61fab7711d0ab3e8ffdb43b1548a9ffcc59a",
+    "checklist": "7859f075f52b20abd8e8e4a8af62069c6288fdbd3e737bc20534776618f70179",
+    "dod_results": "57d3a12439ea42ec3cf4db06c12bf0c93fad7cc61ea3dc053c5652186faf5075",
+    "gate_results": "0cc77e033d20b6837fd538df75ecd8697ff7842010da4eb7dbc400d6d03396f6",
+    "out": "663d564335225d3a4691511a16dd4282dd0b5974645973131ffd607fdaa81dd3"
+  }
+}
