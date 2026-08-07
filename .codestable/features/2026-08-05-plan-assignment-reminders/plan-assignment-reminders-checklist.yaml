@@ -1,0 +1,190 @@
+feature: 2026-08-05-plan-assignment-reminders
+created: 2026-08-05
+
+steps:
+  - id: S1
+    action: "落assignment reminder source/group/member schema、date-only due、canonical fingerprint与terminal truth-table pure reducer"
+    exit_signal: "A1-A4/A10-A13/A19 fixed-clock/canonical/recurrence PG golden通过；current fingerprint+valid_until+timezone_snapshot完全相同才为0 write，fingerprint相同但temporal metadata变化只更新同occurrence并递增validity_revision，withdraw后同fingerprint以新group/dedup/reminder occurrence恰好恢复一次，旧terminal不复活"
+    status: pending
+  - id: S2
+    action: "接PlanningReminderAccountGeneration fence、带generation的ShareAssignmentSourceEventV1、core generation-work reader、planshare safe source reader、reminder epoch repository、assignment Inbox、universal generation resolution、revision gate、durable quarantine/repair、materialized stable reconciliation epoch与contiguous watermark"
+    exit_signal: "A5-A7/A22的canonical two-phase fence、三个owner窄port/depguard、重复/乱序/corrupt/quarantine/backoff/repair/漏事件/epoch supersede/crash/restart/双实例/multi-plan/mixed-kind矩阵唯一；reminder coordinator组合三组plan IDs后由epoch repository物化，planshare adapter不claim core work或写epoch；assignment写Inbox+event/rebuild resolution，CRM/archive/settings/temporal按kind验证后写universal resolution，非assignment不伪造Inbox；目标范围仍有pending/quarantined或applied缺matching resolution时不得complete；非法token/reserve/duplicate fail closed，失败不ack、不越过generation且无source/group/reminder半写"
+    status: pending
+  - id: S3
+    action: "实现CRM-owned CRMReminderLifecycleFactV1 closed union真实adapter、独立core PlanArchiveReminderParticipant adapter及settings-timezone/temporal participants，并按account generation fence→settings/customer→order→slot→plan→reminder锁序重算/撤回"
+    exit_signal: "A3/A8-A10/A20-A22的direct link/unlink/relink、改期、同日改时、different-zone same-local-date、delete/type/order move、cancel/delete/archive exact effects全绿；三个CRM variant compile-positive、外部第四variant与CRM→reminder反向依赖compile-negative；timezone work、temporal边界、multi-plan generation/resolution与whole-tx rollback成立"
+    status: pending
+  - id: S4
+    action: "注册plan_assignment_checklist、Reminder plan ref、Settings telegram_binding_revision、current-group过滤、generation read freshness、clock_timestamp final guarded read/intent revision/atomic calling CAS与account-owner Telegram投递"
+    exit_signal: "A13-A16/A21/A23-A24通过；planning start_deadline=min(db_authorized_at+5s,earliest_valid_until)，legacy-only为+5s；method-start/before-final双monotonic参考点分别扣technical全程与DB取样后的business remainder，锁等待/final SQL/commit-response/本地排队均计入，近边界100ms remainder与80/120ms pause得到≤20ms/0 budget；guard-before-StartAt、final-CAS/call-start pause、pre-call crash与retry跨StartAt均fail closed；每次物理调用以DB clock/current recipient/latest frozen-window snapshot重检，过期或material变化在同一business Delivery上supersede旧intent并重建mixed digest；sender-vs-rebind共同锁序无死锁且rebind提交后不再向旧chat开始新调用，daily/command Delivery ID/source key不变、无第二张Delivery，pending binding_ack特例保留，本期不验收不存在的unbind surface；Delivery独占发送状态，双sender同刻仅一calling attempt，same-fingerprint response-loss才复用exact intent，projection故障只重试，retention/redaction成立，at-least-once与final CAS到HTTP start微窗口可观测"
+    status: pending
+  - id: S5
+    action: "实现plan assignment-reminder Bearer read model、工作台v2 reminder card、Reminders/Dashboard标签与plan deep link"
+    exit_signal: "A17的empty/unscheduled/pending/done/dismissed/error/长文案在1600/1280/375、键盘、200% zoom通过且无客户通知暗示"
+    status: pending
+  - id: S6
+    action: "完成PG并发/故障、OpenAPI codegen、H1/H4/shot_at/price/customer-delivery负向guard与全仓回归"
+    exit_signal: "A1-A24与CMD-001至CMD-006全绿；无Noop production wiring、内存队列fallback、手写DTO、AI/客户消息/经营字段漂移"
+    status: pending
+
+checks:
+  - item: "只有formal active readiness assignment生成due；hint/default lead/offer/on-site/token生命周期的新增提醒计数均为0"
+    source: "roadmap:§4.9; design:§1.1/§1.4+A1-A3/A14"
+    status: pending
+  - item: "due只由future同账号同order type=shoot StartAt换算账号本地日期后减lead日历日；禁止Order.shot_at与24h*n DST漂移"
+    source: "design:§1.4-date-only+A1/A3/A10/A13"
+    status: pending
+  - item: "CanonicalPlanAssignmentReminderGroupV1使用length-prefixed tuple；覆盖account/plan/order/slot/due/rule与排序source ID/revision/content fingerprint"
+    source: "roadmap:§4.9; design:§1.4-material+A4/A8"
+    status: pending
+  - item: "EndAt-only、重复event以及fingerprint+valid_until+timezone_snapshot完全相同为0 generation/whole-projection no-op；同本地日期StartAt变化不生成新fingerprint/Reminder occurrence但推进lifecycle generation并更新valid_until/validity_revision；不同IANA zone即使same-local-date/due/valid_until也推进settings generation、保留occurrence/status、更新timezone_snapshot/validity_revision；跨日、slot、rule、membership、source revision变化生成新fingerprint"
+    source: "design:§1.4/§1.5+A8/A11/A12"
+    status: pending
+  - item: "source/group/member/reminder/resolution表全部account-scoped复合FK/CHECK；group_fingerprint是可重复material equality而group_id+Reminder dedup是occurrence identity，withdrawn实例永不复活；logical bucket(account,plan,slot,due,rule)仅一个state=current；members/fingerprint/activation_generation immutable，只有current group可在account fence与对应lifecycle/settings generation下更新valid_until/timezone_snapshot并递增validity_revision；漏锁/同fingerprint recurrence双实例negative成立"
+    source: "design:D2+§1.4/§1.5+§2.1+A1/A4/A12/A19"
+    status: pending
+  - item: "ShareAssignmentSourceEventV1只additive增加数据库分配的account_source_generation，不增加nickname/receipt/token/recipient；event generation unique，work使用closed assignment_activated|assignment_revoked与source_event_id，含plan_id固定名reciprocal deferred composite FK保证account/generation/plan/ID/kind一一对应；duplicate/mismatch/orphan/cross-plan/rollback DB negative成立；safe reader从类型上排除feedback/secret/customer address"
+    source: "upstream share contract; design:D3-D5+§2.1+A6/A16"
+    status: pending
+  - item: "event低revision no-op、同revision exact no-op、同revision异payload projection rollback后独立脱敏quarantine、高revision推进；assignment Inbox+universal event/rebuild resolution+projection/work applied同tx且watermark只在较小work均有matching resolution时连续推进"
+    source: "design:D4+§2.2-event+A5-A7"
+    status: pending
+  - item: "PlanningReminderGenerationResolution以(account_id,generation)唯一且匹配work plan/kind；assignment使用event_applied|rebuild_verified并保留专用Inbox，CRM/archive使用lifecycle_applied，settings使用settings_rebuilt，temporal使用temporal_applied；非assignment禁止伪造Inbox，applied缺resolution视为invariant corruption"
+    source: "design:D4/D6+§2.1-resolution+§2.2-event/lifecycle/time+A6/A7/A20-A22"
+    status: pending
+  - item: "quarantine按source event唯一持久、PG lease/backoff跨实例/重启不热循环；unresolved freshness fail closed；safe current rebuild验证后同txresolve/assignment Inbox/universal rebuild_verified resolution/work applied/watermark，禁止skip且记录不含正文/nickname"
+    source: "design:D4+§2.1-quarantine+§2.2-event+A6"
+    status: pending
+  - item: "reconciliation在account fence下捕获target；core PlanningGenerationWorkReader列target内work plan IDs，planshare AssignmentReminderSourceReader只读retained assignment plan IDs/safe snapshots，reminder ReminderReconcileEpochRepository列projected source IDs并物化去重排序union；任何planshare adapter不得claim core work或写epoch，reminder coordinator组合三者；durable epoch按work kind验证current authoritative fact：assignment写Inbox+event/rebuild resolution，CRM/archive写lifecycle_applied，settings写settings_rebuilt，temporal写temporal_applied，非assignment不写Inbox；quarantine只由repair处理；complete前断言目标范围无pending/quarantined、每个applied有matching resolution且watermark已追到target；crash/restart恢复，target变化supersede，不因普通分页缺失误撤回"
+    source: "design:D6+§2.2-event+A7"
+    status: pending
+  - item: "多实例event/reconcile使用PG generation work/epoch claim/lease与restart recovery；未提交/rollback generation不可见且无gap，进程内single-flight/time cutoff不承担正确性"
+    source: "design:D6+§1.3+A5-A7"
+    status: pending
+  - item: "CRM package owns sealed CRMReminderLifecycleFactV1=link|order|schedule variants与RecomputeForCRMFactInScope interface，reminder真实adapter单向依赖该contract；direct link/unlink/relink、order cancel/delete、schedule create/update/delete/type/order move映射exact current whitelist，外部不能伪造第四variant，archive独立实现core PlanArchiveReminderParticipant；CRM不得import reminder，reminder-enabled缺真实/Noop/wrong wiring启动失败"
+    source: "CRM design typed participants；design §1.7/§2.1-ports/§2.2-lifecycle+A9"
+    status: pending
+  - item: "所有participant复用caller physical TxAccountScope并只使用core canonical FenceTxView.LockCurrentAccount→opaque LockedFenceTx；anonymous share同理不恢复通用scope；sealed API对reserve-before-lock/cross-tx/account token/same-fact duplicate runtime fail closed，受支持business-lock顺序由typed orchestration、depguard/compile fixture、锁序trace与双连接PG证明，不宣称侦测任意直接SQL；lifecycle先fence再settings/customer→order→slot→plan→reminder，sender/recipient mutation先fence再Settings→Delivery→reminder，不开nested tx/ledger；multi-plan按ID连续generation/work/fact/resolution且source mutation同tx"
+    source: "design:D5+§2.1-ports+§2.2-lifecycle+A8-A10/A22"
+    status: pending
+  - item: "material Settings timezone patch在同一fence/physical tx更新settings并把retained assignment plan IDs UNION reminder source plan IDs按plan ID物化为settings_timezone_changed works；same IANA zone 0 generation，不同zone即使same-local-date/due/valid_until也更新timezone_snapshot并写settings_rebuilt resolution；任一plan失败全回滚，restart逐plan重算且watermark不越过缺口"
+    source: "design:D5+§2.2-settings-timezone+A20"
+    status: pending
+  - item: "slot delete/type/order move、order cancel/delete/unlink、plan archive、assignment revoke与shoot start均withdraw；core durable capability达到reminder后archive只接受planning-share-reminder-v1 exact ordered effects并由caller-owned participant调用真实adapter，禁止lower policy/旧binary降级；assignment/terminal历史保留"
+    source: "roadmap:§4.6/§4.9; design:D13+§1.4+§2.2+A3/A7-A10/A14"
+    status: pending
+  - item: "pending withdrawn自动dismiss；done/dismissed保留；current fingerprint+valid_until+timezone_snapshot exact same才no-op；fingerprint相同但valid_until/timezone_snapshot变化保留同occurrence/status并只更新temporal metadata/revision；withdraw后相同或不同material fingerprint都创建新occurrence pending实例而不复活旧group/reminder"
+    source: "design:§1.5+D10+A11/A12/A19"
+    status: pending
+  - item: "late claim的past due创建overdue pending；无future slot只存unscheduled，不创建伪due"
+    source: "design:§1.4-date-only+A3/A13"
+    status: pending
+  - item: "read/dashboard先capture target并ensure applied_generation，再在account fence与group locks后构建tentative response，最后一条guarded SELECT即时使用clock_timestamp()重检current target、matching resolutions与最早valid_until；intent创建与每次physical call permit同样在所有锁后重检；fence/delivery/settings锁等待、payload构建、pre-call crash或retry backoff跨StartAt均0-row fail closed并幂等安排shoot_started work，不使用transaction_timestamp、查空、runner先行或application time cutoff证明freshness；old validity marker后slot重排future不会withdraw新group"
+    source: "design:D7/D11+§2.2-time/freshness+A6/A7/A15/A21"
+    status: pending
+  - item: "digest intent与每次BeginCurrentCall均按fence→Settings/recipient row→delivery claim→current groups/reminders共同锁序，按Delivery frozen window构建current payload；final guarded CAS以clock_timestamp()重检active intent revision、binding revision/chat、claim、status/source/freshness与permit supersession，并原子创建calling attempt，不保留未定义的authorized→calling阶段；planning start_deadline=min(db_authorized_at+5s,earliest_valid_until)，legacy-only为db_authorized_at+5s；method-start/before-final双monotonic参考点把technical剩余定义为5s减method全程、planning business剩余定义为DB authorization remainder减before-final至返回耗时，再取非负最小值，StartDeadline只作DB审计且禁用application wall clock/time.Until；missing/expired/status terminal不得授权旧intent；authoritative fingerprint完全相同才复用active revision，否则在同一business Delivery上supersede并新revision；source/status/recipient以calling CAS commit线性化，temporal decision在其final statement线性化；返回耗尽、deadline超时或permit被supersede必须重跑完整DB guard；Delivery独占结果状态且双sender同刻仅一calling attempt；response-loss允许同fingerprint exact重复但不宣称exactly-once"
+    source: "design:D7/D8+§2.2-freshness/status+A15/A16/A21/A23"
+    status: pending
+  - item: "DigestIntent按delivery_id+intent_revision/account FK唯一且行immutable，Delivery持active revision与唯一发送状态；attempt permit只是短租约/审计；payload<=4096 scalars/16384 bytes；business Delivery的delivery_id/source/source_key/target_local_date/timezone_at_enqueue冻结，每次attempt按current timezone/current recipient/latest snapshot在同一Delivery frozen window筛选；same-fingerprint response-loss复用exact active intent，任何recipient/status/source/temporal变化均在同一Delivery创建新revision，mixed digest只保留fresh legacy，禁止re-enqueue第二张daily/command Delivery绕过source-key幂等；pending/recovery所需payload不可清理，terminal 7d后全部revision单向redact、metadata 90d后删除，account export/delete/log脱敏契约成立"
+    source: "design:§2.1-intent+§2.2-freshness+A24"
+    status: pending
+  - item: "Telegram recipient只由attempt tx锁定的current Settings telegram_chat_id+telegram_binding_revision解析；本期bind/rebind仅material chat变化revision+1、same chat不增，future unbind保留同规则但无当前endpoint/DoD；recipient mutation取account fence但0 generation，bind token不在Settings前持锁；sender-vs-rebind共同fence→Settings→Delivery→reminder锁序双连接无死锁，material rebind等待calling attempt结束或deadline失效，只supersede同一business Delivery的旧intent revision、移动active pointer并唤醒同一Delivery，提交后不再向旧chat开始新调用；daily/command Delivery ID/source/source_key前后相同且无第二张Delivery，只有pending binding_ack保留既有supersession；RecipientGate只作进程内优化；无recipient不冻结intent，snapshot只在retry horizon内owner-only保存；schema/dependency/network无customer TG/SMS/email/opt-in/unsubscribe"
+    source: "roadmap:H4/§4.9; design:D8+§2.1-intent+§3.2+A16/A23/A24"
+    status: pending
+  - item: "ReminderType additive含plan_assignment_checklist、plan_id只读；POST reminders仍只能创建custom；generated Go/TS无手写重复DTO"
+    source: "design:D1+§2.1+A17"
+    status: pending
+  - item: "plan reminder read只返回current groups+unscheduled count，字段明确为reminder_status:pending|done|dismissed，跨账号404；历史保留在Reminder/projection且不从content反解析source"
+    source: "design:D9+§2.1+A17"
+    status: pending
+  - item: "planning reminder done/dismiss先锁account fence再锁Reminder/group，与intent线性化但0 generation且不反写ReadinessItem/assignment/order；legacy status路径零漂移；token rotate/revoke/expire不触发source change"
+    source: "design:D12+§1.2+§2.2-status+A11/A14/A23"
+    status: pending
+  - item: "工作台v2 card、Reminders/Dashboard覆盖各状态、plan deep link、长文案与responsive/a11y，无‘已通知客户’文案"
+    source: "prototype:v2/planning-workspace; design:§2.2-UI+A17"
+    status: pending
+  - item: "无plan账号legacy birthday/follow_up/churn/custom扫描、dashboard、digest、API与DOM基线无新增提示/阻塞/query漂移"
+    source: "requirement:H1; design:§1.1/§3.2+A18"
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd backend && go test -p=1 ./internal/reminder/... ./internal/planshare/... ./internal/shootplanning/... ./internal/order ./internal/schedule ./internal/settings/... ./internal/platform/store/... ./internal/dataexport/... ./internal/platform/httpapi ./cmd/server -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd frontend && npm run test:plan-assignment-reminders"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run lint && npm run build"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "node --test frontend/scripts/planning-prototype-v2.test.mjs"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required:
+    - design_review
+    - implementation_step_evidence
+    - canonical_group_fingerprint_golden
+    - reminder_occurrence_recurrence_truth_table_and_concurrency_fixture
+    - fixed_clock_due_and_start_boundary_matrix
+    - source_event_revision_and_corruption_fixture
+    - assignment_reconciliation_full_epoch_fixture
+    - account_generation_commit_frontier_and_contiguous_watermark_fixture
+    - universal_generation_resolution_mixed_kind_fixture
+    - canonical_fence_type_state_and_multi_plan_generation_fixture
+    - generation_source_epoch_port_ownership_depguard_fixture
+    - settings_timezone_same_local_date_account_wide_recompute_fault_restart_fixture
+    - temporal_clock_timestamp_lock_wait_and_payload_boundary_fixture
+    - temporal_old_validity_marker_future_reschedule_race_fixture
+    - durable_quarantine_backoff_repair_health_fixture
+    - postgres_cross_instance_restart_claim_fixture
+    - crm_lifecycle_global_lock_and_fault_matrix
+    - crm_reminder_lifecycle_closed_union_compile_negative_dependency_direction_fixture
+    - crm_direct_link_unlink_relink_whole_transaction_resolution_fixture
+    - archive_planning_share_reminder_ack_policy_ttl_fixture
+    - archive_capability_downgrade_rejection_fixture
+    - terminal_reminder_truth_table
+    - digest_enqueue_to_send_freshness_fixture
+    - digest_send_intent_cross_instance_linearization_and_response_loss_fixture
+    - digest_attempt_boundary_temporal_expiry_pre_call_crash_retry_fixture
+    - digest_call_start_deadline_commit_response_and_monotonic_budget_fixture
+    - digest_intent_revision_mixed_legacy_planning_rebuild_fixture
+    - planning_reminder_status_recipient_intent_linearization_fixture
+    - settings_recipient_binding_revision_sender_rebind_lock_order_fixture
+    - settings_rebind_old_recipient_attempt_supersession_fixture
+    - settings_rebind_business_delivery_identity_preservation_fixture
+    - digest_frozen_delivery_window_timezone_change_retry_fixture
+    - digest_intent_delivery_authority_and_retention_fixture
+    - account_owner_recipient_network_negative_guard
+    - order_shot_at_and_business_fact_dependency_guard
+    - legacy_no_plan_query_dom_digest_diff
+    - openapi_generated_type_regression
+    - browser_responsive_accessibility_screenshots
+    - code_review
+    - qa_report
+    - acceptance_report
+    - roadmap_writeback
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo_fixme: forbidden
+    commented_out_code: forbidden
+    unused_imports: forbidden
+    handwritten_openapi_dto: forbidden
+    placeholder_handler_or_static_fixture: forbidden
+    noop_production_participant: forbidden
+    in_memory_production_queue_fallback: forbidden
+    customer_delivery_dependency: forbidden
+    raw_nickname_content_token_or_receipt_log: forbidden
+    order_shot_at_or_business_fact_dependency: forbidden

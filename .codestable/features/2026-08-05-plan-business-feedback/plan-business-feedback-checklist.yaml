@@ -1,0 +1,159 @@
+feature: 2026-08-05-plan-business-feedback
+created: 2026-08-05
+
+steps:
+  - id: S1
+    action: "执行准入与上游conformance：机械核验stage-2 evidence approval binding，并对已落地core/CRM/reminder/generic Execute、locked Order/Schedule participant与Settings mutation participant建立版本化矩阵"
+    exit_signal: "planning-evidence-dispatch-gate对plan-business-feedback返回passed；fence/锁序/callback scope/operation/generated type矩阵与approved designs一致；未通过时implementation diff为零"
+    status: pending
+  - id: S2
+    action: "契约、schema与纯规则：固化OpenAPI生成类型、facts/draft/generation/audit/settings fence schema、完整override map、planning-business-v1范围/overflow/warnings、canonical target fingerprint与effective stale oracle"
+    exit_signal: "make generate-check通过；formula unknown/0/absolute-target=0/overflow、warning closed enum、generation_id、fingerprint和stale priority golden覆盖A1-A7/A13/A19/A21；runtime尚未注册placeholder route"
+    status: pending
+  - id: S3
+    action: "经营事实与草稿生成：接BusinessPlanSource、BusinessCRMSource、locked BusinessRuleProvider，完成facts双revision、双draft同generation/source snapshot、partial unavailable、slot mode closed table与supersede"
+    exit_signal: "真实PG/API证明facts CAS/no-op、同key replay callback零调用、source retry全回滚、missing-order/无slot/create_new/nonfuture unavailable准确、order/schedule/reminder目标零写；A1-A9/A21/A24通过"
+    status: pending
+  - id: S4
+    action: "订单草稿决策：接WithLockedTargetInScope opaque callback、server exact acknowledgement、OrderPriceAdjustment append-only audit、apply/dismiss terminal state与成功ledger"
+    exit_signal: "compile-negative与双连接/三断点fixture证明只可写同一locked target，price+唯一audit+draft+ledger全成或全败；absolute target 0、stale、different-key与dismiss矩阵A5/A10-A11/A14-A16通过"
+    status: pending
+  - id: S5
+    action: "档期草稿决策与create-new交接：在CRM/reminder全局锁序内接staged locked callback end update，并以PlanningSchedulePrefillV1接既有日历选择start和普通recovery"
+    exit_signal: "PG fixture证明fence→customer/order/slot/plan→callback→business rows→scope write、locked fingerprint与whole-tx rollback；browser证明state一次消费、URL/storage/POST无business payload、cancel零写且普通recovery保留；A7-A9/A12-A14通过"
+    status: pending
+  - id: S6
+    action: "HTTP、Settings事务、权限与composition harden：注册Bearer routes、Order exact id filter、Settings mutation fence/CAS/timezone participant、detail bounded projection及share/cross-account/query/DTO/log guards"
+    exit_signal: "两个revision=0首次写最多一个成功；rule+timezone fault全回滚；detail query恒定；route exact matrix、share/cross-account 404及SharedPlanView/query/DOM/log负向通过；A16-A19/A22-A23通过"
+    status: pending
+  - id: S7
+    action: "Settings与workbench UI：实现完整override map的继承/unknown/0/value→inherit、facts/draft状态与PlanningSchedulePrefillV1日历consumer/end联动"
+    exit_signal: "真实API下全部business状态、value→inherit、start手选/end自动转manual、refresh/back/cancel/普通recovery可操作；planning list无business badge；v2 conformance与响应式/a11y证据齐全；A9/A19-A20/A23通过"
+    status: pending
+  - id: S8
+    action: "全面验证与交付审计：重跑A1-A24、全部核心命令、并发/故障/权限/查询上界/原型矩阵，反查交付物、清洁度与roadmap/CONTEXT回写"
+    exit_signal: "CMD-001至CMD-006全绿；Evidence Manifest绑定最终build/config；无debug/TODO/FIXME/注释代码/无用import/手写DTO/placeholder/浮点金额/匿名价格信号；required artifacts齐全"
+    status: pending
+
+checks:
+  - item: "PlanningBusinessFacts四字段完整replacement保留null/0区别，拥有独立revision；set_business_facts同时CAS并按material推进core plan revision"
+    source: "design §1.6假设C、§2.1 HTTP保存facts、A1-A2"
+    status: pending
+  - item: "PublicPlanScale.planned_look_count与current Shot count只经core port读取；没有private look_count，planned_scene_count不从rented_location_count推导"
+    source: "roadmap §4.10；design §0、§1.2、A6"
+    status: pending
+  - item: "planning-business-v1默认/账号完整override map版本化；section缺失preserve、map missing继承、null/0/value与value→inherit；same map保持revision/hash/fresh，material map才使旧fresh stale"
+    source: "design §1.5、§2.1 EffectiveBusinessRuleProfileV1/Settings、A3-A5/A19"
+    status: pending
+  - item: "OrderAdjustmentLine只有delta；base顶层独立；unknown line排除并告警；base unknown仅absolute target可形成total，禁止line sum冒充总价"
+    source: "roadmap §4.10；design §1.5、A3-A5"
+    status: pending
+  - item: "ScheduleDurationDraft只以estimated_duration_minutes为basis；missing order优先返回order_required；无任何shoot slot才create_new，future slot才update_existing，past/ongoing slot typed unavailable；0/null/overflow可区分"
+    source: "design §1.5、§1.6假设D、§2.1 generation、§2.2 create_new、A7-A9/A21/A24"
+    status: pending
+  - item: "order/slot target fingerprint分别exact覆盖roadmap白名单，固定schema/JSON/null/UTC编码并由服务端计算；客户端request无fingerprint"
+    source: "roadmap §4.10；design §2.1 canonical frame、A10-A13"
+    status: pending
+  - item: "fresh/stale/applied/dismissed projection、supersede与stale_reason优先级确定；applied/dismissed不被后续变化重写"
+    source: "design §2.1状态投影、A11-A15"
+    status: pending
+  - item: "facts/generate/decision各有稳定operation/resource/canonical body；exact replay callback 0，异resource/body conflict，不同key并发最多一次target mutation"
+    source: "design §2.2幂等/CAS、A2/A14"
+    status: pending
+  - item: "dismiss只锁business identity/revision/terminal，不调用Order/Schedule participant；fresh/stale及target已删除均可dismiss，applied仍409"
+    source: "design §2.1 apply/dismiss、§2.2幂等/CAS、A15"
+    status: pending
+  - item: "订单apply只能在WithLockedTargetInScope callback内通过opaque scope写同一目标；重算stale/ack后更新price、追加唯一immutable audit、标draft applied并存ledger；任一失败全回滚"
+    source: "design §2.2 apply order、A10-A11/A14/A16"
+    status: pending
+  - item: "Order/Schedule opaque scope有runtime active/single-use guard；use-after-callback、second apply、success-without-apply、apply-then-callback-error均fail closed且whole-tx rollback"
+    source: "design §2.1 participant runtime guard；S4/S5"
+    status: pending
+  - item: "档期apply复用CRM/reminder staged lifecycle，锁序为fence→customer→order→slot→plans→opaque callback→business rows→scope write；禁止直接slot UPDATE、callback前写入或嵌套transaction"
+    source: "design §2.2 apply existing schedule、A12-A14"
+    status: pending
+  - item: "Bearer+AccountScope是唯一business访问面；share/cross-account统一404，SharedPlanView、anonymous query/DTO/DOM/bundle零business字段"
+    source: "roadmap §5；design §1.2、§2.1权限、A17"
+    status: pending
+  - item: "无策划订单/档期/报价/设置/reminder保持零提示零阻塞；business不读取share/reminder/media/AI，不自动通知客户或自动应用"
+    source: "roadmap H1/H2；design §1.2、A18、§3.2"
+    status: pending
+  - item: "PlanningSchedulePrefillV1只携带order+basis并一次消费；URL/local/session/business journal/final POST零business payload；确认后仍复用普通schedule recovery"
+    source: "roadmap §4.10；design §2.2 create_new、A9"
+    status: pending
+  - item: "Settings mutation participant以可选reminder fence→AccountSettingsMutationFence→settings row串行空行首次CAS和联合PATCH；CAS/fault时timezone generation/work与全部字段全回滚"
+    source: "design §2.1 Settings/interface、A19/A22"
+    status: pending
+  - item: "facts/rule输入范围、checked int64/时间运算、PostgreSQL integer落值、warning closed enum和plan lifecycle guard均有exact error/zero-write证据"
+    source: "design §1.5/§1.6假设E、A21"
+    status: pending
+  - item: "同次双draft持久化同一generation_id/source snapshot；detail对0/1/2 draft与lines查询恒定，planning list零business query/DTO/badge"
+    source: "design §2.1 generation/detail、frontend conformance、A23"
+    status: pending
+  - item: "tracked v2 business facts、两类draft、unknown、stale/re-generate、破坏性确认、dismiss与无slot日历路径形成child-level conformance matrix"
+    source: "design §2.2 frontend conformance、A20/A23"
+    status: pending
+  - item: "结构健康度不向759行schedule repository、order repository、api client追加business编排；新business子包/adapter/handler/component保持职责局部"
+    source: "design §2.5"
+    status: pending
+  - item: "stage-2-evidence-go只阻止implementation dispatch；gate未passed时S2之后不得产生implementation diff，design不伪称已获批准"
+    source: "roadmap §6/§8.2；design §1.7、S1"
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd backend && go test -p=1 ./internal/shootplanning/... ./internal/order ./internal/schedule ./internal/settings ./internal/platform/idempotency ./internal/platform/httpapi ./cmd/server -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd frontend && npm run test:shoot-planning"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "node --test frontend/scripts/planning-prototype-v2.test.mjs"
+      core: false
+      failure_handling: fix-or-block
+  evidence_required:
+    - stage_2_evidence_dispatch_gate_output
+    - formula_unknown_zero_absolute_target_truth_table
+    - business_input_range_overflow_warning_lifecycle_fixture
+    - business_generation_id_shared_snapshot_fixture
+    - schedule_missing_order_unavailable_zero_write_fixture
+    - canonical_target_fingerprint_golden
+    - stale_reason_priority_fixture
+    - postgres_concurrency_and_fault_injection_fixture
+    - locked_order_schedule_capability_compile_and_contract_fixture
+    - order_adjustment_append_only_audit_fixture
+    - schedule_crm_reminder_generation_transaction_fixture
+    - settings_first_write_cas_timezone_atomicity_fixture
+    - idempotency_cross_resource_replay_fixture
+    - route_application_coverage
+    - business_detail_bounded_query_and_list_zero_query_fixture
+    - shared_plan_business_negative_query_dto_dom_guard
+    - calendar_planning_prefill_url_storage_post_body_fixture
+    - prototype_v2_business_conformance_matrix
+    - browser_screenshots_1600_1280_375_keyboard_zoom
+    - evidence_manifest
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_task_markers: forbidden
+    commented_out_code: forbidden
+    unused_imports: forbidden
+    duplicate_openapi_dto: forbidden
+    placeholder_handler: forbidden
+    floating_point_money: forbidden
+    anonymous_business_signal: forbidden

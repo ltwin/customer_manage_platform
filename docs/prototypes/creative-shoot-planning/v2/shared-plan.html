@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>拍摄策划 · 唐糖</title>
+<link rel="stylesheet" href="planning.css">
+<style>
+body { background: var(--bg); }
+.shell { max-width: 760px; margin: 0 auto; padding: 0 var(--space-4) var(--space-12); }
+
+/* 原型控制条（真实客户页不存在） */
+.protobar {
+  background: var(--fg); color: var(--bg);
+  padding: var(--space-3) var(--space-4);
+  display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+  flex-wrap: wrap; font-size: var(--text-xs);
+}
+.protobar b { font-size: 10.5px; font-weight: 650; letter-spacing: .04em; opacity: .68; }
+.protobar button {
+  padding: 5px var(--space-3); border-radius: var(--radius-pill);
+  border: 1px solid oklch(100% 0 0 / 0.28); color: var(--bg); font-size: var(--text-xs);
+}
+.protobar button[aria-pressed="true"] { background: var(--bg); color: var(--fg); font-weight: 600; border-color: var(--bg); }
+.protobar button:focus-visible { outline: 2px solid var(--bg); outline-offset: 2px; }
+
+.hero { padding: var(--space-12) 0 var(--space-8); text-align: center; }
+.hero h1 { font-size: clamp(24px, 4.6vw, 32px); line-height: 1.2; margin: var(--space-3) 0; font-weight: 700; }
+.hero .lead { font-size: var(--text-base); color: var(--muted); max-width: 52ch; margin: 0 auto; }
+
+.sec { padding: var(--space-8) 0; border-top: 1px solid var(--border); }
+.sec > .eyebrow { display: block; margin-bottom: var(--space-4); }
+.sec h2 { font-size: var(--text-xl); margin-bottom: var(--space-4); }
+
+.brief-body { font-size: var(--text-base); color: var(--fg-2); line-height: var(--leading-body); white-space: pre-line; }
+
+.mood { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--space-3); }
+.mood figcaption { font-size: var(--text-xs); color: var(--muted); margin-top: 6px; }
+
+.scale { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-4); }
+.scale div { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); }
+.scale b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 26px; font-weight: 700; display: block; line-height: 1.1; }
+.scale span { font-size: var(--text-xs); color: var(--muted); }
+
+/* full: 逐条镜头 */
+.cshot { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4) var(--space-5); }
+.cshot + .cshot { margin-top: var(--space-3); }
+.cshot h3 { font-size: var(--text-base); }
+.cshot-pos { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--meta); }
+.cshot dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: var(--space-3); margin: var(--space-3) 0; }
+.cshot dt { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
+.cshot dd { font-size: var(--text-xs); color: var(--fg-2); }
+.cshot-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; padding-top: var(--space-3); border-top: 1px solid var(--border-soft); }
+
+/* 分工 */
+.claim { display: grid; grid-template-columns: 1fr auto; gap: var(--space-4); align-items: center;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4); }
+.claim + .claim { margin-top: var(--space-3); }
+.claim b { font-size: var(--text-sm); }
+
+.fbform { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-5); }
+
+.foot { padding: var(--space-8) 0; border-top: 1px solid var(--border); font-size: var(--text-xs); color: var(--muted); text-align: center; }
+
+.locked {
+  background: var(--surface); border: 1px dashed var(--border);
+  border-radius: var(--radius-md); padding: var(--space-6);
+  text-align: center; color: var(--muted); font-size: var(--text-sm);
+}
+
+.toast {
+  position: fixed; left: 50%; bottom: var(--space-6); transform: translate(-50%, 16px);
+  background: var(--fg); color: var(--bg); padding: 10px var(--space-5);
+  border-radius: var(--radius-pill); font-size: var(--text-xs);
+  box-shadow: var(--elev-raised); opacity: 0; pointer-events: none; z-index: 90; max-width: 92vw;
+  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+}
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+/* 逐条反馈内联输入 */
+.fb-inline { margin-top: var(--space-3); padding: var(--space-3); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.fb-inline textarea { width: 100%; min-height: 60px; padding: 8px 11px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); resize: vertical; }
+.fb-inline .row { margin-top: var(--space-2); justify-content: flex-end; }
+.claim .fb-inline { grid-column: 1 / -1; }
+.fb-sent { margin-top: var(--space-3); font-size: var(--text-xs); color: var(--muted); border-left: 3px solid var(--accent); padding: 6px var(--space-3); background: var(--accent-weak); border-radius: 0 var(--radius-s) var(--radius-s) 0; }
+
+/* 失效态 */
+.expired-view { text-align: center; padding: var(--space-12) var(--space-4); }
+.expired-view h1 { font-size: var(--text-2xl); margin: var(--space-4) 0 var(--space-3); }
+.expired-view p { color: var(--muted); font-size: var(--text-sm); max-width: 42ch; margin: 0 auto; }
+
+@media (max-width: 560px) {
+  .claim { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="protobar" data-od-id="proto-controls">
+  <b>原型控制</b>
+  <span>视图档位</span>
+  <button type="button" id="btnProposal" aria-pressed="false">proposal</button>
+  <button type="button" id="btnFull" aria-pressed="true">full</button>
+  <button type="button" id="btnExpired" aria-pressed="false">已失效</button>
+  <span style="opacity:.6">真实客户页不存在这一条控制栏</span>
+</div>
+
+<div class="shell expired-view" id="expiredView" data-od-id="expired-view" hidden>
+  <p class="eyebrow">影约 · 拍摄策划</p>
+  <h1>这个链接已经失效了</h1>
+  <p>可能是摄影师更新了链接、方案有了新版本，或合作安排发生变化。你之前提交的意见和认领都还在，不会丢。</p>
+  <p style="margin-top:var(--space-3)">需要新链接的话，直接联系你的摄影师。</p>
+</div>
+
+<div class="shell" id="mainShell" data-od-id="shared-plan">
+  <header class="hero" data-od-id="hero">
+    <p class="eyebrow">影约 · 拍摄策划</p>
+    <h1>魔女的旅行<br>伊蕾娜双 look</h1>
+    <p class="lead">这是为唐糖这次拍摄准备的创作方案。看完可以直接在页面里留意见，不用注册也不用下载任何东西。</p>
+    <div class="row" style="justify-content:center;margin-top:var(--space-5);gap:var(--space-2)">
+      <span class="tag" id="viewTag">完整方案</span>
+      <span class="tag">08-16 09:30–16:30</span>
+      <span class="tag">12 个镜头</span>
+    </div>
+  </header>
+  <section class="sec" data-od-id="sec-brief">
+    <span class="eyebrow">创作意图</span>
+    <h2>我们想拍成什么样</h2>
+    <p class="brief-body">角色是「旅途中的观察者」，不是战斗系魔女。整体要通透的旅行感：清晨侧逆光、微尘、旧石板路。
+
+两个 look 分段：上午旅装（斗篷、行李、松散发丝），下午正装（星屑胸针、正面构图、更冷的白平衡）。
+
+避免高饱和滤镜与厚重暗角——你上次提到不要「厚涂感」，这次会控制。</p>
+  </section>
+
+  <section class="sec" data-od-id="sec-mood">
+    <span class="eyebrow">风格方向</span>
+    <h2>参考氛围</h2>
+    <div class="mood">
+      <figure>
+        <div class="ph-img"><span>晨雾巷道</span></div>
+        <figcaption>光线与雾气浓度参考</figcaption>
+      </figure>
+      <figure>
+        <div class="ph-img"><span>旅装质感</span></div>
+        <figcaption>斗篷垂坠与发丝状态</figcaption>
+      </figure>
+      <figure>
+        <div class="ph-img"><span>冷调正装</span></div>
+        <figcaption>下午段的白平衡方向</figcaption>
+      </figure>
+      <figure>
+        <div class="ph-img"><span>金属高光</span></div>
+        <figcaption>胸针特写的光质</figcaption>
+      </figure>
+    </div>
+    <p class="hint" style="margin-top:var(--space-3)">参考图仅用于沟通氛围，不代表最终成片。</p>
+  </section>
+
+  <section class="sec" data-od-id="sec-scale">
+    <span class="eyebrow">规模概览</span>
+    <h2>这次大概会拍多少</h2>
+    <div class="scale">
+      <div><b class="num">12</b><span>个计划镜头</span></div>
+      <div><b class="num">2</b><span>套 look</span></div>
+      <div><b class="num">3</b><span>个场景</span></div>
+      <div><b class="num">7</b><span>小时计划拍摄</span></div>
+    </div>
+  </section>
+
+  <!-- full only：逐条镜头 -->
+  <section class="sec" data-full data-od-id="sec-shots">
+    <span class="eyebrow">逐镜方案</span>
+    <h2>每一个镜头怎么拍</h2>
+    <p class="hint" style="margin-bottom:var(--space-4)">哪条觉得不合适，直接点这条下面的「这条我有想法」。</p>
+
+    <article class="cshot" data-od-id="cshot-1">
+      <p class="cshot-pos">01</p>
+      <h3>石板路 · 回望</h3>
+      <dl>
+        <div><dt>场景</dt><dd>东巷旧石板路尽头，晨雾未散</dd></div>
+        <div><dt>动作要点</dt><dd>行走中半侧身回望，让斗篷带起来</dd></div>
+        <div><dt>表情</dt><dd>放松、轻微好奇，不看镜头</dd></div>
+        <div><dt>光线</dt><dd>自然侧逆光，柔和</dd></div>
+      </dl>
+      <div class="cshot-actions">
+        <button class="btn btn-secondary btn-sm" type="button" data-fb="石板路 · 回望">这条我有想法</button>
+        <span class="tag tag-ok">你已确认</span>
+      </div>
+    </article>
+
+    <article class="cshot" data-od-id="cshot-7">
+      <p class="cshot-pos">07</p>
+      <h3>阁楼窗前 · 正装立像</h3>
+      <dl>
+        <div><dt>场景</dt><dd>民宿阁楼斜窗，下午 15:00 前后</dd></div>
+        <div><dt>动作要点</dt><dd>正面立像，双手交叠于杖顶，肩线放平</dd></div>
+        <div><dt>表情</dt><dd>平静直视镜头，下颌微收</dd></div>
+        <div><dt>光线</dt><dd>只用窗光，柔和</dd></div>
+      </dl>
+      <div class="cshot-actions">
+        <button class="btn btn-secondary btn-sm" type="button" data-fb="阁楼窗前 · 正装立像">这条我有想法</button>
+        <span class="tag tag-warn">你提过想改成侧脸</span>
+      </div>
+    </article>
+
+    <article class="cshot" data-od-id="cshot-8">
+      <p class="cshot-pos">08</p>
+      <h3>长桌读信 · 侧写</h3>
+      <dl>
+        <div><dt>场景</dt><dd>旧书店长桌，暖色台灯做前景光</dd></div>
+        <div><dt>动作要点</dt><dd>坐姿读信，注意手部放松</dd></div>
+        <div><dt>需要准备</dt><dd>旧书店 15:00 时段确认</dd></div>
+      </dl>
+      <div class="cshot-actions">
+        <button class="btn btn-secondary btn-sm" type="button" data-fb="长桌读信 · 侧写">这条我有想法</button>
+      </div>
+    </article>
+
+    <p class="hint" style="margin-top:var(--space-4)">其余 9 个镜头结构类似，拍摄当天会按顺序执行。</p>
+  </section>
+
+  <!-- full only：分工 -->
+  <section class="sec" data-full data-od-id="sec-claims">
+    <span class="eyebrow">拍摄前准备</span>
+    <h2>拍摄前的准备分工</h2>
+    <p class="hint" style="margin-bottom:var(--space-4)">认领后摄影师会在拍摄前几天自己核对一遍，不会给你发消息催。认领时会生成一个凭证码，想自己取消认领时需要用到它。</p>
+
+    <div class="claim" data-od-id="claim-1">
+      <div>
+        <b>灰之魔女正装假发（已梳型）</b>
+        <p class="hint" style="margin-top:4px">上次沟通里唐糖说带 · 拍摄前 3 天核对</p>
+      </div>
+      <div class="row">
+        <span class="tag tag-ok">唐糖 已认领</span>
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel-claim>取消认领</button>
+      </div>
+    </div>
+
+    <div class="claim" data-od-id="claim-2">
+      <div>
+        <b>确认旧书店 15:00 能不能进</b>
+        <p class="hint" style="margin-top:4px">唐糖说认识老板 · 拍摄前 3 天核对</p>
+      </div>
+      <div class="row">
+        <span class="tag tag-ok">唐糖 已认领</span>
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel-claim>取消认领</button>
+      </div>
+    </div>
+
+    <div class="claim" data-od-id="claim-3">
+      <div>
+        <b>当天协助反光板</b>
+        <p class="hint" style="margin-top:4px">尚无人认领</p>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary btn-sm" type="button" data-claim>我来负责</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- full only 被锁时的占位 -->
+  <section class="sec" data-proposal data-od-id="sec-locked" hidden>
+    <span class="eyebrow">逐镜方案与分工</span>
+    <h2>确认合作后开放</h2>
+    <div class="locked">
+      这一版是方案概览。等我们确认档期、拍摄单排好之后，我会给你一个完整版链接，里面有每个镜头的具体安排和准备分工。
+    </div>
+  </section>
+
+  <section class="sec" data-od-id="sec-feedback">
+    <span class="eyebrow">整体意见</span>
+    <h2>对整个方案说点什么</h2>
+    <form class="fbform" novalidate data-od-id="feedback-form">
+      <label class="field"><span>怎么称呼你</span><input type="text" id="nick" value="唐糖" maxlength="20">
+        <small>只用于标注这条意见来自谁，不作为登录身份，也不会用来给你发通知。</small>
+      </label>
+      <label class="field"><span>你的想法</span><textarea rows="4" id="fbText" placeholder="例如：整体方向对，就是别太多雾"></textarea></label>
+      <button class="btn btn-primary" type="button" id="btnSendFb">发送意见</button>
+    </form>
+
+    <div style="margin-top:var(--space-4)" id="fbList"></div>
+  </section>
+
+  <footer class="foot" data-od-id="foot">
+    <p>影约 · 摄影师私域客户经营系统</p>
+    <p style="margin-top:6px">此页面通过专属免登录链接访问；链接可能被摄影师随时更新或关闭。</p>
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+(function () {
+  var toastEl = document.getElementById('toast');
+  var timer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('is-on');
+    clearTimeout(timer);
+    timer = setTimeout(function () { toastEl.classList.remove('is-on'); }, 2800);
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-toast]');
+    if (t) toast(t.getAttribute('data-toast'));
+  });
+
+  /* proposal / full / expired 档位切换 */
+  var btnP = document.getElementById('btnProposal');
+  var btnF = document.getElementById('btnFull');
+  var btnE = document.getElementById('btnExpired');
+  var viewTag = document.getElementById('viewTag');
+  var mainShell = document.getElementById('mainShell');
+  var expiredView = document.getElementById('expiredView');
+
+  function setView(level) {
+    var isFull = level === 'full';
+    var isExpired = level === 'expired';
+    btnF.setAttribute('aria-pressed', isFull ? 'true' : 'false');
+    btnP.setAttribute('aria-pressed', level === 'proposal' ? 'true' : 'false');
+    btnE.setAttribute('aria-pressed', isExpired ? 'true' : 'false');
+    mainShell.hidden = isExpired;
+    expiredView.hidden = !isExpired;
+    if (!isExpired) {
+      Array.prototype.forEach.call(document.querySelectorAll('[data-full]'), function (el) { el.hidden = !isFull; });
+      Array.prototype.forEach.call(document.querySelectorAll('[data-proposal]'), function (el) { el.hidden = isFull; });
+      viewTag.textContent = isFull ? '完整方案' : '方案概览';
+    }
+    document.title = (isExpired ? '链接已失效' : isFull ? '拍摄策划' : '拍摄方案') + ' · 唐糖';
+    history.replaceState(null, '', '?view=' + level);
+  }
+  btnP.addEventListener('click', function () { setView('proposal'); });
+  btnF.addEventListener('click', function () { setView('full'); });
+  btnE.addEventListener('click', function () { setView('expired'); });
+  setView(/view=proposal/.test(location.search) ? 'proposal' : /view=expired/.test(location.search) ? 'expired' : 'full');
+
+  /* 整案反馈 */
+  var list = document.getElementById('fbList');
+  document.getElementById('btnSendFb').addEventListener('click', function () {
+    var text = document.getElementById('fbText').value.trim();
+    var nick = document.getElementById('nick').value.trim() || '匿名';
+    if (!text) { toast('先写点内容再发送'); return; }
+    var card = document.createElement('div');
+    card.className = 'fbform';
+    card.style.marginTop = 'var(--space-3)';
+    card.innerHTML = '<p class="hint">' + nick + ' · 刚刚</p>' +
+      '<p style="font-family:var(--font-display);font-size:var(--text-base);margin-top:6px"></p>';
+    card.querySelector('p:last-child').textContent = text;
+    list.insertBefore(card, list.firstChild);
+    document.getElementById('fbText').value = '';
+    toast('已发送 · 摄影师会在工作台看到这条意见');
+  });
+
+  /* 逐条反馈：点击展开内联输入 */
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-fb]');
+    if (!b) return;
+    var shot = b.closest('.cshot');
+    var box = shot.querySelector('.fb-inline');
+    if (box) { box.hidden = !box.hidden; if (!box.hidden) box.querySelector('textarea').focus(); return; }
+    box = document.createElement('div');
+    box.className = 'fb-inline';
+    box.innerHTML = '<textarea placeholder="对「' + b.getAttribute('data-fb') + '」这一镜的想法，例如：想改成侧脸"></textarea>' +
+      '<div class="row"><button class="btn btn-ghost btn-sm" type="button" data-fb-close>收起</button>' +
+      '<button class="btn btn-primary btn-sm" type="button" data-fb-send>发送这条意见</button></div>';
+    shot.appendChild(box);
+    box.querySelector('textarea').focus();
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target.closest('[data-fb-close]')) {
+      e.target.closest('.fb-inline').hidden = true;
+      return;
+    }
+    var send = e.target.closest('[data-fb-send]');
+    if (!send) return;
+    var box = send.closest('.fb-inline');
+    var ta = box.querySelector('textarea');
+    var text = ta.value.trim();
+    if (!text) { toast('先写点内容再发送'); return; }
+    var nick = document.getElementById('nick').value.trim() || '匿名';
+    var sent = document.createElement('p');
+    sent.className = 'fb-sent';
+    sent.textContent = nick + ' 对这一镜的意见已发给摄影师：' + text;
+    box.parentNode.insertBefore(sent, box);
+    ta.value = '';
+    box.hidden = true;
+    toast('已发送 · 摄影师会在工作台的镜头反馈里看到');
+  });
+
+  /* 认领：生成凭证码；取消认领需输入凭证码 */
+  function makeCode() {
+    var chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', s = '';
+    for (var i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+    return s + '-' + Math.floor(Math.random() * 90 + 10);
+  }
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-claim]');
+    if (!b) return;
+    var nick = document.getElementById('nick').value.trim() || '匿名';
+    var code = makeCode();
+    var row = b.closest('.claim').querySelector('.row');
+    row.innerHTML = '<span class="tag tag-ok">' + nick + ' 已认领</span>' +
+      '<span class="tag" style="font-family:var(--font-mono)">凭证 ' + code + '</span>' +
+      '<button class="btn btn-ghost btn-sm" type="button" data-cancel-claim>取消认领</button>';
+    toast('已认领 · 请记下凭证码 ' + code + '，取消认领时需要它');
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-cancel-claim]');
+    if (!b) return;
+    var claim = b.closest('.claim');
+    var box = claim.querySelector('.fb-inline');
+    if (box) { box.hidden = !box.hidden; if (!box.hidden) box.querySelector('input').focus(); return; }
+    box = document.createElement('div');
+    box.className = 'fb-inline';
+    box.innerHTML = '<label class="field" style="margin-bottom:0"><span>输入认领时的凭证码</span>' +
+      '<input type="text" placeholder="例如 K7QF-92" maxlength="10" style="width:100%;padding:8px 11px;border:1px solid var(--border-strong);border-radius:var(--radius-s)">' +
+      '<small>凭证码在你认领时生成过一次。找不到的话，联系摄影师帮你取消。</small></label>' +
+      '<div class="row"><button class="btn btn-ghost btn-sm" type="button" data-fb-close>收起</button>' +
+      '<button class="btn btn-secondary btn-sm" type="button" data-cancel-confirm>确认取消认领</button></div>';
+    claim.appendChild(box);
+    box.querySelector('input').focus();
+  });
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-cancel-confirm]');
+    if (!b) return;
+    var box = b.closest('.fb-inline');
+    var val = box.querySelector('input').value.trim();
+    if (!val) { toast('要先输入凭证码才能取消'); return; }
+    var claim = box.closest('.claim');
+    var row = claim.querySelector('.row');
+    row.innerHTML = '<button class="btn btn-primary btn-sm" type="button" data-claim>我来负责</button>';
+    box.remove();
+    var hint = claim.querySelector('.hint');
+    if (hint) hint.textContent = '尚无人认领';
+    toast('已取消认领 · 这项准备重新变为待认领');
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>拍摄策划首版原型 · 影约 CRM</title>
+<link rel="stylesheet" href="planning.css">
+<style>
+.shell { max-width: var(--container-max); margin: 0 auto; padding: 0 var(--container-gutter-desktop) var(--space-12); }
+.hero { padding: var(--space-12) 0 var(--space-8); max-width: 62ch; }
+.hero h1 { font-size: clamp(24px, 4.4vw, 34px); line-height: 1.22; margin: var(--space-3) 0 var(--space-4); font-weight: 700; }
+.hero p { font-size: var(--text-base); color: var(--fg-2); }
+.sec { padding: var(--space-8) 0; border-top: 1px solid var(--border); }
+.sec > .eyebrow { display: block; margin-bottom: var(--space-4); }
+
+.screens { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-4); }
+.screen-card {
+  display: block; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden;
+  transition: border-color var(--motion-fast) var(--ease-standard), box-shadow var(--motion-fast) var(--ease-standard);
+}
+.screen-card:hover { border-color: var(--meta); box-shadow: var(--shadow-2); }
+.screen-card:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.screen-card .ph-img { border: 0; border-radius: 0; aspect-ratio: 16 / 10; }
+.screen-card .body { padding: var(--space-4) var(--space-5) var(--space-5); }
+.screen-card h3 { font-size: var(--text-base); margin-bottom: 6px; }
+.screen-card p { font-size: var(--text-xs); color: var(--muted); }
+.screen-card .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: var(--space-3); }
+
+.cover { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--space-4); }
+.cover div { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-4) var(--space-5); }
+.cover b { display: block; font-family: var(--font-display); font-size: var(--text-base); margin-bottom: 6px; }
+.cover span { font-size: var(--text-xs); color: var(--muted); }
+
+.rules { display: grid; gap: var(--space-3); }
+@media (max-width: 720px) { .shell { padding-left: var(--container-gutter-phone); padding-right: var(--container-gutter-phone); } }
+</style>
+</head>
+<body>
+<div class="shell" data-od-id="planning-index">
+
+<header class="hero" data-od-id="hero">
+  <p class="eyebrow">creative-shoot-planning · 原型 v2（评审后优化版）</p>
+  <h1>从「已定档」到「已拍摄」之间的创作准备层</h1>
+  <p>把散落在聊天记录、截图和链接里的角色理解、妆造、场地、道具与镜头顺序，收进一份可执行的策划；现场逐镜完成，客户免登录参与，复杂度回流成经营草稿。首版不依赖任何 AI 或知识库能力。</p>
+  <p style="margin-top:var(--space-3);font-size:var(--text-xs);color:var(--muted)">v2 变化：工作台默认列表态、界面全量用户语言（工程契约收进「评审注释」虚线框）、破坏性操作全部加确认、反馈可采纳并跳转镜头、Run Mode 支持镜头清单 / 参考素材 / 收尾流程、分享页新增失效态与认领凭证。</p>
+  <div class="row" style="margin-top:var(--space-5)">
+    <a class="btn btn-primary" href="planning-workspace.html">进入策划工作台</a>
+    <a class="btn btn-secondary" href="shared-plan.html">看客户会看到什么</a>
+  </div>
+</header>
+
+<section class="sec" data-od-id="sec-screens">
+  <span class="eyebrow">五个界面</span>
+  <div class="screens">
+    <a class="screen-card" href="planning-workspace.html" data-od-id="card-workspace">
+      <div class="ph-img"><span>列表 + 详情六分区</span></div>
+      <div class="body">
+        <h3>策划工作台</h3>
+        <p>默认进入策划台账列表，点卡片进详情六分区：创作 brief、镜头表、准备项、参考素材、分享反馈与经营草稿。摄取与 Run Mode 从这里进入。</p>
+        <div class="tags"><span class="tag">shoot-plan-core</span><span class="tag">crm-integration</span><span class="tag">business-feedback</span></div>
+      </div>
+    </a>
+
+    <a class="screen-card" href="plan-ingestion.html" data-od-id="card-ingestion">
+      <div class="ph-img"><span>原文 → 候选 → 落盘</span></div>
+      <div class="body">
+        <h3>摄取工作台</h3>
+        <p>粘贴聊天原文与参考图，确认候选与层级，一次保存进策划。顶部可选保存目标；重新解析有确认拦截。非全局导航，从工作台进入。</p>
+        <div class="tags"><span class="tag">ingestion-capture</span><span class="tag">reference-assets</span></div>
+      </div>
+    </a>
+
+    <a class="screen-card" href="run-mode.html" data-od-id="card-runmode">
+      <div class="ph-img"><span>390 × 844 现场界面</span></div>
+      <div class="body">
+        <h3>现场 Run Mode</h3>
+        <p>移动端逐镜执行：捕获或跳过（选「其他」必填说明）、备注随镜保存、镜头清单跳转、参考素材速查，全部有结果后进入收尾。</p>
+        <div class="tags"><span class="tag">run-session</span><span class="tag">capture</span></div>
+      </div>
+    </a>
+
+    <a class="screen-card" href="shared-plan.html?view=full" data-od-id="card-shared-full">
+      <div class="ph-img"><span>免登录 · 完整档</span></div>
+      <div class="body">
+        <h3>客户分享页 · 完整档</h3>
+        <p>逐条镜头内联留意见、准备分工认领（生成凭证码，凭码自助取消）。页内控制条可切概览档与「链接已失效」态。</p>
+        <div class="tags"><span class="tag">plan-share</span><span class="tag tag-ok">full</span><span class="tag">expired 态</span></div>
+      </div>
+    </a>
+
+    <a class="screen-card" href="shared-plan.html?view=proposal" data-od-id="card-shared-proposal">
+      <div class="ph-img"><span>免登录 · 概览档</span></div>
+      <div class="body">
+        <h3>客户分享页 · 概览档</h3>
+        <p>只有创作意图、氛围与规模概览，整案反馈。逐镜与分工整体不存在，等确认合作后签发完整档。</p>
+        <div class="tags"><span class="tag">plan-share</span><span class="tag">proposal</span></div>
+      </div>
+    </a>
+  </div>
+</section>
+
+<section class="sec" data-od-id="sec-coverage">
+  <span class="eyebrow">路线覆盖</span>
+  <h2 style="font-size:var(--text-xl);margin-bottom:var(--space-4)">八条首版 feature 的界面落点</h2>
+  <div class="cover">
+    <div><b>shoot-plan-core</b><span>工作台 brief / 镜头表 / 状态机 · Run Mode session 与 capture</span></div>
+    <div><b>planning-reference-assets</b><span>参考素材 tab 的来源 × 权利 × 用途联动与矩阵表</span></div>
+    <div><b>plan-ingestion-capture</b><span>摄取工作台三步流程、候选层级、丢弃恢复与建案计时</span></div>
+    <div><b>shoot-plan-crm-integration</b><span>brief 侧的 CRM 关联卡与执行时间窗投影</span></div>
+    <div><b>plan-share-collaboration</b><span>分享 tab 的双档签发轮换 + 两个客户页</span></div>
+    <div><b>plan-assignment-reminders</b><span>准备项 tab 的认领项检查提醒卡</span></div>
+    <div><b>plan-business-feedback</b><span>经营草稿 tab 的复杂度事实与两份 typed draft</span></div>
+    <div><b>creative-planning-v1-hardening</b><span>无独立界面：界面用用户语言表述，stale / 409 / fail-closed 等契约细节统一收进各页「评审注释」虚线框</span></div>
+  </div>
+</section>
+
+<section class="sec" data-od-id="sec-rules">
+  <span class="eyebrow">界面上被固定下来的红线</span>
+  <div class="rules">
+    <div class="note"><b>H1 策划是辅助工具</b>：任何列表与详情都不出现「缺策划」提示，没有策划的订单、档期与报价零阻塞；内部观测指标不进摄影师界面。</div>
+    <div class="note"><b>H2 协作与定价解耦</b>：两个客户页均无价格、成本、工时与草稿字段；经营草稿 tab 明确标注仅摄影师可见。</div>
+    <div class="note"><b>H3 首版不依赖 AI</b>：摄取只做结构化切分，纯链接保留为未解析候选，不抓取、不 OCR，无任何模型入口。</div>
+    <div class="note"><b>H4 不自动触达客户</b>：认领项提醒收件人固定为账号所有者，昵称永不成为投递地址。</div>
+    <div class="note"><b>H5 原作素材仅展示</b>：official / fan / screenshot 的生成参考选项在界面上直接禁用并给出原因。</div>
+  </div>
+</section>
+
+<footer class="sec" data-od-id="foot">
+  <p class="hint">静态原型，无后端。交互均为前端演示，用于评审信息架构与关键状态；数据为示例内容。页面里的虚线框「评审注释 · 正式产品不显示」承载工程契约说明，只面向评审。原版备份见 <code>../backup/planning-v1/</code>。</p>
+  <div class="row" style="margin-top:var(--space-3)">
+    <a class="btn btn-secondary btn-sm" href="../user-center-artistic.html">用户中心原型</a>
+    <a class="btn btn-secondary btn-sm" href="../dashboard.html">今日概览原型</a>
+    <a class="btn btn-secondary btn-sm" href="../v2/calendar.html">档期日历原型</a>
+  </div>
+</footer>
+
+</div>
+</body>
+</html>

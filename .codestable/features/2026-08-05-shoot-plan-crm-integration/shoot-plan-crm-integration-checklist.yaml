@@ -1,0 +1,141 @@
+feature: 2026-08-05-shoot-plan-crm-integration
+created: 2026-08-05
+
+steps:
+  - id: S0
+    action: "由goal package生成并自测planning-evidence-dispatch-gate；在CRM dispatch前校验stage-1 canonical status/path/SHA-256/gate version"
+    exit_signal: "runner对pending fixture返回needs-human/exit 2且无CRM implementation artifact；仅真实approved+hash/version匹配返回passed/exit 0"
+    status: pending
+  - id: S1
+    action: "characterize三域事务并分离两类外壳：CRM/manual走Execute+claim；无key source mutation走本域tx且不新增ledger/header"
+    exit_signal: "两类路径共享sorted locks且PG无死锁；reminder-enabled的link/unlink/order/schedule路径先锁account generation fence；CRM retry回滚claim；schedule source retry回滚domain tx/generation；merge/order/schedule逐endpoint exact error保持，delete additive customer_changed有OpenAPI golden"
+    status: pending
+  - id: S2
+    action: "落独立connection/projection revision owner、CRM sidecar schema、link epoch snapshot、pure reducer、projection fingerprint和状态序列/fixed-clock golden"
+    exit_signal: "connection-only/projection-only/both/window-only/no-op revision真值表、direct independent link_order与order_deleted→unlink_customer矩阵、concurrent adopt CAS、inactive_past/apply_suppressed CHECK/DTO、A19与snapshot/privacy均唯一"
+    status: pending
+  - id: S3
+    action: "接CrmLinkCommandV1、manual window hook、customer/order/schedule typed transaction participants及reminder-enabled canonical FenceTxView/LockedFenceTx与CRM-owned closed lifecycle fact union"
+    exit_signal: "A1-A12故障/并发/replay全绿；closed union compile-positive/外部variant compile-negative，direct link/unlink/relink与order/schedule whole-tx fixtures穿过真实adapter；受支持路径证明view.LockCurrentAccount先于business locks，material后per-plan locked.ReserveGeneration→participant写lifecycle_applied resolution→MarkApplied；generation/work/domain/projection/resolution同tx全成全败；same-fact 0 write/0 generation"
+    status: pending
+  - id: S4
+    action: "在展示repository接planning summary batch read，并接OpenAPI request union、单一PlanMutationResult response、plan filters/routes与composition"
+    exit_signal: "A13/A14/A16/A18通过；0/10/100 IDs同时断言query delta=0/1/1与customer/order/schedule exact membership/count/primary/window/warning；summary精确allowlist；12个core request/response golden不变"
+    status: pending
+  - id: S5
+    action: "按docs/prototypes/creative-shoot-planning/v2/README.md与planning-workspace.html conformance matrix实现workbench CRM关联及customer/order/schedule optional summary/deep link"
+    exit_signal: "A14/A15在1600/1280/375、键盘、200%zoom通过；CRM card层级、customer/order/slot与slot/manual来源、unlink确认的full失效/提醒撤回/订单档期无副作用文案和server capability一致；零plan exact DOM无提示，conflict/warning/suppression/adopt可恢复，原型未覆盖summary按child exact contract"
+    status: pending
+  - id: S6
+    action: "全面验证A1-A19、gate映射、PG并发/retry、fixed-clock边界、query delta、scoped guards与全仓清洁度"
+    exit_signal: "CMD-001至CMD-006全绿；无gate bypass、CRM新增shot_at依赖、价格/share/reminder/business扩散或Noop wiring"
+    status: pending
+
+checks:
+  - item: "S0 runner由goal-package拥有且先于CRM implementation存在；pending/rejected/missing/hash/version/approved有固定JSON、exit与handoff映射"
+    source: "design D13、§3.2、A17"
+    status: pending
+  - item: "request union按operation分离；response统一复用PlanMutationResult；CRM stored bytes与wire一致，12个core variants回归不变"
+    source: "design D3-D5、HTTP、A1-A4/A18"
+    status: pending
+  - item: "PlanCRMConnection唯一拥有connection_revision，PlanScheduleProjection唯一拥有projection_revision；event after revisions只标本次推进owner且至少一项非空；adopt仅CAS projection并以projection_revision_conflict fail closed；connection-only/projection-only/both/window-only/no-op/concurrent-adopt真值表确定"
+    source: "design §1.4 revision owner、D1、A1-A3/A10/A12"
+    status: pending
+  - item: "link epoch snapshot单epoch immutable；independent direct link_order从order派生customer，已有不同customer/order精确409；order_deleted→unlink_customer清current epoch/snapshot、projection source与suppression但append-only events保留snapshot；relink新epoch；cross-account/lifecycle矩阵确定"
+    source: "design D1-D5、§1.4、A1-A7"
+    status: pending
+  - item: "可能改变reminder的CRM command服从Execute开tx/claim→canonical view.LockCurrentAccount取得opaque LockedFenceTx→first-only pre-read→customer/order/slot/plan排序锁→locked recheck→locked.ReserveGeneration/recompute→lifecycle_applied resolution→MarkApplied→whole-tx bounded retry；sealed API对reserve-before-lock/cross-tx-account token/same-fact duplicate runtime fail closed，受支持business-lock顺序由typed orchestration、depguard/compile fixture、锁序trace和双连接PG证明，不宣称侦测任意直接SQL；manual-only不进fence"
+    source: "design §2.2、A6-A10"
+    status: pending
+  - item: "无Idempotency-Key的order/schedule source mutation保持本域tx/retry且不新增ledger/header，但reminder-enabled先锁account fence并在material时同tx分配generation；有key create复用已有Execute callback"
+    source: "design §2.2、S1、A6-A12"
+    status: pending
+  - item: "source并发错误逐endpoint固定：merge/order保持既有domain error，schedule create/update保持customer_changed，schedule delete additive同code并同步OpenAPI"
+    source: "design §2.2 exhaustion mapping、S1、A6-A9"
+    status: pending
+  - item: "manual set/clear、schedule suppression/adopt、cancel/delete/unlink/relink、completed/archived状态矩阵完整；connection/projection/core/window revision按唯一owner推进且单command各自最多一次"
+    source: "design §1.4、D6、A7-A11"
+    status: pending
+  - item: "slot end时间只限制首次apply/adopt；时间流逝不写状态，已有window保留，end+2h后capture mode由core读取时派生"
+    source: "design §1.4、D11、A19"
+    status: pending
+  - item: "inactive_past与apply_suppressed进入schema/CHECK/DTO；missing/past→future按无manual、manual、suppressed三类唯一归约"
+    source: "design §1.4、名词模型、A9-A10/A19"
+    status: pending
+  - item: "projection fingerprint覆盖source事实；same-value slot patch/retry/cancel replay为0 row/event/connection/projection/plan/window revision与0 PlanningReminder generation，material fact才写唯一generation/work"
+    source: "design D7/D10、A8/A12"
+    status: pending
+  - item: "新增shootplanning CRM/projection/query依赖面不读取Order.shot_at；不误报既有order/customer合法读取"
+    source: "design D11、§3.2、A9"
+    status: pending
+  - item: "CRM package拥有sealed CRMReminderLifecycleFactV1 union与CRMReminderLifecycleParticipant；link/unlink/relink、order cancel/delete、schedule create/update/delete/type/order move映射exact variant且只传locked reducer后的隐私裁剪current whitelist；reminder adapter单向依赖CRM contract，archive仍走core PlanArchiveReminderParticipant；generation只使用canonical FenceTxView/LockedFenceTx；per-plan真实participant同tx写lifecycle_applied resolution后MarkApplied，非assignment不伪造Inbox；compile-negative、whole-tx及Noop/missing/wrong-wiring startup失败成立"
+    source: "design typed participants、§2.2、A5/A9/A16"
+    status: pending
+  - item: "PlanningSummary按current customer/order/slot-owner membership排除archived；plan_count含completed，active只含draft|ready|in_progress；primary=updated_at DESC,id DESC，window/warning只属于primary；order-deleted/unlinked离开旧domain；0/10/100同时断言query 0/1/1与exact values，zero/archived-only整体absent"
+    source: "design D12、summary contract、A13-A14"
+    status: pending
+  - item: "tracked v2 README/workspace为UI参考快照；CRM card层级、customer/order/slot、slot projection vs manual、unlink的full立即失效/提醒撤回/订单档期无副作用、cancelled/deleted/suppressed/adopt均进入conformance；prototype未覆盖summary由child design定义"
+    source: "design frontend、A15；docs/prototypes/creative-shoot-planning/v2/README.md；docs/prototypes/creative-shoot-planning/v2/planning-workspace.html"
+    status: pending
+  - item: "零plan API/DOM与既有CRM基线一致，不新增提示、创建条件、价格、share/reminder/business或状态副作用"
+    source: "design §1.2、frontend、A14-A15"
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "python3 .codestable/roadmap/creative-shoot-planning/goal-tools/planning-evidence-dispatch-gate.py --roadmap .codestable/roadmap/creative-shoot-planning --feature shoot-plan-crm-integration --decision stage-1-evidence-go --json"
+      core: true
+      failure_handling: handoff-without-crm-implementation
+    - id: CMD-002
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test -p=1 ./internal/shootplanning/... ./internal/customer ./internal/order ./internal/schedule ./internal/platform/httpapi -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run test:shoot-plan-crm"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "cd frontend && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required:
+    - stage1_gate_json_exit_and_no_artifact_assertion
+    - command_output
+    - crm_link_epoch_api_matrix
+    - crm_connection_projection_revision_owner_truth_table_and_concurrent_adopt_fixture
+    - crm_direct_link_and_deleted_unlink_truth_table
+    - reducer_state_sequence_golden
+    - postgres_sorted_lock_concurrency_fixture
+    - participant_fault_matrix
+    - planning_reminder_account_fence_generation_rollback_fixture
+    - planning_reminder_lifecycle_resolution_atomicity_fixture
+    - crm_reminder_lifecycle_fact_union_compile_negative_and_whole_transaction_fixture
+    - projection_material_noop_evidence
+    - scoped_order_shot_at_negative_guard
+    - planning_summary_query_delta_and_exact_value_membership_matrix
+    - zero_plan_dom_api_diff
+    - openapi_request_union_single_response_regression
+    - execute_retry_claim_rollback_fixture
+    - external_source_transaction_retry_without_ledger_fixture
+    - external_source_exact_error_envelope_matrix
+    - slot_end_fixed_clock_matrix
+    - browser_screenshots
+    - tracked_v2_crm_prototype_conformance_matrix
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_task_markers: forbidden
+    commented_out_code: forbidden
+    duplicate_openapi_dto: forbidden
+    placeholder_handler: forbidden
+    noop_production_participant: forbidden
+    gate_bypass: forbidden

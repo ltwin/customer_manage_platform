@@ -1,0 +1,123 @@
+feature: 2026-08-05-plan-ingestion-capture
+created: 2026-08-05
+
+steps:
+  - id: S1
+    action: "固化parser v1、frame_v1 IDs、LCS+gap reparse reconciliation、content/readiness-link/reference完整schema、URL-first与逐项ack"
+    exit_signal: "golden覆盖A1-A5及前插/前删/duplicate重排/消失重现/URL变化/部分ack，输出ID/status/revision/action byte-stable；0/1/N links有provenance"
+    status: pending
+  - id: S2
+    action: "落 account-scoped session/reference-link/observation/tick/retention schema、repository、fake clock 与 revision/lock order"
+    exit_signal: "真实PostgreSQL证明partial unique每plan一editing session、create winner/loser、跨账号404、CAS、terminal final delta/300s cap、30日规则"
+    status: pending
+  - id: S3
+    action: "接通 create/get/preview/abandon application、idempotency、OpenAPI/handlers/routes 与中断恢复"
+    exit_signal: "A6-A7全绿；concurrent create恢复winner；replay/no-op不写tick；逐项source-change ack与terminal read-only/final delta确定；无placeholder"
+    status: pending
+  - id: S4
+    action: "实现pure PrepareIngestionCommit、core kept/zero-core分支、ReadinessLinkCandidate与独立PlanTargetProof/PlanReferenceLink participant"
+    exit_signal: "A8-A9覆盖0/1/N readiness links、新/旧/移出/cross-plan target；media proof不复用；reference-only不增revision且core 0-candidate 400不变"
+    status: pending
+  - id: S5
+    action: "接 planningmedia prepared binding/post-core HolderProof，完成唯一 ExecuteInScope combined transaction 与全故障/重放矩阵"
+    exit_signal: "A10-A12 全绿；session/core/link/media/observation/ledger全成全败；asset保持staged；media-only delta冲突且replay callback=0"
+    status: pending
+  - id: S6
+    action: "接 PlanReady observation sink、stage-1 evidence projector与fixed/real sample decision/hash dry-run"
+    exit_signal: "A13/A16全绿；ready/abandon累计final delta且replay=0；无observation ready no-op；route-enabled+Noop sink composition测试必失败；approval仍pending"
+    status: pending
+  - id: S7
+    action: "实现三步摄取页、candidate editor、dropped恢复、staged assets、conflict/reparse/commit summary与minimal-loop导航"
+    exit_signal: "A14-A15在1600/1280/375、键盘、200% zoom通过；真实API paste→commit→workspace→run可完成且无计时/工程注释"
+    status: pending
+  - id: S8
+    action: "全面验证与交付审计：A1-A17、query/lock/route矩阵、全仓回归、scope guard、证据与清洁度"
+    exit_signal: "CMD-001至CMD-006全绿；evidence_required齐全；无AI/provider/OCR/crawler/匿名/消息/经营/原文日志/重复DTO或临时标记"
+    status: pending
+
+checks:
+  - item: "parser v1固定URL/speaker/blank/cue/duplicate/sort/limit与frame_v1；reparse按唯一LCS backtrack+gap规则对齐，禁止相似度/隐式DB顺序"
+    source: "design §1.4、D4-D8、§2.1 parser、A1-A5"
+    status: pending
+  - item: "source/candidate limits、30日inactivity/raw retention是versioned待确认假设；超限可见且terminal redaction不删已提交事实"
+    source: "design A-ING-1/A-ING-2、D3、A2/A7"
+    status: pending
+  - item: "partial unique强制每plan最多一editing session；lifecycle仅editing→committed|abandoned；GET不写tick，terminal不可resume/copy/move"
+    source: "design D1-D2、HTTP transition、A6-A7"
+    status: pending
+  - item: "IngestionCommitCanonicalV1/ResultV1逐字段直接引用upstream；任何callback字段变化升级v2，不复制近似type"
+    source: "design §2.1 Commit v1、A8-A11"
+    status: pending
+  - item: "0 core candidate使用SnapshotBatchTargetInScope且plan revision不变；不改变core-only batch 0 candidate=400；all discard=400"
+    source: "design D10、application ports、A9"
+    status: pending
+  - item: "combined顺序为session→core→media自有HolderProof→reference专用PlanTargetProof→session/observation→ledger；capability不可互换且锁序无环"
+    source: "design §2.2 combined sequence、A8-A12"
+    status: pending
+  - item: "同key/media intent delta/response-loss/concurrent replay覆盖完整canonical；replay core/media/link/session/tick callback均为0"
+    source: "design §2.2 transaction、A10-A11"
+    status: pending
+  - item: "PlanBuildObservation普通/ready/abandon共用accumulator，terminal前计final delta；first/replay/300/301秒、无row no-op与post-terminal单列确定；UI无计时"
+    source: "design D11-D13、observation、A13/A16"
+    status: pending
+  - item: "ReadinessLinkCandidate与ReferenceLinkCandidate均有完整snapshot/source-change/逐项ack schema；PlanReferenceLink用专用PlanTargetProof且不抓取内容"
+    source: "design D5/D9、reference decision、A3/A8/A12"
+    status: pending
+  - item: "planningmedia upload/binding/rights/GC不复制；commit失败asset保持原staged deadline，无object key/permitted_uses"
+    source: "design dependencies/transaction、A10/A17"
+    status: pending
+  - item: "tracked prototype的brief与内部计时不进入formal v1；摄取页保留三步、candidate/dropped/link/staged/conflict核心IA"
+    source: "design §1.2、frontend、A14-A15"
+    status: pending
+  - item: "stage-1 report生成与owner approval权限分离；pending gate不能由阈值计算、agent判断或design pass自动批准"
+    source: "design D13、observation/evidence、A16-A17"
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd backend && go test -p=1 ./internal/shootplanning/... ./internal/planningmedia ./internal/platform/idempotency ./internal/platform/httpapi -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test -p=1 ./internal/shootplanning/ingestion -run 'TestParserGolden|TestCombinedCommit|TestObservation|TestEvidence' -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run test:plan-ingestion"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "cd frontend && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required:
+    - command_output
+    - parser_golden_corpus
+    - canonical_candidate_diff
+    - session_api_revision_matrix
+    - postgres_combined_fault_matrix
+    - idempotency_callback_counts
+    - activity_clock_fixture
+    - query_and_lock_order_evidence
+    - stage1_report_dry_run_and_hash
+    - browser_screenshots
+    - minimal_loop_browser_recording
+    - scoped_negative_guard
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_task_markers: forbidden
+    commented_out_code: forbidden
+    duplicate_openapi_dto: forbidden
+    placeholder_handler: forbidden
+    raw_ingestion_log: forbidden
+    crawler_or_provider_dependency: forbidden

@@ -9,7 +9,7 @@ tags: [shoot-planning, cosplay, creative-workflow, ai, knowledge-base, client-co
 
 # 创作型拍摄策划与 AI 知识增强
 
-> 创意空间 | 2026-07-30 创建，2026-08-04 四次收敛 | 下一步：两个 epic 独立 review 与批准
+> 创意空间 | 2026-07-30 创建，2026-08-05 五次收敛 | 下一步：首版 roadmap 原型对齐复审与批准
 
 ## 出发点
 
@@ -130,6 +130,14 @@ AI 的理想角色不是替摄影师一键决定方案，而是读取“角色�
 - **已拍板（2026-08-04）：客户自动提醒不进首版。** 首版提醒对象是摄影师账号所有者，内容是客户认领项检查清单；客户 TG 直达另立 opt-in 能力，不把匿名 `claimed_by` 当收件人身份。
 - **已拍板（2026-08-04）：售前 proposal 只允许整案反馈。** 未关联符合条件订单时服务端不得签发 `full`；逐条镜头反馈和分工认领只在重新签发的 `full` token 下开放，成单不会让旧 proposal token 自动升级。
 - **已拍板（2026-08-04）：原作链接和图片不因不抓取而丢失。** 链接保留为 `reference_link`，原作图、设定集和动画截图只允许 moodboard/display，不进入生成上下文；生成参考只接受服务端核验为摄影师自有或明确授权的素材。
+
+### 原型对齐决定（2026-08-05）
+
+- **原型固化为长期参考。** 首版 v2 快照进入 `docs/prototypes/creative-shoot-planning/v2/` 并受版本控制；ignored 工作目录不再是后续设计、实现和验收的引用面。原型负责信息架构、用户语言、视觉层级和交互路径，roadmap/OpenAPI/经确认的 child design 仍负责权限、生命周期、错误与事务语义。
+- **准备工作是四类不同事实。** `responsibility_hint` 只是从讨论中提取的备忘，`preflight_status` 是摄影师的拍前核对，`ShareAssignment` 才是客户正式认领，现场缺失来自 execution event；四者不能互相自动覆盖。准备项可服务多个镜头，只有 required 未核对阻断 ready。准备项提前天数只是未来认领默认值，正式认领时才快照进 assignment 并生成摄影师提醒。
+- **现场纠错必须可审计、可按时间点重放。** Run Mode 只做执行；captured 撤销和 skipped 改 captured 追加 result event，误记作废追加独立 void fact，移除已有执行记录的 Shot 也保留历史。completion 冻结 finalization snapshot；完成后纠错须 reopen/re-complete，并使旧 evidence binding 失效，不能通过覆盖行或删镜头抹掉准备遗漏证据。
+- **公开规模与经营事实分离。** proposal/full 可见的镜头、造型、场景规模由 core `PublicPlanScale` 提供；公开计划拍摄时长只从执行时间窗计算。人员、成本、价格、精修数量和 `estimated_duration_minutes` 继续仅摄影师可见，匿名 DTO 不读取 business facts。
+- **本轮不改变 epic 边界。** 仍是既有 8 条首版 feature、同一 minimal loop 和同一 DAG；AI/知识后置 roadmap 不因原型对齐而新增、提前或改序。
 
 ## 阶段排序
 

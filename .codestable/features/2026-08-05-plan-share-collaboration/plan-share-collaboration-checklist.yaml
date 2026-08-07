@@ -1,0 +1,197 @@
+feature: 2026-08-05-plan-share-collaboration
+created: 2026-08-05
+
+steps:
+  - id: S1
+    action: "安全与契约骨架：characterize既有middleware/auth/SPA，建立token/receipt commitment、sealed share capability、exact DTO、typed source ports与scope guards"
+    exit_signal: "raw secret canary在DB/ledger/log为0；HTTP无法构造AccountScope且anonymous复用唯一ledger算法；platform-security PG counter跨实例/重启持久且fail-closed；所有匿名mutation计outer attempt，只有current ledger winner同tx写入的exact-frame admission可免业务quota；proposal/full schema/query边界可机械断言；既有非敏感route/auth行为零漂移"
+    status: pending
+  - id: S2
+    action: "Generation与Bearer编排：落schema/repository、Bearer management projection、issue/rotate/revoke、eligibility epoch、first-only CRM pre-read/全局锁序、expiry与exact幂等表"
+    exit_signal: "刷新可恢复proposal/full状态原因/revision、paged offers与每个view独立的server-derived expiry policy/default quote且无secret；默认expiry按past/normal/far-future window clamp，直接显式边界相等合法、越界拒绝，t0 projection→t1 mutation在10m quote TTL内可提交、过期/事实漂移稳定409刷新，UI提交的绝对expires_at/closed source与canonical replay一致；PG replay/cancel/delete/unlink/relink矩阵唯一且无反向死锁；旧full不复活"
+    status: pending
+  - id: S3
+    action: "匿名投影：接core/CRM safe source、proposal/full public route、uniform 404与full-open observation"
+    exit_signal: "read-write repeatable-read GET中projection/ref upsert/full-open observation同tx；proposal Shot/assignment/business query为0；full allowlist与archive/失资格404通过"
+    status: pending
+  - id: S4
+    action: "Shared media：接generation-bound moodboard refs与planningmedia permit/read-pin读取"
+    exit_signal: "ref按token generation+binding+exact generation+checksum唯一，并发首次GET/release/GC只一ref或404/retry；permit矩阵通过且wire无内部标识"
+    status: pending
+  - id: S5
+    action: "Feedback协作：接plan/Shot匿名feedback、Bearer list/disposition与deep link"
+    exit_signal: "proposal/full权限、revision/idempotency/rate/文本边界通过；Bearer feedback exact page按created_at+ID稳定cursor返回全部disposition历史、字段allowlist/query bound/敏感排除成立；adopt/ignore不自动改core且目标deep link准确"
+    status: pending
+  - id: S6
+    action: "Assignment协作：接readiness/on-site offer、lead snapshot、client-generated receipt、匿名/摄影师revoke、account planning-reminder generation fence、versioned source outbox、core remove guard与planning-share-v1 archive"
+    exit_signal: "同offer并发只一active；Bearer assignment exact page按claimed_at+ID稳定cursor返回active/revoked历史、revoke revision/deep link与字段allowlist；anonymous从sealed ShareTxScope、Bearer photographer-revoke从TxAccountScope trusted adapter取得canonical FenceTxView，均LockCurrentAccount后进入同一kernel，禁止scope互相伪造；activation新ID/rev1、material revoke rev+1、replay不加号且active/revoked字段CHECK成立；permission/revision/target失败不reserve；closed kind/source_event_id/event generation unique/含plan_id固定名reciprocal deferred FK拒绝duplicate/mismatch/orphan/cross-plan；空库up/down成功，populated down是transactional migration并按core work→share event固定顺序取得SHARE table lock后才空检查/DDL，不依赖migrator advisory lock；writer-first稳定拒绝并全保留，down-first使writer整tx失败/rollback且无core orphan，reset/restore后re-up；work/event同tx一致且双实例单调无gap；claim-vs-remove无死锁；whole-tx rollback；archive/lead/token/receipt/昵称矩阵通过"
+    status: pending
+  - id: S7
+    action: "前端与安全收口：实现proposal/full/expired和工作台协作区、一次性secret、path redaction与security headers；创建package.json test:plan-share与planning-prototype-v2.test.mjs专属runner"
+    exit_signal: "CMD-003/CMD-006从本step结束起mandatory且有真实断言；v2 conformance及1600/1280/375/coarse/200%/keyboard/screen-reader证据齐全；access/error/panic/monitoring raw secret 0命中"
+    status: pending
+  - id: S8
+    action: "全矩阵验证：运行OpenAPI生成、全仓门禁、PG/media故障、query/DTO/DOM/bundle/log scope guards并落证据"
+    exit_signal: "A1-A24全部有可观察证据；make check通过；无placeholder、AI、customer delivery、price/business或secret漂移"
+    status: pending
+
+checks:
+  - item: "ShareGeneration的view_level、generation、eligibility_link_epoch_id与commitment不可原位修改；每plan/view最多一个active"
+    source: "design:§1.5+D3+A2"
+    status: pending
+  - item: "token格式严格为sp1+12-byte selector+32-byte secret；receipt为cr1+32-byte secret；服务端只存SHA-256 commitment"
+    source: "design:§1.5+§1.6+A1/A18"
+    status: pending
+  - item: "issue/rotate/claim由secure client先生成secret；server response/ledger/Web Storage均无secret；24h ledger TTL内exact replay，过期后按current state确定退化且不复制第二ledger"
+    source: "design:D2+§2.1-idempotency+A1/A18"
+    status: pending
+  - item: "proposal/full可同时active；full签发不撤销或升级proposal；rotate/revoke只作用目标view generation"
+    source: "design:D3+A2/A24"
+    status: pending
+  - item: "SharePolicyV1直接显式expiry闭区间为command DB now的[now+1h,now+366d]；默认规则为proposal/no-window desired=evaluated_at+30d、full window desired=ends_at+24h，再clamp到quote时闭区间；每个proposal/full view item返回独立policy+10m default_quote，UI提交绝对expires_at与explicit|quoted_default closed source；quoted default按view/window revision/policy/evaluated_at完整重算，t0读past-window下界、t1延迟提交、quote过期/漂移、两view默认不同、显式lower/upper equality/双侧越界有fixture；canonical exact replay不重算默认"
+    source: "design:§1.5/§2.1-Bearer-query+A2/A3"
+    status: pending
+  - item: "full issue仅允许scheduled|shot|selected|retouching|delivered|closed；不合资格409；full mutation按customer→order→slot→plan锁序pre-read+locked recheck"
+    source: "roadmap:§4.6/§4.7; design:§2.2-issue+A3"
+    status: pending
+  - item: "full access每次重检link epoch与live eligibility；GET snapshot与mutation锁后重检线性化已冻结；cancel/delete/unlink/relink/archive统一404且旧代不能复活/降级"
+    source: "design:D4+§2.2-issue+A4"
+    status: pending
+  - item: "proposal exact DTO/query/DOM无Shots、shot feedback、assignment；full也无notes/execution/private CRM/business字段"
+    source: "design:§1.4+A5/A6"
+    status: pending
+  - item: "PublicPlanScale的shot current派生、look/scene nullable隐藏；公开duration只由window ends-starts，PlanningBusinessFacts query=0"
+    source: "roadmap:§4.7; design:§1.4+A7"
+    status: pending
+  - item: "SharedAssetAccessRef绑定token generation+active moodboard binding+exact generation/checksum；不复用Bearer ref或泄露内部ID"
+    source: "design:D7+§2.2-shared-media+A8/A21"
+    status: pending
+  - item: "media content每次签ContentPermit/ReadPin并覆盖open-vs-release/GC、stale/corrupt与固定response headers"
+    source: "design:§2.2-shared-media+A21"
+    status: pending
+  - item: "匿名resolver只产sealed ValidatedShareContext/ShareTxScope，不构造AccountScope；feedback/claim/revoke要求current token、Origin、Idempotency-Key、expected revision及SharePolicyV1"
+    source: "roadmap:§5; design:D1+§2.1-capability+§2.2-security+A1/A22"
+    status: pending
+  - item: "proposal只允许整案feedback；full允许plan/Shot feedback；Bearer disposition不自动改brief/Shot且deep link准确"
+    source: "design:§1.4+§1.6+A12-A14"
+    status: pending
+  - item: "readiness claim快照item/default rule lead；on-site lead为空；active assignment通过core ReadinessRemovalGuard阻止remove/offer close且claim-vs-remove无死锁"
+    source: "roadmap:§4.9; design:D8/D11+§2.2-guard+A15/A16/A20"
+    status: pending
+  - item: "同offer最多一个active assignment；revoke后新claim产生新ID；token rotate/revoke/expire不删除assignment"
+    source: "design:§1.6+A17/A20"
+    status: pending
+  - item: "self-revoke只接受current full+receipt；rotate后新full+原receipt可撤销；nickname永不参与身份或投递"
+    source: "roadmap:§4.9/§5; design:§1.6+idempotency-table+A19"
+    status: pending
+  - item: "anonymous claim/self-revoke只从sealed ShareTxScope.PlanningReminderFence()取canonical FenceTxView，Bearer photographer-revoke只从TxAccountScope trusted adapter派生view；anonymous不得恢复AccountScope，Bearer不得构造share capability且无anonymous admission；两者均view.LockCurrentAccount→opaque LockedFenceTx→shared kernel业务锁/recheck→locked.ReserveGeneration；sealed API对reserve-before-lock/cross-tx/account token/same-fact duplicate runtime fail closed，受支持business-lock顺序由typed orchestration、depguard/compile fixture、锁序trace和双连接PG证明，不宣称侦测任意直接SQL；event ID由trusted app生成，closed assignment kind/source_event_id/event generation unique/含plan_id固定名reciprocal deferred FK保证account/generation/plan/ID/kind一一对应；duplicate/mismatch/orphan/cross-plan/rollback成立；空库migration round-trip成功，populated down禁止NoTransaction并在任何空检查/DDL前以core work→share event固定顺序取得SHARE table lock，不能把golang-migrate advisory lock当writer exclusion；writer先提交时down等锁后拒绝且全部原样，down先锁时writer阻塞并在schema删除后整tx rollback且无core work orphan，reset/restore后re-up；anonymous admission仅在anonymous tx，event/assignment/observation/ledger同tx；feedback/token lifecycle不取fence；本feature不创建reminder/digest/客户消息"
+    source: "design:§2.1-source-event/fence+§2.2-feedback/claim+A16/A17/A23"
+    status: pending
+  - item: "ShareAssignment discriminator全链路统一assignment_kind；readiness要求readiness_item_id非空/offer_id空，on_site_support相反；active要求revoked_at/revoked_by均为空，revoked要求二者均非空且actor为anonymous|photographer；claim新ID revision=1且activation event=1，material revoke严格+1且首次event=2，exact replay不加号，re-claim新ID/rev1，token/feedback/失败不改revision"
+    source: "design:D8+§2.1-schema/fence+§2.2-claim+A15-A20/A23"
+    status: pending
+  - item: "ShareInteractionObservation含policy_version并按kind exact constructor去重：full_open每generation一条、feedback按feedback ID、assignment按source-event ID；最终G3再按distinct plan/slot聚合且无正文/nickname/token/IP"
+    source: "roadmap:§4.8; design:D10+§2.1-observation+A23"
+    status: pending
+  - item: "web/API asset route path在access/error/panic/analytics/frontend monitoring中统一redact；raw secret/body canary 0命中"
+    source: "design:§2.2-security+A10"
+    status: pending
+  - item: "anonymous HTML/API/content具备no-referrer/private-no-store/CSP/nosniff；无第三方script/img/font/connect/telemetry"
+    source: "roadmap:§4.7; design:§2.2-security+A11"
+    status: pending
+  - item: "public share route不restore auth、不因authenticated跳转、不携cookie；sharedRequest credentials omit且token只在组件内存"
+    source: "design:§2.2-frontend+§2.3+A10/A11"
+    status: pending
+  - item: "anonymous invalid token/permission/receipt/archive/full eligibility统一status/body/header与dummy compare；时间guard按≥500样本/p95≤25%；planning-share-v1 archive effects精确且保留feedback/assignment"
+    source: "roadmap:§10.1; design:§2.2-security/archive+A9/A20"
+    status: pending
+  - item: "权威表中全部Bearer/anonymous operation/resource/canonical/response冻结；通过always-on attempt ceiling后unexpired exact replay callback=0，TTL过期重跑current state；跨token/target/body冲突，不同operation不交叉；失败无半写"
+    source: "design:§2.1-Bearer/Anonymous-canonical+A1/A2/A12/A14/A17/A19/A20"
+    status: pending
+  - item: "匿名mutation两层限流固定：platform-security trusted PG anchored fixed-window counter是无AccountScope业务数据的显式全局例外，跨实例/重启持久且故障503 fail-closed；IP按日HMAC轮换但同一active window不重置，最长1h grace内trusted resolver只在内存计算current/previous candidates，gate先upsert candidate-only guard rows、再以全局稳定顺序FOR UPDATE全部guards后选择仍active previous，否则才current；午夜前current与午夜后previous命中同一guard，双active为corruption 503，所有IP组合维度一致，23:59→00:00的10m outer/1h business剩余额度、ceiling/Retry-After/窗口后新预算/guard+counter cleanup有fixed-clock双实例fixture且DB无raw IP；每个请求含exact replay都计IP/token outer attempt且超限429不访问ledger；唯一CanonicalAnonymousMutationFrameV1 bytes及特殊字符escaping golden同时供ledger/admission hash，只有ledger first callback同tx写入的winner admission可免业务quota；并发exact/different-frame的quota/admission/ledger/callback计数与rollback语义按A22固定，admission expiry复制ledger expiry"
+    source: "roadmap:§5; design:§2.1-Anonymous-canonical+§2.2-security+A22"
+    status: pending
+  - item: "Bearer GET shares exact management projection支持刷新恢复双view effective reason/revision、per-view expiry policy/default quote与paged offers且无selector/secret；GET feedback与GET assignments分别冻结exact allowlist DTO、created/claimed-at+ID stable cursor、默认50/最大100、全部status/history规则与query bound，assignment提供revoke revision，二者排除receipt/commitment/selector/secret/internal account/CRM/generation identity；v2正式UI覆盖proposal/full独立active override、one-time secret与破坏性说明"
+    source: "roadmap:§5; design:§2.1-Bearer-query+§2.2-frontend+A24; prototype:v2/README"
+    status: pending
+  - item: "1600/1280/375、coarse≥44px、200% zoom、键盘、focus、screen reader、offline/409恢复均有证据"
+    source: "design:§1.3+§2.2-frontend+A24"
+    status: pending
+  - item: "OpenAPI/routes/dependencies/DTO/DOM/bundle负向扫描无AI、OCR、crawler、price/business/customer delivery、static/presigned media或secret storage"
+    source: "design:§1.2+§3.2+A5-A11"
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "cd backend && go test -p=1 ./... -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd frontend && npm run lint && npm run build"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd frontend && npm run test:plan-share"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "make generate && git diff --exit-code -- backend/internal/platform/httpapi/api.gen.go frontend/src/api/schema.d.ts"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "node --test frontend/scripts/planning-prototype-v2.test.mjs"
+      core: false
+      failure_handling: fix-or-block
+  evidence_required:
+    - design_review
+    - implementation_step_evidence
+    - postgresql_concurrency_and_fault_matrix
+    - media_permit_and_volume_matrix
+    - openapi_exact_dto_golden
+    - token_receipt_db_ledger_log_canary
+    - query_and_dependency_scope_guard
+    - sealed_share_capability_and_single_ledger_fixture
+    - exact_idempotency_operation_resource_response_fixture
+    - anonymous_rate_admission_replay_ceiling_fixture
+    - global_security_counter_cross_instance_restart_fixture
+    - global_security_counter_daily_digest_rollover_continuity_fixture
+    - crm_share_lock_order_concurrency_matrix
+    - core_readiness_guard_and_archive_ack_fixture
+    - expiry_default_clamp_boundary_and_canonical_replay_fixture
+    - expiry_per_view_quote_cross_request_clock_fixture
+    - bearer_feedback_assignment_exact_projection_pagination_golden
+    - assignment_source_event_schema_and_order_fixture
+    - assignment_state_revocation_check_constraint_fixture
+    - planning_share_reciprocal_fk_plan_identity_migration_fixture
+    - planning_share_populated_down_writer_exclusion_atomic_rejection_and_restore_fixture
+    - assignment_generation_fence_cross_instance_rollback_fixture
+    - assignment_actor_entrypoint_scope_compile_and_whole_tx_fixture
+    - assignment_revision_activation_revoke_reclaim_fixture
+    - interaction_observation_constructor_and_cross_generation_fixture
+    - anonymous_get_ref_upsert_repeatable_read_fixture
+    - security_header_and_rate_limit_probe
+    - frontend_test_plan_share_runner
+    - planning_prototype_v2_conformance_runner
+    - high_risk_evidence_manifest
+    - planning_reminder_fence_contention_metrics_baseline
+    - browser_responsive_accessibility_screenshots
+    - code_review
+    - qa_report
+    - acceptance_report
+    - roadmap_writeback
+  cleanliness:
+    debug_output: forbidden
+    temporary_todo_fixme: forbidden
+    commented_out_code: forbidden
+    unused_imports: forbidden
+    handwritten_openapi_dto: forbidden
+    placeholder_handler_or_static_fixture: forbidden
+    raw_token_receipt_or_free_text_log: forbidden
+    web_storage_secret: forbidden
+    third_party_anonymous_resource: forbidden
+    ai_provider_or_customer_delivery_dependency: forbidden

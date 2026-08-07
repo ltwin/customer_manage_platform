@@ -1,0 +1,124 @@
+feature: 2026-08-05-planning-reference-assets
+created: 2026-08-05
+
+steps:
+  - id: S1
+    action: "固化 rights matrix、typed keys、图片限制与 immutablefs seam；提取中性文件 primitive 并锁定 avatar key/bytes/manifest characterization"
+    exit_signal: "matrix exhaustive fixture 与 adversarial image corpus 先红后绿；avatar 既有 public interface、object bytes、key 和 manifest digest 零漂移"
+    status: pending
+  - id: S2
+    action: "落 planningmedia account-scoped schema、repository、typed local store、inventory/manifest 和空目标 module restore fixture"
+    exit_signal: "真实 PostgreSQL + 临时 volume 证明 exact generation、稳定 inventory、缺失/孤儿/corrupt 分类与全成全败 restore"
+    status: pending
+  - id: S3
+    action: "接通有界 spool、唯一 UploadCanonicalV1 claim、original/display 双 rendition和 physical orphan reconciliation"
+    exit_signal: "A1/A4-A6 全绿；同 key 只有一份 request identity，replay 的 full decode/publish callback 为 0；claim crash 与所有 DB/ledger/对象故障点都有确定回滚或 48h orphan 清理证据"
+    status: pending
+  - id: S4
+    action: "接通 post-core HolderProof、plan/shot binding、业务 AssetLease、独立 AssetReadPin permit、GC 与 ingestion prepared binding shared-tx seam"
+    exit_signal: "A2/A3/A7-A10/A16 全绿；bound/staged preview 分别使用 binding/upload-context pin；新/旧 Shot 按 coreResult 新 revision 签 proof；bind/permit/GC 共用锁序"
+    status: pending
+  - id: S5
+    action: "完成 OpenAPI、generated types、Bearer handlers、route/composition 与 display content headers；此时才注册 runtime route"
+    exit_signal: "五条 parent seam 均进入真实 application；400/401/404/409/413/415/500/503 与 account/revision/replay matrix 通过；无 placeholder/static route"
+    status: pending
+  - id: S6
+    action: "实现工作台参考素材 upload/gallery/matrix/binding/detach 与 staged/stale/released/corrupt 状态"
+    exit_signal: "真实 API 下 empty/loading/error/48h retry/rights rejection 可恢复；1600/1280/375、键盘和 200% zoom 可用且无工程评审文案"
+    status: pending
+  - id: S7
+    action: "把 TxAccountScope batch AssetAccessRef 接入 open-session stored RunInputSnapshot 与 375px reference sheet"
+    exit_signal: "30 Shot/100 binding 查询上界固定且 replay media query 为 0；coarse pointer/44px/200% zoom/强光高对比下只读 display，网络/素材失败不阻断 capture/skip 且不出现结构编辑"
+    status: pending
+  - id: S8
+    action: "全面验证与交付审计：A1-A16、avatar non-regression、module restore、对象/DB 并发、scope guard、全仓回归和清洁度"
+    exit_signal: "CMD-001 至 CMD-006 全绿；所有 evidence_required 齐全；无 AI/provider、匿名 route、object key、通用 BlobStore、重复 ledger、临时标记或 debug 输出"
+    status: pending
+
+checks:
+  - item: "source_class、rights_basis、purpose、target closed union 与 matrix_version=1 完整；client permitted_uses 不能进入 request 或放宽服务端裁决"
+    source: "design §2.1 rights matrix、A2-A3"
+    status: pending
+  - item: "PlanAsset/generation/rendition/rights immutable identity 与 asset revision 分离；original/display checksum、size、mime、dimension 可审计且 object key 不外露"
+    source: "design D2、§2.1 model、A1/A10"
+    status: pending
+  - item: "JPEG/PNG/static WebP、20MiB/12000/60MP/2560 与 metadata stripping 的待确认假设被实现为同一 versioned pipeline/contract"
+    source: "design A-IMG-1、§1.4、A4"
+    status: pending
+  - item: "upload 只有一份 operation/resource/canonical body/stored response；display 是 versioned 派生输出，不存在 preflight/final 双 claim；同 key same/different bytes/rights/plan、concurrent replay、claim crash 与 response-loss 行为确定"
+    source: "design D9、§2.1 canonical contract、A5"
+    status: pending
+  - item: "object/DB 事务边界不宣称 exactly-once；original/display/DB/ledger 每个故障点由 immutable resume 或 orphan reconciliation 收口"
+    source: "design D10、§2.2 upload、A6"
+    status: pending
+  - item: "HolderProof 在同一 TxAccountScope 验证 plan/Shot ownership、lifecycle 与 revision；planningmedia 不查询 core/customer/order/schedule 表"
+    source: "design D1、HolderProof ports、A7"
+    status: pending
+  - item: "binding/lease/permit 四层逐次重检 exact generation/rights/purpose；business AssetLease 必须有 binding，AssetReadPin 以 binding/upload context 二选一锚定；detach 不等于 delete，lease/pin 不等于授权"
+    source: "design D3-D7、§2.2 chain、A8-A10"
+    status: pending
+  - item: "48h staged/orphan rule、binding/permit/GC 共用 asset row lock、exact claim/delete/finalize、bound/staged read pin 与 late-delete 防护有固定时钟和双连接 fixture"
+    source: "design A-IMG-2、D11、A9"
+    status: pending
+  - item: "immutablefs 无领域语义；avatar typed store/pointer/inventory/manifest/backup lifecycle 未并入 planningmedia 或通用 BlobStore"
+    source: "design D12、§2.5、A12"
+    status: pending
+  - item: "gallery 与 RunInputSnapshot 使用普通/TxAccountScope 同源 batch projector；首次 refs 进入 stored response，replay query 为 0；Web/Run Mode 只读 display且失败不阻断现场执行"
+    source: "design D7-D8、§2.2 frontend、A10-A14"
+    status: pending
+  - item: "module inventory/adapter restore fixture 精确且全成全败；production schema-v2 package/rehearsal 明确保留给 hardening"
+    source: "design §2.2 restore、§3.2、A12"
+    status: pending
+  - item: "ingestion prepared port 不拥有 outer operation/response；core batch 后按新 revision 为新/旧 holder 批量签 proof；shared transaction rollback/replay 覆盖 core/media/ledger，且无匿名/AI/provider surface"
+    source: "design application ports、A15-A16"
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd backend && go test -p=1 ./internal/planningmedia ./internal/platform/immutablefs ./internal/avatarmedia ./internal/accountprofile ./internal/shootplanning ./internal/platform/idempotency ./internal/platform/httpapi -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd backend && go test -p=1 ./internal/planningmedia -run 'TestPostgres|TestSharedTx|TestGC|TestRestore|TestUploadFaults' -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run test:planning-media"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "cd frontend && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required:
+    - command_output
+    - rights_matrix_fixture
+    - adversarial_image_corpus
+    - object_store_fault_injection
+    - postgres_concurrency_fixture
+    - idempotency_replay_matrix
+    - inventory_restore_manifest
+    - avatar_characterization_diff
+    - api_response_and_header_matrix
+    - query_count_evidence
+    - browser_screenshots
+    - shared_tx_ingestion_probe
+    - scoped_negative_guard
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_task_markers: forbidden
+    commented_out_code: forbidden
+    duplicate_openapi_dto: forbidden
+    placeholder_handler: forbidden
+    public_static_media_route: forbidden
+    object_key_exposure: forbidden

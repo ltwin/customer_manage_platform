@@ -1,0 +1,184 @@
+feature: 2026-08-05-creative-planning-v1-hardening
+created: 2026-08-05
+
+steps:
+  - id: S1
+    action: "建立上游准入与基线：绑定七个accepted child、Goal evidence gates、真实generated types/routes/maintenance seams和最终build，运行positive/negative conformance并归属任何scope defect"
+    exit_signal: "planning_v1_dependency_conformance.json全部required row为conformant且CMD-001/现有baseline已归因；任一缺口时S2-S8 implementation diff为零并给出唯一owner"
+    status: pending
+  - id: S2
+    action: "冻结schema-v1 characterization并交付独立schema-v2七文件package model、writer、strict dual reader、metadata/digest/manifest exact decoder和old-reader拒绝矩阵"
+    exit_signal: "v1五件套成员/metadata/error/CLI/restore golden零漂移；新reader读v1/v2，冻结old reader对v2稳定非零拒绝；unknown/duplicate/member/tar adversarial corpus全绿"
+    status: pending
+  - id: S3
+    action: "交付完整restore preflight与固定状态机：deployment identity、digest、双manifest、missing/orphan、space、tool compatibility、stop/replace/migrate/validate/reopen及failure-stop"
+    exit_signal: "所有preflight拒绝case目标零写；真实PG+avatar+planning三资源成功exact restore；replace/migrate/validate断点不报告成功且writers保持stopped；A23-A25通过"
+    status: pending
+  - id: S4
+    action: "运行真实跨模块E2E与组合失败矩阵：摄取atomic commit、shot list、live Run Mode纠错、full协作/asset/认领、摄影师reminder、feedback深链和私有business draft"
+    exit_signal: "E2E-PLANNING-V1-001及DB/object/network/restart/late-delete/stale/fence失败场景在真实browser/API/PG/volume上全绿；无hardening私表绕过或上游补偿规则"
+    status: pending
+  - id: S5
+    action: "完成H1/H2、tracked v2五页、响应式与可访问性conformance：exact匿名负向、破坏性确认、正式文案、1600/1280/375/200%/keyboard/screen reader/coarse pointer"
+    exit_signal: "H1 paired baseline零提示/阻塞/额外业务mutation；H2 response/query/DTO/DOM/bundle/log零商业信号；五页状态与A14-A18全部有可重复证据"
+    status: pending
+  - id: S6
+    action: "验证并汇总G1-G3 evidence：strict sample decisions/window/cohort、G1 distinct live、G2 median+abandon、G3 distinct interaction/finalization Shot、stale和approval binding"
+    exit_signal: "stage JSON重算一致，JSON权威/Markdown派生；G1与G3 cohort分列；reopen/re-complete、decision/report/hash变化使旧索引stale/failed且不修改approval；A19-A21通过"
+    status: pending
+  - id: S7
+    action: "完成production-shaped backup/restore rehearsal与发布/回退门：真实镜像/PG/双卷、archive readiness/readback、schema-v2 restore tool保留和operator runbook"
+    exit_signal: "owner授权的planning_restore_rehearsal.json为passed且绑定package/tool/image/deployment hashes；release verifier按固定顺序passed；旧进程/marker/rollback/tool任一不合格均零promotion非passed"
+    status: pending
+  - id: S8
+    action: "全面验证与交付审计：重跑A1-A27、CMD-001至CMD-010适用门、Evidence Manifest/hash/sanitization、全仓make check、清洁度和文档/roadmap限定回写"
+    exit_signal: "最终build/config/deployment绑定一致；所有required artifacts存在且validator全绿；无placeholder/skip-force/debug/TODO/FIXME/secret/匿名商业信号；外部生产动作未被自动执行"
+    status: pending
+
+checks:
+  - item: "hardening只消费owner公开seam；七个依赖、stage report producer、Goal gate任一缺失都形成blocked_upstream_scope_defect，不在本feature暗补业务/安全/事务契约"
+    source: "design §1.2、§1.4-§1.5、A1"
+    status: pending
+  - item: "完整真实E2E覆盖摄取atomic commit→shot list→live Run Mode→full协作/asset/feedback/assignment→摄影师reminder→私有business draft及最终audit"
+    source: "roadmap item；design §2.2跨模块E2E、A2"
+    status: pending
+  - item: "断网、atomic rollback、result replay、captured→cleared、skipped→captured、wrong skip→void+新result、completed reopen规则都有history/current/zero-partial-write证据"
+    source: "roadmap item；design §2.2失败矩阵、A3-A5"
+    status: pending
+  - item: "H1无plan账号的客户/订单/报价/schedule/settings/reminder零提示零阻塞零额外planning业务mutation，内部G指标不进入摄影师UI"
+    source: "roadmap H1；design §2.2 H1/H2、A6"
+    status: pending
+  - item: "H2 proposal/full read+mutation、shared asset、query、DTO、DOM、bundle、log exact排除price/cost/business facts/经营时长/adjustment/draft及衍生信号"
+    source: "roadmap H2；design §2.2 H1/H2、A7-A10/A16"
+    status: pending
+  - item: "PublicPlanScale由core编辑、share公开读取、business只读消费；share business query为0，公开duration只来自execution window"
+    source: "roadmap §4.7/§4.10；design §2.2 H2、A9"
+    status: pending
+  - item: "token expired/revoked/rotated与archive匿名统一404；DB/object/restart/late-delete保持exact generation和media pin/lease/GC owner契约"
+    source: "roadmap item；design失败矩阵、A8/A10"
+    status: pending
+  - item: "feedback disposition后Shot深链/focus、assignment reminder recipient/freshness、business stale/apply分别经owner真实路径验证"
+    source: "design主E2E、A11-A13"
+    status: pending
+  - item: "tracked v2五页矩阵按roadmap→OpenAPI→confirmed child design→prototype优先级；empty/loading/error/stale/expired/断网均落正式route"
+    source: "prototype README；design §2.2 prototype、A14"
+    status: pending
+  - item: "unlink/archive/remove executed Shot/rotate-revoke/revoke assignment/apply draft均显示server-current副作用、二次确认、revision漂移拒绝和focus return"
+    source: "prototype README；roadmap item；design §2.2、A15"
+    status: pending
+  - item: "正式UI无评审注释/契约/fail-closed/G指标；planning list无business price badge，business只在私有detail tab"
+    source: "prototype README；design §2.2、A16"
+    status: pending
+  - item: "1600/1280/375、coarse pointer、200% zoom、keyboard、screen reader、强光/对比、focus return和44px target完整；Run Mode移动端execution-only"
+    source: "roadmap item；design浏览器矩阵、A17-A18"
+    status: pending
+  - item: "ObservationSampleDecision覆盖所有candidate并带closed reason/revision/fact refs；duplicate shoot单一eligible，stage-1与stage-2 cohort不混用"
+    source: "roadmap §8；design §2.1 evidence、A19-A20"
+    status: pending
+  - item: "G1按distinct eligible plan的live RunModeSession；G2只对successful active_seconds中位数并独立报告abandon"
+    source: "roadmap §8.1；design §2.1、A19"
+    status: pending
+  - item: "G3互动按distinct plan/slot；准备遗漏分母为finalization current distinct Shot、分子为绑定event refs所属distinct Shot，不按event或notes重复推断"
+    source: "roadmap §4.8/§8.2；design §2.1、A20"
+    status: pending
+  - item: "completed后纠错必须reopen/re-complete；新finalization revision、decision/report bytes或approval hash mismatch使旧report stale/failed；JSON权威、Markdown派生"
+    source: "roadmap §8；design evidence编排、A21"
+    status: pending
+  - item: "schema-v1仍是五件套且writer/reader/CLI/error/restore characterization兼容；schema-v2固定七件套，new reader双读、old reader明确拒绝v2"
+    source: "roadmap §4.11；design D2-D4/§2.1 package、A22"
+    status: pending
+  - item: "schema-v2 metadata/deployment identity/payload digests/双manifest/member types/tar safety exact；staging/source unknown/duplicate/missing/orphan及space/tool mismatch在destructive前拒绝；v2不得因待修复target内容损坏而拒绝，v1非空planning target例外拒绝"
+    source: "roadmap §4.11；design §2.1 preflight、A23"
+    status: pending
+  - item: "v1 restore对非空planning target fail-closed；v2 restore固定preflight→stop writes→replace→migrate→validate→reopen，任何post-stop失败保持writers stopped且不报告成功"
+    source: "design D5-D7/restore状态机、A24-A25"
+    status: pending
+  - item: "production-shaped rehearsal使用真实镜像/PG/avatar/planning volumes并绑定deployment/package/tool/image hash；模块fixture不能替代"
+    source: "roadmap §4.11；design §2.2 rehearsal、A24"
+    status: pending
+  - item: "release顺序为additive schema→兼容binary→旧进程退出→trusted inventory→planningctl相邻CAS/readback→真实writer/participant；hardening只验证不执行"
+    source: "roadmap §9；design发布与回退、A26"
+    status: pending
+  - item: "rollback不schema down/降marker；回退app理解active marker与additive schema，v2-capable restore tool/image独立保留"
+    source: "roadmap §4.11/§9；design发布与回退、A26"
+    status: pending
+  - item: "v2主体不继续堆入961/543/1941行v1 helpers；使用planningbackup/planninghardening职责目录，legacy adapter由characterization守护"
+    source: "design §2.5"
+    status: pending
+  - item: "全程无AI/知识库/provider、账号export媒体、archive marker新造、planning-share-v1改写、reminder绕过或自动生产动作"
+    source: "design §1.2、Non-Automatic Actions"
+    status: pending
+
+dod:
+  commands:
+    - id: CMD-001
+      command: "make generate-check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-002
+      command: "cd backend && go test -p=1 ./internal/shootplanning/... ./internal/planningmedia/... ./internal/planshare/... ./internal/reminder/... ./internal/order ./internal/schedule ./internal/settings ./internal/platform/httpapi ./cmd/server ./cmd/planningctl -count=1 -parallel=1"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-003
+      command: "cd frontend && npm run test:shoot-planning"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-004
+      command: "cd frontend && npm run test:shoot-planning:e2e"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-005
+      command: "cd frontend && npm run test:prototype && npm run build && npm run lint"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-006
+      command: "python3 scripts/lib/planningbackup/selftest.py"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-007
+      command: "bash scripts/test-planning-ops-backup-restore-safety.sh"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-008
+      command: "make check"
+      core: true
+      failure_handling: fix-or-block
+    - id: CMD-009
+      command: "./scripts/rehearse-planning-backup-restore.sh --config <owner-approved-production-shaped-config> --evidence <private-evidence-dir>"
+      core: false
+      failure_handling: fix-or-block
+    - id: CMD-010
+      command: "./scripts/verify-planning-v1-release-readiness.sh --evidence <evidence-manifest> --json"
+      core: true
+      failure_handling: fix-or-block
+  evidence_required:
+    - planning_v1_dependency_conformance
+    - planning_v1_conformance_matrix
+    - planning_v1_e2e_and_failure_results
+    - planning_v1_h1_h2_negative_matrix
+    - planning_v1_prototype_responsive_a11y_matrix
+    - observation_sample_decision_digest
+    - stage_1_g1_g2_canonical_report_and_validator
+    - stage_2_g3_canonical_report_and_validator
+    - planning_v1_evidence_index_and_stale_matrix
+    - schema_v1_old_new_writer_reader_characterization
+    - schema_v2_package_golden_and_adversarial_corpus
+    - planning_restore_preflight_zero_mutation_oracle
+    - planning_restore_stage_and_failure_stop_matrix
+    - planning_restore_production_shaped_rehearsal
+    - planning_v1_release_and_rollback_readiness
+    - browser_1600_1280_375_zoom_keyboard_screenreader_coarse_evidence
+    - evidence_manifest
+    - sanitization_report
+    - diff_summary
+  cleanliness:
+    debug_output: forbidden
+    temporary_task_markers: forbidden
+    commented_out_code: forbidden
+    unused_imports: forbidden
+    duplicate_openapi_dto: forbidden
+    placeholder_or_fake_pass: forbidden
+    skip_or_force_preflight: forbidden
+    secret_or_production_data_fixture: forbidden
+    anonymous_business_signal: forbidden
+    automatic_release_or_cutover: forbidden

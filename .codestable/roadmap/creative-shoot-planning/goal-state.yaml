@@ -1,0 +1,106 @@
+roadmap: creative-shoot-planning
+status: running
+baseline_ref: 64e1105c0e08b474851431fa80f2ec3d595a85a5
+driver_kind: host-agent
+driver_id: "/root/creative_shoot_planning_goal_driver"
+execution_confirmation_id: "0cfee048-fd76-491a-925c-caa8bf9eb434"
+acceptance_authorization: approved
+acceptance_authorization_ref: "approval-report.md#goal-acceptance"
+commit_authorization: approved
+commit_authorization_ref: "approval-report.md#goal-commits"
+handoff_reason: ""
+handoff_next: ""
+current_feature_index: 0
+workspace:
+  mode: new-worktree-from-develop
+  current_branch: feat/creative-shoot-planning
+  required_base: develop
+  requested_branch: feat/creative-shoot-planning
+  worktree_path: /Users/samson/workspace/my_project/customer_manage_platform/.worktrees/creative-shoot-planning
+  reason: "owner已批准Option A；独立worktree已从develop创建，本Epic批准基线须完成scope attribution迁移与核验后方可派发"
+external_checkpoints:
+  stage-1-evidence-go:
+    before_feature: shoot-plan-crm-integration
+    status: pending
+    runner: .codestable/roadmap/creative-shoot-planning/goal-tools/planning-evidence-dispatch-gate.py
+  stage-2-evidence-go:
+    before_feature: plan-business-feedback
+    status: pending
+    runner: .codestable/roadmap/creative-shoot-planning/goal-tools/planning-evidence-dispatch-gate.py
+  production-shaped-rehearsal:
+    before_feature_acceptance: creative-planning-v1-hardening
+    status: pending
+    reason: "需要owner提供受控非生产环境与独立操作授权；Goal execution不包含production动作"
+features:
+  - slug: shoot-plan-core
+    roadmap_item: shoot-plan-core
+    feature_dir: .codestable/features/2026-08-05-shoot-plan-core
+    design: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-design.md
+    checklist: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-checklist.yaml
+    review: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-review.md
+    qa: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-qa.md
+    acceptance: .codestable/features/2026-08-05-shoot-plan-core/shoot-plan-core-acceptance.md
+    status: pending
+  - slug: planning-reference-assets
+    roadmap_item: planning-reference-assets
+    feature_dir: .codestable/features/2026-08-05-planning-reference-assets
+    design: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-design.md
+    checklist: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-checklist.yaml
+    review: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-review.md
+    qa: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-qa.md
+    acceptance: .codestable/features/2026-08-05-planning-reference-assets/planning-reference-assets-acceptance.md
+    status: pending
+  - slug: plan-ingestion-capture
+    roadmap_item: plan-ingestion-capture
+    feature_dir: .codestable/features/2026-08-05-plan-ingestion-capture
+    design: .codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-design.md
+    checklist: .codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-checklist.yaml
+    review: .codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-review.md
+    qa: .codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-qa.md
+    acceptance: .codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-acceptance.md
+    status: pending
+  - slug: shoot-plan-crm-integration
+    roadmap_item: shoot-plan-crm-integration
+    feature_dir: .codestable/features/2026-08-05-shoot-plan-crm-integration
+    design: .codestable/features/2026-08-05-shoot-plan-crm-integration/shoot-plan-crm-integration-design.md
+    checklist: .codestable/features/2026-08-05-shoot-plan-crm-integration/shoot-plan-crm-integration-checklist.yaml
+    review: .codestable/features/2026-08-05-shoot-plan-crm-integration/shoot-plan-crm-integration-review.md
+    qa: .codestable/features/2026-08-05-shoot-plan-crm-integration/shoot-plan-crm-integration-qa.md
+    acceptance: .codestable/features/2026-08-05-shoot-plan-crm-integration/shoot-plan-crm-integration-acceptance.md
+    status: pending
+  - slug: plan-share-collaboration
+    roadmap_item: plan-share-collaboration
+    feature_dir: .codestable/features/2026-08-05-plan-share-collaboration
+    design: .codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-design.md
+    checklist: .codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-checklist.yaml
+    review: .codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-review.md
+    qa: .codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-qa.md
+    acceptance: .codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-acceptance.md
+    status: pending
+  - slug: plan-assignment-reminders
+    roadmap_item: plan-assignment-reminders
+    feature_dir: .codestable/features/2026-08-05-plan-assignment-reminders
+    design: .codestable/features/2026-08-05-plan-assignment-reminders/plan-assignment-reminders-design.md
+    checklist: .codestable/features/2026-08-05-plan-assignment-reminders/plan-assignment-reminders-checklist.yaml
+    review: .codestable/features/2026-08-05-plan-assignment-reminders/plan-assignment-reminders-review.md
+    qa: .codestable/features/2026-08-05-plan-assignment-reminders/plan-assignment-reminders-qa.md
+    acceptance: .codestable/features/2026-08-05-plan-assignment-reminders/plan-assignment-reminders-acceptance.md
+    status: pending
+  - slug: plan-business-feedback
+    roadmap_item: plan-business-feedback
+    feature_dir: .codestable/features/2026-08-05-plan-business-feedback
+    design: .codestable/features/2026-08-05-plan-business-feedback/plan-business-feedback-design.md
+    checklist: .codestable/features/2026-08-05-plan-business-feedback/plan-business-feedback-checklist.yaml
+    review: .codestable/features/2026-08-05-plan-business-feedback/plan-business-feedback-review.md
+    qa: .codestable/features/2026-08-05-plan-business-feedback/plan-business-feedback-qa.md
+    acceptance: .codestable/features/2026-08-05-plan-business-feedback/plan-business-feedback-acceptance.md
+    status: pending
+  - slug: creative-planning-v1-hardening
+    roadmap_item: creative-planning-v1-hardening
+    feature_dir: .codestable/features/2026-08-05-creative-planning-v1-hardening
+    design: .codestable/features/2026-08-05-creative-planning-v1-hardening/creative-planning-v1-hardening-design.md
+    checklist: .codestable/features/2026-08-05-creative-planning-v1-hardening/creative-planning-v1-hardening-checklist.yaml
+    review: .codestable/features/2026-08-05-creative-planning-v1-hardening/creative-planning-v1-hardening-review.md
+    qa: .codestable/features/2026-08-05-creative-planning-v1-hardening/creative-planning-v1-hardening-qa.md
+    acceptance: .codestable/features/2026-08-05-creative-planning-v1-hardening/creative-planning-v1-hardening-acceptance.md
+    status: pending

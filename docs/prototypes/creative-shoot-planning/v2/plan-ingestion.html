@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>摄取工作台 · 拍摄策划</title>
+<link rel="stylesheet" href="planning.css">
+<style>
+.ing { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.15fr); gap: var(--space-5); align-items: start; }
+.steps { display: flex; gap: var(--space-2); margin-bottom: var(--space-5); flex-wrap: wrap; }
+.step {
+  display: flex; align-items: center; gap: var(--space-2);
+  font-size: var(--text-xs); color: var(--muted);
+  padding: 6px var(--space-3); border-radius: var(--radius-pill);
+  border: 1px solid var(--border); background: var(--surface);
+}
+.step b { font-family: var(--font-mono); font-size: 10px; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--border-soft); color: var(--muted); }
+.step.is-on { border-color: var(--accent); color: var(--fg); background: color-mix(in oklab, var(--accent), var(--surface) 93%); }
+.step.is-on b { background: var(--accent); color: var(--accent-on); }
+.step.is-done b { background: var(--success); color: var(--accent-on); }
+
+.paste { width: 100%; min-height: 340px; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.75;
+  padding: var(--space-4); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); resize: vertical; }
+.paste:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); background: var(--surface); }
+
+.cand { border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); padding: var(--space-4); }
+.cand + .cand { margin-top: var(--space-3); }
+.cand.is-dropped { background: var(--bg); border-style: dashed; }
+.cand-top { display: grid; grid-template-columns: 22px 1fr auto; gap: var(--space-3); align-items: start; }
+.cand-top input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); margin-top: 3px; }
+.cand-src { font-family: var(--font-mono); font-size: 10px; color: var(--muted); letter-spacing: .06em; }
+.cand-text { font-size: var(--text-sm); color: var(--fg); margin: 4px 0 8px; }
+.cand-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2) var(--space-4); }
+.cand-fields label { display: block; }
+.cand-fields span { display: block; font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 3px; }
+.cand-fields input, .cand-fields select {
+  width: 100%; padding: 6px var(--space-2); font-size: var(--text-xs);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+}
+.cand-fields input:focus, .cand-fields select:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
+
+.tick { display: flex; align-items: baseline; gap: var(--space-2); }
+.tick b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700; }
+.bar { height: 6px; border-radius: 3px; background: var(--border-soft); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+
+@media (max-width: 980px) { .ing { grid-template-columns: 1fr; } }
+
+.toast {
+  position: fixed; left: 50%; bottom: var(--space-6); transform: translate(-50%, 16px);
+  background: var(--fg); color: var(--bg); padding: 10px var(--space-5);
+  border-radius: var(--radius-pill); font-size: var(--text-xs);
+  box-shadow: var(--elev-raised); opacity: 0; pointer-events: none; z-index: 90;
+  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+}
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<div class="app" data-od-id="ingestion-page">
+
+<aside class="rail" data-od-id="rail">
+  <a class="brand" href="index.html" data-od-id="brand">
+    <span class="brand-mark">影</span>
+    <span><b>影约 CRM</b><small>摄影师工作台</small></span>
+  </a>
+  <p class="rail-label">经营</p>
+  <a class="rail-link" href="../dashboard.html"><span>今日概览</span></a>
+  <a class="rail-link" href="../v2/calendar.html"><span>档期</span></a>
+  <p class="rail-label">创作</p>
+  <a class="rail-link" href="planning-workspace.html" aria-current="page"><span>拍摄策划</span><em class="cnt num">5</em></a>
+  <div class="rail-foot"><p>原型 · 首版最小闭环</p><p>不自动抓取 · 不 OCR</p></div>
+</aside>
+
+<div class="main">
+  <header class="topbar" data-od-id="topbar">
+    <div>
+      <p class="crumb">创作 / 拍摄策划 / 摄取聊天记录</p>
+      <h1>把聊天记录变成镜头表</h1>
+    </div>
+    <div class="row">
+      <a class="btn btn-secondary btn-sm" href="planning-workspace.html">返回策划</a>
+      <span class="tag tag-accent" id="keptChip" data-od-id="chip-kept">已选 8 条</span>
+      <a class="btn btn-primary btn-sm" href="#commit-summary" data-od-id="btn-goto-commit">去确认保存</a>
+    </div>
+  </header>
+
+  <div class="canvas">
+    <div class="steps" data-od-id="ingestion-steps">
+      <span class="step is-done"><b>1</b>粘贴原文 / 上传参考图</span>
+      <span class="step is-on"><b>2</b>确认候选与层级</span>
+      <span class="step"><b>3</b>确认保存</span>
+    </div>
+
+    <div class="row" style="margin-bottom:var(--space-4);gap:var(--space-3)" data-od-id="target-plan">
+      <label class="hint" for="targetPlan" style="font-weight:600">保存到哪份策划</label>
+      <select id="targetPlan" style="padding:7px var(--space-3);border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);max-width:340px">
+        <option selected>魔女的旅行 · 伊蕾娜双 look（第 7 版）</option>
+        <option>废墟机娘 · 银灰甲胄（第 4 版）</option>
+        <option>夏日制服 · 天台逆光（第 2 版）</option>
+        <option>＋ 新建空白策划</option>
+      </select>
+    </div>
+
+    <div class="note" style="margin-bottom:var(--space-5)">目标是把已经聊完的内容低成本搬进策划，而不是重新填一遍表单。本页不调用任何模型：切分只按行与空行做结构化，链接原样保留，绝不自动打开网页、不做 OCR。</div>
+
+    <div class="ing">
+      <!-- 左：原文 -->
+      <div class="stack">
+        <div class="panel" data-od-id="ingest-source">
+          <div class="panel-head">
+            <div><h3>聊天原文</h3><p>粘贴后按行与空行切分为候选，行号保留为来源引用。</p></div>
+            <span class="tag tag-accent">已解析 11 段</span>
+          </div>
+          <label class="sr-only" for="pasteBox">粘贴聊天记录</label>
+          <textarea class="paste" id="pasteBox" spellcheck="false">唐糖：晨雾那种感觉！石板路走过去回头那一下
+唐糖：斗篷要带起来一点
+我：好，那这条算 01 镜。侧逆光 + 银反打下颌，不上闪
+
+唐糖：胸针一定要拍特写，我自己带
+我：俯拍放地图上，硬光小束光出金属高光
+
+唐糖：下午换正装，阁楼窗前站着
+唐糖：https://www.xiaohongshu.com/explore/aaa111 这个妆造参考
+唐糖：还有这个 https://weibo.com/x/yyy 灰之魔女的发型
+
+我：正装记得要那顶梳好型的假发
+唐糖：假发我带
+
+（图片 3 张）
+唐糖：去年那组雾大到看不清衣服，这次别太多雾
+
+唐糖：
+我：旧书店那边我问一下 15:00 能不能进
+唐糖：我去问吧，我认识老板</textarea>
+          <div class="row-between" style="margin-top:var(--space-3)">
+            <span class="hint">支持微信 / QQ / Telegram 直接粘贴，行号会保留为来源引用</span>
+            <button class="btn btn-secondary btn-sm" type="button" id="btnReparse">重新解析</button>
+          </div>
+        </div>
+
+        <div class="panel" data-od-id="ingest-images">
+          <div class="panel-head"><div><h3>参考图片 3 张</h3><p>上传时需要写清楚来源；在你确认保存前，它们不会挂到策划上。</p></div></div>
+          <div class="grid-3">
+            <figure>
+              <div class="ph-img"><span>妆面参考</span></div>
+              <p class="hint" style="margin-top:6px">customer_supplied · 展示同意</p>
+            </figure>
+            <figure>
+              <div class="ph-img"><span>发型截图</span></div>
+              <p class="hint" style="margin-top:6px">anime_screenshot · 仅展示</p>
+            </figure>
+            <figure>
+              <div class="ph-img"><span>巷道光线</span></div>
+              <p class="hint" style="margin-top:6px">anime_screenshot · 仅展示</p>
+            </figure>
+          </div>
+          <div class="note note-warn" style="margin-top:var(--space-4)">如果保存中途失败，图片会原样留在这里，48 小时内可以重新保存，<b>不会产生半条镜头</b>。</div>
+        </div>
+
+        <div class="proto-note" data-od-id="ingest-timing">
+          <b>建案计时（内部产品证据）</b>：首次粘贴至今有效时长 6:12；连续 5 分钟无交互不累计，切后台与刷新恢复仍归入同一策划。该指标仅用于验证「摄取比手填快」，正式产品不向摄影师显示任何计时或达标提示（红线 H1）。
+        </div>
+      </div>
+
+      <!-- 右：候选 -->
+      <div class="stack">
+        <div class="panel" data-od-id="candidate-shots">
+          <div class="panel-head">
+            <div><h3>内容候选 6 条</h3><p>勾选保留，可改层级与规范标签；不勾选即记为你显式丢弃。</p></div>
+            <button class="btn btn-ghost btn-sm" type="button" data-toast="已全选">全选</button>
+          </div>
+
+          <div class="cand" data-od-id="cand-1">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留候选 1">
+              <div>
+                <p class="cand-src">来源行 1–3</p>
+                <p class="cand-text">晨雾石板路走过去回头那一下，斗篷带起来。侧逆光 + 银反打下颌，不上闪。</p>
+              </div>
+              <span class="tag tag-accent">镜头层</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>标题</span><input type="text" value="石板路 · 回望"></label>
+              <label><span>取景</span><select><option selected>medium</option><option>full</option><option>wide</option></select></label>
+              <label><span>灯光方向</span><select><option selected>side</option><option>back</option><option>natural</option></select></label>
+              <label><span>灯光质感</span><select><option selected>soft</option><option>hard</option></select></label>
+              <label><span>色调</span><select><option selected>cool</option><option>warm</option><option>neutral</option></select></label>
+              <label><span>类型</span><select><option selected>narrative</option><option>portrait</option></select></label>
+            </div>
+          </div>
+
+          <div class="cand" data-od-id="cand-2">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留候选 2">
+              <div>
+                <p class="cand-src">来源行 5–6</p>
+                <p class="cand-text">胸针特写，客户自带；俯拍放地图上，硬光小束光出金属高光。</p>
+              </div>
+              <span class="tag tag-accent">镜头层</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>标题</span><input type="text" value="行李特写 · 星屑胸针"></label>
+              <label><span>取景</span><select><option selected>extreme_closeup</option><option>closeup</option></select></label>
+              <label><span>灯光方向</span><select><option selected>top</option><option>side</option></select></label>
+              <label><span>灯光质感</span><select><option selected>hard</option><option>soft</option></select></label>
+              <label><span>色调</span><select><option selected>neutral</option><option>warm</option></select></label>
+              <label><span>类型</span><select><option selected>detail</option><option>environment</option></select></label>
+            </div>
+          </div>
+
+          <div class="cand" data-od-id="cand-3">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留候选 3">
+              <div>
+                <p class="cand-src">来源行 8</p>
+                <p class="cand-text">下午换正装，阁楼窗前站着。</p>
+              </div>
+              <span class="tag tag-accent">镜头层</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>标题</span><input type="text" value="阁楼窗前 · 正装立像"></label>
+              <label><span>取景</span><select><option selected>medium_closeup</option><option>medium</option></select></label>
+              <label><span>灯光方向</span><select><option selected>unknown（不填）</option><option>front</option><option>side</option></select></label>
+              <label><span>灯光质感</span><select><option selected>soft</option><option>mixed</option></select></label>
+              <label><span>色调</span><select><option selected>unknown（不填）</option><option>cool</option></select></label>
+              <label><span>类型</span><select><option selected>portrait</option><option>narrative</option></select></label>
+            </div>
+            <p class="hint" style="margin-top:var(--space-2)">原文没说灯光方向和色调，保持 unknown。系统不会替你猜。</p>
+          </div>
+
+          <div class="cand" data-od-id="cand-4">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留候选 4">
+              <div>
+                <p class="cand-src">来源行 14</p>
+                <p class="cand-text">去年那组雾大到看不清衣服，这次别太多雾。</p>
+              </div>
+              <span class="tag">brief 层</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>归入层级</span><select><option selected>创作 brief（追加）</option><option>镜头层</option><option>准备项</option></select></label>
+            </div>
+          </div>
+
+          <div class="cand" data-od-id="cand-5">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留候选 5">
+              <div>
+                <p class="cand-src">来源行 11–12</p>
+                <p class="cand-text">正装假发（已梳型）由客户带。</p>
+              </div>
+              <span class="tag tag-ok">准备项</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>层级</span><select><option selected>妆造</option><option>场地</option><option>道具与器材</option></select></label>
+              <label><span>预期负责人</span><select><option selected>客户（原文：假发我带）</option><option>我</option><option>暂不指定</option></select></label>
+              <label><span>是否必需</span><select><option selected>必需</option><option>可选</option></select></label>
+              <label><span>客户认领后的默认核对提前量</span><select><option selected>3 天</option><option>1 天</option><option>使用账号默认</option></select></label>
+            </div>
+            <p class="hint" style="margin-top:var(--space-2)">「预期负责人」和提前量只是未来认领的默认值；客户在分享页正式认领后才生成摄影师核对提醒。</p>
+          </div>
+
+          <div class="cand" data-od-id="cand-6">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留候选 6">
+              <div>
+                <p class="cand-src">来源行 17</p>
+                <p class="cand-text">旧书店 15:00 时段由客户去问（原文：我去问吧，我认识老板）。</p>
+              </div>
+              <span class="tag tag-ok">准备项</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>层级</span><select><option selected>场地</option><option>妆造</option><option>道具与器材</option></select></label>
+              <label><span>预期负责人</span><select><option selected>客户</option><option>我</option><option>暂不指定</option></select></label>
+              <label><span>是否必需</span><select><option selected>必需</option><option>可选</option></select></label>
+              <label><span>客户认领后的默认核对提前量</span><select><option selected>3 天</option><option>1 天</option><option>使用账号默认</option></select></label>
+            </div>
+            <p class="hint" style="margin-top:var(--space-2)">未正式认领时不产生分工提醒；现场协助类认领也不设到期提醒。</p>
+          </div>
+        </div>
+
+        <div class="panel" data-od-id="candidate-links">
+          <div class="panel-head"><div><h3>参考链接候选 2 条</h3><p>纯链接是<b>候选</b>，不是被丢弃的内容。</p></div></div>
+          <div class="cand">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留链接 1">
+              <div>
+                <p class="cand-src">来源行 9 · xiaohongshu.com</p>
+                <p class="cand-text">妆造参考</p>
+              </div>
+              <span class="tag tag-unknown">链接待整理</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>归属</span><select><option selected>策划级参考</option><option>第 03 镜参考</option></select></label>
+              <label><span>标注</span><input type="text" value="妆造参考（客户提供）"></label>
+            </div>
+          </div>
+          <div class="cand">
+            <div class="cand-top">
+              <input type="checkbox" checked aria-label="保留链接 2">
+              <div>
+                <p class="cand-src">来源行 10 · weibo.com</p>
+                <p class="cand-text">灰之魔女的发型</p>
+              </div>
+              <span class="tag tag-unknown">链接待整理</span>
+            </div>
+            <div class="cand-fields" style="margin-top:var(--space-3)">
+              <label><span>归属</span><select><option selected>第 03 镜参考</option><option>策划级参考</option></select></label>
+              <label><span>标注</span><input type="text" value="正装发型参考"></label>
+            </div>
+          </div>
+          <p class="hint" style="margin-top:var(--space-3)">链接只保存 URL 与你写的标注，首版不抓取标题、不下载图片、不解析页面。</p>
+        </div>
+
+        <div class="panel panel-flat" data-od-id="candidate-dropped">
+          <div class="panel-head">
+            <div><h3>已丢弃 4 条</h3><p>每条都能看到原因与原文，保存前可随时恢复。</p></div>
+            <button class="btn btn-ghost btn-sm" type="button" id="toggleDropped" aria-expanded="false">展开</button>
+          </div>
+          <div id="droppedList" hidden>
+            <div class="cand is-dropped">
+              <div class="cand-top">
+                <input type="checkbox" aria-label="恢复此条">
+                <div><p class="cand-src">来源行 15 · 原文为空行</p><p class="cand-text muted">（空）</p></div>
+                <span class="tag tag-unknown">blank</span>
+              </div>
+            </div>
+            <div class="cand is-dropped">
+              <div class="cand-top">
+                <input type="checkbox" aria-label="恢复此条">
+                <div><p class="cand-src">来源行 4 · 与候选 1 高度重复</p><p class="cand-text muted">「斗篷要带起来一点」</p></div>
+                <span class="tag tag-unknown">duplicate</span>
+              </div>
+            </div>
+            <div class="cand is-dropped">
+              <div class="cand-top">
+                <input type="checkbox" aria-label="恢复此条">
+                <div><p class="cand-src">来源行 13 · 系统消息</p><p class="cand-text muted">「（图片 3 张）」</p></div>
+                <span class="tag tag-unknown">unsupported</span>
+              </div>
+            </div>
+            <div class="cand is-dropped">
+              <div class="cand-top">
+                <input type="checkbox" aria-label="恢复此条">
+                <div><p class="cand-src">来源行 16 · 由我手动丢弃（内容已被候选 6 覆盖）</p><p class="cand-text muted">「旧书店那边我问一下 15:00 能不能进」</p></div>
+                <span class="tag tag-unknown">手动丢弃</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel" id="commit-summary" data-od-id="commit-summary">
+          <div class="panel-head"><div><h3>保存摘要</h3><p>以下内容会一次性写入策划；要么全部成功，要么全部不写。</p></div></div>
+          <dl class="kv stack" style="gap:var(--space-3)">
+            <div><dt>新增镜头</dt><dd>3 条（追加到第 13–15 位）</dd></div>
+            <div><dt>brief 追加</dt><dd>1 段</dd></div>
+            <div><dt>新增准备项</dt><dd>2 条（均标为必需）</dd></div>
+            <div><dt>参考链接</dt><dd>2 条（保留原链接，未解析）</dd></div>
+            <div><dt>图片绑定</dt><dd>3 张（含 1 张客户提供）</dd></div>
+            <div><dt>策划版本</dt><dd>第 <span class="num">7</span> 版 → 保存后第 <span class="num">8</span> 版</dd></div>
+          </dl>
+          <div class="divider"></div>
+          <div class="row">
+            <button class="btn btn-primary" type="button" id="commitBtn">确认保存 8 条</button>
+            <button class="btn btn-secondary" type="button" data-toast="已放弃本次摄取，原文保留在草稿箱">放弃</button>
+          </div>
+          <p class="hint" style="margin-top:var(--space-3)">如果这份策划刚好在别处被改过，保存会先停下来让你看一眼差异，不会覆盖别处的修改。</p>
+          <div class="proto-note" style="margin-top:var(--space-3)">契约：提交为单事务，携带 expected plan revision；revision 不匹配返回 409，客户端重新拉取差异。图片绑定失败整体回滚，素材保持 unattached 并进入 48h GC 宽限期。</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="confirm-mask" id="reparseConfirm" role="dialog" aria-modal="true" aria-labelledby="reparseTitle">
+  <div class="confirm-card">
+    <h3 id="reparseTitle">重新解析原文？</h3>
+    <p>你已经编辑过 3 条候选（改过标题或标签）。重新解析会按新原文重建候选列表，<b>已编辑的候选会保留你的修改</b>，只有未动过的候选会被替换。</p>
+    <div class="row">
+      <button class="btn btn-secondary btn-sm" type="button" id="btnReparseCancel">先不解析</button>
+      <button class="btn btn-primary btn-sm" type="button" id="btnReparseOk">重新解析</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var toastEl = document.getElementById('toast');
+  var timer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('is-on');
+    clearTimeout(timer);
+    timer = setTimeout(function () { toastEl.classList.remove('is-on'); }, 2600);
+  }
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-toast]');
+    if (t) toast(t.getAttribute('data-toast'));
+  });
+
+  /* 勾选数量 → 保存按钮与顶栏计数 */
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.cand input[type=checkbox]'));
+  var commitBtn = document.getElementById('commitBtn');
+  var keptChip = document.getElementById('keptChip');
+  function refresh() {
+    var kept = boxes.filter(function (b) { return b.checked; }).length;
+    commitBtn.textContent = '确认保存 ' + kept + ' 条';
+    keptChip.textContent = '已选 ' + kept + ' 条';
+    commitBtn.disabled = kept === 0;
+    boxes.forEach(function (b) {
+      var cand = b.closest('.cand');
+      if (cand) cand.classList.toggle('is-dropped', !b.checked);
+    });
+  }
+  boxes.forEach(function (b) { b.addEventListener('change', refresh); });
+  refresh();
+
+  commitBtn.addEventListener('click', function () {
+    var kept = boxes.filter(function (b) { return b.checked; }).length;
+    toast('已保存 ' + kept + ' 条 · 策划更新到第 8 版 · 图片已挂载');
+    var steps = document.querySelectorAll('.step');
+    steps[1].className = 'step is-done';
+    steps[2].className = 'step is-on';
+  });
+
+  /* 重新解析：先确认，说明已编辑内容如何处理 */
+  var reparseMask = document.getElementById('reparseConfirm');
+  document.getElementById('btnReparse').addEventListener('click', function () {
+    reparseMask.classList.add('is-open');
+  });
+  document.getElementById('btnReparseCancel').addEventListener('click', function () {
+    reparseMask.classList.remove('is-open');
+  });
+  document.getElementById('btnReparseOk').addEventListener('click', function () {
+    reparseMask.classList.remove('is-open');
+    toast('已重新解析 · 你编辑过的 3 条候选保留了你的修改');
+  });
+  reparseMask.addEventListener('click', function (e) {
+    if (e.target === reparseMask) reparseMask.classList.remove('is-open');
+  });
+
+  var selectAll = document.querySelector('[data-toast="已全选"]');
+  if (selectAll) {
+    selectAll.addEventListener('click', function () {
+      boxes.forEach(function (b) { b.checked = true; });
+      refresh();
+    });
+  }
+
+  /* 恢复被丢弃的候选 */
+  Array.prototype.forEach.call(document.querySelectorAll('[data-restore]'), function (btn) {
+    btn.addEventListener('click', function () {
+      toast('已恢复该候选，可在上方列表中编辑');
+    });
+  });
+})();
+</script>
+</body>
+</html>

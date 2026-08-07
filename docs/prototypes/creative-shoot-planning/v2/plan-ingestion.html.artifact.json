@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "proto-design/planning/plan-ingestion.html",
+  "entry": "proto-design/planning/plan-ingestion.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-04T11:30:35.688Z",
+  "updatedAt": "2026-08-04T11:30:35.688Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

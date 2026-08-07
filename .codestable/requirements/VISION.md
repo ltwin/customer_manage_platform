@@ -4,6 +4,7 @@
 
 ## draft（愿景已定，尚未实现）
 
+- **[creative-shoot-planning](creative-shoot-planning.md)** — 把散落在聊天、参考图和脑海里的创作灵感，变成拍前能协作、现场能照着执行的拍摄方案
 - **[account-center](account-center.md)** — 摄影师能从经营台一眼认出当前账号，并维护自己的头像与展示名称，安全与设置也集中在同一入口
 - **[self-service-account-system](self-service-account-system.md)** — 摄影师用自己的邮箱注册、验证并安全登录经营台，不再等待人工开通账号
 - **[telegram-digest](telegram-digest.md)** — 每天把该处理的提醒、档期和待收尾款送到 Telegram，忙起来也不用反复打开系统查漏项

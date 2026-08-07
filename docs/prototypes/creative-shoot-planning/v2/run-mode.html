@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>现场 Run Mode · 拍摄策划</title>
+<link rel="stylesheet" href="planning.css">
+<style>
+/* 手机取景框（桌面预览时居中显示） */
+.stage { min-height: 100vh; display: grid; place-items: center; padding: var(--space-8) var(--space-4); }
+.stage-head { text-align: center; max-width: 60ch; margin: 0 auto var(--space-6); }
+.stage-head h1 { font-size: var(--text-xl); }
+.stage-head p { color: var(--muted); font-size: var(--text-xs); margin-top: var(--space-2); }
+.device {
+  width: 390px; height: 844px; flex: none;
+  border-radius: 46px; background: var(--fg);
+  padding: 11px; box-shadow: var(--elev-raised);
+  position: relative;
+}
+.device::after {
+  content: ''; position: absolute; top: 22px; left: 50%; transform: translateX(-50%);
+  width: 104px; height: 28px; border-radius: 15px; background: var(--fg); z-index: 5;
+}
+.screen {
+  width: 100%; height: 100%; border-radius: 36px; overflow: hidden;
+  background: var(--bg); display: flex; flex-direction: column; position: relative;
+}
+
+/* Run mode 内部 */
+.run-top {
+  padding: 54px var(--space-4) var(--space-3);
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.run-title { font-family: var(--font-display); font-size: var(--text-base); }
+.run-meta { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-2); }
+.run-progress { display: flex; gap: 3px; margin-top: var(--space-3); }
+.run-progress i { flex: 1; height: 4px; border-radius: 2px; background: var(--border); cursor: pointer; }
+.run-progress i.ok { background: var(--success); }
+.run-progress i.skip { background: var(--danger); }
+.run-progress i.now { background: var(--accent); }
+
+.linklike { color: var(--accent); font-size: inherit; text-decoration: underline; text-underline-offset: 2px; padding: 0; }
+
+/* 镜头清单抽屉 */
+.shotlist { list-style: none; display: grid; gap: 6px; margin: var(--space-4) 0; max-height: 52vh; overflow-y: auto; }
+.shotlist button {
+  width: 100%; display: grid; grid-template-columns: 34px 1fr auto; gap: var(--space-2);
+  align-items: center; text-align: left; padding: 9px var(--space-3);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg); font-size: var(--text-xs);
+}
+.shotlist button[aria-current="true"] { border-color: var(--accent); background: color-mix(in oklab, var(--accent), var(--surface) 92%); font-weight: 600; }
+.shotlist .num { color: var(--meta); }
+
+.run-body { flex: 1; overflow-y: auto; padding: var(--space-4); }
+.run-pos { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--accent); letter-spacing: .06em; }
+.run-shot-title { font-family: var(--font-display); font-size: var(--text-xl); line-height: 1.2; margin: var(--space-2) 0 var(--space-3); }
+.run-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: var(--space-4); }
+.run-field { padding: var(--space-3) 0; border-bottom: 1px solid var(--border-soft); }
+.run-field dt { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.run-field dd { font-size: var(--text-sm); color: var(--fg); line-height: 1.55; }
+.run-ready { margin: var(--space-4) 0; }
+.run-ready li { display: flex; gap: var(--space-2); align-items: center; font-size: var(--text-xs); padding: 7px 0; list-style: none; }
+
+.run-foot {
+  flex: none; padding: var(--space-3) var(--space-4) var(--space-6);
+  background: var(--surface); border-top: 1px solid var(--border);
+  display: grid; gap: var(--space-2);
+}
+.run-btn { min-height: 48px; font-size: var(--text-base); border-radius: var(--radius-sm); }
+.run-nav { display: grid; grid-template-columns: 48px 1fr 48px; gap: var(--space-2); }
+.run-nav button { min-height: 44px; }
+
+/* 跳过原因抽屉 */
+.sheet {
+  position: absolute; inset: 0; background: oklch(24% 0.04 288 / 0.44);
+  display: none; align-items: flex-end; z-index: 40;
+}
+.sheet.is-open { display: flex; }
+.sheet-card {
+  width: 100%; background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+  max-height: 86%; overflow-y: auto;
+}
+.reason { display: grid; gap: var(--space-2); margin: var(--space-4) 0; }
+.reason button {
+  min-height: 46px; text-align: left; padding: 0 var(--space-4);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg); font-size: var(--text-sm);
+}
+.reason button:hover { border-color: var(--accent); background: var(--border-soft); }
+.reason button:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.reason button.is-on { border-color: var(--accent); background: color-mix(in oklab, var(--accent), var(--surface) 90%); font-weight: 600; }
+
+.side-notes { max-width: 390px; }
+.wrap { display: flex; gap: var(--space-8); align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+
+@media (max-width: 430px) {
+  .stage { padding: 0; }
+  .stage-head { display: none; }
+  .device { width: 100%; height: 100vh; border-radius: 0; padding: 0; box-shadow: none; }
+  .device::after { display: none; }
+  .screen { border-radius: 0; }
+  .run-top { padding-top: var(--space-4); }
+  .side-notes { display: none; }
+}
+
+.toast {
+  position: absolute; left: 50%; bottom: 110px; transform: translate(-50%, 12px);
+  background: var(--fg); color: var(--bg); padding: 9px var(--space-4);
+  border-radius: var(--radius-pill); font-size: var(--text-xs);
+  opacity: 0; pointer-events: none; z-index: 60; white-space: nowrap;
+  transition: opacity var(--motion-base) var(--ease-standard), transform var(--motion-base) var(--ease-standard);
+}
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<div class="stage" data-od-id="run-mode-page">
+  <div>
+    <div class="stage-head" data-od-id="stage-head">
+      <p class="eyebrow">现场 Run Mode</p>
+      <h1>独立的逐镜执行界面</h1>
+      <p>断网时明确失败并待重试，不伪装同步成功。首版没有离线可写模式。</p>
+    </div>
+
+    <div class="wrap">
+      <div class="device" data-od-id="device-frame">
+        <div class="screen">
+            <header class="run-top" data-od-id="run-top">
+              <p class="run-title">魔女的旅行 · 伊蕾娜双 look</p>
+              <div class="run-meta">
+                <span class="tag tag-ok"><i class="dot"></i>现场</span>
+                <span class="tag">第 1 场</span>
+                <span class="tag">第 7 版</span>
+                <span class="tag" id="clock">09:41</span>
+              </div>
+              <div class="run-progress" id="progress" aria-label="镜头进度，可点击跳转">
+                <i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i><i class="ok"></i>
+                <i class="skip"></i><i class="now"></i><i></i><i></i><i></i><i></i><i></i>
+              </div>
+              <p class="hint" style="margin-top:6px"><button type="button" class="linklike" id="posLabel">第 7 镜 / 共 12 镜 ▾</button><span id="counts"> · 已捕获 5 · 已跳过 1</span></p>
+            </header>
+
+            <div class="run-body" data-od-id="run-body">
+              <p class="run-pos num" id="posNum">07 / 12</p>
+              <h2 class="run-shot-title" id="shotTitle">阁楼窗前 · 正装立像</h2>
+              <div class="run-tags" id="shotTags">
+                <span class="tag">medium_closeup</span>
+                <span class="tag tag-unknown">灯光方向 未填</span>
+                <span class="tag">soft</span>
+                <span class="tag tag-unknown">色调 未填</span>
+                <span class="tag">portrait</span>
+              </div>
+
+              <dl id="shotFields">
+                <div class="run-field"><dt>场景</dt><dd>民宿阁楼斜窗，下午 15:00 前后自然光</dd></div>
+                <div class="run-field"><dt>动作</dt><dd>正面立像，双手交叠于杖顶，肩线放平</dd></div>
+                <div class="run-field"><dt>表情</dt><dd>平静直视镜头，下颌微收</dd></div>
+                <div class="run-field"><dt>构图</dt><dd>窗框作天然边框，人物居中偏左三分位</dd></div>
+                <div class="run-field"><dt>灯光</dt><dd>只用窗光，白纱柔化；不要在脸上留窗格影</dd></div>
+              </dl>
+
+              <div class="run-ready">
+                <p class="eyebrow" style="margin-bottom:var(--space-2)">本镜必需准备项</p>
+                <ul id="readyList">
+                  <li><span class="tag tag-danger">缺失</span>灰之魔女正装假发（客户认领）</li>
+                  <li><span class="tag tag-ok">就绪</span>星屑胸针</li>
+                  <li><span class="tag tag-ok">就绪</span>阁楼场地</li>
+                </ul>
+              </div>
+
+              <div id="refRow" style="margin-top:var(--space-3)"></div>
+
+              <label class="field" style="margin-top:var(--space-3)"><span>现场备注</span>
+                <textarea rows="3" id="shotNote" placeholder="只记你需要的，不必填写"></textarea>
+                <small>备注跟着这一镜保存，切换镜头不会丢。</small>
+              </label>
+            </div>
+
+            <footer class="run-foot" data-od-id="run-foot">
+              <button class="btn btn-primary run-btn" type="button" id="btnCapture">标记已捕获</button>
+              <div class="run-nav">
+                <button class="btn btn-secondary" type="button" id="btnPrev" aria-label="上一镜">←</button>
+                <button class="btn btn-secondary" type="button" id="btnSkip">跳过本镜</button>
+                <button class="btn btn-secondary" type="button" id="btnNext" aria-label="下一镜">→</button>
+              </div>
+            </footer>
+
+            <!-- 跳过原因 -->
+            <div class="sheet" id="skipSheet" role="dialog" aria-modal="true" aria-labelledby="skipTitle" data-od-id="skip-sheet">
+              <div class="sheet-card">
+                <h3 id="skipTitle" style="font-size:var(--text-lg)">为什么跳过这一镜？</h3>
+                <p class="hint" style="margin-top:6px">跳过必须写原因——这是之后标记「策划完成」的前提。原因只有你自己能看到。</p>
+                <div class="reason" id="reasonList">
+                  <button type="button" data-reason="preparation_missing">准备物料缺失</button>
+                  <button type="button" data-reason="time_insufficient">时间不够</button>
+                  <button type="button" data-reason="location_unavailable">场地不可用</button>
+                  <button type="button" data-reason="subject_unavailable">主体不可用</button>
+                  <button type="button" data-reason="creative_change">创作方向变更</button>
+                  <button type="button" data-reason="technical_failure">技术故障</button>
+                  <button type="button" data-reason="other">其他</button>
+                </div>
+                <label class="field"><span>补充说明<span id="skipDetailReq" class="muted" style="font-weight:400">（可选；选「其他」时必填）</span></span><textarea rows="2" id="skipDetail" placeholder="例如：正装假发未带到场，改到补拍"></textarea></label>
+                <div class="row" style="gap:var(--space-2)">
+                  <button class="btn btn-primary" style="flex:1;min-height:46px" type="button" id="btnSkipConfirm">确认跳过</button>
+                  <button class="btn btn-secondary" style="min-height:46px" type="button" id="btnSkipCancel">返回</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 镜头清单：从进度条或位置标签进入 -->
+            <div class="sheet" id="listSheet" role="dialog" aria-modal="true" aria-labelledby="listTitle" data-od-id="shot-list-sheet">
+              <div class="sheet-card">
+                <h3 id="listTitle" style="font-size:var(--text-lg)">镜头清单</h3>
+                <p class="hint" style="margin-top:6px">点任意一条直接跳转；顺序即执行顺序。</p>
+                <ol class="shotlist" id="shotListOl"></ol>
+                <button class="btn btn-secondary" style="width:100%;min-height:46px" type="button" id="btnListClose">返回</button>
+              </div>
+            </div>
+
+            <!-- 参考素材 -->
+            <div class="sheet" id="refSheet" role="dialog" aria-modal="true" aria-labelledby="refTitle" data-od-id="ref-sheet">
+              <div class="sheet-card">
+                <h3 id="refTitle" style="font-size:var(--text-lg)">本镜参考素材</h3>
+                <p class="hint" style="margin-top:6px" id="refHint"></p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);margin:var(--space-4) 0" id="refGrid"></div>
+                <button class="btn btn-secondary" style="width:100%;min-height:46px" type="button" id="btnRefClose">返回</button>
+              </div>
+            </div>
+
+            <!-- 收尾 -->
+            <div class="sheet" id="endSheet" role="dialog" aria-modal="true" aria-labelledby="endTitle" data-od-id="end-sheet">
+              <div class="sheet-card">
+                <h3 id="endTitle" style="font-size:var(--text-lg)">所有镜头都有结果了</h3>
+                <p class="hint" style="margin-top:6px" id="endSummary"></p>
+                <div class="note" style="margin:var(--space-4) 0">回到工作台后可以「标记完成」整个策划；已跳过的镜头会保留原因，之后可安排补拍。</div>
+                <div class="row" style="gap:var(--space-2)">
+                  <a class="btn btn-primary" style="flex:1;min-height:46px" href="planning-workspace.html">结束本场 · 回工作台</a>
+                  <button class="btn btn-secondary" style="min-height:46px" type="button" id="btnEndStay">再看看</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="toast" id="toast" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="side-notes stack" data-od-id="run-notes">
+        <div class="panel">
+          <div class="panel-head"><div><h3>capture_mode 由服务端判定</h3></div></div>
+          <dl class="kv stack" style="gap:var(--space-3)">
+            <div><dt>live</dt><dd>session 打开时间落在被快照的 live 窗口内（本例 07:30–18:30）</dd></div>
+            <div><dt>backfill</dt><dd>存在时间窗但 session 在窗口结束后打开，或在普通编辑页补记</dd></div>
+            <div><dt>unknown</dt><dd>没有时间窗、时间窗失效无法绑定快照，或在 live 窗口之前用于演练</dd></div>
+          </dl>
+          <div class="note" style="margin-top:var(--space-4)">客户端<b>不能</b>提交 capture_mode；窗口结束后的改动也不会重写已有 session 与 capture 的历史。</div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div><h3>现场约束</h3></div></div>
+          <ul class="stack" style="gap:var(--space-2);font-size:var(--text-xs);color:var(--fg-2);padding-left:var(--space-4)">
+            <li>主操作按钮 ≥ 48px，适配单手与手套操作</li>
+            <li>断网时提交明确失败并保留待重试，不显示假成功</li>
+            <li>跳过必须选原因，否则无法完成策划</li>
+            <li>Run Mode 只做逐镜执行，不在现场提供编辑镜头表的入口</li>
+          </ul>
+          <div class="divider"></div>
+          <a class="btn btn-secondary btn-sm" href="planning-workspace.html">回到策划工作台</a>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><div><h3>断网状态演示</h3></div></div>
+          <button class="btn btn-secondary btn-sm" type="button" id="btnOffline">模拟提交失败</button>
+          <p class="hint" style="margin-top:var(--space-3)">失败后该条捕获保持未提交，重新联网后由你手动重试，系统不会静默丢弃。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var SHOTS = [
+    { title: '石板路 · 回望', tags: ['medium','side','soft','cool','narrative'],
+      fields: [['场景','东巷旧石板路尽头，晨雾未散'],['动作','行走中半侧身回望，斗篷带起'],['表情','放松、轻微好奇，不看镜头'],['构图','三分之一站位，留出右侧巷道纵深'],['灯光','自然侧逆光 + 银反打亮下颌，不上闪']],
+      ready: [['ok','旅装斗篷'],['ok','行李道具'],['ok','防雾镜布']], state: 'captured' },
+    { title: '行李特写 · 星屑胸针', tags: ['extreme_closeup','top','hard','neutral','detail'],
+      fields: [['场景','木质长椅，胸针置于摊开的地图上'],['构图','俯拍平面构图，地图纹理占三分之二'],['灯光','硬光小束光打出金属高光'],['备注','客户自带胸针，注意别刮花漆面']],
+      ready: [['ok','星屑胸针'],['ok','束光筒']], state: 'captured' },
+    { title: '巷口回身 · 半身', tags: ['medium','back','natural','cool','portrait'],
+      fields: [['场景','巷口砖墙前'],['动作','背身半回头'],['灯光','纯自然光，不加光']],
+      ready: [['ok','旅装斗篷']], state: 'captured' },
+    { title: '石阶坐姿 · 读地图', tags: ['full','side','soft','warm','narrative'],
+      fields: [['场景','教堂侧石阶'],['动作','坐姿摊开地图'],['构图','低机位平视']],
+      ready: [['ok','地图道具']], state: 'captured' },
+    { title: '晨雾全景 · 环境交代', tags: ['extreme_wide','natural','soft','cool','environment'],
+      fields: [['场景','巷道纵深全景，人物占画面 1/8'],['灯光','等雾最浓的十分钟']],
+      ready: [['ok','长焦镜头']], state: 'captured' },
+    { title: '换装间隙 · 抓拍', tags: ['closeup','mixed','mixed','warm','detail'],
+      fields: [['场景','民宿一楼镜前'],['跳过原因','创作方向变更']],
+      ready: [['ok','无']], state: 'skipped' },
+    { title: '阁楼窗前 · 正装立像', tags: ['medium_closeup','灯光方向 未填','soft','色调 未填','portrait'],
+      fields: [['场景','民宿阁楼斜窗，下午 15:00 前后自然光'],['动作','正面立像，双手交叠于杖顶，肩线放平'],['表情','平静直视镜头，下颌微收'],['构图','窗框作天然边框，人物居中偏左三分位'],['灯光','只用窗光，白纱柔化；不要在脸上留窗格影']],
+      ready: [['miss','灰之魔女正装假发（客户认领）'],['ok','星屑胸针'],['ok','阁楼场地']],
+      refs: ['官方设定 · 正装立绘','动画截图 · 阁楼光线'], state: 'now' },
+    { title: '长桌读信 · 侧写', tags: ['medium','front','mixed','warm','interaction'],
+      fields: [['场景','旧书店长桌，暖色台灯做前景光'],['必需准备项','信件道具、旧书店场地确认']],
+      ready: [['miss','旧书店 15:00 时段（客户认领待核对）'],['ok','信件道具']],
+      refs: ['原作截图 · 读信场景','原作截图 · 台灯光质'], state: 'todo' },
+    { title: '书架间穿行', tags: ['full','side','soft','neutral','environment'],
+      fields: [['场景','旧书店高书架走道'],['动作','缓步穿行，衣摆自然摆动']],
+      ready: [['ok','无额外准备']], state: 'todo' },
+    { title: '正装剪影 · 逆光', tags: ['wide','back','hard','monochrome','silhouette'],
+      fields: [['场景','落地窗前，日落前 30 分钟'],['灯光','强逆光压成剪影，保留发丝轮廓']],
+      ready: [['ok','无额外准备']], state: 'todo' },
+    { title: '手部特写 · 杖顶', tags: ['extreme_closeup','side','soft','cool','detail'],
+      fields: [['场景','杖顶宝石与指节'],['备注','注意指甲妆是否入镜']],
+      ready: [['ok','法杖道具']], state: 'todo' },
+    { title: '收尾合影 · 留档', tags: ['medium','front','natural','neutral','portrait'],
+      fields: [['场景','门口台阶'],['备注','客户自留用，不进交付']],
+      ready: [['ok','无额外准备']], state: 'todo' }
+  ];
+
+  var idx = 6;
+  var toastEl = document.getElementById('toast');
+  var timer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('is-on');
+    clearTimeout(timer);
+    timer = setTimeout(function () { toastEl.classList.remove('is-on'); }, 2400);
+  }
+
+  var el = {
+    posNum: document.getElementById('posNum'),
+    posLabel: document.getElementById('posLabel'),
+    counts: document.getElementById('counts'),
+    title: document.getElementById('shotTitle'),
+    tags: document.getElementById('shotTags'),
+    fields: document.getElementById('shotFields'),
+    ready: document.getElementById('readyList'),
+    note: document.getElementById('shotNote'),
+    refRow: document.getElementById('refRow'),
+    progress: document.getElementById('progress'),
+    capture: document.getElementById('btnCapture'),
+    body: document.querySelector('.run-body')
+  };
+
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+  function render() {
+    var s = SHOTS[idx];
+    el.posNum.textContent = pad(idx + 1) + ' / ' + SHOTS.length;
+    el.title.textContent = s.title;
+
+    el.tags.innerHTML = s.tags.map(function (t) {
+      var unknown = t.indexOf('未填') >= 0;
+      return '<span class="tag' + (unknown ? ' tag-unknown' : '') + '">' + t + '</span>';
+    }).join('');
+
+    el.fields.innerHTML = s.fields.map(function (f) {
+      return '<div class="run-field"><dt>' + f[0] + '</dt><dd>' + f[1] + '</dd></div>';
+    }).join('');
+
+    el.ready.innerHTML = s.ready.map(function (r) {
+      var cls = r[0] === 'miss' ? 'tag tag-danger' : 'tag tag-ok';
+      var label = r[0] === 'miss' ? '缺失' : '就绪';
+      return '<li><span class="' + cls + '">' + label + '</span>' + r[1] + '</li>';
+    }).join('');
+
+    el.refRow.innerHTML = s.refs && s.refs.length
+      ? '<button class="btn btn-secondary btn-sm" type="button" id="btnRefs">查看参考素材 · ' + s.refs.length + ' 张</button>'
+      : '<span class="hint">本镜未绑定参考素材</span>';
+
+    var captured = 0, skipped = 0;
+    el.progress.innerHTML = SHOTS.map(function (s2, i) {
+      if (s2.state === 'captured') captured++;
+      if (s2.state === 'skipped') skipped++;
+      var cls = i === idx ? 'now' : s2.state === 'captured' ? 'ok' : s2.state === 'skipped' ? 'skip' : '';
+      return '<i class="' + cls + '" data-i="' + i + '" title="第 ' + (i + 1) + ' 镜"></i>';
+    }).join('');
+    el.posLabel.textContent = '第 ' + (idx + 1) + ' 镜 / 共 ' + SHOTS.length + ' 镜 ▾';
+    el.counts.textContent = ' · 已捕获 ' + captured + ' · 已跳过 ' + skipped;
+
+    if (s.state === 'captured') {
+      el.capture.textContent = '已捕获 · 点击撤销';
+      el.capture.className = 'btn btn-secondary run-btn';
+    } else if (s.state === 'skipped') {
+      el.capture.textContent = '已跳过 · 改为已捕获';
+      el.capture.className = 'btn btn-secondary run-btn';
+    } else {
+      el.capture.textContent = '标记已捕获';
+      el.capture.className = 'btn btn-primary run-btn';
+    }
+    el.note.value = s.note || '';
+    el.body.scrollTop = 0;
+  }
+
+  /* 现场备注跟镜头走，切换不丢 */
+  el.note.addEventListener('input', function () { SHOTS[idx].note = el.note.value; });
+
+  function step(d) {
+    var next = idx + d;
+    if (next < 0 || next >= SHOTS.length) { toast(d > 0 ? '已是最后一镜' : '已是第一镜'); return; }
+    idx = next;
+    render();
+  }
+
+  document.getElementById('btnPrev').addEventListener('click', function () { step(-1); });
+  document.getElementById('btnNext').addEventListener('click', function () { step(1); });
+
+  /* 进度条点击跳转 */
+  el.progress.addEventListener('click', function (e) {
+    var i = e.target.getAttribute && e.target.getAttribute('data-i');
+    if (i === null || i === undefined) return;
+    idx = parseInt(i, 10);
+    render();
+  });
+
+  /* 收尾：所有镜头都有结果时提示结束本场 */
+  var endSheet = document.getElementById('endSheet');
+  function checkAllDone() {
+    var captured = 0, skipped = 0, open = 0;
+    SHOTS.forEach(function (s) {
+      if (s.state === 'captured') captured++;
+      else if (s.state === 'skipped') skipped++;
+      else open++;
+    });
+    if (open > 0) return;
+    document.getElementById('endSummary').textContent =
+      '共 ' + SHOTS.length + ' 镜：已捕获 ' + captured + ' · 已跳过 ' + skipped + '。';
+    endSheet.classList.add('is-open');
+  }
+  document.getElementById('btnEndStay').addEventListener('click', function () { endSheet.classList.remove('is-open'); });
+  endSheet.addEventListener('click', function (e) { if (e.target === endSheet) endSheet.classList.remove('is-open'); });
+
+  el.capture.addEventListener('click', function () {
+    var s = SHOTS[idx];
+    if (s.state === 'captured') {
+      s.state = 'todo';
+      toast('已撤销捕获');
+      render();
+      return;
+    }
+    s.state = 'captured';
+    toast('第 ' + (idx + 1) + ' 镜已捕获 · 记为现场完成');
+    render();
+    setTimeout(function () {
+      if (idx < SHOTS.length - 1) { idx++; render(); }
+      checkAllDone();
+    }, 480);
+  });
+
+  /* 跳过流程 */
+  var REASON_LABELS = {
+    preparation_missing: '准备物料缺失',
+    time_insufficient: '时间不够',
+    location_unavailable: '场地不可用',
+    subject_unavailable: '主体不可用',
+    creative_change: '创作方向变更',
+    technical_failure: '技术故障',
+    other: '其他'
+  };
+  var sheet = document.getElementById('skipSheet');
+  var skipDetail = document.getElementById('skipDetail');
+  var chosen = null;
+  document.getElementById('btnSkip').addEventListener('click', function () {
+    chosen = null;
+    skipDetail.value = '';
+    Array.prototype.forEach.call(sheet.querySelectorAll('.reason button'), function (b) { b.classList.remove('is-on'); });
+    sheet.classList.add('is-open');
+  });
+  document.getElementById('btnSkipCancel').addEventListener('click', function () { sheet.classList.remove('is-open'); });
+  sheet.addEventListener('click', function (e) { if (e.target === sheet) sheet.classList.remove('is-open'); });
+
+  Array.prototype.forEach.call(sheet.querySelectorAll('.reason button'), function (b) {
+    b.addEventListener('click', function () {
+      Array.prototype.forEach.call(sheet.querySelectorAll('.reason button'), function (x) { x.classList.remove('is-on'); });
+      b.classList.add('is-on');
+      chosen = b.getAttribute('data-reason');
+    });
+  });
+
+  document.getElementById('btnSkipConfirm').addEventListener('click', function () {
+    if (!chosen) { toast('请先选择跳过原因'); return; }
+    if (chosen === 'other' && !skipDetail.value.trim()) {
+      toast('选了「其他」需要写明补充说明');
+      skipDetail.focus();
+      return;
+    }
+    SHOTS[idx].state = 'skipped';
+    sheet.classList.remove('is-open');
+    toast('已跳过 · 原因：' + REASON_LABELS[chosen]);
+    render();
+    setTimeout(function () {
+      if (idx < SHOTS.length - 1) { idx++; render(); }
+      checkAllDone();
+    }, 480);
+  });
+
+  /* 镜头清单抽屉 */
+  var listSheet = document.getElementById('listSheet');
+  var listOl = document.getElementById('shotListOl');
+  var STATE_TAG = {
+    captured: '<span class="tag tag-ok">已捕获</span>',
+    skipped: '<span class="tag tag-danger">已跳过</span>',
+    now: '<span class="tag tag-accent">当前</span>',
+    todo: '<span class="tag tag-unknown">待执行</span>'
+  };
+  function openList() {
+    listOl.innerHTML = SHOTS.map(function (s, i) {
+      var st = i === idx ? 'now' : (s.state === 'now' ? 'todo' : s.state);
+      return '<li><button type="button" data-jump="' + i + '"' + (i === idx ? ' aria-current="true"' : '') + '>' +
+        '<span class="num">' + pad(i + 1) + '</span><span>' + s.title + '</span>' + STATE_TAG[st] + '</button></li>';
+    }).join('');
+    listSheet.classList.add('is-open');
+  }
+  el.posLabel.addEventListener('click', openList);
+  listOl.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-jump]');
+    if (!b) return;
+    idx = parseInt(b.getAttribute('data-jump'), 10);
+    listSheet.classList.remove('is-open');
+    render();
+  });
+  document.getElementById('btnListClose').addEventListener('click', function () { listSheet.classList.remove('is-open'); });
+  listSheet.addEventListener('click', function (e) { if (e.target === listSheet) listSheet.classList.remove('is-open'); });
+
+  /* 参考素材抽屉 */
+  var refSheet = document.getElementById('refSheet');
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest || !e.target.closest('#btnRefs')) return;
+    var s = SHOTS[idx];
+    document.getElementById('refHint').textContent = '第 ' + (idx + 1) + ' 镜 · ' + s.title + ' · 原作素材仅用于现场比对，不做生成';
+    document.getElementById('refGrid').innerHTML = s.refs.map(function (r) {
+      return '<figure><div class="ph-img"><span>' + r + '</span></div></figure>';
+    }).join('');
+    refSheet.classList.add('is-open');
+  });
+  document.getElementById('btnRefClose').addEventListener('click', function () { refSheet.classList.remove('is-open'); });
+  refSheet.addEventListener('click', function (e) { if (e.target === refSheet) refSheet.classList.remove('is-open'); });
+
+  document.getElementById('btnOffline').addEventListener('click', function () {
+    toast('提交失败 · 网络不可用，该条捕获待重试');
+  });
+
+  /* 键盘导航（桌面预览） */
+  document.addEventListener('keydown', function (e) {
+    var openSheet = document.querySelector('.sheet.is-open');
+    if (openSheet) {
+      if (e.key === 'Escape') openSheet.classList.remove('is-open');
+      return;
+    }
+    if (e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight') step(1);
+    if (e.key === 'ArrowLeft') step(-1);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
