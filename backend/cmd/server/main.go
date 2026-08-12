@@ -38,6 +38,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
 )
 
 const telegramAPIBaseURL = "https://api.telegram.org"
@@ -149,10 +150,19 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		planningMediaObjects,
 		planningmedia.WithHolderAuthorizer(shootplanning.NewMediaHolderAuthorizer(shootplanning.NewPostgresRepository())),
 	)
-	shootPlanningApp, err := composeShootPlanningApplication(ctx, s.ArchiveCapabilityStartupReader(), idempotencyExecutor, planningMediaApp)
+	ingestionRepo := ingestion.NewRepository()
+	shootPlanningApp, err := composeShootPlanningApplicationWithIngestion(
+		ctx,
+		s.ArchiveCapabilityStartupReader(),
+		idempotencyExecutor,
+		planningMediaApp,
+		ingestion.NewPlanReadyObservationAdapter(ingestionRepo),
+	)
 	if err != nil {
 		return err
 	}
+	planningIngestionApp := ingestion.NewApplication(ingestionRepo, idempotencyExecutor,
+		ingestion.WithCoreApplication(shootPlanningApp), ingestion.WithPlanningMediaApplication(planningMediaApp))
 
 	objects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
 	if err != nil {
@@ -219,7 +229,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Customer:                  customer.NewService(customer.NewPostgresRepository()),
 		Orders:                    order.NewService(order.NewPostgresRepository()),
 		Packages:                  pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
-		Idempotency:               idempotency.NewExecutor(),
+		Idempotency:               idempotencyExecutor,
 		AccountTimezone:           settingsSvc,
 		Schedule:                  schedule.NewService(schedule.NewPostgresRepository(), schedule.ClockFunc(time.Now)),
 		Avatar:                    avatarApp,
@@ -232,6 +242,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		TelegramBinding:           telegramBinding,
 		ShootPlanning:             shootPlanningApp,
 		PlanningMedia:             planningMediaApp,
+		PlanningIngestion:         planningIngestionApp,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -309,6 +320,37 @@ func composeShootPlanningApplication(
 	application, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), executor, options...)
 	if err != nil {
 		return nil, fmt.Errorf("compose shoot planning application: %w", err)
+	}
+	return application, nil
+}
+
+func composeShootPlanningApplicationWithIngestion(
+	ctx context.Context,
+	startupReader archiveCapabilityStartupReader,
+	executor *idempotency.Executor,
+	projector shootplanning.ShotAccessRefProjector,
+	sink shootplanning.PlanReadyObservationSink,
+) (*shootplanning.Application, error) {
+	if startupReader == nil {
+		return nil, errors.New("shoot planning archive capability startup reader is required")
+	}
+	archiveCapability, err := startupReader.Current(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read shoot planning archive capability at startup: %w", err)
+	}
+	if archiveCapability.Capability != planningcapability.ArchiveCapabilityCore {
+		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", archiveCapability.Capability)
+	}
+	options := []shootplanning.ApplicationOption{
+		shootplanning.WithIngestionRoutesEnabled(),
+		shootplanning.WithPlanReadyObservationSink(sink),
+	}
+	if projector != nil {
+		options = append(options, shootplanning.WithShotAccessRefProjector(projector))
+	}
+	application, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), executor, options...)
+	if err != nil {
+		return nil, fmt.Errorf("compose shoot planning application with ingestion: %w", err)
 	}
 	return application, nil
 }

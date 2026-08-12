@@ -103,6 +103,23 @@ func (PlanningShareReminderArchiveImpactPolicyV1) RequiredAcknowledgement() Arch
 
 type ApplicationOption func(*Application) error
 
+func WithPlanReadyObservationSink(sink PlanReadyObservationSink) ApplicationOption {
+	return func(app *Application) error {
+		if sink == nil {
+			return ErrPlanReadyObservationWiringMismatch
+		}
+		app.readyObservationSink = sink
+		return nil
+	}
+}
+
+func WithIngestionRoutesEnabled() ApplicationOption {
+	return func(app *Application) error {
+		app.ingestionRoutesEnabled = true
+		return nil
+	}
+}
+
 func WithReadinessRemovalGuard(guard ReadinessRemovalGuard) ApplicationOption {
 	return func(app *Application) error {
 		if guard == nil {
@@ -134,13 +151,15 @@ func WithArchiveReminderParticipant(participant PlanArchiveReminderParticipant) 
 }
 
 type Application struct {
-	repo               PostgresRepository
-	idempotency        *idempotency.Executor
-	removalGuard       ReadinessRemovalGuard
-	archivePolicy      ArchiveImpactPolicy
-	archiveParticipant PlanArchiveReminderParticipant
-	now                func() time.Time
-	mediaProjector     ShotAccessRefProjector
+	repo                   PostgresRepository
+	idempotency            *idempotency.Executor
+	removalGuard           ReadinessRemovalGuard
+	archivePolicy          ArchiveImpactPolicy
+	archiveParticipant     PlanArchiveReminderParticipant
+	now                    func() time.Time
+	mediaProjector         ShotAccessRefProjector
+	readyObservationSink   PlanReadyObservationSink
+	ingestionRoutesEnabled bool
 }
 
 func WithShotAccessRefProjector(projector ShotAccessRefProjector) ApplicationOption {
@@ -153,10 +172,11 @@ func NewApplication(repo PostgresRepository, executor *idempotency.Executor, opt
 	}
 	app := &Application{
 		repo: repo, idempotency: executor,
-		removalGuard:       DisabledReadinessRemovalGuard{},
-		archivePolicy:      CoreOnlyArchiveImpactPolicyV1{},
-		archiveParticipant: DisabledPlanArchiveReminderParticipant{},
-		now:                time.Now,
+		removalGuard:         DisabledReadinessRemovalGuard{},
+		archivePolicy:        CoreOnlyArchiveImpactPolicyV1{},
+		archiveParticipant:   DisabledPlanArchiveReminderParticipant{},
+		readyObservationSink: NoopPlanReadyObservationSink{},
+		now:                  time.Now,
 	}
 	for _, option := range options {
 		if option == nil {
@@ -186,6 +206,9 @@ func NewApplication(repo PostgresRepository, executor *idempotency.Executor, opt
 	}
 	if capability != planningcapability.ArchiveCapabilityCore && guardDisabled {
 		return nil, ErrReadinessGuardWiringMismatch
+	}
+	if app.ingestionRoutesEnabled && isNoopPlanReadyObservationSink(app.readyObservationSink) {
+		return nil, ErrPlanReadyObservationWiringMismatch
 	}
 	return app, nil
 }
@@ -353,6 +376,14 @@ func (a *Application) TransitionPlan(ctx context.Context, scope store.AccountSco
 		result, err := a.transitionPlanInScope(ctx, tx, planID, transition)
 		if err != nil {
 			return idempotency.StoredResponse{}, err
+		}
+		if transition.Kind == TransitionMarkReady {
+			if err := a.readyObservationSink.AccumulateAndRecordFirstReadyInScope(ctx, tx, PlanReadyObservationFact{
+				PlanID: planID,
+				TickID: "ready:" + key,
+			}); err != nil {
+				return idempotency.StoredResponse{}, err
+			}
 		}
 		body, err := json.Marshal(result)
 		return idempotency.StoredResponse{Status: 200, Body: body}, err

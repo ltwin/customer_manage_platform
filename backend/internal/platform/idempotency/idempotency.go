@@ -32,6 +32,10 @@ const (
 	OperationPlanningMediaBindingRelease Operation = "planning-media.binding.release.v1"
 	OperationPlanningMediaLeaseReserve   Operation = "planning-media.lease.reserve.v1"
 	OperationPlanningMediaLeaseRelease   Operation = "planning-media.lease.release.v1"
+	OperationPlanIngestionCreate         Operation = "plan-ingestion.create.v1"
+	OperationPlanIngestionPreview        Operation = "plan-ingestion.preview.v1"
+	OperationPlanIngestionTransition     Operation = "plan-ingestion.transition.v1"
+	OperationPlanIngestionCommit         Operation = "plan-ingestion.commit.v1"
 	defaultTTL                                     = 24 * time.Hour
 )
 
@@ -87,6 +91,12 @@ func PlanningMediaUploadResource(planID string) ResourceIdentity {
 }
 func PlanningMediaBindingResource(planID, assetID string) ResourceIdentity {
 	return ResourceIdentity{kind: "planning-media-binding", primaryID: planID, secondaryID: assetID}
+}
+func PlanIngestionCreateResource(planID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-ingestion-create", primaryID: planID}
+}
+func PlanIngestionSessionResource(planID, sessionID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-ingestion-session", primaryID: planID, secondaryID: sessionID}
 }
 
 type transactionRunner interface {
@@ -373,6 +383,10 @@ func resourceMatchesOperation(operation Operation, identity ResourceIdentity) bo
 	case OperationPlanningMediaBindingCreate, OperationPlanningMediaBindingRelease,
 		OperationPlanningMediaLeaseReserve, OperationPlanningMediaLeaseRelease:
 		return identity.kind == "planning-media-binding" && primary && secondary
+	case OperationPlanIngestionCreate:
+		return identity.kind == "plan-ingestion-create" && primary && !secondary
+	case OperationPlanIngestionPreview, OperationPlanIngestionTransition, OperationPlanIngestionCommit:
+		return identity.kind == "plan-ingestion-session" && primary && secondary
 	default:
 		return false
 	}

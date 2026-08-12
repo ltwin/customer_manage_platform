@@ -1,6 +1,6 @@
 import type { components, paths } from '../api/schema'
-import { ApiError } from '../api/client'
-import { clearToken, getToken } from '../auth/token'
+import { ApiError, request } from '../api/transport'
+import { authorizedFetch } from '../auth/session'
 
 export type ShootPlanStatus = components['schemas']['ShootPlanStatus']
 export type ShootPlanList = components['schemas']['ShootPlanList']
@@ -26,6 +26,17 @@ export type PlanAssetPage = components['schemas']['PlanAssetPage']
 export type UploadPlanAssetResult = components['schemas']['UploadPlanAssetResult']
 export type CreateAssetBindingInput = components['schemas']['CreateAssetBindingInput']
 export type AssetBindingResult = components['schemas']['AssetBindingResult']
+export type PlanIngestionSession = components['schemas']['PlanIngestionSession']
+export type CreatePlanIngestionSessionInput = components['schemas']['CreatePlanIngestionSessionInput']
+export type PreviewPlanIngestionSessionInput = components['schemas']['PreviewPlanIngestionSessionInput']
+export type TransitionPlanIngestionSessionInput = components['schemas']['TransitionPlanIngestionSessionInput']
+export type CommitPlanIngestionSessionInput = components['schemas']['CommitPlanIngestionSessionInput']
+export type PlanIngestionCommitResult = components['schemas']['PlanIngestionCommitResult']
+export type IngestionCandidateSnapshot = components['schemas']['IngestionCandidateSnapshot']
+export type IngestionContentCandidate = components['schemas']['IngestionContentCandidate']
+export type IngestionReadinessLinkCandidate = components['schemas']['IngestionReadinessLinkCandidate']
+export type IngestionReferenceLinkCandidate = components['schemas']['IngestionReferenceLinkCandidate']
+export type IngestionDroppedCandidate = components['schemas']['IngestionDroppedCandidate']
 
 export function listShootPlans(params: {
   status?: ShootPlanStatus
@@ -76,6 +87,53 @@ export function transitionShootPlan(
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify(body),
+  })
+}
+
+export function createPlanIngestionSession(
+  planID: string,
+  body: CreatePlanIngestionSessionInput,
+  idempotencyKey: string,
+): Promise<PlanIngestionSession> {
+  return request<PlanIngestionSession>(`/shoot-plans/${encodeURIComponent(planID)}/ingestion-sessions`, {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body),
+  })
+}
+
+export function getPlanIngestionSession(planID: string, sessionID: string): Promise<PlanIngestionSession> {
+  return request<PlanIngestionSession>(`/shoot-plans/${encodeURIComponent(planID)}/ingestion-sessions/${encodeURIComponent(sessionID)}`)
+}
+
+export function previewPlanIngestionSession(
+  planID: string,
+  sessionID: string,
+  body: PreviewPlanIngestionSessionInput,
+  idempotencyKey: string,
+): Promise<PlanIngestionSession> {
+  return request<PlanIngestionSession>(`/shoot-plans/${encodeURIComponent(planID)}/ingestion-sessions/${encodeURIComponent(sessionID)}/preview`, {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body),
+  })
+}
+
+export function transitionPlanIngestionSession(
+  planID: string,
+  sessionID: string,
+  body: TransitionPlanIngestionSessionInput,
+  idempotencyKey: string,
+): Promise<PlanIngestionSession> {
+  return request<PlanIngestionSession>(`/shoot-plans/${encodeURIComponent(planID)}/ingestion-sessions/${encodeURIComponent(sessionID)}/transition`, {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body),
+  })
+}
+
+export function commitPlanIngestionSession(
+  planID: string,
+  sessionID: string,
+  body: CommitPlanIngestionSessionInput,
+  idempotencyKey: string,
+): Promise<PlanIngestionCommitResult> {
+  return request<PlanIngestionCommitResult>(`/shoot-plans/${encodeURIComponent(planID)}/ingestion-sessions/${encodeURIComponent(sessionID)}/commit`, {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(body),
   })
 }
 
@@ -164,12 +222,8 @@ export function planAssetContentURL(planID: string, assetID: string, displayChec
 }
 
 export async function fetchPlanAssetDisplay(planID: string, assetID: string, displayChecksum: string): Promise<Blob> {
-  const headers = new Headers()
-  const token = getToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(planAssetContentURL(planID, assetID, displayChecksum), { headers })
+  const response = await authorizedFetch(planAssetContentURL(planID, assetID, displayChecksum))
   if (!response.ok) {
-    if (response.status === 401) clearToken()
     throw new ApiError(response.status, 'asset_unavailable', '参考素材暂不可用')
   }
   return await response.blob()
@@ -177,32 +231,10 @@ export async function fetchPlanAssetDisplay(planID: string, assetID: string, dis
 
 async function planningMediaRequest<T>(path: string, init: RequestInit): Promise<T> {
   const headers = new Headers(init.headers)
-  const token = getToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`/api/v1${path}`, { ...init, headers })
+  const response = await authorizedFetch(`/api/v1${path}`, { ...init, headers })
   if (!response.ok) {
     let envelope: components['schemas']['ErrorEnvelope'] | null = null
     try { envelope = await response.json() as components['schemas']['ErrorEnvelope'] } catch { envelope = null }
-    if (response.status === 401) clearToken()
-    throw new ApiError(response.status, envelope?.error.code ?? 'internal', envelope?.error.message ?? `请求失败（${response.status}）`, envelope?.error.details)
-  }
-  return await response.json() as T
-}
-
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  headers.set('Content-Type', 'application/json')
-  const token = getToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`/api/v1${path}`, { ...init, headers })
-  if (!response.ok) {
-    let envelope: components['schemas']['ErrorEnvelope'] | null = null
-    try {
-      envelope = await response.json() as components['schemas']['ErrorEnvelope']
-    } catch {
-      envelope = null
-    }
-    if (response.status === 401) clearToken()
     throw new ApiError(response.status, envelope?.error.code ?? 'internal', envelope?.error.message ?? `请求失败（${response.status}）`, envelope?.error.details)
   }
   return await response.json() as T

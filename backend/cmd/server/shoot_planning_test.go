@@ -8,11 +8,33 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
 )
 
 type fakeArchiveCapabilityStartupReader struct {
 	state planningcapability.ArchiveCapabilityState
 	err   error
+}
+
+func TestComposeShootPlanningApplicationWithIngestionRejectsNoopSink(t *testing.T) {
+	core := fakeArchiveCapabilityStartupReader{state: planningcapability.ArchiveCapabilityState{
+		SingletonKey: planningcapability.SingletonKey,
+		Capability:   planningcapability.ArchiveCapabilityCore,
+		Revision:     1,
+	}}
+	_, err := composeShootPlanningApplicationWithIngestion(
+		t.Context(), core, idempotency.NewExecutor(), nil, shootplanning.NoopPlanReadyObservationSink{},
+	)
+	if !errors.Is(err, shootplanning.ErrPlanReadyObservationWiringMismatch) {
+		t.Fatalf("route-enabled noop sink must fail closed, got %v", err)
+	}
+	if _, err := composeShootPlanningApplicationWithIngestion(
+		t.Context(), core, idempotency.NewExecutor(), nil,
+		ingestion.NewPlanReadyObservationAdapter(ingestion.NewRepository()),
+	); err != nil {
+		t.Fatalf("real ingestion adapter should compose: %v", err)
+	}
 }
 
 func (reader fakeArchiveCapabilityStartupReader) Current(context.Context) (planningcapability.ArchiveCapabilityState, error) {

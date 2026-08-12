@@ -330,6 +330,74 @@ type BindingResult struct {
 	Binding AssetBinding `json:"binding"`
 }
 
+// PreparedBindingInput is the narrow in-scope seam used by ingestion combined
+// commit. It intentionally contains no client-provided rights or object key.
+type PreparedBindingInput struct {
+	PlanID               string
+	AssetID              string
+	Generation           int
+	HolderKind           HolderKind
+	HolderID             string
+	Purpose              Purpose
+	ExpectedPlanRevision int64
+}
+
+// BindPreparedAssetsInScope binds an already-uploaded generation inside the
+// caller's transaction. Holder authorization is re-issued here; callers may
+// not pass or reuse a media proof from another capability.
+func (a *Application) BindPreparedAssetsInScope(ctx context.Context, tx store.TxAccountScope, input PreparedBindingInput) (BindingResult, error) {
+	if input.PlanID == "" || input.AssetID == "" || input.Generation < 1 || input.ExpectedPlanRevision < 1 || input.HolderID == "" {
+		return BindingResult{}, fmt.Errorf("%w: prepared binding input invalid", ErrValidation)
+	}
+	asset, err := a.repo.LockAsset(ctx, tx, input.AssetID)
+	if err != nil {
+		return BindingResult{}, err
+	}
+	if asset.UploadContextPlanID != input.PlanID {
+		return BindingResult{}, ErrNotFound
+	}
+	if asset.State == AssetGCPending || asset.State == AssetDeleted || asset.State == AssetCorrupt {
+		return BindingResult{}, ErrAssetState
+	}
+	if asset.CurrentGeneration != input.Generation {
+		return BindingResult{}, ErrAssetReferenceStale
+	}
+	if a.authorizer == nil {
+		return BindingResult{}, ErrHolderAuthorizationRequired
+	}
+	if _, err := a.authorizer.AuthorizeMediaHolderInScope(ctx, tx, HolderRequest{PlanID: input.PlanID, HolderID: input.HolderID, Kind: input.HolderKind, ExpectedPlanRevision: input.ExpectedPlanRevision, Mutation: MutationBind}); err != nil {
+		return BindingResult{}, err
+	}
+	rights, err := a.repo.RightsForGeneration(ctx, tx, input.AssetID, input.Generation)
+	if err != nil {
+		return BindingResult{}, err
+	}
+	if err := ValidatePurpose(rights, input.Purpose); err != nil {
+		return BindingResult{}, err
+	}
+	if input.HolderKind == HolderPlan && input.Purpose != PurposeMoodboardDisplay && input.Purpose != PurposeGenerationReference {
+		return BindingResult{}, ErrPurposeNotPermitted
+	}
+	if input.HolderKind == HolderShot && input.Purpose != PurposeShotReferenceDisplay && input.Purpose != PurposeGenerationReference {
+		return BindingResult{}, ErrPurposeNotPermitted
+	}
+	if existing, err := a.repo.FindActiveBinding(ctx, tx, input.AssetID, input.Generation, input.HolderKind, input.HolderID, input.Purpose); err == nil {
+		return BindingResult{Asset: asset, Binding: existing}, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return BindingResult{}, err
+	}
+	now := a.now().UTC()
+	binding := AssetBinding{ID: uuid.NewString(), AssetID: asset.ID, Generation: input.Generation, HolderKind: input.HolderKind, HolderID: input.HolderID, PlanID: input.PlanID, Purpose: input.Purpose, State: BindingActive, Revision: 1, CreatedAt: now}
+	if err := a.repo.InsertBinding(ctx, tx, binding); err != nil {
+		return BindingResult{}, err
+	}
+	if _, err := tx.Update(ctx, "planning_media_assets", "state = $2, revision = revision + 1, updated_at = $3", "id = $4", AssetActive, now, asset.ID); err != nil {
+		return BindingResult{}, err
+	}
+	asset.State, asset.Revision = AssetActive, asset.Revision+1
+	return BindingResult{Asset: asset, Binding: binding}, nil
+}
+
 type LeaseInput struct {
 	AssetID               string
 	Generation            int

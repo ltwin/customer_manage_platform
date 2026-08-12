@@ -86,6 +86,39 @@ func (e AssetBindingState) Valid() bool {
 	}
 }
 
+// Defines values for CoreArchiveAcknowledgementEffects.
+const (
+	CoreArchiveAcknowledgementEffectsExecutionHistoryRetained CoreArchiveAcknowledgementEffects = "execution_history_retained"
+	CoreArchiveAcknowledgementEffectsPlanBecomesReadOnly      CoreArchiveAcknowledgementEffects = "plan_becomes_read_only"
+)
+
+// Valid indicates whether the value is a known member of the CoreArchiveAcknowledgementEffects enum.
+func (e CoreArchiveAcknowledgementEffects) Valid() bool {
+	switch e {
+	case CoreArchiveAcknowledgementEffectsExecutionHistoryRetained:
+		return true
+	case CoreArchiveAcknowledgementEffectsPlanBecomesReadOnly:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CoreArchiveAcknowledgementVersion.
+const (
+	CoreV1 CoreArchiveAcknowledgementVersion = "core-v1"
+)
+
+// Valid indicates whether the value is a known member of the CoreArchiveAcknowledgementVersion enum.
+func (e CoreArchiveAcknowledgementVersion) Valid() bool {
+	switch e {
+	case CoreV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateAssetBindingInputHolderKind.
 const (
 	CreateAssetBindingInputHolderKindPlan CreateAssetBindingInputHolderKind = "plan"
@@ -455,6 +488,93 @@ func (e PlanningMediaUploadFormDeclaredMediaType) Valid() bool {
 	}
 }
 
+// Defines values for PlanningShareArchiveAcknowledgementEffects.
+const (
+	PlanningShareArchiveAcknowledgementEffectsActiveShareLinksBecomeUnavailable PlanningShareArchiveAcknowledgementEffects = "active_share_links_become_unavailable"
+	PlanningShareArchiveAcknowledgementEffectsExecutionHistoryRetained          PlanningShareArchiveAcknowledgementEffects = "execution_history_retained"
+	PlanningShareArchiveAcknowledgementEffectsPlanBecomesReadOnly               PlanningShareArchiveAcknowledgementEffects = "plan_becomes_read_only"
+	PlanningShareArchiveAcknowledgementEffectsShareAssignmentsRetained          PlanningShareArchiveAcknowledgementEffects = "share_assignments_retained"
+	PlanningShareArchiveAcknowledgementEffectsShareFeedbackRetained             PlanningShareArchiveAcknowledgementEffects = "share_feedback_retained"
+)
+
+// Valid indicates whether the value is a known member of the PlanningShareArchiveAcknowledgementEffects enum.
+func (e PlanningShareArchiveAcknowledgementEffects) Valid() bool {
+	switch e {
+	case PlanningShareArchiveAcknowledgementEffectsActiveShareLinksBecomeUnavailable:
+		return true
+	case PlanningShareArchiveAcknowledgementEffectsExecutionHistoryRetained:
+		return true
+	case PlanningShareArchiveAcknowledgementEffectsPlanBecomesReadOnly:
+		return true
+	case PlanningShareArchiveAcknowledgementEffectsShareAssignmentsRetained:
+		return true
+	case PlanningShareArchiveAcknowledgementEffectsShareFeedbackRetained:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningShareArchiveAcknowledgementVersion.
+const (
+	PlanningShareV1 PlanningShareArchiveAcknowledgementVersion = "planning-share-v1"
+)
+
+// Valid indicates whether the value is a known member of the PlanningShareArchiveAcknowledgementVersion enum.
+func (e PlanningShareArchiveAcknowledgementVersion) Valid() bool {
+	switch e {
+	case PlanningShareV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningShareReminderArchiveAcknowledgementEffects.
+const (
+	ActiveAssignmentRemindersWithdrawn PlanningShareReminderArchiveAcknowledgementEffects = "active_assignment_reminders_withdrawn"
+	ActiveShareLinksBecomeUnavailable  PlanningShareReminderArchiveAcknowledgementEffects = "active_share_links_become_unavailable"
+	ExecutionHistoryRetained           PlanningShareReminderArchiveAcknowledgementEffects = "execution_history_retained"
+	PlanBecomesReadOnly                PlanningShareReminderArchiveAcknowledgementEffects = "plan_becomes_read_only"
+	ShareAssignmentsRetained           PlanningShareReminderArchiveAcknowledgementEffects = "share_assignments_retained"
+	ShareFeedbackRetained              PlanningShareReminderArchiveAcknowledgementEffects = "share_feedback_retained"
+)
+
+// Valid indicates whether the value is a known member of the PlanningShareReminderArchiveAcknowledgementEffects enum.
+func (e PlanningShareReminderArchiveAcknowledgementEffects) Valid() bool {
+	switch e {
+	case ActiveAssignmentRemindersWithdrawn:
+		return true
+	case ActiveShareLinksBecomeUnavailable:
+		return true
+	case ExecutionHistoryRetained:
+		return true
+	case PlanBecomesReadOnly:
+		return true
+	case ShareAssignmentsRetained:
+		return true
+	case ShareFeedbackRetained:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningShareReminderArchiveAcknowledgementVersion.
+const (
+	PlanningShareReminderV1 PlanningShareReminderArchiveAcknowledgementVersion = "planning-share-reminder-v1"
+)
+
+// Valid indicates whether the value is a known member of the PlanningShareReminderArchiveAcknowledgementVersion enum.
+func (e PlanningShareReminderArchiveAcknowledgementVersion) Valid() bool {
+	switch e {
+	case PlanningShareReminderV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PricingMode.
 const (
 	PricingModeFixed       PricingMode = "fixed"
@@ -731,6 +851,16 @@ type AccountProfile struct {
 	UpdatedAt       *time.Time                `json:"updated_at,omitempty"`
 }
 
+// ArchiveAcknowledgement defines model for ArchiveAcknowledgement.
+type ArchiveAcknowledgement struct {
+	union json.RawMessage
+}
+
+// ArchiveAcknowledgementRequiredDetails defines model for ArchiveAcknowledgementRequiredDetails.
+type ArchiveAcknowledgementRequiredDetails struct {
+	RequiredArchiveAcknowledgement ArchiveAcknowledgement `json:"required_archive_acknowledgement"`
+}
+
 // AssetBinding defines model for AssetBinding.
 type AssetBinding struct {
 	AssetId    string                 `json:"asset_id"`
@@ -777,6 +907,18 @@ type ChurnThreshold struct {
 	Days      int       `json:"days"`
 	ShootType ShootType `json:"shoot_type"`
 }
+
+// CoreArchiveAcknowledgement defines model for CoreArchiveAcknowledgement.
+type CoreArchiveAcknowledgement struct {
+	Effects []CoreArchiveAcknowledgementEffects `json:"effects"`
+	Version CoreArchiveAcknowledgementVersion   `json:"version"`
+}
+
+// CoreArchiveAcknowledgementEffects defines model for CoreArchiveAcknowledgement.Effects.
+type CoreArchiveAcknowledgementEffects string
+
+// CoreArchiveAcknowledgementVersion defines model for CoreArchiveAcknowledgement.Version.
+type CoreArchiveAcknowledgementVersion string
 
 // CreateAssetBindingInput defines model for CreateAssetBindingInput.
 type CreateAssetBindingInput struct {
@@ -917,14 +1059,17 @@ type CustomerSummary struct {
 	Status         CustomerStatus  `json:"status"`
 }
 
+// ErrorDetails defines model for ErrorDetails.
+type ErrorDetails struct {
+	union json.RawMessage
+}
+
 // ErrorEnvelope 统一错误封套；含认证错误码与既有业务 conflict 子码
 type ErrorEnvelope struct {
 	Error struct {
-		Code string `json:"code"`
-
-		// Details order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
-		Details *ScheduleConflictDetails `json:"details,omitempty"`
-		Message string                   `json:"message"`
+		Code    string        `json:"code"`
+		Details *ErrorDetails `json:"details,omitempty"`
+		Message string        `json:"message"`
 	} `json:"error"`
 }
 
@@ -1230,6 +1375,30 @@ type PlanningMediaUploadForm struct {
 
 // PlanningMediaUploadFormDeclaredMediaType defines model for PlanningMediaUploadForm.DeclaredMediaType.
 type PlanningMediaUploadFormDeclaredMediaType string
+
+// PlanningShareArchiveAcknowledgement defines model for PlanningShareArchiveAcknowledgement.
+type PlanningShareArchiveAcknowledgement struct {
+	Effects []PlanningShareArchiveAcknowledgementEffects `json:"effects"`
+	Version PlanningShareArchiveAcknowledgementVersion   `json:"version"`
+}
+
+// PlanningShareArchiveAcknowledgementEffects defines model for PlanningShareArchiveAcknowledgement.Effects.
+type PlanningShareArchiveAcknowledgementEffects string
+
+// PlanningShareArchiveAcknowledgementVersion defines model for PlanningShareArchiveAcknowledgement.Version.
+type PlanningShareArchiveAcknowledgementVersion string
+
+// PlanningShareReminderArchiveAcknowledgement defines model for PlanningShareReminderArchiveAcknowledgement.
+type PlanningShareReminderArchiveAcknowledgement struct {
+	Effects []PlanningShareReminderArchiveAcknowledgementEffects `json:"effects"`
+	Version PlanningShareReminderArchiveAcknowledgementVersion   `json:"version"`
+}
+
+// PlanningShareReminderArchiveAcknowledgementEffects defines model for PlanningShareReminderArchiveAcknowledgement.Effects.
+type PlanningShareReminderArchiveAcknowledgementEffects string
+
+// PlanningShareReminderArchiveAcknowledgementVersion defines model for PlanningShareReminderArchiveAcknowledgement.Version.
+type PlanningShareReminderArchiveAcknowledgementVersion string
 
 // PricingMode defines model for PricingMode.
 type PricingMode string
@@ -1940,6 +2109,187 @@ type CreateShootPlanAssetBindingJSONRequestBody = CreateAssetBindingInput
 
 // ReleaseShootPlanAssetBindingJSONRequestBody defines body for ReleaseShootPlanAssetBinding for application/json ContentType.
 type ReleaseShootPlanAssetBindingJSONRequestBody = ReleaseAssetBindingInput
+
+// AsCoreArchiveAcknowledgement returns the union data inside the ArchiveAcknowledgement as a CoreArchiveAcknowledgement
+func (t ArchiveAcknowledgement) AsCoreArchiveAcknowledgement() (CoreArchiveAcknowledgement, error) {
+	var body CoreArchiveAcknowledgement
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCoreArchiveAcknowledgement overwrites any union data inside the ArchiveAcknowledgement as the provided CoreArchiveAcknowledgement
+func (t *ArchiveAcknowledgement) FromCoreArchiveAcknowledgement(v CoreArchiveAcknowledgement) error {
+	v.Version = "core-v1"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCoreArchiveAcknowledgement performs a merge with any union data inside the ArchiveAcknowledgement, using the provided CoreArchiveAcknowledgement
+func (t *ArchiveAcknowledgement) MergeCoreArchiveAcknowledgement(v CoreArchiveAcknowledgement) error {
+	v.Version = "core-v1"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsPlanningShareArchiveAcknowledgement returns the union data inside the ArchiveAcknowledgement as a PlanningShareArchiveAcknowledgement
+func (t ArchiveAcknowledgement) AsPlanningShareArchiveAcknowledgement() (PlanningShareArchiveAcknowledgement, error) {
+	var body PlanningShareArchiveAcknowledgement
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPlanningShareArchiveAcknowledgement overwrites any union data inside the ArchiveAcknowledgement as the provided PlanningShareArchiveAcknowledgement
+func (t *ArchiveAcknowledgement) FromPlanningShareArchiveAcknowledgement(v PlanningShareArchiveAcknowledgement) error {
+	v.Version = "planning-share-v1"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePlanningShareArchiveAcknowledgement performs a merge with any union data inside the ArchiveAcknowledgement, using the provided PlanningShareArchiveAcknowledgement
+func (t *ArchiveAcknowledgement) MergePlanningShareArchiveAcknowledgement(v PlanningShareArchiveAcknowledgement) error {
+	v.Version = "planning-share-v1"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsPlanningShareReminderArchiveAcknowledgement returns the union data inside the ArchiveAcknowledgement as a PlanningShareReminderArchiveAcknowledgement
+func (t ArchiveAcknowledgement) AsPlanningShareReminderArchiveAcknowledgement() (PlanningShareReminderArchiveAcknowledgement, error) {
+	var body PlanningShareReminderArchiveAcknowledgement
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromPlanningShareReminderArchiveAcknowledgement overwrites any union data inside the ArchiveAcknowledgement as the provided PlanningShareReminderArchiveAcknowledgement
+func (t *ArchiveAcknowledgement) FromPlanningShareReminderArchiveAcknowledgement(v PlanningShareReminderArchiveAcknowledgement) error {
+	v.Version = "planning-share-reminder-v1"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergePlanningShareReminderArchiveAcknowledgement performs a merge with any union data inside the ArchiveAcknowledgement, using the provided PlanningShareReminderArchiveAcknowledgement
+func (t *ArchiveAcknowledgement) MergePlanningShareReminderArchiveAcknowledgement(v PlanningShareReminderArchiveAcknowledgement) error {
+	v.Version = "planning-share-reminder-v1"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ArchiveAcknowledgement) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"version"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t ArchiveAcknowledgement) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "core-v1":
+		return t.AsCoreArchiveAcknowledgement()
+	case "planning-share-reminder-v1":
+		return t.AsPlanningShareReminderArchiveAcknowledgement()
+	case "planning-share-v1":
+		return t.AsPlanningShareArchiveAcknowledgement()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t ArchiveAcknowledgement) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ArchiveAcknowledgement) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsScheduleConflictDetails returns the union data inside the ErrorDetails as a ScheduleConflictDetails
+func (t ErrorDetails) AsScheduleConflictDetails() (ScheduleConflictDetails, error) {
+	var body ScheduleConflictDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromScheduleConflictDetails overwrites any union data inside the ErrorDetails as the provided ScheduleConflictDetails
+func (t *ErrorDetails) FromScheduleConflictDetails(v ScheduleConflictDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeScheduleConflictDetails performs a merge with any union data inside the ErrorDetails, using the provided ScheduleConflictDetails
+func (t *ErrorDetails) MergeScheduleConflictDetails(v ScheduleConflictDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsArchiveAcknowledgementRequiredDetails returns the union data inside the ErrorDetails as a ArchiveAcknowledgementRequiredDetails
+func (t ErrorDetails) AsArchiveAcknowledgementRequiredDetails() (ArchiveAcknowledgementRequiredDetails, error) {
+	var body ArchiveAcknowledgementRequiredDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromArchiveAcknowledgementRequiredDetails overwrites any union data inside the ErrorDetails as the provided ArchiveAcknowledgementRequiredDetails
+func (t *ErrorDetails) FromArchiveAcknowledgementRequiredDetails(v ArchiveAcknowledgementRequiredDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeArchiveAcknowledgementRequiredDetails performs a merge with any union data inside the ErrorDetails, using the provided ArchiveAcknowledgementRequiredDetails
+func (t *ErrorDetails) MergeArchiveAcknowledgementRequiredDetails(v ArchiveAcknowledgementRequiredDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ErrorDetails) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ErrorDetails) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // AsShootScheduleSlotListItem returns the union data inside the ScheduleSlotListItem as a ShootScheduleSlotListItem
 func (t ScheduleSlotListItem) AsShootScheduleSlotListItem() (ShootScheduleSlotListItem, error) {

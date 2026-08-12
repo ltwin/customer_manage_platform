@@ -27,6 +27,7 @@ import { peekLoginNotice } from './account/security/loginNotice.ts'
 import ShootPlansPage from './planning/ShootPlansPage'
 import ShootPlanWorkspacePage from './planning/ShootPlanWorkspacePage'
 import ShootPlanRunPage from './planning/ShootPlanRunPage'
+import ShootPlanIngestionPage from './planning/ShootPlanIngestionPage'
 
 type AuthStatus = ReturnType<typeof getAuthSnapshot>['status']
 
@@ -115,6 +116,7 @@ export default function App() {
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/shoot-plans" element={<ShootPlansPage />} />
         <Route path="/shoot-plans/:id" element={<ShootPlanWorkspacePage />} />
+        <Route path="/shoot-plans/:id/ingestions/:sessionId" element={<ShootPlanIngestionPage />} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/reminders" element={<RemindersPage />} />
         <Route path="/settings" element={<Navigate to="/account/settings" replace />} />

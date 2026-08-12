@@ -142,14 +142,13 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 		t.Fatalf("migrate rollback legacy fixture up: %v", err)
 	}
 	fullVersion := migrationVersion(t, url)
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("account profiles down: %v", err)
-	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("settings availability down: %v", err)
-	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("limiter schema down: %v", err)
+	for _, label := range []string{
+		"plan ingestion", "planning media", "shoot planning",
+		"account profiles", "settings availability", "limiter schema",
+	} {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatalf("%s down: %v", label, err)
+		}
 	}
 	versionBefore := migrationVersion(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -170,14 +169,13 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 
 	resetAuthSchema(t, url)
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("prepare account profiles down: %v", err)
-	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("prepare settings availability down: %v", err)
-	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatalf("prepare new-style auth down: %v", err)
+	for _, label := range []string{
+		"plan ingestion", "planning media", "shoot planning",
+		"account profiles", "settings availability", "limiter schema",
+	} {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatalf("prepare %s down: %v", label, err)
+		}
 	}
 	db = openSQLDatabase(t, url)
 	if _, err := db.ExecContext(ctx, `INSERT INTO accounts (id, status, password_hash)
@@ -206,7 +204,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	return legacyRollbackHarnessReport{
 		Report: "auth_legacy_rollback", MigrationChecksum: "sha256:" + hex.EncodeToString(digest[:]),
 		LegacySchemaVersionBefore: versionBefore, LegacySchemaVersionAfter: versionAfter,
-		LimiterSchemaRollback:        fullVersion == 15 && versionBefore == 12,
+		LimiterSchemaRollback:        fullVersion == 18 && versionBefore == 12,
 		LegacyDownPassed:             versionBefore == 12 && versionAfter == 11,
 		LegacyDataPreserved:          legacyHash == "deprecated-hash" && customerCount == 1,
 		NewStyleDownBlocked:          downErr != nil && strings.Contains(downErr.Error(), "auth_schema_down_blocked_new_accounts"),

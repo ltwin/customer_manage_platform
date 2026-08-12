@@ -1,0 +1,41 @@
+[
+  {
+    "name": "pure-url-query-fragment",
+    "source": "https://example.com/a?x=1#part。",
+    "content_count": 0,
+    "reference_count": 1,
+    "reference": "https://example.com/a?x=1#part"
+  },
+  {
+    "name": "speaker-and-readiness",
+    "source": "摄影师：记得带白手套",
+    "content_count": 1,
+    "reference_count": 0,
+    "kind": "readiness",
+    "normalized": "记得带白手套"
+  },
+  {
+    "name": "time-and-emoji",
+    "source": "15:00 拍逆光 ✨",
+    "content_count": 1,
+    "reference_count": 0,
+    "kind": "shot",
+    "normalized": "15:00 拍逆光 ✨"
+  },
+  {
+    "name": "one-line-two-urls",
+    "source": "参考 https://a.example/x 和 https://b.example/y",
+    "content_count": 1,
+    "reference_count": 2,
+    "kind": "shot",
+    "normalized": "参考 和"
+  },
+  {
+    "name": "ftp-is-content",
+    "source": "ftp://example.com/file",
+    "content_count": 1,
+    "reference_count": 0,
+    "kind": "shot",
+    "normalized": "ftp://example.com/file"
+  }
+]

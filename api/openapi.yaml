@@ -48,6 +48,8 @@ tags:
     description: 独立创作型拍摄策划、现场执行与审计历史
   - name: planning-media
     description: 拍摄策划参考素材的上传、绑定、展示与生命周期管理
+  - name: planning-ingestion
+    description: 摄取聊天文本、参考链接与候选编辑会话
 
 paths:
   /auth/capabilities:
@@ -2161,6 +2163,128 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /shoot-plans/{id}/ingestion-sessions:
+    post:
+      tags: [planning-ingestion]
+      operationId: createPlanIngestionSession
+      summary: 创建策划摄取会话
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlanIngestionSessionInput"
+      responses:
+        "201":
+          description: 摄取会话已创建
+          content: {application/json: {schema: {$ref: "#/components/schemas/PlanIngestionSession"}}}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "422": {$ref: "#/components/responses/ValidationFailed"}
+        "500": {$ref: "#/components/responses/Internal"}
+
+  /shoot-plans/{id}/ingestion-sessions/{sessionId}:
+    get:
+      tags: [planning-ingestion]
+      operationId: getPlanIngestionSession
+      summary: 恢复策划摄取会话
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: sessionId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200":
+          description: 摄取会话
+          content: {application/json: {schema: {$ref: "#/components/schemas/PlanIngestionSession"}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "500": {$ref: "#/components/responses/Internal"}
+
+  /shoot-plans/{id}/ingestion-sessions/{sessionId}/preview:
+    post:
+      tags: [planning-ingestion]
+      operationId: previewPlanIngestionSession
+      summary: 重新解析并保存摄取候选预览
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: sessionId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/PreviewPlanIngestionSessionInput"}}}
+      responses:
+        "200":
+          description: 候选预览
+          content: {application/json: {schema: {$ref: "#/components/schemas/PlanIngestionSession"}}}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "422": {$ref: "#/components/responses/ValidationFailed"}
+        "500": {$ref: "#/components/responses/Internal"}
+
+  /shoot-plans/{id}/ingestion-sessions/{sessionId}/transition:
+    post:
+      tags: [planning-ingestion]
+      operationId: transitionPlanIngestionSession
+      summary: 结束摄取会话
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: sessionId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/TransitionPlanIngestionSessionInput"}}}
+      responses:
+        "200":
+          description: 会话已结束
+          content: {application/json: {schema: {$ref: "#/components/schemas/PlanIngestionSession"}}}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "500": {$ref: "#/components/responses/Internal"}
+
+  /shoot-plans/{id}/ingestion-sessions/{sessionId}/commit:
+    post:
+      tags: [planning-ingestion]
+      operationId: commitPlanIngestionSession
+      summary: 原子提交摄取候选
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: sessionId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: "#/components/schemas/CommitPlanIngestionSessionInput"}}}
+      responses:
+        "200":
+          description: 摄取候选已原子提交
+          content: {application/json: {schema: {$ref: "#/components/schemas/PlanIngestionCommitResult"}}}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "422": {$ref: "#/components/responses/ValidationFailed"}
+        "500": {$ref: "#/components/responses/Internal"}
+
   /shoot-plans/{id}/assets:
     get:
       tags: [planning-media]
@@ -2635,7 +2759,20 @@ components:
             message:
               type: string
             details:
-              $ref: "#/components/schemas/ScheduleConflictDetails"
+              $ref: "#/components/schemas/ErrorDetails"
+
+    ErrorDetails:
+      oneOf:
+        - $ref: "#/components/schemas/ScheduleConflictDetails"
+        - $ref: "#/components/schemas/ArchiveAcknowledgementRequiredDetails"
+
+    ArchiveAcknowledgementRequiredDetails:
+      type: object
+      additionalProperties: false
+      required: [required_archive_acknowledgement]
+      properties:
+        required_archive_acknowledgement:
+          $ref: "#/components/schemas/ArchiveAcknowledgement"
 
     ScheduleConflictDetails:
       description: order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
@@ -4590,6 +4727,316 @@ components:
         execution_fact_revision:
           type: integer
           format: int64
+
+    CreatePlanIngestionSessionInput:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_revision]
+      properties:
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        source_text: {type: string, minLength: 1, maxLength: 200000}
+        staged_asset_intent_count: {type: integer, minimum: 0, maximum: 50, default: 0}
+        staged_asset_intents: {type: array, items: {$ref: "#/components/schemas/IngestionAssetBindingDecision"}, maxItems: 50}
+
+    IngestionParsedSegment:
+      type: object
+      additionalProperties: false
+      required: [fingerprint, original, normalized, line_refs, first_line]
+      properties:
+        fingerprint: {type: string}
+        original: {type: string}
+        normalized: {type: string}
+        line_refs: {type: array, items: {type: integer, minimum: 1}}
+        first_line: {type: integer, minimum: 1}
+
+    IngestionContentCandidate:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, kind, source_line_refs, source_fingerprint, original_excerpt, normalized_content, title, action, source_status, user_modified]
+      properties:
+        candidate_id: {type: string}
+        kind: {type: string, enum: [shot, readiness]}
+        source_line_refs: {type: array, items: {type: integer, minimum: 1}}
+        source_fingerprint: {type: string}
+        prior_source_fingerprint: {type: string, nullable: true}
+        original_excerpt: {type: string}
+        normalized_content: {type: string}
+        title: {type: string}
+        category: {type: string, nullable: true}
+        requirement: {type: string, nullable: true}
+        responsibility_hint: {type: string, nullable: true}
+        default_preparation_lead_days: {type: integer, nullable: true, minimum: 0}
+        preflight_status: {type: string, nullable: true}
+        action: {type: string, enum: [keep, discard, needs_confirmation]}
+        source_status: {type: string, enum: [current, source_changed, source_missing, reappeared]}
+        user_modified: {type: boolean}
+        superseded_by_candidate_id: {type: string, nullable: true}
+        source_change_revision: {type: integer, format: int64, nullable: true}
+        acknowledged_source_change_revision: {type: integer, format: int64, nullable: true}
+
+    IngestionReadinessLinkCandidate:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, readiness_client_or_id_ref, shot_client_or_id_ref, source_line_refs, action, source_status, user_modified]
+      properties:
+        candidate_id: {type: string}
+        readiness_client_or_id_ref: {type: string}
+        shot_client_or_id_ref: {type: string}
+        source_line_refs: {type: array, items: {type: integer, minimum: 1}}
+        action: {type: string, enum: [keep, discard, needs_confirmation]}
+        source_status: {type: string, enum: [current, source_changed, source_missing, reappeared]}
+        user_modified: {type: boolean}
+        source_change_revision: {type: integer, format: int64, nullable: true}
+        acknowledged_source_change_revision: {type: integer, format: int64, nullable: true}
+
+    IngestionReferenceLinkCandidate:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, raw_url, url_digest, url_occurrence, source_line_refs, source_fingerprint, target_kind, action, source_status, user_modified]
+      properties:
+        candidate_id: {type: string}
+        raw_url: {type: string, format: uri, maxLength: 2048}
+        url_digest: {type: string}
+        url_occurrence: {type: integer, minimum: 1}
+        source_line_refs: {type: array, items: {type: integer, minimum: 1}}
+        source_fingerprint: {type: string}
+        prior_source_fingerprint: {type: string, nullable: true}
+        label: {type: string, nullable: true, maxLength: 160}
+        source_hint: {type: string, nullable: true, maxLength: 80}
+        target_kind: {type: string, enum: [plan, shot]}
+        target_client_or_id_ref: {type: string, nullable: true}
+        action: {type: string, enum: [keep, discard, needs_confirmation]}
+        source_status: {type: string, enum: [current, source_changed, source_missing, reappeared]}
+        user_modified: {type: boolean}
+        source_change_revision: {type: integer, format: int64, nullable: true}
+        acknowledged_source_change_revision: {type: integer, format: int64, nullable: true}
+
+    IngestionDroppedCandidate:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, reason, source_line_refs, action]
+      properties:
+        candidate_id: {type: string}
+        reason: {type: string}
+        source_line_refs: {type: array, items: {type: integer, minimum: 1}}
+        original: {type: string}
+        winner_candidate_id: {type: string, nullable: true}
+        action: {type: string, enum: [discard, needs_confirmation]}
+
+    IngestionCandidateSnapshot:
+      type: object
+      additionalProperties: false
+      required: [segments, content_candidates, readiness_link_candidates, reference_link_candidates, dropped_candidates, asset_binding_candidates]
+      properties:
+        segments: {type: array, items: {$ref: "#/components/schemas/IngestionParsedSegment"}}
+        content_candidates: {type: array, items: {$ref: "#/components/schemas/IngestionContentCandidate"}}
+        readiness_link_candidates: {type: array, items: {$ref: "#/components/schemas/IngestionReadinessLinkCandidate"}}
+        reference_link_candidates: {type: array, items: {$ref: "#/components/schemas/IngestionReferenceLinkCandidate"}}
+        dropped_candidates: {type: array, items: {$ref: "#/components/schemas/IngestionDroppedCandidate"}}
+        asset_binding_candidates: {type: array, items: {$ref: "#/components/schemas/IngestionAssetBindingDecision"}, maxItems: 50}
+
+    PreviewPlanIngestionSessionInput:
+      type: object
+      additionalProperties: false
+      required: [expected_session_revision]
+      properties:
+        expected_session_revision: {type: integer, format: int64, minimum: 1}
+        source_text: {type: string, nullable: true, maxLength: 200000}
+        staged_asset_intent_count: {type: integer, minimum: 0, maximum: 50, default: 0}
+        staged_asset_intents: {type: array, items: {$ref: "#/components/schemas/IngestionAssetBindingDecision"}, maxItems: 50}
+        content_overrides: {type: array, items: {$ref: "#/components/schemas/IngestionContentOverride"}, maxItems: 300}
+        reference_link_overrides: {type: array, items: {$ref: "#/components/schemas/IngestionReferenceLinkOverride"}, maxItems: 100}
+        readiness_link_overrides: {type: array, items: {$ref: "#/components/schemas/IngestionReadinessLinkOverride"}, maxItems: 300}
+        readiness_link_selections: {type: array, items: {$ref: "#/components/schemas/IngestionReadinessLinkSelection"}, maxItems: 300}
+
+    IngestionContentOverride:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, action]
+      properties:
+        candidate_id: {type: string}
+        kind: {type: string, enum: [shot, readiness]}
+        title: {type: string, maxLength: 160}
+        action: {type: string, enum: [keep, discard]}
+        acknowledge_source_change_revision: {type: integer, format: int64, nullable: true}
+
+    IngestionReferenceLinkOverride:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, action]
+      properties:
+        candidate_id: {type: string}
+        label: {type: string, nullable: true, maxLength: 160}
+        target_kind: {type: string, enum: [plan, shot]}
+        target_client_or_id_ref: {type: string, nullable: true}
+        action: {type: string, enum: [keep, discard]}
+        acknowledge_source_change_revision: {type: integer, format: int64, nullable: true}
+
+    IngestionReadinessLinkSelection:
+      type: object
+      additionalProperties: false
+      required: [readiness_client_or_id_ref, shot_client_or_id_ref]
+      properties:
+        readiness_client_or_id_ref: {type: string}
+        shot_client_or_id_ref: {type: string}
+
+    IngestionReadinessLinkOverride:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, readiness_client_or_id_ref, shot_client_or_id_ref, action]
+      properties:
+        candidate_id: {type: string}
+        readiness_client_or_id_ref: {type: string}
+        shot_client_or_id_ref: {type: string}
+        action: {type: string, enum: [keep, discard]}
+        acknowledge_source_change_revision: {type: integer, format: int64, nullable: true}
+
+    TransitionPlanIngestionSessionInput:
+      type: object
+      additionalProperties: false
+      required: [expected_session_revision, state]
+      properties:
+        expected_session_revision: {type: integer, format: int64, minimum: 1}
+        state: {type: string, enum: [abandoned]}
+
+    CommitPlanIngestionSessionInput:
+      type: object
+      additionalProperties: false
+      required: [expected_session_revision, expected_plan_revision]
+      properties:
+        expected_session_revision: {type: integer, format: int64, minimum: 1}
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        shot_decisions: {type: array, items: {$ref: "#/components/schemas/IngestionShotDecision"}, maxItems: 300}
+        readiness_decisions: {type: array, items: {$ref: "#/components/schemas/IngestionReadinessDecision"}, maxItems: 300}
+        link_decisions: {type: array, items: {$ref: "#/components/schemas/IngestionLinkDecision"}, maxItems: 300}
+        reference_link_decisions: {type: array, items: {$ref: "#/components/schemas/IngestionReferenceLinkDecision"}, maxItems: 100}
+        asset_bindings: {type: array, items: {$ref: "#/components/schemas/IngestionAssetBindingDecision"}, maxItems: 50}
+
+    PlanIngestionCommitResult:
+      type: object
+      additionalProperties: false
+      required: [session, reference_links, media_bindings]
+      properties:
+        session: {$ref: "#/components/schemas/PlanIngestionSession"}
+        plan_batch:
+          allOf:
+            - $ref: "#/components/schemas/PlanBatchResult"
+          nullable: true
+        reference_links: {type: array, items: {$ref: "#/components/schemas/PlanReferenceLink"}}
+        media_bindings: {type: array, items: {$ref: "#/components/schemas/AssetBindingResult"}}
+
+    PlanBatchResult:
+      type: object
+      additionalProperties: true
+      required: [plan_id, revision, status, created_ids, current_shots, current_readiness, current_links]
+      properties:
+        plan_id: {type: string}
+        revision: {type: integer, format: int64}
+        status: {$ref: "#/components/schemas/ShootPlanStatus"}
+        created_ids: {type: array, items: {type: object, additionalProperties: true}}
+        current_shots: {type: array, items: {$ref: "#/components/schemas/ShootPlanShot"}}
+        current_readiness: {type: array, items: {$ref: "#/components/schemas/ShootPlanReadinessItem"}}
+        current_links: {type: array, items: {type: object, additionalProperties: true}}
+
+    PlanReferenceLink:
+      type: object
+      additionalProperties: false
+      required: [id, plan_id, target_kind, target_id, url, url_digest, source_session_id, source_candidate_id, revision, created_at]
+      properties:
+        id: {type: string}
+        plan_id: {type: string}
+        target_kind: {type: string, enum: [plan, shot]}
+        target_id: {type: string}
+        url: {type: string, format: uri, maxLength: 2048}
+        url_digest: {type: string}
+        label: {type: string, nullable: true, maxLength: 160}
+        source_hint: {type: string, nullable: true, maxLength: 80}
+        source_session_id: {type: string}
+        source_candidate_id: {type: string}
+        revision: {type: integer, format: int64}
+        removed_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+
+    IngestionShotDecision:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, action]
+      properties:
+        candidate_id: {type: string}
+        action: {type: string, enum: [keep, discard]}
+        client_ref: {type: string}
+        shot: {$ref: "#/components/schemas/ShotWrite"}
+        position_after_client_or_shot_ref: {type: string, nullable: true}
+        reason: {type: string}
+
+    IngestionReadinessDecision:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, action]
+      properties:
+        candidate_id: {type: string}
+        action: {type: string, enum: [keep, discard]}
+        client_ref: {type: string}
+        item: {$ref: "#/components/schemas/ReadinessWrite"}
+        reason: {type: string}
+
+    IngestionLinkDecision:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, action, shot_client_or_id_ref, readiness_client_or_id_ref]
+      properties:
+        candidate_id: {type: string}
+        action: {type: string, enum: [keep, discard]}
+        shot_client_or_id_ref: {type: string}
+        readiness_client_or_id_ref: {type: string}
+        reason: {type: string}
+
+    IngestionReferenceLinkDecision:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, action, raw_url, target_kind]
+      properties:
+        candidate_id: {type: string}
+        action: {type: string, enum: [keep, discard]}
+        raw_url: {type: string, format: uri, maxLength: 2048}
+        label: {type: string, nullable: true, maxLength: 160}
+        target_kind: {type: string, enum: [plan, shot]}
+        target_client_or_id_ref: {type: string, nullable: true}
+        reason: {type: string}
+
+    IngestionAssetBindingDecision:
+      type: object
+      additionalProperties: false
+      required: [candidate_id, asset_id, generation, target_kind, target_client_or_id_ref, purpose]
+      properties:
+        candidate_id: {type: string}
+        asset_id: {type: string}
+        generation: {type: integer, minimum: 1}
+        target_kind: {type: string, enum: [plan, shot]}
+        target_client_or_id_ref: {type: string}
+        purpose: {type: string}
+
+    PlanIngestionSession:
+      type: object
+      additionalProperties: false
+      required: [id, plan_id, state, revision, parser_version, source_checksum, source_line_count, candidate_snapshot, candidate_schema_version, created_at, updated_at]
+      properties:
+        id: {type: string}
+        plan_id: {type: string}
+        state: {type: string, enum: [editing, committed, abandoned]}
+        revision: {type: integer, format: int64}
+        parser_version: {type: integer, enum: [1]}
+        source_text: {type: string, nullable: true}
+        source_checksum: {type: string}
+        source_line_count: {type: integer}
+        candidate_snapshot:
+          $ref: "#/components/schemas/IngestionCandidateSnapshot"
+        candidate_schema_version: {type: integer, enum: [1]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        committed_at: {type: string, format: date-time, nullable: true}
+        abandoned_at: {type: string, format: date-time, nullable: true}
+        redacted_at: {type: string, format: date-time, nullable: true}
 
     PlanFinalizationSnapshot:
       type: object

@@ -1152,6 +1152,11 @@ type ArchiveAcknowledgement struct {
 	union json.RawMessage
 }
 
+// ArchiveAcknowledgementRequiredDetails defines model for ArchiveAcknowledgementRequiredDetails.
+type ArchiveAcknowledgementRequiredDetails struct {
+	RequiredArchiveAcknowledgement ArchiveAcknowledgement `json:"required_archive_acknowledgement"`
+}
+
 // ArchivePlanTransition defines model for ArchivePlanTransition.
 type ArchivePlanTransition struct {
 	ExpectedRevision int64                           `json:"expected_revision"`
@@ -1225,14 +1230,17 @@ type CreativeBriefPatch struct {
 // EmptyTransitionPayload defines model for EmptyTransitionPayload.
 type EmptyTransitionPayload = map[string]interface{}
 
+// ErrorDetails defines model for ErrorDetails.
+type ErrorDetails struct {
+	union json.RawMessage
+}
+
 // ErrorEnvelope 统一错误封套；含认证错误码与既有业务 conflict 子码
 type ErrorEnvelope struct {
 	Error struct {
-		Code string `json:"code"`
-
-		// Details order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
-		Details *ScheduleConflictDetails `json:"details,omitempty"`
-		Message string                   `json:"message"`
+		Code    string        `json:"code"`
+		Details *ErrorDetails `json:"details,omitempty"`
+		Message string        `json:"message"`
 	} `json:"error"`
 }
 
@@ -1991,6 +1999,68 @@ func (t ArchiveAcknowledgement) MarshalJSON() ([]byte, error) {
 }
 
 func (t *ArchiveAcknowledgement) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsScheduleConflictDetails returns the union data inside the ErrorDetails as a ScheduleConflictDetails
+func (t ErrorDetails) AsScheduleConflictDetails() (ScheduleConflictDetails, error) {
+	var body ScheduleConflictDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromScheduleConflictDetails overwrites any union data inside the ErrorDetails as the provided ScheduleConflictDetails
+func (t *ErrorDetails) FromScheduleConflictDetails(v ScheduleConflictDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeScheduleConflictDetails performs a merge with any union data inside the ErrorDetails, using the provided ScheduleConflictDetails
+func (t *ErrorDetails) MergeScheduleConflictDetails(v ScheduleConflictDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsArchiveAcknowledgementRequiredDetails returns the union data inside the ErrorDetails as a ArchiveAcknowledgementRequiredDetails
+func (t ErrorDetails) AsArchiveAcknowledgementRequiredDetails() (ArchiveAcknowledgementRequiredDetails, error) {
+	var body ArchiveAcknowledgementRequiredDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromArchiveAcknowledgementRequiredDetails overwrites any union data inside the ErrorDetails as the provided ArchiveAcknowledgementRequiredDetails
+func (t *ErrorDetails) FromArchiveAcknowledgementRequiredDetails(v ArchiveAcknowledgementRequiredDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeArchiveAcknowledgementRequiredDetails performs a merge with any union data inside the ErrorDetails, using the provided ArchiveAcknowledgementRequiredDetails
+func (t *ErrorDetails) MergeArchiveAcknowledgementRequiredDetails(v ArchiveAcknowledgementRequiredDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ErrorDetails) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ErrorDetails) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

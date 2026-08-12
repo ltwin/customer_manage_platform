@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
+import {
+  buildExecutionWindow,
+  inferExecutionWindowMode,
+} from '../src/planning/executionWindow.ts'
 import { shotHasExecutionHistory } from '../src/planning/history.ts'
 
 function source(path: string): string {
@@ -13,6 +17,64 @@ test('shot history acknowledgement is based on retained execution facts, not the
   assert.equal(shotHasExecutionHistory(plan, 'shot-1'), true)
   assert.equal(shotHasExecutionHistory(plan, 'shot-3'), false)
   assert.equal(shotHasExecutionHistory({}, 'shot-1'), false)
+})
+
+test('shoot time defaults to an automatic two-hour live recognition buffer', () => {
+  const window = buildExecutionWindow({
+    startsAt: '2026-08-23T15:00',
+    endsAt: '2026-08-23T21:30',
+    timezone: 'Asia/Shanghai',
+    mode: 'automatic',
+    customLiveStartsAt: '',
+    customLiveEndsAt: '',
+  })
+
+  assert.deepEqual(window, {
+    startsAt: '2026-08-23T07:00:00Z',
+    endsAt: '2026-08-23T13:30:00Z',
+    timezone: 'Asia/Shanghai',
+    liveWindowStartsAt: '2026-08-23T05:00:00Z',
+    liveWindowEndsAt: '2026-08-23T15:30:00Z',
+  })
+})
+
+test('custom live recognition range must contain the complete shoot time', () => {
+  assert.throws(() => buildExecutionWindow({
+    startsAt: '2026-08-17T00:00',
+    endsAt: '2026-08-23T23:59',
+    timezone: 'Asia/Shanghai',
+    mode: 'custom',
+    customLiveStartsAt: '2026-08-23T15:00',
+    customLiveEndsAt: '2026-08-23T21:30',
+  }), /现场识别范围需要包含完整的拍摄时间/)
+})
+
+test('saved two-hour buffers reopen in automatic mode while adjusted buffers remain custom', () => {
+  assert.equal(inferExecutionWindowMode({
+    starts_at: '2026-08-23T07:00:00Z',
+    ends_at: '2026-08-23T13:30:00Z',
+    live_window_starts_at: '2026-08-23T05:00:00Z',
+    live_window_ends_at: '2026-08-23T15:30:00Z',
+  }), 'automatic')
+  assert.equal(inferExecutionWindowMode({
+    starts_at: '2026-08-23T07:00:00Z',
+    ends_at: '2026-08-23T13:30:00Z',
+    live_window_starts_at: '2026-08-23T04:00:00Z',
+    live_window_ends_at: '2026-08-23T15:30:00Z',
+  }), 'custom')
+})
+
+test('shoot time keeps system-level live recognition settings in a collapsed advanced section', () => {
+  const panel = source('../src/planning/panels/BriefPanel.tsx')
+
+  assert.match(panel, /<h2>拍摄时间<\/h2>/)
+  assert.match(panel, /<span>拍摄开始<\/span>/)
+  assert.match(panel, /<span>拍摄结束<\/span>/)
+  assert.match(panel, /<details className="planning-advanced-settings">/)
+  assert.match(panel, /<summary><Settings2[^>]*aria-hidden="true"[^>]*\/><span>高级设置<\/span>/)
+  assert.match(panel, /现场范围自动设置/)
+  assert.match(panel, /拍摄地点时区/)
+  assert.doesNotMatch(panel, /<span>IANA 时区<\/span>|<span>现场窗口开始<\/span>|<span>现场窗口结束<\/span>/)
 })
 
 test('planning API reuses generated OpenAPI types and never accepts account scope or capture mode from callers', () => {
@@ -28,20 +90,20 @@ test('planning workspace stays in AppShell while Run Mode is independently authe
   const app = source('../src/App.tsx')
   const shell = source('../src/components/AppShell.tsx')
 
-  assert.match(app, /<RequireAuth>[\s\S]*<AppShell \/>[\s\S]*<Route path="\/shoot-plans"/)
+  assert.match(app, /<RequireAuth status=\{auth\.status\}>[\s\S]*<AppShell \/>[\s\S]*<Route path="\/shoot-plans"/)
   assert.match(app, /<Route path="\/shoot-plans\/:id"/)
-  assert.match(app, /<Route path="\/settings"[^\n]*\/>\s*<\/Route>\s*<Route\s*path="\/shoot-plans\/:id\/run"[\s\S]*<RequireAuth>[\s\S]*<ShootPlanRunPage \/>/)
+  assert.match(app, /<Route path="\/settings"[^\n]*\/>[\s\S]*<Route path="\/shoot-plans\/:id\/run" element=\{<RequireAuth status=\{auth\.status\}><ShootPlanRunPage \/><\/RequireAuth>\} \/>/)
   assert.match(shell, /label: '策划', to: '\/shoot-plans'/)
 })
 
-test('workspace exposes only the four approved core sections and no later-feature entry points', () => {
+test('workspace exposes only the five approved core sections and no later-feature entry points', () => {
   const workspace = source('../src/planning/ShootPlanWorkspacePage.tsx')
 
-  assert.equal((workspace.match(/<TabButton\s/g) ?? []).length, 4)
-  for (const coreTab of ['创作 brief', '镜头表', '准备项', '执行历史']) {
+  assert.equal((workspace.match(/<TabButton\s/g) ?? []).length, 5)
+  for (const coreTab of ['创作 brief', '镜头表', '准备项', '参考素材', '执行历史']) {
     assert.match(workspace, new RegExp(`>${coreTab}(?:\\s|<|\\{)`))
   }
-  for (const deferredEntry of ['参考素材', '分享反馈', '经营草稿', '素材摄取', 'AI 脚本', 'AI 分镜']) {
+  for (const deferredEntry of ['分享反馈', '经营草稿', '素材摄取', 'AI 脚本', 'AI 分镜']) {
     assert.doesNotMatch(workspace, new RegExp(`>${deferredEntry}<`))
   }
 })

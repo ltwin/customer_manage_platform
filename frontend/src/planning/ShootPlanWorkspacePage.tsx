@@ -135,6 +135,7 @@ export default function ShootPlanWorkspacePage() {
         </div>
         <div className="topbar-actions">
           <button className="btn" type="button" onClick={() => navigate('/shoot-plans')}>← 全部策划</button>
+          {plan && plan.status !== 'archived' && <button className="btn btn-primary" type="button" onClick={() => navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/ingestions/new`)}>从聊天整理</button>}
           {plan && <StatusActions plan={plan} busy={busy} runTransition={runTransition} onRun={() => navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/run`)} />}
         </div>
       </header>

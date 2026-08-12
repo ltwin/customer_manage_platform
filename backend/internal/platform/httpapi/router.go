@@ -25,6 +25,7 @@ import (
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
 )
 
 // Pinger 是健康检查所需的最小数据库探测面（测试注入失败用）。
@@ -63,6 +64,7 @@ type RouterDeps struct {
 	Now                       func() time.Time
 	ShootPlanning             *shootplanning.Application
 	PlanningMedia             *planningmedia.Application
+	PlanningIngestion         *ingestion.Application
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -179,6 +181,9 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	}
 	if deps.PlanningMedia != nil {
 		registerPlanningMediaHandlers(protected, deps.PlanningMedia, deps.ScopeFactory)
+	}
+	if deps.PlanningIngestion != nil {
+		registerPlanningIngestionHandlers(protected, deps.PlanningIngestion, deps.ScopeFactory)
 	}
 
 	// 未注册 API 路径与方法不匹配一律 404 not_found（不开启 405 区分，§4.1 无此错误码）；

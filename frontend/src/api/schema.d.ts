@@ -739,6 +739,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/shoot-plans/{id}/ingestion-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建策划摄取会话 */
+        post: operations["createPlanIngestionSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/ingestion-sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 恢复策划摄取会话 */
+        get: operations["getPlanIngestionSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/ingestion-sessions/{sessionId}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 重新解析并保存摄取候选预览 */
+        post: operations["previewPlanIngestionSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/ingestion-sessions/{sessionId}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 结束摄取会话 */
+        post: operations["transitionPlanIngestionSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/ingestion-sessions/{sessionId}/commit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 原子提交摄取候选 */
+        post: operations["commitPlanIngestionSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shoot-plans/{id}/assets": {
         parameters: {
             query?: never;
@@ -970,8 +1055,12 @@ export interface components {
             error: {
                 code: string;
                 message: string;
-                details?: components["schemas"]["ScheduleConflictDetails"];
+                details?: components["schemas"]["ErrorDetails"];
             };
+        };
+        ErrorDetails: components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"];
+        ArchiveAcknowledgementRequiredDetails: {
+            required_archive_acknowledgement: components["schemas"]["ArchiveAcknowledgement"];
         };
         /** @description order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返 */
         ScheduleConflictDetails: {
@@ -1887,6 +1976,280 @@ export interface components {
             execution_revision: number;
             /** Format: int64 */
             execution_fact_revision: number;
+        };
+        CreatePlanIngestionSessionInput: {
+            /** Format: int64 */
+            expected_plan_revision: number;
+            source_text?: string;
+            /** @default 0 */
+            staged_asset_intent_count: number;
+            staged_asset_intents?: components["schemas"]["IngestionAssetBindingDecision"][];
+        };
+        IngestionParsedSegment: {
+            fingerprint: string;
+            original: string;
+            normalized: string;
+            line_refs: number[];
+            first_line: number;
+        };
+        IngestionContentCandidate: {
+            candidate_id: string;
+            /** @enum {string} */
+            kind: "shot" | "readiness";
+            source_line_refs: number[];
+            source_fingerprint: string;
+            prior_source_fingerprint?: string | null;
+            original_excerpt: string;
+            normalized_content: string;
+            title: string;
+            category?: string | null;
+            requirement?: string | null;
+            responsibility_hint?: string | null;
+            default_preparation_lead_days?: number | null;
+            preflight_status?: string | null;
+            /** @enum {string} */
+            action: "keep" | "discard" | "needs_confirmation";
+            /** @enum {string} */
+            source_status: "current" | "source_changed" | "source_missing" | "reappeared";
+            user_modified: boolean;
+            superseded_by_candidate_id?: string | null;
+            /** Format: int64 */
+            source_change_revision?: number | null;
+            /** Format: int64 */
+            acknowledged_source_change_revision?: number | null;
+        };
+        IngestionReadinessLinkCandidate: {
+            candidate_id: string;
+            readiness_client_or_id_ref: string;
+            shot_client_or_id_ref: string;
+            source_line_refs: number[];
+            /** @enum {string} */
+            action: "keep" | "discard" | "needs_confirmation";
+            /** @enum {string} */
+            source_status: "current" | "source_changed" | "source_missing" | "reappeared";
+            user_modified: boolean;
+            /** Format: int64 */
+            source_change_revision?: number | null;
+            /** Format: int64 */
+            acknowledged_source_change_revision?: number | null;
+        };
+        IngestionReferenceLinkCandidate: {
+            candidate_id: string;
+            /** Format: uri */
+            raw_url: string;
+            url_digest: string;
+            url_occurrence: number;
+            source_line_refs: number[];
+            source_fingerprint: string;
+            prior_source_fingerprint?: string | null;
+            label?: string | null;
+            source_hint?: string | null;
+            /** @enum {string} */
+            target_kind: "plan" | "shot";
+            target_client_or_id_ref?: string | null;
+            /** @enum {string} */
+            action: "keep" | "discard" | "needs_confirmation";
+            /** @enum {string} */
+            source_status: "current" | "source_changed" | "source_missing" | "reappeared";
+            user_modified: boolean;
+            /** Format: int64 */
+            source_change_revision?: number | null;
+            /** Format: int64 */
+            acknowledged_source_change_revision?: number | null;
+        };
+        IngestionDroppedCandidate: {
+            candidate_id: string;
+            reason: string;
+            source_line_refs: number[];
+            original?: string;
+            winner_candidate_id?: string | null;
+            /** @enum {string} */
+            action: "discard" | "needs_confirmation";
+        };
+        IngestionCandidateSnapshot: {
+            segments: components["schemas"]["IngestionParsedSegment"][];
+            content_candidates: components["schemas"]["IngestionContentCandidate"][];
+            readiness_link_candidates: components["schemas"]["IngestionReadinessLinkCandidate"][];
+            reference_link_candidates: components["schemas"]["IngestionReferenceLinkCandidate"][];
+            dropped_candidates: components["schemas"]["IngestionDroppedCandidate"][];
+            asset_binding_candidates: components["schemas"]["IngestionAssetBindingDecision"][];
+        };
+        PreviewPlanIngestionSessionInput: {
+            /** Format: int64 */
+            expected_session_revision: number;
+            source_text?: string | null;
+            /** @default 0 */
+            staged_asset_intent_count: number;
+            staged_asset_intents?: components["schemas"]["IngestionAssetBindingDecision"][];
+            content_overrides?: components["schemas"]["IngestionContentOverride"][];
+            reference_link_overrides?: components["schemas"]["IngestionReferenceLinkOverride"][];
+            readiness_link_overrides?: components["schemas"]["IngestionReadinessLinkOverride"][];
+            readiness_link_selections?: components["schemas"]["IngestionReadinessLinkSelection"][];
+        };
+        IngestionContentOverride: {
+            candidate_id: string;
+            /** @enum {string} */
+            kind?: "shot" | "readiness";
+            title?: string;
+            /** @enum {string} */
+            action: "keep" | "discard";
+            /** Format: int64 */
+            acknowledge_source_change_revision?: number | null;
+        };
+        IngestionReferenceLinkOverride: {
+            candidate_id: string;
+            label?: string | null;
+            /** @enum {string} */
+            target_kind?: "plan" | "shot";
+            target_client_or_id_ref?: string | null;
+            /** @enum {string} */
+            action: "keep" | "discard";
+            /** Format: int64 */
+            acknowledge_source_change_revision?: number | null;
+        };
+        IngestionReadinessLinkSelection: {
+            readiness_client_or_id_ref: string;
+            shot_client_or_id_ref: string;
+        };
+        IngestionReadinessLinkOverride: {
+            candidate_id: string;
+            readiness_client_or_id_ref: string;
+            shot_client_or_id_ref: string;
+            /** @enum {string} */
+            action: "keep" | "discard";
+            /** Format: int64 */
+            acknowledge_source_change_revision?: number | null;
+        };
+        TransitionPlanIngestionSessionInput: {
+            /** Format: int64 */
+            expected_session_revision: number;
+            /** @enum {string} */
+            state: "abandoned";
+        };
+        CommitPlanIngestionSessionInput: {
+            /** Format: int64 */
+            expected_session_revision: number;
+            /** Format: int64 */
+            expected_plan_revision: number;
+            shot_decisions?: components["schemas"]["IngestionShotDecision"][];
+            readiness_decisions?: components["schemas"]["IngestionReadinessDecision"][];
+            link_decisions?: components["schemas"]["IngestionLinkDecision"][];
+            reference_link_decisions?: components["schemas"]["IngestionReferenceLinkDecision"][];
+            asset_bindings?: components["schemas"]["IngestionAssetBindingDecision"][];
+        };
+        PlanIngestionCommitResult: {
+            session: components["schemas"]["PlanIngestionSession"];
+            plan_batch?: components["schemas"]["PlanBatchResult"] | null;
+            reference_links: components["schemas"]["PlanReferenceLink"][];
+            media_bindings: components["schemas"]["AssetBindingResult"][];
+        };
+        PlanBatchResult: {
+            plan_id: string;
+            /** Format: int64 */
+            revision: number;
+            status: components["schemas"]["ShootPlanStatus"];
+            created_ids: {
+                [key: string]: unknown;
+            }[];
+            current_shots: components["schemas"]["ShootPlanShot"][];
+            current_readiness: components["schemas"]["ShootPlanReadinessItem"][];
+            current_links: {
+                [key: string]: unknown;
+            }[];
+        } & {
+            [key: string]: unknown;
+        };
+        PlanReferenceLink: {
+            id: string;
+            plan_id: string;
+            /** @enum {string} */
+            target_kind: "plan" | "shot";
+            target_id: string;
+            /** Format: uri */
+            url: string;
+            url_digest: string;
+            label?: string | null;
+            source_hint?: string | null;
+            source_session_id: string;
+            source_candidate_id: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            removed_at?: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        IngestionShotDecision: {
+            candidate_id: string;
+            /** @enum {string} */
+            action: "keep" | "discard";
+            client_ref?: string;
+            shot?: components["schemas"]["ShotWrite"];
+            position_after_client_or_shot_ref?: string | null;
+            reason?: string;
+        };
+        IngestionReadinessDecision: {
+            candidate_id: string;
+            /** @enum {string} */
+            action: "keep" | "discard";
+            client_ref?: string;
+            item?: components["schemas"]["ReadinessWrite"];
+            reason?: string;
+        };
+        IngestionLinkDecision: {
+            candidate_id: string;
+            /** @enum {string} */
+            action: "keep" | "discard";
+            shot_client_or_id_ref: string;
+            readiness_client_or_id_ref: string;
+            reason?: string;
+        };
+        IngestionReferenceLinkDecision: {
+            candidate_id: string;
+            /** @enum {string} */
+            action: "keep" | "discard";
+            /** Format: uri */
+            raw_url: string;
+            label?: string | null;
+            /** @enum {string} */
+            target_kind: "plan" | "shot";
+            target_client_or_id_ref?: string | null;
+            reason?: string;
+        };
+        IngestionAssetBindingDecision: {
+            candidate_id: string;
+            asset_id: string;
+            generation: number;
+            /** @enum {string} */
+            target_kind: "plan" | "shot";
+            target_client_or_id_ref: string;
+            purpose: string;
+        };
+        PlanIngestionSession: {
+            id: string;
+            plan_id: string;
+            /** @enum {string} */
+            state: "editing" | "committed" | "abandoned";
+            /** Format: int64 */
+            revision: number;
+            /** @enum {integer} */
+            parser_version: 1;
+            source_text?: string | null;
+            source_checksum: string;
+            source_line_count: number;
+            candidate_snapshot: components["schemas"]["IngestionCandidateSnapshot"];
+            /** @enum {integer} */
+            candidate_schema_version: 1;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            committed_at?: string | null;
+            /** Format: date-time */
+            abandoned_at?: string | null;
+            /** Format: date-time */
+            redacted_at?: string | null;
         };
         PlanFinalizationSnapshot: {
             id: string;
@@ -4065,6 +4428,175 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    createPlanIngestionSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePlanIngestionSessionInput"];
+            };
+        };
+        responses: {
+            /** @description 摄取会话已创建 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanIngestionSession"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    getPlanIngestionSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 摄取会话 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanIngestionSession"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    previewPlanIngestionSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewPlanIngestionSessionInput"];
+            };
+        };
+        responses: {
+            /** @description 候选预览 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanIngestionSession"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            413: components["responses"]["PayloadTooLarge"];
+            422: components["responses"]["ValidationFailed"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    transitionPlanIngestionSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransitionPlanIngestionSessionInput"];
+            };
+        };
+        responses: {
+            /** @description 会话已结束 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanIngestionSession"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    commitPlanIngestionSession: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                sessionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommitPlanIngestionSessionInput"];
+            };
+        };
+        responses: {
+            /** @description 摄取候选已原子提交 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanIngestionCommitResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["ValidationFailed"];
             500: components["responses"]["Internal"];
         };
     };

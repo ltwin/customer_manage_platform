@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import { Settings2 } from 'lucide-react'
+import { useShell } from '../../components/shellContext'
+import { instantToLocalDateTime } from '../../components/schedule/timezone'
 import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail } from '../api'
-import { instantToLocalDateTime, resolveLocalDateTime } from '../../components/schedule/timezone'
+import {
+  buildExecutionWindow,
+  inferExecutionWindowMode,
+  type ExecutionWindowMode,
+} from '../executionWindow'
 
 export default function BriefPanel({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner }) {
+  const { timezone: accountTimezone } = useShell()
   return (
     <div className="planning-panel-grid">
       <BriefEditor plan={plan} busy={busy} runCommand={runCommand} />
       <div className="planning-side-stack">
         <ScaleEditor plan={plan} busy={busy} runCommand={runCommand} />
-        <WindowEditor plan={plan} busy={busy} runCommand={runCommand} />
+        <WindowEditor plan={plan} busy={busy} runCommand={runCommand} accountTimezone={accountTimezone} />
       </div>
     </div>
   )
@@ -132,14 +140,16 @@ function ScaleEditor({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: 
   )
 }
 
-function WindowEditor({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner }) {
+function WindowEditor({ plan, busy, runCommand, accountTimezone }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner; accountTimezone: string | null }) {
   const window = plan.execution_window
-  const initialTimezone = window?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Asia/Shanghai'
+  const initialTimezone = window?.timezone ?? accountTimezone ?? 'Asia/Shanghai'
+  const initialMode = inferExecutionWindowMode(window)
   const [startsAt, setStartsAt] = useState(toLocalInput(window?.starts_at, initialTimezone))
   const [endsAt, setEndsAt] = useState(toLocalInput(window?.ends_at, initialTimezone))
-  const [liveStartsAt, setLiveStartsAt] = useState(toLocalInput(window?.live_window_starts_at, initialTimezone))
-  const [liveEndsAt, setLiveEndsAt] = useState(toLocalInput(window?.live_window_ends_at, initialTimezone))
+  const [customLiveStartsAt, setCustomLiveStartsAt] = useState(initialMode === 'custom' ? toLocalInput(window?.live_window_starts_at, initialTimezone) : '')
+  const [customLiveEndsAt, setCustomLiveEndsAt] = useState(initialMode === 'custom' ? toLocalInput(window?.live_window_ends_at, initialTimezone) : '')
   const [timezone, setTimezone] = useState(initialTimezone)
+  const [mode, setMode] = useState<ExecutionWindowMode>(initialMode)
   const [error, setError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const planID = useRef(plan.id)
@@ -147,60 +157,94 @@ function WindowEditor({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy:
     const planChanged = planID.current !== plan.id
     planID.current = plan.id
     if (dirty && !planChanged) return
-    const nextTimezone = plan.execution_window?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'Asia/Shanghai'
+    const nextTimezone = plan.execution_window?.timezone ?? accountTimezone ?? 'Asia/Shanghai'
+    const nextMode = inferExecutionWindowMode(plan.execution_window)
     setStartsAt(toLocalInput(plan.execution_window?.starts_at, nextTimezone))
     setEndsAt(toLocalInput(plan.execution_window?.ends_at, nextTimezone))
-    setLiveStartsAt(toLocalInput(plan.execution_window?.live_window_starts_at, nextTimezone))
-    setLiveEndsAt(toLocalInput(plan.execution_window?.live_window_ends_at, nextTimezone))
+    setCustomLiveStartsAt(nextMode === 'custom' ? toLocalInput(plan.execution_window?.live_window_starts_at, nextTimezone) : '')
+    setCustomLiveEndsAt(nextMode === 'custom' ? toLocalInput(plan.execution_window?.live_window_ends_at, nextTimezone) : '')
     setTimezone(nextTimezone)
+    setMode(nextMode)
     setDirty(false)
-  }, [dirty, plan])
+  }, [accountTimezone, dirty, plan])
 
   async function save(event: FormEvent) {
     event.preventDefault()
     setError(null)
-    if (!startsAt || !endsAt || !liveStartsAt || !liveEndsAt || !timezone.trim()) {
-      setError('开始、结束、现场窗口和时区都需要填写。')
-      return
-    }
     try {
-      const normalizedTimezone = timezone.trim()
+      const resolved = buildExecutionWindow({
+        startsAt,
+        endsAt,
+        timezone,
+        mode,
+        customLiveStartsAt,
+        customLiveEndsAt,
+      })
       await runCommand({
         expected_revision: plan.revision,
         operation: 'set_execution_window',
-        starts_at: localInputToInstant(startsAt, normalizedTimezone),
-        ends_at: localInputToInstant(endsAt, normalizedTimezone),
-        timezone: normalizedTimezone,
-        live_window_starts_at: localInputToInstant(liveStartsAt, normalizedTimezone),
-        live_window_ends_at: localInputToInstant(liveEndsAt, normalizedTimezone),
+        starts_at: resolved.startsAt,
+        ends_at: resolved.endsAt,
+        timezone: resolved.timezone,
+        live_window_starts_at: resolved.liveWindowStartsAt,
+        live_window_ends_at: resolved.liveWindowEndsAt,
       }, 'execution-window')
       setDirty(false)
     } catch (cause) {
-      setError(planningErrorMessage(cause, '执行时间窗保存失败'))
+      setError(planningErrorMessage(cause, '拍摄时间保存失败'))
     }
   }
 
   return (
     <form className="card planning-panel" onSubmit={save}>
-      <div className="planning-panel-head"><div><h2>执行时间窗</h2><p>现场窗口用于服务端判定现场完成或事后补记。</p></div><span className="badge badge-muted">{window ? `第 ${window.revision} 版` : '未设置'}</span></div>
+      <div className="planning-panel-head"><div><h2>拍摄时间</h2><p>用于拍摄安排和现场记录。</p></div><span className="badge badge-muted">{window ? `第 ${window.revision} 版` : '未设置'}</span></div>
       <div className="field-row">
-        <label className="field"><span>开始</span><input className="input" type="datetime-local" value={startsAt} disabled={plan.status === 'archived'} onChange={(event) => { setStartsAt(event.target.value); setDirty(true) }} /></label>
-        <label className="field"><span>结束</span><input className="input" type="datetime-local" value={endsAt} disabled={plan.status === 'archived'} onChange={(event) => { setEndsAt(event.target.value); setDirty(true) }} /></label>
+        <label className="field"><span>拍摄开始</span><input className="input" type="datetime-local" value={startsAt} disabled={plan.status === 'archived'} onChange={(event) => { setStartsAt(event.target.value); setDirty(true) }} /></label>
+        <label className="field"><span>拍摄结束</span><input className="input" type="datetime-local" value={endsAt} disabled={plan.status === 'archived'} onChange={(event) => { setEndsAt(event.target.value); setDirty(true) }} /></label>
       </div>
-      <div className="field-row">
-        <label className="field"><span>现场窗口开始</span><input className="input" type="datetime-local" value={liveStartsAt} disabled={plan.status === 'archived'} onChange={(event) => { setLiveStartsAt(event.target.value); setDirty(true) }} /></label>
-        <label className="field"><span>现场窗口结束</span><input className="input" type="datetime-local" value={liveEndsAt} disabled={plan.status === 'archived'} onChange={(event) => { setLiveEndsAt(event.target.value); setDirty(true) }} /></label>
-      </div>
-      <label className="field"><span>IANA 时区</span><input className="input" value={timezone} maxLength={255} disabled={plan.status === 'archived'} onChange={(event) => { setTimezone(event.target.value); setDirty(true) }} /></label>
+      <p className="planning-timezone-summary">时间按 {timezoneDisplayName(timezone)} 记录</p>
+      <details className="planning-advanced-settings">
+        <summary><Settings2 size={16} aria-hidden="true" /><span>高级设置</span><small>{mode === 'automatic' ? '现场范围自动设置' : '现场范围已自定义'}</small></summary>
+        <div className="planning-advanced-body">
+          <div className="field">
+            <span>现场识别范围</span>
+            <div className="planning-segmented" role="group" aria-label="现场识别范围设置方式">
+              <button type="button" className={mode === 'automatic' ? 'is-active' : ''} aria-pressed={mode === 'automatic'} disabled={plan.status === 'archived'} onClick={() => { setMode('automatic'); setDirty(true) }}>自动</button>
+              <button type="button" className={mode === 'custom' ? 'is-active' : ''} aria-pressed={mode === 'custom'} disabled={plan.status === 'archived'} onClick={() => {
+                const defaults = automaticLiveInputs(startsAt, endsAt, timezone)
+                setMode('custom')
+                if (!customLiveStartsAt && defaults) setCustomLiveStartsAt(defaults.startsAt)
+                if (!customLiveEndsAt && defaults) setCustomLiveEndsAt(defaults.endsAt)
+                setDirty(true)
+              }}>自定义</button>
+            </div>
+            <small className="planning-field-help">{mode === 'automatic' ? automaticRangeDescription(startsAt, endsAt, timezone) : '自定义范围必须包含完整的拍摄时间。'}</small>
+          </div>
+          {mode === 'custom' && <div className="field-row">
+            <label className="field"><span>现场开始</span><input className="input" type="datetime-local" value={customLiveStartsAt} disabled={plan.status === 'archived'} onChange={(event) => { setCustomLiveStartsAt(event.target.value); setDirty(true) }} /></label>
+            <label className="field"><span>现场结束</span><input className="input" type="datetime-local" value={customLiveEndsAt} disabled={plan.status === 'archived'} onChange={(event) => { setCustomLiveEndsAt(event.target.value); setDirty(true) }} /></label>
+          </div>}
+          <label className="field"><span>拍摄地点时区</span><input className="input" list="planning-timezones" value={timezone} maxLength={255} disabled={plan.status === 'archived'} onChange={(event) => { setTimezone(event.target.value); setDirty(true) }} /><small className="planning-field-help">默认使用账号时区；跨时区拍摄时可修改。</small></label>
+          <datalist id="planning-timezones">
+            <option value="Asia/Shanghai">中国标准时间</option>
+            <option value="Asia/Hong_Kong">香港时间</option>
+            <option value="Asia/Tokyo">日本标准时间</option>
+            <option value="Asia/Seoul">韩国标准时间</option>
+            <option value="Europe/London">伦敦时间</option>
+            <option value="America/Los_Angeles">洛杉矶时间</option>
+            <option value="America/New_York">纽约时间</option>
+          </datalist>
+        </div>
+      </details>
       <div className="planning-form-actions">
-        <button className="btn btn-primary btn-sm" disabled={busy || plan.status === 'archived'}>保存时间窗</button>
+        <button className="btn btn-primary btn-sm" disabled={busy || plan.status === 'archived'}>保存拍摄时间</button>
         {window && <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || plan.status === 'archived'} onClick={() => {
-          if (!globalThis.confirm('清除执行时间窗后，后续 Run Mode 记录将不再区分现场与补记。确认清除吗？')) return
+          if (!globalThis.confirm('清除拍摄时间后，后续现场记录将不再区分现场完成与事后补记。确认清除吗？')) return
           setError(null)
           void runCommand({ expected_revision: plan.revision, operation: 'clear_execution_window' }, 'clear-window')
             .then(() => setDirty(false))
-            .catch((cause) => setError(planningErrorMessage(cause, '清除时间窗失败')))
-        }}>清除时间窗</button>}
+            .catch((cause) => setError(planningErrorMessage(cause, '清除拍摄时间失败')))
+        }}>清除拍摄时间</button>}
       </div>
       {error && <p className="planning-inline-error" role="alert">{error}</p>}
     </form>
@@ -226,8 +270,40 @@ function toLocalInput(value: string | null | undefined, timezone: string): strin
   }
 }
 
-function localInputToInstant(value: string, timezone: string): string {
-  const [date, time] = value.split('T')
-  if (!date || !time) throw new Error('日期或时间格式无效')
-  return resolveLocalDateTime(date, time, timezone).instant
+function automaticLiveInputs(startsAt: string, endsAt: string, timezone: string): { startsAt: string; endsAt: string } | null {
+  try {
+    const resolved = buildExecutionWindow({ startsAt, endsAt, timezone, mode: 'automatic', customLiveStartsAt: '', customLiveEndsAt: '' })
+    return {
+      startsAt: toLocalInput(resolved.liveWindowStartsAt, resolved.timezone),
+      endsAt: toLocalInput(resolved.liveWindowEndsAt, resolved.timezone),
+    }
+  } catch {
+    return null
+  }
+}
+
+function automaticRangeDescription(startsAt: string, endsAt: string, timezone: string): string {
+  const range = automaticLiveInputs(startsAt, endsAt, timezone)
+  if (!range) return '保存时按拍摄开始前 2 小时至结束后 2 小时自动设置。'
+  return `现场时段将自动设为 ${formatLocalInput(range.startsAt)} 至 ${formatLocalInput(range.endsAt)}。`
+}
+
+function formatLocalInput(value: string): string {
+  const [date = '', time = ''] = value.split('T')
+  return `${date.replace(/-/g, '/')} ${time}`
+}
+
+function timezoneDisplayName(timezone: string): string {
+  const normalized = timezone.trim()
+  if (!normalized) return '未设置的时区'
+  try {
+    const date = new Date()
+    const name = new Intl.DateTimeFormat('zh-CN', { timeZone: normalized, timeZoneName: 'long' })
+      .formatToParts(date).find((part) => part.type === 'timeZoneName')?.value
+    const offset = new Intl.DateTimeFormat('zh-CN', { timeZone: normalized, timeZoneName: 'longOffset' })
+      .formatToParts(date).find((part) => part.type === 'timeZoneName')?.value.replace('GMT', 'UTC')
+    return name && offset ? `${name}（${offset}）` : normalized
+  } catch {
+    return normalized
+  }
 }

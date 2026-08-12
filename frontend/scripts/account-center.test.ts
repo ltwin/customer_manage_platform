@@ -247,7 +247,7 @@ test('hardening A3/A13: navItems drop settings; floating theme-toggle removed', 
 	assert.doesNotMatch(appShellSource, /\bSun\b|\bMoon\b/)
 	assert.doesNotMatch(indexCSS, /\.theme-toggle/)
 	const navKeys = [...appShellSource.matchAll(/key: '([^']+)'/g)].map((match) => match[1])
-	assert.deepEqual(navKeys, ['dashboard', 'customers', 'orders', 'calendar', 'packages', 'reminders'])
+	assert.deepEqual(navKeys, ['dashboard', 'customers', 'orders', 'calendar', 'planning', 'packages', 'reminders'])
 })
 
 test('hardening A4: AccountMenu cycles ArrowUp/Down/Home/End via nextMenuIndex', () => {
