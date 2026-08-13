@@ -27,7 +27,7 @@ updated: 2026-08-06
 ## S2 — 账号隔离与 neutral 基础持久化
 
 - 退出信号：真实 PG 覆盖 create/list/detail、隔离、CAS、稳定分页、软移出、capability bootstrap/promotion/shared-lock 与 neutral generation/fence；migration up/down 与 reciprocal FK fixture 通过。
-- 影响面：`0012_shoot_planning_core.up/down.sql`；`repository.go:71` 的 `PostgresRepository`、`:142` 的固定两查询 List、`:194` 的 Detail；`platform/store/planning_capability.go`、`planning_reminder_fence.go`、`planning_share_migration_contract_test.go`；`platform/planningcapability` 与 `platform/txcap`。
+- 影响面：`0016_shoot_planning_core.up/down.sql`；`repository.go:71` 的 `PostgresRepository`、`:142` 的固定两查询 List、`:194` 的 Detail；`platform/store/planning_capability.go`、`planning_reminder_fence.go`、`planning_share_migration_contract_test.go`；`platform/planningcapability` 与 `platform/txcap`。
 - TDD：RED 先落真实容器 fixture；GREEN 依次实现 account-scoped schema/repository、deployment singleton capability、sealed transaction reader/promoter 和 generation fence；VERIFY 为 repository/store/planning migration/双连接测试。
 - 查询上界：List 固定一次 `Count` + 一次 `QueryPage`，循环只扫描当前 rows，不按 item 加载 Shot/Readiness；真实 PG stable-list fixture 验证分页与 tie-break。Detail 对单 plan 使用固定查询序列，不随集合大小 fan-out。
 - 清洁度：业务包不直接 import pgx；`planReadScope` 使用 `store.Row/Rows` 边界类型。

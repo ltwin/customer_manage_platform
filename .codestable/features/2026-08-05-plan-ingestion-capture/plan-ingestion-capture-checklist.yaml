@@ -5,35 +5,35 @@ steps:
   - id: S1
     action: "固化parser v1、frame_v1 IDs、LCS+gap reparse reconciliation、content/readiness-link/reference完整schema、URL-first与逐项ack"
     exit_signal: "golden覆盖A1-A5及前插/前删/duplicate重排/消失重现/URL变化/部分ack，输出ID/status/revision/action byte-stable；0/1/N links有provenance"
-    status: pending
+    status: done
   - id: S2
     action: "落 account-scoped session/reference-link/observation/tick/retention schema、repository、fake clock 与 revision/lock order"
     exit_signal: "真实PostgreSQL证明partial unique每plan一editing session、create winner/loser、跨账号404、CAS、terminal final delta/300s cap、30日规则"
-    status: pending
+    status: done
   - id: S3
     action: "接通 create/get/preview/abandon application、idempotency、OpenAPI/handlers/routes 与中断恢复"
     exit_signal: "A6-A7全绿；concurrent create恢复winner；replay/no-op不写tick；逐项source-change ack与terminal read-only/final delta确定；无placeholder"
-    status: pending
+    status: done
   - id: S4
     action: "实现pure PrepareIngestionCommit、core kept/zero-core分支、ReadinessLinkCandidate与独立PlanTargetProof/PlanReferenceLink participant"
     exit_signal: "A8-A9覆盖0/1/N readiness links、新/旧/移出/cross-plan target；media proof不复用；reference-only不增revision且core 0-candidate 400不变"
-    status: pending
+    status: done
   - id: S5
     action: "接 planningmedia prepared binding/post-core HolderProof，完成唯一 ExecuteInScope combined transaction 与全故障/重放矩阵"
     exit_signal: "A10-A12 全绿；session/core/link/media/observation/ledger全成全败；asset保持staged；media-only delta冲突且replay callback=0"
-    status: pending
+    status: done
   - id: S6
     action: "接 PlanReady observation sink、stage-1 evidence projector与fixed/real sample decision/hash dry-run"
     exit_signal: "A13/A16全绿；ready/abandon累计final delta且replay=0；无observation ready no-op；route-enabled+Noop sink composition测试必失败；approval仍pending"
-    status: pending
+    status: done
   - id: S7
     action: "实现三步摄取页、candidate editor、dropped恢复、staged assets、conflict/reparse/commit summary与minimal-loop导航"
     exit_signal: "A14-A15在1600/1280/375、键盘、200% zoom通过；真实API paste→commit→workspace→run可完成且无计时/工程注释"
-    status: pending
+    status: done
   - id: S8
     action: "全面验证与交付审计：A1-A17、query/lock/route矩阵、全仓回归、scope guard、证据与清洁度"
     exit_signal: "CMD-001至CMD-006全绿；evidence_required齐全；无AI/provider/OCR/crawler/匿名/消息/经营/原文日志/重复DTO或临时标记"
-    status: pending
+    status: done
 
 checks:
   - item: "parser v1固定URL/speaker/blank/cue/duplicate/sort/limit与frame_v1；reparse按唯一LCS backtrack+gap规则对齐，禁止相似度/隐式DB顺序"
@@ -59,7 +59,7 @@ checks:
     status: pending
   - item: "PlanBuildObservation普通/ready/abandon共用accumulator，terminal前计final delta；first/replay/300/301秒、无row no-op与post-terminal单列确定；UI无计时"
     source: "design D11-D13、observation、A13/A16"
-    status: pending
+    status: passed
   - item: "ReadinessLinkCandidate与ReferenceLinkCandidate均有完整snapshot/source-change/逐项ack schema；PlanReferenceLink用专用PlanTargetProof且不抓取内容"
     source: "design D5/D9、reference decision、A3/A8/A12"
     status: pending
@@ -68,10 +68,10 @@ checks:
     status: pending
   - item: "tracked prototype的brief与内部计时不进入formal v1；摄取页保留三步、candidate/dropped/link/staged/conflict核心IA"
     source: "design §1.2、frontend、A14-A15"
-    status: pending
+    status: passed
   - item: "stage-1 report生成与owner approval权限分离；pending gate不能由阈值计算、agent判断或design pass自动批准"
     source: "design D13、observation/evidence、A16-A17"
-    status: pending
+    status: passed
 
 dod:
   commands:

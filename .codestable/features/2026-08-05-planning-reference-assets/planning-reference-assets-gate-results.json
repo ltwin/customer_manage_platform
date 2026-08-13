@@ -61,8 +61,8 @@
         "backend/internal/platform/httpapi/planning_media.go",
         "backend/internal/platform/immutablefs/store.go",
         "backend/internal/platform/immutablefs/store_test.go",
-        "backend/internal/platform/store/migrations/0013_planning_media.down.sql",
-        "backend/internal/platform/store/migrations/0013_planning_media.up.sql",
+        "backend/internal/platform/store/migrations/0017_planning_media.down.sql",
+        "backend/internal/platform/store/migrations/0017_planning_media.up.sql",
         "backend/internal/shootplanning/media_holder.go",
         "frontend/scripts/planning-media.test.ts",
         "frontend/src/planning/panels/PlanningMediaPanel.tsx"

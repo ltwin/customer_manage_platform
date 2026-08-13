@@ -1,0 +1,64 @@
+{
+  "gate_id": "dod-runner",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "command": "make generate-check",
+      "exit_code": 0,
+      "stdout": "cd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml\ncd backend/internal/shootplanning/httpcontract && go tool oapi-codegen -config oapi-codegen.yaml ../../../../api/openapi.yaml\ncd frontend && npm run generate\n\n> frontend@0.0.0 generate\n> openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts\n\n✨ openapi-typescript 7.13.0\n🚀 ../api/openapi.yaml → src/api/schema.d.ts [76.3ms]\n",
+      "stderr": "",
+      "id": "CMD-001",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "cd backend && go test -p=1 ./internal/shootplanning/... ./internal/planningmedia ./internal/platform/idempotency ./internal/platform/httpapi -count=1 -parallel=1",
+      "exit_code": 0,
+      "stdout": "ok  \tgithub.com/samson/customer-manage-platform/backend/internal/shootplanning\t17.323s\n?   \tgithub.com/samson/customer-manage-platform/backend/internal/shootplanning/httpcontract\t[no test files]\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion\t4.766s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder\t0.201s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/planningmedia\t7.097s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/idempotency\t4.032s\nok  \tgithub.com/samson/customer-manage-platform/backend/internal/platform/httpapi\t28.139s\n",
+      "stderr": "",
+      "id": "CMD-002",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "cd backend && go test -p=1 ./internal/shootplanning/ingestion -run 'TestParserGolden|TestCombinedCommit|TestObservation|TestEvidence' -count=1 -parallel=1",
+      "exit_code": 0,
+      "stdout": "ok  \tgithub.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion\t2.532s\n",
+      "stderr": "",
+      "id": "CMD-003",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "cd frontend && npm run test:plan-ingestion",
+      "exit_code": 0,
+      "stdout": "\n> frontend@0.0.0 test:plan-ingestion\n> node --test --experimental-transform-types scripts/plan-ingestion.test.ts\n\n(node:99568) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ plan ingestion route and API use generated contract types (2.422458ms)\n✔ plan ingestion has no internal timer, AI, provider, or engineering note in formal UI (0.297292ms)\n✔ plan ingestion responsive and keyboard contracts are present (0.439041ms)\nℹ tests 3\nℹ suites 0\nℹ pass 3\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 101.074709\n",
+      "stderr": "",
+      "id": "CMD-004",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "cd frontend && npm run build && npm run lint",
+      "exit_code": 0,
+      "stdout": "\n> frontend@0.0.0 build\n> tsc -b && vite build\n\nvite v8.1.3 building client environment for production...\n\u001b[2K\ntransforming...✓ 91 modules transformed.\nrendering chunks...\ncomputing gzip size...\ndist/index.html                   0.75 kB │ gzip:   0.44 kB\ndist/assets/index-Cn3QTHFr.css   55.12 kB │ gzip:  10.93 kB\ndist/assets/index-CSc9mbug.js   639.71 kB │ gzip: 184.26 kB\n\n✓ built in 121ms\n\n> frontend@0.0.0 lint\n> oxlint\n\n",
+      "stderr": "[plugin builtin:vite-reporter] \n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\n",
+      "id": "CMD-005",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    },
+    {
+      "command": "make check",
+      "exit_code": 0,
+      "stdout": "-test scripts/avatar-layout.test.mjs\n\n✔ customer profile flex growth excludes the avatar (0.462708ms)\nℹ tests 1\nℹ suites 0\nℹ pass 1\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 56.517125\ncd frontend && npm run test:telegram-digest\n\n> frontend@0.0.0 test:telegram-digest\n> node --test --experimental-transform-types scripts/telegram-digest.test.ts\n\n(node:3163) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ bind-token API wrapper posts to the generated contract and never persists response (18.179292ms)\n✔ deep-link opener uses noopener,noreferrer and reports popup blocking (0.11975ms)\n✔ Settings page exposes binding states without rendering secrets or storage/log sinks (3.597ms)\n✔ Telegram binding card keeps mobile wrapping and keyboard focus contracts (3.5255ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 133.859041\ncd frontend && npm run test:data-export\n\n> frontend@0.0.0 test:data-export\n> node --test --experimental-transform-types scripts/data-export.test.ts\n\n(node:3181) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ fetchDataExport sends Bearer and returns a complete JSON Blob with the exact server filename (15.303ms)\n✔ fetchDataExport accepts only application/json base media type with legal parameters (1.650792ms)\n✔ fetchDataExport accepts only the whole fixed filename and otherwise uses a safe UTC fallback (3.212417ms)\n✔ fetchDataExport reuses ApiError for 500 and 401 responses (0.499084ms)\n✔ body/blob rejection returns no result and download collaboration creates no object URL (0.164833ms)\n✔ download collaboration triggers once and always releases its object URL (0.358625ms)\n✔ DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-safe contracts (1.865833ms)\n✔ DataExportCard relies on native button keyboard behavior and shared mobile-safe styles (0.470875ms)\nℹ tests 8\nℹ suites 0\nℹ pass 8\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 126.646417\ncd frontend && npm run test:v1-hardening\n\n> frontend@0.0.0 test:v1-hardening\n> node --test --experimental-transform-types scripts/v1-hardening.test.ts\n\n(node:3199) ExperimentalWarning: Transform Types is an experimental feature and might change at any time\n(Use `node --trace-warnings ...` to show where the warning was created)\n✔ page read states have one observable presentation in the fixed priority order (0.630167ms)\n✔ page-owned data becomes stale on refresh failure without becoming empty (0.093292ms)\n✔ initial failure and successful empty remain mutually exclusive (0.050416ms)\n✔ customer results keep one page-owned query across the 768/769 responsive boundary (1.594167ms)\n✔ note keyboard actions separate submit, IME composition, multiline, and cancel (0.100708ms)\n✔ note submission gate rejects a repeated submit until the active request settles (0.069917ms)\n✔ empty customer picker keyboard navigation never exposes an invalid active option (0.088958ms)\n✔ mobile calendar keeps write actions hidden while dense and long drawer content stays bounded (0.733125ms)\n✔ mobile shell keeps Customers and Calendar direct with safe-area and touch-size contracts (0.609459ms)\nℹ tests 9\nℹ suites 0\nℹ pass 9\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 93.464209\n./scripts/test-v1-ops-contract.sh\nv1 ops catalog contract: passed (148 cases; negative corpus rejected)\ncd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml\ncd backend/internal/shootplanning/httpcontract && go tool oapi-codegen -config oapi-codegen.yaml ../../../../api/openapi.yaml\ncd frontend && npm run generate\n\n> frontend@0.0.0 generate\n> openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts\n\n✨ openapi-typescript 7.13.0\n🚀 ../api/openapi.yaml → src/api/schema.d.ts [66.3ms]\n",
+      "stderr": "[plugin builtin:vite-reporter] \n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\n",
+      "id": "CMD-006",
+      "core": true,
+      "failure_handling": "fix-or-block"
+    }
+  ],
+  "providers": {}
+}

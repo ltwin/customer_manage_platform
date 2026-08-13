@@ -1,0 +1,27 @@
+{
+  "gate_id": "scope-gate",
+  "stage": "implementation.before_review",
+  "status": "passed",
+  "blocking": [],
+  "warnings": [],
+  "evidence": [
+    {
+      "changed_files": [
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-checklist.yaml",
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-evidence-pack.md",
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-implementation.md",
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-review.md",
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-s8-audit.md"
+      ],
+      "ignored_machine_artifacts": [
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-dod-results.json",
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-evidence-pack-results.json",
+        ".codestable/features/2026-08-05-plan-ingestion-capture/plan-ingestion-capture-gate-results.json"
+      ],
+      "allowed_prefixes": [
+        ".codestable/features/2026-08-05-plan-ingestion-capture"
+      ]
+    }
+  ],
+  "providers": {}
+}

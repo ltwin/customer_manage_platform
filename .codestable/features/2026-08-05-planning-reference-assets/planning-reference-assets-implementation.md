@@ -48,7 +48,7 @@ tags: [planning-media, implementation, evidence]
 
 ### 变更
 
-- migration `0013_planning_media` 建立 asset、rights、generation、rendition、binding、lease、read pin 与 physical inventory 表；current generation 使用 deferred composite FK，rights declaration ID 与 exact asset/generation 一致，source×rights 约束在数据库层继续 fail-closed。
+- migration `0017_planning_media` 建立 asset、rights、generation、rendition、binding、lease、read pin 与 physical inventory 表；current generation 使用 deferred composite FK，rights declaration ID 与 exact asset/generation 一致，source×rights 约束在数据库层继续 fail-closed。
 - gallery 使用固定名 `planning_media_asset_gallery` projection view；`AccountScope.QueryPage` 不再接收 raw JOIN 字符串，所有 `TxAccountScope.Insert` 均由基座唯一注入 `account_id`。
 - repository 可按账号稳定列出 gallery 与 exact rendition inventory；内部 object key 只留在 maintenance projection，不进入公开 DTO。
 - manifest 从 typed key 解析 asset/generation/rendition，稳定排序并计算整体 digest；restore 只接受空目标、完整且无额外对象的 source inventory，逐对象 verified open，任一失败清理已创建对象，完成后再次核对 manifest digest。
