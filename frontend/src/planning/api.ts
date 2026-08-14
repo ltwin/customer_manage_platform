@@ -38,6 +38,8 @@ export type IngestionContentCandidate = components['schemas']['IngestionContentC
 export type IngestionReadinessLinkCandidate = components['schemas']['IngestionReadinessLinkCandidate']
 export type IngestionReferenceLinkCandidate = components['schemas']['IngestionReferenceLinkCandidate']
 export type IngestionDroppedCandidate = components['schemas']['IngestionDroppedCandidate']
+export type PlanAssignmentReminderView = components['schemas']['PlanAssignmentReminderView']
+export type PlanAssignmentReminderGroup = components['schemas']['PlanAssignmentReminderGroup']
 
 export function listShootPlans(params: {
   status?: ShootPlanStatus
@@ -65,6 +67,12 @@ export function createShootPlan(body: CreateShootPlanInput, idempotencyKey: stri
 export function getShootPlan(id: string, includeHistory = false): Promise<ShootPlanDetail> {
   const query = includeHistory ? '?include=execution_history' : ''
   return request<ShootPlanDetail>(`/shoot-plans/${encodeURIComponent(id)}${query}`)
+}
+
+export function getShootPlanAssignmentReminders(id: string): Promise<PlanAssignmentReminderView> {
+  return request<PlanAssignmentReminderView>(
+    `/shoot-plans/${encodeURIComponent(id)}/assignment-reminders`,
+  )
 }
 
 export function applyShootPlanCommand(

@@ -164,7 +164,7 @@ func newAccountAccessE2EFixture(t *testing.T) accountAccessE2EFixture {
 		reminderdomain.NewPostgresRepository(),
 		reminderdomain.NewSettingsAdapter(settingsService),
 		slog.New(slog.DiscardHandler),
-	)
+	).WithFreshness(reminderdomain.NewAssignmentReminderFreshness())
 	digestRepo := digestdomain.NewPostgresBindingRepository()
 	bindingService := digestdomain.NewBindingService(
 		digestRepo,

@@ -780,10 +780,8 @@ func (a *Application) transitionPlanInScope(ctx context.Context, tx store.TxAcco
 			return PlanTransitionResult{}, err
 		}
 		if lockedFence != nil {
+			// Real archive participant owns withdraw + lifecycle_applied resolution + MarkApplied.
 			if err := a.archiveParticipant.OnPlanArchivedInScope(ctx, tx, planID, plan.Revision+1, generation, now); err != nil {
-				return PlanTransitionResult{}, err
-			}
-			if err := lockedFence.MarkApplied(ctx, generation); err != nil {
 				return PlanTransitionResult{}, err
 			}
 		}

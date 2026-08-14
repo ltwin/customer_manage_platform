@@ -93,6 +93,18 @@ DELETE FROM share_generations;
 `); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0028 digest intent down before 0027: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0027 temporal down before 0026: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0026 down before 0024 lock protocol: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0025 down before 0024 lock protocol: %v", err)
+	}
 	downTx, err = db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -225,6 +237,18 @@ SELECT EXISTS (
   WHERE table_name = 'share_assignment_source_event_v1'
 )`).Scan(&exists); err != nil || !exists {
 		t.Fatalf("0024 event table missing: exists=%v err=%v", exists, err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0028 digest intent down failed: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0027 temporal down failed: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0026 down failed: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0025 down failed: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("empty down failed: %v", err)

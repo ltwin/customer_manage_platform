@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   ApiError,
   dismissReminder,
@@ -31,6 +31,7 @@ const typeLabels: Record<Reminder['type'], string> = {
   follow_up: '回访',
   churn: '流失',
   custom: '自定义',
+  plan_assignment_checklist: '认领项核对',
 }
 
 export default function RemindersPage() {
@@ -169,7 +170,14 @@ export default function RemindersPage() {
                     <span className="num">{item.due_date}</span>
                     <div>{item.content}</div>
                     <div className="sub">
-                      {item.customer_id ? `客户 ${item.customer_id}` : '无客户'} · {item.status}
+                      {item.plan_id ? (
+                        <Link to={`/shoot-plans/${item.plan_id}?tab=readiness`}>打开策划准备项</Link>
+                      ) : item.customer_id ? (
+                        `客户 ${item.customer_id}`
+                      ) : (
+                        '无客户'
+                      )}{' '}
+                      · {item.status}
                     </div>
                   </div>
                   {item.status === 'pending' && (

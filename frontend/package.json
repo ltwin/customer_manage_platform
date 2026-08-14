@@ -24,6 +24,7 @@
     "test:planning-media": "node --test --experimental-transform-types scripts/planning-media.test.ts",
     "test:plan-ingestion": "node --test --experimental-transform-types scripts/plan-ingestion.test.ts",
     "test:plan-share": "node --test --experimental-transform-types scripts/plan-share.test.ts",
+    "test:plan-assignment-reminders": "node --test --experimental-transform-types scripts/plan-assignment-reminders.test.ts",
     "test:prototype": "node --test scripts/prototype-contract.test.mjs",
     "preview": "vite preview",
     "generate": "openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts"

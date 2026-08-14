@@ -58,34 +58,25 @@ func (sc TxAccountScope) PlanningReminderFence() planningreminder.FenceTxView {
 			return next, nil
 		},
 		Apply: func(ctx context.Context, generation int64) error {
+			exists, err := sc.Exists(ctx, "planning_reminder_generation_resolutions", "generation = $2", generation)
+			if err != nil {
+				return fmt.Errorf("require planning reminder resolution before apply: %w", err)
+			}
+			if !exists {
+				return errors.New("planning reminder generation missing matching resolution")
+			}
 			updated, err := sc.Update(ctx, "planning_reminder_generation_work",
-				"state = $2, applied_at = clock_timestamp()", "generation = $3 AND state = $4",
-				"applied", generation, "pending")
+				"state = $2, applied_at = clock_timestamp()",
+				"generation = $3 AND state IN ($4, $5)",
+				"applied", generation, "pending", "quarantined")
 			if err != nil {
 				return fmt.Errorf("mark planning reminder generation applied: %w", err)
 			}
 			if updated != 1 {
 				return errors.New("planning reminder generation is missing or already terminal")
 			}
-			var applied, target int64
-			if err := sc.QueryRow(ctx, "planning_reminder_account_generations",
-				"applied_generation, target_generation", "TRUE").Scan(&applied, &target); err != nil {
-				return fmt.Errorf("load planning reminder watermark: %w", err)
-			}
-			for applied < target {
-				var state string
-				err := sc.QueryRow(ctx, "planning_reminder_generation_work", "state", "generation = $2", applied+1).Scan(&state)
-				if err != nil {
-					return fmt.Errorf("load next planning reminder work: %w", err)
-				}
-				if state != "applied" {
-					break
-				}
-				applied++
-			}
-			if _, err := sc.Update(ctx, "planning_reminder_account_generations",
-				"applied_generation = $2, updated_at = clock_timestamp()", "TRUE", applied); err != nil {
-				return fmt.Errorf("advance planning reminder applied watermark: %w", err)
+			if _, err := sc.AdvanceAppliedWatermarkIfContiguous(ctx); err != nil {
+				return err
 			}
 			return nil
 		},

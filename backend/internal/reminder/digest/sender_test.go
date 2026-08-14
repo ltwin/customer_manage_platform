@@ -2,6 +2,7 @@ package digest
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -25,6 +26,52 @@ type fixedMessageBuilder struct{ text string }
 
 func (b fixedMessageBuilder) Build(context.Context, store.AccountScope, Delivery) (string, error) {
 	return b.text, nil
+}
+
+type stubCallAuthorizer struct {
+	messages   MessageBuilder
+	recipients RecipientResolver
+}
+
+func (a stubCallAuthorizer) BeginCurrentCall(
+	ctx context.Context,
+	scope store.AccountScope,
+	claim AttemptClaim,
+) (CallStartPermit, error) {
+	text, err := a.messages.Build(ctx, scope, claim.Delivery)
+	if err != nil {
+		return CallStartPermit{}, err
+	}
+	outcome, err := a.recipients.ResolveCurrent(ctx, store.ScopedAccount{AccountID: scope.AccountID(), Scope: scope})
+	if err != nil {
+		return CallStartPermit{}, err
+	}
+	switch outcome.Kind {
+	case RecipientMissing, RecipientIntegrity:
+		return CallStartPermit{}, errRecipientMissingIntent
+	case RecipientCurrent:
+	default:
+		return CallStartPermit{}, errors.New("unknown recipient outcome")
+	}
+	return CallStartPermit{
+		AttemptID:            "att_stub",
+		IntentRevision:       1,
+		StartDeadline:        time.Now().UTC().Add(5 * time.Second),
+		MonotonicStartBudget: 5 * time.Second,
+		PayloadText:          text,
+		RecipientChatID:      outcome.ChatID,
+	}, nil
+}
+
+func newTestSender(
+	repository DeliveryRepository,
+	gate RecipientGate,
+	recipients RecipientResolver,
+	messages MessageBuilder,
+	telegram TelegramSender,
+) *DeliverySender {
+	return NewDeliverySender(repository, gate, recipients, messages, telegram).
+		WithCallAuthorizer(stubCallAuthorizer{messages: messages, recipients: recipients})
 }
 
 type barrierRecipientResolver struct {
@@ -97,7 +144,7 @@ func TestDeliverySenderFakeFlowClaimsFencesSendsAndFinalizes(t *testing.T) {
 	insertDelivery(t, account.Scope, "del-send", "ack-send", now)
 	repo := NewPostgresDeliveryRepository()
 	telegram := NewFakeTelegram()
-	sender := NewDeliverySender(
+	sender := newTestSender(
 		repo,
 		NewRecipientGate(),
 		fixedRecipientResolver{outcome: RecipientOutcome{Kind: RecipientCurrent, ChatID: "chat-current"}},
@@ -126,7 +173,7 @@ func TestDeliverySenderCallBoundaryFenceReleasesWithoutSendingOrBudget(t *testin
 	insertDelivery(t, account.Scope, "del-fence", "ack-fence", start)
 	repo := NewPostgresDeliveryRepository()
 	telegram := NewFakeTelegram()
-	sender := NewDeliverySender(
+	sender := newTestSender(
 		repo,
 		NewRecipientGate(),
 		fixedRecipientResolver{
@@ -169,9 +216,9 @@ func TestDeliverySenderExpiredOwnerDoesNotSendAfterAnotherClaimantReclaims(t *te
 	}
 	telegramA := NewFakeTelegram()
 	telegramB := NewFakeTelegram()
-	senderA := NewDeliverySender(repo, gate, recipients, fixedMessageBuilder{text: "A must not send"}, telegramA).
+	senderA := newTestSender(repo, gate, recipients, fixedMessageBuilder{text: "A must not send"}, telegramA).
 		WithClock(clock.Now)
-	senderB := NewDeliverySender(repo, gate, recipients, fixedMessageBuilder{text: "B sends once"}, telegramB).
+	senderB := newTestSender(repo, gate, recipients, fixedMessageBuilder{text: "B sends once"}, telegramB).
 		WithClock(clock.Now)
 
 	aDone := make(chan error, 1)
@@ -226,7 +273,7 @@ func TestDeliverySenderRecipientMissingBacksOffWithoutSendingOrBudget(t *testing
 	insertDelivery(t, account.Scope, "del-missing", "ack-missing", now)
 	repo := NewPostgresDeliveryRepository()
 	telegram := NewFakeTelegram()
-	sender := NewDeliverySender(
+	sender := newTestSender(
 		repo,
 		NewRecipientGate(),
 		fixedRecipientResolver{outcome: RecipientOutcome{Kind: RecipientMissing}},

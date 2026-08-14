@@ -2,8 +2,8 @@
 epic: ../requirements/creative-shoot-planning.md
 phase: executing
 approved_revision: 91bf0c2b47e2b9d117339803ae3254c731420db0be634d81e9dd66722a579a67
-current_item: ITEM-6
-next_action: 实现 plan-assignment-reminders（把正式 readiness assignment 投影为只发给摄影师账号的提醒）
+current_item: ITEM-7
+next_action: ITEM-6 已提交；ITEM-7 `plan-business-feedback` 被 `stage-2-evidence-go` 挡住，不自动开工
 blocked_by: null
 item_progression: continuous
 milestone_commit: authorized
@@ -34,7 +34,12 @@ remote_publish: manual
   - evidence: `.codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-s8-evidence.md`
   - checklist: S1/S3/S5/S8=`done`；S2/S4/S6/S7=`pending`（cancel/delete 双连接、content↔GC 双连接、claim↔remove/archive HTTP exact、真实浏览器截图等 residual）
   - note: 按 owner 授权提交本条里程碑后进入 ITEM-6。stage-1/stage-2 仍未标 passed；未 push。
-- [ ] ITEM-6 · `plan-assignment-reminders`
+- [x] ITEM-6 · `plan-assignment-reminders`
+  - status: implemented
+  - verification: 父代理复核 `make generate-check`、`go test -p=1 ./cmd/server ./internal/reminder/ ./internal/reminder/digest/ -count=1 -parallel=1`、`npm run test:plan-assignment-reminders` 均 exit 0；S6 证据记录 CMD-001～006（含 `make check`）exit 0。
+  - evidence: `.codestable/features/2026-08-05-plan-assignment-reminders/plan-assignment-reminders-s6-evidence.md`
+  - checklist: S1–S6=`done`；真实浏览器截图 residual；stage-1/stage-2 仍未标 passed
+  - note: 按 owner 授权提交本条里程碑。生产走真实 archive/CRM/timezone/freshness 与 PG lease runner，扩展既有 Telegram digest，不向客户投递。未 push。
 - [ ] ITEM-7 · `plan-business-feedback`
   - blocked_by: `stage-2-evidence-go`
 - [ ] ITEM-8 · `creative-planning-v1-hardening`
@@ -50,3 +55,4 @@ remote_publish: manual
 - 分支基线：`feat/creative-shoot-planning` 已包含本地最新 `main`，当前三个 Epic 里程碑提交位于其上；安全 stash 保留，未应用、未删除。
 - 2026-08-14：ITEM-4 implementation 收口。自动化验证通过；stage-1 仍 deferred；本地 PG dirty v16 未 force。按 owner 授权提交本条里程碑后进入 ITEM-5。
 - 2026-08-14：ITEM-5 S8 全矩阵验证后按授权提交里程碑。`make generate-check` / `make check` 通过；补 `expiry_quote_stale`、archive 投影 404、IP previous-day grace、Bearer feedback allowlist golden；修 auth-legacy tip 钉 `fullVersion==24`。S2/S4/S6/S7 与若干 A 残差记入 evidence，不阻塞本条里程碑。stage-1/stage-2 未标 passed；未 push。
+- 2026-08-14：ITEM-6 S1–S6 实现后按授权提交里程碑。生产接线为真实 archive/CRM/timezone/freshness 与 PG lease runner；扩展既有 Telegram digest，不向客户投递。真实浏览器截图 residual；stage-1/stage-2 未标 passed；未 push。ITEM-7 仍被 `stage-2-evidence-go` 挡住。

@@ -199,12 +199,22 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	settingsSvc := settings.NewService(settings.NewPostgresRepository()).WithScopeFactory(func(accountID string) store.AccountScope {
 		return s.ScopeFor(auth.AccountContext{AccountID: accountID})
 	})
+	var settingsErr error
+	settingsSvc, settingsErr = settingsSvc.WithPlanningReminderTimezone(
+		true,
+		reminder.NewTimezoneChangePlanningParticipant(nil, nil),
+	)
+	if settingsErr != nil {
+		return newStartupFailure("settings-timezone-wiring", "SETTINGS", "invalid_config", settingsErr)
+	}
+	assignmentFreshness := reminder.NewAssignmentReminderFreshness()
 	reminderSvc := reminder.NewService(
 		reminder.NewPostgresRepository(),
 		reminder.NewSettingsAdapter(settingsSvc),
 		logger,
-	)
+	).WithFreshness(assignmentFreshness)
 	reminderRunner := reminder.NewScanRunner(s, reminderSvc, settingsSvc, logger)
+	assignmentReminderRunner := reminder.NewPlanningAssignmentRunner(s, logger)
 	dashboardSvc := dashboard.NewService(dashboard.NewPostgresRepository(), settingsSvc)
 	dataExportSvc := dataexport.NewService(dataexport.NewPostgresRepository(), dataexport.ClockFunc(time.Now))
 	telegramBinding, telegramRunner, telegramErr := buildTelegramIntegration(
@@ -212,6 +222,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		s,
 		settingsSvc,
 		reminderSvc,
+		assignmentFreshness,
 		logger,
 	)
 	if telegramErr != nil {
@@ -284,7 +295,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	runnerDone := make(chan struct{})
-	runners := []backgroundRunner{maintenance, profileMaintenance, reminderRunner, authReplayRunner}
+	runners := []backgroundRunner{maintenance, profileMaintenance, reminderRunner, assignmentReminderRunner, authReplayRunner}
 	if telegramRunner != nil {
 		runners = append(runners, telegramRunner)
 	}
@@ -392,16 +403,25 @@ func composeShootPlanningApplicationWithIngestion(
 func shootPlanningOptionsForCapability(
 	capability planningcapability.ArchiveCapability,
 ) ([]shootplanning.ApplicationOption, error) {
+	// CRM reminder + settings timezone are decoupled from archive capability:
+	// ITEM-6 production always wires the real CRM adapter (never Disabled/Noop).
+	crmReminder := shootplanning.WithCRMReminder(reminder.NewCRMReminderLifecycleAdapter(nil), true)
 	switch capability {
 	case planningcapability.ArchiveCapabilityCore:
-		return nil, nil
+		return []shootplanning.ApplicationOption{crmReminder}, nil
 	case planningcapability.ArchiveCapabilityPlanningShare:
 		return []shootplanning.ApplicationOption{
 			shootplanning.WithArchiveImpactPolicy(shootplanning.PlanningShareArchiveImpactPolicyV1{}),
 			shootplanning.WithReadinessRemovalGuard(planshare.ReadinessRemovalGuard{}),
+			crmReminder,
 		}, nil
 	case planningcapability.ArchiveCapabilityReminder:
-		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", capability)
+		return []shootplanning.ApplicationOption{
+			shootplanning.WithArchiveImpactPolicy(shootplanning.PlanningShareReminderArchiveImpactPolicyV1{}),
+			shootplanning.WithReadinessRemovalGuard(planshare.ReadinessRemovalGuard{}),
+			shootplanning.WithArchiveReminderParticipant(reminder.NewPlanArchiveReminderAdapter()),
+			crmReminder,
+		}, nil
 	default:
 		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", capability)
 	}
@@ -416,11 +436,15 @@ func buildTelegramIntegration(
 	accounts *store.Store,
 	settingsSvc *settings.Service,
 	reminderSvc *reminder.Service,
+	freshness *reminder.AssignmentReminderFreshness,
 	logger *slog.Logger,
 ) (httpapi.TelegramBindingIssuer, *digest.TelegramRunner, error) {
 	enabled, err := cfg.TelegramStatus()
 	if err != nil || !enabled {
 		return nil, nil, err
+	}
+	if freshness == nil {
+		return nil, nil, errors.New("assignment reminder freshness required for telegram digest intent")
 	}
 
 	gate := digest.NewRecipientGate()
@@ -439,8 +463,10 @@ func buildTelegramIntegration(
 	messages := digest.NewDigestMessageBuilder(snapshots, digest.NewRenderer())
 	recipients := digest.NewSettingsRecipientResolver(settingsSvc)
 	deliveryRepo := digest.NewPostgresDeliveryRepository()
+	intent := digest.NewDigestIntentService(messages, freshness)
 	sender := digest.NewDeliverySender(deliveryRepo, gate, recipients, messages, telegramClient).
-		WithIntegrationState(integrationState)
+		WithIntegrationState(integrationState).
+		WithIntentService(intent)
 	senderRunner := digest.NewDeliverySenderRunner(accounts, sender).WithIntegrationState(integrationState)
 	daily := digest.NewDailyScheduler(accounts, targets, scan, digest.NewPostgresDailyRepository(), logger)
 

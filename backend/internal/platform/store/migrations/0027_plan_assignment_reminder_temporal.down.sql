@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS plan_assignment_reminder_temporal_invalidations;

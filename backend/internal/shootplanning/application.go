@@ -151,6 +151,18 @@ func WithArchiveReminderParticipant(participant PlanArchiveReminderParticipant) 
 	}
 }
 
+// WithCRMReminder wires the CRM closed-union reminder participant.
+// enabled=true requires a non-disabled real adapter; enabled=false requires Disabled.
+func WithCRMReminder(participant crm.CRMReminderLifecycleParticipant, enabled bool) ApplicationOption {
+	return func(app *Application) error {
+		if app.crm == nil {
+			return errors.New("crm engine is required")
+		}
+		_, err := app.crm.WithReminder(participant, enabled)
+		return err
+	}
+}
+
 type Application struct {
 	repo                   PostgresRepository
 	idempotency            *idempotency.Executor

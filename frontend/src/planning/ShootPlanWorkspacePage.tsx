@@ -25,6 +25,7 @@ import { planningErrorMessage } from './presentation'
 import BriefPanel from './panels/BriefPanel'
 import ShotsPanel from './panels/ShotsPanel'
 import ReadinessPanel from './panels/ReadinessPanel'
+import AssignmentReminderCard from './panels/AssignmentReminderCard'
 import ExecutionHistoryPanel from './panels/ExecutionHistoryPanel'
 import PlanningMediaPanel from './panels/PlanningMediaPanel'
 import ShareCollaborationPanel from './share/ShareCollaborationPanel'
@@ -193,7 +194,12 @@ export default function ShootPlanWorkspacePage() {
             <div className="tab-panel active">
               {tab === 'brief' && <BriefPanel plan={plan} busy={busy} runCommand={runCommand} />}
               {tab === 'shots' && <ShotsPanel plan={plan} busy={busy} runCommand={runCommand} />}
-              {tab === 'readiness' && <ReadinessPanel plan={plan} busy={busy} runCommand={runCommand} />}
+              {tab === 'readiness' && (
+                <>
+                  <ReadinessPanel plan={plan} busy={busy} runCommand={runCommand} />
+                  <AssignmentReminderCard planID={plan.id} />
+                </>
+              )}
               {tab === 'assets' && <PlanningMediaPanel planID={plan.id} planRevision={plan.revision} readOnly={plan.status === 'archived'} />}
               {tab === 'share' && (
                 <ShareCollaborationPanel

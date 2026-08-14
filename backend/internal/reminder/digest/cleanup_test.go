@@ -133,7 +133,7 @@ func TestDeliverySenderPreSendCancelUsesIndependentBoundedCleanupContext(t *test
 		releaseSeen: make(chan cleanupProbe, 1),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	sender := NewDeliverySender(
+	sender := newTestSender(
 		repo,
 		NewRecipientGate(),
 		cancelingRecipientResolver{cancel: cancel},
@@ -183,7 +183,7 @@ func TestDeliverySenderRepairsResultCommitUnknownWithoutResending(t *testing.T) 
 				current: delivery, applyThenError: tt.applyThenError,
 			}
 			telegram := NewFakeTelegram()
-			sender := NewDeliverySender(
+			sender := newTestSender(
 				repo,
 				NewRecipientGate(),
 				fixedRecipientResolver{outcome: RecipientOutcome{Kind: RecipientCurrent, ChatID: "chat"}},
@@ -264,7 +264,7 @@ func TestDeliverySenderRetriesStaleFinalizeWhileClaimStillOwnsDelivery(t *testin
 		current: delivery,
 	}
 	telegram := NewFakeTelegram()
-	sender := NewDeliverySender(
+	sender := newTestSender(
 		repo,
 		NewRecipientGate(),
 		fixedRecipientResolver{outcome: RecipientOutcome{Kind: RecipientCurrent, ChatID: "chat"}},

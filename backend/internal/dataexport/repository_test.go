@@ -229,8 +229,9 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 				{ShootType: "cosplay", Days: 180},
 				{ShootType: "other", Days: 180},
 			},
-			DigestHour:     7,
-			TelegramChatID: testPointer("fixture-chat"),
+			DigestHour:              7,
+			TelegramChatID:          testPointer("fixture-chat"),
+			TelegramBindingRevision: 1,
 			Availability: settings.ScheduleAvailability{
 				Weekly: settings.ScheduleAvailabilityWeekly{
 					Monday:    testAvailabilityWindow("08:30", "17:30"),

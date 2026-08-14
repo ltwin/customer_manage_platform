@@ -39,14 +39,15 @@ type ChurnThreshold struct {
 
 // Settings 是账号级有效设置（读取时已叠加默认值）。
 type Settings struct {
-	Timezone          string
-	BirthdayLeadDays  int
-	FollowUpAfterDays int
-	ChurnThresholds   []ChurnThreshold
-	DigestHour        int
-	TelegramChatID    *string
-	Availability      ScheduleAvailability
-	UpdatedAt         time.Time
+	Timezone                string
+	BirthdayLeadDays        int
+	FollowUpAfterDays       int
+	ChurnThresholds         []ChurnThreshold
+	DigestHour              int
+	TelegramChatID          *string
+	TelegramBindingRevision int64
+	Availability            ScheduleAvailability
+	UpdatedAt               time.Time
 }
 
 // PatchInput 是 PATCH /settings 的域输入；指针表示"未传"。
@@ -62,12 +63,13 @@ type PatchInput struct {
 // DefaultSettings 返回无存储行时的纯默认值（entry 级 churn 默认）。
 func DefaultSettings() Settings {
 	return Settings{
-		Timezone:          DefaultTimezone,
-		BirthdayLeadDays:  DefaultBirthdayLeadDays,
-		FollowUpAfterDays: DefaultFollowUpAfterDays,
-		ChurnThresholds:   defaultChurnThresholds(),
-		DigestHour:        DefaultDigestHour,
-		Availability:      DefaultScheduleAvailability(),
+		Timezone:                DefaultTimezone,
+		BirthdayLeadDays:        DefaultBirthdayLeadDays,
+		FollowUpAfterDays:       DefaultFollowUpAfterDays,
+		ChurnThresholds:         defaultChurnThresholds(),
+		DigestHour:              DefaultDigestHour,
+		TelegramBindingRevision: 1,
+		Availability:            DefaultScheduleAvailability(),
 	}
 }
 

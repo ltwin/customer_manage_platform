@@ -186,12 +186,15 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.POST("/packages", h.CreatePackage)
 	protected.PATCH("/packages/:id", func(c *gin.Context) { h.UpdatePackage(c, c.Param("id")) })
 	protected.DELETE("/packages/:id", func(c *gin.Context) { h.DeletePackage(c, c.Param("id")) })
-	// reminder-engine：提醒五操作 + 设置读写
+	// reminder-engine：提醒五操作 + 设置读写 + plan assignment reminder read
 	protected.GET("/reminders", h.listRemindersRoute)
 	protected.POST("/reminders", h.CreateReminder)
 	protected.POST("/reminders/:id/done", func(c *gin.Context) { h.MarkReminderDone(c, c.Param("id")) })
 	protected.POST("/reminders/:id/dismiss", func(c *gin.Context) { h.DismissReminder(c, c.Param("id")) })
 	protected.POST("/admin/reminders/scan", h.ScanReminders)
+	protected.GET("/shoot-plans/:id/assignment-reminders", func(c *gin.Context) {
+		h.GetShootPlanAssignmentReminders(c, c.Param("id"))
+	})
 	protected.GET("/settings", h.GetSettings)
 	protected.PATCH("/settings", h.UpdateSettings)
 	protected.POST("/settings/telegram/bind-token", h.CreateTelegramBindToken)

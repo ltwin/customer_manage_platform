@@ -48,6 +48,7 @@ func TestShootPlanningCoreMigrationSeedIsStableAndDownIsComplete(t *testing.T) {
 	// share(0021-0024), security-budget(0020), plan-crm(0019), plan-ingestion(0018),
 	// planning-media(0017) must be rolled back before the core planning migration(0016).
 	for _, label := range []string{
+		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal", "plan-assignment-reminder-ingestion", "plan-assignment-reminders",
 		"share-assignments", "share-feedbacks", "share-anonymous", "share-generations",
 		"security-budget", "plan-crm", "plan-ingestion", "planning-media", "planning",
 	} {

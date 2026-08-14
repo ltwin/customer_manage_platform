@@ -2,10 +2,15 @@ package settings
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder"
 )
 
 // Repository 是 settings 持久化面。
@@ -17,10 +22,17 @@ type Repository interface {
 // ScopeFactory 由 composition root 注入，供 TimezoneForAccount 构造 AccountScope。
 type ScopeFactory func(accountID string) store.AccountScope
 
+// TimezoneChangePlanningParticipant is caller-owned by settings; reminder supplies the real adapter.
+type TimezoneChangePlanningParticipant interface {
+	ListAffectedPlanIDsInScope(ctx context.Context, tx store.TxAccountScope, oldTimezone, newTimezone string) ([]string, error)
+}
+
 // Service 封装默认值叠加、校验与时区提供。
 type Service struct {
-	repo     Repository
-	scopeFor ScopeFactory
+	repo                Repository
+	scopeFor            ScopeFactory
+	reminderTZEnabled   bool
+	timezoneParticipant TimezoneChangePlanningParticipant
 }
 
 func NewService(repo Repository) *Service {
@@ -31,6 +43,20 @@ func NewService(repo Repository) *Service {
 func (s *Service) WithScopeFactory(factory ScopeFactory) *Service {
 	s.scopeFor = factory
 	return s
+}
+
+// WithPlanningReminderTimezone enables the fence-aware timezone patch path.
+// When enabled, a real participant is required; missing wiring fails closed.
+func (s *Service) WithPlanningReminderTimezone(enabled bool, participant TimezoneChangePlanningParticipant) (*Service, error) {
+	if enabled && participant == nil {
+		return nil, errors.New("settings timezone participant required when reminder timezone enabled")
+	}
+	if !enabled && participant != nil {
+		return nil, errors.New("settings timezone participant must be nil when reminder timezone disabled")
+	}
+	s.reminderTZEnabled = enabled
+	s.timezoneParticipant = participant
+	return s, nil
 }
 
 // Get 返回有效设置：无行时返回纯默认，不隐式建行。
@@ -45,18 +71,20 @@ func (s *Service) Get(ctx context.Context, scope store.AccountScope) (Settings, 
 	return EffectiveSettings(stored), nil
 }
 
-// Patch 校验后 upsert；返回叠加默认后的有效设置。
+// Patch 校验后 upsert；reminder 启用且 timezone 变更时走 fence + generation reserve。
 func (s *Service) Patch(ctx context.Context, scope store.AccountScope, input PatchInput) (Settings, error) {
 	current, err := s.Get(ctx, scope)
 	if err != nil {
 		return Settings{}, err
 	}
 	next := current
+	timezoneTouched := false
 	if input.Timezone != nil {
 		tz := strings.TrimSpace(*input.Timezone)
 		if err := validateTimezone(tz); err != nil {
 			return Settings{}, err
 		}
+		timezoneTouched = true
 		next.Timezone = tz
 	}
 	if input.BirthdayLeadDays != nil {
@@ -82,7 +110,6 @@ func (s *Service) Patch(ctx context.Context, scope store.AccountScope, input Pat
 		if err != nil {
 			return Settings{}, err
 		}
-		// entry 级叠加：以默认全类型为底，再被 PATCH 条目覆盖。
 		next.ChurnThresholds = overlayChurnThresholds(defaultChurnThresholds(), normalized)
 	}
 	if input.Availability != nil {
@@ -91,11 +118,134 @@ func (s *Service) Patch(ctx context.Context, scope store.AccountScope, input Pat
 		}
 		next.Availability = *input.Availability
 	}
+
+	if s.reminderTZEnabled && timezoneTouched {
+		return s.patchWithReminderTimezone(ctx, scope, current, next)
+	}
 	saved, err := s.repo.Upsert(ctx, scope, next)
 	if err != nil {
 		return Settings{}, err
 	}
 	return EffectiveSettings(saved), nil
+}
+
+func (s *Service) patchWithReminderTimezone(
+	ctx context.Context,
+	scope store.AccountScope,
+	current, next Settings,
+) (Settings, error) {
+	if s.timezoneParticipant == nil {
+		return Settings{}, errors.New("settings timezone participant missing")
+	}
+	var saved Settings
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		locked, err := tx.PlanningReminderFence().LockCurrentAccount(ctx)
+		if err != nil {
+			return err
+		}
+		if err := lockSettingsRow(ctx, tx); err != nil {
+			return err
+		}
+		effectiveOld := EffectiveSettings(current).Timezone
+		effectiveNew := EffectiveSettings(next).Timezone
+		if effectiveOld == effectiveNew {
+			upserted, err := upsertSettingsInScope(ctx, tx, next)
+			if err != nil {
+				return err
+			}
+			saved = upserted
+			return nil
+		}
+		planIDs, err := s.timezoneParticipant.ListAffectedPlanIDsInScope(ctx, tx, effectiveOld, effectiveNew)
+		if err != nil {
+			return err
+		}
+		upserted, err := upsertSettingsInScope(ctx, tx, next)
+		if err != nil {
+			return err
+		}
+		for _, planID := range planIDs {
+			if _, err := locked.ReserveGeneration(ctx, planningreminder.MutationFact{
+				PlanID: planID, MutationKind: planningreminder.MutationSettingsTimezoneChanged,
+			}); err != nil {
+				return err
+			}
+		}
+		saved = upserted
+		return nil
+	})
+	if err != nil {
+		return Settings{}, err
+	}
+	return EffectiveSettings(saved), nil
+}
+
+func lockSettingsRow(ctx context.Context, tx store.TxAccountScope) error {
+	var tz string
+	err := tx.QueryRowForUpdate(ctx, "settings", "timezone", "TRUE").Scan(&tz)
+	if errors.Is(err, store.ErrNoRows) {
+		// No row yet: Upsert will create; still OK for accounts without planning sources.
+		return nil
+	}
+	return err
+}
+
+func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, settings Settings) (Settings, error) {
+	thresholds, err := json.Marshal(settings.ChurnThresholds)
+	if err != nil {
+		return Settings{}, err
+	}
+	availability, err := encodeScheduleAvailabilityJSON(settings.Availability)
+	if err != nil {
+		return Settings{}, err
+	}
+	now := time.Now().UTC()
+	ownedColumns := []string{
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "availability", "updated_at",
+	}
+	if err := tx.Upsert(ctx, "settings",
+		ownedColumns,
+		[]string{"account_id"},
+		ownedColumns,
+		settings.Timezone,
+		settings.BirthdayLeadDays,
+		settings.FollowUpAfterDays,
+		thresholds,
+		settings.DigestHour,
+		availability,
+		now,
+	); err != nil {
+		return Settings{}, fmt.Errorf("upsert settings in tx: %w", err)
+	}
+	var (
+		s           Settings
+		threshBytes []byte
+		availBytes  []byte
+		telegram    sql.NullString
+		bindingRev  int64
+		updatedAt   time.Time
+	)
+	if err := tx.QueryRow(ctx, "settings", settingsColumns, "TRUE").Scan(
+		&s.Timezone, &s.BirthdayLeadDays, &s.FollowUpAfterDays, &threshBytes,
+		&s.DigestHour, &telegram, &bindingRev, &availBytes, &updatedAt,
+	); err != nil {
+		return Settings{}, err
+	}
+	if telegram.Valid {
+		v := telegram.String
+		s.TelegramChatID = &v
+	}
+	s.TelegramBindingRevision = bindingRev
+	if len(threshBytes) > 0 {
+		_ = json.Unmarshal(threshBytes, &s.ChurnThresholds)
+	}
+	decoded, err := DecodeScheduleAvailabilityJSON(availBytes)
+	if err != nil {
+		return Settings{}, err
+	}
+	s.Availability = decoded
+	s.UpdatedAt = updatedAt
+	return s, nil
 }
 
 // TimezoneForAccount 实现 httpapi.AccountTimezoneProvider。
@@ -179,6 +329,9 @@ func EffectiveSettings(stored Settings) Settings {
 	stored.ChurnThresholds = overlayChurnThresholds(def.ChurnThresholds, stored.ChurnThresholds)
 	if isZeroScheduleAvailability(stored.Availability) {
 		stored.Availability = def.Availability
+	}
+	if stored.TelegramBindingRevision < 1 {
+		stored.TelegramBindingRevision = def.TelegramBindingRevision
 	}
 	return stored
 }

@@ -7,10 +7,11 @@ import (
 )
 
 const (
-	TypeBirthday = "birthday"
-	TypeFollowUp = "follow_up"
-	TypeChurn    = "churn"
-	TypeCustom   = "custom"
+	TypeBirthday                = "birthday"
+	TypeFollowUp                = "follow_up"
+	TypeChurn                   = "churn"
+	TypeCustom                  = "custom"
+	TypePlanAssignmentChecklist = "plan_assignment_checklist"
 
 	StatusPending   = "pending"
 	StatusDone      = "done"
@@ -38,6 +39,7 @@ type Reminder struct {
 	Type       string
 	CustomerID *string
 	OrderID    *string
+	PlanID     *string   // plan_assignment_checklist 只读引用；legacy 类型恒为空
 	DueDate    time.Time // date-only，UTC 午夜存储语义
 	Content    string
 	Status     string

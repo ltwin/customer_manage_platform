@@ -87,6 +87,7 @@ func TestAccountAuthMigrationPreservesLegacyAccountAndRollsBack(t *testing.T) {
 		t.Fatalf("close before auth down migration: %v", err)
 	}
 	for index, label := range []string{
+		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal", "plan-assignment-reminder-ingestion", "plan-assignment-reminders",
 		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
 		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
 		"account profiles", "settings availability", "limiter", "legacy-only auth",
@@ -133,6 +134,7 @@ func TestAccountAuthDownMigrationRejectsNewStyleAccount(t *testing.T) {
 	}
 
 	for index, label := range []string{
+		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal", "plan-assignment-reminder-ingestion", "plan-assignment-reminders",
 		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
 		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
 		"account profiles", "settings availability", "limiter",

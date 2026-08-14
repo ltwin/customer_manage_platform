@@ -96,7 +96,7 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		reminderdomain.NewPostgresRepository(),
 		reminderdomain.NewSettingsAdapter(settingsSvc),
 		slog.New(slog.DiscardHandler),
-	)
+	).WithFreshness(reminderdomain.NewAssignmentReminderFreshness())
 	digestRepo := digestdomain.NewPostgresBindingRepository()
 	bindingSvc := digestdomain.NewBindingService(
 		digestRepo,

@@ -506,6 +506,39 @@ func (e PlanAssetRightsDeclarationMatrixVersion) Valid() bool {
 	}
 }
 
+// Defines values for PlanAssignmentReminderDeliveryMode.
+const (
+	InApp                 PlanAssignmentReminderDeliveryMode = "in_app"
+	TelegramDigestIfBound PlanAssignmentReminderDeliveryMode = "telegram_digest_if_bound"
+)
+
+// Valid indicates whether the value is a known member of the PlanAssignmentReminderDeliveryMode enum.
+func (e PlanAssignmentReminderDeliveryMode) Valid() bool {
+	switch e {
+	case InApp:
+		return true
+	case TelegramDigestIfBound:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanAssignmentReminderRecipientKind.
+const (
+	AccountOwner PlanAssignmentReminderRecipientKind = "account_owner"
+)
+
+// Valid indicates whether the value is a known member of the PlanAssignmentReminderRecipientKind enum.
+func (e PlanAssignmentReminderRecipientKind) Valid() bool {
+	switch e {
+	case AccountOwner:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PlanningMediaPurpose.
 const (
 	GenerationReference  PlanningMediaPurpose = "generation_reference"
@@ -775,10 +808,11 @@ func (e ReminderStatus) Valid() bool {
 
 // Defines values for ReminderType.
 const (
-	ReminderTypeBirthday ReminderType = "birthday"
-	ReminderTypeChurn    ReminderType = "churn"
-	ReminderTypeCustom   ReminderType = "custom"
-	ReminderTypeFollowUp ReminderType = "follow_up"
+	ReminderTypeBirthday                ReminderType = "birthday"
+	ReminderTypeChurn                   ReminderType = "churn"
+	ReminderTypeCustom                  ReminderType = "custom"
+	ReminderTypeFollowUp                ReminderType = "follow_up"
+	ReminderTypePlanAssignmentChecklist ReminderType = "plan_assignment_checklist"
 )
 
 // Valid indicates whether the value is a known member of the ReminderType enum.
@@ -791,6 +825,8 @@ func (e ReminderType) Valid() bool {
 	case ReminderTypeCustom:
 		return true
 	case ReminderTypeFollowUp:
+		return true
+	case ReminderTypePlanAssignmentChecklist:
 		return true
 	default:
 		return false
@@ -1744,6 +1780,40 @@ type PlanAssetRightsDeclaration struct {
 // PlanAssetRightsDeclarationMatrixVersion defines model for PlanAssetRightsDeclaration.MatrixVersion.
 type PlanAssetRightsDeclarationMatrixVersion int
 
+// PlanAssignmentReminderDeliveryMode 站内提醒；若账号已绑定 Telegram 则进入 digest
+type PlanAssignmentReminderDeliveryMode string
+
+// PlanAssignmentReminderGroup defines model for PlanAssignmentReminderGroup.
+type PlanAssignmentReminderGroup struct {
+	// Content 确定性长文案摘要（认领项核对（N项）：前3项…）
+	Content       string                               `json:"content"`
+	DeliveryModes []PlanAssignmentReminderDeliveryMode `json:"delivery_modes"`
+
+	// DueDate 账号本地日期 due；current group 必有
+	DueDate   openapi_types.Date `json:"due_date"`
+	GroupId   string             `json:"group_id"`
+	ItemCount int                `json:"item_count"`
+
+	// RecipientKind 收件人固定为摄影师账号所有者；永不向客户投递
+	RecipientKind  PlanAssignmentReminderRecipientKind `json:"recipient_kind"`
+	ReminderId     string                              `json:"reminder_id"`
+	ReminderStatus ReminderStatus                      `json:"reminder_status"`
+	SlotId         string                              `json:"slot_id"`
+}
+
+// PlanAssignmentReminderRecipientKind 收件人固定为摄影师账号所有者；永不向客户投递
+type PlanAssignmentReminderRecipientKind string
+
+// PlanAssignmentReminderView defines model for PlanAssignmentReminderView.
+type PlanAssignmentReminderView struct {
+	// Groups 仅 state=current 的 groups；历史保留在 Reminder 列表与内部 projection
+	Groups []PlanAssignmentReminderGroup `json:"groups"`
+	PlanId *string                       `json:"plan_id,omitempty"`
+
+	// UnscheduledSourceCount 有 active readiness 但尚无 future shoot slot 的 source 数；不从 Reminder 文案反解析
+	UnscheduledSourceCount int `json:"unscheduled_source_count"`
+}
+
 // PlanningMediaPurpose defines model for PlanningMediaPurpose.
 type PlanningMediaPurpose string
 
@@ -1846,8 +1916,11 @@ type Reminder struct {
 	DueDate  openapi_types.Date `json:"due_date"`
 	Id       *string            `json:"id,omitempty"`
 	OrderId  *string            `json:"order_id,omitempty"`
-	Status   ReminderStatus     `json:"status"`
-	Type     ReminderType       `json:"type"`
+
+	// PlanId plan_assignment_checklist 只读引用；legacy 类型不返回
+	PlanId *string        `json:"plan_id,omitempty"`
+	Status ReminderStatus `json:"status"`
+	Type   ReminderType   `json:"type"`
 }
 
 // ReminderStatus defines model for ReminderStatus.
@@ -3273,6 +3346,9 @@ type ServerInterface interface {
 	// 读取展示版本参考素材
 	// (GET /shoot-plans/{id}/assets/{assetId}/content)
 	GetShootPlanAssetContent(c *gin.Context, id Id, assetId string, params GetShootPlanAssetContentParams)
+	// 读取策划当前认领项检查提醒投影（Bearer；只返回 current groups）
+	// (GET /shoot-plans/{id}/assignment-reminders)
+	GetShootPlanAssignmentReminders(c *gin.Context, id Id)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -5282,6 +5358,33 @@ func (siw *ServerInterfaceWrapper) GetShootPlanAssetContent(c *gin.Context) {
 	siw.Handler.GetShootPlanAssetContent(c, id, assetId, params)
 }
 
+// GetShootPlanAssignmentReminders operation middleware
+func (siw *ServerInterfaceWrapper) GetShootPlanAssignmentReminders(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetShootPlanAssignmentReminders(c, id)
+}
+
 // GinServerOptions provides options for the Gin server.
 type GinServerOptions struct {
 	BaseURL      string
@@ -5370,4 +5473,5 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/shoot-plans/:id/assets/:assetId/bindings", wrapper.CreateShootPlanAssetBinding)
 	router.DELETE(options.BaseURL+"/shoot-plans/:id/assets/:assetId/bindings/:bindingId", wrapper.ReleaseShootPlanAssetBinding)
 	router.GET(options.BaseURL+"/shoot-plans/:id/assets/:assetId/content", wrapper.GetShootPlanAssetContent)
+	router.GET(options.BaseURL+"/shoot-plans/:id/assignment-reminders", wrapper.GetShootPlanAssignmentReminders)
 }

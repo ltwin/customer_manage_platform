@@ -913,9 +913,7 @@ func (a *Application) claimInShareScope(
 	if err := scope.ReplayAdmissions().RecordForCurrentLedgerClaim(ctx, frame); err != nil {
 		return AssignmentClaimResultV1{}, err
 	}
-	if err := locked.MarkApplied(ctx, generation); err != nil {
-		return AssignmentClaimResultV1{}, err
-	}
+	// Leave generation work pending for the reminder fence consumer (ITEM-6 S2).
 	return AssignmentClaimResultV1{
 		AssignmentID:   row.ID,
 		AssignmentKind: row.AssignmentKind,
@@ -1104,9 +1102,7 @@ func revokeAssignmentKernel(
 			return AssignmentMutationResultV1{}, err
 		}
 	}
-	if err := locked.MarkApplied(ctx, generation); err != nil {
-		return AssignmentMutationResultV1{}, err
-	}
+	// Leave generation work pending for the reminder fence consumer (ITEM-6 S2).
 	if updated.RevokedAt == nil {
 		return AssignmentMutationResultV1{}, errors.New("revoked assignment missing revoked_at")
 	}

@@ -336,7 +336,14 @@ func (e *Engine) applySource(
 	if err := PersistResult(ctx, tx, plan, conn, proj, window, result); err != nil {
 		return err
 	}
-	return nil
+	if !e.reminderEnabled {
+		return nil
+	}
+	fence, err := e.MaybeLockFence(ctx, tx)
+	if err != nil {
+		return err
+	}
+	return e.applyReminder(ctx, tx, fence, plan.ID, result, order, slot, now)
 }
 
 func (e *Engine) applyReminder(

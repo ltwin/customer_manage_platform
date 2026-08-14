@@ -233,9 +233,14 @@ func persistWindow(ctx context.Context, tx store.TxAccountScope, planID string, 
 }
 
 func WriteGenerationResolution(ctx context.Context, tx store.TxAccountScope, planID string, generation int64) error {
+	var mutationKind string
+	if err := tx.QueryRow(ctx, "planning_reminder_generation_work",
+		"mutation_kind", "generation = $2", generation).Scan(&mutationKind); err != nil {
+		return fmt.Errorf("load generation work for resolution: %w", err)
+	}
 	return tx.Insert(ctx, "planning_reminder_generation_resolutions",
-		[]string{"generation", "plan_id", "resolution"},
-		generation, planID, "lifecycle_applied")
+		[]string{"generation", "plan_id", "mutation_kind", "resolution_kind", "source_event_id", "resolved_at"},
+		generation, planID, mutationKind, "lifecycle_applied", nil, time.Now().UTC())
 }
 
 func scanConnection(row interface{ Scan(...any) error }) (Connection, error) {

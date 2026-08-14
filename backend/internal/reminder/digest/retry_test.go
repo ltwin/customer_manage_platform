@@ -71,7 +71,7 @@ func TestDeliverySenderInvalidAuthDoesNotBurnFailureBudget(t *testing.T) {
 	telegram := NewFakeTelegram()
 	telegram.QueueSendError(&TelegramError{Kind: TelegramErrorInvalidAuth, Code: "401"})
 	state := NewIntegrationState(nil).WithClock(func() time.Time { return now })
-	sender := NewDeliverySender(repo, NewRecipientGate(),
+	sender := newTestSender(repo, NewRecipientGate(),
 		fixedRecipientResolver{outcome: RecipientOutcome{Kind: RecipientCurrent, ChatID: "chat"}},
 		fixedMessageBuilder{text: "ack"}, telegram).
 		WithClock(func() time.Time { return now }).
@@ -108,7 +108,7 @@ func TestDeliverySenderSendStartedCancellationLeavesClaimForRepairOrLease(t *tes
 	repo := NewPostgresDeliveryRepository()
 	ctx, cancel := context.WithCancel(context.Background())
 	telegram := cancelOnSendTelegram{started: make(chan struct{}), cancel: cancel}
-	sender := NewDeliverySender(repo, NewRecipientGate(),
+	sender := newTestSender(repo, NewRecipientGate(),
 		fixedRecipientResolver{outcome: RecipientOutcome{Kind: RecipientCurrent, ChatID: "chat"}},
 		fixedMessageBuilder{text: "ack"}, telegram).WithClock(func() time.Time { return now })
 	processed, err := sender.SendNext(ctx, account)

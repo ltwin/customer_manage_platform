@@ -861,6 +861,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/shoot-plans/{id}/assignment-reminders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 读取策划当前认领项检查提醒投影（Bearer；只返回 current groups）
+         * @description 走 generation freshness：capture target → Ensure → 最终 fence + clock_timestamp() 守卫读。
+         *     无 active readiness 时返回空 groups 与 unscheduled_source_count=0，不返回「缺策划」。
+         *     跨账号或不存在 plan 统一 404。客户端永不传 account_id。
+         */
+        get: operations["getShootPlanAssignmentReminders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shoot-plans/{id}/assignments": {
         parameters: {
             query?: never;
@@ -1365,7 +1387,7 @@ export interface components {
         /** @enum {string} */
         SlotType: "shoot" | "hold" | "busy";
         /** @enum {string} */
-        ReminderType: "birthday" | "follow_up" | "churn" | "custom";
+        ReminderType: "birthday" | "follow_up" | "churn" | "custom" | "plan_assignment_checklist";
         /** @enum {string} */
         ReminderStatus: "pending" | "done" | "dismissed";
         Customer: {
@@ -1595,12 +1617,47 @@ export interface components {
             type: components["schemas"]["ReminderType"];
             customer_id?: string;
             order_id?: string;
+            /** @description plan_assignment_checklist 只读引用；legacy 类型不返回 */
+            readonly plan_id?: string;
             /** Format: date */
             due_date: string;
             content: string;
             status: components["schemas"]["ReminderStatus"];
             /** @description unique per account（规则见 §4.4） */
             dedup_key: string;
+        };
+        /**
+         * @description 收件人固定为摄影师账号所有者；永不向客户投递
+         * @enum {string}
+         */
+        PlanAssignmentReminderRecipientKind: "account_owner";
+        /**
+         * @description 站内提醒；若账号已绑定 Telegram 则进入 digest
+         * @enum {string}
+         */
+        PlanAssignmentReminderDeliveryMode: "in_app" | "telegram_digest_if_bound";
+        PlanAssignmentReminderGroup: {
+            group_id: string;
+            reminder_id: string;
+            reminder_status: components["schemas"]["ReminderStatus"];
+            /**
+             * Format: date
+             * @description 账号本地日期 due；current group 必有
+             */
+            due_date: string;
+            item_count: number;
+            slot_id: string;
+            /** @description 确定性长文案摘要（认领项核对（N项）：前3项…） */
+            content: string;
+            recipient_kind: components["schemas"]["PlanAssignmentReminderRecipientKind"];
+            delivery_modes: components["schemas"]["PlanAssignmentReminderDeliveryMode"][];
+        };
+        PlanAssignmentReminderView: {
+            readonly plan_id: string;
+            /** @description 有 active readiness 但尚无 future shoot slot 的 source 数；不从 Reminder 文案反解析 */
+            unscheduled_source_count: number;
+            /** @description 仅 state=current 的 groups；历史保留在 Reminder 列表与内部 projection */
+            groups: components["schemas"]["PlanAssignmentReminderGroup"][];
         };
         ChurnThreshold: {
             shoot_type: components["schemas"]["ShootType"];
@@ -5564,6 +5621,31 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            500: components["responses"]["Internal"];
+        };
+    };
+    getShootPlanAssignmentReminders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前认领项提醒投影 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanAssignmentReminderView"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             500: components["responses"]["Internal"];
         };
     };

@@ -11,7 +11,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, availability, updated_at"
+const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, telegram_binding_revision, availability, updated_at"
 
 // PostgresRepository 实现 settings.Repository。
 type PostgresRepository struct{}
@@ -26,6 +26,7 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 		thresholds   []byte
 		availability []byte
 		chatID       sql.NullString
+		bindingRev   int64
 		updatedAt    time.Time
 	)
 	err := scope.QueryRow(ctx, "settings", settingsColumns, "").Scan(
@@ -35,6 +36,7 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 		&thresholds,
 		&s.DigestHour,
 		&chatID,
+		&bindingRev,
 		&availability,
 		&updatedAt,
 	)
@@ -58,6 +60,7 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 		v := chatID.String
 		s.TelegramChatID = &v
 	}
+	s.TelegramBindingRevision = bindingRev
 	s.UpdatedAt = updatedAt
 	return s, true, nil
 }

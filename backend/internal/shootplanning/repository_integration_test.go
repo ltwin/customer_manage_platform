@@ -14,6 +14,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -386,14 +387,25 @@ func (p *configurableArchiveParticipant) OnPlanArchivedInScope(
 	tx store.TxAccountScope,
 	planID string,
 	_ int64,
-	_ int64,
+	generation int64,
 	_ time.Time,
 ) error {
 	p.calls++
 	if _, err := tx.Update(ctx, "shoot_plans", "subject = $2", "id = $3", "participant touched", planID); err != nil {
 		return err
 	}
-	return p.err
+	if p.err != nil {
+		return p.err
+	}
+	// S3 archive participant owns resolution + MarkApplied (engine no longer stubs them).
+	if err := crm.WriteGenerationResolution(ctx, tx, planID, generation); err != nil {
+		return err
+	}
+	locked, err := tx.PlanningReminderFence().LockCurrentAccount(ctx)
+	if err != nil {
+		return err
+	}
+	return locked.MarkApplied(ctx, generation)
 }
 
 func TestApplicationRemovalGuardAndReminderArchiveRollback(t *testing.T) {
@@ -1084,6 +1096,16 @@ func TestPlanningReminderFenceReservesAndAdvancesContiguously(t *testing.T) {
 		}
 		generationB, err = locked.ReserveGeneration(ctx, planningreminder.MutationFact{PlanID: planB.ID, MutationKind: planningreminder.MutationPlanArchived})
 		if err != nil {
+			return err
+		}
+		if err := tx.Insert(ctx, "planning_reminder_generation_resolutions",
+			[]string{"generation", "plan_id", "mutation_kind", "resolution_kind", "source_event_id", "resolved_at"},
+			generationA, planA.ID, string(planningreminder.MutationPlanArchived), "lifecycle_applied", nil, time.Now().UTC()); err != nil {
+			return err
+		}
+		if err := tx.Insert(ctx, "planning_reminder_generation_resolutions",
+			[]string{"generation", "plan_id", "mutation_kind", "resolution_kind", "source_event_id", "resolved_at"},
+			generationB, planB.ID, string(planningreminder.MutationPlanArchived), "lifecycle_applied", nil, time.Now().UTC()); err != nil {
 			return err
 		}
 		if err := locked.MarkApplied(ctx, generationB); err != nil {

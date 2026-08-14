@@ -38,10 +38,11 @@ type Repository interface {
 
 // Service 是提醒域服务。
 type Service struct {
-	repo     Repository
-	settings SettingsLoader
-	logger   *slog.Logger
-	now      func() time.Time
+	repo      Repository
+	settings  SettingsLoader
+	logger    *slog.Logger
+	now       func() time.Time
+	freshness *AssignmentReminderFreshness
 }
 
 func NewService(repo Repository, settings SettingsLoader, logger *slog.Logger) *Service {
@@ -54,6 +55,12 @@ func NewService(repo Repository, settings SettingsLoader, logger *slog.Logger) *
 		logger:   logger,
 		now:      time.Now,
 	}
+}
+
+// WithFreshness wires Bearer final-read freshness (S4). Missing wiring keeps legacy List.
+func (s *Service) WithFreshness(freshness *AssignmentReminderFreshness) *Service {
+	s.freshness = freshness
+	return s
 }
 
 // WithClock 注入 now，供测试。
@@ -70,6 +77,13 @@ func (s *Service) List(ctx context.Context, scope store.AccountScope, filter Lis
 	normalized, err := normalizeListFilter(filter)
 	if err != nil {
 		return ListResult{}, err
+	}
+	if s.freshness != nil {
+		fresh, err := s.ListWithFreshnessFinalRead(ctx, scope, normalized, *s.freshness)
+		if err != nil {
+			return ListResult{}, err
+		}
+		return ListResult(fresh), nil
 	}
 	return s.repo.List(ctx, scope, normalized)
 }
@@ -100,22 +114,6 @@ func (s *Service) CreateCustom(ctx context.Context, scope store.AccountScope, in
 	input.Content = content
 	input.DueDate = dateOnly(input.DueDate)
 	return s.repo.CreateCustom(ctx, scope, input)
-}
-
-func (s *Service) MarkDone(ctx context.Context, scope store.AccountScope, id string) (Reminder, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Reminder{}, ValidationError{Message: "id 必填"}
-	}
-	return s.repo.SetStatus(ctx, scope, id, StatusDone)
-}
-
-func (s *Service) Dismiss(ctx context.Context, scope store.AccountScope, id string) (Reminder, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Reminder{}, ValidationError{Message: "id 必填"}
-	}
-	return s.repo.SetStatus(ctx, scope, id, StatusDismissed)
 }
 
 // Scan 对单账号执行完整扫描 pipeline（单事务）。

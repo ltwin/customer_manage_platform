@@ -55,8 +55,22 @@ func (PostgresBindingRepository) ConsumeAndBind(
 ) (BindOutcome, error) {
 	outcome := BindInvalid
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		// Lock order: account fence → Settings → (token after settings) → Delivery.
+		if _, err := tx.PlanningReminderFence().LockCurrentAccount(ctx); err != nil {
+			return err
+		}
+		var currentChat sql.NullString
+		var bindingRev sql.NullInt64
+		err := tx.QueryRowForUpdate(ctx, "settings",
+			"telegram_chat_id, telegram_binding_revision", "TRUE").
+			Scan(&currentChat, &bindingRev)
+		if err != nil && !errors.Is(err, store.ErrNoRows) {
+			return err
+		}
+		settingsMissing := errors.Is(err, store.ErrNoRows)
+
 		var storedHash []byte
-		err := tx.QueryRowForUpdate(ctx, "telegram_bind_tokens", "token_hash",
+		err = tx.QueryRowForUpdate(ctx, "telegram_bind_tokens", "token_hash",
 			"token_hash = $2 AND expires_at > $3 AND consumed_at IS NULL", tokenHash, now).Scan(&storedHash)
 		if errors.Is(err, store.ErrNoRows) {
 			return nil
@@ -69,13 +83,40 @@ func (PostgresBindingRepository) ConsumeAndBind(
 			"token_hash = $3 AND consumed_at IS NULL", now, tokenHash); err != nil {
 			return err
 		}
-		if err := tx.Upsert(ctx, "settings",
-			[]string{"telegram_chat_id", "updated_at"},
-			[]string{"account_id"},
-			[]string{"telegram_chat_id", "updated_at"},
-			chatID, now); err != nil {
-			return err
+
+		currentRev := int64(1)
+		if bindingRev.Valid && bindingRev.Int64 >= 1 {
+			currentRev = bindingRev.Int64
 		}
+		sameChat := !settingsMissing && currentChat.Valid && currentChat.String == chatID
+		if sameChat {
+			if err := tx.Upsert(ctx, "settings",
+				[]string{"telegram_chat_id", "updated_at"},
+				[]string{"account_id"},
+				[]string{"telegram_chat_id", "updated_at"},
+				chatID, now); err != nil {
+				return err
+			}
+		} else {
+			if err := waitOutCallingPermitsInScope(ctx, tx, now); err != nil {
+				return err
+			}
+			nextRev := currentRev
+			if currentChat.Valid && currentChat.String != "" && currentChat.String != chatID {
+				nextRev = currentRev + 1
+			}
+			if err := tx.Upsert(ctx, "settings",
+				[]string{"telegram_chat_id", "telegram_binding_revision", "updated_at"},
+				[]string{"account_id"},
+				[]string{"telegram_chat_id", "telegram_binding_revision", "updated_at"},
+				chatID, nextRev, now); err != nil {
+				return err
+			}
+			if err := supersedeActiveIntentsForBusinessDeliveries(ctx, tx, now); err != nil {
+				return err
+			}
+		}
+
 		if _, err := tx.Update(ctx, "telegram_deliveries",
 			"status = $2, claim_id = NULL, lease_until = NULL, updated_at = $3",
 			"source = $4 AND status = $5",
@@ -109,6 +150,36 @@ func (PostgresBindingRepository) ConsumeAndBind(
 		return BindInvalid, err
 	}
 	return outcome, nil
+}
+
+func waitOutCallingPermitsInScope(ctx context.Context, tx store.TxAccountScope, now time.Time) error {
+	// Supersede expired calling permits first.
+	if _, err := tx.Update(ctx, "delivery_send_attempt_permits",
+		"outcome = $2, finalized_at = clock_timestamp()",
+		"outcome = $3 AND start_deadline <= clock_timestamp()",
+		"superseded", "calling"); err != nil {
+		return err
+	}
+	live, err := tx.Exists(ctx, "delivery_send_attempt_permits",
+		"outcome = $2 AND start_deadline > clock_timestamp()", "calling")
+	if err != nil {
+		return err
+	}
+	if live {
+		return fmt.Errorf("calling permit still live; rebind must wait")
+	}
+	_ = now
+	return nil
+}
+
+func supersedeActiveIntentsForBusinessDeliveries(ctx context.Context, tx store.TxAccountScope, now time.Time) error {
+	// Clear active pointer on pending daily/command deliveries so next attempt rebuilds intent.
+	// Do not change delivery_id/source/source_key or create a second Delivery.
+	_, err := tx.Update(ctx, "telegram_deliveries",
+		"active_intent_revision = NULL, next_attempt_at = $2, claim_id = NULL, lease_until = NULL, updated_at = $2",
+		"status = $3 AND source IN ($4, $5)",
+		now, string(DeliveryStatusPending), string(DeliverySourceDaily), string(DeliverySourceCommand))
+	return err
 }
 
 func (PostgresBindingRepository) MatchCurrentChat(

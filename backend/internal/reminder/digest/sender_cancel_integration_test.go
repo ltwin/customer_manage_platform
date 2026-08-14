@@ -83,6 +83,24 @@ func (b fixedTextBuilder) Build(context.Context, store.AccountScope, digest.Deli
 	return b.text, nil
 }
 
+type fixedCallAuthorizer struct {
+	chatID string
+	text   string
+}
+
+func (a fixedCallAuthorizer) BeginCurrentCall(
+	context.Context, store.AccountScope, digest.AttemptClaim,
+) (digest.CallStartPermit, error) {
+	return digest.CallStartPermit{
+		AttemptID:            "att_cancel",
+		IntentRevision:       1,
+		StartDeadline:        time.Now().UTC().Add(5 * time.Second),
+		MonotonicStartBudget: 5 * time.Second,
+		PayloadText:          a.text,
+		RecipientChatID:      a.chatID,
+	}, nil
+}
+
 func TestDeliverySenderWithProductionClientKeepsClaimOnSendStartedCancel(t *testing.T) {
 	now := time.Date(2026, 7, 15, 8, 0, 0, 0, time.UTC)
 	lease := now.Add(30 * time.Second)
@@ -100,13 +118,16 @@ func TestDeliverySenderWithProductionClientKeepsClaimOnSendStartedCancel(t *test
 	transport := &cancelTransport{started: make(chan struct{})}
 	client := telegramapi.NewClient("secret", "https://example.invalid", &http.Client{Transport: transport})
 
+	recipients := currentRecipientResolver{chatID: "chat"}
+	messages := fixedTextBuilder{text: "digest body"}
 	sender := digest.NewDeliverySender(
 		repo,
 		digest.NewRecipientGate(),
-		currentRecipientResolver{chatID: "chat"},
-		fixedTextBuilder{text: "digest body"},
+		recipients,
+		messages,
 		client,
-	).WithClock(func() time.Time { return now })
+	).WithClock(func() time.Time { return now }).
+		WithCallAuthorizer(fixedCallAuthorizer{chatID: "chat", text: "digest body"})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

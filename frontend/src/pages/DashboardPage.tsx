@@ -38,6 +38,7 @@ const reminderTypeLabel: Record<DashboardReminder['type'], string> = {
   follow_up: '回访',
   churn: '流失',
   custom: '自定义',
+  plan_assignment_checklist: '认领项核对',
 }
 
 const orderStatusLabel: Record<string, string> = {
@@ -325,14 +326,19 @@ function ReminderRow({
 }) {
   const today = formatDateOnly(new Date(), timezone)
   const overdue = reminder.due_date < today
+  const detailLink = reminder.plan_id
+    ? `/shoot-plans/${reminder.plan_id}?tab=readiness`
+    : reminder.customer_id
+      ? `/customers/${reminder.customer_id}`
+      : null
   return (
     <div className="row-item">
       <span className="badge badge-muted">{reminderTypeLabel[reminder.type]}</span>
       <div className="grow">
         <div className="title">{reminder.content}</div>
         <div className="meta">
-          {reminder.customer_id ? (
-            <Link to={`/customers/${reminder.customer_id}`}>查看客户</Link>
+          {detailLink ? (
+            <Link to={detailLink}>{reminder.plan_id ? '打开策划准备项' : '查看客户'}</Link>
           ) : (
             '未关联客户'
           )}

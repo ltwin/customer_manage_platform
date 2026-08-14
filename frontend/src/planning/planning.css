@@ -79,6 +79,11 @@
 .planning-crm-kv > div { display: grid; gap: 3px; padding: 10px 12px; border-radius: var(--radius-s); background: var(--bg); }
 .planning-crm-kv dt { color: var(--muted); font-size: 11px; }
 .planning-crm-kv dd { margin: 0; color: var(--fg); font-size: 13px; overflow-wrap: anywhere; }
+.planning-assignment-reminder-stack { display: grid; gap: 14px; margin-top: 8px; }
+.planning-assignment-reminder-group { display: grid; gap: 8px; }
+.planning-assignment-reminder-group .planning-crm-kv { margin-bottom: 0; }
+.planning-panel + .planning-panel,
+.planning-section + .planning-panel { margin-top: 18px; }
 .planning-crm-choices { display: flex; flex-direction: column; gap: 8px; margin: 0 0 14px; padding: 0; list-style: none; }
 .planning-crm-warning { margin-top: 6px; color: var(--warning); font-size: 12px; font-weight: 650; }
 .planning-crm-confirm { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-s); background: var(--surface-2); }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 )
 
 func TestNewHTTPServerUsesProductionConnectionTimeouts(t *testing.T) {
@@ -187,7 +188,14 @@ func TestBuildTelegramIntegrationHonorsOptionalConfiguration(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			binding, runner, err := buildTelegramIntegration(tt.cfg, nil, nil, nil, nil)
+			var freshness *reminder.AssignmentReminderFreshness
+			if tt.wantEnabled {
+				freshness = reminder.NewAssignmentReminderFreshness()
+			}
+			binding, runner, err := buildTelegramIntegration(tt.cfg, nil, nil, nil, freshness, nil)
+			if tt.wantEnabled && freshness == nil {
+				t.Fatal("active telegram requires freshness wiring")
+			}
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("error: got %v, wantErr=%v", err, tt.wantErr)
 			}
@@ -199,6 +207,16 @@ func TestBuildTelegramIntegrationHonorsOptionalConfiguration(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("active_missing_freshness_fail_closed", func(t *testing.T) {
+		_, _, err := buildTelegramIntegration(
+			config.Config{TelegramBotToken: "synthetic-token", TelegramBotUsername: "synthetic_bot"},
+			nil, nil, nil, nil, nil,
+		)
+		if err == nil {
+			t.Fatal("missing freshness must fail closed")
+		}
+	})
 }
 
 func TestWaitForRunnerUsesCallerDeadline(t *testing.T) {

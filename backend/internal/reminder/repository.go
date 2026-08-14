@@ -12,7 +12,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-const reminderColumns = "id, account_id, created_at, type, customer_id, order_id, due_date, content, status, dedup_key"
+const reminderColumns = "id, account_id, created_at, type, customer_id, order_id, plan_id, due_date, content, status, dedup_key"
 
 // PostgresRepository 实现 reminder 持久化与跨域扫描取数。
 type PostgresRepository struct{}
@@ -342,11 +342,11 @@ type rowScanner interface {
 
 func scanReminder(row rowScanner) (Reminder, error) {
 	var r Reminder
-	var customerID, orderID sql.NullString
+	var customerID, orderID, planID sql.NullString
 	var due time.Time
 	if err := row.Scan(
 		&r.ID, &r.AccountID, &r.CreatedAt, &r.Type,
-		&customerID, &orderID, &due, &r.Content, &r.Status, &r.DedupKey,
+		&customerID, &orderID, &planID, &due, &r.Content, &r.Status, &r.DedupKey,
 	); err != nil {
 		return Reminder{}, err
 	}
@@ -357,6 +357,10 @@ func scanReminder(row rowScanner) (Reminder, error) {
 	if orderID.Valid {
 		v := orderID.String
 		r.OrderID = &v
+	}
+	if planID.Valid {
+		v := planID.String
+		r.PlanID = &v
 	}
 	r.DueDate = dateOnly(due)
 	return r, nil

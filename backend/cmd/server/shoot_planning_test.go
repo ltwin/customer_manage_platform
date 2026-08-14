@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/planshare"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
+	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
 )
@@ -62,14 +63,14 @@ func TestComposeShootPlanningApplicationFailsClosed(t *testing.T) {
 		t.Fatalf("planning-share-v1 composition should succeed with real guard: app=%v err=%v", shareApp, err)
 	}
 
-	reminder := fakeArchiveCapabilityStartupReader{state: planningcapability.ArchiveCapabilityState{
+	reminderCap := fakeArchiveCapabilityStartupReader{state: planningcapability.ArchiveCapabilityState{
 		SingletonKey: planningcapability.SingletonKey,
 		Capability:   planningcapability.ArchiveCapabilityReminder,
 		Revision:     3,
 	}}
-	if _, err := composeShootPlanningApplication(t.Context(), reminder, idempotency.NewExecutor()); err == nil ||
-		!strings.Contains(err.Error(), "unavailable server wiring") {
-		t.Fatalf("reminder capability must fail closed until ITEM-6, got %v", err)
+	reminderApp, err := composeShootPlanningApplication(t.Context(), reminderCap, idempotency.NewExecutor())
+	if err != nil || reminderApp == nil {
+		t.Fatalf("planning-share-reminder-v1 composition must succeed with real archive/CRM wiring: app=%v err=%v", reminderApp, err)
 	}
 
 	readFailure := errors.New("marker unavailable")
@@ -81,5 +82,70 @@ func TestComposeShootPlanningApplicationFailsClosed(t *testing.T) {
 	}
 	if _, err := composeShootPlanningApplication(t.Context(), core, nil); err == nil {
 		t.Fatal("missing shared idempotency executor must fail closed")
+	}
+}
+
+func TestShootPlanningOptionsReminderWiringMatrix(t *testing.T) {
+	t.Parallel()
+
+	opts, err := shootPlanningOptionsForCapability(planningcapability.ArchiveCapabilityReminder)
+	if err != nil {
+		t.Fatalf("reminder options: %v", err)
+	}
+	app, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), idempotency.NewExecutor(), opts...)
+	if err != nil || app == nil {
+		t.Fatalf("reminder wiring ready composition failed: %v", err)
+	}
+
+	// Non-reminder capabilities must keep archive participant Disabled.
+	for _, capability := range []planningcapability.ArchiveCapability{
+		planningcapability.ArchiveCapabilityCore,
+		planningcapability.ArchiveCapabilityPlanningShare,
+	} {
+		capability := capability
+		opts, err := shootPlanningOptionsForCapability(capability)
+		if err != nil {
+			t.Fatalf("%s options: %v", capability, err)
+		}
+		if _, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), idempotency.NewExecutor(), opts...); err != nil {
+			t.Fatalf("%s composition with production options: %v", capability, err)
+		}
+		// Injecting a real archive participant on non-reminder capability must fail.
+		bad := append([]shootplanning.ApplicationOption{}, opts...)
+		bad = append(bad, shootplanning.WithArchiveReminderParticipant(reminder.NewPlanArchiveReminderAdapter()))
+		if _, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), idempotency.NewExecutor(), bad...); !errors.Is(err, shootplanning.ErrArchiveWiringMismatch) {
+			t.Fatalf("%s + real archive participant want ErrArchiveWiringMismatch, got %v", capability, err)
+		}
+	}
+
+	// Reminder capability rejects Disabled archive participant / wrong policy / missing guard.
+	if _, err := shootplanning.NewApplication(
+		shootplanning.NewPostgresRepository(),
+		idempotency.NewExecutor(),
+		shootplanning.WithArchiveImpactPolicy(shootplanning.PlanningShareReminderArchiveImpactPolicyV1{}),
+		shootplanning.WithReadinessRemovalGuard(planshare.ReadinessRemovalGuard{}),
+		shootplanning.WithArchiveReminderParticipant(shootplanning.DisabledPlanArchiveReminderParticipant{}),
+		shootplanning.WithCRMReminder(reminder.NewCRMReminderLifecycleAdapter(nil), true),
+	); !errors.Is(err, shootplanning.ErrArchiveWiringMismatch) {
+		t.Fatalf("disabled archive participant: %v", err)
+	}
+	if _, err := shootplanning.NewApplication(
+		shootplanning.NewPostgresRepository(),
+		idempotency.NewExecutor(),
+		shootplanning.WithArchiveImpactPolicy(shootplanning.PlanningShareArchiveImpactPolicyV1{}),
+		shootplanning.WithReadinessRemovalGuard(planshare.ReadinessRemovalGuard{}),
+		shootplanning.WithArchiveReminderParticipant(reminder.NewPlanArchiveReminderAdapter()),
+		shootplanning.WithCRMReminder(reminder.NewCRMReminderLifecycleAdapter(nil), true),
+	); !errors.Is(err, shootplanning.ErrArchiveWiringMismatch) {
+		t.Fatalf("wrong archive policy on reminder capability: %v", err)
+	}
+	if _, err := shootplanning.NewApplication(
+		shootplanning.NewPostgresRepository(),
+		idempotency.NewExecutor(),
+		shootplanning.WithArchiveImpactPolicy(shootplanning.PlanningShareReminderArchiveImpactPolicyV1{}),
+		shootplanning.WithArchiveReminderParticipant(reminder.NewPlanArchiveReminderAdapter()),
+		shootplanning.WithCRMReminder(reminder.NewCRMReminderLifecycleAdapter(nil), true),
+	); !errors.Is(err, shootplanning.ErrReadinessGuardWiringMismatch) {
+		t.Fatalf("missing readiness guard: %v", err)
 	}
 }

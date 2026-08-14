@@ -25,6 +25,21 @@ linters:
           deny:
             - pkg: github.com/jackc/pgx
               desc: pgx 仅 store 系包可 import（ADR-001 账号隔离基座强制）
+        # ITEM-6 S2：planshare 不得依赖 reminder epoch/consumer 实现。
+        planshare-no-reminder:
+          files:
+            - "**/planshare/**"
+            - "!**/planshare/**/*_test.go"
+          deny:
+            - pkg: github.com/samson/customer-manage-platform/backend/internal/reminder
+              desc: planshare 不得 import reminder（三 owner 窄 port：planshare 只读 safe source）
+        # CRM 不得反向依赖 reminder。
+        crm-no-reminder:
+          files:
+            - "**/shootplanning/crm/**"
+          deny:
+            - pkg: github.com/samson/customer-manage-platform/backend/internal/reminder
+              desc: CRM package 不得 import reminder
 
 formatters:
   enable:

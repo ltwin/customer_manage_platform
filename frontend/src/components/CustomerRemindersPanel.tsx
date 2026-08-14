@@ -16,6 +16,7 @@ const typeLabels: Record<Reminder['type'], string> = {
   follow_up: '回访',
   churn: '流失',
   custom: '自定义',
+  plan_assignment_checklist: '认领项核对',
 }
 
 interface Props {

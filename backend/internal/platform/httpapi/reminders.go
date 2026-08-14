@@ -219,6 +219,10 @@ func (h *handlers) abortReminderError(c *gin.Context, err error) bool {
 		abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
 		return true
 	}
+	if errors.Is(err, reminder.ErrFreshnessRetryable) || errors.Is(err, reminder.ErrFreshnessNotCurrent) {
+		_ = c.Error(err)
+		return true
+	}
 	_ = c.Error(err)
 	return true
 }
@@ -227,16 +231,18 @@ func toAPIReminder(r reminder.Reminder) Reminder {
 	id := r.ID
 	acct := r.AccountID
 	created := r.CreatedAt
-	return Reminder{
+	out := Reminder{
 		Id:         &id,
 		AccountId:  &acct,
 		CreatedAt:  &created,
 		Type:       ReminderType(r.Type),
 		CustomerId: r.CustomerID,
 		OrderId:    r.OrderID,
+		PlanId:     r.PlanID,
 		DueDate:    openapi_types.Date{Time: r.DueDate},
 		Content:    r.Content,
 		Status:     ReminderStatus(r.Status),
 		DedupKey:   r.DedupKey,
 	}
+	return out
 }
