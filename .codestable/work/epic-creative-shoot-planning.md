@@ -2,8 +2,8 @@
 epic: ../requirements/creative-shoot-planning.md
 phase: executing
 approved_revision: 91bf0c2b47e2b9d117339803ae3254c731420db0be634d81e9dd66722a579a67
-current_item: ITEM-5
-next_action: 实现 plan-share-collaboration（proposal/full 免登录分享、匿名投影与协作）
+current_item: ITEM-6
+next_action: 实现 plan-assignment-reminders（把正式 readiness assignment 投影为只发给摄影师账号的提醒）
 blocked_by: null
 item_progression: continuous
 milestone_commit: authorized
@@ -25,9 +25,15 @@ remote_publish: manual
   - evidence: legacy `.codestable/features/2026-08-05-plan-ingestion-capture/`
 - [x] ITEM-4 · `shoot-plan-crm-integration`
   - status: implemented
+  - commit: `be182a6f58333fc10798505bb94858e07eec58f4`
   - owner_dispatch: 2026-08-13 授权在 stage-1 canonical JSON 缺失时先实现；不把 gate 标为 passed
   - verification: `make generate-check`；`go test -p=1 ./internal/shootplanning/... ./internal/customer ./internal/order ./internal/schedule ./internal/platform/httpapi -count=1 -parallel=1`；`npm run test:shoot-plan-crm`；`npm run lint`；`npm run build`。CMD-001 / stage-1 仍未机械通过。本地 worktree PG `schema_migrations` dirty version 16，未 force，浏览器烟马未跑。
-- [ ] ITEM-5 · `plan-share-collaboration`
+- [x] ITEM-5 · `plan-share-collaboration`
+  - status: implemented
+  - verification: `make generate-check` 与 `make check` 通过（2026-08-14）
+  - evidence: `.codestable/features/2026-08-05-plan-share-collaboration/plan-share-collaboration-s8-evidence.md`
+  - checklist: S1/S3/S5/S8=`done`；S2/S4/S6/S7=`pending`（cancel/delete 双连接、content↔GC 双连接、claim↔remove/archive HTTP exact、真实浏览器截图等 residual）
+  - note: 按 owner 授权提交本条里程碑后进入 ITEM-6。stage-1/stage-2 仍未标 passed；未 push。
 - [ ] ITEM-6 · `plan-assignment-reminders`
 - [ ] ITEM-7 · `plan-business-feedback`
   - blocked_by: `stage-2-evidence-go`
@@ -43,3 +49,4 @@ remote_publish: manual
 - `.codestable/roadmap/creative-shoot-planning/` 与对应 `.codestable/features/` 路径作为 legacy v1 冻结证据输入保留，不再承担活动进度的 canonical owner，也不在本次更新中改写。
 - 分支基线：`feat/creative-shoot-planning` 已包含本地最新 `main`，当前三个 Epic 里程碑提交位于其上；安全 stash 保留，未应用、未删除。
 - 2026-08-14：ITEM-4 implementation 收口。自动化验证通过；stage-1 仍 deferred；本地 PG dirty v16 未 force。按 owner 授权提交本条里程碑后进入 ITEM-5。
+- 2026-08-14：ITEM-5 S8 全矩阵验证后按授权提交里程碑。`make generate-check` / `make check` 通过；补 `expiry_quote_stale`、archive 投影 404、IP previous-day grace、Bearer feedback allowlist golden；修 auth-legacy tip 钉 `fullVersion==24`。S2/S4/S6/S7 与若干 A 残差记入 evidence，不阻塞本条里程碑。stage-1/stage-2 未标 passed；未 push。

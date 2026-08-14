@@ -94,6 +94,7 @@ type handlers struct {
 	trustedProxyCIDRs   []netip.Prefix
 	now                 func() time.Time
 	planningMedia       *planningMediaHandlers
+	anonymousShare      anonymousShareRouteDeps
 }
 
 var _ ServerInterface = (*handlers)(nil)

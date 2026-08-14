@@ -35,11 +35,13 @@ func WithHolderAuthorizer(authorizer HolderAuthorizer) ApplicationOption {
 func WithClock(now func() time.Time) ApplicationOption { return func(a *Application) { a.now = now } }
 
 type Application struct {
-	repo       Repository
-	executor   *idempotency.Executor
-	objects    immutablefs.ObjectStore
-	authorizer HolderAuthorizer
-	now        func() time.Time
+	repo           Repository
+	executor       *idempotency.Executor
+	objects        immutablefs.ObjectStore
+	authorizer     HolderAuthorizer
+	now            func() time.Time
+	pendingPermits sync.Map // permit id → *liveDisplayPermit (pre-commit)
+	livePermits    sync.Map // permit id → *liveDisplayPermit (openable)
 }
 
 func (a *Application) BatchShotAccessRefsInScope(ctx context.Context, tx store.TxAccountScope, planID string, shotIDs []string) (map[string][]AssetAccessRef, error) {

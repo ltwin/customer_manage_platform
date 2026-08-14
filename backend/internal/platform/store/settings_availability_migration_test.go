@@ -57,7 +57,8 @@ func TestSettingsAvailabilityMigrationBackfillsExistingRowsAndRollsBack(t *testi
 		t.Fatalf("close before down migration: %v", err)
 	}
 	for index, label := range []string{
-		"plan ingestion", "planning media", "shoot planning",
+		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
+		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
 		"account profiles", "settings availability",
 	} {
 		if err := store.MigrateDownOneForTest(url); err != nil {

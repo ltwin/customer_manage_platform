@@ -455,3 +455,9 @@ type errRow struct {
 func (r errRow) Scan(_ ...any) error {
 	return r.err
 }
+
+// IsSerializationFailure reports PostgreSQL serialization / deadlock failures.
+func IsSerializationFailure(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && (pgErr.Code == "40001" || pgErr.Code == "40P01")
+}

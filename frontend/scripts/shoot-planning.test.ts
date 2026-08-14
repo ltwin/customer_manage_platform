@@ -96,11 +96,11 @@ test('planning workspace stays in AppShell while Run Mode is independently authe
   assert.match(shell, /label: '策划', to: '\/shoot-plans'/)
 })
 
-test('workspace exposes only the five approved core sections and no later-feature entry points', () => {
+test('workspace exposes the approved core sections plus share collaboration and no deferred later-feature entry points', () => {
   const workspace = source('../src/planning/ShootPlanWorkspacePage.tsx')
 
-  assert.equal((workspace.match(/<TabButton\s/g) ?? []).length, 5)
-  for (const coreTab of ['创作 brief', '镜头表', '准备项', '参考素材', '执行历史']) {
+  assert.equal((workspace.match(/<TabButton\s/g) ?? []).length, 6)
+  for (const coreTab of ['创作 brief', '镜头表', '准备项', '参考素材', '分享协作', '执行历史']) {
     assert.match(workspace, new RegExp(`>${coreTab}(?:\\s|<|\\{)`))
   }
   for (const deferredEntry of ['分享反馈', '经营草稿', '素材摄取', 'AI 脚本', 'AI 分镜']) {

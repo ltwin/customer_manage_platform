@@ -46,6 +46,8 @@ tags:
     description: 全量导出（data-export）
   - name: shoot-planning
     description: 独立创作型拍摄策划、现场执行与审计历史
+  - name: plan-share-anonymous
+    description: 策划分享匿名投影（无鉴权）
   - name: planning-media
     description: 拍摄策划参考素材的上传、绑定、展示与生命周期管理
   - name: planning-ingestion
@@ -2036,6 +2038,644 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+
+  /shared/plans/{token}:
+    get:
+      tags: [plan-share-anonymous]
+      operationId: getSharedPlan
+      summary: 匿名读取策划分享投影（proposal 或 full）
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      responses:
+        "200":
+          description: exact SharedPlanProposalV1 或 SharedPlanFullV1
+          headers:
+            Cache-Control:
+              schema: {type: string}
+            Referrer-Policy:
+              schema: {type: string}
+            Content-Security-Policy:
+              schema: {type: string}
+            X-Content-Type-Options:
+              schema: {type: string}
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/SharedPlanProposalV1"
+                  - $ref: "#/components/schemas/SharedPlanFullV1"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Internal"
+
+  /shared/plans/{token}/feedback:
+    post:
+      tags: [plan-share-anonymous]
+      operationId: createSharedPlanFeedback
+      summary: 匿名提交整案反馈（proposal/full）
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 200}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedPlanFeedbackCreateInputV1"
+      responses:
+        "201":
+          description: 反馈创建结果
+          headers:
+            Cache-Control: {schema: {type: string}}
+            Referrer-Policy: {schema: {type: string}}
+            Content-Security-Policy: {schema: {type: string}}
+            X-Content-Type-Options: {schema: {type: string}}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackCreateResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: plan_revision_conflict | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Internal"
+
+  /shared/plans/{token}/shots/{shotRef}/feedback:
+    post:
+      tags: [plan-share-anonymous]
+      operationId: createSharedShotFeedback
+      summary: 匿名提交 Shot 反馈（full only；proposal 统一 404）
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 200}
+        - name: shotRef
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedShotFeedbackCreateInputV1"
+      responses:
+        "201":
+          description: 反馈创建结果
+          headers:
+            Cache-Control: {schema: {type: string}}
+            Referrer-Policy: {schema: {type: string}}
+            Content-Security-Policy: {schema: {type: string}}
+            X-Content-Type-Options: {schema: {type: string}}
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackCreateResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: shot_revision_conflict | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Internal"
+
+  /shared/plans/{token}/assignments:
+    post:
+      tags: [plan-share-anonymous]
+      operationId: claimSharedAssignment
+      summary: 匿名认领 readiness / on-site support（full only；proposal 统一 404）
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 200}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedAssignmentClaimInputV1"
+      responses:
+        "201":
+          description: 认领结果（不含 receipt secret）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentClaimResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: assignment_already_claimed | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Internal"
+
+  /shared/plans/{token}/assignments/{assignmentRef}:
+    delete:
+      tags: [plan-share-anonymous]
+      operationId: selfRevokeSharedAssignment
+      summary: 匿名自撤认领（当前 full token + receipt；旧 receipt 统一 404）
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 200}
+        - name: assignmentRef
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SharedAssignmentSelfRevokeInputV1"
+      responses:
+        "200":
+          description: 撤销结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentMutationResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: assignment_stale | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Internal"
+
+  /shared/plans/{token}/assets/{ref}/content:
+    get:
+      tags: [plan-share-anonymous]
+      operationId: getSharedPlanAssetContent
+      summary: 匿名读取分享 moodboard 展示素材（generation-bound ref）
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: ref
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: v
+          in: query
+          required: true
+          description: display checksum；与投影 moodboard.checksum 一致
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+      responses:
+        "200":
+          description: 展示版本图片；不 redirect；固定安全头
+          headers:
+            ETag: {schema: {type: string}}
+            Cache-Control: {schema: {type: string}}
+            Content-Length: {schema: {type: integer, format: int64}}
+            Content-Disposition: {schema: {type: string, enum: [inline]}}
+            X-Content-Type-Options: {schema: {type: string, enum: [nosniff]}}
+            Referrer-Policy: {schema: {type: string}}
+            Content-Security-Policy: {schema: {type: string}}
+          content:
+            image/png: {schema: {type: string, format: binary}}
+            image/jpeg: {schema: {type: string, format: binary}}
+            image/webp: {schema: {type: string, format: binary}}
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/Internal"
+        "503":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/shares:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [shoot-planning]
+      operationId: getShootPlanShares
+      summary: 读取策划分享管理投影（proposal/full 各一项 + on-site offers 分页）
+      parameters:
+        - name: offerCursor
+          in: query
+          schema: {type: string}
+        - name: offerLimit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        "200":
+          description: 分享管理投影；不含 selector/secret/commitment/完整 URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareManagementProjectionV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+    post:
+      tags: [shoot-planning]
+      operationId: issueShootPlanShare
+      summary: 签发一代分享 token（caller 提交 secret_commitment）
+      parameters:
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareIssueInputV1"
+      responses:
+        "201":
+          description: 签发结果；含 selector，不含 secret/commitment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareIssueResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: share_generation_exists | full_view_not_eligible | expiry_quote_expired | expiry_quote_stale | plan_revision_conflict | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/shares/{shareId}/rotate:
+    post:
+      tags: [shoot-planning]
+      operationId: rotateShootPlanShare
+      summary: 轮换一代分享 token
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: shareId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareRotateInputV1"
+      responses:
+        "200":
+          description: 新一代签发结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareIssueResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: share_stale | share_invalid_state | full_view_not_eligible | expiry_quote_expired | expiry_quote_stale | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/shares/{shareId}:
+    delete:
+      tags: [shoot-planning]
+      operationId: revokeShootPlanShare
+      summary: 撤销目标一代分享 token
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: shareId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShareRevokeInputV1"
+      responses:
+        "200":
+          description: 撤销结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareRevokeResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: share_stale | share_invalid_state | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/feedback:
+    get:
+      tags: [shoot-planning]
+      operationId: getShootPlanFeedback
+      summary: 分页读取策划反馈管理列表（全部 disposition 历史）
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        "200":
+          description: FeedbackManagementPageV1 exact allowlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackManagementPageV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/feedback/{feedbackId}/disposition:
+    post:
+      tags: [shoot-planning]
+      operationId: setShootPlanFeedbackDisposition
+      summary: 采纳或忽略反馈（不自动改 core）
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: feedbackId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackDispositionInputV1"
+      responses:
+        "200":
+          description: disposition 结果与 deep link
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackDispositionResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: feedback_stale | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/assignments:
+    get:
+      tags: [shoot-planning]
+      operationId: getShootPlanAssignments
+      summary: 分页读取策划认领管理列表（active + revoked 历史）
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: cursor
+          in: query
+          schema: {type: string}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 50}
+      responses:
+        "200":
+          description: AssignmentManagementPageV1 exact allowlist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentManagementPageV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/assignments/{assignmentId}:
+    delete:
+      tags: [shoot-planning]
+      operationId: revokeShootPlanAssignment
+      summary: 摄影师撤销认领
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: assignmentId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentPhotographerRevokeInputV1"
+      responses:
+        "200":
+          description: 撤销结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignmentMutationResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: assignment_stale | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/assignment-offers:
+    post:
+      tags: [shoot-planning]
+      operationId: createShootPlanAssignmentOffer
+      summary: 创建 on-site support offer
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentOfferCreateInputV1"
+      responses:
+        "201":
+          description: offer 创建结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfferMutationResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: plan_revision_conflict | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/assignment-offers/{offerId}:
+    delete:
+      tags: [shoot-planning]
+      operationId: closeShootPlanAssignmentOffer
+      summary: 关闭 on-site support offer（有 active assignment 时 409）
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - name: offerId
+          in: path
+          required: true
+          schema: {type: string}
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignmentOfferCloseInputV1"
+      responses:
+        "200":
+          description: offer 关闭结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OfferMutationResultV1"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: assignment_active | offer_stale | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /shoot-plans/{id}/transitions:
     post:
       tags: [shoot-planning]
@@ -2783,6 +3423,15 @@ components:
       oneOf:
         - $ref: "#/components/schemas/ScheduleConflictDetails"
         - $ref: "#/components/schemas/ArchiveAcknowledgementRequiredDetails"
+        - $ref: "#/components/schemas/ExpiryQuoteExpiredDetails"
+
+    ExpiryQuoteExpiredDetails:
+      type: object
+      additionalProperties: false
+      required: [refreshed_expiry_policy]
+      properties:
+        refreshed_expiry_policy:
+          $ref: "#/components/schemas/ExpiryPolicyProjectionV1"
 
     ArchiveAcknowledgementRequiredDetails:
       type: object
@@ -5346,3 +5995,547 @@ components:
         finalized_at:
           type: string
           format: date-time
+
+
+    SharedCreativeBriefV1:
+      type: object
+      additionalProperties: false
+      properties:
+        work_title: {type: string, nullable: true}
+        character_name: {type: string, nullable: true}
+        theme_statement: {type: string, nullable: true}
+        mood: {type: string, nullable: true}
+        visual_keywords:
+          type: array
+          items: {type: string}
+
+    SharedPublicWindowV1:
+      type: object
+      additionalProperties: false
+      required: [starts_at, ends_at, timezone, duration_minutes]
+      properties:
+        starts_at: {type: string, format: date-time}
+        ends_at: {type: string, format: date-time}
+        timezone: {type: string}
+        duration_minutes: {type: integer, minimum: 0}
+
+    SharedPublicScaleV1:
+      type: object
+      additionalProperties: false
+      required: [planned_shot_count]
+      properties:
+        planned_shot_count: {type: integer, minimum: 0}
+        planned_look_count: {type: integer, minimum: 0, nullable: true}
+        planned_scene_count: {type: integer, minimum: 0, nullable: true}
+
+    SharedMoodboardItemV1:
+      type: object
+      additionalProperties: false
+      required: [ref, checksum]
+      properties:
+        ref: {type: string, minLength: 1}
+        checksum: {type: string, minLength: 1}
+
+    SharedPlanProposalV1:
+      type: object
+      additionalProperties: false
+      required: [view_level, title, creative_brief, public_scale, moodboard, projection_revision]
+      properties:
+        view_level: {type: string, enum: [proposal]}
+        title: {type: string}
+        creative_brief: {$ref: "#/components/schemas/SharedCreativeBriefV1"}
+        public_window: {$ref: "#/components/schemas/SharedPublicWindowV1"}
+        public_scale: {$ref: "#/components/schemas/SharedPublicScaleV1"}
+        moodboard:
+          type: array
+          items: {$ref: "#/components/schemas/SharedMoodboardItemV1"}
+        projection_revision: {type: integer, format: int64, minimum: 1}
+
+    SharedShotV1:
+      type: object
+      additionalProperties: false
+      required: [id, position, title, revision]
+      properties:
+        id: {type: string}
+        position: {type: integer}
+        title: {type: string}
+        scene: {type: string, nullable: true}
+        action: {type: string, nullable: true}
+        expression: {type: string, nullable: true}
+        composition: {type: string, nullable: true}
+        lighting_text: {type: string, nullable: true}
+        framing_tag: {type: string, nullable: true}
+        lighting_direction_tag: {type: string, nullable: true}
+        lighting_quality_tag: {type: string, nullable: true}
+        palette_tag: {type: string, nullable: true}
+        shot_type_tag: {type: string, nullable: true}
+        revision: {type: integer, format: int64, minimum: 1}
+
+    SharedActiveAssignmentV1:
+      type: object
+      additionalProperties: false
+      required: [id, claimed_by_display_name, revision]
+      properties:
+        id: {type: string}
+        claimed_by_display_name: {type: string}
+        revision: {type: integer, format: int64, minimum: 1}
+
+    SharedAssignmentOpportunityV1:
+      type: object
+      additionalProperties: false
+      required: [offer_id, assignment_kind, content, target_revision]
+      properties:
+        offer_id: {type: string}
+        assignment_kind: {type: string, enum: [readiness, on_site_support]}
+        readiness_item_id: {type: string, nullable: true}
+        content: {type: string}
+        preparation_lead_days_preview: {type: integer, nullable: true}
+        target_revision: {type: integer, format: int64, minimum: 1}
+        active_assignment: {$ref: "#/components/schemas/SharedActiveAssignmentV1"}
+
+    SharedPlanFullV1:
+      type: object
+      additionalProperties: false
+      required: [view_level, title, creative_brief, public_scale, moodboard, projection_revision, shots, assignment_opportunities]
+      properties:
+        view_level: {type: string, enum: [full]}
+        title: {type: string}
+        creative_brief: {$ref: "#/components/schemas/SharedCreativeBriefV1"}
+        public_window: {$ref: "#/components/schemas/SharedPublicWindowV1"}
+        public_scale: {$ref: "#/components/schemas/SharedPublicScaleV1"}
+        moodboard:
+          type: array
+          items: {$ref: "#/components/schemas/SharedMoodboardItemV1"}
+        projection_revision: {type: integer, format: int64, minimum: 1}
+        shots:
+          type: array
+          items: {$ref: "#/components/schemas/SharedShotV1"}
+        assignment_opportunities:
+          type: array
+          items: {$ref: "#/components/schemas/SharedAssignmentOpportunityV1"}
+
+    ShareViewLevel:
+      type: string
+      enum: [proposal, full]
+
+    ExpirySourceExplicitV1:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [explicit]
+
+    DefaultQuoteV1:
+      type: object
+      additionalProperties: false
+      required: [evaluated_at, valid_until, view_level, policy_version]
+      properties:
+        evaluated_at: {type: string, format: date-time}
+        valid_until: {type: string, format: date-time}
+        view_level: {$ref: "#/components/schemas/ShareViewLevel"}
+        execution_window_revision: {type: integer, format: int64, nullable: true}
+        policy_version: {type: string, enum: [v1]}
+
+    ExpirySourceQuotedDefaultV1:
+      type: object
+      additionalProperties: false
+      required: [kind, default_quote]
+      properties:
+        kind:
+          type: string
+          enum: [quoted_default]
+        default_quote:
+          $ref: "#/components/schemas/DefaultQuoteV1"
+
+    ExpirySourceV1:
+      oneOf:
+        - $ref: "#/components/schemas/ExpirySourceExplicitV1"
+        - $ref: "#/components/schemas/ExpirySourceQuotedDefaultV1"
+
+    ExpiryPolicyProjectionV1:
+      type: object
+      additionalProperties: false
+      required:
+        [view_level, min_expires_at, max_expires_at, resolved_default_expires_at,
+         policy_version, default_quote]
+      properties:
+        view_level: {$ref: "#/components/schemas/ShareViewLevel"}
+        min_expires_at: {type: string, format: date-time}
+        max_expires_at: {type: string, format: date-time}
+        resolved_default_expires_at: {type: string, format: date-time}
+        policy_version: {type: string, enum: [v1]}
+        default_quote: {$ref: "#/components/schemas/DefaultQuoteV1"}
+
+    LatestShareGenerationProjectionV1:
+      type: object
+      additionalProperties: false
+      required:
+        [share_id, generation, fingerprint, effective_state, issued_at, expires_at, revision]
+      properties:
+        share_id: {type: string}
+        generation: {type: integer, format: int64}
+        fingerprint: {type: string}
+        effective_state:
+          type: string
+          enum: [active, expired, rotated, revoked, eligibility_invalidated, archived]
+        ended_reason: {type: string, nullable: true}
+        issued_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+        ended_at: {type: string, format: date-time, nullable: true}
+        first_opened_at: {type: string, format: date-time, nullable: true}
+        revision: {type: integer, format: int64}
+
+    ShareViewProjectionV1:
+      type: object
+      additionalProperties: false
+      required: [view_level, expiry_policy]
+      properties:
+        view_level: {$ref: "#/components/schemas/ShareViewLevel"}
+        expiry_policy: {$ref: "#/components/schemas/ExpiryPolicyProjectionV1"}
+        latest_generation:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/LatestShareGenerationProjectionV1"
+
+    OnSiteOfferProjectionV1:
+      type: object
+      additionalProperties: false
+      required: [offer_id, assignment_kind, content, state, revision, created_at]
+      properties:
+        offer_id: {type: string}
+        assignment_kind: {type: string, enum: [on_site_support]}
+        content: {type: string}
+        state: {type: string, enum: [open, closed]}
+        revision: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        closed_at: {type: string, format: date-time, nullable: true}
+        active_assignment_id: {type: string, nullable: true}
+
+    ShareManagementProjectionV1:
+      type: object
+      additionalProperties: false
+      required: [share_views, on_site_offers]
+      properties:
+        share_views:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: {$ref: "#/components/schemas/ShareViewProjectionV1"}
+        on_site_offers:
+          type: array
+          items: {$ref: "#/components/schemas/OnSiteOfferProjectionV1"}
+        offers_next_cursor: {type: string, nullable: true}
+
+    ShareIssueInputV1:
+      type: object
+      additionalProperties: false
+      required:
+        [expected_plan_revision, view_level, secret_commitment, expires_at,
+         expiry_source, policy_version]
+      properties:
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        view_level: {$ref: "#/components/schemas/ShareViewLevel"}
+        secret_commitment:
+          type: string
+          description: base64url raw-unpadded SHA-256(secret)
+          minLength: 43
+          maxLength: 43
+        expires_at: {type: string, format: date-time}
+        expiry_source: {$ref: "#/components/schemas/ExpirySourceV1"}
+        policy_version: {type: string, enum: [v1]}
+
+    ShareRotateInputV1:
+      type: object
+      additionalProperties: false
+      required:
+        [expected_share_revision, new_secret_commitment, expires_at,
+         expiry_source, policy_version]
+      properties:
+        expected_share_revision: {type: integer, format: int64, minimum: 1}
+        new_secret_commitment:
+          type: string
+          minLength: 43
+          maxLength: 43
+        expires_at: {type: string, format: date-time}
+        expiry_source: {$ref: "#/components/schemas/ExpirySourceV1"}
+        policy_version: {type: string, enum: [v1]}
+
+    ShareRevokeInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_share_revision, policy_version]
+      properties:
+        expected_share_revision: {type: integer, format: int64, minimum: 1}
+        policy_version: {type: string, enum: [v1]}
+
+    ShareIssueResultV1:
+      type: object
+      additionalProperties: false
+      required: [share_id, selector, generation, view_level, state, expires_at, revision]
+      properties:
+        share_id: {type: string}
+        selector: {type: string}
+        generation: {type: integer, format: int64}
+        view_level: {$ref: "#/components/schemas/ShareViewLevel"}
+        state: {type: string, enum: [active]}
+        expires_at: {type: string, format: date-time}
+        revision: {type: integer, format: int64}
+
+    ShareRevokeResultV1:
+      type: object
+      additionalProperties: false
+      required: [share_id, state, revision, revoked_at]
+      properties:
+        share_id: {type: string}
+        state: {type: string, enum: [revoked]}
+        revision: {type: integer, format: int64}
+        revoked_at: {type: string, format: date-time}
+
+    SharedPlanFeedbackCreateInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_projection_revision, content, policy_version]
+      properties:
+        expected_projection_revision: {type: integer, format: int64, minimum: 1}
+        author_display_name: {type: string, minLength: 0, maxLength: 40}
+        content: {type: string, minLength: 1, maxLength: 2000}
+        policy_version: {type: string, enum: [v1]}
+
+    SharedShotFeedbackCreateInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_shot_revision, content, policy_version]
+      properties:
+        expected_shot_revision: {type: integer, format: int64, minimum: 1}
+        author_display_name: {type: string, minLength: 0, maxLength: 40}
+        content: {type: string, minLength: 1, maxLength: 2000}
+        policy_version: {type: string, enum: [v1]}
+
+    FeedbackCreateResultV1:
+      type: object
+      additionalProperties: false
+      required: [feedback_id, target_kind, revision, created_at]
+      properties:
+        feedback_id: {type: string}
+        target_kind: {type: string, enum: [plan, shot]}
+        target_ref: {type: string, nullable: true}
+        revision: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+
+    FeedbackTargetV1:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: {type: string, enum: [plan]}
+        - type: object
+          additionalProperties: false
+          required: [kind, shot_id]
+          properties:
+            kind: {type: string, enum: [shot]}
+            shot_id: {type: string}
+
+    FeedbackDeepLinkTargetV1:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind: {type: string, enum: [feedback_section]}
+        - type: object
+          additionalProperties: false
+          required: [kind, shot_id]
+          properties:
+            kind: {type: string, enum: [shot]}
+            shot_id: {type: string}
+
+    FeedbackManagementItemV1:
+      type: object
+      additionalProperties: false
+      required:
+        [feedback_id, target, author_display_name, content, disposition, revision,
+         created_at, deep_link_target]
+      properties:
+        feedback_id: {type: string}
+        target: {$ref: "#/components/schemas/FeedbackTargetV1"}
+        author_display_name: {type: string}
+        content: {type: string}
+        disposition: {type: string, enum: [pending, adopted, ignored]}
+        revision: {type: integer, format: int64}
+        created_at: {type: string, format: date-time}
+        disposition_at: {type: string, format: date-time, nullable: true}
+        deep_link_target: {$ref: "#/components/schemas/FeedbackDeepLinkTargetV1"}
+
+    FeedbackManagementPageV1:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/FeedbackManagementItemV1"}
+        next_cursor: {type: string, nullable: true}
+
+    FeedbackDispositionInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_feedback_revision, disposition]
+      properties:
+        expected_feedback_revision: {type: integer, format: int64, minimum: 1}
+        disposition: {type: string, enum: [adopted, ignored]}
+
+    FeedbackDispositionResultV1:
+      type: object
+      additionalProperties: false
+      required: [feedback_id, disposition, revision, deep_link_target]
+      properties:
+        feedback_id: {type: string}
+        disposition: {type: string, enum: [adopted, ignored]}
+        revision: {type: integer, format: int64}
+        deep_link_target: {$ref: "#/components/schemas/FeedbackDeepLinkTargetV1"}
+
+    AssignmentTargetV1:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: {type: string, enum: [readiness, on_site_support]}
+        readiness_item_id: {type: string}
+        offer_id: {type: string}
+
+    AssignmentDeepLinkTargetV1:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: {type: string, enum: [readiness, offer]}
+        readiness_item_id: {type: string}
+        offer_id: {type: string}
+
+    AssignmentManagementItemV1:
+      type: object
+      additionalProperties: false
+      required:
+        [assignment_id, assignment_kind, target, content_snapshot, claimed_by_display_name,
+         status, revision, claimed_at, deep_link_target]
+      properties:
+        assignment_id: {type: string}
+        assignment_kind: {type: string, enum: [readiness, on_site_support]}
+        target: {$ref: "#/components/schemas/AssignmentTargetV1"}
+        content_snapshot: {type: string}
+        claimed_by_display_name: {type: string}
+        preparation_lead_days_snapshot: {type: integer, nullable: true}
+        lead_rule_version: {type: string, nullable: true}
+        status: {type: string, enum: [active, revoked]}
+        revision: {type: integer, format: int64}
+        claimed_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time, nullable: true}
+        revoked_by: {type: string, enum: [anonymous, photographer], nullable: true}
+        deep_link_target: {$ref: "#/components/schemas/AssignmentDeepLinkTargetV1"}
+
+    AssignmentManagementPageV1:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AssignmentManagementItemV1"}
+        next_cursor: {type: string, nullable: true}
+
+    AssignmentOfferCreateInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_revision, assignment_kind, content]
+      properties:
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        assignment_kind: {type: string, enum: [on_site_support]}
+        content: {type: string, minLength: 1, maxLength: 240}
+        policy_version: {type: string, enum: [v1]}
+
+    AssignmentOfferCloseInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_offer_revision]
+      properties:
+        expected_offer_revision: {type: integer, format: int64, minimum: 1}
+        policy_version: {type: string, enum: [v1]}
+
+    OfferMutationResultV1:
+      type: object
+      additionalProperties: false
+      required: [offer_id, state, revision]
+      properties:
+        offer_id: {type: string}
+        state: {type: string, enum: [open, closed]}
+        revision: {type: integer, format: int64}
+
+    AssignmentPhotographerRevokeInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_assignment_revision]
+      properties:
+        expected_assignment_revision: {type: integer, format: int64, minimum: 1}
+        policy_version: {type: string, enum: [v1]}
+
+    AssignmentClaimTargetV1:
+      type: object
+      additionalProperties: false
+      required: [kind]
+      properties:
+        kind: {type: string, enum: [readiness, on_site_support]}
+        readiness_item_id: {type: string}
+        offer_id: {type: string}
+
+    SharedAssignmentClaimInputV1:
+      type: object
+      additionalProperties: false
+      required: [target, expected_target_revision, claim_receipt_commitment]
+      properties:
+        target: {$ref: "#/components/schemas/AssignmentClaimTargetV1"}
+        expected_target_revision: {type: integer, format: int64, minimum: 1}
+        claimed_by_display_name: {type: string, maxLength: 40}
+        claim_receipt_commitment:
+          type: string
+          description: base64url SHA-256(receipt secret)
+          minLength: 43
+          maxLength: 43
+        policy_version: {type: string, enum: [v1]}
+
+    SharedAssignmentSelfRevokeInputV1:
+      type: object
+      additionalProperties: false
+      required: [expected_assignment_revision, claim_receipt]
+      properties:
+        expected_assignment_revision: {type: integer, format: int64, minimum: 1}
+        claim_receipt:
+          type: string
+          description: raw cr1.<secret> wire; hashed before ledger
+          minLength: 1
+          maxLength: 200
+        policy_version: {type: string, enum: [v1]}
+
+    AssignmentClaimResultV1:
+      type: object
+      additionalProperties: false
+      required: [assignment_id, assignment_kind, target_ref, status, revision, claimed_at]
+      properties:
+        assignment_id: {type: string}
+        assignment_kind: {type: string, enum: [readiness, on_site_support]}
+        target_ref: {type: string}
+        status: {type: string, enum: [active, revoked]}
+        revision: {type: integer, format: int64}
+        claimed_at: {type: string, format: date-time}
+
+    AssignmentMutationResultV1:
+      type: object
+      additionalProperties: false
+      required: [assignment_id, status, revision, revoked_at]
+      properties:
+        assignment_id: {type: string}
+        status: {type: string, enum: [active, revoked]}
+        revision: {type: integer, format: int64}
+        revoked_at: {type: string, format: date-time}

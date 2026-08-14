@@ -84,8 +84,13 @@ func TestCustomerAvatarMigrationUpDownAndConstraints(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatalf("close before down migration: %v", err)
 	}
-	// avatar 是 0008，需连续回滚 0018-0016 planning migrations，再回滚 main 上的账号与基础迁移。
-	for i, label := range []string{"plan-ingestion", "planning-media", "shoot-planning", "account-profiles", "settings-availability", "auth-attempt-limiter", "account-auth", "telegram", "reminders", "settings", "avatar"} {
+	// avatar 是 0008，需连续回滚 0020-0016 planning / security migrations，再回滚账号与基础迁移。
+	for i, label := range []string{
+		"share-assignments", "share-feedbacks", "share-anonymous", "share-generations",
+		"security-attempt-budget", "plan-crm", "plan-ingestion", "planning-media", "shoot-planning",
+		"account-profiles", "settings-availability", "auth-attempt-limiter", "account-auth",
+		"telegram", "reminders", "settings", "avatar",
+	} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("migrate down one (%s step %d): %v", label, i+1, err)
 		}

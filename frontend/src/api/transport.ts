@@ -35,6 +35,20 @@ export async function publicRequest<T>(path: string, init: RequestInit = {}): Pr
   return responseBody<T>(res)
 }
 
+/** Anonymous plan-share API calls: never send cookies / credentials. */
+export async function sharedRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers)
+  headers.set('Content-Type', 'application/json')
+  const res = await fetch(`/api/v1${path}`, {
+    ...init,
+    credentials: 'omit',
+    cache: 'no-store',
+    referrerPolicy: 'no-referrer',
+    headers,
+  })
+  return responseBody<T>(res)
+}
+
 export async function requestWithoutAuthRetry<T>(path: string, init: RequestInit = {}): Promise<T> {
 	const headers = new Headers(init.headers)
 	headers.set('Content-Type', 'application/json')

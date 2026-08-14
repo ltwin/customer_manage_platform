@@ -87,7 +87,8 @@ func TestAccountAuthMigrationPreservesLegacyAccountAndRollsBack(t *testing.T) {
 		t.Fatalf("close before auth down migration: %v", err)
 	}
 	for index, label := range []string{
-		"plan ingestion", "planning media", "shoot planning",
+		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
+		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
 		"account profiles", "settings availability", "limiter", "legacy-only auth",
 	} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
@@ -132,7 +133,8 @@ func TestAccountAuthDownMigrationRejectsNewStyleAccount(t *testing.T) {
 	}
 
 	for index, label := range []string{
-		"plan ingestion", "planning media", "shoot planning",
+		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
+		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
 		"account profiles", "settings availability", "limiter",
 	} {
 		if err := store.MigrateDownOneForTest(url); err != nil {

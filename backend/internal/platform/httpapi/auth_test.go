@@ -760,6 +760,18 @@ func TestAuthTypedErrorsAndActionPageReferrerPolicy(t *testing.T) {
 			t.Fatalf("%s referrer policy=%q", path, rec.Header().Get("Referrer-Policy"))
 		}
 	}
+
+	shareHTML := authRequest(t, fixture.handler, http.MethodGet, "/shared/plans/sp1.test.token", "", "", "")
+	if shareHTML.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("shared plan HTML referrer policy=%q", shareHTML.Header().Get("Referrer-Policy"))
+	}
+	if shareHTML.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("shared plan HTML cache=%q", shareHTML.Header().Get("Cache-Control"))
+	}
+	const wantCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	if shareHTML.Header().Get("Content-Security-Policy") != wantCSP {
+		t.Fatalf("shared plan HTML CSP=%q", shareHTML.Header().Get("Content-Security-Policy"))
+	}
 }
 
 func TestPasswordRoutesOriginCookieAndErrorMatrix(t *testing.T) {

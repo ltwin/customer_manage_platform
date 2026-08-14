@@ -86,6 +86,78 @@ func (e AssetBindingState) Valid() bool {
 	}
 }
 
+// Defines values for AssignmentClaimResultV1AssignmentKind.
+const (
+	AssignmentClaimResultV1AssignmentKindOnSiteSupport AssignmentClaimResultV1AssignmentKind = "on_site_support"
+	AssignmentClaimResultV1AssignmentKindReadiness     AssignmentClaimResultV1AssignmentKind = "readiness"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentClaimResultV1AssignmentKind enum.
+func (e AssignmentClaimResultV1AssignmentKind) Valid() bool {
+	switch e {
+	case AssignmentClaimResultV1AssignmentKindOnSiteSupport:
+		return true
+	case AssignmentClaimResultV1AssignmentKindReadiness:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentClaimResultV1Status.
+const (
+	AssignmentClaimResultV1StatusActive  AssignmentClaimResultV1Status = "active"
+	AssignmentClaimResultV1StatusRevoked AssignmentClaimResultV1Status = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentClaimResultV1Status enum.
+func (e AssignmentClaimResultV1Status) Valid() bool {
+	switch e {
+	case AssignmentClaimResultV1StatusActive:
+		return true
+	case AssignmentClaimResultV1StatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentClaimTargetV1Kind.
+const (
+	AssignmentClaimTargetV1KindOnSiteSupport AssignmentClaimTargetV1Kind = "on_site_support"
+	AssignmentClaimTargetV1KindReadiness     AssignmentClaimTargetV1Kind = "readiness"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentClaimTargetV1Kind enum.
+func (e AssignmentClaimTargetV1Kind) Valid() bool {
+	switch e {
+	case AssignmentClaimTargetV1KindOnSiteSupport:
+		return true
+	case AssignmentClaimTargetV1KindReadiness:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentMutationResultV1Status.
+const (
+	AssignmentMutationResultV1StatusActive  AssignmentMutationResultV1Status = "active"
+	AssignmentMutationResultV1StatusRevoked AssignmentMutationResultV1Status = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentMutationResultV1Status enum.
+func (e AssignmentMutationResultV1Status) Valid() bool {
+	switch e {
+	case AssignmentMutationResultV1StatusActive:
+		return true
+	case AssignmentMutationResultV1StatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CoreArchiveAcknowledgementEffects.
 const (
 	CoreArchiveAcknowledgementEffectsExecutionHistoryRetained CoreArchiveAcknowledgementEffects = "execution_history_retained"
@@ -185,6 +257,36 @@ func (e CustomerStatus) Valid() bool {
 	}
 }
 
+// Defines values for DefaultQuoteV1PolicyVersion.
+const (
+	DefaultQuoteV1PolicyVersionV1 DefaultQuoteV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the DefaultQuoteV1PolicyVersion enum.
+func (e DefaultQuoteV1PolicyVersion) Valid() bool {
+	switch e {
+	case DefaultQuoteV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpiryPolicyProjectionV1PolicyVersion.
+const (
+	ExpiryPolicyProjectionV1PolicyVersionV1 ExpiryPolicyProjectionV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryPolicyProjectionV1PolicyVersion enum.
+func (e ExpiryPolicyProjectionV1PolicyVersion) Valid() bool {
+	switch e {
+	case ExpiryPolicyProjectionV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ExportAccountProfileAvatarMediaType.
 const (
 	ExportAccountProfileAvatarMediaTypeImagejpeg ExportAccountProfileAvatarMediaType = "image/jpeg"
@@ -215,6 +317,24 @@ const (
 func (e ExportDocumentSchemaVersion) Valid() bool {
 	switch e {
 	case N3:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackCreateResultV1TargetKind.
+const (
+	FeedbackCreateResultV1TargetKindPlan FeedbackCreateResultV1TargetKind = "plan"
+	FeedbackCreateResultV1TargetKindShot FeedbackCreateResultV1TargetKind = "shot"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackCreateResultV1TargetKind enum.
+func (e FeedbackCreateResultV1TargetKind) Valid() bool {
+	switch e {
+	case FeedbackCreateResultV1TargetKindPlan:
+		return true
+	case FeedbackCreateResultV1TargetKindShot:
 		return true
 	default:
 		return false
@@ -259,34 +379,34 @@ func (e OrderCreationMode) Valid() bool {
 
 // Defines values for OrderStatus.
 const (
-	Cancelled  OrderStatus = "cancelled"
-	Closed     OrderStatus = "closed"
-	Consulting OrderStatus = "consulting"
-	Delivered  OrderStatus = "delivered"
-	Retouching OrderStatus = "retouching"
-	Scheduled  OrderStatus = "scheduled"
-	Selected   OrderStatus = "selected"
-	Shot       OrderStatus = "shot"
+	OrderStatusCancelled  OrderStatus = "cancelled"
+	OrderStatusClosed     OrderStatus = "closed"
+	OrderStatusConsulting OrderStatus = "consulting"
+	OrderStatusDelivered  OrderStatus = "delivered"
+	OrderStatusRetouching OrderStatus = "retouching"
+	OrderStatusScheduled  OrderStatus = "scheduled"
+	OrderStatusSelected   OrderStatus = "selected"
+	OrderStatusShot       OrderStatus = "shot"
 )
 
 // Valid indicates whether the value is a known member of the OrderStatus enum.
 func (e OrderStatus) Valid() bool {
 	switch e {
-	case Cancelled:
+	case OrderStatusCancelled:
 		return true
-	case Closed:
+	case OrderStatusClosed:
 		return true
-	case Consulting:
+	case OrderStatusConsulting:
 		return true
-	case Delivered:
+	case OrderStatusDelivered:
 		return true
-	case Retouching:
+	case OrderStatusRetouching:
 		return true
-	case Scheduled:
+	case OrderStatusScheduled:
 		return true
-	case Selected:
+	case OrderStatusSelected:
 		return true
-	case Shot:
+	case OrderStatusShot:
 		return true
 	default:
 		return false
@@ -677,6 +797,132 @@ func (e ReminderType) Valid() bool {
 	}
 }
 
+// Defines values for ShareViewLevel.
+const (
+	ShareViewLevelFull     ShareViewLevel = "full"
+	ShareViewLevelProposal ShareViewLevel = "proposal"
+)
+
+// Valid indicates whether the value is a known member of the ShareViewLevel enum.
+func (e ShareViewLevel) Valid() bool {
+	switch e {
+	case ShareViewLevelFull:
+		return true
+	case ShareViewLevelProposal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharedAssignmentClaimInputV1PolicyVersion.
+const (
+	SharedAssignmentClaimInputV1PolicyVersionV1 SharedAssignmentClaimInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the SharedAssignmentClaimInputV1PolicyVersion enum.
+func (e SharedAssignmentClaimInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case SharedAssignmentClaimInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharedAssignmentOpportunityV1AssignmentKind.
+const (
+	OnSiteSupport SharedAssignmentOpportunityV1AssignmentKind = "on_site_support"
+	Readiness     SharedAssignmentOpportunityV1AssignmentKind = "readiness"
+)
+
+// Valid indicates whether the value is a known member of the SharedAssignmentOpportunityV1AssignmentKind enum.
+func (e SharedAssignmentOpportunityV1AssignmentKind) Valid() bool {
+	switch e {
+	case OnSiteSupport:
+		return true
+	case Readiness:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharedAssignmentSelfRevokeInputV1PolicyVersion.
+const (
+	SharedAssignmentSelfRevokeInputV1PolicyVersionV1 SharedAssignmentSelfRevokeInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the SharedAssignmentSelfRevokeInputV1PolicyVersion enum.
+func (e SharedAssignmentSelfRevokeInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case SharedAssignmentSelfRevokeInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharedPlanFeedbackCreateInputV1PolicyVersion.
+const (
+	SharedPlanFeedbackCreateInputV1PolicyVersionV1 SharedPlanFeedbackCreateInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the SharedPlanFeedbackCreateInputV1PolicyVersion enum.
+func (e SharedPlanFeedbackCreateInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case SharedPlanFeedbackCreateInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharedPlanFullV1ViewLevel.
+const (
+	SharedPlanFullV1ViewLevelFull SharedPlanFullV1ViewLevel = "full"
+)
+
+// Valid indicates whether the value is a known member of the SharedPlanFullV1ViewLevel enum.
+func (e SharedPlanFullV1ViewLevel) Valid() bool {
+	switch e {
+	case SharedPlanFullV1ViewLevelFull:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharedPlanProposalV1ViewLevel.
+const (
+	Proposal SharedPlanProposalV1ViewLevel = "proposal"
+)
+
+// Valid indicates whether the value is a known member of the SharedPlanProposalV1ViewLevel enum.
+func (e SharedPlanProposalV1ViewLevel) Valid() bool {
+	switch e {
+	case Proposal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharedShotFeedbackCreateInputV1PolicyVersion.
+const (
+	SharedShotFeedbackCreateInputV1PolicyVersionV1 SharedShotFeedbackCreateInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the SharedShotFeedbackCreateInputV1PolicyVersion enum.
+func (e SharedShotFeedbackCreateInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case SharedShotFeedbackCreateInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ShootPlanStatus.
 const (
 	Archived   ShootPlanStatus = "archived"
@@ -951,6 +1197,43 @@ type AssetBindingResult struct {
 	Binding AssetBinding `json:"binding"`
 }
 
+// AssignmentClaimResultV1 defines model for AssignmentClaimResultV1.
+type AssignmentClaimResultV1 struct {
+	AssignmentId   string                                `json:"assignment_id"`
+	AssignmentKind AssignmentClaimResultV1AssignmentKind `json:"assignment_kind"`
+	ClaimedAt      time.Time                             `json:"claimed_at"`
+	Revision       int64                                 `json:"revision"`
+	Status         AssignmentClaimResultV1Status         `json:"status"`
+	TargetRef      string                                `json:"target_ref"`
+}
+
+// AssignmentClaimResultV1AssignmentKind defines model for AssignmentClaimResultV1.AssignmentKind.
+type AssignmentClaimResultV1AssignmentKind string
+
+// AssignmentClaimResultV1Status defines model for AssignmentClaimResultV1.Status.
+type AssignmentClaimResultV1Status string
+
+// AssignmentClaimTargetV1 defines model for AssignmentClaimTargetV1.
+type AssignmentClaimTargetV1 struct {
+	Kind            AssignmentClaimTargetV1Kind `json:"kind"`
+	OfferId         *string                     `json:"offer_id,omitempty"`
+	ReadinessItemId *string                     `json:"readiness_item_id,omitempty"`
+}
+
+// AssignmentClaimTargetV1Kind defines model for AssignmentClaimTargetV1.Kind.
+type AssignmentClaimTargetV1Kind string
+
+// AssignmentMutationResultV1 defines model for AssignmentMutationResultV1.
+type AssignmentMutationResultV1 struct {
+	AssignmentId string                           `json:"assignment_id"`
+	Revision     int64                            `json:"revision"`
+	RevokedAt    time.Time                        `json:"revoked_at"`
+	Status       AssignmentMutationResultV1Status `json:"status"`
+}
+
+// AssignmentMutationResultV1Status defines model for AssignmentMutationResultV1.Status.
+type AssignmentMutationResultV1Status string
+
 // AuthCapabilities defines model for AuthCapabilities.
 type AuthCapabilities struct {
 	PublicRegistrationEnabled bool `json:"public_registration_enabled"`
@@ -1124,6 +1407,18 @@ type CustomerSummary struct {
 	Status         CustomerStatus  `json:"status"`
 }
 
+// DefaultQuoteV1 defines model for DefaultQuoteV1.
+type DefaultQuoteV1 struct {
+	EvaluatedAt             time.Time                   `json:"evaluated_at"`
+	ExecutionWindowRevision nullable.Nullable[int64]    `json:"execution_window_revision,omitempty"`
+	PolicyVersion           DefaultQuoteV1PolicyVersion `json:"policy_version"`
+	ValidUntil              time.Time                   `json:"valid_until"`
+	ViewLevel               ShareViewLevel              `json:"view_level"`
+}
+
+// DefaultQuoteV1PolicyVersion defines model for DefaultQuoteV1.PolicyVersion.
+type DefaultQuoteV1PolicyVersion string
+
 // ErrorDetails defines model for ErrorDetails.
 type ErrorDetails struct {
 	union json.RawMessage
@@ -1136,6 +1431,24 @@ type ErrorEnvelope struct {
 		Details *ErrorDetails `json:"details,omitempty"`
 		Message string        `json:"message"`
 	} `json:"error"`
+}
+
+// ExpiryPolicyProjectionV1 defines model for ExpiryPolicyProjectionV1.
+type ExpiryPolicyProjectionV1 struct {
+	DefaultQuote             DefaultQuoteV1                        `json:"default_quote"`
+	MaxExpiresAt             time.Time                             `json:"max_expires_at"`
+	MinExpiresAt             time.Time                             `json:"min_expires_at"`
+	PolicyVersion            ExpiryPolicyProjectionV1PolicyVersion `json:"policy_version"`
+	ResolvedDefaultExpiresAt time.Time                             `json:"resolved_default_expires_at"`
+	ViewLevel                ShareViewLevel                        `json:"view_level"`
+}
+
+// ExpiryPolicyProjectionV1PolicyVersion defines model for ExpiryPolicyProjectionV1.PolicyVersion.
+type ExpiryPolicyProjectionV1PolicyVersion string
+
+// ExpiryQuoteExpiredDetails defines model for ExpiryQuoteExpiredDetails.
+type ExpiryQuoteExpiredDetails struct {
+	RefreshedExpiryPolicy ExpiryPolicyProjectionV1 `json:"refreshed_expiry_policy"`
 }
 
 // ExportAccountProfile defines model for ExportAccountProfile.
@@ -1187,6 +1500,18 @@ type ExportDocument struct {
 
 // ExportDocumentSchemaVersion defines model for ExportDocument.SchemaVersion.
 type ExportDocumentSchemaVersion int
+
+// FeedbackCreateResultV1 defines model for FeedbackCreateResultV1.
+type FeedbackCreateResultV1 struct {
+	CreatedAt  time.Time                        `json:"created_at"`
+	FeedbackId string                           `json:"feedback_id"`
+	Revision   int64                            `json:"revision"`
+	TargetKind FeedbackCreateResultV1TargetKind `json:"target_kind"`
+	TargetRef  nullable.Nullable[string]        `json:"target_ref,omitempty"`
+}
+
+// FeedbackCreateResultV1TargetKind defines model for FeedbackCreateResultV1.TargetKind.
+type FeedbackCreateResultV1TargetKind string
 
 // NonShootScheduleSlotListItem defines model for NonShootScheduleSlotListItem.
 type NonShootScheduleSlotListItem struct {
@@ -1614,6 +1939,154 @@ type Settings struct {
 
 	// Timezone IANA，默认 Asia/Shanghai；所有 date-only 判定按此时区（§4.1）
 	Timezone string `json:"timezone"`
+}
+
+// ShareViewLevel defines model for ShareViewLevel.
+type ShareViewLevel string
+
+// SharedActiveAssignmentV1 defines model for SharedActiveAssignmentV1.
+type SharedActiveAssignmentV1 struct {
+	ClaimedByDisplayName string `json:"claimed_by_display_name"`
+	Id                   string `json:"id"`
+	Revision             int64  `json:"revision"`
+}
+
+// SharedAssignmentClaimInputV1 defines model for SharedAssignmentClaimInputV1.
+type SharedAssignmentClaimInputV1 struct {
+	// ClaimReceiptCommitment base64url SHA-256(receipt secret)
+	ClaimReceiptCommitment string                                     `json:"claim_receipt_commitment"`
+	ClaimedByDisplayName   *string                                    `json:"claimed_by_display_name,omitempty"`
+	ExpectedTargetRevision int64                                      `json:"expected_target_revision"`
+	PolicyVersion          *SharedAssignmentClaimInputV1PolicyVersion `json:"policy_version,omitempty"`
+	Target                 AssignmentClaimTargetV1                    `json:"target"`
+}
+
+// SharedAssignmentClaimInputV1PolicyVersion defines model for SharedAssignmentClaimInputV1.PolicyVersion.
+type SharedAssignmentClaimInputV1PolicyVersion string
+
+// SharedAssignmentOpportunityV1 defines model for SharedAssignmentOpportunityV1.
+type SharedAssignmentOpportunityV1 struct {
+	ActiveAssignment           *SharedActiveAssignmentV1                   `json:"active_assignment,omitempty"`
+	AssignmentKind             SharedAssignmentOpportunityV1AssignmentKind `json:"assignment_kind"`
+	Content                    string                                      `json:"content"`
+	OfferId                    string                                      `json:"offer_id"`
+	PreparationLeadDaysPreview nullable.Nullable[int]                      `json:"preparation_lead_days_preview,omitempty"`
+	ReadinessItemId            nullable.Nullable[string]                   `json:"readiness_item_id,omitempty"`
+	TargetRevision             int64                                       `json:"target_revision"`
+}
+
+// SharedAssignmentOpportunityV1AssignmentKind defines model for SharedAssignmentOpportunityV1.AssignmentKind.
+type SharedAssignmentOpportunityV1AssignmentKind string
+
+// SharedAssignmentSelfRevokeInputV1 defines model for SharedAssignmentSelfRevokeInputV1.
+type SharedAssignmentSelfRevokeInputV1 struct {
+	// ClaimReceipt raw cr1.<secret> wire; hashed before ledger
+	ClaimReceipt               string                                          `json:"claim_receipt"`
+	ExpectedAssignmentRevision int64                                           `json:"expected_assignment_revision"`
+	PolicyVersion              *SharedAssignmentSelfRevokeInputV1PolicyVersion `json:"policy_version,omitempty"`
+}
+
+// SharedAssignmentSelfRevokeInputV1PolicyVersion defines model for SharedAssignmentSelfRevokeInputV1.PolicyVersion.
+type SharedAssignmentSelfRevokeInputV1PolicyVersion string
+
+// SharedCreativeBriefV1 defines model for SharedCreativeBriefV1.
+type SharedCreativeBriefV1 struct {
+	CharacterName  nullable.Nullable[string] `json:"character_name,omitempty"`
+	Mood           nullable.Nullable[string] `json:"mood,omitempty"`
+	ThemeStatement nullable.Nullable[string] `json:"theme_statement,omitempty"`
+	VisualKeywords *[]string                 `json:"visual_keywords,omitempty"`
+	WorkTitle      nullable.Nullable[string] `json:"work_title,omitempty"`
+}
+
+// SharedMoodboardItemV1 defines model for SharedMoodboardItemV1.
+type SharedMoodboardItemV1 struct {
+	Checksum string `json:"checksum"`
+	Ref      string `json:"ref"`
+}
+
+// SharedPlanFeedbackCreateInputV1 defines model for SharedPlanFeedbackCreateInputV1.
+type SharedPlanFeedbackCreateInputV1 struct {
+	AuthorDisplayName          *string                                      `json:"author_display_name,omitempty"`
+	Content                    string                                       `json:"content"`
+	ExpectedProjectionRevision int64                                        `json:"expected_projection_revision"`
+	PolicyVersion              SharedPlanFeedbackCreateInputV1PolicyVersion `json:"policy_version"`
+}
+
+// SharedPlanFeedbackCreateInputV1PolicyVersion defines model for SharedPlanFeedbackCreateInputV1.PolicyVersion.
+type SharedPlanFeedbackCreateInputV1PolicyVersion string
+
+// SharedPlanFullV1 defines model for SharedPlanFullV1.
+type SharedPlanFullV1 struct {
+	AssignmentOpportunities []SharedAssignmentOpportunityV1 `json:"assignment_opportunities"`
+	CreativeBrief           SharedCreativeBriefV1           `json:"creative_brief"`
+	Moodboard               []SharedMoodboardItemV1         `json:"moodboard"`
+	ProjectionRevision      int64                           `json:"projection_revision"`
+	PublicScale             SharedPublicScaleV1             `json:"public_scale"`
+	PublicWindow            *SharedPublicWindowV1           `json:"public_window,omitempty"`
+	Shots                   []SharedShotV1                  `json:"shots"`
+	Title                   string                          `json:"title"`
+	ViewLevel               SharedPlanFullV1ViewLevel       `json:"view_level"`
+}
+
+// SharedPlanFullV1ViewLevel defines model for SharedPlanFullV1.ViewLevel.
+type SharedPlanFullV1ViewLevel string
+
+// SharedPlanProposalV1 defines model for SharedPlanProposalV1.
+type SharedPlanProposalV1 struct {
+	CreativeBrief      SharedCreativeBriefV1         `json:"creative_brief"`
+	Moodboard          []SharedMoodboardItemV1       `json:"moodboard"`
+	ProjectionRevision int64                         `json:"projection_revision"`
+	PublicScale        SharedPublicScaleV1           `json:"public_scale"`
+	PublicWindow       *SharedPublicWindowV1         `json:"public_window,omitempty"`
+	Title              string                        `json:"title"`
+	ViewLevel          SharedPlanProposalV1ViewLevel `json:"view_level"`
+}
+
+// SharedPlanProposalV1ViewLevel defines model for SharedPlanProposalV1.ViewLevel.
+type SharedPlanProposalV1ViewLevel string
+
+// SharedPublicScaleV1 defines model for SharedPublicScaleV1.
+type SharedPublicScaleV1 struct {
+	PlannedLookCount  nullable.Nullable[int] `json:"planned_look_count,omitempty"`
+	PlannedSceneCount nullable.Nullable[int] `json:"planned_scene_count,omitempty"`
+	PlannedShotCount  int                    `json:"planned_shot_count"`
+}
+
+// SharedPublicWindowV1 defines model for SharedPublicWindowV1.
+type SharedPublicWindowV1 struct {
+	DurationMinutes int       `json:"duration_minutes"`
+	EndsAt          time.Time `json:"ends_at"`
+	StartsAt        time.Time `json:"starts_at"`
+	Timezone        string    `json:"timezone"`
+}
+
+// SharedShotFeedbackCreateInputV1 defines model for SharedShotFeedbackCreateInputV1.
+type SharedShotFeedbackCreateInputV1 struct {
+	AuthorDisplayName    *string                                      `json:"author_display_name,omitempty"`
+	Content              string                                       `json:"content"`
+	ExpectedShotRevision int64                                        `json:"expected_shot_revision"`
+	PolicyVersion        SharedShotFeedbackCreateInputV1PolicyVersion `json:"policy_version"`
+}
+
+// SharedShotFeedbackCreateInputV1PolicyVersion defines model for SharedShotFeedbackCreateInputV1.PolicyVersion.
+type SharedShotFeedbackCreateInputV1PolicyVersion string
+
+// SharedShotV1 defines model for SharedShotV1.
+type SharedShotV1 struct {
+	Action               nullable.Nullable[string] `json:"action,omitempty"`
+	Composition          nullable.Nullable[string] `json:"composition,omitempty"`
+	Expression           nullable.Nullable[string] `json:"expression,omitempty"`
+	FramingTag           nullable.Nullable[string] `json:"framing_tag,omitempty"`
+	Id                   string                    `json:"id"`
+	LightingDirectionTag nullable.Nullable[string] `json:"lighting_direction_tag,omitempty"`
+	LightingQualityTag   nullable.Nullable[string] `json:"lighting_quality_tag,omitempty"`
+	LightingText         nullable.Nullable[string] `json:"lighting_text,omitempty"`
+	PaletteTag           nullable.Nullable[string] `json:"palette_tag,omitempty"`
+	Position             int                       `json:"position"`
+	Revision             int64                     `json:"revision"`
+	Scene                nullable.Nullable[string] `json:"scene,omitempty"`
+	ShotTypeTag          nullable.Nullable[string] `json:"shot_type_tag,omitempty"`
+	Title                string                    `json:"title"`
 }
 
 // ShootPlanStatus defines model for ShootPlanStatus.
@@ -2102,6 +2575,41 @@ type UpdateScheduleSlotJSONBody struct {
 	Type    *SlotType                 `json:"type,omitempty"`
 }
 
+// GetSharedPlan200JSONResponseBody defines parameters for GetSharedPlan.
+type GetSharedPlan200JSONResponseBody struct {
+	union json.RawMessage
+}
+
+// GetSharedPlanAssetContentParams defines parameters for GetSharedPlanAssetContent.
+type GetSharedPlanAssetContentParams struct {
+	// V display checksum；与投影 moodboard.checksum 一致
+	V string `form:"v" json:"v"`
+}
+
+// ClaimSharedAssignmentParams defines parameters for ClaimSharedAssignment.
+type ClaimSharedAssignmentParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// SelfRevokeSharedAssignmentParams defines parameters for SelfRevokeSharedAssignment.
+type SelfRevokeSharedAssignmentParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateSharedPlanFeedbackParams defines parameters for CreateSharedPlanFeedback.
+type CreateSharedPlanFeedbackParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CreateSharedShotFeedbackParams defines parameters for CreateSharedShotFeedback.
+type CreateSharedShotFeedbackParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
 // ListShootPlanAssetsParams defines parameters for ListShootPlanAssets.
 type ListShootPlanAssetsParams struct {
 	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
@@ -2202,6 +2710,18 @@ type UpdateScheduleSlotJSONRequestBody UpdateScheduleSlotJSONBody
 
 // UpdateSettingsJSONRequestBody defines body for UpdateSettings for application/json ContentType.
 type UpdateSettingsJSONRequestBody = UpdateSettingsBody
+
+// ClaimSharedAssignmentJSONRequestBody defines body for ClaimSharedAssignment for application/json ContentType.
+type ClaimSharedAssignmentJSONRequestBody = SharedAssignmentClaimInputV1
+
+// SelfRevokeSharedAssignmentJSONRequestBody defines body for SelfRevokeSharedAssignment for application/json ContentType.
+type SelfRevokeSharedAssignmentJSONRequestBody = SharedAssignmentSelfRevokeInputV1
+
+// CreateSharedPlanFeedbackJSONRequestBody defines body for CreateSharedPlanFeedback for application/json ContentType.
+type CreateSharedPlanFeedbackJSONRequestBody = SharedPlanFeedbackCreateInputV1
+
+// CreateSharedShotFeedbackJSONRequestBody defines body for CreateSharedShotFeedback for application/json ContentType.
+type CreateSharedShotFeedbackJSONRequestBody = SharedShotFeedbackCreateInputV1
 
 // UploadShootPlanAssetMultipartRequestBody defines body for UploadShootPlanAsset for multipart/form-data ContentType.
 type UploadShootPlanAssetMultipartRequestBody = PlanningMediaUploadForm
@@ -2383,6 +2903,32 @@ func (t *ErrorDetails) MergeArchiveAcknowledgementRequiredDetails(v ArchiveAckno
 	return err
 }
 
+// AsExpiryQuoteExpiredDetails returns the union data inside the ErrorDetails as a ExpiryQuoteExpiredDetails
+func (t ErrorDetails) AsExpiryQuoteExpiredDetails() (ExpiryQuoteExpiredDetails, error) {
+	var body ExpiryQuoteExpiredDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromExpiryQuoteExpiredDetails overwrites any union data inside the ErrorDetails as the provided ExpiryQuoteExpiredDetails
+func (t *ErrorDetails) FromExpiryQuoteExpiredDetails(v ExpiryQuoteExpiredDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeExpiryQuoteExpiredDetails performs a merge with any union data inside the ErrorDetails, using the provided ExpiryQuoteExpiredDetails
+func (t *ErrorDetails) MergeExpiryQuoteExpiredDetails(v ExpiryQuoteExpiredDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -2476,6 +3022,68 @@ func (t ScheduleSlotListItem) MarshalJSON() ([]byte, error) {
 }
 
 func (t *ScheduleSlotListItem) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsSharedPlanProposalV1 returns the union data inside the GetSharedPlan200JSONResponseBody as a SharedPlanProposalV1
+func (t GetSharedPlan200JSONResponseBody) AsSharedPlanProposalV1() (SharedPlanProposalV1, error) {
+	var body SharedPlanProposalV1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSharedPlanProposalV1 overwrites any union data inside the GetSharedPlan200JSONResponseBody as the provided SharedPlanProposalV1
+func (t *GetSharedPlan200JSONResponseBody) FromSharedPlanProposalV1(v SharedPlanProposalV1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSharedPlanProposalV1 performs a merge with any union data inside the GetSharedPlan200JSONResponseBody, using the provided SharedPlanProposalV1
+func (t *GetSharedPlan200JSONResponseBody) MergeSharedPlanProposalV1(v SharedPlanProposalV1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSharedPlanFullV1 returns the union data inside the GetSharedPlan200JSONResponseBody as a SharedPlanFullV1
+func (t GetSharedPlan200JSONResponseBody) AsSharedPlanFullV1() (SharedPlanFullV1, error) {
+	var body SharedPlanFullV1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSharedPlanFullV1 overwrites any union data inside the GetSharedPlan200JSONResponseBody as the provided SharedPlanFullV1
+func (t *GetSharedPlan200JSONResponseBody) FromSharedPlanFullV1(v SharedPlanFullV1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSharedPlanFullV1 performs a merge with any union data inside the GetSharedPlan200JSONResponseBody, using the provided SharedPlanFullV1
+func (t *GetSharedPlan200JSONResponseBody) MergeSharedPlanFullV1(v SharedPlanFullV1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t GetSharedPlan200JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *GetSharedPlan200JSONResponseBody) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -2632,6 +3240,24 @@ type ServerInterface interface {
 	// 生成 TG 绑定 token 与 deep link（绑定流程见 §4.5）
 	// (POST /settings/telegram/bind-token)
 	CreateTelegramBindToken(c *gin.Context)
+	// 匿名读取策划分享投影（proposal 或 full）
+	// (GET /shared/plans/{token})
+	GetSharedPlan(c *gin.Context, token string)
+	// 匿名读取分享 moodboard 展示素材（generation-bound ref）
+	// (GET /shared/plans/{token}/assets/{ref}/content)
+	GetSharedPlanAssetContent(c *gin.Context, token string, ref string, params GetSharedPlanAssetContentParams)
+	// 匿名认领 readiness / on-site support（full only；proposal 统一 404）
+	// (POST /shared/plans/{token}/assignments)
+	ClaimSharedAssignment(c *gin.Context, token string, params ClaimSharedAssignmentParams)
+	// 匿名自撤认领（当前 full token + receipt；旧 receipt 统一 404）
+	// (DELETE /shared/plans/{token}/assignments/{assignmentRef})
+	SelfRevokeSharedAssignment(c *gin.Context, token string, assignmentRef string, params SelfRevokeSharedAssignmentParams)
+	// 匿名提交整案反馈（proposal/full）
+	// (POST /shared/plans/{token}/feedback)
+	CreateSharedPlanFeedback(c *gin.Context, token string, params CreateSharedPlanFeedbackParams)
+	// 匿名提交 Shot 反馈（full only；proposal 统一 404）
+	// (POST /shared/plans/{token}/shots/{shotRef}/feedback)
+	CreateSharedShotFeedback(c *gin.Context, token string, shotRef string, params CreateSharedShotFeedbackParams)
 	// 列出策划参考素材
 	// (GET /shoot-plans/{id}/assets)
 	ListShootPlanAssets(c *gin.Context, id Id, params ListShootPlanAssetsParams)
@@ -4078,6 +4704,302 @@ func (siw *ServerInterfaceWrapper) CreateTelegramBindToken(c *gin.Context) {
 	siw.Handler.CreateTelegramBindToken(c)
 }
 
+// GetSharedPlan operation middleware
+func (siw *ServerInterfaceWrapper) GetSharedPlan(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", c.Param("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter token: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSharedPlan(c, token)
+}
+
+// GetSharedPlanAssetContent operation middleware
+func (siw *ServerInterfaceWrapper) GetSharedPlanAssetContent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", c.Param("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter token: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "ref" -------------
+	var ref string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "ref", c.Param("ref"), &ref, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ref: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetSharedPlanAssetContentParams
+
+	// ------------- Required query parameter "v" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "v", c.Request.URL.Query(), &params.V, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter v: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetSharedPlanAssetContent(c, token, ref, params)
+}
+
+// ClaimSharedAssignment operation middleware
+func (siw *ServerInterfaceWrapper) ClaimSharedAssignment(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", c.Param("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter token: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ClaimSharedAssignmentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ClaimSharedAssignment(c, token, params)
+}
+
+// SelfRevokeSharedAssignment operation middleware
+func (siw *ServerInterfaceWrapper) SelfRevokeSharedAssignment(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", c.Param("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter token: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "assignmentRef" -------------
+	var assignmentRef string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "assignmentRef", c.Param("assignmentRef"), &assignmentRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter assignmentRef: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SelfRevokeSharedAssignmentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SelfRevokeSharedAssignment(c, token, assignmentRef, params)
+}
+
+// CreateSharedPlanFeedback operation middleware
+func (siw *ServerInterfaceWrapper) CreateSharedPlanFeedback(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", c.Param("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter token: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateSharedPlanFeedbackParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateSharedPlanFeedback(c, token, params)
+}
+
+// CreateSharedShotFeedback operation middleware
+func (siw *ServerInterfaceWrapper) CreateSharedShotFeedback(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token" -------------
+	var token string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token", c.Param("token"), &token, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter token: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "shotRef" -------------
+	var shotRef string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "shotRef", c.Param("shotRef"), &shotRef, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter shotRef: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateSharedShotFeedbackParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateSharedShotFeedback(c, token, shotRef, params)
+}
+
 // ListShootPlanAssets operation middleware
 func (siw *ServerInterfaceWrapper) ListShootPlanAssets(c *gin.Context) {
 
@@ -4437,6 +5359,12 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/settings", wrapper.GetSettings)
 	router.PATCH(options.BaseURL+"/settings", wrapper.UpdateSettings)
 	router.POST(options.BaseURL+"/settings/telegram/bind-token", wrapper.CreateTelegramBindToken)
+	router.GET(options.BaseURL+"/shared/plans/:token", wrapper.GetSharedPlan)
+	router.GET(options.BaseURL+"/shared/plans/:token/assets/:ref/content", wrapper.GetSharedPlanAssetContent)
+	router.POST(options.BaseURL+"/shared/plans/:token/assignments", wrapper.ClaimSharedAssignment)
+	router.DELETE(options.BaseURL+"/shared/plans/:token/assignments/:assignmentRef", wrapper.SelfRevokeSharedAssignment)
+	router.POST(options.BaseURL+"/shared/plans/:token/feedback", wrapper.CreateSharedPlanFeedback)
+	router.POST(options.BaseURL+"/shared/plans/:token/shots/:shotRef/feedback", wrapper.CreateSharedShotFeedback)
 	router.GET(options.BaseURL+"/shoot-plans/:id/assets", wrapper.ListShootPlanAssets)
 	router.POST(options.BaseURL+"/shoot-plans/:id/assets", wrapper.UploadShootPlanAsset)
 	router.POST(options.BaseURL+"/shoot-plans/:id/assets/:assetId/bindings", wrapper.CreateShootPlanAssetBinding)

@@ -342,6 +342,26 @@ test('auth routes and pages are mounted without the legacy storage token contrac
   assert.match(app, /path="\/reset-password"/)
   assert.match(app, /path="\/change-password"/)
   assert.match(app, /Navigate to="\/account\/security\/password" replace/)
+  // Characterization (plan-share S7): action-token routes and anonymous share skip session restore.
+  // /shared/plans/:token is a public route — no AnonymousEntry, no AppShell.
+  assert.match(
+    app,
+    /isActionTokenRoute = location\.pathname === '\/verify-email' \|\| location\.pathname === '\/reset-password'/,
+  )
+  assert.match(app, /isPublicShareRoute = location\.pathname\.startsWith\('\/shared\/plans\/'\)/)
+  assert.match(app, /skipSessionRestore = isActionTokenRoute \|\| isPublicShareRoute/)
+  assert.match(app, /path="\/shared\/plans\/:token"/)
+  assert.match(app, /element=\{<SharedPlanPage \/>\}/)
+  const shareRoute = app.match(/<Route path="\/shared\/plans\/:token" element=\{<SharedPlanPage \/>\} \/>/)?.[0] ?? ''
+  assert.equal(shareRoute, '<Route path="/shared/plans/:token" element={<SharedPlanPage />} />')
+  assert.doesNotMatch(shareRoute, /AnonymousEntry|AppShell|RequireAuth/)
+  const transport = await readFile('src/api/transport.ts', 'utf8')
+  // Characterization (plan-share S1/S3/S7): publicRequest still defaults to same-origin;
+  // sharedRequest uses credentials omit for anonymous share API.
+  assert.match(transport, /credentials: init\.credentials \?\? 'same-origin'/)
+  assert.match(transport, /export async function sharedRequest/)
+  assert.match(transport, /credentials: 'omit'/)
+  assert.match(transport, /referrerPolicy: 'no-referrer'/)
   assert.match(loginPage, /login\(email, password\)/)
   assert.match(loginPage, /to="\/forgot-password"/)
   assert.doesNotMatch(loginPage, /手机号|短信|验证码/)

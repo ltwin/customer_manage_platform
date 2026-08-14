@@ -45,9 +45,12 @@ func TestShootPlanningCoreMigrationSeedIsStableAndDownIsComplete(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	// plan-ingestion(0018) and planning-media(0017) must be rolled back
-	// before the core planning migration(0016).
-	for _, label := range []string{"plan-ingestion", "planning-media", "planning"} {
+	// share(0021-0024), security-budget(0020), plan-crm(0019), plan-ingestion(0018),
+	// planning-media(0017) must be rolled back before the core planning migration(0016).
+	for _, label := range []string{
+		"share-assignments", "share-feedbacks", "share-anonymous", "share-generations",
+		"security-budget", "plan-crm", "plan-ingestion", "planning-media", "planning",
+	} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("migrate %s down: %v", label, err)
 		}

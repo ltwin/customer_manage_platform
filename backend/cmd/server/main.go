@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -24,6 +26,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
+	"github.com/samson/customer-manage-platform/backend/internal/planshare"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/authmail"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
@@ -163,6 +166,24 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	planningIngestionApp := ingestion.NewApplication(ingestionRepo, idempotencyExecutor,
 		ingestion.WithCoreApplication(shootPlanningApp), ingestion.WithPlanningMediaApplication(planningMediaApp))
+	planShareApp := planshare.NewApplication(idempotencyExecutor)
+	planShareResolver := planshare.NewResolver(
+		planshare.StoreTokenLookup{Store: s},
+		planshare.DefaultTrustedCapabilityFactory{},
+	)
+	planShareRunner := planshare.StoreShareTransactionRunner{Store: s, Media: planningMediaApp}
+	planShareIPDigest := planshare.FailClosedIPDigestResolver{
+		Key: derivePlanshareIPDigestKey(cfg.AuthTokenSecret),
+	}
+	planShareReadBudget := planshare.SecurityBudgetReadGate{
+		Gate: store.SecurityAttemptBudgetGate{Store: s},
+	}
+	planShareMutationDigest := planshare.FailClosedMutationIPDigestResolver{
+		Key: derivePlanshareIPDigestKey(cfg.AuthTokenSecret),
+	}
+	planShareMutationBudget := planshare.SecurityBudgetMutationGate{
+		Gate: store.SecurityAttemptBudgetGate{Store: s},
+	}
 
 	objects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
 	if err != nil {
@@ -241,8 +262,20 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		DataExport:                dataExportSvc,
 		TelegramBinding:           telegramBinding,
 		ShootPlanning:             shootPlanningApp,
-		PlanningMedia:             planningMediaApp,
-		PlanningIngestion:         planningIngestionApp,
+		PlanShare:                 planShareApp,
+		AnonymousShare: httpapi.AnonymousShareDeps{
+			App:            planShareApp,
+			Resolver:       planShareResolver,
+			Runner:         planShareRunner,
+			PlanningMedia:  planningMediaApp,
+			ReadBudget:     planShareReadBudget,
+			IPDigest:       planShareIPDigest,
+			MutationBudget: planShareMutationBudget,
+			MutationDigest: planShareMutationDigest,
+			PublicBaseURL:  cfg.PublicBaseURL,
+		},
+		PlanningMedia:     planningMediaApp,
+		PlanningIngestion: planningIngestionApp,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -310,10 +343,10 @@ func composeShootPlanningApplication(
 	if err != nil {
 		return nil, fmt.Errorf("read shoot planning archive capability at startup: %w", err)
 	}
-	if archiveCapability.Capability != planningcapability.ArchiveCapabilityCore {
-		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", archiveCapability.Capability)
+	options, err := shootPlanningOptionsForCapability(archiveCapability.Capability)
+	if err != nil {
+		return nil, err
 	}
-	options := make([]shootplanning.ApplicationOption, 0, 1)
 	if len(projectors) > 0 && projectors[0] != nil {
 		options = append(options, shootplanning.WithShotAccessRefProjector(projectors[0]))
 	}
@@ -338,13 +371,14 @@ func composeShootPlanningApplicationWithIngestion(
 	if err != nil {
 		return nil, fmt.Errorf("read shoot planning archive capability at startup: %w", err)
 	}
-	if archiveCapability.Capability != planningcapability.ArchiveCapabilityCore {
-		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", archiveCapability.Capability)
+	options, err := shootPlanningOptionsForCapability(archiveCapability.Capability)
+	if err != nil {
+		return nil, err
 	}
-	options := []shootplanning.ApplicationOption{
+	options = append(options,
 		shootplanning.WithIngestionRoutesEnabled(),
 		shootplanning.WithPlanReadyObservationSink(sink),
-	}
+	)
 	if projector != nil {
 		options = append(options, shootplanning.WithShotAccessRefProjector(projector))
 	}
@@ -353,6 +387,24 @@ func composeShootPlanningApplicationWithIngestion(
 		return nil, fmt.Errorf("compose shoot planning application with ingestion: %w", err)
 	}
 	return application, nil
+}
+
+func shootPlanningOptionsForCapability(
+	capability planningcapability.ArchiveCapability,
+) ([]shootplanning.ApplicationOption, error) {
+	switch capability {
+	case planningcapability.ArchiveCapabilityCore:
+		return nil, nil
+	case planningcapability.ArchiveCapabilityPlanningShare:
+		return []shootplanning.ApplicationOption{
+			shootplanning.WithArchiveImpactPolicy(shootplanning.PlanningShareArchiveImpactPolicyV1{}),
+			shootplanning.WithReadinessRemovalGuard(planshare.ReadinessRemovalGuard{}),
+		}, nil
+	case planningcapability.ArchiveCapabilityReminder:
+		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", capability)
+	default:
+		return nil, fmt.Errorf("shoot planning archive capability requires unavailable server wiring: %s", capability)
+	}
 }
 
 type backgroundRunner interface {
@@ -439,4 +491,14 @@ func waitForRunner(ctx context.Context, runnerDone <-chan struct{}) error {
 	case <-ctx.Done():
 		return fmt.Errorf("background runner shutdown timeout: %w", ctx.Err())
 	}
+}
+
+func derivePlanshareIPDigestKey(rootSecret string) []byte {
+	extract := hmac.New(sha256.New, make([]byte, sha256.Size))
+	_, _ = extract.Write([]byte(rootSecret))
+	prk := extract.Sum(nil)
+	expand := hmac.New(sha256.New, prk)
+	_, _ = expand.Write([]byte("planshare/v1/ip-digest"))
+	_, _ = expand.Write([]byte{1})
+	return expand.Sum(nil)
 }

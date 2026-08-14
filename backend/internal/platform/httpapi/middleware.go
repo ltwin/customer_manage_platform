@@ -20,7 +20,7 @@ func recoveryMiddleware(logger *slog.Logger) gin.HandlerFunc {
 				logger.LogAttrs(c.Request.Context(), slog.LevelError, "panic recovered",
 					slog.Any("panic", r),
 					slog.String("method", c.Request.Method),
-					slog.String("path", c.Request.URL.Path),
+					slog.String("path", sensitiveRequestLabel(c.Request.URL.Path)),
 					slog.String("stack", string(debug.Stack())),
 				)
 				abortError(c, http.StatusInternalServerError, CodeInternal, "内部错误")
@@ -37,7 +37,7 @@ func requestLogMiddleware(logger *slog.Logger) gin.HandlerFunc {
 		c.Next()
 		attrs := []slog.Attr{
 			slog.String("method", c.Request.Method),
-			slog.String("path", c.Request.URL.Path),
+			slog.String("path", sensitiveRequestLabel(c.Request.URL.Path)),
 			slog.Int("status", c.Writer.Status()),
 			slog.Duration("duration", time.Since(start)),
 		}
@@ -56,7 +56,7 @@ func errorEnvelopeMiddleware(logger *slog.Logger) gin.HandlerFunc {
 		if len(c.Errors) > 0 && !c.Writer.Written() {
 			logger.LogAttrs(c.Request.Context(), slog.LevelError, "unhandled handler error",
 				slog.String("method", c.Request.Method),
-				slog.String("path", c.Request.URL.Path),
+				slog.String("path", sensitiveRequestLabel(c.Request.URL.Path)),
 				slog.String("error", c.Errors.String()),
 			)
 			abortError(c, http.StatusInternalServerError, CodeInternal, "内部错误")

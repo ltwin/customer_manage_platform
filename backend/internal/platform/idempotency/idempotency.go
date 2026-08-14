@@ -18,26 +18,37 @@ import (
 type Operation string
 
 const (
-	OperationOrderCreate                 Operation = "order.create.v1"
-	OperationScheduleSlotCreate          Operation = "schedule-slot.create.v1"
-	OperationShootPlanCreate             Operation = "shoot-plan.create.v1"
-	OperationShootPlanCommand            Operation = "shoot-plan.command.v1"
-	OperationShootPlanTransition         Operation = "shoot-plan.transition.v1"
-	OperationRunSessionOpen              Operation = "shoot-plan.run-session.open.v1"
-	OperationShotCapture                 Operation = "shoot-plan.shot.capture.v1"
-	OperationExecutionEventVoid          Operation = "shoot-plan.execution-event.void.v1"
-	OperationShootPlanBatch              Operation = "shoot-plan.batch-commit.v1"
-	OperationPlanningMediaUpload         Operation = "planning-media.upload.v1"
-	OperationPlanningMediaBindingCreate  Operation = "planning-media.binding.create.v1"
-	OperationPlanningMediaBindingRelease Operation = "planning-media.binding.release.v1"
-	OperationPlanningMediaLeaseReserve   Operation = "planning-media.lease.reserve.v1"
-	OperationPlanningMediaLeaseRelease   Operation = "planning-media.lease.release.v1"
-	OperationPlanIngestionCreate         Operation = "plan-ingestion.create.v1"
-	OperationPlanIngestionPreview        Operation = "plan-ingestion.preview.v1"
-	OperationPlanIngestionTransition     Operation = "plan-ingestion.transition.v1"
-	OperationPlanIngestionCommit         Operation = "plan-ingestion.commit.v1"
-	OperationShootPlanCRMLink            Operation = "shoot-plan.crm-link.v1"
-	defaultTTL                                     = 24 * time.Hour
+	OperationOrderCreate                           Operation = "order.create.v1"
+	OperationScheduleSlotCreate                    Operation = "schedule-slot.create.v1"
+	OperationShootPlanCreate                       Operation = "shoot-plan.create.v1"
+	OperationShootPlanCommand                      Operation = "shoot-plan.command.v1"
+	OperationShootPlanTransition                   Operation = "shoot-plan.transition.v1"
+	OperationRunSessionOpen                        Operation = "shoot-plan.run-session.open.v1"
+	OperationShotCapture                           Operation = "shoot-plan.shot.capture.v1"
+	OperationExecutionEventVoid                    Operation = "shoot-plan.execution-event.void.v1"
+	OperationShootPlanBatch                        Operation = "shoot-plan.batch-commit.v1"
+	OperationPlanningMediaUpload                   Operation = "planning-media.upload.v1"
+	OperationPlanningMediaBindingCreate            Operation = "planning-media.binding.create.v1"
+	OperationPlanningMediaBindingRelease           Operation = "planning-media.binding.release.v1"
+	OperationPlanningMediaLeaseReserve             Operation = "planning-media.lease.reserve.v1"
+	OperationPlanningMediaLeaseRelease             Operation = "planning-media.lease.release.v1"
+	OperationPlanIngestionCreate                   Operation = "plan-ingestion.create.v1"
+	OperationPlanIngestionPreview                  Operation = "plan-ingestion.preview.v1"
+	OperationPlanIngestionTransition               Operation = "plan-ingestion.transition.v1"
+	OperationPlanIngestionCommit                   Operation = "plan-ingestion.commit.v1"
+	OperationShootPlanCRMLink                      Operation = "shoot-plan.crm-link.v1"
+	OperationPlanShareIssue                        Operation = "plan-share.issue.v1"
+	OperationPlanShareRotate                       Operation = "plan-share.rotate.v1"
+	OperationPlanShareRevoke                       Operation = "plan-share.revoke.v1"
+	OperationPlanShareFeedbackDisposition          Operation = "plan-share.feedback-disposition.v1"
+	OperationPlanShareFeedbackPlanCreate           Operation = "plan-share.feedback-plan-create.v1"
+	OperationPlanShareFeedbackShotCreate           Operation = "plan-share.feedback-shot-create.v1"
+	OperationPlanShareOfferCreate                  Operation = "plan-share.offer-create.v1"
+	OperationPlanShareOfferClose                   Operation = "plan-share.offer-close.v1"
+	OperationPlanShareAssignmentPhotographerRevoke Operation = "plan-share.assignment-photographer-revoke.v1"
+	OperationPlanShareAssignmentClaim              Operation = "plan-share.assignment-claim.v1"
+	OperationPlanShareAssignmentSelfRevoke         Operation = "plan-share.assignment-self-revoke.v1"
+	defaultTTL                                               = 24 * time.Hour
 )
 
 var (
@@ -63,6 +74,11 @@ type Request struct {
 	Key              string
 	ResourceIdentity ResourceIdentity
 	CanonicalBody    []byte
+	// ExactFrameHash, when set, is the ledger request_hash (hex SHA-256 of the
+	// caller-owned exact frame bytes). Anonymous mutations must set this to the
+	// hash of CanonicalAnonymousMutationFrameV1Bytes so ledger and admission
+	// consume the same slice without a second wrap.
+	ExactFrameHash string
 }
 
 func PlanCollectionResource() ResourceIdentity {
@@ -99,6 +115,37 @@ func PlanIngestionCreateResource(planID string) ResourceIdentity {
 func PlanIngestionSessionResource(planID, sessionID string) ResourceIdentity {
 	return ResourceIdentity{kind: "plan-ingestion-session", primaryID: planID, secondaryID: sessionID}
 }
+func ShareIssueResource(planID, viewLevel string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-issue", primaryID: planID, secondaryID: viewLevel}
+}
+func ShareGenerationResource(planID, shareID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-generation", primaryID: planID, secondaryID: shareID}
+}
+func FeedbackResource(planID, feedbackID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-feedback", primaryID: planID, secondaryID: feedbackID}
+}
+func AnonymousPlanFeedbackResource(planID, generationID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-plan-feedback", primaryID: planID, secondaryID: generationID}
+}
+func AnonymousShotFeedbackResource(planID, secondaryTuple string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-shot-feedback", primaryID: planID, secondaryID: secondaryTuple}
+}
+func OfferCollectionResource(planID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-offer-collection", primaryID: planID}
+}
+func OfferResource(planID, offerID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-offer", primaryID: planID, secondaryID: offerID}
+}
+func AssignmentResource(planID, assignmentID string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-assignment", primaryID: planID, secondaryID: assignmentID}
+}
+func AssignmentClaimResource(planID, secondaryTuple string) ResourceIdentity {
+	return ResourceIdentity{kind: "plan-share-assignment-claim", primaryID: planID, secondaryID: secondaryTuple}
+}
+
+func (r ResourceIdentity) Kind() string        { return r.kind }
+func (r ResourceIdentity) PrimaryID() string   { return r.primaryID }
+func (r ResourceIdentity) SecondaryID() string { return r.secondaryID }
 
 type transactionRunner interface {
 	Run(context.Context, store.AccountScope, func(store.TxAccountScope) error) error
@@ -333,6 +380,17 @@ func validateAndHashTypedRequest(request Request) (string, error) {
 	if !resourceMatchesOperation(request.Operation, request.ResourceIdentity) {
 		return "", fmt.Errorf("%w: operation 与 resource identity 不匹配", ErrValidation)
 	}
+	if request.ExactFrameHash != "" {
+		if len(request.ExactFrameHash) != 64 {
+			return "", fmt.Errorf("%w: exact frame hash 非法", ErrValidation)
+		}
+		for _, r := range request.ExactFrameHash {
+			if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+				return "", fmt.Errorf("%w: exact frame hash 非法", ErrValidation)
+			}
+		}
+		return request.ExactFrameHash, nil
+	}
 	frame := struct {
 		FrameVersion int             `json:"frame_version"`
 		Operation    Operation       `json:"operation"`
@@ -390,6 +448,24 @@ func resourceMatchesOperation(operation Operation, identity ResourceIdentity) bo
 		return identity.kind == "plan-ingestion-session" && primary && secondary
 	case OperationShootPlanCRMLink:
 		return identity.kind == "shoot-plan" && primary && !secondary
+	case OperationPlanShareIssue:
+		return identity.kind == "plan-share-issue" && primary && secondary
+	case OperationPlanShareRotate, OperationPlanShareRevoke:
+		return identity.kind == "plan-share-generation" && primary && secondary
+	case OperationPlanShareFeedbackDisposition:
+		return identity.kind == "plan-share-feedback" && primary && secondary
+	case OperationPlanShareFeedbackPlanCreate:
+		return identity.kind == "plan-share-plan-feedback" && primary && secondary
+	case OperationPlanShareFeedbackShotCreate:
+		return identity.kind == "plan-share-shot-feedback" && primary && secondary
+	case OperationPlanShareOfferCreate:
+		return identity.kind == "plan-share-offer-collection" && primary && !secondary
+	case OperationPlanShareOfferClose:
+		return identity.kind == "plan-share-offer" && primary && secondary
+	case OperationPlanShareAssignmentPhotographerRevoke, OperationPlanShareAssignmentSelfRevoke:
+		return identity.kind == "plan-share-assignment" && primary && secondary
+	case OperationPlanShareAssignmentClaim:
+		return identity.kind == "plan-share-assignment-claim" && primary && secondary
 	default:
 		return false
 	}

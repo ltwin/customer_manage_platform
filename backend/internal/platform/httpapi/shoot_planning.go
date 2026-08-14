@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/oapi-codegen/nullable"
 
+	"github.com/samson/customer-manage-platform/backend/internal/planshare"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -24,6 +25,7 @@ const shootPlanningRawBodyKey = "shoot-planning-raw-body"
 
 type shootPlanningHandlers struct {
 	app          *shootplanning.Application
+	planShare    *planshare.Application
 	scopeFactory ScopeFactory
 }
 
@@ -838,8 +840,15 @@ func enumPointer[T ~string](value *T) *string {
 	return &converted
 }
 
-func registerShootPlanningHandlers(router gin.IRouter, app *shootplanning.Application, scopeFactory ScopeFactory) {
-	shootplanningapi.RegisterHandlersWithOptions(router, &shootPlanningHandlers{app: app, scopeFactory: scopeFactory}, shootplanningapi.GinServerOptions{
+func registerShootPlanningHandlers(
+	router gin.IRouter,
+	app *shootplanning.Application,
+	planShare *planshare.Application,
+	scopeFactory ScopeFactory,
+) {
+	shootplanningapi.RegisterHandlersWithOptions(router, &shootPlanningHandlers{
+		app: app, planShare: planShare, scopeFactory: scopeFactory,
+	}, shootplanningapi.GinServerOptions{
 		ErrorHandler: func(c *gin.Context, _ error, _ int) {
 			abortShootPlanningValidation(c)
 		},

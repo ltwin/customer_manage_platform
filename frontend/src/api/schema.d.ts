@@ -671,6 +671,264 @@ export interface paths {
         patch: operations["applyShootPlanCommand"];
         trace?: never;
     };
+    "/shared/plans/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 匿名读取策划分享投影（proposal 或 full） */
+        get: operations["getSharedPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shared/plans/{token}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 匿名提交整案反馈（proposal/full） */
+        post: operations["createSharedPlanFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shared/plans/{token}/shots/{shotRef}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 匿名提交 Shot 反馈（full only；proposal 统一 404） */
+        post: operations["createSharedShotFeedback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shared/plans/{token}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 匿名认领 readiness / on-site support（full only；proposal 统一 404） */
+        post: operations["claimSharedAssignment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shared/plans/{token}/assignments/{assignmentRef}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 匿名自撤认领（当前 full token + receipt；旧 receipt 统一 404） */
+        delete: operations["selfRevokeSharedAssignment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shared/plans/{token}/assets/{ref}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 匿名读取分享 moodboard 展示素材（generation-bound ref） */
+        get: operations["getSharedPlanAssetContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** 读取策划分享管理投影（proposal/full 各一项 + on-site offers 分页） */
+        get: operations["getShootPlanShares"];
+        put?: never;
+        /** 签发一代分享 token（caller 提交 secret_commitment） */
+        post: operations["issueShootPlanShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/shares/{shareId}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 轮换一代分享 token */
+        post: operations["rotateShootPlanShare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/shares/{shareId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 撤销目标一代分享 token */
+        delete: operations["revokeShootPlanShare"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页读取策划反馈管理列表（全部 disposition 历史） */
+        get: operations["getShootPlanFeedback"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/feedback/{feedbackId}/disposition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 采纳或忽略反馈（不自动改 core） */
+        post: operations["setShootPlanFeedbackDisposition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/assignments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 分页读取策划认领管理列表（active + revoked 历史） */
+        get: operations["getShootPlanAssignments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/assignments/{assignmentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 摄影师撤销认领 */
+        delete: operations["revokeShootPlanAssignment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/assignment-offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建 on-site support offer */
+        post: operations["createShootPlanAssignmentOffer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/assignment-offers/{offerId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 关闭 on-site support offer（有 active assignment 时 409） */
+        delete: operations["closeShootPlanAssignmentOffer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shoot-plans/{id}/transitions": {
         parameters: {
             query?: never;
@@ -1058,7 +1316,10 @@ export interface components {
                 details?: components["schemas"]["ErrorDetails"];
             };
         };
-        ErrorDetails: components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"];
+        ErrorDetails: components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"];
+        ExpiryQuoteExpiredDetails: {
+            refreshed_expiry_policy: components["schemas"]["ExpiryPolicyProjectionV1"];
+        };
         ArchiveAcknowledgementRequiredDetails: {
             required_archive_acknowledgement: components["schemas"]["ArchiveAcknowledgement"];
         };
@@ -2386,6 +2647,402 @@ export interface components {
             execution_fact_revision: number;
             /** Format: date-time */
             finalized_at: string;
+        };
+        SharedCreativeBriefV1: {
+            work_title?: string | null;
+            character_name?: string | null;
+            theme_statement?: string | null;
+            mood?: string | null;
+            visual_keywords?: string[];
+        };
+        SharedPublicWindowV1: {
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            timezone: string;
+            duration_minutes: number;
+        };
+        SharedPublicScaleV1: {
+            planned_shot_count: number;
+            planned_look_count?: number | null;
+            planned_scene_count?: number | null;
+        };
+        SharedMoodboardItemV1: {
+            ref: string;
+            checksum: string;
+        };
+        SharedPlanProposalV1: {
+            /** @enum {string} */
+            view_level: "proposal";
+            title: string;
+            creative_brief: components["schemas"]["SharedCreativeBriefV1"];
+            public_window?: components["schemas"]["SharedPublicWindowV1"];
+            public_scale: components["schemas"]["SharedPublicScaleV1"];
+            moodboard: components["schemas"]["SharedMoodboardItemV1"][];
+            /** Format: int64 */
+            projection_revision: number;
+        };
+        SharedShotV1: {
+            id: string;
+            position: number;
+            title: string;
+            scene?: string | null;
+            action?: string | null;
+            expression?: string | null;
+            composition?: string | null;
+            lighting_text?: string | null;
+            framing_tag?: string | null;
+            lighting_direction_tag?: string | null;
+            lighting_quality_tag?: string | null;
+            palette_tag?: string | null;
+            shot_type_tag?: string | null;
+            /** Format: int64 */
+            revision: number;
+        };
+        SharedActiveAssignmentV1: {
+            id: string;
+            claimed_by_display_name: string;
+            /** Format: int64 */
+            revision: number;
+        };
+        SharedAssignmentOpportunityV1: {
+            offer_id: string;
+            /** @enum {string} */
+            assignment_kind: "readiness" | "on_site_support";
+            readiness_item_id?: string | null;
+            content: string;
+            preparation_lead_days_preview?: number | null;
+            /** Format: int64 */
+            target_revision: number;
+            active_assignment?: components["schemas"]["SharedActiveAssignmentV1"];
+        };
+        SharedPlanFullV1: {
+            /** @enum {string} */
+            view_level: "full";
+            title: string;
+            creative_brief: components["schemas"]["SharedCreativeBriefV1"];
+            public_window?: components["schemas"]["SharedPublicWindowV1"];
+            public_scale: components["schemas"]["SharedPublicScaleV1"];
+            moodboard: components["schemas"]["SharedMoodboardItemV1"][];
+            /** Format: int64 */
+            projection_revision: number;
+            shots: components["schemas"]["SharedShotV1"][];
+            assignment_opportunities: components["schemas"]["SharedAssignmentOpportunityV1"][];
+        };
+        /** @enum {string} */
+        ShareViewLevel: "proposal" | "full";
+        ExpirySourceExplicitV1: {
+            /** @enum {string} */
+            kind: "explicit";
+        };
+        DefaultQuoteV1: {
+            /** Format: date-time */
+            evaluated_at: string;
+            /** Format: date-time */
+            valid_until: string;
+            view_level: components["schemas"]["ShareViewLevel"];
+            /** Format: int64 */
+            execution_window_revision?: number | null;
+            /** @enum {string} */
+            policy_version: "v1";
+        };
+        ExpirySourceQuotedDefaultV1: {
+            /** @enum {string} */
+            kind: "quoted_default";
+            default_quote: components["schemas"]["DefaultQuoteV1"];
+        };
+        ExpirySourceV1: components["schemas"]["ExpirySourceExplicitV1"] | components["schemas"]["ExpirySourceQuotedDefaultV1"];
+        ExpiryPolicyProjectionV1: {
+            view_level: components["schemas"]["ShareViewLevel"];
+            /** Format: date-time */
+            min_expires_at: string;
+            /** Format: date-time */
+            max_expires_at: string;
+            /** Format: date-time */
+            resolved_default_expires_at: string;
+            /** @enum {string} */
+            policy_version: "v1";
+            default_quote: components["schemas"]["DefaultQuoteV1"];
+        };
+        LatestShareGenerationProjectionV1: {
+            share_id: string;
+            /** Format: int64 */
+            generation: number;
+            fingerprint: string;
+            /** @enum {string} */
+            effective_state: "active" | "expired" | "rotated" | "revoked" | "eligibility_invalidated" | "archived";
+            ended_reason?: string | null;
+            /** Format: date-time */
+            issued_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            ended_at?: string | null;
+            /** Format: date-time */
+            first_opened_at?: string | null;
+            /** Format: int64 */
+            revision: number;
+        };
+        ShareViewProjectionV1: {
+            view_level: components["schemas"]["ShareViewLevel"];
+            expiry_policy: components["schemas"]["ExpiryPolicyProjectionV1"];
+            latest_generation?: components["schemas"]["LatestShareGenerationProjectionV1"] | null;
+        };
+        OnSiteOfferProjectionV1: {
+            offer_id: string;
+            /** @enum {string} */
+            assignment_kind: "on_site_support";
+            content: string;
+            /** @enum {string} */
+            state: "open" | "closed";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            closed_at?: string | null;
+            active_assignment_id?: string | null;
+        };
+        ShareManagementProjectionV1: {
+            share_views: components["schemas"]["ShareViewProjectionV1"][];
+            on_site_offers: components["schemas"]["OnSiteOfferProjectionV1"][];
+            offers_next_cursor?: string | null;
+        };
+        ShareIssueInputV1: {
+            /** Format: int64 */
+            expected_plan_revision: number;
+            view_level: components["schemas"]["ShareViewLevel"];
+            /** @description base64url raw-unpadded SHA-256(secret) */
+            secret_commitment: string;
+            /** Format: date-time */
+            expires_at: string;
+            expiry_source: components["schemas"]["ExpirySourceV1"];
+            /** @enum {string} */
+            policy_version: "v1";
+        };
+        ShareRotateInputV1: {
+            /** Format: int64 */
+            expected_share_revision: number;
+            new_secret_commitment: string;
+            /** Format: date-time */
+            expires_at: string;
+            expiry_source: components["schemas"]["ExpirySourceV1"];
+            /** @enum {string} */
+            policy_version: "v1";
+        };
+        ShareRevokeInputV1: {
+            /** Format: int64 */
+            expected_share_revision: number;
+            /** @enum {string} */
+            policy_version: "v1";
+        };
+        ShareIssueResultV1: {
+            share_id: string;
+            selector: string;
+            /** Format: int64 */
+            generation: number;
+            view_level: components["schemas"]["ShareViewLevel"];
+            /** @enum {string} */
+            state: "active";
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: int64 */
+            revision: number;
+        };
+        ShareRevokeResultV1: {
+            share_id: string;
+            /** @enum {string} */
+            state: "revoked";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            revoked_at: string;
+        };
+        SharedPlanFeedbackCreateInputV1: {
+            /** Format: int64 */
+            expected_projection_revision: number;
+            author_display_name?: string;
+            content: string;
+            /** @enum {string} */
+            policy_version: "v1";
+        };
+        SharedShotFeedbackCreateInputV1: {
+            /** Format: int64 */
+            expected_shot_revision: number;
+            author_display_name?: string;
+            content: string;
+            /** @enum {string} */
+            policy_version: "v1";
+        };
+        FeedbackCreateResultV1: {
+            feedback_id: string;
+            /** @enum {string} */
+            target_kind: "plan" | "shot";
+            target_ref?: string | null;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        FeedbackTargetV1: {
+            /** @enum {string} */
+            kind: "plan";
+        } | {
+            /** @enum {string} */
+            kind: "shot";
+            shot_id: string;
+        };
+        FeedbackDeepLinkTargetV1: {
+            /** @enum {string} */
+            kind: "feedback_section";
+        } | {
+            /** @enum {string} */
+            kind: "shot";
+            shot_id: string;
+        };
+        FeedbackManagementItemV1: {
+            feedback_id: string;
+            target: components["schemas"]["FeedbackTargetV1"];
+            author_display_name: string;
+            content: string;
+            /** @enum {string} */
+            disposition: "pending" | "adopted" | "ignored";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            disposition_at?: string | null;
+            deep_link_target: components["schemas"]["FeedbackDeepLinkTargetV1"];
+        };
+        FeedbackManagementPageV1: {
+            items: components["schemas"]["FeedbackManagementItemV1"][];
+            next_cursor?: string | null;
+        };
+        FeedbackDispositionInputV1: {
+            /** Format: int64 */
+            expected_feedback_revision: number;
+            /** @enum {string} */
+            disposition: "adopted" | "ignored";
+        };
+        FeedbackDispositionResultV1: {
+            feedback_id: string;
+            /** @enum {string} */
+            disposition: "adopted" | "ignored";
+            /** Format: int64 */
+            revision: number;
+            deep_link_target: components["schemas"]["FeedbackDeepLinkTargetV1"];
+        };
+        AssignmentTargetV1: {
+            /** @enum {string} */
+            kind: "readiness" | "on_site_support";
+            readiness_item_id?: string;
+            offer_id?: string;
+        };
+        AssignmentDeepLinkTargetV1: {
+            /** @enum {string} */
+            kind: "readiness" | "offer";
+            readiness_item_id?: string;
+            offer_id?: string;
+        };
+        AssignmentManagementItemV1: {
+            assignment_id: string;
+            /** @enum {string} */
+            assignment_kind: "readiness" | "on_site_support";
+            target: components["schemas"]["AssignmentTargetV1"];
+            content_snapshot: string;
+            claimed_by_display_name: string;
+            preparation_lead_days_snapshot?: number | null;
+            lead_rule_version?: string | null;
+            /** @enum {string} */
+            status: "active" | "revoked";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            claimed_at: string;
+            /** Format: date-time */
+            revoked_at?: string | null;
+            /** @enum {string|null} */
+            revoked_by?: "anonymous" | "photographer" | null;
+            deep_link_target: components["schemas"]["AssignmentDeepLinkTargetV1"];
+        };
+        AssignmentManagementPageV1: {
+            items: components["schemas"]["AssignmentManagementItemV1"][];
+            next_cursor?: string | null;
+        };
+        AssignmentOfferCreateInputV1: {
+            /** Format: int64 */
+            expected_plan_revision: number;
+            /** @enum {string} */
+            assignment_kind: "on_site_support";
+            content: string;
+            /** @enum {string} */
+            policy_version?: "v1";
+        };
+        AssignmentOfferCloseInputV1: {
+            /** Format: int64 */
+            expected_offer_revision: number;
+            /** @enum {string} */
+            policy_version?: "v1";
+        };
+        OfferMutationResultV1: {
+            offer_id: string;
+            /** @enum {string} */
+            state: "open" | "closed";
+            /** Format: int64 */
+            revision: number;
+        };
+        AssignmentPhotographerRevokeInputV1: {
+            /** Format: int64 */
+            expected_assignment_revision: number;
+            /** @enum {string} */
+            policy_version?: "v1";
+        };
+        AssignmentClaimTargetV1: {
+            /** @enum {string} */
+            kind: "readiness" | "on_site_support";
+            readiness_item_id?: string;
+            offer_id?: string;
+        };
+        SharedAssignmentClaimInputV1: {
+            target: components["schemas"]["AssignmentClaimTargetV1"];
+            /** Format: int64 */
+            expected_target_revision: number;
+            claimed_by_display_name?: string;
+            /** @description base64url SHA-256(receipt secret) */
+            claim_receipt_commitment: string;
+            /** @enum {string} */
+            policy_version?: "v1";
+        };
+        SharedAssignmentSelfRevokeInputV1: {
+            /** Format: int64 */
+            expected_assignment_revision: number;
+            /** @description raw cr1.<secret> wire; hashed before ledger */
+            claim_receipt: string;
+            /** @enum {string} */
+            policy_version?: "v1";
+        };
+        AssignmentClaimResultV1: {
+            assignment_id: string;
+            /** @enum {string} */
+            assignment_kind: "readiness" | "on_site_support";
+            target_ref: string;
+            /** @enum {string} */
+            status: "active" | "revoked";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            claimed_at: string;
+        };
+        AssignmentMutationResultV1: {
+            assignment_id: string;
+            /** @enum {string} */
+            status: "active" | "revoked";
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            revoked_at: string;
         };
     };
     responses: {
@@ -4419,6 +5076,643 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             /** @description plan_revision_conflict | customer_link_conflict | order_link_conflict | projection_revision_conflict | projection_missing | projection_not_active | projection_not_future | source_changed | order_still_linked | archived_read_only | reopen_required | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    getSharedPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description exact SharedPlanProposalV1 或 SharedPlanFullV1 */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Referrer-Policy"?: string;
+                    "Content-Security-Policy"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedPlanProposalV1"] | components["schemas"]["SharedPlanFullV1"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Internal"];
+        };
+    };
+    createSharedPlanFeedback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedPlanFeedbackCreateInputV1"];
+            };
+        };
+        responses: {
+            /** @description 反馈创建结果 */
+            201: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Referrer-Policy"?: string;
+                    "Content-Security-Policy"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackCreateResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+            /** @description plan_revision_conflict | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Internal"];
+        };
+    };
+    createSharedShotFeedback: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                token: string;
+                shotRef: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedShotFeedbackCreateInputV1"];
+            };
+        };
+        responses: {
+            /** @description 反馈创建结果 */
+            201: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Referrer-Policy"?: string;
+                    "Content-Security-Policy"?: string;
+                    "X-Content-Type-Options"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackCreateResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+            /** @description shot_revision_conflict | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Internal"];
+        };
+    };
+    claimSharedAssignment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedAssignmentClaimInputV1"];
+            };
+        };
+        responses: {
+            /** @description 认领结果（不含 receipt secret） */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentClaimResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+            /** @description assignment_already_claimed | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Internal"];
+        };
+    };
+    selfRevokeSharedAssignment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                token: string;
+                assignmentRef: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedAssignmentSelfRevokeInputV1"];
+            };
+        };
+        responses: {
+            /** @description 撤销结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentMutationResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            404: components["responses"]["NotFound"];
+            /** @description assignment_stale | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Internal"];
+        };
+    };
+    getSharedPlanAssetContent: {
+        parameters: {
+            query: {
+                /** @description display checksum；与投影 moodboard.checksum 一致 */
+                v: string;
+            };
+            header?: never;
+            path: {
+                token: string;
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 展示版本图片；不 redirect；固定安全头 */
+            200: {
+                headers: {
+                    ETag?: string;
+                    "Cache-Control"?: string;
+                    "Content-Length"?: number;
+                    "Content-Disposition"?: "inline";
+                    "X-Content-Type-Options"?: "nosniff";
+                    "Referrer-Policy"?: string;
+                    "Content-Security-Policy"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
+            500: components["responses"]["Internal"];
+            503: components["responses"]["Internal"];
+        };
+    };
+    getShootPlanShares: {
+        parameters: {
+            query?: {
+                offerCursor?: string;
+                offerLimit?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 分享管理投影；不含 selector/secret/commitment/完整 URL */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareManagementProjectionV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    issueShootPlanShare: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareIssueInputV1"];
+            };
+        };
+        responses: {
+            /** @description 签发结果；含 selector，不含 secret/commitment */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareIssueResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description share_generation_exists | full_view_not_eligible | expiry_quote_expired | expiry_quote_stale | plan_revision_conflict | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    rotateShootPlanShare: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                shareId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareRotateInputV1"];
+            };
+        };
+        responses: {
+            /** @description 新一代签发结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareIssueResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description share_stale | share_invalid_state | full_view_not_eligible | expiry_quote_expired | expiry_quote_stale | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    revokeShootPlanShare: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                shareId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ShareRevokeInputV1"];
+            };
+        };
+        responses: {
+            /** @description 撤销结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShareRevokeResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description share_stale | share_invalid_state | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    getShootPlanFeedback: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description FeedbackManagementPageV1 exact allowlist */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackManagementPageV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    setShootPlanFeedbackDisposition: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                feedbackId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackDispositionInputV1"];
+            };
+        };
+        responses: {
+            /** @description disposition 结果与 deep link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackDispositionResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description feedback_stale | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    getShootPlanAssignments: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description AssignmentManagementPageV1 exact allowlist */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentManagementPageV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    revokeShootPlanAssignment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                assignmentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentPhotographerRevokeInputV1"];
+            };
+        };
+        responses: {
+            /** @description 撤销结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssignmentMutationResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description assignment_stale | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    createShootPlanAssignmentOffer: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentOfferCreateInputV1"];
+            };
+        };
+        responses: {
+            /** @description offer 创建结果 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfferMutationResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description plan_revision_conflict | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            500: components["responses"]["Internal"];
+        };
+    };
+    closeShootPlanAssignmentOffer: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                offerId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignmentOfferCloseInputV1"];
+            };
+        };
+        responses: {
+            /** @description offer 关闭结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OfferMutationResultV1"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description assignment_active | offer_stale | idempotency_conflict */
             409: {
                 headers: {
                     [name: string]: unknown;

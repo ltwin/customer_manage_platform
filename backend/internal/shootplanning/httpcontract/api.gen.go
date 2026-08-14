@@ -49,6 +49,174 @@ func (e ArchivePlanTransitionTransition) Valid() bool {
 	}
 }
 
+// Defines values for AssignmentDeepLinkTargetV1Kind.
+const (
+	AssignmentDeepLinkTargetV1KindOffer     AssignmentDeepLinkTargetV1Kind = "offer"
+	AssignmentDeepLinkTargetV1KindReadiness AssignmentDeepLinkTargetV1Kind = "readiness"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentDeepLinkTargetV1Kind enum.
+func (e AssignmentDeepLinkTargetV1Kind) Valid() bool {
+	switch e {
+	case AssignmentDeepLinkTargetV1KindOffer:
+		return true
+	case AssignmentDeepLinkTargetV1KindReadiness:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentManagementItemV1AssignmentKind.
+const (
+	AssignmentManagementItemV1AssignmentKindOnSiteSupport AssignmentManagementItemV1AssignmentKind = "on_site_support"
+	AssignmentManagementItemV1AssignmentKindReadiness     AssignmentManagementItemV1AssignmentKind = "readiness"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentManagementItemV1AssignmentKind enum.
+func (e AssignmentManagementItemV1AssignmentKind) Valid() bool {
+	switch e {
+	case AssignmentManagementItemV1AssignmentKindOnSiteSupport:
+		return true
+	case AssignmentManagementItemV1AssignmentKindReadiness:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentManagementItemV1RevokedBy.
+const (
+	AssignmentManagementItemV1RevokedByAnonymous    AssignmentManagementItemV1RevokedBy = "anonymous"
+	AssignmentManagementItemV1RevokedByPhotographer AssignmentManagementItemV1RevokedBy = "photographer"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentManagementItemV1RevokedBy enum.
+func (e AssignmentManagementItemV1RevokedBy) Valid() bool {
+	switch e {
+	case AssignmentManagementItemV1RevokedByAnonymous:
+		return true
+	case AssignmentManagementItemV1RevokedByPhotographer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentManagementItemV1Status.
+const (
+	AssignmentManagementItemV1StatusActive  AssignmentManagementItemV1Status = "active"
+	AssignmentManagementItemV1StatusRevoked AssignmentManagementItemV1Status = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentManagementItemV1Status enum.
+func (e AssignmentManagementItemV1Status) Valid() bool {
+	switch e {
+	case AssignmentManagementItemV1StatusActive:
+		return true
+	case AssignmentManagementItemV1StatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentMutationResultV1Status.
+const (
+	AssignmentMutationResultV1StatusActive  AssignmentMutationResultV1Status = "active"
+	AssignmentMutationResultV1StatusRevoked AssignmentMutationResultV1Status = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentMutationResultV1Status enum.
+func (e AssignmentMutationResultV1Status) Valid() bool {
+	switch e {
+	case AssignmentMutationResultV1StatusActive:
+		return true
+	case AssignmentMutationResultV1StatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentOfferCloseInputV1PolicyVersion.
+const (
+	AssignmentOfferCloseInputV1PolicyVersionV1 AssignmentOfferCloseInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentOfferCloseInputV1PolicyVersion enum.
+func (e AssignmentOfferCloseInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case AssignmentOfferCloseInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentOfferCreateInputV1AssignmentKind.
+const (
+	AssignmentOfferCreateInputV1AssignmentKindOnSiteSupport AssignmentOfferCreateInputV1AssignmentKind = "on_site_support"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentOfferCreateInputV1AssignmentKind enum.
+func (e AssignmentOfferCreateInputV1AssignmentKind) Valid() bool {
+	switch e {
+	case AssignmentOfferCreateInputV1AssignmentKindOnSiteSupport:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentOfferCreateInputV1PolicyVersion.
+const (
+	AssignmentOfferCreateInputV1PolicyVersionV1 AssignmentOfferCreateInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentOfferCreateInputV1PolicyVersion enum.
+func (e AssignmentOfferCreateInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case AssignmentOfferCreateInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentPhotographerRevokeInputV1PolicyVersion.
+const (
+	AssignmentPhotographerRevokeInputV1PolicyVersionV1 AssignmentPhotographerRevokeInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentPhotographerRevokeInputV1PolicyVersion enum.
+func (e AssignmentPhotographerRevokeInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case AssignmentPhotographerRevokeInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssignmentTargetV1Kind.
+const (
+	AssignmentTargetV1KindOnSiteSupport AssignmentTargetV1Kind = "on_site_support"
+	AssignmentTargetV1KindReadiness     AssignmentTargetV1Kind = "readiness"
+)
+
+// Valid indicates whether the value is a known member of the AssignmentTargetV1Kind enum.
+func (e AssignmentTargetV1Kind) Valid() bool {
+	switch e {
+	case AssignmentTargetV1KindOnSiteSupport:
+		return true
+	case AssignmentTargetV1KindReadiness:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ClearExecutionWindowPlanCommandOperation.
 const (
 	ClearExecutionWindow ClearExecutionWindowPlanCommandOperation = "clear_execution_window"
@@ -112,6 +280,213 @@ func (e CoreArchiveAcknowledgementVersion) Valid() bool {
 	}
 }
 
+// Defines values for DefaultQuoteV1PolicyVersion.
+const (
+	DefaultQuoteV1PolicyVersionV1 DefaultQuoteV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the DefaultQuoteV1PolicyVersion enum.
+func (e DefaultQuoteV1PolicyVersion) Valid() bool {
+	switch e {
+	case DefaultQuoteV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpiryPolicyProjectionV1PolicyVersion.
+const (
+	ExpiryPolicyProjectionV1PolicyVersionV1 ExpiryPolicyProjectionV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the ExpiryPolicyProjectionV1PolicyVersion enum.
+func (e ExpiryPolicyProjectionV1PolicyVersion) Valid() bool {
+	switch e {
+	case ExpiryPolicyProjectionV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpirySourceExplicitV1Kind.
+const (
+	Explicit ExpirySourceExplicitV1Kind = "explicit"
+)
+
+// Valid indicates whether the value is a known member of the ExpirySourceExplicitV1Kind enum.
+func (e ExpirySourceExplicitV1Kind) Valid() bool {
+	switch e {
+	case Explicit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ExpirySourceQuotedDefaultV1Kind.
+const (
+	QuotedDefault ExpirySourceQuotedDefaultV1Kind = "quoted_default"
+)
+
+// Valid indicates whether the value is a known member of the ExpirySourceQuotedDefaultV1Kind enum.
+func (e ExpirySourceQuotedDefaultV1Kind) Valid() bool {
+	switch e {
+	case QuotedDefault:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackDeepLinkTargetV10Kind.
+const (
+	FeedbackSection FeedbackDeepLinkTargetV10Kind = "feedback_section"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackDeepLinkTargetV10Kind enum.
+func (e FeedbackDeepLinkTargetV10Kind) Valid() bool {
+	switch e {
+	case FeedbackSection:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackDeepLinkTargetV11Kind.
+const (
+	FeedbackDeepLinkTargetV11KindShot FeedbackDeepLinkTargetV11Kind = "shot"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackDeepLinkTargetV11Kind enum.
+func (e FeedbackDeepLinkTargetV11Kind) Valid() bool {
+	switch e {
+	case FeedbackDeepLinkTargetV11KindShot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackDispositionInputV1Disposition.
+const (
+	FeedbackDispositionInputV1DispositionAdopted FeedbackDispositionInputV1Disposition = "adopted"
+	FeedbackDispositionInputV1DispositionIgnored FeedbackDispositionInputV1Disposition = "ignored"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackDispositionInputV1Disposition enum.
+func (e FeedbackDispositionInputV1Disposition) Valid() bool {
+	switch e {
+	case FeedbackDispositionInputV1DispositionAdopted:
+		return true
+	case FeedbackDispositionInputV1DispositionIgnored:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackDispositionResultV1Disposition.
+const (
+	FeedbackDispositionResultV1DispositionAdopted FeedbackDispositionResultV1Disposition = "adopted"
+	FeedbackDispositionResultV1DispositionIgnored FeedbackDispositionResultV1Disposition = "ignored"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackDispositionResultV1Disposition enum.
+func (e FeedbackDispositionResultV1Disposition) Valid() bool {
+	switch e {
+	case FeedbackDispositionResultV1DispositionAdopted:
+		return true
+	case FeedbackDispositionResultV1DispositionIgnored:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackManagementItemV1Disposition.
+const (
+	Adopted FeedbackManagementItemV1Disposition = "adopted"
+	Ignored FeedbackManagementItemV1Disposition = "ignored"
+	Pending FeedbackManagementItemV1Disposition = "pending"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackManagementItemV1Disposition enum.
+func (e FeedbackManagementItemV1Disposition) Valid() bool {
+	switch e {
+	case Adopted:
+		return true
+	case Ignored:
+		return true
+	case Pending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackTargetV10Kind.
+const (
+	Plan FeedbackTargetV10Kind = "plan"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackTargetV10Kind enum.
+func (e FeedbackTargetV10Kind) Valid() bool {
+	switch e {
+	case Plan:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FeedbackTargetV11Kind.
+const (
+	FeedbackTargetV11KindShot FeedbackTargetV11Kind = "shot"
+)
+
+// Valid indicates whether the value is a known member of the FeedbackTargetV11Kind enum.
+func (e FeedbackTargetV11Kind) Valid() bool {
+	switch e {
+	case FeedbackTargetV11KindShot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LatestShareGenerationProjectionV1EffectiveState.
+const (
+	LatestShareGenerationProjectionV1EffectiveStateActive                 LatestShareGenerationProjectionV1EffectiveState = "active"
+	LatestShareGenerationProjectionV1EffectiveStateArchived               LatestShareGenerationProjectionV1EffectiveState = "archived"
+	LatestShareGenerationProjectionV1EffectiveStateEligibilityInvalidated LatestShareGenerationProjectionV1EffectiveState = "eligibility_invalidated"
+	LatestShareGenerationProjectionV1EffectiveStateExpired                LatestShareGenerationProjectionV1EffectiveState = "expired"
+	LatestShareGenerationProjectionV1EffectiveStateRevoked                LatestShareGenerationProjectionV1EffectiveState = "revoked"
+	LatestShareGenerationProjectionV1EffectiveStateRotated                LatestShareGenerationProjectionV1EffectiveState = "rotated"
+)
+
+// Valid indicates whether the value is a known member of the LatestShareGenerationProjectionV1EffectiveState enum.
+func (e LatestShareGenerationProjectionV1EffectiveState) Valid() bool {
+	switch e {
+	case LatestShareGenerationProjectionV1EffectiveStateActive:
+		return true
+	case LatestShareGenerationProjectionV1EffectiveStateArchived:
+		return true
+	case LatestShareGenerationProjectionV1EffectiveStateEligibilityInvalidated:
+		return true
+	case LatestShareGenerationProjectionV1EffectiveStateExpired:
+		return true
+	case LatestShareGenerationProjectionV1EffectiveStateRevoked:
+		return true
+	case LatestShareGenerationProjectionV1EffectiveStateRotated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LinkCustomerCrmCommandOperation.
 const (
 	LinkCustomer LinkCustomerCrmCommandOperation = "link_customer"
@@ -166,6 +541,57 @@ const (
 func (e MarkReadyPlanTransitionTransition) Valid() bool {
 	switch e {
 	case MarkReady:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OfferMutationResultV1State.
+const (
+	OfferMutationResultV1StateClosed OfferMutationResultV1State = "closed"
+	OfferMutationResultV1StateOpen   OfferMutationResultV1State = "open"
+)
+
+// Valid indicates whether the value is a known member of the OfferMutationResultV1State enum.
+func (e OfferMutationResultV1State) Valid() bool {
+	switch e {
+	case OfferMutationResultV1StateClosed:
+		return true
+	case OfferMutationResultV1StateOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OnSiteOfferProjectionV1AssignmentKind.
+const (
+	OnSiteSupport OnSiteOfferProjectionV1AssignmentKind = "on_site_support"
+)
+
+// Valid indicates whether the value is a known member of the OnSiteOfferProjectionV1AssignmentKind enum.
+func (e OnSiteOfferProjectionV1AssignmentKind) Valid() bool {
+	switch e {
+	case OnSiteSupport:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OnSiteOfferProjectionV1State.
+const (
+	OnSiteOfferProjectionV1StateClosed OnSiteOfferProjectionV1State = "closed"
+	OnSiteOfferProjectionV1StateOpen   OnSiteOfferProjectionV1State = "open"
+)
+
+// Valid indicates whether the value is a known member of the OnSiteOfferProjectionV1State enum.
+func (e OnSiteOfferProjectionV1State) Valid() bool {
+	switch e {
+	case OnSiteOfferProjectionV1StateClosed:
+		return true
+	case OnSiteOfferProjectionV1StateOpen:
 		return true
 	default:
 		return false
@@ -532,6 +958,99 @@ func (e SetPublicScalePlanCommandOperation) Valid() bool {
 	}
 }
 
+// Defines values for ShareIssueInputV1PolicyVersion.
+const (
+	ShareIssueInputV1PolicyVersionV1 ShareIssueInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the ShareIssueInputV1PolicyVersion enum.
+func (e ShareIssueInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case ShareIssueInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShareIssueResultV1State.
+const (
+	ShareIssueResultV1StateActive ShareIssueResultV1State = "active"
+)
+
+// Valid indicates whether the value is a known member of the ShareIssueResultV1State enum.
+func (e ShareIssueResultV1State) Valid() bool {
+	switch e {
+	case ShareIssueResultV1StateActive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShareRevokeInputV1PolicyVersion.
+const (
+	ShareRevokeInputV1PolicyVersionV1 ShareRevokeInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the ShareRevokeInputV1PolicyVersion enum.
+func (e ShareRevokeInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case ShareRevokeInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShareRevokeResultV1State.
+const (
+	Revoked ShareRevokeResultV1State = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ShareRevokeResultV1State enum.
+func (e ShareRevokeResultV1State) Valid() bool {
+	switch e {
+	case Revoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShareRotateInputV1PolicyVersion.
+const (
+	ShareRotateInputV1PolicyVersionV1 ShareRotateInputV1PolicyVersion = "v1"
+)
+
+// Valid indicates whether the value is a known member of the ShareRotateInputV1PolicyVersion enum.
+func (e ShareRotateInputV1PolicyVersion) Valid() bool {
+	switch e {
+	case ShareRotateInputV1PolicyVersionV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShareViewLevel.
+const (
+	ShareViewLevelFull     ShareViewLevel = "full"
+	ShareViewLevelProposal ShareViewLevel = "proposal"
+)
+
+// Valid indicates whether the value is a known member of the ShareViewLevel enum.
+func (e ShareViewLevel) Valid() bool {
+	switch e {
+	case ShareViewLevelFull:
+		return true
+	case ShareViewLevelProposal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ShootPlanCRMState.
 const (
 	CustomerLinked ShootPlanCRMState = "customer_linked"
@@ -660,19 +1179,19 @@ func (e ShootPlanReadinessItemRequirement) Valid() bool {
 
 // Defines values for ShootPlanReadinessItemResponsibilityHint.
 const (
-	ShootPlanReadinessItemResponsibilityHintCustomer     ShootPlanReadinessItemResponsibilityHint = "customer"
-	ShootPlanReadinessItemResponsibilityHintPhotographer ShootPlanReadinessItemResponsibilityHint = "photographer"
-	ShootPlanReadinessItemResponsibilityHintUnassigned   ShootPlanReadinessItemResponsibilityHint = "unassigned"
+	Customer     ShootPlanReadinessItemResponsibilityHint = "customer"
+	Photographer ShootPlanReadinessItemResponsibilityHint = "photographer"
+	Unassigned   ShootPlanReadinessItemResponsibilityHint = "unassigned"
 )
 
 // Valid indicates whether the value is a known member of the ShootPlanReadinessItemResponsibilityHint enum.
 func (e ShootPlanReadinessItemResponsibilityHint) Valid() bool {
 	switch e {
-	case ShootPlanReadinessItemResponsibilityHintCustomer:
+	case Customer:
 		return true
-	case ShootPlanReadinessItemResponsibilityHintPhotographer:
+	case Photographer:
 		return true
-	case ShootPlanReadinessItemResponsibilityHintUnassigned:
+	case Unassigned:
 		return true
 	default:
 		return false
@@ -1113,34 +1632,34 @@ func (e ShotWritePaletteTag) Valid() bool {
 
 // Defines values for ShotWriteShotTypeTag.
 const (
-	Action      ShotWriteShotTypeTag = "action"
-	Detail      ShotWriteShotTypeTag = "detail"
-	Environment ShotWriteShotTypeTag = "environment"
-	Interaction ShotWriteShotTypeTag = "interaction"
-	Narrative   ShotWriteShotTypeTag = "narrative"
-	Other       ShotWriteShotTypeTag = "other"
-	Portrait    ShotWriteShotTypeTag = "portrait"
-	Silhouette  ShotWriteShotTypeTag = "silhouette"
+	ShotWriteShotTypeTagAction      ShotWriteShotTypeTag = "action"
+	ShotWriteShotTypeTagDetail      ShotWriteShotTypeTag = "detail"
+	ShotWriteShotTypeTagEnvironment ShotWriteShotTypeTag = "environment"
+	ShotWriteShotTypeTagInteraction ShotWriteShotTypeTag = "interaction"
+	ShotWriteShotTypeTagNarrative   ShotWriteShotTypeTag = "narrative"
+	ShotWriteShotTypeTagOther       ShotWriteShotTypeTag = "other"
+	ShotWriteShotTypeTagPortrait    ShotWriteShotTypeTag = "portrait"
+	ShotWriteShotTypeTagSilhouette  ShotWriteShotTypeTag = "silhouette"
 )
 
 // Valid indicates whether the value is a known member of the ShotWriteShotTypeTag enum.
 func (e ShotWriteShotTypeTag) Valid() bool {
 	switch e {
-	case Action:
+	case ShotWriteShotTypeTagAction:
 		return true
-	case Detail:
+	case ShotWriteShotTypeTagDetail:
 		return true
-	case Environment:
+	case ShotWriteShotTypeTagEnvironment:
 		return true
-	case Interaction:
+	case ShotWriteShotTypeTagInteraction:
 		return true
-	case Narrative:
+	case ShotWriteShotTypeTagNarrative:
 		return true
-	case Other:
+	case ShotWriteShotTypeTagOther:
 		return true
-	case Portrait:
+	case ShotWriteShotTypeTagPortrait:
 		return true
-	case Silhouette:
+	case ShotWriteShotTypeTagSilhouette:
 		return true
 	default:
 		return false
@@ -1315,6 +1834,101 @@ type ArchivePlanTransition struct {
 // ArchivePlanTransitionTransition defines model for ArchivePlanTransition.Transition.
 type ArchivePlanTransitionTransition string
 
+// AssignmentDeepLinkTargetV1 defines model for AssignmentDeepLinkTargetV1.
+type AssignmentDeepLinkTargetV1 struct {
+	Kind            AssignmentDeepLinkTargetV1Kind `json:"kind"`
+	OfferId         *string                        `json:"offer_id,omitempty"`
+	ReadinessItemId *string                        `json:"readiness_item_id,omitempty"`
+}
+
+// AssignmentDeepLinkTargetV1Kind defines model for AssignmentDeepLinkTargetV1.Kind.
+type AssignmentDeepLinkTargetV1Kind string
+
+// AssignmentManagementItemV1 defines model for AssignmentManagementItemV1.
+type AssignmentManagementItemV1 struct {
+	AssignmentId                string                                                 `json:"assignment_id"`
+	AssignmentKind              AssignmentManagementItemV1AssignmentKind               `json:"assignment_kind"`
+	ClaimedAt                   time.Time                                              `json:"claimed_at"`
+	ClaimedByDisplayName        string                                                 `json:"claimed_by_display_name"`
+	ContentSnapshot             string                                                 `json:"content_snapshot"`
+	DeepLinkTarget              AssignmentDeepLinkTargetV1                             `json:"deep_link_target"`
+	LeadRuleVersion             nullable.Nullable[string]                              `json:"lead_rule_version,omitempty"`
+	PreparationLeadDaysSnapshot nullable.Nullable[int]                                 `json:"preparation_lead_days_snapshot,omitempty"`
+	Revision                    int64                                                  `json:"revision"`
+	RevokedAt                   nullable.Nullable[time.Time]                           `json:"revoked_at,omitempty"`
+	RevokedBy                   nullable.Nullable[AssignmentManagementItemV1RevokedBy] `json:"revoked_by,omitempty"`
+	Status                      AssignmentManagementItemV1Status                       `json:"status"`
+	Target                      AssignmentTargetV1                                     `json:"target"`
+}
+
+// AssignmentManagementItemV1AssignmentKind defines model for AssignmentManagementItemV1.AssignmentKind.
+type AssignmentManagementItemV1AssignmentKind string
+
+// AssignmentManagementItemV1RevokedBy defines model for AssignmentManagementItemV1.RevokedBy.
+type AssignmentManagementItemV1RevokedBy string
+
+// AssignmentManagementItemV1Status defines model for AssignmentManagementItemV1.Status.
+type AssignmentManagementItemV1Status string
+
+// AssignmentManagementPageV1 defines model for AssignmentManagementPageV1.
+type AssignmentManagementPageV1 struct {
+	Items      []AssignmentManagementItemV1 `json:"items"`
+	NextCursor nullable.Nullable[string]    `json:"next_cursor,omitempty"`
+}
+
+// AssignmentMutationResultV1 defines model for AssignmentMutationResultV1.
+type AssignmentMutationResultV1 struct {
+	AssignmentId string                           `json:"assignment_id"`
+	Revision     int64                            `json:"revision"`
+	RevokedAt    time.Time                        `json:"revoked_at"`
+	Status       AssignmentMutationResultV1Status `json:"status"`
+}
+
+// AssignmentMutationResultV1Status defines model for AssignmentMutationResultV1.Status.
+type AssignmentMutationResultV1Status string
+
+// AssignmentOfferCloseInputV1 defines model for AssignmentOfferCloseInputV1.
+type AssignmentOfferCloseInputV1 struct {
+	ExpectedOfferRevision int64                                     `json:"expected_offer_revision"`
+	PolicyVersion         *AssignmentOfferCloseInputV1PolicyVersion `json:"policy_version,omitempty"`
+}
+
+// AssignmentOfferCloseInputV1PolicyVersion defines model for AssignmentOfferCloseInputV1.PolicyVersion.
+type AssignmentOfferCloseInputV1PolicyVersion string
+
+// AssignmentOfferCreateInputV1 defines model for AssignmentOfferCreateInputV1.
+type AssignmentOfferCreateInputV1 struct {
+	AssignmentKind       AssignmentOfferCreateInputV1AssignmentKind `json:"assignment_kind"`
+	Content              string                                     `json:"content"`
+	ExpectedPlanRevision int64                                      `json:"expected_plan_revision"`
+	PolicyVersion        *AssignmentOfferCreateInputV1PolicyVersion `json:"policy_version,omitempty"`
+}
+
+// AssignmentOfferCreateInputV1AssignmentKind defines model for AssignmentOfferCreateInputV1.AssignmentKind.
+type AssignmentOfferCreateInputV1AssignmentKind string
+
+// AssignmentOfferCreateInputV1PolicyVersion defines model for AssignmentOfferCreateInputV1.PolicyVersion.
+type AssignmentOfferCreateInputV1PolicyVersion string
+
+// AssignmentPhotographerRevokeInputV1 defines model for AssignmentPhotographerRevokeInputV1.
+type AssignmentPhotographerRevokeInputV1 struct {
+	ExpectedAssignmentRevision int64                                             `json:"expected_assignment_revision"`
+	PolicyVersion              *AssignmentPhotographerRevokeInputV1PolicyVersion `json:"policy_version,omitempty"`
+}
+
+// AssignmentPhotographerRevokeInputV1PolicyVersion defines model for AssignmentPhotographerRevokeInputV1.PolicyVersion.
+type AssignmentPhotographerRevokeInputV1PolicyVersion string
+
+// AssignmentTargetV1 defines model for AssignmentTargetV1.
+type AssignmentTargetV1 struct {
+	Kind            AssignmentTargetV1Kind `json:"kind"`
+	OfferId         *string                `json:"offer_id,omitempty"`
+	ReadinessItemId *string                `json:"readiness_item_id,omitempty"`
+}
+
+// AssignmentTargetV1Kind defines model for AssignmentTargetV1.Kind.
+type AssignmentTargetV1Kind string
+
 // ClearExecutionWindowPlanCommand defines model for ClearExecutionWindowPlanCommand.
 type ClearExecutionWindowPlanCommand struct {
 	ExpectedRevision int64                                    `json:"expected_revision"`
@@ -1375,6 +1989,18 @@ type CreativeBriefPatch struct {
 	WorkTitle      nullable.Nullable[string]   `json:"work_title,omitempty"`
 }
 
+// DefaultQuoteV1 defines model for DefaultQuoteV1.
+type DefaultQuoteV1 struct {
+	EvaluatedAt             time.Time                   `json:"evaluated_at"`
+	ExecutionWindowRevision nullable.Nullable[int64]    `json:"execution_window_revision,omitempty"`
+	PolicyVersion           DefaultQuoteV1PolicyVersion `json:"policy_version"`
+	ValidUntil              time.Time                   `json:"valid_until"`
+	ViewLevel               ShareViewLevel              `json:"view_level"`
+}
+
+// DefaultQuoteV1PolicyVersion defines model for DefaultQuoteV1.PolicyVersion.
+type DefaultQuoteV1PolicyVersion string
+
 // EmptyTransitionPayload defines model for EmptyTransitionPayload.
 type EmptyTransitionPayload = map[string]interface{}
 
@@ -1391,6 +2017,149 @@ type ErrorEnvelope struct {
 		Message string        `json:"message"`
 	} `json:"error"`
 }
+
+// ExpiryPolicyProjectionV1 defines model for ExpiryPolicyProjectionV1.
+type ExpiryPolicyProjectionV1 struct {
+	DefaultQuote             DefaultQuoteV1                        `json:"default_quote"`
+	MaxExpiresAt             time.Time                             `json:"max_expires_at"`
+	MinExpiresAt             time.Time                             `json:"min_expires_at"`
+	PolicyVersion            ExpiryPolicyProjectionV1PolicyVersion `json:"policy_version"`
+	ResolvedDefaultExpiresAt time.Time                             `json:"resolved_default_expires_at"`
+	ViewLevel                ShareViewLevel                        `json:"view_level"`
+}
+
+// ExpiryPolicyProjectionV1PolicyVersion defines model for ExpiryPolicyProjectionV1.PolicyVersion.
+type ExpiryPolicyProjectionV1PolicyVersion string
+
+// ExpiryQuoteExpiredDetails defines model for ExpiryQuoteExpiredDetails.
+type ExpiryQuoteExpiredDetails struct {
+	RefreshedExpiryPolicy ExpiryPolicyProjectionV1 `json:"refreshed_expiry_policy"`
+}
+
+// ExpirySourceExplicitV1 defines model for ExpirySourceExplicitV1.
+type ExpirySourceExplicitV1 struct {
+	Kind ExpirySourceExplicitV1Kind `json:"kind"`
+}
+
+// ExpirySourceExplicitV1Kind defines model for ExpirySourceExplicitV1.Kind.
+type ExpirySourceExplicitV1Kind string
+
+// ExpirySourceQuotedDefaultV1 defines model for ExpirySourceQuotedDefaultV1.
+type ExpirySourceQuotedDefaultV1 struct {
+	DefaultQuote DefaultQuoteV1                  `json:"default_quote"`
+	Kind         ExpirySourceQuotedDefaultV1Kind `json:"kind"`
+}
+
+// ExpirySourceQuotedDefaultV1Kind defines model for ExpirySourceQuotedDefaultV1.Kind.
+type ExpirySourceQuotedDefaultV1Kind string
+
+// ExpirySourceV1 defines model for ExpirySourceV1.
+type ExpirySourceV1 struct {
+	union json.RawMessage
+}
+
+// FeedbackDeepLinkTargetV1 defines model for FeedbackDeepLinkTargetV1.
+type FeedbackDeepLinkTargetV1 struct {
+	union json.RawMessage
+}
+
+// FeedbackDeepLinkTargetV10 defines model for .
+type FeedbackDeepLinkTargetV10 struct {
+	Kind FeedbackDeepLinkTargetV10Kind `json:"kind"`
+}
+
+// FeedbackDeepLinkTargetV10Kind defines model for FeedbackDeepLinkTargetV1.0.Kind.
+type FeedbackDeepLinkTargetV10Kind string
+
+// FeedbackDeepLinkTargetV11 defines model for .
+type FeedbackDeepLinkTargetV11 struct {
+	Kind   FeedbackDeepLinkTargetV11Kind `json:"kind"`
+	ShotId string                        `json:"shot_id"`
+}
+
+// FeedbackDeepLinkTargetV11Kind defines model for FeedbackDeepLinkTargetV1.1.Kind.
+type FeedbackDeepLinkTargetV11Kind string
+
+// FeedbackDispositionInputV1 defines model for FeedbackDispositionInputV1.
+type FeedbackDispositionInputV1 struct {
+	Disposition              FeedbackDispositionInputV1Disposition `json:"disposition"`
+	ExpectedFeedbackRevision int64                                 `json:"expected_feedback_revision"`
+}
+
+// FeedbackDispositionInputV1Disposition defines model for FeedbackDispositionInputV1.Disposition.
+type FeedbackDispositionInputV1Disposition string
+
+// FeedbackDispositionResultV1 defines model for FeedbackDispositionResultV1.
+type FeedbackDispositionResultV1 struct {
+	DeepLinkTarget FeedbackDeepLinkTargetV1               `json:"deep_link_target"`
+	Disposition    FeedbackDispositionResultV1Disposition `json:"disposition"`
+	FeedbackId     string                                 `json:"feedback_id"`
+	Revision       int64                                  `json:"revision"`
+}
+
+// FeedbackDispositionResultV1Disposition defines model for FeedbackDispositionResultV1.Disposition.
+type FeedbackDispositionResultV1Disposition string
+
+// FeedbackManagementItemV1 defines model for FeedbackManagementItemV1.
+type FeedbackManagementItemV1 struct {
+	AuthorDisplayName string                              `json:"author_display_name"`
+	Content           string                              `json:"content"`
+	CreatedAt         time.Time                           `json:"created_at"`
+	DeepLinkTarget    FeedbackDeepLinkTargetV1            `json:"deep_link_target"`
+	Disposition       FeedbackManagementItemV1Disposition `json:"disposition"`
+	DispositionAt     nullable.Nullable[time.Time]        `json:"disposition_at,omitempty"`
+	FeedbackId        string                              `json:"feedback_id"`
+	Revision          int64                               `json:"revision"`
+	Target            FeedbackTargetV1                    `json:"target"`
+}
+
+// FeedbackManagementItemV1Disposition defines model for FeedbackManagementItemV1.Disposition.
+type FeedbackManagementItemV1Disposition string
+
+// FeedbackManagementPageV1 defines model for FeedbackManagementPageV1.
+type FeedbackManagementPageV1 struct {
+	Items      []FeedbackManagementItemV1 `json:"items"`
+	NextCursor nullable.Nullable[string]  `json:"next_cursor,omitempty"`
+}
+
+// FeedbackTargetV1 defines model for FeedbackTargetV1.
+type FeedbackTargetV1 struct {
+	union json.RawMessage
+}
+
+// FeedbackTargetV10 defines model for .
+type FeedbackTargetV10 struct {
+	Kind FeedbackTargetV10Kind `json:"kind"`
+}
+
+// FeedbackTargetV10Kind defines model for FeedbackTargetV1.0.Kind.
+type FeedbackTargetV10Kind string
+
+// FeedbackTargetV11 defines model for .
+type FeedbackTargetV11 struct {
+	Kind   FeedbackTargetV11Kind `json:"kind"`
+	ShotId string                `json:"shot_id"`
+}
+
+// FeedbackTargetV11Kind defines model for FeedbackTargetV1.1.Kind.
+type FeedbackTargetV11Kind string
+
+// LatestShareGenerationProjectionV1 defines model for LatestShareGenerationProjectionV1.
+type LatestShareGenerationProjectionV1 struct {
+	EffectiveState LatestShareGenerationProjectionV1EffectiveState `json:"effective_state"`
+	EndedAt        nullable.Nullable[time.Time]                    `json:"ended_at,omitempty"`
+	EndedReason    nullable.Nullable[string]                       `json:"ended_reason,omitempty"`
+	ExpiresAt      time.Time                                       `json:"expires_at"`
+	Fingerprint    string                                          `json:"fingerprint"`
+	FirstOpenedAt  nullable.Nullable[time.Time]                    `json:"first_opened_at,omitempty"`
+	Generation     int64                                           `json:"generation"`
+	IssuedAt       time.Time                                       `json:"issued_at"`
+	Revision       int64                                           `json:"revision"`
+	ShareId        string                                          `json:"share_id"`
+}
+
+// LatestShareGenerationProjectionV1EffectiveState defines model for LatestShareGenerationProjectionV1.EffectiveState.
+type LatestShareGenerationProjectionV1EffectiveState string
 
 // LinkCustomerCrmCommand defines model for LinkCustomerCrmCommand.
 type LinkCustomerCrmCommand struct {
@@ -1442,6 +2211,34 @@ type MarkReadyPlanTransition struct {
 
 // MarkReadyPlanTransitionTransition defines model for MarkReadyPlanTransition.Transition.
 type MarkReadyPlanTransitionTransition string
+
+// OfferMutationResultV1 defines model for OfferMutationResultV1.
+type OfferMutationResultV1 struct {
+	OfferId  string                     `json:"offer_id"`
+	Revision int64                      `json:"revision"`
+	State    OfferMutationResultV1State `json:"state"`
+}
+
+// OfferMutationResultV1State defines model for OfferMutationResultV1.State.
+type OfferMutationResultV1State string
+
+// OnSiteOfferProjectionV1 defines model for OnSiteOfferProjectionV1.
+type OnSiteOfferProjectionV1 struct {
+	ActiveAssignmentId nullable.Nullable[string]             `json:"active_assignment_id,omitempty"`
+	AssignmentKind     OnSiteOfferProjectionV1AssignmentKind `json:"assignment_kind"`
+	ClosedAt           nullable.Nullable[time.Time]          `json:"closed_at,omitempty"`
+	Content            string                                `json:"content"`
+	CreatedAt          time.Time                             `json:"created_at"`
+	OfferId            string                                `json:"offer_id"`
+	Revision           int64                                 `json:"revision"`
+	State              OnSiteOfferProjectionV1State          `json:"state"`
+}
+
+// OnSiteOfferProjectionV1AssignmentKind defines model for OnSiteOfferProjectionV1.AssignmentKind.
+type OnSiteOfferProjectionV1AssignmentKind string
+
+// OnSiteOfferProjectionV1State defines model for OnSiteOfferProjectionV1.State.
+type OnSiteOfferProjectionV1State string
 
 // OpenRunSessionResult defines model for OpenRunSessionResult.
 type OpenRunSessionResult struct {
@@ -1688,6 +2485,84 @@ type SetPublicScalePlanCommand struct {
 
 // SetPublicScalePlanCommandOperation defines model for SetPublicScalePlanCommand.Operation.
 type SetPublicScalePlanCommandOperation string
+
+// ShareIssueInputV1 defines model for ShareIssueInputV1.
+type ShareIssueInputV1 struct {
+	ExpectedPlanRevision int64                          `json:"expected_plan_revision"`
+	ExpiresAt            time.Time                      `json:"expires_at"`
+	ExpirySource         ExpirySourceV1                 `json:"expiry_source"`
+	PolicyVersion        ShareIssueInputV1PolicyVersion `json:"policy_version"`
+
+	// SecretCommitment base64url raw-unpadded SHA-256(secret)
+	SecretCommitment string         `json:"secret_commitment"`
+	ViewLevel        ShareViewLevel `json:"view_level"`
+}
+
+// ShareIssueInputV1PolicyVersion defines model for ShareIssueInputV1.PolicyVersion.
+type ShareIssueInputV1PolicyVersion string
+
+// ShareIssueResultV1 defines model for ShareIssueResultV1.
+type ShareIssueResultV1 struct {
+	ExpiresAt  time.Time               `json:"expires_at"`
+	Generation int64                   `json:"generation"`
+	Revision   int64                   `json:"revision"`
+	Selector   string                  `json:"selector"`
+	ShareId    string                  `json:"share_id"`
+	State      ShareIssueResultV1State `json:"state"`
+	ViewLevel  ShareViewLevel          `json:"view_level"`
+}
+
+// ShareIssueResultV1State defines model for ShareIssueResultV1.State.
+type ShareIssueResultV1State string
+
+// ShareManagementProjectionV1 defines model for ShareManagementProjectionV1.
+type ShareManagementProjectionV1 struct {
+	OffersNextCursor nullable.Nullable[string] `json:"offers_next_cursor,omitempty"`
+	OnSiteOffers     []OnSiteOfferProjectionV1 `json:"on_site_offers"`
+	ShareViews       []ShareViewProjectionV1   `json:"share_views"`
+}
+
+// ShareRevokeInputV1 defines model for ShareRevokeInputV1.
+type ShareRevokeInputV1 struct {
+	ExpectedShareRevision int64                           `json:"expected_share_revision"`
+	PolicyVersion         ShareRevokeInputV1PolicyVersion `json:"policy_version"`
+}
+
+// ShareRevokeInputV1PolicyVersion defines model for ShareRevokeInputV1.PolicyVersion.
+type ShareRevokeInputV1PolicyVersion string
+
+// ShareRevokeResultV1 defines model for ShareRevokeResultV1.
+type ShareRevokeResultV1 struct {
+	Revision  int64                    `json:"revision"`
+	RevokedAt time.Time                `json:"revoked_at"`
+	ShareId   string                   `json:"share_id"`
+	State     ShareRevokeResultV1State `json:"state"`
+}
+
+// ShareRevokeResultV1State defines model for ShareRevokeResultV1.State.
+type ShareRevokeResultV1State string
+
+// ShareRotateInputV1 defines model for ShareRotateInputV1.
+type ShareRotateInputV1 struct {
+	ExpectedShareRevision int64                           `json:"expected_share_revision"`
+	ExpiresAt             time.Time                       `json:"expires_at"`
+	ExpirySource          ExpirySourceV1                  `json:"expiry_source"`
+	NewSecretCommitment   string                          `json:"new_secret_commitment"`
+	PolicyVersion         ShareRotateInputV1PolicyVersion `json:"policy_version"`
+}
+
+// ShareRotateInputV1PolicyVersion defines model for ShareRotateInputV1.PolicyVersion.
+type ShareRotateInputV1PolicyVersion string
+
+// ShareViewLevel defines model for ShareViewLevel.
+type ShareViewLevel string
+
+// ShareViewProjectionV1 defines model for ShareViewProjectionV1.
+type ShareViewProjectionV1 struct {
+	ExpiryPolicy     ExpiryPolicyProjectionV1                             `json:"expiry_policy"`
+	LatestGeneration nullable.Nullable[LatestShareGenerationProjectionV1] `json:"latest_generation,omitempty"`
+	ViewLevel        ShareViewLevel                                       `json:"view_level"`
+}
 
 // ShootPlanCRM defines model for ShootPlanCRM.
 type ShootPlanCRM struct {
@@ -2063,8 +2938,44 @@ type ApplyShootPlanCommandParams struct {
 	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
 }
 
+// CreateShootPlanAssignmentOfferParams defines parameters for CreateShootPlanAssignmentOffer.
+type CreateShootPlanAssignmentOfferParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CloseShootPlanAssignmentOfferParams defines parameters for CloseShootPlanAssignmentOffer.
+type CloseShootPlanAssignmentOfferParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// GetShootPlanAssignmentsParams defines parameters for GetShootPlanAssignments.
+type GetShootPlanAssignmentsParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// RevokeShootPlanAssignmentParams defines parameters for RevokeShootPlanAssignment.
+type RevokeShootPlanAssignmentParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
 // VoidShootPlanExecutionEventParams defines parameters for VoidShootPlanExecutionEvent.
 type VoidShootPlanExecutionEventParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// GetShootPlanFeedbackParams defines parameters for GetShootPlanFeedback.
+type GetShootPlanFeedbackParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// SetShootPlanFeedbackDispositionParams defines parameters for SetShootPlanFeedbackDisposition.
+type SetShootPlanFeedbackDispositionParams struct {
 	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
 	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
 }
@@ -2076,6 +2987,30 @@ type OpenShootPlanRunSessionJSONBody struct {
 
 // OpenShootPlanRunSessionParams defines parameters for OpenShootPlanRunSession.
 type OpenShootPlanRunSessionParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// GetShootPlanSharesParams defines parameters for GetShootPlanShares.
+type GetShootPlanSharesParams struct {
+	OfferCursor *string `form:"offerCursor,omitempty" json:"offerCursor,omitempty"`
+	OfferLimit  *int    `form:"offerLimit,omitempty" json:"offerLimit,omitempty"`
+}
+
+// IssueShootPlanShareParams defines parameters for IssueShootPlanShare.
+type IssueShootPlanShareParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RevokeShootPlanShareParams defines parameters for RevokeShootPlanShare.
+type RevokeShootPlanShareParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RotateShootPlanShareParams defines parameters for RotateShootPlanShare.
+type RotateShootPlanShareParams struct {
 	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
 	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
 }
@@ -2098,11 +3033,32 @@ type CreateShootPlanJSONRequestBody = CreateShootPlanInput
 // ApplyShootPlanCommandJSONRequestBody defines body for ApplyShootPlanCommand for application/json ContentType.
 type ApplyShootPlanCommandJSONRequestBody = ShootPlanMutationRequest
 
+// CreateShootPlanAssignmentOfferJSONRequestBody defines body for CreateShootPlanAssignmentOffer for application/json ContentType.
+type CreateShootPlanAssignmentOfferJSONRequestBody = AssignmentOfferCreateInputV1
+
+// CloseShootPlanAssignmentOfferJSONRequestBody defines body for CloseShootPlanAssignmentOffer for application/json ContentType.
+type CloseShootPlanAssignmentOfferJSONRequestBody = AssignmentOfferCloseInputV1
+
+// RevokeShootPlanAssignmentJSONRequestBody defines body for RevokeShootPlanAssignment for application/json ContentType.
+type RevokeShootPlanAssignmentJSONRequestBody = AssignmentPhotographerRevokeInputV1
+
 // VoidShootPlanExecutionEventJSONRequestBody defines body for VoidShootPlanExecutionEvent for application/json ContentType.
 type VoidShootPlanExecutionEventJSONRequestBody = VoidExecutionEventInput
 
+// SetShootPlanFeedbackDispositionJSONRequestBody defines body for SetShootPlanFeedbackDisposition for application/json ContentType.
+type SetShootPlanFeedbackDispositionJSONRequestBody = FeedbackDispositionInputV1
+
 // OpenShootPlanRunSessionJSONRequestBody defines body for OpenShootPlanRunSession for application/json ContentType.
 type OpenShootPlanRunSessionJSONRequestBody OpenShootPlanRunSessionJSONBody
+
+// IssueShootPlanShareJSONRequestBody defines body for IssueShootPlanShare for application/json ContentType.
+type IssueShootPlanShareJSONRequestBody = ShareIssueInputV1
+
+// RevokeShootPlanShareJSONRequestBody defines body for RevokeShootPlanShare for application/json ContentType.
+type RevokeShootPlanShareJSONRequestBody = ShareRevokeInputV1
+
+// RotateShootPlanShareJSONRequestBody defines body for RotateShootPlanShare for application/json ContentType.
+type RotateShootPlanShareJSONRequestBody = ShareRotateInputV1
 
 // AppendShootPlanShotResultJSONRequestBody defines body for AppendShootPlanShotResult for application/json ContentType.
 type AppendShootPlanShotResultJSONRequestBody = AppendShotResultInput
@@ -2281,12 +3237,224 @@ func (t *ErrorDetails) MergeArchiveAcknowledgementRequiredDetails(v ArchiveAckno
 	return err
 }
 
+// AsExpiryQuoteExpiredDetails returns the union data inside the ErrorDetails as a ExpiryQuoteExpiredDetails
+func (t ErrorDetails) AsExpiryQuoteExpiredDetails() (ExpiryQuoteExpiredDetails, error) {
+	var body ExpiryQuoteExpiredDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromExpiryQuoteExpiredDetails overwrites any union data inside the ErrorDetails as the provided ExpiryQuoteExpiredDetails
+func (t *ErrorDetails) FromExpiryQuoteExpiredDetails(v ExpiryQuoteExpiredDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeExpiryQuoteExpiredDetails performs a merge with any union data inside the ErrorDetails, using the provided ExpiryQuoteExpiredDetails
+func (t *ErrorDetails) MergeExpiryQuoteExpiredDetails(v ExpiryQuoteExpiredDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
 }
 
 func (t *ErrorDetails) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsExpirySourceExplicitV1 returns the union data inside the ExpirySourceV1 as a ExpirySourceExplicitV1
+func (t ExpirySourceV1) AsExpirySourceExplicitV1() (ExpirySourceExplicitV1, error) {
+	var body ExpirySourceExplicitV1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromExpirySourceExplicitV1 overwrites any union data inside the ExpirySourceV1 as the provided ExpirySourceExplicitV1
+func (t *ExpirySourceV1) FromExpirySourceExplicitV1(v ExpirySourceExplicitV1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeExpirySourceExplicitV1 performs a merge with any union data inside the ExpirySourceV1, using the provided ExpirySourceExplicitV1
+func (t *ExpirySourceV1) MergeExpirySourceExplicitV1(v ExpirySourceExplicitV1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsExpirySourceQuotedDefaultV1 returns the union data inside the ExpirySourceV1 as a ExpirySourceQuotedDefaultV1
+func (t ExpirySourceV1) AsExpirySourceQuotedDefaultV1() (ExpirySourceQuotedDefaultV1, error) {
+	var body ExpirySourceQuotedDefaultV1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromExpirySourceQuotedDefaultV1 overwrites any union data inside the ExpirySourceV1 as the provided ExpirySourceQuotedDefaultV1
+func (t *ExpirySourceV1) FromExpirySourceQuotedDefaultV1(v ExpirySourceQuotedDefaultV1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeExpirySourceQuotedDefaultV1 performs a merge with any union data inside the ExpirySourceV1, using the provided ExpirySourceQuotedDefaultV1
+func (t *ExpirySourceV1) MergeExpirySourceQuotedDefaultV1(v ExpirySourceQuotedDefaultV1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ExpirySourceV1) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ExpirySourceV1) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsFeedbackDeepLinkTargetV10 returns the union data inside the FeedbackDeepLinkTargetV1 as a FeedbackDeepLinkTargetV10
+func (t FeedbackDeepLinkTargetV1) AsFeedbackDeepLinkTargetV10() (FeedbackDeepLinkTargetV10, error) {
+	var body FeedbackDeepLinkTargetV10
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromFeedbackDeepLinkTargetV10 overwrites any union data inside the FeedbackDeepLinkTargetV1 as the provided FeedbackDeepLinkTargetV10
+func (t *FeedbackDeepLinkTargetV1) FromFeedbackDeepLinkTargetV10(v FeedbackDeepLinkTargetV10) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeFeedbackDeepLinkTargetV10 performs a merge with any union data inside the FeedbackDeepLinkTargetV1, using the provided FeedbackDeepLinkTargetV10
+func (t *FeedbackDeepLinkTargetV1) MergeFeedbackDeepLinkTargetV10(v FeedbackDeepLinkTargetV10) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsFeedbackDeepLinkTargetV11 returns the union data inside the FeedbackDeepLinkTargetV1 as a FeedbackDeepLinkTargetV11
+func (t FeedbackDeepLinkTargetV1) AsFeedbackDeepLinkTargetV11() (FeedbackDeepLinkTargetV11, error) {
+	var body FeedbackDeepLinkTargetV11
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromFeedbackDeepLinkTargetV11 overwrites any union data inside the FeedbackDeepLinkTargetV1 as the provided FeedbackDeepLinkTargetV11
+func (t *FeedbackDeepLinkTargetV1) FromFeedbackDeepLinkTargetV11(v FeedbackDeepLinkTargetV11) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeFeedbackDeepLinkTargetV11 performs a merge with any union data inside the FeedbackDeepLinkTargetV1, using the provided FeedbackDeepLinkTargetV11
+func (t *FeedbackDeepLinkTargetV1) MergeFeedbackDeepLinkTargetV11(v FeedbackDeepLinkTargetV11) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t FeedbackDeepLinkTargetV1) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *FeedbackDeepLinkTargetV1) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsFeedbackTargetV10 returns the union data inside the FeedbackTargetV1 as a FeedbackTargetV10
+func (t FeedbackTargetV1) AsFeedbackTargetV10() (FeedbackTargetV10, error) {
+	var body FeedbackTargetV10
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromFeedbackTargetV10 overwrites any union data inside the FeedbackTargetV1 as the provided FeedbackTargetV10
+func (t *FeedbackTargetV1) FromFeedbackTargetV10(v FeedbackTargetV10) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeFeedbackTargetV10 performs a merge with any union data inside the FeedbackTargetV1, using the provided FeedbackTargetV10
+func (t *FeedbackTargetV1) MergeFeedbackTargetV10(v FeedbackTargetV10) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsFeedbackTargetV11 returns the union data inside the FeedbackTargetV1 as a FeedbackTargetV11
+func (t FeedbackTargetV1) AsFeedbackTargetV11() (FeedbackTargetV11, error) {
+	var body FeedbackTargetV11
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromFeedbackTargetV11 overwrites any union data inside the FeedbackTargetV1 as the provided FeedbackTargetV11
+func (t *FeedbackTargetV1) FromFeedbackTargetV11(v FeedbackTargetV11) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeFeedbackTargetV11 performs a merge with any union data inside the FeedbackTargetV1, using the provided FeedbackTargetV11
+func (t *FeedbackTargetV1) MergeFeedbackTargetV11(v FeedbackTargetV11) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t FeedbackTargetV1) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *FeedbackTargetV1) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -3112,12 +4280,42 @@ type ServerInterface interface {
 	// 应用一个 typed 聚合命令
 	// (PATCH /shoot-plans/{id})
 	ApplyShootPlanCommand(c *gin.Context, id Id, params ApplyShootPlanCommandParams)
+	// 创建 on-site support offer
+	// (POST /shoot-plans/{id}/assignment-offers)
+	CreateShootPlanAssignmentOffer(c *gin.Context, id Id, params CreateShootPlanAssignmentOfferParams)
+	// 关闭 on-site support offer（有 active assignment 时 409）
+	// (DELETE /shoot-plans/{id}/assignment-offers/{offerId})
+	CloseShootPlanAssignmentOffer(c *gin.Context, id Id, offerId string, params CloseShootPlanAssignmentOfferParams)
+	// 分页读取策划认领管理列表（active + revoked 历史）
+	// (GET /shoot-plans/{id}/assignments)
+	GetShootPlanAssignments(c *gin.Context, id Id, params GetShootPlanAssignmentsParams)
+	// 摄影师撤销认领
+	// (DELETE /shoot-plans/{id}/assignments/{assignmentId})
+	RevokeShootPlanAssignment(c *gin.Context, id Id, assignmentId string, params RevokeShootPlanAssignmentParams)
 	// 追加一个指向结果事实的作废事实
 	// (POST /shoot-plans/{id}/execution-events/{eventId}/void)
 	VoidShootPlanExecutionEvent(c *gin.Context, id Id, eventId string, params VoidShootPlanExecutionEventParams)
+	// 分页读取策划反馈管理列表（全部 disposition 历史）
+	// (GET /shoot-plans/{id}/feedback)
+	GetShootPlanFeedback(c *gin.Context, id Id, params GetShootPlanFeedbackParams)
+	// 采纳或忽略反馈（不自动改 core）
+	// (POST /shoot-plans/{id}/feedback/{feedbackId}/disposition)
+	SetShootPlanFeedbackDisposition(c *gin.Context, id Id, feedbackId string, params SetShootPlanFeedbackDispositionParams)
 	// 打开 execution-only Run Mode 会话
 	// (POST /shoot-plans/{id}/run-sessions)
 	OpenShootPlanRunSession(c *gin.Context, id Id, params OpenShootPlanRunSessionParams)
+	// 读取策划分享管理投影（proposal/full 各一项 + on-site offers 分页）
+	// (GET /shoot-plans/{id}/shares)
+	GetShootPlanShares(c *gin.Context, id Id, params GetShootPlanSharesParams)
+	// 签发一代分享 token（caller 提交 secret_commitment）
+	// (POST /shoot-plans/{id}/shares)
+	IssueShootPlanShare(c *gin.Context, id Id, params IssueShootPlanShareParams)
+	// 撤销目标一代分享 token
+	// (DELETE /shoot-plans/{id}/shares/{shareId})
+	RevokeShootPlanShare(c *gin.Context, id Id, shareId string, params RevokeShootPlanShareParams)
+	// 轮换一代分享 token
+	// (POST /shoot-plans/{id}/shares/{shareId}/rotate)
+	RotateShootPlanShare(c *gin.Context, id Id, shareId string, params RotateShootPlanShareParams)
 	// 追加 captured、skipped 或 cleared 结果事实
 	// (POST /shoot-plans/{id}/shots/{shotId}/capture)
 	AppendShootPlanShotResult(c *gin.Context, id Id, shotId string, params AppendShootPlanShotResultParams)
@@ -3341,6 +4539,232 @@ func (siw *ServerInterfaceWrapper) ApplyShootPlanCommand(c *gin.Context) {
 	siw.Handler.ApplyShootPlanCommand(c, id, params)
 }
 
+// CreateShootPlanAssignmentOffer operation middleware
+func (siw *ServerInterfaceWrapper) CreateShootPlanAssignmentOffer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateShootPlanAssignmentOfferParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateShootPlanAssignmentOffer(c, id, params)
+}
+
+// CloseShootPlanAssignmentOffer operation middleware
+func (siw *ServerInterfaceWrapper) CloseShootPlanAssignmentOffer(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "offerId" -------------
+	var offerId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "offerId", c.Param("offerId"), &offerId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CloseShootPlanAssignmentOfferParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CloseShootPlanAssignmentOffer(c, id, offerId, params)
+}
+
+// GetShootPlanAssignments operation middleware
+func (siw *ServerInterfaceWrapper) GetShootPlanAssignments(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetShootPlanAssignmentsParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetShootPlanAssignments(c, id, params)
+}
+
+// RevokeShootPlanAssignment operation middleware
+func (siw *ServerInterfaceWrapper) RevokeShootPlanAssignment(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "assignmentId" -------------
+	var assignmentId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "assignmentId", c.Param("assignmentId"), &assignmentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter assignmentId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeShootPlanAssignmentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RevokeShootPlanAssignment(c, id, assignmentId, params)
+}
+
 // VoidShootPlanExecutionEvent operation middleware
 func (siw *ServerInterfaceWrapper) VoidShootPlanExecutionEvent(c *gin.Context) {
 
@@ -3404,6 +4828,115 @@ func (siw *ServerInterfaceWrapper) VoidShootPlanExecutionEvent(c *gin.Context) {
 	siw.Handler.VoidShootPlanExecutionEvent(c, id, eventId, params)
 }
 
+// GetShootPlanFeedback operation middleware
+func (siw *ServerInterfaceWrapper) GetShootPlanFeedback(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetShootPlanFeedbackParams
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetShootPlanFeedback(c, id, params)
+}
+
+// SetShootPlanFeedbackDisposition operation middleware
+func (siw *ServerInterfaceWrapper) SetShootPlanFeedbackDisposition(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "feedbackId" -------------
+	var feedbackId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "feedbackId", c.Param("feedbackId"), &feedbackId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter feedbackId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetShootPlanFeedbackDispositionParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SetShootPlanFeedbackDisposition(c, id, feedbackId, params)
+}
+
 // OpenShootPlanRunSession operation middleware
 func (siw *ServerInterfaceWrapper) OpenShootPlanRunSession(c *gin.Context) {
 
@@ -3456,6 +4989,232 @@ func (siw *ServerInterfaceWrapper) OpenShootPlanRunSession(c *gin.Context) {
 	}
 
 	siw.Handler.OpenShootPlanRunSession(c, id, params)
+}
+
+// GetShootPlanShares operation middleware
+func (siw *ServerInterfaceWrapper) GetShootPlanShares(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetShootPlanSharesParams
+
+	// ------------- Optional query parameter "offerCursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offerCursor", c.Request.URL.Query(), &params.OfferCursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerCursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "offerLimit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offerLimit", c.Request.URL.Query(), &params.OfferLimit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter offerLimit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetShootPlanShares(c, id, params)
+}
+
+// IssueShootPlanShare operation middleware
+func (siw *ServerInterfaceWrapper) IssueShootPlanShare(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params IssueShootPlanShareParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.IssueShootPlanShare(c, id, params)
+}
+
+// RevokeShootPlanShare operation middleware
+func (siw *ServerInterfaceWrapper) RevokeShootPlanShare(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "shareId" -------------
+	var shareId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "shareId", c.Param("shareId"), &shareId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter shareId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeShootPlanShareParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RevokeShootPlanShare(c, id, shareId, params)
+}
+
+// RotateShootPlanShare operation middleware
+func (siw *ServerInterfaceWrapper) RotateShootPlanShare(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "shareId" -------------
+	var shareId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "shareId", c.Param("shareId"), &shareId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter shareId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RotateShootPlanShareParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RotateShootPlanShare(c, id, shareId, params)
 }
 
 // AppendShootPlanShotResult operation middleware
@@ -3606,8 +5365,18 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/shoot-plans", wrapper.CreateShootPlan)
 	router.GET(options.BaseURL+"/shoot-plans/:id", wrapper.GetShootPlan)
 	router.PATCH(options.BaseURL+"/shoot-plans/:id", wrapper.ApplyShootPlanCommand)
+	router.POST(options.BaseURL+"/shoot-plans/:id/assignment-offers", wrapper.CreateShootPlanAssignmentOffer)
+	router.DELETE(options.BaseURL+"/shoot-plans/:id/assignment-offers/:offerId", wrapper.CloseShootPlanAssignmentOffer)
+	router.GET(options.BaseURL+"/shoot-plans/:id/assignments", wrapper.GetShootPlanAssignments)
+	router.DELETE(options.BaseURL+"/shoot-plans/:id/assignments/:assignmentId", wrapper.RevokeShootPlanAssignment)
 	router.POST(options.BaseURL+"/shoot-plans/:id/execution-events/:eventId/void", wrapper.VoidShootPlanExecutionEvent)
+	router.GET(options.BaseURL+"/shoot-plans/:id/feedback", wrapper.GetShootPlanFeedback)
+	router.POST(options.BaseURL+"/shoot-plans/:id/feedback/:feedbackId/disposition", wrapper.SetShootPlanFeedbackDisposition)
 	router.POST(options.BaseURL+"/shoot-plans/:id/run-sessions", wrapper.OpenShootPlanRunSession)
+	router.GET(options.BaseURL+"/shoot-plans/:id/shares", wrapper.GetShootPlanShares)
+	router.POST(options.BaseURL+"/shoot-plans/:id/shares", wrapper.IssueShootPlanShare)
+	router.DELETE(options.BaseURL+"/shoot-plans/:id/shares/:shareId", wrapper.RevokeShootPlanShare)
+	router.POST(options.BaseURL+"/shoot-plans/:id/shares/:shareId/rotate", wrapper.RotateShootPlanShare)
 	router.POST(options.BaseURL+"/shoot-plans/:id/shots/:shotId/capture", wrapper.AppendShootPlanShotResult)
 	router.POST(options.BaseURL+"/shoot-plans/:id/transitions", wrapper.TransitionShootPlan)
 }

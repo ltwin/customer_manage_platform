@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import StateNotice from '../components/StateNotice'
 import {
   beginPageRead,
@@ -27,17 +27,48 @@ import ShotsPanel from './panels/ShotsPanel'
 import ReadinessPanel from './panels/ReadinessPanel'
 import ExecutionHistoryPanel from './panels/ExecutionHistoryPanel'
 import PlanningMediaPanel from './panels/PlanningMediaPanel'
+import ShareCollaborationPanel from './share/ShareCollaborationPanel'
 import './planning.css'
+import './share/share.css'
 
 export type CommandRunner = (command: ShootPlanMutationRequest, scope: string) => Promise<void>
 export type TransitionRunner = (transition: PlanTransition, scope: string) => Promise<void>
 
-type WorkspaceTab = 'brief' | 'shots' | 'readiness' | 'assets' | 'history'
+type WorkspaceTab = 'brief' | 'shots' | 'readiness' | 'assets' | 'share' | 'history'
+
+function parseWorkspaceTab(value: string | null): WorkspaceTab | null {
+  if (value === 'brief' || value === 'shots' || value === 'readiness' || value === 'assets' || value === 'share' || value === 'history') {
+    return value
+  }
+  return null
+}
+
+function parseShareFocus(value: string | null):
+  | { kind: 'feedback' }
+  | { kind: 'shot'; shotID: string }
+  | { kind: 'offer'; offerID: string }
+  | { kind: 'readiness'; readinessItemID: string }
+  | null {
+  if (!value) return null
+  if (value === 'feedback') return { kind: 'feedback' }
+  if (value.startsWith('shot:')) return { kind: 'shot', shotID: value.slice(5) }
+  if (value.startsWith('offer:')) return { kind: 'offer', offerID: value.slice(6) }
+  if (value.startsWith('readiness:')) return { kind: 'readiness', readinessItemID: value.slice(10) }
+  return null
+}
 
 export default function ShootPlanWorkspacePage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
-  const [tab, setTab] = useState<WorkspaceTab>('brief')
+  const [searchParams] = useSearchParams()
+  const initialTab = parseWorkspaceTab(searchParams.get('tab')) ?? 'brief'
+  const [tab, setTab] = useState<WorkspaceTab>(initialTab)
+  const shareFocus = parseShareFocus(searchParams.get('focus'))
+
+  useEffect(() => {
+    const next = parseWorkspaceTab(searchParams.get('tab'))
+    if (next) setTab(next)
+  }, [searchParams])
   const [state, setState] = useState<PageReadState<ShootPlanDetail>>({ kind: 'loading', message: '正在加载策划工作台' })
   const [reloadTick, setReloadTick] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -156,6 +187,7 @@ export default function ShootPlanWorkspacePage() {
               <TabButton active={tab === 'shots'} onClick={() => setTab('shots')}>镜头表 {plan.shots.length}</TabButton>
               <TabButton active={tab === 'readiness'} onClick={() => setTab('readiness')}>准备项 {plan.readiness_items.length}</TabButton>
               <TabButton active={tab === 'assets'} onClick={() => setTab('assets')}>参考素材</TabButton>
+              <TabButton active={tab === 'share'} onClick={() => setTab('share')}>分享协作</TabButton>
               <TabButton active={tab === 'history'} onClick={() => setTab('history')}>执行历史</TabButton>
             </div>
             <div className="tab-panel active">
@@ -163,6 +195,14 @@ export default function ShootPlanWorkspacePage() {
               {tab === 'shots' && <ShotsPanel plan={plan} busy={busy} runCommand={runCommand} />}
               {tab === 'readiness' && <ReadinessPanel plan={plan} busy={busy} runCommand={runCommand} />}
               {tab === 'assets' && <PlanningMediaPanel planID={plan.id} planRevision={plan.revision} readOnly={plan.status === 'archived'} />}
+              {tab === 'share' && (
+                <ShareCollaborationPanel
+                  planID={plan.id}
+                  planRevision={plan.revision}
+                  readOnly={plan.status === 'archived'}
+                  focus={shareFocus}
+                />
+              )}
               {tab === 'history' && <ExecutionHistoryPanel plan={plan} busy={busy} onReload={() => load(true).then(() => undefined)} />}
             </div>
           </>

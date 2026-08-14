@@ -23,3 +23,4 @@ output-options:
     - export
     - account-profile
     - planning-media
+    - plan-share-anonymous

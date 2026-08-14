@@ -24,6 +24,11 @@ type ReadTxAccountScope struct {
 // It never accepts or derives an account identifier from request input.
 func (sc TxAccountScope) AccountID() string { return sc.scope.accountID }
 
+// BoundAccountScope returns the account-bound scope that owns this transaction.
+// Trusted domain adapters may capture it for post-commit cleanup (for example
+// planning-media read-pin release). HTTP handlers must never call this.
+func (sc TxAccountScope) BoundAccountScope() AccountScope { return sc.scope }
+
 // WithinTx 保留既有领域代码的事务入口；新建的跨资源创建编排使用 WithTxScope。
 func (sc AccountScope) WithinTx(ctx context.Context, fn func(AccountScope) error) error {
 	return sc.withinTx(ctx, fn)

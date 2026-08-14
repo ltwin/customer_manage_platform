@@ -17,6 +17,7 @@ import (
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
+	"github.com/samson/customer-manage-platform/backend/internal/planshare"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -63,6 +64,8 @@ type RouterDeps struct {
 	TrustedProxyCIDRs         []netip.Prefix
 	Now                       func() time.Time
 	ShootPlanning             *shootplanning.Application
+	PlanShare                 *planshare.Application
+	AnonymousShare            AnonymousShareDeps
 	PlanningMedia             *planningmedia.Application
 	PlanningIngestion         *ingestion.Application
 }
@@ -113,6 +116,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		registrationEnabled: deps.PublicRegistrationEnabled,
 		trustedProxyCIDRs:   append([]netip.Prefix(nil), deps.TrustedProxyCIDRs...),
 		now:                 now,
+		anonymousShare:      deps.AnonymousShare,
 	}
 	if deps.PlanningMedia != nil {
 		h.planningMedia = &planningMediaHandlers{app: deps.PlanningMedia, scopeFactory: deps.ScopeFactory}
@@ -127,6 +131,31 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	api.POST("/auth/logout", h.Logout)
 	api.POST("/auth/password/forgot", h.ForgotPassword)
 	api.POST("/auth/password/reset", h.ResetPassword)
+	// Anonymous plan-share projection: same unauthenticated group as login.
+	api.GET("/shared/plans/:token", func(c *gin.Context) {
+		h.GetSharedPlan(c, c.Param("token"))
+	})
+	api.GET("/shared/plans/:token/assets/:ref/content", func(c *gin.Context) {
+		h.GetSharedPlanAssetContent(c, c.Param("token"), c.Param("ref"), GetSharedPlanAssetContentParams{
+			V: c.Query("v"),
+		})
+	})
+	api.POST("/shared/plans/:token/feedback", func(c *gin.Context) {
+		key := c.GetHeader("Idempotency-Key")
+		h.CreateSharedPlanFeedback(c, c.Param("token"), CreateSharedPlanFeedbackParams{IdempotencyKey: key})
+	})
+	api.POST("/shared/plans/:token/shots/:shotRef/feedback", func(c *gin.Context) {
+		key := c.GetHeader("Idempotency-Key")
+		h.CreateSharedShotFeedback(c, c.Param("token"), c.Param("shotRef"), CreateSharedShotFeedbackParams{IdempotencyKey: key})
+	})
+	api.POST("/shared/plans/:token/assignments", func(c *gin.Context) {
+		key := c.GetHeader("Idempotency-Key")
+		h.ClaimSharedAssignment(c, c.Param("token"), ClaimSharedAssignmentParams{IdempotencyKey: key})
+	})
+	api.DELETE("/shared/plans/:token/assignments/:assignmentRef", func(c *gin.Context) {
+		key := c.GetHeader("Idempotency-Key")
+		h.SelfRevokeSharedAssignment(c, c.Param("token"), c.Param("assignmentRef"), SelfRevokeSharedAssignmentParams{IdempotencyKey: key})
+	})
 	protected := api.Group("", authMiddleware(deps.Auth))
 	protected.GET("/me", h.GetMe)
 	protected.POST("/auth/password/change", h.ChangePassword)
@@ -177,7 +206,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.DELETE("/account/profile/avatar", h.deleteAccountProfileAvatarRoute)
 	protected.GET("/account/profile/avatar/content", h.getAccountProfileAvatarContentRoute)
 	if deps.ShootPlanning != nil {
-		registerShootPlanningHandlers(protected, deps.ShootPlanning, deps.ScopeFactory)
+		registerShootPlanningHandlers(protected, deps.ShootPlanning, deps.PlanShare, deps.ScopeFactory)
 	}
 	if deps.PlanningMedia != nil {
 		registerPlanningMediaHandlers(protected, deps.PlanningMedia, deps.ScopeFactory)
@@ -212,14 +241,23 @@ func isAPIPath(path string) bool {
 	return cleaned == "/api" || strings.HasPrefix(cleaned, "/api/")
 }
 
+// HTML CSP for the anonymous share SPA shell (not the anonymous JSON API CSP).
+const sharedPlanHTMLCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
 // staticHandler 托管 go:embed 静态产物：命中文件直接服务，其余路径 SPA fallback 到 index.html；
 // 产物未同步（仅 .gitkeep 的空 dist）时非 API 路径纯 404。
 func staticHandler(dist fs.FS) gin.HandlerFunc {
 	httpFS := http.FS(dist)
 	return func(c *gin.Context) {
 		path := strings.TrimPrefix(c.Request.URL.Path, "/")
-		if actionPath := strings.Trim(path, "/"); actionPath == "verify-email" || actionPath == "reset-password" {
+		actionPath := strings.Trim(path, "/")
+		if actionPath == "verify-email" || actionPath == "reset-password" {
 			c.Header("Referrer-Policy", "no-referrer")
+		}
+		if strings.HasPrefix(actionPath, "shared/plans/") {
+			c.Header("Referrer-Policy", "no-referrer")
+			c.Header("Cache-Control", "private, no-store")
+			c.Header("Content-Security-Policy", sharedPlanHTMLCSP)
 		}
 		if path != "" && path != "index.html" {
 			if info, err := fs.Stat(dist, path); err == nil && !info.IsDir() {

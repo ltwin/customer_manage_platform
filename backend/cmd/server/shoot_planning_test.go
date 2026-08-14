@@ -52,21 +52,24 @@ func TestComposeShootPlanningApplicationFailsClosed(t *testing.T) {
 		t.Fatalf("core composition should succeed: app=%v err=%v", application, err)
 	}
 
-	for _, capability := range []planningcapability.ArchiveCapability{
-		planningcapability.ArchiveCapabilityPlanningShare,
-		planningcapability.ArchiveCapabilityReminder,
-	} {
-		t.Run(string(capability), func(t *testing.T) {
-			reader := fakeArchiveCapabilityStartupReader{state: planningcapability.ArchiveCapabilityState{
-				SingletonKey: planningcapability.SingletonKey,
-				Capability:   capability,
-				Revision:     2,
-			}}
-			if _, err := composeShootPlanningApplication(t.Context(), reader, idempotency.NewExecutor()); err == nil ||
-				!strings.Contains(err.Error(), "unavailable server wiring") {
-				t.Fatalf("higher capability must fail closed, got %v", err)
-			}
-		})
+	share := fakeArchiveCapabilityStartupReader{state: planningcapability.ArchiveCapabilityState{
+		SingletonKey: planningcapability.SingletonKey,
+		Capability:   planningcapability.ArchiveCapabilityPlanningShare,
+		Revision:     2,
+	}}
+	shareApp, err := composeShootPlanningApplication(t.Context(), share, idempotency.NewExecutor())
+	if err != nil || shareApp == nil {
+		t.Fatalf("planning-share-v1 composition should succeed with real guard: app=%v err=%v", shareApp, err)
+	}
+
+	reminder := fakeArchiveCapabilityStartupReader{state: planningcapability.ArchiveCapabilityState{
+		SingletonKey: planningcapability.SingletonKey,
+		Capability:   planningcapability.ArchiveCapabilityReminder,
+		Revision:     3,
+	}}
+	if _, err := composeShootPlanningApplication(t.Context(), reminder, idempotency.NewExecutor()); err == nil ||
+		!strings.Contains(err.Error(), "unavailable server wiring") {
+		t.Fatalf("reminder capability must fail closed until ITEM-6, got %v", err)
 	}
 
 	readFailure := errors.New("marker unavailable")

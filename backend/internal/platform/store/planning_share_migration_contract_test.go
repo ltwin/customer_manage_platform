@@ -11,28 +11,6 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-const installShareAssignmentFixture = `
-CREATE TABLE share_assignment_source_event_v1 (
-    account_id TEXT NOT NULL REFERENCES accounts(id),
-    generation BIGINT NOT NULL,
-    plan_id TEXT NOT NULL,
-    event_id TEXT NOT NULL,
-    mutation_kind TEXT NOT NULL CHECK (mutation_kind IN ('assignment_activated','assignment_revoked')),
-    PRIMARY KEY (account_id, event_id),
-    UNIQUE (account_id, generation, plan_id, event_id, mutation_kind),
-    CONSTRAINT fk_planshare_assignment_event_to_planning_reminder_work
-      FOREIGN KEY (account_id, generation, plan_id, event_id, mutation_kind)
-      REFERENCES planning_reminder_generation_work
-        (account_id, generation, plan_id, source_event_id, mutation_kind)
-      DEFERRABLE INITIALLY DEFERRED
-);
-ALTER TABLE planning_reminder_generation_work
-  ADD CONSTRAINT fk_planning_reminder_assignment_work_to_planshare_event
-  FOREIGN KEY (account_id, generation, plan_id, source_event_id, mutation_kind)
-  REFERENCES share_assignment_source_event_v1
-    (account_id, generation, plan_id, event_id, mutation_kind)
-  DEFERRABLE INITIALLY DEFERRED;`
-
 func TestPlanningShareReciprocalFKAndPopulatedDownWriterExclusion(t *testing.T) {
 	ctx := context.Background()
 	url := startPostgres(t)
@@ -50,9 +28,7 @@ func TestPlanningShareReciprocalFKAndPopulatedDownWriterExclusion(t *testing.T) 
 	if _, err := db.ExecContext(ctx, `INSERT INTO shoot_plans(id,account_id,title,subject) VALUES('share-fk-plan','share-fk-acct','计划','主体')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, installShareAssignmentFixture); err != nil {
-		t.Fatalf("install reciprocal constraints: %v", err)
-	}
+	seedShareAssignmentPair(t, db, ctx, "share-fk-acct", "share-fk-plan", "asgn-1", "event-1", 1)
 
 	pairTx, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -61,7 +37,16 @@ func TestPlanningShareReciprocalFKAndPopulatedDownWriterExclusion(t *testing.T) 
 	if _, err := pairTx.ExecContext(ctx, `INSERT INTO planning_reminder_generation_work(account_id,generation,plan_id,mutation_kind,source_event_id) VALUES('share-fk-acct',1,'share-fk-plan','assignment_activated','event-1')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pairTx.ExecContext(ctx, `INSERT INTO share_assignment_source_event_v1(account_id,generation,plan_id,event_id,mutation_kind) VALUES('share-fk-acct',1,'share-fk-plan','event-1','assignment_activated')`); err != nil {
+	if _, err := pairTx.ExecContext(ctx, `
+INSERT INTO share_assignment_source_event_v1(
+  event_id, account_id, plan_id, assignment_id, assignment_revision,
+  account_source_generation, event_kind, assignment_kind, readiness_item_id,
+  preparation_lead_days_snapshot, lead_rule_version, content_fingerprint
+) VALUES (
+  'event-1','share-fk-acct','share-fk-plan','asgn-1',1,
+  1,'assignment_activated','readiness','ready-1',
+  3,'platform-default-v1','fp1'
+)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := pairTx.Commit(); err != nil {
@@ -100,7 +85,12 @@ func TestPlanningShareReciprocalFKAndPopulatedDownWriterExclusion(t *testing.T) 
 	}
 
 	// Return to the only supported down precondition: an unpublished empty pair.
-	if _, err := db.ExecContext(ctx, `DELETE FROM share_assignment_source_event_v1; DELETE FROM planning_reminder_generation_work WHERE mutation_kind IN ('assignment_activated','assignment_revoked')`); err != nil {
+	if _, err := db.ExecContext(ctx, `
+DELETE FROM share_assignment_source_event_v1;
+DELETE FROM planning_reminder_generation_work WHERE mutation_kind IN ('assignment_activated','assignment_revoked');
+DELETE FROM share_assignments;
+DELETE FROM share_generations;
+`); err != nil {
 		t.Fatal(err)
 	}
 	downTx, err = db.BeginTx(ctx, nil)
@@ -128,7 +118,16 @@ func TestPlanningShareReciprocalFKAndPopulatedDownWriterExclusion(t *testing.T) 
 			writerDone <- err
 			return
 		}
-		if _, err := writerTx.ExecContext(ctx, `INSERT INTO share_assignment_source_event_v1(account_id,generation,plan_id,event_id,mutation_kind) VALUES('share-fk-acct',2,'share-fk-plan','event-2','assignment_activated')`); err != nil {
+		if _, err := writerTx.ExecContext(ctx, `
+INSERT INTO share_assignment_source_event_v1(
+  event_id, account_id, plan_id, assignment_id, assignment_revision,
+  account_source_generation, event_kind, assignment_kind, readiness_item_id,
+  preparation_lead_days_snapshot, lead_rule_version, content_fingerprint
+) VALUES (
+  'event-2','share-fk-acct','share-fk-plan','asgn-1',1,
+  2,'assignment_activated','readiness','ready-1',
+  3,'platform-default-v1','fp1'
+)`); err != nil {
 			writerDone <- err
 			return
 		}
@@ -180,9 +179,7 @@ INSERT INTO shoot_plans(id,account_id,title,subject) VALUES
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ExecContext(ctx, installShareAssignmentFixture); err != nil {
-		t.Fatal(err)
-	}
+	seedShareAssignmentPair(t, db, ctx, "cross-plan-acct", "cross-plan-a", "asgn-cross", "cross-event", 1)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -191,12 +188,81 @@ INSERT INTO shoot_plans(id,account_id,title,subject) VALUES
 	if _, err := tx.ExecContext(ctx, `INSERT INTO planning_reminder_generation_work(account_id,generation,plan_id,mutation_kind,source_event_id) VALUES('cross-plan-acct',1,'cross-plan-a','assignment_activated','cross-event')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO share_assignment_source_event_v1(account_id,generation,plan_id,event_id,mutation_kind) VALUES('cross-plan-acct',1,'cross-plan-b','cross-event','assignment_activated')`); err != nil {
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO share_assignment_source_event_v1(
+  event_id, account_id, plan_id, assignment_id, assignment_revision,
+  account_source_generation, event_kind, assignment_kind, readiness_item_id,
+  preparation_lead_days_snapshot, lead_rule_version, content_fingerprint
+) VALUES (
+  'cross-event','cross-plan-acct','cross-plan-b','asgn-cross',1,
+  1,'assignment_activated','readiness','ready-1',
+  3,'platform-default-v1','fp1'
+)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err == nil {
 		t.Fatal("cross-plan reciprocal identity unexpectedly committed")
 	} else if errors.Is(err, context.Canceled) {
 		t.Fatalf("unexpected cancellation: %v", err)
+	}
+}
+
+func TestPlanningShareEmptyMigrationRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	url := startPostgres(t)
+	if err := store.MigrateUp(url); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	var exists bool
+	if err := db.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_name = 'share_assignment_source_event_v1'
+)`).Scan(&exists); err != nil || !exists {
+		t.Fatalf("0024 event table missing: exists=%v err=%v", exists, err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty down failed: %v", err)
+	}
+	if err := db.QueryRowContext(ctx, `
+SELECT EXISTS (
+  SELECT 1 FROM information_schema.tables
+  WHERE table_name = 'share_assignment_source_event_v1'
+)`).Scan(&exists); err != nil || exists {
+		t.Fatalf("0024 event table still present after empty down: exists=%v err=%v", exists, err)
+	}
+	if err := store.MigrateUp(url); err != nil {
+		t.Fatalf("re-up after empty down failed: %v", err)
+	}
+}
+
+func seedShareAssignmentPair(t *testing.T, db *sql.DB, ctx context.Context, accountID, planID, assignmentID, _ string, _ int64) {
+	t.Helper()
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO share_generations(
+  id, account_id, plan_id, view_level, generation, selector, secret_commitment, fingerprint,
+  state, expires_at, issued_at, revision
+) VALUES (
+  $1, $2, $3, 'proposal', 1, $4, decode('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','hex'),
+  $5, 'active', now() + interval '1 day', now(), 1
+)`, "gen-"+assignmentID, accountID, planID, "sel"+assignmentID, "fp"+assignmentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `
+INSERT INTO share_assignments(
+  id, account_id, plan_id, token_generation_id, assignment_kind, readiness_item_id,
+  content_snapshot, claimed_by_display_name, preparation_lead_days_snapshot, lead_rule_version,
+  status, claim_receipt_commitment, revision
+) VALUES (
+  $1, $2, $3, $4, 'readiness', 'ready-1',
+  '准备内容', '匿名', 3, 'platform-default-v1',
+  'active', decode('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','hex'), 1
+)`, assignmentID, accountID, planID, "gen-"+assignmentID); err != nil {
+		t.Fatal(err)
 	}
 }

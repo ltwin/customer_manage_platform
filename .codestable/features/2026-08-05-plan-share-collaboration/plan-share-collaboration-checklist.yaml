@@ -5,7 +5,7 @@ steps:
   - id: S1
     action: "安全与契约骨架：characterize既有middleware/auth/SPA，建立token/receipt commitment、sealed share capability、exact DTO、typed source ports与scope guards"
     exit_signal: "raw secret canary在DB/ledger/log为0；HTTP无法构造AccountScope且anonymous复用唯一ledger算法；platform-security PG counter跨实例/重启持久且fail-closed；所有匿名mutation计outer attempt，只有current ledger winner同tx写入的exact-frame admission可免业务quota；proposal/full schema/query边界可机械断言；既有非敏感route/auth行为零漂移"
-    status: pending
+    status: done
   - id: S2
     action: "Generation与Bearer编排：落schema/repository、Bearer management projection、issue/rotate/revoke、eligibility epoch、first-only CRM pre-read/全局锁序、expiry与exact幂等表"
     exit_signal: "刷新可恢复proposal/full状态原因/revision、paged offers与每个view独立的server-derived expiry policy/default quote且无secret；默认expiry按past/normal/far-future window clamp，直接显式边界相等合法、越界拒绝，t0 projection→t1 mutation在10m quote TTL内可提交、过期/事实漂移稳定409刷新，UI提交的绝对expires_at/closed source与canonical replay一致；PG replay/cancel/delete/unlink/relink矩阵唯一且无反向死锁；旧full不复活"
@@ -13,7 +13,7 @@ steps:
   - id: S3
     action: "匿名投影：接core/CRM safe source、proposal/full public route、uniform 404与full-open observation"
     exit_signal: "read-write repeatable-read GET中projection/ref upsert/full-open observation同tx；proposal Shot/assignment/business query为0；full allowlist与archive/失资格404通过"
-    status: pending
+    status: done
   - id: S4
     action: "Shared media：接generation-bound moodboard refs与planningmedia permit/read-pin读取"
     exit_signal: "ref按token generation+binding+exact generation+checksum唯一，并发首次GET/release/GC只一ref或404/retry；permit矩阵通过且wire无内部标识"
@@ -21,7 +21,7 @@ steps:
   - id: S5
     action: "Feedback协作：接plan/Shot匿名feedback、Bearer list/disposition与deep link"
     exit_signal: "proposal/full权限、revision/idempotency/rate/文本边界通过；Bearer feedback exact page按created_at+ID稳定cursor返回全部disposition历史、字段allowlist/query bound/敏感排除成立；adopt/ignore不自动改core且目标deep link准确"
-    status: pending
+    status: done
   - id: S6
     action: "Assignment协作：接readiness/on-site offer、lead snapshot、client-generated receipt、匿名/摄影师revoke、account planning-reminder generation fence、versioned source outbox、core remove guard与planning-share-v1 archive"
     exit_signal: "同offer并发只一active；Bearer assignment exact page按claimed_at+ID稳定cursor返回active/revoked历史、revoke revision/deep link与字段allowlist；anonymous从sealed ShareTxScope、Bearer photographer-revoke从TxAccountScope trusted adapter取得canonical FenceTxView，均LockCurrentAccount后进入同一kernel，禁止scope互相伪造；activation新ID/rev1、material revoke rev+1、replay不加号且active/revoked字段CHECK成立；permission/revision/target失败不reserve；closed kind/source_event_id/event generation unique/含plan_id固定名reciprocal deferred FK拒绝duplicate/mismatch/orphan/cross-plan；空库up/down成功，populated down是transactional migration并按core work→share event固定顺序取得SHARE table lock后才空检查/DDL，不依赖migrator advisory lock；writer-first稳定拒绝并全保留，down-first使writer整tx失败/rollback且无core orphan，reset/restore后re-up；work/event同tx一致且双实例单调无gap；claim-vs-remove无死锁；whole-tx rollback；archive/lead/token/receipt/昵称矩阵通过"
@@ -33,7 +33,7 @@ steps:
   - id: S8
     action: "全矩阵验证：运行OpenAPI生成、全仓门禁、PG/media故障、query/DTO/DOM/bundle/log scope guards并落证据"
     exit_signal: "A1-A24全部有可观察证据；make check通过；无placeholder、AI、customer delivery、price/business或secret漂移"
-    status: pending
+    status: done
 
 checks:
   - item: "ShareGeneration的view_level、generation、eligibility_link_epoch_id与commitment不可原位修改；每plan/view最多一个active"

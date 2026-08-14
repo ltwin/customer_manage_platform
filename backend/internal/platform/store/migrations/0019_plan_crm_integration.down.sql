@@ -2,7 +2,8 @@ DROP VIEW IF EXISTS planning_summary_by_slot;
 DROP VIEW IF EXISTS planning_summary_by_order;
 DROP VIEW IF EXISTS planning_summary_by_customer;
 
-CREATE OR REPLACE VIEW shoot_plan_list_projection AS
+DROP VIEW IF EXISTS shoot_plan_list_projection;
+CREATE VIEW shoot_plan_list_projection AS
 SELECT p.account_id,
        p.id,
        p.title,
