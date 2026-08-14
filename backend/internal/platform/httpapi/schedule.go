@@ -323,6 +323,7 @@ func toAPIScheduleListItem(item scheduledomain.ListItem) (ScheduleSlotListItem, 
 			PackageShootType:    packageShootType,
 			StartAt:             item.StartAt,
 			Type:                Shoot,
+			PlanningSummary:     toAPIPlanningSummary(item.PlanningSummary),
 		})
 		return result, err
 	}

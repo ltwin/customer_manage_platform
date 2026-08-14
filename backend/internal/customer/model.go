@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/nullable"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
 const (
@@ -132,8 +133,9 @@ type ListFilter struct {
 
 type ListItem struct {
 	Customer
-	OrdersCount int
-	LastShotAt  *string
+	OrdersCount     int
+	LastShotAt      *string
+	PlanningSummary *crm.Summary
 }
 
 type ListResult struct {
@@ -158,8 +160,9 @@ type CustomerStats struct {
 
 type Detail struct {
 	Customer
-	Identities []SocialIdentity
-	Notes      []CustomerNote
-	Referrer   *CustomerSummary
-	Stats      CustomerStats
+	Identities      []SocialIdentity
+	Notes           []CustomerNote
+	Referrer        *CustomerSummary
+	Stats           CustomerStats
+	PlanningSummary *crm.Summary
 }

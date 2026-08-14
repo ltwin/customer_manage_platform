@@ -19,6 +19,21 @@ const (
 	BearerAuthScopes bearerAuthContextKey = "bearerAuth.Scopes"
 )
 
+// Defines values for AdoptScheduleProjectionCrmCommandOperation.
+const (
+	AdoptScheduleProjection AdoptScheduleProjectionCrmCommandOperation = "adopt_schedule_projection"
+)
+
+// Valid indicates whether the value is a known member of the AdoptScheduleProjectionCrmCommandOperation enum.
+func (e AdoptScheduleProjectionCrmCommandOperation) Valid() bool {
+	switch e {
+	case AdoptScheduleProjection:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ArchivePlanTransitionTransition.
 const (
 	Archive ArchivePlanTransitionTransition = "archive"
@@ -97,6 +112,36 @@ func (e CoreArchiveAcknowledgementVersion) Valid() bool {
 	}
 }
 
+// Defines values for LinkCustomerCrmCommandOperation.
+const (
+	LinkCustomer LinkCustomerCrmCommandOperation = "link_customer"
+)
+
+// Valid indicates whether the value is a known member of the LinkCustomerCrmCommandOperation enum.
+func (e LinkCustomerCrmCommandOperation) Valid() bool {
+	switch e {
+	case LinkCustomer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LinkOrderCrmCommandOperation.
+const (
+	LinkOrder LinkOrderCrmCommandOperation = "link_order"
+)
+
+// Valid indicates whether the value is a known member of the LinkOrderCrmCommandOperation enum.
+func (e LinkOrderCrmCommandOperation) Valid() bool {
+	switch e {
+	case LinkOrder:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LinkReadinessPlanCommandOperation.
 const (
 	LinkReadiness LinkReadinessPlanCommandOperation = "link_readiness"
@@ -154,6 +199,42 @@ func (e PlanExecutionWindowSource) Valid() bool {
 	case Manual:
 		return true
 	case ScheduleSlot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanScheduleProjectionViewStatus.
+const (
+	ActiveApplied          PlanScheduleProjectionViewStatus = "active_applied"
+	ActiveManualOverride   PlanScheduleProjectionViewStatus = "active_manual_override"
+	ActiveUnapplied        PlanScheduleProjectionViewStatus = "active_unapplied"
+	InactiveOrderCancelled PlanScheduleProjectionViewStatus = "inactive_order_cancelled"
+	InactiveOrderDeleted   PlanScheduleProjectionViewStatus = "inactive_order_deleted"
+	InactivePast           PlanScheduleProjectionViewStatus = "inactive_past"
+	InactiveUnlinked       PlanScheduleProjectionViewStatus = "inactive_unlinked"
+	MissingSlot            PlanScheduleProjectionViewStatus = "missing_slot"
+)
+
+// Valid indicates whether the value is a known member of the PlanScheduleProjectionViewStatus enum.
+func (e PlanScheduleProjectionViewStatus) Valid() bool {
+	switch e {
+	case ActiveApplied:
+		return true
+	case ActiveManualOverride:
+		return true
+	case ActiveUnapplied:
+		return true
+	case InactiveOrderCancelled:
+		return true
+	case InactiveOrderDeleted:
+		return true
+	case InactivePast:
+		return true
+	case InactiveUnlinked:
+		return true
+	case MissingSlot:
 		return true
 	default:
 		return false
@@ -445,6 +526,33 @@ const (
 func (e SetPublicScalePlanCommandOperation) Valid() bool {
 	switch e {
 	case SetPublicScale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShootPlanCRMState.
+const (
+	CustomerLinked ShootPlanCRMState = "customer_linked"
+	Independent    ShootPlanCRMState = "independent"
+	OrderCancelled ShootPlanCRMState = "order_cancelled"
+	OrderDeleted   ShootPlanCRMState = "order_deleted"
+	OrderLinked    ShootPlanCRMState = "order_linked"
+)
+
+// Valid indicates whether the value is a known member of the ShootPlanCRMState enum.
+func (e ShootPlanCRMState) Valid() bool {
+	switch e {
+	case CustomerLinked:
+		return true
+	case Independent:
+		return true
+	case OrderCancelled:
+		return true
+	case OrderDeleted:
+		return true
+	case OrderLinked:
 		return true
 	default:
 		return false
@@ -1054,6 +1162,36 @@ func (e StartPlanTransitionTransition) Valid() bool {
 	}
 }
 
+// Defines values for UnlinkCustomerCrmCommandOperation.
+const (
+	UnlinkCustomer UnlinkCustomerCrmCommandOperation = "unlink_customer"
+)
+
+// Valid indicates whether the value is a known member of the UnlinkCustomerCrmCommandOperation enum.
+func (e UnlinkCustomerCrmCommandOperation) Valid() bool {
+	switch e {
+	case UnlinkCustomer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UnlinkOrderCrmCommandOperation.
+const (
+	UnlinkOrder UnlinkOrderCrmCommandOperation = "unlink_order"
+)
+
+// Valid indicates whether the value is a known member of the UnlinkOrderCrmCommandOperation enum.
+func (e UnlinkOrderCrmCommandOperation) Valid() bool {
+	switch e {
+	case UnlinkOrder:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UnlinkReadinessPlanCommandOperation.
 const (
 	UnlinkReadiness UnlinkReadinessPlanCommandOperation = "unlink_readiness"
@@ -1128,6 +1266,16 @@ func (e GetShootPlanParamsInclude) Valid() bool {
 		return false
 	}
 }
+
+// AdoptScheduleProjectionCrmCommand defines model for AdoptScheduleProjectionCrmCommand.
+type AdoptScheduleProjectionCrmCommand struct {
+	ExpectedRevision   int64                                      `json:"expected_revision"`
+	Operation          AdoptScheduleProjectionCrmCommandOperation `json:"operation"`
+	ProjectionRevision int64                                      `json:"projection_revision"`
+}
+
+// AdoptScheduleProjectionCrmCommandOperation defines model for AdoptScheduleProjectionCrmCommand.Operation.
+type AdoptScheduleProjectionCrmCommandOperation string
 
 // AppendShotResultInput defines model for AppendShotResultInput.
 type AppendShotResultInput struct {
@@ -1244,6 +1392,26 @@ type ErrorEnvelope struct {
 	} `json:"error"`
 }
 
+// LinkCustomerCrmCommand defines model for LinkCustomerCrmCommand.
+type LinkCustomerCrmCommand struct {
+	CustomerId       string                          `json:"customer_id"`
+	ExpectedRevision int64                           `json:"expected_revision"`
+	Operation        LinkCustomerCrmCommandOperation `json:"operation"`
+}
+
+// LinkCustomerCrmCommandOperation defines model for LinkCustomerCrmCommand.Operation.
+type LinkCustomerCrmCommandOperation string
+
+// LinkOrderCrmCommand defines model for LinkOrderCrmCommand.
+type LinkOrderCrmCommand struct {
+	ExpectedRevision int64                        `json:"expected_revision"`
+	Operation        LinkOrderCrmCommandOperation `json:"operation"`
+	OrderId          string                       `json:"order_id"`
+}
+
+// LinkOrderCrmCommandOperation defines model for LinkOrderCrmCommand.Operation.
+type LinkOrderCrmCommandOperation string
+
 // LinkReadinessPlanCommand defines model for LinkReadinessPlanCommand.
 type LinkReadinessPlanCommand struct {
 	ExpectedRevision int64                             `json:"expected_revision"`
@@ -1254,6 +1422,16 @@ type LinkReadinessPlanCommand struct {
 
 // LinkReadinessPlanCommandOperation defines model for LinkReadinessPlanCommand.Operation.
 type LinkReadinessPlanCommandOperation string
+
+// LinkedOrderSnapshot defines model for LinkedOrderSnapshot.
+type LinkedOrderSnapshot struct {
+	CustomerId   string    `json:"customer_id"`
+	LinkedAt     time.Time `json:"linked_at"`
+	OrderId      string    `json:"order_id"`
+	PackageName  *string   `json:"package_name,omitempty"`
+	StatusAtLink string    `json:"status_at_link"`
+	Title        *string   `json:"title,omitempty"`
+}
 
 // MarkReadyPlanTransition defines model for MarkReadyPlanTransition.
 type MarkReadyPlanTransition struct {
@@ -1278,11 +1456,6 @@ type PlanAssetAccessRef struct {
 	DisplayChecksum string `json:"display_checksum"`
 	DisplayName     string `json:"display_name"`
 	Generation      int    `json:"generation"`
-}
-
-// PlanCommand defines model for PlanCommand.
-type PlanCommand struct {
-	union json.RawMessage
 }
 
 // PlanCommandBase defines model for PlanCommandBase.
@@ -1330,6 +1503,19 @@ type PlanMutationResult struct {
 	Revision          int64                  `json:"revision"`
 	Status            ShootPlanStatus        `json:"status"`
 }
+
+// PlanScheduleProjectionView defines model for PlanScheduleProjectionView.
+type PlanScheduleProjectionView struct {
+	ApplySuppressed bool                             `json:"apply_suppressed"`
+	EndsAt          *time.Time                       `json:"ends_at,omitempty"`
+	SlotId          *string                          `json:"slot_id,omitempty"`
+	StartsAt        *time.Time                       `json:"starts_at,omitempty"`
+	Status          PlanScheduleProjectionViewStatus `json:"status"`
+	Timezone        *string                          `json:"timezone,omitempty"`
+}
+
+// PlanScheduleProjectionViewStatus defines model for PlanScheduleProjectionView.Status.
+type PlanScheduleProjectionViewStatus string
 
 // PlanTransition defines model for PlanTransition.
 type PlanTransition struct {
@@ -1503,6 +1689,20 @@ type SetPublicScalePlanCommand struct {
 // SetPublicScalePlanCommandOperation defines model for SetPublicScalePlanCommand.Operation.
 type SetPublicScalePlanCommandOperation string
 
+// ShootPlanCRM defines model for ShootPlanCRM.
+type ShootPlanCRM struct {
+	ConnectionRevision  int64                       `json:"connection_revision"`
+	CustomerId          *string                     `json:"customer_id,omitempty"`
+	LinkedOrderSnapshot *LinkedOrderSnapshot        `json:"linked_order_snapshot,omitempty"`
+	OrderId             *string                     `json:"order_id,omitempty"`
+	ProjectionRevision  *int64                      `json:"projection_revision,omitempty"`
+	ScheduleProjection  *PlanScheduleProjectionView `json:"schedule_projection,omitempty"`
+	State               ShootPlanCRMState           `json:"state"`
+}
+
+// ShootPlanCRMState defines model for ShootPlanCRM.State.
+type ShootPlanCRMState string
+
 // ShootPlanCaptureMode defines model for ShootPlanCaptureMode.
 type ShootPlanCaptureMode string
 
@@ -1524,6 +1724,7 @@ type ShootPlanDetail struct {
 	CompletedAt                    nullable.Nullable[time.Time]           `json:"completed_at,omitempty"`
 	CreatedAt                      time.Time                              `json:"created_at"`
 	CreativeBrief                  CreativeBrief                          `json:"creative_brief"`
+	Crm                            nullable.Nullable[ShootPlanCRM]        `json:"crm,omitempty"`
 	ExecutionFactRevision          int64                                  `json:"execution_fact_revision"`
 	ExecutionHistory               *[]ShotExecutionFact                   `json:"execution_history,omitempty"`
 	ExecutionWindow                nullable.Nullable[PlanExecutionWindow] `json:"execution_window,omitempty"`
@@ -1557,6 +1758,11 @@ type ShootPlanListItem struct {
 	Subject               string          `json:"subject"`
 	Title                 string          `json:"title"`
 	UpdatedAt             time.Time       `json:"updated_at"`
+}
+
+// ShootPlanMutationRequest defines model for ShootPlanMutationRequest.
+type ShootPlanMutationRequest struct {
+	union json.RawMessage
 }
 
 // ShootPlanReadinessItem defines model for ShootPlanReadinessItem.
@@ -1719,6 +1925,24 @@ type StartPlanTransition struct {
 // StartPlanTransitionTransition defines model for StartPlanTransition.Transition.
 type StartPlanTransitionTransition string
 
+// UnlinkCustomerCrmCommand defines model for UnlinkCustomerCrmCommand.
+type UnlinkCustomerCrmCommand struct {
+	ExpectedRevision int64                             `json:"expected_revision"`
+	Operation        UnlinkCustomerCrmCommandOperation `json:"operation"`
+}
+
+// UnlinkCustomerCrmCommandOperation defines model for UnlinkCustomerCrmCommand.Operation.
+type UnlinkCustomerCrmCommandOperation string
+
+// UnlinkOrderCrmCommand defines model for UnlinkOrderCrmCommand.
+type UnlinkOrderCrmCommand struct {
+	ExpectedRevision int64                          `json:"expected_revision"`
+	Operation        UnlinkOrderCrmCommandOperation `json:"operation"`
+}
+
+// UnlinkOrderCrmCommandOperation defines model for UnlinkOrderCrmCommand.Operation.
+type UnlinkOrderCrmCommandOperation string
+
 // UnlinkReadinessPlanCommand defines model for UnlinkReadinessPlanCommand.
 type UnlinkReadinessPlanCommand struct {
 	ExpectedRevision int64                               `json:"expected_revision"`
@@ -1811,10 +2035,12 @@ type bearerAuthContextKey string
 
 // ListShootPlansParams defines parameters for ListShootPlans.
 type ListShootPlansParams struct {
-	Status   *ShootPlanStatus `form:"status,omitempty" json:"status,omitempty"`
-	Archived *bool            `form:"archived,omitempty" json:"archived,omitempty"`
-	Page     *Page            `form:"page,omitempty" json:"page,omitempty"`
-	PageSize *PageSize        `form:"page_size,omitempty" json:"page_size,omitempty"`
+	Status     *ShootPlanStatus `form:"status,omitempty" json:"status,omitempty"`
+	Archived   *bool            `form:"archived,omitempty" json:"archived,omitempty"`
+	CustomerId *string          `form:"customer_id,omitempty" json:"customer_id,omitempty"`
+	OrderId    *string          `form:"order_id,omitempty" json:"order_id,omitempty"`
+	Page       *Page            `form:"page,omitempty" json:"page,omitempty"`
+	PageSize   *PageSize        `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // CreateShootPlanParams defines parameters for CreateShootPlan.
@@ -1870,7 +2096,7 @@ type TransitionShootPlanParams struct {
 type CreateShootPlanJSONRequestBody = CreateShootPlanInput
 
 // ApplyShootPlanCommandJSONRequestBody defines body for ApplyShootPlanCommand for application/json ContentType.
-type ApplyShootPlanCommandJSONRequestBody = PlanCommand
+type ApplyShootPlanCommandJSONRequestBody = ShootPlanMutationRequest
 
 // VoidShootPlanExecutionEventJSONRequestBody defines body for VoidShootPlanExecutionEvent for application/json ContentType.
 type VoidShootPlanExecutionEventJSONRequestBody = VoidExecutionEventInput
@@ -2065,395 +2291,6 @@ func (t *ErrorDetails) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-// AsUpdateBriefPlanCommand returns the union data inside the PlanCommand as a UpdateBriefPlanCommand
-func (t PlanCommand) AsUpdateBriefPlanCommand() (UpdateBriefPlanCommand, error) {
-	var body UpdateBriefPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromUpdateBriefPlanCommand overwrites any union data inside the PlanCommand as the provided UpdateBriefPlanCommand
-func (t *PlanCommand) FromUpdateBriefPlanCommand(v UpdateBriefPlanCommand) error {
-	v.Operation = "update_brief"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeUpdateBriefPlanCommand performs a merge with any union data inside the PlanCommand, using the provided UpdateBriefPlanCommand
-func (t *PlanCommand) MergeUpdateBriefPlanCommand(v UpdateBriefPlanCommand) error {
-	v.Operation = "update_brief"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsUpsertShotPlanCommand returns the union data inside the PlanCommand as a UpsertShotPlanCommand
-func (t PlanCommand) AsUpsertShotPlanCommand() (UpsertShotPlanCommand, error) {
-	var body UpsertShotPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromUpsertShotPlanCommand overwrites any union data inside the PlanCommand as the provided UpsertShotPlanCommand
-func (t *PlanCommand) FromUpsertShotPlanCommand(v UpsertShotPlanCommand) error {
-	v.Operation = "upsert_shot"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeUpsertShotPlanCommand performs a merge with any union data inside the PlanCommand, using the provided UpsertShotPlanCommand
-func (t *PlanCommand) MergeUpsertShotPlanCommand(v UpsertShotPlanCommand) error {
-	v.Operation = "upsert_shot"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsReorderShotsPlanCommand returns the union data inside the PlanCommand as a ReorderShotsPlanCommand
-func (t PlanCommand) AsReorderShotsPlanCommand() (ReorderShotsPlanCommand, error) {
-	var body ReorderShotsPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromReorderShotsPlanCommand overwrites any union data inside the PlanCommand as the provided ReorderShotsPlanCommand
-func (t *PlanCommand) FromReorderShotsPlanCommand(v ReorderShotsPlanCommand) error {
-	v.Operation = "reorder_shots"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeReorderShotsPlanCommand performs a merge with any union data inside the PlanCommand, using the provided ReorderShotsPlanCommand
-func (t *PlanCommand) MergeReorderShotsPlanCommand(v ReorderShotsPlanCommand) error {
-	v.Operation = "reorder_shots"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsRemoveShotPlanCommand returns the union data inside the PlanCommand as a RemoveShotPlanCommand
-func (t PlanCommand) AsRemoveShotPlanCommand() (RemoveShotPlanCommand, error) {
-	var body RemoveShotPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromRemoveShotPlanCommand overwrites any union data inside the PlanCommand as the provided RemoveShotPlanCommand
-func (t *PlanCommand) FromRemoveShotPlanCommand(v RemoveShotPlanCommand) error {
-	v.Operation = "remove_shot"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeRemoveShotPlanCommand performs a merge with any union data inside the PlanCommand, using the provided RemoveShotPlanCommand
-func (t *PlanCommand) MergeRemoveShotPlanCommand(v RemoveShotPlanCommand) error {
-	v.Operation = "remove_shot"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsUpsertReadinessPlanCommand returns the union data inside the PlanCommand as a UpsertReadinessPlanCommand
-func (t PlanCommand) AsUpsertReadinessPlanCommand() (UpsertReadinessPlanCommand, error) {
-	var body UpsertReadinessPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromUpsertReadinessPlanCommand overwrites any union data inside the PlanCommand as the provided UpsertReadinessPlanCommand
-func (t *PlanCommand) FromUpsertReadinessPlanCommand(v UpsertReadinessPlanCommand) error {
-	v.Operation = "upsert_readiness"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeUpsertReadinessPlanCommand performs a merge with any union data inside the PlanCommand, using the provided UpsertReadinessPlanCommand
-func (t *PlanCommand) MergeUpsertReadinessPlanCommand(v UpsertReadinessPlanCommand) error {
-	v.Operation = "upsert_readiness"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsRemoveReadinessPlanCommand returns the union data inside the PlanCommand as a RemoveReadinessPlanCommand
-func (t PlanCommand) AsRemoveReadinessPlanCommand() (RemoveReadinessPlanCommand, error) {
-	var body RemoveReadinessPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromRemoveReadinessPlanCommand overwrites any union data inside the PlanCommand as the provided RemoveReadinessPlanCommand
-func (t *PlanCommand) FromRemoveReadinessPlanCommand(v RemoveReadinessPlanCommand) error {
-	v.Operation = "remove_readiness"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeRemoveReadinessPlanCommand performs a merge with any union data inside the PlanCommand, using the provided RemoveReadinessPlanCommand
-func (t *PlanCommand) MergeRemoveReadinessPlanCommand(v RemoveReadinessPlanCommand) error {
-	v.Operation = "remove_readiness"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsSetPreflightPlanCommand returns the union data inside the PlanCommand as a SetPreflightPlanCommand
-func (t PlanCommand) AsSetPreflightPlanCommand() (SetPreflightPlanCommand, error) {
-	var body SetPreflightPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromSetPreflightPlanCommand overwrites any union data inside the PlanCommand as the provided SetPreflightPlanCommand
-func (t *PlanCommand) FromSetPreflightPlanCommand(v SetPreflightPlanCommand) error {
-	v.Operation = "set_preflight"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeSetPreflightPlanCommand performs a merge with any union data inside the PlanCommand, using the provided SetPreflightPlanCommand
-func (t *PlanCommand) MergeSetPreflightPlanCommand(v SetPreflightPlanCommand) error {
-	v.Operation = "set_preflight"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsLinkReadinessPlanCommand returns the union data inside the PlanCommand as a LinkReadinessPlanCommand
-func (t PlanCommand) AsLinkReadinessPlanCommand() (LinkReadinessPlanCommand, error) {
-	var body LinkReadinessPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromLinkReadinessPlanCommand overwrites any union data inside the PlanCommand as the provided LinkReadinessPlanCommand
-func (t *PlanCommand) FromLinkReadinessPlanCommand(v LinkReadinessPlanCommand) error {
-	v.Operation = "link_readiness"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeLinkReadinessPlanCommand performs a merge with any union data inside the PlanCommand, using the provided LinkReadinessPlanCommand
-func (t *PlanCommand) MergeLinkReadinessPlanCommand(v LinkReadinessPlanCommand) error {
-	v.Operation = "link_readiness"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsUnlinkReadinessPlanCommand returns the union data inside the PlanCommand as a UnlinkReadinessPlanCommand
-func (t PlanCommand) AsUnlinkReadinessPlanCommand() (UnlinkReadinessPlanCommand, error) {
-	var body UnlinkReadinessPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromUnlinkReadinessPlanCommand overwrites any union data inside the PlanCommand as the provided UnlinkReadinessPlanCommand
-func (t *PlanCommand) FromUnlinkReadinessPlanCommand(v UnlinkReadinessPlanCommand) error {
-	v.Operation = "unlink_readiness"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeUnlinkReadinessPlanCommand performs a merge with any union data inside the PlanCommand, using the provided UnlinkReadinessPlanCommand
-func (t *PlanCommand) MergeUnlinkReadinessPlanCommand(v UnlinkReadinessPlanCommand) error {
-	v.Operation = "unlink_readiness"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsSetPublicScalePlanCommand returns the union data inside the PlanCommand as a SetPublicScalePlanCommand
-func (t PlanCommand) AsSetPublicScalePlanCommand() (SetPublicScalePlanCommand, error) {
-	var body SetPublicScalePlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromSetPublicScalePlanCommand overwrites any union data inside the PlanCommand as the provided SetPublicScalePlanCommand
-func (t *PlanCommand) FromSetPublicScalePlanCommand(v SetPublicScalePlanCommand) error {
-	v.Operation = "set_public_scale"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeSetPublicScalePlanCommand performs a merge with any union data inside the PlanCommand, using the provided SetPublicScalePlanCommand
-func (t *PlanCommand) MergeSetPublicScalePlanCommand(v SetPublicScalePlanCommand) error {
-	v.Operation = "set_public_scale"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsSetExecutionWindowPlanCommand returns the union data inside the PlanCommand as a SetExecutionWindowPlanCommand
-func (t PlanCommand) AsSetExecutionWindowPlanCommand() (SetExecutionWindowPlanCommand, error) {
-	var body SetExecutionWindowPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromSetExecutionWindowPlanCommand overwrites any union data inside the PlanCommand as the provided SetExecutionWindowPlanCommand
-func (t *PlanCommand) FromSetExecutionWindowPlanCommand(v SetExecutionWindowPlanCommand) error {
-	v.Operation = "set_execution_window"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeSetExecutionWindowPlanCommand performs a merge with any union data inside the PlanCommand, using the provided SetExecutionWindowPlanCommand
-func (t *PlanCommand) MergeSetExecutionWindowPlanCommand(v SetExecutionWindowPlanCommand) error {
-	v.Operation = "set_execution_window"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsClearExecutionWindowPlanCommand returns the union data inside the PlanCommand as a ClearExecutionWindowPlanCommand
-func (t PlanCommand) AsClearExecutionWindowPlanCommand() (ClearExecutionWindowPlanCommand, error) {
-	var body ClearExecutionWindowPlanCommand
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromClearExecutionWindowPlanCommand overwrites any union data inside the PlanCommand as the provided ClearExecutionWindowPlanCommand
-func (t *PlanCommand) FromClearExecutionWindowPlanCommand(v ClearExecutionWindowPlanCommand) error {
-	v.Operation = "clear_execution_window"
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeClearExecutionWindowPlanCommand performs a merge with any union data inside the PlanCommand, using the provided ClearExecutionWindowPlanCommand
-func (t *PlanCommand) MergeClearExecutionWindowPlanCommand(v ClearExecutionWindowPlanCommand) error {
-	v.Operation = "clear_execution_window"
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-func (t PlanCommand) Discriminator() (string, error) {
-	var discriminator struct {
-		Discriminator string `json:"operation"`
-	}
-	err := json.Unmarshal(t.union, &discriminator)
-	return discriminator.Discriminator, err
-}
-
-func (t PlanCommand) ValueByDiscriminator() (interface{}, error) {
-	discriminator, err := t.Discriminator()
-	if err != nil {
-		return nil, err
-	}
-	switch discriminator {
-	case "clear_execution_window":
-		return t.AsClearExecutionWindowPlanCommand()
-	case "link_readiness":
-		return t.AsLinkReadinessPlanCommand()
-	case "remove_readiness":
-		return t.AsRemoveReadinessPlanCommand()
-	case "remove_shot":
-		return t.AsRemoveShotPlanCommand()
-	case "reorder_shots":
-		return t.AsReorderShotsPlanCommand()
-	case "set_execution_window":
-		return t.AsSetExecutionWindowPlanCommand()
-	case "set_preflight":
-		return t.AsSetPreflightPlanCommand()
-	case "set_public_scale":
-		return t.AsSetPublicScalePlanCommand()
-	case "unlink_readiness":
-		return t.AsUnlinkReadinessPlanCommand()
-	case "update_brief":
-		return t.AsUpdateBriefPlanCommand()
-	case "upsert_readiness":
-		return t.AsUpsertReadinessPlanCommand()
-	case "upsert_shot":
-		return t.AsUpsertShotPlanCommand()
-	default:
-		return nil, errors.New("unknown discriminator value: " + discriminator)
-	}
-}
-
-func (t PlanCommand) MarshalJSON() ([]byte, error) {
-	b, err := t.union.MarshalJSON()
-	return b, err
-}
-
-func (t *PlanCommand) UnmarshalJSON(b []byte) error {
-	err := t.union.UnmarshalJSON(b)
-	return err
-}
-
 // AsMarkReadyPlanTransition returns the union data inside the PlanTransition as a MarkReadyPlanTransition
 func (t PlanTransition) AsMarkReadyPlanTransition() (MarkReadyPlanTransition, error) {
 	var body MarkReadyPlanTransition
@@ -2633,6 +2470,545 @@ func (t *PlanTransition) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsUpdateBriefPlanCommand returns the union data inside the ShootPlanMutationRequest as a UpdateBriefPlanCommand
+func (t ShootPlanMutationRequest) AsUpdateBriefPlanCommand() (UpdateBriefPlanCommand, error) {
+	var body UpdateBriefPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpdateBriefPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided UpdateBriefPlanCommand
+func (t *ShootPlanMutationRequest) FromUpdateBriefPlanCommand(v UpdateBriefPlanCommand) error {
+	v.Operation = "update_brief"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpdateBriefPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided UpdateBriefPlanCommand
+func (t *ShootPlanMutationRequest) MergeUpdateBriefPlanCommand(v UpdateBriefPlanCommand) error {
+	v.Operation = "update_brief"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpsertShotPlanCommand returns the union data inside the ShootPlanMutationRequest as a UpsertShotPlanCommand
+func (t ShootPlanMutationRequest) AsUpsertShotPlanCommand() (UpsertShotPlanCommand, error) {
+	var body UpsertShotPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpsertShotPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided UpsertShotPlanCommand
+func (t *ShootPlanMutationRequest) FromUpsertShotPlanCommand(v UpsertShotPlanCommand) error {
+	v.Operation = "upsert_shot"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpsertShotPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided UpsertShotPlanCommand
+func (t *ShootPlanMutationRequest) MergeUpsertShotPlanCommand(v UpsertShotPlanCommand) error {
+	v.Operation = "upsert_shot"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsReorderShotsPlanCommand returns the union data inside the ShootPlanMutationRequest as a ReorderShotsPlanCommand
+func (t ShootPlanMutationRequest) AsReorderShotsPlanCommand() (ReorderShotsPlanCommand, error) {
+	var body ReorderShotsPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromReorderShotsPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided ReorderShotsPlanCommand
+func (t *ShootPlanMutationRequest) FromReorderShotsPlanCommand(v ReorderShotsPlanCommand) error {
+	v.Operation = "reorder_shots"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeReorderShotsPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided ReorderShotsPlanCommand
+func (t *ShootPlanMutationRequest) MergeReorderShotsPlanCommand(v ReorderShotsPlanCommand) error {
+	v.Operation = "reorder_shots"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsRemoveShotPlanCommand returns the union data inside the ShootPlanMutationRequest as a RemoveShotPlanCommand
+func (t ShootPlanMutationRequest) AsRemoveShotPlanCommand() (RemoveShotPlanCommand, error) {
+	var body RemoveShotPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRemoveShotPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided RemoveShotPlanCommand
+func (t *ShootPlanMutationRequest) FromRemoveShotPlanCommand(v RemoveShotPlanCommand) error {
+	v.Operation = "remove_shot"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeRemoveShotPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided RemoveShotPlanCommand
+func (t *ShootPlanMutationRequest) MergeRemoveShotPlanCommand(v RemoveShotPlanCommand) error {
+	v.Operation = "remove_shot"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUpsertReadinessPlanCommand returns the union data inside the ShootPlanMutationRequest as a UpsertReadinessPlanCommand
+func (t ShootPlanMutationRequest) AsUpsertReadinessPlanCommand() (UpsertReadinessPlanCommand, error) {
+	var body UpsertReadinessPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUpsertReadinessPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided UpsertReadinessPlanCommand
+func (t *ShootPlanMutationRequest) FromUpsertReadinessPlanCommand(v UpsertReadinessPlanCommand) error {
+	v.Operation = "upsert_readiness"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUpsertReadinessPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided UpsertReadinessPlanCommand
+func (t *ShootPlanMutationRequest) MergeUpsertReadinessPlanCommand(v UpsertReadinessPlanCommand) error {
+	v.Operation = "upsert_readiness"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsRemoveReadinessPlanCommand returns the union data inside the ShootPlanMutationRequest as a RemoveReadinessPlanCommand
+func (t ShootPlanMutationRequest) AsRemoveReadinessPlanCommand() (RemoveReadinessPlanCommand, error) {
+	var body RemoveReadinessPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRemoveReadinessPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided RemoveReadinessPlanCommand
+func (t *ShootPlanMutationRequest) FromRemoveReadinessPlanCommand(v RemoveReadinessPlanCommand) error {
+	v.Operation = "remove_readiness"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeRemoveReadinessPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided RemoveReadinessPlanCommand
+func (t *ShootPlanMutationRequest) MergeRemoveReadinessPlanCommand(v RemoveReadinessPlanCommand) error {
+	v.Operation = "remove_readiness"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSetPreflightPlanCommand returns the union data inside the ShootPlanMutationRequest as a SetPreflightPlanCommand
+func (t ShootPlanMutationRequest) AsSetPreflightPlanCommand() (SetPreflightPlanCommand, error) {
+	var body SetPreflightPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetPreflightPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided SetPreflightPlanCommand
+func (t *ShootPlanMutationRequest) FromSetPreflightPlanCommand(v SetPreflightPlanCommand) error {
+	v.Operation = "set_preflight"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSetPreflightPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided SetPreflightPlanCommand
+func (t *ShootPlanMutationRequest) MergeSetPreflightPlanCommand(v SetPreflightPlanCommand) error {
+	v.Operation = "set_preflight"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsLinkReadinessPlanCommand returns the union data inside the ShootPlanMutationRequest as a LinkReadinessPlanCommand
+func (t ShootPlanMutationRequest) AsLinkReadinessPlanCommand() (LinkReadinessPlanCommand, error) {
+	var body LinkReadinessPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromLinkReadinessPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided LinkReadinessPlanCommand
+func (t *ShootPlanMutationRequest) FromLinkReadinessPlanCommand(v LinkReadinessPlanCommand) error {
+	v.Operation = "link_readiness"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeLinkReadinessPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided LinkReadinessPlanCommand
+func (t *ShootPlanMutationRequest) MergeLinkReadinessPlanCommand(v LinkReadinessPlanCommand) error {
+	v.Operation = "link_readiness"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUnlinkReadinessPlanCommand returns the union data inside the ShootPlanMutationRequest as a UnlinkReadinessPlanCommand
+func (t ShootPlanMutationRequest) AsUnlinkReadinessPlanCommand() (UnlinkReadinessPlanCommand, error) {
+	var body UnlinkReadinessPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUnlinkReadinessPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided UnlinkReadinessPlanCommand
+func (t *ShootPlanMutationRequest) FromUnlinkReadinessPlanCommand(v UnlinkReadinessPlanCommand) error {
+	v.Operation = "unlink_readiness"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUnlinkReadinessPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided UnlinkReadinessPlanCommand
+func (t *ShootPlanMutationRequest) MergeUnlinkReadinessPlanCommand(v UnlinkReadinessPlanCommand) error {
+	v.Operation = "unlink_readiness"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSetPublicScalePlanCommand returns the union data inside the ShootPlanMutationRequest as a SetPublicScalePlanCommand
+func (t ShootPlanMutationRequest) AsSetPublicScalePlanCommand() (SetPublicScalePlanCommand, error) {
+	var body SetPublicScalePlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetPublicScalePlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided SetPublicScalePlanCommand
+func (t *ShootPlanMutationRequest) FromSetPublicScalePlanCommand(v SetPublicScalePlanCommand) error {
+	v.Operation = "set_public_scale"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSetPublicScalePlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided SetPublicScalePlanCommand
+func (t *ShootPlanMutationRequest) MergeSetPublicScalePlanCommand(v SetPublicScalePlanCommand) error {
+	v.Operation = "set_public_scale"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSetExecutionWindowPlanCommand returns the union data inside the ShootPlanMutationRequest as a SetExecutionWindowPlanCommand
+func (t ShootPlanMutationRequest) AsSetExecutionWindowPlanCommand() (SetExecutionWindowPlanCommand, error) {
+	var body SetExecutionWindowPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetExecutionWindowPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided SetExecutionWindowPlanCommand
+func (t *ShootPlanMutationRequest) FromSetExecutionWindowPlanCommand(v SetExecutionWindowPlanCommand) error {
+	v.Operation = "set_execution_window"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSetExecutionWindowPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided SetExecutionWindowPlanCommand
+func (t *ShootPlanMutationRequest) MergeSetExecutionWindowPlanCommand(v SetExecutionWindowPlanCommand) error {
+	v.Operation = "set_execution_window"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsClearExecutionWindowPlanCommand returns the union data inside the ShootPlanMutationRequest as a ClearExecutionWindowPlanCommand
+func (t ShootPlanMutationRequest) AsClearExecutionWindowPlanCommand() (ClearExecutionWindowPlanCommand, error) {
+	var body ClearExecutionWindowPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromClearExecutionWindowPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided ClearExecutionWindowPlanCommand
+func (t *ShootPlanMutationRequest) FromClearExecutionWindowPlanCommand(v ClearExecutionWindowPlanCommand) error {
+	v.Operation = "clear_execution_window"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeClearExecutionWindowPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided ClearExecutionWindowPlanCommand
+func (t *ShootPlanMutationRequest) MergeClearExecutionWindowPlanCommand(v ClearExecutionWindowPlanCommand) error {
+	v.Operation = "clear_execution_window"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsLinkCustomerCrmCommand returns the union data inside the ShootPlanMutationRequest as a LinkCustomerCrmCommand
+func (t ShootPlanMutationRequest) AsLinkCustomerCrmCommand() (LinkCustomerCrmCommand, error) {
+	var body LinkCustomerCrmCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromLinkCustomerCrmCommand overwrites any union data inside the ShootPlanMutationRequest as the provided LinkCustomerCrmCommand
+func (t *ShootPlanMutationRequest) FromLinkCustomerCrmCommand(v LinkCustomerCrmCommand) error {
+	v.Operation = "link_customer"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeLinkCustomerCrmCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided LinkCustomerCrmCommand
+func (t *ShootPlanMutationRequest) MergeLinkCustomerCrmCommand(v LinkCustomerCrmCommand) error {
+	v.Operation = "link_customer"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsLinkOrderCrmCommand returns the union data inside the ShootPlanMutationRequest as a LinkOrderCrmCommand
+func (t ShootPlanMutationRequest) AsLinkOrderCrmCommand() (LinkOrderCrmCommand, error) {
+	var body LinkOrderCrmCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromLinkOrderCrmCommand overwrites any union data inside the ShootPlanMutationRequest as the provided LinkOrderCrmCommand
+func (t *ShootPlanMutationRequest) FromLinkOrderCrmCommand(v LinkOrderCrmCommand) error {
+	v.Operation = "link_order"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeLinkOrderCrmCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided LinkOrderCrmCommand
+func (t *ShootPlanMutationRequest) MergeLinkOrderCrmCommand(v LinkOrderCrmCommand) error {
+	v.Operation = "link_order"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUnlinkOrderCrmCommand returns the union data inside the ShootPlanMutationRequest as a UnlinkOrderCrmCommand
+func (t ShootPlanMutationRequest) AsUnlinkOrderCrmCommand() (UnlinkOrderCrmCommand, error) {
+	var body UnlinkOrderCrmCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUnlinkOrderCrmCommand overwrites any union data inside the ShootPlanMutationRequest as the provided UnlinkOrderCrmCommand
+func (t *ShootPlanMutationRequest) FromUnlinkOrderCrmCommand(v UnlinkOrderCrmCommand) error {
+	v.Operation = "unlink_order"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUnlinkOrderCrmCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided UnlinkOrderCrmCommand
+func (t *ShootPlanMutationRequest) MergeUnlinkOrderCrmCommand(v UnlinkOrderCrmCommand) error {
+	v.Operation = "unlink_order"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUnlinkCustomerCrmCommand returns the union data inside the ShootPlanMutationRequest as a UnlinkCustomerCrmCommand
+func (t ShootPlanMutationRequest) AsUnlinkCustomerCrmCommand() (UnlinkCustomerCrmCommand, error) {
+	var body UnlinkCustomerCrmCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUnlinkCustomerCrmCommand overwrites any union data inside the ShootPlanMutationRequest as the provided UnlinkCustomerCrmCommand
+func (t *ShootPlanMutationRequest) FromUnlinkCustomerCrmCommand(v UnlinkCustomerCrmCommand) error {
+	v.Operation = "unlink_customer"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUnlinkCustomerCrmCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided UnlinkCustomerCrmCommand
+func (t *ShootPlanMutationRequest) MergeUnlinkCustomerCrmCommand(v UnlinkCustomerCrmCommand) error {
+	v.Operation = "unlink_customer"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsAdoptScheduleProjectionCrmCommand returns the union data inside the ShootPlanMutationRequest as a AdoptScheduleProjectionCrmCommand
+func (t ShootPlanMutationRequest) AsAdoptScheduleProjectionCrmCommand() (AdoptScheduleProjectionCrmCommand, error) {
+	var body AdoptScheduleProjectionCrmCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromAdoptScheduleProjectionCrmCommand overwrites any union data inside the ShootPlanMutationRequest as the provided AdoptScheduleProjectionCrmCommand
+func (t *ShootPlanMutationRequest) FromAdoptScheduleProjectionCrmCommand(v AdoptScheduleProjectionCrmCommand) error {
+	v.Operation = "adopt_schedule_projection"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeAdoptScheduleProjectionCrmCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided AdoptScheduleProjectionCrmCommand
+func (t *ShootPlanMutationRequest) MergeAdoptScheduleProjectionCrmCommand(v AdoptScheduleProjectionCrmCommand) error {
+	v.Operation = "adopt_schedule_projection"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ShootPlanMutationRequest) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"operation"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t ShootPlanMutationRequest) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "adopt_schedule_projection":
+		return t.AsAdoptScheduleProjectionCrmCommand()
+	case "clear_execution_window":
+		return t.AsClearExecutionWindowPlanCommand()
+	case "link_customer":
+		return t.AsLinkCustomerCrmCommand()
+	case "link_order":
+		return t.AsLinkOrderCrmCommand()
+	case "link_readiness":
+		return t.AsLinkReadinessPlanCommand()
+	case "remove_readiness":
+		return t.AsRemoveReadinessPlanCommand()
+	case "remove_shot":
+		return t.AsRemoveShotPlanCommand()
+	case "reorder_shots":
+		return t.AsReorderShotsPlanCommand()
+	case "set_execution_window":
+		return t.AsSetExecutionWindowPlanCommand()
+	case "set_preflight":
+		return t.AsSetPreflightPlanCommand()
+	case "set_public_scale":
+		return t.AsSetPublicScalePlanCommand()
+	case "unlink_customer":
+		return t.AsUnlinkCustomerCrmCommand()
+	case "unlink_order":
+		return t.AsUnlinkOrderCrmCommand()
+	case "unlink_readiness":
+		return t.AsUnlinkReadinessPlanCommand()
+	case "update_brief":
+		return t.AsUpdateBriefPlanCommand()
+	case "upsert_readiness":
+		return t.AsUpsertReadinessPlanCommand()
+	case "upsert_shot":
+		return t.AsUpsertShotPlanCommand()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t ShootPlanMutationRequest) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ShootPlanMutationRequest) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsShotExecutionResultEvent returns the union data inside the ShotExecutionFact as a ShotExecutionResultEvent
 func (t ShotExecutionFact) AsShotExecutionResultEvent() (ShotExecutionResultEvent, error) {
 	var body ShotExecutionResultEvent
@@ -2783,6 +3159,22 @@ func (siw *ServerInterfaceWrapper) ListShootPlans(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "archived", c.Request.URL.Query(), &params.Archived, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archived: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "customer_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "customer_id", c.Request.URL.Query(), &params.CustomerId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter customer_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "order_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "order_id", c.Request.URL.Query(), &params.OrderId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter order_id: %w", err), http.StatusBadRequest)
 		return
 	}
 

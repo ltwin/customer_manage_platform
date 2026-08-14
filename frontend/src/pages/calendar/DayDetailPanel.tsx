@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { CalendarRange, Plus, X } from 'lucide-react'
 
 import type { ScheduleSlotListItem } from '../../api/client'
+import PlanningSummaryLink from '../../components/PlanningSummaryLink'
 import EmptyState from '../../components/EmptyState'
 import { useFocusTrap } from '../../components/useFocusTrap'
 import {
@@ -169,6 +170,7 @@ function SlotDetail({
           {slot.order_status === 'cancelled' && <span className="danger-text">订单已取消，档期保留但不占可约时间</span>}
         </div>
       )}
+      {slot.type === 'shoot' && <PlanningSummaryLink summary={slot.planning_summary} />}
       {slot.note && <p>{slot.note}</p>}
       {projection.conflicting && <div className="calendar-v2-conflict">时间重叠 · 保存仍允许，请人工确认</div>}
       {turnaround && turnaroundThresholdMinutes !== null && (

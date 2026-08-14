@@ -7,6 +7,7 @@ import type { CustomerChannel } from './customerLabels'
 import QuickNote from '../components/customers/QuickNote'
 import CustomerAvatar from '../components/customers/CustomerAvatar'
 import CustomerResult from '../components/customers/CustomerResult'
+import PlanningSummaryLink from '../components/PlanningSummaryLink'
 import {
   customerStatusBadge,
   shortCustomerDate,
@@ -155,6 +156,7 @@ export default function CustomersPage() {
                 <th>来源</th>
                 <th>约单</th>
                 <th>最近拍摄</th>
+                <th>策划</th>
                 <th>状态</th>
                 <th>快捷操作</th>
               </tr>
@@ -182,6 +184,7 @@ export default function CustomersPage() {
                     <td><span className="badge badge-muted">{channelLabels[customer.channel]}</span></td>
                     <td><span className="num">{customer.orders_count}</span> 单</td>
                     <td className="num muted-text">{customer.last_shot_at ?? '暂无'}</td>
+                    <td><PlanningSummaryLink summary={customer.planning_summary} /></td>
                     <td><span className={badgeClass}>{badgeLabel}</span></td>
                     <td>
                       {customer.status !== 'merged' && (

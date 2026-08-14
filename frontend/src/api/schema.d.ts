@@ -1135,6 +1135,7 @@ export interface components {
              * @description 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
              */
             last_shot_at: string | null;
+            planning_summary?: components["schemas"]["PlanningSummary"];
         };
         CustomerSummary: {
             id: string;
@@ -1162,6 +1163,7 @@ export interface components {
             notes: components["schemas"]["CustomerNote"][];
             referrer: components["schemas"]["CustomerSummary"] | null;
             stats: components["schemas"]["CustomerStats"];
+            planning_summary?: components["schemas"]["PlanningSummary"];
         };
         SocialIdentity: {
             readonly id: string;
@@ -1242,6 +1244,7 @@ export interface components {
             customer_display_name: string;
             /** @description 引用套系的 name；未引用套系时缺省 */
             package_name?: string;
+            planning_summary?: components["schemas"]["PlanningSummary"];
         };
         ScheduleSlot: {
             readonly id: string;
@@ -1300,6 +1303,7 @@ export interface components {
             order_balance_paid: boolean;
             /** @description 订单所选套系的拍摄类型；未选套系时缺省 */
             package_shoot_type?: components["schemas"]["ShootType"];
+            planning_summary?: components["schemas"]["PlanningSummary"];
         } & {
             /**
              * @description discriminator enum property added by openapi-typescript
@@ -1604,6 +1608,7 @@ export interface components {
             completed_at?: string | null;
             /** Format: date-time */
             archived_at?: string | null;
+            crm?: components["schemas"]["ShootPlanCRM"] | null;
         };
         CreateShootPlanInput: {
             title: string;
@@ -1803,6 +1808,122 @@ export interface components {
             operation: "clear_execution_window";
         };
         PlanCommand: components["schemas"]["UpdateBriefPlanCommand"] | components["schemas"]["UpsertShotPlanCommand"] | components["schemas"]["ReorderShotsPlanCommand"] | components["schemas"]["RemoveShotPlanCommand"] | components["schemas"]["UpsertReadinessPlanCommand"] | components["schemas"]["RemoveReadinessPlanCommand"] | components["schemas"]["SetPreflightPlanCommand"] | components["schemas"]["LinkReadinessPlanCommand"] | components["schemas"]["UnlinkReadinessPlanCommand"] | components["schemas"]["SetPublicScalePlanCommand"] | components["schemas"]["SetExecutionWindowPlanCommand"] | components["schemas"]["ClearExecutionWindowPlanCommand"];
+        LinkCustomerCrmCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "link_customer";
+            customer_id: string;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "link_customer";
+        };
+        LinkOrderCrmCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "link_order";
+            order_id: string;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "link_order";
+        };
+        UnlinkOrderCrmCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "unlink_order";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "unlink_order";
+        };
+        UnlinkCustomerCrmCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "unlink_customer";
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "unlink_customer";
+        };
+        AdoptScheduleProjectionCrmCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "adopt_schedule_projection";
+            /** Format: int64 */
+            projection_revision: number;
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "adopt_schedule_projection";
+        };
+        CrmLinkCommand: components["schemas"]["LinkCustomerCrmCommand"] | components["schemas"]["LinkOrderCrmCommand"] | components["schemas"]["UnlinkOrderCrmCommand"] | components["schemas"]["UnlinkCustomerCrmCommand"] | components["schemas"]["AdoptScheduleProjectionCrmCommand"];
+        ShootPlanMutationRequest: components["schemas"]["UpdateBriefPlanCommand"] | components["schemas"]["UpsertShotPlanCommand"] | components["schemas"]["ReorderShotsPlanCommand"] | components["schemas"]["RemoveShotPlanCommand"] | components["schemas"]["UpsertReadinessPlanCommand"] | components["schemas"]["RemoveReadinessPlanCommand"] | components["schemas"]["SetPreflightPlanCommand"] | components["schemas"]["LinkReadinessPlanCommand"] | components["schemas"]["UnlinkReadinessPlanCommand"] | components["schemas"]["SetPublicScalePlanCommand"] | components["schemas"]["SetExecutionWindowPlanCommand"] | components["schemas"]["ClearExecutionWindowPlanCommand"] | components["schemas"]["LinkCustomerCrmCommand"] | components["schemas"]["LinkOrderCrmCommand"] | components["schemas"]["UnlinkOrderCrmCommand"] | components["schemas"]["UnlinkCustomerCrmCommand"] | components["schemas"]["AdoptScheduleProjectionCrmCommand"];
+        LinkedOrderSnapshot: {
+            order_id: string;
+            customer_id: string;
+            title?: string;
+            package_name?: string;
+            status_at_link: string;
+            /** Format: date-time */
+            linked_at: string;
+        };
+        PlanScheduleProjectionView: {
+            /** @enum {string} */
+            status: "missing_slot" | "active_applied" | "active_manual_override" | "active_unapplied" | "inactive_past" | "inactive_order_cancelled" | "inactive_order_deleted" | "inactive_unlinked";
+            apply_suppressed: boolean;
+            slot_id?: string;
+            /** Format: date-time */
+            starts_at?: string;
+            /** Format: date-time */
+            ends_at?: string;
+            timezone?: string;
+        };
+        ShootPlanCRM: {
+            /** @enum {string} */
+            state: "independent" | "customer_linked" | "order_linked" | "order_cancelled" | "order_deleted";
+            /** Format: int64 */
+            connection_revision: number;
+            /** Format: int64 */
+            projection_revision?: number;
+            customer_id?: string;
+            order_id?: string;
+            linked_order_snapshot?: components["schemas"]["LinkedOrderSnapshot"];
+            schedule_projection?: components["schemas"]["PlanScheduleProjectionView"];
+        };
+        PlanningSummaryPrimaryPlan: {
+            id: string;
+            title: string;
+            status: components["schemas"]["ShootPlanStatus"];
+            /** Format: int64 */
+            shot_count: number;
+            /** Format: int64 */
+            readiness_unchecked_count: number;
+        };
+        PlanningSummaryExecutionWindow: {
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            timezone: string;
+            /** @enum {string} */
+            source: "manual" | "schedule_slot";
+        };
+        PlanningSummary: {
+            /** Format: int64 */
+            plan_count: number;
+            /** Format: int64 */
+            active_plan_count: number;
+            primary_plan?: components["schemas"]["PlanningSummaryPrimaryPlan"];
+            execution_window?: components["schemas"]["PlanningSummaryExecutionWindow"];
+            /** @enum {string} */
+            link_warning?: "order_cancelled" | "order_deleted";
+        };
         PlanMutationResult: {
             plan_id: string;
             /** Format: int64 */
@@ -3630,6 +3751,15 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            /** @description customer_changed（并发 merge 导致订单客户连续变化，需重拉候选） */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };
@@ -4175,6 +4305,8 @@ export interface operations {
             query?: {
                 status?: components["schemas"]["ShootPlanStatus"];
                 archived?: boolean;
+                customer_id?: string;
+                order_id?: string;
                 page?: components["parameters"]["Page"];
                 page_size?: components["parameters"]["PageSize"];
             };
@@ -4270,7 +4402,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PlanCommand"];
+                "application/json": components["schemas"]["ShootPlanMutationRequest"];
             };
         };
         responses: {
@@ -4286,7 +4418,15 @@ export interface operations {
             400: components["responses"]["ValidationFailed"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
+            /** @description plan_revision_conflict | customer_link_conflict | order_link_conflict | projection_revision_conflict | projection_missing | projection_not_active | projection_not_future | source_changed | order_still_linked | archived_read_only | reopen_required | idempotency_conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             500: components["responses"]["Internal"];
         };
     };

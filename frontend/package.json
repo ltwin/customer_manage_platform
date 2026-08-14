@@ -20,6 +20,7 @@
     "test:account-center": "node --test --experimental-transform-types scripts/account-center.test.ts",
     "test:v1-hardening": "node --test --experimental-transform-types scripts/v1-hardening.test.ts",
     "test:shoot-planning": "node --test --experimental-transform-types scripts/shoot-planning.test.ts",
+    "test:shoot-plan-crm": "node --test --experimental-transform-types scripts/shoot-plan-crm.test.ts",
     "test:planning-media": "node --test --experimental-transform-types scripts/planning-media.test.ts",
     "test:plan-ingestion": "node --test --experimental-transform-types scripts/plan-ingestion.test.ts",
     "test:prototype": "node --test scripts/prototype-contract.test.mjs",

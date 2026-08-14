@@ -13,6 +13,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
 var (
@@ -160,6 +161,7 @@ type Application struct {
 	mediaProjector         ShotAccessRefProjector
 	readyObservationSink   PlanReadyObservationSink
 	ingestionRoutesEnabled bool
+	crm                    *crm.Engine
 }
 
 func WithShotAccessRefProjector(projector ShotAccessRefProjector) ApplicationOption {
@@ -176,6 +178,7 @@ func NewApplication(repo PostgresRepository, executor *idempotency.Executor, opt
 		archivePolicy:        CoreOnlyArchiveImpactPolicyV1{},
 		archiveParticipant:   DisabledPlanArchiveReminderParticipant{},
 		readyObservationSink: NoopPlanReadyObservationSink{},
+		crm:                  crm.NewEngine(),
 		now:                  time.Now,
 	}
 	for _, option := range options {
@@ -310,6 +313,120 @@ type PlanMutationResult struct {
 	ChangedProjection map[string]any `json:"changed_projection"`
 }
 
+func (a *Application) CRM() *crm.Engine {
+	if a == nil {
+		return nil
+	}
+	return a.crm
+}
+
+func (a *Application) ApplyCRMLink(
+	ctx context.Context,
+	scope store.AccountScope,
+	key, planID string,
+	expectedRevision int64,
+	command crm.Command,
+) (PlanMutationResult, error) {
+	planID = strings.TrimSpace(planID)
+	if planID == "" || expectedRevision < 1 || command.Kind == "" {
+		return PlanMutationResult{}, validationError("crm command invalid")
+	}
+	canonical, err := marshalCRMCommand(expectedRevision, command)
+	if err != nil {
+		return PlanMutationResult{}, err
+	}
+	return a.executePlanMutation(ctx, scope, idempotency.Request{
+		Operation: idempotency.OperationShootPlanCRMLink, Key: key,
+		ResourceIdentity: idempotency.PlanResource(planID), CanonicalBody: canonical,
+	}, func(tx store.TxAccountScope) (PlanMutationResult, error) {
+		outcome, err := a.crm.ApplyCommandInScope(ctx, tx, planID, expectedRevision, command)
+		if err != nil {
+			return PlanMutationResult{}, mapCRMError(err)
+		}
+		return PlanMutationResult{
+			PlanID: outcome.PlanID, Revision: outcome.Revision, Status: PlanStatus(outcome.Status),
+			ChangedProjection: crmChangedProjection(outcome),
+		}, nil
+	}, "decode crm command replay")
+}
+
+const crmSourceRetryAttempts = 3
+
+func (a *Application) executePlanMutation(
+	ctx context.Context,
+	scope store.AccountScope,
+	request idempotency.Request,
+	mutate func(store.TxAccountScope) (PlanMutationResult, error),
+	decodeErr string,
+) (PlanMutationResult, error) {
+	for attempt := 0; attempt < crmSourceRetryAttempts; attempt++ {
+		response, err := a.idempotency.Execute(ctx, scope, request, func(tx store.TxAccountScope) (idempotency.StoredResponse, error) {
+			result, err := mutate(tx)
+			if err != nil {
+				return idempotency.StoredResponse{}, err
+			}
+			body, err := json.Marshal(result)
+			return idempotency.StoredResponse{Status: 200, Body: body}, err
+		})
+		if errors.Is(err, crm.ErrSourceChangedRetry) {
+			continue
+		}
+		if err != nil {
+			return PlanMutationResult{}, mapCRMError(err)
+		}
+		var result PlanMutationResult
+		if err := json.Unmarshal(response.Body, &result); err != nil {
+			return PlanMutationResult{}, fmt.Errorf("%s: %w", decodeErr, err)
+		}
+		return result, nil
+	}
+	return PlanMutationResult{}, crm.ErrSourceChanged
+}
+
+func marshalCRMCommand(expectedRevision int64, command crm.Command) ([]byte, error) {
+	body := map[string]any{"expected_revision": expectedRevision, "operation": string(command.Kind)}
+	if command.CustomerID != nil {
+		body["customer_id"] = strings.TrimSpace(*command.CustomerID)
+	}
+	if command.OrderID != nil {
+		body["order_id"] = strings.TrimSpace(*command.OrderID)
+	}
+	if command.ProjectionRevision != nil {
+		body["projection_revision"] = *command.ProjectionRevision
+	}
+	return json.Marshal(body)
+}
+
+func crmChangedProjection(outcome crm.ApplyOutcome) map[string]any {
+	projection := map[string]any{
+		"crm_state":           string(outcome.Connection.State),
+		"connection_revision": outcome.Connection.ConnectionRevision,
+		"customer_id":         outcome.Connection.CustomerID,
+		"order_id":            outcome.Connection.OrderID,
+	}
+	if outcome.Projection != nil && outcome.Projection.Exists {
+		projection["projection_revision"] = outcome.Projection.ProjectionRevision
+		projection["schedule_status"] = string(outcome.Projection.Status)
+		projection["apply_suppressed"] = outcome.Projection.ApplySuppressed
+	}
+	return projection
+}
+
+func mapCRMError(err error) error {
+	switch {
+	case errors.Is(err, crm.ErrPlanRevisionConflict):
+		return ErrPlanRevisionConflict
+	case errors.Is(err, crm.ErrArchivedReadOnly):
+		return ErrArchivedReadOnly
+	case errors.Is(err, crm.ErrReopenRequired):
+		return ErrReopenRequired
+	case errors.Is(err, crm.ErrNotFound):
+		return ErrPlanNotFound
+	default:
+		return err
+	}
+}
+
 func (a *Application) ApplyPlanCommand(
 	ctx context.Context,
 	scope store.AccountScope,
@@ -325,25 +442,12 @@ func (a *Application) ApplyPlanCommand(
 	if err != nil {
 		return PlanMutationResult{}, err
 	}
-	response, err := a.idempotency.Execute(ctx, scope, idempotency.Request{
+	return a.executePlanMutation(ctx, scope, idempotency.Request{
 		Operation: idempotency.OperationShootPlanCommand, Key: key,
 		ResourceIdentity: idempotency.PlanResource(planID), CanonicalBody: canonical,
-	}, func(tx store.TxAccountScope) (idempotency.StoredResponse, error) {
-		result, err := a.applyPlanCommandInScope(ctx, tx, planID, expectedRevision, command)
-		if err != nil {
-			return idempotency.StoredResponse{}, err
-		}
-		body, err := json.Marshal(result)
-		return idempotency.StoredResponse{Status: 200, Body: body}, err
-	})
-	if err != nil {
-		return PlanMutationResult{}, err
-	}
-	var result PlanMutationResult
-	if err := json.Unmarshal(response.Body, &result); err != nil {
-		return PlanMutationResult{}, fmt.Errorf("decode plan command replay: %w", err)
-	}
-	return result, nil
+	}, func(tx store.TxAccountScope) (PlanMutationResult, error) {
+		return a.applyPlanCommandInScope(ctx, tx, planID, expectedRevision, command)
+	}, "decode plan command replay")
 }
 
 type PlanTransition struct {

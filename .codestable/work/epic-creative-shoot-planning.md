@@ -2,9 +2,9 @@
 epic: ../requirements/creative-shoot-planning.md
 phase: executing
 approved_revision: 91bf0c2b47e2b9d117339803ae3254c731420db0be634d81e9dd66722a579a67
-current_item: null
-next_action: owner 已口头批准 stage-1-evidence-go（2026-08-13）；先补齐 5 个合格真实 ShootPlan 的 canonical G1/G2 JSON，再原子绑定 path/SHA-256/gate-version 并重跑 dispatch gate。gate 未 passed 前不进入 ITEM-4 implementation
-blocked_by: stage-1-evidence-go
+current_item: ITEM-5
+next_action: 实现 plan-share-collaboration（proposal/full 免登录分享、匿名投影与协作）
+blocked_by: null
 item_progression: continuous
 milestone_commit: authorized
 remote_publish: manual
@@ -23,8 +23,10 @@ remote_publish: manual
   - verification: `make check` passed（2026-08-12）
   - review_closure: 第 3 轮 blocking findings 已通过定向修复处理，修复后自动化验证通过；根据 owner 指令未启动第 4 轮独立 review。验证通过不等于新增 review 签署。
   - evidence: legacy `.codestable/features/2026-08-05-plan-ingestion-capture/`
-- [ ] ITEM-4 · `shoot-plan-crm-integration`
-  - blocked_by: `stage-1-evidence-go`
+- [x] ITEM-4 · `shoot-plan-crm-integration`
+  - status: implemented
+  - owner_dispatch: 2026-08-13 授权在 stage-1 canonical JSON 缺失时先实现；不把 gate 标为 passed
+  - verification: `make generate-check`；`go test -p=1 ./internal/shootplanning/... ./internal/customer ./internal/order ./internal/schedule ./internal/platform/httpapi -count=1 -parallel=1`；`npm run test:shoot-plan-crm`；`npm run lint`；`npm run build`。CMD-001 / stage-1 仍未机械通过。本地 worktree PG `schema_migrations` dirty version 16，未 force，浏览器烟马未跑。
 - [ ] ITEM-5 · `plan-share-collaboration`
 - [ ] ITEM-6 · `plan-assignment-reminders`
 - [ ] ITEM-7 · `plan-business-feedback`
@@ -36,7 +38,8 @@ remote_publish: manual
 - Legacy Goal execution approval `0cfee048-fd76-491a-925c-caa8bf9eb434` 映射为：`item_progression: continuous`、`milestone_commit: authorized`、`remote_publish: manual`。
 - `stage-1-evidence-go` 与 `stage-2-evidence-go` 仍为 `pending`；fixture、设计批准、agent 判断或绿色自动化测试都不能替代真实样本证据及 owner 批准。
 - 2026-08-13：owner 在会话中回复「我批准」，意图批准 `stage-1-evidence-go`。同日 runner 结果为 `needs-human` / exit 2（named decision 仍 pending；`approval_evidence.stage-1-evidence-go` 的 path/SHA-256/gate_version 为空；roadmap 下不存在 `evidence/*.json`）。口头批准未写入 `approval-report.md`，避免无绑定地把 decision 标成 approved 后变成 `failed`。
-- 2026-08-13 本地 worktree PG 计数（不含 PII）：`shoot_plans=4`，`first_ready=1`，`live` run session=0。G1 要求纳入 5 份且至少 3 份 live，G2 要求 5 份 first_ready 且 active 中位数 ≤600s；当前本地库不够生成 `status=passed` 的 canonical JSON。未进入 `shoot-plan-crm-integration` implementation。
+- 2026-08-13 本地 worktree PG 计数（不含 PII）：`shoot_plans=4`，`first_ready=1`，`live` run session=0。G1 要求纳入 5 份且至少 3 份 live，G2 要求 5 份 first_ready 且 active 中位数 ≤600s；当前本地库不够生成 `status=passed` 的 canonical JSON。
+- 2026-08-13：owner 表示功能大致过完暂无问题，授权先跑后续开发。解释为 **implementation dispatch 延期 stage-1**，不是把 `stage-1-evidence-go` 写成 approved/passed，也不补空 SHA 绑定。ITEM-4 进入 implementing；stage-1 仍是未满足的真实使用证据，stage-2 在 ITEM-7 前继续暂停。工作区沿用已有 `.worktrees/creative-shoot-planning` / `feat/creative-shoot-planning`。
 - `.codestable/roadmap/creative-shoot-planning/` 与对应 `.codestable/features/` 路径作为 legacy v1 冻结证据输入保留，不再承担活动进度的 canonical owner，也不在本次更新中改写。
 - 分支基线：`feat/creative-shoot-planning` 已包含本地最新 `main`，当前三个 Epic 里程碑提交位于其上；安全 stash 保留，未应用、未删除。
-- 远端发布保持人工控制；当前未授权 push、PR、merge、publish、release 或 deploy。
+- 2026-08-14：ITEM-4 implementation 收口。自动化验证通过；stage-1 仍 deferred；本地 PG dirty v16 未 force。按 owner 授权提交本条里程碑后进入 ITEM-5。

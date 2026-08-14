@@ -1403,6 +1403,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          description: customer_changed（并发 merge 导致订单客户连续变化，需重拉候选）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -1919,6 +1925,14 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: customer_id
+          in: query
+          schema:
+            type: string
+        - name: order_id
+          in: query
+          schema:
+            type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
       responses:
@@ -1999,7 +2013,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PlanCommand"
+              $ref: "#/components/schemas/ShootPlanMutationRequest"
       responses:
         "200":
           description: 命令结果
@@ -2014,7 +2028,11 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
-          $ref: "#/components/responses/Conflict"
+          description: plan_revision_conflict | customer_link_conflict | order_link_conflict | projection_revision_conflict | projection_missing | projection_not_active | projection_not_future | source_changed | order_still_linked | archived_read_only | reopen_required | idempotency_conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -2946,6 +2964,8 @@ components:
               format: date
               nullable: true
               description: 非 cancelled 订单 max(shot_at) 按账号时区截断；order 域未落地前恒为 null
+            planning_summary:
+              $ref: "#/components/schemas/PlanningSummary"
 
     CustomerSummary:
       type: object
@@ -3004,6 +3024,8 @@ components:
                 - $ref: "#/components/schemas/CustomerSummary"
             stats:
               $ref: "#/components/schemas/CustomerStats"
+            planning_summary:
+              $ref: "#/components/schemas/PlanningSummary"
 
     SocialIdentity:
       type: object
@@ -3163,6 +3185,8 @@ components:
             package_name:
               type: string
               description: 引用套系的 name；未引用套系时缺省
+            planning_summary:
+              $ref: "#/components/schemas/PlanningSummary"
 
     ScheduleSlot:
       type: object
@@ -3266,6 +3290,8 @@ components:
               allOf:
                 - $ref: "#/components/schemas/ShootType"
               description: 订单所选套系的拍摄类型；未选套系时缺省
+            planning_summary:
+              $ref: "#/components/schemas/PlanningSummary"
 
     NonShootScheduleSlotListItem:
       allOf:
@@ -4012,6 +4038,10 @@ components:
           type: string
           format: date-time
           nullable: true
+        crm:
+          allOf:
+            - $ref: "#/components/schemas/ShootPlanCRM"
+          nullable: true
 
     CreateShootPlanInput:
       type: object
@@ -4373,6 +4403,248 @@ components:
           set_public_scale: "#/components/schemas/SetPublicScalePlanCommand"
           set_execution_window: "#/components/schemas/SetExecutionWindowPlanCommand"
           clear_execution_window: "#/components/schemas/ClearExecutionWindowPlanCommand"
+
+    LinkCustomerCrmCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [customer_id]
+          properties:
+            operation:
+              type: string
+              enum: [link_customer]
+            customer_id:
+              type: string
+
+    LinkOrderCrmCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [order_id]
+          properties:
+            operation:
+              type: string
+              enum: [link_order]
+            order_id:
+              type: string
+
+    UnlinkOrderCrmCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          properties:
+            operation:
+              type: string
+              enum: [unlink_order]
+
+    UnlinkCustomerCrmCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          properties:
+            operation:
+              type: string
+              enum: [unlink_customer]
+
+    AdoptScheduleProjectionCrmCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [projection_revision]
+          properties:
+            operation:
+              type: string
+              enum: [adopt_schedule_projection]
+            projection_revision:
+              type: integer
+              format: int64
+              minimum: 1
+
+    CrmLinkCommand:
+      oneOf:
+        - $ref: "#/components/schemas/LinkCustomerCrmCommand"
+        - $ref: "#/components/schemas/LinkOrderCrmCommand"
+        - $ref: "#/components/schemas/UnlinkOrderCrmCommand"
+        - $ref: "#/components/schemas/UnlinkCustomerCrmCommand"
+        - $ref: "#/components/schemas/AdoptScheduleProjectionCrmCommand"
+      discriminator:
+        propertyName: operation
+        mapping:
+          link_customer: "#/components/schemas/LinkCustomerCrmCommand"
+          link_order: "#/components/schemas/LinkOrderCrmCommand"
+          unlink_order: "#/components/schemas/UnlinkOrderCrmCommand"
+          unlink_customer: "#/components/schemas/UnlinkCustomerCrmCommand"
+          adopt_schedule_projection: "#/components/schemas/AdoptScheduleProjectionCrmCommand"
+
+    ShootPlanMutationRequest:
+      oneOf:
+        - $ref: "#/components/schemas/UpdateBriefPlanCommand"
+        - $ref: "#/components/schemas/UpsertShotPlanCommand"
+        - $ref: "#/components/schemas/ReorderShotsPlanCommand"
+        - $ref: "#/components/schemas/RemoveShotPlanCommand"
+        - $ref: "#/components/schemas/UpsertReadinessPlanCommand"
+        - $ref: "#/components/schemas/RemoveReadinessPlanCommand"
+        - $ref: "#/components/schemas/SetPreflightPlanCommand"
+        - $ref: "#/components/schemas/LinkReadinessPlanCommand"
+        - $ref: "#/components/schemas/UnlinkReadinessPlanCommand"
+        - $ref: "#/components/schemas/SetPublicScalePlanCommand"
+        - $ref: "#/components/schemas/SetExecutionWindowPlanCommand"
+        - $ref: "#/components/schemas/ClearExecutionWindowPlanCommand"
+        - $ref: "#/components/schemas/LinkCustomerCrmCommand"
+        - $ref: "#/components/schemas/LinkOrderCrmCommand"
+        - $ref: "#/components/schemas/UnlinkOrderCrmCommand"
+        - $ref: "#/components/schemas/UnlinkCustomerCrmCommand"
+        - $ref: "#/components/schemas/AdoptScheduleProjectionCrmCommand"
+      discriminator:
+        propertyName: operation
+        mapping:
+          update_brief: "#/components/schemas/UpdateBriefPlanCommand"
+          upsert_shot: "#/components/schemas/UpsertShotPlanCommand"
+          reorder_shots: "#/components/schemas/ReorderShotsPlanCommand"
+          remove_shot: "#/components/schemas/RemoveShotPlanCommand"
+          upsert_readiness: "#/components/schemas/UpsertReadinessPlanCommand"
+          remove_readiness: "#/components/schemas/RemoveReadinessPlanCommand"
+          set_preflight: "#/components/schemas/SetPreflightPlanCommand"
+          link_readiness: "#/components/schemas/LinkReadinessPlanCommand"
+          unlink_readiness: "#/components/schemas/UnlinkReadinessPlanCommand"
+          set_public_scale: "#/components/schemas/SetPublicScalePlanCommand"
+          set_execution_window: "#/components/schemas/SetExecutionWindowPlanCommand"
+          clear_execution_window: "#/components/schemas/ClearExecutionWindowPlanCommand"
+          link_customer: "#/components/schemas/LinkCustomerCrmCommand"
+          link_order: "#/components/schemas/LinkOrderCrmCommand"
+          unlink_order: "#/components/schemas/UnlinkOrderCrmCommand"
+          unlink_customer: "#/components/schemas/UnlinkCustomerCrmCommand"
+          adopt_schedule_projection: "#/components/schemas/AdoptScheduleProjectionCrmCommand"
+
+    LinkedOrderSnapshot:
+      type: object
+      additionalProperties: false
+      required: [order_id, customer_id, status_at_link, linked_at]
+      properties:
+        order_id:
+          type: string
+        customer_id:
+          type: string
+        title:
+          type: string
+        package_name:
+          type: string
+        status_at_link:
+          type: string
+        linked_at:
+          type: string
+          format: date-time
+
+    PlanScheduleProjectionView:
+      type: object
+      additionalProperties: false
+      required: [status, apply_suppressed]
+      properties:
+        status:
+          type: string
+          enum:
+            [missing_slot, active_applied, active_manual_override, active_unapplied,
+             inactive_past, inactive_order_cancelled, inactive_order_deleted, inactive_unlinked]
+        apply_suppressed:
+          type: boolean
+        slot_id:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+
+    ShootPlanCRM:
+      type: object
+      additionalProperties: false
+      required: [state, connection_revision]
+      properties:
+        state:
+          type: string
+          enum: [independent, customer_linked, order_linked, order_cancelled, order_deleted]
+        connection_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        projection_revision:
+          type: integer
+          format: int64
+          minimum: 1
+        customer_id:
+          type: string
+        order_id:
+          type: string
+        linked_order_snapshot:
+          $ref: "#/components/schemas/LinkedOrderSnapshot"
+        schedule_projection:
+          $ref: "#/components/schemas/PlanScheduleProjectionView"
+
+    PlanningSummaryPrimaryPlan:
+      type: object
+      additionalProperties: false
+      required: [id, title, status, shot_count, readiness_unchecked_count]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/ShootPlanStatus"
+        shot_count:
+          type: integer
+          format: int64
+          minimum: 0
+        readiness_unchecked_count:
+          type: integer
+          format: int64
+          minimum: 0
+
+    PlanningSummaryExecutionWindow:
+      type: object
+      additionalProperties: false
+      required: [starts_at, ends_at, timezone, source]
+      properties:
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+        source:
+          type: string
+          enum: [manual, schedule_slot]
+
+    PlanningSummary:
+      type: object
+      additionalProperties: false
+      required: [plan_count, active_plan_count]
+      properties:
+        plan_count:
+          type: integer
+          format: int64
+          minimum: 0
+        active_plan_count:
+          type: integer
+          format: int64
+          minimum: 0
+        primary_plan:
+          $ref: "#/components/schemas/PlanningSummaryPrimaryPlan"
+        execution_window:
+          $ref: "#/components/schemas/PlanningSummaryExecutionWindow"
+        link_warning:
+          type: string
+          enum: [order_cancelled, order_deleted]
 
     PlanMutationResult:
       type: object

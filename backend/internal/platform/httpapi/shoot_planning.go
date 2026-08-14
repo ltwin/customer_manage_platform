@@ -15,6 +15,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 	shootplanningapi "github.com/samson/customer-manage-platform/backend/internal/shootplanning/httpcontract"
 )
 
@@ -33,7 +34,7 @@ func (h *shootPlanningHandlers) ListShootPlans(c *gin.Context, params shootplann
 	if !ok {
 		return
 	}
-	if !onlyQueryParameters(c, "status", "archived", "page", "page_size") ||
+	if !onlyQueryParameters(c, "status", "archived", "page", "page_size", "customer_id", "order_id") ||
 		(params.Status != nil && !params.Status.Valid()) {
 		abortShootPlanningValidation(c)
 		return
@@ -51,6 +52,12 @@ func (h *shootPlanningHandlers) ListShootPlans(c *gin.Context, params shootplann
 	}
 	if params.PageSize != nil {
 		filter.PageSize = *params.PageSize
+	}
+	if params.CustomerId != nil {
+		filter.CustomerID = *params.CustomerId
+	}
+	if params.OrderId != nil {
+		filter.OrderID = *params.OrderId
 	}
 	if filter.Page < 1 || filter.PageSize < 1 || filter.PageSize > 100 {
 		abortShootPlanningValidation(c)
@@ -104,12 +111,17 @@ func (h *shootPlanningHandlers) ApplyShootPlanCommand(c *gin.Context, id shootpl
 	if !ok {
 		return
 	}
-	expectedRevision, command, err := decodePlanCommand(c)
+	expectedRevision, crmCommand, command, err := decodeShootPlanMutation(c)
 	if err != nil {
 		abortShootPlanningValidation(c)
 		return
 	}
-	result, err := h.app.ApplyPlanCommand(c.Request.Context(), scope, params.IdempotencyKey, id, expectedRevision, command)
+	var result shootplanning.PlanMutationResult
+	if crmCommand != nil {
+		result, err = h.app.ApplyCRMLink(c.Request.Context(), scope, params.IdempotencyKey, id, expectedRevision, *crmCommand)
+	} else {
+		result, err = h.app.ApplyPlanCommand(c.Request.Context(), scope, params.IdempotencyKey, id, expectedRevision, command)
+	}
 	if h.abortError(c, err) {
 		return
 	}
@@ -242,6 +254,16 @@ func (h *shootPlanningHandlers) abortError(c *gin.Context, err error) bool {
 		{shootplanning.ErrExecutionEventAlreadyVoid, CodeExecutionEventAlreadyVoid, "执行事实已作废"},
 		{shootplanning.ErrSupersedesMismatch, CodeSupersedesEventMismatch, "被替代事实与当前结果不一致"},
 		{idempotency.ErrConflict, CodeIdempotencyConflict, "幂等键已被其他请求使用"},
+		{crm.ErrCustomerLinkConflict, CodeCustomerLinkConflict, "已关联其他客户，请先解除后再关联"},
+		{crm.ErrOrderLinkConflict, CodeOrderLinkConflict, "已关联其他订单，请先解除后再关联"},
+		{crm.ErrProjectionRevisionConflict, CodeProjectionRevisionConflict, "档期投影版本已变化，请刷新后重试"},
+		{crm.ErrProjectionMissing, CodeProjectionMissing, "当前没有可采纳的档期投影"},
+		{crm.ErrProjectionNotActive, CodeProjectionNotActive, "当前档期投影不可采纳"},
+		{crm.ErrProjectionNotFuture, CodeProjectionNotFuture, "档期已结束，不能作为未来拍摄时间"},
+		{crm.ErrSourceChangedRetry, CodeSourceChanged, "关联的客户或订单刚刚发生变化，请刷新后重试"},
+		{crm.ErrSourceChanged, CodeSourceChanged, "关联的客户或订单刚刚发生变化，请刷新后重试"},
+		{crm.ErrOrderStillLinked, CodeOrderStillLinked, "请先解除订单关联再解除客户"},
+		{crm.ErrCustomerMerged, CodeCustomerMerged, "客户已合并，档案只读"},
 	}
 	for _, item := range conflicts {
 		if errors.Is(err, item.err) {
@@ -251,11 +273,11 @@ func (h *shootPlanningHandlers) abortError(c *gin.Context, err error) bool {
 	}
 	if errors.Is(err, shootplanning.ErrPlanNotFound) || errors.Is(err, shootplanning.ErrShotNotFound) ||
 		errors.Is(err, shootplanning.ErrReadinessNotFound) || errors.Is(err, shootplanning.ErrRunSessionNotFound) ||
-		errors.Is(err, shootplanning.ErrExecutionEventNotFound) {
+		errors.Is(err, shootplanning.ErrExecutionEventNotFound) || errors.Is(err, crm.ErrNotFound) {
 		abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
 		return true
 	}
-	if errors.Is(err, shootplanning.ErrValidation) || errors.Is(err, idempotency.ErrValidation) {
+	if errors.Is(err, shootplanning.ErrValidation) || errors.Is(err, idempotency.ErrValidation) || errors.Is(err, crm.ErrValidation) {
 		abortShootPlanningValidation(c)
 		return true
 	}
@@ -393,14 +415,90 @@ func jsonObjectField(body []byte, name string) ([]byte, error) {
 	return value, nil
 }
 
-func decodePlanCommand(c *gin.Context) (int64, shootplanning.PlanCommand, error) {
+func decodeShootPlanMutation(c *gin.Context) (int64, *crm.Command, shootplanning.PlanCommand, error) {
 	if c.ContentType() != "application/json" {
-		return 0, nil, errors.New("content type must be application/json")
+		return 0, nil, nil, errors.New("content type must be application/json")
 	}
 	body, err := readRequestBody(c)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, nil, err
 	}
+	if err := requireJSONFields(body, "expected_revision", "operation"); err != nil {
+		return 0, nil, nil, err
+	}
+	var discriminator struct {
+		Operation string `json:"operation"`
+	}
+	if err := json.Unmarshal(body, &discriminator); err != nil {
+		return 0, nil, nil, err
+	}
+	switch discriminator.Operation {
+	case "link_customer", "link_order", "unlink_order", "unlink_customer", "adopt_schedule_projection":
+		command, err := decodeCRMCommand(body, discriminator.Operation)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+		return command.expected, &command.command, nil, nil
+	default:
+		c.Set(shootPlanningRawBodyKey, body)
+		revision, planCommand, err := decodePlanCommandFromBody(body)
+		return revision, nil, planCommand, err
+	}
+}
+
+type decodedCRMCommand struct {
+	expected int64
+	command  crm.Command
+}
+
+func decodeCRMCommand(body []byte, operation string) (decodedCRMCommand, error) {
+	switch operation {
+	case "link_customer":
+		if err := requireJSONFields(body, "customer_id"); err != nil {
+			return decodedCRMCommand{}, err
+		}
+		var request shootplanningapi.LinkCustomerCrmCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.LinkCustomer {
+			return decodedCRMCommand{}, invalidUnion(err)
+		}
+		return decodedCRMCommand{expected: request.ExpectedRevision, command: crm.Command{Kind: crm.KindLinkCustomer, CustomerID: &request.CustomerId}}, nil
+	case "link_order":
+		if err := requireJSONFields(body, "order_id"); err != nil {
+			return decodedCRMCommand{}, err
+		}
+		var request shootplanningapi.LinkOrderCrmCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.LinkOrder {
+			return decodedCRMCommand{}, invalidUnion(err)
+		}
+		return decodedCRMCommand{expected: request.ExpectedRevision, command: crm.Command{Kind: crm.KindLinkOrder, OrderID: &request.OrderId}}, nil
+	case "unlink_order":
+		var request shootplanningapi.UnlinkOrderCrmCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.UnlinkOrder {
+			return decodedCRMCommand{}, invalidUnion(err)
+		}
+		return decodedCRMCommand{expected: request.ExpectedRevision, command: crm.Command{Kind: crm.KindUnlinkOrder}}, nil
+	case "unlink_customer":
+		var request shootplanningapi.UnlinkCustomerCrmCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.UnlinkCustomer {
+			return decodedCRMCommand{}, invalidUnion(err)
+		}
+		return decodedCRMCommand{expected: request.ExpectedRevision, command: crm.Command{Kind: crm.KindUnlinkCustomer}}, nil
+	case "adopt_schedule_projection":
+		if err := requireJSONFields(body, "projection_revision"); err != nil {
+			return decodedCRMCommand{}, err
+		}
+		var request shootplanningapi.AdoptScheduleProjectionCrmCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.AdoptScheduleProjection {
+			return decodedCRMCommand{}, invalidUnion(err)
+		}
+		revision := request.ProjectionRevision
+		return decodedCRMCommand{expected: request.ExpectedRevision, command: crm.Command{Kind: crm.KindAdopt, ProjectionRevision: &revision}}, nil
+	default:
+		return decodedCRMCommand{}, errors.New("unknown crm command discriminator")
+	}
+}
+
+func decodePlanCommandFromBody(body []byte) (int64, shootplanning.PlanCommand, error) {
 	if err := requireJSONFields(body, "expected_revision", "operation"); err != nil {
 		return 0, nil, err
 	}

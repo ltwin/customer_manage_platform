@@ -18,6 +18,7 @@ import { scheduleDialogShouldOpen } from '../components/schedule/flow'
 import { readPendingSchedule } from '../components/schedule/journal'
 import { accountToday } from '../components/schedule/timezone'
 import { useShell } from '../components/shellContext'
+import PlanningSummaryLink from '../components/PlanningSummaryLink'
 import CustomerAvatar from '../components/customers/CustomerAvatar'
 import StateNotice from '../components/StateNotice'
 import {
@@ -251,6 +252,7 @@ export default function CustomerDetailPage() {
         <div>
           <div className="crumb"><Link to="/customers">客户</Link> / 档案</div>
           <h1>{customer.display_name}</h1>
+          <PlanningSummaryLink summary={customer.planning_summary} />
         </div>
         <div className="topbar-actions">
           {!isMerged && (

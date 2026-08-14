@@ -16,9 +16,9 @@ import {
   getShootPlan,
   newPlanningMutationKey,
   transitionShootPlan,
-  type PlanCommand,
   type PlanTransition,
   type ShootPlanDetail,
+  type ShootPlanMutationRequest,
 } from './api'
 import StatusBadge from './StatusBadge'
 import { planningErrorMessage } from './presentation'
@@ -29,7 +29,7 @@ import ExecutionHistoryPanel from './panels/ExecutionHistoryPanel'
 import PlanningMediaPanel from './panels/PlanningMediaPanel'
 import './planning.css'
 
-export type CommandRunner = (command: PlanCommand, scope: string) => Promise<void>
+export type CommandRunner = (command: ShootPlanMutationRequest, scope: string) => Promise<void>
 export type TransitionRunner = (transition: PlanTransition, scope: string) => Promise<void>
 
 type WorkspaceTab = 'brief' | 'shots' | 'readiness' | 'assets' | 'history'

@@ -27,6 +27,7 @@ import type {
   UpdateOrderBody,
 } from '../../api/client'
 import { useShell } from '../shellContext'
+import PlanningSummaryLink from '../PlanningSummaryLink'
 import { useFocusTrap } from '../useFocusTrap'
 import {
 	accountDateAtNoonToInstant,
@@ -908,6 +909,7 @@ function OrderRow({
           <span className={`badge ${statusBadge(order.status)}`}>{statusLabels[order.status]}</span>
           <h3>{orderTitle(order)}</h3>
         </div>
+        <PlanningSummaryLink summary={order.planning_summary} />
         <div className="order-meta">
           {!fixedCustomer && (
             <Link to={`/customers/${order.customer_id}`}>{order.customer_display_name}</Link>

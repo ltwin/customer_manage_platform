@@ -36,6 +36,7 @@ const (
 	OperationPlanIngestionPreview        Operation = "plan-ingestion.preview.v1"
 	OperationPlanIngestionTransition     Operation = "plan-ingestion.transition.v1"
 	OperationPlanIngestionCommit         Operation = "plan-ingestion.commit.v1"
+	OperationShootPlanCRMLink            Operation = "shoot-plan.crm-link.v1"
 	defaultTTL                                     = 24 * time.Hour
 )
 
@@ -387,6 +388,8 @@ func resourceMatchesOperation(operation Operation, identity ResourceIdentity) bo
 		return identity.kind == "plan-ingestion-create" && primary && !secondary
 	case OperationPlanIngestionPreview, OperationPlanIngestionTransition, OperationPlanIngestionCommit:
 		return identity.kind == "plan-ingestion-session" && primary && secondary
+	case OperationShootPlanCRMLink:
+		return identity.kind == "shoot-plan" && primary && !secondary
 	default:
 		return false
 	}

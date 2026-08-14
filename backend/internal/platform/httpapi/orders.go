@@ -387,5 +387,6 @@ func toAPIOrderListItem(item orderdomain.ListItem) OrderListItem {
 		ShotAt:              item.ShotAt,
 		Status:              OrderStatus(item.Status),
 		Title:               item.Title,
+		PlanningSummary:     toAPIPlanningSummary(item.PlanningSummary),
 	}
 }

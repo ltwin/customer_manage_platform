@@ -10,6 +10,7 @@ export type ShootPlanShot = components['schemas']['ShootPlanShot']
 export type ShootPlanReadinessItem = components['schemas']['ShootPlanReadinessItem']
 export type ShotExecutionFact = components['schemas']['ShotExecutionFact']
 export type PlanCommand = components['schemas']['PlanCommand']
+export type ShootPlanMutationRequest = components['schemas']['ShootPlanMutationRequest']
 export type PlanMutationResult = components['schemas']['PlanMutationResult']
 export type PlanTransition = components['schemas']['PlanTransition']
 export type PlanTransitionResult = components['schemas']['PlanTransitionResult']
@@ -68,7 +69,7 @@ export function getShootPlan(id: string, includeHistory = false): Promise<ShootP
 
 export function applyShootPlanCommand(
   id: string,
-  body: PlanCommand,
+  body: ShootPlanMutationRequest,
   idempotencyKey: string,
 ): Promise<PlanMutationResult> {
   return request<PlanMutationResult>(`/shoot-plans/${encodeURIComponent(id)}`, {

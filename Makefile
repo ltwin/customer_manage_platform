@@ -49,6 +49,9 @@ test:
 	cd frontend && npm run test:customer-avatar
 	cd frontend && npm run test:v1-hardening
 	cd frontend && npm run test:shoot-planning
+	cd frontend && npm run test:planning-media
+	cd frontend && npm run test:plan-ingestion
+	cd frontend && npm run test:shoot-plan-crm
 	./scripts/test-auth-legacy-cutover.sh
 	./scripts/test-auth-security-catalog.sh
 	bash ./scripts/test-v1-ops-common.sh

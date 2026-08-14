@@ -6,6 +6,7 @@ import { instantToLocalDateTime } from '../../components/schedule/timezone'
 import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail } from '../api'
+import CrmLinkPanel from './CrmLinkPanel'
 import {
   buildExecutionWindow,
   inferExecutionWindowMode,
@@ -20,6 +21,7 @@ export default function BriefPanel({ plan, busy, runCommand }: { plan: ShootPlan
       <div className="planning-side-stack">
         <ScaleEditor plan={plan} busy={busy} runCommand={runCommand} />
         <WindowEditor plan={plan} busy={busy} runCommand={runCommand} accountTimezone={accountTimezone} />
+        <CrmLinkPanel plan={plan} busy={busy} runCommand={runCommand} />
       </div>
     </div>
   )

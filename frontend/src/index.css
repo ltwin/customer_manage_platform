@@ -1255,3 +1255,12 @@ dd { margin: 0 0 0.75rem; word-break: break-all; }
   gap: 0.35rem;
   flex-shrink: 0;
 }
+.planning-summary-link {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.planning-summary-link a {
+  color: var(--accent);
+  font-weight: 650;
+}

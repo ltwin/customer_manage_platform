@@ -232,6 +232,7 @@ func toAPICustomerListItem(item customerdomain.ListItem) CustomerListItem {
 		RealName:             item.RealName,
 		ReferrerCustomerId:   item.ReferrerCustomerID,
 		Status:               CustomerStatus(item.Status),
+		PlanningSummary:      toAPIPlanningSummary(item.PlanningSummary),
 	}
 }
 
@@ -293,7 +294,8 @@ func toAPICustomerDetail(detail customerdomain.Detail) CustomerDetail {
 			OrdersCount:      detail.Stats.OrdersCount,
 			TotalOrderAmount: detail.Stats.TotalOrderAmount,
 		},
-		Status: CustomerStatus(detail.Status),
+		Status:          CustomerStatus(detail.Status),
+		PlanningSummary: toAPIPlanningSummary(detail.PlanningSummary),
 	}
 }
 

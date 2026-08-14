@@ -575,6 +575,42 @@ func (e PlanningShareReminderArchiveAcknowledgementVersion) Valid() bool {
 	}
 }
 
+// Defines values for PlanningSummaryLinkWarning.
+const (
+	OrderCancelled PlanningSummaryLinkWarning = "order_cancelled"
+	OrderDeleted   PlanningSummaryLinkWarning = "order_deleted"
+)
+
+// Valid indicates whether the value is a known member of the PlanningSummaryLinkWarning enum.
+func (e PlanningSummaryLinkWarning) Valid() bool {
+	switch e {
+	case OrderCancelled:
+		return true
+	case OrderDeleted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanningSummaryExecutionWindowSource.
+const (
+	PlanningSummaryExecutionWindowSourceManual       PlanningSummaryExecutionWindowSource = "manual"
+	PlanningSummaryExecutionWindowSourceScheduleSlot PlanningSummaryExecutionWindowSource = "schedule_slot"
+)
+
+// Valid indicates whether the value is a known member of the PlanningSummaryExecutionWindowSource enum.
+func (e PlanningSummaryExecutionWindowSource) Valid() bool {
+	switch e {
+	case PlanningSummaryExecutionWindowSourceManual:
+		return true
+	case PlanningSummaryExecutionWindowSourceScheduleSlot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PricingMode.
 const (
 	PricingModeFixed       PricingMode = "fixed"
@@ -635,6 +671,33 @@ func (e ReminderType) Valid() bool {
 	case ReminderTypeCustom:
 		return true
 	case ReminderTypeFollowUp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ShootPlanStatus.
+const (
+	Archived   ShootPlanStatus = "archived"
+	Completed  ShootPlanStatus = "completed"
+	Draft      ShootPlanStatus = "draft"
+	InProgress ShootPlanStatus = "in_progress"
+	Ready      ShootPlanStatus = "ready"
+)
+
+// Valid indicates whether the value is a known member of the ShootPlanStatus enum.
+func (e ShootPlanStatus) Valid() bool {
+	switch e {
+	case Archived:
+		return true
+	case Completed:
+		return true
+	case Draft:
+		return true
+	case InProgress:
+		return true
+	case Ready:
 		return true
 	default:
 		return false
@@ -981,10 +1044,11 @@ type CustomerDetail struct {
 	MergedIntoCustomerId *string          `json:"merged_into_customer_id,omitempty"`
 
 	// Notes 倒序
-	Notes    []CustomerNote                     `json:"notes"`
-	Phone    *string                            `json:"phone,omitempty"`
-	RealName *string                            `json:"real_name,omitempty"`
-	Referrer nullable.Nullable[CustomerSummary] `json:"referrer"`
+	Notes           []CustomerNote                     `json:"notes"`
+	Phone           *string                            `json:"phone,omitempty"`
+	PlanningSummary *PlanningSummary                   `json:"planning_summary,omitempty"`
+	RealName        *string                            `json:"real_name,omitempty"`
+	Referrer        nullable.Nullable[CustomerSummary] `json:"referrer"`
 
 	// ReferrerCustomerId channel=referral 时必填
 	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
@@ -1014,9 +1078,10 @@ type CustomerListItem struct {
 	MergedIntoCustomerId *string                               `json:"merged_into_customer_id,omitempty"`
 
 	// OrdersCount 非 cancelled 订单计数；order 域未落地前恒为 0
-	OrdersCount int     `json:"orders_count"`
-	Phone       *string `json:"phone,omitempty"`
-	RealName    *string `json:"real_name,omitempty"`
+	OrdersCount     int              `json:"orders_count"`
+	Phone           *string          `json:"phone,omitempty"`
+	PlanningSummary *PlanningSummary `json:"planning_summary,omitempty"`
+	RealName        *string          `json:"real_name,omitempty"`
 
 	// ReferrerCustomerId channel=referral 时必填
 	ReferrerCustomerId *string        `json:"referrer_customer_id,omitempty"`
@@ -1190,7 +1255,8 @@ type OrderListItem struct {
 	PackageId   *string    `json:"package_id,omitempty"`
 
 	// PackageName 引用套系的 name；未引用套系时缺省
-	PackageName *string `json:"package_name,omitempty"`
+	PackageName     *string          `json:"package_name,omitempty"`
+	PlanningSummary *PlanningSummary `json:"planning_summary,omitempty"`
 
 	// Price 分
 	Price *int `json:"price,omitempty"`
@@ -1400,6 +1466,38 @@ type PlanningShareReminderArchiveAcknowledgementEffects string
 // PlanningShareReminderArchiveAcknowledgementVersion defines model for PlanningShareReminderArchiveAcknowledgement.Version.
 type PlanningShareReminderArchiveAcknowledgementVersion string
 
+// PlanningSummary defines model for PlanningSummary.
+type PlanningSummary struct {
+	ActivePlanCount int64                           `json:"active_plan_count"`
+	ExecutionWindow *PlanningSummaryExecutionWindow `json:"execution_window,omitempty"`
+	LinkWarning     *PlanningSummaryLinkWarning     `json:"link_warning,omitempty"`
+	PlanCount       int64                           `json:"plan_count"`
+	PrimaryPlan     *PlanningSummaryPrimaryPlan     `json:"primary_plan,omitempty"`
+}
+
+// PlanningSummaryLinkWarning defines model for PlanningSummary.LinkWarning.
+type PlanningSummaryLinkWarning string
+
+// PlanningSummaryExecutionWindow defines model for PlanningSummaryExecutionWindow.
+type PlanningSummaryExecutionWindow struct {
+	EndsAt   time.Time                            `json:"ends_at"`
+	Source   PlanningSummaryExecutionWindowSource `json:"source"`
+	StartsAt time.Time                            `json:"starts_at"`
+	Timezone string                               `json:"timezone"`
+}
+
+// PlanningSummaryExecutionWindowSource defines model for PlanningSummaryExecutionWindow.Source.
+type PlanningSummaryExecutionWindowSource string
+
+// PlanningSummaryPrimaryPlan defines model for PlanningSummaryPrimaryPlan.
+type PlanningSummaryPrimaryPlan struct {
+	Id                      string          `json:"id"`
+	ReadinessUncheckedCount int64           `json:"readiness_unchecked_count"`
+	ShotCount               int64           `json:"shot_count"`
+	Status                  ShootPlanStatus `json:"status"`
+	Title                   string          `json:"title"`
+}
+
 // PricingMode defines model for PricingMode.
 type PricingMode string
 
@@ -1518,6 +1616,9 @@ type Settings struct {
 	Timezone string `json:"timezone"`
 }
 
+// ShootPlanStatus defines model for ShootPlanStatus.
+type ShootPlanStatus string
+
 // ShootScheduleSlotListItem defines model for ShootScheduleSlotListItem.
 type ShootScheduleSlotListItem struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
@@ -1561,6 +1662,7 @@ type ShootScheduleSlotListItem struct {
 
 	// PackageShootType 订单所选套系的拍摄类型；未选套系时缺省
 	PackageShootType *ShootType                    `json:"package_shoot_type,omitempty"`
+	PlanningSummary  *PlanningSummary              `json:"planning_summary,omitempty"`
 	StartAt          time.Time                     `json:"start_at"`
 	Type             ShootScheduleSlotListItemType `json:"type"`
 }

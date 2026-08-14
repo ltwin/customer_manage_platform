@@ -2,6 +2,7 @@ package shootplanning
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
 var (
@@ -25,6 +26,8 @@ type CreatePlanInput struct {
 
 type ListPlansFilter struct {
 	Status       *PlanStatus
+	CustomerID   string
+	OrderID      string
 	ArchivedOnly bool
 	Page         int
 	PageSize     int
@@ -54,6 +57,26 @@ type PlanDetail struct {
 	RequiredArchiveAcknowledgement ArchiveAcknowledgement     `json:"required_archive_acknowledgement"`
 	ExecutionFacts                 []ExecutionFact            `json:"execution_history,omitempty"`
 	Finalizations                  []PlanFinalizationSnapshot `json:"finalizations,omitempty"`
+	CRM                            *PlanCRMView               `json:"crm,omitempty"`
+}
+
+type PlanCRMView struct {
+	State               string                   `json:"state"`
+	ConnectionRevision  int64                    `json:"connection_revision"`
+	ProjectionRevision  *int64                   `json:"projection_revision,omitempty"`
+	CustomerID          *string                  `json:"customer_id,omitempty"`
+	OrderID             *string                  `json:"order_id,omitempty"`
+	LinkedOrderSnapshot *crm.LinkedOrderSnapshot `json:"linked_order_snapshot,omitempty"`
+	ScheduleProjection  *PlanScheduleView        `json:"schedule_projection,omitempty"`
+}
+
+type PlanScheduleView struct {
+	Status          string     `json:"status"`
+	ApplySuppressed bool       `json:"apply_suppressed"`
+	SlotID          *string    `json:"slot_id,omitempty"`
+	StartsAt        *time.Time `json:"starts_at,omitempty"`
+	EndsAt          *time.Time `json:"ends_at,omitempty"`
+	Timezone        *string    `json:"timezone,omitempty"`
 }
 
 type PlanFinalizationSnapshot struct {
@@ -120,17 +143,25 @@ func (PostgresRepository) Create(ctx context.Context, scope store.AccountScope, 
 	if runeLen(title) < 1 || runeLen(title) > 160 || runeLen(subject) < 1 || runeLen(subject) > 240 {
 		return ShootPlan{}, validationError("title 或 subject 非法")
 	}
-	id := "spl_" + uuid.NewString()
-	if _, err := scope.InsertReturningID(ctx, "shoot_plans", []string{"id", "title", "subject"}, id, title, subject); err != nil {
-		return ShootPlan{}, fmt.Errorf("create shoot plan: %w", err)
-	}
-	return loadPlan(ctx, scope, id)
+	var plan ShootPlan
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		created, err := PostgresRepository{}.CreateInScope(ctx, tx, CreatePlanInput{Title: title, Subject: subject})
+		if err != nil {
+			return err
+		}
+		plan = created
+		return nil
+	})
+	return plan, err
 }
 
 func (PostgresRepository) CreateInScope(ctx context.Context, tx store.TxAccountScope, input CreatePlanInput) (ShootPlan, error) {
 	id := newPlanID()
 	if _, err := tx.InsertReturningID(ctx, "shoot_plans", []string{"id", "title", "subject"}, id, input.Title, input.Subject); err != nil {
 		return ShootPlan{}, fmt.Errorf("create shoot plan in scope: %w", err)
+	}
+	if err := crm.InsertIndependentConnection(ctx, tx, id); err != nil {
+		return ShootPlan{}, fmt.Errorf("create plan crm connection: %w", err)
 	}
 	return loadPlanFromTx(ctx, tx, id)
 }
@@ -160,6 +191,14 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 		}
 		cond = "status = $2"
 		args = append(args, string(*filter.Status))
+	}
+	if id := strings.TrimSpace(filter.CustomerID); id != "" {
+		args = append(args, id)
+		cond += fmt.Sprintf(" AND crm_customer_id = $%d", len(args)+1)
+	}
+	if id := strings.TrimSpace(filter.OrderID); id != "" {
+		args = append(args, id)
+		cond += fmt.Sprintf(" AND crm_order_id = $%d", len(args)+1)
 	}
 	total, err := scope.Count(ctx, "shoot_plan_list_projection", cond, args...)
 	if err != nil {
@@ -218,6 +257,10 @@ func loadPlanDetail(ctx context.Context, scope planReadScope, id string, include
 	}
 	plan.ExecutionWindow = window
 	detail := PlanDetail{ShootPlan: plan, Shots: shots, ReadinessItems: readiness}
+	detail.CRM, err = loadCRMView(ctx, scope, id)
+	if err != nil {
+		return PlanDetail{}, err
+	}
 	if includeHistory {
 		detail.ExecutionFacts, err = loadExecutionFacts(ctx, scope, id)
 		if err != nil {
@@ -504,6 +547,66 @@ func validPlanStatus(status PlanStatus) bool {
 	default:
 		return false
 	}
+}
+
+func loadCRMView(ctx context.Context, scope planReadScope, planID string) (*PlanCRMView, error) {
+	var view PlanCRMView
+	var customer, orderID sql.NullString
+	var snapshot []byte
+	err := scope.QueryRow(ctx, "plan_crm_connections",
+		"state, connection_revision, customer_id, order_id, linked_order_snapshot",
+		"plan_id = $2", planID).Scan(&view.State, &view.ConnectionRevision, &customer, &orderID, &snapshot)
+	if errors.Is(err, store.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load plan crm connection: %w", err)
+	}
+	if customer.Valid {
+		view.CustomerID = &customer.String
+	}
+	if orderID.Valid {
+		view.OrderID = &orderID.String
+	}
+	if len(snapshot) > 0 {
+		var snap crm.LinkedOrderSnapshot
+		if err := json.Unmarshal(snapshot, &snap); err != nil {
+			return nil, fmt.Errorf("decode linked order snapshot: %w", err)
+		}
+		view.LinkedOrderSnapshot = &snap
+	}
+	var projRev int64
+	var status string
+	var suppressed bool
+	var slotID sql.NullString
+	var start, end sql.NullTime
+	var timezone sql.NullString
+	err = scope.QueryRow(ctx, "plan_schedule_projections",
+		"projection_revision, status, apply_suppressed, slot_id, starts_at, ends_at, timezone",
+		"plan_id = $2", planID).Scan(&projRev, &status, &suppressed, &slotID, &start, &end, &timezone)
+	if err != nil && !errors.Is(err, store.ErrNoRows) {
+		return nil, fmt.Errorf("load plan schedule projection: %w", err)
+	}
+	if err == nil {
+		view.ProjectionRevision = &projRev
+		sched := PlanScheduleView{Status: status, ApplySuppressed: suppressed}
+		if slotID.Valid {
+			sched.SlotID = &slotID.String
+		}
+		if start.Valid {
+			value := start.Time.UTC()
+			sched.StartsAt = &value
+		}
+		if end.Valid {
+			value := end.Time.UTC()
+			sched.EndsAt = &value
+		}
+		if timezone.Valid {
+			sched.Timezone = &timezone.String
+		}
+		view.ScheduleProjection = &sched
+	}
+	return &view, nil
 }
 
 func runeLen(value string) int { return len([]rune(value)) }

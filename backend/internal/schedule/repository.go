@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
 const (
@@ -19,10 +21,22 @@ const (
 	shootOrderUniqueConstraint = "schedule_slots_account_shoot_order_uidx"
 )
 
-type PostgresRepository struct{}
+type PlanningScheduleProjectionSink interface {
+	LockPlanningReminderFenceInScope(context.Context, store.TxAccountScope) error
+	ReprojectScheduleMutationInScope(context.Context, store.TxAccountScope, crm.ScheduleMutationFact, time.Time) error
+}
+
+type PostgresRepository struct {
+	sink PlanningScheduleProjectionSink
+}
 
 func NewPostgresRepository() PostgresRepository {
 	return PostgresRepository{}
+}
+
+func (r PostgresRepository) WithProjectionSink(sink PlanningScheduleProjectionSink) PostgresRepository {
+	r.sink = sink
+	return r
 }
 
 func (r PostgresRepository) Create(
@@ -88,6 +102,9 @@ func (r PostgresRepository) CreatePreparedInScope(
 	expectedCustomerID string,
 	now time.Time,
 ) (CreateResult, error) {
+	if err := r.lockFence(ctx, tx); err != nil {
+		return CreateResult{}, err
+	}
 	candidate := prepared.slot
 	candidate.ID = "slot_" + uuid.NewString()
 	if candidate.Type == TypeShoot {
@@ -138,6 +155,14 @@ func (r PostgresRepository) CreatePreparedInScope(
 	}
 	created, err := findSlot(ctx, tx, insertedID, false)
 	if err != nil {
+		return CreateResult{}, err
+	}
+	if err := r.reproject(ctx, tx, crm.ScheduleMutationFact{
+		Change:        crm.ScheduleCreate,
+		SlotID:        created.ID,
+		NewOrderID:    created.OrderID,
+		NewCustomerID: stringPtrFromValue(expectedCustomerID),
+	}, now); err != nil {
 		return CreateResult{}, err
 	}
 	return CreateResult{Slot: created, Overlaps: slotIDs(overlaps)}, nil
@@ -238,6 +263,22 @@ func assembleListItems(
 		}
 		items = append(items, item)
 	}
+	slotIDsForSummary := make([]string, 0, len(items))
+	for _, item := range items {
+		if item.Type == TypeShoot {
+			slotIDsForSummary = append(slotIDsForSummary, item.ID)
+		}
+	}
+	planningSummaries, err := crm.LoadSummaries(ctx, scope, crm.SummaryViewBySlot, slotIDsForSummary)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if summary, ok := planningSummaries[items[i].ID]; ok {
+			copied := summary
+			items[i].PlanningSummary = &copied
+		}
+	}
 	return items, nil
 }
 
@@ -267,6 +308,22 @@ func (r PostgresRepository) Update(
 		var updated Slot
 		var candidate Slot
 		err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			if err := r.lockFence(ctx, tx); err != nil {
+				return err
+			}
+			unlocked, err := findSlot(ctx, tx, id, false)
+			if err != nil {
+				return err
+			}
+			candidate, err = ApplyUpdate(unlocked, input)
+			if err != nil {
+				return err
+			}
+			oldCustomerID, newCustomerID, err := r.lockScheduleGraph(ctx, tx, unlocked, candidate)
+			if err != nil {
+				return err
+			}
+			_ = oldCustomerID
 			locked, err := findSlot(ctx, tx, id, true)
 			if err != nil {
 				return err
@@ -302,7 +359,10 @@ func (r PostgresRepository) Update(
 				return err
 			}
 			updated, err = findSlot(ctx, tx, id, false)
-			return err
+			if err != nil {
+				return err
+			}
+			return r.reproject(ctx, tx, scheduleChangeFact(locked, updated, oldCustomerID, newCustomerID), now)
 		})
 		var moved CustomerChangedError
 		if errors.As(err, &moved) {
@@ -326,15 +386,65 @@ func (r PostgresRepository) Update(
 	return Slot{}, ErrCustomerChanged
 }
 
-func (PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, id string) error {
-	deleted, err := scope.Delete(ctx, "schedule_slots", "id = $2", id)
+func (r PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, id string) error {
+	current, err := findSlot(ctx, scope, id, false)
 	if err != nil {
 		return err
 	}
-	if deleted == 0 {
-		return fmt.Errorf("%w: 档期不存在", ErrNotFound)
+	expectedCustomerID := ""
+	if current.Type == TypeShoot && current.OrderID != nil {
+		expectedCustomerID, err = lookupOrderCustomerID(ctx, scope, *current.OrderID)
+		if err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
 	}
-	return nil
+	for attempt := 0; attempt < 3; attempt++ {
+		err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			if err := r.lockFence(ctx, tx); err != nil {
+				return err
+			}
+			unlocked, err := findSlot(ctx, tx, id, false)
+			if err != nil {
+				return err
+			}
+			oldCustomerID, _, err := r.lockScheduleGraph(ctx, tx, unlocked, Slot{})
+			if err != nil {
+				return err
+			}
+			if unlocked.Type == TypeShoot && unlocked.OrderID != nil && expectedCustomerID != "" {
+				actual, err := lookupOrderCustomerID(ctx, tx, *unlocked.OrderID)
+				if err != nil {
+					return err
+				}
+				if actual != expectedCustomerID {
+					return CustomerChangedError{CustomerID: actual}
+				}
+			}
+			locked, err := findSlot(ctx, tx, id, true)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Delete(ctx, "schedule_slots", "id = $2", id); err != nil {
+				return err
+			}
+			return r.reproject(ctx, tx, crm.ScheduleMutationFact{
+				Change:        crm.ScheduleDelete,
+				SlotID:        locked.ID,
+				OldOrderID:    locked.OrderID,
+				OldCustomerID: stringPtrFromValue(oldCustomerID),
+			}, time.Now().UTC())
+		})
+		var moved CustomerChangedError
+		if errors.As(err, &moved) {
+			if attempt < 2 {
+				expectedCustomerID = moved.CustomerID
+				continue
+			}
+			return ErrCustomerChanged
+		}
+		return err
+	}
+	return ErrCustomerChanged
 }
 
 type rowScope interface {
@@ -741,6 +851,109 @@ func nullableStringArg(value *string) any {
 		return nil
 	}
 	return *value
+}
+
+func (r PostgresRepository) lockFence(ctx context.Context, tx store.TxAccountScope) error {
+	if r.sink == nil {
+		return nil
+	}
+	return r.sink.LockPlanningReminderFenceInScope(ctx, tx)
+}
+
+func (r PostgresRepository) reproject(ctx context.Context, tx store.TxAccountScope, fact crm.ScheduleMutationFact, now time.Time) error {
+	if r.sink == nil {
+		return nil
+	}
+	return r.sink.ReprojectScheduleMutationInScope(ctx, tx, fact, now)
+}
+
+func (r PostgresRepository) lockScheduleGraph(ctx context.Context, tx store.TxAccountScope, oldSlot, newSlot Slot) (string, string, error) {
+	oldCustomerID, err := customerIDOfSlot(ctx, tx, oldSlot)
+	if err != nil {
+		return "", "", err
+	}
+	newCustomerID, err := customerIDOfSlot(ctx, tx, newSlot)
+	if err != nil {
+		return "", "", err
+	}
+	if err := lockSortedIDs(ctx, tx, "customers", oldCustomerID, newCustomerID); err != nil {
+		return "", "", err
+	}
+	if err := lockSortedIDs(ctx, tx, "orders", derefOrderID(oldSlot.OrderID), derefOrderID(newSlot.OrderID)); err != nil {
+		return "", "", err
+	}
+	return oldCustomerID, newCustomerID, nil
+}
+
+func customerIDOfSlot(ctx context.Context, tx store.TxAccountScope, slot Slot) (string, error) {
+	if slot.Type != TypeShoot || slot.OrderID == nil || *slot.OrderID == "" {
+		return "", nil
+	}
+	id, err := lookupOrderCustomerID(ctx, tx, *slot.OrderID)
+	if errors.Is(err, ErrNotFound) {
+		return "", nil
+	}
+	return id, err
+}
+
+func lockSortedIDs(ctx context.Context, tx store.TxAccountScope, table string, ids ...string) error {
+	seen := map[string]struct{}{}
+	unique := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	sort.Strings(unique)
+	for _, id := range unique {
+		var found string
+		err := tx.QueryRowForUpdate(ctx, table, "id", "id = $2", id).Scan(&found)
+		if errors.Is(err, store.ErrNoRows) {
+			return fmt.Errorf("%w: %s 不存在", ErrNotFound, table)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func scheduleChangeFact(before, after Slot, oldCustomerID, newCustomerID string) crm.ScheduleMutationFact {
+	change := crm.ScheduleUpdate
+	if before.Type != after.Type {
+		change = crm.ScheduleTypeChanged
+	} else if derefOrderID(before.OrderID) != derefOrderID(after.OrderID) {
+		change = crm.ScheduleOrderMoved
+	}
+	return crm.ScheduleMutationFact{
+		Change:        change,
+		SlotID:        after.ID,
+		OldOrderID:    before.OrderID,
+		NewOrderID:    after.OrderID,
+		OldCustomerID: stringPtrFromValue(oldCustomerID),
+		NewCustomerID: stringPtrFromValue(newCustomerID),
+	}
+}
+
+func derefOrderID(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+func stringPtrFromValue(value string) *string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func stringPtr(value sql.NullString) *string {

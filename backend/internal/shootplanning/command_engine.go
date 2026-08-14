@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder"
 )
 
@@ -21,6 +22,10 @@ func (a *Application) applyPlanCommandInScope(
 	expectedRevision int64,
 	command PlanCommand,
 ) (PlanMutationResult, error) {
+	switch command.(type) {
+	case SetExecutionWindowCommand, ClearExecutionWindowCommand:
+		return a.applyManualWindowWithCRM(ctx, tx, planID, expectedRevision, command)
+	}
 	plan, err := a.repo.LockPlan(ctx, tx, planID)
 	if err != nil {
 		return PlanMutationResult{}, err
@@ -62,12 +67,6 @@ func (a *Application) applyPlanCommandInScope(
 		changed, err = applyUnlinkReadiness(ctx, tx, planID, command.ShotID, command.ReadinessID)
 	case SetPublicScaleCommand:
 		err = applyPublicScale(ctx, tx, planID, command)
-	case SetExecutionWindowCommand:
-		err = applyExecutionWindow(ctx, tx, planID, command)
-	case ClearExecutionWindowCommand:
-		var deleted int64
-		deleted, err = tx.Delete(ctx, "shoot_plan_execution_windows", "plan_id = $2", planID)
-		changed = deleted > 0
 	default:
 		err = errors.New("unknown plan command")
 	}
@@ -655,27 +654,35 @@ func applyPublicScale(ctx context.Context, tx store.TxAccountScope, planID strin
 	return err
 }
 
-func applyExecutionWindow(ctx context.Context, tx store.TxAccountScope, planID string, command SetExecutionWindowCommand) error {
-	if !command.EndsAt.After(command.StartsAt) || command.LiveWindowStartsAt.After(command.StartsAt) || command.LiveWindowEndsAt.Before(command.EndsAt) {
-		return validationError("invalid_execution_window")
+func (a *Application) applyManualWindowWithCRM(
+	ctx context.Context,
+	tx store.TxAccountScope,
+	planID string,
+	expectedRevision int64,
+	command PlanCommand,
+) (PlanMutationResult, error) {
+	crmCommand := crm.Command{Kind: crm.KindClearWindow}
+	if set, ok := command.(SetExecutionWindowCommand); ok {
+		if !set.EndsAt.After(set.StartsAt) || set.LiveWindowStartsAt.After(set.StartsAt) || set.LiveWindowEndsAt.Before(set.EndsAt) {
+			return PlanMutationResult{}, validationError("invalid_execution_window")
+		}
+		if _, err := time.LoadLocation(set.Timezone); err != nil {
+			return PlanMutationResult{}, validationError("invalid_execution_window")
+		}
+		crmCommand = crm.Command{Kind: crm.KindSetManual, Manual: &crm.Window{
+			Source: "manual", StartsAt: set.StartsAt, EndsAt: set.EndsAt, Timezone: set.Timezone,
+			LiveWindowStartsAt: set.LiveWindowStartsAt, LiveWindowEndsAt: set.LiveWindowEndsAt,
+			RuleVersion: crm.RuleVersion,
+		}}
 	}
-	if _, err := time.LoadLocation(command.Timezone); err != nil {
-		return validationError("invalid_execution_window")
-	}
-	var revision int64
-	err := tx.QueryRowForUpdate(ctx, "shoot_plan_execution_windows", "revision", "plan_id = $2", planID).Scan(&revision)
-	if errors.Is(err, store.ErrNoRows) {
-		return tx.Insert(ctx, "shoot_plan_execution_windows",
-			[]string{"plan_id", "source", "source_ref", "starts_at", "ends_at", "timezone", "live_window_starts_at", "live_window_ends_at", "rule_version", "revision"},
-			planID, "manual", nil, command.StartsAt, command.EndsAt, command.Timezone, command.LiveWindowStartsAt, command.LiveWindowEndsAt, 1, 1)
-	}
+	outcome, err := a.crm.ApplyManualInScope(ctx, tx, planID, expectedRevision, crmCommand)
 	if err != nil {
-		return err
+		return PlanMutationResult{}, mapCRMError(err)
 	}
-	_, err = tx.Update(ctx, "shoot_plan_execution_windows",
-		"source = $2, source_ref = $3, starts_at = $4, ends_at = $5, timezone = $6, live_window_starts_at = $7, live_window_ends_at = $8, rule_version = $9, revision = revision + 1",
-		"plan_id = $10", "manual", nil, command.StartsAt, command.EndsAt, command.Timezone, command.LiveWindowStartsAt, command.LiveWindowEndsAt, 1, planID)
-	return err
+	return PlanMutationResult{
+		PlanID: outcome.PlanID, Revision: outcome.Revision, Status: PlanStatus(outcome.Status),
+		ChangedProjection: crmChangedProjection(outcome),
+	}, nil
 }
 
 func requiredReadinessIncomplete(ctx context.Context, tx store.TxAccountScope, planID string) (bool, error) {

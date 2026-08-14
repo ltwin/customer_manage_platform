@@ -11,12 +11,26 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
-type PostgresRepository struct{}
+type PlanningOrderLifecycleParticipant interface {
+	LockPlanningReminderFenceInScope(context.Context, store.TxAccountScope) error
+	BeforeOrderDeleteInScope(context.Context, store.TxAccountScope, string, string, string, time.Time) error
+	OnOrderCancelledInScope(context.Context, store.TxAccountScope, string, string, string, time.Time) error
+}
+
+type PostgresRepository struct {
+	lifecycle PlanningOrderLifecycleParticipant
+}
 
 func NewPostgresRepository() PostgresRepository {
 	return PostgresRepository{}
+}
+
+func (r PostgresRepository) WithLifecycleParticipant(participant PlanningOrderLifecycleParticipant) PostgresRepository {
+	r.lifecycle = participant
+	return r
 }
 
 func (r PostgresRepository) Create(ctx context.Context, scope store.AccountScope, prepared PreparedCreate) (Order, error) {
@@ -130,17 +144,37 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 		}
 		items = append(items, item)
 	}
+	orderIDs := make([]string, 0, len(items))
+	for _, item := range items {
+		orderIDs = append(orderIDs, item.ID)
+	}
+	summaries, err := crm.LoadSummaries(ctx, scope, crm.SummaryViewByOrder, orderIDs)
+	if err != nil {
+		return ListResult{}, err
+	}
+	for i := range items {
+		if summary, ok := summaries[items[i].ID]; ok {
+			copied := summary
+			items[i].PlanningSummary = &copied
+		}
+	}
 	return ListResult{Items: items, Total: total}, nil
 }
 
-func (PostgresRepository) Update(ctx context.Context, scope store.AccountScope, id string, input UpdateInput) (Order, error) {
+func (r PostgresRepository) Update(ctx context.Context, scope store.AccountScope, id string, input UpdateInput) (Order, error) {
 	var updated Order
-	err := scope.WithinTx(ctx, func(tx store.AccountScope) error {
+	now := time.Now().UTC()
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if r.lifecycle != nil && input.Status != nil && *input.Status == StatusCancelled {
+			if err := r.lifecycle.LockPlanningReminderFenceInScope(ctx, tx); err != nil {
+				return err
+			}
+		}
 		current, err := findOrderForUpdate(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		next, err := ApplyUpdateInput(current, input, time.Now().UTC())
+		next, err := ApplyUpdateInput(current, input, now)
 		if err != nil {
 			return err
 		}
@@ -163,6 +197,11 @@ func (PostgresRepository) Update(ctx context.Context, scope store.AccountScope, 
 		if _, err := tx.Update(ctx, "orders", strings.Join(sets, ", "), cond, args...); err != nil {
 			return err
 		}
+		if r.lifecycle != nil && current.Status != StatusCancelled && next.Status == StatusCancelled {
+			if err := r.lifecycle.OnOrderCancelledInScope(ctx, tx, next.ID, next.CustomerID, next.Status, now); err != nil {
+				return err
+			}
+		}
 		updated, err = findOrder(ctx, tx, id)
 		return err
 	})
@@ -172,8 +211,14 @@ func (PostgresRepository) Update(ctx context.Context, scope store.AccountScope, 
 	return updated, nil
 }
 
-func (PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, id string) error {
-	return scope.WithinTx(ctx, func(tx store.AccountScope) error {
+func (r PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, id string) error {
+	now := time.Now().UTC()
+	return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if r.lifecycle != nil {
+			if err := r.lifecycle.LockPlanningReminderFenceInScope(ctx, tx); err != nil {
+				return err
+			}
+		}
 		current, err := findOrderForUpdate(ctx, tx, id)
 		if err != nil {
 			return err
@@ -183,7 +228,7 @@ func (PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, 
 		}
 		var slotID string
 		var slotStartAt time.Time
-		err = tx.QueryRow(
+		err = tx.QueryRowForUpdate(
 			ctx,
 			"schedule_slots",
 			"id, start_at",
@@ -195,6 +240,11 @@ func (PostgresRepository) Delete(ctx context.Context, scope store.AccountScope, 
 		}
 		if !errors.Is(err, store.ErrNoRows) {
 			return err
+		}
+		if r.lifecycle != nil {
+			if err := r.lifecycle.BeforeOrderDeleteInScope(ctx, tx, current.ID, current.CustomerID, current.Status, now); err != nil {
+				return err
+			}
 		}
 		rows, err := tx.Delete(ctx, "orders", "id = $2", id)
 		if err != nil {

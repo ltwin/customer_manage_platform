@@ -46,6 +46,14 @@ const (
 	CodeExecutionHistoryAckRequired    = "execution_history_ack_required"
 	CodeExecutionEventAlreadyVoid      = "execution_event_already_void"
 	CodeSupersedesEventMismatch        = "supersedes_event_mismatch"
+	CodeCustomerLinkConflict           = "customer_link_conflict"
+	CodeOrderLinkConflict              = "order_link_conflict"
+	CodeProjectionRevisionConflict     = "projection_revision_conflict"
+	CodeProjectionMissing              = "projection_missing"
+	CodeProjectionNotActive            = "projection_not_active"
+	CodeProjectionNotFuture            = "projection_not_future"
+	CodeSourceChanged                  = "source_changed"
+	CodeOrderStillLinked               = "order_still_linked"
 )
 
 // newErrorEnvelope 构造统一错误封套（类型用 codegen 产物，保证与契约同源）。

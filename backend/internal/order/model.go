@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/nullable"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
 const (
@@ -116,6 +117,7 @@ type ListItem struct {
 	Order
 	CustomerDisplayName string
 	PackageName         *string
+	PlanningSummary     *crm.Summary
 }
 
 type ListResult struct {

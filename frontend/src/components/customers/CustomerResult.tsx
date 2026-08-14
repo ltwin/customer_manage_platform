@@ -1,6 +1,7 @@
 import { channelLabels } from '../../pages/customerLabels'
 import CustomerAvatar from './CustomerAvatar'
 import QuickNote from './QuickNote'
+import PlanningSummaryLink from '../PlanningSummaryLink'
 import {
   customerStatusBadge,
   shortCustomerDate,
@@ -62,6 +63,7 @@ export default function CustomerResult({
           <dd><span className={badgeClass}>{badgeLabel}</span></dd>
         </div>
       </dl>
+      <PlanningSummaryLink summary={customer.planning_summary} />
 
       {customer.status !== 'merged' && (
         <div className="customer-result-action">

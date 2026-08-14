@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/nullable"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
 var (
@@ -71,6 +72,7 @@ type ListItem struct {
 	OrderBalancePaid    bool
 	PackageName         *string
 	PackageShootType    *string
+	PlanningSummary     *crm.Summary
 }
 
 type CustomerChangedError struct {

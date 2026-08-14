@@ -13,12 +13,24 @@ import (
 	"github.com/oapi-codegen/nullable"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
 
-type PostgresRepository struct{}
+type PlanCustomerMergeParticipant interface {
+	MigratePlanCustomersInScope(context.Context, store.TxAccountScope, string, string, time.Time) error
+}
+
+type PostgresRepository struct {
+	merge PlanCustomerMergeParticipant
+}
 
 func NewPostgresRepository() PostgresRepository {
 	return PostgresRepository{}
+}
+
+func (r PostgresRepository) WithPlanMergeParticipant(participant PlanCustomerMergeParticipant) PostgresRepository {
+	r.merge = participant
+	return r
 }
 
 func (PostgresRepository) Create(ctx context.Context, scope store.AccountScope, input CreateInput) (Customer, error) {
@@ -75,6 +87,7 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 	defer rows.Close()
 
 	items := make([]ListItem, 0, filter.PageSize)
+	ids := make([]string, 0, filter.PageSize)
 	for rows.Next() {
 		customer, err := scanCustomer(rows)
 		if err != nil {
@@ -89,9 +102,20 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 			OrdersCount: stats.OrdersCount,
 			LastShotAt:  stats.LastShotAt,
 		})
+		ids = append(ids, customer.ID)
 	}
 	if err := rows.Err(); err != nil {
 		return ListResult{}, err
+	}
+	summaries, err := crm.LoadSummaries(ctx, scope, crm.SummaryViewByCustomer, ids)
+	if err != nil {
+		return ListResult{}, err
+	}
+	for i := range items {
+		if summary, ok := summaries[items[i].ID]; ok {
+			copied := summary
+			items[i].PlanningSummary = &copied
+		}
 	}
 	return ListResult{Items: items, Total: total}, nil
 }
@@ -128,12 +152,22 @@ func (PostgresRepository) Detail(ctx context.Context, scope store.AccountScope, 
 	if err != nil {
 		return Detail{}, err
 	}
+	var planningSummary *crm.Summary
+	summaries, err := crm.LoadSummaries(ctx, scope, crm.SummaryViewByCustomer, []string{id})
+	if err != nil {
+		return Detail{}, err
+	}
+	if summary, ok := summaries[id]; ok {
+		copied := summary
+		planningSummary = &copied
+	}
 	return Detail{
-		Customer:   customer,
-		Identities: identities,
-		Notes:      notes,
-		Referrer:   referrer,
-		Stats:      stats,
+		Customer:        customer,
+		Identities:      identities,
+		Notes:           notes,
+		Referrer:        referrer,
+		Stats:           stats,
+		PlanningSummary: planningSummary,
 	}, nil
 }
 
@@ -325,9 +359,9 @@ func (PostgresRepository) AddNote(ctx context.Context, scope store.AccountScope,
 // 自指则清空，channel 保持不变——「referral+空 referrer」是合法历史态）、
 // source 置 merged + 指针；任一步失败整体回滚。两行都加 FOR UPDATE 锁，
 // 防与其他写操作并发交错。
-func (PostgresRepository) Merge(ctx context.Context, scope store.AccountScope, targetID, sourceID string) (Customer, error) {
+func (r PostgresRepository) Merge(ctx context.Context, scope store.AccountScope, targetID, sourceID string) (Customer, error) {
 	var merged Customer
-	err := scope.WithinTx(ctx, func(tx store.AccountScope) error {
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		// 固定锁序（按 id 升序）避免对向 merge 死锁。
 		firstID, secondID := targetID, sourceID
 		if firstID > secondID {
@@ -340,6 +374,11 @@ func (PostgresRepository) Merge(ctx context.Context, scope store.AccountScope, t
 			}
 			if locked.Status != StatusActive {
 				return fmt.Errorf("%w: 双方客户必须都是 active", ErrMergeConflict)
+			}
+		}
+		if r.merge != nil {
+			if err := r.merge.MigratePlanCustomersInScope(ctx, tx, sourceID, targetID, time.Now().UTC()); err != nil {
+				return err
 			}
 		}
 
@@ -396,7 +435,9 @@ func requireWritableCustomer(ctx context.Context, scope store.AccountScope, cust
 
 // findCustomerForUpdate 同 findCustomer，但对命中行加 FOR UPDATE 行锁；
 // 供「先锁客户行、再校验状态或不变量」的写路径使用，只应在 WithinTx 内调用。
-func findCustomerForUpdate(ctx context.Context, scope store.AccountScope, id string) (Customer, error) {
+func findCustomerForUpdate(ctx context.Context, scope interface {
+	QueryRowForUpdate(context.Context, string, string, string, ...any) store.Row
+}, id string) (Customer, error) {
 	customer, err := scanCustomer(scope.QueryRowForUpdate(ctx, "customers", customerColumns, "id = $2", id))
 	if errors.Is(err, store.ErrNoRows) {
 		return Customer{}, fmt.Errorf("%w: 客户不存在", ErrNotFound)
@@ -434,7 +475,9 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-func findCustomer(ctx context.Context, scope store.AccountScope, id string) (Customer, error) {
+func findCustomer(ctx context.Context, scope interface {
+	QueryRow(context.Context, string, string, string, ...any) store.Row
+}, id string) (Customer, error) {
 	customer, err := scanCustomer(scope.QueryRow(ctx, "customers", customerColumns, "id = $2", id))
 	if errors.Is(err, store.ErrNoRows) {
 		return Customer{}, fmt.Errorf("%w: 客户不存在", ErrNotFound)
