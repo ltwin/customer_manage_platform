@@ -88,6 +88,105 @@ import {
   backfillTimestampFields,
   scheduleDraftResumeInput,
 } from '../src/components/schedule/backfill.ts'
+import {
+  applyBusinessDurationStart,
+  deriveBusinessPrefillEnd,
+  parsePlanningSchedulePrefill,
+} from '../src/components/schedule/businessPrefill.ts'
+
+test('planning schedule prefill accepts only the versioned one-shot payload', () => {
+  assert.deepEqual(parsePlanningSchedulePrefill(null), { present: false, value: null, error: null })
+  assert.deepEqual(parsePlanningSchedulePrefill({ kind: 'another-route-state' }), { present: false, value: null, error: null })
+  assert.deepEqual(parsePlanningSchedulePrefill({
+    kind: 'planning-schedule-prefill-v1',
+    order_id: ' ord-1 ',
+    basis_minutes: 420,
+  }), {
+    present: true,
+    value: { kind: 'planning-schedule-prefill-v1', order_id: 'ord-1', basis_minutes: 420 },
+    error: null,
+  })
+  assert.equal(parsePlanningSchedulePrefill({
+    kind: 'planning-schedule-prefill-v1', order_id: '', basis_minutes: 420,
+  }).error, '经营草稿中的订单信息无效')
+  assert.equal(parsePlanningSchedulePrefill({
+    kind: 'planning-schedule-prefill-v1', order_id: 'ord-1', basis_minutes: 0,
+  }).error, '经营草稿中的建议时长无效')
+})
+
+test('business duration prefill adds elapsed minutes in the account timezone', () => {
+  assert.deepEqual(deriveBusinessPrefillEnd(
+    { date: '2026-08-20', time: '10:00' }, 'Asia/Shanghai', 420,
+  ), { date: '2026-08-20', time: '17:00' })
+  assert.deepEqual(deriveBusinessPrefillEnd(
+    { date: '2026-03-08', time: '01:30' }, 'America/New_York', 120,
+  ), { date: '2026-03-08', time: '04:30' })
+  assert.equal(deriveBusinessPrefillEnd(
+    { date: '2026-11-01', time: '01:30' }, 'America/New_York', 60,
+  ), null)
+  assert.deepEqual(deriveBusinessPrefillEnd(
+    { date: '2026-11-01', time: '01:30', occurrence: 'second' }, 'America/New_York', 60,
+  ), { date: '2026-11-01', time: '02:30' })
+})
+
+test('business duration stays linked to the draft until the end is edited', () => {
+  const linkedDraft = {
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    allDay: false,
+    businessDurationMinutes: 420,
+  }
+
+  assert.deepEqual(
+    applyBusinessDurationStart({ ...linkedDraft, startDate: '2026-08-25' }, 'Asia/Shanghai'),
+    { ...linkedDraft, startDate: '2026-08-25' },
+  )
+  const completed = applyBusinessDurationStart({
+    ...linkedDraft,
+    startDate: '2026-08-25',
+    startTime: '10:00',
+  }, 'Asia/Shanghai')
+  assert.deepEqual(completed, {
+    ...linkedDraft,
+    startDate: '2026-08-25',
+    startTime: '10:00',
+    endDate: '2026-08-25',
+    endTime: '17:00',
+    endOccurrence: undefined,
+  })
+  assert.deepEqual(applyBusinessDurationStart({
+    ...completed,
+    startTime: '11:30',
+  }, 'Asia/Shanghai'), {
+    ...completed,
+    startTime: '11:30',
+    endTime: '18:30',
+  })
+
+  const manuallyUnlinked = {
+    ...completed,
+    endTime: '19:00',
+    businessDurationMinutes: undefined,
+  }
+  assert.deepEqual(applyBusinessDurationStart({
+    ...manuallyUnlinked,
+    startTime: '12:00',
+  }, 'Asia/Shanghai'), {
+    ...manuallyUnlinked,
+    startTime: '12:00',
+  })
+  assert.deepEqual(applyBusinessDurationStart({
+    ...completed,
+    allDay: true,
+    startTime: '12:00',
+  }, 'Asia/Shanghai'), {
+    ...completed,
+    allDay: true,
+    startTime: '12:00',
+  })
+})
 
 test('month grid starts Monday and always contains 42 days', () => {
   const grid = monthGrid('2026-07')
@@ -597,6 +696,16 @@ test('calendar UI consumes turnaround warnings and keeps preview loading separat
   assert.match(details, /calendar-v2-turnaround/)
   assert.match(details, /turnaroundThresholdMinutes/)
   assert.match(week, /onDoubleClick=\{\(event\) => event\.stopPropagation\(\)\}/)
+})
+
+test('business duration linkage is owned by the editable schedule draft', () => {
+  const dialog = readFileSync(new URL('../src/components/schedule/ScheduleSlotDialog.tsx', import.meta.url), 'utf8')
+
+  assert.match(dialog, /businessDurationMinutes\?: number/)
+  assert.match(dialog, /businessDurationMinutes: prefill\.basisMinutes/)
+  assert.match(dialog, /applyBusinessDurationStart\(next, timezone\)/)
+  assert.match(dialog, /function changeEnd\(next: SlotDraft\) \{\s+changeDraft\(\{ \.\.\.next, businessDurationMinutes: undefined \}\)/)
+  assert.doesNotMatch(dialog, /businessDurationLinked/)
 })
 
 test('calendar delete flow has a synchronous mutation lock, stable focus, and date-bound notice', () => {

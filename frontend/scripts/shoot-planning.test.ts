@@ -6,10 +6,51 @@ import {
   inferExecutionWindowMode,
 } from '../src/planning/executionWindow.ts'
 import { shotHasExecutionHistory } from '../src/planning/history.ts'
+import {
+  businessDraftGenerationMessage,
+  businessDraftUnavailableMessage,
+  optionalAbsoluteTargetPriceYuanToCents,
+  unavailableReasonLabel,
+  validateOptionalAbsoluteTargetPriceYuan,
+} from '../src/planning/businessDraftInput.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
 }
+
+test('business draft absolute target price preserves empty, explicit zero, and exact positive cents', () => {
+  assert.equal(validateOptionalAbsoluteTargetPriceYuan(''), null)
+  assert.equal(optionalAbsoluteTargetPriceYuanToCents(''), null)
+  assert.equal(optionalAbsoluteTargetPriceYuanToCents('0'), 0)
+  assert.equal(optionalAbsoluteTargetPriceYuanToCents('2860.50'), 286050)
+  assert.equal(validateOptionalAbsoluteTargetPriceYuan('12.345'), '绝对目标价最多保留两位小数')
+})
+
+test('business draft generation reports generated and unavailable kinds separately', () => {
+  assert.equal(businessDraftGenerationMessage({
+    order_adjustment: { state: 'generated' },
+    schedule_duration: { state: 'unavailable', reason: 'duration_unknown' },
+  }), '订单价格草稿已生成；档期时长草稿不可用：预估时长仍未知。订单和档期尚未修改。')
+
+  assert.equal(businessDraftUnavailableMessage({
+    order_adjustment: { state: 'unavailable', reason: 'order_required' },
+    schedule_duration: { state: 'unavailable', reason: 'duration_not_positive' },
+  }), '无法生成经营草稿：订单价格草稿：需要先关联订单；档期时长草稿：预估时长必须大于零')
+})
+
+test('business draft unavailable reasons all have user-facing labels', () => {
+  const reasons = [
+    'order_required',
+    'order_cancelled',
+    'business_calculation_overflow',
+    'duration_unknown',
+    'duration_not_positive',
+    'duration_out_of_range',
+    'schedule_stage_ineligible',
+    'schedule_slot_not_future',
+  ] as const
+  for (const reason of reasons) assert.notEqual(unavailableReasonLabel(reason), reason)
+})
 
 test('shot history acknowledgement is based on retained execution facts, not the current outcome projection', () => {
   const plan = { execution_history: [{ shot_id: 'shot-1' }, { shot_id: 'shot-2' }] }
@@ -96,16 +137,135 @@ test('planning workspace stays in AppShell while Run Mode is independently authe
   assert.match(shell, /label: '策划', to: '\/shoot-plans'/)
 })
 
-test('workspace exposes the approved core sections plus share collaboration and no deferred later-feature entry points', () => {
+test('workspace exposes the approved core sections, share collaboration, and private business workbench', () => {
   const workspace = source('../src/planning/ShootPlanWorkspacePage.tsx')
 
-  assert.equal((workspace.match(/<TabButton\s/g) ?? []).length, 6)
-  for (const coreTab of ['创作 brief', '镜头表', '准备项', '参考素材', '分享协作', '执行历史']) {
+  assert.equal((workspace.match(/<TabButton\s/g) ?? []).length, 7)
+  for (const coreTab of ['创作 brief', '镜头表', '准备项', '参考素材', '分享协作', '执行历史', '经营草稿']) {
     assert.match(workspace, new RegExp(`>${coreTab}(?:\\s|<|\\{)`))
   }
-  for (const deferredEntry of ['分享反馈', '经营草稿', '素材摄取', 'AI 脚本', 'AI 分镜']) {
+  for (const deferredEntry of ['分享反馈', '素材摄取', 'AI 脚本', 'AI 分镜']) {
     assert.doesNotMatch(workspace, new RegExp(`>${deferredEntry}<`))
   }
+})
+
+test('business workbench keeps facts, drafts, and destructive acknowledgement on private generated APIs', () => {
+  const panel = source('../src/planning/panels/BusinessPanel.tsx')
+  const api = source('../src/planning/api.ts')
+
+  assert.match(panel, /仅你可见/)
+  assert.match(panel, /留空表示未知，0 表示明确为零/)
+  assert.match(panel, /draft_kinds:\s*\['order_adjustment', 'schedule_duration'\]/)
+  assert.match(panel, /draft\.required_acknowledgement/)
+  assert.match(panel, /window\.confirm/)
+  assert.match(panel, /kind:\s*'planning-schedule-prefill-v1'/)
+  assert.doesNotMatch(panel, /localStorage|sessionStorage|searchParams|business_draft_id/)
+  assert.match(api, /`\/shoot-plans\/\$\{encodeURIComponent\(planID\)\}\/business-drafts`/)
+  assert.match(api, /business-drafts\/\$\{encodeURIComponent\(draftID\)\}\/apply`/)
+})
+
+test('shared plan and planning list surfaces contain no private business signal', () => {
+  const openapi = source('../../api/openapi.yaml')
+  const sharedSchemas = openapi.slice(
+    openapi.indexOf('    SharedCreativeBriefV1:'),
+    openapi.indexOf('    ShareViewLevel:'),
+  )
+  const listOperation = openapi.slice(
+    openapi.indexOf('  /shoot-plans:\n'),
+    openapi.indexOf('    post:\n', openapi.indexOf('  /shoot-plans:\n')),
+  )
+  const anonymousHandler = source('../../backend/internal/platform/httpapi/plan_share_anonymous.go')
+  const listRepository = source('../../backend/internal/shootplanning/repository.go')
+  const listQuery = listRepository.slice(
+    listRepository.indexOf('func (PostgresRepository) List('),
+    listRepository.indexOf('func (PostgresRepository) Detail('),
+  )
+  const sharedDOM = [
+    '../src/planning/share/api.ts',
+    '../src/planning/share/SharedCommon.tsx',
+    '../src/planning/share/SharedProposalView.tsx',
+    '../src/planning/share/SharedFullSections.tsx',
+    '../src/planning/share/SharedFullView.tsx',
+    '../src/planning/share/SharedPlanPage.tsx',
+  ].map(source).join('\n')
+  const listDOM = source('../src/planning/ShootPlansPage.tsx')
+  const privateSignals = /planning_business|business|经营|报价|价格|rule_version|draft|facts/i
+
+  assert.ok(sharedSchemas.length > 0)
+  assert.ok(listOperation.length > 0)
+  assert.ok(listQuery.length > 0)
+  assert.doesNotMatch(sharedSchemas, privateSignals)
+  assert.doesNotMatch(anonymousHandler, privateSignals)
+  assert.doesNotMatch(sharedDOM, privateSignals)
+  assert.doesNotMatch(listOperation, privateSignals)
+  assert.doesNotMatch(listQuery, /planning_business|business/i)
+  assert.doesNotMatch(listDOM, /business|经营|报价|价格/i)
+})
+
+test('calendar consumes the planning prefill once and submits only the ordinary schedule body', () => {
+  const calendar = source('../src/pages/CalendarPage.tsx')
+  const dialog = source('../src/components/schedule/ScheduleSlotDialog.tsx')
+  const prefill = source('../src/components/schedule/businessPrefill.ts')
+  const client = source('../src/api/client.ts')
+
+  assert.match(calendar, /parsePlanningSchedulePrefill\(location\.state\)/)
+  assert.match(calendar, /replace:\s*true, state:\s*null/)
+  assert.match(calendar, /listOrders\(\{ id: prefill\.order_id, page: 1, pageSize: 1 \}\)/)
+  assert.match(calendar, /fetchCustomer\(order\.customer_id\)/)
+  assert.match(dialog, /startDate:\s*''[\s\S]*startTime:\s*''/)
+  assert.match(dialog, /businessDurationMinutes\?: number/)
+  assert.match(dialog, /businessDurationMinutes: prefill\.basisMinutes/)
+  assert.match(dialog, /applyBusinessDurationStart\(next, timezone\)/)
+  assert.match(dialog, /businessDurationMinutes: undefined/)
+  assert.doesNotMatch(dialog, /businessDurationLinked/)
+  assert.match(prefill, /Temporal\.Instant\.from\(resolved\.instant\)\.add\(\{ minutes: basisMinutes \}\)/)
+  assert.match(client, /if \(params\.id\) search\.set\('id', params\.id\)/)
+  assert.match(dialog, /function createSlotBody[\s\S]*start_at:[\s\S]*end_at:[\s\S]*order_id/)
+  assert.doesNotMatch(dialog.match(/function createSlotBody[\s\S]*?\n\}/)?.[0] ?? '', /basis|prefill|business|draft_id/)
+})
+
+test('business settings submit a complete replacement map with inherit, unknown, and explicit zero modes', () => {
+  const section = source('../src/account/settings/PlanningBusinessRulesSection.tsx')
+  const page = source('../src/account/settings/AccountSettingsPage.tsx')
+  const draft = source('../src/account/settings/businessRulesDraft.ts')
+
+  assert.match(section, /只影响新生成草稿/)
+  for (const mode of ['继承', '未知', '自定义']) assert.match(section, new RegExp(`>${mode}<`))
+  assert.match(section, /expected_revision:\s*settings\.planning_business_rule_revision/)
+  assert.match(section, /overrides:\s*businessRuleOverridesFromDraft\(draft\)/)
+  assert.match(section, /reason\.status === 409[\s\S]*onRefresh\(\)/)
+  assert.match(page, /onRefresh=\{\(\) => setReloadTick/)
+  assert.match(draft, /if \(entry\.mode === 'inherit'\) continue/)
+  assert.match(draft, /result\[descriptor\.key\] = null/)
+  assert.match(draft, /packagePriceYuanToCents/)
+})
+
+test('business draft generation response is a kind-specific closed union', () => {
+  const openapi = source('../../api/openapi.yaml')
+  const generated = source('../src/api/schema.d.ts')
+
+  assert.match(openapi, /OrderBusinessDraftGenerationItem:[\s\S]*oneOf:[\s\S]*GeneratedOrderBusinessDraftItem[\s\S]*UnavailableOrderBusinessDraftItem/)
+  assert.match(openapi, /ScheduleBusinessDraftGenerationItem:[\s\S]*oneOf:[\s\S]*GeneratedScheduleBusinessDraftItem[\s\S]*UnavailableScheduleBusinessDraftItem/)
+  assert.match(generated, /OrderBusinessDraftUnavailableReason: "order_required" \| "order_cancelled" \| "business_calculation_overflow";/)
+  assert.match(generated, /ScheduleBusinessDraftUnavailableReason: "order_required" \| "duration_unknown" \| "duration_not_positive" \| "duration_out_of_range" \| "schedule_stage_ineligible" \| "schedule_slot_not_future";/)
+  assert.doesNotMatch(openapi, /^    BusinessDraftGenerationItem:/m)
+  assert.doesNotMatch(openapi, /^    UnavailableBusinessDraftItem:/m)
+})
+
+test('business mutation retries retain canonical keys until 2xx and do not misreport reload failures', () => {
+  const panel = source('../src/planning/panels/BusinessPanel.tsx')
+  const workspace = source('../src/planning/ShootPlanWorkspacePage.tsx')
+
+  assert.match(panel, /business-generate:\$\{plan\.id\}:\$\{JSON\.stringify\(body\)\}/)
+  assert.match(panel, /business-decision:\$\{plan\.id\}:\$\{draft\.id\}:\$\{JSON\.stringify\(body\)\}/)
+  assert.equal((panel.match(/getMutationKey\(signature,/g) ?? []).length, 2)
+  assert.equal((panel.match(/acknowledgeMutation\(signature\)/g) ?? []).length, 2)
+  assert.doesNotMatch(panel, /newPlanningMutationKey/)
+  assert.match(panel, /acknowledgeMutation\(signature\)[\s\S]*草稿生成已提交，但最新页面加载失败/)
+  assert.match(panel, /acknowledgeMutation\(signature\)[\s\S]*草稿操作已提交，但最新页面加载失败/)
+  assert.match(panel, /shouldRefreshBusinessDraft\(cause\)[\s\S]*await onReload\(\)/)
+  assert.match(workspace, /const getMutationKey = useCallback[\s\S]*pendingKeys\.current\.set\(signature, key\)/)
+  assert.match(workspace, /<BusinessPanel[\s\S]*key=\{plan\.id\}[\s\S]*getMutationKey=\{getMutationKey\}/)
 })
 
 test('archive confirmation submits the exact server projection instead of reconstructing effects', () => {
@@ -188,5 +348,8 @@ test('planning responsive contract avoids dense tables and preserves coarse-poin
   assert.match(css, /@media \(max-width: 430px\)/)
   assert.match(css, /@media \(pointer: coarse\)[\s\S]*min-height:\s*44px/)
   assert.match(css, /@media \(max-width: 768px\)[\s\S]*grid-template-columns:\s*1fr/)
+  assert.match(css, /\.planning-business-form-grid\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/)
+  assert.match(css, /\.planning-business-form-grid \.planning-field\s*\{[\s\S]*?display:\s*grid;[\s\S]*?min-width:\s*0/)
+  assert.match(css, /\.planning-business-form-grid input\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0/)
   assert.doesNotMatch(planningSources, /<table\b|overflow-x:\s*scroll/)
 })

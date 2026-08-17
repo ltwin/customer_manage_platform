@@ -1108,6 +1108,11 @@ paths:
       operationId: listOrders
       summary: 订单列表（默认排序 created_at DESC、同值 id DESC，保证分页稳定，§4.3）
       parameters:
+        - name: id
+          in: query
+          description: 精确订单 id；仍按当前账号隔离，可与其他过滤条件组合
+          schema:
+            type: string
         - name: customer_id
           in: query
           schema:
@@ -1968,7 +1973,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ShootPlanDetail"
+                $ref: "#/components/schemas/ShootPlanCoreDetail"
         "400":
           $ref: "#/components/responses/ValidationFailed"
         "401":
@@ -2035,6 +2040,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/business-drafts:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [shoot-planning-business]
+      operationId: generateShootPlanBusinessDrafts
+      summary: 生成摄影师私有的订单与档期经营草稿，不修改目标对象
+      parameters:
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateBusinessDraftsInput"
+      responses:
+        "201":
+          description: 至少生成一类经营草稿
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessDraftGenerationResult"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "500":
+          $ref: "#/components/responses/Internal"
+
+  /shoot-plans/{id}/business-drafts/{draftId}/apply:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+      - name: draftId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      tags: [shoot-planning-business]
+      operationId: decideShootPlanBusinessDraft
+      summary: 显式应用或忽略一份经营草稿
+      parameters:
+        - $ref: "#/components/parameters/RequiredIdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BusinessDraftDecisionInput"
+      responses:
+        "200":
+          description: 草稿决策结果
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BusinessDraftDecisionResult"
+        "400":
+          $ref: "#/components/responses/ValidationFailed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "500":
           $ref: "#/components/responses/Internal"
 
@@ -3449,6 +3525,68 @@ components:
         - $ref: "#/components/schemas/ScheduleConflictDetails"
         - $ref: "#/components/schemas/ArchiveAcknowledgementRequiredDetails"
         - $ref: "#/components/schemas/ExpiryQuoteExpiredDetails"
+        - $ref: "#/components/schemas/BusinessDraftUnavailableDetails"
+        - $ref: "#/components/schemas/StaleBusinessDraftDetails"
+
+    OrderBusinessDraftUnavailableReason:
+      type: string
+      enum:
+        [order_required, order_cancelled, business_calculation_overflow]
+
+    ScheduleBusinessDraftUnavailableReason:
+      type: string
+      enum:
+        [order_required, duration_unknown, duration_not_positive,
+         duration_out_of_range, schedule_stage_ineligible, schedule_slot_not_future]
+
+    UnavailableOrderBusinessDraftItem:
+      type: object
+      additionalProperties: false
+      required: [state, reason]
+      properties:
+        state:
+          type: string
+          enum: [unavailable]
+        reason:
+          $ref: "#/components/schemas/OrderBusinessDraftUnavailableReason"
+
+    UnavailableScheduleBusinessDraftItem:
+      type: object
+      additionalProperties: false
+      required: [state, reason]
+      properties:
+        state:
+          type: string
+          enum: [unavailable]
+        reason:
+          $ref: "#/components/schemas/ScheduleBusinessDraftUnavailableReason"
+
+    BusinessDraftUnavailableDetails:
+      type: object
+      additionalProperties: false
+      properties:
+        order_adjustment:
+          $ref: "#/components/schemas/UnavailableOrderBusinessDraftItem"
+        schedule_duration:
+          $ref: "#/components/schemas/UnavailableScheduleBusinessDraftItem"
+
+    StaleBusinessDraftDetails:
+      type: object
+      additionalProperties: false
+      required: [draft_id, kind, status, stale_reason, revision]
+      properties:
+        draft_id: {type: string}
+        kind: {type: string, enum: [order_adjustment, schedule_duration]}
+        status: {type: string, enum: [stale]}
+        stale_reason:
+          type: string
+          enum:
+            [superseded, expired, plan_revision_changed,
+             business_facts_revision_changed, crm_connection_changed,
+             crm_projection_changed, rule_version_changed,
+             order_target_missing, order_stage_ineligible, order_target_changed,
+             slot_target_missing, schedule_stage_ineligible, slot_target_changed]
+        revision: {type: integer, format: int64, minimum: 1}
 
     ExpiryQuoteExpiredDetails:
       type: object
@@ -4171,9 +4309,11 @@ components:
 
     Settings:
       type: object
+      additionalProperties: false
       required:
         [timezone, birthday_lead_days, follow_up_after_days, churn_thresholds,
-         digest_hour, availability]
+         digest_hour, availability, planning_business_rule_overrides,
+         planning_business_rule_revision]
       properties:
         timezone:
           type: string
@@ -4199,6 +4339,12 @@ components:
           type: string
         availability:
           $ref: "#/components/schemas/ScheduleAvailability"
+        planning_business_rule_overrides:
+          $ref: "#/components/schemas/PlanningBusinessRuleOverrides"
+        planning_business_rule_revision:
+          type: integer
+          format: int64
+          minimum: 0
 
     UpdateSettingsBody:
       type: object
@@ -4221,6 +4367,65 @@ components:
           maximum: 23
         availability:
           $ref: "#/components/schemas/ScheduleAvailability"
+        planning_business_rules:
+          $ref: "#/components/schemas/PlanningBusinessRulesPatch"
+
+    PlanningBusinessRuleOverrides:
+      type: object
+      additionalProperties: false
+      properties:
+        included_look_count:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100000
+        extra_look_unit_amount:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 2147483647
+        rented_location_unit_amount:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 2147483647
+        assistant_unit_amount:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 2147483647
+        included_retouched_photo_count:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100000
+        extra_retouch_unit_amount:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 2147483647
+        included_shot_count:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100000
+        extra_shot_unit_amount:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 2147483647
+
+    PlanningBusinessRulesPatch:
+      type: object
+      additionalProperties: false
+      required: [expected_revision, overrides]
+      properties:
+        expected_revision:
+          type: integer
+          format: int64
+          minimum: 0
+        overrides:
+          $ref: "#/components/schemas/PlanningBusinessRuleOverrides"
 
     ExportCounts:
       type: object
@@ -4725,7 +4930,7 @@ components:
           format: int64
           minimum: 0
 
-    ShootPlanDetail:
+    ShootPlanCoreDetail:
       type: object
       additionalProperties: false
       required:
@@ -4791,6 +4996,17 @@ components:
           allOf:
             - $ref: "#/components/schemas/ShootPlanCRM"
           nullable: true
+        business:
+          $ref: "#/components/schemas/PlanningBusinessDetail"
+
+    ShootPlanDetail:
+      allOf:
+        - $ref: "#/components/schemas/ShootPlanCoreDetail"
+        - type: object
+          required: [business]
+          properties:
+            business:
+              $ref: "#/components/schemas/PlanningBusinessDetail"
 
     CreateShootPlanInput:
       type: object
@@ -5123,6 +5339,51 @@ components:
               type: string
               enum: [clear_execution_window]
 
+    PlanningBusinessFactsInput:
+      type: object
+      additionalProperties: false
+      required:
+        [rented_location_count, assistant_count, retouched_photo_count,
+         estimated_duration_minutes]
+      properties:
+        rented_location_count:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+        assistant_count:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100
+        retouched_photo_count:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 100000
+        estimated_duration_minutes:
+          type: integer
+          nullable: true
+          minimum: 0
+          maximum: 10080
+
+    SetBusinessFactsPlanCommand:
+      allOf:
+        - $ref: "#/components/schemas/PlanCommandBase"
+        - type: object
+          additionalProperties: false
+          required: [expected_business_facts_revision, facts]
+          properties:
+            operation:
+              type: string
+              enum: [set_business_facts]
+            expected_business_facts_revision:
+              type: integer
+              format: int64
+              minimum: 0
+            facts:
+              $ref: "#/components/schemas/PlanningBusinessFactsInput"
+
     PlanCommand:
       oneOf:
         - $ref: "#/components/schemas/UpdateBriefPlanCommand"
@@ -5137,6 +5398,7 @@ components:
         - $ref: "#/components/schemas/SetPublicScalePlanCommand"
         - $ref: "#/components/schemas/SetExecutionWindowPlanCommand"
         - $ref: "#/components/schemas/ClearExecutionWindowPlanCommand"
+        - $ref: "#/components/schemas/SetBusinessFactsPlanCommand"
       discriminator:
         propertyName: operation
         mapping:
@@ -5152,6 +5414,7 @@ components:
           set_public_scale: "#/components/schemas/SetPublicScalePlanCommand"
           set_execution_window: "#/components/schemas/SetExecutionWindowPlanCommand"
           clear_execution_window: "#/components/schemas/ClearExecutionWindowPlanCommand"
+          set_business_facts: "#/components/schemas/SetBusinessFactsPlanCommand"
 
     LinkCustomerCrmCommand:
       allOf:
@@ -5244,6 +5507,7 @@ components:
         - $ref: "#/components/schemas/SetPublicScalePlanCommand"
         - $ref: "#/components/schemas/SetExecutionWindowPlanCommand"
         - $ref: "#/components/schemas/ClearExecutionWindowPlanCommand"
+        - $ref: "#/components/schemas/SetBusinessFactsPlanCommand"
         - $ref: "#/components/schemas/LinkCustomerCrmCommand"
         - $ref: "#/components/schemas/LinkOrderCrmCommand"
         - $ref: "#/components/schemas/UnlinkOrderCrmCommand"
@@ -5264,11 +5528,274 @@ components:
           set_public_scale: "#/components/schemas/SetPublicScalePlanCommand"
           set_execution_window: "#/components/schemas/SetExecutionWindowPlanCommand"
           clear_execution_window: "#/components/schemas/ClearExecutionWindowPlanCommand"
+          set_business_facts: "#/components/schemas/SetBusinessFactsPlanCommand"
           link_customer: "#/components/schemas/LinkCustomerCrmCommand"
           link_order: "#/components/schemas/LinkOrderCrmCommand"
           unlink_order: "#/components/schemas/UnlinkOrderCrmCommand"
           unlink_customer: "#/components/schemas/UnlinkCustomerCrmCommand"
           adopt_schedule_projection: "#/components/schemas/AdoptScheduleProjectionCrmCommand"
+
+    PlanningBusinessFacts:
+      type: object
+      additionalProperties: false
+      required:
+        [rented_location_count, assistant_count, retouched_photo_count,
+         estimated_duration_minutes, revision, updated_at]
+      properties:
+        rented_location_count: {type: integer, nullable: true, minimum: 0, maximum: 100}
+        assistant_count: {type: integer, nullable: true, minimum: 0, maximum: 100}
+        retouched_photo_count: {type: integer, nullable: true, minimum: 0, maximum: 100000}
+        estimated_duration_minutes: {type: integer, nullable: true, minimum: 0, maximum: 10080}
+        revision: {type: integer, format: int64, minimum: 0}
+        updated_at: {type: string, format: date-time, nullable: true}
+
+    PlanningBusinessPublicInputs:
+      type: object
+      additionalProperties: false
+      required: [planned_look_count, current_shot_count]
+      properties:
+        planned_look_count: {type: integer, nullable: true, minimum: 0}
+        current_shot_count: {type: integer, minimum: 0}
+
+    EffectivePlanningBusinessRules:
+      type: object
+      additionalProperties: false
+      required: [rule_version, overrides, unknown_keys]
+      properties:
+        rule_version: {type: string}
+        overrides:
+          $ref: "#/components/schemas/PlanningBusinessRuleOverrides"
+        unknown_keys:
+          type: array
+          uniqueItems: true
+          items: {type: string}
+
+    BusinessAdjustmentSourceFact:
+      type: object
+      additionalProperties: false
+      required: [field, owner, observed_value, rule_key]
+      properties:
+        field:
+          type: string
+          enum: [planned_look_count, current_shot_count, rented_location_count, assistant_count, retouched_photo_count]
+        owner:
+          type: string
+          enum: [public_plan_scale, current_shot_aggregate, planning_business_facts]
+        observed_value: {type: integer, nullable: true}
+        rule_key: {type: string}
+
+    BusinessAdjustmentLine:
+      type: object
+      additionalProperties: false
+      required: [kind, label, quantity, unit_amount, amount, source_fact]
+      properties:
+        kind:
+          type: string
+          enum: [extra_look, rented_location, assistant, extra_retouch, extra_shot]
+        label: {type: string}
+        quantity: {type: integer, nullable: true}
+        unit_amount: {type: integer, nullable: true}
+        amount: {type: integer, nullable: true}
+        source_fact:
+          $ref: "#/components/schemas/BusinessAdjustmentSourceFact"
+
+    BusinessDraftAcknowledgement:
+      type: object
+      additionalProperties: false
+      required: [version, effects]
+      properties:
+        version:
+          type: string
+          enum: [order-adjustment-v1, schedule-duration-v1]
+        effects:
+          type: array
+          items: {type: string}
+
+    OrderAdjustmentDraftView:
+      type: object
+      additionalProperties: false
+      required:
+        [id, generation_id, kind, status, revision, base_price, calculation_mode,
+         absolute_target_price, lines, proposed_total, warnings, rule_version,
+         required_acknowledgement, created_at, expires_at]
+      properties:
+        id: {type: string}
+        generation_id: {type: string}
+        kind: {type: string, enum: [order_adjustment]}
+        status: {type: string, enum: [fresh, stale, applied, dismissed]}
+        stale_reason: {type: string}
+        revision: {type: integer, format: int64, minimum: 1}
+        base_price: {type: integer, nullable: true, minimum: 0}
+        calculation_mode: {type: string, enum: [delta_from_base, absolute_target]}
+        absolute_target_price: {type: integer, nullable: true, minimum: 0}
+        lines:
+          type: array
+          items: {$ref: "#/components/schemas/BusinessAdjustmentLine"}
+        proposed_total: {type: integer, nullable: true, minimum: 0}
+        warnings:
+          type: array
+          items:
+            type: string
+            enum: [unknown_source_fact, unknown_rate, unknown_adjustment_lines_excluded, no_material_change]
+        rule_version: {type: string}
+        required_acknowledgement:
+          allOf:
+            - $ref: "#/components/schemas/BusinessDraftAcknowledgement"
+          nullable: true
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+
+    ScheduleDurationDraftView:
+      type: object
+      additionalProperties: false
+      required:
+        [id, generation_id, kind, status, revision, target_mode, basis_minutes,
+         original_start_at, original_end_at, proposed_end_at, warnings,
+         rule_version, required_acknowledgement, created_at, expires_at]
+      properties:
+        id: {type: string}
+        generation_id: {type: string}
+        kind: {type: string, enum: [schedule_duration]}
+        status: {type: string, enum: [fresh, stale, applied, dismissed]}
+        stale_reason: {type: string}
+        revision: {type: integer, format: int64, minimum: 1}
+        target_mode: {type: string, enum: [update_existing, create_new]}
+        basis_minutes: {type: integer, minimum: 1, maximum: 10080}
+        original_start_at: {type: string, format: date-time, nullable: true}
+        original_end_at: {type: string, format: date-time, nullable: true}
+        proposed_end_at: {type: string, format: date-time, nullable: true}
+        warnings:
+          type: array
+          items:
+            type: string
+            enum: [unknown_source_fact, unknown_rate, unknown_adjustment_lines_excluded, no_material_change]
+        rule_version: {type: string}
+        required_acknowledgement:
+          allOf:
+            - $ref: "#/components/schemas/BusinessDraftAcknowledgement"
+          nullable: true
+        created_at: {type: string, format: date-time}
+        expires_at: {type: string, format: date-time}
+
+    PlanningBusinessDetail:
+      type: object
+      additionalProperties: false
+      required: [facts, public_inputs, effective_rules, order_adjustment, schedule_duration]
+      properties:
+        facts:
+          $ref: "#/components/schemas/PlanningBusinessFacts"
+        public_inputs:
+          $ref: "#/components/schemas/PlanningBusinessPublicInputs"
+        effective_rules:
+          $ref: "#/components/schemas/EffectivePlanningBusinessRules"
+        order_adjustment:
+          allOf:
+            - $ref: "#/components/schemas/OrderAdjustmentDraftView"
+          nullable: true
+        schedule_duration:
+          allOf:
+            - $ref: "#/components/schemas/ScheduleDurationDraftView"
+          nullable: true
+
+    GenerateBusinessDraftsInput:
+      type: object
+      additionalProperties: false
+      required: [expected_plan_revision, expected_business_facts_revision, draft_kinds]
+      properties:
+        expected_plan_revision: {type: integer, format: int64, minimum: 1}
+        expected_business_facts_revision: {type: integer, format: int64, minimum: 0}
+        draft_kinds:
+          type: array
+          minItems: 1
+          maxItems: 2
+          uniqueItems: true
+          items: {type: string, enum: [order_adjustment, schedule_duration]}
+        absolute_target_price: {type: integer, nullable: true, minimum: 0, maximum: 2147483647}
+
+    GeneratedOrderBusinessDraftItem:
+      type: object
+      additionalProperties: false
+      required: [state, order_draft]
+      properties:
+        state: {type: string, enum: [generated]}
+        order_draft:
+          $ref: "#/components/schemas/OrderAdjustmentDraftView"
+
+    GeneratedScheduleBusinessDraftItem:
+      type: object
+      additionalProperties: false
+      required: [state, schedule_draft]
+      properties:
+        state: {type: string, enum: [generated]}
+        schedule_draft:
+          $ref: "#/components/schemas/ScheduleDurationDraftView"
+
+    OrderBusinessDraftGenerationItem:
+      oneOf:
+        - $ref: "#/components/schemas/GeneratedOrderBusinessDraftItem"
+        - $ref: "#/components/schemas/UnavailableOrderBusinessDraftItem"
+      discriminator:
+        propertyName: state
+        mapping:
+          generated: "#/components/schemas/GeneratedOrderBusinessDraftItem"
+          unavailable: "#/components/schemas/UnavailableOrderBusinessDraftItem"
+
+    ScheduleBusinessDraftGenerationItem:
+      oneOf:
+        - $ref: "#/components/schemas/GeneratedScheduleBusinessDraftItem"
+        - $ref: "#/components/schemas/UnavailableScheduleBusinessDraftItem"
+      discriminator:
+        propertyName: state
+        mapping:
+          generated: "#/components/schemas/GeneratedScheduleBusinessDraftItem"
+          unavailable: "#/components/schemas/UnavailableScheduleBusinessDraftItem"
+
+    BusinessDraftGenerationResult:
+      type: object
+      additionalProperties: false
+      required: [generation_id, plan_id, plan_revision, business_facts_revision, rule_version]
+      properties:
+        generation_id: {type: string}
+        plan_id: {type: string}
+        plan_revision: {type: integer, format: int64, minimum: 1}
+        business_facts_revision: {type: integer, format: int64, minimum: 0}
+        rule_version: {type: string}
+        order_adjustment:
+          $ref: "#/components/schemas/OrderBusinessDraftGenerationItem"
+        schedule_duration:
+          $ref: "#/components/schemas/ScheduleBusinessDraftGenerationItem"
+
+    BusinessDraftDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [expected_draft_revision, decision]
+      properties:
+        expected_draft_revision: {type: integer, format: int64, minimum: 1}
+        decision:
+          type: string
+          enum: [dismiss, apply_order_adjustment, apply_schedule_duration]
+        acknowledgement:
+          $ref: "#/components/schemas/BusinessDraftAcknowledgement"
+
+    BusinessDraftDecisionResult:
+      type: object
+      additionalProperties: false
+      required: [draft_id, kind, status, revision]
+      properties:
+        draft_id: {type: string}
+        kind: {type: string, enum: [order_adjustment, schedule_duration]}
+        status: {type: string, enum: [applied, dismissed]}
+        revision: {type: integer, format: int64, minimum: 1}
+        applied_target:
+          type: object
+          additionalProperties: false
+          properties:
+            target_id: {type: string}
+            adjustment_id: {type: string}
+            before_price: {type: integer, nullable: true}
+            after_price: {type: integer, nullable: true}
+            before_end_at: {type: string, format: date-time, nullable: true}
+            after_end_at: {type: string, format: date-time, nullable: true}
 
     LinkedOrderSnapshot:
       type: object

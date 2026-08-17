@@ -143,6 +143,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 	fullVersion := migrationVersion(t, url)
 	for _, label := range []string{
+		"plan-business-feedback",
 		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal",
 		"plan-assignment-reminder-ingestion", "plan-assignment-reminders",
 		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
@@ -173,6 +174,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 
 	resetAuthSchema(t, url)
 	for _, label := range []string{
+		"plan-business-feedback",
 		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal",
 		"plan-assignment-reminder-ingestion", "plan-assignment-reminders",
 		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
@@ -212,7 +214,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 		LegacySchemaVersionBefore: versionBefore, LegacySchemaVersionAfter: versionAfter,
 		// Tip is pinned to the current highest migration so adding a new up/down
 		// without extending the labeled down walk fails this gate loudly.
-		LimiterSchemaRollback:        fullVersion == 28 && versionBefore == 12,
+		LimiterSchemaRollback:        fullVersion == 29 && versionBefore == 12,
 		LegacyDownPassed:             versionBefore == 12 && versionAfter == 11,
 		LegacyDataPreserved:          legacyHash == "deprecated-hash" && customerCount == 1,
 		NewStyleDownBlocked:          downErr != nil && strings.Contains(downErr.Error(), "auth_schema_down_blocked_new_accounts"),

@@ -1,30 +1,10 @@
 package settings
 
 import (
-	"context"
 	"errors"
 	"reflect"
 	"testing"
-
-	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
-
-type settingsRepositoryStub struct {
-	stored  Settings
-	found   bool
-	upserts int
-}
-
-func (r *settingsRepositoryStub) Get(context.Context, store.AccountScope) (Settings, bool, error) {
-	return r.stored, r.found, nil
-}
-
-func (r *settingsRepositoryStub) Upsert(_ context.Context, _ store.AccountScope, value Settings) (Settings, error) {
-	r.stored = value
-	r.found = true
-	r.upserts++
-	return value, nil
-}
 
 func TestDefaultSettingsIncludesCompleteAvailability(t *testing.T) {
 	got := DefaultSettings().Availability
@@ -47,20 +27,15 @@ func TestDefaultSettingsIncludesCompleteAvailability(t *testing.T) {
 }
 
 func TestServicePatchReplacesWholeAvailability(t *testing.T) {
-	repo := &settingsRepositoryStub{}
-	svc := NewService(repo)
 	availability := DefaultScheduleAvailability()
 	availability.Weekly.Monday = availabilityWindow("08:30", "17:30")
 	availability.Weekly.Sunday = nil
 	availability.MinOpeningMinutes = 90
 	availability.TurnaroundMinutes = 30
 
-	got, err := svc.Patch(context.Background(), store.AccountScope{}, PatchInput{Availability: &availability})
+	got, _, err := applyPatch(DefaultSettings(), PatchInput{Availability: &availability})
 	if err != nil {
 		t.Fatalf("Patch() error = %v", err)
-	}
-	if repo.upserts != 1 {
-		t.Fatalf("upserts = %d, want 1", repo.upserts)
 	}
 	if !reflect.DeepEqual(got.Availability, availability) {
 		t.Fatalf("saved availability = %#v, want %#v", got.Availability, availability)
@@ -94,16 +69,11 @@ func TestServicePatchRejectsInvalidAvailabilityWithoutWriting(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := &settingsRepositoryStub{}
-			svc := NewService(repo)
 			availability := DefaultScheduleAvailability()
 			tt.mutate(&availability)
-			_, err := svc.Patch(context.Background(), store.AccountScope{}, PatchInput{Availability: &availability})
+			_, _, err := applyPatch(DefaultSettings(), PatchInput{Availability: &availability})
 			if !errors.Is(err, ErrValidation) {
 				t.Fatalf("Patch() error = %v, want validation error", err)
-			}
-			if repo.upserts != 0 {
-				t.Fatalf("upserts = %d, want 0", repo.upserts)
 			}
 		})
 	}

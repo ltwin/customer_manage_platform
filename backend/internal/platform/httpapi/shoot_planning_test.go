@@ -8,10 +8,169 @@ import (
 	"testing"
 	"time"
 
+	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
+	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 )
+
+func TestShootPlanningBusinessHTTPVerticalSlice(t *testing.T) {
+	router, database, issuer, _ := newCustomerAPIRouterWithContainer(t)
+	token := issueToken(t, issuer, testAcctID)
+
+	created := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans", token, "business-http-create", `{"title":"经营接口","subject":"角色 B"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create business plan: %d %s", created.Code, created.Body.String())
+	}
+	var plan struct {
+		ID       string `json:"id"`
+		Revision int64  `json:"revision"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &plan); err != nil || plan.ID == "" || plan.Revision != 1 {
+		t.Fatalf("decode business plan: err=%v body=%s", err, created.Body.String())
+	}
+	initialDetail := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans/"+plan.ID, token, "", "")
+	if initialDetail.Code != http.StatusOK || !strings.Contains(initialDetail.Body.String(), `"business"`) {
+		t.Fatalf("business detail projection: %d %s", initialDetail.Code, initialDetail.Body.String())
+	}
+
+	unauthorized := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts", "", "business-http-unauthorized", `{"expected_plan_revision":1,"expected_business_facts_revision":0,"draft_kinds":["order_adjustment"]}`)
+	requirePlanningError(t, unauthorized, http.StatusUnauthorized, httpapi.CodeUnauthorized)
+	badFacts := shootPlanningRequest(t, router, http.MethodPatch, "/api/v1/shoot-plans/"+plan.ID, token, "business-http-bad-facts", `{"expected_revision":1,"operation":"set_business_facts","expected_business_facts_revision":0,"facts":{"rented_location_count":0,"assistant_count":0,"retouched_photo_count":0}}`)
+	requirePlanningError(t, badFacts, http.StatusBadRequest, httpapi.CodeValidationFailed)
+	rangeFacts := shootPlanningRequest(t, router, http.MethodPatch, "/api/v1/shoot-plans/"+plan.ID, token, "business-http-range-facts", `{"expected_revision":1,"operation":"set_business_facts","expected_business_facts_revision":0,"facts":{"rented_location_count":101,"assistant_count":0,"retouched_photo_count":0,"estimated_duration_minutes":420}}`)
+	requirePlanningError(t, rangeFacts, http.StatusBadRequest, httpapi.CodeValidationFailed)
+
+	facts := shootPlanningRequest(t, router, http.MethodPatch, "/api/v1/shoot-plans/"+plan.ID, token, "business-http-facts", `{"expected_revision":1,"operation":"set_business_facts","expected_business_facts_revision":0,"facts":{"rented_location_count":1,"assistant_count":0,"retouched_photo_count":18,"estimated_duration_minutes":420}}`)
+	if facts.Code != http.StatusOK || !strings.Contains(facts.Body.String(), `"revision":2`) {
+		t.Fatalf("set business facts: %d %s", facts.Code, facts.Body.String())
+	}
+
+	missingOrder := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts", token, "business-http-missing-order", `{"expected_plan_revision":2,"expected_business_facts_revision":1,"draft_kinds":["order_adjustment","schedule_duration"]}`)
+	requirePlanningError(t, missingOrder, http.StatusConflict, "business_draft_unavailable")
+	var unavailable struct {
+		Error struct {
+			Details struct {
+				OrderAdjustment  struct{ State, Reason string } `json:"order_adjustment"`
+				ScheduleDuration struct{ State, Reason string } `json:"schedule_duration"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(missingOrder.Body.Bytes(), &unavailable); err != nil ||
+		unavailable.Error.Details.OrderAdjustment.Reason != "order_required" ||
+		unavailable.Error.Details.ScheduleDuration.Reason != "order_required" {
+		t.Fatalf("typed unavailable details missing: err=%v body=%s", err, missingOrder.Body.String())
+	}
+	scope := database.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	draftCount, err := scope.Count(t.Context(), "planning_business_drafts", "plan_id = $2", plan.ID)
+	if err != nil || draftCount != 0 {
+		t.Fatalf("all-unavailable generation wrote drafts: count=%d err=%v", draftCount, err)
+	}
+	badKinds := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts", token, "business-http-bad-kinds", `{"expected_plan_revision":2,"expected_business_facts_revision":1,"draft_kinds":["order_adjustment","order_adjustment"]}`)
+	requirePlanningError(t, badKinds, http.StatusBadRequest, httpapi.CodeValidationFailed)
+
+	customers := customerdomain.NewService(customerdomain.NewPostgresRepository())
+	customer, err := customers.Create(t.Context(), scope, customerdomain.CreateInput{
+		DisplayName: "经营接口客户",
+		Channel:     customerdomain.ChannelOther,
+		Identities:  []customerdomain.IdentityInput{{Platform: customerdomain.PlatformOther, Handle: "business-http-customer"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	basePrice := 268000
+	orderTitle := "经营接口订单"
+	createdOrder, err := orderdomain.NewService(orderdomain.NewPostgresRepository()).Create(t.Context(), scope, orderdomain.CreateInput{
+		CreationMode: orderdomain.CreationModeNew,
+		CustomerID:   customer.ID,
+		Title:        &orderTitle,
+		Price:        &basePrice,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	linked := shootPlanningRequest(t, router, http.MethodPatch, "/api/v1/shoot-plans/"+plan.ID, token, "business-http-link-order", `{"expected_revision":2,"operation":"link_order","order_id":"`+createdOrder.ID+`"}`)
+	if linked.Code != http.StatusOK || !strings.Contains(linked.Body.String(), `"revision":2`) {
+		t.Fatalf("link business order: %d %s", linked.Code, linked.Body.String())
+	}
+
+	generatedResponse := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts", token, "business-http-generate", `{"expected_plan_revision":2,"expected_business_facts_revision":1,"draft_kinds":["order_adjustment","schedule_duration"]}`)
+	if generatedResponse.Code != http.StatusCreated {
+		t.Fatalf("generate business drafts: %d %s", generatedResponse.Code, generatedResponse.Body.String())
+	}
+	type draftProjection struct {
+		ID                      string `json:"id"`
+		Revision                int64  `json:"revision"`
+		RequiredAcknowledgement *struct {
+			Version string   `json:"version"`
+			Effects []string `json:"effects"`
+		} `json:"required_acknowledgement"`
+	}
+	var generated struct {
+		OrderAdjustment struct {
+			State      string           `json:"state"`
+			OrderDraft *draftProjection `json:"order_draft"`
+		} `json:"order_adjustment"`
+		ScheduleDuration struct {
+			State         string `json:"state"`
+			ScheduleDraft *struct {
+				draftProjection
+				TargetMode   string `json:"target_mode"`
+				BasisMinutes int    `json:"basis_minutes"`
+			} `json:"schedule_draft"`
+		} `json:"schedule_duration"`
+	}
+	if err := json.Unmarshal(generatedResponse.Body.Bytes(), &generated); err != nil || generated.OrderAdjustment.OrderDraft == nil || generated.ScheduleDuration.ScheduleDraft == nil || generated.ScheduleDuration.ScheduleDraft.TargetMode != "create_new" {
+		t.Fatalf("decode generated business drafts: err=%v body=%s", err, generatedResponse.Body.String())
+	}
+	orderDraft := generated.OrderAdjustment.OrderDraft
+	wrongAck := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts/"+orderDraft.ID+"/apply", token, "business-http-wrong-ack", `{"expected_draft_revision":1,"decision":"apply_order_adjustment","acknowledgement":{"version":"order-adjustment-v1","effects":[]}}`)
+	requirePlanningError(t, wrongAck, http.StatusBadRequest, httpapi.CodeValidationFailed)
+
+	if _, err := scope.Update(t.Context(), "orders", "price = $2", "id = $3", 269000, createdOrder.ID); err != nil {
+		t.Fatal(err)
+	}
+	acknowledgement, err := json.Marshal(orderDraft.RequiredAcknowledgement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleApply := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts/"+orderDraft.ID+"/apply", token, "business-http-stale-apply", `{"expected_draft_revision":1,"decision":"apply_order_adjustment","acknowledgement":`+string(acknowledgement)+`}`)
+	requirePlanningError(t, staleApply, http.StatusConflict, "stale_business_draft")
+	var stale struct {
+		Error struct {
+			Details struct {
+				DraftID  string `json:"draft_id"`
+				Kind     string `json:"kind"`
+				Status   string `json:"status"`
+				Reason   string `json:"stale_reason"`
+				Revision int64  `json:"revision"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(staleApply.Body.Bytes(), &stale); err != nil || stale.Error.Details.DraftID != orderDraft.ID || stale.Error.Details.Reason != "order_target_changed" || stale.Error.Details.Status != "stale" {
+		t.Fatalf("typed stale details missing: err=%v body=%s", err, staleApply.Body.String())
+	}
+
+	scheduleDraft := generated.ScheduleDuration.ScheduleDraft
+	createNewApply := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts/"+scheduleDraft.ID+"/apply", token, "business-http-create-new-apply", `{"expected_draft_revision":1,"decision":"apply_schedule_duration"}`)
+	requirePlanningError(t, createNewApply, http.StatusConflict, "business_draft_requires_schedule_create")
+
+	hash, err := auth.HashPassword(testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CreateAccount(t.Context(), "business-http-other", hash); err != nil {
+		t.Fatal(err)
+	}
+	otherToken := issueToken(t, issuer, "business-http-other")
+	crossDetail := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans/"+plan.ID, otherToken, "", "")
+	requirePlanningError(t, crossDetail, http.StatusNotFound, httpapi.CodeNotFound)
+	crossDecision := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans/"+plan.ID+"/business-drafts/"+orderDraft.ID+"/apply", otherToken, "business-http-cross-decision", `{"expected_draft_revision":1,"decision":"dismiss"}`)
+	requirePlanningError(t, crossDecision, http.StatusNotFound, httpapi.CodeNotFound)
+	shareBusiness := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shared/plans/not-a-token/business-drafts", "", "business-http-share", `{}`)
+	requirePlanningError(t, shareBusiness, http.StatusNotFound, httpapi.CodeNotFound)
+}
 
 func shootPlanningRequest(
 	t *testing.T,

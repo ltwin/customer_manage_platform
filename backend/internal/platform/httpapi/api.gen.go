@@ -359,6 +359,27 @@ func (e NonShootScheduleSlotListItemType) Valid() bool {
 	}
 }
 
+// Defines values for OrderBusinessDraftUnavailableReason.
+const (
+	OrderBusinessDraftUnavailableReasonBusinessCalculationOverflow OrderBusinessDraftUnavailableReason = "business_calculation_overflow"
+	OrderBusinessDraftUnavailableReasonOrderCancelled              OrderBusinessDraftUnavailableReason = "order_cancelled"
+	OrderBusinessDraftUnavailableReasonOrderRequired               OrderBusinessDraftUnavailableReason = "order_required"
+)
+
+// Valid indicates whether the value is a known member of the OrderBusinessDraftUnavailableReason enum.
+func (e OrderBusinessDraftUnavailableReason) Valid() bool {
+	switch e {
+	case OrderBusinessDraftUnavailableReasonBusinessCalculationOverflow:
+		return true
+	case OrderBusinessDraftUnavailableReasonOrderCancelled:
+		return true
+	case OrderBusinessDraftUnavailableReasonOrderRequired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for OrderCreationMode.
 const (
 	Backfill OrderCreationMode = "backfill"
@@ -730,16 +751,16 @@ func (e PlanningShareReminderArchiveAcknowledgementVersion) Valid() bool {
 
 // Defines values for PlanningSummaryLinkWarning.
 const (
-	OrderCancelled PlanningSummaryLinkWarning = "order_cancelled"
-	OrderDeleted   PlanningSummaryLinkWarning = "order_deleted"
+	PlanningSummaryLinkWarningOrderCancelled PlanningSummaryLinkWarning = "order_cancelled"
+	PlanningSummaryLinkWarningOrderDeleted   PlanningSummaryLinkWarning = "order_deleted"
 )
 
 // Valid indicates whether the value is a known member of the PlanningSummaryLinkWarning enum.
 func (e PlanningSummaryLinkWarning) Valid() bool {
 	switch e {
-	case OrderCancelled:
+	case PlanningSummaryLinkWarningOrderCancelled:
 		return true
-	case OrderDeleted:
+	case PlanningSummaryLinkWarningOrderDeleted:
 		return true
 	default:
 		return false
@@ -827,6 +848,36 @@ func (e ReminderType) Valid() bool {
 	case ReminderTypeFollowUp:
 		return true
 	case ReminderTypePlanAssignmentChecklist:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleBusinessDraftUnavailableReason.
+const (
+	ScheduleBusinessDraftUnavailableReasonDurationNotPositive     ScheduleBusinessDraftUnavailableReason = "duration_not_positive"
+	ScheduleBusinessDraftUnavailableReasonDurationOutOfRange      ScheduleBusinessDraftUnavailableReason = "duration_out_of_range"
+	ScheduleBusinessDraftUnavailableReasonDurationUnknown         ScheduleBusinessDraftUnavailableReason = "duration_unknown"
+	ScheduleBusinessDraftUnavailableReasonOrderRequired           ScheduleBusinessDraftUnavailableReason = "order_required"
+	ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture   ScheduleBusinessDraftUnavailableReason = "schedule_slot_not_future"
+	ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible ScheduleBusinessDraftUnavailableReason = "schedule_stage_ineligible"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleBusinessDraftUnavailableReason enum.
+func (e ScheduleBusinessDraftUnavailableReason) Valid() bool {
+	switch e {
+	case ScheduleBusinessDraftUnavailableReasonDurationNotPositive:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonDurationOutOfRange:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonDurationUnknown:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonOrderRequired:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible:
 		return true
 	default:
 		return false
@@ -1076,6 +1127,120 @@ func (e SocialPlatform) Valid() bool {
 	}
 }
 
+// Defines values for StaleBusinessDraftDetailsKind.
+const (
+	OrderAdjustment  StaleBusinessDraftDetailsKind = "order_adjustment"
+	ScheduleDuration StaleBusinessDraftDetailsKind = "schedule_duration"
+)
+
+// Valid indicates whether the value is a known member of the StaleBusinessDraftDetailsKind enum.
+func (e StaleBusinessDraftDetailsKind) Valid() bool {
+	switch e {
+	case OrderAdjustment:
+		return true
+	case ScheduleDuration:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StaleBusinessDraftDetailsStaleReason.
+const (
+	StaleBusinessDraftDetailsStaleReasonBusinessFactsRevisionChanged StaleBusinessDraftDetailsStaleReason = "business_facts_revision_changed"
+	StaleBusinessDraftDetailsStaleReasonCrmConnectionChanged         StaleBusinessDraftDetailsStaleReason = "crm_connection_changed"
+	StaleBusinessDraftDetailsStaleReasonCrmProjectionChanged         StaleBusinessDraftDetailsStaleReason = "crm_projection_changed"
+	StaleBusinessDraftDetailsStaleReasonExpired                      StaleBusinessDraftDetailsStaleReason = "expired"
+	StaleBusinessDraftDetailsStaleReasonOrderStageIneligible         StaleBusinessDraftDetailsStaleReason = "order_stage_ineligible"
+	StaleBusinessDraftDetailsStaleReasonOrderTargetChanged           StaleBusinessDraftDetailsStaleReason = "order_target_changed"
+	StaleBusinessDraftDetailsStaleReasonOrderTargetMissing           StaleBusinessDraftDetailsStaleReason = "order_target_missing"
+	StaleBusinessDraftDetailsStaleReasonPlanRevisionChanged          StaleBusinessDraftDetailsStaleReason = "plan_revision_changed"
+	StaleBusinessDraftDetailsStaleReasonRuleVersionChanged           StaleBusinessDraftDetailsStaleReason = "rule_version_changed"
+	StaleBusinessDraftDetailsStaleReasonScheduleStageIneligible      StaleBusinessDraftDetailsStaleReason = "schedule_stage_ineligible"
+	StaleBusinessDraftDetailsStaleReasonSlotTargetChanged            StaleBusinessDraftDetailsStaleReason = "slot_target_changed"
+	StaleBusinessDraftDetailsStaleReasonSlotTargetMissing            StaleBusinessDraftDetailsStaleReason = "slot_target_missing"
+	StaleBusinessDraftDetailsStaleReasonSuperseded                   StaleBusinessDraftDetailsStaleReason = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the StaleBusinessDraftDetailsStaleReason enum.
+func (e StaleBusinessDraftDetailsStaleReason) Valid() bool {
+	switch e {
+	case StaleBusinessDraftDetailsStaleReasonBusinessFactsRevisionChanged:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonCrmConnectionChanged:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonCrmProjectionChanged:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonExpired:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonOrderStageIneligible:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonOrderTargetChanged:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonOrderTargetMissing:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonPlanRevisionChanged:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonRuleVersionChanged:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonScheduleStageIneligible:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonSlotTargetChanged:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonSlotTargetMissing:
+		return true
+	case StaleBusinessDraftDetailsStaleReasonSuperseded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StaleBusinessDraftDetailsStatus.
+const (
+	Stale StaleBusinessDraftDetailsStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the StaleBusinessDraftDetailsStatus enum.
+func (e StaleBusinessDraftDetailsStatus) Valid() bool {
+	switch e {
+	case Stale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UnavailableOrderBusinessDraftItemState.
+const (
+	UnavailableOrderBusinessDraftItemStateUnavailable UnavailableOrderBusinessDraftItemState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the UnavailableOrderBusinessDraftItemState enum.
+func (e UnavailableOrderBusinessDraftItemState) Valid() bool {
+	switch e {
+	case UnavailableOrderBusinessDraftItemStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UnavailableScheduleBusinessDraftItemState.
+const (
+	UnavailableScheduleBusinessDraftItemStateUnavailable UnavailableScheduleBusinessDraftItemState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the UnavailableScheduleBusinessDraftItemState enum.
+func (e UnavailableScheduleBusinessDraftItemState) Valid() bool {
+	switch e {
+	case UnavailableScheduleBusinessDraftItemStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for VerificationDispatchStatus.
 const (
 	VerificationRequired VerificationDispatchStatus = "verification_required"
@@ -1283,6 +1448,12 @@ type AvatarVersion = string
 
 // Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
 type Birthday = string
+
+// BusinessDraftUnavailableDetails defines model for BusinessDraftUnavailableDetails.
+type BusinessDraftUnavailableDetails struct {
+	OrderAdjustment  *UnavailableOrderBusinessDraftItem    `json:"order_adjustment,omitempty"`
+	ScheduleDuration *UnavailableScheduleBusinessDraftItem `json:"schedule_duration,omitempty"`
+}
 
 // ChurnThreshold defines model for ChurnThreshold.
 type ChurnThreshold struct {
@@ -1594,6 +1765,9 @@ type Order struct {
 	Title  *string     `json:"title,omitempty"`
 }
 
+// OrderBusinessDraftUnavailableReason defines model for OrderBusinessDraftUnavailableReason.
+type OrderBusinessDraftUnavailableReason string
+
 // OrderCreationMode defines model for OrderCreationMode.
 type OrderCreationMode string
 
@@ -1814,6 +1988,24 @@ type PlanAssignmentReminderView struct {
 	UnscheduledSourceCount int `json:"unscheduled_source_count"`
 }
 
+// PlanningBusinessRuleOverrides defines model for PlanningBusinessRuleOverrides.
+type PlanningBusinessRuleOverrides struct {
+	AssistantUnitAmount         nullable.Nullable[int] `json:"assistant_unit_amount,omitempty"`
+	ExtraLookUnitAmount         nullable.Nullable[int] `json:"extra_look_unit_amount,omitempty"`
+	ExtraRetouchUnitAmount      nullable.Nullable[int] `json:"extra_retouch_unit_amount,omitempty"`
+	ExtraShotUnitAmount         nullable.Nullable[int] `json:"extra_shot_unit_amount,omitempty"`
+	IncludedLookCount           nullable.Nullable[int] `json:"included_look_count,omitempty"`
+	IncludedRetouchedPhotoCount nullable.Nullable[int] `json:"included_retouched_photo_count,omitempty"`
+	IncludedShotCount           nullable.Nullable[int] `json:"included_shot_count,omitempty"`
+	RentedLocationUnitAmount    nullable.Nullable[int] `json:"rented_location_unit_amount,omitempty"`
+}
+
+// PlanningBusinessRulesPatch defines model for PlanningBusinessRulesPatch.
+type PlanningBusinessRulesPatch struct {
+	ExpectedRevision int64                         `json:"expected_revision"`
+	Overrides        PlanningBusinessRuleOverrides `json:"overrides"`
+}
+
 // PlanningMediaPurpose defines model for PlanningMediaPurpose.
 type PlanningMediaPurpose string
 
@@ -1956,6 +2148,9 @@ type ScheduleAvailabilityWindow struct {
 	Start string `json:"start"`
 }
 
+// ScheduleBusinessDraftUnavailableReason defines model for ScheduleBusinessDraftUnavailableReason.
+type ScheduleBusinessDraftUnavailableReason string
+
 // ScheduleConflictDetails order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
 type ScheduleConflictDetails struct {
 	ScheduleSlotId  string    `json:"schedule_slot_id"`
@@ -2006,9 +2201,11 @@ type Settings struct {
 	ChurnThresholds []ChurnThreshold `json:"churn_thresholds"`
 
 	// DigestHour 按 timezone
-	DigestHour        int     `json:"digest_hour"`
-	FollowUpAfterDays int     `json:"follow_up_after_days"`
-	TelegramChatId    *string `json:"telegram_chat_id,omitempty"`
+	DigestHour                    int                           `json:"digest_hour"`
+	FollowUpAfterDays             int                           `json:"follow_up_after_days"`
+	PlanningBusinessRuleOverrides PlanningBusinessRuleOverrides `json:"planning_business_rule_overrides"`
+	PlanningBusinessRuleRevision  int64                         `json:"planning_business_rule_revision"`
+	TelegramChatId                *string                       `json:"telegram_chat_id,omitempty"`
 
 	// Timezone IANA，默认 Asia/Shanghai；所有 date-only 判定按此时区（§4.1）
 	Timezone string `json:"timezone"`
@@ -2237,13 +2434,50 @@ type SocialIdentity struct {
 // SocialPlatform defines model for SocialPlatform.
 type SocialPlatform string
 
+// StaleBusinessDraftDetails defines model for StaleBusinessDraftDetails.
+type StaleBusinessDraftDetails struct {
+	DraftId     string                               `json:"draft_id"`
+	Kind        StaleBusinessDraftDetailsKind        `json:"kind"`
+	Revision    int64                                `json:"revision"`
+	StaleReason StaleBusinessDraftDetailsStaleReason `json:"stale_reason"`
+	Status      StaleBusinessDraftDetailsStatus      `json:"status"`
+}
+
+// StaleBusinessDraftDetailsKind defines model for StaleBusinessDraftDetails.Kind.
+type StaleBusinessDraftDetailsKind string
+
+// StaleBusinessDraftDetailsStaleReason defines model for StaleBusinessDraftDetails.StaleReason.
+type StaleBusinessDraftDetailsStaleReason string
+
+// StaleBusinessDraftDetailsStatus defines model for StaleBusinessDraftDetails.Status.
+type StaleBusinessDraftDetailsStatus string
+
+// UnavailableOrderBusinessDraftItem defines model for UnavailableOrderBusinessDraftItem.
+type UnavailableOrderBusinessDraftItem struct {
+	Reason OrderBusinessDraftUnavailableReason    `json:"reason"`
+	State  UnavailableOrderBusinessDraftItemState `json:"state"`
+}
+
+// UnavailableOrderBusinessDraftItemState defines model for UnavailableOrderBusinessDraftItem.State.
+type UnavailableOrderBusinessDraftItemState string
+
+// UnavailableScheduleBusinessDraftItem defines model for UnavailableScheduleBusinessDraftItem.
+type UnavailableScheduleBusinessDraftItem struct {
+	Reason ScheduleBusinessDraftUnavailableReason    `json:"reason"`
+	State  UnavailableScheduleBusinessDraftItemState `json:"state"`
+}
+
+// UnavailableScheduleBusinessDraftItemState defines model for UnavailableScheduleBusinessDraftItem.State.
+type UnavailableScheduleBusinessDraftItemState string
+
 // UpdateSettingsBody defines model for UpdateSettingsBody.
 type UpdateSettingsBody struct {
-	Availability      *ScheduleAvailability `json:"availability,omitempty"`
-	BirthdayLeadDays  *int                  `json:"birthday_lead_days,omitempty"`
-	ChurnThresholds   *[]ChurnThreshold     `json:"churn_thresholds,omitempty"`
-	DigestHour        *int                  `json:"digest_hour,omitempty"`
-	FollowUpAfterDays *int                  `json:"follow_up_after_days,omitempty"`
+	Availability          *ScheduleAvailability       `json:"availability,omitempty"`
+	BirthdayLeadDays      *int                        `json:"birthday_lead_days,omitempty"`
+	ChurnThresholds       *[]ChurnThreshold           `json:"churn_thresholds,omitempty"`
+	DigestHour            *int                        `json:"digest_hour,omitempty"`
+	FollowUpAfterDays     *int                        `json:"follow_up_after_days,omitempty"`
+	PlanningBusinessRules *PlanningBusinessRulesPatch `json:"planning_business_rules,omitempty"`
 
 	// Timezone IANA 时区
 	Timezone *string `json:"timezone,omitempty"`
@@ -2501,6 +2735,8 @@ type AddCustomerNoteJSONBody struct {
 
 // ListOrdersParams defines parameters for ListOrders.
 type ListOrdersParams struct {
+	// Id 精确订单 id；仍按当前账号隔离，可与其他过滤条件组合
+	Id         *string      `form:"id,omitempty" json:"id,omitempty"`
 	CustomerId *string      `form:"customer_id,omitempty" json:"customer_id,omitempty"`
 	Status     *OrderStatus `form:"status,omitempty" json:"status,omitempty"`
 
@@ -2992,6 +3228,58 @@ func (t *ErrorDetails) FromExpiryQuoteExpiredDetails(v ExpiryQuoteExpiredDetails
 
 // MergeExpiryQuoteExpiredDetails performs a merge with any union data inside the ErrorDetails, using the provided ExpiryQuoteExpiredDetails
 func (t *ErrorDetails) MergeExpiryQuoteExpiredDetails(v ExpiryQuoteExpiredDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsBusinessDraftUnavailableDetails returns the union data inside the ErrorDetails as a BusinessDraftUnavailableDetails
+func (t ErrorDetails) AsBusinessDraftUnavailableDetails() (BusinessDraftUnavailableDetails, error) {
+	var body BusinessDraftUnavailableDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromBusinessDraftUnavailableDetails overwrites any union data inside the ErrorDetails as the provided BusinessDraftUnavailableDetails
+func (t *ErrorDetails) FromBusinessDraftUnavailableDetails(v BusinessDraftUnavailableDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeBusinessDraftUnavailableDetails performs a merge with any union data inside the ErrorDetails, using the provided BusinessDraftUnavailableDetails
+func (t *ErrorDetails) MergeBusinessDraftUnavailableDetails(v BusinessDraftUnavailableDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsStaleBusinessDraftDetails returns the union data inside the ErrorDetails as a StaleBusinessDraftDetails
+func (t ErrorDetails) AsStaleBusinessDraftDetails() (StaleBusinessDraftDetails, error) {
+	var body StaleBusinessDraftDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromStaleBusinessDraftDetails overwrites any union data inside the ErrorDetails as the provided StaleBusinessDraftDetails
+func (t *ErrorDetails) FromStaleBusinessDraftDetails(v StaleBusinessDraftDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeStaleBusinessDraftDetails performs a merge with any union data inside the ErrorDetails, using the provided StaleBusinessDraftDetails
+func (t *ErrorDetails) MergeStaleBusinessDraftDetails(v StaleBusinessDraftDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -4176,6 +4464,14 @@ func (siw *ServerInterfaceWrapper) ListOrders(c *gin.Context) {
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListOrdersParams
+
+	// ------------- Optional query parameter "id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "id", c.Request.URL.Query(), &params.Id, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
 
 	// ------------- Optional query parameter "customer_id" -------------
 

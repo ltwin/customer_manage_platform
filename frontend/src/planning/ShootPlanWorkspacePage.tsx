@@ -28,6 +28,7 @@ import ReadinessPanel from './panels/ReadinessPanel'
 import AssignmentReminderCard from './panels/AssignmentReminderCard'
 import ExecutionHistoryPanel from './panels/ExecutionHistoryPanel'
 import PlanningMediaPanel from './panels/PlanningMediaPanel'
+import BusinessPanel from './panels/BusinessPanel'
 import ShareCollaborationPanel from './share/ShareCollaborationPanel'
 import './planning.css'
 import './share/share.css'
@@ -35,10 +36,10 @@ import './share/share.css'
 export type CommandRunner = (command: ShootPlanMutationRequest, scope: string) => Promise<void>
 export type TransitionRunner = (transition: PlanTransition, scope: string) => Promise<void>
 
-type WorkspaceTab = 'brief' | 'shots' | 'readiness' | 'assets' | 'share' | 'history'
+type WorkspaceTab = 'brief' | 'shots' | 'readiness' | 'assets' | 'share' | 'business' | 'history'
 
 function parseWorkspaceTab(value: string | null): WorkspaceTab | null {
-  if (value === 'brief' || value === 'shots' || value === 'readiness' || value === 'assets' || value === 'share' || value === 'history') {
+  if (value === 'brief' || value === 'shots' || value === 'readiness' || value === 'assets' || value === 'share' || value === 'business' || value === 'history') {
     return value
   }
   return null
@@ -75,6 +76,14 @@ export default function ShootPlanWorkspacePage() {
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
   const pendingKeys = useRef(new Map<string, string>())
+  const getMutationKey = useCallback((signature: string, scope: string) => {
+    const key = pendingKeys.current.get(signature) ?? newPlanningMutationKey(scope)
+    pendingKeys.current.set(signature, key)
+    return key
+  }, [])
+  const acknowledgeMutation = useCallback((signature: string) => {
+    pendingKeys.current.delete(signature)
+  }, [])
 
   const reload = useCallback(() => setReloadTick((value) => value + 1), [])
   const load = useCallback(async (preserve = true) => {
@@ -110,50 +119,60 @@ export default function ShootPlanWorkspacePage() {
   }, [id, reloadTick, reload])
 
   const runCommand: CommandRunner = useCallback(async (command, scope) => {
-    const signature = `command:${JSON.stringify(command)}`
-    const key = pendingKeys.current.get(signature) ?? newPlanningMutationKey(scope)
-    pendingKeys.current.set(signature, key)
+    const signature = `command:${id}:${JSON.stringify(command)}`
+    const key = getMutationKey(signature, scope)
     setBusy(true)
     setFeedback(null)
     try {
-      await applyShootPlanCommand(id, command, key)
-      pendingKeys.current.delete(signature)
-      await load(true)
-      setFeedback('已保存最新版本。')
-    } catch (error) {
-      if (error instanceof ApiError && error.code === 'plan_revision_conflict') {
-        await load(true).catch(() => undefined)
-        setFeedback('策划已在其他页面更新。页面已刷新，请核对保留的输入后重新保存。')
+      try {
+        await applyShootPlanCommand(id, command, key)
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'plan_revision_conflict') {
+          await load(true).catch(() => undefined)
+          setFeedback('策划已在其他页面更新。页面已刷新，请核对保留的输入后重新保存。')
+        }
+        throw error
       }
-      throw error
+      acknowledgeMutation(signature)
+      try {
+        await load(true)
+        setFeedback('已保存最新版本。')
+      } catch {
+        setFeedback('更改已提交，但最新页面加载失败；请刷新页面查看结果。')
+      }
     } finally {
       setBusy(false)
     }
-  }, [id, load])
+  }, [acknowledgeMutation, getMutationKey, id, load])
 
   const runTransition: TransitionRunner = useCallback(async (transition, scope) => {
-    const signature = `transition:${JSON.stringify(transition)}`
-    const key = pendingKeys.current.get(signature) ?? newPlanningMutationKey(scope)
-    pendingKeys.current.set(signature, key)
+    const signature = `transition:${id}:${JSON.stringify(transition)}`
+    const key = getMutationKey(signature, scope)
     setBusy(true)
     setFeedback(null)
     try {
-      await transitionShootPlan(id, transition, key)
-      pendingKeys.current.delete(signature)
-      await load(true)
-      setFeedback('策划状态已更新。')
-    } catch (error) {
-      if (error instanceof ApiError && (error.code === 'plan_revision_conflict' || error.code === 'archive_acknowledgement_required')) {
-        await load(true).catch(() => undefined)
-        setFeedback(error.code === 'archive_acknowledgement_required'
-          ? '归档影响已变化。页面已刷新，请重新阅读并确认。'
-          : '策划版本已变化。页面已刷新，请重新确认状态。')
+      try {
+        await transitionShootPlan(id, transition, key)
+      } catch (error) {
+        if (error instanceof ApiError && (error.code === 'plan_revision_conflict' || error.code === 'archive_acknowledgement_required')) {
+          await load(true).catch(() => undefined)
+          setFeedback(error.code === 'archive_acknowledgement_required'
+            ? '归档影响已变化。页面已刷新，请重新阅读并确认。'
+            : '策划版本已变化。页面已刷新，请重新确认状态。')
+        }
+        throw error
       }
-      throw error
+      acknowledgeMutation(signature)
+      try {
+        await load(true)
+        setFeedback('策划状态已更新。')
+      } catch {
+        setFeedback('状态变更已提交，但最新页面加载失败；请刷新页面查看结果。')
+      }
     } finally {
       setBusy(false)
     }
-  }, [id, load])
+  }, [acknowledgeMutation, getMutationKey, id, load])
 
   const presentation = pageReadPresentation(state)
   const plan = readyPageData(state)
@@ -189,6 +208,7 @@ export default function ShootPlanWorkspacePage() {
               <TabButton active={tab === 'readiness'} onClick={() => setTab('readiness')}>准备项 {plan.readiness_items.length}</TabButton>
               <TabButton active={tab === 'assets'} onClick={() => setTab('assets')}>参考素材</TabButton>
               <TabButton active={tab === 'share'} onClick={() => setTab('share')}>分享协作</TabButton>
+              <TabButton active={tab === 'business'} onClick={() => setTab('business')}>经营草稿</TabButton>
               <TabButton active={tab === 'history'} onClick={() => setTab('history')}>执行历史</TabButton>
             </div>
             <div className="tab-panel active">
@@ -207,6 +227,17 @@ export default function ShootPlanWorkspacePage() {
                   planRevision={plan.revision}
                   readOnly={plan.status === 'archived'}
                   focus={shareFocus}
+                />
+              )}
+              {tab === 'business' && (
+                <BusinessPanel
+                  key={plan.id}
+                  plan={plan}
+                  busy={busy}
+                  runCommand={runCommand}
+                  getMutationKey={getMutationKey}
+                  acknowledgeMutation={acknowledgeMutation}
+                  onReload={() => load(true).then(() => undefined)}
                 />
               )}
               {tab === 'history' && <ExecutionHistoryPanel plan={plan} busy={busy} onReload={() => load(true).then(() => undefined)} />}

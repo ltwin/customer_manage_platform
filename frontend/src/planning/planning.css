@@ -126,6 +126,205 @@
   .planning-plan-card, .planning-check, .planning-links .chip, .planning-tabs .tab { min-height: 44px; }
 }
 
+.planning-business-panel {
+  display: grid;
+  gap: 24px;
+}
+
+.planning-business-generation-actions {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.planning-business-target-price {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  width: min(240px, 42vw);
+}
+
+.planning-business-target-price input,
+.planning-business-form-grid input {
+  width: 100%;
+  min-width: 0;
+}
+
+.planning-eyebrow {
+  margin: 0 0 4px;
+  color: #7c2d12;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.planning-business-facts {
+  padding-block: 20px;
+  border-block: 1px solid #e5e7eb;
+}
+
+.planning-section-heading,
+.planning-panel-header,
+.planning-business-line,
+.planning-money-summary,
+.planning-duration-summary,
+.planning-business-public-inputs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.planning-section-heading h3,
+.planning-business-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.planning-section-heading > span,
+.planning-muted,
+.planning-business-card.is-empty p,
+.planning-business-public-inputs {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.planning-business-form-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.planning-business-form-grid .planning-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.planning-business-public-inputs {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.planning-business-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.planning-business-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #d7dee8;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.planning-business-card.is-empty {
+  min-height: 156px;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.planning-money-summary,
+.planning-duration-summary {
+  align-items: baseline;
+  margin: 18px 0;
+}
+
+.planning-money-summary strong,
+.planning-duration-summary strong {
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.planning-business-lines {
+  display: grid;
+  gap: 8px;
+}
+
+.planning-business-line {
+  min-height: 32px;
+  padding-block: 6px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 13px;
+}
+
+.planning-business-line span:nth-child(2) {
+  color: #64748b;
+}
+
+.planning-business-warnings {
+  margin: 14px 0;
+  padding: 10px 10px 10px 28px;
+  border-left: 3px solid #d97706;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.planning-draft-status {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.planning-draft-status.is-fresh {
+  background: #ecfdf5;
+  color: #166534;
+}
+
+.planning-draft-status.is-stale {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.planning-draft-status.is-applied {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+@media (max-width: 900px) {
+  .planning-business-form-grid,
+  .planning-business-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 600px) {
+  .planning-business-form-grid,
+  .planning-business-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-panel-header,
+  .planning-business-generation-actions,
+  .planning-section-heading,
+  .planning-money-summary,
+  .planning-duration-summary,
+  .planning-business-line {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .planning-panel-header .btn {
+    width: 100%;
+  }
+
+  .planning-business-target-price {
+    width: 100%;
+  }
+}
+
 /* 摄取页：三步最小闭环，与工作台共享 token，不展示内部观测或计时。 */
 .ingestion-page { max-width: 1280px; }
 .ingestion-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }

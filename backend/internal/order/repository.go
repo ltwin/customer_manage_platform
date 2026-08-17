@@ -350,8 +350,12 @@ func scanOrder(row scanner) (Order, error) {
 }
 
 func buildOrderFilter(filter ListFilter) (string, []any) {
-	conds := make([]string, 0, 4)
-	args := make([]any, 0, 5)
+	conds := make([]string, 0, 5)
+	args := make([]any, 0, 6)
+	if filter.ID != "" {
+		args = append(args, filter.ID)
+		conds = append(conds, fmt.Sprintf("id = $%d", len(args)+1))
+	}
 	if filter.CustomerID != "" {
 		args = append(args, filter.CustomerID)
 		conds = append(conds, fmt.Sprintf("customer_id = $%d", len(args)+1))

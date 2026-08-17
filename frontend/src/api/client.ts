@@ -408,6 +408,7 @@ export function deletePackage(id: string): Promise<void> {
 }
 
 export function listOrders(params: {
+  id?: string
   customerId?: string
   status?: OrderStatus
   unpaidBalance?: boolean
@@ -416,6 +417,7 @@ export function listOrders(params: {
   pageSize?: number
 } = {}): Promise<OrderListResponse> {
   const search = new URLSearchParams()
+  if (params.id) search.set('id', params.id)
   if (params.customerId) search.set('customer_id', params.customerId)
   if (params.status) search.set('status', params.status)
   if (params.unpaidBalance) search.set('unpaid_balance', 'true')
@@ -488,6 +490,7 @@ export type Reminder = components['schemas']['Reminder']
 export type ReminderStatus = components['schemas']['ReminderStatus']
 export type ReminderType = components['schemas']['ReminderType']
 export type Settings = components['schemas']['Settings']
+export type PlanningBusinessRuleOverrides = components['schemas']['PlanningBusinessRuleOverrides']
 export type ScheduleAvailability = components['schemas']['ScheduleAvailability']
 export type ScheduleAvailabilityWeekly = components['schemas']['ScheduleAvailabilityWeekly']
 export type ScheduleAvailabilityWindow = components['schemas']['ScheduleAvailabilityWindow']

@@ -26,6 +26,7 @@ import (
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
 )
 
@@ -64,6 +65,7 @@ type RouterDeps struct {
 	TrustedProxyCIDRs         []netip.Prefix
 	Now                       func() time.Time
 	ShootPlanning             *shootplanning.Application
+	ShootPlanningBusiness     *business.Application
 	PlanShare                 *planshare.Application
 	AnonymousShare            AnonymousShareDeps
 	PlanningMedia             *planningmedia.Application
@@ -209,7 +211,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.DELETE("/account/profile/avatar", h.deleteAccountProfileAvatarRoute)
 	protected.GET("/account/profile/avatar/content", h.getAccountProfileAvatarContentRoute)
 	if deps.ShootPlanning != nil {
-		registerShootPlanningHandlers(protected, deps.ShootPlanning, deps.PlanShare, deps.ScopeFactory)
+		registerShootPlanningHandlers(protected, deps.ShootPlanning, deps.PlanShare, deps.ShootPlanningBusiness, deps.ScopeFactory)
 	}
 	if deps.PlanningMedia != nil {
 		registerPlanningMediaHandlers(protected, deps.PlanningMedia, deps.ScopeFactory)

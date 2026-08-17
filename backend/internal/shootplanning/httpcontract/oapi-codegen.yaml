@@ -7,3 +7,4 @@ output-options:
   nullable-type: true
   include-tags:
     - shoot-planning
+    - shoot-planning-business

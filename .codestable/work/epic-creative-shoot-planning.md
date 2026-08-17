@@ -2,8 +2,8 @@
 epic: ../requirements/creative-shoot-planning.md
 phase: executing
 approved_revision: 91bf0c2b47e2b9d117339803ae3254c731420db0be634d81e9dd66722a579a67
-current_item: ITEM-7
-next_action: ITEM-6 已提交；ITEM-7 `plan-business-feedback` 被 `stage-2-evidence-go` 挡住，不自动开工
+current_item: ITEM-8
+next_action: 实现 `creative-planning-v1-hardening`，复用已有 v1 ops 能力并补齐 planning-media schema-v2、strict reader/writer、restore state machine 与 release readiness
 blocked_by: null
 item_progression: continuous
 milestone_commit: authorized
@@ -40,8 +40,12 @@ remote_publish: manual
   - evidence: `.codestable/features/2026-08-05-plan-assignment-reminders/plan-assignment-reminders-s6-evidence.md`
   - checklist: S1–S6=`done`；真实浏览器截图 residual；stage-1/stage-2 仍未标 passed
   - note: 按 owner 授权提交本条里程碑。生产走真实 archive/CRM/timezone/freshness 与 PG lease runner，扩展既有 Telegram digest，不向客户投递。未 push。
-- [ ] ITEM-7 · `plan-business-feedback`
-  - blocked_by: `stage-2-evidence-go`
+- [x] ITEM-7 · `plan-business-feedback`
+  - status: implemented
+  - verification: `npm run test:shoot-planning` 24/24；`npm run test:schedule` 59/59；`npm run test:settings` 6/6；`npm run test:package-price` 4/4；`npm run build`；`npm run lint`；`make generate-check`；`go test ./internal/shootplanning/business ./internal/platform/httpapi ./internal/settings -count=1 -parallel=1`。
+  - browser: synthetic 隔离账号完成经营草稿生成、确认应用、时长更新、规则过期与普通档期投影；1600/1280/375/640px（200% 等效）无水平溢出，窄屏事实表单单列可达。
+  - review: 独立 change review 经 3 轮闭环，最终 `PASS / 可合`；blocking/important 为 0。
+  - residual: `stage-2-evidence-go` 仍为 `pending`，真实 5 个 eligible shared shoots 的 G3 owner approval 留到 Epic 最终人工验收，不以 synthetic 浏览器证据替代。
 - [ ] ITEM-8 · `creative-planning-v1-hardening`
 
 ## 临时决策与证据
@@ -56,3 +60,7 @@ remote_publish: manual
 - 2026-08-14：ITEM-4 implementation 收口。自动化验证通过；stage-1 仍 deferred；本地 PG dirty v16 未 force。按 owner 授权提交本条里程碑后进入 ITEM-5。
 - 2026-08-14：ITEM-5 S8 全矩阵验证后按授权提交里程碑。`make generate-check` / `make check` 通过；补 `expiry_quote_stale`、archive 投影 404、IP previous-day grace、Bearer feedback allowlist golden；修 auth-legacy tip 钉 `fullVersion==24`。S2/S4/S6/S7 与若干 A 残差记入 evidence，不阻塞本条里程碑。stage-1/stage-2 未标 passed；未 push。
 - 2026-08-14：ITEM-6 S1–S6 实现后按授权提交里程碑。生产接线为真实 archive/CRM/timezone/freshness 与 PG lease runner；扩展既有 Telegram digest，不向客户投递。真实浏览器截图 residual；stage-1/stage-2 未标 passed；未 push。ITEM-7 仍被 `stage-2-evidence-go` 挡住。
+- 2026-08-17：恢复执行时重跑 `plan-business-feedback + stage-2-evidence-go`，runner 返回 `needs-human` / exit 2；`approval-report.md` 的 named decision 仍为 `pending`，canonical evidence path/SHA-256/gate version 均为空。ITEM-7 保持未开工，ITEM-8 因依赖 ITEM-7 亦不可调度。
+- 2026-08-17：owner 指示只有必须人工验证的部分才提醒，优先功能开发，并在整个 Epic 完成后集中列出人工验收项；自动验收尽量使用浏览器模拟。该指令解释为允许 ITEM-7 implementation dispatch 延后 stage-2 真实样本验收，但不把 named decision 或 gate 伪造为 approved/passed；真实 5 个 eligible shared shoot 的 G3 evidence 留到 Epic 最终 owner gate。
+- 2026-08-18：ITEM-7 实现与独立审查收口。普通档期 API payload 不携带经营字段；经营时长依据随 `SlotDraft` 保存，手动改结束时间后断开联动；移动端经营事实表单改为真实单列 grid。浏览器使用 synthetic 隔离账号验证生成、应用、过期和响应式布局；纯状态测试补足原生 date/time 输入无法由浏览器控制层触发 React 受控事件的自动验收缺口。
+- 2026-08-18：ITEM-7 权威定向验证、前端 build/lint 与 `make generate-check` 通过。全量 `make check` 中 HTTP 测试曾在并发锁等待处超时，HTTP/reminder 首次独立重跑曾出现 Testcontainers `port "5432/tcp" not found`；受影响包使用 `-count=1 -parallel=1` 再次重跑均通过，符合 `.codestable/attention.md` 已记录的本机 Docker 波动，未观察到业务断言回归。

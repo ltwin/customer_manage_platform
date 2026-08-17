@@ -204,6 +204,21 @@ func TestOrderAPIRoundtripAndErrorPaths(t *testing.T) {
 		t.Fatalf("same key different body: want idempotency_conflict, got %d %s", changed.Code, changed.Body.String())
 	}
 
+	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/orders?id="+*delivered.Id+"&page_size=1", tokenA, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("exact order lookup: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || list.Total != 1 || len(list.Items) != 1 || *list.Items[0].Id != *delivered.Id {
+		t.Fatalf("exact order lookup mismatch: list=%+v err=%v", list, err)
+	}
+	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/orders?id="+orderB.ID+"&page_size=1", tokenA, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cross-account exact order lookup: want scoped 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil || list.Total != 0 || len(list.Items) != 0 {
+		t.Fatalf("cross-account exact order must be hidden: list=%+v err=%v", list, err)
+	}
+
 	future := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
 	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/orders?schedulable_at="+future+"&page=1&page_size=1", tokenA, nil)
 	if rec.Code != http.StatusOK {

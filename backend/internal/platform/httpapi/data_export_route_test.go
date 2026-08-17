@@ -238,6 +238,7 @@ func assertCompleteRouteExportJSON(
 		}},
 		"settings": map[string]any{
 			"timezone": "Asia/Tokyo", "birthday_lead_days": float64(5), "follow_up_after_days": float64(9),
+			"planning_business_rule_overrides": map[string]any{}, "planning_business_rule_revision": float64(0),
 			"churn_thresholds": []any{
 				map[string]any{"shoot_type": "portrait", "days": float64(90)},
 				map[string]any{"shoot_type": "cosplay", "days": float64(180)},

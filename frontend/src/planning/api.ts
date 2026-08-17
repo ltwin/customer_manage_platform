@@ -16,6 +16,7 @@ export type PlanTransition = components['schemas']['PlanTransition']
 export type PlanTransitionResult = components['schemas']['PlanTransitionResult']
 export type ArchiveAcknowledgement = components['schemas']['ArchiveAcknowledgement']
 export type CreateShootPlanInput = components['schemas']['CreateShootPlanInput']
+export type CreateShootPlanResult = paths['/shoot-plans']['post']['responses']['201']['content']['application/json']
 export type AppendShotResultInput = components['schemas']['AppendShotResultInput']
 export type AppendShotResultResponse = components['schemas']['AppendShotResultResponse']
 export type OpenRunSessionResult = components['schemas']['OpenRunSessionResult']
@@ -40,6 +41,14 @@ export type IngestionReferenceLinkCandidate = components['schemas']['IngestionRe
 export type IngestionDroppedCandidate = components['schemas']['IngestionDroppedCandidate']
 export type PlanAssignmentReminderView = components['schemas']['PlanAssignmentReminderView']
 export type PlanAssignmentReminderGroup = components['schemas']['PlanAssignmentReminderGroup']
+export type PlanningBusinessDetail = components['schemas']['PlanningBusinessDetail']
+export type PlanningBusinessFacts = components['schemas']['PlanningBusinessFacts']
+export type GenerateBusinessDraftsInput = components['schemas']['GenerateBusinessDraftsInput']
+export type BusinessDraftGenerationResult = components['schemas']['BusinessDraftGenerationResult']
+export type BusinessDraftDecisionInput = components['schemas']['BusinessDraftDecisionInput']
+export type BusinessDraftDecisionResult = components['schemas']['BusinessDraftDecisionResult']
+export type OrderAdjustmentDraftView = components['schemas']['OrderAdjustmentDraftView']
+export type ScheduleDurationDraftView = components['schemas']['ScheduleDurationDraftView']
 
 export function listShootPlans(params: {
   status?: ShootPlanStatus
@@ -56,8 +65,8 @@ export function listShootPlans(params: {
   return request<ShootPlanList>(`/shoot-plans${query ? `?${query}` : ''}`)
 }
 
-export function createShootPlan(body: CreateShootPlanInput, idempotencyKey: string): Promise<ShootPlanDetail> {
-  return request<ShootPlanDetail>('/shoot-plans', {
+export function createShootPlan(body: CreateShootPlanInput, idempotencyKey: string): Promise<CreateShootPlanResult> {
+	return request<CreateShootPlanResult>('/shoot-plans', {
     method: 'POST',
     headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify(body),
@@ -85,6 +94,37 @@ export function applyShootPlanCommand(
     headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify(body),
   })
+}
+
+export function generateShootPlanBusinessDrafts(
+  planID: string,
+  body: GenerateBusinessDraftsInput,
+  idempotencyKey: string,
+): Promise<BusinessDraftGenerationResult> {
+  return request<BusinessDraftGenerationResult>(
+    `/shoot-plans/${encodeURIComponent(planID)}/business-drafts`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(body),
+    },
+  )
+}
+
+export function decideShootPlanBusinessDraft(
+  planID: string,
+  draftID: string,
+  body: BusinessDraftDecisionInput,
+  idempotencyKey: string,
+): Promise<BusinessDraftDecisionResult> {
+  return request<BusinessDraftDecisionResult>(
+    `/shoot-plans/${encodeURIComponent(planID)}/business-drafts/${encodeURIComponent(draftID)}/apply`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(body),
+    },
+  )
 }
 
 export function transitionShootPlan(

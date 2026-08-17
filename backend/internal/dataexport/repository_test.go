@@ -20,6 +20,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 )
 
 func TestPostgresRepositoryLoadsCustomersInStableOrderAndDefaultsEmptySettings(t *testing.T) {
@@ -221,9 +222,10 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 			{ID: "reminder-pending", AccountID: "acct-full", CreatedAt: createdAt, Type: "custom", CustomerID: testPointer("cus-a"), OrderID: testPointer("order-a"), DueDate: dueDate, Content: "Fixture pending", Status: "pending", DedupKey: "dedup-pending"},
 		},
 		Settings: settings.Settings{
-			Timezone:          "Asia/Tokyo",
-			BirthdayLeadDays:  5,
-			FollowUpAfterDays: 9,
+			Timezone:                      "Asia/Tokyo",
+			BirthdayLeadDays:              5,
+			FollowUpAfterDays:             9,
+			PlanningBusinessRuleOverrides: business.RuleOverrides{},
 			ChurnThresholds: []settings.ChurnThreshold{
 				{ShootType: "portrait", Days: 90},
 				{ShootType: "cosplay", Days: 180},

@@ -15,6 +15,7 @@ import {
 import type {
   CreateOrderBody,
   CreateScheduleSlotBody,
+  OrderListItem,
   ScheduleSlotListItem,
   UpdateScheduleSlotBody,
 } from '../../api/client'
@@ -41,6 +42,7 @@ import {
 } from './journal'
 import type { PendingScheduleFlow, ScheduleDraft } from './journal'
 import { scheduleDraftResumeInput } from './backfill'
+import { applyBusinessDurationStart } from './businessPrefill'
 import {
   claimPendingFlow,
   locateStatusSyncOrder,
@@ -72,8 +74,14 @@ interface SlotDraft {
   allDay: boolean
   startOccurrence?: LocalTimeOccurrence
   endOccurrence?: LocalTimeOccurrence
+  businessDurationMinutes?: number
   note: string
   shoot: ShootOrderDraft
+}
+
+export interface ScheduleBusinessPrefill {
+  order: OrderListItem
+  basisMinutes: number
 }
 
 export default function ScheduleSlotDialog({
@@ -84,6 +92,7 @@ export default function ScheduleSlotDialog({
   scheduleDraftId,
   fixedType,
   fixedCustomer,
+  businessPrefill,
   source = 'calendar',
   onClose,
   onChanged,
@@ -96,6 +105,7 @@ export default function ScheduleSlotDialog({
   scheduleDraftId?: string
   fixedType?: SlotType
   fixedCustomer?: FixedScheduleCustomer
+  businessPrefill?: ScheduleBusinessPrefill
   source?: 'calendar' | 'customer'
   onClose(): void
   onChanged(): Promise<void> | void
@@ -183,12 +193,16 @@ export default function ScheduleSlotDialog({
         setFlowID(newScheduleFlowID())
         setOrderAttempt(1)
         setSlotAttempt(1)
-        setDraft(slot ? draftFromSlot(slot, timezone) : emptyDraft(initialDate, fixedType, fixedCustomer))
+        setDraft(slot
+          ? draftFromSlot(slot, timezone)
+          : businessPrefill
+            ? draftFromBusinessPrefill(businessPrefill, fixedCustomer)
+            : emptyDraft(initialDate, fixedType, fixedCustomer))
       }
     } catch (reason) {
       setError(errorMessage(reason, '恢复记录读取失败'))
     }
-  }, [open, slot, scheduleDraftId, initialDate, fixedType, fixedCustomer, timezone])
+  }, [open, slot, scheduleDraftId, initialDate, fixedType, fixedCustomer, businessPrefill, timezone])
 
   useEffect(() => () => previewRequestRef.current.controller?.abort(), [])
 
@@ -213,6 +227,14 @@ export default function ScheduleSlotDialog({
     setDraft(next)
     invalidateConflictPreview()
     setError(null)
+  }
+
+  function changeStart(next: SlotDraft) {
+    changeDraft(applyBusinessDurationStart(next, timezone))
+  }
+
+  function changeEnd(next: SlotDraft) {
+    changeDraft({ ...next, businessDurationMinutes: undefined })
   }
 
   function invalidateConflictPreview() {
@@ -887,25 +909,32 @@ export default function ScheduleSlotDialog({
             <div className="field-row schedule-date-row">
               <div className="field">
                 <label htmlFor="slotStartDate">开始日期</label>
-                <input id="slotStartDate" className="input" type="date" value={draft.startDate} onChange={(event) => changeDraft({ ...draft, startDate: event.target.value })} />
+                <input id="slotStartDate" className="input" type="date" value={draft.startDate} onChange={(event) => changeStart({ ...draft, startDate: event.target.value })} />
               </div>
               <div className="field">
                 <label htmlFor="slotStartTime">开始时间</label>
-                <input id="slotStartTime" className="input" type="time" disabled={draft.allDay} value={draft.startTime} onChange={(event) => changeDraft({ ...draft, startTime: event.target.value, startOccurrence: undefined })} />
-                <OccurrenceSelect date={draft.startDate} time={draft.startTime} timezone={timezone} value={draft.startOccurrence} onChange={(value) => changeDraft({ ...draft, startOccurrence: value })} />
+                <input id="slotStartTime" className="input" type="time" disabled={draft.allDay} value={draft.startTime} onChange={(event) => changeStart({ ...draft, startTime: event.target.value, startOccurrence: undefined })} />
+                <OccurrenceSelect date={draft.startDate} time={draft.startTime} timezone={timezone} value={draft.startOccurrence} onChange={(value) => changeStart({ ...draft, startOccurrence: value })} />
               </div>
               <div className="field">
                 <label htmlFor="slotEndDate">结束日期</label>
-                <input id="slotEndDate" className="input" type="date" disabled={draft.allDay} value={draft.endDate} onChange={(event) => changeDraft({ ...draft, endDate: event.target.value })} />
+                <input id="slotEndDate" className="input" type="date" disabled={draft.allDay} value={draft.endDate} onChange={(event) => changeEnd({ ...draft, endDate: event.target.value })} />
               </div>
               <div className="field">
                 <label htmlFor="slotEndTime">结束时间</label>
-                <input id="slotEndTime" className="input" type="time" disabled={draft.allDay} value={draft.endTime} onChange={(event) => changeDraft({ ...draft, endTime: event.target.value, endOccurrence: undefined })} />
-                <OccurrenceSelect date={draft.endDate} time={draft.endTime} timezone={timezone} value={draft.endOccurrence} onChange={(value) => changeDraft({ ...draft, endOccurrence: value })} />
+                <input id="slotEndTime" className="input" type="time" disabled={draft.allDay} value={draft.endTime} onChange={(event) => changeEnd({ ...draft, endTime: event.target.value, endOccurrence: undefined })} />
+                <OccurrenceSelect date={draft.endDate} time={draft.endTime} timezone={timezone} value={draft.endOccurrence} onChange={(value) => changeEnd({ ...draft, endOccurrence: value })} />
               </div>
             </div>
             <label className="check-line">
-              <input type="checkbox" checked={draft.allDay} onChange={(event) => changeDraft({ ...draft, allDay: event.target.checked, endDate: draft.startDate })} />
+              <input type="checkbox" checked={draft.allDay} onChange={(event) => {
+                changeDraft({
+                  ...draft,
+                  allDay: event.target.checked,
+                  endDate: draft.startDate,
+                  businessDurationMinutes: undefined,
+                })
+              }} />
               全天
             </label>
 
@@ -1043,6 +1072,31 @@ function emptyDraft(date: string, fixedType?: SlotType, fixedCustomer?: FixedSch
       orderId: '',
       packageId: '',
       title: '',
+      priceYuan: '',
+    },
+  }
+}
+
+function draftFromBusinessPrefill(
+  prefill: ScheduleBusinessPrefill,
+  fixedCustomer?: FixedScheduleCustomer,
+): SlotDraft {
+  return {
+    type: 'shoot',
+    startDate: '',
+    startTime: '',
+    endDate: '',
+    endTime: '',
+    allDay: false,
+    businessDurationMinutes: prefill.basisMinutes,
+    note: '',
+    shoot: {
+      source: 'existing',
+      customerId: fixedCustomer?.id ?? prefill.order.customer_id,
+      orderId: prefill.order.id,
+      orderStatus: prefill.order.status,
+      packageId: '',
+      title: prefill.order.title ?? prefill.order.package_name ?? '当前订单',
       priceYuan: '',
     },
   }

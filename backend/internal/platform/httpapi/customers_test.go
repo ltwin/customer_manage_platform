@@ -30,6 +30,7 @@ import (
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
 	settingsdomain "github.com/samson/customer-manage-platform/backend/internal/settings"
 	shootplanningdomain "github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	planningbusiness "github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 )
 
 func startCustomerPostgres(t *testing.T) (string, *tcpostgres.PostgresContainer) {
@@ -109,25 +110,34 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 	if err != nil {
 		t.Fatalf("new shoot planning application: %v", err)
 	}
+	shootPlanningBusiness, err := planningbusiness.NewApplication(
+		planningbusiness.NewRepository(), idempotencyExecutor,
+		orderdomain.NewBusinessAdjustmentParticipant(),
+		scheduledomain.NewBusinessDurationParticipant(shootPlanningApp.CRM()),
+	)
+	if err != nil {
+		t.Fatalf("new shoot planning business application: %v", err)
+	}
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Logger:          slog.New(slog.DiscardHandler),
-		DB:              s,
-		ScopeFactory:    s,
-		Auth:            auth.NewService(s, tokens),
-		Customer:        customerdomain.NewService(customerdomain.NewPostgresRepository()),
-		Orders:          orderdomain.NewService(orderdomain.NewPostgresRepository()),
-		Packages:        pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
-		Idempotency:     idempotencyExecutor,
-		AccountTimezone: settingsSvc,
-		Schedule:        scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(time.Now)),
-		Avatar:          customerdomain.NewAvatarApplication(avatarRepo, objects),
-		AvatarProcessor: avatarimage.NewProcessor(),
-		Settings:        settingsSvc,
-		Reminders:       reminderSvc,
-		Dashboard:       dashboarddomain.NewService(dashboarddomain.NewPostgresRepository(), settingsSvc),
-		DataExport:      dataexport.NewService(dataexport.NewPostgresRepository(), dataexport.ClockFunc(time.Now)),
-		TelegramBinding: bindingSvc,
-		ShootPlanning:   shootPlanningApp,
+		Logger:                slog.New(slog.DiscardHandler),
+		DB:                    s,
+		ScopeFactory:          s,
+		Auth:                  auth.NewService(s, tokens),
+		Customer:              customerdomain.NewService(customerdomain.NewPostgresRepository()),
+		Orders:                orderdomain.NewService(orderdomain.NewPostgresRepository()),
+		Packages:              pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
+		Idempotency:           idempotencyExecutor,
+		AccountTimezone:       settingsSvc,
+		Schedule:              scheduledomain.NewService(scheduledomain.NewPostgresRepository(), scheduledomain.ClockFunc(time.Now)),
+		Avatar:                customerdomain.NewAvatarApplication(avatarRepo, objects),
+		AvatarProcessor:       avatarimage.NewProcessor(),
+		Settings:              settingsSvc,
+		Reminders:             reminderSvc,
+		Dashboard:             dashboarddomain.NewService(dashboarddomain.NewPostgresRepository(), settingsSvc),
+		DataExport:            dataexport.NewService(dataexport.NewPostgresRepository(), dataexport.ClockFunc(time.Now)),
+		TelegramBinding:       bindingSvc,
+		ShootPlanning:         shootPlanningApp,
+		ShootPlanningBusiness: shootPlanningBusiness,
 	})
 	return router, s, tokens, ctr
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 	shootplanningapi "github.com/samson/customer-manage-platform/backend/internal/shootplanning/httpcontract"
 )
@@ -26,6 +27,7 @@ const shootPlanningRawBodyKey = "shoot-planning-raw-body"
 type shootPlanningHandlers struct {
 	app          *shootplanning.Application
 	planShare    *planshare.Application
+	business     *business.Application
 	scopeFactory ScopeFactory
 }
 
@@ -105,7 +107,18 @@ func (h *shootPlanningHandlers) GetShootPlan(c *gin.Context, id shootplanningapi
 	if h.abortError(c, err) {
 		return
 	}
-	c.JSON(http.StatusOK, detail)
+	if h.business == nil {
+		_ = c.Error(errors.New("shoot planning business dependencies missing"))
+		return
+	}
+	businessDetail, err := h.business.GetDetail(c.Request.Context(), scope, id)
+	if h.abortBusinessError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, struct {
+		shootplanning.PlanDetail
+		Business business.Detail `json:"business"`
+	}{PlanDetail: detail, Business: businessDetail})
 }
 
 func (h *shootPlanningHandlers) ApplyShootPlanCommand(c *gin.Context, id shootplanningapi.Id, params shootplanningapi.ApplyShootPlanCommandParams) {
@@ -113,18 +126,104 @@ func (h *shootPlanningHandlers) ApplyShootPlanCommand(c *gin.Context, id shootpl
 	if !ok {
 		return
 	}
-	expectedRevision, crmCommand, command, err := decodeShootPlanMutation(c)
+	expectedRevision, crmCommand, businessCommand, command, err := decodeShootPlanMutation(c)
 	if err != nil {
 		abortShootPlanningValidation(c)
 		return
 	}
 	var result shootplanning.PlanMutationResult
-	if crmCommand != nil {
+	if businessCommand != nil {
+		if h.business == nil {
+			_ = c.Error(errors.New("shoot planning business dependencies missing"))
+			return
+		}
+		businessResult, businessErr := h.business.SetFacts(
+			c.Request.Context(), scope, params.IdempotencyKey, id,
+			businessCommand.expectedPlanRevision, businessCommand.expectedFactsRevision,
+			businessCommand.facts,
+		)
+		if h.abortBusinessError(c, businessErr) {
+			return
+		}
+		c.JSON(http.StatusOK, businessResult)
+		return
+	} else if crmCommand != nil {
 		result, err = h.app.ApplyCRMLink(c.Request.Context(), scope, params.IdempotencyKey, id, expectedRevision, *crmCommand)
 	} else {
 		result, err = h.app.ApplyPlanCommand(c.Request.Context(), scope, params.IdempotencyKey, id, expectedRevision, command)
 	}
 	if h.abortError(c, err) {
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *shootPlanningHandlers) GenerateShootPlanBusinessDrafts(
+	c *gin.Context,
+	id shootplanningapi.Id,
+	params shootplanningapi.GenerateShootPlanBusinessDraftsParams,
+) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	if h.business == nil {
+		_ = c.Error(errors.New("shoot planning business dependencies missing"))
+		return
+	}
+	var body shootplanningapi.GenerateBusinessDraftsInput
+	if err := decodeStrictRequest(c, &body, "expected_plan_revision", "expected_business_facts_revision", "draft_kinds"); err != nil {
+		abortShootPlanningValidation(c)
+		return
+	}
+	kinds := make([]business.DraftKind, 0, len(body.DraftKinds))
+	for _, kind := range body.DraftKinds {
+		kinds = append(kinds, business.DraftKind(kind))
+	}
+	result, err := h.business.Generate(c.Request.Context(), scope, params.IdempotencyKey, id, business.GenerateInput{
+		ExpectedPlanRevision:  body.ExpectedPlanRevision,
+		ExpectedFactsRevision: body.ExpectedBusinessFactsRevision,
+		DraftKinds:            kinds,
+		AbsoluteTargetPrice:   nullablePointer(body.AbsoluteTargetPrice),
+	})
+	if h.abortBusinessError(c, err) {
+		return
+	}
+	c.JSON(http.StatusCreated, result)
+}
+
+func (h *shootPlanningHandlers) DecideShootPlanBusinessDraft(
+	c *gin.Context,
+	id shootplanningapi.Id,
+	draftID string,
+	params shootplanningapi.DecideShootPlanBusinessDraftParams,
+) {
+	scope, ok := h.scope(c)
+	if !ok {
+		return
+	}
+	if h.business == nil {
+		_ = c.Error(errors.New("shoot planning business dependencies missing"))
+		return
+	}
+	var body shootplanningapi.BusinessDraftDecisionInput
+	if err := decodeStrictRequest(c, &body, "expected_draft_revision", "decision"); err != nil {
+		abortShootPlanningValidation(c)
+		return
+	}
+	var acknowledgement *business.Acknowledgement
+	if body.Acknowledgement != nil {
+		acknowledgement = &business.Acknowledgement{
+			Version: string(body.Acknowledgement.Version),
+			Effects: append([]string(nil), body.Acknowledgement.Effects...),
+		}
+	}
+	result, err := h.business.Decide(c.Request.Context(), scope, params.IdempotencyKey, id, draftID, business.DecisionInput{
+		ExpectedDraftRevision: body.ExpectedDraftRevision,
+		Decision:              business.Decision(body.Decision),
+		Acknowledgement:       acknowledgement,
+	})
+	if h.abortBusinessError(c, err) {
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -287,6 +386,99 @@ func (h *shootPlanningHandlers) abortError(c *gin.Context, err error) bool {
 	return true
 }
 
+func (h *shootPlanningHandlers) abortBusinessError(c *gin.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+	var unavailable *business.DraftUnavailableError
+	if errors.As(err, &unavailable) {
+		details, detailsErr := businessDraftUnavailableErrorDetails(unavailable)
+		if detailsErr != nil {
+			_ = c.Error(detailsErr)
+			return true
+		}
+		abortErrorWithTypedDetails(c, http.StatusConflict, "business_draft_unavailable",
+			"当前信息不足以生成经营草稿", details)
+		return true
+	}
+	var stale *business.StaleDraftError
+	if errors.As(err, &stale) {
+		details, detailsErr := staleBusinessDraftErrorDetails(stale)
+		if detailsErr != nil {
+			_ = c.Error(detailsErr)
+			return true
+		}
+		abortErrorWithTypedDetails(c, http.StatusConflict, "stale_business_draft",
+			"经营草稿已过期，请重新生成", details)
+		return true
+	}
+	if errors.Is(err, business.ErrNotFound) {
+		abortError(c, http.StatusNotFound, CodeNotFound, "资源不存在")
+		return true
+	}
+	if errors.Is(err, business.ErrInvalidBusinessFact) || errors.Is(err, business.ErrInvalidBusinessRule) ||
+		errors.Is(err, business.ErrDraftDecision) || errors.Is(err, business.ErrInvalidInput) {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "经营草稿请求不合法")
+		return true
+	}
+	type businessConflict struct {
+		err     error
+		code    string
+		message string
+	}
+	conflicts := []businessConflict{
+		{business.ErrPlanRevisionConflict, "plan_revision_conflict", "策划版本已变化，请刷新后重试"},
+		{business.ErrRevisionConflict, "business_revision_conflict", "经营信息版本已变化，请刷新后重试"},
+		{business.ErrDraftUnavailable, "business_draft_unavailable", "当前信息不足以生成经营草稿"},
+		{business.ErrDraftStale, "stale_business_draft", "经营草稿已过期，请重新生成"},
+		{business.ErrNoMaterialChange, "business_draft_no_material_change", "目标内容无需更新"},
+		{business.ErrUnknownTotal, "business_draft_unknown_total", "订单建议总价尚不明确"},
+		{business.ErrScheduleCreate, "business_draft_requires_schedule_create", "请前往日历选择拍摄时间"},
+		{business.ErrReopenRequired, CodeReopenRequired, "已完成策划需重新打开后才能修改"},
+		{business.ErrArchivedReadOnly, CodeArchivedReadOnly, "已归档策划不可修改"},
+		{idempotency.ErrConflict, CodeIdempotencyConflict, "幂等键已被其他请求使用"},
+	}
+	for _, conflict := range conflicts {
+		if errors.Is(err, conflict.err) {
+			abortError(c, http.StatusConflict, conflict.code, conflict.message)
+			return true
+		}
+	}
+	_ = c.Error(err)
+	return true
+}
+
+func businessDraftUnavailableErrorDetails(source *business.DraftUnavailableError) (ErrorDetails, error) {
+	details := BusinessDraftUnavailableDetails{}
+	if source.OrderAdjustment != nil {
+		details.OrderAdjustment = &UnavailableOrderBusinessDraftItem{
+			State:  UnavailableOrderBusinessDraftItemStateUnavailable,
+			Reason: OrderBusinessDraftUnavailableReason(*source.OrderAdjustment),
+		}
+	}
+	if source.ScheduleDuration != nil {
+		details.ScheduleDuration = &UnavailableScheduleBusinessDraftItem{
+			State:  UnavailableScheduleBusinessDraftItemStateUnavailable,
+			Reason: ScheduleBusinessDraftUnavailableReason(*source.ScheduleDuration),
+		}
+	}
+	var union ErrorDetails
+	err := union.FromBusinessDraftUnavailableDetails(details)
+	return union, err
+}
+
+func staleBusinessDraftErrorDetails(source *business.StaleDraftError) (ErrorDetails, error) {
+	var union ErrorDetails
+	err := union.FromStaleBusinessDraftDetails(StaleBusinessDraftDetails{
+		DraftId:     source.DraftID,
+		Kind:        StaleBusinessDraftDetailsKind(source.Kind),
+		Revision:    source.Revision,
+		StaleReason: StaleBusinessDraftDetailsStaleReason(source.Reason),
+		Status:      Stale,
+	})
+	return union, err
+}
+
 func archiveAcknowledgementErrorDetails(required shootplanning.ArchiveAcknowledgement) (ErrorDetails, error) {
 	body, err := json.Marshal(required)
 	if err != nil {
@@ -380,6 +572,22 @@ func requireJSONFields(body []byte, names ...string) error {
 	return nil
 }
 
+func requireJSONKeys(body []byte, names ...string) error {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(body, &object); err != nil {
+		return err
+	}
+	if object == nil {
+		return errors.New("JSON object is required")
+	}
+	for _, name := range names {
+		if _, ok := object[name]; !ok {
+			return fmt.Errorf("field %s is required", name)
+		}
+	}
+	return nil
+}
+
 func rejectNullFields(body []byte, names ...string) error {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(body, &object); err != nil {
@@ -417,34 +625,66 @@ func jsonObjectField(body []byte, name string) ([]byte, error) {
 	return value, nil
 }
 
-func decodeShootPlanMutation(c *gin.Context) (int64, *crm.Command, shootplanning.PlanCommand, error) {
+type decodedBusinessFactsCommand struct {
+	expectedPlanRevision  int64
+	expectedFactsRevision int64
+	facts                 business.Facts
+}
+
+func decodeShootPlanMutation(c *gin.Context) (int64, *crm.Command, *decodedBusinessFactsCommand, shootplanning.PlanCommand, error) {
 	if c.ContentType() != "application/json" {
-		return 0, nil, nil, errors.New("content type must be application/json")
+		return 0, nil, nil, nil, errors.New("content type must be application/json")
 	}
 	body, err := readRequestBody(c)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 	if err := requireJSONFields(body, "expected_revision", "operation"); err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 	var discriminator struct {
 		Operation string `json:"operation"`
 	}
 	if err := json.Unmarshal(body, &discriminator); err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 	switch discriminator.Operation {
 	case "link_customer", "link_order", "unlink_order", "unlink_customer", "adopt_schedule_projection":
 		command, err := decodeCRMCommand(body, discriminator.Operation)
 		if err != nil {
-			return 0, nil, nil, err
+			return 0, nil, nil, nil, err
 		}
-		return command.expected, &command.command, nil, nil
+		return command.expected, &command.command, nil, nil, nil
+	case "set_business_facts":
+		if err := requireJSONFields(body, "expected_business_facts_revision", "facts"); err != nil {
+			return 0, nil, nil, nil, err
+		}
+		factsBody, err := jsonObjectField(body, "facts")
+		if err != nil {
+			return 0, nil, nil, nil, err
+		}
+		if err := requireJSONKeys(factsBody, "rented_location_count", "assistant_count", "retouched_photo_count", "estimated_duration_minutes"); err != nil {
+			return 0, nil, nil, nil, err
+		}
+		var request shootplanningapi.SetBusinessFactsPlanCommand
+		if err := decodeStrictJSON(body, &request); err != nil || request.Operation != shootplanningapi.SetBusinessFacts {
+			return 0, nil, nil, nil, invalidUnion(err)
+		}
+		decoded := &decodedBusinessFactsCommand{
+			expectedPlanRevision:  request.ExpectedRevision,
+			expectedFactsRevision: request.ExpectedBusinessFactsRevision,
+			facts: business.Facts{
+				RentedLocationCount:      nullablePointer(request.Facts.RentedLocationCount),
+				AssistantCount:           nullablePointer(request.Facts.AssistantCount),
+				RetouchedPhotoCount:      nullablePointer(request.Facts.RetouchedPhotoCount),
+				EstimatedDurationMinutes: nullablePointer(request.Facts.EstimatedDurationMinutes),
+			},
+		}
+		return request.ExpectedRevision, nil, decoded, nil, nil
 	default:
 		c.Set(shootPlanningRawBodyKey, body)
 		revision, planCommand, err := decodePlanCommandFromBody(body)
-		return revision, nil, planCommand, err
+		return revision, nil, nil, planCommand, err
 	}
 }
 
@@ -844,10 +1084,11 @@ func registerShootPlanningHandlers(
 	router gin.IRouter,
 	app *shootplanning.Application,
 	planShare *planshare.Application,
+	businessApp *business.Application,
 	scopeFactory ScopeFactory,
 ) {
 	shootplanningapi.RegisterHandlersWithOptions(router, &shootPlanningHandlers{
-		app: app, planShare: planShare, scopeFactory: scopeFactory,
+		app: app, planShare: planShare, business: businessApp, scopeFactory: scopeFactory,
 	}, shootplanningapi.GinServerOptions{
 		ErrorHandler: func(c *gin.Context, _ error, _ int) {
 			abortShootPlanningValidation(c)

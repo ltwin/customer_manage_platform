@@ -35,6 +35,7 @@ import {
 } from './settingsControllerKernel.ts'
 import { createSettingsSaveQueue } from './settingsSaveQueue.ts'
 import './account-settings.css'
+import PlanningBusinessRulesSection from './PlanningBusinessRulesSection.tsx'
 
 const shootTypeLabels: Record<ChurnThreshold['shoot_type'], string> = {
 	portrait: '写真',
@@ -574,6 +575,17 @@ export default function AccountSettingsPage() {
 					</fieldset>
 				</form>
 			</section>
+
+			<PlanningBusinessRulesSection
+				key={settings.planning_business_rule_revision}
+				settings={settings}
+				disabled={submitBlocked}
+				onSaved={() => {
+					notify('经营规则已保存')
+					setReloadTick((value) => value + 1)
+				}}
+				onRefresh={() => setReloadTick((value) => value + 1)}
+			/>
 
 			<section className="card form-stack" aria-labelledby="accountSettingsAppearanceTitle">
 				<div>

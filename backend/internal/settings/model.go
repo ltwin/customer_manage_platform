@@ -4,6 +4,8 @@ package settings
 import (
 	"errors"
 	"time"
+
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 )
 
 const (
@@ -19,8 +21,9 @@ const (
 )
 
 var (
-	ErrValidation = errors.New("validation_failed")
-	ErrNotFound   = errors.New("not_found")
+	ErrValidation                   = errors.New("validation_failed")
+	ErrNotFound                     = errors.New("not_found")
+	ErrPlanningBusinessRuleRevision = errors.New("planning_business_rule_revision_conflict")
 )
 
 // ValidationError 是可回传给 HTTP 层的校验失败。
@@ -39,37 +42,46 @@ type ChurnThreshold struct {
 
 // Settings 是账号级有效设置（读取时已叠加默认值）。
 type Settings struct {
-	Timezone                string
-	BirthdayLeadDays        int
-	FollowUpAfterDays       int
-	ChurnThresholds         []ChurnThreshold
-	DigestHour              int
-	TelegramChatID          *string
-	TelegramBindingRevision int64
-	Availability            ScheduleAvailability
-	UpdatedAt               time.Time
+	Timezone                      string
+	BirthdayLeadDays              int
+	FollowUpAfterDays             int
+	ChurnThresholds               []ChurnThreshold
+	DigestHour                    int
+	TelegramChatID                *string
+	TelegramBindingRevision       int64
+	Availability                  ScheduleAvailability
+	PlanningBusinessRuleOverrides business.RuleOverrides
+	PlanningBusinessRuleRevision  int64
+	UpdatedAt                     time.Time
+}
+
+type PlanningBusinessRulesPatch struct {
+	ExpectedRevision int64
+	Overrides        business.RuleOverrides
 }
 
 // PatchInput 是 PATCH /settings 的域输入；指针表示"未传"。
 type PatchInput struct {
-	Timezone          *string
-	BirthdayLeadDays  *int
-	FollowUpAfterDays *int
-	ChurnThresholds   *[]ChurnThreshold
-	DigestHour        *int
-	Availability      *ScheduleAvailability
+	Timezone              *string
+	BirthdayLeadDays      *int
+	FollowUpAfterDays     *int
+	ChurnThresholds       *[]ChurnThreshold
+	DigestHour            *int
+	Availability          *ScheduleAvailability
+	PlanningBusinessRules *PlanningBusinessRulesPatch
 }
 
 // DefaultSettings 返回无存储行时的纯默认值（entry 级 churn 默认）。
 func DefaultSettings() Settings {
 	return Settings{
-		Timezone:                DefaultTimezone,
-		BirthdayLeadDays:        DefaultBirthdayLeadDays,
-		FollowUpAfterDays:       DefaultFollowUpAfterDays,
-		ChurnThresholds:         defaultChurnThresholds(),
-		DigestHour:              DefaultDigestHour,
-		TelegramBindingRevision: 1,
-		Availability:            DefaultScheduleAvailability(),
+		Timezone:                      DefaultTimezone,
+		BirthdayLeadDays:              DefaultBirthdayLeadDays,
+		FollowUpAfterDays:             DefaultFollowUpAfterDays,
+		ChurnThresholds:               defaultChurnThresholds(),
+		DigestHour:                    DefaultDigestHour,
+		TelegramBindingRevision:       1,
+		Availability:                  DefaultScheduleAvailability(),
+		PlanningBusinessRuleOverrides: make(business.RuleOverrides),
 	}
 }
 

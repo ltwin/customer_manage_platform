@@ -587,6 +587,14 @@ func TestListFiltersSummariesAndStableSorting(t *testing.T) {
 	if err != nil || byCustomer.Total != 1 || byCustomer.Items[0].ID != "ord_b" {
 		t.Fatalf("customer/status filter mismatch: err=%v list=%+v", err, byCustomer)
 	}
+	byID, err := svc.List(ctx, scope, orderdomain.ListFilter{ID: " ord_c ", PageSize: 1})
+	if err != nil || byID.Total != 1 || len(byID.Items) != 1 || byID.Items[0].ID != "ord_c" {
+		t.Fatalf("exact id filter mismatch: err=%v list=%+v", err, byID)
+	}
+	missingID, err := svc.List(ctx, scope, orderdomain.ListFilter{ID: "ord_missing", PageSize: 1})
+	if err != nil || missingID.Total != 0 || len(missingID.Items) != 0 {
+		t.Fatalf("missing exact id should be an empty scoped list: err=%v list=%+v", err, missingID)
+	}
 }
 
 func TestCreationModesAndSchedulablePagination(t *testing.T) {

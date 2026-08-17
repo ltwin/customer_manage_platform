@@ -12,6 +12,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 )
 
 func (h *handlers) GetSettings(c *gin.Context) {
@@ -72,6 +73,12 @@ func (h *handlers) UpdateSettings(c *gin.Context) {
 		}
 		input.Availability = &availability
 	}
+	if body.PlanningBusinessRules != nil {
+		input.PlanningBusinessRules = &settings.PlanningBusinessRulesPatch{
+			ExpectedRevision: body.PlanningBusinessRules.ExpectedRevision,
+			Overrides:        fromAPIPlanningBusinessRuleOverrides(body.PlanningBusinessRules.Overrides),
+		}
+	}
 	s, err := h.settings.Patch(c.Request.Context(), scope, input)
 	if h.abortSettingsError(c, err) {
 		return
@@ -105,6 +112,10 @@ func (h *handlers) abortSettingsError(c *gin.Context, err error) bool {
 		abortError(c, http.StatusBadRequest, CodeValidationFailed, msg)
 		return true
 	}
+	if errors.Is(err, settings.ErrPlanningBusinessRuleRevision) {
+		abortError(c, http.StatusConflict, CodePlanRevisionConflict, "经营规则版本已变化，请刷新后重试")
+		return true
+	}
 	_ = c.Error(err)
 	return true
 }
@@ -118,14 +129,65 @@ func toAPISettings(s settings.Settings) Settings {
 		})
 	}
 	return Settings{
-		Timezone:          s.Timezone,
-		BirthdayLeadDays:  s.BirthdayLeadDays,
-		FollowUpAfterDays: s.FollowUpAfterDays,
-		ChurnThresholds:   thresholds,
-		DigestHour:        s.DigestHour,
-		TelegramChatId:    s.TelegramChatID,
-		Availability:      toAPIScheduleAvailability(s.Availability),
+		Timezone:                      s.Timezone,
+		BirthdayLeadDays:              s.BirthdayLeadDays,
+		FollowUpAfterDays:             s.FollowUpAfterDays,
+		ChurnThresholds:               thresholds,
+		DigestHour:                    s.DigestHour,
+		TelegramChatId:                s.TelegramChatID,
+		Availability:                  toAPIScheduleAvailability(s.Availability),
+		PlanningBusinessRuleOverrides: toAPIPlanningBusinessRuleOverrides(s.PlanningBusinessRuleOverrides),
+		PlanningBusinessRuleRevision:  s.PlanningBusinessRuleRevision,
 	}
+}
+
+func fromAPIPlanningBusinessRuleOverrides(input PlanningBusinessRuleOverrides) business.RuleOverrides {
+	result := make(business.RuleOverrides)
+	putNullableRule(result, "included_look_count", input.IncludedLookCount)
+	putNullableRule(result, "extra_look_unit_amount", input.ExtraLookUnitAmount)
+	putNullableRule(result, "rented_location_unit_amount", input.RentedLocationUnitAmount)
+	putNullableRule(result, "assistant_unit_amount", input.AssistantUnitAmount)
+	putNullableRule(result, "included_retouched_photo_count", input.IncludedRetouchedPhotoCount)
+	putNullableRule(result, "extra_retouch_unit_amount", input.ExtraRetouchUnitAmount)
+	putNullableRule(result, "included_shot_count", input.IncludedShotCount)
+	putNullableRule(result, "extra_shot_unit_amount", input.ExtraShotUnitAmount)
+	return result
+}
+
+func putNullableRule(target business.RuleOverrides, key string, value nullable.Nullable[int]) {
+	if !value.IsSpecified() {
+		return
+	}
+	if value.IsNull() {
+		target[key] = nil
+		return
+	}
+	integer := value.MustGet()
+	target[key] = &integer
+}
+
+func toAPIPlanningBusinessRuleOverrides(input business.RuleOverrides) PlanningBusinessRuleOverrides {
+	var output PlanningBusinessRuleOverrides
+	output.IncludedLookCount = apiNullableRule(input, "included_look_count")
+	output.ExtraLookUnitAmount = apiNullableRule(input, "extra_look_unit_amount")
+	output.RentedLocationUnitAmount = apiNullableRule(input, "rented_location_unit_amount")
+	output.AssistantUnitAmount = apiNullableRule(input, "assistant_unit_amount")
+	output.IncludedRetouchedPhotoCount = apiNullableRule(input, "included_retouched_photo_count")
+	output.ExtraRetouchUnitAmount = apiNullableRule(input, "extra_retouch_unit_amount")
+	output.IncludedShotCount = apiNullableRule(input, "included_shot_count")
+	output.ExtraShotUnitAmount = apiNullableRule(input, "extra_shot_unit_amount")
+	return output
+}
+
+func apiNullableRule(input business.RuleOverrides, key string) nullable.Nullable[int] {
+	value, exists := input[key]
+	if !exists {
+		return nullable.Nullable[int]{}
+	}
+	if value == nil {
+		return nullable.NewNullNullable[int]()
+	}
+	return nullable.NewNullableWithValue(*value)
 }
 
 func toAPIScheduleAvailability(value settings.ScheduleAvailability) ScheduleAvailability {

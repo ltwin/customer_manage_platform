@@ -6,20 +6,26 @@ import {
   useRef,
   useState,
 } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
   ApiError,
   deleteScheduleSlot,
+  fetchCustomer,
   getSettings,
   getScheduleSlot,
+  listOrders,
   listScheduleSlots,
 } from '../api/client'
 import type {
   ScheduleSlotListItem,
   Settings,
 } from '../api/client'
-import ScheduleSlotDialog from '../components/schedule/ScheduleSlotDialog'
+import ScheduleSlotDialog, {
+  type ScheduleBusinessPrefill,
+} from '../components/schedule/ScheduleSlotDialog'
+import { parsePlanningSchedulePrefill } from '../components/schedule/businessPrefill'
+import type { FixedScheduleCustomer } from '../components/schedule/ShootOrderFlow'
 import { readPendingSchedule } from '../components/schedule/journal'
 import {
   accountToday,
@@ -74,6 +80,7 @@ interface DeferredCalendarDeleteReconciliation {
 
 export default function CalendarPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { notify, timezone: shellTimezone, timezoneError, timezoneLoading } = useShell()
   const [searchParams, setSearchParams] = useSearchParams()
   const queryDate = searchParams.get('date') ?? ''
@@ -111,6 +118,9 @@ export default function CalendarPage() {
   const [queryError, setQueryError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingSlot, setEditingSlot] = useState<ScheduleSlotListItem | null>(null)
+  const [businessPrefill, setBusinessPrefill] = useState<ScheduleBusinessPrefill | null>(null)
+  const [businessPrefillCustomer, setBusinessPrefillCustomer] = useState<FixedScheduleCustomer | null>(null)
+  const [businessPrefillEnvelope] = useState(() => parsePlanningSchedulePrefill(location.state))
   const [deleteTarget, setDeleteTarget] = useState<ScheduleSlotListItem | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -127,6 +137,66 @@ export default function CalendarPage() {
   const [openingsLoading, setOpeningsLoading] = useState(false)
   const [openingsError, setOpeningsError] = useState<string | null>(null)
   const openingsRequestRef = useRef<ActiveCalendarRequest>(emptyActiveRequest())
+
+  useLayoutEffect(() => {
+    if (!businessPrefillEnvelope.present) return
+    navigate({
+      pathname: location.pathname,
+      search: location.search,
+      hash: location.hash,
+    }, { replace: true, state: null })
+  }, [businessPrefillEnvelope.present, location.hash, location.pathname, location.search, navigate])
+
+  useEffect(() => {
+    if (!businessPrefillEnvelope.present) return
+    if (!businessPrefillEnvelope.value) {
+      return
+    }
+    try {
+      if (readPendingSchedule()) {
+        setQueryError('当前标签页存在待恢复排期；已保留原恢复流程，请完成后重新从经营草稿进入')
+        return
+      }
+    } catch (reason) {
+      setQueryError(errorMessage(reason, '恢复记录读取失败'))
+      return
+    }
+
+    const prefill = businessPrefillEnvelope.value
+    let active = true
+    listOrders({ id: prefill.order_id, page: 1, pageSize: 1 })
+      .then(async (result) => {
+        const order = result.items.length === 1 && result.items[0]?.id === prefill.order_id
+          ? result.items[0]
+          : null
+        if (!order) throw new ApiError(404, 'not_found', '订单不存在或已不可访问')
+        const customer = await fetchCustomer(order.customer_id)
+        return { order, customer }
+      })
+      .then(({ order, customer }) => {
+        if (!active) return
+        setQueryError(null)
+        setEditingSlot(null)
+        setBusinessPrefill({ order, basisMinutes: prefill.basis_minutes })
+        setBusinessPrefillCustomer({
+          id: customer.id,
+          display_name: customer.display_name,
+          status: customer.status,
+          avatar_revision: customer.avatar_revision,
+          avatar_url: customer.avatar_url,
+        })
+        setDialogOpen(true)
+      })
+      .catch((reason: unknown) => {
+        if (!active) return
+        if (reason instanceof ApiError && reason.status === 401) {
+          navigate('/login', { replace: true })
+          return
+        }
+        setQueryError(errorMessage(reason, '经营草稿的订单加载失败'))
+      })
+    return () => { active = false }
+  }, [businessPrefillEnvelope, navigate])
 
   const focusCalendarDate = useCallback((date: string) => {
     if (!date) return
@@ -556,12 +626,16 @@ export default function CalendarPage() {
     rememberScheduleReturnFocus()
     setSelectedDate(date)
     setEditingSlot(null)
+    setBusinessPrefill(null)
+    setBusinessPrefillCustomer(null)
     setDialogOpen(true)
   }
 
   function openEdit(slot: ScheduleSlotListItem) {
     rememberScheduleReturnFocus()
     setEditingSlot(slot)
+    setBusinessPrefill(null)
+    setBusinessPrefillCustomer(null)
     setDialogOpen(true)
   }
 
@@ -574,6 +648,8 @@ export default function CalendarPage() {
 
   function closeScheduleDialog() {
     setDialogOpen(false)
+    setBusinessPrefill(null)
+    setBusinessPrefillCustomer(null)
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
         const target = scheduleReturnFocusRef.current
@@ -750,6 +826,8 @@ export default function CalendarPage() {
         initialDate={selectedDate || today}
         slot={editingSlot}
         scheduleDraftId={queryScheduleDraft || undefined}
+        fixedCustomer={businessPrefillCustomer ?? undefined}
+        businessPrefill={businessPrefill ?? undefined}
         onClose={closeScheduleDialog}
         onChanged={refreshCalendarData}
         onCompleted={(date) => {

@@ -104,6 +104,7 @@ type UpdateInput struct {
 }
 
 type ListFilter struct {
+	ID             string
 	CustomerID     string
 	Status         string
 	UnpaidBalance  bool

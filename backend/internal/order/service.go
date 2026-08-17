@@ -152,6 +152,7 @@ func normalizeUpdateInput(input UpdateInput) (UpdateInput, error) {
 }
 
 func normalizeListFilter(filter ListFilter) (ListFilter, error) {
+	filter.ID = strings.TrimSpace(filter.ID)
 	filter.CustomerID = strings.TrimSpace(filter.CustomerID)
 	filter.Status = strings.TrimSpace(filter.Status)
 	if filter.Page == 0 {

@@ -41,6 +41,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
+	planningbusiness "github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
 )
 
@@ -164,6 +165,15 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	shootPlanningBusiness, err := planningbusiness.NewApplication(
+		planningbusiness.NewRepository(),
+		idempotencyExecutor,
+		order.NewBusinessAdjustmentParticipant(),
+		schedule.NewBusinessDurationParticipant(shootPlanningApp.CRM()),
+	)
+	if err != nil {
+		return newStartupFailure("shoot-planning-business-wiring", "PLANNING_BUSINESS", "invalid_config", err)
+	}
 	planningIngestionApp := ingestion.NewApplication(ingestionRepo, idempotencyExecutor,
 		ingestion.WithCoreApplication(shootPlanningApp), ingestion.WithPlanningMediaApplication(planningMediaApp))
 	planShareApp := planshare.NewApplication(idempotencyExecutor)
@@ -273,6 +283,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		DataExport:                dataExportSvc,
 		TelegramBinding:           telegramBinding,
 		ShootPlanning:             shootPlanningApp,
+		ShootPlanningBusiness:     shootPlanningBusiness,
 		PlanShare:                 planShareApp,
 		AnonymousShare: httpapi.AnonymousShareDeps{
 			App:            planShareApp,

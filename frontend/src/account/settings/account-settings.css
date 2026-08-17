@@ -20,3 +20,54 @@
   gap: 0.35rem;
   max-width: 16rem;
 }
+
+.planning-business-rule-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.planning-business-rule-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1fr) minmax(13rem, auto) minmax(10rem, 0.8fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.planning-business-rule-row:last-child {
+  border-bottom: 0;
+}
+
+.planning-business-rule-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.planning-business-rule-label span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.planning-business-rule-mode {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.planning-business-rule-mode button {
+  min-width: 0;
+}
+
+.planning-business-rule-value {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .planning-business-rule-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}

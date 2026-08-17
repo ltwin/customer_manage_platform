@@ -48,6 +48,9 @@ const (
 	OperationPlanShareAssignmentPhotographerRevoke Operation = "plan-share.assignment-photographer-revoke.v1"
 	OperationPlanShareAssignmentClaim              Operation = "plan-share.assignment-claim.v1"
 	OperationPlanShareAssignmentSelfRevoke         Operation = "plan-share.assignment-self-revoke.v1"
+	OperationShootPlanBusinessFacts                Operation = "shoot-plan.business-facts.v1"
+	OperationShootPlanBusinessDraftGenerate        Operation = "shoot-plan.business-drafts.generate.v1"
+	OperationShootPlanBusinessDraftDecision        Operation = "shoot-plan.business-draft.decision.v1"
 	defaultTTL                                               = 24 * time.Hour
 )
 
@@ -101,6 +104,9 @@ func EventVoidResource(planID, eventID string) ResourceIdentity {
 }
 func BatchResource(planID string) ResourceIdentity {
 	return ResourceIdentity{kind: "shoot-plan-batch", primaryID: planID}
+}
+func BusinessDraftResource(planID, draftID string) ResourceIdentity {
+	return ResourceIdentity{kind: "shoot-plan-business-draft", primaryID: planID, secondaryID: draftID}
 }
 
 func PlanningMediaUploadResource(planID string) ResourceIdentity {
@@ -446,8 +452,10 @@ func resourceMatchesOperation(operation Operation, identity ResourceIdentity) bo
 		return identity.kind == "plan-ingestion-create" && primary && !secondary
 	case OperationPlanIngestionPreview, OperationPlanIngestionTransition, OperationPlanIngestionCommit:
 		return identity.kind == "plan-ingestion-session" && primary && secondary
-	case OperationShootPlanCRMLink:
+	case OperationShootPlanCRMLink, OperationShootPlanBusinessFacts, OperationShootPlanBusinessDraftGenerate:
 		return identity.kind == "shoot-plan" && primary && !secondary
+	case OperationShootPlanBusinessDraftDecision:
+		return identity.kind == "shoot-plan-business-draft" && primary && secondary
 	case OperationPlanShareIssue:
 		return identity.kind == "plan-share-issue" && primary && secondary
 	case OperationPlanShareRotate, OperationPlanShareRevoke:

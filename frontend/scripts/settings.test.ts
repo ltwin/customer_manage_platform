@@ -7,6 +7,11 @@ import {
   validateAvailabilityDraft,
 } from '../src/pages/settings/availabilityDraft.ts'
 import type { Settings, UpdateSettingsBody } from '../src/api/client.ts'
+import {
+  businessRuleDraftFromOverrides,
+  businessRuleOverridesFromDraft,
+  validateBusinessRuleDraft,
+} from '../src/account/settings/businessRulesDraft.ts'
 
 const settingsFixture: Settings = {
   timezone: 'Asia/Shanghai',
@@ -31,7 +36,40 @@ const settingsFixture: Settings = {
     min_opening_minutes: 90,
     turnaround_minutes: 45,
   },
+  planning_business_rule_overrides: {},
+  planning_business_rule_revision: 0,
 }
+
+test('business rule draft preserves inherit, explicit unknown, zero, and money precision', () => {
+  const draft = businessRuleDraftFromOverrides({
+    included_look_count: 0,
+    extra_look_unit_amount: null,
+    assistant_unit_amount: 12550,
+  })
+  assert.deepEqual(draft.included_look_count, { mode: 'value', value: '0' })
+  assert.deepEqual(draft.extra_look_unit_amount, { mode: 'unknown', value: '' })
+  assert.deepEqual(draft.rented_location_unit_amount, { mode: 'inherit', value: '' })
+  assert.deepEqual(draft.assistant_unit_amount, { mode: 'value', value: '125.5' })
+
+  draft.included_shot_count = { mode: 'unknown', value: '' }
+  draft.extra_shot_unit_amount = { mode: 'value', value: '0' }
+  assert.deepEqual(businessRuleOverridesFromDraft(draft), {
+    included_look_count: 0,
+    extra_look_unit_amount: null,
+    assistant_unit_amount: 12550,
+    included_shot_count: null,
+    extra_shot_unit_amount: 0,
+  })
+})
+
+test('business rule draft validates count range and cent precision', () => {
+  const draft = businessRuleDraftFromOverrides({})
+  draft.included_look_count = { mode: 'value', value: '100001' }
+  assert.match(validateBusinessRuleDraft(draft) ?? '', /数量超出范围/)
+  draft.included_look_count = { mode: 'inherit', value: '' }
+  draft.extra_retouch_unit_amount = { mode: 'value', value: '12.345' }
+  assert.match(validateBusinessRuleDraft(draft) ?? '', /最多保留两位小数/)
+})
 
 test('availability draft hydrates all seven days and does not mutate server settings', () => {
   const draft = fromSettings(settingsFixture)

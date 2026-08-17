@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder"
 )
 
@@ -71,96 +72,41 @@ func (s *Service) Get(ctx context.Context, scope store.AccountScope) (Settings, 
 	return EffectiveSettings(stored), nil
 }
 
-// Patch 校验后 upsert；reminder 启用且 timezone 变更时走 fence + generation reserve。
+// Patch serializes every Settings mutation so first-write rule CAS and timezone
+// reminder work share one physical transaction.
 func (s *Service) Patch(ctx context.Context, scope store.AccountScope, input PatchInput) (Settings, error) {
-	current, err := s.Get(ctx, scope)
-	if err != nil {
-		return Settings{}, err
-	}
-	next := current
-	timezoneTouched := false
-	if input.Timezone != nil {
-		tz := strings.TrimSpace(*input.Timezone)
-		if err := validateTimezone(tz); err != nil {
-			return Settings{}, err
-		}
-		timezoneTouched = true
-		next.Timezone = tz
-	}
-	if input.BirthdayLeadDays != nil {
-		if *input.BirthdayLeadDays < 1 {
-			return Settings{}, ValidationError{Message: "birthday_lead_days 须 ≥ 1"}
-		}
-		next.BirthdayLeadDays = *input.BirthdayLeadDays
-	}
-	if input.FollowUpAfterDays != nil {
-		if *input.FollowUpAfterDays < 1 {
-			return Settings{}, ValidationError{Message: "follow_up_after_days 须 ≥ 1"}
-		}
-		next.FollowUpAfterDays = *input.FollowUpAfterDays
-	}
-	if input.DigestHour != nil {
-		if *input.DigestHour < 0 || *input.DigestHour > 23 {
-			return Settings{}, ValidationError{Message: "digest_hour 须在 0-23"}
-		}
-		next.DigestHour = *input.DigestHour
-	}
-	if input.ChurnThresholds != nil {
-		normalized, err := normalizeChurnThresholds(*input.ChurnThresholds)
-		if err != nil {
-			return Settings{}, err
-		}
-		next.ChurnThresholds = overlayChurnThresholds(defaultChurnThresholds(), normalized)
-	}
-	if input.Availability != nil {
-		if err := ValidateScheduleAvailability(*input.Availability); err != nil {
-			return Settings{}, err
-		}
-		next.Availability = *input.Availability
-	}
-
-	if s.reminderTZEnabled && timezoneTouched {
-		return s.patchWithReminderTimezone(ctx, scope, current, next)
-	}
-	saved, err := s.repo.Upsert(ctx, scope, next)
-	if err != nil {
-		return Settings{}, err
-	}
-	return EffectiveSettings(saved), nil
-}
-
-func (s *Service) patchWithReminderTimezone(
-	ctx context.Context,
-	scope store.AccountScope,
-	current, next Settings,
-) (Settings, error) {
-	if s.timezoneParticipant == nil {
-		return Settings{}, errors.New("settings timezone participant missing")
-	}
 	var saved Settings
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		locked, err := tx.PlanningReminderFence().LockCurrentAccount(ctx)
-		if err != nil {
-			return err
-		}
-		if err := lockSettingsRow(ctx, tx); err != nil {
-			return err
-		}
-		effectiveOld := EffectiveSettings(current).Timezone
-		effectiveNew := EffectiveSettings(next).Timezone
-		if effectiveOld == effectiveNew {
-			upserted, err := upsertSettingsInScope(ctx, tx, next)
+		var locked planningreminder.LockedFenceTx
+		var err error
+		if s.reminderTZEnabled && input.Timezone != nil {
+			locked, err = tx.PlanningReminderFence().LockCurrentAccount(ctx)
 			if err != nil {
 				return err
 			}
-			saved = upserted
-			return nil
 		}
-		planIDs, err := s.timezoneParticipant.ListAffectedPlanIDsInScope(ctx, tx, effectiveOld, effectiveNew)
+		if err := ensureSettingsMutationFence(ctx, tx); err != nil {
+			return err
+		}
+		current, err := loadSettingsInScope(ctx, tx)
 		if err != nil {
 			return err
 		}
-		upserted, err := upsertSettingsInScope(ctx, tx, next)
+		next, timezoneChanged, err := applyPatch(current, input)
+		if err != nil {
+			return err
+		}
+		var planIDs []string
+		if locked != nil && timezoneChanged {
+			if s.timezoneParticipant == nil {
+				return errors.New("settings timezone participant missing")
+			}
+			planIDs, err = s.timezoneParticipant.ListAffectedPlanIDsInScope(ctx, tx, current.Timezone, next.Timezone)
+			if err != nil {
+				return err
+			}
+		}
+		saved, err = upsertSettingsInScope(ctx, tx, next)
 		if err != nil {
 			return err
 		}
@@ -171,7 +117,6 @@ func (s *Service) patchWithReminderTimezone(
 				return err
 			}
 		}
-		saved = upserted
 		return nil
 	})
 	if err != nil {
@@ -180,14 +125,113 @@ func (s *Service) patchWithReminderTimezone(
 	return EffectiveSettings(saved), nil
 }
 
-func lockSettingsRow(ctx context.Context, tx store.TxAccountScope) error {
-	var tz string
-	err := tx.QueryRowForUpdate(ctx, "settings", "timezone", "TRUE").Scan(&tz)
-	if errors.Is(err, store.ErrNoRows) {
-		// No row yet: Upsert will create; still OK for accounts without planning sources.
-		return nil
+func applyPatch(current Settings, input PatchInput) (Settings, bool, error) {
+	next := current
+	timezoneChanged := false
+	if input.Timezone != nil {
+		tz := strings.TrimSpace(*input.Timezone)
+		if err := validateTimezone(tz); err != nil {
+			return Settings{}, false, err
+		}
+		timezoneChanged = current.Timezone != tz
+		next.Timezone = tz
 	}
-	return err
+	if input.BirthdayLeadDays != nil {
+		if *input.BirthdayLeadDays < 1 {
+			return Settings{}, false, ValidationError{Message: "birthday_lead_days 须 ≥ 1"}
+		}
+		next.BirthdayLeadDays = *input.BirthdayLeadDays
+	}
+	if input.FollowUpAfterDays != nil {
+		if *input.FollowUpAfterDays < 1 {
+			return Settings{}, false, ValidationError{Message: "follow_up_after_days 须 ≥ 1"}
+		}
+		next.FollowUpAfterDays = *input.FollowUpAfterDays
+	}
+	if input.DigestHour != nil {
+		if *input.DigestHour < 0 || *input.DigestHour > 23 {
+			return Settings{}, false, ValidationError{Message: "digest_hour 须在 0-23"}
+		}
+		next.DigestHour = *input.DigestHour
+	}
+	if input.ChurnThresholds != nil {
+		normalized, err := normalizeChurnThresholds(*input.ChurnThresholds)
+		if err != nil {
+			return Settings{}, false, err
+		}
+		next.ChurnThresholds = overlayChurnThresholds(defaultChurnThresholds(), normalized)
+	}
+	if input.Availability != nil {
+		if err := ValidateScheduleAvailability(*input.Availability); err != nil {
+			return Settings{}, false, err
+		}
+		next.Availability = *input.Availability
+	}
+	if input.PlanningBusinessRules != nil {
+		patch := input.PlanningBusinessRules
+		if patch.ExpectedRevision != current.PlanningBusinessRuleRevision {
+			return Settings{}, false, ErrPlanningBusinessRuleRevision
+		}
+		if err := validatePlanningBusinessRuleOverrides(patch.Overrides); err != nil {
+			return Settings{}, false, err
+		}
+		if !businessRuleOverridesEqual(current.PlanningBusinessRuleOverrides, patch.Overrides) {
+			next.PlanningBusinessRuleOverrides = cloneBusinessRuleOverrides(patch.Overrides)
+			next.PlanningBusinessRuleRevision++
+		}
+	}
+	return next, timezoneChanged, nil
+}
+
+func ensureSettingsMutationFence(ctx context.Context, tx store.TxAccountScope) error {
+	now := time.Now().UTC()
+	var createdAt time.Time
+	err := tx.InsertOnConflictDoNothingReturning(ctx, "account_settings_mutation_fences",
+		[]string{"created_at"}, []string{"account_id"}, []string{"created_at"}, now,
+	).Scan(&createdAt)
+	if err != nil && !errors.Is(err, store.ErrNoRows) {
+		return err
+	}
+	return tx.QueryRowForUpdate(ctx, "account_settings_mutation_fences", "created_at", "TRUE").Scan(&createdAt)
+}
+
+func loadSettingsInScope(ctx context.Context, tx store.TxAccountScope) (Settings, error) {
+	var (
+		s             Settings
+		thresholds    []byte
+		availability  []byte
+		businessRules []byte
+		telegram      sql.NullString
+		updatedAt     time.Time
+	)
+	err := tx.QueryRowForUpdate(ctx, "settings", settingsColumns, "TRUE").Scan(
+		&s.Timezone, &s.BirthdayLeadDays, &s.FollowUpAfterDays, &thresholds,
+		&s.DigestHour, &telegram, &s.TelegramBindingRevision, &availability,
+		&businessRules, &s.PlanningBusinessRuleRevision, &updatedAt,
+	)
+	if errors.Is(err, store.ErrNoRows) {
+		return DefaultSettings(), nil
+	}
+	if err != nil {
+		return Settings{}, err
+	}
+	if telegram.Valid {
+		value := telegram.String
+		s.TelegramChatID = &value
+	}
+	if err := json.Unmarshal(thresholds, &s.ChurnThresholds); err != nil {
+		return Settings{}, err
+	}
+	decodedAvailability, err := DecodeScheduleAvailabilityJSON(availability)
+	if err != nil {
+		return Settings{}, err
+	}
+	s.Availability = decodedAvailability
+	if err := json.Unmarshal(businessRules, &s.PlanningBusinessRuleOverrides); err != nil {
+		return Settings{}, err
+	}
+	s.UpdatedAt = updatedAt
+	return EffectiveSettings(s), nil
 }
 
 func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, settings Settings) (Settings, error) {
@@ -199,9 +243,14 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	if err != nil {
 		return Settings{}, err
 	}
+	businessRules, err := json.Marshal(settings.PlanningBusinessRuleOverrides)
+	if err != nil {
+		return Settings{}, err
+	}
 	now := time.Now().UTC()
 	ownedColumns := []string{
-		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "availability", "updated_at",
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "availability",
+		"planning_business_rule_overrides", "planning_business_rule_revision", "updated_at",
 	}
 	if err := tx.Upsert(ctx, "settings",
 		ownedColumns,
@@ -213,21 +262,25 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 		thresholds,
 		settings.DigestHour,
 		availability,
+		businessRules,
+		settings.PlanningBusinessRuleRevision,
 		now,
 	); err != nil {
 		return Settings{}, fmt.Errorf("upsert settings in tx: %w", err)
 	}
 	var (
-		s           Settings
-		threshBytes []byte
-		availBytes  []byte
-		telegram    sql.NullString
-		bindingRev  int64
-		updatedAt   time.Time
+		s                 Settings
+		threshBytes       []byte
+		availBytes        []byte
+		businessRuleBytes []byte
+		telegram          sql.NullString
+		bindingRev        int64
+		updatedAt         time.Time
 	)
 	if err := tx.QueryRow(ctx, "settings", settingsColumns, "TRUE").Scan(
 		&s.Timezone, &s.BirthdayLeadDays, &s.FollowUpAfterDays, &threshBytes,
-		&s.DigestHour, &telegram, &bindingRev, &availBytes, &updatedAt,
+		&s.DigestHour, &telegram, &bindingRev, &availBytes,
+		&businessRuleBytes, &s.PlanningBusinessRuleRevision, &updatedAt,
 	); err != nil {
 		return Settings{}, err
 	}
@@ -244,8 +297,59 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 		return Settings{}, err
 	}
 	s.Availability = decoded
+	if err := json.Unmarshal(businessRuleBytes, &s.PlanningBusinessRuleOverrides); err != nil {
+		return Settings{}, err
+	}
 	s.UpdatedAt = updatedAt
 	return s, nil
+}
+
+func validatePlanningBusinessRuleOverrides(overrides business.RuleOverrides) error {
+	for key, value := range overrides {
+		maxValue := business.MaxMoney
+		switch key {
+		case "included_look_count", "included_retouched_photo_count", "included_shot_count":
+			maxValue = business.MaxCount
+		case "extra_look_unit_amount", "rented_location_unit_amount", "assistant_unit_amount",
+			"extra_retouch_unit_amount", "extra_shot_unit_amount":
+		default:
+			return ValidationError{Message: "planning_business_rules.overrides 包含未知规则"}
+		}
+		if value != nil && (*value < 0 || *value > maxValue) {
+			return ValidationError{Message: "planning_business_rules.overrides 超出范围"}
+		}
+	}
+	return nil
+}
+
+func businessRuleOverridesEqual(left, right business.RuleOverrides) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, leftValue := range left {
+		rightValue, exists := right[key]
+		if !exists || !optionalIntEqual(leftValue, rightValue) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneBusinessRuleOverrides(source business.RuleOverrides) business.RuleOverrides {
+	cloned := make(business.RuleOverrides, len(source))
+	for key, value := range source {
+		if value == nil {
+			cloned[key] = nil
+			continue
+		}
+		copyValue := *value
+		cloned[key] = &copyValue
+	}
+	return cloned
+}
+
+func optionalIntEqual(left, right *int) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
 }
 
 // TimezoneForAccount 实现 httpapi.AccountTimezoneProvider。
@@ -332,6 +436,9 @@ func EffectiveSettings(stored Settings) Settings {
 	}
 	if stored.TelegramBindingRevision < 1 {
 		stored.TelegramBindingRevision = def.TelegramBindingRevision
+	}
+	if stored.PlanningBusinessRuleOverrides == nil {
+		stored.PlanningBusinessRuleOverrides = def.PlanningBusinessRuleOverrides
 	}
 	return stored
 }

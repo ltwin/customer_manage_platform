@@ -114,6 +114,9 @@ func (h *handlers) ListOrders(c *gin.Context, params ListOrdersParams) {
 		return
 	}
 	filter := orderdomain.ListFilter{}
+	if params.Id != nil {
+		filter.ID = *params.Id
+	}
 	if params.CustomerId != nil {
 		filter.CustomerID = *params.CustomerId
 	}
@@ -234,6 +237,9 @@ func (h *handlers) abortOrderError(c *gin.Context, err error) bool {
 
 func bindListOrdersParams(c *gin.Context) (ListOrdersParams, bool) {
 	var params ListOrdersParams
+	if id := strings.TrimSpace(c.Query("id")); id != "" {
+		params.Id = &id
+	}
 	if customerID := strings.TrimSpace(c.Query("customer_id")); customerID != "" {
 		params.CustomerId = &customerID
 	}

@@ -217,6 +217,156 @@ func (e AssignmentTargetV1Kind) Valid() bool {
 	}
 }
 
+// Defines values for BusinessAdjustmentLineKind.
+const (
+	Assistant      BusinessAdjustmentLineKind = "assistant"
+	ExtraLook      BusinessAdjustmentLineKind = "extra_look"
+	ExtraRetouch   BusinessAdjustmentLineKind = "extra_retouch"
+	ExtraShot      BusinessAdjustmentLineKind = "extra_shot"
+	RentedLocation BusinessAdjustmentLineKind = "rented_location"
+)
+
+// Valid indicates whether the value is a known member of the BusinessAdjustmentLineKind enum.
+func (e BusinessAdjustmentLineKind) Valid() bool {
+	switch e {
+	case Assistant:
+		return true
+	case ExtraLook:
+		return true
+	case ExtraRetouch:
+		return true
+	case ExtraShot:
+		return true
+	case RentedLocation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BusinessAdjustmentSourceFactField.
+const (
+	AssistantCount      BusinessAdjustmentSourceFactField = "assistant_count"
+	CurrentShotCount    BusinessAdjustmentSourceFactField = "current_shot_count"
+	PlannedLookCount    BusinessAdjustmentSourceFactField = "planned_look_count"
+	RentedLocationCount BusinessAdjustmentSourceFactField = "rented_location_count"
+	RetouchedPhotoCount BusinessAdjustmentSourceFactField = "retouched_photo_count"
+)
+
+// Valid indicates whether the value is a known member of the BusinessAdjustmentSourceFactField enum.
+func (e BusinessAdjustmentSourceFactField) Valid() bool {
+	switch e {
+	case AssistantCount:
+		return true
+	case CurrentShotCount:
+		return true
+	case PlannedLookCount:
+		return true
+	case RentedLocationCount:
+		return true
+	case RetouchedPhotoCount:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BusinessAdjustmentSourceFactOwner.
+const (
+	BusinessAdjustmentSourceFactOwnerCurrentShotAggregate  BusinessAdjustmentSourceFactOwner = "current_shot_aggregate"
+	BusinessAdjustmentSourceFactOwnerPlanningBusinessFacts BusinessAdjustmentSourceFactOwner = "planning_business_facts"
+	BusinessAdjustmentSourceFactOwnerPublicPlanScale       BusinessAdjustmentSourceFactOwner = "public_plan_scale"
+)
+
+// Valid indicates whether the value is a known member of the BusinessAdjustmentSourceFactOwner enum.
+func (e BusinessAdjustmentSourceFactOwner) Valid() bool {
+	switch e {
+	case BusinessAdjustmentSourceFactOwnerCurrentShotAggregate:
+		return true
+	case BusinessAdjustmentSourceFactOwnerPlanningBusinessFacts:
+		return true
+	case BusinessAdjustmentSourceFactOwnerPublicPlanScale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BusinessDraftAcknowledgementVersion.
+const (
+	OrderAdjustmentV1  BusinessDraftAcknowledgementVersion = "order-adjustment-v1"
+	ScheduleDurationV1 BusinessDraftAcknowledgementVersion = "schedule-duration-v1"
+)
+
+// Valid indicates whether the value is a known member of the BusinessDraftAcknowledgementVersion enum.
+func (e BusinessDraftAcknowledgementVersion) Valid() bool {
+	switch e {
+	case OrderAdjustmentV1:
+		return true
+	case ScheduleDurationV1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BusinessDraftDecisionInputDecision.
+const (
+	ApplyOrderAdjustment  BusinessDraftDecisionInputDecision = "apply_order_adjustment"
+	ApplyScheduleDuration BusinessDraftDecisionInputDecision = "apply_schedule_duration"
+	Dismiss               BusinessDraftDecisionInputDecision = "dismiss"
+)
+
+// Valid indicates whether the value is a known member of the BusinessDraftDecisionInputDecision enum.
+func (e BusinessDraftDecisionInputDecision) Valid() bool {
+	switch e {
+	case ApplyOrderAdjustment:
+		return true
+	case ApplyScheduleDuration:
+		return true
+	case Dismiss:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BusinessDraftDecisionResultKind.
+const (
+	BusinessDraftDecisionResultKindOrderAdjustment  BusinessDraftDecisionResultKind = "order_adjustment"
+	BusinessDraftDecisionResultKindScheduleDuration BusinessDraftDecisionResultKind = "schedule_duration"
+)
+
+// Valid indicates whether the value is a known member of the BusinessDraftDecisionResultKind enum.
+func (e BusinessDraftDecisionResultKind) Valid() bool {
+	switch e {
+	case BusinessDraftDecisionResultKindOrderAdjustment:
+		return true
+	case BusinessDraftDecisionResultKindScheduleDuration:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BusinessDraftDecisionResultStatus.
+const (
+	BusinessDraftDecisionResultStatusApplied   BusinessDraftDecisionResultStatus = "applied"
+	BusinessDraftDecisionResultStatusDismissed BusinessDraftDecisionResultStatus = "dismissed"
+)
+
+// Valid indicates whether the value is a known member of the BusinessDraftDecisionResultStatus enum.
+func (e BusinessDraftDecisionResultStatus) Valid() bool {
+	switch e {
+	case BusinessDraftDecisionResultStatusApplied:
+		return true
+	case BusinessDraftDecisionResultStatusDismissed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ClearExecutionWindowPlanCommandOperation.
 const (
 	ClearExecutionWindow ClearExecutionWindowPlanCommandOperation = "clear_execution_window"
@@ -457,6 +607,54 @@ func (e FeedbackTargetV11Kind) Valid() bool {
 	}
 }
 
+// Defines values for GenerateBusinessDraftsInputDraftKinds.
+const (
+	GenerateBusinessDraftsInputDraftKindsOrderAdjustment  GenerateBusinessDraftsInputDraftKinds = "order_adjustment"
+	GenerateBusinessDraftsInputDraftKindsScheduleDuration GenerateBusinessDraftsInputDraftKinds = "schedule_duration"
+)
+
+// Valid indicates whether the value is a known member of the GenerateBusinessDraftsInputDraftKinds enum.
+func (e GenerateBusinessDraftsInputDraftKinds) Valid() bool {
+	switch e {
+	case GenerateBusinessDraftsInputDraftKindsOrderAdjustment:
+		return true
+	case GenerateBusinessDraftsInputDraftKindsScheduleDuration:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeneratedOrderBusinessDraftItemState.
+const (
+	GeneratedOrderBusinessDraftItemStateGenerated GeneratedOrderBusinessDraftItemState = "generated"
+)
+
+// Valid indicates whether the value is a known member of the GeneratedOrderBusinessDraftItemState enum.
+func (e GeneratedOrderBusinessDraftItemState) Valid() bool {
+	switch e {
+	case GeneratedOrderBusinessDraftItemStateGenerated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GeneratedScheduleBusinessDraftItemState.
+const (
+	GeneratedScheduleBusinessDraftItemStateGenerated GeneratedScheduleBusinessDraftItemState = "generated"
+)
+
+// Valid indicates whether the value is a known member of the GeneratedScheduleBusinessDraftItemState enum.
+func (e GeneratedScheduleBusinessDraftItemState) Valid() bool {
+	switch e {
+	case GeneratedScheduleBusinessDraftItemStateGenerated:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LatestShareGenerationProjectionV1EffectiveState.
 const (
 	LatestShareGenerationProjectionV1EffectiveStateActive                 LatestShareGenerationProjectionV1EffectiveState = "active"
@@ -592,6 +790,108 @@ func (e OnSiteOfferProjectionV1State) Valid() bool {
 	case OnSiteOfferProjectionV1StateClosed:
 		return true
 	case OnSiteOfferProjectionV1StateOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderAdjustmentDraftViewCalculationMode.
+const (
+	AbsoluteTarget OrderAdjustmentDraftViewCalculationMode = "absolute_target"
+	DeltaFromBase  OrderAdjustmentDraftViewCalculationMode = "delta_from_base"
+)
+
+// Valid indicates whether the value is a known member of the OrderAdjustmentDraftViewCalculationMode enum.
+func (e OrderAdjustmentDraftViewCalculationMode) Valid() bool {
+	switch e {
+	case AbsoluteTarget:
+		return true
+	case DeltaFromBase:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderAdjustmentDraftViewKind.
+const (
+	OrderAdjustmentDraftViewKindOrderAdjustment OrderAdjustmentDraftViewKind = "order_adjustment"
+)
+
+// Valid indicates whether the value is a known member of the OrderAdjustmentDraftViewKind enum.
+func (e OrderAdjustmentDraftViewKind) Valid() bool {
+	switch e {
+	case OrderAdjustmentDraftViewKindOrderAdjustment:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderAdjustmentDraftViewStatus.
+const (
+	OrderAdjustmentDraftViewStatusApplied   OrderAdjustmentDraftViewStatus = "applied"
+	OrderAdjustmentDraftViewStatusDismissed OrderAdjustmentDraftViewStatus = "dismissed"
+	OrderAdjustmentDraftViewStatusFresh     OrderAdjustmentDraftViewStatus = "fresh"
+	OrderAdjustmentDraftViewStatusStale     OrderAdjustmentDraftViewStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the OrderAdjustmentDraftViewStatus enum.
+func (e OrderAdjustmentDraftViewStatus) Valid() bool {
+	switch e {
+	case OrderAdjustmentDraftViewStatusApplied:
+		return true
+	case OrderAdjustmentDraftViewStatusDismissed:
+		return true
+	case OrderAdjustmentDraftViewStatusFresh:
+		return true
+	case OrderAdjustmentDraftViewStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderAdjustmentDraftViewWarnings.
+const (
+	OrderAdjustmentDraftViewWarningsNoMaterialChange               OrderAdjustmentDraftViewWarnings = "no_material_change"
+	OrderAdjustmentDraftViewWarningsUnknownAdjustmentLinesExcluded OrderAdjustmentDraftViewWarnings = "unknown_adjustment_lines_excluded"
+	OrderAdjustmentDraftViewWarningsUnknownRate                    OrderAdjustmentDraftViewWarnings = "unknown_rate"
+	OrderAdjustmentDraftViewWarningsUnknownSourceFact              OrderAdjustmentDraftViewWarnings = "unknown_source_fact"
+)
+
+// Valid indicates whether the value is a known member of the OrderAdjustmentDraftViewWarnings enum.
+func (e OrderAdjustmentDraftViewWarnings) Valid() bool {
+	switch e {
+	case OrderAdjustmentDraftViewWarningsNoMaterialChange:
+		return true
+	case OrderAdjustmentDraftViewWarningsUnknownAdjustmentLinesExcluded:
+		return true
+	case OrderAdjustmentDraftViewWarningsUnknownRate:
+		return true
+	case OrderAdjustmentDraftViewWarningsUnknownSourceFact:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OrderBusinessDraftUnavailableReason.
+const (
+	OrderBusinessDraftUnavailableReasonBusinessCalculationOverflow OrderBusinessDraftUnavailableReason = "business_calculation_overflow"
+	OrderBusinessDraftUnavailableReasonOrderCancelled              OrderBusinessDraftUnavailableReason = "order_cancelled"
+	OrderBusinessDraftUnavailableReasonOrderRequired               OrderBusinessDraftUnavailableReason = "order_required"
+)
+
+// Valid indicates whether the value is a known member of the OrderBusinessDraftUnavailableReason enum.
+func (e OrderBusinessDraftUnavailableReason) Valid() bool {
+	switch e {
+	case OrderBusinessDraftUnavailableReasonBusinessCalculationOverflow:
+		return true
+	case OrderBusinessDraftUnavailableReasonOrderCancelled:
+		return true
+	case OrderBusinessDraftUnavailableReasonOrderRequired:
 		return true
 	default:
 		return false
@@ -889,6 +1189,132 @@ const (
 func (e ReorderShotsPlanCommandOperation) Valid() bool {
 	switch e {
 	case ReorderShots:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleBusinessDraftUnavailableReason.
+const (
+	ScheduleBusinessDraftUnavailableReasonDurationNotPositive     ScheduleBusinessDraftUnavailableReason = "duration_not_positive"
+	ScheduleBusinessDraftUnavailableReasonDurationOutOfRange      ScheduleBusinessDraftUnavailableReason = "duration_out_of_range"
+	ScheduleBusinessDraftUnavailableReasonDurationUnknown         ScheduleBusinessDraftUnavailableReason = "duration_unknown"
+	ScheduleBusinessDraftUnavailableReasonOrderRequired           ScheduleBusinessDraftUnavailableReason = "order_required"
+	ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture   ScheduleBusinessDraftUnavailableReason = "schedule_slot_not_future"
+	ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible ScheduleBusinessDraftUnavailableReason = "schedule_stage_ineligible"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleBusinessDraftUnavailableReason enum.
+func (e ScheduleBusinessDraftUnavailableReason) Valid() bool {
+	switch e {
+	case ScheduleBusinessDraftUnavailableReasonDurationNotPositive:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonDurationOutOfRange:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonDurationUnknown:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonOrderRequired:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture:
+		return true
+	case ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleDurationDraftViewKind.
+const (
+	ScheduleDuration ScheduleDurationDraftViewKind = "schedule_duration"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleDurationDraftViewKind enum.
+func (e ScheduleDurationDraftViewKind) Valid() bool {
+	switch e {
+	case ScheduleDuration:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleDurationDraftViewStatus.
+const (
+	ScheduleDurationDraftViewStatusApplied   ScheduleDurationDraftViewStatus = "applied"
+	ScheduleDurationDraftViewStatusDismissed ScheduleDurationDraftViewStatus = "dismissed"
+	ScheduleDurationDraftViewStatusFresh     ScheduleDurationDraftViewStatus = "fresh"
+	ScheduleDurationDraftViewStatusStale     ScheduleDurationDraftViewStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleDurationDraftViewStatus enum.
+func (e ScheduleDurationDraftViewStatus) Valid() bool {
+	switch e {
+	case ScheduleDurationDraftViewStatusApplied:
+		return true
+	case ScheduleDurationDraftViewStatusDismissed:
+		return true
+	case ScheduleDurationDraftViewStatusFresh:
+		return true
+	case ScheduleDurationDraftViewStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleDurationDraftViewTargetMode.
+const (
+	CreateNew      ScheduleDurationDraftViewTargetMode = "create_new"
+	UpdateExisting ScheduleDurationDraftViewTargetMode = "update_existing"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleDurationDraftViewTargetMode enum.
+func (e ScheduleDurationDraftViewTargetMode) Valid() bool {
+	switch e {
+	case CreateNew:
+		return true
+	case UpdateExisting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScheduleDurationDraftViewWarnings.
+const (
+	ScheduleDurationDraftViewWarningsNoMaterialChange               ScheduleDurationDraftViewWarnings = "no_material_change"
+	ScheduleDurationDraftViewWarningsUnknownAdjustmentLinesExcluded ScheduleDurationDraftViewWarnings = "unknown_adjustment_lines_excluded"
+	ScheduleDurationDraftViewWarningsUnknownRate                    ScheduleDurationDraftViewWarnings = "unknown_rate"
+	ScheduleDurationDraftViewWarningsUnknownSourceFact              ScheduleDurationDraftViewWarnings = "unknown_source_fact"
+)
+
+// Valid indicates whether the value is a known member of the ScheduleDurationDraftViewWarnings enum.
+func (e ScheduleDurationDraftViewWarnings) Valid() bool {
+	switch e {
+	case ScheduleDurationDraftViewWarningsNoMaterialChange:
+		return true
+	case ScheduleDurationDraftViewWarningsUnknownAdjustmentLinesExcluded:
+		return true
+	case ScheduleDurationDraftViewWarningsUnknownRate:
+		return true
+	case ScheduleDurationDraftViewWarningsUnknownSourceFact:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SetBusinessFactsPlanCommandOperation.
+const (
+	SetBusinessFacts SetBusinessFactsPlanCommandOperation = "set_business_facts"
+)
+
+// Valid indicates whether the value is a known member of the SetBusinessFactsPlanCommandOperation enum.
+func (e SetBusinessFactsPlanCommandOperation) Valid() bool {
+	switch e {
+	case SetBusinessFacts:
 		return true
 	default:
 		return false
@@ -1666,6 +2092,90 @@ func (e ShotWriteShotTypeTag) Valid() bool {
 	}
 }
 
+// Defines values for StaleBusinessDraftDetailsKind.
+const (
+	StaleBusinessDraftDetailsKindOrderAdjustment  StaleBusinessDraftDetailsKind = "order_adjustment"
+	StaleBusinessDraftDetailsKindScheduleDuration StaleBusinessDraftDetailsKind = "schedule_duration"
+)
+
+// Valid indicates whether the value is a known member of the StaleBusinessDraftDetailsKind enum.
+func (e StaleBusinessDraftDetailsKind) Valid() bool {
+	switch e {
+	case StaleBusinessDraftDetailsKindOrderAdjustment:
+		return true
+	case StaleBusinessDraftDetailsKindScheduleDuration:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StaleBusinessDraftDetailsStaleReason.
+const (
+	BusinessFactsRevisionChanged StaleBusinessDraftDetailsStaleReason = "business_facts_revision_changed"
+	CrmConnectionChanged         StaleBusinessDraftDetailsStaleReason = "crm_connection_changed"
+	CrmProjectionChanged         StaleBusinessDraftDetailsStaleReason = "crm_projection_changed"
+	Expired                      StaleBusinessDraftDetailsStaleReason = "expired"
+	OrderStageIneligible         StaleBusinessDraftDetailsStaleReason = "order_stage_ineligible"
+	OrderTargetChanged           StaleBusinessDraftDetailsStaleReason = "order_target_changed"
+	OrderTargetMissing           StaleBusinessDraftDetailsStaleReason = "order_target_missing"
+	PlanRevisionChanged          StaleBusinessDraftDetailsStaleReason = "plan_revision_changed"
+	RuleVersionChanged           StaleBusinessDraftDetailsStaleReason = "rule_version_changed"
+	ScheduleStageIneligible      StaleBusinessDraftDetailsStaleReason = "schedule_stage_ineligible"
+	SlotTargetChanged            StaleBusinessDraftDetailsStaleReason = "slot_target_changed"
+	SlotTargetMissing            StaleBusinessDraftDetailsStaleReason = "slot_target_missing"
+	Superseded                   StaleBusinessDraftDetailsStaleReason = "superseded"
+)
+
+// Valid indicates whether the value is a known member of the StaleBusinessDraftDetailsStaleReason enum.
+func (e StaleBusinessDraftDetailsStaleReason) Valid() bool {
+	switch e {
+	case BusinessFactsRevisionChanged:
+		return true
+	case CrmConnectionChanged:
+		return true
+	case CrmProjectionChanged:
+		return true
+	case Expired:
+		return true
+	case OrderStageIneligible:
+		return true
+	case OrderTargetChanged:
+		return true
+	case OrderTargetMissing:
+		return true
+	case PlanRevisionChanged:
+		return true
+	case RuleVersionChanged:
+		return true
+	case ScheduleStageIneligible:
+		return true
+	case SlotTargetChanged:
+		return true
+	case SlotTargetMissing:
+		return true
+	case Superseded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StaleBusinessDraftDetailsStatus.
+const (
+	StaleBusinessDraftDetailsStatusStale StaleBusinessDraftDetailsStatus = "stale"
+)
+
+// Valid indicates whether the value is a known member of the StaleBusinessDraftDetailsStatus enum.
+func (e StaleBusinessDraftDetailsStatus) Valid() bool {
+	switch e {
+	case StaleBusinessDraftDetailsStatusStale:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StartPlanTransitionTransition.
 const (
 	Start StartPlanTransitionTransition = "start"
@@ -1675,6 +2185,36 @@ const (
 func (e StartPlanTransitionTransition) Valid() bool {
 	switch e {
 	case Start:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UnavailableOrderBusinessDraftItemState.
+const (
+	UnavailableOrderBusinessDraftItemStateUnavailable UnavailableOrderBusinessDraftItemState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the UnavailableOrderBusinessDraftItemState enum.
+func (e UnavailableOrderBusinessDraftItemState) Valid() bool {
+	switch e {
+	case UnavailableOrderBusinessDraftItemStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for UnavailableScheduleBusinessDraftItemState.
+const (
+	UnavailableScheduleBusinessDraftItemStateUnavailable UnavailableScheduleBusinessDraftItemState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the UnavailableScheduleBusinessDraftItemState enum.
+func (e UnavailableScheduleBusinessDraftItemState) Valid() bool {
+	switch e {
+	case UnavailableScheduleBusinessDraftItemStateUnavailable:
 		return true
 	default:
 		return false
@@ -1929,6 +2469,91 @@ type AssignmentTargetV1 struct {
 // AssignmentTargetV1Kind defines model for AssignmentTargetV1.Kind.
 type AssignmentTargetV1Kind string
 
+// BusinessAdjustmentLine defines model for BusinessAdjustmentLine.
+type BusinessAdjustmentLine struct {
+	Amount     nullable.Nullable[int]       `json:"amount"`
+	Kind       BusinessAdjustmentLineKind   `json:"kind"`
+	Label      string                       `json:"label"`
+	Quantity   nullable.Nullable[int]       `json:"quantity"`
+	SourceFact BusinessAdjustmentSourceFact `json:"source_fact"`
+	UnitAmount nullable.Nullable[int]       `json:"unit_amount"`
+}
+
+// BusinessAdjustmentLineKind defines model for BusinessAdjustmentLine.Kind.
+type BusinessAdjustmentLineKind string
+
+// BusinessAdjustmentSourceFact defines model for BusinessAdjustmentSourceFact.
+type BusinessAdjustmentSourceFact struct {
+	Field         BusinessAdjustmentSourceFactField `json:"field"`
+	ObservedValue nullable.Nullable[int]            `json:"observed_value"`
+	Owner         BusinessAdjustmentSourceFactOwner `json:"owner"`
+	RuleKey       string                            `json:"rule_key"`
+}
+
+// BusinessAdjustmentSourceFactField defines model for BusinessAdjustmentSourceFact.Field.
+type BusinessAdjustmentSourceFactField string
+
+// BusinessAdjustmentSourceFactOwner defines model for BusinessAdjustmentSourceFact.Owner.
+type BusinessAdjustmentSourceFactOwner string
+
+// BusinessDraftAcknowledgement defines model for BusinessDraftAcknowledgement.
+type BusinessDraftAcknowledgement struct {
+	Effects []string                            `json:"effects"`
+	Version BusinessDraftAcknowledgementVersion `json:"version"`
+}
+
+// BusinessDraftAcknowledgementVersion defines model for BusinessDraftAcknowledgement.Version.
+type BusinessDraftAcknowledgementVersion string
+
+// BusinessDraftDecisionInput defines model for BusinessDraftDecisionInput.
+type BusinessDraftDecisionInput struct {
+	Acknowledgement       *BusinessDraftAcknowledgement      `json:"acknowledgement,omitempty"`
+	Decision              BusinessDraftDecisionInputDecision `json:"decision"`
+	ExpectedDraftRevision int64                              `json:"expected_draft_revision"`
+}
+
+// BusinessDraftDecisionInputDecision defines model for BusinessDraftDecisionInput.Decision.
+type BusinessDraftDecisionInputDecision string
+
+// BusinessDraftDecisionResult defines model for BusinessDraftDecisionResult.
+type BusinessDraftDecisionResult struct {
+	AppliedTarget *struct {
+		AdjustmentId *string                      `json:"adjustment_id,omitempty"`
+		AfterEndAt   nullable.Nullable[time.Time] `json:"after_end_at,omitempty"`
+		AfterPrice   nullable.Nullable[int]       `json:"after_price,omitempty"`
+		BeforeEndAt  nullable.Nullable[time.Time] `json:"before_end_at,omitempty"`
+		BeforePrice  nullable.Nullable[int]       `json:"before_price,omitempty"`
+		TargetId     *string                      `json:"target_id,omitempty"`
+	} `json:"applied_target,omitempty"`
+	DraftId  string                            `json:"draft_id"`
+	Kind     BusinessDraftDecisionResultKind   `json:"kind"`
+	Revision int64                             `json:"revision"`
+	Status   BusinessDraftDecisionResultStatus `json:"status"`
+}
+
+// BusinessDraftDecisionResultKind defines model for BusinessDraftDecisionResult.Kind.
+type BusinessDraftDecisionResultKind string
+
+// BusinessDraftDecisionResultStatus defines model for BusinessDraftDecisionResult.Status.
+type BusinessDraftDecisionResultStatus string
+
+// BusinessDraftGenerationResult defines model for BusinessDraftGenerationResult.
+type BusinessDraftGenerationResult struct {
+	BusinessFactsRevision int64                                `json:"business_facts_revision"`
+	GenerationId          string                               `json:"generation_id"`
+	OrderAdjustment       *OrderBusinessDraftGenerationItem    `json:"order_adjustment,omitempty"`
+	PlanId                string                               `json:"plan_id"`
+	PlanRevision          int64                                `json:"plan_revision"`
+	RuleVersion           string                               `json:"rule_version"`
+	ScheduleDuration      *ScheduleBusinessDraftGenerationItem `json:"schedule_duration,omitempty"`
+}
+
+// BusinessDraftUnavailableDetails defines model for BusinessDraftUnavailableDetails.
+type BusinessDraftUnavailableDetails struct {
+	OrderAdjustment  *UnavailableOrderBusinessDraftItem    `json:"order_adjustment,omitempty"`
+	ScheduleDuration *UnavailableScheduleBusinessDraftItem `json:"schedule_duration,omitempty"`
+}
+
 // ClearExecutionWindowPlanCommand defines model for ClearExecutionWindowPlanCommand.
 type ClearExecutionWindowPlanCommand struct {
 	ExpectedRevision int64                                    `json:"expected_revision"`
@@ -2000,6 +2625,13 @@ type DefaultQuoteV1 struct {
 
 // DefaultQuoteV1PolicyVersion defines model for DefaultQuoteV1.PolicyVersion.
 type DefaultQuoteV1PolicyVersion string
+
+// EffectivePlanningBusinessRules defines model for EffectivePlanningBusinessRules.
+type EffectivePlanningBusinessRules struct {
+	Overrides   PlanningBusinessRuleOverrides `json:"overrides"`
+	RuleVersion string                        `json:"rule_version"`
+	UnknownKeys []string                      `json:"unknown_keys"`
+}
 
 // EmptyTransitionPayload defines model for EmptyTransitionPayload.
 type EmptyTransitionPayload = map[string]interface{}
@@ -2144,6 +2776,35 @@ type FeedbackTargetV11 struct {
 // FeedbackTargetV11Kind defines model for FeedbackTargetV1.1.Kind.
 type FeedbackTargetV11Kind string
 
+// GenerateBusinessDraftsInput defines model for GenerateBusinessDraftsInput.
+type GenerateBusinessDraftsInput struct {
+	AbsoluteTargetPrice           nullable.Nullable[int]                  `json:"absolute_target_price,omitempty"`
+	DraftKinds                    []GenerateBusinessDraftsInputDraftKinds `json:"draft_kinds"`
+	ExpectedBusinessFactsRevision int64                                   `json:"expected_business_facts_revision"`
+	ExpectedPlanRevision          int64                                   `json:"expected_plan_revision"`
+}
+
+// GenerateBusinessDraftsInputDraftKinds defines model for GenerateBusinessDraftsInput.DraftKinds.
+type GenerateBusinessDraftsInputDraftKinds string
+
+// GeneratedOrderBusinessDraftItem defines model for GeneratedOrderBusinessDraftItem.
+type GeneratedOrderBusinessDraftItem struct {
+	OrderDraft OrderAdjustmentDraftView             `json:"order_draft"`
+	State      GeneratedOrderBusinessDraftItemState `json:"state"`
+}
+
+// GeneratedOrderBusinessDraftItemState defines model for GeneratedOrderBusinessDraftItem.State.
+type GeneratedOrderBusinessDraftItemState string
+
+// GeneratedScheduleBusinessDraftItem defines model for GeneratedScheduleBusinessDraftItem.
+type GeneratedScheduleBusinessDraftItem struct {
+	ScheduleDraft ScheduleDurationDraftView               `json:"schedule_draft"`
+	State         GeneratedScheduleBusinessDraftItemState `json:"state"`
+}
+
+// GeneratedScheduleBusinessDraftItemState defines model for GeneratedScheduleBusinessDraftItem.State.
+type GeneratedScheduleBusinessDraftItemState string
+
 // LatestShareGenerationProjectionV1 defines model for LatestShareGenerationProjectionV1.
 type LatestShareGenerationProjectionV1 struct {
 	EffectiveState LatestShareGenerationProjectionV1EffectiveState `json:"effective_state"`
@@ -2247,6 +2908,46 @@ type OpenRunSessionResult struct {
 	Session      RunModeSession   `json:"session"`
 }
 
+// OrderAdjustmentDraftView defines model for OrderAdjustmentDraftView.
+type OrderAdjustmentDraftView struct {
+	AbsoluteTargetPrice     nullable.Nullable[int]                          `json:"absolute_target_price"`
+	BasePrice               nullable.Nullable[int]                          `json:"base_price"`
+	CalculationMode         OrderAdjustmentDraftViewCalculationMode         `json:"calculation_mode"`
+	CreatedAt               time.Time                                       `json:"created_at"`
+	ExpiresAt               time.Time                                       `json:"expires_at"`
+	GenerationId            string                                          `json:"generation_id"`
+	Id                      string                                          `json:"id"`
+	Kind                    OrderAdjustmentDraftViewKind                    `json:"kind"`
+	Lines                   []BusinessAdjustmentLine                        `json:"lines"`
+	ProposedTotal           nullable.Nullable[int]                          `json:"proposed_total"`
+	RequiredAcknowledgement nullable.Nullable[BusinessDraftAcknowledgement] `json:"required_acknowledgement"`
+	Revision                int64                                           `json:"revision"`
+	RuleVersion             string                                          `json:"rule_version"`
+	StaleReason             *string                                         `json:"stale_reason,omitempty"`
+	Status                  OrderAdjustmentDraftViewStatus                  `json:"status"`
+	Warnings                []OrderAdjustmentDraftViewWarnings              `json:"warnings"`
+}
+
+// OrderAdjustmentDraftViewCalculationMode defines model for OrderAdjustmentDraftView.CalculationMode.
+type OrderAdjustmentDraftViewCalculationMode string
+
+// OrderAdjustmentDraftViewKind defines model for OrderAdjustmentDraftView.Kind.
+type OrderAdjustmentDraftViewKind string
+
+// OrderAdjustmentDraftViewStatus defines model for OrderAdjustmentDraftView.Status.
+type OrderAdjustmentDraftViewStatus string
+
+// OrderAdjustmentDraftViewWarnings defines model for OrderAdjustmentDraftView.Warnings.
+type OrderAdjustmentDraftViewWarnings string
+
+// OrderBusinessDraftGenerationItem defines model for OrderBusinessDraftGenerationItem.
+type OrderBusinessDraftGenerationItem struct {
+	union json.RawMessage
+}
+
+// OrderBusinessDraftUnavailableReason defines model for OrderBusinessDraftUnavailableReason.
+type OrderBusinessDraftUnavailableReason string
+
 // PlanAssetAccessRef defines model for PlanAssetAccessRef.
 type PlanAssetAccessRef struct {
 	AssetId         string `json:"asset_id"`
@@ -2325,6 +3026,51 @@ type PlanTransitionResult struct {
 	PlanId               string                   `json:"plan_id"`
 	Revision             int64                    `json:"revision"`
 	Status               ShootPlanStatus          `json:"status"`
+}
+
+// PlanningBusinessDetail defines model for PlanningBusinessDetail.
+type PlanningBusinessDetail struct {
+	EffectiveRules   EffectivePlanningBusinessRules               `json:"effective_rules"`
+	Facts            PlanningBusinessFacts                        `json:"facts"`
+	OrderAdjustment  nullable.Nullable[OrderAdjustmentDraftView]  `json:"order_adjustment"`
+	PublicInputs     PlanningBusinessPublicInputs                 `json:"public_inputs"`
+	ScheduleDuration nullable.Nullable[ScheduleDurationDraftView] `json:"schedule_duration"`
+}
+
+// PlanningBusinessFacts defines model for PlanningBusinessFacts.
+type PlanningBusinessFacts struct {
+	AssistantCount           nullable.Nullable[int]       `json:"assistant_count"`
+	EstimatedDurationMinutes nullable.Nullable[int]       `json:"estimated_duration_minutes"`
+	RentedLocationCount      nullable.Nullable[int]       `json:"rented_location_count"`
+	RetouchedPhotoCount      nullable.Nullable[int]       `json:"retouched_photo_count"`
+	Revision                 int64                        `json:"revision"`
+	UpdatedAt                nullable.Nullable[time.Time] `json:"updated_at"`
+}
+
+// PlanningBusinessFactsInput defines model for PlanningBusinessFactsInput.
+type PlanningBusinessFactsInput struct {
+	AssistantCount           nullable.Nullable[int] `json:"assistant_count"`
+	EstimatedDurationMinutes nullable.Nullable[int] `json:"estimated_duration_minutes"`
+	RentedLocationCount      nullable.Nullable[int] `json:"rented_location_count"`
+	RetouchedPhotoCount      nullable.Nullable[int] `json:"retouched_photo_count"`
+}
+
+// PlanningBusinessPublicInputs defines model for PlanningBusinessPublicInputs.
+type PlanningBusinessPublicInputs struct {
+	CurrentShotCount int                    `json:"current_shot_count"`
+	PlannedLookCount nullable.Nullable[int] `json:"planned_look_count"`
+}
+
+// PlanningBusinessRuleOverrides defines model for PlanningBusinessRuleOverrides.
+type PlanningBusinessRuleOverrides struct {
+	AssistantUnitAmount         nullable.Nullable[int] `json:"assistant_unit_amount,omitempty"`
+	ExtraLookUnitAmount         nullable.Nullable[int] `json:"extra_look_unit_amount,omitempty"`
+	ExtraRetouchUnitAmount      nullable.Nullable[int] `json:"extra_retouch_unit_amount,omitempty"`
+	ExtraShotUnitAmount         nullable.Nullable[int] `json:"extra_shot_unit_amount,omitempty"`
+	IncludedLookCount           nullable.Nullable[int] `json:"included_look_count,omitempty"`
+	IncludedRetouchedPhotoCount nullable.Nullable[int] `json:"included_retouched_photo_count,omitempty"`
+	IncludedShotCount           nullable.Nullable[int] `json:"included_shot_count,omitempty"`
+	RentedLocationUnitAmount    nullable.Nullable[int] `json:"rented_location_unit_amount,omitempty"`
 }
 
 // PlanningShareArchiveAcknowledgement defines model for PlanningShareArchiveAcknowledgement.
@@ -2441,11 +3187,62 @@ type RunModeSession struct {
 	PlanId                  string                       `json:"plan_id"`
 }
 
+// ScheduleBusinessDraftGenerationItem defines model for ScheduleBusinessDraftGenerationItem.
+type ScheduleBusinessDraftGenerationItem struct {
+	union json.RawMessage
+}
+
+// ScheduleBusinessDraftUnavailableReason defines model for ScheduleBusinessDraftUnavailableReason.
+type ScheduleBusinessDraftUnavailableReason string
+
 // ScheduleConflictDetails order_in_use / order_already_scheduled 的可行动上下文；出现时两个字段必返
 type ScheduleConflictDetails struct {
 	ScheduleSlotId  string    `json:"schedule_slot_id"`
 	ScheduleStartAt time.Time `json:"schedule_start_at"`
 }
+
+// ScheduleDurationDraftView defines model for ScheduleDurationDraftView.
+type ScheduleDurationDraftView struct {
+	BasisMinutes            int                                             `json:"basis_minutes"`
+	CreatedAt               time.Time                                       `json:"created_at"`
+	ExpiresAt               time.Time                                       `json:"expires_at"`
+	GenerationId            string                                          `json:"generation_id"`
+	Id                      string                                          `json:"id"`
+	Kind                    ScheduleDurationDraftViewKind                   `json:"kind"`
+	OriginalEndAt           nullable.Nullable[time.Time]                    `json:"original_end_at"`
+	OriginalStartAt         nullable.Nullable[time.Time]                    `json:"original_start_at"`
+	ProposedEndAt           nullable.Nullable[time.Time]                    `json:"proposed_end_at"`
+	RequiredAcknowledgement nullable.Nullable[BusinessDraftAcknowledgement] `json:"required_acknowledgement"`
+	Revision                int64                                           `json:"revision"`
+	RuleVersion             string                                          `json:"rule_version"`
+	StaleReason             *string                                         `json:"stale_reason,omitempty"`
+	Status                  ScheduleDurationDraftViewStatus                 `json:"status"`
+	TargetMode              ScheduleDurationDraftViewTargetMode             `json:"target_mode"`
+	Warnings                []ScheduleDurationDraftViewWarnings             `json:"warnings"`
+}
+
+// ScheduleDurationDraftViewKind defines model for ScheduleDurationDraftView.Kind.
+type ScheduleDurationDraftViewKind string
+
+// ScheduleDurationDraftViewStatus defines model for ScheduleDurationDraftView.Status.
+type ScheduleDurationDraftViewStatus string
+
+// ScheduleDurationDraftViewTargetMode defines model for ScheduleDurationDraftView.TargetMode.
+type ScheduleDurationDraftViewTargetMode string
+
+// ScheduleDurationDraftViewWarnings defines model for ScheduleDurationDraftView.Warnings.
+type ScheduleDurationDraftViewWarnings string
+
+// SetBusinessFactsPlanCommand defines model for SetBusinessFactsPlanCommand.
+type SetBusinessFactsPlanCommand struct {
+	ExpectedBusinessFactsRevision int64                                `json:"expected_business_facts_revision"`
+	ExpectedRevision              int64                                `json:"expected_revision"`
+	Facts                         PlanningBusinessFactsInput           `json:"facts"`
+	Operation                     SetBusinessFactsPlanCommandOperation `json:"operation"`
+}
+
+// SetBusinessFactsPlanCommandOperation defines model for SetBusinessFactsPlanCommand.Operation.
+type SetBusinessFactsPlanCommandOperation string
 
 // SetExecutionWindowPlanCommand defines model for SetExecutionWindowPlanCommand.
 type SetExecutionWindowPlanCommand struct {
@@ -2581,6 +3378,30 @@ type ShootPlanCRMState string
 // ShootPlanCaptureMode defines model for ShootPlanCaptureMode.
 type ShootPlanCaptureMode string
 
+// ShootPlanCoreDetail defines model for ShootPlanCoreDetail.
+type ShootPlanCoreDetail struct {
+	ArchivedAt                     nullable.Nullable[time.Time]           `json:"archived_at,omitempty"`
+	Business                       *PlanningBusinessDetail                `json:"business,omitempty"`
+	CompletedAt                    nullable.Nullable[time.Time]           `json:"completed_at,omitempty"`
+	CreatedAt                      time.Time                              `json:"created_at"`
+	CreativeBrief                  CreativeBrief                          `json:"creative_brief"`
+	Crm                            nullable.Nullable[ShootPlanCRM]        `json:"crm,omitempty"`
+	ExecutionFactRevision          int64                                  `json:"execution_fact_revision"`
+	ExecutionHistory               *[]ShotExecutionFact                   `json:"execution_history,omitempty"`
+	ExecutionWindow                nullable.Nullable[PlanExecutionWindow] `json:"execution_window,omitempty"`
+	Finalizations                  *[]PlanFinalizationSnapshot            `json:"finalizations,omitempty"`
+	Id                             string                                 `json:"id"`
+	PublicScale                    PublicPlanScale                        `json:"public_scale"`
+	ReadinessItems                 []ShootPlanReadinessItem               `json:"readiness_items"`
+	RequiredArchiveAcknowledgement ArchiveAcknowledgement                 `json:"required_archive_acknowledgement"`
+	Revision                       int64                                  `json:"revision"`
+	Shots                          []ShootPlanShot                        `json:"shots"`
+	Status                         ShootPlanStatus                        `json:"status"`
+	Subject                        string                                 `json:"subject"`
+	Title                          string                                 `json:"title"`
+	UpdatedAt                      time.Time                              `json:"updated_at"`
+}
+
 // ShootPlanCurrentOutcome defines model for ShootPlanCurrentOutcome.
 type ShootPlanCurrentOutcome struct {
 	CaptureMode ShootPlanCaptureMode          `json:"capture_mode"`
@@ -2596,6 +3417,7 @@ type ShootPlanCurrentOutcomeResult string
 // ShootPlanDetail defines model for ShootPlanDetail.
 type ShootPlanDetail struct {
 	ArchivedAt                     nullable.Nullable[time.Time]           `json:"archived_at,omitempty"`
+	Business                       PlanningBusinessDetail                 `json:"business"`
 	CompletedAt                    nullable.Nullable[time.Time]           `json:"completed_at,omitempty"`
 	CreatedAt                      time.Time                              `json:"created_at"`
 	CreativeBrief                  CreativeBrief                          `json:"creative_brief"`
@@ -2790,6 +3612,24 @@ type ShotWritePaletteTag string
 // ShotWriteShotTypeTag defines model for ShotWrite.ShotTypeTag.
 type ShotWriteShotTypeTag string
 
+// StaleBusinessDraftDetails defines model for StaleBusinessDraftDetails.
+type StaleBusinessDraftDetails struct {
+	DraftId     string                               `json:"draft_id"`
+	Kind        StaleBusinessDraftDetailsKind        `json:"kind"`
+	Revision    int64                                `json:"revision"`
+	StaleReason StaleBusinessDraftDetailsStaleReason `json:"stale_reason"`
+	Status      StaleBusinessDraftDetailsStatus      `json:"status"`
+}
+
+// StaleBusinessDraftDetailsKind defines model for StaleBusinessDraftDetails.Kind.
+type StaleBusinessDraftDetailsKind string
+
+// StaleBusinessDraftDetailsStaleReason defines model for StaleBusinessDraftDetails.StaleReason.
+type StaleBusinessDraftDetailsStaleReason string
+
+// StaleBusinessDraftDetailsStatus defines model for StaleBusinessDraftDetails.Status.
+type StaleBusinessDraftDetailsStatus string
+
 // StartPlanTransition defines model for StartPlanTransition.
 type StartPlanTransition struct {
 	ExpectedRevision int64                         `json:"expected_revision"`
@@ -2799,6 +3639,24 @@ type StartPlanTransition struct {
 
 // StartPlanTransitionTransition defines model for StartPlanTransition.Transition.
 type StartPlanTransitionTransition string
+
+// UnavailableOrderBusinessDraftItem defines model for UnavailableOrderBusinessDraftItem.
+type UnavailableOrderBusinessDraftItem struct {
+	Reason OrderBusinessDraftUnavailableReason    `json:"reason"`
+	State  UnavailableOrderBusinessDraftItemState `json:"state"`
+}
+
+// UnavailableOrderBusinessDraftItemState defines model for UnavailableOrderBusinessDraftItem.State.
+type UnavailableOrderBusinessDraftItemState string
+
+// UnavailableScheduleBusinessDraftItem defines model for UnavailableScheduleBusinessDraftItem.
+type UnavailableScheduleBusinessDraftItem struct {
+	Reason ScheduleBusinessDraftUnavailableReason    `json:"reason"`
+	State  UnavailableScheduleBusinessDraftItemState `json:"state"`
+}
+
+// UnavailableScheduleBusinessDraftItemState defines model for UnavailableScheduleBusinessDraftItem.State.
+type UnavailableScheduleBusinessDraftItemState string
 
 // UnlinkCustomerCrmCommand defines model for UnlinkCustomerCrmCommand.
 type UnlinkCustomerCrmCommand struct {
@@ -2962,6 +3820,18 @@ type RevokeShootPlanAssignmentParams struct {
 	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
 }
 
+// GenerateShootPlanBusinessDraftsParams defines parameters for GenerateShootPlanBusinessDrafts.
+type GenerateShootPlanBusinessDraftsParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DecideShootPlanBusinessDraftParams defines parameters for DecideShootPlanBusinessDraft.
+type DecideShootPlanBusinessDraftParams struct {
+	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
+	IdempotencyKey RequiredIdempotencyKey `json:"Idempotency-Key"`
+}
+
 // VoidShootPlanExecutionEventParams defines parameters for VoidShootPlanExecutionEvent.
 type VoidShootPlanExecutionEventParams struct {
 	// IdempotencyKey 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果
@@ -3041,6 +3911,12 @@ type CloseShootPlanAssignmentOfferJSONRequestBody = AssignmentOfferCloseInputV1
 
 // RevokeShootPlanAssignmentJSONRequestBody defines body for RevokeShootPlanAssignment for application/json ContentType.
 type RevokeShootPlanAssignmentJSONRequestBody = AssignmentPhotographerRevokeInputV1
+
+// GenerateShootPlanBusinessDraftsJSONRequestBody defines body for GenerateShootPlanBusinessDrafts for application/json ContentType.
+type GenerateShootPlanBusinessDraftsJSONRequestBody = GenerateBusinessDraftsInput
+
+// DecideShootPlanBusinessDraftJSONRequestBody defines body for DecideShootPlanBusinessDraft for application/json ContentType.
+type DecideShootPlanBusinessDraftJSONRequestBody = BusinessDraftDecisionInput
 
 // VoidShootPlanExecutionEventJSONRequestBody defines body for VoidShootPlanExecutionEvent for application/json ContentType.
 type VoidShootPlanExecutionEventJSONRequestBody = VoidExecutionEventInput
@@ -3263,6 +4139,58 @@ func (t *ErrorDetails) MergeExpiryQuoteExpiredDetails(v ExpiryQuoteExpiredDetail
 	return err
 }
 
+// AsBusinessDraftUnavailableDetails returns the union data inside the ErrorDetails as a BusinessDraftUnavailableDetails
+func (t ErrorDetails) AsBusinessDraftUnavailableDetails() (BusinessDraftUnavailableDetails, error) {
+	var body BusinessDraftUnavailableDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromBusinessDraftUnavailableDetails overwrites any union data inside the ErrorDetails as the provided BusinessDraftUnavailableDetails
+func (t *ErrorDetails) FromBusinessDraftUnavailableDetails(v BusinessDraftUnavailableDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeBusinessDraftUnavailableDetails performs a merge with any union data inside the ErrorDetails, using the provided BusinessDraftUnavailableDetails
+func (t *ErrorDetails) MergeBusinessDraftUnavailableDetails(v BusinessDraftUnavailableDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsStaleBusinessDraftDetails returns the union data inside the ErrorDetails as a StaleBusinessDraftDetails
+func (t ErrorDetails) AsStaleBusinessDraftDetails() (StaleBusinessDraftDetails, error) {
+	var body StaleBusinessDraftDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromStaleBusinessDraftDetails overwrites any union data inside the ErrorDetails as the provided StaleBusinessDraftDetails
+func (t *ErrorDetails) FromStaleBusinessDraftDetails(v StaleBusinessDraftDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeStaleBusinessDraftDetails performs a merge with any union data inside the ErrorDetails, using the provided StaleBusinessDraftDetails
+func (t *ErrorDetails) MergeStaleBusinessDraftDetails(v StaleBusinessDraftDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -3459,6 +4387,95 @@ func (t *FeedbackTargetV1) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsGeneratedOrderBusinessDraftItem returns the union data inside the OrderBusinessDraftGenerationItem as a GeneratedOrderBusinessDraftItem
+func (t OrderBusinessDraftGenerationItem) AsGeneratedOrderBusinessDraftItem() (GeneratedOrderBusinessDraftItem, error) {
+	var body GeneratedOrderBusinessDraftItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromGeneratedOrderBusinessDraftItem overwrites any union data inside the OrderBusinessDraftGenerationItem as the provided GeneratedOrderBusinessDraftItem
+func (t *OrderBusinessDraftGenerationItem) FromGeneratedOrderBusinessDraftItem(v GeneratedOrderBusinessDraftItem) error {
+	v.State = "generated"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeGeneratedOrderBusinessDraftItem performs a merge with any union data inside the OrderBusinessDraftGenerationItem, using the provided GeneratedOrderBusinessDraftItem
+func (t *OrderBusinessDraftGenerationItem) MergeGeneratedOrderBusinessDraftItem(v GeneratedOrderBusinessDraftItem) error {
+	v.State = "generated"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUnavailableOrderBusinessDraftItem returns the union data inside the OrderBusinessDraftGenerationItem as a UnavailableOrderBusinessDraftItem
+func (t OrderBusinessDraftGenerationItem) AsUnavailableOrderBusinessDraftItem() (UnavailableOrderBusinessDraftItem, error) {
+	var body UnavailableOrderBusinessDraftItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUnavailableOrderBusinessDraftItem overwrites any union data inside the OrderBusinessDraftGenerationItem as the provided UnavailableOrderBusinessDraftItem
+func (t *OrderBusinessDraftGenerationItem) FromUnavailableOrderBusinessDraftItem(v UnavailableOrderBusinessDraftItem) error {
+	v.State = "unavailable"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUnavailableOrderBusinessDraftItem performs a merge with any union data inside the OrderBusinessDraftGenerationItem, using the provided UnavailableOrderBusinessDraftItem
+func (t *OrderBusinessDraftGenerationItem) MergeUnavailableOrderBusinessDraftItem(v UnavailableOrderBusinessDraftItem) error {
+	v.State = "unavailable"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t OrderBusinessDraftGenerationItem) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"state"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t OrderBusinessDraftGenerationItem) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "generated":
+		return t.AsGeneratedOrderBusinessDraftItem()
+	case "unavailable":
+		return t.AsUnavailableOrderBusinessDraftItem()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t OrderBusinessDraftGenerationItem) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *OrderBusinessDraftGenerationItem) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsMarkReadyPlanTransition returns the union data inside the PlanTransition as a MarkReadyPlanTransition
 func (t PlanTransition) AsMarkReadyPlanTransition() (MarkReadyPlanTransition, error) {
 	var body MarkReadyPlanTransition
@@ -3634,6 +4651,95 @@ func (t PlanTransition) MarshalJSON() ([]byte, error) {
 }
 
 func (t *PlanTransition) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsGeneratedScheduleBusinessDraftItem returns the union data inside the ScheduleBusinessDraftGenerationItem as a GeneratedScheduleBusinessDraftItem
+func (t ScheduleBusinessDraftGenerationItem) AsGeneratedScheduleBusinessDraftItem() (GeneratedScheduleBusinessDraftItem, error) {
+	var body GeneratedScheduleBusinessDraftItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromGeneratedScheduleBusinessDraftItem overwrites any union data inside the ScheduleBusinessDraftGenerationItem as the provided GeneratedScheduleBusinessDraftItem
+func (t *ScheduleBusinessDraftGenerationItem) FromGeneratedScheduleBusinessDraftItem(v GeneratedScheduleBusinessDraftItem) error {
+	v.State = "generated"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeGeneratedScheduleBusinessDraftItem performs a merge with any union data inside the ScheduleBusinessDraftGenerationItem, using the provided GeneratedScheduleBusinessDraftItem
+func (t *ScheduleBusinessDraftGenerationItem) MergeGeneratedScheduleBusinessDraftItem(v GeneratedScheduleBusinessDraftItem) error {
+	v.State = "generated"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsUnavailableScheduleBusinessDraftItem returns the union data inside the ScheduleBusinessDraftGenerationItem as a UnavailableScheduleBusinessDraftItem
+func (t ScheduleBusinessDraftGenerationItem) AsUnavailableScheduleBusinessDraftItem() (UnavailableScheduleBusinessDraftItem, error) {
+	var body UnavailableScheduleBusinessDraftItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromUnavailableScheduleBusinessDraftItem overwrites any union data inside the ScheduleBusinessDraftGenerationItem as the provided UnavailableScheduleBusinessDraftItem
+func (t *ScheduleBusinessDraftGenerationItem) FromUnavailableScheduleBusinessDraftItem(v UnavailableScheduleBusinessDraftItem) error {
+	v.State = "unavailable"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeUnavailableScheduleBusinessDraftItem performs a merge with any union data inside the ScheduleBusinessDraftGenerationItem, using the provided UnavailableScheduleBusinessDraftItem
+func (t *ScheduleBusinessDraftGenerationItem) MergeUnavailableScheduleBusinessDraftItem(v UnavailableScheduleBusinessDraftItem) error {
+	v.State = "unavailable"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ScheduleBusinessDraftGenerationItem) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"state"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t ScheduleBusinessDraftGenerationItem) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "generated":
+		return t.AsGeneratedScheduleBusinessDraftItem()
+	case "unavailable":
+		return t.AsUnavailableScheduleBusinessDraftItem()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t ScheduleBusinessDraftGenerationItem) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ScheduleBusinessDraftGenerationItem) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -3974,6 +5080,34 @@ func (t *ShootPlanMutationRequest) MergeClearExecutionWindowPlanCommand(v ClearE
 	return err
 }
 
+// AsSetBusinessFactsPlanCommand returns the union data inside the ShootPlanMutationRequest as a SetBusinessFactsPlanCommand
+func (t ShootPlanMutationRequest) AsSetBusinessFactsPlanCommand() (SetBusinessFactsPlanCommand, error) {
+	var body SetBusinessFactsPlanCommand
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetBusinessFactsPlanCommand overwrites any union data inside the ShootPlanMutationRequest as the provided SetBusinessFactsPlanCommand
+func (t *ShootPlanMutationRequest) FromSetBusinessFactsPlanCommand(v SetBusinessFactsPlanCommand) error {
+	v.Operation = "set_business_facts"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSetBusinessFactsPlanCommand performs a merge with any union data inside the ShootPlanMutationRequest, using the provided SetBusinessFactsPlanCommand
+func (t *ShootPlanMutationRequest) MergeSetBusinessFactsPlanCommand(v SetBusinessFactsPlanCommand) error {
+	v.Operation = "set_business_facts"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsLinkCustomerCrmCommand returns the union data inside the ShootPlanMutationRequest as a LinkCustomerCrmCommand
 func (t ShootPlanMutationRequest) AsLinkCustomerCrmCommand() (LinkCustomerCrmCommand, error) {
 	var body LinkCustomerCrmCommand
@@ -4144,6 +5278,8 @@ func (t ShootPlanMutationRequest) ValueByDiscriminator() (interface{}, error) {
 		return t.AsRemoveShotPlanCommand()
 	case "reorder_shots":
 		return t.AsReorderShotsPlanCommand()
+	case "set_business_facts":
+		return t.AsSetBusinessFactsPlanCommand()
 	case "set_execution_window":
 		return t.AsSetExecutionWindowPlanCommand()
 	case "set_preflight":
@@ -4292,6 +5428,12 @@ type ServerInterface interface {
 	// 摄影师撤销认领
 	// (DELETE /shoot-plans/{id}/assignments/{assignmentId})
 	RevokeShootPlanAssignment(c *gin.Context, id Id, assignmentId string, params RevokeShootPlanAssignmentParams)
+	// 生成摄影师私有的订单与档期经营草稿，不修改目标对象
+	// (POST /shoot-plans/{id}/business-drafts)
+	GenerateShootPlanBusinessDrafts(c *gin.Context, id Id, params GenerateShootPlanBusinessDraftsParams)
+	// 显式应用或忽略一份经营草稿
+	// (POST /shoot-plans/{id}/business-drafts/{draftId}/apply)
+	DecideShootPlanBusinessDraft(c *gin.Context, id Id, draftId string, params DecideShootPlanBusinessDraftParams)
 	// 追加一个指向结果事实的作废事实
 	// (POST /shoot-plans/{id}/execution-events/{eventId}/void)
 	VoidShootPlanExecutionEvent(c *gin.Context, id Id, eventId string, params VoidShootPlanExecutionEventParams)
@@ -4763,6 +5905,123 @@ func (siw *ServerInterfaceWrapper) RevokeShootPlanAssignment(c *gin.Context) {
 	}
 
 	siw.Handler.RevokeShootPlanAssignment(c, id, assignmentId, params)
+}
+
+// GenerateShootPlanBusinessDrafts operation middleware
+func (siw *ServerInterfaceWrapper) GenerateShootPlanBusinessDrafts(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GenerateShootPlanBusinessDraftsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GenerateShootPlanBusinessDrafts(c, id, params)
+}
+
+// DecideShootPlanBusinessDraft operation middleware
+func (siw *ServerInterfaceWrapper) DecideShootPlanBusinessDraft(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "draftId" -------------
+	var draftId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "draftId", c.Param("draftId"), &draftId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter draftId: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DecideShootPlanBusinessDraftParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey RequiredIdempotencyKey
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DecideShootPlanBusinessDraft(c, id, draftId, params)
 }
 
 // VoidShootPlanExecutionEvent operation middleware
@@ -5369,6 +6628,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.DELETE(options.BaseURL+"/shoot-plans/:id/assignment-offers/:offerId", wrapper.CloseShootPlanAssignmentOffer)
 	router.GET(options.BaseURL+"/shoot-plans/:id/assignments", wrapper.GetShootPlanAssignments)
 	router.DELETE(options.BaseURL+"/shoot-plans/:id/assignments/:assignmentId", wrapper.RevokeShootPlanAssignment)
+	router.POST(options.BaseURL+"/shoot-plans/:id/business-drafts", wrapper.GenerateShootPlanBusinessDrafts)
+	router.POST(options.BaseURL+"/shoot-plans/:id/business-drafts/:draftId/apply", wrapper.DecideShootPlanBusinessDraft)
 	router.POST(options.BaseURL+"/shoot-plans/:id/execution-events/:eventId/void", wrapper.VoidShootPlanExecutionEvent)
 	router.GET(options.BaseURL+"/shoot-plans/:id/feedback", wrapper.GetShootPlanFeedback)
 	router.POST(options.BaseURL+"/shoot-plans/:id/feedback/:feedbackId/disposition", wrapper.SetShootPlanFeedbackDisposition)

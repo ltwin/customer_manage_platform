@@ -671,6 +671,45 @@ export interface paths {
         patch: operations["applyShootPlanCommand"];
         trace?: never;
     };
+    "/shoot-plans/{id}/business-drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 生成摄影师私有的订单与档期经营草稿，不修改目标对象 */
+        post: operations["generateShootPlanBusinessDrafts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/shoot-plans/{id}/business-drafts/{draftId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 显式应用或忽略一份经营草稿 */
+        post: operations["decideShootPlanBusinessDraft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/shared/plans/{token}": {
         parameters: {
             query?: never;
@@ -1338,7 +1377,42 @@ export interface components {
                 details?: components["schemas"]["ErrorDetails"];
             };
         };
-        ErrorDetails: components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"];
+        ErrorDetails: components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"];
+        /** @enum {string} */
+        OrderBusinessDraftUnavailableReason: "order_required" | "order_cancelled" | "business_calculation_overflow";
+        /** @enum {string} */
+        ScheduleBusinessDraftUnavailableReason: "order_required" | "duration_unknown" | "duration_not_positive" | "duration_out_of_range" | "schedule_stage_ineligible" | "schedule_slot_not_future";
+        UnavailableOrderBusinessDraftItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "unavailable";
+            reason: components["schemas"]["OrderBusinessDraftUnavailableReason"];
+        };
+        UnavailableScheduleBusinessDraftItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "unavailable";
+            reason: components["schemas"]["ScheduleBusinessDraftUnavailableReason"];
+        };
+        BusinessDraftUnavailableDetails: {
+            order_adjustment?: components["schemas"]["UnavailableOrderBusinessDraftItem"];
+            schedule_duration?: components["schemas"]["UnavailableScheduleBusinessDraftItem"];
+        };
+        StaleBusinessDraftDetails: {
+            draft_id: string;
+            /** @enum {string} */
+            kind: "order_adjustment" | "schedule_duration";
+            /** @enum {string} */
+            status: "stale";
+            /** @enum {string} */
+            stale_reason: "superseded" | "expired" | "plan_revision_changed" | "business_facts_revision_changed" | "crm_connection_changed" | "crm_projection_changed" | "rule_version_changed" | "order_target_missing" | "order_stage_ineligible" | "order_target_changed" | "slot_target_missing" | "schedule_stage_ineligible" | "slot_target_changed";
+            /** Format: int64 */
+            revision: number;
+        };
         ExpiryQuoteExpiredDetails: {
             refreshed_expiry_policy: components["schemas"]["ExpiryPolicyProjectionV1"];
         };
@@ -1699,6 +1773,9 @@ export interface components {
             digest_hour: number;
             telegram_chat_id?: string;
             availability: components["schemas"]["ScheduleAvailability"];
+            planning_business_rule_overrides: components["schemas"]["PlanningBusinessRuleOverrides"];
+            /** Format: int64 */
+            planning_business_rule_revision: number;
         };
         UpdateSettingsBody: {
             /** @description IANA 时区 */
@@ -1708,6 +1785,22 @@ export interface components {
             churn_thresholds?: components["schemas"]["ChurnThreshold"][];
             digest_hour?: number;
             availability?: components["schemas"]["ScheduleAvailability"];
+            planning_business_rules?: components["schemas"]["PlanningBusinessRulesPatch"];
+        };
+        PlanningBusinessRuleOverrides: {
+            included_look_count?: number | null;
+            extra_look_unit_amount?: number | null;
+            rented_location_unit_amount?: number | null;
+            assistant_unit_amount?: number | null;
+            included_retouched_photo_count?: number | null;
+            extra_retouch_unit_amount?: number | null;
+            included_shot_count?: number | null;
+            extra_shot_unit_amount?: number | null;
+        };
+        PlanningBusinessRulesPatch: {
+            /** Format: int64 */
+            expected_revision: number;
+            overrides: components["schemas"]["PlanningBusinessRuleOverrides"];
         };
         ExportCounts: {
             customers: number;
@@ -1901,7 +1994,7 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
-        ShootPlanDetail: {
+        ShootPlanCoreDetail: {
             id: string;
             title: string;
             subject: string;
@@ -1927,6 +2020,10 @@ export interface components {
             /** Format: date-time */
             archived_at?: string | null;
             crm?: components["schemas"]["ShootPlanCRM"] | null;
+            business?: components["schemas"]["PlanningBusinessDetail"];
+        };
+        ShootPlanDetail: components["schemas"]["ShootPlanCoreDetail"] & {
+            business: components["schemas"]["PlanningBusinessDetail"];
         };
         CreateShootPlanInput: {
             title: string;
@@ -2125,7 +2222,26 @@ export interface components {
              */
             operation: "clear_execution_window";
         };
-        PlanCommand: components["schemas"]["UpdateBriefPlanCommand"] | components["schemas"]["UpsertShotPlanCommand"] | components["schemas"]["ReorderShotsPlanCommand"] | components["schemas"]["RemoveShotPlanCommand"] | components["schemas"]["UpsertReadinessPlanCommand"] | components["schemas"]["RemoveReadinessPlanCommand"] | components["schemas"]["SetPreflightPlanCommand"] | components["schemas"]["LinkReadinessPlanCommand"] | components["schemas"]["UnlinkReadinessPlanCommand"] | components["schemas"]["SetPublicScalePlanCommand"] | components["schemas"]["SetExecutionWindowPlanCommand"] | components["schemas"]["ClearExecutionWindowPlanCommand"];
+        PlanningBusinessFactsInput: {
+            rented_location_count: number | null;
+            assistant_count: number | null;
+            retouched_photo_count: number | null;
+            estimated_duration_minutes: number | null;
+        };
+        SetBusinessFactsPlanCommand: components["schemas"]["PlanCommandBase"] & {
+            /** @enum {string} */
+            operation?: "set_business_facts";
+            /** Format: int64 */
+            expected_business_facts_revision: number;
+            facts: components["schemas"]["PlanningBusinessFactsInput"];
+        } & {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            operation: "set_business_facts";
+        };
+        PlanCommand: components["schemas"]["UpdateBriefPlanCommand"] | components["schemas"]["UpsertShotPlanCommand"] | components["schemas"]["ReorderShotsPlanCommand"] | components["schemas"]["RemoveShotPlanCommand"] | components["schemas"]["UpsertReadinessPlanCommand"] | components["schemas"]["RemoveReadinessPlanCommand"] | components["schemas"]["SetPreflightPlanCommand"] | components["schemas"]["LinkReadinessPlanCommand"] | components["schemas"]["UnlinkReadinessPlanCommand"] | components["schemas"]["SetPublicScalePlanCommand"] | components["schemas"]["SetExecutionWindowPlanCommand"] | components["schemas"]["ClearExecutionWindowPlanCommand"] | components["schemas"]["SetBusinessFactsPlanCommand"];
         LinkCustomerCrmCommand: components["schemas"]["PlanCommandBase"] & {
             /** @enum {string} */
             operation?: "link_customer";
@@ -2181,7 +2297,169 @@ export interface components {
             operation: "adopt_schedule_projection";
         };
         CrmLinkCommand: components["schemas"]["LinkCustomerCrmCommand"] | components["schemas"]["LinkOrderCrmCommand"] | components["schemas"]["UnlinkOrderCrmCommand"] | components["schemas"]["UnlinkCustomerCrmCommand"] | components["schemas"]["AdoptScheduleProjectionCrmCommand"];
-        ShootPlanMutationRequest: components["schemas"]["UpdateBriefPlanCommand"] | components["schemas"]["UpsertShotPlanCommand"] | components["schemas"]["ReorderShotsPlanCommand"] | components["schemas"]["RemoveShotPlanCommand"] | components["schemas"]["UpsertReadinessPlanCommand"] | components["schemas"]["RemoveReadinessPlanCommand"] | components["schemas"]["SetPreflightPlanCommand"] | components["schemas"]["LinkReadinessPlanCommand"] | components["schemas"]["UnlinkReadinessPlanCommand"] | components["schemas"]["SetPublicScalePlanCommand"] | components["schemas"]["SetExecutionWindowPlanCommand"] | components["schemas"]["ClearExecutionWindowPlanCommand"] | components["schemas"]["LinkCustomerCrmCommand"] | components["schemas"]["LinkOrderCrmCommand"] | components["schemas"]["UnlinkOrderCrmCommand"] | components["schemas"]["UnlinkCustomerCrmCommand"] | components["schemas"]["AdoptScheduleProjectionCrmCommand"];
+        ShootPlanMutationRequest: components["schemas"]["UpdateBriefPlanCommand"] | components["schemas"]["UpsertShotPlanCommand"] | components["schemas"]["ReorderShotsPlanCommand"] | components["schemas"]["RemoveShotPlanCommand"] | components["schemas"]["UpsertReadinessPlanCommand"] | components["schemas"]["RemoveReadinessPlanCommand"] | components["schemas"]["SetPreflightPlanCommand"] | components["schemas"]["LinkReadinessPlanCommand"] | components["schemas"]["UnlinkReadinessPlanCommand"] | components["schemas"]["SetPublicScalePlanCommand"] | components["schemas"]["SetExecutionWindowPlanCommand"] | components["schemas"]["ClearExecutionWindowPlanCommand"] | components["schemas"]["SetBusinessFactsPlanCommand"] | components["schemas"]["LinkCustomerCrmCommand"] | components["schemas"]["LinkOrderCrmCommand"] | components["schemas"]["UnlinkOrderCrmCommand"] | components["schemas"]["UnlinkCustomerCrmCommand"] | components["schemas"]["AdoptScheduleProjectionCrmCommand"];
+        PlanningBusinessFacts: {
+            rented_location_count: number | null;
+            assistant_count: number | null;
+            retouched_photo_count: number | null;
+            estimated_duration_minutes: number | null;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            updated_at: string | null;
+        };
+        PlanningBusinessPublicInputs: {
+            planned_look_count: number | null;
+            current_shot_count: number;
+        };
+        EffectivePlanningBusinessRules: {
+            rule_version: string;
+            overrides: components["schemas"]["PlanningBusinessRuleOverrides"];
+            unknown_keys: string[];
+        };
+        BusinessAdjustmentSourceFact: {
+            /** @enum {string} */
+            field: "planned_look_count" | "current_shot_count" | "rented_location_count" | "assistant_count" | "retouched_photo_count";
+            /** @enum {string} */
+            owner: "public_plan_scale" | "current_shot_aggregate" | "planning_business_facts";
+            observed_value: number | null;
+            rule_key: string;
+        };
+        BusinessAdjustmentLine: {
+            /** @enum {string} */
+            kind: "extra_look" | "rented_location" | "assistant" | "extra_retouch" | "extra_shot";
+            label: string;
+            quantity: number | null;
+            unit_amount: number | null;
+            amount: number | null;
+            source_fact: components["schemas"]["BusinessAdjustmentSourceFact"];
+        };
+        BusinessDraftAcknowledgement: {
+            /** @enum {string} */
+            version: "order-adjustment-v1" | "schedule-duration-v1";
+            effects: string[];
+        };
+        OrderAdjustmentDraftView: {
+            id: string;
+            generation_id: string;
+            /** @enum {string} */
+            kind: "order_adjustment";
+            /** @enum {string} */
+            status: "fresh" | "stale" | "applied" | "dismissed";
+            stale_reason?: string;
+            /** Format: int64 */
+            revision: number;
+            base_price: number | null;
+            /** @enum {string} */
+            calculation_mode: "delta_from_base" | "absolute_target";
+            absolute_target_price: number | null;
+            lines: components["schemas"]["BusinessAdjustmentLine"][];
+            proposed_total: number | null;
+            warnings: ("unknown_source_fact" | "unknown_rate" | "unknown_adjustment_lines_excluded" | "no_material_change")[];
+            rule_version: string;
+            required_acknowledgement: components["schemas"]["BusinessDraftAcknowledgement"] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        ScheduleDurationDraftView: {
+            id: string;
+            generation_id: string;
+            /** @enum {string} */
+            kind: "schedule_duration";
+            /** @enum {string} */
+            status: "fresh" | "stale" | "applied" | "dismissed";
+            stale_reason?: string;
+            /** Format: int64 */
+            revision: number;
+            /** @enum {string} */
+            target_mode: "update_existing" | "create_new";
+            basis_minutes: number;
+            /** Format: date-time */
+            original_start_at: string | null;
+            /** Format: date-time */
+            original_end_at: string | null;
+            /** Format: date-time */
+            proposed_end_at: string | null;
+            warnings: ("unknown_source_fact" | "unknown_rate" | "unknown_adjustment_lines_excluded" | "no_material_change")[];
+            rule_version: string;
+            required_acknowledgement: components["schemas"]["BusinessDraftAcknowledgement"] | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        PlanningBusinessDetail: {
+            facts: components["schemas"]["PlanningBusinessFacts"];
+            public_inputs: components["schemas"]["PlanningBusinessPublicInputs"];
+            effective_rules: components["schemas"]["EffectivePlanningBusinessRules"];
+            order_adjustment: components["schemas"]["OrderAdjustmentDraftView"] | null;
+            schedule_duration: components["schemas"]["ScheduleDurationDraftView"] | null;
+        };
+        GenerateBusinessDraftsInput: {
+            /** Format: int64 */
+            expected_plan_revision: number;
+            /** Format: int64 */
+            expected_business_facts_revision: number;
+            draft_kinds: ("order_adjustment" | "schedule_duration")[];
+            absolute_target_price?: number | null;
+        };
+        GeneratedOrderBusinessDraftItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "generated";
+            order_draft: components["schemas"]["OrderAdjustmentDraftView"];
+        };
+        GeneratedScheduleBusinessDraftItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "generated";
+            schedule_draft: components["schemas"]["ScheduleDurationDraftView"];
+        };
+        OrderBusinessDraftGenerationItem: components["schemas"]["GeneratedOrderBusinessDraftItem"] | components["schemas"]["UnavailableOrderBusinessDraftItem"];
+        ScheduleBusinessDraftGenerationItem: components["schemas"]["GeneratedScheduleBusinessDraftItem"] | components["schemas"]["UnavailableScheduleBusinessDraftItem"];
+        BusinessDraftGenerationResult: {
+            generation_id: string;
+            plan_id: string;
+            /** Format: int64 */
+            plan_revision: number;
+            /** Format: int64 */
+            business_facts_revision: number;
+            rule_version: string;
+            order_adjustment?: components["schemas"]["OrderBusinessDraftGenerationItem"];
+            schedule_duration?: components["schemas"]["ScheduleBusinessDraftGenerationItem"];
+        };
+        BusinessDraftDecisionInput: {
+            /** Format: int64 */
+            expected_draft_revision: number;
+            /** @enum {string} */
+            decision: "dismiss" | "apply_order_adjustment" | "apply_schedule_duration";
+            acknowledgement?: components["schemas"]["BusinessDraftAcknowledgement"];
+        };
+        BusinessDraftDecisionResult: {
+            draft_id: string;
+            /** @enum {string} */
+            kind: "order_adjustment" | "schedule_duration";
+            /** @enum {string} */
+            status: "applied" | "dismissed";
+            /** Format: int64 */
+            revision: number;
+            applied_target?: {
+                target_id?: string;
+                adjustment_id?: string;
+                before_price?: number | null;
+                after_price?: number | null;
+                /** Format: date-time */
+                before_end_at?: string | null;
+                /** Format: date-time */
+                after_end_at?: string | null;
+            };
+        };
         LinkedOrderSnapshot: {
             order_id: string;
             customer_id: string;
@@ -4156,6 +4434,8 @@ export interface operations {
     listOrders: {
         parameters: {
             query?: {
+                /** @description 精确订单 id；仍按当前账号隔离，可与其他过滤条件组合 */
+                id?: string;
                 customer_id?: string;
                 status?: components["schemas"]["OrderStatus"];
                 /** @description true = balance_paid=false 且 status ∈ {shot, selected, retouching, delivered}（已进入交付链条且未结清，§4.3 2026-07-09 口径） */
@@ -5066,7 +5346,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ShootPlanDetail"];
+                    "application/json": components["schemas"]["ShootPlanCoreDetail"];
                 };
             };
             400: components["responses"]["ValidationFailed"];
@@ -5141,6 +5421,75 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            500: components["responses"]["Internal"];
+        };
+    };
+    generateShootPlanBusinessDrafts: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateBusinessDraftsInput"];
+            };
+        };
+        responses: {
+            /** @description 至少生成一类经营草稿 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessDraftGenerationResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    decideShootPlanBusinessDraft: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description 拍摄策划 mutation 的安全重放键；只持久化成功 2xx，24 小时内精确 frame 重放首次结果 */
+                "Idempotency-Key": components["parameters"]["RequiredIdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["Id"];
+                draftId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BusinessDraftDecisionInput"];
+            };
+        };
+        responses: {
+            /** @description 草稿决策结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BusinessDraftDecisionResult"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             500: components["responses"]["Internal"];
         };
     };
