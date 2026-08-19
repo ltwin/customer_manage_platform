@@ -18,6 +18,7 @@ V1_STAGING=
 V1_RESTORE_DESTRUCTIVE=0
 V1_RESTORE_ORIGINAL_RUNNING=0
 V1_SIGNAL_EXIT=0
+V1_REPLACE_ONLY=0
 
 usage() {
   v1_die 2 usage arguments use-required-restore-flags
@@ -39,6 +40,10 @@ while (($#)); do
       ;;
     --break-stale-lock)
       V1_BREAK_STALE_LOCK=1
+      shift
+      ;;
+    --replace-only)
+      V1_REPLACE_ONLY=1
       shift
       ;;
     *) usage ;;
@@ -88,6 +93,9 @@ trap 'restore_signal INT' INT
 trap 'restore_signal TERM' TERM
 
 [[ -n "$V1_ENV_FILE" && -n "$V1_COMPOSE_FILE" && -n "$V1_DOCKER_CONTEXT" && -n "$V1_PROJECT_NAME" && "$V1_INPUT_SET" -eq 1 && -n "$V1_CONFIRM_PROJECT" ]] || usage
+if [[ "$V1_REPLACE_ONLY" -eq 1 ]]; then
+  [[ -n "${V1_INHERITED_LOCK_ID:-}" && -n "${V1_INHERITED_OWNER_NONCE:-}" && -n "${V1_INHERITED_FENCE_ID:-}" ]] || usage
+fi
 v1_require_commands
 v1_validate_common_files
 
@@ -190,6 +198,13 @@ v1_start_helper_to_file "$avatar_helper" "$V1_PRIVATE_DIR/avatar-restore.log" \
   2>"$V1_PRIVATE_DIR/avatar-restore.stderr" || \
   v1_die 10 restore-avatar-replace avatar failure-stop-required
 v1_status restore-avatar-replace pass
+
+if [[ "$V1_REPLACE_ONLY" -eq 1 ]]; then
+  # Internal composition mode: the caller owns migrate, final validation and reopen.
+  V1_RESTORE_DESTRUCTIVE=0
+  v1_status restore-replace-only pass
+  exit 0
+fi
 
 V1_STAGE=restore-verify
 v1_create_helper restore verify /usr/local/bin/avatar-manifest --manifest /tmp/avatar-manifest.json verify || \

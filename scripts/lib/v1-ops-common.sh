@@ -19,6 +19,7 @@ V1_APP_ID=
 V1_PG_ID=
 V1_AVATAR_VOLUME=
 V1_PG_VOLUME=
+V1_PLANNING_VOLUME=
 V1_NETWORK=
 V1_APP_STATE=
 V1_APP_IMAGE_ID=
@@ -34,6 +35,7 @@ V1_OPERATION_HELPERS=()
 V1_LAST_HELPER_ID=
 V1_CLEANUP_FAILED=0
 V1_BREAK_STALE_LOCK=0
+V1_GENERATION_INHERITED=0
 
 v1_status() {
   printf 'stage/%s=%s\n' "$1" "$2"
@@ -260,6 +262,18 @@ v1_candidate_break() {
 v1_acquire_lock() {
   local name created started label_args
   V1_STAGE=lock-acquire
+  if [[ -n "${V1_INHERITED_LOCK_ID:-}" || -n "${V1_INHERITED_OWNER_NONCE:-}" || -n "${V1_INHERITED_FENCE_ID:-}" ]]; then
+    [[ -n "${V1_INHERITED_LOCK_ID:-}" && -n "${V1_INHERITED_OWNER_NONCE:-}" && -n "${V1_INHERITED_FENCE_ID:-}" ]] || \
+      v1_die 7 lock-acquire inherited-generation incomplete-parent-generation
+    V1_LOCK_ID="$V1_INHERITED_LOCK_ID"
+    V1_LOCK_ID_HASH="$(v1_sha_text "$V1_LOCK_ID")"
+    V1_OWNER_NONCE="$V1_INHERITED_OWNER_NONCE"
+    V1_OWNER_NONCE_HASH="$(v1_sha_text "$V1_OWNER_NONCE")"
+    v1_recheck_lock || \
+      v1_die 7 lock-acquire inherited-generation parent-lock-invalid
+    V1_GENERATION_INHERITED=1
+    return
+  fi
   name="photographer-private-crm-ops-lock-$V1_TARGET_HASH"
   V1_OWNER_NONCE="$(v1_random_nonce)"
   V1_OWNER_NONCE_HASH="$(v1_sha_text "$V1_OWNER_NONCE")"
@@ -388,6 +402,12 @@ v1_resolve_runtime() {
 v1_acquire_fence() {
   local name created
   V1_STAGE=helper-fence
+  if [[ "$V1_GENERATION_INHERITED" -eq 1 ]]; then
+    [[ -n "${V1_INHERITED_FENCE_ID:-}" ]] || v1_die 7 helper-fence inherited-generation parent-fence-missing
+    V1_FENCE_ID="$V1_INHERITED_FENCE_ID"
+    v1_recheck_generation || v1_die 7 helper-fence inherited-generation parent-fence-invalid
+    return
+  fi
   name="photographer-private-crm-ops-helper-$V1_TARGET_HASH"
   created="$(v1_docker create --network none --name "$name" \
     --label com.photographer-crm.ops=true \
@@ -470,7 +490,7 @@ v1_remove_helper() {
   v1_docker rm -v "$id" >/dev/null 2>&1 || return 1
   ! v1_docker container inspect "$id" >/dev/null 2>&1 || return 1
   while IFS= read -r volume; do
-    [[ -z "$volume" || "$volume" == "$V1_AVATAR_VOLUME" || "$volume" == "$V1_PG_VOLUME" ]] && continue
+    [[ -z "$volume" || "$volume" == "$V1_AVATAR_VOLUME" || "$volume" == "$V1_PG_VOLUME" || "$volume" == "$V1_PLANNING_VOLUME" ]] && continue
     ! v1_docker volume inspect "$volume" >/dev/null 2>&1 || return 1
   done <<<"$volumes"
   return 0
@@ -517,14 +537,14 @@ v1_cleanup() {
     [[ -n "$id" ]] && v1_remove_helper "$id" || V1_CLEANUP_FAILED=1
   done
   set -u
-  if [[ "$V1_CLEANUP_FAILED" -eq 0 && -n "$V1_FENCE_ID" ]]; then
+  if [[ "$V1_GENERATION_INHERITED" -eq 0 && "$V1_CLEANUP_FAILED" -eq 0 && -n "$V1_FENCE_ID" ]]; then
     if v1_recheck_lock && v1_remove_helper "$V1_FENCE_ID"; then
       V1_FENCE_ID=
     else
       V1_CLEANUP_FAILED=1
     fi
   fi
-  if [[ "$V1_CLEANUP_FAILED" -eq 0 && -z "$V1_FENCE_ID" && -n "$V1_LOCK_ID" ]]; then
+  if [[ "$V1_GENERATION_INHERITED" -eq 0 && "$V1_CLEANUP_FAILED" -eq 0 && -z "$V1_FENCE_ID" && -n "$V1_LOCK_ID" ]]; then
     if v1_recheck_lock; then
       if v1_docker rm -v "$V1_LOCK_ID" >/dev/null 2>&1 && \
           ! v1_docker container inspect "$V1_LOCK_ID" >/dev/null 2>&1; then

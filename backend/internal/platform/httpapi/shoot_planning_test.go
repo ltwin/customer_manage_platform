@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -431,4 +432,102 @@ func TestShootPlanningHTTPVerticalSlice(t *testing.T) {
 	if strings.Contains(failClosed.Body.String(), "wiring") || strings.Contains(failClosed.Body.String(), "capability") {
 		t.Fatalf("unexpected errors must not leak internal text: %s", failClosed.Body.String())
 	}
+}
+
+func TestShootPlanningOptionalJSONHTTPContract(t *testing.T) {
+	router, _, issuer, _ := newCustomerAPIRouterWithContainer(t)
+	token := issueToken(t, issuer, testAcctID)
+
+	created := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans", token, "optional-create-plan", `{"title":"三态契约","subject":"JSON"}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create plan: status=%d body=%s", created.Code, created.Body.String())
+	}
+	var plan struct {
+		ID       string `json:"id"`
+		Revision int64  `json:"revision"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &plan); err != nil || plan.ID == "" || plan.Revision != 1 {
+		t.Fatalf("decode plan: err=%v body=%s", err, created.Body.String())
+	}
+	path := "/api/v1/shoot-plans/" + plan.ID
+	initial := shootPlanningRequest(t, router, http.MethodPatch, path, token, "optional-create-shot", `{"expected_revision":1,"operation":"upsert_shot","shot":{"title":"主镜头","scene":"初始场景"}}`)
+	if initial.Code != http.StatusOK {
+		t.Fatalf("create shot: status=%d body=%s", initial.Code, initial.Body.String())
+	}
+	var mutation struct {
+		Revision          int64 `json:"revision"`
+		ChangedProjection struct {
+			ShotID string `json:"shot_id"`
+		} `json:"changed_projection"`
+	}
+	if err := json.Unmarshal(initial.Body.Bytes(), &mutation); err != nil || mutation.Revision != 2 || mutation.ChangedProjection.ShotID == "" {
+		t.Fatalf("decode shot mutation: err=%v body=%s", err, initial.Body.String())
+	}
+
+	tests := []struct {
+		name          string
+		body          func(revision int64) string
+		wantStatus    int
+		wantScene     *string
+		wantIncrement bool
+	}{
+		{name: "omitted", body: func(revision int64) string {
+			return fmt.Sprintf(`{"expected_revision":%d,"operation":"upsert_shot","shot_id":%q,"shot":{}}`, revision, mutation.ChangedProjection.ShotID)
+		}, wantStatus: http.StatusOK, wantScene: pointerTo("初始场景"), wantIncrement: true},
+		{name: "null", body: func(revision int64) string {
+			return fmt.Sprintf(`{"expected_revision":%d,"operation":"upsert_shot","shot_id":%q,"shot":{"scene":null}}`, revision, mutation.ChangedProjection.ShotID)
+		}, wantStatus: http.StatusOK, wantIncrement: true},
+		{name: "value", body: func(revision int64) string {
+			return fmt.Sprintf(`{"expected_revision":%d,"operation":"upsert_shot","shot_id":%q,"shot":{"scene":"新场景"}}`, revision, mutation.ChangedProjection.ShotID)
+		}, wantStatus: http.StatusOK, wantScene: pointerTo("新场景"), wantIncrement: true},
+		{name: "wrong type", body: func(revision int64) string {
+			return fmt.Sprintf(`{"expected_revision":%d,"operation":"upsert_shot","shot_id":%q,"shot":{"scene":42}}`, revision, mutation.ChangedProjection.ShotID)
+		}, wantStatus: http.StatusBadRequest},
+		{name: "top-level duplicate", body: func(revision int64) string {
+			return fmt.Sprintf(`{"expected_revision":%d,"expected_revision":%d,"operation":"upsert_shot","shot_id":%q,"shot":{}}`, revision, revision, mutation.ChangedProjection.ShotID)
+		}, wantStatus: http.StatusBadRequest},
+		{name: "nested duplicate", body: func(revision int64) string {
+			return fmt.Sprintf(`{"expected_revision":%d,"operation":"upsert_shot","shot_id":%q,"shot":{"scene":"a","scene":"b"}}`, revision, mutation.ChangedProjection.ShotID)
+		}, wantStatus: http.StatusBadRequest},
+		{name: "trailing JSON", body: func(revision int64) string {
+			return fmt.Sprintf(`{"expected_revision":%d,"operation":"upsert_shot","shot_id":%q,"shot":{}}{}`, revision, mutation.ChangedProjection.ShotID)
+		}, wantStatus: http.StatusBadRequest},
+	}
+
+	revision := mutation.Revision
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := shootPlanningRequest(t, router, http.MethodPatch, path, token, fmt.Sprintf("optional-case-%d", index), test.body(revision))
+			if response.Code != test.wantStatus {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, test.wantStatus, response.Body.String())
+			}
+			if test.wantStatus == http.StatusBadRequest {
+				requirePlanningError(t, response, http.StatusBadRequest, httpapi.CodeValidationFailed)
+				return
+			}
+			if test.wantIncrement {
+				revision++
+			}
+			detail := shootPlanningRequest(t, router, http.MethodGet, path, token, "", "")
+			var projection struct {
+				Shots []struct {
+					Scene *string `json:"scene"`
+				} `json:"shots"`
+			}
+			if err := json.Unmarshal(detail.Body.Bytes(), &projection); err != nil || len(projection.Shots) != 1 {
+				t.Fatalf("decode projection: err=%v body=%s", err, detail.Body.String())
+			}
+			if test.wantScene == nil {
+				if projection.Shots[0].Scene != nil {
+					t.Fatalf("scene was not cleared: %q", *projection.Shots[0].Scene)
+				}
+			} else if projection.Shots[0].Scene == nil || *projection.Shots[0].Scene != *test.wantScene {
+				t.Fatalf("scene=%v want=%q", projection.Shots[0].Scene, *test.wantScene)
+			}
+		})
+	}
+}
+
+func pointerTo[T any](value T) *T {
+	return &value
 }

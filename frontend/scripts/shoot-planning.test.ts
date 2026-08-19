@@ -336,6 +336,7 @@ test('Run Mode has mobile, coarse-pointer, focus, and high-contrast light contra
 
 test('planning responsive contract avoids dense tables and preserves coarse-pointer targets', () => {
   const css = source('../src/planning/planning.css')
+  const accountMenuCSS = source('../src/account/account-menu.css')
   const planningSources = [
     '../src/planning/ShootPlansPage.tsx',
     '../src/planning/ShootPlanWorkspacePage.tsx',
@@ -347,7 +348,14 @@ test('planning responsive contract avoids dense tables and preserves coarse-poin
 
   assert.match(css, /@media \(max-width: 430px\)/)
   assert.match(css, /@media \(pointer: coarse\)[\s\S]*min-height:\s*44px/)
+  assert.match(css, /\.planning-panel \.field,[\s\S]*?\.planning-panel \.field-row,[\s\S]*?\.planning-panel \.input \{\s*min-width:\s*0;/)
+  assert.match(css, /\.planning-panel \.input \{\s*width:\s*100%;/)
+  assert.match(css, /\.planning-workspace \.btn,\s*\.planning-workspace \.tab \{\s*min-height:\s*44px;/)
+  assert.match(css, /\.planning-workspace-topbar \.btn \{\s*min-height:\s*44px;/)
+  assert.match(css, /\.planning-workspace \.btn\.btn-sm,[\s\S]*?\.planning-workspace \.tab,[\s\S]*?\.planning-workspace \.planning-panel \.btn \{\s*min-height:\s*44px;/)
   assert.match(css, /@media \(max-width: 768px\)[\s\S]*grid-template-columns:\s*1fr/)
+  assert.match(css, /@media \(max-width: 768px\)[\s\S]*\.planning-workspace-topbar[\s\S]*flex-wrap:\s*wrap/)
+  assert.match(accountMenuCSS, /@media \(max-width: 860px\)[\s\S]*\.main > \.topbar[\s\S]*padding-right:\s*4\.5rem/)
   assert.match(css, /\.planning-business-form-grid\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/)
   assert.match(css, /\.planning-business-form-grid \.planning-field\s*\{[\s\S]*?display:\s*grid;[\s\S]*?min-width:\s*0/)
   assert.match(css, /\.planning-business-form-grid input\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0/)

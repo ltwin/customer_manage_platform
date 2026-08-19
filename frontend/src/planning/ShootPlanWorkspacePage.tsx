@@ -179,7 +179,7 @@ export default function ShootPlanWorkspacePage() {
 
   return (
     <>
-      <header className="topbar">
+      <header className="topbar planning-workspace-topbar">
         <div>
           <div className="crumb"><Link to="/shoot-plans">拍摄策划</Link> / 工作台</div>
           <h1>{plan?.title ?? '策划工作台'}</h1>

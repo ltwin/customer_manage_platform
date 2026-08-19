@@ -34,6 +34,7 @@ services:
       - "8080:8080"
     volumes:
       - avatar_data:/var/lib/crm/avatars
+      - planning_media_data:/var/lib/crm/planning-media
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,3 +64,4 @@ services:
 volumes:
   pgdata:
   avatar_data:
+  planning_media_data:

@@ -1,9 +1,10 @@
-// Command migrate 是 schema 迁移的手动入口（CMD-003）：对 DATABASE_URL 指向的库执行 migrate up。
-// 服务进程启动时也会自动执行同一迁移（见 cmd/server）。
+// Command migrate runs forward database migrations without opening the HTTP
+// server. It is used by the destructive restore state machine while writers
+// remain stopped.
 package main
 
 import (
-	"log"
+	"fmt"
 	"os"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -12,10 +13,11 @@ import (
 func main() {
 	databaseURL := os.Getenv("DATABASE_URL")
 	if databaseURL == "" {
-		log.Fatal("DATABASE_URL 未设置")
+		fmt.Fprintln(os.Stderr, "migrate error: DATABASE_URL is required")
+		os.Exit(1)
 	}
 	if err := store.MigrateUp(databaseURL); err != nil {
-		log.Fatalf("migrate up 失败: %v", err)
+		fmt.Fprintf(os.Stderr, "migrate error: %v\n", err)
+		os.Exit(1)
 	}
-	log.Println("migrate up 完成")
 }

@@ -202,6 +202,11 @@ go run ./cmd/accountctl auth claim-legacy --email owner@example.com
 
 ## 一致备份与恢复
 
+拍摄策划启用 `planning_media_data` 后，使用 schema-v2 的 `planning-backup-compose.sh` 和
+`planning-restore-compose.sh`，production-shaped rehearsal 与 release evidence 契约见
+[`docs/ops/planning-backup-restore.md`](docs/ops/planning-backup-restore.md)。下文保留历史数据库＋头像
+schema-v1 工具的兼容与运行规则。
+
 production compose 将头像放在独立 named volume `avatar_data`，容器内固定挂载到
 `/var/lib/crm/avatars`，并以 `AVATAR_LOCAL_REQUIRE_MOUNT=true` 启动；缺卷、只落容器层、
 不可写或无法从 Linux mount table 证明为独立挂载点时，app 会 fail-fast。二进制直跑可使用

@@ -27,6 +27,14 @@
 .planning-panel-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(330px, .85fr); gap: 16px; align-items: start; }
 .planning-side-stack { display: flex; flex-direction: column; gap: 16px; }
 .planning-panel { padding: 20px; }
+.planning-panel .field,
+.planning-panel .field-row,
+.planning-panel .input { min-width: 0; }
+.planning-panel .field-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.planning-panel .input { width: 100%; }
+.planning-workspace .btn,
+.planning-workspace .tab { min-height: 44px; }
+.planning-workspace-topbar .btn { min-height: 44px; }
 .planning-panel-head { margin-bottom: 18px; }
 .planning-panel-head h2 { font-size: 16px; margin-bottom: 3px; }
 .planning-brief-text { min-height: 180px !important; }
@@ -96,6 +104,19 @@
 }
 
 @media (max-width: 768px) {
+  .planning-workspace-topbar {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .planning-workspace-topbar > div:first-child {
+    flex: 1 0 100%;
+    width: 100%;
+  }
+  .planning-workspace-topbar > .topbar-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-start;
+  }
   .bottom-nav { overflow-x: auto; justify-content: flex-start; }
   .bottom-nav a { min-width: 58px; }
   .planning-ledger-head, .planning-section-head { flex-direction: column; align-items: stretch; }
@@ -124,6 +145,10 @@
 
 @media (pointer: coarse) {
   .planning-plan-card, .planning-check, .planning-links .chip, .planning-tabs .tab { min-height: 44px; }
+  .topbar-actions .btn { min-height: 44px; }
+  .planning-workspace .btn.btn-sm,
+  .planning-workspace .tab,
+  .planning-workspace .planning-panel .btn { min-height: 44px; }
 }
 
 .planning-business-panel {

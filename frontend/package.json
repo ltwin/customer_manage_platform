@@ -20,6 +20,7 @@
     "test:account-center": "node --test --experimental-transform-types scripts/account-center.test.ts",
     "test:v1-hardening": "node --test --experimental-transform-types scripts/v1-hardening.test.ts",
     "test:shoot-planning": "node --test --experimental-transform-types scripts/shoot-planning.test.ts",
+    "test:shoot-planning:e2e": "node scripts/shoot-planning.e2e.mjs",
     "test:shoot-plan-crm": "node --test --experimental-transform-types scripts/shoot-plan-crm.test.ts",
     "test:planning-media": "node --test --experimental-transform-types scripts/planning-media.test.ts",
     "test:plan-ingestion": "node --test --experimental-transform-types scripts/plan-ingestion.test.ts",
@@ -44,6 +45,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "openapi-typescript": "^7.13.0",
     "oxlint": "^1.71.0",
+    "playwright": "^1.58.2",
     "typescript": "~5.9.0",
     "vite": "^8.1.1"
   }

@@ -12,6 +12,10 @@
 }
 
 @media (max-width: 860px) {
+  .main > .topbar {
+    padding-right: 4.5rem;
+  }
+
   .account-menu-slot-desktop {
     display: none;
   }

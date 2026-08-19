@@ -114,6 +114,8 @@ backup_manifest_line="$(grep -n 'V1_STAGE=backup-manifest' "$backup" | head -n1 
   fail backup-freeze-stage-order
 grep -Fq 'v1_start_app' "$restore" || fail restore-start-not-distinguished
 grep -Fq 'v1_wait_app_health' "$restore" || fail restore-health-not-distinguished
+grep -Fq 'V1_REPLACE_ONLY' "$restore" || fail restore-missing-internal-replace-only-mode
+grep -Fq 'V1_INHERITED_FENCE_ID' "$restore" || fail restore-replace-only-not-fenced
 grep -Fq '"$V1_OPS_HELPER" publish' "$backup" || fail backup-no-replace-publish
 ! grep -Eq '^[[:space:]]*mv[[:space:]]+"\$V1_TEMP_PACKAGE"' "$backup" || fail backup-plain-mv-publish
 

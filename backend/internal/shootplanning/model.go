@@ -2,6 +2,7 @@
 package shootplanning
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"time"
@@ -191,6 +192,18 @@ type Optional[T any] struct {
 	Specified bool
 	Null      bool
 	Value     T
+}
+
+func (optional *Optional[T]) UnmarshalJSON(data []byte) error {
+	optional.Specified = true
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		optional.Null = true
+		var zero T
+		optional.Value = zero
+		return nil
+	}
+	optional.Null = false
+	return json.Unmarshal(data, &optional.Value)
 }
 
 // PlanCommand is a closed application union. Each concrete type carries one

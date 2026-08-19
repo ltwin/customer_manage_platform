@@ -1,6 +1,6 @@
 # 命令基线：make check 是全 roadmap 后续 feature 的验证入口（roadmap §6）。
 
-.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync
+.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening
 
 BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || printf development)
 
@@ -59,7 +59,15 @@ test:
 	bash ./scripts/test-v1-ops-common.sh
 	python3 ./scripts/lib/v1-ops-package-selftest.py
 	bash ./scripts/test-v1-ops-backup-restore-safety.sh
+	bash ./scripts/test-planning-ops-backup-restore-safety.sh
+	bash ./scripts/test-planning-hardening.sh
 	./scripts/test-v1-ops-contract.sh
+
+planning-ops-safety:
+	bash ./scripts/test-planning-ops-backup-restore-safety.sh
+
+planning-hardening:
+	bash ./scripts/test-planning-hardening.sh
 
 # 契约线（design 2.2）：api/openapi.yaml -> Go 服务端类型（按 tag）+ TS 全量类型
 generate: frontend/node_modules

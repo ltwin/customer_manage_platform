@@ -509,6 +509,95 @@ test_public_docker_stderr_is_private() {
   pass_case
 }
 
+test_inherited_generation_is_adopted_and_preserved() {
+  local calls="$work_dir/inherited-generation.calls"
+  : >"$calls"
+  (
+    source "$repo_root/scripts/lib/v1-ops-common.sh"
+    V1_TARGET_HASH=target-hash
+    V1_INHERITED_LOCK_ID=parent-lock
+    V1_INHERITED_OWNER_NONCE=parent-secret-nonce
+    V1_INHERITED_FENCE_ID=parent-fence
+    local expected_nonce_hash expected_lock_hash
+    expected_nonce_hash="$(v1_sha_text "$V1_INHERITED_OWNER_NONCE")"
+    expected_lock_hash="$(v1_sha_text "$V1_INHERITED_LOCK_ID")"
+    v1_docker() {
+      printf '%s\n' "$*" >>"$calls"
+      case "$*" in
+        'container inspect parent-lock --format {{index .Config.Labels "com.photographer-crm.ops.owner-nonce-sha256"}}') printf '%s\n' "$expected_nonce_hash" ;;
+        'container inspect parent-lock --format {{index .Config.Labels "com.photographer-crm.ops.target-sha256"}}') printf '%s\n' target-hash ;;
+        'container inspect parent-lock --format {{index .Config.Labels "com.photographer-crm.ops.kind"}}') printf '%s\n' lock ;;
+        'container inspect parent-fence --format {{index .Config.Labels "com.photographer-crm.ops.lock-id-sha256"}}') printf '%s\n' "$expected_lock_hash" ;;
+        'container inspect parent-fence --format {{index .Config.Labels "com.photographer-crm.ops.owner-nonce-sha256"}}') printf '%s\n' "$expected_nonce_hash" ;;
+        *) return 1 ;;
+      esac
+    }
+    v1_acquire_lock
+    v1_acquire_fence
+    [[ "$V1_GENERATION_INHERITED" -eq 1 ]]
+    [[ "$V1_LOCK_ID" == parent-lock && "$V1_FENCE_ID" == parent-fence ]]
+    V1_PRIVATE_DIR=
+    V1_OPERATION_HELPERS=()
+    v1_cleanup
+    [[ "$V1_LOCK_ID" == parent-lock && "$V1_FENCE_ID" == parent-fence ]]
+  )
+  ! grep -Eq '(^| )create |(^| )rm ' "$calls"
+  pass_case
+}
+
+test_incomplete_inherited_generation_fails_closed() {
+  local observed
+  set +e
+  (
+    source "$repo_root/scripts/lib/v1-ops-common.sh"
+    V1_TARGET_HASH=target-hash
+    V1_INHERITED_FENCE_ID=parent-fence
+    v1_acquire_lock
+  ) >/dev/null 2>&1
+  observed=$?
+  set -e
+  [[ "$observed" -eq 7 ]]
+
+  set +e
+  (
+    source "$repo_root/scripts/lib/v1-ops-common.sh"
+    V1_TARGET_HASH=target-hash
+    V1_INHERITED_LOCK_ID=parent-lock
+    V1_INHERITED_OWNER_NONCE=parent-secret-nonce
+    v1_acquire_lock
+  ) >/dev/null 2>&1
+  observed=$?
+  set -e
+  [[ "$observed" -eq 7 ]]
+  pass_case
+}
+
+test_inherited_generation_rejects_wrong_raw_nonce() {
+  local observed wrong_hash
+  wrong_hash="$(python3 -c 'import hashlib; print(hashlib.sha256(b"wrong-nonce").hexdigest())')"
+  set +e
+  (
+    source "$repo_root/scripts/lib/v1-ops-common.sh"
+    V1_TARGET_HASH=target-hash
+    V1_INHERITED_LOCK_ID=parent-lock
+    V1_INHERITED_OWNER_NONCE=parent-secret-nonce
+    V1_INHERITED_FENCE_ID=parent-fence
+    v1_docker() {
+      case "$*" in
+        'container inspect parent-lock --format {{index .Config.Labels "com.photographer-crm.ops.owner-nonce-sha256"}}') printf '%s\n' "$wrong_hash" ;;
+        'container inspect parent-lock --format {{index .Config.Labels "com.photographer-crm.ops.target-sha256"}}') printf '%s\n' target-hash ;;
+        'container inspect parent-lock --format {{index .Config.Labels "com.photographer-crm.ops.kind"}}') printf '%s\n' lock ;;
+        *) return 1 ;;
+      esac
+    }
+    v1_acquire_lock
+  ) >/dev/null 2>&1
+  observed=$?
+  set -e
+  [[ "$observed" -eq 7 ]]
+  pass_case
+}
+
 test_remove_helper_checks_unexpected_volume_residual() {
   local calls="$work_dir/remove-helper-volume.calls"
   : >"$calls"
@@ -516,11 +605,12 @@ test_remove_helper_checks_unexpected_volume_residual() {
     source "$repo_root/scripts/lib/v1-ops-common.sh"
     V1_AVATAR_VOLUME=target-avatar
     V1_PG_VOLUME=target-pgdata
+    V1_PLANNING_VOLUME=target-planning-media
     v1_docker() {
       printf '%s\n' "$*" >>"$calls"
       case "$*" in
         'container inspect helper-id --format '* )
-          printf '%s\n' target-avatar synthetic-anonymous-volume
+          printf '%s\n' target-avatar target-planning-media synthetic-anonymous-volume
           return 0
           ;;
         'rm -v helper-id') return 0 ;;
@@ -532,6 +622,7 @@ test_remove_helper_checks_unexpected_volume_residual() {
     v1_remove_helper helper-id
   )
   grep -qx 'volume inspect synthetic-anonymous-volume' "$calls"
+  ! grep -q 'volume inspect target-planning-media' "$calls"
   pass_case
 }
 
@@ -549,6 +640,9 @@ test_runtime_accepts_matching_live_env_identity
 test_preflight_reuses_already_pinned_host
 test_preflight_pinned_host_skips_context_resolution
 test_public_docker_stderr_is_private
+test_inherited_generation_is_adopted_and_preserved
+test_incomplete_inherited_generation_fails_closed
+test_inherited_generation_rejects_wrong_raw_nonce
 test_remove_helper_checks_unexpected_volume_residual
 
 printf 'v1 ops common fixture tests: passed (%s cases)\n' "$case_count"
