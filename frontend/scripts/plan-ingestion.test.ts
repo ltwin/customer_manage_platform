@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
+import { restoredCandidateKind } from '../src/planning/ingestionCandidates.ts'
+
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
 }
@@ -44,4 +46,19 @@ test('plan ingestion responsive and keyboard contracts are present', () => {
   assert.match(css, /@media \(max-width: 768px\)[\s\S]*\.ingestion-grid, \.ingestion-review \{ grid-template-columns: 1fr; \}/)
   assert.match(css, /@media \(max-width: 430px\)/)
   assert.match(css, /@media \(pointer: coarse\)[\s\S]*\.ingestion-page button/)
+})
+
+test('restoring a dropped candidate inherits the duplicate winner kind instead of hardcoding shot', () => {
+  const candidates = [
+    { candidate_id: 'c-ready', kind: 'readiness' },
+    { candidate_id: 'c-shot', kind: 'shot' },
+  ]
+
+  assert.equal(restoredCandidateKind({ candidate_id: 'd1', reason: 'exact_duplicate', source_line_refs: [4], winner_candidate_id: 'c-ready' }, candidates), 'readiness')
+  assert.equal(restoredCandidateKind({ candidate_id: 'd2', reason: 'exact_duplicate', source_line_refs: [5], winner_candidate_id: 'c-shot' }, candidates), 'shot')
+  assert.equal(restoredCandidateKind({ candidate_id: 'd3', reason: 'blank', source_line_refs: [15] }, candidates), 'shot')
+
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+  assert.match(page, /restoredCandidateKind\(item, candidates\)/)
+  assert.doesNotMatch(page, /kind: 'shot',/)
 })

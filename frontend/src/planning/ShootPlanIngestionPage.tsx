@@ -19,6 +19,7 @@ import {
   type ShootPlanDetail,
 } from './api'
 import { planningErrorMessage } from './presentation'
+import { restoredCandidateKind } from './ingestionCandidates'
 import './planning.css'
 
 type Step = 'source' | 'review' | 'commit'
@@ -155,7 +156,7 @@ export default function ShootPlanIngestionPage() {
     if (candidates.some((candidate) => candidate.candidate_id === item.candidate_id)) return
     setCandidates((current) => [...current, {
       candidate_id: item.candidate_id,
-      kind: 'shot',
+      kind: restoredCandidateKind(item, candidates),
       source_line_refs: item.source_line_refs,
       source_fingerprint: '',
       original_excerpt: item.original ?? '',
