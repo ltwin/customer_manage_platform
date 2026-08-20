@@ -3,8 +3,8 @@ epic: ../requirements/creative-shoot-planning.md
 phase: acceptance
 approved_revision: 91bf0c2b47e2b9d117339803ae3254c731420db0be634d81e9dd66722a579a67
 current_item: null
-next_action: 执行 Epic final acceptance review，汇总自动验证与必须由 owner 完成的真实证据/生产授权项后停在最终 owner gate
-blocked_by: null
+next_action: 等待 owner 完成或处置真实样本、production-shaped rehearsal、真实设备/生产侧证据，并对整个 Epic 做最终人工接受
+blocked_by: owner-final-acceptance
 item_progression: continuous
 milestone_commit: authorized
 remote_publish: manual
@@ -48,6 +48,7 @@ remote_publish: manual
   - residual: `stage-2-evidence-go` 仍为 `pending`，真实 5 个 eligible shared shoots 的 G3 owner approval 留到 Epic 最终人工验收，不以 synthetic 浏览器证据替代。
 - [x] ITEM-8 · `creative-planning-v1-hardening`
   - status: implemented
+  - commit: `bb9589e63efd8146920df8362d55deebdcada065`
   - verification: `PYTHONPATH=scripts/lib python3 -m planninghardening.selftest`；`bash scripts/test-planning-hardening.sh`；`bash scripts/test-planning-ops-backup-restore-safety.sh`；`bash scripts/test-v1-ops-backup-restore-safety.sh`；planning HTTP 定向 Go tests；`go test ./cmd/planningctl -count=1`；`npm run test:shoot-planning` 24/24；`npm run test:prototype` 4/4；`npm run build`；`npm run lint`；`make generate-check`；`git diff --cached --check`。
   - review: 两轮独立 change review 后按 findings 修复 canonical approval gate、真实 schema-v2 rehearsal package、planningctl readiness/readback 跨 artifact 绑定和 stage path confinement。owner 2026-08-19 要求审查最多两轮，因此不追加第三轮；修复通过自动化与主流程自审，但不宣称新增独立 reviewer 签署。
   - residual: `stage-1-evidence-go`、`stage-2-evidence-go` 与 owner-authorized production-shaped rehearsal 仍 pending；release verifier 因此正确 fail closed，不以 synthetic fixture 替代。
@@ -72,3 +73,5 @@ remote_publish: manual
 - 2026-08-19：rehearsal release evidence 必须携带真实 `planning_restore_package/`，verifier 重算 package bytes 并绑定 app/postgres/restore-tool digest；`planningctl readiness` exact frame、内层 digest、trusted inventory、marker/revision 与 CAS readback 也已闭合。绝对路径和包含 `..` 的 stage evidence path 均拒绝。
 - 2026-08-19：ITEM-8 独立 change review 已产生两轮终态报告。第二轮的 release fake-pass blocking 与 stage path confinement important 已完成修复和回归测试；第三轮首次派发被平台内容过滤中止且无报告，不计终态轮次。owner 随后明确要求最多两轮，不再重试；该修复没有第三方 closure 签署，作为 Epic final acceptance review 的透明输入。
 - 2026-08-19：完整 `make check` 曾因已记录的本机 Testcontainers `port "5432/tcp" not found` 在 `internal/customer`、`internal/platform/httpapi` 失败；两个受影响完整包随后分别以 `-count=1 -parallel=1` 通过。不能把该次 `make check` 记为原始 exit 0。前端 lint 仅保留既有 `AccountCenterContext.tsx` 两条 Fast Refresh warning，build 仅保留既有大 chunk warning。
+- 2026-08-19：fresh Epic final acceptance review 对冻结提交 `bb9589e63efd8146920df8362d55deebdcada065` 和批准契约 SHA-256 `91bf0c2b47e2b9d117339803ae3254c731420db0be634d81e9dd66722a579a67` 返回 `PASS`：0 blocking、0 important、0 nit。审查确认 ITEM-1 至 ITEM-8 的实现与自动验证可进入 owner 最终验收；不把 stage-1/stage-2 真实样本、production-shaped rehearsal、真实设备/读屏、生产发布或 owner 接受宣称为已完成。
+- 2026-08-20：对照冻结原型 `docs/prototypes/creative-shoot-planning/v2/` 完成逐域 UI 差距分析，产出 `.codestable/work/prototype-v2-ui-gap-analysis.md`（28 条真差距 + 3 条 residual + 5 条 by-design，含稳定 ID 与处置优先级）。结论：数据契约与安全骨架达标且部分超出原型；差距集中在摄取候选编辑深度、Run Mode 现场交互（备注/清单/跳过强制原因）、工作台引导闭环与列表信息密度。该文件作为 owner 最终验收的对照输入，不改变任何 gate/decision 状态；其中与 plan-share checklist S6/S7 重叠的项按原 residual 跟踪。
