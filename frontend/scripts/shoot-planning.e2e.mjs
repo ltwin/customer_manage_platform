@@ -431,12 +431,14 @@ async function runExecutionFlow(context, page) {
   await saveResult(page, '✓ 完成拍摄')
 
   await goToShot(page, '站姿正面')
+  await page.getByLabel('跳过原因').selectOption('time_insufficient')
   await saveResult(page, '跳过本镜')
   await goToShot(page, '站姿正面')
   await saveResult(page, '✓ 完成拍摄')
 
   await goToShot(page, '侧身回头')
   await page.getByLabel('跳过原因').selectOption('other')
+  await page.getByLabel('现场备注').fill('客户临时有事，这一镜改期补拍')
   await saveResult(page, '跳过本镜')
   await saveResult(page, '清除本镜结果')
   await saveResult(page, '✓ 完成拍摄')

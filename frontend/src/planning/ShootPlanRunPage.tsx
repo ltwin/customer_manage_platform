@@ -12,7 +12,7 @@ import {
 } from './api'
 import { fetchPlanAssetDisplay } from './api'
 import { planningErrorMessage } from './presentation'
-import { applySavedShotResult, completedShotCount, nextPendingShotIndex } from './runState'
+import { applySavedShotResult, completedShotCount, nextPendingShotIndex, normalizeRunNotes, validateSkipSubmission } from './runState'
 import './run.css'
 
 type RunView = {
@@ -39,7 +39,9 @@ export default function ShootPlanRunPage() {
   const { id = '' } = useParams()
   const [state, setState] = useState<RunPageState>({ kind: 'opening' })
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [skipReason, setSkipReason] = useState<ShootPlanSkipReason>('preparation_missing')
+  const [shotNotes, setShotNotes] = useState<Record<string, string>>({})
+  const [skipReason, setSkipReason] = useState<ShootPlanSkipReason | ''>('')
+  const [skipError, setSkipError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [savedMessage, setSavedMessage] = useState<string | null>(null)
@@ -80,11 +82,22 @@ export default function ShootPlanRunPage() {
     if (state.kind !== 'ready') return
     const shot = state.view.opened.input.shots[currentIndex]
     if (!shot || (result === 'cleared' && !shot.current_outcome)) return
+    const note = normalizeRunNotes(shotNotes[shot.id] ?? '')
+    if (result === 'skipped') {
+      const problem = validateSkipSubmission(skipReason, note ?? '')
+      if (problem) {
+        setSkipError(problem)
+        setSavedMessage(null)
+        return
+      }
+    }
+    setSkipError(null)
     const body: AppendShotResultInput = {
       expected_execution_revision: shot.execution_revision,
       session_id: state.view.opened.session.id,
       result,
-      ...(result === 'skipped' ? { skip_reason: skipReason } : {}),
+      ...(result === 'skipped' ? { skip_reason: skipReason as ShootPlanSkipReason } : {}),
+      ...(result !== 'cleared' && note ? { notes: note } : {}),
       ...(shot.current_outcome ? { supersedes_event_id: shot.current_outcome.event_id } : {}),
     }
     const signature = JSON.stringify({ shotID: shot.id, body })
@@ -169,6 +182,11 @@ export default function ShootPlanRunPage() {
             </div>
             <ReferenceSheet planID={id} refs={shot.asset_access_refs ?? []} />
             <ReadinessSummary shotID={shot.id} input={input} />
+            <label className="run-note-field">
+              <span>现场备注</span>
+              <textarea rows={3} maxLength={1000} value={shotNotes[shot.id] ?? ''} placeholder="只记你需要的，不必填写" onChange={(event) => setShotNotes((current) => ({ ...current, [shot.id]: event.target.value }))} />
+              <small>备注跟着这一镜保存，切换镜头不会丢。</small>
+            </label>
           </article>
 
           <section className="run-actions" aria-label="记录本镜结果">
@@ -176,11 +194,14 @@ export default function ShootPlanRunPage() {
             {actionError && <div className="run-unsaved" role="alert"><strong>未保存</strong><span>{actionError}</span><span>当前镜头和已保存状态保持不变，可直接重试同一动作。</span></div>}
             <button className="run-button run-button-captured" type="button" disabled={saving} onClick={() => void saveResult('captured')}>{saving ? '正在保存…' : '✓ 完成拍摄'}</button>
             <div className="run-skip-row">
-              <select aria-label="跳过原因" value={skipReason} disabled={saving} onChange={(event) => setSkipReason(event.target.value as ShootPlanSkipReason)}>
+              <select aria-label="跳过原因" value={skipReason} disabled={saving} onChange={(event) => { setSkipReason(event.target.value as ShootPlanSkipReason | ''); setSkipError(null) }}>
+                <option value="" disabled>选择跳过原因</option>
                 {skipReasons.map((reason) => <option value={reason.value} key={reason.value}>{reason.label}</option>)}
               </select>
               <button className="run-button run-button-skipped" type="button" disabled={saving} onClick={() => void saveResult('skipped')}>跳过本镜</button>
             </div>
+            <p className="run-skip-hint">跳过必须写原因；选「其他」时在现场备注写明补充说明。</p>
+            {skipError && <p className="run-validation" role="alert">{skipError}</p>}
             <button className="run-button run-button-clear" type="button" disabled={saving || !shot.current_outcome} onClick={() => void saveResult('cleared')}>清除本镜结果</button>
           </section>
         </>

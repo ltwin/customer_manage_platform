@@ -1,4 +1,15 @@
-import type { AppendShotResultResponse, RunInputSnapshot } from './api'
+import type { AppendShotResultResponse, RunInputSnapshot, ShootPlanSkipReason } from './api'
+
+export function normalizeRunNotes(value: string): string | undefined {
+  const trimmed = value.trim()
+  return trimmed === '' ? undefined : trimmed
+}
+
+export function validateSkipSubmission(reason: ShootPlanSkipReason | '', note: string): string | null {
+  if (reason === '') return '请先选择跳过原因，再确认跳过。'
+  if (reason === 'other' && note.trim() === '') return '选了「其他」时，需要写明补充说明。'
+  return null
+}
 
 export function applySavedShotResult(
   input: RunInputSnapshot,

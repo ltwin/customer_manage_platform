@@ -7,6 +7,10 @@ import {
 } from '../src/planning/executionWindow.ts'
 import { shotHasExecutionHistory } from '../src/planning/history.ts'
 import {
+  normalizeRunNotes,
+  validateSkipSubmission,
+} from '../src/planning/runState.ts'
+import {
   businessDraftGenerationMessage,
   businessDraftUnavailableMessage,
   optionalAbsoluteTargetPriceYuanToCents,
@@ -332,6 +336,32 @@ test('Run Mode has mobile, coarse-pointer, focus, and high-contrast light contra
   assert.match(css, /--run-text:\s*#111827/)
   assert.match(css, /--run-surface:\s*#ffffff/)
   assert.doesNotMatch(css, /overflow-x:\s*(?:auto|scroll)/)
+})
+
+test('Run Mode keeps optional per-shot field notes that are submitted with captured and skipped results', () => {
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+
+  assert.equal(normalizeRunNotes('   '), undefined)
+  assert.equal(normalizeRunNotes('  正装假发未带到场  '), '正装假发未带到场')
+  assert.match(runPage, /<span>现场备注<\/span>/)
+  assert.match(runPage, /placeholder="只记你需要的，不必填写"/)
+  assert.match(runPage, /备注跟着这一镜保存，切换镜头不会丢/)
+  assert.match(runPage, /maxLength=\{1000\}/)
+  assert.match(runPage, /normalizeRunNotes\(shotNotes\[shot\.id\] \?\? ''\)/)
+  assert.match(runPage, /\{ notes: note \}/)
+})
+
+test('Run Mode skips require an explicit reason and a supplementary note for other', () => {
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+
+  assert.equal(validateSkipSubmission('', '已写过备注'), '请先选择跳过原因，再确认跳过。')
+  assert.equal(validateSkipSubmission('other', '   '), '选了「其他」时，需要写明补充说明。')
+  assert.equal(validateSkipSubmission('other', '假发未带到场，改到补拍'), null)
+  assert.equal(validateSkipSubmission('time_insufficient', ''), null)
+  assert.match(runPage, /useState<ShootPlanSkipReason \| ''>\(''\)/)
+  assert.match(runPage, /<option value="" disabled>选择跳过原因<\/option>/)
+  assert.match(runPage, /validateSkipSubmission\(skipReason, note \?\? ''\)/)
+  assert.match(runPage, /跳过必须写原因/)
 })
 
 test('planning responsive contract avoids dense tables and preserves coarse-pointer targets', () => {

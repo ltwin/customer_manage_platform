@@ -61,6 +61,13 @@
 .run-button-captured { min-height: 62px; font-size: 20px; }
 .run-skip-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, .65fr); gap: 10px; }
 .run-skip-row select { min-height: 48px; width: 100%; padding: 8px 12px; border: 2px solid var(--run-border); border-radius: 11px; background: #ffffff; color: var(--run-text); font: inherit; font-weight: 700; }
+.run-skip-hint { margin: 0; color: var(--run-muted); font-size: 13px; }
+.run-validation { margin: 0; padding: 10px 12px; border-left: 5px solid #c2410c; border-radius: 0 10px 10px 0; background: #fff7ed; color: #7c2d12; font-weight: 750; }
+.run-note-field { display: grid; gap: 6px; margin-top: 20px; padding-top: 16px; border-top: 2px solid var(--run-border); }
+.run-note-field span { color: var(--run-muted); font-size: 12px; font-weight: 800; }
+.run-note-field textarea { min-height: 96px; padding: 10px 12px; border: 2px solid var(--run-border); border-radius: 11px; background: #ffffff; color: var(--run-text); font: inherit; resize: vertical; }
+.run-note-field textarea:focus-visible { outline: 4px solid #93c5fd; outline-offset: 2px; }
+.run-note-field small { color: var(--run-muted); font-size: 12px; }
 .run-button-skipped { border-color: #c2410c; color: #9a3412; }
 .run-button-clear { color: var(--run-muted); }
 .run-saved { padding: 10px 12px; border-left: 5px solid #15803d; background: #f0fdf4; color: #14532d; font-weight: 800; }
