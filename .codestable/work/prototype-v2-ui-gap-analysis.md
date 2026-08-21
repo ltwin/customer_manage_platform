@@ -7,14 +7,18 @@ analysis_date: 2026-08-20
 status: open
 disposition: epic-final-acceptance-input
 gap_counts:
-  true_gap: 25
+  true_gap: 21
   residual: 3
   by_design: 5
-  fixed_pending_commit: 3
+  fixed_pending_commit: 7
 fixed_ids:
   - GAP-RUN-01
   - GAP-RUN-02
+  - GAP-ING-01
+  - GAP-ING-02
+  - GAP-ING-03
   - GAP-ING-04
+  - GAP-ING-05
 fixed_date: 2026-08-20
 ---
 
@@ -57,11 +61,11 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 | ID | 优先级 | 内容 | 证据 |
 |---|---|---|---|
-| GAP-ING-01 | 高 | 镜头候选的 5 个规范标签（取景/灯光方向/灯光质感/色调/类型）不可编辑，commit 只传 `title`/`notes`；`ShotWrite` 全字段支持 | `ShootPlanIngestionPage.tsx:181`；`schema.d.ts:2044-2062` |
-| GAP-ING-02 | 高 | 准备项候选的层级/预期负责人/是否必需/默认核对提前量界面上不可查看不可改，只能被动接受服务端解析值；design 要求「用户必须显式改成 required/负责人/提前量」（parser 默认全 optional/unassigned） | `ShootPlanIngestionPage.tsx:208-216, 304`；ingestion design §80 |
-| GAP-ING-03 | 高 | 「重新解析」无确认弹窗、无「已编辑候选保留」说明；design §333 明确要求该弹窗 | `ShootPlanIngestionPage.tsx:106-120`；design §333 |
+| GAP-ING-01 | 高 | 镜头候选的 5 个规范标签（取景/灯光方向/灯光质感/色调/类型）不可编辑，commit 只传 `title`/`notes`；`ShotWrite` 全字段支持 **【已修复 2026-08-20，待提交：含加性契约扩展（候选/override 携带标签、reparse 保留）】** | `ShootPlanIngestionPage.tsx:181`；`schema.d.ts:2044-2062` |
+| GAP-ING-02 | 高 | 准备项候选的层级/预期负责人/是否必需/默认核对提前量界面上不可查看不可改，只能被动接受服务端解析值；design 要求「用户必须显式改成 required/负责人/提前量」（parser 默认全 optional/unassigned） **【已修复 2026-08-20，待提交：四字段可编辑，经 preview override 持久化】** | `ShootPlanIngestionPage.tsx:208-216, 304`；ingestion design §80 |
+| GAP-ING-03 | 高 | 「重新解析」无确认弹窗、无「已编辑候选保留」说明；design §333 明确要求该弹窗 **【已修复 2026-08-20，待提交】** | `ShootPlanIngestionPage.tsx:106-120`；design §333 |
 | GAP-ING-04 | 高（疑似 bug） | 恢复被丢弃候选时 kind 硬编码 `'shot'`，准备项类候选恢复后会变成镜头 **【已修复 2026-08-20，待提交：重复项按 winner kind 恢复，其余默认镜头】** | `ShootPlanIngestionPage.tsx:158` |
-| GAP-ING-05 | 中 | 参考链接候选的归属（`target_kind`）与标注不可编辑（下拉 disabled、label 无输入）；API 支持 `reference_link_overrides` | `ShootPlanIngestionPage.tsx:228, 304`；`schema.d.ts:2816-2826` |
+| GAP-ING-05 | 中 | 参考链接候选的归属（`target_kind`）与标注不可编辑（下拉 disabled、label 无输入）；API 支持 `reference_link_overrides` **【已修复 2026-08-20，待提交：标注输入 + 归属/归属镜头选择】** | `ShootPlanIngestionPage.tsx:228, 304`；`schema.d.ts:2816-2826` |
 | GAP-ING-06 | 中 | 参考图上传来源声明硬编码 `customer_supplied/display_consent`，无来源选择 | `ShootPlanIngestionPage.tsx:127-129` |
 | GAP-ING-07 | 中 | 丢弃原因退化为原始字符串展示，无 blank/duplicate/unsupported/手动丢弃 分类标签与对照说明；丢弃区无展开/收起 | `ShootPlanIngestionPage.tsx:304` |
 | GAP-ING-08 | 低 | 保存摘要粒度简化（仅 3 个计数，无分类明细与版本号变化）；无顶栏「已选 N 条」chip | `ShootPlanIngestionPage.tsx:274, 310` |
@@ -153,7 +157,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 ## 处置建议（优先级排序）
 
 1. **GAP-RUN-01/02 + GAP-ING-04**：影响现场与摄取数据正确性/质量，且属 contract 内字段，最先修——**已完成（2026-08-20，待提交）**：Run Mode 增加逐镜现场备注（随 captured/skipped 提交 `notes`，≤1000 rune）、跳过原因强制显式选择且「其他」必须填备注；摄取恢复丢弃候选按 winner kind 继承。验证：test:shoot-planning 26/26、test:plan-ingestion 4/4、planning-prototype-v2 6/6、lint 0 error、build 通过；e2e 脚本已同步新交互，完整 e2e 需本地栈环境后补跑；
-2. **GAP-ING-01/02/03/05**：design 明确要求的候选编辑能力（API 就绪，UI 未接），一次 cs-feat 可收口；
+2. **GAP-ING-01/02/03/05**：design 明确要求的候选编辑能力——**已完成（2026-08-20，待提交）**：候选快照与 preview override 加性扩展（5 个规范标签 + 准备项四字段，枚举白名单 fail-closed，reparse 经 Reconcile 整体携带自动保留），镜头/准备项/参考链接的编辑 UI 落地，commit 决策携带完整 ShotWrite/ReadinessWrite，重新解析加确认弹窗（文案按 design §333）。验证：ingestion Go 包全绿、`make generate-check`、test:plan-ingestion 7/7、test:shoot-planning 26/26、planning-prototype-v2 6/6、lint 0 error、build 通过；已知限制：override 无法表达「清除已设标签/字段」（nil=未编辑，与 reference label override 既有语义一致）；
 3. **RES-SHARE-01 + GAP-SHARE-01**：与 plan-share checklist S6/S7 residual 一并收口（取消认领 UI + 反馈回显）；
 4. **GAP-WS-01/02/03/04**：引导闭环需前后端配合（列表 API 扩字段、错误码结构化），建议单独 feature；
 5. **GAP-UX-01/02 与各低优先级文案项**：打磨批，可在 final acceptance 后统一处理。
