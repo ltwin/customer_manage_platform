@@ -3351,7 +3351,7 @@ components:
     PlanAsset:
       type: object
       additionalProperties: false
-      required: [id, upload_context_plan_id, display_name, state, current_generation, revision, gc_rule_version, created_at, updated_at]
+      required: [id, upload_context_plan_id, display_name, state, current_generation, revision, gc_rule_version, created_at, updated_at, rights, active_bindings]
       properties:
         id: {type: string}
         upload_context_plan_id: {type: string}
@@ -3365,6 +3365,24 @@ components:
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         deleted_at: {type: string, format: date-time}
+        rights:
+          $ref: "#/components/schemas/PlanAssetRightsSnapshot"
+        active_bindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssetBinding"
+
+    PlanAssetRightsSnapshot:
+      type: object
+      additionalProperties: false
+      required: [generation, source_class, rights_basis, license_generation_reference_granted, declared_at]
+      description: 当前代的权利声明快照；矩阵裁决口径见 planningmedia/matrix.go。
+      properties:
+        generation: {type: integer}
+        source_class: {$ref: "#/components/schemas/PlanningMediaSourceClass"}
+        rights_basis: {$ref: "#/components/schemas/PlanningMediaRightsBasis"}
+        license_generation_reference_granted: {type: boolean}
+        declared_at: {type: string, format: date-time}
     PlanAssetAccessRef:
       type: object
       additionalProperties: false

@@ -1878,18 +1878,22 @@ type PackageStatus string
 
 // PlanAsset defines model for PlanAsset.
 type PlanAsset struct {
-	CreatedAt           time.Time              `json:"created_at"`
-	CurrentGeneration   int                    `json:"current_generation"`
-	DeletedAt           *time.Time             `json:"deleted_at,omitempty"`
-	DisplayChecksum     *string                `json:"display_checksum,omitempty"`
-	DisplayName         string                 `json:"display_name"`
-	GcEligibleAt        *time.Time             `json:"gc_eligible_at,omitempty"`
-	GcRuleVersion       PlanAssetGcRuleVersion `json:"gc_rule_version"`
-	Id                  string                 `json:"id"`
-	Revision            int64                  `json:"revision"`
-	State               PlanAssetState         `json:"state"`
-	UpdatedAt           time.Time              `json:"updated_at"`
-	UploadContextPlanId string                 `json:"upload_context_plan_id"`
+	ActiveBindings    []AssetBinding         `json:"active_bindings"`
+	CreatedAt         time.Time              `json:"created_at"`
+	CurrentGeneration int                    `json:"current_generation"`
+	DeletedAt         *time.Time             `json:"deleted_at,omitempty"`
+	DisplayChecksum   *string                `json:"display_checksum,omitempty"`
+	DisplayName       string                 `json:"display_name"`
+	GcEligibleAt      *time.Time             `json:"gc_eligible_at,omitempty"`
+	GcRuleVersion     PlanAssetGcRuleVersion `json:"gc_rule_version"`
+	Id                string                 `json:"id"`
+	Revision          int64                  `json:"revision"`
+
+	// Rights 当前代的权利声明快照；矩阵裁决口径见 planningmedia/matrix.go。
+	Rights              PlanAssetRightsSnapshot `json:"rights"`
+	State               PlanAssetState          `json:"state"`
+	UpdatedAt           time.Time               `json:"updated_at"`
+	UploadContextPlanId string                  `json:"upload_context_plan_id"`
 }
 
 // PlanAssetGcRuleVersion defines model for PlanAsset.GcRuleVersion.
@@ -1953,6 +1957,15 @@ type PlanAssetRightsDeclaration struct {
 
 // PlanAssetRightsDeclarationMatrixVersion defines model for PlanAssetRightsDeclaration.MatrixVersion.
 type PlanAssetRightsDeclarationMatrixVersion int
+
+// PlanAssetRightsSnapshot 当前代的权利声明快照；矩阵裁决口径见 planningmedia/matrix.go。
+type PlanAssetRightsSnapshot struct {
+	DeclaredAt                        time.Time                `json:"declared_at"`
+	Generation                        int                      `json:"generation"`
+	LicenseGenerationReferenceGranted bool                     `json:"license_generation_reference_granted"`
+	RightsBasis                       PlanningMediaRightsBasis `json:"rights_basis"`
+	SourceClass                       PlanningMediaSourceClass `json:"source_class"`
+}
 
 // PlanAssignmentReminderDeliveryMode 站内提醒；若账号已绑定 Telegram 则进入 digest
 type PlanAssignmentReminderDeliveryMode string

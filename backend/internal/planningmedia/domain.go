@@ -72,18 +72,29 @@ const (
 )
 
 type PlanAsset struct {
-	ID                  string     `json:"id"`
-	UploadContextPlanID string     `json:"upload_context_plan_id"`
-	DisplayName         string     `json:"display_name"`
-	DisplayChecksum     string     `json:"display_checksum,omitempty"`
-	State               AssetState `json:"state"`
-	CurrentGeneration   int        `json:"current_generation"`
-	Revision            int64      `json:"revision"`
-	GCEligibleAt        *time.Time `json:"gc_eligible_at,omitempty"`
-	GCRuleVersion       int        `json:"gc_rule_version"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
-	DeletedAt           *time.Time `json:"deleted_at,omitempty"`
+	ID                  string           `json:"id"`
+	UploadContextPlanID string           `json:"upload_context_plan_id"`
+	DisplayName         string           `json:"display_name"`
+	DisplayChecksum     string           `json:"display_checksum,omitempty"`
+	State               AssetState       `json:"state"`
+	CurrentGeneration   int              `json:"current_generation"`
+	Revision            int64            `json:"revision"`
+	GCEligibleAt        *time.Time       `json:"gc_eligible_at,omitempty"`
+	GCRuleVersion       int              `json:"gc_rule_version"`
+	CreatedAt           time.Time        `json:"created_at"`
+	UpdatedAt           time.Time        `json:"updated_at"`
+	DeletedAt           *time.Time       `json:"deleted_at,omitempty"`
+	Rights              *PlanAssetRights `json:"rights"`
+	ActiveBindings      []AssetBinding   `json:"active_bindings"`
+}
+
+// PlanAssetRights：列表卡片展示用的当前代权利声明快照。
+type PlanAssetRights struct {
+	Generation                        int         `json:"generation"`
+	SourceClass                       SourceClass `json:"source_class"`
+	RightsBasis                       RightsBasis `json:"rights_basis"`
+	LicenseGenerationReferenceGranted bool        `json:"license_generation_reference_granted"`
+	DeclaredAt                        time.Time   `json:"declared_at"`
 }
 type AssetGeneration struct {
 	AssetID          string            `json:"asset_id"`

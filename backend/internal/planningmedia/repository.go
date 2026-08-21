@@ -2,6 +2,8 @@ package planningmedia
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -57,7 +59,7 @@ func (Repository) ListForPlan(ctx context.Context, scope store.AccountScope, pla
 	if limit < 1 || limit > 100 {
 		return PlanAssetPage{}, fmt.Errorf("invalid page size")
 	}
-	rows, err := scope.QueryPage(ctx, "planning_media_asset_gallery", "id,upload_context_plan_id,display_name,state,current_generation,revision,gc_eligible_at,gc_rule_version,created_at,updated_at,deleted_at,display_checksum", "upload_context_plan_id = $2 AND id > $3", []store.OrderBy{{Column: "id"}}, limit, 0, planID, cursor)
+	rows, err := scope.QueryPage(ctx, "planning_media_asset_gallery", "id,upload_context_plan_id,display_name,state,current_generation,revision,gc_eligible_at,gc_rule_version,created_at,updated_at,deleted_at,display_checksum,rights_generation,rights_source_class,rights_basis,rights_generation_granted,rights_declared_at,active_bindings", "upload_context_plan_id = $2 AND id > $3", []store.OrderBy{{Column: "id"}}, limit, 0, planID, cursor)
 	if err != nil {
 		return PlanAssetPage{}, err
 	}
@@ -65,8 +67,31 @@ func (Repository) ListForPlan(ctx context.Context, scope store.AccountScope, pla
 	result := PlanAssetPage{Items: make([]PlanAsset, 0, limit)}
 	for rows.Next() {
 		var a PlanAsset
-		if err := rows.Scan(&a.ID, &a.UploadContextPlanID, &a.DisplayName, &a.State, &a.CurrentGeneration, &a.Revision, &a.GCEligibleAt, &a.GCRuleVersion, &a.CreatedAt, &a.UpdatedAt, &a.DeletedAt, &a.DisplayChecksum); err != nil {
+		var (
+			rightsGeneration  sql.NullInt64
+			rightsSourceClass sql.NullString
+			rightsBasis       sql.NullString
+			rightsGranted     sql.NullBool
+			rightsDeclaredAt  sql.NullTime
+			activeBindings    []byte
+		)
+		if err := rows.Scan(&a.ID, &a.UploadContextPlanID, &a.DisplayName, &a.State, &a.CurrentGeneration, &a.Revision, &a.GCEligibleAt, &a.GCRuleVersion, &a.CreatedAt, &a.UpdatedAt, &a.DeletedAt, &a.DisplayChecksum, &rightsGeneration, &rightsSourceClass, &rightsBasis, &rightsGranted, &rightsDeclaredAt, &activeBindings); err != nil {
 			return PlanAssetPage{}, err
+		}
+		if rightsGeneration.Valid && rightsSourceClass.Valid && rightsBasis.Valid && rightsDeclaredAt.Valid {
+			a.Rights = &PlanAssetRights{
+				Generation:                        int(rightsGeneration.Int64),
+				SourceClass:                       SourceClass(rightsSourceClass.String),
+				RightsBasis:                       RightsBasis(rightsBasis.String),
+				LicenseGenerationReferenceGranted: rightsGranted.Bool,
+				DeclaredAt:                        rightsDeclaredAt.Time,
+			}
+		}
+		a.ActiveBindings = make([]AssetBinding, 0)
+		if len(activeBindings) > 0 {
+			if err := json.Unmarshal(activeBindings, &a.ActiveBindings); err != nil {
+				return PlanAssetPage{}, fmt.Errorf("decode active bindings: %w", err)
+			}
 		}
 		result.Items = append(result.Items, a)
 	}

@@ -1259,6 +1259,17 @@ export interface components {
             updated_at: string;
             /** Format: date-time */
             deleted_at?: string;
+            rights: components["schemas"]["PlanAssetRightsSnapshot"];
+            active_bindings: components["schemas"]["AssetBinding"][];
+        };
+        /** @description 当前代的权利声明快照；矩阵裁决口径见 planningmedia/matrix.go。 */
+        PlanAssetRightsSnapshot: {
+            generation: number;
+            source_class: components["schemas"]["PlanningMediaSourceClass"];
+            rights_basis: components["schemas"]["PlanningMediaRightsBasis"];
+            license_generation_reference_granted: boolean;
+            /** Format: date-time */
+            declared_at: string;
         };
         PlanAssetAccessRef: {
             asset_id: string;

@@ -243,7 +243,14 @@ export default function ShootPlanWorkspacePage() {
                   <AssignmentReminderCard planID={plan.id} />
                 </>
               )}
-              {tab === 'assets' && <PlanningMediaPanel planID={plan.id} planRevision={plan.revision} readOnly={plan.status === 'archived'} />}
+              {tab === 'assets' && (
+                <PlanningMediaPanel
+                  planID={plan.id}
+                  planRevision={plan.revision}
+                  readOnly={plan.status === 'archived'}
+                  shots={plan.shots.map((shot) => ({ id: shot.id, position: shot.position, title: shot.title }))}
+                />
+              )}
               {tab === 'share' && (
                 <ShareCollaborationPanel
                   planID={plan.id}

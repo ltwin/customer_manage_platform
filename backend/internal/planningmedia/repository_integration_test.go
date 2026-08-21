@@ -183,3 +183,67 @@ func createPlanningMediaAccount(t *testing.T, database *store.Store, accountID s
 	}
 	return database.ScopeFor(auth.AccountContext{AccountID: accountID})
 }
+
+func TestGalleryProjectionReturnsRightsSnapshotAndActiveBindings(t *testing.T) {
+	ctx := context.Background()
+	database := openPlanningMediaStore(t)
+	scope := createPlanningMediaAccount(t, database, "planning-media-gallery")
+	if err := scope.Insert(ctx, "shoot_plans", []string{"id", "title", "subject"}, "plan-gallery", "策划", "角色"); err != nil {
+		t.Fatal(err)
+	}
+	repository := Repository{}
+	record := postgresAssetRecord(t, "planning-media-gallery", "plan-gallery", "asset-gallery", 1, SourceAnimeScreenshot, RightsCitationOrDisplay)
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		return repository.InsertAsset(ctx, tx, record)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := repository.ListForPlan(ctx, scope, "plan-gallery", "", 40)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("gallery page=%+v err=%v", page, err)
+	}
+	asset := page.Items[0]
+	if asset.Rights == nil || asset.Rights.SourceClass != SourceAnimeScreenshot ||
+		asset.Rights.RightsBasis != RightsCitationOrDisplay || asset.Rights.Generation != 1 {
+		t.Fatalf("rights snapshot=%+v", asset.Rights)
+	}
+	if asset.ActiveBindings == nil || len(asset.ActiveBindings) != 0 {
+		t.Fatalf("expected empty active bindings, got %+v", asset.ActiveBindings)
+	}
+
+	now := time.Now().UTC()
+	bindingColumns := []string{"id", "asset_id", "generation", "holder_kind", "holder_id", "plan_id", "purpose", "state", "revision", "created_at"}
+	if err := scope.Insert(ctx, "planning_media_bindings", bindingColumns,
+		"bind-plan", "asset-gallery", 1, "plan", "plan-gallery", "plan-gallery", "moodboard_display", "active", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := scope.Insert(ctx, "planning_media_bindings", bindingColumns,
+		"bind-shot", "asset-gallery", 1, "shot", "shot-1", "plan-gallery", "shot_reference_display", "active", 1, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := scope.Insert(ctx, "planning_media_bindings", append(bindingColumns, "released_at"),
+		"bind-released", "asset-gallery", 1, "plan", "plan-gallery", "plan-gallery", "moodboard_display", "released", 1, now, now); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err = repository.ListForPlan(ctx, scope, "plan-gallery", "", 40)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("gallery page after binding=%+v err=%v", page, err)
+	}
+	bindings := page.Items[0].ActiveBindings
+	if len(bindings) != 2 {
+		t.Fatalf("expected 2 active bindings, got %+v", bindings)
+	}
+	byHolder := map[string]AssetBinding{}
+	for _, binding := range bindings {
+		byHolder[string(binding.HolderKind)+"/"+binding.HolderID] = binding
+	}
+	if _, ok := byHolder["plan/plan-gallery"]; !ok {
+		t.Fatalf("missing plan binding: %+v", bindings)
+	}
+	shot, ok := byHolder["shot/shot-1"]
+	if !ok || shot.Purpose != PurposeShotReferenceDisplay || shot.PlanID != "plan-gallery" {
+		t.Fatalf("missing shot binding: %+v", shot)
+	}
+}
