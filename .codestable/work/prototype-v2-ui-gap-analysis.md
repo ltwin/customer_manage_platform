@@ -8,14 +8,15 @@ status: open
 disposition: epic-final-acceptance-input
 gap_counts:
   true_gap_total: 38
-  true_gap_remaining: 26
-  true_gap_fixed: 12
+  true_gap_remaining: 25
+  true_gap_fixed: 13
   true_gap_partial: 1
   residual: 2
   by_design: 7
 fixed_ids:
   - GAP-RUN-01
   - GAP-RUN-02
+  - GAP-RUN-03
   - GAP-ING-01
   - GAP-ING-02
   - GAP-ING-03
@@ -99,7 +100,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 |---|---|---|---|
 | GAP-RUN-01 | 高 | 现场备注完全缺失：无输入 UI，请求体未传 `notes`；schema `AppendShotResultInput.notes` 存在，design §186 将 notes 列入 execution event 字段 **【已修复 2026-08-20，待提交】** | `ShootPlanRunPage.tsx:83-89`；`schema.d.ts:2630` |
 | GAP-RUN-02 | 高 | 跳过原因退化为页内下拉：默认值可直接提交（无强制选择），「其他」必填补充说明缺失且请求体不传 notes **【已修复 2026-08-20，待提交】** | `ShootPlanRunPage.tsx:28-36, 42, 87, 178-183` |
-| GAP-RUN-03 | 高 | 镜头清单抽屉缺失：跨镜跳转只能逐镜移动；进度条为单一连续条，无分段三态（ok/skip/now）、不可点击 | `ShootPlanRunPage.tsx:144-147, 153-157` |
+| GAP-RUN-03 | 高 | 镜头清单抽屉缺失：跨镜跳转只能逐镜移动；进度条为单一连续条，无分段三态（ok/skip/now）、不可点击 **【已修复 2026-08-21，待提交：进度条改为逐镜分段按钮（ok=绿/skip=橙/now=蓝/待执行=灰，coarse 指针 44px 命中区），点段或位置标签「第 N 镜 / 共 M 镜 ▾」打开镜头清单抽屉（role=dialog，逐条 已捕获/已跳过/当前/待执行 标签，点按跳转并关闭，Escape/背板/返回关闭）；底部计数「已捕获 X · 已跳过 Y」】** | `ShootPlanRunPage.tsx:144-147, 153-157` |
 | GAP-RUN-04 | 中 | 主按钮不随状态变化：原型「已捕获→点击撤销 / 已跳过→改为已捕获」的一步撤销/改判，实现需「清除本镜结果」+ 重新标记两次提交 | `ShootPlanRunPage.tsx:177, 184` |
 | GAP-RUN-05 | 中 | 规范标签行缺失（含「灯光方向 未填」占位语义）；空字段直接不渲染 | `ShootPlanRunPage.tsx:208-211` |
 | GAP-RUN-06 | 中 | 收尾提示为静态横幅：无分项统计（捕获/跳过数）、无「结束本场」行动按钮 | `ShootPlanRunPage.tsx:189` |
@@ -181,11 +182,10 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 > 文中各「待提交」标记均已随四批提交入库（批 4 提交：`0f13dc9` 引导闭环 / `59b02f8` 列表增强 / `d382c15` 台账）。
 
-38 条真差距中 12 条完整修复、GAP-WS-04 部分收口，**剩余 26 条**（1 高 / 13 中 / 11 低 / WS-04 残余 1 项未分级）：
+38 条真差距中 13 条完整修复、GAP-WS-04 部分收口，**剩余 25 条**（13 中 / 11 低 / WS-04 残余 1 项未分级；高优先级已清零）：
 
 | 域 | ID | 优先级 | 内容 |
 |---|---|---|---|
-| Run | GAP-RUN-03 | **高** | 镜头清单抽屉缺失；进度条无 ok/skip/now 分段三态且不可点击 |
 | Run | GAP-RUN-04 | 中 | 主按钮不随状态变化（撤销/改判需两步） |
 | Run | GAP-RUN-05 | 中 | 规范标签行缺失（含「未填」占位） |
 | Run | GAP-RUN-06 | 中 | 收尾提示无分项统计与「结束本场」按钮 |
@@ -214,7 +214,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 **Residual（挂 plan-share checklist S6/S7）**：S6 后端验证矩阵证据（design A19）、S7 v2 conformance 浏览器证据（1600/1280/375/coarse/200%/keyboard/screen-reader）。不因 RES-SHARE-01 的 UI 修复自动关闭。
 
-**建议处置顺序**：GAP-RUN-03（唯一高优）→ GAP-WS-09（误导性错误话术，正确性风险）→ 中优先级按域打包；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：四批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
+**建议处置顺序**：高优先级已清零；剩余按 GAP-WS-09（误导性错误话术，正确性风险）→ GAP-RUN-04/05/06（Run Mode 现场体验三件套）→ 中优先级按域打包；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
 
 ## 引用
 
