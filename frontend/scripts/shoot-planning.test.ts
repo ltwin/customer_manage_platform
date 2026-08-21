@@ -7,6 +7,7 @@ import {
 } from '../src/planning/executionWindow.ts'
 import { shotHasExecutionHistory } from '../src/planning/history.ts'
 import {
+  mainShotAction,
   normalizeRunNotes,
   runOutcomeCounts,
   runShotState,
@@ -574,4 +575,34 @@ test('plan list page renders the enriched three-line card structure', () => {
   assert.match(page, /windowRangeLabel\(/)
   assert.match(page, /listStatusLines\(/)
   assert.match(page, /未设执行时间/)
+})
+
+test('Run Mode main action is stateful for one-step undo and re-judge', () => {
+  assert.deepEqual(mainShotAction(null), { result: 'captured', label: '✓ 完成拍摄', tone: 'primary' })
+  assert.deepEqual(mainShotAction({ result: 'captured' }), { result: 'cleared', label: '已拍摄 · 点击撤销', tone: 'secondary' })
+  assert.deepEqual(mainShotAction({ result: 'skipped' }), { result: 'captured', label: '已跳过 · 改为已拍摄', tone: 'secondary' })
+  assert.deepEqual(mainShotAction({ result: 'cleared' }), { result: 'captured', label: '✓ 完成拍摄', tone: 'primary' })
+
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+  assert.match(runPage, /const mainAction = mainShotAction\(shot\?\.current_outcome\)/)
+  assert.match(runPage, /saveResult\(mainAction\.result\)/)
+  assert.match(runPage, /run-button-undo/)
+})
+
+test('Run Mode shot card renders all five taxonomy tags with unfilled placeholders', () => {
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+
+  assert.match(runPage, /shotTagFields\.map/)
+  assert.match(runPage, /\{field\.label\} \{value \?\? '未填'\}/)
+  assert.match(runPage, /className=\{`run-tag\$\{value \? '' : ' is-empty'\}`\}/)
+})
+
+test('Run Mode completion card shows split stats and end-of-session actions', () => {
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+
+  assert.match(runPage, /已捕获 \{counts\.captured\} · 已跳过 \{counts\.skipped\} · 共 \{input\.shots\.length\} 镜/)
+  assert.match(runPage, /结束本场 · 回工作台/)
+  assert.match(runPage, /再看看/)
+  assert.match(runPage, /已跳过的镜头会保留原因，之后可安排补拍/)
+  assert.match(runPage, /setCompleteDismissed/)
 })

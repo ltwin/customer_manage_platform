@@ -12,7 +12,8 @@ import {
 } from './api'
 import { fetchPlanAssetDisplay } from './api'
 import { planningErrorMessage } from './presentation'
-import { applySavedShotResult, completedShotCount, nextPendingShotIndex, normalizeRunNotes, runOutcomeCounts, runShotState, validateSkipSubmission } from './runState'
+import { applySavedShotResult, completedShotCount, mainShotAction, nextPendingShotIndex, normalizeRunNotes, runOutcomeCounts, runShotState, validateSkipSubmission } from './runState'
+import { shotTagFields } from './ingestionCandidates'
 import './run.css'
 
 type RunView = {
@@ -46,6 +47,7 @@ export default function ShootPlanRunPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [savedMessage, setSavedMessage] = useState<string | null>(null)
   const [listOpen, setListOpen] = useState(false)
+  const [completeDismissed, setCompleteDismissed] = useState(false)
   const openKey = useRef(newPlanningMutationKey('open-run'))
   const openContext = useRef<{ title: string; expectedRevision: number } | null>(null)
   const pendingActionKeys = useRef(new Map<string, string>())
@@ -92,6 +94,7 @@ export default function ShootPlanRunPage() {
     if (state.kind !== 'ready') return
     const shot = state.view.opened.input.shots[currentIndex]
     if (!shot || (result === 'cleared' && !shot.current_outcome)) return
+    setCompleteDismissed(false)
     const note = normalizeRunNotes(shotNotes[shot.id] ?? '')
     if (result === 'skipped') {
       const problem = validateSkipSubmission(skipReason, note ?? '')
@@ -156,6 +159,7 @@ export default function ShootPlanRunPage() {
   const input = view.opened.input
   const shot = input.shots[currentIndex]
   const counts = runOutcomeCounts(input.shots)
+  const mainAction = mainShotAction(shot?.current_outcome)
   const allDone = input.shots.length > 0 && completedShotCount(input) === input.shots.length
 
   return (
@@ -198,6 +202,12 @@ export default function ShootPlanRunPage() {
               <div><p className="run-kicker">镜头 {shot.position}</p><h2>{shot.title}</h2></div>
               <OutcomeBadge shot={shot} />
             </div>
+            <div className="run-tags" aria-label="规范标签">
+              {shotTagFields.map((field) => {
+                const value = shot[field.key]
+                return <span className={`run-tag${value ? '' : ' is-empty'}`} key={field.key}>{field.label} {value ?? '未填'}</span>
+              })}
+            </div>
             <div className="run-shot-facts">
               <RunFact label="场景" value={shot.scene} />
               <RunFact label="动作" value={shot.action} />
@@ -217,7 +227,12 @@ export default function ShootPlanRunPage() {
           <section className="run-actions" aria-label="记录本镜结果">
             {savedMessage && <p className="run-saved" role="status">{savedMessage}</p>}
             {actionError && <div className="run-unsaved" role="alert"><strong>未保存</strong><span>{actionError}</span><span>当前镜头和已保存状态保持不变，可直接重试同一动作。</span></div>}
-            <button className="run-button run-button-captured" type="button" disabled={saving} onClick={() => void saveResult('captured')}>{saving ? '正在保存…' : '✓ 完成拍摄'}</button>
+            <button
+              className={`run-button run-button-captured${mainAction.tone === 'secondary' ? ' run-button-undo' : ''}`}
+              type="button"
+              disabled={saving}
+              onClick={() => void saveResult(mainAction.result)}
+            >{saving ? '正在保存…' : mainAction.label}</button>
             <div className="run-skip-row">
               <select aria-label="跳过原因" value={skipReason} disabled={saving} onChange={(event) => { setSkipReason(event.target.value as ShootPlanSkipReason | ''); setSkipError(null) }}>
                 <option value="" disabled>选择跳过原因</option>
@@ -232,7 +247,17 @@ export default function ShootPlanRunPage() {
         </>
       )}
 
-      {allDone && <section className="run-complete" role="status"><strong>全部镜头已有结果</strong><span>可以返回工作台检查执行历史并标记完成。</span></section>}
+      {allDone && !completeDismissed && (
+        <section className="run-complete" role="status">
+          <strong>全部镜头已有结果</strong>
+          <span>已捕获 {counts.captured} · 已跳过 {counts.skipped} · 共 {input.shots.length} 镜。</span>
+          <span>回到工作台可以「标记完成」整个策划；已跳过的镜头会保留原因，之后可安排补拍。</span>
+          <div className="run-complete-actions">
+            <Link className="run-button run-button-primary" to={`/shoot-plans/${encodeURIComponent(id)}`}>结束本场 · 回工作台</Link>
+            <button className="run-button" type="button" onClick={() => setCompleteDismissed(true)}>再看看</button>
+          </div>
+        </section>
+      )}
 
       {listOpen && input.shots.length > 0 && (
         <div

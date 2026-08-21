@@ -124,3 +124,8 @@
 }
 
 @keyframes run-pulse { to { opacity: .3; transform: scale(.8); } }
+.run-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 14px; }
+.run-tag { padding: 5px 9px; border: 1px solid var(--run-border); border-radius: 999px; background: #f7f8fb; color: var(--run-muted); font-size: 12px; font-weight: 750; }
+.run-tag.is-empty { opacity: .55; }
+.run-button-captured.run-button-undo { border-color: var(--run-border); background: var(--run-surface); color: var(--run-text); }
+.run-complete-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
