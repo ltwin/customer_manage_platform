@@ -7,10 +7,12 @@ analysis_date: 2026-08-20
 status: open
 disposition: epic-final-acceptance-input
 gap_counts:
-  true_gap: 15
+  true_gap_total: 38
+  true_gap_remaining: 26
+  true_gap_fixed: 12
+  true_gap_partial: 1
   residual: 2
-  by_design: 5
-  fixed_pending_commit: 14
+  by_design: 7
 fixed_ids:
   - GAP-RUN-01
   - GAP-RUN-02
@@ -26,7 +28,10 @@ fixed_ids:
   - GAP-WS-02
   - GAP-WS-03
   - GAP-WS-04
-fixed_date: 2026-08-21
+partial_ids:
+  - GAP-WS-04
+last_reconciled: 2026-08-21
+reconcile_note: 2026-08-21 行级对账修正；旧计数器（true_gap:19→15 等）自初版起与表格行数存在漂移，现以行级清点为准。
 ---
 
 # 拍摄策划 v2 原型 vs 实现 UI 差距分析
@@ -171,6 +176,45 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 修复应走 cs-feat/residual 流程而不是直接改码；涉及 API 字段新增的（GAP-WS-04、GAP-SHARE-01/03）
 需先回 OpenAPI 契约。本文件不改变任何 gate/decision 状态，仅作为 owner 最终验收的对照输入。
+
+## 六、剩余清单（2026-08-21 行级对账）
+
+> 文中各「待提交」标记均已随四批提交入库（批 4 提交：`0f13dc9` 引导闭环 / `59b02f8` 列表增强 / `d382c15` 台账）。
+
+38 条真差距中 12 条完整修复、GAP-WS-04 部分收口，**剩余 26 条**（1 高 / 13 中 / 11 低 / WS-04 残余 1 项未分级）：
+
+| 域 | ID | 优先级 | 内容 |
+|---|---|---|---|
+| Run | GAP-RUN-03 | **高** | 镜头清单抽屉缺失；进度条无 ok/skip/now 分段三态且不可点击 |
+| Run | GAP-RUN-04 | 中 | 主按钮不随状态变化（撤销/改判需两步） |
+| Run | GAP-RUN-05 | 中 | 规范标签行缺失（含「未填」占位） |
+| Run | GAP-RUN-06 | 中 | 收尾提示无分项统计与「结束本场」按钮 |
+| Run | GAP-RUN-07 | 低 | session 元信息缺「第几场/版本号/时钟」 |
+| Run | GAP-RUN-08 | 低 | 参考素材空态提示缺失；跳过原因用户语言与原型不一致 |
+| 摄取 | GAP-ING-06 | 中 | 上传来源声明硬编码，无来源选择 |
+| 摄取 | GAP-ING-07 | 中 | 丢弃原因无分类标签与展开/收起 |
+| 摄取 | GAP-ING-08 | 低 | 保存摘要粒度简化；无「已选 N 条」chip |
+| 摄取 | GAP-ING-09 | 低 | 冲突时无差异查看 UI |
+| 摄取 | GAP-ING-10 | 低 | 「全选」快捷按钮缺失 |
+| 工作台 | GAP-WS-04 残余 | — | 列表侧栏扩展标签（分享状态/认领待核对/草稿待确认/反馈条数），批 4 按方案 D2 明确不做 |
+| 工作台 | GAP-WS-05 | 中 | 镜头卡标签/捕获元信息/「复制镜头」缺失 |
+| 工作台 | GAP-WS-06 | 中 | 素材用途选择与来源×权利×用途矩阵表缺失 |
+| 工作台 | GAP-WS-07 | 中 | 素材无镜头级绑定、无纯链接素材 |
+| 工作台 | GAP-WS-08 | 中 | 准备项无分组、无认领人与「现场缺失」联动 |
+| 工作台 | GAP-WS-09 | 中 | 分享签发 409 一律「页面已刷新」话术，资格错误被误导性覆盖 |
+| 工作台 | GAP-WS-10 | 低 | 执行时间窗三选一入口分散 |
+| 工作台 | GAP-WS-11 | 低 | 经营草稿缺「依据」列与建议总价行 |
+| 工作台 | GAP-WS-12 | 低 | 撤销认领确认缺联动说明与状态标签 |
+| 工作台 | GAP-WS-13 | 低 | 公开规模说明与进度流转说明弱化 |
+| 工作台 | GAP-WS-14 | 低 | 新建策划为必填弹窗，非一键空白建案 |
+| 分享 | GAP-SHARE-03 | 中 | moodboard 无 caption/用途说明（需回契约 `SharedMoodboardItemV1`） |
+| 分享 | GAP-SHARE-04 | 低 | `document.title` 不随档位变化；页脚生命周期告知弱化 |
+| 通用 | GAP-UX-01 | 中 | 确认对话框不统一（confirm/prompt/自定义混用） |
+| 通用 | GAP-UX-02 | 中 | 无 toast 体系 |
+
+**Residual（挂 plan-share checklist S6/S7）**：S6 后端验证矩阵证据（design A19）、S7 v2 conformance 浏览器证据（1600/1280/375/coarse/200%/keyboard/screen-reader）。不因 RES-SHARE-01 的 UI 修复自动关闭。
+
+**建议处置顺序**：GAP-RUN-03（唯一高优）→ GAP-WS-09（误导性错误话术，正确性风险）→ 中优先级按域打包；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：四批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
 
 ## 引用
 
