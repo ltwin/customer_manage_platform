@@ -12,7 +12,7 @@ import {
 } from './api'
 import { fetchPlanAssetDisplay } from './api'
 import { planningErrorMessage } from './presentation'
-import { applySavedShotResult, completedShotCount, nextPendingShotIndex, normalizeRunNotes, validateSkipSubmission } from './runState'
+import { applySavedShotResult, completedShotCount, nextPendingShotIndex, normalizeRunNotes, runOutcomeCounts, runShotState, validateSkipSubmission } from './runState'
 import './run.css'
 
 type RunView = {
@@ -45,6 +45,7 @@ export default function ShootPlanRunPage() {
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [savedMessage, setSavedMessage] = useState<string | null>(null)
+  const [listOpen, setListOpen] = useState(false)
   const openKey = useRef(newPlanningMutationKey('open-run'))
   const openContext = useRef<{ title: string; expectedRevision: number } | null>(null)
   const pendingActionKeys = useRef(new Map<string, string>())
@@ -77,6 +78,15 @@ export default function ShootPlanRunPage() {
   useEffect(() => {
     void open()
   }, [open])
+
+  useEffect(() => {
+    if (!listOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setListOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [listOpen])
 
   async function saveResult(result: 'captured' | 'skipped' | 'cleared') {
     if (state.kind !== 'ready') return
@@ -145,8 +155,8 @@ export default function ShootPlanRunPage() {
   const { view } = state
   const input = view.opened.input
   const shot = input.shots[currentIndex]
-  const doneCount = completedShotCount(input)
-  const allDone = input.shots.length > 0 && doneCount === input.shots.length
+  const counts = runOutcomeCounts(input.shots)
+  const allDone = input.shots.length > 0 && completedShotCount(input) === input.shots.length
 
   return (
     <main className="run-mode-page">
@@ -154,10 +164,25 @@ export default function ShootPlanRunPage() {
         <div><p className="run-kicker">现场执行 · {captureModeLabel(view.opened.session.capture_mode)}</p><h1>{view.title}</h1></div>
         <Link className="run-exit" to={`/shoot-plans/${encodeURIComponent(id)}`}>退出现场模式</Link>
       </header>
-      <section className="run-progress" aria-label="拍摄进度">
-        <div><strong>{doneCount}</strong> / {input.shots.length} 已记录</div>
-        <div className="run-progress-track"><span style={{ width: `${input.shots.length ? (doneCount / input.shots.length) * 100 : 0}%` }} /></div>
-      </section>
+      {input.shots.length > 0 && (
+        <section className="run-progress" aria-label="镜头进度，可点击跳转">
+          <div className="run-progress-segments">
+            {input.shots.map((segmentShot, i) => (
+              <button
+                key={segmentShot.id}
+                type="button"
+                className={`run-seg run-seg-${i === currentIndex ? 'now' : runShotState(segmentShot)}`}
+                aria-label={`第 ${i + 1} 镜${segmentShot.title ? ` · ${segmentShot.title}` : ''}，点击跳转`}
+                onClick={() => setCurrentIndex(i)}
+              />
+            ))}
+          </div>
+          <p className="run-progress-caption">
+            <button type="button" className="run-linklike" onClick={() => setListOpen(true)}>第 {currentIndex + 1} 镜 / 共 {input.shots.length} 镜 ▾</button>
+            <span> · 已捕获 {counts.captured} · 已跳过 {counts.skipped}</span>
+          </p>
+        </section>
+      )}
 
       {input.shots.length === 0 || !shot ? (
         <section className="run-state-card" role="alert"><h2>当前没有可执行镜头</h2><p>请返回工作台补充镜头并标记已就绪。</p></section>
@@ -208,8 +233,49 @@ export default function ShootPlanRunPage() {
       )}
 
       {allDone && <section className="run-complete" role="status"><strong>全部镜头已有结果</strong><span>可以返回工作台检查执行历史并标记完成。</span></section>}
+
+      {listOpen && input.shots.length > 0 && (
+        <div
+          className="run-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="runListTitle"
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setListOpen(false) }}
+        >
+          <div className="run-sheet-card">
+            <h3 id="runListTitle">镜头清单</h3>
+            <p className="run-sheet-hint">点任意一条直接跳转；顺序即执行顺序。</p>
+            <ol className="run-shotlist">
+              {input.shots.map((listShot, i) => {
+                const listState = i === currentIndex ? 'now' : runShotState(listShot)
+                return (
+                  <li key={listShot.id}>
+                    <button
+                      type="button"
+                      aria-current={i === currentIndex || undefined}
+                      onClick={() => { setCurrentIndex(i); setListOpen(false) }}
+                    >
+                      <span className="run-shotlist-num">{String(i + 1).padStart(2, '0')}</span>
+                      <span className="run-shotlist-title">{listShot.title}</span>
+                      <span className={`run-shotlist-tag run-shotlist-tag-${listState}`}>{runStateLabel(listState)}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ol>
+            <button className="run-button run-sheet-close" type="button" autoFocus onClick={() => setListOpen(false)}>返回</button>
+          </div>
+        </div>
+      )}
     </main>
   )
+}
+
+function runStateLabel(state: 'ok' | 'skip' | 'pending' | 'now'): string {
+  if (state === 'ok') return '已捕获'
+  if (state === 'skip') return '已跳过'
+  if (state === 'now') return '当前'
+  return '待执行'
 }
 
 function ReferenceSheet({ planID, refs }: { planID: string; refs: OpenRunSessionResult['input']['shots'][number]['asset_access_refs'] }) {

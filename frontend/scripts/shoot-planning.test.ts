@@ -8,6 +8,8 @@ import {
 import { shotHasExecutionHistory } from '../src/planning/history.ts'
 import {
   normalizeRunNotes,
+  runOutcomeCounts,
+  runShotState,
   validateSkipSubmission,
 } from '../src/planning/runState.ts'
 import {
@@ -375,6 +377,44 @@ test('Run Mode skips require an explicit reason and a supplementary note for oth
   assert.match(runPage, /<option value="" disabled>选择跳过原因<\/option>/)
   assert.match(runPage, /validateSkipSubmission\(skipReason, note \?\? ''\)/)
   assert.match(runPage, /跳过必须写原因/)
+})
+
+test('Run Mode shot states map outcomes to segment states and counts', () => {
+  assert.equal(runShotState({ current_outcome: null }), 'pending')
+  assert.equal(runShotState({ current_outcome: { result: 'captured' } }), 'ok')
+  assert.equal(runShotState({ current_outcome: { result: 'skipped' } }), 'skip')
+  assert.equal(runShotState({ current_outcome: { result: 'cleared' } }), 'pending')
+  assert.deepEqual(runOutcomeCounts([
+    { current_outcome: { result: 'captured' } },
+    { current_outcome: { result: 'skipped' } },
+    { current_outcome: { result: 'skipped' } },
+    { current_outcome: null },
+  ]), { captured: 1, skipped: 2 })
+})
+
+test('Run Mode progress is a clickable segmented bar opening the shot list sheet', () => {
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+  const css = source('../src/planning/run.css')
+
+  assert.match(runPage, /aria-label="镜头进度，可点击跳转"/)
+  assert.match(runPage, /run-seg run-seg-\$\{i === currentIndex \? 'now' : runShotState\(/)
+  assert.match(runPage, /setCurrentIndex\(i\)/)
+  assert.match(runPage, /setListOpen\(true\)/)
+  assert.match(runPage, /第 \{currentIndex \+ 1\} 镜 \/ 共 \{input\.shots\.length\} 镜 ▾/)
+  assert.match(runPage, /已捕获 \{counts\.captured\} · 已跳过 \{counts\.skipped\}/)
+
+  assert.match(runPage, /role="dialog"\s+aria-modal="true"\s+aria-labelledby="runListTitle"/)
+  assert.match(runPage, /点任意一条直接跳转；顺序即执行顺序/)
+  assert.match(runPage, /aria-current=\{i === currentIndex \|\| undefined\}/)
+  assert.match(runPage, /Escape/)
+  for (const tag of ['已捕获', '已跳过', '当前', '待执行']) assert.match(runPage, new RegExp(tag))
+
+  assert.match(css, /\.run-seg-ok::after[\s\S]*?background:/)
+  assert.match(css, /\.run-seg-skip::after/)
+  assert.match(css, /\.run-seg-now::after/)
+  assert.match(css, /@media \(pointer: coarse\)[\s\S]*?\.run-seg \{ min-height: 44px; \}/)
+  assert.match(css, /\.run-sheet-card/)
+  assert.doesNotMatch(css, /run-progress-track/)
 })
 
 test('planning responsive contract avoids dense tables and preserves coarse-pointer targets', () => {
