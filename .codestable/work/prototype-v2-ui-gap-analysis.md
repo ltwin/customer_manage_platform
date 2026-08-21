@@ -7,10 +7,10 @@ analysis_date: 2026-08-20
 status: open
 disposition: epic-final-acceptance-input
 gap_counts:
-  true_gap: 21
-  residual: 3
+  true_gap: 19
+  residual: 2
   by_design: 5
-  fixed_pending_commit: 7
+  fixed_pending_commit: 10
 fixed_ids:
   - GAP-RUN-01
   - GAP-RUN-02
@@ -19,6 +19,9 @@ fixed_ids:
   - GAP-ING-03
   - GAP-ING-04
   - GAP-ING-05
+  - GAP-SHARE-01
+  - GAP-SHARE-02
+  - RES-SHARE-01
 fixed_date: 2026-08-20
 ---
 
@@ -135,15 +138,15 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 | ID | 内容 | 证据 |
 |---|---|---|
-| RES-SHARE-01 | 客户侧「凭码自助取消认领」无 UI：`selfRevokeSharedAssignment` API 已就绪（design A19 全覆盖后端验证），前端无调用 | `share/api.ts:88-102` 无调用点；checklist S6/S7 pending |
+| RES-SHARE-01 | 客户侧「凭码自助取消认领」无 UI：`selfRevokeSharedAssignment` API 已就绪（design A19 全覆盖后端验证），前端无调用 **【UI 已修复 2026-08-20，待提交：凭码输入 + 格式预检 + 404/409 分级文案 + 签名幂等键；S6/S7 其余收口仍按 residual 跟踪】** | `share/api.ts:88-102`；checklist S6/S7 pending |
 | RES-SHARE-02 | S7 要求的 v2 conformance 与 1600/1280/375/coarse/200%/keyboard/screen-reader 证据未产出 | checklist S7 pending |
 
 ### GAP
 
 | ID | 优先级 | 内容 | 证据 |
 |---|---|---|---|
-| GAP-SHARE-01 | 高 | 整案反馈发送后无回显列表（客户看不到自己已提交的意见）；逐镜反馈无「你已确认/你提过…」状态标记，`SharedShotV1` 无反馈状态字段 | `SharedCommon.tsx:153, 187`；`schema.d.ts:3028-3045` |
-| GAP-SHARE-02 | 中 | 认领区三条用户语言承诺缺失：「摄影师会自己核对、不会催你」「凭证码用途」「找不到凭证联系摄影师」 | `SharedFullSections.tsx:143-145` |
+| GAP-SHARE-01 | 高 | 整案反馈发送后无回显列表（客户看不到自己已提交的意见）；逐镜反馈无「你已确认/你提过…」状态标记，`SharedShotV1` 无反馈状态字段 **【已修复 2026-08-20，待提交：本次访问内本地回显（匿名端不回读他人反馈），逐镜已提意见带摘要标记】** | `SharedCommon.tsx:153, 187`；`schema.d.ts:3028-3045` |
+| GAP-SHARE-02 | 中 | 认领区三条用户语言承诺缺失：「摄影师会自己核对、不会催你」「凭证码用途」「找不到凭证联系摄影师」 **【已修复 2026-08-20，待提交】** | `SharedFullSections.tsx:143-145` |
 | GAP-SHARE-03 | 中 | moodboard 无 caption/用途说明（数据模型层 `SharedMoodboardItemV1` 仅 ref+checksum，API 层缺） | `schema.d.ts:3006-3009` |
 | GAP-SHARE-04 | 低 | `document.title` 不随 full/proposal/expired 变化；页脚丢失「专属免登录、可能被更新或关闭」生命周期告知；锁定占位与昵称字段的原第一人称/隐私说明文案弱化 | `SharedProposalView.tsx:20-24`；`SharedCommon.tsx:115-117, 172` |
 
@@ -158,7 +161,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 1. **GAP-RUN-01/02 + GAP-ING-04**：影响现场与摄取数据正确性/质量，且属 contract 内字段，最先修——**已完成（2026-08-20，待提交）**：Run Mode 增加逐镜现场备注（随 captured/skipped 提交 `notes`，≤1000 rune）、跳过原因强制显式选择且「其他」必须填备注；摄取恢复丢弃候选按 winner kind 继承。验证：test:shoot-planning 26/26、test:plan-ingestion 4/4、planning-prototype-v2 6/6、lint 0 error、build 通过；e2e 脚本已同步新交互，完整 e2e 需本地栈环境后补跑；
 2. **GAP-ING-01/02/03/05**：design 明确要求的候选编辑能力——**已完成（2026-08-20，待提交）**：候选快照与 preview override 加性扩展（5 个规范标签 + 准备项四字段，枚举白名单 fail-closed，reparse 经 Reconcile 整体携带自动保留），镜头/准备项/参考链接的编辑 UI 落地，commit 决策携带完整 ShotWrite/ReadinessWrite，重新解析加确认弹窗（文案按 design §333）。验证：ingestion Go 包全绿、`make generate-check`、test:plan-ingestion 7/7、test:shoot-planning 26/26、planning-prototype-v2 6/6、lint 0 error、build 通过；已知限制：override 无法表达「清除已设标签/字段」（nil=未编辑，与 reference label override 既有语义一致）；
-3. **RES-SHARE-01 + GAP-SHARE-01**：与 plan-share checklist S6/S7 residual 一并收口（取消认领 UI + 反馈回显）；
+3. **RES-SHARE-01 + GAP-SHARE-01/02**：分享页闭环——**UI 部分已完成（2026-08-20，待提交）**：客户凭码自助取消认领（含承诺文案与 404/409 分级提示）、整案/逐镜反馈本次访问内回显。验证：test:plan-share 12/12（3 条新测试）、planning-prototype-v2 6/6、lint 0 error、build 通过。plan-share checklist S6/S7 的后端矩阵证据与 v2 conformance 浏览器证据仍按原 residual 跟踪，不因本 UI 修复自动关闭；
 4. **GAP-WS-01/02/03/04**：引导闭环需前后端配合（列表 API 扩字段、错误码结构化），建议单独 feature；
 5. **GAP-UX-01/02 与各低优先级文案项**：打磨批，可在 final acceptance 后统一处理。
 
