@@ -8,8 +8,8 @@ status: open
 disposition: epic-final-acceptance-input
 gap_counts:
   true_gap_total: 38
-  true_gap_remaining: 25
-  true_gap_fixed: 13
+  true_gap_remaining: 24
+  true_gap_fixed: 14
   true_gap_partial: 1
   residual: 2
   by_design: 7
@@ -29,6 +29,7 @@ fixed_ids:
   - GAP-WS-02
   - GAP-WS-03
   - GAP-WS-04
+  - GAP-WS-09
 partial_ids:
   - GAP-WS-04
 last_reconciled: 2026-08-21
@@ -128,7 +129,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | GAP-WS-06 | 中 | 素材面板用途写死 `moodboard_display`：无用途选择与「生成参考（本来源禁止）」联动、无来源×权利×用途矩阵表、素材卡无来源/权利标签 | `PlanningMediaPanel.tsx:42, 53, 66, 70-75` |
 | GAP-WS-07 | 中 | 素材仅支持整案挂载与图片上传：无镜头级绑定、无纯链接素材 | `PlanningMediaPanel.tsx:52-54, 64` |
 | GAP-WS-08 | 中 | 准备项列表不按妆造/场地/道具器材分组；条目无认领人姓名与「现场缺失」红标联动 | `ReadinessPanel.tsx:7, 53-72` |
-| GAP-WS-09 | 中 | 分享签发 409 一律显示「页面已刷新」话术，`full_view_not_eligible` 等资格错误会被误导性覆盖；无完整档资格说明文案 | `ShareCollaborationPanel.tsx:435, 723-735` |
+| GAP-WS-09 | 中 | 分享签发 409 一律显示「页面已刷新」话术，`full_view_not_eligible` 等资格错误会被误导性覆盖；无完整档资格说明文案 **【已修复 2026-08-21，待提交：409 分流——stale/revision 类才显示「页面已刷新」，`full_view_not_eligible` 显示资格条件与 CRM 关联卡引导，其余 409 保留服务端领域文案；完整档卡片前置资格说明 note（订单状态口径与 eligibility.go 一致，含取消后失效不降级）】** | `ShareCollaborationPanel.tsx:435, 723-735` |
 | GAP-WS-10 | 低 | 执行时间窗无显式「来源」三选一（slot 投影/手动/暂不设置）——投影联动拆到了 CRM 面板，语义等价但入口分散 | `BriefPanel.tsx:200-254`；`CrmLinkPanel.tsx:129, 194-207` |
 | GAP-WS-11 | 低 | 经营草稿逐行表缺「依据」列与建议总价行；应用确认无金额前后对照 | `BusinessPanel.tsx:259-267, 128-133` |
 | GAP-WS-12 | 低 | 撤销认领确认缺「核对提醒一并撤销」联动说明；认领条目无「现场缺失/待核对」状态标签；无「认领规则说明」note | `ShareCollaborationPanel.tsx:297` |
@@ -182,7 +183,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 > 文中各「待提交」标记均已随四批提交入库（批 4 提交：`0f13dc9` 引导闭环 / `59b02f8` 列表增强 / `d382c15` 台账）。
 
-38 条真差距中 13 条完整修复、GAP-WS-04 部分收口，**剩余 25 条**（13 中 / 11 低 / WS-04 残余 1 项未分级；高优先级已清零）：
+38 条真差距中 14 条完整修复、GAP-WS-04 部分收口，**剩余 24 条**（12 中 / 11 低 / WS-04 残余 1 项未分级）：
 
 | 域 | ID | 优先级 | 内容 |
 |---|---|---|---|
@@ -201,7 +202,6 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | 工作台 | GAP-WS-06 | 中 | 素材用途选择与来源×权利×用途矩阵表缺失 |
 | 工作台 | GAP-WS-07 | 中 | 素材无镜头级绑定、无纯链接素材 |
 | 工作台 | GAP-WS-08 | 中 | 准备项无分组、无认领人与「现场缺失」联动 |
-| 工作台 | GAP-WS-09 | 中 | 分享签发 409 一律「页面已刷新」话术，资格错误被误导性覆盖 |
 | 工作台 | GAP-WS-10 | 低 | 执行时间窗三选一入口分散 |
 | 工作台 | GAP-WS-11 | 低 | 经营草稿缺「依据」列与建议总价行 |
 | 工作台 | GAP-WS-12 | 低 | 撤销认领确认缺联动说明与状态标签 |
@@ -214,7 +214,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 **Residual（挂 plan-share checklist S6/S7）**：S6 后端验证矩阵证据（design A19）、S7 v2 conformance 浏览器证据（1600/1280/375/coarse/200%/keyboard/screen-reader）。不因 RES-SHARE-01 的 UI 修复自动关闭。
 
-**建议处置顺序**：高优先级已清零；剩余按 GAP-WS-09（误导性错误话术，正确性风险）→ GAP-RUN-04/05/06（Run Mode 现场体验三件套）→ 中优先级按域打包；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
+**建议处置顺序**：高优先级与 WS-09 均已清零；剩余按 GAP-RUN-04/05/06（Run Mode 现场体验三件套）→ 中优先级按域打包；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
 
 ## 引用
 
