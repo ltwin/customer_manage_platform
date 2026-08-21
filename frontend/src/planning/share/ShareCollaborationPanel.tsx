@@ -22,6 +22,7 @@ import {
   type ShareViewProjection,
 } from './api'
 import { composeShareURL, generateShareSecretMaterial, isWebCryptoAvailable } from './crypto'
+import { fullViewEligibilityNote, shareConflictMessage } from './conflictMessages'
 import { removedShotLabel, shotPositionLabel, shotReferenceLabel } from './shotReference'
 import OneTimeSecretDialog from './OneTimeSecretDialog'
 
@@ -481,6 +482,7 @@ function ShareViewCard({
           <span className="tag">尚未签发</span>
         )}
       </div>
+      {view.view_level === 'full' && <p className="share-eligibility-note">{fullViewEligibilityNote}</p>}
       {latest && (
         <dl className="share-kv">
           <div><dt>指纹</dt><dd>{latest.fingerprint}</dd></div>
@@ -735,7 +737,7 @@ function handleConflict(
   message: string,
 ) {
   if (cause instanceof ApiError && cause.status === 409) {
-    setError(message)
+    setError(shareConflictMessage(cause.code, cause.message, message))
     void reload()
     return
   }

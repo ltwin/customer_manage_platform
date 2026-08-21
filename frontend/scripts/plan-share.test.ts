@@ -2,6 +2,11 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { isClaimReceiptWireFormat, isWebCryptoAvailable } from '../src/planning/share/crypto.ts'
+import {
+  fullViewEligibilityNote,
+  isStaleRefreshCode,
+  shareConflictMessage,
+} from '../src/planning/share/conflictMessages.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -138,4 +143,38 @@ test('claim section explains photographer-side checks, no customer messaging, an
 
   assert.match(full, /不会给你发消息催/)
   assert.match(full, /认领时会生成一个凭证码/)
+})
+
+test('share 409s split into stale-refresh, eligibility, and server-domain messages', () => {
+  assert.equal(isStaleRefreshCode('plan_revision_conflict'), true)
+  assert.equal(isStaleRefreshCode('share_stale'), true)
+  assert.equal(isStaleRefreshCode('expiry_quote_stale'), true)
+  assert.equal(isStaleRefreshCode('full_view_not_eligible'), false)
+  assert.equal(isStaleRefreshCode('share_generation_exists'), false)
+
+  assert.match(
+    shareConflictMessage('full_view_not_eligible', '当前 CRM 关联不满足完整分享资格', '签发冲突：页面已刷新，请核对有效期后重试。'),
+    /还不能签发完整档[\s\S]*已定档[\s\S]*方案概览[\s\S]*CRM 关联卡/,
+  )
+  assert.equal(
+    shareConflictMessage('share_stale', '分享版本已变化，请刷新后重试', '轮换冲突：页面已刷新，请核对后重试。'),
+    '轮换冲突：页面已刷新，请核对后重试。',
+  )
+  assert.equal(
+    shareConflictMessage('share_generation_exists', '该视角已有有效分享链接，请轮换', '签发冲突：页面已刷新，请核对有效期后重试。'),
+    '该视角已有有效分享链接，请轮换',
+  )
+  assert.equal(
+    shareConflictMessage('weird_unknown_code', '', '签发冲突：页面已刷新，请核对有效期后重试。'),
+    '签发冲突：页面已刷新，请核对有效期后重试。',
+  )
+})
+
+test('share panel keeps eligibility errors distinct and explains full view eligibility upfront', () => {
+  const panel = source('../src/planning/share/ShareCollaborationPanel.tsx')
+
+  assert.match(panel, /shareConflictMessage\(cause\.code, cause\.message, message\)/)
+  assert.match(panel, /view\.view_level === 'full' &&[\s\S]*fullViewEligibilityNote/)
+  assert.match(fullViewEligibilityNote, /订单已定档/)
+  assert.match(fullViewEligibilityNote, /不会自动降级成概览/)
 })
