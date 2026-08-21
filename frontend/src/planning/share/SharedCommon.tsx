@@ -130,6 +130,8 @@ export function PlanFeedbackForm({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 匿名端不回读他人反馈；这份列表只回显本次访问内自己提交的意见。
+  const [sentFeedback, setSentFeedback] = useState<Array<{ who: string; text: string }>>([])
   const [key] = useState(() => newShareMutationKey('plan-feedback'))
 
   async function submit(event: FormEvent) {
@@ -151,6 +153,7 @@ export function PlanFeedbackForm({
       }, key)
       setContent('')
       setMessage('意见已送出，摄影师会在工作台看到。')
+      setSentFeedback((current) => [{ who: nickname.trim().slice(0, 40) || '匿名', text }, ...current].slice(0, 20))
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
         setError('方案已更新。页面将刷新，你刚写的内容仍保留，请确认后再次发送。')
@@ -187,6 +190,17 @@ export function PlanFeedbackForm({
         {message && <p className="share-status" role="status">{message}</p>}
         {error && <p className="share-inline-error" role="alert">{error}</p>}
       </form>
+      {sentFeedback.length > 0 && (
+        <div className="share-fb-list share-fb-sent-list" aria-label="你已提交的意见">
+          <p className="share-hint">你在本次访问中提交过的意见：</p>
+          {sentFeedback.map((item, index) => (
+            <div className="share-fb-item" key={index}>
+              <p className="share-fb-who">{item.who} · 已送出</p>
+              <p className="share-fb-quote">{item.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

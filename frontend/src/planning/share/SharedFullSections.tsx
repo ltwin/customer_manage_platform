@@ -5,10 +5,12 @@ import {
   claimSharedAssignment,
   createSharedShotFeedback,
   newShareMutationKey,
+  selfRevokeSharedAssignment,
   type SharedAssignmentClaimInput,
+  type SharedAssignmentSelfRevokeInput,
   type SharedPlanFull,
 } from './api'
-import { generateClaimReceiptMaterial, isWebCryptoAvailable } from './crypto'
+import { generateClaimReceiptMaterial, isClaimReceiptWireFormat, isWebCryptoAvailable } from './crypto'
 import OneTimeSecretDialog from './OneTimeSecretDialog'
 
 export function FullShotsSection({
@@ -62,6 +64,7 @@ function ShotFeedbackForm({
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sent, setSent] = useState<string | null>(null)
   const [key] = useState(() => newShareMutationKey(`shot-feedback-${shotID}`))
 
   async function submit(event: FormEvent) {
@@ -82,6 +85,7 @@ function ShotFeedbackForm({
       }, key)
       setContent('')
       setMessage('这条意见已送出。')
+      setSent(text)
       setOpen(false)
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 409) {
@@ -102,7 +106,12 @@ function ShotFeedbackForm({
           这条我有想法
         </button>
       )}
-      {message && <p className="share-status" role="status">{message}</p>}
+      {message && !sent && <p className="share-status" role="status">{message}</p>}
+      {sent && (
+        <p className="share-status" role="status">
+          你已对这一镜提过意见：「{sent.length > 80 ? `${sent.slice(0, 80)}…` : sent}」
+        </p>
+      )}
       {open && (
         <form className="share-fb-inline" onSubmit={(event) => { void submit(event) }}>
           <label className="field">
@@ -140,6 +149,7 @@ export function FullAssignmentsSection({
     <section className="share-sec" id="share-assignments">
       <span className="share-eyebrow">准备分工</span>
       <h2>我可以认领哪几项</h2>
+      <p className="share-hint">认领后摄影师会在拍摄前几天自己核对一遍，不会给你发消息催。认领时会生成一个凭证码，想自己取消认领时需要用到它。</p>
       {!cryptoOK && (
         <p className="share-inline-error" role="alert">当前浏览器不支持安全随机数，认领已禁用。请换用支持 Web Crypto 的浏览器。</p>
       )}
@@ -168,6 +178,14 @@ export function FullAssignmentsSection({
                   setReceipt(wire)
                   onReload()
                 }}
+                onConflict={onReload}
+              />
+            )}
+            {item.active_assignment && (
+              <SelfRevokeForm
+                token={token}
+                assignment={item.active_assignment}
+                onRevoked={onReload}
                 onConflict={onReload}
               />
             )}
@@ -256,5 +274,90 @@ function ClaimForm({
       <button className="btn btn-primary share-touch" type="submit" disabled={busy || disabled}>认领</button>
       {error && <p className="share-inline-error" role="alert">{error}</p>}
     </form>
+  )
+}
+
+function SelfRevokeForm({
+  token,
+  assignment,
+  onRevoked,
+  onConflict,
+}: {
+  token: string
+  assignment: NonNullable<SharedPlanFull['assignment_opportunities'][number]['active_assignment']>
+  onRevoked: () => void
+  onConflict: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [receipt, setReceipt] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  // 幂等键跟随请求体签名：网络失败重试复用同键；改过凭证后换新键，避免 canonical 漂移撞 409。
+  const [attempt, setAttempt] = useState<{ signature: string; key: string } | null>(null)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    const wire = receipt.trim()
+    if (!isClaimReceiptWireFormat(wire)) {
+      setError('请输入认领时生成的完整凭证（cr1. 开头的一串字符）。找不到凭证码的话，联系摄影师帮你取消。')
+      return
+    }
+    const body: SharedAssignmentSelfRevokeInput = {
+      expected_assignment_revision: assignment.revision,
+      claim_receipt: wire,
+      policy_version: 'v1',
+    }
+    const signature = JSON.stringify({ assignment: assignment.id, body })
+    const key = attempt?.signature === signature ? attempt.key : newShareMutationKey('self-revoke')
+    setAttempt({ signature, key })
+    setBusy(true)
+    setError(null)
+    try {
+      await selfRevokeSharedAssignment(token, assignment.id, body, key)
+      setDone(true)
+      setOpen(false)
+      onRevoked()
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 404) {
+        setError('凭证不匹配，或这项认领已经有变化。可刷新后重试，或联系摄影师帮你取消。')
+      } else if (cause instanceof ApiError && cause.status === 409) {
+        setError('这项认领已有变化。页面将刷新。')
+        onConflict()
+      } else {
+        setError(cause instanceof Error ? cause.message : '取消认领失败，请重试。')
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="share-claim-revoke">
+      {!open && !done && (
+        <button className="btn btn-ghost btn-sm share-touch" type="button" onClick={() => setOpen(true)}>取消认领</button>
+      )}
+      {done && <span className="share-status">已取消认领，这项准备重新变为待认领。</span>}
+      {open && (
+        <form className="share-claim-form" onSubmit={(event) => { void submit(event) }}>
+          <label className="field">
+            <span>输入认领时的凭证码</span>
+            <input
+              value={receipt}
+              disabled={busy}
+              onChange={(event) => setReceipt(event.target.value)}
+              placeholder="cr1.…"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <div className="share-form-actions">
+            <button className="btn btn-ghost btn-sm share-touch" type="button" onClick={() => setOpen(false)}>收起</button>
+            <button className="btn btn-secondary btn-sm share-touch" type="submit" disabled={busy}>确认取消认领</button>
+          </div>
+          {error && <p className="share-inline-error" role="alert">{error}</p>}
+        </form>
+      )}
+    </div>
   )
 }

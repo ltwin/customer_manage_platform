@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { isWebCryptoAvailable } from '../src/planning/share/crypto.ts'
+import { isClaimReceiptWireFormat, isWebCryptoAvailable } from '../src/planning/share/crypto.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -106,4 +106,36 @@ test('Makefile and package.json expose mandatory plan-share runners', () => {
   assert.match(pkg, /"test:plan-share":/)
   assert.match(makefile, /npm run test:plan-share/)
   assert.match(makefile, /planning-prototype-v2\.test\.mjs/)
+})
+
+test('customers can self-revoke an active assignment with the one-time receipt', () => {
+  const full = source('../src/planning/share/SharedFullSections.tsx')
+
+  assert.equal(isClaimReceiptWireFormat('cr1.ABCdef1234567890-_ghiJKL'), true)
+  assert.equal(isClaimReceiptWireFormat('  cr1.ABCdef1234567890-_ghiJKL  '), true)
+  assert.equal(isClaimReceiptWireFormat('K7QF-92'), false)
+  assert.equal(isClaimReceiptWireFormat('cr1.'), false)
+  assert.equal(isClaimReceiptWireFormat('cr1.短'), false)
+  assert.match(full, /selfRevokeSharedAssignment\(/)
+  assert.match(full, /expected_assignment_revision: assignment\.revision/)
+  assert.match(full, /claim_receipt: wire/)
+  assert.match(full, /取消认领/)
+  assert.match(full, /凭证不匹配/)
+  assert.match(full, /联系摄影师帮你取消/)
+})
+
+test('submitted feedback stays visible to its author within the same visit', () => {
+  const common = source('../src/planning/share/SharedCommon.tsx')
+  const full = source('../src/planning/share/SharedFullSections.tsx')
+
+  assert.match(common, /你已提交的意见/)
+  assert.match(common, /setSentFeedback/)
+  assert.match(full, /你已对这一镜提过意见/)
+})
+
+test('claim section explains photographer-side checks, no customer messaging, and receipt use', () => {
+  const full = source('../src/planning/share/SharedFullSections.tsx')
+
+  assert.match(full, /不会给你发消息催/)
+  assert.match(full, /认领时会生成一个凭证码/)
 })

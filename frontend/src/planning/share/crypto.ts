@@ -46,3 +46,10 @@ export async function generateClaimReceiptMaterial(): Promise<{ receiptWire: str
   const commitment = toBase64URL(await sha256Raw(secret))
   return { receiptWire: `cr1.${toBase64URL(secret)}`, commitment }
 }
+
+const CLAIM_RECEIPT_WIRE_PATTERN = /^cr1\.[A-Za-z0-9_-]{20,180}$/
+
+// 仅做输入形态预检，减少无谓请求；真伪由服务端 constant-time 比对裁决。
+export function isClaimReceiptWireFormat(value: string): boolean {
+  return CLAIM_RECEIPT_WIRE_PATTERN.test(value.trim())
+}

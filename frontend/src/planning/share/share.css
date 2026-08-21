@@ -164,3 +164,6 @@
     grid-template-columns: 1fr;
   }
 }
+.share-claim-revoke { display: grid; gap: 8px; justify-items: end; }
+.share-claim-revoke .share-claim-form { justify-items: stretch; min-width: min(320px, 100%); }
+.share-fb-sent-list { margin-top: 14px; }
