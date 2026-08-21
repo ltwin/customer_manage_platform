@@ -22,7 +22,10 @@ import {
   type ShareViewProjection,
 } from './api'
 import { composeShareURL, generateShareSecretMaterial, isWebCryptoAvailable } from './crypto'
+import { removedShotLabel, shotPositionLabel, shotReferenceLabel } from './shotReference'
 import OneTimeSecretDialog from './OneTimeSecretDialog'
+
+export type ShotLabel = { position: number; title: string }
 
 type FocusTarget =
   | { kind: 'feedback' }
@@ -36,11 +39,13 @@ export default function ShareCollaborationPanel({
   planRevision,
   readOnly,
   focus,
+  shotLabels,
 }: {
   planID: string
   planRevision: number
   readOnly: boolean
   focus: FocusTarget
+  shotLabels: Record<string, ShotLabel>
 }) {
   const navigate = useNavigate()
   const [management, setManagement] = useState<ShareManagementProjection | null>(null)
@@ -171,7 +176,9 @@ export default function ShareCollaborationPanel({
         </div>
         <div className="share-fb-list">
           {feedback.length === 0 && <p className="share-hint">还没有反馈。</p>}
-          {feedback.map((item) => (
+          {feedback.map((item) => {
+            const shotMeta = item.target.kind === 'shot' ? shotLabels[item.target.shot_id] : undefined
+            return (
             <article
               className="share-fb-item"
               key={item.feedback_id}
@@ -180,7 +187,7 @@ export default function ShareCollaborationPanel({
               <p className="share-fb-who">
                 {item.author_display_name || '匿名'}
                 {' · '}
-                {item.target.kind === 'shot' ? `第 ${item.target.shot_id} 镜` : '整案反馈'}
+                {item.target.kind === 'shot' ? (shotMeta ? shotReferenceLabel(shotMeta.position, shotMeta.title) : removedShotLabel) : '整案反馈'}
               </p>
               <p className="share-fb-quote">{item.content}</p>
               <div className="share-form-actions">
@@ -250,12 +257,13 @@ export default function ShareCollaborationPanel({
                     type="button"
                     onClick={() => navigate(`/shoot-plans/${encodeURIComponent(planID)}?tab=shots&focus=shot:${item.target.kind === 'shot' ? item.target.shot_id : ''}`)}
                   >
-                    去修改该镜头
+                    {shotMeta ? `去修改 ${shotPositionLabel(shotMeta.position)}` : '去修改该镜头'}
                   </button>
                 )}
               </div>
             </article>
-          ))}
+            )
+          })}
         </div>
         {feedbackCursor && (
           <button className="btn btn-secondary share-touch" type="button" onClick={() => { void loadMoreFeedback() }}>加载更多反馈</button>

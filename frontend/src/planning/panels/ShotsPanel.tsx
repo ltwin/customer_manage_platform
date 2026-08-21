@@ -1,14 +1,32 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail, ShootPlanShot } from '../api'
 import { shotHasExecutionHistory } from '../history'
 
-export default function ShotsPanel({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner }) {
+export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner; focusShotID: string | null }) {
   const [editing, setEditing] = useState<ShootPlanShot | 'new' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [highlightID, setHighlightID] = useState<string | null>(null)
   const readonly = plan.status === 'archived'
+  const appliedFocusID = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!focusShotID || appliedFocusID.current === focusShotID) return
+    appliedFocusID.current = focusShotID
+    const shot = plan.shots.find((candidate) => candidate.id === focusShotID)
+    if (!shot) return
+    document.getElementById(`planning-shot-${shot.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setEditing(shot)
+    setHighlightID(shot.id)
+  }, [focusShotID, plan.shots])
+
+  useEffect(() => {
+    if (!highlightID) return
+    const timer = window.setTimeout(() => setHighlightID(null), 2400)
+    return () => window.clearTimeout(timer)
+  }, [highlightID])
 
   async function reorder(index: number, direction: -1 | 1) {
     const target = index + direction
@@ -61,7 +79,7 @@ export default function ShotsPanel({ plan, busy, runCommand }: { plan: ShootPlan
       ) : (
         <div className="planning-shot-list">
           {plan.shots.map((shot, index) => (
-            <article className="card planning-shot-card" key={shot.id}>
+            <article className={`card planning-shot-card${highlightID === shot.id ? ' is-focused' : ''}`} key={shot.id} id={`planning-shot-${shot.id}`}>
               <div className="planning-shot-position">{shot.position}</div>
               <div className="planning-shot-body">
                 <div className="planning-title-line"><h3>{shot.title}</h3><OutcomeBadge shot={shot} /></div>

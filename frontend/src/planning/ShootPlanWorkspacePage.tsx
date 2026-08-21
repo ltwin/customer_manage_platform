@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import StateNotice from '../components/StateNotice'
@@ -22,6 +22,7 @@ import {
 } from './api'
 import StatusBadge from './StatusBadge'
 import { planningErrorMessage } from './presentation'
+import { deriveTransitionGuidance, isTransitionGuidanceCode, type TransitionGuidance } from './transitionGuidance'
 import BriefPanel from './panels/BriefPanel'
 import ShotsPanel from './panels/ShotsPanel'
 import ReadinessPanel from './panels/ReadinessPanel'
@@ -75,6 +76,7 @@ export default function ShootPlanWorkspacePage() {
   const [reloadTick, setReloadTick] = useState(0)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [transitionGuidance, setTransitionGuidance] = useState<TransitionGuidance | null>(null)
   const pendingKeys = useRef(new Map<string, string>())
   const getMutationKey = useCallback((signature: string, scope: string) => {
     const key = pendingKeys.current.get(signature) ?? newPlanningMutationKey(scope)
@@ -150,6 +152,7 @@ export default function ShootPlanWorkspacePage() {
     const key = getMutationKey(signature, scope)
     setBusy(true)
     setFeedback(null)
+    setTransitionGuidance(null)
     try {
       try {
         await transitionShootPlan(id, transition, key)
@@ -159,6 +162,10 @@ export default function ShootPlanWorkspacePage() {
           setFeedback(error.code === 'archive_acknowledgement_required'
             ? '归档影响已变化。页面已刷新，请重新阅读并确认。'
             : '策划版本已变化。页面已刷新，请重新确认状态。')
+        }
+        if (error instanceof ApiError && isTransitionGuidanceCode(error.code)) {
+          const fresh = await load(true).catch(() => undefined)
+          if (fresh) setTransitionGuidance(deriveTransitionGuidance(error.code, fresh))
         }
         throw error
       }
@@ -176,6 +183,14 @@ export default function ShootPlanWorkspacePage() {
 
   const presentation = pageReadPresentation(state)
   const plan = readyPageData(state)
+  const focusShotID = shareFocus?.kind === 'shot' ? shareFocus.shotID : null
+  const shotLabels = useMemo(() => {
+    if (!plan) return {}
+    return Object.fromEntries(plan.shots.map((shot) => [shot.id, { position: shot.position, title: shot.title }]))
+  }, [plan])
+  const openRunMode = useCallback(() => {
+    if (plan) navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/run`)
+  }, [navigate, plan])
 
   return (
     <>
@@ -187,12 +202,20 @@ export default function ShootPlanWorkspacePage() {
         <div className="topbar-actions">
           <button className="btn" type="button" onClick={() => navigate('/shoot-plans')}>← 全部策划</button>
           {plan && plan.status !== 'archived' && <button className="btn btn-primary" type="button" onClick={() => navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/ingestions/new`)}>从聊天整理</button>}
-          {plan && <StatusActions plan={plan} busy={busy} runTransition={runTransition} onRun={() => navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/run`)} />}
+          {plan && <StatusActions plan={plan} busy={busy} runTransition={runTransition} onRun={openRunMode} />}
         </div>
       </header>
       <main className="content planning-content planning-workspace">
         {presentation.notice && <StateNotice {...presentation.notice} />}
         {feedback && <div className="planning-feedback" role="status">{feedback}</div>}
+        {transitionGuidance && (
+          <TransitionGuidanceCard
+            guidance={transitionGuidance}
+            onGoReadiness={() => setTab('readiness')}
+            onGoShots={() => setTab('shots')}
+            onRun={openRunMode}
+          />
+        )}
         {plan && (
           <>
             <div className="planning-summary-strip">
@@ -213,7 +236,7 @@ export default function ShootPlanWorkspacePage() {
             </div>
             <div className="tab-panel active">
               {tab === 'brief' && <BriefPanel plan={plan} busy={busy} runCommand={runCommand} />}
-              {tab === 'shots' && <ShotsPanel plan={plan} busy={busy} runCommand={runCommand} />}
+              {tab === 'shots' && <ShotsPanel plan={plan} busy={busy} runCommand={runCommand} focusShotID={focusShotID} />}
               {tab === 'readiness' && (
                 <>
                   <ReadinessPanel plan={plan} busy={busy} runCommand={runCommand} />
@@ -227,6 +250,7 @@ export default function ShootPlanWorkspacePage() {
                   planRevision={plan.revision}
                   readOnly={plan.status === 'archived'}
                   focus={shareFocus}
+                  shotLabels={shotLabels}
                 />
               )}
               {tab === 'business' && (
@@ -253,6 +277,42 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   return <button className={`tab${active ? ' active' : ''}`} role="tab" aria-selected={active} type="button" onClick={onClick}>{children}</button>
 }
 
+function TransitionGuidanceCard({ guidance, onGoReadiness, onGoShots, onRun }: {
+  guidance: TransitionGuidance
+  onGoReadiness: () => void
+  onGoShots: () => void
+  onRun: () => void
+}) {
+  return (
+    <div className="planning-guidance" role="alert">
+      {guidance.kind === 'readiness' && (
+        <>
+          <p><strong>还不能标记已就绪</strong>：还有 {guidance.missingTitles.length} 项必需准备项未核对：{guidance.missingTitles.join('、')}。</p>
+          <div className="planning-guidance-actions">
+            <button className="btn btn-primary btn-sm" type="button" onClick={onGoReadiness}>去准备项核对</button>
+          </div>
+        </>
+      )}
+      {guidance.kind === 'shots' && (
+        <>
+          {guidance.total === 0 ? (
+            <p><strong>还不能标记完成</strong>：还没有镜头。完成策划要求至少一条镜头，且每个镜头都有结果（跳过需写原因）。</p>
+          ) : (
+            <p><strong>还不能标记完成</strong>：{guidance.total} 个镜头里还有 {guidance.remaining} 个既没捕获也没跳过。完成策划要求每个镜头都有结果（跳过需写原因）。</p>
+          )}
+          <div className="planning-guidance-actions">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={onGoShots}>{guidance.total === 0 ? '去镜头表建立' : '去镜头表看看'}</button>
+            {guidance.total > 0 && <button className="btn btn-primary btn-sm" type="button" onClick={onRun}>进入 Run Mode</button>}
+          </div>
+        </>
+      )}
+      {guidance.kind === 'retry' && (
+        <p>刚才被拒的条件现在已经满足。页面已刷新，请再试一次。</p>
+      )}
+    </div>
+  )
+}
+
 function StatusActions({ plan, busy, runTransition, onRun }: { plan: ShootPlanDetail; busy: boolean; runTransition: TransitionRunner; onRun: () => void }) {
   const [error, setError] = useState<string | null>(null)
   async function transition(kind: 'mark_ready' | 'start' | 'complete' | 'reopen') {
@@ -275,7 +335,11 @@ function StatusActions({ plan, busy, runTransition, onRun }: { plan: ShootPlanDe
     try {
       await runTransition(body, kind)
     } catch (cause) {
-      setError(planningErrorMessage(cause, '状态更新失败'))
+      if (cause instanceof ApiError && isTransitionGuidanceCode(cause.code)) {
+        setError(null)
+      } else {
+        setError(planningErrorMessage(cause, '状态更新失败'))
+      }
     }
   }
 

@@ -39,6 +39,7 @@ export default function ReadinessPanel({ plan, busy, runCommand }: { plan: Shoot
 
   const required = plan.readiness_items.filter((item) => item.requirement === 'required')
   const requiredDone = required.filter((item) => item.preflight_status === 'checked').length
+  const uncheckedRequired = required.filter((item) => item.preflight_status === 'unchecked')
   return (
     <section className="planning-section">
       <div className="planning-section-head">
@@ -46,6 +47,11 @@ export default function ReadinessPanel({ plan, busy, runCommand }: { plan: Shoot
         <button className="btn btn-primary" type="button" disabled={busy || readonly} onClick={() => setEditing('new')}>＋ 新增准备项</button>
       </div>
       <div className="planning-readiness-summary"><strong>{requiredDone} / {required.length}</strong><span>必需准备项已核对</span></div>
+      {plan.status === 'draft' && uncheckedRequired.length > 0 && (
+        <div className="planning-note planning-note-warn">
+          <strong>完成核对前不能标记已就绪</strong>（标记按钮在右上角）。未核对：{uncheckedRequired.map((item) => item.title).join('、')}。
+        </div>
+      )}
       {error && <p className="planning-inline-error" role="alert">{error}</p>}
       {plan.readiness_items.length === 0 ? (
         <div className="planning-empty-card">还没有准备项。没有必需准备项时，不会阻塞“标记已就绪”。</div>
