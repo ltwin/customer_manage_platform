@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail, ShootPlanReadinessItem } from '../api'
+import { getShootPlanAssignments, type AssignmentManagementItem } from '../share/api'
+import { preparationMissingShotPositions, readinessTag } from '../outcomeLabels'
 
 const categoryLabels: Record<string, string> = { styling: '妆造', location: '场地', prop_equipment: '道具与设备', other: '其他' }
 const responsibilityLabels: Record<string, string> = { photographer: '摄影师', customer: '拍摄对象', unassigned: '未分配' }
@@ -10,7 +12,24 @@ const responsibilityLabels: Record<string, string> = { photographer: '摄影师'
 export default function ReadinessPanel({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner }) {
   const [editing, setEditing] = useState<ShootPlanReadinessItem | 'new' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [assignments, setAssignments] = useState<AssignmentManagementItem[]>([])
   const readonly = plan.status === 'archived'
+
+  useEffect(() => {
+    let active = true
+    getShootPlanAssignments(plan.id, { limit: 100 })
+      .then((page) => { if (active) setAssignments(page.items) })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [plan.id, plan.revision])
+
+  const claimantByReadiness = new Map<string, string>()
+  for (const assignment of assignments) {
+    if (assignment.status === 'active' && assignment.assignment_kind === 'readiness'
+      && assignment.target.kind === 'readiness' && assignment.target.readiness_item_id) {
+      claimantByReadiness.set(assignment.target.readiness_item_id, assignment.claimed_by_display_name)
+    }
+  }
 
   async function toggle(item: ShootPlanReadinessItem) {
     setError(null)
@@ -56,25 +75,48 @@ export default function ReadinessPanel({ plan, busy, runCommand }: { plan: Shoot
       {plan.readiness_items.length === 0 ? (
         <div className="planning-empty-card">还没有准备项。没有必需准备项时，不会阻塞“标记已就绪”。</div>
       ) : (
-        <div className="planning-readiness-list">
-          {plan.readiness_items.map((item) => {
-            const linkedShots = plan.shots.filter((shot) => shot.readiness_item_ids.includes(item.id))
-            return (
-              <article className="card planning-readiness-card" key={item.id}>
-                <label className="planning-check">
-                  <input type="checkbox" checked={item.preflight_status === 'checked'} disabled={busy || readonly} onChange={() => void toggle(item)} />
-                  <span className="sr-only">切换核对状态</span>
-                </label>
-                <div className="planning-readiness-main">
-                  <div className="planning-title-line"><h3>{item.title}</h3><span className={`badge ${item.requirement === 'required' ? 'badge-warning' : 'badge-muted'}`}>{item.requirement === 'required' ? '必需' : '可选'}</span></div>
-                  <div className="planning-meta"><span>{categoryLabels[item.category] ?? item.category}</span><span>责任提示：{responsibilityLabels[item.responsibility_hint] ?? item.responsibility_hint}</span>{item.default_preparation_lead_days !== undefined && item.default_preparation_lead_days !== null && <span>建议提前 {item.default_preparation_lead_days} 天</span>}</div>
-                  {linkedShots.length > 0 && <p className="planning-linked-shots">关联镜头：{linkedShots.map((shot) => shot.title).join('、')}</p>}
-                </div>
-                <div className="planning-card-actions"><button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => setEditing(item)}>编辑</button><button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || readonly} onClick={() => void remove(item)}>移除</button></div>
-              </article>
-            )
-          })}
-        </div>
+        (['styling', 'location', 'prop_equipment', 'other'] as const)
+          .map((category) => ({
+            category,
+            label: categoryLabels[category] ?? category,
+            items: plan.readiness_items.filter((item) => item.category === category),
+          }))
+          .filter((group) => group.items.length > 0)
+          .map((group) => (
+            <div className="planning-ready-group" key={group.category}>
+              <p className="planning-eyebrow">{group.label}</p>
+              <div className="planning-readiness-list">
+                {group.items.map((item) => {
+                  const linkedShots = plan.shots.filter((shot) => shot.readiness_item_ids.includes(item.id))
+                  const claimant = claimantByReadiness.get(item.id)
+                  const missingPositions = preparationMissingShotPositions(plan.shots, item.id)
+                  const tag = readinessTag(item, missingPositions.length > 0)
+                  return (
+                    <article className="card planning-readiness-card" key={item.id}>
+                      <label className="planning-check">
+                        <input type="checkbox" checked={item.preflight_status === 'checked'} disabled={busy || readonly} onChange={() => void toggle(item)} />
+                        <span className="sr-only">切换核对状态</span>
+                      </label>
+                      <div className="planning-readiness-main">
+                        <div className="planning-title-line"><h3>{item.title}</h3><span className={tag.className}>{tag.label}</span></div>
+                        <div className="planning-meta">
+                          <span>{group.label}</span>
+                          <span>责任提示：{responsibilityLabels[item.responsibility_hint] ?? item.responsibility_hint}</span>
+                          {claimant && <span>客户认领 · {claimant}</span>}
+                          {item.default_preparation_lead_days !== undefined && item.default_preparation_lead_days !== null && <span>建议提前 {item.default_preparation_lead_days} 天</span>}
+                        </div>
+                        {missingPositions.length > 0 && (
+                          <p className="planning-site-missing">现场缺失 · 来自 Run Mode 第 {missingPositions.join('、')} 镜跳过记录</p>
+                        )}
+                        {linkedShots.length > 0 && <p className="planning-linked-shots">关联镜头：{linkedShots.map((shot) => shot.title).join('、')}</p>}
+                      </div>
+                      <div className="planning-card-actions"><button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => setEditing(item)}>编辑</button><button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || readonly} onClick={() => void remove(item)}>移除</button></div>
+                    </article>
+                  )
+                })}
+              </div>
+            </div>
+          ))
       )}
       {editing && <ReadinessDialog plan={plan} item={editing === 'new' ? null : editing} busy={busy} runCommand={runCommand} onClose={() => setEditing(null)} />}
     </section>

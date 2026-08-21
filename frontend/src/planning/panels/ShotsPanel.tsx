@@ -4,9 +4,12 @@ import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail, ShootPlanShot } from '../api'
 import { shotHasExecutionHistory } from '../history'
+import { shotTagFields } from '../ingestionCandidates'
+import { captureModeShortLabel, skipReasonLabel } from '../outcomeLabels'
 
 export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner; focusShotID: string | null }) {
   const [editing, setEditing] = useState<ShootPlanShot | 'new' | null>(null)
+  const [duplicating, setDuplicating] = useState<ShootPlanShot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [highlightID, setHighlightID] = useState<string | null>(null)
   const readonly = plan.status === 'archived'
@@ -83,6 +86,12 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
               <div className="planning-shot-position">{shot.position}</div>
               <div className="planning-shot-body">
                 <div className="planning-title-line"><h3>{shot.title}</h3><OutcomeBadge shot={shot} /></div>
+                <div className="planning-shot-tags" aria-label="规范标签">
+                  {shotTagFields.map((field) => {
+                    const value = shot[field.key]
+                    return <span className={`planning-tag${value ? '' : ' is-empty'}`} key={field.key}>{field.label} {value ?? '未填'}</span>
+                  })}
+                </div>
                 <div className="planning-shot-copy">
                   {shot.scene && <p><strong>场景</strong>{shot.scene}</p>}
                   {shot.action && <p><strong>动作</strong>{shot.action}</p>}
@@ -92,8 +101,9 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
                   {shot.notes && <p><strong>备注</strong>{shot.notes}</p>}
                 </div>
                 <div className="planning-meta">
-                  {shot.framing_tag && <span>景别 {shot.framing_tag}</span>}
-                  {shot.shot_type_tag && <span>类型 {shot.shot_type_tag}</span>}
+                  {shot.current_outcome && (
+                    <span>{shot.current_outcome.result === 'captured' ? '捕获于' : '跳过于'} {formatOutcomeInstant(shot.current_outcome.checked_at)}{shot.current_outcome.capture_mode === 'backfill' ? ' · 补记' : ''}</span>
+                  )}
                   <span>执行版本 {shot.execution_revision}</span>
                 </div>
                 {plan.readiness_items.length > 0 && (
@@ -109,6 +119,7 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
               <div className="planning-card-actions">
                 <button className="btn btn-sm" type="button" disabled={busy || readonly || index === 0} aria-label={`上移镜头 ${shot.title}`} onClick={() => void reorder(index, -1)}>↑</button>
                 <button className="btn btn-sm" type="button" disabled={busy || readonly || index === plan.shots.length - 1} aria-label={`下移镜头 ${shot.title}`} onClick={() => void reorder(index, 1)}>↓</button>
+                <button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => { setEditing(null); setDuplicating(shot) }}>复制</button>
                 <button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => setEditing(shot)}>编辑</button>
                 <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || readonly} onClick={() => void remove(shot)}>移除</button>
               </div>
@@ -116,7 +127,16 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
           ))}
         </div>
       )}
-      {editing && <ShotDialog plan={plan} shot={editing === 'new' ? null : editing} busy={busy} runCommand={runCommand} onClose={() => setEditing(null)} />}
+      {(editing || duplicating) && (
+        <ShotDialog
+          plan={plan}
+          shot={editing && editing !== 'new' ? editing : null}
+          initial={duplicating}
+          busy={busy}
+          runCommand={runCommand}
+          onClose={() => { setEditing(null); setDuplicating(null) }}
+        />
+      )}
     </section>
   )
 }
@@ -124,23 +144,30 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
 function OutcomeBadge({ shot }: { shot: ShootPlanShot }) {
   const outcome = shot.current_outcome
   if (!outcome) return <span className="badge badge-muted">待执行</span>
-  if (outcome.result === 'captured') return <span className="badge badge-success">已捕获</span>
-  return <span className="badge badge-warning">已跳过 · {outcome.skip_reason ?? '未说明'}</span>
+  if (outcome.result === 'captured') return <span className="badge badge-success">已捕获 · {captureModeShortLabel(outcome.capture_mode)}</span>
+  return <span className="badge badge-warning">已跳过 · {skipReasonLabel(outcome.skip_reason)}</span>
 }
 
-function ShotDialog({ plan, shot, busy, runCommand, onClose }: { plan: ShootPlanDetail; shot: ShootPlanShot | null; busy: boolean; runCommand: CommandRunner; onClose: () => void }) {
-  const [title, setTitle] = useState(shot?.title ?? '')
-  const [scene, setScene] = useState(shot?.scene ?? '')
-  const [action, setAction] = useState(shot?.action ?? '')
-  const [expression, setExpression] = useState(shot?.expression ?? '')
-  const [composition, setComposition] = useState(shot?.composition ?? '')
-  const [lighting, setLighting] = useState(shot?.lighting_text ?? '')
-  const [notes, setNotes] = useState(shot?.notes ?? '')
-  const [framing, setFraming] = useState(shot?.framing_tag ?? '')
-  const [lightingDirection, setLightingDirection] = useState(shot?.lighting_direction_tag ?? '')
-  const [lightingQuality, setLightingQuality] = useState(shot?.lighting_quality_tag ?? '')
-  const [palette, setPalette] = useState(shot?.palette_tag ?? '')
-  const [shotType, setShotType] = useState(shot?.shot_type_tag ?? '')
+function formatOutcomeInstant(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.valueOf())) return '时间未知'
+  return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(date)
+}
+
+function ShotDialog({ plan, shot, initial, busy, runCommand, onClose }: { plan: ShootPlanDetail; shot: ShootPlanShot | null; initial?: ShootPlanShot | null; busy: boolean; runCommand: CommandRunner; onClose: () => void }) {
+  const source = shot ?? initial ?? null
+  const [title, setTitle] = useState(source?.title ?? '')
+  const [scene, setScene] = useState(source?.scene ?? '')
+  const [action, setAction] = useState(source?.action ?? '')
+  const [expression, setExpression] = useState(source?.expression ?? '')
+  const [composition, setComposition] = useState(source?.composition ?? '')
+  const [lighting, setLighting] = useState(source?.lighting_text ?? '')
+  const [notes, setNotes] = useState(source?.notes ?? '')
+  const [framing, setFraming] = useState(source?.framing_tag ?? '')
+  const [lightingDirection, setLightingDirection] = useState(source?.lighting_direction_tag ?? '')
+  const [lightingQuality, setLightingQuality] = useState(source?.lighting_quality_tag ?? '')
+  const [palette, setPalette] = useState(source?.palette_tag ?? '')
+  const [shotType, setShotType] = useState(source?.shot_type_tag ?? '')
   const [error, setError] = useState<string | null>(null)
 
   async function save(event: FormEvent) {
@@ -169,8 +196,8 @@ function ShotDialog({ plan, shot, busy, runCommand, onClose }: { plan: ShootPlan
   return (
     <div className="overlay open" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
       <form className="dialog planning-shot-dialog" role="dialog" aria-modal="true" aria-labelledby="shotDialogTitle" onSubmit={save}>
-        <h2 id="shotDialogTitle">{shot ? '编辑镜头' : '新增镜头'}</h2>
-        <p className="dialog-sub">只编辑镜头结构；现场结果在 Run Mode 或执行历史中记录。</p>
+        <h2 id="shotDialogTitle">{shot ? '编辑镜头' : initial ? '复制为新镜头' : '新增镜头'}</h2>
+        <p className="dialog-sub">只编辑镜头结构；现场结果在 Run Mode 或执行历史中记录。{initial ? ' 保存会在镜头表末尾新增一条。' : ''}</p>
         <label className="field"><span>镜头标题</span><input className="input" autoFocus value={title} maxLength={160} onChange={(event) => setTitle(event.target.value)} /></label>
         <div className="field-row"><TextArea label="场景" value={scene} setValue={setScene} /><TextArea label="动作" value={action} setValue={setAction} /></div>
         <div className="field-row"><TextArea label="表情" value={expression} setValue={setExpression} /><TextArea label="构图" value={composition} setValue={setComposition} /></div>

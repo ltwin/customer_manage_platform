@@ -448,3 +448,9 @@
 .planning-empty strong { color: var(--text); }
 @media (max-width: 900px) { .planning-media-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .planning-media-grid { grid-template-columns: 1fr; } .planning-media-controls { align-items: stretch; } .planning-media-controls select { width: 100%; } }
+.planning-shot-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+.planning-tag { padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface-2, #f1f5f9); color: var(--muted); font-size: 11px; font-weight: 750; }
+.planning-tag.is-empty { opacity: .55; }
+.planning-ready-group { margin-bottom: 14px; }
+.planning-ready-group .planning-eyebrow { margin: 10px 0 6px; }
+.planning-site-missing { margin: 5px 0 0; color: var(--danger); font-size: 12px; font-weight: 700; }

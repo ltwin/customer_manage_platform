@@ -33,6 +33,12 @@ import {
   shotPositionLabel,
   shotReferenceLabel,
 } from '../src/planning/share/shotReference.ts'
+import {
+  captureModeShortLabel,
+  preparationMissingShotPositions,
+  readinessTag,
+  skipReasonLabel,
+} from '../src/planning/outcomeLabels.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -605,4 +611,56 @@ test('Run Mode completion card shows split stats and end-of-session actions', ()
   assert.match(runPage, /再看看/)
   assert.match(runPage, /已跳过的镜头会保留原因，之后可安排补拍/)
   assert.match(runPage, /setCompleteDismissed/)
+})
+
+test('outcome labels map skip reasons, capture modes, and readiness requirement states', () => {
+  assert.equal(skipReasonLabel('preparation_missing'), '准备未完成')
+  assert.equal(skipReasonLabel('other'), '其他')
+  assert.equal(skipReasonLabel(null), '未说明')
+  assert.equal(skipReasonLabel('weird'), '未说明')
+  assert.equal(captureModeShortLabel('live'), '现场')
+  assert.equal(captureModeShortLabel('backfill'), '补记')
+  assert.equal(captureModeShortLabel(undefined), '未判定时段')
+
+  assert.deepEqual(readinessTag({ requirement: 'required', preflight_status: 'checked' }, true), { label: '必需 · 现场缺失', className: 'badge badge-danger' })
+  assert.deepEqual(readinessTag({ requirement: 'optional', preflight_status: 'checked' }, true), { label: '现场缺失', className: 'badge badge-danger' })
+  assert.deepEqual(readinessTag({ requirement: 'required', preflight_status: 'unchecked' }, false), { label: '必需 · 待核对', className: 'badge badge-warning' })
+  assert.deepEqual(readinessTag({ requirement: 'required', preflight_status: 'checked' }, false), { label: '必需', className: 'badge badge-accent' })
+  assert.deepEqual(readinessTag({ requirement: 'optional', preflight_status: 'unchecked' }, false), { label: '可选', className: 'badge badge-muted' })
+})
+
+test('preparation-missing site flags derive only from linked skipped shots', () => {
+  const shots = [
+    { position: 5, readiness_item_ids: ['r1'], current_outcome: { result: 'skipped', skip_reason: 'preparation_missing' } },
+    { position: 6, readiness_item_ids: ['r1'], current_outcome: { result: 'skipped', skip_reason: 'time_insufficient' } },
+    { position: 7, readiness_item_ids: ['r1', 'r2'], current_outcome: { result: 'skipped', skip_reason: 'preparation_missing' } },
+    { position: 8, readiness_item_ids: ['r1'], current_outcome: null },
+    { position: 9, readiness_item_ids: [], current_outcome: { result: 'skipped', skip_reason: 'preparation_missing' } },
+  ]
+  assert.deepEqual(preparationMissingShotPositions(shots, 'r1'), [5, 7])
+  assert.deepEqual(preparationMissingShotPositions(shots, 'r2'), [7])
+  assert.deepEqual(preparationMissingShotPositions(shots, 'r3'), [])
+})
+
+test('workspace shot cards show full taxonomy, capture-mode badges, capture time, and duplicate action', () => {
+  const shots = source('../src/planning/panels/ShotsPanel.tsx')
+
+  assert.match(shots, /shotTagFields\.map/)
+  assert.match(shots, /\{field\.label\} \{value \?\? '未填'\}/)
+  assert.match(shots, /已捕获 · \{captureModeShortLabel\(outcome\.capture_mode\)\}/)
+  assert.match(shots, /skipReasonLabel\(outcome\.skip_reason\)/)
+  assert.match(shots, /捕获于/)
+  assert.match(shots, /setDuplicating/)
+  assert.match(shots, /复制为新镜头/)
+})
+
+test('readiness list groups by category with claimant names and on-site missing flags', () => {
+  const readiness = source('../src/planning/panels/ReadinessPanel.tsx')
+
+  assert.match(readiness, /getShootPlanAssignments/)
+  assert.match(readiness, /planning-ready-group/)
+  assert.match(readiness, /客户认领 · \{claimant\}/)
+  assert.match(readiness, /readinessTag\(/)
+  assert.match(readiness, /现场缺失 · 来自 Run Mode 第/)
+  assert.match(readiness, /preparationMissingShotPositions\(/)
 })
