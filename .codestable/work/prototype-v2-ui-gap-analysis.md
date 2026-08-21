@@ -8,8 +8,8 @@ status: open
 disposition: epic-final-acceptance-input
 gap_counts:
   true_gap_total: 38
-  true_gap_remaining: 21
-  true_gap_fixed: 17
+  true_gap_remaining: 19
+  true_gap_fixed: 19
   true_gap_partial: 1
   residual: 2
   by_design: 7
@@ -33,6 +33,8 @@ fixed_ids:
   - GAP-RUN-04
   - GAP-RUN-05
   - GAP-RUN-06
+  - GAP-WS-05
+  - GAP-WS-08
 partial_ids:
   - GAP-WS-04
 last_reconciled: 2026-08-21
@@ -128,10 +130,10 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | GAP-WS-02 | 高 | 「标记已就绪」被拒时不列出具体缺失项；就绪校验面板无警示 note 与面板内按钮（按钮在 topbar） **【已修复 2026-08-21，待提交：引导卡逐项列出未核对必需项；准备项面板加警示 note；按钮按 BD-WS 先例留在 topbar】** | `ReadinessPanel.tsx:40-48`；`ShootPlanWorkspacePage.tsx:297` |
 | GAP-WS-03 | 高 | 反馈「去修改该镜头」只切 tab，不定位/展开/打开编辑镜头；反馈目标显示原始 shot_id 而非「第 07 镜」 **【已修复 2026-08-21，待提交：focus=shot 经工作台传入镜头表，滚动定位+高亮+自动打开编辑弹窗；反馈条目显示「第 07 镜 · 标题」，已移除镜头回退显示「已移除的镜头」】** | `ShareCollaborationPanel.tsx:183, 207, 251`；`ShotsPanel.tsx` 无 focus 消费 |
 | GAP-WS-04 | 高（API+UI 双缺） | 列表卡片缺关联订单/客户、执行时间窗、捕获统计、侧栏状态标签；列表 API 本身不返回这些字段 **【部分收口 2026-08-21，待提交：列表 API 加性扩 4 组字段（crm_summary/execution_window_summary/execution_stats/readiness_summary），迁移 0030 扩 shoot_plan_list_projection（订单取链接时快照、客户名 join 档案、捕获统计 join 执行事件、准备项标量子查询），卡片改三行结构；侧栏扩展标签（分享状态/认领待核对/草稿待确认）按方案 D2 明确不做，剩余记 GAP-WS-04 残余】** | `ShootPlansPage.tsx:88-100`；`schema.d.ts:1977-1991` |
-| GAP-WS-05 | 中 | 镜头卡只外显景别+类型两标签，无「未填」占位；捕获状态无 capture_mode 区分（「已捕获 · 现场」）；无「捕获于 09:41 · 第 1 场」元信息；无「复制镜头」 | `ShotsPanel.tsx:77-79, 106-111` |
+| GAP-WS-05 | 中 | 镜头卡只外显景别+类型两标签，无「未填」占位；捕获状态无 capture_mode 区分（「已捕获 · 现场」）；无「捕获于 09:41 · 第 1 场」元信息；无「复制镜头」 **【已修复 2026-08-21，待提交：标签行改为 5 个规范标签 chip（复用 ingestionCategories 字段定义，空值「未填」）；捕获徽章带 capture_mode（已捕获 · 现场/补记）与跳过原因中文标签；元信息行显示「捕获于/跳过于 MM-DD HH:mm（· 补记）」——场次与版本号不在 current_outcome 契约内，如实不展示；新增「复制」按钮预填打开「复制为新镜头」弹窗（保存即在末尾新增）】** | `ShotsPanel.tsx:77-79, 106-111` |
 | GAP-WS-06 | 中 | 素材面板用途写死 `moodboard_display`：无用途选择与「生成参考（本来源禁止）」联动、无来源×权利×用途矩阵表、素材卡无来源/权利标签 | `PlanningMediaPanel.tsx:42, 53, 66, 70-75` |
 | GAP-WS-07 | 中 | 素材仅支持整案挂载与图片上传：无镜头级绑定、无纯链接素材 | `PlanningMediaPanel.tsx:52-54, 64` |
-| GAP-WS-08 | 中 | 准备项列表不按妆造/场地/道具器材分组；条目无认领人姓名与「现场缺失」红标联动 | `ReadinessPanel.tsx:7, 53-72` |
+| GAP-WS-08 | 中 | 准备项列表不按妆造/场地/道具器材分组；条目无认领人姓名与「现场缺失」红标联动 **【已修复 2026-08-21，待提交：按 styling/location/prop_equipment/other 分组渲染（eyebrow 组头）；拉取认领记录显示「客户认领 · 姓名」；「现场缺失」红标按当前投影派生（关联镜头 current_outcome=skipped+preparation_missing，补拍成功自动解除），标签四态 必需·现场缺失/必需·待核对/必需/可选】** | `ReadinessPanel.tsx:7, 53-72` |
 | GAP-WS-09 | 中 | 分享签发 409 一律显示「页面已刷新」话术，`full_view_not_eligible` 等资格错误会被误导性覆盖；无完整档资格说明文案 **【已修复 2026-08-21，待提交：409 分流——stale/revision 类才显示「页面已刷新」，`full_view_not_eligible` 显示资格条件与 CRM 关联卡引导，其余 409 保留服务端领域文案；完整档卡片前置资格说明 note（订单状态口径与 eligibility.go 一致，含取消后失效不降级）】** | `ShareCollaborationPanel.tsx:435, 723-735` |
 | GAP-WS-10 | 低 | 执行时间窗无显式「来源」三选一（slot 投影/手动/暂不设置）——投影联动拆到了 CRM 面板，语义等价但入口分散 | `BriefPanel.tsx:200-254`；`CrmLinkPanel.tsx:129, 194-207` |
 | GAP-WS-11 | 低 | 经营草稿逐行表缺「依据」列与建议总价行；应用确认无金额前后对照 | `BusinessPanel.tsx:259-267, 128-133` |
@@ -186,7 +188,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 > 文中各「待提交」标记均已随四批提交入库（批 4 提交：`0f13dc9` 引导闭环 / `59b02f8` 列表增强 / `d382c15` 台账）。
 
-38 条真差距中 17 条完整修复、GAP-WS-04 部分收口，**剩余 21 条**（9 中 / 11 低 / WS-04 残余 1 项未分级）：
+38 条真差距中 19 条完整修复、GAP-WS-04 部分收口，**剩余 19 条**（7 中 / 11 低 / WS-04 残余 1 项未分级）：
 
 | 域 | ID | 优先级 | 内容 |
 |---|---|---|---|
@@ -198,10 +200,8 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | 摄取 | GAP-ING-09 | 低 | 冲突时无差异查看 UI |
 | 摄取 | GAP-ING-10 | 低 | 「全选」快捷按钮缺失 |
 | 工作台 | GAP-WS-04 残余 | — | 列表侧栏扩展标签（分享状态/认领待核对/草稿待确认/反馈条数），批 4 按方案 D2 明确不做 |
-| 工作台 | GAP-WS-05 | 中 | 镜头卡标签/捕获元信息/「复制镜头」缺失 |
 | 工作台 | GAP-WS-06 | 中 | 素材用途选择与来源×权利×用途矩阵表缺失 |
 | 工作台 | GAP-WS-07 | 中 | 素材无镜头级绑定、无纯链接素材 |
-| 工作台 | GAP-WS-08 | 中 | 准备项无分组、无认领人与「现场缺失」联动 |
 | 工作台 | GAP-WS-10 | 低 | 执行时间窗三选一入口分散 |
 | 工作台 | GAP-WS-11 | 低 | 经营草稿缺「依据」列与建议总价行 |
 | 工作台 | GAP-WS-12 | 低 | 撤销认领确认缺联动说明与状态标签 |
@@ -214,7 +214,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 **Residual（挂 plan-share checklist S6/S7）**：S6 后端验证矩阵证据（design A19）、S7 v2 conformance 浏览器证据（1600/1280/375/coarse/200%/keyboard/screen-reader）。不因 RES-SHARE-01 的 UI 修复自动关闭。
 
-**建议处置顺序**：高优先级、WS-09 与 RUN 三件套均已清零；剩余中优先级按域打包（WS-05~08 素材/准备项/镜头卡、ING-06/07 摄取编辑、SHARE-03 moodboard 说明、UX-01/02 打磨批）；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
+**建议处置顺序**：高优先级、WS-09 与 RUN 三件套均已清零；剩余中优先级按域打包（WS-06/07 素材用途与绑定、ING-06/07 摄取编辑、SHARE-03 moodboard 说明、UX-01/02 打磨批）；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
 
 ## 引用
 
