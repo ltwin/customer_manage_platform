@@ -7,10 +7,10 @@ analysis_date: 2026-08-20
 status: open
 disposition: epic-final-acceptance-input
 gap_counts:
-  true_gap: 19
+  true_gap: 15
   residual: 2
   by_design: 5
-  fixed_pending_commit: 10
+  fixed_pending_commit: 14
 fixed_ids:
   - GAP-RUN-01
   - GAP-RUN-02
@@ -22,7 +22,11 @@ fixed_ids:
   - GAP-SHARE-01
   - GAP-SHARE-02
   - RES-SHARE-01
-fixed_date: 2026-08-20
+  - GAP-WS-01
+  - GAP-WS-02
+  - GAP-WS-03
+  - GAP-WS-04
+fixed_date: 2026-08-21
 ---
 
 # 拍摄策划 v2 原型 vs 实现 UI 差距分析
@@ -110,10 +114,10 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 | ID | 优先级 | 内容 | 证据 |
 |---|---|---|---|
-| GAP-WS-01 | 高 | 「标记完成」被拒时无「去镜头表看看」引导与剩余计数说明，仅显示后端错误消息 | `ShootPlanWorkspacePage.tsx:277-279`；`presentation.ts:12-29` |
-| GAP-WS-02 | 高 | 「标记已就绪」被拒时不列出具体缺失项；就绪校验面板无警示 note 与面板内按钮（按钮在 topbar） | `ReadinessPanel.tsx:40-48`；`ShootPlanWorkspacePage.tsx:297` |
-| GAP-WS-03 | 高 | 反馈「去修改该镜头」只切 tab，不定位/展开/打开编辑镜头；反馈目标显示原始 shot_id 而非「第 07 镜」 | `ShareCollaborationPanel.tsx:183, 207, 251`；`ShotsPanel.tsx` 无 focus 消费 |
-| GAP-WS-04 | 高（API+UI 双缺） | 列表卡片缺关联订单/客户、执行时间窗、捕获统计、侧栏状态标签；列表 API 本身不返回这些字段 | `ShootPlansPage.tsx:88-100`；`schema.d.ts:1977-1991` |
+| GAP-WS-01 | 高 | 「标记完成」被拒时无「去镜头表看看」引导与剩余计数说明，仅显示后端错误消息 **【已修复 2026-08-21，待提交：被拒后重取 detail 派生剩余数，引导卡带「去镜头表看看/进入 Run Mode」跳转，topbar 通用错误对引导类错误码静默】** | `ShootPlanWorkspacePage.tsx:277-279`；`presentation.ts:12-29` |
+| GAP-WS-02 | 高 | 「标记已就绪」被拒时不列出具体缺失项；就绪校验面板无警示 note 与面板内按钮（按钮在 topbar） **【已修复 2026-08-21，待提交：引导卡逐项列出未核对必需项；准备项面板加警示 note；按钮按 BD-WS 先例留在 topbar】** | `ReadinessPanel.tsx:40-48`；`ShootPlanWorkspacePage.tsx:297` |
+| GAP-WS-03 | 高 | 反馈「去修改该镜头」只切 tab，不定位/展开/打开编辑镜头；反馈目标显示原始 shot_id 而非「第 07 镜」 **【已修复 2026-08-21，待提交：focus=shot 经工作台传入镜头表，滚动定位+高亮+自动打开编辑弹窗；反馈条目显示「第 07 镜 · 标题」，已移除镜头回退显示「已移除的镜头」】** | `ShareCollaborationPanel.tsx:183, 207, 251`；`ShotsPanel.tsx` 无 focus 消费 |
+| GAP-WS-04 | 高（API+UI 双缺） | 列表卡片缺关联订单/客户、执行时间窗、捕获统计、侧栏状态标签；列表 API 本身不返回这些字段 **【部分收口 2026-08-21，待提交：列表 API 加性扩 4 组字段（crm_summary/execution_window_summary/execution_stats/readiness_summary），迁移 0030 扩 shoot_plan_list_projection（订单取链接时快照、客户名 join 档案、捕获统计 join 执行事件、准备项标量子查询），卡片改三行结构；侧栏扩展标签（分享状态/认领待核对/草稿待确认）按方案 D2 明确不做，剩余记 GAP-WS-04 残余】** | `ShootPlansPage.tsx:88-100`；`schema.d.ts:1977-1991` |
 | GAP-WS-05 | 中 | 镜头卡只外显景别+类型两标签，无「未填」占位；捕获状态无 capture_mode 区分（「已捕获 · 现场」）；无「捕获于 09:41 · 第 1 场」元信息；无「复制镜头」 | `ShotsPanel.tsx:77-79, 106-111` |
 | GAP-WS-06 | 中 | 素材面板用途写死 `moodboard_display`：无用途选择与「生成参考（本来源禁止）」联动、无来源×权利×用途矩阵表、素材卡无来源/权利标签 | `PlanningMediaPanel.tsx:42, 53, 66, 70-75` |
 | GAP-WS-07 | 中 | 素材仅支持整案挂载与图片上传：无镜头级绑定、无纯链接素材 | `PlanningMediaPanel.tsx:52-54, 64` |
@@ -162,7 +166,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 1. **GAP-RUN-01/02 + GAP-ING-04**：影响现场与摄取数据正确性/质量，且属 contract 内字段，最先修——**已完成（2026-08-20，待提交）**：Run Mode 增加逐镜现场备注（随 captured/skipped 提交 `notes`，≤1000 rune）、跳过原因强制显式选择且「其他」必须填备注；摄取恢复丢弃候选按 winner kind 继承。验证：test:shoot-planning 26/26、test:plan-ingestion 4/4、planning-prototype-v2 6/6、lint 0 error、build 通过；e2e 脚本已同步新交互，完整 e2e 需本地栈环境后补跑；
 2. **GAP-ING-01/02/03/05**：design 明确要求的候选编辑能力——**已完成（2026-08-20，待提交）**：候选快照与 preview override 加性扩展（5 个规范标签 + 准备项四字段，枚举白名单 fail-closed，reparse 经 Reconcile 整体携带自动保留），镜头/准备项/参考链接的编辑 UI 落地，commit 决策携带完整 ShotWrite/ReadinessWrite，重新解析加确认弹窗（文案按 design §333）。验证：ingestion Go 包全绿、`make generate-check`、test:plan-ingestion 7/7、test:shoot-planning 26/26、planning-prototype-v2 6/6、lint 0 error、build 通过；已知限制：override 无法表达「清除已设标签/字段」（nil=未编辑，与 reference label override 既有语义一致）；
 3. **RES-SHARE-01 + GAP-SHARE-01/02**：分享页闭环——**UI 部分已完成（2026-08-20，待提交）**：客户凭码自助取消认领（含承诺文案与 404/409 分级提示）、整案/逐镜反馈本次访问内回显。验证：test:plan-share 12/12（3 条新测试）、planning-prototype-v2 6/6、lint 0 error、build 通过。plan-share checklist S6/S7 的后端矩阵证据与 v2 conformance 浏览器证据仍按原 residual 跟踪，不因本 UI 修复自动关闭；
-4. **GAP-WS-01/02/03/04**：引导闭环需前后端配合（列表 API 扩字段、错误码结构化），建议单独 feature；
+4. **GAP-WS-01/02/03/04**：引导闭环需前后端配合（列表 API 扩字段、错误码结构化），建议单独 feature——**已完成（2026-08-21，待提交）**：被拒引导卡（前端从刷新后 detail 派生缺失项，无需结构化错误码）+ 准备项警示 note + 反馈「去修改该镜头」定位/高亮/自动开编辑与「第 07 镜」标签 + 列表 API 加性扩字段与三行卡片。GAP-WS-04 的侧栏扩展标签按方案决策 D2 不做（分享状态等工作台内已可见）。验证：go store/shootplanning/httpapi 全绿（含新增 TestPlanListEnrichmentProjection 真库集成测试）、`make generate-check`、test:shoot-planning 35/35、planning-prototype-v2 6/6、lint 0 error、build 通过；迁移 down 回滚测试清单已同步补 0030；e2e 完整跑仍需本地栈；
 5. **GAP-UX-01/02 与各低优先级文案项**：打磨批，可在 final acceptance 后统一处理。
 
 修复应走 cs-feat/residual 流程而不是直接改码；涉及 API 字段新增的（GAP-WS-04、GAP-SHARE-01/03）
