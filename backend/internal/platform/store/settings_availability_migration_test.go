@@ -57,6 +57,7 @@ func TestSettingsAvailabilityMigrationBackfillsExistingRowsAndRollsBack(t *testi
 		t.Fatalf("close before down migration: %v", err)
 	}
 	for index, label := range []string{
+		"plan-list-enrichment",
 		"plan-business-feedback",
 		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal", "plan-assignment-reminder-ingestion", "plan-assignment-reminders",
 		"share assignments", "share feedbacks", "share anonymous projection", "share generations",

@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
@@ -1011,6 +1013,158 @@ func promoteArchiveCapability(
 }
 
 func stringPointer(value string) *string { return &value }
+
+func TestPlanListEnrichmentProjection(t *testing.T) {
+	ctx := context.Background()
+	db := openPlanningStore(t)
+	scope := createPlanningAccount(t, db, "shoot-plan-list-enrich-acct")
+	app, err := shootplanning.NewApplication(shootplanning.NewPostgresRepository(), idempotency.NewExecutor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := app.CreatePlan(ctx, scope, "list-enrich-create", shootplanning.CreatePlanInput{Title: "列表增强", Subject: "主体"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	findItem := func() shootplanning.PlanListItem {
+		result, listErr := app.ListPlans(ctx, scope, shootplanning.ListPlansFilter{Page: 1, PageSize: 20})
+		if listErr != nil {
+			t.Fatal(listErr)
+		}
+		for _, item := range result.Items {
+			if item.ID == plan.ID {
+				return item
+			}
+		}
+		t.Fatalf("plan %s missing from list", plan.ID)
+		return shootplanning.PlanListItem{}
+	}
+
+	independent := findItem()
+	if independent.CRM.CustomerID != nil || independent.CRM.CustomerName != nil || independent.CRM.OrderID != nil ||
+		independent.CRM.OrderTitle != nil || independent.CRM.OrderStatusAtLink != nil {
+		t.Fatalf("independent crm summary=%+v", independent.CRM)
+	}
+	if independent.ExecutionWindow != nil {
+		t.Fatalf("independent window=%+v", independent.ExecutionWindow)
+	}
+	if independent.ExecutionStats.Captured != 0 || independent.ExecutionStats.Skipped != 0 {
+		t.Fatalf("independent stats=%+v", independent.ExecutionStats)
+	}
+	if independent.ReadinessSummary.RequiredTotal != 0 || independent.ReadinessSummary.RequiredUnchecked != 0 {
+		t.Fatalf("independent readiness=%+v", independent.ReadinessSummary)
+	}
+
+	engine := crm.NewEngine()
+	linkedCustomer := createCRMCustomer(t, customer.NewService(customer.NewPostgresRepository()), scope, "阿晚")
+	if outcome := applyCRM(t, scope, engine, plan.ID, plan.Revision, crm.Command{
+		Kind: crm.KindLinkCustomer, CustomerID: &linkedCustomer.ID,
+	}); outcome.Noop {
+		t.Fatalf("link customer was a noop: %+v", outcome)
+	}
+	linked := findItem()
+	if linked.CRM.CustomerID == nil || *linked.CRM.CustomerID != linkedCustomer.ID || linked.CRM.CustomerName == nil || *linked.CRM.CustomerName != "阿晚" {
+		t.Fatalf("linked crm summary=%+v", linked.CRM)
+	}
+	if linked.CRM.OrderID != nil {
+		t.Fatalf("linked order should stay empty: %+v", linked.CRM)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	detail, err := app.GetPlan(ctx, scope, plan.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation, err := app.ApplyPlanCommand(ctx, scope, "list-enrich-window", plan.ID, detail.Revision,
+		shootplanning.SetExecutionWindowCommand{
+			StartsAt: now.Add(-time.Hour), EndsAt: now.Add(time.Hour), Timezone: "Asia/Shanghai",
+			LiveWindowStartsAt: now.Add(-2 * time.Hour), LiveWindowEndsAt: now.Add(2 * time.Hour),
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation, err = app.ApplyPlanCommand(ctx, scope, "list-enrich-shot-a", plan.ID, mutation.Revision,
+		shootplanning.UpsertShotCommand{Shot: shootplanning.ShotWrite{Title: stringPointer("镜头一")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutation, err = app.ApplyPlanCommand(ctx, scope, "list-enrich-shot-b", plan.ID, mutation.Revision,
+		shootplanning.UpsertShotCommand{Shot: shootplanning.ShotWrite{Title: stringPointer("镜头二")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, title := range []string{"必需甲", "必需乙"} {
+		mutation, err = app.ApplyPlanCommand(ctx, scope, fmt.Sprintf("list-enrich-ready-%d", index+1), plan.ID, mutation.Revision,
+			shootplanning.UpsertReadinessCommand{Item: shootplanning.ReadinessWrite{
+				Category: stringPointer("styling"), Title: stringPointer(title), Requirement: stringPointer("required"),
+				PreflightStatus: stringPointer("unchecked"), ResponsibilityHint: stringPointer("photographer"),
+			}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	detail, err = app.GetPlan(ctx, scope, plan.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, item := range detail.ReadinessItems {
+		mutation, err = app.ApplyPlanCommand(ctx, scope, fmt.Sprintf("list-enrich-check-%d", index+1), plan.ID, mutation.Revision,
+			shootplanning.SetPreflightCommand{ReadinessID: item.ID, PreflightStatus: "checked"})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	firstRequired := detail.ReadinessItems[0].ID
+	ready, err := app.TransitionPlan(ctx, scope, "list-enrich-mark-ready", plan.ID, shootplanning.PlanTransition{
+		ExpectedRevision: mutation.Revision, Kind: shootplanning.TransitionMarkReady,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := app.OpenRunSession(ctx, scope, "list-enrich-session", plan.ID, ready.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shotA := session.Input.Shots[0].ID
+	shotB := session.Input.Shots[1].ID
+	if _, err := app.AppendShotResult(ctx, scope, "list-enrich-capture", plan.ID, shotA, shootplanning.AppendShotResultInput{
+		ExpectedExecutionRevision: 0, SessionID: &session.Session.ID, Result: shootplanning.ShotResultCaptured,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	skipReason := "preparation_missing"
+	if _, err := app.AppendShotResult(ctx, scope, "list-enrich-skip", plan.ID, shotB, shootplanning.AppendShotResultInput{
+		ExpectedExecutionRevision: 0, SessionID: &session.Session.ID,
+		Result: shootplanning.ShotResultSkipped, SkipReason: &skipReason,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = app.GetPlan(ctx, scope, plan.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.ApplyPlanCommand(ctx, scope, "list-enrich-uncheck", plan.ID, detail.Revision,
+		shootplanning.SetPreflightCommand{ReadinessID: firstRequired, PreflightStatus: "unchecked"}); err != nil {
+		t.Fatal(err)
+	}
+
+	final := findItem()
+	if final.ExecutionWindow == nil || final.ExecutionWindow.Source != "manual" ||
+		!final.ExecutionWindow.StartsAt.Equal(now.Add(-time.Hour)) || !final.ExecutionWindow.EndsAt.Equal(now.Add(time.Hour)) ||
+		final.ExecutionWindow.Timezone != "Asia/Shanghai" {
+		t.Fatalf("final window=%+v", final.ExecutionWindow)
+	}
+	if final.ExecutionStats.Captured != 1 || final.ExecutionStats.Skipped != 1 {
+		t.Fatalf("final stats=%+v", final.ExecutionStats)
+	}
+	if final.ReadinessSummary.RequiredTotal != 2 || final.ReadinessSummary.RequiredUnchecked != 1 {
+		t.Fatalf("final readiness=%+v", final.ReadinessSummary)
+	}
+	if final.PublicScale.PlannedShotCount != 2 {
+		t.Fatalf("final shot count=%d", final.PublicScale.PlannedShotCount)
+	}
+}
 
 func TestPostgresRepositoryPlanRevisionCAS(t *testing.T) {
 	ctx := context.Background()

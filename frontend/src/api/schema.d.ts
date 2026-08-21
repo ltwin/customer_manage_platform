@@ -1893,6 +1893,35 @@ export interface components {
             /** Format: int64 */
             revision: number;
         };
+        /** @description 客户名取当前档案；订单标题与状态取链接时快照（订单删除后仍可显示）。 */
+        PlanListCrmSummary: {
+            customer_id: string | null;
+            customer_name: string | null;
+            order_id: string | null;
+            order_title: string | null;
+            order_status_at_link: string | null;
+        };
+        PlanListWindowSummary: {
+            /** @enum {string} */
+            source: "manual" | "schedule_slot";
+            /** Format: date-time */
+            starts_at: string;
+            /** Format: date-time */
+            ends_at: string;
+            timezone: string;
+        };
+        PlanListExecutionStats: {
+            /** Format: int64 */
+            captured_count: number;
+            /** Format: int64 */
+            skipped_count: number;
+        };
+        PlanListReadinessSummary: {
+            /** Format: int64 */
+            required_total: number;
+            /** Format: int64 */
+            required_unchecked: number;
+        };
         ShootPlanCurrentOutcome: {
             event_id: string;
             /** @enum {string} */
@@ -1988,6 +2017,10 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            crm_summary?: components["schemas"]["PlanListCrmSummary"];
+            execution_window_summary?: components["schemas"]["PlanListWindowSummary"] | null;
+            execution_stats?: components["schemas"]["PlanListExecutionStats"];
+            readiness_summary?: components["schemas"]["PlanListReadinessSummary"];
         };
         ShootPlanList: {
             items: components["schemas"]["ShootPlanListItem"][];

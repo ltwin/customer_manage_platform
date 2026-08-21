@@ -915,16 +915,34 @@ func (e PlanExecutionWindowRuleVersion) Valid() bool {
 
 // Defines values for PlanExecutionWindowSource.
 const (
-	Manual       PlanExecutionWindowSource = "manual"
-	ScheduleSlot PlanExecutionWindowSource = "schedule_slot"
+	PlanExecutionWindowSourceManual       PlanExecutionWindowSource = "manual"
+	PlanExecutionWindowSourceScheduleSlot PlanExecutionWindowSource = "schedule_slot"
 )
 
 // Valid indicates whether the value is a known member of the PlanExecutionWindowSource enum.
 func (e PlanExecutionWindowSource) Valid() bool {
 	switch e {
-	case Manual:
+	case PlanExecutionWindowSourceManual:
 		return true
-	case ScheduleSlot:
+	case PlanExecutionWindowSourceScheduleSlot:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanListWindowSummarySource.
+const (
+	PlanListWindowSummarySourceManual       PlanListWindowSummarySource = "manual"
+	PlanListWindowSummarySourceScheduleSlot PlanListWindowSummarySource = "schedule_slot"
+)
+
+// Valid indicates whether the value is a known member of the PlanListWindowSummarySource enum.
+func (e PlanListWindowSummarySource) Valid() bool {
+	switch e {
+	case PlanListWindowSummarySourceManual:
+		return true
+	case PlanListWindowSummarySourceScheduleSlot:
 		return true
 	default:
 		return false
@@ -2994,6 +3012,38 @@ type PlanFinalizationSnapshot struct {
 	PreparationMissingEventIds []string  `json:"preparation_missing_event_ids"`
 }
 
+// PlanListCrmSummary 客户名取当前档案；订单标题与状态取链接时快照（订单删除后仍可显示）。
+type PlanListCrmSummary struct {
+	CustomerId        nullable.Nullable[string] `json:"customer_id"`
+	CustomerName      nullable.Nullable[string] `json:"customer_name"`
+	OrderId           nullable.Nullable[string] `json:"order_id"`
+	OrderStatusAtLink nullable.Nullable[string] `json:"order_status_at_link"`
+	OrderTitle        nullable.Nullable[string] `json:"order_title"`
+}
+
+// PlanListExecutionStats defines model for PlanListExecutionStats.
+type PlanListExecutionStats struct {
+	CapturedCount int64 `json:"captured_count"`
+	SkippedCount  int64 `json:"skipped_count"`
+}
+
+// PlanListReadinessSummary defines model for PlanListReadinessSummary.
+type PlanListReadinessSummary struct {
+	RequiredTotal     int64 `json:"required_total"`
+	RequiredUnchecked int64 `json:"required_unchecked"`
+}
+
+// PlanListWindowSummary defines model for PlanListWindowSummary.
+type PlanListWindowSummary struct {
+	EndsAt   time.Time                   `json:"ends_at"`
+	Source   PlanListWindowSummarySource `json:"source"`
+	StartsAt time.Time                   `json:"starts_at"`
+	Timezone string                      `json:"timezone"`
+}
+
+// PlanListWindowSummarySource defines model for PlanListWindowSummary.Source.
+type PlanListWindowSummarySource string
+
 // PlanMutationResult defines model for PlanMutationResult.
 type PlanMutationResult struct {
 	ChangedProjection map[string]interface{} `json:"changed_projection"`
@@ -3446,15 +3496,21 @@ type ShootPlanList struct {
 
 // ShootPlanListItem defines model for ShootPlanListItem.
 type ShootPlanListItem struct {
-	CreatedAt             time.Time       `json:"created_at"`
-	ExecutionFactRevision int64           `json:"execution_fact_revision"`
-	Id                    string          `json:"id"`
-	PublicScale           PublicPlanScale `json:"public_scale"`
-	Revision              int64           `json:"revision"`
-	Status                ShootPlanStatus `json:"status"`
-	Subject               string          `json:"subject"`
-	Title                 string          `json:"title"`
-	UpdatedAt             time.Time       `json:"updated_at"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// CrmSummary 客户名取当前档案；订单标题与状态取链接时快照（订单删除后仍可显示）。
+	CrmSummary             *PlanListCrmSummary                      `json:"crm_summary,omitempty"`
+	ExecutionFactRevision  int64                                    `json:"execution_fact_revision"`
+	ExecutionStats         *PlanListExecutionStats                  `json:"execution_stats,omitempty"`
+	ExecutionWindowSummary nullable.Nullable[PlanListWindowSummary] `json:"execution_window_summary,omitempty"`
+	Id                     string                                   `json:"id"`
+	PublicScale            PublicPlanScale                          `json:"public_scale"`
+	ReadinessSummary       *PlanListReadinessSummary                `json:"readiness_summary,omitempty"`
+	Revision               int64                                    `json:"revision"`
+	Status                 ShootPlanStatus                          `json:"status"`
+	Subject                string                                   `json:"subject"`
+	Title                  string                                   `json:"title"`
+	UpdatedAt              time.Time                                `json:"updated_at"`
 }
 
 // ShootPlanMutationRequest defines model for ShootPlanMutationRequest.

@@ -18,6 +18,7 @@ import {
   type ShootPlanStatus,
 } from './api'
 import StatusBadge from './StatusBadge'
+import { crmSummaryLine, listStatusLines, windowRangeLabel } from './listCard'
 import { planningErrorMessage, shootPlanStatusLabel } from './presentation'
 import './planning.css'
 
@@ -89,10 +90,16 @@ export default function ShootPlansPage() {
                     <h3>{plan.title}</h3>
                     <StatusBadge status={plan.status} />
                   </div>
-                  <p>主体：{plan.subject}</p>
+                  <p>主体：{plan.subject} · {crmSummaryLine(plan.crm_summary)} · {plan.public_scale.planned_shot_count} 个镜头 · 第 {plan.revision} 版</p>
                   <div className="planning-meta">
-                    <span>{plan.public_scale.planned_shot_count} 个镜头</span>
-                    <span>第 {plan.revision} 版</span>
+                    {plan.execution_window_summary ? (
+                      <span>{windowRangeLabel(plan.execution_window_summary.starts_at, plan.execution_window_summary.ends_at, plan.execution_window_summary.timezone)}</span>
+                    ) : (
+                      <span>未设执行时间</span>
+                    )}
+                    {listStatusLines(plan).map((line) => (
+                      <span key={line}>{line}</span>
+                    ))}
                     <span>更新于 {formatDateTime(plan.updated_at)}</span>
                   </div>
                 </div>

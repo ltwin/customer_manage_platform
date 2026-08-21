@@ -43,6 +43,44 @@ type PlanListItem struct {
 	ExecutionFactRevision int64           `json:"execution_fact_revision"`
 	CreatedAt             time.Time       `json:"created_at"`
 	UpdatedAt             time.Time       `json:"updated_at"`
+	CRM                   PlanListCrm     `json:"crm_summary"`
+	ExecutionWindow       *PlanListWindow `json:"execution_window_summary"`
+	ExecutionStats        PlanListStats   `json:"execution_stats"`
+	ReadinessSummary      PlanListReady   `json:"readiness_summary"`
+}
+
+// PlanListCrm：客户名取当前档案；订单标题与状态取链接时快照（订单删除后仍可显示）。
+type PlanListCrm struct {
+	CustomerID        *string `json:"customer_id"`
+	CustomerName      *string `json:"customer_name"`
+	OrderID           *string `json:"order_id"`
+	OrderTitle        *string `json:"order_title"`
+	OrderStatusAtLink *string `json:"order_status_at_link"`
+}
+
+type PlanListWindow struct {
+	Source   string    `json:"source"`
+	StartsAt time.Time `json:"starts_at"`
+	EndsAt   time.Time `json:"ends_at"`
+	Timezone string    `json:"timezone"`
+}
+
+type PlanListStats struct {
+	Captured int64 `json:"captured_count"`
+	Skipped  int64 `json:"skipped_count"`
+}
+
+type PlanListReady struct {
+	RequiredTotal     int64 `json:"required_total"`
+	RequiredUnchecked int64 `json:"required_unchecked"`
+}
+
+func nullStringPtr(value sql.NullString) *string {
+	if !value.Valid || value.String == "" {
+		return nil
+	}
+	stringValue := value.String
+	return &stringValue
 }
 
 type ListPlansResult struct {
@@ -205,7 +243,10 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 		return ListPlansResult{}, fmt.Errorf("count shoot plans: %w", err)
 	}
 	rows, err := scope.QueryPage(ctx, "shoot_plan_list_projection",
-		"id, title, subject, status, planned_look_count, planned_scene_count, revision, execution_fact_revision, created_at, updated_at, planned_shot_count",
+		"id, title, subject, status, planned_look_count, planned_scene_count, revision, execution_fact_revision, created_at, updated_at, planned_shot_count, "+
+			"crm_customer_id, crm_order_id, crm_customer_name, crm_order_title, crm_order_status_at_link, "+
+			"window_starts_at, window_ends_at, window_timezone, window_source, captured_count, skipped_count, "+
+			"readiness_required_total, readiness_required_unchecked",
 		cond,
 		[]store.OrderBy{{Column: "updated_at", Desc: true}, {Column: "id", Desc: true}},
 		filter.PageSize, (filter.Page-1)*filter.PageSize, args...)
@@ -216,11 +257,41 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 	items := make([]PlanListItem, 0, filter.PageSize)
 	for rows.Next() {
 		var item PlanListItem
+		var (
+			customerID   sql.NullString
+			orderID      sql.NullString
+			customerName sql.NullString
+			orderTitle   sql.NullString
+			orderStatus  sql.NullString
+			windowStart  sql.NullTime
+			windowEnd    sql.NullTime
+			windowTZ     sql.NullString
+			windowSource sql.NullString
+		)
 		if err := rows.Scan(&item.ID, &item.Title, &item.Subject, &item.Status,
 			&item.PublicScale.PlannedLookCount, &item.PublicScale.PlannedSceneCount,
 			&item.Revision, &item.ExecutionFactRevision, &item.CreatedAt, &item.UpdatedAt,
-			&item.PublicScale.PlannedShotCount); err != nil {
+			&item.PublicScale.PlannedShotCount,
+			&customerID, &orderID, &customerName, &orderTitle, &orderStatus,
+			&windowStart, &windowEnd, &windowTZ, &windowSource,
+			&item.ExecutionStats.Captured, &item.ExecutionStats.Skipped,
+			&item.ReadinessSummary.RequiredTotal, &item.ReadinessSummary.RequiredUnchecked); err != nil {
 			return ListPlansResult{}, fmt.Errorf("scan shoot plan list: %w", err)
+		}
+		item.CRM = PlanListCrm{
+			CustomerID:        nullStringPtr(customerID),
+			CustomerName:      nullStringPtr(customerName),
+			OrderID:           nullStringPtr(orderID),
+			OrderTitle:        nullStringPtr(orderTitle),
+			OrderStatusAtLink: nullStringPtr(orderStatus),
+		}
+		if windowSource.Valid && windowStart.Valid && windowEnd.Valid && windowTZ.Valid {
+			item.ExecutionWindow = &PlanListWindow{
+				Source:   windowSource.String,
+				StartsAt: windowStart.Time,
+				EndsAt:   windowEnd.Time,
+				Timezone: windowTZ.String,
+			}
 		}
 		items = append(items, item)
 	}

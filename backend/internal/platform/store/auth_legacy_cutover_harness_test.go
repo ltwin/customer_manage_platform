@@ -143,6 +143,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 	fullVersion := migrationVersion(t, url)
 	for _, label := range []string{
+		"plan-list-enrichment",
 		"plan-business-feedback",
 		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal",
 		"plan-assignment-reminder-ingestion", "plan-assignment-reminders",
@@ -174,6 +175,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 
 	resetAuthSchema(t, url)
 	for _, label := range []string{
+		"plan-list-enrichment",
 		"plan-business-feedback",
 		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal",
 		"plan-assignment-reminder-ingestion", "plan-assignment-reminders",

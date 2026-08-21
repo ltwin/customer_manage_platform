@@ -17,6 +17,19 @@ import {
   unavailableReasonLabel,
   validateOptionalAbsoluteTargetPriceYuan,
 } from '../src/planning/businessDraftInput.ts'
+import {
+  deriveTransitionGuidance,
+  isTransitionGuidanceCode,
+} from '../src/planning/transitionGuidance.ts'
+import {
+  crmSummaryLine,
+  listStatusLines,
+  windowRangeLabel,
+} from '../src/planning/listCard.ts'
+import {
+  shotPositionLabel,
+  shotReferenceLabel,
+} from '../src/planning/share/shotReference.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -390,4 +403,135 @@ test('planning responsive contract avoids dense tables and preserves coarse-poin
   assert.match(css, /\.planning-business-form-grid \.planning-field\s*\{[\s\S]*?display:\s*grid;[\s\S]*?min-width:\s*0/)
   assert.match(css, /\.planning-business-form-grid input\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0/)
   assert.doesNotMatch(planningSources, /<table\b|overflow-x:\s*scroll/)
+})
+
+test('transition guidance derives what is missing from fresh plan data', () => {
+  const plan = {
+    readiness_items: [
+      { requirement: 'required', preflight_status: 'checked', title: '已核对项' },
+      { requirement: 'required', preflight_status: 'unchecked', title: '旧书店 15:00 时段确认' },
+      { requirement: 'optional', preflight_status: 'unchecked', title: '干冰机' },
+    ],
+    shots: [
+      { current_outcome: { result: 'captured' }, title: '全景' },
+      { current_outcome: null, title: '正装立像' },
+      { current_outcome: null, title: '侧脸特写' },
+    ],
+  }
+
+  assert.deepEqual(deriveTransitionGuidance('readiness_incomplete', plan), {
+    kind: 'readiness',
+    missingTitles: ['旧书店 15:00 时段确认'],
+  })
+  assert.deepEqual(deriveTransitionGuidance('shots_incomplete', plan), {
+    kind: 'shots',
+    total: 3,
+    remaining: 2,
+  })
+  assert.deepEqual(deriveTransitionGuidance('shots_incomplete', { readiness_items: [], shots: [] }), {
+    kind: 'shots',
+    total: 0,
+    remaining: 0,
+  })
+  assert.equal(deriveTransitionGuidance('archived_read_only', plan), null)
+})
+
+test('transition guidance falls back to retry when fresh data no longer shows the blocker', () => {
+  const resolved = {
+    readiness_items: [{ requirement: 'required', preflight_status: 'checked', title: '已核对项' }],
+    shots: [{ current_outcome: { result: 'skipped' }, title: '全景' }],
+  }
+
+  assert.deepEqual(deriveTransitionGuidance('readiness_incomplete', resolved), { kind: 'retry' })
+  assert.deepEqual(deriveTransitionGuidance('shots_incomplete', resolved), { kind: 'retry' })
+})
+
+test('transition guidance codes are exactly the two server rejection codes', () => {
+  assert.equal(isTransitionGuidanceCode('readiness_incomplete'), true)
+  assert.equal(isTransitionGuidanceCode('shots_incomplete'), true)
+  assert.equal(isTransitionGuidanceCode('plan_revision_conflict'), false)
+  assert.equal(isTransitionGuidanceCode('invalid_plan_transition'), false)
+})
+
+test('workspace transition rejections render guidance cards with jump actions instead of bare errors', () => {
+  const page = source('../src/planning/ShootPlanWorkspacePage.tsx')
+
+  assert.match(page, /deriveTransitionGuidance\(/)
+  assert.match(page, /isTransitionGuidanceCode\(/)
+  assert.match(page, /还不能标记已就绪/)
+  assert.match(page, /去准备项核对/)
+  assert.match(page, /还不能标记完成/)
+  assert.match(page, /既没捕获也没跳过/)
+  assert.match(page, /去镜头表看看/)
+  assert.match(page, /进入 Run Mode/)
+  assert.match(page, /还没有镜头/)
+})
+
+test('readiness panel warns which required items block marking ready while the action stays in the topbar', () => {
+  const panel = source('../src/planning/panels/ReadinessPanel.tsx')
+
+  assert.match(panel, /完成核对前不能标记已就绪/)
+  assert.match(panel, /标记按钮在右上角/)
+})
+
+test('feedback go-edit-shot focuses, highlights, and opens the referenced shot in the shots tab', () => {
+  const page = source('../src/planning/ShootPlanWorkspacePage.tsx')
+  const shots = source('../src/planning/panels/ShotsPanel.tsx')
+  const share = source('../src/planning/share/ShareCollaborationPanel.tsx')
+
+  assert.match(page, /focusShotID=\{/)
+  assert.match(page, /shotLabels=\{/)
+  assert.match(shots, /focusShotID/)
+  assert.match(shots, /id=\{`planning-shot-\$\{shot\.id\}`\}/)
+  assert.match(shots, /scrollIntoView/)
+  assert.match(shots, /is-focused/)
+  assert.match(share, /shotReferenceLabel\(/)
+  assert.match(share, /removedShotLabel/)
+  assert.match(source('../src/planning/share/shotReference.ts'), /已移除的镜头/)
+  assert.doesNotMatch(share, /第 \$\{item\.target\.shot_id\} 镜/)
+})
+
+test('shot reference labels use two-digit positions with titles', () => {
+  assert.equal(shotReferenceLabel(7, '正装立像'), '第 07 镜 · 正装立像')
+  assert.equal(shotReferenceLabel(112, 'X'), '第 112 镜 · X')
+  assert.equal(shotPositionLabel(7), '第 07 镜')
+})
+
+test('plan list card summaries derive CRM, window, and progress lines from enriched list fields', () => {
+  assert.equal(crmSummaryLine(undefined), '无客户 · 无订单（灵感存档）')
+  assert.equal(crmSummaryLine({
+    customer_id: 'cus_1', customer_name: '阿晚', order_id: null, order_title: null, order_status_at_link: null,
+  }), '客户 阿晚')
+  assert.equal(crmSummaryLine({
+    customer_id: 'cus_1', customer_name: '阿晚', order_id: 'ord_1', order_title: 'ORD-2098', order_status_at_link: 'scheduled',
+  }), '关联订单 ORD-2098（已定档）')
+  assert.equal(crmSummaryLine({
+    customer_id: 'cus_1', customer_name: '阿晚', order_id: 'ord_1', order_title: null, order_status_at_link: null,
+  }), '客户 阿晚')
+
+  assert.equal(windowRangeLabel('2026-08-16T01:30:00Z', '2026-08-16T08:30:00Z', 'Asia/Shanghai'), '08-16 09:30–16:30')
+  assert.equal(windowRangeLabel('not-a-date', '2026-08-16T08:30:00Z'), '执行时间待定')
+
+  assert.deepEqual(listStatusLines({
+    public_scale: { planned_shot_count: 12, planned_look_count: null, planned_scene_count: null },
+    execution_stats: { captured_count: 5, skipped_count: 1 },
+    readiness_summary: { required_total: 6, required_unchecked: 0 },
+  }), ['已捕获 5 / 跳过 1', '必需准备 6/6 已核对'])
+  assert.deepEqual(listStatusLines({
+    public_scale: { planned_shot_count: 9, planned_look_count: null, planned_scene_count: null },
+    execution_stats: { captured_count: 0, skipped_count: 0 },
+    readiness_summary: { required_total: 6, required_unchecked: 0 },
+  }), ['必需准备 6/6 已核对', '尚未开始现场执行'])
+  assert.deepEqual(listStatusLines({
+    public_scale: { planned_shot_count: 5, planned_look_count: null, planned_scene_count: null },
+  }), ['尚未开始现场执行'])
+})
+
+test('plan list page renders the enriched three-line card structure', () => {
+  const page = source('../src/planning/ShootPlansPage.tsx')
+
+  assert.match(page, /crmSummaryLine\(/)
+  assert.match(page, /windowRangeLabel\(/)
+  assert.match(page, /listStatusLines\(/)
+  assert.match(page, /未设执行时间/)
 })

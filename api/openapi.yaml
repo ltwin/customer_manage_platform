@@ -4675,6 +4675,75 @@ components:
           format: int64
           minimum: 1
 
+    PlanListCrmSummary:
+      type: object
+      additionalProperties: false
+      required: [customer_id, customer_name, order_id, order_title, order_status_at_link]
+      description: 客户名取当前档案；订单标题与状态取链接时快照（订单删除后仍可显示）。
+      properties:
+        customer_id:
+          type: string
+          nullable: true
+        customer_name:
+          type: string
+          nullable: true
+        order_id:
+          type: string
+          nullable: true
+        order_title:
+          type: string
+          nullable: true
+        order_status_at_link:
+          type: string
+          nullable: true
+
+    PlanListWindowSummary:
+      type: object
+      additionalProperties: false
+      required: [source, starts_at, ends_at, timezone]
+      properties:
+        source:
+          type: string
+          enum: [manual, schedule_slot]
+        starts_at:
+          type: string
+          format: date-time
+        ends_at:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+          minLength: 1
+          maxLength: 255
+
+    PlanListExecutionStats:
+      type: object
+      additionalProperties: false
+      required: [captured_count, skipped_count]
+      properties:
+        captured_count:
+          type: integer
+          format: int64
+          minimum: 0
+        skipped_count:
+          type: integer
+          format: int64
+          minimum: 0
+
+    PlanListReadinessSummary:
+      type: object
+      additionalProperties: false
+      required: [required_total, required_unchecked]
+      properties:
+        required_total:
+          type: integer
+          format: int64
+          minimum: 0
+        required_unchecked:
+          type: integer
+          format: int64
+          minimum: 0
+
     ShootPlanCurrentOutcome:
       type: object
       additionalProperties: false
@@ -4915,6 +4984,16 @@ components:
         updated_at:
           type: string
           format: date-time
+        crm_summary:
+          $ref: "#/components/schemas/PlanListCrmSummary"
+        execution_window_summary:
+          allOf:
+            - $ref: "#/components/schemas/PlanListWindowSummary"
+          nullable: true
+        execution_stats:
+          $ref: "#/components/schemas/PlanListExecutionStats"
+        readiness_summary:
+          $ref: "#/components/schemas/PlanListReadinessSummary"
 
     ShootPlanList:
       type: object
