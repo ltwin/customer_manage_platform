@@ -8,8 +8,8 @@ status: open
 disposition: epic-final-acceptance-input
 gap_counts:
   true_gap_total: 38
-  true_gap_remaining: 15
-  true_gap_fixed: 21
+  true_gap_remaining: 13
+  true_gap_fixed: 23
   true_gap_partial: 2
   residual: 2
   by_design: 7
@@ -38,6 +38,8 @@ fixed_ids:
   - GAP-WS-06
   - GAP-WS-07
   - GAP-ING-06
+  - GAP-ING-07
+  - GAP-SHARE-03
 partial_ids:
   - GAP-WS-04
   - GAP-WS-07
@@ -90,7 +92,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | GAP-ING-04 | 高（疑似 bug） | 恢复被丢弃候选时 kind 硬编码 `'shot'`，准备项类候选恢复后会变成镜头 **【已修复 2026-08-20，待提交：重复项按 winner kind 恢复，其余默认镜头】** | `ShootPlanIngestionPage.tsx:158` |
 | GAP-ING-05 | 中 | 参考链接候选的归属（`target_kind`）与标注不可编辑（下拉 disabled、label 无输入）；API 支持 `reference_link_overrides` **【已修复 2026-08-20，待提交：标注输入 + 归属/归属镜头选择】** | `ShootPlanIngestionPage.tsx:228, 304`；`schema.d.ts:2816-2826` |
 | GAP-ING-06 | 中 | 参考图上传来源声明硬编码 `customer_supplied/display_consent`，无来源选择 **【已修复 2026-08-21，待提交：上传入口加来源选择（8 类，共享 mediaRights 模块），声明按矩阵派生】** | `ShootPlanIngestionPage.tsx:127-129` |
-| GAP-ING-07 | 中 | 丢弃原因退化为原始字符串展示，无 blank/duplicate/unsupported/手动丢弃 分类标签与对照说明；丢弃区无展开/收起 | `ShootPlanIngestionPage.tsx:304` |
+| GAP-ING-07 | 中 | 丢弃原因退化为原始字符串展示，无 blank/duplicate/unsupported/手动丢弃 分类标签与对照说明；丢弃区无展开/收起 **【已修复 2026-08-21：ingestionDropped.ts 纯模块镜像 parser reason 全集（blank/duplicate/unsupported/over_limit）+ 前端 manual 分类；丢弃区改 details 展开/收起，行内分类标签、原文摘录、重复项并入提示、五类对照说明；候选列表手动丢弃显示 tag-warn 标签】** | `ShootPlanIngestionPage.tsx:304` |
 | GAP-ING-08 | 低 | 保存摘要粒度简化（仅 3 个计数，无分类明细与版本号变化）；无顶栏「已选 N 条」chip | `ShootPlanIngestionPage.tsx:274, 310` |
 | GAP-ING-09 | 低 | 保存前主动重取 revision 规避 409，冲突时仅 stale 横幅无差异查看 UI | `ShootPlanIngestionPage.tsx:245-252` |
 | GAP-ING-10 | 低 | 「全选」快捷按钮缺失 | 原型 :171 |
@@ -167,7 +169,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 |---|---|---|---|
 | GAP-SHARE-01 | 高 | 整案反馈发送后无回显列表（客户看不到自己已提交的意见）；逐镜反馈无「你已确认/你提过…」状态标记，`SharedShotV1` 无反馈状态字段 **【已修复 2026-08-20，待提交：本次访问内本地回显（匿名端不回读他人反馈），逐镜已提意见带摘要标记】** | `SharedCommon.tsx:153, 187`；`schema.d.ts:3028-3045` |
 | GAP-SHARE-02 | 中 | 认领区三条用户语言承诺缺失：「摄影师会自己核对、不会催你」「凭证码用途」「找不到凭证联系摄影师」 **【已修复 2026-08-20，待提交】** | `SharedFullSections.tsx:143-145` |
-| GAP-SHARE-03 | 中 | moodboard 无 caption/用途说明（数据模型层 `SharedMoodboardItemV1` 仅 ref+checksum，API 层缺） | `schema.d.ts:3006-3009` |
+| GAP-SHARE-03 | 中 | moodboard 无 caption/用途说明（数据模型层 `SharedMoodboardItemV1` 仅 ref+checksum，API 层缺） **【已修复 2026-08-21：契约加 caption/usage_note 可选字段（零迁移，caption=素材 display_name，usage_note=权益来源推导，权威在服务端 planshare）；分享图卡 figcaption 双行渲染 + alt 语义化；集成测试断言投影字段】** | `schema.d.ts:3006-3009` |
 | GAP-SHARE-04 | 低 | `document.title` 不随 full/proposal/expired 变化；页脚丢失「专属免登录、可能被更新或关闭」生命周期告知；锁定占位与昵称字段的原第一人称/隐私说明文案弱化 | `SharedProposalView.tsx:20-24`；`SharedCommon.tsx:115-117, 172` |
 
 ## 五、通用交互（跨页）
@@ -192,13 +194,12 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 > 文中各「待提交」标记均已随四批提交入库（批 4 提交：`0f13dc9` 引导闭环 / `59b02f8` 列表增强 / `d382c15` 台账）。
 
-38 条真差距中 21 条完整修复、GAP-WS-04 与 GAP-WS-07 部分收口，**剩余 15 条可执行**（4 中 / 11 低）+ 2 项残余（WS-04 侧栏扩展标签、WS-07 纯链接素材）：
+38 条真差距中 23 条完整修复、GAP-WS-04 与 GAP-WS-07 部分收口，**剩余 13 条可执行**（2 中 / 11 低）+ 2 项残余（WS-04 侧栏扩展标签、WS-07 纯链接素材）：
 
 | 域 | ID | 优先级 | 内容 |
 |---|---|---|---|
 | Run | GAP-RUN-07 | 低 | session 元信息缺「第几场/版本号/时钟」 |
 | Run | GAP-RUN-08 | 低 | 参考素材空态提示缺失；跳过原因用户语言与原型不一致 |
-| 摄取 | GAP-ING-07 | 中 | 丢弃原因无分类标签与展开/收起 |
 | 摄取 | GAP-ING-08 | 低 | 保存摘要粒度简化；无「已选 N 条」chip |
 | 摄取 | GAP-ING-09 | 低 | 冲突时无差异查看 UI |
 | 摄取 | GAP-ING-10 | 低 | 「全选」快捷按钮缺失 |
@@ -209,14 +210,13 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | 工作台 | GAP-WS-12 | 低 | 撤销认领确认缺联动说明与状态标签 |
 | 工作台 | GAP-WS-13 | 低 | 公开规模说明与进度流转说明弱化 |
 | 工作台 | GAP-WS-14 | 低 | 新建策划为必填弹窗，非一键空白建案 |
-| 分享 | GAP-SHARE-03 | 中 | moodboard 无 caption/用途说明（需回契约 `SharedMoodboardItemV1`） |
 | 分享 | GAP-SHARE-04 | 低 | `document.title` 不随档位变化；页脚生命周期告知弱化 |
 | 通用 | GAP-UX-01 | 中 | 确认对话框不统一（confirm/prompt/自定义混用） |
 | 通用 | GAP-UX-02 | 中 | 无 toast 体系 |
 
 **Residual（挂 plan-share checklist S6/S7）**：S6 后端验证矩阵证据（design A19）、S7 v2 conformance 浏览器证据（1600/1280/375/coarse/200%/keyboard/screen-reader）。不因 RES-SHARE-01 的 UI 修复自动关闭。
 
-**建议处置顺序**：高优先级、WS-09 与 RUN 三件套均已清零；剩余中优先级按域打包（ING-07 摄取丢弃分类、SHARE-03 moodboard 说明、UX-01/02 打磨批）；素材域仅剩 WS-07 纯链接素材残余（owner 已决策不做）；GAP-UX-01/02 作为统一「交互打磨批」最后收敛 confirm/toast 两个体系。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）。
+**建议处置顺序**：高优先级、WS-09 与 RUN 三件套均已清零；中优先级仅剩 GAP-UX-01/02（统一「交互打磨批」，一次性收敛 confirm/toast 两个体系，横跨全部 planning 页面）；其后为 11 条低优先级收尾。素材域仅剩 WS-07 纯链接素材残余（owner 已决策不做，宜单独立项）。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）；`account-center.test.ts` A8 media-query 正则存量失败（4a11fb6 插入 `.main > .topbar` 规则所致，与本 epic 无关）。
 
 ## 引用
 
