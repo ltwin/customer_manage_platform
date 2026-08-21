@@ -374,12 +374,22 @@
 .ingestion-review-main { min-width: 0; }
 .ingestion-candidate { border: 1px solid var(--border); background: var(--surface); border-radius: var(--radius-m); padding: 16px; margin-top: 10px; box-shadow: var(--shadow-1); }
 .ingestion-candidate-top { display: grid; grid-template-columns: 22px minmax(0, 1fr) 110px; gap: 12px; align-items: start; }
-.ingestion-check input, .ingestion-reference input, .ingestion-link-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+.ingestion-check input, .ingestion-reference input[type="checkbox"], .ingestion-link-row input { width: 18px; height: 18px; accent-color: var(--accent); }
 .ingestion-title-input { width: 100%; border: 0; border-bottom: 1px solid var(--border); padding: 2px 0 5px; background: transparent; font-size: 15px; font-weight: 650; }
 .ingestion-title-input:focus { outline: none; border-bottom-color: var(--accent); }
 .ingestion-candidate-top select, .ingestion-reference select, .ingestion-link-row select { min-height: 34px; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); background: var(--surface); }
 .ingestion-candidate-text { white-space: pre-wrap; margin-top: 7px; }
 .ingestion-candidate-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.ingestion-candidate-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px 14px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.ingestion-candidate-fields > label { display: grid; gap: 4px; min-width: 0; font-size: 12px; }
+.ingestion-candidate-fields > label > span { color: var(--muted); font-size: 11.5px; font-weight: 650; }
+.ingestion-candidate-fields select, .ingestion-candidate-fields input { min-height: 34px; width: 100%; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); background: var(--surface); font-size: 12px; }
+.ingestion-field-hint { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 11.5px; }
+.ingestion-reference { flex-wrap: wrap; row-gap: 8px; }
+.ingestion-reference-main { display: grid; gap: 4px; min-width: 0; flex: 1; }
+.ingestion-reference-target { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: none; }
+.ingestion-label-input { border: 0; border-bottom: 1px solid var(--border); padding: 2px 0 4px; background: transparent; font-size: 12.5px; font-weight: 650; width: 100%; }
+.ingestion-label-input:focus { outline: none; border-bottom-color: var(--accent); }
 .ingestion-subsection { margin-top: 24px; }
 .ingestion-reference { justify-content: flex-start; }
 .ingestion-reference > span { display: grid; min-width: 0; flex: 1; gap: 3px; }

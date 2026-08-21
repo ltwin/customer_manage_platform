@@ -6315,6 +6315,26 @@ components:
         responsibility_hint: {type: string, nullable: true}
         default_preparation_lead_days: {type: integer, nullable: true, minimum: 0}
         preflight_status: {type: string, nullable: true}
+        framing_tag:
+          type: string
+          nullable: true
+          enum: [extreme_closeup, closeup, medium_closeup, medium, full, wide, extreme_wide, other]
+        lighting_direction_tag:
+          type: string
+          nullable: true
+          enum: [front, side, back, top, bottom, mixed, natural, other]
+        lighting_quality_tag:
+          type: string
+          nullable: true
+          enum: [hard, soft, mixed, natural, other]
+        palette_tag:
+          type: string
+          nullable: true
+          enum: [warm, cool, neutral, monochrome, high_saturation, low_saturation, mixed, other]
+        shot_type_tag:
+          type: string
+          nullable: true
+          enum: [portrait, action, interaction, environment, detail, silhouette, narrative, other]
         action: {type: string, enum: [keep, discard, needs_confirmation]}
         source_status: {type: string, enum: [current, source_changed, source_missing, reappeared]}
         user_modified: {type: boolean}
@@ -6406,6 +6426,39 @@ components:
         kind: {type: string, enum: [shot, readiness]}
         title: {type: string, maxLength: 160}
         action: {type: string, enum: [keep, discard]}
+        category:
+          type: string
+          nullable: true
+          enum: [styling, location, prop_equipment, other]
+        requirement:
+          type: string
+          nullable: true
+          enum: [required, optional]
+        responsibility_hint:
+          type: string
+          nullable: true
+          enum: [photographer, customer, unassigned]
+        default_preparation_lead_days: {type: integer, nullable: true, minimum: 0, maximum: 365}
+        framing_tag:
+          type: string
+          nullable: true
+          enum: [extreme_closeup, closeup, medium_closeup, medium, full, wide, extreme_wide, other]
+        lighting_direction_tag:
+          type: string
+          nullable: true
+          enum: [front, side, back, top, bottom, mixed, natural, other]
+        lighting_quality_tag:
+          type: string
+          nullable: true
+          enum: [hard, soft, mixed, natural, other]
+        palette_tag:
+          type: string
+          nullable: true
+          enum: [warm, cool, neutral, monochrome, high_saturation, low_saturation, mixed, other]
+        shot_type_tag:
+          type: string
+          nullable: true
+          enum: [portrait, action, interaction, environment, detail, silhouette, narrative, other]
         acknowledge_source_change_revision: {type: integer, format: int64, nullable: true}
 
     IngestionReferenceLinkOverride:

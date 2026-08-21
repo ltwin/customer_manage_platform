@@ -2724,6 +2724,16 @@ export interface components {
             responsibility_hint?: string | null;
             default_preparation_lead_days?: number | null;
             preflight_status?: string | null;
+            /** @enum {string|null} */
+            framing_tag?: "extreme_closeup" | "closeup" | "medium_closeup" | "medium" | "full" | "wide" | "extreme_wide" | "other" | null;
+            /** @enum {string|null} */
+            lighting_direction_tag?: "front" | "side" | "back" | "top" | "bottom" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            lighting_quality_tag?: "hard" | "soft" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            palette_tag?: "warm" | "cool" | "neutral" | "monochrome" | "high_saturation" | "low_saturation" | "mixed" | "other" | null;
+            /** @enum {string|null} */
+            shot_type_tag?: "portrait" | "action" | "interaction" | "environment" | "detail" | "silhouette" | "narrative" | "other" | null;
             /** @enum {string} */
             action: "keep" | "discard" | "needs_confirmation";
             /** @enum {string} */
@@ -2810,6 +2820,23 @@ export interface components {
             title?: string;
             /** @enum {string} */
             action: "keep" | "discard";
+            /** @enum {string|null} */
+            category?: "styling" | "location" | "prop_equipment" | "other" | null;
+            /** @enum {string|null} */
+            requirement?: "required" | "optional" | null;
+            /** @enum {string|null} */
+            responsibility_hint?: "photographer" | "customer" | "unassigned" | null;
+            default_preparation_lead_days?: number | null;
+            /** @enum {string|null} */
+            framing_tag?: "extreme_closeup" | "closeup" | "medium_closeup" | "medium" | "full" | "wide" | "extreme_wide" | "other" | null;
+            /** @enum {string|null} */
+            lighting_direction_tag?: "front" | "side" | "back" | "top" | "bottom" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            lighting_quality_tag?: "hard" | "soft" | "mixed" | "natural" | "other" | null;
+            /** @enum {string|null} */
+            palette_tag?: "warm" | "cool" | "neutral" | "monochrome" | "high_saturation" | "low_saturation" | "mixed" | "other" | null;
+            /** @enum {string|null} */
+            shot_type_tag?: "portrait" | "action" | "interaction" | "environment" | "detail" | "silhouette" | "narrative" | "other" | null;
             /** Format: int64 */
             acknowledge_source_change_revision?: number | null;
         };

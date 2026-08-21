@@ -73,6 +73,9 @@ func applyPreviewOverrides(parsed *ParseOutput, current Session, input PreviewIn
 			return ErrPreviewOverride
 		}
 		candidate.Action = override.Action
+		if err := applyCandidateFieldEdits(candidate, override); err != nil {
+			return err
+		}
 		candidate.UserModified = true
 		if candidate.SourceChangeRevision != nil && override.AcknowledgeSourceChangeRevision != nil {
 			value := *override.AcknowledgeSourceChangeRevision
@@ -202,6 +205,63 @@ func acknowledgeSourceChange(status string, revision, acknowledgement *int64) er
 		if revision == nil || acknowledgement == nil || *revision != *acknowledgement {
 			return ErrPreviewOverride
 		}
+	}
+	return nil
+}
+
+// 与 core 命令引擎的 ShotWrite/ReadinessWrite 白名单保持同一集合；此处提前
+// fail closed，避免字段编辑只在 commit 阶段才被拒绝。
+var (
+	validFramingTags           = stringSet("extreme_closeup", "closeup", "medium_closeup", "medium", "full", "wide", "extreme_wide", "other")
+	validLightingDirectionTags = stringSet("front", "side", "back", "top", "bottom", "mixed", "natural", "other")
+	validLightingQualityTags   = stringSet("hard", "soft", "mixed", "natural", "other")
+	validPaletteTags           = stringSet("warm", "cool", "neutral", "monochrome", "high_saturation", "low_saturation", "mixed", "other")
+	validShotTypeTags          = stringSet("portrait", "action", "interaction", "environment", "detail", "silhouette", "narrative", "other")
+	validCategories            = stringSet("styling", "location", "prop_equipment", "other")
+	validRequirements          = stringSet("required", "optional")
+	validResponsibilityHints   = stringSet("photographer", "customer", "unassigned")
+)
+
+func stringSet(values ...string) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		result[value] = struct{}{}
+	}
+	return result
+}
+
+// applyCandidateFieldEdits 把 override 携带的规范标签与准备项字段编辑落到候选上。
+// nil 表示该字段本次未编辑；空串不是合法值，直接拒绝。
+func applyCandidateFieldEdits(candidate *ContentCandidate, override ContentCandidateOverride) error {
+	tagEdits := []struct {
+		value   *string
+		target  **string
+		allowed map[string]struct{}
+	}{
+		{override.FramingTag, &candidate.FramingTag, validFramingTags},
+		{override.LightingDirectionTag, &candidate.LightingDirectionTag, validLightingDirectionTags},
+		{override.LightingQualityTag, &candidate.LightingQualityTag, validLightingQualityTags},
+		{override.PaletteTag, &candidate.PaletteTag, validPaletteTags},
+		{override.ShotTypeTag, &candidate.ShotTypeTag, validShotTypeTags},
+		{override.Category, &candidate.Category, validCategories},
+		{override.Requirement, &candidate.Requirement, validRequirements},
+		{override.ResponsibilityHint, &candidate.ResponsibilityHint, validResponsibilityHints},
+	}
+	for _, edit := range tagEdits {
+		if edit.value == nil {
+			continue
+		}
+		normalized := strings.TrimSpace(*edit.value)
+		if _, ok := edit.allowed[normalized]; !ok {
+			return ErrPreviewOverride
+		}
+		*edit.target = &normalized
+	}
+	if override.DefaultPreparationLeadDays != nil {
+		if *override.DefaultPreparationLeadDays < 0 || *override.DefaultPreparationLeadDays > 365 {
+			return ErrPreviewOverride
+		}
+		candidate.DefaultPreparationLeadDays = override.DefaultPreparationLeadDays
 	}
 	return nil
 }

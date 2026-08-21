@@ -82,4 +82,49 @@ func TestApplyPreviewOverridesRequiresReadinessLinkAcknowledgement(t *testing.T)
 	}
 }
 
+func TestApplyPreviewOverridesPersistsTaxonomyAndReadinessFieldEdits(t *testing.T) {
+	parsed := ParseOutput{
+		ContentCandidates: []ContentCandidate{
+			{CandidateID: "shot-1", Kind: "shot", Title: "石板路", Action: "keep", SourceStatus: "current"},
+			{CandidateID: "ready-1", Kind: "readiness", Title: "正装假发", Action: "keep", SourceStatus: "current"},
+		},
+	}
+	err := applyPreviewOverrides(&parsed, Session{}, PreviewInput{ContentOverrides: []ContentCandidateOverride{
+		{CandidateID: "shot-1", Action: "keep", FramingTag: stringPtr("medium"), LightingQualityTag: stringPtr("soft")},
+		{CandidateID: "ready-1", Action: "keep", Category: stringPtr("styling"), Requirement: stringPtr("required"), ResponsibilityHint: stringPtr("customer"), DefaultPreparationLeadDays: intPtr(3)},
+	}})
+	if err != nil {
+		t.Fatalf("apply overrides: %v", err)
+	}
+	shot := parsed.ContentCandidates[0]
+	if shot.FramingTag == nil || *shot.FramingTag != "medium" || shot.LightingQualityTag == nil || *shot.LightingQualityTag != "soft" {
+		t.Fatalf("shot taxonomy edits not persisted: %+v", shot)
+	}
+	readiness := parsed.ContentCandidates[1]
+	if readiness.Category == nil || *readiness.Category != "styling" || readiness.Requirement == nil || *readiness.Requirement != "required" ||
+		readiness.ResponsibilityHint == nil || *readiness.ResponsibilityHint != "customer" || readiness.DefaultPreparationLeadDays == nil || *readiness.DefaultPreparationLeadDays != 3 {
+		t.Fatalf("readiness field edits not persisted: %+v", readiness)
+	}
+	if !shot.UserModified || !readiness.UserModified {
+		t.Fatal("field edits must mark candidates user modified")
+	}
+}
+
+func TestApplyPreviewOverridesRejectsInvalidTaxonomyAndReadinessEdits(t *testing.T) {
+	shotParsed := ParseOutput{ContentCandidates: []ContentCandidate{{CandidateID: "shot-1", Kind: "shot", Title: "石板路", Action: "keep", SourceStatus: "current"}}}
+	if err := applyPreviewOverrides(&shotParsed, Session{}, PreviewInput{ContentOverrides: []ContentCandidateOverride{{CandidateID: "shot-1", Action: "keep", PaletteTag: stringPtr("neon")}}}); !errors.Is(err, ErrPreviewOverride) {
+		t.Fatalf("expected invalid palette rejection, got %v", err)
+	}
+	readinessParsed := ParseOutput{ContentCandidates: []ContentCandidate{{CandidateID: "ready-1", Kind: "readiness", Title: "假发", Action: "keep", SourceStatus: "current"}}}
+	if err := applyPreviewOverrides(&readinessParsed, Session{}, PreviewInput{ContentOverrides: []ContentCandidateOverride{{CandidateID: "ready-1", Action: "keep", DefaultPreparationLeadDays: intPtr(400)}}}); !errors.Is(err, ErrPreviewOverride) {
+		t.Fatalf("expected lead-day range rejection, got %v", err)
+	}
+	categoryParsed := ParseOutput{ContentCandidates: []ContentCandidate{{CandidateID: "ready-2", Kind: "readiness", Title: "场地", Action: "keep", SourceStatus: "current"}}}
+	if err := applyPreviewOverrides(&categoryParsed, Session{}, PreviewInput{ContentOverrides: []ContentCandidateOverride{{CandidateID: "ready-2", Action: "keep", Category: stringPtr("wardrobe")}}}); !errors.Is(err, ErrPreviewOverride) {
+		t.Fatalf("expected invalid category rejection, got %v", err)
+	}
+}
+
 func int64Ptr(value int64) *int64 { return &value }
+
+func intPtr(value int) *int { return &value }

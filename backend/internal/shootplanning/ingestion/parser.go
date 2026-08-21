@@ -80,6 +80,11 @@ type ContentCandidate struct {
 	ResponsibilityHint               *string `json:"responsibility_hint,omitempty"`
 	DefaultPreparationLeadDays       *int    `json:"default_preparation_lead_days,omitempty"`
 	PreflightStatus                  *string `json:"preflight_status,omitempty"`
+	FramingTag                       *string `json:"framing_tag,omitempty"`
+	LightingDirectionTag             *string `json:"lighting_direction_tag,omitempty"`
+	LightingQualityTag               *string `json:"lighting_quality_tag,omitempty"`
+	PaletteTag                       *string `json:"palette_tag,omitempty"`
+	ShotTypeTag                      *string `json:"shot_type_tag,omitempty"`
 	Action                           string  `json:"action"`
 	SourceStatus                     string  `json:"source_status"`
 	UserModified                     bool    `json:"user_modified"`
@@ -106,11 +111,20 @@ type ReadinessLinkSelection struct {
 }
 
 type ContentCandidateOverride struct {
-	CandidateID                     string `json:"candidate_id"`
-	Kind                            string `json:"kind"`
-	Title                           string `json:"title"`
-	Action                          string `json:"action"`
-	AcknowledgeSourceChangeRevision *int64 `json:"acknowledge_source_change_revision,omitempty"`
+	CandidateID                     string  `json:"candidate_id"`
+	Kind                            string  `json:"kind"`
+	Title                           string  `json:"title"`
+	Action                          string  `json:"action"`
+	Category                        *string `json:"category,omitempty"`
+	Requirement                     *string `json:"requirement,omitempty"`
+	ResponsibilityHint              *string `json:"responsibility_hint,omitempty"`
+	DefaultPreparationLeadDays      *int    `json:"default_preparation_lead_days,omitempty"`
+	FramingTag                      *string `json:"framing_tag,omitempty"`
+	LightingDirectionTag            *string `json:"lighting_direction_tag,omitempty"`
+	LightingQualityTag              *string `json:"lighting_quality_tag,omitempty"`
+	PaletteTag                      *string `json:"palette_tag,omitempty"`
+	ShotTypeTag                     *string `json:"shot_type_tag,omitempty"`
+	AcknowledgeSourceChangeRevision *int64  `json:"acknowledge_source_change_revision,omitempty"`
 }
 
 type ReferenceLinkCandidateOverride struct {

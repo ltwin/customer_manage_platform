@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { restoredCandidateKind } from '../src/planning/ingestionCandidates.ts'
+import { contentOverrideFields, restoredCandidateKind, shotDecisionShot } from '../src/planning/ingestionCandidates.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -60,5 +60,45 @@ test('restoring a dropped candidate inherits the duplicate winner kind instead o
 
   const page = source('../src/planning/ShootPlanIngestionPage.tsx')
   assert.match(page, /restoredCandidateKind\(item, candidates\)/)
-  assert.doesNotMatch(page, /kind: 'shot',/)
+  assert.doesNotMatch(page, /\bkind: 'shot',/)
+})
+
+test('ingestion candidates expose taxonomy and readiness field edits that persist through preview and commit', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+  const module = source('../src/planning/ingestionCandidates.ts')
+
+  assert.equal(shotDecisionShot({ title: '石板路', normalized_content: '晨雾', framing_tag: 'medium', palette_tag: null }).framing_tag, 'medium')
+  assert.equal(shotDecisionShot({ title: '侧身', normalized_content: '回头' }).palette_tag, null)
+  assert.equal(contentOverrideFields({ category: 'styling', requirement: 'required' }).category, 'styling')
+  assert.equal(contentOverrideFields({ framing_tag: 'soft' }).framing_tag, 'soft')
+  assert.deepEqual(contentOverrideFields({}), {})
+
+  for (const field of ['取景', '灯光方向', '灯光质感', '色调', '类型']) {
+    assert.match(module, new RegExp(field))
+  }
+  for (const field of ['层级', '预期负责人', '是否必需', '核对提前量']) {
+    assert.match(page, new RegExp(field))
+  }
+  assert.match(page, /shotDecisionShot\(candidate\)/)
+  assert.match(page, /\.\.\.contentOverrideFields\(candidate\)/)
+  assert.match(page, /<option value="">未填<\/option>/)
+  assert.match(page, /原文没说的维度保持未填，系统不会替你猜/)
+})
+
+test('reference link candidates support label and target editing instead of a disabled select', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+
+  assert.match(page, /onReferenceEdit=/)
+  assert.doesNotMatch(page, /select value=\{reference\.target_kind\} disabled/)
+  assert.match(page, /aria-label="链接标注"/)
+  assert.match(page, /aria-label="链接归属"/)
+})
+
+test('reparse requires an explicit confirmation that documents edited-candidate retention', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+
+  assert.match(page, /if \(session && !window\.confirm\(/)
+  assert.match(page, /重新解析会按新原文重建候选列表/)
+  assert.match(page, /会保留你的修改/)
+  assert.match(page, /需要重新确认/)
 })
