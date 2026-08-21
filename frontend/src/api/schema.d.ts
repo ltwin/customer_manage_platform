@@ -3077,6 +3077,8 @@ export interface components {
         SharedMoodboardItemV1: {
             ref: string;
             checksum: string;
+            caption?: string | null;
+            usage_note?: string;
         };
         SharedPlanProposalV1: {
             /** @enum {string} */

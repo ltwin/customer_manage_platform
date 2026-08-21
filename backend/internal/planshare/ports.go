@@ -314,6 +314,8 @@ type MoodboardBindingRef struct {
 	AssetID         string
 	ExactGeneration int
 	DisplayChecksum string
+	Caption         string
+	UsageNote       string
 }
 
 // SharedDisplayPermitRequest asks planningmedia for a display ContentPermit.

@@ -34,10 +34,33 @@ type SharedPublicScaleV1 struct {
 	PlannedSceneCount *int `json:"planned_scene_count"`
 }
 
-// SharedMoodboardItemV1 exposes only anonymous media refs.
+// SharedMoodboardItemV1 exposes only anonymous media refs plus a
+// photographer-authored caption and a rights-derived usage note.
 type SharedMoodboardItemV1 struct {
-	Ref      string `json:"ref"`
-	Checksum string `json:"checksum"`
+	Ref       string `json:"ref"`
+	Checksum  string `json:"checksum"`
+	Caption   string `json:"caption,omitempty"`
+	UsageNote string `json:"usage_note,omitempty"`
+}
+
+// moodboardUsageNotes keeps the anonymous-view wording aligned with the
+// frontend mediaRights mirror; basis is bijective to source class (matrix.go).
+var moodboardUsageNotes = map[string]string{
+	"official":           "官方资料 · 引用作风格参考",
+	"anime_screenshot":   "动画截图 · 引用作风格参考",
+	"setting_book":       "设定集资料 · 引用作风格参考",
+	"fan":                "同人作品 · 引用作风格参考",
+	"unknown_web":        "网络来源 · 引用作风格参考",
+	"photographer_owned": "摄影师创作 · 用作风格沟通",
+	"licensed":           "已获许可素材 · 用于风格沟通",
+	"customer_supplied":  "客户提供 · 已获展示同意",
+}
+
+func moodboardUsageNote(sourceClass string) string {
+	if note, ok := moodboardUsageNotes[sourceClass]; ok {
+		return note
+	}
+	return "引用作风格参考"
 }
 
 // SharedPlanProposalV1 is the exact proposal anonymous DTO skeleton.

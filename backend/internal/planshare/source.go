@@ -352,11 +352,26 @@ func (r shareMediaReader) ListMoodboardBindingsInShare(
 		if err != nil {
 			return nil, err
 		}
+		recordProbe(ctx, "planning_media_assets")
+		var caption string
+		if err := r.tx.QueryRow(ctx, "planning_media_assets",
+			"display_name", "id = $2", binding.assetID).Scan(&caption); err != nil {
+			return nil, err
+		}
+		recordProbe(ctx, "planning_media_rights_declarations")
+		var sourceClass string
+		if err := r.tx.QueryRow(ctx, "planning_media_rights_declarations",
+			"source_class", "asset_id = $2 AND generation = $3",
+			binding.assetID, binding.generation).Scan(&sourceClass); err != nil {
+			return nil, err
+		}
 		out = append(out, MoodboardBindingRef{
 			BindingID:       binding.id,
 			AssetID:         binding.assetID,
 			ExactGeneration: binding.generation,
 			DisplayChecksum: checksum,
+			Caption:         caption,
+			UsageNote:       moodboardUsageNote(sourceClass),
 		})
 	}
 	return out, nil

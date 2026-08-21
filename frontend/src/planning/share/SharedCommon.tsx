@@ -86,7 +86,13 @@ function MoodboardFigure({ token, item }: { token: string; item: SharedMoodboard
 
   return (
     <figure>
-      {url ? <img src={url} alt="分享参考图" referrerPolicy="no-referrer" /> : <div className="share-mood-placeholder" aria-hidden="true" />}
+      {url ? <img src={url} alt={item.caption || '分享参考图'} referrerPolicy="no-referrer" /> : <div className="share-mood-placeholder" aria-hidden="true" />}
+      {(item.caption || item.usage_note) && (
+        <figcaption>
+          {item.caption && <span className="share-mood-caption">{item.caption}</span>}
+          {item.usage_note && <span className="share-mood-usage">{item.usage_note}</span>}
+        </figcaption>
+      )}
     </figure>
   )
 }

@@ -145,6 +145,12 @@ func TestAnonymousSharedMediaContentMatrix(t *testing.T) {
 	if proj.Proposal.Moodboard[0].Checksum != checksum {
 		t.Fatalf("checksum mismatch %s vs %s", proj.Proposal.Moodboard[0].Checksum, checksum)
 	}
+	if proj.Proposal.Moodboard[0].Caption != "moodboard" {
+		t.Fatalf("caption missing from moodboard item: %+v", proj.Proposal.Moodboard[0])
+	}
+	if proj.Proposal.Moodboard[0].UsageNote != "官方资料 · 引用作风格参考" {
+		t.Fatalf("usage note missing from moodboard item: %+v", proj.Proposal.Moodboard[0])
+	}
 
 	logBuf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(logBuf, nil))

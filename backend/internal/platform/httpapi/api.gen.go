@@ -2283,8 +2283,10 @@ type SharedCreativeBriefV1 struct {
 
 // SharedMoodboardItemV1 defines model for SharedMoodboardItemV1.
 type SharedMoodboardItemV1 struct {
-	Checksum string `json:"checksum"`
-	Ref      string `json:"ref"`
+	Caption   nullable.Nullable[string] `json:"caption,omitempty"`
+	Checksum  string                    `json:"checksum"`
+	Ref       string                    `json:"ref"`
+	UsageNote *string                   `json:"usage_note,omitempty"`
 }
 
 // SharedPlanFeedbackCreateInputV1 defines model for SharedPlanFeedbackCreateInputV1.

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
 import { contentOverrideFields, restoredCandidateKind, shotDecisionShot } from '../src/planning/ingestionCandidates.ts'
+import { droppedExcerpt, droppedLegendLine, dropReasonLabel, dropReasonNote } from '../src/planning/ingestionDropped.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -101,4 +102,52 @@ test('reparse requires an explicit confirmation that documents edited-candidate 
   assert.match(page, /重新解析会按新原文重建候选列表/)
   assert.match(page, /会保留你的修改/)
   assert.match(page, /需要重新确认/)
+})
+
+test('dropped candidates classify parser reasons instead of showing raw reason strings', () => {
+  assert.equal(dropReasonLabel('blank'), '空白段')
+  assert.equal(dropReasonLabel('duplicate'), '重复内容')
+  assert.equal(dropReasonLabel('unsupported'), '无法识别')
+  assert.equal(dropReasonLabel('over_limit'), '超出上限')
+  assert.equal(dropReasonLabel('manual'), '手动丢弃')
+  // 服务端未来的未知 reason 按原值透出，不猜测翻译。
+  assert.equal(dropReasonLabel('future_kind'), 'future_kind')
+  assert.equal(dropReasonNote('future_kind'), '解析层丢弃项，可恢复为候选')
+})
+
+test('dropped excerpts fold whitespace and truncate long originals', () => {
+  assert.equal(droppedExcerpt(null), '')
+  assert.equal(droppedExcerpt('   \n\t  '), '')
+  assert.equal(droppedExcerpt('晨雾 石板路'), '晨雾 石板路')
+  assert.equal(droppedExcerpt('第一行\n第二行'), '第一行 第二行')
+  const long = '长'.repeat(80)
+  assert.equal(droppedExcerpt(long), `${'长'.repeat(60)}…`)
+})
+
+test('dropped legend covers all parser reasons plus manual discard', () => {
+  for (const label of ['重复内容', '无法识别', '超出上限', '空白段', '手动丢弃']) {
+    assert.match(droppedLegendLine, new RegExp(label))
+  }
+  assert.match(droppedLegendLine, /＝/)
+})
+
+test('ingestion dropped section is collapsible and renders labels, excerpts, and winner hints', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+  const css = source('../src/planning/planning.css')
+
+  assert.match(page, /<details className="ingestion-dropped-details"><summary>展开查看 \{dropped\.length\} 项丢弃内容<\/summary>/)
+  assert.match(page, /分类对照：\{droppedLegendLine\}/)
+  assert.match(page, /dropReasonLabel\(item\.reason\)/)
+  assert.match(page, /droppedExcerpt\(item\.original\)/)
+  assert.match(page, /重复项已并入保留候选/)
+  // 原始 reason 字符串不再直接进入展示层。
+  assert.doesNotMatch(page, /· \{item\.reason\}/)
+  assert.match(css, /\.ingestion-dropped-details > summary \{ cursor: pointer/)
+  assert.match(css, /\.ingestion-dropped-main \{ flex: 1/)
+})
+
+test('candidates discarded by the photographer show a manual-discard tag', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+
+  assert.match(page, /\{candidate\.action === 'discard' && <span className="tag tag-warn">手动丢弃<\/span>\}/)
 })

@@ -143,7 +143,7 @@ func (s shareAssetRefStore) UpsertMoodboardRef(
 	var storedRef, checksum string
 	err := row.Scan(&storedRef, &checksum)
 	if err == nil {
-		return SharedMoodboardItemV1{Ref: storedRef, Checksum: checksum}, nil
+		return SharedMoodboardItemV1{Ref: storedRef, Checksum: checksum, Caption: input.Binding.Caption, UsageNote: input.Binding.UsageNote}, nil
 	}
 	if !errors.Is(err, store.ErrNoRows) {
 		return SharedMoodboardItemV1{}, err
@@ -159,7 +159,7 @@ func (s shareAssetRefStore) UpsertMoodboardRef(
 	if err != nil {
 		return SharedMoodboardItemV1{}, err
 	}
-	return SharedMoodboardItemV1{Ref: storedRef, Checksum: checksum}, nil
+	return SharedMoodboardItemV1{Ref: storedRef, Checksum: checksum, Caption: input.Binding.Caption, UsageNote: input.Binding.UsageNote}, nil
 }
 
 func (s shareAssetRefStore) LoadActiveByRef(

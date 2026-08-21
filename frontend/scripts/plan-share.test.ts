@@ -178,3 +178,16 @@ test('share panel keeps eligibility errors distinct and explains full view eligi
   assert.match(fullViewEligibilityNote, /订单已定档/)
   assert.match(fullViewEligibilityNote, /不会自动降级成概览/)
 })
+
+test('anonymous moodboard figures render server-provided caption and usage note', () => {
+  const shared = source('../src/planning/share/SharedCommon.tsx')
+  const schema = source('../src/api/schema.d.ts')
+  const css = source('../src/planning/share/share.css')
+
+  assert.match(schema, /SharedMoodboardItemV1: \{[\s\S]*caption\?: string \| null;[\s\S]*usage_note\?: string;/)
+  assert.match(shared, /\(item\.caption \|\| item\.usage_note\)/)
+  assert.match(shared, /share-mood-caption/)
+  assert.match(shared, /share-mood-usage/)
+  assert.match(shared, /alt=\{item\.caption \|\| '分享参考图'\}/)
+  assert.match(css, /\.share-mood figcaption \{ display: grid/)
+})
