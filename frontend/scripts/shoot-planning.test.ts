@@ -797,6 +797,8 @@ test('public scale hints and the four-step progression panel match the prototype
   assert.match(brief, /这是计划规模，不从付费场地数量推断。/)
   assert.match(brief, /<details className="planning-flow-help">/)
   assert.match(brief, /进度怎么流转/)
+  // 回归：整行提示必须位于两列网格之外，混进网格会打乱自动排列（BriefEditor 被挤进窄侧栏）。
+  assert.match(brief, /<\/details>\s*<div className="planning-panel-grid">/)
   for (const step of ['草稿 → 已就绪', '已就绪 → 拍摄中', '拍摄中 → 已完成', '已完成后想再改，需要先「重新打开」']) {
     assert.ok(brief.includes(step), step)
   }

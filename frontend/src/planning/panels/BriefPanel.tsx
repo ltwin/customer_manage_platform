@@ -17,7 +17,9 @@ import {
 export default function BriefPanel({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner }) {
   const { timezone: accountTimezone } = useShell()
   return (
-    <div className="planning-panel-grid">
+    <>
+      {/* 整行提示块，必须放在两列网格之外：planning-panel-grid 按行自动排列，
+          混入网格子元素会把 BriefEditor 挤进窄侧栏并产生大段空白。 */}
       <details className="planning-flow-help">
         <summary>进度怎么流转</summary>
         <ol>
@@ -28,13 +30,15 @@ export default function BriefPanel({ plan, busy, runCommand }: { plan: ShootPlan
         </ol>
         <p>状态只往前推进；被拒时页面会告诉你差什么。</p>
       </details>
+      <div className="planning-panel-grid">
       <BriefEditor plan={plan} busy={busy} runCommand={runCommand} />
       <div className="planning-side-stack">
         <ScaleEditor plan={plan} busy={busy} runCommand={runCommand} />
         <WindowEditor plan={plan} busy={busy} runCommand={runCommand} accountTimezone={accountTimezone} />
         <CrmLinkPanel plan={plan} busy={busy} runCommand={runCommand} />
       </div>
-    </div>
+      </div>
+    </>
   )
 }
 

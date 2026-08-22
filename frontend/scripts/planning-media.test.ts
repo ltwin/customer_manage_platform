@@ -75,3 +75,25 @@ test('ingestion upload declares a selectable source instead of a hardcoded one',
   assert.match(ingestion, /ingestion-upload-source/)
   assert.doesNotMatch(ingestion, /source_class: 'customer_supplied'/)
 })
+
+test('media panel uses two panels (upload card + gallery card) with compact bind controls', () => {
+  const css = readFileSync(new URL('../src/planning/planning.css', import.meta.url), 'utf8')
+
+  // 上传卡 + 素材墙两段结构；素材墙带「分享页可见性」说明。
+  assert.match(panel, /<section className="planning-panel planning-media-upload"/)
+  assert.match(panel, /素材墙 \{assets\.length > 0 && <span className="tag">\{assets\.length\}<\/span>\}/)
+  assert.match(panel, /只有「情绪板展示」用途的素材会出现在客户分享页。/)
+  // 卡内层级：图 → 名 → 标签 → 单行 hint（状态 · 第 N 代 · 已挂合并）。
+  assert.match(panel, /planning-media-meta/)
+  assert.match(panel, /planning-media-hint/)
+  assert.doesNotMatch(panel, /planning-media-bindings/)
+  // 挂载收敛：下拉整行 + 双按钮同排（挂到整案为 ghost）。
+  assert.match(panel, /<div className="planning-media-bind-actions">/)
+  assert.match(panel, /btn btn-ghost btn-sm" type="button" disabled=\{busy\} onClick=\{\(\) => void bind\(asset, 'plan', planID, 'moodboard_display'\)\}>挂到整案/)
+  // 控件横排自适应网格；素材墙 auto-fill 自适应，不再是固定 4 列。
+  assert.match(css, /\.planning-media-controls \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(210px, 1fr\)\)/)
+  assert.match(css, /\.planning-media-grid \{ display: grid; grid-template-columns: repeat\(auto-fill, minmax\(180px, 1fr\)\)/)
+  assert.doesNotMatch(css, /\.planning-media-grid \{ display: grid; grid-template-columns: repeat\(4/)
+  // 旧的纵向 flex 覆盖补丁已清除。
+  assert.doesNotMatch(css, /\.planning-media-controls \{ display: flex; flex-direction: column/)
+})

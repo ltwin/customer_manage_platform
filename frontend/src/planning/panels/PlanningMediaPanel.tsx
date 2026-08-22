@@ -85,75 +85,86 @@ export default function PlanningMediaPanel({ planID, planRevision, readOnly, sho
 
   const generationSelectable = purposeAllowed(source, generationGrant, 'generation_reference')
 
-  return <section className="planning-media-panel" aria-labelledby="planning-media-title">
-    <div className="panel-heading"><div><h2 id="planning-media-title">参考素材</h2><p className="muted">上传时会声明来源与用途；未挂载素材保留 48 小时，方便重试。</p></div>
-      {!readOnly && <button className="btn btn-primary" type="button" disabled={busy || loading} onClick={() => fileRef.current?.click()}>上传参考图</button>}
-    </div>
-    {!readOnly && (
-      <div className="planning-media-controls">
-        <label>素材来源<select value={source} onChange={(event) => changeSource(event.target.value as Source)}>
-          {mediaSourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select></label>
-        <label>用途<select value={purpose} onChange={(event) => setPurpose(event.target.value as MediaPurpose)}>
-          {mediaPurposeOptions.map((option) => (
-            <option key={option.value} value={option.value} disabled={option.value === 'generation_reference' && !generationSelectable}>
-              {option.label}{option.value === 'generation_reference' && !generationSelectable ? '（本来源禁止）' : ''}
-            </option>
+  return <div className="planning-media-layout">
+    <section className="planning-panel planning-media-upload" aria-labelledby="planning-media-title">
+      <div className="planning-panel-head"><div><h2 id="planning-media-title">参考素材</h2><p>上传时声明来源与用途；未挂载素材保留 48 小时，方便重试。</p></div>
+        {!readOnly && <button className="btn btn-primary" type="button" disabled={busy || loading} onClick={() => fileRef.current?.click()}>上传参考图</button>}
+      </div>
+      {!readOnly && (
+        <>
+          <div className="planning-media-controls">
+            <label className="planning-media-field"><span>素材来源</span>
+              <select value={source} onChange={(event) => changeSource(event.target.value as Source)}>
+                {mediaSourceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="planning-media-field"><span>用途</span>
+              <select value={purpose} onChange={(event) => setPurpose(event.target.value as MediaPurpose)}>
+                {mediaPurposeOptions.map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.value === 'generation_reference' && !generationSelectable}>
+                    {option.label}{option.value === 'generation_reference' && !generationSelectable ? '（本来源禁止）' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {generationGrantSelectable(source) && (
+              <label className="planning-media-grant"><input type="checkbox" checked={generationGrant} onChange={(event) => changeGenerationGrant(event.target.checked)} /><span>已获得生成参考授权（许可在档）</span></label>
+            )}
+            <input ref={fileRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void selectFile(event)} />
+          </div>
+          <p className="planning-media-matrix-note">{matrixRejectionNote}</p>
+        </>
+      )}
+      <details className="planning-media-matrix">
+        <summary>来源 × 权利 × 用途对照</summary>
+        <div className="planning-media-matrix-rows">
+          <p><span>来源</span><span>权利依据</span><span>可选用途</span></p>
+          {mediaSourceOptions.map((option) => (
+            <p key={option.value}>
+              <span>{option.label}</span>
+              <span>{option.basisLabel}</span>
+              <span>{purposeAllowed(option.value, true, 'generation_reference') ? '情绪板 · 镜头参考 · 生成参考' : '情绪板 · 镜头参考'}</span>
+            </p>
           ))}
-        </select></label>
-        {generationGrantSelectable(source) && (
-          <label className="planning-media-grant"><input type="checkbox" checked={generationGrant} onChange={(event) => changeGenerationGrant(event.target.checked)} />已获得生成参考授权（许可在档）</label>
-        )}
-        <p className="planning-media-matrix-note">{matrixRejectionNote}</p>
-        <input ref={fileRef} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void selectFile(event)} />
-      </div>
-    )}
-    <details className="planning-media-matrix">
-      <summary>来源 × 权利 × 用途对照</summary>
-      <div className="planning-media-matrix-rows">
-        <p><span>来源</span><span>权利依据</span><span>可选用途</span></p>
-        {mediaSourceOptions.map((option) => (
-          <p key={option.value}>
-            <span>{option.label}</span>
-            <span>{option.basisLabel}</span>
-            <span>{purposeAllowed(option.value, true, 'generation_reference') ? '情绪板 · 镜头参考 · 生成参考' : '情绪板 · 镜头参考'}</span>
-          </p>
-        ))}
-      </div>
-    </details>
+        </div>
+      </details>
+    </section>
     {notice && <div className="planning-feedback" role="status">{notice}</div>}
-    {loading ? <div className="planning-empty"><strong>正在加载参考素材</strong><span>素材列表加载完成后即可继续操作。</span></div> : assets.length === 0 ? <div className="planning-empty"><strong>还没有参考素材</strong><span>可先上传场地、动作、构图或灯光参考。</span></div> : <div className="planning-media-grid">{assets.map((asset) => {
+    <section className="planning-panel" aria-labelledby="planning-media-gallery-title">
+      <div className="planning-panel-head"><div><h2 id="planning-media-gallery-title">素材墙 {assets.length > 0 && <span className="tag">{assets.length}</span>}</h2><p>只有「情绪板展示」用途的素材会出现在客户分享页。</p></div></div>
+      {loading ? <div className="planning-empty"><strong>正在加载参考素材</strong><span>素材列表加载完成后即可继续操作。</span></div> : assets.length === 0 ? <div className="planning-empty"><strong>还没有参考素材</strong><span>可先上传场地、动作、构图或灯光参考。</span></div> : <div className="planning-media-grid">{assets.map((asset) => {
       const bindable = !readOnly && (asset.state === 'staged' || asset.state === 'active')
       const shotTarget = shotTargets[asset.id] ?? ''
+      const sourceMeta = asset.rights ? mediaSourceMeta(asset.rights.source_class) : null
       return <article className={`planning-media-card state-${asset.state}`} key={asset.id}>
         <AssetImage planID={planID} asset={asset} />
-        <h3>{asset.display_name || '未命名素材'}</h3>
-        <p>{stateLabel(asset.state)} · 第 {asset.current_generation} 代</p>
-        {asset.rights && (
-          <p className="planning-media-tags">
-            <span className="planning-tag">{mediaSourceMeta(asset.rights.source_class).label}</span>
-            <span className="planning-tag">{mediaSourceMeta(asset.rights.source_class).basisLabel}</span>
-            {asset.rights.license_generation_reference_granted && <span className="planning-tag">生成授权</span>}
-          </p>
-        )}
-        {asset.active_bindings && asset.active_bindings.length > 0 && (
-          <p className="planning-media-bindings">已挂：{asset.active_bindings.map((binding) => binding.holder_kind === 'plan'
-            ? '整案情绪板'
-            : bindingLabel(shots, binding.holder_id)).join('、')}</p>
-        )}
-        {bindable && (
-          <div className="planning-media-bind-row">
-            <button className="btn" type="button" disabled={busy} onClick={() => void bind(asset, 'plan', planID, 'moodboard_display')}>挂到整案</button>
-            <select aria-label={`挂载 ${asset.display_name || '素材'} 到镜头`} value={shotTarget} disabled={busy || shots.length === 0} onChange={(event) => setShotTargets((current) => ({ ...current, [asset.id]: event.target.value }))}>
-              <option value="" disabled>{shots.length === 0 ? '本策划还没有镜头' : '挂到镜头…'}</option>
-              {shots.map((shot) => <option key={shot.id} value={shot.id}>{shotPositionLabel(shot.position)} · {shot.title}</option>)}
-            </select>
-            <button className="btn" type="button" disabled={busy || !shotTarget} onClick={() => void bind(asset, 'shot', shotTarget, 'shot_reference_display')}>挂到该镜头</button>
-          </div>
-        )}
+        <div className="planning-media-meta">
+          <h3>{asset.display_name || '未命名素材'}</h3>
+          {asset.rights && sourceMeta && (
+            <div className="planning-media-tags">
+              <span className="planning-tag">{sourceMeta.label}</span>
+              <span className="planning-tag">{sourceMeta.basisLabel}</span>
+              {asset.rights.license_generation_reference_granted && <span className="planning-tag is-ok">生成授权</span>}
+            </div>
+          )}
+          <p className="planning-media-hint">{stateLabel(asset.state)} · 第 {asset.current_generation} 代{asset.active_bindings && asset.active_bindings.length > 0 ? ` · 已挂：${asset.active_bindings.map((binding) => binding.holder_kind === 'plan' ? '整案情绪板' : bindingLabel(shots, binding.holder_id)).join('、')}` : ''}</p>
+          {bindable && (
+            <div className="planning-media-bind-row">
+              <select aria-label={`挂载 ${asset.display_name || '素材'} 到镜头`} value={shotTarget} disabled={busy || shots.length === 0} onChange={(event) => setShotTargets((current) => ({ ...current, [asset.id]: event.target.value }))}>
+                <option value="" disabled>{shots.length === 0 ? '本策划还没有镜头' : '挂到镜头…'}</option>
+                {shots.map((shot) => <option key={shot.id} value={shot.id}>{shotPositionLabel(shot.position)} · {shot.title}</option>)}
+              </select>
+              <div className="planning-media-bind-actions">
+                <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => void bind(asset, 'plan', planID, 'moodboard_display')}>挂到整案</button>
+                <button className="btn btn-sm" type="button" disabled={busy || !shotTarget} onClick={() => void bind(asset, 'shot', shotTarget, 'shot_reference_display')}>挂到该镜头</button>
+              </div>
+            </div>
+          )}
+        </div>
       </article>
     })}</div>}
-  </section>
+    </section>
+  </div>
 }
 
 function bindingLabel(shots: MediaShotOption[], holderID: string): string {
