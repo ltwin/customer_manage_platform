@@ -183,7 +183,7 @@ test('business workbench keeps facts, drafts, and destructive acknowledgement on
   assert.match(panel, /留空表示未知，0 表示明确为零/)
   assert.match(panel, /draft_kinds:\s*\['order_adjustment', 'schedule_duration'\]/)
   assert.match(panel, /draft\.required_acknowledgement/)
-  assert.match(panel, /window\.confirm/)
+  assert.match(panel, /<ConfirmDialog/)
   assert.match(panel, /kind:\s*'planning-schedule-prefill-v1'/)
   assert.doesNotMatch(panel, /localStorage|sessionStorage|searchParams|business_draft_id/)
   assert.match(api, /`\/shoot-plans\/\$\{encodeURIComponent\(planID\)\}\/business-drafts`/)
@@ -663,4 +663,68 @@ test('readiness list groups by category with claimant names and on-site missing 
   assert.match(readiness, /readinessTag\(/)
   assert.match(readiness, /现场缺失 · 来自 Run Mode 第/)
   assert.match(readiness, /preparationMissingShotPositions\(/)
+})
+
+test('ConfirmDialog unifies destructive confirmations with dialog a11y and busy guards', () => {
+  const dialog = source('../src/components/ConfirmDialog.tsx')
+  const css = source('../src/planning/planning.css')
+
+  assert.match(dialog, /role="alertdialog" aria-modal="true" aria-labelledby="planningConfirmTitle" aria-describedby="planningConfirmBody"/)
+  assert.match(dialog, /event\.key === 'Escape' && !busy/)
+  assert.match(dialog, /event\.target === event\.currentTarget && !busy/)
+  assert.match(dialog, /cancelRef\.current\?\.focus\(\)/)
+  // prompt 变体：requiredInput 存在时空输入禁用确认，提交 trimmed 值。
+  assert.match(dialog, /requiredInput != null && value\.trim\(\) === ''/)
+  assert.match(dialog, /onConfirm\(value\.trim\(\)\)/)
+  assert.match(dialog, /danger \? 'btn btn-danger' : 'btn btn-primary'/)
+  assert.match(css, /\.planning-confirm-input textarea \{/)
+})
+
+test('planning pages contain no native confirm/prompt dialogs', () => {
+  const files = [
+    '../src/planning/ShootPlanWorkspacePage.tsx',
+    '../src/planning/ShootPlanIngestionPage.tsx',
+    '../src/planning/ShootPlanRunPage.tsx',
+    '../src/planning/panels/BriefPanel.tsx',
+    '../src/planning/panels/ShotsPanel.tsx',
+    '../src/planning/panels/ReadinessPanel.tsx',
+    '../src/planning/panels/ExecutionHistoryPanel.tsx',
+    '../src/planning/panels/BusinessPanel.tsx',
+    '../src/planning/panels/CrmLinkPanel.tsx',
+  ]
+  for (const file of files) {
+    assert.doesNotMatch(source(file), /window\.confirm|globalThis\.confirm|window\.prompt|globalThis\.prompt|window\.alert/, file)
+  }
+})
+
+test('destructive actions route through ConfirmDialog with danger tone and specific copy', () => {
+  const workspace = source('../src/planning/ShootPlanWorkspacePage.tsx')
+  const shots = source('../src/planning/panels/ShotsPanel.tsx')
+  const readiness = source('../src/planning/panels/ReadinessPanel.tsx')
+  const history = source('../src/planning/panels/ExecutionHistoryPanel.tsx')
+  const brief = source('../src/planning/panels/BriefPanel.tsx')
+  const business = source('../src/planning/panels/BusinessPanel.tsx')
+
+  assert.match(workspace, /title="确认归档这份策划？"/)
+  assert.match(workspace, /title="重新打开这份策划？"/)
+  assert.match(shots, /title=\{`移除镜头「\$\{removing\.title\}」？`\}/)
+  assert.match(shots, /acknowledge_execution_history: hasHistory/)
+  assert.match(readiness, /title=\{`移除准备项「\$\{removing\.title\}」？`\}/)
+  // 作废用 requiredInput 变体替代原生 prompt+confirm 两连。
+  assert.match(history, /requiredInput=\{\{ label: '作废原因'/)
+  assert.match(history, /void voidEvent\(fact, reason\)/)
+  assert.match(brief, /title="清除拍摄时间？"/)
+  assert.match(business, /title="确认应用这份草稿？"/)
+  assert.match(business, /effects\.map\(effectLabel\)/)
+})
+
+test('workspace success feedback toasts through the shell while recovery warnings stay inline', () => {
+  const workspace = source('../src/planning/ShootPlanWorkspacePage.tsx')
+
+  assert.match(workspace, /const \{ notify \} = useShell\(\)/)
+  assert.ok(workspace.includes("notify('已保存最新版本。')"))
+  assert.ok(workspace.includes("notify('策划状态已更新。')"))
+  // 需要用户后续动作的告警保留页面级 planning-feedback。
+  assert.match(workspace, /setFeedback\('更改已提交，但最新页面加载失败；请刷新页面查看结果。'\)/)
+  assert.match(workspace, /setFeedback\('策划已在其他页面更新。页面已刷新，请核对保留的输入后重新保存。'\)/)
 })

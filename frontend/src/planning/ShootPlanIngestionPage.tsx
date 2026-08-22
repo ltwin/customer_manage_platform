@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../api/client'
+import ConfirmDialog from '../components/ConfirmDialog'
+import { useShell } from '../components/shellContext'
 import type { components } from '../api/schema'
 import {
   commitPlanIngestionSession,
@@ -54,7 +56,8 @@ export default function ShootPlanIngestionPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
-  const [feedback, setFeedback] = useState<string | null>(null)
+  const { notify } = useShell()
+  const [confirmingReparse, setConfirmingReparse] = useState(false)
 
   const applySession = useCallback((next: PlanIngestionSession) => {
     setSession(next)
@@ -109,15 +112,14 @@ export default function ShootPlanIngestionPage() {
 
   async function parseSource() {
 	    if ((!source.trim() && assets.length === 0) || !plan) return
-    if (session && !window.confirm('重新解析会按新原文重建候选列表：你编辑过的候选（标题、类型、规范标签与准备项字段）会保留你的修改，未动过的候选会被替换；来源有变化的候选需要重新确认后才能保存。确定重新解析吗？')) return
-    setBusy(true); setFeedback(null); setError(null); setStale(false)
+    setBusy(true); setError(null); setStale(false)
     try {
       const next = session
 	        ? await previewPlanIngestionSession(id, session.id, { expected_session_revision: session.revision, source_text: source || undefined, staged_asset_intent_count: selectedAssetList.length, staged_asset_intents: selectedAssetList.map(assetBindingIntent) }, newPlanningMutationKey('ingestion-preview'))
 	        : await createPlanIngestionSession(id, { expected_plan_revision: plan.revision, source_text: source || undefined, staged_asset_intent_count: selectedAssetList.length, staged_asset_intents: selectedAssetList.map(assetBindingIntent) }, newPlanningMutationKey('ingestion-create'))
       applySession(next)
       if (isNew) navigate(`/shoot-plans/${encodeURIComponent(id)}/ingestions/${encodeURIComponent(next.id)}`, { replace: true })
-      setFeedback('候选已更新，请逐条确认。')
+      notify('候选已更新，请逐条确认。')
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'ingestion_revision_conflict') setStale(true)
       setError(planningErrorMessage(cause, '解析失败，原文仍保留在当前页面。'))
@@ -132,7 +134,7 @@ export default function ShootPlanIngestionPage() {
       const result = await uploadPlanAsset(id, plan.revision, file, rightsDeclarationFor(uploadSource, false), 'moodboard_display', newPlanningMutationKey('ingestion-asset'))
       setAssets((current) => [result.asset, ...current.filter((item) => item.id !== result.asset.id)])
       setSelectedAssets((current) => new Set(current).add(result.asset.id))
-      setFeedback('参考图已暂存，提交时会与候选一起处理。')
+      notify('参考图已暂存，提交时会与候选一起处理。')
     } catch (cause) { setError(planningErrorMessage(cause, '参考图上传失败')) } finally { setBusy(false); event.target.value = '' }
   }
 
@@ -179,7 +181,7 @@ export default function ShootPlanIngestionPage() {
     if (!current || !previous) return
     editCandidate(previous.candidate_id, { title: `${previous.title} · ${current.title}`, normalized_content: `${previous.normalized_content}\n${current.normalized_content}` })
     discardCandidate(current.candidate_id)
-    setFeedback('已合并到上一条候选，提交前仍可撤销。')
+    notify('已合并到上一条候选，提交前仍可撤销。')
   }
 
   function buildCommitInput(): CommitInput {
@@ -224,7 +226,7 @@ export default function ShootPlanIngestionPage() {
 
   async function previewEdits() {
     if (!session) return
-    setBusy(true); setError(null); setFeedback(null); setStale(false)
+    setBusy(true); setError(null); setStale(false)
     try {
       const next = await previewPlanIngestionSession(id, session.id, {
         expected_session_revision: session.revision,
@@ -238,7 +240,7 @@ export default function ShootPlanIngestionPage() {
       }, newPlanningMutationKey('ingestion-preview-edits'))
       applySession(next)
 		setStep('commit')
-      setFeedback('编辑已暂存，请确认保存。')
+      notify('编辑已暂存，请确认保存。')
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'ingestion_revision_conflict') setStale(true)
       setError(planningErrorMessage(cause, '编辑暂存失败，当前修改仍保留。'))
@@ -247,14 +249,14 @@ export default function ShootPlanIngestionPage() {
 
   async function commit() {
     if (!session || !plan || keptCount === 0) return
-    setBusy(true); setError(null); setFeedback(null)
+    setBusy(true); setError(null)
     try {
       const currentPlan = await getShootPlan(id)
       const result = await commitPlanIngestionSession(id, session.id, { ...buildCommitInput(), expected_plan_revision: currentPlan.revision }, newPlanningMutationKey('ingestion-commit'))
       setPlan(currentPlan)
       setSession(result.session)
       setStep('commit')
-      setFeedback(`已保存 ${result.plan_batch?.created_ids?.length ?? 0} 个核心候选、${result.reference_links?.length ?? 0} 条参考链接和 ${result.media_bindings?.length ?? 0} 个素材绑定。`)
+      notify(`已保存 ${result.plan_batch?.created_ids?.length ?? 0} 个核心候选、${result.reference_links?.length ?? 0} 条参考链接和 ${result.media_bindings?.length ?? 0} 个素材绑定。`)
     } catch (cause) {
       if (cause instanceof ApiError && cause.code === 'ingestion_revision_conflict') setStale(true)
       setError(planningErrorMessage(cause, '保存失败；当前编辑仍保留，可刷新后重试。'))
@@ -267,7 +269,7 @@ export default function ShootPlanIngestionPage() {
     try {
       const next = await transitionPlanIngestionSession(id, session.id, { expected_session_revision: session.revision, state: 'abandoned' }, newPlanningMutationKey('ingestion-abandon'))
       applySession(next)
-      setFeedback('本次摄取已结束，原文与素材仍按保留规则可恢复查看。')
+      notify('本次摄取已结束，原文与素材仍按保留规则可恢复查看。')
     } catch (cause) { setError(planningErrorMessage(cause, '结束摄取失败')) } finally { setBusy(false) }
   }
 
@@ -287,9 +289,18 @@ export default function ShootPlanIngestionPage() {
         <StepPill active={step === 'commit'} done={false} number="3">确认保存</StepPill>
       </div>
       {stale && <div className="planning-feedback ingestion-stale" role="alert">服务端版本已变化。你的编辑仍保留在本页；刷新前请先复制需要保留的内容。</div>}
+      {confirmingReparse && (
+        <ConfirmDialog
+          title="重新解析并重建候选？"
+          body="重新解析会按新原文重建候选列表：你编辑过的候选（标题、类型、规范标签与准备项字段）会保留你的修改，未动过的候选会被替换；来源有变化的候选需要重新确认后才能保存。"
+          confirmLabel="重新解析"
+          busy={busy}
+          onConfirm={() => { setConfirmingReparse(false); void parseSource() }}
+          onCancel={() => setConfirmingReparse(false)}
+        />
+      )}
       {error && <div className="planning-feedback ingestion-error" role="alert">{error}</div>}
-      {feedback && <div className="planning-feedback" role="status">{feedback}</div>}
-	      {step === 'source' && <SourceStep source={source} setSource={setSource} assets={assets} busy={busy} uploadSource={uploadSource} setUploadSource={setUploadSource} onUpload={uploadReference} onParse={() => void parseSource()} hasSession={Boolean(session)} />}
+	      {step === 'source' && <SourceStep source={source} setSource={setSource} assets={assets} busy={busy} uploadSource={uploadSource} setUploadSource={setUploadSource} onUpload={uploadReference} onParse={() => { if (session) setConfirmingReparse(true); else void parseSource() }} hasSession={Boolean(session)} />}
 	      {step === 'review' && <ReviewStep candidates={candidates} references={references} dropped={dropped} readinessCandidates={readinessCandidates} shotCandidates={shotCandidates} readinessLinkCandidates={session?.candidate_snapshot.readiness_link_candidates ?? []} readinessLinkAcks={readinessLinkAcks} links={readinessLinks} setLinks={setReadinessLinks} onAcknowledgeReadinessLink={(candidateID, revision) => setReadinessLinkAcks((current) => ({ ...current, [candidateID]: revision }))} onAcknowledgeReference={(candidateID, revision) => setReferenceAcks((current) => ({ ...current, [candidateID]: revision }))} referenceAcks={referenceAcks} onEdit={editCandidate} onDiscard={discardCandidate} onRestore={restoreDropped} onMerge={mergeIntoPrevious} onReferenceToggle={(candidateID) => setReferences((current) => current.map((candidate) => candidate.candidate_id === candidateID ? { ...candidate, action: candidate.action === 'discard' ? 'keep' : 'discard', user_modified: true } : candidate))} onReferenceEdit={editReference} assets={assets} selectedAssets={selectedAssets} setSelectedAssets={setSelectedAssets} onNext={() => void previewEdits()} onBack={() => setStep('source')} />}
       {step === 'commit' && <CommitStep session={session} candidates={activeCandidates} referenceCount={keptReferenceCount} assetCount={selectedAssetList.length} busy={busy} onCommit={() => void commit()} onBack={() => setStep(session?.state === 'editing' ? 'review' : 'source')} onWorkspace={() => navigate(`/shoot-plans/${encodeURIComponent(id)}`)} />}
     </main>

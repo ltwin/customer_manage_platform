@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { planningErrorMessage } from '../presentation'
 import { newPlanningMutationKey, voidShootPlanExecutionEvent, type ShootPlanDetail, type ShotExecutionFact } from '../api'
 
@@ -7,14 +8,12 @@ export default function ExecutionHistoryPanel({ plan, busy, onReload }: { plan: 
   const voidedTargets = new Set(history.filter((fact) => fact.kind === 'void').map((fact) => fact.target_event_id))
   const [error, setError] = useState<string | null>(null)
   const [voiding, setVoiding] = useState<string | null>(null)
+  const [voidTarget, setVoidTarget] = useState<Extract<ShotExecutionFact, { kind: 'result' }> | null>(null)
   const pendingKeys = useRef(new Map<string, string>())
 
-  async function voidEvent(fact: Extract<ShotExecutionFact, { kind: 'result' }>) {
+  async function voidEvent(fact: Extract<ShotExecutionFact, { kind: 'result' }>, reason: string) {
     const shot = plan.shots.find((candidate) => candidate.id === fact.shot_id)
     if (!shot) { setError('这条事实对应的镜头已不在当前镜头表中，不能从工作台作废。'); return }
-    const reason = globalThis.prompt('作废不会删除原始记录，而是追加一条可审计的作废事实。请输入原因：')?.trim()
-    if (!reason) return
-    if (!globalThis.confirm('确认追加作废事实吗？当前镜头结果会按完整时间线重新计算。')) return
     const key = pendingKeys.current.get(fact.id) ?? newPlanningMutationKey('void-event')
     pendingKeys.current.set(fact.id, key)
     setVoiding(fact.id)
@@ -45,7 +44,7 @@ export default function ExecutionHistoryPanel({ plan, busy, onReload }: { plan: 
                 <div className="planning-meta"><span>{fact.kind === 'result' ? formatDateTime(fact.checked_at) : formatDateTime(fact.voided_at)}</span><span>事实版本 {fact.revision}</span>{fact.kind === 'result' && <span>{captureModeLabel(fact.capture_mode)}</span>}</div>
               </div>
               {fact.kind === 'result' && plan.status === 'in_progress' && (
-                <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || voiding !== null || voidedTargets.has(fact.id)} onClick={() => void voidEvent(fact)}>{voidedTargets.has(fact.id) ? '已作废' : voiding === fact.id ? '正在作废…' : '作废'}</button>
+                <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || voiding !== null || voidedTargets.has(fact.id)} onClick={() => setVoidTarget(fact)}>{voidedTargets.has(fact.id) ? '已作废' : voiding === fact.id ? '正在作废…' : '作废'}</button>
               )}
             </article>
           ))}
@@ -57,6 +56,18 @@ export default function ExecutionHistoryPanel({ plan, busy, onReload }: { plan: 
           <article className="card" key={snapshot.id}><div className="planning-title-line"><h3>第 {snapshot.finalization_revision} 次完成</h3><span className="badge badge-muted">策划第 {snapshot.plan_revision} 版</span></div><div className="planning-meta"><span>{snapshot.current_shot_ids.length} 个镜头</span><span>{snapshot.preparation_missing_event_ids.length} 条现场准备缺失</span><span>{formatDateTime(snapshot.finalized_at)}</span></div></article>
         ))}
       </div>
+      {voidTarget && (
+        <ConfirmDialog
+          title="追加作废事实？"
+          body={['作废不会删除原始记录，而是追加一条可审计的作废事实。', '当前镜头结果会按完整时间线重新计算。']}
+          confirmLabel="追加作废事实"
+          danger
+          requiredInput={{ label: '作废原因', placeholder: '例如：误记录了一次拍摄', maxLength: 200 }}
+          busy={busy || voiding !== null}
+          onConfirm={(reason) => { const fact = voidTarget; setVoidTarget(null); void voidEvent(fact, reason) }}
+          onCancel={() => setVoidTarget(null)}
+        />
+      )}
     </section>
   )
 }

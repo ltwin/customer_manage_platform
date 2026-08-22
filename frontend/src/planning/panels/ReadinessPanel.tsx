@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail, ShootPlanReadinessItem } from '../api'
@@ -11,6 +12,7 @@ const responsibilityLabels: Record<string, string> = { photographer: '摄影师'
 
 export default function ReadinessPanel({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner }) {
   const [editing, setEditing] = useState<ShootPlanReadinessItem | 'new' | null>(null)
+  const [removing, setRemoving] = useState<ShootPlanReadinessItem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [assignments, setAssignments] = useState<AssignmentManagementItem[]>([])
   const readonly = plan.status === 'archived'
@@ -46,8 +48,6 @@ export default function ReadinessPanel({ plan, busy, runCommand }: { plan: Shoot
   }
 
   async function remove(item: ShootPlanReadinessItem) {
-    const linkedShots = plan.shots.filter((shot) => shot.readiness_item_ids.includes(item.id)).length
-    if (!globalThis.confirm(`移除后会同时解除与 ${linkedShots} 个镜头的关联，但不会删除镜头。确认移除「${item.title}」吗？`)) return
     setError(null)
     try {
       await runCommand({ expected_revision: plan.revision, operation: 'remove_readiness', readiness_id: item.id }, 'remove-readiness')
@@ -110,7 +110,7 @@ export default function ReadinessPanel({ plan, busy, runCommand }: { plan: Shoot
                         )}
                         {linkedShots.length > 0 && <p className="planning-linked-shots">关联镜头：{linkedShots.map((shot) => shot.title).join('、')}</p>}
                       </div>
-                      <div className="planning-card-actions"><button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => setEditing(item)}>编辑</button><button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || readonly} onClick={() => void remove(item)}>移除</button></div>
+                      <div className="planning-card-actions"><button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => setEditing(item)}>编辑</button><button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || readonly} onClick={() => setRemoving(item)}>移除</button></div>
                     </article>
                   )
                 })}
@@ -119,6 +119,17 @@ export default function ReadinessPanel({ plan, busy, runCommand }: { plan: Shoot
           ))
       )}
       {editing && <ReadinessDialog plan={plan} item={editing === 'new' ? null : editing} busy={busy} runCommand={runCommand} onClose={() => setEditing(null)} />}
+      {removing && (
+        <ConfirmDialog
+          title={`移除准备项「${removing.title}」？`}
+          body={`移除后会同时解除与 ${plan.shots.filter((shot) => shot.readiness_item_ids.includes(removing.id)).length} 个镜头的关联，但不会删除镜头。`}
+          confirmLabel="移除准备项"
+          danger
+          busy={busy}
+          onConfirm={() => { const item = removing; setRemoving(null); void remove(item) }}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
     </section>
   )
 }

@@ -95,13 +95,31 @@ test('reference link candidates support label and target editing instead of a di
   assert.match(page, /aria-label="链接归属"/)
 })
 
-test('reparse requires an explicit confirmation that documents edited-candidate retention', () => {
+test('reparse requires an explicit ConfirmDialog that documents edited-candidate retention', () => {
   const page = source('../src/planning/ShootPlanIngestionPage.tsx')
 
-  assert.match(page, /if \(session && !window\.confirm\(/)
+  // 已有会话时先弹统一确认框，无会话（首次解析）直接执行。
+  assert.match(page, /if \(session\) setConfirmingReparse\(true\); else void parseSource\(\)/)
+  assert.match(page, /confirmingReparse && \(\s*<ConfirmDialog/)
+  assert.match(page, /title="重新解析并重建候选？"/)
   assert.match(page, /重新解析会按新原文重建候选列表/)
   assert.match(page, /会保留你的修改/)
   assert.match(page, /需要重新确认/)
+  assert.doesNotMatch(page, /window\.confirm|globalThis\.confirm|globalThis\.prompt/)
+})
+
+test('ingestion transient success feedback goes through the shell toast, not inline status', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+
+  assert.match(page, /const \{ notify \} = useShell\(\)/)
+  for (const message of ['候选已更新，请逐条确认。', '参考图已暂存，提交时会与候选一起处理。', '已合并到上一条候选，提交前仍可撤销。', '编辑已暂存，请确认保存。', '本次摄取已结束，原文与素材仍按保留规则可恢复查看。']) {
+    assert.ok(page.includes(`notify('${message}')`), `toast missing: ${message}`)
+  }
+  assert.ok(page.includes('notify(`已保存 ${result.plan_batch?.created_ids?.length ?? 0} 个核心候选'))
+  // 持久告警仍走内联块；瞬时成功不再有 planning-feedback role=status 渲染。
+  assert.match(page, /planning-feedback ingestion-stale/)
+  assert.match(page, /planning-feedback ingestion-error/)
+  assert.doesNotMatch(page, /\{feedback && <div className="planning-feedback"/)
 })
 
 test('dropped candidates classify parser reasons instead of showing raw reason strings', () => {

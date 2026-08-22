@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { ApiError } from '../../api/client.ts'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { isPackagePriceYuanInputAllowed } from '../../pages/packagePrice.ts'
 import type { ShootPlanDetail } from '../api'
 import {
@@ -49,6 +50,7 @@ export default function BusinessPanel({
   const [working, setWorking] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [confirmingDecision, setConfirmingDecision] = useState<{ draft: OrderAdjustmentDraftView | ScheduleDurationDraftView; decision: BusinessDraftDecisionInput['decision'] } | null>(null)
 
   useEffect(() => {
     if (!dirty) setFacts(factsFromPlan(plan))
@@ -120,15 +122,23 @@ export default function BusinessPanel({
     }
   }
 
+  async function requestDecision(
+    draft: OrderAdjustmentDraftView | ScheduleDurationDraftView,
+    decision: BusinessDraftDecisionInput['decision'],
+  ): Promise<void> {
+    if (decision !== 'dismiss' && draft.required_acknowledgement) {
+      setConfirmingDecision({ draft, decision })
+      return
+    }
+    await decide(draft, decision)
+  }
+
   async function decide(
     draft: OrderAdjustmentDraftView | ScheduleDurationDraftView,
     decision: BusinessDraftDecisionInput['decision'],
   ) {
     let acknowledgement: BusinessDraftDecisionInput['acknowledgement']
-    if (decision !== 'dismiss') {
-      if (!draft.required_acknowledgement) return
-      const effects = draft.required_acknowledgement.effects.map(effectLabel).join('\n')
-      if (!window.confirm(`${effects}\n\n确认继续吗？`)) return
+    if (decision !== 'dismiss' && draft.required_acknowledgement) {
       acknowledgement = draft.required_acknowledgement
     }
     setWorking(true)
@@ -224,9 +234,19 @@ export default function BusinessPanel({
       </div>
 
       <div className="planning-business-grid">
-        <OrderDraftCard draft={plan.business.order_adjustment} disabled={disabled} onDecision={decide} />
-        <ScheduleDraftCard draft={plan.business.schedule_duration} disabled={disabled} onDecision={decide} onOpenCalendar={openCalendar} />
+        <OrderDraftCard draft={plan.business.order_adjustment} disabled={disabled} onDecision={requestDecision} />
+        <ScheduleDraftCard draft={plan.business.schedule_duration} disabled={disabled} onDecision={requestDecision} onOpenCalendar={openCalendar} />
       </div>
+      {confirmingDecision && confirmingDecision.draft.required_acknowledgement && (
+        <ConfirmDialog
+          title="确认应用这份草稿？"
+          body={confirmingDecision.draft.required_acknowledgement.effects.map(effectLabel)}
+          confirmLabel="确认继续"
+          busy={working}
+          onConfirm={() => { const pending = confirmingDecision; setConfirmingDecision(null); void decide(pending.draft, pending.decision) }}
+          onCancel={() => setConfirmingDecision(null)}
+        />
+      )}
     </section>
   )
 

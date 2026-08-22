@@ -11,6 +11,8 @@ import {
   type PageReadState,
 } from '../components/pageReadState'
 import { ApiError } from '../api/client'
+import ConfirmDialog from '../components/ConfirmDialog'
+import { useShell } from '../components/shellContext'
 import {
   applyShootPlanCommand,
   getShootPlan,
@@ -63,6 +65,7 @@ function parseShareFocus(value: string | null):
 export default function ShootPlanWorkspacePage() {
   const { id = '' } = useParams()
   const navigate = useNavigate()
+  const { notify } = useShell()
   const [searchParams] = useSearchParams()
   const initialTab = parseWorkspaceTab(searchParams.get('tab')) ?? 'brief'
   const [tab, setTab] = useState<WorkspaceTab>(initialTab)
@@ -138,14 +141,14 @@ export default function ShootPlanWorkspacePage() {
       acknowledgeMutation(signature)
       try {
         await load(true)
-        setFeedback('已保存最新版本。')
+        notify('已保存最新版本。')
       } catch {
         setFeedback('更改已提交，但最新页面加载失败；请刷新页面查看结果。')
       }
     } finally {
       setBusy(false)
     }
-  }, [acknowledgeMutation, getMutationKey, id, load])
+  }, [acknowledgeMutation, getMutationKey, id, load, notify])
 
   const runTransition: TransitionRunner = useCallback(async (transition, scope) => {
     const signature = `transition:${id}:${JSON.stringify(transition)}`
@@ -172,14 +175,14 @@ export default function ShootPlanWorkspacePage() {
       acknowledgeMutation(signature)
       try {
         await load(true)
-        setFeedback('策划状态已更新。')
+        notify('策划状态已更新。')
       } catch {
         setFeedback('状态变更已提交，但最新页面加载失败；请刷新页面查看结果。')
       }
     } finally {
       setBusy(false)
     }
-  }, [acknowledgeMutation, getMutationKey, id, load])
+  }, [acknowledgeMutation, getMutationKey, id, load, notify])
 
   const presentation = pageReadPresentation(state)
   const plan = readyPageData(state)
@@ -322,6 +325,7 @@ function TransitionGuidanceCard({ guidance, onGoReadiness, onGoShots, onRun }: {
 
 function StatusActions({ plan, busy, runTransition, onRun }: { plan: ShootPlanDetail; busy: boolean; runTransition: TransitionRunner; onRun: () => void }) {
   const [error, setError] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<null | 'archive' | 'reopen'>(null)
   async function transition(kind: 'mark_ready' | 'start' | 'complete' | 'reopen') {
     setError(null)
     let body: PlanTransition
@@ -352,8 +356,7 @@ function StatusActions({ plan, busy, runTransition, onRun }: { plan: ShootPlanDe
 
   async function archive() {
     const acknowledgement = plan.required_archive_acknowledgement
-    const effects = acknowledgement.effects.map((effect) => `• ${archiveEffectLabel(effect)}`).join('\n')
-    if (!window.confirm(`归档后策划将永久只读，执行历史会保留。\n\n${effects}\n\n确认归档吗？`)) return
+    if (!acknowledgement) return
     setError(null)
     try {
       await runTransition({ expected_revision: plan.revision, transition: 'archive', payload: acknowledgement } as PlanTransition, 'archive')
@@ -368,9 +371,30 @@ function StatusActions({ plan, busy, runTransition, onRun }: { plan: ShootPlanDe
       {plan.status === 'draft' && <button className="btn btn-primary" disabled={busy} type="button" onClick={() => void transition('mark_ready')}>标记已就绪</button>}
       {plan.status === 'ready' && <button className="btn btn-primary" disabled={busy} type="button" onClick={() => void transition('start')}>手动开始拍摄</button>}
       {plan.status === 'in_progress' && <button className="btn btn-primary" disabled={busy} type="button" onClick={() => void transition('complete')}>标记完成</button>}
-      {plan.status === 'completed' && <button className="btn" disabled={busy} type="button" onClick={() => { if (window.confirm('重新打开后可继续修改并产生新的完成快照，旧快照会保留。')) void transition('reopen') }}>重新打开</button>}
-      {plan.status !== 'archived' && <button className="btn btn-danger-ghost" disabled={busy} type="button" onClick={() => void archive()}>归档</button>}
+      {plan.status === 'completed' && <button className="btn" disabled={busy} type="button" onClick={() => setConfirming('reopen')}>重新打开</button>}
+      {plan.status !== 'archived' && <button className="btn btn-danger-ghost" disabled={busy} type="button" onClick={() => setConfirming('archive')}>归档</button>}
       {error && <span className="planning-action-error" role="alert">{error}</span>}
+      {confirming === 'archive' && plan.required_archive_acknowledgement && (
+        <ConfirmDialog
+          title="确认归档这份策划？"
+          body={['归档后策划将永久只读，执行历史会保留。', ...plan.required_archive_acknowledgement.effects.map((effect) => `• ${archiveEffectLabel(effect)}`)]}
+          confirmLabel="确认归档"
+          danger
+          busy={busy}
+          onConfirm={() => { setConfirming(null); void archive() }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+      {confirming === 'reopen' && (
+        <ConfirmDialog
+          title="重新打开这份策划？"
+          body="重新打开后可继续修改并产生新的完成快照，旧快照会保留。"
+          confirmLabel="重新打开"
+          busy={busy}
+          onConfirm={() => { setConfirming(null); void transition('reopen') }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
     </div>
   )
 }

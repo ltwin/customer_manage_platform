@@ -401,6 +401,11 @@
 .ingestion-reference > span { display: grid; min-width: 0; flex: 1; gap: 3px; }
 .ingestion-reference small { overflow-wrap: anywhere; }
 .ingestion-dropped { border-bottom-style: dashed; }
+.planning-confirm-dialog { max-width: 440px; }
+.planning-confirm-dialog .dialog-sub p { margin: 0 0 6px; }
+.planning-confirm-input { display: grid; gap: 6px; margin-top: 4px; font-size: 12px; }
+.planning-confirm-input > span { color: var(--muted); font-weight: 650; }
+.planning-confirm-input textarea { min-height: 56px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--radius-s); background: var(--surface); font-size: 12.5px; resize: vertical; }
 .ingestion-dropped-details { border: 1px dashed var(--border-strong); border-radius: var(--radius-s); padding: 10px 14px; background: var(--surface-2); }
 .ingestion-dropped-details > summary { cursor: pointer; font-size: 12.5px; font-weight: 650; color: var(--muted); }
 .ingestion-dropped-details[open] > summary { margin-bottom: 4px; }

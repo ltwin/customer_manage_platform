@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Settings2 } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { useShell } from '../../components/shellContext'
 import { instantToLocalDateTime } from '../../components/schedule/timezone'
 import { planningErrorMessage } from '../presentation'
@@ -154,6 +155,7 @@ function WindowEditor({ plan, busy, runCommand, accountTimezone }: { plan: Shoot
   const [mode, setMode] = useState<ExecutionWindowMode>(initialMode)
   const [error, setError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
+  const [confirmingClear, setConfirmingClear] = useState(false)
   const planID = useRef(plan.id)
   useEffect(() => {
     const planChanged = planID.current !== plan.id
@@ -240,15 +242,26 @@ function WindowEditor({ plan, busy, runCommand, accountTimezone }: { plan: Shoot
       </details>
       <div className="planning-form-actions">
         <button className="btn btn-primary btn-sm" disabled={busy || plan.status === 'archived'}>保存拍摄时间</button>
-        {window && <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || plan.status === 'archived'} onClick={() => {
-          if (!globalThis.confirm('清除拍摄时间后，后续现场记录将不再区分现场完成与事后补记。确认清除吗？')) return
-          setError(null)
-          void runCommand({ expected_revision: plan.revision, operation: 'clear_execution_window' }, 'clear-window')
-            .then(() => setDirty(false))
-            .catch((cause) => setError(planningErrorMessage(cause, '清除拍摄时间失败')))
-        }}>清除拍摄时间</button>}
+        {window && <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || plan.status === 'archived'} onClick={() => setConfirmingClear(true)}>清除拍摄时间</button>}
       </div>
       {error && <p className="planning-inline-error" role="alert">{error}</p>}
+      {confirmingClear && (
+        <ConfirmDialog
+          title="清除拍摄时间？"
+          body="清除拍摄时间后，后续现场记录将不再区分现场完成与事后补记。"
+          confirmLabel="清除拍摄时间"
+          danger
+          busy={busy}
+          onConfirm={() => {
+            setConfirmingClear(false)
+            setError(null)
+            void runCommand({ expected_revision: plan.revision, operation: 'clear_execution_window' }, 'clear-window')
+              .then(() => setDirty(false))
+              .catch((cause) => setError(planningErrorMessage(cause, '清除拍摄时间失败')))
+          }}
+          onCancel={() => setConfirmingClear(false)}
+        />
+      )}
     </form>
   )
 }

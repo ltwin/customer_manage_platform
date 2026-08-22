@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail, ShootPlanShot } from '../api'
@@ -10,6 +11,7 @@ import { captureModeShortLabel, skipReasonLabel } from '../outcomeLabels'
 export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner; focusShotID: string | null }) {
   const [editing, setEditing] = useState<ShootPlanShot | 'new' | null>(null)
   const [duplicating, setDuplicating] = useState<ShootPlanShot | null>(null)
+  const [removing, setRemoving] = useState<ShootPlanShot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [highlightID, setHighlightID] = useState<string | null>(null)
   const readonly = plan.status === 'archived'
@@ -46,10 +48,6 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
 
   async function remove(shot: ShootPlanShot) {
     const hasHistory = shotHasExecutionHistory(plan, shot.id)
-    const message = hasHistory
-      ? '这条镜头已有执行记录。移除只会把它移出当前镜头表，历史记录和完成快照都会保留。确认移除吗？'
-      : '移除后镜头不再出现在当前镜头表中。确认移除吗？'
-    if (!globalThis.confirm(message)) return
     setError(null)
     try {
       await runCommand({ expected_revision: plan.revision, operation: 'remove_shot', shot_id: shot.id, acknowledge_execution_history: hasHistory }, 'remove-shot')
@@ -121,7 +119,7 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
                 <button className="btn btn-sm" type="button" disabled={busy || readonly || index === plan.shots.length - 1} aria-label={`下移镜头 ${shot.title}`} onClick={() => void reorder(index, 1)}>↓</button>
                 <button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => { setEditing(null); setDuplicating(shot) }}>复制</button>
                 <button className="btn btn-sm" type="button" disabled={busy || readonly} onClick={() => setEditing(shot)}>编辑</button>
-                <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || readonly} onClick={() => void remove(shot)}>移除</button>
+                <button className="btn btn-danger-ghost btn-sm" type="button" disabled={busy || readonly} onClick={() => setRemoving(shot)}>移除</button>
               </div>
             </article>
           ))}
@@ -135,6 +133,19 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
           busy={busy}
           runCommand={runCommand}
           onClose={() => { setEditing(null); setDuplicating(null) }}
+        />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={`移除镜头「${removing.title}」？`}
+          body={shotHasExecutionHistory(plan, removing.id)
+            ? '这条镜头已有执行记录。移除只会把它移出当前镜头表，历史记录和完成快照都会保留。'
+            : '移除后镜头不再出现在当前镜头表中。'}
+          confirmLabel="移除镜头"
+          danger
+          busy={busy}
+          onConfirm={() => { const shot = removing; setRemoving(null); void remove(shot) }}
+          onCancel={() => setRemoving(null)}
         />
       )}
     </section>
