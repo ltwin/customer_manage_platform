@@ -8,8 +8,8 @@ status: open
 disposition: epic-final-acceptance-input
 gap_counts:
   true_gap_total: 38
-  true_gap_remaining: 13
-  true_gap_fixed: 23
+  true_gap_remaining: 11
+  true_gap_fixed: 25
   true_gap_partial: 2
   residual: 2
   by_design: 7
@@ -40,6 +40,8 @@ fixed_ids:
   - GAP-ING-06
   - GAP-ING-07
   - GAP-SHARE-03
+  - GAP-UX-01
+  - GAP-UX-02
 partial_ids:
   - GAP-WS-04
   - GAP-WS-07
@@ -176,8 +178,8 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 | ID | 优先级 | 内容 | 证据 |
 |---|---|---|---|
-| GAP-UX-01 | 中 | 确认对话框不统一：混用 `window.confirm`/`prompt`/自定义 dialog/inline alertdialog；原型为统一模态 | `ShootPlanWorkspacePage.tsx:285,300`、`ShotsPanel.tsx:31`、`ExecutionHistoryPanel.tsx:15-17` 等 |
-| GAP-UX-02 | 中 | 无 toast 体系：操作反馈用页面级 status 与局部 message 替代 | 全局无 toast 实现 |
+| GAP-UX-01 | 中 | 确认对话框不统一：混用 `window.confirm`/`prompt`/自定义 dialog/inline alertdialog；原型为统一模态 **【已修复 2026-08-21：统一 ConfirmDialog 组件（role=alertdialog + Escape/backdrop/focus + busy 守卫 + danger 色调 + requiredInput 原因必填变体）；8 处原生 confirm 与 1 处 prompt（作废原因）全部替换；CrmLinkPanel 面板内嵌 alertdialog 为自洽范式保留】** | `ShootPlanWorkspacePage.tsx:285,300`、`ShotsPanel.tsx:31`、`ExecutionHistoryPanel.tsx:15-17` 等 |
+| GAP-UX-02 | 中 | 无 toast 体系：操作反馈用页面级 status 与局部 message 替代 **【已修复 2026-08-21：planning 页接入 AppShell 既有 toast（useShell().notify）；工作台与摄取页全部瞬时成功反馈走 toast，恢复类告警（刷新失败/版本冲突恢复）保留内联 planning-feedback；RunPage 独立全屏路由维持内联反馈】** | 全局无 toast 实现 |
 
 ## 处置建议（优先级排序）
 
@@ -194,7 +196,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 > 文中各「待提交」标记均已随四批提交入库（批 4 提交：`0f13dc9` 引导闭环 / `59b02f8` 列表增强 / `d382c15` 台账）。
 
-38 条真差距中 23 条完整修复、GAP-WS-04 与 GAP-WS-07 部分收口，**剩余 13 条可执行**（2 中 / 11 低）+ 2 项残余（WS-04 侧栏扩展标签、WS-07 纯链接素材）：
+38 条真差距中 25 条完整修复、GAP-WS-04 与 GAP-WS-07 部分收口，**剩余 11 条可执行（全部低优先级）**+ 2 项残余（WS-04 侧栏扩展标签、WS-07 纯链接素材）：
 
 | 域 | ID | 优先级 | 内容 |
 |---|---|---|---|
@@ -211,12 +213,10 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | 工作台 | GAP-WS-13 | 低 | 公开规模说明与进度流转说明弱化 |
 | 工作台 | GAP-WS-14 | 低 | 新建策划为必填弹窗，非一键空白建案 |
 | 分享 | GAP-SHARE-04 | 低 | `document.title` 不随档位变化；页脚生命周期告知弱化 |
-| 通用 | GAP-UX-01 | 中 | 确认对话框不统一（confirm/prompt/自定义混用） |
-| 通用 | GAP-UX-02 | 中 | 无 toast 体系 |
 
 **Residual（挂 plan-share checklist S6/S7）**：S6 后端验证矩阵证据（design A19）、S7 v2 conformance 浏览器证据（1600/1280/375/coarse/200%/keyboard/screen-reader）。不因 RES-SHARE-01 的 UI 修复自动关闭。
 
-**建议处置顺序**：高优先级、WS-09 与 RUN 三件套均已清零；中优先级仅剩 GAP-UX-01/02（统一「交互打磨批」，一次性收敛 confirm/toast 两个体系，横跨全部 planning 页面）；其后为 11 条低优先级收尾。素材域仅剩 WS-07 纯链接素材残余（owner 已决策不做，宜单独立项）。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）；`account-center.test.ts` A8 media-query 正则存量失败（4a11fb6 插入 `.main > .topbar` 规则所致，与本 epic 无关）。
+**建议处置顺序**：高、中优先级已全部清零（UX-01/02 打磨批 2026-08-21 收口）；剩余 11 条低优先级可按域分 2-3 批收尾。素材域仅剩 WS-07 纯链接素材残余（owner 已决策不做，宜单独立项）。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）；`account-center.test.ts` A8 media-query 正则存量失败（4a11fb6 插入 `.main > .topbar` 规则所致，与本 epic 无关）。
 
 ## 引用
 
