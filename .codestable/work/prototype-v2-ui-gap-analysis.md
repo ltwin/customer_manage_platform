@@ -8,8 +8,8 @@ status: open
 disposition: epic-final-acceptance-input
 gap_counts:
   true_gap_total: 38
-  true_gap_remaining: 11
-  true_gap_fixed: 25
+  true_gap_remaining: 0
+  true_gap_fixed: 36
   true_gap_partial: 2
   residual: 2
   by_design: 7
@@ -42,6 +42,17 @@ fixed_ids:
   - GAP-SHARE-03
   - GAP-UX-01
   - GAP-UX-02
+  - GAP-RUN-07
+  - GAP-RUN-08
+  - GAP-ING-08
+  - GAP-ING-09
+  - GAP-ING-10
+  - GAP-WS-10
+  - GAP-WS-11
+  - GAP-WS-12
+  - GAP-WS-13
+  - GAP-WS-14
+  - GAP-SHARE-04
 partial_ids:
   - GAP-WS-04
   - GAP-WS-07
@@ -95,9 +106,9 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | GAP-ING-05 | 中 | 参考链接候选的归属（`target_kind`）与标注不可编辑（下拉 disabled、label 无输入）；API 支持 `reference_link_overrides` **【已修复 2026-08-20，待提交：标注输入 + 归属/归属镜头选择】** | `ShootPlanIngestionPage.tsx:228, 304`；`schema.d.ts:2816-2826` |
 | GAP-ING-06 | 中 | 参考图上传来源声明硬编码 `customer_supplied/display_consent`，无来源选择 **【已修复 2026-08-21，待提交：上传入口加来源选择（8 类，共享 mediaRights 模块），声明按矩阵派生】** | `ShootPlanIngestionPage.tsx:127-129` |
 | GAP-ING-07 | 中 | 丢弃原因退化为原始字符串展示，无 blank/duplicate/unsupported/手动丢弃 分类标签与对照说明；丢弃区无展开/收起 **【已修复 2026-08-21：ingestionDropped.ts 纯模块镜像 parser reason 全集（blank/duplicate/unsupported/over_limit）+ 前端 manual 分类；丢弃区改 details 展开/收起，行内分类标签、原文摘录、重复项并入提示、五类对照说明；候选列表手动丢弃显示 tag-warn 标签】** | `ShootPlanIngestionPage.tsx:304` |
-| GAP-ING-08 | 低 | 保存摘要粒度简化（仅 3 个计数，无分类明细与版本号变化）；无顶栏「已选 N 条」chip | `ShootPlanIngestionPage.tsx:274, 310` |
-| GAP-ING-09 | 低 | 保存前主动重取 revision 规避 409，冲突时仅 stale 横幅无差异查看 UI | `ShootPlanIngestionPage.tsx:245-252` |
-| GAP-ING-10 | 低 | 「全选」快捷按钮缺失 | 原型 :171 |
+| GAP-ING-08 | 低 | 保存摘要粒度简化（仅 3 个计数，无分类明细与版本号变化）；无顶栏「已选 N 条」chip **【已修复 2026-08-21：顶栏「已选 N 条」chip（仅确认候选步显示）；保存摘要核心候选附「镜头 X · 准备项 Y」明细与「基于策划第 N 版提交」说明】** | `ShootPlanIngestionPage.tsx:274, 310` |
+| GAP-ING-09 | 低 | 保存前主动重取 revision 规避 409，冲突时仅 stale 横幅无差异查看 UI **【已修复 2026-08-21：409 时拉取服务端最新会话，stale 横幅下可展开「查看本地与服务端的差异」（版本漂移/候选与链接保留计数对照/原文校验和变化），staleDiffLines 纯函数落 ingestionConflict.ts；内容一致时不弹】** | `ShootPlanIngestionPage.tsx:245-252` |
+| GAP-ING-10 | 低 | 「全选」快捷按钮缺失 **【已修复 2026-08-21：确认候选标题区「全选」按钮一键恢复全部手动丢弃，toast「已全选」】** | 原型 :171 |
 
 注：GAP-ING-03 中「已编辑候选是否被保留」由服务端持久化 candidate snapshot 保障（design D7），
 前端重新解析不携带 overrides 不构成数据丢失风险，缺的是**确认与说明**。
@@ -118,8 +129,8 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | GAP-RUN-04 | 中 | 主按钮不随状态变化：原型「已捕获→点击撤销 / 已跳过→改为已捕获」的一步撤销/改判，实现需「清除本镜结果」+ 重新标记两次提交 **【已修复 2026-08-21，待提交：主按钮随本镜状态三态——待执行「✓ 完成拍摄」（primary）/ 已拍摄「已拍摄 · 点击撤销」（一步清除）/ 已跳过「已跳过 · 改为已拍摄」（一步改判，supersedes 自动携带）；「清除本镜结果」保留为回到待执行的入口】** | `ShootPlanRunPage.tsx:177, 184` |
 | GAP-RUN-05 | 中 | 规范标签行缺失（含「灯光方向 未填」占位语义）；空字段直接不渲染 **【已修复 2026-08-21，待提交：镜头卡头部渲染 5 个规范标签 chip（取景/灯光方向/灯光质感/色调/类型，复用 ingestionCandidates 的字段定义），空值显示「未填」弱化 chip】** | `ShootPlanRunPage.tsx:208-211` |
 | GAP-RUN-06 | 中 | 收尾提示为静态横幅：无分项统计（捕获/跳过数）、无「结束本场」行动按钮 **【已修复 2026-08-21，待提交：收尾卡显示「已捕获 X · 已跳过 Y · 共 N 镜」分项统计 + 「结束本场 · 回工作台」主按钮（回工作台链接）+「再看看」收起；再次记录结果会重新展示】** | `ShootPlanRunPage.tsx:189` |
-| GAP-RUN-07 | 低 | session 元信息缺「第几场/版本号/时钟」；`plan_revision` 字段有值未渲染 | `ShootPlanRunPage.tsx:141`；`schema.d.ts:2620` |
-| GAP-RUN-08 | 低 | 参考素材为内嵌网格直出（可接受），但空态无「本镜未绑定参考素材」提示、无「仅比对不生成」说明；跳过原因 4 项用户语言与原型不一致（如「准备未完成」vs「准备物料缺失」） | `ShootPlanRunPage.tsx:28-36, 194-200` |
+| GAP-RUN-07 | 低 | session 元信息缺「第几场/版本号/时钟」；`plan_revision` 字段有值未渲染 **【已修复 2026-08-21：页头 run-meta 标签行（capture 模式 / 第 N 版 / 时钟，15s 低频刷新）；「第几场」因契约无 session 序列字段如实不展示】** | `ShootPlanRunPage.tsx:141`；`schema.d.ts:2620` |
+| GAP-RUN-08 | 低 | 参考素材为内嵌网格直出（可接受），但空态无「本镜未绑定参考素材」提示、无「仅比对不生成」说明；跳过原因 4 项用户语言与原型不一致（如「准备未完成」vs「准备物料缺失」） **【已修复 2026-08-21：参考区空态提示 + 「原作素材仅用于现场比对，不做生成」说明；跳过原因 4 处措辞对齐原型（准备物料缺失/时间不够/主体不可用/创作方向变更），Run 选择器与 outcomeLabels 同源】** | `ShootPlanRunPage.tsx:28-36, 194-200` |
 
 ## 三、策划工作台（列表 + 详情）
 
@@ -143,11 +154,11 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | GAP-WS-07 | 中 | 素材仅支持整案挂载与图片上传：无镜头级绑定、无纯链接素材 **【部分收口 2026-08-21，待提交：镜头级绑定落地（素材卡选镜头 → holder_kind=shot + shot_reference_display，绑定结果经 active_bindings 回显）；纯链接素材按 owner 决策（2026-08-21）明确不做，记残余——需新资产形态与上传管线/安全审查，宜单独立项】** | `PlanningMediaPanel.tsx:52-54, 64` |
 | GAP-WS-08 | 中 | 准备项列表不按妆造/场地/道具器材分组；条目无认领人姓名与「现场缺失」红标联动 **【已修复 2026-08-21，待提交：按 styling/location/prop_equipment/other 分组渲染（eyebrow 组头）；拉取认领记录显示「客户认领 · 姓名」；「现场缺失」红标按当前投影派生（关联镜头 current_outcome=skipped+preparation_missing，补拍成功自动解除），标签四态 必需·现场缺失/必需·待核对/必需/可选】** | `ReadinessPanel.tsx:7, 53-72` |
 | GAP-WS-09 | 中 | 分享签发 409 一律显示「页面已刷新」话术，`full_view_not_eligible` 等资格错误会被误导性覆盖；无完整档资格说明文案 **【已修复 2026-08-21，待提交：409 分流——stale/revision 类才显示「页面已刷新」，`full_view_not_eligible` 显示资格条件与 CRM 关联卡引导，其余 409 保留服务端领域文案；完整档卡片前置资格说明 note（订单状态口径与 eligibility.go 一致，含取消后失效不降级）】** | `ShareCollaborationPanel.tsx:435, 723-735` |
-| GAP-WS-10 | 低 | 执行时间窗无显式「来源」三选一（slot 投影/手动/暂不设置）——投影联动拆到了 CRM 面板，语义等价但入口分散 | `BriefPanel.tsx:200-254`；`CrmLinkPanel.tsx:129, 194-207` |
-| GAP-WS-11 | 低 | 经营草稿逐行表缺「依据」列与建议总价行；应用确认无金额前后对照 | `BusinessPanel.tsx:259-267, 128-133` |
-| GAP-WS-12 | 低 | 撤销认领确认缺「核对提醒一并撤销」联动说明；认领条目无「现场缺失/待核对」状态标签；无「认领规则说明」note | `ShareCollaborationPanel.tsx:297` |
-| GAP-WS-13 | 低 | 公开规模说明文案弱化（「签发后客户页可见/未知隐藏」「不从付费场地推断」缺失）；进度流转四步说明面板缺失 | `BriefPanel.tsx:134` |
-| GAP-WS-14 | 低 | 新建策划为弹窗表单且标题/主体必填，原型为一键空白建案（客户订单均可空） | `ShootPlansPage.tsx:115-162` |
+| GAP-WS-10 | 低 | 执行时间窗无显式「来源」三选一（slot 投影/手动/暂不设置）——投影联动拆到了 CRM 面板，语义等价但入口分散 **【已修复 2026-08-21：时间窗面板顶部来源状态行（未设置/跟随档期投影/手动维护·有未采纳投影/手动维护·无投影），执行入口保留在 CRM 关联卡，windowSourceNote 纯函数按投影 status 派生】** | `BriefPanel.tsx:200-254`；`CrmLinkPanel.tsx:129, 194-207` |
+| GAP-WS-11 | 低 | 经营草稿逐行表缺「依据」列与建议总价行；应用确认无金额前后对照 **【已修复 2026-08-21：逐行表加套系基准价行、依据列（source_fact.field · rule_key）与建议总价行；订单草稿应用确认标题带金额、正文首行「订单价格将从 X 更新为 Y；只改订单价格，不动档期，客户不会收到任何自动通知」】** | `BusinessPanel.tsx:259-267, 128-133` |
+| GAP-WS-12 | 低 | 撤销认领确认缺「核对提醒一并撤销」联动说明；认领条目无「现场缺失/待核对」状态标签；无「认领规则说明」note **【已修复 2026-08-21：撤销确认加「对应的核对提醒会一并撤销」（后端撤销确实预留 assignment_revoked 提醒世代）；认领条目附 现场缺失/待核对 标签（工作台同源派生传入）；认领区头附规则说明】** | `ShareCollaborationPanel.tsx:297` |
+| GAP-WS-13 | 低 | 公开规模说明文案弱化（「签发后客户页可见/未知隐藏」「不从付费场地推断」缺失）；进度流转四步说明面板缺失 **【已修复 2026-08-21：造型/场景字段附原型说明文案；brief 页顶部「进度怎么流转」details 面板（四步 + 只前进原则）】** | `BriefPanel.tsx:134` |
+| GAP-WS-14 | 低 | 新建策划为弹窗表单且标题/主体必填，原型为一键空白建案（客户订单均可空） **【已修复 2026-08-21：台账页「＋ 新建策划」一键建空白案（默认标题 未命名策划/主体 待补充，后端要求非空），toast 确认后直达工作台；必填弹窗移除】** | `ShootPlansPage.tsx:115-162` |
 
 ## 四、客户分享页（shared-plan）
 
@@ -172,7 +183,7 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 | GAP-SHARE-01 | 高 | 整案反馈发送后无回显列表（客户看不到自己已提交的意见）；逐镜反馈无「你已确认/你提过…」状态标记，`SharedShotV1` 无反馈状态字段 **【已修复 2026-08-20，待提交：本次访问内本地回显（匿名端不回读他人反馈），逐镜已提意见带摘要标记】** | `SharedCommon.tsx:153, 187`；`schema.d.ts:3028-3045` |
 | GAP-SHARE-02 | 中 | 认领区三条用户语言承诺缺失：「摄影师会自己核对、不会催你」「凭证码用途」「找不到凭证联系摄影师」 **【已修复 2026-08-20，待提交】** | `SharedFullSections.tsx:143-145` |
 | GAP-SHARE-03 | 中 | moodboard 无 caption/用途说明（数据模型层 `SharedMoodboardItemV1` 仅 ref+checksum，API 层缺） **【已修复 2026-08-21：契约加 caption/usage_note 可选字段（零迁移，caption=素材 display_name，usage_note=权益来源推导，权威在服务端 planshare）；分享图卡 figcaption 双行渲染 + alt 语义化；集成测试断言投影字段】** | `schema.d.ts:3006-3009` |
-| GAP-SHARE-04 | 低 | `document.title` 不随 full/proposal/expired 变化；页脚丢失「专属免登录、可能被更新或关闭」生命周期告知；锁定占位与昵称字段的原第一人称/隐私说明文案弱化 | `SharedProposalView.tsx:20-24`；`SharedCommon.tsx:115-117, 172` |
+| GAP-SHARE-04 | 低 | `document.title` 不随 full/proposal/expired 变化；页脚丢失「专属免登录、可能被更新或关闭」生命周期告知；锁定占位与昵称字段的原第一人称/隐私说明文案弱化 **【已修复 2026-08-21：document.title 随档位/失效态变化（拍摄策划/拍摄方案/链接已失效 · 策划名）；页脚补生命周期告知；昵称字段补「只用于标注意见来源，不作为登录身份，不发通知」；锁定占位改摄影师第一人称承诺】** | `SharedProposalView.tsx:20-24`；`SharedCommon.tsx:115-117, 172` |
 
 ## 五、通用交互（跨页）
 
@@ -196,27 +207,16 @@ append-only 执行历史、capture_mode 服务端判定、断网明确失败均�
 
 > 文中各「待提交」标记均已随四批提交入库（批 4 提交：`0f13dc9` 引导闭环 / `59b02f8` 列表增强 / `d382c15` 台账）。
 
-38 条真差距中 25 条完整修复、GAP-WS-04 与 GAP-WS-07 部分收口，**剩余 11 条可执行（全部低优先级）**+ 2 项残余（WS-04 侧栏扩展标签、WS-07 纯链接素材）：
+38 条真差距已全部收口：**36 条完整修复 + GAP-WS-04 与 GAP-WS-07 两条部分收口**。可执行清单清零，仅余两项明确挂账的残余：
 
 | 域 | ID | 优先级 | 内容 |
 |---|---|---|---|
-| Run | GAP-RUN-07 | 低 | session 元信息缺「第几场/版本号/时钟」 |
-| Run | GAP-RUN-08 | 低 | 参考素材空态提示缺失；跳过原因用户语言与原型不一致 |
-| 摄取 | GAP-ING-08 | 低 | 保存摘要粒度简化；无「已选 N 条」chip |
-| 摄取 | GAP-ING-09 | 低 | 冲突时无差异查看 UI |
-| 摄取 | GAP-ING-10 | 低 | 「全选」快捷按钮缺失 |
 | 工作台 | GAP-WS-04 残余 | — | 列表侧栏扩展标签（分享状态/认领待核对/草稿待确认/反馈条数），批 4 按方案 D2 明确不做 |
 | 工作台 | GAP-WS-07 残余 | — | 纯链接素材（贴 URL 不传图），owner 2026-08-21 决策本批不做，宜单独立项 |
-| 工作台 | GAP-WS-10 | 低 | 执行时间窗三选一入口分散 |
-| 工作台 | GAP-WS-11 | 低 | 经营草稿缺「依据」列与建议总价行 |
-| 工作台 | GAP-WS-12 | 低 | 撤销认领确认缺联动说明与状态标签 |
-| 工作台 | GAP-WS-13 | 低 | 公开规模说明与进度流转说明弱化 |
-| 工作台 | GAP-WS-14 | 低 | 新建策划为必填弹窗，非一键空白建案 |
-| 分享 | GAP-SHARE-04 | 低 | `document.title` 不随档位变化；页脚生命周期告知弱化 |
 
 **Residual（挂 plan-share checklist S6/S7）**：S6 后端验证矩阵证据（design A19）、S7 v2 conformance 浏览器证据（1600/1280/375/coarse/200%/keyboard/screen-reader）。不因 RES-SHARE-01 的 UI 修复自动关闭。
 
-**建议处置顺序**：高、中优先级已全部清零（UX-01/02 打磨批 2026-08-21 收口）；剩余 11 条低优先级可按域分 2-3 批收尾。素材域仅剩 WS-07 纯链接素材残余（owner 已决策不做，宜单独立项）。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）；`account-center.test.ts` A8 media-query 正则存量失败（4a11fb6 插入 `.main > .topbar` 规则所致，与本 epic 无关）。
+**处置终态（2026-08-21）**：38 条真差距全部收口（36 完整修复 + WS-04/WS-07 部分收口挂账残余）；剩余事项只有 WS-04 侧栏扩展标签（D2 决策不做）与 WS-07 纯链接素材（owner 决策另立项）。挂账：历批修复的 e2e 完整跑（需本地栈 + `PLANNING_E2E_EMAIL/PASSWORD`）；`account-center.test.ts` A8 media-query 正则存量失败（4a11fb6 插入 `.main > .topbar` 规则所致，与本 epic 无关）。
 
 ## 引用
 
