@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useShell } from '../components/shellContext'
 import StateNotice from '../components/StateNotice'
 import {
   beginPageRead,
@@ -24,10 +24,25 @@ import './planning.css'
 
 export default function ShootPlansPage() {
   const navigate = useNavigate()
+  const { notify } = useShell()
   const [filter, setFilter] = useState<'all' | ShootPlanStatus>('all')
   const [reloadTick, setReloadTick] = useState(0)
   const [state, setState] = useState<PageReadState<ShootPlanList>>({ kind: 'loading', message: '正在加载拍摄策划' })
-  const [createOpen, setCreateOpen] = useState(false)
+  const [creating, setCreating] = useState(false)
+
+  // 一键空白建案：标题/主体给默认值（后端要求非空），客户、订单与档期都可后补。
+  async function createBlank() {
+    setCreating(true)
+    try {
+      const plan = await createShootPlan({ title: '未命名策划', subject: '待补充' }, newPlanningMutationKey('create'))
+      notify('已新建空白策划（客户与订单均可留空）')
+      navigate(`/shoot-plans/${encodeURIComponent(plan.id)}`)
+    } catch (cause) {
+      notify(planningErrorMessage(cause, '新建策划失败；请稍后重试。'))
+    } finally {
+      setCreating(false)
+    }
+  }
 
   const reload = useCallback(() => setReloadTick((value) => value + 1), [])
   useEffect(() => {
@@ -59,7 +74,7 @@ export default function ShootPlansPage() {
           <h1>拍摄策划</h1>
         </div>
         <div className="topbar-actions">
-          <button className="btn btn-primary" type="button" onClick={() => setCreateOpen(true)}>＋ 新建策划</button>
+          <button className="btn btn-primary" type="button" disabled={creating} onClick={() => void createBlank()}>{creating ? '正在创建…' : '＋ 新建策划'}</button>
         </div>
       </header>
       <main className="content planning-content">
@@ -109,64 +124,10 @@ export default function ShootPlansPage() {
           </div>
         )}
       </main>
-      {createOpen && (
-        <CreatePlanDialog
-          onClose={() => setCreateOpen(false)}
-          onCreated={(id) => navigate(`/shoot-plans/${encodeURIComponent(id)}`)}
-        />
-      )}
     </>
   )
 }
 
-function CreatePlanDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
-  const [title, setTitle] = useState('')
-  const [subject, setSubject] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [key] = useState(() => newPlanningMutationKey('create'))
-
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    if (!title.trim() || !subject.trim()) {
-      setError('标题和拍摄主体都需要填写。')
-      return
-    }
-    setSaving(true)
-    setError(null)
-    try {
-      const plan = await createShootPlan({ title: title.trim(), subject: subject.trim() }, key)
-      onCreated(plan.id)
-    } catch (cause) {
-      setError(planningErrorMessage(cause, '新建策划失败；再次提交会安全重放同一请求。'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="overlay open" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose() }}>
-      <form className="dialog planning-dialog" role="dialog" aria-modal="true" aria-labelledby="createPlanTitle" onSubmit={submit}>
-        <h2 id="createPlanTitle">新建拍摄策划</h2>
-        <p className="dialog-sub">客户、订单和档期都不是必填；先把创作想法独立保存下来。</p>
-        <label className="field">
-          <span>标题</span>
-          <input className="input" value={title} maxLength={160} autoFocus onChange={(event) => setTitle(event.target.value)} placeholder="例如：废墟机娘 · 银灰甲胄" />
-        </label>
-        <label className="field">
-          <span>拍摄主体</span>
-          <input className="input" value={subject} maxLength={240} onChange={(event) => setSubject(event.target.value)} placeholder="角色、人物或创作对象" />
-          <span className="hint">这是自由文本，不要求对应客户档案。</span>
-        </label>
-        {error && <p className="planning-inline-error" role="alert">{error}</p>}
-        <div className="dialog-actions">
-          <button className="btn" type="button" disabled={saving} onClick={onClose}>取消</button>
-          <button className="btn btn-primary" type="submit" disabled={saving}>{saving ? '正在创建…' : '创建并打开'}</button>
-        </div>
-      </form>
-    </div>
-  )
-}
 
 function formatDateTime(value: string): string {
   const date = new Date(value)

@@ -119,7 +119,12 @@ export function SharedScaleSection({
 }
 
 export function SharedFooter() {
-  return <footer className="share-foot">链接由摄影师发出。请勿把完整链接转发给无关的人。</footer>
+  return (
+    <footer className="share-foot">
+      <p>链接由摄影师发出。请勿把完整链接转发给无关的人。</p>
+      <p>此页面通过专属免登录链接访问；链接可能被摄影师随时更新或关闭。</p>
+    </footer>
+  )
 }
 
 export function PlanFeedbackForm({
@@ -180,6 +185,7 @@ export function PlanFeedbackForm({
         <label className="field">
           <span>怎么称呼你（可选，最多 40 字）</span>
           <input maxLength={40} value={nickname} disabled={busy} onChange={(event) => setNickname(event.target.value)} />
+          <small>只用于标注这条意见来自谁，不作为登录身份，也不会用来给你发通知。</small>
         </label>
         <label className="field">
           <span>意见正文（1–2000 字纯文本）</span>

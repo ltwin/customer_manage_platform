@@ -4,6 +4,7 @@ import test from 'node:test'
 
 import { contentOverrideFields, restoredCandidateKind, shotDecisionShot } from '../src/planning/ingestionCandidates.ts'
 import { droppedExcerpt, droppedLegendLine, dropReasonLabel, dropReasonNote } from '../src/planning/ingestionDropped.ts'
+import { staleDiffLines } from '../src/planning/ingestionConflict.ts'
 
 function source(path: string): string {
   return readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -168,4 +169,57 @@ test('candidates discarded by the photographer show a manual-discard tag', () =>
   const page = source('../src/planning/ShootPlanIngestionPage.tsx')
 
   assert.match(page, /\{candidate\.action === 'discard' && <span className="tag tag-warn">手动丢弃<\/span>\}/)
+})
+
+test('ingestion stale conflict exposes a diff panel between local edits and server session', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+  const module = source('../src/planning/ingestionConflict.ts')
+
+  // 冲突时拉取最新会话并渲染可展开的差异面板。
+  assert.match(page, /function markStale\(\)/)
+  assert.match(page, /getPlanIngestionSession\(id, session\.id\)/)
+  assert.match(page, /<details className="ingestion-stale-diff"><summary>查看本地与服务端的差异<\/summary>/)
+  assert.match(page, /staleDiffLines\(localSide, serverSide\)/)
+  // 差异只在内容确有变化时展示（拉回的会话与本地相同则不弹）。
+  assert.match(page, /fresh\.revision !== session\.revision \|\| fresh\.source_checksum !== session\.source_checksum/)
+
+  // 纯函数：版本漂移、候选/链接计数对照、校验和变化各自成行。
+  const lines = staleDiffLines(
+    { revision: 3, keptCandidates: 6, totalCandidates: 8, keptReferences: 2, totalReferences: 3, sourceChecksum: 'sha-a' },
+    { revision: 5, keptCandidates: 9, totalCandidates: 9, keptReferences: 3, totalReferences: 3, sourceChecksum: 'sha-b' },
+  )
+  assert.ok(lines.some((line) => line.includes('本地基于第 3 版') && line.includes('第 5 版')))
+  assert.ok(lines.some((line) => line.includes('本地保留 6 / 共 8 条') && line.includes('服务端最新解析共 9 条')))
+  assert.ok(lines.some((line) => line.includes('本地保留 2 / 共 3 条') && line.includes('服务端最新 3 条')))
+  assert.ok(lines.some((line) => line.includes('原文校验和：已变化')))
+  // 版本相同且校验和一致时省略版本行、判定未变化。
+  const sameLines = staleDiffLines(
+    { revision: 4, keptCandidates: 1, totalCandidates: 2, keptReferences: 0, totalReferences: 1, sourceChecksum: 'sha-x' },
+    { revision: 4, keptCandidates: 2, totalCandidates: 2, keptReferences: 1, totalReferences: 1, sourceChecksum: 'sha-x' },
+  )
+  assert.ok(!sameLines.some((line) => line.includes('会话版本')))
+  assert.ok(sameLines.some((line) => line.includes('原文校验和：未变化')))
+  assert.match(module, /export function staleDiffLines/)
+})
+
+test('ingestion review step offers select-all and a kept-count chip in the topbar', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+
+  assert.match(page, /function selectAllKept\(\)/)
+  assert.match(page, /onSelectAll=\{selectAllKept\}/)
+  assert.match(page, /onSelectAll: \(\) => void/)
+  assert.match(page, /<button className="btn btn-ghost btn-sm" type="button" onClick=\{onSelectAll\}>全选<\/button>/)
+  assert.ok(page.includes("notify('已全选')"))
+  // 顶栏「已选 N 条」chip 只在确认候选步骤出现。
+  assert.match(page, /\{step === 'review' && <span className="tag tag-accent">已选 \{keptCount\} 条<\/span>\}/)
+})
+
+test('ingestion commit summary breaks down candidates and pins the base plan revision', () => {
+  const page = source('../src/planning/ShootPlanIngestionPage.tsx')
+
+  assert.match(page, /shotCount=\{activeCandidates\.filter\(\(candidate\) => candidate\.kind === 'shot'\)\.length\}/)
+  assert.match(page, /readinessCount=\{activeCandidates\.filter\(\(candidate\) => candidate\.kind === 'readiness'\)\.length\}/)
+  assert.match(page, /planRevision=\{plan\.revision\}/)
+  assert.match(page, /镜头 \{shotCount\} · 准备项 \{readinessCount\}/)
+  assert.match(page, /基于策划第 \{planRevision\} 版提交；保存成功后策划会生成新版本/)
 })

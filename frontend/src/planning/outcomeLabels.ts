@@ -1,11 +1,11 @@
 // 执行结果与准备项状态的用户语言标签（工作台镜头卡 / 准备项列表共用）。
 
 export const skipReasonLabels: Record<string, string> = {
-  preparation_missing: '准备未完成',
-  time_insufficient: '时间不足',
+  preparation_missing: '准备物料缺失',
+  time_insufficient: '时间不够',
   location_unavailable: '场地不可用',
-  subject_unavailable: '拍摄对象不可用',
-  creative_change: '创作调整',
+  subject_unavailable: '主体不可用',
+  creative_change: '创作方向变更',
   technical_failure: '技术故障',
   other: '其他',
 }

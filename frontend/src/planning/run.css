@@ -129,3 +129,9 @@
 .run-tag.is-empty { opacity: .55; }
 .run-button-captured.run-button-undo { border-color: var(--run-border); background: var(--run-surface); color: var(--run-text); }
 .run-complete-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.run-header-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.run-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.run-meta-tag { font-size: 11.5px; font-weight: 650; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; background: var(--surface); font-variant-numeric: tabular-nums; }
+.run-meta-tag.is-live { color: var(--ok, #3d7a4f); border-color: currentColor; }
+.run-meta-tag.is-live::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 5px; vertical-align: 1px; }
+.run-reference-empty { margin: 0; color: var(--muted); font-size: 12.5px; }

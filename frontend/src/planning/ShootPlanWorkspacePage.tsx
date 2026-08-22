@@ -25,6 +25,7 @@ import {
 import StatusBadge from './StatusBadge'
 import { planningErrorMessage } from './presentation'
 import { deriveTransitionGuidance, isTransitionGuidanceCode, type TransitionGuidance } from './transitionGuidance'
+import { preparationMissingShotPositions } from './outcomeLabels'
 import BriefPanel from './panels/BriefPanel'
 import ShotsPanel from './panels/ShotsPanel'
 import ReadinessPanel from './panels/ReadinessPanel'
@@ -191,6 +192,17 @@ export default function ShootPlanWorkspacePage() {
     if (!plan) return {}
     return Object.fromEntries(plan.shots.map((shot) => [shot.id, { position: shot.position, title: shot.title }]))
   }, [plan])
+  // 认领条目状态标签的来源口径：现场缺失 > 待核对 > 已核对（与准备项面板同源派生）。
+  const readinessStates = useMemo(() => {
+    if (!plan) return {}
+    const map: Record<string, 'site_missing' | 'to_check' | 'checked'> = {}
+    for (const item of plan.readiness_items) {
+      if (preparationMissingShotPositions(plan.shots, item.id).length > 0) map[item.id] = 'site_missing'
+      else if (item.preflight_status === 'unchecked') map[item.id] = 'to_check'
+      else map[item.id] = 'checked'
+    }
+    return map
+  }, [plan])
   const openRunMode = useCallback(() => {
     if (plan) navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/run`)
   }, [navigate, plan])
@@ -261,6 +273,7 @@ export default function ShootPlanWorkspacePage() {
                   readOnly={plan.status === 'archived'}
                   focus={shareFocus}
                   shotLabels={shotLabels}
+                  readinessStates={readinessStates}
                 />
               )}
               {tab === 'business' && (

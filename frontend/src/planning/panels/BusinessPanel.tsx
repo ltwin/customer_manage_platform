@@ -237,16 +237,23 @@ export default function BusinessPanel({
         <OrderDraftCard draft={plan.business.order_adjustment} disabled={disabled} onDecision={requestDecision} />
         <ScheduleDraftCard draft={plan.business.schedule_duration} disabled={disabled} onDecision={requestDecision} onOpenCalendar={openCalendar} />
       </div>
-      {confirmingDecision && confirmingDecision.draft.required_acknowledgement && (
-        <ConfirmDialog
-          title="确认应用这份草稿？"
-          body={confirmingDecision.draft.required_acknowledgement.effects.map(effectLabel)}
-          confirmLabel="确认继续"
-          busy={working}
-          onConfirm={() => { const pending = confirmingDecision; setConfirmingDecision(null); void decide(pending.draft, pending.decision) }}
-          onCancel={() => setConfirmingDecision(null)}
-        />
-      )}
+      {confirmingDecision && confirmingDecision.draft.required_acknowledgement && (() => {
+        const draft = confirmingDecision.draft
+        const isOrder = draft.kind === 'order_adjustment'
+        const amountLine = isOrder && draft.proposed_total != null
+          ? `订单价格将从 ${formatMoney(draft.base_price)} 更新为 ${formatMoney(draft.proposed_total)}；只改订单价格，不动档期，客户不会收到任何自动通知。`
+          : null
+        return (
+          <ConfirmDialog
+            title={isOrder && draft.proposed_total != null ? `把建议总价 ${formatMoney(draft.proposed_total)} 写入订单？` : '确认应用这份草稿？'}
+            body={amountLine ? [amountLine, ...draft.required_acknowledgement.effects.map(effectLabel)] : draft.required_acknowledgement.effects.map(effectLabel)}
+            confirmLabel="确认继续"
+            busy={working}
+            onConfirm={() => { const pending = confirmingDecision; setConfirmingDecision(null); void decide(pending.draft, pending.decision) }}
+            onCancel={() => setConfirmingDecision(null)}
+          />
+        )
+      })()}
     </section>
   )
 
@@ -276,14 +283,27 @@ function OrderDraftCard({ draft, disabled, onDecision }: { draft: OrderAdjustmen
         <span>当前价格 {formatMoney(draft.base_price)}</span>
         <strong>建议价格 {formatMoney(draft.proposed_total)}</strong>
       </div>
-      <div className="planning-business-lines">
+      <div className="planning-business-lines planning-business-lines-detail">
+        <div className="planning-business-line planning-business-line-base">
+          <span>套系基准价</span>
+          <span className="planning-line-basis">order.price</span>
+          <span>—</span>
+          <strong>{formatMoney(draft.base_price)}</strong>
+        </div>
         {draft.lines.map((line) => (
           <div key={line.kind} className="planning-business-line">
             <span>{line.label}</span>
+            <span className="planning-line-basis">{line.source_fact.field} · {line.source_fact.rule_key}</span>
             <span>{line.quantity ?? '未知'} × {formatMoney(line.unit_amount)}</span>
             <strong>{formatMoney(line.amount)}</strong>
           </div>
         ))}
+        <div className="planning-business-line planning-business-line-total">
+          <span>建议总价</span>
+          <span aria-hidden="true" />
+          <span aria-hidden="true" />
+          <strong>{formatMoney(draft.proposed_total)}</strong>
+        </div>
       </div>
       <Warnings warnings={draft.warnings} staleReason={draft.stale_reason} />
       <div className="planning-inline-actions">

@@ -41,12 +41,14 @@ export default function ShareCollaborationPanel({
   readOnly,
   focus,
   shotLabels,
+  readinessStates,
 }: {
   planID: string
   planRevision: number
   readOnly: boolean
   focus: FocusTarget
   shotLabels: Record<string, ShotLabel>
+  readinessStates: Record<string, 'site_missing' | 'to_check' | 'checked'>
 }) {
   const navigate = useNavigate()
   const [management, setManagement] = useState<ShareManagementProjection | null>(null)
@@ -275,7 +277,7 @@ export default function ShareCollaborationPanel({
         <div className="planning-panel-head">
           <div>
             <h2>认领记录</h2>
-            <p>链接轮换或撤销不会删除已有认领；摄影师可随时撤销。</p>
+            <p>链接轮换或撤销不会删除已有认领；摄影师可随时撤销。客户认领后你会收到一次核对提醒；「待核对」在拍摄前核对完成，「现场缺失」来自 Run Mode 的跳过记录。</p>
           </div>
         </div>
         <div className="share-fb-list">
@@ -296,6 +298,8 @@ export default function ShareCollaborationPanel({
               <p className="share-fb-quote">{item.content_snapshot}</p>
               <div className="share-form-actions">
                 <span className="tag">{item.status === 'active' ? '已认领' : '已撤销'}</span>
+                {item.status === 'active' && item.deep_link_target.kind === 'readiness' && item.deep_link_target.readiness_item_id && readinessStates[item.deep_link_target.readiness_item_id] === 'site_missing' && <span className="tag tag-warn">现场缺失</span>}
+                {item.status === 'active' && item.deep_link_target.kind === 'readiness' && item.deep_link_target.readiness_item_id && readinessStates[item.deep_link_target.readiness_item_id] === 'to_check' && <span className="tag">待核对</span>}
                 {item.status === 'active' && !readOnly && (
                   <button
                     className="btn btn-ghost btn-sm share-touch"
@@ -303,7 +307,7 @@ export default function ShareCollaborationPanel({
                     disabled={busy}
                     onClick={() => setConfirm({
                       title: `撤销「${item.content_snapshot}」的认领？`,
-                      body: '撤销后该项回到无人认领。不会给对方发送任何通知。',
+                      body: '撤销后该项回到无人认领，对应的核对提醒会一并撤销。不会给对方发送任何通知。',
                       onConfirm: async () => {
                         setBusy(true)
                         setError(null)

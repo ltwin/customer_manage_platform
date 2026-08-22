@@ -480,3 +480,19 @@
 .planning-media-bind-row select { min-height: 38px; }
 .ingestion-upload-controls { display: flex; align-items: center; gap: 8px; }
 .ingestion-upload-source { min-height: 38px; }
+.ingestion-candidate-tools { display: flex; align-items: center; gap: 8px; }
+.ingestion-stale-diff { border: 1px dashed var(--border-strong); border-radius: var(--radius-s); padding: 8px 14px; margin-bottom: 12px; background: var(--surface-2); }
+.ingestion-stale-diff > summary { cursor: pointer; font-size: 12.5px; font-weight: 650; color: var(--muted); }
+.ingestion-stale-diff ul { margin: 8px 0 2px; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.ingestion-summary-grid small { color: var(--muted); font-size: 11px; }
+.planning-business-lines-detail .planning-business-line { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, .9fr) auto; gap: 8px; align-items: baseline; }
+.planning-line-basis { font-family: var(--font-mono); font-size: 10.5px; color: #64748b; overflow-wrap: anywhere; }
+.planning-business-line-base span:first-child, .planning-business-line-total span:first-child { font-weight: 650; }
+.planning-business-line-total { border-bottom: 0; border-top: 2px solid #e2e8f0; font-weight: 700; }
+.planning-business-line-total strong { font-size: 14.5px; }
+.planning-flow-help { border: 1px dashed var(--border-strong); border-radius: var(--radius-s); padding: 8px 14px; background: var(--surface-2); }
+.planning-flow-help > summary { cursor: pointer; font-size: 12px; font-weight: 650; color: var(--muted); }
+.planning-flow-help ol { margin: 8px 0 4px; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.9; }
+.planning-flow-help p { margin: 0; color: var(--muted); font-size: 11.5px; }
+.planning-window-source { margin: 0 0 10px; }
+.planning-field small { color: var(--muted); font-size: 11px; }

@@ -322,7 +322,7 @@ test('planning mutations always carry an idempotency key and retain scoped retry
   assert.ok((api.match(/'Idempotency-Key': idempotencyKey/g) ?? []).length >= 6)
   assert.match(workspace, /pendingKeys\.current\.get\(signature\) \?\? newPlanningMutationKey\(scope\)/)
   assert.match(workspace, /pendingKeys\.current\.delete\(signature\)/)
-  assert.match(ledger, /const \[key\] = useState\(\(\) => newPlanningMutationKey\('create'\)\)/)
+  assert.match(ledger, /createShootPlan\(\{ title: '未命名策划', subject: '待补充' \}, newPlanningMutationKey\('create'\)\)/)
 })
 
 test('Run Mode updates saved state only after a successful response and keeps failed actions retryable', () => {
@@ -614,7 +614,7 @@ test('Run Mode completion card shows split stats and end-of-session actions', ()
 })
 
 test('outcome labels map skip reasons, capture modes, and readiness requirement states', () => {
-  assert.equal(skipReasonLabel('preparation_missing'), '准备未完成')
+  assert.equal(skipReasonLabel('preparation_missing'), '准备物料缺失')
   assert.equal(skipReasonLabel('other'), '其他')
   assert.equal(skipReasonLabel(null), '未说明')
   assert.equal(skipReasonLabel('weird'), '未说明')
@@ -714,7 +714,7 @@ test('destructive actions route through ConfirmDialog with danger tone and speci
   assert.match(history, /requiredInput=\{\{ label: '作废原因'/)
   assert.match(history, /void voidEvent\(fact, reason\)/)
   assert.match(brief, /title="清除拍摄时间？"/)
-  assert.match(business, /title="确认应用这份草稿？"/)
+  assert.match(business, /isOrder && draft\.proposed_total != null \? `把建议总价 \$\{formatMoney\(draft\.proposed_total\)\} 写入订单？` : '确认应用这份草稿？'/)
   assert.match(business, /effects\.map\(effectLabel\)/)
 })
 
@@ -727,4 +727,87 @@ test('workspace success feedback toasts through the shell while recovery warning
   // 需要用户后续动作的告警保留页面级 planning-feedback。
   assert.match(workspace, /setFeedback\('更改已提交，但最新页面加载失败；请刷新页面查看结果。'\)/)
   assert.match(workspace, /setFeedback\('策划已在其他页面更新。页面已刷新，请核对保留的输入后重新保存。'\)/)
+})
+
+test('run header shows session meta with plan revision tag and a low-frequency clock', () => {
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+  const css = source('../src/planning/run.css')
+
+  assert.match(runPage, /<div className="run-meta" aria-label="本场会话信息">/)
+  assert.match(runPage, /第 \{input\.plan_revision\} 版/)
+  assert.match(runPage, /function RunClock\(\)/)
+  // 时钟只做现场参考：15s 低频刷新，避免整页每秒重渲。
+  assert.match(runPage, /window\.setInterval\(\(\) => setNow\(new Date\(\)\), 15000\)/)
+  assert.match(css, /\.run-meta-tag\.is-live::before/)
+})
+
+test('run reference sheet explains empty state and compare-only usage; skip reasons match prototype wording', () => {
+  const runPage = source('../src/planning/ShootPlanRunPage.tsx')
+
+  assert.match(runPage, /本镜未绑定参考素材/)
+  assert.match(runPage, /原作素材仅用于现场比对，不做生成/)
+  // Run 选择器与工作台标签共用原型措辞（准备物料缺失/时间不够/主体不可用/创作方向变更）。
+  assert.match(runPage, /label: '准备物料缺失'/)
+  assert.match(runPage, /label: '时间不够'/)
+  assert.match(runPage, /label: '主体不可用'/)
+  assert.match(runPage, /label: '创作方向变更'/)
+  assert.equal(skipReasonLabel('time_insufficient'), '时间不够')
+  assert.equal(skipReasonLabel('creative_change'), '创作方向变更')
+})
+
+test('workspace window editor states the execution-window source three ways', () => {
+  const brief = source('../src/planning/panels/BriefPanel.tsx')
+
+  assert.match(brief, /function windowSourceNote\(plan: ShootPlanDetail, hasWindow: boolean\)/)
+  assert.match(brief, /尚未设置：可在此手动填写，或关联订单档期后从 CRM 卡采纳档期投影。/)
+  assert.match(brief, /来源：跟随订单档期投影（在 CRM 关联卡管理抑制或重新采纳）。/)
+  assert.match(brief, /来源：手动维护；存在未采纳的档期投影，可在 CRM 关联卡查看。/)
+  assert.match(brief, /来源：手动维护；未关联可用的订单档期投影。/)
+})
+
+test('business draft lines carry a basis column, suggested total, and amount comparison in apply confirm', () => {
+  const business = source('../src/planning/panels/BusinessPanel.tsx')
+
+  assert.match(business, /<span className="planning-line-basis">\{line\.source_fact\.field\} · \{line\.source_fact\.rule_key\}<\/span>/)
+  assert.match(business, /套系基准价/)
+  assert.match(business, /<span>建议总价<\/span>/)
+  assert.match(business, /把建议总价 \$\{formatMoney\(draft\.proposed_total\)\} 写入订单？/)
+  assert.match(business, /订单价格将从 \$\{formatMoney\(draft\.base_price\)\} 更新为 \$\{formatMoney\(draft\.proposed_total\)\}/)
+  assert.match(business, /客户不会收到任何自动通知/)
+})
+
+test('assignment claims show readiness state tags and revoke confirm explains reminder cancellation', () => {
+  const panel = source('../src/planning/share/ShareCollaborationPanel.tsx')
+  const workspace = source('../src/planning/ShootPlanWorkspacePage.tsx')
+
+  assert.match(panel, /'site_missing' \| 'to_check' \| 'checked'/)
+  assert.match(panel, /现场缺失<\/span>/)
+  assert.match(panel, /待核对<\/span>/)
+  assert.match(panel, /对应的核对提醒会一并撤销/)
+  assert.match(panel, /「待核对」在拍摄前核对完成，「现场缺失」来自 Run Mode 的跳过记录/)
+  // 状态与准备项面板同源派生（现场缺失优先，其次待核对）。
+  assert.match(workspace, /if \(preparationMissingShotPositions\(plan\.shots, item\.id\)\.length > 0\) map\[item\.id\] = 'site_missing'/)
+  assert.match(workspace, /readinessStates=\{readinessStates\}/)
+})
+
+test('public scale hints and the four-step progression panel match the prototype copy', () => {
+  const brief = source('../src/planning/panels/BriefPanel.tsx')
+
+  assert.match(brief, /签发 proposal\/full 后可在客户页显示；未知时留空并隐藏。/)
+  assert.match(brief, /这是计划规模，不从付费场地数量推断。/)
+  assert.match(brief, /<details className="planning-flow-help">/)
+  assert.match(brief, /进度怎么流转/)
+  for (const step of ['草稿 → 已就绪', '已就绪 → 拍摄中', '拍摄中 → 已完成', '已完成后想再改，需要先「重新打开」']) {
+    assert.ok(brief.includes(step), step)
+  }
+})
+
+test('plan list creates a blank plan in one click instead of a required-fields modal', () => {
+  const plans = source('../src/planning/ShootPlansPage.tsx')
+
+  assert.match(plans, /async function createBlank\(\)/)
+  assert.match(plans, /createShootPlan\(\{ title: '未命名策划', subject: '待补充' \}, newPlanningMutationKey\('create'\)\)/)
+  assert.ok(plans.includes("notify('已新建空白策划（客户与订单均可留空）')"))
+  assert.doesNotMatch(plans, /CreatePlanDialog/)
+  assert.doesNotMatch(plans, /标题和拍摄主体都需要填写/)
 })

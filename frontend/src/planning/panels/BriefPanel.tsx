@@ -18,6 +18,16 @@ export default function BriefPanel({ plan, busy, runCommand }: { plan: ShootPlan
   const { timezone: accountTimezone } = useShell()
   return (
     <div className="planning-panel-grid">
+      <details className="planning-flow-help">
+        <summary>进度怎么流转</summary>
+        <ol>
+          <li>草稿 → 已就绪：只检查你显式标为「必需」的准备项</li>
+          <li>已就绪 → 拍摄中：进入 Run Mode 或手动开始</li>
+          <li>拍摄中 → 已完成：每个镜头要么已捕获、要么已跳过（跳过须写原因）</li>
+          <li>已完成后想再改，需要先「重新打开」</li>
+        </ol>
+        <p>状态只往前推进；被拒时页面会告诉你差什么。</p>
+      </details>
       <BriefEditor plan={plan} busy={busy} runCommand={runCommand} />
       <div className="planning-side-stack">
         <ScaleEditor plan={plan} busy={busy} runCommand={runCommand} />
@@ -134,13 +144,23 @@ function ScaleEditor({ plan, busy, runCommand }: { plan: ShootPlanDetail; busy: 
     <form className="card planning-panel" onSubmit={save}>
       <div className="planning-panel-head"><div><h2>公开规模</h2><p>镜头数由当前镜头表自动计算。</p></div><button className="btn btn-sm" disabled={busy || plan.status === 'archived'}>保存</button></div>
       <div className="field-row">
-        <label className="field"><span>计划造型数</span><input className="input" type="number" min="1" max="999" value={looks} disabled={plan.status === 'archived'} onChange={(event) => { setLooks(event.target.value); setDirty(true) }} placeholder="未知则留空" /></label>
-        <label className="field"><span>计划场景数</span><input className="input" type="number" min="1" max="999" value={scenes} disabled={plan.status === 'archived'} onChange={(event) => { setScenes(event.target.value); setDirty(true) }} placeholder="未知则留空" /></label>
+        <label className="field"><span>计划造型数</span><input className="input" type="number" min="1" max="999" value={looks} disabled={plan.status === 'archived'} onChange={(event) => { setLooks(event.target.value); setDirty(true) }} placeholder="未知则留空" /><small>签发 proposal/full 后可在客户页显示；未知时留空并隐藏。</small></label>
+        <label className="field"><span>计划场景数</span><input className="input" type="number" min="1" max="999" value={scenes} disabled={plan.status === 'archived'} onChange={(event) => { setScenes(event.target.value); setDirty(true) }} placeholder="未知则留空" /><small>这是计划规模，不从付费场地数量推断。</small></label>
       </div>
       <div className="planning-readonly-stat">当前镜头数 <strong>{plan.public_scale.planned_shot_count}</strong></div>
       {error && <p className="planning-inline-error" role="alert">{error}</p>}
     </form>
   )
+}
+
+// 时间窗「来源」三态说明：档期投影跟随 / 手动维护 / 未设置。投影的采纳与抑制
+// 操作仍在 CRM 关联卡（同一语义的执行入口），这里给出一致的来源状态提示。
+function windowSourceNote(plan: ShootPlanDetail, hasWindow: boolean): string {
+  const projection = plan.crm?.schedule_projection
+  if (!hasWindow) return '尚未设置：可在此手动填写，或关联订单档期后从 CRM 卡采纳档期投影。'
+  if (projection?.status === 'active_applied') return '来源：跟随订单档期投影（在 CRM 关联卡管理抑制或重新采纳）。'
+  if (projection?.status === 'active_unapplied') return '来源：手动维护；存在未采纳的档期投影，可在 CRM 关联卡查看。'
+  return '来源：手动维护；未关联可用的订单档期投影。'
 }
 
 function WindowEditor({ plan, busy, runCommand, accountTimezone }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner; accountTimezone: string | null }) {
@@ -201,7 +221,7 @@ function WindowEditor({ plan, busy, runCommand, accountTimezone }: { plan: Shoot
 
   return (
     <form className="card planning-panel" onSubmit={save}>
-      <div className="planning-panel-head"><div><h2>拍摄时间</h2><p>用于拍摄安排和现场记录。</p></div><span className="badge badge-muted">{window ? `第 ${window.revision} 版` : '未设置'}</span></div>
+      <div className="planning-panel-head"><div><h2>拍摄时间</h2><p>用于拍摄安排和现场记录。</p></div><span className="badge badge-muted">{window ? `第 ${window.revision} 版` : '未设置'}</span></div><p className="planning-field-help planning-window-source">{windowSourceNote(plan, window != null)}</p>
       <div className="field-row">
         <label className="field"><span>拍摄开始</span><input className="input" type="datetime-local" value={startsAt} disabled={plan.status === 'archived'} onChange={(event) => { setStartsAt(event.target.value); setDirty(true) }} /></label>
         <label className="field"><span>拍摄结束</span><input className="input" type="datetime-local" value={endsAt} disabled={plan.status === 'archived'} onChange={(event) => { setEndsAt(event.target.value); setDirty(true) }} /></label>

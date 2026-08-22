@@ -191,3 +191,16 @@ test('anonymous moodboard figures render server-provided caption and usage note'
   assert.match(shared, /alt=\{item\.caption \|\| '分享参考图'\}/)
   assert.match(css, /\.share-mood figcaption \{ display: grid/)
 })
+
+test('anonymous share page title tracks view level and expiry; footer explains link lifecycle', () => {
+  const page = source('../src/planning/share/SharedPlanPage.tsx')
+  const common = source('../src/planning/share/SharedCommon.tsx')
+  const proposal = source('../src/planning/share/SharedProposalView.tsx')
+
+  assert.match(page, /document\.title = '链接已失效 · 拍摄分享'/)
+  assert.match(page, /view_level === 'full' \? `拍摄策划 · \$\{state\.plan\.title\}` : `拍摄方案 · \$\{state\.plan\.title\}`/)
+  assert.match(common, /此页面通过专属免登录链接访问；链接可能被摄影师随时更新或关闭。/)
+  assert.match(common, /只用于标注这条意见来自谁，不作为登录身份，也不会用来给你发通知。/)
+  // 锁定占位改为摄影师第一人称承诺（原型口径）。
+  assert.match(proposal, /等我们确认档期、拍摄单排好之后，我会给你一个完整版链接/)
+})

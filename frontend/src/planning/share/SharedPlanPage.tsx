@@ -42,6 +42,14 @@ export default function SharedPlanPage() {
     void load(token)
   }, [token])
 
+  // 标题随档位/失效态变化，方便客户在多标签页里区分链接状态。
+  useEffect(() => {
+    if (state.kind === 'unavailable') document.title = '链接已失效 · 拍摄分享'
+    else if (state.kind === 'ready') {
+      document.title = state.plan.view_level === 'full' ? `拍摄策划 · ${state.plan.title}` : `拍摄方案 · ${state.plan.title}`
+    }
+  }, [state])
+
   if (state.kind === 'loading') {
     return (
       <main className="share-page" role="status" aria-live="polite">

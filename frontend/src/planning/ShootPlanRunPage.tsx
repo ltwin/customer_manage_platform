@@ -27,11 +27,11 @@ type RunPageState =
   | { kind: 'ready'; view: RunView }
 
 const skipReasons: Array<{ value: ShootPlanSkipReason; label: string }> = [
-  { value: 'preparation_missing', label: '准备未完成' },
-  { value: 'time_insufficient', label: '时间不足' },
+  { value: 'preparation_missing', label: '准备物料缺失' },
+  { value: 'time_insufficient', label: '时间不够' },
   { value: 'location_unavailable', label: '场地不可用' },
-  { value: 'subject_unavailable', label: '拍摄对象不可用' },
-  { value: 'creative_change', label: '创作调整' },
+  { value: 'subject_unavailable', label: '主体不可用' },
+  { value: 'creative_change', label: '创作方向变更' },
   { value: 'technical_failure', label: '技术故障' },
   { value: 'other', label: '其他' },
 ]
@@ -166,7 +166,14 @@ export default function ShootPlanRunPage() {
     <main className="run-mode-page">
       <header className="run-header">
         <div><p className="run-kicker">现场执行 · {captureModeLabel(view.opened.session.capture_mode)}</p><h1>{view.title}</h1></div>
-        <Link className="run-exit" to={`/shoot-plans/${encodeURIComponent(id)}`}>退出现场模式</Link>
+        <div className="run-header-side">
+          <div className="run-meta" aria-label="本场会话信息">
+            <span className={`run-meta-tag${view.opened.session.capture_mode === 'live' ? ' is-live' : ''}`}>{captureModeLabel(view.opened.session.capture_mode)}</span>
+            <span className="run-meta-tag">第 {input.plan_revision} 版</span>
+            <RunClock />
+          </div>
+          <Link className="run-exit" to={`/shoot-plans/${encodeURIComponent(id)}`}>退出现场模式</Link>
+        </div>
       </header>
       {input.shots.length > 0 && (
         <section className="run-progress" aria-label="镜头进度，可点击跳转">
@@ -307,8 +314,20 @@ function ReferenceSheet({ planID, refs }: { planID: string; refs: OpenRunSession
   const [failed, setFailed] = useState(0)
   const reportFailure = useCallback(() => setFailed((value) => value + 1), [])
   useEffect(() => { setFailed(0) }, [planID, refs])
-  if (!refs || refs.length === 0) return null
-  return <section className="run-reference-sheet" aria-label="本镜参考素材"><div className="run-reference-heading"><strong>本镜参考</strong><span>{refs.length} 张</span></div><div className="run-reference-grid">{refs.map((ref) => <ReferenceImage key={`${ref.asset_id}-${ref.generation}`} planID={planID} ref={ref} onFail={reportFailure} />)}</div>{failed > 0 && <small className="run-reference-note">部分参考素材暂不可用，不影响现场记录。</small>}</section>
+  if (!refs || refs.length === 0) {
+    return <section className="run-reference-sheet" aria-label="本镜参考素材"><p className="run-reference-empty">本镜未绑定参考素材</p></section>
+  }
+  return <section className="run-reference-sheet" aria-label="本镜参考素材"><div className="run-reference-heading"><strong>本镜参考</strong><span>{refs.length} 张 · 原作素材仅用于现场比对，不做生成</span></div><div className="run-reference-grid">{refs.map((ref) => <ReferenceImage key={`${ref.asset_id}-${ref.generation}`} planID={planID} ref={ref} onFail={reportFailure} />)}</div>{failed > 0 && <small className="run-reference-note">部分参考素材暂不可用，不影响现场记录。</small>}</section>
+}
+
+// 时钟仅作现场参考，不参与任何判定；低频刷新避免整页每秒重渲。
+function RunClock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 15000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return <span className="run-meta-tag">{String(now.getHours()).padStart(2, '0')}:{String(now.getMinutes()).padStart(2, '0')}</span>
 }
 
 function ReferenceImage({ planID, ref, onFail }: { planID: string; ref: NonNullable<OpenRunSessionResult['input']['shots'][number]['asset_access_refs']>[number]; onFail: () => void }) {
