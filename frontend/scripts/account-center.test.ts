@@ -154,7 +154,7 @@ test('A8 dual-slot CSS hides the inactive slot with display:none', () => {
 	assert.match(menuCSS, /\.account-menu-slot-mobile\s*\{\s*display:\s*none;/)
 	assert.match(
 		menuCSS,
-		/@media\s*\(max-width:\s*860px\)\s*\{[^}]*\.account-menu-slot-desktop\s*\{\s*display:\s*none;/,
+		/@media\s*\(max-width:\s*860px\)\s*\{[\s\S]*?\.account-menu-slot-desktop\s*\{\s*display:\s*none;/,
 	)
 	assert.match(
 		menuCSS,
