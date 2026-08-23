@@ -24,9 +24,16 @@ type Repository interface {
 	Delete(context.Context, store.AccountScope, string) error
 }
 
+// DeliveryPolicyProvider 提供账号级应交付日派生上下文（时区 + 默认 SLA 天数）。
+// 由 composition root 注入 settings 域实现；order 域不反向 import settings。
+type DeliveryPolicyProvider interface {
+	DeliveryPolicyForAccount(context.Context, store.AccountScope) (DeliveryPolicy, error)
+}
+
 type Service struct {
-	repo Repository
-	now  func() time.Time
+	repo           Repository
+	now            func() time.Time
+	deliveryPolicy DeliveryPolicyProvider
 }
 
 func NewService(repo Repository) *Service {
@@ -41,19 +48,51 @@ func NewServiceWithClock(repo Repository, now func() time.Time) *Service {
 	return &Service{repo: repo, now: now}
 }
 
+// WithDeliveryPolicyProvider 注入应交付日派生上下文来源；未注入时不派生（只接受显式覆盖）。
+func (s *Service) WithDeliveryPolicyProvider(provider DeliveryPolicyProvider) *Service {
+	s.deliveryPolicy = provider
+	return s
+}
+
+// resolveDeliveryPolicy 取账号派生上下文；未注入 provider 时返回未就绪策略。
+func (s *Service) resolveDeliveryPolicy(ctx context.Context, scope store.AccountScope) (DeliveryPolicy, error) {
+	if s.deliveryPolicy == nil {
+		return DeliveryPolicy{}, nil
+	}
+	return s.deliveryPolicy.DeliveryPolicyForAccount(ctx, scope)
+}
+
 func (s *Service) Create(ctx context.Context, scope store.AccountScope, input CreateInput) (Order, error) {
-	prepared, err := s.PrepareCreate(input)
+	policy, err := s.resolveDeliveryPolicy(ctx, scope)
+	if err != nil {
+		return Order{}, err
+	}
+	prepared, err := s.prepareCreateWithPolicy(input, policy)
 	if err != nil {
 		return Order{}, err
 	}
 	return s.repo.Create(ctx, scope, prepared)
 }
 
-func (s *Service) PrepareCreate(input CreateInput) (PreparedCreate, error) {
+// PrepareCreateInScope 在已有账号 scope 下准备创建输入，使组合流程（档期建单）也能派生应交付日。
+func (s *Service) PrepareCreateInScope(
+	ctx context.Context,
+	scope store.AccountScope,
+	input CreateInput,
+) (PreparedCreate, error) {
+	policy, err := s.resolveDeliveryPolicy(ctx, scope)
+	if err != nil {
+		return PreparedCreate{}, err
+	}
+	return s.prepareCreateWithPolicy(input, policy)
+}
+
+func (s *Service) prepareCreateWithPolicy(input CreateInput, policy DeliveryPolicy) (PreparedCreate, error) {
 	normalized, err := normalizeCreateInput(input)
 	if err != nil {
 		return PreparedCreate{}, err
 	}
+	normalized.deliveryPolicy = policy
 	initial, err := ApplyCreateInput(normalized)
 	if err != nil {
 		return PreparedCreate{}, err
@@ -90,6 +129,9 @@ func (s *Service) Update(ctx context.Context, scope store.AccountScope, id strin
 	}
 	normalized, err := normalizeUpdateInput(input)
 	if err != nil {
+		return Order{}, err
+	}
+	if normalized.deliveryPolicy, err = s.resolveDeliveryPolicy(ctx, scope); err != nil {
 		return Order{}, err
 	}
 	return s.repo.Update(ctx, scope, id, normalized)

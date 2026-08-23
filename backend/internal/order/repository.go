@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/samson/customer-manage-platform/backend/internal/platform/clock"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 )
@@ -74,6 +75,8 @@ func (PostgresRepository) CreatePreparedInScope(
 			"shot_at",
 			"delivered_at",
 			"note",
+			"delivery_due_at",
+			"delivery_due_is_override",
 		},
 		id,
 		input.CustomerID,
@@ -86,6 +89,8 @@ func (PostgresRepository) CreatePreparedInScope(
 		nullableTimeArg(prepared.initial.ShotAt),
 		nullableTimeArg(prepared.initial.DeliveredAt),
 		nullableStringArg(input.Note),
+		nullableDateArg(prepared.initial.DeliveryDueAt),
+		prepared.initial.DeliveryDueIsOverride,
 	); err != nil {
 		return Order{}, err
 	}
@@ -192,6 +197,8 @@ func (r PostgresRepository) Update(ctx context.Context, scope store.AccountScope
 		set("shot_at", nullableTimeArg(next.ShotAt))
 		set("delivered_at", nullableTimeArg(next.DeliveredAt))
 		set("note", nullableStringArg(next.Note))
+		set("delivery_due_at", nullableDateArg(next.DeliveryDueAt))
+		set("delivery_due_is_override", next.DeliveryDueIsOverride)
 		cond := fmt.Sprintf("id = $%d", len(args)+2)
 		args = append(args, id)
 		if _, err := tx.Update(ctx, "orders", strings.Join(sets, ", "), cond, args...); err != nil {
@@ -291,7 +298,7 @@ func requireUsablePackage(ctx context.Context, scope rowScope, packageID, mode s
 	return nil
 }
 
-const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note"
+const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note, delivery_due_at, delivery_due_is_override"
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -322,7 +329,7 @@ func scanOrder(row scanner) (Order, error) {
 	var order Order
 	var packageID, title, note sql.NullString
 	var price sql.NullInt64
-	var shotAt, deliveredAt sql.NullTime
+	var shotAt, deliveredAt, deliveryDueAt sql.NullTime
 	if err := row.Scan(
 		&order.ID,
 		&order.AccountID,
@@ -337,8 +344,14 @@ func scanOrder(row scanner) (Order, error) {
 		&shotAt,
 		&deliveredAt,
 		&note,
+		&deliveryDueAt,
+		&order.DeliveryDueIsOverride,
 	); err != nil {
 		return Order{}, err
+	}
+	if deliveryDueAt.Valid {
+		due := clock.DateOnly(deliveryDueAt.Time)
+		order.DeliveryDueAt = &due
 	}
 	order.PackageID = stringPtr(packageID)
 	order.Title = stringPtr(title)
@@ -484,6 +497,14 @@ func nullableIntArg(value *int) any {
 		return nil
 	}
 	return *value
+}
+
+// nullableDateArg 把 date-only 值写入 DATE 列；nil 为 SQL NULL。
+func nullableDateArg(value *time.Time) any {
+	if value == nil {
+		return nil
+	}
+	return clock.DateOnly(*value)
 }
 
 func nullableTimeArg(value *time.Time) any {

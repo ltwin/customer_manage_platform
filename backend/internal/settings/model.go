@@ -14,6 +14,7 @@ const (
 	DefaultFollowUpAfterDays = 7
 	DefaultChurnDays         = 180
 	DefaultDigestHour        = 9
+	DefaultDeliverySLADays   = 14
 
 	ShootTypePortrait = "portrait"
 	ShootTypeCosplay  = "cosplay"
@@ -47,6 +48,7 @@ type Settings struct {
 	FollowUpAfterDays             int
 	ChurnThresholds               []ChurnThreshold
 	DigestHour                    int
+	DeliverySLADays               int
 	TelegramChatID                *string
 	TelegramBindingRevision       int64
 	Availability                  ScheduleAvailability
@@ -67,6 +69,7 @@ type PatchInput struct {
 	FollowUpAfterDays     *int
 	ChurnThresholds       *[]ChurnThreshold
 	DigestHour            *int
+	DeliverySLADays       *int
 	Availability          *ScheduleAvailability
 	PlanningBusinessRules *PlanningBusinessRulesPatch
 }
@@ -79,6 +82,7 @@ func DefaultSettings() Settings {
 		FollowUpAfterDays:             DefaultFollowUpAfterDays,
 		ChurnThresholds:               defaultChurnThresholds(),
 		DigestHour:                    DefaultDigestHour,
+		DeliverySLADays:               DefaultDeliverySLADays,
 		TelegramBindingRevision:       1,
 		Availability:                  DefaultScheduleAvailability(),
 		PlanningBusinessRuleOverrides: make(business.RuleOverrides),

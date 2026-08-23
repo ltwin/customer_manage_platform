@@ -72,10 +72,10 @@ func TestDataExportRouteReturnsRealAccountData(t *testing.T) {
 	if err := scope.Insert(context.Background(), "orders",
 		[]string{
 			"id", "created_at", "customer_id", "package_id", "title", "status", "price", "deposit_paid",
-			"balance_paid", "shot_at", "delivered_at", "note",
+			"balance_paid", "shot_at", "delivered_at", "delivery_due_at", "delivery_due_is_override", "note",
 		},
 		"order-route", fixtureTime, *created.Id, "pkg-route", "Fixture Route Order", "delivered", 12800, true, true,
-		shotAt, deliveredAt, "fixture order note"); err != nil {
+		shotAt, deliveredAt, "2026-07-25", false, "fixture order note"); err != nil {
 		t.Fatalf("insert order fixture: %v", err)
 	}
 	if err := scope.Insert(context.Background(), "schedule_slots",
@@ -89,10 +89,10 @@ func TestDataExportRouteReturnsRealAccountData(t *testing.T) {
 		t.Fatalf("insert reminder fixture: %v", err)
 	}
 	if err := scope.Insert(context.Background(), "settings",
-		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "telegram_chat_id", "availability", "updated_at"},
+		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "telegram_chat_id", "availability", "updated_at"},
 		"Asia/Tokyo", 5, 9, []byte(`[{
 			"shoot_type":"portrait","days":90
-		}]`), 7, "fixture-chat",
+		}]`), 7, 30, "fixture-chat",
 		[]byte(`{"weekly":{"1":{"start":"08:30","end":"17:30"},"2":null,"3":{"start":"10:00","end":"19:00"},"4":{"start":"10:00","end":"19:00"},"5":{"start":"10:00","end":"19:00"},"6":{"start":"09:00","end":"20:00"},"7":null},"min_opening_minutes":90,"turnaround_minutes":30}`),
 		fixtureTime); err != nil {
 		t.Fatalf("insert settings fixture: %v", err)
@@ -224,7 +224,8 @@ func assertCompleteRouteExportJSON(
 			"id": "order-route", "account_id": testAcctID, "created_at": fixtureTime.Format(time.RFC3339),
 			"customer_id": customerID, "package_id": "pkg-route", "title": "Fixture Route Order", "status": "delivered",
 			"price": float64(12800), "deposit_paid": true, "balance_paid": true, "shot_at": shotAt.Format(time.RFC3339),
-			"delivered_at": deliveredAt.Format(time.RFC3339), "note": "fixture order note",
+			"delivered_at": deliveredAt.Format(time.RFC3339), "delivery_due_at": "2026-07-25",
+			"delivery_due_is_override": false, "note": "fixture order note",
 		}},
 		"schedule_slots": []any{map[string]any{
 			"id": "slot-route", "account_id": testAcctID, "created_at": fixtureTime.Format(time.RFC3339),
@@ -244,7 +245,7 @@ func assertCompleteRouteExportJSON(
 				map[string]any{"shoot_type": "cosplay", "days": float64(180)},
 				map[string]any{"shoot_type": "other", "days": float64(180)},
 			},
-			"digest_hour": float64(7), "telegram_chat_id": "fixture-chat",
+			"digest_hour": float64(7), "delivery_sla_days": float64(30), "telegram_chat_id": "fixture-chat",
 			"availability": map[string]any{
 				"weekly": map[string]any{
 					"1": map[string]any{"start": "08:30", "end": "17:30"},

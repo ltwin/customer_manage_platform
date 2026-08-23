@@ -11,7 +11,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, telegram_binding_revision, availability, planning_business_rule_overrides, planning_business_rule_revision, updated_at"
+const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, delivery_sla_days, telegram_chat_id, telegram_binding_revision, availability, planning_business_rule_overrides, planning_business_rule_revision, updated_at"
 
 // PostgresRepository 实现 settings.Repository。
 type PostgresRepository struct{}
@@ -36,6 +36,7 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 		&s.FollowUpAfterDays,
 		&thresholds,
 		&s.DigestHour,
+		&s.DeliverySLADays,
 		&chatID,
 		&bindingRev,
 		&availability,
@@ -86,7 +87,7 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 	}
 	now := time.Now().UTC()
 	ownedColumns := []string{
-		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "availability",
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "availability",
 		"planning_business_rule_overrides", "planning_business_rule_revision", "updated_at",
 	}
 	if err := scope.Upsert(ctx, "settings",
@@ -98,6 +99,7 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 		settings.FollowUpAfterDays,
 		thresholds,
 		settings.DigestHour,
+		settings.DeliverySLADays,
 		availability,
 		businessRules,
 		settings.PlanningBusinessRuleRevision,

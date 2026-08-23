@@ -52,10 +52,11 @@ func TestDashboardGetAggregatesFiveBlocks(t *testing.T) {
 	// --- orders：unpaid 窄口径 + recent_stats 窗口/取消/NULL price ---
 	inWindow := time.Date(2026, 7, 10, 4, 0, 0, 0, time.UTC)    // 07-10 12:00 SHA，落 [today-29,today]
 	deliveredIn := time.Date(2026, 7, 11, 4, 0, 0, 0, time.UTC) // 07-11 12:00 SHA
+	deliveryDue := time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC) // 订单级覆盖的应交付日（date-only）
 	outWindow := time.Date(2026, 5, 1, 4, 0, 0, 0, time.UTC)    // 远早于窗口
 
 	price := func(v int) *int { return &v }
-	seedOrder(t, scope, orderSeed{id: "ord-du", customerID: "cus-1", title: "已交付未结清", status: "delivered", balancePaid: false, depositPaid: true, price: price(80000), createdAt: inWindow, deliveredAt: &deliveredIn})
+	seedOrder(t, scope, orderSeed{id: "ord-du", customerID: "cus-1", title: "已交付未结清", status: "delivered", balancePaid: false, depositPaid: true, price: price(80000), createdAt: inWindow, deliveredAt: &deliveredIn, shotAt: &deliveredIn, deliveryDueAt: &deliveryDue, deliveryDueIsOverride: true})
 	seedOrder(t, scope, orderSeed{id: "ord-shot", customerID: "cus-1", title: "已拍未结清", status: "shot", balancePaid: false, depositPaid: true, price: price(60000), createdAt: inWindow})
 	seedOrder(t, scope, orderSeed{id: "ord-dp", customerID: "cus-1", title: "已交付已结清", status: "delivered", balancePaid: true, depositPaid: true, price: price(50000), createdAt: inWindow, deliveredAt: &deliveredIn})
 	seedOrder(t, scope, orderSeed{id: "ord-dp-null", customerID: "cus-1", title: "已结清无报价", status: "delivered", balancePaid: true, depositPaid: true, price: nil, createdAt: inWindow, deliveredAt: &deliveredIn})
@@ -86,6 +87,13 @@ func TestDashboardGetAggregatesFiveBlocks(t *testing.T) {
 	item := got.UnpaidOrders.Items[0]
 	if item.ID != "ord-du" || item.CustomerDisplayName != "客户甲" {
 		t.Fatalf("unpaid item = %+v", item)
+	}
+	// 交付事实必须原样投影：漏投影会让 dashboard 对每个订单谎报「非覆盖」。
+	if item.DeliveryDueAt == nil || !item.DeliveryDueAt.Equal(deliveryDue) {
+		t.Fatalf("unpaid item delivery_due_at = %v, want %v", item.DeliveryDueAt, deliveryDue)
+	}
+	if !item.DeliveryDueIsOverride {
+		t.Fatalf("unpaid item delivery_due_is_override = false, want true（订单级覆盖不得被谎报为自动派生）")
 	}
 
 	// S6：recent_stats 三口径；NULL price 计 delivered 不抬 revenue；cancelled 排除 delivered/revenue 但计 created。
@@ -217,6 +225,10 @@ type orderSeed struct {
 	price       *int
 	createdAt   time.Time
 	deliveredAt *time.Time
+	shotAt      *time.Time
+	// 应交付日与覆盖标记：验证 dashboard 投影不谎报交付事实。
+	deliveryDueAt         *time.Time
+	deliveryDueIsOverride bool
 }
 
 func seedOrder(t *testing.T, scope store.AccountScope, o orderSeed) {
@@ -230,6 +242,14 @@ func seedOrder(t *testing.T, scope store.AccountScope, o orderSeed) {
 	if o.deliveredAt != nil {
 		cols = append(cols, "delivered_at")
 		args = append(args, *o.deliveredAt)
+	}
+	if o.shotAt != nil {
+		cols = append(cols, "shot_at")
+		args = append(args, *o.shotAt)
+	}
+	if o.deliveryDueAt != nil {
+		cols = append(cols, "delivery_due_at", "delivery_due_is_override")
+		args = append(args, *o.deliveryDueAt, o.deliveryDueIsOverride)
 	}
 	if err := scope.Insert(context.Background(), "orders", cols, args...); err != nil {
 		t.Fatalf("seed order %s: %v", o.id, err)

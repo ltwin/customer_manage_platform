@@ -15,8 +15,9 @@ type availabilityWindowResponse struct {
 }
 
 type settingsAvailabilityResponse struct {
-	Timezone     string `json:"timezone"`
-	Availability struct {
+	Timezone        string `json:"timezone"`
+	DeliverySlaDays int    `json:"delivery_sla_days"`
+	Availability    struct {
 		Weekly            map[string]*availabilityWindowResponse `json:"weekly"`
 		MinOpeningMinutes int                                    `json:"min_opening_minutes"`
 		TurnaroundMinutes int                                    `json:"turnaround_minutes"`
@@ -101,6 +102,36 @@ func TestSettingsAvailabilityDefaultsValidationIsolationAndCorruption(t *testing
 	rec = authenticatedRequest(t, router, http.MethodGet, "/api/v1/settings", tokenA, nil)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("corrupt stored availability: want 500, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// S1：delivery_sla_days PATCH 生效、越界 400、拒绝时不改已存值（dashboard-v2 ITEM-1）。
+func TestSettingsDeliverySLADaysPatchAppliesAndRejectsOutOfRange(t *testing.T) {
+	router, _, issuer := newCustomerAPIRouter(t)
+	token := issueToken(t, issuer, testAcctID)
+
+	rec := authenticatedRequest(t, router, http.MethodPatch, "/api/v1/settings", token, []byte(`{"delivery_sla_days":30}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch delivery_sla_days=30: want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if updated := getSettingsAvailability(t, router, token); updated.DeliverySlaDays != 30 {
+		t.Fatalf("saved delivery_sla_days = %d, want 30", updated.DeliverySlaDays)
+	}
+
+	for name, body := range map[string]string{
+		"zero":        `{"delivery_sla_days":0}`,
+		"negative":    `{"delivery_sla_days":-1}`,
+		"above range": `{"delivery_sla_days":181}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := authenticatedRequest(t, router, http.MethodPatch, "/api/v1/settings", token, []byte(body))
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("invalid patch: want 400, got %d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	if unchanged := getSettingsAvailability(t, router, token); unchanged.DeliverySlaDays != 30 {
+		t.Fatalf("invalid patch changed stored value: %d", unchanged.DeliverySlaDays)
 	}
 }
 

@@ -154,6 +154,12 @@ func applyPatch(current Settings, input PatchInput) (Settings, bool, error) {
 		}
 		next.DigestHour = *input.DigestHour
 	}
+	if input.DeliverySLADays != nil {
+		if *input.DeliverySLADays < 1 || *input.DeliverySLADays > 180 {
+			return Settings{}, false, ValidationError{Message: "delivery_sla_days 须在 1-180"}
+		}
+		next.DeliverySLADays = *input.DeliverySLADays
+	}
 	if input.ChurnThresholds != nil {
 		normalized, err := normalizeChurnThresholds(*input.ChurnThresholds)
 		if err != nil {
@@ -206,7 +212,7 @@ func loadSettingsInScope(ctx context.Context, tx store.TxAccountScope) (Settings
 	)
 	err := tx.QueryRowForUpdate(ctx, "settings", settingsColumns, "TRUE").Scan(
 		&s.Timezone, &s.BirthdayLeadDays, &s.FollowUpAfterDays, &thresholds,
-		&s.DigestHour, &telegram, &s.TelegramBindingRevision, &availability,
+		&s.DigestHour, &s.DeliverySLADays, &telegram, &s.TelegramBindingRevision, &availability,
 		&businessRules, &s.PlanningBusinessRuleRevision, &updatedAt,
 	)
 	if errors.Is(err, store.ErrNoRows) {
@@ -249,7 +255,7 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	}
 	now := time.Now().UTC()
 	ownedColumns := []string{
-		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "availability",
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "availability",
 		"planning_business_rule_overrides", "planning_business_rule_revision", "updated_at",
 	}
 	if err := tx.Upsert(ctx, "settings",
@@ -261,6 +267,7 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 		settings.FollowUpAfterDays,
 		thresholds,
 		settings.DigestHour,
+		settings.DeliverySLADays,
 		availability,
 		businessRules,
 		settings.PlanningBusinessRuleRevision,
@@ -279,7 +286,7 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	)
 	if err := tx.QueryRow(ctx, "settings", settingsColumns, "TRUE").Scan(
 		&s.Timezone, &s.BirthdayLeadDays, &s.FollowUpAfterDays, &threshBytes,
-		&s.DigestHour, &telegram, &bindingRev, &availBytes,
+		&s.DigestHour, &s.DeliverySLADays, &telegram, &bindingRev, &availBytes,
 		&businessRuleBytes, &s.PlanningBusinessRuleRevision, &updatedAt,
 	); err != nil {
 		return Settings{}, err
@@ -429,6 +436,9 @@ func EffectiveSettings(stored Settings) Settings {
 	}
 	if stored.DigestHour < 0 || stored.DigestHour > 23 {
 		stored.DigestHour = def.DigestHour
+	}
+	if stored.DeliverySLADays < 1 || stored.DeliverySLADays > 180 {
+		stored.DeliverySLADays = def.DeliverySLADays
 	}
 	stored.ChurnThresholds = overlayChurnThresholds(def.ChurnThresholds, stored.ChurnThresholds)
 	if isZeroScheduleAvailability(stored.Availability) {

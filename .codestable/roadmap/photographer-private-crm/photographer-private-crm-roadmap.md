@@ -181,7 +181,18 @@ Package:         name*, shoot_type*(portrait|cosplay|other),
 Order:           customer_id*, package_id?, title?,
                  status*(consulting|scheduled|shot|selected|retouching|delivered|closed|cancelled),
                  price?(分), deposit_paid*(bool, 默认 false), balance_paid*(bool, 默认 false),
-                 shot_at?, delivered_at?, note?
+                 shot_at?, delivered_at?, note?,
+                 delivery_due_at?(date), delivery_due_is_override*(bool, 默认 false)
+                 （应交付日语义，dashboard-v2-redesign ITEM-1 增量：date-only，非时刻。
+                   shot_at 首次落值或变更时自动派生 = 账号时区 LocalDate(shot_at) + Settings.delivery_sla_days，
+                   写入即为落库事实；其余写路径（改备注/改价/推进状态）不重算既有值。
+                   显式传 delivery_due_at 为订单级覆盖并置 is_override=true，仅已到达拍摄
+                   且未取消的订单接受该字段；覆盖后不再随 shot_at 变更重算。PATCH 显式传 null
+                   撤销覆盖（is_override 回 false）并按当前 shot_at 重新派生，无 shot_at 时清空；
+                   未传该字段保持现状。改 Settings.delivery_sla_days
+                   只影响此后新落值的订单，不重写历史。cancelled 订单保留既有落库值——
+                   因此 delivery_due_at IS NOT NULL 不等价于「在交付队列中」，
+                   消费方必须联合 status 过滤，队列集合口径由 ITEM-4 单点定义）
 ScheduleSlot:    start_at*, end_at*(> start_at), type*(shoot|hold|busy),
                  order_id?(type=shoot 时必填), note?
 Reminder:        type*(birthday|follow_up|churn|custom), customer_id?, order_id?,
@@ -191,6 +202,10 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                  birthday_lead_days*(默认 3), follow_up_after_days*(默认 7),
                  churn_thresholds*: [{shoot_type, days}](默认全类型 180),
                  digest_hour*(0-23, 默认 9, 按 timezone), telegram_chat_id?,
+                 delivery_sla_days*(1..180, 默认 14)
+                 （账号级默认交付 SLA 天数，dashboard-v2-redesign ITEM-1 增量：
+                   供 Order.delivery_due_at 自动派生使用；订单级覆盖优先，
+                   修改本值不重写历史订单已落库的应交付日），
                  availability*: {
                    weekly*: {"1".."7": {start*(HH:MM), end*(HH:MM)} | null},
                    min_opening_minutes*(15..480, 默认 120),
@@ -530,14 +545,14 @@ Port:   TelegramPort { sendMessage(chat_id, text) error }
 
 ```
 GET /export → application/json（Content-Disposition 附件）
-{ exported_at, schema_version: 2,
+{ exported_at, schema_version: 3,
   counts: { customers, social_identities, customer_notes, packages, orders,
             schedule_slots, reminders },
   customers[], social_identities[], customer_notes[], packages[], orders[],
   schedule_slots[], reminders[], settings }        // 各数组 shape 全部按 4.2
 ```
 
-**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。
+**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。
 
 ### 4.x 共享数据结构 / 状态
 

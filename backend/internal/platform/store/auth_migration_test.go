@@ -87,6 +87,7 @@ func TestAccountAuthMigrationPreservesLegacyAccountAndRollsBack(t *testing.T) {
 		t.Fatalf("close before auth down migration: %v", err)
 	}
 	for index, label := range []string{
+		"orders-delivery-due",
 		"media-gallery-rights-bindings",
 		"plan-list-enrichment",
 		"plan-business-feedback",
@@ -137,6 +138,7 @@ func TestAccountAuthDownMigrationRejectsNewStyleAccount(t *testing.T) {
 	}
 
 	for index, label := range []string{
+		"orders-delivery-due",
 		"media-gallery-rights-bindings",
 		"plan-list-enrichment",
 		"plan-business-feedback",

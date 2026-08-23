@@ -1606,6 +1606,16 @@ export interface components {
              */
             delivered_at?: string;
             note?: string;
+            /**
+             * Format: date
+             * @description 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段（§4.2）
+             */
+            delivery_due_at?: string;
+            /**
+             * @description true 表示该应交付日是订单级覆盖，不随 shot_at 变更重算（§4.2）
+             * @default false
+             */
+            delivery_due_is_override: boolean;
         };
         OrderListItem: components["schemas"]["Order"] & {
             /** @description 引用客户的 display_name（列表可读性摘要，§4.3 2026-07-09 update） */
@@ -1782,6 +1792,11 @@ export interface components {
              * @default 9
              */
             digest_hour: number;
+            /**
+             * @description 账号级默认交付 SLA 天数，供 Order.delivery_due_at 自动派生；修改不重写历史订单（§4.2）
+             * @default 14
+             */
+            delivery_sla_days: number;
             telegram_chat_id?: string;
             availability: components["schemas"]["ScheduleAvailability"];
             planning_business_rule_overrides: components["schemas"]["PlanningBusinessRuleOverrides"];
@@ -1795,6 +1810,7 @@ export interface components {
             follow_up_after_days?: number;
             churn_thresholds?: components["schemas"]["ChurnThreshold"][];
             digest_hour?: number;
+            delivery_sla_days?: number;
             availability?: components["schemas"]["ScheduleAvailability"];
             planning_business_rules?: components["schemas"]["PlanningBusinessRulesPatch"];
         };
@@ -4581,6 +4597,11 @@ export interface operations {
                      */
                     delivered_at?: string;
                     note?: string;
+                    /**
+                     * Format: date
+                     * @description 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段。建单无「撤销覆盖」语义，故不接受 null——缺省即走自动派生；撤销覆盖见 PATCH（§4.2）
+                     */
+                    delivery_due_at?: string;
                 };
             };
         };
@@ -4664,6 +4685,11 @@ export interface operations {
                     /** @description 分 */
                     price?: number;
                     note?: string;
+                    /**
+                     * Format: date
+                     * @description 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段。显式传 null 撤销订单级覆盖并按当前 shot_at 重新派生（无 shot_at 时清空）；未传该字段保持现状（§4.2）
+                     */
+                    delivery_due_at?: string | null;
                 };
             };
         };

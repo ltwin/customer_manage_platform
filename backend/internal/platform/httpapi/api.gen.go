@@ -1749,10 +1749,16 @@ type Order struct {
 
 	// DeliveredAt 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
-	DepositPaid bool       `json:"deposit_paid"`
-	Id          *string    `json:"id,omitempty"`
-	Note        *string    `json:"note,omitempty"`
-	PackageId   *string    `json:"package_id,omitempty"`
+
+	// DeliveryDueAt 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段（§4.2）
+	DeliveryDueAt *openapi_types.Date `json:"delivery_due_at,omitempty"`
+
+	// DeliveryDueIsOverride true 表示该应交付日是订单级覆盖，不随 shot_at 变更重算（§4.2）
+	DeliveryDueIsOverride *bool   `json:"delivery_due_is_override,omitempty"`
+	DepositPaid           bool    `json:"deposit_paid"`
+	Id                    *string `json:"id,omitempty"`
+	Note                  *string `json:"note,omitempty"`
+	PackageId             *string `json:"package_id,omitempty"`
 
 	// Price 分
 	Price *int `json:"price,omitempty"`
@@ -1784,10 +1790,16 @@ type OrderListItem struct {
 
 	// DeliveredAt 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
-	DepositPaid bool       `json:"deposit_paid"`
-	Id          *string    `json:"id,omitempty"`
-	Note        *string    `json:"note,omitempty"`
-	PackageId   *string    `json:"package_id,omitempty"`
+
+	// DeliveryDueAt 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段（§4.2）
+	DeliveryDueAt *openapi_types.Date `json:"delivery_due_at,omitempty"`
+
+	// DeliveryDueIsOverride true 表示该应交付日是订单级覆盖，不随 shot_at 变更重算（§4.2）
+	DeliveryDueIsOverride *bool   `json:"delivery_due_is_override,omitempty"`
+	DepositPaid           bool    `json:"deposit_paid"`
+	Id                    *string `json:"id,omitempty"`
+	Note                  *string `json:"note,omitempty"`
+	PackageId             *string `json:"package_id,omitempty"`
 
 	// PackageName 引用套系的 name；未引用套系时缺省
 	PackageName     *string          `json:"package_name,omitempty"`
@@ -2213,6 +2225,9 @@ type Settings struct {
 	// ChurnThresholds 默认全类型 180
 	ChurnThresholds []ChurnThreshold `json:"churn_thresholds"`
 
+	// DeliverySlaDays 账号级默认交付 SLA 天数，供 Order.delivery_due_at 自动派生；修改不重写历史订单（§4.2）
+	DeliverySlaDays int `json:"delivery_sla_days"`
+
 	// DigestHour 按 timezone
 	DigestHour                    int                           `json:"digest_hour"`
 	FollowUpAfterDays             int                           `json:"follow_up_after_days"`
@@ -2490,6 +2505,7 @@ type UpdateSettingsBody struct {
 	Availability          *ScheduleAvailability       `json:"availability,omitempty"`
 	BirthdayLeadDays      *int                        `json:"birthday_lead_days,omitempty"`
 	ChurnThresholds       *[]ChurnThreshold           `json:"churn_thresholds,omitempty"`
+	DeliverySlaDays       *int                        `json:"delivery_sla_days,omitempty"`
 	DigestHour            *int                        `json:"digest_hour,omitempty"`
 	FollowUpAfterDays     *int                        `json:"follow_up_after_days,omitempty"`
 	PlanningBusinessRules *PlanningBusinessRulesPatch `json:"planning_business_rules,omitempty"`
@@ -2774,9 +2790,12 @@ type CreateOrderJSONBody struct {
 
 	// DeliveredAt 补录用；仅目标状态已到达 delivered 时可给
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
-	DepositPaid *bool      `json:"deposit_paid,omitempty"`
-	Note        *string    `json:"note,omitempty"`
-	PackageId   *string    `json:"package_id,omitempty"`
+
+	// DeliveryDueAt 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段。建单无「撤销覆盖」语义，故不接受 null——缺省即走自动派生；撤销覆盖见 PATCH（§4.2）
+	DeliveryDueAt *openapi_types.Date `json:"delivery_due_at,omitempty"`
+	DepositPaid   *bool               `json:"deposit_paid,omitempty"`
+	Note          *string             `json:"note,omitempty"`
+	PackageId     *string             `json:"package_id,omitempty"`
 
 	// Price 分
 	Price *int `json:"price,omitempty"`
@@ -2799,8 +2818,11 @@ type CreateOrderParams struct {
 type UpdateOrderJSONBody struct {
 	BalancePaid *bool      `json:"balance_paid,omitempty"`
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
-	DepositPaid *bool      `json:"deposit_paid,omitempty"`
-	Note        *string    `json:"note,omitempty"`
+
+	// DeliveryDueAt 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段。显式传 null 撤销订单级覆盖并按当前 shot_at 重新派生（无 shot_at 时清空）；未传该字段保持现状（§4.2）
+	DeliveryDueAt nullable.Nullable[openapi_types.Date] `json:"delivery_due_at,omitempty"`
+	DepositPaid   *bool                                 `json:"deposit_paid,omitempty"`
+	Note          *string                               `json:"note,omitempty"`
 
 	// Price 分
 	Price  *int       `json:"price,omitempty"`

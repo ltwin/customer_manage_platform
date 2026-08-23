@@ -174,7 +174,7 @@ func TestPreparedCreateUsesNormalizedInputAndCallerTransaction(t *testing.T) {
 	seedCustomer(t, scope, "cus_active", "小美", "active")
 
 	svc := orderService()
-	prepared, err := svc.PrepareCreate(orderdomain.CreateInput{
+	prepared, err := svc.PrepareCreateInScope(ctx, scope, orderdomain.CreateInput{
 		CustomerID: "  cus_active  ",
 		Title:      strPtr("  事务内订单  "),
 	})

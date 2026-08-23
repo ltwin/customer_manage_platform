@@ -58,6 +58,10 @@ type Order struct {
 	ShotAt      *time.Time
 	DeliveredAt *time.Time
 	Note        *string
+	// DeliveryDueAt 是 date-only 的应交付日（UTC 午夜表示），非时刻。
+	DeliveryDueAt *time.Time
+	// DeliveryDueIsOverride 为 true 时该应交付日是订单级覆盖，不随 shot_at 变更重算。
+	DeliveryDueIsOverride bool
 }
 
 type OrderInUseError struct {
@@ -74,17 +78,21 @@ func (e OrderInUseError) Unwrap() error {
 }
 
 type CreateInput struct {
-	CreationMode string
-	CustomerID   string
-	PackageID    *string
-	Title        *string
-	Price        *int
-	Status       *string
-	DepositPaid  *bool
-	BalancePaid  *bool
-	ShotAt       *time.Time
-	DeliveredAt  *time.Time
-	Note         *string
+	CreationMode  string
+	CustomerID    string
+	PackageID     *string
+	Title         *string
+	Price         *int
+	Status        *string
+	DepositPaid   *bool
+	BalancePaid   *bool
+	ShotAt        *time.Time
+	DeliveredAt   *time.Time
+	Note          *string
+	DeliveryDueAt *time.Time
+
+	// deliveryPolicy 由 service 从账号 settings 解析后填入（与 ListFilter.schedulableNow 同惯例）。
+	deliveryPolicy DeliveryPolicy
 }
 
 type PreparedCreate struct {
@@ -93,14 +101,18 @@ type PreparedCreate struct {
 }
 
 type UpdateInput struct {
-	Status      *string
-	DepositPaid *bool
-	BalancePaid *bool
-	ShotAt      nullable.Nullable[time.Time]
-	DeliveredAt nullable.Nullable[time.Time]
-	Title       *string
-	Price       nullable.Nullable[int]
-	Note        *string
+	Status        *string
+	DepositPaid   *bool
+	BalancePaid   *bool
+	ShotAt        nullable.Nullable[time.Time]
+	DeliveredAt   nullable.Nullable[time.Time]
+	Title         *string
+	Price         nullable.Nullable[int]
+	Note          *string
+	DeliveryDueAt nullable.Nullable[time.Time]
+
+	// deliveryPolicy 由 service 从账号 settings 解析后填入。
+	deliveryPolicy DeliveryPolicy
 }
 
 type ListFilter struct {

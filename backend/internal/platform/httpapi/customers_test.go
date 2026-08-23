@@ -119,12 +119,13 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		t.Fatalf("new shoot planning business application: %v", err)
 	}
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		Logger:                slog.New(slog.DiscardHandler),
-		DB:                    s,
-		ScopeFactory:          s,
-		Auth:                  auth.NewService(s, tokens),
-		Customer:              customerdomain.NewService(customerdomain.NewPostgresRepository()),
-		Orders:                orderdomain.NewService(orderdomain.NewPostgresRepository()),
+		Logger:       slog.New(slog.DiscardHandler),
+		DB:           s,
+		ScopeFactory: s,
+		Auth:         auth.NewService(s, tokens),
+		Customer:     customerdomain.NewService(customerdomain.NewPostgresRepository()),
+		Orders: orderdomain.NewService(orderdomain.NewPostgresRepository()).
+			WithDeliveryPolicyProvider(orderdomain.NewSettingsDeliveryPolicyAdapter(settingsSvc)),
 		Packages:              pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),
 		Idempotency:           idempotencyExecutor,
 		AccountTimezone:       settingsSvc,

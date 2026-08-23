@@ -277,3 +277,139 @@ func authenticatedOrderCreate(
 	h.ServeHTTP(rec, req)
 	return rec
 }
+
+// TestDeliveryDueDerivedOnBothCreatePaths 锁住 POST /orders 两条分支的应交付日语义一致：
+// 带 Idempotency-Key（前端补录/档期组合流程走这条）与不带键必须都派生应交付日。
+// 回归背景：幂等分支曾误调不带账号上下文的 PrepareCreate，静默跳过派生，而当时的
+// 领域测试直接给未导出的 deliveryPolicy 赋值，绕过 service 接线因而无法发现。
+func TestDeliveryDueDerivedOnBothCreatePaths(t *testing.T) {
+	h, s, issuer := newCustomerAPIRouter(t)
+	ctx := context.Background()
+	token := issueToken(t, issuer, testAcctID)
+	scope := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	customers := customerdomain.NewService(customerdomain.NewPostgresRepository())
+
+	customer, err := customers.Create(ctx, scope, customerdomain.CreateInput{
+		DisplayName: "交付队列客户",
+		Channel:     customerdomain.ChannelOther,
+		Identities: []customerdomain.IdentityInput{
+			{Platform: customerdomain.PlatformWechat, Handle: "delivery-due-paths"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+
+	// 默认账号时区 Asia/Shanghai + 默认 SLA 14 天：本地 2026-07-09 拍摄 → 2026-07-23 应交付。
+	body := []byte(`{
+		"creation_mode": "backfill",
+		"customer_id": "` + customer.ID + `",
+		"status": "shot",
+		"shot_at": "2026-07-09T02:00:00Z"
+	}`)
+
+	withKey := authenticatedOrderCreate(t, h, token, "delivery-due-idempotent-1", body)
+	if withKey.Code != http.StatusCreated {
+		t.Fatalf("idempotent create: %d %s", withKey.Code, withKey.Body.String())
+	}
+	withoutKey := authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", token, body)
+	if withoutKey.Code != http.StatusCreated {
+		t.Fatalf("plain create: %d %s", withoutKey.Code, withoutKey.Body.String())
+	}
+
+	for _, created := range []struct {
+		label string
+		rec   *httptest.ResponseRecorder
+	}{
+		{label: "带 Idempotency-Key", rec: withKey},
+		{label: "不带 Idempotency-Key", rec: withoutKey},
+	} {
+		var order httpapi.Order
+		if err := json.Unmarshal(created.rec.Body.Bytes(), &order); err != nil {
+			t.Fatalf("%s: decode order: %v", created.label, err)
+		}
+		if order.DeliveryDueAt == nil {
+			t.Fatalf("%s: delivery_due_at = nil，两条建单路径都必须派生应交付日", created.label)
+		}
+		if got, want := order.DeliveryDueAt.Format("2006-01-02"), "2026-07-23"; got != want {
+			t.Fatalf("%s: delivery_due_at = %q, want %q", created.label, got, want)
+		}
+		if order.DeliveryDueIsOverride == nil || *order.DeliveryDueIsOverride {
+			t.Fatalf("%s: 自动派生不应标记为订单级覆盖", created.label)
+		}
+	}
+}
+
+// TestDeliveryDueOverrideCanBeClearedViaPatch 端到端验证三态：
+// PATCH 显式传 null 撤销订单级覆盖并回到自动派生；未传该字段则保持现状。
+func TestDeliveryDueOverrideCanBeClearedViaPatch(t *testing.T) {
+	h, s, issuer := newCustomerAPIRouter(t)
+	ctx := context.Background()
+	token := issueToken(t, issuer, testAcctID)
+	scope := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	customers := customerdomain.NewService(customerdomain.NewPostgresRepository())
+
+	customer, err := customers.Create(ctx, scope, customerdomain.CreateInput{
+		DisplayName: "撤销覆盖客户",
+		Channel:     customerdomain.ChannelOther,
+		Identities: []customerdomain.IdentityInput{
+			{Platform: customerdomain.PlatformWechat, Handle: "clear-override"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+
+	// 建单即带订单级覆盖（默认时区上海 + SLA 14，自动派生本应为 2026-07-23）。
+	rec := authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", token, []byte(`{
+		"creation_mode": "backfill",
+		"customer_id": "`+customer.ID+`",
+		"status": "shot",
+		"shot_at": "2026-07-09T02:00:00Z",
+		"delivery_due_at": "2026-08-01"
+	}`))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create order: %d %s", rec.Code, rec.Body.String())
+	}
+	var created httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created order: %v", err)
+	}
+	if created.DeliveryDueIsOverride == nil || !*created.DeliveryDueIsOverride {
+		t.Fatalf("建单显式给值应标记为订单级覆盖")
+	}
+
+	// 未传 delivery_due_at：保持覆盖值不变。
+	rec = authenticatedRequest(t, h, http.MethodPatch, "/api/v1/orders/"+*created.Id, token,
+		[]byte(`{"note":"只改备注"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch note: %d %s", rec.Code, rec.Body.String())
+	}
+	var untouched httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &untouched); err != nil {
+		t.Fatalf("decode untouched order: %v", err)
+	}
+	if untouched.DeliveryDueAt == nil || untouched.DeliveryDueAt.Format("2006-01-02") != "2026-08-01" {
+		t.Fatalf("未传字段不应改动应交付日，got %v", untouched.DeliveryDueAt)
+	}
+	if untouched.DeliveryDueIsOverride == nil || !*untouched.DeliveryDueIsOverride {
+		t.Fatalf("未传字段不应撤销覆盖标记")
+	}
+
+	// 显式 null：撤销覆盖并回到自动派生 2026-07-23。
+	rec = authenticatedRequest(t, h, http.MethodPatch, "/api/v1/orders/"+*created.Id, token,
+		[]byte(`{"delivery_due_at":null}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch null: %d %s", rec.Code, rec.Body.String())
+	}
+	var cleared httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &cleared); err != nil {
+		t.Fatalf("decode cleared order: %v", err)
+	}
+	if cleared.DeliveryDueIsOverride == nil || *cleared.DeliveryDueIsOverride {
+		t.Fatalf("显式 null 应撤销覆盖标记")
+	}
+	if cleared.DeliveryDueAt == nil || cleared.DeliveryDueAt.Format("2006-01-02") != "2026-07-23" {
+		t.Fatalf("撤销后应回到自动派生 2026-07-23，got %v", cleared.DeliveryDueAt)
+	}
+}

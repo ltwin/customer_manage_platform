@@ -55,6 +55,7 @@ func (h *handlers) UpdateSettings(c *gin.Context) {
 		BirthdayLeadDays:  body.BirthdayLeadDays,
 		FollowUpAfterDays: body.FollowUpAfterDays,
 		DigestHour:        body.DigestHour,
+		DeliverySLADays:   body.DeliverySlaDays,
 	}
 	if body.ChurnThresholds != nil {
 		entries := make([]settings.ChurnThreshold, 0, len(*body.ChurnThresholds))
@@ -134,6 +135,7 @@ func toAPISettings(s settings.Settings) Settings {
 		FollowUpAfterDays:             s.FollowUpAfterDays,
 		ChurnThresholds:               thresholds,
 		DigestHour:                    s.DigestHour,
+		DeliverySlaDays:               s.DeliverySLADays,
 		TelegramChatId:                s.TelegramChatID,
 		Availability:                  toAPIScheduleAvailability(s.Availability),
 		PlanningBusinessRuleOverrides: toAPIPlanningBusinessRuleOverrides(s.PlanningBusinessRuleOverrides),

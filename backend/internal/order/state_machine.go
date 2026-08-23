@@ -74,6 +74,12 @@ func ApplyCreateInput(input CreateInput) (Order, error) {
 	if err := validateFinalState(Order{}, order, UpdateInput{}); err != nil {
 		return Order{}, err
 	}
+	// 建单没有「撤销覆盖」语义：给了日期就是覆盖，没给就走自动派生。
+	explicitDue := nullableFromPointer(input.DeliveryDueAt)
+	if err := validateDeliveryDue(order, explicitDue, input.deliveryPolicy); err != nil {
+		return Order{}, err
+	}
+	order = applyDeliveryDue(order, explicitDue, input.deliveryPolicy, order.ShotAt != nil)
 	return order, nil
 }
 
@@ -146,6 +152,10 @@ func ApplyUpdateInput(current Order, input UpdateInput, now time.Time) (Order, e
 	if err := validateFinalState(current, next, input); err != nil {
 		return Order{}, err
 	}
+	if err := validateDeliveryDue(next, input.DeliveryDueAt, input.deliveryPolicy); err != nil {
+		return Order{}, err
+	}
+	next = applyDeliveryDue(next, input.DeliveryDueAt, input.deliveryPolicy, shotAtChanged(current, next))
 	return next, nil
 }
 

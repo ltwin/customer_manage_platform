@@ -42,6 +42,25 @@ func TestServicePatchReplacesWholeAvailability(t *testing.T) {
 	}
 }
 
+func TestServicePatchDeliverySLADays(t *testing.T) {
+	days := func(value int) *int { return &value }
+
+	for _, valid := range []int{1, 30, 180} {
+		got, _, err := applyPatch(DefaultSettings(), PatchInput{DeliverySLADays: days(valid)})
+		if err != nil {
+			t.Fatalf("Patch(%d) error = %v", valid, err)
+		}
+		if got.DeliverySLADays != valid {
+			t.Fatalf("saved delivery_sla_days = %d, want %d", got.DeliverySLADays, valid)
+		}
+	}
+	for _, invalid := range []int{0, -1, 181} {
+		if _, _, err := applyPatch(DefaultSettings(), PatchInput{DeliverySLADays: days(invalid)}); !errors.Is(err, ErrValidation) {
+			t.Fatalf("Patch(%d) error = %v, want validation error", invalid, err)
+		}
+	}
+}
+
 func TestServicePatchRejectsInvalidAvailabilityWithoutWriting(t *testing.T) {
 	tests := []struct {
 		name   string

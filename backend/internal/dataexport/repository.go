@@ -12,6 +12,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/clock"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
@@ -22,10 +23,10 @@ const customerColumns = "id, account_id, created_at, display_name, real_name, ph
 const identityColumns = "id, account_id, created_at, customer_id, platform, handle, remark"
 const noteColumns = "id, account_id, created_at, customer_id, content"
 const packageColumns = "id, account_id, created_at, name, shoot_type, pricing_mode, base_price, duration_minutes, shot_count_min, shot_count_max, raw_delivery_count, retouch_count, note, status"
-const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note"
+const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, delivery_due_at, delivery_due_is_override, note"
 const slotColumns = "id, account_id, created_at, start_at, end_at, type, order_id, note"
 const reminderColumns = "id, account_id, created_at, type, customer_id, order_id, due_date, content, status, dedup_key"
-const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, telegram_chat_id, telegram_binding_revision, availability, updated_at"
+const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, delivery_sla_days, telegram_chat_id, telegram_binding_revision, availability, updated_at"
 
 // PostgresRepository loads the export allowlist without going through paginated domain services.
 type PostgresRepository struct{}
@@ -194,11 +195,11 @@ func loadOrders(ctx context.Context, scope store.ReadTxAccountScope) ([]orderdom
 		var item orderdomain.Order
 		var packageID, title, note sql.NullString
 		var price sql.NullInt64
-		var shotAt, deliveredAt sql.NullTime
+		var shotAt, deliveredAt, deliveryDueAt sql.NullTime
 		if err := rows.Scan(
 			&item.ID, &item.AccountID, &item.CreatedAt, &item.CustomerID, &packageID,
 			&title, &item.Status, &price, &item.DepositPaid, &item.BalancePaid,
-			&shotAt, &deliveredAt, &note,
+			&shotAt, &deliveredAt, &deliveryDueAt, &item.DeliveryDueIsOverride, &note,
 		); err != nil {
 			return nil, err
 		}
@@ -207,6 +208,10 @@ func loadOrders(ctx context.Context, scope store.ReadTxAccountScope) ([]orderdom
 		item.Price = nullIntPointer(price)
 		item.ShotAt = nullTimePointer(shotAt)
 		item.DeliveredAt = nullTimePointer(deliveredAt)
+		if deliveryDueAt.Valid {
+			due := clock.DateOnly(deliveryDueAt.Time)
+			item.DeliveryDueAt = &due
+		}
 		item.Note = nullStringPointer(note)
 		items = append(items, item)
 	}
@@ -336,6 +341,7 @@ func loadEffectiveSettings(ctx context.Context, scope store.ReadTxAccountScope) 
 		&stored.FollowUpAfterDays,
 		&thresholds,
 		&stored.DigestHour,
+		&stored.DeliverySLADays,
 		&chatID,
 		&bindingRev,
 		&availability,

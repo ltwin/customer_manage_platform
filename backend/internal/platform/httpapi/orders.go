@@ -11,9 +11,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/oapi-codegen/nullable"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/clock"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -48,16 +50,17 @@ func (h *handlers) CreateOrder(c *gin.Context, params CreateOrderParams) {
 		return
 	}
 	input := orderdomain.CreateInput{
-		CreationMode: stringValue(body.CreationMode),
-		CustomerID:   body.CustomerId,
-		PackageID:    body.PackageId,
-		Title:        body.Title,
-		Price:        body.Price,
-		DepositPaid:  body.DepositPaid,
-		BalancePaid:  body.BalancePaid,
-		ShotAt:       body.ShotAt,
-		DeliveredAt:  body.DeliveredAt,
-		Note:         body.Note,
+		CreationMode:  stringValue(body.CreationMode),
+		CustomerID:    body.CustomerId,
+		PackageID:     body.PackageId,
+		Title:         body.Title,
+		Price:         body.Price,
+		DepositPaid:   body.DepositPaid,
+		BalancePaid:   body.BalancePaid,
+		ShotAt:        body.ShotAt,
+		DeliveredAt:   body.DeliveredAt,
+		DeliveryDueAt: domainDateFromAPI(body.DeliveryDueAt),
+		Note:          body.Note,
 	}
 	if body.Status != nil {
 		status := string(*body.Status)
@@ -75,7 +78,7 @@ func (h *handlers) CreateOrder(c *gin.Context, params CreateOrderParams) {
 		_ = c.Error(errors.New("idempotency dependency missing"))
 		return
 	}
-	prepared, err := h.orders.PrepareCreate(input)
+	prepared, err := h.orders.PrepareCreateInScope(c.Request.Context(), scope, input)
 	if h.abortOrderError(c, err) {
 		return
 	}
@@ -166,6 +169,7 @@ func (h *handlers) UpdateOrder(c *gin.Context, id Id) {
 	input.Price = nullableIntFromRaw(raw, "price", body.Price)
 	input.ShotAt = nullableTimeFromRaw(raw, "shot_at", body.ShotAt)
 	input.DeliveredAt = nullableTimeFromRaw(raw, "delivered_at", body.DeliveredAt)
+	input.DeliveryDueAt = domainNullableDateFromAPI(body.DeliveryDueAt)
 	updated, err := h.orders.Update(c.Request.Context(), scope, id, input)
 	if h.abortOrderError(c, err) {
 		return
@@ -373,6 +377,9 @@ func toAPIOrder(o orderdomain.Order) Order {
 		ShotAt:      o.ShotAt,
 		Status:      OrderStatus(o.Status),
 		Title:       o.Title,
+
+		DeliveryDueAt:         apiDatePointer(o.DeliveryDueAt),
+		DeliveryDueIsOverride: &o.DeliveryDueIsOverride,
 	}
 }
 
@@ -394,5 +401,40 @@ func toAPIOrderListItem(item orderdomain.ListItem) OrderListItem {
 		Status:              OrderStatus(item.Status),
 		Title:               item.Title,
 		PlanningSummary:     toAPIPlanningSummary(item.PlanningSummary),
+
+		DeliveryDueAt:         apiDatePointer(item.DeliveryDueAt),
+		DeliveryDueIsOverride: &item.DeliveryDueIsOverride,
 	}
+}
+
+// apiDatePointer 把领域 date-only 值投影为契约 date 类型。
+func apiDatePointer(value *time.Time) *openapi_types.Date {
+	if value == nil {
+		return nil
+	}
+	return &openapi_types.Date{Time: *value}
+}
+
+// domainNullableDateFromAPI 保留契约的三态：未传 / 显式 null / 有值。
+// 显式 null 表示撤销订单级覆盖并交还自动派生，与「未传」语义不同。
+func domainNullableDateFromAPI(value nullable.Nullable[openapi_types.Date]) nullable.Nullable[time.Time] {
+	var result nullable.Nullable[time.Time]
+	if !value.IsSpecified() {
+		return result
+	}
+	if value.IsNull() {
+		result.SetNull()
+		return result
+	}
+	result.Set(clock.DateOnly(value.MustGet().Time))
+	return result
+}
+
+// domainDateFromAPI 把契约 date 转成领域 date-only（UTC 午夜）。
+func domainDateFromAPI(value *openapi_types.Date) *time.Time {
+	if value == nil {
+		return nil
+	}
+	normalized := clock.DateOnly(value.Time)
+	return &normalized
 }

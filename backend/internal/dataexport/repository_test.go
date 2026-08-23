@@ -119,8 +119,8 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 	for index := len(orderStatuses) - 1; index >= 0; index-- {
 		status := orderStatuses[index]
 		id := "order-" + string(rune('a'+index))
-		var packageID, title, price, shotAt, deliveredAt, note any
-		var depositPaid, balancePaid bool
+		var packageID, title, price, shotAt, deliveredAt, deliveryDueAt, note any
+		var depositPaid, balancePaid, deliveryDueIsOverride bool
 		switch id {
 		case "order-a":
 			packageID, title, price, note = "pkg-a", "Fixture consulting", 12000, "fixture order"
@@ -129,13 +129,16 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 			packageID, title, price, note = "pkg-b", "Fixture delivered", 8000, "delivered order"
 			shotAt, deliveredAt = createdAt.Add(-48*time.Hour), createdAt.Add(-24*time.Hour)
 			depositPaid, balancePaid = true, true
+			// 显式覆盖的应交付日：导出必须原样带出，而不是回落默认派生。
+			deliveryDueAt, deliveryDueIsOverride = time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC), true
 		}
 		if err := scope.Insert(ctx, "orders",
 			[]string{
 				"id", "created_at", "customer_id", "package_id", "title", "status", "price", "deposit_paid",
-				"balance_paid", "shot_at", "delivered_at", "note",
+				"balance_paid", "shot_at", "delivered_at", "delivery_due_at", "delivery_due_is_override", "note",
 			},
-			id, createdAt, "cus-a", packageID, title, status, price, depositPaid, balancePaid, shotAt, deliveredAt, note); err != nil {
+			id, createdAt, "cus-a", packageID, title, status, price, depositPaid, balancePaid, shotAt, deliveredAt,
+			deliveryDueAt, deliveryDueIsOverride, note); err != nil {
 			t.Fatalf("insert order %s: %v", status, err)
 		}
 	}
@@ -171,8 +174,8 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 		}
 	}
 	if err := scope.Insert(ctx, "settings",
-		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "telegram_chat_id", "availability", "updated_at"},
-		"Asia/Tokyo", 5, 9, []byte(`[{"shoot_type":"portrait","days":90}]`), 7, "fixture-chat",
+		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "telegram_chat_id", "availability", "updated_at"},
+		"Asia/Tokyo", 5, 9, []byte(`[{"shoot_type":"portrait","days":90}]`), 7, 30, "fixture-chat",
 		[]byte(`{"weekly":{"1":{"start":"08:30","end":"17:30"},"2":null,"3":{"start":"10:00","end":"19:00"},"4":{"start":"10:00","end":"19:00"},"5":{"start":"10:00","end":"19:00"},"6":{"start":"09:00","end":"20:00"},"7":null},"min_opening_minutes":90,"turnaround_minutes":30}`),
 		createdAt); err != nil {
 		t.Fatalf("insert settings: %v", err)
@@ -207,7 +210,7 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 			{ID: "order-c", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "shot"},
 			{ID: "order-d", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "selected"},
 			{ID: "order-e", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "retouching"},
-			{ID: "order-f", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", PackageID: testPointer("pkg-b"), Title: testPointer("Fixture delivered"), Status: "delivered", Price: testPointer(8000), DepositPaid: true, BalancePaid: true, ShotAt: testPointer(createdAt.Add(-48 * time.Hour)), DeliveredAt: testPointer(createdAt.Add(-24 * time.Hour)), Note: testPointer("delivered order")},
+			{ID: "order-f", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", PackageID: testPointer("pkg-b"), Title: testPointer("Fixture delivered"), Status: "delivered", Price: testPointer(8000), DepositPaid: true, BalancePaid: true, ShotAt: testPointer(createdAt.Add(-48 * time.Hour)), DeliveredAt: testPointer(createdAt.Add(-24 * time.Hour)), DeliveryDueAt: testPointer(time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)), DeliveryDueIsOverride: true, Note: testPointer("delivered order")},
 			{ID: "order-g", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "closed"},
 			{ID: "order-h", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "cancelled"},
 		},
@@ -232,6 +235,7 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 				{ShootType: "other", Days: 180},
 			},
 			DigestHour:              7,
+			DeliverySLADays:         30,
 			TelegramChatID:          testPointer("fixture-chat"),
 			TelegramBindingRevision: 1,
 			Availability: settings.ScheduleAvailability{
