@@ -75,8 +75,9 @@ function validateSection(
 			return result.ok === false ? result.message : null
 		}
 		case 'reminders': {
-			const { birthdayLeadDays, followUpAfterDays, churnThresholds } = state.reminders.draft
+			const { birthdayLeadDays, followUpAfterDays, churnThresholds, deliverySlaDays } = state.reminders.draft
 			if (birthdayLeadDays < 1 || followUpAfterDays < 1) return '天数须 ≥ 1'
+			if (deliverySlaDays < 1) return '交付 SLA 天数须 ≥ 1'
 			for (const entry of churnThresholds) {
 				if (entry.days < 1) return '流失阈值天数须 ≥ 1'
 			}
@@ -387,7 +388,7 @@ export default function AccountSettingsPage() {
 			<section className="card form-stack" aria-labelledby="accountSettingsRemindersTitle">
 				<div>
 					<h2 id="accountSettingsRemindersTitle">提醒规则</h2>
-					<p className="sub">生日提前、交付回访与流失阈值。</p>
+					<p className="sub">生日提前、交付回访、流失阈值与交付 SLA 默认值。</p>
 				</div>
 				{state.reminders.serverUpdated && (
 					<p className="account-settings-server-updated" role="status">
@@ -437,6 +438,20 @@ export default function AccountSettingsPage() {
 									dispatchSynced({
 										type: 'EDIT_REMINDERS',
 										patch: { followUpAfterDays: Number(event.target.value) },
+									})
+								}
+							/>
+						</label>
+						<label>
+							交付 SLA 天数（拍摄后承诺交片）
+							<input
+								type="number"
+								min={1}
+								value={state.reminders.draft.deliverySlaDays}
+								onChange={(event) =>
+									dispatchSynced({
+										type: 'EDIT_REMINDERS',
+										patch: { deliverySlaDays: Number(event.target.value) },
 									})
 								}
 							/>

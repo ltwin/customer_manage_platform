@@ -53,6 +53,7 @@ function emptyReminders(): RemindersDraft {
 		birthdayLeadDays: 3,
 		followUpAfterDays: 7,
 		churnThresholds: [],
+		deliverySlaDays: 14,
 	}
 }
 
@@ -94,6 +95,7 @@ function hydrateReminders(snapshot: Settings): RemindersDraft {
 		birthdayLeadDays: snapshot.birthday_lead_days,
 		followUpAfterDays: snapshot.follow_up_after_days,
 		churnThresholds: snapshot.churn_thresholds.map((entry: ChurnThreshold) => ({ ...entry })),
+		deliverySlaDays: snapshot.delivery_sla_days,
 	}
 }
 

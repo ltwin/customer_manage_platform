@@ -65,6 +65,7 @@ const settingsFixture: Settings = {
 	birthday_lead_days: 4,
 	follow_up_after_days: 8,
 	digest_hour: 10,
+	delivery_sla_days: 14,
 	telegram_chat_id: 'chat-fixture',
 	churn_thresholds: [
 		{ shoot_type: 'portrait', days: 120 },
@@ -290,12 +291,15 @@ test('A1–A4 body builders emit only owned fields', () => {
 		birthdayLeadDays: 5,
 		followUpAfterDays: 9,
 		churnThresholds: [{ shoot_type: 'portrait', days: 90 }],
+		deliverySlaDays: 21,
 	})
 	assert.deepEqual(bodyBuilders.bodyKeys(reminders).sort(), [
 		'birthday_lead_days',
 		'churn_thresholds',
+		'delivery_sla_days',
 		'follow_up_after_days',
 	])
+	assert.equal(reminders.delivery_sla_days, 21)
 	assert.equal(reminders.churn_thresholds?.length, 3)
 	assert.deepEqual(
 		reminders.churn_thresholds?.map((entry) => entry.shoot_type).sort(),

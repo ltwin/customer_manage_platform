@@ -1,29 +1,34 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  CalendarOff,
   Check,
   ClipboardCheck,
-  ShieldCheck,
+  TrendingDown,
+  TrendingUp,
   Wallet,
   X,
 } from 'lucide-react'
 import {
   ApiError,
   dismissReminder,
-  fetchDashboard,
+  fetchDashboardV2,
+  getSettings,
+  listOrders,
+  listScheduleSlots,
   markReminderDone,
   updateOrder,
 } from '../api/client'
 import type {
-  Dashboard,
-  DashboardReminder,
-  DashboardSlot,
-  DashboardUnpaidOrder,
+  DashboardV2,
+  DashboardV2Reminder,
+  OrderListItem,
+  ScheduleSlotListItem,
+  Settings,
 } from '../api/client'
 import { useShell } from '../components/shellContext'
 import StateNotice from '../components/StateNotice'
 import EmptyState from '../components/EmptyState'
+import { useFocusTrap } from '../components/useFocusTrap'
 import {
   beginPageRead,
   completePageRead,
@@ -32,29 +37,36 @@ import {
   readyPageData,
   type PageReadState,
 } from '../components/pageReadState'
+import { groupOpeningsByDate, openingsText } from './calendar/openings'
+import type { Opening } from './calendar/model'
+import { localDayRange } from '../components/schedule/timezone'
+import CopyTextSheet from './dashboard/CopyTextSheet'
+import {
+  channelLabels,
+  computeUpcomingOpenings,
+  formatPercent,
+  formatShortYuan,
+  formatYuan,
+  localDateOfInstant,
+  minutesOfHHMM,
+  minutesToHHMM,
+  upcomingLocalDates,
+  v2DeliveryRows,
+  v2FocusModel,
+  v2MatrixModel,
+  v2TimelineModel,
+  v2WaterfallModel,
+} from './dashboard/dashboardV2Model'
+import './dashboard/dashboardV2.css'
 
-const reminderTypeLabel: Record<DashboardReminder['type'], string> = {
+const upcomingOpeningsDays = 14
+
+const reminderTypeLabel: Record<DashboardV2Reminder['type'], string> = {
   birthday: '生日',
   follow_up: '回访',
   churn: '流失',
   custom: '自定义',
   plan_assignment_checklist: '认领项核对',
-}
-
-const orderStatusLabel: Record<string, string> = {
-  consulting: '咨询',
-  scheduled: '待拍',
-  shot: '已拍',
-  selected: '已选',
-  retouching: '精修',
-  delivered: '已交付',
-  closed: '已完成',
-  cancelled: '已取消',
-}
-
-function formatPrice(cents: number | null | undefined): string {
-  if (cents == null) return '—'
-  return `¥${(cents / 100).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`
 }
 
 function formatToday(timezone: string | null): string {
@@ -77,38 +89,36 @@ function formatToday(timezone: string | null): string {
   }
 }
 
-function formatSlotTime(iso: string, timezone: string | null): string {
-  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', hour12: false }
-  if (timezone) options.timeZone = timezone
-  try {
-    return new Intl.DateTimeFormat('zh-CN', options).format(new Date(iso))
-  } catch {
-    return new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false }).format(
-      new Date(iso),
-    )
-  }
+function formatDateOnly(date: Date, timezone: string | null): string {
+  return localDateOfInstant(date.toISOString(), timezone)
 }
 
-function slotTitle(slot: DashboardSlot): string {
-  if (slot.type === 'shoot') {
-    return `${slot.customer_display_name} · ${slot.order_title ?? slot.package_name ?? '未命名订单'}`
-  }
-  return slot.note ?? (slot.type === 'hold' ? '预留' : '个人占用')
+interface OpeningsAux {
+  settings: Settings | null
+  openings: Opening[]
+  failed: boolean
 }
+
+const initialOpeningsAux: OpeningsAux = { settings: null, openings: [], failed: false }
 
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { notify, timezone } = useShell()
-  const [readState, setReadState] = useState<PageReadState<Dashboard>>({
+  const [readState, setReadState] = useState<PageReadState<DashboardV2>>({
     kind: 'loading',
     message: '正在加载仪表盘',
   })
   const [actionId, setActionId] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
+  const [openingsAux, setOpeningsAux] = useState<OpeningsAux>(initialOpeningsAux)
+  const [receivableSheetOpen, setReceivableSheetOpen] = useState(false)
+  const [receivableOrders, setReceivableOrders] = useState<OrderListItem[] | null>(null)
+  const [copySheet, setCopySheet] = useState<{ sub: string; text: string } | null>(null)
+  const auxLoadedRef = useRef(false)
 
   const load = useCallback(() => {
     setReadState((current) => beginPageRead(current, '正在加载仪表盘', true))
-    fetchDashboard()
+    fetchDashboardV2()
       .then((result) => setReadState(completePageRead(result, false, '')))
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 401) {
@@ -128,7 +138,45 @@ export default function DashboardPage() {
     load()
   }, [load, tick])
 
-  const refetch = useCallback(() => setTick((n) => n + 1), [])
+  const reloadAux = useCallback(() => {
+    auxLoadedRef.current = false
+    setOpeningsAux(initialOpeningsAux)
+  }, [])
+
+  // 辅助读：settings（availability + 交付 SLA）与未来 14 天档期，用于空档速览与交付
+  // 进度条；失败不阻塞主面板。与 Calendar 页同源算法（验收标准 3）。
+  useEffect(() => {
+    if (auxLoadedRef.current) return
+    auxLoadedRef.current = true
+    let active = true
+    void (async () => {
+      try {
+        const settings = await getSettings()
+        if (!active) return
+        const tz = settings.timezone
+        const fromDate = localDateOfInstant(new Date().toISOString(), tz)
+        const dates = upcomingLocalDates(fromDate, upcomingOpeningsDays)
+        const range = localDayRange(dates[dates.length - 1] ?? fromDate, tz)
+        const slots = await listScheduleSlots(
+          localDayRange(fromDate, tz).start,
+          range.end,
+        )
+        if (!active) return
+        const openings = computeUpcomingOpenings(slots, fromDate, upcomingOpeningsDays, tz, settings.availability)
+        setOpeningsAux({ settings, openings, failed: false })
+      } catch {
+        if (active) setOpeningsAux({ settings: null, openings: [], failed: true })
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [reloadAux, tick])
+
+  const refetch = useCallback(() => {
+    setTick((n) => n + 1)
+    reloadAux()
+  }, [reloadAux])
 
   const handleError = useCallback(
     (err: unknown, fallback: string) => {
@@ -160,12 +208,32 @@ export default function DashboardPage() {
     try {
       await updateOrder(id, { balance_paid: true })
       notify('已标记尾款收讫')
+      // 弹层保持打开时原地刷新明细，维持 v1「标记收讫 → 列表更新」行为
+      setReceivableOrders(null)
+      if (receivableSheetOpen) {
+        loadReceivableOrders()
+      }
       refetch()
     } catch (err) {
       handleError(err, '标记失败')
     } finally {
       setActionId(null)
     }
+  }
+
+  function loadReceivableOrders() {
+    listOrders({ unpaidBalance: true, pageSize: 100 })
+      .then((result) => setReceivableOrders(result.items))
+      .catch((err: unknown) => {
+        handleError(err, '待收明细加载失败')
+        setReceivableSheetOpen(false)
+      })
+  }
+
+  function openReceivableSheet() {
+    setReceivableSheetOpen(true)
+    setReceivableOrders(null)
+    loadReceivableOrders()
   }
 
   const presentation = pageReadPresentation(readState)
@@ -181,17 +249,37 @@ export default function DashboardPage() {
 
   if (!data) return null
 
+  const now = new Date()
+  const todayDate = formatDateOnly(now, timezone)
+  const focus = v2FocusModel(data.next_shoot, timezone, now)
+  const timeline = v2TimelineModel(
+    data.today_slots,
+    data.today_openings.working_window,
+    data.today_openings.openings,
+    timezone,
+    now,
+  )
+  const waterfall = v2WaterfallModel(data.revenue_waterfall)
+  const matrix = v2MatrixModel(data.channel_matrix)
+  const deliveryRows = v2DeliveryRows(
+    data.delivery_queue.items,
+    openingsAux.settings?.delivery_sla_days ?? 14,
+    timezone,
+    todayDate,
+  )
   const due = data.due_reminders
   const slots = data.today_slots
-  const unpaid = data.unpaid_orders
-  const churn = data.churn_alerts
-  const stats = data.recent_stats
+  const todayShootCount = slots.filter(
+    (slot) => slot.type === 'shoot' && slot.order_status !== 'cancelled',
+  ).length
+  const overdueCount = data.delivery_queue.items.filter((item) => item.overdue).length
+  const utilization = data.schedule_utilization
 
   return (
     <>
       <header className="topbar">
         <div>
-          <h1>{slots.length > 0 ? `今天有 ${slots.length} 个安排` : '今天暂无档期安排'}</h1>
+          <h1>{todayShootCount > 0 ? `今天有 ${todayShootCount} 场拍摄` : '今天暂无拍摄安排'}</h1>
           <div className="sub">
             {formatToday(timezone)} · {due.length} 条待办需处理
           </div>
@@ -208,123 +296,369 @@ export default function DashboardPage() {
 
       <main className="content">
         {presentation.notice && <StateNotice {...presentation.notice} />}
-        <div className="stat-grid">
-          <StatCard tone="danger" label="待办提醒" value={String(due.length)} delta="近 3 天 · 含逾期提醒" />
-          <StatCard tone="accent" label="今日档期" value={String(slots.length)} delta="拍摄 / 预留 / 占用集中查看" />
-          <StatCard tone="warning" label="待收尾款" value={String(unpaid.count)} delta={`${unpaid.count} 笔 · 已交付未结清`} />
-          <StatCard tone="success" label="近 30 天确认收入" value={formatPrice(stats.revenue_confirmed)} delta={`交付 ${stats.orders_delivered} · 新建 ${stats.orders_created}`} />
-        </div>
 
-        <div className="two-col section-gap">
+        <section className="dv2-focus-strip">
+          <FocusCard focus={focus} todaySlots={slots} />
           <section className="card">
             <h2 className="card-title">
-              待办提醒 · 近 3 天 <span className="count">· {due.length}</span>
-              <Link className="more" to="/reminders">
-                全部提醒 →
-              </Link>
-            </h2>
-            <div className="row-list">
-              {due.length === 0 ? (
-                <EmptyState icon={ClipboardCheck} title="待办已清空" hint="今天可以专心拍摄了" />
-              ) : (
-                due.map((reminder) => (
-                  <ReminderRow
-                    key={reminder.id}
-                    reminder={reminder}
-                    timezone={timezone}
-                    busy={actionId === reminder.id}
-                    onDone={() => void actReminder(reminder.id, 'done')}
-                    onDismiss={() => void actReminder(reminder.id, 'dismiss')}
-                  />
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="card">
-            <h2 className="card-title">
-              今日档期 <span className="count">· {slots.length}</span>
+              今日时间轴
+              <span className="count">
+                · {todayShootCount} 场拍摄，{data.today_openings.openings.length} 段空档
+              </span>
               <Link className="more" to="/calendar">
                 打开日历 →
               </Link>
             </h2>
-            <div className="row-list">
-              {slots.length === 0 ? (
-                <EmptyState icon={CalendarOff} title="今天没有档期" hint="去日历里挑一天开新单" />
-              ) : (
-                slots.map((slot) => <SlotRow key={slot.id} slot={slot} timezone={timezone} />)
+            <TimelineCard timeline={timeline} />
+            <div className="dv2-tl-legend">
+              <span><i className="dot" style={{ background: 'var(--slot-shoot)' }} />拍摄</span>
+              <span><i className="dot" style={{ background: 'var(--slot-hold)' }} />预留</span>
+              <span><i className="dot" style={{ background: 'var(--slot-busy)' }} />个人占用</span>
+              <span><i className="dot" style={{ background: 'var(--accent2)' }} />当前时间</span>
+            </div>
+          </section>
+        </section>
+
+        <section className="card section-gap">
+          <h2 className="card-title">
+            今日待办 · 近 3 天 <span className="count">· {due.length}</span>
+            <Link className="more" to="/reminders">
+              全部提醒 →
+            </Link>
+          </h2>
+          <div className="row-list">
+            {due.length === 0 ? (
+              <EmptyState icon={ClipboardCheck} title="待办已清空" hint="今天可以专心拍摄了" />
+            ) : (
+              due.map((reminder) => (
+                <ReminderRow
+                  key={reminder.id}
+                  reminder={reminder}
+                  today={todayDate}
+                  busy={actionId === reminder.id}
+                  onDone={() => void actReminder(reminder.id, 'done')}
+                  onDismiss={() => void actReminder(reminder.id, 'dismiss')}
+                />
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="card section-gap">
+          <h2 className="card-title">
+            后期交付
+            <span className="count">
+              · {data.delivery_queue.count} 单未交付
+              {openingsAux.settings
+                ? ` · 承诺拍摄后 ${openingsAux.settings.delivery_sla_days} 天交片`
+                : ''}
+              {overdueCount > 0 ? ` · ${overdueCount} 单已逾期` : ''}
+            </span>
+            <Link className="more" to="/orders?status=shot">
+              拍摄后订单 →
+            </Link>
+          </h2>
+          <div className="row-list">
+            {deliveryRows.length === 0 ? (
+              <EmptyState icon={Check} title="没有在手后期" hint="拍完的订单会按应交付日排在这里" />
+            ) : (
+              deliveryRows.map((row) => (
+                <DeliveryRow key={row.orderId} row={row} />
+              ))
+            )}
+          </div>
+        </section>
+
+        <div className="two-col section-gap">
+          <section className="card">
+            <h2 className="card-title">收入构成<span className="count">· 已确认 / 待收 / 在途</span></h2>
+            <div className="dv2-waterfall-head">
+              <div className="dv2-waterfall-total">
+                <span className="k">近 30 天已确认收入</span>
+                <span className="v">{formatYuan(waterfall.confirmedCents)}</span>
+              </div>
+              {waterfall.trendLabel && (
+                <span
+                  className={
+                    waterfall.trendUp === true
+                      ? 'dv2-trend dv2-trend-up'
+                      : waterfall.trendUp === false
+                        ? 'dv2-trend dv2-trend-down'
+                        : 'dv2-trend'
+                  }
+                >
+                  {waterfall.trendUp === false ? <TrendingDown aria-hidden="true" strokeWidth={2.2} /> : waterfall.trendUp === true ? <TrendingUp aria-hidden="true" strokeWidth={2.2} /> : null}
+                  {waterfall.trendLabel}
+                </span>
               )}
             </div>
+            <div className="dv2-wf-bar">
+              {waterfall.segments
+                .filter((segment) => segment.valueCents > 0)
+                .map((segment) => (
+                  <div
+                    key={segment.key}
+                    className={`dv2-wf-seg dv2-wf-${segment.key}`}
+                    style={{ width: `${segment.percent}%` }}
+                    title={`${segment.label} ${formatYuan(segment.valueCents)} · ${Math.round(segment.percent)}%`}
+                  >
+                    {segment.percent > 13 ? formatShortYuan(segment.valueCents) : ''}
+                  </div>
+                ))}
+            </div>
+            <div className="dv2-wf-legend">
+              {waterfall.segments.map((segment) => (
+                <button
+                  key={segment.key}
+                  type="button"
+                  className="dv2-wf-leg-row"
+                  onClick={segment.key === 'receivable' ? openReceivableSheet : undefined}
+                  title={segment.key === 'receivable' ? '查看待收明细' : segment.note}
+                >
+                  <span className={`swatch dv2-wf-${segment.key}`} />
+                  <span>
+                    <span className="k">{segment.label}</span>
+                    <span className="d"> · {segment.note}</span>
+                  </span>
+                  <span className="v">{formatYuan(segment.valueCents)}</span>
+                </button>
+              ))}
+            </div>
+            <div className="dv2-kpi-row">
+              {waterfall.kpis.map((kpi) => (
+                <div key={kpi.label} className="dv2-kpi">
+                  <div className="k">{kpi.label}</div>
+                  <div className="v">{kpi.value}</div>
+                  <div className="d">{kpi.note}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="card">
+            <h2 className="card-title">档期利用率<span className="count">· {utilization.month}</span></h2>
+            <div className="dv2-util-head">
+              <span className="dv2-util-rate">
+                {utilization.utilization == null ? '—' : formatPercent(utilization.utilization, 1)}
+              </span>
+              <span className="dv2-util-sub">
+                {utilization.shoot_count} 场拍摄 · {utilization.hold_days} 天仅预留 · {utilization.open_days} 天有空档 · {utilization.conflict_days} 天冲突
+              </span>
+            </div>
+            <OpeningsPanel
+              openings={openingsAux.openings}
+              failed={openingsAux.failed}
+              onCopy={(text) => setCopySheet({
+                sub: '发给客户 / 朋友圈',
+                text,
+              })}
+            />
           </section>
         </div>
 
-        <div className="two-col">
-          <section className="card">
-            <h2 className="card-title">
-              待收尾款订单 <span className="count">· {unpaid.count}</span>
-            </h2>
-            <div className="row-list">
-              {unpaid.items.length === 0 ? (
-                <EmptyState icon={Wallet} title="没有待收尾款" hint="账都收齐了" />
-              ) : (
-                unpaid.items.map((order) => (
-                  <UnpaidRow
-                    key={order.id}
-                    order={order}
-                    timezone={timezone}
-                    busy={actionId === order.id}
-                    onSettle={() => void settleOrder(order.id)}
-                  />
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="card">
-            <h2 className="card-title">
-              流失预警 <span className="count">· {churn.length}</span>
-            </h2>
-            <div className="row-list">
-              {churn.length === 0 ? (
-                <EmptyState icon={ShieldCheck} title="暂无流失预警" hint="老客户都还在联系中" />
-              ) : (
-                churn.map((reminder) => (
-                  <div className="row-item" key={reminder.id}>
-                    <div className="grow">
-                      <div className="title">{reminder.content}</div>
-                      <div className="meta">
-                        {reminder.customer_id ? (
-                          <Link to={`/customers/${reminder.customer_id}`}>查看档案</Link>
-                        ) : (
-                          '未关联客户'
-                        )}
-                      </div>
+        <section className="card">
+          <h2 className="card-title">渠道 × 类型 收入分布<span className="count">· 累计已结清</span></h2>
+          {matrix.rows.length === 0 ? (
+            <EmptyState icon={Wallet} title="暂无已结清收入" hint="订单结清后按下单时归因展示" />
+          ) : (
+            <>
+              <div>
+                {matrix.rows.map((row) => (
+                  <div key={row.channelLabel} className="dv2-mx-row">
+                    <div className="dv2-mx-label">
+                      {row.channelLabel}
+                      <small>{row.customerCount} 位 · {row.orderCount} 单</small>
+                    </div>
+                    <div className="dv2-mx-track">
+                      {row.segments
+                        .filter((segment) => segment.cents > 0)
+                        .map((segment) => (
+                          <span
+                            key={segment.type}
+                            className={`dv2-mx-seg dv2-mx-${segment.type}`}
+                            style={{ width: `${segment.percent}%` }}
+                            title={`${segment.label} ${formatYuan(segment.cents)}`}
+                          >
+                            {segment.percent > 22 ? formatShortYuan(segment.cents) : ''}
+                          </span>
+                        ))}
+                    </div>
+                    <div className="dv2-mx-total">
+                      {formatShortYuan(row.totalCents)}
+                      <small>{row.totalPercent}%</small>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </section>
-        </div>
+                ))}
+              </div>
+              <div className="dv2-insight">{matrix.insight}</div>
+            </>
+          )}
+        </section>
       </main>
+
+      {receivableSheetOpen && (
+        <ReceivableSheet
+          orders={receivableOrders}
+          count={data.revenue_waterfall.receivable.count}
+          totalCents={data.revenue_waterfall.receivable.total}
+          timezone={timezone}
+          today={todayDate}
+          busyId={actionId}
+          onSettle={(id) => { void settleOrder(id) }}
+          onClose={() => {
+            setReceivableSheetOpen(false)
+            setReceivableOrders(null)
+          }}
+        />
+      )}
+
+      {copySheet && (
+        <CopyTextSheet
+          title="可约时间文案"
+          sub={copySheet.sub}
+          text={copySheet.text}
+          onClose={() => setCopySheet(null)}
+        />
+      )}
     </>
   )
 }
 
+/* ================= L1 · 焦点卡 ================= */
+
+function FocusCard({
+  focus,
+  todaySlots,
+}: {
+  focus: ReturnType<typeof v2FocusModel>
+  todaySlots: ScheduleSlotListItem[]
+}) {
+  if (focus.state === 'none') {
+    const rest = todaySlots.filter((slot) => slot.type !== 'shoot')
+    return (
+      <article className="dv2-focus-next">
+        <div className="dv2-focus-empty">
+          <div className="t">{todaySlots.length > 0 ? '今天没有拍摄安排' : '近期没有排拍摄'}</div>
+          <div className="h">
+            {rest.length > 0
+              ? `今天还有 ${rest.length} 项非拍摄安排（预留 / 占用）`
+              : '去日历里挑一天开新单，或把意向客户约起来'}
+          </div>
+          <Link className="btn btn-sm" to="/calendar">打开日历</Link>
+        </div>
+      </article>
+    )
+  }
+  const customerHref = focus.slot && focus.slot.type === 'shoot' && focus.slot.customer_id
+    ? `/customers/${focus.slot.customer_id}`
+    : null
+  const orderHref = focus.slot && focus.slot.type === 'shoot' && focus.slot.customer_id
+    ? `/customers/${focus.slot.customer_id}?tab=orders&order=${focus.slot.order_id}`
+    : null
+  return (
+    <article className="dv2-focus-next">
+      <div className="dv2-focus-eyebrow">
+        {focus.state === 'today' ? '下一场拍摄' : '下一场拍摄（未来）'}
+        {focus.countdownLabel && <span className="dv2-focus-countdown">{focus.countdownLabel}</span>}
+      </div>
+      <div className="dv2-focus-when">
+        {focus.state === 'today' ? (
+          <>
+            <span className="dv2-focus-time">{focus.startLabel}</span>
+            <span className="dv2-focus-dur">
+              — {focus.endLabel} · {Math.floor(focus.durationMinutes / 60)}h
+              {focus.durationMinutes % 60 ? `${focus.durationMinutes % 60}m` : ''}
+            </span>
+          </>
+        ) : (
+          <span className="dv2-focus-time">{focus.whenLabel}</span>
+        )}
+      </div>
+      <div className="dv2-focus-who">
+        <div className="grow">
+          <div className="name">{focus.customerName ?? focus.title ?? '档期安排'}</div>
+          {focus.note && <div className="sub">{focus.note}</div>}
+        </div>
+      </div>
+      <div className="dv2-focus-actions">
+        {customerHref && <Link className="btn btn-sm" to={customerHref}>客户档案</Link>}
+        {orderHref && <Link className="btn btn-sm btn-ghost" to={orderHref}>订单详情</Link>}
+      </div>
+    </article>
+  )
+}
+
+/* ================= L1 · 时间轴 ================= */
+
+function TimelineCard({ timeline }: { timeline: ReturnType<typeof v2TimelineModel> }) {
+  const { dayStart, dayEnd, items, openings, nowMin } = timeline
+  const span = Math.max(dayEnd - dayStart, 60)
+  const height = Math.round((span / 60) * 22)
+  const y = (minutes: number) => ((minutes - dayStart) / span) * height
+
+  const rules: number[] = []
+  for (let m = Math.ceil(dayStart / 120) * 120; m <= dayEnd; m += 120) rules.push(m)
+
+  return (
+    <div className="dv2-timeline" style={{ height: `${height}px` }} role="img" aria-label="今日时间轴">
+      {rules.map((m) => (
+        <div key={m} className="dv2-tl-rule" style={{ top: `${y(m)}px` }} />
+      ))}
+      {rules.map((m) => (
+        <div key={m} className="dv2-tl-hour" style={{ top: `${y(m)}px` }}>{minutesToHHMM(m)}</div>
+      ))}
+      {openings.map((opening, index) => {
+        const start = minutesOfHHMM(opening.start)
+        const end = minutesOfHHMM(opening.end)
+        const top = y(start)
+        return (
+          <div
+            key={`${opening.start}-${index}`}
+            className="dv2-tl-gap"
+            style={{ top: `${top}px`, height: `${Math.max(22, y(end) - top - 3)}px` }}
+          >
+            空档 {opening.start}–{opening.end}
+          </div>
+        )
+      })}
+      {items.map((item) => {
+        const top = y(item.startMin)
+        return (
+          <div
+            key={item.id}
+            className={`dv2-tl-item dv2-tl-${item.kind}`}
+            style={{ top: `${top}px`, height: `${Math.max(26, y(item.endMin) - top - 3)}px` }}
+            title={`${item.title}${item.statusLabel ? ` · ${item.statusLabel}` : ''}`}
+          >
+            <span className="t">{item.title}</span>
+            <span className="m">{minutesToHHMM(item.startMin)}–{minutesToHHMM(item.endMin)}</span>
+          </div>
+        )
+      })}
+      {nowMin != null && (
+        <div className="dv2-tl-now" style={{ top: `${y(nowMin)}px` }}>
+          <span className="dv2-tl-now-label">现在 {minutesToHHMM(nowMin)}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ================= L1 · 待办 ================= */
+
 function ReminderRow({
   reminder,
-  timezone,
+  today,
   busy,
   onDone,
   onDismiss,
 }: {
-  reminder: DashboardReminder
-  timezone: string | null
+  reminder: DashboardV2Reminder
+  today: string
   busy: boolean
   onDone: () => void
   onDismiss: () => void
 }) {
-  const today = formatDateOnly(new Date(), timezone)
   const overdue = reminder.due_date < today
   const detailLink = reminder.plan_id
     ? `/shoot-plans/${reminder.plan_id}?tab=readiness`
@@ -342,6 +676,7 @@ function ReminderRow({
           ) : (
             '未关联客户'
           )}
+          {reminder.customer_summary && ` · ${channelLabels[reminder.customer_summary.channel]}来源`}
           {' · '}
           <span className="num">{reminder.due_date.slice(5).replace('-', '/')}</span>
           {overdue && <span className="danger-text"> · 已逾期</span>}
@@ -359,95 +694,164 @@ function ReminderRow({
   )
 }
 
-function SlotRow({ slot, timezone }: { slot: DashboardSlot; timezone: string | null }) {
-  const to =
-    slot.type === 'shoot' && slot.customer_id
-      ? `/customers/${slot.customer_id}?tab=orders&order=${slot.order_id}`
-      : '/calendar'
-  return (
-    <Link className="row-item row-item-link" to={to}>
-      <span className={`dot slot-${slot.type}`} />
-      <div className="grow">
-        <div className="title">{slotTitle(slot)}</div>
-        <div className="meta">
-          {slot.type === 'shoot' ? orderStatusLabel[slot.order_status] ?? slot.order_status : '档期'}
-        </div>
-      </div>
-      <span className="num muted-text">
-        {formatSlotTime(slot.start_at, timezone)}–{formatSlotTime(slot.end_at, timezone)}
-      </span>
-    </Link>
-  )
-}
+/* ================= L1.5 · 交付队列 ================= */
 
-function UnpaidRow({
-  order,
-  timezone,
-  busy,
-  onSettle,
-}: {
-  order: DashboardUnpaidOrder
-  timezone: string | null
-  busy: boolean
-  onSettle: () => void
-}) {
+function DeliveryRow({ row }: { row: ReturnType<typeof v2DeliveryRows>[number] }) {
+  const orderHref = row.customerId
+    ? `/customers/${row.customerId}?tab=orders&order=${row.orderId}`
+    : null
   return (
-    <div className="row-item">
+    <div className="dv2-dl-row">
       <div className="grow">
-        <div className="title">{order.title ?? order.customer_display_name}</div>
-        <div className="meta">
-          {order.customer_id ? (
-            <Link to={`/customers/${order.customer_id}?tab=orders&order=${order.id}`}>
-              {order.customer_display_name}
-            </Link>
+        <div className="dv2-dl-title">
+          {orderHref ? <Link to={orderHref}>{row.title}</Link> : row.title}
+          <span className={`badge ${row.overdue ? 'badge-danger' : 'badge-muted'}`}>{row.stageLabel}</span>
+        </div>
+        <div className="dv2-dl-meta">
+          {row.customerName}
+          {row.daysSinceShot != null && <> · 拍摄已过 <b className="num">{row.daysSinceShot}</b> 天</>}
+          {' · '}
+          {row.overdue ? (
+            <span className="dv2-dl-overdue">{row.dueLabel}</span>
           ) : (
-            order.customer_display_name
+            <>
+              {row.dueLabel}
+              {row.dueDate && `（应 ${row.dueDate.slice(5).replace('-', '/')} 交付）`}
+            </>
           )}
-          {order.delivered_at && ` · 已交付 ${formatDateOnly(new Date(order.delivered_at), timezone).slice(5)}`}
         </div>
       </div>
-      <span className="num muted-text">报价 {formatPrice(order.price)}</span>
-      <button className="btn btn-sm" type="button" disabled={busy} onClick={onSettle}>
-        标记收讫
-      </button>
+      {row.progressPct != null && (
+        <div className="dv2-gauge">
+          <div className="dv2-gauge-track">
+            <div
+              className="dv2-gauge-fill"
+              style={{
+                width: `${row.progressPct}%`,
+                background: row.overdue
+                  ? 'var(--danger)'
+                  : row.progressPct > 70
+                    ? 'var(--warning)'
+                    : 'var(--accent)',
+              }}
+            />
+          </div>
+          <div className="dv2-gauge-label">周期 {row.progressPct}%</div>
+        </div>
+      )}
     </div>
   )
 }
 
-function formatDateOnly(date: Date, timezone: string | null): string {
-  const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: '2-digit', day: '2-digit' }
-  if (timezone) options.timeZone = timezone
-  try {
-    // en-CA 产出 YYYY-MM-DD，便于与后端 due_date 字符串比较
-    return new Intl.DateTimeFormat('en-CA', options).format(date)
-  } catch {
-    return new Intl.DateTimeFormat('en-CA', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(date)
+/* ================= L2 · 空档速览 ================= */
+
+function OpeningsPanel({
+  openings,
+  failed,
+  onCopy,
+}: {
+  openings: Opening[]
+  failed: boolean
+  onCopy(text: string): void
+}) {
+  if (failed) {
+    return <div className="dv2-open-summary">未来空档暂不可用，可稍后在日历页查看。</div>
   }
+  const days = groupOpeningsByDate(openings, upcomingOpeningsDays)
+  if (days.length === 0) {
+    return <div className="dv2-open-summary">未来 {upcomingOpeningsDays} 天暂无可约空档，新客建议约更晚档期。</div>
+  }
+  const chips = days.slice(0, 4).map((day) => ({
+    key: day.date,
+    label: `${day.date.slice(5).replace('-', '/')} · ${day.openings.map((opening) => `${opening.start}–${opening.end}`).join('、')}`,
+  }))
+  return (
+    <div className="dv2-util-openings">
+      <div className="dv2-open-summary">
+        未来 {upcomingOpeningsDays} 天 <b>{days.length}</b> 天有可约空档 · 最近 <b>{days[0].date.slice(5).replace('-', '/')}</b>
+      </div>
+      <div className="dv2-open-chips">
+        {chips.map((chip) => (
+          <span key={chip.key} className="dv2-open-chip">{chip.label}</span>
+        ))}
+        <button className="btn btn-sm" type="button" onClick={() => onCopy(openingsText(openings, 5))}>
+          复制可约时间
+        </button>
+      </div>
+    </div>
+  )
 }
 
-function StatCard({
-  tone,
-  label,
-  value,
-  delta,
+/* ================= 待收明细弹层 ================= */
+
+function ReceivableSheet({
+  orders,
+  count,
+  totalCents,
+  timezone,
+  today,
+  busyId,
+  onSettle,
+  onClose,
 }: {
-  tone: 'accent' | 'success' | 'warning' | 'danger'
-  label: string
-  value: string
-  delta: string
+  orders: OrderListItem[] | null
+  count: number
+  totalCents: number
+  timezone: string | null
+  today: string
+  busyId: string | null
+  onSettle(id: string): void
+  onClose(): void
 }) {
+  const dialogRef = useFocusTrap<HTMLElement>(true, onClose, true)
   return (
-    <div className={`stat stat-${tone}`}>
-      <div className="label">
-        <span className={`dot tone-${tone}`} />
-        {label}
-      </div>
-      <div className="value">{value}</div>
-      <div className="delta">{delta}</div>
+    <div className="overlay open" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section ref={dialogRef} className="dialog" role="dialog" aria-modal="true" aria-labelledby="dv2ReceivableTitle" tabIndex={-1} autoFocus>
+        <h2 id="dv2ReceivableTitle">待收尾款明细</h2>
+        <p className="dialog-sub">
+          {count} 笔已交付未结清 · 合计 {formatYuan(totalCents)}（按 outstanding_amount，非报价推算）
+        </p>
+        {orders == null ? (
+          <StateNotice kind="loading" message="正在加载待收明细" />
+        ) : (
+          <div className="dv2-sheet-list">
+            {orders.map((order) => {
+              const delivered = order.delivered_at ? localDateOfInstant(order.delivered_at, timezone) : null
+              const ageDays = delivered
+                ? Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(`${delivered}T12:00:00Z`)) / 86400000)
+                : null
+              return (
+                <div key={order.id} className="dv2-sheet-item">
+                  <div className="grow">
+                    <div className="t">{order.title ?? order.package_name ?? '未命名订单'}</div>
+                    <div className="m">
+                      {order.customer_display_name}
+                      {delivered && ` · 交付 ${delivered.slice(5).replace('-', '/')}`}
+                      {ageDays != null && ageDays > 0 && ` · 已过 ${ageDays} 天`}
+                    </div>
+                  </div>
+                  <span className="v">
+                    {order.outstanding_amount == null ? '—' : formatYuan(order.outstanding_amount)}
+                  </span>
+                  <button
+                    className="btn btn-sm"
+                    type="button"
+                    disabled={busyId === order.id}
+                    onClick={() => onSettle(order.id)}
+                  >
+                    标记收讫
+                  </button>
+                </div>
+              )
+            })}
+            {orders.length === 0 && <div className="m">没有待收明细。</div>}
+            {orders.length >= 100 && <div className="m">仅显示前 100 笔，完整列表见订单页「未收尾款」筛选。</div>}
+          </div>
+        )}
+        <div className="dialog-actions">
+          <button className="btn" type="button" onClick={onClose}>关闭</button>
+        </div>
+      </section>
     </div>
   )
 }

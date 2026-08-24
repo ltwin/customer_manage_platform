@@ -12,12 +12,18 @@ import {
   businessRuleOverridesFromDraft,
   validateBusinessRuleDraft,
 } from '../src/account/settings/businessRulesDraft.ts'
+import { buildRemindersBody } from '../src/account/settings/bodyBuilders.ts'
+import {
+  initialSettingsControllerState,
+  settingsControllerReducer,
+} from '../src/account/settings/settingsControllerKernel.ts'
 
 const settingsFixture: Settings = {
   timezone: 'Asia/Shanghai',
   birthday_lead_days: 4,
   follow_up_after_days: 8,
   digest_hour: 10,
+  delivery_sla_days: 14,
   churn_thresholds: [
     { shoot_type: 'portrait', days: 120 },
     { shoot_type: 'cosplay', days: 150 },
@@ -185,3 +191,42 @@ test('availability serializer replaces only availability in the current writable
 
 // D11（account-center-hardening）：旧 SettingsPage 整表 freeze / settingsSaveInFlightRef
 // 断言已删除；由 test:account-center 的 A6/A11 fieldset disabled 与 A5c settingsSaveQueue 承接。
+
+test('reminders draft carries delivery SLA days through hydrate, edit and patch body', () => {
+  const snapshot = settingsFixture
+  let state = settingsControllerReducer(initialSettingsControllerState(), { type: 'LOAD_START' })
+  state = settingsControllerReducer(state, {
+    type: 'LOAD_SUCCESS',
+    seq: 1,
+    snapshot,
+  })
+  assert.equal(state.reminders.draft.deliverySlaDays, 14)
+
+  state = settingsControllerReducer(state, {
+    type: 'EDIT_REMINDERS',
+    patch: { deliverySlaDays: 21 },
+  })
+  assert.equal(state.reminders.draft.deliverySlaDays, 21)
+  assert.equal(state.reminders.draft.birthdayLeadDays, 4)
+
+  const body = buildRemindersBody(snapshot, state.reminders.draft)
+  assert.equal(body.delivery_sla_days, 21)
+  assert.equal(body.birthday_lead_days, 4)
+  assert.equal(body.follow_up_after_days, 8)
+})
+
+test('reminders body keeps snapshot SLA when draft untouched by other fields', () => {
+  let state = settingsControllerReducer(initialSettingsControllerState(), { type: 'LOAD_START' })
+  state = settingsControllerReducer(state, {
+    type: 'LOAD_SUCCESS',
+    seq: 1,
+    snapshot: settingsFixture,
+  })
+  const edited = settingsControllerReducer(state, {
+    type: 'EDIT_REMINDERS',
+    patch: { birthdayLeadDays: 9 },
+  })
+  const body = buildRemindersBody(settingsFixture, edited.reminders.draft)
+  assert.equal(body.delivery_sla_days, 14)
+  assert.equal(body.birthday_lead_days, 9)
+})

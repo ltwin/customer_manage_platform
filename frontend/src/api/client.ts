@@ -486,7 +486,22 @@ export function fetchDashboard(): Promise<Dashboard> {
   return request<Dashboard>('/dashboard')
 }
 
+export type DashboardV2 =
+  paths['/dashboard/v2']['get']['responses']['200']['content']['application/json']
+export type DashboardV2DeliveryItem = DashboardV2['delivery_queue']['items'][number]
+export type DashboardV2Opening = DashboardV2['today_openings']['openings'][number]
+export type DashboardV2WorkingWindow = NonNullable<
+  DashboardV2['today_openings']['working_window']
+>
+export type DashboardV2Reminder = DashboardV2['due_reminders'][number]
+export type DashboardV2Waterfall = DashboardV2['revenue_waterfall']
+
+export function fetchDashboardV2(): Promise<DashboardV2> {
+  return request<DashboardV2>('/dashboard/v2')
+}
+
 export type Reminder = components['schemas']['Reminder']
+export type CustomerChannel = components['schemas']['CustomerChannel']
 export type ReminderStatus = components['schemas']['ReminderStatus']
 export type ReminderType = components['schemas']['ReminderType']
 export type Settings = components['schemas']['Settings']

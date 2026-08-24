@@ -9,9 +9,10 @@ export type GeneralDraft = {
 }
 
 export type RemindersDraft = {
-	birthdayLeadDays: number
-	followUpAfterDays: number
-	churnThresholds: ChurnThreshold[]
+  birthdayLeadDays: number
+  followUpAfterDays: number
+  churnThresholds: ChurnThreshold[]
+  deliverySlaDays: number
 }
 
 export type TelegramDraft = {
@@ -49,11 +50,12 @@ export function buildAvailabilityBody(
 }
 
 export function buildRemindersBody(snapshot: Settings, draft: RemindersDraft): UpdateSettingsBody {
-	return {
-		birthday_lead_days: draft.birthdayLeadDays,
-		follow_up_after_days: draft.followUpAfterDays,
-		churn_thresholds: completeChurnThresholds(snapshot, draft.churnThresholds),
-	}
+  return {
+    birthday_lead_days: draft.birthdayLeadDays,
+    follow_up_after_days: draft.followUpAfterDays,
+    churn_thresholds: completeChurnThresholds(snapshot, draft.churnThresholds),
+    delivery_sla_days: draft.deliverySlaDays,
+  }
 }
 
 export function buildTelegramBody(_snapshot: Settings, draft: TelegramDraft): UpdateSettingsBody {

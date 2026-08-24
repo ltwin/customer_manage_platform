@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { ApiError, fetchMe } from '../api/client'
 import { AccountCenterProvider } from '../account/AccountCenterContext.tsx'
 import AccountMenu from '../account/AccountMenu.tsx'
-import { PrototypeProvider } from '../crm/PrototypeStore'
 import type { ShellContext } from './shellContext'
 import StateNotice from './StateNotice'
 import {
@@ -100,7 +99,6 @@ export default function AppShell() {
 
   return (
     <AccountCenterProvider theme={theme} setTheme={setTheme} notify={notify}>
-    <PrototypeProvider>
       <div className="app-shell">
         <aside className="sidebar">
           <NavLink className="brand" to="/dashboard">
@@ -146,7 +144,6 @@ export default function AppShell() {
       <div id="toast" className={toast ? 'show' : ''} role="status" aria-live="polite">
         {toast}
       </div>
-    </PrototypeProvider>
     </AccountCenterProvider>
   )
 }

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BanknoteArrowUp,
   Check,
+  Coins,
   MoreHorizontal,
   Plus,
   Trash2,
@@ -62,6 +63,13 @@ import CustomerAvatar from '../customers/CustomerAvatar'
 import CustomerPicker from '../customers/CustomerPicker'
 import StateNotice from '../StateNotice'
 import {
+  buildPaymentPatch,
+  hydratePaymentDraft,
+  validatePaymentDraft,
+  yuanInputToCents,
+  type PaymentDraft,
+} from './paymentDraft'
+import {
   beginPageRead,
   completePageRead,
   failPageRead,
@@ -87,6 +95,7 @@ interface OrderDraft {
   packageId: string
   title: string
   priceYuan: string
+  amountPaidYuan: string
   backfill: boolean
   status: OrderStatusValue
   shotDate: string
@@ -179,6 +188,7 @@ export default function OrderWorkspace({
   const [packages, setPackages] = useState<PackageOption[]>([])
   const [actionId, setActionId] = useState<string | null>(null)
   const [progressTarget, setProgressTarget] = useState<ProgressTarget | null>(null)
+  const [paymentTarget, setPaymentTarget] = useState<{ order: OrderListItem; draft: PaymentDraft; error: string | null } | null>(null)
   const [cancelTarget, setCancelTarget] = useState<OrderListItem | null>(null)
   const [cancelNote, setCancelNote] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<OrderListItem | null>(null)
@@ -543,15 +553,36 @@ export default function OrderWorkspace({
 	function confirmProgress() {
 		if (!progressTarget) return
 		if (!timezone || !isValidAccountDate(progressTarget.date, timezone)) {
-      setActionError('请选择有效日期')
-      return
-    }
-    const body: UpdateOrderBody = { status: progressTarget.status }
+			setActionError('请选择有效日期')
+			return
+		}
+		const body: UpdateOrderBody = { status: progressTarget.status }
 		if (progressTarget.status === 'shot') body.shot_at = accountDateAtNoonToInstant(progressTarget.date, timezone)
 		if (progressTarget.status === 'delivered') body.delivered_at = accountDateAtNoonToInstant(progressTarget.date, timezone)
     void applyUpdate(progressTarget.order, body, `订单已推进到${statusLabels[progressTarget.status]}`)
     setProgressTarget(null)
   }
+
+	function openPayment(order: OrderListItem) {
+		setPaymentTarget({ order, draft: hydratePaymentDraft(order, timezone), error: null })
+	}
+
+	function confirmPayment() {
+		if (!paymentTarget) return
+		const validation = validatePaymentDraft(paymentTarget.draft, paymentTarget.order)
+		if (validation) {
+			setPaymentTarget({ ...paymentTarget, error: validation })
+			return
+		}
+		const patch = buildPaymentPatch(paymentTarget.draft, paymentTarget.order, timezone)
+		if (Object.keys(patch).length === 0) {
+			setPaymentTarget({ ...paymentTarget, error: '没有需要保存的修改' })
+			return
+		}
+		const order = paymentTarget.order
+		setPaymentTarget(null)
+		void applyUpdate(order, patch, '收款与应交日已更新')
+	}
 
   function confirmCancel() {
     if (!cancelTarget) return
@@ -701,6 +732,7 @@ export default function OrderWorkspace({
                 fixedCustomer={Boolean(fixedCustomerId)}
                 busy={actionId === order.id}
                 onProgress={requestProgress}
+                onPayment={openPayment}
                 onCancel={(target) => {
                   setCancelTarget(target)
                   setCancelNote(target.note ?? '')
@@ -772,6 +804,79 @@ export default function OrderWorkspace({
         </div>
       )}
 
+      {paymentTarget && (
+        <div className="overlay open" onClick={(event) => { if (event.target === event.currentTarget) setPaymentTarget(null) }}>
+          <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="paymentOrderTitle">
+            <h2 id="paymentOrderTitle">收款与应交日</h2>
+            <p className="dialog-sub">
+              {orderTitle(paymentTarget.order)}
+              {paymentTarget.order.price != null && ` · 报价 ${formatPrice(paymentTarget.order.price)}`}
+            </p>
+            {paymentTarget.error && <div className="form-error" role="alert">{paymentTarget.error}</div>}
+            <div className="field">
+              <label htmlFor="paymentAmount">已收金额（元）</label>
+              <input
+                id="paymentAmount"
+                className="input"
+                inputMode="decimal"
+                placeholder="0"
+                value={paymentTarget.draft.amountPaidYuan}
+                onChange={(event) => setPaymentTarget({
+                  ...paymentTarget,
+                  draft: { ...paymentTarget.draft, amountPaidYuan: event.target.value },
+                  error: null,
+                })}
+                autoFocus
+              />
+              <div className="hint">
+                {paymentTarget.order.outstanding_amount == null
+                  ? '订单未定价，outstanding 不计入待收合计'
+                  : `当前待收 ${formatPrice(paymentTarget.order.outstanding_amount)}，保存后按 DEC-10 推定联动`}
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="paymentPaidAt">收款日期</label>
+              <input
+                id="paymentPaidAt"
+                className="input"
+                type="date"
+                value={paymentTarget.draft.paidDate}
+                onChange={(event) => setPaymentTarget({
+                  ...paymentTarget,
+                  draft: { ...paymentTarget.draft, paidDate: event.target.value },
+                  error: null,
+                })}
+              />
+              <div className="hint">留空表示不修改；已收现金 30 天按此日期落窗统计</div>
+            </div>
+            <div className="field">
+              <label htmlFor="paymentDue">应交付日（仅已拍摄且未取消的订单可改）</label>
+              <input
+                id="paymentDue"
+                className="input"
+                type="date"
+                value={paymentTarget.draft.dueDate}
+                disabled={dueDateLocked(paymentTarget.order)}
+                onChange={(event) => setPaymentTarget({
+                  ...paymentTarget,
+                  draft: { ...paymentTarget.draft, dueDate: event.target.value },
+                  error: null,
+                })}
+              />
+              <div className="hint">
+                {paymentTarget.draft.dueIsOverride
+                  ? '该应交日是订单级覆盖；清空保存即撤销覆盖，按当前拍摄日与账号 SLA 重新派生'
+                  : `缺省按账号 SLA 自动派生；显式填写即成为订单级覆盖${dueDateLocked(paymentTarget.order) ? '（当前订单未到达拍摄，暂不可改）' : ''}`}
+              </div>
+            </div>
+            <div className="dialog-actions">
+              <button className="btn" type="button" onClick={() => setPaymentTarget(null)}>取消</button>
+              <button className="btn btn-primary" type="button" onClick={confirmPayment}>保存</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {cancelTarget && (
         <div className="overlay open" onClick={(event) => { if (event.target === event.currentTarget) setCancelTarget(null) }}>
           <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="cancelOrderTitle">
@@ -828,6 +933,7 @@ function OrderRow({
   fixedCustomer,
   busy,
   onProgress,
+  onPayment,
   onCancel,
   onDelete,
   onUpdate,
@@ -837,6 +943,7 @@ function OrderRow({
   fixedCustomer: boolean
   busy: boolean
   onProgress(order: OrderListItem, next: OrderStatusValue): void
+  onPayment(order: OrderListItem): void
   onCancel(order: OrderListItem): void
   onDelete(order: OrderListItem): void
   onUpdate(order: OrderListItem, body: UpdateOrderBody, message: string): void
@@ -892,6 +999,9 @@ function OrderRow({
   if (!terminal && !order.balance_paid) {
     overflow.push({ key: 'balance', label: '标记尾款', icon: BanknoteArrowUp, run: () => onUpdate(order, { balance_paid: true }, '已标记尾款') })
   }
+  if (!terminal) {
+    overflow.push({ key: 'payment', label: '收款 / 应交日', icon: Coins, run: () => onPayment(order) })
+  }
   if (canSkipDelivered) {
     overflow.push({ key: 'deliver', label: '直接交付', icon: TruckIcon, run: () => onProgress(order, 'delivered') })
   }
@@ -927,7 +1037,10 @@ function OrderRow({
         <div className="payment-flags">
           {order.deposit_paid && <span className="badge badge-success">定金已收</span>}
           {order.balance_paid && <span className="badge badge-success">尾款已收</span>}
-          {!terminal && !order.deposit_paid && !order.balance_paid && (
+          {order.amount_paid > 0 && !order.balance_paid && (
+            <span className="badge badge-muted">已收 {formatPrice(order.amount_paid)}</span>
+          )}
+          {!terminal && !order.deposit_paid && !order.balance_paid && order.amount_paid === 0 && (
             <span className="badge badge-warning">未收款</span>
           )}
         </div>
@@ -1093,6 +1206,20 @@ function OrderDialog({
               placeholder="680"
             />
           </div>
+          <div className="field">
+            <label htmlFor="orderAmountPaid">已收金额（元）</label>
+            <input
+              id="orderAmountPaid"
+              className="input"
+              value={draft.amountPaidYuan}
+              inputMode="decimal"
+              onChange={(event) => onDraft({ ...draft, amountPaidYuan: event.target.value })}
+              placeholder="0"
+            />
+            <div className="hint">
+              {draft.backfill ? '补录历史收款金额；不写收款时间，需精确日期可在保存后用「收款 / 应交日」补录' : '建单时录入即视为当下收款；待收余额按 DEC-10 推定'}
+            </div>
+          </div>
         </div>
 
         <div className="field">
@@ -1165,6 +1292,7 @@ function defaultDraft(customerId: string): OrderDraft {
     packageId: '',
     title: '',
     priceYuan: '',
+    amountPaidYuan: '',
     backfill: false,
     status: 'consulting',
     shotDate: '',
@@ -1180,6 +1308,10 @@ function validateDraft(draft: OrderDraft, fixedCustomer: boolean): string | null
   if (draft.priceYuan.trim()) {
     const priceError = validatePackagePriceYuan(draft.priceYuan)
     if (priceError) return priceError.replace('基础价', '价格')
+  }
+  if (draft.amountPaidYuan.trim()) {
+    const paidCents = yuanInputToCents(draft.amountPaidYuan)
+    if (paidCents == null) return '已收金额须为非负数字，最多两位小数'
   }
   if (draft.backfill && draft.status !== 'cancelled') {
     if (reached(draft.status, 'shot') && !draft.shotDate) return '该状态需要拍摄日期'
@@ -1231,6 +1363,7 @@ function applyCreateBodyToDraft(draft: OrderDraft, body: CreateOrderBody, timezo
   draft.packageId = body.package_id ?? ''
   draft.title = body.title ?? ''
   draft.priceYuan = body.price == null ? '' : String(body.price / 100)
+  draft.amountPaidYuan = body.amount_paid == null ? '' : String(body.amount_paid / 100)
   draft.backfill = body.creation_mode === 'backfill'
   draft.status = (body.status ?? 'consulting') as OrderStatusValue
   draft.depositPaid = body.deposit_paid ?? false
@@ -1248,6 +1381,15 @@ function toCreateBody(draft: OrderDraft, timezone: string | null): CreateOrderBo
   if (draft.packageId) body.package_id = draft.packageId
   if (draft.title.trim()) body.title = draft.title.trim()
   if (draft.priceYuan.trim()) body.price = packagePriceYuanToCents(draft.priceYuan)
+  const paidCents = yuanInputToCents(draft.amountPaidYuan)
+  if (paidCents != null && paidCents > 0) {
+    body.amount_paid = paidCents
+    // 「录入即当下收款」只适用于正常建单：补录的是历史订单，paid_at=now 会把历史收款
+    // 虚增进近 30 天已收现金窗口（§4.2 创建不自动写，补录不带 paid_at 完全合法）。
+    if (!draft.backfill) {
+      body.paid_at = new Date().toISOString()
+    }
+  }
   if (draft.depositPaid) body.deposit_paid = true
   if (draft.balancePaid) body.balance_paid = true
   if (draft.note.trim()) body.note = draft.note.trim()
@@ -1269,6 +1411,11 @@ function nextStatus(order: OrderListItem): OrderStatusValue | null {
   const index = statusOrder.indexOf(order.status)
   if (index < 0 || index >= statusOrder.indexOf('closed')) return null
   return statusOrder[index + 1]
+}
+
+/** 契约 §4.2：delivery_due_at 仅已到达拍摄且未取消的订单接受显式写。 */
+function dueDateLocked(order: OrderListItem): boolean {
+  return order.status === 'cancelled' || !reached(order.status, 'shot')
 }
 
 function reached(status: OrderStatusValue, target: OrderStatusValue): boolean {
