@@ -241,7 +241,7 @@ export default function DashboardPage() {
 
   if (!presentation.showReadyData) {
     return (
-      <main className="content">
+      <main className="content content-wide">
         {presentation.notice && <StateNotice {...presentation.notice} />}
       </main>
     )
@@ -294,7 +294,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <main className="content">
+      <main className="content content-wide">
         {presentation.notice && <StateNotice {...presentation.notice} />}
 
         <section className="dv2-focus-strip">
@@ -319,55 +319,57 @@ export default function DashboardPage() {
           </section>
         </section>
 
-        <section className="card section-gap">
-          <h2 className="card-title">
-            今日待办 · 近 3 天 <span className="count">· {due.length}</span>
-            <Link className="more" to="/reminders">
-              全部提醒 →
-            </Link>
-          </h2>
-          <div className="row-list">
-            {due.length === 0 ? (
-              <EmptyState icon={ClipboardCheck} title="待办已清空" hint="今天可以专心拍摄了" />
-            ) : (
-              due.map((reminder) => (
-                <ReminderRow
-                  key={reminder.id}
-                  reminder={reminder}
-                  today={todayDate}
-                  busy={actionId === reminder.id}
-                  onDone={() => void actReminder(reminder.id, 'done')}
-                  onDismiss={() => void actReminder(reminder.id, 'dismiss')}
-                />
-              ))
-            )}
-          </div>
-        </section>
+        <div className="two-col section-gap">
+          <section className="card">
+            <h2 className="card-title">
+              今日待办 · 近 3 天 <span className="count">· {due.length}</span>
+              <Link className="more" to="/reminders">
+                全部提醒 →
+              </Link>
+            </h2>
+            <div className="row-list">
+              {due.length === 0 ? (
+                <EmptyState icon={ClipboardCheck} title="待办已清空" hint="今天可以专心拍摄了" />
+              ) : (
+                due.map((reminder) => (
+                  <ReminderRow
+                    key={reminder.id}
+                    reminder={reminder}
+                    today={todayDate}
+                    busy={actionId === reminder.id}
+                    onDone={() => void actReminder(reminder.id, 'done')}
+                    onDismiss={() => void actReminder(reminder.id, 'dismiss')}
+                  />
+                ))
+              )}
+            </div>
+          </section>
 
-        <section className="card section-gap">
-          <h2 className="card-title">
-            后期交付
-            <span className="count">
-              · {data.delivery_queue.count} 单未交付
-              {openingsAux.settings
-                ? ` · 承诺拍摄后 ${openingsAux.settings.delivery_sla_days} 天交片`
-                : ''}
-              {overdueCount > 0 ? ` · ${overdueCount} 单已逾期` : ''}
-            </span>
-            <Link className="more" to="/orders?status=shot">
-              拍摄后订单 →
-            </Link>
-          </h2>
-          <div className="row-list">
-            {deliveryRows.length === 0 ? (
-              <EmptyState icon={Check} title="没有在手后期" hint="拍完的订单会按应交付日排在这里" />
-            ) : (
-              deliveryRows.map((row) => (
-                <DeliveryRow key={row.orderId} row={row} />
-              ))
-            )}
-          </div>
-        </section>
+          <section className="card">
+            <h2 className="card-title">
+              后期交付
+              <span className="count">
+                · {data.delivery_queue.count} 单未交付
+                {openingsAux.settings
+                  ? ` · 承诺拍摄后 ${openingsAux.settings.delivery_sla_days} 天交片`
+                  : ''}
+                {overdueCount > 0 ? ` · ${overdueCount} 单已逾期` : ''}
+              </span>
+              <Link className="more" to="/orders?status=shot">
+                拍摄后订单 →
+              </Link>
+            </h2>
+            <div className="row-list">
+              {deliveryRows.length === 0 ? (
+                <EmptyState icon={Check} title="没有在手后期" hint="拍完的订单会按应交付日排在这里" />
+              ) : (
+                deliveryRows.map((row) => (
+                  <DeliveryRow key={row.orderId} row={row} />
+                ))
+              )}
+            </div>
+          </section>
+        </div>
 
         <div className="two-col section-gap">
           <section className="card">

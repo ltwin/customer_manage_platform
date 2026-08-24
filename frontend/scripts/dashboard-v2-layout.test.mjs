@@ -47,3 +47,18 @@ test('dashboard v2 narrows within the 430px mobile breakpoint', () => {
   }
   assert.match(mobile, /\.dv2-mx-track\s*\{[^}]*min-width:\s*100%/, 'matrix track must span the full row on mobile')
 })
+
+test('dashboard v2 uses the wide content modifier and pairs list cards in two-col rows', () => {
+  const page = readFileSync(new URL('../src/pages/DashboardPage.tsx', import.meta.url), 'utf8')
+  assert.match(
+    page,
+    /className="content content-wide"/,
+    'the dashboard main must opt into the wide content modifier so landscape screens fill instead of leaving side blanks',
+  )
+  const pairs = page.match(/className="two-col section-gap"/g) ?? []
+  assert.equal(
+    pairs.length,
+    2,
+    'todo+delivery and revenue+utilization must each form a paired two-col row on desktop (they stack below 1080px)',
+  )
+})

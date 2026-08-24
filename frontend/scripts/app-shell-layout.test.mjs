@@ -22,3 +22,13 @@ test('content column centers horizontally instead of hugging the left edge on wi
     'capped .content must center horizontally so wide landscape screens do not leave a lopsided right blank strip',
   )
 })
+
+test('content-wide variant fills the main area with a bounded ceiling', () => {
+  const wideRule = stylesheet.match(/\.content\.content-wide\s*\{[^}]*\}/)?.[0] ?? ''
+  assert.ok(wideRule.length > 0, 'missing .content.content-wide rule')
+  assert.match(
+    wideRule,
+    /max-width:\s*1760px/,
+    'the wide variant must raise the cap so data-dense pages fill landscape screens, yet stay bounded (centered) on ultrawide displays',
+  )
+})
