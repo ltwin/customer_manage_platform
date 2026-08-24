@@ -44,7 +44,6 @@ import CopyTextSheet from './dashboard/CopyTextSheet'
 import {
   channelLabels,
   computeUpcomingOpenings,
-  formatPercent,
   formatShortYuan,
   formatYuan,
   localDateOfInstant,
@@ -441,7 +440,7 @@ export default function DashboardPage() {
             <h2 className="card-title">档期利用率<span className="count">· {utilization.month}</span></h2>
             <div className="dv2-util-head">
               <span className="dv2-util-rate">
-                {utilization.utilization == null ? '—' : formatPercent(utilization.utilization, 1)}
+                {utilization.utilization == null ? '—' : `${utilization.utilization}%`}
               </span>
               <span className="dv2-util-sub">
                 {utilization.shoot_count} 场拍摄 · {utilization.hold_days} 天仅预留 · {utilization.open_days} 天有空档 · {utilization.conflict_days} 天冲突

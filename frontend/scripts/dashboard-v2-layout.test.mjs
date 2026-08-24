@@ -62,3 +62,17 @@ test('dashboard v2 uses the wide content modifier and pairs list cards in two-co
     'todo+delivery and revenue+utilization must each form a paired two-col row on desktop (they stack below 1080px)',
   )
 })
+
+test('schedule utilization renders the backend percent value directly', () => {
+  const page = readFileSync(new URL('../src/pages/DashboardPage.tsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(
+    page,
+    /formatPercent\(\s*utilization\.utilization/,
+    'schedule_utilization.utilization is a 0-100 percent (openapi contract), but formatPercent expects a 0-1 ratio and would scale it ×100',
+  )
+  assert.match(
+    page,
+    /utilization\.utilization == null \? '—' : `\$\{utilization\.utilization\}%`/,
+    'the utilization headline must append % to the backend percent value, in parity with CalendarToolbar',
+  )
+})
