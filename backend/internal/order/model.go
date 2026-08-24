@@ -67,6 +67,11 @@ type Order struct {
 	AmountPaid        int
 	OutstandingAmount *int
 	PaidAt            *time.Time
+	// ChannelSnapshot 与 ShootTypeSnapshot 是下单时固化的归因快照：创建事务内取
+	// 客户当前渠道与所选套系当前拍摄类型，此后不可变（客户/套系后改、merge 改挂
+	// 均不重算）。ShootTypeSnapshot 为 NULL 表示无套系订单（矩阵「未归因」桶）。
+	ChannelSnapshot   string
+	ShootTypeSnapshot *string
 }
 
 type OrderInUseError struct {

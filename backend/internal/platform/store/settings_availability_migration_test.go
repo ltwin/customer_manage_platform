@@ -57,6 +57,7 @@ func TestSettingsAvailabilityMigrationBackfillsExistingRowsAndRollsBack(t *testi
 		t.Fatalf("close before down migration: %v", err)
 	}
 	for index, label := range []string{
+		"orders-attribution-snapshot",
 		"orders-payment-facts",
 		"orders-delivery-due",
 		"media-gallery-rights-bindings",

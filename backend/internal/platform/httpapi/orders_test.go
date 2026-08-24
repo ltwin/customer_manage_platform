@@ -549,3 +549,141 @@ func TestOrderPaymentFactsLifecycle(t *testing.T) {
 		t.Fatalf("补录结清单不得发明 paid_at: %v", backfilled.PaidAt)
 	}
 }
+
+// TestOrderAttributionSnapshotLifecycle 端到端验证归因快照（dashboard-v2 ITEM-3）：
+// 建单响应携带创建时固化的渠道/拍摄类型；客户渠道或套系类型后改、订单字段修正
+// 都不改变快照；无套系订单 shoot_type_snapshot 缺省（矩阵未归因桶）。
+func TestOrderAttributionSnapshotLifecycle(t *testing.T) {
+	h, s, issuer := newCustomerAPIRouter(t)
+	ctx := context.Background()
+	token := issueToken(t, issuer, testAcctID)
+	scope := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	customers := customerdomain.NewService(customerdomain.NewPostgresRepository())
+	packages := pkgcatalog.NewService(pkgcatalog.NewPostgresRepository())
+
+	customer, err := customers.Create(ctx, scope, customerdomain.CreateInput{
+		DisplayName: "归因客户",
+		Channel:     customerdomain.ChannelXiaohongshu,
+		Identities:  []customerdomain.IdentityInput{{Platform: customerdomain.PlatformWechat, Handle: "attribution"}},
+	})
+	if err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+	pkg, err := packages.Create(ctx, scope, pkgcatalog.CreateInput{
+		Name:        "Cosplay 套系",
+		ShootType:   pkgcatalog.ShootTypeCosplay,
+		PricingMode: pkgcatalog.PricingModeFixed,
+		BasePrice:   68000,
+	})
+	if err != nil {
+		t.Fatalf("create package: %v", err)
+	}
+
+	rec := authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", token, []byte(`{
+		"customer_id": "`+customer.ID+`",
+		"package_id": "`+pkg.ID+`",
+		"price": 1000
+	}`))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create order: %d %s", rec.Code, rec.Body.String())
+	}
+	var created httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created order: %v", err)
+	}
+	if created.ChannelSnapshot != customerdomain.ChannelXiaohongshu {
+		t.Fatalf("channel_snapshot 应固化下单时渠道: %q", created.ChannelSnapshot)
+	}
+	if created.ShootTypeSnapshot == nil || *created.ShootTypeSnapshot != pkgcatalog.ShootTypeCosplay {
+		t.Fatalf("shoot_type_snapshot 应固化套系拍摄类型: %v", created.ShootTypeSnapshot)
+	}
+	orderPath := "/api/v1/orders/" + *created.Id
+
+	// 客户渠道后改、套系类型后改：历史订单归因不变。
+	weiboChannel := customerdomain.ChannelWeibo
+	if _, err := customers.Update(ctx, scope, customer.ID, customerdomain.UpdateInput{
+		Channel: &weiboChannel,
+	}); err != nil {
+		t.Fatalf("change customer channel: %v", err)
+	}
+	otherShootType := pkgcatalog.ShootTypeOther
+	if _, err := packages.Update(ctx, scope, pkg.ID, pkgcatalog.UpdateInput{
+		ShootType: &otherShootType,
+	}); err != nil {
+		t.Fatalf("change package shoot_type: %v", err)
+	}
+
+	rec = authenticatedRequest(t, h, http.MethodPatch, orderPath, token, []byte(`{"title": "改名不重算"}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch order: %d %s", rec.Code, rec.Body.String())
+	}
+	var revised httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &revised); err != nil {
+		t.Fatalf("decode revised order: %v", err)
+	}
+	if revised.ChannelSnapshot != customerdomain.ChannelXiaohongshu ||
+		revised.ShootTypeSnapshot == nil || *revised.ShootTypeSnapshot != pkgcatalog.ShootTypeCosplay {
+		t.Fatalf("归因快照不可变被破坏: channel=%q shoot_type=%v",
+			revised.ChannelSnapshot, revised.ShootTypeSnapshot)
+	}
+
+	// 列表项同样携带快照。
+	rec = authenticatedRequest(t, h, http.MethodGet, "/api/v1/orders?customer_id="+customer.ID, token, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list orders: %d %s", rec.Code, rec.Body.String())
+	}
+	var listed struct {
+		Items []httpapi.OrderListItem `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode order list: %v", err)
+	}
+	if len(listed.Items) != 1 || listed.Items[0].ChannelSnapshot != customerdomain.ChannelXiaohongshu {
+		t.Fatalf("列表项快照缺失或被重算: %+v", listed.Items)
+	}
+
+	// 无套系订单：shoot_type_snapshot 缺省（未归因桶），channel 快照仍固化。
+	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", token, []byte(`{
+		"customer_id": "`+customer.ID+`",
+		"price": 500
+	}`))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create packageless order: %d %s", rec.Code, rec.Body.String())
+	}
+	var noPackage httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &noPackage); err != nil {
+		t.Fatalf("decode packageless order: %v", err)
+	}
+	if noPackage.ShootTypeSnapshot != nil {
+		t.Fatalf("无套系订单 shoot_type_snapshot 应缺省: %v", *noPackage.ShootTypeSnapshot)
+	}
+	// 渠道后改（weibo）之后的新单固化新渠道，验证取的是下单时值。
+	if noPackage.ChannelSnapshot != customerdomain.ChannelWeibo {
+		t.Fatalf("新单应固化下单时（已后改）渠道 weibo: %q", noPackage.ChannelSnapshot)
+	}
+
+	// 幂等建单路径同样固化快照；同键重放返回同一存储响应（对齐交付日双路径先例，
+	// 防幂等分支静默跳过仓库侧取值的回归）。
+	idempotentBody := []byte(`{
+		"customer_id": "` + customer.ID + `",
+		"package_id": "` + pkg.ID + `",
+		"price": 900
+	}`)
+	withKey := authenticatedOrderCreate(t, h, token, "attribution-idempotent-1", idempotentBody)
+	if withKey.Code != http.StatusCreated {
+		t.Fatalf("idempotent create: %d %s", withKey.Code, withKey.Body.String())
+	}
+	var idempotent httpapi.Order
+	if err := json.Unmarshal(withKey.Body.Bytes(), &idempotent); err != nil {
+		t.Fatalf("decode idempotent order: %v", err)
+	}
+	if idempotent.ChannelSnapshot != customerdomain.ChannelWeibo ||
+		idempotent.ShootTypeSnapshot == nil || *idempotent.ShootTypeSnapshot != pkgcatalog.ShootTypeOther {
+		t.Fatalf("幂等建单快照应固化下单时渠道/类型（weibo/other）: channel=%q shoot_type=%v",
+			idempotent.ChannelSnapshot, idempotent.ShootTypeSnapshot)
+	}
+	replay := authenticatedOrderCreate(t, h, token, "attribution-idempotent-1", idempotentBody)
+	if replay.Code != http.StatusCreated || replay.Body.String() != withKey.Body.String() {
+		t.Fatalf("幂等重放应返回同一存储响应: %d %s", replay.Code, replay.Body.String())
+	}
+}

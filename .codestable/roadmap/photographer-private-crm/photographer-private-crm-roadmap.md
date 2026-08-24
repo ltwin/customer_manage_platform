@@ -208,6 +208,16 @@ Order:           customer_id*, package_id?, title?,
                    不自动写——不为历史发明收款时刻；已写入可修正、不可置空。金额字段无 null 语义：
                    POST/PATCH 显式 null → 400；终态订单金额可修正（对齐 price，退款/坏账的
                    手工修正通道），deposit_paid/balance_paid 终态不可变不变）
+                 channel_snapshot*(渠道枚举，同 customers.channel), shoot_type_snapshot?(portrait|cosplay|other)
+                 （归因快照语义，dashboard-v2-redesign ITEM-3 增量：
+                   创建事务内固化下单时客户当前渠道与所选套系当前拍摄类型，写入即为落库事实；
+                   此后不可变——客户渠道/套系拍摄类型后改、客户 merge 改挂订单、任何 PATCH/状态
+                   推进都不重算（两字段非请求字段，POST/PATCH 均不接受；换套系路径不存在——
+                   package_id 创建后不可改）。shoot_type_snapshot NULL = 无套系订单，渠道×类型
+                   矩阵归「未归因」桶（展示口径 ITEM-4）。channel_snapshot 恒有值、取值域与
+                   customers.channel 同步演进（直写 SQL 缺省归 'other' 仅兜底，生产写路径
+                   恒显式提供）。存量订单 best-effort 回填：按当前客户渠道/套系类型写入，
+                   可能与真实下单时不一致，仅作展示不做精确承诺）
 ScheduleSlot:    start_at*, end_at*(> start_at), type*(shoot|hold|busy),
                  order_id?(type=shoot 时必填), note?
 Reminder:        type*(birthday|follow_up|churn|custom), customer_id?, order_id?,
@@ -341,6 +351,8 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                       cancelled 可直建（时间戳可选，建议 note 写原因）
                                     历史引用规则：backfill 允许 active/archived 客户与套系，merged 客户
                                       仍 → 409 customer_archived；引用仍须同账号存在，不存在/跨账号→404
+                                    响应与列表项随 §4.2 Order shape 携带创建时固化的
+                                      channel_snapshot/shoot_type_snapshot（非请求字段，PATCH 亦不可写）
   GET    /orders?customer_id=&status=&unpaid_balance=true&schedulable_at=&page=
                                     列表项附引用摘要: customer_display_name(string),
                                       package_name?(string, 引用套系时返回)——全局订单页可读性依赖，
@@ -573,7 +585,7 @@ GET /export → application/json（Content-Disposition 附件）
   schedule_slots[], reminders[], settings }        // 各数组 shape 全部按 4.2
 ```
 
-**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。`dashboard-v2-redesign` ITEM-1/2 新增订单字段随 §4.2 Order shape 进入导出（amount_paid 恒输出，其余可缺省），`schema_version` 是否 bump 由该 epic ITEM-6 统一决策（此前保持 3）。
+**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。`dashboard-v2-redesign` ITEM-1/2/3 新增订单字段随 §4.2 Order shape 进入导出（amount_paid/channel_snapshot 恒输出，其余可缺省），`schema_version` 是否 bump 由该 epic ITEM-6 统一决策（此前保持 3）。
 
 ### 4.x 共享数据结构 / 状态
 

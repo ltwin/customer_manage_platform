@@ -1745,10 +1745,13 @@ type Order struct {
 	AccountId *string `json:"account_id,omitempty"`
 
 	// AmountPaid 分；已收现金，恒有值（默认 0）。未显式给 outstanding_amount 时按 DEC-10 推定（§4.2 支付事实语义）
-	AmountPaid  int        `json:"amount_paid"`
-	BalancePaid bool       `json:"balance_paid"`
-	CreatedAt   *time.Time `json:"created_at,omitempty"`
-	CustomerId  string     `json:"customer_id"`
+	AmountPaid  int  `json:"amount_paid"`
+	BalancePaid bool `json:"balance_paid"`
+
+	// ChannelSnapshot 下单时固化的客户渠道归因快照（dashboard-v2 ITEM-3）。此后不可变：客户渠道后改、merge 改挂、任何 PATCH 都不重算；非请求字段。取值域与 customers.channel 同步（§4.2）
+	ChannelSnapshot CustomerChannel `json:"channel_snapshot"`
+	CreatedAt       *time.Time      `json:"created_at,omitempty"`
+	CustomerId      string          `json:"customer_id"`
 
 	// DeliveredAt 进入 delivered 时服务端自动写入，事后可 PATCH 修正（§4.2）
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
@@ -1772,6 +1775,9 @@ type Order struct {
 	// Price 分
 	Price *int `json:"price,omitempty"`
 
+	// ShootTypeSnapshot 下单时固化的套系拍摄类型快照（dashboard-v2 ITEM-3）；NULL=无套系订单，渠道×类型矩阵归「未归因」桶。不可变，非请求字段（§4.2）
+	ShootTypeSnapshot *ShootType `json:"shoot_type_snapshot,omitempty"`
+
 	// ShotAt 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
 	ShotAt *time.Time `json:"shot_at,omitempty"`
 
@@ -1792,9 +1798,12 @@ type OrderListItem struct {
 	AccountId *string `json:"account_id,omitempty"`
 
 	// AmountPaid 分；已收现金，恒有值（默认 0）。未显式给 outstanding_amount 时按 DEC-10 推定（§4.2 支付事实语义）
-	AmountPaid  int        `json:"amount_paid"`
-	BalancePaid bool       `json:"balance_paid"`
-	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	AmountPaid  int  `json:"amount_paid"`
+	BalancePaid bool `json:"balance_paid"`
+
+	// ChannelSnapshot 下单时固化的客户渠道归因快照（dashboard-v2 ITEM-3）。此后不可变：客户渠道后改、merge 改挂、任何 PATCH 都不重算；非请求字段。取值域与 customers.channel 同步（§4.2）
+	ChannelSnapshot CustomerChannel `json:"channel_snapshot"`
+	CreatedAt       *time.Time      `json:"created_at,omitempty"`
 
 	// CustomerDisplayName 引用客户的 display_name（列表可读性摘要，§4.3 2026-07-09 update）
 	CustomerDisplayName string `json:"customer_display_name"`
@@ -1825,6 +1834,9 @@ type OrderListItem struct {
 
 	// Price 分
 	Price *int `json:"price,omitempty"`
+
+	// ShootTypeSnapshot 下单时固化的套系拍摄类型快照（dashboard-v2 ITEM-3）；NULL=无套系订单，渠道×类型矩阵归「未归因」桶。不可变，非请求字段（§4.2）
+	ShootTypeSnapshot *ShootType `json:"shoot_type_snapshot,omitempty"`
 
 	// ShotAt 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
 	ShotAt *time.Time `json:"shot_at,omitempty"`

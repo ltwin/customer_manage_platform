@@ -72,10 +72,11 @@ func TestDataExportRouteReturnsRealAccountData(t *testing.T) {
 	if err := scope.Insert(context.Background(), "orders",
 		[]string{
 			"id", "created_at", "customer_id", "package_id", "title", "status", "price", "deposit_paid",
-			"balance_paid", "shot_at", "delivered_at", "delivery_due_at", "delivery_due_is_override", "note",
+			"balance_paid", "shot_at", "delivered_at", "delivery_due_at", "delivery_due_is_override",
+			"channel_snapshot", "shoot_type_snapshot", "note",
 		},
 		"order-route", fixtureTime, *created.Id, "pkg-route", "Fixture Route Order", "delivered", 12800, true, true,
-		shotAt, deliveredAt, "2026-07-25", false, "fixture order note"); err != nil {
+		shotAt, deliveredAt, "2026-07-25", false, "other", "portrait", "fixture order note"); err != nil {
 		t.Fatalf("insert order fixture: %v", err)
 	}
 	if err := scope.Insert(context.Background(), "schedule_slots",
@@ -228,6 +229,8 @@ func assertCompleteRouteExportJSON(
 			"delivery_due_is_override": false, "note": "fixture order note",
 			// 支付事实（ITEM-2）：直插 fixture 未录金额 → amount_paid 默认 0 恒在；outstanding/paid_at 可缺省。
 			"amount_paid": float64(0),
+			// 归因快照（ITEM-3）：channel_snapshot 恒输出；shoot_type_snapshot 随套系输出。
+			"channel_snapshot": "other", "shoot_type_snapshot": "portrait",
 		}},
 		"schedule_slots": []any{map[string]any{
 			"id": "slot-route", "account_id": testAcctID, "created_at": fixtureTime.Format(time.RFC3339),

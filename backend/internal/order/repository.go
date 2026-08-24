@@ -53,13 +53,17 @@ func (PostgresRepository) CreatePreparedInScope(
 	prepared PreparedCreate,
 ) (Order, error) {
 	input := prepared.Input
-	if err := requireUsableCustomer(ctx, scope, input.CustomerID, input.CreationMode); err != nil {
+	customerChannel, err := requireUsableCustomer(ctx, scope, input.CustomerID, input.CreationMode)
+	if err != nil {
 		return Order{}, err
 	}
+	var packageShootType *string
 	if input.PackageID != nil {
-		if err := requireUsablePackage(ctx, scope, *input.PackageID, input.CreationMode); err != nil {
+		shootType, err := requireUsablePackage(ctx, scope, *input.PackageID, input.CreationMode)
+		if err != nil {
 			return Order{}, err
 		}
+		packageShootType = &shootType
 	}
 	id := "ord_" + uuid.NewString()
 	if _, err := scope.InsertReturningID(ctx, "orders",
@@ -80,6 +84,8 @@ func (PostgresRepository) CreatePreparedInScope(
 			"amount_paid",
 			"outstanding_amount",
 			"paid_at",
+			"channel_snapshot",
+			"shoot_type_snapshot",
 		},
 		id,
 		input.CustomerID,
@@ -97,6 +103,8 @@ func (PostgresRepository) CreatePreparedInScope(
 		prepared.initial.AmountPaid,
 		nullableIntArg(prepared.initial.OutstandingAmount),
 		nullableTimeArg(prepared.initial.PaidAt),
+		customerChannel,
+		nullableStringArg(packageShootType),
 	); err != nil {
 		return Order{}, err
 	}
@@ -273,41 +281,44 @@ func (r PostgresRepository) Delete(ctx context.Context, scope store.AccountScope
 	})
 }
 
-func requireUsableCustomer(ctx context.Context, scope rowScope, customerID, mode string) error {
-	var status string
-	err := scope.QueryRowForUpdate(ctx, "customers", "status", "id = $2", customerID).Scan(&status)
+// requireUsableCustomer 校验客户可引用并返回其当前渠道——归因快照的取值来源，
+// 与订单插入同事务同行锁读取（dashboard-v2 ITEM-3）。
+func requireUsableCustomer(ctx context.Context, scope rowScope, customerID, mode string) (string, error) {
+	var status, channel string
+	err := scope.QueryRowForUpdate(ctx, "customers", "status, channel", "id = $2", customerID).Scan(&status, &channel)
 	if errors.Is(err, store.ErrNoRows) {
-		return fmt.Errorf("%w: 客户不存在", ErrNotFound)
+		return "", fmt.Errorf("%w: 客户不存在", ErrNotFound)
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if status == "merged" || (mode == CreationModeNew && status != "active") ||
 		(mode == CreationModeBackfill && status != "active" && status != "archived") {
-		return fmt.Errorf("%w: 客户已归档或合并", ErrCustomerArchived)
+		return "", fmt.Errorf("%w: 客户已归档或合并", ErrCustomerArchived)
 	}
-	return nil
+	return channel, nil
 }
 
-func requireUsablePackage(ctx context.Context, scope rowScope, packageID, mode string) error {
-	var status string
-	err := scope.QueryRowForUpdate(ctx, "packages", "status", "id = $2", packageID).Scan(&status)
+// requireUsablePackage 校验套系可引用并返回其当前拍摄类型——归因快照的取值来源。
+func requireUsablePackage(ctx context.Context, scope rowScope, packageID, mode string) (string, error) {
+	var status, shootType string
+	err := scope.QueryRowForUpdate(ctx, "packages", "status, shoot_type", "id = $2", packageID).Scan(&status, &shootType)
 	if errors.Is(err, store.ErrNoRows) {
-		return fmt.Errorf("%w: 套系不存在", ErrNotFound)
+		return "", fmt.Errorf("%w: 套系不存在", ErrNotFound)
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	if mode == CreationModeNew && status != "active" {
-		return ValidationError{Message: "下架套系不可用于新建订单"}
+		return "", ValidationError{Message: "下架套系不可用于新建订单"}
 	}
 	if mode == CreationModeBackfill && status != "active" && status != "archived" {
-		return ValidationError{Message: "套系状态不可用于历史补录"}
+		return "", ValidationError{Message: "套系状态不可用于历史补录"}
 	}
-	return nil
+	return shootType, nil
 }
 
-const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note, delivery_due_at, delivery_due_is_override, amount_paid, outstanding_amount, paid_at"
+const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note, delivery_due_at, delivery_due_is_override, amount_paid, outstanding_amount, paid_at, channel_snapshot, shoot_type_snapshot"
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -336,7 +347,7 @@ func findOrderForUpdate(ctx context.Context, scope rowScope, id string) (Order, 
 
 func scanOrder(row scanner) (Order, error) {
 	var order Order
-	var packageID, title, note sql.NullString
+	var packageID, title, note, shootTypeSnapshot sql.NullString
 	var price, outstanding sql.NullInt64
 	var shotAt, deliveredAt, deliveryDueAt, paidAt sql.NullTime
 	if err := row.Scan(
@@ -358,6 +369,8 @@ func scanOrder(row scanner) (Order, error) {
 		&order.AmountPaid,
 		&outstanding,
 		&paidAt,
+		&order.ChannelSnapshot,
+		&shootTypeSnapshot,
 	); err != nil {
 		return Order{}, err
 	}
@@ -373,6 +386,7 @@ func scanOrder(row scanner) (Order, error) {
 	order.Note = stringPtr(note)
 	order.OutstandingAmount = intPtr(outstanding)
 	order.PaidAt = timePtr(paidAt)
+	order.ShootTypeSnapshot = stringPtr(shootTypeSnapshot)
 	return order, nil
 }
 

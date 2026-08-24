@@ -120,6 +120,10 @@ func TestOrdersPaymentFactsMigrationBackfillsExistingOrders(t *testing.T) {
 		t.Fatalf("close before down migration: %v", err)
 	}
 
+	// 0033 之上已叠加 0034（归因快照）：先退 0034 再退 0033，本测试锁的是 0033 自身的可逆性。
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback attribution-snapshot migration: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback payment-facts migration: %v", err)
 	}

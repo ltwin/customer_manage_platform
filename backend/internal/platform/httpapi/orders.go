@@ -420,6 +420,9 @@ func toAPIOrder(o orderdomain.Order) Order {
 		AmountPaid:        o.AmountPaid,
 		OutstandingAmount: o.OutstandingAmount,
 		PaidAt:            o.PaidAt,
+
+		ChannelSnapshot:   CustomerChannel(o.ChannelSnapshot),
+		ShootTypeSnapshot: shootTypePointer(o.ShootTypeSnapshot),
 	}
 }
 
@@ -448,7 +451,19 @@ func toAPIOrderListItem(item orderdomain.ListItem) OrderListItem {
 		AmountPaid:        item.AmountPaid,
 		OutstandingAmount: item.OutstandingAmount,
 		PaidAt:            item.PaidAt,
+
+		ChannelSnapshot:   CustomerChannel(item.ChannelSnapshot),
+		ShootTypeSnapshot: shootTypePointer(item.ShootTypeSnapshot),
 	}
+}
+
+// shootTypePointer 把领域 *string 拍摄类型投影为契约枚举指针。
+func shootTypePointer(value *string) *ShootType {
+	if value == nil {
+		return nil
+	}
+	converted := ShootType(*value)
+	return &converted
 }
 
 // apiDatePointer 把领域 date-only 值投影为契约 date 类型。

@@ -122,15 +122,18 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 		var packageID, title, price, shotAt, deliveredAt, deliveryDueAt, note any
 		var depositPaid, balancePaid, deliveryDueIsOverride bool
 		var amountPaid int
-		var outstanding, paidAt any
+		var outstanding, paidAt, shootTypeSnapshot any
+		channelSnapshot := "other"
 		switch id {
 		case "order-a":
 			packageID, title, price, note = "pkg-a", "Fixture consulting", 12000, "fixture order"
+			shootTypeSnapshot = "portrait"
 			depositPaid = true
 			// 部分收款：导出必须原样带出金额事实，而非回落推定。
 			amountPaid, outstanding = 300, 700
 		case "order-f":
 			packageID, title, price, note = "pkg-b", "Fixture delivered", 8000, "delivered order"
+			shootTypeSnapshot = "cosplay"
 			shotAt, deliveredAt = createdAt.Add(-48*time.Hour), createdAt.Add(-24*time.Hour)
 			depositPaid, balancePaid = true, true
 			// 显式覆盖的应交付日：导出必须原样带出，而不是回落默认派生。
@@ -141,10 +144,10 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 			[]string{
 				"id", "created_at", "customer_id", "package_id", "title", "status", "price", "deposit_paid",
 				"balance_paid", "shot_at", "delivered_at", "delivery_due_at", "delivery_due_is_override",
-				"amount_paid", "outstanding_amount", "paid_at", "note",
+				"amount_paid", "outstanding_amount", "paid_at", "channel_snapshot", "shoot_type_snapshot", "note",
 			},
 			id, createdAt, "cus-a", packageID, title, status, price, depositPaid, balancePaid, shotAt, deliveredAt,
-			deliveryDueAt, deliveryDueIsOverride, amountPaid, outstanding, paidAt, note); err != nil {
+			deliveryDueAt, deliveryDueIsOverride, amountPaid, outstanding, paidAt, channelSnapshot, shootTypeSnapshot, note); err != nil {
 			t.Fatalf("insert order %s: %v", id, err)
 		}
 	}
@@ -211,14 +214,14 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 			{ID: "pkg-b", AccountID: "acct-full", CreatedAt: createdAt, Name: "Fixture pkg-b", ShootType: "cosplay", PricingMode: "per_photo", BasePrice: 8000, Status: "archived"},
 		},
 		Orders: []orderdomain.Order{
-			{ID: "order-a", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", PackageID: testPointer("pkg-a"), Title: testPointer("Fixture consulting"), Status: "consulting", Price: testPointer(12000), DepositPaid: true, AmountPaid: 300, OutstandingAmount: testPointer(700), Note: testPointer("fixture order")},
-			{ID: "order-b", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "scheduled"},
-			{ID: "order-c", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "shot"},
-			{ID: "order-d", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "selected"},
-			{ID: "order-e", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "retouching"},
-			{ID: "order-f", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", PackageID: testPointer("pkg-b"), Title: testPointer("Fixture delivered"), Status: "delivered", Price: testPointer(8000), DepositPaid: true, BalancePaid: true, ShotAt: testPointer(createdAt.Add(-48 * time.Hour)), DeliveredAt: testPointer(createdAt.Add(-24 * time.Hour)), DeliveryDueAt: testPointer(time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)), DeliveryDueIsOverride: true, AmountPaid: 8000, OutstandingAmount: testPointer(0), PaidAt: testPointer(createdAt.Add(-20 * time.Hour)), Note: testPointer("delivered order")},
-			{ID: "order-g", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "closed"},
-			{ID: "order-h", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "cancelled"},
+			{ID: "order-a", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", PackageID: testPointer("pkg-a"), Title: testPointer("Fixture consulting"), Status: "consulting", Price: testPointer(12000), DepositPaid: true, AmountPaid: 300, OutstandingAmount: testPointer(700), ChannelSnapshot: "other", ShootTypeSnapshot: testPointer("portrait"), Note: testPointer("fixture order")},
+			{ID: "order-b", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "scheduled", ChannelSnapshot: "other"},
+			{ID: "order-c", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "shot", ChannelSnapshot: "other"},
+			{ID: "order-d", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "selected", ChannelSnapshot: "other"},
+			{ID: "order-e", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "retouching", ChannelSnapshot: "other"},
+			{ID: "order-f", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", PackageID: testPointer("pkg-b"), Title: testPointer("Fixture delivered"), Status: "delivered", Price: testPointer(8000), DepositPaid: true, BalancePaid: true, ShotAt: testPointer(createdAt.Add(-48 * time.Hour)), DeliveredAt: testPointer(createdAt.Add(-24 * time.Hour)), DeliveryDueAt: testPointer(time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)), DeliveryDueIsOverride: true, AmountPaid: 8000, OutstandingAmount: testPointer(0), PaidAt: testPointer(createdAt.Add(-20 * time.Hour)), ChannelSnapshot: "other", ShootTypeSnapshot: testPointer("cosplay"), Note: testPointer("delivered order")},
+			{ID: "order-g", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "closed", ChannelSnapshot: "other"},
+			{ID: "order-h", AccountID: "acct-full", CreatedAt: createdAt, CustomerID: "cus-a", Status: "cancelled", ChannelSnapshot: "other"},
 		},
 		ScheduleSlots: []schedule.Slot{
 			{ID: "slot-busy", AccountID: "acct-full", CreatedAt: createdAt, StartAt: createdAt.Add(time.Hour), EndAt: createdAt.Add(2 * time.Hour), Type: "busy"},

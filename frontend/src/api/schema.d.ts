@@ -1604,6 +1604,10 @@ export interface components {
              * @description 收款时刻；仅在 balance_paid 由 false 实际跃迁为 true 且未显式提供时自动写服务端 now，创建不自动写（§4.2）
              */
             paid_at?: string;
+            /** @description 下单时固化的客户渠道归因快照（dashboard-v2 ITEM-3）。此后不可变：客户渠道后改、merge 改挂、任何 PATCH 都不重算；非请求字段。取值域与 customers.channel 同步（§4.2） */
+            channel_snapshot: components["schemas"]["CustomerChannel"];
+            /** @description 下单时固化的套系拍摄类型快照（dashboard-v2 ITEM-3）；NULL=无套系订单，渠道×类型矩阵归「未归因」桶。不可变，非请求字段（§4.2） */
+            shoot_type_snapshot?: components["schemas"]["ShootType"];
             /**
              * Format: date-time
              * @description 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
