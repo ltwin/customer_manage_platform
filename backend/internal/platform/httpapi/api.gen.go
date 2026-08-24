@@ -2794,6 +2794,11 @@ type AddCustomerNoteJSONBody struct {
 	Content string `json:"content"`
 }
 
+// GetDashboardV2200JSONResponseBody_NextShoot defines parameters for GetDashboardV2.
+type GetDashboardV2200JSONResponseBody_NextShoot struct {
+	union json.RawMessage
+}
+
 // ListOrdersParams defines parameters for ListOrders.
 type ListOrdersParams struct {
 	// Id 精确订单 id；仍按当前账号隔离，可与其他过滤条件组合
@@ -3470,6 +3475,42 @@ func (t *ScheduleSlotListItem) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsScheduleSlotListItem returns the union data inside the GetDashboardV2200JSONResponseBody_NextShoot as a ScheduleSlotListItem
+func (t GetDashboardV2200JSONResponseBody_NextShoot) AsScheduleSlotListItem() (ScheduleSlotListItem, error) {
+	var body ScheduleSlotListItem
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromScheduleSlotListItem overwrites any union data inside the GetDashboardV2200JSONResponseBody_NextShoot as the provided ScheduleSlotListItem
+func (t *GetDashboardV2200JSONResponseBody_NextShoot) FromScheduleSlotListItem(v ScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeScheduleSlotListItem performs a merge with any union data inside the GetDashboardV2200JSONResponseBody_NextShoot, using the provided ScheduleSlotListItem
+func (t *GetDashboardV2200JSONResponseBody_NextShoot) MergeScheduleSlotListItem(v ScheduleSlotListItem) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t GetDashboardV2200JSONResponseBody_NextShoot) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *GetDashboardV2200JSONResponseBody_NextShoot) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsSharedPlanProposalV1 returns the union data inside the GetSharedPlan200JSONResponseBody as a SharedPlanProposalV1
 func (t GetSharedPlan200JSONResponseBody) AsSharedPlanProposalV1() (SharedPlanProposalV1, error) {
 	var body SharedPlanProposalV1
@@ -3618,6 +3659,9 @@ type ServerInterface interface {
 	// 今日经营台聚合（口径单点在服务端，§4.3）
 	// (GET /dashboard)
 	GetDashboard(c *gin.Context)
+	// 经营台 v2 分层聚合读模型（口径单点在服务端，§4.3 dashboard-v2-redesign 块）
+	// (GET /dashboard/v2)
+	GetDashboardV2(c *gin.Context)
 	// 全量导出（application/json 附件；counts 必须与各数组长度一致，§4.6）
 	// (GET /export)
 	ExportAll(c *gin.Context)
@@ -4505,6 +4549,21 @@ func (siw *ServerInterfaceWrapper) GetDashboard(c *gin.Context) {
 	}
 
 	siw.Handler.GetDashboard(c)
+}
+
+// GetDashboardV2 operation middleware
+func (siw *ServerInterfaceWrapper) GetDashboardV2(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetDashboardV2(c)
 }
 
 // ExportAll operation middleware
@@ -5819,6 +5878,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/customers/:id/merge", wrapper.MergeCustomer)
 	router.POST(options.BaseURL+"/customers/:id/notes", wrapper.AddCustomerNote)
 	router.GET(options.BaseURL+"/dashboard", wrapper.GetDashboard)
+	router.GET(options.BaseURL+"/dashboard/v2", wrapper.GetDashboardV2)
 	router.GET(options.BaseURL+"/export", wrapper.ExportAll)
 	router.GET(options.BaseURL+"/me", wrapper.GetMe)
 	router.GET(options.BaseURL+"/orders", wrapper.ListOrders)

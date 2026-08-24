@@ -1,0 +1,77 @@
+{
+  "name": "dst-window-resolution",
+  "description": "America/New_York DST：2026-03-08 春跳（01:15–02:45 → 窗口跨 gap，结束时刻推移到跳跃后）与 2026-11-01 秋回（01:15 歧义取较早、02:45 稳定）",
+  "timezone": "America/New_York",
+  "availability": {
+    "weekly": {
+      "1": null,
+      "2": null,
+      "3": null,
+      "4": null,
+      "5": null,
+      "6": null,
+      "7": {
+        "start": "01:15",
+        "end": "02:45"
+      }
+    },
+    "min_opening_minutes": 30,
+    "turnaround_minutes": 60
+  },
+  "slots": [
+    {
+      "id": "d1",
+      "type": "shoot",
+      "start_at": "2026-11-01T05:30:00Z",
+      "end_at": "2026-11-01T05:45:00Z",
+      "order_status": null
+    }
+  ],
+  "dates": [
+    "2026-03-08",
+    "2026-11-01"
+  ],
+  "month": null,
+  "expected": {
+    "days": [
+      {
+        "date": "2026-03-08",
+        "working_window": {
+          "start": "01:15",
+          "end": "03:45",
+          "start_at": "2026-03-08T06:15:00Z",
+          "end_at": "2026-03-08T07:45:00Z"
+        },
+        "openings": [
+          {
+            "date": "2026-03-08",
+            "start": "01:15",
+            "end": "03:45",
+            "start_at": "2026-03-08T06:15:00Z",
+            "end_at": "2026-03-08T07:45:00Z"
+          }
+        ]
+      },
+      {
+        "date": "2026-11-01",
+        "working_window": {
+          "start": "01:15",
+          "end": "02:45",
+          "start_at": "2026-11-01T05:15:00Z",
+          "end_at": "2026-11-01T07:45:00Z"
+        },
+        "openings": [
+          {
+            "date": "2026-11-01",
+            "start": "01:45",
+            "end": "02:45",
+            "start_at": "2026-11-01T05:45:00Z",
+            "end_at": "2026-11-01T07:45:00Z"
+          }
+        ]
+      }
+    ],
+    "errors": [],
+    "month_overview": null
+  }
+}

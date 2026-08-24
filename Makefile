@@ -41,6 +41,7 @@ test:
 	cd frontend && npm run test:api-client
 	cd frontend && npm run test:auth
 	cd frontend && npm run test:schedule
+	cd frontend && npm run test:openings-golden
 	cd frontend && npm run test:settings
 	cd frontend && npm run test:avatar-layout
 	cd frontend && npm run test:telegram-digest

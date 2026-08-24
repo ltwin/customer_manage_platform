@@ -202,6 +202,8 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	protected.POST("/settings/telegram/bind-token", h.CreateTelegramBindToken)
 	// dashboard：登录后默认落地经营台聚合（D7 手工注册，不走全量 RegisterHandlers）
 	protected.GET("/dashboard", h.GetDashboard)
+	// dashboard v2：分层聚合读模型（dashboard-v2-redesign DEC-7 并存不迁移）
+	protected.GET("/dashboard/v2", h.GetDashboardV2)
 	// data-export：真实 read-model repository 完成后才暴露受保护附件路由。
 	protected.GET("/export", h.ExportAll)
 	// account-profile：账号资料与头像

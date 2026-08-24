@@ -55,14 +55,14 @@ work: ../work/epic-dashboard-v2-redesign.md
 | 已确认收入 | delivered_at 落窗 ∧ balance_paid=true ∧ 非 cancelled 的 price 之和 | roadmap §4.3 既有 `revenue_confirmed` |
 | 已收现金 | 新增 `amount_paid` 字段之和 | 本 Epic DEC-4 |
 | 待收尾款 | `outstanding_amount`（余额未清部分），非报价推算 | 本 Epic DEC-4 |
-| 在途 | 已交付未结清 vs 已拍摄未交付的边界，ITEM-4 设计冻结时定稿并回写本表 | 本 Epic |
+| 在途 | status ∈ {scheduled, shot, selected, retouching} 且非 cancelled 的 price 之和；已交付未结清归待收段、不属在途 | 本 Epic（ITEM-4 2026-08-24 冻结，回写本表） |
 | 客单价 | 窗口内已确认收入 ÷ 窗口内计入已确认收入的订单笔数 | 本 Epic |
-| 90 天复购占比 | 近 90 天窗口内按 `shot_at` 拍摄 ≥2 次的客户占比；精确口径 ITEM-4 设计冻结 | 审计 §4 |
+| 90 天复购占比 | 近 90 天窗（[今日-89, 今日]）内 shot_at 落窗且非 cancelled 订单按客户聚合，拍摄 ≥2 单客户数 ÷ 有拍摄客户数（0 客户 → NULL） | 本 Epic（ITEM-4 2026-08-24 冻结，回写本表） |
 | 待收账龄 | 今日 − 最早一笔未结清已交付订单的 `delivered_at` | 本 Epic |
 | 环比 | 与上一个相邻 30 天窗口的同口径比较 | 本 Epic |
 | 归因快照 | 订单创建时固化的 `channel_snapshot`/`shoot_type_snapshot` | 本 Epic DEC-5 |
 | 线索（Lead） | 客户状态视图（无 delivered/closed 订单），**非独立实体** | CONTEXT.md |
-| 下一场（next_shoot） | 今日及之后最早的 shoot 档期，跨日/取消口径见 ITEM-4 | 本 Epic |
+| 下一场（next_shoot） | 今日及之后最早的未取消 shoot（end_at 越过本地今日 00:00 即候选，含进行中的跨日拍摄；取消 = shoot ∧ 订单 cancelled），无则 null | 本 Epic（ITEM-4 2026-08-24 冻结，回写本表） |
 
 ## 关键决策
 

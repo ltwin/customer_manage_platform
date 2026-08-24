@@ -8,16 +8,10 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// TimezoneProvider 是经营台取账号有效时区的最小依赖（method 见 design D9）。
-// composition root 注入 settings.Service（其已实现 TimezoneForAccount），
-// dashboard 包因此不 import settings/httpapi，也不注入他域业务服务。
-type TimezoneProvider interface {
-	TimezoneForAccount(ctx context.Context, accountID string) (string, error)
-}
-
 // Repository 是经营台聚合读面：按窗口一次载入五块（经 AccountScope 直查，ADR-001 / D1）。
 type Repository interface {
 	LoadDashboard(ctx context.Context, scope store.AccountScope, window Window) (Dashboard, error)
+	LoadDashboardV2(ctx context.Context, scope store.AccountScope, window V2Window) (V2Facts, error)
 }
 
 // Window 是 Service 依账号时区算好、交给 Repository 的日界与窗口。
@@ -31,15 +25,16 @@ type Window struct {
 	RecentEnd   time.Time // 瞬时：本地次日 00:00（不含），近 30 天窗上界
 }
 
-// Service 编排「取时区 → 算窗口 → 调仓库」；无领域写、无路由依赖（ADR-003）。
+// Service 编排「取设置 → 算窗口 → 调仓库」；无领域写、无路由依赖（ADR-003）。
+// settingsReader 由 composition root 注入 settings.Service（时区 + 可约偏好，design D9 / DEC-9）。
 type Service struct {
-	repo     Repository
-	timezone TimezoneProvider
-	now      func() time.Time
+	repo           Repository
+	settingsReader V2SettingsReader
+	now            func() time.Time
 }
 
-func NewService(repo Repository, timezone TimezoneProvider) *Service {
-	return &Service{repo: repo, timezone: timezone, now: time.Now}
+func NewService(repo Repository, settingsReader V2SettingsReader) *Service {
+	return &Service{repo: repo, settingsReader: settingsReader, now: time.Now}
 }
 
 // WithClock 注入 now（测试用，确定性窗口）。
@@ -53,7 +48,7 @@ func (s *Service) WithClock(now func() time.Time) *Service {
 // Get 按账号时区聚合经营台五块。时区读取或解析失败即返回 error（handler 落 500），
 // 绝不用浏览器或默认时区继续算（design D3 / S12）。
 func (s *Service) Get(ctx context.Context, scope store.AccountScope, accountID string) (Dashboard, error) {
-	timezone, err := s.timezone.TimezoneForAccount(ctx, accountID)
+	timezone, err := s.settingsReader.TimezoneForAccount(ctx, accountID)
 	if err != nil {
 		return Dashboard{}, err
 	}

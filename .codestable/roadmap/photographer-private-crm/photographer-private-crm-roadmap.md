@@ -455,6 +455,63 @@ dashboard
          （recent_stats 窗口 = 账号时区自然日 [今日-29, 今日] 含今日共 30 天；替代原"本月"口径，
            cancelled 归属与 total_order_amount 对齐，2026-07-06 原型比对拍板；
            ListItem 形由 dashboard feature 2026-07-14 钉死，与 OpenAPI 一致）
+  GET    /dashboard/v2 →                      （dashboard-v2-redesign ITEM-4 增量，2026-08-24 定稿；
+         {                                     旧 GET /dashboard 并存不迁移，DEC-7；全部窗口/日界
+           next_shoot: ScheduleSlotListItem?|null 由服务端按 Settings.timezone 单点计算，DEC-1/3/9）
+                          (今日及之后最早的未取消 shoot——end_at 越过本地今日 00:00 即候选，
+                           含进行中的跨日拍摄；取消 = type=shoot ∧ 引用订单 status=cancelled；
+                           排序 start_at ASC, id ASC；无则 null),
+           today_slots: ScheduleSlotListItem[](与 /dashboard.today_slots 完全同口径，
+                          摘要与排序经 schedule 装配单一来源),
+           today_openings: { working_window: {start,end,start_at,end_at}?|null,
+                             openings: {date,start,end,start_at,end_at}[] }
+                          (当日 Settings.availability 工作窗内 ≥ min_opening_minutes 的空档；
+                           未取消的 shoot/hold/busy 均占用；工作窗解析含 DST compatible 语义；
+                           当日 weekday 未配置 → working_window=null 且 openings=[]；算法为
+                           Go 权威实现，与前端 TS 以共享 golden fixtures 对拍，DEC-9),
+           delivery_queue: { count, items: { order: OrderListItem, days_left?: int,
+                             overdue: bool }[] }
+                          (status ∈ {shot,selected,retouching} 已拍未交付；应交日取
+                           delivery_due_at（SLA 派生/订单覆盖，ITEM-1）；排序
+                           delivery_due_at ASC NULLS LAST, id ASC；days_left = 应交日 −
+                           账号时区今日（自然日差，负数=逾期），无应交日可缺省；
+                           count == len(items)),
+           revenue_waterfall: { confirmed: { current, previous, change_ratio? },
+                                receivable: { total, count },
+                                pipeline: { total, count },
+                                cash_received_30d, average_order_value?,
+                                repeat_customer_ratio_90d?, oldest_receivable_age_days? }
+                          (confirmed=近 30 天窗 revenue_confirmed 既有口径不变，环比对上一个
+                           相邻 30 天窗 [今日-59,今日-29) 同口径，previous=0 时 change_ratio 缺省；
+                           receivable=当前 status=delivered ∧ balance_paid=false 订单的
+                           outstanding_amount 之和（NULL→0；DEC-10 录满未点收讫计笔数不计
+                           金额），存量时点值、无窗口；pipeline（在途）=status ∈
+                           {scheduled,shot,selected,retouching} 且非 cancelled 的 price 之和
+                           （NULL 跳过）——「在途」冻结为：已定档进入执行链但尚未交付确认的
+                           收入承诺；已交付未结清归待收段、不属在途；cash_received_30d=
+                           近 30 天窗内 paid_at 落窗且非 cancelled 的 amount_paid 之和
+                           （无 paid_at 的历史收款不虚构时间）；average_order_value=当前窗
+                           confirmed ÷ 计入订单笔数；repeat_customer_ratio_90d=近 90 天窗
+                           [今日-89,今日] 内 shot_at 落窗且非 cancelled 订单按客户聚合、
+                           拍摄 ≥2 单客户数 ÷ 有拍摄客户数（0 客户缺省）；
+                           oldest_receivable_age_days=今日 − 最早一笔未结清已交付订单
+                           delivered_at（账号本地自然日差），无则缺省),
+           schedule_utilization: { month, utilization?, shoot_count, hold_days,
+                                   open_days, conflict_days }
+                          (账号本地当前自然月，与 Calendar v2 月概览同口径同值（parity 契约
+                           测试）：分母=各已配置工作日工作窗分钟和（未配置日不入分母），
+                           分子=未取消 shoot+hold 与工作窗相交分钟（busy 不计分子）；
+                           utilization=两位小数、封顶 100，分母 0 缺省；取消判定与
+                           Calendar 同源：shoot ∧ 引用订单 cancelled),
+           channel_matrix: { rows: { channel, portrait, cosplay, other, unattributed,
+                             total, order_count, customer_count }[], grand_total }
+                          (非 cancelled ∧ balance_paid=true 订单按下单时归因快照
+                           channel_snapshot × shoot_type_snapshot 聚合 price（NULL 跳过，
+                           ITEM-3）；shoot_type_snapshot NULL 归 unattributed 未归因桶；
+                           累计、无窗口；行按 total DESC, channel ASC),
+           due_reminders: Reminder 形 + customer_summary:{display_name,channel}?|null
+                          (口径与 /dashboard.due_reminders 完全一致（近 3 天窗含逾期）；
+                           仅追加客户摘要投影还原 v2 行样式，批量装配无 N+1) }
 ```
 
 

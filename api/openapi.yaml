@@ -1730,6 +1730,228 @@ paths:
         "500":
           $ref: "#/components/responses/Internal"
 
+  /dashboard/v2:
+    get:
+      tags: [dashboard]
+      operationId: getDashboardV2
+      summary: 经营台 v2 分层聚合读模型（口径单点在服务端，§4.3 dashboard-v2-redesign 块）
+      responses:
+        "200":
+          description: v2 聚合数据
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  [next_shoot, today_slots, today_openings, delivery_queue,
+                   revenue_waterfall, schedule_utilization, channel_matrix, due_reminders]
+                properties:
+                  next_shoot:
+                    nullable: true
+                    oneOf:
+                      - $ref: "#/components/schemas/ScheduleSlotListItem"
+                  today_slots:
+                    description: 与账号本地今日半开日界相交的档期（与 GET /dashboard.today_slots 同口径）
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScheduleSlotListItem"
+                  today_openings:
+                    type: object
+                    required: [working_window, openings]
+                    properties:
+                      working_window:
+                        description: 当日 Settings.availability 工作窗（解析为时刻）；当日未配置 → null
+                        type: object
+                        nullable: true
+                        required: [start, end, start_at, end_at]
+                        properties:
+                          start:
+                            type: string
+                            description: 本地 HH:MM
+                          end:
+                            type: string
+                            description: 本地 HH:MM
+                          start_at:
+                            type: string
+                            format: date-time
+                          end_at:
+                            type: string
+                            format: date-time
+                      openings:
+                        description: 工作窗内 ≥ min_opening_minutes 的空档（未取消 shoot/hold/busy 均占用；算法与 Calendar v2 单一权威）
+                        type: array
+                        items:
+                          type: object
+                          required: [date, start, end, start_at, end_at]
+                          properties:
+                            date:
+                              type: string
+                              format: date
+                            start:
+                              type: string
+                              description: 本地 HH:MM
+                            end:
+                              type: string
+                              description: 本地 HH:MM
+                            start_at:
+                              type: string
+                              format: date-time
+                            end_at:
+                              type: string
+                              format: date-time
+                  delivery_queue:
+                    type: object
+                    required: [count, items]
+                    properties:
+                      count:
+                        type: integer
+                        description: 与 items 长度一致（不截断）
+                      items:
+                        description: status ∈ {shot,selected,retouching} 已拍未交付，按应交日升序（NULLS LAST）
+                        type: array
+                        items:
+                          type: object
+                          required: [order, overdue]
+                          properties:
+                            order:
+                              $ref: "#/components/schemas/OrderListItem"
+                            days_left:
+                              type: integer
+                              description: 应交日 − 账号时区今日（自然日差，负数即逾期）；无应交日缺省
+                            overdue:
+                              type: boolean
+                  revenue_waterfall:
+                    type: object
+                    required:
+                      [confirmed, receivable, pipeline, cash_received_30d]
+                    properties:
+                      confirmed:
+                        type: object
+                        required: [current, previous]
+                        description: 近 30 天窗 revenue_confirmed 既有口径 + 环比
+                        properties:
+                          current:
+                            type: integer
+                            description: 分
+                          previous:
+                            type: integer
+                            description: 分；上一个相邻 30 天窗同口径
+                          change_ratio:
+                            type: number
+                            description: (current−previous)/previous，4 位小数；previous=0 缺省
+                      receivable:
+                        type: object
+                        required: [total, count]
+                        description: 当前 delivered ∧ 未结清订单的 outstanding_amount 之和（存量时点值，无窗口）
+                        properties:
+                          total:
+                            type: integer
+                            description: 分；录满未点收讫订单计笔数不计金额
+                          count:
+                            type: integer
+                      pipeline:
+                        type: object
+                        required: [total, count]
+                        description: 「在途」= status ∈ {scheduled,shot,selected,retouching} 且非 cancelled 的 price 之和（存量时点值，无窗口）
+                        properties:
+                          total:
+                            type: integer
+                            description: 分；price NULL 跳过
+                          count:
+                            type: integer
+                      cash_received_30d:
+                        type: integer
+                        description: 分；近 30 天窗内 paid_at 落窗且非 cancelled 的 amount_paid 之和
+                      average_order_value:
+                        type: integer
+                        description: 分；当前窗已确认收入 ÷ 计入订单笔数；无则缺省
+                      repeat_customer_ratio_90d:
+                        type: number
+                        description: 近 90 天窗内拍摄 ≥2 单客户占比（4 位小数）；0 客户缺省
+                      oldest_receivable_age_days:
+                        type: integer
+                        description: 今日 − 最早未结清已交付订单 delivered_at（本地自然日差）；无则缺省
+                  schedule_utilization:
+                    type: object
+                    required: [month, shoot_count, hold_days, open_days, conflict_days]
+                    description: 账号本地当前自然月；与 Calendar v2 月概览同口径同值（parity）
+                    properties:
+                      month:
+                        type: string
+                        pattern: '^\d{4}-\d{2}$'
+                      utilization:
+                        type: number
+                        description: 未取消 shoot+hold 工作窗相交分钟占比，两位小数、封顶 100；分母 0 缺省
+                      shoot_count:
+                        type: integer
+                        description: 未取消 shoot 档期去重计数
+                      hold_days:
+                        type: integer
+                      open_days:
+                        type: integer
+                        description: 存在 ≥ min_opening_minutes 空档的已配置工作日数
+                      conflict_days:
+                        type: integer
+                  channel_matrix:
+                    type: object
+                    required: [rows, grand_total]
+                    properties:
+                      rows:
+                        description: 非 cancelled ∧ balance_paid=true 订单按下单时归因快照聚合 price；行按 total DESC, channel ASC；无数据的渠道不出空行
+                        type: array
+                        items:
+                          type: object
+                          required: [channel, portrait, cosplay, other, unattributed, total, order_count, customer_count]
+                          properties:
+                            channel:
+                              allOf:
+                                - $ref: "#/components/schemas/CustomerChannel"
+                            portrait:
+                              type: integer
+                              description: 分
+                            cosplay:
+                              type: integer
+                              description: 分
+                            other:
+                              type: integer
+                              description: 分
+                            unattributed:
+                              type: integer
+                              description: 分；shoot_type_snapshot NULL 的未归因桶
+                            total:
+                              type: integer
+                              description: 分
+                            order_count:
+                              type: integer
+                            customer_count:
+                              type: integer
+                      grand_total:
+                        type: integer
+                        description: 分
+                  due_reminders:
+                    description: 口径与 GET /dashboard.due_reminders 一致（近 3 天窗含逾期），附客户摘要投影
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: "#/components/schemas/Reminder"
+                        - type: object
+                          properties:
+                            customer_summary:
+                              description: 客户摘要（display_name + 渠道）；提醒无客户则 null
+                              type: object
+                              nullable: true
+                              required: [display_name, channel]
+                              properties:
+                                display_name:
+                                  type: string
+                                channel:
+                                  allOf:
+                                    - $ref: "#/components/schemas/CustomerChannel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/Internal"
+
   /export:
     get:
       tags: [export]

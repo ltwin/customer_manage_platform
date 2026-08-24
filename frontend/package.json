@@ -12,6 +12,7 @@
     "test:api-client": "node --test --experimental-transform-types scripts/api-client.test.ts",
     "test:auth": "node --test --experimental-transform-types scripts/auth.test.ts",
     "test:schedule": "node --test --experimental-transform-types scripts/schedule.test.ts",
+    "test:openings-golden": "node --test --experimental-transform-types scripts/openings-golden.test.ts",
     "test:settings": "node --test --experimental-transform-types scripts/settings.test.ts",
     "test:avatar-layout": "node --test scripts/avatar-layout.test.mjs",
     "test:customer-avatar": "node --test --experimental-transform-types scripts/customer-avatar.test.ts",

@@ -371,6 +371,19 @@ func (s *Service) TimezoneForAccount(ctx context.Context, accountID string) (str
 	return settings.Timezone, nil
 }
 
+// AvailabilityForAccount 供 dashboard v2 等跨域读模型取账号可约偏好（与 GET /settings 同源；
+// 无自定义行时返回默认值；dashboard-v2-redesign DEC-3/DEC-9）。
+func (s *Service) AvailabilityForAccount(ctx context.Context, accountID string) (ScheduleAvailability, error) {
+	if s.scopeFor == nil {
+		return DefaultScheduleAvailability(), nil
+	}
+	settings, err := s.Get(ctx, s.scopeFor(accountID))
+	if err != nil {
+		return ScheduleAvailability{}, err
+	}
+	return settings.Availability, nil
+}
+
 func validateTimezone(tz string) error {
 	if tz == "" {
 		return ValidationError{Message: "timezone 必填"}

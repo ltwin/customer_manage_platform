@@ -28,6 +28,11 @@ func NewAccountClock(timezone string) (AccountClock, error) {
 	return AccountClock{loc: loc}, nil
 }
 
+// Location 暴露账号时区（供 openings/利用率等需要逐时刻解析的算法复用同一时区）。
+func (c AccountClock) Location() *time.Location {
+	return c.loc
+}
+
 // LocalDate 把瞬时时间截成账号本地 date-only（UTC 午夜表示）。
 func (c AccountClock) LocalDate(t time.Time) time.Time {
 	local := t.In(c.loc)

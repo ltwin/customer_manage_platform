@@ -13,9 +13,10 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	reminderdomain "github.com/samson/customer-manage-platform/backend/internal/reminder"
+	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
 
-// stubTimezone 是注入 dashboard.Service 的时区 seam（design D9）。
+// stubTimezone 是注入 dashboard.Service 的设置 seam（design D9；v2 起同接口还需可约偏好）。
 type stubTimezone struct {
 	tz  string
 	err error
@@ -23,6 +24,10 @@ type stubTimezone struct {
 
 func (s stubTimezone) TimezoneForAccount(context.Context, string) (string, error) {
 	return s.tz, s.err
+}
+
+func (s stubTimezone) AvailabilityForAccount(context.Context, string) (settings.ScheduleAvailability, error) {
+	return settings.DefaultScheduleAvailability(), nil
 }
 
 func fixedClock(t time.Time) func() time.Time {

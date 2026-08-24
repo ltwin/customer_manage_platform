@@ -1,0 +1,107 @@
+{
+  "name": "month-utilization",
+  "description": "月度利用率（DEC-2 口径）：分子=未取消 shoot+hold 与工作窗相交分钟（busy 不计）、分母不含未配置日、取消 shoot 不计 shoot_count、跨月内跨日档期按日分段、重叠档期记 conflict 日",
+  "timezone": "Asia/Shanghai",
+  "availability": {
+    "weekly": {
+      "1": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "2": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "3": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "4": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "5": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "6": {
+        "start": "09:00",
+        "end": "20:00"
+      },
+      "7": null
+    },
+    "min_opening_minutes": 120,
+    "turnaround_minutes": 60
+  },
+  "slots": [
+    {
+      "id": "m1",
+      "type": "shoot",
+      "start_at": "2026-07-06T04:00:00Z",
+      "end_at": "2026-07-06T06:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "m2",
+      "type": "hold",
+      "start_at": "2026-07-07T02:00:00Z",
+      "end_at": "2026-07-07T04:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "m3",
+      "type": "busy",
+      "start_at": "2026-07-08T02:00:00Z",
+      "end_at": "2026-07-08T10:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "m4",
+      "type": "shoot",
+      "start_at": "2026-07-09T02:00:00Z",
+      "end_at": "2026-07-09T05:00:00Z",
+      "order_status": "cancelled"
+    },
+    {
+      "id": "m5",
+      "type": "shoot",
+      "start_at": "2026-07-10T10:00:00Z",
+      "end_at": "2026-07-11T03:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "m6",
+      "type": "shoot",
+      "start_at": "2026-07-14T04:00:00Z",
+      "end_at": "2026-07-14T06:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "m7",
+      "type": "shoot",
+      "start_at": "2026-07-14T05:00:00Z",
+      "end_at": "2026-07-14T07:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "m8",
+      "type": "shoot",
+      "start_at": "2026-07-12T02:00:00Z",
+      "end_at": "2026-07-12T04:00:00Z",
+      "order_status": null
+    }
+  ],
+  "dates": [],
+  "month": "2026-07",
+  "expected": {
+    "days": [],
+    "errors": [],
+    "month_overview": {
+      "shoot_count": 5,
+      "hold_days": 1,
+      "conflict_days": 1,
+      "open_days": 26,
+      "utilization": 4.38
+    }
+  }
+}

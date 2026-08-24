@@ -1,0 +1,153 @@
+{
+  "name": "openings-boundary",
+  "description": "空档边界：正好等于 min_opening_minutes 计入、差 1 分钟不计、相邻档期间无空档、整窗被占无空档、跨午夜档期按日分别裁剪",
+  "timezone": "Asia/Shanghai",
+  "availability": {
+    "weekly": {
+      "1": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "2": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "3": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "4": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "5": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "6": {
+        "start": "10:00",
+        "end": "19:00"
+      },
+      "7": {
+        "start": "10:00",
+        "end": "19:00"
+      }
+    },
+    "min_opening_minutes": 120,
+    "turnaround_minutes": 60
+  },
+  "slots": [
+    {
+      "id": "b1",
+      "type": "shoot",
+      "start_at": "2026-07-06T04:00:00Z",
+      "end_at": "2026-07-06T06:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "b2",
+      "type": "hold",
+      "start_at": "2026-07-06T06:00:00Z",
+      "end_at": "2026-07-06T08:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "b3",
+      "type": "shoot",
+      "start_at": "2026-07-06T09:59:00Z",
+      "end_at": "2026-07-06T11:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "b4",
+      "type": "busy",
+      "start_at": "2026-07-07T01:00:00Z",
+      "end_at": "2026-07-07T12:00:00Z",
+      "order_status": null
+    },
+    {
+      "id": "b5",
+      "type": "shoot",
+      "start_at": "2026-07-08T10:00:00Z",
+      "end_at": "2026-07-09T03:00:00Z",
+      "order_status": null
+    }
+  ],
+  "dates": [
+    "2026-07-06",
+    "2026-07-07",
+    "2026-07-08",
+    "2026-07-09"
+  ],
+  "month": null,
+  "expected": {
+    "days": [
+      {
+        "date": "2026-07-06",
+        "working_window": {
+          "start": "10:00",
+          "end": "19:00",
+          "start_at": "2026-07-06T02:00:00Z",
+          "end_at": "2026-07-06T11:00:00Z"
+        },
+        "openings": [
+          {
+            "date": "2026-07-06",
+            "start": "10:00",
+            "end": "12:00",
+            "start_at": "2026-07-06T02:00:00Z",
+            "end_at": "2026-07-06T04:00:00Z"
+          }
+        ]
+      },
+      {
+        "date": "2026-07-07",
+        "working_window": {
+          "start": "10:00",
+          "end": "19:00",
+          "start_at": "2026-07-07T02:00:00Z",
+          "end_at": "2026-07-07T11:00:00Z"
+        },
+        "openings": []
+      },
+      {
+        "date": "2026-07-08",
+        "working_window": {
+          "start": "10:00",
+          "end": "19:00",
+          "start_at": "2026-07-08T02:00:00Z",
+          "end_at": "2026-07-08T11:00:00Z"
+        },
+        "openings": [
+          {
+            "date": "2026-07-08",
+            "start": "10:00",
+            "end": "18:00",
+            "start_at": "2026-07-08T02:00:00Z",
+            "end_at": "2026-07-08T10:00:00Z"
+          }
+        ]
+      },
+      {
+        "date": "2026-07-09",
+        "working_window": {
+          "start": "10:00",
+          "end": "19:00",
+          "start_at": "2026-07-09T02:00:00Z",
+          "end_at": "2026-07-09T11:00:00Z"
+        },
+        "openings": [
+          {
+            "date": "2026-07-09",
+            "start": "11:00",
+            "end": "19:00",
+            "start_at": "2026-07-09T03:00:00Z",
+            "end_at": "2026-07-09T11:00:00Z"
+          }
+        ]
+      }
+    ],
+    "errors": [],
+    "month_overview": null
+  }
+}

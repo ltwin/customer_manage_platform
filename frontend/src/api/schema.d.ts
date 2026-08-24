@@ -563,6 +563,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/v2": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 经营台 v2 分层聚合读模型（口径单点在服务端，§4.3 dashboard-v2-redesign 块） */
+        get: operations["getDashboardV2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/export": {
         parameters: {
             query?: never;
@@ -5199,6 +5216,140 @@ export interface operations {
                             /** @description 分；近 30 天 delivered_at 落窗口、balance_paid=true 且当前非 cancelled 的订单 price 之和 */
                             revenue_confirmed: number;
                         };
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["Internal"];
+        };
+    };
+    getDashboardV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description v2 聚合数据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        next_shoot: components["schemas"]["ScheduleSlotListItem"] | null;
+                        /** @description 与账号本地今日半开日界相交的档期（与 GET /dashboard.today_slots 同口径） */
+                        today_slots: components["schemas"]["ScheduleSlotListItem"][];
+                        today_openings: {
+                            /** @description 当日 Settings.availability 工作窗（解析为时刻）；当日未配置 → null */
+                            working_window: {
+                                /** @description 本地 HH:MM */
+                                start: string;
+                                /** @description 本地 HH:MM */
+                                end: string;
+                                /** Format: date-time */
+                                start_at: string;
+                                /** Format: date-time */
+                                end_at: string;
+                            } | null;
+                            /** @description 工作窗内 ≥ min_opening_minutes 的空档（未取消 shoot/hold/busy 均占用；算法与 Calendar v2 单一权威） */
+                            openings: {
+                                /** Format: date */
+                                date: string;
+                                /** @description 本地 HH:MM */
+                                start: string;
+                                /** @description 本地 HH:MM */
+                                end: string;
+                                /** Format: date-time */
+                                start_at: string;
+                                /** Format: date-time */
+                                end_at: string;
+                            }[];
+                        };
+                        delivery_queue: {
+                            /** @description 与 items 长度一致（不截断） */
+                            count: number;
+                            /** @description status ∈ {shot,selected,retouching} 已拍未交付，按应交日升序（NULLS LAST） */
+                            items: {
+                                order: components["schemas"]["OrderListItem"];
+                                /** @description 应交日 − 账号时区今日（自然日差，负数即逾期）；无应交日缺省 */
+                                days_left?: number;
+                                overdue: boolean;
+                            }[];
+                        };
+                        revenue_waterfall: {
+                            /** @description 近 30 天窗 revenue_confirmed 既有口径 + 环比 */
+                            confirmed: {
+                                /** @description 分 */
+                                current: number;
+                                /** @description 分；上一个相邻 30 天窗同口径 */
+                                previous: number;
+                                /** @description (current−previous)/previous，4 位小数；previous=0 缺省 */
+                                change_ratio?: number;
+                            };
+                            /** @description 当前 delivered ∧ 未结清订单的 outstanding_amount 之和（存量时点值，无窗口） */
+                            receivable: {
+                                /** @description 分；录满未点收讫订单计笔数不计金额 */
+                                total: number;
+                                count: number;
+                            };
+                            /** @description 「在途」= status ∈ {scheduled,shot,selected,retouching} 且非 cancelled 的 price 之和（存量时点值，无窗口） */
+                            pipeline: {
+                                /** @description 分；price NULL 跳过 */
+                                total: number;
+                                count: number;
+                            };
+                            /** @description 分；近 30 天窗内 paid_at 落窗且非 cancelled 的 amount_paid 之和 */
+                            cash_received_30d: number;
+                            /** @description 分；当前窗已确认收入 ÷ 计入订单笔数；无则缺省 */
+                            average_order_value?: number;
+                            /** @description 近 90 天窗内拍摄 ≥2 单客户占比（4 位小数）；0 客户缺省 */
+                            repeat_customer_ratio_90d?: number;
+                            /** @description 今日 − 最早未结清已交付订单 delivered_at（本地自然日差）；无则缺省 */
+                            oldest_receivable_age_days?: number;
+                        };
+                        /** @description 账号本地当前自然月；与 Calendar v2 月概览同口径同值（parity） */
+                        schedule_utilization: {
+                            month: string;
+                            /** @description 未取消 shoot+hold 工作窗相交分钟占比，两位小数、封顶 100；分母 0 缺省 */
+                            utilization?: number;
+                            /** @description 未取消 shoot 档期去重计数 */
+                            shoot_count: number;
+                            hold_days: number;
+                            /** @description 存在 ≥ min_opening_minutes 空档的已配置工作日数 */
+                            open_days: number;
+                            conflict_days: number;
+                        };
+                        channel_matrix: {
+                            /** @description 非 cancelled ∧ balance_paid=true 订单按下单时归因快照聚合 price；行按 total DESC, channel ASC；无数据的渠道不出空行 */
+                            rows: {
+                                channel: components["schemas"]["CustomerChannel"];
+                                /** @description 分 */
+                                portrait: number;
+                                /** @description 分 */
+                                cosplay: number;
+                                /** @description 分 */
+                                other: number;
+                                /** @description 分；shoot_type_snapshot NULL 的未归因桶 */
+                                unattributed: number;
+                                /** @description 分 */
+                                total: number;
+                                order_count: number;
+                                customer_count: number;
+                            }[];
+                            /** @description 分 */
+                            grand_total: number;
+                        };
+                        /** @description 口径与 GET /dashboard.due_reminders 一致（近 3 天窗含逾期），附客户摘要投影 */
+                        due_reminders: (components["schemas"]["Reminder"] & {
+                            /** @description 客户摘要（display_name + 渠道）；提醒无客户则 null */
+                            customer_summary?: {
+                                display_name: string;
+                                channel: components["schemas"]["CustomerChannel"];
+                            } | null;
+                        })[];
                     };
                 };
             };
