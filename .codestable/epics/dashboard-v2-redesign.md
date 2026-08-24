@@ -70,7 +70,7 @@ work: ../work/epic-dashboard-v2-redesign.md
 - **DEC-2 · 利用率口径统一**：Dashboard 只做展示派生，不新造算法；统一采用 Calendar v2 的"工作窗口内 shoot+hold 占用分钟占比"口径。废弃原型"有拍摄的天数"。
 - **DEC-3 · 空档/时段以 settings 为准**：删除原型 09:00–21:00 / ≥90 分钟常量；复用 `GET /settings` availability（工作日窗口、最小可约时长、转场缓冲）与 Calendar openings 算法。
 - **DEC-4 · 金额语义四态**：已确认（`revenue_confirmed` 既有口径）/ 已收现金（`amount_paid`）/ 待收（`outstanding_amount`）/ 在途（待定，见遗留风险）。支付事实 = 订单最小字段，不做支付流水表。已收现金在 v2 UI 作为瀑布卡 KPI 行辅助指标呈现，不是瀑布三段之一。
-- **DEC-5 · 归因快照**：订单表固化 `channel_snapshot`/`shoot_type_snapshot`，下单时取客户当前渠道与套系拍摄类型。历史订单不回写快照（遗留风险说明）。
+- **DEC-5 · 归因快照**：订单表固化 `channel_snapshot`/`shoot_type_snapshot`，下单时取客户当前渠道与套系拍摄类型。存量订单 best-effort 回填——按当前客户渠道/套系类型写入，可能与真实下单时不一致（遗留风险 4）。（2026-08-24 ITEM-6 措辞清理：原括注「历史订单不回写快照」与 ITEM-3 实现及验收要点「best-effort 回填」冲突，按实现校正。）
 - **DEC-6 · 交付 SLA 来源**：`delivery_due_at = shot_at + 账号级默认 SLA 天数`，订单级可覆盖；SLA 默认值进 settings（与 availability 同级），不写死 14 天。
 - **DEC-7 · 端点版本策略**：保留 `GET /dashboard`（旧五块）不动，新增 `GET /dashboard/v2`。两端点并存，deprecate 时机见遗留风险，不在本 Epic 内合并。
 - **DEC-8 · 聚合读模型归属**：`dashboard/v2` 读模型落在 dashboard 域，经 `AccountScope` 直查 orders/slots/reminders/customers/packages，复用 `schedule.AssembleListItems` 摘要装配，不注入他域 service（compound cross-domain-read-model）。

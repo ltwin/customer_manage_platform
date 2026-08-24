@@ -112,7 +112,7 @@ func TestDataExportRouteReturnsRealAccountData(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); err != nil {
 		t.Fatalf("decode export: %v", err)
 	}
-	if document.SchemaVersion != 3 || len(document.Customers) != 1 || len(document.SocialIdentities) != 1 ||
+	if document.SchemaVersion != 4 || len(document.Customers) != 1 || len(document.SocialIdentities) != 1 ||
 		len(document.CustomerNotes) != 1 || len(document.Packages) != 1 || len(document.Orders) != 1 ||
 		len(document.ScheduleSlots) != 1 || len(document.Reminders) != 1 {
 		t.Fatalf("export did not include real account data: %+v", document)
@@ -195,7 +195,7 @@ func assertCompleteRouteExportJSON(
 	}
 	expected := map[string]any{
 		"exported_at":    exportedAt,
-		"schema_version": float64(3),
+		"schema_version": float64(4),
 		"counts": map[string]any{
 			"customers": float64(1), "social_identities": float64(1), "customer_notes": float64(1),
 			"packages": float64(1), "orders": float64(1), "schedule_slots": float64(1), "reminders": float64(1),

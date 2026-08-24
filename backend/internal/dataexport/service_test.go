@@ -52,8 +52,8 @@ func TestServiceBuildsVersionedDocumentWithLengthDerivedCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	if doc.SchemaVersion != 3 {
-		t.Fatalf("schema version = %d, want 3", doc.SchemaVersion)
+	if doc.SchemaVersion != 4 {
+		t.Fatalf("schema version = %d, want 4", doc.SchemaVersion)
 	}
 	if !doc.ExportedAt.Equal(now.UTC()) {
 		t.Fatalf("exported at = %s, want %s", doc.ExportedAt, now.UTC())

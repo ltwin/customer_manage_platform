@@ -4841,7 +4841,7 @@ components:
           format: date-time
         schema_version:
           type: integer
-          enum: [3]
+          enum: [4]
         counts:
           $ref: "#/components/schemas/ExportCounts"
         customers:

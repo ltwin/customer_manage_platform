@@ -105,3 +105,11 @@ items:
     feature: 2026-07-31-calendar-v2-redesign
     minimal_loop: false
     notes: 新增量不回退或改写已 done 的 schedule-calendar/data-export 历史。完成信号：Settings availability migration+strict PATCH+有效默认+schema-v2 export parity，shoot slot 批量款项/套系摘要与 dashboard 回归无 N+1，月/周/空档文案/利用率/转场/取消降级与桌面移动 CRUD 完成，ScheduleSlotDialog journal/幂等/unknown recovery 保持且 conflict preview generation 正确，DST 与 1600/1280/375 workspace/layout/focus/overflow 证据通过；不新增 openings/overview/book、拖拽、重复规则、多窗口、自助预约或主动消息发送。
+
+  - slug: dashboard-v2-redesign
+    description: 经营台 v2 增量：交付 SLA 与交付队列事实、订单支付事实字段、渠道/类型归因快照、GET /dashboard/v2 聚合读模型、前端三层结构接入与金额/SLA 写侧录入（roadmap §4.2 Order/Settings 增量、§4.3 /dashboard/v2、§4.6 schema_version 4）
+    depends_on: [dashboard, calendar-v2-redesign]
+    status: done
+    feature: 2026-08-22-dashboard-v2-redesign
+    minimal_loop: false
+    notes: 走 epic/work 流程（.codestable/epics/dashboard-v2-redesign.md + .codestable/work/ 六份子项记录），无 features 目录。新增量不回退或改写已 done 的 dashboard 历史；旧 GET /dashboard 保留（Telegram digest 服务端消费）。完成信号（epic 验收标准 1-8 全过）：登录默认落地页 v2 三层八块真实数据无原型写死常量、口径单点服务端、openings/利用率与 Calendar v2 同值（共享 golden fixtures 对拍）、金额/SLA 写侧录入后瀑布与交付队列联动（DEC-10 推定）、机器契约与 roadmap §4 权威源一致、导出 schema_version 统一升 4；六子项（ITEM-1 交付 SLA / ITEM-2 支付事实 / ITEM-3 归因快照 / ITEM-4 聚合读模型 / ITEM-5 前端与写侧 / ITEM-6 契约文档回写）change review 闭环 + 完整 make check 单轮全绿。咨询转化与健康度分层下放二期（roadmap §7）。

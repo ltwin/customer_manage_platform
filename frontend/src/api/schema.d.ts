@@ -1900,7 +1900,7 @@ export interface components {
             /** Format: date-time */
             exported_at: string;
             /** @enum {integer} */
-            schema_version: 3;
+            schema_version: 4;
             counts: components["schemas"]["ExportCounts"];
             customers: components["schemas"]["Customer"][];
             social_identities: components["schemas"]["SocialIdentity"][];

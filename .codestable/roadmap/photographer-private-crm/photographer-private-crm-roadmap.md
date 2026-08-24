@@ -635,14 +635,14 @@ Port:   TelegramPort { sendMessage(chat_id, text) error }
 
 ```
 GET /export → application/json（Content-Disposition 附件）
-{ exported_at, schema_version: 3,
+{ exported_at, schema_version: 4,
   counts: { customers, social_identities, customer_notes, packages, orders,
             schedule_slots, reminders },
   customers[], social_identities[], customer_notes[], packages[], orders[],
   schedule_slots[], reminders[], settings }        // 各数组 shape 全部按 4.2
 ```
 
-**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。`dashboard-v2-redesign` ITEM-1/2/3 新增订单字段随 §4.2 Order shape 进入导出（amount_paid/channel_snapshot 恒输出，其余可缺省），`schema_version` 是否 bump 由该 epic ITEM-6 统一决策（此前保持 3）。
+**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。`dashboard-v2-redesign` ITEM-1/2/3 新增订单字段随 §4.2 Order shape 进入导出（amount_paid/channel_snapshot 恒输出，其余可缺省）；该 epic ITEM-6（2026-08-24）统一拍板 `schema_version` 由 3 升为 4——延续「每逢导出 shape 变化即 bump」纪律（calendar-v2 1→2、creative-planning 2→3 先例），维持「同版本 ⇒ 同 shape」不变量，消费方可按版本区分导出年代；不采用「可选字段静默兼容保持 3」——金额三字段与恒输出的 channel_snapshot 属新增经营事实，静默保持 3 会让同一版本指向两种 shape。
 
 ### 4.x 共享数据结构 / 状态
 
@@ -689,6 +689,9 @@ GET /export → application/json（Content-Disposition 附件）
 13. **calendar-v2-redesign** — 档期工作台增量：月/周双视图、真实可约空档、转场提醒、订单款项/套系摘要和移动端完整 CRUD
     - 所属模块：platform + reminder/settings + schedule + webapp ｜ 依赖：schedule-calendar, reminder-engine, dashboard, data-export ｜ 状态：done ｜ 对应 feature：2026-07-31-calendar-v2-redesign
     - 备注：本条是新增量，不回退或改写已 done 的 `schedule-calendar` / `data-export` 历史。完成信号：Settings availability 迁移、严格 PATCH、有效默认与 schema-v2 导出 parity 通过；shoot slot 在 schedule repository 内批量装配价格/收款/套系拍摄类型且 dashboard 回归无 N+1；月/周视图、未来 14 天空档（最多展示 8 天、复制前 5 天）、shoot+hold 利用率、转场软提醒、取消降级和桌面/移动 CRUD 可用；周日默认 09:00–20:00、单日单窗口、Temporal compatible DST 语义有确定性测试；复用 ScheduleSlotDialog 的 journal/幂等/unknown recovery，并以 conflict preview generation 保证确认范围与保存范围一致；1600/1280/375 记录实际 workspace 宽度、layout mode、DOM/focus 与 overflow 证据；不新增 openings/overview/book、拖拽、重复规则、多窗口、自助预约或主动消息发送。
+14. **dashboard-v2-redesign** — 经营台 v2 增量：交付 SLA 与交付队列事实、订单支付事实字段、渠道/类型归因快照、`GET /dashboard/v2` 聚合读模型、前端三层结构接入与金额/SLA 写侧录入
+    - 所属模块：dashboard + order + settings + schedule + webapp ｜ 依赖：dashboard, calendar-v2-redesign ｜ 状态：done ｜ 对应 epic：dashboard-v2-redesign（2026-08-22 owner 批准，六子项 2026-08-24 收口）
+    - 备注：本条是 roadmap-owned 增量，不回退或改写已 done 的 `dashboard` 历史；旧 `GET /dashboard` 保留（Telegram digest 服务端消费），与 `/dashboard/v2` 并存，合并时机见 §7 二期。记录走 epic/work 流程（`.codestable/epics/dashboard-v2-redesign.md` 与 `.codestable/work/` 六份子项记录），无 features 目录。完成信号：epic 验收标准 1–8 全过——登录默认落地页为 v2 三层八块真实数据、无原型写死常量；口径单点在服务端；openings/利用率 Go 权威实现与前端 TS 共享 golden fixtures 对拍（DEC-9）、与 Calendar v2 月视图同值；金额/SLA 写侧录入后瀑布与交付队列数字联动（DEC-10 金额联动推定）；机器契约与 §4 权威源一致、导出 schema_version 统一升 4（§4.6）；六个子项 change review 闭环 + 完整 make check 单轮全绿。咨询转化与健康度分层下放二期（§7）。
 
 **最小闭环**：第 2 条 `customer-core` 做完后，登录 → 30 秒建一个带渠道、1 个或多个社交身份的客户 → 列表搜到、详情看到——端到端最窄路径可演示。
 
@@ -737,12 +740,14 @@ GET /export → application/json（Content-Disposition 附件）
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
 - **reminder-engine 已知边界（2026-07-13 acceptance）**：① `digest_hour` 早于每日 runner 首次跨日扫描完成时刻时可能出现摘要空窗，telegram-digest 应在推送前顺带触发幂等扫描；② 复购触发旧 churn 自动 dismissed 后若新订单再取消，既有 churn dedup 行不会回到 pending，可能静默到产生新的最近成交单；③ 账号时区向西修改可能让检查点暂时领先本地日期，后续自然日推进后自愈。三项均不改变本 feature 已验收边界，后续消费/迭代需显式读取。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
+- **dashboard-v2-redesign 二期下放（2026-08-24 epic 收口记录）**：①咨询转化漏斗（consulted_at / 转化线索）并入「渠道转化分析」批次；②客户健康度分层（个人节奏 ratio / tier / LTV）须先决策与 reminder churn 固定阈值两套「流失」口径共用或分离；③`GET /dashboard` 与 `/dashboard/v2` 两端点并存，合并与 deprecate 时机由 owner 再拍板；④Calendar 前端切换为消费服务端 openings/利用率结果，消除 Go/TS 双实现并存漂移窗口（DEC-9，golden fixtures 兜底）；⑤收入瀑布在途/已确认明细钻取与利用率热力格（明细数据不在 v2 聚合内）。详见 `.codestable/epics/dashboard-v2-redesign.md` 遗留风险与 `.codestable/work/epic-dashboard-v2-redesign.md`。
 - ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量；2026-07-10 schedule-calendar update 同时把 `GET /me` 收编为平台契约并增加 timezone，消解原白名单债。
 - **头像与全量导出决策 gate**：`customer-avatar` 只保证 Customer JSON 带可用 `avatar_revision/avatar_version/avatar_url` 与本地卷可做一致备份；当前 §4.6 仍是实体 JSON。`data-export` design 启动前必须由 owner 二选一：reference-only JSON（明确不承诺头像便携恢复），或先把 §4.6 update 为媒体文件 + exact-generation manifest/key/count/checksum 的便携包。未拍板不得启动/完成该条；不得把鉴权 URL 冒充可携带资产。**2026-07-21 resolved**：owner 已选择 reference-only JSON；只导出公开头像引用元数据，不含头像二进制、内部 object_id 或 manifest，不承诺跨环境便携恢复；§4.6 JSON 契约保持不变，启动 gate 已解除。
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
 
 ## 8. 变更日志
 
+- 2026-08-24（dashboard-v2-redesign 六子项收口，ITEM-6 契约与文档回写）：新增条目 14 作为 roadmap-owned 增量，不回退旧 `dashboard` done 状态。§4.2 Order 增 delivery_due_at/delivery_due_is_override 与 Settings 增 delivery_sla_days（ITEM-1）、amount_paid/outstanding_amount/paid_at 与 DEC-10 金额联动推定（ITEM-2）、channel_snapshot/shoot_type_snapshot（ITEM-3）；§4.3 新增 GET /dashboard/v2 聚合契约（ITEM-4，「在途」冻结为 scheduled/shot/selected/retouching 且非 cancelled 的 price 之和，已交付未结清归待收段）——以上各块已分别随子项启动前定稿落文（沿用 D11 先例），本次收口逐块核对机器契约（api/openapi.yaml）与权威源一致、零漂移。§4.6 统一拍板导出 schema_version 3→4（ITEM-1/2/3 全部新增订单字段一次决策，理由见 §4.6 约束行）。CONTEXT.md 增已收现金/待收尾款/在途/归因快照/应交付日术语并更新订单条目；items.yaml 增 dashboard-v2-redesign done；§7 增 dashboard-v2 二期下放清单。旧 `GET /dashboard` 保留供 Telegram digest 服务端消费。
 - 2026-07-31（calendar-v2-redesign owner 批准）：新增条目 13 作为 roadmap-owned 增量，不回退旧 `schedule-calendar` / `data-export` done 状态。§2/§3 收编月/周双视图、可约空档回答、转场软提醒和移动端完整 CRUD；§4.2 给 Settings 增严格 ISO weekday availability（周日默认 09:00–20:00、单日单窗口、最小空档 120 分钟、转场 60 分钟、Temporal compatible DST）；§4.3 扩 shoot slot 批量摘要为价格/定金/尾款/套系拍摄类型并要求 Settings 局部 strict decode；§4.6 因 required availability 把导出 schema_version 升到 2 并要求非默认 Settings parity。openings/overview 继续由 webapp 对短窗口纯计算，不新增聚合端点；旧可靠写流程保留并补 conflict preview generation。
 - 2026-07-13（reminder-engine acceptance）：条目 8 完成；Settings 明确归 `backend/internal/settings`，`GET /reminders` 固定 `due_date ASC,id ASC`，birthday dedup 年份明确为生日发生日年份，custom dedup 固定为 `custom:{reminder_id}`；记录 digest 空窗、复购取消后 churn 静默和时区西移检查点自愈三项已知边界。
 - 2026-07-13（customer-avatar owner 选择）：merged source 默认保留合并时的头像且 GET 可读，但 PUT 继续 `409 customer_merged`，DELETE 改为唯一 cleanup-only PII 清理例外；它只能清 pointer 并进入精确代次 GC，不恢复 merged 档案其他编辑能力。owner 同时接受首版 GC 默认值：24h grace、每小时 runner、每账号每 tick 各一页 object inventory/current-pointer audit +100 due。

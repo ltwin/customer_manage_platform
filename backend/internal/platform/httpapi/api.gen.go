@@ -310,13 +310,13 @@ func (e ExportAccountProfileAvatarMediaType) Valid() bool {
 
 // Defines values for ExportDocumentSchemaVersion.
 const (
-	N3 ExportDocumentSchemaVersion = 3
+	N4 ExportDocumentSchemaVersion = 4
 )
 
 // Valid indicates whether the value is a known member of the ExportDocumentSchemaVersion enum.
 func (e ExportDocumentSchemaVersion) Valid() bool {
 	switch e {
-	case N3:
+	case N4:
 		return true
 	default:
 		return false
