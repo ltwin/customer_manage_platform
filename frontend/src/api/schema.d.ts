@@ -1595,6 +1595,15 @@ export interface components {
             deposit_paid: boolean;
             /** @default false */
             balance_paid: boolean;
+            /** @description 分；已收现金，恒有值（默认 0）。未显式给 outstanding_amount 时按 DEC-10 推定（§4.2 支付事实语义） */
+            amount_paid: number;
+            /** @description 分；待收余额。NULL=price 未定价、不计入待收合计；balance_paid=true 时恒为 0（单向不变量） */
+            outstanding_amount?: number;
+            /**
+             * Format: date-time
+             * @description 收款时刻；仅在 balance_paid 由 false 实际跃迁为 true 且未显式提供时自动写服务端 now，创建不自动写（§4.2）
+             */
+            paid_at?: string;
             /**
              * Format: date-time
              * @description 进入 shot 时服务端自动写入，事后可 PATCH 修正（§4.2）
@@ -4602,6 +4611,15 @@ export interface operations {
                      * @description 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段。建单无「撤销覆盖」语义，故不接受 null——缺省即走自动派生；撤销覆盖见 PATCH（§4.2）
                      */
                     delivery_due_at?: string;
+                    /** @description 分；已收现金。未显式给 outstanding_amount 时按 §4.2 DEC-10 推定——结清单（balance_paid=true）推定结清金额（不降低既有），未结清单推定 max(price−amount_paid, 0)。不接受 null */
+                    amount_paid?: number;
+                    /** @description 分；待收余额，显式值优先于推定；price 未定价且未显式给值时为 null（不计入待收合计）。结清态显式非 0 → 400。不接受 null */
+                    outstanding_amount?: number;
+                    /**
+                     * Format: date-time
+                     * @description 收款时刻，补录历史收款用；缺省不自动写——创建不发明收款时刻（§4.2）。不接受 null
+                     */
+                    paid_at?: string;
                 };
             };
         };
@@ -4690,6 +4708,15 @@ export interface operations {
                      * @description 应交付日（date-only）。缺省时由服务端在 shot_at 首次落值或变更时按账号时区 + Settings.delivery_sla_days 自动派生；其余写路径不重算既有值。显式给值即订单级覆盖，此后不随 shot_at 变更重算；仅已到达拍摄且未取消的订单接受该字段。显式传 null 撤销订单级覆盖并按当前 shot_at 重新派生（无 shot_at 时清空）；未传该字段保持现状（§4.2）
                      */
                     delivery_due_at?: string | null;
+                    /** @description 分；已收现金。录入/修正后未显式给 outstanding_amount 时按 §4.2 DEC-10 推定 max(price−amount_paid, 0)。金额字段无 null 语义，显式 null → 400 */
+                    amount_paid?: number;
+                    /** @description 分；待收余额，显式值优先于推定。balance_paid=true 时显式非 0 → 400（单向不变量）。无 null 语义，显式 null → 400 */
+                    outstanding_amount?: number;
+                    /**
+                     * Format: date-time
+                     * @description 收款时刻，可补录修正；标记收讫（balance_paid false→true）且未显式提供时自动写服务端 now。无 null 语义，显式 null → 400（§4.2）
+                     */
+                    paid_at?: string;
                 };
             };
         };

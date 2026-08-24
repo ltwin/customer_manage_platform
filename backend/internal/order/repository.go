@@ -77,6 +77,9 @@ func (PostgresRepository) CreatePreparedInScope(
 			"note",
 			"delivery_due_at",
 			"delivery_due_is_override",
+			"amount_paid",
+			"outstanding_amount",
+			"paid_at",
 		},
 		id,
 		input.CustomerID,
@@ -91,6 +94,9 @@ func (PostgresRepository) CreatePreparedInScope(
 		nullableStringArg(input.Note),
 		nullableDateArg(prepared.initial.DeliveryDueAt),
 		prepared.initial.DeliveryDueIsOverride,
+		prepared.initial.AmountPaid,
+		nullableIntArg(prepared.initial.OutstandingAmount),
+		nullableTimeArg(prepared.initial.PaidAt),
 	); err != nil {
 		return Order{}, err
 	}
@@ -199,6 +205,9 @@ func (r PostgresRepository) Update(ctx context.Context, scope store.AccountScope
 		set("note", nullableStringArg(next.Note))
 		set("delivery_due_at", nullableDateArg(next.DeliveryDueAt))
 		set("delivery_due_is_override", next.DeliveryDueIsOverride)
+		set("amount_paid", next.AmountPaid)
+		set("outstanding_amount", nullableIntArg(next.OutstandingAmount))
+		set("paid_at", nullableTimeArg(next.PaidAt))
 		cond := fmt.Sprintf("id = $%d", len(args)+2)
 		args = append(args, id)
 		if _, err := tx.Update(ctx, "orders", strings.Join(sets, ", "), cond, args...); err != nil {
@@ -298,7 +307,7 @@ func requireUsablePackage(ctx context.Context, scope rowScope, packageID, mode s
 	return nil
 }
 
-const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note, delivery_due_at, delivery_due_is_override"
+const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, note, delivery_due_at, delivery_due_is_override, amount_paid, outstanding_amount, paid_at"
 
 type scanner interface {
 	Scan(dest ...any) error
@@ -328,8 +337,8 @@ func findOrderForUpdate(ctx context.Context, scope rowScope, id string) (Order, 
 func scanOrder(row scanner) (Order, error) {
 	var order Order
 	var packageID, title, note sql.NullString
-	var price sql.NullInt64
-	var shotAt, deliveredAt, deliveryDueAt sql.NullTime
+	var price, outstanding sql.NullInt64
+	var shotAt, deliveredAt, deliveryDueAt, paidAt sql.NullTime
 	if err := row.Scan(
 		&order.ID,
 		&order.AccountID,
@@ -346,6 +355,9 @@ func scanOrder(row scanner) (Order, error) {
 		&note,
 		&deliveryDueAt,
 		&order.DeliveryDueIsOverride,
+		&order.AmountPaid,
+		&outstanding,
+		&paidAt,
 	); err != nil {
 		return Order{}, err
 	}
@@ -359,6 +371,8 @@ func scanOrder(row scanner) (Order, error) {
 	order.ShotAt = timePtr(shotAt)
 	order.DeliveredAt = timePtr(deliveredAt)
 	order.Note = stringPtr(note)
+	order.OutstandingAmount = intPtr(outstanding)
+	order.PaidAt = timePtr(paidAt)
 	return order, nil
 }
 

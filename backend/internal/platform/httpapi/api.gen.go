@@ -1742,7 +1742,10 @@ type NonShootScheduleSlotListItemType string
 // Order defines model for Order.
 type Order struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
-	AccountId   *string    `json:"account_id,omitempty"`
+	AccountId *string `json:"account_id,omitempty"`
+
+	// AmountPaid 分；已收现金，恒有值（默认 0）。未显式给 outstanding_amount 时按 DEC-10 推定（§4.2 支付事实语义）
+	AmountPaid  int        `json:"amount_paid"`
 	BalancePaid bool       `json:"balance_paid"`
 	CreatedAt   *time.Time `json:"created_at,omitempty"`
 	CustomerId  string     `json:"customer_id"`
@@ -1758,7 +1761,13 @@ type Order struct {
 	DepositPaid           bool    `json:"deposit_paid"`
 	Id                    *string `json:"id,omitempty"`
 	Note                  *string `json:"note,omitempty"`
-	PackageId             *string `json:"package_id,omitempty"`
+
+	// OutstandingAmount 分；待收余额。NULL=price 未定价、不计入待收合计；balance_paid=true 时恒为 0（单向不变量）
+	OutstandingAmount *int    `json:"outstanding_amount,omitempty"`
+	PackageId         *string `json:"package_id,omitempty"`
+
+	// PaidAt 收款时刻；仅在 balance_paid 由 false 实际跃迁为 true 且未显式提供时自动写服务端 now，创建不自动写（§4.2）
+	PaidAt *time.Time `json:"paid_at,omitempty"`
 
 	// Price 分
 	Price *int `json:"price,omitempty"`
@@ -1780,7 +1789,10 @@ type OrderCreationMode string
 // OrderListItem defines model for OrderListItem.
 type OrderListItem struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
-	AccountId   *string    `json:"account_id,omitempty"`
+	AccountId *string `json:"account_id,omitempty"`
+
+	// AmountPaid 分；已收现金，恒有值（默认 0）。未显式给 outstanding_amount 时按 DEC-10 推定（§4.2 支付事实语义）
+	AmountPaid  int        `json:"amount_paid"`
 	BalancePaid bool       `json:"balance_paid"`
 	CreatedAt   *time.Time `json:"created_at,omitempty"`
 
@@ -1799,10 +1811,16 @@ type OrderListItem struct {
 	DepositPaid           bool    `json:"deposit_paid"`
 	Id                    *string `json:"id,omitempty"`
 	Note                  *string `json:"note,omitempty"`
-	PackageId             *string `json:"package_id,omitempty"`
+
+	// OutstandingAmount 分；待收余额。NULL=price 未定价、不计入待收合计；balance_paid=true 时恒为 0（单向不变量）
+	OutstandingAmount *int    `json:"outstanding_amount,omitempty"`
+	PackageId         *string `json:"package_id,omitempty"`
 
 	// PackageName 引用套系的 name；未引用套系时缺省
-	PackageName     *string          `json:"package_name,omitempty"`
+	PackageName *string `json:"package_name,omitempty"`
+
+	// PaidAt 收款时刻；仅在 balance_paid 由 false 实际跃迁为 true 且未显式提供时自动写服务端 now，创建不自动写（§4.2）
+	PaidAt          *time.Time       `json:"paid_at,omitempty"`
 	PlanningSummary *PlanningSummary `json:"planning_summary,omitempty"`
 
 	// Price 分
@@ -2782,6 +2800,8 @@ type ListOrdersParams struct {
 
 // CreateOrderJSONBody defines parameters for CreateOrder.
 type CreateOrderJSONBody struct {
+	// AmountPaid 分；已收现金。未显式给 outstanding_amount 时按 §4.2 DEC-10 推定——结清单（balance_paid=true）推定结清金额（不降低既有），未结清单推定 max(price−amount_paid, 0)。不接受 null
+	AmountPaid  *int  `json:"amount_paid,omitempty"`
 	BalancePaid *bool `json:"balance_paid,omitempty"`
 
 	// CreationMode new=新业务，只允许 consulting/scheduled 且只能引用 active 客户/套系；backfill=历史补录，可按状态不变量直达并允许 active/archived 客户与套系，merged 客户仍拒绝
@@ -2795,7 +2815,13 @@ type CreateOrderJSONBody struct {
 	DeliveryDueAt *openapi_types.Date `json:"delivery_due_at,omitempty"`
 	DepositPaid   *bool               `json:"deposit_paid,omitempty"`
 	Note          *string             `json:"note,omitempty"`
-	PackageId     *string             `json:"package_id,omitempty"`
+
+	// OutstandingAmount 分；待收余额，显式值优先于推定；price 未定价且未显式给值时为 null（不计入待收合计）。结清态显式非 0 → 400。不接受 null
+	OutstandingAmount *int    `json:"outstanding_amount,omitempty"`
+	PackageId         *string `json:"package_id,omitempty"`
+
+	// PaidAt 收款时刻，补录历史收款用；缺省不自动写——创建不发明收款时刻（§4.2）。不接受 null
+	PaidAt *time.Time `json:"paid_at,omitempty"`
 
 	// Price 分
 	Price *int `json:"price,omitempty"`
@@ -2816,6 +2842,8 @@ type CreateOrderParams struct {
 
 // UpdateOrderJSONBody defines parameters for UpdateOrder.
 type UpdateOrderJSONBody struct {
+	// AmountPaid 分；已收现金。录入/修正后未显式给 outstanding_amount 时按 §4.2 DEC-10 推定 max(price−amount_paid, 0)。金额字段无 null 语义，显式 null → 400
+	AmountPaid  *int       `json:"amount_paid,omitempty"`
 	BalancePaid *bool      `json:"balance_paid,omitempty"`
 	DeliveredAt *time.Time `json:"delivered_at,omitempty"`
 
@@ -2823,6 +2851,12 @@ type UpdateOrderJSONBody struct {
 	DeliveryDueAt nullable.Nullable[openapi_types.Date] `json:"delivery_due_at,omitempty"`
 	DepositPaid   *bool                                 `json:"deposit_paid,omitempty"`
 	Note          *string                               `json:"note,omitempty"`
+
+	// OutstandingAmount 分；待收余额，显式值优先于推定。balance_paid=true 时显式非 0 → 400（单向不变量）。无 null 语义，显式 null → 400
+	OutstandingAmount *int `json:"outstanding_amount,omitempty"`
+
+	// PaidAt 收款时刻，可补录修正；标记收讫（balance_paid false→true）且未显式提供时自动写服务端 now。无 null 语义，显式 null → 400（§4.2）
+	PaidAt *time.Time `json:"paid_at,omitempty"`
 
 	// Price 分
 	Price  *int       `json:"price,omitempty"`

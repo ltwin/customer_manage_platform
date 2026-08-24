@@ -15,7 +15,7 @@ import (
 
 const (
 	reminderColumns = "id, account_id, created_at, type, customer_id, order_id, due_date, content, status, dedup_key"
-	orderColumns    = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, delivery_due_at, delivery_due_is_override, note"
+	orderColumns    = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, delivery_due_at, delivery_due_is_override, amount_paid, outstanding_amount, paid_at, note"
 )
 
 // PostgresRepository 经 AccountScope 直查 reminders / schedule_slots / orders 装配五块（D1）。
@@ -229,13 +229,13 @@ func scanReminders(rows rowsScanner) ([]reminderdomain.Reminder, error) {
 func scanOrder(row interface{ Scan(dest ...any) error }) (orderdomain.Order, error) {
 	var order orderdomain.Order
 	var packageID, title, note sql.NullString
-	var price sql.NullInt64
-	var shotAt, deliveredAt, deliveryDueAt sql.NullTime
+	var price, outstanding sql.NullInt64
+	var shotAt, deliveredAt, deliveryDueAt, paidAt sql.NullTime
 	if err := row.Scan(
 		&order.ID, &order.AccountID, &order.CreatedAt, &order.CustomerID,
 		&packageID, &title, &order.Status, &price, &order.DepositPaid,
 		&order.BalancePaid, &shotAt, &deliveredAt, &deliveryDueAt,
-		&order.DeliveryDueIsOverride, &note,
+		&order.DeliveryDueIsOverride, &order.AmountPaid, &outstanding, &paidAt, &note,
 	); err != nil {
 		return orderdomain.Order{}, err
 	}
@@ -258,6 +258,13 @@ func scanOrder(row interface{ Scan(dest ...any) error }) (orderdomain.Order, err
 	if deliveryDueAt.Valid {
 		due := clock.DateOnly(deliveryDueAt.Time)
 		order.DeliveryDueAt = &due
+	}
+	if outstanding.Valid {
+		v := int(outstanding.Int64)
+		order.OutstandingAmount = &v
+	}
+	if paidAt.Valid {
+		order.PaidAt = &paidAt.Time
 	}
 	if note.Valid {
 		order.Note = &note.String

@@ -94,6 +94,9 @@ DELETE FROM share_generations;
 		t.Fatal(err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0033 orders payment facts down before 0032: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("empty 0032 orders delivery due down before 0031: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -249,6 +252,9 @@ SELECT EXISTS (
   WHERE table_name = 'share_assignment_source_event_v1'
 )`).Scan(&exists); err != nil || !exists {
 		t.Fatalf("0024 event table missing: exists=%v err=%v", exists, err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("empty 0033 orders payment facts down failed: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("empty 0032 orders delivery due down failed: %v", err)

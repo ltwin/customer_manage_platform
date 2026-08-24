@@ -226,6 +226,8 @@ func assertCompleteRouteExportJSON(
 			"price": float64(12800), "deposit_paid": true, "balance_paid": true, "shot_at": shotAt.Format(time.RFC3339),
 			"delivered_at": deliveredAt.Format(time.RFC3339), "delivery_due_at": "2026-07-25",
 			"delivery_due_is_override": false, "note": "fixture order note",
+			// 支付事实（ITEM-2）：直插 fixture 未录金额 → amount_paid 默认 0 恒在；outstanding/paid_at 可缺省。
+			"amount_paid": float64(0),
 		}},
 		"schedule_slots": []any{map[string]any{
 			"id": "slot-route", "account_id": testAcctID, "created_at": fixtureTime.Format(time.RFC3339),

@@ -71,6 +71,12 @@ func ApplyCreateInput(input CreateInput) (Order, error) {
 	if input.BalancePaid != nil {
 		order.BalancePaid = *input.BalancePaid
 	}
+	order.AmountPaid = 0
+	if input.AmountPaid != nil {
+		order.AmountPaid = *input.AmountPaid
+	}
+	order.OutstandingAmount = input.OutstandingAmount
+	order.PaidAt = input.PaidAt
 	if err := validateFinalState(Order{}, order, UpdateInput{}); err != nil {
 		return Order{}, err
 	}
@@ -80,6 +86,12 @@ func ApplyCreateInput(input CreateInput) (Order, error) {
 		return Order{}, err
 	}
 	order = applyDeliveryDue(order, explicitDue, input.deliveryPolicy, order.ShotAt != nil)
+	if err := validatePaymentFacts(order, input.OutstandingAmount != nil); err != nil {
+		return Order{}, err
+	}
+	// 建单即视为 amount_paid=0 已录入，故未显式给 outstanding 也按 DEC-10 推定；
+	// paid_at 只取显式值——创建不发明收款时刻。
+	order = applyPaymentFacts(Order{}, order, true, input.AmountPaid != nil, input.OutstandingAmount != nil)
 	return order, nil
 }
 
@@ -132,6 +144,27 @@ func ApplyUpdateInput(current Order, input UpdateInput, now time.Time) (Order, e
 			next.DeliveredAt = &deliveredAt
 		}
 	}
+	// 金额字段先于推定应用，使 DEC-10 推定使用本请求的最终值；金额无 null 语义。
+	if input.AmountPaid.IsSpecified() {
+		if input.AmountPaid.IsNull() {
+			return Order{}, ValidationError{Message: "amount_paid 不接受 null"}
+		}
+		next.AmountPaid = input.AmountPaid.MustGet()
+	}
+	if input.OutstandingAmount.IsSpecified() {
+		if input.OutstandingAmount.IsNull() {
+			return Order{}, ValidationError{Message: "outstanding_amount 不接受 null"}
+		}
+		outstanding := input.OutstandingAmount.MustGet()
+		next.OutstandingAmount = &outstanding
+	}
+	if input.PaidAt.IsSpecified() {
+		if input.PaidAt.IsNull() {
+			return Order{}, ValidationError{Message: "paid_at 不可置空"}
+		}
+		paidAt := input.PaidAt.MustGet()
+		next.PaidAt = &paidAt
+	}
 
 	statusChanged := targetStatus != current.Status
 	if statusChanged {
@@ -156,7 +189,20 @@ func ApplyUpdateInput(current Order, input UpdateInput, now time.Time) (Order, e
 		return Order{}, err
 	}
 	next = applyDeliveryDue(next, input.DeliveryDueAt, input.deliveryPolicy, shotAtChanged(current, next))
+	if err := validatePaymentFacts(next, explicitOutstandingProvided(input)); err != nil {
+		return Order{}, err
+	}
+	next = applyPaymentFacts(current, next, explicitAmountProvided(input), explicitAmountProvided(input), explicitOutstandingProvided(input))
+	next = autoSettlePaidAt(current, next, input.PaidAt.IsSpecified(), now)
 	return next, nil
+}
+
+func explicitAmountProvided(input UpdateInput) bool {
+	return input.AmountPaid.IsSpecified() && !input.AmountPaid.IsNull()
+}
+
+func explicitOutstandingProvided(input UpdateInput) bool {
+	return input.OutstandingAmount.IsSpecified() && !input.OutstandingAmount.IsNull()
 }
 
 func validateFinalState(current, next Order, input UpdateInput) error {

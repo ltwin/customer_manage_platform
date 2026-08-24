@@ -78,6 +78,7 @@ func TestTelegramDigestMigrationUpDownAndConstraints(t *testing.T) {
 		t.Fatalf("close before down migration: %v", err)
 	}
 	for index, label := range []string{
+		"orders-payment-facts",
 		"orders-delivery-due",
 		"media-gallery-rights-bindings",
 		"plan-list-enrichment",

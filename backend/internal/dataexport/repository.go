@@ -23,7 +23,7 @@ const customerColumns = "id, account_id, created_at, display_name, real_name, ph
 const identityColumns = "id, account_id, created_at, customer_id, platform, handle, remark"
 const noteColumns = "id, account_id, created_at, customer_id, content"
 const packageColumns = "id, account_id, created_at, name, shoot_type, pricing_mode, base_price, duration_minutes, shot_count_min, shot_count_max, raw_delivery_count, retouch_count, note, status"
-const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, delivery_due_at, delivery_due_is_override, note"
+const orderColumns = "id, account_id, created_at, customer_id, package_id, title, status, price, deposit_paid, balance_paid, shot_at, delivered_at, delivery_due_at, delivery_due_is_override, amount_paid, outstanding_amount, paid_at, note"
 const slotColumns = "id, account_id, created_at, start_at, end_at, type, order_id, note"
 const reminderColumns = "id, account_id, created_at, type, customer_id, order_id, due_date, content, status, dedup_key"
 const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, delivery_sla_days, telegram_chat_id, telegram_binding_revision, availability, updated_at"
@@ -194,12 +194,13 @@ func loadOrders(ctx context.Context, scope store.ReadTxAccountScope) ([]orderdom
 	for rows.Next() {
 		var item orderdomain.Order
 		var packageID, title, note sql.NullString
-		var price sql.NullInt64
-		var shotAt, deliveredAt, deliveryDueAt sql.NullTime
+		var price, outstanding sql.NullInt64
+		var shotAt, deliveredAt, deliveryDueAt, paidAt sql.NullTime
 		if err := rows.Scan(
 			&item.ID, &item.AccountID, &item.CreatedAt, &item.CustomerID, &packageID,
 			&title, &item.Status, &price, &item.DepositPaid, &item.BalancePaid,
-			&shotAt, &deliveredAt, &deliveryDueAt, &item.DeliveryDueIsOverride, &note,
+			&shotAt, &deliveredAt, &deliveryDueAt, &item.DeliveryDueIsOverride,
+			&item.AmountPaid, &outstanding, &paidAt, &note,
 		); err != nil {
 			return nil, err
 		}
@@ -212,6 +213,8 @@ func loadOrders(ctx context.Context, scope store.ReadTxAccountScope) ([]orderdom
 			due := clock.DateOnly(deliveryDueAt.Time)
 			item.DeliveryDueAt = &due
 		}
+		item.OutstandingAmount = nullIntPointer(outstanding)
+		item.PaidAt = nullTimePointer(paidAt)
 		item.Note = nullStringPointer(note)
 		items = append(items, item)
 	}

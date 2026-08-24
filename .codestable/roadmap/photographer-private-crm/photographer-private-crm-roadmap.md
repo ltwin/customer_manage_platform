@@ -193,6 +193,21 @@ Order:           customer_id*, package_id?, title?,
                    只影响此后新落值的订单，不重写历史。cancelled 订单保留既有落库值——
                    因此 delivery_due_at IS NOT NULL 不等价于「在交付队列中」，
                    消费方必须联合 status 过滤，队列集合口径由 ITEM-4 单点定义）
+                 amount_paid*(分, int, 默认 0), outstanding_amount?(分), paid_at?
+                 （支付事实语义，dashboard-v2-redesign ITEM-2 增量：
+                   amount_paid=已收现金，outstanding_amount=待收余额（NULL=price 未定价，
+                   不计入待收合计），paid_at=收款时刻。DEC-10 金额联动推定：显式金额始终优先；
+                   置 balance_paid=true 且未显式给金额时推定 amount_paid=max(既有, COALESCE(price,0))
+                   （不降低既有）、outstanding_amount=0；未结清且录入/修正 amount_paid（含创建——
+                   建单即视为 0 已录入）而未显式给 outstanding_amount 时推定
+                   max(price−amount_paid, 0)。单向不变量恒成立：balance_paid=true ⇒
+                   outstanding_amount=0，已收讫订单钉死 0，后改 price/金额不重算；反向不要求——
+                   录满全款而未点收讫的订单 outstanding=0 但 balance_paid 仍 false，留在待收尾款卡
+                   提示显式确认。paid_at 显式提供始终优先；仅 balance_paid 由 false 实际跃迁为
+                   true 且未显式提供时自动写服务端 now（v1「标记收讫」路径），创建（含补录结清单）
+                   不自动写——不为历史发明收款时刻；已写入可修正、不可置空。金额字段无 null 语义：
+                   POST/PATCH 显式 null → 400；终态订单金额可修正（对齐 price，退款/坏账的
+                   手工修正通道），deposit_paid/balance_paid 终态不可变不变）
 ScheduleSlot:    start_at*, end_at*(> start_at), type*(shoot|hold|busy),
                  order_id?(type=shoot 时必填), note?
 Reminder:        type*(birthday|follow_up|churn|custom), customer_id?, order_id?,
@@ -310,7 +325,8 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
 订单域
   POST   /orders                    Header: Idempotency-Key?；Body: {creation_mode?=new,
                                     customer_id, package_id?, title?, price?, status?, deposit_paid?,
-                                     balance_paid?, shot_at?, delivered_at?, note?}
+                                     balance_paid?, shot_at?, delivered_at?, amount_paid?,
+                                     outstanding_amount?, paid_at?, note?}
                                     → 201；creation_mode=new 缺省 status=consulting
                                     new：status 只允许 consulting/scheduled，客户与套系都只允许 active；
                                       merged/archived 客户 → 409 customer_archived；
@@ -341,11 +357,16 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                                       active，历史可 active/archived，merged 永拒；并排除已有 shoot
                                       slot；可与 customer_id 组合，服务端完整分页过滤，前端不得只取
                                       第一页自行筛选
-  PATCH  /orders/{id}               {status?|deposit_paid?|balance_paid?|shot_at?|delivered_at?|…}
+  PATCH  /orders/{id}               {status?|deposit_paid?|balance_paid?|shot_at?|delivered_at?|
+                                    amount_paid?|outstanding_amount?|paid_at?|…}
                                     非法跃迁 → 409 invalid_status_transition
                                     未结清进 closed / closed 试图取消结清标记 → 409 unpaid_balance
                                     status 等于当前状态视为幂等字段修正/no-op → 200，供结果未知重放
                                     字段修正不变量违反（时间戳预写/置空、终态改标记）→ 400（见 §4.2）
+                                    金额字段显式 null → 400；balance_paid=true 时显式 outstanding≠0 →
+                                    400（单向不变量）；标记收讫 {balance_paid:true} 自动落 paid_at=now
+                                    并按推定补齐金额（支付事实语义见 §4.2，dashboard-v2-redesign
+                                    ITEM-2）
   DELETE /orders/{id}               仅终态（closed/cancelled）可物理删除 → 204（2026-07-09 拍板）
                                     非终态 → 409 order_not_terminal（进行中订单先 cancel）
                                     删除即从实时聚合/统计消失（删 closed 单会减少 orders_count 与
@@ -552,7 +573,7 @@ GET /export → application/json（Content-Disposition 附件）
   schedule_slots[], reminders[], settings }        // 各数组 shape 全部按 4.2
 ```
 
-**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。
+**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。`dashboard-v2-redesign` ITEM-1/2 新增订单字段随 §4.2 Order shape 进入导出（amount_paid 恒输出，其余可缺省），`schema_version` 是否 bump 由该 epic ITEM-6 统一决策（此前保持 3）。
 
 ### 4.x 共享数据结构 / 状态
 

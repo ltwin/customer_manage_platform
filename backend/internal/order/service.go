@@ -167,6 +167,12 @@ func normalizeCreateInput(input CreateInput) (CreateInput, error) {
 	if err := validateOptionalIntPtr(input.Price, "price"); err != nil {
 		return CreateInput{}, err
 	}
+	if err := validateOptionalIntPtr(input.AmountPaid, "amount_paid"); err != nil {
+		return CreateInput{}, err
+	}
+	if err := validateOptionalIntPtr(input.OutstandingAmount, "outstanding_amount"); err != nil {
+		return CreateInput{}, err
+	}
 	if err := validateNote(input.Note); err != nil {
 		return CreateInput{}, err
 	}
@@ -188,6 +194,12 @@ func normalizeUpdateInput(input UpdateInput) (UpdateInput, error) {
 	}
 	var err error
 	if input.Price, err = normalizeClearableInt(input.Price, "price"); err != nil {
+		return UpdateInput{}, err
+	}
+	if input.AmountPaid, err = normalizeClearableInt(input.AmountPaid, "amount_paid"); err != nil {
+		return UpdateInput{}, err
+	}
+	if input.OutstandingAmount, err = normalizeClearableInt(input.OutstandingAmount, "outstanding_amount"); err != nil {
 		return UpdateInput{}, err
 	}
 	return input, nil

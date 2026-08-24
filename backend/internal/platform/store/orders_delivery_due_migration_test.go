@@ -127,6 +127,10 @@ func TestOrdersDeliveryDueMigrationBackfillsExistingOrders(t *testing.T) {
 		t.Fatalf("close before down migration: %v", err)
 	}
 
+	// 0032 之上已叠加 0033（支付事实）：先退 0033 再退 0032，本测试锁的是 0032 自身的可逆性。
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback payment-facts migration: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback delivery-due migration: %v", err)
 	}

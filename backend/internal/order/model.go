@@ -62,6 +62,11 @@ type Order struct {
 	DeliveryDueAt *time.Time
 	// DeliveryDueIsOverride 为 true 时该应交付日是订单级覆盖，不随 shot_at 变更重算。
 	DeliveryDueIsOverride bool
+	// AmountPaid 是已收现金（分），恒有值；OutstandingAmount 是待收余额（分），
+	// NULL 表示 price 未定价、不计入待收合计；PaidAt 是收款时刻（NULL=未知，含存量 backfill）。
+	AmountPaid        int
+	OutstandingAmount *int
+	PaidAt            *time.Time
 }
 
 type OrderInUseError struct {
@@ -90,6 +95,10 @@ type CreateInput struct {
 	DeliveredAt   *time.Time
 	Note          *string
 	DeliveryDueAt *time.Time
+	AmountPaid    *int
+	// OutstandingAmount 与 PaidAt 为支付事实录入；显式值优先于 DEC-10 推定。
+	OutstandingAmount *int
+	PaidAt            *time.Time
 
 	// deliveryPolicy 由 service 从账号 settings 解析后填入（与 ListFilter.schedulableNow 同惯例）。
 	deliveryPolicy DeliveryPolicy
@@ -110,6 +119,11 @@ type UpdateInput struct {
 	Price         nullable.Nullable[int]
 	Note          *string
 	DeliveryDueAt nullable.Nullable[time.Time]
+	AmountPaid    nullable.Nullable[int]
+	// OutstandingAmount 与 PaidAt 三态仅用于区分「未传」与「显式 null」；
+	// 金额字段无 null 语义，显式 null 一律 400。
+	OutstandingAmount nullable.Nullable[int]
+	PaidAt            nullable.Nullable[time.Time]
 
 	// deliveryPolicy 由 service 从账号 settings 解析后填入。
 	deliveryPolicy DeliveryPolicy

@@ -413,3 +413,139 @@ func TestDeliveryDueOverrideCanBeClearedViaPatch(t *testing.T) {
 		t.Fatalf("撤销后应回到自动派生 2026-07-23，got %v", cleared.DeliveryDueAt)
 	}
 }
+
+// TestOrderPaymentFactsLifecycle 端到端验证 DEC-10 金额联动推定与单向不变量：
+// 建单推定待收 → 部分收款联动 → 标记收讫推定结清并自动落 paid_at →
+// 结清后 outstanding 钉死 0；补录结清单不发明收款时刻；显式 null/负值/结清态
+// 显式 outstanding 由 400 拒绝。
+func TestOrderPaymentFactsLifecycle(t *testing.T) {
+	h, s, issuer := newCustomerAPIRouter(t)
+	ctx := context.Background()
+	token := issueToken(t, issuer, testAcctID)
+	scope := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	customers := customerdomain.NewService(customerdomain.NewPostgresRepository())
+
+	customer, err := customers.Create(ctx, scope, customerdomain.CreateInput{
+		DisplayName: "支付事实客户",
+		Channel:     customerdomain.ChannelOther,
+		Identities:  []customerdomain.IdentityInput{{Platform: customerdomain.PlatformWechat, Handle: "payment-facts"}},
+	})
+	if err != nil {
+		t.Fatalf("create customer: %v", err)
+	}
+
+	// 建单带 price：amount_paid=0、outstanding 推定 = price。
+	rec := authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", token, []byte(`{
+		"customer_id": "`+customer.ID+`",
+		"price": 1000
+	}`))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create order: %d %s", rec.Code, rec.Body.String())
+	}
+	var created httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode created order: %v", err)
+	}
+	if created.AmountPaid != 0 || created.OutstandingAmount == nil || *created.OutstandingAmount != 1000 {
+		t.Fatalf("建单推定失败: amount=%d outstanding=%v", created.AmountPaid, created.OutstandingAmount)
+	}
+	if created.PaidAt != nil {
+		t.Fatalf("建单不应自动写 paid_at: %v", created.PaidAt)
+	}
+	orderPath := "/api/v1/orders/" + *created.Id
+
+	// 部分收款联动：录 300 → outstanding=700（支撑验收标准 8 待收段）。
+	rec = authenticatedRequest(t, h, http.MethodPatch, orderPath, token, []byte(`{"amount_paid": 300}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("partial payment: %d %s", rec.Code, rec.Body.String())
+	}
+	var partial httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &partial); err != nil {
+		t.Fatalf("decode partial order: %v", err)
+	}
+	if partial.AmountPaid != 300 || partial.OutstandingAmount == nil || *partial.OutstandingAmount != 700 {
+		t.Fatalf("部分收款联动失败: amount=%d outstanding=%v", partial.AmountPaid, partial.OutstandingAmount)
+	}
+
+	// v1「标记收讫」不回退：推定 amount=max(既有, price)=1000、outstanding=0、paid_at 自动落。
+	rec = authenticatedRequest(t, h, http.MethodPatch, orderPath, token, []byte(`{"balance_paid": true}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("settle order: %d %s", rec.Code, rec.Body.String())
+	}
+	var settled httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &settled); err != nil {
+		t.Fatalf("decode settled order: %v", err)
+	}
+	if settled.AmountPaid != 1000 || settled.OutstandingAmount == nil || *settled.OutstandingAmount != 0 {
+		t.Fatalf("结清推定失败: amount=%d outstanding=%v", settled.AmountPaid, settled.OutstandingAmount)
+	}
+	if settled.PaidAt == nil {
+		t.Fatalf("标记收讫应自动落 paid_at")
+	}
+
+	// 结清后 outstanding 钉死：改 price 不重算。
+	rec = authenticatedRequest(t, h, http.MethodPatch, orderPath, token, []byte(`{"price": 800}`))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("price change after settle: %d %s", rec.Code, rec.Body.String())
+	}
+	var repriced httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &repriced); err != nil {
+		t.Fatalf("decode repriced order: %v", err)
+	}
+	if repriced.OutstandingAmount == nil || *repriced.OutstandingAmount != 0 {
+		t.Fatalf("结清后改价不得重算 outstanding: %v", repriced.OutstandingAmount)
+	}
+
+	// 单向不变量在 API 层：结清态显式 outstanding≠0 → 400。
+	rec = authenticatedRequest(t, h, http.MethodPatch, orderPath, token, []byte(`{"outstanding_amount": 500}`))
+	if rec.Code != http.StatusBadRequest || decodeEnvelope(t, rec).Error.Code != "validation_failed" {
+		t.Fatalf("settled explicit outstanding: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// 金额字段无 null 语义：显式 null → 400。
+	for _, field := range []string{"amount_paid", "outstanding_amount", "paid_at"} {
+		rec = authenticatedRequest(t, h, http.MethodPatch, orderPath, token, []byte(`{"`+field+`": null}`))
+		if rec.Code != http.StatusBadRequest || decodeEnvelope(t, rec).Error.Code != "validation_failed" {
+			t.Fatalf("%s explicit null: %d %s", field, rec.Code, rec.Body.String())
+		}
+	}
+
+	// 负金额 → 400。
+	rec = authenticatedRequest(t, h, http.MethodPatch, orderPath, token, []byte(`{"amount_paid": -1}`))
+	if rec.Code != http.StatusBadRequest || decodeEnvelope(t, rec).Error.Code != "validation_failed" {
+		t.Fatalf("negative amount: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// 建单侧显式 null 同口径 400（*int 绑定区分不了 null 与缺省，须显式拦）。
+	for _, field := range []string{"amount_paid", "outstanding_amount", "paid_at"} {
+		rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", token,
+			[]byte(`{"customer_id": "`+customer.ID+`", "`+field+`": null}`))
+		if rec.Code != http.StatusBadRequest || decodeEnvelope(t, rec).Error.Code != "validation_failed" {
+			t.Fatalf("POST %s explicit null: %d %s", field, rec.Code, rec.Body.String())
+		}
+	}
+
+	// 补录结清单：结清推定生效但 paid_at 不发明。
+	rec = authenticatedRequest(t, h, http.MethodPost, "/api/v1/orders", token, []byte(`{
+		"creation_mode": "backfill",
+		"customer_id": "`+customer.ID+`",
+		"status": "delivered",
+		"shot_at": "2026-07-01T02:00:00Z",
+		"delivered_at": "2026-07-15T02:00:00Z",
+		"price": 500,
+		"balance_paid": true
+	}`))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("backfill settled order: %d %s", rec.Code, rec.Body.String())
+	}
+	var backfilled httpapi.Order
+	if err := json.Unmarshal(rec.Body.Bytes(), &backfilled); err != nil {
+		t.Fatalf("decode backfilled order: %v", err)
+	}
+	if backfilled.AmountPaid != 500 || backfilled.OutstandingAmount == nil || *backfilled.OutstandingAmount != 0 {
+		t.Fatalf("补录结清单推定失败: amount=%d outstanding=%v", backfilled.AmountPaid, backfilled.OutstandingAmount)
+	}
+	if backfilled.PaidAt != nil {
+		t.Fatalf("补录结清单不得发明 paid_at: %v", backfilled.PaidAt)
+	}
+}

@@ -43,10 +43,11 @@ func (h *handlers) CreateOrder(c *gin.Context, params CreateOrderParams) {
 	if !ok {
 		return
 	}
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxOrderBodyBytes)
-	var body CreateOrderJSONRequestBody
-	if err := c.ShouldBindJSON(&body); err != nil {
-		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求体格式错误")
+	body, raw, ok := bindCreateOrderBody(c)
+	if !ok {
+		return
+	}
+	if !rejectExplicitNullAmounts(c, raw) {
 		return
 	}
 	input := orderdomain.CreateInput{
@@ -60,7 +61,12 @@ func (h *handlers) CreateOrder(c *gin.Context, params CreateOrderParams) {
 		ShotAt:        body.ShotAt,
 		DeliveredAt:   body.DeliveredAt,
 		DeliveryDueAt: domainDateFromAPI(body.DeliveryDueAt),
-		Note:          body.Note,
+		AmountPaid:    body.AmountPaid,
+		// 金额字段建单为二态：缺省交由 DEC-10 推定收敛；显式 null 由
+		// rejectExplicitNullAmounts 统一 400，不静默走推定。
+		OutstandingAmount: body.OutstandingAmount,
+		PaidAt:            body.PaidAt,
+		Note:              body.Note,
 	}
 	if body.Status != nil {
 		status := string(*body.Status)
@@ -170,6 +176,9 @@ func (h *handlers) UpdateOrder(c *gin.Context, id Id) {
 	input.ShotAt = nullableTimeFromRaw(raw, "shot_at", body.ShotAt)
 	input.DeliveredAt = nullableTimeFromRaw(raw, "delivered_at", body.DeliveredAt)
 	input.DeliveryDueAt = domainNullableDateFromAPI(body.DeliveryDueAt)
+	input.AmountPaid = nullableIntFromRaw(raw, "amount_paid", body.AmountPaid)
+	input.OutstandingAmount = nullableIntFromRaw(raw, "outstanding_amount", body.OutstandingAmount)
+	input.PaidAt = nullableTimeFromRaw(raw, "paid_at", body.PaidAt)
 	updated, err := h.orders.Update(c.Request.Context(), scope, id, input)
 	if h.abortOrderError(c, err) {
 		return
@@ -301,6 +310,33 @@ func bindUpdateOrderBody(c *gin.Context) (UpdateOrderJSONRequestBody, []byte, bo
 	return body, raw, true
 }
 
+func bindCreateOrderBody(c *gin.Context) (CreateOrderJSONRequestBody, []byte, bool) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxOrderBodyBytes)
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求体格式错误")
+		return CreateOrderJSONRequestBody{}, nil, false
+	}
+	var body CreateOrderJSONRequestBody
+	if err := json.Unmarshal(raw, &body); err != nil {
+		abortError(c, http.StatusBadRequest, CodeValidationFailed, "请求体格式错误")
+		return CreateOrderJSONRequestBody{}, nil, false
+	}
+	return body, raw, true
+}
+
+// rejectExplicitNullAmounts 金额字段无 null 语义（§4.2）：建单侧 *int 绑定无法区分
+// 「显式 null」与「缺省」，不拦会让 null 静默走 DEC-10 推定；与 PATCH 的三态拒绝同口径 400。
+func rejectExplicitNullAmounts(c *gin.Context, raw []byte) bool {
+	for _, field := range []string{"amount_paid", "outstanding_amount", "paid_at"} {
+		if value, ok := jsonField(raw, field); ok && isJSONNull(value) {
+			abortError(c, http.StatusBadRequest, CodeValidationFailed, field+" 不接受 null")
+			return false
+		}
+	}
+	return true
+}
+
 func nullableIntFromRaw(raw []byte, name string, value *int) nullable.Nullable[int] {
 	var result nullable.Nullable[int]
 	field, ok := jsonField(raw, name)
@@ -380,6 +416,10 @@ func toAPIOrder(o orderdomain.Order) Order {
 
 		DeliveryDueAt:         apiDatePointer(o.DeliveryDueAt),
 		DeliveryDueIsOverride: &o.DeliveryDueIsOverride,
+
+		AmountPaid:        o.AmountPaid,
+		OutstandingAmount: o.OutstandingAmount,
+		PaidAt:            o.PaidAt,
 	}
 }
 
@@ -404,6 +444,10 @@ func toAPIOrderListItem(item orderdomain.ListItem) OrderListItem {
 
 		DeliveryDueAt:         apiDatePointer(item.DeliveryDueAt),
 		DeliveryDueIsOverride: &item.DeliveryDueIsOverride,
+
+		AmountPaid:        item.AmountPaid,
+		OutstandingAmount: item.OutstandingAmount,
+		PaidAt:            item.PaidAt,
 	}
 }
 
