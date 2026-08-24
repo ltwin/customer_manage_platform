@@ -18,6 +18,7 @@
     "test:dashboard-v2-layout": "node --test scripts/dashboard-v2-layout.test.mjs",
     "test:settings": "node --test --experimental-transform-types scripts/settings.test.ts",
     "test:avatar-layout": "node --test scripts/avatar-layout.test.mjs",
+    "test:app-shell-layout": "node --test scripts/app-shell-layout.test.mjs",
     "test:customer-avatar": "node --test --experimental-transform-types scripts/customer-avatar.test.ts",
     "test:telegram-digest": "node --test --experimental-transform-types scripts/telegram-digest.test.ts",
     "test:data-export": "node --test --experimental-transform-types scripts/data-export.test.ts",

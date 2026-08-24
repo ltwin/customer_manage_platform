@@ -194,7 +194,7 @@ input, select, textarea { font-family: inherit; font-size: 14px; }
 .topbar .sub, .crumb { font-size: 12.5px; color: var(--muted); }
 .crumb a, .meta a { color: var(--accent); }
 .topbar-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; min-width: 0; }
-.content { padding: 24px 28px 80px; max-width: 1280px; width: 100%; }
+.content { padding: 24px 28px 80px; max-width: 1280px; width: 100%; margin-inline: auto; }
 
 .bottom-nav {
   display: none;

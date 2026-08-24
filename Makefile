@@ -47,6 +47,7 @@ test:
 	cd frontend && npm run test:dashboard-v2-layout
 	cd frontend && npm run test:settings
 	cd frontend && npm run test:avatar-layout
+	cd frontend && npm run test:app-shell-layout
 	cd frontend && npm run test:telegram-digest
 	cd frontend && npm run test:data-export
 	cd frontend && npm run test:account-center
