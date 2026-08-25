@@ -92,6 +92,22 @@ test('customer health card pairs with the channel matrix and discloses its crite
   }
 })
 
+test('receivable sheet queries the delivered-unsettled scope matching the card count', () => {
+  const page = readFileSync(new URL('../src/pages/DashboardPage.tsx', import.meta.url), 'utf8')
+  // 卡片计数 = delivered ∧ !balance_paid（roadmap §4.3 窄口径）；弹层取数必须同口径组合查询，
+  // 否则副标题「N 笔已交付未结清」与列表行数对不上（2026-08-25 远端实测反馈）
+  assert.match(
+    page,
+    /listOrders\(\{ status: 'delivered', unpaidBalance: true, pageSize: 100 \}\)/,
+    'the receivable sheet must compose status=delivered with unpaid_balance so the rows match the card count and total',
+  )
+  assert.match(
+    page,
+    /未交付阶段的未结清/,
+    'the sheet must disclose that pre-delivery unpaid orders live in the orders-page 未收尾款 filter',
+  )
+})
+
 test('schedule utilization renders the backend percent value directly', () => {
   const page = readFileSync(new URL('../src/pages/DashboardPage.tsx', import.meta.url), 'utf8')
   assert.doesNotMatch(

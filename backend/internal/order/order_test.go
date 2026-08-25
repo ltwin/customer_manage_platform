@@ -549,6 +549,34 @@ func TestFieldCorrectionInvariants(t *testing.T) {
 	}
 }
 
+func TestListStatusUnpaidBalanceComposition(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t)
+	scope := createAccount(t, s, "acct-unpaid")
+	svc := orderService()
+
+	seedCustomer(t, scope, "cus_u", "小收", "active")
+	shotAt := time.Date(2026, 7, 9, 8, 0, 0, 0, time.UTC)
+	deliveredAt := time.Date(2026, 7, 20, 8, 0, 0, 0, time.UTC)
+	// dashboard 待收尾款弹层依赖 status 与 unpaid_balance 的 AND 组合取窄口径
+	// （delivered ∧ 未结清），与卡片计数（roadmap §4.3）同源。
+	seedOrder(t, scope, seedOrderInput{ID: "ord_shot_unpaid", CustomerID: "cus_u", Status: orderdomain.StatusShot, BalancePaid: false, ShotAt: &shotAt, CreatedAt: shotAt})
+	seedOrder(t, scope, seedOrderInput{ID: "ord_delivered_unpaid", CustomerID: "cus_u", Status: orderdomain.StatusDelivered, BalancePaid: false, ShotAt: &shotAt, DeliveredAt: &deliveredAt, CreatedAt: shotAt})
+
+	unpaid, err := svc.List(ctx, scope, orderdomain.ListFilter{UnpaidBalance: true})
+	if err != nil || unpaid.Total != 2 {
+		t.Fatalf("unpaid filter: err=%v total=%d, want 2", err, unpaid.Total)
+	}
+	deliveredOnly, err := svc.List(ctx, scope, orderdomain.ListFilter{Status: orderdomain.StatusDelivered, UnpaidBalance: true})
+	if err != nil || deliveredOnly.Total != 1 || len(deliveredOnly.Items) != 1 || deliveredOnly.Items[0].ID != "ord_delivered_unpaid" {
+		t.Fatalf("delivered+unpaid composition: err=%v list=%+v", err, deliveredOnly)
+	}
+	shotOnly, err := svc.List(ctx, scope, orderdomain.ListFilter{Status: orderdomain.StatusShot, UnpaidBalance: true})
+	if err != nil || shotOnly.Total != 1 || shotOnly.Items[0].ID != "ord_shot_unpaid" {
+		t.Fatalf("shot+unpaid composition: err=%v list=%+v", err, shotOnly)
+	}
+}
+
 func TestListFiltersSummariesAndStableSorting(t *testing.T) {
 	ctx := context.Background()
 	s := openStore(t)

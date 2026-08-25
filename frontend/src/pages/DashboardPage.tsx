@@ -229,7 +229,9 @@ export default function DashboardPage() {
   }
 
   function loadReceivableOrders() {
-    listOrders({ unpaidBalance: true, pageSize: 100 })
+    // 与卡片计数同口径（delivered ∧ 未结清，roadmap §4.3）：不加 status 会把拍摄/修图中
+    // 的未结清也列进来，副标题「N 笔已交付未结清」与行数对不上。
+    listOrders({ status: 'delivered', unpaidBalance: true, pageSize: 100 })
       .then((result) => setReceivableOrders(result.items))
       .catch((err: unknown) => {
         handleError(err, '待收明细加载失败')
@@ -982,6 +984,7 @@ function ReceivableSheet({
             })}
             {orders.length === 0 && <div className="m">没有待收明细。</div>}
             {orders.length >= 100 && <div className="m">仅显示前 100 笔，完整列表见订单页「未收尾款」筛选。</div>}
+            <div className="m">仅列已交付订单；未交付阶段的未结清请到订单页「未收尾款」筛选。</div>
           </div>
         )}
         <div className="dialog-actions">
