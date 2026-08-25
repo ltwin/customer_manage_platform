@@ -143,6 +143,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 	fullVersion := migrationVersion(t, url)
 	for _, label := range []string{
+		"settings-health-tiers",
 		"orders-attribution-snapshot",
 		"orders-payment-facts",
 		"orders-delivery-due",
@@ -179,6 +180,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 
 	resetAuthSchema(t, url)
 	for _, label := range []string{
+		"settings-health-tiers",
 		"orders-attribution-snapshot",
 		"orders-payment-facts",
 		"orders-delivery-due",

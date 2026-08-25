@@ -510,6 +510,7 @@ export type ScheduleAvailability = components['schemas']['ScheduleAvailability']
 export type ScheduleAvailabilityWeekly = components['schemas']['ScheduleAvailabilityWeekly']
 export type ScheduleAvailabilityWindow = components['schemas']['ScheduleAvailabilityWindow']
 export type ChurnThreshold = components['schemas']['ChurnThreshold']
+export type HealthTiers = components['schemas']['HealthTiers']
 export type ReminderListResponse =
   paths['/reminders']['get']['responses']['200']['content']['application/json']
 export type CreateReminderBody =

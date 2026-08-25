@@ -420,3 +420,128 @@
   .dv2-dl-row { flex-wrap: wrap; }
   .dv2-focus-time { font-size: 24px; }
 }
+
+/* ============ L3 · 客户资产（健康度分层，customer-health-tiers） ============ */
+
+.dv2-cohort-bar {
+  display: flex;
+  gap: 3px;
+  margin: 10px 0 8px;
+  min-height: 30px;
+}
+
+.dv2-cohort-seg {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  min-width: 0;
+  padding: 3px 2px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.dv2-cohort-seg:hover { opacity: 0.95; }
+.dv2-cohort-seg.is-active { opacity: 1; outline: 2px solid rgba(255, 255, 255, 0.85); }
+
+.dv2-cohort-seg .n { font-weight: 700; font-size: 13px; line-height: 1.1; color: #fff; }
+.dv2-cohort-seg .l { font-size: 10px; color: rgba(255, 255, 255, 0.9); }
+
+.dv2-cohort-active   { background: var(--success, #3f9e63); }
+.dv2-cohort-sleeping { background: var(--accent, #5a7bbf); }
+.dv2-cohort-at_risk  { background: var(--warning, #c98a2d); }
+.dv2-cohort-lost     { background: var(--danger, #c05b5b); }
+.dv2-cohort-new      { background: var(--slot-busy, #8a8f98); }
+
+.dv2-cohort-crossref {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning, #c98a2d) 12%, transparent);
+  font-size: 12px;
+}
+
+.dv2-cohort-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 2px 0 8px;
+  font-weight: 600;
+}
+
+.dv2-risk-list { display: flex; flex-direction: column; gap: 8px; }
+
+.dv2-risk-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel-2, rgba(127, 127, 127, 0.08));
+}
+
+.dv2-risk-row .grow { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+
+.dv2-risk-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.dv2-risk-badge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-dim, #9aa0a6);
+  background: rgba(127, 127, 127, 0.16);
+}
+
+.dv2-risk-meta { font-size: 12px; color: var(--text-dim, #9aa0a6); }
+.dv2-risk-meta .num { color: inherit; font-weight: 700; }
+.dv2-risk-extra { font-size: 11px; color: var(--text-dim, #9aa0a6); opacity: 0.9; }
+
+.dv2-risk-ltv {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+  flex: 0 0 auto;
+}
+
+.dv2-risk-ltv .v { font-weight: 700; font-size: 13px; }
+.dv2-risk-ltv .k { font-size: 10px; color: var(--text-dim, #9aa0a6); }
+
+.dv2-risk-gauge { flex: 0 0 84px; display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
+
+.dv2-risk-gauge-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(127, 127, 127, 0.2);
+  overflow: hidden;
+}
+
+.dv2-risk-gauge-fill { height: 100%; border-radius: 999px; }
+
+.dv2-risk-gauge-label { font-size: 10px; color: var(--text-dim, #9aa0a6); text-align: right; }
+
+.dv2-cohort-explain {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-dim, #9aa0a6);
+}
+
+.dv2-cohort-explain summary { cursor: pointer; }
+
+@media (max-width: 430px) {
+  .dv2-risk-row { flex-wrap: wrap; }
+  .dv2-risk-gauge { flex: 1 1 100%; flex-direction: row; align-items: center; gap: 8px; }
+  .dv2-risk-gauge-track { flex: 1 1 auto; }
+}

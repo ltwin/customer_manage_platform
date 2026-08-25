@@ -11,7 +11,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, delivery_sla_days, telegram_chat_id, telegram_binding_revision, availability, planning_business_rule_overrides, planning_business_rule_revision, updated_at"
+const settingsColumns = "timezone, birthday_lead_days, follow_up_after_days, churn_thresholds, digest_hour, delivery_sla_days, health_tiers, telegram_chat_id, telegram_binding_revision, availability, planning_business_rule_overrides, planning_business_rule_revision, updated_at"
 
 // PostgresRepository 实现 settings.Repository。
 type PostgresRepository struct{}
@@ -24,6 +24,7 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 	var (
 		s             Settings
 		thresholds    []byte
+		healthTiers   []byte
 		availability  []byte
 		businessRules []byte
 		chatID        sql.NullString
@@ -37,6 +38,7 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 		&thresholds,
 		&s.DigestHour,
 		&s.DeliverySLADays,
+		&healthTiers,
 		&chatID,
 		&bindingRev,
 		&availability,
@@ -53,6 +55,11 @@ func (PostgresRepository) Get(ctx context.Context, scope store.AccountScope) (Se
 	if len(thresholds) > 0 {
 		if err := json.Unmarshal(thresholds, &s.ChurnThresholds); err != nil {
 			return Settings{}, false, err
+		}
+	}
+	if len(healthTiers) > 0 {
+		if err := json.Unmarshal(healthTiers, &s.HealthTiers); err != nil {
+			return Settings{}, false, fmt.Errorf("decode stored settings health_tiers: %v", err)
 		}
 	}
 	decodedAvailability, err := DecodeScheduleAvailabilityJSON(availability)
@@ -77,6 +84,10 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 	if err != nil {
 		return Settings{}, err
 	}
+	healthTiers, err := json.Marshal(settings.HealthTiers)
+	if err != nil {
+		return Settings{}, err
+	}
 	availability, err := encodeScheduleAvailabilityJSON(settings.Availability)
 	if err != nil {
 		return Settings{}, err
@@ -87,7 +98,7 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 	}
 	now := time.Now().UTC()
 	ownedColumns := []string{
-		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "availability",
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "health_tiers", "availability",
 		"planning_business_rule_overrides", "planning_business_rule_revision", "updated_at",
 	}
 	if err := scope.Upsert(ctx, "settings",
@@ -100,6 +111,7 @@ func (PostgresRepository) Upsert(ctx context.Context, scope store.AccountScope, 
 		thresholds,
 		settings.DigestHour,
 		settings.DeliverySLADays,
+		healthTiers,
 		availability,
 		businessRules,
 		settings.PlanningBusinessRuleRevision,

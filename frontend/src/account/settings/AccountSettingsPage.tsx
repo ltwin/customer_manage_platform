@@ -24,6 +24,7 @@ import {
 	buildGeneralBody,
 	buildRemindersBody,
 	buildTelegramBody,
+	validateHealthTiersDraft,
 } from './bodyBuilders.ts'
 import {
 	canSubmitSettings,
@@ -81,7 +82,7 @@ function validateSection(
 			for (const entry of churnThresholds) {
 				if (entry.days < 1) return '流失阈值天数须 ≥ 1'
 			}
-			return null
+			return validateHealthTiersDraft(state.reminders.draft.healthTiers)
 		}
 		case 'telegram': {
 			const hour = state.telegram.draft.digestHour
@@ -456,6 +457,89 @@ export default function AccountSettingsPage() {
 								}
 							/>
 						</label>
+						<fieldset>
+							<legend>健康度分层（个人节奏倍数 · 仪表盘客户资产盘点）</legend>
+							<label>
+								沉睡分界（倍）
+								<input
+									type="number"
+									step="0.1"
+									min={0.1}
+									value={state.reminders.draft.healthTiers.sleeping_ratio}
+									onChange={(event) =>
+										dispatchSynced({
+											type: 'EDIT_REMINDERS',
+											patch: {
+												healthTiers: {
+													...state.reminders.draft.healthTiers,
+													sleeping_ratio: Number(event.target.value),
+												},
+											},
+										})
+									}
+								/>
+							</label>
+							<label>
+								高危分界（倍）
+								<input
+									type="number"
+									step="0.1"
+									min={0.1}
+									value={state.reminders.draft.healthTiers.at_risk_ratio}
+									onChange={(event) =>
+										dispatchSynced({
+											type: 'EDIT_REMINDERS',
+											patch: {
+												healthTiers: {
+													...state.reminders.draft.healthTiers,
+													at_risk_ratio: Number(event.target.value),
+												},
+											},
+										})
+									}
+								/>
+							</label>
+							<label>
+								已流失分界（倍）
+								<input
+									type="number"
+									step="0.1"
+									min={0.1}
+									value={state.reminders.draft.healthTiers.lost_ratio}
+									onChange={(event) =>
+										dispatchSynced({
+											type: 'EDIT_REMINDERS',
+											patch: {
+												healthTiers: {
+													...state.reminders.draft.healthTiers,
+													lost_ratio: Number(event.target.value),
+												},
+											},
+										})
+									}
+								/>
+							</label>
+							<label>
+								通用基线（天 · 仅 1 次拍摄客户）
+								<input
+									type="number"
+									min={30}
+									max={365}
+									value={state.reminders.draft.healthTiers.fallback_cadence_days}
+									onChange={(event) =>
+										dispatchSynced({
+											type: 'EDIT_REMINDERS',
+											patch: {
+												healthTiers: {
+													...state.reminders.draft.healthTiers,
+													fallback_cadence_days: Number(event.target.value),
+												},
+											},
+										})
+									}
+								/>
+							</label>
+						</fieldset>
 						<fieldset>
 							<legend>流失阈值（天）</legend>
 							{state.reminders.draft.churnThresholds.map((entry, index) => (

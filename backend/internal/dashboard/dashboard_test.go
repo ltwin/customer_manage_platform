@@ -30,6 +30,10 @@ func (s stubTimezone) AvailabilityForAccount(context.Context, string) (settings.
 	return settings.DefaultScheduleAvailability(), nil
 }
 
+func (s stubTimezone) HealthTiersForAccount(context.Context, string) (settings.HealthTiers, error) {
+	return settings.DefaultHealthTiers(), nil
+}
+
 func fixedClock(t time.Time) func() time.Time {
 	return func() time.Time { return t }
 }

@@ -160,6 +160,12 @@ func applyPatch(current Settings, input PatchInput) (Settings, bool, error) {
 		}
 		next.DeliverySLADays = *input.DeliverySLADays
 	}
+	if input.HealthTiers != nil {
+		if err := validateHealthTiers(*input.HealthTiers); err != nil {
+			return Settings{}, false, err
+		}
+		next.HealthTiers = *input.HealthTiers
+	}
 	if input.ChurnThresholds != nil {
 		normalized, err := normalizeChurnThresholds(*input.ChurnThresholds)
 		if err != nil {
@@ -205,6 +211,7 @@ func loadSettingsInScope(ctx context.Context, tx store.TxAccountScope) (Settings
 	var (
 		s             Settings
 		thresholds    []byte
+		healthTiers   []byte
 		availability  []byte
 		businessRules []byte
 		telegram      sql.NullString
@@ -212,7 +219,7 @@ func loadSettingsInScope(ctx context.Context, tx store.TxAccountScope) (Settings
 	)
 	err := tx.QueryRowForUpdate(ctx, "settings", settingsColumns, "TRUE").Scan(
 		&s.Timezone, &s.BirthdayLeadDays, &s.FollowUpAfterDays, &thresholds,
-		&s.DigestHour, &s.DeliverySLADays, &telegram, &s.TelegramBindingRevision, &availability,
+		&s.DigestHour, &s.DeliverySLADays, &healthTiers, &telegram, &s.TelegramBindingRevision, &availability,
 		&businessRules, &s.PlanningBusinessRuleRevision, &updatedAt,
 	)
 	if errors.Is(err, store.ErrNoRows) {
@@ -227,6 +234,11 @@ func loadSettingsInScope(ctx context.Context, tx store.TxAccountScope) (Settings
 	}
 	if err := json.Unmarshal(thresholds, &s.ChurnThresholds); err != nil {
 		return Settings{}, err
+	}
+	if len(healthTiers) > 0 {
+		if err := json.Unmarshal(healthTiers, &s.HealthTiers); err != nil {
+			return Settings{}, err
+		}
 	}
 	decodedAvailability, err := DecodeScheduleAvailabilityJSON(availability)
 	if err != nil {
@@ -245,6 +257,10 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	if err != nil {
 		return Settings{}, err
 	}
+	healthTiers, err := json.Marshal(settings.HealthTiers)
+	if err != nil {
+		return Settings{}, err
+	}
 	availability, err := encodeScheduleAvailabilityJSON(settings.Availability)
 	if err != nil {
 		return Settings{}, err
@@ -255,7 +271,7 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	}
 	now := time.Now().UTC()
 	ownedColumns := []string{
-		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "availability",
+		"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "health_tiers", "availability",
 		"planning_business_rule_overrides", "planning_business_rule_revision", "updated_at",
 	}
 	if err := tx.Upsert(ctx, "settings",
@@ -268,6 +284,7 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 		thresholds,
 		settings.DigestHour,
 		settings.DeliverySLADays,
+		healthTiers,
 		availability,
 		businessRules,
 		settings.PlanningBusinessRuleRevision,
@@ -278,6 +295,7 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	var (
 		s                 Settings
 		threshBytes       []byte
+		healthTierBytes   []byte
 		availBytes        []byte
 		businessRuleBytes []byte
 		telegram          sql.NullString
@@ -286,7 +304,7 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	)
 	if err := tx.QueryRow(ctx, "settings", settingsColumns, "TRUE").Scan(
 		&s.Timezone, &s.BirthdayLeadDays, &s.FollowUpAfterDays, &threshBytes,
-		&s.DigestHour, &s.DeliverySLADays, &telegram, &bindingRev, &availBytes,
+		&s.DigestHour, &s.DeliverySLADays, &healthTierBytes, &telegram, &bindingRev, &availBytes,
 		&businessRuleBytes, &s.PlanningBusinessRuleRevision, &updatedAt,
 	); err != nil {
 		return Settings{}, err
@@ -298,6 +316,9 @@ func upsertSettingsInScope(ctx context.Context, tx store.TxAccountScope, setting
 	s.TelegramBindingRevision = bindingRev
 	if len(threshBytes) > 0 {
 		_ = json.Unmarshal(threshBytes, &s.ChurnThresholds)
+	}
+	if len(healthTierBytes) > 0 {
+		_ = json.Unmarshal(healthTierBytes, &s.HealthTiers)
 	}
 	decoded, err := DecodeScheduleAvailabilityJSON(availBytes)
 	if err != nil {
@@ -384,6 +405,18 @@ func (s *Service) AvailabilityForAccount(ctx context.Context, accountID string) 
 	return settings.Availability, nil
 }
 
+// HealthTiersForAccount 供 dashboard v2 customer_health 块取健康度分层参数。
+func (s *Service) HealthTiersForAccount(ctx context.Context, accountID string) (HealthTiers, error) {
+	if s.scopeFor == nil {
+		return DefaultHealthTiers(), nil
+	}
+	settings, err := s.Get(ctx, s.scopeFor(accountID))
+	if err != nil {
+		return HealthTiers{}, err
+	}
+	return settings.HealthTiers, nil
+}
+
 func validateTimezone(tz string) error {
 	if tz == "" {
 		return ValidationError{Message: "timezone 必填"}
@@ -435,6 +468,25 @@ func overlayChurnThresholds(base, overrides []ChurnThreshold) []ChurnThreshold {
 	return out
 }
 
+// validateHealthTiers 校验健康度分层参数：三档 ratio 严格递增（>0 起步）+
+// 通用基线天数范围（roadmap §4.2）。零值（存量行未存该组）视为无效，
+// 由 EffectiveSettings 回退默认。
+func validateHealthTiers(value HealthTiers) error {
+	if value.SleepingRatio <= 0 {
+		return ValidationError{Message: "health_tiers.sleeping_ratio 须 > 0"}
+	}
+	if !(value.SleepingRatio < value.AtRiskRatio) {
+		return ValidationError{Message: "health_tiers 三档阈值须严格递增：sleeping_ratio < at_risk_ratio < lost_ratio"}
+	}
+	if !(value.AtRiskRatio < value.LostRatio) {
+		return ValidationError{Message: "health_tiers 三档阈值须严格递增：sleeping_ratio < at_risk_ratio < lost_ratio"}
+	}
+	if value.FallbackCadenceDays < 30 || value.FallbackCadenceDays > 365 {
+		return ValidationError{Message: "health_tiers.fallback_cadence_days 须在 30-365"}
+	}
+	return nil
+}
+
 // EffectiveSettings returns the stored row overlaid with all read defaults.
 func EffectiveSettings(stored Settings) Settings {
 	def := DefaultSettings()
@@ -452,6 +504,9 @@ func EffectiveSettings(stored Settings) Settings {
 	}
 	if stored.DeliverySLADays < 1 || stored.DeliverySLADays > 180 {
 		stored.DeliverySLADays = def.DeliverySLADays
+	}
+	if err := validateHealthTiers(stored.HealthTiers); err != nil {
+		stored.HealthTiers = def.HealthTiers
 	}
 	stored.ChurnThresholds = overlayChurnThresholds(def.ChurnThresholds, stored.ChurnThresholds)
 	if isZeroScheduleAvailability(stored.Availability) {

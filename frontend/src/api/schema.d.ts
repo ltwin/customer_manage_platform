@@ -1788,6 +1788,51 @@ export interface components {
             shoot_type: components["schemas"]["ShootType"];
             days: number;
         };
+        /** @description 客户健康度分层参数组（§4.2 customer-health-tiers；跨字段校验 0 < sleeping_ratio < at_risk_ratio < lost_ratio，fallback 30-365；仅供 dashboard v2 customer_health 块消费，与 churn_thresholds 相互独立） */
+        HealthTiers: {
+            /** @description 活跃→沉睡 分界（个人节奏倍数，默认 1.2） */
+            sleeping_ratio: number;
+            /** @description 沉睡→高危 分界（个人节奏倍数，默认 2） */
+            at_risk_ratio: number;
+            /** @description 高危→已流失 分界（个人节奏倍数，默认 3.5） */
+            lost_ratio: number;
+            /** @description 仅 1 次拍摄客户的通用节奏基线天数（30-365，默认 120） */
+            fallback_cadence_days: number;
+        };
+        /** @description 健康度分层行（date-only 按账号时区；新客 since_days/cadence_days/ratio 缺省） */
+        CustomerHealthItem: {
+            customer_id: string;
+            display_name: string;
+            channel: components["schemas"]["CustomerChannel"];
+            /**
+             * Format: date
+             * @description 账号本地建档日
+             */
+            created_at: string;
+            /** @description 非 cancelled 且有拍摄日的订单计数 */
+            shots: number;
+            /** @description 距上次拍摄自然日数；新客 null */
+            since_days?: number | null;
+            /** @description 节奏基线天数（≥2 拍=个人间隔均值，仅 1 拍=通用基线）；新客 null */
+            cadence_days?: number | null;
+            /** @description since_days ÷ cadence_days，两位小数；新客 null */
+            ratio?: number | null;
+            /**
+             * @description personal=个人节奏；fallback=通用基线（UI 须标注）；none=新客
+             * @enum {string}
+             */
+            baseline: "personal" | "fallback" | "none";
+            /** @description 分；非 cancelled ∧ balance_paid=true 的 price 之和（与渠道矩阵同源） */
+            settled_ltv: number;
+            /** @description 分；非 cancelled ∧ balance_paid=false 订单的 amount_paid 之和（NULL→0，仅展示不参与排序） */
+            unsettled_paid: number;
+        };
+        CustomerHealthTier: {
+            /** @description 该层全量数 */
+            count: number;
+            /** @description 层内排序：at_risk/lost 按 settled_ltv DESC → ratio DESC；active/sleeping 按 ratio DESC；new 按 created_at DESC；tie 一律 customer_id ASC；上限 50 行（超出截断） */
+            items: components["schemas"]["CustomerHealthItem"][];
+        };
         ScheduleAvailabilityWindow: {
             /** @description 账号时区的本地开始时间，HH:MM */
             start: string;
@@ -1827,6 +1872,7 @@ export interface components {
              * @default 14
              */
             delivery_sla_days: number;
+            health_tiers: components["schemas"]["HealthTiers"];
             telegram_chat_id?: string;
             availability: components["schemas"]["ScheduleAvailability"];
             planning_business_rule_overrides: components["schemas"]["PlanningBusinessRuleOverrides"];
@@ -1841,6 +1887,7 @@ export interface components {
             churn_thresholds?: components["schemas"]["ChurnThreshold"][];
             digest_hour?: number;
             delivery_sla_days?: number;
+            health_tiers?: components["schemas"]["HealthTiers"];
             availability?: components["schemas"]["ScheduleAvailability"];
             planning_business_rules?: components["schemas"]["PlanningBusinessRulesPatch"];
         };
@@ -1900,7 +1947,7 @@ export interface components {
             /** Format: date-time */
             exported_at: string;
             /** @enum {integer} */
-            schema_version: 4;
+            schema_version: 5;
             counts: components["schemas"]["ExportCounts"];
             customers: components["schemas"]["Customer"][];
             social_identities: components["schemas"]["SocialIdentity"][];
@@ -5341,6 +5388,20 @@ export interface operations {
                             }[];
                             /** @description 分 */
                             grand_total: number;
+                        };
+                        /** @description 客户资产盘点（status=active 客户全员按个人节奏分层；「已流失」是资产盘点结论，与 reminder churn 口径分离；§4.3 customer-health-tiers 块） */
+                        customer_health: {
+                            /** @description 五层 count 之和 */
+                            total: number;
+                            /** @description 当前生效参数回显（口径说明与判定快照一致） */
+                            thresholds: components["schemas"]["HealthTiers"];
+                            tiers: {
+                                active: components["schemas"]["CustomerHealthTier"];
+                                sleeping: components["schemas"]["CustomerHealthTier"];
+                                at_risk: components["schemas"]["CustomerHealthTier"];
+                                lost: components["schemas"]["CustomerHealthTier"];
+                                new: components["schemas"]["CustomerHealthTier"];
+                            };
                         };
                         /** @description 口径与 GET /dashboard.due_reminders 一致（近 3 天窗含逾期），附客户摘要投影 */
                         due_reminders: (components["schemas"]["Reminder"] & {

@@ -8,10 +8,16 @@ import {
   formatPercent,
   formatShortYuan,
   formatYuan,
+  healthCopyText,
   localMinutesOfInstant,
   upcomingLocalDates,
   v2DeliveryRows,
   v2FocusModel,
+  v2HealthCounts,
+  v2HealthRows,
+  v2HealthTierHint,
+  v2HealthTierMeta,
+  v2HealthTierOrder,
   v2MatrixModel,
   v2TimelineModel,
   v2WaterfallModel,
@@ -317,4 +323,115 @@ test('computeUpcomingOpenings reuses calendar model openings for future days', (
   assert.equal(openings[0]?.date, '2026-07-14')
   assert.equal(openings[0]?.start, '09:00')
   assert.equal(openings[0]?.end, '21:00')
+})
+
+// ============ customer_health（客户资产·健康度分层）============
+
+const healthFixture = {
+  total: 6,
+  thresholds: { sleeping_ratio: 1.2, at_risk_ratio: 2, lost_ratio: 3.5, fallback_cadence_days: 120 },
+  tiers: {
+    active: {
+      count: 1,
+      items: [{
+        customer_id: 'cus-a', display_name: '阿茶', channel: 'douyin',
+        created_at: '2026-07-01', shots: 2, since_days: 14, cadence_days: 16,
+        ratio: 0.88, baseline: 'personal', settled_ltv: 50000, unsettled_paid: 30000,
+      }],
+    },
+    sleeping: { count: 1, items: [] },
+    at_risk: {
+      count: 2,
+      items: [
+        {
+          customer_id: 'cus-r1', display_name: '夜见', channel: 'weibo',
+          created_at: '2025-10-01', shots: 1, since_days: 296, cadence_days: 120,
+          ratio: 2.47, baseline: 'fallback', settled_ltv: 300000, unsettled_paid: 0,
+        },
+        {
+          customer_id: 'cus-r2', display_name: '苏晚', channel: 'xiaohongshu',
+          created_at: '2025-12-01', shots: 1, since_days: 266, cadence_days: 120,
+          ratio: 2.22, baseline: 'fallback', settled_ltv: 120000, unsettled_paid: 8000,
+        },
+      ],
+    },
+    lost: { count: 1, items: [] },
+    new: {
+      count: 1,
+      items: [{
+        customer_id: 'cus-n', display_name: '小新', channel: 'referral',
+        created_at: '2026-08-01', shots: 0, baseline: 'none',
+        settled_ltv: 0, unsettled_paid: 0,
+      }],
+    },
+  },
+} as DashboardV2['customer_health']
+
+test('v2HealthTierOrder exposes the five cohort tiers in display order', () => {
+  assert.deepEqual(v2HealthTierOrder, ['active', 'sleeping', 'at_risk', 'lost', 'new'])
+  assert.equal(v2HealthTierMeta('at_risk').label, '高危')
+  assert.equal(v2HealthTierMeta('new').label, '新客')
+})
+
+test('v2HealthTierHint reflects the effective thresholds instead of hardcoded defaults', () => {
+  const defaults = healthFixture.thresholds
+  assert.equal(v2HealthTierHint('at_risk', defaults), '超节奏 2–3.5 倍 · 按累计贡献排序')
+  const custom = { sleeping_ratio: 1.5, at_risk_ratio: 2.5, lost_ratio: 4, fallback_cadence_days: 90 }
+  assert.equal(v2HealthTierHint('sleeping', custom), '超节奏 1.5–2.5 倍')
+  assert.equal(v2HealthTierHint('lost', custom), '超节奏 4 倍以上 · 按累计贡献排序')
+})
+
+test('v2HealthRows renders personal-baseline rows with dual money columns', () => {
+  const rows = v2HealthRows(healthFixture, 'active', '2026-08-24')
+  assert.equal(rows.length, 1)
+  const row = rows[0]
+  assert.equal(row.displayName, '阿茶')
+  assert.equal(row.channelLabel, '抖音')
+  assert.equal(row.ratioText, '0.88×')
+  assert.equal(row.sinceDays, 14)
+  assert.equal(row.cadenceDays, 16)
+  assert.equal(row.fallbackBaseline, false)
+  assert.equal(row.settledText, '¥500')
+  assert.equal(row.unsettledText, '¥300')
+  assert.equal(row.gaugePercent, 25) // 0.88 / lost_ratio 3.5 × 100
+})
+
+test('v2HealthRows marks fallback-baseline rows and renders new-customer rows without ratio', () => {
+  const atRisk = v2HealthRows(healthFixture, 'at_risk', '2026-08-24')
+  assert.equal(atRisk.length, 2)
+  assert.equal(atRisk[0].customerId, 'cus-r1') // 服务端已按 settled_ltv 排序，前端保序
+  assert.equal(atRisk[0].fallbackBaseline, true)
+  assert.equal(atRisk[0].unsettledText, null) // unsettled_paid=0 不显示次要行
+  assert.equal(atRisk[1].unsettledText, '¥80')
+
+  const fresh = v2HealthRows(healthFixture, 'new', '2026-08-24')
+  assert.equal(fresh.length, 1)
+  assert.equal(fresh[0].ratioText, null)
+  assert.equal(fresh[0].sinceDays, null)
+  assert.equal(fresh[0].createdDaysAgo, 23)
+})
+
+test('v2HealthCounts derives cohort bar shares from tier counts', () => {
+  const counts = v2HealthCounts(healthFixture)
+  assert.deepEqual(
+    counts.map((entry) => [entry.key, entry.count]),
+    [['active', 1], ['sleeping', 1], ['at_risk', 2], ['lost', 1], ['new', 1]],
+  )
+  assert.equal(counts[0].percent, 17) // round(1/6*100)
+})
+
+test('healthCopyText speaks the tier language with concrete facts', () => {
+  const rows = v2HealthRows(healthFixture, 'at_risk', '2026-08-24')
+  const winback = healthCopyText('winback', rows[0])
+  assert.ok(winback.includes('夜见'), 'winback copy must address the customer by name')
+  assert.ok(winback.includes('296'), 'winback copy must mention days since last shoot')
+
+  const fresh = v2HealthRows(healthFixture, 'new', '2026-08-24')
+  const first = healthCopyText('first', fresh[0])
+  assert.ok(first.includes('小新'))
+  assert.ok(first.includes('23'), 'first-order copy must mention days since signup')
+
+  const active = v2HealthRows(healthFixture, 'active', '2026-08-24')
+  const care = healthCopyText('care', active[0])
+  assert.ok(care.includes('阿茶'), 'care copy must address the customer by name')
 })

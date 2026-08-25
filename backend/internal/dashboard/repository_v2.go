@@ -60,6 +60,29 @@ type V2Facts struct {
 	// RepeatWindowShots：90 天窗内 shot_at 落窗且非 cancelled 订单的 customer_id 逐行列表。
 	RepeatWindowShots []string
 	MatrixRows        []MatrixSourceRow
+
+	// HealthCustomers / HealthOrders：健康度分层的原始事实行（customer-health-tiers，
+	// 瞬时时刻；service 按账号时区折算 date-only 后进纯函数）。
+	HealthCustomers []healthCustomerSource
+	HealthOrders    []healthOrderSource
+}
+
+// healthCustomerSource 是健康度盘点的客户事实行：仅 status=active（archived/merged 不入）。
+type healthCustomerSource struct {
+	ID          string
+	DisplayName string
+	Channel     string
+	CreatedAt   time.Time // 瞬时
+}
+
+// healthOrderSource 是健康度盘点的订单事实行：非 cancelled 全量
+// （节奏样本与双金额口径共用）。ShotAt nil = 未拍摄（金额照计、不入节奏样本）。
+type healthOrderSource struct {
+	CustomerID  string
+	ShotAt      *time.Time // 瞬时
+	Price       *int
+	BalancePaid bool
+	AmountPaid  *int
 }
 
 // pipelineStatuses 是「在途」冻结口径的状态集（roadmap §4.3：已定档进入执行链但尚未交付确认）。
@@ -135,6 +158,14 @@ func (PostgresRepository) LoadDashboardV2(
 	if err != nil {
 		return V2Facts{}, err
 	}
+	healthCustomers, err := loadHealthCustomers(ctx, scope)
+	if err != nil {
+		return V2Facts{}, err
+	}
+	healthOrders, err := loadHealthOrders(ctx, scope)
+	if err != nil {
+		return V2Facts{}, err
+	}
 	return V2Facts{
 		DueReminders:          dueItems,
 		TodaySlots:            todaySlots,
@@ -150,6 +181,8 @@ func (PostgresRepository) LoadDashboardV2(
 		Cash30d:               cash,
 		RepeatWindowShots:     repeatShots,
 		MatrixRows:            matrixRows,
+		HealthCustomers:       healthCustomers,
+		HealthOrders:          healthOrders,
 	}, nil
 }
 
@@ -348,6 +381,45 @@ func loadMatrixRows(ctx context.Context, scope store.AccountScope) ([]MatrixSour
 			return nil, err
 		}
 		row.ShootTypeSnapshot = shootType
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// loadHealthCustomers：健康度盘点对象 = status=active 客户全员（archived/merged 不入，§4.3）。
+func loadHealthCustomers(ctx context.Context, scope store.AccountScope) ([]healthCustomerSource, error) {
+	rows, err := scope.Query(ctx, "customers", "id, display_name, channel, created_at", "status = 'active'")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]healthCustomerSource, 0)
+	for rows.Next() {
+		var row healthCustomerSource
+		if err := rows.Scan(&row.ID, &row.DisplayName, &row.Channel, &row.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// loadHealthOrders：健康度订单事实 = 非 cancelled 全量（节奏样本 + 双金额口径共用一查）。
+func loadHealthOrders(ctx context.Context, scope store.AccountScope) ([]healthOrderSource, error) {
+	rows, err := scope.Query(ctx, "orders",
+		"customer_id, shot_at, price, balance_paid, amount_paid",
+		"status <> $2",
+		orderdomain.StatusCancelled)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]healthOrderSource, 0)
+	for rows.Next() {
+		var row healthOrderSource
+		if err := rows.Scan(&row.CustomerID, &row.ShotAt, &row.Price, &row.BalancePaid, &row.AmountPaid); err != nil {
+			return nil, err
+		}
 		out = append(out, row)
 	}
 	return out, rows.Err()

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
@@ -23,7 +24,24 @@ type dashboardV2Response struct {
 	RevenueWaterfall    dashboardV2RevenueWaterfall `json:"revenue_waterfall"`
 	ScheduleUtilization dashboardV2Utilization      `json:"schedule_utilization"`
 	ChannelMatrix       dashboardV2ChannelMatrix    `json:"channel_matrix"`
+	CustomerHealth      dashboardV2CustomerHealth   `json:"customer_health"`
 	DueReminders        []dashboardV2DueReminder    `json:"due_reminders"`
+}
+
+// dashboardV2CustomerHealth 是客户资产盘点块；行/桶复用契约生成类型，
+// tiers 五字段对象为内联 schema 手写形。
+type dashboardV2CustomerHealth struct {
+	Total      int                    `json:"total"`
+	Thresholds HealthTiers            `json:"thresholds"`
+	Tiers      dashboardV2HealthTiers `json:"tiers"`
+}
+
+type dashboardV2HealthTiers struct {
+	Active   CustomerHealthTier `json:"active"`
+	Sleeping CustomerHealthTier `json:"sleeping"`
+	AtRisk   CustomerHealthTier `json:"at_risk"`
+	Lost     CustomerHealthTier `json:"lost"`
+	New      CustomerHealthTier `json:"new"`
 }
 
 type dashboardV2TodayOpenings struct {
@@ -247,7 +265,63 @@ func toDashboardV2Response(data dashboarddomain.V2) (dashboardV2Response, error)
 			OpenDays:     data.Utilization.OpenDays,
 			ConflictDays: data.Utilization.ConflictDays,
 		},
-		ChannelMatrix: dashboardV2ChannelMatrix{Rows: matrixRows, GrandTotal: data.ChannelMatrix.GrandTotal},
-		DueReminders:  due,
+		ChannelMatrix:  dashboardV2ChannelMatrix{Rows: matrixRows, GrandTotal: data.ChannelMatrix.GrandTotal},
+		CustomerHealth: toAPICustomerHealth(data.CustomerHealth),
+		DueReminders:   due,
 	}, nil
+}
+
+func toAPICustomerHealth(health dashboarddomain.CustomerHealth) dashboardV2CustomerHealth {
+	toTier := func(bucket dashboarddomain.CustomerHealthBucket) CustomerHealthTier {
+		items := make([]CustomerHealthItem, 0, len(bucket.Items))
+		for _, item := range bucket.Items {
+			items = append(items, toAPICustomerHealthItem(item))
+		}
+		return CustomerHealthTier{Count: bucket.Count, Items: items}
+	}
+	return dashboardV2CustomerHealth{
+		Total: health.Total,
+		Thresholds: HealthTiers{
+			SleepingRatio:       float32(health.Thresholds.SleepingRatio),
+			AtRiskRatio:         float32(health.Thresholds.AtRiskRatio),
+			LostRatio:           float32(health.Thresholds.LostRatio),
+			FallbackCadenceDays: health.Thresholds.FallbackCadenceDays,
+		},
+		Tiers: dashboardV2HealthTiers{
+			Active:   toTier(health.Tiers.Active),
+			Sleeping: toTier(health.Tiers.Sleeping),
+			AtRisk:   toTier(health.Tiers.AtRisk),
+			Lost:     toTier(health.Tiers.Lost),
+			New:      toTier(health.Tiers.New),
+		},
+	}
+}
+
+func toAPICustomerHealthItem(item dashboarddomain.CustomerHealthItem) CustomerHealthItem {
+	out := CustomerHealthItem{
+		Baseline:      CustomerHealthItemBaseline(item.Baseline),
+		Channel:       CustomerChannel(item.Channel),
+		CreatedAt:     openapi_types.Date{Time: item.CreatedAt},
+		CustomerId:    item.CustomerID,
+		DisplayName:   item.DisplayName,
+		SettledLtv:    item.SettledLTV,
+		Shots:         item.Shots,
+		UnsettledPaid: item.UnsettledPaid,
+	}
+	if item.SinceDays != nil {
+		out.SinceDays.Set(*item.SinceDays)
+	} else {
+		out.SinceDays.SetNull()
+	}
+	if item.CadenceDays != nil {
+		out.CadenceDays.Set(*item.CadenceDays)
+	} else {
+		out.CadenceDays.SetNull()
+	}
+	if item.Ratio != nil {
+		out.Ratio.Set(float32(*item.Ratio))
+	} else {
+		out.Ratio.SetNull()
+	}
+	return out
 }

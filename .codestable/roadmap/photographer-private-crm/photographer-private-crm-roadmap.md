@@ -231,6 +231,16 @@ Settings:        timezone*(IANA, 默认 "Asia/Shanghai"),
                  （账号级默认交付 SLA 天数，dashboard-v2-redesign ITEM-1 增量：
                    供 Order.delivery_due_at 自动派生使用；订单级覆盖优先，
                    修改本值不重写历史订单已落库的应交付日），
+                 health_tiers*: { sleeping_ratio*(>0, 默认 1.2), at_risk_ratio*(默认 2),
+                                  lost_ratio*(默认 3.5),
+                                  fallback_cadence_days*(30..365, 默认 120) }
+                 （客户健康度分层参数组，customer-health-tiers 增量：
+                   跨字段校验 0 < sleeping_ratio < at_risk_ratio < lost_ratio，
+                   违反 → 400 validation_failed；fallback_cadence_days=仅 1 次拍摄
+                   客户的通用节奏基线天数；仅供 dashboard v2 customer_health 块消费，
+                   与 reminder churn_thresholds 相互独立——churn 是行动提醒（固定天数），
+                   健康度是资产盘点（个人节奏倍数），两套流失口径分离 + 前端交叉引用，
+                   owner 2026-08-24 拍板）,
                  availability*: {
                    weekly*: {"1".."7": {start*(HH:MM), end*(HH:MM)} | null},
                    min_opening_minutes*(15..480, 默认 120),
@@ -509,6 +519,35 @@ dashboard
                            channel_snapshot × shoot_type_snapshot 聚合 price（NULL 跳过，
                            ITEM-3）；shoot_type_snapshot NULL 归 unattributed 未归因桶；
                            累计、无窗口；行按 total DESC, channel ASC),
+           customer_health: { total,
+                              thresholds: { sleeping_ratio, at_risk_ratio, lost_ratio,
+                                            fallback_cadence_days },
+                              tiers: { active|sleeping|at_risk|lost|new:
+                                { count, items: { customer_id, display_name, channel,
+                                  created_at(date), shots, since_days?, cadence_days?,
+                                  ratio?(两位小数), baseline(personal|fallback|none),
+                                  settled_ltv, unsettled_paid }[] } } }
+                          (customer-health-tiers 增量，2026-08-24 定稿；盘点对象=
+                           status=active 客户全员（archived/merged 不入）；ratio=
+                           距上次拍摄自然日天数 ÷ 个人节奏基线天数，节奏样本=非 cancelled
+                           且 shot_at 非空订单按 shot_at ASC 的相邻间隔均值，相邻间隔
+                           <7 天一律按 7 天下限兜底（含同日多单；工程防除零，不参数化）；≥2 次拍摄=
+                           personal 基线、仅 1 次=fallback_cadence_days 通用基线
+                           （baseline=fallback）、0 次=新客层（baseline=none，
+                           since_days/cadence_days/ratio 缺省）；tier 判定 ratio ≤
+                           sleeping_ratio=active、≤ at_risk_ratio=sleeping、≤
+                           lost_ratio=at_risk、> lost_ratio=lost——「已流失」tier 是
+                           资产盘点结论，与 reminder churn 提醒（固定天数阈值）口径
+                           分离，前端高危层与 due_reminders 中 type=churn 行交叉引用；
+                           行金额双口径共存：settled_ltv=非 cancelled ∧ balance_paid=true
+                           的 price 之和（与 channel_matrix 同源，排序用它）、
+                           unsettled_paid=非 cancelled ∧ balance_paid=false 订单的
+                           amount_paid 之和（NULL→0，仅展示不参与排序）；层内排序
+                           at_risk/lost 按 settled_ltv DESC → ratio DESC、
+                           active/sleeping 按 ratio DESC、new 按 created_at DESC，
+                           tie 一律 customer_id ASC；items 每层上限 50 行（超出截断，
+                           count 仍为该层全量数），total=五层 count 之和；thresholds
+                           回显当前生效参数，保证口径说明与判定快照一致),
            due_reminders: Reminder 形 + customer_summary:{display_name,channel}?|null
                           (口径与 /dashboard.due_reminders 完全一致（近 3 天窗含逾期）；
                            仅追加客户摘要投影还原 v2 行样式，批量装配无 N+1) }
@@ -635,14 +674,14 @@ Port:   TelegramPort { sendMessage(chat_id, text) error }
 
 ```
 GET /export → application/json（Content-Disposition 附件）
-{ exported_at, schema_version: 4,
+{ exported_at, schema_version: 5,
   counts: { customers, social_identities, customer_notes, packages, orders,
             schedule_slots, reminders },
   customers[], social_identities[], customer_notes[], packages[], orders[],
   schedule_slots[], reminders[], settings }        // 各数组 shape 全部按 4.2
 ```
 
-**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。`dashboard-v2-redesign` ITEM-1/2/3 新增订单字段随 §4.2 Order shape 进入导出（amount_paid/channel_snapshot 恒输出，其余可缺省）；该 epic ITEM-6（2026-08-24）统一拍板 `schema_version` 由 3 升为 4——延续「每逢导出 shape 变化即 bump」纪律（calendar-v2 1→2、creative-planning 2→3 先例），维持「同版本 ⇒ 同 shape」不变量，消费方可按版本区分导出年代；不采用「可选字段静默兼容保持 3」——金额三字段与恒输出的 channel_snapshot 属新增经营事实，静默保持 3 会让同一版本指向两种 shape。
+**约束**：全量无分页；`counts` 必须与各数组长度一致（验收核对点）；含全部 PII，导出文件的存放责任在 owner（见第 7 节拍板包）。`calendar-v2-redesign` 因 `Settings.availability` 成为 required 字段把导出 `schema_version` 从 1 升为 2，creative-planning 系列续升为 3（本行 2026-08-23 校正为与实现一致）；dataexport 的显式列、JSON 解码与 API 投影必须返回和 `GET /settings` 相同的非默认 availability，禁止静默回落默认值。v1 的实体数组、counts 与 reference-only 头像边界不变。`dashboard-v2-redesign` ITEM-1/2/3 新增订单字段随 §4.2 Order shape 进入导出（amount_paid/channel_snapshot 恒输出，其余可缺省）；该 epic ITEM-6（2026-08-24）统一拍板 `schema_version` 由 3 升为 4——延续「每逢导出 shape 变化即 bump」纪律（calendar-v2 1→2、creative-planning 2→3 先例），维持「同版本 ⇒ 同 shape」不变量，消费方可按版本区分导出年代；不采用「可选字段静默兼容保持 3」——金额三字段与恒输出的 channel_snapshot 属新增经营事实，静默保持 3 会让同一版本指向两种 shape。customer-health-tiers（2026-08-24）把 `schema_version` 由 4 续升为 5——`Settings.health_tiers` 成为 required 字段随导出恒输出（同 availability 先例），延续同一 bump 纪律。
 
 ### 4.x 共享数据结构 / 状态
 
@@ -740,13 +779,14 @@ GET /export → application/json（Content-Disposition 附件）
 - 零成交线索的跟进提醒（本版 churn 刻意排除）记二期候选，配合渠道转化分析一起规划。
 - **reminder-engine 已知边界（2026-07-13 acceptance）**：① `digest_hour` 早于每日 runner 首次跨日扫描完成时刻时可能出现摘要空窗，telegram-digest 应在推送前顺带触发幂等扫描；② 复购触发旧 churn 自动 dismissed 后若新订单再取消，既有 churn dedup 行不会回到 pending，可能静默到产生新的最近成交单；③ 账号时区向西修改可能让检查点暂时领先本地日期，后续自然日推进后自愈。三项均不改变本 feature 已验收边界，后续消费/迭代需显式读取。
 - **二期候选（2026-07-06 设计原型比对拍板，本版不做）**：①拍摄回顾 / 选片相册缩略图（原型 customer-detail 有此卡片；roadmap §2 已明确在线选片/交付不做，首版无数据来源）；②多层人脉链可视化与转介绍带单金额归因（原型展示"转介绍 2 层 · 合计 ¥3,140"；首版只有 referrer_customer_id 单向引用 + 详情页介绍人摘要，链式聚合与金额归因属渠道转化分析范畴）——两项与渠道转化分析同批规划。
-- **dashboard-v2-redesign 二期下放（2026-08-24 epic 收口记录）**：①咨询转化漏斗（consulted_at / 转化线索）并入「渠道转化分析」批次；②客户健康度分层（个人节奏 ratio / tier / LTV）须先决策与 reminder churn 固定阈值两套「流失」口径共用或分离；③`GET /dashboard` 与 `/dashboard/v2` 两端点并存，合并与 deprecate 时机由 owner 再拍板；④Calendar 前端切换为消费服务端 openings/利用率结果，消除 Go/TS 双实现并存漂移窗口（DEC-9，golden fixtures 兜底）；⑤收入瀑布在途/已确认明细钻取与利用率热力格（明细数据不在 v2 聚合内）。详见 `.codestable/epics/dashboard-v2-redesign.md` 遗留风险与 `.codestable/work/epic-dashboard-v2-redesign.md`。
+- **dashboard-v2-redesign 二期下放（2026-08-24 epic 收口记录）**：①咨询转化漏斗（consulted_at / 转化线索）并入「渠道转化分析」批次；②~~客户健康度分层（个人节奏 ratio / tier / LTV）须先决策与 reminder churn 固定阈值两套「流失」口径共用或分离~~——已由 **customer-health-tiers**（2026-08-24，feat 流程）落地：owner 拍板两套口径**分离 + 卡内交叉引用**（churn=行动提醒固定天数、健康度=资产盘点个人节奏倍数）；LTV 主口径「已结清」与渠道矩阵同源、未结清已收作次要行共存；阈值/基线参数化进 `Settings.health_tiers`（§4.2），`GET /dashboard/v2` 增 `customer_health` 块（§4.3），导出 schema_version 升 5（§4.6）；③`GET /dashboard` 与 `/dashboard/v2` 两端点并存，合并与 deprecate 时机由 owner 再拍板；④Calendar 前端切换为消费服务端 openings/利用率结果，消除 Go/TS 双实现并存漂移窗口（DEC-9，golden fixtures 兜底）；⑤收入瀑布在途/已确认明细钻取与利用率热力格（明细数据不在 v2 聚合内）。详见 `.codestable/epics/dashboard-v2-redesign.md` 遗留风险与 `.codestable/work/epic-dashboard-v2-redesign.md`。
 - ✅ **OpenAPI 同步结果**：customer-core 已收编 §4 契约增量；2026-07-10 schedule-calendar update 同时把 `GET /me` 收编为平台契约并增加 timezone，消解原白名单债。
 - **头像与全量导出决策 gate**：`customer-avatar` 只保证 Customer JSON 带可用 `avatar_revision/avatar_version/avatar_url` 与本地卷可做一致备份；当前 §4.6 仍是实体 JSON。`data-export` design 启动前必须由 owner 二选一：reference-only JSON（明确不承诺头像便携恢复），或先把 §4.6 update 为媒体文件 + exact-generation manifest/key/count/checksum 的便携包。未拍板不得启动/完成该条；不得把鉴权 URL 冒充可携带资产。**2026-07-21 resolved**：owner 已选择 reference-only JSON；只导出公开头像引用元数据，不含头像二进制、内部 object_id 或 manifest，不承诺跨环境便携恢复；§4.6 JSON 契约保持不变，启动 gate 已解除。
 - "owner 真实使用两周"作为产品成功软信号，不进验收门槛，由 owner 自行观察后决定二期方向（画像/渠道分析）。
 
 ## 8. 变更日志
 
+- 2026-08-24（customer-health-tiers feat，dashboard-v2 二期下放第 ② 项落地）：§4.2 Settings 增 `health_tiers` 参数组（三档 ratio 严格递增 + fallback 基线 30-365，迁移 0035 JSONB 列默认即原型口径）；§4.3 GET /dashboard/v2 增 `customer_health` 块（active 客户全员按个人节奏五层分层、行金额双口径 settled_ltv/unsettled_paid、层内排序与 50 行上限、thresholds 回显）；§4.6 导出 schema_version 4→5（Settings.health_tiers 恒输出）。owner 五项口径拍板：与 churn 分离+交叉引用、LTV 主口径已结清（与矩阵同源）+未结清已收次要行共存（不加 toggle）、阈值参数化进 settings（不硬编码）、节奏样本排除 cancelled 仅统计 active 客户、扩 v2 块不另开端点。健康度 tier 术语语义权威在 §4.3、仅 dashboard 域消费。§7 二期下放清单第 ② 条收口。
 - 2026-08-24（dashboard-v2-redesign 六子项收口，ITEM-6 契约与文档回写）：新增条目 14 作为 roadmap-owned 增量，不回退旧 `dashboard` done 状态。§4.2 Order 增 delivery_due_at/delivery_due_is_override 与 Settings 增 delivery_sla_days（ITEM-1）、amount_paid/outstanding_amount/paid_at 与 DEC-10 金额联动推定（ITEM-2）、channel_snapshot/shoot_type_snapshot（ITEM-3）；§4.3 新增 GET /dashboard/v2 聚合契约（ITEM-4，「在途」冻结为 scheduled/shot/selected/retouching 且非 cancelled 的 price 之和，已交付未结清归待收段）——以上各块已分别随子项启动前定稿落文（沿用 D11 先例），本次收口逐块核对机器契约（api/openapi.yaml）与权威源一致、零漂移。§4.6 统一拍板导出 schema_version 3→4（ITEM-1/2/3 全部新增订单字段一次决策，理由见 §4.6 约束行）。CONTEXT.md 增已收现金/待收尾款/在途/归因快照/应交付日术语并更新订单条目；items.yaml 增 dashboard-v2-redesign done；§7 增 dashboard-v2 二期下放清单。旧 `GET /dashboard` 保留供 Telegram digest 服务端消费。
 - 2026-07-31（calendar-v2-redesign owner 批准）：新增条目 13 作为 roadmap-owned 增量，不回退旧 `schedule-calendar` / `data-export` done 状态。§2/§3 收编月/周双视图、可约空档回答、转场软提醒和移动端完整 CRUD；§4.2 给 Settings 增严格 ISO weekday availability（周日默认 09:00–20:00、单日单窗口、最小空档 120 分钟、转场 60 分钟、Temporal compatible DST）；§4.3 扩 shoot slot 批量摘要为价格/定金/尾款/套系拍摄类型并要求 Settings 局部 strict decode；§4.6 因 required availability 把导出 schema_version 升到 2 并要求非默认 Settings parity。openings/overview 继续由 webapp 对短窗口纯计算，不新增聚合端点；旧可靠写流程保留并补 conflict preview generation。
 - 2026-07-13（reminder-engine acceptance）：条目 8 完成；Settings 明确归 `backend/internal/settings`，`GET /reminders` 固定 `due_date ASC,id ASC`，birthday dedup 年份明确为生日发生日年份，custom dedup 固定为 `custom:{reminder_id}`；记录 digest 空窗、复购取消后 churn 静默和时区西移检查点自愈三项已知边界。

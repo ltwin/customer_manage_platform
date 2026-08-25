@@ -46,12 +46,18 @@ import {
   computeUpcomingOpenings,
   formatShortYuan,
   formatYuan,
+  healthCopyText,
   localDateOfInstant,
   minutesOfHHMM,
   minutesToHHMM,
   upcomingLocalDates,
   v2DeliveryRows,
   v2FocusModel,
+  v2HealthCounts,
+  v2HealthRows,
+  v2HealthTierHint,
+  v2HealthTierMeta,
+  type V2HealthTierKey,
   v2MatrixModel,
   v2TimelineModel,
   v2WaterfallModel,
@@ -113,6 +119,8 @@ export default function DashboardPage() {
   const [receivableSheetOpen, setReceivableSheetOpen] = useState(false)
   const [receivableOrders, setReceivableOrders] = useState<OrderListItem[] | null>(null)
   const [copySheet, setCopySheet] = useState<{ sub: string; text: string } | null>(null)
+  // 健康度分层默认聚焦高危层（挽回优先看价值），沿原型交互
+  const [healthTier, setHealthTier] = useState<V2HealthTierKey>('at_risk')
   const auxLoadedRef = useRef(false)
 
   const load = useCallback(() => {
@@ -273,6 +281,17 @@ export default function DashboardPage() {
   ).length
   const overdueCount = data.delivery_queue.items.filter((item) => item.overdue).length
   const utilization = data.schedule_utilization
+  const health = data.customer_health
+  const healthCounts = v2HealthCounts(health)
+  const healthRows = v2HealthRows(health, healthTier, todayDate)
+  const healthMeta = v2HealthTierMeta(healthTier)
+  // 两套流失口径分离（§4.3）：高危层只标注、不判定——哪些客户已有 churn 唤回提醒
+  const churnCustomerIds = new Set(
+    due.filter((item) => item.type === 'churn' && item.customer_id).map((item) => item.customer_id),
+  )
+  const churnCrossCount = healthTier === 'at_risk'
+    ? healthRows.filter((row) => churnCustomerIds.has(row.customerId)).length
+    : 0
 
   return (
     <>
@@ -457,44 +476,160 @@ export default function DashboardPage() {
           </section>
         </div>
 
-        <section className="card">
-          <h2 className="card-title">渠道 × 类型 收入分布<span className="count">· 累计已结清</span></h2>
-          {matrix.rows.length === 0 ? (
-            <EmptyState icon={Wallet} title="暂无已结清收入" hint="订单结清后按下单时归因展示" />
-          ) : (
-            <>
-              <div>
-                {matrix.rows.map((row) => (
-                  <div key={row.channelLabel} className="dv2-mx-row">
-                    <div className="dv2-mx-label">
-                      {row.channelLabel}
-                      <small>{row.customerCount} 位 · {row.orderCount} 单</small>
-                    </div>
-                    <div className="dv2-mx-track">
-                      {row.segments
-                        .filter((segment) => segment.cents > 0)
-                        .map((segment) => (
+        <div className="two-col section-gap">
+          <section className="card">
+            <h2 className="card-title">
+              健康度分层
+              <span className="count">· 共 {health.total} 位在册客户 · 按个人拍摄节奏分层</span>
+              <Link className="more" to="/customers">
+                全部客户 →
+              </Link>
+            </h2>
+            <div className="dv2-cohort-bar">
+              {healthCounts
+                .filter((entry) => entry.count > 0)
+                .map((entry) => {
+                  const meta = v2HealthTierMeta(entry.key)
+                  return (
+                    <button
+                      key={entry.key}
+                      type="button"
+                      className={`dv2-cohort-seg dv2-cohort-${entry.key}${entry.key === healthTier ? ' is-active' : ''}`}
+                      style={{ width: `${entry.percent}%` }}
+                      title={`${meta.label} · ${entry.count} 位 · ${v2HealthTierHint(entry.key, health.thresholds)}`}
+                      onClick={() => setHealthTier(entry.key)}
+                    >
+                      <span className="n">{entry.count}</span>
+                      <span className="l">{meta.label}</span>
+                    </button>
+                  )
+                })}
+            </div>
+            {churnCrossCount > 0 && (
+              <div className="dv2-cohort-crossref">
+                其中 {churnCrossCount} 位已生成唤回提醒，见上方「今日待办」，处理完记得回来闭环。
+              </div>
+            )}
+            <div className="dv2-cohort-title">
+              {healthMeta.label}客户<span className="count">· {health.tiers[healthTier].count} 位 · {v2HealthTierHint(healthTier, health.thresholds)}</span>
+            </div>
+            {healthRows.length === 0 ? (
+              <EmptyState
+                icon={ClipboardCheck}
+                title="这一层暂时没有客户"
+                hint="点上方色块切换其他分层"
+              />
+            ) : (
+              <div className="dv2-risk-list">
+                {healthRows.map((row) => (
+                  <div key={row.customerId} className="dv2-risk-row">
+                    <div className="grow">
+                      <div className="dv2-risk-name">
+                        {row.displayName}
+                        <span className="dv2-risk-badge">{row.channelLabel}</span>
+                        {row.fallbackBaseline && (
                           <span
-                            key={segment.type}
-                            className={`dv2-mx-seg dv2-mx-${segment.type}`}
-                            style={{ width: `${segment.percent}%` }}
-                            title={`${segment.label} ${formatYuan(segment.cents)}`}
+                            className="dv2-risk-badge"
+                            title={`仅 1 次拍摄，无个人节奏样本，按 ${health.thresholds.fallback_cadence_days} 天通用基线判定`}
                           >
-                            {segment.percent > 22 ? formatShortYuan(segment.cents) : ''}
+                            通用基线
                           </span>
-                        ))}
+                        )}
+                      </div>
+                      <div className="dv2-risk-meta">
+                        {row.sinceDays != null
+                          ? <>距上次拍摄 <b className="num">{row.sinceDays}</b> 天 · 个人节奏 <b className="num">{row.cadenceDays}</b> 天</>
+                          : <>建档 <b className="num">{row.createdDaysAgo}</b> 天，尚无拍摄记录</>}
+                      </div>
+                      {row.unsettledText && (
+                        <div className="dv2-risk-extra">另有未结清已收 {row.unsettledText}</div>
+                      )}
                     </div>
-                    <div className="dv2-mx-total">
-                      {formatShortYuan(row.totalCents)}
-                      <small>{row.totalPercent}%</small>
+                    <div className="dv2-risk-ltv">
+                      <span className="v">{row.settledText}</span>
+                      <span className="k">累计贡献</span>
                     </div>
+                    <div className="dv2-risk-gauge">
+                      <div className="dv2-risk-gauge-track">
+                        <div
+                          className="dv2-risk-gauge-fill"
+                          style={{
+                            width: `${row.gaugePercent ?? 0}%`,
+                            background: `var(--${healthMeta.tone === 'muted' ? 'slot-busy' : healthMeta.tone})`,
+                          }}
+                        />
+                      </div>
+                      <div className="dv2-risk-gauge-label">{row.ratioText ?? '—'}</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() =>
+                        setCopySheet({
+                          sub: `${healthMeta.label}客户触达文案`,
+                          text: healthCopyText(healthMeta.ctaKind, row),
+                        })
+                      }
+                    >
+                      {healthMeta.ctaLabel}
+                    </button>
                   </div>
                 ))}
               </div>
-              <div className="dv2-insight">{matrix.insight}</div>
-            </>
-          )}
-        </section>
+            )}
+            <details className="dv2-cohort-explain">
+              <summary>判定口径与基线说明</summary>
+              <div style={{ marginTop: 6 }}>
+                判定口径：<code>距上次拍摄天数 ÷ 该客户历史平均拍摄间隔</code>。
+                比值 ≤{health.thresholds.sleeping_ratio} 活跃、≤{health.thresholds.at_risk_ratio} 沉睡、≤
+                {health.thresholds.lost_ratio} 高危、&gt;{health.thresholds.lost_ratio} 已流失。
+                只拍过一次的客户没有间隔样本，回退到 {health.thresholds.fallback_cadence_days} 天通用基线并单独标注。
+                高危 / 已流失层按累计贡献排序，优先挽回高价值客户。
+                「已流失」是资产盘点口径，与提醒引擎的固定天数流失提醒相互独立（可在设置中调整两组参数）。
+                累计贡献 = 已结清订单报价之和（与渠道矩阵同源）；另有未结清已收按实际收款补充展示。
+              </div>
+            </details>
+          </section>
+
+          <section className="card">
+            <h2 className="card-title">渠道 × 类型 收入分布<span className="count">· 累计已结清</span></h2>
+            {matrix.rows.length === 0 ? (
+              <EmptyState icon={Wallet} title="暂无已结清收入" hint="订单结清后按下单时归因展示" />
+            ) : (
+              <>
+                <div>
+                  {matrix.rows.map((row) => (
+                    <div key={row.channelLabel} className="dv2-mx-row">
+                      <div className="dv2-mx-label">
+                        {row.channelLabel}
+                        <small>{row.customerCount} 位 · {row.orderCount} 单</small>
+                      </div>
+                      <div className="dv2-mx-track">
+                        {row.segments
+                          .filter((segment) => segment.cents > 0)
+                          .map((segment) => (
+                            <span
+                              key={segment.type}
+                              className={`dv2-mx-seg dv2-mx-${segment.type}`}
+                              style={{ width: `${segment.percent}%` }}
+                              title={`${segment.label} ${formatYuan(segment.cents)}`}
+                            >
+                              {segment.percent > 22 ? formatShortYuan(segment.cents) : ''}
+                            </span>
+                          ))}
+                      </div>
+                      <div className="dv2-mx-total">
+                        {formatShortYuan(row.totalCents)}
+                        <small>{row.totalPercent}%</small>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="dv2-insight">{matrix.insight}</div>
+              </>
+            )}
+          </section>
+        </div>
       </main>
 
       {receivableSheetOpen && (

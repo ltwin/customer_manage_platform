@@ -2,6 +2,7 @@
 // 类型一律来自契约 codegen（src/api/schema.d.ts 经 client.ts），禁手写 DTO。
 import type {
   CustomerChannel,
+  HealthTiers,
   DashboardV2,
   DashboardV2DeliveryItem,
   DashboardV2Waterfall,
@@ -512,4 +513,117 @@ export function computeUpcomingOpenings(
   const dates = upcomingLocalDates(fromDate, days)
   const model = buildCalendarModel(slots, dates, timezone, availability)
   return model.days.flatMap((day) => day.openings)
+}
+
+/* ================= L3 · 客户资产（健康度分层，customer-health-tiers） ================= */
+
+export type V2HealthTierKey = 'active' | 'sleeping' | 'at_risk' | 'lost' | 'new'
+
+export interface V2HealthTierMeta {
+  key: V2HealthTierKey
+  label: string
+  tone: 'success' | 'accent' | 'warning' | 'danger' | 'muted'
+  ctaLabel: string
+  ctaKind: 'care' | 'winback' | 'first'
+}
+
+export const v2HealthTierOrder: readonly V2HealthTierKey[] = ['active', 'sleeping', 'at_risk', 'lost', 'new']
+
+const HEALTH_TIER_META: Record<V2HealthTierKey, V2HealthTierMeta> = {
+  active: { key: 'active', label: '活跃', tone: 'success', ctaLabel: '关怀', ctaKind: 'care' },
+  sleeping: { key: 'sleeping', label: '沉睡', tone: 'accent', ctaLabel: '唤回文案', ctaKind: 'winback' },
+  at_risk: { key: 'at_risk', label: '高危', tone: 'warning', ctaLabel: '唤回文案', ctaKind: 'winback' },
+  lost: { key: 'lost', label: '已流失', tone: 'danger', ctaLabel: '最后唤回', ctaKind: 'winback' },
+  new: { key: 'new', label: '新客', tone: 'muted', ctaLabel: '促成首单', ctaKind: 'first' },
+}
+
+export function v2HealthTierMeta(key: V2HealthTierKey): V2HealthTierMeta {
+  return HEALTH_TIER_META[key]
+}
+
+// 层语境提示按当前生效阈值动态拼装——参数化后不得硬编码默认区间。
+export function v2HealthTierHint(key: V2HealthTierKey, thresholds: HealthTiers): string {
+  switch (key) {
+    case 'active':
+      return '在个人节奏内'
+    case 'sleeping':
+      return `超节奏 ${thresholds.sleeping_ratio}–${thresholds.at_risk_ratio} 倍`
+    case 'at_risk':
+      return `超节奏 ${thresholds.at_risk_ratio}–${thresholds.lost_ratio} 倍 · 按累计贡献排序`
+    case 'lost':
+      return `超节奏 ${thresholds.lost_ratio} 倍以上 · 按累计贡献排序`
+    case 'new':
+      return '尚无拍摄记录'
+  }
+}
+
+export interface V2HealthRowModel {
+  customerId: string
+  displayName: string
+  channelLabel: string
+  createdDaysAgo: number
+  sinceDays: number | null
+  cadenceDays: number | null
+  ratioText: string | null
+  fallbackBaseline: boolean
+  settledText: string
+  unsettledText: string | null
+  gaugePercent: number | null
+}
+
+// date-only 字符串自然日差（UTC 正午锚定避免跨时区日界漂移）。
+function healthDaysBetween(fromDate: string, toDate: string): number {
+  const from = Date.parse(`${fromDate}T12:00:00Z`)
+  const to = Date.parse(`${toDate}T12:00:00Z`)
+  return Math.round((to - from) / 86400000)
+}
+
+export function v2HealthRows(
+  health: DashboardV2['customer_health'],
+  tier: V2HealthTierKey,
+  today: string,
+): V2HealthRowModel[] {
+  return health.tiers[tier].items.map((item) => ({
+    customerId: item.customer_id,
+    displayName: item.display_name,
+    channelLabel: channelLabels[item.channel] ?? item.channel,
+    createdDaysAgo: healthDaysBetween(item.created_at, today),
+    sinceDays: item.since_days ?? null,
+    cadenceDays: item.cadence_days ?? null,
+    ratioText: item.ratio == null ? null : `${item.ratio}×`,
+    fallbackBaseline: item.baseline === 'fallback',
+    settledText: formatYuan(item.settled_ltv),
+    unsettledText: item.unsettled_paid > 0 ? formatYuan(item.unsettled_paid) : null,
+    gaugePercent: item.ratio == null
+      ? null
+      : Math.min(100, Math.round((item.ratio / health.thresholds.lost_ratio) * 100)),
+  }))
+}
+
+export interface V2HealthCountModel {
+  key: V2HealthTierKey
+  count: number
+  percent: number
+}
+
+export function v2HealthCounts(health: DashboardV2['customer_health']): V2HealthCountModel[] {
+  return v2HealthTierOrder.map((key) => ({
+    key,
+    count: health.tiers[key].count,
+    percent: health.total > 0 ? Math.round((health.tiers[key].count / health.total) * 100) : 0,
+  }))
+}
+
+// 每层一个符合语境的触达动作；文案带具体事实（距上次拍摄/建档天数）——
+// 健康度卡的价值就是把数字变成可直接粘贴的私域话术。
+export function healthCopyText(kind: 'care' | 'winback' | 'first', row: V2HealthRowModel): string {
+  const name = row.displayName
+  if (kind === 'winback') {
+    const gap = row.sinceDays != null ? `距上次拍摄已经 ${row.sinceDays} 天了，` : ''
+    return `${name}，好久不见！${gap}翻到你那组照片还是好喜欢。最近想不想再来一组？老朋友我给你留优先档，想拍随时戳我～`
+  }
+  if (kind === 'first') {
+    return `${name}，看到你 ${row.createdDaysAgo} 天前留了联系方式还没约上～这周刚好有档，要不要先约一组试试？第一次拍我多带些小道具～`
+  }
+  return `${name}，最近怎么样呀？翻相册看到给你拍的那组还是觉得好看，有空来唠嗑～`
 }

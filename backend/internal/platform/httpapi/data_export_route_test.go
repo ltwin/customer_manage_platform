@@ -90,10 +90,11 @@ func TestDataExportRouteReturnsRealAccountData(t *testing.T) {
 		t.Fatalf("insert reminder fixture: %v", err)
 	}
 	if err := scope.Insert(context.Background(), "settings",
-		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "telegram_chat_id", "availability", "updated_at"},
+		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "health_tiers", "telegram_chat_id", "availability", "updated_at"},
 		"Asia/Tokyo", 5, 9, []byte(`[{
 			"shoot_type":"portrait","days":90
-		}]`), 7, 30, "fixture-chat",
+		}]`), 7, 30,
+		[]byte(`{"sleeping_ratio":1.5,"at_risk_ratio":2.5,"lost_ratio":4,"fallback_cadence_days":90}`), "fixture-chat",
 		[]byte(`{"weekly":{"1":{"start":"08:30","end":"17:30"},"2":null,"3":{"start":"10:00","end":"19:00"},"4":{"start":"10:00","end":"19:00"},"5":{"start":"10:00","end":"19:00"},"6":{"start":"09:00","end":"20:00"},"7":null},"min_opening_minutes":90,"turnaround_minutes":30}`),
 		fixtureTime); err != nil {
 		t.Fatalf("insert settings fixture: %v", err)
@@ -112,7 +113,7 @@ func TestDataExportRouteReturnsRealAccountData(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &document); err != nil {
 		t.Fatalf("decode export: %v", err)
 	}
-	if document.SchemaVersion != 4 || len(document.Customers) != 1 || len(document.SocialIdentities) != 1 ||
+	if document.SchemaVersion != 5 || len(document.Customers) != 1 || len(document.SocialIdentities) != 1 ||
 		len(document.CustomerNotes) != 1 || len(document.Packages) != 1 || len(document.Orders) != 1 ||
 		len(document.ScheduleSlots) != 1 || len(document.Reminders) != 1 {
 		t.Fatalf("export did not include real account data: %+v", document)
@@ -195,7 +196,7 @@ func assertCompleteRouteExportJSON(
 	}
 	expected := map[string]any{
 		"exported_at":    exportedAt,
-		"schema_version": float64(4),
+		"schema_version": float64(5),
 		"counts": map[string]any{
 			"customers": float64(1), "social_identities": float64(1), "customer_notes": float64(1),
 			"packages": float64(1), "orders": float64(1), "schedule_slots": float64(1), "reminders": float64(1),
@@ -251,6 +252,7 @@ func assertCompleteRouteExportJSON(
 				map[string]any{"shoot_type": "other", "days": float64(180)},
 			},
 			"digest_hour": float64(7), "delivery_sla_days": float64(30), "telegram_chat_id": "fixture-chat",
+			"health_tiers": map[string]any{"sleeping_ratio": 1.5, "at_risk_ratio": 2.5, "lost_ratio": float64(4), "fallback_cadence_days": float64(90)},
 			"availability": map[string]any{
 				"weekly": map[string]any{
 					"1": map[string]any{"start": "08:30", "end": "17:30"},

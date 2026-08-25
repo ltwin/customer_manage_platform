@@ -25,6 +25,10 @@ func (s stubV2Settings) AvailabilityForAccount(context.Context, string) (setting
 	return s.availability, nil
 }
 
+func (s stubV2Settings) HealthTiersForAccount(context.Context, string) (settings.HealthTiers, error) {
+	return settings.DefaultHealthTiers(), nil
+}
+
 func availabilityPtr(start, end string) *settings.ScheduleAvailabilityWindow {
 	return &settings.ScheduleAvailabilityWindow{Start: start, End: end}
 }
@@ -342,6 +346,64 @@ func TestDashboardV2AggregatesReadModel(t *testing.T) {
 	}
 	if got.ChannelMatrix.GrandTotal != 150000 {
 		t.Fatalf("matrix grand = %d, want 150000", got.ChannelMatrix.GrandTotal)
+	}
+
+	// customer_health：cus-1 两拍（07-01/07-08 间隔 7）与 cus-2 两拍（07-05/07-08 间隔 3→
+	// 相邻间隔 <7 天一律按下限 7 兜底）均 cadence 7、since 6 → ratio 0.86；cus-3 单拍
+	// fallback 120、since 4 → 0.03。三人全 active；ratio tie 按 id ASC。
+	ch := got.CustomerHealth
+	if ch.Total != 3 || ch.Tiers.Active.Count != 3 || ch.Tiers.Sleeping.Count != 0 ||
+		ch.Tiers.AtRisk.Count != 0 || ch.Tiers.Lost.Count != 0 || ch.Tiers.New.Count != 0 {
+		t.Fatalf("health counts = total %d active %d, want 3/3 其余 0", ch.Total, ch.Tiers.Active.Count)
+	}
+	if ch.Thresholds != (settings.HealthTiers{SleepingRatio: 1.2, AtRiskRatio: 2, LostRatio: 3.5, FallbackCadenceDays: 120}) {
+		t.Fatalf("health thresholds = %+v, want defaults", ch.Thresholds)
+	}
+	active := ch.Tiers.Active.Items
+	if len(active) != 3 || active[0].CustomerID != "cus-1" || active[1].CustomerID != "cus-2" || active[2].CustomerID != "cus-3" {
+		t.Fatalf("health active order = %+v", active)
+	}
+	if row := active[0]; row.DisplayName != "阿茶" || row.Baseline != dashboard.HealthBaselinePersonal ||
+		*row.SinceDays != 6 || *row.CadenceDays != 7 || *row.Ratio != 0.86 || row.Shots != 2 ||
+		row.SettledLTV != 90000 || row.UnsettledPaid != 30000 {
+		t.Fatalf("health cus-1 = %+v, want personal/6/7/0.86/90000/30000", row)
+	}
+	if row := active[1]; row.Baseline != dashboard.HealthBaselinePersonal || *row.CadenceDays != 7 {
+		t.Fatalf("health cus-2 = %+v, want personal cadence 7（间隔 3 <7 触发下限兜底）", row)
+	}
+	if row := active[2]; row.Baseline != dashboard.HealthBaselineFallback || *row.CadenceDays != 120 ||
+		row.SettledLTV != 40000 || row.UnsettledPaid != 80000 {
+		t.Fatalf("health cus-3 = %+v, want fallback/120/40000/80000", row)
+	}
+
+	// 负例：archived 客户（含其结清订单）不入盘点（§4.3 仅 status=active）。
+	// got 是 231 行的值快照，种子后必须二次 GetV2 才能真正锁住过滤。
+	if err := scope.Insert(context.Background(), "customers",
+		[]string{"id", "display_name", "channel", "status"}, "cus-arch", "归档客", "weibo", "archived"); err != nil {
+		t.Fatalf("seed archived customer: %v", err)
+	}
+	seedV2Order(t, scope, v2OrderSeed{id: "ord-arch", customerID: "cus-arch", title: "归档客户结清单", status: "closed",
+		balancePaid: true, depositPaid: true, price: intPtr(70000), createdAt: createdAt,
+		shotAt:      ptrTime(time.Date(2026, 7, 12, 4, 0, 0, 0, time.UTC)),
+		deliveredAt: ptrTime(time.Date(2026, 7, 13, 4, 0, 0, 0, time.UTC)),
+		amountPaid:  70000, channelSnapshot: "weibo"})
+	after, err := svc.GetV2(ctx, scope, "acct-v2")
+	if err != nil {
+		t.Fatalf("dashboard v2 get after archived seed: %v", err)
+	}
+	if after.CustomerHealth.Total != 3 || after.CustomerHealth.Tiers.Active.Count != 3 {
+		t.Fatalf("health after archived seed = total %d active %d, want 3/3（archived 不入盘点）",
+			after.CustomerHealth.Total, after.CustomerHealth.Tiers.Active.Count)
+	}
+	for _, tier := range []dashboard.CustomerHealthBucket{
+		after.CustomerHealth.Tiers.Active, after.CustomerHealth.Tiers.Sleeping,
+		after.CustomerHealth.Tiers.AtRisk, after.CustomerHealth.Tiers.Lost, after.CustomerHealth.Tiers.New,
+	} {
+		for _, item := range tier.Items {
+			if item.CustomerID == "cus-arch" {
+				t.Fatalf("archived customer leaked into health items: %+v", item)
+			}
+		}
 	}
 
 	// 待办行样式：排序 due ASC；客户摘要批量投影；无客户 → nil。

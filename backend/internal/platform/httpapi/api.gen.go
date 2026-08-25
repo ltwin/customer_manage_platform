@@ -236,6 +236,27 @@ func (e CustomerChannel) Valid() bool {
 	}
 }
 
+// Defines values for CustomerHealthItemBaseline.
+const (
+	Fallback CustomerHealthItemBaseline = "fallback"
+	None     CustomerHealthItemBaseline = "none"
+	Personal CustomerHealthItemBaseline = "personal"
+)
+
+// Valid indicates whether the value is a known member of the CustomerHealthItemBaseline enum.
+func (e CustomerHealthItemBaseline) Valid() bool {
+	switch e {
+	case Fallback:
+		return true
+	case None:
+		return true
+	case Personal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CustomerStatus.
 const (
 	CustomerStatusActive   CustomerStatus = "active"
@@ -310,13 +331,13 @@ func (e ExportAccountProfileAvatarMediaType) Valid() bool {
 
 // Defines values for ExportDocumentSchemaVersion.
 const (
-	N4 ExportDocumentSchemaVersion = 4
+	N5 ExportDocumentSchemaVersion = 5
 )
 
 // Valid indicates whether the value is a known member of the ExportDocumentSchemaVersion enum.
 func (e ExportDocumentSchemaVersion) Valid() bool {
 	switch e {
-	case N4:
+	case N5:
 		return true
 	default:
 		return false
@@ -1546,6 +1567,48 @@ type CustomerDetail struct {
 	Status             CustomerStatus `json:"status"`
 }
 
+// CustomerHealthItem 健康度分层行（date-only 按账号时区；新客 since_days/cadence_days/ratio 缺省）
+type CustomerHealthItem struct {
+	// Baseline personal=个人节奏；fallback=通用基线（UI 须标注）；none=新客
+	Baseline CustomerHealthItemBaseline `json:"baseline"`
+
+	// CadenceDays 节奏基线天数（≥2 拍=个人间隔均值，仅 1 拍=通用基线）；新客 null
+	CadenceDays nullable.Nullable[int] `json:"cadence_days,omitempty"`
+	Channel     CustomerChannel        `json:"channel"`
+
+	// CreatedAt 账号本地建档日
+	CreatedAt   openapi_types.Date `json:"created_at"`
+	CustomerId  string             `json:"customer_id"`
+	DisplayName string             `json:"display_name"`
+
+	// Ratio since_days ÷ cadence_days，两位小数；新客 null
+	Ratio nullable.Nullable[float32] `json:"ratio,omitempty"`
+
+	// SettledLtv 分；非 cancelled ∧ balance_paid=true 的 price 之和（与渠道矩阵同源）
+	SettledLtv int `json:"settled_ltv"`
+
+	// Shots 非 cancelled 且有拍摄日的订单计数
+	Shots int `json:"shots"`
+
+	// SinceDays 距上次拍摄自然日数；新客 null
+	SinceDays nullable.Nullable[int] `json:"since_days,omitempty"`
+
+	// UnsettledPaid 分；非 cancelled ∧ balance_paid=false 订单的 amount_paid 之和（NULL→0，仅展示不参与排序）
+	UnsettledPaid int `json:"unsettled_paid"`
+}
+
+// CustomerHealthItemBaseline personal=个人节奏；fallback=通用基线（UI 须标注）；none=新客
+type CustomerHealthItemBaseline string
+
+// CustomerHealthTier defines model for CustomerHealthTier.
+type CustomerHealthTier struct {
+	// Count 该层全量数
+	Count int `json:"count"`
+
+	// Items 层内排序：at_risk/lost 按 settled_ltv DESC → ratio DESC；active/sleeping 按 ratio DESC；new 按 created_at DESC；tie 一律 customer_id ASC；上限 50 行（超出截断）
+	Items []CustomerHealthItem `json:"items"`
+}
+
 // CustomerListItem defines model for CustomerListItem.
 type CustomerListItem struct {
 	// AccountId 服务端由账号上下文写入，客户端永不传（ADR-001）
@@ -1719,6 +1782,21 @@ type FeedbackCreateResultV1 struct {
 
 // FeedbackCreateResultV1TargetKind defines model for FeedbackCreateResultV1.TargetKind.
 type FeedbackCreateResultV1TargetKind string
+
+// HealthTiers 客户健康度分层参数组（§4.2 customer-health-tiers；跨字段校验 0 < sleeping_ratio < at_risk_ratio < lost_ratio，fallback 30-365；仅供 dashboard v2 customer_health 块消费，与 churn_thresholds 相互独立）
+type HealthTiers struct {
+	// AtRiskRatio 沉睡→高危 分界（个人节奏倍数，默认 2）
+	AtRiskRatio float32 `json:"at_risk_ratio"`
+
+	// FallbackCadenceDays 仅 1 次拍摄客户的通用节奏基线天数（30-365，默认 120）
+	FallbackCadenceDays int `json:"fallback_cadence_days"`
+
+	// LostRatio 高危→已流失 分界（个人节奏倍数，默认 3.5）
+	LostRatio float32 `json:"lost_ratio"`
+
+	// SleepingRatio 活跃→沉睡 分界（个人节奏倍数，默认 1.2）
+	SleepingRatio float32 `json:"sleeping_ratio"`
+}
 
 // NonShootScheduleSlotListItem defines model for NonShootScheduleSlotListItem.
 type NonShootScheduleSlotListItem struct {
@@ -2259,8 +2337,11 @@ type Settings struct {
 	DeliverySlaDays int `json:"delivery_sla_days"`
 
 	// DigestHour 按 timezone
-	DigestHour                    int                           `json:"digest_hour"`
-	FollowUpAfterDays             int                           `json:"follow_up_after_days"`
+	DigestHour        int `json:"digest_hour"`
+	FollowUpAfterDays int `json:"follow_up_after_days"`
+
+	// HealthTiers 客户健康度分层参数组（§4.2 customer-health-tiers；跨字段校验 0 < sleeping_ratio < at_risk_ratio < lost_ratio，fallback 30-365；仅供 dashboard v2 customer_health 块消费，与 churn_thresholds 相互独立）
+	HealthTiers                   HealthTiers                   `json:"health_tiers"`
 	PlanningBusinessRuleOverrides PlanningBusinessRuleOverrides `json:"planning_business_rule_overrides"`
 	PlanningBusinessRuleRevision  int64                         `json:"planning_business_rule_revision"`
 	TelegramChatId                *string                       `json:"telegram_chat_id,omitempty"`
@@ -2532,12 +2613,15 @@ type UnavailableScheduleBusinessDraftItemState string
 
 // UpdateSettingsBody defines model for UpdateSettingsBody.
 type UpdateSettingsBody struct {
-	Availability          *ScheduleAvailability       `json:"availability,omitempty"`
-	BirthdayLeadDays      *int                        `json:"birthday_lead_days,omitempty"`
-	ChurnThresholds       *[]ChurnThreshold           `json:"churn_thresholds,omitempty"`
-	DeliverySlaDays       *int                        `json:"delivery_sla_days,omitempty"`
-	DigestHour            *int                        `json:"digest_hour,omitempty"`
-	FollowUpAfterDays     *int                        `json:"follow_up_after_days,omitempty"`
+	Availability      *ScheduleAvailability `json:"availability,omitempty"`
+	BirthdayLeadDays  *int                  `json:"birthday_lead_days,omitempty"`
+	ChurnThresholds   *[]ChurnThreshold     `json:"churn_thresholds,omitempty"`
+	DeliverySlaDays   *int                  `json:"delivery_sla_days,omitempty"`
+	DigestHour        *int                  `json:"digest_hour,omitempty"`
+	FollowUpAfterDays *int                  `json:"follow_up_after_days,omitempty"`
+
+	// HealthTiers 客户健康度分层参数组（§4.2 customer-health-tiers；跨字段校验 0 < sleeping_ratio < at_risk_ratio < lost_ratio，fallback 30-365；仅供 dashboard v2 customer_health 块消费，与 churn_thresholds 相互独立）
+	HealthTiers           *HealthTiers                `json:"health_tiers,omitempty"`
 	PlanningBusinessRules *PlanningBusinessRulesPatch `json:"planning_business_rules,omitempty"`
 
 	// Timezone IANA 时区

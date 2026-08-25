@@ -66,6 +66,12 @@ const settingsFixture: Settings = {
 	follow_up_after_days: 8,
 	digest_hour: 10,
 	delivery_sla_days: 14,
+	health_tiers: {
+		sleeping_ratio: 1.2,
+		at_risk_ratio: 2,
+		lost_ratio: 3.5,
+		fallback_cadence_days: 120,
+	},
 	telegram_chat_id: 'chat-fixture',
 	churn_thresholds: [
 		{ shoot_type: 'portrait', days: 120 },
@@ -292,12 +298,14 @@ test('A1–A4 body builders emit only owned fields', () => {
 		followUpAfterDays: 9,
 		churnThresholds: [{ shoot_type: 'portrait', days: 90 }],
 		deliverySlaDays: 21,
+		healthTiers: settingsFixture.health_tiers,
 	})
 	assert.deepEqual(bodyBuilders.bodyKeys(reminders).sort(), [
 		'birthday_lead_days',
 		'churn_thresholds',
 		'delivery_sla_days',
 		'follow_up_after_days',
+		'health_tiers',
 	])
 	assert.equal(reminders.delivery_sla_days, 21)
 	assert.equal(reminders.churn_thresholds?.length, 3)

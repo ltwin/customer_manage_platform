@@ -54,6 +54,12 @@ function emptyReminders(): RemindersDraft {
 		followUpAfterDays: 7,
 		churnThresholds: [],
 		deliverySlaDays: 14,
+		healthTiers: {
+			sleeping_ratio: 1.2,
+			at_risk_ratio: 2,
+			lost_ratio: 3.5,
+			fallback_cadence_days: 120,
+		},
 	}
 }
 
@@ -96,6 +102,7 @@ function hydrateReminders(snapshot: Settings): RemindersDraft {
 		followUpAfterDays: snapshot.follow_up_after_days,
 		churnThresholds: snapshot.churn_thresholds.map((entry: ChurnThreshold) => ({ ...entry })),
 		deliverySlaDays: snapshot.delivery_sla_days,
+		healthTiers: { ...snapshot.health_tiers },
 	}
 }
 

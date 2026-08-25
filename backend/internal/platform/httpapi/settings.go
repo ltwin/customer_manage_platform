@@ -57,6 +57,15 @@ func (h *handlers) UpdateSettings(c *gin.Context) {
 		DigestHour:        body.DigestHour,
 		DeliverySLADays:   body.DeliverySlaDays,
 	}
+	if body.HealthTiers != nil {
+		healthTiers := settings.HealthTiers{
+			SleepingRatio:       float64(body.HealthTiers.SleepingRatio),
+			AtRiskRatio:         float64(body.HealthTiers.AtRiskRatio),
+			LostRatio:           float64(body.HealthTiers.LostRatio),
+			FallbackCadenceDays: body.HealthTiers.FallbackCadenceDays,
+		}
+		input.HealthTiers = &healthTiers
+	}
 	if body.ChurnThresholds != nil {
 		entries := make([]settings.ChurnThreshold, 0, len(*body.ChurnThresholds))
 		for _, e := range *body.ChurnThresholds {
@@ -130,12 +139,18 @@ func toAPISettings(s settings.Settings) Settings {
 		})
 	}
 	return Settings{
-		Timezone:                      s.Timezone,
-		BirthdayLeadDays:              s.BirthdayLeadDays,
-		FollowUpAfterDays:             s.FollowUpAfterDays,
-		ChurnThresholds:               thresholds,
-		DigestHour:                    s.DigestHour,
-		DeliverySlaDays:               s.DeliverySLADays,
+		Timezone:          s.Timezone,
+		BirthdayLeadDays:  s.BirthdayLeadDays,
+		FollowUpAfterDays: s.FollowUpAfterDays,
+		ChurnThresholds:   thresholds,
+		DigestHour:        s.DigestHour,
+		DeliverySlaDays:   s.DeliverySLADays,
+		HealthTiers: HealthTiers{
+			SleepingRatio:       float32(s.HealthTiers.SleepingRatio),
+			AtRiskRatio:         float32(s.HealthTiers.AtRiskRatio),
+			LostRatio:           float32(s.HealthTiers.LostRatio),
+			FallbackCadenceDays: s.HealthTiers.FallbackCadenceDays,
+		},
 		TelegramChatId:                s.TelegramChatID,
 		Availability:                  toAPIScheduleAvailability(s.Availability),
 		PlanningBusinessRuleOverrides: toAPIPlanningBusinessRuleOverrides(s.PlanningBusinessRuleOverrides),

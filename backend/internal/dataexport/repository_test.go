@@ -183,8 +183,9 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 		}
 	}
 	if err := scope.Insert(ctx, "settings",
-		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "telegram_chat_id", "availability", "updated_at"},
-		"Asia/Tokyo", 5, 9, []byte(`[{"shoot_type":"portrait","days":90}]`), 7, 30, "fixture-chat",
+		[]string{"timezone", "birthday_lead_days", "follow_up_after_days", "churn_thresholds", "digest_hour", "delivery_sla_days", "health_tiers", "telegram_chat_id", "availability", "updated_at"},
+		"Asia/Tokyo", 5, 9, []byte(`[{"shoot_type":"portrait","days":90}]`), 7, 30,
+		[]byte(`{"sleeping_ratio":1.5,"at_risk_ratio":2.5,"lost_ratio":4,"fallback_cadence_days":90}`), "fixture-chat",
 		[]byte(`{"weekly":{"1":{"start":"08:30","end":"17:30"},"2":null,"3":{"start":"10:00","end":"19:00"},"4":{"start":"10:00","end":"19:00"},"5":{"start":"10:00","end":"19:00"},"6":{"start":"09:00","end":"20:00"},"7":null},"min_opening_minutes":90,"turnaround_minutes":30}`),
 		createdAt); err != nil {
 		t.Fatalf("insert settings: %v", err)
@@ -245,6 +246,7 @@ func TestPostgresRepositoryLoadsEveryEntityAndTerminalStatus(t *testing.T) {
 			},
 			DigestHour:              7,
 			DeliverySLADays:         30,
+			HealthTiers:             settings.HealthTiers{SleepingRatio: 1.5, AtRiskRatio: 2.5, LostRatio: 4, FallbackCadenceDays: 90}, // 自定义值：导出不得静默回落默认（§4.6 availability 先例）
 			TelegramChatID:          testPointer("fixture-chat"),
 			TelegramBindingRevision: 1,
 			Availability: settings.ScheduleAvailability{

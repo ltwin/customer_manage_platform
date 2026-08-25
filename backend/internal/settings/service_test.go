@@ -101,3 +101,72 @@ func TestServicePatchRejectsInvalidAvailabilityWithoutWriting(t *testing.T) {
 func availabilityWindow(start, end string) *ScheduleAvailabilityWindow {
 	return &ScheduleAvailabilityWindow{Start: start, End: end}
 }
+
+func TestDefaultSettingsHealthTiers(t *testing.T) {
+	got := DefaultSettings().HealthTiers
+	want := HealthTiers{
+		SleepingRatio:       1.2,
+		AtRiskRatio:         2,
+		LostRatio:           3.5,
+		FallbackCadenceDays: 120,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("default health_tiers = %#v, want %#v", got, want)
+	}
+}
+
+func TestServicePatchHealthTiers(t *testing.T) {
+	value := HealthTiers{SleepingRatio: 1.5, AtRiskRatio: 2.5, LostRatio: 4, FallbackCadenceDays: 90}
+	got, _, err := applyPatch(DefaultSettings(), PatchInput{HealthTiers: &value})
+	if err != nil {
+		t.Fatalf("Patch() error = %v", err)
+	}
+	if !reflect.DeepEqual(got.HealthTiers, value) {
+		t.Fatalf("saved health_tiers = %#v, want %#v", got.HealthTiers, value)
+	}
+}
+
+func TestServicePatchHealthTiersValidation(t *testing.T) {
+	valid := HealthTiers{SleepingRatio: 1.2, AtRiskRatio: 2, LostRatio: 3.5, FallbackCadenceDays: 120}
+	tests := []struct {
+		name   string
+		mutate func(*HealthTiers)
+	}{
+		{name: "sleeping not below at_risk", mutate: func(v *HealthTiers) { v.SleepingRatio = 2 }},
+		{name: "at_risk not below lost", mutate: func(v *HealthTiers) { v.AtRiskRatio = 3.5 }},
+		{name: "sleeping not positive", mutate: func(v *HealthTiers) { v.SleepingRatio = 0 }},
+		{name: "fallback below range", mutate: func(v *HealthTiers) { v.FallbackCadenceDays = 29 }},
+		{name: "fallback above range", mutate: func(v *HealthTiers) { v.FallbackCadenceDays = 366 }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value := valid
+			tt.mutate(&value)
+			_, _, err := applyPatch(DefaultSettings(), PatchInput{HealthTiers: &value})
+			if !errors.Is(err, ErrValidation) {
+				t.Fatalf("Patch() error = %v, want validation error", err)
+			}
+		})
+	}
+}
+
+// TestEffectiveSettingsFallsBackInvalidHealthTiers 直测存储防御：
+// 零值（存量行未存该组）或乱序值一律回退默认，不把无效参数放行给消费方。
+func TestEffectiveSettingsFallsBackInvalidHealthTiers(t *testing.T) {
+	def := DefaultHealthTiers()
+	for name, value := range map[string]HealthTiers{
+		"zero value (column absent legacy row)": {},
+		"out of order":                          {SleepingRatio: 2, AtRiskRatio: 1.5, LostRatio: 3.5, FallbackCadenceDays: 120},
+		"fallback out of range":                 {SleepingRatio: 1.2, AtRiskRatio: 2, LostRatio: 3.5, FallbackCadenceDays: 400},
+	} {
+		got := EffectiveSettings(Settings{HealthTiers: value}).HealthTiers
+		if !reflect.DeepEqual(got, def) {
+			t.Fatalf("%s: effective health_tiers = %#v, want default %#v", name, got, def)
+		}
+	}
+	valid := HealthTiers{SleepingRatio: 1.5, AtRiskRatio: 2.5, LostRatio: 4, FallbackCadenceDays: 90}
+	if got := EffectiveSettings(Settings{HealthTiers: valid}).HealthTiers; !reflect.DeepEqual(got, valid) {
+		t.Fatalf("valid value must pass through, got %#v", got)
+	}
+}

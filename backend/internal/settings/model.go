@@ -16,6 +16,11 @@ const (
 	DefaultDigestHour        = 9
 	DefaultDeliverySLADays   = 14
 
+	DefaultHealthSleepingRatio       = 1.2
+	DefaultHealthAtRiskRatio         = 2
+	DefaultHealthLostRatio           = 3.5
+	DefaultHealthFallbackCadenceDays = 120
+
 	ShootTypePortrait = "portrait"
 	ShootTypeCosplay  = "cosplay"
 	ShootTypeOther    = "other"
@@ -41,6 +46,17 @@ type ChurnThreshold struct {
 	Days      int    `json:"days"`
 }
 
+// HealthTiers 是客户健康度分层参数组（roadmap §4.2）：ratio 阈值三档递增 +
+// 仅 1 次拍摄客户的通用节奏基线。仅供 dashboard v2 customer_health 块消费，
+// 与 reminder churn_thresholds 相互独立（churn=行动提醒固定天数，健康度=资产
+// 盘点个人节奏倍数，owner 2026-08-24 拍板两套口径分离 + 前端交叉引用）。
+type HealthTiers struct {
+	SleepingRatio       float64 `json:"sleeping_ratio"`
+	AtRiskRatio         float64 `json:"at_risk_ratio"`
+	LostRatio           float64 `json:"lost_ratio"`
+	FallbackCadenceDays int     `json:"fallback_cadence_days"`
+}
+
 // Settings 是账号级有效设置（读取时已叠加默认值）。
 type Settings struct {
 	Timezone                      string
@@ -49,6 +65,7 @@ type Settings struct {
 	ChurnThresholds               []ChurnThreshold
 	DigestHour                    int
 	DeliverySLADays               int
+	HealthTiers                   HealthTiers
 	TelegramChatID                *string
 	TelegramBindingRevision       int64
 	Availability                  ScheduleAvailability
@@ -70,6 +87,7 @@ type PatchInput struct {
 	ChurnThresholds       *[]ChurnThreshold
 	DigestHour            *int
 	DeliverySLADays       *int
+	HealthTiers           *HealthTiers
 	Availability          *ScheduleAvailability
 	PlanningBusinessRules *PlanningBusinessRulesPatch
 }
@@ -83,6 +101,7 @@ func DefaultSettings() Settings {
 		ChurnThresholds:               defaultChurnThresholds(),
 		DigestHour:                    DefaultDigestHour,
 		DeliverySLADays:               DefaultDeliverySLADays,
+		HealthTiers:                   DefaultHealthTiers(),
 		TelegramBindingRevision:       1,
 		Availability:                  DefaultScheduleAvailability(),
 		PlanningBusinessRuleOverrides: make(business.RuleOverrides),
@@ -94,6 +113,16 @@ func defaultChurnThresholds() []ChurnThreshold {
 		{ShootType: ShootTypePortrait, Days: DefaultChurnDays},
 		{ShootType: ShootTypeCosplay, Days: DefaultChurnDays},
 		{ShootType: ShootTypeOther, Days: DefaultChurnDays},
+	}
+}
+
+// DefaultHealthTiers 返回健康度分层默认参数（原型口径：1.2/2/3.5 倍 + 120 天基线）。
+func DefaultHealthTiers() HealthTiers {
+	return HealthTiers{
+		SleepingRatio:       DefaultHealthSleepingRatio,
+		AtRiskRatio:         DefaultHealthAtRiskRatio,
+		LostRatio:           DefaultHealthLostRatio,
+		FallbackCadenceDays: DefaultHealthFallbackCadenceDays,
 	}
 }
 

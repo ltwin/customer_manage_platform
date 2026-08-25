@@ -58,9 +58,38 @@ test('dashboard v2 uses the wide content modifier and pairs list cards in two-co
   const pairs = page.match(/className="two-col section-gap"/g) ?? []
   assert.equal(
     pairs.length,
-    2,
-    'todo+delivery and revenue+utilization must each form a paired two-col row on desktop (they stack below 1080px)',
+    3,
+    'todo+delivery, revenue+utilization and health+matrix must each form a paired two-col row on desktop (they stack below 1080px)',
   )
+})
+
+test('customer health card pairs with the channel matrix and discloses its criteria', () => {
+  const page = readFileSync(new URL('../src/pages/DashboardPage.tsx', import.meta.url), 'utf8')
+  assert.match(page, /健康度分层/, 'the L3 customer-assets row must render the health cohort card')
+  assert.match(
+    page,
+    /判定口径/,
+    'the health card must disclose the tier criteria (ratio thresholds and baselines) instead of a black box',
+  )
+  // 口径说明必须引用后端回显的 thresholds，而不是前端写死——参数化后口径与判定要快照一致
+  assert.match(
+    page,
+    /health\.thresholds|customer_health\.thresholds|healthThresholds/,
+    'the criteria disclosure must reference the thresholds echoed back by the API, not hardcoded constants',
+  )
+  // 交叉引用：高危层标注已有 churn 提醒的客户数（两套流失口径分离 + 桥接）
+  assert.match(
+    page,
+    /type === 'churn'|type: 'churn'/,
+    'the at_risk tier must cross-reference churn reminders from due_reminders (separate-but-bridged cadence policies)',
+  )
+  const stylesheet = readFileSync(
+    new URL('../src/pages/dashboard/dashboardV2.css', import.meta.url),
+    'utf8',
+  )
+  for (const selector of ['.dv2-cohort-bar', '.dv2-cohort-seg', '.dv2-risk-row', '.dv2-risk-gauge']) {
+    assert.match(stylesheet, new RegExp(selector.replace('.', '\\.') + '\\s*\\{'), `missing ${selector}`)
+  }
 })
 
 test('schedule utilization renders the backend percent value directly', () => {

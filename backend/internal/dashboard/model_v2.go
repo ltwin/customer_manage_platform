@@ -3,9 +3,12 @@
 package dashboard
 
 import (
+	"time"
+
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	reminderdomain "github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
+	"github.com/samson/customer-manage-platform/backend/internal/settings"
 )
 
 // V2 是经营台 v2 分层读模型：今日驾驶舱 / 未来空档 / 收入瀑布 / 渠道矩阵 / 档期利用率。
@@ -27,6 +30,8 @@ type V2 struct {
 	ChannelMatrix ChannelMatrix
 	// DueReminders：近 3 天待办 + 客户摘要投影（还原 v2 行样式，批量装配）。
 	DueReminders []DueReminderItem
+	// CustomerHealth：客户资产盘点（个人节奏分层 + LTV，customer-health-tiers）。
+	CustomerHealth CustomerHealth
 }
 
 // TodayOpenings 是今日空档块；当日未配置工作窗 → WorkingWindow=nil、Openings 为空。
@@ -103,6 +108,65 @@ type ChannelMatrix struct {
 type CustomerSummary struct {
 	DisplayName string
 	Channel     string
+}
+
+// HealthCustomerRow 是健康度纯函数的输入客户行（date-only：service 已按账号时区折算）。
+type HealthCustomerRow struct {
+	ID          string
+	DisplayName string
+	Channel     string
+	CreatedAt   time.Time // date-only（账号本地建档日）
+}
+
+// HealthOrderRow 是健康度纯函数的输入订单行（date-only）。ShotDate nil = 未拍摄
+// （金额照计、不入节奏样本）。
+type HealthOrderRow struct {
+	CustomerID  string
+	ShotDate    *time.Time // date-only（账号本地拍摄日）
+	Price       *int
+	BalancePaid bool
+	AmountPaid  *int
+}
+
+// CustomerHealthItem 是健康度分层行（roadmap §4.3 customer_health 块）。
+// Baseline 三值：personal（≥2 拍个人节奏）/ fallback（仅 1 拍通用基线，UI 须标注）/
+// none（新客，无拍摄记录，SinceDays/CadenceDays/Ratio 均 nil）。
+// 行金额双口径：SettledLTV 与 ChannelMatrix 同源（排序用它）；UnsettledPaid 仅展示。
+type CustomerHealthItem struct {
+	CustomerID    string
+	DisplayName   string
+	Channel       string
+	CreatedAt     time.Time // date-only（账号本地建档日）
+	Shots         int
+	SinceDays     *int
+	CadenceDays   *int
+	Ratio         *float64 // 两位小数
+	Baseline      string
+	SettledLTV    int
+	UnsettledPaid int
+}
+
+// CustomerHealthBucket 是单层分桶；Count 为该层全量数，Items 上限 healthTierItemCap。
+type CustomerHealthBucket struct {
+	Count int
+	Items []CustomerHealthItem
+}
+
+// CustomerHealthTiers 是五层分桶（固定字段，不做 map——契约 key 集合封闭）。
+type CustomerHealthTiers struct {
+	Active   CustomerHealthBucket
+	Sleeping CustomerHealthBucket
+	AtRisk   CustomerHealthBucket
+	Lost     CustomerHealthBucket
+	New      CustomerHealthBucket
+}
+
+// CustomerHealth 是客户资产盘点块：active 客户全员分层 + 生效参数回显
+// （口径说明与判定快照一致）。
+type CustomerHealth struct {
+	Total      int
+	Thresholds settings.HealthTiers
+	Tiers      CustomerHealthTiers
 }
 
 // DueReminderItem 是 v2 待办行：Reminder + 客户摘要（无客户 → nil）。

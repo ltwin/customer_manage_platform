@@ -88,7 +88,7 @@ func TestExportAllProjectsEmptyVersionedDocument(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode export document: %v", err)
 	}
-	if got.SchemaVersion != 4 || got.Counts != (ExportCounts{}) {
+	if got.SchemaVersion != 5 || got.Counts != (ExportCounts{}) {
 		t.Fatalf("document version/counts = %d/%+v", got.SchemaVersion, got.Counts)
 	}
 	if got.Customers == nil || got.SocialIdentities == nil || got.CustomerNotes == nil ||
@@ -397,7 +397,7 @@ func TestExportAllTransportFailureDoesNotAttemptSecondEnvelope(t *testing.T) {
 func emptyExportDocumentFixture() dataexport.Document {
 	doc := dataexport.Document{
 		ExportedAt:    time.Date(2026, time.July, 21, 8, 30, 15, 0, time.UTC),
-		SchemaVersion: 4,
+		SchemaVersion: 5,
 	}
 	empty := dataexport.EmptySnapshot()
 	doc.Customers = empty.Customers

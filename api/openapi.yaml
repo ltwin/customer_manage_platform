@@ -1744,7 +1744,8 @@ paths:
                 type: object
                 required:
                   [next_shoot, today_slots, today_openings, delivery_queue,
-                   revenue_waterfall, schedule_utilization, channel_matrix, due_reminders]
+                   revenue_waterfall, schedule_utilization, channel_matrix,
+                   customer_health, due_reminders]
                 properties:
                   next_shoot:
                     nullable: true
@@ -1928,6 +1929,32 @@ paths:
                       grand_total:
                         type: integer
                         description: 分
+                  customer_health:
+                    type: object
+                    description: 客户资产盘点（status=active 客户全员按个人节奏分层；「已流失」是资产盘点结论，与 reminder churn 口径分离；§4.3 customer-health-tiers 块）
+                    required: [total, thresholds, tiers]
+                    properties:
+                      total:
+                        type: integer
+                        description: 五层 count 之和
+                      thresholds:
+                        description: 当前生效参数回显（口径说明与判定快照一致）
+                        allOf:
+                          - $ref: "#/components/schemas/HealthTiers"
+                      tiers:
+                        type: object
+                        required: [active, sleeping, at_risk, lost, new]
+                        properties:
+                          active:
+                            $ref: "#/components/schemas/CustomerHealthTier"
+                          sleeping:
+                            $ref: "#/components/schemas/CustomerHealthTier"
+                          at_risk:
+                            $ref: "#/components/schemas/CustomerHealthTier"
+                          lost:
+                            $ref: "#/components/schemas/CustomerHealthTier"
+                          new:
+                            $ref: "#/components/schemas/CustomerHealthTier"
                   due_reminders:
                     description: 口径与 GET /dashboard.due_reminders 一致（近 3 天窗含逾期），附客户摘要投影
                     type: array
@@ -4538,6 +4565,79 @@ components:
         days:
           type: integer
 
+    HealthTiers:
+      type: object
+      description: 客户健康度分层参数组（§4.2 customer-health-tiers；跨字段校验 0 < sleeping_ratio < at_risk_ratio < lost_ratio，fallback 30-365；仅供 dashboard v2 customer_health 块消费，与 churn_thresholds 相互独立）
+      required: [sleeping_ratio, at_risk_ratio, lost_ratio, fallback_cadence_days]
+      properties:
+        sleeping_ratio:
+          type: number
+          description: 活跃→沉睡 分界（个人节奏倍数，默认 1.2）
+        at_risk_ratio:
+          type: number
+          description: 沉睡→高危 分界（个人节奏倍数，默认 2）
+        lost_ratio:
+          type: number
+          description: 高危→已流失 分界（个人节奏倍数，默认 3.5）
+        fallback_cadence_days:
+          type: integer
+          description: 仅 1 次拍摄客户的通用节奏基线天数（30-365，默认 120）
+
+    CustomerHealthItem:
+      type: object
+      description: 健康度分层行（date-only 按账号时区；新客 since_days/cadence_days/ratio 缺省）
+      required: [customer_id, display_name, channel, created_at, shots, baseline, settled_ltv, unsettled_paid]
+      properties:
+        customer_id:
+          type: string
+        display_name:
+          type: string
+        channel:
+          allOf:
+            - $ref: "#/components/schemas/CustomerChannel"
+        created_at:
+          type: string
+          format: date
+          description: 账号本地建档日
+        shots:
+          type: integer
+          description: 非 cancelled 且有拍摄日的订单计数
+        since_days:
+          type: integer
+          nullable: true
+          description: 距上次拍摄自然日数；新客 null
+        cadence_days:
+          type: integer
+          nullable: true
+          description: 节奏基线天数（≥2 拍=个人间隔均值，仅 1 拍=通用基线）；新客 null
+        ratio:
+          type: number
+          nullable: true
+          description: since_days ÷ cadence_days，两位小数；新客 null
+        baseline:
+          type: string
+          enum: [personal, fallback, none]
+          description: personal=个人节奏；fallback=通用基线（UI 须标注）；none=新客
+        settled_ltv:
+          type: integer
+          description: 分；非 cancelled ∧ balance_paid=true 的 price 之和（与渠道矩阵同源）
+        unsettled_paid:
+          type: integer
+          description: 分；非 cancelled ∧ balance_paid=false 订单的 amount_paid 之和（NULL→0，仅展示不参与排序）
+
+    CustomerHealthTier:
+      type: object
+      required: [count, items]
+      properties:
+        count:
+          type: integer
+          description: 该层全量数
+        items:
+          type: array
+          description: 层内排序：at_risk/lost 按 settled_ltv DESC → ratio DESC；active/sleeping 按 ratio DESC；new 按 created_at DESC；tie 一律 customer_id ASC；上限 50 行（超出截断）
+          items:
+            $ref: "#/components/schemas/CustomerHealthItem"
+
     ScheduleAvailabilityWindow:
       type: object
       additionalProperties: false
@@ -4607,8 +4707,8 @@ components:
       additionalProperties: false
       required:
         [timezone, birthday_lead_days, follow_up_after_days, churn_thresholds,
-         digest_hour, delivery_sla_days, availability, planning_business_rule_overrides,
-         planning_business_rule_revision]
+         digest_hour, delivery_sla_days, health_tiers, availability,
+         planning_business_rule_overrides, planning_business_rule_revision]
       properties:
         timezone:
           type: string
@@ -4636,6 +4736,8 @@ components:
           maximum: 180
           default: 14
           description: 账号级默认交付 SLA 天数，供 Order.delivery_due_at 自动派生；修改不重写历史订单（§4.2）
+        health_tiers:
+          $ref: "#/components/schemas/HealthTiers"
         telegram_chat_id:
           type: string
         availability:
@@ -4670,6 +4772,8 @@ components:
           type: integer
           minimum: 1
           maximum: 180
+        health_tiers:
+          $ref: "#/components/schemas/HealthTiers"
         availability:
           $ref: "#/components/schemas/ScheduleAvailability"
         planning_business_rules:
@@ -4841,7 +4945,7 @@ components:
           format: date-time
         schema_version:
           type: integer
-          enum: [4]
+          enum: [5]
         counts:
           $ref: "#/components/schemas/ExportCounts"
         customers:

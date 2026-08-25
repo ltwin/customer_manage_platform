@@ -12,7 +12,7 @@ import {
   businessRuleOverridesFromDraft,
   validateBusinessRuleDraft,
 } from '../src/account/settings/businessRulesDraft.ts'
-import { buildRemindersBody } from '../src/account/settings/bodyBuilders.ts'
+import { buildRemindersBody, validateHealthTiersDraft } from '../src/account/settings/bodyBuilders.ts'
 import {
   initialSettingsControllerState,
   settingsControllerReducer,
@@ -24,6 +24,12 @@ const settingsFixture: Settings = {
   follow_up_after_days: 8,
   digest_hour: 10,
   delivery_sla_days: 14,
+  health_tiers: {
+    sleeping_ratio: 1.2,
+    at_risk_ratio: 2,
+    lost_ratio: 3.5,
+    fallback_cadence_days: 120,
+  },
   churn_thresholds: [
     { shoot_type: 'portrait', days: 120 },
     { shoot_type: 'cosplay', days: 150 },
@@ -229,4 +235,36 @@ test('reminders body keeps snapshot SLA when draft untouched by other fields', (
   const body = buildRemindersBody(settingsFixture, edited.reminders.draft)
   assert.equal(body.delivery_sla_days, 14)
   assert.equal(body.birthday_lead_days, 9)
+})
+
+// ============ health_tiers（客户健康度分层参数组）============
+
+const defaultHealthTiers = {
+  sleeping_ratio: 1.2,
+  at_risk_ratio: 2,
+  lost_ratio: 3.5,
+  fallback_cadence_days: 120,
+}
+
+test('hydrate + buildRemindersBody round-trips health_tiers', () => {
+  const snapshot: Settings = {
+    ...settingsFixture,
+    health_tiers: { sleeping_ratio: 1.5, at_risk_ratio: 2.5, lost_ratio: 4, fallback_cadence_days: 90 },
+  }
+  let state = settingsControllerReducer(initialSettingsControllerState(), { type: 'LOAD_START' })
+  state = settingsControllerReducer(state, {
+    type: 'LOAD_SUCCESS', seq: 1, snapshot,
+  })
+  assert.deepEqual(state.reminders.draft.healthTiers, snapshot.health_tiers)
+  const body = buildRemindersBody(snapshot, state.reminders.draft)
+  assert.deepEqual(body.health_tiers, snapshot.health_tiers)
+})
+
+test('validateHealthTiersDraft enforces strict ascending ratios and fallback range', () => {
+  assert.equal(validateHealthTiersDraft(defaultHealthTiers), null)
+  assert.ok(validateHealthTiersDraft({ ...defaultHealthTiers, sleeping_ratio: 2 }))
+  assert.ok(validateHealthTiersDraft({ ...defaultHealthTiers, at_risk_ratio: 3.5 }))
+  assert.ok(validateHealthTiersDraft({ ...defaultHealthTiers, sleeping_ratio: 0 }))
+  assert.ok(validateHealthTiersDraft({ ...defaultHealthTiers, fallback_cadence_days: 29 }))
+  assert.ok(validateHealthTiersDraft({ ...defaultHealthTiers, fallback_cadence_days: 366 }))
 })
