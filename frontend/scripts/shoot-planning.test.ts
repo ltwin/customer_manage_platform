@@ -827,6 +827,24 @@ test('plan list offers ingestion as the primary create path with blank creation 
   assert.match(plans, /还没有拍摄策划。把和客户聊过的记录粘进「从聊天整理」/)
 })
 
+// U7a：列表不再固定停在第一页，超过 pageSize 的策划要能续加载出来。
+test('plan list pages through the ledger instead of capping at one fixed page', () => {
+  const plans = source('../src/planning/ShootPlansPage.tsx')
+
+  assert.match(plans, /const planPageSize = 50/)
+  assert.match(plans, /type PlanListPage = \{ items: ShootPlanListItem\[\]; total: number; page: number \}/)
+  assert.match(plans, /显示 \{list\.items\.length\} \/ \{list\.total\} 份策划/)
+  assert.match(plans, /list\.items\.length < list\.total/)
+  assert.match(plans, /加载更多（\$\{list\.items\.length\}\/\$\{list\.total\}）/)
+  // 下一页是追加，不是替换。
+  assert.match(plans, /items: \[\.\.\.data\.items, \.\.\.result\.items\], total: result\.total, page: nextPage/)
+  // 换筛选作废在途请求，旧筛选的下一页不得追进新列表。
+  assert.match(plans, /loadMoreRequestSeq\.current \+= 1\s*\n\s*setLoadingMore\(false\)/)
+  assert.match(plans, /loadMoreRequestSeq\.current === requestSeq && filterRef\.current === requestFilter/)
+  // 下一页失败走 stale 分支，已加载的策划留在页面上。
+  assert.match(plans, /failPageRead\(current, planningErrorMessage\(error, '加载更多失败，仍显示已加载的策划'\)/)
+})
+
 // 用户可见文案里不允许再出现英文功能名或同一功能的旧称。
 test('planning UI copy uses 现场模式 and 从聊天整理 instead of Run Mode and 摄取工作台', () => {
   for (const path of [
