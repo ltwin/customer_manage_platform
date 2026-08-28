@@ -2,6 +2,7 @@ package planningmedia
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -38,8 +39,9 @@ func TestRightsMatrixIsExhaustiveAndFailClosed(t *testing.T) {
 }
 
 func TestPlanningObjectKeyIsTypedAndCanonical(t *testing.T) {
-	key, err := planningObjectKey("acc_test", "asset-123", 2, RenditionDisplay)
-	if err != nil || key != "planning/acc_test/assets/asset-123/g2/display" {
+	checksum := "sha256-" + strings.Repeat("a", 64)
+	key, err := planningObjectKey("acc_test", "asset-123", 2, RenditionDisplay, checksum)
+	if err != nil || key != "planning/acc_test/assets/asset-123/g2/"+checksum+"/display" {
 		t.Fatalf("key=%q err=%v", key, err)
 	}
 	for _, input := range []struct {
@@ -47,8 +49,25 @@ func TestPlanningObjectKeyIsTypedAndCanonical(t *testing.T) {
 		generation     int
 		kind           RenditionKind
 	}{{"../escape", "asset", 1, RenditionDisplay}, {"account", "asset/escape", 1, RenditionDisplay}, {"account", "asset", 0, RenditionDisplay}, {"account", "asset", 1, "future"}} {
-		if _, err := planningObjectKey(input.account, input.asset, input.generation, input.kind); err == nil {
+		if _, err := planningObjectKey(input.account, input.asset, input.generation, input.kind, checksum); err == nil {
 			t.Fatalf("invalid key input accepted: %+v", input)
 		}
+	}
+	if _, err := planningObjectKey("account", "asset", 1, RenditionDisplay, "sha256-bad"); err == nil {
+		t.Fatal("invalid checksum accepted")
+	}
+	legacy := "planning/acc_test/assets/asset-123/g2/display"
+	if _, _, _, _, err := parsePlanningObjectKey(legacy); err != nil {
+		t.Fatalf("legacy planning key must remain readable: %v", err)
+	}
+}
+
+func TestPlanningAccountPrefixDoesNotOverlapSiblingAccounts(t *testing.T) {
+	prefix := planningAccountPrefix("acc")
+	if prefix != "planning/acc/assets/" {
+		t.Fatalf("prefix=%q", prefix)
+	}
+	if strings.HasPrefix("planning/acc2/assets/object", prefix) {
+		t.Fatal("account prefix must not overlap a sibling account id")
 	}
 }

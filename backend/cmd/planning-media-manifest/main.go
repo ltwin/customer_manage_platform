@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
@@ -24,6 +25,9 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
+	if strings.TrimSpace(os.Getenv("AVATAR_STORAGE_DRIVER")) == "oss" {
+		return errors.New("planning-media-manifest 暂不支持 OSS；请使用 OSS 版本控制与后续专用备份方案")
+	}
 	flags := flag.NewFlagSet("planning-media-manifest", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	root := flags.String("root", os.Getenv("PLANNING_MEDIA_LOCAL_ROOT"), "planning media volume root")

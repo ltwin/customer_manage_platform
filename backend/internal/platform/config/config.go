@@ -28,9 +28,14 @@ type Config struct {
 	TrustedProxyCIDRs             string // TRUSTED_PROXY_CIDRS（预留给统一 source 解析）
 	TrustedProxyPrefixes          []netip.Prefix
 	HTTPAddr                      string // HTTP_ADDR（默认 :8080）
-	AvatarStorageDriver           string // AVATAR_STORAGE_DRIVER（首版仅 local）
+	AvatarStorageDriver           string // AVATAR_STORAGE_DRIVER（local|oss，统管头像与策划素材对象存储）
 	AvatarLocalRoot               string // AVATAR_LOCAL_ROOT（local 对象根目录）
 	AvatarLocalRequireMount       bool   // AVATAR_LOCAL_REQUIRE_MOUNT（production 必须为 true）
+	PlanningMediaLocalRoot        string // PLANNING_MEDIA_LOCAL_ROOT（可选；缺省沿用 AvatarLocalRoot 同级 planning-media）
+	OSSRegion                     string // OSS_REGION（oss driver 必填）
+	OSSEndpoint                   string // OSS_ENDPOINT（可选；ECS 同地域建议内网 endpoint）
+	OSSUseCName                   bool   // OSS_USE_CNAME（endpoint 是 bucket 自定义 CNAME 时为 true）
+	OSSBucket                     string // OSS_BUCKET（oss driver 必填；头像与策划素材共用，键前缀天然分区）
 	TelegramBotToken              string // TELEGRAM_BOT_TOKEN（可选，仅服务端环境）
 	TelegramBotUsername           string // TELEGRAM_BOT_USERNAME（可选，不含 @）
 }
@@ -50,6 +55,12 @@ type AccountAuthConfig struct {
 	TrustedProxyPrefixes          []netip.Prefix
 }
 
+// 对象存储驱动取值（AVATAR_STORAGE_DRIVER）。
+const (
+	StorageDriverLocal = "local"
+	StorageDriverOSS   = "oss"
+)
+
 // 启动期 fail-fast 错误：必填项缺失时进程不得继续。
 var (
 	ErrDatabaseURLMissing             = errors.New("DATABASE_URL 未设置")
@@ -60,7 +71,11 @@ var (
 	ErrAuthMailDriverInvalid          = errors.New("AUTH_MAIL_DRIVER 非法或不适用于当前 PUBLIC_BASE_URL")
 	ErrResendAPIKeyMissing            = errors.New("RESEND_API_KEY 未设置")
 	ErrTrustedProxyCIDRsInvalid       = errors.New("TRUSTED_PROXY_CIDRS 必须是逗号分隔的 canonical CIDR")
-	ErrAvatarStorageDriverInvalid     = errors.New("AVATAR_STORAGE_DRIVER 非法：首版仅支持 local")
+	ErrAvatarStorageDriverInvalid     = errors.New("AVATAR_STORAGE_DRIVER 非法：仅支持 local 或 oss")
+	ErrOSSRegionMissing               = errors.New("OSS_REGION 未设置：oss driver 必填")
+	ErrOSSBucketMissing               = errors.New("OSS_BUCKET 未设置：oss driver 必填")
+	ErrOSSUseCNameInvalid             = errors.New("OSS_USE_CNAME 必须是 true 或 false")
+	ErrOSSCNameEndpointMissing        = errors.New("OSS_ENDPOINT 未设置：OSS_USE_CNAME=true 时必填")
 	ErrAvatarLocalRootMissing         = errors.New("AVATAR_LOCAL_ROOT 未设置")
 	ErrAvatarLocalRequireMountInvalid = errors.New("AVATAR_LOCAL_REQUIRE_MOUNT 必须是 true 或 false")
 	ErrAvatarLocalRootNotMount        = errors.New("AVATAR_LOCAL_ROOT 不是可验证的独立挂载点")
@@ -93,25 +108,55 @@ func Load() (Config, error) {
 	if cfg.HTTPAddr == "" {
 		cfg.HTTPAddr = ":8080"
 	}
+	cfg.PlanningMediaLocalRoot = strings.TrimSpace(os.Getenv("PLANNING_MEDIA_LOCAL_ROOT"))
+	cfg.OSSRegion = strings.TrimSpace(os.Getenv("OSS_REGION"))
+	cfg.OSSEndpoint = strings.TrimSpace(os.Getenv("OSS_ENDPOINT"))
+	cfg.OSSBucket = strings.TrimSpace(os.Getenv("OSS_BUCKET"))
 	if cfg.AvatarStorageDriver == "" {
-		cfg.AvatarStorageDriver = "local"
+		cfg.AvatarStorageDriver = StorageDriverLocal
 	}
-	if cfg.AvatarStorageDriver != "local" {
+	switch cfg.AvatarStorageDriver {
+	case StorageDriverLocal:
+		if cfg.AvatarLocalRoot == "" {
+			return Config{}, ErrAvatarLocalRootMissing
+		}
+		requireMount, err := parseRequiredBool("AVATAR_LOCAL_REQUIRE_MOUNT", os.Getenv("AVATAR_LOCAL_REQUIRE_MOUNT"))
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.AvatarLocalRequireMount = requireMount
+		root, err := prepareAvatarLocalRoot(cfg.AvatarLocalRoot, requireMount)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.AvatarLocalRoot = root
+		if cfg.PlanningMediaLocalRoot == "" {
+			cfg.PlanningMediaLocalRoot = filepath.Join(filepath.Dir(cfg.AvatarLocalRoot), "planning-media")
+		} else {
+			absRoot, err := filepath.Abs(cfg.PlanningMediaLocalRoot)
+			if err != nil {
+				return Config{}, fmt.Errorf("%w: resolve PLANNING_MEDIA_LOCAL_ROOT: %w", ErrAvatarLocalRootUnavailable, err)
+			}
+			cfg.PlanningMediaLocalRoot = absRoot
+		}
+	case StorageDriverOSS:
+		if cfg.OSSRegion == "" {
+			return Config{}, ErrOSSRegionMissing
+		}
+		if cfg.OSSBucket == "" {
+			return Config{}, ErrOSSBucketMissing
+		}
+		useCName, err := parseOptionalBool("OSS_USE_CNAME", os.Getenv("OSS_USE_CNAME"), ErrOSSUseCNameInvalid)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.OSSUseCName = useCName
+		if useCName && cfg.OSSEndpoint == "" {
+			return Config{}, ErrOSSCNameEndpointMissing
+		}
+	default:
 		return Config{}, ErrAvatarStorageDriverInvalid
 	}
-	if cfg.AvatarLocalRoot == "" {
-		return Config{}, ErrAvatarLocalRootMissing
-	}
-	requireMount, err := parseRequiredBool("AVATAR_LOCAL_REQUIRE_MOUNT", os.Getenv("AVATAR_LOCAL_REQUIRE_MOUNT"))
-	if err != nil {
-		return Config{}, err
-	}
-	cfg.AvatarLocalRequireMount = requireMount
-	root, err := prepareAvatarLocalRoot(cfg.AvatarLocalRoot, requireMount)
-	if err != nil {
-		return Config{}, err
-	}
-	cfg.AvatarLocalRoot = root
 	return cfg, nil
 }
 
@@ -269,6 +314,20 @@ func parseRequiredBool(name, raw string) (bool, error) {
 	value, err := strconv.ParseBool(raw)
 	if err != nil {
 		return false, fmt.Errorf("%w: %s", ErrAvatarLocalRequireMountInvalid, name)
+	}
+	return value, nil
+}
+
+func parseOptionalBool(name, raw string, invalid error) (bool, error) {
+	if raw == "" {
+		return false, nil
+	}
+	if raw != "true" && raw != "false" {
+		return false, fmt.Errorf("%w: %s", invalid, name)
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%w: %s", invalid, name)
 	}
 	return value, nil
 }

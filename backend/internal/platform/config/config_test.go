@@ -66,7 +66,27 @@ func TestLoadAvatarStorageFailsFast(t *testing.T) {
 		mutate func(*testing.T)
 		want   error
 	}{
-		{name: "unknown driver", mutate: func(t *testing.T) { t.Setenv("AVATAR_STORAGE_DRIVER", "oss") }, want: ErrAvatarStorageDriverInvalid},
+		{name: "unknown driver", mutate: func(t *testing.T) { t.Setenv("AVATAR_STORAGE_DRIVER", "s3") }, want: ErrAvatarStorageDriverInvalid},
+		{name: "oss driver missing region", mutate: func(t *testing.T) {
+			t.Setenv("AVATAR_STORAGE_DRIVER", "oss")
+			t.Setenv("OSS_BUCKET", "crm-objects")
+		}, want: ErrOSSRegionMissing},
+		{name: "oss driver missing bucket", mutate: func(t *testing.T) {
+			t.Setenv("AVATAR_STORAGE_DRIVER", "oss")
+			t.Setenv("OSS_REGION", "cn-hangzhou")
+		}, want: ErrOSSBucketMissing},
+		{name: "oss invalid cname switch", mutate: func(t *testing.T) {
+			t.Setenv("AVATAR_STORAGE_DRIVER", "oss")
+			t.Setenv("OSS_REGION", "cn-hangzhou")
+			t.Setenv("OSS_BUCKET", "crm-objects")
+			t.Setenv("OSS_USE_CNAME", "sometimes")
+		}, want: ErrOSSUseCNameInvalid},
+		{name: "oss cname missing endpoint", mutate: func(t *testing.T) {
+			t.Setenv("AVATAR_STORAGE_DRIVER", "oss")
+			t.Setenv("OSS_REGION", "cn-hangzhou")
+			t.Setenv("OSS_BUCKET", "crm-objects")
+			t.Setenv("OSS_USE_CNAME", "true")
+		}, want: ErrOSSCNameEndpointMissing},
 		{name: "missing root", mutate: func(t *testing.T) { t.Setenv("AVATAR_LOCAL_ROOT", "") }, want: ErrAvatarLocalRootMissing},
 		{name: "invalid require mount", mutate: func(t *testing.T) { t.Setenv("AVATAR_LOCAL_REQUIRE_MOUNT", "sometimes") }, want: ErrAvatarLocalRequireMountInvalid},
 		{name: "require mount without real mount", mutate: func(t *testing.T) { t.Setenv("AVATAR_LOCAL_REQUIRE_MOUNT", "true") }, want: ErrAvatarLocalRootNotMount},
@@ -82,6 +102,54 @@ func TestLoadAvatarStorageFailsFast(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadOSSDriverSkipsLocalRootRequirements(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("AVATAR_STORAGE_DRIVER", "oss")
+	t.Setenv("OSS_REGION", "cn-hangzhou")
+	t.Setenv("OSS_BUCKET", "crm-objects")
+	t.Setenv("OSS_ENDPOINT", "oss-cn-hangzhou-internal.aliyuncs.com")
+	t.Setenv("OSS_USE_CNAME", "false")
+	t.Setenv("AVATAR_LOCAL_ROOT", "")
+	t.Setenv("AVATAR_LOCAL_REQUIRE_MOUNT", "true")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.AvatarStorageDriver != StorageDriverOSS || cfg.OSSRegion != "cn-hangzhou" ||
+		cfg.OSSBucket != "crm-objects" || cfg.OSSEndpoint != "oss-cn-hangzhou-internal.aliyuncs.com" {
+		t.Fatalf("oss config mismatch: %+v", cfg)
+	}
+	if cfg.PlanningMediaLocalRoot != "" {
+		t.Fatalf("oss driver 不应推导本地 planning-media 根: %q", cfg.PlanningMediaLocalRoot)
+	}
+}
+
+func TestLoadPlanningMediaLocalRoot(t *testing.T) {
+	t.Run("缺省沿用 AvatarLocalRoot 同级推导", func(t *testing.T) {
+		setRequiredEnvironment(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		want := filepath.Join(filepath.Dir(cfg.AvatarLocalRoot), "planning-media")
+		if cfg.PlanningMediaLocalRoot != want {
+			t.Fatalf("planning root mismatch: want %q got %q", want, cfg.PlanningMediaLocalRoot)
+		}
+	})
+	t.Run("显式配置优先", func(t *testing.T) {
+		setRequiredEnvironment(t)
+		explicit := filepath.Join(t.TempDir(), "media-extra")
+		t.Setenv("PLANNING_MEDIA_LOCAL_ROOT", explicit)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if cfg.PlanningMediaLocalRoot != explicit {
+			t.Fatalf("planning root mismatch: want %q got %q", explicit, cfg.PlanningMediaLocalRoot)
+		}
+	})
 }
 
 func TestLoadTelegramConfigurationIsOptional(t *testing.T) {

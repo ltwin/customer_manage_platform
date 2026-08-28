@@ -39,7 +39,7 @@ type InventoryFinding struct {
 }
 
 func BuildManifest(ctx context.Context, objects immutablefs.ObjectStore) (PlanningMediaManifestV1, error) {
-	items, err := listAll(ctx, objects)
+	items, err := listAllPrefix(ctx, objects, "planning/")
 	if err != nil {
 		return PlanningMediaManifestV1{}, err
 	}
@@ -64,14 +64,14 @@ func VerifyAndRestoreFixture(ctx context.Context, manifest PlanningMediaManifest
 	if manifest.Digest == "" || manifest.Digest != manifestDigest(manifest) {
 		return fmt.Errorf("manifest_digest_invalid")
 	}
-	targetItems, err := listAll(ctx, target)
+	targetItems, err := listAllPrefix(ctx, target, "planning/")
 	if err != nil {
 		return err
 	}
 	if len(targetItems) != 0 {
 		return fmt.Errorf("restore_target_not_empty")
 	}
-	sourceItems, err := listAll(ctx, source)
+	sourceItems, err := listAllPrefix(ctx, source, "planning/")
 	if err != nil {
 		return err
 	}
@@ -157,23 +157,10 @@ func sameInventoryMetadata(left, right immutablefs.Metadata) bool {
 		left.Width == right.Width && left.Height == right.Height
 }
 
-func listAll(ctx context.Context, objects immutablefs.ObjectStore) ([]immutablefs.Item, error) {
-	var all []immutablefs.Item
-	cursor := ""
-	for {
-		page, err := objects.List(ctx, "", cursor, 1000)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, page.Items...)
-		if page.Done {
-			return all, nil
-		}
-		cursor = page.NextCursor
-	}
-}
 func cleanup(ctx context.Context, target immutablefs.ObjectStore, keys []string) {
 	for _, key := range keys {
+		// restore fixture 正在返回更具体的失败；清理失败由调用方后续的
+		// target-not-empty preflight 可见，不能吞掉原始完整性/写入错误。
 		_ = target.Delete(ctx, key)
 	}
 }

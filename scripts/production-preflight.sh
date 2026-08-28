@@ -552,34 +552,80 @@ validate_binary_avatar() {
   local root=""
   local require_mount=""
   local real_root=""
+  local region=""
+  local endpoint=""
+  local bucket=""
+  local use_cname=""
+  local access_key_id=""
+  local access_key_secret=""
   get_value "AVATAR_STORAGE_DRIVER"
   driver="$VALUE"
-  [[ "$driver" == "local" ]] || \
-    fail "$EXIT_CONFIG" "config-matrix" "AVATAR_STORAGE_DRIVER" "use-local-avatar-storage"
-  get_value "AVATAR_LOCAL_ROOT"
-  root="$VALUE"
-  [[ "$FOUND" == "true" && "$root" == /* && -d "$root" && -r "$root" && -w "$root" && -x "$root" ]] || \
-    fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-readable-writable-absolute-directory"
-  real_root="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$root" 2>/dev/null)" || \
-    fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-readable-writable-absolute-directory"
-  [[ -n "$real_root" && -d "$real_root" ]] || \
-    fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-readable-writable-absolute-directory"
-  get_value "AVATAR_LOCAL_REQUIRE_MOUNT"
-  require_mount="$VALUE"
-  [[ "$FOUND" == "true" && ( "$require_mount" == "true" || "$require_mount" == "false" ) ]] || \
-    fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "set-explicit-boolean"
-  if [[ "$require_mount" == "true" ]]; then
-    python3 -c 'import os,sys; raise SystemExit(0 if os.path.ismount(sys.argv[1]) else 1)' "$real_root" 2>/dev/null || \
-      fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-verified-mount-point"
-    status "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "ok"
-  else
-    status "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "durability-attention"
-  fi
-  case "$real_root" in
-    "$TEMP_DIR"/*|/tmp/*|/private/tmp/*|"$REPO_ROOT"/*)
-      status "config-matrix" "AVATAR_LOCAL_ROOT" "durability-attention"
+  case "$driver" in
+    local)
+      get_value "AVATAR_LOCAL_ROOT"
+      root="$VALUE"
+      [[ "$FOUND" == "true" && "$root" == /* && -d "$root" && -r "$root" && -w "$root" && -x "$root" ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-readable-writable-absolute-directory"
+      real_root="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$root" 2>/dev/null)" || \
+        fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-readable-writable-absolute-directory"
+      [[ -n "$real_root" && -d "$real_root" ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-readable-writable-absolute-directory"
+      get_value "AVATAR_LOCAL_REQUIRE_MOUNT"
+      require_mount="$VALUE"
+      [[ "$FOUND" == "true" && ( "$require_mount" == "true" || "$require_mount" == "false" ) ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "set-explicit-boolean"
+      if [[ "$require_mount" == "true" ]]; then
+        python3 -c 'import os,sys; raise SystemExit(0 if os.path.ismount(sys.argv[1]) else 1)' "$real_root" 2>/dev/null || \
+          fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-verified-mount-point"
+        status "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "ok"
+      else
+        status "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "durability-attention"
+      fi
+      case "$real_root" in
+        "$TEMP_DIR"/*|/tmp/*|/private/tmp/*|"$REPO_ROOT"/*)
+          status "config-matrix" "AVATAR_LOCAL_ROOT" "durability-attention"
+          ;;
+        *) status "config-matrix" "AVATAR_LOCAL_ROOT" "ok" ;;
+      esac
       ;;
-    *) status "config-matrix" "AVATAR_LOCAL_ROOT" "ok" ;;
+    oss)
+      get_value "OSS_REGION"
+      region="$VALUE"
+      [[ "$FOUND" == "true" && -n "$region" ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "OSS_REGION" "set-oss-region"
+      get_value "OSS_ENDPOINT"
+      endpoint="$VALUE"
+      get_value "OSS_USE_CNAME"
+      use_cname="$VALUE"
+      [[ "$FOUND" != "true" || -z "$use_cname" ]] && use_cname="false"
+      [[ "$use_cname" == "true" || "$use_cname" == "false" ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "OSS_USE_CNAME" "set-explicit-boolean"
+      [[ "$use_cname" != "true" || -n "$endpoint" ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "OSS_ENDPOINT" "set-cname-endpoint"
+      get_value "OSS_BUCKET"
+      bucket="$VALUE"
+      [[ "$FOUND" == "true" && -n "$bucket" ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "OSS_BUCKET" "set-oss-bucket"
+      get_value "OSS_ACCESS_KEY_ID"
+      access_key_id="$VALUE"
+      get_value "OSS_ACCESS_KEY_SECRET"
+      access_key_secret="$VALUE"
+      [[ ( -z "$access_key_id" && -z "$access_key_secret" ) || \
+        ( -n "$access_key_id" && -n "$access_key_secret" ) ]] || \
+        fail "$EXIT_CONFIG" "config-matrix" "OSS_CREDENTIALS" "set-complete-ak-pair-or-use-ecs-role"
+      status "config-matrix" "OSS_REGION" "ok"
+      status "config-matrix" "OSS_USE_CNAME" "ok"
+      status "config-matrix" "OSS_BUCKET" "ok"
+      if [[ -z "$access_key_id" ]]; then
+        status "config-matrix" "OSS_CREDENTIALS" "ecs-role-attention"
+      else
+        status "config-matrix" "OSS_CREDENTIALS" "ok"
+      fi
+      status "support-boundary" "backup-restore" "unsupported"
+      ;;
+    *)
+      fail "$EXIT_CONFIG" "config-matrix" "AVATAR_STORAGE_DRIVER" "use-supported-object-storage"
+      ;;
   esac
   status "config-matrix" "AVATAR_STORAGE_DRIVER" "ok"
 }
@@ -712,7 +758,7 @@ services = model.get("services") or {}
 volumes = model.get("volumes") or {}
 if set(services) != {"app", "postgres"}:
     raise SystemExit(10)
-if set(volumes) != {"avatar_data", "pgdata"}:
+if set(volumes) != {"avatar_data", "planning_media_data", "pgdata"}:
     raise SystemExit(20)
 if not services["app"].get("image") or not services["postgres"].get("image"):
     raise SystemExit(30)
@@ -740,7 +786,7 @@ set -e
 case "$render_check" in
   0) ;;
   10) fail "$EXIT_COMPOSE" "compose-render" "SERVICES" "use-fixed-app-and-postgres-services" ;;
-  20) fail "$EXIT_COMPOSE" "compose-render" "VOLUMES" "use-fixed-avatar-and-postgres-volumes" ;;
+  20) fail "$EXIT_COMPOSE" "compose-render" "VOLUMES" "use-fixed-media-and-postgres-volumes" ;;
   30) fail "$EXIT_COMPOSE" "compose-render" "IMAGES" "set-service-images" ;;
   70) fail "$EXIT_COMPOSE" "compose-render" "APP_ENV_FILE" "select-same-canonical-env-file" ;;
   *) fail "$EXIT_COMPOSE" "compose-render" "COMPOSE_MODEL" "fix-compose-render" ;;
@@ -787,16 +833,45 @@ render_env_value "app" "HTTP_ADDR"
   fail "$EXIT_CONFIG" "config-matrix" "HTTP_ADDR" "use-fixed-compose-http-address"
 status "config-matrix" "HTTP_ADDR" "public-bind-attention"
 render_env_value "app" "AVATAR_STORAGE_DRIVER"
-[[ "$VALUE" == "local" ]] || \
-  fail "$EXIT_CONFIG" "config-matrix" "AVATAR_STORAGE_DRIVER" "use-local-avatar-storage"
-render_env_value "app" "AVATAR_LOCAL_ROOT"
-[[ "$VALUE" == "/var/lib/crm/avatars" ]] || \
-  fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-fixed-compose-avatar-root"
-render_env_value "app" "AVATAR_LOCAL_REQUIRE_MOUNT"
-[[ "$VALUE" == "true" ]] || \
-  fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "require-compose-avatar-mount"
-render_has_mount "app" "avatar_data" "/var/lib/crm/avatars" || \
-  fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-fixed-compose-avatar-mount"
+object_storage_driver="$VALUE"
+case "$object_storage_driver" in
+  local)
+    render_env_value "app" "AVATAR_LOCAL_ROOT"
+    [[ "$VALUE" == "/var/lib/crm/avatars" ]] || \
+      fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-fixed-compose-avatar-root"
+    render_env_value "app" "AVATAR_LOCAL_REQUIRE_MOUNT"
+    [[ "$VALUE" == "true" ]] || \
+      fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_REQUIRE_MOUNT" "require-compose-avatar-mount"
+    render_has_mount "app" "avatar_data" "/var/lib/crm/avatars" || \
+      fail "$EXIT_CONFIG" "config-matrix" "AVATAR_LOCAL_ROOT" "use-fixed-compose-avatar-mount"
+    render_has_mount "app" "planning_media_data" "/var/lib/crm/planning-media" || \
+      fail "$EXIT_CONFIG" "config-matrix" "PLANNING_MEDIA_LOCAL_ROOT" "use-fixed-compose-planning-media-mount"
+    ;;
+  oss)
+    render_env_value "app" "OSS_REGION"
+    [[ -n "$VALUE" ]] || fail "$EXIT_CONFIG" "config-matrix" "OSS_REGION" "set-oss-region"
+    render_env_value "app" "OSS_ENDPOINT"
+    rendered_oss_endpoint="$VALUE"
+    render_env_value "app" "OSS_USE_CNAME"
+    [[ "$VALUE" == "true" || "$VALUE" == "false" ]] || \
+      fail "$EXIT_CONFIG" "config-matrix" "OSS_USE_CNAME" "set-explicit-boolean"
+    [[ "$VALUE" != "true" || -n "$rendered_oss_endpoint" ]] || \
+      fail "$EXIT_CONFIG" "config-matrix" "OSS_ENDPOINT" "set-cname-endpoint"
+    render_env_value "app" "OSS_BUCKET"
+    [[ -n "$VALUE" ]] || fail "$EXIT_CONFIG" "config-matrix" "OSS_BUCKET" "set-oss-bucket"
+    render_env_value "app" "OSS_ACCESS_KEY_ID"
+    rendered_oss_access_key_id="$VALUE"
+    render_env_value "app" "OSS_ACCESS_KEY_SECRET"
+    rendered_oss_access_key_secret="$VALUE"
+    [[ ( -z "$rendered_oss_access_key_id" && -z "$rendered_oss_access_key_secret" ) || \
+      ( -n "$rendered_oss_access_key_id" && -n "$rendered_oss_access_key_secret" ) ]] || \
+      fail "$EXIT_CONFIG" "config-matrix" "OSS_CREDENTIALS" "set-complete-ak-pair-or-use-ecs-role"
+    status "support-boundary" "backup-restore" "unsupported"
+    ;;
+  *)
+    fail "$EXIT_CONFIG" "config-matrix" "AVATAR_STORAGE_DRIVER" "use-supported-object-storage"
+    ;;
+esac
 render_has_mount "postgres" "pgdata" "/var/lib/postgresql/data" || \
   fail "$EXIT_CONFIG" "config-matrix" "POSTGRES_DB" "use-fixed-compose-postgres-mount"
 status "config-matrix" "AVATAR_STORAGE" "ok"

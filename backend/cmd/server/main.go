@@ -12,12 +12,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
+	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -115,6 +115,14 @@ func classifyConfigStartupFailure(err error) error {
 		key = "TRUSTED_PROXY_CIDRS"
 	case errors.Is(err, config.ErrAvatarStorageDriverInvalid):
 		key = "AVATAR_STORAGE_DRIVER"
+	case errors.Is(err, config.ErrOSSRegionMissing):
+		key = "OSS_REGION"
+	case errors.Is(err, config.ErrOSSBucketMissing):
+		key = "OSS_BUCKET"
+	case errors.Is(err, config.ErrOSSUseCNameInvalid):
+		key = "OSS_USE_CNAME"
+	case errors.Is(err, config.ErrOSSCNameEndpointMissing):
+		key = "OSS_ENDPOINT"
 	case errors.Is(err, config.ErrAvatarLocalRootMissing),
 		errors.Is(err, config.ErrAvatarLocalRootNotMount),
 		errors.Is(err, config.ErrAvatarLocalRootUnavailable):
@@ -126,6 +134,45 @@ func classifyConfigStartupFailure(err error) error {
 		key = "AVATAR_LOCAL_REQUIRE_MOUNT"
 	}
 	return newStartupFailure("config-load", key, errorClass, err)
+}
+
+// composeObjectStores 按 AVATAR_STORAGE_DRIVER 装配对象存储：local 双根目录，
+// 或共享 OSS bucket（头像 avatars/ 与策划素材 planning/ 键前缀天然分区）。
+func composeObjectStores(ctx context.Context, cfg config.Config) (immutablefs.ObjectStore, avatarmedia.ObjectStore, error) {
+	switch cfg.AvatarStorageDriver {
+	case config.StorageDriverOSS:
+		objects, err := immutablefs.NewOSS(immutablefs.OSSConfig{
+			Region:   cfg.OSSRegion,
+			Endpoint: cfg.OSSEndpoint,
+			Bucket:   cfg.OSSBucket,
+			UseCName: cfg.OSSUseCName,
+		})
+		if err != nil {
+			return nil, nil, newStartupFailure("object-store-init", "OSS_BUCKET", "object-storage", err)
+		}
+		if err := objects.Probe(ctx); err != nil {
+			return nil, nil, newStartupFailure("object-store-probe", "OSS_BUCKET", "object-storage", err)
+		}
+		avatarObjects, err := avatarmedia.NewOSSStore(objects)
+		if err != nil {
+			return nil, nil, newStartupFailure("avatar-store-init", "OSS_BUCKET", "object-storage", err)
+		}
+		return objects, avatarObjects, nil
+	case config.StorageDriverLocal:
+		planningMediaObjects, err := immutablefs.NewLocal(cfg.PlanningMediaLocalRoot)
+		if err != nil {
+			return nil, nil, newStartupFailure("planning-media-store-init", "PLANNING_MEDIA_LOCAL_ROOT", "filesystem", err)
+		}
+		avatarObjects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
+		if err != nil {
+			return nil, nil, newStartupFailure("avatar-store-init", "AVATAR_LOCAL_ROOT", "filesystem", err)
+		}
+		return planningMediaObjects, avatarObjects, nil
+	default:
+		return nil, nil, newStartupFailure(
+			"object-store-init", "AVATAR_STORAGE_DRIVER", "invalid_config", config.ErrAvatarStorageDriverInvalid,
+		)
+	}
 }
 
 func run(ctx context.Context, logger *slog.Logger) error {
@@ -144,9 +191,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	defer s.Close()
 	idempotencyExecutor := idempotency.NewExecutor()
-	planningMediaObjects, err := immutablefs.NewLocal(filepath.Join(filepath.Dir(cfg.AvatarLocalRoot), "planning-media"))
+	planningMediaObjects, avatarObjects, err := composeObjectStores(ctx, cfg)
 	if err != nil {
-		return newStartupFailure("planning-media-store-init", "AVATAR_LOCAL_ROOT", "filesystem", err)
+		return err
 	}
 	planningMediaApp := planningmedia.NewApplication(
 		planningmedia.Repository{},
@@ -195,16 +242,12 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		Gate: store.SecurityAttemptBudgetGate{Store: s},
 	}
 
-	objects, err := avatarstore.NewLocal(cfg.AvatarLocalRoot)
-	if err != nil {
-		return newStartupFailure("avatar-store-init", "AVATAR_LOCAL_ROOT", "filesystem", err)
-	}
 	avatarRepo := customer.NewPostgresAvatarRepository()
-	avatarApp := customer.NewAvatarApplication(avatarRepo, objects)
-	maintenance := customer.NewAvatarMaintenanceRunner(s, avatarRepo, objects, logger)
+	avatarApp := customer.NewAvatarApplication(avatarRepo, avatarObjects)
+	maintenance := customer.NewAvatarMaintenanceRunner(s, avatarRepo, avatarObjects, logger)
 	profileRepo := accountprofile.NewPostgresRepository()
-	profileSvc := accountprofile.NewService(profileRepo, objects)
-	profileMaintenance := accountprofile.NewMaintenanceRunner(s, profileRepo, objects, logger)
+	profileSvc := accountprofile.NewService(profileRepo, avatarObjects)
+	profileMaintenance := accountprofile.NewMaintenanceRunner(s, profileRepo, avatarObjects, logger)
 
 	settingsSvc := settings.NewService(settings.NewPostgresRepository()).WithScopeFactory(func(accountID string) store.AccountScope {
 		return s.ScopeFor(auth.AccountContext{AccountID: accountID})

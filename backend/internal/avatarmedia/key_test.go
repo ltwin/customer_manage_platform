@@ -54,6 +54,20 @@ func TestDualKeyRoundTripAndRejects(t *testing.T) {
 	}
 }
 
+func TestTypedPrefixesEndAtPathSegmentBoundary(t *testing.T) {
+	customer, err := CustomerPrefix("acc", "cust")
+	if err != nil || customer.String() != "avatars/acc/customers/cust/" {
+		t.Fatalf("CustomerPrefix boundary: %q err=%v", customer.String(), err)
+	}
+	account, err := AccountPrefix("acc")
+	if err != nil || account.String() != "avatars/acc/" {
+		t.Fatalf("AccountPrefix boundary: %q err=%v", account.String(), err)
+	}
+	if _, err := ParsePrefix(customer.String()); err != nil {
+		t.Fatalf("typed trailing-slash prefix must parse: %v", err)
+	}
+}
+
 func TestGoldenKeyAndManifestBytes(t *testing.T) {
 	ref := ObjectRef{
 		AvatarVersion:  "sha256-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",

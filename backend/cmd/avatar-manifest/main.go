@@ -41,6 +41,9 @@ func run(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if cfg.AvatarStorageDriver != config.StorageDriverLocal {
+		return errors.New("avatar-manifest 暂不支持 OSS；请使用 OSS 版本控制与后续专用备份方案")
+	}
 	database, err := platformstore.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return err

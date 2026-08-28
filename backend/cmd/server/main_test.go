@@ -171,6 +171,37 @@ func TestClassifyConfigStartupFailureUsesConfigKeyAndStableClass(t *testing.T) {
 	}
 }
 
+func TestClassifyOSSConfigStartupFailureUsesExactKey(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		key  string
+	}{
+		{name: "region", err: config.ErrOSSRegionMissing, key: "OSS_REGION"},
+		{name: "bucket", err: config.ErrOSSBucketMissing, key: "OSS_BUCKET"},
+		{name: "cname switch", err: config.ErrOSSUseCNameInvalid, key: "OSS_USE_CNAME"},
+		{name: "cname endpoint", err: config.ErrOSSCNameEndpointMissing, key: "OSS_ENDPOINT"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var classified *startupFailure
+			if !errors.As(classifyConfigStartupFailure(tt.err), &classified) {
+				t.Fatal("failure is not classified")
+			}
+			if classified.configKey != tt.key || classified.errorClass != "invalid_config" {
+				t.Fatalf("unexpected classification: %+v", classified)
+			}
+		})
+	}
+}
+
+func TestComposeObjectStoresRejectsUnknownDriver(t *testing.T) {
+	_, _, err := composeObjectStores(context.Background(), config.Config{AvatarStorageDriver: "future"})
+	if !errors.Is(err, config.ErrAvatarStorageDriverInvalid) {
+		t.Fatalf("unknown storage driver must fail closed: %v", err)
+	}
+}
+
 func TestBuildTelegramIntegrationHonorsOptionalConfiguration(t *testing.T) {
 	tests := []struct {
 		name        string

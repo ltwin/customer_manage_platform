@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -161,11 +162,11 @@ func (a *Application) Upload(ctx context.Context, scope store.AccountScope, key 
 		now := a.now().UTC()
 		assetID := deterministicUploadID(tx.AccountID(), input.PlanID, key, "asset")
 		rightsID := deterministicUploadID(tx.AccountID(), input.PlanID, key, "rights")
-		originalKey, err := planningObjectKey(tx.AccountID(), assetID, 1, RenditionOriginal)
+		originalKey, err := planningObjectKey(tx.AccountID(), assetID, 1, RenditionOriginal, processed.Original.Checksum)
 		if err != nil {
 			return idempotency.StoredResponse{}, err
 		}
-		displayKey, err := planningObjectKey(tx.AccountID(), assetID, 1, RenditionDisplay)
+		displayKey, err := planningObjectKey(tx.AccountID(), assetID, 1, RenditionDisplay, processed.Display.Checksum)
 		if err != nil {
 			return idempotency.StoredResponse{}, err
 		}
@@ -221,11 +222,14 @@ func (a *Application) removePublishedBestEffort(ctx context.Context, published [
 		if exact, ok := a.objects.(interface {
 			RemoveExact(context.Context, string, immutablefs.Metadata) error
 		}); ok {
+			// 主错误已经决定事务失败；清理失败只会留下可被 reconciliation
+			// 发现的 orphan，不能覆盖更有诊断价值的原始错误。
 			_ = exact.RemoveExact(ctx, object.key, object.metadata)
 			continue
 		}
 		meta, err := a.objects.Stat(ctx, object.key)
 		if err == nil && meta.Checksum == object.metadata.Checksum && meta.Size == object.metadata.Size {
+			// 同上：fallback 删除是 best effort，orphan 由后续对账回收。
 			_ = a.objects.Delete(ctx, object.key)
 		}
 	}
@@ -244,7 +248,7 @@ func (a *Application) ReconcilePhysicalOrphans(ctx context.Context, scope store.
 	if err != nil {
 		return nil, err
 	}
-	actual, err := listAllPrefix(ctx, a.objects, "planning/"+scope.AccountID())
+	actual, err := listAllPrefix(ctx, a.objects, planningAccountPrefix(scope.AccountID()))
 	if err != nil {
 		return nil, err
 	}
@@ -299,6 +303,10 @@ func listAllPrefix(ctx context.Context, objects immutablefs.ObjectStore, prefix 
 		}
 		cursor = page.NextCursor
 	}
+}
+
+func planningAccountPrefix(accountID string) string {
+	return path.Join("planning", accountID, "assets") + "/"
 }
 
 func removeObjectExact(ctx context.Context, objects immutablefs.ObjectStore, key string, metadata immutablefs.Metadata) error {

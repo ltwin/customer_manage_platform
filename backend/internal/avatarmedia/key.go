@@ -117,7 +117,7 @@ func CustomerPrefix(accountID, customerID string) (Prefix, error) {
 	if !segmentPattern.MatchString(accountID) || !segmentPattern.MatchString(customerID) {
 		return Prefix{}, ErrObjectKey
 	}
-	return Prefix{value: fmt.Sprintf("avatars/%s/customers/%s", accountID, customerID)}, nil
+	return Prefix{value: fmt.Sprintf("avatars/%s/customers/%s/", accountID, customerID)}, nil
 }
 
 // AccountPrefix 构建账号头像根下列举前缀。
@@ -125,12 +125,14 @@ func AccountPrefix(accountID string) (Prefix, error) {
 	if !segmentPattern.MatchString(accountID) {
 		return Prefix{}, ErrObjectKey
 	}
-	return Prefix{value: fmt.Sprintf("avatars/%s", accountID)}, nil
+	return Prefix{value: fmt.Sprintf("avatars/%s/", accountID)}, nil
 }
 
-// ParsePrefix 校验 List 前缀：相对、clean、avatars/ 下。
+// ParsePrefix 校验 List 前缀：相对、clean、avatars/ 下；允许单个末尾 /
+// 表示完整路径段边界，避免 OSS 的字符串前缀跨账号/客户匹配。
 func ParsePrefix(raw string) (Prefix, error) {
-	if raw == "" || path.IsAbs(raw) || path.Clean(raw) != raw || !strings.HasPrefix(raw, "avatars/") {
+	trimmed := strings.TrimSuffix(raw, "/")
+	if raw == "" || path.IsAbs(raw) || path.Clean(trimmed) != trimmed || !strings.HasPrefix(raw, "avatars/") {
 		return Prefix{}, ErrObjectKey
 	}
 	if strings.Contains(raw, "\\") || strings.Contains(raw, "//") {

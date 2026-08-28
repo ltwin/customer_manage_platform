@@ -108,11 +108,11 @@ func postgresAssetRecord(t *testing.T, accountID, planID, assetID string, genera
 	now := time.Date(2026, 8, 5, 0, 0, 0, 0, time.UTC)
 	originalBody := []byte(assetID + "-original")
 	displayBody := []byte(assetID + "-display")
-	originalKey, err := planningObjectKey(accountID, assetID, generation, RenditionOriginal)
+	originalKey, err := planningObjectKey(accountID, assetID, generation, RenditionOriginal, digest(originalBody))
 	if err != nil {
 		t.Fatal(err)
 	}
-	displayKey, err := planningObjectKey(accountID, assetID, generation, RenditionDisplay)
+	displayKey, err := planningObjectKey(accountID, assetID, generation, RenditionDisplay, digest(displayBody))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,7 @@ package planningmedia
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -51,8 +52,8 @@ func TestRestoreRejectsMissingOrphanCorruptAndCleansPartialTarget(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	orphanKey, _ := planningObjectKey("acc_restore", "orphan", 1, RenditionDisplay)
 	orphanBody := []byte("orphan")
+	orphanKey, _ := planningObjectKey("acc_restore", "orphan", 1, RenditionDisplay, digest(orphanBody))
 	if _, _, err := source.PutImmutable(ctx, orphanKey, orphanBody, fixtureMetadata(orphanBody, now)); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +131,7 @@ func newLocalStore(t *testing.T) *immutablefs.Local {
 
 func putFixture(t *testing.T, local *immutablefs.Local, accountID, assetID string, generation int, kind RenditionKind, body []byte, now time.Time) {
 	t.Helper()
-	key, err := planningObjectKey(accountID, assetID, generation, kind)
+	key, err := planningObjectKey(accountID, assetID, generation, kind, digest(body))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,9 +148,28 @@ func TestOpenVerifiedRejectsMetadataMismatch(t *testing.T) {
 	local := newLocalStore(t)
 	now := time.Now().UTC()
 	putFixture(t, local, "acc_restore", "asset-a", 1, RenditionDisplay, []byte("display"), now)
-	key, _ := planningObjectKey("acc_restore", "asset-a", 1, RenditionDisplay)
+	key, _ := planningObjectKey("acc_restore", "asset-a", 1, RenditionDisplay, digest([]byte("display")))
 	_, err := openVerified(context.Background(), local, key, immutablefs.Metadata{MediaType: "image/png", Size: 1, Checksum: "sha256-wrong"})
 	if !errors.Is(err, immutablefs.ErrIntegrity) {
 		t.Fatalf("metadata mismatch err=%v", err)
+	}
+}
+
+func TestBuildManifestIgnoresOtherSharedBucketNamespaces(t *testing.T) {
+	objects := newLocalStore(t)
+	body := []byte("planning")
+	putFixture(t, objects, "acc_manifest", "asset-a", 1, RenditionDisplay, body, time.Now())
+	avatarBody := []byte("avatar")
+	avatarKey := "avatars/acc_manifest/customers/customer-a/sha256-" + strings.Repeat("0", 64) + "/" + strings.Repeat("0", 32)
+	if _, _, err := objects.PutImmutable(context.Background(), avatarKey, avatarBody, fixtureMetadata(avatarBody, time.Now())); err != nil {
+		t.Fatalf("seed avatar namespace: %v", err)
+	}
+
+	manifest, err := BuildManifest(context.Background(), objects)
+	if err != nil {
+		t.Fatalf("BuildManifest 不应读取 avatars/ 命名空间: %v", err)
+	}
+	if len(manifest.Entries) != 1 || !strings.HasPrefix(manifest.Entries[0].Key, "planning/") {
+		t.Fatalf("planning manifest 命名空间不符: %+v", manifest.Entries)
 	}
 }

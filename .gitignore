@@ -13,7 +13,8 @@ backend/internal/platform/webui/dist/*
 !backend/internal/platform/webui/dist/.gitkeep
 
 # Claude Code 执行 worktree
-.claude/worktrees/
+.claude/
+.zcode/
 .worktrees/
 
 .DS_Store

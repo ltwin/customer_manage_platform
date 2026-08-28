@@ -12,7 +12,7 @@ last_reviewed: 2026-07-13
 
 ## 概述
 
-头像是 Customer 档案的可选属性。PostgreSQL 保存 **写 revision + 五字段 current pointer**；二进制落在 **AvatarObjectStore**（首版 local 持久卷）。公开读取始终走同源鉴权 `GET /api/v1/customers/{id}/avatar/content?v={avatar_version}`，不暴露本地路径、object key 或预签名 URL。
+头像是 Customer 档案的可选属性。PostgreSQL 保存 **写 revision + 五字段 current pointer**；二进制落在 **AvatarObjectStore**（支持 local 持久卷或私有 OSS）。公开读取始终走同源鉴权 `GET /api/v1/customers/{id}/avatar/content?v={avatar_version}`，不暴露本地路径、object key 或预签名 URL。
 
 机器契约以 `api/openapi.yaml` 为准；人类可读 endpoint 参考见 [docs/api/customer-avatar.md](../api/customer-avatar.md)。
 
@@ -20,9 +20,9 @@ last_reviewed: 2026-07-13
 
 - 已完成 `customer-profile-complete`、`order-tracking`、`schedule-calendar`（选择面注入依赖既有 UI）。
 - 环境变量（见 `.env.example`）：
-  - `AVATAR_STORAGE_DRIVER=local`（首版仅 local）
-  - `AVATAR_LOCAL_ROOT` 本地根目录
-  - `AVATAR_LOCAL_REQUIRE_MOUNT`：production compose 为 `true`；二进制直跑缺省 `false`
+  - `AVATAR_STORAGE_DRIVER=local|oss`；完整 OSS 配置与 bucket runbook 见 [object-storage.md](object-storage.md)
+  - local 模式：`AVATAR_LOCAL_ROOT`、`AVATAR_LOCAL_REQUIRE_MOUNT`
+  - oss 模式：`OSS_REGION`、`OSS_BUCKET`，可选 `OSS_ENDPOINT` / `OSS_USE_CNAME`
 - Migration：`backend/internal/platform/store/migrations/0008_customer_avatar.*.sql`
 
 ## 快速上手
@@ -101,7 +101,7 @@ make check   # 全仓门禁；本机 Testcontainers 高并行偶发失败时见 
 
 ## 明确不做
 
-- OSS adapter、预签名直读、客户端直传
+- 预签名直读、客户端直传
 - 建档表单里头像字段
 - 裁剪 / 人脸 / 相册 / 原图 / GIF·SVG·HEIC
 - JSON data-export 内嵌头像二进制（data-export 另有 owner gate）

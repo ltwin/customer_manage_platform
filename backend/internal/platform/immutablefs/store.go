@@ -202,7 +202,7 @@ func (s *Local) List(ctx context.Context, prefix, cursor string, limit int) (Pag
 	if limit < 1 || limit > 1000 {
 		return Page{}, ErrInvalidKey
 	}
-	prefixDir, err := s.safePath(prefix)
+	prefixDir, err := s.safePath(strings.TrimSuffix(prefix, "/"))
 	if err != nil {
 		return Page{}, err
 	}

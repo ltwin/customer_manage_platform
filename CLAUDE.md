@@ -41,6 +41,7 @@
 | HTTP API 参考清单 | `docs/api/manifest.yaml`（已有条目见 `docs/api/`，机器契约仍以 `api/openapi.yaml` 为准） |
 | Reminder / Settings API 参考 | `docs/api/reminders.md`、`docs/api/settings.md` |
 | 客户头像用户/开发/API 指南 | `docs/user/customer-avatar.md`、`docs/dev/customer-avatar.md`、`docs/api/customer-avatar.md` |
+| 对象存储驱动与 OSS bucket 初始化 | `docs/dev/object-storage.md` |
 | 头像 generation 模式沉淀 | `.codestable/compound/2026-07-13-avatar-immutable-generation-pattern.md` |
 | Go 编码规范 checklist | `docs/go-style-checklist.md`（决策：`.codestable/compound/2026-07-06-decision-go-uber-style-guide.md`） |
 | 前端编码规范 checklist | `docs/frontend-style-checklist.md`（决策：`.codestable/compound/2026-07-07-decision-frontend-toolchain-first-standard.md`） |

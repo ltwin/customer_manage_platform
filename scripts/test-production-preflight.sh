@@ -5,11 +5,33 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 preflight="$repo_root/scripts/production-preflight.sh"
 evidence_helper="$repo_root/scripts/lib/auth-preflight-evidence.py"
 work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
+fake_socket="$work_dir/docker.sock"
+python3 - "$fake_socket" <<'PY' &
+import signal
+import socket
+import sys
+
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(sys.argv[1])
+server.listen(1)
+signal.pause()
+PY
+fake_socket_pid=$!
+cleanup_fixture() {
+  kill "$fake_socket_pid" >/dev/null 2>&1 || true
+  wait "$fake_socket_pid" >/dev/null 2>&1 || true
+  rm -rf "$work_dir"
+}
+trap cleanup_fixture EXIT
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  [[ -S "$fake_socket" ]] && break
+  sleep 0.01
+done
+[[ -S "$fake_socket" ]]
 case_count=0
 TEST_PATH="$PATH"
 TEST_DOCKER_HOST=""
-FAKE_ENDPOINT="unix:///var/run/docker.sock"
+FAKE_ENDPOINT="unix://$fake_socket"
 FAKE_VERSION="2.24.0"
 FAKE_RENDER_FILE=""
 DOCKER_LOG="$work_dir/docker.log"
@@ -41,6 +63,31 @@ write_binary_env() {
     printf '%s\n' 'TELEGRAM_BOT_TOKEN='
     printf '%s\n' 'TELEGRAM_BOT_USERNAME='
   } >"$destination"
+}
+
+write_oss_binary_env() {
+  local destination="$1"
+  write_binary_env "$destination"
+  python3 - "$destination" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+lines = [
+    line for line in path.read_text(encoding="utf-8").splitlines()
+    if not line.startswith(("AVATAR_STORAGE_DRIVER=", "AVATAR_LOCAL_ROOT=", "AVATAR_LOCAL_REQUIRE_MOUNT="))
+]
+lines.extend([
+    "AVATAR_STORAGE_DRIVER=oss",
+    "OSS_REGION=cn-hangzhou",
+    "OSS_ENDPOINT=media.example.invalid",
+    "OSS_USE_CNAME=true",
+    "OSS_BUCKET=crm-production-objects",
+    "OSS_ACCESS_KEY_ID=",
+    "OSS_ACCESS_KEY_SECRET=",
+])
+path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
 }
 
 run_preflight() {
@@ -143,7 +190,17 @@ write_render() {
   printf '"AUTH_TOKEN_SECRET":"%s",' "$auth_secret" >>"$destination"
   printf '%s' '"HTTP_ADDR":":8080","AVATAR_STORAGE_DRIVER":"local","AVATAR_LOCAL_ROOT":"/var/lib/crm/avatars","AVATAR_LOCAL_REQUIRE_MOUNT":"true","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"",' >>"$destination"
   printf '"DATABASE_URL":"%s"' "$database_url" >>"$destination"
-  printf '%s' '},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"}]},"postgres":{"image":"postgres:17-alpine","environment":{},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"pgdata":{}}}' >>"$destination"
+  printf '%s' '},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"},{"type":"volume","source":"planning_media_data","target":"/var/lib/crm/planning-media"}]},"postgres":{"image":"postgres:17-alpine","environment":{},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"planning_media_data":{},"pgdata":{}}}' >>"$destination"
+}
+
+write_oss_render() {
+  local destination="$1"
+  local database_url="$2"
+  printf '%s' '{"services":{"app":{"image":"crm:local","environment":{' >"$destination"
+  printf '%s' '"AUTH_TOKEN_SECRET":"0123456789abcdef0123456789abcdef","HTTP_ADDR":":8080",' >>"$destination"
+  printf '%s' '"AVATAR_STORAGE_DRIVER":"oss","OSS_REGION":"cn-hangzhou","OSS_ENDPOINT":"media.example.invalid","OSS_USE_CNAME":"true","OSS_BUCKET":"crm-production-objects","OSS_ACCESS_KEY_ID":"","OSS_ACCESS_KEY_SECRET":"","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"",' >>"$destination"
+  printf '"DATABASE_URL":"%s"' "$database_url" >>"$destination"
+  printf '%s' '},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"},{"type":"volume","source":"planning_media_data","target":"/var/lib/crm/planning-media"}]},"postgres":{"image":"postgres:17-alpine","environment":{},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"planning_media_data":{},"pgdata":{}}}' >>"$destination"
 }
 
 fake_bin="$work_dir/fake-bin"
@@ -178,6 +235,27 @@ run_preflight binary-valid 0 \
   --mode binary --seed-state initialized --env-file "$valid_env"
 grep -qx 'readiness/registration=secure-baseline-ready' "$work_dir/binary-valid.out"
 grep -qx 'complete/preflight=secure-baseline-ready' "$work_dir/binary-valid.out"
+
+oss_binary_env="$work_dir/oss-binary.env"
+write_oss_binary_env "$oss_binary_env"
+run_preflight binary-oss-valid 0 \
+  --mode binary --seed-state initialized --env-file "$oss_binary_env"
+grep -qx 'config-matrix/AVATAR_STORAGE_DRIVER=ok' "$work_dir/binary-oss-valid.out"
+grep -qx 'support-boundary/backup-restore=unsupported' "$work_dir/binary-oss-valid.out"
+
+oss_partial_credentials_env="$work_dir/oss-partial-credentials.env"
+sed 's/^OSS_ACCESS_KEY_ID=$/OSS_ACCESS_KEY_ID=synthetic-access-key/' \
+  "$oss_binary_env" >"$oss_partial_credentials_env"
+run_preflight binary-oss-partial-credentials 4 \
+  --mode binary --seed-state initialized --env-file "$oss_partial_credentials_env"
+grep -q 'key=OSS_CREDENTIALS' "$work_dir/binary-oss-partial-credentials.err"
+
+oss_missing_cname_endpoint_env="$work_dir/oss-missing-cname-endpoint.env"
+sed 's/^OSS_ENDPOINT=.*$/OSS_ENDPOINT=/' \
+  "$oss_binary_env" >"$oss_missing_cname_endpoint_env"
+run_preflight binary-oss-missing-cname-endpoint 4 \
+  --mode binary --seed-state initialized --env-file "$oss_missing_cname_endpoint_env"
+grep -q 'key=OSS_ENDPOINT' "$work_dir/binary-oss-missing-cname-endpoint.err"
 
 duplicate_env="$work_dir/duplicate.env"
 write_binary_env "$duplicate_env"
@@ -438,6 +516,26 @@ fi
 grep -q -- 'compose --env-file ' "$DOCKER_LOG"
 grep -q -- '--project-name crm-fixture config --format json' "$DOCKER_LOG"
 
+managed_oss_env="$work_dir/managed-oss.env"
+managed_oss_render="$work_dir/managed-oss-render.json"
+write_managed_env "$managed_oss_env"
+{
+  printf '%s\n' 'AVATAR_STORAGE_DRIVER=oss'
+  printf '%s\n' 'OSS_REGION=cn-hangzhou'
+  printf '%s\n' 'OSS_ENDPOINT=media.example.invalid'
+  printf '%s\n' 'OSS_USE_CNAME=true'
+  printf '%s\n' 'OSS_BUCKET=crm-production-objects'
+  printf '%s\n' 'OSS_ACCESS_KEY_ID='
+  printf '%s\n' 'OSS_ACCESS_KEY_SECRET='
+} >>"$managed_oss_env"
+write_oss_render "$managed_oss_render" 'postgres://crm:managed-production-password@postgres:5432/crm?sslmode=disable'
+FAKE_RENDER_FILE="$managed_oss_render"
+run_preflight managed-oss-valid 0 \
+  --mode compose-managed-db --seed-state initialized --env-file "$managed_oss_env" \
+  --compose-file "$repo_root/docker-compose.yml" --docker-context local-fixture --project-name crm-fixture
+grep -qx 'support-boundary/backup-restore=unsupported' "$work_dir/managed-oss-valid.out"
+FAKE_RENDER_FILE="$managed_render"
+
 managed_enabled_env="$work_dir/managed-enabled.env"
 sed 's/^AUTH_PUBLIC_REGISTRATION_ENABLED=false$/AUTH_PUBLIC_REGISTRATION_ENABLED=true/' \
   "$managed_env" >"$managed_enabled_env"
@@ -477,7 +575,7 @@ run_preflight selector-remote-context 2 \
   --mode compose-managed-db --seed-state initialized --env-file "$managed_env" \
   --compose-file "$repo_root/docker-compose.yml" --docker-context remote-fixture --project-name crm-fixture
 [[ "$(wc -l <"$DOCKER_LOG")" -eq 1 ]]
-FAKE_ENDPOINT='unix:///var/run/docker.sock'
+FAKE_ENDPOINT="unix://$fake_socket"
 
 FAKE_VERSION='2.23.9'
 : >"$DOCKER_LOG"

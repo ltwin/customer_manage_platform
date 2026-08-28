@@ -83,7 +83,8 @@ func TestPostgresUploadSingleCanonicalClaimReplayAndObjectFaultCleanup(t *testin
 	if err != nil || len(expected) != 2 {
 		t.Fatalf("database inventory=%+v err=%v", expected, err)
 	}
-	orphanKey, err := planningObjectKey(scope.AccountID(), "orphan-s3", 1, RenditionDisplay)
+	orphanChecksum := digest([]byte("orphan-physical"))
+	orphanKey, err := planningObjectKey(scope.AccountID(), "orphan-s3", 1, RenditionDisplay, orphanChecksum)
 	if err != nil {
 		t.Fatal(err)
 	}

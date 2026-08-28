@@ -14,29 +14,68 @@ import (
 
 var objectKeySegment = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 
-func planningObjectKey(accountID, assetID string, generation int, rendition RenditionKind) (string, error) {
+func planningObjectKey(
+	accountID string,
+	assetID string,
+	generation int,
+	rendition RenditionKind,
+	checksum string,
+) (string, error) {
 	if !objectKeySegment.MatchString(accountID) || !objectKeySegment.MatchString(assetID) || generation < 1 ||
-		(rendition != RenditionOriginal && rendition != RenditionDisplay) {
+		(rendition != RenditionOriginal && rendition != RenditionDisplay) || !validObjectChecksum(checksum) {
 		return "", fmt.Errorf("planning_media_object_key_invalid")
 	}
-	return path.Join("planning", accountID, "assets", assetID, fmt.Sprintf("g%d", generation), string(rendition)), nil
+	return path.Join("planning", accountID, "assets", assetID, fmt.Sprintf("g%d", generation), checksum, string(rendition)), nil
 }
 
 func parsePlanningObjectKey(key string) (accountID, assetID string, generation int, rendition RenditionKind, err error) {
 	parts := strings.Split(key, "/")
-	if len(parts) != 6 || parts[0] != "planning" || parts[2] != "assets" || !strings.HasPrefix(parts[4], "g") {
+	if (len(parts) != 6 && len(parts) != 7) || parts[0] != "planning" || parts[2] != "assets" || !strings.HasPrefix(parts[4], "g") {
 		return "", "", 0, "", fmt.Errorf("planning_media_object_key_invalid")
 	}
 	generation, err = strconv.Atoi(strings.TrimPrefix(parts[4], "g"))
 	if err != nil {
 		return "", "", 0, "", fmt.Errorf("planning_media_object_key_invalid")
 	}
-	rendering := RenditionKind(parts[5])
-	canonical, err := planningObjectKey(parts[1], parts[3], generation, rendering)
+	if len(parts) == 6 {
+		rendering := RenditionKind(parts[5])
+		if !legacyPlanningObjectKeyIsCanonical(parts[1], parts[3], generation, rendering, key) {
+			return "", "", 0, "", fmt.Errorf("planning_media_object_key_invalid")
+		}
+		return parts[1], parts[3], generation, rendering, nil
+	}
+	rendering := RenditionKind(parts[6])
+	canonical, err := planningObjectKey(parts[1], parts[3], generation, rendering, parts[5])
 	if err != nil || canonical != key {
 		return "", "", 0, "", fmt.Errorf("planning_media_object_key_invalid")
 	}
 	return parts[1], parts[3], generation, rendering, nil
+}
+
+func legacyPlanningObjectKeyIsCanonical(
+	accountID string,
+	assetID string,
+	generation int,
+	rendition RenditionKind,
+	key string,
+) bool {
+	if !objectKeySegment.MatchString(accountID) || !objectKeySegment.MatchString(assetID) || generation < 1 ||
+		(rendition != RenditionOriginal && rendition != RenditionDisplay) {
+		return false
+	}
+	return path.Join("planning", accountID, "assets", assetID, fmt.Sprintf("g%d", generation), string(rendition)) == key
+}
+
+func validObjectChecksum(value string) bool {
+	if len(value) != len("sha256-")+64 || !strings.HasPrefix(value, "sha256-") {
+		return false
+	}
+	for _, char := range strings.TrimPrefix(value, "sha256-") {
+		if char < '0' || char > '9' && char < 'a' || char > 'f' {
+			return false
+		}
+	}
+	return true
 }
 
 type AssetState string
