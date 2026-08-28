@@ -5,6 +5,7 @@ import { authorizedFetch } from '../auth/session'
 export type ShootPlanStatus = components['schemas']['ShootPlanStatus']
 export type ShootPlanList = components['schemas']['ShootPlanList']
 export type ShootPlanListItem = components['schemas']['ShootPlanListItem']
+export type ShootPlanListSort = components['schemas']['ShootPlanListSort']
 export type ShootPlanDetail = components['schemas']['ShootPlanDetail']
 export type ShootPlanShot = components['schemas']['ShootPlanShot']
 export type ShootPlanReadinessItem = components['schemas']['ShootPlanReadinessItem']
@@ -53,12 +54,16 @@ export type ScheduleDurationDraftView = components['schemas']['ScheduleDurationD
 export function listShootPlans(params: {
   status?: ShootPlanStatus
   archived?: boolean
+  q?: string
+  sort?: ShootPlanListSort
   page?: number
   pageSize?: number
 } = {}): Promise<ShootPlanList> {
   const search = new URLSearchParams()
   if (params.status) search.set('status', params.status)
   if (params.archived !== undefined) search.set('archived', String(params.archived))
+  if (params.q) search.set('q', params.q)
+  if (params.sort) search.set('sort', params.sort)
   if (params.page) search.set('page', String(params.page))
   if (params.pageSize) search.set('page_size', String(params.pageSize))
   const query = search.toString()

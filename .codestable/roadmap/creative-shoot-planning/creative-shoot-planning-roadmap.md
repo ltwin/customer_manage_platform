@@ -476,7 +476,13 @@ ScheduleDurationDraft
 ```http
 # Bearer + AccountScope
 POST   /api/v1/shoot-plans
-GET    /api/v1/shoot-plans
+GET    /api/v1/shoot-plans?q=&sort=&status=&archived=&customer_id=&order_id=&page=&page_size=
+                                  # q 大小写不敏感子串匹配 title/subject，首尾空白忽略，
+                                  #   去空白后为空视为未传，>120 字 400；
+                                  # sort ∈ updated_at_desc(默认)|updated_at_asc|created_at_desc，
+                                  #   服务端映射为固定列白名单并一律以 id 兜底，客户端永不传列名，
+                                  #   未知值 400；
+                                  # q/status 过滤一律发生在分页之前，禁止前端取一页后自行筛选或排序
 GET    /api/v1/shoot-plans/{id}
 PATCH  /api/v1/shoot-plans/{id}
 POST   /api/v1/shoot-plans/{id}/transitions

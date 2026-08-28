@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,6 +51,93 @@ func TestPostgresRepositoryAccountIsolationAndStableList(t *testing.T) {
 	}
 	if _, err := repo.Detail(ctx, scopeB, first.ID, false); !errors.Is(err, shootplanning.ErrPlanNotFound) {
 		t.Fatalf("cross-account detail error = %v, want not found", err)
+	}
+}
+
+func TestPostgresRepositoryListKeywordAndSort(t *testing.T) {
+	ctx := context.Background()
+	db := openPlanningStore(t)
+	scope := createPlanningAccount(t, db, "shoot-plan-list-query")
+	other := createPlanningAccount(t, db, "shoot-plan-list-query-other")
+	repo := shootplanning.NewPostgresRepository()
+
+	for _, input := range []shootplanning.CreatePlanInput{
+		{Title: "夜景人像", Subject: "模特 A"},
+		{Title: "晨雾外拍", Subject: "夜景补拍备选"},
+		{Title: "Studio Portrait", Subject: "模特 B"},
+	} {
+		if _, err := repo.Create(ctx, scope, input); err != nil {
+			t.Fatalf("create plan %q: %v", input.Title, err)
+		}
+	}
+	// 关键词不得越过账号边界。
+	if _, err := repo.Create(ctx, other, shootplanning.CreatePlanInput{Title: "夜景别的账号", Subject: "模特 C"}); err != nil {
+		t.Fatalf("create other-account plan: %v", err)
+	}
+
+	// 关键词同时命中 title 与 subject，且过滤发生在分页之前（total 与页内容同口径）。
+	byKeyword, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Q: "夜景", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list by keyword: %v", err)
+	}
+	if byKeyword.Total != 2 || len(byKeyword.Items) != 2 {
+		t.Fatalf("keyword list = total %d items %d, want 2/2: %+v", byKeyword.Total, len(byKeyword.Items), byKeyword.Items)
+	}
+	for _, item := range byKeyword.Items {
+		if !strings.Contains(item.Title, "夜景") && !strings.Contains(item.Subject, "夜景") {
+			t.Fatalf("keyword list leaked non-matching plan: %+v", item)
+		}
+	}
+
+	// 大小写不敏感。
+	lower, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Q: "studio", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list by lowercase keyword: %v", err)
+	}
+	if lower.Total != 1 || len(lower.Items) != 1 || lower.Items[0].Title != "Studio Portrait" {
+		t.Fatalf("case-insensitive keyword list = %+v", lower)
+	}
+
+	// 首尾空白不参与匹配。
+	padded, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Q: "  夜景  ", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list by padded keyword: %v", err)
+	}
+	if padded.Total != byKeyword.Total {
+		t.Fatalf("padded keyword total = %d, want %d", padded.Total, byKeyword.Total)
+	}
+
+	desc, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Sort: shootplanning.PlanListSortUpdatedDesc, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list updated desc: %v", err)
+	}
+	asc, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Sort: shootplanning.PlanListSortUpdatedAsc, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list updated asc: %v", err)
+	}
+	if len(desc.Items) != 3 || len(asc.Items) != len(desc.Items) {
+		t.Fatalf("sorted lists have unexpected sizes: desc=%d asc=%d", len(desc.Items), len(asc.Items))
+	}
+	// id 兜底让两个方向严格互为倒序，即使 updated_at 在同一刻撞值。
+	for i := range desc.Items {
+		if desc.Items[i].ID != asc.Items[len(asc.Items)-1-i].ID {
+			t.Fatalf("updated_at asc is not the exact reverse of desc: desc=%+v asc=%+v", desc.Items, asc.Items)
+		}
+	}
+
+	created, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Sort: shootplanning.PlanListSortCreatedDesc, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list created desc: %v", err)
+	}
+	if created.Total != 3 || len(created.Items) != 3 {
+		t.Fatalf("created desc list = total %d items %d, want 3/3", created.Total, len(created.Items))
+	}
+
+	if _, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Sort: "title_asc", Page: 1, PageSize: 20}); err == nil {
+		t.Fatal("unknown sort key must be rejected")
+	}
+	if _, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Q: strings.Repeat("夜", 121), Page: 1, PageSize: 20}); err == nil {
+		t.Fatal("over-long keyword must be rejected")
 	}
 }
 

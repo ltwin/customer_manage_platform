@@ -38,12 +38,24 @@ func (h *shootPlanningHandlers) ListShootPlans(c *gin.Context, params shootplann
 	if !ok {
 		return
 	}
-	if !onlyQueryParameters(c, "status", "archived", "page", "page_size", "customer_id", "order_id") ||
-		(params.Status != nil && !params.Status.Valid()) {
+	if !onlyQueryParameters(c, "status", "archived", "page", "page_size", "customer_id", "order_id", "q", "sort") ||
+		(params.Status != nil && !params.Status.Valid()) ||
+		(params.Sort != nil && !params.Sort.Valid()) {
 		abortShootPlanningValidation(c)
 		return
 	}
 	filter := shootplanning.ListPlansFilter{Page: 1, PageSize: 20}
+	if params.Q != nil {
+		keyword, ok := shootplanning.PlanListKeyword(*params.Q)
+		if !ok {
+			abortShootPlanningValidation(c)
+			return
+		}
+		filter.Q = keyword
+	}
+	if params.Sort != nil {
+		filter.Sort = shootplanning.PlanListSort(*params.Sort)
+	}
 	if params.Status != nil {
 		status := shootplanning.PlanStatus(*params.Status)
 		filter.Status = &status

@@ -258,6 +258,22 @@ func TestShootPlanningHTTPVerticalSlice(t *testing.T) {
 	badQuery := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans?account_id=acct-other", accountAToken, "", "")
 	requirePlanningError(t, badQuery, http.StatusBadRequest, httpapi.CodeValidationFailed)
 
+	searched := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans?q=%E5%A4%9C%E6%99%AF&sort=created_at_desc", accountAToken, "", "")
+	if searched.Code != http.StatusOK || !strings.Contains(searched.Body.String(), createdPlan.ID) {
+		t.Fatalf("list plans by keyword: %d %s", searched.Code, searched.Body.String())
+	}
+	missed := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans?q=%E6%B2%A1%E6%9C%89%E8%BF%99%E4%B8%AA", accountAToken, "", "")
+	if missed.Code != http.StatusOK || strings.Contains(missed.Body.String(), createdPlan.ID) {
+		t.Fatalf("non-matching keyword must not return the plan: %d %s", missed.Code, missed.Body.String())
+	}
+	badSort := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans?sort=title_asc", accountAToken, "", "")
+	requirePlanningError(t, badSort, http.StatusBadRequest, httpapi.CodeValidationFailed)
+	// 排序键永远只是枚举名：SQL 片段必须在 handler 就被拒。
+	injectedSort := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans?sort=updated_at+DESC%2C+account_id", accountAToken, "", "")
+	requirePlanningError(t, injectedSort, http.StatusBadRequest, httpapi.CodeValidationFailed)
+	longKeyword := shootPlanningRequest(t, router, http.MethodGet, "/api/v1/shoot-plans?q="+strings.Repeat("a", 121), accountAToken, "", "")
+	requirePlanningError(t, longKeyword, http.StatusBadRequest, httpapi.CodeValidationFailed)
+
 	hash, err := auth.HashPassword(testPassword)
 	if err != nil {
 		t.Fatalf("hash account B password: %v", err)

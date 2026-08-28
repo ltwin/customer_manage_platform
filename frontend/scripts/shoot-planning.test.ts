@@ -838,11 +838,38 @@ test('plan list pages through the ledger instead of capping at one fixed page', 
   assert.match(plans, /加载更多（\$\{list\.items\.length\}\/\$\{list\.total\}）/)
   // 下一页是追加，不是替换。
   assert.match(plans, /items: \[\.\.\.data\.items, \.\.\.result\.items\], total: result\.total, page: nextPage/)
-  // 换筛选作废在途请求，旧筛选的下一页不得追进新列表。
+  // 换查询条件作废在途请求，旧条件的下一页不得追进新列表。
   assert.match(plans, /loadMoreRequestSeq\.current \+= 1\s*\n\s*setLoadingMore\(false\)/)
-  assert.match(plans, /loadMoreRequestSeq\.current === requestSeq && filterRef\.current === requestFilter/)
+  assert.match(plans, /loadMoreRequestSeq\.current === requestSeq && queryRef\.current === requestQuery/)
   // 下一页失败走 stale 分支，已加载的策划留在页面上。
   assert.match(plans, /failPageRead\(current, planningErrorMessage\(error, '加载更多失败，仍显示已加载的策划'\)/)
+})
+
+// U7b：关键词与排序都在服务端完成，前端不得取一页再自己筛或自己排。
+test('plan list搜索与排序走生成契约，过滤与排序都在服务端', () => {
+  const plans = source('../src/planning/ShootPlansPage.tsx')
+  const api = source('../src/planning/api.ts')
+  const schema = source('../src/api/schema.d.ts')
+
+  assert.match(schema, /ShootPlanListSort: "updated_at_desc" \| "updated_at_asc" \| "created_at_desc"/)
+  assert.match(api, /export type ShootPlanListSort = components\['schemas'\]\['ShootPlanListSort'\]/)
+  assert.match(api, /if \(params\.q\) search\.set\('q', params\.q\)/)
+  assert.match(api, /if \(params\.sort\) search\.set\('sort', params\.sort\)/)
+
+  assert.match(plans, /type PlanListQuery = \{ q: string; sort: ShootPlanListSort; filter: 'all' \| ShootPlanStatus \}/)
+  assert.match(plans, /q: keyword\.trim\(\)/)
+  assert.match(plans, /没有匹配「\$\{query\.q\}」的拍摄策划/)
+  // 首页与下一页共用同一个请求构造，参数不会两处各写一遍而漂移。
+  assert.match(plans, /listShootPlans\(listRequest\(query, 1\)\)/)
+  assert.match(plans, /listShootPlans\(listRequest\(requestQuery, nextPage\)\)/)
+  for (const label of ['最近更新', '最久未更新', '最新创建']) {
+    assert.ok(plans.includes(label), label)
+  }
+  // 客户端只送排序键，绝不送列名。
+  assert.doesNotMatch(plans, /updated_at DESC|order_by|ORDER BY/)
+  // 搜索框与排序框都有可见标签（e2e 断言页面零个无标签控件）。
+  assert.match(plans, /<span>搜索<\/span>\s*\n\s*<input className="input" type="search"/)
+  assert.match(plans, /<span>排序<\/span>/)
 })
 
 // 用户可见文案里不允许再出现英文功能名或同一功能的旧称。

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShell } from '../components/shellContext'
 import StateNotice from '../components/StateNotice'
@@ -15,6 +15,7 @@ import {
   listShootPlans,
   newPlanningMutationKey,
   type ShootPlanListItem,
+  type ShootPlanListSort,
   type ShootPlanStatus,
 } from './api'
 import StatusBadge from './StatusBadge'
@@ -24,21 +25,51 @@ import './planning.css'
 
 const planPageSize = 50
 
+const sortOptions: ReadonlyArray<{ value: ShootPlanListSort; label: string }> = [
+  { value: 'updated_at_desc', label: '最近更新' },
+  { value: 'updated_at_asc', label: '最久未更新' },
+  { value: 'created_at_desc', label: '最新创建' },
+]
+
 // 累加式翻页：已加载的页留在列表里，page 记住下一页从哪续。
 type PlanListPage = { items: ShootPlanListItem[]; total: number; page: number }
+
+// 查询条件是一个整体：搜索、排序、状态任一变化都要重开列表，
+// 所以翻页的「是否还是同一份查询」只比这一个对象。
+type PlanListQuery = { q: string; sort: ShootPlanListSort; filter: 'all' | ShootPlanStatus }
+
+function listRequest(query: PlanListQuery, page: number) {
+  return {
+    status: query.filter === 'all' ? undefined : query.filter,
+    archived: query.filter === 'archived',
+    q: query.q || undefined,
+    sort: query.sort,
+    page,
+    pageSize: planPageSize,
+  }
+}
+
+function emptyListMessage(query: PlanListQuery): string {
+  if (query.q) return `没有匹配「${query.q}」的拍摄策划。换个关键词，或清空搜索看全部。`
+  if (query.filter !== 'all') return '当前筛选下没有拍摄策划。'
+  return '还没有拍摄策划。把和客户聊过的记录粘进「从聊天整理」，一次生成镜头与准备项；也可以先空白建案，之后再补。'
+}
 
 export default function ShootPlansPage() {
   const navigate = useNavigate()
   const { notify } = useShell()
   const [filter, setFilter] = useState<'all' | ShootPlanStatus>('all')
+  const [keyword, setKeyword] = useState('')
+  const [sort, setSort] = useState<ShootPlanListSort>('updated_at_desc')
   const [reloadTick, setReloadTick] = useState(0)
   const [state, setState] = useState<PageReadState<PlanListPage>>({ kind: 'loading', message: '正在加载拍摄策划' })
   const [creating, setCreating] = useState<'ingestion' | 'workspace' | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
-  const filterRef = useRef(filter)
+  const query = useMemo<PlanListQuery>(() => ({ q: keyword.trim(), sort, filter }), [filter, keyword, sort])
+  const queryRef = useRef(query)
   const loadMoreRequestSeq = useRef(0)
 
-  useEffect(() => { filterRef.current = filter }, [filter])
+  useEffect(() => { queryRef.current = query }, [query])
 
   // 一键空白建案：标题/主体给默认值（后端要求非空），客户、订单与档期都可后补。
   // 两个入口建的都是同一份空白策划，区别只在建完落到哪一步：主路径直接进「从聊天整理」，
@@ -60,41 +91,31 @@ export default function ShootPlansPage() {
   const reload = useCallback(() => setReloadTick((value) => value + 1), [])
   useEffect(() => {
     let active = true
-    // 换筛选等于重开一份列表：在途的「加载更多」作废，避免旧筛选的下一页追进新结果。
+    // 换查询条件等于重开一份列表：在途的「加载更多」作废，避免旧条件的下一页追进新结果。
     loadMoreRequestSeq.current += 1
     setLoadingMore(false)
     setState((current) => beginPageRead(current, '正在加载拍摄策划', true))
-    listShootPlans({
-      status: filter === 'all' ? undefined : filter,
-      archived: filter === 'archived' ? true : false,
-      page: 1,
-      pageSize: planPageSize,
-    }).then((result) => {
+    listShootPlans(listRequest(query, 1)).then((result) => {
       if (!active) return
-      setState(completePageRead({ items: result.items, total: result.total, page: 1 }, result.items.length === 0, filter === 'all' ? '还没有拍摄策划。把和客户聊过的记录粘进「从聊天整理」，一次生成镜头与准备项；也可以先空白建案，之后再补。' : '当前筛选下没有拍摄策划。'))
+      setState(completePageRead({ items: result.items, total: result.total, page: 1 }, result.items.length === 0, emptyListMessage(query)))
     }).catch((error: unknown) => {
       if (!active) return
       setState((current) => failPageRead(current, planningErrorMessage(error, '拍摄策划加载失败'), reload))
     })
     return () => { active = false }
-  }, [filter, reloadTick, reload])
+  }, [query, reloadTick, reload])
 
   async function loadMorePlans() {
     const loaded = readyPageData(state)
     if (!loaded) return
     const nextPage = loaded.page + 1
-    const requestFilter = filter
+    const requestQuery = query
     const requestSeq = loadMoreRequestSeq.current + 1
     loadMoreRequestSeq.current = requestSeq
-    const requestStillCurrent = () => loadMoreRequestSeq.current === requestSeq && filterRef.current === requestFilter
+    const requestStillCurrent = () => loadMoreRequestSeq.current === requestSeq && queryRef.current === requestQuery
     setLoadingMore(true)
     try {
-      const result = await listShootPlans({
-        status: requestFilter === 'all' ? undefined : requestFilter,
-        archived: requestFilter === 'archived' ? true : false,
-        page: nextPage,
-        pageSize: planPageSize,
-      })
+      const result = await listShootPlans(listRequest(requestQuery, nextPage))
       if (!requestStillCurrent()) return
       setState((current) => {
         const data = readyPageData(current)
@@ -132,15 +153,29 @@ export default function ShootPlansPage() {
             <h2>全部拍摄策划</h2>
             <p className="muted-text">策划是独立的创作工具，不关联客户或订单也能正常使用。</p>
           </div>
-          <label className="planning-filter">
-            <span>状态筛选</span>
-            <select className="input" value={filter} onChange={(event) => setFilter(event.target.value as 'all' | ShootPlanStatus)}>
-              <option value="all">全部状态</option>
-              {(['draft', 'ready', 'in_progress', 'completed', 'archived'] as const).map((status) => (
-                <option key={status} value={status}>{shootPlanStatusLabel(status)}</option>
-              ))}
-            </select>
-          </label>
+          <div className="planning-filters">
+            <label className="planning-filter">
+              <span>搜索</span>
+              <input className="input" type="search" value={keyword} maxLength={120} placeholder="标题或拍摄主体" onChange={(event) => setKeyword(event.target.value)} />
+            </label>
+            <label className="planning-filter">
+              <span>状态筛选</span>
+              <select className="input" value={filter} onChange={(event) => setFilter(event.target.value as 'all' | ShootPlanStatus)}>
+                <option value="all">全部状态</option>
+                {(['draft', 'ready', 'in_progress', 'completed', 'archived'] as const).map((status) => (
+                  <option key={status} value={status}>{shootPlanStatusLabel(status)}</option>
+                ))}
+              </select>
+            </label>
+            <label className="planning-filter">
+              <span>排序</span>
+              <select className="input" value={sort} onChange={(event) => setSort(event.target.value as ShootPlanListSort)}>
+                {sortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
         </section>
 
         {presentation.notice && <StateNotice {...presentation.notice} />}

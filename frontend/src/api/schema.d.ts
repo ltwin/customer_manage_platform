@@ -657,7 +657,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 稳定分页列出当前账号的拍摄策划 */
+        /** 稳定分页列出当前账号的拍摄策划（q 匹配 title/subject） */
         get: operations["listShootPlans"];
         put?: never;
         /** 创建不依赖客户、订单或档期的拍摄策划 */
@@ -1961,6 +1961,12 @@ export interface components {
         };
         /** @enum {string} */
         ShootPlanStatus: "draft" | "ready" | "in_progress" | "completed" | "archived";
+        /**
+         * @description 拍摄策划列表排序键；服务端把它映射为固定列名白名单，客户端永不传列名
+         * @default updated_at_desc
+         * @enum {string}
+         */
+        ShootPlanListSort: "updated_at_desc" | "updated_at_asc" | "created_at_desc";
         /** @enum {string} */
         ShootPlanCaptureMode: "live" | "backfill" | "unknown";
         /** @enum {string} */
@@ -5639,6 +5645,10 @@ export interface operations {
     listShootPlans: {
         parameters: {
             query?: {
+                /** @description 关键词，大小写不敏感子串匹配 title/subject；首尾空白忽略，去空白后为空视为未传；过滤发生在分页前，超过 120 字为 400 */
+                q?: string;
+                /** @description 列表排序；缺省 updated_at_desc。任一排序都以 id 兜底，保证同值行的分页稳定 */
+                sort?: components["schemas"]["ShootPlanListSort"];
                 status?: components["schemas"]["ShootPlanStatus"];
                 archived?: boolean;
                 customer_id?: string;
