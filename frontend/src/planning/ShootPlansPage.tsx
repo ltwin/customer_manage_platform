@@ -28,19 +28,22 @@ export default function ShootPlansPage() {
   const [filter, setFilter] = useState<'all' | ShootPlanStatus>('all')
   const [reloadTick, setReloadTick] = useState(0)
   const [state, setState] = useState<PageReadState<ShootPlanList>>({ kind: 'loading', message: '正在加载拍摄策划' })
-  const [creating, setCreating] = useState(false)
+  const [creating, setCreating] = useState<'ingestion' | 'workspace' | null>(null)
 
   // 一键空白建案：标题/主体给默认值（后端要求非空），客户、订单与档期都可后补。
-  async function createBlank() {
-    setCreating(true)
+  // 两个入口建的都是同一份空白策划，区别只在建完落到哪一步：主路径直接进「从聊天整理」，
+  // 次级入口保留摄影师零成本先建案、之后再补信息的走法。
+  async function createBlank(next: 'ingestion' | 'workspace') {
+    setCreating(next)
     try {
       const plan = await createShootPlan({ title: '未命名策划', subject: '待补充' }, newPlanningMutationKey('create'))
-      notify('已新建空白策划（客户与订单均可留空）')
-      navigate(`/shoot-plans/${encodeURIComponent(plan.id)}`)
+      notify(next === 'ingestion' ? '已新建策划，接着把聊天记录整理成方案。' : '已新建空白策划（客户与订单均可留空）')
+      const path = `/shoot-plans/${encodeURIComponent(plan.id)}`
+      navigate(next === 'ingestion' ? `${path}/ingestions/new` : path)
     } catch (cause) {
       notify(planningErrorMessage(cause, '新建策划失败；请稍后重试。'))
     } finally {
-      setCreating(false)
+      setCreating(null)
     }
   }
 
@@ -55,7 +58,7 @@ export default function ShootPlansPage() {
       pageSize: 50,
     }).then((result) => {
       if (!active) return
-      setState(completePageRead(result, result.items.length === 0, filter === 'all' ? '还没有拍摄策划，可以先新建一份空白策划。' : '当前筛选下没有拍摄策划。'))
+      setState(completePageRead(result, result.items.length === 0, filter === 'all' ? '还没有拍摄策划。把和客户聊过的记录粘进「从聊天整理」，一次生成镜头与准备项；也可以先空白建案，之后再补。' : '当前筛选下没有拍摄策划。'))
     }).catch((error: unknown) => {
       if (!active) return
       setState((current) => failPageRead(current, planningErrorMessage(error, '拍摄策划加载失败'), reload))
@@ -74,7 +77,8 @@ export default function ShootPlansPage() {
           <h1>拍摄策划</h1>
         </div>
         <div className="topbar-actions">
-          <button className="btn btn-primary" type="button" disabled={creating} onClick={() => void createBlank()}>{creating ? '正在创建…' : '＋ 新建策划'}</button>
+          <button className="btn btn-primary" type="button" disabled={creating !== null} onClick={() => void createBlank('ingestion')}>{creating === 'ingestion' ? '正在创建…' : '＋ 从聊天整理'}</button>
+          <button className="btn" type="button" disabled={creating !== null} onClick={() => void createBlank('workspace')}>{creating === 'workspace' ? '正在创建…' : '空白建案'}</button>
         </div>
       </header>
       <main className="content planning-content">

@@ -24,7 +24,7 @@ export default function BriefPanel({ plan, busy, runCommand }: { plan: ShootPlan
         <summary>进度怎么流转</summary>
         <ol>
           <li>草稿 → 已就绪：只检查你显式标为「必需」的准备项</li>
-          <li>已就绪 → 拍摄中：进入 Run Mode 或手动开始</li>
+          <li>已就绪 → 拍摄中：进入现场模式 或手动开始</li>
           <li>拍摄中 → 已完成：每个镜头要么已捕获、要么已跳过（跳过须写原因）</li>
           <li>已完成后想再改，需要先「重新打开」</li>
         </ol>

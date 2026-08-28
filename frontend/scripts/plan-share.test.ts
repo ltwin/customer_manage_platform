@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { isClaimReceiptWireFormat, isWebCryptoAvailable } from '../src/planning/share/crypto.ts'
+import { fromDatetimeLocal, toDatetimeLocal } from '../src/planning/share/expiry.ts'
 import {
   fullViewEligibilityNote,
   isStaleRefreshCode,
@@ -203,4 +204,38 @@ test('anonymous share page title tracks view level and expiry; footer explains l
   assert.match(common, /只用于标注这条意见来自谁，不作为登录身份，也不会用来给你发通知。/)
   // 锁定占位改为摄影师第一人称承诺（原型口径）。
   assert.match(proposal, /等我们确认档期、拍摄单排好之后，我会给你一个完整版链接/)
+})
+
+test('share expiry input is expressed in the photographer local timezone and still serialized as UTC', () => {
+  const panel = source('../src/planning/share/ShareCollaborationPanel.tsx')
+
+  assert.match(panel, /<span>到期时间（本地时间）<\/span>/)
+  assert.doesNotMatch(panel, /绝对到期时间|UTC/)
+  assert.match(panel, /import \{ fromDatetimeLocal, toDatetimeLocal \} from '\.\/expiry'/)
+  // 换算逻辑集中在 expiry.ts；面板里不得再出现 getUTC* / Date.UTC 的本地化倒退。
+  assert.doesNotMatch(panel, /getUTC|Date\.UTC/)
+})
+
+test('expiry converters round-trip local wall time against UTC ISO on both sides of UTC', () => {
+  const original = process.env.TZ
+  try {
+    for (const [zone, wall, expected] of [
+      ['Asia/Shanghai', '2026-08-28T18:00', '2026-08-28T10:00:00.000Z'],
+      ['America/New_York', '2026-08-28T18:00', '2026-08-28T22:00:00.000Z'],
+      ['UTC', '2026-08-28T18:00', '2026-08-28T18:00:00.000Z'],
+    ] as const) {
+      process.env.TZ = zone
+      assert.equal(fromDatetimeLocal(wall), expected, `${zone} local -> UTC`)
+      assert.equal(toDatetimeLocal(expected), wall, `${zone} UTC -> local`)
+    }
+
+    // 空值与非法输入回落到「此刻」，控件清空不会写出 Invalid Date。
+    process.env.TZ = 'Asia/Shanghai'
+    assert.match(fromDatetimeLocal(''), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    assert.match(fromDatetimeLocal('not-a-date'), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    assert.equal(toDatetimeLocal('not-a-date'), '')
+  } finally {
+    if (original === undefined) delete process.env.TZ
+    else process.env.TZ = original
+  }
 })

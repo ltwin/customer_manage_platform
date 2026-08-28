@@ -106,7 +106,7 @@ export default function ReadinessPanel({ plan, busy, runCommand }: { plan: Shoot
                           {item.default_preparation_lead_days !== undefined && item.default_preparation_lead_days !== null && <span>建议提前 {item.default_preparation_lead_days} 天</span>}
                         </div>
                         {missingPositions.length > 0 && (
-                          <p className="planning-site-missing">现场缺失 · 来自 Run Mode 第 {missingPositions.join('、')} 镜跳过记录</p>
+                          <p className="planning-site-missing">现场缺失 · 来自现场模式第 {missingPositions.join('、')} 镜跳过记录</p>
                         )}
                         {linkedShots.length > 0 && <p className="planning-linked-shots">关联镜头：{linkedShots.map((shot) => shot.title).join('、')}</p>}
                       </div>

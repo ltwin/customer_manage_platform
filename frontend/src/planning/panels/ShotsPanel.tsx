@@ -5,7 +5,7 @@ import { planningErrorMessage } from '../presentation'
 import type { CommandRunner } from '../ShootPlanWorkspacePage'
 import type { PlanCommand, ShootPlanDetail, ShootPlanShot } from '../api'
 import { shotHasExecutionHistory } from '../history'
-import { shotTagFields } from '../ingestionCandidates'
+import { shotTagField, shotTagFields, shotTagLabel, type ShotTagFieldKey } from '../ingestionCandidates'
 import { captureModeShortLabel, skipReasonLabel } from '../outcomeLabels'
 
 export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { plan: ShootPlanDetail; busy: boolean; runCommand: CommandRunner; focusShotID: string | null }) {
@@ -87,7 +87,7 @@ export default function ShotsPanel({ plan, busy, runCommand, focusShotID }: { pl
                 <div className="planning-shot-tags" aria-label="规范标签">
                   {shotTagFields.map((field) => {
                     const value = shot[field.key]
-                    return <span className={`planning-tag${value ? '' : ' is-empty'}`} key={field.key}>{field.label} {value ?? '未填'}</span>
+                    return <span className={`planning-tag${value ? '' : ' is-empty'}`} key={field.key}>{field.label} {shotTagLabel(field.key, value)}</span>
                   })}
                 </div>
                 <div className="planning-shot-copy">
@@ -208,18 +208,18 @@ function ShotDialog({ plan, shot, initial, busy, runCommand, onClose }: { plan: 
     <div className="overlay open" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
       <form className="dialog planning-shot-dialog" role="dialog" aria-modal="true" aria-labelledby="shotDialogTitle" onSubmit={save}>
         <h2 id="shotDialogTitle">{shot ? '编辑镜头' : initial ? '复制为新镜头' : '新增镜头'}</h2>
-        <p className="dialog-sub">只编辑镜头结构；现场结果在 Run Mode 或执行历史中记录。{initial ? ' 保存会在镜头表末尾新增一条。' : ''}</p>
+        <p className="dialog-sub">只编辑镜头结构；现场结果在现场模式或执行历史中记录。{initial ? ' 保存会在镜头表末尾新增一条。' : ''}</p>
         <label className="field"><span>镜头标题</span><input className="input" autoFocus value={title} maxLength={160} onChange={(event) => setTitle(event.target.value)} /></label>
         <div className="field-row"><TextArea label="场景" value={scene} setValue={setScene} /><TextArea label="动作" value={action} setValue={setAction} /></div>
         <div className="field-row"><TextArea label="表情" value={expression} setValue={setExpression} /><TextArea label="构图" value={composition} setValue={setComposition} /></div>
         <TextArea label="打光" value={lighting} setValue={setLighting} />
         <TextArea label="备注" value={notes} setValue={setNotes} maxLength={2000} />
         <div className="planning-taxonomy-grid">
-          <EnumSelect label="景别" value={framing} setValue={setFraming} values={['extreme_closeup','closeup','medium_closeup','medium','full','wide','extreme_wide','other']} />
-          <EnumSelect label="光线方向" value={lightingDirection} setValue={setLightingDirection} values={['front','side','back','top','bottom','mixed','natural','other']} />
-          <EnumSelect label="光质" value={lightingQuality} setValue={setLightingQuality} values={['hard','soft','mixed','natural','other']} />
-          <EnumSelect label="色调" value={palette} setValue={setPalette} values={['warm','cool','neutral','monochrome','high_saturation','low_saturation','mixed','other']} />
-          <EnumSelect label="镜头类型" value={shotType} setValue={setShotType} values={['portrait','action','interaction','environment','detail','silhouette','narrative','other']} />
+          <EnumSelect fieldKey="framing_tag" value={framing} setValue={setFraming} />
+          <EnumSelect fieldKey="lighting_direction_tag" value={lightingDirection} setValue={setLightingDirection} />
+          <EnumSelect fieldKey="lighting_quality_tag" value={lightingQuality} setValue={setLightingQuality} />
+          <EnumSelect fieldKey="palette_tag" value={palette} setValue={setPalette} />
+          <EnumSelect fieldKey="shot_type_tag" value={shotType} setValue={setShotType} />
         </div>
         {error && <p className="planning-inline-error" role="alert">{error}</p>}
         <div className="dialog-actions"><button className="btn" type="button" disabled={busy} onClick={onClose}>取消</button><button className="btn btn-primary" disabled={busy}>{busy ? '正在保存…' : '保存镜头'}</button></div>
@@ -232,8 +232,9 @@ function TextArea({ label, value, setValue, maxLength = 1000 }: { label: string;
   return <label className="field"><span>{label}</span><textarea className="input" value={value} maxLength={maxLength} onChange={(event) => setValue(event.target.value)} /></label>
 }
 
-function EnumSelect({ label, value, setValue, values }: { label: string; value: string; setValue: (value: string) => void; values: string[] }) {
-  return <label className="field"><span>{label}</span><select className="input" value={value} onChange={(event) => setValue(event.target.value)}><option value="">未设置</option>{values.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+function EnumSelect({ fieldKey, value, setValue }: { fieldKey: ShotTagFieldKey; value: string; setValue: (value: string) => void }) {
+  const field = shotTagField(fieldKey)
+  return <label className="field"><span>{field.label}</span><select className="input" value={value} onChange={(event) => setValue(event.target.value)}><option value="">未填</option>{field.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
 }
 
 function nullable(value: string): string | null {

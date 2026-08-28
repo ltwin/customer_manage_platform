@@ -325,7 +325,7 @@ function TransitionGuidanceCard({ guidance, onGoReadiness, onGoShots, onRun }: {
           )}
           <div className="planning-guidance-actions">
             <button className="btn btn-secondary btn-sm" type="button" onClick={onGoShots}>{guidance.total === 0 ? '去镜头表建立' : '去镜头表看看'}</button>
-            {guidance.total > 0 && <button className="btn btn-primary btn-sm" type="button" onClick={onRun}>进入 Run Mode</button>}
+            {guidance.total > 0 && <button className="btn btn-primary btn-sm" type="button" onClick={onRun}>进入现场模式</button>}
           </div>
         </>
       )}
@@ -380,7 +380,7 @@ function StatusActions({ plan, busy, runTransition, onRun }: { plan: ShootPlanDe
 
   return (
     <div className="planning-status-actions">
-      {(plan.status === 'ready' || plan.status === 'in_progress') && <button className="btn btn-primary" disabled={busy} type="button" onClick={onRun}>进入 Run Mode</button>}
+      {(plan.status === 'ready' || plan.status === 'in_progress') && <button className="btn btn-primary" disabled={busy} type="button" onClick={onRun}>进入现场模式</button>}
       {plan.status === 'draft' && <button className="btn btn-primary" disabled={busy} type="button" onClick={() => void transition('mark_ready')}>标记已就绪</button>}
       {plan.status === 'ready' && <button className="btn btn-primary" disabled={busy} type="button" onClick={() => void transition('start')}>手动开始拍摄</button>}
       {plan.status === 'in_progress' && <button className="btn btn-primary" disabled={busy} type="button" onClick={() => void transition('complete')}>标记完成</button>}

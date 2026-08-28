@@ -23,6 +23,7 @@ import {
 } from './api'
 import { composeShareURL, generateShareSecretMaterial, isWebCryptoAvailable } from './crypto'
 import { fullViewEligibilityNote, shareConflictMessage } from './conflictMessages'
+import { fromDatetimeLocal, toDatetimeLocal } from './expiry'
 import { removedShotLabel, shotPositionLabel, shotReferenceLabel } from './shotReference'
 import OneTimeSecretDialog from './OneTimeSecretDialog'
 
@@ -277,7 +278,7 @@ export default function ShareCollaborationPanel({
         <div className="planning-panel-head">
           <div>
             <h2>认领记录</h2>
-            <p>链接轮换或撤销不会删除已有认领；摄影师可随时撤销。客户认领后你会收到一次核对提醒；「待核对」在拍摄前核对完成，「现场缺失」来自 Run Mode 的跳过记录。</p>
+            <p>链接轮换或撤销不会删除已有认领；摄影师可随时撤销。客户认领后你会收到一次核对提醒；「待核对」在拍摄前核对完成，「现场缺失」来自现场模式的跳过记录。</p>
           </div>
         </div>
         <div className="share-fb-list">
@@ -586,7 +587,7 @@ function ExpiryEditor({
       </label>
       {!useDefault && (
         <label className="field">
-          <span>绝对到期时间（UTC）</span>
+          <span>到期时间（本地时间）</span>
           <input
             type="datetime-local"
             disabled={disabled}
@@ -787,14 +788,3 @@ function formatInstant(value: string): string {
   }
 }
 
-function toDatetimeLocal(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}T${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`
-}
-
-function fromDatetimeLocal(value: string): string {
-  if (!value) return new Date().toISOString()
-  return new Date(`${value}:00.000Z`).toISOString()
-}

@@ -42,13 +42,90 @@ export type ShotTagFieldKey =
   | 'palette_tag'
   | 'shot_type_tag'
 
-export const shotTagFields: ReadonlyArray<{ key: ShotTagFieldKey; label: string; values: readonly string[] }> = [
-  { key: 'framing_tag', label: '取景', values: ['extreme_closeup', 'closeup', 'medium_closeup', 'medium', 'full', 'wide', 'extreme_wide', 'other'] },
-  { key: 'lighting_direction_tag', label: '灯光方向', values: ['front', 'side', 'back', 'top', 'bottom', 'mixed', 'natural', 'other'] },
-  { key: 'lighting_quality_tag', label: '灯光质感', values: ['hard', 'soft', 'mixed', 'natural', 'other'] },
-  { key: 'palette_tag', label: '色调', values: ['warm', 'cool', 'neutral', 'monochrome', 'high_saturation', 'low_saturation', 'mixed', 'other'] },
-  { key: 'shot_type_tag', label: '类型', values: ['portrait', 'action', 'interaction', 'environment', 'detail', 'silhouette', 'narrative', 'other'] },
-]
+export type ShotTagOption = { value: string; label: string }
+export type ShotTagField = { label: string; options: readonly ShotTagOption[] }
+
+// 规范标签的中文显示唯一权威源：存储值与 API 契约仍是英文枚举，UI 一律走这里取中文。
+// 任何页面都不得再硬编码枚举值或自备一套中文，否则同一标签会在镜头卡、现场模式和
+// 整理候选里显示成三种说法。
+const shotTagFieldMap: Record<ShotTagFieldKey, ShotTagField> = {
+  framing_tag: {
+    label: '景别',
+    options: [
+      { value: 'extreme_closeup', label: '大特写' },
+      { value: 'closeup', label: '特写' },
+      { value: 'medium_closeup', label: '近景' },
+      { value: 'medium', label: '中景' },
+      { value: 'full', label: '全景' },
+      { value: 'wide', label: '远景' },
+      { value: 'extreme_wide', label: '大远景' },
+      { value: 'other', label: '其他' },
+    ],
+  },
+  lighting_direction_tag: {
+    label: '光线方向',
+    options: [
+      { value: 'front', label: '顺光' },
+      { value: 'side', label: '侧光' },
+      { value: 'back', label: '逆光' },
+      { value: 'top', label: '顶光' },
+      { value: 'bottom', label: '底光' },
+      { value: 'mixed', label: '混合' },
+      { value: 'natural', label: '自然光' },
+      { value: 'other', label: '其他' },
+    ],
+  },
+  lighting_quality_tag: {
+    label: '光质',
+    options: [
+      { value: 'hard', label: '硬光' },
+      { value: 'soft', label: '柔光' },
+      { value: 'mixed', label: '混合' },
+      { value: 'natural', label: '自然光' },
+      { value: 'other', label: '其他' },
+    ],
+  },
+  palette_tag: {
+    label: '色调',
+    options: [
+      { value: 'warm', label: '暖调' },
+      { value: 'cool', label: '冷调' },
+      { value: 'neutral', label: '中性' },
+      { value: 'monochrome', label: '单色' },
+      { value: 'high_saturation', label: '高饱和' },
+      { value: 'low_saturation', label: '低饱和' },
+      { value: 'mixed', label: '混合' },
+      { value: 'other', label: '其他' },
+    ],
+  },
+  shot_type_tag: {
+    label: '镜头类型',
+    options: [
+      { value: 'portrait', label: '人像' },
+      { value: 'action', label: '动作' },
+      { value: 'interaction', label: '互动' },
+      { value: 'environment', label: '环境' },
+      { value: 'detail', label: '细节' },
+      { value: 'silhouette', label: '剪影' },
+      { value: 'narrative', label: '叙事' },
+      { value: 'other', label: '其他' },
+    ],
+  },
+}
+
+export const shotTagFields: ReadonlyArray<{ key: ShotTagFieldKey } & ShotTagField> =
+  (Object.keys(shotTagFieldMap) as ShotTagFieldKey[]).map((key) => ({ key, ...shotTagFieldMap[key] }))
+
+export function shotTagField(key: ShotTagFieldKey): ShotTagField {
+  return shotTagFieldMap[key]
+}
+
+// 未选就是未选：空值统一显示「未填」，渲染点不必各自处理这个边界。
+// 遇到映射外的值（契约先扩、前端后跟）保留原值，宁可露出英文也不吞掉信息。
+export function shotTagLabel(key: ShotTagFieldKey, value: string | null | undefined): string {
+  if (!value) return '未填'
+  return shotTagFieldMap[key].options.find((option) => option.value === value)?.label ?? value
+}
 
 // 「未填」选择恢复为 null：规范标签未知就是未知，不从文本猜测。
 export function shotTagPatch(key: ShotTagFieldKey, value: string): Pick<IngestionContentCandidate, ShotTagFieldKey> {
