@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShell } from '../components/shellContext'
 import StateNotice from '../components/StateNotice'
@@ -14,7 +14,7 @@ import {
   createShootPlan,
   listShootPlans,
   newPlanningMutationKey,
-  type ShootPlanList,
+  type ShootPlanListItem,
   type ShootPlanStatus,
 } from './api'
 import StatusBadge from './StatusBadge'
@@ -22,13 +22,23 @@ import { crmSummaryLine, listStatusLines, windowRangeLabel } from './listCard'
 import { planningErrorMessage, shootPlanStatusLabel } from './presentation'
 import './planning.css'
 
+const planPageSize = 50
+
+// 累加式翻页：已加载的页留在列表里，page 记住下一页从哪续。
+type PlanListPage = { items: ShootPlanListItem[]; total: number; page: number }
+
 export default function ShootPlansPage() {
   const navigate = useNavigate()
   const { notify } = useShell()
   const [filter, setFilter] = useState<'all' | ShootPlanStatus>('all')
   const [reloadTick, setReloadTick] = useState(0)
-  const [state, setState] = useState<PageReadState<ShootPlanList>>({ kind: 'loading', message: '正在加载拍摄策划' })
+  const [state, setState] = useState<PageReadState<PlanListPage>>({ kind: 'loading', message: '正在加载拍摄策划' })
   const [creating, setCreating] = useState<'ingestion' | 'workspace' | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const filterRef = useRef(filter)
+  const loadMoreRequestSeq = useRef(0)
+
+  useEffect(() => { filterRef.current = filter }, [filter])
 
   // 一键空白建案：标题/主体给默认值（后端要求非空），客户、订单与档期都可后补。
   // 两个入口建的都是同一份空白策划，区别只在建完落到哪一步：主路径直接进「从聊天整理」，
@@ -50,21 +60,55 @@ export default function ShootPlansPage() {
   const reload = useCallback(() => setReloadTick((value) => value + 1), [])
   useEffect(() => {
     let active = true
+    // 换筛选等于重开一份列表：在途的「加载更多」作废，避免旧筛选的下一页追进新结果。
+    loadMoreRequestSeq.current += 1
+    setLoadingMore(false)
     setState((current) => beginPageRead(current, '正在加载拍摄策划', true))
     listShootPlans({
       status: filter === 'all' ? undefined : filter,
       archived: filter === 'archived' ? true : false,
       page: 1,
-      pageSize: 50,
+      pageSize: planPageSize,
     }).then((result) => {
       if (!active) return
-      setState(completePageRead(result, result.items.length === 0, filter === 'all' ? '还没有拍摄策划。把和客户聊过的记录粘进「从聊天整理」，一次生成镜头与准备项；也可以先空白建案，之后再补。' : '当前筛选下没有拍摄策划。'))
+      setState(completePageRead({ items: result.items, total: result.total, page: 1 }, result.items.length === 0, filter === 'all' ? '还没有拍摄策划。把和客户聊过的记录粘进「从聊天整理」，一次生成镜头与准备项；也可以先空白建案，之后再补。' : '当前筛选下没有拍摄策划。'))
     }).catch((error: unknown) => {
       if (!active) return
       setState((current) => failPageRead(current, planningErrorMessage(error, '拍摄策划加载失败'), reload))
     })
     return () => { active = false }
   }, [filter, reloadTick, reload])
+
+  async function loadMorePlans() {
+    const loaded = readyPageData(state)
+    if (!loaded) return
+    const nextPage = loaded.page + 1
+    const requestFilter = filter
+    const requestSeq = loadMoreRequestSeq.current + 1
+    loadMoreRequestSeq.current = requestSeq
+    const requestStillCurrent = () => loadMoreRequestSeq.current === requestSeq && filterRef.current === requestFilter
+    setLoadingMore(true)
+    try {
+      const result = await listShootPlans({
+        status: requestFilter === 'all' ? undefined : requestFilter,
+        archived: requestFilter === 'archived' ? true : false,
+        page: nextPage,
+        pageSize: planPageSize,
+      })
+      if (!requestStillCurrent()) return
+      setState((current) => {
+        const data = readyPageData(current)
+        if (!data) return current
+        return completePageRead({ items: [...data.items, ...result.items], total: result.total, page: nextPage }, false, '')
+      })
+    } catch (error) {
+      if (!requestStillCurrent()) return
+      // 下一页失败不清空已加载的策划：列表保持可用，错误条带重试。
+      setState((current) => failPageRead(current, planningErrorMessage(error, '加载更多失败，仍显示已加载的策划'), () => { void loadMorePlans() }))
+    } finally {
+      if (requestStillCurrent()) setLoadingMore(false)
+    }
+  }
 
   const presentation = pageReadPresentation(state)
   const list = readyPageData(state)
@@ -100,6 +144,7 @@ export default function ShootPlansPage() {
         </section>
 
         {presentation.notice && <StateNotice {...presentation.notice} />}
+        {list && <div className="result-meta">显示 {list.items.length} / {list.total} 份策划</div>}
         {list && (
           <div className="planning-plan-list" aria-live="polite">
             {list.items.map((plan) => (
@@ -125,6 +170,13 @@ export default function ShootPlansPage() {
                 <span className="planning-open-hint">打开工作台 →</span>
               </button>
             ))}
+          </div>
+        )}
+        {list && list.items.length < list.total && (
+          <div className="load-more">
+            <button className="btn" type="button" disabled={loadingMore} onClick={() => { void loadMorePlans() }}>
+              {loadingMore ? '加载中' : `加载更多（${list.items.length}/${list.total}）`}
+            </button>
           </div>
         )}
       </main>
