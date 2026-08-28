@@ -33,7 +33,7 @@ export default function ExecutionHistoryPanel({ plan, busy, onReload }: { plan: 
     <section className="planning-section">
       <div className="planning-section-head"><div><p className="planning-eyebrow">执行历史</p><h2>追加事实与完成快照</h2><p>历史不可覆盖；纠错通过追加作废事实完成。</p></div></div>
       {error && <p className="planning-inline-error" role="alert">{error}</p>}
-      {history.length === 0 ? <div className="planning-empty-card">尚无执行记录。现场结果会在 Run Mode 上线后从独立界面写入。</div> : (
+      {history.length === 0 ? <div className="planning-empty-card">尚无执行记录。现场结果会在现场模式上线后从独立界面写入。</div> : (
         <div className="planning-history-list">
           {history.map((fact) => (
             <article className={`card planning-history-item planning-history-${fact.kind}`} key={fact.id}>

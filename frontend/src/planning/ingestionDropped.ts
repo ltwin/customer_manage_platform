@@ -11,7 +11,7 @@ export const ingestionDropReasons: ReadonlyArray<{
 }> = [
   { value: 'duplicate', label: '重复内容', note: '与保留的候选重复，只保留其中一条' },
   { value: 'unsupported', label: '无法识别', note: '解析器无法把这段归入镜头或准备项' },
-  { value: 'over_limit', label: '超出上限', note: '候选数量超过单次摄取上限，需拆分原文分批摄取' },
+  { value: 'over_limit', label: '超出上限', note: '候选数量超过单次整理上限，需拆分原文分批整理' },
   { value: 'blank', label: '空白段', note: '该段没有可解析的有效内容' },
   { value: 'manual', label: '手动丢弃', note: '你在确认步骤取消勾选的候选，仍在上方列表可重新勾选' },
 ]

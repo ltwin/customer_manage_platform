@@ -13,7 +13,7 @@ import {
 import { fetchPlanAssetDisplay } from './api'
 import { planningErrorMessage } from './presentation'
 import { applySavedShotResult, completedShotCount, mainShotAction, nextPendingShotIndex, normalizeRunNotes, runOutcomeCounts, runShotState, validateSkipSubmission } from './runState'
-import { shotTagFields } from './ingestionCandidates'
+import { shotTagFields, shotTagLabel } from './ingestionCandidates'
 import './run.css'
 
 type RunView = {
@@ -212,7 +212,7 @@ export default function ShootPlanRunPage() {
             <div className="run-tags" aria-label="规范标签">
               {shotTagFields.map((field) => {
                 const value = shot[field.key]
-                return <span className={`run-tag${value ? '' : ' is-empty'}`} key={field.key}>{field.label} {value ?? '未填'}</span>
+                return <span className={`run-tag${value ? '' : ' is-empty'}`} key={field.key}>{field.label} {shotTagLabel(field.key, value)}</span>
               })}
             </div>
             <div className="run-shot-facts">

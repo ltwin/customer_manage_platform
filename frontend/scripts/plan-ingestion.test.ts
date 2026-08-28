@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 
-import { contentOverrideFields, restoredCandidateKind, shotDecisionShot } from '../src/planning/ingestionCandidates.ts'
+import { contentOverrideFields, restoredCandidateKind, shotDecisionShot, shotTagField, shotTagFields, shotTagLabel } from '../src/planning/ingestionCandidates.ts'
 import { droppedExcerpt, droppedLegendLine, dropReasonLabel, dropReasonNote } from '../src/planning/ingestionDropped.ts'
 import { staleDiffLines } from '../src/planning/ingestionConflict.ts'
 
@@ -75,7 +75,7 @@ test('ingestion candidates expose taxonomy and readiness field edits that persis
   assert.equal(contentOverrideFields({ framing_tag: 'soft' }).framing_tag, 'soft')
   assert.deepEqual(contentOverrideFields({}), {})
 
-  for (const field of ['取景', '灯光方向', '灯光质感', '色调', '类型']) {
+  for (const field of ['景别', '光线方向', '光质', '色调', '镜头类型']) {
     assert.match(module, new RegExp(field))
   }
   for (const field of ['层级', '预期负责人', '是否必需', '核对提前量']) {
@@ -113,7 +113,7 @@ test('ingestion transient success feedback goes through the shell toast, not inl
   const page = source('../src/planning/ShootPlanIngestionPage.tsx')
 
   assert.match(page, /const \{ notify \} = useShell\(\)/)
-  for (const message of ['候选已更新，请逐条确认。', '参考图已暂存，提交时会与候选一起处理。', '已合并到上一条候选，提交前仍可撤销。', '编辑已暂存，请确认保存。', '本次摄取已结束，原文与素材仍按保留规则可恢复查看。']) {
+  for (const message of ['候选已更新，请逐条确认。', '参考图已暂存，提交时会与候选一起处理。', '已合并到上一条候选，提交前仍可撤销。', '编辑已暂存，请确认保存。', '本次整理已结束，原文与素材仍按保留规则可恢复查看。']) {
     assert.ok(page.includes(`notify('${message}')`), `toast missing: ${message}`)
   }
   assert.ok(page.includes('notify(`已保存 ${result.plan_batch?.created_ids?.length ?? 0} 个核心候选'))
@@ -121,6 +121,40 @@ test('ingestion transient success feedback goes through the shell toast, not inl
   assert.match(page, /planning-feedback ingestion-stale/)
   assert.match(page, /planning-feedback ingestion-error/)
   assert.doesNotMatch(page, /\{feedback && <div className="planning-feedback"/)
+})
+
+test('shot taxonomy values render in Chinese from a single mapping source', () => {
+  assert.equal(shotTagLabel('framing_tag', 'extreme_closeup'), '大特写')
+  assert.equal(shotTagLabel('palette_tag', 'high_saturation'), '高饱和')
+  assert.equal(shotTagLabel('lighting_direction_tag', 'natural'), '自然光')
+  assert.equal(shotTagLabel('shot_type_tag', 'other'), '其他')
+  // 未选就是未选；契约先扩出的未知值保留原样，不吞掉信息。
+  assert.equal(shotTagLabel('framing_tag', null), '未填')
+  assert.equal(shotTagLabel('framing_tag', ''), '未填')
+  assert.equal(shotTagLabel('framing_tag', 'future_value'), 'future_value')
+
+  assert.deepEqual(shotTagFields.map((field) => field.key), ['framing_tag', 'lighting_direction_tag', 'lighting_quality_tag', 'palette_tag', 'shot_type_tag'])
+  assert.equal(shotTagField('framing_tag').label, '景别')
+  for (const field of shotTagFields) {
+    assert.ok(field.options.length > 0, field.key)
+    assert.equal(field.options.at(-1)?.value, 'other')
+    for (const option of field.options) {
+      assert.doesNotMatch(option.label, /[a-z_]/, `${field.key}.${option.value} still renders the raw enum`)
+    }
+  }
+})
+
+test('taxonomy render points read the shared mapping instead of hardcoding enum values', () => {
+  const ingestion = source('../src/planning/ShootPlanIngestionPage.tsx')
+  const shots = source('../src/planning/panels/ShotsPanel.tsx')
+  const run = source('../src/planning/ShootPlanRunPage.tsx')
+
+  assert.match(ingestion, /field\.options\.map\(\(option\) => <option key=\{option\.value\} value=\{option\.value\}>\{option\.label\}<\/option>\)/)
+  assert.match(shots, /<EnumSelect fieldKey="framing_tag"/)
+  assert.match(shots, /const field = shotTagField\(fieldKey\)/)
+  for (const page of [ingestion, shots, run]) {
+    assert.doesNotMatch(page, /'extreme_closeup'|'high_saturation'|'silhouette'/)
+  }
 })
 
 test('dropped candidates classify parser reasons instead of showing raw reason strings', () => {

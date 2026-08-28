@@ -182,14 +182,12 @@ async function login(page) {
   recordScenario('authenticated-login', ['login API 200', 'dashboard navigation completed'])
 }
 
-async function createPlan(page, unique) {
+// 列表页是双入口：主入口「＋ 从聊天整理」建案后直跳整理页，本流程要的是工作台，
+// 所以走次级入口「空白建案」（标题与主体由后端默认值补齐，无建案弹窗）。
+async function createPlan(page) {
   await page.goto(`${baseURL}/shoot-plans`, { waitUntil: 'domcontentloaded' })
   await page.getByRole('heading', { name: '拍摄策划', exact: true }).waitFor()
-  await page.getByRole('button', { name: /新建策划/ }).click()
-  const dialog = page.getByRole('dialog', { name: '新建拍摄策划' })
-  await dialog.getByLabel('标题').fill(`Hardening E2E ${unique}`)
-  await dialog.getByLabel('拍摄主体').fill('Synthetic planning acceptance')
-  await dialog.getByRole('button', { name: '创建并打开' }).click()
+  await page.getByRole('button', { name: '空白建案', exact: true }).click()
   await page.waitForURL(/\/shoot-plans\/[^/?#]+$/, { timeout: 15_000 })
   planID = decodeURIComponent(new URL(page.url()).pathname.split('/').at(-1) ?? '')
   assert.match(planID, /^spl_/, 'created plan id is not canonical')
@@ -260,7 +258,7 @@ async function ingestConversation(page) {
   const commitResponse = await commitResponsePromise
   assert.equal(commitResponse.status(), 200, 'ingestion commit API failed')
   const commitOutcome = await Promise.race([
-    page.getByRole('heading', { name: '已保存摄取结果', exact: true }).waitFor().then(() => null),
+    page.getByRole('heading', { name: '已保存整理结果', exact: true }).waitFor().then(() => null),
     page.getByRole('alert').last().waitFor().then(async () => page.getByRole('alert').last().innerText()),
   ])
   if (commitOutcome) throw new Error(`ingestion commit rejected: ${commitOutcome}`)
@@ -410,8 +408,8 @@ async function goToShot(page, title) {
 
 async function runExecutionFlow(context, page) {
   await page.getByRole('button', { name: '标记已就绪' }).click()
-  await page.getByRole('button', { name: '进入 Run Mode' }).waitFor()
-  await page.getByRole('button', { name: '进入 Run Mode' }).click()
+  await page.getByRole('button', { name: '进入现场模式' }).waitFor()
+  await page.getByRole('button', { name: '进入现场模式' }).click()
   await page.waitForURL(/\/run$/)
   await page.getByRole('heading', { name: '站姿主镜', exact: true }).waitFor()
 
@@ -495,7 +493,7 @@ try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: 'light', locale: 'zh-CN' })
     const page = await context.newPage()
     await login(page)
-    await createPlan(page, unique)
+    await createPlan(page)
     await observePage(page, 'authenticated-create-1280')
     await saveBrief(page)
     await addShotAndReadiness(page)

@@ -510,7 +510,7 @@ test('workspace transition rejections render guidance cards with jump actions in
   assert.match(page, /还不能标记完成/)
   assert.match(page, /既没捕获也没跳过/)
   assert.match(page, /去镜头表看看/)
-  assert.match(page, /进入 Run Mode/)
+  assert.match(page, /进入现场模式/)
   assert.match(page, /还没有镜头/)
 })
 
@@ -599,7 +599,7 @@ test('Run Mode shot card renders all five taxonomy tags with unfilled placeholde
   const runPage = source('../src/planning/ShootPlanRunPage.tsx')
 
   assert.match(runPage, /shotTagFields\.map/)
-  assert.match(runPage, /\{field\.label\} \{value \?\? '未填'\}/)
+  assert.match(runPage, /\{field\.label\} \{shotTagLabel\(field\.key, value\)\}/)
   assert.match(runPage, /className=\{`run-tag\$\{value \? '' : ' is-empty'\}`\}/)
 })
 
@@ -646,7 +646,7 @@ test('workspace shot cards show full taxonomy, capture-mode badges, capture time
   const shots = source('../src/planning/panels/ShotsPanel.tsx')
 
   assert.match(shots, /shotTagFields\.map/)
-  assert.match(shots, /\{field\.label\} \{value \?\? '未填'\}/)
+  assert.match(shots, /\{field\.label\} \{shotTagLabel\(field\.key, value\)\}/)
   assert.match(shots, /已捕获 · \{captureModeShortLabel\(outcome\.capture_mode\)\}/)
   assert.match(shots, /skipReasonLabel\(outcome\.skip_reason\)/)
   assert.match(shots, /捕获于/)
@@ -661,7 +661,7 @@ test('readiness list groups by category with claimant names and on-site missing 
   assert.match(readiness, /planning-ready-group/)
   assert.match(readiness, /客户认领 · \{claimant\}/)
   assert.match(readiness, /readinessTag\(/)
-  assert.match(readiness, /现场缺失 · 来自 Run Mode 第/)
+  assert.match(readiness, /现场缺失 · 来自现场模式第/)
   assert.match(readiness, /preparationMissingShotPositions\(/)
 })
 
@@ -784,7 +784,7 @@ test('assignment claims show readiness state tags and revoke confirm explains re
   assert.match(panel, /现场缺失<\/span>/)
   assert.match(panel, /待核对<\/span>/)
   assert.match(panel, /对应的核对提醒会一并撤销/)
-  assert.match(panel, /「待核对」在拍摄前核对完成，「现场缺失」来自 Run Mode 的跳过记录/)
+  assert.match(panel, /「待核对」在拍摄前核对完成，「现场缺失」来自现场模式的跳过记录/)
   // 状态与准备项面板同源派生（现场缺失优先，其次待核对）。
   assert.match(workspace, /if \(preparationMissingShotPositions\(plan\.shots, item\.id\)\.length > 0\) map\[item\.id\] = 'site_missing'/)
   assert.match(workspace, /readinessStates=\{readinessStates\}/)
@@ -807,9 +807,40 @@ test('public scale hints and the four-step progression panel match the prototype
 test('plan list creates a blank plan in one click instead of a required-fields modal', () => {
   const plans = source('../src/planning/ShootPlansPage.tsx')
 
-  assert.match(plans, /async function createBlank\(\)/)
+  assert.match(plans, /async function createBlank\(next: 'ingestion' \| 'workspace'\)/)
   assert.match(plans, /createShootPlan\(\{ title: '未命名策划', subject: '待补充' \}, newPlanningMutationKey\('create'\)\)/)
-  assert.ok(plans.includes("notify('已新建空白策划（客户与订单均可留空）')"))
+  assert.ok(plans.includes("notify(next === 'ingestion' ? '已新建策划，接着把聊天记录整理成方案。' : '已新建空白策划（客户与订单均可留空）')"))
   assert.doesNotMatch(plans, /CreatePlanDialog/)
   assert.doesNotMatch(plans, /标题和拍摄主体都需要填写/)
+})
+
+// 建案漏斗的分母构成：主入口一步直达整理页，零成本空白建案仍然保留。
+test('plan list offers ingestion as the primary create path with blank creation kept as secondary', () => {
+  const plans = source('../src/planning/ShootPlansPage.tsx')
+
+  assert.match(plans, /btn btn-primary[\s\S]{0,200}createBlank\('ingestion'\)[\s\S]{0,80}＋ 从聊天整理/)
+  assert.match(plans, /createBlank\('workspace'\)[\s\S]{0,60}空白建案/)
+  assert.match(plans, /navigate\(next === 'ingestion' \? `\$\{path\}\/ingestions\/new` : path\)/)
+  // 两个入口共用一个 creating 标记，创建期间互斥，避免连点建出两份空案。
+  assert.match(plans, /useState<'ingestion' \| 'workspace' \| null>\(null\)/)
+  assert.equal((plans.match(/disabled=\{creating !== null\}/g) ?? []).length, 2)
+  assert.match(plans, /还没有拍摄策划。把和客户聊过的记录粘进「从聊天整理」/)
+})
+
+// 用户可见文案里不允许再出现英文功能名或同一功能的旧称。
+test('planning UI copy uses 现场模式 and 从聊天整理 instead of Run Mode and 摄取工作台', () => {
+  for (const path of [
+    '../src/planning/ShootPlansPage.tsx',
+    '../src/planning/ShootPlanWorkspacePage.tsx',
+    '../src/planning/ShootPlanRunPage.tsx',
+    '../src/planning/ShootPlanIngestionPage.tsx',
+    '../src/planning/panels/BriefPanel.tsx',
+    '../src/planning/panels/ShotsPanel.tsx',
+    '../src/planning/panels/ReadinessPanel.tsx',
+    '../src/planning/panels/ExecutionHistoryPanel.tsx',
+    '../src/planning/share/ShareCollaborationPanel.tsx',
+  ]) {
+    assert.doesNotMatch(source(path), /Run Mode|摄取工作台/, path)
+  }
+  assert.match(source('../src/planning/ShootPlanIngestionPage.tsx'), /拍摄策划<\/Link> \/ 从聊天整理/)
 })
