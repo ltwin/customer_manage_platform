@@ -1561,6 +1561,27 @@ func (e ShootPlanCurrentOutcomeResult) Valid() bool {
 	}
 }
 
+// Defines values for ShootPlanListSort.
+const (
+	CreatedAtDesc ShootPlanListSort = "created_at_desc"
+	UpdatedAtAsc  ShootPlanListSort = "updated_at_asc"
+	UpdatedAtDesc ShootPlanListSort = "updated_at_desc"
+)
+
+// Valid indicates whether the value is a known member of the ShootPlanListSort enum.
+func (e ShootPlanListSort) Valid() bool {
+	switch e {
+	case CreatedAtDesc:
+		return true
+	case UpdatedAtAsc:
+		return true
+	case UpdatedAtDesc:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ShootPlanReadinessItemCategory.
 const (
 	ShootPlanReadinessItemCategoryLocation      ShootPlanReadinessItemCategory = "location"
@@ -3513,6 +3534,9 @@ type ShootPlanListItem struct {
 	UpdatedAt              time.Time                                `json:"updated_at"`
 }
 
+// ShootPlanListSort 拍摄策划列表排序键；服务端把它映射为固定列名白名单，客户端永不传列名
+type ShootPlanListSort string
+
 // ShootPlanMutationRequest defines model for ShootPlanMutationRequest.
 type ShootPlanMutationRequest struct {
 	union json.RawMessage
@@ -3824,12 +3848,17 @@ type bearerAuthContextKey string
 
 // ListShootPlansParams defines parameters for ListShootPlans.
 type ListShootPlansParams struct {
-	Status     *ShootPlanStatus `form:"status,omitempty" json:"status,omitempty"`
-	Archived   *bool            `form:"archived,omitempty" json:"archived,omitempty"`
-	CustomerId *string          `form:"customer_id,omitempty" json:"customer_id,omitempty"`
-	OrderId    *string          `form:"order_id,omitempty" json:"order_id,omitempty"`
-	Page       *Page            `form:"page,omitempty" json:"page,omitempty"`
-	PageSize   *PageSize        `form:"page_size,omitempty" json:"page_size,omitempty"`
+	// Q 关键词，大小写不敏感子串匹配 title/subject；首尾空白忽略，去空白后为空视为未传；过滤发生在分页前，超过 120 字为 400
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort 列表排序；缺省 updated_at_desc。任一排序都以 id 兜底，保证同值行的分页稳定
+	Sort       *ShootPlanListSort `form:"sort,omitempty" json:"sort,omitempty"`
+	Status     *ShootPlanStatus   `form:"status,omitempty" json:"status,omitempty"`
+	Archived   *bool              `form:"archived,omitempty" json:"archived,omitempty"`
+	CustomerId *string            `form:"customer_id,omitempty" json:"customer_id,omitempty"`
+	OrderId    *string            `form:"order_id,omitempty" json:"order_id,omitempty"`
+	Page       *Page              `form:"page,omitempty" json:"page,omitempty"`
+	PageSize   *PageSize          `form:"page_size,omitempty" json:"page_size,omitempty"`
 }
 
 // CreateShootPlanParams defines parameters for CreateShootPlan.
@@ -5460,7 +5489,7 @@ func (t *ShotExecutionFact) UnmarshalJSON(b []byte) error {
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// 稳定分页列出当前账号的拍摄策划
+	// 稳定分页列出当前账号的拍摄策划（q 匹配 title/subject）
 	// (GET /shoot-plans)
 	ListShootPlans(c *gin.Context, params ListShootPlansParams)
 	// 创建不依赖客户、订单或档期的拍摄策划
@@ -5541,6 +5570,22 @@ func (siw *ServerInterfaceWrapper) ListShootPlans(c *gin.Context) {
 
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListShootPlansParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", c.Request.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort: %w", err), http.StatusBadRequest)
+		return
+	}
 
 	// ------------- Optional query parameter "status" -------------
 

@@ -29,8 +29,44 @@ type ListPlansFilter struct {
 	CustomerID   string
 	OrderID      string
 	ArchivedOnly bool
+	Q            string
+	Sort         PlanListSort
 	Page         int
 	PageSize     int
+}
+
+// PlanListSort 是列表排序键。客户端只送这个枚举，列名与方向永远是本包的编译期常量。
+type PlanListSort string
+
+const (
+	PlanListSortUpdatedDesc PlanListSort = "updated_at_desc"
+	PlanListSortUpdatedAsc  PlanListSort = "updated_at_asc"
+	PlanListSortCreatedDesc PlanListSort = "created_at_desc"
+)
+
+// PlanListQMaxRunes 是关键词长度上限；超过按 400 处理，避免无意义的长模式扫全表。
+const PlanListQMaxRunes = 120
+
+// planListOrder 把排序键映射为列白名单。每种排序都以 id 兜底：updated_at/created_at
+// 在同一秒内可能撞值，没有兜底列时分页会漏行或重复行。
+func planListOrder(value PlanListSort) ([]store.OrderBy, bool) {
+	switch value {
+	case "", PlanListSortUpdatedDesc:
+		return []store.OrderBy{{Column: "updated_at", Desc: true}, {Column: "id", Desc: true}}, true
+	case PlanListSortUpdatedAsc:
+		return []store.OrderBy{{Column: "updated_at"}, {Column: "id"}}, true
+	case PlanListSortCreatedDesc:
+		return []store.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}}, true
+	default:
+		return nil, false
+	}
+}
+
+// PlanListKeyword 归一化关键词：首尾空白不参与匹配，去空白后为空等于没传。
+// 第二个返回值报告长度是否越界，由调用方转成 400。
+func PlanListKeyword(raw string) (string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	return trimmed, len([]rune(trimmed)) <= PlanListQMaxRunes
 }
 
 type PlanListItem struct {
@@ -238,6 +274,21 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 		args = append(args, id)
 		cond += fmt.Sprintf(" AND crm_order_id = $%d", len(args)+1)
 	}
+	// 关键词与状态、CRM 过滤同处一个 WHERE，count 与取页共用：分页发生在过滤之后，
+	// 不允许先取一页再在内存里筛，否则 total 与页内容对不上。
+	keyword, ok := PlanListKeyword(filter.Q)
+	if !ok {
+		return ListPlansResult{}, validationError("keyword too long")
+	}
+	if keyword != "" {
+		args = append(args, "%"+keyword+"%")
+		placeholder := fmt.Sprintf("$%d", len(args)+1)
+		cond += fmt.Sprintf(" AND (title ILIKE %[1]s OR subject ILIKE %[1]s)", placeholder)
+	}
+	order, ok := planListOrder(filter.Sort)
+	if !ok {
+		return ListPlansResult{}, validationError("sort invalid")
+	}
 	total, err := scope.Count(ctx, "shoot_plan_list_projection", cond, args...)
 	if err != nil {
 		return ListPlansResult{}, fmt.Errorf("count shoot plans: %w", err)
@@ -248,7 +299,7 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 			"window_starts_at, window_ends_at, window_timezone, window_source, captured_count, skipped_count, "+
 			"readiness_required_total, readiness_required_unchecked",
 		cond,
-		[]store.OrderBy{{Column: "updated_at", Desc: true}, {Column: "id", Desc: true}},
+		order,
 		filter.PageSize, (filter.Page-1)*filter.PageSize, args...)
 	if err != nil {
 		return ListPlansResult{}, fmt.Errorf("list shoot plans: %w", err)

@@ -2199,8 +2199,19 @@ paths:
     get:
       tags: [shoot-planning]
       operationId: listShootPlans
-      summary: 稳定分页列出当前账号的拍摄策划
+      summary: 稳定分页列出当前账号的拍摄策划（q 匹配 title/subject）
       parameters:
+        - name: q
+          in: query
+          description: 关键词，大小写不敏感子串匹配 title/subject；首尾空白忽略，去空白后为空视为未传；过滤发生在分页前，超过 120 字为 400
+          schema:
+            type: string
+            maxLength: 120
+        - name: sort
+          in: query
+          description: 列表排序；缺省 updated_at_desc。任一排序都以 id 兜底，保证同值行的分页稳定
+          schema:
+            $ref: "#/components/schemas/ShootPlanListSort"
         - name: status
           in: query
           schema:
@@ -4983,6 +4994,12 @@ components:
     ShootPlanStatus:
       type: string
       enum: [draft, ready, in_progress, completed, archived]
+
+    ShootPlanListSort:
+      type: string
+      description: 拍摄策划列表排序键；服务端把它映射为固定列名白名单，客户端永不传列名
+      enum: [updated_at_desc, updated_at_asc, created_at_desc]
+      default: updated_at_desc
 
     ShootPlanCaptureMode:
       type: string
