@@ -281,7 +281,7 @@ func (PostgresRepository) List(ctx context.Context, scope store.AccountScope, fi
 		return ListPlansResult{}, validationError("keyword too long")
 	}
 	if keyword != "" {
-		args = append(args, "%"+keyword+"%")
+		args = append(args, store.LikeContainsPattern(keyword))
 		placeholder := fmt.Sprintf("$%d", len(args)+1)
 		cond += fmt.Sprintf(" AND (title ILIKE %[1]s OR subject ILIKE %[1]s)", placeholder)
 	}

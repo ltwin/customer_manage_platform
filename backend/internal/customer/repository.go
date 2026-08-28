@@ -629,7 +629,7 @@ func buildCustomerFilter(filter ListFilter) (string, []any) {
 		conds = append(conds, fmt.Sprintf("channel = $%d", len(args)+1))
 	}
 	if filter.Q != "" {
-		args = append(args, "%"+filter.Q+"%")
+		args = append(args, store.LikeContainsPattern(filter.Q))
 		placeholder := fmt.Sprintf("$%d", len(args)+1)
 		conds = append(conds, fmt.Sprintf(`(
 			display_name ILIKE %[1]s

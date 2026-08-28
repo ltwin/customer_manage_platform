@@ -158,6 +158,61 @@ func TestCreateListAndDetail(t *testing.T) {
 	}
 }
 
+// 搜索关键词里的 LIKE 元字符必须按字面量匹配：不转义时搜「100%」会通配成
+// 「以 100 开头的一切」，用户拿不到任何报错，只会拿到一批莫名其妙的结果。
+func TestListKeywordTreatsLikeMetacharactersAsLiterals(t *testing.T) {
+	ctx := context.Background()
+	s := openStore(t)
+	scope := createAccount(t, s, "acct-like")
+	svc := customerService()
+
+	for _, input := range []customer.CreateInput{
+		{DisplayName: "折扣 100% 客户", Channel: customer.ChannelXiaohongshu, Identities: []customer.IdentityInput{{Platform: customer.PlatformWechat, Handle: "discount-a"}}},
+		{DisplayName: "命名 a_b 客户", Channel: customer.ChannelXiaohongshu, Identities: []customer.IdentityInput{{Platform: customer.PlatformWechat, Handle: "naming-b"}}},
+		{DisplayName: "普通客户", Channel: customer.ChannelXiaohongshu, Identities: []customer.IdentityInput{{Platform: customer.PlatformWechat, Handle: "plain-c"}}},
+	} {
+		if _, err := svc.Create(ctx, scope, input); err != nil {
+			t.Fatalf("create customer %q: %v", input.DisplayName, err)
+		}
+	}
+
+	for _, tt := range []struct {
+		keyword string
+		wantOne string
+	}{
+		{keyword: "100%", wantOne: "折扣 100% 客户"},
+		{keyword: "%", wantOne: "折扣 100% 客户"},
+		{keyword: "a_b", wantOne: "命名 a_b 客户"},
+		{keyword: "_", wantOne: "命名 a_b 客户"},
+	} {
+		list, err := svc.List(ctx, scope, customer.ListFilter{Q: tt.keyword})
+		if err != nil {
+			t.Fatalf("list by literal %q: %v", tt.keyword, err)
+		}
+		if list.Total != 1 || len(list.Items) != 1 || list.Items[0].DisplayName != tt.wantOne {
+			t.Fatalf("literal %q = total %d items %+v, want only %q", tt.keyword, list.Total, list.Items, tt.wantOne)
+		}
+	}
+
+	// 反斜杠自身也是字面量，且不能让模式变成非法转义序列。
+	backslash, err := svc.List(ctx, scope, customer.ListFilter{Q: `\`})
+	if err != nil {
+		t.Fatalf("list by literal backslash: %v", err)
+	}
+	if backslash.Total != 0 {
+		t.Fatalf("literal backslash matched %d customers, want 0", backslash.Total)
+	}
+
+	// 转义不能顺手把 identity.handle 那条 EXISTS 子查询搞坏。
+	byHandle, err := svc.List(ctx, scope, customer.ListFilter{Q: "naming-b"})
+	if err != nil {
+		t.Fatalf("list by identity handle: %v", err)
+	}
+	if byHandle.Total != 1 || len(byHandle.Items) != 1 || byHandle.Items[0].DisplayName != "命名 a_b 客户" {
+		t.Fatalf("identity handle search = total %d items %+v", byHandle.Total, byHandle.Items)
+	}
+}
+
 func TestCreateValidationRollback(t *testing.T) {
 	ctx := context.Background()
 	s := openStore(t)

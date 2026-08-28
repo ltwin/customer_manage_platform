@@ -65,6 +65,8 @@ func TestPostgresRepositoryListKeywordAndSort(t *testing.T) {
 		{Title: "夜景人像", Subject: "模特 A"},
 		{Title: "晨雾外拍", Subject: "夜景补拍备选"},
 		{Title: "Studio Portrait", Subject: "模特 B"},
+		{Title: "折扣 100% 交付", Subject: "模特 D"},
+		{Title: "命名 a_b 规则", Subject: "模特 E"},
 	} {
 		if _, err := repo.Create(ctx, scope, input); err != nil {
 			t.Fatalf("create plan %q: %v", input.Title, err)
@@ -107,6 +109,33 @@ func TestPostgresRepositoryListKeywordAndSort(t *testing.T) {
 		t.Fatalf("padded keyword total = %d, want %d", padded.Total, byKeyword.Total)
 	}
 
+	// LIKE 元字符按字面量匹配：搜「%」不能通配成全部，搜「_」不能通配成任意单字符。
+	for _, tt := range []struct {
+		keyword   string
+		wantTitle string
+	}{
+		{keyword: "100%", wantTitle: "折扣 100% 交付"},
+		{keyword: "%", wantTitle: "折扣 100% 交付"},
+		{keyword: "a_b", wantTitle: "命名 a_b 规则"},
+		{keyword: "_", wantTitle: "命名 a_b 规则"},
+	} {
+		literal, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Q: tt.keyword, Page: 1, PageSize: 20})
+		if err != nil {
+			t.Fatalf("list by literal %q: %v", tt.keyword, err)
+		}
+		if literal.Total != 1 || len(literal.Items) != 1 || literal.Items[0].Title != tt.wantTitle {
+			t.Fatalf("literal %q = total %d items %+v, want only %q", tt.keyword, literal.Total, literal.Items, tt.wantTitle)
+		}
+	}
+	// 反斜杠本身也必须是字面量，且不能让模式变成非法转义序列。
+	backslash, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Q: `\`, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatalf("list by literal backslash: %v", err)
+	}
+	if backslash.Total != 0 {
+		t.Fatalf("literal backslash matched %d plans, want 0", backslash.Total)
+	}
+
 	desc, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Sort: shootplanning.PlanListSortUpdatedDesc, Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("list updated desc: %v", err)
@@ -115,7 +144,7 @@ func TestPostgresRepositoryListKeywordAndSort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list updated asc: %v", err)
 	}
-	if len(desc.Items) != 3 || len(asc.Items) != len(desc.Items) {
+	if len(desc.Items) != 5 || len(asc.Items) != len(desc.Items) {
 		t.Fatalf("sorted lists have unexpected sizes: desc=%d asc=%d", len(desc.Items), len(asc.Items))
 	}
 	// id 兜底让两个方向严格互为倒序，即使 updated_at 在同一刻撞值。
@@ -129,8 +158,8 @@ func TestPostgresRepositoryListKeywordAndSort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list created desc: %v", err)
 	}
-	if created.Total != 3 || len(created.Items) != 3 {
-		t.Fatalf("created desc list = total %d items %d, want 3/3", created.Total, len(created.Items))
+	if created.Total != 5 || len(created.Items) != 5 {
+		t.Fatalf("created desc list = total %d items %d, want 5/5", created.Total, len(created.Items))
 	}
 
 	if _, err := repo.List(ctx, scope, shootplanning.ListPlansFilter{Sort: "title_asc", Page: 1, PageSize: 20}); err == nil {
