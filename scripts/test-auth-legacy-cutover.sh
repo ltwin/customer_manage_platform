@@ -32,19 +32,9 @@ run_go_test rollback-harness ./internal/platform/store \
 report_file="$work_dir/reports.log"
 sed -n 's/^.*AUTH_LEGACY_HARNESS /AUTH_LEGACY_HARNESS /p' \
   "$work_dir/rollback-harness.log" >"$report_file"
-[[ "$(grep -c '^AUTH_LEGACY_HARNESS ' "$report_file")" -eq 2 ]]
-grep -q '"report":"auth_legacy_cutover"' "$report_file"
-grep -q '"account_id_preserved":true' "$report_file"
-grep -q '"business_counts_preserved":true' "$report_file"
-grep -q '"avatar_checksum_preserved":true' "$report_file"
-grep -q '"legacy_unclaimed_count":0' "$report_file"
-grep -q '"pending_claim_count":0' "$report_file"
-grep -q '"report":"auth_legacy_rollback"' "$report_file"
-grep -q '"legacy_down_passed":true' "$report_file"
-grep -q '"limiter_schema_rollback":true' "$report_file"
-grep -q '"new_style_down_blocked":true' "$report_file"
-grep -q '"new_style_account_preserved":true' "$report_file"
 
+# 泄露扫描先于字段断言：断言失败时要把报告转到 stderr 才能定位，所以报告必须已经
+# 确认是干净的，否则诊断本身就成了绕过这道闸的口子。
 for forbidden in \
   'postgres://' \
   'Authorization' \
@@ -61,6 +51,34 @@ do
     exit 1
   fi
 done
+
+report_lines="$(grep -c '^AUTH_LEGACY_HARNESS ' "$report_file")"
+if [[ "$report_lines" -ne 2 ]]; then
+  printf 'auth legacy harness emitted %s report lines, want 2 (cutover + rollback)\n' \
+    "$report_lines" >&2
+  cat "$report_file" >&2
+  exit 1
+fi
+
+expect_report() {
+  if ! grep -F -q "$1" "$report_file"; then
+    printf 'auth legacy report missing %s\n' "$1" >&2
+    cat "$report_file" >&2
+    return 1
+  fi
+}
+
+expect_report '"report":"auth_legacy_cutover"'
+expect_report '"account_id_preserved":true'
+expect_report '"business_counts_preserved":true'
+expect_report '"avatar_checksum_preserved":true'
+expect_report '"legacy_unclaimed_count":0'
+expect_report '"pending_claim_count":0'
+expect_report '"report":"auth_legacy_rollback"'
+expect_report '"legacy_down_passed":true'
+expect_report '"limiter_schema_rollback":true'
+expect_report '"new_style_down_blocked":true'
+expect_report '"new_style_account_preserved":true'
 
 cat "$report_file"
 printf '%s\n' 'AUTH_LEGACY_CUTOVER_CHECK {"report":"auth_legacy_cutover_checks","ready":true,"checks":["accountctl_contract","legacy_password_only_shape_rejected","legacy_access_jwt_rejected","seed_startup_path_retired","account_admission_concurrency","repo_pinned_rollback"]}'

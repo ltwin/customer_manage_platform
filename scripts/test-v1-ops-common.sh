@@ -6,8 +6,18 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 source "$repo_root/scripts/lib/v1-ops-common.sh"
 
 work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
 case_count=0
+current_case=""
+
+# 用例体靠 set -e 在断言处中断，所以不能用 `if ! case` 包起来跑（那会在函数内关掉
+# set -e）。改成退出时报出最后进入的用例名，把「只剩一个退出码」变成可定位的失败。
+report_failed_case() {
+  local status=$?
+  if [[ "$status" -ne 0 ]]; then
+    printf 'v1 ops common fixture case failed: %s (exit %s)\n' "${current_case:-<startup>}" "$status" >&2
+  fi
+}
+trap 'report_failed_case; rm -rf "$work_dir"' EXIT
 
 pass_case() {
   case_count=$((case_count + 1))
@@ -444,7 +454,14 @@ test_preflight_pinned_host_skips_context_resolution() {
   local render_file="$root/render.json"
   local docker_log="$root/docker.log"
   mkdir -p "$fake_bin"
-  [[ -S "$socket_path" ]]
+  # preflight 坚持 --pinned-host 必须指向真实存在的 unix socket，所以这条用例虽然用假
+  # docker 二进制，仍隐式依赖本机 docker daemon 在跑。daemon 停了要说清楚，否则失败点
+  # 会漂到 preflight 的 endpoint-select，看起来像 fixture 坏了。
+  if [[ ! -S "$socket_path" ]]; then
+    printf 'pinned-host case needs a live docker socket at %s (start the docker daemon)\n' \
+      "$socket_path" >&2
+    return 1
+  fi
   {
     printf '%s\n' 'DATABASE_URL=ignored'
     printf '%s\n' 'APP_DATABASE_URL='
@@ -463,7 +480,7 @@ test_preflight_pinned_host_skips_context_resolution() {
     printf '%s\n' 'TELEGRAM_BOT_USERNAME='
   } >"$env_file"
   printf '%s\n' 'services: {}' >"$compose_file"
-  printf '%s\n' '{"services":{"app":{"image":"crm:local","environment":{"AUTH_TOKEN_SECRET":"0123456789abcdef0123456789abcdef","AUTH_TOKEN_ISSUER":"photographer-crm","PUBLIC_BASE_URL":"https://crm.example.invalid","AUTH_PUBLIC_REGISTRATION_ENABLED":"false","AUTH_MAIL_DRIVER":"resend","RESEND_API_KEY":"synthetic-resend-key","AUTH_MAIL_FROM":"CRM Fixture <fixture@crm.example.invalid>","HTTP_ADDR":":8080","AVATAR_STORAGE_DRIVER":"local","AVATAR_LOCAL_ROOT":"/var/lib/crm/avatars","AVATAR_LOCAL_REQUIRE_MOUNT":"true","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"","DATABASE_URL":"postgres://crm:managed-production-password@postgres:5432/crm?sslmode=disable"},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"}]},"postgres":{"image":"postgres:17-alpine","environment":{"POSTGRES_USER":"crm","POSTGRES_DB":"crm"},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"pgdata":{}}}' >"$render_file"
+  printf '%s\n' '{"services":{"app":{"image":"crm:local","environment":{"AUTH_TOKEN_SECRET":"0123456789abcdef0123456789abcdef","AUTH_TOKEN_ISSUER":"photographer-crm","PUBLIC_BASE_URL":"https://crm.example.invalid","AUTH_PUBLIC_REGISTRATION_ENABLED":"false","AUTH_MAIL_DRIVER":"resend","RESEND_API_KEY":"synthetic-resend-key","AUTH_MAIL_FROM":"CRM Fixture <fixture@crm.example.invalid>","HTTP_ADDR":":8080","AVATAR_STORAGE_DRIVER":"local","AVATAR_LOCAL_ROOT":"/var/lib/crm/avatars","AVATAR_LOCAL_REQUIRE_MOUNT":"true","SEED_ADMIN_PASSWORD":"","TELEGRAM_BOT_TOKEN":"","TELEGRAM_BOT_USERNAME":"","DATABASE_URL":"postgres://crm:managed-production-password@postgres:5432/crm?sslmode=disable"},"volumes":[{"type":"volume","source":"avatar_data","target":"/var/lib/crm/avatars"},{"type":"volume","source":"planning_media_data","target":"/var/lib/crm/planning-media"}]},"postgres":{"image":"postgres:17-alpine","environment":{"POSTGRES_USER":"crm","POSTGRES_DB":"crm"},"volumes":[{"type":"volume","source":"pgdata","target":"/var/lib/postgresql/data"}]}},"volumes":{"avatar_data":{},"planning_media_data":{},"pgdata":{}}}' >"$render_file"
   {
     printf '%s\n' '#!/usr/bin/env bash'
     printf '%s\n' 'printf "%s\n" "$*" >>"$V1_TEST_DOCKER_LOG"'
@@ -478,13 +495,20 @@ test_preflight_pinned_host_skips_context_resolution() {
   chmod +x "$fake_bin/docker"
   : >"$docker_log"
 
-  env -i PATH="$fake_bin:$PATH" HOME="${HOME:-}" TMPDIR="${TMPDIR:-/tmp}" \
+  # preflight 的诊断全在 stderr（error code=N stage=X key=Y remediation=Z），失败时必须
+  # 转出来——否则退出码之外什么都不剩，work_dir 又会被 trap 删掉。
+  if ! env -i PATH="$fake_bin:$PATH" HOME="${HOME:-}" TMPDIR="${TMPDIR:-/tmp}" \
     V1_TEST_DOCKER_LOG="$docker_log" V1_TEST_RENDER_FILE="$render_file" \
     "$repo_root/scripts/production-preflight.sh" \
       --mode compose-managed-db --seed-state initialized \
       --env-file "$env_file" --compose-file "$compose_file" \
       --docker-context must-not-be-inspected --pinned-host "unix://$socket_path" \
       --project-name synthetic-project >"$root/out" 2>"$root/err"
+  then
+    printf 'pinned-host preflight fixture rejected by production-preflight.sh\n' >&2
+    cat "$root/err" "$root/out" >&2
+    return 1
+  fi
   grep -qx 'complete/preflight=secure-baseline-ready' "$root/out"
   ! grep -q '^context ' "$docker_log"
   grep -q "^--host unix://$socket_path " "$docker_log"
@@ -626,23 +650,27 @@ test_remove_helper_checks_unexpected_volume_residual() {
   pass_case
 }
 
-test_cleanup_helper_failure_keeps_fence_and_lock
-test_cleanup_fence_failure_keeps_primary_lock
-test_operation_helper_records_create_id_before_inspect
-test_lock_records_create_id_before_inspect
-test_fence_records_create_id_before_inspect
-test_stale_break_rejects_incomplete_candidate_invariant
-test_stale_break_rechecks_name_before_delete
-test_stale_break_removes_only_verified_immutable_id_with_v
-test_runtime_rejects_live_app_env_drift
-test_runtime_rejects_live_postgres_env_drift
-test_runtime_accepts_matching_live_env_identity
-test_preflight_reuses_already_pinned_host
-test_preflight_pinned_host_skips_context_resolution
-test_public_docker_stderr_is_private
-test_inherited_generation_is_adopted_and_preserved
-test_incomplete_inherited_generation_fails_closed
-test_inherited_generation_rejects_wrong_raw_nonce
-test_remove_helper_checks_unexpected_volume_residual
+for current_case in \
+  test_cleanup_helper_failure_keeps_fence_and_lock \
+  test_cleanup_fence_failure_keeps_primary_lock \
+  test_operation_helper_records_create_id_before_inspect \
+  test_lock_records_create_id_before_inspect \
+  test_fence_records_create_id_before_inspect \
+  test_stale_break_rejects_incomplete_candidate_invariant \
+  test_stale_break_rechecks_name_before_delete \
+  test_stale_break_removes_only_verified_immutable_id_with_v \
+  test_runtime_rejects_live_app_env_drift \
+  test_runtime_rejects_live_postgres_env_drift \
+  test_runtime_accepts_matching_live_env_identity \
+  test_preflight_reuses_already_pinned_host \
+  test_preflight_pinned_host_skips_context_resolution \
+  test_public_docker_stderr_is_private \
+  test_inherited_generation_is_adopted_and_preserved \
+  test_incomplete_inherited_generation_fails_closed \
+  test_inherited_generation_rejects_wrong_raw_nonce \
+  test_remove_helper_checks_unexpected_volume_residual
+do
+  "$current_case"
+done
 
 printf 'v1 ops common fixture tests: passed (%s cases)\n' "$case_count"

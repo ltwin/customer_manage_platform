@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,9 +18,11 @@ import (
 )
 
 func TestAuthLegacyCutoverHarness(t *testing.T) {
+	// down 走查的覆盖度先查：漏扩时几毫秒内就报错，不必等容器起完再失败。
+	downWalk := legacyRollbackDownWalk(t)
 	url := startPostgres(t)
 	cutover := runLegacyCutoverFixture(t, url)
-	rollback := runLegacyRollbackFixtures(t, url)
+	rollback := runLegacyRollbackFixtures(t, url, downWalk)
 	logHarnessReport(t, cutover)
 	logHarnessReport(t, rollback)
 }
@@ -123,7 +126,66 @@ func runLegacyCutoverFixture(t *testing.T, url string) legacyCutoverHarnessRepor
 	}
 }
 
-func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessReport {
+// legacyAuthMigrationVersion 是 account-auth 迁移（0012）的版本号，回滚走查的终点。
+const legacyAuthMigrationVersion uint = 12
+
+// legacyRollbackDownWalk 返回从迁移顶点逐级 down 回 0012 要走的标签，并校验步数与
+// migrations 目录的顶点一致。步数曾被硬钉成常量，加迁移时漏改过三次（18→24、
+// 29→32、34→35），每次都让 limiter_schema_rollback 假红；顶点本身不是要守的不变量，
+// 要守的是「down 走查覆盖了 0012 以上的每一级」。
+func legacyRollbackDownWalk(t *testing.T) []string {
+	t.Helper()
+	walk := []string{
+		"settings-health-tiers",
+		"orders-attribution-snapshot",
+		"orders-payment-facts",
+		"orders-delivery-due",
+		"media-gallery-rights-bindings",
+		"plan-list-enrichment",
+		"plan-business-feedback",
+		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal",
+		"plan-assignment-reminder-ingestion", "plan-assignment-reminders",
+		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
+		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
+		"account profiles", "settings availability", "limiter schema",
+	}
+	want := int(migrationTip(t)) - int(legacyAuthMigrationVersion)
+	if len(walk) != want {
+		t.Fatalf("legacy rollback down walk covers %d migrations, migrations tip needs %d; "+
+			"extend the walk when adding a migration", len(walk), want)
+	}
+	return walk
+}
+
+// migrationTip 从 migrations 目录读出最高迁移号。
+func migrationTip(t *testing.T) uint {
+	t.Helper()
+	entries, err := filepath.Glob(filepath.Join("migrations", "*.up.sql"))
+	if err != nil {
+		t.Fatalf("glob migrations: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("no migrations found under migrations/")
+	}
+	var tip uint
+	for _, entry := range entries {
+		name := filepath.Base(entry)
+		prefix, _, found := strings.Cut(name, "_")
+		if !found {
+			t.Fatalf("migration %q has no NNNN_ prefix", name)
+		}
+		version, err := strconv.ParseUint(prefix, 10, 32)
+		if err != nil {
+			t.Fatalf("migration %q has no numeric prefix: %v", name, err)
+		}
+		if uint(version) > tip {
+			tip = uint(version)
+		}
+	}
+	return tip
+}
+
+func runLegacyRollbackFixtures(t *testing.T, url string, downWalk []string) legacyRollbackHarnessReport {
 	t.Helper()
 	ctx := context.Background()
 	resetToMigrationStep(t, url, 11)
@@ -142,20 +204,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 		t.Fatalf("migrate rollback legacy fixture up: %v", err)
 	}
 	fullVersion := migrationVersion(t, url)
-	for _, label := range []string{
-		"settings-health-tiers",
-		"orders-attribution-snapshot",
-		"orders-payment-facts",
-		"orders-delivery-due",
-		"media-gallery-rights-bindings",
-		"plan-list-enrichment",
-		"plan-business-feedback",
-		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal",
-		"plan-assignment-reminder-ingestion", "plan-assignment-reminders",
-		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
-		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
-		"account profiles", "settings availability", "limiter schema",
-	} {
+	for _, label := range downWalk {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("%s down: %v", label, err)
 		}
@@ -179,20 +228,7 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	}
 
 	resetAuthSchema(t, url)
-	for _, label := range []string{
-		"settings-health-tiers",
-		"orders-attribution-snapshot",
-		"orders-payment-facts",
-		"orders-delivery-due",
-		"media-gallery-rights-bindings",
-		"plan-list-enrichment",
-		"plan-business-feedback",
-		"plan-assignment-reminder-digest-intent", "plan-assignment-reminder-temporal",
-		"plan-assignment-reminder-ingestion", "plan-assignment-reminders",
-		"share assignments", "share feedbacks", "share anonymous projection", "share generations",
-		"security attempt budget", "plan crm", "plan ingestion", "planning media", "shoot planning",
-		"account profiles", "settings availability", "limiter schema",
-	} {
+	for _, label := range downWalk {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatalf("prepare %s down: %v", label, err)
 		}
@@ -224,10 +260,11 @@ func runLegacyRollbackFixtures(t *testing.T, url string) legacyRollbackHarnessRe
 	return legacyRollbackHarnessReport{
 		Report: "auth_legacy_rollback", MigrationChecksum: "sha256:" + hex.EncodeToString(digest[:]),
 		LegacySchemaVersionBefore: versionBefore, LegacySchemaVersionAfter: versionAfter,
-		// Tip is pinned to the current highest migration so adding a new up/down
-		// without extending the labeled down walk fails this gate loudly.
-		LimiterSchemaRollback:        fullVersion == 34 && versionBefore == 12,
-		LegacyDownPassed:             versionBefore == 12 && versionAfter == 11,
+		// 断言「从真实顶点起步，一路 down 穿过 0013 limiter schema 落到 12」，
+		// 以免把「只回滚了 limiter」误报成 account-auth rollback 已通过。
+		// 顶点由 legacyRollbackDownWalk 从 migrations 目录读出，不再手钉常量。
+		LimiterSchemaRollback:        fullVersion == legacyAuthMigrationVersion+uint(len(downWalk)) && versionBefore == legacyAuthMigrationVersion,
+		LegacyDownPassed:             versionBefore == legacyAuthMigrationVersion && versionAfter == legacyAuthMigrationVersion-1,
 		LegacyDataPreserved:          legacyHash == "deprecated-hash" && customerCount == 1,
 		NewStyleDownBlocked:          downErr != nil && strings.Contains(downErr.Error(), "auth_schema_down_blocked_new_accounts"),
 		NewStyleMarker:               "auth_schema_down_blocked_new_accounts",
