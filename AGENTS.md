@@ -84,7 +84,9 @@ Skills directory: /Users/samson/.claude/skills
 | `build` + `lint` + `generate-check` | 9s | 2% |
 | 前端全部单测（312 个） | 0.9s | <1% |
 
-后端 18 个包各起各的 PostgreSQL 容器（22 个启动点，无 reuse），且 `-p=1 -parallel=1` 强制全串行——串行是为了绕开 testcontainers 的端口映射 flake。**慢和 flake 是同一个根因**：每个包都要自己抢一次端口映射。
+容器是**按测试**起的，不是按包：`internal/customer` 一个包单轮就创建 32 个 PostgreSQL 容器（`docker events` 实测），全仓库辅助函数调用点 100+，都没有 reuse。加上 `-p=1 -parallel=1` 强制全串行（串行是为了绕开 testcontainers 的端口映射 flake），**慢和 flake 就是同一个根因**：每个测试都要自己抢一次端口映射。
+
+按实测失败率（单轮 `make check` 约 3 处 / 100+ 次容器启动）推算，**一次就干净通过的 `make check` 是少数情况**。红灯必须走下面的分诊，不能直接当回归，也不能直接放行。
 
 ### 后端红灯分诊
 
@@ -94,7 +96,15 @@ Skills directory: /Users/samson/.claude/skills
 cd backend && go test ./internal/<包>/ -count=1
 ```
 
-单独跑过 = 已知 flake（`port "5432/tcp" not found`），不是回归，可以继续；单独跑也红 = 真回归，必须修。不要因为"上次也这样"就直接放行，每次都要跑这一步确认。
+判据不是"单独跑过没有"这一条——flake 单独跑也会红。三条一起看：
+
+1. **错误文本**是 `container connection string: port "5432/tcp" not found`（启动期，非断言失败）→ 指向 flake；任何断言失败或 diff 输出 → 真回归。
+2. **失败点是否游走**：重跑时换成同包另一个测试失败 → 竞态；每次钉死同一个测试 → 真回归。
+3. **重跑能否变绿**：跑三轮，出现过绿 → flake。
+
+三条都指向 flake 才放行，并在提交或合并说明里写清跑了哪几轮。任一条指向回归就当回归查。不要因为"上次也这样"跳过这一步。
+
+同一个 flake 也会打到 `test-ops`：`scripts/test-auth-legacy-cutover.sh` 内部包着 `go test`，走同一条容器路径。
 
 ### 测试不是唯一的验证手段
 
