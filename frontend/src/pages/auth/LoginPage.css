@@ -81,8 +81,8 @@
   right: 0;
   bottom: 2px;
   height: 6px;
-  background: var(--accent2-weak);
-  border-radius: 3px;
+  background: var(--accent-weak);
+  border-radius: var(--radius-xxs);
   z-index: -1;
 }
 .auth-pitch > p { color: var(--muted); font-size: 15px; max-width: 26rem; }
@@ -92,7 +92,7 @@
 .auth-proof-dot {
   width: 18px;
   height: 18px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   flex: none;
   margin-top: 2px;
   display: grid;
@@ -154,16 +154,14 @@
   margin-bottom: 14px;
   border: 1px solid var(--danger);
   background: var(--danger-weak);
-  color: oklch(44% 0.18 20);
+  color: var(--danger);
 }
-[data-theme='dark'] .auth-alert { color: oklch(85% 0.11 20); }
 .auth-alert svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
 .auth-alert.auth-alert-ok {
   border-color: var(--success);
   background: var(--success-weak);
-  color: oklch(42% 0.12 158);
+  color: var(--success);
 }
-[data-theme='dark'] .auth-alert.auth-alert-ok { color: oklch(83% 0.12 158); }
 
 .auth-btn-block { width: 100%; min-height: 44px; font-size: 14px; font-weight: 600; }
 

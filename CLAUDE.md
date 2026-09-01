@@ -7,7 +7,8 @@
 - 本项目用 CodeStable 管理规格与流程；任何 CodeStable 技能启动前先读 `.codestable/attention.md`。
 - 功能实现从 roadmap 取条目：`.codestable/roadmap/photographer-private-crm/`（13 条子 feature，依赖序）。
 - 当前执行状态以 `.codestable/roadmap/photographer-private-crm/photographer-private-crm-items.yaml` 为准；不要从旧 feature 报告或对话推断进度。
-- 聚合验证入口是 `make check`；OpenAPI 变更后运行 `make generate` 并提交 Go/TS 两份生成物。
+- 验证按影响面选门禁，判定表见 [AGENTS.md 「验证范式」](AGENTS.md#验证范式)：日常用 `make check-frontend` / `check-go PKG=...` / `check-ops`，`make check` 是合回 `develop` 与发布前的门禁（约 8 分钟），不是每次编辑的默认动作。
+- OpenAPI 变更后运行 `make generate` 并提交 Go/TS 两份生成物。
 
 ## 硬规则（写代码必须遵守）
 
@@ -31,6 +32,7 @@
 | 要找什么 | 位置 |
 |---|---|
 | 启动必读注意事项 | `.codestable/attention.md` |
+| 验证范式与门禁判定表 | `AGENTS.md`「验证范式」 |
 | 领域术语表 | `.codestable/requirements/CONTEXT.md` |
 | 已拍板决策（ADR 001-004） | `.codestable/requirements/adrs/` |
 | 能力愿景索引 | `.codestable/requirements/VISION.md` |

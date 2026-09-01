@@ -17,7 +17,7 @@
   align-items: center;
   min-height: 36px;
   padding: 0.35rem 0.85rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: inherit;
   text-decoration: none;
   opacity: 0.78;
@@ -55,14 +55,15 @@
 .account-profile-avatar-preview {
   width: 4.5rem;
   height: 4.5rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 1.4rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--fg);
+  border: 1px solid var(--border);
 }
 
 .account-profile-avatar-preview img {
@@ -71,12 +72,12 @@
   object-fit: cover;
 }
 
-.account-profile-avatar-preview.tone-0 { background: #5b7c99; }
-.account-profile-avatar-preview.tone-1 { background: #6a8f6b; }
-.account-profile-avatar-preview.tone-2 { background: #8a6d5b; }
-.account-profile-avatar-preview.tone-3 { background: #6d6a8f; }
-.account-profile-avatar-preview.tone-4 { background: #8f6a7a; }
-.account-profile-avatar-preview.tone-5 { background: #5b8a8f; }
+.account-profile-avatar-preview.tone-0 { background: var(--avatar-tone-0); }
+.account-profile-avatar-preview.tone-1 { background: var(--avatar-tone-1); }
+.account-profile-avatar-preview.tone-2 { background: var(--avatar-tone-2); }
+.account-profile-avatar-preview.tone-3 { background: var(--avatar-tone-3); }
+.account-profile-avatar-preview.tone-4 { background: var(--avatar-tone-4); }
+.account-profile-avatar-preview.tone-5 { background: var(--avatar-tone-5); }
 
 .account-readonly-meta {
   display: grid;

@@ -1,8 +1,11 @@
 # 命令基线：make check 是全 roadmap 后续 feature 的验证入口（roadmap §6）。
 
-.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening
+.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening test-go test-frontend test-ops check-frontend check-go check-ops
 
 BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || printf development)
+
+# 后端测试范围，可被分层门禁覆盖：make check-go PKG=./internal/order/...
+PKG ?= ./...
 
 check: build lint test generate-check
 
@@ -33,32 +36,21 @@ lint:
 	cd backend && golangci-lint run ./...
 	cd frontend && npm run lint
 
-test:
+# 全量测试 = 三段之和。分段是为了让分层门禁能只取其一（范式见 AGENTS.md），
+# 组合而非各写一份清单：手工清单曾漂移过——三个 test:* 脚本存在却从未进门禁。
+test: test-go test-frontend test-ops
+
+test-go:
 	# Testcontainers 逐包并发会偶发丢失 PostgreSQL mapped port；串行 package/test 保持门禁稳定。
-	cd backend && go test -p=1 ./... -count=1 -parallel=1
-	cd frontend && npm run test:customer-money
-	cd frontend && npm run test:package-price
-	cd frontend && npm run test:api-client
-	cd frontend && npm run test:auth
-	cd frontend && npm run test:schedule
-	cd frontend && npm run test:openings-golden
-	cd frontend && npm run test:dashboard-v2
-	cd frontend && npm run test:order-payment
-	cd frontend && npm run test:dashboard-v2-layout
-	cd frontend && npm run test:settings
-	cd frontend && npm run test:avatar-layout
-	cd frontend && npm run test:app-shell-layout
-	cd frontend && npm run test:telegram-digest
-	cd frontend && npm run test:data-export
-	cd frontend && npm run test:account-center
-	cd frontend && npm run test:customer-avatar
-	cd frontend && npm run test:v1-hardening
-	cd frontend && npm run test:shoot-planning
-	cd frontend && npm run test:planning-media
-	cd frontend && npm run test:plan-ingestion
-	cd frontend && npm run test:shoot-plan-crm
-	cd frontend && npm run test:plan-share
-	node --test frontend/scripts/planning-prototype-v2.test.mjs
+	cd backend && go test -p=1 $(PKG) -count=1 -parallel=1
+
+# glob 自动发现，新增 scripts/*.test.* 无需改 Makefile。
+# *.e2e.mjs 不匹配 node 的测试文件名模式，故不会被卷进来——它需要 Playwright、
+# 运行中的前端和一对真实账号口令，只能手动跑。
+test-frontend: frontend/node_modules
+	cd frontend && node --test --experimental-transform-types "scripts/*.test.ts" "scripts/*.test.mjs"
+
+test-ops:
 	./scripts/test-auth-legacy-cutover.sh
 	./scripts/test-auth-security-catalog.sh
 	bash ./scripts/test-v1-ops-common.sh
@@ -67,6 +59,24 @@ test:
 	bash ./scripts/test-planning-ops-backup-restore-safety.sh
 	bash ./scripts/test-planning-hardening.sh
 	./scripts/test-v1-ops-contract.sh
+
+# ---- 分层门禁 ----
+# 按影响面选门禁，不要习惯性跑 check。判定表见 AGENTS.md「验证范式」。
+
+# 前端改动（CSS / 组件 / 页面）：lint + 构建 + 全部前端单测
+check-frontend: frontend/node_modules
+	cd frontend && npm run lint
+	cd frontend && npm run build
+	$(MAKE) test-frontend
+
+# 后端限定包：make check-go PKG=./internal/order/...
+check-go:
+	cd backend && go build ./...
+	cd backend && golangci-lint run $(PKG)
+	$(MAKE) test-go PKG=$(PKG)
+
+# 部署脚本 / ops 契约改动
+check-ops: test-ops
 
 planning-ops-safety:
 	bash ./scripts/test-planning-ops-backup-restore-safety.sh

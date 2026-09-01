@@ -579,8 +579,9 @@ test('STEP-000b baseline: security surface, shared form, settings stripped, test
 	assert.doesNotMatch(accountSettingsSource, /DataExportCard|account-security-card|logoutSession/)
 	assert.match(packageJSON, /"test:account-center"/)
 	assert.match(packageJSON, /"test:customer-avatar"/)
-	assert.match(makefile, /npm run test:account-center/)
-	assert.match(makefile, /npm run test:customer-avatar/)
+	// 注册守卫：门禁改用 glob 发现 scripts/*.test.*，单文件自动入闸；
+	// 这里钉住发现机制，换回手工清单会让这条失败。
+	assert.match(makefile, /node --test .*"scripts\/\*\.test\.ts" "scripts\/\*\.test\.mjs"/)
 })
 
 test('CHK-001 identity card consumes AccountCenterContext and static verified label', () => {
