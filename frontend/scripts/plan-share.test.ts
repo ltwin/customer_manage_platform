@@ -110,8 +110,9 @@ test('Makefile and package.json expose mandatory plan-share runners', () => {
   const makefile = source('../../Makefile')
 
   assert.match(pkg, /"test:plan-share":/)
-  assert.match(makefile, /npm run test:plan-share/)
-  assert.match(makefile, /planning-prototype-v2\.test\.mjs/)
+  // 注册守卫：门禁改用 glob 发现 scripts/*.test.*，plan-share 与 planning-prototype-v2
+  // 都由它覆盖；这里钉住发现机制，换回手工清单会让这条失败。
+  assert.match(makefile, /node --test .*"scripts\/\*\.test\.ts" "scripts\/\*\.test\.mjs"/)
 })
 
 test('customers can self-revoke an active assignment with the one-time receipt', () => {

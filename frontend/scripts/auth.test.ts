@@ -382,7 +382,9 @@ test('auth routes and pages are mounted without the legacy storage token contrac
   assert.match(securityPage, /logoutSession\(\)/)
   assert.match(welcomePage, /fetchAuthCapabilities/)
   assert.match(welcomePage, /to="\/register"/)
-  assert.match(makefile, /npm run test:auth/)
+  // 注册守卫：门禁不再逐个登记 runner，test-frontend 用 glob 发现 scripts/*.test.*，
+  // 本文件因此自动入闸。改为钉住发现机制——换回手工清单会让这条失败。
+  assert.match(makefile, /node --test .*"scripts\/\*\.test\.ts" "scripts\/\*\.test\.mjs"/)
   assert.doesNotMatch(
     [app, loginPage, registerPage, verifyPage, forgotPage, resetPage, changeForm, accountMenu, securityPage, appShell, welcomePage, sessionSource].join('\n'),
     /crm_token/,
