@@ -170,7 +170,7 @@
 .share-claim-revoke { display: grid; gap: 8px; justify-items: end; }
 .share-claim-revoke .share-claim-form { justify-items: stretch; min-width: min(320px, 100%); }
 .share-fb-sent-list { margin-top: 14px; }
-.share-eligibility-note { margin: 0 0 14px; padding: 10px 12px; border-left: 3px solid var(--warning); background: var(--warning-weak); border-radius: 0 8px 8px 0; color: var(--fg); font-size: 12.5px; }
+.share-eligibility-note { margin: 0 0 14px; padding: 10px 12px; border-left: 3px solid var(--warning); background: var(--warning-weak); border-radius: 0 var(--radius-s) var(--radius-s) 0; color: var(--fg); font-size: 12.5px; }
 .share-foot p { margin: 0; }
 .share-foot p + p { margin-top: 4px; }
 .share-fb-form small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }

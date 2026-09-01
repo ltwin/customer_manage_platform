@@ -101,7 +101,7 @@
   position: absolute;
   left: 10px;
   right: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   padding: 4px 10px;
   overflow: hidden;
   color: var(--fg);
@@ -137,7 +137,7 @@
   gap: 6px;
   border: 1.5px dashed var(--border-strong);
   background: transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--muted);
   font-size: 11.5px;
   min-height: 24px;
@@ -172,7 +172,7 @@
   font-family: var(--font-mono);
   background: var(--fg);
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-xxs);
 }
 
 .dv2-tl-legend {
@@ -188,7 +188,7 @@
   display: inline-block;
   width: 8px;
   height: 8px;
-  border-radius: 2px;
+  border-radius: var(--radius-xxs);
   margin-right: 4px;
   vertical-align: -1px;
 }
@@ -212,11 +212,11 @@
 .dv2-gauge { width: 120px; flex: none; }
 .dv2-gauge-track {
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--radius-xxs);
   background: var(--surface-2);
   overflow: hidden;
 }
-.dv2-gauge-fill { height: 100%; border-radius: 3px; background: var(--accent); }
+.dv2-gauge-fill { height: 100%; border-radius: var(--radius-xxs); background: var(--accent); }
 .dv2-gauge-label { font-size: 10.5px; color: var(--muted); margin-top: 3px; font-family: var(--font-mono); }
 
 /* ---------- 收入瀑布 ---------- */
@@ -233,7 +233,7 @@
 .dv2-wf-bar {
   display: flex;
   height: 34px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
   border: 1px solid var(--border);
 }
@@ -263,7 +263,7 @@
   gap: 8px;
   width: 100%;
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -272,7 +272,7 @@
 }
 
 .dv2-wf-leg-row:hover { background: var(--surface-2); }
-.dv2-wf-leg-row .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.dv2-wf-leg-row .swatch { width: 10px; height: 10px; border-radius: var(--radius-xxs); flex: none; }
 .dv2-wf-leg-row .k { font-weight: 600; }
 .dv2-wf-leg-row .d { color: var(--muted); }
 .dv2-wf-leg-row .v { margin-left: auto; font-family: var(--font-mono); font-weight: 650; }
@@ -311,7 +311,7 @@
   justify-content: center;
   font-size: 10.5px;
   font-family: var(--font-mono);
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   background: var(--surface-2);
   color: var(--muted);
   border: 1px solid transparent;
@@ -357,7 +357,7 @@
   flex: 1;
   display: flex;
   height: 22px;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
   background: var(--surface-2);
 }
@@ -376,7 +376,7 @@
   font-size: 12px;
   color: var(--muted);
   background: var(--surface-2);
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   padding: 8px 10px;
 }
 
@@ -407,7 +407,7 @@
   font-size: 13px;
   line-height: 1.55;
   padding: 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--fg);
@@ -458,7 +458,7 @@
   min-width: 0;
   padding: 3px 2px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   opacity: 0.75;
   transition: opacity 0.15s ease;

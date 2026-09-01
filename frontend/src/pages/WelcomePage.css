@@ -95,7 +95,7 @@
   bottom: 4px;
   height: 9px;
   background: var(--accent-weak);
-  border-radius: 4px;
+  border-radius: var(--radius-xxs);
   z-index: -1;
 }
 .wp-lede { font-size: 16.5px; color: var(--muted); max-width: 31rem; }
