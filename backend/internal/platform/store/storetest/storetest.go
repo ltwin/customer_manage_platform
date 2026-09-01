@@ -77,9 +77,7 @@ func run(m *testing.M, migrateUp func(databaseURL string) error) (int, error) {
 		tcpostgres.WithDatabase(dbName),
 		tcpostgres.WithUsername(dbUser),
 		tcpostgres.WithPassword(dbPassword),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
+		testcontainers.WithWaitStrategy(waitReady()),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("start postgres container: %w", err)
@@ -124,6 +122,20 @@ func buildTemplate(ctx context.Context, migrateUp func(string) error) error {
 		return fmt.Errorf("migrate template database: %w", err)
 	}
 	return nil
+}
+
+// waitReady 等两件事，缺一不可：
+//   - 日志出现两次「ready to accept connections」（第一次是 initdb 阶段的临时实例）
+//   - 端口映射真的可连
+//
+// 只等日志是这个仓库长期 flake 的真正根因：日志行出现时 Docker 可能还没发布端口
+// 映射，紧接着的 MappedPort 就报 `port "5432/tcp" not found`。串行跑碰不到，
+// 是因为串行根本没有并发启动；-p>1 时多个容器同时起，几乎每轮必现。
+func waitReady() wait.Strategy {
+	return wait.ForAll(
+		wait.ForLog("database system is ready to accept connections").WithOccurrence(2),
+		wait.ForListeningPort("5432/tcp"),
+	).WithStartupTimeoutDefault(60 * time.Second)
 }
 
 // URLFor 拼出共享容器上某个 database 的连接串。
@@ -175,9 +187,7 @@ func NewDedicated(t *testing.T, migrateUp func(string) error, opts ...testcontai
 		tcpostgres.WithDatabase(dbName),
 		tcpostgres.WithUsername(dbUser),
 		tcpostgres.WithPassword(dbPassword),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60 * time.Second)),
+		testcontainers.WithWaitStrategy(waitReady()),
 	}
 	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine", append(args, opts...)...)
 	if err != nil {

@@ -65,28 +65,36 @@ Skills directory: /Users/samson/.claude/skills
 | 前端 CSS / 组件 / 页面 | `make check-frontend` | 4s |
 | 前端且引用了生成的 `schema.d.ts` | 上面 + `make generate-check` | +1s |
 | 单个 Go 包内部逻辑 | `make check-go PKG=./internal/xxx/...` | 2~60s，取决于包 |
-| Go 跨包改动 / 接口签名 / 迁移 | `make check-go`（PKG 默认 `./...`） | ~6min |
+| Go 跨包改动 / 接口签名 / 迁移 | `make check-go`（PKG 默认 `./...`） | ~55s |
 | `api/openapi.yaml` | `make generate` + 提交两份生成物 + 两侧受影响包 | — |
 | `scripts/` 下部署与 ops 契约 | `make check-ops` | ~2min |
-| 合回 `develop` 前 / 发布前 | `make check` | ~8min |
+| 合回 `develop` 前 / 发布前 | `make check` | ~3min |
 
 分层门禁只改变**跑什么**，不改变**标准**。缩小范围是因为其余部分与改动无关，不是为了让红灯消失；一旦不确定影响面，就往上取一档。
 
-### 为什么 `make check` 贵
+### `make check` 的成本构成
 
 暖缓存下各段实测：
 
 | 段 | 耗时 | 占比 |
 |---|---|---|
-| 后端 `go test -p=1 ./...` | ~350s | 73% |
-| `scripts/test-auth-security-catalog.sh` | 86s | 18% |
-| `scripts/test-auth-legacy-cutover.sh` | 22s | 5% |
-| `build` + `lint` + `generate-check` | 9s | 2% |
+| 后端 `go test -p=4 ./...` | ~50s | 27% |
+| `scripts/test-auth-security-catalog.sh` | 86s | 46% |
+| `scripts/test-auth-legacy-cutover.sh` | 22s | 12% |
+| `build` + `lint` + `generate-check` | 9s | 5% |
 | 前端全部单测（312 个） | 0.9s | <1% |
 
-容器是**按测试**起的，不是按包：`internal/customer` 一个包单轮就创建 32 个 PostgreSQL 容器（`docker events` 实测），全仓库辅助函数调用点 100+，都没有 reuse。加上 `-p=1 -parallel=1` 强制全串行（串行是为了绕开 testcontainers 的端口映射 flake），**慢和 flake 就是同一个根因**：每个测试都要自己抢一次端口映射。
+后端已不再是大头。现在最贵的单项是 `test-auth-security-catalog.sh`（86s），它内部也是 `go test`——下一个要优化的就是它。
 
-按实测失败率（单轮 `make check` 约 3 处 / 100+ 次容器启动）推算，**一次就干净通过的 `make check` 是少数情况**。红灯必须走下面的分诊，不能直接当回归，也不能直接放行。
+集成测试的容器由 `internal/platform/store/storetest` 统一提供：**每个测试二进制一个容器**，测试之间靠独立 database 隔离（从模板库克隆，约 37ms）。全量一轮 19 个容器。新写集成测试直接用 `storetest.NewURL(t)`，不要自己起容器——自起会同时丢掉复用和下面那条等待策略。
+
+### 端口映射 flake 的根因（已修）
+
+历史上 `port "5432/tcp" not found` 长期存在，一度被当成「testcontainers 并发缺陷」用 `-p=1` 串行绕开。真正的原因是**等待策略只等日志、不等端口发布**：日志打出 `ready to accept connections` 时 Docker 可能还没发布端口映射，紧接着的 `MappedPort` 就报错。
+
+`storetest.waitReady()` 补上 `wait.ForListeningPort` 后，`-p=4` 连续六轮全绿。**任何新起容器的代码都必须用 `waitReady()`**，只等日志就会把这个洞带回来。
+
+并发度由 `GOTEST_P` 控制，默认 4，是这台机器（12 核 / Docker 8GB）的实测上限：`-p=8` 会把容器启动压到排队，十分钟跑不完。调高前先按下面的判据实测。
 
 ### 后端红灯分诊
 
@@ -96,15 +104,17 @@ Skills directory: /Users/samson/.claude/skills
 cd backend && go test ./internal/<包>/ -count=1
 ```
 
-判据不是"单独跑过没有"这一条——flake 单独跑也会红。三条一起看：
+**默认假设是真回归。** 容器复用与等待策略修好之后，`make check` 是能一次通过的（连续多轮实测），红灯不再有「大概率是 flake」这个先验。
 
-1. **错误文本**是 `container connection string: port "5432/tcp" not found`（启动期，非断言失败）→ 指向 flake；任何断言失败或 diff 输出 → 真回归。
-2. **失败点是否游走**：重跑时换成同包另一个测试失败 → 竞态；每次钉死同一个测试 → 真回归。
-3. **重跑能否变绿**：跑三轮，出现过绿 → flake。
+判为环境问题需要三条同时成立：
 
-三条都指向 flake 才放行，并在提交或合并说明里写清跑了哪几轮。任一条指向回归就当回归查。不要因为"上次也这样"跳过这一步。
+1. **错误文本**是容器启动期失败（`port "5432/tcp" not found`、`rootless Docker not found`），而非断言失败或 diff 输出。
+2. **失败点游走**：重跑时换成同包另一个测试失败 → 竞态；每次钉死同一个测试 → 真回归。
+3. **重跑能变绿**：跑三轮，出现过绿。
 
-同一个 flake 也会打到 `test-ops`：`scripts/test-auth-legacy-cutover.sh` 内部包着 `go test`，走同一条容器路径。
+三条都成立才放行，并在提交或合并说明里写清跑了哪几轮。任一条不成立就当回归查。
+
+还有一类会被误判成 flake 的**真问题**：测试自带真实墙钟窗口，并发下拿不到时间片就失败（`TestS6MonotonicBudgetThroughBeginCurrentCall` 曾用 100ms 窗口跑两轮数据库往返）。这类要改测试——把墙钟窗口放大到与被测语义无关的量级，而不是调低并发度。
 
 ### 测试不是唯一的验证手段
 

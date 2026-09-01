@@ -6,6 +6,7 @@ BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || printf development)
 
 # 后端测试范围，可被分层门禁覆盖：make check-go PKG=./internal/order/...
 PKG ?= ./...
+GOTEST_P ?= 4
 
 check: build lint test generate-check
 
@@ -40,9 +41,11 @@ lint:
 # 组合而非各写一份清单：手工清单曾漂移过——三个 test:* 脚本存在却从未进门禁。
 test: test-go test-frontend test-ops
 
+# 并发度 4 是实测上限。容器等待策略补上端口监听后（storetest.waitReady），
+# -p=4 连续六轮全绿、约 50s，串行是 158s；-p=8 会把 Docker（12 核 / 8GB）压到
+# 容器启动排队，实测十分钟跑不完。调高前先按 AGENTS.md 的稳定性判据实测。
 test-go:
-	# Testcontainers 逐包并发会偶发丢失 PostgreSQL mapped port；串行 package/test 保持门禁稳定。
-	cd backend && go test -p=1 $(PKG) -count=1 -parallel=1
+	cd backend && go test -p=$(GOTEST_P) $(PKG) -count=1 -parallel=$(GOTEST_P)
 
 # glob 自动发现，新增 scripts/*.test.* 无需改 Makefile。
 # *.e2e.mjs 不匹配 node 的测试文件名模式，故不会被卷进来——它需要 Playwright、

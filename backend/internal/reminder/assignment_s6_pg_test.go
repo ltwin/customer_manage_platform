@@ -26,8 +26,13 @@ func TestS6MonotonicBudgetThroughBeginCurrentCall(t *testing.T) {
 		wantZero bool
 		wantMax  time.Duration
 	}{
-		{name: "80ms_from_100ms", pause: 80 * time.Millisecond, wantMax: 80 * time.Millisecond},
-		{name: "120ms_from_100ms", pause: 120 * time.Millisecond, wantZero: true},
+		// 窗口取秒级而不是毫秒级：pause 走注入的假时钟不占真实时间，
+		// 但 valid_until 是真墙钟，中间要跑完 claimDelivery 和 BeginCurrentCall 两轮
+		// 数据库往返。原先 100ms 的窗口在 -p>1 有 CPU 争抢时会被往返吃光，
+		// 断言前预算就已耗尽（约三分之一轮次失败）。这里验的是钳制算术
+		// budget = min(pause, 剩余)，不是数据库延迟，所以放大窗口不改变被测语义。
+		{name: "pause_below_remaining", pause: 2400 * time.Millisecond, wantMax: 2400 * time.Millisecond},
+		{name: "pause_above_remaining", pause: 3600 * time.Millisecond, wantZero: true},
 	}
 	for i, tc := range cases {
 		tc := tc
@@ -38,8 +43,8 @@ func TestS6MonotonicBudgetThroughBeginCurrentCall(t *testing.T) {
 			ctx := context.Background()
 			now := time.Now().UTC()
 			seedBoundSettings(t, scope, "chat-budget", 1)
-			// Keep a ~100ms business remainder relative to CAS clock_timestamp().
-			seedShortLivedPlanningGroup(t, scope, planID, orderID, slotID, now.Add(120*time.Millisecond))
+			// Keep a ~3s business remainder relative to CAS clock_timestamp().
+			seedShortLivedPlanningGroup(t, scope, planID, orderID, slotID, now.Add(3600*time.Millisecond))
 
 			local := time.Date(2026, 8, 14, 0, 0, 0, 0, time.UTC)
 			delID := fmt.Sprintf("del_budget_%d", i)
@@ -52,7 +57,7 @@ func TestS6MonotonicBudgetThroughBeginCurrentCall(t *testing.T) {
 			}
 			if _, err := scope.Update(ctx, "plan_assignment_reminder_groups",
 				"valid_until = $2", "state = $3",
-				time.Now().UTC().Add(100*time.Millisecond), reminder.GroupStateCurrent); err != nil {
+				time.Now().UTC().Add(3000*time.Millisecond), reminder.GroupStateCurrent); err != nil {
 				t.Fatalf("refresh valid_until: %v", err)
 			}
 			claim := claimDelivery(t, scope, now)
