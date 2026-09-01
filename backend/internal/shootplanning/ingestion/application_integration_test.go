@@ -3,32 +3,20 @@ package ingestion_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 func TestApplicationCreatePreviewReplayAndAbandon(t *testing.T) {
 	ctx := context.Background()
-	container, err := tcpostgres.Run(ctx, "postgres:17-alpine", tcpostgres.WithDatabase("ingestion_app_test"), tcpostgres.WithUsername("ingestion_app_test"), tcpostgres.WithPassword("ingestion_app_test"), testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60*time.Second)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-	url, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MigrateUp(url); err != nil {
-		t.Fatal(err)
-	}
+	url := storetest.NewURL(t)
 	db, err := store.Open(ctx, url)
 	if err != nil {
 		t.Fatal(err)
@@ -107,15 +95,7 @@ func TestApplicationCreatePreviewReplayAndAbandon(t *testing.T) {
 
 func TestCombinedCommitReferenceOnlyAndCoreRollbackBoundary(t *testing.T) {
 	ctx := context.Background()
-	container, err := tcpostgres.Run(ctx, "postgres:17-alpine", tcpostgres.WithDatabase("ingestion_commit_test"), tcpostgres.WithUsername("ingestion_commit_test"), tcpostgres.WithPassword("ingestion_commit_test"), testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60*time.Second)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-	url, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
+	url := storetest.NewURL(t)
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}

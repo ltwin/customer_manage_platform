@@ -8,27 +8,14 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 func TestSessionRevisionScopeAndObservationClock(t *testing.T) {
 	ctx := context.Background()
-	container, err := tcpostgres.Run(ctx, "postgres:17-alpine", tcpostgres.WithDatabase("ingestion_test"), tcpostgres.WithUsername("ingestion_test"), tcpostgres.WithPassword("ingestion_test"), testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60*time.Second)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-	url, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MigrateUp(url); err != nil {
-		t.Fatal(err)
-	}
+	url := storetest.NewURL(t)
 	db, err := store.Open(ctx, url)
 	if err != nil {
 		t.Fatal(err)

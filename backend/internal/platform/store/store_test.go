@@ -5,15 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
-	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
 
 func TestCustomerAvatarMigrationUpDownAndConstraints(t *testing.T) {
@@ -119,31 +116,14 @@ func TestCustomerAvatarMigrationUpDownAndConstraints(t *testing.T) {
 	}
 }
 
-// startPostgres 起一个一次性 PG 容器并返回连接串（测试与 dev 库互不干扰，design D5）。
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
+
+// startPostgres 返回一个空库的连接串（测试与 dev 库互不干扰，design D5）。
+// 本包大量测试用 MigrateStepsForTest 从零推进到指定步数，故取空库而非
+// storetest.NewURL 的已迁移克隆。库之间相互隔离，容器整包共享。
 func startPostgres(t *testing.T) string {
 	t.Helper()
-	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			t.Logf("terminate postgres container: %v", err)
-		}
-	})
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("container connection string: %v", err)
-	}
-	return url
+	return storetest.NewRawURL(t)
 }
 
 // openMigrated 对空库执行 migrate up 并打开 Store。

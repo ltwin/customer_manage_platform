@@ -17,15 +17,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
+
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 func TestGetVirtualDefaultDoesNotWrite(t *testing.T) {
 	ctx := context.Background()
@@ -182,28 +181,7 @@ func openStore(t *testing.T) *store.Store {
 
 func startPostgres(t *testing.T) string {
 	t.Helper()
-	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			t.Logf("terminate postgres container: %v", err)
-		}
-	})
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("container connection string: %v", err)
-	}
-	return url
+	return storetest.NewURL(t)
 }
 
 func createAccount(t *testing.T, s *store.Store, id string) store.AccountScope {

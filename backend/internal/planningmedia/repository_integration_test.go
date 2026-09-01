@@ -7,10 +7,10 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
+
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 func TestPostgresPlanningMediaSchemaRepositoryAndAccountIsolation(t *testing.T) {
 	ctx := context.Background()
@@ -151,23 +151,7 @@ func openPlanningMediaStore(t *testing.T) *store.Store {
 func openPlanningMediaStoreWithURL(t *testing.T) (*store.Store, string) {
 	t.Helper()
 	ctx := context.Background()
-	container, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("planning_media_test"),
-		tcpostgres.WithUsername("planning_media_test"),
-		tcpostgres.WithPassword("planning_media_test"),
-		testcontainers.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-	url, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MigrateUp(url); err != nil {
-		t.Fatalf("fresh migrate: %v", err)
-	}
+	url := storetest.NewURL(t)
 	database, err := store.Open(ctx, url)
 	if err != nil {
 		t.Fatal(err)

@@ -15,6 +15,7 @@ import (
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
 	platformstore "github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
 
 func TestAvatarMaintenanceReconcilesAndDeletesOnlyExactOldGeneration(t *testing.T) {
@@ -75,7 +76,7 @@ func TestAvatarMaintenanceReconcilesAndDeletesOnlyExactOldGeneration(t *testing.
 
 func TestAvatarMaintenanceDBSessionLossCannotDeleteRepublishedChecksum(t *testing.T) {
 	ctx := context.Background()
-	url, postgres := startPostgresContainer(t)
+	url, dbName := startPostgresDatabase(t)
 	if err := platformstore.MigrateUp(url); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
@@ -123,10 +124,11 @@ func TestAvatarMaintenanceDBSessionLossCannotDeleteRepublishedChecksum(t *testin
 	case <-time.After(10 * time.Second):
 		t.Fatal("GC did not reach blocked storage Delete")
 	}
-	command := `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND state = 'idle in transaction' AND query LIKE '%avatar_object_gc%'`
-	if _, _, err := postgres.Exec(ctx, []string{"psql", "-U", "crm_test", "-d", "crm_test", "-c", command}); err != nil {
-		t.Fatalf("terminate GC database session: %v", err)
-	}
+	// pg_stat_activity 是集群级视图，容器整包共享后必须按 datname 限定，
+	// 否则会杀掉同一容器上其它测试库的连接。
+	command := `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '` + dbName +
+		`' AND pid <> pg_backend_pid() AND state = 'idle in transaction' AND query LIKE '%avatar_object_gc%'`
+	storetest.ExecSQL(t, dbName, command)
 
 	republished, err := app.Set(ctx, scope, "cus_avatar_session_loss", second.AvatarRevision, contentA)
 	if err != nil {
@@ -150,7 +152,7 @@ func TestAvatarMaintenanceDBSessionLossCannotDeleteRepublishedChecksum(t *testin
 
 func TestAvatarMaintenancePreCurrentGenerationBurnSurvivesDBSessionLoss(t *testing.T) {
 	ctx := context.Background()
-	url, postgres := startPostgresContainer(t)
+	url, dbName := startPostgresDatabase(t)
 	if err := platformstore.MigrateUp(url); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
@@ -205,10 +207,11 @@ func TestAvatarMaintenancePreCurrentGenerationBurnSurvivesDBSessionLoss(t *testi
 	case <-time.After(10 * time.Second):
 		t.Fatal("GC did not pause deleting pre-current generation")
 	}
-	command := `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE pid <> pg_backend_pid() AND state = 'idle in transaction' AND query LIKE '%avatar_object_gc%'`
-	if _, _, err := postgres.Exec(ctx, []string{"psql", "-U", "crm_test", "-d", "crm_test", "-c", command}); err != nil {
-		t.Fatalf("terminate pre-current GC session: %v", err)
-	}
+	// pg_stat_activity 是集群级视图，容器整包共享后必须按 datname 限定，
+	// 否则会杀掉同一容器上其它测试库的连接。
+	command := `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '` + dbName +
+		`' AND pid <> pg_backend_pid() AND state = 'idle in transaction' AND query LIKE '%avatar_object_gc%'`
+	storetest.ExecSQL(t, dbName, command)
 	close(raceStore.putRelease)
 	result := <-setResult
 	if result.err != nil {

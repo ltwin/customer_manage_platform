@@ -128,10 +128,7 @@ func TestAccountAccessHTTPPostgresE2EAndFullIsolation(t *testing.T) {
 
 func newAccountAccessE2EFixture(t *testing.T) accountAccessE2EFixture {
 	t.Helper()
-	databaseURL, _ := startCustomerPostgres(t)
-	if err := store.MigrateUp(databaseURL); err != nil {
-		t.Fatalf("migrate account access E2E database: %v", err)
-	}
+	databaseURL := startCustomerPostgres(t)
 	database, err := store.Open(context.Background(), databaseURL)
 	if err != nil {
 		t.Fatalf("open account access E2E store: %v", err)

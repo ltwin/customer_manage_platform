@@ -10,14 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/txcap"
 )
+
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 var errScriptedTransactionOutcome = errors.New("scripted transaction outcome unknown")
 
@@ -348,29 +347,7 @@ func TestExecuteCreateProtocol(t *testing.T) {
 func openTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			t.Logf("terminate postgres container: %v", err)
-		}
-	})
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("container connection string: %v", err)
-	}
-	if err := store.MigrateUp(url); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
+	url := storetest.NewURL(t)
 	s, err := store.Open(ctx, url)
 	if err != nil {
 		t.Fatalf("open store: %v", err)

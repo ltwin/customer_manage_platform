@@ -9,11 +9,11 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 func TestPlanningBusinessRulesFirstWriteCASAndReplacementSemantics(t *testing.T) {
 	ctx := context.Background()
@@ -134,25 +134,7 @@ func TestPlanningBusinessRulesFirstWriteCASAndReplacementSemantics(t *testing.T)
 func openSettingsStore(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
-	container, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("planning_settings_test"),
-		tcpostgres.WithUsername("planning_settings_test"),
-		tcpostgres.WithPassword("planning_settings_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MigrateUp(databaseURL); err != nil {
-		t.Fatalf("migrate settings database: %v", err)
-	}
+	databaseURL := storetest.NewURL(t)
 	db, err := store.Open(ctx, databaseURL)
 	if err != nil {
 		t.Fatal(err)

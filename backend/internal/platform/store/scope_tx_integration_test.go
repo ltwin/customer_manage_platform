@@ -5,13 +5,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
 
 func TestReadSnapshotUsesRepeatableReadAndReadOnlyTransaction(t *testing.T) {
@@ -130,26 +126,8 @@ func TestReadSnapshotReportsCommitFailure(t *testing.T) {
 func openReadSnapshotTestStore(t *testing.T, accountID string) (*Store, AccountScope) {
 	t.Helper()
 	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(ctr) })
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("postgres connection string: %v", err)
-	}
-	if err := MigrateUp(url); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	database, err := Open(ctx, url)
+	// 已迁移的克隆库，容器由 TestMain 整包共享。
+	database, err := Open(ctx, storetest.NewURL(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

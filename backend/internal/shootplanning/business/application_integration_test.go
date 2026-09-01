@@ -13,16 +13,16 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
+
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 func TestBusinessFactsDraftsOrderAndScheduleApply(t *testing.T) {
 	ctx := context.Background()
@@ -509,25 +509,7 @@ func assertScheduleEnd(t *testing.T, ctx context.Context, scope store.AccountSco
 func openBusinessStore(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
-	container, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("planning_business_test"),
-		tcpostgres.WithUsername("planning_business_test"),
-		tcpostgres.WithPassword("planning_business_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(60*time.Second),
-		),
-	)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(container) })
-	databaseURL, err := container.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.MigrateUp(databaseURL); err != nil {
-		t.Fatalf("migrate business database: %v", err)
-	}
+	databaseURL := storetest.NewURL(t)
 	db, err := store.Open(ctx, databaseURL)
 	if err != nil {
 		t.Fatal(err)

@@ -8,20 +8,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/schedule"
 	"github.com/samson/customer-manage-platform/backend/internal/settings"
 	"github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
+	"github.com/testcontainers/testcontainers-go"
 )
+
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 func TestPostgresRepositoryLoadsCustomersInStableOrderAndDefaultsEmptySettings(t *testing.T) {
 	ctx := context.Background()
@@ -283,26 +283,10 @@ func testAvailabilityWindow(start, end string) *settings.ScheduleAvailabilityWin
 
 func TestPostgresRepositoryUsesOneBatchReadPerExportTableAndNoCountQuery(t *testing.T) {
 	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithCmd("postgres", "-c", "log_statement=all"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start statement-logging postgres: %v", err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(ctr) })
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("postgres connection string: %v", err)
-	}
-	if err := store.MigrateUp(url); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	// 专属容器：本测试要开 log_statement=all，且断言整份容器日志里每条批量读
+	// 恰好出现一次 —— 共享容器的日志会混入同包其它测试的语句。
+	url, ctr := storetest.NewDedicated(t, store.MigrateUp,
+		testcontainers.WithCmd("postgres", "-c", "log_statement=all"))
 	database, err := store.Open(ctx, url)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -436,22 +420,7 @@ func canonicalTimePointer(value *time.Time) *time.Time {
 func openDataExportStore(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres: %v", err)
-	}
-	t.Cleanup(func() { _ = testcontainers.TerminateContainer(ctr) })
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("postgres connection string: %v", err)
-	}
+	url := storetest.NewURL(t)
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}

@@ -17,7 +17,7 @@ import (
 )
 
 func TestShootPlanningBusinessHTTPVerticalSlice(t *testing.T) {
-	router, database, issuer, _ := newCustomerAPIRouterWithContainer(t)
+	router, database, issuer, _ := newCustomerAPIRouterWithURL(t)
 	token := issueToken(t, issuer, testAcctID)
 
 	created := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans", token, "business-http-create", `{"title":"经营接口","subject":"角色 B"}`)
@@ -215,7 +215,7 @@ func requirePlanningError(t *testing.T, recorder *httptest.ResponseRecorder, sta
 }
 
 func TestShootPlanningHTTPVerticalSlice(t *testing.T) {
-	router, database, issuer, _ := newCustomerAPIRouterWithContainer(t)
+	router, database, issuer, _ := newCustomerAPIRouterWithURL(t)
 	accountAToken := issueToken(t, issuer, testAcctID)
 
 	unauthorized := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans", "", "create-unauthorized", `{"title":"夜景","subject":"角色 A"}`)
@@ -451,7 +451,7 @@ func TestShootPlanningHTTPVerticalSlice(t *testing.T) {
 }
 
 func TestShootPlanningOptionalJSONHTTPContract(t *testing.T) {
-	router, _, issuer, _ := newCustomerAPIRouterWithContainer(t)
+	router, _, issuer, _ := newCustomerAPIRouterWithURL(t)
 	token := issueToken(t, issuer, testAcctID)
 
 	created := shootPlanningRequest(t, router, http.MethodPost, "/api/v1/shoot-plans", token, "optional-create-plan", `{"title":"三态契约","subject":"JSON"}`)

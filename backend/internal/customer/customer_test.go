@@ -9,55 +9,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
 
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
+
 func startPostgres(t *testing.T) string {
-	url, _ := startPostgresContainer(t)
-	return url
+	t.Helper()
+	return storetest.NewURL(t)
 }
 
-// startPostgresContainer 同时返回容器句柄，供需要容器内 psql 注入的测试使用
+// startPostgresDatabase 额外返回库名，供需要容器内 psql 注入 DDL 的测试使用
 // （pgx 直连被 depguard 限制在 store 系包内，ADR-001 基座守护）。
-func startPostgresContainer(t *testing.T) (string, *tcpostgres.PostgresContainer) {
+func startPostgresDatabase(t *testing.T) (url, database string) {
 	t.Helper()
-	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			t.Logf("terminate postgres container: %v", err)
-		}
-	})
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("container connection string: %v", err)
-	}
-	return url, ctr
+	name, url := storetest.NewDatabase(t)
+	return url, name
 }
 
 func openStore(t *testing.T) *store.Store {
 	t.Helper()
-	url := startPostgres(t)
-	if err := store.MigrateUp(url); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
-	s, err := store.Open(context.Background(), url)
+	s, err := store.Open(context.Background(), startPostgres(t))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

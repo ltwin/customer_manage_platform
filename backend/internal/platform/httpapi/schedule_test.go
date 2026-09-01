@@ -301,7 +301,7 @@ func TestScheduleAPICreateOverlapsExcludeCancelledShoot(t *testing.T) {
 }
 
 func TestScheduleAPIReturnsCustomerChangedAfterTwoMoves(t *testing.T) {
-	h, s, issuer, ctr := newCustomerAPIRouterWithContainer(t)
+	h, s, issuer, databaseURL := newCustomerAPIRouterWithURL(t)
 	ctx := context.Background()
 	token := issueToken(t, issuer, testAcctID)
 	scope := s.ScopeFor(auth.AccountContext{AccountID: testAcctID})
@@ -317,11 +317,6 @@ func TestScheduleAPIReturnsCustomerChangedAfterTwoMoves(t *testing.T) {
 	if err := scope.Insert(ctx, "orders", []string{"id", "customer_id", "status"}, "ord-http-move", "cus-http-source", "scheduled"); err != nil {
 		t.Fatalf("seed moving order: %v", err)
 	}
-	databaseURL, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("container connection string: %v", err)
-	}
-
 	firstReady := make(chan struct{})
 	firstRelease := make(chan struct{})
 	firstDone := make(chan error, 1)

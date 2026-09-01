@@ -8,6 +8,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
 
 // A10：merge 全迁移面——身份 / 备注改挂 target、C 的 referrer 重定向、
@@ -138,7 +139,7 @@ func TestMergeErrorMatrix(t *testing.T) {
 // 已执行的身份迁移整体回滚，双方与指针全部保持原状。
 func TestMergeRollbackOnMidTransactionFailure(t *testing.T) {
 	ctx := context.Background()
-	url, ctr := startPostgresContainer(t)
+	url, database := startPostgresDatabase(t)
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
@@ -161,12 +162,7 @@ func TestMergeRollbackOnMidTransactionFailure(t *testing.T) {
 
 	// 注入（容器内 psql 执行 DDL，pgx 直连被 depguard 限制在 store 系包）：
 	// 禁止任何备注挂到 target → merge 的备注迁移步必然失败。
-	execSQL := func(statement string) {
-		code, output, err := ctr.Exec(ctx, []string{"psql", "-U", "crm_test", "-d", "crm_test", "-c", statement})
-		if err != nil || code != 0 {
-			t.Fatalf("exec %q: code=%d err=%v output=%v", statement, code, err, output)
-		}
-	}
+	execSQL := func(statement string) { storetest.ExecSQL(t, database, statement) }
 	execSQL("ALTER TABLE customer_notes ADD CONSTRAINT tmp_block_target CHECK (customer_id <> '" + target.ID + "')")
 
 	if _, err := svc.Merge(ctx, scope, target.ID, source.ID); err == nil {

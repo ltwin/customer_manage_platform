@@ -10,10 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
-
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -25,6 +21,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	reminderdomain "github.com/samson/customer-manage-platform/backend/internal/reminder"
 	digestdomain "github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
 	scheduledomain "github.com/samson/customer-manage-platform/backend/internal/schedule"
@@ -33,44 +30,25 @@ import (
 	planningbusiness "github.com/samson/customer-manage-platform/backend/internal/shootplanning/business"
 )
 
-func startCustomerPostgres(t *testing.T) (string, *tcpostgres.PostgresContainer) {
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
+
+func startCustomerPostgres(t *testing.T) string {
 	t.Helper()
-	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			t.Logf("terminate postgres container: %v", err)
-		}
-	})
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("container connection string: %v", err)
-	}
-	return url, ctr
+	return storetest.NewURL(t)
 }
 
 func newCustomerAPIRouter(t *testing.T) (http.Handler, *store.Store, *auth.TokenIssuer) {
 	t.Helper()
-	router, s, tokens, _ := newCustomerAPIRouterWithContainer(t)
+	router, s, tokens, _ := newCustomerAPIRouterWithURL(t)
 	return router, s, tokens
 }
 
-func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store, *auth.TokenIssuer, *tcpostgres.PostgresContainer) {
+// newCustomerAPIRouterWithURL 第四个返回值是本测试库的连接串，供需要对同一个库
+// 另开一条连接的测试使用（并发事务场景）。原先返回容器句柄，容器整包共享后
+// 容器上的默认库不再是本测试的库，拿容器取连接串会连错。
+func newCustomerAPIRouterWithURL(t *testing.T) (http.Handler, *store.Store, *auth.TokenIssuer, string) {
 	t.Helper()
-	url, ctr := startCustomerPostgres(t)
-	if err := store.MigrateUp(url); err != nil {
-		t.Fatalf("migrate up: %v", err)
-	}
+	url := startCustomerPostgres(t)
 	s, err := store.Open(context.Background(), url)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -140,7 +118,7 @@ func newCustomerAPIRouterWithContainer(t *testing.T) (http.Handler, *store.Store
 		ShootPlanning:         shootPlanningApp,
 		ShootPlanningBusiness: shootPlanningBusiness,
 	})
-	return router, s, tokens, ctr
+	return router, s, tokens, url
 }
 
 func authenticatedRequest(t *testing.T, h http.Handler, method, path, token string, body []byte) *httptest.ResponseRecorder {

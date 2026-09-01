@@ -7,44 +7,23 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/nullable"
-	"github.com/testcontainers/testcontainers-go"
-	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 )
 
-func startPostgresContainer(t *testing.T) (string, *tcpostgres.PostgresContainer) {
+func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
+
+func startPostgres(t *testing.T) string {
 	t.Helper()
-	ctx := context.Background()
-	ctr, err := tcpostgres.Run(ctx, "postgres:17-alpine",
-		tcpostgres.WithDatabase("crm_test"),
-		tcpostgres.WithUsername("crm_test"),
-		tcpostgres.WithPassword("crm_test"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
-			t.Logf("terminate postgres container: %v", err)
-		}
-	})
-	url, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("container connection string: %v", err)
-	}
-	return url, ctr
+	return storetest.NewURL(t)
 }
 
-func openStore(t *testing.T) (*store.Store, *tcpostgres.PostgresContainer) {
+func openStore(t *testing.T) *store.Store {
 	t.Helper()
-	url, ctr := startPostgresContainer(t)
+	url := startPostgres(t)
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
@@ -53,7 +32,7 @@ func openStore(t *testing.T) (*store.Store, *tcpostgres.PostgresContainer) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(s.Close)
-	return s, ctr
+	return s
 }
 
 func packageService() *pkgcatalog.Service {
@@ -70,7 +49,7 @@ func createAccount(t *testing.T, s *store.Store, id string) store.AccountScope {
 
 func TestCreateListAndValidation(t *testing.T) {
 	ctx := context.Background()
-	s, _ := openStore(t)
+	s := openStore(t)
 	scope := createAccount(t, s, "acct-a")
 	svc := packageService()
 
@@ -154,7 +133,7 @@ func TestCreateListAndValidation(t *testing.T) {
 
 func TestUpdatePartialAndClearableFields(t *testing.T) {
 	ctx := context.Background()
-	s, _ := openStore(t)
+	s := openStore(t)
 	scope := createAccount(t, s, "acct-a")
 	svc := packageService()
 	created := createPackage(t, svc, scope, "套系")
@@ -211,7 +190,7 @@ func TestUpdatePartialAndClearableFields(t *testing.T) {
 
 func TestListStatusPaginationAndIsolation(t *testing.T) {
 	ctx := context.Background()
-	s, _ := openStore(t)
+	s := openStore(t)
 	scopeA := createAccount(t, s, "acct-a")
 	scopeB := createAccount(t, s, "acct-b")
 	svc := packageService()
@@ -254,7 +233,7 @@ func TestListStatusPaginationAndIsolation(t *testing.T) {
 
 func TestUpdateStatusAndDeleteIsolation(t *testing.T) {
 	ctx := context.Background()
-	s, _ := openStore(t)
+	s := openStore(t)
 	scopeA := createAccount(t, s, "acct-a")
 	scopeB := createAccount(t, s, "acct-b")
 	svc := packageService()
@@ -285,7 +264,7 @@ func TestUpdateStatusAndDeleteIsolation(t *testing.T) {
 
 func TestDeletePackageInUseWhenOrdersTableExists(t *testing.T) {
 	ctx := context.Background()
-	s, _ := openStore(t)
+	s := openStore(t)
 	scope := createAccount(t, s, "acct-a")
 	svc := packageService()
 	seedCustomer(t, scope, "cus_order")
