@@ -40,8 +40,8 @@
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #e9e2d4, #f7f3eb);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
 }
 .share-mood figcaption { display: grid; gap: 2px; margin-top: 6px; }
 .share-mood-caption { font-size: var(--text-xs); color: var(--text); overflow-wrap: anywhere; }
@@ -170,7 +170,7 @@
 .share-claim-revoke { display: grid; gap: 8px; justify-items: end; }
 .share-claim-revoke .share-claim-form { justify-items: stretch; min-width: min(320px, 100%); }
 .share-fb-sent-list { margin-top: 14px; }
-.share-eligibility-note { margin: 0 0 14px; padding: 10px 12px; border-left: 3px solid var(--warning, #b45309); background: var(--warning-weak, #fef3c7); border-radius: 0 8px 8px 0; color: var(--fg); font-size: 12.5px; }
+.share-eligibility-note { margin: 0 0 14px; padding: 10px 12px; border-left: 3px solid var(--warning); background: var(--warning-weak); border-radius: 0 8px 8px 0; color: var(--fg); font-size: 12.5px; }
 .share-foot p { margin: 0; }
 .share-foot p + p { margin-top: 4px; }
 .share-fb-form small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }

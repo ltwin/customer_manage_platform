@@ -228,8 +228,8 @@
 }
 
 .calendar-v2-month-cell.today .calendar-v2-date-button > span {
-  background: var(--accent);
-  color: white;
+  background: var(--accent-solid);
+  color: var(--on-accent-solid);
   box-shadow: 0 0 0 3px var(--accent-tint);
 }
 
@@ -276,10 +276,11 @@
   color: var(--accent);
 }
 
+/* 「预留」走中性阶：琥珀已经给了「拍摄」，两者同色就分不出来了 */
 .calendar-v2-month-event.hold,
 .calendar-v2-week-event.hold {
-  background: var(--warning-weak);
-  color: color-mix(in oklch, var(--warning) 75%, var(--fg));
+  background: color-mix(in oklch, var(--slot-hold) 40%, var(--surface));
+  color: var(--fg);
 }
 
 .calendar-v2-month-event.busy,
@@ -730,7 +731,7 @@
   display: block;
   width: 100%;
   border: 0;
-  background: oklch(22% 0.03 288 / 0.42);
+  background: oklch(20% 0.01 60 / 0.45);
   backdrop-filter: blur(2px);
 }
 
@@ -767,10 +768,10 @@
   place-items: center;
   width: 52px;
   height: 52px;
-  border: 1px solid var(--accent-hover);
+  border: 1px solid var(--accent-solid-hover);
   border-radius: 50%;
-  background: var(--accent);
-  color: white;
+  background: var(--accent-solid);
+  color: var(--on-accent-solid);
   box-shadow: var(--shadow-pop);
 }
 
@@ -786,7 +787,7 @@
   display: grid;
   place-items: center;
   padding: 18px;
-  background: oklch(22% 0.03 288 / 0.48);
+  background: oklch(20% 0.01 60 / 0.5);
   backdrop-filter: blur(3px);
 }
 
@@ -857,7 +858,5 @@
   }
 }
 
-[data-theme="dark"] .calendar-v2-month-cell.today .calendar-v2-date-button > span,
-[data-theme="dark"] .calendar-v2-workspace[data-layout-mode="bottom-sheet"] .calendar-v2-fab {
-  color: oklch(17% 0.02 288);
-}
+/* 实心琥珀在两个主题下都配 --on-accent-solid 深字，基础规则已覆盖，
+   这里不再按主题翻转文字色。 */

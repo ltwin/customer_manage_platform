@@ -62,12 +62,15 @@
   justify-content: center;
   width: 2rem;
   height: 2rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   font-size: 0.85rem;
   font-weight: 600;
-  background: #5b7c99;
-  color: #fff;
+  /* 与客户字母头像同一套兜底：极低色度 + 深字。
+   * 原先的中调实色配白字实测只有 ~4.3:1，不达 4.5。 */
+  background: var(--avatar-tone-0);
+  color: var(--fg);
+  border: 1px solid var(--border);
   flex: 0 0 auto;
 }
 
@@ -77,12 +80,12 @@
   object-fit: cover;
 }
 
-.account-avatar.tone-0 { background: #5b7c99; }
-.account-avatar.tone-1 { background: #6a8f6b; }
-.account-avatar.tone-2 { background: #8a6d5b; }
-.account-avatar.tone-3 { background: #6d6a8f; }
-.account-avatar.tone-4 { background: #8f6a7a; }
-.account-avatar.tone-5 { background: #5b8a8f; }
+.account-avatar.tone-0 { background: var(--avatar-tone-0); }
+.account-avatar.tone-1 { background: var(--avatar-tone-1); }
+.account-avatar.tone-2 { background: var(--avatar-tone-2); }
+.account-avatar.tone-3 { background: var(--avatar-tone-3); }
+.account-avatar.tone-4 { background: var(--avatar-tone-4); }
+.account-avatar.tone-5 { background: var(--avatar-tone-5); }
 
 .account-menu-trigger-text {
   display: flex;

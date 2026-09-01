@@ -94,7 +94,7 @@
   right: -2px;
   bottom: 4px;
   height: 9px;
-  background: var(--accent2-weak);
+  background: var(--accent-weak);
   border-radius: 4px;
   z-index: -1;
 }
@@ -178,23 +178,20 @@
 .wp-tag-accent { background: var(--accent-weak); color: var(--accent); border-color: var(--accent-tint); }
 .wp-tag-warn {
   background: var(--warning-weak);
-  color: oklch(46% 0.11 62);
+  color: var(--warning);
   border-color: color-mix(in oklch, var(--warning) 30%, transparent);
 }
 .wp-tag-ok {
   background: var(--success-weak);
-  color: oklch(42% 0.12 158);
+  color: var(--success);
   border-color: color-mix(in oklch, var(--success) 26%, transparent);
 }
+/* 这一档没有独立语义，樱粉退役后回中性 */
 .wp-tag-pink {
-  background: var(--accent2-weak);
-  color: oklch(50% 0.15 355);
-  border-color: color-mix(in oklch, var(--accent2) 26%, transparent);
+  background: var(--surface-2);
+  color: var(--muted);
+  border-color: var(--border);
 }
-/* 暗色下这三种标签的文字色需要提亮，否则压在深底上读不出来 */
-[data-theme="dark"] .wp-tag-warn { color: oklch(84% 0.11 70); }
-[data-theme="dark"] .wp-tag-ok { color: oklch(82% 0.12 158); }
-[data-theme="dark"] .wp-tag-pink { color: oklch(84% 0.11 355); }
 
 /* ── 价值主张 ── */
 .wp-band {
@@ -220,7 +217,7 @@
 .wp-value-icon {
   width: 36px;
   height: 36px;
-  border-radius: 11px;
+  border-radius: var(--radius-m);
   display: grid;
   place-items: center;
   margin-bottom: 16px;
@@ -322,7 +319,7 @@
   margin-top: 4px;
   letter-spacing: -0.02em;
 }
-.wp-k-val.wp-pink { color: var(--accent2); }
+.wp-k-val.wp-pink { color: var(--accent); }
 .wp-k-foot { font-size: 11px; color: var(--muted); margin-top: 3px; }
 
 .wp-tbl-scroll { overflow-x: auto; }
@@ -392,12 +389,11 @@
   gap: 8px;
   border: 1px solid var(--danger);
   background: var(--danger-weak);
-  color: oklch(44% 0.18 20);
+  color: var(--danger);
   border-radius: var(--radius-s);
   padding: 9px 11px;
   font-size: 12px;
 }
-[data-theme='dark'] .wp-conflict-note { color: oklch(84% 0.12 20); }
 .wp-conflict-note svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
 
 /* 套系 */
@@ -483,7 +479,7 @@
   width: 5px;
   height: 5px;
   border-radius: var(--radius-pill);
-  background: var(--accent2);
+  background: var(--accent-solid);
   margin-right: 5px;
   vertical-align: 1px;
 }

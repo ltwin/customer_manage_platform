@@ -10,7 +10,7 @@
   margin: 0;
   padding: 0.65rem 0.85rem;
   border-radius: var(--radius-s, 8px);
-  background: rgb(180 140 40 / 0.12);
+  background: var(--accent-weak);
   color: inherit;
   font-size: 0.92rem;
 }

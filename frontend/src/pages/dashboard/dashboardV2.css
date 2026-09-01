@@ -14,13 +14,19 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-left: 3px solid var(--slot-shoot);
-  border-radius: var(--radius-s);
+  border-radius: var(--radius-m);
   background: var(--surface);
+  box-shadow: var(--shadow-1);
   padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
+
+/* 两极构图：上极点只放倒计时，主内容整体压到底部。
+   卡片与时间轴在 grid 里等高，不这么排就会在中段留一大片死区。 */
+.dv2-focus-top { display: flex; justify-content: flex-end; min-height: 22px; }
+.dv2-focus-main { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
 
 .dv2-focus-empty {
   display: flex;
@@ -62,7 +68,7 @@
 .dv2-focus-who .name { font-size: 15px; font-weight: 650; }
 .dv2-focus-who .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-.dv2-focus-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+.dv2-focus-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 
 /* ---------- 今日时间轴 ---------- */
 
@@ -98,7 +104,7 @@
   border-radius: 6px;
   padding: 4px 10px;
   overflow: hidden;
-  color: white;
+  color: var(--fg);
   font-size: 12px;
   display: flex;
   flex-direction: column;
@@ -110,7 +116,14 @@
 .dv2-tl-item .t { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dv2-tl-item .m { font-size: 10.5px; opacity: 0.85; }
 
-.dv2-tl-shoot { background: var(--slot-shoot); }
+/* 拍摄块用弱底 + 琥珀边条，不用实心：时间轴上拍摄块面积大，
+   实心琥珀会把锚点色的稀缺性用掉，也跟焦点卡抢注意力。
+   实心留给真正的行动点（主按钮、倒计时）。 */
+.dv2-tl-shoot {
+  background: var(--accent-weak);
+  color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--slot-shoot);
+}
 .dv2-tl-hold { background: var(--slot-hold); }
 .dv2-tl-busy { background: var(--slot-busy); }
 
@@ -122,10 +135,10 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1.5px dashed color-mix(in oklch, var(--accent) 45%, var(--border));
-  background: var(--accent-weak);
+  border: 1.5px dashed var(--border-strong);
+  background: transparent;
   border-radius: 6px;
-  color: var(--accent);
+  color: var(--muted);
   font-size: 11.5px;
   min-height: 24px;
   padding: 0 8px;
@@ -135,7 +148,7 @@
   position: absolute;
   left: -6px;
   right: 0;
-  border-top: 2px solid var(--accent2);
+  border-top: 2px solid var(--fg);
   pointer-events: none;
 }
 
@@ -147,7 +160,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--accent2);
+  background: var(--fg);
 }
 
 .dv2-tl-now-label {
@@ -155,9 +168,9 @@
   right: 0;
   top: -18px;
   font-size: 10px;
-  color: var(--accent2);
+  color: var(--bg);
   font-family: var(--font-mono);
-  background: var(--surface);
+  background: var(--fg);
   padding: 0 4px;
   border-radius: 4px;
 }
@@ -231,15 +244,16 @@
   justify-content: center;
   font-size: 11px;
   font-weight: 600;
-  color: white;
   font-family: var(--font-mono);
   overflow: hidden;
   white-space: nowrap;
 }
 
-.dv2-wf-confirmed { background: var(--success); }
-.dv2-wf-receivable { background: var(--warning); }
-.dv2-wf-pipeline { background: color-mix(in oklch, var(--accent) 78%, var(--surface)); }
+/* 确定性递减 = 琥珀浓度递减。三段是同一个量的三个把握程度，不是三个并列类别，
+   所以用一条浓度阶而不是三个色相。 */
+.dv2-wf-confirmed { background: var(--accent-solid); color: var(--on-accent-solid); }
+.dv2-wf-receivable { background: color-mix(in oklch, var(--accent-solid) 42%, var(--surface-2)); color: var(--fg); }
+.dv2-wf-pipeline { background: var(--surface-2); color: var(--muted); }
 
 .dv2-wf-legend { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
 
@@ -304,12 +318,17 @@
 }
 
 .dv2-util-day.is-past { opacity: 0.45; }
-.dv2-util-day.is-today { border-color: var(--accent); color: var(--fg); }
+.dv2-util-day.is-today { border-color: var(--accent-solid); color: var(--fg); }
 .dv2-util-day.is-blocked { background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 3px, var(--border) 3px, var(--border) 4px); }
-.dv2-util-day.lv1 { background: color-mix(in oklch, var(--accent) 26%, var(--surface)); color: var(--fg); }
-.dv2-util-day.lv2 { background: color-mix(in oklch, var(--accent) 52%, var(--surface)); color: white; }
-.dv2-util-day.lv3 { background: var(--accent); color: white; }
-.dv2-util-day.is-hold { background: var(--warning-weak); color: var(--fg); }
+.dv2-util-day.lv1 { background: color-mix(in oklch, var(--accent-solid) 28%, var(--surface)); color: var(--fg); }
+/* lv2 是这条热度阶最难处理的一档：混入 --surface 后浅色模式落在 L≈83%、
+   暗色模式落在 L≈54% —— 中等亮度对两个方向的文字都不友好。
+   文字统一用 --fg，暗色下再把混合比降到 46%（L≈45%），避开那个中间地带。
+   实测：62%+深字 3.54:1 → 62%+--fg 4.29:1 → 46%+--fg 4.6:1。 */
+.dv2-util-day.lv2 { background: color-mix(in oklch, var(--accent-solid) 62%, var(--surface)); color: var(--fg); }
+[data-theme="dark"] .dv2-util-day.lv2 { background: color-mix(in oklch, var(--accent-solid) 46%, var(--surface)); }
+.dv2-util-day.lv3 { background: var(--accent-solid); color: var(--on-accent-solid); }
+.dv2-util-day.is-hold { background: var(--slot-hold); color: var(--fg); }
 
 .dv2-util-openings { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
 
@@ -343,10 +362,10 @@
   background: var(--surface-2);
 }
 
-.dv2-mx-seg { display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; font-family: var(--font-mono); overflow: hidden; white-space: nowrap; }
-.dv2-mx-portrait { background: var(--accent); }
-.dv2-mx-cosplay { background: var(--accent2); }
-.dv2-mx-other { background: var(--slot-busy); }
+.dv2-mx-seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-family: var(--font-mono); overflow: hidden; white-space: nowrap; }
+.dv2-mx-portrait { background: var(--accent-solid); color: var(--on-accent-solid); }
+.dv2-mx-cosplay { background: color-mix(in oklch, var(--accent-solid) 55%, var(--surface-2)); color: var(--fg); }
+.dv2-mx-other { background: color-mix(in oklch, var(--accent-solid) 22%, var(--surface-2)); color: var(--fg); }
 .dv2-mx-unattributed { background: var(--surface-2); color: var(--muted); border: 1px dashed var(--border); }
 
 .dv2-mx-total { width: 86px; flex: none; text-align: right; font-family: var(--font-mono); font-size: 12.5px; font-weight: 650; }
@@ -446,22 +465,26 @@
 }
 
 .dv2-cohort-seg:hover { opacity: 0.95; }
-.dv2-cohort-seg.is-active { opacity: 1; outline: 2px solid rgba(255, 255, 255, 0.85); }
+/* 选中态原先是白色描边 —— 浅色底上看不见。改用前景色。 */
+.dv2-cohort-seg.is-active { opacity: 1; outline: 2px solid var(--fg); outline-offset: 1px; }
 
-.dv2-cohort-seg .n { font-weight: 700; font-size: 13px; line-height: 1.1; color: #fff; }
-.dv2-cohort-seg .l { font-size: 10px; color: rgba(255, 255, 255, 0.9); }
+.dv2-cohort-seg .n { font-weight: 700; font-size: 13px; line-height: 1.1; color: inherit; }
+.dv2-cohort-seg .l { font-size: 10px; color: inherit; opacity: 0.82; }
 
-.dv2-cohort-active   { background: var(--success, #3f9e63); }
-.dv2-cohort-sleeping { background: var(--accent, #5a7bbf); }
-.dv2-cohort-at_risk  { background: var(--warning, #c98a2d); }
-.dv2-cohort-lost     { background: var(--danger, #c05b5b); }
-.dv2-cohort-new      { background: var(--slot-busy, #8a8f98); }
+/* 五个分层是有序的（新客 → 活跃 → 沉睡 → 有流失风险 → 已流失）。
+   中间三档走中性阶，只有两端和「需要注意」那一档带语义色：
+   绿=健康、琥珀=注意、红=已流失。琥珀在这里正是它的本职。 */
+.dv2-cohort-new      { background: var(--surface-2); color: var(--muted); border: 1px solid var(--border); }
+.dv2-cohort-active   { background: var(--success); color: var(--on-success); }
+.dv2-cohort-sleeping { background: var(--slot-hold); color: var(--fg); }
+.dv2-cohort-at_risk  { background: var(--accent-solid); color: var(--on-accent-solid); }
+.dv2-cohort-lost     { background: var(--danger); color: var(--on-danger); }
 
 .dv2-cohort-crossref {
   margin: 0 0 8px;
   padding: 6px 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--warning, #c98a2d) 12%, transparent);
+  border-radius: var(--radius-s);
+  background: var(--accent-weak);
   font-size: 12px;
 }
 
@@ -480,8 +503,8 @@
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--panel-2, rgba(127, 127, 127, 0.08));
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
 }
 
 .dv2-risk-row .grow { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
@@ -497,16 +520,17 @@
 
 .dv2-risk-badge {
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: 10px;
   font-weight: 500;
-  color: var(--text-dim, #9aa0a6);
-  background: rgba(127, 127, 127, 0.16);
+  color: var(--muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
 }
 
-.dv2-risk-meta { font-size: 12px; color: var(--text-dim, #9aa0a6); }
+.dv2-risk-meta { font-size: 12px; color: var(--muted); }
 .dv2-risk-meta .num { color: inherit; font-weight: 700; }
-.dv2-risk-extra { font-size: 11px; color: var(--text-dim, #9aa0a6); opacity: 0.9; }
+.dv2-risk-extra { font-size: 11px; color: var(--muted); opacity: 0.9; }
 
 .dv2-risk-ltv {
   display: flex;
@@ -517,25 +541,25 @@
 }
 
 .dv2-risk-ltv .v { font-weight: 700; font-size: 13px; }
-.dv2-risk-ltv .k { font-size: 10px; color: var(--text-dim, #9aa0a6); }
+.dv2-risk-ltv .k { font-size: 10px; color: var(--muted); }
 
 .dv2-risk-gauge { flex: 0 0 84px; display: flex; flex-direction: column; gap: 3px; align-items: stretch; }
 
 .dv2-risk-gauge-track {
   height: 5px;
-  border-radius: 999px;
-  background: rgba(127, 127, 127, 0.2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
   overflow: hidden;
 }
 
-.dv2-risk-gauge-fill { height: 100%; border-radius: 999px; }
+.dv2-risk-gauge-fill { height: 100%; border-radius: var(--radius-pill); }
 
-.dv2-risk-gauge-label { font-size: 10px; color: var(--text-dim, #9aa0a6); text-align: right; }
+.dv2-risk-gauge-label { font-size: 10px; color: var(--muted); text-align: right; }
 
 .dv2-cohort-explain {
   margin-top: 10px;
   font-size: 12px;
-  color: var(--text-dim, #9aa0a6);
+  color: var(--muted);
 }
 
 .dv2-cohort-explain summary { cursor: pointer; }

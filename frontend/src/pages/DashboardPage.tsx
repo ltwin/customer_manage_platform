@@ -334,7 +334,7 @@ export default function DashboardPage() {
               <span><i className="dot" style={{ background: 'var(--slot-shoot)' }} />拍摄</span>
               <span><i className="dot" style={{ background: 'var(--slot-hold)' }} />预留</span>
               <span><i className="dot" style={{ background: 'var(--slot-busy)' }} />个人占用</span>
-              <span><i className="dot" style={{ background: 'var(--accent2)' }} />当前时间</span>
+              <span><i className="dot" style={{ background: 'var(--fg)' }} />当前时间</span>
             </div>
           </section>
         </section>
@@ -695,9 +695,14 @@ function FocusCard({
     : null
   return (
     <article className="dv2-focus-next">
+      {/* 倒计时提到右上角：它是这张卡最紧急的一条信息，原先挤在 eyebrow 里当附属标签。
+          提上来同时给构图一个上极点，主内容才好整体压到底部，不再是「上重下空」。 */}
+      <div className="dv2-focus-top">
+        {focus.countdownLabel && <span className="dv2-focus-countdown">{focus.countdownLabel}</span>}
+      </div>
+      <div className="dv2-focus-main">
       <div className="dv2-focus-eyebrow">
         {focus.state === 'today' ? '下一场拍摄' : '下一场拍摄（未来）'}
-        {focus.countdownLabel && <span className="dv2-focus-countdown">{focus.countdownLabel}</span>}
       </div>
       <div className="dv2-focus-when">
         {focus.state === 'today' ? (
@@ -721,6 +726,7 @@ function FocusCard({
       <div className="dv2-focus-actions">
         {customerHref && <Link className="btn btn-sm" to={customerHref}>客户档案</Link>}
         {orderHref && <Link className="btn btn-sm btn-ghost" to={orderHref}>订单详情</Link>}
+      </div>
       </div>
     </article>
   )
@@ -866,10 +872,12 @@ function DeliveryRow({ row }: { row: ReturnType<typeof v2DeliveryRows>[number] }
               className="dv2-gauge-fill"
               style={{
                 width: `${row.progressPct}%`,
+                // --warning 现在就是 --accent（琥珀同时承担品牌与「注意」），
+                // 所以临近档用更实的 --accent-solid 拉开，不能再写 var(--warning)——那会退化成同一个色。
                 background: row.overdue
                   ? 'var(--danger)'
                   : row.progressPct > 70
-                    ? 'var(--warning)'
+                    ? 'var(--accent-solid)'
                     : 'var(--accent)',
               }}
             />
