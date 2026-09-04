@@ -20,6 +20,7 @@ import {
   type CalendarSlotType,
   type CalendarView,
 } from './types'
+import type { WeekDragRange } from './weekCollapse'
 import './calendar.css'
 
 export interface CalendarWorkspaceProps {
@@ -41,6 +42,7 @@ export interface CalendarWorkspaceProps {
   openingsLoading: boolean
   openingsError: string | null
   lastDeletedShoot: { slot: ScheduleSlotListItem; date: string } | null
+  timezone: string | null
   onNavigate(delta: number, view: CalendarView): void
   onToday(): void
   onJumpMonth(month: string): void
@@ -49,6 +51,7 @@ export interface CalendarWorkspaceProps {
   onDetailOpen(): void
   onDetailClose(): void
   onCreate(date: string): void
+  onCreateTimeRange(range: WeekDragRange): void
   onEdit(slot: ScheduleSlotListItem): void
   onDelete(slot: ScheduleSlotListItem): void
   onOpeningsOpen(): void
@@ -77,6 +80,7 @@ export default function CalendarWorkspace({
   openingsLoading,
   openingsError,
   lastDeletedShoot,
+  timezone,
   onNavigate,
   onToday,
   onJumpMonth,
@@ -85,6 +89,7 @@ export default function CalendarWorkspace({
   onDetailOpen,
   onDetailClose,
   onCreate,
+  onCreateTimeRange,
   onEdit,
   onDelete,
   onOpeningsOpen,
@@ -98,8 +103,18 @@ export default function CalendarWorkspace({
   const [filters, setFilters] = useState<CalendarFilters>(defaultCalendarFilters)
   const [showCancelled, setShowCancelled] = useState(false)
   const [openingsOpen, setOpeningsOpen] = useState(false)
+  const [expandedBands, setExpandedBands] = useState<Set<string>>(new Set())
   const detailReturnFocusRef = useRef<HTMLElement | null>(null)
   const selectedDay = days.find((day) => day.date === selectedDate)
+
+  function toggleBand(bandKey: string) {
+    setExpandedBands((current) => {
+      const next = new Set(current)
+      if (next.has(bandKey)) next.delete(bandKey)
+      else next.add(bandKey)
+      return next
+    })
+  }
 
   useEffect(() => {
     if (availabilityReady || !openingsOpen) return
@@ -211,6 +226,11 @@ export default function CalendarWorkspace({
               filters={filters}
               showCancelled={showCancelled}
               loading={loading}
+              timezone={timezone}
+              writesEnabled={writesEnabled}
+              expandedBands={expandedBands}
+              onToggleBand={toggleBand}
+              onCreateRange={onCreateTimeRange}
               onSelectDate={selectDate}
               onSelectSlot={selectSlot}
             />

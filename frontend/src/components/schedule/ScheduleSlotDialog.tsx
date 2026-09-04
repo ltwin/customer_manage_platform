@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import {
@@ -84,10 +84,18 @@ export interface ScheduleBusinessPrefill {
   basisMinutes: number
 }
 
+export interface ScheduleInitialRange {
+  startDate: string
+  startTime: string
+  endDate: string
+  endTime: string
+}
+
 export default function ScheduleSlotDialog({
   open,
   timezone,
   initialDate,
+  initialRange,
   slot,
   scheduleDraftId,
   fixedType,
@@ -101,6 +109,7 @@ export default function ScheduleSlotDialog({
   open: boolean
   timezone: string | null
   initialDate: string
+  initialRange?: ScheduleInitialRange | null
   slot?: ScheduleSlotListItem | null
   scheduleDraftId?: string
   fixedType?: SlotType
@@ -137,7 +146,7 @@ export default function ScheduleSlotDialog({
   const busy = previewLoading || mutationSaving
   const dialogRef = useFocusTrap<HTMLElement>(open, closeDialog, !mutationSaving)
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return
     invalidateConflictPreview()
     setError(null)
@@ -197,12 +206,14 @@ export default function ScheduleSlotDialog({
           ? draftFromSlot(slot, timezone)
           : businessPrefill
             ? draftFromBusinessPrefill(businessPrefill, fixedCustomer)
-            : emptyDraft(initialDate, fixedType, fixedCustomer))
+            : initialRange
+              ? draftFromInitialRange(initialRange, fixedType, fixedCustomer)
+              : emptyDraft(initialDate, fixedType, fixedCustomer))
       }
     } catch (reason) {
       setError(errorMessage(reason, '恢复记录读取失败'))
     }
-  }, [open, slot, scheduleDraftId, initialDate, fixedType, fixedCustomer, businessPrefill, timezone])
+  }, [open, slot, scheduleDraftId, initialDate, initialRange, fixedType, fixedCustomer, businessPrefill, timezone])
 
   useEffect(() => () => previewRequestRef.current.controller?.abort(), [])
 
@@ -1074,6 +1085,20 @@ function emptyDraft(date: string, fixedType?: SlotType, fixedCustomer?: FixedSch
       title: '',
       priceYuan: '',
     },
+  }
+}
+
+function draftFromInitialRange(
+  range: ScheduleInitialRange,
+  fixedType?: SlotType,
+  fixedCustomer?: FixedScheduleCustomer,
+): SlotDraft {
+  return {
+    ...emptyDraft(range.startDate, fixedType, fixedCustomer),
+    startDate: range.startDate,
+    startTime: range.startTime,
+    endDate: range.endDate,
+    endTime: range.endTime,
   }
 }
 

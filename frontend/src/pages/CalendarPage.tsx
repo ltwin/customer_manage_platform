@@ -58,6 +58,7 @@ import {
   type CalendarRequestVersion,
 } from './calendar/requestState'
 import type { CalendarView } from './calendar/types'
+import { dragCreateDate, type WeekDragRange } from './calendar/weekCollapse'
 import { openingsForFirstDays } from './calendar/openings'
 import { waitForCalendarSettingsIdle } from './calendar/deleteCoordination'
 import {
@@ -118,6 +119,7 @@ export default function CalendarPage() {
   const [queryError, setQueryError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingSlot, setEditingSlot] = useState<ScheduleSlotListItem | null>(null)
+  const [createRange, setCreateRange] = useState<WeekDragRange | null>(null)
   const [businessPrefill, setBusinessPrefill] = useState<ScheduleBusinessPrefill | null>(null)
   const [businessPrefillCustomer, setBusinessPrefillCustomer] = useState<FixedScheduleCustomer | null>(null)
   const [businessPrefillEnvelope] = useState(() => parsePlanningSchedulePrefill(location.state))
@@ -621,13 +623,14 @@ export default function CalendarPage() {
     setSearchParams(selectedDate ? { date: selectedDate } : {})
   }
 
-  function openCreate(date = selectedDate || today) {
+  function openCreate(date = selectedDate || today, range: WeekDragRange | null = null) {
     if (!accountTimezone) return
     rememberScheduleReturnFocus()
     setSelectedDate(date)
     setEditingSlot(null)
     setBusinessPrefill(null)
     setBusinessPrefillCustomer(null)
+    setCreateRange(range)
     setDialogOpen(true)
   }
 
@@ -636,6 +639,7 @@ export default function CalendarPage() {
     setEditingSlot(slot)
     setBusinessPrefill(null)
     setBusinessPrefillCustomer(null)
+    setCreateRange(null)
     setDialogOpen(true)
   }
 
@@ -648,6 +652,7 @@ export default function CalendarPage() {
 
   function closeScheduleDialog() {
     setDialogOpen(false)
+    setCreateRange(null)
     setBusinessPrefill(null)
     setBusinessPrefillCustomer(null)
     window.requestAnimationFrame(() => {
@@ -803,6 +808,7 @@ export default function CalendarPage() {
           openingsLoading={openingsLoading}
           openingsError={openingsError ?? openingsCalculationError}
           lastDeletedShoot={lastDeletedShoot}
+          timezone={accountTimezone}
           onNavigate={navigatePeriod}
           onToday={goToday}
           onJumpMonth={jumpMonth}
@@ -811,6 +817,7 @@ export default function CalendarPage() {
           onDetailOpen={() => setDetailOpen(true)}
           onDetailClose={closeDetail}
           onCreate={openCreate}
+          onCreateTimeRange={(range) => openCreate(range.startDate, range)}
           onEdit={openEdit}
           onDelete={openDeleteDialog}
           onOpeningsOpen={() => setOpeningsActive(true)}
@@ -823,7 +830,8 @@ export default function CalendarPage() {
       <ScheduleSlotDialog
         open={dialogOpen}
         timezone={accountTimezone}
-        initialDate={selectedDate || today}
+        initialDate={dragCreateDate(createRange, selectedDate, today)}
+        initialRange={createRange}
         slot={editingSlot}
         scheduleDraftId={queryScheduleDraft || undefined}
         fixedCustomer={businessPrefillCustomer ?? undefined}
