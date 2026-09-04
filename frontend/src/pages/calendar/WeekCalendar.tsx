@@ -13,6 +13,8 @@ import {
   type WeekSlotLayout,
 } from './model'
 import type { CalendarFilters } from './types'
+import SlotHoverCard from './SlotHoverCard'
+import { useSlotHoverCard, type SlotHoverController } from './useSlotHoverCard'
 import { calendarSlotTitle } from './format'
 import { calendarDateFocusTarget } from './keyboard'
 import {
@@ -71,6 +73,7 @@ export default function WeekCalendar({
   onSelectSlot(date: string, projection: CalendarProjection): void
 }) {
   const [drag, setDrag] = useState<DragState | null>(null)
+  const hover = useSlotHoverCard()
   const byDate = new Map(days.map((day) => [day.date, day]))
   const axisTimeline = calendarWeekAxisTimeline(days, dates)
   const timelineMinutes = Math.max(24 * 60, ...dates.map((date) => byDate.get(date)?.timeline.durationMinutes ?? 0))
@@ -187,7 +190,7 @@ export default function WeekCalendar({
           const allDay = visibleLayouts(day, filters, showCancelled).filter((layout) => layout.projection.allDay)
           return (
             <div className="calendar-v2-all-day-cell" key={date}>
-              {allDay.map((layout) => eventButton(layout, day, selectedSlotID, () => onSelectSlot(date, layout.projection), true, scale))}
+              {allDay.map((layout) => eventButton(layout, day, selectedSlotID, () => onSelectSlot(date, layout.projection), true, scale, hover))}
             </div>
           )
         })}
@@ -291,6 +294,7 @@ export default function WeekCalendar({
                 () => onSelectSlot(date, layout.projection),
                 false,
                 scale,
+                hover,
               ))}
               {ghost && (
                 <div
@@ -305,8 +309,13 @@ export default function WeekCalendar({
           )
         })}
       </div>
+      <SlotHoverCard target={hover.target} />
     </div>
   )
+}
+
+function fallbackTimeLabel(projection: CalendarProjection): string {
+  return projection.allDay ? '全天' : `${projection.displayStart}–${projection.displayEnd}`
 }
 
 function transitionTickLabel(label: string, utcOffset: string): string {
@@ -331,6 +340,7 @@ function eventButton(
   onClick: () => void,
   allDay: boolean,
   scale: ReturnType<typeof createWeekTimeScale>,
+  hover: SlotHoverController,
 ) {
   const projection = layout.projection
   const style = allDay || !day ? undefined : {
@@ -338,6 +348,7 @@ function eventButton(
     left: `calc(${(layout.lane / layout.laneCount) * 100}% + 2px)`,
     width: `calc(${100 / layout.laneCount}% - 4px)`,
   }
+  const timeLabel = day ? calendarProjectionTimeLabel(projection, day.timeline) : fallbackTimeLabel(projection)
   return (
     <button
       type="button"
@@ -351,9 +362,12 @@ function eventButton(
       ].filter(Boolean).join(' ')}
       style={style}
       key={projection.slot.id}
-      onClick={onClick}
+      onClick={() => {
+        hover.hide()
+        onClick()
+      }}
       onDoubleClick={(event) => event.stopPropagation()}
-      title={calendarSlotTitle(projection.slot)}
+      {...hover.handlers(projection, timeLabel)}
     >
       {!allDay && day && <small>{calendarProjectionTimeLabel(projection, day.timeline)}</small>}
       <span>{calendarSlotTitle(projection.slot)}</span>

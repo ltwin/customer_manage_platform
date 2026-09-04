@@ -12,13 +12,11 @@ import {
 } from './model'
 import type { CalendarLayoutMode } from './layoutMode'
 import type { CalendarFilters } from './types'
+import SlotShootMeta from './SlotShootMeta'
 import {
-  calendarOrderStatusLabel,
-  calendarShootTypeLabel,
   calendarSlotTitle,
   calendarSlotTypeLabel,
   formatCalendarDay,
-  formatCalendarMoney,
 } from './format'
 
 export default function DayDetailPanel({
@@ -161,15 +159,7 @@ function SlotDetail({
         <time>{timeLabel ?? (projection.allDay ? '全天' : `${projection.displayStart}–${projection.displayEnd}`)}</time>
       </div>
       <h3>{calendarSlotTitle(slot)}</h3>
-      {slot.type === 'shoot' && (
-        <div className="calendar-v2-shoot-meta">
-          <span>{slot.package_name ?? '未选套系'} · {calendarShootTypeLabel(slot.package_shoot_type)}</span>
-          <span>{calendarOrderStatusLabel(slot.order_status)} · {formatCalendarMoney(slot.order_price)}</span>
-          <span>定金 {slot.order_deposit_paid ? '已收' : '未收'} · 尾款 {slot.order_balance_paid ? '已收' : '未收'}</span>
-          {slot.customer_status === 'archived' && <span className="warning-text">客户已归档</span>}
-          {slot.order_status === 'cancelled' && <span className="danger-text">订单已取消，档期保留但不占可约时间</span>}
-        </div>
-      )}
+      {slot.type === 'shoot' && <SlotShootMeta slot={slot} />}
       {slot.type === 'shoot' && <PlanningSummaryLink summary={slot.planning_summary} />}
       {slot.note && <p>{slot.note}</p>}
       {projection.conflicting && <div className="calendar-v2-conflict">时间重叠 · 保存仍允许，请人工确认</div>}

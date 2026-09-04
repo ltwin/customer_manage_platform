@@ -1,5 +1,7 @@
-import type { CalendarDayModel, CalendarProjection } from './model'
+import { calendarProjectionTimeLabel, type CalendarDayModel, type CalendarProjection } from './model'
 import type { CalendarFilters } from './types'
+import SlotHoverCard from './SlotHoverCard'
+import { useSlotHoverCard } from './useSlotHoverCard'
 import { calendarSlotTitle } from './format'
 import { calendarDateFocusTarget } from './keyboard'
 
@@ -30,6 +32,7 @@ export default function MonthCalendar({
   onSelectDate(date: string): void
   onSelectSlot(date: string, projection: CalendarProjection): void
 }) {
+  const hover = useSlotHoverCard()
   const byDate = new Map(days.map((day) => [day.date, day]))
   const tabbableDate = dates.includes(selectedDate) ? selectedDate : dates[0]
 
@@ -91,8 +94,14 @@ export default function MonthCalendar({
                   ].filter(Boolean).join(' ')}
                   type="button"
                   key={projection.slot.id}
-                  onClick={() => onSelectSlot(date, projection)}
-                  title={calendarSlotTitle(projection.slot)}
+                  onClick={() => {
+                    hover.hide()
+                    onSelectSlot(date, projection)
+                  }}
+                  {...hover.handlers(
+                    projection,
+                    day ? calendarProjectionTimeLabel(projection, day.timeline) : projection.displayStart,
+                  )}
                 >
                   {projection.allDay ? '全天' : projection.displayStart} {calendarSlotTitle(projection.slot)}
                 </button>
@@ -103,6 +112,7 @@ export default function MonthCalendar({
           </div>
         )
       })}
+      <SlotHoverCard target={hover.target} />
     </div>
   )
 }

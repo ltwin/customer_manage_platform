@@ -58,6 +58,7 @@ import {
   type CalendarRequestVersion,
 } from './calendar/requestState'
 import type { CalendarView } from './calendar/types'
+import { scrollSlotDetailIntoView } from './calendar/detailScroll'
 import { dragCreateDate, type WeekDragRange } from './calendar/weekCollapse'
 import { openingsForFirstDays } from './calendar/openings'
 import { waitForCalendarSettingsIdle } from './calendar/deleteCoordination'
@@ -571,8 +572,9 @@ export default function CalendarPage() {
     if (!target) return
     const frame = window.requestAnimationFrame(() => {
       const element = document.querySelector<HTMLElement>(`[data-slot-id="${CSS.escape(querySlot)}"]`)
-      element?.scrollIntoView({ block: 'center' })
-      element?.focus({ preventScroll: true })
+      if (!element) return
+      scrollSlotDetailIntoView(element)
+      element.focus({ preventScroll: true })
     })
     return () => window.cancelAnimationFrame(frame)
   }, [querySlot, readState.kind, slots])

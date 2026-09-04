@@ -974,13 +974,71 @@
   line-height: 1.55;
 }
 
+/* —— 事项悬停摘要卡 ——
+   挂在 body 上（.calendar-v2-workspace 是 overflow: clip，留在里面会被裁掉），
+   所以这里的选择器不带 workspace 前缀。 */
+
+.calendar-v2-hover-card {
+  position: fixed;
+  z-index: 80;
+  width: 272px;
+  max-width: calc(100vw - 16px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  padding: 11px 13px;
+  background: var(--surface);
+  box-shadow: var(--shadow-2);
+  color: var(--fg);
+  pointer-events: none;
+  animation: calendar-v2-hover-card-in var(--dur-fast) var(--ease);
+}
+
+.calendar-v2-hover-card.cancelled {
+  opacity: 0.9;
+}
+
+.calendar-v2-hover-card h3 {
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.calendar-v2-hover-card p {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.calendar-v2-hover-card-tag {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 @keyframes calendar-v2-pulse {
   from { opacity: 0.42; }
   to { opacity: 0.92; }
 }
 
+@keyframes calendar-v2-hover-card-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .calendar-v2-event-skeleton {
+    animation: none;
+  }
+
+  .calendar-v2-hover-card {
     animation: none;
   }
 
