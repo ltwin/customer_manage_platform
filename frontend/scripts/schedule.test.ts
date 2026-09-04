@@ -18,6 +18,10 @@ import {
   overlappingSlots,
 } from '../src/components/schedule/calendarModel.ts'
 import {
+  resolveCurrentCustomer,
+  type CustomerSelection,
+} from '../src/components/customers/customerPickerModel.ts'
+import {
   buildCalendarModel,
   calendarProjectionTimeLabel,
   calendarTimelineBlock,
@@ -1393,6 +1397,20 @@ test('editing keeps the current scheduled order visible when it is excluded from
   assert.equal(missingSelectedOrderOption('order-1', [{ id: 'order-2' }]), true)
   assert.equal(missingSelectedOrderOption('order-1', [{ id: 'order-1' }]), false)
   assert.equal(missingSelectedOrderOption('', [{ id: 'order-2' }]), false)
+})
+
+test('editing shows the slot customer immediately without opening the picker', () => {
+  const flow = readFileSync(new URL('../src/components/schedule/ShootOrderFlow.tsx', import.meta.url), 'utf8')
+  // 客户选择器未展开时 options 为空，显示名只能来自 selectedCustomer 回退
+  assert.match(flow, /<CustomerPicker[^>]*selectedCustomer=\{selectedCustomer\}/s)
+
+  const dialog = readFileSync(new URL('../src/components/schedule/ScheduleSlotDialog.tsx', import.meta.url), 'utf8')
+  assert.match(dialog, /<ShootOrderFlow[^>]*selectedCustomer=\{slotCustomerSelection\}/s)
+
+  // slot 派生的选择（无头像/渠道字段）在候选未加载时也能解析出显示对象
+  const slotCustomer = { id: 'cus_slot', display_name: '档案客户', status: 'archived' } as CustomerSelection
+  assert.equal(resolveCurrentCustomer([], 'cus_slot', slotCustomer), slotCustomer)
+  assert.equal(resolveCurrentCustomer([], 'cus_other', slotCustomer), undefined)
 })
 
 test('status sync searches refreshed customer pages before stable unfiltered fallback', async () => {

@@ -12,6 +12,7 @@ import type {
 import { missingSelectedOrderOption } from './flow'
 import CustomerAvatar from '../customers/CustomerAvatar'
 import CustomerPicker from '../customers/CustomerPicker'
+import type { CustomerSelection } from '../customers/customerPickerModel'
 
 type PackageOption = PackageListResponse['items'][number]
 
@@ -38,6 +39,7 @@ export default function ShootOrderFlow({
   targetEndAt,
   reloadToken,
   fixedCustomer,
+  selectedCustomer,
   onChange,
   onHistoricalHandoff,
 }: {
@@ -45,6 +47,7 @@ export default function ShootOrderFlow({
   targetEndAt: string | null
   reloadToken: number
   fixedCustomer?: FixedScheduleCustomer
+  selectedCustomer?: CustomerSelection
   onChange(value: ShootOrderDraft): void
   onHistoricalHandoff(customerID: string): void
 }) {
@@ -148,6 +151,7 @@ export default function ShootOrderFlow({
             label="客户"
             candidateStatuses={historical && includeArchived ? ['active', 'archived'] : ['active']}
             value={value.customerId}
+            selectedCustomer={selectedCustomer}
             onChange={(choice) => onChange({
               ...value,
               customerId: choice?.id ?? '',

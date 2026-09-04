@@ -21,6 +21,7 @@ import type {
 } from '../../api/client'
 import { packagePriceYuanToCents, validatePackagePriceYuan } from '../../pages/packagePrice'
 import { useFocusTrap } from '../useFocusTrap'
+import type { CustomerSelection } from '../customers/customerPickerModel'
 import ShootOrderFlow from './ShootOrderFlow'
 import type { FixedScheduleCustomer, ShootOrderDraft } from './ShootOrderFlow'
 import { overlappingSlots } from './calendarModel'
@@ -225,6 +226,17 @@ export default function ScheduleSlotDialog({
       return null
     }
   }, [draft, timezone])
+  // 编辑档期时客户候选列表要展开才加载；slot 自带的客户信息让选择器闭合时也能立即显示当前客户。
+  // 草稿一旦换过客户就不再回退到 slot 客户。
+  const slotCustomerSelection = useMemo<CustomerSelection | undefined>(() => {
+    if (!slot || slot.type !== 'shoot') return undefined
+    if (draft.shoot.customerId !== slot.customer_id) return undefined
+    return {
+      id: slot.customer_id,
+      display_name: slot.customer_display_name,
+      status: slot.customer_status,
+    }
+  }, [slot, draft.shoot.customerId])
   const pendingSourceDraft = useMemo(() => {
     if (!pending?.source_draft_id) return null
     try {
@@ -955,6 +967,7 @@ export default function ScheduleSlotDialog({
                 targetEndAt={resolved?.endAt ?? null}
                 reloadToken={candidateReloadToken}
                 fixedCustomer={fixedCustomer}
+                selectedCustomer={slotCustomerSelection}
                 onChange={(shoot) => changeDraft({ ...draft, shoot })}
                 onHistoricalHandoff={handoffHistorical}
               />

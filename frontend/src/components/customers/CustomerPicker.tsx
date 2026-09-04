@@ -101,16 +101,16 @@ export default function CustomerPicker({
 			}}
 		>
 			<div className="customer-picker-control">
-				{current && (
-					<CustomerAvatar
-						customerId={current.id ?? ''}
-						displayName={current.display_name}
-						avatarRevision={current.avatar_revision}
-						avatarUrl={current.avatar_url}
-						size="sm"
-						decorative
-					/>
-				)}
+              {current && (
+                <CustomerAvatar
+                  customerId={current.id ?? ''}
+                  displayName={current.display_name}
+                  avatarRevision={current.avatar_revision ?? ''}
+                  avatarUrl={current.avatar_url}
+                  size="sm"
+                  decorative
+                />
+              )}
 				<input
 					className="input"
 					role="combobox"

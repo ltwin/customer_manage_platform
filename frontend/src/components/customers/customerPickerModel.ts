@@ -2,7 +2,9 @@ import { listCustomers } from '../../api/client.ts'
 import type { CustomerListResponse } from '../../api/client.ts'
 
 export type CustomerChoice = CustomerListResponse['items'][number]
-export type CustomerSelection = Pick<CustomerChoice, 'id' | 'display_name' | 'status' | 'channel' | 'avatar_revision' | 'avatar_version' | 'avatar_url'>
+/** 已选客户的最小展示形态：编辑档期等场景只有 id/名称/状态，头像与渠道字段可缺省 */
+export type CustomerSelection = Pick<CustomerChoice, 'id' | 'display_name' | 'status'> &
+	Partial<Pick<CustomerChoice, 'channel' | 'avatar_revision' | 'avatar_version' | 'avatar_url'>>
 
 const pageSize = 20
 
