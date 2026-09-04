@@ -3,8 +3,8 @@ epic: ../epics/package-sku-pricing.md
 phase: planning
 approved_revision: pending
 current_item: null
-next_action: 等待 creative-workspace-redesign ITEM-1B（B1 段，不受 prototype gate 阻塞）对策划计价逐项裁决并同步修订本 Epic；套系 SKU 与多订单项部分继续保持 proposed
-blocked_by: creative-workspace-redesign ITEM-1B（B1 段）产品边界未冻结；全部策划相关范围/验收/决策/子项/交付索引不可执行；此前多订单项 design review 亦已达到三轮上限
+next_action: B1 修订版（hash 9988ead7…）已通过创作侧 3 轮 design review；对本 Epic 自身（套系 SKU / 多订单项 / 订单聚合）做一次增量 design review（新阶段、fresh reviewer），通过后进入 owner confirmation；ITEM-1 可在确认后启动
+blocked_by: 本 Epic 修订版待自身增量 design review 与 owner confirmation；ITEM-3 窄例外授权（改创作 legacy 兼容面）待 owner 在创作 Epic 侧明示接受
 item_progression: pending
 milestone_commit: pending
 remote_publish: pending
@@ -15,7 +15,7 @@ remote_publish: pending
 - [ ] ITEM-1 · 语义权威、API 形状与公式样例
 - [ ] ITEM-2 · 套系计价模型与迁移
 - [ ] ITEM-3 · 多订单项、报价基准与价格状态机
-- [ ] ITEM-4 · 创作策划计价划界与陈旧性
+- [-] ITEM-4 · 创作策划计价划界与陈旧性（已裁决删除 · creative ITEM-1B B1 2026-09-04，编号占位）
 - [ ] ITEM-5 · 套系、dashboard、提醒与档期读模型适配
 - [ ] ITEM-6 · 前端套系、订单项与排期体验
 - [ ] ITEM-7 · 导出、文档与整体验收
@@ -33,3 +33,8 @@ remote_publish: pending
 - 多订单项 fresh design review round 3（2026-09-02）：冻结 hash `94984d9501e363fc8d27ea354abdf05376215966930a2ef780863c4b949b14e7`，同 reviewer 确认 round 2 的 5 项解决、absolute 多 plan 优先级仍 blocking，另有 rebaseline NULL/重试 important 与索引漏 0038 minor。处理：absolute 改为排他总价 owner，原子终止其他 contributions；其他 plan 后续 apply 必须 `replace_absolute_target` 并以当前总价 rebaseline；delta 限 signed BIGINT/checked int64；冻结带 revision+Idempotency-Key 的 rebaseline endpoint 与 NULL 基线错误；最终索引补 0038。修订后 Epic hash `d802a77d9db84470c7ccef4146728f9dd6fd4bd1c8222a2e22ad0c2ea4787ca9`。本 design review 已达三轮上限，按门槛停在 owner checkpoint，不自行发起第 4 轮。
 - 2026-09-03：owner 将摄影师创作空间重设计设为更高优先级，并明确反对创作流程与计价持续绑定。为形成双向可执行 barrier，本 Epic 的验收 9–11、18、ITEM-4 和 ITEM-6 planner UI 在 `creative-workspace-redesign` ITEM-1B（B1 段）完成逐项 `删除 | legacy-read-only | 由订单端替代` 裁决前不可实施；套系 SKU、多订单项和纯订单计价内容仍保持 proposed，不把旧 planner 设计视为已批准。
 - 2026-09-03：创作空间先导 Epic design review round 3 对双向 barrier 完整复核为 `PASS`；冻结 package Epic hash `b61d462194eec4a27aaffbbaf9895f661a3cfd5a402433e19861c2d77c44c64f`。barrier 继续保持，review 通过不等于 planner 内容获批。
+- 2026-09-04：`creative-workspace-redesign` ITEM-1B B1 段完成 barrier 裁决，记录见 `.codestable/work/feat-legacy-planner-barrier.md` §2（17 条逐项 `删除 | legacy-read-only | 由订单端替代`，版本绑定 `pilot=creative ITEM-2` / `global=package ITEM-3`）。本 Epic 据此修订：删除验收 9/18、ITEM-4、0038、DEC-9/10 原文与 planner UI；验收 10 改为精修只依赖订单项自身字段；验收 11 改为旧 `order_adjustment` 草稿在删除 `orders.package_id` 后全局 fail-closed（`legacy_planner_retired`）；ITEM-5/6/7 依赖去掉 ITEM-4；遗留风险 6/10 替换。修订后 hash 见下一条 review 记录。套系 SKU 与多订单项内容未变，仍需自身增量 design review 后 owner confirmation。
+- 2026-09-04（B1 review round 1 后）：修订版 hash `9cbc210fc5e13a93700c1f600f5aac32b305bbb71f5e9ae8ecce1f0c0f9f54e7`。按创作侧 reviewer 发现补正：验收 11 扩为「fail-closed 且旧只读面 / 旧→旧级联不断」，点名三处去 `package_id` 读取与 settings 写面拒绝，声明两个 `legacy_planner_retired` enum 为 OpenAPI 契约变更；交付索引改为 ITEM-3 对 `shootplanning/business`、`shootplanning/crm`、`settings` 的窄例外授权（范围见 `.codestable/work/feat-legacy-planner-barrier.md` §5）；ITEM-3 验收要点补验收 11；遗留风险 6/10 统一「已裁决删除；替换为」约定。该例外授权是跨 Epic 边界，待 owner 在创作 Epic 侧裁决。
+- 2026-09-04（B1 review round 2 后）：修订版 hash `adf47c20a971065cc723f87ad586b3a0d6e98593e3cc343ee8719178ed4fb3aa`。barrier 段改为「三处 SQL 硬读是技术事实，整体退役是 DEC-8 产品裁决」并补 `schedule_duration` 保留前提；验收 11 补两处前端映射与 settings 只读化；交付索引前端行与例外段扩为与 barrier 文件 §5 等价。
+- 2026-09-04（B1 review round 3 后，终态）：修订版 hash `9988ead7bcee874229576dcd1f319c7cb0e5ebdc6640886ef6a8b4a84f73d1c6`。settings 拒绝形状定为 400 `validation_failed` + 中文 message（不新增 code、不动 `httpapi/` 手写文件）；交付索引例外段直接枚举三个前端文件。创作侧 B1 审查阶段关闭，barrier 裁决版本绑定生效。
+

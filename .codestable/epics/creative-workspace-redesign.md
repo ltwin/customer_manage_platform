@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: active
 created: 2026-09-03
 work: ../work/epic-creative-workspace-redesign.md
 ---
