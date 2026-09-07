@@ -362,7 +362,8 @@ function WorkspaceContents() {
             {workspace.kind !== 'inbox' && (
               <LinkEditor
                 disabled={!writable}
-                linked={!!workspace.link}
+                key={`${workspace.id}:${workspace.link?.kind ?? ''}:${workspace.link?.id ?? ''}`}
+                link={workspace.link}
                 save={(value) => {
                   void act(() =>
                     mutate({
@@ -1162,17 +1163,17 @@ function ShotEditor({
 }
 function LinkEditor({
   disabled,
-  linked,
+  link,
   save,
 }: {
   disabled: boolean
-  linked: boolean
+  link: api.Workspace['link']
   save: (value: NonNullable<api.Command['link']>) => void
 }) {
-  const [kind, setKind] = useState<'order' | 'customer'>('order')
+  const [kind, setKind] = useState<'order' | 'customer'>(link?.kind ?? 'order')
   const [q, setQ] = useState('')
   const [options, setOptions] = useState<{ id: string; name: string }[]>([])
-  const [value, setValue] = useState('')
+  const [value, setValue] = useState(link?.id ?? '')
   const [error, setError] = useState('')
   const [composing, setComposing] = useState(false)
   useEffect(() => {
@@ -1210,6 +1211,26 @@ function LinkEditor({
         if (value) save({ kind, id: value })
       }}
     >
+      <p role="status" className="cw-current-link">
+        {link ? (
+          link.broken ? (
+            <>原关联{link.kind === 'order' ? '订单' : '客户'}已失效，可更换或解除关联。</>
+          ) : (
+            <>
+              已关联{link.kind === 'order' ? '订单' : '客户'}：{' '}
+              <Link
+                to={
+                  link.kind === 'order'
+                    ? `/orders?order=${encodeURIComponent(link.id)}`
+                    : `/customers/${encodeURIComponent(link.id)}`
+                }
+              >
+                {link.name || '查看关联'} ↗
+              </Link>
+            </>
+          )
+        ) : '当前未关联订单或客户'}
+      </p>
       <p className="cw-muted">可选关联，仅方便双向查看，不改变订单或档期。</p>
       <label>
         关联类型
@@ -1220,6 +1241,7 @@ function LinkEditor({
           onChange={(e) => {
             setKind(e.target.value === 'customer' ? 'customer' : 'order')
             setValue('')
+            setQ('')
             setOptions([])
           }}
         >
@@ -1257,6 +1279,11 @@ function LinkEditor({
           <option value="">
             请选择{options.length >= 100 ? '（可输入名称缩小范围）' : ''}
           </option>
+          {link && kind === link.kind && !options.some((o) => o.id === link.id) && (
+            <option value={link.id} disabled={link.broken}>
+              {link.broken ? '原关联已失效' : link.name || '当前关联'}
+            </option>
+          )}
           {options.map((o) => (
             <option value={o.id} key={o.id}>
               {o.name}
@@ -1265,10 +1292,13 @@ function LinkEditor({
         </select>
       </label>
       {error && <p role="alert">{error}</p>}
-      <button className="btn" disabled={disabled || !value}>
-        关联
+      <button
+        className="btn"
+        disabled={disabled || !value || (kind === link?.kind && value === link.id)}
+      >
+        {link ? '更换关联' : '关联'}
       </button>
-      {linked && (
+      {link && (
         <button
           type="button"
           className="btn btn-ghost"
