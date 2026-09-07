@@ -2,9 +2,9 @@
 epic: ../epics/creative-workspace-redesign.md
 phase: executing
 approved_revision: ac6b32090a67fff970213fffb135c8bd2ea9f87eacfc27b267a4dd14bd017159
-current_item: ITEM-1B
-next_action: ITEM-1B B1 段已关闭（里程碑 commit）；ITEM-1B 整体等 B2（依赖 prototype-shape-go=go）。当前无可运行候选：ITEM-1A 等 owner 用真实素材自测 v3 原型并招募 ≥2 名外部摄影师走查；owner 同时需对 B1 的两项裁决（验收 9 收窄、package ITEM-3 窄例外授权）明示接受或否决
-blocked_by: prototype-shape-go（ITEM-1A 人工走查未完成）；B1 两项裁决待 owner 明示接受
+current_item: ITEM-5
+next_action: 工程交付已完成；待 owner 确定试点账号与部署窗口，冻结 enrollment/连续项目 ledger 并采集真实项目证据。外部形态走查继续并行
+blocked_by: ITEM-5 依赖单独部署授权、明确试点账号及真实摄影师项目记录；当前无真实 cohort
 item_progression: continuous
 milestone_commit: authorized
 remote_publish: manual
@@ -13,12 +13,12 @@ remote_publish: manual
 ## 子项进度
 
 - [ ] ITEM-1A · 形态原型与走查（v3 原型已落盘，待 owner 自测与外部走查）
-- [ ] ITEM-1B · 跨 Epic barrier、迁移矩阵与契约回写
-  - B1 已交付并通过 design review（3 轮，blocking 清零）：`.codestable/work/feat-legacy-planner-barrier.md` hash `79d389c648240b84e897572364c7f850fc4a9f6273fa0bc1ceefa2aad8ba0a27`；`package-sku-pricing.md` 修订版 hash `9988ead7bcee874229576dcd1f319c7cb0e5ebdc6640886ef6a8b4a84f73d1c6`。两项需 owner 明示接受：(1) preflight 对 completed/archived 计划残留草稿判诊断，是对已批准验收 9 字面的收窄；(2) package ITEM-3 对创作 legacy 兼容面的窄例外授权（barrier 文件 §5 第 3 条 / §6）
-  - B2 等 `prototype-shape-go=go`
-- [ ] ITEM-2 · pilot 经营写入隔离与 legacy 安全预检
-- [ ] ITEM-3 · 创作空间、卡片、拍摄项与 legacy-read 地基
-- [ ] ITEM-4 · 批量搬入、灵感墙与图优先现场 pilot
+- [x] ITEM-1B · 跨 Epic barrier、迁移矩阵与契约回写
+  - B1 已交付并通过 design review（3 轮，blocking 清零）：`.codestable/work/feat-legacy-planner-barrier.md` hash `79d389c648240b84e897572364c7f850fc4a9f6273fa0bc1ceefa2aad8ba0a27`；`package-sku-pricing.md` 修订版 hash `9988ead7bcee874229576dcd1f319c7cb0e5ebdc6640886ef6a8b4a84f73d1c6`。两项裁决已按 2026-09-04 owner 指示接受：(1) preflight 对 completed/archived 计划残留草稿判诊断，是对已批准验收 9 字面的收窄；(2) package ITEM-3 对创作 legacy 兼容面的窄例外授权（barrier 文件 §5 第 3 条 / §6）
+  - B2 已回写 canonical requirement 与 attention；按下方 2026-09-04 owner 指示解除原型前置，外部走查并行。B1 两项裁决同该指示视为接受
+- [x] ITEM-2 · pilot 经营写入隔离与 legacy 安全预检
+- [x] ITEM-3 · 创作空间、卡片、拍摄项与 legacy-read 地基
+- [x] ITEM-4 · 批量搬入、灵感墙与图优先现场 pilot（工程交付；未部署）
 - [ ] ITEM-5 · 连续真实项目证据与产品处置
 
 ## 临时决策与证据
@@ -46,4 +46,15 @@ remote_publish: manual
 - ITEM-1B B1 design review round 3（2026-09-04，本阶段最后一轮）：同一 reviewer follow-up，冻结 hash `211be977…` / `adf47c20…`，结论「有条件可合」：round 1/2 全部 finding resolved 且无回归，无 blocking；新增 2 important + 1 nit，均为机械修正——(N3-1) §3.2 `PATCH /shoot-plans/{id}` 写「13 个命令」错误，`ShootPlanMutationRequest` 实为 18 个含 5 条 CRM link/unlink，照 13 枚举会漏掉写 `plan_crm_connections` 的入口；(N3-2) `400 legacy_planner_retired` 要改不在例外范围的 `httpapi/settings.go:112-124`，二选一；(N3-3) package `:200` 交叉引用「上一行」指错。处理：N3-1 改为「全部 operation、blanket 拒绝、不按白名单实现」并点名 5 条 CRM 命令；N3-2 选沿用 `validation_failed` + 中文 message、不新增 code、例外授权明文排除 `httpapi/` 手写文件；N3-3 直接枚举文件名。审查阶段已达 3 轮上限，修复为机械性、无需再对轮；终态 hash `79d389c648240b84e897572364c7f850fc4a9f6273fa0bc1ceefa2aad8ba0a27` / `9988ead7bcee874229576dcd1f319c7cb0e5ebdc6640886ef6a8b4a84f73d1c6`。reviewer 三轮均未能核实项：归档产生的 generation work 收敛时限、上游「current reminder」是否另有严格定义、未编译验证前端 `tsc` 判断——记为 ITEM-2 实现时的验证项。
 - 晶化候选：审查 packet 若引用 discriminator union 的成员数，reviewer 应核对是外层还是内层 union；文档里对 blanket 规则不写计数，避免实现者按数枚举漏项。
 - ITEM-1B B1 里程碑 commit：`9eac54e`（`feat/creative-workspace-redesign`，未发布远端，`remote_publish: manual`）。v3 原型 `docs/prototypes/creative-workspace/v3/` 仍为未跟踪文件，属 ITEM-1A 交付，待 owner 自测后随 1A 里程碑一起提交，不混入本 diff。
+- 2026-09-04 owner 指示：「禁止过度 review，不要太在意流程，完成 feature 第一」；跳过 `prototype-shape-go` 作为 ITEM-2/3 的前置，外部走查改为并行、结果只用于调整形态。B1 两项裁决（验收 9 收窄、package ITEM-3 窄例外）视为默认接受，按其实现。后续子项：文档类 1 轮 review 即关，代码以测试与门禁为主。
 
+
+## 2026-09-07 工程交付与验证
+
+- 按已授权 feature worktree 继续原有领域草稿，完成 ITEM-2/3/4：账号单写切换与清场、旧写入口事务内复核；独立空间/素材/成员关系/分组/拍摄项/备忘/可选 CRM 关联；批量搬入、图片优先灵感墙、现场完成/跳过/撤销/补记、离线只读及原始观察事件。试点准入需 `CREATIVE_WORKSPACE_PILOT_ACCOUNTS` 明确列出账号，默认关闭。
+- 0036 增量迁移保留旧事实；图片复用既有权利矩阵但使用独立不可变资产生命周期。备份同时包含 planning/ 与 creative/，补齐真实 Go 清单与 Python 校验器的摘要及带校验和路径兼容。具体操作与恢复限制见 `docs/dev/creative-workspace.md`。
+- 同一只读 reviewer 对冻结实现做三轮审查，最终 round 3 `PASS`，无 unresolved 或新增 blocking/important；终态 manifest `b4682c3799f94a0744a722a729839ebc8edb66dad2fd0bb27080a6f12bdf4328`。修复并验证未知提交保留对象、取消后有界清理、归档元数据禁写、挪卡来源竞态及跨语言摘要互通。审查后的机械修正仅 compose 显式转发准入环境变量、E2E 注释与交付记录。
+- 验证：全量 `make check-go` 通过；最终增量 creativeworkspace/httpapi/planningmedia 真库测试全部通过，后端 build/lint 通过；`make check-frontend` 338/338，通过；`make generate-check` 无漂移；designmd lint 与创意页面 scoped premium audit 均 0 error。
+- `make check-ops` 首轮容器启动失败，第二轮测试发现阶段容器启动并发失败；第三轮以 `GOFLAGS=-p=1` 限制发现阶段并发，完整门禁通过，未跳过任何用例。明确记录环境失败，不将失败轮次算作通过。
+- 最新真实 PostgreSQL/router/media 浏览器 fixture 跑通素材搬入、成组与合并拍摄项、执行与撤销、备忘、订单双向跳转、归档恢复、刷新保留、离线图片查看、375px 无横溢出、未保存离开焦点约束、提交回执丢失后同键重试不重复。浏览器 pageErrors 为 0；只有 refresh 与 /me 使用认证 fixture。合成记录不进入 pilot 分母。
+- ITEM-1A 外部走查、ITEM-5 真实账号部署及至少五个真实项目仍未完成；没有生成 go 结论、没有合回 develop、没有推送或部署。v3 原型保持原有未跟踪状态，等待原型里程碑单独处置。

@@ -1,3 +1,4 @@
+import { LegacyWriteSurface } from './creative/legacy'
 import { useEffect, useSyncExternalStore } from 'react'
 import type { ReactElement } from 'react'
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
@@ -24,6 +25,8 @@ import AccountSecurityPage from './account/AccountSecurityPage.tsx'
 import AccountPasswordPage from './account/AccountPasswordPage.tsx'
 import AccountSettingsPage from './account/settings/AccountSettingsPage.tsx'
 import { peekLoginNotice } from './account/security/loginNotice.ts'
+import SpacesPage from './creative/SpacesPage'
+import WorkspacePage from './creative/WorkspacePage'
 import ShootPlansPage from './planning/ShootPlansPage'
 import ShootPlanWorkspacePage from './planning/ShootPlanWorkspacePage'
 import ShootPlanRunPage from './planning/ShootPlanRunPage'
@@ -118,9 +121,11 @@ export default function App() {
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
         <Route path="/calendar" element={<CalendarPage />} />
+        <Route path="/creative-workspaces" element={<SpacesPage />} />
+        <Route path="/creative-workspaces/:id" element={<WorkspacePage />} />
         <Route path="/shoot-plans" element={<ShootPlansPage />} />
         <Route path="/shoot-plans/:id" element={<ShootPlanWorkspacePage />} />
-        <Route path="/shoot-plans/:id/ingestions/:sessionId" element={<ShootPlanIngestionPage />} />
+        <Route path="/shoot-plans/:id/ingestions/:sessionId" element={<LegacyWriteSurface><ShootPlanIngestionPage /></LegacyWriteSurface>} />
         <Route path="/packages" element={<PackagesPage />} />
         <Route path="/reminders" element={<RemindersPage />} />
         <Route path="/settings" element={<Navigate to="/account/settings" replace />} />
@@ -133,7 +138,7 @@ export default function App() {
           <Route path="settings" element={<AccountSettingsPage />} />
         </Route>
       </Route>
-      <Route path="/shoot-plans/:id/run" element={<RequireAuth status={auth.status}><ShootPlanRunPage /></RequireAuth>} />
+      <Route path="/shoot-plans/:id/run" element={<RequireAuth status={auth.status}><LegacyWriteSurface><ShootPlanRunPage /></LegacyWriteSurface></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

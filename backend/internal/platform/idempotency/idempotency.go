@@ -361,7 +361,9 @@ func validateRequest(
 	canonicalRequest []byte,
 	callback func(store.TxAccountScope) (StoredResponse, error),
 ) error {
-	if operation != OperationOrderCreate && operation != OperationScheduleSlotCreate {
+	if operation != OperationOrderCreate && operation != OperationScheduleSlotCreate &&
+		operation != "creative-workspace.create.v1" && operation != "creative-workspace.cards.import.v1" &&
+		operation != "creative-workspace.shoot-items.create.v1" && operation != "creative-workspace.memos.create.v1" {
 		return fmt.Errorf("%w: operation 非法", ErrValidation)
 	}
 	if len(key) < 8 || len(key) > 128 || !keyPattern.MatchString(key) {

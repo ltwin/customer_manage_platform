@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useFocusTrap } from './useFocusTrap'
+import { useState } from 'react'
 
 export interface ConfirmDialogProps {
   title: string
@@ -27,29 +28,32 @@ export default function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   const [value, setValue] = useState('')
-  const cancelRef = useRef<HTMLButtonElement | null>(null)
-
-  useEffect(() => {
-    cancelRef.current?.focus()
-  }, [])
-
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === 'Escape' && !busy) onCancel()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [busy, onCancel])
+  const dialogRef = useFocusTrap<HTMLDivElement>(true, onCancel, !busy)
 
   const lines = Array.isArray(body) ? body : [body]
   const inputMissing = requiredInput != null && value.trim() === ''
 
   return (
-    <div className="overlay open" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onCancel() }}>
-      <div className="dialog planning-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="planningConfirmTitle" aria-describedby="planningConfirmBody">
+    <div
+      className="overlay open"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="dialog planning-confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="planningConfirmTitle"
+        aria-describedby="planningConfirmBody"
+      >
         <h2 id="planningConfirmTitle">{title}</h2>
         <div id="planningConfirmBody" className="dialog-sub">
-          {lines.map((line, index) => <p key={index}>{line}</p>)}
+          {lines.map((line, index) => (
+            <p key={index}>{line}</p>
+          ))}
         </div>
         {requiredInput && (
           <label className="planning-confirm-input">
@@ -64,7 +68,14 @@ export default function ConfirmDialog({
           </label>
         )}
         <div className="dialog-actions">
-          <button ref={cancelRef} className="btn" type="button" disabled={busy} onClick={onCancel}>{cancelLabel ?? '取消'}</button>
+          <button
+            className="btn"
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {cancelLabel ?? '取消'}
+          </button>
           <button
             className={danger ? 'btn btn-danger' : 'btn btn-primary'}
             type="button"

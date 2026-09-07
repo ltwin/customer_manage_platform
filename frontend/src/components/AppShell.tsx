@@ -19,7 +19,7 @@ const navItems = [
   { key: 'customers', label: '客户', to: '/customers', icon: CustomersIcon },
   { key: 'orders', label: '订单', to: '/orders', icon: OrdersIcon },
   { key: 'calendar', label: '档期', to: '/calendar', icon: CalendarIcon },
-  { key: 'planning', label: '策划', to: '/shoot-plans', icon: PlanningIcon },
+  { key: 'planning', label: '创意空间', to: '/creative-workspaces', icon: PlanningIcon },
   { key: 'packages', label: '套系', to: '/packages', icon: PackageIcon },
   { key: 'reminders', label: '提醒', to: '/reminders', icon: ReminderIcon },
 ]

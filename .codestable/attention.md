@@ -40,3 +40,7 @@ CodeStable 所有落盘产出的正文用**中文**：plan / design、plan revie
 - 在开发之前必须提问用户是在当前branch开发还是使用worktree新开branch，单feature开发倾向于不开worktree，而并行开发则只能使用worktree
 - 除非必要，否则最好一个featue一个提交，且提交代码必需经过人工同意，不能自动进行，这是为了在后续执行review的时候更加精准。
 - 同一 feature 的实现/设计审核与修复循环默认最多 3 轮（含独立 review/QA closure）；第 3 轮后非阻塞项转为 residual risk，仍有 blocking 则停在 owner checkpoint，额外复审须 owner 明确授权。
+
+### 创意空间需求归属
+
+- `.codestable/requirements/` 是本项目 canonical requirement 位置；创意空间依照已批准 Epic ITEM-1B 回写 `creative-shoot-planning.md`。永久 Epic 保留冻结批准版本，执行状态只写 work 游标。

@@ -159,8 +159,8 @@ test('planning workspace stays in AppShell while Run Mode is independently authe
 
   assert.match(app, /<RequireAuth status=\{auth\.status\}>[\s\S]*<AppShell \/>[\s\S]*<Route path="\/shoot-plans"/)
   assert.match(app, /<Route path="\/shoot-plans\/:id"/)
-  assert.match(app, /<Route path="\/settings"[^\n]*\/>[\s\S]*<Route path="\/shoot-plans\/:id\/run" element=\{<RequireAuth status=\{auth\.status\}><ShootPlanRunPage \/><\/RequireAuth>\} \/>/)
-  assert.match(shell, /label: '策划', to: '\/shoot-plans'/)
+  assert.match(app, /<Route path="\/settings"[^\n]*\/>[\s\S]*<Route path="\/shoot-plans\/:id\/run" element=\{<RequireAuth status=\{auth\.status\}><LegacyWriteSurface><ShootPlanRunPage \/><\/LegacyWriteSurface><\/RequireAuth>\} \/>/)
+  assert.match(shell, /label: '创意空间', to: '\/creative-workspaces'/)
 })
 
 test('workspace exposes the approved core sections, share collaboration, and private business workbench', () => {
@@ -669,10 +669,13 @@ test('ConfirmDialog unifies destructive confirmations with dialog a11y and busy 
   const dialog = source('../src/components/ConfirmDialog.tsx')
   const css = source('../src/planning/planning.css')
 
-  assert.match(dialog, /role="alertdialog" aria-modal="true" aria-labelledby="planningConfirmTitle" aria-describedby="planningConfirmBody"/)
-  assert.match(dialog, /event\.key === 'Escape' && !busy/)
+  assert.match(dialog, /role="alertdialog"\s+aria-modal="true"\s+aria-labelledby="planningConfirmTitle"\s+aria-describedby="planningConfirmBody"/)
+  assert.match(dialog, /useFocusTrap<HTMLDivElement>\(true, onCancel, !busy\)/)
   assert.match(dialog, /event\.target === event\.currentTarget && !busy/)
-  assert.match(dialog, /cancelRef\.current\?\.focus\(\)/)
+  const focusTrap = source('../src/components/useFocusTrap.ts')
+  assert.match(focusTrap, /event\.key === 'Escape' && closeEnabledRef\.current/)
+  assert.match(focusTrap, /returnTarget\.focus/)
+  assert.match(focusTrap, /focusableElements\(container\)/)
   // prompt 变体：requiredInput 存在时空输入禁用确认，提交 trimmed 值。
   assert.match(dialog, /requiredInput != null && value\.trim\(\) === ''/)
   assert.match(dialog, /onConfirm\(value\.trim\(\)\)/)
