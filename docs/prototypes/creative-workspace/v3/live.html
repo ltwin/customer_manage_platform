@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>现场模式 · 影约</title>
+<link rel="stylesheet" href="workspace.css">
+<style>
+/* 现场模式：一屏一个画面，参考图是主体 */
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; background: var(--bg); }
+.live-top { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top)); background: var(--surface); border-bottom: 1px solid var(--border); }
+.live-top .name { font-weight: 600; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.progress { display: flex; gap: 3px; padding: 8px 12px 0; background: var(--surface); }
+.progress i { flex: 1; height: 4px; border-radius: 2px; background: var(--border); cursor: pointer; }
+.progress i.done { background: var(--success); }
+.progress i.skip { background: var(--border-strong); }
+.progress i.now { background: var(--accent-solid); }
+.live-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ref-stage { flex: 1; min-height: 0; display: grid; place-items: center; background: oklch(10% 0.004 60); position: relative; cursor: zoom-in; }
+.ref-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ref-stage.noimg { background: var(--surface-2); color: var(--muted); cursor: default; padding: 24px; text-align: center; }
+.ref-stage .pos { position: absolute; top: 10px; left: 12px; font-family: var(--font-mono); font-size: 12px; color: oklch(85% 0 0); background: oklch(0% 0 0 / .35); padding: 2px 8px; border-radius: var(--radius-pill); }
+.ref-stage.noimg .pos { color: var(--muted); background: var(--surface); }
+.ref-stage .result-badge { position: absolute; top: 10px; right: 12px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: var(--radius-pill); }
+.result-badge.done { background: var(--success); color: var(--on-success); }
+.result-badge.skip { background: var(--surface); color: var(--muted); border: 1px solid var(--border-strong); }
+.live-text { flex: none; padding: 12px 16px 6px; max-height: 32vh; overflow-y: auto; }
+.live-text h2 { font-size: 18px; line-height: 1.25; }
+.live-text .desc { font-size: 14px; color: var(--muted); margin-top: 4px; white-space: pre-wrap; }
+.live-text .note { margin-top: 8px; color: var(--fg); background: var(--accent-weak); border: 0; }
+.live-foot { flex: none; padding: 10px 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); background: var(--surface); border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.live-foot .main { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
+.live-foot .main .btn { min-height: 52px; font-size: 16px; }
+.live-foot .aux { display: flex; gap: 6px; justify-content: space-between; align-items: center; }
+.live-foot .aux .btn { min-height: 40px; }
+.live-foot .nav { display: flex; gap: 6px; }
+.wrap { display: grid; grid-template-rows: auto auto 1fr auto; height: 100%; }
+@media (min-width: 900px) {
+  .wrap { max-width: 1100px; margin: 0 auto; width: 100%; grid-template-columns: 1fr 380px; grid-template-rows: auto auto 1fr; grid-template-areas: "top top" "prog prog" "body side"; }
+  .live-top { grid-area: top; } .progress { grid-area: prog; }
+  .live-body { grid-area: body; }
+  .live-side { grid-area: side; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: var(--surface); }
+  .live-text { max-height: none; flex: 1; }
+  .live-foot { border-top: 1px solid var(--border); }
+}
+@media (max-width: 899px) { .live-side { display: contents; } }
+.sheet .memo-item { grid-template-columns: 24px 1fr; }
+.end { padding: 24px 16px; display: grid; gap: 12px; }
+.end .stat { display: flex; gap: 18px; font-size: 14px; }
+.end .stat b { font-size: 22px; display: block; }
+.skip-reasons { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+/* 现场页底部是主操作区，原型控制条挪到右上角 */
+.protobar, .protobar-toggle { bottom: auto; left: auto; top: max(64px, calc(env(safe-area-inset-top) + 56px)); right: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="live-top">
+    <a class="back" id="backLink" href="#" aria-label="返回空间">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+    <span class="name" id="spaceName"></span>
+    <button class="btn btn-sm" id="memoBtn" type="button">备忘</button>
+    <button class="btn btn-sm" id="listBtn" type="button">清单</button>
+  </header>
+  <div class="progress" id="progress" aria-label="进度"></div>
+
+  <div class="live-body">
+    <div class="ref-stage" id="stage"></div>
+    <div id="offline" hidden style="padding:8px 12px 0"><div class="banner offline"><b>没有网络。</b>可以继续看，但记录会保存不了，需要联网。</div></div>
+  </div>
+  <div class="live-side">
+    <div class="live-text" id="text"></div>
+    <footer class="live-foot">
+      <div class="main" id="mainBtns"></div>
+      <div class="aux">
+        <div class="nav">
+          <button class="btn btn-quiet" id="prevBtn" type="button">上一个</button>
+          <button class="btn btn-quiet" id="nextBtn" type="button">下一个</button>
+        </div>
+        <button class="btn btn-quiet" id="noteBtn" type="button">补记</button>
+      </div>
+    </footer>
+  </div>
+</div>
+
+<!-- 跳过 -->
+<div class="overlay" id="skipSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="skTitle">
+    <h2 id="skTitle">先跳过这个</h2>
+    <p class="sub">随手记一下为什么，回头复盘用。不记也行。</p>
+    <div class="skip-reasons" id="skipReasons">
+      <button class="chip" type="button" data-r="光线不对">光线不对</button>
+      <button class="chip" type="button" data-r="场地不行">场地不行</button>
+      <button class="chip" type="button" data-r="时间不够">时间不够</button>
+      <button class="chip" type="button" data-r="客户不想拍">客户不想拍</button>
+      <button class="chip" type="button" data-r="换了想法">换了想法</button>
+    </div>
+    <div class="actions">
+      <button class="btn" type="button" data-close>不跳了</button>
+      <button class="btn btn-primary" id="skipGo" type="button">跳过</button>
+    </div>
+  </div>
+</div>
+
+<!-- 补记 -->
+<div class="overlay" id="noteSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ntTitle">
+    <h2 id="ntTitle">补记</h2>
+    <p class="sub">写给自己的一句话，跟着这个画面保存。</p>
+    <textarea class="input" id="noteInput" rows="3" placeholder="比如：拍了三组，第二组的侧光最好"></textarea>
+    <div class="actions">
+      <button class="btn" type="button" data-close>取消</button>
+      <button class="btn btn-primary" id="noteGo" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 备忘 -->
+<div class="overlay" id="memoSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mmTitle">
+    <h2 id="mmTitle">拍摄备忘</h2>
+    <p class="sub">出发前写的，核对一下。</p>
+    <div class="memo-list" id="memoList"></div>
+    <div class="actions"><button class="btn" type="button" data-close>关闭</button></div>
+  </div>
+</div>
+
+<!-- 清单 -->
+<div class="overlay" id="listSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="lsTitle">
+    <h2 id="lsTitle">拍摄清单</h2>
+    <p class="sub" id="lsSub"></p>
+    <div class="picker" id="listItems"></div>
+    <div class="actions"><button class="btn" type="button" data-close>关闭</button></div>
+  </div>
+</div>
+
+<!-- 收尾 -->
+<div class="overlay" id="endSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="edTitle">
+    <h2 id="edTitle">这一场都过了一遍</h2>
+    <div class="end" id="endBody"></div>
+    <div class="actions">
+      <button class="btn" type="button" data-close>再看看</button>
+      <a class="btn btn-primary" id="endBack" href="#">回到空间</a>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox" id="lightbox"><button class="close" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button><img alt=""><div class="cap"></div></div>
+
+<script src="proto.js"></script>
+<script>
+(function () {
+  const P = Proto;
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const spaceId = P.q('id');
+  const space = spaceId && P.getSpace(spaceId);
+  if (!space) { location.replace('workspaces.html'); return; }
+  const items = P.shootList(spaceId);
+  $('#backLink').href = 'workspace.html?id=' + spaceId + '&tab=shoot';
+  $('#endBack').href = 'workspace.html?id=' + spaceId;
+  $('#spaceName').textContent = P.displayName(space).text;
+  if (!items.length) { alert('这个空间还没有要拍的画面，先回灵感墙做几个。'); location.replace('workspace.html?id=' + spaceId); return; }
+
+  // ---- 会话与断网（原型控制） ----
+  let offline = false;
+  const st = P.load();
+  const session = { id: P.uid('sess'), spaceId, openedAt: P.now(), kind: navigator.onLine ? 'live' : 'live-unverified' };
+  st.sessions.push(session); P.save();
+  function setOffline(on) {
+    offline = on; $('#offline').hidden = !on;
+    const b = $('[data-proto="offline"]'); if (b) b.textContent = on ? '恢复网络' : '模拟断网';
+    if (!on && pendingOpen) { P.toast('网络恢复：已把断网期间的打开记录补报为「待核实」'); pendingOpen = false; }
+    if (on) pendingOpen = true;
+  }
+  let pendingOpen = false;
+  function write(fn, okMsg) {
+    if (offline) { P.toast('未保存，需要联网', true); return false; }
+    fn(); if (okMsg) P.toast(okMsg); return true;
+  }
+
+  // ---- 渲染 ----
+  let idx = Math.max(0, items.findIndex((i) => !i.result));
+  function cur() { return P.load().shootItems.find((x) => x.id === items[idx].id); }
+  function render() {
+    const list = items.map((i) => P.load().shootItems.find((x) => x.id === i.id));
+    $('#progress').innerHTML = list.map((it, i) => `<i class="${i === idx ? 'now' : it.result ? (it.result.kind === 'done' ? 'done' : 'skip') : ''}" data-go="${i}" title="${P.esc(it.title)}"></i>`).join('');
+    const it = list[idx];
+    const stage = $('#stage');
+    stage.classList.toggle('noimg', !it.refSrc);
+    stage.innerHTML = `<span class="pos">${idx + 1} / ${list.length}</span>` + (it.refSrc ? `<img src="${P.esc(it.refSrc)}" alt="参考图">` : '<span>这个画面没有参考图</span>') +
+      (it.result ? `<span class="result-badge ${it.result.kind === 'done' ? 'done' : 'skip'}">${it.result.kind === 'done' ? '拍到了' : '跳过了'}</span>` : '');
+    $('#text').innerHTML = `<h2>${P.esc(it.title)}</h2>${it.desc ? `<div class="desc">${P.esc(it.desc)}</div>` : ''}${it.result && it.result.reason ? `<div class="desc">跳过原因：${P.esc(it.result.reason)}</div>` : ''}${it.result && it.result.note ? `<div class="note">${P.esc(it.result.note)}</div>` : ''}`;
+    const mb = $('#mainBtns');
+    if (!it.result) mb.innerHTML = `<button class="btn" id="skipBtn" type="button">跳过</button><button class="btn btn-primary" id="doneBtn" type="button">拍到了</button>`;
+    else mb.innerHTML = `<button class="btn" id="undoBtn" type="button">撤销</button><button class="btn btn-primary" id="goNext" type="button">${idx < list.length - 1 ? '下一个' : '收尾'}</button>`;
+    $('#prevBtn').disabled = idx === 0;
+    $('#nextBtn').disabled = idx === list.length - 1;
+    $('#memoBtn').textContent = '备忘' + (P.memosIn(spaceId).length ? ' ' + P.memosIn(spaceId).length : '');
+  }
+  function go(i) { idx = Math.max(0, Math.min(items.length - 1, i)); render(); }
+  function nextOrEnd() {
+    const list = items.map((i) => P.load().shootItems.find((x) => x.id === i.id));
+    const pending = list.findIndex((x, i) => !x.result && i > idx);
+    if (pending >= 0) return go(pending);
+    if (list.every((x) => x.result)) return openEnd();
+    const any = list.findIndex((x) => !x.result); if (any >= 0) go(any);
+  }
+  $('#mainBtns').addEventListener('click', (e) => {
+    const id = e.target.closest('button')?.id;
+    if (id === 'doneBtn') { if (write(() => P.setResult(cur().id, { kind: 'done', at: P.now() }))) { render(); setTimeout(nextOrEnd, 350); } }
+    if (id === 'skipBtn') { skipReason = ''; $$('#skipReasons .chip').forEach((c) => c.classList.remove('active')); open('#skipSheet'); }
+    if (id === 'undoBtn') { if (write(() => P.setResult(cur().id, null), '已撤销')) render(); }
+    if (id === 'goNext') nextOrEnd();
+  });
+  $('#prevBtn').addEventListener('click', () => go(idx - 1));
+  $('#nextBtn').addEventListener('click', () => go(idx + 1));
+  $('#progress').addEventListener('click', (e) => { const i = e.target.closest('[data-go]'); if (i) go(+i.dataset.go); });
+  $('#stage').addEventListener('click', () => { const it = cur(); if (it.refSrc) { $('#lightbox img').src = it.refSrc; $('#lightbox .cap').textContent = it.title; $('#lightbox').classList.add('open'); } });
+  $('#lightbox').addEventListener('click', () => $('#lightbox').classList.remove('open'));
+
+  // 跳过
+  let skipReason = '';
+  $('#skipReasons').addEventListener('click', (e) => { const c = e.target.closest('.chip'); if (!c) return; skipReason = c.dataset.r; $$('#skipReasons .chip').forEach((x) => x.classList.toggle('active', x === c)); });
+  $('#skipGo').addEventListener('click', () => { if (write(() => P.setResult(cur().id, { kind: 'skip', reason: skipReason, at: P.now() }))) { close('#skipSheet'); render(); setTimeout(nextOrEnd, 350); } });
+  // 补记
+  $('#noteBtn').addEventListener('click', () => { $('#noteInput').value = (cur().result && cur().result.note) || ''; open('#noteSheet'); });
+  $('#noteGo').addEventListener('click', () => {
+    const t = $('#noteInput').value.trim();
+    if (write(() => { const it = cur(); P.setResult(it.id, Object.assign({}, it.result || { kind: 'pending', at: P.now() }, { note: t })); }, '已保存')) { close('#noteSheet'); render(); }
+  });
+  // 备忘
+  $('#memoBtn').addEventListener('click', () => { renderMemo(); open('#memoSheet'); });
+  function renderMemo() {
+    const ms = P.memosIn(spaceId);
+    $('#memoList').innerHTML = ms.length ? ms.map((m) => `<label class="memo-item ${m.checked ? 'done' : ''}"><input type="checkbox" ${m.checked ? 'checked' : ''} data-memo="${m.id}"><span class="text">${P.esc(m.text)}</span></label>`).join('') : '<div class="wall-empty">出发前没写备忘。没关系，这不影响拍。</div>';
+  }
+  $('#memoList').addEventListener('change', (e) => { const c = e.target.closest('[data-memo]'); if (!c) return; if (!write(() => P.toggleMemo(c.dataset.memo))) c.checked = !c.checked; renderMemo(); render(); });
+  // 清单
+  $('#listBtn').addEventListener('click', () => {
+    const list = items.map((i) => P.load().shootItems.find((x) => x.id === i.id));
+    const done = list.filter((x) => x.result && x.result.kind === 'done').length; const skip = list.filter((x) => x.result && x.result.kind === 'skip').length;
+    $('#lsSub').textContent = `拍到了 ${done} · 跳过 ${skip} · 还剩 ${list.length - done - skip}`;
+    $('#listItems').innerHTML = list.map((x, i) => `<button type="button" data-i="${i}" ${i === idx ? 'aria-current="true"' : ''}><span><span class="num muted">${String(i + 1).padStart(2, '0')}</span> ${P.esc(x.title)}</span><span class="m">${x.result ? (x.result.kind === 'done' ? '拍到了' : '跳过') : ''}</span></button>`).join('');
+    open('#listSheet');
+  });
+  $('#listItems').addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b) { close('#listSheet'); go(+b.dataset.i); } });
+  // 收尾
+  function openEnd() {
+    const list = items.map((i) => P.load().shootItems.find((x) => x.id === i.id));
+    const done = list.filter((x) => x.result && x.result.kind === 'done').length; const skip = list.length - done;
+    $('#endBody').innerHTML = `<div class="stat"><span><b>${done}</b>拍到了</span><span><b>${skip}</b>跳过</span></div><p class="hint">跳过的画面还留在清单里，想补拍就新建一个空间。这里不会把空间标成「完成」，也不会算价格。</p>`;
+    open('#endSheet');
+  }
+
+  function open(sel) { $(sel).classList.add('open'); }
+  function close(sel) { $(sel).classList.remove('open'); }
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) $$('.overlay.open').forEach((x) => x.classList.remove('open')); else if (e.target.classList.contains('overlay')) e.target.classList.remove('open'); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $$('.overlay.open').forEach((x) => x.classList.remove('open')); $('#lightbox').classList.remove('open'); } if (e.key === 'ArrowRight') go(idx + 1); if (e.key === 'ArrowLeft') go(idx - 1); });
+
+  render();
+  P.protobar('<button class="btn" data-proto="offline">模拟断网</button>');
+  document.querySelector('.protobar').addEventListener('click', (e) => { if (e.target.closest('[data-proto="offline"]')) setOffline(!offline); });
+  window.addEventListener('offline', () => setOffline(true));
+  window.addEventListener('online', () => setOffline(false));
+})();
+</script>
+</body>
+</html>

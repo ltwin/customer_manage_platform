@@ -2,6 +2,10 @@
 
 摄影师私域客户经营系统的能力清单。每条一句 pitch，详情读对应 req 文档。
 
+## exploratory（未来候选，尚未立项）
+
+- **[creative-asset-platform](creative-asset-platform.md)** — 将摄影素材、风格参考和角色知识包逐步发展为可分享、可取得、可用于项目与 Agent 的资产平台；初版 PRD 待验证，免费分享、关注领取与付费市场不属于当前创意空间迭代的交付范围
+
 ## draft（愿景已定，尚未实现）
 
 - **[creative-shoot-planning](creative-shoot-planning.md)** — 把散落在聊天、参考图和脑海里的创作灵感，变成拍前能协作、现场能照着执行的拍摄方案

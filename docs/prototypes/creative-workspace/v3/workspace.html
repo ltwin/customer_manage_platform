@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创作空间 · 影约</title>
+<link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="back" href="workspaces.html" aria-label="返回创作空间列表">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      创作空间
+    </a>
+    <div class="grow"></div>
+    <div class="topbar-actions">
+      <button class="btn" id="importBtn" type="button">搬入素材</button>
+      <a class="btn btn-primary" id="liveBtn" href="#">现场模式</a>
+      <button class="icon-btn" id="spaceMore" type="button" aria-label="空间操作"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="ws-head">
+    <input class="inline-name" id="nameInput" placeholder="未命名空间 · 点这里起个名（可不填）" aria-label="空间名称" maxlength="60">
+    <div class="ws-sub" id="sub"></div>
+  </div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" role="tab" data-tab="wall" type="button">灵感墙<span class="count" id="cWall"></span></button>
+    <button class="tab" role="tab" data-tab="shoot" type="button">要拍的画面<span class="count" id="cShoot"></span></button>
+    <button class="tab" role="tab" data-tab="memo" type="button">拍摄备忘<span class="count" id="cMemo"></span></button>
+  </div>
+
+  <!-- 灵感墙 -->
+  <section class="tab-panel" data-panel="wall">
+    <div class="toolbar" id="wallBar">
+      <span class="muted hide-mobile" id="wallHint">拖图片到页面任意位置，或粘贴一段文字</span>
+      <div class="spacer"></div>
+      <button class="btn" id="selectBtn" type="button">选择</button>
+    </div>
+    <div class="toolbar" id="selBar" hidden>
+      <span id="selCount">已选 0</span>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="selShoot" type="button">做成要拍的画面</button>
+      <button class="btn" id="selGroup" type="button">成组</button>
+      <button class="btn" id="selMove" type="button">移到其他空间</button>
+      <button class="btn btn-danger" id="selRemove" type="button">移除</button>
+      <button class="btn btn-quiet" id="selCancel" type="button">取消</button>
+    </div>
+    <div class="wall" id="wall"></div>
+    <div class="dropzone" id="dropzone">
+      <b>把参考图拖到这里</b>
+      一次拖多张，每张成一条；也可以粘贴一段聊天记录，每行成一条
+      <div class="row">
+        <button class="btn" type="button" data-open="import">选择图片 / 粘贴文字</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 要拍的画面 -->
+  <section class="tab-panel" data-panel="shoot" hidden>
+    <div class="section" style="padding-top:12px">
+      <p class="hint" style="margin-bottom:12px">从灵感墙上选几张做成要拍的画面，现场就对着这份清单拍。做成之后就是你自己的了，原始灵感改了也不会跟着变。</p>
+      <div class="shoot-list" id="shootList"></div>
+    </div>
+  </section>
+
+  <!-- 拍摄备忘 -->
+  <section class="tab-panel" data-panel="memo" hidden>
+    <div class="section" style="padding-top:12px">
+      <p class="hint" style="margin-bottom:8px">写给自己的、拍摄前别忘了的事。不会提醒你，不会给客户看，也不影响任何操作。</p>
+      <div class="memo-list" id="memoList"></div>
+      <div class="memo-add">
+        <textarea class="input" id="memoInput" rows="1" placeholder="一行一条，可以整段粘贴" aria-label="新增备忘"></textarea>
+        <button class="btn" id="memoAdd" type="button">添加</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="page-drop" id="pageDrop">松开，放进这个空间</div>
+
+<!-- 搬入 -->
+<div class="overlay" id="importSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <h2 id="importTitle">搬入素材</h2>
+    <p class="sub">图片按张成卡，文字按行成卡，链接原样保留。视频先不支持。</p>
+    <div class="dropzone" id="sheetDrop" style="margin-bottom:14px">
+      <b>拖图片到这里</b>
+      <div class="row"><label class="btn" for="fileInput">选择图片</label><input type="file" id="fileInput" accept="image/*" multiple class="sr-only"></div>
+    </div>
+    <div class="field">
+      <label for="pasteInput">或者粘贴一段文字 / 聊天记录</label>
+      <textarea class="input" id="pasteInput" placeholder="阿宁：这次想拍暗一点的&#10;阿宁：像上次那组走廊的感觉但更冷&#10;https://…"></textarea>
+    </div>
+    <div class="actions">
+      <button class="btn" type="button" data-close>关闭</button>
+      <button class="btn btn-primary" id="pasteGo" type="button">按行放进来</button>
+    </div>
+  </div>
+</div>
+
+<!-- 预览 -->
+<div class="overlay" id="previewSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+    <h2 id="pvTitle" class="sr-only">查看灵感</h2>
+    <div class="preview" id="pvBody"></div>
+    <div class="actions">
+      <button class="btn btn-danger" id="pvRemove" type="button">移除</button>
+      <div class="spacer"></div>
+      <button class="btn" type="button" data-close>关闭</button>
+      <button class="btn btn-primary" id="pvShoot" type="button">做成要拍的画面</button>
+    </div>
+  </div>
+</div>
+
+<!-- 建立要拍的画面（多选） -->
+<div class="overlay" id="shootSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="shTitle">
+    <h2 id="shTitle">做成要拍的画面</h2>
+    <p class="sub" id="shSub"></p>
+    <div class="actions" style="justify-content:flex-start">
+      <button class="btn btn-primary" id="shEach" type="button">每条各成一个画面</button>
+      <button class="btn" id="shMerge" type="button">合成一个画面</button>
+      <div class="spacer"></div>
+      <button class="btn btn-quiet" type="button" data-close>取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 移到其他空间 -->
+<div class="overlay" id="moveSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="mvTitle">
+    <h2 id="mvTitle">移到其他空间</h2>
+    <p class="sub">灵感会离开当前空间。已经做成的要拍的画面不受影响。</p>
+    <div class="picker" id="mvList"></div>
+    <div class="actions"><button class="btn" type="button" data-close>取消</button></div>
+  </div>
+</div>
+
+<!-- 关联 -->
+<div class="overlay" id="linkSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="lkTitle">
+    <h2 id="lkTitle">关联订单或客户</h2>
+    <p class="sub">只是为了以后在列表里认出来、能互相跳转。不会改订单、档期或价格。</p>
+    <div class="chips" style="margin-bottom:10px"><button class="chip active" data-lk="order" type="button">订单</button><button class="chip" data-lk="customer" type="button">客户</button></div>
+    <div class="picker" id="lkList"></div>
+    <div class="actions">
+      <button class="btn btn-danger" id="lkClear" type="button">解除关联</button>
+      <div class="spacer"></div>
+      <button class="btn" type="button" data-close>取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 空间更多 -->
+<div class="menu" id="tileMenu"></div>
+<div class="menu" id="spaceMenu"></div>
+<div class="lightbox" id="lightbox"><button class="close" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button><img alt=""><div class="cap"></div></div>
+
+<script src="proto.js"></script>
+<script>
+(function () {
+  const P = Proto;
+  const q = P.q;
+  let spaceId = q('id');
+  let space = spaceId ? P.getSpace(spaceId) : null;
+  if (!space) { location.replace('workspaces.html'); return; }
+  P.touch(space);
+  const isInbox = space.kind === 'inbox';
+
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const DOTS = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+  const UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
+  const DOWN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
+  const TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
+  const ORDER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>';
+  const CUST = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>';
+
+  let selecting = false;
+  const selected = new Set();
+  let currentTab = q('tab') || 'wall';
+  let previewCardId = null;
+
+  // ---------- 头部 ----------
+  const nameInput = $('#nameInput');
+  function renderHead() {
+    space = P.getSpace(spaceId);
+    if (isInbox) {
+      nameInput.value = '未归类'; nameInput.readOnly = true; nameInput.setAttribute('aria-readonly', 'true');
+      $('#sub').innerHTML = '<span>随手放进来的灵感先在这里，之后想清楚了再挪进项目空间。</span>';
+    } else {
+      nameInput.value = space.name || '';
+      const t = P.linkTarget(space.link);
+      let link;
+      if (!t) link = `<button class="linklike" type="button" data-open="link">关联订单或客户</button>`;
+      else if (t.broken) link = `<span class="link-state broken">${t.type === 'order' ? ORDER : CUST} 关联的${t.type === 'order' ? '订单' : '客户'}已不存在</span> <button class="linklike" type="button" data-open="link">更换或解除</button>`;
+      else link = `<span class="link-state">${t.type === 'order' ? ORDER : CUST} <a class="linklike" href="#" data-goto="${t.type}">${P.esc(t.name)}</a>${t.sub ? ` <span class="muted">· ${P.esc(t.sub)}</span>` : ''}</span> <button class="linklike" type="button" data-open="link">更换</button>`;
+      $('#sub').innerHTML = link + `<span class="muted">${P.esc(P.ago(space.createdAt))}创建</span>`;
+    }
+    const items = P.shootList(spaceId);
+    const live = $('#liveBtn');
+    live.href = 'live.html?id=' + spaceId;
+    live.classList.toggle('btn-primary', items.length > 0);
+    live.title = items.length ? '' : '先做几个要拍的画面';
+    live.dataset.empty = items.length ? '' : '1';
+    $('#cWall').textContent = P.cardsInSpace(spaceId).length || '';
+    $('#cShoot').textContent = items.length || '';
+    $('#cMemo').textContent = P.memosIn(spaceId).length || '';
+  }
+  $('#liveBtn').addEventListener('click', (e) => { if (e.currentTarget.dataset.empty) { e.preventDefault(); P.toast('先到灵感墙选几张，做成要拍的画面'); } });
+  nameInput.addEventListener('change', () => { if (!isInbox) { P.renameSpace(spaceId, nameInput.value.trim()); P.toast('已保存'); } });
+  nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') nameInput.blur(); });
+  document.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-goto]');
+    if (g) { e.preventDefault(); P.toast(g.dataset.goto === 'order' ? '（原型）跳到订单详情，订单页会显示「关联的创作空间」入口回到这里' : '（原型）跳到客户详情，客户页会显示「关联的创作空间」入口回到这里'); }
+  });
+
+  // ---------- tabs ----------
+  function showTab(t) {
+    currentTab = t;
+    $$('.tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
+    $$('.tab-panel').forEach((p) => { p.hidden = p.dataset.panel !== t; });
+    const u = new URL(location.href); u.searchParams.set('tab', t); history.replaceState(null, '', u);
+  }
+  $$('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+  // ---------- 灵感墙 ----------
+  function tile(x) {
+    const c = x.card;
+    const inList = P.shootList(spaceId).some((i) => (i.sourceCardIds || [i.sourceCardId]).includes(c.id));
+    let body, kind;
+    if (c.type === 'image') { body = `<img src="${P.esc(c.src)}" alt="">`; kind = ''; }
+    else if (c.type === 'text') { body = `<p>${P.esc(c.text)}</p>`; kind = '文字'; }
+    else { body = `<span class="host">${P.esc(P.host(c.url))}</span><span class="url">${P.esc(c.url)}</span>`; kind = '链接'; }
+    return `<div class="tile is-${c.type} ${selected.has(c.id) ? 'selected' : ''}" data-card="${c.id}" draggable="true" tabindex="0" role="button" aria-label="${c.type === 'image' ? '图片' : kind}灵感">
+      ${body}${kind ? `<span class="kind">${kind}</span>` : ''}
+      ${inList ? '<span class="in-list">已在清单</span>' : ''}
+      <span class="check" aria-hidden="true">✓</span>
+      <button class="more" type="button" aria-label="更多操作" data-more="${c.id}">${DOTS}</button>
+    </div>`;
+  }
+  function renderWall() {
+    const all = P.cardsInSpace(spaceId);
+    const groups = P.groupsInSpace(spaceId);
+    const wall = $('#wall');
+    wall.classList.toggle('selecting', selecting);
+    $('#dropzone').hidden = all.length > 0;
+    $('#wallBar').hidden = selecting || !all.length;
+    $('#selBar').hidden = !selecting;
+    $('#wallHint').textContent = isInbox ? '随手放：拖图片到页面任意位置，或粘贴一句话、一个链接' : '拖图片到页面任意位置，或粘贴一段聊天记录';
+    let html = '';
+    groups.forEach((g) => {
+      const cs = all.filter((x) => x.m.groupId === g.id);
+      html += `<section class="group group-drop" data-group="${g.id}">
+        <div class="group-head">
+          <input class="group-name" value="${P.esc(g.name)}" aria-label="分组名" data-gname="${g.id}" maxlength="40">
+          <span class="muted">${cs.length} 条</span>
+          <div class="spacer"></div>
+          <button class="btn btn-quiet btn-sm" type="button" data-dissolve="${g.id}">解散分组</button>
+        </div>
+        <div class="grid" data-grid="${g.id}">${cs.map(tile).join('') || '<div class="wall-empty">把灵感拖进来</div>'}</div>
+      </section>`;
+    });
+    const loose = all.filter((x) => !x.m.groupId || !groups.some((g) => g.id === x.m.groupId));
+    if (loose.length || !groups.length) {
+      html += `<section class="group group-drop" data-group="">
+        ${groups.length ? '<div class="group-head"><span class="muted">未分组 · ' + loose.length + ' 条</span></div>' : ''}
+        <div class="grid" data-grid="">${loose.map(tile).join('')}</div>
+      </section>`;
+    }
+    wall.innerHTML = html;
+    renderHead();
+  }
+
+  // 点击 / 选择
+  $('#wall').addEventListener('click', (e) => {
+    const more = e.target.closest('[data-more]');
+    if (more) { e.stopPropagation(); openMenu(more.dataset.more, more); return; }
+    const dis = e.target.closest('[data-dissolve]');
+    if (dis) { P.dissolveGroup(dis.dataset.dissolve); renderWall(); P.toast('分组已解散，灵感还在'); return; }
+    const t = e.target.closest('.tile'); if (!t) return;
+    if (selecting) { toggleSel(t.dataset.card); return; }
+    openPreview(t.dataset.card);
+  });
+  $('#wall').addEventListener('keydown', (e) => {
+    const t = e.target.closest('.tile'); if (!t) return;
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selecting ? toggleSel(t.dataset.card) : openPreview(t.dataset.card); }
+  });
+  $('#wall').addEventListener('change', (e) => {
+    const g = e.target.closest('[data-gname]'); if (g) { P.renameGroup(g.dataset.gname, g.value.trim() || '分组'); P.toast('已保存'); }
+  });
+  function toggleSel(id) {
+    selected.has(id) ? selected.delete(id) : selected.add(id);
+    $$(`.tile[data-card="${id}"]`).forEach((t) => t.classList.toggle('selected', selected.has(id)));
+    $('#selCount').textContent = '已选 ' + selected.size;
+  }
+  function setSelecting(on) { selecting = on; if (!on) selected.clear(); $('#selCount').textContent = '已选 0'; renderWall(); }
+  $('#selectBtn').addEventListener('click', () => setSelecting(true));
+  $('#selCancel').addEventListener('click', () => setSelecting(false));
+  $('#selRemove').addEventListener('click', () => {
+    if (!selected.size) return P.toast('先选几条');
+    if (!confirm(`移除这 ${selected.size} 条灵感？已经做成的要拍的画面会保留，只是不能再回看原始灵感。`)) return;
+    selected.forEach(P.archiveCard); setSelecting(false); P.toast('已移除');
+  });
+  $('#selGroup').addEventListener('click', () => {
+    if (!selected.size) return P.toast('先选几条');
+    const g = P.createGroup(spaceId, '', Array.from(selected)); setSelecting(false);
+    const inp = $(`[data-gname="${g.id}"]`); if (inp) { inp.focus(); inp.select(); }
+    P.toast('已成组，给它起个名');
+  });
+  $('#selMove').addEventListener('click', () => { if (!selected.size) return P.toast('先选几条'); openMove(Array.from(selected)); });
+  $('#selShoot').addEventListener('click', () => { if (!selected.size) return P.toast('先选几条'); openShoot(Array.from(selected)); });
+
+  // 拖拽换序（桌面）
+  let dragId = null;
+  $('#wall').addEventListener('dragstart', (e) => {
+    const t = e.target.closest('.tile'); if (!t) return;
+    dragId = t.dataset.card; t.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', dragId); } catch (_) {}
+  });
+  $('#wall').addEventListener('dragend', () => { dragId = null; $$('.dragging, .drop-before, .drop-after, .group-drop.over').forEach((el) => el.classList.remove('dragging', 'drop-before', 'drop-after', 'over')); });
+  $('#wall').addEventListener('dragover', (e) => {
+    if (!dragId) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    $$('.drop-before, .drop-after').forEach((el) => el.classList.remove('drop-before', 'drop-after'));
+    $$('.group-drop.over').forEach((el) => el.classList.remove('over'));
+    const t = e.target.closest('.tile');
+    if (t && t.dataset.card !== dragId) {
+      const r = t.getBoundingClientRect(); t.classList.add(e.clientX < r.left + r.width / 2 ? 'drop-before' : 'drop-after');
+    } else { const g = e.target.closest('.group-drop'); if (g) g.classList.add('over'); }
+  });
+  $('#wall').addEventListener('drop', (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    const t = e.target.closest('.tile');
+    const g = e.target.closest('.group-drop');
+    const groupId = g ? (g.dataset.group || null) : null;
+    if (t && t.dataset.card !== dragId) {
+      const r = t.getBoundingClientRect(); const before = e.clientX < r.left + r.width / 2;
+      const gridCards = $$('.tile', t.closest('.grid')).map((x) => x.dataset.card);
+      const i = gridCards.indexOf(t.dataset.card);
+      const beforeId = before ? t.dataset.card : gridCards[i + 1] || null;
+      P.reorder(spaceId, dragId, beforeId, groupId);
+    } else if (g) {
+      P.reorder(spaceId, dragId, null, groupId);
+    }
+    dragId = null; renderWall();
+  });
+
+  // 更多菜单
+  const menu = $('#tileMenu');
+  let menuCard = null;
+  function openMenu(cardId, anchor) {
+    menuCard = cardId;
+    const c = P.getCard(cardId);
+    const m = P.load().memberships.find((x) => x.cardId === cardId);
+    const groups = P.groupsInSpace(spaceId);
+    menu.innerHTML = `
+      <button type="button" data-act="preview">查看</button>
+      <button type="button" data-act="shoot">做成要拍的画面</button>
+      <hr>
+      <button type="button" data-act="up">往前挪</button>
+      <button type="button" data-act="down">往后挪</button>
+      ${groups.length ? '<hr>' + groups.filter((g) => g.id !== m.groupId).map((g) => `<button type="button" data-act="group" data-g="${g.id}">放进「${P.esc(g.name)}」</button>`).join('') : ''}
+      ${m.groupId ? '<button type="button" data-act="group" data-g="">移出分组</button>' : ''}
+      <hr>
+      <button type="button" data-act="move">${isInbox ? '带进项目空间' : '移到其他空间'}</button>
+      <button type="button" class="danger" data-act="remove">移除</button>`;
+    const r = anchor.getBoundingClientRect();
+    menu.style.left = Math.min(r.left, window.innerWidth - 210) + 'px';
+    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 320) + 'px';
+    menu.classList.add('open');
+    void c;
+  }
+  document.addEventListener('click', (e) => { if (!e.target.closest('#tileMenu') && !e.target.closest('[data-more]')) menu.classList.remove('open'); });
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = menuCard; menu.classList.remove('open');
+    const act = b.dataset.act;
+    if (act === 'preview') openPreview(id);
+    if (act === 'shoot') openShoot([id]);
+    if (act === 'move') openMove([id]);
+    if (act === 'remove') { if (confirm('移除这条灵感？已做成的要拍的画面会保留。')) { P.archiveCard(id); renderWall(); P.toast('已移除'); } }
+    if (act === 'group') { P.setGroup([id], b.dataset.g || null); renderWall(); }
+    if (act === 'up' || act === 'down') {
+      const m = P.load().memberships.find((x) => x.cardId === id);
+      const sib = P.cardsInSpace(spaceId).filter((x) => (x.m.groupId || null) === (m.groupId || null)).map((x) => x.card.id);
+      const i = sib.indexOf(id);
+      const target = act === 'up' ? sib[i - 1] : sib[i + 2];
+      if (act === 'up' && i === 0) return;
+      if (act === 'down' && i === sib.length - 1) return;
+      P.reorder(spaceId, id, target || null, m.groupId || null); renderWall();
+    }
+  });
+
+  // ---------- 预览 ----------
+  function openPreview(id) {
+    const c = P.getCard(id); if (!c) return;
+    previewCardId = id;
+    let html;
+    if (c.type === 'image') html = `<img src="${P.esc(c.src)}" alt="" id="pvImg" style="cursor:zoom-in">`;
+    else if (c.type === 'text') html = `<p>${P.esc(c.text)}</p>`;
+    else html = `<p><a class="linklike" href="${P.esc(c.url.startsWith('http') ? c.url : 'https://' + c.url)}" target="_blank" rel="noopener">${P.esc(c.url)}</a></p>`;
+    const meta = [];
+    if (c.batchId) meta.push('来自一次批量搬入');
+    meta.push(P.ago(c.createdAt) + '放入');
+    html += `<div class="meta">${meta.map(P.esc).join(' · ')}</div>`;
+    $('#pvBody').innerHTML = html;
+    const im = $('#pvImg'); if (im) im.addEventListener('click', () => lightbox(c.src));
+    open('#previewSheet');
+  }
+  $('#pvShoot').addEventListener('click', () => { close('#previewSheet'); openShoot([previewCardId]); });
+  $('#pvRemove').addEventListener('click', () => { if (confirm('移除这条灵感？')) { P.archiveCard(previewCardId); close('#previewSheet'); renderWall(); P.toast('已移除'); } });
+
+  // ---------- 做成要拍的画面 ----------
+  let shootIds = [];
+  function openShoot(ids) {
+    shootIds = ids;
+    if (ids.length === 1) { finishShoot(false); return; }
+    const n = ids.length; const imgs = ids.map(P.getCard).filter((c) => c && c.type === 'image').length;
+    $('#shSub').textContent = `选了 ${n} 条（${imgs} 张图）。各成一个画面，还是把它们合成一个画面？合成时第一张图作为参考，文字合并成说明。`;
+    open('#shootSheet');
+  }
+  function finishShoot(merge) {
+    const made = P.createShootItems(spaceId, shootIds, { merge });
+    close('#shootSheet'); setSelecting(false);
+    P.toast(`已做成 ${made.length} 个要拍的画面`);
+    renderShoot(); showTab('shoot');
+  }
+  $('#shEach').addEventListener('click', () => finishShoot(false));
+  $('#shMerge').addEventListener('click', () => finishShoot(true));
+
+  // ---------- 移到其他空间 ----------
+  let moveIds = [];
+  function openMove(ids) {
+    moveIds = ids;
+    const spaces = P.listSpaces().filter((s) => s.id !== spaceId);
+    $('#mvList').innerHTML = spaces.map((s) => {
+      const n = P.displayName(s); return `<button type="button" data-to="${s.id}"><span>${s.kind === 'inbox' ? '未归类' : P.esc(n.text)}</span><span class="m">${P.cardsInSpace(s.id).length} 条</span></button>`;
+    }).join('') + `<button type="button" data-to="__new">＋ 新建一个空间并放进去</button>`;
+    open('#moveSheet');
+  }
+  $('#mvList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-to]'); if (!b) return;
+    let to = b.dataset.to;
+    if (to === '__new') to = P.createSpace().id;
+    moveIds.forEach((id) => P.moveCard(id, to));
+    close('#moveSheet'); setSelecting(false);
+    const n = P.displayName(P.getSpace(to));
+    P.toast(`已移到「${n.text}」`);
+  });
+
+  // ---------- 关联 ----------
+  let lkType = 'order';
+  function renderLink() {
+    $$('[data-lk]').forEach((c) => c.classList.toggle('active', c.dataset.lk === lkType));
+    const list = lkType === 'order' ? P.DEMO.orders.filter((o) => !o.deleted) : P.DEMO.customers;
+    $('#lkList').innerHTML = list.map((o) => `<button type="button" data-pick="${o.id}"><span>${P.esc(o.title || o.name)}</span>${o.date ? `<span class="m">${o.date} · ${o.status}</span>` : ''}</button>`).join('');
+    $('#lkClear').hidden = !P.getSpace(spaceId).link;
+  }
+  $$('[data-lk]').forEach((c) => c.addEventListener('click', () => { lkType = c.dataset.lk; renderLink(); }));
+  $('#lkList').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pick]'); if (!b) return;
+    P.setLink(spaceId, { type: lkType, id: b.dataset.pick }); close('#linkSheet'); renderHead(); P.toast('已关联，订单页也能看到这个空间了');
+  });
+  $('#lkClear').addEventListener('click', () => { P.setLink(spaceId, null); close('#linkSheet'); renderHead(); P.toast('已解除关联，空间内容不受影响'); });
+
+  // ---------- 搬入 ----------
+  function doImportText(text) {
+    const r = P.importText(spaceId, text);
+    if (!r.cards.length) return P.toast('没有可放入的内容');
+    P.toast(`放进来 ${r.cards.length} 条`);
+    renderWall(); showTab('wall');
+  }
+  function doImportFiles(files) {
+    P.readFilesAsDataUrls(files, (urls, rejected) => {
+      if (rejected.length) P.toast(`视频先不支持，${rejected.length} 个文件没有放入`, true);
+      if (!urls.length) return;
+      const t0 = performance.now();
+      const r = P.importImages(spaceId, urls);
+      if (!r.persisted) { P.toast('这批图太大，没有保存成功。走查用的浏览器存储有限，换小一点的图试试', true); return; }
+      P.toast(`放进来 ${urls.length} 张图 · ${Math.round(performance.now() - t0)} ms`);
+      renderWall(); showTab('wall');
+    });
+  }
+  $('#pasteGo').addEventListener('click', () => { const t = $('#pasteInput').value; if (!t.trim()) return P.toast('先粘贴一些文字'); $('#pasteInput').value = ''; close('#importSheet'); doImportText(t); });
+  $('#fileInput').addEventListener('change', (e) => { close('#importSheet'); doImportFiles(e.target.files); e.target.value = ''; });
+  ['#dropzone', '#sheetDrop'].forEach((sel) => {
+    const el = $(sel);
+    el.addEventListener('dragover', (e) => { if (dragId) return; e.preventDefault(); e.stopPropagation(); el.classList.add('over'); });
+    el.addEventListener('dragleave', () => el.classList.remove('over'));
+    el.addEventListener('drop', (e) => { if (dragId) return; e.preventDefault(); e.stopPropagation(); el.classList.remove('over'); close('#importSheet'); handleDrop(e.dataTransfer); });
+  });
+  function handleDrop(dt) {
+    if (dt.files && dt.files.length) return doImportFiles(dt.files);
+    const text = dt.getData('text/plain'); if (text && text.trim()) doImportText(text);
+  }
+  // 整页拖入
+  let dragDepth = 0;
+  document.addEventListener('dragenter', (e) => { if (dragId) return; if (!Array.from(e.dataTransfer.types || []).some((t) => t === 'Files' || t === 'text/plain')) return; dragDepth++; $('#pageDrop').classList.add('on'); });
+  document.addEventListener('dragleave', () => { if (dragId) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('#pageDrop').classList.remove('on'); });
+  document.addEventListener('dragover', (e) => { if (dragId) return; e.preventDefault(); });
+  document.addEventListener('drop', (e) => { if (dragId) return; e.preventDefault(); dragDepth = 0; $('#pageDrop').classList.remove('on'); if (!e.target.closest('.dropzone')) handleDrop(e.dataTransfer); });
+  // 整页粘贴
+  document.addEventListener('paste', (e) => {
+    if (e.target.matches('input, textarea')) return;
+    const items = Array.from(e.clipboardData.items || []);
+    const files = items.filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter(Boolean);
+    if (files.length) { e.preventDefault(); return doImportFiles(files); }
+    const text = e.clipboardData.getData('text/plain');
+    if (text && text.trim()) { e.preventDefault(); doImportText(text); }
+  });
+
+  // ---------- 要拍的画面 ----------
+  function renderShoot() {
+    const items = P.shootList(spaceId);
+    const el = $('#shootList');
+    if (!items.length) { el.innerHTML = '<div class="empty"><b>还没有要拍的画面</b>回灵感墙，选几张做成要拍的画面。<div style="margin-top:12px"><button class="btn" type="button" data-tab-go="wall">去灵感墙</button></div></div>'; renderHead(); return; }
+    el.innerHTML = items.map((it, i) => {
+      const st = P.sourceState(it);
+      return `<div class="shoot-item" data-item="${it.id}">
+        <div class="ref ${it.refSrc ? '' : 'noimg'}">${it.refSrc ? `<img src="${P.esc(it.refSrc)}" alt="">` : '没有参考图'}</div>
+        <div class="body">
+          <span class="idx">${String(i + 1).padStart(2, '0')}</span>
+          <input class="title" value="${P.esc(it.title)}" aria-label="画面名" data-title="${it.id}" maxlength="80">
+          ${it.desc ? `<div class="desc">${P.esc(it.desc)}</div>` : ''}
+          <div class="src ${st === 'available' ? '' : 'unavail'}">${st === 'available' ? `<button class="linklike" type="button" data-src="${it.sourceCardId}">查看原始灵感</button>` : '原始灵感已不在这里，内容照旧保留'}</div>
+        </div>
+        <div class="side">
+          <button class="btn btn-quiet btn-sm" type="button" data-up="${it.id}" ${i === 0 ? 'disabled' : ''}>${UP}</button>
+          <button class="btn btn-quiet btn-sm" type="button" data-dn="${it.id}" ${i === items.length - 1 ? 'disabled' : ''}>${DOWN}</button>
+          <button class="btn btn-quiet btn-sm" type="button" data-tomb="${it.id}">移出清单</button>
+        </div>
+      </div>`;
+    }).join('');
+    renderHead();
+  }
+  $('#shootList').addEventListener('click', (e) => {
+    const go = e.target.closest('[data-tab-go]'); if (go) return showTab(go.dataset.tabGo);
+    const s = e.target.closest('[data-src]'); if (s) return openPreview(s.dataset.src);
+    const t = e.target.closest('[data-tomb]');
+    if (t) { if (confirm('移出拍摄清单？以前的现场记录还能看到。')) { P.tombstone(t.dataset.tomb); renderShoot(); P.toast('已移出'); } return; }
+    const up = e.target.closest('[data-up]'); const dn = e.target.closest('[data-dn]');
+    if (up || dn) {
+      const id = (up || dn).dataset.up || (up || dn).dataset.dn;
+      const items = P.shootList(spaceId); const i = items.findIndex((x) => x.id === id); const j = up ? i - 1 : i + 1;
+      if (j < 0 || j >= items.length) return;
+      const o = items[j].order; P.updateShootItem(items[j].id, { order: items[i].order }); P.updateShootItem(id, { order: o }); renderShoot();
+    }
+  });
+  $('#shootList').addEventListener('change', (e) => { const t = e.target.closest('[data-title]'); if (t) { P.updateShootItem(t.dataset.title, { title: t.value.trim() || '要拍的画面' }); P.toast('已保存'); } });
+
+  // ---------- 备忘 ----------
+  function renderMemo() {
+    const ms = P.memosIn(spaceId);
+    $('#memoList').innerHTML = ms.length ? ms.map((m, i) => `<div class="memo-item ${m.checked ? 'done' : ''}">
+      <input type="checkbox" ${m.checked ? 'checked' : ''} data-memo="${m.id}" aria-label="勾掉">
+      <span class="text">${P.esc(m.text)}</span>
+      <div class="ops">
+        <button type="button" data-mup="${m.id}" aria-label="上移" ${i === 0 ? 'disabled' : ''}>${UP}</button>
+        <button type="button" data-mdn="${m.id}" aria-label="下移" ${i === ms.length - 1 ? 'disabled' : ''}>${DOWN}</button>
+        <button type="button" data-mdel="${m.id}" aria-label="删除">${TRASH}</button>
+      </div>
+    </div>`).join('') : '<div class="wall-empty">还没写。比如：备用电池、反光板、租的伞记得还。</div>';
+    renderHead();
+  }
+  $('#memoList').addEventListener('change', (e) => { const c = e.target.closest('[data-memo]'); if (c) { P.toggleMemo(c.dataset.memo); renderMemo(); } });
+  $('#memoList').addEventListener('click', (e) => {
+    const d = e.target.closest('[data-mdel]'); if (d) { P.deleteMemo(d.dataset.mdel); renderMemo(); return; }
+    const u = e.target.closest('[data-mup]'); if (u) { P.moveMemo(u.dataset.mup, -1); renderMemo(); return; }
+    const n = e.target.closest('[data-mdn]'); if (n) { P.moveMemo(n.dataset.mdn, 1); renderMemo(); }
+  });
+  function addMemo() { const t = $('#memoInput').value; if (!t.trim()) return; const n = P.addMemos(spaceId, t); $('#memoInput').value = ''; renderMemo(); P.toast(n > 1 ? `加了 ${n} 条` : '已加'); }
+  $('#memoAdd').addEventListener('click', addMemo);
+  $('#memoInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); addMemo(); } });
+
+  // ---------- 弹层通用 ----------
+  function open(sel) { $(sel).classList.add('open'); const f = $(sel).querySelector('textarea, input:not([type=file]), button'); if (f) setTimeout(() => f.focus(), 30); }
+  function close(sel) { $(sel).classList.remove('open'); }
+  document.addEventListener('click', (e) => {
+    const o = e.target.closest('[data-open]');
+    if (o) { const k = o.dataset.open; if (k === 'import') open('#importSheet'); if (k === 'link') { renderLink(); open('#linkSheet'); } return; }
+    if (e.target.closest('[data-close]')) { $$('.overlay.open').forEach((x) => x.classList.remove('open')); return; }
+    if (e.target.classList.contains('overlay')) e.target.classList.remove('open');
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $$('.overlay.open').forEach((x) => x.classList.remove('open')); $('#lightbox').classList.remove('open'); menu.classList.remove('open'); if (selecting) setSelecting(false); } });
+  $('#importBtn').addEventListener('click', () => open('#importSheet'));
+  function lightbox(src) { const lb = $('#lightbox'); lb.querySelector('img').src = src; lb.classList.add('open'); }
+  $('#lightbox').addEventListener('click', () => $('#lightbox').classList.remove('open'));
+
+  // ---------- 启动 ----------
+  renderWall(); renderShoot(); renderMemo(); showTab(currentTab);
+  if (q('new')) { P.toast('空间已建好。直接拖图或粘贴文字进来，名字以后再说'); const u = new URL(location.href); u.searchParams.delete('new'); history.replaceState(null, '', u); }
+  if (q('link') && !isInbox) { renderLink(); open('#linkSheet'); const u = new URL(location.href); u.searchParams.delete('link'); history.replaceState(null, '', u); }
+
+  // ---------- 空间操作菜单 ----------
+  const spaceMenu = $('#spaceMenu');
+  $('#spaceMore').hidden = isInbox;
+  $('#spaceMore').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const s = P.getSpace(spaceId);
+    spaceMenu.innerHTML = `
+      <button type="button" data-sact="rename">${s.name ? '改名' : '起个名'}</button>
+      <button type="button" data-sact="link">${s.link ? '更换关联' : '关联订单或客户'}</button>
+      <hr>
+      <button type="button" data-sact="archive">归档这个空间</button>`;
+    const r = e.currentTarget.getBoundingClientRect();
+    spaceMenu.style.left = Math.min(r.right - 190, window.innerWidth - 200) + 'px';
+    spaceMenu.style.top = (r.bottom + 4) + 'px';
+    spaceMenu.classList.add('open');
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#spaceMenu')) spaceMenu.classList.remove('open'); });
+  spaceMenu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sact]'); if (!b) return;
+    spaceMenu.classList.remove('open');
+    if (b.dataset.sact === 'rename') { nameInput.focus(); nameInput.select(); }
+    if (b.dataset.sact === 'link') { renderLink(); open('#linkSheet'); }
+    if (b.dataset.sact === 'archive') {
+      if (!confirm('归档这个空间？它会从列表移到「已归档」，灵感、要拍的画面和备忘都保留，随时可以恢复。')) return;
+      P.archiveSpace(spaceId); location.href = 'workspaces.html';
+    }
+  });
+  P.protobar();
+})();
+</script>
+</body>
+</html>
