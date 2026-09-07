@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创作空间先导原型 v3 · 影约</title>
+<link rel="stylesheet" href="workspace.css">
+<style>
+.hero { padding: 48px 0 24px; max-width: 64ch; }
+.hero h1 { font-size: clamp(24px, 4vw, 32px); line-height: 1.22; margin: 8px 0 12px; }
+.hero p { color: var(--muted); font-size: 15px; }
+.hero .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+.map { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.map a.card { display: block; transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.map a.card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-2); }
+.map .card p { font-size: 13px; color: var(--muted); }
+.map .card .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.rules { display: grid; gap: 8px; }
+.rules .note { color: var(--fg); }
+.rules b { font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="hero">
+    <p class="eyebrow">creative-workspace-redesign · 原型 v3 · ITEM-1A</p>
+    <h1>把攒下来的参考，理成现场能用的一张清单</h1>
+    <p>一个空间对应一次拍摄。图片一次拖进来、聊天一次贴进来，在灵感墙上排个顺序、分个组，挑出要拍的画面，现场对着参考图拍。没有表单、没有状态、没有价格。</p>
+    <div class="row">
+      <a class="btn btn-primary btn-lg" href="workspaces.html">进入创作空间</a>
+      <a class="btn btn-lg" href="TASKS.md">走查任务脚本</a>
+    </div>
+  </header>
+
+  <section class="section">
+    <div class="section-head"><h2>三个界面</h2></div>
+    <div class="map">
+      <a class="card" href="workspaces.html">
+        <h3>创作空间台账</h3>
+        <p>未归类置顶，其余按最近打开排。没起名的空间用关联的客户或订单名认出来。旧策划记录在最底下一行。</p>
+        <div class="tags"><span class="tag">一步创建</span><span class="tag">未归类</span><span class="tag">关联显示</span></div>
+      </a>
+      <a class="card" href="workspace.html?id=ws_2">
+        <h3>空间内页 · 灵感墙</h3>
+        <p>图片优先的等宽网格。拖图、贴聊天记录都按条成卡；拖拽换序、多选成组；选几张做成「要拍的画面」；备忘一行一条。</p>
+        <div class="tags"><span class="tag">批量搬入</span><span class="tag">排序分组</span><span class="tag">要拍的画面</span><span class="tag">拍摄备忘</span></div>
+      </a>
+      <a class="card" href="live.html?id=ws_2">
+        <h3>现场模式</h3>
+        <p>第一眼是参考图。拍到了 / 撤销一步，跳过和补记两层。备忘从底部拉出。断网只读，写失败明说。</p>
+        <div class="tags"><span class="tag">参考图主体</span><span class="tag">断网只读</span></div>
+      </a>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><h2>界面上固定的红线</h2><span class="muted">走查中不得被「顺手」突破</span></div>
+    <div class="rules">
+      <div class="note"><b>没有必填。</b>新建空间不弹表单；标题、关联、备忘都是之后可选的事，不填不是残缺态。</div>
+      <div class="note"><b>形态不弱于收藏夹。</b>默认视图是图片网格，不是文本列表；文字卡和链接卡与图片同尺寸并排。</div>
+      <div class="note"><b>要拍的画面由自己挑。</b>卡片不会自动变成拍摄项；做成之后与来源脱钩，来源变了也不跟着变。</div>
+      <div class="note"><b>备忘只是给自己的一张纸。</b>没有必需项、截止时间、负责人、提醒，不阻断任何操作，不显示完成度。</div>
+      <div class="note"><b>关联只用来跳转和认出来。</b>对订单、客户、档期、价格零写；关联对象没了，空间内容不受影响。</div>
+      <div class="note"><b>没有 AI、画布、检索、知识库入口或占位按钮。</b>视频不能拖入，会被明确拒绝。</div>
+    </div>
+  </section>
+
+  <footer class="section">
+    <p class="hint">静态原型，数据存在本机浏览器里，可在页面左下角「原型控制」重置。示例图片来自 <code>frontend/public/marketing/</code>。旧策划工作台原型见 <a class="linklike" href="../../creative-shoot-planning/v2/index.html">creative-shoot-planning/v2</a>（只读）。</p>
+  </footer>
+</div>
+<script src="proto.js"></script>
+<script>Proto.protobar();</script>
+</body>
+</html>

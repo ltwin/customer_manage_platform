@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创作空间 · 影约</title>
+<link rel="stylesheet" href="workspace.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <h1>创作空间</h1>
+    <div class="grow"></div>
+    <div class="topbar-actions">
+      <button class="btn btn-primary" id="newBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        新建创作空间
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+  <div class="section">
+    <div class="ws-list" id="list" aria-label="创作空间列表"></div>
+
+    <div class="archived-entry" id="archivedEntry" hidden>
+      <button type="button" id="archivedToggle" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px"><path d="M6 9l6 6 6-6"/></svg>
+        <span id="archivedLabel">已归档</span>
+      </button>
+      <div class="ws-list" id="archivedList" hidden></div>
+    </div>
+
+    <div class="history-entry">
+      <a href="../../creative-shoot-planning/v2/planning-workspace.html" title="改版前的策划记录，只读">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>
+        旧策划记录
+        <span class="muted">· 改版前的策划与分享，只读</span>
+      </a>
+    </div>
+  </div>
+</main>
+
+<div class="menu" id="rowMenu"></div>
+
+<!-- 重命名 -->
+<div class="overlay" id="renameSheet">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rnTitle">
+    <h2 id="rnTitle">给空间起个名</h2>
+    <p class="sub">不起也行，列表里会用关联的客户或订单名认出来。</p>
+    <input class="input" id="renameInput" maxlength="60" placeholder="比如：汉服外拍 · 林小满">
+    <div class="actions">
+      <button class="btn" type="button" data-close>取消</button>
+      <button class="btn btn-primary" id="renameGo" type="button">保存</button>
+    </div>
+  </div>
+</div>
+
+<script src="proto.js"></script>
+<script>
+(function () {
+  const P = Proto;
+  const { listSpaces, listArchived, displayName, linkTarget, cardsInSpace, spaceImages, shootList, ago, esc, createSpace } = P;
+  const $ = (s, r) => (r || document).querySelector(s);
+  const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+  const ICON = {
+    order: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+    customer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+    inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l2-8h12l2 8v6H4z"/><path d="M4 13h5l1.5 2h3L15 13h5"/></svg>',
+    dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  };
+
+  function thumb(space) {
+    if (space.kind === 'inbox') return `<div class="ws-thumb inbox">${ICON.inbox}</div>`;
+    const imgs = spaceImages(space.id, 4);
+    if (!imgs.length) return `<div class="ws-thumb single"></div>`;
+    if (imgs.length < 4) return `<div class="ws-thumb single"><img src="${esc(imgs[0])}" alt=""></div>`;
+    return `<div class="ws-thumb">${imgs.map((s) => `<img src="${esc(s)}" alt="">`).join('')}</div>`;
+  }
+
+  function row(space, archived) {
+    const name = displayName(space);
+    const link = linkTarget(space.link);
+    const cards = cardsInSpace(space.id).length;
+    const items = shootList(space.id).length;
+    const linkHtml = !link ? '' : link.broken
+      ? `<span class="ws-link broken">${ICON[link.type]} 关联已失效</span>`
+      : `<span class="ws-link">${ICON[link.type]} ${esc(link.name)}</span>`;
+    const meta = [linkHtml, `${cards} 条灵感`, items ? `${items} 个要拍的画面` : ''].filter(Boolean).join('<span aria-hidden="true"> · </span>');
+    const sub = space.kind === 'inbox' ? '<span>随手放进来的灵感先在这里</span>' : meta;
+    const side = space.kind === 'inbox'
+      ? `<span class="ago">${ago(space.openedAt)}打开</span>`
+      : archived
+        ? `<button class="btn btn-sm" type="button" data-restore="${space.id}">恢复</button>`
+        : `<span class="ago">${ago(space.openedAt)}打开</span><button class="icon-btn" type="button" aria-label="更多操作" data-more="${space.id}">${ICON.dots}</button>`;
+    return `<a class="ws-row ${space.kind === 'inbox' ? 'is-inbox' : ''} ${archived ? 'is-archived' : ''}" href="workspace.html?id=${space.id}" data-row="${space.id}">
+      ${thumb(space)}
+      <div class="ws-main">
+        <div class="ws-name">${name.fallback && space.kind !== 'inbox' ? `<span class="fallback">${esc(name.text)}</span>` : esc(name.text)}</div>
+        <div class="ws-meta">${sub}</div>
+      </div>
+      <div class="ws-side">${side}</div>
+    </a>`;
+  }
+
+  function render() {
+    $('#list').innerHTML = listSpaces().map((s) => row(s, false)).join('');
+    const archived = listArchived();
+    $('#archivedEntry').hidden = !archived.length;
+    $('#archivedLabel').textContent = `已归档 ${archived.length} 个`;
+    $('#archivedList').innerHTML = archived.map((s) => row(s, true)).join('');
+  }
+
+  // ---- 行级操作 ----
+  const menu = $('#rowMenu');
+  let menuSpace = null;
+  document.addEventListener('click', (e) => {
+    const more = e.target.closest('[data-more]');
+    if (more) {
+      e.preventDefault(); e.stopPropagation();
+      menuSpace = more.dataset.more;
+      const s = P.getSpace(menuSpace);
+      menu.innerHTML = `
+        <button type="button" data-act="open">打开</button>
+        <button type="button" data-act="rename">${s.name ? '改名' : '起个名'}</button>
+        <button type="button" data-act="link">${s.link ? '更换关联' : '关联订单或客户'}</button>
+        <hr>
+        <button type="button" data-act="archive">归档</button>`;
+      const r = more.getBoundingClientRect();
+      menu.style.left = Math.min(r.right - 190, window.innerWidth - 200) + 'px';
+      menu.style.top = Math.min(r.bottom + 4, window.innerHeight - 220) + 'px';
+      menu.classList.add('open');
+      return;
+    }
+    const restore = e.target.closest('[data-restore]');
+    if (restore) { e.preventDefault(); P.unarchiveSpace(restore.dataset.restore); render(); P.toast('已恢复到列表'); return; }
+    if (!e.target.closest('#rowMenu')) menu.classList.remove('open');
+  });
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = menuSpace; menu.classList.remove('open');
+    const act = b.dataset.act;
+    if (act === 'open') location.href = 'workspace.html?id=' + id;
+    if (act === 'link') location.href = 'workspace.html?id=' + id + '&link=1';
+    if (act === 'rename') { $('#renameInput').value = P.getSpace(id).name || ''; $('#renameSheet').classList.add('open'); setTimeout(() => $('#renameInput').focus(), 30); }
+    if (act === 'archive') archive(id);
+  });
+  function archive(id) {
+    const name = displayName(P.getSpace(id)).text;
+    P.archiveSpace(id); render();
+    undoToast(`「${name}」已归档，灵感都还在`, () => { P.unarchiveSpace(id); render(); });
+  }
+  // 归档不弹确认：可撤销的动作不打断
+  let undoTimer = null;
+  function undoToast(msg, undo) {
+    let el = $('.toast');
+    if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.innerHTML = `${esc(msg)}<button class="undo" type="button">撤销</button>`;
+    el.classList.remove('warn'); el.classList.add('show');
+    el.querySelector('.undo').addEventListener('click', () => { undo(); el.classList.remove('show'); });
+    clearTimeout(undoTimer); undoTimer = setTimeout(() => el.classList.remove('show'), 5000);
+  }
+  $('#renameGo').addEventListener('click', () => { P.renameSpace(menuSpace, $('#renameInput').value.trim()); $('#renameSheet').classList.remove('open'); render(); P.toast('已保存'); });
+  $('#renameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) $('#renameGo').click(); });
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-close]') || e.target.classList.contains('overlay')) $$('.overlay.open').forEach((x) => x.classList.remove('open')); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $$('.overlay.open').forEach((x) => x.classList.remove('open')); menu.classList.remove('open'); } });
+
+  $('#archivedToggle').addEventListener('click', () => {
+    const open = $('#archivedList').hidden;
+    $('#archivedList').hidden = !open;
+    $('#archivedToggle').setAttribute('aria-expanded', String(open));
+  });
+  $('#newBtn').addEventListener('click', () => {
+    const s = createSpace();
+    location.href = 'workspace.html?id=' + s.id + '&new=1';
+  });
+  render();
+  P.protobar();
+})();
+</script>
+</body>
+</html>
