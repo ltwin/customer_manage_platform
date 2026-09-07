@@ -83,6 +83,7 @@ func TestCustomerAvatarMigrationUpDownAndConstraints(t *testing.T) {
 	}
 	// avatar 是 0008，需连续回滚 0020-0016 planning / security migrations，再回滚账号与基础迁移。
 	for i, label := range []string{
+		"creative-workspace",
 		"settings-health-tiers",
 		"orders-attribution-snapshot",
 		"orders-payment-facts",

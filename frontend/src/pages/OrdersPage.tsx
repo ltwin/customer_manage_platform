@@ -1,6 +1,8 @@
+import { useSearchParams } from 'react-router-dom'
 import OrderWorkspace from '../components/orders/OrderWorkspace'
 
 export default function OrdersPage() {
+  const [params] = useSearchParams()
   return (
     <>
       <header className="topbar">
@@ -10,7 +12,7 @@ export default function OrdersPage() {
         </div>
       </header>
       <main className="content">
-        <OrderWorkspace />
+        <OrderWorkspace focusOrderId={params.get('order') ?? undefined} />
       </main>
     </>
   )

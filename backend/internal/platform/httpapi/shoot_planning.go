@@ -331,10 +331,13 @@ func (h *shootPlanningHandlers) scope(c *gin.Context) (store.AccountScope, bool)
 		_ = c.Error(errors.New("shoot planning route dependencies missing"))
 		return store.AccountScope{}, false
 	}
-	return h.scopeFactory.ScopeFor(account), true
+	return creativeLegacyScope(c, h.scopeFactory.ScopeFor(account)), true
 }
 
 func (h *shootPlanningHandlers) abortError(c *gin.Context, err error) bool {
+	if abortLegacyWriteError(c, err) {
+		return true
+	}
 	if err == nil {
 		return false
 	}
@@ -399,6 +402,9 @@ func (h *shootPlanningHandlers) abortError(c *gin.Context, err error) bool {
 }
 
 func (h *shootPlanningHandlers) abortBusinessError(c *gin.Context, err error) bool {
+	if abortLegacyWriteError(c, err) {
+		return true
+	}
 	if err == nil {
 		return false
 	}

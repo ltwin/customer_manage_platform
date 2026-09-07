@@ -1229,10 +1229,439 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative-pilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getCreativePilot */
+        get: operations["getCreativePilot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-pilot/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** preflightCreativePilot */
+        get: operations["preflightCreativePilot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-pilot/enroll": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** enrollCreativePilot */
+        post: operations["enrollCreativePilot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-pilot/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** stopCreativePilot */
+        post: operations["stopCreativePilot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取创意空间 */
+        get: operations["listCreativeWorkspaces"];
+        put?: never;
+        /** 一步创建空间 */
+        post: operations["createCreativeWorkspace"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-workspaces/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getCreativeWorkspace */
+        get: operations["getCreativeWorkspace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 编辑创意空间 */
+        patch: operations["commandCreativeWorkspace"];
+        trace?: never;
+    };
+    "/creative-workspaces/{id}/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** importCreativeCards */
+        post: operations["importCreativeCards"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-workspaces/{id}/shoot-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** createCreativeShootItems */
+        post: operations["createCreativeShootItems"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-workspaces/{id}/memos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** createCreativeMemos */
+        post: operations["createCreativeMemos"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-workspaces/{id}/assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** uploadCreativeAsset */
+        post: operations["uploadCreativeAsset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-workspaces/{id}/assets/{assetId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** getCreativeAssetContent */
+        get: operations["getCreativeAssetContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative-workspaces/{id}/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 记录打开事实，现场归类由报告按冻结时间窗派生 */
+        post: operations["recordCreativeObservation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CreativeWorkspaceLink: {
+            /** @enum {string} */
+            kind: "order" | "customer";
+            id: string;
+            name: string;
+            sub?: string;
+            broken: boolean;
+        };
+        CreativeWorkspace: {
+            id: string;
+            /** @enum {string} */
+            kind: "project" | "inbox";
+            name: string;
+            link?: components["schemas"]["CreativeWorkspaceLink"];
+            archived: boolean;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            last_opened_at: string;
+            /** Format: int64 */
+            card_count: number;
+            cover_asset_id?: string;
+            cover_checksum?: string;
+            /** Format: int64 */
+            shoot_item_count: number;
+        };
+        CreativeCard: {
+            id: string;
+            /** @enum {string} */
+            type: "text" | "image" | "link";
+            text?: string;
+            url?: string;
+            asset_id?: string;
+            display_checksum?: string;
+            /** Format: int64 */
+            width?: number;
+            /** Format: int64 */
+            height?: number;
+            caption?: string;
+            /** @enum {string} */
+            source_class?: "official" | "anime_screenshot" | "setting_book" | "fan" | "unknown_web" | "photographer_owned" | "licensed" | "customer_supplied";
+            batch_id?: string;
+            /** Format: int64 */
+            batch_seq?: number;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+            archived: boolean;
+            workspace_id: string;
+            group_id?: string;
+            /** Format: int64 */
+            position: number;
+        };
+        CreativeGroup: {
+            id: string;
+            workspace_id: string;
+            name: string;
+            /** Format: int64 */
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeImportBatch: {
+            id: string;
+            workspace_id: string;
+            source_kind: string;
+            /** Format: int64 */
+            card_count: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeShootItem: {
+            id: string;
+            workspace_id: string;
+            title: string;
+            description: string;
+            ref_asset_id?: string;
+            ref_display_checksum?: string;
+            source_card_id?: string;
+            /** Format: int64 */
+            source_card_rev?: number;
+            source_card_ids: string[];
+            source_workspace_id?: string;
+            /** @enum {string} */
+            source_state: "available" | "unavailable";
+            /** Format: int64 */
+            position: number;
+            /** @enum {string} */
+            status: "active" | "tombstone";
+            /** @enum {string} */
+            result?: "done" | "skipped";
+            result_note: string;
+            /** Format: date-time */
+            result_at?: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreativeMemo: {
+            id: string;
+            workspace_id: string;
+            text: string;
+            checked: boolean;
+            /** Format: int64 */
+            position: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreativeAsset: {
+            id: string;
+            workspace_id: string;
+            /** @enum {string} */
+            source_class: "official" | "anime_screenshot" | "setting_book" | "fan" | "unknown_web" | "photographer_owned" | "licensed" | "customer_supplied";
+            rights_basis: string;
+            generation_reference_granted: boolean;
+            original_media_type: string;
+            /** Format: int64 */
+            original_size: number;
+            /** Format: int64 */
+            original_width: number;
+            /** Format: int64 */
+            original_height: number;
+            original_checksum: string;
+            display_media_type: string;
+            /** Format: int64 */
+            display_size: number;
+            /** Format: int64 */
+            display_width: number;
+            /** Format: int64 */
+            display_height: number;
+            display_checksum: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeWorkspaceDetail: {
+            workspace: components["schemas"]["CreativeWorkspace"];
+            cards: components["schemas"]["CreativeCard"][];
+            groups: components["schemas"]["CreativeGroup"][];
+            shoot_items: components["schemas"]["CreativeShootItem"][];
+            memos: components["schemas"]["CreativeMemo"][];
+        };
+        CreativePilotAccount: {
+            can_enroll?: boolean;
+            /** @enum {string} */
+            state: "legacy_write" | "pilot_new_write" | "stopped";
+            /** Format: date-time */
+            enrolled_at?: string;
+            /** Format: date-time */
+            stopped_at?: string;
+            window_id?: string;
+            /** Format: int64 */
+            revision: number;
+        };
+        CreativePreflightItem: {
+            key: string;
+            title: string;
+            /** Format: int64 */
+            count: number;
+            blocking: boolean;
+            how_to: string;
+        };
+        CreativePreflightResult: {
+            eligible: boolean;
+            items: components["schemas"]["CreativePreflightItem"][];
+        };
+        CreativeImportCardsResult: {
+            batch: components["schemas"]["CreativeImportBatch"];
+            cards: components["schemas"]["CreativeCard"][];
+        };
+        CreativeCommand: {
+            /** @enum {string} */
+            operation: "update_workspace" | "reorder_cards" | "update_card" | "remove_card" | "move_card" | "create_group" | "rename_group" | "delete_group" | "set_group" | "update_shoot_item" | "remove_shoot_item" | "reorder_shoot_items" | "update_memo" | "delete_memo" | "reorder_memos";
+            name?: string;
+            id?: string;
+            to_workspace_id?: string;
+            text?: string;
+            caption?: string;
+            title?: string;
+            description?: string;
+            result_note?: string;
+            group_id?: string | null;
+            ids?: string[];
+            archived?: boolean;
+            checked?: boolean;
+            clear_result?: boolean;
+            /** Format: int64 */
+            expected_revision?: number;
+            /** @enum {string} */
+            result?: "done" | "skipped";
+            link?: {
+                /** @enum {string} */
+                kind: "" | "order" | "customer";
+                id: string;
+            };
+        };
+        CreativeCreateInput: {
+            name?: string;
+        };
+        CreativeImportInput: {
+            raw_text?: string;
+            asset_ids?: string[];
+            group_id?: string;
+        };
+        CreativeCreateShotsInput: {
+            card_ids: string[];
+            merge?: boolean;
+        };
+        CreativeCreateMemosInput: {
+            text: string;
+        };
+        CreativeEnrollInput: {
+            window_id?: string;
+        };
         /** @enum {string} */
         PlanningMediaSourceClass: "official" | "anime_screenshot" | "setting_book" | "fan" | "unknown_web" | "photographer_owned" | "licensed" | "customer_supplied";
         /** @enum {string} */
@@ -6987,6 +7416,483 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getCreativePilot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativePilotAccount"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    preflightCreativePilot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativePreflightResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    enrollCreativePilot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeEnrollInput"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativePilotAccount"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    stopCreativePilot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativePilotAccount"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeWorkspaces: {
+        parameters: {
+            query?: {
+                archived?: boolean;
+                link_kind?: string;
+                link_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeWorkspace"][];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeWorkspace: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeCreateInput"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeWorkspace"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeWorkspaceDetail"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    commandCreativeWorkspace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeCommand"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeWorkspaceDetail"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    importCreativeCards: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeImportInput"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeImportCardsResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeShootItems: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeCreateShotsInput"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeShootItem"][];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeMemos: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeCreateMemosInput"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeMemo"][];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    uploadCreativeAsset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAsset"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeAssetContent: {
+        parameters: {
+            query?: {
+                v?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+                assetId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/jpeg": string;
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    recordCreativeObservation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    event_id: string;
+                    session_id: string;
+                    /** @enum {string} */
+                    kind: "space_open" | "live_open" | "live_unverified";
+                    /** Format: date-time */
+                    client_at: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 已记录 */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
 }

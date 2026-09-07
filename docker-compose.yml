@@ -25,6 +25,7 @@ services:
       # 只起 app（review REV-005）。凭证经 .env 注入（cp .env.example .env）。
       DATABASE_URL: ${APP_DATABASE_URL:-postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD:-crm-dev-password}@postgres:5432/${POSTGRES_DB:-crm}?sslmode=disable}
       HTTP_ADDR: ":8080"
+      CREATIVE_WORKSPACE_PILOT_ACCOUNTS: ${CREATIVE_WORKSPACE_PILOT_ACCOUNTS:-}
       # 对象存储驱动 local|oss（统管头像与策划素材）；切 oss 时设置
       # OSS_REGION/OSS_ENDPOINT/OSS_BUCKET（凭证经 .env 注入）。本地卷挂载可保留，oss 驱动不会读写。
       AVATAR_STORAGE_DRIVER: ${AVATAR_STORAGE_DRIVER:-local}

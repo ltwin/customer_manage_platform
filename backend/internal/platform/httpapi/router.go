@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeworkspace"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
@@ -70,6 +71,9 @@ type RouterDeps struct {
 	AnonymousShare            AnonymousShareDeps
 	PlanningMedia             *planningmedia.Application
 	PlanningIngestion         *ingestion.Application
+	CreativeWorkspace         *creativeworkspace.Service
+	CreativePilot             *creativeworkspace.Pilot
+	CreativeEnrollmentAllowed func(string) bool
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -158,7 +162,10 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		key := c.GetHeader("Idempotency-Key")
 		h.SelfRevokeSharedAssignment(c, c.Param("token"), c.Param("assignmentRef"), SelfRevokeSharedAssignmentParams{IdempotencyKey: key})
 	})
-	protected := api.Group("", authMiddleware(deps.Auth))
+	protected := api.Group("", authMiddleware(deps.Auth), creativeLegacyMiddleware(deps.CreativePilot, deps.ScopeFactory))
+	if deps.CreativeWorkspace != nil && deps.CreativePilot != nil {
+		registerCreativeWorkspace(protected, deps)
+	}
 	protected.GET("/me", h.GetMe)
 	protected.POST("/auth/password/change", h.ChangePassword)
 	protected.GET("/customers", h.listCustomersRoute)

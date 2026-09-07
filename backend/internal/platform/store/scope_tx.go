@@ -8,6 +8,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// ErrCommitOutcomeUnknown means a COMMIT acknowledgement failed. Callers must
+// retain external objects until reconciliation proves they are unreferenced.
+var ErrCommitOutcomeUnknown = errors.New("commit outcome unknown")
+
 // TxAccountScope 是已开启事务内的账号隔离句柄。它刻意不暴露开启事务的方法，
 // 避免幂等创建 callback 意外把业务写放进另一个事务。
 type TxAccountScope struct {
@@ -99,6 +103,13 @@ func (sc AccountScope) withinTx(ctx context.Context, fn func(AccountScope) error
 		}
 	}()
 	txScope := AccountScope{pool: sc.pool, runner: tx, accountID: sc.accountID}
+	if sc.legacyPlanningWrite {
+		if err := (TxAccountScope{scope: txScope}).RequireLegacyPlanningWrite(ctx); err != nil {
+			// No callback has run; rollback releases the account barrier.
+			_ = tx.Rollback(ctx)
+			return err
+		}
+	}
 	if err := fn(txScope); err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
 			return fmt.Errorf("scoped tx rollback after %w: %w", err, rbErr)
@@ -106,7 +117,7 @@ func (sc AccountScope) withinTx(ctx context.Context, fn func(AccountScope) error
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit scoped tx: %w", err)
+		return fmt.Errorf("commit scoped tx: %w: %w", ErrCommitOutcomeUnknown, err)
 	}
 	return nil
 }

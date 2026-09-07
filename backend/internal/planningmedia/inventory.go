@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
 )
@@ -39,13 +41,13 @@ type InventoryFinding struct {
 }
 
 func BuildManifest(ctx context.Context, objects immutablefs.ObjectStore) (PlanningMediaManifestV1, error) {
-	items, err := listAllPrefix(ctx, objects, "planning/")
+	items, err := listMediaInventory(ctx, objects)
 	if err != nil {
 		return PlanningMediaManifestV1{}, err
 	}
 	entries := make([]ManifestEntry, 0, len(items))
 	for _, item := range items {
-		_, assetID, generation, rendition, err := parsePlanningObjectKey(item.Key)
+		_, assetID, generation, rendition, err := parseInventoryObjectKey(item.Key)
 		if err != nil {
 			return PlanningMediaManifestV1{}, err
 		}
@@ -64,14 +66,14 @@ func VerifyAndRestoreFixture(ctx context.Context, manifest PlanningMediaManifest
 	if manifest.Digest == "" || manifest.Digest != manifestDigest(manifest) {
 		return fmt.Errorf("manifest_digest_invalid")
 	}
-	targetItems, err := listAllPrefix(ctx, target, "planning/")
+	targetItems, err := listMediaInventory(ctx, target)
 	if err != nil {
 		return err
 	}
 	if len(targetItems) != 0 {
 		return fmt.Errorf("restore_target_not_empty")
 	}
-	sourceItems, err := listAllPrefix(ctx, source, "planning/")
+	sourceItems, err := listMediaInventory(ctx, source)
 	if err != nil {
 		return err
 	}
@@ -81,7 +83,7 @@ func VerifyAndRestoreFixture(ctx context.Context, manifest PlanningMediaManifest
 	created := make([]string, 0, len(manifest.Entries))
 	previousKey := ""
 	for _, entry := range manifest.Entries {
-		_, assetID, generation, rendition, parseErr := parsePlanningObjectKey(entry.Key)
+		_, assetID, generation, rendition, parseErr := parseInventoryObjectKey(entry.Key)
 		if parseErr != nil || entry.Key <= previousKey || entry.AssetID != assetID || entry.Generation != generation || entry.Rendition != rendition {
 			cleanup(ctx, target, created)
 			return fmt.Errorf("manifest_entry_invalid")
@@ -185,4 +187,31 @@ func manifestDigest(manifest PlanningMediaManifestV1) string {
 	body, _ := json.Marshal(clone)
 	sum := sha256.Sum256(body)
 	return "sha256-" + hex.EncodeToString(sum[:])
+}
+
+// Creative assets have their own namespace and lifecycle; the stopped-volume
+// backup includes both namespaces without enrolling them in legacy media GC.
+func listMediaInventory(ctx context.Context, objects immutablefs.ObjectStore) ([]immutablefs.Item, error) {
+	var all []immutablefs.Item
+	for _, prefix := range []string{"planning/", "creative/"} {
+		items, err := listAllPrefix(ctx, objects, prefix)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, items...)
+	}
+	return all, nil
+}
+
+var creativeInventoryKey = regexp.MustCompile(`^creative/([A-Za-z0-9._-]+)/assets/([A-Za-z0-9._-]+)/(sha256-[0-9a-f]{64})/(original|display)$`)
+
+func parseInventoryObjectKey(key string) (string, string, int, RenditionKind, error) {
+	if strings.HasPrefix(key, "planning/") {
+		return parsePlanningObjectKey(key)
+	}
+	match := creativeInventoryKey.FindStringSubmatch(key)
+	if match == nil {
+		return "", "", 0, "", fmt.Errorf("creative inventory key invalid")
+	}
+	return match[1], match[2], 1, RenditionKind(match[4]), nil
 }

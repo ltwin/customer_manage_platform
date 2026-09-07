@@ -21,6 +21,7 @@ try:
         _planning_manifest_digest,
         _legacy_module,
         load_json,
+        validate_planning_manifest,
         publish_v2,
         snapshot_v2,
         validate_package,
@@ -36,6 +37,7 @@ except ImportError:  # direct script invocation from the ops safety shell
         _planning_manifest_digest,
         _legacy_module,
         load_json,
+        validate_planning_manifest,
         publish_v2,
         snapshot_v2,
         validate_package,
@@ -161,6 +163,23 @@ def _must_reject(name: str, root: Path) -> None:
 
 
 def main() -> int:
+    with tempfile.TemporaryDirectory() as creative_dir:
+        creative = _planning_manifest()
+        entry = creative["entries"][0]
+        entry["key"] = "creative/account-1/assets/asset-1/" + entry["metadata"]["Checksum"] + "/display"
+        creative["digest"] = _planning_manifest_digest(creative)
+        path = Path(creative_dir) / "manifest.json"
+        path.write_text(json.dumps(creative, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        validate_planning_manifest(path)
+        entry["key"] = entry["key"].replace("a" * 64, "b" * 64)
+        creative["digest"] = _planning_manifest_digest(creative)
+        path.write_text(json.dumps(creative, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        try:
+            validate_planning_manifest(path)
+        except ContractError:
+            pass
+        else:
+            raise AssertionError("creative key/checksum mismatch accepted")
     with tempfile.TemporaryDirectory(prefix="planningbackup-v2-test-") as raw:
         root = Path(raw)
         legacy = _legacy_selftest()

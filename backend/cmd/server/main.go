@@ -12,12 +12,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeworkspace"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -303,6 +305,15 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	authService := auth.NewService(s, tokenIssuer, authOptions...)
 	authReplayRunner := newAuthReplaySweepRunner(authService, logger)
+	creativeAccounts := make(map[string]bool)
+	for _, id := range strings.Split(os.Getenv("CREATIVE_WORKSPACE_PILOT_ACCOUNTS"), ",") {
+		if id = strings.TrimSpace(id); id != "" {
+			creativeAccounts[id] = true
+		}
+	}
+	creativeRepo := creativeworkspace.NewPostgresRepository()
+	creativePilot := creativeworkspace.NewPilot(creativeRepo)
+	creativeService := creativeworkspace.NewService(creativeRepo, planningMediaObjects, creativePilot)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
 		Logger:                    logger,
 		DB:                        s,
@@ -341,8 +352,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			MutationDigest: planShareMutationDigest,
 			PublicBaseURL:  cfg.PublicBaseURL,
 		},
-		PlanningMedia:     planningMediaApp,
-		PlanningIngestion: planningIngestionApp,
+		PlanningMedia:             planningMediaApp,
+		PlanningIngestion:         planningIngestionApp,
+		CreativeWorkspace:         creativeService,
+		CreativePilot:             creativePilot,
+		CreativeEnrollmentAllowed: func(id string) bool { return creativeAccounts[id] },
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

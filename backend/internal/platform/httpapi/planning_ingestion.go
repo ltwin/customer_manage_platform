@@ -30,7 +30,7 @@ func (h *planningIngestionHandlers) scope(c *gin.Context) (store.AccountScope, b
 		abortError(c, http.StatusUnauthorized, CodeUnauthorized, "未认证")
 		return store.AccountScope{}, false
 	}
-	return h.scopeFactory.ScopeFor(account), true
+	return creativeLegacyScope(c, h.scopeFactory.ScopeFor(account)), true
 }
 
 type createIngestionBody struct {
@@ -152,6 +152,9 @@ func (h *planningIngestionHandlers) commit(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 func (h *planningIngestionHandlers) fail(c *gin.Context, err error) bool {
+	if abortLegacyWriteError(c, err) {
+		return true
+	}
 	if err == nil {
 		return false
 	}

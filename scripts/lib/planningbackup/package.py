@@ -76,7 +76,10 @@ HEX64 = re.compile(r"^[0-9a-f]{64}$")
 IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 UTC = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?Z$")
 PLANNING_KEY = re.compile(
-    r"^planning/([A-Za-z0-9_-]+)/assets/([A-Za-z0-9_-]+)/g([1-9][0-9]*)/(original|display)$"
+    r"^planning/([A-Za-z0-9_-]+)/assets/([A-Za-z0-9_-]+)/g([1-9][0-9]*)/(?:sha256-[0-9a-f]{64}/)?(original|display)$"
+)
+CREATIVE_KEY = re.compile(
+    r"^creative/([A-Za-z0-9._-]+)/assets/([A-Za-z0-9._-]+)/(sha256-[0-9a-f]{64})/(original|display)$"
 )
 MEDIA_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
@@ -182,11 +185,22 @@ def _read_tar_member(stream: Any, size: int, key: str) -> bytes:
 
 
 def _planning_manifest_digest(manifest: dict[str, Any]) -> str:
-    payload = copy.deepcopy(manifest)
-    payload.pop("digest", None)
-    # PlanningMediaManifestV1 is produced by Go json.Marshal.  The current
-    # field insertion order is stable and is kept here for byte-compatible
-    # digest verification of that owner-owned manifest.
+    # Match Go manifestDigest exactly: json.Marshal of the typed struct retains
+    # the trailing digest field as an empty string. Reconstruct field order so
+    # harmless JSON key reordering cannot change the signed logical manifest.
+    entries = []
+    for entry in manifest["entries"]:
+        meta = entry["metadata"]
+        ordered_meta = {key: meta[key] for key in ("MediaType", "Size", "Checksum", "ModifiedAt")}
+        for optional in ("Width", "Height"):
+            if meta.get(optional, 0) != 0:
+                ordered_meta[optional] = meta[optional]
+        entries.append({
+            "key": entry["key"], "asset_id": entry["asset_id"],
+            "generation": entry["generation"], "rendition": entry["rendition"],
+            "metadata": ordered_meta,
+        })
+    payload = {"version": manifest["version"], "entries": entries, "digest": ""}
     encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return "sha256-" + hashlib.sha256(encoded).hexdigest()
 
@@ -221,7 +235,7 @@ def validate_planning_manifest(path: Path) -> dict[str, Any]:
     for entry in manifest["entries"]:
         if not isinstance(entry, dict) or set(entry) != {"key", "asset_id", "generation", "rendition", "metadata"}:
             raise ContractError("planning-manifest-entry-schema")
-        key = require_string(entry["key"], "planning-manifest-key", PLANNING_KEY)
+        key = require_string(entry["key"], "planning-manifest-key")
         if previous and key <= previous:
             raise ContractError("planning-manifest-order")
         previous = key
@@ -231,16 +245,21 @@ def validate_planning_manifest(path: Path) -> dict[str, Any]:
             raise ContractError("planning-manifest-generation")
         if entry["rendition"] not in {"original", "display"}:
             raise ContractError("planning-manifest-rendition")
-        key_match = PLANNING_KEY.fullmatch(key)
+        creative_match = CREATIVE_KEY.fullmatch(key)
+        key_match = PLANNING_KEY.fullmatch(key) or creative_match
         if key_match is None:
             raise ContractError("planning-manifest-key")
         if key_match.group(2) != asset_id:
             raise ContractError("planning-manifest-key-asset-id")
-        if int(key_match.group(3)) != generation:
+        if (1 if creative_match else int(key_match.group(3))) != generation:
             raise ContractError("planning-manifest-key-generation")
         if key_match.group(4) != entry["rendition"]:
             raise ContractError("planning-manifest-key-rendition")
         _validate_metadata(entry["metadata"], "planning-manifest-metadata")
+        if key.startswith("planning/") and len(key.split("/")) == 7 and key.split("/")[5] != entry["metadata"]["Checksum"]:
+            raise ContractError("planning-manifest-key-checksum")
+        if creative_match and creative_match.group(3) != entry["metadata"]["Checksum"]:
+            raise ContractError("creative-manifest-key-checksum")
     digest = require_string(manifest["digest"], "planning-manifest-digest")
     if digest != _planning_manifest_digest(manifest):
         raise ContractError("planning-manifest-digest")

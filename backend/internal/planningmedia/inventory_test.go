@@ -2,7 +2,13 @@ package planningmedia
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -171,5 +177,72 @@ func TestBuildManifestIgnoresOtherSharedBucketNamespaces(t *testing.T) {
 	}
 	if len(manifest.Entries) != 1 || !strings.HasPrefix(manifest.Entries[0].Key, "planning/") {
 		t.Fatalf("planning manifest 命名空间不符: %+v", manifest.Entries)
+	}
+}
+
+func TestCreativeAssetsParticipateInExactBackupRestore(t *testing.T) {
+	ctx := context.Background()
+	source, err := immutablefs.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := immutablefs.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := []byte("creative image")
+	sum := sha256.Sum256(body)
+	checksum := "sha256-" + hex.EncodeToString(sum[:])
+	key := "creative/account-1/assets/cas-1/" + checksum + "/display"
+	_, _, err = source.PutImmutable(ctx, key, body, immutablefs.Metadata{MediaType: "image/png", Size: int64(len(body)), Checksum: checksum})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := BuildManifest(ctx, source)
+	if err != nil || len(manifest.Entries) != 1 {
+		t.Fatalf("creative missing from backup: %v %+v", err, manifest)
+	}
+	if err := VerifyAndRestoreFixture(ctx, manifest, source, target); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := target.Stat(ctx, key); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGoManifestVerifiesWithPythonBackupReader(t *testing.T) {
+	python, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("python3 is required for cross-language backup verification")
+	}
+	objects := newLocalStore(t)
+	putFixture(t, objects, "account-1", "asset-1", 1, RenditionDisplay, []byte("legacy"), time.Now().UTC())
+	body := []byte("creative")
+	sum := sha256.Sum256(body)
+	checksum := "sha256-" + hex.EncodeToString(sum[:])
+	key := "creative/account-1/assets/cas-1/" + checksum + "/display"
+	_, _, err = objects.PutImmutable(context.Background(), key, body, fixtureMetadata(body, time.Now().UTC()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := BuildManifest(context.Background(), objects)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "manifest.json")
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := filepath.Abs("../../../scripts/lib/planningbackup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), python, "-c", "import sys; from pathlib import Path; sys.path.insert(0,sys.argv[2]); from package import validate_planning_manifest; validate_planning_manifest(Path(sys.argv[1]))", file, reader)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Go manifest rejected by Python: %v: %s", err, output)
 	}
 }
