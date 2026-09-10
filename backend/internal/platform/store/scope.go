@@ -56,10 +56,9 @@ func validateIdents(table string, cols ...string) error {
 // 编译期常量，禁止拼接任何请求派生输入——请求值一律走 args 占位符；
 // table / columns 有标识符校验兜底，cond / setClause 无法机器校验，靠本契约约束。
 type AccountScope struct {
-	pool                *pgxpool.Pool
-	runner              scopedRunner
-	accountID           string
-	legacyPlanningWrite bool
+	pool      *pgxpool.Pool
+	runner    scopedRunner
+	accountID string
 }
 
 // AccountID returns the authenticated account bound to this scope. It is
@@ -259,9 +258,6 @@ func (sc AccountScope) Exists(ctx context.Context, table, cond string, args ...a
 
 // Insert 向业务表插入一行：account_id 列由基座写入，调用方不提供、也提供不了。
 func (sc AccountScope) Insert(ctx context.Context, table string, cols []string, args ...any) error {
-	if sc.legacyPlanningWrite {
-		return sc.withinTx(ctx, func(tx AccountScope) error { return tx.Insert(ctx, table, cols, args...) })
-	}
 	if sc.accountID == "" {
 		return ErrEmptyAccountScope
 	}
@@ -285,15 +281,6 @@ func (sc AccountScope) Insert(ctx context.Context, table string, cols []string, 
 
 // InsertReturningID 向业务表插入一行并返回服务端生成或调用方提供的 id。
 func (sc AccountScope) InsertReturningID(ctx context.Context, table string, cols []string, args ...any) (string, error) {
-	if sc.legacyPlanningWrite {
-		var id string
-		err := sc.withinTx(ctx, func(tx AccountScope) error {
-			var err error
-			id, err = tx.InsertReturningID(ctx, table, cols, args...)
-			return err
-		})
-		return id, err
-	}
 	if sc.accountID == "" {
 		return "", ErrEmptyAccountScope
 	}
@@ -376,9 +363,6 @@ func (sc AccountScope) Upsert(
 	cols, conflictCols, updateCols []string,
 	args ...any,
 ) error {
-	if sc.legacyPlanningWrite {
-		return sc.withinTx(ctx, func(tx AccountScope) error { return tx.Upsert(ctx, table, cols, conflictCols, updateCols, args...) })
-	}
 
 	if sc.accountID == "" {
 		return ErrEmptyAccountScope
@@ -429,15 +413,6 @@ func (sc AccountScope) Upsert(
 // Update 更新业务表：基座拼接 WHERE account_id = $1；
 // setClause 与 cond 的占位符从 $2 起统一编号。返回受影响行数。
 func (sc AccountScope) Update(ctx context.Context, table, setClause, cond string, args ...any) (int64, error) {
-	if sc.legacyPlanningWrite {
-		var n int64
-		err := sc.withinTx(ctx, func(tx AccountScope) error {
-			var err error
-			n, err = tx.Update(ctx, table, setClause, cond, args...)
-			return err
-		})
-		return n, err
-	}
 	if sc.accountID == "" {
 		return 0, ErrEmptyAccountScope
 	}
@@ -457,11 +432,6 @@ func (sc AccountScope) Update(ctx context.Context, table, setClause, cond string
 
 // Delete 删除业务表行：基座拼接 WHERE account_id = $1；cond 占位符从 $2 起。返回受影响行数。
 func (sc AccountScope) Delete(ctx context.Context, table, cond string, args ...any) (int64, error) {
-	if sc.legacyPlanningWrite {
-		var n int64
-		err := sc.withinTx(ctx, func(tx AccountScope) error { var err error; n, err = tx.Delete(ctx, table, cond, args...); return err })
-		return n, err
-	}
 	if sc.accountID == "" {
 		return 0, ErrEmptyAccountScope
 	}

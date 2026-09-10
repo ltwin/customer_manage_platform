@@ -12,9 +12,3 @@ export function useOnline() {
   }, [])
   return online
 }
-export function message(error: unknown) {
-  if (error instanceof TypeError) return '未能连接服务器，输入已保留，请联网后重试。'
-  return error instanceof Error
-    ? error.message
-    : '保存失败，请重试。输入仍保留在这里。'
-}

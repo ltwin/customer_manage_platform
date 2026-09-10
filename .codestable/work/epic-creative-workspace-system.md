@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
 current_item: FND-02
-next_action: 继续FND-02，接入creativelibrary/creativecanvas应用命令、OpenAPI及真实前端保存/冲突/重开流程；内容层第一切片已通过检查，FND-02仍进行中且新改动未提交
+next_action: owner已授权提交FND-02并启动FND-03；完成本次提交后推进个人库整理与组合检索
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -437,7 +437,7 @@ remote_publish: manual
 ## FND-02 开发启动
 
 - owner明确允许提交当前代码并启动下一项，已提交43fbc24（包含FND-01、滚轮微调及此前创意规划/原型），未push。该授权不沿用到FND-02提交，继续manual。
-- [ ] FND-02 第一个可保存的文字创作闭环（进行中）
+- [x] FND-02 第一个可保存的文字创作闭环（完成）
 
 ### FND-02 第一内容切片证据
 
@@ -465,3 +465,86 @@ remote_publish: manual
   - `backend/internal/platform/store/settings_health_tiers_migration_test.go`：`e90ae0a8b9136fe802d9714082af8f6c685983fae181ee1f5545a26565e60d2a`
   - `backend/internal/platform/store/store_test.go`：`5d618e77dff262bc5102bf03c47b40846a7c5fa3dab95b319a2f510c74071228`
   - `backend/internal/platform/store/telegram_digest_migration_test.go`：`1d3d8862eefe1f6d3d14587a9334bc70c39b88bda7a638ede3fabc030dffbd85`
+
+### 2026-09-10 跨任务接续：FND-02 应用层与 API 切片
+
+- 从任务 `01a079d8-b0e9-7bd3-9d54-0eeaf7e2f2d7` 接续，沿用 `.worktrees/creative-workspace-redesign`。现场 HEAD 为 `70203b6`（内容层已提交），保留并完成原先未跟踪的 creativecanvas/creativelibrary 代码；此前提交权限不沿用，本轮未提交、未推送。
+- 项目及唯一默认画布创建、改名、归档/恢复和分页；个人资产库文字/链接创建、读取、分页/水位；节点新增/资产引用、首次内容、分叉/追加、独立布局移动和快照已接通。所有命令复用同事务的 creativeops 回执/账号能力屏障；根关系、版本和用途失败整体回滚。
+- 新增 11 个 HTTP 方法，OpenAPI 同步生成 Go/TS DTO；1 MiB 请求边界，路径目标由服务端注入，header/body 操作标识一致。页面、账号准入和前端保存队列尚未接入，capabilities 仍为 foundation_only；未对真实账号开启 writer、运行迁移或写入业务数据库。本轮未新增迁移。
+- 长文字快照/列表预览上限 2000 Unicode 字符且标记 truncated；完整正文按精确修订读取，陈旧修订已失去合法根时公开读取返回404，内部缺根仍是完整性错误。用途声明使用独立输入类型，仅三个当前字段、说明最多500字，不通过旧结构接受生成授权。
+- 验证：make check-go 全量 build/lint/测试通过；make check-frontend build/lint/341测试通过；make generate-check 通过；git diff --check 通过。六项 creativecanvas 数据库用例覆盖双画布隔离/重放、归档并发、用途回滚、空节点、分页、长正文与陈旧读取；真实 HTTP 用例增加8种坐标缺失/null组合、无回执/无版本变化、缺失nullable字段、声明500/501/2000及额外授权字段、陈旧读取、非法header。日志 `/tmp/creative-fnd02-backend.log`、`/tmp/creative-fnd02-frontend.log`、`/tmp/creative-fnd02-http-final.log`、`/tmp/creative-fnd02-drift.log`。
+- cs-feat 因持久化/并发/账号边界触发独立审查；宿主 fresh reviewer `/root/review_fnd02_api`，明确 gpt-6-astra/high，无可用异构provider配置。R1：1 blocking（缺失/null坐标被解码为0）、2 important（声明契约、陈旧修订500）；R2：全部resolved，0新问题，PASS。未开第三轮。本结论仅针对应用/API切片，不代表完整FND-02。
+- 图谱 Verify：原 worktree 项目 ready，generation 2026-09-04T15:47:38Z。相关符号未命中，新路径not_tracked、已有router/生成契约metadata_changed，逐路径coverage后全部直接源码fallback，不作图谱完备声明。
+- 已将接口边界、恢复规则和后续工作归入 [开发说明](../../docs/dev/creative-text-canvas.md)。尚待正式前端入口、账号准入、每账号/画布/标签页草稿与命令恢复、跨窗口冲突及浏览器双画布完整验收、引用一致性检查；FND-02保持进行中。
+- R2冻结清单 `/tmp/creative-fnd02-api-review-r2.json` SHA-256 `b047a769b048a2c6a2868afa636bdd5d0db0c8a45f523077e2429219738dfec9`，14代码/契约文件如下；本节及开发说明为审查后进度记录，不冒充已在冻结目标内：
+  - `backend/internal/creativecanvas/projects.go`：`c26985178529ccafe795ddc2ee610984acde11af14e6cb3fd56e9d84e675adf7`
+  - `backend/internal/creativecanvas/service.go`：`b7e11329fc0d45d323512ade0fc9ad3a245938780cf1c303a0e8db2442a615c8`
+  - `backend/internal/creativecanvas/service_test.go`：`d9a93d82aacbc7b43d41b51b26513143fb7f5fa3e87b29246063359f27676ee5`
+  - `backend/internal/creativelibrary/list.go`：`153ecc9f27e4250b02441c41aa79138346c2791a1a253253c16a563032e4a5d0`
+  - `backend/internal/creativelibrary/service.go`：`6c7a7ad438091ac1470ac9f1ea170ec05af43dd05abb2fbfd4f55eb8d0a073ad`
+  - `backend/internal/platform/creativeops/page.go`：`f6d98f4380fb508ae37ab9f005d389771c89da3c87d4478f81916a7bf69896ab`
+  - `backend/internal/platform/httpapi/creative_canvas.go`：`c1c66d6445465918e5b7437732b527d321b0e0807cd324fab2f08bedb01dc353`
+  - `backend/internal/platform/httpapi/creative_canvas_test.go`：`efdcdd099d381a83cd12959c446108220db2ae241062575044108165dda0bad3`
+  - `api/openapi.yaml`：`a8b763e3288a49745cc780f68233a736c9a2571dc72f4c180a25f723f26f5e25`
+  - `backend/internal/creativecontent/content.go`：`fa8fa4c0532ffa10e9cf18bbd5c12218fefeeddbfe17f1d525bee9ff48cb4640`
+  - `backend/internal/creativecontent/content_test.go`：`dab72ca9aa4a1ecea62e2896274d5417a81d2d8359797689c82987f9849795a6`
+  - `backend/internal/platform/httpapi/api.gen.go`：`05973217f266ee79a96243f0d4a491ee1900fcea8c2464b7e3fe7557b220be6b`
+  - `backend/internal/platform/httpapi/router.go`：`09e79aa7120f8f72ef22d7fbe303303e9514bbb057ef90a0da6fe23bec754c51`
+  - `frontend/src/api/schema.d.ts`：`e82fff9e7ced59a0be863e9bc6acae49b3cb4da89879eeef64b91b6c13f9b385`
+
+### FND-02 正式创作闭环收尾（2026-09-10）
+
+- 接续同一工作树，新增 `/creative` 正式入口及个人库、项目/默认画布、文字/链接节点、正文与位置编辑、改名/归档/恢复。入口按真实账号能力显示，React Flow 延迟加载；未开放媒体/Agent，未对真实业务账号执行准入命令。
+- IndexedDB 保存账号/标签页草稿及完整命令，节点草稿再按画布/节点分隔；未知回执恢复沿用原 body/key。Web Lock 生命周期关闭并排空本机写入，旧网络回执不覆盖新会话。冲突展示版本后确认，保留新草稿。
+- 受信任 `creative-access --mode read|write` 与只读 `--check` 已实现，含账号范围引用一致性检查；沿用0038，无新增迁移、无真实业务库写入。操作说明见 `../../docs/dev/creative-text-canvas.md`。
+- 同一独立 reviewer `/root/review_fnd02_editor` 完成三轮：R1 两项 blocking（三项 important）分别为旧队列晚回执、失败导航写旧画布、认证续期、同版本权限投影、非法测试账号状态；R2 上述全部 resolved，新增离线轮询失败禁用本机输入；R3 全部 resolved，PASS，无新增 blocking/important。R2 曾因额度中断，恢复的是同一轮/同一reviewer，不将中断算通过。
+- R3 冻结39文件清单 `/tmp/creative-fnd02-editor-review-r3.json`，SHA-256 `d4d97307e016975abc67480f88696e6d192aec855d8152020f693a6e1407391d`；reviewer首尾及主流程归档前全部hash一致。审查期间未修改工作树；本记录及最终开发文档验证说明在审查返回后追加，不冒充审查代码目标。
+- `make check-frontend` 351/351 PASS（包含队列生命周期、令牌续期/账号切换与快照权限投影回归）；已有AccountCenter热更新warning与主包体积warning保留。`make generate-check` PASS；premium strict 0；Design.md lint 0 errors/0 warnings；`git diff --check` PASS。
+- 真实临时PostgreSQL + 注册/验证/登录 + HTTP服务浏览器14场景PASS（末轮22.84s，日志 `/tmp/creative-editor-e2e-r3.log`）：无项目资产库、资产/节点丢回执恢复无重复、真实拖拽、双画布分叉、草稿重开、跨窗口冲突、位置按钮、归档恢复、链接不抓取、持续离线轮询失败后输入及重开、放弃确认、失败画布切换、390px布局。截图已实看，位于 `/tmp/creative-editor-qa/desktop.png` 与 `mobile.png`。
+- **完整Go门禁未通过，不能宣称全绿。** build/lint通过，前两轮本次受影响包均通过，但全量先在package/digest、再在dashboard出现Docker容器启动期端口映射context deadline exceeded。单跑package三轮PASS/PASS/启动FAIL，digest三轮PASS，dashboard三轮PASS；inspect确认失败容器HostConfig要求随机5432映射而NetworkSettings为空。第三轮全量共享reaper启动失败，多个包在执行断言前报No such container，已停止无效重跑。日志 `/tmp/creative-editor-go-r2.log`、`/tmp/creative-editor-go-final.log`、`/tmp/creative-editor-go-final3.log`。未调整并发、超时、storetest或Docker配置；待环境恢复后补跑 `make check-go`，再结束FND-02验收。
+- 图谱Verify仍为generation `2026-09-04T15:47:38Z`；新增文件not_tracked、变动文件metadata_changed，已按39文件覆盖报告直接读取源码核对，不作图谱完备性断言。未提交/发布，不自动推进per-item的下一项。
+
+### FND-02 使用反馈：正常保存静默
+
+- owner要求取消节点拖动/新增等操作的保存过程与成功通知。已移除正式创作台的“正在保存/确认中/已同步”状态和保存成功Toast；正常状态不渲染空提示栏。仅显示未提交正文草稿、离线、错误和需要人工恢复的未知/拒绝请求。保存队列、持久化与权限守卫未改。
+- UX-CONTRACT同步该反馈策略。浏览器用MutationObserver覆盖整个操作过程，确认未出现这些通知，而非只检查保存结束时；14场景PASS，前端351项PASS，premium strict0，diff check通过。证据 `/tmp/creative-silent-browser-final.log`、`/tmp/creative-silent-frontend.log`；桌面截图已实看。仅前端呈现改动，无需重复全量Go门禁；此前Docker门禁限制仍待处理。未提交。
+
+### owner方向修订：正式暗色工作台，取消试用与旧功能兼容
+
+- owner明确项目尚未上线，旧创意空间可直接移除，不需要功能白名单或新旧兼容；随后再次明确不受旧CRM视觉约束，正式界面遵循v5暗色+液态玻璃，以成熟优雅的产品体验为目标。这是明确的新范围授权，沿用当前工作树；不涉及代码提交、发布、清空真实数据库或开放未实现的功能。
+- 必须修改：正式创作台布局/主题与移动面板；主导航；旧页面/API/试用开关/旧writer切换代码；新画布的账号白名单；相关OpenAPI生成物、回归和使用文档。需要验证：正常账号无需开通、未认证/未激活仍拒绝、账号隔离和内容用途/归档/队列保持、独立拍摄策划正常工作、旧API为404、暗色桌面与窄屏。待调查项无。
+- 旧creativeworkspace领域包、HTTP入口、前端页面及客户/订单旧空间组件已移除；拍摄策划作为独立业务保留，去除试用兼容只读锁。历史SQL迁移保持不可变，不执行清库或数据迁移。`creative-access`与CREATIVE_WORKSPACE_PILOT_ACCOUNTS已移除；产品支持能力只由服务端实现决定，正常active账号直接读取/人工写入，账号隔离和真实用途授权仍强制。
+- 新视觉由editor/workspace.css统一拥有，原型v5为来源；全屏暗色画布、浮动玻璃工具/资产/编辑面板、绿色选中态、细描边与高光；保留静默保存。未给未实现Agent/媒体放置假按钮。DESIGN与UX-CONTRACT及开发文档已同步。
+- 本轮执行 `make check-go` 一次完整通过，build/lint无问题；此前Docker阻塞已在本次运行解除。前端351项与第一轮14场景浏览器通过；补充移动面板回归捕获“收起编辑后误露出资产库”，修正为回到画布，正在最终回归。旧FND-02 R3仅覆盖此前目标，本次权限/退役调整由新独立审查阶段验收。
+- 原冻结Epic中的试用白名单与旧域承接（包括FND-11旧迁移）的前提被本次owner决定替代；保留原批准文件作为历史，不按该旧兼容任务执行，不把未来其他FND项提前标完成。后续路线整理以本次决定为边界。
+
+### 正式工作台改造最终验证
+
+- 独立新阶段review使用宿主collaboration fresh `/root/review_studio_retirement`，gpt-6-astra/high；无可用异构provider工具，Paseo偏好文件不存在，按同构最强模型回退。R1无blocking、1important（手机新增资产入口缺失），已将唯一入口移入个人库标题栏；R2 PASS，无未解决或新增finding。移动缩放候选通过等待CSS过渡结束后测量排除，单节点约192px。
+- 冻结目标75路径：R1 `/tmp/creative-redesign-review-r1.json` SHA256 `23faed2deb24aa06dc004e03f0d5b204c5e75507e5b7eabff467774e089d50ca`；R2 `/tmp/creative-redesign-review-r2.json` SHA256 `12a6c23ef83cb04c317921c8f48fe4acc39b9e8dbc6497e97b6133511b6f7eb5`。两轮首尾与主流程归档前hash一致；审查期间不编辑工作树。本段与开发文档验证记录在审查结束后追加。
+- `make check-go`完整PASS（build、lint0、全包测试）；`make check-frontend`351/351PASS（保留已有AccountCenter热更新与主bundle体积warning）；`make generate-check`PASS；Design.md lint0errors/0warnings；premium strict0；diff check通过。日志在 `/tmp/creative-redesign-go.log`、`creative-redesign-frontend.log`、`creative-redesign-drift.log`。
+- 浏览器16场景PASS `/tmp/creative-redesign-browser-r2.log`：真实新账号无开通记录、文字/链接、双画布隔离、拖放与节点保存、丢回执恢复、静默保存、离线草稿、冲突、归档恢复、失败导航，以及390px无项目时创建两类资产、手机面板开合与稳定视口。桌面、手机库/编辑/画布、冲突截图已实看，`/tmp/creative-editor-qa/`。
+- graph Verify generation仍2026-09-04，75路径已查coverage；新增not_tracked、修改metadata_changed、删除missing，源码直接读取/搜索补足。`.env.example`已记录partial第32行是邮件sender说明，原文已读，本次只删试用env。无索引完备性断言。
+- 本轮改动无需旧账号开通、无需迁移。保留历史SQL不会在运行时重新开启旧功能；未执行真实数据库删除、提交或发布。FND-02先前全量Go环境阻塞已由本次完整PASS关闭，后续FND仍按各自范围执行。
+
+### owner反馈：创意空间一级首页
+
+- owner提供Buzzy截图，明确创意空间需要一级页面展示已有项目与新建项目，未来作为相对独立产品入口。按现有暗色液态玻璃设计，不复制促销、模型或未实现Agent功能。
+- `/creative`新增项目首页；`/creative/canvases/:canvasID`进入画布，`/creative/library`是无项目资产库。画布返回首页，项目创建和列表移出编辑器侧栏。AppShell对该路由子树使用沉浸布局；首页自身有项目、个人资产库和CRM返回导航。
+- 首页真实列表/归档/分页来自现有API，项目创建复用SaveQueue和project-form草稿，不改数据库或后端协议。成功回到进行中列表，卡片点击进入画布；未知结果恢复原请求、草稿重开与会话锁保持。请求过期结果由abort/generation过滤。
+- 验证覆盖首页无画布、首页↔画布、项目草稿刷新、丢回执不重复、归档筛选与手机首页；旧16场景随新层级改写并继续执行。新卡片为抽象项目封面，不虚构项目内容或真实生成缩略图。
+
+### 一级首页最终验收
+
+- 独立新阶段review `/root/review_creative_home`，宿主gpt-6-astra/high同构回退（无异构provider工具、Paseo偏好文件不存在）。R1一项blocking：创建/恢复完成落盘通知延迟到离页后，旧setParams可能抢回首页；已用页面代际与实际pathname双守卫修复，覆盖React过渡期间尚未卸载的窗口。R2 PASS，无未解决或新增finding。
+- 冻结10路径：R1清单 `/tmp/creative-home-review-r1.json` SHA256 `547542abdaf783577a65cd1cc567b6b94fadd4f70bd0db55b09381373c4cb3ee`；R2 `/tmp/creative-home-review-r2.json` SHA256 `1732febaf8bd15f18f650e7b1fa185f16a43ada13bfa7b1f1f2b9e52f2760234`，首尾及主流程归档前一致。审查期间未修改工作树；此验收记录与开发文档在结果返回后追加。
+- `make check-frontend`351项PASS；真实DB浏览器20场景PASS `/tmp/creative-home-browser-r2-final.log`，包括创建/恢复两条完成事件延迟切页路径。测试只延迟真实IndexedDB已提交写入的完成通知，不伪造业务成功；先红日志 `/tmp/creative-home-navigation-red.log` 与单代际不足的 `/tmp/creative-home-browser-r2.log`，完整双守卫后绿。首页项目卡片、草稿重开/未知恢复、归档切换、画布/资产库导航、390px首页全部验证。
+- premium strict0、Design lint0errors/0warnings、diffcheck通过。未改后端/API/schema，不重复全量Go门禁；此前完整Go通过仍有效。截图 `/tmp/creative-editor-qa/home-desktop.png`、`home-mobile.png`、`home-empty.png`已实看；本轮不提交/发布。
+
+2026-09-10 一键新建项目调整完成：默认「未命名项目」，创建/回执恢复后直接进入指定画布，沿用画布改名。352项前端测试、20个真实浏览器场景（含双击去重、回执丢失重开恢复、改名刷新及迟到回调不抢导航）、generate-check、premium strict和本地backend-build通过；桌面/手机截图已检查。未提交。
+
+2026-09-10 拖动卡顿修复：移除位置保存对整页loading、拖动禁用与旧坐标重建的依赖；位置意图本机持久化、120ms合并、回执推进版本，保留原操作恢复/冲突守卫，跨回执拖动使用自身确认版本。355项前端测试、22个真库浏览器场景（慢网连续拖动/旧快照/丢回执后再拖及重开/离线重连）、generate-check、premium strict和backend-build通过。未提交。
+
+### FND-02 提交授权与最终审查
+
+2026-09-10 owner明确授权「提交，然后进入下一个feature开发」。本次提交范围包含FND-02正式文字/链接闭环、旧空间退役、独立项目首页、一键创建及前端优先拖动。最新并发增量独立审查由宿主gpt-6-astra/high执行（无异构provider，Paseo配置缺失），R1发现拖回旧坐标被no-op忽略；回归先红后绿，R2全目标PASS，0遗留问题。冻结manifest SHA256 7634e5b51594429b898356860dced1a09852a23f3eadc3704a49f84fbebffe0f。356项前端测试、此前22个真库浏览器场景通过，完整Go门禁已在退役阶段通过。未push；提交授权仅针对当前FND-02改动，FND-03仍按manual提交。

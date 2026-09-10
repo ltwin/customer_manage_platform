@@ -16,9 +16,31 @@ import (
 )
 
 func (h *handlers) GetCreativeCapabilities(c *gin.Context) {
-	// No unfinished node/action is advertised. FND-02+ will intersect registered
-	// application capabilities with the account barrier, not a frontend flag.
-	c.JSON(http.StatusOK, CreativeFoundationCapabilities{SchemaVersion: 1, Available: false, Reason: "foundation_only", NodeTypes: []string{}, Tools: []string{}})
+
+	result := CreativeFoundationCapabilities{SchemaVersion: 1, Reason: "foundation_only", NodeTypes: []string{}, Tools: []string{}}
+	if h.scopeFactory == nil {
+		c.JSON(http.StatusOK, result)
+		return
+	}
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	capability, err := scope.CreativeCapabilities(c.Request.Context())
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	if capability.Read {
+		result.Available = true
+		result.Reason = "read_only"
+		result.NodeTypes = []string{"core.text", "core.link"}
+		if capability.ManualWrite {
+			result.Reason = "available"
+			result.Tools = []string{"create_asset", "create_project", "rename_project", "archive_project", "restore_project", "add_node", "move_node", "replace_content"}
+		}
+	}
+	c.JSON(http.StatusOK, result)
 }
 
 func (h *handlers) GetCreativeOperation(c *gin.Context, operationID uuid.UUID) {

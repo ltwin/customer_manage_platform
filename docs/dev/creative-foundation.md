@@ -1,6 +1,6 @@
 # 创意空间 FND-01：开发底座
 
-本页说明已落地的底座及验证范围。当前还没有正式项目/素材/生成入口，`GET /api/v1/creative/capabilities`在认证后如实返回`foundation_only`、空节点/工具列表。账号能力新表默认全部关闭；不通过开发页绕过认证或写业务数据。
+本页说明已落地的底座及验证范围。正式页面与生成入口尚未接入；文字/链接应用接口已实现，见[文字与链接应用接口](creative-text-canvas.md)。`GET /api/v1/creative/capabilities`在认证后如实返回`foundation_only`、空节点/工具列表。账号能力新表默认全部关闭；不通过开发页绕过认证或写业务数据。
 
 ## 本次代码归属
 
@@ -67,3 +67,5 @@ python3 docs/product/creative-canvas-system/probes/eino/run.py
 代码审查补强：所有对象递归拒绝重复字段及大小写折叠别名（含Unicode等价），限制64层嵌套，hash/Validate/Apply共享规范化输入；回执HTTP投影保留json.Number。Worker检查使用River同schema的完整迁移Validate，未迁移/仅部分迁移均拒绝就绪。这三项都有先失败后通过的回归测试。
 
 画布滚轮规则：默认上下平移，按住Ctrl（Windows）或Command（Mac）再滚动才缩放；松开后恢复平移。左键框选、中键/空格拖动平移保持原行为，浏览器验证覆盖两种修饰键。
+
+FND-02 的正式文字/链接创作入口与持久化保存流程见 [文字创作闭环](creative-text-canvas.md)。该页面对正常账号直接开放；本基础验证页仍用于交互探针，不代表后续媒体或 Agent 已可用。

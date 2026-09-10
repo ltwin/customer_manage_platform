@@ -19,7 +19,7 @@ import (
 
 func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 func textDraft(text string) creativecontent.Draft {
-	return creativecontent.Draft{Kind: "text", Payload: creativecontent.Payload{Body: &text}, Rights: planningmedia.RightsDeclarationInput{SourceClass: planningmedia.SourcePhotographerOwned, RightsBasis: planningmedia.RightsOwnershipAttested}}
+	return creativecontent.Draft{Kind: "text", Payload: creativecontent.Payload{Body: &text}, Rights: creativecontent.RightsDeclarationInput{SourceClass: planningmedia.SourcePhotographerOwned, RightsBasis: planningmedia.RightsOwnershipAttested}}
 }
 func setup(t *testing.T) (*sql.DB, store.AccountScope, store.AccountScope) {
 	t.Helper()

@@ -1,19 +1,26 @@
-# 创意空间交互归属
+# 创意工作台交互归属
 
-本文记录本轮新增界面的交互后果；产品规则来自 `.codestable/epics/creative-workspace-redesign.md` 与执行游标的 owner 决定，不重新定义经营或权限规则。
+本工作台以owner最新决策为准：尚未上线，不保留旧创意空间或账号试用/开通机制；正式UI采用v5暗色液态玻璃。
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
-| Select/Listbox | 原生 select + .input | 既有 settings / index.css；本轮接受操作系统菜单 | 类型、分组、关联对象与目标空间 | 浏览器键盘与 375px |
-| Form | .input + 就地表单 | Epic DEC-15/16、共享 index.css | 创建零必填；名称/关联/备忘为可选编辑 | HTTP 与浏览器保存/失败 |
-| Scrollbar | frontend/src/index.css | 现有全局 scrollbar token | 自然页面滚动；素材长文内部滚动 | 浏览器 computed style |
-| Toast | AppShell / useShell.notify | 共享 shellContext | 成功提示；错误保留在页内 | aria-live 与保存结果 |
-| CRUD | creative/api.ts 与空间页面 | OpenAPI creative-workspace；Epic DEC-3/9/17 | 创建直接进空灵感墙；归档后保留内容；停止后只读 | 真库测试与浏览器主链 |
-| Confirmation | ConfirmDialog + useFocusTrap | 共享确认组件 | 移除素材/备忘与停止试用；归档可恢复不额外确认 | 取消焦点、Tab、Escape、焦点归还 |
-| Upload | WorkspacePage 的搬入队列 | Epic ITEM-4、planningmedia 图像管线 | 多行粘贴、多图选择与拖入 | 每文件失败保留、同键重试 |
+| Select/Listbox | 原生select + .input | ContentForm及工作台主题 | 中文类型/来源，操作系统菜单 | 浏览器表单 |
+| Form | ContentForm + .input/.btn | OpenAPI内容契约 | 工作台暗色主题，IME期间不提交 | 前端及浏览器 |
+| Scrollbar | 共享scrollbar，工作台色彩变量 | workspace.css | 资产/编辑面板独立滚动 | 窄屏走查 |
+| Toast | AppShell/useShell.notify | owner静默保存决策 | 正式画布不发送成功Toast | 全过程DOM观察 |
+| CRUD | editor/api.ts + SaveQueue | OpenAPI创作命令 | 正常账号直接使用，项目归档只读可恢复 | 真库及浏览器 |
+| Confirmation | ConfirmDialog + useFocusTrap | 项目共享组件 | 冲突重新应用、放弃本机草稿 | 取消/确认及键盘 |
+| Layout | editor/workspace.css | DESIGN.md与v5原型 | 独立暗色工作台，浮动资产/编辑面板 | 桌面/窄屏截图 |
 
-账号隔离与写权限由服务端决定；禁用状态只是反馈。网络失败保留输入；批量创建重试复用同一幂等键，成功后才清空。现场只对服务端成功响应显示结果，断网不排队写入拍摄结果。离线打开仅暂记为未核验的使用观察，恢复网络后补报，不能变成已核验现场事实。
+- `/creative`为独立项目首页，主导航进入后先选择/新建项目；`/creative/canvases/:canvasID`为项目画布，左上角返回首页，`/creative/library`为无项目资产库；首页提供返回CRM入口；旧空间页面与API下线，不做重定向兼容或账号迁移。拍摄策划独立保留，不再被旧试用模式锁成只读。
+- 个人资产库不要求项目；文字/链接可多画布使用。来源声明只涉及当前展示用途，不获取生成授权。账号隔离、认证、来源用途守卫仍由服务端强制。
+- 保存队列是唯一草稿与恢复组件；完整请求先持久化，每个会话最多一个未完成命令。同键重试不重复效果；离开页面先关闭队列并排空本机写入，再释放标签页锁。
+- 正常新增/移动/编辑及恢复成功静默进行，不显示保存中/确认中/已同步或成功Toast。正文未提交、离线、持久错误和需人工恢复时才展示提示；正常状态不渲染提示栏。
+- 轮询更新快照，不替换本机草稿或预期版本。失联仍可编辑已加载且未明确撤销用途的正文；提交单独禁用。失败导航清空旧画布并阻止写错目标。
+- 冲突展示服务器内容并固定对话框打开时的版本；明确确认后重新应用，外部又有变化仍冲突。放弃正文草稿需共享确认框。
+- 资产支持拖放与“放入画布”按钮，节点位置有方向按钮；滚轮平移、Ctrl/Command缩放、空格/中键平移。面板可收起，窄屏不强制上下堆叠。
+- 当前工具目录仅有文字/链接及项目操作，媒体/Agent未实现不显示可执行入口；支持能力由服务端产品实现决定，不是账号白名单。
 
-导航名称为「创意空间」；「旧策划记录」保留原路由，放在历史入口。关联仅跳转，禁止带出档期、计价或提醒。未命名空间显示名可回落到关联对象名。
+- 首页所有新建入口均一键创建「未命名项目」并直接进入返回的画布；无需先填名称或再次点击卡片，进入后通过「改名」修改项目名称。复用SaveQueue持久化请求和原操作回执，未知结果恢复后进入同一画布，连续点击不重复创建；离开首页后的完成回调不得抢回导航。列表支持归档/进行中与分页，快速切换丢弃旧请求结果。普通保存成功保持静默。
 
-语言为简体中文，界面用「摄影师 / 账号 / 客户」的项目术语。原生控件接受操作系统的交互；搜索输入须兼容中文输入法。主动作有 pending、disabled 与错误状态；拖动排序有按钮替代操作。验收证据在 `.codestable/work/epic-creative-workspace-redesign.md` 记录。
+- 节点位置采用前端即时响应：拖动期间只更新React Flow本地坐标，松手后写入本机位置意图，120ms合并同节点连续落点；网络请求不触发整页loading或禁用拖动。SaveQueue串行发送不可变命令，以回执推进位置版本；待同步及已确认但快照未追上的位置覆盖旧快照。离线落点保留，联网后同步；未知回执恢复原操作，冲突不自动覆盖其他窗口，明确放弃后加载服务器位置。

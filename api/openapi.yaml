@@ -56,6 +56,347 @@ tags:
     description: 摄取聊天文本、参考链接与候选编辑会话
 
 paths:
+  /creative/assets:
+    get:
+      tags:
+      - creative-foundation
+      operationId: listCreativeAssets
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 30
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeAssetPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      tags:
+      - creative-foundation
+      operationId: createCreativeTextAsset
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCreativeTextAssetRequest'
+      responses:
+        '201':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeAssetCreateResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/assets/{id}:
+    get:
+      tags:
+      - creative-foundation
+      operationId: getCreativeTextAsset
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryAsset'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/content-revisions/{id}:
+    get:
+      tags:
+      - creative-foundation
+      operationId: getCreativeContentRevision
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeContentRevision'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/projects:
+    get:
+      tags:
+      - creative-foundation
+      operationId: listCreativeProjects
+      parameters:
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 30
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      - in: query
+        name: archived
+        schema:
+          type: boolean
+          default: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeProjectPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      tags:
+      - creative-foundation
+      operationId: createCreativeProject
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCreativeProjectRequest'
+      responses:
+        '201':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeProjectCreateResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/projects/{id}/archive:
+    post:
+      tags:
+      - creative-foundation
+      operationId: archiveCreativeProject
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArchiveCreativeProjectRequest'
+      responses:
+        '200':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeProjectStateResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/projects/{id}/restore:
+    post:
+      tags:
+      - creative-foundation
+      operationId: restoreCreativeProject
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreCreativeProjectRequest'
+      responses:
+        '200':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeProjectStateResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/projects/{id}/rename:
+    post:
+      tags:
+      - creative-foundation
+      operationId: renameCreativeProject
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameCreativeProjectRequest'
+      responses:
+        '200':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeProjectStateResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/canvases/{id}:
+    get:
+      tags:
+      - creative-foundation
+      operationId: getCreativeCanvas
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeCanvasSnapshot'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/canvases/{id}/commands:
+    post:
+      tags:
+      - creative-foundation
+      operationId: commandCreativeCanvas
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommandCreativeCanvasRequest'
+      responses:
+        '200':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeNodeCommandResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /creative/capabilities:
     get:
       tags: [creative-foundation]
@@ -3501,448 +3842,6 @@ paths:
         "409": {$ref: "#/components/responses/Conflict"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
 
-  /creative-pilot:
-    get:
-      tags:
-      - creative-workspace
-      operationId: getCreativePilot
-      summary: getCreativePilot
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativePilotAccount'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-  /creative-pilot/preflight:
-    get:
-      tags:
-      - creative-workspace
-      operationId: preflightCreativePilot
-      summary: preflightCreativePilot
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativePreflightResult'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-  /creative-pilot/enroll:
-    post:
-      tags:
-      - creative-workspace
-      operationId: enrollCreativePilot
-      summary: enrollCreativePilot
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativePilotAccount'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreativeEnrollInput'
-  /creative-pilot/stop:
-    post:
-      tags:
-      - creative-workspace
-      operationId: stopCreativePilot
-      summary: stopCreativePilot
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativePilotAccount'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-  /creative-workspaces:
-    get:
-      tags:
-      - creative-workspace
-      operationId: listCreativeWorkspaces
-      summary: 读取创意空间
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CreativeWorkspace'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: archived
-        in: query
-        schema:
-          type: boolean
-      - name: link_kind
-        in: query
-        schema:
-          type: string
-      - name: link_id
-        in: query
-        schema:
-          type: string
-    post:
-      tags:
-      - creative-workspace
-      operationId: createCreativeWorkspace
-      summary: 一步创建空间
-      responses:
-        '201':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativeWorkspace'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
-          minLength: 8
-          maxLength: 128
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreativeCreateInput'
-  /creative-workspaces/{id}:
-    get:
-      tags:
-      - creative-workspace
-      operationId: getCreativeWorkspace
-      summary: getCreativeWorkspace
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativeWorkspaceDetail'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-    patch:
-      tags:
-      - creative-workspace
-      operationId: commandCreativeWorkspace
-      summary: 编辑创意空间
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativeWorkspaceDetail'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreativeCommand'
-  /creative-workspaces/{id}/cards:
-    post:
-      tags:
-      - creative-workspace
-      operationId: importCreativeCards
-      summary: importCreativeCards
-      responses:
-        '201':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativeImportCardsResult'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
-          minLength: 8
-          maxLength: 128
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreativeImportInput'
-  /creative-workspaces/{id}/shoot-items:
-    post:
-      tags:
-      - creative-workspace
-      operationId: createCreativeShootItems
-      summary: createCreativeShootItems
-      responses:
-        '201':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CreativeShootItem'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
-          minLength: 8
-          maxLength: 128
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreativeCreateShotsInput'
-  /creative-workspaces/{id}/memos:
-    post:
-      tags:
-      - creative-workspace
-      operationId: createCreativeMemos
-      summary: createCreativeMemos
-      responses:
-        '201':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/CreativeMemo'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: Idempotency-Key
-        in: header
-        required: true
-        schema:
-          type: string
-          minLength: 8
-          maxLength: 128
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreativeCreateMemosInput'
-  /creative-workspaces/{id}/assets:
-    post:
-      tags:
-      - creative-workspace
-      operationId: uploadCreativeAsset
-      summary: uploadCreativeAsset
-      responses:
-        '201':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativeAsset'
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required:
-              - file
-              properties:
-                file:
-                  type: string
-                  format: binary
-  /creative-workspaces/{id}/assets/{assetId}/content:
-    get:
-      tags:
-      - creative-workspace
-      operationId: getCreativeAssetContent
-      summary: getCreativeAssetContent
-      responses:
-        '200':
-          description: 成功
-          content:
-            image/jpeg:
-              schema:
-                type: string
-                format: binary
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: assetId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: v
-        in: query
-        schema:
-          type: string
-
-  /creative-workspaces/{id}/observations:
-    post:
-      tags:
-      - creative-workspace
-      operationId: recordCreativeObservation
-      summary: 记录打开事实，现场归类由报告按冻结时间窗派生
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required:
-              - event_id
-              - session_id
-              - kind
-              - client_at
-              properties:
-                event_id:
-                  type: string
-                session_id:
-                  type: string
-                kind:
-                  type: string
-                  enum:
-                  - space_open
-                  - live_open
-                  - live_unverified
-                client_at:
-                  type: string
-                  format: date-time
-      responses:
-        '204':
-          description: 已记录
-        default:
-          description: 请求失败
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorEnvelope'
-
 components:
   securitySchemes:
     bearerAuth:
@@ -4085,6 +3984,588 @@ components:
         application/json:
           schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   schemas:
+    CreativeTextPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - body
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 100000
+    CreativeLinkPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - url
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 4096
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+    CreativeContentPayload:
+      oneOf:
+      - $ref: '#/components/schemas/CreativeTextPayload'
+      - $ref: '#/components/schemas/CreativeLinkPayload'
+    CreativeContentRights:
+      type: object
+      additionalProperties: false
+      required:
+      - source_class
+      - rights_basis
+      properties:
+        source_class:
+          type: string
+        rights_basis:
+          type: string
+        evidence_summary:
+          type: string
+          maxLength: 500
+    CreativeContentDraft:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - payload
+      - rights
+      properties:
+        kind:
+          type: string
+          enum:
+          - text
+          - link
+        payload:
+          $ref: '#/components/schemas/CreativeContentPayload'
+        rights:
+          $ref: '#/components/schemas/CreativeContentRights'
+    CreativeContentRevision:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - content_id
+      - kind
+      - sequence
+      - payload
+      - truncated
+      properties:
+        truncated:
+          type: boolean
+          description: 正文是否为摘要；编辑前读取该修订完整正文
+        id:
+          type: string
+        content_id:
+          type: string
+        kind:
+          type: string
+          enum:
+          - text
+          - link
+        sequence:
+          $ref: '#/components/schemas/CreativeRevision'
+        payload:
+          $ref: '#/components/schemas/CreativeContentPayload'
+    CreativeLibraryAsset:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - title
+      - description
+      - kind
+      - revision
+      - content_id
+      - content_revision_id
+      - unavailable
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        kind:
+          type: string
+          enum:
+          - text
+          - link
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        content_id:
+          type: string
+        content_revision_id:
+          type: string
+        content:
+          $ref: '#/components/schemas/CreativeContentRevision'
+        unavailable:
+          type: boolean
+    CreativeAssetPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - next_cursor
+      - total_count
+      - library_revision
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeLibraryAsset'
+        next_cursor:
+          type: string
+        total_count:
+          type: integer
+          format: int64
+        library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeAssetCreatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - title
+      - content
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        content:
+          $ref: '#/components/schemas/CreativeContentDraft'
+    CreativeAssetCreateResult:
+      type: object
+      additionalProperties: false
+      required:
+      - asset_id
+      - revision
+      - content_revision_id
+      - library_revision
+      properties:
+        asset_id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        content_revision_id:
+          type: string
+        library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeProject:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - default_canvas_id
+      - revision
+      - archived
+      - updated_at
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        default_canvas_id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        archived:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+    CreativeProjectPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeProject'
+        next_cursor:
+          type: string
+    CreativeProjectCreatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CreativeProjectCreateResult:
+      type: object
+      additionalProperties: false
+      required:
+      - project_id
+      - default_canvas_id
+      - revision
+      properties:
+        project_id:
+          type: string
+        default_canvas_id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeProjectStatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      properties:
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeProjectRenamePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      - name
+      properties:
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+    CreativeProjectStateResult:
+      type: object
+      additionalProperties: false
+      required:
+      - project_id
+      - revision
+      properties:
+        project_id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        archived:
+          type: boolean
+    CreativeCanvasNode:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - type_key
+      - title
+      - x
+      - y
+      - width
+      - height
+      - placement_revision
+      - data_revision
+      - content_id
+      - content_revision_id
+      - unavailable
+      properties:
+        id:
+          type: string
+        type_key:
+          type: string
+          enum:
+          - core.text
+          - core.link
+        title:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        placement_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        data_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        content_id:
+          type: string
+          nullable: true
+        content_revision_id:
+          type: string
+          nullable: true
+        content:
+          $ref: '#/components/schemas/CreativeContentRevision'
+        unavailable:
+          type: boolean
+    CreativeCanvasSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+      - project_name
+      - project_revision
+      - id
+      - project_id
+      - archived
+      - revision
+      - topology_revision
+      - nodes
+      properties:
+        project_name:
+          type: string
+        project_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        id:
+          type: string
+        project_id:
+          type: string
+        archived:
+          type: boolean
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeCanvasNode'
+    CreativeAssetReference:
+      type: object
+      additionalProperties: false
+      required:
+      - asset_id
+      - expected_asset_revision
+      - content_revision_id
+      properties:
+        asset_id:
+          type: string
+        expected_asset_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        content_revision_id:
+          type: string
+    CreativeAddNodePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - type_key
+      - x
+      - y
+      - expected_topology_revision
+      properties:
+        type:
+          type: string
+          enum:
+          - add_node
+        node_id:
+          type: string
+          pattern: ^cwnode_[0-9a-f-]{36}$
+        type_key:
+          type: string
+          enum:
+          - core.text
+          - core.link
+        title:
+          type: string
+          maxLength: 200
+        x:
+          type: number
+          minimum: -10000000
+          maximum: 10000000
+        y:
+          type: number
+          minimum: -10000000
+          maximum: 10000000
+        expected_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        asset:
+          $ref: '#/components/schemas/CreativeAssetReference'
+        content:
+          $ref: '#/components/schemas/CreativeContentDraft'
+    CreativeMoveNodePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - expected_placement_revision
+      - x
+      - y
+      properties:
+        type:
+          type: string
+          enum:
+          - move_node
+        node_id:
+          type: string
+        expected_placement_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        x:
+          type: number
+          minimum: -10000000
+          maximum: 10000000
+        y:
+          type: number
+          minimum: -10000000
+          maximum: 10000000
+    CreativeReplaceContentPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - expected_data_revision
+      - expected_content_revision_id
+      - payload
+      properties:
+        type:
+          type: string
+          enum:
+          - replace_content
+        node_id:
+          type: string
+        expected_data_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        expected_content_revision_id:
+          type: string
+          nullable: true
+        payload:
+          $ref: '#/components/schemas/CreativeContentPayload'
+        rights:
+          $ref: '#/components/schemas/CreativeContentRights'
+    CreativeCanvasCommandPayload:
+      oneOf:
+      - $ref: '#/components/schemas/CreativeAddNodePayload'
+      - $ref: '#/components/schemas/CreativeMoveNodePayload'
+      - $ref: '#/components/schemas/CreativeReplaceContentPayload'
+    CreativeNodeCommandResult:
+      type: object
+      additionalProperties: false
+      required:
+      - node_id
+      - result_revision
+      - before_topology_revision
+      - result_topology_revision
+      - placement_revision
+      - data_revision
+      - content_revision_id
+      properties:
+        node_id:
+          type: string
+        result_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        before_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        result_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        placement_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        data_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        content_revision_id:
+          type: string
+          nullable: true
+    CreateCreativeTextAssetRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetCreatePayload'
+    CreateCreativeProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeProjectCreatePayload'
+    ArchiveCreativeProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeProjectStatePayload'
+    RestoreCreativeProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeProjectStatePayload'
+    RenameCreativeProjectRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeProjectRenamePayload'
+    CommandCreativeCanvasRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeCanvasCommandPayload'
     CreativeRevision:
       type: string
       pattern: '^[1-9][0-9]*$'
@@ -4115,561 +4596,6 @@ components:
         created_at: {type: string, format: date-time}
         retained_until: {type: string, format: date-time}
 
-    CreativeWorkspaceLink:
-      type: object
-      required:
-      - kind
-      - id
-      - name
-      - broken
-      properties:
-        kind:
-          type: string
-          enum:
-          - order
-          - customer
-        id:
-          type: string
-        name:
-          type: string
-        sub:
-          type: string
-        broken:
-          type: boolean
-    CreativeWorkspace:
-      type: object
-      required:
-      - id
-      - kind
-      - name
-      - archived
-      - revision
-      - created_at
-      - updated_at
-      - last_opened_at
-      - card_count
-      - shoot_item_count
-      properties:
-        id:
-          type: string
-        kind:
-          type: string
-          enum:
-          - project
-          - inbox
-        name:
-          type: string
-        link:
-          $ref: '#/components/schemas/CreativeWorkspaceLink'
-        archived:
-          type: boolean
-        revision:
-          type: integer
-          format: int64
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-        last_opened_at:
-          type: string
-          format: date-time
-        card_count:
-          type: integer
-          format: int64
-        cover_asset_id:
-          type: string
-        cover_checksum:
-          type: string
-        shoot_item_count:
-          type: integer
-          format: int64
-    CreativeCard:
-      type: object
-      required:
-      - id
-      - type
-      - revision
-      - created_at
-      - archived
-      - workspace_id
-      - position
-      properties:
-        id:
-          type: string
-        type:
-          type: string
-          enum:
-          - text
-          - image
-          - link
-        text:
-          type: string
-        url:
-          type: string
-        asset_id:
-          type: string
-        display_checksum:
-          type: string
-        width:
-          type: integer
-          format: int64
-        height:
-          type: integer
-          format: int64
-        caption:
-          type: string
-        source_class:
-          type: string
-          enum: &id001
-          - official
-          - anime_screenshot
-          - setting_book
-          - fan
-          - unknown_web
-          - photographer_owned
-          - licensed
-          - customer_supplied
-        batch_id:
-          type: string
-        batch_seq:
-          type: integer
-          format: int64
-        revision:
-          type: integer
-          format: int64
-        created_at:
-          type: string
-          format: date-time
-        archived:
-          type: boolean
-        workspace_id:
-          type: string
-        group_id:
-          type: string
-        position:
-          type: integer
-          format: int64
-    CreativeGroup:
-      type: object
-      required:
-      - id
-      - workspace_id
-      - name
-      - position
-      - created_at
-      properties:
-        id:
-          type: string
-        workspace_id:
-          type: string
-        name:
-          type: string
-        position:
-          type: integer
-          format: int64
-        created_at:
-          type: string
-          format: date-time
-    CreativeImportBatch:
-      type: object
-      required:
-      - id
-      - workspace_id
-      - source_kind
-      - card_count
-      - created_at
-      properties:
-        id:
-          type: string
-        workspace_id:
-          type: string
-        source_kind:
-          type: string
-        card_count:
-          type: integer
-          format: int64
-        created_at:
-          type: string
-          format: date-time
-    CreativeShootItem:
-      type: object
-      required:
-      - id
-      - workspace_id
-      - title
-      - description
-      - source_card_ids
-      - source_state
-      - position
-      - status
-      - result_note
-      - revision
-      - created_at
-      - updated_at
-      properties:
-        id:
-          type: string
-        workspace_id:
-          type: string
-        title:
-          type: string
-        description:
-          type: string
-        ref_asset_id:
-          type: string
-        ref_display_checksum:
-          type: string
-        source_card_id:
-          type: string
-        source_card_rev:
-          type: integer
-          format: int64
-        source_card_ids:
-          type: array
-          items:
-            type: string
-        source_workspace_id:
-          type: string
-        source_state:
-          type: string
-          enum:
-          - available
-          - unavailable
-        position:
-          type: integer
-          format: int64
-        status:
-          type: string
-          enum:
-          - active
-          - tombstone
-        result:
-          type: string
-          enum: &id002
-          - done
-          - skipped
-        result_note:
-          type: string
-        result_at:
-          type: string
-          format: date-time
-        revision:
-          type: integer
-          format: int64
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    CreativeMemo:
-      type: object
-      required:
-      - id
-      - workspace_id
-      - text
-      - checked
-      - position
-      - created_at
-      - updated_at
-      properties:
-        id:
-          type: string
-        workspace_id:
-          type: string
-        text:
-          type: string
-        checked:
-          type: boolean
-        position:
-          type: integer
-          format: int64
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    CreativeAsset:
-      type: object
-      required:
-      - id
-      - workspace_id
-      - source_class
-      - rights_basis
-      - generation_reference_granted
-      - original_media_type
-      - original_size
-      - original_width
-      - original_height
-      - original_checksum
-      - display_media_type
-      - display_size
-      - display_width
-      - display_height
-      - display_checksum
-      - created_at
-      properties:
-        id:
-          type: string
-        workspace_id:
-          type: string
-        source_class:
-          type: string
-          enum: *id001
-        rights_basis:
-          type: string
-        generation_reference_granted:
-          type: boolean
-        original_media_type:
-          type: string
-        original_size:
-          type: integer
-          format: int64
-        original_width:
-          type: integer
-          format: int64
-        original_height:
-          type: integer
-          format: int64
-        original_checksum:
-          type: string
-        display_media_type:
-          type: string
-        display_size:
-          type: integer
-          format: int64
-        display_width:
-          type: integer
-          format: int64
-        display_height:
-          type: integer
-          format: int64
-        display_checksum:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-    CreativeWorkspaceDetail:
-      type: object
-      required:
-      - workspace
-      - cards
-      - groups
-      - shoot_items
-      - memos
-      properties:
-        workspace:
-          $ref: '#/components/schemas/CreativeWorkspace'
-        cards:
-          type: array
-          items:
-            $ref: '#/components/schemas/CreativeCard'
-        groups:
-          type: array
-          items:
-            $ref: '#/components/schemas/CreativeGroup'
-        shoot_items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CreativeShootItem'
-        memos:
-          type: array
-          items:
-            $ref: '#/components/schemas/CreativeMemo'
-    CreativePilotAccount:
-      type: object
-      required:
-      - state
-      - revision
-      properties:
-        can_enroll:
-          type: boolean
-        state:
-          type: string
-          enum:
-          - legacy_write
-          - pilot_new_write
-          - stopped
-        enrolled_at:
-          type: string
-          format: date-time
-        stopped_at:
-          type: string
-          format: date-time
-        window_id:
-          type: string
-        revision:
-          type: integer
-          format: int64
-    CreativePreflightItem:
-      type: object
-      required:
-      - key
-      - title
-      - count
-      - blocking
-      - how_to
-      properties:
-        key:
-          type: string
-        title:
-          type: string
-        count:
-          type: integer
-          format: int64
-        blocking:
-          type: boolean
-        how_to:
-          type: string
-    CreativePreflightResult:
-      type: object
-      required:
-      - eligible
-      - items
-      properties:
-        eligible:
-          type: boolean
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/CreativePreflightItem'
-    CreativeImportCardsResult:
-      type: object
-      required:
-      - batch
-      - cards
-      properties:
-        batch:
-          $ref: '#/components/schemas/CreativeImportBatch'
-        cards:
-          type: array
-          items:
-            $ref: '#/components/schemas/CreativeCard'
-    CreativeCommand:
-      type: object
-      additionalProperties: false
-      required:
-      - operation
-      properties:
-        operation:
-          type: string
-          enum:
-          - update_workspace
-          - reorder_cards
-          - update_card
-          - remove_card
-          - move_card
-          - create_group
-          - rename_group
-          - delete_group
-          - set_group
-          - update_shoot_item
-          - remove_shoot_item
-          - reorder_shoot_items
-          - update_memo
-          - delete_memo
-          - reorder_memos
-        name:
-          type: string
-        id:
-          type: string
-        to_workspace_id:
-          type: string
-        text:
-          type: string
-        caption:
-          type: string
-        title:
-          type: string
-        description:
-          type: string
-        result_note:
-          type: string
-        group_id:
-          type: string
-          nullable: true
-        ids:
-          type: array
-          items:
-            type: string
-        archived:
-          type: boolean
-        checked:
-          type: boolean
-        clear_result:
-          type: boolean
-        expected_revision:
-          type: integer
-          format: int64
-          minimum: 1
-        result:
-          type: string
-          enum: *id002
-        link:
-          type: object
-          required:
-          - kind
-          - id
-          properties:
-            kind:
-              type: string
-              enum:
-              - ''
-              - order
-              - customer
-            id:
-              type: string
-    CreativeCreateInput:
-      type: object
-      additionalProperties: false
-      properties:
-        name:
-          type: string
-          maxLength: 80
-    CreativeImportInput:
-      type: object
-      additionalProperties: false
-      properties:
-        raw_text:
-          type: string
-        asset_ids:
-          type: array
-          maxItems: 50
-          items:
-            type: string
-        group_id:
-          type: string
-    CreativeCreateShotsInput:
-      type: object
-      additionalProperties: false
-      properties:
-        card_ids:
-          type: array
-          items:
-            type: string
-          minItems: 1
-          maxItems: 50
-        merge:
-          type: boolean
-      required:
-      - card_ids
-    CreativeCreateMemosInput:
-      type: object
-      additionalProperties: false
-      properties:
-        text:
-          type: string
-      required:
-      - text
-    CreativeEnrollInput:
-      type: object
-      additionalProperties: false
-      properties:
-        window_id:
-          type: string
     PlanningMediaSourceClass:
       type: string
       enum: [official, anime_screenshot, setting_book, fan, unknown_web, photographer_owned, licensed, customer_supplied]

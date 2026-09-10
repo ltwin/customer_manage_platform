@@ -1,4 +1,3 @@
-import LinkedSpaces from '../creative/LinkedSpaces'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CalendarPlus, GitMerge, Pencil, Archive, ArchiveRestore } from 'lucide-react'
@@ -254,7 +253,6 @@ export default function CustomerDetailPage() {
           <div className="crumb"><Link to="/customers">客户</Link> / 档案</div>
           <h1>{customer.display_name}</h1>
           <PlanningSummaryLink summary={customer.planning_summary} />
- <LinkedSpaces kind="customer" id={customer.id} />
         </div>
         <div className="topbar-actions">
           {!isMerged && (

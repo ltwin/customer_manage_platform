@@ -128,16 +128,20 @@ func TestConcurrentReceiptReplayAndIsolation(t *testing.T) {
 	if n := count(t, f, "creative_test_effects"); n != 2 {
 		t.Fatalf("account effects=%d", n)
 	}
-	// An existing receipt may be read after write permission is revoked; new effects may not.
+	// Old rollout rows cannot deny an active account; authentication still can.
 	if _, err := f.db.Exec("UPDATE creative_account_capabilities SET manual_write_enabled=false WHERE account_id='creative-a'"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := exec.Run(ctx, f.a, op, cmd); err != nil {
-		t.Fatalf("read replay: %v", err)
+	if _, err := exec.Run(ctx, f.a, op, command("two")); err != nil {
+		t.Fatalf("active account: %v", err)
 	}
-	if _, err := exec.Run(ctx, f.a, op, command("two")); !errors.Is(err, store.ErrCreativeAccessDenied) {
-		t.Fatalf("disabled write: %v", err)
+	if _, err := f.db.Exec("UPDATE accounts SET status='pending_verification' WHERE id='creative-a'"); err != nil {
+		t.Fatal(err)
 	}
+	if _, err := exec.Run(ctx, f.a, op, command("three")); !errors.Is(err, store.ErrCreativeAccessDenied) {
+		t.Fatalf("inactive account: %v", err)
+	}
+
 }
 
 func TestRollbackValidationAndExpiry(t *testing.T) {

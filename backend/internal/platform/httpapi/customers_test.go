@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/samson/customer-manage-platform/backend/internal/creativeworkspace"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -21,7 +20,6 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
-	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	reminderdomain "github.com/samson/customer-manage-platform/backend/internal/reminder"
@@ -98,21 +96,12 @@ func newCustomerAPIRouterWithURL(t *testing.T) (http.Handler, *store.Store, *aut
 	if err != nil {
 		t.Fatalf("new shoot planning business application: %v", err)
 	}
-	creativeObjects, err := immutablefs.NewLocal(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	creativeRepo := creativeworkspace.NewPostgresRepository()
-	creativePilot := creativeworkspace.NewPilot(creativeRepo)
 	router := httpapi.NewRouter(httpapi.RouterDeps{
-		CreativePilot:             creativePilot,
-		CreativeEnrollmentAllowed: func(id string) bool { return id == testAcctID },
-		CreativeWorkspace:         creativeworkspace.NewService(creativeRepo, creativeObjects, creativePilot),
-		Logger:                    slog.New(slog.DiscardHandler),
-		DB:                        s,
-		ScopeFactory:              s,
-		Auth:                      auth.NewService(s, tokens),
-		Customer:                  customerdomain.NewService(customerdomain.NewPostgresRepository()),
+		Logger:       slog.New(slog.DiscardHandler),
+		DB:           s,
+		ScopeFactory: s,
+		Auth:         auth.NewService(s, tokens),
+		Customer:     customerdomain.NewService(customerdomain.NewPostgresRepository()),
 		Orders: orderdomain.NewService(orderdomain.NewPostgresRepository()).
 			WithDeliveryPolicyProvider(orderdomain.NewSettingsDeliveryPolicyAdapter(settingsSvc)),
 		Packages:              pkgcatalog.NewService(pkgcatalog.NewPostgresRepository()),

@@ -106,13 +106,10 @@ func (h *handlers) settingsScope(c *gin.Context) (store.AccountScope, bool) {
 		abortError(c, http.StatusInternalServerError, CodeInternal, "内部错误")
 		return store.AccountScope{}, false
 	}
-	return creativeLegacyScope(c, h.scopeFactory.ScopeFor(ac)), true
+	return h.scopeFactory.ScopeFor(ac), true
 }
 
 func (h *handlers) abortSettingsError(c *gin.Context, err error) bool {
-	if abortLegacyWriteError(c, err) {
-		return true
-	}
 	if err == nil {
 		return false
 	}

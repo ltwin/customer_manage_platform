@@ -1,4 +1,3 @@
-import { useLegacyReadOnly } from '../creative/useLegacyReadOnly'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -65,7 +64,6 @@ function parseShareFocus(value: string | null):
 }
 
 export default function ShootPlanWorkspacePage() {
- const legacyReadOnly = useLegacyReadOnly() !== 'write'
   const { id = '' } = useParams()
   const navigate = useNavigate()
   const { notify } = useShell()
@@ -218,12 +216,11 @@ export default function ShootPlanWorkspacePage() {
         </div>
         <div className="topbar-actions">
           <button className="btn" type="button" onClick={() => navigate('/shoot-plans')}>← 全部策划</button>
-          {plan && !legacyReadOnly && plan.status !== 'archived' && <button className="btn btn-primary" type="button" onClick={() => navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/ingestions/new`)}>从聊天整理</button>}
-          {plan && !legacyReadOnly && <StatusActions plan={plan} busy={busy} runTransition={runTransition} onRun={openRunMode} />}
+          {plan && plan.status !== 'archived' && <button className="btn btn-primary" type="button" onClick={() => navigate(`/shoot-plans/${encodeURIComponent(plan.id)}/ingestions/new`)}>从聊天整理</button>}
+          {plan && <StatusActions plan={plan} busy={busy} runTransition={runTransition} onRun={openRunMode} />}
         </div>
       </header>
       <main className="content planning-content planning-workspace">
-        {legacyReadOnly && <p role="status">旧策划记录已只读，新的创作请前往 <Link to="/creative-workspaces">创意空间</Link>。</p>}
  {presentation.notice && <StateNotice {...presentation.notice} />}
         {feedback && <div className="planning-feedback" role="status">{feedback}</div>}
         {transitionGuidance && (
@@ -252,7 +249,7 @@ export default function ShootPlanWorkspacePage() {
               <TabButton active={tab === 'business'} onClick={() => setTab('business')}>经营草稿</TabButton>
               <TabButton active={tab === 'history'} onClick={() => setTab('history')}>执行历史</TabButton>
             </div>
-            <fieldset disabled={legacyReadOnly} className="tab-panel active" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+            <fieldset className="tab-panel active" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               {tab === 'brief' && <BriefPanel plan={plan} busy={busy} runCommand={runCommand} />}
               {tab === 'shots' && <ShotsPanel plan={plan} busy={busy} runCommand={runCommand} focusShotID={focusShotID} />}
               {tab === 'readiness' && (
@@ -265,7 +262,7 @@ export default function ShootPlanWorkspacePage() {
                 <PlanningMediaPanel
                   planID={plan.id}
                   planRevision={plan.revision}
-                  readOnly={legacyReadOnly || plan.status === 'archived'}
+                  readOnly={plan.status === 'archived'}
                   shots={plan.shots.map((shot) => ({ id: shot.id, position: shot.position, title: shot.title }))}
                 />
               )}
@@ -273,7 +270,7 @@ export default function ShootPlanWorkspacePage() {
                 <ShareCollaborationPanel
                   planID={plan.id}
                   planRevision={plan.revision}
-                  readOnly={legacyReadOnly || plan.status === 'archived'}
+                  readOnly={plan.status === 'archived'}
                   focus={shareFocus}
                   shotLabels={shotLabels}
                   readinessStates={readinessStates}
