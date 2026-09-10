@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict';
+import {normalizeTags,saveTag,deleteTag,saveTagGroup,deleteTagGroup,matchTagFilter} from './tags.mjs';
+const original={assets:[{id:'a',tags:['柔光','柔光','Mood']},{id:'b',tags:['mood','海边']}],trash:[{asset:{id:'t',tags:['柔光']}}],collections:[],projects:[]};
+const state=normalizeTags(original);assert.equal(state.tagCatalog.length,3);assert.equal(state.assets[0].tagIds.length,2);assert.equal(state.assets[0].tagIds[1],state.assets[1].tagIds[0]);assert.deepEqual(normalizeTags(state),state);assert.equal(original.tagCatalog,undefined);
+const soft=state.tagCatalog.find(t=>t.name==='柔光');let next=saveTagGroup(state,{name:'光线'});const group=next.tagGroups[0];next=saveTag(next,{id:soft.id,name:'窗边柔光',color:'blue',groupId:group.id});assert.equal(next.assets[0].tags[0],'窗边柔光');assert.equal(next.trash[0].asset.tags[0],'窗边柔光');assert.equal(next.assets[0].tagIds[0],soft.id);assert.equal(next.tagCatalog.find(t=>t.id===soft.id).color,'blue');assert.throws(()=>saveTag(next,{name:' MOOD '}),/同名/);assert.throws(()=>saveTag(next,{name:'x',color:'invalid'}),/有效/);
+const withoutGroup=deleteTagGroup(next,group.id);assert.equal(withoutGroup.tagCatalog.find(t=>t.id===soft.id).groupId,null);assert.deepEqual(withoutGroup.assets,next.assets);
+const gone=deleteTag(withoutGroup,soft.id);assert(!gone.assets[0].tagIds.includes(soft.id));assert.equal(gone.trash[0].asset.tags.length,0);assert.equal(gone.assets.length,original.assets.length);
+assert(matchTagFilter(state.assets[0],state.assets[0].tagIds));assert(!matchTagFilter(state.assets[1],state.assets[0].tagIds));assert(matchTagFilter(state.assets[1],state.assets[0].tagIds,'any'));assert(!matchTagFilter(state.assets[0],['deleted-id']));
+console.log('PASS tag model: idempotent legacy migration, unique names, stable rename/color/group, trash synchronization, safe deletes and all/any filtering');

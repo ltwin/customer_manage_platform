@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {trashAssets,restoreAssets,purgeAssets,expiredItems,setRetention,retentionDays} from './recycle.mjs';
+const now=Date.UTC(2026,8,7),day=86400000;
+const state={assets:[{id:'a',kind:'image',title:'照片',src:'data:image',width:2,height:3,tags:[]},{id:'b',kind:'text',title:'想法',text:'正文',tags:[]}],favorites:['a'],collections:[{id:'c',items:['a','b']}],projects:[{id:'p-sea',items:['a'],document:undefined}]};
+const before=structuredClone(state),trashed=trashAssets(state,['a'],now);
+assert.deepEqual(state,before);assert.equal(trashed.assets.length,1);assert.equal(trashed.trash.length,1);assert.deepEqual(trashed.favorites,[]);assert.deepEqual(trashed.collections[0].items,['b']);assert.deepEqual(trashed.projects[0].items,[]);assert.equal(trashed.projects[0].document.shots.length,1);assert.equal(trashed.projects[0].document.shots[0].image,'data:image');
+const restored=restoreAssets(trashed,['a']);assert.deepEqual(restored.favorites,['a']);assert(restored.collections[0].items.includes('a'));assert.deepEqual(restored.projects[0].items,['a']);assert.equal(restored.trash.length,0);assert.equal(restored.assets.find(a=>a.id==='a').src,'data:image');
+const withoutGroup=structuredClone(trashed);withoutGroup.collections=[];withoutGroup.projects=[];const orphan=restoreAssets(withoutGroup,['a']);assert.equal(orphan.collections.length,0);assert.equal(orphan.projects.length,0);assert(orphan.assets.some(a=>a.id==='a'));
+assert.equal(retentionDays(state),30);assert.equal(expiredItems(trashed,now+30*day-1).length,0);assert.equal(expiredItems(trashed,now+30*day).length,1);assert.equal(expiredItems({...trashed,trashRetentionDays:null},now+365*day).length,0);
+const purged=setRetention(trashed,7,now+8*day);assert.equal(purged.trash.length,0);assert.equal(purged.trashRetentionDays,7);assert.equal(purged.projects[0].document.shots[0].image,'data:image');assert.throws(()=>setRetention(state,0),/有效/);assert.deepEqual(purgeAssets(state,['a']).assets,state.assets);
+console.log('PASS recycle model: nonmutation, soft deletion, existing/missing relations, snapshot preservation, default/never/exact expiry, shorter retention purge');

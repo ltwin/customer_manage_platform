@@ -4,9 +4,12 @@
 
 ## exploratory（未来候选，尚未立项）
 
+- **[creative-canvas-system · 头脑风暴](../../docs/product/creative-canvas-system/brainstorm.md)** — 以画布节点系统承载创作，资产库与 Agent 提供辅助，策划节点连接现场模式，Skill 沉淀专业方法；长期方向已提出，节点契约与阶段路线仍待验证和修订
 - **[creative-asset-platform](creative-asset-platform.md)** — 将摄影素材、风格参考和角色知识包逐步发展为可分享、可取得、可用于项目与 Agent 的资产平台；初版 PRD 待验证，免费分享、关注领取与付费市场不属于当前创意空间迭代的交付范围
 
 ## draft（愿景已定，尚未实现）
+
+- **[creative-canvas-foundation](creative-canvas-foundation.md)** — 将个人资产库、通用画布与 Agent 落为真实可保存、可引用、可执行的创作基础框架；首期范围已开始收敛，当前处于需求设计，架构与模块设计随后推进
 
 - **[creative-shoot-planning](creative-shoot-planning.md)** — 把散落在聊天、参考图和脑海里的创作灵感，变成拍前能协作、现场能照着执行的拍摄方案
 - **[account-center](account-center.md)** — 摄影师能从经营台一眼认出当前账号，并维护自己的头像与展示名称，安全与设置也集中在同一入口

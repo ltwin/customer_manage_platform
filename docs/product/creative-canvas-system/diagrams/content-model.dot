@@ -1,0 +1,21 @@
+digraph ContentModel {
+ graph [rankdir=TB,bgcolor="#f6f8fb",pad="0.45",nodesep="0.45",ranksep="0.65",fontname="PingFang SC",fontsize=26,fontcolor="#152739",labelloc=t,label="创意空间 · 核心领域对象\n资产是收藏条目，节点是创作实例，修订是内容事实"];
+ node [shape=box,style="rounded,filled",fillcolor="white",color="#d4dce5",penwidth=1.3,fontname="PingFang SC",fontsize=16,fontcolor="#20364b",margin="0.2,0.16"];
+ edge [color="#748b9e",arrowsize=0.75,fontname="PingFang SC",fontsize=12,fontcolor="#50677e",penwidth=1.4];
+ {rank=same;project [label="项目",fillcolor="#e3edf9"];collection [label="个人库分组 / 标签",fillcolor="#e7f3ef"];run [label="Agent 运行",fillcolor="#eee8fa"];}
+ canvas [label="画布\n首期每项目一张",fillcolor="#e3edf9"];
+ {rank=same;nodeInst [label="节点实例\n布局 / 使用意图 / 输入配置",fillcolor="#e3edf9"];asset [label="资产\n名称 / 标签 / 分组 / 最爱",fillcolor="#e7f3ef"];input [label="运行输入快照\n当时的内容与上下文",fillcolor="#eee8fa"];}
+ revision [label="不可变内容修订\n明确采用的文字 / 链接 / 媒体版本",fillcolor="#fff4df",color="#c9ad72",penwidth=2];
+ identity [label="内容身份\n管理修订归属；无全局当前版本",fillcolor="#fff4df"];
+ binding [label="媒体绑定\n原件 / 展示件 / 缩略图",fillcolor="#fff4df"];
+ blob [label="Blob\n固定对象 key / version / hash",fillcolor="#fff4df"];
+ group [label="节点组\n同画布父子关系\n子节点使用相对坐标",fillcolor="#e3edf9"];
+ project -> canvas [label="拥有"];canvas -> nodeInst [label="包含"];canvas -> group [label="特殊节点"];group -> nodeInst [label="可选父组",constraint=false];
+ collection -> asset [label="多重归类 / 打标签"];run -> input [label="冻结"];
+ nodeInst -> revision [label="可选引用一个修订"];asset -> revision [label="引用一个修订"];input -> revision [label="涉及内容时引用"];
+ identity -> revision [label="归属",dir=back];revision -> binding [label="0..多"];binding -> blob [label="每条绑定一个对象"];
+ editNote [shape=note,label="修改一个节点的内容\n首次编辑分叉 → 新内容 / 新修订\n原资产和其他节点保持不变",fillcolor="#ffffff",fontsize=14];
+ nodeInst -> editNote [style=dashed,arrowhead=none,constraint=false];
+ legend [shape=plain,label="图中为逻辑关系，均按账号与对象 key 校验；不建立数据库外键\n删除资产或节点不等于立即删除文件，媒体按全部有效引用判断保留",fontcolor="#65798b",fontsize=12];
+ blob -> legend [style=invis];editNote -> legend [style=invis];
+}

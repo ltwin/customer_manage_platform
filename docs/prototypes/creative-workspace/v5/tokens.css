@@ -1,0 +1,32 @@
+/* v5 夜间创作台。唯一运行时色彩、字形与玻璃材质来源，画布与资产侧栏共同消费。 */
+:root {
+  color-scheme: dark;
+  --bg: #141619;
+  --surface: #202328;
+  --surface-raised: #2b2f35;
+  --ink: #eeeee9;
+  --muted: #a8adb5;
+  --subtle: #7d848e;
+  --accent: #bdcec9;
+  --accent-ink: #1a302b;
+  --line: rgba(220, 228, 236, 0.13);
+  --hover: rgba(220, 228, 236, 0.075);
+  --danger: #f0a59e;
+  --gold: #d7bf98;
+  --glass: rgba(34, 38, 44, 0.87);
+  --glass-border: rgba(224, 234, 247, 0.15);
+  --glass-highlight: rgba(255, 255, 255, 0.1);
+  --shadow:
+    0 16px 48px #0005, inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 #0003;
+  --font-body: "PingFang SC", "Hiragino Sans GB", system-ui, sans-serif;
+  --font-display: "Songti SC", "STSong", "Noto Serif CJK SC", serif;
+  --font-mono: "SFMono-Regular", Consolas, monospace;
+  --radius-control: 10px;
+  --radius-panel: 20px;
+  --scroll-thumb: #555d66;
+  --scroll-hover: #7a848e;
+  --scroll-track: transparent;
+  --scroll-active: #99a5ae;
+  --focus: #b8d9d0;
+}

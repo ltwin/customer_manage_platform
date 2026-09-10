@@ -209,6 +209,42 @@ func (e CreateAssetBindingInputHolderKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeFoundationCapabilitiesSchemaVersion.
+const (
+	CreativeFoundationCapabilitiesSchemaVersionN1 CreativeFoundationCapabilitiesSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeFoundationCapabilitiesSchemaVersion enum.
+func (e CreativeFoundationCapabilitiesSchemaVersion) Valid() bool {
+	switch e {
+	case CreativeFoundationCapabilitiesSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeOperationReceiptHttpStatus.
+const (
+	N200 CreativeOperationReceiptHttpStatus = 200
+	N201 CreativeOperationReceiptHttpStatus = 201
+	N202 CreativeOperationReceiptHttpStatus = 202
+)
+
+// Valid indicates whether the value is a known member of the CreativeOperationReceiptHttpStatus enum.
+func (e CreativeOperationReceiptHttpStatus) Valid() bool {
+	switch e {
+	case N200:
+		return true
+	case N201:
+		return true
+	case N202:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CustomerChannel.
 const (
 	CustomerChannelDouyin      CustomerChannel = "douyin"
@@ -535,13 +571,13 @@ func (e PlanAssetRenditionKind) Valid() bool {
 
 // Defines values for PlanAssetRightsDeclarationMatrixVersion.
 const (
-	PlanAssetRightsDeclarationMatrixVersionN1 PlanAssetRightsDeclarationMatrixVersion = 1
+	N1 PlanAssetRightsDeclarationMatrixVersion = 1
 )
 
 // Valid indicates whether the value is a known member of the PlanAssetRightsDeclarationMatrixVersion enum.
 func (e PlanAssetRightsDeclarationMatrixVersion) Valid() bool {
 	switch e {
-	case PlanAssetRightsDeclarationMatrixVersionN1:
+	case N1:
 		return true
 	default:
 		return false
@@ -1506,6 +1542,39 @@ type CreateAssetBindingInput struct {
 
 // CreateAssetBindingInputHolderKind defines model for CreateAssetBindingInput.HolderKind.
 type CreateAssetBindingInputHolderKind string
+
+// CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
+type CreativeFoundationCapabilities struct {
+	Available     bool                                        `json:"available"`
+	NodeTypes     []string                                    `json:"node_types"`
+	Reason        string                                      `json:"reason"`
+	SchemaVersion CreativeFoundationCapabilitiesSchemaVersion `json:"schema_version"`
+	Tools         []string                                    `json:"tools"`
+}
+
+// CreativeFoundationCapabilitiesSchemaVersion defines model for CreativeFoundationCapabilities.SchemaVersion.
+type CreativeFoundationCapabilitiesSchemaVersion int
+
+// CreativeOperationReceipt defines model for CreativeOperationReceipt.
+type CreativeOperationReceipt struct {
+	CreatedAt     time.Time                          `json:"created_at"`
+	HttpStatus    CreativeOperationReceiptHttpStatus `json:"http_status"`
+	OperationId   openapi_types.UUID                 `json:"operation_id"`
+	OperationType string                             `json:"operation_type"`
+	Response      map[string]interface{}             `json:"response"`
+	ResultId      *string                            `json:"result_id,omitempty"`
+	ResultKind    string                             `json:"result_kind"`
+
+	// ResultRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultRevision *CreativeRevision `json:"result_revision,omitempty"`
+	RetainedUntil  time.Time         `json:"retained_until"`
+}
+
+// CreativeOperationReceiptHttpStatus defines model for CreativeOperationReceipt.HttpStatus.
+type CreativeOperationReceiptHttpStatus int
+
+// CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+type CreativeRevision = string
 
 // Customer defines model for Customer.
 type Customer struct {
@@ -3707,6 +3776,12 @@ type ServerInterface interface {
 	// 注册 pending_verification 账号并尝试发送验证邮件
 	// (POST /auth/register)
 	Register(c *gin.Context)
+	// 查询当前已实现的创意能力；地基阶段不开放业务动作
+	// (GET /creative/capabilities)
+	GetCreativeCapabilities(c *gin.Context)
+	// 读取本账号持久回执；404不证明操作从未提交
+	// (GET /creative/operations/{operation_id})
+	GetCreativeOperation(c *gin.Context, operationId openapi_types.UUID)
 	// 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
 	// (GET /customers)
 	ListCustomers(c *gin.Context, params ListCustomersParams)
@@ -4204,6 +4279,48 @@ func (siw *ServerInterfaceWrapper) Register(c *gin.Context) {
 	}
 
 	siw.Handler.Register(c)
+}
+
+// GetCreativeCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeCapabilities(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeCapabilities(c)
+}
+
+// GetCreativeOperation operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeOperation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "operation_id" -------------
+	var operationId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "operation_id", c.Param("operation_id"), &operationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter operation_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeOperation(c, operationId)
 }
 
 // ListCustomers operation middleware
@@ -5950,6 +6067,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/password/reset", wrapper.ResetPassword)
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
+	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
+	router.GET(options.BaseURL+"/creative/operations/:operation_id", wrapper.GetCreativeOperation)
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
 	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)

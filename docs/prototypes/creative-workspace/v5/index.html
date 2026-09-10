@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#141619" />
+    <title>九月，向海而行 · 创意空间</title>
+    <link rel="icon" href="../v4/mark.svg" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="canvas.css" />
+    <link rel="stylesheet" href="planning.css" />
+    <link rel="stylesheet" href="asset-shelf.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#canvas">跳到画布</a>
+    <header class="topbar">
+      <div class="project-heading">
+        <span class="brand-symbol" data-icon="aperture"></span
+        ><span class="brand-name">创意空间</span
+        ><span class="header-divider"></span
+        ><button id="project-name" class="project-name" title="重命名创作项目">
+          九月，向海而行 <span data-icon="chevron-down"></span></button
+        ><span class="private-badge"
+          ><span data-icon="lock"></span>私人项目</span
+        >
+      </div>
+      <div class="top-actions">
+        <span id="save-status" class="save-status" role="status"
+          >正在打开画布</span
+        ><button
+          class="icon-button"
+          id="project-menu"
+          aria-label="项目菜单"
+          title="项目菜单"
+        >
+          <span data-icon="ellipsis"></span></button
+        ><button class="avatar" id="about-open" aria-label="原型说明">
+          影
+        </button>
+      </div>
+    </header>
+    <nav class="tool-rail glass" aria-label="创作工具">
+      <button
+        class="tool-button add-tool"
+        id="add-node"
+        aria-label="新建节点"
+        title="新建节点 · N"
+        aria-haspopup="menu"
+      >
+        <span data-icon="plus"></span>
+      </button>
+      <div class="rail-separator"></div>
+      <button
+        class="tool-button"
+        id="library-toggle"
+        aria-label="资产库"
+        aria-expanded="false"
+        aria-controls="library-panel"
+        title="资产库 · L"
+      >
+        <span data-icon="images"></span><span>资产</span>
+      </button>
+      <button
+        class="tool-button"
+        id="node-search"
+        aria-label="搜索画布节点"
+        title="搜索画布节点"
+      >
+        <span data-icon="search"></span><span>查找</span>
+      </button>
+      <div class="rail-separator"></div>
+      <button
+        class="tool-button"
+        id="select-tool"
+        aria-label="选择工具"
+        aria-pressed="true"
+        title="选择工具 · V"
+      >
+        <span data-icon="mouse-pointer-2"></span></button
+      ><button
+        class="tool-button"
+        id="pan-tool"
+        aria-label="移动画布"
+        aria-pressed="false"
+        title="移动画布 · 中键 / H / 按住空格"
+      >
+        <span data-icon="hand"></span>
+      </button>
+      <div class="rail-spacer"></div>
+      <button
+        class="tool-button"
+        id="help-open"
+        aria-label="画布快捷键"
+        title="画布快捷键"
+      >
+        <span data-icon="circle-help"></span></button
+      ><span class="prototype-mark">v5</span>
+    </nav>
+    <aside
+      id="library-panel"
+      class="library-panel glass"
+      aria-label="资产库侧栏"
+      hidden
+    >
+      <header class="panel-heading">
+        <div>
+          <h2>资产库</h2>
+          <p>整理、检索，随手放入画布。</p>
+        </div>
+        <div>
+          <button
+            id="library-expand"
+            class="icon-button"
+            aria-label="展开资产管理"
+            title="展开资产管理"
+          >
+            <span data-icon="maximize"></span></button
+          ><button
+            id="library-close"
+            class="icon-button"
+            aria-label="收起资产库"
+            title="收起资产库"
+          >
+            <span data-icon="panel-left-close"></span>
+          </button>
+        </div>
+      </header>
+      <div class="segmented" role="group" aria-label="资产来源">
+        <button id="personal-tab" aria-pressed="true">个人资产库</button
+        ><button id="market-tab" aria-pressed="false">
+          <span data-icon="globe"></span>公共市场
+        </button>
+      </div>
+      <div id="personal-panel" class="personal-panel"></div>
+      <div id="market-panel" class="market-panel" hidden>
+        <div class="search-field">
+          <span data-icon="search"></span
+          ><input
+            type="search"
+            id="market-search"
+            aria-label="搜索市场示例"
+            placeholder="搜索风格、素材、知识包"
+          /><button
+            id="market-clear"
+            class="icon-button"
+            aria-label="清除市场搜索"
+            hidden
+          >
+            <span data-icon="x"></span>
+          </button>
+        </div>
+        <div
+          id="market-types"
+          class="filter-chips"
+          role="group"
+          aria-label="市场内容类型"
+        >
+          <button data-market-kind="all" aria-pressed="true">全部</button
+          ><button data-market-kind="image" aria-pressed="false">素材</button
+          ><button data-market-kind="style" aria-pressed="false">风格</button
+          ><button data-market-kind="knowledge" aria-pressed="false">
+            知识包
+          </button>
+        </div>
+        <div class="market-disclosure">
+          <span>市场预览</span>示例内容 · 尚未开放真实交易
+        </div>
+        <div id="market-grid" class="market-grid"></div>
+        <div class="empty" id="market-empty" hidden>
+          <h3>没有找到相关资产</h3>
+          <p>试试其他关键词，或清除筛选。</p>
+          <button id="market-reset" class="pill-button">清除筛选</button>
+        </div>
+      </div>
+      <footer class="library-foot">
+        <span data-icon="move-up-right"></span
+        ><span>拖到画布，或点击素材上的 +</span>
+      </footer>
+    </aside>
+    <main id="workspace" class="workspace">
+      <section
+        id="canvas"
+        class="canvas"
+        tabindex="0"
+        aria-label="创作画布；左键拖动空白框选节点，方向键移动选中节点，中键或空格拖动画布，双击空白新建节点"
+      >
+        <div class="canvas-caption">
+          <span class="canvas-dot"></span><span>主画布</span
+          ><span class="caption-divider">/</span
+          ><span id="node-count">5 个节点</span>
+        </div>
+        <div id="world" class="world">
+          <svg id="edges" class="edges" aria-label="节点参考关系"></svg>
+          <div id="nodes"></div>
+        </div>
+        <svg
+          id="connection-preview"
+          class="connection-preview"
+          aria-hidden="true"
+        ></svg>
+        <div id="canvas-empty" class="canvas-empty" hidden>
+          <span data-icon="aperture"></span>
+          <h1>从一个念头开始。</h1>
+          <p>双击画布，或从资产库放入第一份灵感。</p>
+          <button class="pill-button" id="empty-add">
+            <span data-icon="plus"></span>新建节点
+          </button>
+        </div>
+        <div
+          id="selection-box"
+          class="selection-box"
+          hidden
+          aria-hidden="true"
+        ></div>
+        <div id="selection-tools" class="selection-tools glass" hidden>
+          <button
+            id="selection-group"
+            class="icon-button"
+            aria-label="将所选节点打组"
+            title="打组 · ⌘/Ctrl G"
+            hidden
+          >
+            <span data-icon="layers"></span>
+          </button>
+          <button
+            id="selection-ungroup"
+            class="icon-button"
+            aria-label="解散所选分组"
+            title="解组 · ⌘/Ctrl Shift G"
+            hidden
+          >
+            <span data-icon="unlink"></span>
+          </button>
+          <button
+            id="selection-preview"
+            class="icon-button"
+            aria-label="放大查看媒体"
+            title="放大查看媒体"
+            hidden
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" />
+            </svg></button
+          ><button
+            id="selection-download"
+            class="icon-button"
+            aria-label="下载媒体"
+            title="下载媒体"
+            hidden
+          >
+            <span data-icon="download"></span></button
+          ><span id="selection-label"></span
+          ><button
+            id="selection-agent"
+            class="icon-button"
+            aria-label="打开 Agent"
+            title="打开 Agent"
+          >
+            <span data-icon="sparkles"></span></button
+          ><button
+            id="selection-save-asset"
+            class="icon-button"
+            aria-label="存入个人资产库"
+            title="存入个人资产库"
+          >
+            <span data-icon="folder"></span></button
+          ><button
+            id="selection-copy"
+            class="icon-button"
+            aria-label="复制节点"
+            title="复制节点"
+          >
+            <span data-icon="copy"></span></button
+          ><button
+            id="selection-delete"
+            class="icon-button"
+            aria-label="移除所选节点"
+            title="移除所选节点"
+          >
+            <span data-icon="trash-2"></span>
+          </button>
+        </div>
+        <div class="canvas-bottom">
+          <div class="viewport-controls glass">
+            <button
+              id="undo"
+              class="icon-button"
+              aria-label="撤销"
+              title="撤销 · ⌘Z"
+              disabled
+            >
+              <span data-icon="undo-2"></span></button
+            ><button
+              id="redo"
+              class="icon-button"
+              aria-label="重做"
+              title="重做 · ⌘⇧Z"
+              disabled
+            >
+              <span data-icon="redo-2"></span></button
+            ><span class="control-divider"></span
+            ><button
+              id="zoom-out"
+              class="icon-button"
+              aria-label="缩小"
+              title="缩小"
+            >
+              <span data-icon="minus"></span></button
+            ><button
+              id="zoom-level"
+              class="zoom-level"
+              aria-label="恢复百分之百缩放"
+            >
+              100%</button
+            ><button
+              id="zoom-in"
+              class="icon-button"
+              aria-label="放大"
+              title="放大"
+            >
+              <span data-icon="plus"></span></button
+            ><button
+              id="fit-view"
+              class="icon-button"
+              aria-label="适应全部节点"
+              title="适应全部节点 · F"
+            >
+              <span data-icon="scan"></span></button
+            ><span class="control-divider"></span
+            ><button
+              id="minimap-toggle"
+              class="icon-button"
+              aria-label="切换小地图"
+              aria-pressed="true"
+              title="小地图"
+            >
+              <span data-icon="map"></span>
+            </button>
+          </div>
+          <p class="canvas-hint" id="canvas-hint">
+            左键框选 · 中键 / 空格平移 · 双击新建
+          </p>
+          <div id="minimap" class="minimap glass" aria-label="画布小地图"></div>
+        </div>
+      </section>
+      <section
+        id="embedded-page"
+        class="embedded-page glass"
+        aria-label="节点最大化视图"
+        hidden
+      ></section>
+      <div id="page-error" class="page-error glass" role="alert" hidden>
+        <h2>画布暂时没有打开</h2>
+        <p id="page-error-message"></p>
+        <button id="retry-boot" class="pill-button">重试</button>
+      </div>
+    </main>
+    <button
+      id="agent-reopen"
+      class="agent-reopen glass"
+      aria-label="打开 Agent"
+      hidden
+    >
+      <span data-icon="sparkles"></span>Agent
+    </button>
+    <aside
+      id="agent-panel"
+      class="agent-panel glass"
+      aria-label="Agent 创作助手"
+    >
+      <header class="agent-heading">
+        <span class="agent-symbol" data-icon="sparkles"></span>
+        <div>
+          <h2>创作助手</h2>
+          <span>Agent <span class="demo-badge">交互演示</span></span>
+        </div>
+        <button
+          id="agent-history"
+          class="icon-button"
+          aria-label="查看本地会话"
+          title="本地会话"
+        >
+          <span data-icon="clock"></span></button
+        ><button
+          id="agent-close"
+          class="icon-button"
+          aria-label="收起 Agent"
+          title="收起 Agent"
+        >
+          <span data-icon="panel-right-close"></span>
+        </button>
+      </header>
+      <div id="chat-scroll" class="chat-scroll">
+        <div class="agent-welcome">
+          <span class="eyebrow">A LITTLE ROOM FOR POSSIBILITY</span>
+          <h2>一起，<br />让想法成形。</h2>
+          <p>从一份参考开始，<br />把还未成形的念头慢慢展开。</p>
+          <button class="suggestion" id="suggest-plan">
+            <span data-icon="clapperboard"></span
+            ><span
+              ><strong>把灵感整理成拍摄策划</strong
+              ><small>分镜、布光与现场准备</small></span
+            ><span data-icon="arrow-up-right"></span></button
+          ><button class="suggestion" id="suggest-reference">
+            <span data-icon="images"></span
+            ><span
+              ><strong>一起梳理画布里的参考</strong
+              ><small>从画面中找到共同线索</small></span
+            ><span data-icon="arrow-up-right"></span>
+          </button>
+        </div>
+        <div id="messages" class="messages" aria-live="polite"></div>
+      </div>
+      <div class="agent-composer-area">
+        <div id="context-chips" class="context-chips" aria-live="polite"></div>
+        <div
+          id="attachment-chips"
+          class="attachment-chips"
+          aria-live="polite"
+        ></div>
+        <input
+          id="chat-attachments"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          hidden
+        />
+        <form id="chat-form" class="chat-form" novalidate>
+          <label for="chat-input" class="sr-only">给创作助手的指令</label
+          ><textarea
+            id="chat-input"
+            rows="3"
+            maxlength="4000"
+            placeholder="描述你的想法，或引用画布节点…"
+          ></textarea>
+          <div class="composer-tools">
+            <button
+              type="button"
+              id="chat-context"
+              class="icon-button"
+              aria-label="上传图片附件"
+              title="上传图片附件 · JPG / PNG / WebP"
+            >
+              <span data-icon="plus"></span></button
+            ><button type="button" id="skill-select" class="skill-select">
+              <span data-icon="sparkles"></span
+              ><span id="skill-label">选择 Skill</span
+              ><span data-icon="chevron-down"></span></button
+            ><button
+              type="submit"
+              id="send-message"
+              class="send-button"
+              aria-label="发送演示消息"
+              title="发送 · ⌘Enter"
+              disabled
+            >
+              <span data-icon="arrow-up"></span>
+            </button>
+          </div>
+        </form>
+        <div class="composer-model-row">
+          <span>LLM</span
+          ><button
+            type="button"
+            id="model-select"
+            class="skill-select"
+            aria-haspopup="menu"
+            aria-expanded="false"
+          >
+            <span id="model-label">自动选择</span
+            ><span data-icon="chevron-down"></span></button
+          ><span class="model-demo">演示</span>
+        </div>
+        <p class="agent-disclosure">本地交互演示 · 未连接生成模型</p>
+      </div>
+    </aside>
+    <div id="save-error" class="save-error glass" role="alert" hidden>
+      <span id="save-error-text"></span><button id="retry-save">重试保存</button
+      ><button id="export-recovery">导出本地副本</button>
+    </div>
+    <div
+      id="menu"
+      class="menu glass"
+      role="menu"
+      aria-label="快捷操作"
+      hidden
+    ></div>
+    <div id="toast" class="toast glass" role="status" aria-live="polite"></div>
+    <dialog
+      id="dialog"
+      class="app-dialog glass"
+      aria-labelledby="dialog-title"
+      aria-describedby="dialog-description"
+    >
+      <header>
+        <div>
+          <h2 id="dialog-title"></h2>
+          <p id="dialog-description"></p>
+        </div>
+        <button id="dialog-close" class="icon-button" aria-label="关闭">
+          <span data-icon="x"></span>
+        </button>
+      </header>
+      <form id="dialog-form" novalidate>
+        <div id="dialog-body"></div>
+        <p id="dialog-error" class="form-error" tabindex="-1" role="alert"></p>
+        <footer>
+          <button type="button" id="dialog-cancel" class="pill-button">
+            取消</button
+          ><button type="submit" id="dialog-submit" class="pill-button primary">
+            保存
+          </button>
+        </footer>
+      </form>
+    </dialog>
+    <dialog
+      id="discard"
+      class="app-dialog glass"
+      aria-labelledby="discard-title"
+    >
+      <h2 id="discard-title">放弃尚未保存的修改？</h2>
+      <p>本次输入还没有保存，关闭后会丢弃。</p>
+      <footer>
+        <button id="discard-keep" class="pill-button primary" autofocus>
+          继续编辑</button
+        ><button id="discard-leave" class="pill-button">放弃修改</button>
+      </footer>
+    </dialog>
+    <dialog id="media-preview" class="media-preview" aria-label="媒体预览">
+      <button
+        id="media-preview-close"
+        class="icon-button glass"
+        aria-label="关闭媒体预览"
+        autofocus
+      >
+        <span data-icon="x"></span>
+      </button>
+      <div id="media-preview-content" class="media-preview-content"></div>
+      <p
+        id="media-preview-error"
+        class="media-preview-error glass"
+        role="alert"
+        hidden
+      >
+        媒体无法加载，请关闭预览后重新选择文件。
+      </p>
+    </dialog>
+    <script type="module" src="app.mjs"></script>
+  </body>
+</html>

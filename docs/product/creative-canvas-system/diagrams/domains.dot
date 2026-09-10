@@ -1,0 +1,30 @@
+digraph Domains {
+ graph [rankdir=LR,bgcolor="#f6f8fb",pad="0.45",nodesep="0.45",ranksep="0.75",fontname="PingFang SC",fontsize=26,fontcolor="#152739",labelloc=t,label="创意空间 · 领域协作图\n箭头表示消费能力 / 业务协作，不表示数据库外键",compound=true];
+ node [shape=box,style="rounded,filled",fillcolor="white",color="#d4dce5",penwidth=1.4,fontname="PingFang SC",fontsize=16,fontcolor="#20364b",margin="0.22,0.17"];
+ edge [color="#748b9e",arrowsize=0.75,penwidth=1.4,fontname="PingFang SC",fontsize=12,fontcolor="#50677e"];
+ subgraph clusterCreative {
+ label="首期创意空间";fontsize=18;color="#d5dfe9";style="rounded,filled";fillcolor="#edf2f7";
+ agent [label="Agent 创作协作\n会话 · 有界运行 · 输入快照\nHarness · Tools · Skills · 产物",fillcolor="#eee8fa",color="#a18bc6"];
+ {rank=same;library [label="个人资产整理\n资产 · 分组层级 · 标签\n最爱 · 未归类 · 回收站",fillcolor="#e7f3ef",color="#7daf9e"];canvas [label="通用画布创作\n项目 · 画布 · 节点\n父子组 · 有向参考 · 撤销",fillcolor="#e3edf9",color="#7e9fc2"];}
+ content [label="创作内容\n内容身份 · 不可变修订\n来源声明 · 用途授权 · 引用保留",fillcolor="#fff4df",color="#c9ad72"];
+ media [label="媒体生命周期\n上传会话 · 待绑定候选\nBlob · 校验 · 受控读取 · 回收",fillcolor="#fff4df",color="#c9ad72"];
+ agent -> library [label="个人库检索工具"];agent -> canvas [label="读取 / 受控编辑命令"];
+ agent -> content [label="固定本次输入修订"];
+ canvas -> content [label="节点引用 / 编辑分叉"];
+ library -> content [label="资产采用某个修订"];
+ content -> media [label="媒体绑定 / 保留核对"];
+ }
+ gateway [label="平台 LLM Gateway\n统一模型接口 · 供应商适配\n观测 · 用量 · 预算 · 成本",fillcolor="#e5e7f8",color="#8d94bd"];
+ agent -> gateway [label="模型请求 / 成本投影"];
+ subgraph clusterFuture {
+ label="后续摄影业务扩展（首期只验证接口边界）";fontsize=16;color="#c4cbd4";style="rounded,dashed";
+ plan [label="独立拍摄策划\n摘要节点之外的专业文档\n镜头 / 准备 / 策划修订",fillcolor="#f1f3f6"];
+ crm [label="CRM 订单\n工作流可选引用\n成果可选发布关联",fillcolor="#f1f3f6"];
+ field [label="现场模式\n采用策划版本\n执行事实独立记录",fillcolor="#f1f3f6"];
+ plan -> crm [label="显式发布关联",style=dashed];plan -> field [label="指导现场",style=dashed];
+ }
+ canvas -> plan [label="摘要 / 最大化\n专用文档绑定",style=dashed];
+ agent -> crm [label="未来策划 Skill\n可选读取订单",style=dashed,constraint=false];
+ rule [shape=plain,label="项目不关联客户、订单或档期\n策划镜头不依赖画布图片节点存活",fontcolor="#65798b",fontsize=12];
+ field -> rule [style=invis];
+}

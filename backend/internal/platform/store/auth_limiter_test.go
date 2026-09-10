@@ -52,6 +52,7 @@ func TestAttemptLimiterMigrationCreatesVersionedBudgetTable(t *testing.T) {
 		t.Fatalf("close before limiter down migration: %v", err)
 	}
 	for index, label := range []string{
+		"creative-foundation",
 		"creative-workspace",
 		"settings-health-tiers",
 		"orders-attribution-snapshot",
@@ -91,7 +92,7 @@ func TestAuthReadinessInspectsCurrentLimiterSchemaAndLegacyCutover(t *testing.T)
 	if err != nil {
 		t.Fatalf("inspect current auth readiness: %v", err)
 	}
-	if state.SchemaVersion != 36 || !state.DatabaseReady || !state.LimiterSchemaReady || !state.LegacyCutoverReady {
+	if state.SchemaVersion != int(migrationTip(t)) || !state.DatabaseReady || !state.LimiterSchemaReady || !state.LegacyCutoverReady {
 		t.Fatalf("current readiness = %#v", state)
 	}
 
@@ -165,6 +166,7 @@ func TestAuthReadinessInspectsCurrentLimiterSchemaAndLegacyCutover(t *testing.T)
 		t.Fatalf("delete legacy readiness fixture: %v", err)
 	}
 	for index, label := range []string{
+		"creative-foundation",
 		"creative-workspace",
 		"settings-health-tiers",
 		"orders-attribution-snapshot",

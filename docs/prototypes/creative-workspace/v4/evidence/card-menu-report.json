@@ -1,0 +1,12 @@
+{
+  "checks": [
+    "lower-right trigger opens five actions without detail or masonry movement; arrows/end/escape restore focus",
+    "keyboard open, Tab, outside pointer and page scroll dismiss menu",
+    "collection/project shortcuts reuse working pickers without opening detail",
+    "favorite shortcut persists and menu reflects current favorite status",
+    "trash shortcut opens existing confirmation and cancellation preserves asset/focus",
+    "detail trash is an accessible icon-only button aligned with three existing footer actions",
+    "375px/320px menus avoid screen edges and bottom navigation; footer stays on one row without horizontal overflow"
+  ],
+  "pageErrors": []
+}

@@ -1,0 +1,39 @@
+{
+  "checks": [
+    "lazy requests + reserved geometry + original aspect ratio",
+    "scroll loads all remaining images",
+    "search, empty, IME composition and query restoration",
+    "detail, note persistence, discard guard, keyboard and focus return",
+    "bulk multi-project references are durable and deduplicated",
+    "create collection, validation, empty collection, heart add/remove",
+    "image/text/link import, invalid file recovery, refresh persistence",
+    "multi-tab stale writes cannot overwrite saved state",
+    "local favorites still save offline",
+    "image failure retries in original reserved position",
+    "375px / 320px responsive, touch, modal actions, reduced motion",
+    "glass computed style and zero runtime exceptions"
+  ],
+  "pageErrors": [],
+  "screenshots": [
+    "01-loading-placeholders",
+    "02-desktop-library",
+    "03-detail",
+    "04-collections",
+    "05-image-error",
+    "06-mobile-library",
+    "07-mobile-detail",
+    "08-mobile-collections"
+  ],
+  "glass": {
+    "backdrop": "blur(24px) saturate(1.35)",
+    "background": "rgba(249, 251, 247, 0.66)"
+  },
+  "buttonBindings": {
+    "count": 84,
+    "unbound": []
+  },
+  "textareaResize": [
+    "none",
+    "none"
+  ]
+}

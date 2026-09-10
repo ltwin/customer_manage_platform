@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "distinct project overview/list, editable brief and conditions, dirty guard and persistence",
+    "project-specific reference intent is separate from global collection notes",
+    "reference snapshots create shots; editing and manual shot validation work",
+    "all six planning sections, prop checklist and explicit unavailable export",
+    "canvas preview uses project content and labels unsupported drag/connection tools",
+    "live reads the same shots; done/skip/undo and props persist",
+    "new projects do not inherit demonstration plans",
+    "mobile layouts, editor focus containment and reachable save",
+    "project imports also enter library and remain unfiled without a normal collection"
+  ],
+  "pageErrors": [],
+  "apiRequests": []
+}

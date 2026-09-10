@@ -16,6 +16,8 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: creative-foundation
+    description: 通用创意空间的能力发现与操作回执
   - name: email-account-access
     description: 邮箱注册验证、登录、refresh、logout 与当前账号
   - name: public-auth-hardening
@@ -54,6 +56,40 @@ tags:
     description: 摄取聊天文本、参考链接与候选编辑会话
 
 paths:
+  /creative/capabilities:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeCapabilities
+      summary: 查询当前已实现的创意能力；地基阶段不开放业务动作
+      responses:
+        "200":
+          description: 已认证账号的能力投影
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeFoundationCapabilities"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /creative/operations/{operation_id}:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeOperation
+      summary: 读取本账号持久回执；404不证明操作从未提交
+      parameters:
+        - name: operation_id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      responses:
+        "200":
+          description: 原操作提交回执；202受理不表示后台工作完成
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeOperationReceipt"}
+        "400": {$ref: "#/components/responses/ValidationFailed"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+
   /auth/capabilities:
     get:
       tags: [email-account-access]
@@ -4049,6 +4085,36 @@ components:
         application/json:
           schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   schemas:
+    CreativeRevision:
+      type: string
+      pattern: '^[1-9][0-9]*$'
+      maxLength: 19
+      description: 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+    CreativeFoundationCapabilities:
+      type: object
+      additionalProperties: false
+      required: [schema_version, available, reason, node_types, tools]
+      properties:
+        schema_version: {type: integer, enum: [1]}
+        available: {type: boolean}
+        reason: {type: string}
+        node_types: {type: array, items: {type: string}}
+        tools: {type: array, items: {type: string}}
+    CreativeOperationReceipt:
+      type: object
+      additionalProperties: false
+      required: [operation_id, operation_type, http_status, response, result_kind, created_at, retained_until]
+      properties:
+        operation_id: {type: string, format: uuid}
+        operation_type: {type: string}
+        http_status: {type: integer, enum: [200, 201, 202]}
+        response: {type: object, additionalProperties: true}
+        result_kind: {type: string}
+        result_id: {type: string}
+        result_revision: {$ref: "#/components/schemas/CreativeRevision"}
+        created_at: {type: string, format: date-time}
+        retained_until: {type: string, format: date-time}
+
     CreativeWorkspaceLink:
       type: object
       required:
