@@ -1,0 +1,16 @@
+{
+  "checks": [
+    "image-only form, required selection, per-image metadata, switch cancellation and exactly one asset per image",
+    "image description and source visible in detail and description searchable",
+    "required text title/body and multiline content with embedded URL create one text asset",
+    "link fields validate HTTP(S), retain description/tags and expose original URL without fetching it",
+    "confirmed type switch discards only unsaved draft; blank link title uses hostname; all saved types survive reload",
+    "removing/adding/deduplicating queued images preserves other metadata; close/discard writes nothing",
+    "oversize/corrupt files recover; batch decode failure has no partial writes and retains metadata for retry",
+    "global image drop respects current text draft and confirmed type boundary",
+    "project collection creates the selected type in library and project, without implicit normal-collection classification",
+    "all three forms have reachable save, contained keyboard focus and no horizontal overflow at 375px"
+  ],
+  "pageErrors": [],
+  "externalRequests": []
+}

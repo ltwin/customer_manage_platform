@@ -1,0 +1,10 @@
+{
+  "checks": [
+    "one toolbar owns type/tags/display controls; no unmanaged category chips, no empty tag row, grouped utilities, unavailable video explicit",
+    "type uses actual image/text/link kind and persists in URL/reload",
+    "legacy thematic URLs no longer hide materials; old text category maps to actual text type and new navigation is canonical",
+    "live tag filter combines with media type; badge/selected row update, empty state resets both",
+    "821px review size and 375px/320px mobile layouts keep sorting/utilities visible and dropdown live without horizontal overflow"
+  ],
+  "pageErrors": []
+}

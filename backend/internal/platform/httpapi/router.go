@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeworkspace"
@@ -166,6 +168,15 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	if deps.CreativeWorkspace != nil && deps.CreativePilot != nil {
 		registerCreativeWorkspace(protected, deps)
 	}
+	protected.GET("/creative/capabilities", h.GetCreativeCapabilities)
+	protected.GET("/creative/operations/:operation_id", func(c *gin.Context) {
+		id, err := uuid.Parse(c.Param("operation_id"))
+		if err != nil || !creativeops.ValidOperationID(c.Param("operation_id")) {
+			abortError(c, 400, CodeValidationFailed, "操作标识不合法")
+			return
+		}
+		h.GetCreativeOperation(c, id)
+	})
 	protected.GET("/me", h.GetMe)
 	protected.POST("/auth/password/change", h.ChangePassword)
 	protected.GET("/customers", h.listCustomersRoute)

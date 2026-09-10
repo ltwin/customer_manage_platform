@@ -9,6 +9,7 @@ output-options:
   # nullable-type: PATCH null 三态（未传/传值/传 null）由生成类型直接表达（design D9）。
   nullable-type: true
   include-tags:
+    - creative-foundation
     - email-account-access
     - public-auth-hardening
     - customer-core

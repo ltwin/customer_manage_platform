@@ -136,6 +136,7 @@ const legacyAuthMigrationVersion uint = 12
 func legacyRollbackDownWalk(t *testing.T) []string {
 	t.Helper()
 	walk := []string{
+		"creative-foundation",
 		"creative-workspace",
 		"settings-health-tiers",
 		"orders-attribution-snapshot",

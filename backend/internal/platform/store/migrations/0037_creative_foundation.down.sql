@@ -1,0 +1,2 @@
+DROP TABLE creative_operation_receipts;
+DROP TABLE creative_account_capabilities;

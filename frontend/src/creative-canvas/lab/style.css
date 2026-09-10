@@ -1,0 +1,33 @@
+:root { color-scheme: dark; font-family: "PingFang SC", "Microsoft YaHei", sans-serif; color: #e7edf4; background: #101317; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button { font: inherit; border: 1px solid #465565; color: #e7edf4; background: #26313b; border-radius: 9px; padding: 9px 12px; cursor: pointer; }
+button:hover:not(:disabled) { background: #334455; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, a:focus-visible { outline: 2px solid #98c4e4; outline-offset: 3px; }
+.lab-shell { height: 100dvh; min-height: 420px; display: flex; flex-direction: column; }
+.lab-header { min-height: 88px; display: flex; align-items: center; gap: 32px; padding: 18px 30px; border-bottom: 1px solid #ffffff15; background: #161b22; }
+.lab-eyebrow { color: #9eadbc; font-size: 10px; letter-spacing: .14em; }
+.lab-header h1 { font-size: 22px; font-weight: 500; margin: 6px 0 0; }
+.lab-header p { font-size: 12px; color: #a8b5c3; flex: 1; }
+.lab-header a { color: #bdcddd; font-size: 13px; }
+.lab-stage { position: relative; flex: 1; min-height: 0; }
+.lab-stage .react-flow { --xy-background-color: #101317; --xy-edge-stroke: #8399b1; --xy-edge-stroke-width: 1.5; }
+.lab-stage .react-flow__node-group { border-radius: 20px; border: 1px solid #6c839855; background: #7896ba09; }
+.lab-stage .react-flow__node-group.selected { border-color: #b4d0ed; }
+.lab-node { width: 240px; height: 155px; padding: 19px; background: #202730; border: 1px solid #48525f; border-radius: 14px; }
+.react-flow__node.selected .lab-node { border-color: #b5d3ee; box-shadow: 0 0 0 2px #8bb9df24; }
+.lab-node-kind { font-size: 10px; letter-spacing: .12em; color: #a1b7cb; }
+.lab-node h2 { font-size: 17px; font-weight: 500; margin: 10px 0; }
+.lab-node p { font-size: 12px; line-height: 1.7; color: #b4beca; margin: 0; }
+.lab-node .react-flow__handle { width: 10px; height: 10px; background: #bfd2e3; border: 2px solid #202730; top: 50%; }
+.lab-node-toolbar { padding: 10px 15px; border: 1px solid #ffffff26; border-radius: 12px; background: #25313de8; color: #dbe8f5; font-size: 12px; backdrop-filter: blur(18px); }
+.lab-panel, .lab-inspector { position: absolute; z-index: 10; background: #1d2631e8; backdrop-filter: blur(22px); border: 1px solid #ffffff22; box-shadow: 0 15px 45px #0004; border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; font-size: 12px; }
+.lab-panel { width: 252px; right: 20px; top: 20px; }
+.lab-panel strong, .lab-inspector strong { font-size: 14px; font-weight: 500; }
+.lab-panel span, .lab-panel p, .lab-panel output { color: #bac8d6; line-height: 1.7; margin: 0; }
+.lab-actions { display: flex; gap: 8px; }
+.lab-inspector { bottom: 20px; right: 20px; }
+@media (max-width: 640px) { .lab-header { gap: 12px; padding: 14px; } .lab-header p { display: none; } .lab-header a { margin-left: auto; } .lab-panel { top: 10px; right: 10px; width: 210px; padding: 12px; } .lab-panel p { display: none; } .lab-actions { flex-direction: column; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }

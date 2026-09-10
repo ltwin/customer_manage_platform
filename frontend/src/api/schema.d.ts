@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/creative/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 查询当前已实现的创意能力；地基阶段不开放业务动作 */
+        get: operations["getCreativeCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/operations/{operation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 读取本账号持久回执；404不证明操作从未提交 */
+        get: operations["getCreativeOperation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/capabilities": {
         parameters: {
             query?: never;
@@ -1439,6 +1473,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number */
+        CreativeRevision: string;
+        CreativeFoundationCapabilities: {
+            /** @enum {integer} */
+            schema_version: 1;
+            available: boolean;
+            reason: string;
+            node_types: string[];
+            tools: string[];
+        };
+        CreativeOperationReceipt: {
+            /** Format: uuid */
+            operation_id: string;
+            operation_type: string;
+            /** @enum {integer} */
+            http_status: 200 | 201 | 202;
+            response: {
+                [key: string]: unknown;
+            };
+            result_kind: string;
+            result_id?: string;
+            result_revision?: components["schemas"]["CreativeRevision"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            retained_until: string;
+        };
         CreativeWorkspaceLink: {
             /** @enum {string} */
             kind: "order" | "customer";
@@ -4112,6 +4173,54 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getCreativeCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 已认证账号的能力投影 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeFoundationCapabilities"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getCreativeOperation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                operation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 原操作提交回执；202受理不表示后台工作完成 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeOperationReceipt"];
+                };
+            };
+            400: components["responses"]["ValidationFailed"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     getAuthCapabilities: {
         parameters: {
             query?: never;

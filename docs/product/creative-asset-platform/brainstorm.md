@@ -14,6 +14,8 @@ prd: ../../../.codestable/requirements/creative-asset-platform.md
 
 当前私人工具路线见 [创意空间完整迭代](../../../.codestable/epics/creative-workspace-system.md)。旧 `.codestable/brainstorms/` 保持历史只读，新讨论在本目录落盘；未来稳定需求以 PRD 为准，实施范围以各期获批 Epic 为准。
 
+后续方向见[以画布为主体的创意空间头脑风暴](../creative-canvas-system/brainstorm.md)：画布承载创作，策划节点连接现场，Agent 通过 Skill 调用工具；由此进一步探索画布模板、3D 场景和专业方法的复用与分享。它扩展了本文的长期机会，未将这些发布形态加入资产平台首期。
+
 ## 我们要形成的价值循环
 
 **摄影师积累经验 → 整理成可复用资产 → 其他摄影师找到并用于项目 → 留下自愿公开的成果与纠错 → 作者改进资产 → 复用与供给继续增加。**

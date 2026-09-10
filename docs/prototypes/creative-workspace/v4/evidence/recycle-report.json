@@ -1,0 +1,13 @@
+{
+  "checks": [
+    "single move cancellation and confirmation; library, collection and project references hide while adopted shot persists",
+    "trash route/default retention/reload and restore to original surviving relations",
+    "bulk move/select-all/restore supports image and text, preserving favorites",
+    "permanent deletion has cancellation and confirmation; cannot restore asset, project shot snapshot remains",
+    "never retention survives old timestamps; shortening previews immediate deletion, cancel preserves data, confirm and reload persist",
+    "opening page automatically clears expired items under configured policy",
+    "mobile recycle layout, confirmation focus containment and clear-all"
+  ],
+  "pageErrors": [],
+  "apiRequests": []
+}

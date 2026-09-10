@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "image-only changes trigger discard protection; cancel does not import assets or alter shots",
+    "manual shot accepts a library image, adds project reference without duplicate asset and persists",
+    "uploaded replacement is atomic with library/project insertion; original assets and shot execution survive, overview/live use new image",
+    "clearing a shot image preserves library asset and project reference; text-only shot persists",
+    "invalid and corrupt uploads show recoverable errors without changing draft text or saved state",
+    "image picker search/empty state and mobile dialog layout/focus containment work",
+    "concurrent storage conflict keeps image/text draft and writes neither shot nor uploaded asset",
+    "remove cancellation/confirmation and refresh work; source assets, project references and execution history retained; canvas/live update",
+    "removing final shot leaves persistent empty live view with a reachable creation action"
+  ],
+  "pageErrors": [],
+  "apiRequests": []
+}

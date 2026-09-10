@@ -1,0 +1,12 @@
+{
+  "checks": [
+    "single selection immediately updates cards, chips and count while dropdown stays open; no modal or apply step",
+    "multiple selection and deselection update results before dropdown dismissal",
+    "Escape closes only selector and retains active filter; reload and clear work",
+    "image tags and inline creation give immediate field feedback inside original dialog; Enter does not submit asset and cancel has no writes",
+    "existing asset tags save and render immediately with one dialog only",
+    "375px/320px inline and filter panels fit viewport and show live count without extra dialogs"
+  ],
+  "pageErrors": [],
+  "apiRequests": []
+}

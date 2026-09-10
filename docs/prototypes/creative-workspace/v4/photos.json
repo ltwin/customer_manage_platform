@@ -1,0 +1,194 @@
+[
+  {
+    "id": "asset-1",
+    "src": "assets/photo-01.jpg",
+    "width": 850,
+    "height": 1275,
+    "title": "光落在她停留的地方",
+    "category": "人像",
+    "tags": [
+      "黑白",
+      "建筑",
+      "硬光"
+    ],
+    "source": "https://unsplash.com/photos/_Jl2IAK-P_I",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-2",
+    "src": "assets/photo-02.jpg",
+    "width": 850,
+    "height": 567,
+    "title": "把风景框进画面",
+    "category": "空间",
+    "tags": [
+      "自然光",
+      "建筑",
+      "留白"
+    ],
+    "source": "https://unsplash.com/s/photos/tadao-ando",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-3",
+    "src": "assets/photo-03.jpg",
+    "width": 850,
+    "height": 1275,
+    "title": "一束光，就够了",
+    "category": "人像",
+    "tags": [
+      "情绪",
+      "暗调",
+      "布光"
+    ],
+    "source": "https://unsplash.com/photos/lSyF2JBDrVU",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-4",
+    "src": "assets/photo-04.jpg",
+    "width": 850,
+    "height": 567,
+    "title": "海岸边的紫色诗句",
+    "category": "色彩",
+    "tags": [
+      "花卉",
+      "海边",
+      "色彩"
+    ],
+    "source": "https://unsplash.com/photos/tTaHgKpX_uo",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-5",
+    "src": "assets/photo-05.jpg",
+    "width": 850,
+    "height": 1275,
+    "title": "白裙与拱形的对话",
+    "category": "人像",
+    "tags": [
+      "黑白",
+      "构图",
+      "留白"
+    ],
+    "source": "https://unsplash.com/photos/ACZBXBHZC-M",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-6",
+    "src": "assets/photo-06.jpg",
+    "width": 850,
+    "height": 1249,
+    "title": "柔软的白，安静的黑",
+    "category": "人像",
+    "tags": [
+      "穿搭",
+      "对比",
+      "姿态"
+    ],
+    "source": "https://unsplash.com/photos/uKecjL1c6Lo",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-7",
+    "src": "assets/photo-07.jpg",
+    "width": 850,
+    "height": 1133,
+    "title": "把夏天留在花影里",
+    "category": "色彩",
+    "tags": [
+      "花卉",
+      "海边",
+      "氛围"
+    ],
+    "source": "https://unsplash.com/photos/ejmKwBrx9dU",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-8",
+    "src": "assets/photo-08.jpg",
+    "width": 850,
+    "height": 1275,
+    "title": "城市里的光影练习",
+    "category": "人像",
+    "tags": [
+      "街头",
+      "光影",
+      "线条"
+    ],
+    "source": "https://images.unsplash.com/photo-1602174940535-c9849f914093",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-9",
+    "src": "assets/photo-09.jpg",
+    "width": 850,
+    "height": 567,
+    "title": "弧线，和一点玫瑰色",
+    "category": "空间",
+    "tags": [
+      "建筑",
+      "色彩",
+      "曲线"
+    ],
+    "source": "https://unsplash.com/photos/eMrgT-d4hms",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-10",
+    "src": "assets/photo-10.jpg",
+    "width": 850,
+    "height": 1275,
+    "title": "等一阵海风",
+    "category": "风景",
+    "tags": [
+      "海边",
+      "柔光",
+      "花卉"
+    ],
+    "source": "https://unsplash.com/photos/nL52ZWFmfww",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-11",
+    "src": "assets/photo-11.jpg",
+    "width": 850,
+    "height": 638,
+    "title": "蓝色没有标准答案",
+    "category": "风景",
+    "tags": [
+      "海边",
+      "色彩",
+      "自然"
+    ],
+    "source": "https://unsplash.com/photos/uGctVs3KKk0",
+    "note": "",
+    "kind": "image"
+  },
+  {
+    "id": "asset-12",
+    "src": "assets/photo-12.jpg",
+    "width": 850,
+    "height": 1133,
+    "title": "去海边找一片留白",
+    "category": "空间",
+    "tags": [
+      "建筑",
+      "外景",
+      "自然光"
+    ],
+    "source": "https://unsplash.com/photos/yRtEPEEP2y8",
+    "note": "",
+    "kind": "image"
+  }
+]

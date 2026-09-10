@@ -1,0 +1,11 @@
+{
+  "checks": [
+    "custom glass list replaces native popup, shows icons/selection/disabled video and keeps masonry geometry",
+    "pointer selection and toggle-close leave no residual square focus outline",
+    "keyboard arrows/Home/End skip disabled video, Enter commits, Escape cancels and rounded visible focus remains",
+    "sorting shares the same component, changes actual order and survives reload",
+    "outside click, scrolling and Tab close list; opening type closes existing tag dropdown",
+    "375px/320px touch-size options fit viewport and avoid bottom navigation without pointer focus artifacts"
+  ],
+  "pageErrors": []
+}

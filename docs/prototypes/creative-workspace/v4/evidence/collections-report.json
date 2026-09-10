@@ -1,0 +1,10 @@
+{
+  "checks": [
+    "three navigation sections, fixed system entries, legacy heart URL and persisted favorites",
+    "favoriting and project references leave unfiled status unchanged",
+    "normal collection classifies; remove restores unfiled without altering favorites/projects",
+    "rename, cancel/delete, persistence; assets and project/favorite/other-collection references survive",
+    "missing collection recovery and mobile management actions"
+  ],
+  "errors": []
+}

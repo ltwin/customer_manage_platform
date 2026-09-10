@@ -1,0 +1,17 @@
+{
+  "checks": [
+    "existing tags become stable catalog entries without losing asset attachments on reload",
+    "create group and colored tag, group assignment, duplicate protection, manager inventory",
+    "creation chooses existing tags and stages new colored/grouped tags; asset and new tag persist together",
+    "cancelling asset creation discards newly staged tags without creating unused catalog entries",
+    "multi-tag all filter, visible chips and URL/reload persist independently of text search",
+    "existing material tag editor and explicit any/all matching use actual tag membership",
+    "rename/color edits retain tag ID, update materials and keep current filter valid",
+    "group rename and confirmed deletion retain tags/colors/material attachments in ungrouped",
+    "tag deletion removes attachments in recycle bin; restoring material does not resurrect deleted tag",
+    "storage conflict preserves text/tag draft and writes neither material nor staged tag",
+    "mobile manager/picker fit viewport and nested editor contains keyboard focus"
+  ],
+  "pageErrors": [],
+  "apiRequests": []
+}

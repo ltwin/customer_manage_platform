@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#edf0ed">
+  <title>创意空间 · 灵感库</title>
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="studio.css">
+  <link rel="stylesheet" href="project.css">
+  <script src="canvas-surface.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到素材</a>
+  <div class="ambient" aria-hidden="true"></div>
+  <aside class="rail glass" aria-label="创意空间导航">
+    <a class="brand" href="#view=library" aria-label="影约 · 创意空间"><img src="mark.svg" alt="" width="34" height="34"></a>
+    <div class="rail-line"></div>
+    <nav>
+      <a class="nav-item active" href="#view=library" data-nav="library"><span data-icon="grid"></span><span>素材</span></a>
+      <a class="nav-item" href="#view=collections" data-nav="collections"><span data-icon="layers"></span><span>集合</span></a>
+      <a class="nav-item" href="#view=projects" data-nav="projects"><span data-icon="folder"></span><span>项目</span></a>
+    </nav>
+    <div class="rail-bottom"><button class="icon-button" id="about-open" aria-label="原型说明与体验设置" title="原型说明与体验设置"><span data-icon="sliders"></span></button><span class="avatar" aria-label="本地演示账号">影</span></div>
+  </aside>
+
+  <main id="main" tabindex="-1">
+    <header class="topbar">
+      <a class="wordmark" href="#view=library">创意空间<span>CREATIVE SPACE</span></a>
+      <form id="search-form" class="search glass" role="search" novalidate>
+        <span data-icon="search"></span><label class="sr-only" for="search">搜索素材、标签或收藏笔记</label>
+        <input id="search" type="search" autocomplete="off" placeholder="寻找一种光，一种情绪…">
+        <button type="button" id="clear-search" class="icon-button" aria-label="清除搜索" hidden><span data-icon="x"></span></button>
+        <kbd aria-hidden="true">/</kbd>
+      </form>
+      <button id="import-open" class="button primary"><span data-icon="plus"></span><span>收集灵感</span></button>
+    </header>
+
+    <section class="intro">
+      <div><button id="back" class="back-link" hidden><span data-icon="arrow-left"></span>返回</button><p class="eyebrow" id="eyebrow">YOUR PRIVATE COLLECTION</p><h1 id="page-title">灵感，慢慢成形<span class="title-dot">。</span></h1><p id="page-description">把喜欢的光线、色彩与瞬间，留给下一次创作。</p></div>
+      <div class="intro-side"><span class="small-orbit" aria-hidden="true">✳</span><span id="library-count">正在打开灵感库</span><span class="quiet">留一点空间，给偶然。</span></div>
+    </section>
+
+    <section id="project-workbench" hidden aria-label="项目创作工作台">
+      <div class="project-prototype-note"><span>交互原型</span><p>手动编辑与现场操作仅保存在此浏览器；AI、导出等未接入能力会单独标注。</p></div>
+      <nav id="project-tabs" class="project-tabs glass" aria-label="项目视图"></nav>
+      <div id="project-content"></div>
+    </section>
+    <section id="asset-filter-tools" class="toolbar glass browse-toolbar" aria-label="素材筛选与显示">
+      <div class="browse-filter-controls"><div class="asset-type-control"><select id="media-type" aria-label="素材类型"><option value="all">全部类型</option><option value="image">图片</option><option value="text">文字</option><option value="link">链接</option><option value="video" disabled>视频 · 暂未开放</option></select></div><span class="browse-divider" aria-hidden="true"></span><button id="tag-filter-open" class="browse-tag-button"><span data-icon="tag"></span><span>标签筛选</span><span id="tag-filter-number" hidden></span><span data-icon="chevron-down"></span></button></div>
+      <div class="view-tools"><div class="sort-control"><select id="sort" aria-label="排序"><option value="recent">最近收藏</option><option value="oldest">最早收藏</option><option value="name">名称排序</option></select></div><span class="tool-divider"></span><button id="selection-toggle" class="icon-button" aria-label="选择多张素材" aria-pressed="false" title="批量选择"><span data-icon="check-square"></span></button><button id="filter-toggle" class="icon-button" aria-label="显示更多筛选" aria-expanded="false" aria-controls="filter-panel" title="显示设置"><span data-icon="sliders"></span></button></div>
+    </section>
+    <div id="tag-filter-bar" class="tag-filter-bar active-filter-row" hidden><span class="active-filter-label">标签</span><div id="active-tag-filters" class="tag-chip-list"></div><label id="tag-match-label" hidden><span class="sr-only">标签匹配方式</span><select id="tag-match-mode"><option value="all">同时包含</option><option value="any">包含任意一个</option></select></label><button id="tag-filter-clear" class="text-button" hidden>清除标签</button></div>
+    <div id="filter-panel" class="filter-panel glass" hidden><label>图片方向<select id="orientation"><option value="all">全部比例</option><option value="portrait">竖幅</option><option value="landscape">横幅</option><option value="square">方形</option></select></label><label>卡片大小<select id="size"><option value="comfortable">舒展</option><option value="compact">紧凑</option></select></label><button id="reset-filters" class="button subtle">重置筛选</button></div>
+    <div class="results-line"><span id="result-count" role="status" aria-live="polite">正在加载</span><button id="create-group" class="text-button" hidden><span data-icon="plus"></span>新建集合</button><span id="collection-actions" hidden><button id="rename-collection" class="text-button">重命名</button><button id="delete-collection" class="text-button danger-text">删除集合</button></span><div class="library-utilities"><button id="tag-manage-open" class="text-button"><span data-icon="tag"></span>管理标签</button><button id="trash-open" class="text-button" aria-label="打开回收站"><span data-icon="trash"></span>回收站 <span id="trash-badge">0</span></button></div></div>
+    <div id="storage-warning" class="notice" role="alert" hidden></div>
+    <section id="trash-panel" aria-label="素材回收站" hidden>
+      <div class="trash-settings glass"><div><h2>给灵感留一点回来的时间。</h2><p>从移入回收站当天起计算。恢复后回到仍存在的原集合与项目。</p><p class="trash-local-note">本地原型在打开或使用页面时清理到期素材；关闭页面期间不会在后台运行。已采纳的分镜快照独立保留。</p></div><div class="trash-retention-controls"><label for="trash-retention">自动清理</label><select id="trash-retention"><option value="7">保留 7 天</option><option value="30">保留 30 天</option><option value="90">保留 90 天</option><option value="never">不自动清理</option></select><button class="button" id="trash-save-retention">保存设置</button></div></div>
+      <div class="trash-tools"><span id="trash-count" tabindex="-1" role="status"></span><button class="text-button danger-text" id="trash-clear">清空回收站</button></div>
+      <div class="trash-bulk glass"><label><input type="checkbox" id="trash-select-all">全选</label><span id="trash-selection-count">已选 0 项</span><button class="button" id="trash-restore-selected" disabled>恢复所选</button><button class="text-button danger-text" id="trash-purge-selected" disabled>彻底删除所选</button></div>
+      <div id="trash-list"></div><div id="trash-empty" class="empty-state" hidden><h2>回收站是空的</h2><p>移除的素材会暂存在这里，保留时间内可以恢复。</p></div>
+    </section>
+    <section id="gallery" class="masonry" aria-label="灵感素材"></section>
+    <section id="group-grid" class="group-grid" aria-label="集合与项目" hidden></section>
+    <section id="empty" class="empty-state" hidden><span data-icon="spark"></span><h2 id="empty-title">还没有找到这份灵感</h2><p id="empty-copy">换个关键词，或放宽一点筛选条件。</p><button class="button" id="empty-action">清除筛选</button></section>
+    <div id="page-error" class="empty-state" role="alert" hidden><h2>灵感库暂时没有打开</h2><p id="page-error-text"></p><button id="retry-page" class="button">重新加载</button></div>
+    <footer class="gallery-footer"><span class="footer-mark" aria-hidden="true">✳</span><p id="end-copy">每一个被留下的瞬间，都可能成为起点。</p><button type="button" class="footer-about" data-about>影约 · 创意空间 · 原型说明</button></footer>
+  </main>
+
+  <div id="selection-bar" class="selection-bar glass" hidden><span id="selection-count">已选 0 项</span><button id="bulk-shot" class="button primary" hidden>加入分镜</button><button id="bulk-project" class="button primary">加入项目</button><button id="bulk-collection" class="button">加入集合</button><button id="bulk-trash" class="button danger-text">移入回收站</button><button id="bulk-remove" class="button" hidden>移出集合</button><button id="clear-selection" class="icon-button" aria-label="清空选择"><span data-icon="x"></span></button></div>
+  <div id="asset-menu" class="asset-menu glass" role="menu" aria-label="素材快捷操作" hidden></div>
+  <div id="toast" class="toast glass" role="status" aria-live="polite"></div>
+  <div id="drop-overlay" class="drop-overlay" hidden><div class="glass"><span data-icon="plus"></span><h2>把灵感放进来</h2><p>松开以导入图片</p></div></div>
+
+  <dialog id="detail" class="detail-dialog glass" aria-labelledby="detail-title">
+    <div class="detail-image" id="detail-image"></div>
+    <div class="detail-info"><div class="detail-actions"><span class="eyebrow" id="detail-type">影像参考</span><div><button id="detail-prev" class="icon-button" aria-label="上一张素材"><span data-icon="arrow-left"></span></button><button id="detail-next" class="icon-button" aria-label="下一张素材"><span data-icon="arrow-right"></span></button><button class="icon-button" data-close="detail" aria-label="关闭素材详情"><span data-icon="x"></span></button></div></div>
+      <h2 id="detail-title"></h2><p class="detail-dimensions" id="detail-dimensions"></p><div id="detail-tags" class="detail-tags"></div><button id="detail-edit-tags" class="text-button">编辑标签</button><p id="detail-description" class="detail-description" hidden></p>
+      <div class="detail-divider"></div><label for="detail-note">为什么留下这份灵感</label><textarea id="detail-note" rows="4" maxlength="1000" placeholder="是光线、姿态，还是某种说不清的情绪？"></textarea><div class="note-save"><span id="note-status" role="status"></span><button id="save-note" class="text-button">保存笔记</button></div>
+      <div id="detail-usage" class="detail-usage"></div><a id="detail-source" class="source-link" target="_blank" rel="noopener noreferrer"><span data-icon="link"></span><span>查看素材来源</span><span data-icon="arrow-up-right"></span></a>
+      <button id="detail-remove" class="text-button" hidden>移出当前集合</button><div class="detail-bottom"><button id="detail-add" class="button primary"><span data-icon="plus"></span>加入项目</button><button id="detail-collection" class="button">加入集合</button><button id="detail-favorite" class="icon-button favorite-button" aria-label="加入我的最爱" aria-pressed="false"><span data-icon="heart"></span></button><button id="detail-trash" type="button" class="icon-button danger-icon" aria-label="移入回收站" title="移入回收站"><span data-icon="trash"></span></button></div>
+    </div>
+  </dialog>
+
+  <dialog id="picker" class="small-dialog glass" aria-labelledby="picker-title"><header class="dialog-head"><h2 id="picker-title">加入项目</h2><button class="icon-button" data-close="picker" aria-label="关闭选择"><span data-icon="x"></span></button></header><p id="picker-description">同一份灵感，可以出现在不同的创作里。</p><form id="picker-form" novalidate><div id="picker-options" class="picker-options"></div><p id="picker-error" class="form-error" role="alert"></p><button class="button primary wide" type="submit" id="picker-submit">确认加入</button></form></dialog>
+
+  <dialog id="import-dialog" class="small-dialog glass" aria-labelledby="import-title">
+    <header class="dialog-head"><h2 id="import-title">收集新的灵感</h2><button class="icon-button" data-close="import-dialog" aria-label="关闭导入"><span data-icon="x"></span></button></header>
+    <p>这次，想留下一份什么样的灵感？</p>
+    <form id="import-form" novalidate>
+      <div id="import-fields">
+        <div class="import-types" role="group" aria-label="素材类型"><button type="button" data-import-kind="image" aria-pressed="true"><span data-icon="image"></span>图片</button><button type="button" data-import-kind="text" aria-pressed="false"><span data-icon="layers"></span>文字</button><button type="button" data-import-kind="link" aria-pressed="false"><span data-icon="link"></span>链接</button></div>
+        <section id="import-image-panel" class="import-panel" aria-label="图片素材">
+          <p class="import-hint">每张图片是一份素材，标题和描述随这张图片一起保存。</p>
+          <label class="upload-zone" id="upload-zone" for="files"><span data-icon="image"></span><strong>拖入图片，或点击选择</strong><span>JPG、PNG、WebP · 单张不超过 5 MB · 最多 50 张</span><input type="file" id="files" multiple accept="image/jpeg,image/png,image/webp" class="sr-only"></label>
+          <div id="file-list" class="file-list" aria-label="待保存的图片"></div>
+        </section>
+        <section id="import-text-panel" class="import-panel" aria-label="文字素材" hidden>
+          <p class="import-hint">留下一段想法、拍摄提示或知识笔记，整篇保存为一份素材。</p>
+          <label for="import-text-title">标题 <span>必填</span></label><input id="import-text-title" type="text" maxlength="200" placeholder="例如：阴天人像的光线观察">
+          <label for="import-text">正文 <span>必填</span></label><textarea id="import-text" rows="7" maxlength="10000" placeholder="写下完整的想法，可以分段，也可以包含链接。"></textarea>
+          <div id="import-text-tags" class="tag-field" aria-label="素材标签"></div>
+        </section>
+        <section id="import-link-panel" class="import-panel" aria-label="链接素材" hidden>
+          <p class="import-hint">保存一处值得回看的参考。当前仅收藏链接，不会自动抓取网页。</p>
+          <label for="import-link-url">网址 <span>必填</span></label><input id="import-link-url" type="url" maxlength="2048" placeholder="https://" autocomplete="url" inputmode="url">
+          <label for="import-link-title">标题 <span>可选 · 留空使用网站域名</span></label><input id="import-link-title" type="text" maxlength="200" placeholder="例如：一组值得参考的海边肖像">
+          <label for="import-link-description">参考说明 <span>可选</span></label><textarea id="import-link-description" rows="4" maxlength="6000" placeholder="这份参考里，有哪些值得关注的细节？"></textarea>
+          <div id="import-link-tags" class="tag-field" aria-label="素材标签"></div>
+        </section>
+      </div>
+      <div id="import-footer"><p id="import-error" class="form-error" role="alert"></p><button type="submit" class="button primary wide" id="import-submit">保存图片素材</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="create-dialog" class="small-dialog glass" aria-labelledby="create-title"><header class="dialog-head"><h2 id="create-title">新的灵感集合</h2><button class="icon-button" data-close="create-dialog" aria-label="关闭名称编辑"><span data-icon="x"></span></button></header><form id="create-form" novalidate><label for="group-name">给它一个名字</label><input id="group-name" maxlength="60" placeholder="例如：雨夜里的电影感" autocomplete="off"><p id="create-error" class="form-error" role="alert"></p><button id="create-submit" class="button primary wide" type="submit">创建</button></form></dialog>
+
+  <dialog id="tag-manager" class="tag-manager-dialog glass" aria-labelledby="tag-manager-title">
+    <header class="dialog-head"><div><span class="eyebrow">A LANGUAGE OF YOUR OWN</span><h2 id="tag-manager-title">整理你的灵感语言</h2><p>用分组收纳标签，用颜色标记不同的线索。</p></div><button class="icon-button" data-close="tag-manager" aria-label="关闭标签管理"><span data-icon="x"></span></button></header>
+    <div class="tag-manager-layout"><aside class="tag-manager-sidebar"><div class="tag-manager-side-heading"><span>标签分组</span><button id="tag-group-new" class="icon-button" title="新建分组" aria-label="新建标签分组"><span data-icon="plus"></span></button></div><nav id="tag-group-list" aria-label="标签分组"></nav></aside><section class="tag-manager-main"><div class="tag-manager-tools"><label class="tag-search"><span data-icon="search"></span><input type="search" id="tag-manager-search" aria-label="查找标签或分组" placeholder="查找标签或分组"></label><button id="tag-new" class="button primary"><span data-icon="plus"></span>新建标签</button></div><div class="tag-manager-group-heading"><h3 id="tag-group-heading"></h3><div id="tag-group-actions" hidden><button class="text-button" id="tag-group-edit">重命名</button><button class="text-button danger-text" id="tag-group-delete">删除分组</button></div></div><p id="tag-manager-summary" class="tag-help" role="status"></p><div id="managed-tag-list"></div></section></div>
+  </dialog>
+  <div id="tag-picker" class="tag-dropdown glass" role="region" aria-label="标签选择" hidden><header class="tag-dropdown-head"><strong id="tag-picker-title">选择标签</strong><span id="tag-live-count" role="status" aria-live="polite"></span><button type="button" class="icon-button" id="tag-picker-close" aria-label="收起标签选择"><span data-icon="x"></span></button></header><p id="tag-picker-help" class="tag-help"></p><div id="tag-picker-selected" class="tag-chip-list"></div><label class="tag-search"><span data-icon="search"></span><input type="search" id="tag-picker-search" aria-label="搜索标签或分组" placeholder="搜索标签或分组" maxlength="40"></label><div id="tag-picker-groups"></div><button type="button" id="tag-picker-create" class="text-button">新建标签</button><div id="tag-inline-new" hidden><label for="tag-inline-name">标签名称</label><input id="tag-inline-name" type="text" maxlength="40"><div class="tag-inline-options"><label>分组<select id="tag-inline-group"></select></label><label>颜色<select id="tag-inline-color"></select></label></div><div class="tag-inline-actions"><button type="button" id="tag-inline-cancel" class="text-button">取消新建</button><button type="button" id="tag-inline-save" class="button primary">创建并选中</button></div></div><p id="tag-picker-error" class="form-error" role="alert"></p><footer class="tag-dropdown-footer"><button type="button" class="text-button" id="tag-picker-apply">收起</button></footer></div>
+  <dialog id="tag-editor" class="small-dialog glass" aria-labelledby="tag-editor-title"><header class="dialog-head"><h2 id="tag-editor-title">新建标签</h2><button class="icon-button" data-close="tag-editor" aria-label="关闭标签编辑"><span data-icon="x"></span></button></header><form id="tag-editor-form" novalidate><label for="tag-name">标签名称</label><input type="text" id="tag-name" name="name" maxlength="40" placeholder="例如：电影感"><label for="tag-parent-group">所属分组</label><select id="tag-parent-group" name="groupId"></select><fieldset class="tag-color-field"><legend>颜色标记</legend><div id="tag-color-options"></div></fieldset><p id="tag-editor-note" class="tag-help"></p><p id="tag-editor-error" class="form-error" role="alert"></p><button class="button primary wide" type="submit" id="tag-editor-save">保存标签</button></form></dialog>
+  <dialog id="tag-group-editor" class="small-dialog glass" aria-labelledby="tag-group-editor-title"><header class="dialog-head"><h2 id="tag-group-editor-title">新建标签分组</h2><button class="icon-button" data-close="tag-group-editor" aria-label="关闭分组编辑"><span data-icon="x"></span></button></header><form id="tag-group-form" novalidate><label for="tag-group-name">分组名称</label><input type="text" id="tag-group-name" maxlength="40" placeholder="例如：光线、情绪、场景"><p class="tag-help">分组用于整理标签，不会移动素材或改变集合。</p><p id="tag-group-error" class="form-error" role="alert"></p><button class="button primary wide" type="submit" id="tag-group-save">保存分组</button></form></dialog>
+  <dialog id="tag-delete-dialog" class="small-dialog glass" aria-labelledby="tag-delete-title"><h2 id="tag-delete-title">删除标签？</h2><p id="tag-delete-description"></p><p id="tag-delete-error" class="form-error" role="alert"></p><div class="dialog-buttons"><button class="button" data-close="tag-delete-dialog" autofocus>取消</button><button class="button danger-button" id="tag-delete-confirm">删除</button></div></dialog>
+  <dialog id="asset-delete-dialog" class="small-dialog glass" aria-labelledby="asset-delete-title"><h2 id="asset-delete-title">移入回收站？</h2><p id="asset-delete-description"></p><p id="asset-delete-error" class="form-error" role="alert"></p><div class="dialog-buttons"><button class="button" data-close="asset-delete-dialog" autofocus>取消</button><button class="button danger-button" id="asset-delete-confirm">移入回收站</button></div></dialog>
+  <dialog id="delete-dialog" class="small-dialog glass" aria-labelledby="delete-title"><h2 id="delete-title">删除这个集合？</h2><p id="delete-description"></p><p id="delete-error" class="form-error" role="alert"></p><div class="dialog-buttons"><button class="button" data-close="delete-dialog" autofocus>保留集合</button><button id="confirm-delete-collection" class="button danger-button">删除集合</button></div></dialog>
+
+  <dialog id="remove-shot-dialog" class="small-dialog glass" aria-labelledby="remove-shot-title"><h2 id="remove-shot-title">移除这个分镜？</h2><p id="remove-shot-description"></p><p id="remove-shot-error" class="form-error" role="alert"></p><div class="dialog-buttons"><button class="button" data-close="remove-shot-dialog" autofocus>保留分镜</button><button id="remove-shot-confirm" class="button danger-button">移除分镜</button></div></dialog>
+  <dialog id="project-editor" class="small-dialog glass" aria-labelledby="project-editor-title"><header class="dialog-head"><h2 id="project-editor-title">编辑项目</h2><button class="icon-button" data-close="project-editor" aria-label="关闭项目编辑"><span data-icon="x"></span></button></header><form id="project-editor-form" novalidate><div id="project-editor-fields"></div><p id="project-editor-error" class="form-error" role="alert"></p><button id="project-editor-save" type="submit" class="button primary wide">保存到本地原型</button></form></dialog>
+  <dialog id="discard-dialog" class="small-dialog glass" aria-labelledby="discard-title"><h2 id="discard-title">保留还没存下的灵感？</h2><p id="discard-description">关闭后，本次未保存的输入会被丢弃。</p><div class="dialog-buttons"><button id="keep-editing" class="button primary" autofocus>继续编辑</button><button id="discard" class="button">放弃更改</button></div></dialog>
+  <dialog id="about" class="small-dialog glass" aria-labelledby="about-title"><header class="dialog-head"><h2 id="about-title">一间安静的创作室</h2><button class="icon-button" data-close="about" aria-label="关闭说明"><span data-icon="x"></span></button></header><p>创意空间 v4 交互原型。收藏、笔记、导入与项目引用只保存在当前浏览器，不连接业务账号。</p><p>示例影像来自 Unsplash，收藏名称与笔记为演示文案，不表示摄影作品的作者或授权。</p><label class="switch-row"><span>慢速图片加载演示<small>关闭说明后，观察预占位卡片</small></span><input type="checkbox" id="slow-mode"></label><a class="source-link" href="README.md" target="_blank">查看原型说明与测试范围<span data-icon="arrow-up-right"></span></a></dialog>
+  <script type="module" src="studio.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "checks": [
+    "only normal collections expose menus; system entries still open; no nested buttons",
+    "outer menu does not enter collection, shares keyboard navigation and focus restoration",
+    "quick rename stays in collection overview, persists and keeps material/project content",
+    "delete cancellation and confirmation work directly in overview; same-URL list refreshes and all materials/other references survive",
+    "open shortcut and protected system navigation retain existing behavior",
+    "375px/320px menu remains touch-accessible and inside viewport above bottom navigation"
+  ],
+  "pageErrors": []
+}

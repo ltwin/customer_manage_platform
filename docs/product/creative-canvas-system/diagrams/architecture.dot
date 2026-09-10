@@ -1,0 +1,31 @@
+digraph Architecture {
+ graph [rankdir=TB, bgcolor="#f6f8fb", pad="0.45", nodesep="0.38", ranksep="0.62", fontname="PingFang SC", fontsize=26, fontcolor="#152739", labelloc=t, label="创意空间 · 系统架构\n目标设计 v0.5  /  首期真实闭环", compound=true];
+ node [shape=box, style="rounded,filled", fillcolor="white", color="#d4dce5", penwidth=1.3, fontname="PingFang SC", fontsize=15, fontcolor="#20364b", margin="0.2,0.15"];
+ edge [color="#76899c", arrowsize=0.75, penwidth=1.4, fontname="PingFang SC", fontsize=12, fontcolor="#50677e"];
+ browser [label="浏览器工作台\n个人资产侧栏  ·  React Flow 画布  ·  Agent 对话\nZustand：确认基线 / 待提交命令 / 本地预览", fillcolor="#e7f3ef", color="#7daf9e"];
+ subgraph clusterServer {
+  label="Go 模块化单体  ·  同一代码库，API / Worker 独立进程"; fontsize=17; style="rounded,filled"; color="#d5dfe9"; fillcolor="#edf2f7";
+  {rank=same; api [label="API 进程\n鉴权 / REST / SSE / 媒体代理", fillcolor="#e3edf9",color="#7e9fc2"]; worker [label="Worker 进程\nAgent / 媒体 / 维护任务",fillcolor="#eee8fa",color="#a18bc6"];}
+  app [label="共享应用编排与领域入口\n账号作用域 · 命令前置条件 · 幂等回执 · 短事务",fillcolor="#ffffff",penwidth=2];
+  subgraph clusterDomains {
+   label="共享领域包（不是独立部署服务）"; fontsize=14; style="rounded,filled"; fillcolor="#ffffff"; color="#dce3ea";
+   {rank=same; library [label="个人库\n资产 / 分组 / 标签 / 回收站",fillcolor="#e7f3ef"];canvas [label="创作画布\n项目 / 节点 / 连线 / 节点组",fillcolor="#e3edf9"];agent [label="Agent\nEino ADK / 业务Harness\n上下文 / Tools / Skills",fillcolor="#eee8fa"];}
+   {rank=same; content [label="内容与修订\n不可变版本 / 来源 / 合法引用",fillcolor="#fff4df"];media [label="媒体\n上传 / 校验 / 读取 / 清理",fillcolor="#fff4df"];}
+   library -> content [label="引用版本"]; canvas -> content [label="引用版本"]; agent -> content [label="冻结输入"];
+   content -> media [label="媒体资源",constraint=false];
+  }
+  gateway [label="LLM Gateway（平台模块）\n统一接口 / 供应商适配 / 限流\n请求 / 观测 / 预算 / 成本",fillcolor="#e5e7f8",color="#8d94bd"];
+  agent -> gateway [label="Harness 调用，首期由 Worker 执行"];
+  api -> app;worker -> app;app -> library;app -> canvas;app -> agent;app -> media [label="上传编排"];
+ }
+ {rank=same; pg [shape=cylinder,label="PostgreSQL 17\n业务事实 / 显式 key 关系\n命令回执 / River 持久任务",fillcolor="#e3edf9",color="#7e9fc2"];oss [shape=cylinder,label="OSS 私有对象\ncreative-v2：staging / blobs\n旧对象前缀独立保留",fillcolor="#fff4df",color="#c9ad72"];models [label="模型供应商\n能力适配 / 实际调用 / 用量",fillcolor="#eee8fa",color="#a18bc6"];}
+ browser -> api [label="REST / SSE / Range",dir=both];
+ browser -> oss [label="短期预签名分片 PUT\n仅 staging",style=dashed,color="#3e8974",constraint=false];
+ app -> pg [label="领域仓储 / 同事务入队"];
+ pg -> worker [label="领取持久任务",style=dashed,constraint=false];
+ media -> oss [label="校验 / 版本读取 / 精确清理",dir=both];
+ gateway -> models [label="适配多供应商",dir=both];
+ gateway -> pg [label="统一用量与成本事实"];
+ legend [shape=plain,label="实线：调用或数据读写     虚线：异步任务 / 受限直传\n网络与媒体处理不持数据库事务；人工与 Agent 共用领域命令",fontcolor="#65798b",fontsize=12];
+ pg -> legend [style=invis];oss -> legend [style=invis];models -> legend [style=invis];
+}
