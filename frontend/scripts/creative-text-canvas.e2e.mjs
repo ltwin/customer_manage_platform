@@ -63,6 +63,7 @@ await context.addInitScript(() => {
     },
   })
 })
+let unavailablePreviewTitle = null
 let loseNext = false
 let loseNode = false
 let loseProject = false
@@ -109,6 +110,20 @@ await context.route('**/api/v1/**', async (route) => {
     await route.abort('failed')
     return
   }
+  if (
+    unavailablePreviewTitle &&
+    route.request().method() === 'GET' &&
+    u.pathname === '/api/v1/creative/assets'
+  ) {
+    const data = await response.json()
+    data.items = data.items.map((a) =>
+      a.title === unavailablePreviewTitle
+        ? { ...a, unavailable: true, content: undefined }
+        : a,
+    )
+    await route.fulfill({ response, json: data })
+    return
+  }
   await route.fulfill({ response })
 })
 async function waitUntil(check, message) {
@@ -139,8 +154,8 @@ async function saved(p) {
   )
 }
 async function selectNode(p) {
-  await p.locator('.react-flow__node').first().click()
-  await p.locator('.cc-inspector textarea').waitFor()
+  await p.locator('.react-flow__node').first().dblclick()
+  await p.locator('.cc-editor-dialog textarea').waitFor()
 }
 try {
   const page = await context.newPage()
@@ -216,11 +231,12 @@ try {
     await page.getByRole('heading', { name, exact: true }).waitFor()
     if (name === '第一张画布') {
       loseNode = true
+      await page.locator('.cc-asset').first().hover()
       await page.getByRole('button', { name: '放入画布', exact: true }).click()
       await page.getByRole('button', { name: '查询并恢复原保存' }).click()
     } else {
       await page
-        .locator('.cc-asset')
+        .locator('.cl-card-content')
         .first()
         .dragTo(page.locator('.react-flow__pane'))
     }
@@ -235,7 +251,9 @@ try {
   await saved(page)
   await selectNode(page)
   await page.getByLabel('正文', { exact: true }).fill('第一张画布的本机草稿')
-  await page.getByText('有本机草稿 · 尚未保存到项目', { exact: true }).waitFor()
+  await page
+    .getByRole('button', { name: '放弃本机修改', exact: true })
+    .waitFor()
   await page.reload()
   await saved(page)
   await selectNode(page)
@@ -287,20 +305,21 @@ try {
     .getByRole('button', { name: '将草稿应用到当前版本', exact: true })
     .click()
   await saved(page)
-  await page.getByRole('button', { name: '向→移动', exact: true }).click()
+  await page.locator('.react-flow__node').first().focus()
+  await page.keyboard.press('ArrowRight')
   await saved(page)
   await page.getByRole('button', { name: '归档项目', exact: true }).click()
   await saved(page)
   assert(
     await page
-      .getByRole('button', { name: '＋ 文字', exact: true })
+      .getByRole('button', { name: '新建节点', exact: true })
       .isDisabled(),
   )
   await page.getByRole('button', { name: '恢复项目', exact: true }).click()
   await saved(page)
   assert(
     !(await page
-      .getByRole('button', { name: '＋ 文字', exact: true })
+      .getByRole('button', { name: '新建节点', exact: true })
       .isDisabled()),
   )
 
@@ -331,7 +350,9 @@ try {
     { timeout: 10000 },
   )
   await page.getByLabel('正文', { exact: true }).fill('离线输入仍保留')
-  await page.getByText('有本机草稿 · 尚未保存到项目', { exact: true }).waitFor()
+  await page
+    .getByRole('button', { name: '放弃本机修改', exact: true })
+    .waitFor()
   failedCanvasPath = null
   await context.setOffline(false)
   await page.reload()
@@ -343,7 +364,22 @@ try {
   )
   await page.getByRole('button', { name: '放弃本机修改', exact: true }).click()
   await page.getByRole('alertdialog').waitFor()
-  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: '取消', exact: true })
+    .focus()
+  await page.keyboard.press('Tab')
+  assert.equal(
+    await page.evaluate(() => document.activeElement.textContent),
+    '放弃草稿',
+    'top modal receives Tab',
+  )
+  await page.keyboard.press('Escape')
+  assert.equal(
+    await page.getByRole('dialog', { name: '编辑节点', exact: true }).count(),
+    1,
+    'Escape only closes confirmation',
+  )
   assert.equal(
     await page.getByLabel('正文', { exact: true }).inputValue(),
     '离线输入仍保留',
@@ -354,6 +390,7 @@ try {
   // Failed in-app navigation must never leave the previous canvas writable.
   failedCanvasPath =
     '/api/v1/creative/canvases/' + new URL(second).pathname.split('/').pop()
+  await page.getByRole('button', { name: '收起编辑面板', exact: true }).click()
   await page.getByRole('link', { name: '返回创意空间', exact: true }).click()
   await page
     .getByRole('link', { name: '打开项目：第二张画布', exact: true })
@@ -364,7 +401,7 @@ try {
   )
   assert(
     await page
-      .getByRole('button', { name: '新增文字节点', exact: true })
+      .getByRole('button', { name: '新建节点', exact: true })
       .isDisabled(),
   )
   failedCanvasPath = null
@@ -374,7 +411,56 @@ try {
     .click()
   await saved(page)
   await selectNode(page)
-  await page.screenshot({ path: `${output}/desktop.png`, fullPage: true })
+  await page.screenshot({
+    path: `${output}/desktop-editor.png`,
+    fullPage: true,
+  })
+  await page.getByRole('button', { name: '收起编辑面板', exact: true }).click()
+  await page.locator('.react-flow__node').first().click()
+  assert.equal(
+    await page.getByRole('dialog').count(),
+    0,
+    'single click selects without opening editor',
+  )
+  await page.getByRole('toolbar', { name: '节点操作' }).waitFor()
+  const beforeShelf = await page
+    .locator('.react-flow__viewport')
+    .getAttribute('style')
+  await page.getByRole('button', { name: '展开资产管理', exact: true }).click()
+  assert.equal(
+    await page.locator('.react-flow__viewport').getAttribute('style'),
+    beforeShelf,
+    'expansion preserves viewport',
+  )
+  await page.screenshot({ path: `${output}/desktop-library-expanded.png` })
+  await page.getByRole('button', { name: '收起资产管理', exact: true }).click()
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('.cc-workspace')
+        .style.getPropertyValue('--shelf-width') === '318px',
+  )
+  const metrics = await page.evaluate(() => {
+    const rail = document.querySelector('.cc-tool-rail'),
+      shelf = document.querySelector('.cl-library'),
+      node = document.querySelector('.cc-node'),
+      text = document.querySelector('.cc-node p')
+    return {
+      rail: rail.getBoundingClientRect().width,
+      shelf: shelf.getBoundingClientRect().width,
+      radius: getComputedStyle(node).borderRadius,
+      font: getComputedStyle(text).fontFamily,
+      blur: getComputedStyle(shelf).backdropFilter,
+    }
+  })
+  assert.equal(metrics.rail, 54)
+  assert.equal(metrics.shelf, 318)
+  assert.equal(metrics.radius, '13px')
+  assert(metrics.font.includes('Songti'))
+  assert(metrics.blur.includes('28px'))
+  await writeFile(`${output}/v5-metrics.json`, JSON.stringify(metrics, null, 2))
+  await page.screenshot({ path: `${output}/desktop.png` })
+  await page.getByRole('button', { name: '编辑节点', exact: true }).click()
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: `${output}/mobile.png`, fullPage: true })
   assert(
@@ -390,12 +476,17 @@ try {
       requestAnimationFrame(() => requestAnimationFrame(resolve)),
     )
   })
+  if (await page.locator('#creative-library').isVisible())
+    await page.getByRole('button', { name: '收起资产库', exact: true }).click()
+  await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
   const mobileNodeWidth = await page
     .locator('.react-flow__node')
     .first()
     .evaluate((el) => el.getBoundingClientRect().width)
   assert(mobileNodeWidth >= 160, `stable mobile node width: ${mobileNodeWidth}`)
   await page.screenshot({ path: `${output}/mobile-canvas.png` })
+  if (await page.locator('#creative-library').isVisible())
+    await page.getByRole('button', { name: '收起资产库', exact: true }).click()
   await page.getByRole('button', { name: '资产库', exact: true }).click()
   assert(
     await page.getByRole('complementary', { name: '个人资产库' }).isVisible(),
@@ -414,7 +505,6 @@ try {
   // New assets remain reachable without a project at a phone viewport.
   await page.goto(`${url}/creative/library`)
   await saved(page)
-  await page.getByRole('button', { name: '资产库', exact: true }).click()
   for (const kind of ['text', 'link']) {
     await page.getByRole('button', { name: '新增资产', exact: true }).click()
     await page
@@ -611,6 +701,269 @@ try {
     offlineTransform,
   )
 
+  // FND-03: the same library handles standalone organization and canvas reuse.
+  await page.goto(`${url}/creative/library`)
+  await saved(page)
+  await page
+    .getByRole('button', { name: '管理分组与标签', exact: true })
+    .click()
+  async function createNamed(button, title, name, parent) {
+    if (button === '新建分类')
+      await page.getByRole('button', { name: '新建分类', exact: true }).click()
+    else await page.getByRole('button', { name: button, exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: title, exact: true })
+    await dialog.getByLabel('名称', { exact: true }).fill(name)
+    if (parent)
+      await dialog
+        .getByLabel('上级分组', { exact: true })
+        .selectOption({ label: parent })
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' })
+    await saved(page)
+  }
+  await createNamed('新建分类', '新建分类', '拍摄风格')
+  await createNamed('新建分组', '新建分组', '商业拍摄')
+  await createNamed('新建分组', '新建分组', '人像参考', '商业拍摄')
+  await page.getByRole('button', { name: '新增资产', exact: true }).click()
+  await page.getByLabel('资产名称', { exact: true }).fill('取消标签草稿')
+  await page.getByLabel('查找标签', { exact: true }).fill('不应落库')
+  await page
+    .getByRole('button', { name: '新建标签「不应落库」', exact: true })
+    .click()
+  await page.getByRole('button', { name: '收起编辑面板', exact: true }).click()
+  assert.equal(
+    await page
+      .getByRole('button', { name: '编辑标签：不应落库', exact: true })
+      .count(),
+    0,
+  )
+  await page.getByRole('button', { name: '新增资产', exact: true }).click()
+  await page
+    .getByRole('button', { name: '移除待创建标签：不应落库', exact: true })
+    .click()
+  await page.getByLabel('资产名称', { exact: true }).fill('窗边光线 100%')
+  await page.getByLabel('正文', { exact: true }).fill('自然光布光参考')
+  await page.getByLabel('内容来源', { exact: true }).selectOption('owned')
+  await page.locator('.cl-picker summary').click()
+  await page
+    .locator('.cl-picker')
+    .getByLabel('人像参考', { exact: true })
+    .check()
+  await page.getByLabel('查找标签', { exact: true }).fill('自然光')
+  await page
+    .getByLabel('新标签分类', { exact: true })
+    .selectOption({ label: '拍摄风格' })
+  await page
+    .getByRole('button', { name: '新建标签「自然光」', exact: true })
+    .click()
+  await page.getByRole('button', { name: '保存资产', exact: true }).click()
+  await saved(page)
+  await page.getByLabel('资产操作：窗边光线 100%', { exact: true }).click()
+  await page
+    .getByRole('button', { name: '加入最爱：窗边光线 100%', exact: true })
+    .click()
+  await saved(page)
+  await page.getByRole('button', { name: '最爱', exact: true }).click()
+  await saved(page)
+  assert.equal(await page.locator('.cc-asset').count(), 1)
+  await page.getByRole('button', { name: '未归类', exact: true }).click()
+  await saved(page)
+  assert.equal(
+    await page
+      .getByRole('heading', { name: '窗边光线 100%', exact: true })
+      .count(),
+    0,
+  )
+  await page.getByRole('button', { name: '全部', exact: true }).click()
+  await saved(page)
+  await page.getByRole('button', { name: '分组与筛选', exact: true }).click()
+  await page.getByRole('button', { name: '商业拍摄', exact: true }).click()
+  await saved(page)
+  assert.equal(await page.locator('.cc-asset').count(), 0)
+  await page.getByLabel('包含子组', { exact: true }).check()
+  await saved(page)
+  assert.equal(await page.locator('.cc-asset').count(), 1)
+  await page.getByLabel('分组操作：商业拍摄', { exact: true }).click()
+  await page
+    .getByRole('button', { name: '删除分组：商业拍摄', exact: true })
+    .click()
+  await page.getByRole('button', { name: '删除分组', exact: true }).click()
+  await saved(page)
+  // A deleted filter is explicit, never silently changed to all assets.
+  await page.getByRole('button', { name: '全库范围', exact: true }).click()
+  await saved(page)
+  await page.getByRole('button', { name: '人像参考', exact: true }).click()
+  await saved(page)
+  assert.equal(await page.locator('.cc-asset').count(), 1)
+  await page.getByRole('button', { name: '清除筛选', exact: true }).click()
+  await saved(page)
+  await page.getByLabel('搜索个人资产', { exact: true }).fill('100_')
+  await page
+    .getByRole('paragraph')
+    .filter({ hasText: '没有找到匹配的资产' })
+    .waitFor()
+  await page.getByLabel('搜索个人资产', { exact: true }).fill('自然光')
+  await page
+    .getByRole('heading', { name: '窗边光线 100%', exact: true })
+    .waitFor()
+  await saved(page)
+  assert.equal(await page.locator('.cc-asset').count(), 1)
+  await page.getByRole('button', { name: '清除资产搜索', exact: true }).click()
+  await saved(page)
+  await page.getByRole('button', { name: '关闭筛选', exact: true }).click()
+  await page.getByLabel('选择资产：窗边光线 100%', { exact: true }).click()
+  await page.getByRole('button', { name: '移入回收站', exact: true }).click()
+  await page
+    .getByRole('alertdialog')
+    .getByRole('button', { name: '移入回收站', exact: true })
+    .click()
+  await saved(page)
+  await page.getByRole('button', { name: '回收站', exact: true }).click()
+  await saved(page)
+  assert.equal(await page.locator('.cc-asset').count(), 1)
+  await page.getByLabel('资产操作：窗边光线 100%', { exact: true }).click()
+  await page.getByRole('button', { name: '恢复资产', exact: true }).click()
+  await saved(page)
+  await page.getByRole('button', { name: '最爱', exact: true }).click()
+  await saved(page)
+  assert.equal(await page.locator('.cc-asset').count(), 1)
+  await page.screenshot({
+    path: `${output}/library-organized-desktop.png`,
+    fullPage: true,
+  })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({
+    path: `${output}/library-organized-mobile.png`,
+    fullPage: true,
+  })
+  assert(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  )
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page
+    .getByRole('button', { name: '管理分组与标签', exact: true })
+    .click()
+  await page
+    .getByRole('button', { name: '删除分类：拍摄风格', exact: true })
+    .click()
+  const categoryConfirm = page.getByRole('alertdialog')
+  await categoryConfirm
+    .getByRole('button', { name: '取消', exact: true })
+    .focus()
+  await page.keyboard.press('Tab')
+  assert.equal(
+    await page.evaluate(() => document.activeElement.textContent),
+    '删除分类',
+  )
+  await page.keyboard.press('Tab')
+  assert.equal(
+    await page.evaluate(() => document.activeElement.textContent),
+    '取消',
+  )
+  await page.keyboard.press('Escape')
+  await page.getByRole('dialog', { name: '标签与分类', exact: true }).waitFor()
+  assert.equal(await page.getByRole('alertdialog').count(), 0)
+  assert.equal(
+    await page.evaluate(() =>
+      document.activeElement.getAttribute('aria-label'),
+    ),
+    '删除分类：拍摄风格',
+  )
+  await page.getByRole('button', { name: '收起编辑面板', exact: true }).click()
+
+  // Rendering a revoked preview never reuses previously loaded private text.
+  await page.getByLabel('选择资产：窗边光线 100%', { exact: true }).focus()
+  await page.keyboard.press('Space')
+  await page
+    .getByRole('dialog', { name: '窗边光线 100%', exact: true })
+    .getByText('自然光布光参考', { exact: true })
+    .waitFor()
+  await page.keyboard.press('Escape')
+  unavailablePreviewTitle = '只保存链接'
+  await page.getByRole('button', { name: '全部', exact: true }).click()
+  await saved(page)
+  await page.getByLabel('选择资产：只保存链接', { exact: true }).focus()
+  await page.keyboard.press('Space')
+  const unavailableDialog = page.getByRole('dialog', {
+    name: '只保存链接',
+    exact: true,
+  })
+  await unavailableDialog.waitFor()
+  assert(
+    !(await unavailableDialog.innerText()).includes('自然光布光参考'),
+    'revoked preview must not reuse prior asset text',
+  )
+  assert(
+    (await unavailableDialog.innerText()).includes('当前无权展示此内容'),
+    'revoked preview has an explicit unavailable state',
+  )
+  await page.keyboard.press('Escape')
+  await page.getByLabel('选择资产：只保存链接', { exact: true }).dblclick()
+  await unavailableDialog
+    .getByText('当前无权展示此内容', { exact: true })
+    .waitFor()
+  await page.keyboard.press('Escape')
+  unavailablePreviewTitle = null
+
+  // Full browser sampling includes input debounce, API, rendering and a paint.
+  const seeded = await context.request.post(`${api}/__test/library-scale`)
+  assert.equal(seeded.status(), 204, await seeded.text())
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto(`${url}/creative/library`)
+  await saved(page)
+  const durations = []
+  page.on('response', (r) => {
+    const u = new URL(r.url())
+    if (u.pathname.includes('/creative/assets'))
+      console.log(
+        'library response',
+        u.pathname,
+        u.searchParams.get('q'),
+        r.status(),
+      )
+  })
+  for (let i = 0; i < 40; i++) {
+    const q = ['摄影', '窗边', '布光', '100%'][i % 4]
+    const result = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname.endsWith('/creative/assets') &&
+        new URL(r.url()).searchParams.get('q') === q,
+    )
+    const start = performance.now()
+    await page.getByLabel('搜索个人资产', { exact: true }).fill(q)
+    const response = await result
+    assert.equal(response.status(), 200)
+    await saved(page)
+    await page.locator('.cc-asset').first().waitFor()
+    await page.evaluate(
+      () =>
+        new Promise((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(resolve)),
+        ),
+    )
+    durations.push(performance.now() - start)
+  }
+  durations.sort((a, b) => a - b)
+  const perf = {
+    samples: durations.length,
+    p50: durations[19],
+    p95: durations[37],
+    max: durations[39],
+    assets: 10000,
+    groups: 100,
+    tags: 200,
+    includes: '300ms debounce + network + DOM + paint',
+  }
+  await writeFile(
+    `${output}/library-search-performance.json`,
+    JSON.stringify(perf, null, 2),
+  )
+  assert(perf.p95 <= 1000, `library search end-to-end p95 ${perf.p95}ms`)
+  await page.screenshot({ path: `${output}/library-scale.png` })
+
   assert.deepEqual(errors, [])
   await writeFile(
     `${output}/result.json`,
@@ -641,6 +994,7 @@ try {
           'project-home-completion-after-navigation',
           'responsive-drag-during-delayed-save-and-stale-poll',
           'drag-lost-receipt-reload-and-offline-reconnect',
+          'library-groups-inline-tags-filter-trash-restore',
         ],
       },
       null,

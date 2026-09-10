@@ -73,6 +73,67 @@ paths:
         name: cursor
         schema:
           type: string
+      - name: view
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - all
+          - favorites
+          - unclassified
+          - trash
+      - name: group_id
+        in: query
+        required: false
+        schema:
+          type: string
+      - name: include_descendants
+        in: query
+        required: false
+        schema:
+          type: boolean
+      - name: kind
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - text
+          - link
+      - name: q
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 200
+      - name: tag_ids
+        in: query
+        required: false
+        schema:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+        style: form
+        explode: false
+      - name: tag_mode
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - all
+          - any
+      - name: sort
+        in: query
+        required: false
+        schema:
+          type: string
+          enum:
+          - recent
+          - oldest
+          - name
       responses:
         '200':
           description: 成功
@@ -3842,6 +3903,718 @@ paths:
         "409": {$ref: "#/components/responses/Conflict"}
         "503": {$ref: "#/components/responses/ServiceUnavailable"}
 
+  /creative/asset-groups:
+    get:
+      operationId: listCreativeGroups
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeGroupPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createCreativeGroup
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCreativeGroupRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/tags:
+    get:
+      operationId: listCreativeTags
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeTagPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createCreativeTag
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCreativeTagRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/tag-categories:
+    get:
+      operationId: listCreativeCategories
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeCategoryPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: createCreativeCategory
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCreativeCategoryRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/library-settings:
+    get:
+      operationId: getCreativeLibrarySettings
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibrarySettings'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+    post:
+      operationId: saveCreativeLibrarySettings
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveCreativeLibrarySettingsRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/asset-groups/{id}/rename:
+    post:
+      operationId: renameCreativeGroup
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RenameCreativeGroupRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/asset-groups/{id}/move:
+    post:
+      operationId: moveCreativeGroup
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveCreativeGroupRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/asset-groups/{id}/delete:
+    post:
+      operationId: deleteCreativeGroup
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteCreativeGroupRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/tags/{id}/edit:
+    post:
+      operationId: editCreativeTag
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditCreativeTagRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/tags/{id}/delete:
+    post:
+      operationId: deleteCreativeTag
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteCreativeTagRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/tag-categories/{id}/edit:
+    post:
+      operationId: editCreativeCategory
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EditCreativeCategoryRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/tag-categories/{id}/delete:
+    post:
+      operationId: deleteCreativeCategory
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteCreativeCategoryRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/{id}/metadata:
+    post:
+      operationId: updateCreativeAssetMetadata
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCreativeAssetMetadataRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/batch-organize:
+    post:
+      operationId: organizeCreativeAssets
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizeCreativeAssetsRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/{id}/trash:
+    post:
+      operationId: trashCreativeAsset
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrashCreativeAssetRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/batch-trash:
+    post:
+      operationId: batchTrashCreativeAssets
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchTrashCreativeAssetsRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/{id}/restore:
+    post:
+      operationId: restoreCreativeAsset
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreCreativeAssetRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/batch-restore:
+    post:
+      operationId: batchRestoreCreativeAssets
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchRestoreCreativeAssetsRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/{id}/purge:
+    post:
+      operationId: purgeCreativeAsset
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PurgeCreativeAssetRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/assets/batch-purge:
+    post:
+      operationId: batchPurgeCreativeAssets
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchPurgeCreativeAssetsRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
 components:
   securitySchemes:
     bearerAuth:
@@ -3984,6 +4757,706 @@ components:
         application/json:
           schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   schemas:
+    CreativeLibraryResult:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - revision
+      - hierarchy_revision
+      - library_revision
+      properties:
+        id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeAssetGroup:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - parent_id
+      - name
+      - position
+      - revision
+      properties:
+        id:
+          type: string
+        parent_id:
+          type: string
+          nullable: true
+        name:
+          type: string
+        position:
+          type: integer
+          minimum: 0
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeLibraryTag:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - color
+      - category_id
+      - revision
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+          pattern: ^#[a-fA-F0-9]{6}$
+        category_id:
+          type: string
+          nullable: true
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeTagCategory:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - position
+      - revision
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        position:
+          type: integer
+          minimum: 0
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeGroupPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - hierarchy_revision
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeAssetGroup'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeTagPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - hierarchy_revision
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeLibraryTag'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeCategoryPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - hierarchy_revision
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeTagCategory'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeLibrarySettings:
+      type: object
+      additionalProperties: false
+      required:
+      - retention_days
+      - revision
+      - hierarchy_revision
+      - library_revision
+      properties:
+        retention_days:
+          type: integer
+          nullable: true
+          enum:
+          - 7
+          - 30
+          - 90
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeNewTag:
+      type: object
+      additionalProperties: false
+      required:
+      - client_tag_key
+      - name
+      - color
+      properties:
+        client_tag_key:
+          type: string
+          minLength: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        color:
+          type: string
+          pattern: ^#[a-fA-F0-9]{6}$
+        category_id:
+          type: string
+          nullable: true
+    CreativeAssetVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - asset_id
+      - expected_revision
+      properties:
+        asset_id:
+          type: string
+          minLength: 1
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeGroupCreatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - hierarchy_revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        parent_id:
+          type: string
+          nullable: true
+        position:
+          type: integer
+          minimum: 0
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeGroupRenamePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - expected_revision
+      - hierarchy_revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeGroupMovePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - parent_id
+      - position
+      - expected_revision
+      - hierarchy_revision
+      properties:
+        parent_id:
+          type: string
+          nullable: true
+        position:
+          type: integer
+          minimum: 0
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeStructureDeletePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      - hierarchy_revision
+      properties:
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeTagCreatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - color
+      - hierarchy_revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        color:
+          type: string
+          pattern: ^#[a-fA-F0-9]{6}$
+        category_id:
+          type: string
+          nullable: true
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeTagEditPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - color
+      - category_id
+      - expected_revision
+      - hierarchy_revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        color:
+          type: string
+          pattern: ^#[a-fA-F0-9]{6}$
+        category_id:
+          type: string
+          nullable: true
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeCategoryCreatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - hierarchy_revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeCategoryEditPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - name
+      - expected_revision
+      - hierarchy_revision
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeAssetMetadataPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      properties:
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        is_favorite:
+          type: boolean
+    CreativeAssetStatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      properties:
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeLibrarySettingsPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      - retention_days
+      properties:
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        retention_days:
+          type: integer
+          nullable: true
+          enum:
+          - 7
+          - 30
+          - 90
+    CreativeAssetOrganizePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - assets
+      properties:
+        assets:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CreativeAssetVersion'
+        add_group_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        remove_group_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        add_tag_ids:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+        remove_tag_ids:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+    CreativeAssetBatchPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - assets
+      properties:
+        assets:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CreativeAssetVersion'
+    CreateCreativeGroupRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeGroupCreatePayload'
+    RenameCreativeGroupRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeGroupRenamePayload'
+    MoveCreativeGroupRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeGroupMovePayload'
+    DeleteCreativeGroupRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeStructureDeletePayload'
+    CreateCreativeTagRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeTagCreatePayload'
+    EditCreativeTagRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeTagEditPayload'
+    DeleteCreativeTagRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeStructureDeletePayload'
+    CreateCreativeCategoryRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeCategoryCreatePayload'
+    EditCreativeCategoryRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeCategoryEditPayload'
+    DeleteCreativeCategoryRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeStructureDeletePayload'
+    UpdateCreativeAssetMetadataRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetMetadataPayload'
+    OrganizeCreativeAssetsRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetOrganizePayload'
+    SaveCreativeLibrarySettingsRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeLibrarySettingsPayload'
+    TrashCreativeAssetRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetStatePayload'
+    BatchTrashCreativeAssetsRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetBatchPayload'
+    RestoreCreativeAssetRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetStatePayload'
+    BatchRestoreCreativeAssetsRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetBatchPayload'
+    PurgeCreativeAssetRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetStatePayload'
+    BatchPurgeCreativeAssetsRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetBatchPayload'
     CreativeTextPayload:
       type: object
       additionalProperties: false
@@ -4084,6 +5557,12 @@ components:
       - content_id
       - content_revision_id
       - unavailable
+      - is_favorite
+      - created_at
+      - deleted_at
+      - purge_after
+      - group_ids
+      - tag_ids
       properties:
         id:
           type: string
@@ -4106,6 +5585,29 @@ components:
           $ref: '#/components/schemas/CreativeContentRevision'
         unavailable:
           type: boolean
+        is_favorite:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        purge_after:
+          type: string
+          format: date-time
+          nullable: true
+        group_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        tag_ids:
+          type: array
+          maxItems: 50
+          items:
+            type: string
     CreativeAssetPage:
       type: object
       additionalProperties: false
@@ -4142,6 +5644,21 @@ components:
           maxLength: 2000
         content:
           $ref: '#/components/schemas/CreativeContentDraft'
+        group_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+        tag_ids:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+        new_tags:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/CreativeNewTag'
     CreativeAssetCreateResult:
       type: object
       additionalProperties: false
@@ -4150,6 +5667,7 @@ components:
       - revision
       - content_revision_id
       - library_revision
+      - tag_mapping
       properties:
         asset_id:
           type: string
@@ -4159,6 +5677,10 @@ components:
           type: string
         library_revision:
           $ref: '#/components/schemas/CreativeRevision'
+        tag_mapping:
+          type: object
+          additionalProperties:
+            type: string
     CreativeProject:
       type: object
       additionalProperties: false

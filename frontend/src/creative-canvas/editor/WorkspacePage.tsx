@@ -6,10 +6,18 @@ import {
   Type,
   Link2,
   LockKeyhole,
-  PanelLeftClose,
-  PanelRightClose,
+  ChevronDown,
+  MousePointer2,
+  Hand,
+  CircleHelp,
 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ReactFlowProvider } from '@xyflow/react'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -22,9 +30,13 @@ import * as api from './api.ts'
 import { newerCanvas, matchesCanvas } from './snapshot.ts'
 import CanvasView from './CanvasView.tsx'
 import ContentForm from './ContentForm.tsx'
+import StudioDialog from './StudioDialog.tsx'
 import { blankDraft } from './content.ts'
 import '@xyflow/react/dist/style.css'
 import './workspace.css'
+import LibraryPanel from './LibraryPanel.tsx'
+import { emptyCatalog, emptyOrganization } from './libraryState.ts'
+import OrganizationPicker from './OrganizationPicker.tsx'
 
 export default function WorkspacePage() {
   const account = api.currentAccount()
@@ -37,18 +49,14 @@ export default function WorkspacePage() {
 function Workspace({ account }: { account: string }) {
   const { queue, error: storageError } = useJournal(account)
   const online = useOnline()
+  const [libraryWidth, setLibraryWidth] = useState(318)
   const [libraryOpen, setLibraryOpen] = useState(
     () => !window.matchMedia('(max-width: 760px)').matches,
   )
-  const [compactPanels, setCompactPanels] = useState(
-    () => window.matchMedia('(max-width: 1100px)').matches,
-  )
-  useEffect(() => {
-    const query = window.matchMedia('(max-width: 1100px)')
-    const changed = () => setCompactPanels(query.matches)
-    query.addEventListener('change', changed)
-    return () => query.removeEventListener('change', changed)
-  }, [])
+  const [editing, setEditing] = useState(false)
+  const [addMenu, setAddMenu] = useState(false)
+  const [help, setHelp] = useState(false)
+  const [panMode, setPanMode] = useState(false)
   const { canvasID = '' } = useParams<{ canvasID: string }>()
   const [assets, setAssets] = useState<api.AssetPage>({
     items: [],
@@ -56,6 +64,8 @@ function Workspace({ account }: { account: string }) {
     total_count: 0,
     library_revision: '1',
   })
+  const [catalog, setCatalog] = useState(emptyCatalog)
+  const [libraryLoading, setLibraryLoading] = useState(true)
   const [canvas, setCanvas] = useState<api.Canvas | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [full, setFull] = useState<Draft | null>(null)
@@ -88,10 +98,14 @@ function Workspace({ account }: { account: string }) {
     ) ||
     !!storageError ||
     !!localError ||
+    libraryLoading ||
     loading
   const canEditLocal = matchesCanvas(canvas, canvasID) && !canvas?.archived
   const canWrite = canEditLocal && !error
-  const refresh = useCallback(() => setTick((v) => v + 1), [])
+  const refresh = useCallback(() => {
+    setLibraryLoading(true)
+    setTick((v) => v + 1)
+  }, [])
   const positions = queue?.value.positions
   const canMove = !!queue && canEditLocal && !storageError && !localError
   useEffect(() => {
@@ -146,17 +160,13 @@ function Workspace({ account }: { account: string }) {
     setLoading(true)
     void (async () => {
       const canvasSeq = ++canvasReadSequence.current
-      const [a, c] = await Promise.all([
-        api.read<api.AssetPage>('/assets', controller.signal),
-        canvasID
-          ? api.read<api.Canvas>(
-              `/canvases/${encodeURIComponent(canvasID)}`,
-              controller.signal,
-            )
-          : Promise.resolve(null),
-      ])
+      const c = canvasID
+        ? await api.read<api.Canvas>(
+            `/canvases/${encodeURIComponent(canvasID)}`,
+            controller.signal,
+          )
+        : null
       if (controller.signal.aborted || seq !== readSequence.current) return
-      setAssets(a)
       if (canvasSeq === canvasReadSequence.current)
         setCanvas((old) => newerCanvas(old, c))
       setError('')
@@ -208,6 +218,7 @@ function Workspace({ account }: { account: string }) {
   useEffect(() => {
     setCanvas(null)
     setSelected(null)
+    setEditing(false)
     setFull(null)
     setCompare(null)
     setRename(null)
@@ -266,19 +277,21 @@ function Workspace({ account }: { account: string }) {
       .catch((e: unknown) => setLocalError(errorMessage(e)))
   }
   async function perform(path: string, value: unknown, draftKey?: string) {
-    if (!queue || blocked) return
+    if (!queue || blocked || queue.busy || queue.value.job) return false
     if (
       path.startsWith('/canvases/') &&
       (!canWrite || path !== `/canvases/${canvasID}/commands`)
     )
-      return
+      return false
     setError('')
     setLoading(true)
     try {
       await queue.enqueue(path, value, draftKey)
       if (!queue.value.job) {
         setForm(null)
+        if (draftKey?.startsWith('node:')) setEditing(false)
         refresh()
+        return true
       } else {
         setLoading(false)
       }
@@ -286,6 +299,7 @@ function Workspace({ account }: { account: string }) {
       setLoading(false)
       setLocalError(errorMessage(e))
     }
+    return false
   }
   async function retry() {
     if (!queue) return
@@ -303,14 +317,19 @@ function Workspace({ account }: { account: string }) {
       setLocalError(errorMessage(e))
     }
   }
-  function addEmptyNode(kind: 'text' | 'link') {
+  function addEmptyNode(
+    kind: 'text' | 'link',
+    x = 80 + (canvas?.nodes.length ?? 0) * 20,
+    y = 80 + (canvas?.nodes.length ?? 0) * 20,
+  ) {
+    setAddMenu(false)
     if (!canvas || !canWrite) return
     void perform(`/canvases/${canvas.id}/commands`, {
       type: 'add_node',
       node_id: `cwnode_${crypto.randomUUID()}`,
       type_key: `core.${kind}`,
-      x: 80 + canvas.nodes.length * 20,
-      y: 80 + canvas.nodes.length * 20,
+      x,
+      y,
       expected_topology_revision: canvas.topology_revision,
     } satisfies api.Command)
   }
@@ -365,24 +384,6 @@ function Workspace({ account }: { account: string }) {
       nodeKey,
     )
   }
-  async function loadMore() {
-    const seq = readSequence.current
-    try {
-      const page = await api.read<api.AssetPage>(
-        `/assets?cursor=${encodeURIComponent(assets.next_cursor)}`,
-      )
-      if (seq === readSequence.current)
-        setAssets((a) => ({
-          ...page,
-          items: [
-            ...a.items,
-            ...page.items.filter((n) => !a.items.some((x) => x.id === n.id)),
-          ],
-        }))
-    } catch (e) {
-      setError(errorMessage(e))
-    }
-  }
   const activeProject =
     canvas?.id === canvasID
       ? {
@@ -407,12 +408,12 @@ function Workspace({ account }: { account: string }) {
     storageError ||
     localError ||
     !online ||
-    hasDraft ||
     needsRecovery
   )
   return (
     <main
-      className={`cc-workspace ${libraryOpen ? 'has-library' : ''} ${form || node ? 'has-inspector' : ''}`}
+      style={{ '--shelf-width': `${libraryWidth}px` } as CSSProperties}
+      className={`cc-workspace ${!canvasID ? 'is-library' : ''} ${libraryOpen ? 'has-library' : ''}`}
     >
       <header className="cc-header">
         <div className="cc-heading">
@@ -427,12 +428,38 @@ function Workspace({ account }: { account: string }) {
           <Aperture className="cc-brand-icon" size={25} strokeWidth={1.4} />
           <span className="cc-brand">创意空间</span>
           <span className="cc-divider" />
-          <h1>{activeProject?.name ?? '我的工作台'}</h1>
+          {activeProject ? (
+            <button
+              className="cc-project-name"
+              aria-label="改名"
+              disabled={blocked || !canWrite}
+              onClick={() => setRename(activeProject)}
+            >
+              <h1>{activeProject.name}</h1>
+              <ChevronDown size={13} />
+            </button>
+          ) : (
+            <h1>个人资产库</h1>
+          )}
           <span className="cc-private">
             <LockKeyhole size={12} /> 私人创作
           </span>
         </div>
         <nav className="cc-actions">
+          {activeProject && (
+            <button
+              className="btn cc-quiet"
+              disabled={blocked}
+              onClick={() =>
+                void perform(
+                  `/projects/${activeProject.id}/${canvas?.archived ? 'restore' : 'archive'}`,
+                  { expected_revision: activeProject.revision },
+                )
+              }
+            >
+              {canvas?.archived ? '恢复项目' : '归档项目'}
+            </button>
+          )}
           <Link className="btn" to="/creative">
             所有项目
           </Link>
@@ -440,45 +467,83 @@ function Workspace({ account }: { account: string }) {
       </header>
       <nav className="cc-tool-rail" aria-label="创作工具">
         <button
+          className="cc-add-tool"
+          aria-label="新建节点"
+          title="新建节点"
+          aria-expanded={addMenu}
+          aria-haspopup="menu"
+          disabled={blocked || !canWrite}
+          onClick={() => setAddMenu(!addMenu)}
+        >
+          <Plus size={24} />
+        </button>
+        <span className="cc-rail-line" />
+        <button
           className={libraryOpen ? 'is-active' : ''}
           aria-label="资产库"
-          aria-expanded={libraryOpen && !(compactPanels && (form || node))}
+          aria-expanded={libraryOpen}
           aria-controls="creative-library"
           title="资产库"
-          onClick={() => {
-            setLibraryOpen((v) => (compactPanels && (form || node) ? true : !v))
-            if (compactPanels) {
-              setForm(null)
-              setSelected(null)
-            }
-          }}
+          onClick={() => setLibraryOpen(!libraryOpen)}
         >
-          <Library size={21} strokeWidth={1.5} />
+          <Library size={20} strokeWidth={1.5} />
           <span>资产</span>
         </button>
         <span className="cc-rail-line" />
         <button
-          aria-label="新增文字节点"
-          title="新增文字节点"
-          disabled={blocked || !canWrite}
-          onClick={() => addEmptyNode('text')}
+          aria-label="选择工具"
+          title="选择工具"
+          aria-pressed={!panMode}
+          onClick={() => setPanMode(false)}
         >
-          <Type size={21} strokeWidth={1.5} />
-          <span>文字</span>
+          <MousePointer2 size={20} strokeWidth={1.5} />
         </button>
         <button
-          aria-label="新增链接节点"
-          title="新增链接节点"
-          disabled={blocked || !canWrite}
-          onClick={() => addEmptyNode('link')}
+          aria-label="移动画布"
+          title="移动画布 · 中键 / 空格"
+          aria-pressed={panMode}
+          onClick={() => setPanMode(true)}
         >
-          <Link2 size={20} strokeWidth={1.5} />
-          <span>链接</span>
+          <Hand size={20} strokeWidth={1.5} />
+        </button>
+        <span className="cc-rail-spacer" />
+        <button
+          aria-label="画布快捷键"
+          title="画布快捷键"
+          onClick={() => setHelp(true)}
+        >
+          <CircleHelp size={19} strokeWidth={1.5} />
         </button>
       </nav>
+      {addMenu && (
+        <>
+          <button
+            className="cc-menu-dismiss"
+            aria-label="关闭新建菜单"
+            onClick={() => setAddMenu(false)}
+          />
+          <div
+            className="cc-add-menu cc-glass"
+            role="menu"
+            aria-label="新建节点"
+          >
+            {(['text', 'link'] as const).map((kind) => (
+              <button
+                key={kind}
+                role="menuitem"
+                aria-label={kind === 'text' ? '新增文字节点' : '新增链接节点'}
+                disabled={blocked || !canWrite}
+                onClick={() => addEmptyNode(kind)}
+              >
+                {kind === 'text' ? <Type size={17} /> : <Link2 size={17} />}
+                <span>{kind === 'text' ? '文字' : '链接'}</span>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
       {showNotice && (
         <section className="cc-save-status" aria-live="polite">
-          {hasDraft && <span>有本机草稿 · 尚未保存到项目</span>}
           {!online && <span>当前离线 · 输入仍保留在本机</span>}
           {(error || storageError || localError) && (
             <p role="alert">
@@ -536,124 +601,29 @@ function Workspace({ account }: { account: string }) {
         </section>
       )}
       <div className="cc-layout">
-        <aside
-          className="cc-library"
-          id="creative-library"
-          aria-label="个人资产库"
-          hidden={!libraryOpen}
-        >
-          <div className="cc-library-heading">
-            <div>
-              <span className="cc-eyebrow">LIBRARY</span>
-              <h2>个人资产库</h2>
-            </div>
-            <button
-              className="cc-icon-button"
-              aria-label="新增资产"
-              title="新增资产"
-              onClick={() => setForm('asset')}
-              disabled={blocked}
-            >
-              <Plus size={18} />
-            </button>
-            <button
-              className="cc-icon-button"
-              aria-label="收起资产库"
-              title="收起资产库"
-              onClick={() => setLibraryOpen(false)}
-            >
-              <PanelLeftClose size={18} />
-            </button>
-          </div>
-          <div className="cc-section-title">
-            <h2>个人库</h2>
-            <span>{assets.total_count} 项</span>
-          </div>
-          <p className="cc-muted">独立于项目保存。放入画布后可分别编辑。</p>
-          <div className="cc-assets">
-            {assets.items.map((a) => (
-              <article
-                className="cc-asset"
-                key={a.id}
-                draggable={!!canvas && canWrite && !blocked && !a.unavailable}
-                onDragStart={(e) =>
-                  e.dataTransfer.setData('application/creative-asset', a.id)
-                }
-              >
-                <span className="cc-kind">
-                  {a.kind === 'text' ? '文字' : '链接'}
-                </span>
-                <h3>{a.title}</h3>
-                <p>
-                  {a.unavailable
-                    ? '当前无权展示'
-                    : a.content && 'body' in a.content.payload
-                      ? a.content.payload.body
-                      : a.content && 'url' in a.content.payload
-                        ? a.content.payload.url
-                        : ''}
-                </p>
-                <button
-                  className="btn"
-                  disabled={!canvas || blocked || !canWrite || a.unavailable}
-                  onClick={() => addAsset(a)}
-                >
-                  放入画布
-                </button>
-              </article>
-            ))}
-          </div>
-          {!loading && !assets.items.length && (
-            <p className="cc-muted">把一句想法或一个链接存进个人库。</p>
-          )}
-          {assets.next_cursor && (
-            <button className="btn" onClick={() => void loadMore()}>
-              加载更多资产
-            </button>
-          )}
-        </aside>
+        <LibraryPanel
+          disabled={blocked}
+          busy={!!queue?.busy || loading}
+          hidden={!!canvasID && !libraryOpen}
+          standalone={!canvasID}
+          tick={tick}
+          onCreate={() => setForm('asset')}
+          onClose={() => setLibraryOpen(false)}
+          onWidth={setLibraryWidth}
+          onAssets={setAssets}
+          onLoading={setLibraryLoading}
+          onCatalog={setCatalog}
+          onCommand={perform}
+          canDrop={!!canvas && canWrite}
+          onDrop={addAsset}
+        />
         <section className="cc-stage" aria-label="创作画布">
           {canvas && canvas.id === canvasID ? (
             <>
-              <div className="cc-toolbar">
-                <div className="cc-actions">
-                  {(['text', 'link'] as const).map((kind) => (
-                    <button
-                      className="btn"
-                      key={kind}
-                      disabled={blocked || !canWrite}
-                      onClick={() => addEmptyNode(kind)}
-                    >
-                      ＋ {kind === 'text' ? '文字' : '链接'}
-                    </button>
-                  ))}
-                </div>
-                <div className="cc-actions">
-                  {canvas.archived && <span>已归档 · 只读</span>}
-                  {activeProject && (
-                    <>
-                      <button
-                        className="btn"
-                        disabled={blocked || !canWrite}
-                        onClick={() => setRename(activeProject)}
-                      >
-                        改名
-                      </button>
-                      <button
-                        className="btn"
-                        disabled={blocked}
-                        onClick={() =>
-                          void perform(
-                            `/projects/${activeProject.id}/${canvas.archived ? 'restore' : 'archive'}`,
-                            { expected_revision: activeProject.revision },
-                          )
-                        }
-                      >
-                        {canvas.archived ? '恢复项目' : '归档项目'}
-                      </button>
-                    </>
-                  )}
-                </div>
+              <div className="cc-canvas-caption">
+                <i />
+                主画布 <span>/</span> {canvas.nodes.length} 个节点{' '}
+                {canvas.archived && ' · 已归档'}
               </div>
               <ReactFlowProvider key={canvas.id}>
                 <CanvasView
@@ -661,10 +631,14 @@ function Workspace({ account }: { account: string }) {
                   canvas={canvas}
                   selected={selected}
                   onSelect={(id) => {
-                    setForm(null)
                     setSelected(id)
-                    if (window.innerWidth <= 760) setLibraryOpen(false)
                   }}
+                  onEdit={(id) => {
+                    setSelected(id)
+                    setEditing(true)
+                  }}
+                  onAdd={(x, y) => addEmptyNode('text', x, y)}
+                  panMode={panMode}
                   disabled={blocked || !canWrite}
                   moveDisabled={!canMove}
                   positions={positions}
@@ -675,43 +649,19 @@ function Workspace({ account }: { account: string }) {
               </ReactFlowProvider>
             </>
           ) : (
-            <div className="cc-welcome">
-              <span className="cc-welcome-mark">
-                <Aperture size={44} strokeWidth={0.8} />
-              </span>
-              <span className="cc-kind">A LITTLE ROOM FOR POSSIBILITY</span>
-              <h2>
-                让想法，
-                <br />
-                自由生长。
-              </h2>
-              <p>
-                一段文字，一个链接，一份尚未成形的灵感。
-                <br />
-                从一张画布开始，把它们慢慢连成你的作品。
-              </p>
-              <Link className="btn btn-primary cc-start" to="/creative">
-                <Plus size={17} /> 新建项目
-              </Link>
+            <div className="cc-canvas-empty">
+              <h2>{error ? '画布暂时没有打开' : '正在打开画布…'}</h2>
             </div>
           )}
         </section>
-        {(form || node) && (
-          <aside className="cc-inspector" aria-label="内容编辑">
-            <div className="cc-section-title">
-              <h2>{form === 'asset' ? '存入个人库' : '编辑节点'}</h2>
-              <button
-                className="btn"
-                aria-label="收起编辑面板"
-                onClick={() => {
-                  if (compactPanels) setLibraryOpen(false)
-                  setForm(null)
-                  setSelected(null)
-                }}
-              >
-                <PanelRightClose size={18} />
-              </button>
-            </div>
+        {(form || (editing && node)) && (
+          <StudioDialog
+            title={form === 'asset' ? '存入个人库' : '编辑节点'}
+            onClose={() => {
+              setForm(null)
+              setEditing(false)
+            }}
+          >
             {form === 'asset' ? (
               <ContentForm
                 key="asset"
@@ -719,11 +669,29 @@ function Workspace({ account }: { account: string }) {
                 draft={assetDraft}
                 onChange={(d) => writeDraft('asset-form', d)}
                 disabled={blocked}
+                extraFields={
+                  <OrganizationPicker
+                    groups={catalog.groups}
+                    tags={catalog.tags}
+                    categories={catalog.categories}
+                    value={assetDraft.organization ?? emptyOrganization()}
+                    onChange={(organization) =>
+                      writeDraft('asset-form', { ...assetDraft, organization })
+                    }
+                    disabled={blocked}
+                  />
+                }
                 label="保存资产"
                 onSave={(content) =>
                   void perform(
                     '/assets',
-                    { title: assetDraft.title, content },
+                    {
+                      title: assetDraft.title,
+                      content,
+                      group_ids: assetDraft.organization?.groupIDs ?? [],
+                      tag_ids: assetDraft.organization?.tagIDs ?? [],
+                      new_tags: assetDraft.organization?.newTags ?? [],
+                    },
                     'asset-form',
                   )
                 }
@@ -754,40 +722,29 @@ function Workspace({ account }: { account: string }) {
                     放弃本机修改
                   </button>
                 )}
-                <fieldset className="cc-position" disabled={!canMove}>
-                  <legend>位置调整</legend>
-                  {[
-                    ['←', -20, 0],
-                    ['↑', 0, -20],
-                    ['↓', 0, 20],
-                    ['→', 20, 0],
-                  ].map(([label, x, y]) => (
-                    <button
-                      className="btn"
-                      type="button"
-                      key={label}
-                      aria-label={`向${label}移动`}
-                      onClick={() => {
-                        const position =
-                          positions?.[`${canvasID}:${node.id}`] ?? node
-                        moveNode(
-                          node,
-                          position.x + Number(x),
-                          position.y + Number(y),
-                        )
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </fieldset>
               </>
             ) : (
               <p>正在读取完整正文…</p>
             )}
-          </aside>
+          </StudioDialog>
         )}
       </div>
+      {help && (
+        <StudioDialog title="画布快捷键" onClose={() => setHelp(false)}>
+          <dl className="cc-shortcuts">
+            <dt>平移画布</dt>
+            <dd>滚轮 / 中键拖动 / 按住空格拖动</dd>
+            <dt>缩放画布</dt>
+            <dd>Ctrl / ⌘ + 滚轮</dd>
+            <dt>编辑节点</dt>
+            <dd>双击节点 / 选中后点击编辑</dd>
+            <dt>新建文字</dt>
+            <dd>双击画布空白处</dd>
+            <dt>微调节点</dt>
+            <dd>选中节点后按方向键</dd>
+          </dl>
+        </StudioDialog>
+      )}
       {discard && (
         <ConfirmDialog
           title="放弃本机草稿？"

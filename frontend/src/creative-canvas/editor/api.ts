@@ -54,3 +54,11 @@ export function send(
     return value
   })
 }
+export type Group = components['schemas']['CreativeAssetGroup']
+export type Tag = components['schemas']['CreativeLibraryTag']
+export type Category = components['schemas']['CreativeTagCategory']
+export type GroupPage = components['schemas']['CreativeGroupPage']
+export type TagPage = components['schemas']['CreativeTagPage']
+export type CategoryPage = components['schemas']['CreativeCategoryPage']
+export type LibrarySettings = components['schemas']['CreativeLibrarySettings']
+export type NewTag = components['schemas']['CreativeNewTag']

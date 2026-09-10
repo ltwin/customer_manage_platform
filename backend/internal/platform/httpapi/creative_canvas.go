@@ -18,6 +18,7 @@ import (
 )
 
 func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
+	registerCreativeLibrary(r, h)
 	w := ServerInterfaceWrapper{Handler: h, ErrorHandler: func(c *gin.Context, _ error, status int) {
 		abortError(c, status, CodeValidationFailed, "请求参数不合法")
 	}}
@@ -55,6 +56,8 @@ func creativeError(c *gin.Context, err error) {
 		abortError(c, 409, "creative_operation_expired", "操作已超过恢复期限，请保留草稿")
 	case errors.Is(err, creativecanvas.ErrVersionConflict), errors.Is(err, creativelibrary.ErrVersionConflict):
 		abortError(c, 409, "creative_revision_conflict", "内容已变化，请保留草稿并刷新后确认")
+	case errors.Is(err, creativelibrary.ErrTrashed):
+		abortError(c, 409, "creative_asset_trashed", "资产已在回收站，请恢复后编辑")
 	case errors.Is(err, creativecanvas.ErrArchived):
 		abortError(c, 409, "archived_read_only", "项目已归档，请恢复后编辑")
 	case errors.Is(err, creativecanvas.ErrNotFound), errors.Is(err, creativelibrary.ErrNotFound), errors.Is(err, creativecontent.ErrNotFound):
@@ -92,7 +95,32 @@ func (h *handlers) ListCreativeAssets(c *gin.Context, p ListCreativeAssetsParams
 		cursor = *p.Cursor
 	}
 	creativeRead(c, func() (creativelibrary.AssetPage, error) {
-		return creativelibrary.ListAssets(c.Request.Context(), scope, limit, cursor)
+		q := creativelibrary.Search{Limit: limit, Cursor: cursor}
+		if p.View != nil {
+			q.View = string(*p.View)
+		}
+		if p.GroupId != nil {
+			q.GroupID = *p.GroupId
+		}
+		if p.IncludeDescendants != nil {
+			q.Descendants = *p.IncludeDescendants
+		}
+		if p.Kind != nil {
+			q.Kind = string(*p.Kind)
+		}
+		if p.Q != nil {
+			q.Q = *p.Q
+		}
+		if p.TagIds != nil {
+			q.TagIDs = *p.TagIds
+		}
+		if p.TagMode != nil {
+			q.TagMode = string(*p.TagMode)
+		}
+		if p.Sort != nil {
+			q.Sort = string(*p.Sort)
+		}
+		return creativelibrary.SearchAssets(c.Request.Context(), scope, q)
 	})
 }
 func (h *handlers) ListCreativeProjects(c *gin.Context, p ListCreativeProjectsParams) {

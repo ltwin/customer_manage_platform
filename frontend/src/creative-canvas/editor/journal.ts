@@ -1,3 +1,4 @@
+import type { Organization } from './libraryState.ts'
 // The journal owns local recovery only. It never marks server data as saved.
 export type Job = {
   path: string
@@ -10,6 +11,7 @@ export type Job = {
   position?: { key: string; token: string }
 }
 export type Draft = {
+  organization?: Organization
   value: string
   title: string
   kind: 'text' | 'link'

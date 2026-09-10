@@ -89,3 +89,15 @@ func (sc TxAccountScope) CreativeNow(ctx context.Context) (time.Time, error) {
 	err := sc.scope.execRunner().QueryRow(ctx, "SELECT clock_timestamp()").Scan(&now)
 	return now, err
 }
+
+// RequireCreativeRead checks the active account inside the caller's read-only snapshot.
+func (sc ReadTxAccountScope) RequireCreativeRead(ctx context.Context) error {
+	c, err := sc.scope.CreativeCapabilities(ctx)
+	if err != nil {
+		return err
+	}
+	if !c.Read {
+		return ErrCreativeAccessDenied
+	}
+	return nil
+}

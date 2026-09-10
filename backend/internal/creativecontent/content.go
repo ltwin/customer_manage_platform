@@ -161,7 +161,18 @@ func WriteAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, s
 
 // RequireUsable protects the selected revision. Future GC must take the same
 // revision lock and explicitly check every registered root, never a source ID.
+type contentReader interface {
+	QueryRow(context.Context, string, string, string, ...any) store.Row
+	Exists(context.Context, string, string, ...any) (bool, error)
+}
+
+func ReadInSnapshot(ctx context.Context, tx store.ReadTxAccountScope, id, purpose string) (Revision, error) {
+	return requireUsable(ctx, tx, tx.QueryRow, id, purpose)
+}
 func RequireUsable(ctx context.Context, tx store.TxAccountScope, id, purpose string) (Revision, error) {
+	return requireUsable(ctx, tx, tx.QueryRowForUpdate, id, purpose)
+}
+func requireUsable(ctx context.Context, tx contentReader, protectedRow func(context.Context, string, string, string, ...any) store.Row, id, purpose string) (Revision, error) {
 	if purpose != "display" && purpose != "ai_analysis" && purpose != "generation_reference" {
 		return Revision{}, creativeops.ErrValidation
 	}
@@ -175,12 +186,12 @@ func RequireUsable(ctx context.Context, tx store.TxAccountScope, id, purpose str
 		return Revision{}, err
 	}
 	var r Revision
-	if err := tx.QueryRowForUpdate(ctx, "creative_contents", "kind, origin_node_id_snapshot", "id=$2", contentID).Scan(&r.Kind, &r.OriginNodeID); err != nil {
+	if err := protectedRow(ctx, "creative_contents", "kind, origin_node_id_snapshot", "id=$2", contentID).Scan(&r.Kind, &r.OriginNodeID); err != nil {
 		return Revision{}, fmt.Errorf("content identity: %w", err)
 	}
 	var source planningmedia.SourceClass
 	var basis planningmedia.RightsBasis
-	if err := tx.QueryRowForUpdate(ctx, "creative_rights_declarations", "source_class, rights_basis", "id=$2", declarationID).Scan(&source, &basis); err != nil {
+	if err := protectedRow(ctx, "creative_rights_declarations", "source_class, rights_basis", "id=$2", declarationID).Scan(&source, &basis); err != nil {
 		if errors.Is(err, store.ErrNoRows) {
 			return Revision{}, ErrUsageDenied
 		}
@@ -195,7 +206,7 @@ func RequireUsable(ctx context.Context, tx store.TxAccountScope, id, purpose str
 	var payload json.RawMessage
 	var state string
 	var sequence int64
-	err = tx.QueryRowForUpdate(ctx, "creative_content_revisions", "id, content_id, sequence, payload, rights_declaration_id, state", "id=$2", id).Scan(&r.ID, &r.ContentID, &sequence, &payload, &r.DeclarationID, &state)
+	err = protectedRow(ctx, "creative_content_revisions", "id, content_id, sequence, payload, rights_declaration_id, state", "id=$2", id).Scan(&r.ID, &r.ContentID, &sequence, &payload, &r.DeclarationID, &state)
 	if err != nil {
 		return Revision{}, err
 	}
@@ -219,7 +230,7 @@ func RequireUsable(ctx context.Context, tx store.TxAccountScope, id, purpose str
 	return r, nil
 }
 
-func requireRoot(ctx context.Context, tx store.TxAccountScope, revision Revision) error {
+func requireRoot(ctx context.Context, tx contentReader, revision Revision) error {
 	// Actual owner paths, including matching content identity/type; no arbitrary
 	// relationship insertion and no authorization from historical source IDs.
 	asset, err := tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND content_id=$3 AND kind=$4", revision.ID, revision.ContentID, revision.Kind)

@@ -18,7 +18,10 @@ var migrationsFS embed.FS
 // MigrateUp 把 schema 迁移到最新版本；带版本号可重复执行（幂等）。
 // 启动序约束：必须先于 HTTP 监听完成（design 2.2）。
 func MigrateUp(databaseURL string) error {
-	return migrateUpFS(databaseURL, migrationsFS, "migrations", "schema_migrations")
+	if err := migrateUpFS(databaseURL, migrationsFS, "migrations", "schema_migrations"); err != nil {
+		return err
+	}
+	return rebuildCreativeLibraryIndex(databaseURL)
 }
 
 // migrateUpFS 对指定迁移目录执行 up；migrationsTable 允许测试专用迁移序列

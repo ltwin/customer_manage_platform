@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -22,7 +24,8 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	if frontendURL == "" {
 		t.Skip("set CREATIVE_EDITOR_URL to the isolated Vite server")
 	}
-	db, err := store.Open(t.Context(), startCustomerPostgres(t))
+	databaseURL := startCustomerPostgres(t)
+	db, err := store.Open(t.Context(), databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +67,61 @@ func TestCreativeEditorBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server := httptest.NewServer(handler)
+	// Isolated benchmark fixture endpoint exists only in this opt-in test server.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/__test/library-scale" {
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(405)
+			return
+		}
+		seedDB, e := sql.Open("pgx", databaseURL)
+		if e != nil {
+			http.Error(w, e.Error(), 500)
+			return
+		}
+		defer func() { _ = seedDB.Close() }()
+		tx, e := seedDB.BeginTx(r.Context(), nil)
+		if e != nil {
+			http.Error(w, e.Error(), 500)
+			return
+		}
+		defer func() { _ = tx.Rollback() }()
+		var seedID, accountID string
+		if e = tx.QueryRow(`SELECT id,account_id FROM creative_assets WHERE kind='text' AND deleted_at IS NULL LIMIT 1`).Scan(&seedID, &accountID); e != nil {
+			http.Error(w, e.Error(), 500)
+			return
+		}
+		_, e = tx.Exec(`INSERT INTO creative_assets(id,account_id,kind,title,normalized_title,description,content_id,content_revision_id,is_favorite) SELECT 'ui-bench-'||g,a.account_id,a.kind,'摄影参考 '||g,'摄影参考 '||g,'窗边自然光与室内布光 100%',a.content_id,a.content_revision_id,g%3=0 FROM generate_series(1,10000)g CROSS JOIN creative_assets a WHERE a.account_id=$1 AND a.id=$2`, accountID, seedID)
+		if e != nil {
+			http.Error(w, e.Error(), 500)
+			return
+		}
+		for _, q := range []string{
+			`INSERT INTO creative_asset_groups(id,account_id,name,position) SELECT 'ui-g-'||g,$1,'参考组 '||g,g FROM generate_series(1,100)g`,
+			`INSERT INTO creative_tags(id,account_id,name,normalized_name,color) SELECT 'ui-t-'||g,$1,'色调 '||g,'色调 '||g,'#ABCDEF' FROM generate_series(1,200)g`,
+			`INSERT INTO creative_asset_group_members(account_id,asset_id,group_id) SELECT $1,'ui-bench-'||g,'ui-g-'||(g%100+1) FROM generate_series(1,10000)g`,
+			`INSERT INTO creative_asset_tags(account_id,asset_id,tag_id) SELECT $1,'ui-bench-'||g,'ui-t-'||(g%200+1) FROM generate_series(1,10000)g`,
+			`UPDATE creative_library_settings SET hierarchy_revision=hierarchy_revision+1,library_revision=library_revision+1 WHERE account_id=$1`,
+		} {
+			if _, e = tx.Exec(q, accountID); e != nil {
+				http.Error(w, e.Error(), 500)
+				return
+			}
+		}
+		_, e = tx.Exec(`INSERT INTO creative_asset_search(account_id,asset_id,normalized_text,asset_revision,normalization_version) SELECT account_id,id,normalized_title||E'\n'||description,revision,$2 FROM creative_assets a WHERE a.account_id=$1 AND a.id LIKE 'ui-bench-%'`, accountID, textindex.Version)
+		if e != nil {
+			http.Error(w, e.Error(), 500)
+			return
+		}
+		if e = tx.Commit(); e != nil {
+			http.Error(w, e.Error(), 500)
+			return
+		}
+		w.WriteHeader(204)
+	}))
 	defer server.Close()
 	root, err := filepath.Abs("../../../..")
 	if err != nil {
