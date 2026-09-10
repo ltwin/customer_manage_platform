@@ -1,0 +1,9 @@
+DROP TABLE creative_nodes;
+DROP TABLE creative_canvases;
+DROP TABLE creative_projects;
+DROP TABLE creative_assets;
+DROP TABLE creative_library_settings;
+DROP TABLE creative_content_revisions;
+DROP TABLE creative_usage_grants;
+DROP TABLE creative_rights_declarations;
+DROP TABLE creative_contents;

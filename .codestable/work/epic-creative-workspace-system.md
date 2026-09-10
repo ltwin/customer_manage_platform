@@ -2,8 +2,8 @@
 epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
-current_item: FND-01
-next_action: 推进FND-02最小文字/链接资产与项目画布的真实持久化闭环；FND-01已实现并通过检查与独立审查，改动未提交
+current_item: FND-02
+next_action: 继续FND-02，接入creativelibrary/creativecanvas应用命令、OpenAPI及真实前端保存/冲突/重开流程；内容层第一切片已通过检查，FND-02仍进行中且新改动未提交
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -433,3 +433,35 @@ remote_publish: manual
 - owner要求默认滚轮上下滚动，Ctrl（Windows）/Command（Mac）加滚轮才缩放。验证页用ReactFlow panOnScroll/Vertical、zoomOnScroll=false及Control/Meta修饰键实现；同步页内提示与开发说明。此规则沿后续正式画布使用。
 - Context7及已安装12.11.6源码核对配置；目标三路径coverage为not_tracked，直接读源。扩充现有浏览器验证：普通滚轮只改Y不改scale，两种修饰键分别缩放、释放后恢复平移；原框选/中键/空格/组移动/toolbar/固定端点/窄屏回归通过。缩放测试用小delta避免先碰最大缩放上限，采样结果等待实际渲染后断言。
 - make check-frontend通过（341测试），浏览器e2e通过，git diff --check通过。未改后端、未提交；此前R2代码审查hash保留历史证据，不冒称覆盖这次局部UI变更。
+
+## FND-02 开发启动
+
+- owner明确允许提交当前代码并启动下一项，已提交43fbc24（包含FND-01、滚轮微调及此前创意规划/原型），未push。该授权不沿用到FND-02提交，继续manual。
+- [ ] FND-02 第一个可保存的文字创作闭环（进行中）
+
+### FND-02 第一内容切片证据
+
+- 新增creativecontent的text/link类型校验、Create/Fork/Append与WriteAndRetain、当前显示用途读取守卫；首次节点编辑分叉，自己后续编辑追加，不广播修改其他使用方。复用planningmedia纯显示权利矩阵，来源声明由输入明确提供，不自动授予AI/生成用途；派生继承原声明。链接只存URL/元信息，不抓取远程资源。
+- 0038建立本项实际所需的9张内容/声明/授权/修订/资产/库根/项目/画布/节点基础表，不含媒体或Agent表；新表全部显式account/key、无FK。last_sequence在内容身份中持久递增，删除历史最高修订也不复用序号；有引用才提交的守卫核对revision/content/kind配对。旧迁移down清单增加0038一级并保留既有断言。
+- 5项真实PostgreSQL测试通过：无根回滚/跨账号/用途撤销与AI拒绝；两个画布中的节点共享素材→一处Fork/Append→其他节点和资产仍指原修订；链接无请求、危险协议拒绝；错误内容配对不构成根；清理未引用高版本后序号继续递增。make check-go全量build/lint/测试通过；增加第五项序号测试后单包再次通过3.008s。日志/tmp/creative-fnd02-content-check.log、/tmp/creative-fnd02-content-targeted.log，git diff --check通过。
+- Fresh只读cs-review：Meitner，ID 01a08996-e37e-7de0-aac8-a419a0d7548a。单轮PASS，blocking/important/nit均0，首尾16/16 hash匹配；仅审本内容切片，不代表完整FND-02通过。遵宿主继承模型限制，无异构provider，未派生或提交。
+- 图谱Verify当前root已确认ready；WriteAndRetain未命中、generation仍2026-09-04T15:47:38Z，候选新文件not_tracked/旧测试metadata_changed，matrix metadata_match，均以直接源码核对为证，不作全图或调用链完备断言。
+- 未完成且保留原目标：creativelibrary/creativecanvas实际应用命令、项目归档恢复、API/生成DTO、账号准入路径、真实前端与跨窗口/回执/草稿验证、引用一致性扫描，以及FND-02浏览器完整验收。当前只读写隔离测试数据库，没有对真实账号启用新writer、执行0038或自动提交新代码。
+- 冻结清单 `/tmp/creative-fnd02-content-review.json` SHA-256 `60448691428870c69d17e44a3656f0bc0301f41870cbc8f36a65c7f578e7f090`，基线HEAD `43fbc244259b353f323f5fb593e4b64f3affe231`，16文件：
+
+  - `backend/internal/creativecontent/content.go`：`4588ca2e7d59f94ad342817d0ec1fab789a51cb9ae3f82c29f95ddbf299ec062`
+  - `backend/internal/creativecontent/content_test.go`：`a0111f56d66f58d0094238195d42b9ebb9ce9b983d493b3de902ffe73aeb7afa`
+  - `backend/internal/platform/store/auth_legacy_cutover_harness_test.go`：`652935e327989d10f04720acebc46fd6ddf897a40fecc7368d0900487e578142`
+  - `backend/internal/platform/store/auth_limiter_test.go`：`7f8b0957b39ae2d30c55a0a262433a0668b2240c6177a6494db1b6ddad2a9b71`
+  - `backend/internal/platform/store/auth_migration_test.go`：`962d051885bffe00b61d23ce67f6e82eeb2f7cfeb796367e9a4b255556e8084e`
+  - `backend/internal/platform/store/migrations/0038_creative_text_canvas.down.sql`：`fba457088d55aa368dc80892f214c7ab5f78eb93fdbe9017a4c203e2b6e47db4`
+  - `backend/internal/platform/store/migrations/0038_creative_text_canvas.up.sql`：`5756982d30e1a9ecf86eb93179a1eee94a90b1708283851e3b06737e694cb8b7`
+  - `backend/internal/platform/store/orders_attribution_snapshot_migration_test.go`：`c2a52c8407cee29cd8d9e4224def76b4cc342524e3d041c5deac2e4fb7dc42b0`
+  - `backend/internal/platform/store/orders_delivery_due_migration_test.go`：`41cf93cf699259b1c5ac6e86253c01f49bb4c6db868951f7416d5769185938fd`
+  - `backend/internal/platform/store/orders_payment_facts_migration_test.go`：`f85dfcb6274cf265eac378041fcb71de417f0d4d7f43b5a5dab9ccc610193e15`
+  - `backend/internal/platform/store/planning_migration_test.go`：`1169e47c257e7e6adbdd4e87bea4218df934265f181a2dd6a7bee0aec3be46df`
+  - `backend/internal/platform/store/planning_share_migration_contract_test.go`：`ccc3fc09def1f07a1df843d70df953b4c64e2484c6d4f10059313a3d4e05405c`
+  - `backend/internal/platform/store/settings_availability_migration_test.go`：`f338b97c5502fc1fd0bd0a579e3e5305fd954d772a145d15b82b27259d85a511`
+  - `backend/internal/platform/store/settings_health_tiers_migration_test.go`：`e90ae0a8b9136fe802d9714082af8f6c685983fae181ee1f5545a26565e60d2a`
+  - `backend/internal/platform/store/store_test.go`：`5d618e77dff262bc5102bf03c47b40846a7c5fa3dab95b319a2f510c74071228`
+  - `backend/internal/platform/store/telegram_digest_migration_test.go`：`1d3d8862eefe1f6d3d14587a9334bc70c39b88bda7a638ede3fabc030dffbd85`
