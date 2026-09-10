@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import type { Draft } from './journal.ts'
 import type { ContentDraft } from './api.ts'
 
@@ -13,6 +13,7 @@ type Props = {
   label: string
   needsRights?: boolean
   asset?: boolean
+  extraFields?: ReactNode
 }
 export default function ContentForm({
   draft,
@@ -23,6 +24,7 @@ export default function ContentForm({
   label,
   needsRights = true,
   asset = false,
+  extraFields,
 }: Props) {
   const errorID = useId()
   const [source, setSource] = useState('')
@@ -132,6 +134,7 @@ export default function ContentForm({
           内容来源
           <select
             className="input"
+            aria-label="内容来源"
             value={source}
             disabled={disabled}
             onChange={(e) => setSource(e.target.value)}
@@ -142,6 +145,7 @@ export default function ContentForm({
           </select>
         </label>
       )}
+      {extraFields}
       <p id={errorID} className="cc-help" role={error ? 'alert' : undefined}>
         {error ||
           (draft.kind === 'link'

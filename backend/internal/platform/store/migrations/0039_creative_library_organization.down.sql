@@ -1,0 +1,10 @@
+ALTER TABLE creative_assets DROP CONSTRAINT creative_asset_purge_window;
+DROP INDEX creative_asset_trash;
+DROP INDEX creative_asset_kind;
+DROP INDEX creative_asset_name;
+DROP TABLE creative_asset_search;
+DROP TABLE creative_asset_tags;
+DROP TABLE creative_tags;
+DROP TABLE creative_tag_categories;
+DROP TABLE creative_asset_group_members;
+DROP TABLE creative_asset_groups;

@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -20,11 +22,15 @@ var (
 )
 
 type CreateAssetInput struct {
+	GroupIDs    []string              `json:"group_ids,omitempty"`
+	TagIDs      []string              `json:"tag_ids,omitempty"`
+	NewTags     []NewTag              `json:"new_tags,omitempty"`
 	Title       string                `json:"title"`
 	Description string                `json:"description"`
 	Content     creativecontent.Draft `json:"content"`
 }
 type AssetResult struct {
+	TagMapping        map[string]string    `json:"tag_mapping"`
 	ID                string               `json:"asset_id"`
 	Revision          creativeops.Revision `json:"revision"`
 	ContentRevisionID string               `json:"content_revision_id"`
@@ -36,6 +42,12 @@ type AssetReference struct {
 	ContentRevisionID string               `json:"content_revision_id"`
 }
 type Asset struct {
+	Favorite          bool                      `json:"is_favorite"`
+	CreatedAt         time.Time                 `json:"created_at"`
+	DeletedAt         *time.Time                `json:"deleted_at"`
+	PurgeAfter        *time.Time                `json:"purge_after"`
+	GroupIDs          []string                  `json:"group_ids"`
+	TagIDs            []string                  `json:"tag_ids"`
 	ID                string                    `json:"id"`
 	Title             string                    `json:"title"`
 	Description       string                    `json:"description"`
@@ -71,15 +83,22 @@ func CreateAsset(ctx context.Context, scope store.AccountScope, command creative
 			}
 			id := "ccas_" + uuid.NewString()
 			content, err := creativecontent.WriteAndRetain(ctx, tx, in.Content, "", nil, func(r creativecontent.Revision) error {
-				return tx.Insert(ctx, "creative_assets", []string{"id", "kind", "title", "normalized_title", "description", "content_id", "content_revision_id", "source_url"}, id, r.Kind, in.Title, strings.ToLower(strings.TrimSpace(in.Title)), in.Description, r.ContentID, r.ID, in.Content.Payload.URL)
+				return tx.Insert(ctx, "creative_assets", []string{"id", "kind", "title", "normalized_title", "description", "content_id", "content_revision_id", "source_url"}, id, r.Kind, in.Title, textindex.Normalize(in.Title), in.Description, r.ContentID, r.ID, in.Content.Payload.URL)
 			})
 			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			mapping, err := organizeNew(ctx, tx, id, in.GroupIDs, in.TagIDs, in.NewTags)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			if err = indexAsset(ctx, tx, Asset{ID: id, Title: in.Title, Description: in.Description, Revision: 1}, in.Content.Payload); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			if _, err := tx.Update(ctx, "creative_library_settings", "library_revision=library_revision+1", ""); err != nil {
 				return creativeops.Outcome{}, err
 			}
-			body, err := json.Marshal(AssetResult{ID: id, Revision: 1, ContentRevisionID: content.ID, LibraryRevision: revision + 1})
+			body, err := json.Marshal(AssetResult{TagMapping: mapping, ID: id, Revision: 1, ContentRevisionID: content.ID, LibraryRevision: revision + 1})
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
@@ -126,12 +145,12 @@ func ResolveAssetsInTx(ctx context.Context, tx store.TxAccountScope, ref AssetRe
 	return a, nil
 }
 
-const assetColumns = "id,title,description,kind,revision,content_id,content_revision_id"
+const assetColumns = "id,title,description,kind,revision,content_id,content_revision_id,is_favorite,created_at,deleted_at,purge_after"
 
 func scanAsset(row store.Row) (Asset, error) {
-	var a Asset
+	a := Asset{GroupIDs: []string{}, TagIDs: []string{}}
 	var revision int64
-	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.Kind, &revision, &a.ContentID, &a.ContentRevisionID)
+	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.Kind, &revision, &a.ContentID, &a.ContentRevisionID, &a.Favorite, &a.CreatedAt, &a.DeletedAt, &a.PurgeAfter)
 	if errors.Is(err, store.ErrNoRows) {
 		return Asset{}, ErrNotFound
 	}
@@ -140,16 +159,19 @@ func scanAsset(row store.Row) (Asset, error) {
 }
 func GetAsset(ctx context.Context, scope store.AccountScope, id string) (Asset, error) {
 	var a Asset
-	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		if err := tx.RequireCreativeRead(ctx); err != nil {
 			return err
 		}
 		var err error
-		a, err = scanAsset(tx.QueryRow(ctx, "creative_assets", assetColumns, "id=$2 AND deleted_at IS NULL", id))
+		a, err = scanAsset(tx.QueryRow(ctx, "creative_assets", assetColumns, "id=$2", id))
 		if err != nil {
 			return err
 		}
-		r, err := creativecontent.RequireUsable(ctx, tx, a.ContentRevisionID, "display")
+		if err = attachRelations(ctx, tx, &a); err != nil {
+			return err
+		}
+		r, err := creativecontent.ReadInSnapshot(ctx, tx, a.ContentRevisionID, "display")
 		if errors.Is(err, creativecontent.ErrUsageDenied) {
 			a.Unavailable = true
 			return nil

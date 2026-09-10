@@ -2,8 +2,8 @@
 epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
-current_item: FND-02
-next_action: owner已授权提交FND-02并启动FND-03；完成本次提交后推进个人库整理与组合检索
+current_item: FND-03
+next_action: FND-03与v5界面对齐已完成并通过验收，改动未提交；下一项FND-04完整画布命令与扩展边界，提交仍manual
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -548,3 +548,21 @@ remote_publish: manual
 ### FND-02 提交授权与最终审查
 
 2026-09-10 owner明确授权「提交，然后进入下一个feature开发」。本次提交范围包含FND-02正式文字/链接闭环、旧空间退役、独立项目首页、一键创建及前端优先拖动。最新并发增量独立审查由宿主gpt-6-astra/high执行（无异构provider，Paseo配置缺失），R1发现拖回旧坐标被no-op忽略；回归先红后绿，R2全目标PASS，0遗留问题。冻结manifest SHA256 7634e5b51594429b898356860dced1a09852a23f3eadc3704a49f84fbebffe0f。356项前端测试、此前22个真库浏览器场景通过，完整Go门禁已在退役阶段通过。未push；提交授权仅针对当前FND-02改动，FND-03仍按manual提交。
+
+### FND-03 开发启动
+
+依据已批准Epic FND-03及modules/library.md实现同一库模型的层级分组、多重归类、标签/分类、精确检索/分页水位及人工回收。旧账号试用和旧空间兼容不恢复。必须修改：库应用、正式迁移、OpenAPI/生成物、共享资产侧栏；必须验证：账号隔离、结构/批量竞争、草稿临时标签、purge引用保留、查询过期响应及10,000条基准。归属延续creativelibrary，内容根释放由资产行删除表达；物理GC与自动到期任务留FND-10。规范化使用同一固定Unicode实现，升级时显式重建，分页绑定算法版本与完整条件。
+
+
+### FND-03 与 v5 对齐验收（2026-09-10）
+
+- [x] FND-03 个人库整理与组合检索（实现、独立审查、验证完成，未提交）
+- 完成层级分组/子组提升、多重归类、最爱/未归类、标签颜色与分类、资产表单内联标签原子创建、组合搜索/名称与时间排序/查询绑定分页/水位、批量整理与人工回收/恢复/逻辑purge、7/30/90/无限保留设置。共享项目侧栏和无项目个人库。自动过期与物理GC留FND-10，媒体与节点完整命令留各自后续项。
+- owner指出正式UI偏离v5后，对照实际原型截图与canvas.css/asset-shelf.css重做结构：54px通高工具轨、318px可伸缩资产侧栏（720px展开）、目录树与双列文字卡、13px宋体节点、单击选中/双击模态编辑、跟随节点浮条、手动缩放控件。删除常驻右侧表单与重复顶部工具条；资产侧栏开合/拖宽不自动fitView。保留独立项目首页、一键未命名创建和静默前端优先同步。
+- 明确文字草稿关闭保留本机，放弃才确认；共享useFocusTrap用栈保证只让顶层模态接管Tab/Escape及焦点归还。预览结果绑定asset ID+content revision，不可展示状态优先，不显示此前资产正文。
+- 独立change review沿同一reviewer lineage、宿主gpt-6-astra/high执行（无合格异构provider，按cs-feat回退）。R1修复3 important：叠层焦点、批量回执ID/revision不匹配、撤销用途后详情丢整理关联；R2修复预览旧正文串位；均先有red再修复。R3完整目标PASS，无blocking/important遗留。R3 manifest /tmp/fnd03-review-r3.json，SHA eae787b263400c5fefbc4fe8b07d19064855b4a7b8426c616f2b770b4d76f2eb。审后只更新本执行记录，产品实现未改。
+- 验证全部通过：make check-frontend（356单测、build、lint）；make generate-check；make check-go（build、golangci-lint 0问题、全Go测试）；premium strict 0问题；designmd lint 0错误/0警告。新增真实数据库测试覆盖并发规范化标签归并/层级冲突、跨账号游标、查询水位、撤销用途不泄露正文、批量原子性与回执、0039升级回填/重入/回滚保留旧资产。旧迁移回滚用例逐项加入0039步，不缩小测试范围。
+- 最终浏览器TestCreativeEditorBrowser PASS 70.06s，日志 /tmp/fnd03-browser-green-retry.log；包含原23条流程和v5尺寸/视口稳定、嵌套确认焦点、不可用预览双击/Space断言，以及10k库40次输入到绘制采样。先前一次页面等待超时未用旧PASS替代；不改源代码重跑当前冻结版本后通过。Go一次idempotency容器启动超时也先单包核实，再独占跑完整gate通过（/tmp/fnd03-go-gate-clean.log），没有降低并发或豁免断言。
+- 性能证据：当前仅文字/链接支持范围，10,001资产/100组/200标签，100混合领域查询首次390.44ms、p95 106.75ms（/tmp/fnd03-search-benchmark-final.log）；最终浏览器40次采样p95 655.13ms，包含300ms防抖、网络、DOM与绘制（/tmp/creative-editor-qa/library-search-performance.json）。不外推到尚未实现的完整媒体库。
+- 桌面/窄屏截图及实测值：/tmp/creative-editor-qa/desktop.png、desktop-library-expanded.png、mobile-canvas.png、library-organized-desktop.png、library-organized-mobile.png、v5-metrics.json。原型对照：/tmp/v5-canvas-reference.png、/tmp/v5-library-reference.png。DESIGN.md与UX-CONTRACT.md记录正式映射，后续功能按v5继续，不回退CRM旧样式。
+- FND-02提交为734bfff，本FND-03与本轮UI修正未提交、未push。下一项FND-04负责连线、布局分组、复制/解组、Undo/Redo、节点扩展与内部执行版本基础。当前无阻塞，保持manual提交和per-item推进。

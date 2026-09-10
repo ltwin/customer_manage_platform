@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
 
+// Only the topmost mounted dialog owns keyboard navigation and initial focus.
+const focusTrapStack: HTMLElement[] = []
+
 const focusableSelector = [
   'a[href]',
   'button:not([disabled])',
@@ -23,12 +26,15 @@ export function useFocusTrap<T extends HTMLElement>(
 
   useEffect(() => {
     if (!open) return
-    returnFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null
+    returnFocusRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null
     const container = containerRef.current
     if (!container) return
+    focusTrapStack.push(container)
     const focusInitial = () => {
+      if (focusTrapStack.at(-1) !== container) return
       const first = focusableElements(container)[0]
       ;(first ?? container).focus()
     }
@@ -40,7 +46,7 @@ export function useFocusTrap<T extends HTMLElement>(
 
     function onKeyDown(event: KeyboardEvent) {
       const container = containerRef.current
-      if (!container) return
+      if (!container || focusTrapStack.at(-1) !== container) return
       if (event.key === 'Escape' && closeEnabledRef.current) {
         event.preventDefault()
         event.stopPropagation()
@@ -56,9 +62,16 @@ export function useFocusTrap<T extends HTMLElement>(
       }
       const current = elements.indexOf(document.activeElement as HTMLElement)
       const next = event.shiftKey
-        ? (current <= 0 ? elements.length - 1 : current - 1)
-        : (current < 0 || current === elements.length - 1 ? 0 : current + 1)
-      if ((event.shiftKey && current <= 0) || (!event.shiftKey && (current < 0 || current === elements.length - 1))) {
+        ? current <= 0
+          ? elements.length - 1
+          : current - 1
+        : current < 0 || current === elements.length - 1
+          ? 0
+          : current + 1
+      if (
+        (event.shiftKey && current <= 0) ||
+        (!event.shiftKey && (current < 0 || current === elements.length - 1))
+      ) {
         event.preventDefault()
         elements[next]?.focus()
       }
@@ -69,8 +82,15 @@ export function useFocusTrap<T extends HTMLElement>(
       window.cancelAnimationFrame(focusFrame)
       window.cancelAnimationFrame(secondFrame)
       document.removeEventListener('keydown', onKeyDown)
+      const wasTop = focusTrapStack.at(-1) === container
+      const index = focusTrapStack.lastIndexOf(container)
+      if (index !== -1) focusTrapStack.splice(index, 1)
       const returnTarget = returnFocusRef.current
-      if (returnTarget?.isConnected && !returnTarget.closest('[aria-hidden="true"]')) {
+      if (
+        wasTop &&
+        returnTarget?.isConnected &&
+        !returnTarget.closest('[aria-hidden="true"]')
+      ) {
         returnTarget.focus({ preventScroll: true })
       }
     }
@@ -80,6 +100,11 @@ export function useFocusTrap<T extends HTMLElement>(
 }
 
 function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(focusableSelector))
-    .filter((element) => element.getAttribute('aria-hidden') !== 'true' && element.offsetParent !== null)
+  return Array.from(
+    container.querySelectorAll<HTMLElement>(focusableSelector),
+  ).filter(
+    (element) =>
+      element.getAttribute('aria-hidden') !== 'true' &&
+      element.offsetParent !== null,
+  )
 }

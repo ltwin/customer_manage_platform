@@ -205,13 +205,15 @@ export class SaveQueue {
           statusOf(e) === 403 ||
           code === 'creative_revision_conflict' ||
           code === 'archived_read_only' ||
+          code === 'creative_asset_trashed' ||
           statusOf(e) === 422 ||
           statusOf(e) === 404)
       // Version/state conflicts prove this operation never committed even after a retry:
       // an existing receipt would have replayed before these domain guards.
       if (
         code === 'creative_revision_conflict' ||
-        code === 'archived_read_only'
+        code === 'archived_read_only' ||
+        code === 'creative_asset_trashed'
       )
         uncertain = false
       await this.update({
@@ -222,7 +224,8 @@ export class SaveQueue {
             definitive ||
             (!uncertain &&
               (code === 'creative_revision_conflict' ||
-                code === 'archived_read_only'))
+                code === 'archived_read_only' ||
+                code === 'creative_asset_trashed'))
               ? 'rejected'
               : 'unknown',
           message: errorMessage(e),

@@ -313,16 +313,58 @@ func (e CreativeFoundationCapabilitiesSchemaVersion) Valid() bool {
 
 // Defines values for CreativeLibraryAssetKind.
 const (
-	Link CreativeLibraryAssetKind = "link"
-	Text CreativeLibraryAssetKind = "text"
+	CreativeLibraryAssetKindLink CreativeLibraryAssetKind = "link"
+	CreativeLibraryAssetKindText CreativeLibraryAssetKind = "text"
 )
 
 // Valid indicates whether the value is a known member of the CreativeLibraryAssetKind enum.
 func (e CreativeLibraryAssetKind) Valid() bool {
 	switch e {
-	case Link:
+	case CreativeLibraryAssetKindLink:
 		return true
-	case Text:
+	case CreativeLibraryAssetKindText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeLibrarySettingsRetentionDays.
+const (
+	CreativeLibrarySettingsRetentionDaysN30 CreativeLibrarySettingsRetentionDays = 30
+	CreativeLibrarySettingsRetentionDaysN7  CreativeLibrarySettingsRetentionDays = 7
+	CreativeLibrarySettingsRetentionDaysN90 CreativeLibrarySettingsRetentionDays = 90
+)
+
+// Valid indicates whether the value is a known member of the CreativeLibrarySettingsRetentionDays enum.
+func (e CreativeLibrarySettingsRetentionDays) Valid() bool {
+	switch e {
+	case CreativeLibrarySettingsRetentionDaysN30:
+		return true
+	case CreativeLibrarySettingsRetentionDaysN7:
+		return true
+	case CreativeLibrarySettingsRetentionDaysN90:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeLibrarySettingsPayloadRetentionDays.
+const (
+	CreativeLibrarySettingsPayloadRetentionDaysN30 CreativeLibrarySettingsPayloadRetentionDays = 30
+	CreativeLibrarySettingsPayloadRetentionDaysN7  CreativeLibrarySettingsPayloadRetentionDays = 7
+	CreativeLibrarySettingsPayloadRetentionDaysN90 CreativeLibrarySettingsPayloadRetentionDays = 90
+)
+
+// Valid indicates whether the value is a known member of the CreativeLibrarySettingsPayloadRetentionDays enum.
+func (e CreativeLibrarySettingsPayloadRetentionDays) Valid() bool {
+	switch e {
+	case CreativeLibrarySettingsPayloadRetentionDaysN30:
+		return true
+	case CreativeLibrarySettingsPayloadRetentionDaysN7:
+		return true
+	case CreativeLibrarySettingsPayloadRetentionDaysN90:
 		return true
 	default:
 		return false
@@ -1463,6 +1505,87 @@ func (e ForgotPassword202JSONResponseBodyStatus) Valid() bool {
 	}
 }
 
+// Defines values for ListCreativeAssetsParamsView.
+const (
+	ListCreativeAssetsParamsViewAll          ListCreativeAssetsParamsView = "all"
+	ListCreativeAssetsParamsViewFavorites    ListCreativeAssetsParamsView = "favorites"
+	ListCreativeAssetsParamsViewTrash        ListCreativeAssetsParamsView = "trash"
+	ListCreativeAssetsParamsViewUnclassified ListCreativeAssetsParamsView = "unclassified"
+)
+
+// Valid indicates whether the value is a known member of the ListCreativeAssetsParamsView enum.
+func (e ListCreativeAssetsParamsView) Valid() bool {
+	switch e {
+	case ListCreativeAssetsParamsViewAll:
+		return true
+	case ListCreativeAssetsParamsViewFavorites:
+		return true
+	case ListCreativeAssetsParamsViewTrash:
+		return true
+	case ListCreativeAssetsParamsViewUnclassified:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCreativeAssetsParamsKind.
+const (
+	ListCreativeAssetsParamsKindLink ListCreativeAssetsParamsKind = "link"
+	ListCreativeAssetsParamsKindText ListCreativeAssetsParamsKind = "text"
+)
+
+// Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
+func (e ListCreativeAssetsParamsKind) Valid() bool {
+	switch e {
+	case ListCreativeAssetsParamsKindLink:
+		return true
+	case ListCreativeAssetsParamsKindText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCreativeAssetsParamsTagMode.
+const (
+	ListCreativeAssetsParamsTagModeAll ListCreativeAssetsParamsTagMode = "all"
+	ListCreativeAssetsParamsTagModeAny ListCreativeAssetsParamsTagMode = "any"
+)
+
+// Valid indicates whether the value is a known member of the ListCreativeAssetsParamsTagMode enum.
+func (e ListCreativeAssetsParamsTagMode) Valid() bool {
+	switch e {
+	case ListCreativeAssetsParamsTagModeAll:
+		return true
+	case ListCreativeAssetsParamsTagModeAny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCreativeAssetsParamsSort.
+const (
+	Name   ListCreativeAssetsParamsSort = "name"
+	Oldest ListCreativeAssetsParamsSort = "oldest"
+	Recent ListCreativeAssetsParamsSort = "recent"
+)
+
+// Valid indicates whether the value is a known member of the ListCreativeAssetsParamsSort enum.
+func (e ListCreativeAssetsParamsSort) Valid() bool {
+	switch e {
+	case Name:
+		return true
+	case Oldest:
+		return true
+	case Recent:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateCustomerJSONBodyStatus.
 const (
 	UpdateCustomerJSONBodyStatusActive   UpdateCustomerJSONBodyStatus = "active"
@@ -1645,6 +1768,27 @@ type AvatarRevision = string
 // AvatarVersion defines model for AvatarVersion.
 type AvatarVersion = string
 
+// BatchPurgeCreativeAssetsRequest defines model for BatchPurgeCreativeAssetsRequest.
+type BatchPurgeCreativeAssetsRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAssetBatchPayload `json:"payload"`
+}
+
+// BatchRestoreCreativeAssetsRequest defines model for BatchRestoreCreativeAssetsRequest.
+type BatchRestoreCreativeAssetsRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAssetBatchPayload `json:"payload"`
+}
+
+// BatchTrashCreativeAssetsRequest defines model for BatchTrashCreativeAssetsRequest.
+type BatchTrashCreativeAssetsRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAssetBatchPayload `json:"payload"`
+}
+
 // Birthday 生日特例："MM-DD" 或 "YYYY-MM-DD"（年份可缺，§4.1）
 type Birthday = string
 
@@ -1692,11 +1836,32 @@ type CreateAssetBindingInput struct {
 // CreateAssetBindingInputHolderKind defines model for CreateAssetBindingInput.HolderKind.
 type CreateAssetBindingInputHolderKind string
 
+// CreateCreativeCategoryRequest defines model for CreateCreativeCategoryRequest.
+type CreateCreativeCategoryRequest struct {
+	ClientCreatedAt time.Time                     `json:"client_created_at"`
+	OperationId     openapi_types.UUID            `json:"operation_id"`
+	Payload         CreativeCategoryCreatePayload `json:"payload"`
+}
+
+// CreateCreativeGroupRequest defines model for CreateCreativeGroupRequest.
+type CreateCreativeGroupRequest struct {
+	ClientCreatedAt time.Time                  `json:"client_created_at"`
+	OperationId     openapi_types.UUID         `json:"operation_id"`
+	Payload         CreativeGroupCreatePayload `json:"payload"`
+}
+
 // CreateCreativeProjectRequest defines model for CreateCreativeProjectRequest.
 type CreateCreativeProjectRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
 	OperationId     openapi_types.UUID           `json:"operation_id"`
 	Payload         CreativeProjectCreatePayload `json:"payload"`
+}
+
+// CreateCreativeTagRequest defines model for CreateCreativeTagRequest.
+type CreateCreativeTagRequest struct {
+	ClientCreatedAt time.Time                `json:"client_created_at"`
+	OperationId     openapi_types.UUID       `json:"operation_id"`
+	Payload         CreativeTagCreatePayload `json:"payload"`
 }
 
 // CreateCreativeTextAssetRequest defines model for CreateCreativeTextAssetRequest.
@@ -1727,10 +1892,18 @@ type CreativeAddNodePayloadType string
 // CreativeAddNodePayloadTypeKey defines model for CreativeAddNodePayload.TypeKey.
 type CreativeAddNodePayloadTypeKey string
 
+// CreativeAssetBatchPayload defines model for CreativeAssetBatchPayload.
+type CreativeAssetBatchPayload struct {
+	Assets []CreativeAssetVersion `json:"assets"`
+}
+
 // CreativeAssetCreatePayload defines model for CreativeAssetCreatePayload.
 type CreativeAssetCreatePayload struct {
 	Content     CreativeContentDraft `json:"content"`
 	Description *string              `json:"description,omitempty"`
+	GroupIds    *[]string            `json:"group_ids,omitempty"`
+	NewTags     *[]CreativeNewTag    `json:"new_tags,omitempty"`
+	TagIds      *[]string            `json:"tag_ids,omitempty"`
 	Title       string               `json:"title"`
 }
 
@@ -1743,7 +1916,38 @@ type CreativeAssetCreateResult struct {
 	LibraryRevision CreativeRevision `json:"library_revision"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision   CreativeRevision  `json:"revision"`
+	TagMapping map[string]string `json:"tag_mapping"`
+}
+
+// CreativeAssetGroup defines model for CreativeAssetGroup.
+type CreativeAssetGroup struct {
+	Id       string                    `json:"id"`
+	Name     string                    `json:"name"`
+	ParentId nullable.Nullable[string] `json:"parent_id"`
+	Position int                       `json:"position"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeAssetMetadataPayload defines model for CreativeAssetMetadataPayload.
+type CreativeAssetMetadataPayload struct {
+	Description *string `json:"description,omitempty"`
+
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+	IsFavorite       *bool            `json:"is_favorite,omitempty"`
+	Title            *string          `json:"title,omitempty"`
+}
+
+// CreativeAssetOrganizePayload defines model for CreativeAssetOrganizePayload.
+type CreativeAssetOrganizePayload struct {
+	AddGroupIds    *[]string              `json:"add_group_ids,omitempty"`
+	AddTagIds      *[]string              `json:"add_tag_ids,omitempty"`
+	Assets         []CreativeAssetVersion `json:"assets"`
+	RemoveGroupIds *[]string              `json:"remove_group_ids,omitempty"`
+	RemoveTagIds   *[]string              `json:"remove_tag_ids,omitempty"`
 }
 
 // CreativeAssetPage defines model for CreativeAssetPage.
@@ -1763,6 +1967,20 @@ type CreativeAssetReference struct {
 
 	// ExpectedAssetRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	ExpectedAssetRevision CreativeRevision `json:"expected_asset_revision"`
+}
+
+// CreativeAssetStatePayload defines model for CreativeAssetStatePayload.
+type CreativeAssetStatePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+}
+
+// CreativeAssetVersion defines model for CreativeAssetVersion.
+type CreativeAssetVersion struct {
+	AssetId string `json:"asset_id"`
+
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
 }
 
 // CreativeCanvasCommandPayload defines model for CreativeCanvasCommandPayload.
@@ -1810,6 +2028,30 @@ type CreativeCanvasSnapshot struct {
 
 	// TopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	TopologyRevision CreativeRevision `json:"topology_revision"`
+}
+
+// CreativeCategoryCreatePayload defines model for CreativeCategoryCreatePayload.
+type CreativeCategoryCreatePayload struct {
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+	Name              string           `json:"name"`
+}
+
+// CreativeCategoryEditPayload defines model for CreativeCategoryEditPayload.
+type CreativeCategoryEditPayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+	Name              string           `json:"name"`
+}
+
+// CreativeCategoryPage defines model for CreativeCategoryPage.
+type CreativeCategoryPage struct {
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision      `json:"hierarchy_revision"`
+	Items             []CreativeTagCategory `json:"items"`
 }
 
 // CreativeContentDraft defines model for CreativeContentDraft.
@@ -1863,23 +2105,116 @@ type CreativeFoundationCapabilities struct {
 // CreativeFoundationCapabilitiesSchemaVersion defines model for CreativeFoundationCapabilities.SchemaVersion.
 type CreativeFoundationCapabilitiesSchemaVersion int
 
+// CreativeGroupCreatePayload defines model for CreativeGroupCreatePayload.
+type CreativeGroupCreatePayload struct {
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision          `json:"hierarchy_revision"`
+	Name              string                    `json:"name"`
+	ParentId          nullable.Nullable[string] `json:"parent_id,omitempty"`
+	Position          *int                      `json:"position,omitempty"`
+}
+
+// CreativeGroupMovePayload defines model for CreativeGroupMovePayload.
+type CreativeGroupMovePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision          `json:"hierarchy_revision"`
+	ParentId          nullable.Nullable[string] `json:"parent_id"`
+	Position          int                       `json:"position"`
+}
+
+// CreativeGroupPage defines model for CreativeGroupPage.
+type CreativeGroupPage struct {
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision     `json:"hierarchy_revision"`
+	Items             []CreativeAssetGroup `json:"items"`
+}
+
+// CreativeGroupRenamePayload defines model for CreativeGroupRenamePayload.
+type CreativeGroupRenamePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+	Name              string           `json:"name"`
+}
+
 // CreativeLibraryAsset defines model for CreativeLibraryAsset.
 type CreativeLibraryAsset struct {
-	Content           *CreativeContentRevision `json:"content,omitempty"`
-	ContentId         string                   `json:"content_id"`
-	ContentRevisionId string                   `json:"content_revision_id"`
-	Description       string                   `json:"description"`
-	Id                string                   `json:"id"`
-	Kind              CreativeLibraryAssetKind `json:"kind"`
+	Content           *CreativeContentRevision     `json:"content,omitempty"`
+	ContentId         string                       `json:"content_id"`
+	ContentRevisionId string                       `json:"content_revision_id"`
+	CreatedAt         time.Time                    `json:"created_at"`
+	DeletedAt         nullable.Nullable[time.Time] `json:"deleted_at"`
+	Description       string                       `json:"description"`
+	GroupIds          []string                     `json:"group_ids"`
+	Id                string                       `json:"id"`
+	IsFavorite        bool                         `json:"is_favorite"`
+	Kind              CreativeLibraryAssetKind     `json:"kind"`
+	PurgeAfter        nullable.Nullable[time.Time] `json:"purge_after"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision    CreativeRevision `json:"revision"`
+	TagIds      []string         `json:"tag_ids"`
 	Title       string           `json:"title"`
 	Unavailable bool             `json:"unavailable"`
 }
 
 // CreativeLibraryAssetKind defines model for CreativeLibraryAsset.Kind.
 type CreativeLibraryAssetKind string
+
+// CreativeLibraryResult defines model for CreativeLibraryResult.
+type CreativeLibraryResult struct {
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+	Id                string           `json:"id"`
+
+	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	LibraryRevision CreativeRevision `json:"library_revision"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeLibrarySettings defines model for CreativeLibrarySettings.
+type CreativeLibrarySettings struct {
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+
+	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	LibraryRevision CreativeRevision                                        `json:"library_revision"`
+	RetentionDays   nullable.Nullable[CreativeLibrarySettingsRetentionDays] `json:"retention_days"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeLibrarySettingsRetentionDays defines model for CreativeLibrarySettings.RetentionDays.
+type CreativeLibrarySettingsRetentionDays int
+
+// CreativeLibrarySettingsPayload defines model for CreativeLibrarySettingsPayload.
+type CreativeLibrarySettingsPayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision                                               `json:"expected_revision"`
+	RetentionDays    nullable.Nullable[CreativeLibrarySettingsPayloadRetentionDays] `json:"retention_days"`
+}
+
+// CreativeLibrarySettingsPayloadRetentionDays defines model for CreativeLibrarySettingsPayload.RetentionDays.
+type CreativeLibrarySettingsPayloadRetentionDays int
+
+// CreativeLibraryTag defines model for CreativeLibraryTag.
+type CreativeLibraryTag struct {
+	CategoryId nullable.Nullable[string] `json:"category_id"`
+	Color      string                    `json:"color"`
+	Id         string                    `json:"id"`
+	Name       string                    `json:"name"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
 
 // CreativeLinkPayload defines model for CreativeLinkPayload.
 type CreativeLinkPayload struct {
@@ -1900,6 +2235,14 @@ type CreativeMoveNodePayload struct {
 
 // CreativeMoveNodePayloadType defines model for CreativeMoveNodePayload.Type.
 type CreativeMoveNodePayloadType string
+
+// CreativeNewTag defines model for CreativeNewTag.
+type CreativeNewTag struct {
+	CategoryId   nullable.Nullable[string] `json:"category_id,omitempty"`
+	ClientTagKey string                    `json:"client_tag_key"`
+	Color        string                    `json:"color"`
+	Name         string                    `json:"name"`
+}
 
 // CreativeNodeCommandResult defines model for CreativeNodeCommandResult.
 type CreativeNodeCommandResult struct {
@@ -2010,6 +2353,55 @@ type CreativeReplaceContentPayloadType string
 
 // CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 type CreativeRevision = string
+
+// CreativeStructureDeletePayload defines model for CreativeStructureDeletePayload.
+type CreativeStructureDeletePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+}
+
+// CreativeTagCategory defines model for CreativeTagCategory.
+type CreativeTagCategory struct {
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Position int    `json:"position"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeTagCreatePayload defines model for CreativeTagCreatePayload.
+type CreativeTagCreatePayload struct {
+	CategoryId nullable.Nullable[string] `json:"category_id,omitempty"`
+	Color      string                    `json:"color"`
+
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+	Name              string           `json:"name"`
+}
+
+// CreativeTagEditPayload defines model for CreativeTagEditPayload.
+type CreativeTagEditPayload struct {
+	CategoryId nullable.Nullable[string] `json:"category_id"`
+	Color      string                    `json:"color"`
+
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+	Name              string           `json:"name"`
+}
+
+// CreativeTagPage defines model for CreativeTagPage.
+type CreativeTagPage struct {
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision     `json:"hierarchy_revision"`
+	Items             []CreativeLibraryTag `json:"items"`
+}
 
 // CreativeTextPayload defines model for CreativeTextPayload.
 type CreativeTextPayload struct {
@@ -2198,6 +2590,41 @@ type DefaultQuoteV1 struct {
 // DefaultQuoteV1PolicyVersion defines model for DefaultQuoteV1.PolicyVersion.
 type DefaultQuoteV1PolicyVersion string
 
+// DeleteCreativeCategoryRequest defines model for DeleteCreativeCategoryRequest.
+type DeleteCreativeCategoryRequest struct {
+	ClientCreatedAt time.Time                      `json:"client_created_at"`
+	OperationId     openapi_types.UUID             `json:"operation_id"`
+	Payload         CreativeStructureDeletePayload `json:"payload"`
+}
+
+// DeleteCreativeGroupRequest defines model for DeleteCreativeGroupRequest.
+type DeleteCreativeGroupRequest struct {
+	ClientCreatedAt time.Time                      `json:"client_created_at"`
+	OperationId     openapi_types.UUID             `json:"operation_id"`
+	Payload         CreativeStructureDeletePayload `json:"payload"`
+}
+
+// DeleteCreativeTagRequest defines model for DeleteCreativeTagRequest.
+type DeleteCreativeTagRequest struct {
+	ClientCreatedAt time.Time                      `json:"client_created_at"`
+	OperationId     openapi_types.UUID             `json:"operation_id"`
+	Payload         CreativeStructureDeletePayload `json:"payload"`
+}
+
+// EditCreativeCategoryRequest defines model for EditCreativeCategoryRequest.
+type EditCreativeCategoryRequest struct {
+	ClientCreatedAt time.Time                   `json:"client_created_at"`
+	OperationId     openapi_types.UUID          `json:"operation_id"`
+	Payload         CreativeCategoryEditPayload `json:"payload"`
+}
+
+// EditCreativeTagRequest defines model for EditCreativeTagRequest.
+type EditCreativeTagRequest struct {
+	ClientCreatedAt time.Time              `json:"client_created_at"`
+	OperationId     openapi_types.UUID     `json:"operation_id"`
+	Payload         CreativeTagEditPayload `json:"payload"`
+}
+
 // ErrorDetails defines model for ErrorDetails.
 type ErrorDetails struct {
 	union json.RawMessage
@@ -2305,6 +2732,13 @@ type HealthTiers struct {
 
 	// SleepingRatio 活跃→沉睡 分界（个人节奏倍数，默认 1.2）
 	SleepingRatio float32 `json:"sleeping_ratio"`
+}
+
+// MoveCreativeGroupRequest defines model for MoveCreativeGroupRequest.
+type MoveCreativeGroupRequest struct {
+	ClientCreatedAt time.Time                `json:"client_created_at"`
+	OperationId     openapi_types.UUID       `json:"operation_id"`
+	Payload         CreativeGroupMovePayload `json:"payload"`
 }
 
 // NonShootScheduleSlotListItem defines model for NonShootScheduleSlotListItem.
@@ -2435,6 +2869,13 @@ type OrderListItem struct {
 
 // OrderStatus 语义与合法跃迁见 §4.2 订单状态机
 type OrderStatus string
+
+// OrganizeCreativeAssetsRequest defines model for OrganizeCreativeAssetsRequest.
+type OrganizeCreativeAssetsRequest struct {
+	ClientCreatedAt time.Time                    `json:"client_created_at"`
+	OperationId     openapi_types.UUID           `json:"operation_id"`
+	Payload         CreativeAssetOrganizePayload `json:"payload"`
+}
 
 // Package defines model for Package.
 type Package struct {
@@ -2730,6 +3171,13 @@ type PlanningSummaryPrimaryPlan struct {
 // PricingMode defines model for PricingMode.
 type PricingMode string
 
+// PurgeCreativeAssetRequest defines model for PurgeCreativeAssetRequest.
+type PurgeCreativeAssetRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAssetStatePayload `json:"payload"`
+}
+
 // ReleaseAssetBindingInput defines model for ReleaseAssetBindingInput.
 type ReleaseAssetBindingInput struct {
 	ExpectedAssetRevision   int64 `json:"expected_asset_revision"`
@@ -2763,6 +3211,13 @@ type ReminderStatus string
 // ReminderType defines model for ReminderType.
 type ReminderType string
 
+// RenameCreativeGroupRequest defines model for RenameCreativeGroupRequest.
+type RenameCreativeGroupRequest struct {
+	ClientCreatedAt time.Time                  `json:"client_created_at"`
+	OperationId     openapi_types.UUID         `json:"operation_id"`
+	Payload         CreativeGroupRenamePayload `json:"payload"`
+}
+
 // RenameCreativeProjectRequest defines model for RenameCreativeProjectRequest.
 type RenameCreativeProjectRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
@@ -2770,11 +3225,25 @@ type RenameCreativeProjectRequest struct {
 	Payload         CreativeProjectRenamePayload `json:"payload"`
 }
 
+// RestoreCreativeAssetRequest defines model for RestoreCreativeAssetRequest.
+type RestoreCreativeAssetRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAssetStatePayload `json:"payload"`
+}
+
 // RestoreCreativeProjectRequest defines model for RestoreCreativeProjectRequest.
 type RestoreCreativeProjectRequest struct {
 	ClientCreatedAt time.Time                   `json:"client_created_at"`
 	OperationId     openapi_types.UUID          `json:"operation_id"`
 	Payload         CreativeProjectStatePayload `json:"payload"`
+}
+
+// SaveCreativeLibrarySettingsRequest defines model for SaveCreativeLibrarySettingsRequest.
+type SaveCreativeLibrarySettingsRequest struct {
+	ClientCreatedAt time.Time                      `json:"client_created_at"`
+	OperationId     openapi_types.UUID             `json:"operation_id"`
+	Payload         CreativeLibrarySettingsPayload `json:"payload"`
 }
 
 // ScheduleAvailability defines model for ScheduleAvailability.
@@ -3116,6 +3585,13 @@ type StaleBusinessDraftDetailsStaleReason string
 // StaleBusinessDraftDetailsStatus defines model for StaleBusinessDraftDetails.Status.
 type StaleBusinessDraftDetailsStatus string
 
+// TrashCreativeAssetRequest defines model for TrashCreativeAssetRequest.
+type TrashCreativeAssetRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAssetStatePayload `json:"payload"`
+}
+
 // UnavailableOrderBusinessDraftItem defines model for UnavailableOrderBusinessDraftItem.
 type UnavailableOrderBusinessDraftItem struct {
 	Reason OrderBusinessDraftUnavailableReason    `json:"reason"`
@@ -3133,6 +3609,13 @@ type UnavailableScheduleBusinessDraftItem struct {
 
 // UnavailableScheduleBusinessDraftItemState defines model for UnavailableScheduleBusinessDraftItem.State.
 type UnavailableScheduleBusinessDraftItemState string
+
+// UpdateCreativeAssetMetadataRequest defines model for UpdateCreativeAssetMetadataRequest.
+type UpdateCreativeAssetMetadataRequest struct {
+	ClientCreatedAt time.Time                    `json:"client_created_at"`
+	OperationId     openapi_types.UUID           `json:"operation_id"`
+	Payload         CreativeAssetMetadataPayload `json:"payload"`
+}
 
 // UpdateSettingsBody defines model for UpdateSettingsBody.
 type UpdateSettingsBody struct {
@@ -3311,19 +3794,104 @@ type RegisterJSONBody struct {
 	Password string `json:"password"`
 }
 
+// CreateCreativeGroupParams defines parameters for CreateCreativeGroup.
+type CreateCreativeGroupParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// DeleteCreativeGroupParams defines parameters for DeleteCreativeGroup.
+type DeleteCreativeGroupParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// MoveCreativeGroupParams defines parameters for MoveCreativeGroup.
+type MoveCreativeGroupParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// RenameCreativeGroupParams defines parameters for RenameCreativeGroup.
+type RenameCreativeGroupParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // ListCreativeAssetsParams defines parameters for ListCreativeAssets.
 type ListCreativeAssetsParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit              *int                             `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor             *string                          `form:"cursor,omitempty" json:"cursor,omitempty"`
+	View               *ListCreativeAssetsParamsView    `form:"view,omitempty" json:"view,omitempty"`
+	GroupId            *string                          `form:"group_id,omitempty" json:"group_id,omitempty"`
+	IncludeDescendants *bool                            `form:"include_descendants,omitempty" json:"include_descendants,omitempty"`
+	Kind               *ListCreativeAssetsParamsKind    `form:"kind,omitempty" json:"kind,omitempty"`
+	Q                  *string                          `form:"q,omitempty" json:"q,omitempty"`
+	TagIds             *[]string                        `form:"tag_ids,omitempty" json:"tag_ids,omitempty"`
+	TagMode            *ListCreativeAssetsParamsTagMode `form:"tag_mode,omitempty" json:"tag_mode,omitempty"`
+	Sort               *ListCreativeAssetsParamsSort    `form:"sort,omitempty" json:"sort,omitempty"`
 }
+
+// ListCreativeAssetsParamsView defines parameters for ListCreativeAssets.
+type ListCreativeAssetsParamsView string
+
+// ListCreativeAssetsParamsKind defines parameters for ListCreativeAssets.
+type ListCreativeAssetsParamsKind string
+
+// ListCreativeAssetsParamsTagMode defines parameters for ListCreativeAssets.
+type ListCreativeAssetsParamsTagMode string
+
+// ListCreativeAssetsParamsSort defines parameters for ListCreativeAssets.
+type ListCreativeAssetsParamsSort string
 
 // CreateCreativeTextAssetParams defines parameters for CreateCreativeTextAsset.
 type CreateCreativeTextAssetParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// OrganizeCreativeAssetsParams defines parameters for OrganizeCreativeAssets.
+type OrganizeCreativeAssetsParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// BatchPurgeCreativeAssetsParams defines parameters for BatchPurgeCreativeAssets.
+type BatchPurgeCreativeAssetsParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// BatchRestoreCreativeAssetsParams defines parameters for BatchRestoreCreativeAssets.
+type BatchRestoreCreativeAssetsParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// BatchTrashCreativeAssetsParams defines parameters for BatchTrashCreativeAssets.
+type BatchTrashCreativeAssetsParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// UpdateCreativeAssetMetadataParams defines parameters for UpdateCreativeAssetMetadata.
+type UpdateCreativeAssetMetadataParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// PurgeCreativeAssetParams defines parameters for PurgeCreativeAsset.
+type PurgeCreativeAssetParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// RestoreCreativeAssetParams defines parameters for RestoreCreativeAsset.
+type RestoreCreativeAssetParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// TrashCreativeAssetParams defines parameters for TrashCreativeAsset.
+type TrashCreativeAssetParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // CommandCreativeCanvasParams defines parameters for CommandCreativeCanvas.
 type CommandCreativeCanvasParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// SaveCreativeLibrarySettingsParams defines parameters for SaveCreativeLibrarySettings.
+type SaveCreativeLibrarySettingsParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -3351,6 +3919,36 @@ type RenameCreativeProjectParams struct {
 
 // RestoreCreativeProjectParams defines parameters for RestoreCreativeProject.
 type RestoreCreativeProjectParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CreateCreativeCategoryParams defines parameters for CreateCreativeCategory.
+type CreateCreativeCategoryParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// DeleteCreativeCategoryParams defines parameters for DeleteCreativeCategory.
+type DeleteCreativeCategoryParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// EditCreativeCategoryParams defines parameters for EditCreativeCategory.
+type EditCreativeCategoryParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CreateCreativeTagParams defines parameters for CreateCreativeTag.
+type CreateCreativeTagParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// DeleteCreativeTagParams defines parameters for DeleteCreativeTag.
+type DeleteCreativeTagParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// EditCreativeTagParams defines parameters for EditCreativeTag.
+type EditCreativeTagParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -3716,11 +4314,50 @@ type ResetPasswordJSONRequestBody ResetPasswordJSONBody
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody RegisterJSONBody
 
+// CreateCreativeGroupJSONRequestBody defines body for CreateCreativeGroup for application/json ContentType.
+type CreateCreativeGroupJSONRequestBody = CreateCreativeGroupRequest
+
+// DeleteCreativeGroupJSONRequestBody defines body for DeleteCreativeGroup for application/json ContentType.
+type DeleteCreativeGroupJSONRequestBody = DeleteCreativeGroupRequest
+
+// MoveCreativeGroupJSONRequestBody defines body for MoveCreativeGroup for application/json ContentType.
+type MoveCreativeGroupJSONRequestBody = MoveCreativeGroupRequest
+
+// RenameCreativeGroupJSONRequestBody defines body for RenameCreativeGroup for application/json ContentType.
+type RenameCreativeGroupJSONRequestBody = RenameCreativeGroupRequest
+
 // CreateCreativeTextAssetJSONRequestBody defines body for CreateCreativeTextAsset for application/json ContentType.
 type CreateCreativeTextAssetJSONRequestBody = CreateCreativeTextAssetRequest
 
+// OrganizeCreativeAssetsJSONRequestBody defines body for OrganizeCreativeAssets for application/json ContentType.
+type OrganizeCreativeAssetsJSONRequestBody = OrganizeCreativeAssetsRequest
+
+// BatchPurgeCreativeAssetsJSONRequestBody defines body for BatchPurgeCreativeAssets for application/json ContentType.
+type BatchPurgeCreativeAssetsJSONRequestBody = BatchPurgeCreativeAssetsRequest
+
+// BatchRestoreCreativeAssetsJSONRequestBody defines body for BatchRestoreCreativeAssets for application/json ContentType.
+type BatchRestoreCreativeAssetsJSONRequestBody = BatchRestoreCreativeAssetsRequest
+
+// BatchTrashCreativeAssetsJSONRequestBody defines body for BatchTrashCreativeAssets for application/json ContentType.
+type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
+
+// UpdateCreativeAssetMetadataJSONRequestBody defines body for UpdateCreativeAssetMetadata for application/json ContentType.
+type UpdateCreativeAssetMetadataJSONRequestBody = UpdateCreativeAssetMetadataRequest
+
+// PurgeCreativeAssetJSONRequestBody defines body for PurgeCreativeAsset for application/json ContentType.
+type PurgeCreativeAssetJSONRequestBody = PurgeCreativeAssetRequest
+
+// RestoreCreativeAssetJSONRequestBody defines body for RestoreCreativeAsset for application/json ContentType.
+type RestoreCreativeAssetJSONRequestBody = RestoreCreativeAssetRequest
+
+// TrashCreativeAssetJSONRequestBody defines body for TrashCreativeAsset for application/json ContentType.
+type TrashCreativeAssetJSONRequestBody = TrashCreativeAssetRequest
+
 // CommandCreativeCanvasJSONRequestBody defines body for CommandCreativeCanvas for application/json ContentType.
 type CommandCreativeCanvasJSONRequestBody = CommandCreativeCanvasRequest
+
+// SaveCreativeLibrarySettingsJSONRequestBody defines body for SaveCreativeLibrarySettings for application/json ContentType.
+type SaveCreativeLibrarySettingsJSONRequestBody = SaveCreativeLibrarySettingsRequest
 
 // CreateCreativeProjectJSONRequestBody defines body for CreateCreativeProject for application/json ContentType.
 type CreateCreativeProjectJSONRequestBody = CreateCreativeProjectRequest
@@ -3733,6 +4370,24 @@ type RenameCreativeProjectJSONRequestBody = RenameCreativeProjectRequest
 
 // RestoreCreativeProjectJSONRequestBody defines body for RestoreCreativeProject for application/json ContentType.
 type RestoreCreativeProjectJSONRequestBody = RestoreCreativeProjectRequest
+
+// CreateCreativeCategoryJSONRequestBody defines body for CreateCreativeCategory for application/json ContentType.
+type CreateCreativeCategoryJSONRequestBody = CreateCreativeCategoryRequest
+
+// DeleteCreativeCategoryJSONRequestBody defines body for DeleteCreativeCategory for application/json ContentType.
+type DeleteCreativeCategoryJSONRequestBody = DeleteCreativeCategoryRequest
+
+// EditCreativeCategoryJSONRequestBody defines body for EditCreativeCategory for application/json ContentType.
+type EditCreativeCategoryJSONRequestBody = EditCreativeCategoryRequest
+
+// CreateCreativeTagJSONRequestBody defines body for CreateCreativeTag for application/json ContentType.
+type CreateCreativeTagJSONRequestBody = CreateCreativeTagRequest
+
+// DeleteCreativeTagJSONRequestBody defines body for DeleteCreativeTag for application/json ContentType.
+type DeleteCreativeTagJSONRequestBody = DeleteCreativeTagRequest
+
+// EditCreativeTagJSONRequestBody defines body for EditCreativeTag for application/json ContentType.
+type EditCreativeTagJSONRequestBody = EditCreativeTagRequest
 
 // CreateCustomerJSONRequestBody defines body for CreateCustomer for application/json ContentType.
 type CreateCustomerJSONRequestBody CreateCustomerJSONBody
@@ -4442,14 +5097,53 @@ type ServerInterface interface {
 	// (POST /auth/register)
 	Register(c *gin.Context)
 
+	// (GET /creative/asset-groups)
+	ListCreativeGroups(c *gin.Context)
+
+	// (POST /creative/asset-groups)
+	CreateCreativeGroup(c *gin.Context, params CreateCreativeGroupParams)
+
+	// (POST /creative/asset-groups/{id}/delete)
+	DeleteCreativeGroup(c *gin.Context, id string, params DeleteCreativeGroupParams)
+
+	// (POST /creative/asset-groups/{id}/move)
+	MoveCreativeGroup(c *gin.Context, id string, params MoveCreativeGroupParams)
+
+	// (POST /creative/asset-groups/{id}/rename)
+	RenameCreativeGroup(c *gin.Context, id string, params RenameCreativeGroupParams)
+
 	// (GET /creative/assets)
 	ListCreativeAssets(c *gin.Context, params ListCreativeAssetsParams)
 
 	// (POST /creative/assets)
 	CreateCreativeTextAsset(c *gin.Context, params CreateCreativeTextAssetParams)
 
+	// (POST /creative/assets/batch-organize)
+	OrganizeCreativeAssets(c *gin.Context, params OrganizeCreativeAssetsParams)
+
+	// (POST /creative/assets/batch-purge)
+	BatchPurgeCreativeAssets(c *gin.Context, params BatchPurgeCreativeAssetsParams)
+
+	// (POST /creative/assets/batch-restore)
+	BatchRestoreCreativeAssets(c *gin.Context, params BatchRestoreCreativeAssetsParams)
+
+	// (POST /creative/assets/batch-trash)
+	BatchTrashCreativeAssets(c *gin.Context, params BatchTrashCreativeAssetsParams)
+
 	// (GET /creative/assets/{id})
 	GetCreativeTextAsset(c *gin.Context, id string)
+
+	// (POST /creative/assets/{id}/metadata)
+	UpdateCreativeAssetMetadata(c *gin.Context, id string, params UpdateCreativeAssetMetadataParams)
+
+	// (POST /creative/assets/{id}/purge)
+	PurgeCreativeAsset(c *gin.Context, id string, params PurgeCreativeAssetParams)
+
+	// (POST /creative/assets/{id}/restore)
+	RestoreCreativeAsset(c *gin.Context, id string, params RestoreCreativeAssetParams)
+
+	// (POST /creative/assets/{id}/trash)
+	TrashCreativeAsset(c *gin.Context, id string, params TrashCreativeAssetParams)
 
 	// (GET /creative/canvases/{id})
 	GetCreativeCanvas(c *gin.Context, id string)
@@ -4462,6 +5156,12 @@ type ServerInterface interface {
 
 	// (GET /creative/content-revisions/{id})
 	GetCreativeContentRevision(c *gin.Context, id string)
+
+	// (GET /creative/library-settings)
+	GetCreativeLibrarySettings(c *gin.Context)
+
+	// (POST /creative/library-settings)
+	SaveCreativeLibrarySettings(c *gin.Context, params SaveCreativeLibrarySettingsParams)
 	// 读取本账号持久回执；404不证明操作从未提交
 	// (GET /creative/operations/{operation_id})
 	GetCreativeOperation(c *gin.Context, operationId openapi_types.UUID)
@@ -4480,6 +5180,30 @@ type ServerInterface interface {
 
 	// (POST /creative/projects/{id}/restore)
 	RestoreCreativeProject(c *gin.Context, id string, params RestoreCreativeProjectParams)
+
+	// (GET /creative/tag-categories)
+	ListCreativeCategories(c *gin.Context)
+
+	// (POST /creative/tag-categories)
+	CreateCreativeCategory(c *gin.Context, params CreateCreativeCategoryParams)
+
+	// (POST /creative/tag-categories/{id}/delete)
+	DeleteCreativeCategory(c *gin.Context, id string, params DeleteCreativeCategoryParams)
+
+	// (POST /creative/tag-categories/{id}/edit)
+	EditCreativeCategory(c *gin.Context, id string, params EditCreativeCategoryParams)
+
+	// (GET /creative/tags)
+	ListCreativeTags(c *gin.Context)
+
+	// (POST /creative/tags)
+	CreateCreativeTag(c *gin.Context, params CreateCreativeTagParams)
+
+	// (POST /creative/tags/{id}/delete)
+	DeleteCreativeTag(c *gin.Context, id string, params DeleteCreativeTagParams)
+
+	// (POST /creative/tags/{id}/edit)
+	EditCreativeTag(c *gin.Context, id string, params EditCreativeTagParams)
 	// 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
 	// (GET /customers)
 	ListCustomers(c *gin.Context, params ListCustomersParams)
@@ -4979,6 +5703,228 @@ func (siw *ServerInterfaceWrapper) Register(c *gin.Context) {
 	siw.Handler.Register(c)
 }
 
+// ListCreativeGroups operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeGroups(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeGroups(c)
+}
+
+// CreateCreativeGroup operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeGroup(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeGroupParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeGroup(c, params)
+}
+
+// DeleteCreativeGroup operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCreativeGroup(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCreativeGroupParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCreativeGroup(c, id, params)
+}
+
+// MoveCreativeGroup operation middleware
+func (siw *ServerInterfaceWrapper) MoveCreativeGroup(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params MoveCreativeGroupParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.MoveCreativeGroup(c, id, params)
+}
+
+// RenameCreativeGroup operation middleware
+func (siw *ServerInterfaceWrapper) RenameCreativeGroup(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RenameCreativeGroupParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RenameCreativeGroup(c, id, params)
+}
+
 // ListCreativeAssets operation middleware
 func (siw *ServerInterfaceWrapper) ListCreativeAssets(c *gin.Context) {
 
@@ -5003,6 +5949,70 @@ func (siw *ServerInterfaceWrapper) ListCreativeAssets(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "view" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "view", c.Request.URL.Query(), &params.View, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter view: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "group_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "group_id", c.Request.URL.Query(), &params.GroupId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter group_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "include_descendants" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_descendants", c.Request.URL.Query(), &params.IncludeDescendants, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter include_descendants: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "kind" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "kind", c.Request.URL.Query(), &params.Kind, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter kind: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "tag_ids" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, false, "tag_ids", c.Request.URL.Query(), &params.TagIds, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter tag_ids: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "tag_mode" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_mode", c.Request.URL.Query(), &params.TagMode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter tag_mode: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", c.Request.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort: %w", err), http.StatusBadRequest)
 		return
 	}
 
@@ -5061,6 +6071,186 @@ func (siw *ServerInterfaceWrapper) CreateCreativeTextAsset(c *gin.Context) {
 	siw.Handler.CreateCreativeTextAsset(c, params)
 }
 
+// OrganizeCreativeAssets operation middleware
+func (siw *ServerInterfaceWrapper) OrganizeCreativeAssets(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params OrganizeCreativeAssetsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.OrganizeCreativeAssets(c, params)
+}
+
+// BatchPurgeCreativeAssets operation middleware
+func (siw *ServerInterfaceWrapper) BatchPurgeCreativeAssets(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BatchPurgeCreativeAssetsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.BatchPurgeCreativeAssets(c, params)
+}
+
+// BatchRestoreCreativeAssets operation middleware
+func (siw *ServerInterfaceWrapper) BatchRestoreCreativeAssets(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BatchRestoreCreativeAssetsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.BatchRestoreCreativeAssets(c, params)
+}
+
+// BatchTrashCreativeAssets operation middleware
+func (siw *ServerInterfaceWrapper) BatchTrashCreativeAssets(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BatchTrashCreativeAssetsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.BatchTrashCreativeAssets(c, params)
+}
+
 // GetCreativeTextAsset operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeTextAsset(c *gin.Context) {
 
@@ -5086,6 +6276,222 @@ func (siw *ServerInterfaceWrapper) GetCreativeTextAsset(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeTextAsset(c, id)
+}
+
+// UpdateCreativeAssetMetadata operation middleware
+func (siw *ServerInterfaceWrapper) UpdateCreativeAssetMetadata(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateCreativeAssetMetadataParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UpdateCreativeAssetMetadata(c, id, params)
+}
+
+// PurgeCreativeAsset operation middleware
+func (siw *ServerInterfaceWrapper) PurgeCreativeAsset(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PurgeCreativeAssetParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PurgeCreativeAsset(c, id, params)
+}
+
+// RestoreCreativeAsset operation middleware
+func (siw *ServerInterfaceWrapper) RestoreCreativeAsset(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RestoreCreativeAssetParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RestoreCreativeAsset(c, id, params)
+}
+
+// TrashCreativeAsset operation middleware
+func (siw *ServerInterfaceWrapper) TrashCreativeAsset(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params TrashCreativeAssetParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.TrashCreativeAsset(c, id, params)
 }
 
 // GetCreativeCanvas operation middleware
@@ -5209,6 +6615,66 @@ func (siw *ServerInterfaceWrapper) GetCreativeContentRevision(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeContentRevision(c, id)
+}
+
+// GetCreativeLibrarySettings operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeLibrarySettings(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeLibrarySettings(c)
+}
+
+// SaveCreativeLibrarySettings operation middleware
+func (siw *ServerInterfaceWrapper) SaveCreativeLibrarySettings(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SaveCreativeLibrarySettingsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SaveCreativeLibrarySettings(c, params)
 }
 
 // GetCreativeOperation operation middleware
@@ -5488,6 +6954,342 @@ func (siw *ServerInterfaceWrapper) RestoreCreativeProject(c *gin.Context) {
 	}
 
 	siw.Handler.RestoreCreativeProject(c, id, params)
+}
+
+// ListCreativeCategories operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeCategories(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeCategories(c)
+}
+
+// CreateCreativeCategory operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeCategory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeCategoryParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeCategory(c, params)
+}
+
+// DeleteCreativeCategory operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCreativeCategory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCreativeCategoryParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCreativeCategory(c, id, params)
+}
+
+// EditCreativeCategory operation middleware
+func (siw *ServerInterfaceWrapper) EditCreativeCategory(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EditCreativeCategoryParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.EditCreativeCategory(c, id, params)
+}
+
+// ListCreativeTags operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeTags(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeTags(c)
+}
+
+// CreateCreativeTag operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeTag(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeTagParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeTag(c, params)
+}
+
+// DeleteCreativeTag operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCreativeTag(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteCreativeTagParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DeleteCreativeTag(c, id, params)
+}
+
+// EditCreativeTag operation middleware
+func (siw *ServerInterfaceWrapper) EditCreativeTag(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EditCreativeTagParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.EditCreativeTag(c, id, params)
 }
 
 // ListCustomers operation middleware
@@ -7234,19 +9036,42 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/password/reset", wrapper.ResetPassword)
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
+	router.GET(options.BaseURL+"/creative/asset-groups", wrapper.ListCreativeGroups)
+	router.POST(options.BaseURL+"/creative/asset-groups", wrapper.CreateCreativeGroup)
+	router.POST(options.BaseURL+"/creative/asset-groups/:id/delete", wrapper.DeleteCreativeGroup)
+	router.POST(options.BaseURL+"/creative/asset-groups/:id/move", wrapper.MoveCreativeGroup)
+	router.POST(options.BaseURL+"/creative/asset-groups/:id/rename", wrapper.RenameCreativeGroup)
 	router.GET(options.BaseURL+"/creative/assets", wrapper.ListCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets", wrapper.CreateCreativeTextAsset)
+	router.POST(options.BaseURL+"/creative/assets/batch-organize", wrapper.OrganizeCreativeAssets)
+	router.POST(options.BaseURL+"/creative/assets/batch-purge", wrapper.BatchPurgeCreativeAssets)
+	router.POST(options.BaseURL+"/creative/assets/batch-restore", wrapper.BatchRestoreCreativeAssets)
+	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
+	router.POST(options.BaseURL+"/creative/assets/:id/metadata", wrapper.UpdateCreativeAssetMetadata)
+	router.POST(options.BaseURL+"/creative/assets/:id/purge", wrapper.PurgeCreativeAsset)
+	router.POST(options.BaseURL+"/creative/assets/:id/restore", wrapper.RestoreCreativeAsset)
+	router.POST(options.BaseURL+"/creative/assets/:id/trash", wrapper.TrashCreativeAsset)
 	router.GET(options.BaseURL+"/creative/canvases/:id", wrapper.GetCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/commands", wrapper.CommandCreativeCanvas)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
+	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)
+	router.POST(options.BaseURL+"/creative/library-settings", wrapper.SaveCreativeLibrarySettings)
 	router.GET(options.BaseURL+"/creative/operations/:operation_id", wrapper.GetCreativeOperation)
 	router.GET(options.BaseURL+"/creative/projects", wrapper.ListCreativeProjects)
 	router.POST(options.BaseURL+"/creative/projects", wrapper.CreateCreativeProject)
 	router.POST(options.BaseURL+"/creative/projects/:id/archive", wrapper.ArchiveCreativeProject)
 	router.POST(options.BaseURL+"/creative/projects/:id/rename", wrapper.RenameCreativeProject)
 	router.POST(options.BaseURL+"/creative/projects/:id/restore", wrapper.RestoreCreativeProject)
+	router.GET(options.BaseURL+"/creative/tag-categories", wrapper.ListCreativeCategories)
+	router.POST(options.BaseURL+"/creative/tag-categories", wrapper.CreateCreativeCategory)
+	router.POST(options.BaseURL+"/creative/tag-categories/:id/delete", wrapper.DeleteCreativeCategory)
+	router.POST(options.BaseURL+"/creative/tag-categories/:id/edit", wrapper.EditCreativeCategory)
+	router.GET(options.BaseURL+"/creative/tags", wrapper.ListCreativeTags)
+	router.POST(options.BaseURL+"/creative/tags", wrapper.CreateCreativeTag)
+	router.POST(options.BaseURL+"/creative/tags/:id/delete", wrapper.DeleteCreativeTag)
+	router.POST(options.BaseURL+"/creative/tags/:id/edit", wrapper.EditCreativeTag)
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
 	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)
