@@ -19,15 +19,18 @@ type CreativeCapabilities struct {
 	GCDelete        bool
 }
 
-// CreativeCapabilities is a read projection. Every effect rechecks under the
-// existing account writer barrier; a missing row denies all new capabilities.
+// CreativeCapabilities describes implemented product capabilities for an active account.
 func (sc AccountScope) CreativeCapabilities(ctx context.Context) (CreativeCapabilities, error) {
-	var c CreativeCapabilities
-	err := sc.QueryRow(ctx, "creative_account_capabilities", "read_enabled, manual_write_enabled, media_write_enabled, agent_start_enabled, node_generate_enabled, generation_apply_enabled, gc_delete_enabled", "").Scan(&c.Read, &c.ManualWrite, &c.MediaWrite, &c.AgentStart, &c.NodeGenerate, &c.GenerationApply, &c.GCDelete)
+	var status string
+	err := sc.execRunner().QueryRow(ctx, "SELECT status FROM accounts WHERE id=$1", sc.AccountID()).Scan(&status)
 	if errors.Is(err, ErrNoRows) {
-		return c, nil
+		return CreativeCapabilities{}, nil
 	}
-	return c, err
+	if err != nil {
+		return CreativeCapabilities{}, err
+	}
+	active := status == "active"
+	return CreativeCapabilities{Read: active, ManualWrite: active}, nil
 }
 
 func (sc TxAccountScope) RequireCreativeCapability(ctx context.Context, capability string) error {

@@ -159,8 +159,8 @@ test('planning workspace stays in AppShell while Run Mode is independently authe
 
   assert.match(app, /<RequireAuth status=\{auth\.status\}>[\s\S]*<AppShell \/>[\s\S]*<Route path="\/shoot-plans"/)
   assert.match(app, /<Route path="\/shoot-plans\/:id"/)
-  assert.match(app, /<Route path="\/settings"[^\n]*\/>[\s\S]*<Route path="\/shoot-plans\/:id\/run" element=\{<RequireAuth status=\{auth\.status\}><LegacyWriteSurface><ShootPlanRunPage \/><\/LegacyWriteSurface><\/RequireAuth>\} \/>/)
-  assert.match(shell, /label: '创意空间', to: '\/creative-workspaces'/)
+  assert.match(app, /<Route path="\/settings"[^\n]*\/>[\s\S]*<Route path="\/shoot-plans\/:id\/run" element=\{<RequireAuth status=\{auth\.status\}><ShootPlanRunPage \/><\/RequireAuth>\} \/>/)
+  assert.match(shell, /label: '创意空间',\s*to: '\/creative'/)
 })
 
 test('workspace exposes the approved core sections, share collaboration, and private business workbench', () => {

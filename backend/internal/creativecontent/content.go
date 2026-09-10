@@ -28,12 +28,22 @@ type Payload struct {
 	Title       *string `json:"title,omitempty"`
 	Description *string `json:"description,omitempty"`
 }
+
+// RightsDeclarationInput exposes only the current display declaration fields.
+// Generation consent is intentionally absent from this namespace.
+type RightsDeclarationInput struct {
+	SourceClass     planningmedia.SourceClass `json:"source_class"`
+	RightsBasis     planningmedia.RightsBasis `json:"rights_basis"`
+	EvidenceSummary string                    `json:"evidence_summary,omitempty"`
+}
+
 type Draft struct {
-	Rights  planningmedia.RightsDeclarationInput `json:"rights"`
-	Kind    string                               `json:"kind"`
-	Payload Payload                              `json:"payload"`
+	Rights  RightsDeclarationInput `json:"rights"`
+	Kind    string                 `json:"kind"`
+	Payload Payload                `json:"payload"`
 }
 type Revision struct {
+	Truncated     bool                 `json:"truncated"`
 	ID            string               `json:"id"`
 	ContentID     string               `json:"content_id"`
 	Kind          string               `json:"kind"`
@@ -110,7 +120,11 @@ func WriteAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, s
 		}
 	}
 	if result.DeclarationID == "" {
-		if err := planningmedia.ValidatePurpose(draft.Rights, planningmedia.PurposeMoodboardDisplay); err != nil {
+		if utf8.RuneCountInString(draft.Rights.EvidenceSummary) > 500 {
+			return Revision{}, creativeops.ErrValidation
+		}
+		declaration := planningmedia.RightsDeclarationInput{SourceClass: draft.Rights.SourceClass, RightsBasis: draft.Rights.RightsBasis, EvidenceSummary: draft.Rights.EvidenceSummary}
+		if err := planningmedia.ValidatePurpose(declaration, planningmedia.PurposeMoodboardDisplay); err != nil {
 			return Revision{}, ErrUsageDenied
 		}
 		result.DeclarationID = newID("ccrd")
@@ -233,10 +247,29 @@ func Read(ctx context.Context, scope store.AccountScope, id string) (Revision, e
 		}
 		var err error
 		result, err = RequireUsable(ctx, tx, id, "display")
+		// A snapshot can outlive its final reference after another editor saves.
+		// This public read is unavailable; creation-time missing roots remain errors.
+		if errors.Is(err, ErrMissingRoot) {
+			return ErrNotFound
+		}
 		return err
 	})
 	if err != nil {
 		return Revision{}, err
 	}
 	return result, nil
+}
+
+// Preview limits inline text while retaining the exact revision identity.
+// Editors must read that revision before replacing a truncated body.
+func Preview(r Revision) Revision {
+	if r.Payload.Body != nil {
+		runes := []rune(*r.Payload.Body)
+		if len(runes) > 2000 {
+			body := string(runes[:2000])
+			r.Payload.Body = &body
+			r.Truncated = true
+		}
+	}
+	return r
 }

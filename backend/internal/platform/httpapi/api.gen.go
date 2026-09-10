@@ -209,6 +209,93 @@ func (e CreateAssetBindingInputHolderKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAddNodePayloadType.
+const (
+	AddNode CreativeAddNodePayloadType = "add_node"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAddNodePayloadType enum.
+func (e CreativeAddNodePayloadType) Valid() bool {
+	switch e {
+	case AddNode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAddNodePayloadTypeKey.
+const (
+	CreativeAddNodePayloadTypeKeyCoreLink CreativeAddNodePayloadTypeKey = "core.link"
+	CreativeAddNodePayloadTypeKeyCoreText CreativeAddNodePayloadTypeKey = "core.text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAddNodePayloadTypeKey enum.
+func (e CreativeAddNodePayloadTypeKey) Valid() bool {
+	switch e {
+	case CreativeAddNodePayloadTypeKeyCoreLink:
+		return true
+	case CreativeAddNodePayloadTypeKeyCoreText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeCanvasNodeTypeKey.
+const (
+	CreativeCanvasNodeTypeKeyCoreLink CreativeCanvasNodeTypeKey = "core.link"
+	CreativeCanvasNodeTypeKeyCoreText CreativeCanvasNodeTypeKey = "core.text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeCanvasNodeTypeKey enum.
+func (e CreativeCanvasNodeTypeKey) Valid() bool {
+	switch e {
+	case CreativeCanvasNodeTypeKeyCoreLink:
+		return true
+	case CreativeCanvasNodeTypeKeyCoreText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeContentDraftKind.
+const (
+	CreativeContentDraftKindLink CreativeContentDraftKind = "link"
+	CreativeContentDraftKindText CreativeContentDraftKind = "text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeContentDraftKind enum.
+func (e CreativeContentDraftKind) Valid() bool {
+	switch e {
+	case CreativeContentDraftKindLink:
+		return true
+	case CreativeContentDraftKindText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeContentRevisionKind.
+const (
+	CreativeContentRevisionKindLink CreativeContentRevisionKind = "link"
+	CreativeContentRevisionKindText CreativeContentRevisionKind = "text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeContentRevisionKind enum.
+func (e CreativeContentRevisionKind) Valid() bool {
+	switch e {
+	case CreativeContentRevisionKindLink:
+		return true
+	case CreativeContentRevisionKindText:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeFoundationCapabilitiesSchemaVersion.
 const (
 	CreativeFoundationCapabilitiesSchemaVersionN1 CreativeFoundationCapabilitiesSchemaVersion = 1
@@ -218,6 +305,39 @@ const (
 func (e CreativeFoundationCapabilitiesSchemaVersion) Valid() bool {
 	switch e {
 	case CreativeFoundationCapabilitiesSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeLibraryAssetKind.
+const (
+	Link CreativeLibraryAssetKind = "link"
+	Text CreativeLibraryAssetKind = "text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeLibraryAssetKind enum.
+func (e CreativeLibraryAssetKind) Valid() bool {
+	switch e {
+	case Link:
+		return true
+	case Text:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeMoveNodePayloadType.
+const (
+	MoveNode CreativeMoveNodePayloadType = "move_node"
+)
+
+// Valid indicates whether the value is a known member of the CreativeMoveNodePayloadType enum.
+func (e CreativeMoveNodePayloadType) Valid() bool {
+	switch e {
+	case MoveNode:
 		return true
 	default:
 		return false
@@ -239,6 +359,21 @@ func (e CreativeOperationReceiptHttpStatus) Valid() bool {
 	case N201:
 		return true
 	case N202:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeReplaceContentPayloadType.
+const (
+	ReplaceContent CreativeReplaceContentPayloadType = "replace_content"
+)
+
+// Valid indicates whether the value is a known member of the CreativeReplaceContentPayloadType enum.
+func (e CreativeReplaceContentPayloadType) Valid() bool {
+	switch e {
+	case ReplaceContent:
 		return true
 	default:
 		return false
@@ -1428,6 +1563,13 @@ type ArchiveAcknowledgementRequiredDetails struct {
 	RequiredArchiveAcknowledgement ArchiveAcknowledgement `json:"required_archive_acknowledgement"`
 }
 
+// ArchiveCreativeProjectRequest defines model for ArchiveCreativeProjectRequest.
+type ArchiveCreativeProjectRequest struct {
+	ClientCreatedAt time.Time                   `json:"client_created_at"`
+	OperationId     openapi_types.UUID          `json:"operation_id"`
+	Payload         CreativeProjectStatePayload `json:"payload"`
+}
+
 // AssetBinding defines model for AssetBinding.
 type AssetBinding struct {
 	AssetId    string                 `json:"asset_id"`
@@ -1518,6 +1660,13 @@ type ChurnThreshold struct {
 	ShootType ShootType `json:"shoot_type"`
 }
 
+// CommandCreativeCanvasRequest defines model for CommandCreativeCanvasRequest.
+type CommandCreativeCanvasRequest struct {
+	ClientCreatedAt time.Time                    `json:"client_created_at"`
+	OperationId     openapi_types.UUID           `json:"operation_id"`
+	Payload         CreativeCanvasCommandPayload `json:"payload"`
+}
+
 // CoreArchiveAcknowledgement defines model for CoreArchiveAcknowledgement.
 type CoreArchiveAcknowledgement struct {
 	Effects []CoreArchiveAcknowledgementEffects `json:"effects"`
@@ -1543,6 +1692,165 @@ type CreateAssetBindingInput struct {
 // CreateAssetBindingInputHolderKind defines model for CreateAssetBindingInput.HolderKind.
 type CreateAssetBindingInputHolderKind string
 
+// CreateCreativeProjectRequest defines model for CreateCreativeProjectRequest.
+type CreateCreativeProjectRequest struct {
+	ClientCreatedAt time.Time                    `json:"client_created_at"`
+	OperationId     openapi_types.UUID           `json:"operation_id"`
+	Payload         CreativeProjectCreatePayload `json:"payload"`
+}
+
+// CreateCreativeTextAssetRequest defines model for CreateCreativeTextAssetRequest.
+type CreateCreativeTextAssetRequest struct {
+	ClientCreatedAt time.Time                  `json:"client_created_at"`
+	OperationId     openapi_types.UUID         `json:"operation_id"`
+	Payload         CreativeAssetCreatePayload `json:"payload"`
+}
+
+// CreativeAddNodePayload defines model for CreativeAddNodePayload.
+type CreativeAddNodePayload struct {
+	Asset   *CreativeAssetReference `json:"asset,omitempty"`
+	Content *CreativeContentDraft   `json:"content,omitempty"`
+
+	// ExpectedTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedTopologyRevision CreativeRevision              `json:"expected_topology_revision"`
+	NodeId                   string                        `json:"node_id"`
+	Title                    *string                       `json:"title,omitempty"`
+	Type                     CreativeAddNodePayloadType    `json:"type"`
+	TypeKey                  CreativeAddNodePayloadTypeKey `json:"type_key"`
+	X                        float32                       `json:"x"`
+	Y                        float32                       `json:"y"`
+}
+
+// CreativeAddNodePayloadType defines model for CreativeAddNodePayload.Type.
+type CreativeAddNodePayloadType string
+
+// CreativeAddNodePayloadTypeKey defines model for CreativeAddNodePayload.TypeKey.
+type CreativeAddNodePayloadTypeKey string
+
+// CreativeAssetCreatePayload defines model for CreativeAssetCreatePayload.
+type CreativeAssetCreatePayload struct {
+	Content     CreativeContentDraft `json:"content"`
+	Description *string              `json:"description,omitempty"`
+	Title       string               `json:"title"`
+}
+
+// CreativeAssetCreateResult defines model for CreativeAssetCreateResult.
+type CreativeAssetCreateResult struct {
+	AssetId           string `json:"asset_id"`
+	ContentRevisionId string `json:"content_revision_id"`
+
+	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	LibraryRevision CreativeRevision `json:"library_revision"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeAssetPage defines model for CreativeAssetPage.
+type CreativeAssetPage struct {
+	Items []CreativeLibraryAsset `json:"items"`
+
+	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	LibraryRevision CreativeRevision `json:"library_revision"`
+	NextCursor      string           `json:"next_cursor"`
+	TotalCount      int64            `json:"total_count"`
+}
+
+// CreativeAssetReference defines model for CreativeAssetReference.
+type CreativeAssetReference struct {
+	AssetId           string `json:"asset_id"`
+	ContentRevisionId string `json:"content_revision_id"`
+
+	// ExpectedAssetRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedAssetRevision CreativeRevision `json:"expected_asset_revision"`
+}
+
+// CreativeCanvasCommandPayload defines model for CreativeCanvasCommandPayload.
+type CreativeCanvasCommandPayload struct {
+	union json.RawMessage
+}
+
+// CreativeCanvasNode defines model for CreativeCanvasNode.
+type CreativeCanvasNode struct {
+	Content           *CreativeContentRevision  `json:"content,omitempty"`
+	ContentId         nullable.Nullable[string] `json:"content_id"`
+	ContentRevisionId nullable.Nullable[string] `json:"content_revision_id"`
+
+	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DataRevision CreativeRevision `json:"data_revision"`
+	Height       float32          `json:"height"`
+	Id           string           `json:"id"`
+
+	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	PlacementRevision CreativeRevision          `json:"placement_revision"`
+	Title             string                    `json:"title"`
+	TypeKey           CreativeCanvasNodeTypeKey `json:"type_key"`
+	Unavailable       bool                      `json:"unavailable"`
+	Width             float32                   `json:"width"`
+	X                 float32                   `json:"x"`
+	Y                 float32                   `json:"y"`
+}
+
+// CreativeCanvasNodeTypeKey defines model for CreativeCanvasNode.TypeKey.
+type CreativeCanvasNodeTypeKey string
+
+// CreativeCanvasSnapshot defines model for CreativeCanvasSnapshot.
+type CreativeCanvasSnapshot struct {
+	Archived    bool                 `json:"archived"`
+	Id          string               `json:"id"`
+	Nodes       []CreativeCanvasNode `json:"nodes"`
+	ProjectId   string               `json:"project_id"`
+	ProjectName string               `json:"project_name"`
+
+	// ProjectRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ProjectRevision CreativeRevision `json:"project_revision"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+
+	// TopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	TopologyRevision CreativeRevision `json:"topology_revision"`
+}
+
+// CreativeContentDraft defines model for CreativeContentDraft.
+type CreativeContentDraft struct {
+	Kind    CreativeContentDraftKind `json:"kind"`
+	Payload CreativeContentPayload   `json:"payload"`
+	Rights  CreativeContentRights    `json:"rights"`
+}
+
+// CreativeContentDraftKind defines model for CreativeContentDraft.Kind.
+type CreativeContentDraftKind string
+
+// CreativeContentPayload defines model for CreativeContentPayload.
+type CreativeContentPayload struct {
+	union json.RawMessage
+}
+
+// CreativeContentRevision defines model for CreativeContentRevision.
+type CreativeContentRevision struct {
+	ContentId string                      `json:"content_id"`
+	Id        string                      `json:"id"`
+	Kind      CreativeContentRevisionKind `json:"kind"`
+	Payload   CreativeContentPayload      `json:"payload"`
+
+	// Sequence 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Sequence CreativeRevision `json:"sequence"`
+
+	// Truncated 正文是否为摘要；编辑前读取该修订完整正文
+	Truncated bool `json:"truncated"`
+}
+
+// CreativeContentRevisionKind defines model for CreativeContentRevision.Kind.
+type CreativeContentRevisionKind string
+
+// CreativeContentRights defines model for CreativeContentRights.
+type CreativeContentRights struct {
+	EvidenceSummary *string `json:"evidence_summary,omitempty"`
+	RightsBasis     string  `json:"rights_basis"`
+	SourceClass     string  `json:"source_class"`
+}
+
 // CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
 type CreativeFoundationCapabilities struct {
 	Available     bool                                        `json:"available"`
@@ -1554,6 +1862,64 @@ type CreativeFoundationCapabilities struct {
 
 // CreativeFoundationCapabilitiesSchemaVersion defines model for CreativeFoundationCapabilities.SchemaVersion.
 type CreativeFoundationCapabilitiesSchemaVersion int
+
+// CreativeLibraryAsset defines model for CreativeLibraryAsset.
+type CreativeLibraryAsset struct {
+	Content           *CreativeContentRevision `json:"content,omitempty"`
+	ContentId         string                   `json:"content_id"`
+	ContentRevisionId string                   `json:"content_revision_id"`
+	Description       string                   `json:"description"`
+	Id                string                   `json:"id"`
+	Kind              CreativeLibraryAssetKind `json:"kind"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision    CreativeRevision `json:"revision"`
+	Title       string           `json:"title"`
+	Unavailable bool             `json:"unavailable"`
+}
+
+// CreativeLibraryAssetKind defines model for CreativeLibraryAsset.Kind.
+type CreativeLibraryAssetKind string
+
+// CreativeLinkPayload defines model for CreativeLinkPayload.
+type CreativeLinkPayload struct {
+	Description *string `json:"description,omitempty"`
+	Title       *string `json:"title,omitempty"`
+	Url         string  `json:"url"`
+}
+
+// CreativeMoveNodePayload defines model for CreativeMoveNodePayload.
+type CreativeMoveNodePayload struct {
+	// ExpectedPlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedPlacementRevision CreativeRevision            `json:"expected_placement_revision"`
+	NodeId                    string                      `json:"node_id"`
+	Type                      CreativeMoveNodePayloadType `json:"type"`
+	X                         float32                     `json:"x"`
+	Y                         float32                     `json:"y"`
+}
+
+// CreativeMoveNodePayloadType defines model for CreativeMoveNodePayload.Type.
+type CreativeMoveNodePayloadType string
+
+// CreativeNodeCommandResult defines model for CreativeNodeCommandResult.
+type CreativeNodeCommandResult struct {
+	// BeforeTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	BeforeTopologyRevision CreativeRevision          `json:"before_topology_revision"`
+	ContentRevisionId      nullable.Nullable[string] `json:"content_revision_id"`
+
+	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DataRevision CreativeRevision `json:"data_revision"`
+	NodeId       string           `json:"node_id"`
+
+	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	PlacementRevision CreativeRevision `json:"placement_revision"`
+
+	// ResultRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultRevision CreativeRevision `json:"result_revision"`
+
+	// ResultTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultTopologyRevision CreativeRevision `json:"result_topology_revision"`
+}
 
 // CreativeOperationReceipt defines model for CreativeOperationReceipt.
 type CreativeOperationReceipt struct {
@@ -1573,8 +1939,82 @@ type CreativeOperationReceipt struct {
 // CreativeOperationReceiptHttpStatus defines model for CreativeOperationReceipt.HttpStatus.
 type CreativeOperationReceiptHttpStatus int
 
+// CreativeProject defines model for CreativeProject.
+type CreativeProject struct {
+	Archived        bool   `json:"archived"`
+	DefaultCanvasId string `json:"default_canvas_id"`
+	Id              string `json:"id"`
+	Name            string `json:"name"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision  CreativeRevision `json:"revision"`
+	UpdatedAt time.Time        `json:"updated_at"`
+}
+
+// CreativeProjectCreatePayload defines model for CreativeProjectCreatePayload.
+type CreativeProjectCreatePayload struct {
+	Name string `json:"name"`
+}
+
+// CreativeProjectCreateResult defines model for CreativeProjectCreateResult.
+type CreativeProjectCreateResult struct {
+	DefaultCanvasId string `json:"default_canvas_id"`
+	ProjectId       string `json:"project_id"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeProjectPage defines model for CreativeProjectPage.
+type CreativeProjectPage struct {
+	Items      []CreativeProject `json:"items"`
+	NextCursor string            `json:"next_cursor"`
+}
+
+// CreativeProjectRenamePayload defines model for CreativeProjectRenamePayload.
+type CreativeProjectRenamePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+	Name             string           `json:"name"`
+}
+
+// CreativeProjectStatePayload defines model for CreativeProjectStatePayload.
+type CreativeProjectStatePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+}
+
+// CreativeProjectStateResult defines model for CreativeProjectStateResult.
+type CreativeProjectStateResult struct {
+	Archived  *bool  `json:"archived,omitempty"`
+	ProjectId string `json:"project_id"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeReplaceContentPayload defines model for CreativeReplaceContentPayload.
+type CreativeReplaceContentPayload struct {
+	ExpectedContentRevisionId nullable.Nullable[string] `json:"expected_content_revision_id"`
+
+	// ExpectedDataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedDataRevision CreativeRevision                  `json:"expected_data_revision"`
+	NodeId               string                            `json:"node_id"`
+	Payload              CreativeContentPayload            `json:"payload"`
+	Rights               *CreativeContentRights            `json:"rights,omitempty"`
+	Type                 CreativeReplaceContentPayloadType `json:"type"`
+}
+
+// CreativeReplaceContentPayloadType defines model for CreativeReplaceContentPayload.Type.
+type CreativeReplaceContentPayloadType string
+
 // CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 type CreativeRevision = string
+
+// CreativeTextPayload defines model for CreativeTextPayload.
+type CreativeTextPayload struct {
+	Body string `json:"body"`
+}
 
 // Customer defines model for Customer.
 type Customer struct {
@@ -2323,6 +2763,20 @@ type ReminderStatus string
 // ReminderType defines model for ReminderType.
 type ReminderType string
 
+// RenameCreativeProjectRequest defines model for RenameCreativeProjectRequest.
+type RenameCreativeProjectRequest struct {
+	ClientCreatedAt time.Time                    `json:"client_created_at"`
+	OperationId     openapi_types.UUID           `json:"operation_id"`
+	Payload         CreativeProjectRenamePayload `json:"payload"`
+}
+
+// RestoreCreativeProjectRequest defines model for RestoreCreativeProjectRequest.
+type RestoreCreativeProjectRequest struct {
+	ClientCreatedAt time.Time                   `json:"client_created_at"`
+	OperationId     openapi_types.UUID          `json:"operation_id"`
+	Payload         CreativeProjectStatePayload `json:"payload"`
+}
+
 // ScheduleAvailability defines model for ScheduleAvailability.
 type ScheduleAvailability struct {
 	MinOpeningMinutes int                        `json:"min_opening_minutes"`
@@ -2857,6 +3311,49 @@ type RegisterJSONBody struct {
 	Password string `json:"password"`
 }
 
+// ListCreativeAssetsParams defines parameters for ListCreativeAssets.
+type ListCreativeAssetsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateCreativeTextAssetParams defines parameters for CreateCreativeTextAsset.
+type CreateCreativeTextAssetParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CommandCreativeCanvasParams defines parameters for CommandCreativeCanvas.
+type CommandCreativeCanvasParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// ListCreativeProjectsParams defines parameters for ListCreativeProjects.
+type ListCreativeProjectsParams struct {
+	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Archived *bool   `form:"archived,omitempty" json:"archived,omitempty"`
+}
+
+// CreateCreativeProjectParams defines parameters for CreateCreativeProject.
+type CreateCreativeProjectParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// ArchiveCreativeProjectParams defines parameters for ArchiveCreativeProject.
+type ArchiveCreativeProjectParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// RenameCreativeProjectParams defines parameters for RenameCreativeProject.
+type RenameCreativeProjectParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// RestoreCreativeProjectParams defines parameters for RestoreCreativeProject.
+type RestoreCreativeProjectParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // ListCustomersParams defines parameters for ListCustomers.
 type ListCustomersParams struct {
 	Q       *string          `form:"q,omitempty" json:"q,omitempty"`
@@ -3219,6 +3716,24 @@ type ResetPasswordJSONRequestBody ResetPasswordJSONBody
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody RegisterJSONBody
 
+// CreateCreativeTextAssetJSONRequestBody defines body for CreateCreativeTextAsset for application/json ContentType.
+type CreateCreativeTextAssetJSONRequestBody = CreateCreativeTextAssetRequest
+
+// CommandCreativeCanvasJSONRequestBody defines body for CommandCreativeCanvas for application/json ContentType.
+type CommandCreativeCanvasJSONRequestBody = CommandCreativeCanvasRequest
+
+// CreateCreativeProjectJSONRequestBody defines body for CreateCreativeProject for application/json ContentType.
+type CreateCreativeProjectJSONRequestBody = CreateCreativeProjectRequest
+
+// ArchiveCreativeProjectJSONRequestBody defines body for ArchiveCreativeProject for application/json ContentType.
+type ArchiveCreativeProjectJSONRequestBody = ArchiveCreativeProjectRequest
+
+// RenameCreativeProjectJSONRequestBody defines body for RenameCreativeProject for application/json ContentType.
+type RenameCreativeProjectJSONRequestBody = RenameCreativeProjectRequest
+
+// RestoreCreativeProjectJSONRequestBody defines body for RestoreCreativeProject for application/json ContentType.
+type RestoreCreativeProjectJSONRequestBody = RestoreCreativeProjectRequest
+
 // CreateCustomerJSONRequestBody defines body for CreateCustomer for application/json ContentType.
 type CreateCustomerJSONRequestBody CreateCustomerJSONBody
 
@@ -3397,6 +3912,156 @@ func (t ArchiveAcknowledgement) MarshalJSON() ([]byte, error) {
 }
 
 func (t *ArchiveAcknowledgement) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeAddNodePayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeAddNodePayload
+func (t CreativeCanvasCommandPayload) AsCreativeAddNodePayload() (CreativeAddNodePayload, error) {
+	var body CreativeAddNodePayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeAddNodePayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeAddNodePayload
+func (t *CreativeCanvasCommandPayload) FromCreativeAddNodePayload(v CreativeAddNodePayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeAddNodePayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeAddNodePayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeAddNodePayload(v CreativeAddNodePayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMoveNodePayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeMoveNodePayload
+func (t CreativeCanvasCommandPayload) AsCreativeMoveNodePayload() (CreativeMoveNodePayload, error) {
+	var body CreativeMoveNodePayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMoveNodePayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeMoveNodePayload
+func (t *CreativeCanvasCommandPayload) FromCreativeMoveNodePayload(v CreativeMoveNodePayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMoveNodePayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeMoveNodePayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeMoveNodePayload(v CreativeMoveNodePayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeReplaceContentPayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeReplaceContentPayload
+func (t CreativeCanvasCommandPayload) AsCreativeReplaceContentPayload() (CreativeReplaceContentPayload, error) {
+	var body CreativeReplaceContentPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeReplaceContentPayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeReplaceContentPayload
+func (t *CreativeCanvasCommandPayload) FromCreativeReplaceContentPayload(v CreativeReplaceContentPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeReplaceContentPayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeReplaceContentPayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeReplaceContentPayload(v CreativeReplaceContentPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeCanvasCommandPayload) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeCanvasCommandPayload) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeTextPayload returns the union data inside the CreativeContentPayload as a CreativeTextPayload
+func (t CreativeContentPayload) AsCreativeTextPayload() (CreativeTextPayload, error) {
+	var body CreativeTextPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeTextPayload overwrites any union data inside the CreativeContentPayload as the provided CreativeTextPayload
+func (t *CreativeContentPayload) FromCreativeTextPayload(v CreativeTextPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeTextPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeTextPayload
+func (t *CreativeContentPayload) MergeCreativeTextPayload(v CreativeTextPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeLinkPayload returns the union data inside the CreativeContentPayload as a CreativeLinkPayload
+func (t CreativeContentPayload) AsCreativeLinkPayload() (CreativeLinkPayload, error) {
+	var body CreativeLinkPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeLinkPayload overwrites any union data inside the CreativeContentPayload as the provided CreativeLinkPayload
+func (t *CreativeContentPayload) FromCreativeLinkPayload(v CreativeLinkPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeLinkPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeLinkPayload
+func (t *CreativeContentPayload) MergeCreativeLinkPayload(v CreativeLinkPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeContentPayload) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeContentPayload) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -3776,12 +4441,45 @@ type ServerInterface interface {
 	// 注册 pending_verification 账号并尝试发送验证邮件
 	// (POST /auth/register)
 	Register(c *gin.Context)
+
+	// (GET /creative/assets)
+	ListCreativeAssets(c *gin.Context, params ListCreativeAssetsParams)
+
+	// (POST /creative/assets)
+	CreateCreativeTextAsset(c *gin.Context, params CreateCreativeTextAssetParams)
+
+	// (GET /creative/assets/{id})
+	GetCreativeTextAsset(c *gin.Context, id string)
+
+	// (GET /creative/canvases/{id})
+	GetCreativeCanvas(c *gin.Context, id string)
+
+	// (POST /creative/canvases/{id}/commands)
+	CommandCreativeCanvas(c *gin.Context, id string, params CommandCreativeCanvasParams)
 	// 查询当前已实现的创意能力；地基阶段不开放业务动作
 	// (GET /creative/capabilities)
 	GetCreativeCapabilities(c *gin.Context)
+
+	// (GET /creative/content-revisions/{id})
+	GetCreativeContentRevision(c *gin.Context, id string)
 	// 读取本账号持久回执；404不证明操作从未提交
 	// (GET /creative/operations/{operation_id})
 	GetCreativeOperation(c *gin.Context, operationId openapi_types.UUID)
+
+	// (GET /creative/projects)
+	ListCreativeProjects(c *gin.Context, params ListCreativeProjectsParams)
+
+	// (POST /creative/projects)
+	CreateCreativeProject(c *gin.Context, params CreateCreativeProjectParams)
+
+	// (POST /creative/projects/{id}/archive)
+	ArchiveCreativeProject(c *gin.Context, id string, params ArchiveCreativeProjectParams)
+
+	// (POST /creative/projects/{id}/rename)
+	RenameCreativeProject(c *gin.Context, id string, params RenameCreativeProjectParams)
+
+	// (POST /creative/projects/{id}/restore)
+	RestoreCreativeProject(c *gin.Context, id string, params RestoreCreativeProjectParams)
 	// 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
 	// (GET /customers)
 	ListCustomers(c *gin.Context, params ListCustomersParams)
@@ -4281,6 +4979,196 @@ func (siw *ServerInterfaceWrapper) Register(c *gin.Context) {
 	siw.Handler.Register(c)
 }
 
+// ListCreativeAssets operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeAssets(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreativeAssetsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeAssets(c, params)
+}
+
+// CreateCreativeTextAsset operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeTextAsset(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeTextAssetParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeTextAsset(c, params)
+}
+
+// GetCreativeTextAsset operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeTextAsset(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeTextAsset(c, id)
+}
+
+// GetCreativeCanvas operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeCanvas(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeCanvas(c, id)
+}
+
+// CommandCreativeCanvas operation middleware
+func (siw *ServerInterfaceWrapper) CommandCreativeCanvas(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CommandCreativeCanvasParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CommandCreativeCanvas(c, id, params)
+}
+
 // GetCreativeCapabilities operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeCapabilities(c *gin.Context) {
 
@@ -4294,6 +5182,33 @@ func (siw *ServerInterfaceWrapper) GetCreativeCapabilities(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeCapabilities(c)
+}
+
+// GetCreativeContentRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeContentRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeContentRevision(c, id)
 }
 
 // GetCreativeOperation operation middleware
@@ -4321,6 +5236,258 @@ func (siw *ServerInterfaceWrapper) GetCreativeOperation(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeOperation(c, operationId)
+}
+
+// ListCreativeProjects operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeProjects(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreativeProjectsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "archived" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "archived", c.Request.URL.Query(), &params.Archived, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archived: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeProjects(c, params)
+}
+
+// CreateCreativeProject operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeProject(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeProjectParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeProject(c, params)
+}
+
+// ArchiveCreativeProject operation middleware
+func (siw *ServerInterfaceWrapper) ArchiveCreativeProject(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ArchiveCreativeProjectParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ArchiveCreativeProject(c, id, params)
+}
+
+// RenameCreativeProject operation middleware
+func (siw *ServerInterfaceWrapper) RenameCreativeProject(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RenameCreativeProjectParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RenameCreativeProject(c, id, params)
+}
+
+// RestoreCreativeProject operation middleware
+func (siw *ServerInterfaceWrapper) RestoreCreativeProject(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RestoreCreativeProjectParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RestoreCreativeProject(c, id, params)
 }
 
 // ListCustomers operation middleware
@@ -6067,8 +7234,19 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/password/reset", wrapper.ResetPassword)
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
+	router.GET(options.BaseURL+"/creative/assets", wrapper.ListCreativeAssets)
+	router.POST(options.BaseURL+"/creative/assets", wrapper.CreateCreativeTextAsset)
+	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
+	router.GET(options.BaseURL+"/creative/canvases/:id", wrapper.GetCreativeCanvas)
+	router.POST(options.BaseURL+"/creative/canvases/:id/commands", wrapper.CommandCreativeCanvas)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
+	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
 	router.GET(options.BaseURL+"/creative/operations/:operation_id", wrapper.GetCreativeOperation)
+	router.GET(options.BaseURL+"/creative/projects", wrapper.ListCreativeProjects)
+	router.POST(options.BaseURL+"/creative/projects", wrapper.CreateCreativeProject)
+	router.POST(options.BaseURL+"/creative/projects/:id/archive", wrapper.ArchiveCreativeProject)
+	router.POST(options.BaseURL+"/creative/projects/:id/rename", wrapper.RenameCreativeProject)
+	router.POST(options.BaseURL+"/creative/projects/:id/restore", wrapper.RestoreCreativeProject)
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
 	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)

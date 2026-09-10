@@ -1,8 +1,17 @@
 {
   "profile": "product-admin",
-  "sourceRoots": ["frontend/src/creative"],
+  "sourceRoots": [
+    "frontend/src/creative-canvas/editor"
+  ],
   "locale": "zh-CN",
   "canonicalMap": "UX-CONTRACT.md",
-  "requiredCapabilities": ["Select/Listbox", "Form", "Toast", "CRUD"],
-  "ownership": {"Select/Listbox": "native"}
+  "requiredCapabilities": [
+    "Select/Listbox",
+    "Form",
+    "Toast",
+    "CRUD"
+  ],
+  "ownership": {
+    "Select/Listbox": "native"
+  }
 }

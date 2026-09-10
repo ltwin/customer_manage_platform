@@ -36,7 +36,7 @@ func (h *planningMediaHandlers) scope(c *gin.Context) (store.AccountScope, bool)
 		abortError(c, http.StatusUnauthorized, CodeUnauthorized, "未认证")
 		return store.AccountScope{}, false
 	}
-	return creativeLegacyScope(c, h.scopeFactory.ScopeFor(account)), true
+	return h.scopeFactory.ScopeFor(account), true
 }
 func (h *planningMediaHandlers) list(c *gin.Context) {
 	scope, ok := h.scope(c)
@@ -190,9 +190,6 @@ func decodeStrictJSONBody(c *gin.Context, destination any) error {
 	return decodeStrictJSON(body, destination)
 }
 func (h *planningMediaHandlers) fail(c *gin.Context, err error) {
-	if abortLegacyWriteError(c, err) {
-		return
-	}
 	switch {
 	case errors.Is(err, planningmedia.ErrNotFound):
 		abortError(c, 404, CodeNotFound, "资源不存在")

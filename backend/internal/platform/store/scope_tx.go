@@ -103,13 +103,6 @@ func (sc AccountScope) withinTx(ctx context.Context, fn func(AccountScope) error
 		}
 	}()
 	txScope := AccountScope{pool: sc.pool, runner: tx, accountID: sc.accountID}
-	if sc.legacyPlanningWrite {
-		if err := (TxAccountScope{scope: txScope}).RequireLegacyPlanningWrite(ctx); err != nil {
-			// No callback has run; rollback releases the account barrier.
-			_ = tx.Rollback(ctx)
-			return err
-		}
-	}
 	if err := fn(txScope); err != nil {
 		if rbErr := tx.Rollback(ctx); rbErr != nil {
 			return fmt.Errorf("scoped tx rollback after %w: %w", err, rbErr)

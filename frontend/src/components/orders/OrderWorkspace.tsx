@@ -1,4 +1,3 @@
-import LinkedSpaces from '../../creative/LinkedSpaces'
 import { Link, useNavigate } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -1021,7 +1020,6 @@ function OrderRow({
           <h3>{orderTitle(order)}</h3>
         </div>
         <PlanningSummaryLink summary={order.planning_summary} />
- <LinkedSpaces kind="order" id={order.id} />
         <div className="order-meta">
           {!fixedCustomer && (
             <Link to={`/customers/${order.customer_id}`}>{order.customer_display_name}</Link>

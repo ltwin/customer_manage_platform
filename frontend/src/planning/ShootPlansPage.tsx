@@ -1,4 +1,3 @@
-import { useLegacyReadOnly } from '../creative/useLegacyReadOnly'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useShell } from '../components/shellContext'
@@ -57,7 +56,6 @@ function emptyListMessage(query: PlanListQuery): string {
 }
 
 export default function ShootPlansPage() {
- const legacyReadOnly = useLegacyReadOnly() !== 'write'
   const navigate = useNavigate()
   const { notify } = useShell()
   const [filter, setFilter] = useState<'all' | ShootPlanStatus>('all')
@@ -141,13 +139,12 @@ export default function ShootPlansPage() {
       <header className="topbar">
         <div>
           <div className="crumb">创作 / 拍摄策划</div>
-          <h1>{legacyReadOnly ? '旧策划记录' : '拍摄策划'}</h1>
+          <h1>拍摄策划</h1>
         </div>
         <div className="topbar-actions">
- {legacyReadOnly ? <span>旧记录只读，请在创意空间开始新的拍摄。</span> : <>
+
           <button className="btn btn-primary" type="button" disabled={creating !== null} onClick={() => void createBlank('ingestion')}>{creating === 'ingestion' ? '正在创建…' : '＋ 从聊天整理'}</button>
           <button className="btn" type="button" disabled={creating !== null} onClick={() => void createBlank('workspace')}>{creating === 'workspace' ? '正在创建…' : '空白建案'}</button>
-        </>}
  </div>
       </header>
       <main className="content planning-content">
