@@ -13,6 +13,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -73,6 +74,8 @@ func creativeMediaError(c *gin.Context, err error) {
 		abortError(c, 416, "creative_range_unsatisfiable", "请求范围超出媒体大小")
 	case errors.Is(err, creativemedia.ErrEpoch), errors.Is(err, creativemedia.ErrUnknownResult):
 		abortError(c, 503, "creative_dependency_unavailable", "媒体处理暂时不可用，请稍后重查")
+	case errors.Is(err, jobs.ErrNoHandlers):
+		abortError(c, 503, "creative_dependency_unavailable", "媒体处理队列未就绪：请先执行 creative-worker -migrate 并启动 worker")
 	default:
 		creativeError(c, err)
 	}

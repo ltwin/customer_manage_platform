@@ -205,7 +205,17 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-jobs-init", "DATABASE_URL", "database", err)
 	}
-	creativeMedia.SetRuntime(creativeJobs)
+	// River owns its schema; it is created by `creative-worker -migrate`, not by
+	// the business migrations above. Without it uploads answer 503 with the
+	// reason instead of failing inside the enqueue transaction.
+	if err := creativeJobs.Check(ctx); err != nil {
+		logger.Warn("creative media uploads disabled until the queue schema exists",
+			slog.String("status", "queue_not_migrated"),
+			slog.String("fix", "run `go run ./cmd/creative-worker -migrate`, then start creative-worker"),
+			slog.String("error", err.Error()))
+	} else {
+		creativeMedia.SetRuntime(creativeJobs)
+	}
 	planningMediaApp := planningmedia.NewApplication(
 		planningmedia.Repository{},
 		idempotencyExecutor,
