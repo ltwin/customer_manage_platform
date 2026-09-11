@@ -18,6 +18,8 @@
 
 ## 进程配置
 
+本地开发先执行 `go run ./cmd/creative-worker -migrate` 建 River 的 `creative_jobs` schema，再常驻 `go run ./cmd/creative-worker`；server 启动时检查队列就绪，未迁移则记警告并让上传返回 503「媒体处理队列未就绪」，不会在入队事务里报 500。
+
 `creative-worker` 启动（非 `--migrate/--check`）时调用完整 `config.Load()`，因此除 `DATABASE_URL` 外还需要与 API 相同的 `AUTH_TOKEN_SECRET`（派生票据/分片签名密钥）、`PUBLIC_BASE_URL`、存储驱动与 `CREATIVE_*` 配置；部署时给两个进程同一份 EnvironmentFile。verify 任务超时 20 分钟、complete 5 分钟，其余沿队列默认 2 分钟，每个阶段的执行租约与其超时相同（测试固定该不变量）；发布阶段被中断的会话在下次任务认领时以 `promote_interrupted` 落为 failed，写入的对象留在 `deleting` 的 blob 行等待对账。
 
 ## 读取
