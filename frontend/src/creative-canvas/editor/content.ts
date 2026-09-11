@@ -29,3 +29,20 @@ export function contentText(
 }
 export const isMediaContent = (kind: string) =>
   kind === 'image' || kind === 'video' || kind === 'audio'
+
+
+export function validateContentValue(kind: DraftKind, value: string): string {
+  if (['text', 'link'].includes(kind) && !value.trim())
+    return kind === 'text' ? '请填写正文' : '请填写链接'
+  if (isMediaContent(kind) && value.length > 2000) return '说明最多 2000 字'
+  if (kind === 'link') {
+    try {
+      const url = new URL(value)
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+        return '请输入不含账号口令的 HTTP 或 HTTPS 链接'
+    } catch {
+      return '请输入不含账号口令的 HTTP 或 HTTPS 链接'
+    }
+  }
+  return ''
+}

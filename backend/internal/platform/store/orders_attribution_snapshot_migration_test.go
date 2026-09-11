@@ -128,6 +128,9 @@ func TestOrdersAttributionSnapshotMigrationBackfillsExistingOrders(t *testing.T)
 
 	// 0034 之上已叠加 0035（健康度参数）：先退 0035 再退 0034，本测试锁的是 0034 自身的可逆性。
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback creative-canvas-events migration: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback creative-media migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {

@@ -1,12 +1,14 @@
 import type { Journal, JournalStorage, Job } from './journal.ts'
 import { canvasHistory, selectionRoots } from './graph.ts'
 import { emptyJournal } from './journal.ts'
+import { previewAliases, remapActions } from './structuralPreview.ts'
 import type { Canvas, CanvasNode, Command } from './api.ts'
 import {
   coalesce,
   intentReadSet,
   localNodeIDs,
   projectCanvas,
+  projected,
   type Intent,
   type Receipt,
 } from './outbox.ts'
@@ -142,6 +144,17 @@ export class SaveQueue {
   ): { id: string; done: Promise<Receipt> } {
     const next: Intent = {
       ...intent,
+      actions: intent.actions
+        ? remapActions(
+            intent.actions,
+            Object.assign(
+              {},
+              ...this.outbox
+                .filter((i) => i.canvasID === canvasID)
+                .map(previewAliases),
+            ),
+          )
+        : undefined,
       id: crypto.randomUUID(),
       canvasID,
       state: 'pending',
@@ -171,10 +184,18 @@ export class SaveQueue {
     return { id: merged.id, done }
   }
   // cancelTail drops the newest intent when it has not left this machine.
-  cancelTail(canvasID: string): Intent | null {
+  cancelTail(
+    canvasID: string,
+    kind: Intent['kind'] = 'actions',
+  ): Intent | null {
     const outbox = this.outbox
     const tail = outbox.at(-1)
-    if (!tail || tail.canvasID !== canvasID || tail.state !== 'pending')
+    if (
+      !tail ||
+      tail.canvasID !== canvasID ||
+      tail.state !== 'pending' ||
+      tail.kind !== kind
+    )
       return null
     this.settle(tail.id, withdrawn.cancelled)
     void this.update({ ...this.value, outbox: outbox.slice(0, -1) })
@@ -213,6 +234,20 @@ export class SaveQueue {
       (i) => i.canvasID === canvasID && i.state !== 'confirmed',
     )
     if (!head) return
+    // Previews cannot supply copied versions/inputs or every layout adjustment.
+    // Dependent requests therefore wait for the authoritative snapshot.
+    if (
+      this.outbox
+        .slice(0, this.outbox.indexOf(head))
+        .some(
+          (i) =>
+            i.canvasID === canvasID &&
+            i.receipt &&
+            !projected(i) &&
+            BigInt(i.receipt.result_revision) > BigInt(canvas.revision),
+        )
+    )
+      return
     // Everything before the head, including receipts newer than the
     // snapshot, is the state this intent was made against.
     const view = projectCanvas(
@@ -477,12 +512,31 @@ export class SaveQueue {
         object_results: result.object_results as Receipt['object_results'],
         created_ids: ids(result.created_ids),
         omitted_reference_ids: ids(result.omitted_reference_ids),
+        id_mapping: record(result.id_mapping)
+          ? Object.fromEntries(
+              Object.entries(result.id_mapping).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[1] === 'string',
+              ),
+            )
+          : {},
       }
       outbox = outbox.map((i) =>
         i.id === job.intent
           ? { ...i, state: 'confirmed' as const, receipt }
           : i,
       )
+      const confirmed = outbox.find((i) => i.id === job.intent)
+      if (confirmed) {
+        const aliases = previewAliases(confirmed)
+        outbox = outbox.map((i) =>
+          i.state === 'pending' &&
+          i.canvasID === confirmed.canvasID &&
+          i.actions
+            ? { ...i, actions: remapActions(i.actions, aliases) }
+            : i,
+        )
+      }
       this.settle(job.intent, null, receipt)
     }
     await this.update({ ...this.value, job: null, drafts, outbox })

@@ -5,13 +5,16 @@ package store
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Store 持有连接池，是所有仓储访问的入口。
 type Store struct {
-	pool *pgxpool.Pool
+	pool             *pgxpool.Pool
+	canvasEventsOnce sync.Once
+	canvasEvents     *canvasEventHub
 }
 
 type ScopedAccount struct {
@@ -34,6 +37,7 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 
 // Close 释放连接池。
 func (s *Store) Close() {
+	s.StopCanvasEvents()
 	s.pool.Close()
 }
 

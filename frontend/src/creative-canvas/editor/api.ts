@@ -1,6 +1,6 @@
 import type { components } from '../../api/schema'
 import { request } from '../../api/transport.ts'
-import { getAuthSnapshot } from '../../auth/session.ts'
+import { authorizedFetch, getAuthSnapshot } from '../../auth/session.ts'
 
 export type Canvas = components['schemas']['CreativeCanvasSnapshot']
 export type CanvasNode = components['schemas']['CreativeCanvasNode']
@@ -66,3 +66,11 @@ export type GraphAction = components['schemas']['CreativeGraphAction']
 export type GraphRead = components['schemas']['CreativeGraphRead']
 export type ChangeResult = components['schemas']['CreativeChangeResult']
 export type CreativeDocument = components['schemas']['CreativeDocument']
+
+export function connectCanvasEvents(id: string, signal: AbortSignal): Promise<Response> {
+  return authorizedFetch(`/api/v1/creative/canvases/${encodeURIComponent(id)}/events`, {
+    signal,
+    cache: 'no-store',
+    headers: { Accept: 'text/event-stream' },
+  })
+}

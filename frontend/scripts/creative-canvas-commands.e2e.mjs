@@ -347,10 +347,10 @@ try {
   await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
   await pause(200)
   await node(a).click()
-  await page.getByRole('button', { name: '编辑节点', exact: true }).click()
+  await page.locator('.cc-node.is-selected .cc-node-content').dblclick()
   await page.getByLabel('正文', { exact: true }).fill('以柔和的光线组织画面。')
   await snapshotAfter(() =>
-    page.getByRole('button', { name: '保存到节点', exact: true }).click(),
+    page.getByLabel('正文', { exact: true }).press('Control+Enter'),
   )
   await node(a).click()
   await page.getByRole('button', { name: '添加下游节点', exact: true }).click()
@@ -373,7 +373,7 @@ try {
   async function disconnectAB() {
     await page.locator('.react-flow__edge').first().dispatchEvent('click')
     await snapshotAfter(
-      () => page.getByRole('button', { name: '断开参考', exact: true }).click(),
+      () => page.getByRole('button', { name: '删除连线', exact: true }).click(),
       (c) => c.edges.length === 0,
     )
   }

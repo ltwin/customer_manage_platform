@@ -52,6 +52,7 @@ func TestAttemptLimiterMigrationCreatesVersionedBudgetTable(t *testing.T) {
 		t.Fatalf("close before limiter down migration: %v", err)
 	}
 	for index, label := range []string{
+		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",
 		"creative-library-organization",
@@ -170,6 +171,7 @@ func TestAuthReadinessInspectsCurrentLimiterSchemaAndLegacyCutover(t *testing.T)
 		t.Fatalf("delete legacy readiness fixture: %v", err)
 	}
 	for index, label := range []string{
+		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",
 		"creative-library-organization",

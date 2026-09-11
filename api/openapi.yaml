@@ -425,6 +425,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/canvases/{id}/events:
+    get:
+      tags:
+      - creative-foundation
+      operationId: watchCreativeCanvas
+      description: >-
+        Bearer 认证的 SSE 失效通知。订阅就绪及每次数据库监听恢复后发送 invalidate，
+        客户端据此读取最新画布快照；后续只在事务提交后通知。无历史事件回放，
+        不使用 Last-Event-ID；重连通过首次 invalidate 补齐。unavailable 表示权限或画布已失效。
+        每 20 秒发送注释心跳，连接最多维持 5 分钟后由客户端重连。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: SSE 流；event 为 invalidate 或 unavailable，data 为 {}，空闲时只有注释心跳
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /creative/canvases/{id}/commands:
     post:
       tags:

@@ -132,6 +132,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/canvases/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Bearer 认证的 SSE 失效通知。订阅就绪及每次数据库监听恢复后发送 invalidate， 客户端据此读取最新画布快照；后续只在事务提交后通知。无历史事件回放， 不使用 Last-Event-ID；重连通过首次 invalidate 补齐。unavailable 表示权限或画布已失效。 每 20 秒发送注释心跳，连接最多维持 5 分钟后由客户端重连。 */
+        get: operations["watchCreativeCanvas"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/canvases/{id}/commands": {
         parameters: {
             query?: never;
@@ -5852,6 +5869,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeCanvasSnapshot"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    watchCreativeCanvas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE 流；event 为 invalidate 或 unavailable，data 为 {}，空闲时只有注释心跳 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
                 };
             };
             /** @description 请求失败 */

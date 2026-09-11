@@ -4,7 +4,6 @@ import {
   Library,
   Plus,
   Type,
-  Link2,
   LockKeyhole,
   ChevronDown,
   MousePointer2,
@@ -31,18 +30,20 @@ import { errorMessage, isWithdrawn } from './queue.ts'
 import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
+import { watchCanvasEvents } from './canvasEvents.ts'
+import { ApiError } from '../../api/transport.ts'
 import { newerCanvas, matchesCanvas } from './snapshot.ts'
 import {
-  historyOf,
-  projectCanvas,
-  projected,
-  type Intent,
-} from './outbox.ts'
+  previewAliases,
+  resolvePreviewID,
+  remapActions,
+} from './structuralPreview.ts'
+import { historyOf, projectCanvas, type Intent } from './outbox.ts'
 import DocumentView from './DocumentView.tsx'
 import CanvasView from './CanvasView.tsx'
 import ContentForm from './ContentForm.tsx'
 import StudioDialog from './StudioDialog.tsx'
-import { blankDraft, contentText } from './content.ts'
+import { blankDraft, contentText, payload } from './content.ts'
 import '@xyflow/react/dist/style.css'
 import './workspace.css'
 import LibraryPanel from './LibraryPanel.tsx'
@@ -54,6 +55,8 @@ import MediaPreview from './MediaPreview.tsx'
 import { downloadMedia } from './MediaView.tsx'
 import {
   isMediaKind,
+  classifyFile,
+  mediaFileAccept,
   readableFileName,
   type MediaKind,
 } from './media.ts'
@@ -93,7 +96,12 @@ function Workspace({ account }: { account: string }) {
   const [canvas, setCanvas] = useState<api.Canvas | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [selection, setSelection] = useState<string[]>([])
-  const [groupEditing, setGroupEditing] = useState<api.CanvasNode | null>(null)
+  const [inlineEditing, setInlineEditing] = useState<{
+    id: string
+    draft: Draft | null
+    previousDraft?: Draft
+  } | null>(null)
+  const inlineRequest = useRef(0)
   const onSelection = useCallback((ids: string[]) => {
     setSelection((old) =>
       old.length === ids.length && old.every((v, i) => v === ids[i])
@@ -111,6 +119,7 @@ function Workspace({ account }: { account: string }) {
   const [error, setError] = useState('')
   const [copyNotice, setCopyNotice] = useState('')
   const [localError, setLocalError] = useState('')
+  const [mediaError, setMediaError] = useState('')
   const [loading, setLoading] = useState(true)
   const [discard, setDiscard] = useState<string | null>(null)
   const [form, setForm] = useState<'asset' | null>(null)
@@ -121,6 +130,7 @@ function Workspace({ account }: { account: string }) {
   const [compare, setCompare] = useState<{
     content: api.ContentDraft
     node: api.CanvasNode
+    inlineDraft?: Draft
   } | null>(null)
   const [rename, setRename] = useState<{
     id: string
@@ -139,16 +149,34 @@ function Workspace({ account }: { account: string }) {
   useEffect(() => {
     if (!view) return
     const live = new Set(view.nodes.map((n) => n.id))
+    const aliases = Object.assign(
+      {},
+      ...outbox.map(previewAliases),
+    ) as Record<string, string>
+    const resolve = (id: string) => resolvePreviewID(id, aliases)
     setSelection((old) =>
-      old.every((id) => live.has(id)) ? old : old.filter((id) => live.has(id)),
+      old.every((id) => live.has(id))
+        ? old
+        : old.map(resolve).filter((id) => live.has(id)),
     )
-    setSelected((old) => (old && live.has(old) ? old : null))
-  }, [view])
-  // Nodes created by an effect the projection cannot paint (duplicate, group)
+    setSelected((old) =>
+      old && live.has(resolve(old)) ? resolve(old) : null,
+    )
+    if (Object.keys(aliases).length)
+      setRedoStack((old) =>
+        old.map((i) =>
+          i.actions
+            ? { ...i, actions: remapActions(i.actions, aliases) }
+            : i,
+        ),
+      )
+  }, [view, outbox])
+  // Nodes created by an effect the projection cannot paint
   // are selected once the snapshot that contains them has arrived.
-  const deferredSelection = useRef<{ ids: string[]; revision: string } | null>(
-    null,
-  )
+  const deferredSelection = useRef<{
+    ids: string[]
+    revision: string
+  } | null>(null)
   useEffect(() => {
     const deferred = deferredSelection.current
     if (
@@ -259,12 +287,20 @@ function Workspace({ account }: { account: string }) {
       })
     return () => controller.abort()
   }, [canvasID, tick])
-  const pollCanvas = useRef<() => Promise<void>>(() => Promise.resolve())
+  const refreshCanvas = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => {
     const controller = new AbortController()
     let fetching = false
-    const poll = async () => {
-      if (document.hidden || fetching || !canvasID) return
+    let requested = false
+    let retry: ReturnType<typeof setTimeout> | undefined
+    let retryDelay = 1000
+    const reload = async () => {
+      if (controller.signal.aborted || document.hidden || !navigator.onLine || !canvasID) return
+      if (fetching) {
+        requested = true
+        return
+      }
+      clearTimeout(retry)
       fetching = true
       const canvasSeq = ++canvasReadSequence.current
       try {
@@ -275,34 +311,62 @@ function Workspace({ account }: { account: string }) {
         if (
           !controller.signal.aborted &&
           canvasSeq === canvasReadSequence.current
-        )
+        ) {
           setCanvas((old) => newerCanvas(old, c))
+          setError('')
+          retryDelay = 1000
+        }
       } catch (e) {
-        if (!controller.signal.aborted) setError(errorMessage(e))
+        if (!controller.signal.aborted) {
+          setError(errorMessage(e))
+          // Retry a failed invalidation read, never periodically read an idle canvas.
+          if (!(e instanceof ApiError && [401, 403, 404].includes(e.status))) {
+            retry = setTimeout(() => void reload(), retryDelay)
+            retryDelay = Math.min(retryDelay * 2, 30000)
+          }
+        }
       } finally {
         fetching = false
+        if (requested && !controller.signal.aborted) {
+          requested = false
+          void reload()
+        }
       }
     }
-    pollCanvas.current = poll
-    const timer = window.setInterval(() => void poll(), 5000)
-    const visible = () => {
-      if (!document.hidden) refresh()
+    refreshCanvas.current = reload
+    let stream: AbortController | undefined
+    const connect = () => {
+      stream?.abort()
+      stream = undefined
+      if (document.hidden || !navigator.onLine || !canvasID) return
+      stream = new AbortController()
+      void watchCanvasEvents(
+        (signal) => api.connectCanvasEvents(canvasID, signal),
+        stream.signal,
+        () => void reload(),
+        setError,
+      )
     }
-    window.addEventListener('online', visible)
-    document.addEventListener('visibilitychange', visible)
+    connect()
+    window.addEventListener('online', connect)
+    window.addEventListener('offline', connect)
+    document.addEventListener('visibilitychange', connect)
     return () => {
       controller.abort()
-      pollCanvas.current = () => Promise.resolve()
-      clearInterval(timer)
-      window.removeEventListener('online', visible)
-      document.removeEventListener('visibilitychange', visible)
+      stream?.abort()
+      clearTimeout(retry)
+      refreshCanvas.current = () => Promise.resolve()
+      window.removeEventListener('online', connect)
+      window.removeEventListener('offline', connect)
+      document.removeEventListener('visibilitychange', connect)
     }
-  }, [refresh, canvasID])
+  }, [canvasID])
   useEffect(() => {
     setCanvas(null)
     setSelected(null)
     setSelection([])
-    setGroupEditing(null)
+    setInlineEditing(null)
+    inlineRequest.current++
     setMaximized(null)
     setEditing(false)
     setFull(null)
@@ -380,7 +444,12 @@ function Workspace({ account }: { account: string }) {
       draftKey: options.draftKey,
       draftValue: options.draftKey ? queue.value.drafts[options.draftKey] : undefined,
     })
+    const existing = new Set(view.nodes.map((n) => n.id))
+    const createdLocally = projectCanvas(canvas!, queue.outbox)
+      .nodes.filter((n) => !existing.has(n.id))
+      .map((n) => n.id)
     if (options.select?.length) onSelection(options.select)
+    else if (createdLocally.length) onSelection(createdLocally)
     return staged.done.then(
       (receipt) => {
         if (receipt.omitted_reference_ids.length)
@@ -390,15 +459,17 @@ function Workspace({ account }: { account: string }) {
         const created = receipt.created_ids.filter((id) =>
           id.startsWith('cwnode_'),
         )
-        if (created.length && !options.select?.length)
+        if (
+          created.length &&
+          !options.select?.length &&
+          !createdLocally.length
+        )
           deferredSelection.current = {
             ids: created,
             revision: receipt.result_revision,
           }
-        // Effects the projection cannot paint need the authoritative snapshot
-        // now; everything else just refreshes the canvas in the background.
-        if (!projected(intent)) refresh()
-        else void pollCanvas.current()
+        // Refresh the canvas without reloading the library or blocking edits.
+        void refreshCanvas.current()
         return true
       },
       (e: unknown) => {
@@ -490,6 +561,15 @@ function Workspace({ account }: { account: string }) {
     if (!redo) {
       const cancelled = queue.cancelTail(canvasID)
       if (cancelled) {
+        if (
+          cancelled.draftKey &&
+          JSON.stringify(queue.value.drafts[cancelled.draftKey]) === JSON.stringify(cancelled.draftValue)
+        ) {
+          const drafts = { ...queue.value.drafts }
+          delete drafts[cancelled.draftKey]
+          void queue.update({ ...queue.value, drafts })
+            .catch((error: unknown) => setLocalError(errorMessage(error)))
+        }
         setRedoStack((old) => [...old, cancelled])
         return
       }
@@ -498,8 +578,9 @@ function Workspace({ account }: { account: string }) {
       void stage({ kind: 'undo' })
       return
     }
-    const cancelled = queue.cancelTail(canvasID)
-    if (cancelled && cancelled.kind === 'undo') return
+    if (!history.canRedo) return
+    const cancelled = queue.cancelTail(canvasID, 'undo')
+    if (cancelled) return
     const local = redoStack.at(-1)
     if (local && local.canvasID === canvasID) {
       setRedoStack((old) => old.slice(0, -1))
@@ -522,7 +603,7 @@ function Workspace({ account }: { account: string }) {
     })
   }
   function addEmptyNode(
-    kind: 'text' | 'link' | MediaKind,
+    kind: 'text' | MediaKind,
     x = 80 + (view?.nodes.length ?? 0) * 20,
     y = 80 + (view?.nodes.length ?? 0) * 20,
   ) {
@@ -538,16 +619,11 @@ function Workspace({ account }: { account: string }) {
       { select: [id] },
     )
   }
-  const mediaKindOfFile = (file: File): MediaKind | null =>
-    uploads.capabilities
-      ? ((uploads.capabilities.formats.find(
-          (f) =>
-            f.mime === file.type.split(';')[0].toLowerCase() ||
-            f.extensions.includes(
-              '.' + (file.name.split('.').pop() ?? '').toLowerCase(),
-            ),
-        )?.kind as MediaKind | undefined) ?? null)
-      : null
+  const mediaKindOfFile = (file: File): MediaKind | null => {
+    if (!uploads.capabilities) return null
+    const classified = classifyFile(file, uploads.capabilities)
+    return 'error' in classified ? null : classified.kind
+  }
   // Import into the library: each file becomes an asset in the current group.
   function importToLibrary(files: File[], groupID: string) {
     if (!uploads.capabilities || uploads.capabilitiesError) {
@@ -583,10 +659,10 @@ function Workspace({ account }: { account: string }) {
           type: 'add_node' as const,
           node_id: ids[i]!,
           type_key: `core.${mediaKindOfFile(file)!}` as
-            | 'core.image'
-            | 'core.video'
-            | 'core.audio',
-          title: readableFileName(file.name).replace(/\.[^.]+$/, '').slice(0, 200),
+            'core.image' | 'core.video' | 'core.audio',
+          title: readableFileName(file.name)
+            .replace(/\.[^.]+$/, '')
+            .slice(0, 200),
           x: x + i * 36,
           y: y + i * 36,
         })),
@@ -600,19 +676,34 @@ function Workspace({ account }: { account: string }) {
     }))
   }
   function uploadToNode(id: string, kind: MediaKind) {
+    if (!uploads.capabilities || uploads.capabilitiesError) {
+      setMediaError(uploads.capabilitiesError || '媒体上传暂不可用')
+      return
+    }
+    const input = nodeFileInput.current
+    if (!input) return
+    const accept = mediaFileAccept(uploads.capabilities, kind)
+    if (!accept) {
+      setMediaError('当前未启用此类媒体上传')
+      return
+    }
     nodeUploadTarget.current = { id, kind }
-    nodeFileInput.current?.click()
+    input.accept = accept
+    input.click()
   }
   function nodeFileChosen(files: File[]) {
     const target = nodeUploadTarget.current
     nodeUploadTarget.current = null
     const n = view?.nodes.find((n) => n.id === target?.id)
-    if (!target || !n || !view || !files.length) return
+    if (!target || !n || !view || !files.length || !uploads.capabilities)
+      return
     const file = files[0]!
-    if (mediaKindOfFile(file) !== target.kind) {
-      setLocalError(`请选择${{ image: '图片', video: '视频', audio: '音频' }[target.kind]}文件`)
+    const classified = classifyFile(file, uploads.capabilities, target.kind)
+    if ('error' in classified) {
+      setMediaError(classified.error)
       return
     }
+    setMediaError('')
     uploads.start([file], () => ({
       kind: 'node',
       node: { canvas_id: view.id, node_id: n.id, expected_data_revision: n.data_revision },
@@ -666,7 +757,44 @@ function Workspace({ account }: { account: string }) {
   function addAsset(asset: api.Asset, x = 80, y = 80) {
     addAssets([asset], x, y)
   }
-  function saveNode(content: api.ContentDraft, reapply?: api.CanvasNode) {
+  function editInline(n: api.CanvasNode) {
+    const request = ++inlineRequest.current
+    const key = `node:${canvasID}:${n.id}`
+    const existing = queue?.value.drafts[key]
+    const base: Draft = existing ?? {
+      kind: n.metadata.type_key === 'core.link' ? 'link' : 'text',
+      title: n.metadata.title,
+      value: contentText(n.content?.payload),
+      dataRevision: n.data_revision,
+      contentRevision: n.data.content_revision_id,
+    }
+    setInlineEditing({
+      id: n.id,
+      draft: existing || !n.content?.truncated ? base : null,
+      previousDraft: existing,
+    })
+    if (!existing && n.content?.truncated && n.data.content_revision_id)
+      void api.read<api.Content>(`/content-revisions/${encodeURIComponent(n.data.content_revision_id)}`)
+        .then((content) => {
+          if (inlineRequest.current === request)
+            setInlineEditing({ id: n.id, draft: { ...base, value: contentText(content.payload) } })
+        })
+        .catch((error: unknown) => {
+          if (inlineRequest.current === request) {
+            setInlineEditing(null)
+            setError(errorMessage(error))
+          }
+        })
+  }
+  function saveNode(
+    content: api.ContentDraft,
+    reapply?: api.CanvasNode,
+    inlineDraft?: Draft,
+    inlineID?: string,
+  ) {
+    const draft = inlineDraft ?? queue?.value.drafts[nodeKey] ?? full
+    const node = view?.nodes.find((n) => n.id === (inlineID ?? selected))
+    const saveKey = `node:${canvasID}:${node?.id ?? ''}`
     if (!editable || !view || !node || !draft || (reapply && reapply.id !== node.id))
       return
     if (
@@ -674,7 +802,7 @@ function Workspace({ account }: { account: string }) {
       (node.data_revision !== draft.dataRevision ||
         node.data.content_revision_id !== draft.contentRevision)
     ) {
-      setCompare({ content, node: structuredClone(node) })
+      setCompare({ content, node: structuredClone(node), inlineDraft })
       return
     }
     setRedoStack([])
@@ -682,7 +810,7 @@ function Workspace({ account }: { account: string }) {
       {
         kind: 'actions',
         actions: [
-          ...(draft.title !== node.metadata.title
+          ...(!inlineDraft && draft.title !== node.metadata.title
             ? [
                 {
                   type: 'update_metadata' as const,
@@ -695,8 +823,9 @@ function Workspace({ account }: { account: string }) {
           { type: 'replace_content', node_id: node.id, payload: content.payload },
         ],
       },
-      { draftKey: nodeKey },
+      { draftKey: saveKey },
     )
+    setInlineEditing(null)
     setEditing(false)
   }
   const activeProject =
@@ -846,7 +975,6 @@ function Workspace({ account }: { account: string }) {
             {(
               [
                 ['text', '文字', <Type size={17} key="t" />],
-                ['link', '链接', <Link2 size={17} key="l" />],
                 ['image', '图片', <ImageIcon size={17} key="i" />],
                 ['video', '视频', <Film size={17} key="v" />],
                 ['audio', '音频', <AudioLines size={17} key="a" />],
@@ -866,8 +994,16 @@ function Workspace({ account }: { account: string }) {
           </div>
         </>
       )}
-      {showNotice && (
+      {(showNotice || mediaError) && (
         <section className="cc-save-status" aria-live="polite">
+          {mediaError && (
+            <p role="alert">
+              {mediaError}{' '}
+              <button className="btn" onClick={() => setMediaError('')}>
+                知道了
+              </button>
+            </p>
+          )}
           {copyNotice && (
             <p>
               {copyNotice}{' '}
@@ -994,10 +1130,6 @@ function Workspace({ account }: { account: string }) {
                       setLibraryOpen(false)
                       return
                     }
-                    if (n?.metadata.type_key === 'core.group') {
-                      setGroupEditing(n)
-                      return
-                    }
                     if (
                       n &&
                       ![
@@ -1009,16 +1141,38 @@ function Workspace({ account }: { account: string }) {
                       ].includes(n.metadata.type_key)
                     )
                       return
-                    // Media nodes: an empty node edits by uploading; a filled node
-                    // edits its caption. Preview stays on the toolbar button.
-                    if (n && isMediaKind(n.metadata.type_key.slice(5))) {
-                      if (!n.content) {
-                        uploadToNode(n.id, n.metadata.type_key.slice(5) as MediaKind)
-                        return
-                      }
-                    }
-                    setEditing(true)
+                    // Empty media nodes upload through the explicit upload action.
+                    if (
+                      n &&
+                      isMediaKind(n.metadata.type_key.slice(5)) &&
+                      !n.content
+                    )
+                      return
+                    if (!n || !editable || !n.capabilities.actions.includes('edit') || n.status.content_state === 'unavailable') return
+                    if (['core.text', 'core.link'].includes(n.metadata.type_key)) {
+                      onSelection([id])
+                      editInline(n)
+                    } else setEditing(true)
                   }}
+                  inlineContent={inlineEditing ? {
+                    nodeID: inlineEditing.id,
+                    draft: inlineEditing.draft,
+                    disabled: !editable,
+                    onChange: (d) => writeDraft(`node:${canvasID}:${inlineEditing.id}`, d),
+                    onSave: (d) => saveNode({ kind: d.kind, payload: payload(d.kind, d.value) }, undefined, d, inlineEditing.id),
+                    onCancel: (original) => {
+                      if (queue) {
+                        const key = `node:${canvasID}:${inlineEditing.id}`
+                        const drafts = { ...queue.value.drafts }
+                        if (inlineEditing.previousDraft) drafts[key] = original
+                        else delete drafts[key]
+                        void queue.update({ ...queue.value, drafts })
+                          .catch((error: unknown) => setLocalError(errorMessage(error)))
+                      }
+                      inlineRequest.current++
+                      setInlineEditing(null)
+                    },
+                  } : undefined}
                   onAdd={(x, y) => addEmptyNode('text', x, y)}
                   panMode={panMode}
                   disabled={!editable}
@@ -1131,56 +1285,10 @@ function Workspace({ account }: { account: string }) {
           }}
         />
       )}
-      {groupEditing && (
-        <StudioDialog title="分组名称" onClose={() => setGroupEditing(null)}>
-          <form
-            noValidate
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (!canvas) return
-              const name = String(
-                new FormData(e.currentTarget).get('title') ?? '',
-              ).trim()
-              if (!name) {
-                setError('请填写分组名称')
-                return
-              }
-              setRedoStack([])
-              void stage({
-                kind: 'actions',
-                actions: [
-                  {
-                    type: 'update_metadata',
-                    node_id: groupEditing.id,
-                    title: name,
-                    intent: groupEditing.metadata.intent,
-                  },
-                ],
-              })
-              setGroupEditing(null)
-            }}
-          >
-            <label>
-              分组名称
-              <input
-                className="input"
-                name="title"
-                defaultValue={groupEditing.metadata.title}
-                maxLength={200}
-                autoFocus
-              />
-            </label>
-            <button className="btn btn-primary" disabled={blocked}>
-              保存名称
-            </button>
-          </form>
-        </StudioDialog>
-      )}
       <input
         ref={nodeFileInput}
         type="file"
         hidden
-        accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/mpeg,audio/wav"
         aria-label="选择节点媒体文件"
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
@@ -1255,7 +1363,9 @@ function Workspace({ account }: { account: string }) {
             <dt>缩放画布</dt>
             <dd>Ctrl / ⌘ + 滚轮</dd>
             <dt>编辑节点</dt>
-            <dd>双击节点 / 选中后点击编辑</dd>
+            <dd>双击标题改名，双击文字节点编辑正文；失焦保存，Esc 取消</dd>
+            <dt>右键菜单</dt>
+            <dd>右键画布新建，右键节点、分组或连线查看操作</dd>
             <dt>新建文字</dt>
             <dd>双击画布空白处</dd>
             <dt>打组 / 解组</dt>
@@ -1287,7 +1397,7 @@ function Workspace({ account }: { account: string }) {
           }}
         />
       )}
-      {compare && node && (
+      {compare && (
         <ConfirmDialog
           title="节点已有新的内容"
           body={[
@@ -1299,7 +1409,7 @@ function Workspace({ account }: { account: string }) {
           onConfirm={() => {
             const content = compare
             setCompare(null)
-            saveNode(content.content, content.node)
+            saveNode(content.content, content.node, content.inlineDraft, content.node.id)
           }}
         />
       )}
