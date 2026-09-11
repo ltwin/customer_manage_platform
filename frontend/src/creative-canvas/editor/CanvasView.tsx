@@ -210,6 +210,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
               kind={kind}
               title={n.metadata.title || untitled(n.metadata.type_key)}
               controls={kind !== 'image'}
+              hoverPlay={kind === 'video'}
             />
           ) : (
             <div

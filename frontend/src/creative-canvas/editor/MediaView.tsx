@@ -67,6 +67,11 @@ export function useNearViewport<T extends HTMLElement>() {
   return { ref, near }
 }
 
+// hoverPlay is the canvas preview mode for video nodes: the pointer drives
+// playback (enter plays, leave pauses, a fresh enter resumes after a manual
+// pause) while the native controls stay available. The video opts out of the
+// nodrag guard so the node stays draggable from its surface; presses in the
+// control-bar strip borrow the guard for the press only.
 export function MediaFigure({
   content,
   kind,
@@ -74,6 +79,7 @@ export function MediaFigure({
   className,
   controls = false,
   prefer = 'display',
+  hoverPlay = false,
 }: {
   content: Content | undefined
   kind: string
@@ -81,8 +87,11 @@ export function MediaFigure({
   className?: string
   controls?: boolean
   prefer?: 'display' | 'original'
+  hoverPlay?: boolean
 }) {
   const { ref, near } = useNearViewport<HTMLDivElement>()
+  const video = useRef<HTMLVideoElement>(null)
+  const hover = hoverPlay && kind === 'video'
   const { url, error, retry } = useMediaURL(
     content?.id,
     content?.media,
@@ -97,6 +106,14 @@ export function MediaFigure({
       ref={ref}
       className={`cc-media ${className ?? ''} ${url && !problem ? 'is-ready' : ''}`}
       data-kind={kind}
+      onMouseEnter={
+        hover
+          ? () => {
+              void video.current?.play().catch(() => {})
+            }
+          : undefined
+      }
+      onMouseLeave={hover ? () => video.current?.pause() : undefined}
     >
       {problem ? (
         <button
@@ -124,12 +141,32 @@ export function MediaFigure({
         />
       ) : kind === 'video' ? (
         <video
+          ref={video}
           src={url}
           controls={controls}
           preload="metadata"
           playsInline
           muted={!controls}
-          className="nodrag"
+          className={hover ? undefined : 'nodrag'}
+          onPointerDownCapture={
+            hover
+              ? (event) => {
+                  // The native control bar occupies the bottom strip of the
+                  // video: presses there must reach the controls instead of
+                  // starting a node drag, so lend the element the drag guard
+                  // for the duration of that press.
+                  const el = event.currentTarget
+                  if (event.clientY < el.getBoundingClientRect().bottom - 48)
+                    return
+                  el.classList.add('nodrag')
+                  const release = () => el.classList.remove('nodrag')
+                  window.addEventListener('pointerup', release, { once: true })
+                  window.addEventListener('pointercancel', release, {
+                    once: true,
+                  })
+                }
+              : undefined
+          }
           onError={() => setFailed(true)}
         />
       ) : controls ? (
