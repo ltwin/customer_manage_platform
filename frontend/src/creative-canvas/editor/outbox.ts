@@ -7,6 +7,7 @@ import type {
   GraphRead,
 } from './api.ts'
 import type { Draft } from './journal.ts'
+import { structuralPreview } from './structuralPreview.ts'
 import { canvasHistory, graphActionReadSet, parentFirst } from './graph.ts'
 
 // An intent is one local edit: pending in the outbox, sent as the immutable
@@ -21,6 +22,7 @@ export type Receipt = {
   object_results: ChangeResult['object_results']
   created_ids: string[]
   omitted_reference_ids: string[]
+  id_mapping?: ChangeResult['id_mapping']
 }
 export type Intent = {
   id: string
@@ -428,8 +430,23 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
           edges = edges.filter((e) => e.id !== action.edge_id)
           changed = true
           break
+        case 'group_nodes':
+        case 'ungroup_nodes':
+        case 'duplicate_selection': {
+          const preview = structuralPreview(
+            nodes,
+            edges,
+            intent,
+            index,
+            action,
+          )
+          changed ||= preview.nodes !== nodes || preview.edges !== edges
+          nodes = preview.nodes
+          edges = preview.edges
+          break
+        }
         default:
-          // Grouping, duplication, versions and inputs wait for the snapshot.
+          // Versions and inputs wait for the snapshot.
           break
       }
     }

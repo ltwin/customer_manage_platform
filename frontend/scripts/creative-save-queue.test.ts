@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { previewID, resolvePreviewID, remapActions } from '../src/creative-canvas/editor/structuralPreview.ts'
 import { SaveQueue } from '../src/creative-canvas/editor/queue.ts'
 import { emptyJournal } from '../src/creative-canvas/editor/journal.ts'
 import type {
@@ -866,4 +867,224 @@ test('media nodes from assets take the picture aspect ratio at the default width
     view.nodes.find((n) => n.id === 'cwnode_img')?.metadata.height,
     494,
   )
+})
+
+test('group preview preserves world positions and ungroup restores the layout before any request', () => {
+  const canvas = {
+    ...positionCanvas,
+    nodes: [
+      positionNode,
+      {
+        ...positionNode,
+        id: 'b',
+        metadata: { ...positionNode.metadata, x: 400, y: 100 },
+      },
+    ],
+  }
+  const q = new SaveQueue(
+    memory(),
+    {
+      send: async () => {
+        throw new Error('must stay local')
+      },
+      lookup: async () => ({}),
+    },
+    () => {},
+  )
+  q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'group_nodes', node_ids: ['n', 'b'] }],
+  })
+  const grouped = projectCanvas(canvas, q.outbox)
+  const group = grouped.nodes.find(
+    (n) => n.metadata.type_key === 'core.group',
+  )!
+  assert(group)
+  assert.equal(group.metadata.x, -24)
+  assert.equal(group.metadata.y, -52)
+  for (const original of canvas.nodes) {
+    const child = grouped.nodes.find((n) => n.id === original.id)!
+    assert.equal(child.parent_id, group.id)
+    assert.equal(child.metadata.x + group.metadata.x, original.metadata.x)
+    assert.equal(child.metadata.y + group.metadata.y, original.metadata.y)
+  }
+  q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'ungroup_nodes', node_id: group.id }],
+  })
+  assert.deepEqual(projectCanvas(canvas, q.outbox).nodes, canvas.nodes)
+})
+
+test('duplicate preview copies the subtree and internal references immediately, then remaps later moves', async () => {
+  const group = {
+    ...positionNode,
+    id: 'g',
+    metadata: {
+      ...positionNode.metadata,
+      type_key: 'core.group',
+      x: 100,
+      y: 100,
+    },
+  }
+  const child = { ...positionNode, id: 'child', parent_id: 'g' }
+  const sibling = { ...positionNode, id: 'sibling', parent_id: 'g' }
+  const edge = {
+    id: 'edge',
+    source_node_id: 'child',
+    target_node_id: 'sibling',
+    source_port: 'output',
+    target_port: 'reference',
+    role: 'reference',
+    ordinal: 0,
+    revision: '1',
+  }
+  const canvas = {
+    ...positionCanvas,
+    nodes: [group, child, sibling],
+    edges: [edge, { ...edge, id: 'external', source_node_id: 'outside' }],
+  }
+  const sent: Job[] = []
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => ({}),
+      send: async (job) => {
+        sent.push(job)
+        return receipt(String(sent.length + 1), {
+          created_ids: ['cwnode_g', 'cwnode_child', 'cwnode_sibling'],
+          id_mapping: {
+            g: 'cwnode_g',
+            child: 'cwnode_child',
+            sibling: 'cwnode_sibling',
+          },
+        })
+      },
+    },
+    () => {},
+  )
+  q.stageIntent('a', {
+    kind: 'actions',
+    actions: [
+      {
+        type: 'duplicate_selection',
+        node_ids: ['g', 'child'],
+        dx: 36,
+        dy: 36,
+      },
+    ],
+  })
+  const preview = projectCanvas(canvas, q.outbox)
+  assert.equal(sent.length, 0)
+  assert.equal(preview.nodes.length, 6)
+  assert.equal(preview.edges.length, 3, 'only the internal edge is copied')
+  const copy = preview.nodes.find(
+    (n) =>
+      n.id.startsWith('pending:') && n.metadata.type_key === 'core.group',
+  )!
+  assert.equal(copy.metadata.x, 136)
+  const copiedChild = preview.nodes.find((n) => n.parent_id === copy.id)!
+  assert.equal(copiedChild.metadata.x, child.metadata.x)
+  q.stageMoves(preview, [{ node: copy, x: 250, y: 300 }])
+  await q.sendNextIntent('a', canvas)
+  assert.deepEqual(q.outbox[1].actions, [
+    { type: 'move_node', node_id: 'cwnode_g', x: 250, y: 300 },
+  ])
+  assert.equal(
+    projectCanvas(canvas, q.outbox).nodes.find((n) => n.id === 'cwnode_g')
+      ?.metadata.x,
+    250,
+  )
+  await q.sendNextIntent('a', canvas)
+  assert.equal(
+    sent.length,
+    1,
+    'dependent command waits for authoritative copied versions and inputs',
+  )
+  const confirmed = {
+    ...projectCanvas(canvas, q.outbox.slice(0, 1)),
+    revision: '2',
+  }
+  await q.pruneOutbox(confirmed)
+  await q.sendNextIntent('a', confirmed)
+  assert.equal(sent.length, 2)
+  assert(
+    !sent[1].body.includes('pending:'),
+    'temporary identifiers must never leave the browser',
+  )
+})
+
+test('redo cancellation cannot drop an unrelated pending action; undo cannot cancel an undo', () => {
+  const q = new SaveQueue(
+    memory(),
+    { send: async () => ({}), lookup: async () => ({}) },
+    () => {},
+  )
+  q.stageMoves(positionCanvas, [{ node: positionNode, x: 10, y: 20 }])
+  assert.equal(q.cancelTail('a', 'undo'), null)
+  assert.equal(q.outbox.length, 1)
+  assert(q.cancelTail('a'))
+  q.stageIntent('a', { kind: 'undo' })
+  assert.equal(q.cancelTail('a'), null)
+  assert.equal(q.outbox.length, 1)
+  assert(q.cancelTail('a', 'undo'))
+})
+
+test('group receipt remaps an immediate ungroup and rejects the entire dependent preview on conflict', async () => {
+  let fail = false
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => ({}),
+      send: async () => {
+        if (fail) throw error(409, 'creative_revision_conflict')
+        return receipt('2', { created_ids: ['cwnode_group'] })
+      },
+    },
+    () => {},
+  )
+  q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'group_nodes', node_ids: ['n'] }],
+  })
+  const group = projectCanvas(positionCanvas, q.outbox).nodes.find(
+    (n) => n.id !== 'n',
+  )!
+  q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'ungroup_nodes', node_id: group.id }],
+  })
+  await q.sendNextIntent('a', positionCanvas)
+  assert.deepEqual(q.outbox[1].actions, [
+    { type: 'ungroup_nodes', node_id: 'cwnode_group' },
+  ])
+  assert.deepEqual(
+    projectCanvas(positionCanvas, q.outbox).nodes,
+    positionCanvas.nodes,
+  )
+  const confirmed = {
+    ...projectCanvas(positionCanvas, q.outbox.slice(0, 1)),
+    revision: '2',
+  }
+  await q.pruneOutbox(confirmed)
+  fail = true
+  await q.sendNextIntent('a', confirmed)
+  assert.equal(q.value.job?.state, 'rejected')
+  assert.equal(q.outbox.length, 0)
+  assert.equal(projectCanvas(confirmed, q.outbox), confirmed)
+})
+
+
+test('successive copies resolve nested provisional identities even when receipts share a render', () => {
+  const first = previewID('first', 0, 'n')
+  const second = previewID('second', 0, first)
+  const updatedSecond = previewID('second', 0, 'cwnode_first')
+  const aliases = { [first]: 'cwnode_first', [updatedSecond]: 'cwnode_second' }
+  assert.equal(resolvePreviewID(second, aliases), 'cwnode_second')
+  assert.deepEqual(remapActions([
+    { type: 'move_node', node_id: second, x: 100, y: 200 },
+    { type: 'update_metadata', node_id: first, title: first },
+  ], aliases), [
+    { type: 'move_node', node_id: 'cwnode_second', x: 100, y: 200 },
+    { type: 'update_metadata', node_id: 'cwnode_first', title: first },
+  ], 'identifier remapping must never rewrite literal text')
 })

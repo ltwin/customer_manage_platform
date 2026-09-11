@@ -7735,6 +7735,9 @@ type ServerInterface interface {
 	// (POST /creative/canvases/{id}/commands)
 	CommandCreativeCanvas(c *gin.Context, id string, params CommandCreativeCanvasParams)
 
+	// (GET /creative/canvases/{id}/events)
+	WatchCreativeCanvas(c *gin.Context, id string)
+
 	// (POST /creative/canvases/{id}/executions)
 	RequestCreativeNodeExecution(c *gin.Context, id string, params RequestCreativeNodeExecutionParams)
 
@@ -9250,6 +9253,33 @@ func (siw *ServerInterfaceWrapper) CommandCreativeCanvas(c *gin.Context) {
 	}
 
 	siw.Handler.CommandCreativeCanvas(c, id, params)
+}
+
+// WatchCreativeCanvas operation middleware
+func (siw *ServerInterfaceWrapper) WatchCreativeCanvas(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.WatchCreativeCanvas(c, id)
 }
 
 // RequestCreativeNodeExecution operation middleware
@@ -12321,6 +12351,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/:id/trash", wrapper.TrashCreativeAsset)
 	router.GET(options.BaseURL+"/creative/canvases/:id", wrapper.GetCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/commands", wrapper.CommandCreativeCanvas)
+	router.GET(options.BaseURL+"/creative/canvases/:id/events", wrapper.WatchCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/executions", wrapper.RequestCreativeNodeExecution)
 	router.GET(options.BaseURL+"/creative/canvases/:id/executions/:execution_id", wrapper.GetCreativeNodeExecution)
 	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)

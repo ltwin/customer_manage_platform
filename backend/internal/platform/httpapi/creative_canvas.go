@@ -34,6 +34,7 @@ func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/projects/:id/restore", w.RestoreCreativeProject)
 	r.POST("/creative/projects/:id/rename", w.RenameCreativeProject)
 	r.GET("/creative/canvases/:id", w.GetCreativeCanvas)
+	r.GET("/creative/canvases/:id/events", w.WatchCreativeCanvas)
 	r.POST("/creative/canvases/:id/commands", w.CommandCreativeCanvas)
 	r.GET("/creative/content-revisions/:id", w.GetCreativeContentRevision)
 	r.GET("/creative/documents/:id", w.GetCreativeDocument)

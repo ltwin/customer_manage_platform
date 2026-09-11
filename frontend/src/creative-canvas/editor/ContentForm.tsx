@@ -2,7 +2,7 @@ import { useId, useState, type ReactNode } from 'react'
 import type { Draft } from './journal.ts'
 import type { ContentDraft } from './api.ts'
 
-import { payload } from './content.ts'
+import { payload, validateContentValue } from './content.ts'
 
 type Props = {
   draft: Draft
@@ -34,28 +34,10 @@ export default function ContentForm({
       setError('请填写资产名称')
       return
     }
-    const media = !['text', 'link'].includes(draft.kind)
-    if (!media && !draft.value.trim()) {
-      setError(draft.kind === 'text' ? '请填写正文' : '请填写链接')
+    const problem = validateContentValue(draft.kind, draft.value)
+    if (problem) {
+      setError(problem)
       return
-    }
-    if (media && draft.value.length > 2000) {
-      setError('说明最多 2000 字')
-      return
-    }
-    if (draft.kind === 'link') {
-      try {
-        const u = new URL(draft.value)
-        if (
-          !['http:', 'https:'].includes(u.protocol) ||
-          u.username ||
-          u.password
-        )
-          throw new Error()
-      } catch {
-        setError('请输入不含账号口令的 HTTP 或 HTTPS 链接')
-        return
-      }
     }
     // Source declaration is reserved for later; the server records the
     // photographer's own work by default.
@@ -113,6 +95,7 @@ export default function ContentForm({
           style={{ resize: 'none' }}
           rows={asset ? 4 : draft.kind === 'text' ? 9 : 4}
           value={draft.value}
+          placeholder={draft.kind === 'text' ? '输入文字或粘贴链接' : undefined}
           maxLength={
             draft.kind === 'text' ? 100000 : draft.kind === 'link' ? 4096 : 2000
           }

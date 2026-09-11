@@ -27,18 +27,54 @@ export function pickRendition(
   )
 }
 
-// Files are matched against the server's enabled formats by declared MIME
-// or extension; the server re-verifies the real content after upload.
+// The picker and validation share the server's enabled formats. File metadata
+// is only a preflight check; the server still verifies the actual bytes.
+export function mediaFileAccept(
+  capabilities: MediaCapabilities,
+  kind: MediaKind,
+): string {
+  return capabilities.formats
+    .filter((format) => format.kind === kind)
+    .flatMap((format) => [format.mime, ...format.extensions])
+    .join(',')
+}
+
+const mimeAliases: Record<string, string> = {
+  'image/jpg': 'image/jpeg',
+  'audio/mp3': 'audio/mpeg',
+  'audio/x-mp3': 'audio/mpeg',
+  'audio/x-wav': 'audio/wav',
+  'audio/wave': 'audio/wav',
+  'audio/vnd.wave': 'audio/wav',
+  'video/x-m4v': 'video/mp4',
+}
+
 export function classifyFile(
   file: File,
   capabilities: MediaCapabilities,
+  expectedKind?: MediaKind,
 ): { kind: MediaKind; mime: string } | { error: string } {
-  const extension = '.' + (file.name.split('.').pop() ?? '').toLowerCase()
-  const declared = file.type.split(';')[0].toLowerCase()
-  const format =
-    capabilities.formats.find((f) => f.mime === declared) ??
-    capabilities.formats.find((f) => f.extensions.includes(extension))
+  const extension = /\.[^.]+$/.exec(file.name)?.[0].toLowerCase() ?? ''
+  const rawMime = file.type.split(';')[0].trim().toLowerCase()
+  const declared = mimeAliases[rawMime] ?? rawMime
+  const format = capabilities.formats.find((f) =>
+    f.extensions.includes(extension),
+  )
   if (!format) return { error: '暂不支持此文件格式' }
+  if (expectedKind && format.kind !== expectedKind) {
+    const label = { image: '图片', video: '视频', audio: '音频' }[expectedKind]
+    const extensions = capabilities.formats
+      .filter((f) => f.kind === expectedKind)
+      .flatMap((f) => f.extensions)
+      .join('、')
+    return { error: `请选择${label}文件（${extensions}）` }
+  }
+  if (
+    declared &&
+    declared !== 'application/octet-stream' &&
+    declared !== format.mime
+  )
+    return { error: '文件类型与扩展名不一致，请选择正确的媒体文件' }
   const limit =
     format.kind === 'image'
       ? capabilities.image_max_bytes

@@ -370,6 +370,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
 	// 公网直挂无反代（design D6），ReadHeaderTimeout 防 Slowloris 慢连接耗尽 fd。
 	server := newHTTPServer(cfg.HTTPAddr, router)
+	server.RegisterOnShutdown(s.StopCanvasEvents)
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	runnerDone := make(chan struct{})

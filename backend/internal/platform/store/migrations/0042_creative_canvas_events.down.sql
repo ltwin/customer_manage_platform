@@ -1,0 +1,16 @@
+DROP TRIGGER creative_canvases_notify ON creative_canvases;
+DROP TRIGGER creative_nodes_notify ON creative_nodes;
+DROP TRIGGER creative_edges_notify ON creative_edges;
+DROP TRIGGER creative_node_inputs_notify ON creative_node_inputs;
+DROP TRIGGER creative_changes_notify ON creative_changes;
+DROP TRIGGER creative_node_prompt_drafts_notify ON creative_node_prompt_drafts;
+DROP TRIGGER creative_node_prompt_refs_notify ON creative_node_prompt_refs;
+DROP TRIGGER creative_node_versions_notify ON creative_node_versions;
+DROP TRIGGER creative_node_executions_notify ON creative_node_executions;
+DROP TRIGGER creative_projects_notify ON creative_projects;
+DROP TRIGGER creative_documents_notify ON creative_documents;
+DROP TRIGGER creative_usage_grants_notify ON creative_usage_grants;
+DROP TRIGGER creative_content_revisions_notify ON creative_content_revisions;
+DROP TRIGGER creative_content_required_grants_notify ON creative_content_required_grants;
+DROP TRIGGER accounts_creative_notify ON accounts;
+DROP FUNCTION notify_creative_canvas_changed();

@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   classifyFile,
+  mediaFileAccept,
   describeFailure,
   pickRendition,
   readableFileName,
@@ -15,6 +16,9 @@ const capabilities: MediaCapabilities = {
   formats: [
     { kind: 'image', mime: 'image/png', extensions: ['.png'] },
     { kind: 'video', mime: 'video/webm', extensions: ['.webm'] },
+    { kind: 'video', mime: 'video/mp4', extensions: ['.mp4', '.m4v'] },
+    { kind: 'audio', mime: 'audio/mpeg', extensions: ['.mp3'] },
+    { kind: 'audio', mime: 'audio/wav', extensions: ['.wav'] },
   ],
   image_max_bytes: 1000,
   av_max_bytes: 5000,
@@ -94,4 +98,46 @@ test('rendition choice prefers display for viewing and original when absent', ()
   assert.equal(pickRendition([original], 'display')?.blob_id, 'o')
   assert.equal(pickRendition([original, display], 'original')?.blob_id, 'o')
   assert.equal(pickRendition([], 'display'), undefined)
+})
+
+
+test('node uploads reject other media kinds and metadata conflicts before uploading', () => {
+  for (const [name, mime, kind] of [
+    ['a.png', 'image/png', 'image'],
+    ['a.webm', 'video/webm', 'video'],
+    ['a.mp3', 'audio/mpeg', 'audio'],
+  ] as const) {
+    for (const target of ['image', 'video', 'audio'] as const) {
+      const result = classifyFile(file(name, mime, 10), capabilities, target)
+      assert.equal('error' in result, target !== kind)
+    }
+  }
+  for (const [name, mime] of [
+    ['fake.png', 'audio/mpeg'],
+    ['fake.mp3', 'image/png'],
+    ['fake.wav', 'text/plain'],
+    ['fake.txt', 'image/png'],
+    ['fake', 'image/png'],
+    ['fake.png.exe', 'image/png'],
+  ]) {
+    assert.ok('error' in classifyFile(file(name, mime, 10), capabilities))
+  }
+})
+
+test('common MIME aliases, uppercase extensions and missing MIME stay supported', () => {
+  for (const [name, mime, kind, canonical] of [
+    ['A.PNG', '', 'image', 'image/png'],
+    ['A.MP3', 'application/octet-stream', 'audio', 'audio/mpeg'],
+    ['A.WAV', 'audio/x-wav', 'audio', 'audio/wav'],
+    ['A.WAV', 'audio/vnd.wave', 'audio', 'audio/wav'],
+    ['A.M4V', 'video/x-m4v', 'video', 'video/mp4'],
+  ] as const) {
+    assert.deepEqual(classifyFile(file(name, mime, 10), capabilities, kind), { kind, mime: canonical })
+  }
+})
+
+test('node file pickers expose only server-enabled formats of the selected kind', () => {
+  assert.equal(mediaFileAccept(capabilities, 'image'), 'image/png,.png')
+  assert.equal(mediaFileAccept(capabilities, 'audio'), 'audio/mpeg,.mp3,audio/wav,.wav')
+  assert.equal(mediaFileAccept({ ...capabilities, formats: [] }, 'video'), '')
 })

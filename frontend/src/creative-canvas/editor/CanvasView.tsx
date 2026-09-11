@@ -20,6 +20,7 @@ import {
   Position,
   NodeResizer,
   BaseEdge,
+  EdgeLabelRenderer,
   getBezierPath,
   MarkerType,
 } from '@xyflow/react'
@@ -36,7 +37,6 @@ import type {
 import {
   Type,
   Link2,
-  Ellipsis,
   Pencil,
   Maximize2,
   FileText,
@@ -44,10 +44,12 @@ import {
   Plus,
   Scan,
   Map as MapIcon,
-  Group,
-  Ungroup,
+  Folder,
+  FolderPlus,
+  FolderMinus,
   Copy,
   Trash2,
+  Scissors,
   Undo2,
   Redo2,
   X,
@@ -65,10 +67,20 @@ import { isMediaKind, type MediaKind } from './media.ts'
 import { parentFirst, selectionRoots, worldPoint } from './graph.ts'
 import { contentText } from './content.ts'
 import { attachMagneticPorts } from './magneticPorts.ts'
+import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
+import {
+  InlineNodeTitle,
+  InlineNodeText,
+  type InlineContentEditing,
+} from './InlineNodeEditor.tsx'
 
 type FlowNode = Node<
   {
     item: CanvasNode
+    renaming: boolean
+    rename: (id: string | null) => void
+    saveTitle: (id: string, title: string) => void
+    inlineContent?: InlineContentEditing
     select: (id: string) => void
     port: (
       id: string,
@@ -82,7 +94,6 @@ type FlowNode = Node<
       x: number,
       y: number,
     ) => void
-    upload: (id: string, kind: MediaKind) => void
     disabled: boolean
   },
   'content'
@@ -98,7 +109,7 @@ const connectableTypes = [
 ]
 const kindLabel: Record<string, string> = {
   text: '文字',
-  link: '链接',
+  link: '文字',
   image: '图片',
   video: '视频',
   audio: '音频',
@@ -108,13 +119,20 @@ export const untitled = (typeKey: string) =>
   typeKey === 'core.group'
     ? '未命名分组'
     : `未命名${kindLabel[nodeKind(typeKey)] ?? '节点'}`
-function KindIcon({ typeKey, size = 14 }: { typeKey: string; size?: number }) {
+function KindIcon({
+  typeKey,
+  size = 14,
+}: {
+  typeKey: string
+  size?: number
+}) {
   switch (typeKey) {
     case 'core.group':
-      return <Group size={size} />
+      return <Folder size={size} />
     case 'internal.document':
       return <FileText size={size} />
     case 'core.text':
+    case 'core.link':
       return <Type size={size} />
     case 'core.image':
       return <ImageIcon size={size} />
@@ -143,7 +161,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     ].includes(n.metadata.type_key)
   return (
     <article
-      className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : n.metadata.type_key === 'core.text' ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
+      className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : ['core.text', 'core.link'].includes(n.metadata.type_key) ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
     >
       <NodeResizer
         isVisible={
@@ -157,17 +175,28 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
           data.resize(n.id, size.width, size.height, size.x, size.y)
         }
       />
-      <header className="cc-node-header">
+      <header
+        className="cc-node-header"
+        onClick={() => data.select(n.id)}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+          if (!data.disabled && n.capabilities.actions.includes('rename'))
+            data.rename(n.id)
+        }}
+      >
         <KindIcon typeKey={n.metadata.type_key} />
-        <h3>{n.metadata.title || untitled(n.metadata.type_key)}</h3>
-        <button
-          className="cc-icon-button nodrag"
-          aria-label="节点操作"
-          onClick={() => data.select(n.id)}
-          title="节点操作"
-        >
-          <Ellipsis size={16} />
-        </button>
+        {data.renaming ? (
+          <InlineNodeTitle
+            title={n.metadata.title}
+            disabled={data.disabled}
+            onSave={(title) => data.saveTitle(n.id, title)}
+            onClose={() => data.rename(null)}
+          />
+        ) : (
+          <h3 title={n.metadata.title || untitled(n.metadata.type_key)}>
+            {n.metadata.title || untitled(n.metadata.type_key)}
+          </h3>
+        )}
       </header>
       {!group && media && (
         <div className="cc-node-content cc-node-media">
@@ -183,36 +212,45 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
               controls={kind !== 'image'}
             />
           ) : (
-            <button
-              type="button"
-              className="cc-media-empty nodrag"
-              disabled={data.disabled}
-              aria-label={`上传${kindLabel[kind]}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                data.upload(n.id, kind as MediaKind)
-              }}
+            <div
+              className="cc-media-empty"
+              role="img"
+              aria-label={`空${kindLabel[kind]}节点`}
             >
-              <Upload size={18} />
-              <span>上传{kindLabel[kind]}</span>
-            </button>
+              <KindIcon typeKey={n.metadata.type_key} size={44} />
+            </div>
           )}
-          <div className="cc-node-footer">
-            <span>{contentText(p) || kindLabel[kind]}</span>
-            <span>{kind.toUpperCase()}</span>
-          </div>
         </div>
       )}
       {!group && !media && (
         <div className="cc-node-content">
-          <p>
-            {!known
-              ? '此节点类型当前只读'
-              : n.status.content_state === 'unavailable'
-                ? '当前无权展示此内容'
-                : contentText(p) || '双击，写下你的想法。'}
-          </p>
-          {n.content?.truncated && <small>正文预览 · 编辑时载入全文</small>}
+          {data.inlineContent ? (
+            data.inlineContent.draft ? (
+              <InlineNodeText {...data.inlineContent} draft={data.inlineContent.draft} />
+            ) : (
+              <p role="status">正在读取完整正文…</p>
+            )
+          ) : known &&
+          n.status.content_state !== 'unavailable' &&
+          !contentText(p) ? (
+            <div
+              className="cc-node-empty"
+              role="img"
+              aria-label="双击编辑节点"
+              title="双击编辑节点"
+            >
+              <KindIcon typeKey={n.metadata.type_key} size={40} />
+            </div>
+          ) : (
+            <p>
+              {!known
+                ? '此节点类型当前只读'
+                : n.status.content_state === 'unavailable'
+                  ? '当前无权展示此内容'
+                  : contentText(p)}
+            </p>
+          )}
+          {!data.inlineContent && n.content?.truncated && <small>正文预览 · 编辑时载入全文</small>}
         </div>
       )}
       {!group &&
@@ -365,7 +403,12 @@ function ConnectionPreview(props: ConnectionLineComponentProps<FlowNode>) {
     </>
   )
 }
-function ReferenceEdge(props: EdgeProps) {
+type ReferenceFlowEdge = Edge<{
+  showCut: boolean
+  disconnect: () => void
+}>
+function ReferenceEdge(props: EdgeProps<ReferenceFlowEdge>) {
+  const { zoom } = useViewport()
   const flow = useReactFlow<FlowNode>()
   const source = flow.getInternalNode(props.source),
     target = flow.getInternalNode(props.target)
@@ -375,7 +418,7 @@ function ReferenceEdge(props: EdgeProps) {
   const to = target
     ? edgeAnchor(target, 'input')
     : { x: props.targetX, y: props.targetY }
-  const [path] = getBezierPath({
+  const [path, labelX, labelY] = getBezierPath({
     ...props,
     sourceX: from.x,
     sourceY: from.y,
@@ -386,6 +429,29 @@ function ReferenceEdge(props: EdgeProps) {
     <>
       <BaseEdge {...props} path={path} />
       {props.selected && <path d={path} className="cc-reference-flow" />}
+      {props.data?.showCut && (
+        <EdgeLabelRenderer>
+          <button
+            type="button"
+            className="cc-edge-cut nodrag nopan"
+            style={{
+              left: labelX,
+              top: labelY,
+              transform: `translate(-50%, -50%) scale(${1 / zoom})`,
+            }}
+            aria-label="删除连线"
+            title="删除连线，可撤销"
+            onPointerDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              props.data?.disconnect()
+            }}
+          >
+            <Scissors size={16} aria-hidden="true" />
+          </button>
+        </EdgeLabelRenderer>
+      )}
     </>
   )
 }
@@ -398,6 +464,7 @@ export default function CanvasView({
   onSelection,
   onSelect,
   onEdit,
+  inlineContent,
   onAdd,
   panMode,
   onMove,
@@ -425,6 +492,7 @@ export default function CanvasView({
   onSelection: (ids: string[]) => void
   onSelect: (id: string | null) => void
   onEdit: (id: string) => void
+  inlineContent?: InlineContentEditing
   onAdd: (x: number, y: number) => void
   panMode: boolean
   onMove: (node: CanvasNode, x: number, y: number) => void
@@ -446,23 +514,44 @@ export default function CanvasView({
   assets: Asset[]
   account: string
 }) {
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      const target = event.target
+      if (
+        disabled ||
+        event.defaultPrevented ||
+        event.isComposing ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.altKey ||
+        !(target instanceof HTMLElement) ||
+        target.isContentEditable ||
+        target.closest(
+          'input,textarea,select,[role="textbox"],[role="dialog"],[aria-modal="true"]',
+        )
+      )
+        return
+      const key = event.key.toLowerCase()
+      if (key !== 'z' && !(event.ctrlKey && key === 'y')) return
+      event.preventDefault()
+      if (event.shiftKey || key === 'y') {
+        if (canRedo) onRedo()
+      } else if (canUndo) onUndo()
+    }
+    window.addEventListener('keydown', keydown)
+    return () => window.removeEventListener('keydown', keydown)
+  }, [disabled, canUndo, canRedo, onUndo, onRedo])
   const callbacks = useRef({
     onSelect,
     onSelection,
     onActions,
-    onUploadToNode,
     canvasNodes: canvas.nodes,
   })
   callbacks.current = {
     onSelect,
     onSelection,
     onActions,
-    onUploadToNode,
     canvasNodes: canvas.nodes,
   }
-  const uploadToNode = useCallback((id: string, kind: MediaKind) => {
-    callbacks.current.onUploadToNode(id, kind)
-  }, [])
   const resizePreviews = useRef(
     new Map<
       string,
@@ -490,10 +579,28 @@ export default function CanvasView({
   } | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number; y: number; nodeIDs: string[]; edgeID?: string
+  } | null>(null)
+  const [renamingNode, setRenamingNode] = useState<string | null>(null)
+  const renameNode = useCallback((id: string | null) => {
+    if (id && disabled) return
+    if (id) callbacks.current.onSelection([id])
+    setRenamingNode(id)
+  }, [disabled])
+  const saveTitle = useCallback((id: string, title: string) => {
+    const current = callbacks.current.canvasNodes.find((n) => n.id === id)
+    if (current)
+      callbacks.current.onActions([{
+        type: 'update_metadata', node_id: id, title, intent: current.metadata.intent,
+      }])
+  }, [])
+
   const element = useRef<HTMLDivElement>(null),
     dragging = useRef(new Set<string>()),
     dragBases = useRef(new Map<string, CanvasNode>())
   const selectNode = useCallback((id: string) => {
+    setSelectedEdge(null)
     callbacks.current.onSelect(id)
     callbacks.current.onSelection([id])
   }, [])
@@ -613,6 +720,8 @@ export default function CanvasView({
           old.selected === isSelected &&
           old.draggable === draggable &&
           old.data.disabled === disabled &&
+          old.data.renaming === (renamingNode === n.id) &&
+          old.data.inlineContent === (inlineContent?.nodeID === n.id ? inlineContent : undefined) &&
           old.position.x === position.x &&
           old.position.y === position.y &&
           old.parentId === (n.parent_id ?? undefined)
@@ -639,19 +748,16 @@ export default function CanvasView({
           style: {
             width: n.metadata.width,
             height: n.metadata.height,
-            pointerEvents:
-              n.metadata.type_key === 'core.group' ? 'none' : undefined,
           },
-          dragHandle:
-            n.metadata.type_key === 'core.group'
-              ? '.cc-node-header'
-              : undefined,
           data: {
             item: n,
+            renaming: renamingNode === n.id,
+            rename: renameNode,
+            saveTitle,
+            inlineContent: inlineContent?.nodeID === n.id ? inlineContent : undefined,
             select: selectNode,
             port: openPort,
             resize,
-            upload: uploadToNode,
             disabled,
           },
           selected: isSelected,
@@ -666,13 +772,16 @@ export default function CanvasView({
   }, [
     canvas,
     selection,
+    renamingNode,
+    renameNode,
+    saveTitle,
+    inlineContent,
     moveDisabled,
     panMode,
     panHeld,
     selectNode,
     openPort,
     resize,
-    uploadToNode,
     disabled,
   ])
   useEffect(() => {
@@ -722,6 +831,8 @@ export default function CanvasView({
           .find((n) => n.id === id)
           ?.data.item.capabilities.actions.includes('move'),
     )
+  const singleGroupSelected =
+    selection.length === 1 && active?.data.item.metadata.type_key === 'core.group'
   const toolbarX = Math.max(
       12,
       Math.min(
@@ -733,7 +844,7 @@ export default function CanvasView({
     ),
     toolbarY = Math.max(
       12,
-      Math.min(size.height - 100, viewport.y + point.y * viewport.zoom - 55),
+      Math.min(size.height - 100, viewport.y + (point.y - 30) * viewport.zoom - 54),
     )
   const expanded = new Set(selection)
   for (let changed = true; changed; ) {
@@ -748,7 +859,7 @@ export default function CanvasView({
   const persistedEdges = new Set(
     canvas.edges.filter((e) => !e.id.startsWith('pending:')).map((e) => e.id),
   )
-  const edges: Edge[] = canvas.edges.map(
+  const edges: ReferenceFlowEdge[] = canvas.edges.map(
     (e) => ({
       id: e.id,
       selectable: persistedEdges.has(e.id),
@@ -758,15 +869,27 @@ export default function CanvasView({
       sourceHandle: e.source_port,
       targetHandle: e.target_port,
       type: 'reference',
+      data: {
+        showCut:
+          selectedEdge === e.id && persistedEdges.has(e.id) && !disabled,
+        disconnect: () => {
+          act([{ type: 'disconnect_reference', edge_id: e.id }])
+          setSelectedEdge(null)
+        },
+      },
       selected:
-        expanded.has(e.source_node_id) || expanded.has(e.target_node_id),
+        selectedEdge === e.id ||
+        expanded.has(e.source_node_id) ||
+        expanded.has(e.target_node_id),
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
       style: {
         pointerEvents: persistedEdges.has(e.id) ? 'auto' : 'none',
         stroke: 'var(--accent)',
         strokeWidth: 1.3,
         opacity:
-          expanded.has(e.source_node_id) || expanded.has(e.target_node_id)
+          selectedEdge === e.id ||
+          expanded.has(e.source_node_id) ||
+          expanded.has(e.target_node_id)
             ? 0.9
             : 0.42,
       },
@@ -804,7 +927,7 @@ export default function CanvasView({
       onMove(moves[0].node, moves[0].x, moves[0].y)
     else onMoveSelection(moves)
   }
-  function createConnected(kind: 'text' | 'link' | MediaKind) {
+  function createConnected(kind: 'text' | MediaKind) {
     if (!portMenu) return
     const id = `cwnode_${crypto.randomUUID()}`,
       isOutput = portMenu.side === 'output'
@@ -827,10 +950,213 @@ export default function CanvasView({
     ])
     setPortMenu(null)
   }
+  const contextItems: CanvasMenuItem[] = []
+  if (contextMenu) {
+    const ids = contextMenu.nodeIDs
+    const target = canvas.nodes.find((n) => n.id === ids[0])
+    const one = ids.length === 1
+    const groupOnly = one && target?.metadata.type_key === 'core.group'
+    const locked =
+      disabled ||
+      ids.some(
+        (id) =>
+          !canvas.nodes
+            .find((n) => n.id === id)
+            ?.capabilities.actions.includes('move'),
+      )
+    if (contextMenu.edgeID) {
+      const edgeID = contextMenu.edgeID
+      contextItems.push({
+        label: '删除连线',
+        icon: <Scissors size={16} />,
+        disabled: disabled || !persistedEdges.has(edgeID),
+        danger: true,
+        action: () => {
+          act([{ type: 'disconnect_reference', edge_id: edgeID }])
+          setSelectedEdge(null)
+        },
+      })
+    } else if (target) {
+      if (one) {
+        contextItems.push({
+          label: groupOnly ? '重命名分组' : '编辑节点',
+          icon: <Pencil size={16} />,
+          disabled: disabled || (groupOnly ? !target.capabilities.actions.includes('rename') : !target.capabilities.actions.includes('edit')),
+          action: () => (groupOnly ? renameNode(target.id) : onEdit(target.id)),
+        })
+        if (!groupOnly)
+          contextItems.push({
+            label: '重命名',
+            icon: <FileText size={16} />,
+            disabled:
+              disabled || !target.capabilities.actions.includes('rename'),
+            action: () => renameNode(target.id),
+          })
+        const kind = nodeKind(target.metadata.type_key)
+        if (isMediaKind(kind)) {
+          if (target.capabilities.actions.includes('replace'))
+            contextItems.push({
+              label: target.content ? '替换媒体' : '上传媒体',
+              icon: <Upload size={16} />,
+              disabled,
+              action: () => onUploadToNode(target.id, kind),
+            })
+          if (
+            target.content &&
+            target.capabilities.actions.includes('maximize')
+          )
+            contextItems.push({
+              label: '放大预览',
+              icon: <Maximize2 size={16} />,
+              action: () => onPreview(target.id),
+            })
+          if (
+            target.content &&
+            target.capabilities.actions.includes('download')
+          )
+            contextItems.push({
+              label: '下载媒体',
+              icon: <Download size={16} />,
+              action: () => onDownload(target.id),
+            })
+        }
+        if (
+          target.content &&
+          target.capabilities.actions.includes('save_to_library')
+        )
+          contextItems.push({
+            label: '存入个人资产库',
+            icon: <Library size={16} />,
+            disabled,
+            action: () => onSaveToLibrary(target.id),
+          })
+      }
+      if (groupOnly)
+        contextItems.push({
+          label: '解组',
+          icon: <FolderMinus size={16} />,
+          shortcut: '⇧⌘G',
+          disabled: locked,
+          action: () => act([{ type: 'ungroup_nodes', node_id: target.id }]),
+        })
+      else
+        contextItems.push({
+          label: '打组',
+          icon: <FolderPlus size={16} />,
+          shortcut: '⌘G',
+          disabled: locked,
+          action: () => act([{ type: 'group_nodes', node_ids: ids }]),
+        })
+      contextItems.push({
+        label: ids.length > 1 ? '复制选中节点' : '复制节点',
+        icon: <Copy size={16} />,
+        shortcut: '⌘D',
+        disabled: locked,
+        action: () =>
+          act([{ type: 'duplicate_selection', node_ids: ids, dx: 36, dy: 36 }]),
+      })
+      contextItems.push({
+        label: groupOnly
+          ? '移除分组及其中节点'
+          : ids.length > 1
+            ? '移除选中节点'
+            : '移除节点',
+        icon: <Trash2 size={16} />,
+        disabled: locked,
+        danger: true,
+        action: () =>
+          act([{ type: 'remove_nodes', node_ids: ids, group_mode: 'subtree' }]),
+      })
+    } else if (!ids.length) {
+      const at = flow.screenToFlowPosition({
+        x: contextMenu.x,
+        y: contextMenu.y,
+      })
+      for (const kind of ['text', 'image', 'video', 'audio'] as const)
+        contextItems.push({
+          label: `新增${kindLabel[kind]}节点`,
+          icon: <KindIcon typeKey={`core.${kind}`} size={16} />,
+          disabled,
+          action: () => {
+            const id = `cwnode_${crypto.randomUUID()}`
+            act([
+              {
+                type: 'add_node',
+                node_id: id,
+                type_key: `core.${kind}`,
+                x: at.x,
+                y: at.y,
+              },
+            ])
+            onSelection([id])
+          },
+        })
+      contextItems.push({
+        label: '适应全部节点',
+        icon: <Scan size={16} />,
+        action: () => {
+          void flow.fitView({ padding: 0.25, maxZoom: 1 })
+        },
+      })
+    }
+    contextItems.push(
+      {
+        label: '撤销',
+        icon: <Undo2 size={16} />,
+        shortcut: '⌘Z',
+        disabled: disabled || !canUndo,
+        action: onUndo,
+      },
+      {
+        label: '重做',
+        icon: <Redo2 size={16} />,
+        shortcut: '⇧⌘Z',
+        disabled: disabled || !canRedo,
+        action: onRedo,
+      },
+    )
+  }
   return (
     <div
       className="cc-flow"
       ref={element}
+      onContextMenu={(event) => {
+        const hit = event.target instanceof Element ? event.target : null
+        if (
+          !hit ||
+          hit.closest(
+            'input,textarea,select,video,audio,[contenteditable="true"],[role="dialog"],[role="menu"]',
+          )
+        )
+          return
+        const nodeID = hit.closest<HTMLElement>('.react-flow__node')?.dataset.id
+        const edgeID = hit.closest<HTMLElement>('.react-flow__edge')?.dataset.id
+        if (
+          !nodeID &&
+          !edgeID &&
+          !hit.closest('.react-flow__pane,.react-flow__nodesselection')
+        )
+          return
+        event.preventDefault()
+        event.stopPropagation()
+        setPortMenu(null)
+        const ids = nodeID
+          ? selection.includes(nodeID)
+            ? selection
+            : [nodeID]
+          : hit.closest('.react-flow__nodesselection')
+            ? selection
+            : []
+        onSelection(ids)
+        if (nodeID) onSelect(nodeID)
+        setSelectedEdge(edgeID ?? null)
+        setContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          nodeIDs: ids,
+          edgeID,
+        })
+      }}
       onKeyDown={(e) => {
         if (
           (e.target as HTMLElement).closest('button,input,textarea,select') ||
@@ -839,21 +1165,13 @@ export default function CanvasView({
           return
         const command = e.metaKey || e.ctrlKey,
           key = e.key.toLowerCase()
-        if (command && key === 'z') {
-          e.preventDefault()
-          if (e.shiftKey) {
-            if (canRedo) onRedo()
-          } else if (canUndo) onUndo()
-          return
-        }
         if (command && key === 'g') {
           e.preventDefault()
           if (
-            e.shiftKey &&
-            active?.data.item.metadata.type_key === 'core.group'
+            e.shiftKey && singleGroupSelected && active
           )
             act([{ type: 'ungroup_nodes', node_id: active.id }])
-          else if (selection.length)
+          else if (!e.shiftKey && selection.length && !singleGroupSelected)
             act([{ type: 'group_nodes', node_ids: selection }])
           return
         }
@@ -887,7 +1205,8 @@ export default function CanvasView({
           moveSelection(...step)
         } else if (e.key === 'Enter' && selected) {
           e.preventDefault()
-          onEdit(selected)
+          if (active?.data.item.metadata.type_key === 'core.group') renameNode(selected)
+          else onEdit(selected)
         } else if (e.key === 'Escape') {
           setPortMenu(null)
           onSelection([])
@@ -933,7 +1252,11 @@ export default function CanvasView({
         selectionOnDrag={!panMode && !panHeld}
         selectionMode={SelectionMode.Partial}
         onNodesChange={changeNodes}
-        onNodeDoubleClick={(_, n) => onEdit(n.id)}
+        onNodeClick={() => setSelectedEdge(null)}
+        onNodeDoubleClick={(_, n) => {
+          if (n.data.item.metadata.type_key === 'core.group') renameNode(n.id)
+          else onEdit(n.id)
+        }}
         onPaneClick={() => {
           onSelect(null)
           onSelection([])
@@ -1036,9 +1359,12 @@ export default function CanvasView({
             screen: { x: pointer.clientX, y: pointer.clientY },
           })
         }}
-        onEdgeClick={(_, edge) =>
+        onEdgeClick={(_, edge) => {
+          onSelect(null)
+          onSelection([])
+          setPortMenu(null)
           setSelectedEdge(persistedEdges.has(edge.id) ? edge.id : null)
-        }
+        }}
         onEdgeDoubleClick={(_, edge) => {
           if (persistedEdges.has(edge.id))
             act([{ type: 'disconnect_reference', edge_id: edge.id }])
@@ -1076,7 +1402,7 @@ export default function CanvasView({
             /* Viewport preferences are optional. */
           }
         }}
-        onMoveStart={() => setPortMenu(null)}
+        onMoveStart={() => { setPortMenu(null); setContextMenu(null) }}
         onMoveEnd={(_, v) => {
           try {
             localStorage.setItem(
@@ -1106,29 +1432,15 @@ export default function CanvasView({
           aria-label="节点操作"
           style={{ left: toolbarX, top: toolbarY }}
         >
-          <span>
-            {selection.length > 1
-              ? `${selection.length} 个节点`
-              : active.data.item.metadata.type_key === 'core.group'
-                ? '布局分组'
-                : `${kindLabel[nodeKind(active.data.item.metadata.type_key)] ?? '文档'}节点`}
-          </span>
-          {selection.length === 1 && (
+          {selection.length > 1 && <span>{selection.length} 个节点</span>}
+          {selection.length === 1 && active.data.item.metadata.type_key === 'internal.document' && (
             <button
               className="cc-icon-button"
-              aria-label={
-                active.data.item.metadata.type_key === 'internal.document'
-                  ? '最大化文档'
-                  : '编辑节点'
-              }
-              title="编辑节点 · 双击"
+              aria-label="最大化文档"
+              title="最大化文档"
               onClick={() => onEdit(active.id)}
             >
-              {active.data.item.metadata.type_key === 'internal.document' ? (
-                <Maximize2 size={16} />
-              ) : (
-                <Pencil size={16} />
-              )}
+              <Maximize2 size={16} />
             </button>
           )}
           {selection.length === 1 &&
@@ -1190,15 +1502,17 @@ export default function CanvasView({
                 <Library size={16} />
               </button>
             )}
-          <button
-            className="cc-icon-button"
-            aria-label="打组"
-            title="打组 · ⌘G"
-            disabled={disabled || selectionReadOnly}
-            onClick={() => act([{ type: 'group_nodes', node_ids: selection }])}
-          >
-            <Group size={16} />
-          </button>
+          {!singleGroupSelected && (
+            <button
+              className="cc-icon-button"
+              aria-label="打组"
+              title="打组 · ⌘G"
+              disabled={disabled || selectionReadOnly}
+              onClick={() => act([{ type: 'group_nodes', node_ids: selection }])}
+            >
+              <FolderPlus size={16} />
+            </button>
+          )}
           {selection.length === 1 &&
             active.data.item.metadata.type_key === 'core.group' && (
               <button
@@ -1210,7 +1524,7 @@ export default function CanvasView({
                   act([{ type: 'ungroup_nodes', node_id: active.id }])
                 }
               >
-                <Ungroup size={16} />
+                <FolderMinus size={16} />
               </button>
             )}
           <button
@@ -1246,6 +1560,22 @@ export default function CanvasView({
           </button>
         </div>
       )}
+      {contextMenu && (
+        <CanvasContextMenu
+          key={`${contextMenu.x}:${contextMenu.y}:${contextMenu.nodeIDs.join(',')}:${contextMenu.edgeID ?? ''}`}
+          x={contextMenu.x}
+          y={contextMenu.y}
+          label={
+            contextMenu.edgeID
+              ? '连线右键菜单'
+              : contextMenu.nodeIDs.length
+                ? '节点右键菜单'
+                : '画布右键菜单'
+          }
+          items={contextItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
       {portMenu && (
         <div
           className="cc-port-menu cc-glass"
@@ -1274,10 +1604,6 @@ export default function CanvasView({
           <button disabled={disabled} onClick={() => createConnected('text')}>
             <Type size={16} />
             文字
-          </button>
-          <button disabled={disabled} onClick={() => createConnected('link')}>
-            <Link2 size={16} />
-            链接
           </button>
           <button disabled={disabled} onClick={() => createConnected('image')}>
             <ImageIcon size={16} />
@@ -1330,23 +1656,6 @@ export default function CanvasView({
                 ))}
             </select>
           </label>
-        </div>
-      )}
-      {selectedEdge && canvas.edges.some((e) => e.id === selectedEdge) && (
-        <div className="cc-edge-tools cc-glass">
-          <span>参考连线</span>
-          <button
-            className="cc-icon-button"
-            aria-label="断开参考"
-            title="断开参考，可撤销"
-            disabled={disabled}
-            onClick={() => {
-              act([{ type: 'disconnect_reference', edge_id: selectedEdge }])
-              setSelectedEdge(null)
-            }}
-          >
-            <Trash2 size={16} />
-          </button>
         </div>
       )}
       <div className="cc-history-tools cc-glass">
