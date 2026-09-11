@@ -3,6 +3,7 @@ package creativemedia
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
@@ -17,7 +18,7 @@ const (
 
 // Compose builds the media service for the configured storage driver. Both
 // the API and the worker call it so tickets, keys and limits agree.
-func Compose(cfg config.Config, ticketKey []byte) (*Service, error) {
+func Compose(cfg config.Config, ticketKey []byte, logger *slog.Logger) (*Service, error) {
 	mediaCfg := DefaultConfig()
 	mediaCfg.FFProbe = cfg.CreativeFFProbe
 	mediaCfg.QuotaLimitBytes = cfg.CreativeMediaQuotaBytes
@@ -32,7 +33,12 @@ func Compose(cfg config.Config, ticketKey []byte) (*Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewService(mediaCfg, adapter, verifier, ticketKey, ticketBasePath)
+		svc, err := NewService(mediaCfg, adapter, verifier, ticketKey, ticketBasePath)
+		if err != nil {
+			return nil, err
+		}
+		svc.SetLogger(logger)
+		return svc, nil
 	case config.StorageDriverLocal:
 		// The local adapter needs the part signer, which needs the service key:
 		// build a signer-only service first, then the real one.
@@ -44,7 +50,12 @@ func Compose(cfg config.Config, ticketKey []byte) (*Service, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewService(mediaCfg, adapter, verifier, ticketKey, ticketBasePath)
+		svc, err := NewService(mediaCfg, adapter, verifier, ticketKey, ticketBasePath)
+		if err != nil {
+			return nil, err
+		}
+		svc.SetLogger(logger)
+		return svc, nil
 	default:
 		return nil, fmt.Errorf("unsupported creative media driver %q", cfg.AvatarStorageDriver)
 	}

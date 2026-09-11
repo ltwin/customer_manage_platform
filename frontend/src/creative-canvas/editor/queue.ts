@@ -1,8 +1,15 @@
 import type { Journal, JournalStorage, Job } from './journal.ts'
-import { graphReadSet, selectionRoots } from './graph.ts'
+import { canvasHistory, selectionRoots } from './graph.ts'
 import { emptyJournal } from './journal.ts'
-import { ConnectionOverlay } from './connectionOverlay.ts'
 import type { Canvas, CanvasNode, Command } from './api.ts'
+import {
+  coalesce,
+  intentReadSet,
+  localNodeIDs,
+  projectCanvas,
+  type Intent,
+  type Receipt,
+} from './outbox.ts'
 
 export type QueueTransport = {
   send(job: Job): Promise<unknown>
@@ -17,18 +24,35 @@ const codeOf = (error: unknown) =>
 export const errorMessage = (e: unknown): string =>
   e instanceof Error ? e.message : '请求结果待确认，请保留草稿后重试'
 
-// One immutable operation may be pending per editor session. Further edits stay drafts.
+const record = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+const revision = (v: unknown): v is string =>
+  typeof v === 'string' && /^[1-9][0-9]*$/.test(v)
+// Outcomes decided on this machine: the edit never became a server error.
+export const withdrawn = {
+  cancelled: '已在本机撤销',
+  rejected: '保存被拒绝，本机修改已撤回',
+}
+export const isWithdrawn = (e: unknown) =>
+  e instanceof Error && Object.values(withdrawn).includes(e.message)
+
+// One immutable request is in flight per editor session; everything else
+// waits locally. Canvas edits queue in the outbox and are projected onto the
+// canvas at once, so the editor never waits for the server to answer.
 export class SaveQueue {
-  readonly connections = new ConnectionOverlay()
   value: Journal = emptyJournal()
   busy = false
   localPending = 0
   private closed = false
-  private placementRevisions = new Map<string, string>()
   private writes: Promise<void> = Promise.resolve()
   private storage: JournalStorage
   private transport: QueueTransport
   private changed: () => void
+  private waiters: (() => void)[] = []
+  private confirmations = new Map<
+    string,
+    { resolve: (r: Receipt) => void; reject: (e: Error) => void }
+  >()
   constructor(
     storage: JournalStorage,
     transport: QueueTransport,
@@ -43,8 +67,36 @@ export class SaveQueue {
     await this.writes.catch(() => {})
   }
   async load() {
-    this.value = await this.storage.load()
-    if (this.value.job) this.connections.stage(this.value.job)
+    const loaded = await this.storage.load()
+    // Journals written before moves joined the outbox kept drag targets in
+    // `positions`; unsynced ones become ordinary move intents.
+    const { positions, ...rest } = loaded as Journal & {
+      positions?: Record<
+        string,
+        {
+          canvasID: string
+          nodeID: string
+          x: number
+          y: number
+          synced: boolean
+        }
+      >
+    }
+    this.value = rest
+    for (const p of Object.values(positions ?? {})) {
+      if (p.synced) continue
+      this.value = {
+        ...this.value,
+        outbox: coalesce(this.outbox, {
+          id: crypto.randomUUID(),
+          canvasID: p.canvasID,
+          kind: 'actions',
+          state: 'pending',
+          actions: [{ type: 'move_node', node_id: p.nodeID, x: p.x, y: p.y }],
+        }).outbox,
+      }
+    }
+    if (positions) await this.update(this.value)
     this.changed()
   }
   update(next: Journal): Promise<void> {
@@ -63,181 +115,219 @@ export class SaveQueue {
     this.writes = write
     return write
   }
-  stagePosition(canvasID: string, node: CanvasNode, x: number, y: number) {
-    const key = `${canvasID}:${node.id}`
-    const previous = this.value.positions?.[key]
-    const ownRevision = this.placementRevisions.get(key)
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return Promise.resolve()
-    if (
-      previous
-        ? previous.x === x && previous.y === y
-        : node.metadata.x === x &&
-          node.metadata.y === y &&
-          (!ownRevision ||
-            BigInt(ownRevision) <= BigInt(node.placement_revision))
-    )
-      return Promise.resolve()
-    let revision =
-      previous &&
-      (!previous.synced ||
-        BigInt(previous.revision) > BigInt(node.placement_revision))
-        ? previous.revision
-        : node.placement_revision
-    // A drag can begin before our previous receipt and end after its snapshot.
-    if (ownRevision && BigInt(ownRevision) > BigInt(revision))
-      revision = ownRevision
-    return this.update({
-      ...this.value,
-      positions: {
-        ...this.value.positions,
-        [key]: {
-          canvasID,
-          nodeID: node.id,
-          x,
-          y,
-          revision,
-          token: crypto.randomUUID(),
-          synced: false,
-        },
-      },
-    })
+  // claim takes the single request slot once nothing is in flight. The check
+  // and the claim run in one continuation, so two callers cannot both win.
+  // A settled job needing recovery still refuses new work: its outcome is
+  // never silently overtaken.
+  private async claim() {
+    while (this.busy)
+      await new Promise<void>((resolve) => this.waiters.push(resolve))
+    if (this.value.job) throw new Error('请先处理上一次保存，再提交新的修改')
+    this.busy = true
+    this.changed()
   }
-  stagePositions(
-    canvas: Canvas,
+  private release() {
+    const waiting = this.waiters
+    this.waiters = []
+    for (const resolve of waiting) resolve()
+  }
+  get outbox(): Intent[] {
+    return this.value.outbox ?? []
+  }
+  // stageIntent records a canvas edit locally and returns its identity plus a
+  // promise for the server receipt. Layout bursts merge into the pending tail.
+  stageIntent(
+    canvasID: string,
+    intent: Omit<Intent, 'id' | 'canvasID' | 'state'>,
+  ): { id: string; done: Promise<Receipt> } {
+    const next: Intent = {
+      ...intent,
+      id: crypto.randomUUID(),
+      canvasID,
+      state: 'pending',
+    }
+    const merged = coalesce(this.outbox, next)
+    const done = new Promise<Receipt>((resolve, reject) => {
+      this.confirmations.set(next.id, { resolve, reject })
+    })
+    done.catch(() => {})
+    if (merged.id !== next.id) {
+      // Merged into the tail: settle alongside it.
+      const tail = this.confirmations.get(merged.id)
+      this.confirmations.set(merged.id, {
+        resolve: (r) => {
+          tail?.resolve(r)
+          this.confirmations.get(next.id)?.resolve(r)
+        },
+        reject: (e) => {
+          tail?.reject(e)
+          this.confirmations.get(next.id)?.reject(e)
+        },
+      })
+    }
+    void this.update({ ...this.value, outbox: merged.outbox }).catch(
+      (e: unknown) => this.settle(next.id, errorMessage(e)),
+    )
+    return { id: merged.id, done }
+  }
+  // cancelTail drops the newest intent when it has not left this machine.
+  cancelTail(canvasID: string): Intent | null {
+    const outbox = this.outbox
+    const tail = outbox.at(-1)
+    if (!tail || tail.canvasID !== canvasID || tail.state !== 'pending')
+      return null
+    this.settle(tail.id, withdrawn.cancelled)
+    void this.update({ ...this.value, outbox: outbox.slice(0, -1) })
+    return tail
+  }
+  private settle(id: string, error: string | null, receipt?: Receipt) {
+    const waiter = this.confirmations.get(id)
+    this.confirmations.delete(id)
+    if (!waiter) return
+    if (receipt) waiter.resolve(receipt)
+    else waiter.reject(new Error(error ?? '操作未能保存'))
+  }
+  // pruneOutbox forgets confirmed intents once the snapshot includes them.
+  pruneOutbox(canvas: Canvas) {
+    const kept = this.outbox.filter(
+      (i) =>
+        i.canvasID !== canvas.id ||
+        !i.receipt ||
+        BigInt(i.receipt.result_revision) > BigInt(canvas.revision),
+    )
+    return kept.length === this.outbox.length
+      ? Promise.resolve()
+      : this.update({ ...this.value, outbox: kept })
+  }
+  // sendNextIntent turns the head pending intent into one immutable request.
+  // Positions of already committed nodes go first. The read set comes from
+  // the snapshot plus every receipt before this intent (revisions the
+  // snapshot may lack), never from the intent's own projected effect.
+  async sendNextIntent(canvasID: string, canvas: Canvas) {
+    if (this.closed || this.busy || this.value.job || canvas.id !== canvasID)
+      return
+    const local = localNodeIDs(this.outbox)
+    // A 'sent' intent without a job never reached the journal as a request
+    // (the page closed in between); it is still pending.
+    const head = this.outbox.find(
+      (i) => i.canvasID === canvasID && i.state !== 'confirmed',
+    )
+    if (!head) return
+    // Everything before the head, including receipts newer than the
+    // snapshot, is the state this intent was made against.
+    const view = projectCanvas(
+      canvas,
+      this.outbox.slice(0, this.outbox.indexOf(head)),
+    )
+    await this.claim()
+    let payload: Command
+    let changeID: string | undefined
+    if (head.kind === 'actions') {
+      payload = {
+        type: 'batch',
+        expected_topology_revision: view.topology_revision,
+        read_set: intentReadSet(view, head, undefined, local),
+        actions: head.actions ?? [],
+      }
+    } else {
+      const history = canvasHistory(view.changes)
+      changeID = head.kind === 'undo' ? history.undo : history.redo
+      if (!changeID) {
+        this.settle(head.id, '没有可撤销的操作')
+        try {
+          await this.update({
+            ...this.value,
+            outbox: this.outbox.filter((i) => i.id !== head.id),
+          })
+        } finally {
+          this.busy = false
+          this.changed()
+          this.release()
+        }
+        return
+      }
+      payload = {
+        type: head.kind,
+        change_id: changeID,
+        read_set: intentReadSet(view, head, changeID, local),
+      }
+    }
+    const outbox = this.outbox.map((i) =>
+      i.id === head.id ? { ...i, state: 'sent' as const, changeID } : i,
+    )
+    return this.dispatch(
+      { ...this.value, outbox },
+      `/canvases/${canvasID}/commands`,
+      payload,
+      head.draftKey,
+      head,
+    )
+  }
+  // stageMoves turns a drop into one move intent for the selection roots that
+  // actually moved. Bursts merge with a still-pending tail; a move landing
+  // while a request is in flight simply becomes the next intent.
+  stageMoves(
+    view: Canvas,
     moves: { node: CanvasNode; x: number; y: number }[],
-  ) {
+  ): { id: string; done: Promise<Receipt> } | null {
     const roots = new Set(
       selectionRoots(
-        canvas.nodes,
+        view.nodes,
         moves.map((m) => m.node.id),
       ),
     )
-    const batchID = crypto.randomUUID(),
-      positions = { ...this.value.positions }
-    const readSet = graphReadSet(canvas)
-    for (const r of readSet) {
-      const own = this.placementRevisions.get(`${canvas.id}:${r.id}`)
-      if (
-        own &&
-        r.placement_revision &&
-        BigInt(own) > BigInt(r.placement_revision)
-      )
-        r.placement_revision = own
-    }
+    const actions: Extract<
+      NonNullable<Intent['actions']>[number],
+      { type: 'move_node' }
+    >[] = []
     for (const m of moves) {
+      const current = view.nodes.find((n) => n.id === m.node.id)
       if (
         !roots.has(m.node.id) ||
+        !current ||
         !Number.isFinite(m.x) ||
-        !Number.isFinite(m.y)
+        !Number.isFinite(m.y) ||
+        (current.metadata.x === m.x && current.metadata.y === m.y)
       )
         continue
-      const key = `${canvas.id}:${m.node.id}`,
-        previous = positions[key],
-        own = this.placementRevisions.get(key)
-      if (
-        previous
-          ? previous.x === m.x && previous.y === m.y
-          : m.node.metadata.x === m.x &&
-            m.node.metadata.y === m.y &&
-            (!own || BigInt(own) <= BigInt(m.node.placement_revision))
-      )
-        continue
-      positions[key] = {
-        canvasID: canvas.id,
-        nodeID: m.node.id,
-        x: m.x,
-        y: m.y,
-        revision:
-          previous?.revision ??
-          this.placementRevisions.get(key) ??
-          m.node.placement_revision,
-        token: crypto.randomUUID(),
-        synced: false,
-        batchID,
-        readSet,
-      }
+      actions.push({ type: 'move_node', node_id: m.node.id, x: m.x, y: m.y })
     }
-    return this.update({ ...this.value, positions })
-  }
-  async sendNextPosition(canvasID: string) {
-    if (this.closed || this.busy || this.value.job) return
-    const entry = Object.entries(this.value.positions ?? {}).find(
-      ([, p]) => p.canvasID === canvasID && !p.synced,
-    )
-    if (!entry) return
-    const [key, p] = entry
-    if (p.batchID) {
-      const batch = Object.entries(this.value.positions ?? {}).filter(
-        ([, v]) =>
-          v.canvasID === canvasID && v.batchID === p.batchID && !v.synced,
-      )
-      const readSet = structuredClone(p.readSet ?? [])
-      for (const [, position] of batch) {
-        const r = readSet.find((r) => r.id === position.nodeID)
-        if (r) r.placement_revision = position.revision
-      }
-      return this.enqueue(
-        `/canvases/${canvasID}/commands`,
-        {
-          type: 'batch',
-          read_set: readSet,
-          actions: batch.map(([, v]) => ({
-            type: 'move_node',
-            node_id: v.nodeID,
-            x: v.x,
-            y: v.y,
-          })),
-        } satisfies Command,
-        undefined,
-        undefined,
-        batch.map(([key, v]) => ({ key, token: v.token })),
-      )
-    }
-    return this.enqueue(
-      `/canvases/${canvasID}/commands`,
-      {
-        type: 'move_node',
-        node_id: p.nodeID,
-        x: p.x,
-        y: p.y,
-        expected_placement_revision: p.revision,
-      } satisfies Command,
-      undefined,
-      { key, token: p.token },
-    )
-  }
-  reconcilePositions(canvas: Canvas) {
-    const positions = { ...this.value.positions }
-    let changed = false
-    for (const [key, p] of Object.entries(positions)) {
-      if (p.canvasID !== canvas.id || !p.synced) continue
-      const node = canvas.nodes.find((n) => n.id === p.nodeID)
-      if (!node || BigInt(node.placement_revision) >= BigInt(p.revision)) {
-        delete positions[key]
-        changed = true
-      }
-    }
-    return changed
-      ? this.update({ ...this.value, positions })
-      : Promise.resolve()
+    if (!actions.length) return null
+    return this.stageIntent(view.id, { kind: 'actions', actions })
   }
   async enqueue(
     path: string,
     payload: unknown,
     draftKey?: string,
-    position?: Job['position'],
-    positionBatch?: Job['positions'],
   ): Promise<unknown> {
-    if (this.busy || this.value.job)
-      throw new Error('请先处理上一次保存，再提交新的修改')
+    await this.claim()
+    return this.dispatch(this.value, path, payload, draftKey)
+  }
+  // dispatch persists the immutable request in the claimed slot, then sends.
+  private async dispatch(
+    base: Journal,
+    path: string,
+    payload: unknown,
+    draftKey?: string,
+    intent?: Intent,
+  ): Promise<unknown> {
+    if (this.closed) {
+      this.busy = false
+      return
+    }
     const operation = crypto.randomUUID()
+    // The submitted draft is the one captured when the edit was staged, so
+    // typing that happened while it waited is never mistaken for saved.
     const job: Job = {
       path,
       operation,
       draftKey,
-      position,
-      positions: positionBatch,
-      draftValue: draftKey ? this.value.drafts[draftKey] : undefined,
+      intent: intent?.id,
+      draftValue: intent
+        ? intent.draftValue
+        : draftKey
+          ? this.value.drafts[draftKey]
+          : undefined,
       state: 'ready',
       message: '',
       body: JSON.stringify({
@@ -246,18 +336,22 @@ export class SaveQueue {
         payload,
       }),
     }
-    this.connections.stage(job)
     // Preparation is part of the active save, never an idle recovery prompt.
-    this.busy = true
-    this.changed()
     try {
-      await this.update({ ...this.value, job })
+      await this.update({ ...base, job })
     } catch (error) {
-      this.connections.remove(job.operation)
+      if (intent) {
+        this.settle(intent.id, errorMessage(error))
+        await this.update({
+          ...this.value,
+          outbox: this.outbox.filter((i) => i.id !== intent.id),
+        }).catch(() => {})
+      }
       throw error
     } finally {
       this.busy = false
       this.changed()
+      this.release()
     }
     return this.flush(false)
   }
@@ -265,7 +359,6 @@ export class SaveQueue {
     if (this.closed || this.busy || !this.value.job) return
     const job = structuredClone(this.value.job)
     if (job.state === 'rejected') return
-    this.connections.stage(job)
     this.busy = true
     this.changed()
     let uncertain = recover || job.state === 'unknown'
@@ -311,33 +404,45 @@ export class SaveQueue {
         code === 'creative_asset_trashed'
       )
         uncertain = false
-      if (
+      const rejected =
         definitive ||
         (!uncertain &&
           (code === 'creative_revision_conflict' ||
             code === 'archived_read_only' ||
             code === 'creative_asset_trashed'))
-      )
-        this.connections.remove(job.operation)
+      // A rejected intent and everything queued after it on that canvas are
+      // dropped now: the projection must not keep showing a refused edit.
+      const outbox =
+        rejected && job.intent ? this.dropFrom(job.intent) : this.outbox
       await this.update({
         ...this.value,
+        outbox,
         job: {
           ...job,
-          state:
-            definitive ||
-            (!uncertain &&
-              (code === 'creative_revision_conflict' ||
-                code === 'archived_read_only' ||
-                code === 'creative_asset_trashed'))
-              ? 'rejected'
-              : 'unknown',
+          state: rejected ? 'rejected' : 'unknown',
           message: errorMessage(e),
         },
       })
     } finally {
       this.busy = false
       this.changed()
+      this.release()
     }
+  }
+  private dropFrom(intentID: string): Intent[] {
+    const outbox = this.outbox
+    const index = outbox.findIndex((i) => i.id === intentID)
+    if (index < 0) return outbox
+    const canvasID = outbox[index]!.canvasID
+    const kept: Intent[] = []
+    for (const [i, intent] of outbox.entries()) {
+      if (i >= index && intent.canvasID === canvasID) {
+        this.settle(intent.id, withdrawn.rejected)
+        continue
+      }
+      kept.push(intent)
+    }
+    return kept
   }
   private async complete(job: Job, result: unknown) {
     const drafts = { ...this.value.drafts }
@@ -346,97 +451,45 @@ export class SaveQueue {
       JSON.stringify(drafts[job.draftKey]) === JSON.stringify(job.draftValue)
     )
       delete drafts[job.draftKey]
-    const positions = { ...this.value.positions }
-    if (job.positions) {
+    let outbox = this.outbox
+    if (job.intent) {
+      const intent = outbox.find((i) => i.id === job.intent)
       if (
-        !result ||
-        typeof result !== 'object' ||
-        !('object_results' in result) ||
+        !record(result) ||
+        typeof result.change_id !== 'string' ||
+        !revision(result.result_revision) ||
+        !revision(result.result_topology_revision) ||
         !Array.isArray(result.object_results)
       )
-        throw new Error('画布保存结果无法识别，请恢复原操作')
-      for (const submitted of job.positions) {
-        const nodeID = submitted.key.slice(submitted.key.indexOf(':') + 1)
-        const matches = result.object_results.filter(
-          (value: unknown) =>
-            value &&
-            typeof value === 'object' &&
-            'id' in value &&
-            value.id === nodeID &&
-            'kind' in value &&
-            value.kind === 'node',
-        )
-        if (
-          matches.length !== 1 ||
-          !matches[0].is_live ||
-          typeof matches[0].placement_revision !== 'string' ||
-          !/^[1-9][0-9]*$/.test(matches[0].placement_revision)
-        )
-          throw new Error('位置保存回执不完整，请恢复原操作')
+        throw new Error('画布保存回执无法识别，请恢复原操作')
+      const ids = (v: unknown) =>
+        Array.isArray(v)
+          ? v.filter((x): x is string => typeof x === 'string')
+          : []
+      const receipt: Receipt = {
+        change_id: result.change_id,
+        inverse_of:
+          intent && intent.kind !== 'actions'
+            ? (intent.changeID ?? null)
+            : null,
+        result_revision: result.result_revision,
+        result_topology_revision: result.result_topology_revision,
+        object_results: result.object_results as Receipt['object_results'],
+        created_ids: ids(result.created_ids),
+        omitted_reference_ids: ids(result.omitted_reference_ids),
       }
-      for (const item of result.object_results) {
-        if (
-          !item ||
-          typeof item !== 'object' ||
-          typeof item.id !== 'string' ||
-          item.kind !== 'node'
-        )
-          continue
-        const rev: unknown = item.placement_revision
-        if (typeof rev !== 'string' || !/^[1-9][0-9]*$/.test(rev))
-          throw new Error('布局版本无法识别')
-        const pathCanvas = job.path.split('/')[2],
-          key = `${pathCanvas}:${item.id}`
-        this.placementRevisions.set(key, rev)
-        for (const p of Object.values(positions)) {
-          if (p.canvasID !== pathCanvas) continue
-          const observed = p.readSet?.find((r) => r.id === item.id)
-          const submitted = JSON.parse(job.body).payload.read_set.find(
-            (r: { id: string }) => r.id === item.id,
-          )
-          if (
-            observed &&
-            submitted &&
-            observed.placement_revision === submitted.placement_revision
-          )
-            observed.placement_revision = rev
-        }
-        const current = positions[key],
-          submitted = job.positions.find((p) => p.key === key)
-        if (current && submitted)
-          positions[key] = {
-            ...current,
-            revision: rev,
-            synced: current.token === submitted.token,
-          }
-      }
-    }
-    if (job.position) {
-      if (
-        !result ||
-        typeof result !== 'object' ||
-        !('placement_revision' in result) ||
-        typeof result.placement_revision !== 'string' ||
-        !/^[1-9][0-9]*$/.test(result.placement_revision)
+      outbox = outbox.map((i) =>
+        i.id === job.intent
+          ? { ...i, state: 'confirmed' as const, receipt }
+          : i,
       )
-        throw new Error('位置保存结果无法识别，请恢复原操作')
-      this.placementRevisions.set(job.position.key, result.placement_revision)
-      const current = positions[job.position.key]
-      if (current)
-        positions[job.position.key] = {
-          ...current,
-          revision: result.placement_revision,
-          synced: current.token === job.position.token,
-        }
+      this.settle(job.intent, null, receipt)
     }
-    this.connections.confirm(job, result)
-    await this.update({ ...this.value, job: null, drafts, positions })
+    await this.update({ ...this.value, job: null, drafts, outbox })
   }
   async dismissRejected() {
     if (this.busy || this.value.job?.state !== 'rejected') return
-    const positions = { ...this.value.positions }
-    if (this.value.job.position) delete positions[this.value.job.position.key]
-    for (const p of this.value.job.positions ?? []) delete positions[p.key]
-    await this.update({ ...this.value, job: null, positions })
+    await this.update({ ...this.value, job: null })
+    this.release()
   }
 }

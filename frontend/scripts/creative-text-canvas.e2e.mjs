@@ -88,7 +88,11 @@ await context.route('**/api/v1/**', async (route) => {
     route.request().method() === 'POST'
       ? route.request().postDataJSON()?.payload
       : null
-  if (payload?.type === 'move_node') {
+  // Moves travel as batch commands with move_node actions.
+  if (
+    payload?.type === 'batch' &&
+    payload.actions?.some((a) => a.type === 'move_node')
+  ) {
     moves.push(payload)
     if (holdMove) {
       holdMove = false
@@ -139,7 +143,11 @@ async function saved(p) {
       const button = document.querySelector(
         'button.ch-create, .cc-library button[aria-label="新增资产"]',
       )
-      return button && !button.disabled
+      return (
+        button &&
+        !button.disabled &&
+        !document.querySelector('.cc-stage[data-sync="pending"]')
+      )
     },
     null,
     { timeout: 15000 },
@@ -182,7 +190,6 @@ try {
   await page.getByRole('button', { name: '新增资产', exact: true }).click()
   await page.getByLabel('资产名称').fill('共同参考')
   await page.getByLabel('正文', { exact: true }).fill('两张画布共用的原始文字')
-  await page.getByLabel('内容来源').selectOption('owned')
   loseNext = true
   await page.getByRole('button', { name: '保存资产', exact: true }).click()
   await page.getByRole('button', { name: '查询并恢复原保存' }).waitFor()
@@ -330,7 +337,6 @@ try {
   await page
     .getByLabel('链接地址', { exact: true })
     .fill('https://example.invalid/reference')
-  await page.getByLabel('内容来源').selectOption('reference')
   await page.getByRole('button', { name: '保存资产', exact: true }).click()
   await saved(page)
   assert.equal(await page.locator('.cc-asset').count(), 2)
@@ -516,7 +522,6 @@ try {
       .fill(
         kind === 'text' ? '随时记下的想法' : 'https://example.invalid/mobile',
       )
-    await page.getByLabel('内容来源').selectOption('owned')
     await page.getByRole('button', { name: '保存资产', exact: true }).click()
     await saved(page)
     assert(
@@ -745,7 +750,6 @@ try {
     .click()
   await page.getByLabel('资产名称', { exact: true }).fill('窗边光线 100%')
   await page.getByLabel('正文', { exact: true }).fill('自然光布光参考')
-  await page.getByLabel('内容来源', { exact: true }).selectOption('owned')
   await page.locator('.cl-picker summary').click()
   await page
     .locator('.cl-picker')

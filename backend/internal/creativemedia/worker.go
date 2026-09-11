@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"sort"
@@ -80,6 +81,8 @@ func (s *Service) claim(ctx context.Context, scope store.AccountScope, id, state
 		// fails explicitly; the deleting blob rows keep the objects for
 		// reconciliation instead of leaking a silent 24h stall.
 		if u.State == "verifying" && u.IOPhase == "promoting" && (u.Lease == nil || !now.Before(*u.Lease)) {
+			s.logger.Warn("creative media promotion interrupted; failing session for reconciliation",
+				slog.String("upload_id", u.ID), slog.String("account_id", scope.AccountID()), slog.Int64("epoch", u.Epoch))
 			return s.finish(ctx, tx, u, "failed", "promote_interrupted")
 		}
 		if u.State != state || u.IOPhase != phase {
@@ -121,8 +124,13 @@ func (s *Service) withEpoch(ctx context.Context, scope store.AccountScope, u upl
 	})
 }
 func (s *Service) fail(ctx context.Context, scope store.AccountScope, u upload, code string, cause error) error {
+	s.logger.Warn("creative media upload failed",
+		slog.String("upload_id", u.ID), slog.String("account_id", scope.AccountID()),
+		slog.String("state", u.State), slog.String("io_phase", u.IOPhase), slog.Int64("epoch", u.Epoch),
+		slog.String("kind", u.Kind), slog.Int64("size", u.Size), slog.String("driver", s.adapter.Driver()),
+		slog.String("code", code), slog.String("error", cause.Error()))
 	return s.withEpoch(ctx, scope, u, func(tx store.TxAccountScope, current upload) error {
-		return s.finish(ctx, tx, current, "failed", fmtErr(code, cause))
+		return s.finish(ctx, tx, current, "failed", failureCode(code))
 	})
 }
 

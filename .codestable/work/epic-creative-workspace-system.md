@@ -635,3 +635,13 @@ owner明确授权提交本阶段feature。本提交包含FND-04基础能力、v5
 ### FND-05 提交里程碑（2026-09-11）
 
 owner授权提交：`126da5f`（80 files，pre-commit lint通过）。未push、未合并develop、未应用开发数据库迁移。下一项等待owner指令。
+
+### FND-05 补丁：画布本机优先、媒体节点比例、去掉来源确认（2026-09-11）
+
+- owner 反馈三点：媒体节点增删改/移动响应慢且每次操作都同步；节点不按媒体长宽比定尺寸；上传强制选来源没必要。owner 拍板 ContentForm 的来源选择一并去掉。
+- 响应慢根因：除拖动位置外，所有画布命令走 `perform`，置 loading、等回执、再 `refresh()` 重拉画布与资产库，且队列一次只允许一个待确认操作。改动：journal 新增有序 `outbox`（`outbox.ts`：意图/投影/合并/读集；`queue.ts`：`stageIntent`/`cancelTail`/`sendNextIntent`/`pruneOutbox`，请求槽 `claim` 原子化，回执 `Receipt` 含 created/omitted）。画布编辑立即投影到 `view`（新增/删除/移动/缩放/标题/内容/连线/断开本机可画，分组/复制/版本等回执后拉快照），250ms 静默后按序发送；连续 move/resize 合并进未发出的队尾；撤销未发出的编辑本机取消并入 redo 栈；被拒绝的意图连同其后同画布意图撤回投影并禁用画布编辑直到人工放弃。读集取自「快照 + 该意图之前的回执」投影，不含本机节点与 `pending:` 边；本机节点的位置意图等创建回执。删除 `connectionOverlay.ts`（被投影取代）。UX-CONTRACT「每个会话最多一个未完成命令」改为「同一时刻一个在途请求」。
+- 比例：服务端 `fitMediaSize`（`BindNodeRevisionInTx` 与 add_node asset 路径）：节点仍是默认 280×180 且非音频时高度 = 74 + 280×h/w，夹在 140–640；前端 `fitMediaHeight` 同规则用于资产拖入的本机投影。
+- 来源：OpenAPI `rights` 在内容草稿/上传创建中改为可选；`RightsDeclarationInput.OrDefault` 缺省 `photographer_owned/ownership_attested`；`replace_content` 空节点不再要求 rights；前端删除 UploadDialog 与 ContentForm 来源下拉，选文件即上传。
+- 验证：Go `creativecanvas/creativecontent/creativemedia/creativelibrary` 通过（新增 `TestFitMediaSize…`、`TestFirstContentWithoutRightsDefaultsToOwnWork`、上传省略 rights 用例），`check-go PKG=./internal/creativecanvas/...` 与 httpapi Creative 用例 exit 0，golangci 0 issues；前端 `check-frontend` 372/372、`generate-check`、`git diff --check` 通过；`creative-save-queue.test.ts` 新增 7 条 outbox 用例（投影/合并/本机取消/拒绝撤回/重载续发/本机节点位置延后/读集来自前序回执/比例）。真实浏览器三脚本联跑 PASS（138.8s，`/tmp/fix3-browser.log`）；媒体脚本新增节点尺寸断言（64×48 样本 → 284 高，音频 180）。e2e 驱动改为每脚本独立账号（此前共用账号导致资产计数串扰）。
+- 遗留：`UX-CONTRACT`/`DESIGN`/`docs/dev/creative-text-canvas.md`（新增「本机 outbox」节）/`creative-media.md` 已更新；分组/复制/版本操作仍等快照，未做本机投影；未提交。
+- 2026-09-11 追加：拖动位置合并进 outbox。删除 `positions`/`placementRevisions`/`stagePosition(s)`/`sendNextPosition`/`reconcilePositions`/`forgetPosition`/`withOwnPlacements` 及 `Job.position(s)`，新增 `SaveQueue.stageMoves`（选区根、落点不变不入队）；CanvasView 去掉 `positions` 覆盖层，投影本身承载本机坐标；旧 journal 未同步 positions 加载时转 move 意图。此前 owner 报告的频繁「内容已变化」409 根因即两条路径各记版本号，合并后消除；服务端 409 文案改为「内容已被其他窗口修改，本机这次修改未保存」。验证：`creative-save-queue.test.ts` 20 条（新增在途合并/回退落点/组根/本机节点顺序/旧 journal 迁移），前端 369/369、lint/build、diff --check，三脚本浏览器联跑 PASS 137.6s（text-canvas 的 move 计数改为识别 batch 内 move_node）。

@@ -1,5 +1,5 @@
-import type { GraphRead } from './api.ts'
 import type { Organization } from './libraryState.ts'
+import { intentKinds, intentStates, type Intent } from './outbox.ts'
 // The journal owns local recovery only. It never marks server data as saved.
 export type Job = {
   path: string
@@ -9,8 +9,8 @@ export type Job = {
   message: string
   draftKey?: string
   draftValue?: Draft
-  position?: { key: string; token: string }
-  positions?: { key: string; token: string }[]
+  // The outbox intent this immutable request carries, if any.
+  intent?: string
 }
 export type Draft = {
   organization?: Organization
@@ -20,23 +20,12 @@ export type Draft = {
   dataRevision?: string
   contentRevision?: string | null
 }
-// A placement intent is separate from the immutable request currently in flight.
-export type PositionDraft = {
-  batchID?: string
-  readSet?: GraphRead[]
-  canvasID: string
-  nodeID: string
-  x: number
-  y: number
-  revision: string
-  token: string
-  synced: boolean
-}
 export type Journal = {
   version: 1
   job: Job | null
   drafts: Record<string, Draft>
-  positions?: Record<string, PositionDraft>
+  // Ordered canvas edits not yet visible in a server snapshot.
+  outbox?: Intent[]
 }
 export const emptyJournal = (): Journal => ({
   version: 1,
@@ -82,21 +71,19 @@ export function journalStorage(key: string): JournalStorage {
                   !d ||
                   typeof d.value !== 'string' ||
                   typeof d.title !== 'string' ||
-                  !['text', 'link'].includes(d.kind),
+                  !['text', 'link', 'image', 'video', 'audio'].includes(d.kind),
               ) ||
-              (value.positions &&
-                Object.values(value.positions).some(
-                  (p) =>
-                    !p ||
-                    typeof p.canvasID !== 'string' ||
-                    typeof p.nodeID !== 'string' ||
-                    !Number.isFinite(p.x) ||
-                    !Number.isFinite(p.y) ||
-                    typeof p.revision !== 'string' ||
-                    !/^[1-9][0-9]*$/.test(p.revision) ||
-                    typeof p.token !== 'string' ||
-                    typeof p.synced !== 'boolean',
-                )) ||
+              (value.outbox &&
+                (!Array.isArray(value.outbox) ||
+                  value.outbox.some(
+                    (i) =>
+                      !i ||
+                      typeof i.id !== 'string' ||
+                      typeof i.canvasID !== 'string' ||
+                      !intentKinds.includes(i.kind) ||
+                      !intentStates.includes(i.state) ||
+                      (i.actions !== undefined && !Array.isArray(i.actions)),
+                  ))) ||
               (value.job &&
                 (typeof value.job.body !== 'string' ||
                   typeof value.job.operation !== 'string' ||

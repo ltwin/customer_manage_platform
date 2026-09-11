@@ -2274,6 +2274,7 @@ export interface components {
             /** Format: int64 */
             duration_ms: number | null;
         };
+        /** @description 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。 */
         CreativeContentRights: {
             source_class: string;
             rights_basis: string;
@@ -2283,7 +2284,7 @@ export interface components {
             /** @enum {string} */
             kind: "text" | "link" | "image" | "video" | "audio";
             payload: components["schemas"]["CreativeContentPayload"];
-            rights: components["schemas"]["CreativeContentRights"];
+            rights?: components["schemas"]["CreativeContentRights"];
         };
         CreativeContentRevision: {
             /** @description 正文是否为摘要；编辑前读取该修订完整正文 */
@@ -5193,7 +5194,7 @@ export interface components {
             mime: string;
             /** Format: int64 */
             size: number;
-            rights: components["schemas"]["CreativeContentRights"];
+            rights?: components["schemas"]["CreativeContentRights"];
             target: components["schemas"]["CreativeUploadTarget"];
         };
         CreateCreativeUploadRequest: {

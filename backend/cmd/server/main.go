@@ -196,7 +196,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	creativeMedia, err := creativemedia.Compose(cfg, deriveCreativeMediaTicketKey(cfg.AuthTokenSecret))
+	creativeMedia, err := creativemedia.Compose(cfg, deriveCreativeMediaTicketKey(cfg.AuthTokenSecret), logger)
 	if err != nil {
 		return newStartupFailure("creative-media-init", "CREATIVE_MEDIA_LOCAL_ROOT", "object-storage", err)
 	}

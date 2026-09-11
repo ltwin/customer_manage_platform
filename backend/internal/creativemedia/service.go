@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"log/slog"
 	"math"
 	"path"
 	"strings"
@@ -38,17 +38,26 @@ type Service struct {
 	verifier *Verifier
 	runtime  jobs.Runtime
 	tickets  ticketSigner
+	logger   *slog.Logger
 }
 
 func NewService(cfg Config, adapter Adapter, verifier *Verifier, ticketKey []byte, ticketBase string) (*Service, error) {
 	if adapter == nil || verifier == nil || len(ticketKey) < 32 || ticketBase == "" {
 		return nil, errors.New("creative media service requires adapter, verifier, ticket key and base path")
 	}
-	return &Service{cfg: cfg, adapter: adapter, verifier: verifier, tickets: ticketSigner{key: ticketKey, base: ticketBase}}, nil
+	return &Service{cfg: cfg, adapter: adapter, verifier: verifier, tickets: ticketSigner{key: ticketKey, base: ticketBase}, logger: slog.Default()}, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.
 func (s *Service) SetRuntime(runtime jobs.Runtime) { s.runtime = runtime }
+
+// SetLogger receives the process logger; failure details go here, never to
+// the client-visible error_code.
+func (s *Service) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		s.logger = logger
+	}
+}
 
 // Handlers registers the worker stages. Verification streams up to the
 // audio/video limit twice (staging read, final write) and probes it, so its
@@ -134,10 +143,11 @@ func (s *Service) validateCreate(v CreateUploadInput) error {
 	if v.Size > s.verifier.MaxBytes(v.Kind) || s.partCount(v.Size) > s.cfg.MaxParts {
 		return ErrSizeLimit
 	}
-	if utf8.RuneCountInString(v.Rights.EvidenceSummary) > 500 {
+	rights := v.Rights.OrDefault()
+	if utf8.RuneCountInString(rights.EvidenceSummary) > 500 {
 		return creativeops.ErrValidation
 	}
-	if planningmedia.ValidatePurpose(planningmedia.RightsDeclarationInput{SourceClass: v.Rights.SourceClass, RightsBasis: v.Rights.RightsBasis, EvidenceSummary: v.Rights.EvidenceSummary}, planningmedia.PurposeMoodboardDisplay) != nil {
+	if planningmedia.ValidatePurpose(planningmedia.RightsDeclarationInput{SourceClass: rights.SourceClass, RightsBasis: rights.RightsBasis, EvidenceSummary: rights.EvidenceSummary}, planningmedia.PurposeMoodboardDisplay) != nil {
 		return creativecontent.ErrUsageDenied
 	}
 	return v.Target.validate()
@@ -164,7 +174,8 @@ func (s *Service) CreateUpload(ctx context.Context, scope store.AccountScope, c 
 			return creativeops.Outcome{}, err
 		}
 		declaration := "ccrd_" + uuid.NewString()
-		if err := tx.Insert(ctx, "creative_rights_declarations", []string{"id", "source_class", "rights_basis", "evidence_summary"}, declaration, v.Rights.SourceClass, v.Rights.RightsBasis, v.Rights.EvidenceSummary); err != nil {
+		rights := v.Rights.OrDefault()
+		if err := tx.Insert(ctx, "creative_rights_declarations", []string{"id", "source_class", "rights_basis", "evidence_summary"}, declaration, rights.SourceClass, rights.RightsBasis, rights.EvidenceSummary); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if err := tx.Insert(ctx, "creative_usage_grants", []string{"id", "declaration_id", "purpose", "evidence"}, "ccug_"+uuid.NewString(), declaration, "display", json.RawMessage(`{"source":"upload_declaration"}`)); err != nil {
@@ -457,9 +468,7 @@ func targetOf(u upload) (Target, error) {
 	err := json.Unmarshal(u.Target, &t)
 	return t, err
 }
-func fmtErr(code string, err error) string {
-	if err == nil {
-		return code
-	}
-	return fmt.Sprintf("%s: %s", code, strings.SplitN(err.Error(), "\n", 2)[0])
-}
+
+// failureCode is the client-visible reason class; the underlying error is
+// logged by the worker and never persisted or returned.
+func failureCode(code string) string { return strings.TrimSpace(code) }

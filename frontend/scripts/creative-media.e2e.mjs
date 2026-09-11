@@ -55,7 +55,11 @@ async function saved() {
     const button = document.querySelector(
       '.cc-library button[aria-label="新增资产"],button.ch-create',
     )
-    return button && !button.disabled
+    return (
+      button &&
+      !button.disabled &&
+      !document.querySelector('.cc-stage[data-sync="pending"]')
+    )
   })
   assert.equal(
     await page
@@ -81,11 +85,6 @@ async function trayIdle() {
     60000,
   )
 }
-async function confirmRights() {
-  await page.getByRole('dialog', { name: '导入媒体' }).waitFor()
-  await page.getByLabel('内容来源').selectOption('owned')
-  await page.getByRole('button', { name: '开始上传', exact: true }).click()
-}
 const node = (id) => page.locator(`.react-flow__node[data-id="${id}"]`)
 const sample = (name) => path.join(samples, name)
 try {
@@ -109,7 +108,6 @@ try {
     sample('sample.webm'),
     sample('sample.mp3'),
   ])
-  await confirmRights()
   await trayIdle()
   await page.screenshot({ path: `${output}/library-import-tray.png` })
   const rows = await page.locator('.cc-upload-tray li').allInnerTexts()
@@ -131,7 +129,6 @@ try {
   const chooser2 = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: '导入文件', exact: true }).click()
   await (await chooser2).setFiles([fakePath])
-  await confirmRights()
   await trayIdle()
   await until(
     async () =>
@@ -215,7 +212,6 @@ try {
         new DragEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }),
       )
   }, { x: dropX, y: dropY, bytes: Array.from(await readFile(sample('sample.jpg'))), name: 'drop.jpg' })
-  await confirmRights()
   await trayIdle()
   await until(
     () => snapshot?.nodes.length === 3 && snapshot.nodes.every((n) => n.content),
@@ -226,6 +222,14 @@ try {
     async () => (await page.locator('.react-flow__node .cc-media.is-ready').count()) === 3,
     'node media rendered',
   )
+  // 64x48 samples: nodes never resized by hand take the picture's aspect
+  // ratio at the default width (74px chrome + 280 * 48 / 64 = 284), audio
+  // keeps the default box.
+  for (const n of snapshot.nodes) {
+    const kind = n.metadata.type_key.slice(5)
+    assert.equal(n.metadata.width, 280, `${kind} width`)
+    assert.equal(n.metadata.height, kind === 'audio' ? 180 : 284, `${kind} height`)
+  }
   await page.screenshot({ path: `${output}/canvas-media.png` })
   const jpgNode = snapshot.nodes.find((n) => n.content.media[0].mime === 'image/jpeg')
   const beforeReplace = jpgNode.data.content_revision_id
@@ -234,7 +238,6 @@ try {
   const chooser3 = page.waitForEvent('filechooser')
   await page.getByRole('button', { name: '替换媒体', exact: true }).click()
   await (await chooser3).setFiles([sample('sample.webp')])
-  await confirmRights()
   await trayIdle()
   await until(
     () => snapshot?.nodes.find((n) => n.id === jpgNode.id)?.data.content_revision_id !== beforeReplace,

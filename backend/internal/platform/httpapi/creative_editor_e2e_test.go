@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +39,7 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	tokens := auth.NewTokenIssuer("synthetic-creative-browser-secret")
 	service := auth.NewService(db, tokens, auth.WithAttemptLimiter(db), auth.WithAuthMailSender(mail), auth.WithRegistrationAdmissionMode(auth.RegistrationPublic), auth.WithPublicBaseURL(frontendURL))
 	// Real media pipeline: local adapter, ffprobe verification and an in-process worker.
-	media, err := creativemedia.Compose(config.Config{AvatarStorageDriver: config.StorageDriverLocal, CreativeMediaLocalRoot: t.TempDir(), CreativeFFProbe: "ffprobe", CreativeMediaQuotaBytes: 1 << 30}, bytes.Repeat([]byte{9}, 32))
+	media, err := creativemedia.Compose(config.Config{AvatarStorageDriver: config.StorageDriverLocal, CreativeMediaLocalRoot: t.TempDir(), CreativeFFProbe: "ffprobe", CreativeMediaQuotaBytes: 1 << 30}, bytes.Repeat([]byte{9}, 32), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,37 +56,39 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	}
 	defer func() { _ = mediaJobs.Stop(context.Background()) }()
 	handler := httpapi.NewRouter(httpapi.RouterDeps{Logger: slog.New(slog.DiscardHandler), DB: db, ScopeFactory: db, Auth: service, PublicBaseURL: frontendURL, PublicRegistrationEnabled: true, CreativeMedia: media})
-	email := "creative-browser@example.invalid"
-	registered := authRequest(t, handler, http.MethodPost, "/api/v1/auth/register", `{"email":"`+email+`","password":"`+testPassword+`"}`, frontendURL, "")
-	if registered.Code != 202 {
-		t.Fatalf("register %d %s", registered.Code, registered.Body.String())
-	}
-	action, err := url.Parse(mail.Last().ActionURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fragment, err := url.ParseQuery(action.Fragment)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, err := json.Marshal(map[string]string{"token": fragment.Get("token")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	verified := authRequest(t, handler, http.MethodPost, "/api/v1/auth/email/verify", string(body), frontendURL, "")
-	if verified.Code != 200 {
-		t.Fatalf("verify %d %s", verified.Code, verified.Body.String())
-	}
-	var access httpapi.AccessTokenResponse
-	if err := json.Unmarshal(verified.Body.Bytes(), &access); err != nil {
-		t.Fatal(err)
-	}
-	me := shootPlanningRequest(t, handler, "GET", "/api/v1/me", access.AccessToken, "", "")
+	// Each script gets its own account: their library sizes must not interfere.
 	var account struct {
 		ID string `json:"id"`
 	}
-	if err := json.Unmarshal(me.Body.Bytes(), &account); err != nil {
-		t.Fatal(err)
+	register := func(email string) {
+		registered := authRequest(t, handler, http.MethodPost, "/api/v1/auth/register", `{"email":"`+email+`","password":"`+testPassword+`"}`, frontendURL, "")
+		if registered.Code != 202 {
+			t.Fatalf("register %d %s", registered.Code, registered.Body.String())
+		}
+		action, err := url.Parse(mail.Last().ActionURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fragment, err := url.ParseQuery(action.Fragment)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, err := json.Marshal(map[string]string{"token": fragment.Get("token")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		verified := authRequest(t, handler, http.MethodPost, "/api/v1/auth/email/verify", string(body), frontendURL, "")
+		if verified.Code != 200 {
+			t.Fatalf("verify %d %s", verified.Code, verified.Body.String())
+		}
+		var access httpapi.AccessTokenResponse
+		if err := json.Unmarshal(verified.Body.Bytes(), &access); err != nil {
+			t.Fatal(err)
+		}
+		me := shootPlanningRequest(t, handler, "GET", "/api/v1/me", access.AccessToken, "", "")
+		if err := json.Unmarshal(me.Body.Bytes(), &account); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	// Isolated benchmark fixture endpoint exists only in this opt-in test server.
@@ -175,7 +178,9 @@ func TestCreativeEditorBrowser(t *testing.T) {
 		}
 		scripts = []string{selected}
 	}
-	for _, name := range scripts {
+	for i, name := range scripts {
+		email := fmt.Sprintf("creative-browser-%d@example.invalid", i)
+		register(email)
 		script := filepath.Join(root, "frontend/scripts", name)
 		cmd := exec.CommandContext(t.Context(), "node", script)
 		cmd.Env = append(os.Environ(), "CREATIVE_EDITOR_API="+server.URL, "CREATIVE_EDITOR_EMAIL="+email, "CREATIVE_EDITOR_PASSWORD="+testPassword, "CREATIVE_MEDIA_SAMPLES="+filepath.Join(root, "backend/internal/creativemedia/testdata"))

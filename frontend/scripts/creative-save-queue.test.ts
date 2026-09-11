@@ -2,8 +2,17 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SaveQueue } from '../src/creative-canvas/editor/queue.ts'
 import { emptyJournal } from '../src/creative-canvas/editor/journal.ts'
-import type { CanvasNode, Canvas } from '../src/creative-canvas/editor/api.ts'
+import type {
+  CanvasNode,
+  Canvas,
+  GraphAction,
+} from '../src/creative-canvas/editor/api.ts'
 import type { Journal, Job } from '../src/creative-canvas/editor/journal.ts'
+import {
+  fitMediaHeight,
+  projectCanvas,
+  type Receipt,
+} from '../src/creative-canvas/editor/outbox.ts'
 const error = (status: number, code = 'internal') =>
   Object.assign(new Error(code), { status, code })
 function memory(initial = emptyJournal()) {
@@ -256,14 +265,26 @@ const positionCanvas: Canvas = {
   object_states: [],
 }
 
-test('positions coalesce while a request is in flight and advance only on its receipt', async () => {
+const nodeResult = (id: string, placement: string, data = '1') => ({
+  kind: 'node' as const,
+  id,
+  is_live: true,
+  placement_revision: placement,
+  data_revision: data,
+})
+const moveOf = (job: Job) =>
+  JSON.parse(job.body).payload.actions.filter(
+    (a: { type: string }) => a.type === 'move_node',
+  )
+
+test('drops during an in-flight move merge into one following command with the latest targets', async () => {
   const storage = memory()
   const sent: Job[] = []
-  let release!: (result: unknown) => void
+  let release!: (value: unknown) => void
   const q = new SaveQueue(
     storage,
     {
-      send: async (job) => {
+      send: (job) => {
         sent.push(job)
         return new Promise((resolve) => {
           release = resolve
@@ -275,282 +296,213 @@ test('positions coalesce while a request is in flight and advance only on its re
     },
     () => {},
   )
-  await q.stagePosition('a', positionNode, 10, 20)
-  const first = q.sendNextPosition('a')
-  while (!release) await new Promise((resolve) => setImmediate(resolve))
+  q.stageMoves(positionCanvas, [{ node: positionNode, x: 10, y: 20 }])
+  await sleep()
+  const first = q.sendNextIntent('a', positionCanvas)
+  while (!release) await sleep()
   const immutable = q.value.job!.body
-  await q.stagePosition('a', positionNode, 30, 40)
-  await q.stagePosition('a', positionNode, 50, 60)
-  await q.stagePosition('a', { ...positionNode, id: 'other' }, 70, 80)
-  assert.equal(q.value.job!.body, immutable)
+  const other = { ...positionNode, id: 'other' }
+  const later = { ...positionCanvas, nodes: [positionNode, other] }
+  q.stageMoves(later, [{ node: positionNode, x: 30, y: 40 }])
+  q.stageMoves(later, [{ node: positionNode, x: 50, y: 60 }])
+  q.stageMoves(later, [{ node: other, x: 70, y: 80 }])
+  await sleep()
+  assert.equal(
+    q.value.job!.body,
+    immutable,
+    'in-flight request stays immutable',
+  )
   assert.equal(sent.length, 1)
-  release({ placement_revision: '2' })
+  assert.equal(q.outbox.length, 2, 'later drops share one pending intent')
+  release(receipt('2', { object_results: [nodeResult('n', '2')] }))
   await first
-  assert.equal(q.value.positions!['a:n'].synced, false)
-  const second = q.sendNextPosition('a')
-  while (sent.length < 2) await new Promise((resolve) => setImmediate(resolve))
-  assert.deepEqual(JSON.parse(sent[1].body).payload, {
-    type: 'move_node',
-    node_id: 'n',
-    x: 50,
-    y: 60,
-    expected_placement_revision: '2',
-  })
-  release({ placement_revision: '3' })
-  await second
-  assert.equal(storage.get().positions!['a:n'].synced, true)
-  await q.reconcilePositions(positionCanvas)
-  assert.equal(
-    q.value.positions!['a:n'].x,
-    50,
-    'old snapshot must not discard acknowledged position',
+  const view = projectCanvas(positionCanvas, q.outbox)
+  assert.deepEqual(
+    view.nodes.map((n) => [n.id, n.metadata.x, n.metadata.y]),
+    [['n', 50, 60]],
+    'the projection shows the latest drop before it is sent',
   )
-  await q.reconcilePositions({
-    ...positionCanvas,
-    nodes: [
-      {
-        ...positionNode,
-        metadata: { ...positionNode.metadata, x: 50, y: 60 },
-        placement_revision: '3',
-      },
-    ],
-  })
-  assert.equal(q.value.positions!['a:n'], undefined)
-  assert.equal(q.value.positions!['a:other'].x, 70)
-  await q.stagePosition('a', positionNode, 0, 0)
-  assert.equal(
-    q.value.positions!['a:n'].revision,
-    '3',
-    'a drag begun before our receipt must still use our confirmed revision',
-  )
-})
-test('reload recovers the immutable move then sends the latest local destination', async () => {
-  const storage = memory()
-  const q = new SaveQueue(
-    storage,
-    {
-      send: async () => {
-        throw new Error('lost move receipt')
-      },
-      lookup: async () => ({}),
-    },
-    () => {},
-  )
-  await q.stagePosition('a', positionNode, 10, 20)
-  await q.sendNextPosition('a')
-  const operation = q.value.job!.operation
-  await q.stagePosition('a', positionNode, 80, 90)
-  await q.close()
-  const recovered = new SaveQueue(
-    storage,
-    {
-      lookup: async (id) => {
-        assert.equal(id, operation)
-        return { placement_revision: '2' }
-      },
-      send: async (job) => {
-        assert.deepEqual(JSON.parse(job.body).payload, {
-          type: 'move_node',
-          node_id: 'n',
-          x: 80,
-          y: 90,
-          expected_placement_revision: '2',
-        })
-        return { placement_revision: '3' }
-      },
-    },
-    () => {},
-  )
-  await recovered.load()
-  await recovered.flush()
-  assert.equal(recovered.value.positions!['a:n'].x, 80)
-  await recovered.sendNextPosition('a')
-  assert.equal(recovered.value.positions!['a:n'].synced, true)
-})
-test('a rejected placement retains local intent until explicitly discarded without retrying conflicts', async () => {
-  const q = new SaveQueue(
-    memory(),
-    {
-      lookup: async () => {
-        throw error(404)
-      },
-      send: async () => {
-        throw error(409, 'creative_revision_conflict')
-      },
-    },
-    () => {},
-  )
-  await q.stagePosition('a', positionNode, 15, 25)
-  await q.sendNextPosition('a')
-  assert.equal(q.value.job?.state, 'rejected')
-  assert.equal(q.value.positions!['a:n'].x, 15)
-  await q.dismissRejected()
-  assert.equal(q.value.positions!['a:n'], undefined)
-  assert.equal(q.value.job, null)
-})
-
-test('dragging back to the old coordinates after our receipt still sends the second move', async () => {
-  const sent: Job[] = []
-  const q = new SaveQueue(
-    memory(),
-    {
-      send: async (job) => {
-        sent.push(job)
-        return { placement_revision: String(sent.length + 1) }
-      },
-      lookup: async () => {
-        throw error(404)
-      },
-    },
-    () => {},
-  )
-  await q.stagePosition('a', positionNode, 10, 20)
-  await q.sendNextPosition('a')
-  await q.reconcilePositions({
-    ...positionCanvas,
-    nodes: [
-      {
-        ...positionNode,
-        metadata: { ...positionNode.metadata, x: 10, y: 20 },
-        placement_revision: '2',
-      },
-    ],
-  })
-  await q.stagePosition('a', positionNode, 0, 0)
-  await q.sendNextPosition('a')
-  assert.equal(sent.length, 2)
-  assert.deepEqual(JSON.parse(sent[1].body).payload, {
-    type: 'move_node',
-    node_id: 'n',
-    x: 0,
-    y: 0,
-    expected_placement_revision: '2',
-  })
-})
-
-test('group move receipts carry only their own versions into the next gesture', async () => {
-  let release!: (result: unknown) => void
-  const sent: Job[] = []
-  const group: CanvasNode = {
-    ...positionNode,
-    id: 'g',
-    metadata: { ...positionNode.metadata, type_key: 'core.group' },
-  }
-  const child: CanvasNode = { ...positionNode, id: 'child', parent_id: 'g' }
-  const canvas: Canvas = { ...positionCanvas, nodes: [group, child] }
-  const q = new SaveQueue(
-    memory(),
-    {
-      lookup: async () => {
-        throw error(404)
-      },
-      send: async (job) => {
-        sent.push(job)
-        return new Promise((resolve) => {
-          release = resolve
-        })
-      },
-    },
-    () => {},
-  )
-  await q.stagePositions(canvas, [{ node: group, x: 20, y: 10 }])
-  const first = q.sendNextPosition('a')
-  while (!release) await new Promise((resolve) => setImmediate(resolve))
-  await q.stagePositions(canvas, [{ node: group, x: 50, y: 20 }])
-  release({
-    object_results: [
-      {
-        kind: 'node',
-        id: 'g',
-        is_live: true,
-        placement_revision: '2',
-        data_revision: '1',
-      },
-    ],
-  })
-  await first
-  const second = q.sendNextPosition('a')
-  while (sent.length < 2) await new Promise((resolve) => setImmediate(resolve))
-  const payload = JSON.parse(sent[1].body).payload
-  assert.equal(
-    payload.read_set.find((r: { id: string }) => r.id === 'g')
-      .placement_revision,
-    '2',
-  )
-  assert.equal(
-    payload.read_set.find((r: { id: string }) => r.id === 'child')
-      .placement_revision,
-    '1',
-  )
-  assert.equal(payload.actions[0].x, 50)
-  release({
-    object_results: [
-      {
-        kind: 'node',
-        id: 'g',
-        is_live: true,
-        placement_revision: '3',
-        data_revision: '1',
-      },
-    ],
-  })
-  await second
-})
-test('incomplete batch receipt remains recoverable instead of acknowledging a missing node', async () => {
-  const group: CanvasNode = {
-    ...positionNode,
-    id: 'g',
-    metadata: { ...positionNode.metadata, type_key: 'core.group' },
-  }
-  const canvas: Canvas = { ...positionCanvas, nodes: [group] }
-  const q = new SaveQueue(
-    memory(),
-    {
-      lookup: async () => {
-        throw error(404)
-      },
-      send: async () => ({ object_results: [] }),
-    },
-    () => {},
-  )
-  await q.stagePositions(canvas, [{ node: group, x: 30, y: 40 }])
-  await q.sendNextPosition('a')
-  assert.equal(q.value.job?.state, 'unknown')
-  assert.equal(q.value.positions?.['a:g'].synced, false)
-})
-
-test('unchanged group gesture does not enqueue an empty operation', async () => {
-  let sends = 0
-  const group: CanvasNode = {
-    ...positionNode,
-    id: 'g',
-    metadata: { ...positionNode.metadata, type_key: 'core.group' },
-  }
-  const canvas: Canvas = { ...positionCanvas, nodes: [group] }
-  const q = new SaveQueue(
-    memory(),
-    {
-      lookup: async () => {
-        throw error(404)
-      },
-      send: async () => {
-        sends++
-        return {}
-      },
-    },
-    () => {},
-  )
-  await q.stagePositions(canvas, [
-    { node: group, x: group.metadata.x, y: group.metadata.y },
+  const second = q.sendNextIntent('a', positionCanvas)
+  while (sent.length < 2) await sleep()
+  const body = JSON.parse(sent[1].body).payload
+  assert.deepEqual(moveOf(sent[1]), [
+    { type: 'move_node', node_id: 'n', x: 50, y: 60 },
+    { type: 'move_node', node_id: 'other', x: 70, y: 80 },
   ])
-  await q.sendNextPosition(canvas.id)
-  assert.equal(sends, 0)
-  assert.equal(q.value.job, null)
-})
-test('normal graph reads exclude unrelated permanent identities', async () => {
-  const { graphReadSet } = await import(
-    '../src/creative-canvas/editor/graph.ts'
+  assert.equal(
+    body.read_set.find((r: { id: string }) => r.id === 'n').placement_revision,
+    '2',
+    'the second move reads the revision its own receipt produced',
   )
+  release(
+    receipt('3', {
+      object_results: [nodeResult('n', '3'), nodeResult('other', '2')],
+    }),
+  )
+  await second
+  await q.pruneOutbox({ ...positionCanvas, revision: '3' })
+  assert.equal(q.outbox.length, 0)
+})
+
+test('an unchanged drop stages nothing; dragging back after a receipt is a real move', async () => {
+  const sent: Job[] = []
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => ({}),
+      send: async (job) => (
+        sent.push(job),
+        receipt('2', { object_results: [nodeResult('n', '2')] })
+      ),
+    },
+    () => {},
+  )
+  assert.equal(
+    q.stageMoves(positionCanvas, [{ node: positionNode, x: 0, y: 0 }]),
+    null,
+  )
+  const moved = q.stageMoves(positionCanvas, [
+    { node: positionNode, x: 10, y: 20 },
+  ])!
+  await sleep()
+  await q.sendNextIntent('a', positionCanvas)
+  await moved.done
+  // The polled snapshot still says (0, 0); the photographer sees (10, 20).
+  const view = projectCanvas(positionCanvas, q.outbox)
+  const back = q.stageMoves(view, [{ node: positionNode, x: 0, y: 0 }])
+  assert(back, 'returning to the server coordinates is still a change')
+  await sleep()
+  await q.sendNextIntent('a', positionCanvas)
+  await back.done
+  assert.deepEqual(moveOf(sent[1]), [
+    { type: 'move_node', node_id: 'n', x: 0, y: 0 },
+  ])
+})
+
+test('a group drop moves only selection roots', async () => {
+  const q = new SaveQueue(
+    memory(),
+    { lookup: async () => ({}), send: async () => receipt('2') },
+    () => {},
+  )
+  const group = {
+    ...positionNode,
+    id: 'g',
+    metadata: { ...positionNode.metadata, type_key: 'core.group' },
+  }
+  const child = { ...positionNode, id: 'child', parent_id: 'g' }
+  const canvas = { ...positionCanvas, nodes: [group, child] }
+  q.stageMoves(canvas, [
+    { node: group, x: 100, y: 100 },
+    { node: child, x: 5, y: 5 },
+  ])
+  await sleep()
+  assert.deepEqual(q.outbox[0].actions, [
+    { type: 'move_node', node_id: 'g', x: 100, y: 100 },
+  ])
+})
+
+test('a move of a node that only exists locally follows its creation in order', async () => {
+  const sent: Job[] = []
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => ({}),
+      send: async (job) => {
+        sent.push(job)
+        return receipt(String(sent.length + 1), {
+          created_ids: sent.length === 1 ? ['cwnode_new'] : [],
+          object_results: [nodeResult('cwnode_new', String(sent.length))],
+        })
+      },
+    },
+    () => {},
+  )
+  const creation = q.stageIntent('a', {
+    kind: 'actions',
+    actions: [
+      {
+        type: 'add_node',
+        node_id: 'cwnode_new',
+        type_key: 'core.text',
+        x: 1,
+        y: 2,
+      },
+    ],
+  })
+  await sleep()
+  const view = projectCanvas(positionCanvas, q.outbox)
+  const created = view.nodes.find((n) => n.id === 'cwnode_new')!
+  const move = q.stageMoves(view, [{ node: created, x: 40, y: 50 }])!
+  await sleep()
+  assert.equal(q.outbox.length, 2, 'a move never merges into a creation')
+  await q.sendNextIntent('a', positionCanvas)
+  await creation.done
+  assert.equal(JSON.parse(sent[0].body).payload.actions[0].type, 'add_node')
+  await q.sendNextIntent('a', positionCanvas)
+  await move.done
+  const body = JSON.parse(sent[1].body).payload
+  assert.deepEqual(moveOf(sent[1]), [
+    { type: 'move_node', node_id: 'cwnode_new', x: 40, y: 50 },
+  ])
+  assert.deepEqual(
+    body.read_set.find((r: { id: string }) => r.id === 'cwnode_new'),
+    {
+      kind: 'node',
+      id: 'cwnode_new',
+      placement_revision: '1',
+      data_revision: '1',
+    },
+  )
+})
+
+test('an unsynced drag from a journal written before moves joined the outbox is replayed', async () => {
+  const sent: Job[] = []
+  const legacy = {
+    ...emptyJournal(),
+    positions: {
+      'a:n': {
+        canvasID: 'a',
+        nodeID: 'n',
+        x: 9,
+        y: 8,
+        revision: '1',
+        token: 't',
+        synced: false,
+      },
+      'a:old': {
+        canvasID: 'a',
+        nodeID: 'old',
+        x: 1,
+        y: 1,
+        revision: '1',
+        token: 'u',
+        synced: true,
+      },
+    },
+  } as unknown as Journal
+  const storage = memory(legacy)
+  const q = new SaveQueue(
+    storage,
+    {
+      lookup: async () => ({}),
+      send: async (job) => (sent.push(job), receipt('2')),
+    },
+    () => {},
+  )
+  await q.load()
+  assert.equal('positions' in storage.get(), false)
+  assert.deepEqual(
+    q.outbox.map((i) => i.actions),
+    [[{ type: 'move_node', node_id: 'n', x: 9, y: 8 }]],
+  )
+  await q.sendNextIntent('a', positionCanvas)
+  assert.equal(sent.length, 1)
+})
+
+test('normal graph reads exclude unrelated permanent identities', async () => {
+  const { graphReadSet } =
+    await import('../src/creative-canvas/editor/graph.ts')
   const canvas: Canvas = {
     ...positionCanvas,
     object_states: Array.from({ length: 5100 }, (_, i) => ({
@@ -568,9 +520,8 @@ test('normal graph reads exclude unrelated permanent identities', async () => {
 })
 
 test('copy and remove read only the versions owned by their selected subtree', async () => {
-  const { graphActionReadSet } = await import(
-    '../src/creative-canvas/editor/graph.ts'
-  )
+  const { graphActionReadSet } =
+    await import('../src/creative-canvas/editor/graph.ts')
   const group: CanvasNode = {
     ...positionNode,
     id: 'g',
@@ -632,173 +583,287 @@ test('copy and remove read only the versions owned by their selected subtree', a
   )
 })
 
-const connectionCommand = {
-  type: 'batch',
-  actions: [
-    {
-      type: 'connect_reference',
-      source_node_id: positionNode.id,
-      target_node_id: 'target',
-      source_port: 'output',
-      target_port: 'reference',
-      role: 'reference',
-    },
-  ],
+const connect: GraphAction = {
+  type: 'connect_reference',
+  source_node_id: positionNode.id,
+  target_node_id: 'target',
+  source_port: 'output',
+  target_port: 'reference',
+  role: 'reference',
 }
-const connectionCanvas: Canvas = {
+const twoNodes: Canvas = {
   ...positionCanvas,
   nodes: [positionNode, { ...positionNode, id: 'target' }],
 }
+const receipt = (revision: string, extra: Partial<Receipt> = {}): Receipt => ({
+  change_id: `ch${revision}`,
+  inverse_of: null,
+  result_revision: revision,
+  result_topology_revision: revision,
+  object_results: [],
+  created_ids: [],
+  omitted_reference_ids: [],
+  ...extra,
+})
+const sleep = () => new Promise((resolve) => setImmediate(resolve))
 
-test('connection paints before dispatch and survives receipt until authoritative revision', async () => {
+test('a staged edit paints at once, sends in order and stays painted until the snapshot includes it', async () => {
+  const storage = memory()
+  const sent: Job[] = []
   let release!: (value: unknown) => void
   const q = new SaveQueue(
-    memory(),
+    storage,
     {
       lookup: async () => ({}),
-      send: () =>
-        new Promise((resolve) => {
+      send: (job) => {
+        sent.push(job)
+        return new Promise((resolve) => {
           release = resolve
-        }),
+        })
+      },
     },
     () => {},
   )
-  const saving = q.enqueue('/canvases/a/commands', connectionCommand)
-  assert.equal(q.connections.visible(connectionCanvas).length, 1)
-  while (!release) await new Promise((resolve) => setImmediate(resolve))
-  release({ result_revision: '3' })
-  await saving
-  assert.equal(q.value.job, null)
+  const staged = q.stageIntent('a', { kind: 'actions', actions: [connect] })
+  const removal = q.stageIntent('a', {
+    kind: 'actions',
+    actions: [
+      { type: 'remove_nodes', node_ids: ['target'], group_mode: 'subtree' },
+    ],
+  })
+  await sleep()
+  const painted = projectCanvas(twoNodes, q.outbox)
+  assert.equal(painted.edges.length, 0, 'the later removal also hides the edge')
+  assert.equal(painted.nodes.length, 1)
   assert.equal(
-    q.connections.visible({ ...connectionCanvas, revision: '2' }).length,
-    1,
+    storage.get().outbox?.length,
+    2,
+    'both intents persisted before dispatch',
   )
-  // A newer snapshot can legitimately omit an edge deleted by another window.
-  assert.equal(
-    q.connections.visible({ ...connectionCanvas, revision: '4' }).length,
-    0,
-  )
-  assert.equal(
-    q.connections.visible({ ...connectionCanvas, id: 'other' }).length,
-    0,
-  )
-  assert.equal(
-    q.connections.visible({ ...connectionCanvas, nodes: [positionNode] })
-      .length,
-    0,
-  )
-  q.connections.reconcile({ ...connectionCanvas, revision: '4' })
-  assert.equal(q.connections.visible(connectionCanvas).length, 0)
-})
-
-test('unknown connection restores from journal, deduplicates a polling snapshot and recovers same operation', async () => {
-  const storage = memory(),
-    sent: Job[] = []
-  const transport = {
-    send: async (job: Job) => {
-      sent.push(job)
-      throw new Error('lost receipt')
-    },
-    lookup: async () => ({ result_revision: '3' }),
-  }
-  const q = new SaveQueue(storage, transport, () => {})
-  await q.enqueue('/canvases/a/commands', connectionCommand)
-  assert.equal(q.connections.visible(connectionCanvas).length, 1)
-  const recovered = new SaveQueue(storage, transport, () => {})
-  await recovered.load()
-  assert.equal(recovered.connections.visible(connectionCanvas).length, 1)
-  const edge = {
-    id: 'server-edge',
-    source_node_id: positionNode.id,
-    target_node_id: 'target',
-    source_port: 'output',
-    target_port: 'reference',
-    role: 'reference',
-    revision: '1',
-    ordinal: 0,
-  }
-  assert.equal(
-    recovered.connections.visible({ ...connectionCanvas, edges: [edge] })
-      .length,
-    0,
-  )
-  await recovered.flush()
+  const sending = q.sendNextIntent('a', twoNodes)
+  while (!release) await sleep()
   assert.equal(sent.length, 1)
-  assert.equal(recovered.connections.visible(connectionCanvas).length, 1)
+  const body = JSON.parse(sent[0].body).payload
+  assert.equal(body.type, 'batch')
+  assert.deepEqual(body.actions, [connect])
+  assert.equal(q.outbox[0].state, 'sent')
   assert.equal(
-    recovered.connections.visible({
-      ...connectionCanvas,
-      revision: '3',
-      edges: [edge],
-    }).length,
-    0,
+    await q.sendNextIntent('a', twoNodes),
+    undefined,
+    'one request at a time',
   )
+  release(receipt('2'))
+  await sending
+  assert.equal((await staged.done).result_revision, '2')
+  assert.equal(q.outbox[0].state, 'confirmed')
+  const withReceipt = projectCanvas(twoNodes, q.outbox)
+  assert.equal(
+    withReceipt.changes[0]?.id,
+    'ch2',
+    'receipt joins the local history',
+  )
+  await q.pruneOutbox(twoNodes)
+  assert.equal(
+    q.outbox.length,
+    2,
+    'snapshot at revision 1 does not know the edit',
+  )
+  await q.pruneOutbox({ ...twoNodes, revision: '2' })
+  assert.equal(q.outbox.length, 1)
+  assert.equal(q.outbox[0].kind, 'actions')
+  removal.done.catch(() => {})
 })
 
-test('rejected connections roll back without losing unknown outcomes', async () => {
-  for (const failure of [
-    error(422),
-    error(409, 'creative_revision_conflict'),
-    error(403),
-  ]) {
-    const storage = memory()
-    const q = new SaveQueue(
-      storage,
-      {
-        send: async () => {
-          throw failure
-        },
-        lookup: async () => ({}),
-      },
-      () => {},
-    )
-    await q.enqueue('/canvases/a/commands', connectionCommand)
-    assert.equal(q.value.job?.state, 'rejected')
-    assert.equal(q.connections.visible(connectionCanvas).length, 0)
-    const restored = new SaveQueue(
-      storage,
-      { send: async () => ({}), lookup: async () => ({}) },
-      () => {},
-    )
-    await restored.load()
-    assert.equal(restored.connections.visible(connectionCanvas).length, 0)
-  }
+test('the read set of an edit comes from the state before it, including earlier receipts', async () => {
+  const sent: Job[] = []
   const q = new SaveQueue(
     memory(),
-    { send: async () => ({}), lookup: async () => ({}) },
+    {
+      lookup: async () => ({}),
+      send: async (job) => {
+        sent.push(job)
+        return receipt('2', {
+          object_results: [
+            {
+              kind: 'node',
+              id: 'n',
+              is_live: true,
+              placement_revision: '1',
+              data_revision: '2',
+            },
+          ],
+        })
+      },
+    },
     () => {},
   )
-  await q.enqueue('/canvases/a/commands', connectionCommand)
-  assert.equal(
-    q.value.job?.state,
-    'unknown',
-    'malformed receipt cannot confirm the preview',
+  const rename = q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'update_metadata', node_id: 'n', title: '新标题' }],
+  })
+  const removal = q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'remove_nodes', node_ids: ['n'], group_mode: 'subtree' }],
+  })
+  await sleep()
+  await q.sendNextIntent('a', positionCanvas)
+  await rename.done
+  await q.sendNextIntent('a', positionCanvas)
+  await removal.done
+  const reads = JSON.parse(sent[1].body).payload.read_set
+  assert.deepEqual(
+    reads.find((r: { id: string }) => r.id === 'n'),
+    { kind: 'node', id: 'n', placement_revision: '1', data_revision: '2' },
+    'the removed node is read at the revision its own earlier edit produced',
   )
-  assert.equal(q.connections.visible(connectionCanvas).length, 1)
 })
 
-test('failed local journal writes remove unsent connection preview', async () => {
-  let sends = 0
+test('layout bursts merge into one command; delete then undo cancels locally without a request', async () => {
+  const sent: Job[] = []
   const q = new SaveQueue(
+    memory(),
     {
-      load: async () => emptyJournal(),
-      save: async () => {
-        throw new Error('disk full')
-      },
-    },
-    {
-      send: async () => {
-        sends++
-        return {}
-      },
       lookup: async () => ({}),
+      send: async (job) => (sent.push(job), receipt('2')),
     },
     () => {},
   )
-  await assert.rejects(
-    q.enqueue('/canvases/a/commands', connectionCommand),
-    /disk full/,
+  q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'resize_node', node_id: 'n', width: 300, height: 200 }],
+  })
+  q.stageIntent('a', {
+    kind: 'actions',
+    actions: [
+      { type: 'move_node', node_id: 'n', x: 5, y: 6 },
+      { type: 'resize_node', node_id: 'n', width: 320, height: 210 },
+    ],
+  })
+  await sleep()
+  assert.equal(q.outbox.length, 1)
+  assert.deepEqual(q.outbox[0].actions, [
+    { type: 'resize_node', node_id: 'n', width: 320, height: 210 },
+    { type: 'move_node', node_id: 'n', x: 5, y: 6 },
+  ])
+  const removal = q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'remove_nodes', node_ids: ['n'], group_mode: 'subtree' }],
+  })
+  await sleep()
+  assert.equal(projectCanvas(positionCanvas, q.outbox).nodes.length, 0)
+  const cancelled = q.cancelTail('a')
+  assert.equal(cancelled?.actions?.[0].type, 'remove_nodes')
+  await assert.rejects(removal.done, /已在本机撤销/)
+  await sleep()
+  assert.equal(projectCanvas(positionCanvas, q.outbox).nodes.length, 1)
+  assert.equal(sent.length, 0)
+})
+
+test('a rejected edit and everything after it on that canvas are withdrawn from the projection', async () => {
+  const storage = memory()
+  const q = new SaveQueue(
+    storage,
+    {
+      lookup: async () => {
+        throw error(404)
+      },
+      send: async () => {
+        throw error(409, 'creative_revision_conflict')
+      },
+    },
+    () => {},
   )
-  assert.equal(sends, 0)
-  assert.equal(q.connections.visible(connectionCanvas).length, 0)
+  const first = q.stageIntent('a', { kind: 'actions', actions: [connect] })
+  const second = q.stageIntent('a', {
+    kind: 'actions',
+    actions: [{ type: 'update_metadata', node_id: 'n', title: '后来' }],
+  })
+  const elsewhere = q.stageIntent('b', { kind: 'actions', actions: [connect] })
+  await sleep()
+  await q.sendNextIntent('a', twoNodes)
+  await assert.rejects(first.done, /撤回/)
+  await assert.rejects(second.done, /撤回/)
+  assert.equal(q.value.job?.state, 'rejected')
+  assert.equal(q.outbox.length, 1)
+  assert.equal(q.outbox[0].canvasID, 'b')
+  assert.equal(projectCanvas(twoNodes, q.outbox).edges.length, 0)
+  await q.dismissRejected()
+  assert.equal(storage.get().job, null)
+  elsewhere.done.catch(() => {})
+})
+
+test('an unsent intent survives reload and is sent by the next session', async () => {
+  const storage = memory()
+  const sent: Job[] = []
+  const q = new SaveQueue(
+    storage,
+    {
+      lookup: async () => ({}),
+      send: async (job) => (sent.push(job), receipt('2')),
+    },
+    () => {},
+  )
+  q.stageIntent('a', { kind: 'actions', actions: [connect] })
+  await sleep()
+  await q.close()
+  const next = new SaveQueue(
+    storage,
+    {
+      lookup: async () => ({}),
+      send: async (job) => (sent.push(job), receipt('2')),
+    },
+    () => {},
+  )
+  await next.load()
+  assert.equal(projectCanvas(twoNodes, next.outbox).edges.length, 1)
+  await next.sendNextIntent('a', twoNodes)
+  assert.equal(sent.length, 1)
+  assert.equal(next.outbox[0].state, 'confirmed')
+})
+
+test('media nodes from assets take the picture aspect ratio at the default width', () => {
+  const content = {
+    id: 'ccrv_1',
+    content_id: 'ccnt_1',
+    kind: 'image' as const,
+    sequence: '1',
+    payload: {},
+    truncated: false,
+    media: [
+      {
+        role: 'original',
+        blob_id: 'b',
+        mime: 'image/jpeg',
+        byte_size: 1,
+        width: 1000,
+        height: 1500,
+        duration_ms: null,
+      },
+    ],
+  }
+  assert.equal(fitMediaHeight(content), 74 + 420)
+  assert.equal(fitMediaHeight({ ...content, kind: 'audio' }), 180)
+  assert.equal(fitMediaHeight(undefined), 180)
+  const view = projectCanvas(positionCanvas, [
+    {
+      id: 'i',
+      canvasID: 'a',
+      kind: 'actions',
+      state: 'pending',
+      preview: { cwnode_img: content },
+      actions: [
+        {
+          type: 'add_node',
+          node_id: 'cwnode_img',
+          type_key: 'core.image',
+          x: 0,
+          y: 0,
+        },
+      ],
+    },
+  ])
+  assert.equal(
+    view.nodes.find((n) => n.id === 'cwnode_img')?.metadata.height,
+    494,
+  )
 })

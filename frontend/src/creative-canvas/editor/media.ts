@@ -9,7 +9,6 @@ export type UploadTarget = components['schemas']['CreativeUploadTarget']
 export type UploadCandidate = components['schemas']['CreativeUploadCandidate']
 export type MediaTicket = components['schemas']['CreativeMediaTicket']
 export type MediaObject = components['schemas']['CreativeMediaObject']
-export type ContentRights = components['schemas']['CreativeContentRights']
 export type MediaKind = 'image' | 'video' | 'audio'
 export const mediaKinds: readonly MediaKind[] = ['image', 'video', 'audio']
 export const isMediaKind = (kind: string): kind is MediaKind =>
@@ -65,7 +64,6 @@ export type UploadProgress = {
 export async function uploadFile(
   file: File,
   target: UploadTarget,
-  rights: ContentRights,
   capabilities: MediaCapabilities,
   onProgress: (p: UploadProgress) => void,
   signal?: AbortSignal,
@@ -82,11 +80,10 @@ export async function uploadFile(
       operation_id: operation,
       client_created_at: new Date().toISOString(),
       payload: {
-        file_name: file.name,
+        file_name: readableFileName(file.name),
         kind: classified.kind,
         mime: classified.mime,
         size: file.size,
-        rights,
         target,
       },
     }),
@@ -183,20 +180,35 @@ async function poll(
 
 export function describeFailure(upload: Upload): string | null {
   if (upload.state === 'ready') return null
-  const code = upload.error_code.split(':')[0]
+  const code = upload.error_code
   const messages: Record<string, string> = {
     media_unsupported: '文件内容不是支持的媒体格式',
     size_limit: '文件超过大小上限',
     size_mismatch: '文件大小与声明不一致，请重新选择',
     parts_incomplete: '分片未完整上传，请重试',
-    init_failed: '存储初始化失败，请稍后重试',
+    init_failed: '存储初始化失败，请联系管理员检查存储配置',
+    quota_exceeded: '媒体存储额度不足',
+    promote_interrupted: '媒体处理被中断，请重试',
+    publish_failed: '媒体发布失败，请重试',
     complete_failed: '存储合并失败，请稍后重试',
     verify_failed: '媒体校验失败',
     promote_failed: '媒体写入失败，请稍后重试',
     expired: '上传会话已过期',
     cancelled: '上传已取消',
   }
+  // Only the reason class reaches the client; details stay in worker logs.
   return messages[code] ?? (upload.state === 'failed' ? '上传失败' : null)
+}
+
+// Browsers name files dragged from web pages by their URL segment; decode a
+// percent-encoded name so titles read naturally, keeping it when malformed.
+export function readableFileName(name: string): string {
+  if (!name.includes('%')) return name
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
 }
 
 // Tickets are cached per revision/role/purpose until shortly before expiry.

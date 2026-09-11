@@ -2983,10 +2983,12 @@ type CreativeActionReparentNodesType string
 
 // CreativeActionReplaceContent defines model for CreativeActionReplaceContent.
 type CreativeActionReplaceContent struct {
-	NodeId  string                           `json:"node_id"`
-	Payload CreativeContentPayload           `json:"payload"`
-	Rights  *CreativeContentRights           `json:"rights,omitempty"`
-	Type    CreativeActionReplaceContentType `json:"type"`
+	NodeId  string                 `json:"node_id"`
+	Payload CreativeContentPayload `json:"payload"`
+
+	// Rights 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
+	Rights *CreativeContentRights           `json:"rights,omitempty"`
+	Type   CreativeActionReplaceContentType `json:"type"`
 }
 
 // CreativeActionReplaceContentType defines model for CreativeActionReplaceContent.Type.
@@ -3319,7 +3321,9 @@ type CreativeChangeSummary struct {
 type CreativeContentDraft struct {
 	Kind    CreativeContentDraftKind `json:"kind"`
 	Payload CreativeContentPayload   `json:"payload"`
-	Rights  CreativeContentRights    `json:"rights"`
+
+	// Rights 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
+	Rights *CreativeContentRights `json:"rights,omitempty"`
 }
 
 // CreativeContentDraftKind defines model for CreativeContentDraft.Kind.
@@ -3348,7 +3352,7 @@ type CreativeContentRevision struct {
 // CreativeContentRevisionKind defines model for CreativeContentRevision.Kind.
 type CreativeContentRevisionKind string
 
-// CreativeContentRights defines model for CreativeContentRights.
+// CreativeContentRights 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
 type CreativeContentRights struct {
 	EvidenceSummary *string `json:"evidence_summary,omitempty"`
 	RightsBasis     string  `json:"rights_basis"`
@@ -3872,11 +3876,13 @@ type CreativeReplaceContentPayload struct {
 	ExpectedContentRevisionId nullable.Nullable[string] `json:"expected_content_revision_id"`
 
 	// ExpectedDataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	ExpectedDataRevision CreativeRevision                  `json:"expected_data_revision"`
-	NodeId               string                            `json:"node_id"`
-	Payload              CreativeContentPayload            `json:"payload"`
-	Rights               *CreativeContentRights            `json:"rights,omitempty"`
-	Type                 CreativeReplaceContentPayloadType `json:"type"`
+	ExpectedDataRevision CreativeRevision       `json:"expected_data_revision"`
+	NodeId               string                 `json:"node_id"`
+	Payload              CreativeContentPayload `json:"payload"`
+
+	// Rights 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
+	Rights *CreativeContentRights            `json:"rights,omitempty"`
+	Type   CreativeReplaceContentPayloadType `json:"type"`
 }
 
 // CreativeReplaceContentPayloadType defines model for CreativeReplaceContentPayload.Type.
@@ -4123,9 +4129,11 @@ type CreativeUploadCreatePayload struct {
 	FileName string                          `json:"file_name"`
 	Kind     CreativeUploadCreatePayloadKind `json:"kind"`
 	Mime     string                          `json:"mime"`
-	Rights   CreativeContentRights           `json:"rights"`
-	Size     int64                           `json:"size"`
-	Target   CreativeUploadTarget            `json:"target"`
+
+	// Rights 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
+	Rights *CreativeContentRights `json:"rights,omitempty"`
+	Size   int64                  `json:"size"`
+	Target CreativeUploadTarget   `json:"target"`
 }
 
 // CreativeUploadCreatePayloadKind defines model for CreativeUploadCreatePayload.Kind.

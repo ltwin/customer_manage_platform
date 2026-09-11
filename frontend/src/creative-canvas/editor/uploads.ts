@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { read } from './api.ts'
 import {
   classifyFile,
+  readableFileName,
   uploadFile,
-  type ContentRights,
   type MediaCapabilities,
   type Upload,
   type UploadProgress,
@@ -15,7 +15,6 @@ export type UploadItem = {
   name: string
   size: number
   target: UploadTarget
-  rights: ContentRights
   file: File
   stage: UploadProgress['stage'] | 'queued' | 'rejected'
   sent: number
@@ -72,7 +71,6 @@ export function useUploads(onDone: (item: UploadItem) => void) {
       void uploadFile(
         item.file,
         item.target,
-        item.rights,
         capabilities,
         (p) =>
           patch(item.id, { stage: p.stage, sent: p.sent, upload: p.upload }),
@@ -102,7 +100,6 @@ export function useUploads(onDone: (item: UploadItem) => void) {
     (
       files: File[],
       target: (file: File, index: number) => UploadTarget,
-      rights: ContentRights,
     ) => {
       if (!capabilities) return []
       const batch: UploadItem[] = files
@@ -111,10 +108,9 @@ export function useUploads(onDone: (item: UploadItem) => void) {
           const classified = classifyFile(file, capabilities)
           return {
             id: crypto.randomUUID(),
-            name: file.name,
+            name: readableFileName(file.name),
             size: file.size,
             target: target(file, i),
-            rights,
             file,
             stage: 'error' in classified ? 'rejected' : 'queued',
             sent: 0,
