@@ -101,20 +101,50 @@ test('same revision authorization projection is accepted; wrong canvas is never 
     revision: '1',
     topology_revision: '1',
     archived: false,
+    edges: [],
+    node_inputs: [],
+    changes: [],
+    object_states: [],
     nodes: [
       {
         id: 'n',
-        type_key: 'core.text',
-        title: '',
-        x: 0,
-        y: 0,
-        width: 280,
-        height: 180,
+        parent_id: null,
+        metadata: {
+          type_key: 'core.text',
+          type_version: 1,
+          title: '',
+          intent: '',
+          x: 0,
+          y: 0,
+          width: 280,
+          height: 180,
+          z_order: 0,
+        },
+        prompt: null,
+        capabilities: {
+          actions: [],
+          prompt_mode: 'draft',
+          disabled_reason: null,
+        },
+        status: {
+          content_state: 'ready',
+          generation_state: 'idle',
+          active_execution_id: null,
+          latest_execution_id: null,
+          apply_state: null,
+          error: null,
+          status_revision: '1',
+        },
         placement_revision: '1',
         data_revision: '1',
-        content_id: 'c',
-        content_revision_id: 'r',
-        unavailable: false,
+        data: {
+          schema_version: 1,
+          config: {},
+          content_id: 'c',
+          content_revision_id: 'r',
+          selected_version_id: null,
+          document_id: null,
+        },
         content: {
           id: 'r',
           content_id: 'c',
@@ -127,7 +157,7 @@ test('same revision authorization projection is accepted; wrong canvas is never 
     ],
   }
   const revoked = structuredClone(initial)
-  revoked.nodes[0].unavailable = true
+  revoked.nodes[0].status.content_state = 'unavailable'
   delete revoked.nodes[0].content
   assert.equal(newerCanvas(initial, revoked), revoked)
   assert.equal(matchesCanvas(initial, 'b'), false)

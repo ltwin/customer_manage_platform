@@ -21,7 +21,10 @@ func MigrateUp(databaseURL string) error {
 	if err := migrateUpFS(databaseURL, migrationsFS, "migrations", "schema_migrations"); err != nil {
 		return err
 	}
-	return rebuildCreativeLibraryIndex(databaseURL)
+	if err := rebuildCreativeLibraryIndex(databaseURL); err != nil {
+		return err
+	}
+	return seedCreativeGraphIdentities(databaseURL)
 }
 
 // migrateUpFS 对指定迁移目录执行 up；migrationsTable 允许测试专用迁移序列

@@ -150,6 +150,11 @@ func WriteAndRetain(ctx context.Context, tx store.TxAccountScope, draft Draft, s
 	if err := tx.Insert(ctx, "creative_content_revisions", []string{"id", "content_id", "sequence", "schema_version", "payload", "rights_declaration_id", "provenance_snapshot"}, result.ID, result.ContentID, int64(result.Sequence), 1, payload, result.DeclarationID, provenance); err != nil {
 		return Revision{}, err
 	}
+	if sourceID != "" {
+		if err := RetainDerivativeRights(ctx, tx, result.ID, []Revision{source}); err != nil {
+			return Revision{}, err
+		}
+	}
 	if err := retain(result); err != nil {
 		return Revision{}, err
 	}
@@ -218,7 +223,11 @@ func requireUsable(ctx context.Context, tx contentReader, protectedRow func(cont
 	if err != nil {
 		return Revision{}, err
 	}
-	if !granted {
+	denied, err := tx.Exists(ctx, "creative_content_required_grants", "content_revision_id=$2 AND declaration_id NOT IN (SELECT declaration_id FROM creative_usage_grants WHERE account_id=$1 AND purpose=$3 AND revoked_at IS NULL)", id, purpose)
+	if err != nil {
+		return Revision{}, err
+	}
+	if !granted || denied {
 		return Revision{}, ErrUsageDenied
 	}
 	if err := requireRoot(ctx, tx, r); err != nil {
@@ -246,6 +255,23 @@ func requireRoot(ctx context.Context, tx contentReader, revision Revision) error
 	}
 	if node {
 		return nil
+	}
+	for _, root := range []struct{ table, condition string }{
+		{"creative_change_content_refs", "content_revision_id=$2 AND expires_at>clock_timestamp()"},
+		{"creative_node_inputs", "content_revision_id=$2"},
+		{"creative_node_prompt_refs", "content_revision_id=$2"},
+		{"creative_node_versions", "content_revision_id=$2 AND deleted_at IS NULL AND node_id IN (SELECT id FROM creative_nodes WHERE account_id=$1)"},
+		{"creative_node_version_input_refs", "content_revision_id=$2 AND version_id IN (SELECT id FROM creative_node_versions WHERE account_id=$1 AND deleted_at IS NULL AND node_id IN (SELECT id FROM creative_nodes WHERE account_id=$1))"},
+		{"creative_execution_refs", "content_revision_id=$2 AND execution_id IN (SELECT id FROM creative_node_executions WHERE account_id=$1 AND (retained_until>clock_timestamp() OR state IN ('queued','running','reconciling')))"},
+		{"creative_documents", "content_revision_id=$2"},
+	} {
+		exists, err := tx.Exists(ctx, root.table, root.condition, revision.ID)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
 	}
 	return ErrMissingRoot
 }

@@ -81,6 +81,20 @@ type NodeResult struct {
 	ContentRevisionID      *string              `json:"content_revision_id"`
 }
 type Node struct {
+	ReadOnly          bool                 `json:"-"`
+	Status            NodeStatus           `json:"-"`
+	Prompt            *NodePrompt          `json:"-"`
+	ParentID          *string              `json:"parent_id"`
+	TypeVersion       int                  `json:"type_version"`
+	ZOrder            int                  `json:"z_order"`
+	Intent            string               `json:"intent"`
+	Config            json.RawMessage      `json:"config"`
+	SelectedVersionID *string              `json:"selected_version_id"`
+	DocumentID        *string              `json:"document_id"`
+	StatusRevision    creativeops.Revision `json:"status_revision"`
+	ActiveExecutionID *string              `json:"active_execution_id"`
+	LatestExecutionID *string              `json:"latest_execution_id"`
+
 	ID                string                    `json:"id"`
 	TypeKey           string                    `json:"type_key"`
 	Title             string                    `json:"title"`
@@ -96,6 +110,7 @@ type Node struct {
 	Unavailable       bool                      `json:"unavailable"`
 }
 type Canvas struct {
+	ObjectStates     []ObjectResult       `json:"object_states"`
 	ProjectName      string               `json:"project_name"`
 	ProjectRevision  creativeops.Revision `json:"project_revision"`
 	ID               string               `json:"id"`
@@ -104,6 +119,9 @@ type Canvas struct {
 	Revision         creativeops.Revision `json:"revision"`
 	TopologyRevision creativeops.Revision `json:"topology_revision"`
 	Nodes            []Node               `json:"nodes"`
+	Edges            []Edge               `json:"edges"`
+	Inputs           []NodeInput          `json:"node_inputs"`
+	Changes          []ChangeSummary      `json:"changes"`
 }
 
 func run[T any](ctx context.Context, scope store.AccountScope, key string, c creativeops.Command, validate func(T) error, apply func(context.Context, store.TxAccountScope, T) (creativeops.Outcome, error), wireChecks ...func(json.RawMessage) error) (creativeops.Receipt, error) {
@@ -268,176 +286,6 @@ func advanceCanvas(ctx context.Context, tx store.TxAccountScope, c Canvas, struc
 	_, err := tx.Update(ctx, "creative_canvases", "revision=revision+1,updated_at=clock_timestamp()", "id=$2", c.ID)
 	return err
 }
-func nodeOutcome(c Canvas, n Node, structural bool) (creativeops.Outcome, error) {
-	topology := c.TopologyRevision
-	if structural {
-		topology++
-	}
-	return outcome(200, "node", n.ID, c.Revision+1, NodeResult{NodeID: n.ID, CanvasRevision: c.Revision + 1, BeforeTopologyRevision: c.TopologyRevision, TopologyRevision: topology, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, ContentRevisionID: n.ContentRevisionID})
-}
-func AddNode(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
-	return run(ctx, scope, "canvas.add_node", command, func(v AddNodeInput) error {
-		if v.CanvasID == "" || !validNodeID(v.NodeID) || !validPoint(v.X, v.Y) || v.ExpectedTopologyRevision < 1 || utf8.RuneCountInString(v.Title) > 200 || (v.TypeKey != "core.text" && v.TypeKey != "core.link") || v.Asset != nil && v.Content != nil {
-			return creativeops.ErrValidation
-		}
-		if v.Content != nil {
-			if v.TypeKey != "core."+v.Content.Kind {
-				return creativeops.ErrValidation
-			}
-			return creativecontent.Validate(*v.Content)
-		}
-		return nil
-	}, func(ctx context.Context, tx store.TxAccountScope, v AddNodeInput) (creativeops.Outcome, error) {
-		var asset creativelibrary.Asset
-		if v.Asset != nil {
-			var err error
-			asset, err = creativelibrary.ResolveAssetsInTx(ctx, tx, *v.Asset)
-			if err != nil {
-				return creativeops.Outcome{}, err
-			}
-			if v.TypeKey != "core."+asset.Kind {
-				return creativeops.Outcome{}, creativeops.ErrValidation
-			}
-		}
-		c, err := lockCanvas(ctx, tx, v.CanvasID, true)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if c.TopologyRevision != v.ExpectedTopologyRevision {
-			return creativeops.Outcome{}, ErrVersionConflict
-		}
-		exists, err := tx.Exists(ctx, "creative_nodes", "id=$2", v.NodeID)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if exists {
-			return creativeops.Outcome{}, ErrVersionConflict
-		}
-		count, err := tx.Count(ctx, "creative_nodes", "canvas_id=$2", c.ID)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if count >= maxNodes {
-			return creativeops.Outcome{}, ErrLimit
-		}
-		n := Node{ID: v.NodeID, TypeKey: v.TypeKey, Title: v.Title, X: v.X, Y: v.Y, PlacementRevision: 1, DataRevision: 1}
-		var source *string
-		if v.Asset != nil {
-			r, err := creativecontent.RequireUsable(ctx, tx, asset.ContentRevisionID, "display")
-			if err != nil {
-				return creativeops.Outcome{}, err
-			}
-			if r.ContentID != asset.ContentID || r.Kind != asset.Kind {
-				return creativeops.Outcome{}, creativecontent.ErrMissingRoot
-			}
-			n.ContentID = &r.ContentID
-			n.ContentRevisionID = &r.ID
-			source = &asset.ID
-		}
-		if err := tx.Insert(ctx, "creative_nodes", []string{"id", "canvas_id", "type_key", "title", "x", "y", "content_id", "content_revision_id", "source_asset_id_snapshot"}, n.ID, c.ID, n.TypeKey, n.Title, n.X, n.Y, n.ContentID, n.ContentRevisionID, source); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if v.Content != nil {
-			r, err := creativecontent.WriteAndRetain(ctx, tx, *v.Content, "", &n.ID, func(r creativecontent.Revision) error {
-				_, err := tx.Update(ctx, "creative_nodes", "content_id=$2,content_revision_id=$3", "id=$4 AND canvas_id=$5", r.ContentID, r.ID, n.ID, c.ID)
-				return err
-			})
-			if err != nil {
-				return creativeops.Outcome{}, err
-			}
-			n.ContentRevisionID = &r.ID
-		}
-		if err := advanceCanvas(ctx, tx, c, true); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		return nodeOutcome(c, n, true)
-	}, requirePosition)
-}
-
-const nodeColumns = "id,type_key,title,x,y,width,height,placement_revision,data_revision,content_id,content_revision_id"
-
-func scanNode(row store.Row) (Node, error) {
-	var n Node
-	var placement, data int64
-	err := row.Scan(&n.ID, &n.TypeKey, &n.Title, &n.X, &n.Y, &n.Width, &n.Height, &placement, &data, &n.ContentID, &n.ContentRevisionID)
-	n.PlacementRevision = creativeops.Revision(placement)
-	n.DataRevision = creativeops.Revision(data)
-	return n, notFound(err)
-}
-func MoveNode(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
-	return run(ctx, scope, "canvas.move_node", command, func(v MoveNodeInput) error {
-		if v.CanvasID == "" || v.NodeID == "" || v.ExpectedPlacementRevision < 1 || !validPoint(v.X, v.Y) {
-			return creativeops.ErrValidation
-		}
-		return nil
-	}, func(ctx context.Context, tx store.TxAccountScope, v MoveNodeInput) (creativeops.Outcome, error) {
-		c, err := lockCanvas(ctx, tx, v.CanvasID, true)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		n, err := scanNode(tx.QueryRowForUpdate(ctx, "creative_nodes", nodeColumns, "id=$2 AND canvas_id=$3 AND parent_id IS NULL", v.NodeID, c.ID))
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if n.PlacementRevision != v.ExpectedPlacementRevision {
-			return creativeops.Outcome{}, ErrVersionConflict
-		}
-		if _, err := tx.Update(ctx, "creative_nodes", "x=$2,y=$3,placement_revision=placement_revision+1,updated_at=clock_timestamp()", "id=$4 AND canvas_id=$5", v.X, v.Y, n.ID, c.ID); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		n.PlacementRevision++
-		if err := advanceCanvas(ctx, tx, c, false); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		return nodeOutcome(c, n, false)
-	}, requirePosition)
-}
-func ReplaceContent(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
-	return run(ctx, scope, "canvas.replace_content", command, func(v ReplaceContentInput) error {
-		if v.CanvasID == "" || v.NodeID == "" || v.ExpectedDataRevision < 1 || v.ExpectedContentRevisionID != nil && *v.ExpectedContentRevisionID == "" {
-			return creativeops.ErrValidation
-		}
-		return nil
-	}, func(ctx context.Context, tx store.TxAccountScope, v ReplaceContentInput) (creativeops.Outcome, error) {
-		c, err := lockCanvas(ctx, tx, v.CanvasID, true)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		n, err := scanNode(tx.QueryRowForUpdate(ctx, "creative_nodes", nodeColumns, "id=$2 AND canvas_id=$3", v.NodeID, c.ID))
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if n.DataRevision != v.ExpectedDataRevision || (n.ContentRevisionID == nil) != (v.ExpectedContentRevisionID == nil) || n.ContentRevisionID != nil && *n.ContentRevisionID != *v.ExpectedContentRevisionID {
-			return creativeops.Outcome{}, ErrVersionConflict
-		}
-		d := creativecontent.Draft{Kind: strings.TrimPrefix(n.TypeKey, "core."), Payload: v.Payload}
-		sourceID := ""
-		if n.ContentRevisionID == nil {
-			if v.ContentRights == nil {
-				return creativeops.Outcome{}, creativeops.ErrValidation
-			}
-			d.Rights = *v.ContentRights
-		} else {
-			if v.ContentRights != nil {
-				return creativeops.Outcome{}, creativeops.ErrValidation
-			}
-			sourceID = *n.ContentRevisionID
-		}
-		r, err := creativecontent.WriteAndRetain(ctx, tx, d, sourceID, &n.ID, func(r creativecontent.Revision) error {
-			_, err := tx.Update(ctx, "creative_nodes", "content_id=$2,content_revision_id=$3,data_revision=data_revision+1,updated_at=clock_timestamp()", "id=$4 AND canvas_id=$5", r.ContentID, r.ID, n.ID, c.ID)
-			return err
-		})
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		n.DataRevision++
-		n.ContentRevisionID = &r.ID
-		if err := advanceCanvas(ctx, tx, c, false); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		return nodeOutcome(c, n, false)
-	}, requireContentPointer)
-}
 func GetCanvas(ctx context.Context, scope store.AccountScope, id string) (Canvas, error) {
 	var c Canvas
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
@@ -473,7 +321,11 @@ func GetCanvas(ctx context.Context, scope store.AccountScope, id string) (Canvas
 		}
 		for i := range c.Nodes {
 			n := &c.Nodes[i]
-			if n.ContentRevisionID == nil {
+			n.ReadOnly = c.Archived
+			if err := fillNodeView(ctx, tx, id, n); err != nil {
+				return err
+			}
+			if n.ContentRevisionID == nil || !knownType(n.TypeKey) {
 				continue
 			}
 			r, err := creativecontent.RequireUsable(ctx, tx, *n.ContentRevisionID, "display")
@@ -489,6 +341,9 @@ func GetCanvas(ctx context.Context, scope store.AccountScope, id string) (Canvas
 			}
 			preview := creativecontent.Preview(r)
 			n.Content = &preview
+		}
+		if err := fillGraphSnapshot(ctx, tx, &c); err != nil {
+			return err
 		}
 		return nil
 	})

@@ -61,6 +61,9 @@ func TestSettingsHealthTiersMigrationDefaultsExistingRowsAndRollsBack(t *testing
 		t.Fatalf("close before down migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback creative-canvas-commands migration: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback creative-library-organization migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {

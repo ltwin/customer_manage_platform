@@ -28,6 +28,8 @@ import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
 import { newerCanvas, matchesCanvas } from './snapshot.ts'
+import { graphActionReadSet, canvasHistory } from './graph.ts'
+import DocumentView from './DocumentView.tsx'
 import CanvasView from './CanvasView.tsx'
 import ContentForm from './ContentForm.tsx'
 import StudioDialog from './StudioDialog.tsx'
@@ -53,6 +55,10 @@ function Workspace({ account }: { account: string }) {
   const [libraryOpen, setLibraryOpen] = useState(
     () => !window.matchMedia('(max-width: 760px)').matches,
   )
+  const [maximized, setMaximized] = useState<{
+    id: string
+    libraryOpen: boolean
+  } | null>(null)
   const [editing, setEditing] = useState(false)
   const [addMenu, setAddMenu] = useState(false)
   const [help, setHelp] = useState(false)
@@ -68,8 +74,29 @@ function Workspace({ account }: { account: string }) {
   const [libraryLoading, setLibraryLoading] = useState(true)
   const [canvas, setCanvas] = useState<api.Canvas | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
+  const [selection, setSelection] = useState<string[]>([])
+  const [groupEditing, setGroupEditing] = useState<api.CanvasNode | null>(null)
+  const onSelection = useCallback((ids: string[]) => {
+    setSelection((old) =>
+      old.length === ids.length && old.every((v, i) => v === ids[i])
+        ? old
+        : ids,
+    )
+    setSelected((old) =>
+      old && ids.includes(old) ? old : (ids.at(-1) ?? null),
+    )
+  }, [])
+  useEffect(() => {
+    if (!canvas) return
+    const live = new Set(canvas.nodes.map((n) => n.id))
+    setSelection((old) =>
+      old.every((id) => live.has(id)) ? old : old.filter((id) => live.has(id)),
+    )
+    setSelected((old) => (old && live.has(old) ? old : null))
+  }, [canvas])
   const [full, setFull] = useState<Draft | null>(null)
   const [error, setError] = useState('')
+  const [copyNotice, setCopyNotice] = useState('')
   const [localError, setLocalError] = useState('')
   const [loading, setLoading] = useState(true)
   const [discard, setDiscard] = useState<string | null>(null)
@@ -110,6 +137,7 @@ function Workspace({ account }: { account: string }) {
   const canMove = !!queue && canEditLocal && !storageError && !localError
   useEffect(() => {
     if (!queue || !canvas || canvas.id !== canvasID) return
+    queue.connections.reconcile(canvas)
     void queue
       .reconcilePositions(canvas)
       .catch((e: unknown) => setLocalError(errorMessage(e)))
@@ -218,6 +246,9 @@ function Workspace({ account }: { account: string }) {
   useEffect(() => {
     setCanvas(null)
     setSelected(null)
+    setSelection([])
+    setGroupEditing(null)
+    setMaximized(null)
     setEditing(false)
     setFull(null)
     setCompare(null)
@@ -229,18 +260,18 @@ function Workspace({ account }: { account: string }) {
     setFull(null)
     if (!node) return
     const base: Draft = {
-      ...blankDraft(node.type_key === 'core.link' ? 'link' : 'text'),
-      title: node.title,
+      ...blankDraft(node.metadata.type_key === 'core.link' ? 'link' : 'text'),
+      title: node.metadata.title,
       dataRevision: node.data_revision,
-      contentRevision: node.content_revision_id,
+      contentRevision: node.data.content_revision_id,
     }
-    if (!node.content_revision_id) {
+    if (!node.data.content_revision_id) {
       setFull(base)
       return
     }
     void api
       .read<api.Content>(
-        `/content-revisions/${encodeURIComponent(node.content_revision_id)}`,
+        `/content-revisions/${encodeURIComponent(node.data.content_revision_id)}`,
         controller.signal,
       )
       .then((r) => {
@@ -286,7 +317,36 @@ function Workspace({ account }: { account: string }) {
     setError('')
     setLoading(true)
     try {
-      await queue.enqueue(path, value, draftKey)
+      const result = await queue.enqueue(path, value, draftKey)
+      if (
+        result &&
+        typeof result === 'object' &&
+        'omitted_reference_ids' in result &&
+        Array.isArray(result.omitted_reference_ids) &&
+        result.omitted_reference_ids.length
+      ) {
+        setCopyNotice(
+          `已复制选中节点；${result.omitted_reference_ids.length} 条指向选区外的引用未复制。`,
+        )
+      }
+      if (
+        result &&
+        typeof result === 'object' &&
+        'created_ids' in result &&
+        Array.isArray(result.created_ids)
+      ) {
+        const ids = result.created_ids.filter(
+          (v): v is string => typeof v === 'string' && v.startsWith('cwnode_'),
+        )
+        if (ids.length) onSelection(ids)
+      } else if (
+        result &&
+        typeof result === 'object' &&
+        'node_id' in result &&
+        typeof result.node_id === 'string'
+      ) {
+        onSelection([result.node_id])
+      }
       if (!queue.value.job) {
         setForm(null)
         if (draftKey?.startsWith('node:')) setEditing(false)
@@ -316,6 +376,34 @@ function Workspace({ account }: { account: string }) {
       setLoading(false)
       setLocalError(errorMessage(e))
     }
+  }
+  const history = canvasHistory(canvas?.changes ?? [])
+  function graphActions(actions: api.GraphAction[]) {
+    if (!canvas || !canWrite) return
+    void perform(`/canvases/${canvas.id}/commands`, {
+      type: 'batch',
+      expected_topology_revision: canvas.topology_revision,
+      read_set: graphActionReadSet(canvas, actions),
+      actions,
+    } satisfies api.Command)
+  }
+  function reverseChange(redo = false) {
+    const id = redo ? history.redo : history.undo
+    if (!canvas || !id) return
+    void perform(`/canvases/${canvas.id}/commands`, {
+      type: redo ? 'redo' : 'undo',
+      change_id: id,
+      read_set:
+        canvas.changes?.find((change) => change.id === id)?.read_set ?? [],
+    } satisfies api.Command)
+  }
+  function moveSelection(
+    moves: { node: api.CanvasNode; x: number; y: number }[],
+  ) {
+    if (!queue || !canvas || !canMove) return
+    void queue
+      .stagePositions(canvas, moves)
+      .catch((e: unknown) => setLocalError(errorMessage(e)))
   }
   function addEmptyNode(
     kind: 'text' | 'link',
@@ -362,7 +450,7 @@ function Workspace({ account }: { account: string }) {
     if (
       !reapply &&
       (node.data_revision !== draft.dataRevision ||
-        node.content_revision_id !== draft.contentRevision)
+        node.data.content_revision_id !== draft.contentRevision)
     ) {
       setCompare({ content, node: structuredClone(node) })
       return
@@ -370,16 +458,36 @@ function Workspace({ account }: { account: string }) {
     void perform(
       `/canvases/${canvas.id}/commands`,
       {
-        type: 'replace_content',
-        node_id: node.id,
-        expected_data_revision: reapply
-          ? reapply.data_revision
-          : draft.dataRevision!,
-        expected_content_revision_id: reapply
-          ? reapply.content_revision_id
-          : (draft.contentRevision ?? null),
-        payload: content.payload,
-        ...(!node.content_revision_id ? { rights: content.rights } : {}),
+        type: 'batch',
+        read_set: [
+          {
+            kind: 'node',
+            id: node.id,
+            data_revision: reapply
+              ? reapply.data_revision
+              : draft.dataRevision!,
+          },
+        ],
+        actions: [
+          ...(draft.title !== node.metadata.title
+            ? [
+                {
+                  type: 'update_metadata' as const,
+                  node_id: node.id,
+                  title: draft.title,
+                  intent: node.metadata.intent,
+                },
+              ]
+            : []),
+          {
+            type: 'replace_content',
+            node_id: node.id,
+            payload: content.payload,
+            ...(!node.data.content_revision_id
+              ? { rights: content.rights }
+              : {}),
+          },
+        ],
       } satisfies api.Command,
       nodeKey,
     )
@@ -408,7 +516,8 @@ function Workspace({ account }: { account: string }) {
     storageError ||
     localError ||
     !online ||
-    needsRecovery
+    needsRecovery ||
+    copyNotice
   )
   return (
     <main
@@ -544,6 +653,14 @@ function Workspace({ account }: { account: string }) {
       )}
       {showNotice && (
         <section className="cc-save-status" aria-live="polite">
+          {copyNotice && (
+            <p>
+              {copyNotice}{' '}
+              <button className="btn" onClick={() => setCopyNotice('')}>
+                知道了
+              </button>
+            </p>
+          )}
           {!online && <span>当前离线 · 输入仍保留在本机</span>}
           {(error || storageError || localError) && (
             <p role="alert">
@@ -629,12 +746,39 @@ function Workspace({ account }: { account: string }) {
                 <CanvasView
                   account={account}
                   canvas={canvas}
+                  pendingConnections={queue?.connections.visible(canvas) ?? []}
                   selected={selected}
+                  selection={selection}
+                  onSelection={onSelection}
+                  onActions={graphActions}
+                  onMoveSelection={moveSelection}
+                  onUndo={() => reverseChange()}
+                  onRedo={() => reverseChange(true)}
+                  canUndo={!!history.undo}
+                  canRedo={!!history.redo}
                   onSelect={(id) => {
                     setSelected(id)
                   }}
                   onEdit={(id) => {
                     setSelected(id)
+                    const n = canvas.nodes.find((n) => n.id === id)
+                    if (
+                      n?.metadata.type_key === 'internal.document' &&
+                      n.data.document_id
+                    ) {
+                      setMaximized({ id: n.data.document_id, libraryOpen })
+                      setLibraryOpen(false)
+                      return
+                    }
+                    if (n?.metadata.type_key === 'core.group') {
+                      setGroupEditing(n)
+                      return
+                    }
+                    if (
+                      n &&
+                      !['core.text', 'core.link'].includes(n.metadata.type_key)
+                    )
+                      return
                     setEditing(true)
                   }}
                   onAdd={(x, y) => addEmptyNode('text', x, y)}
@@ -706,8 +850,12 @@ function Workspace({ account }: { account: string }) {
                 <ContentForm
                   key={node.id}
                   draft={draft}
-                  needsRights={node.content_revision_id === null}
-                  disabled={blocked || !canEditLocal || node.unavailable}
+                  needsRights={node.data.content_revision_id === null}
+                  disabled={
+                    blocked ||
+                    !canEditLocal ||
+                    node.status.content_state === 'unavailable'
+                  }
                   submitDisabled={!canWrite}
                   onChange={(d) => writeDraft(nodeKey, d)}
                   label="保存到节点"
@@ -729,6 +877,67 @@ function Workspace({ account }: { account: string }) {
           </StudioDialog>
         )}
       </div>
+      {maximized && (
+        <DocumentView
+          id={maximized.id}
+          onClose={() => {
+            setLibraryOpen(maximized.libraryOpen)
+            setMaximized(null)
+          }}
+        />
+      )}
+      {groupEditing && (
+        <StudioDialog title="分组名称" onClose={() => setGroupEditing(null)}>
+          <form
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (!canvas) return
+              const name = String(
+                new FormData(e.currentTarget).get('title') ?? '',
+              ).trim()
+              if (!name) {
+                setError('请填写分组名称')
+                return
+              }
+              void perform(`/canvases/${canvas.id}/commands`, {
+                type: 'batch',
+                read_set: [
+                  {
+                    id: groupEditing.id,
+                    kind: 'node',
+                    data_revision: groupEditing.data_revision,
+                  },
+                ],
+                actions: [
+                  {
+                    type: 'update_metadata',
+                    node_id: groupEditing.id,
+                    title: name,
+                    intent: groupEditing.metadata.intent,
+                  },
+                ],
+              } satisfies api.Command).then((ok) => {
+                if (ok) setGroupEditing(null)
+              })
+            }}
+          >
+            <label>
+              分组名称
+              <input
+                className="input"
+                name="title"
+                defaultValue={groupEditing.metadata.title}
+                maxLength={200}
+                autoFocus
+              />
+            </label>
+            <button className="btn btn-primary" disabled={blocked}>
+              保存名称
+            </button>
+          </form>
+        </StudioDialog>
+      )}
       {help && (
         <StudioDialog title="画布快捷键" onClose={() => setHelp(false)}>
           <dl className="cc-shortcuts">
@@ -740,6 +949,12 @@ function Workspace({ account }: { account: string }) {
             <dd>双击节点 / 选中后点击编辑</dd>
             <dt>新建文字</dt>
             <dd>双击画布空白处</dd>
+            <dt>打组 / 解组</dt>
+            <dd>⌘ / Ctrl + G，按住 Shift 解组</dd>
+            <dt>复制 / 撤销 / 重做</dt>
+            <dd>⌘ / Ctrl + D / Z / Shift + Z</dd>
+            <dt>断开参考</dt>
+            <dd>双击参考连线</dd>
             <dt>微调节点</dt>
             <dd>选中节点后按方向键</dd>
           </dl>

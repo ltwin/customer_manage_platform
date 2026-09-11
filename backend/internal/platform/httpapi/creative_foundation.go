@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -34,10 +35,14 @@ func (h *handlers) GetCreativeCapabilities(c *gin.Context) {
 	if capability.Read {
 		result.Available = true
 		result.Reason = "read_only"
-		result.NodeTypes = []string{"core.text", "core.link"}
+		for _, definition := range creativecanvas.NodeDefinitions() {
+			if definition.CreationSupported {
+				result.NodeTypes = append(result.NodeTypes, definition.TypeKey)
+			}
+		}
 		if capability.ManualWrite {
 			result.Reason = "available"
-			result.Tools = []string{"create_asset", "create_project", "rename_project", "archive_project", "restore_project", "add_node", "move_node", "replace_content"}
+			result.Tools = []string{"create_asset", "create_project", "rename_project", "archive_project", "restore_project", "add_node", "move_node", "replace_content", "batch", "undo", "redo"}
 		}
 	}
 	c.JSON(http.StatusOK, result)

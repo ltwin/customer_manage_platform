@@ -148,6 +148,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/canvases/{id}/nodes/{node_id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCreativeNodeVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCreativeDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/canvases/{id}/executions/{execution_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCreativeNodeExecution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/canvases/{id}/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["requestCreativeNodeExecution"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/capabilities": {
         parameters: {
             query?: never;
@@ -2081,21 +2145,18 @@ export interface components {
         };
         CreativeCanvasNode: {
             id: string;
-            /** @enum {string} */
-            type_key: "core.text" | "core.link";
-            title: string;
-            x: number;
-            y: number;
-            width: number;
-            height: number;
+            parent_id: string | null;
+            metadata: components["schemas"]["CreativeNodeMetadata"];
+            data: components["schemas"]["CreativeNodeData"];
+            status: components["schemas"]["CreativeNodeStatus"];
+            prompt: components["schemas"]["CreativeNodePrompt"] | null;
+            capabilities: components["schemas"]["CreativeNodeCapabilities"];
             placement_revision: components["schemas"]["CreativeRevision"];
             data_revision: components["schemas"]["CreativeRevision"];
-            content_id: string | null;
-            content_revision_id: string | null;
             content?: components["schemas"]["CreativeContentRevision"];
-            unavailable: boolean;
         };
         CreativeCanvasSnapshot: {
+            object_states: components["schemas"]["CreativeGraphObjectResult"][];
             project_name: string;
             project_revision: components["schemas"]["CreativeRevision"];
             id: string;
@@ -2104,6 +2165,9 @@ export interface components {
             revision: components["schemas"]["CreativeRevision"];
             topology_revision: components["schemas"]["CreativeRevision"];
             nodes: components["schemas"]["CreativeCanvasNode"][];
+            edges: components["schemas"]["CreativeCanvasEdge"][];
+            node_inputs: components["schemas"]["CreativeCanvasInput"][];
+            changes: components["schemas"]["CreativeChangeSummary"][];
         };
         CreativeAssetReference: {
             asset_id: string;
@@ -2140,7 +2204,7 @@ export interface components {
             payload: components["schemas"]["CreativeContentPayload"];
             rights?: components["schemas"]["CreativeContentRights"];
         };
-        CreativeCanvasCommandPayload: components["schemas"]["CreativeAddNodePayload"] | components["schemas"]["CreativeMoveNodePayload"] | components["schemas"]["CreativeReplaceContentPayload"];
+        CreativeCanvasCommandPayload: components["schemas"]["CreativeAddNodePayload"] | components["schemas"]["CreativeMoveNodePayload"] | components["schemas"]["CreativeReplaceContentPayload"] | components["schemas"]["CreativeBatchPayload"] | components["schemas"]["CreativeUndoPayload"] | components["schemas"]["CreativeSavePromptPayload"] | components["schemas"]["CreativeReuseVersionPayload"] | components["schemas"]["CreativeCancelExecutionPayload"];
         CreativeNodeCommandResult: {
             node_id: string;
             result_revision: components["schemas"]["CreativeRevision"];
@@ -2149,6 +2213,8 @@ export interface components {
             placement_revision: components["schemas"]["CreativeRevision"];
             data_revision: components["schemas"]["CreativeRevision"];
             content_revision_id: string | null;
+            change_id: string;
+            object_results: components["schemas"]["CreativeGraphObjectResult"][];
         };
         CreateCreativeTextAssetRequest: {
             /** Format: uuid */
@@ -4537,6 +4603,356 @@ export interface components {
             /** Format: date-time */
             revoked_at: string;
         };
+        CreativeGraphRead: {
+            /** @enum {string} */
+            kind: "node" | "edge" | "input" | "version";
+            id: string;
+            placement_revision?: components["schemas"]["CreativeRevision"];
+            data_revision?: components["schemas"]["CreativeRevision"];
+            revision?: components["schemas"]["CreativeRevision"];
+        };
+        CreativeGraphObjectResult: {
+            /** @description 活跃版本所属节点，供复制与删除构造目标读集。 */
+            node_id?: string;
+            /** @enum {string} */
+            kind: "node" | "edge" | "input" | "version";
+            id: string;
+            placement_revision?: components["schemas"]["CreativeRevision"];
+            data_revision?: components["schemas"]["CreativeRevision"];
+            revision?: components["schemas"]["CreativeRevision"];
+            is_live: boolean;
+        };
+        CreativeCanvasEdge: {
+            id: string;
+            source_node_id: string;
+            target_node_id: string;
+            source_port: string;
+            target_port: string;
+            role: string;
+            ordinal: number;
+            revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeCanvasInput: {
+            id: string;
+            node_id: string;
+            slot: string;
+            ordinal: number;
+            role: string;
+            source_node_id: string | null;
+            content_revision_id: string | null;
+            revision: components["schemas"]["CreativeRevision"];
+            draft_id?: string;
+        };
+        CreativeInputSource: {
+            /** @enum {string} */
+            slot: "reference";
+            ordinal: number;
+            /** @enum {string} */
+            role: "reference";
+            source_node_id?: string | null;
+            content_revision_id?: string | null;
+        };
+        CreativeActionAddNode: {
+            /** @enum {string} */
+            type: "add_node";
+            node_id: string;
+            /** @enum {string} */
+            type_key: "core.text" | "core.link" | "core.group";
+            title?: string;
+            x: number;
+            y: number;
+            parent_id?: string | null;
+            asset?: components["schemas"]["CreativeAssetReference"];
+            content?: components["schemas"]["CreativeContentDraft"];
+        };
+        CreativeActionMoveNodes: {
+            /** @enum {string} */
+            type: "move_nodes";
+            node_ids: string[];
+            dx?: number;
+            dy?: number;
+        };
+        CreativeActionMoveNode: {
+            /** @enum {string} */
+            type: "move_node";
+            node_id: string;
+            x: number;
+            y: number;
+        };
+        CreativeActionResizeNode: {
+            /** @enum {string} */
+            type: "resize_node";
+            node_id: string;
+            width: number;
+            height: number;
+        };
+        CreativeActionUpdateMetadata: {
+            /** @enum {string} */
+            type: "update_metadata";
+            node_id: string;
+            title: string;
+            intent?: string;
+        };
+        CreativeActionClearContent: {
+            /** @enum {string} */
+            type: "clear_content";
+            node_id: string;
+        };
+        CreativeActionReplaceContent: {
+            /** @enum {string} */
+            type: "replace_content";
+            node_id: string;
+            payload: components["schemas"]["CreativeContentPayload"];
+            rights?: components["schemas"]["CreativeContentRights"];
+        };
+        CreativeActionConnectReference: {
+            /** @enum {string} */
+            type: "connect_reference";
+            source_node_id: string;
+            target_node_id: string;
+            /** @enum {string} */
+            source_port: "output";
+            /** @enum {string} */
+            target_port: "reference";
+            /** @enum {string} */
+            role: "reference";
+        };
+        CreativeActionDisconnectReference: {
+            /** @enum {string} */
+            type: "disconnect_reference";
+            edge_id: string;
+        };
+        CreativeActionSetNodeInputs: {
+            /** @enum {string} */
+            type: "set_node_inputs";
+            node_id: string;
+            inputs: components["schemas"]["CreativeInputSource"][];
+        };
+        CreativeActionGroupNodes: {
+            /** @enum {string} */
+            type: "group_nodes";
+            node_ids: string[];
+        };
+        CreativeActionUngroupNodes: {
+            /** @enum {string} */
+            type: "ungroup_nodes";
+            node_id: string;
+        };
+        CreativeActionReparentNodes: {
+            /** @enum {string} */
+            type: "reparent_nodes";
+            node_ids: string[];
+            parent_id: string | null;
+        };
+        CreativeActionDuplicateSelection: {
+            /** @enum {string} */
+            type: "duplicate_selection";
+            node_ids: string[];
+            dx?: number;
+            dy?: number;
+        };
+        CreativeActionRemoveNodes: {
+            /** @enum {string} */
+            type: "remove_nodes";
+            node_ids: string[];
+            /** @enum {string} */
+            group_mode?: "subtree";
+        };
+        CreativeGraphAction: components["schemas"]["CreativeActionAddNode"] | components["schemas"]["CreativeActionMoveNodes"] | components["schemas"]["CreativeActionMoveNode"] | components["schemas"]["CreativeActionResizeNode"] | components["schemas"]["CreativeActionUpdateMetadata"] | components["schemas"]["CreativeActionClearContent"] | components["schemas"]["CreativeActionReplaceContent"] | components["schemas"]["CreativeActionConnectReference"] | components["schemas"]["CreativeActionDisconnectReference"] | components["schemas"]["CreativeActionSetNodeInputs"] | components["schemas"]["CreativeActionGroupNodes"] | components["schemas"]["CreativeActionUngroupNodes"] | components["schemas"]["CreativeActionReparentNodes"] | components["schemas"]["CreativeActionDuplicateSelection"] | components["schemas"]["CreativeActionRemoveNodes"] | components["schemas"]["CreativeActionSelectVersion"] | components["schemas"]["CreativeActionDeleteVersion"];
+        CreativeBatchPayload: {
+            /** @enum {string} */
+            type: "batch";
+            expected_topology_revision?: components["schemas"]["CreativeRevision"];
+            read_set: components["schemas"]["CreativeGraphRead"][];
+            actions: components["schemas"]["CreativeGraphAction"][];
+            change_group_id?: string;
+        };
+        CreativeUndoPayload: {
+            /** @enum {string} */
+            type: "undo" | "redo";
+            change_id?: string;
+            change_group_id?: string;
+            read_set: components["schemas"]["CreativeGraphRead"][];
+        };
+        CreativeChangeResult: {
+            change_id: string;
+            result_revision: components["schemas"]["CreativeRevision"];
+            before_topology_revision: components["schemas"]["CreativeRevision"];
+            result_topology_revision: components["schemas"]["CreativeRevision"];
+            object_results: components["schemas"]["CreativeGraphObjectResult"][];
+            created_ids: string[];
+            removed_ids: string[];
+            id_mapping: {
+                [key: string]: string;
+            };
+            omitted_reference_ids: string[];
+        };
+        CreativeChangeSummary: {
+            read_set: components["schemas"]["CreativeGraphRead"][];
+            id: string;
+            inverse_of: string | null;
+            change_group_id: string | null;
+            result_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeNodeMetadata: {
+            type_key: string;
+            type_version: number;
+            title: string;
+            intent: string;
+            x: number;
+            y: number;
+            width: number;
+            height: number;
+            z_order: number;
+        };
+        CreativeNodeData: {
+            /** @enum {integer} */
+            schema_version: 1;
+            config: {
+                [key: string]: unknown;
+            };
+            content_id: string | null;
+            content_revision_id: string | null;
+            selected_version_id: string | null;
+            document_id: string | null;
+        };
+        CreativeNodeStatus: {
+            /** @enum {string} */
+            content_state: "empty" | "ready" | "unavailable";
+            /** @enum {string} */
+            generation_state: "idle" | "queued" | "running" | "succeeded" | "failed" | "cancelled" | "reconciling";
+            active_execution_id: string | null;
+            latest_execution_id: string | null;
+            apply_state: string | null;
+            error: string | null;
+            status_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeNodeCapabilities: {
+            actions: string[];
+            prompt_mode: string;
+            disabled_reason: string | null;
+        };
+        CreativeNodePrompt: {
+            draft_id: string;
+            draft_revision: components["schemas"]["CreativeRevision"];
+            action_key: string;
+            text: string;
+            model_key: string;
+            parameters: {
+                [key: string]: unknown;
+            };
+            references: components["schemas"]["CreativeCanvasInput"][];
+        };
+        CreativeVersionInput: {
+            content_revision_id: string;
+            role: string;
+        };
+        CreativeNodeVersion: {
+            id: string;
+            node_id: string;
+            version_no: components["schemas"]["CreativeRevision"];
+            origin_kind: string;
+            content_revision_id: string;
+            execution_id_snapshot: string | null;
+            output_ordinal: number | null;
+            generation_provenance: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            revision: components["schemas"]["CreativeRevision"];
+            inputs: components["schemas"]["CreativeVersionInput"][];
+        };
+        CreativeNodeVersionPage: {
+            items: components["schemas"]["CreativeNodeVersion"][];
+            selected_version_id: string | null;
+            data_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeActionSelectVersion: {
+            /** @enum {string} */
+            type: "select_version";
+            node_id: string;
+            version_id: string;
+        };
+        CreativeActionDeleteVersion: {
+            /** @enum {string} */
+            type: "delete_version";
+            node_id: string;
+            version_id: string;
+        };
+        CreativeSavePromptPayload: {
+            /** @enum {string} */
+            type: "save_prompt";
+            node_id: string;
+            expected_draft_revision: components["schemas"]["CreativeRevision"] | null;
+            expected_topology_revision: components["schemas"]["CreativeRevision"];
+            read_set: components["schemas"]["CreativeGraphRead"][];
+            action_key: string;
+            text: string;
+            model_key: string;
+            parameters: {
+                [key: string]: unknown;
+            };
+            references: components["schemas"]["CreativeInputSource"][];
+        };
+        CreativeReuseVersionPayload: {
+            /** @enum {string} */
+            type: "reuse_version_prompt";
+            node_id: string;
+            version_id: string;
+            expected_draft_revision: components["schemas"]["CreativeRevision"] | null;
+            expected_topology_revision: components["schemas"]["CreativeRevision"];
+            read_set: components["schemas"]["CreativeGraphRead"][];
+        };
+        CreativeCancelExecutionPayload: {
+            /** @enum {string} */
+            type: "cancel_execution";
+            execution_id: string;
+        };
+        CreativeDocument: {
+            id: string;
+            title: string;
+            type_key: string;
+            content_revision_id: string;
+            revision: components["schemas"]["CreativeRevision"];
+            content: components["schemas"]["CreativeContentRevision"];
+        };
+        CreativeNodeExecution: {
+            execution_id: string;
+            node_id: string;
+            action_key: string;
+            executor_version: string;
+            /** @enum {string} */
+            state: "queued" | "running" | "succeeded" | "failed" | "cancelled" | "reconciling";
+            apply_state: string;
+            execution_epoch: number;
+            /** Format: date-time */
+            deadline: string;
+            change_id: string | null;
+            error: string;
+            canvas_id: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeRequestExecutionPayload: {
+            node_id: string;
+            action_key: string;
+            expected_data_revision: components["schemas"]["CreativeRevision"];
+            draft_revision: components["schemas"]["CreativeRevision"];
+            read_set: components["schemas"]["CreativeGraphRead"][];
+        };
+        CreativeRequestExecutionRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeRequestExecutionPayload"];
+        };
+        CreativePromptResult: {
+            draft_id: string;
+            draft_revision: components["schemas"]["CreativeRevision"];
+            change: components["schemas"]["CreativeChangeResult"];
+        };
     };
     responses: {
         /** @description 400 validation_failed */
@@ -5039,7 +5455,139 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreativeNodeCommandResult"];
+                    "application/json": components["schemas"]["CreativeNodeCommandResult"] | components["schemas"]["CreativeChangeResult"] | components["schemas"]["CreativePromptResult"] | components["schemas"]["CreativeNodeExecution"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeNodeVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 节点结果版本 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeNodeVersionPage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocument"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeNodeExecution: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                execution_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeNodeExecution"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    requestCreativeNodeExecution: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeRequestExecutionRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeNodeExecution"];
                 };
             };
             /** @description 请求失败 */

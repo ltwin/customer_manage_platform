@@ -15,6 +15,9 @@ func TestCreativeLibraryMigrationBackfillsAndCanRebuildAfterRollback(t *testing.
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal(err)
+	} // 0040
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal(err)
 	} // 0039 -> 0038 fixture
 	db, err := sql.Open("pgx", url)
 	if err != nil {
@@ -42,6 +45,9 @@ func TestCreativeLibraryMigrationBackfillsAndCanRebuildAfterRollback(t *testing.
 		if err = store.MigrateUp(url); err != nil {
 			t.Fatal("idempotent", err)
 		}
+		if err = store.MigrateDownOneForTest(url); err != nil {
+			t.Fatal(err)
+		} // 0040
 		if err = store.MigrateDownOneForTest(url); err != nil {
 			t.Fatal("rollback", err)
 		}

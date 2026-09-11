@@ -2,8 +2,8 @@
 epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
-current_item: FND-03
-next_action: FND-03与v5界面对齐已完成并通过验收，改动未提交；下一项FND-04完整画布命令与扩展边界，提交仍manual
+current_item: FND-04
+next_action: FND-04及画布交互修复完成提交；下一项FND-05图像/视频/音频与跨模块交接，继续遵循v5
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -566,3 +566,52 @@ remote_publish: manual
 - 性能证据：当前仅文字/链接支持范围，10,001资产/100组/200标签，100混合领域查询首次390.44ms、p95 106.75ms（/tmp/fnd03-search-benchmark-final.log）；最终浏览器40次采样p95 655.13ms，包含300ms防抖、网络、DOM与绘制（/tmp/creative-editor-qa/library-search-performance.json）。不外推到尚未实现的完整媒体库。
 - 桌面/窄屏截图及实测值：/tmp/creative-editor-qa/desktop.png、desktop-library-expanded.png、mobile-canvas.png、library-organized-desktop.png、library-organized-mobile.png、v5-metrics.json。原型对照：/tmp/v5-canvas-reference.png、/tmp/v5-library-reference.png。DESIGN.md与UX-CONTRACT.md记录正式映射，后续功能按v5继续，不回退CRM旧样式。
 - FND-02提交为734bfff，本FND-03与本轮UI修正未提交、未push。下一项FND-04负责连线、布局分组、复制/解组、Undo/Redo、节点扩展与内部执行版本基础。当前无阻塞，保持manual提交和per-item推进。
+
+### FND-04 开工（2026-09-10）
+
+- owner明确授权提交已完成改动并继续下一feature；FND-03提交bccc558，未push。沿现有工作区开发。v5为视觉和交互依据，仅功能不合理处作有据局部调整。
+- 归属creativecanvas：统一有界命令执行、布局/数据/Prompt/任务状态分离，服务端字段状态链支持连续撤销，不由前端整图回写。修改节点/边/输入/历史/执行/版本的正式存储、OpenAPI及编辑器。内容模块补齐显式引用守卫。需验证迁移、原子性、读集竞争、版本单调、任务取消/迟到、浏览器分组/连线/撤销与v5几何、拖动。外部模型和Agent仍属后续项。
+- Verify图谱：project Users-samson-workspace-my_project-customer_manage_platform-.worktrees-creative-workspace-redesign，generation 2026-09-04T15:47:38Z；creativecanvas符号查询total0/has_more=false，6条候选路径not_tracked。已回退精确源码，不作图谱完备断言。
+
+### FND-04 实现与独立审查（2026-09-11）
+
+- 已实现正式图命令/状态链、嵌套分组与参考关系、批量本地拖动队列、撤销/重做、Prompt CAS与不可变版本、独立文档fixture、内部真实text-compose任务及条件发布。前端继续v5暗色/玻璃控件；普通保存静默。内部executor不在生产注册，真实模型生成/媒体及成品Prompt历史面板留在FND-05/13。
+- 独立change review由宿主fresh `review_fnd04`（gpt-6-astra/high）执行cs-review；已发现可调用委派工具，无可用异构provider，Paseo配置不存在，显式同构回退。R1冻结patch SHA256 `a14d66f97fee4699a4d8df2d9fc4cf44ef74e9d7382b074b7047fec9b8356559`；报告`/tmp/fnd04-review-r1.md`提出4 blocking+1 important，未记为通过。
+- 对应修复：关系槽位先释放再写最终图；移动回执包含no-op目标的真实版本，前端滤无变化手势；四边/四角缩放提交原点与尺寸，分组同时补偿直接子节点；输入按显式顺序合并去重；普通读集剔除永久墓碑，Undo用目标change的有界当前读集。输入合并语义与读集投影分别补入现有node-generation/canvas契约，没有新增lesson。
+- 回归先红后绿：`/tmp/fnd04-review-regressions-red.log`复现唯一约束与缺no-op回执；`review_regressions_test.go`覆盖替换/Undo、混合no-op、输入执行/历史/复用顺序、5100旧身份、Prompt同槽替换与边重连。`/tmp/fnd04-r2-regressions.log`PASS；前端360/360通过；`/tmp/fnd04-r2-resize-actual.log`真实浏览器验证普通节点和分组的四边/四角、Undo/Redo及DOM尺寸还原，19.147s PASS。R2复审待完成。
+- 性能证据：临时Go overlay在500活跃空文字节点下GetCanvas79.4ms，三次move事务66.4/69.0/67.6ms（`/tmp/fnd04-scale.log`）；不把数据库耗时当成前端帧率。旧浏览器含延迟保存/陈旧轮询期间持续拖动、断网及回执丢失恢复；R1完整双脚本PASS85.025s，R2修复后继续最终合跑。此前race两包PASS；严格UI静态审计0，DESIGN lint0。
+- 0040仅在隔离测试数据库应用；用户的开发数据库、已有5173服务未迁移/重启。FND-04未提交、未push；先完成本项复审和验证，FND-05不在本轮并行启动。
+
+- R2完整候选SHA256 `25444799f8f695fd0aa7267ed65193af7cb5b04aa92b38b09f4c01270c5b6a30`；同reviewer报告`/tmp/fnd04-review-r2.md`确认原前4项resolved，指出读集缩减漏掉复制/删除节点的活跃版本，剩1 blocking。R2全Go、frontend360、双browser104.118s、race两包、generate-check及premium严格审计通过，但未把这些门禁代替review结论。
+- R3对应修复：所有活跃版本在快照中提供node_id归属及真实revision；普通命令保持不携带版本，复制闭包只带当前selected version，删除闭包带其活跃版本，Undo继续使用目标change读集。永久墓碑不回流普通命令，活跃版本不受近期100条change限制。新增101条后续操作后复制/删除旧版本测试，以及真实UI“填写正文→复制→再次复制副本→删除→撤销恢复”路径。`/tmp/fnd04-r3-domain.log`8.746s、`/tmp/fnd04-r3-frontend.log`361/361、`/tmp/fnd04-r3-browser.log`24.892s均PASS；最后一轮独立复审待完成。
+
+
+### FND-04 完成（2026-09-11）
+
+- R3同lineage独立审查PASS：`/tmp/fnd04-review-r3.md`，0未解决blocking/important、0新发现；完整冻结patch SHA256 `39069ea58d29844ada629c2733fc49f68a7fa6ede5c106c904bc88f0399ef841`。三轮审查已结束。审查后仅更新本游标与DESIGN的已实现状态，产品代码保持冻结候选一致。
+- 最终`make check-go`明确exit0（build、lint0 issues、全包测试，`/tmp/fnd04-r3-go.log`）；`make check-frontend`361/361、build/lint通过；`make generate-check`通过；premium strict0；DESIGN lint0 errors/0 warnings；`git diff --check`通过。保留项目已有AccountCenter Fast Refresh与主bundle体积warning，不因本项扩大修复。
+- 真实隔离浏览器：R3新版graph脚本24.892s PASS，覆盖正文编辑、全部缩放方向、分组/复制/连线/Undo/Redo、versioned副本再次复制/删除/恢复、手机与独立文档；R2双脚本104.118s PASS，包含原有离线/慢请求/回执未知/跨窗口及个人库完整回归。R2两包race12.592s/4.901s PASS；R3变化是版本只读投影与命令读集构造，新增领域/前端/浏览器回归及全Go门禁覆盖。当前截图`/tmp/creative-commands-qa/grouped-desktop.png`、`grouped-mobile.png`、`document-maximized.png`。
+- 已将owner的v5优先约束记录到既有DESIGN.md，输入顺序与目标读集规则归入既有node-generation/canvas契约；未新建lesson。保留Epic工作游标供下一项延续。
+- 本项就绪但未提交、未push；上一项提交仍为bccc558。开发数据库未应用0040，已有5173服务未改动。临时5176测试服务验收后关闭。下一项为FND-05，未在本轮越界启动。
+
+### FND-04 画布交互纠偏（2026-09-11，owner新增反馈）
+
+- 范围：修复节点加号弹性跟随与v5样式、点击菜单定位、触摸板双向平移；同轮补充节点主体落线和边缘中心吸附。保留原有FND-04暂存改动，新修复未提交；未启动FND-05。
+- 根因：缺失原型磁吸逻辑；菜单复用了新节点预定坐标；PanOnScrollMode固定Vertical；连接仅依赖小端口命中且onConnectEnd忽略节点主体；端口背景继承CRM浅色--bg。图索引2026-09-04 generation对相关路径not_tracked，按精确源码回退核实。
+- 修复：屏幕像素阻尼动画只写端口样式，不更新React/节点坐标；菜单使用点击屏幕坐标和实际尺寸避让；Free平移；预览与松手共享节点主体/18px邻近命中，同一左右边缘中心锚点用于预览和最终连线，支持反向连接和分组子节点；工作台补齐暗色--bg。吸附邻域使用已有节点几何，避免每次拖线对所有节点读取DOM布局。
+- 红色证据：`/tmp/creative-port-red.log`同时复现加号跟随/样式、菜单和横向平移失败；`/tmp/creative-connection-red2.log`显示节点主体落线edges=0、snapped=false；`/tmp/creative-port-color-red.log`显示圆环底色误为CRM浅色oklch。
+- 验收：`make check-frontend`361/361、build/lint通过（`/tmp/creative-interaction-frontend-final.log`）；generate-check通过；premium strict0及DESIGN lint0错误/0警告。完整真实隔离浏览器双脚本110.887s PASS（`/tmp/creative-interaction-browser-verified.log`），覆盖新交互、减少动态效果、键盘菜单、窄屏边界、正反向/邻近/缩放分组连线，以及原有延迟保存/陈旧轮询/断网/跨窗口路径。保留既有Fast Refresh和bundle大小warning。
+- 旧E2E修正：双向平移生效后，旧脚本可能把节点移出视口仍直接拖动；补显式适应视图并将等待请求改为有超时的断言，避免无限等待。首次完整跑因该准备步骤缺陷停止，不计通过；上面的110.887s是修正后的完整重跑。
+- 视觉证据：`/tmp/creative-commands-qa/port-menu-desktop.png`、`port-menu-mobile.png`、`connection-snap.png`；已实际查看。设计规则归入现有DESIGN.md，不新增lesson。此修复限定前端，不改后端契约/持久化/队列一致性，不触发新独立审查；此前R3结论仅属于原FND-04冻结候选。
+- 开发数据库未变更；现有5173服务未改动。临时5176服务测试后关闭。新增修复保留未提交，下一项仍为FND-05。
+
+### 连线松手延迟修复（2026-09-11）
+
+- 根因：原先仅在服务端回执后刷新Canvas才显示正式边，预览结束与刷新之间存在空档。新增ConnectionOverlay只负责本地连线显示；复用现有job持久化与幂等恢复。同步投影、未知保留、拒绝回滚、成功回执到对应快照之间保留并去重，跨画布/已删除节点不串入；不改变串行调度或journal schema。纯connect batch适用，混合新增节点命令仍走原流程。
+- 红色证据：`/tmp/connection-immediate-red-assertion.txt`在人为延迟请求后观察到0条边（应为1）。365项前端测试与构建/lint通过；generate-check通过；完整双浏览器脚本113.641s PASS。独立R1发现pending临时边选择ID可流入删除命令；已限制临时边选择/指针交互，并在点击、双击、键盘删除入口核验正式ID。
+- R1报告`/tmp/connection-immediate-review-r1.md`，冻结SHA256 `52cf81652879d2cdfeddb06b66114c26b006195480f93123b79f55ae6ac56fea`。owner明确要求修复后不重复review，因此没有R2；发现由本机修复及回归闭环，不宣称独立复审通过。最终`/tmp/connection-immediate-frontend-closure.log`365/365通过；`/tmp/connection-immediate-browser-closure.log`31.886s PASS，涵盖延迟发送、期间点击临时边、确认后删除及撤销。此前完整回归见`/tmp/connection-immediate-browser-final.log`。premium strict0，DESIGN lint0。
+- 验证过程中一次容器启动context deadline exceeded，未进入测试，不计通过；随后隔离重跑31.886s成功。早期临时边删除用例的焦点/选择准备步骤已修正。保留先前代码与本次改动，未提交、未push、未改开发数据库；临时5176测试服务关闭，既有5173保留。FND-05尚未启动。
+
+### FND-04 提交里程碑（2026-09-11）
+
+owner明确授权提交本阶段feature。本提交包含FND-04基础能力、v5交互纠偏及连线松手延迟修复；沿用已通过的对应验证和owner不重复复审的决定。未推送远端、未合并develop、未应用开发数据库迁移；FND-05等待后续开发指令。

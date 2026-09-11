@@ -451,13 +451,135 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreativeNodeCommandResult'
+                oneOf:
+                - $ref: '#/components/schemas/CreativeNodeCommandResult'
+                - $ref: '#/components/schemas/CreativeChangeResult'
+                - $ref: '#/components/schemas/CreativePromptResult'
+                - $ref: '#/components/schemas/CreativeNodeExecution'
         default:
           description: 请求失败
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/canvases/{id}/nodes/{node_id}/versions:
+    get:
+      tags:
+      - creative-foundation
+      operationId: listCreativeNodeVersions
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: node_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 节点结果版本
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeNodeVersionPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}:
+    get:
+      tags:
+      - creative-foundation
+      operationId: getCreativeDocument
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocument'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/canvases/{id}/executions/{execution_id}:
+    get:
+      tags:
+      - creative-foundation
+      operationId: getCreativeNodeExecution
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: execution_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeNodeExecution'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/canvases/{id}/executions:
+    post:
+      tags:
+      - creative-foundation
+      operationId: requestCreativeNodeExecution
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '202':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeNodeExecution'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreativeRequestExecutionRequest'
   /creative/capabilities:
     get:
       tags: [creative-foundation]
@@ -5781,49 +5903,38 @@ components:
       additionalProperties: false
       required:
       - id
-      - type_key
-      - title
-      - x
-      - y
-      - width
-      - height
+      - parent_id
+      - metadata
+      - data
+      - status
+      - prompt
+      - capabilities
       - placement_revision
       - data_revision
-      - content_id
-      - content_revision_id
-      - unavailable
       properties:
         id:
           type: string
-        type_key:
+        parent_id:
           type: string
-          enum:
-          - core.text
-          - core.link
-        title:
-          type: string
-        x:
-          type: number
-        y:
-          type: number
-        width:
-          type: number
-        height:
-          type: number
+          nullable: true
+        metadata:
+          $ref: '#/components/schemas/CreativeNodeMetadata'
+        data:
+          $ref: '#/components/schemas/CreativeNodeData'
+        status:
+          $ref: '#/components/schemas/CreativeNodeStatus'
+        prompt:
+          allOf:
+          - $ref: '#/components/schemas/CreativeNodePrompt'
+          nullable: true
+        capabilities:
+          $ref: '#/components/schemas/CreativeNodeCapabilities'
         placement_revision:
           $ref: '#/components/schemas/CreativeRevision'
         data_revision:
           $ref: '#/components/schemas/CreativeRevision'
-        content_id:
-          type: string
-          nullable: true
-        content_revision_id:
-          type: string
-          nullable: true
         content:
           $ref: '#/components/schemas/CreativeContentRevision'
-        unavailable:
-          type: boolean
     CreativeCanvasSnapshot:
       type: object
       additionalProperties: false
@@ -5836,7 +5947,15 @@ components:
       - revision
       - topology_revision
       - nodes
+      - edges
+      - node_inputs
+      - changes
+      - object_states
       properties:
+        object_states:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphObjectResult'
         project_name:
           type: string
         project_revision:
@@ -5855,6 +5974,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/CreativeCanvasNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeCanvasEdge'
+        node_inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeCanvasInput'
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeChangeSummary'
     CreativeAssetReference:
       type: object
       additionalProperties: false
@@ -5965,6 +6096,11 @@ components:
       - $ref: '#/components/schemas/CreativeAddNodePayload'
       - $ref: '#/components/schemas/CreativeMoveNodePayload'
       - $ref: '#/components/schemas/CreativeReplaceContentPayload'
+      - $ref: '#/components/schemas/CreativeBatchPayload'
+      - $ref: '#/components/schemas/CreativeUndoPayload'
+      - $ref: '#/components/schemas/CreativeSavePromptPayload'
+      - $ref: '#/components/schemas/CreativeReuseVersionPayload'
+      - $ref: '#/components/schemas/CreativeCancelExecutionPayload'
     CreativeNodeCommandResult:
       type: object
       additionalProperties: false
@@ -5976,6 +6112,8 @@ components:
       - placement_revision
       - data_revision
       - content_revision_id
+      - change_id
+      - object_results
       properties:
         node_id:
           type: string
@@ -5992,6 +6130,12 @@ components:
         content_revision_id:
           type: string
           nullable: true
+        change_id:
+          type: string
+        object_results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphObjectResult'
     CreateCreativeTextAssetRequest:
       type: object
       additionalProperties: false
@@ -10237,3 +10381,1026 @@ components:
         status: {type: string, enum: [active, revoked]}
         revision: {type: integer, format: int64}
         revoked_at: {type: string, format: date-time}
+    CreativeGraphRead:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - id
+      properties:
+        kind:
+          type: string
+          enum:
+          - node
+          - edge
+          - input
+          - version
+        id:
+          type: string
+        placement_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        data_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeGraphObjectResult:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - id
+      - is_live
+      properties:
+        node_id:
+          type: string
+          description: 活跃版本所属节点，供复制与删除构造目标读集。
+        kind:
+          type: string
+          enum:
+          - node
+          - edge
+          - input
+          - version
+        id:
+          type: string
+        placement_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        data_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        is_live:
+          type: boolean
+    CreativeCanvasEdge:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - source_node_id
+      - target_node_id
+      - source_port
+      - target_port
+      - role
+      - ordinal
+      - revision
+      properties:
+        id:
+          type: string
+        source_node_id:
+          type: string
+        target_node_id:
+          type: string
+        source_port:
+          type: string
+        target_port:
+          type: string
+        role:
+          type: string
+        ordinal:
+          type: integer
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeCanvasInput:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - node_id
+      - slot
+      - ordinal
+      - role
+      - source_node_id
+      - content_revision_id
+      - revision
+      properties:
+        id:
+          type: string
+        node_id:
+          type: string
+        slot:
+          type: string
+        ordinal:
+          type: integer
+        role:
+          type: string
+        source_node_id:
+          type: string
+          nullable: true
+        content_revision_id:
+          type: string
+          nullable: true
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        draft_id:
+          type: string
+    CreativeInputSource:
+      type: object
+      additionalProperties: false
+      required:
+      - slot
+      - ordinal
+      - role
+      properties:
+        slot:
+          type: string
+          enum:
+          - reference
+        ordinal:
+          type: integer
+          minimum: 0
+        role:
+          type: string
+          enum:
+          - reference
+        source_node_id:
+          type: string
+          nullable: true
+        content_revision_id:
+          type: string
+          nullable: true
+    CreativeActionAddNode:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - type_key
+      - x
+      - y
+      properties:
+        type:
+          type: string
+          enum:
+          - add_node
+        node_id:
+          type: string
+        type_key:
+          type: string
+          enum:
+          - core.text
+          - core.link
+          - core.group
+        title:
+          type: string
+          maxLength: 200
+        x:
+          type: number
+        y:
+          type: number
+        parent_id:
+          type: string
+          nullable: true
+        asset:
+          $ref: '#/components/schemas/CreativeAssetReference'
+        content:
+          $ref: '#/components/schemas/CreativeContentDraft'
+    CreativeActionMoveNodes:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_ids
+      properties:
+        type:
+          type: string
+          enum:
+          - move_nodes
+        node_ids:
+          type: array
+          items:
+            type: string
+        dx:
+          type: number
+        dy:
+          type: number
+    CreativeActionMoveNode:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - x
+      - y
+      properties:
+        type:
+          type: string
+          enum:
+          - move_node
+        node_id:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+    CreativeActionResizeNode:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - width
+      - height
+      properties:
+        type:
+          type: string
+          enum:
+          - resize_node
+        node_id:
+          type: string
+        width:
+          type: number
+        height:
+          type: number
+    CreativeActionUpdateMetadata:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - title
+      properties:
+        type:
+          type: string
+          enum:
+          - update_metadata
+        node_id:
+          type: string
+        title:
+          type: string
+          maxLength: 200
+        intent:
+          type: string
+          maxLength: 2000
+    CreativeActionClearContent:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      properties:
+        type:
+          type: string
+          enum:
+          - clear_content
+        node_id:
+          type: string
+    CreativeActionReplaceContent:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - payload
+      properties:
+        type:
+          type: string
+          enum:
+          - replace_content
+        node_id:
+          type: string
+        payload:
+          $ref: '#/components/schemas/CreativeContentPayload'
+        rights:
+          $ref: '#/components/schemas/CreativeContentRights'
+    CreativeActionConnectReference:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - source_node_id
+      - target_node_id
+      - source_port
+      - target_port
+      - role
+      properties:
+        type:
+          type: string
+          enum:
+          - connect_reference
+        source_node_id:
+          type: string
+        target_node_id:
+          type: string
+        source_port:
+          type: string
+          enum:
+          - output
+        target_port:
+          type: string
+          enum:
+          - reference
+        role:
+          type: string
+          enum:
+          - reference
+    CreativeActionDisconnectReference:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - edge_id
+      properties:
+        type:
+          type: string
+          enum:
+          - disconnect_reference
+        edge_id:
+          type: string
+    CreativeActionSetNodeInputs:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - inputs
+      properties:
+        type:
+          type: string
+          enum:
+          - set_node_inputs
+        node_id:
+          type: string
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeInputSource'
+    CreativeActionGroupNodes:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_ids
+      properties:
+        type:
+          type: string
+          enum:
+          - group_nodes
+        node_ids:
+          type: array
+          items:
+            type: string
+    CreativeActionUngroupNodes:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      properties:
+        type:
+          type: string
+          enum:
+          - ungroup_nodes
+        node_id:
+          type: string
+    CreativeActionReparentNodes:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_ids
+      - parent_id
+      properties:
+        type:
+          type: string
+          enum:
+          - reparent_nodes
+        node_ids:
+          type: array
+          items:
+            type: string
+        parent_id:
+          type: string
+          nullable: true
+    CreativeActionDuplicateSelection:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_ids
+      properties:
+        type:
+          type: string
+          enum:
+          - duplicate_selection
+        node_ids:
+          type: array
+          items:
+            type: string
+        dx:
+          type: number
+        dy:
+          type: number
+    CreativeActionRemoveNodes:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_ids
+      properties:
+        type:
+          type: string
+          enum:
+          - remove_nodes
+        node_ids:
+          type: array
+          items:
+            type: string
+        group_mode:
+          type: string
+          enum:
+          - subtree
+    CreativeGraphAction:
+      oneOf:
+      - $ref: '#/components/schemas/CreativeActionAddNode'
+      - $ref: '#/components/schemas/CreativeActionMoveNodes'
+      - $ref: '#/components/schemas/CreativeActionMoveNode'
+      - $ref: '#/components/schemas/CreativeActionResizeNode'
+      - $ref: '#/components/schemas/CreativeActionUpdateMetadata'
+      - $ref: '#/components/schemas/CreativeActionClearContent'
+      - $ref: '#/components/schemas/CreativeActionReplaceContent'
+      - $ref: '#/components/schemas/CreativeActionConnectReference'
+      - $ref: '#/components/schemas/CreativeActionDisconnectReference'
+      - $ref: '#/components/schemas/CreativeActionSetNodeInputs'
+      - $ref: '#/components/schemas/CreativeActionGroupNodes'
+      - $ref: '#/components/schemas/CreativeActionUngroupNodes'
+      - $ref: '#/components/schemas/CreativeActionReparentNodes'
+      - $ref: '#/components/schemas/CreativeActionDuplicateSelection'
+      - $ref: '#/components/schemas/CreativeActionRemoveNodes'
+      - $ref: '#/components/schemas/CreativeActionSelectVersion'
+      - $ref: '#/components/schemas/CreativeActionDeleteVersion'
+    CreativeBatchPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - read_set
+      - actions
+      properties:
+        type:
+          type: string
+          enum:
+          - batch
+        expected_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        read_set:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphRead'
+        actions:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CreativeGraphAction'
+        change_group_id:
+          type: string
+    CreativeUndoPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - read_set
+      properties:
+        type:
+          type: string
+          enum:
+          - undo
+          - redo
+        change_id:
+          type: string
+        change_group_id:
+          type: string
+        read_set:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphRead'
+    CreativeChangeResult:
+      type: object
+      additionalProperties: false
+      required:
+      - change_id
+      - result_revision
+      - before_topology_revision
+      - result_topology_revision
+      - object_results
+      - created_ids
+      - removed_ids
+      - id_mapping
+      - omitted_reference_ids
+      properties:
+        change_id:
+          type: string
+        result_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        before_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        result_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        object_results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphObjectResult'
+        created_ids:
+          type: array
+          items:
+            type: string
+        removed_ids:
+          type: array
+          items:
+            type: string
+        id_mapping:
+          type: object
+          additionalProperties:
+            type: string
+        omitted_reference_ids:
+          type: array
+          items:
+            type: string
+    CreativeChangeSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - read_set
+      - id
+      - inverse_of
+      - change_group_id
+      - result_revision
+      properties:
+        read_set:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphRead'
+        id:
+          type: string
+        inverse_of:
+          type: string
+          nullable: true
+        change_group_id:
+          type: string
+          nullable: true
+        result_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeNodeMetadata:
+      type: object
+      additionalProperties: false
+      required:
+      - type_key
+      - type_version
+      - title
+      - intent
+      - x
+      - y
+      - width
+      - height
+      - z_order
+      properties:
+        type_key:
+          type: string
+        type_version:
+          type: integer
+        title:
+          type: string
+        intent:
+          type: string
+        x:
+          type: number
+        y:
+          type: number
+        width:
+          type: number
+        height:
+          type: number
+        z_order:
+          type: integer
+    CreativeNodeData:
+      type: object
+      additionalProperties: false
+      required:
+      - schema_version
+      - config
+      - content_id
+      - content_revision_id
+      - selected_version_id
+      - document_id
+      properties:
+        schema_version:
+          type: integer
+          enum:
+          - 1
+        config:
+          type: object
+          additionalProperties: true
+        content_id:
+          type: string
+          nullable: true
+        content_revision_id:
+          type: string
+          nullable: true
+        selected_version_id:
+          type: string
+          nullable: true
+        document_id:
+          type: string
+          nullable: true
+    CreativeNodeStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - content_state
+      - generation_state
+      - active_execution_id
+      - latest_execution_id
+      - apply_state
+      - error
+      - status_revision
+      properties:
+        content_state:
+          type: string
+          enum:
+          - empty
+          - ready
+          - unavailable
+        generation_state:
+          type: string
+          enum:
+          - idle
+          - queued
+          - running
+          - succeeded
+          - failed
+          - cancelled
+          - reconciling
+        active_execution_id:
+          type: string
+          nullable: true
+        latest_execution_id:
+          type: string
+          nullable: true
+        apply_state:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        status_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeNodeCapabilities:
+      type: object
+      additionalProperties: false
+      required:
+      - actions
+      - prompt_mode
+      - disabled_reason
+      properties:
+        actions:
+          type: array
+          items:
+            type: string
+        prompt_mode:
+          type: string
+        disabled_reason:
+          type: string
+          nullable: true
+    CreativeNodePrompt:
+      type: object
+      additionalProperties: false
+      required:
+      - draft_id
+      - draft_revision
+      - action_key
+      - text
+      - model_key
+      - parameters
+      - references
+      properties:
+        draft_id:
+          type: string
+        draft_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        action_key:
+          type: string
+        text:
+          type: string
+        model_key:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeCanvasInput'
+    CreativeVersionInput:
+      type: object
+      additionalProperties: false
+      required:
+      - content_revision_id
+      - role
+      properties:
+        content_revision_id:
+          type: string
+        role:
+          type: string
+    CreativeNodeVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - node_id
+      - version_no
+      - origin_kind
+      - content_revision_id
+      - execution_id_snapshot
+      - output_ordinal
+      - generation_provenance
+      - created_at
+      - revision
+      - inputs
+      properties:
+        id:
+          type: string
+        node_id:
+          type: string
+        version_no:
+          $ref: '#/components/schemas/CreativeRevision'
+        origin_kind:
+          type: string
+        content_revision_id:
+          type: string
+        execution_id_snapshot:
+          type: string
+          nullable: true
+        output_ordinal:
+          type: integer
+          nullable: true
+        generation_provenance:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        inputs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeVersionInput'
+    CreativeNodeVersionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - selected_version_id
+      - data_revision
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeNodeVersion'
+        selected_version_id:
+          type: string
+          nullable: true
+        data_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeActionSelectVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - version_id
+      properties:
+        type:
+          type: string
+          enum:
+          - select_version
+        node_id:
+          type: string
+        version_id:
+          type: string
+    CreativeActionDeleteVersion:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - version_id
+      properties:
+        type:
+          type: string
+          enum:
+          - delete_version
+        node_id:
+          type: string
+        version_id:
+          type: string
+    CreativeSavePromptPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - expected_draft_revision
+      - expected_topology_revision
+      - read_set
+      - action_key
+      - text
+      - model_key
+      - parameters
+      - references
+      properties:
+        type:
+          type: string
+          enum:
+          - save_prompt
+        node_id:
+          type: string
+        expected_draft_revision:
+          allOf:
+          - $ref: '#/components/schemas/CreativeRevision'
+          nullable: true
+        expected_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        read_set:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphRead'
+        action_key:
+          type: string
+        text:
+          type: string
+          maxLength: 32000
+        model_key:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeInputSource'
+    CreativeReuseVersionPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - node_id
+      - version_id
+      - expected_draft_revision
+      - expected_topology_revision
+      - read_set
+      properties:
+        type:
+          type: string
+          enum:
+          - reuse_version_prompt
+        node_id:
+          type: string
+        version_id:
+          type: string
+        expected_draft_revision:
+          allOf:
+          - $ref: '#/components/schemas/CreativeRevision'
+          nullable: true
+        expected_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        read_set:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphRead'
+    CreativeCancelExecutionPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - type
+      - execution_id
+      properties:
+        type:
+          type: string
+          enum:
+          - cancel_execution
+        execution_id:
+          type: string
+    CreativeDocument:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - title
+      - type_key
+      - content_revision_id
+      - revision
+      - content
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        type_key:
+          type: string
+        content_revision_id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        content:
+          $ref: '#/components/schemas/CreativeContentRevision'
+    CreativeNodeExecution:
+      type: object
+      additionalProperties: false
+      required:
+      - execution_id
+      - node_id
+      - action_key
+      - executor_version
+      - state
+      - apply_state
+      - execution_epoch
+      - deadline
+      - change_id
+      - error
+      - canvas_id
+      - created_at
+      properties:
+        execution_id:
+          type: string
+        node_id:
+          type: string
+        action_key:
+          type: string
+        executor_version:
+          type: string
+        state:
+          type: string
+          enum:
+          - queued
+          - running
+          - succeeded
+          - failed
+          - cancelled
+          - reconciling
+        apply_state:
+          type: string
+        execution_epoch:
+          type: integer
+        deadline:
+          type: string
+          format: date-time
+        change_id:
+          type: string
+          nullable: true
+        error:
+          type: string
+        canvas_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreativeRequestExecutionPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - node_id
+      - action_key
+      - expected_data_revision
+      - draft_revision
+      - read_set
+      properties:
+        node_id:
+          type: string
+        action_key:
+          type: string
+        expected_data_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        draft_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        read_set:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphRead'
+    CreativeRequestExecutionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeRequestExecutionPayload'
+    CreativePromptResult:
+      type: object
+      additionalProperties: false
+      required: [draft_id, draft_revision, change]
+      properties:
+        draft_id:
+          type: string
+        draft_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        change:
+          $ref: '#/components/schemas/CreativeChangeResult'

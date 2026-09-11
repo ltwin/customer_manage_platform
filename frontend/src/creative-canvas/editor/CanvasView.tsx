@@ -1,4 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import {
   ReactFlow,
   Background,
@@ -8,38 +15,112 @@ import {
   PanOnScrollMode,
   useReactFlow,
   useKeyPress,
+  SelectionMode,
+  Handle,
+  Position,
+  NodeResizer,
+  BaseEdge,
+  getBezierPath,
+  MarkerType,
 } from '@xyflow/react'
-import type { Node, NodeProps, NodeChange } from '@xyflow/react'
-import type { Asset, Canvas, CanvasNode } from './api.ts'
-
+import type {
+  Node,
+  NodeProps,
+  NodeChange,
+  EdgeProps,
+  Edge,
+  InternalNode,
+  ReactFlowInstance,
+  ConnectionLineComponentProps,
+} from '@xyflow/react'
 import {
   Type,
   Link2,
   Ellipsis,
   Pencil,
+  Maximize2,
+  FileText,
   Minus,
   Plus,
   Scan,
   Map as MapIcon,
+  Group,
+  Ungroup,
+  Copy,
+  Trash2,
+  Undo2,
+  Redo2,
+  X,
 } from 'lucide-react'
+import type { Asset, Canvas, CanvasNode, GraphAction } from './api.ts'
 import type { PositionDraft } from './journal.ts'
+import { parentFirst, selectionRoots, worldPoint } from './graph.ts'
+import { attachMagneticPorts } from './magneticPorts.ts'
+import type { PendingConnection } from './connectionOverlay.ts'
 
 type FlowNode = Node<
-  { item: CanvasNode; select: (id: string) => void },
+  {
+    item: CanvasNode
+    select: (id: string) => void
+    port: (
+      id: string,
+      side: 'input' | 'output',
+      point: { x: number; y: number },
+    ) => void
+    resize: (
+      id: string,
+      width: number,
+      height: number,
+      x: number,
+      y: number,
+    ) => void
+    disabled: boolean
+  },
   'content'
 >
 const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
-  const n = data.item
-  const p = n.content?.payload
+  const n = data.item,
+    p = n.content?.payload,
+    group = n.metadata.type_key === 'core.group',
+    known = [
+      'core.text',
+      'core.link',
+      'core.group',
+      'internal.document',
+    ].includes(n.metadata.type_key)
   return (
     <article
-      className={`cc-node ${n.type_key === 'core.text' ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
+      className={`cc-node ${group ? 'cc-group-node' : n.metadata.type_key === 'core.text' ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
     >
+      <NodeResizer
+        isVisible={
+          !!selected &&
+          !data.disabled &&
+          n.capabilities.actions.includes('resize')
+        }
+        minWidth={160}
+        minHeight={100}
+        onResizeEnd={(_, size) =>
+          data.resize(n.id, size.width, size.height, size.x, size.y)
+        }
+      />
       <header className="cc-node-header">
-        {n.type_key === 'core.text' ? <Type size={14} /> : <Link2 size={14} />}
+        {group ? (
+          <Group size={14} />
+        ) : n.metadata.type_key === 'internal.document' ? (
+          <FileText size={14} />
+        ) : n.metadata.type_key === 'core.text' ? (
+          <Type size={14} />
+        ) : (
+          <Link2 size={14} />
+        )}
         <h3>
-          {n.title ||
-            (n.type_key === 'core.text' ? '未命名文字' : '未命名链接')}
+          {n.metadata.title ||
+            (group
+              ? '未命名分组'
+              : n.metadata.type_key === 'core.text'
+                ? '未命名文字'
+                : '未命名链接')}
         </h3>
         <button
           className="cc-icon-button nodrag"
@@ -50,31 +131,217 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
           <Ellipsis size={16} />
         </button>
       </header>
-      <div className="cc-node-content">
-        <p>
-          {n.unavailable
-            ? '当前无权展示此内容'
-            : p && 'body' in p
-              ? p.body
-              : p && 'url' in p
-                ? p.url
-                : '双击，写下你的想法。'}
-        </p>
-        {n.content?.truncated && <small>正文预览 · 编辑时载入全文</small>}
-      </div>
+      {!group && (
+        <div className="cc-node-content">
+          <p>
+            {!known
+              ? '此节点类型当前只读'
+              : n.status.content_state === 'unavailable'
+                ? '当前无权展示此内容'
+                : p && 'body' in p
+                  ? p.body
+                  : p && 'url' in p
+                    ? p.url
+                    : '双击，写下你的想法。'}
+          </p>
+          {n.content?.truncated && <small>正文预览 · 编辑时载入全文</small>}
+        </div>
+      )}
+      {!group &&
+        (n.metadata.type_key === 'core.text' ||
+          n.metadata.type_key === 'core.link') &&
+        (['input', 'output'] as const).map((side) => (
+          <Handle
+            key={side}
+            id={side === 'input' ? 'reference' : 'output'}
+            type={side === 'input' ? 'target' : 'source'}
+            position={side === 'input' ? Position.Left : Position.Right}
+            className={`cc-reference-handle cc-port-${side}`}
+            isConnectable={
+              !data.disabled && n.capabilities.actions.includes('move')
+            }
+          >
+            <span className="cc-port-target">
+              <button
+                tabIndex={selected ? 0 : -1}
+                disabled={
+                  data.disabled || !n.capabilities.actions.includes('move')
+                }
+                aria-label={side === 'input' ? '添加上游参考' : '添加下游节点'}
+                title={side === 'input' ? '添加上游参考' : '添加下游节点'}
+                aria-haspopup="dialog"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const rect = e.currentTarget.getBoundingClientRect()
+                  data.port(
+                    n.id,
+                    side,
+                    e.detail === 0
+                      ? {
+                          x: rect.left + rect.width / 2,
+                          y: rect.top + rect.height / 2,
+                        }
+                      : { x: e.clientX, y: e.clientY },
+                  )
+                }}
+              >
+                <Plus size={18} />
+              </button>
+            </span>
+          </Handle>
+        ))}
     </article>
   )
 })
-const nodeTypes = { content: Card }
+function edgeAnchor(node: InternalNode<FlowNode>, side: 'input' | 'output') {
+  const p = node.internals.positionAbsolute
+  return {
+    x: p.x + (side === 'output' ? (node.measured.width ?? 280) : 0),
+    y: p.y + (node.measured.height ?? 180) / 2,
+  }
+}
+// Preview and drop resolve the same painted node, with an 18 screen-pixel halo.
+function connectionTarget(
+  flow: ReactFlowInstance<FlowNode>,
+  fromID: string,
+  screen: { x: number; y: number },
+) {
+  const source = document.querySelector(
+    `[data-id="${CSS.escape(fromID)}"].react-flow__node`,
+  )
+  const surface = source?.closest('.react-flow')
+  const hit = document.elementFromPoint(screen.x, screen.y)
+  if (!surface || !hit || !surface.contains(hit)) return null
+  const eligible = (id: string | undefined) => {
+    const n = id ? flow.getInternalNode(id) : undefined
+    return n &&
+      n.id !== fromID &&
+      !n.data.disabled &&
+      ['core.text', 'core.link'].includes(n.data.item.metadata.type_key) &&
+      n.data.item.capabilities.actions.includes('move')
+      ? n
+      : null
+  }
+  const painted = hit.closest<HTMLElement>('.react-flow__node')
+  if (painted && !painted.classList.contains('cc-group-container'))
+    return eligible(painted.dataset.id)
+  // Floating tools/selection controls must never connect through to the canvas.
+  if (!hit.closest('.react-flow__pane,.cc-group-container')) return null
+  let best: InternalNode<FlowNode> | null = null,
+    distance = 18
+  const point = flow.screenToFlowPosition(screen),
+    zoom = flow.getViewport().zoom
+  for (const current of flow.getNodes()) {
+    const n = current.hidden ? null : eligible(current.id)
+    if (!n) continue
+    const p = n.internals.positionAbsolute
+    const d =
+      Math.hypot(
+        Math.max(p.x - point.x, 0, point.x - p.x - (n.measured.width ?? 280)),
+        Math.max(p.y - point.y, 0, point.y - p.y - (n.measured.height ?? 180)),
+      ) * zoom
+    if (d < distance) {
+      best = n
+      distance = d
+    }
+  }
+  return best
+}
+function ConnectionPreview(props: ConnectionLineComponentProps<FlowNode>) {
+  const flow = useReactFlow<FlowNode>(),
+    viewport = flow.getViewport()
+  const screen = flow.flowToScreenPosition({
+    x: (props.pointer.x - viewport.x) / viewport.zoom,
+    y: (props.pointer.y - viewport.y) / viewport.zoom,
+  })
+  const target = connectionTarget(flow, props.fromNode.id, screen)
+  const output = props.fromHandle.type === 'source'
+  const from = edgeAnchor(props.fromNode, output ? 'output' : 'input')
+  const to = target
+    ? edgeAnchor(target, output ? 'input' : 'output')
+    : {
+        x: (props.pointer.x - viewport.x) / viewport.zoom,
+        y: (props.pointer.y - viewport.y) / viewport.zoom,
+      }
+  const [path] = getBezierPath({
+    sourceX: from.x,
+    sourceY: from.y,
+    sourcePosition: output ? Position.Right : Position.Left,
+    targetX: to.x,
+    targetY: to.y,
+    targetPosition: output ? Position.Left : Position.Right,
+  })
+  return (
+    <>
+      {target && (
+        <rect
+          className="cc-connection-target"
+          x={target.internals.positionAbsolute.x}
+          y={target.internals.positionAbsolute.y}
+          width={target.measured.width}
+          height={target.measured.height}
+          rx={13}
+        />
+      )}
+      <path
+        className="react-flow__connection-path cc-connection-preview"
+        d={path}
+      />
+      {target && (
+        <circle
+          className="cc-connection-snap"
+          cx={to.x}
+          cy={to.y}
+          r={4 / viewport.zoom}
+        />
+      )}
+    </>
+  )
+}
+function ReferenceEdge(props: EdgeProps) {
+  const flow = useReactFlow<FlowNode>()
+  const source = flow.getInternalNode(props.source),
+    target = flow.getInternalNode(props.target)
+  const from = source
+    ? edgeAnchor(source, 'output')
+    : { x: props.sourceX, y: props.sourceY }
+  const to = target
+    ? edgeAnchor(target, 'input')
+    : { x: props.targetX, y: props.targetY }
+  const [path] = getBezierPath({
+    ...props,
+    sourceX: from.x,
+    sourceY: from.y,
+    targetX: to.x,
+    targetY: to.y,
+  })
+  return (
+    <>
+      <BaseEdge {...props} path={path} />
+      {props.selected && <path d={path} className="cc-reference-flow" />}
+    </>
+  )
+}
+const nodeTypes = { content: Card },
+  edgeTypes = { reference: ReferenceEdge }
 export default function CanvasView({
+  pendingConnections = [],
   canvas,
   selected,
+  selection,
+  onSelection,
   onSelect,
   onEdit,
   onAdd,
   panMode,
   onMove,
+  onMoveSelection,
   onDropAsset,
+  onActions,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
   disabled,
   moveDisabled,
   positions,
@@ -83,29 +350,149 @@ export default function CanvasView({
 }: {
   canvas: Canvas
   selected: string | null
+  selection: string[]
+  onSelection: (ids: string[]) => void
   onSelect: (id: string | null) => void
   onEdit: (id: string) => void
   onAdd: (x: number, y: number) => void
   panMode: boolean
   onMove: (node: CanvasNode, x: number, y: number) => void
+  onMoveSelection: (moves: { node: CanvasNode; x: number; y: number }[]) => void
   onDropAsset: (asset: Asset, x: number, y: number) => void
+  onActions: (actions: GraphAction[]) => void
+  onUndo: () => void
+  onRedo: () => void
+  canUndo: boolean
+  canRedo: boolean
   disabled: boolean
   moveDisabled: boolean
   positions?: Record<string, PositionDraft>
   assets: Asset[]
+  pendingConnections?: PendingConnection[]
   account: string
 }) {
-  const selectRef = useRef(onSelect)
-  selectRef.current = onSelect
-  const selectNode = useCallback((id: string) => selectRef.current(id), [])
-  const flow = useReactFlow<FlowNode>()
-  const viewport = useViewport()
-  const [size, setSize] = useState({ width: 0, height: 0 })
-  const [minimap, setMinimap] = useState(false)
-  const panHeld = useKeyPress('Space')
-  const dragging = useRef<CanvasNode | null>(null)
-  const [nodes, setNodes] = useState<FlowNode[]>([])
-  const element = useRef<HTMLDivElement>(null)
+  const callbacks = useRef({
+    onSelect,
+    onSelection,
+    onActions,
+    canvasNodes: canvas.nodes,
+  })
+  callbacks.current = {
+    onSelect,
+    onSelection,
+    onActions,
+    canvasNodes: canvas.nodes,
+  }
+  const resizePreviews = useRef(
+    new Map<
+      string,
+      {
+        item: CanvasNode
+        x: number
+        y: number
+        width: number
+        height: number
+      }
+    >(),
+  )
+  const flow = useReactFlow<FlowNode>(),
+    viewport = useViewport(),
+    panHeld = useKeyPress('Space')
+  const [size, setSize] = useState({ width: 0, height: 0 }),
+    [minimap, setMinimap] = useState(false),
+    [nodes, setNodes] = useState<FlowNode[]>([])
+  const [portMenu, setPortMenu] = useState<{
+    id: string
+    side: 'input' | 'output'
+    x: number
+    y: number
+    screen: { x: number; y: number }
+  } | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
+  const element = useRef<HTMLDivElement>(null),
+    dragging = useRef(new Set<string>()),
+    dragBases = useRef(new Map<string, CanvasNode>())
+  const selectNode = useCallback((id: string) => {
+    callbacks.current.onSelect(id)
+    callbacks.current.onSelection([id])
+  }, [])
+  const openPort = useCallback(
+    (
+      id: string,
+      side: 'input' | 'output',
+      screen: { x: number; y: number },
+    ) => {
+      const node = flow.getInternalNode(id)
+      if (!node) return
+      const p = node.internals.positionAbsolute
+      setPortMenu({
+        id,
+        side,
+        screen,
+        x:
+          p.x + (side === 'output' ? (node.measured.width ?? 280) + 200 : -200),
+        y: p.y + (node.measured.height ?? 180) / 2,
+      })
+    },
+    [flow],
+  )
+  const magnetBlocked = useRef(false)
+  magnetBlocked.current = disabled || panMode || panHeld || !!portMenu
+  useEffect(() => {
+    if (!element.current) return
+    return attachMagneticPorts(
+      element.current,
+      () => flow.getViewport().zoom,
+      () => magnetBlocked.current || dragging.current.size > 0,
+    )
+  }, [flow])
+  useLayoutEffect(() => {
+    const menu = menuRef.current,
+      surface = element.current
+    if (!portMenu || !menu || !surface) return
+    // Menu coordinates are screen coordinates, independent of new-node placement.
+    const place = () => {
+      const bounds = surface.getBoundingClientRect()
+      menu.style.maxHeight = `${Math.max(0, bounds.height - 24)}px`
+      menu.style.left = `${Math.max(12, Math.min(bounds.width - menu.offsetWidth - 12, portMenu.screen.x - bounds.left))}px`
+      menu.style.top = `${Math.max(12, Math.min(bounds.height - menu.offsetHeight - 12, portMenu.screen.y - bounds.top))}px`
+    }
+    place()
+    const observer = new ResizeObserver(place)
+    observer.observe(surface)
+    observer.observe(menu)
+    return () => observer.disconnect()
+  }, [portMenu])
+  const resize = useCallback(
+    (id: string, width: number, height: number, x: number, y: number) => {
+      const source = callbacks.current.canvasNodes.find((n) => n.id === id)
+      if (!source) return
+      resizePreviews.current.set(id, { item: source, x, y, width, height })
+      const actions: GraphAction[] = [
+        { type: 'move_node', node_id: id, x, y },
+        { type: 'resize_node', node_id: id, width, height },
+      ]
+      if (source.metadata.type_key === 'core.group') {
+        for (const child of callbacks.current.canvasNodes.filter(
+          (n) => n.parent_id === id,
+        )) {
+          const px = child.metadata.x + source.metadata.x - x
+          const py = child.metadata.y + source.metadata.y - y
+          resizePreviews.current.set(child.id, {
+            item: child,
+            x: px,
+            y: py,
+            width: child.metadata.width,
+            height: child.metadata.height,
+          })
+          actions.push({ type: 'move_node', node_id: child.id, x: px, y: py })
+        }
+      }
+      callbacks.current.onActions(actions)
+    },
+    [],
+  )
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => {
       if (entry)
@@ -117,35 +504,78 @@ export default function CanvasView({
     if (element.current) observer.observe(element.current)
     return () => observer.disconnect()
   }, [])
-
   useEffect(() => {
     setNodes((previous) => {
-      const byID = new Map(previous.map((n) => [n.id, n]))
-      const next = canvas.nodes.map((n): FlowNode => {
-        const old = byID.get(n.id)
-        const local = positions?.[`${canvas.id}:${n.id}`]
-        const position =
-          dragging.current?.id === n.id && old
-            ? old.position
-            : { x: local?.x ?? n.x, y: local?.y ?? n.y }
+      const byID = new Map(previous.map((n) => [n.id, n])),
+        roots = new Set(selectionRoots(canvas.nodes, selection))
+      const next = parentFirst(canvas.nodes).map((n): FlowNode => {
+        const preview = resizePreviews.current.get(n.id)
+        if (preview && preview.item !== n) resizePreviews.current.delete(n.id)
+        const resized = preview?.item === n ? preview : undefined
+        const old = byID.get(n.id),
+          local = positions?.[`${canvas.id}:${n.id}`],
+          position =
+            dragging.current.has(n.id) && old
+              ? old.position
+              : {
+                  x: resized?.x ?? local?.x ?? n.metadata.x,
+                  y: resized?.y ?? local?.y ?? n.metadata.y,
+                },
+          isSelected = selection.includes(n.id),
+          draggable =
+            !moveDisabled &&
+            !panMode &&
+            !panHeld &&
+            (!isSelected || roots.has(n.id)) &&
+            n.capabilities.actions.includes('move')
         if (
           old &&
           old.data.item === n &&
-          old.selected === (n.id === selected) &&
-          old.draggable === (!moveDisabled && !panMode && !panHeld) &&
+          old.selected === isSelected &&
+          old.draggable === draggable &&
+          old.data.disabled === disabled &&
           old.position.x === position.x &&
-          old.position.y === position.y
+          old.position.y === position.y &&
+          old.parentId === (n.parent_id ?? undefined)
         )
           return old
         return {
           ...old,
           id: n.id,
           type: 'content',
+          className:
+            n.metadata.type_key === 'core.group'
+              ? 'cc-group-container'
+              : undefined,
           position,
-          data:
-            old?.data.item === n ? old.data : { item: n, select: selectNode },
-          selected: n.id === selected,
-          draggable: !moveDisabled && !panMode && !panHeld,
+          width:
+            resized?.width ??
+            (old?.data.item === n ? old.width : undefined) ??
+            n.metadata.width,
+          height:
+            resized?.height ??
+            (old?.data.item === n ? old.height : undefined) ??
+            n.metadata.height,
+          parentId: n.parent_id ?? undefined,
+          style: {
+            width: n.metadata.width,
+            height: n.metadata.height,
+            pointerEvents:
+              n.metadata.type_key === 'core.group' ? 'none' : undefined,
+          },
+          dragHandle:
+            n.metadata.type_key === 'core.group'
+              ? '.cc-node-header'
+              : undefined,
+          data: {
+            item: n,
+            select: selectNode,
+            port: openPort,
+            resize,
+            disabled,
+          },
+          selected: isSelected,
+          draggable,
         }
       })
       return next.length === previous.length &&
@@ -153,56 +583,231 @@ export default function CanvasView({
         ? previous
         : next
     })
-  }, [canvas, selected, moveDisabled, positions, panMode, panHeld, selectNode])
+  }, [
+    canvas,
+    selection,
+    moveDisabled,
+    positions,
+    panMode,
+    panHeld,
+    selectNode,
+    openPort,
+    resize,
+    disabled,
+  ])
+  useEffect(() => {
+    if (!portMenu) return
+    const previous = document.activeElement
+    menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
+    const outside = (event: PointerEvent) => {
+      if (
+        event.target instanceof window.Node &&
+        !menuRef.current?.contains(event.target)
+      )
+        setPortMenu(null)
+    }
+    document.addEventListener('pointerdown', outside)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      if (previous instanceof HTMLElement && previous.isConnected)
+        previous.focus()
+    }
+  }, [portMenu])
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
   const changeNodes = useCallback((changes: NodeChange<FlowNode>[]) => {
-    setNodes((ns) => applyNodeChanges(changes, ns))
+    setNodes((nodes) => applyNodeChanges(changes, nodes))
+    // Only direct selection intents update the page. Mirroring the internal
+    // selection observer back into controlled nodes loops during parent changes.
+    const selections = changes.filter((c) => c.type === 'select')
+    if (selections.length) {
+      const ids = new Set(selectionRef.current)
+      for (const c of selections) {
+        if (c.selected) ids.add(c.id)
+        else ids.delete(c.id)
+      }
+      selectionRef.current = [...ids]
+      callbacks.current.onSelection(selectionRef.current)
+    }
   }, [])
-
-  const active = nodes.find((n) => n.id === selected)
-  const toolbarX = active
-    ? Math.max(
-        12,
-        Math.min(
-          size.width - 190,
-          viewport.x + (active.position.x + 140) * viewport.zoom - 85,
-        ),
-      )
-    : 0
-  const toolbarY = active
-    ? Math.max(
-        12,
-        Math.min(
-          size.height - 100,
-          viewport.y + active.position.y * viewport.zoom - 55,
-        ),
-      )
-    : 0
-
+  const active = nodes.find((n) => n.id === selected),
+    viewNodes = nodes.map((n) => ({
+      ...n.data.item,
+      metadata: { ...n.data.item.metadata, x: n.position.x, y: n.position.y },
+    })),
+    point = active ? worldPoint(viewNodes, active.id) : { x: 0, y: 0 },
+    selectionReadOnly = selection.some(
+      (id) =>
+        !nodes
+          .find((n) => n.id === id)
+          ?.data.item.capabilities.actions.includes('move'),
+    )
+  const toolbarX = Math.max(
+      12,
+      Math.min(
+        size.width - 340,
+        viewport.x +
+          (point.x + (active?.width ?? 280) / 2) * viewport.zoom -
+          160,
+      ),
+    ),
+    toolbarY = Math.max(
+      12,
+      Math.min(size.height - 100, viewport.y + point.y * viewport.zoom - 55),
+    )
+  const expanded = new Set(selection)
+  for (let changed = true; changed; ) {
+    changed = false
+    for (const n of canvas.nodes)
+      if (n.parent_id && expanded.has(n.parent_id) && !expanded.has(n.id)) {
+        expanded.add(n.id)
+        changed = true
+      }
+  }
+  const persistedEdges = new Set(canvas.edges.map((edge) => edge.id))
+  const edges: Edge[] = [...(canvas.edges ?? []), ...pendingConnections].map(
+    (e) => ({
+      id: e.id,
+      selectable: persistedEdges.has(e.id),
+      focusable: persistedEdges.has(e.id),
+      source: e.source_node_id,
+      target: e.target_node_id,
+      sourceHandle: e.source_port,
+      targetHandle: e.target_port,
+      type: 'reference',
+      selected:
+        expanded.has(e.source_node_id) || expanded.has(e.target_node_id),
+      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+      style: {
+        pointerEvents: persistedEdges.has(e.id) ? 'auto' : 'none',
+        stroke: 'var(--accent)',
+        strokeWidth: 1.3,
+        opacity:
+          expanded.has(e.source_node_id) || expanded.has(e.target_node_id)
+            ? 0.9
+            : 0.42,
+      },
+    }),
+  )
+  const act = (actions: GraphAction[]) => {
+    if (!disabled) onActions(actions)
+  }
+  function removeSelection() {
+    if (selectedEdge) {
+      if (persistedEdges.has(selectedEdge))
+        act([{ type: 'disconnect_reference', edge_id: selectedEdge }])
+      setSelectedEdge(null)
+      return
+    }
+    if (selection.length)
+      act([
+        { type: 'remove_nodes', node_ids: selection, group_mode: 'subtree' },
+      ])
+  }
+  function moveSelection(dx: number, dy: number) {
+    const roots = selectionRoots(canvas.nodes, selection)
+    const moves = nodes
+      .filter((n) => roots.includes(n.id))
+      .map((n) => ({
+        node: n.data.item,
+        x: n.position.x + dx,
+        y: n.position.y + dy,
+      }))
+    if (
+      moves.length === 1 &&
+      !moves[0].node.parent_id &&
+      moves[0].node.metadata.type_key !== 'core.group'
+    )
+      onMove(moves[0].node, moves[0].x, moves[0].y)
+    else onMoveSelection(moves)
+  }
+  function createConnected(kind: 'text' | 'link') {
+    if (!portMenu) return
+    const id = `cwnode_${crypto.randomUUID()}`,
+      isOutput = portMenu.side === 'output'
+    act([
+      {
+        type: 'add_node',
+        node_id: id,
+        type_key: `core.${kind}`,
+        x: portMenu.x - (isOutput ? 0 : 280),
+        y: portMenu.y - 90,
+      },
+      {
+        type: 'connect_reference',
+        source_node_id: isOutput ? portMenu.id : id,
+        target_node_id: isOutput ? id : portMenu.id,
+        source_port: 'output',
+        target_port: 'reference',
+        role: 'reference',
+      },
+    ])
+    setPortMenu(null)
+  }
   return (
     <div
       className="cc-flow"
       ref={element}
       onKeyDown={(e) => {
-        if ((e.target as HTMLElement).closest('button,input,textarea,select'))
+        if (
+          (e.target as HTMLElement).closest('button,input,textarea,select') ||
+          e.nativeEvent.isComposing
+        )
           return
-        const delta: Record<string, [number, number]> = {
-          ArrowLeft: [-20, 0],
-          ArrowRight: [20, 0],
-          ArrowUp: [0, -20],
-          ArrowDown: [0, 20],
+        const command = e.metaKey || e.ctrlKey,
+          key = e.key.toLowerCase()
+        if (command && key === 'z') {
+          e.preventDefault()
+          if (e.shiftKey) {
+            if (canRedo) onRedo()
+          } else if (canUndo) onUndo()
+          return
         }
-        const step = delta[e.key]
+        if (command && key === 'g') {
+          e.preventDefault()
+          if (
+            e.shiftKey &&
+            active?.data.item.metadata.type_key === 'core.group'
+          )
+            act([{ type: 'ungroup_nodes', node_id: active.id }])
+          else if (selection.length)
+            act([{ type: 'group_nodes', node_ids: selection }])
+          return
+        }
+        if (command && key === 'd') {
+          e.preventDefault()
+          act([
+            {
+              type: 'duplicate_selection',
+              node_ids: selection,
+              dx: 36,
+              dy: 36,
+            },
+          ])
+          return
+        }
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault()
+          removeSelection()
+          return
+        }
+        const delta: Record<string, [number, number]> = {
+            ArrowLeft: [-20, 0],
+            ArrowRight: [20, 0],
+            ArrowUp: [0, -20],
+            ArrowDown: [0, 20],
+          },
+          step = delta[e.key]
         if (active && step && !moveDisabled) {
           e.preventDefault()
           e.stopPropagation()
-          onMove(
-            active.data.item,
-            active.position.x + step[0],
-            active.position.y + step[1],
-          )
+          moveSelection(...step)
         } else if (e.key === 'Enter' && selected) {
           e.preventDefault()
           onEdit(selected)
+        } else if (e.key === 'Escape') {
+          setPortMenu(null)
+          onSelection([])
         }
       }}
       onDragOver={(e) => {
@@ -226,39 +831,131 @@ export default function CanvasView({
     >
       <ReactFlow<FlowNode>
         nodes={nodes}
-        edges={[]}
+        edges={edges}
         nodeTypes={nodeTypes}
-        nodesConnectable={false}
+        edgeTypes={edgeTypes}
+        connectionLineComponent={ConnectionPreview}
+        connectionRadius={0}
+        nodesConnectable={!disabled}
         nodesDraggable={!moveDisabled && !panHeld && !panMode}
         disableKeyboardA11y
         deleteKeyCode={null}
-        multiSelectionKeyCode={null}
+        multiSelectionKeyCode={['Shift', 'Meta', 'Control']}
+        selectionOnDrag={!panMode && !panHeld}
+        selectionMode={SelectionMode.Partial}
         onNodesChange={changeNodes}
-        onNodeClick={(_, n) => onSelect(n.id)}
         onNodeDoubleClick={(_, n) => onEdit(n.id)}
-        onPaneClick={() => onSelect(null)}
+        onPaneClick={() => {
+          onSelect(null)
+          onSelection([])
+          setPortMenu(null)
+          setSelectedEdge(null)
+        }}
         onDoubleClick={(e) => {
           if (
             disabled ||
             !(e.target as HTMLElement).classList.contains('react-flow__pane')
           )
             return
-          const point = flow.screenToFlowPosition({
-            x: e.clientX,
-            y: e.clientY,
+          const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+          onAdd(p.x, p.y)
+        }}
+        onNodeDragStart={(_, n, ns) => {
+          const roots = selectionRoots(
+            canvas.nodes,
+            ns.length ? ns.map((v) => v.id) : [n.id],
+          )
+          dragging.current = new Set(roots)
+          dragBases.current = new Map(
+            canvas.nodes
+              .filter((v) => roots.includes(v.id))
+              .map((v) => [v.id, v]),
+          )
+        }}
+        onNodeDragStop={(_, n, ns) => {
+          const list = ns.length ? ns : [n]
+          const moves = list
+            .filter((v) => dragging.current.has(v.id))
+            .map((v) => ({
+              node: dragBases.current.get(v.id) ?? v.data.item,
+              x: v.position.x,
+              y: v.position.y,
+            }))
+          dragging.current.clear()
+          if (
+            moves.length === 1 &&
+            !moves[0].node.parent_id &&
+            moves[0].node.metadata.type_key !== 'core.group'
+          )
+            onMove(moves[0].node, moves[0].x, moves[0].y)
+          else if (moves.length) onMoveSelection(moves)
+        }}
+        onConnect={(connection) => {
+          if (
+            connection.source &&
+            connection.target &&
+            connection.sourceHandle === 'output' &&
+            connection.targetHandle === 'reference'
+          )
+            act([
+              {
+                type: 'connect_reference',
+                source_node_id: connection.source,
+                target_node_id: connection.target,
+                source_port: 'output',
+                target_port: 'reference',
+                role: 'reference',
+              },
+            ])
+        }}
+        connectOnClick={false}
+        onConnectEnd={(event, state) => {
+          if (state.isValid || !state.fromNode || disabled) return
+          const pointer =
+            'changedTouches' in event ? event.changedTouches[0] : event
+          if (!pointer) return
+          const screen = { x: pointer.clientX, y: pointer.clientY }
+          const target = connectionTarget(flow, state.fromNode.id, screen)
+          if (target) {
+            const output = state.fromHandle?.type === 'source'
+            act([
+              {
+                type: 'connect_reference',
+                source_node_id: output ? state.fromNode.id : target.id,
+                target_node_id: output ? target.id : state.fromNode.id,
+                source_port: 'output',
+                target_port: 'reference',
+                role: 'reference',
+              },
+            ])
+            return
+          }
+          const hit = document.elementFromPoint(screen.x, screen.y)
+          if (
+            !hit?.closest('.react-flow__pane') ||
+            hit.closest('.react-flow__node')
+          )
+            return
+          const p = flow.screenToFlowPosition({
+            x: pointer.clientX,
+            y: pointer.clientY,
           })
-          onAdd(point.x, point.y)
+          setPortMenu({
+            id: state.fromNode.id,
+            side: state.fromHandle?.type === 'target' ? 'input' : 'output',
+            ...p,
+            screen: { x: pointer.clientX, y: pointer.clientY },
+          })
         }}
-        onNodeDragStart={(_, n) => {
-          dragging.current = n.data.item
-        }}
-        onNodeDragStop={(_, n) => {
-          const base = dragging.current ?? n.data.item
-          dragging.current = null
-          onMove(base, n.position.x, n.position.y)
+        onEdgeClick={(_, edge) =>
+          setSelectedEdge(persistedEdges.has(edge.id) ? edge.id : null)
+        }
+        onEdgeDoubleClick={(_, edge) => {
+          if (persistedEdges.has(edge.id))
+            act([{ type: 'disconnect_reference', edge_id: edge.id }])
         }}
         panOnScroll
-        panOnScrollMode={PanOnScrollMode.Vertical}
+        panOnScrollMode={PanOnScrollMode.Free}
         zoomOnScroll={false}
         zoomActivationKeyCode={['Control', 'Meta']}
         panOnDrag={panMode ? true : [1]}
@@ -290,6 +987,7 @@ export default function CanvasView({
             /* Viewport preferences are optional. */
           }
         }}
+        onMoveStart={() => setPortMenu(null)}
         onMoveEnd={(_, v) => {
           try {
             localStorage.setItem(
@@ -301,12 +999,12 @@ export default function CanvasView({
           }
         }}
       >
-        <Background color="var(--canvas-dot)" gap={22} size={1} />
+        <Background gap={24} size={1} color="#64757030" />
         {minimap && (
           <MiniMap
             pannable
             zoomable
-            nodeColor="#5a6764"
+            nodeColor="#607a7180"
             maskColor="#14161988"
             style={{ background: '#252b30' }}
           />
@@ -320,20 +1018,200 @@ export default function CanvasView({
           style={{ left: toolbarX, top: toolbarY }}
         >
           <span>
-            {active.data.item.type_key === 'core.text'
-              ? '文字节点'
-              : '链接节点'}
+            {selection.length > 1
+              ? `${selection.length} 个节点`
+              : active.data.item.metadata.type_key === 'core.group'
+                ? '布局分组'
+                : active.data.item.metadata.type_key === 'core.text'
+                  ? '文字节点'
+                  : '链接节点'}
           </span>
+          {selection.length === 1 && (
+            <button
+              className="cc-icon-button"
+              aria-label={
+                active.data.item.metadata.type_key === 'internal.document'
+                  ? '最大化文档'
+                  : '编辑节点'
+              }
+              title="编辑节点 · 双击"
+              onClick={() => onEdit(active.id)}
+            >
+              {active.data.item.metadata.type_key === 'internal.document' ? (
+                <Maximize2 size={16} />
+              ) : (
+                <Pencil size={16} />
+              )}
+            </button>
+          )}
           <button
             className="cc-icon-button"
-            aria-label="编辑节点"
-            title="编辑节点 · 双击"
-            onClick={() => onEdit(active.id)}
+            aria-label="打组"
+            title="打组 · ⌘G"
+            disabled={disabled || selectionReadOnly}
+            onClick={() => act([{ type: 'group_nodes', node_ids: selection }])}
           >
-            <Pencil size={16} />
+            <Group size={16} />
+          </button>
+          {selection.length === 1 &&
+            active.data.item.metadata.type_key === 'core.group' && (
+              <button
+                className="cc-icon-button"
+                aria-label="解组"
+                title="解组 · ⇧⌘G"
+                disabled={disabled || selectionReadOnly}
+                onClick={() =>
+                  act([{ type: 'ungroup_nodes', node_id: active.id }])
+                }
+              >
+                <Ungroup size={16} />
+              </button>
+            )}
+          <button
+            className="cc-icon-button"
+            aria-label="复制节点"
+            title="复制 · ⌘D"
+            disabled={disabled || selectionReadOnly}
+            onClick={() =>
+              act([
+                {
+                  type: 'duplicate_selection',
+                  node_ids: selection,
+                  dx: 36,
+                  dy: 36,
+                },
+              ])
+            }
+          >
+            <Copy size={16} />
+          </button>
+          <button
+            className="cc-icon-button"
+            aria-label={
+              active.data.item.metadata.type_key === 'core.group'
+                ? '移除分组及其中节点'
+                : '移除节点'
+            }
+            title="移除选区，可撤销"
+            disabled={disabled || selectionReadOnly}
+            onClick={removeSelection}
+          >
+            <Trash2 size={16} />
           </button>
         </div>
       )}
+      {portMenu && (
+        <div
+          className="cc-port-menu cc-glass"
+          ref={menuRef}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.stopPropagation()
+              setPortMenu(null)
+            }
+          }}
+          role="dialog"
+          aria-label="创建并连接节点"
+        >
+          <div>
+            <span>
+              {portMenu.side === 'input' ? '添加上游参考' : '添加下游节点'}
+            </span>
+            <button
+              className="cc-icon-button"
+              aria-label="关闭连接菜单"
+              onClick={() => setPortMenu(null)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <button disabled={disabled} onClick={() => createConnected('text')}>
+            <Type size={16} />
+            文字
+          </button>
+          <button disabled={disabled} onClick={() => createConnected('link')}>
+            <Link2 size={16} />
+            链接
+          </button>
+          <label className="cc-connect-existing">
+            连接已有节点
+            <select
+              className="input"
+              aria-label="连接已有节点"
+              value=""
+              disabled={disabled}
+              onChange={(e) => {
+                const id = e.target.value
+                if (!id) return
+                act([
+                  {
+                    type: 'connect_reference',
+                    source_node_id:
+                      portMenu.side === 'output' ? portMenu.id : id,
+                    target_node_id:
+                      portMenu.side === 'output' ? id : portMenu.id,
+                    source_port: 'output',
+                    target_port: 'reference',
+                    role: 'reference',
+                  },
+                ])
+                setPortMenu(null)
+              }}
+            >
+              <option value="">选择节点…</option>
+              {canvas.nodes
+                .filter(
+                  (n) =>
+                    n.id !== portMenu.id &&
+                    n.capabilities.actions.includes('reference'),
+                )
+                .map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.metadata.title ||
+                      (n.metadata.type_key === 'core.text'
+                        ? '未命名文字'
+                        : '未命名链接')}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+      )}
+      {selectedEdge && canvas.edges.some((e) => e.id === selectedEdge) && (
+        <div className="cc-edge-tools cc-glass">
+          <span>参考连线</span>
+          <button
+            className="cc-icon-button"
+            aria-label="断开参考"
+            title="断开参考，可撤销"
+            disabled={disabled}
+            onClick={() => {
+              act([{ type: 'disconnect_reference', edge_id: selectedEdge }])
+              setSelectedEdge(null)
+            }}
+          >
+            <Trash2 size={16} />
+          </button>
+        </div>
+      )}
+      <div className="cc-history-tools cc-glass">
+        <button
+          aria-label="撤销"
+          title="撤销 · ⌘Z"
+          disabled={!canUndo || disabled}
+          onClick={onUndo}
+        >
+          <Undo2 size={17} />
+        </button>
+        <button
+          aria-label="重做"
+          title="重做 · ⇧⌘Z"
+          disabled={!canRedo || disabled}
+          onClick={onRedo}
+        >
+          <Redo2 size={17} />
+        </button>
+      </div>
       <div className="cc-viewport-controls cc-glass">
         <button aria-label="缩小" onClick={() => void flow.zoomOut()}>
           <Minus size={17} />
@@ -363,15 +1241,6 @@ export default function CanvasView({
           <MapIcon size={17} />
         </button>
       </div>
-      {!canvas.nodes.length && (
-        <div className="cc-canvas-empty">
-          <h2>从一个念头开始。</h2>
-          <p>双击画布，或从资产库放入第一份灵感。</p>
-        </div>
-      )}
-      <p className="cc-gesture">
-        滚轮上下平移 · Ctrl / ⌘ + 滚轮缩放 · 空格拖动平移
-      </p>
     </div>
   )
 }

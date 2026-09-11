@@ -1,3 +1,4 @@
+import type { GraphRead } from './api.ts'
 import type { Organization } from './libraryState.ts'
 // The journal owns local recovery only. It never marks server data as saved.
 export type Job = {
@@ -9,6 +10,7 @@ export type Job = {
   draftKey?: string
   draftValue?: Draft
   position?: { key: string; token: string }
+  positions?: { key: string; token: string }[]
 }
 export type Draft = {
   organization?: Organization
@@ -20,6 +22,8 @@ export type Draft = {
 }
 // A placement intent is separate from the immutable request currently in flight.
 export type PositionDraft = {
+  batchID?: string
+  readSet?: GraphRead[]
   canvasID: string
   nodeID: string
   x: number
