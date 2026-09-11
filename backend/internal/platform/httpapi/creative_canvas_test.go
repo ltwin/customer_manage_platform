@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 )
 
 func TestCreativeCanvasHTTPPersistenceAndEnvelope(t *testing.T) {
@@ -111,28 +112,24 @@ func TestCreativeCanvasHTTPPersistenceAndEnvelope(t *testing.T) {
 	if missingPointer.Code != 400 {
 		t.Fatalf("missing nullable required pointer %d", missingPointer.Code)
 	}
-	var before struct {
-		Nodes []struct {
-			ContentRevisionID string  `json:"content_revision_id"`
-			X                 float64 `json:"x"`
-			DataRevision      string  `json:"data_revision"`
-			PlacementRevision string  `json:"placement_revision"`
-		} `json:"nodes"`
-	}
+	var before httpapi.CreativeCanvasSnapshot
 	current := shootPlanningRequest(t, router, "GET", "/api/v1/creative/canvases/"+project.CanvasID, token, "", "")
 	if err := json.Unmarshal(current.Body.Bytes(), &before); err != nil {
 		t.Fatal(err)
 	}
-	if len(before.Nodes) != 1 || before.Nodes[0].X != 10 || before.Nodes[0].PlacementRevision != "1" {
+	if len(before.Nodes) != 1 || before.Nodes[0].Metadata.X != 10 || before.Nodes[0].PlacementRevision != "1" {
 		t.Fatal("invalid move mutated state")
 	}
-	oldRevision := before.Nodes[0].ContentRevisionID
+	oldRevision, err := before.Nodes[0].Data.ContentRevisionId.Get()
+	if err != nil {
+		t.Fatal("content pointer missing", err)
+	}
 	edited, _, _ := request("/api/v1/creative/canvases/"+project.CanvasID+"/commands", map[string]any{"type": "replace_content", "node_id": nodeID, "expected_data_revision": "1", "expected_content_revision_id": oldRevision, "payload": map[string]any{"body": "新正文"}})
 	if edited.Code != 200 {
 		t.Fatalf("edit %d %s", edited.Code, edited.Body.String())
 	}
 	stale := shootPlanningRequest(t, router, "GET", "/api/v1/creative/content-revisions/"+oldRevision, token, "", "")
-	if stale.Code != 404 {
+	if stale.Code != 200 || !strings.Contains(stale.Body.String(), "原始文字") {
 		t.Fatalf("stale revision %d %s", stale.Code, stale.Body.String())
 	}
 	for _, length := range []int{500, 501, 2000} {

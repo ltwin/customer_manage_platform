@@ -1,5 +1,7 @@
 import type { Journal, JournalStorage, Job } from './journal.ts'
+import { graphReadSet, selectionRoots } from './graph.ts'
 import { emptyJournal } from './journal.ts'
+import { ConnectionOverlay } from './connectionOverlay.ts'
 import type { Canvas, CanvasNode, Command } from './api.ts'
 
 export type QueueTransport = {
@@ -17,6 +19,7 @@ export const errorMessage = (e: unknown): string =>
 
 // One immutable operation may be pending per editor session. Further edits stay drafts.
 export class SaveQueue {
+  readonly connections = new ConnectionOverlay()
   value: Journal = emptyJournal()
   busy = false
   localPending = 0
@@ -41,6 +44,7 @@ export class SaveQueue {
   }
   async load() {
     this.value = await this.storage.load()
+    if (this.value.job) this.connections.stage(this.value.job)
     this.changed()
   }
   update(next: Journal): Promise<void> {
@@ -67,8 +71,8 @@ export class SaveQueue {
     if (
       previous
         ? previous.x === x && previous.y === y
-        : node.x === x &&
-          node.y === y &&
+        : node.metadata.x === x &&
+          node.metadata.y === y &&
           (!ownRevision ||
             BigInt(ownRevision) <= BigInt(node.placement_revision))
     )
@@ -98,6 +102,63 @@ export class SaveQueue {
       },
     })
   }
+  stagePositions(
+    canvas: Canvas,
+    moves: { node: CanvasNode; x: number; y: number }[],
+  ) {
+    const roots = new Set(
+      selectionRoots(
+        canvas.nodes,
+        moves.map((m) => m.node.id),
+      ),
+    )
+    const batchID = crypto.randomUUID(),
+      positions = { ...this.value.positions }
+    const readSet = graphReadSet(canvas)
+    for (const r of readSet) {
+      const own = this.placementRevisions.get(`${canvas.id}:${r.id}`)
+      if (
+        own &&
+        r.placement_revision &&
+        BigInt(own) > BigInt(r.placement_revision)
+      )
+        r.placement_revision = own
+    }
+    for (const m of moves) {
+      if (
+        !roots.has(m.node.id) ||
+        !Number.isFinite(m.x) ||
+        !Number.isFinite(m.y)
+      )
+        continue
+      const key = `${canvas.id}:${m.node.id}`,
+        previous = positions[key],
+        own = this.placementRevisions.get(key)
+      if (
+        previous
+          ? previous.x === m.x && previous.y === m.y
+          : m.node.metadata.x === m.x &&
+            m.node.metadata.y === m.y &&
+            (!own || BigInt(own) <= BigInt(m.node.placement_revision))
+      )
+        continue
+      positions[key] = {
+        canvasID: canvas.id,
+        nodeID: m.node.id,
+        x: m.x,
+        y: m.y,
+        revision:
+          previous?.revision ??
+          this.placementRevisions.get(key) ??
+          m.node.placement_revision,
+        token: crypto.randomUUID(),
+        synced: false,
+        batchID,
+        readSet,
+      }
+    }
+    return this.update({ ...this.value, positions })
+  }
   async sendNextPosition(canvasID: string) {
     if (this.closed || this.busy || this.value.job) return
     const entry = Object.entries(this.value.positions ?? {}).find(
@@ -105,6 +166,33 @@ export class SaveQueue {
     )
     if (!entry) return
     const [key, p] = entry
+    if (p.batchID) {
+      const batch = Object.entries(this.value.positions ?? {}).filter(
+        ([, v]) =>
+          v.canvasID === canvasID && v.batchID === p.batchID && !v.synced,
+      )
+      const readSet = structuredClone(p.readSet ?? [])
+      for (const [, position] of batch) {
+        const r = readSet.find((r) => r.id === position.nodeID)
+        if (r) r.placement_revision = position.revision
+      }
+      return this.enqueue(
+        `/canvases/${canvasID}/commands`,
+        {
+          type: 'batch',
+          read_set: readSet,
+          actions: batch.map(([, v]) => ({
+            type: 'move_node',
+            node_id: v.nodeID,
+            x: v.x,
+            y: v.y,
+          })),
+        } satisfies Command,
+        undefined,
+        undefined,
+        batch.map(([key, v]) => ({ key, token: v.token })),
+      )
+    }
     return this.enqueue(
       `/canvases/${canvasID}/commands`,
       {
@@ -138,6 +226,7 @@ export class SaveQueue {
     payload: unknown,
     draftKey?: string,
     position?: Job['position'],
+    positionBatch?: Job['positions'],
   ): Promise<unknown> {
     if (this.busy || this.value.job)
       throw new Error('请先处理上一次保存，再提交新的修改')
@@ -147,6 +236,7 @@ export class SaveQueue {
       operation,
       draftKey,
       position,
+      positions: positionBatch,
       draftValue: draftKey ? this.value.drafts[draftKey] : undefined,
       state: 'ready',
       message: '',
@@ -156,11 +246,15 @@ export class SaveQueue {
         payload,
       }),
     }
+    this.connections.stage(job)
     // Preparation is part of the active save, never an idle recovery prompt.
     this.busy = true
     this.changed()
     try {
       await this.update({ ...this.value, job })
+    } catch (error) {
+      this.connections.remove(job.operation)
+      throw error
     } finally {
       this.busy = false
       this.changed()
@@ -171,6 +265,7 @@ export class SaveQueue {
     if (this.closed || this.busy || !this.value.job) return
     const job = structuredClone(this.value.job)
     if (job.state === 'rejected') return
+    this.connections.stage(job)
     this.busy = true
     this.changed()
     let uncertain = recover || job.state === 'unknown'
@@ -216,6 +311,14 @@ export class SaveQueue {
         code === 'creative_asset_trashed'
       )
         uncertain = false
+      if (
+        definitive ||
+        (!uncertain &&
+          (code === 'creative_revision_conflict' ||
+            code === 'archived_read_only' ||
+            code === 'creative_asset_trashed'))
+      )
+        this.connections.remove(job.operation)
       await this.update({
         ...this.value,
         job: {
@@ -244,6 +347,70 @@ export class SaveQueue {
     )
       delete drafts[job.draftKey]
     const positions = { ...this.value.positions }
+    if (job.positions) {
+      if (
+        !result ||
+        typeof result !== 'object' ||
+        !('object_results' in result) ||
+        !Array.isArray(result.object_results)
+      )
+        throw new Error('画布保存结果无法识别，请恢复原操作')
+      for (const submitted of job.positions) {
+        const nodeID = submitted.key.slice(submitted.key.indexOf(':') + 1)
+        const matches = result.object_results.filter(
+          (value: unknown) =>
+            value &&
+            typeof value === 'object' &&
+            'id' in value &&
+            value.id === nodeID &&
+            'kind' in value &&
+            value.kind === 'node',
+        )
+        if (
+          matches.length !== 1 ||
+          !matches[0].is_live ||
+          typeof matches[0].placement_revision !== 'string' ||
+          !/^[1-9][0-9]*$/.test(matches[0].placement_revision)
+        )
+          throw new Error('位置保存回执不完整，请恢复原操作')
+      }
+      for (const item of result.object_results) {
+        if (
+          !item ||
+          typeof item !== 'object' ||
+          typeof item.id !== 'string' ||
+          item.kind !== 'node'
+        )
+          continue
+        const rev: unknown = item.placement_revision
+        if (typeof rev !== 'string' || !/^[1-9][0-9]*$/.test(rev))
+          throw new Error('布局版本无法识别')
+        const pathCanvas = job.path.split('/')[2],
+          key = `${pathCanvas}:${item.id}`
+        this.placementRevisions.set(key, rev)
+        for (const p of Object.values(positions)) {
+          if (p.canvasID !== pathCanvas) continue
+          const observed = p.readSet?.find((r) => r.id === item.id)
+          const submitted = JSON.parse(job.body).payload.read_set.find(
+            (r: { id: string }) => r.id === item.id,
+          )
+          if (
+            observed &&
+            submitted &&
+            observed.placement_revision === submitted.placement_revision
+          )
+            observed.placement_revision = rev
+        }
+        const current = positions[key],
+          submitted = job.positions.find((p) => p.key === key)
+        if (current && submitted)
+          positions[key] = {
+            ...current,
+            revision: rev,
+            synced: current.token === submitted.token,
+          }
+      }
+    }
     if (job.position) {
       if (
         !result ||
@@ -262,12 +429,14 @@ export class SaveQueue {
           synced: current.token === job.position.token,
         }
     }
+    this.connections.confirm(job, result)
     await this.update({ ...this.value, job: null, drafts, positions })
   }
   async dismissRejected() {
     if (this.busy || this.value.job?.state !== 'rejected') return
     const positions = { ...this.value.positions }
     if (this.value.job.position) delete positions[this.value.job.position.key]
+    for (const p of this.value.job.positions ?? []) delete positions[p.key]
     await this.update({ ...this.value, job: null, positions })
   }
 }

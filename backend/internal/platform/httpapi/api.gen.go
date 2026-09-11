@@ -209,15 +209,351 @@ func (e CreateAssetBindingInputHolderKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeActionAddNodeType.
+const (
+	CreativeActionAddNodeTypeAddNode CreativeActionAddNodeType = "add_node"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionAddNodeType enum.
+func (e CreativeActionAddNodeType) Valid() bool {
+	switch e {
+	case CreativeActionAddNodeTypeAddNode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionAddNodeTypeKey.
+const (
+	CreativeActionAddNodeTypeKeyCoreGroup CreativeActionAddNodeTypeKey = "core.group"
+	CreativeActionAddNodeTypeKeyCoreLink  CreativeActionAddNodeTypeKey = "core.link"
+	CreativeActionAddNodeTypeKeyCoreText  CreativeActionAddNodeTypeKey = "core.text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionAddNodeTypeKey enum.
+func (e CreativeActionAddNodeTypeKey) Valid() bool {
+	switch e {
+	case CreativeActionAddNodeTypeKeyCoreGroup:
+		return true
+	case CreativeActionAddNodeTypeKeyCoreLink:
+		return true
+	case CreativeActionAddNodeTypeKeyCoreText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionClearContentType.
+const (
+	ClearContent CreativeActionClearContentType = "clear_content"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionClearContentType enum.
+func (e CreativeActionClearContentType) Valid() bool {
+	switch e {
+	case ClearContent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionConnectReferenceRole.
+const (
+	CreativeActionConnectReferenceRoleReference CreativeActionConnectReferenceRole = "reference"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionConnectReferenceRole enum.
+func (e CreativeActionConnectReferenceRole) Valid() bool {
+	switch e {
+	case CreativeActionConnectReferenceRoleReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionConnectReferenceSourcePort.
+const (
+	Output CreativeActionConnectReferenceSourcePort = "output"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionConnectReferenceSourcePort enum.
+func (e CreativeActionConnectReferenceSourcePort) Valid() bool {
+	switch e {
+	case Output:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionConnectReferenceTargetPort.
+const (
+	CreativeActionConnectReferenceTargetPortReference CreativeActionConnectReferenceTargetPort = "reference"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionConnectReferenceTargetPort enum.
+func (e CreativeActionConnectReferenceTargetPort) Valid() bool {
+	switch e {
+	case CreativeActionConnectReferenceTargetPortReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionConnectReferenceType.
+const (
+	ConnectReference CreativeActionConnectReferenceType = "connect_reference"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionConnectReferenceType enum.
+func (e CreativeActionConnectReferenceType) Valid() bool {
+	switch e {
+	case ConnectReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionDeleteVersionType.
+const (
+	DeleteVersion CreativeActionDeleteVersionType = "delete_version"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionDeleteVersionType enum.
+func (e CreativeActionDeleteVersionType) Valid() bool {
+	switch e {
+	case DeleteVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionDisconnectReferenceType.
+const (
+	DisconnectReference CreativeActionDisconnectReferenceType = "disconnect_reference"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionDisconnectReferenceType enum.
+func (e CreativeActionDisconnectReferenceType) Valid() bool {
+	switch e {
+	case DisconnectReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionDuplicateSelectionType.
+const (
+	DuplicateSelection CreativeActionDuplicateSelectionType = "duplicate_selection"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionDuplicateSelectionType enum.
+func (e CreativeActionDuplicateSelectionType) Valid() bool {
+	switch e {
+	case DuplicateSelection:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionGroupNodesType.
+const (
+	GroupNodes CreativeActionGroupNodesType = "group_nodes"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionGroupNodesType enum.
+func (e CreativeActionGroupNodesType) Valid() bool {
+	switch e {
+	case GroupNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionMoveNodeType.
+const (
+	CreativeActionMoveNodeTypeMoveNode CreativeActionMoveNodeType = "move_node"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionMoveNodeType enum.
+func (e CreativeActionMoveNodeType) Valid() bool {
+	switch e {
+	case CreativeActionMoveNodeTypeMoveNode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionMoveNodesType.
+const (
+	MoveNodes CreativeActionMoveNodesType = "move_nodes"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionMoveNodesType enum.
+func (e CreativeActionMoveNodesType) Valid() bool {
+	switch e {
+	case MoveNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionRemoveNodesGroupMode.
+const (
+	Subtree CreativeActionRemoveNodesGroupMode = "subtree"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionRemoveNodesGroupMode enum.
+func (e CreativeActionRemoveNodesGroupMode) Valid() bool {
+	switch e {
+	case Subtree:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionRemoveNodesType.
+const (
+	RemoveNodes CreativeActionRemoveNodesType = "remove_nodes"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionRemoveNodesType enum.
+func (e CreativeActionRemoveNodesType) Valid() bool {
+	switch e {
+	case RemoveNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionReparentNodesType.
+const (
+	ReparentNodes CreativeActionReparentNodesType = "reparent_nodes"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionReparentNodesType enum.
+func (e CreativeActionReparentNodesType) Valid() bool {
+	switch e {
+	case ReparentNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionReplaceContentType.
+const (
+	CreativeActionReplaceContentTypeReplaceContent CreativeActionReplaceContentType = "replace_content"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionReplaceContentType enum.
+func (e CreativeActionReplaceContentType) Valid() bool {
+	switch e {
+	case CreativeActionReplaceContentTypeReplaceContent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionResizeNodeType.
+const (
+	ResizeNode CreativeActionResizeNodeType = "resize_node"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionResizeNodeType enum.
+func (e CreativeActionResizeNodeType) Valid() bool {
+	switch e {
+	case ResizeNode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionSelectVersionType.
+const (
+	SelectVersion CreativeActionSelectVersionType = "select_version"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionSelectVersionType enum.
+func (e CreativeActionSelectVersionType) Valid() bool {
+	switch e {
+	case SelectVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionSetNodeInputsType.
+const (
+	SetNodeInputs CreativeActionSetNodeInputsType = "set_node_inputs"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionSetNodeInputsType enum.
+func (e CreativeActionSetNodeInputsType) Valid() bool {
+	switch e {
+	case SetNodeInputs:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionUngroupNodesType.
+const (
+	UngroupNodes CreativeActionUngroupNodesType = "ungroup_nodes"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionUngroupNodesType enum.
+func (e CreativeActionUngroupNodesType) Valid() bool {
+	switch e {
+	case UngroupNodes:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeActionUpdateMetadataType.
+const (
+	UpdateMetadata CreativeActionUpdateMetadataType = "update_metadata"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionUpdateMetadataType enum.
+func (e CreativeActionUpdateMetadataType) Valid() bool {
+	switch e {
+	case UpdateMetadata:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAddNodePayloadType.
 const (
-	AddNode CreativeAddNodePayloadType = "add_node"
+	CreativeAddNodePayloadTypeAddNode CreativeAddNodePayloadType = "add_node"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAddNodePayloadType enum.
 func (e CreativeAddNodePayloadType) Valid() bool {
 	switch e {
-	case AddNode:
+	case CreativeAddNodePayloadTypeAddNode:
 		return true
 	default:
 		return false
@@ -242,18 +578,30 @@ func (e CreativeAddNodePayloadTypeKey) Valid() bool {
 	}
 }
 
-// Defines values for CreativeCanvasNodeTypeKey.
+// Defines values for CreativeBatchPayloadType.
 const (
-	CreativeCanvasNodeTypeKeyCoreLink CreativeCanvasNodeTypeKey = "core.link"
-	CreativeCanvasNodeTypeKeyCoreText CreativeCanvasNodeTypeKey = "core.text"
+	Batch CreativeBatchPayloadType = "batch"
 )
 
-// Valid indicates whether the value is a known member of the CreativeCanvasNodeTypeKey enum.
-func (e CreativeCanvasNodeTypeKey) Valid() bool {
+// Valid indicates whether the value is a known member of the CreativeBatchPayloadType enum.
+func (e CreativeBatchPayloadType) Valid() bool {
 	switch e {
-	case CreativeCanvasNodeTypeKeyCoreLink:
+	case Batch:
 		return true
-	case CreativeCanvasNodeTypeKeyCoreText:
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeCancelExecutionPayloadType.
+const (
+	CancelExecution CreativeCancelExecutionPayloadType = "cancel_execution"
+)
+
+// Valid indicates whether the value is a known member of the CreativeCancelExecutionPayloadType enum.
+func (e CreativeCancelExecutionPayloadType) Valid() bool {
+	switch e {
+	case CancelExecution:
 		return true
 	default:
 		return false
@@ -305,6 +653,84 @@ const (
 func (e CreativeFoundationCapabilitiesSchemaVersion) Valid() bool {
 	switch e {
 	case CreativeFoundationCapabilitiesSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeGraphObjectResultKind.
+const (
+	CreativeGraphObjectResultKindEdge    CreativeGraphObjectResultKind = "edge"
+	CreativeGraphObjectResultKindInput   CreativeGraphObjectResultKind = "input"
+	CreativeGraphObjectResultKindNode    CreativeGraphObjectResultKind = "node"
+	CreativeGraphObjectResultKindVersion CreativeGraphObjectResultKind = "version"
+)
+
+// Valid indicates whether the value is a known member of the CreativeGraphObjectResultKind enum.
+func (e CreativeGraphObjectResultKind) Valid() bool {
+	switch e {
+	case CreativeGraphObjectResultKindEdge:
+		return true
+	case CreativeGraphObjectResultKindInput:
+		return true
+	case CreativeGraphObjectResultKindNode:
+		return true
+	case CreativeGraphObjectResultKindVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeGraphReadKind.
+const (
+	CreativeGraphReadKindEdge    CreativeGraphReadKind = "edge"
+	CreativeGraphReadKindInput   CreativeGraphReadKind = "input"
+	CreativeGraphReadKindNode    CreativeGraphReadKind = "node"
+	CreativeGraphReadKindVersion CreativeGraphReadKind = "version"
+)
+
+// Valid indicates whether the value is a known member of the CreativeGraphReadKind enum.
+func (e CreativeGraphReadKind) Valid() bool {
+	switch e {
+	case CreativeGraphReadKindEdge:
+		return true
+	case CreativeGraphReadKindInput:
+		return true
+	case CreativeGraphReadKindNode:
+		return true
+	case CreativeGraphReadKindVersion:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeInputSourceRole.
+const (
+	CreativeInputSourceRoleReference CreativeInputSourceRole = "reference"
+)
+
+// Valid indicates whether the value is a known member of the CreativeInputSourceRole enum.
+func (e CreativeInputSourceRole) Valid() bool {
+	switch e {
+	case CreativeInputSourceRoleReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeInputSourceSlot.
+const (
+	CreativeInputSourceSlotReference CreativeInputSourceSlot = "reference"
+)
+
+// Valid indicates whether the value is a known member of the CreativeInputSourceSlot enum.
+func (e CreativeInputSourceSlot) Valid() bool {
+	switch e {
+	case CreativeInputSourceSlotReference:
 		return true
 	default:
 		return false
@@ -373,13 +799,112 @@ func (e CreativeLibrarySettingsPayloadRetentionDays) Valid() bool {
 
 // Defines values for CreativeMoveNodePayloadType.
 const (
-	MoveNode CreativeMoveNodePayloadType = "move_node"
+	CreativeMoveNodePayloadTypeMoveNode CreativeMoveNodePayloadType = "move_node"
 )
 
 // Valid indicates whether the value is a known member of the CreativeMoveNodePayloadType enum.
 func (e CreativeMoveNodePayloadType) Valid() bool {
 	switch e {
-	case MoveNode:
+	case CreativeMoveNodePayloadTypeMoveNode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeNodeDataSchemaVersion.
+const (
+	CreativeNodeDataSchemaVersionN1 CreativeNodeDataSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeNodeDataSchemaVersion enum.
+func (e CreativeNodeDataSchemaVersion) Valid() bool {
+	switch e {
+	case CreativeNodeDataSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeNodeExecutionState.
+const (
+	CreativeNodeExecutionStateCancelled   CreativeNodeExecutionState = "cancelled"
+	CreativeNodeExecutionStateFailed      CreativeNodeExecutionState = "failed"
+	CreativeNodeExecutionStateQueued      CreativeNodeExecutionState = "queued"
+	CreativeNodeExecutionStateReconciling CreativeNodeExecutionState = "reconciling"
+	CreativeNodeExecutionStateRunning     CreativeNodeExecutionState = "running"
+	CreativeNodeExecutionStateSucceeded   CreativeNodeExecutionState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the CreativeNodeExecutionState enum.
+func (e CreativeNodeExecutionState) Valid() bool {
+	switch e {
+	case CreativeNodeExecutionStateCancelled:
+		return true
+	case CreativeNodeExecutionStateFailed:
+		return true
+	case CreativeNodeExecutionStateQueued:
+		return true
+	case CreativeNodeExecutionStateReconciling:
+		return true
+	case CreativeNodeExecutionStateRunning:
+		return true
+	case CreativeNodeExecutionStateSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeNodeStatusContentState.
+const (
+	CreativeNodeStatusContentStateEmpty       CreativeNodeStatusContentState = "empty"
+	CreativeNodeStatusContentStateReady       CreativeNodeStatusContentState = "ready"
+	CreativeNodeStatusContentStateUnavailable CreativeNodeStatusContentState = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the CreativeNodeStatusContentState enum.
+func (e CreativeNodeStatusContentState) Valid() bool {
+	switch e {
+	case CreativeNodeStatusContentStateEmpty:
+		return true
+	case CreativeNodeStatusContentStateReady:
+		return true
+	case CreativeNodeStatusContentStateUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeNodeStatusGenerationState.
+const (
+	CreativeNodeStatusGenerationStateCancelled   CreativeNodeStatusGenerationState = "cancelled"
+	CreativeNodeStatusGenerationStateFailed      CreativeNodeStatusGenerationState = "failed"
+	CreativeNodeStatusGenerationStateIdle        CreativeNodeStatusGenerationState = "idle"
+	CreativeNodeStatusGenerationStateQueued      CreativeNodeStatusGenerationState = "queued"
+	CreativeNodeStatusGenerationStateReconciling CreativeNodeStatusGenerationState = "reconciling"
+	CreativeNodeStatusGenerationStateRunning     CreativeNodeStatusGenerationState = "running"
+	CreativeNodeStatusGenerationStateSucceeded   CreativeNodeStatusGenerationState = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the CreativeNodeStatusGenerationState enum.
+func (e CreativeNodeStatusGenerationState) Valid() bool {
+	switch e {
+	case CreativeNodeStatusGenerationStateCancelled:
+		return true
+	case CreativeNodeStatusGenerationStateFailed:
+		return true
+	case CreativeNodeStatusGenerationStateIdle:
+		return true
+	case CreativeNodeStatusGenerationStateQueued:
+		return true
+	case CreativeNodeStatusGenerationStateReconciling:
+		return true
+	case CreativeNodeStatusGenerationStateRunning:
+		return true
+	case CreativeNodeStatusGenerationStateSucceeded:
 		return true
 	default:
 		return false
@@ -409,13 +934,61 @@ func (e CreativeOperationReceiptHttpStatus) Valid() bool {
 
 // Defines values for CreativeReplaceContentPayloadType.
 const (
-	ReplaceContent CreativeReplaceContentPayloadType = "replace_content"
+	CreativeReplaceContentPayloadTypeReplaceContent CreativeReplaceContentPayloadType = "replace_content"
 )
 
 // Valid indicates whether the value is a known member of the CreativeReplaceContentPayloadType enum.
 func (e CreativeReplaceContentPayloadType) Valid() bool {
 	switch e {
-	case ReplaceContent:
+	case CreativeReplaceContentPayloadTypeReplaceContent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeReuseVersionPayloadType.
+const (
+	ReuseVersionPrompt CreativeReuseVersionPayloadType = "reuse_version_prompt"
+)
+
+// Valid indicates whether the value is a known member of the CreativeReuseVersionPayloadType enum.
+func (e CreativeReuseVersionPayloadType) Valid() bool {
+	switch e {
+	case ReuseVersionPrompt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeSavePromptPayloadType.
+const (
+	SavePrompt CreativeSavePromptPayloadType = "save_prompt"
+)
+
+// Valid indicates whether the value is a known member of the CreativeSavePromptPayloadType enum.
+func (e CreativeSavePromptPayloadType) Valid() bool {
+	switch e {
+	case SavePrompt:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUndoPayloadType.
+const (
+	Redo CreativeUndoPayloadType = "redo"
+	Undo CreativeUndoPayloadType = "undo"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUndoPayloadType enum.
+func (e CreativeUndoPayloadType) Valid() bool {
+	switch e {
+	case Redo:
+		return true
+	case Undo:
 		return true
 	default:
 		return false
@@ -748,13 +1321,13 @@ func (e PlanAssetRenditionKind) Valid() bool {
 
 // Defines values for PlanAssetRightsDeclarationMatrixVersion.
 const (
-	N1 PlanAssetRightsDeclarationMatrixVersion = 1
+	PlanAssetRightsDeclarationMatrixVersionN1 PlanAssetRightsDeclarationMatrixVersion = 1
 )
 
 // Valid indicates whether the value is a known member of the PlanAssetRightsDeclarationMatrixVersion enum.
 func (e PlanAssetRightsDeclarationMatrixVersion) Valid() bool {
 	switch e {
-	case N1:
+	case PlanAssetRightsDeclarationMatrixVersionN1:
 		return true
 	default:
 		return false
@@ -1246,25 +1819,25 @@ func (e SharedShotFeedbackCreateInputV1PolicyVersion) Valid() bool {
 
 // Defines values for ShootPlanStatus.
 const (
-	Archived   ShootPlanStatus = "archived"
-	Completed  ShootPlanStatus = "completed"
-	Draft      ShootPlanStatus = "draft"
-	InProgress ShootPlanStatus = "in_progress"
-	Ready      ShootPlanStatus = "ready"
+	ShootPlanStatusArchived   ShootPlanStatus = "archived"
+	ShootPlanStatusCompleted  ShootPlanStatus = "completed"
+	ShootPlanStatusDraft      ShootPlanStatus = "draft"
+	ShootPlanStatusInProgress ShootPlanStatus = "in_progress"
+	ShootPlanStatusReady      ShootPlanStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the ShootPlanStatus enum.
 func (e ShootPlanStatus) Valid() bool {
 	switch e {
-	case Archived:
+	case ShootPlanStatusArchived:
 		return true
-	case Completed:
+	case ShootPlanStatusCompleted:
 		return true
-	case Draft:
+	case ShootPlanStatusDraft:
 		return true
-	case InProgress:
+	case ShootPlanStatusInProgress:
 		return true
-	case Ready:
+	case ShootPlanStatusReady:
 		return true
 	default:
 		return false
@@ -1871,6 +2444,202 @@ type CreateCreativeTextAssetRequest struct {
 	Payload         CreativeAssetCreatePayload `json:"payload"`
 }
 
+// CreativeActionAddNode defines model for CreativeActionAddNode.
+type CreativeActionAddNode struct {
+	Asset    *CreativeAssetReference      `json:"asset,omitempty"`
+	Content  *CreativeContentDraft        `json:"content,omitempty"`
+	NodeId   string                       `json:"node_id"`
+	ParentId nullable.Nullable[string]    `json:"parent_id,omitempty"`
+	Title    *string                      `json:"title,omitempty"`
+	Type     CreativeActionAddNodeType    `json:"type"`
+	TypeKey  CreativeActionAddNodeTypeKey `json:"type_key"`
+	X        float32                      `json:"x"`
+	Y        float32                      `json:"y"`
+}
+
+// CreativeActionAddNodeType defines model for CreativeActionAddNode.Type.
+type CreativeActionAddNodeType string
+
+// CreativeActionAddNodeTypeKey defines model for CreativeActionAddNode.TypeKey.
+type CreativeActionAddNodeTypeKey string
+
+// CreativeActionClearContent defines model for CreativeActionClearContent.
+type CreativeActionClearContent struct {
+	NodeId string                         `json:"node_id"`
+	Type   CreativeActionClearContentType `json:"type"`
+}
+
+// CreativeActionClearContentType defines model for CreativeActionClearContent.Type.
+type CreativeActionClearContentType string
+
+// CreativeActionConnectReference defines model for CreativeActionConnectReference.
+type CreativeActionConnectReference struct {
+	Role         CreativeActionConnectReferenceRole       `json:"role"`
+	SourceNodeId string                                   `json:"source_node_id"`
+	SourcePort   CreativeActionConnectReferenceSourcePort `json:"source_port"`
+	TargetNodeId string                                   `json:"target_node_id"`
+	TargetPort   CreativeActionConnectReferenceTargetPort `json:"target_port"`
+	Type         CreativeActionConnectReferenceType       `json:"type"`
+}
+
+// CreativeActionConnectReferenceRole defines model for CreativeActionConnectReference.Role.
+type CreativeActionConnectReferenceRole string
+
+// CreativeActionConnectReferenceSourcePort defines model for CreativeActionConnectReference.SourcePort.
+type CreativeActionConnectReferenceSourcePort string
+
+// CreativeActionConnectReferenceTargetPort defines model for CreativeActionConnectReference.TargetPort.
+type CreativeActionConnectReferenceTargetPort string
+
+// CreativeActionConnectReferenceType defines model for CreativeActionConnectReference.Type.
+type CreativeActionConnectReferenceType string
+
+// CreativeActionDeleteVersion defines model for CreativeActionDeleteVersion.
+type CreativeActionDeleteVersion struct {
+	NodeId    string                          `json:"node_id"`
+	Type      CreativeActionDeleteVersionType `json:"type"`
+	VersionId string                          `json:"version_id"`
+}
+
+// CreativeActionDeleteVersionType defines model for CreativeActionDeleteVersion.Type.
+type CreativeActionDeleteVersionType string
+
+// CreativeActionDisconnectReference defines model for CreativeActionDisconnectReference.
+type CreativeActionDisconnectReference struct {
+	EdgeId string                                `json:"edge_id"`
+	Type   CreativeActionDisconnectReferenceType `json:"type"`
+}
+
+// CreativeActionDisconnectReferenceType defines model for CreativeActionDisconnectReference.Type.
+type CreativeActionDisconnectReferenceType string
+
+// CreativeActionDuplicateSelection defines model for CreativeActionDuplicateSelection.
+type CreativeActionDuplicateSelection struct {
+	Dx      *float32                             `json:"dx,omitempty"`
+	Dy      *float32                             `json:"dy,omitempty"`
+	NodeIds []string                             `json:"node_ids"`
+	Type    CreativeActionDuplicateSelectionType `json:"type"`
+}
+
+// CreativeActionDuplicateSelectionType defines model for CreativeActionDuplicateSelection.Type.
+type CreativeActionDuplicateSelectionType string
+
+// CreativeActionGroupNodes defines model for CreativeActionGroupNodes.
+type CreativeActionGroupNodes struct {
+	NodeIds []string                     `json:"node_ids"`
+	Type    CreativeActionGroupNodesType `json:"type"`
+}
+
+// CreativeActionGroupNodesType defines model for CreativeActionGroupNodes.Type.
+type CreativeActionGroupNodesType string
+
+// CreativeActionMoveNode defines model for CreativeActionMoveNode.
+type CreativeActionMoveNode struct {
+	NodeId string                     `json:"node_id"`
+	Type   CreativeActionMoveNodeType `json:"type"`
+	X      float32                    `json:"x"`
+	Y      float32                    `json:"y"`
+}
+
+// CreativeActionMoveNodeType defines model for CreativeActionMoveNode.Type.
+type CreativeActionMoveNodeType string
+
+// CreativeActionMoveNodes defines model for CreativeActionMoveNodes.
+type CreativeActionMoveNodes struct {
+	Dx      *float32                    `json:"dx,omitempty"`
+	Dy      *float32                    `json:"dy,omitempty"`
+	NodeIds []string                    `json:"node_ids"`
+	Type    CreativeActionMoveNodesType `json:"type"`
+}
+
+// CreativeActionMoveNodesType defines model for CreativeActionMoveNodes.Type.
+type CreativeActionMoveNodesType string
+
+// CreativeActionRemoveNodes defines model for CreativeActionRemoveNodes.
+type CreativeActionRemoveNodes struct {
+	GroupMode *CreativeActionRemoveNodesGroupMode `json:"group_mode,omitempty"`
+	NodeIds   []string                            `json:"node_ids"`
+	Type      CreativeActionRemoveNodesType       `json:"type"`
+}
+
+// CreativeActionRemoveNodesGroupMode defines model for CreativeActionRemoveNodes.GroupMode.
+type CreativeActionRemoveNodesGroupMode string
+
+// CreativeActionRemoveNodesType defines model for CreativeActionRemoveNodes.Type.
+type CreativeActionRemoveNodesType string
+
+// CreativeActionReparentNodes defines model for CreativeActionReparentNodes.
+type CreativeActionReparentNodes struct {
+	NodeIds  []string                        `json:"node_ids"`
+	ParentId nullable.Nullable[string]       `json:"parent_id"`
+	Type     CreativeActionReparentNodesType `json:"type"`
+}
+
+// CreativeActionReparentNodesType defines model for CreativeActionReparentNodes.Type.
+type CreativeActionReparentNodesType string
+
+// CreativeActionReplaceContent defines model for CreativeActionReplaceContent.
+type CreativeActionReplaceContent struct {
+	NodeId  string                           `json:"node_id"`
+	Payload CreativeContentPayload           `json:"payload"`
+	Rights  *CreativeContentRights           `json:"rights,omitempty"`
+	Type    CreativeActionReplaceContentType `json:"type"`
+}
+
+// CreativeActionReplaceContentType defines model for CreativeActionReplaceContent.Type.
+type CreativeActionReplaceContentType string
+
+// CreativeActionResizeNode defines model for CreativeActionResizeNode.
+type CreativeActionResizeNode struct {
+	Height float32                      `json:"height"`
+	NodeId string                       `json:"node_id"`
+	Type   CreativeActionResizeNodeType `json:"type"`
+	Width  float32                      `json:"width"`
+}
+
+// CreativeActionResizeNodeType defines model for CreativeActionResizeNode.Type.
+type CreativeActionResizeNodeType string
+
+// CreativeActionSelectVersion defines model for CreativeActionSelectVersion.
+type CreativeActionSelectVersion struct {
+	NodeId    string                          `json:"node_id"`
+	Type      CreativeActionSelectVersionType `json:"type"`
+	VersionId string                          `json:"version_id"`
+}
+
+// CreativeActionSelectVersionType defines model for CreativeActionSelectVersion.Type.
+type CreativeActionSelectVersionType string
+
+// CreativeActionSetNodeInputs defines model for CreativeActionSetNodeInputs.
+type CreativeActionSetNodeInputs struct {
+	Inputs []CreativeInputSource           `json:"inputs"`
+	NodeId string                          `json:"node_id"`
+	Type   CreativeActionSetNodeInputsType `json:"type"`
+}
+
+// CreativeActionSetNodeInputsType defines model for CreativeActionSetNodeInputs.Type.
+type CreativeActionSetNodeInputsType string
+
+// CreativeActionUngroupNodes defines model for CreativeActionUngroupNodes.
+type CreativeActionUngroupNodes struct {
+	NodeId string                         `json:"node_id"`
+	Type   CreativeActionUngroupNodesType `json:"type"`
+}
+
+// CreativeActionUngroupNodesType defines model for CreativeActionUngroupNodes.Type.
+type CreativeActionUngroupNodesType string
+
+// CreativeActionUpdateMetadata defines model for CreativeActionUpdateMetadata.
+type CreativeActionUpdateMetadata struct {
+	Intent *string                          `json:"intent,omitempty"`
+	NodeId string                           `json:"node_id"`
+	Title  string                           `json:"title"`
+	Type   CreativeActionUpdateMetadataType `json:"type"`
+}
+
+// CreativeActionUpdateMetadataType defines model for CreativeActionUpdateMetadata.Type.
+type CreativeActionUpdateMetadataType string
+
 // CreativeAddNodePayload defines model for CreativeAddNodePayload.
 type CreativeAddNodePayload struct {
 	Asset   *CreativeAssetReference `json:"asset,omitempty"`
@@ -1983,42 +2752,92 @@ type CreativeAssetVersion struct {
 	ExpectedRevision CreativeRevision `json:"expected_revision"`
 }
 
+// CreativeBatchPayload defines model for CreativeBatchPayload.
+type CreativeBatchPayload struct {
+	Actions       []CreativeGraphAction `json:"actions"`
+	ChangeGroupId *string               `json:"change_group_id,omitempty"`
+
+	// ExpectedTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedTopologyRevision *CreativeRevision        `json:"expected_topology_revision,omitempty"`
+	ReadSet                  []CreativeGraphRead      `json:"read_set"`
+	Type                     CreativeBatchPayloadType `json:"type"`
+}
+
+// CreativeBatchPayloadType defines model for CreativeBatchPayload.Type.
+type CreativeBatchPayloadType string
+
+// CreativeCancelExecutionPayload defines model for CreativeCancelExecutionPayload.
+type CreativeCancelExecutionPayload struct {
+	ExecutionId string                             `json:"execution_id"`
+	Type        CreativeCancelExecutionPayloadType `json:"type"`
+}
+
+// CreativeCancelExecutionPayloadType defines model for CreativeCancelExecutionPayload.Type.
+type CreativeCancelExecutionPayloadType string
+
 // CreativeCanvasCommandPayload defines model for CreativeCanvasCommandPayload.
 type CreativeCanvasCommandPayload struct {
 	union json.RawMessage
 }
 
-// CreativeCanvasNode defines model for CreativeCanvasNode.
-type CreativeCanvasNode struct {
-	Content           *CreativeContentRevision  `json:"content,omitempty"`
-	ContentId         nullable.Nullable[string] `json:"content_id"`
-	ContentRevisionId nullable.Nullable[string] `json:"content_revision_id"`
+// CreativeCanvasEdge defines model for CreativeCanvasEdge.
+type CreativeCanvasEdge struct {
+	Id      string `json:"id"`
+	Ordinal int    `json:"ordinal"`
 
-	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	DataRevision CreativeRevision `json:"data_revision"`
-	Height       float32          `json:"height"`
-	Id           string           `json:"id"`
-
-	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	PlacementRevision CreativeRevision          `json:"placement_revision"`
-	Title             string                    `json:"title"`
-	TypeKey           CreativeCanvasNodeTypeKey `json:"type_key"`
-	Unavailable       bool                      `json:"unavailable"`
-	Width             float32                   `json:"width"`
-	X                 float32                   `json:"x"`
-	Y                 float32                   `json:"y"`
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision     CreativeRevision `json:"revision"`
+	Role         string           `json:"role"`
+	SourceNodeId string           `json:"source_node_id"`
+	SourcePort   string           `json:"source_port"`
+	TargetNodeId string           `json:"target_node_id"`
+	TargetPort   string           `json:"target_port"`
 }
 
-// CreativeCanvasNodeTypeKey defines model for CreativeCanvasNode.TypeKey.
-type CreativeCanvasNodeTypeKey string
+// CreativeCanvasInput defines model for CreativeCanvasInput.
+type CreativeCanvasInput struct {
+	ContentRevisionId nullable.Nullable[string] `json:"content_revision_id"`
+	DraftId           *string                   `json:"draft_id,omitempty"`
+	Id                string                    `json:"id"`
+	NodeId            string                    `json:"node_id"`
+	Ordinal           int                       `json:"ordinal"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision     CreativeRevision          `json:"revision"`
+	Role         string                    `json:"role"`
+	Slot         string                    `json:"slot"`
+	SourceNodeId nullable.Nullable[string] `json:"source_node_id"`
+}
+
+// CreativeCanvasNode defines model for CreativeCanvasNode.
+type CreativeCanvasNode struct {
+	Capabilities CreativeNodeCapabilities `json:"capabilities"`
+	Content      *CreativeContentRevision `json:"content,omitempty"`
+	Data         CreativeNodeData         `json:"data"`
+
+	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DataRevision CreativeRevision          `json:"data_revision"`
+	Id           string                    `json:"id"`
+	Metadata     CreativeNodeMetadata      `json:"metadata"`
+	ParentId     nullable.Nullable[string] `json:"parent_id"`
+
+	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	PlacementRevision CreativeRevision                      `json:"placement_revision"`
+	Prompt            nullable.Nullable[CreativeNodePrompt] `json:"prompt"`
+	Status            CreativeNodeStatus                    `json:"status"`
+}
 
 // CreativeCanvasSnapshot defines model for CreativeCanvasSnapshot.
 type CreativeCanvasSnapshot struct {
-	Archived    bool                 `json:"archived"`
-	Id          string               `json:"id"`
-	Nodes       []CreativeCanvasNode `json:"nodes"`
-	ProjectId   string               `json:"project_id"`
-	ProjectName string               `json:"project_name"`
+	Archived     bool                        `json:"archived"`
+	Changes      []CreativeChangeSummary     `json:"changes"`
+	Edges        []CreativeCanvasEdge        `json:"edges"`
+	Id           string                      `json:"id"`
+	NodeInputs   []CreativeCanvasInput       `json:"node_inputs"`
+	Nodes        []CreativeCanvasNode        `json:"nodes"`
+	ObjectStates []CreativeGraphObjectResult `json:"object_states"`
+	ProjectId    string                      `json:"project_id"`
+	ProjectName  string                      `json:"project_name"`
 
 	// ProjectRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	ProjectRevision CreativeRevision `json:"project_revision"`
@@ -2052,6 +2871,35 @@ type CreativeCategoryPage struct {
 	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	HierarchyRevision CreativeRevision      `json:"hierarchy_revision"`
 	Items             []CreativeTagCategory `json:"items"`
+}
+
+// CreativeChangeResult defines model for CreativeChangeResult.
+type CreativeChangeResult struct {
+	// BeforeTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	BeforeTopologyRevision CreativeRevision            `json:"before_topology_revision"`
+	ChangeId               string                      `json:"change_id"`
+	CreatedIds             []string                    `json:"created_ids"`
+	IdMapping              map[string]string           `json:"id_mapping"`
+	ObjectResults          []CreativeGraphObjectResult `json:"object_results"`
+	OmittedReferenceIds    []string                    `json:"omitted_reference_ids"`
+	RemovedIds             []string                    `json:"removed_ids"`
+
+	// ResultRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultRevision CreativeRevision `json:"result_revision"`
+
+	// ResultTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultTopologyRevision CreativeRevision `json:"result_topology_revision"`
+}
+
+// CreativeChangeSummary defines model for CreativeChangeSummary.
+type CreativeChangeSummary struct {
+	ChangeGroupId nullable.Nullable[string] `json:"change_group_id"`
+	Id            string                    `json:"id"`
+	InverseOf     nullable.Nullable[string] `json:"inverse_of"`
+	ReadSet       []CreativeGraphRead       `json:"read_set"`
+
+	// ResultRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultRevision CreativeRevision `json:"result_revision"`
 }
 
 // CreativeContentDraft defines model for CreativeContentDraft.
@@ -2093,6 +2941,18 @@ type CreativeContentRights struct {
 	SourceClass     string  `json:"source_class"`
 }
 
+// CreativeDocument defines model for CreativeDocument.
+type CreativeDocument struct {
+	Content           CreativeContentRevision `json:"content"`
+	ContentRevisionId string                  `json:"content_revision_id"`
+	Id                string                  `json:"id"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+	Title    string           `json:"title"`
+	TypeKey  string           `json:"type_key"`
+}
+
 // CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
 type CreativeFoundationCapabilities struct {
 	Available     bool                                        `json:"available"`
@@ -2104,6 +2964,49 @@ type CreativeFoundationCapabilities struct {
 
 // CreativeFoundationCapabilitiesSchemaVersion defines model for CreativeFoundationCapabilities.SchemaVersion.
 type CreativeFoundationCapabilitiesSchemaVersion int
+
+// CreativeGraphAction defines model for CreativeGraphAction.
+type CreativeGraphAction struct {
+	union json.RawMessage
+}
+
+// CreativeGraphObjectResult defines model for CreativeGraphObjectResult.
+type CreativeGraphObjectResult struct {
+	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DataRevision *CreativeRevision             `json:"data_revision,omitempty"`
+	Id           string                        `json:"id"`
+	IsLive       bool                          `json:"is_live"`
+	Kind         CreativeGraphObjectResultKind `json:"kind"`
+
+	// NodeId 活跃版本所属节点，供复制与删除构造目标读集。
+	NodeId *string `json:"node_id,omitempty"`
+
+	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	PlacementRevision *CreativeRevision `json:"placement_revision,omitempty"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision *CreativeRevision `json:"revision,omitempty"`
+}
+
+// CreativeGraphObjectResultKind defines model for CreativeGraphObjectResult.Kind.
+type CreativeGraphObjectResultKind string
+
+// CreativeGraphRead defines model for CreativeGraphRead.
+type CreativeGraphRead struct {
+	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DataRevision *CreativeRevision     `json:"data_revision,omitempty"`
+	Id           string                `json:"id"`
+	Kind         CreativeGraphReadKind `json:"kind"`
+
+	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	PlacementRevision *CreativeRevision `json:"placement_revision,omitempty"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision *CreativeRevision `json:"revision,omitempty"`
+}
+
+// CreativeGraphReadKind defines model for CreativeGraphRead.Kind.
+type CreativeGraphReadKind string
 
 // CreativeGroupCreatePayload defines model for CreativeGroupCreatePayload.
 type CreativeGroupCreatePayload struct {
@@ -2141,6 +3044,21 @@ type CreativeGroupRenamePayload struct {
 	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
 	Name              string           `json:"name"`
 }
+
+// CreativeInputSource defines model for CreativeInputSource.
+type CreativeInputSource struct {
+	ContentRevisionId nullable.Nullable[string] `json:"content_revision_id,omitempty"`
+	Ordinal           int                       `json:"ordinal"`
+	Role              CreativeInputSourceRole   `json:"role"`
+	Slot              CreativeInputSourceSlot   `json:"slot"`
+	SourceNodeId      nullable.Nullable[string] `json:"source_node_id,omitempty"`
+}
+
+// CreativeInputSourceRole defines model for CreativeInputSource.Role.
+type CreativeInputSourceRole string
+
+// CreativeInputSourceSlot defines model for CreativeInputSource.Slot.
+type CreativeInputSourceSlot string
 
 // CreativeLibraryAsset defines model for CreativeLibraryAsset.
 type CreativeLibraryAsset struct {
@@ -2244,15 +3162,24 @@ type CreativeNewTag struct {
 	Name         string                    `json:"name"`
 }
 
+// CreativeNodeCapabilities defines model for CreativeNodeCapabilities.
+type CreativeNodeCapabilities struct {
+	Actions        []string                  `json:"actions"`
+	DisabledReason nullable.Nullable[string] `json:"disabled_reason"`
+	PromptMode     string                    `json:"prompt_mode"`
+}
+
 // CreativeNodeCommandResult defines model for CreativeNodeCommandResult.
 type CreativeNodeCommandResult struct {
 	// BeforeTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	BeforeTopologyRevision CreativeRevision          `json:"before_topology_revision"`
+	ChangeId               string                    `json:"change_id"`
 	ContentRevisionId      nullable.Nullable[string] `json:"content_revision_id"`
 
 	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	DataRevision CreativeRevision `json:"data_revision"`
-	NodeId       string           `json:"node_id"`
+	DataRevision  CreativeRevision            `json:"data_revision"`
+	NodeId        string                      `json:"node_id"`
+	ObjectResults []CreativeGraphObjectResult `json:"object_results"`
 
 	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	PlacementRevision CreativeRevision `json:"placement_revision"`
@@ -2262,6 +3189,110 @@ type CreativeNodeCommandResult struct {
 
 	// ResultTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	ResultTopologyRevision CreativeRevision `json:"result_topology_revision"`
+}
+
+// CreativeNodeData defines model for CreativeNodeData.
+type CreativeNodeData struct {
+	Config            map[string]interface{}        `json:"config"`
+	ContentId         nullable.Nullable[string]     `json:"content_id"`
+	ContentRevisionId nullable.Nullable[string]     `json:"content_revision_id"`
+	DocumentId        nullable.Nullable[string]     `json:"document_id"`
+	SchemaVersion     CreativeNodeDataSchemaVersion `json:"schema_version"`
+	SelectedVersionId nullable.Nullable[string]     `json:"selected_version_id"`
+}
+
+// CreativeNodeDataSchemaVersion defines model for CreativeNodeData.SchemaVersion.
+type CreativeNodeDataSchemaVersion int
+
+// CreativeNodeExecution defines model for CreativeNodeExecution.
+type CreativeNodeExecution struct {
+	ActionKey       string                     `json:"action_key"`
+	ApplyState      string                     `json:"apply_state"`
+	CanvasId        string                     `json:"canvas_id"`
+	ChangeId        nullable.Nullable[string]  `json:"change_id"`
+	CreatedAt       time.Time                  `json:"created_at"`
+	Deadline        time.Time                  `json:"deadline"`
+	Error           string                     `json:"error"`
+	ExecutionEpoch  int                        `json:"execution_epoch"`
+	ExecutionId     string                     `json:"execution_id"`
+	ExecutorVersion string                     `json:"executor_version"`
+	NodeId          string                     `json:"node_id"`
+	State           CreativeNodeExecutionState `json:"state"`
+}
+
+// CreativeNodeExecutionState defines model for CreativeNodeExecution.State.
+type CreativeNodeExecutionState string
+
+// CreativeNodeMetadata defines model for CreativeNodeMetadata.
+type CreativeNodeMetadata struct {
+	Height      float32 `json:"height"`
+	Intent      string  `json:"intent"`
+	Title       string  `json:"title"`
+	TypeKey     string  `json:"type_key"`
+	TypeVersion int     `json:"type_version"`
+	Width       float32 `json:"width"`
+	X           float32 `json:"x"`
+	Y           float32 `json:"y"`
+	ZOrder      int     `json:"z_order"`
+}
+
+// CreativeNodePrompt defines model for CreativeNodePrompt.
+type CreativeNodePrompt struct {
+	ActionKey string `json:"action_key"`
+	DraftId   string `json:"draft_id"`
+
+	// DraftRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DraftRevision CreativeRevision       `json:"draft_revision"`
+	ModelKey      string                 `json:"model_key"`
+	Parameters    map[string]interface{} `json:"parameters"`
+	References    []CreativeCanvasInput  `json:"references"`
+	Text          string                 `json:"text"`
+}
+
+// CreativeNodeStatus defines model for CreativeNodeStatus.
+type CreativeNodeStatus struct {
+	ActiveExecutionId nullable.Nullable[string]         `json:"active_execution_id"`
+	ApplyState        nullable.Nullable[string]         `json:"apply_state"`
+	ContentState      CreativeNodeStatusContentState    `json:"content_state"`
+	Error             nullable.Nullable[string]         `json:"error"`
+	GenerationState   CreativeNodeStatusGenerationState `json:"generation_state"`
+	LatestExecutionId nullable.Nullable[string]         `json:"latest_execution_id"`
+
+	// StatusRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	StatusRevision CreativeRevision `json:"status_revision"`
+}
+
+// CreativeNodeStatusContentState defines model for CreativeNodeStatus.ContentState.
+type CreativeNodeStatusContentState string
+
+// CreativeNodeStatusGenerationState defines model for CreativeNodeStatus.GenerationState.
+type CreativeNodeStatusGenerationState string
+
+// CreativeNodeVersion defines model for CreativeNodeVersion.
+type CreativeNodeVersion struct {
+	ContentRevisionId    string                    `json:"content_revision_id"`
+	CreatedAt            time.Time                 `json:"created_at"`
+	ExecutionIdSnapshot  nullable.Nullable[string] `json:"execution_id_snapshot"`
+	GenerationProvenance map[string]interface{}    `json:"generation_provenance"`
+	Id                   string                    `json:"id"`
+	Inputs               []CreativeVersionInput    `json:"inputs"`
+	NodeId               string                    `json:"node_id"`
+	OriginKind           string                    `json:"origin_kind"`
+	OutputOrdinal        nullable.Nullable[int]    `json:"output_ordinal"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+
+	// VersionNo 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	VersionNo CreativeRevision `json:"version_no"`
+}
+
+// CreativeNodeVersionPage defines model for CreativeNodeVersionPage.
+type CreativeNodeVersionPage struct {
+	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DataRevision      CreativeRevision          `json:"data_revision"`
+	Items             []CreativeNodeVersion     `json:"items"`
+	SelectedVersionId nullable.Nullable[string] `json:"selected_version_id"`
 }
 
 // CreativeOperationReceipt defines model for CreativeOperationReceipt.
@@ -2336,6 +3367,15 @@ type CreativeProjectStateResult struct {
 	Revision CreativeRevision `json:"revision"`
 }
 
+// CreativePromptResult defines model for CreativePromptResult.
+type CreativePromptResult struct {
+	Change  CreativeChangeResult `json:"change"`
+	DraftId string               `json:"draft_id"`
+
+	// DraftRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DraftRevision CreativeRevision `json:"draft_revision"`
+}
+
 // CreativeReplaceContentPayload defines model for CreativeReplaceContentPayload.
 type CreativeReplaceContentPayload struct {
 	ExpectedContentRevisionId nullable.Nullable[string] `json:"expected_content_revision_id"`
@@ -2351,8 +3391,62 @@ type CreativeReplaceContentPayload struct {
 // CreativeReplaceContentPayloadType defines model for CreativeReplaceContentPayload.Type.
 type CreativeReplaceContentPayloadType string
 
+// CreativeRequestExecutionPayload defines model for CreativeRequestExecutionPayload.
+type CreativeRequestExecutionPayload struct {
+	ActionKey string `json:"action_key"`
+
+	// DraftRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	DraftRevision CreativeRevision `json:"draft_revision"`
+
+	// ExpectedDataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedDataRevision CreativeRevision    `json:"expected_data_revision"`
+	NodeId               string              `json:"node_id"`
+	ReadSet              []CreativeGraphRead `json:"read_set"`
+}
+
+// CreativeRequestExecutionRequest defines model for CreativeRequestExecutionRequest.
+type CreativeRequestExecutionRequest struct {
+	ClientCreatedAt time.Time                       `json:"client_created_at"`
+	OperationId     openapi_types.UUID              `json:"operation_id"`
+	Payload         CreativeRequestExecutionPayload `json:"payload"`
+}
+
+// CreativeReuseVersionPayload defines model for CreativeReuseVersionPayload.
+type CreativeReuseVersionPayload struct {
+	ExpectedDraftRevision nullable.Nullable[CreativeRevision] `json:"expected_draft_revision"`
+
+	// ExpectedTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedTopologyRevision CreativeRevision                `json:"expected_topology_revision"`
+	NodeId                   string                          `json:"node_id"`
+	ReadSet                  []CreativeGraphRead             `json:"read_set"`
+	Type                     CreativeReuseVersionPayloadType `json:"type"`
+	VersionId                string                          `json:"version_id"`
+}
+
+// CreativeReuseVersionPayloadType defines model for CreativeReuseVersionPayload.Type.
+type CreativeReuseVersionPayloadType string
+
 // CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 type CreativeRevision = string
+
+// CreativeSavePromptPayload defines model for CreativeSavePromptPayload.
+type CreativeSavePromptPayload struct {
+	ActionKey             string                              `json:"action_key"`
+	ExpectedDraftRevision nullable.Nullable[CreativeRevision] `json:"expected_draft_revision"`
+
+	// ExpectedTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedTopologyRevision CreativeRevision              `json:"expected_topology_revision"`
+	ModelKey                 string                        `json:"model_key"`
+	NodeId                   string                        `json:"node_id"`
+	Parameters               map[string]interface{}        `json:"parameters"`
+	ReadSet                  []CreativeGraphRead           `json:"read_set"`
+	References               []CreativeInputSource         `json:"references"`
+	Text                     string                        `json:"text"`
+	Type                     CreativeSavePromptPayloadType `json:"type"`
+}
+
+// CreativeSavePromptPayloadType defines model for CreativeSavePromptPayload.Type.
+type CreativeSavePromptPayloadType string
 
 // CreativeStructureDeletePayload defines model for CreativeStructureDeletePayload.
 type CreativeStructureDeletePayload struct {
@@ -2406,6 +3500,23 @@ type CreativeTagPage struct {
 // CreativeTextPayload defines model for CreativeTextPayload.
 type CreativeTextPayload struct {
 	Body string `json:"body"`
+}
+
+// CreativeUndoPayload defines model for CreativeUndoPayload.
+type CreativeUndoPayload struct {
+	ChangeGroupId *string                 `json:"change_group_id,omitempty"`
+	ChangeId      *string                 `json:"change_id,omitempty"`
+	ReadSet       []CreativeGraphRead     `json:"read_set"`
+	Type          CreativeUndoPayloadType `json:"type"`
+}
+
+// CreativeUndoPayloadType defines model for CreativeUndoPayload.Type.
+type CreativeUndoPayloadType string
+
+// CreativeVersionInput defines model for CreativeVersionInput.
+type CreativeVersionInput struct {
+	ContentRevisionId string `json:"content_revision_id"`
+	Role              string `json:"role"`
 }
 
 // Customer defines model for Customer.
@@ -3890,6 +5001,16 @@ type CommandCreativeCanvasParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CommandCreativeCanvas200JSONResponseBody defines parameters for CommandCreativeCanvas.
+type CommandCreativeCanvas200JSONResponseBody struct {
+	union json.RawMessage
+}
+
+// RequestCreativeNodeExecutionParams defines parameters for RequestCreativeNodeExecution.
+type RequestCreativeNodeExecutionParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // SaveCreativeLibrarySettingsParams defines parameters for SaveCreativeLibrarySettings.
 type SaveCreativeLibrarySettingsParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -4356,6 +5477,9 @@ type TrashCreativeAssetJSONRequestBody = TrashCreativeAssetRequest
 // CommandCreativeCanvasJSONRequestBody defines body for CommandCreativeCanvas for application/json ContentType.
 type CommandCreativeCanvasJSONRequestBody = CommandCreativeCanvasRequest
 
+// RequestCreativeNodeExecutionJSONRequestBody defines body for RequestCreativeNodeExecution for application/json ContentType.
+type RequestCreativeNodeExecutionJSONRequestBody = CreativeRequestExecutionRequest
+
 // SaveCreativeLibrarySettingsJSONRequestBody defines body for SaveCreativeLibrarySettings for application/json ContentType.
 type SaveCreativeLibrarySettingsJSONRequestBody = SaveCreativeLibrarySettingsRequest
 
@@ -4649,6 +5773,136 @@ func (t *CreativeCanvasCommandPayload) MergeCreativeReplaceContentPayload(v Crea
 	return err
 }
 
+// AsCreativeBatchPayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeBatchPayload
+func (t CreativeCanvasCommandPayload) AsCreativeBatchPayload() (CreativeBatchPayload, error) {
+	var body CreativeBatchPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeBatchPayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeBatchPayload
+func (t *CreativeCanvasCommandPayload) FromCreativeBatchPayload(v CreativeBatchPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeBatchPayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeBatchPayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeBatchPayload(v CreativeBatchPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeUndoPayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeUndoPayload
+func (t CreativeCanvasCommandPayload) AsCreativeUndoPayload() (CreativeUndoPayload, error) {
+	var body CreativeUndoPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeUndoPayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeUndoPayload
+func (t *CreativeCanvasCommandPayload) FromCreativeUndoPayload(v CreativeUndoPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeUndoPayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeUndoPayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeUndoPayload(v CreativeUndoPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeSavePromptPayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeSavePromptPayload
+func (t CreativeCanvasCommandPayload) AsCreativeSavePromptPayload() (CreativeSavePromptPayload, error) {
+	var body CreativeSavePromptPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeSavePromptPayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeSavePromptPayload
+func (t *CreativeCanvasCommandPayload) FromCreativeSavePromptPayload(v CreativeSavePromptPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeSavePromptPayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeSavePromptPayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeSavePromptPayload(v CreativeSavePromptPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeReuseVersionPayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeReuseVersionPayload
+func (t CreativeCanvasCommandPayload) AsCreativeReuseVersionPayload() (CreativeReuseVersionPayload, error) {
+	var body CreativeReuseVersionPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeReuseVersionPayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeReuseVersionPayload
+func (t *CreativeCanvasCommandPayload) FromCreativeReuseVersionPayload(v CreativeReuseVersionPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeReuseVersionPayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeReuseVersionPayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeReuseVersionPayload(v CreativeReuseVersionPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeCancelExecutionPayload returns the union data inside the CreativeCanvasCommandPayload as a CreativeCancelExecutionPayload
+func (t CreativeCanvasCommandPayload) AsCreativeCancelExecutionPayload() (CreativeCancelExecutionPayload, error) {
+	var body CreativeCancelExecutionPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeCancelExecutionPayload overwrites any union data inside the CreativeCanvasCommandPayload as the provided CreativeCancelExecutionPayload
+func (t *CreativeCanvasCommandPayload) FromCreativeCancelExecutionPayload(v CreativeCancelExecutionPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeCancelExecutionPayload performs a merge with any union data inside the CreativeCanvasCommandPayload, using the provided CreativeCancelExecutionPayload
+func (t *CreativeCanvasCommandPayload) MergeCreativeCancelExecutionPayload(v CreativeCancelExecutionPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t CreativeCanvasCommandPayload) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -4717,6 +5971,458 @@ func (t CreativeContentPayload) MarshalJSON() ([]byte, error) {
 }
 
 func (t *CreativeContentPayload) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeActionAddNode returns the union data inside the CreativeGraphAction as a CreativeActionAddNode
+func (t CreativeGraphAction) AsCreativeActionAddNode() (CreativeActionAddNode, error) {
+	var body CreativeActionAddNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionAddNode overwrites any union data inside the CreativeGraphAction as the provided CreativeActionAddNode
+func (t *CreativeGraphAction) FromCreativeActionAddNode(v CreativeActionAddNode) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionAddNode performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionAddNode
+func (t *CreativeGraphAction) MergeCreativeActionAddNode(v CreativeActionAddNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionMoveNodes returns the union data inside the CreativeGraphAction as a CreativeActionMoveNodes
+func (t CreativeGraphAction) AsCreativeActionMoveNodes() (CreativeActionMoveNodes, error) {
+	var body CreativeActionMoveNodes
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionMoveNodes overwrites any union data inside the CreativeGraphAction as the provided CreativeActionMoveNodes
+func (t *CreativeGraphAction) FromCreativeActionMoveNodes(v CreativeActionMoveNodes) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionMoveNodes performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionMoveNodes
+func (t *CreativeGraphAction) MergeCreativeActionMoveNodes(v CreativeActionMoveNodes) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionMoveNode returns the union data inside the CreativeGraphAction as a CreativeActionMoveNode
+func (t CreativeGraphAction) AsCreativeActionMoveNode() (CreativeActionMoveNode, error) {
+	var body CreativeActionMoveNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionMoveNode overwrites any union data inside the CreativeGraphAction as the provided CreativeActionMoveNode
+func (t *CreativeGraphAction) FromCreativeActionMoveNode(v CreativeActionMoveNode) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionMoveNode performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionMoveNode
+func (t *CreativeGraphAction) MergeCreativeActionMoveNode(v CreativeActionMoveNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionResizeNode returns the union data inside the CreativeGraphAction as a CreativeActionResizeNode
+func (t CreativeGraphAction) AsCreativeActionResizeNode() (CreativeActionResizeNode, error) {
+	var body CreativeActionResizeNode
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionResizeNode overwrites any union data inside the CreativeGraphAction as the provided CreativeActionResizeNode
+func (t *CreativeGraphAction) FromCreativeActionResizeNode(v CreativeActionResizeNode) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionResizeNode performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionResizeNode
+func (t *CreativeGraphAction) MergeCreativeActionResizeNode(v CreativeActionResizeNode) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionUpdateMetadata returns the union data inside the CreativeGraphAction as a CreativeActionUpdateMetadata
+func (t CreativeGraphAction) AsCreativeActionUpdateMetadata() (CreativeActionUpdateMetadata, error) {
+	var body CreativeActionUpdateMetadata
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionUpdateMetadata overwrites any union data inside the CreativeGraphAction as the provided CreativeActionUpdateMetadata
+func (t *CreativeGraphAction) FromCreativeActionUpdateMetadata(v CreativeActionUpdateMetadata) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionUpdateMetadata performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionUpdateMetadata
+func (t *CreativeGraphAction) MergeCreativeActionUpdateMetadata(v CreativeActionUpdateMetadata) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionClearContent returns the union data inside the CreativeGraphAction as a CreativeActionClearContent
+func (t CreativeGraphAction) AsCreativeActionClearContent() (CreativeActionClearContent, error) {
+	var body CreativeActionClearContent
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionClearContent overwrites any union data inside the CreativeGraphAction as the provided CreativeActionClearContent
+func (t *CreativeGraphAction) FromCreativeActionClearContent(v CreativeActionClearContent) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionClearContent performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionClearContent
+func (t *CreativeGraphAction) MergeCreativeActionClearContent(v CreativeActionClearContent) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionReplaceContent returns the union data inside the CreativeGraphAction as a CreativeActionReplaceContent
+func (t CreativeGraphAction) AsCreativeActionReplaceContent() (CreativeActionReplaceContent, error) {
+	var body CreativeActionReplaceContent
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionReplaceContent overwrites any union data inside the CreativeGraphAction as the provided CreativeActionReplaceContent
+func (t *CreativeGraphAction) FromCreativeActionReplaceContent(v CreativeActionReplaceContent) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionReplaceContent performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionReplaceContent
+func (t *CreativeGraphAction) MergeCreativeActionReplaceContent(v CreativeActionReplaceContent) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionConnectReference returns the union data inside the CreativeGraphAction as a CreativeActionConnectReference
+func (t CreativeGraphAction) AsCreativeActionConnectReference() (CreativeActionConnectReference, error) {
+	var body CreativeActionConnectReference
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionConnectReference overwrites any union data inside the CreativeGraphAction as the provided CreativeActionConnectReference
+func (t *CreativeGraphAction) FromCreativeActionConnectReference(v CreativeActionConnectReference) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionConnectReference performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionConnectReference
+func (t *CreativeGraphAction) MergeCreativeActionConnectReference(v CreativeActionConnectReference) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionDisconnectReference returns the union data inside the CreativeGraphAction as a CreativeActionDisconnectReference
+func (t CreativeGraphAction) AsCreativeActionDisconnectReference() (CreativeActionDisconnectReference, error) {
+	var body CreativeActionDisconnectReference
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionDisconnectReference overwrites any union data inside the CreativeGraphAction as the provided CreativeActionDisconnectReference
+func (t *CreativeGraphAction) FromCreativeActionDisconnectReference(v CreativeActionDisconnectReference) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionDisconnectReference performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionDisconnectReference
+func (t *CreativeGraphAction) MergeCreativeActionDisconnectReference(v CreativeActionDisconnectReference) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionSetNodeInputs returns the union data inside the CreativeGraphAction as a CreativeActionSetNodeInputs
+func (t CreativeGraphAction) AsCreativeActionSetNodeInputs() (CreativeActionSetNodeInputs, error) {
+	var body CreativeActionSetNodeInputs
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionSetNodeInputs overwrites any union data inside the CreativeGraphAction as the provided CreativeActionSetNodeInputs
+func (t *CreativeGraphAction) FromCreativeActionSetNodeInputs(v CreativeActionSetNodeInputs) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionSetNodeInputs performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionSetNodeInputs
+func (t *CreativeGraphAction) MergeCreativeActionSetNodeInputs(v CreativeActionSetNodeInputs) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionGroupNodes returns the union data inside the CreativeGraphAction as a CreativeActionGroupNodes
+func (t CreativeGraphAction) AsCreativeActionGroupNodes() (CreativeActionGroupNodes, error) {
+	var body CreativeActionGroupNodes
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionGroupNodes overwrites any union data inside the CreativeGraphAction as the provided CreativeActionGroupNodes
+func (t *CreativeGraphAction) FromCreativeActionGroupNodes(v CreativeActionGroupNodes) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionGroupNodes performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionGroupNodes
+func (t *CreativeGraphAction) MergeCreativeActionGroupNodes(v CreativeActionGroupNodes) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionUngroupNodes returns the union data inside the CreativeGraphAction as a CreativeActionUngroupNodes
+func (t CreativeGraphAction) AsCreativeActionUngroupNodes() (CreativeActionUngroupNodes, error) {
+	var body CreativeActionUngroupNodes
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionUngroupNodes overwrites any union data inside the CreativeGraphAction as the provided CreativeActionUngroupNodes
+func (t *CreativeGraphAction) FromCreativeActionUngroupNodes(v CreativeActionUngroupNodes) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionUngroupNodes performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionUngroupNodes
+func (t *CreativeGraphAction) MergeCreativeActionUngroupNodes(v CreativeActionUngroupNodes) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionReparentNodes returns the union data inside the CreativeGraphAction as a CreativeActionReparentNodes
+func (t CreativeGraphAction) AsCreativeActionReparentNodes() (CreativeActionReparentNodes, error) {
+	var body CreativeActionReparentNodes
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionReparentNodes overwrites any union data inside the CreativeGraphAction as the provided CreativeActionReparentNodes
+func (t *CreativeGraphAction) FromCreativeActionReparentNodes(v CreativeActionReparentNodes) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionReparentNodes performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionReparentNodes
+func (t *CreativeGraphAction) MergeCreativeActionReparentNodes(v CreativeActionReparentNodes) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionDuplicateSelection returns the union data inside the CreativeGraphAction as a CreativeActionDuplicateSelection
+func (t CreativeGraphAction) AsCreativeActionDuplicateSelection() (CreativeActionDuplicateSelection, error) {
+	var body CreativeActionDuplicateSelection
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionDuplicateSelection overwrites any union data inside the CreativeGraphAction as the provided CreativeActionDuplicateSelection
+func (t *CreativeGraphAction) FromCreativeActionDuplicateSelection(v CreativeActionDuplicateSelection) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionDuplicateSelection performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionDuplicateSelection
+func (t *CreativeGraphAction) MergeCreativeActionDuplicateSelection(v CreativeActionDuplicateSelection) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionRemoveNodes returns the union data inside the CreativeGraphAction as a CreativeActionRemoveNodes
+func (t CreativeGraphAction) AsCreativeActionRemoveNodes() (CreativeActionRemoveNodes, error) {
+	var body CreativeActionRemoveNodes
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionRemoveNodes overwrites any union data inside the CreativeGraphAction as the provided CreativeActionRemoveNodes
+func (t *CreativeGraphAction) FromCreativeActionRemoveNodes(v CreativeActionRemoveNodes) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionRemoveNodes performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionRemoveNodes
+func (t *CreativeGraphAction) MergeCreativeActionRemoveNodes(v CreativeActionRemoveNodes) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionSelectVersion returns the union data inside the CreativeGraphAction as a CreativeActionSelectVersion
+func (t CreativeGraphAction) AsCreativeActionSelectVersion() (CreativeActionSelectVersion, error) {
+	var body CreativeActionSelectVersion
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionSelectVersion overwrites any union data inside the CreativeGraphAction as the provided CreativeActionSelectVersion
+func (t *CreativeGraphAction) FromCreativeActionSelectVersion(v CreativeActionSelectVersion) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionSelectVersion performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionSelectVersion
+func (t *CreativeGraphAction) MergeCreativeActionSelectVersion(v CreativeActionSelectVersion) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionDeleteVersion returns the union data inside the CreativeGraphAction as a CreativeActionDeleteVersion
+func (t CreativeGraphAction) AsCreativeActionDeleteVersion() (CreativeActionDeleteVersion, error) {
+	var body CreativeActionDeleteVersion
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionDeleteVersion overwrites any union data inside the CreativeGraphAction as the provided CreativeActionDeleteVersion
+func (t *CreativeGraphAction) FromCreativeActionDeleteVersion(v CreativeActionDeleteVersion) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionDeleteVersion performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionDeleteVersion
+func (t *CreativeGraphAction) MergeCreativeActionDeleteVersion(v CreativeActionDeleteVersion) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeGraphAction) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeGraphAction) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -4948,6 +6654,120 @@ func (t *ScheduleSlotListItem) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsCreativeNodeCommandResult returns the union data inside the CommandCreativeCanvas200JSONResponseBody as a CreativeNodeCommandResult
+func (t CommandCreativeCanvas200JSONResponseBody) AsCreativeNodeCommandResult() (CreativeNodeCommandResult, error) {
+	var body CreativeNodeCommandResult
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeNodeCommandResult overwrites any union data inside the CommandCreativeCanvas200JSONResponseBody as the provided CreativeNodeCommandResult
+func (t *CommandCreativeCanvas200JSONResponseBody) FromCreativeNodeCommandResult(v CreativeNodeCommandResult) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeNodeCommandResult performs a merge with any union data inside the CommandCreativeCanvas200JSONResponseBody, using the provided CreativeNodeCommandResult
+func (t *CommandCreativeCanvas200JSONResponseBody) MergeCreativeNodeCommandResult(v CreativeNodeCommandResult) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeChangeResult returns the union data inside the CommandCreativeCanvas200JSONResponseBody as a CreativeChangeResult
+func (t CommandCreativeCanvas200JSONResponseBody) AsCreativeChangeResult() (CreativeChangeResult, error) {
+	var body CreativeChangeResult
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeChangeResult overwrites any union data inside the CommandCreativeCanvas200JSONResponseBody as the provided CreativeChangeResult
+func (t *CommandCreativeCanvas200JSONResponseBody) FromCreativeChangeResult(v CreativeChangeResult) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeChangeResult performs a merge with any union data inside the CommandCreativeCanvas200JSONResponseBody, using the provided CreativeChangeResult
+func (t *CommandCreativeCanvas200JSONResponseBody) MergeCreativeChangeResult(v CreativeChangeResult) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativePromptResult returns the union data inside the CommandCreativeCanvas200JSONResponseBody as a CreativePromptResult
+func (t CommandCreativeCanvas200JSONResponseBody) AsCreativePromptResult() (CreativePromptResult, error) {
+	var body CreativePromptResult
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativePromptResult overwrites any union data inside the CommandCreativeCanvas200JSONResponseBody as the provided CreativePromptResult
+func (t *CommandCreativeCanvas200JSONResponseBody) FromCreativePromptResult(v CreativePromptResult) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativePromptResult performs a merge with any union data inside the CommandCreativeCanvas200JSONResponseBody, using the provided CreativePromptResult
+func (t *CommandCreativeCanvas200JSONResponseBody) MergeCreativePromptResult(v CreativePromptResult) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeNodeExecution returns the union data inside the CommandCreativeCanvas200JSONResponseBody as a CreativeNodeExecution
+func (t CommandCreativeCanvas200JSONResponseBody) AsCreativeNodeExecution() (CreativeNodeExecution, error) {
+	var body CreativeNodeExecution
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeNodeExecution overwrites any union data inside the CommandCreativeCanvas200JSONResponseBody as the provided CreativeNodeExecution
+func (t *CommandCreativeCanvas200JSONResponseBody) FromCreativeNodeExecution(v CreativeNodeExecution) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeNodeExecution performs a merge with any union data inside the CommandCreativeCanvas200JSONResponseBody, using the provided CreativeNodeExecution
+func (t *CommandCreativeCanvas200JSONResponseBody) MergeCreativeNodeExecution(v CreativeNodeExecution) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CommandCreativeCanvas200JSONResponseBody) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CommandCreativeCanvas200JSONResponseBody) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsScheduleSlotListItem returns the union data inside the GetDashboardV2200JSONResponseBody_NextShoot as a ScheduleSlotListItem
 func (t GetDashboardV2200JSONResponseBody_NextShoot) AsScheduleSlotListItem() (ScheduleSlotListItem, error) {
 	var body ScheduleSlotListItem
@@ -5150,12 +6970,24 @@ type ServerInterface interface {
 
 	// (POST /creative/canvases/{id}/commands)
 	CommandCreativeCanvas(c *gin.Context, id string, params CommandCreativeCanvasParams)
+
+	// (POST /creative/canvases/{id}/executions)
+	RequestCreativeNodeExecution(c *gin.Context, id string, params RequestCreativeNodeExecutionParams)
+
+	// (GET /creative/canvases/{id}/executions/{execution_id})
+	GetCreativeNodeExecution(c *gin.Context, id string, executionId string)
+
+	// (GET /creative/canvases/{id}/nodes/{node_id}/versions)
+	ListCreativeNodeVersions(c *gin.Context, id string, nodeId string)
 	// 查询当前已实现的创意能力；地基阶段不开放业务动作
 	// (GET /creative/capabilities)
 	GetCreativeCapabilities(c *gin.Context)
 
 	// (GET /creative/content-revisions/{id})
 	GetCreativeContentRevision(c *gin.Context, id string)
+
+	// (GET /creative/documents/{id})
+	GetCreativeDocument(c *gin.Context, id string)
 
 	// (GET /creative/library-settings)
 	GetCreativeLibrarySettings(c *gin.Context)
@@ -6575,6 +8407,132 @@ func (siw *ServerInterfaceWrapper) CommandCreativeCanvas(c *gin.Context) {
 	siw.Handler.CommandCreativeCanvas(c, id, params)
 }
 
+// RequestCreativeNodeExecution operation middleware
+func (siw *ServerInterfaceWrapper) RequestCreativeNodeExecution(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RequestCreativeNodeExecutionParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RequestCreativeNodeExecution(c, id, params)
+}
+
+// GetCreativeNodeExecution operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeNodeExecution(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "execution_id" -------------
+	var executionId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "execution_id", c.Param("execution_id"), &executionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter execution_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeNodeExecution(c, id, executionId)
+}
+
+// ListCreativeNodeVersions operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeNodeVersions(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "node_id" -------------
+	var nodeId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "node_id", c.Param("node_id"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter node_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeNodeVersions(c, id, nodeId)
+}
+
 // GetCreativeCapabilities operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeCapabilities(c *gin.Context) {
 
@@ -6615,6 +8573,33 @@ func (siw *ServerInterfaceWrapper) GetCreativeContentRevision(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeContentRevision(c, id)
+}
+
+// GetCreativeDocument operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeDocument(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeDocument(c, id)
 }
 
 // GetCreativeLibrarySettings operation middleware
@@ -9054,8 +11039,12 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/:id/trash", wrapper.TrashCreativeAsset)
 	router.GET(options.BaseURL+"/creative/canvases/:id", wrapper.GetCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/commands", wrapper.CommandCreativeCanvas)
+	router.POST(options.BaseURL+"/creative/canvases/:id/executions", wrapper.RequestCreativeNodeExecution)
+	router.GET(options.BaseURL+"/creative/canvases/:id/executions/:execution_id", wrapper.GetCreativeNodeExecution)
+	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
+	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
 	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/library-settings", wrapper.SaveCreativeLibrarySettings)
 	router.GET(options.BaseURL+"/creative/operations/:operation_id", wrapper.GetCreativeOperation)

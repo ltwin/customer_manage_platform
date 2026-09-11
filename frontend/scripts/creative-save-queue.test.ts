@@ -207,17 +207,39 @@ test('completion returns the committed result for creation and recovered navigat
 
 const positionNode: CanvasNode = {
   id: 'n',
-  type_key: 'core.text',
-  title: '',
-  x: 0,
-  y: 0,
-  width: 280,
-  height: 180,
+  parent_id: null,
+  metadata: {
+    type_key: 'core.text',
+    type_version: 1,
+    title: '',
+    intent: '',
+    x: 0,
+    y: 0,
+    width: 280,
+    height: 180,
+    z_order: 0,
+  },
+  prompt: null,
+  capabilities: { actions: [], prompt_mode: 'draft', disabled_reason: null },
+  status: {
+    content_state: 'ready',
+    generation_state: 'idle',
+    active_execution_id: null,
+    latest_execution_id: null,
+    apply_state: null,
+    error: null,
+    status_revision: '1',
+  },
   placement_revision: '1',
   data_revision: '1',
-  content_id: null,
-  content_revision_id: null,
-  unavailable: false,
+  data: {
+    schema_version: 1,
+    config: {},
+    content_id: null,
+    content_revision_id: null,
+    selected_version_id: null,
+    document_id: null,
+  },
 }
 const positionCanvas: Canvas = {
   id: 'a',
@@ -228,6 +250,10 @@ const positionCanvas: Canvas = {
   topology_revision: '1',
   archived: false,
   nodes: [positionNode],
+  edges: [],
+  node_inputs: [],
+  changes: [],
+  object_states: [],
 }
 
 test('positions coalesce while a request is in flight and advance only on its receipt', async () => {
@@ -281,7 +307,13 @@ test('positions coalesce while a request is in flight and advance only on its re
   )
   await q.reconcilePositions({
     ...positionCanvas,
-    nodes: [{ ...positionNode, x: 50, y: 60, placement_revision: '3' }],
+    nodes: [
+      {
+        ...positionNode,
+        metadata: { ...positionNode.metadata, x: 50, y: 60 },
+        placement_revision: '3',
+      },
+    ],
   })
   assert.equal(q.value.positions!['a:n'], undefined)
   assert.equal(q.value.positions!['a:other'].x, 70)
@@ -376,7 +408,13 @@ test('dragging back to the old coordinates after our receipt still sends the sec
   await q.sendNextPosition('a')
   await q.reconcilePositions({
     ...positionCanvas,
-    nodes: [{ ...positionNode, x: 10, y: 20, placement_revision: '2' }],
+    nodes: [
+      {
+        ...positionNode,
+        metadata: { ...positionNode.metadata, x: 10, y: 20 },
+        placement_revision: '2',
+      },
+    ],
   })
   await q.stagePosition('a', positionNode, 0, 0)
   await q.sendNextPosition('a')
@@ -388,4 +426,379 @@ test('dragging back to the old coordinates after our receipt still sends the sec
     y: 0,
     expected_placement_revision: '2',
   })
+})
+
+test('group move receipts carry only their own versions into the next gesture', async () => {
+  let release!: (result: unknown) => void
+  const sent: Job[] = []
+  const group: CanvasNode = {
+    ...positionNode,
+    id: 'g',
+    metadata: { ...positionNode.metadata, type_key: 'core.group' },
+  }
+  const child: CanvasNode = { ...positionNode, id: 'child', parent_id: 'g' }
+  const canvas: Canvas = { ...positionCanvas, nodes: [group, child] }
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => {
+        throw error(404)
+      },
+      send: async (job) => {
+        sent.push(job)
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      },
+    },
+    () => {},
+  )
+  await q.stagePositions(canvas, [{ node: group, x: 20, y: 10 }])
+  const first = q.sendNextPosition('a')
+  while (!release) await new Promise((resolve) => setImmediate(resolve))
+  await q.stagePositions(canvas, [{ node: group, x: 50, y: 20 }])
+  release({
+    object_results: [
+      {
+        kind: 'node',
+        id: 'g',
+        is_live: true,
+        placement_revision: '2',
+        data_revision: '1',
+      },
+    ],
+  })
+  await first
+  const second = q.sendNextPosition('a')
+  while (sent.length < 2) await new Promise((resolve) => setImmediate(resolve))
+  const payload = JSON.parse(sent[1].body).payload
+  assert.equal(
+    payload.read_set.find((r: { id: string }) => r.id === 'g')
+      .placement_revision,
+    '2',
+  )
+  assert.equal(
+    payload.read_set.find((r: { id: string }) => r.id === 'child')
+      .placement_revision,
+    '1',
+  )
+  assert.equal(payload.actions[0].x, 50)
+  release({
+    object_results: [
+      {
+        kind: 'node',
+        id: 'g',
+        is_live: true,
+        placement_revision: '3',
+        data_revision: '1',
+      },
+    ],
+  })
+  await second
+})
+test('incomplete batch receipt remains recoverable instead of acknowledging a missing node', async () => {
+  const group: CanvasNode = {
+    ...positionNode,
+    id: 'g',
+    metadata: { ...positionNode.metadata, type_key: 'core.group' },
+  }
+  const canvas: Canvas = { ...positionCanvas, nodes: [group] }
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => {
+        throw error(404)
+      },
+      send: async () => ({ object_results: [] }),
+    },
+    () => {},
+  )
+  await q.stagePositions(canvas, [{ node: group, x: 30, y: 40 }])
+  await q.sendNextPosition('a')
+  assert.equal(q.value.job?.state, 'unknown')
+  assert.equal(q.value.positions?.['a:g'].synced, false)
+})
+
+test('unchanged group gesture does not enqueue an empty operation', async () => {
+  let sends = 0
+  const group: CanvasNode = {
+    ...positionNode,
+    id: 'g',
+    metadata: { ...positionNode.metadata, type_key: 'core.group' },
+  }
+  const canvas: Canvas = { ...positionCanvas, nodes: [group] }
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => {
+        throw error(404)
+      },
+      send: async () => {
+        sends++
+        return {}
+      },
+    },
+    () => {},
+  )
+  await q.stagePositions(canvas, [
+    { node: group, x: group.metadata.x, y: group.metadata.y },
+  ])
+  await q.sendNextPosition(canvas.id)
+  assert.equal(sends, 0)
+  assert.equal(q.value.job, null)
+})
+test('normal graph reads exclude unrelated permanent identities', async () => {
+  const { graphReadSet } = await import(
+    '../src/creative-canvas/editor/graph.ts'
+  )
+  const canvas: Canvas = {
+    ...positionCanvas,
+    object_states: Array.from({ length: 5100 }, (_, i) => ({
+      id: `deleted-${i}`,
+      kind: 'node' as const,
+      is_live: false,
+      placement_revision: '1',
+      data_revision: '1',
+    })),
+  }
+  assert.deepEqual(
+    graphReadSet(canvas).map((r) => r.id),
+    canvas.nodes.map((n) => n.id),
+  )
+})
+
+test('copy and remove read only the versions owned by their selected subtree', async () => {
+  const { graphActionReadSet } = await import(
+    '../src/creative-canvas/editor/graph.ts'
+  )
+  const group: CanvasNode = {
+    ...positionNode,
+    id: 'g',
+    metadata: { ...positionNode.metadata, type_key: 'core.group' },
+  }
+  const child: CanvasNode = {
+    ...positionNode,
+    id: 'child',
+    parent_id: 'g',
+    data: { ...positionNode.data, selected_version_id: 'selected' },
+  }
+  const canvas: Canvas = {
+    ...positionCanvas,
+    nodes: [group, child],
+    object_states: [
+      {
+        kind: 'version',
+        id: 'selected',
+        node_id: 'child',
+        is_live: true,
+        revision: '1',
+      },
+      {
+        kind: 'version',
+        id: 'history',
+        node_id: 'child',
+        is_live: true,
+        revision: '1',
+      },
+      {
+        kind: 'version',
+        id: 'unrelated',
+        node_id: 'elsewhere',
+        is_live: true,
+        revision: '1',
+      },
+      {
+        kind: 'version',
+        id: 'deleted',
+        node_id: 'child',
+        is_live: false,
+        revision: '2',
+      },
+    ],
+  }
+  assert.deepEqual(
+    graphActionReadSet(canvas, [
+      { type: 'duplicate_selection', node_ids: ['g'] },
+    ])
+      .filter((r) => r.kind === 'version')
+      .map((r) => r.id),
+    ['selected'],
+  )
+  assert.deepEqual(
+    graphActionReadSet(canvas, [{ type: 'remove_nodes', node_ids: ['g'] }])
+      .filter((r) => r.kind === 'version')
+      .map((r) => r.id),
+    ['selected', 'history'],
+  )
+})
+
+const connectionCommand = {
+  type: 'batch',
+  actions: [
+    {
+      type: 'connect_reference',
+      source_node_id: positionNode.id,
+      target_node_id: 'target',
+      source_port: 'output',
+      target_port: 'reference',
+      role: 'reference',
+    },
+  ],
+}
+const connectionCanvas: Canvas = {
+  ...positionCanvas,
+  nodes: [positionNode, { ...positionNode, id: 'target' }],
+}
+
+test('connection paints before dispatch and survives receipt until authoritative revision', async () => {
+  let release!: (value: unknown) => void
+  const q = new SaveQueue(
+    memory(),
+    {
+      lookup: async () => ({}),
+      send: () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    },
+    () => {},
+  )
+  const saving = q.enqueue('/canvases/a/commands', connectionCommand)
+  assert.equal(q.connections.visible(connectionCanvas).length, 1)
+  while (!release) await new Promise((resolve) => setImmediate(resolve))
+  release({ result_revision: '3' })
+  await saving
+  assert.equal(q.value.job, null)
+  assert.equal(
+    q.connections.visible({ ...connectionCanvas, revision: '2' }).length,
+    1,
+  )
+  // A newer snapshot can legitimately omit an edge deleted by another window.
+  assert.equal(
+    q.connections.visible({ ...connectionCanvas, revision: '4' }).length,
+    0,
+  )
+  assert.equal(
+    q.connections.visible({ ...connectionCanvas, id: 'other' }).length,
+    0,
+  )
+  assert.equal(
+    q.connections.visible({ ...connectionCanvas, nodes: [positionNode] })
+      .length,
+    0,
+  )
+  q.connections.reconcile({ ...connectionCanvas, revision: '4' })
+  assert.equal(q.connections.visible(connectionCanvas).length, 0)
+})
+
+test('unknown connection restores from journal, deduplicates a polling snapshot and recovers same operation', async () => {
+  const storage = memory(),
+    sent: Job[] = []
+  const transport = {
+    send: async (job: Job) => {
+      sent.push(job)
+      throw new Error('lost receipt')
+    },
+    lookup: async () => ({ result_revision: '3' }),
+  }
+  const q = new SaveQueue(storage, transport, () => {})
+  await q.enqueue('/canvases/a/commands', connectionCommand)
+  assert.equal(q.connections.visible(connectionCanvas).length, 1)
+  const recovered = new SaveQueue(storage, transport, () => {})
+  await recovered.load()
+  assert.equal(recovered.connections.visible(connectionCanvas).length, 1)
+  const edge = {
+    id: 'server-edge',
+    source_node_id: positionNode.id,
+    target_node_id: 'target',
+    source_port: 'output',
+    target_port: 'reference',
+    role: 'reference',
+    revision: '1',
+    ordinal: 0,
+  }
+  assert.equal(
+    recovered.connections.visible({ ...connectionCanvas, edges: [edge] })
+      .length,
+    0,
+  )
+  await recovered.flush()
+  assert.equal(sent.length, 1)
+  assert.equal(recovered.connections.visible(connectionCanvas).length, 1)
+  assert.equal(
+    recovered.connections.visible({
+      ...connectionCanvas,
+      revision: '3',
+      edges: [edge],
+    }).length,
+    0,
+  )
+})
+
+test('rejected connections roll back without losing unknown outcomes', async () => {
+  for (const failure of [
+    error(422),
+    error(409, 'creative_revision_conflict'),
+    error(403),
+  ]) {
+    const storage = memory()
+    const q = new SaveQueue(
+      storage,
+      {
+        send: async () => {
+          throw failure
+        },
+        lookup: async () => ({}),
+      },
+      () => {},
+    )
+    await q.enqueue('/canvases/a/commands', connectionCommand)
+    assert.equal(q.value.job?.state, 'rejected')
+    assert.equal(q.connections.visible(connectionCanvas).length, 0)
+    const restored = new SaveQueue(
+      storage,
+      { send: async () => ({}), lookup: async () => ({}) },
+      () => {},
+    )
+    await restored.load()
+    assert.equal(restored.connections.visible(connectionCanvas).length, 0)
+  }
+  const q = new SaveQueue(
+    memory(),
+    { send: async () => ({}), lookup: async () => ({}) },
+    () => {},
+  )
+  await q.enqueue('/canvases/a/commands', connectionCommand)
+  assert.equal(
+    q.value.job?.state,
+    'unknown',
+    'malformed receipt cannot confirm the preview',
+  )
+  assert.equal(q.connections.visible(connectionCanvas).length, 1)
+})
+
+test('failed local journal writes remove unsent connection preview', async () => {
+  let sends = 0
+  const q = new SaveQueue(
+    {
+      load: async () => emptyJournal(),
+      save: async () => {
+        throw new Error('disk full')
+      },
+    },
+    {
+      send: async () => {
+        sends++
+        return {}
+      },
+      lookup: async () => ({}),
+    },
+    () => {},
+  )
+  await assert.rejects(
+    q.enqueue('/canvases/a/commands', connectionCommand),
+    /disk full/,
+  )
+  assert.equal(sends, 0)
+  assert.equal(q.connections.visible(connectionCanvas).length, 0)
 })

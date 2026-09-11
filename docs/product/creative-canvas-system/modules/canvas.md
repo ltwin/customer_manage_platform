@@ -26,7 +26,7 @@ created: 2026-09-09
 
 快照中未知类型保留原始配置为只读节点，不能让旧客户端整图覆盖擦掉它。
 
-命令回执包括 operation_id、change_id、result_revision、before_topology_revision、result_topology_revision、changed_ids、removed_ids、object_results、必要临时 ID 映射；不复制大正文/媒体到长期回执。object_results 包含每个受影响图对象的 kind/id/is_live 和提交后的实际版本：节点 placement_revision/data_revision，边/输入 revision；删除返回身份记录的最后版本及 is_live=false。结果在修改对象的同一事务中固定并写入紧凑回执，不能重放时查当前表补值。before_topology_revision 与 result_topology_revision 是该事务执行前后真实拓扑版本，连同回执固定保存；纯内容/布局命令未改拓扑时二者相等。对象数量受批次影响上限约束，只含身份/版本，不含正文。
+命令回执包括 operation_id、change_id、result_revision、before_topology_revision、result_topology_revision、changed_ids、removed_ids、object_results、必要临时 ID 映射；不复制大正文/媒体到长期回执。object_results 包含每个受影响图对象的 kind/id/is_live 和提交后的实际版本：节点 placement_revision/data_revision，边/输入 revision；删除返回身份记录的最后版本及 is_live=false。移动批次还返回每个显式提交节点的实际版本，包括最终位置未变化的节点；未变化不推高节点版本。结果在修改对象的同一事务中固定并写入紧凑回执，不能重放时查当前表补值。before_topology_revision 与 result_topology_revision 是该事务执行前后真实拓扑版本，连同回执固定保存；纯内容/布局命令未改拓扑时二者相等。对象数量受批次影响上限约束，只含身份/版本，不含正文。
 
 当前阶段统一在回执后刷新快照并叠加未确认编辑；未来若提供增量端点须校验 before/after 水位，不能把旧回执里的节点数据覆盖新状态。
 
@@ -143,3 +143,7 @@ React Flow 使用受控 nodes/edges；适配层先排父节点再排子节点、
 ## 8. Prompt、状态与结果版本
 
 首期新增[node-generation](../node-generation.md)契约：GetCanvas/GetNode返回类型化data、服务端status、prompt草稿与capabilities；SaveNodePrompt、SelectNodeVersion、DeleteNodeVersion、ListNodeVersions、ReuseVersionPrompt为共享应用能力。FND-04建立模型/命令和内部执行基线，FND-13完成真实媒体生成/面板/历史体验。版本列表是真实保留根，不以撤销过期清空；Prompt refs动态节点关系加入既有参考图/环检查，删除源节点时与edges/node_inputs一并处理。状态刷新不增加data_revision，采用版本才改变输出。
+
+### FND-04 读集投影
+
+普通画布命令只读取当前活跃图；历史身份仍保留在服务端，不随每次编辑整批提交。近期 change 摘要提供其涉及对象的当前 `read_set`，撤销/重做只使用目标 change 的读集（包含待恢复墓碑的实际版本）。`object_states`投影近期可撤销变化涉及的删除身份，以及所有活跃版本的身份、版本号与所属node_id。普通命令不携带版本；复制只带选中闭包的当前选用版本，删除带被删除闭包的活跃版本；活跃版本不受近期撤销窗口限制。它不是全量历史身份目录。

@@ -147,7 +147,7 @@ func validateOutcome(out Outcome) error {
 	if out.HTTPStatus != 200 && out.HTTPStatus != 201 && out.HTTPStatus != 202 {
 		return ErrValidation
 	}
-	if out.ResultKind == "" || len(out.Response) > 24<<10 {
+	if out.ResultKind == "" || len(out.Response) > 64<<10 {
 		return fmt.Errorf("%w: receipt must be bounded", ErrValidation)
 	}
 	var object map[string]any

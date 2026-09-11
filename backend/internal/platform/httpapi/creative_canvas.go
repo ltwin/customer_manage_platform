@@ -33,6 +33,10 @@ func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/canvases/:id", w.GetCreativeCanvas)
 	r.POST("/creative/canvases/:id/commands", w.CommandCreativeCanvas)
 	r.GET("/creative/content-revisions/:id", w.GetCreativeContentRevision)
+	r.GET("/creative/documents/:id", w.GetCreativeDocument)
+	r.GET("/creative/canvases/:id/nodes/:node_id/versions", w.ListCreativeNodeVersions)
+	r.GET("/creative/canvases/:id/executions/:execution_id", w.GetCreativeNodeExecution)
+	r.POST("/creative/canvases/:id/executions", w.RequestCreativeNodeExecution)
 }
 func (h *handlers) creativeScope(c *gin.Context) (store.AccountScope, bool) {
 	ac, ok := auth.AccountContextFrom(c.Request.Context())
@@ -66,8 +70,10 @@ func creativeError(c *gin.Context, err error) {
 		abortError(c, 403, "creative_usage_denied", "此内容当前不允许使用")
 	case errors.Is(err, store.ErrCreativeAccessDenied):
 		abortError(c, 403, CodeForbidden, "创意空间当前不可用")
+	case errors.Is(err, creativecanvas.ErrActionUnavailable):
+		abortError(c, 422, "creative_action_unavailable", "此节点动作尚未配置")
 	case errors.Is(err, creativecanvas.ErrLimit):
-		abortError(c, 422, "creative_size_limit", "画布节点数量已达上限")
+		abortError(c, 422, "creative_size_limit", "本次操作涉及的节点或关联过多，请缩小选区")
 	case errors.Is(err, store.ErrCommitOutcomeUnknown):
 		abortError(c, 503, "creative_commit_unknown", "提交结果待确认，请保留原操作重查")
 	default:
@@ -214,6 +220,18 @@ func (h *handlers) creativeWrite(c *gin.Context, targetKey, target string, apply
 		}
 		delete(payload, "type")
 		switch kind {
+		case "reuse_version_prompt":
+			apply = creativecanvas.ReuseVersionPrompt
+		case "cancel_execution":
+			apply = creativecanvas.CancelNodeExecution
+		case "save_prompt":
+			apply = creativecanvas.SaveNodePrompt
+		case "batch":
+			apply = creativecanvas.ApplyCommands
+		case "undo":
+			apply = creativecanvas.Undo
+		case "redo":
+			apply = creativecanvas.Redo
 		case "add_node":
 			apply = creativecanvas.AddNode
 		case "move_node":
@@ -254,4 +272,42 @@ func (h *handlers) RenameCreativeProject(c *gin.Context, id string, _ RenameCrea
 }
 func (h *handlers) CommandCreativeCanvas(c *gin.Context, id string, _ CommandCreativeCanvasParams) {
 	h.creativeWrite(c, "canvas_id", id, nil)
+}
+
+func (h *handlers) ListCreativeNodeVersions(c *gin.Context, id string, nodeID string) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	creativeRead(c, func() (creativecanvas.VersionPage, error) {
+		return creativecanvas.ListNodeVersions(c.Request.Context(), scope, id, nodeID)
+	})
+}
+
+func (h *handlers) GetCreativeDocument(c *gin.Context, id string) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	creativeRead(c, func() (creativecanvas.Document, error) {
+		return creativecanvas.ReadDocument(c.Request.Context(), scope, id)
+	})
+}
+func (h *handlers) GetCreativeNodeExecution(c *gin.Context, id string, executionID string) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	creativeRead(c, func() (creativecanvas.NodeExecution, error) {
+		return creativecanvas.GetNodeExecution(c.Request.Context(), scope, creativecanvas.ExecutionTarget{CanvasID: id, ExecutionID: executionID})
+	})
+}
+func (h *handlers) RequestCreativeNodeExecution(c *gin.Context, id string, _ RequestCreativeNodeExecutionParams) {
+	h.creativeWrite(c, "canvas_id", id, func(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
+		service, err := creativecanvas.NewExecutionService(nil)
+		if err != nil {
+			return creativeops.Receipt{}, err
+		}
+		return service.Request(ctx, scope, command, nil)
+	})
 }

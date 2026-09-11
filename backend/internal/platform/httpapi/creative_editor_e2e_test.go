@@ -69,6 +69,22 @@ func TestCreativeEditorBrowser(t *testing.T) {
 
 	// Isolated benchmark fixture endpoint exists only in this opt-in test server.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__test/document" {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(405)
+				return
+			}
+			result, err := documentFixture(r.Context(), db.ScopeFor(auth.AccountContext{AccountID: account.ID}), r.URL.Query().Get("canvas_id"), r.URL.Query().Get("document_id"))
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err = json.NewEncoder(w).Encode(result); err != nil {
+				t.Error(err)
+			}
+			return
+		}
 		if r.URL.Path != "/__test/library-scale" {
 			handler.ServeHTTP(w, r)
 			return
@@ -127,12 +143,21 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join(root, "frontend/scripts/creative-text-canvas.e2e.mjs")
-	cmd := exec.CommandContext(t.Context(), "node", script)
-	cmd.Env = append(os.Environ(), "CREATIVE_EDITOR_API="+server.URL, "CREATIVE_EDITOR_EMAIL="+email, "CREATIVE_EDITOR_PASSWORD="+testPassword)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("browser: %v\n%s", err, out)
+	scripts := []string{"creative-text-canvas.e2e.mjs", "creative-canvas-commands.e2e.mjs"}
+	if selected := os.Getenv("CREATIVE_EDITOR_SCRIPT"); selected != "" {
+		if selected != scripts[0] && selected != scripts[1] {
+			t.Fatal("unknown browser script")
+		}
+		scripts = []string{selected}
 	}
-	t.Log(string(out))
+	for _, name := range scripts {
+		script := filepath.Join(root, "frontend/scripts", name)
+		cmd := exec.CommandContext(t.Context(), "node", script)
+		cmd.Env = append(os.Environ(), "CREATIVE_EDITOR_API="+server.URL, "CREATIVE_EDITOR_EMAIL="+email, "CREATIVE_EDITOR_PASSWORD="+testPassword)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("browser %s: %v\n%s", name, err, out)
+		}
+		t.Log(string(out))
+	}
 }

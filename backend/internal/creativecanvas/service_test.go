@@ -295,8 +295,8 @@ func TestCanvasPreviewDoesNotReplaceFullRevision(t *testing.T) {
 	if _, err := creativecanvas.ReplaceContent(t.Context(), a, command(t, creativecanvas.ReplaceContentInput{CanvasID: p.CanvasID, NodeID: id, ExpectedDataRevision: 1, ExpectedContentRevisionID: &full.ID, Payload: creativecontent.Payload{Body: &nextBody}})); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := creativecontent.Read(t.Context(), a, full.ID); !errors.Is(err, creativecontent.ErrNotFound) {
-		t.Fatalf("stale truncated read %v", err)
+	if retained, err := creativecontent.Read(t.Context(), a, full.ID); err != nil || retained.Payload.Body == nil || *retained.Payload.Body != body {
+		t.Fatalf("undo retention must preserve complete prior revision: %v", err)
 	}
 }
 

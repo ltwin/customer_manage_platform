@@ -600,6 +600,8 @@ try {
   // Deliberately stall the server while continuing real pointer drags.
   await page.goto(first)
   await saved(page)
+  // Earlier wheel checks can now pan horizontally; frame the drag target explicitly.
+  await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
   const dragged = page.locator('.react-flow__node').first()
   async function dragBy(target, dx, dy) {
     const box = await target.boundingBox()
@@ -620,7 +622,7 @@ try {
       .querySelector('.react-flow__node')
       .style.transform.includes('translate'),
   )
-  while (!releaseMove) await new Promise((resolve) => setTimeout(resolve, 10))
+  await waitUntil(() => !!releaseMove, 'drag did not submit a move request')
   const firstDrop = await dragged.boundingBox()
   assert(
     firstDrop.x - beforeDrag.x > 50,
