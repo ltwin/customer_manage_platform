@@ -69,6 +69,10 @@ endpoint 建议：ECS 与 bucket 同地域时设置内网 endpoint（如 `oss-cn
 
 本节适用于[创意画布基础框架](../product/creative-canvas-system/architecture.md)。FND-05 已实现 `internal/creativemedia`：local 与 OSS 两个流式适配器、上传状态机、内容校验、发布/候选与票据读取；OSS 适配器只有 fake conformance 与 SDK 调用形状验证，**真实 bucket、RAM 最小权限、CORS 尚未在授权测试环境执行**（PRE-05 待办），生产切换前必须补做。已有头像、planning 和创意空间先导继续沿用各自现行路径，不因本节被切换。
 
+RAM 最小权限在原 runbook 六项之外，媒体分片与版本读取还需要：`oss:AbortMultipartUpload`、`oss:ListParts`、`oss:ListMultipartUploads`、`oss:GetObjectVersion`、`oss:DeleteObjectVersion`（InitiateMultipartUpload / UploadPart / CompleteMultipartUpload 归 `oss:PutObject`）；bucket 必须开启版本控制，否则完成分片与发布拿不到固定版本号。缺权限时上传落为 `failed/init_failed`；OSS 返回的 Code、RequestId 与完整错误只写入 creative-worker 的结构化日志（`creative media upload failed`），不落库、不返回前端。
+
+bucket CORS（控制台「数据安全 → 跨域设置」，浏览器直接 PUT 预签名分片地址时必需）：来源填实际前端 Origin（开发 `http://localhost:5173`、`http://127.0.0.1:5173`；生产 `https://<前端域名>`，协议/host/端口逐一匹配，不用 `*`）；Methods `PUT, GET, HEAD`；Headers `*`；Expose `ETag, x-oss-request-id`；MaxAge 600；开启 Vary: Origin；不需要 Credentials（分片请求 `credentials: omit`）。缺规则时浏览器在预检阶段报 CORS 错误，服务端不会收到任何请求。
+
 运行配置：`AVATAR_STORAGE_DRIVER` 统一决定驱动；local 下 `CREATIVE_MEDIA_LOCAL_ROOT` 存放 `creative-v2/{account}/staging/{upload}/sessions|versions` 与 `blobs/{blob}/versions/{sha256}`，分片经 API `PUT /creative/media-parts?token=` 写入，token 由服务器 HMAC 签发并绑定 key/会话/分片号/有效期。`CREATIVE_FFPROBE` 指向 ffprobe（音视频探测，不转码）；`CREATIVE_MEDIA_QUOTA_BYTES` 是每账号额度。API 与 `creative-worker` 两个进程都从 `AUTH_TOKEN_SECRET` 派生同一票据密钥；worker 必须在业务迁移 0041 与 River 迁移之后启动，API 只入队不执行上传阶段。
 
 新对象限于 `creative-v2/{account_id}/staging/{upload_id}/original` 和 `creative-v2/{account_id}/blobs/{blob_id}/{rendition}`（rendition 为 original/display）；OSS 以对象版本号固定内容，local 在该 key 下再以 `versions/{sha256}` 存放固定版本。旧先导使用 `creative/{account_id}/assets/…`，它不属于新版孤立对象扫描范围。新 GC 只接受已校验的新前缀与账号，先核对 DB 保留根，再操作精确 key/version；旧文件由原生命周期或显式迁移接管规则负责。

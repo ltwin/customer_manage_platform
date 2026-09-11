@@ -233,6 +233,30 @@ func TestEmptyNodeFirstContentAndStaleReplacement(t *testing.T) {
 	}
 }
 
+func TestFirstContentWithoutRightsDefaultsToOwnWork(t *testing.T) {
+	db, a, _ := setup(t)
+	p := project(t, a)
+	id := "cwnode_" + uuid.NewString()
+	if _, err := creativecanvas.AddNode(t.Context(), a, command(t, creativecanvas.AddNodeInput{CanvasID: p.CanvasID, NodeID: id, TypeKey: "core.text", ExpectedTopologyRevision: 1})); err != nil {
+		t.Fatal(err)
+	}
+	d := draft("不问来源")
+	if _, err := creativecanvas.ReplaceContent(t.Context(), a, command(t, creativecanvas.ReplaceContentInput{CanvasID: p.CanvasID, NodeID: id, ExpectedDataRevision: 1, Payload: d.Payload})); err != nil {
+		t.Fatal(err)
+	}
+	c, err := creativecanvas.GetCanvas(t.Context(), a, p.CanvasID)
+	if err != nil || len(c.Nodes) != 1 || c.Nodes[0].Content == nil {
+		t.Fatalf("content: %+v %v", c, err)
+	}
+	var source, basis string
+	if err := db.QueryRow(`SELECT d.source_class, d.rights_basis FROM creative_content_revisions r JOIN creative_rights_declarations d ON d.id=r.rights_declaration_id WHERE r.id=$1`, c.Nodes[0].Content.ID).Scan(&source, &basis); err != nil {
+		t.Fatal(err)
+	}
+	if source != "photographer_owned" || basis != "ownership_attested" {
+		t.Fatalf("default declaration %s/%s", source, basis)
+	}
+}
+
 func TestListsPaginationAccountAndArchiveFilters(t *testing.T) {
 	_, a, b := setup(t)
 	for range 3 {

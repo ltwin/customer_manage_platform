@@ -3,6 +3,7 @@ package creativecanvas
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -69,6 +70,7 @@ func BindNodeRevisionInTx(ctx context.Context, tx store.TxAccountScope, t NodeTa
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
 	n.SelectedVersionID = nil
+	fitMediaSize(&n, r)
 	after.Nodes[n.ID] = n
 	changes, err := planChanges(before, after, ids)
 	if err != nil {
@@ -126,4 +128,28 @@ func SaveNodeToLibrary(ctx context.Context, scope store.AccountScope, c creative
 		}
 		return outcome(201, "asset", result.ID, result.Revision, result)
 	})
+}
+
+// Default node box and the chrome a media card keeps around its picture
+// (41px header + 33px footer, per workspace.css). A node the photographer has
+// never resized adopts the media's aspect ratio so the whole picture shows.
+const (
+	defaultNodeWidth  = 280.0
+	defaultNodeHeight = 180.0
+	mediaChromeHeight = 74.0
+	minMediaHeight    = 140.0
+	maxMediaHeight    = 640.0
+)
+
+func fitMediaSize(n *Node, r creativecontent.Revision) {
+	if n.Width != defaultNodeWidth || n.Height != defaultNodeHeight || r.Kind == "audio" {
+		return
+	}
+	for _, m := range r.Media {
+		if m.Role != "original" || m.Width == nil || m.Height == nil || *m.Width <= 0 || *m.Height <= 0 {
+			continue
+		}
+		n.Height = math.Round(math.Min(maxMediaHeight, math.Max(minMediaHeight, mediaChromeHeight+defaultNodeWidth*float64(*m.Height)/float64(*m.Width))))
+		return
+	}
 }

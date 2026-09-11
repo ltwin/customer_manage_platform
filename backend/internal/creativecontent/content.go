@@ -61,6 +61,17 @@ type RightsDeclarationInput struct {
 	EvidenceSummary string                    `json:"evidence_summary,omitempty"`
 }
 
+// OrDefault fills an omitted declaration with the photographer's own work.
+// Clients no longer ask for a source; the field stays reserved for licensed
+// or cited material.
+func (r RightsDeclarationInput) OrDefault() RightsDeclarationInput {
+	if r.SourceClass == "" && r.RightsBasis == "" {
+		r.SourceClass = planningmedia.SourcePhotographerOwned
+		r.RightsBasis = planningmedia.RightsOwnershipAttested
+	}
+	return r
+}
+
 type Draft struct {
 	Rights  RightsDeclarationInput `json:"rights"`
 	Kind    string                 `json:"kind"`
@@ -188,6 +199,7 @@ func write(ctx context.Context, tx store.TxAccountScope, draft Draft, objects []
 		result.DeclarationID = draft.DeclarationID
 	}
 	if result.DeclarationID == "" {
+		draft.Rights = draft.Rights.OrDefault()
 		if utf8.RuneCountInString(draft.Rights.EvidenceSummary) > 500 {
 			return Revision{}, creativeops.ErrValidation
 		}

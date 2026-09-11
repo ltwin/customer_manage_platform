@@ -17,6 +17,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -26,12 +27,17 @@ import { ReactFlowProvider } from '@xyflow/react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useOnline } from './useOnline.ts'
 import { useJournal } from './useJournal.ts'
-import { errorMessage } from './queue.ts'
+import { errorMessage, isWithdrawn } from './queue.ts'
 import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
 import { newerCanvas, matchesCanvas } from './snapshot.ts'
-import { graphActionReadSet, canvasHistory } from './graph.ts'
+import {
+  historyOf,
+  projectCanvas,
+  projected,
+  type Intent,
+} from './outbox.ts'
 import DocumentView from './DocumentView.tsx'
 import CanvasView from './CanvasView.tsx'
 import ContentForm from './ContentForm.tsx'
@@ -44,10 +50,13 @@ import { emptyCatalog, emptyOrganization } from './libraryState.ts'
 import OrganizationPicker from './OrganizationPicker.tsx'
 import { useUploads } from './uploads.ts'
 import UploadTray from './UploadTray.tsx'
-import UploadDialog from './UploadDialog.tsx'
 import MediaPreview from './MediaPreview.tsx'
 import { downloadMedia } from './MediaView.tsx'
-import { isMediaKind, type ContentRights, type MediaKind, type UploadTarget } from './media.ts'
+import {
+  isMediaKind,
+  readableFileName,
+  type MediaKind,
+} from './media.ts'
 
 export default function WorkspacePage() {
   const account = api.currentAccount()
@@ -95,14 +104,9 @@ function Workspace({ account }: { account: string }) {
       old && ids.includes(old) ? old : (ids.at(-1) ?? null),
     )
   }, [])
-  useEffect(() => {
-    if (!canvas) return
-    const live = new Set(canvas.nodes.map((n) => n.id))
-    setSelection((old) =>
-      old.every((id) => live.has(id)) ? old : old.filter((id) => live.has(id)),
-    )
-    setSelected((old) => (old && live.has(old) ? old : null))
-  }, [canvas])
+  const [tick, setTick] = useState(0)
+  // Edits undone before they left this machine; redo replays them locally.
+  const [redoStack, setRedoStack] = useState<Intent[]>([])
   const [full, setFull] = useState<Draft | null>(null)
   const [error, setError] = useState('')
   const [copyNotice, setCopyNotice] = useState('')
@@ -112,11 +116,6 @@ function Workspace({ account }: { account: string }) {
   const [form, setForm] = useState<'asset' | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
-  const [pendingImport, setPendingImport] = useState<{
-    files: File[]
-    destination: string
-    target: (file: File, index: number) => UploadTarget
-  } | null>(null)
   const nodeFileInput = useRef<HTMLInputElement>(null)
   const nodeUploadTarget = useRef<{ id: string; kind: MediaKind } | null>(null)
   const [compare, setCompare] = useState<{
@@ -128,30 +127,64 @@ function Workspace({ account }: { account: string }) {
     name: string
     revision: string
   } | null>(null)
-  const [tick, setTick] = useState(0)
   const readSequence = useRef(0)
   const canvasReadSequence = useRef(0)
-  const node = canvas?.nodes.find((n) => n.id === selected)
+  const outbox = useMemo(() => queue?.value.outbox ?? [], [queue?.value.outbox])
+  // The canvas the photographer sees: snapshot plus local edits on their way.
+  const view = useMemo(
+    () =>
+      canvas && canvas.id === canvasID ? projectCanvas(canvas, outbox) : canvas,
+    [canvas, canvasID, outbox],
+  )
+  useEffect(() => {
+    if (!view) return
+    const live = new Set(view.nodes.map((n) => n.id))
+    setSelection((old) =>
+      old.every((id) => live.has(id)) ? old : old.filter((id) => live.has(id)),
+    )
+    setSelected((old) => (old && live.has(old) ? old : null))
+  }, [view])
+  // Nodes created by an effect the projection cannot paint (duplicate, group)
+  // are selected once the snapshot that contains them has arrived.
+  const deferredSelection = useRef<{ ids: string[]; revision: string } | null>(
+    null,
+  )
+  useEffect(() => {
+    const deferred = deferredSelection.current
+    if (
+      !canvas ||
+      !deferred ||
+      BigInt(canvas.revision) < BigInt(deferred.revision)
+    )
+      return
+    deferredSelection.current = null
+    const live = new Set(canvas.nodes.map((n) => n.id))
+    onSelection(deferred.ids.filter((id) => live.has(id)))
+  }, [canvas, onSelection])
+  const node = view?.nodes.find((n) => n.id === selected)
   const nodeKey = `node:${canvasID}:${selected ?? ''}`
   const draft = queue?.value.drafts[nodeKey] ?? full
+  // Non-canvas requests (library, projects) still wait for the single slot;
+  // canvas edits are queued locally and never block the editor.
   const blocked =
     !queue ||
     queue.busy ||
     !!queue.value.job ||
-    Object.values(queue.value.positions ?? {}).some(
-      (p) => p.canvasID === canvasID && !p.synced,
-    ) ||
     !!storageError ||
     !!localError ||
     libraryLoading ||
     loading
   const canEditLocal = matchesCanvas(canvas, canvasID) && !canvas?.archived
-  const canWrite = canEditLocal && !error
+  const canWrite = canEditLocal && !error && !!queue && !storageError && !localError
+  // Local edits stay enabled while a rejected request awaits a decision only
+  // if it is not a canvas command; a refused canvas edit must be resolved first.
+  const editable =
+    canWrite &&
+    !(queue.value.job?.state === 'rejected' && queue.value.job.intent)
   const refresh = useCallback(() => {
     setLibraryLoading(true)
     setTick((v) => v + 1)
   }, [])
-  const positions = queue?.value.positions
   const canMove = !!queue && canEditLocal && !storageError && !localError
   const uploads = useUploads((item) => {
     if (item.upload?.binding?.status === 'needs_review')
@@ -160,37 +193,40 @@ function Workspace({ account }: { account: string }) {
   })
   useEffect(() => {
     if (!queue || !canvas || canvas.id !== canvasID) return
-    queue.connections.reconcile(canvas)
     void queue
-      .reconcilePositions(canvas)
+      .pruneOutbox(canvas)
       .catch((e: unknown) => setLocalError(errorMessage(e)))
-  }, [queue, canvas, canvasID, positions])
+  }, [queue, canvas, canvasID, outbox])
+  // Queued canvas edits leave in order, after a short pause so a burst of
+  // moves or a delete-then-undo settles locally before anything is sent.
   useEffect(() => {
     if (
       !queue ||
+      !canvas ||
+      canvas.id !== canvasID ||
       !canEditLocal ||
       !online ||
       storageError ||
       localError ||
       queue.busy ||
       queue.value.job ||
-      !Object.values(queue.value.positions ?? {}).some(
-        (p) => p.canvasID === canvasID && !p.synced,
-      ) ||
-      loading
+      loading ||
+      // A 'sent' intent whose request never reached the journal is resent.
+      !outbox.some((i) => i.canvasID === canvasID && i.state !== 'confirmed')
     )
       return
-    // Only the final local position in this short burst becomes a command.
     const timer = window.setTimeout(() => {
       void queue
-        .sendNextPosition(canvasID)
+        .sendNextIntent(canvasID, canvas)
         .catch((e: unknown) => setLocalError(errorMessage(e)))
-    }, 120)
+    }, 250)
     return () => window.clearTimeout(timer)
   }, [
     queue,
     queue?.value,
     queue?.busy,
+    canvas,
+    outbox,
     canvasID,
     canEditLocal,
     online,
@@ -198,13 +234,6 @@ function Workspace({ account }: { account: string }) {
     localError,
     loading,
   ])
-  function moveNode(n: api.CanvasNode, x: number, y: number) {
-    if (!queue || !canMove) return
-    void queue
-      .stagePosition(canvasID, n, x, y)
-      .catch((e: unknown) => setLocalError(errorMessage(e)))
-  }
-
   useEffect(() => {
     const controller = new AbortController()
     const seq = ++readSequence.current
@@ -230,6 +259,7 @@ function Workspace({ account }: { account: string }) {
       })
     return () => controller.abort()
   }, [canvasID, tick])
+  const pollCanvas = useRef<() => Promise<void>>(() => Promise.resolve())
   useEffect(() => {
     const controller = new AbortController()
     let fetching = false
@@ -253,6 +283,7 @@ function Workspace({ account }: { account: string }) {
         fetching = false
       }
     }
+    pollCanvas.current = poll
     const timer = window.setInterval(() => void poll(), 5000)
     const visible = () => {
       if (!document.hidden) refresh()
@@ -261,6 +292,7 @@ function Workspace({ account }: { account: string }) {
     document.addEventListener('visibilitychange', visible)
     return () => {
       controller.abort()
+      pollCanvas.current = () => Promise.resolve()
       clearInterval(timer)
       window.removeEventListener('online', visible)
       document.removeEventListener('visibilitychange', visible)
@@ -277,6 +309,7 @@ function Workspace({ account }: { account: string }) {
     setCompare(null)
     setRename(null)
     setDiscard(null)
+    setRedoStack([])
   }, [canvasID])
   useEffect(() => {
     const controller = new AbortController()
@@ -334,13 +367,51 @@ function Workspace({ account }: { account: string }) {
       })
       .catch((e: unknown) => setLocalError(errorMessage(e)))
   }
+  // stage queues one canvas edit: painted at once, sent in the background.
+  // Resolves true when the server confirms it.
+  function stage(
+    intent: Omit<Intent, 'id' | 'canvasID' | 'state'>,
+    options: { select?: string[]; draftKey?: string } = {},
+  ): Promise<boolean> {
+    if (!queue || !view || view.id !== canvasID || !editable) return Promise.resolve(false)
+    setError('')
+    const staged = queue.stageIntent(canvasID, {
+      ...intent,
+      draftKey: options.draftKey,
+      draftValue: options.draftKey ? queue.value.drafts[options.draftKey] : undefined,
+    })
+    if (options.select?.length) onSelection(options.select)
+    return staged.done.then(
+      (receipt) => {
+        if (receipt.omitted_reference_ids.length)
+          setCopyNotice(
+            `已复制选中节点；${receipt.omitted_reference_ids.length} 条指向选区外的引用未复制。`,
+          )
+        const created = receipt.created_ids.filter((id) =>
+          id.startsWith('cwnode_'),
+        )
+        if (created.length && !options.select?.length)
+          deferredSelection.current = {
+            ids: created,
+            revision: receipt.result_revision,
+          }
+        // Effects the projection cannot paint need the authoritative snapshot
+        // now; everything else just refreshes the canvas in the background.
+        if (!projected(intent)) refresh()
+        else void pollCanvas.current()
+        return true
+      },
+      (e: unknown) => {
+        // A rejection is surfaced by the recovery notice, a cancellation by
+        // nothing at all; only unexpected failures become local errors.
+        if (!isWithdrawn(e)) setLocalError(errorMessage(e))
+        return false
+      },
+    )
+  }
   async function perform(path: string, value: unknown, draftKey?: string) {
     if (!queue || blocked || queue.busy || queue.value.job) return false
-    if (
-      path.startsWith('/canvases/') &&
-      (!canWrite || path !== `/canvases/${canvasID}/commands`)
-    )
-      return false
+    if (path.startsWith('/canvases/')) return false
     setError('')
     setLoading(true)
     try {
@@ -404,49 +475,68 @@ function Workspace({ account }: { account: string }) {
       setLocalError(errorMessage(e))
     }
   }
-  const history = canvasHistory(canvas?.changes ?? [])
+  const history = view
+    ? historyOf(view, outbox, redoStack)
+    : { canUndo: false, canRedo: false, undo: undefined, redo: undefined }
   function graphActions(actions: api.GraphAction[]) {
-    if (!canvas || !canWrite) return
-    void perform(`/canvases/${canvas.id}/commands`, {
-      type: 'batch',
-      expected_topology_revision: canvas.topology_revision,
-      read_set: graphActionReadSet(canvas, actions),
-      actions,
-    } satisfies api.Command)
+    if (!view || !editable) return
+    setRedoStack([])
+    void stage({ kind: 'actions', actions })
   }
+  // Undo of an edit that has not left this machine cancels it outright and
+  // keeps it for redo; anything already sent is reversed on the server.
   function reverseChange(redo = false) {
-    const id = redo ? history.redo : history.undo
-    if (!canvas || !id) return
-    void perform(`/canvases/${canvas.id}/commands`, {
-      type: redo ? 'redo' : 'undo',
-      change_id: id,
-      read_set:
-        canvas.changes?.find((change) => change.id === id)?.read_set ?? [],
-    } satisfies api.Command)
+    if (!queue || !view || !editable) return
+    if (!redo) {
+      const cancelled = queue.cancelTail(canvasID)
+      if (cancelled) {
+        setRedoStack((old) => [...old, cancelled])
+        return
+      }
+      if (!history.canUndo) return
+      setRedoStack([])
+      void stage({ kind: 'undo' })
+      return
+    }
+    const cancelled = queue.cancelTail(canvasID)
+    if (cancelled && cancelled.kind === 'undo') return
+    const local = redoStack.at(-1)
+    if (local && local.canvasID === canvasID) {
+      setRedoStack((old) => old.slice(0, -1))
+      void stage({ kind: 'actions', actions: local.actions, preview: local.preview })
+      return
+    }
+    if (!history.canRedo) return
+    void stage({ kind: 'redo' })
   }
+  // A drop is just another canvas edit: staged, painted, sent in order.
   function moveSelection(
     moves: { node: api.CanvasNode; x: number; y: number }[],
   ) {
-    if (!queue || !canvas || !canMove) return
-    void queue
-      .stagePositions(canvas, moves)
-      .catch((e: unknown) => setLocalError(errorMessage(e)))
+    if (!queue || !view || view.id !== canvasID || !canMove) return
+    const staged = queue.stageMoves(view, moves)
+    if (!staged) return
+    setRedoStack([])
+    void staged.done.catch((e: unknown) => {
+      if (!isWithdrawn(e)) setLocalError(errorMessage(e))
+    })
   }
   function addEmptyNode(
     kind: 'text' | 'link' | MediaKind,
-    x = 80 + (canvas?.nodes.length ?? 0) * 20,
-    y = 80 + (canvas?.nodes.length ?? 0) * 20,
+    x = 80 + (view?.nodes.length ?? 0) * 20,
+    y = 80 + (view?.nodes.length ?? 0) * 20,
   ) {
     setAddMenu(false)
-    if (!canvas || !canWrite) return
-    void perform(`/canvases/${canvas.id}/commands`, {
-      type: 'add_node',
-      node_id: `cwnode_${crypto.randomUUID()}`,
-      type_key: `core.${kind}`,
-      x,
-      y,
-      expected_topology_revision: canvas.topology_revision,
-    } satisfies api.Command)
+    if (!view || !editable) return
+    const id = `cwnode_${crypto.randomUUID()}`
+    setRedoStack([])
+    void stage(
+      {
+        kind: 'actions',
+        actions: [{ type: 'add_node', node_id: id, type_key: `core.${kind}`, x, y }],
+      },
+      { select: [id] },
+    )
   }
   const mediaKindOfFile = (file: File): MediaKind | null =>
     uploads.capabilities
@@ -464,53 +554,50 @@ function Workspace({ account }: { account: string }) {
       setLocalError(uploads.capabilitiesError || '媒体上传暂不可用')
       return
     }
-    setPendingImport({
-      files,
-      destination: '存入个人资产库',
-      target: (file) => ({
-        kind: 'asset',
-        asset: {
-          title: file.name.replace(/\.[^.]+$/, '').slice(0, 200) || file.name,
-          group_ids: groupID ? [groupID] : [],
-        },
-      }),
-    })
+    uploads.start(files, (file) => ({
+      kind: 'asset',
+      asset: {
+        title:
+          readableFileName(file.name).replace(/\.[^.]+$/, '').slice(0, 200) ||
+          readableFileName(file.name),
+        group_ids: groupID ? [groupID] : [],
+      },
+    }))
   }
   // Drop files on the canvas: create empty media nodes first, then upload
-  // into each node so the publication binds by node target.
+  // into each node so the publication binds by node target. The nodes must
+  // exist on the server before an upload can target them.
   async function dropFiles(files: File[], x: number, y: number) {
-    if (!canvas || !canWrite || !uploads.capabilities) return
+    if (!view || !editable || !uploads.capabilities) return
     const usable = files.filter((f) => mediaKindOfFile(f))
     if (!usable.length) {
       setLocalError('拖入的文件不是支持的图片、视频或音频格式')
       return
     }
     const ids = usable.map(() => `cwnode_${crypto.randomUUID()}`)
-    const ok = await perform(`/canvases/${canvas.id}/commands`, {
-      type: 'batch',
-      expected_topology_revision: canvas.topology_revision,
-      read_set: [],
-      actions: usable.map((file, i) => ({
-        type: 'add_node' as const,
-        node_id: ids[i]!,
-        type_key: `core.${mediaKindOfFile(file)!}` as
-          | 'core.image'
-          | 'core.video'
-          | 'core.audio',
-        title: file.name.replace(/\.[^.]+$/, '').slice(0, 200),
-        x: x + i * 36,
-        y: y + i * 36,
-      })),
-    } satisfies api.Command)
+    setRedoStack([])
+    const ok = await stage(
+      {
+        kind: 'actions',
+        actions: usable.map((file, i) => ({
+          type: 'add_node' as const,
+          node_id: ids[i]!,
+          type_key: `core.${mediaKindOfFile(file)!}` as
+            | 'core.image'
+            | 'core.video'
+            | 'core.audio',
+          title: readableFileName(file.name).replace(/\.[^.]+$/, '').slice(0, 200),
+          x: x + i * 36,
+          y: y + i * 36,
+        })),
+      },
+      { select: ids },
+    )
     if (!ok) return
-    setPendingImport({
-      files: usable,
-      destination: '放入画布节点',
-      target: (_, i) => ({
-        kind: 'node',
-        node: { canvas_id: canvas.id, node_id: ids[i]!, expected_data_revision: '1' },
-      }),
-    })
+    uploads.start(usable, (_, i) => ({
+      kind: 'node',
+      node: { canvas_id: canvasID, node_id: ids[i]!, expected_data_revision: '1' },
+    }))
   }
   function uploadToNode(id: string, kind: MediaKind) {
     nodeUploadTarget.current = { id, kind }
@@ -519,29 +606,20 @@ function Workspace({ account }: { account: string }) {
   function nodeFileChosen(files: File[]) {
     const target = nodeUploadTarget.current
     nodeUploadTarget.current = null
-    const n = canvas?.nodes.find((n) => n.id === target?.id)
-    if (!target || !n || !canvas || !files.length) return
+    const n = view?.nodes.find((n) => n.id === target?.id)
+    if (!target || !n || !view || !files.length) return
     const file = files[0]!
     if (mediaKindOfFile(file) !== target.kind) {
       setLocalError(`请选择${{ image: '图片', video: '视频', audio: '音频' }[target.kind]}文件`)
       return
     }
-    setPendingImport({
-      files: [file],
-      destination: n.content ? '替换节点媒体' : '放入节点',
-      target: () => ({
-        kind: 'node',
-        node: { canvas_id: canvas.id, node_id: n.id, expected_data_revision: n.data_revision },
-      }),
-    })
-  }
-  function startImport(rights: ContentRights) {
-    if (!pendingImport) return
-    uploads.start(pendingImport.files, pendingImport.target, rights)
-    setPendingImport(null)
+    uploads.start([file], () => ({
+      kind: 'node',
+      node: { canvas_id: view.id, node_id: n.id, expected_data_revision: n.data_revision },
+    }))
   }
   async function downloadNode(id: string) {
-    const n = canvas?.nodes.find((n) => n.id === id)
+    const n = view?.nodes.find((n) => n.id === id)
     if (!n?.content) return
     try {
       await downloadMedia(n.content, n.metadata.title || n.id)
@@ -549,60 +627,47 @@ function Workspace({ account }: { account: string }) {
       setLocalError(errorMessage(e))
     }
   }
-  function addAsset(asset: api.Asset, x = 80, y = 80) {
-    if (!canvas || !canWrite || asset.unavailable) return
-    void perform(`/canvases/${canvas.id}/commands`, {
-      type: 'add_node',
-      node_id: `cwnode_${crypto.randomUUID()}`,
-      type_key: `core.${asset.kind}`,
-      title: asset.title,
-      x,
-      y,
-      expected_topology_revision: canvas.topology_revision,
-      asset: {
-        asset_id: asset.id,
-        expected_asset_revision: asset.revision,
-        content_revision_id: asset.content_revision_id,
-      },
-    } satisfies api.Command)
-  }
   // Several selected assets land in one batch so the queue sends one command.
   function addAssets(dropped: api.Asset[], x = 80, y = 80) {
-    if (!canvas || !canWrite) return
+    if (!view || !editable) return
     const usable = dropped.filter((a) => !a.unavailable)
     if (!usable.length) return
-    void perform(`/canvases/${canvas.id}/commands`, {
-      type: 'batch',
-      expected_topology_revision: canvas.topology_revision,
-      read_set: [],
-      actions: usable.map((asset, i) => ({
-        type: 'add_node' as const,
-        node_id: `cwnode_${crypto.randomUUID()}`,
-        type_key: `core.${asset.kind}` as
-          | 'core.text'
-          | 'core.link'
-          | 'core.image'
-          | 'core.video'
-          | 'core.audio',
-        title: asset.title,
-        x: x + i * 36,
-        y: y + i * 36,
-        asset: {
-          asset_id: asset.id,
-          expected_asset_revision: asset.revision,
-          content_revision_id: asset.content_revision_id,
-        },
-      })),
-    } satisfies api.Command)
+    const ids = usable.map(() => `cwnode_${crypto.randomUUID()}`)
+    const preview: Record<string, api.Content> = {}
+    for (const [i, asset] of usable.entries())
+      if (asset.content) preview[ids[i]!] = asset.content
+    setRedoStack([])
+    void stage(
+      {
+        kind: 'actions',
+        preview,
+        actions: usable.map((asset, i) => ({
+          type: 'add_node' as const,
+          node_id: ids[i]!,
+          type_key: `core.${asset.kind}` as
+            | 'core.text'
+            | 'core.link'
+            | 'core.image'
+            | 'core.video'
+            | 'core.audio',
+          title: asset.title,
+          x: x + i * 36,
+          y: y + i * 36,
+          asset: {
+            asset_id: asset.id,
+            expected_asset_revision: asset.revision,
+            content_revision_id: asset.content_revision_id,
+          },
+        })),
+      },
+      { select: ids },
+    )
+  }
+  function addAsset(asset: api.Asset, x = 80, y = 80) {
+    addAssets([asset], x, y)
   }
   function saveNode(content: api.ContentDraft, reapply?: api.CanvasNode) {
-    if (
-      !canWrite ||
-      !canvas ||
-      !node ||
-      !draft ||
-      (reapply && reapply.id !== node.id)
-    )
+    if (!editable || !view || !node || !draft || (reapply && reapply.id !== node.id))
       return
     if (
       !reapply &&
@@ -612,19 +677,10 @@ function Workspace({ account }: { account: string }) {
       setCompare({ content, node: structuredClone(node) })
       return
     }
-    void perform(
-      `/canvases/${canvas.id}/commands`,
+    setRedoStack([])
+    void stage(
       {
-        type: 'batch',
-        read_set: [
-          {
-            kind: 'node',
-            id: node.id,
-            data_revision: reapply
-              ? reapply.data_revision
-              : draft.dataRevision!,
-          },
-        ],
+        kind: 'actions',
         actions: [
           ...(draft.title !== node.metadata.title
             ? [
@@ -636,18 +692,12 @@ function Workspace({ account }: { account: string }) {
                 },
               ]
             : []),
-          {
-            type: 'replace_content',
-            node_id: node.id,
-            payload: content.payload,
-            ...(!node.data.content_revision_id
-              ? { rights: content.rights }
-              : {}),
-          },
+          { type: 'replace_content', node_id: node.id, payload: content.payload },
         ],
-      } satisfies api.Command,
-      nodeKey,
+      },
+      { draftKey: nodeKey },
     )
+    setEditing(false)
   }
   const activeProject =
     canvas?.id === canvasID
@@ -863,11 +913,9 @@ function Workspace({ account }: { account: string }) {
                       .catch((e: unknown) => setLocalError(errorMessage(e)))
                   }}
                 >
-                  {job.position
-                    ? '放弃本机位置，载入服务器位置'
-                    : job.draftKey
-                      ? '关闭被拒绝的请求，保留草稿'
-                      : '放弃被拒绝的请求'}
+                  {job.draftKey
+                    ? '关闭被拒绝的请求，保留草稿'
+                    : '放弃被拒绝的请求'}
                 </button>
               ) : (
                 <button
@@ -896,24 +944,33 @@ function Workspace({ account }: { account: string }) {
           onLoading={setLibraryLoading}
           onCatalog={setCatalog}
           onCommand={perform}
-          canDrop={!!canvas && canWrite}
+          canDrop={!!view && editable}
           onDrop={addAsset}
           onImport={importToLibrary}
           importDisabled={blocked || !uploads.capabilities}
         />
-        <section className="cc-stage" aria-label="创作画布">
-          {canvas && canvas.id === canvasID ? (
+        <section
+          className="cc-stage"
+          aria-label="创作画布"
+          data-sync={
+            outbox.some(
+              (i) => i.canvasID === canvasID && i.state !== 'confirmed',
+            )
+              ? 'pending'
+              : 'idle'
+          }
+        >
+          {view && view.id === canvasID ? (
             <>
               <div className="cc-canvas-caption">
                 <i />
-                主画布 <span>/</span> {canvas.nodes.length} 个节点{' '}
-                {canvas.archived && ' · 已归档'}
+                主画布 <span>/</span> {view.nodes.length} 个节点{' '}
+                {view.archived && ' · 已归档'}
               </div>
-              <ReactFlowProvider key={canvas.id}>
+              <ReactFlowProvider key={view.id}>
                 <CanvasView
                   account={account}
-                  canvas={canvas}
-                  pendingConnections={queue?.connections.visible(canvas) ?? []}
+                  canvas={view}
                   selected={selected}
                   selection={selection}
                   onSelection={onSelection}
@@ -921,14 +978,14 @@ function Workspace({ account }: { account: string }) {
                   onMoveSelection={moveSelection}
                   onUndo={() => reverseChange()}
                   onRedo={() => reverseChange(true)}
-                  canUndo={!!history.undo}
-                  canRedo={!!history.redo}
+                  canUndo={history.canUndo}
+                  canRedo={history.canRedo}
                   onSelect={(id) => {
                     setSelected(id)
                   }}
                   onEdit={(id) => {
                     setSelected(id)
-                    const n = canvas.nodes.find((n) => n.id === id)
+                    const n = view.nodes.find((n) => n.id === id)
                     if (
                       n?.metadata.type_key === 'internal.document' &&
                       n.data.document_id
@@ -964,9 +1021,8 @@ function Workspace({ account }: { account: string }) {
                   }}
                   onAdd={(x, y) => addEmptyNode('text', x, y)}
                   panMode={panMode}
-                  disabled={blocked || !canWrite}
+                  disabled={!editable}
                   moveDisabled={!canMove}
-                  positions={positions}
                   assets={assets.items}
                   onDropAsset={addAsset}
                   onDropAssets={addAssets}
@@ -974,10 +1030,10 @@ function Workspace({ account }: { account: string }) {
                   onUploadToNode={uploadToNode}
                   onDownload={(id) => void downloadNode(id)}
                   onSaveToLibrary={(id) =>
-                    setSavingNode(canvas.nodes.find((n) => n.id === id) ?? null)
+                    setSavingNode(view.nodes.find((n) => n.id === id) ?? null)
                   }
                   onPreview={setPreview}
-                  onMove={moveNode}
+                  onMove={(n, x, y) => moveSelection([{ node: n, x, y }])}
                 />
               </ReactFlowProvider>
             </>
@@ -1039,13 +1095,13 @@ function Workspace({ account }: { account: string }) {
                 <ContentForm
                   key={node.id}
                   draft={draft}
-                  needsRights={node.data.content_revision_id === null}
                   disabled={
-                    blocked ||
+                    !!storageError ||
+                    !!localError ||
                     !canEditLocal ||
                     node.status.content_state === 'unavailable'
                   }
-                  submitDisabled={!canWrite}
+                  submitDisabled={!editable}
                   onChange={(d) => writeDraft(nodeKey, d)}
                   label="保存到节点"
                   onSave={(content) => saveNode(content)}
@@ -1089,15 +1145,9 @@ function Workspace({ account }: { account: string }) {
                 setError('请填写分组名称')
                 return
               }
-              void perform(`/canvases/${canvas.id}/commands`, {
-                type: 'batch',
-                read_set: [
-                  {
-                    id: groupEditing.id,
-                    kind: 'node',
-                    data_revision: groupEditing.data_revision,
-                  },
-                ],
+              setRedoStack([])
+              void stage({
+                kind: 'actions',
                 actions: [
                   {
                     type: 'update_metadata',
@@ -1106,9 +1156,8 @@ function Workspace({ account }: { account: string }) {
                     intent: groupEditing.metadata.intent,
                   },
                 ],
-              } satisfies api.Command).then((ok) => {
-                if (ok) setGroupEditing(null)
               })
+              setGroupEditing(null)
             }}
           >
             <label>
@@ -1144,17 +1193,9 @@ function Workspace({ account }: { account: string }) {
         onRetry={uploads.retry}
         onDismiss={uploads.dismiss}
       />
-      {pendingImport && (
-        <UploadDialog
-          files={pendingImport.files}
-          destination={pendingImport.destination}
-          onConfirm={startImport}
-          onCancel={() => setPendingImport(null)}
-        />
-      )}
       {preview &&
         (() => {
-          const n = canvas?.nodes.find((n) => n.id === preview)
+          const n = view?.nodes.find((n) => n.id === preview)
           return n?.content && isMediaKind(n.metadata.type_key.slice(5)) ? (
             <MediaPreview
               content={n.content}
@@ -1164,7 +1205,7 @@ function Workspace({ account }: { account: string }) {
             />
           ) : null
         })()}
-      {savingNode && canvas && (
+      {savingNode && view && (
         <StudioDialog title="存入个人资产库" onClose={() => setSavingNode(null)}>
           <form
             className="cc-form"
@@ -1178,7 +1219,7 @@ function Workspace({ account }: { account: string }) {
                 return
               }
               void perform('/assets/from-canvas-node', {
-                canvas_id: canvas.id,
+                canvas_id: view.id,
                 node_id: savingNode.id,
                 expected_data_revision: savingNode.data_revision,
                 target: { title },

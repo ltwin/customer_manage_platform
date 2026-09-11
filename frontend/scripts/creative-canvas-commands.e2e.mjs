@@ -35,6 +35,19 @@ await context.route('**/api/v1/**', async (route) => {
     postedCommands.push(request.postDataJSON()?.payload)
   const response = await route.fetch({ url: api + u.pathname + u.search })
   if (request.method() === 'POST') posts++
+  // Rejected commands are the usual reason a snapshot never advances.
+  if (
+    request.method() === 'POST' &&
+    u.pathname.startsWith('/api/v1/creative/') &&
+    !response.ok()
+  )
+    console.error(
+      'rejected',
+      u.pathname,
+      response.status(),
+      await response.text(),
+      request.postData(),
+    )
   if (
     request.method() === 'GET' &&
     /^\/api\/v1\/creative\/canvases\/[^/]+$/.test(u.pathname) &&
@@ -59,7 +72,11 @@ async function saved() {
     const button = document.querySelector(
       '.cc-library button[aria-label="新增资产"],button.ch-create',
     )
-    return button && !button.disabled
+    return (
+      button &&
+      !button.disabled &&
+      !document.querySelector('.cc-stage[data-sync="pending"]')
+    )
   })
   assert.equal(
     await page
@@ -332,7 +349,6 @@ try {
   await node(a).click()
   await page.getByRole('button', { name: '编辑节点', exact: true }).click()
   await page.getByLabel('正文', { exact: true }).fill('以柔和的光线组织画面。')
-  await page.getByLabel('内容来源', { exact: true }).selectOption('owned')
   await snapshotAfter(() =>
     page.getByRole('button', { name: '保存到节点', exact: true }).click(),
   )

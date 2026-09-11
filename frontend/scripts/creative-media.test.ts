@@ -4,6 +4,7 @@ import {
   classifyFile,
   describeFailure,
   pickRendition,
+  readableFileName,
   type MediaCapabilities,
   type Upload,
 } from '../src/creative-canvas/editor/media.ts'
@@ -63,10 +64,17 @@ test('failure codes map to actionable messages and ready uploads have none', () 
     content_revision_id: null,
     created_at: '2026-01-01T00:00:00Z',
   } as const
-  const failed: Upload = { ...base, state: 'failed', error_code: 'media_unsupported: detected audio/mpeg' }
+  const failed: Upload = { ...base, state: 'failed', error_code: 'media_unsupported' }
   assert.equal(describeFailure(failed), '文件内容不是支持的媒体格式')
   assert.equal(describeFailure({ ...base, state: 'ready', error_code: '' }), null)
   assert.equal(describeFailure({ ...base, state: 'failed', error_code: 'weird' }), '上传失败')
+  assert.equal(
+    describeFailure({ ...base, state: 'failed', error_code: 'init_failed' }),
+    '存储初始化失败，请联系管理员检查存储配置',
+  )
+  assert.equal(readableFileName('%E5%9B%BE%E7%89%87.png'), '图片.png')
+  assert.equal(readableFileName('100%.png'), '100%.png')
+  assert.equal(readableFileName('plain.png'), 'plain.png')
 })
 
 test('media payloads keep captions separate from text and link bodies', () => {

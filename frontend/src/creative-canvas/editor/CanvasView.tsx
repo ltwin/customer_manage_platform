@@ -62,11 +62,9 @@ import {
 import type { Asset, Canvas, CanvasNode, GraphAction } from './api.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind, type MediaKind } from './media.ts'
-import type { PositionDraft } from './journal.ts'
 import { parentFirst, selectionRoots, worldPoint } from './graph.ts'
 import { contentText } from './content.ts'
 import { attachMagneticPorts } from './magneticPorts.ts'
-import type { PendingConnection } from './connectionOverlay.ts'
 
 type FlowNode = Node<
   {
@@ -394,7 +392,6 @@ function ReferenceEdge(props: EdgeProps) {
 const nodeTypes = { content: Card },
   edgeTypes = { reference: ReferenceEdge }
 export default function CanvasView({
-  pendingConnections = [],
   canvas,
   selected,
   selection,
@@ -419,7 +416,6 @@ export default function CanvasView({
   canRedo,
   disabled,
   moveDisabled,
-  positions,
   assets,
   account,
 }: {
@@ -447,9 +443,7 @@ export default function CanvasView({
   canRedo: boolean
   disabled: boolean
   moveDisabled: boolean
-  positions?: Record<string, PositionDraft>
   assets: Asset[]
-  pendingConnections?: PendingConnection[]
   account: string
 }) {
   const callbacks = useRef({
@@ -599,13 +593,12 @@ export default function CanvasView({
         if (preview && preview.item !== n) resizePreviews.current.delete(n.id)
         const resized = preview?.item === n ? preview : undefined
         const old = byID.get(n.id),
-          local = positions?.[`${canvas.id}:${n.id}`],
           position =
             dragging.current.has(n.id) && old
               ? old.position
               : {
-                  x: resized?.x ?? local?.x ?? n.metadata.x,
-                  y: resized?.y ?? local?.y ?? n.metadata.y,
+                  x: resized?.x ?? n.metadata.x,
+                  y: resized?.y ?? n.metadata.y,
                 },
           isSelected = selection.includes(n.id),
           draggable =
@@ -674,7 +667,6 @@ export default function CanvasView({
     canvas,
     selection,
     moveDisabled,
-    positions,
     panMode,
     panHeld,
     selectNode,
@@ -752,8 +744,11 @@ export default function CanvasView({
         changed = true
       }
   }
-  const persistedEdges = new Set(canvas.edges.map((edge) => edge.id))
-  const edges: Edge[] = [...(canvas.edges ?? []), ...pendingConnections].map(
+  // Edges still waiting for their receipt are painted but not yet addressable.
+  const persistedEdges = new Set(
+    canvas.edges.filter((e) => !e.id.startsWith('pending:')).map((e) => e.id),
+  )
+  const edges: Edge[] = canvas.edges.map(
     (e) => ({
       id: e.id,
       selectable: persistedEdges.has(e.id),

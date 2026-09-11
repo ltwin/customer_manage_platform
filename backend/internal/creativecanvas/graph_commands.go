@@ -380,6 +380,7 @@ func (e *editGraph) add(a Action) error {
 		}
 		n.ContentID = &r.ContentID
 		n.ContentRevisionID = &r.ID
+		fitMediaSize(&n, r)
 	}
 	if a.Content != nil {
 		if n.TypeKey != "core."+a.Content.Kind {
@@ -406,10 +407,9 @@ func (e *editGraph) replace(a Action) error {
 	d := creativecontent.Draft{Kind: strings.TrimPrefix(n.TypeKey, "core."), Payload: *a.Payload}
 	source := ""
 	if n.ContentRevisionID == nil {
-		if a.Rights == nil {
-			return creativeops.ErrValidation
+		if a.Rights != nil {
+			d.Rights = *a.Rights
 		}
-		d.Rights = *a.Rights
 	} else {
 		if a.Rights != nil {
 			return creativeops.ErrValidation

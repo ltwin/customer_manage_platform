@@ -189,6 +189,9 @@ func deref(v *string) string {
 	}
 	return *v
 }
+
+// classify maps service errors to sentinels and flattens the SDK's multi-line
+// error text into one diagnosable line (code, HTTP status, request id).
 func classify(err error) error {
 	var serviceErr *oss.ServiceError
 	if errors.As(err, &serviceErr) {
@@ -198,6 +201,7 @@ func classify(err error) error {
 		case serviceErr.StatusCode == http.StatusRequestedRangeNotSatisfiable:
 			return ErrRange
 		}
+		return fmt.Errorf("oss %s (http %d, request %s): %s", serviceErr.Code, serviceErr.StatusCode, serviceErr.RequestID, strings.SplitN(serviceErr.Message, "\n", 2)[0])
 	}
 	return err
 }

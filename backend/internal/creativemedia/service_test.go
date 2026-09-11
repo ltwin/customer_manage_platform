@@ -375,7 +375,7 @@ func TestEveryEnabledFormatVerifiesAndFakeMimeFails(t *testing.T) {
 	}
 	// Declared image, actually audio bytes: verification fails without leaking the file.
 	fake := f.uploadFile(t, f.a, "fake.png", "image/png", "image", sample(t, "sample.mp3"), creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "假图"}})
-	if fake.State != "failed" || !strings.HasPrefix(fake.ErrorCode, "media_unsupported") {
+	if fake.State != "failed" || fake.ErrorCode != "media_unsupported" {
 		t.Fatalf("fake %+v", fake)
 	}
 	var reserved int64
@@ -387,6 +387,10 @@ func TestEveryEnabledFormatVerifiesAndFakeMimeFails(t *testing.T) {
 		t.Fatalf("failed upload created asset: %d", page.TotalCount)
 	}
 	// Unsupported declared MIME and oversize declarations are rejected on create.
+	// Omitted rights default to the photographer's own work.
+	if _, err := f.svc.CreateUpload(t.Context(), f.a, command(t, creativemedia.CreateUploadInput{FileName: "own.png", Kind: "image", Mime: "image/png", Size: 10, Target: creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "own"}}})); err != nil {
+		t.Fatalf("upload without rights: %v", err)
+	}
 	if _, err := f.svc.CreateUpload(t.Context(), f.a, command(t, creativemedia.CreateUploadInput{FileName: "x.gif", Kind: "image", Mime: "image/gif", Size: 10, Rights: rights(), Target: creativemedia.Target{Kind: "asset", Asset: &creativemedia.AssetTarget{Title: "x"}}})); !errors.Is(err, creativemedia.ErrUnsupported) {
 		t.Fatal("gif accepted", err)
 	}

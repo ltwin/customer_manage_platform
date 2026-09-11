@@ -47,7 +47,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	media, err := creativemedia.Compose(cfg, deriveTicketKey(cfg.AuthTokenSecret))
+	media, err := creativemedia.Compose(cfg, deriveTicketKey(cfg.AuthTokenSecret), slog.Default())
 	if err != nil {
 		return err
 	}

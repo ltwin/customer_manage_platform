@@ -6,7 +6,7 @@
 
 | 阶段 | 进程 | 说明 |
 |---|---|---|
-| CreateUpload | API | 校验目标（库目录/标签或节点 data_revision）、预留配额、写不可变来源声明、同事务入队 `media.upload_init` |
+| CreateUpload | API | 校验目标（库目录/标签或节点 data_revision）、预留配额、写不可变来源声明（`rights` 可省略，缺省 `photographer_owned/ownership_attested`）、同事务入队 `media.upload_init` |
 | workInit | worker | claim 租约 → `initializing` → 适配器 InitMultipart → `uploading`，multipart_id 落库后才允许签分片 |
 | AuthorizeParts | API | 仅 `uploading/none` 且未到期；local 返回 HMAC token 的 API PUT，OSS 返回预签名 UploadPart |
 | CompleteUpload | API | 202；`completing` 后入队 `media.upload_complete` |

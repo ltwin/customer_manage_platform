@@ -11,7 +11,6 @@ type Props = {
   disabled: boolean
   submitDisabled?: boolean
   label: string
-  needsRights?: boolean
   asset?: boolean
   extraFields?: ReactNode
 }
@@ -22,12 +21,10 @@ export default function ContentForm({
   disabled,
   submitDisabled = false,
   label,
-  needsRights = true,
   asset = false,
   extraFields,
 }: Props) {
   const errorID = useId()
-  const [source, setSource] = useState('')
   const [error, setError] = useState('')
   const [composing, setComposing] = useState(false)
   function save() {
@@ -60,21 +57,9 @@ export default function ContentForm({
         return
       }
     }
-    if (needsRights && !media && !source) {
-      setError('请确认内容来源')
-      return
-    }
-    onSave({
-      kind: draft.kind,
-      payload: payload(draft.kind, draft.value),
-      rights:
-        source === 'reference'
-          ? { source_class: 'unknown_web', rights_basis: 'citation_or_display' }
-          : {
-              source_class: 'photographer_owned',
-              rights_basis: 'ownership_attested',
-            },
-    })
+    // Source declaration is reserved for later; the server records the
+    // photographer's own work by default.
+    onSave({ kind: draft.kind, payload: payload(draft.kind, draft.value) })
   }
   return (
     <form
@@ -146,22 +131,6 @@ export default function ContentForm({
           onChange={(e) => onChange({ ...draft, value: e.target.value })}
         />
       </label>
-      {needsRights && ['text', 'link'].includes(draft.kind) && (
-        <label>
-          内容来源
-          <select
-            className="input"
-            aria-label="内容来源"
-            value={source}
-            disabled={disabled}
-            onChange={(e) => setSource(e.target.value)}
-          >
-            <option value="">请选择并确认</option>
-            <option value="owned">本人创作，确认拥有权利</option>
-            <option value="reference">网络引用，仅供展示参考</option>
-          </select>
-        </label>
-      )}
       {extraFields}
       <p id={errorID} className="cc-help" role={error ? 'alert' : undefined}>
         {error ||

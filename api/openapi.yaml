@@ -5958,6 +5958,7 @@ components:
     CreativeContentRights:
       type: object
       additionalProperties: false
+      description: 来源声明；省略时服务端记为本人创作（photographer_owned / ownership_attested）。
       required:
       - source_class
       - rights_basis
@@ -5975,7 +5976,6 @@ components:
       required:
       - kind
       - payload
-      - rights
       properties:
         kind:
           type: string
@@ -11720,7 +11720,7 @@ components:
     CreativeUploadCreatePayload:
       type: object
       additionalProperties: false
-      required: [file_name, kind, mime, size, rights, target]
+      required: [file_name, kind, mime, size, target]
       properties:
         file_name: {type: string, minLength: 1, maxLength: 255}
         kind: {type: string, enum: [image, video, audio]}
