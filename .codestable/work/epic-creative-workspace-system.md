@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
 current_item: FND-05
-next_action: 视频节点悬停预览修复（FND-05 后续交互批次）已完成待 owner 提交授权；下一项按依赖可选FND-06（Gateway）或FND-13前置；真实OSS验收（PRE-05）待授权bucket
+next_action: 视频节点悬停预览已提交（36d3280，未push）；下一项按依赖可选FND-06（Gateway）或FND-13前置；真实OSS验收（PRE-05）待授权bucket
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -655,4 +655,5 @@ owner授权提交：`126da5f`（80 files，pre-commit lint通过）。未push、
 - owner 反馈画布视频节点交互：现状是点击播放、再次点击暂停，且视频表面无法拖动节点；要求改为悬停播放、离开暂停、可拖拽。随后 owner 纠正：不能去掉播放按钮和进度条，手动暂停仍可用，离开后再悬停继续播放。
 - 实现（3 files，前端）：`MediaFigure` 新增 `hoverPlay` 参数（仅画布视频启用）——容器 `mouseenter` 调 `play()`（默认有声，`.catch` 兜底浏览器自动播放策略；静默失败时用户仍可手动点播放）、`mouseleave` 调 `pause()`；手动暂停后只要指针未离开节点就不会被覆盖，再次进入从暂停处续播。视频元素在 hover 模式去掉常驻 `nodrag`，节点可从视频表面拖动（拖动中视频继续播放）；原生控制条占视频底部约 48px，按压坐标落在该区域时仅为该次按压临时加 `nodrag` 类（`pointerup`/`pointercancel` 释放），进度条拖动与播放/暂停、音量操作命中控件而不是拖动节点。`CanvasView` 视频/音频仍传 `controls`，仅视频追加 `hoverPlay`；媒体预览弹窗与资产库用法不变，预览打开时照旧暂停画布视频。
 - 验证：`make check-frontend` 381/381 通过，`git diff --check` 通过；`creative-canvas-interaction.e2e.mjs`（真实 Chromium、页内 MediaRecorder 录制 WebM、API 全 mock、临时 Vite 5177）连续两轮 PASS，新增断言：controls 属性存在、非静音、悬停后 `!paused && currentTime>0`、手动暂停后节点内移动仍暂停、离开暂停、再次进入续播、从视频表面拖动节点位移 >60px、控制条区域按压节点位移 <1px；既有交互回归全部保持。commands/media e2e 需真实后端与已迁移数据库（0041/0042 未应用于开发库），本轮未跑。
-- 文档：`docs/dev/creative-text-canvas.md` 新增「视频节点悬停预览（2026-09-11）」节。未提交：等待 owner 提交授权。
+- 文档：`docs/dev/creative-text-canvas.md` 新增「视频节点悬停预览（2026-09-11）」节。
+- 2026-09-11 提交里程碑：owner 授权提交 `36d3280`（5 files，pre-commit lint 通过）。未 push、未合并 develop。
