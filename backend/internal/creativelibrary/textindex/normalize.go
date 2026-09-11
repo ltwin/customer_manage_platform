@@ -20,7 +20,7 @@ func Document(title, description, source string, payload json.RawMessage) (strin
 		return "", err
 	}
 	parts := []string{title, description, source}
-	for _, key := range []string{"body", "url", "title", "description"} {
+	for _, key := range []string{"body", "url", "title", "description", "caption"} {
 		if raw, ok := fields[key]; ok {
 			var value string
 			if err := json.Unmarshal(raw, &value); err != nil {

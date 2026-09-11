@@ -19,8 +19,11 @@ func TestCanvasMigrationSeedsOnceAndRefusesLossyRollback(t *testing.T) {
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatal(err)
+	// Roll back 0041 (media) and 0040 (graph) so the old node lacks an identity.
+	for range 2 {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatal(err)
+		}
 	}
 	db, err := sql.Open("pgx", url)
 	if err != nil {
@@ -70,6 +73,10 @@ func TestCanvasMigrationSeedsOnceAndRefusesLossyRollback(t *testing.T) {
 	}
 	if err = move(2); !errors.Is(err, creativecanvas.ErrGraphIntegrity) {
 		t.Fatal("missing heads silently reconstructed", err)
+	}
+	// 0041 (media) rolls back cleanly on an empty media schema; 0040 must refuse.
+	if err = store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("media rollback on empty media schema", err)
 	}
 	if err = store.MigrateDownOneForTest(url); err == nil {
 		t.Fatal("lossy graph rollback accepted")

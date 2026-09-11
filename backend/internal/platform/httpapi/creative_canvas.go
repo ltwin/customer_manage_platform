@@ -12,6 +12,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -19,6 +20,7 @@ import (
 
 func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	registerCreativeLibrary(r, h)
+	registerCreativeMedia(r, h)
 	w := ServerInterfaceWrapper{Handler: h, ErrorHandler: func(c *gin.Context, _ error, status int) {
 		abortError(c, status, CodeValidationFailed, "请求参数不合法")
 	}}
@@ -76,6 +78,8 @@ func creativeError(c *gin.Context, err error) {
 		abortError(c, 422, "creative_size_limit", "本次操作涉及的节点或关联过多，请缩小选区")
 	case errors.Is(err, store.ErrCommitOutcomeUnknown):
 		abortError(c, 503, "creative_commit_unknown", "提交结果待确认，请保留原操作重查")
+	case errors.Is(err, creativemedia.ErrNotFound), errors.Is(err, creativemedia.ErrState), errors.Is(err, creativemedia.ErrExpired), errors.Is(err, creativemedia.ErrUnsupported), errors.Is(err, creativemedia.ErrSizeLimit), errors.Is(err, creativemedia.ErrQuota), errors.Is(err, creativemedia.ErrTicket), errors.Is(err, creativemedia.ErrRange), errors.Is(err, creativemedia.ErrEpoch), errors.Is(err, creativemedia.ErrUnknownResult):
+		creativeMediaError(c, err)
 	default:
 		_ = c.Error(err) // Shared middleware records and renders unexpected errors.
 	}

@@ -1,6 +1,8 @@
 package httpapi_test
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
@@ -13,7 +15,9 @@ import (
 	"testing"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex"
+	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -33,7 +37,24 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	mail := &testMailSender{}
 	tokens := auth.NewTokenIssuer("synthetic-creative-browser-secret")
 	service := auth.NewService(db, tokens, auth.WithAttemptLimiter(db), auth.WithAuthMailSender(mail), auth.WithRegistrationAdmissionMode(auth.RegistrationPublic), auth.WithPublicBaseURL(frontendURL))
-	handler := httpapi.NewRouter(httpapi.RouterDeps{Logger: slog.New(slog.DiscardHandler), DB: db, ScopeFactory: db, Auth: service, PublicBaseURL: frontendURL, PublicRegistrationEnabled: true})
+	// Real media pipeline: local adapter, ffprobe verification and an in-process worker.
+	media, err := creativemedia.Compose(config.Config{AvatarStorageDriver: config.StorageDriverLocal, CreativeMediaLocalRoot: t.TempDir(), CreativeFFProbe: "ffprobe", CreativeMediaQuotaBytes: 1 << 30}, bytes.Repeat([]byte{9}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MigrateCreativeJobs(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	mediaJobs, err := db.NewJobRuntime(media.Handlers(), slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	media.SetRuntime(mediaJobs)
+	if err := mediaJobs.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = mediaJobs.Stop(context.Background()) }()
+	handler := httpapi.NewRouter(httpapi.RouterDeps{Logger: slog.New(slog.DiscardHandler), DB: db, ScopeFactory: db, Auth: service, PublicBaseURL: frontendURL, PublicRegistrationEnabled: true, CreativeMedia: media})
 	email := "creative-browser@example.invalid"
 	registered := authRequest(t, handler, http.MethodPost, "/api/v1/auth/register", `{"email":"`+email+`","password":"`+testPassword+`"}`, frontendURL, "")
 	if registered.Code != 202 {
@@ -143,9 +164,13 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scripts := []string{"creative-text-canvas.e2e.mjs", "creative-canvas-commands.e2e.mjs"}
+	scripts := []string{"creative-text-canvas.e2e.mjs", "creative-canvas-commands.e2e.mjs", "creative-media.e2e.mjs"}
 	if selected := os.Getenv("CREATIVE_EDITOR_SCRIPT"); selected != "" {
-		if selected != scripts[0] && selected != scripts[1] {
+		known := false
+		for _, name := range scripts {
+			known = known || name == selected
+		}
+		if !known {
 			t.Fatal("unknown browser script")
 		}
 		scripts = []string{selected}
@@ -153,7 +178,7 @@ func TestCreativeEditorBrowser(t *testing.T) {
 	for _, name := range scripts {
 		script := filepath.Join(root, "frontend/scripts", name)
 		cmd := exec.CommandContext(t.Context(), "node", script)
-		cmd.Env = append(os.Environ(), "CREATIVE_EDITOR_API="+server.URL, "CREATIVE_EDITOR_EMAIL="+email, "CREATIVE_EDITOR_PASSWORD="+testPassword)
+		cmd.Env = append(os.Environ(), "CREATIVE_EDITOR_API="+server.URL, "CREATIVE_EDITOR_EMAIL="+email, "CREATIVE_EDITOR_PASSWORD="+testPassword, "CREATIVE_MEDIA_SAMPLES="+filepath.Join(root, "backend/internal/creativemedia/testdata"))
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("browser %s: %v\n%s", name, err, out)

@@ -15,6 +15,9 @@ func TestCreativeLibraryMigrationBackfillsAndCanRebuildAfterRollback(t *testing.
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal(err)
+	} // 0041
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal(err)
 	} // 0040
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal(err)
@@ -45,6 +48,9 @@ func TestCreativeLibraryMigrationBackfillsAndCanRebuildAfterRollback(t *testing.
 		if err = store.MigrateUp(url); err != nil {
 			t.Fatal("idempotent", err)
 		}
+		if err = store.MigrateDownOneForTest(url); err != nil {
+			t.Fatal(err)
+		} // 0041
 		if err = store.MigrateDownOneForTest(url); err != nil {
 			t.Fatal(err)
 		} // 0040

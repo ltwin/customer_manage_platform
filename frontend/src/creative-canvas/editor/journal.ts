@@ -16,7 +16,7 @@ export type Draft = {
   organization?: Organization
   value: string
   title: string
-  kind: 'text' | 'link'
+  kind: 'text' | 'link' | 'image' | 'video' | 'audio'
   dataRevision?: string
   contentRevision?: string | null
 }

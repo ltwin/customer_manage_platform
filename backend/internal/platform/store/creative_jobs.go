@@ -24,6 +24,8 @@ const creativeQueueSchema = "creative_jobs"
 type JobHandler struct {
 	Kind string
 	Work func(context.Context, AccountScope, jobs.Request) error
+	// Timeout bounds one attempt; zero keeps the default two minutes.
+	Timeout time.Duration
 }
 
 type queuedCreativeJob struct {
@@ -38,6 +40,7 @@ type creativeJobRuntime struct {
 	store    *Store
 	client   *river.Client[pgx.Tx]
 	handlers map[string]func(context.Context, AccountScope, jobs.Request) error
+	timeouts map[string]time.Duration
 }
 
 // NewJobRuntime shares the store's connection pool; no second pool or raw tx is
@@ -46,15 +49,18 @@ func (s *Store) NewJobRuntime(handlers []JobHandler, logger *slog.Logger) (jobs.
 	if s == nil || s.pool == nil {
 		return nil, errors.New("store is not open")
 	}
-	runtime := &creativeJobRuntime{store: s, handlers: make(map[string]func(context.Context, AccountScope, jobs.Request) error)}
+	runtime := &creativeJobRuntime{store: s, handlers: make(map[string]func(context.Context, AccountScope, jobs.Request) error), timeouts: map[string]time.Duration{}}
 	for _, h := range handlers {
-		if h.Kind == "" || h.Work == nil {
+		if h.Kind == "" || h.Work == nil || h.Timeout < 0 {
 			return nil, jobs.ErrInvalidTask
 		}
 		if _, exists := runtime.handlers[h.Kind]; exists {
 			return nil, jobs.ErrInvalidTask
 		}
 		runtime.handlers[h.Kind] = h.Work
+		if h.Timeout > 0 {
+			runtime.timeouts[h.Kind] = h.Timeout
+		}
 	}
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &creativeDispatcher{runtime: runtime})
@@ -116,7 +122,10 @@ type creativeDispatcher struct {
 	runtime *creativeJobRuntime
 }
 
-func (w *creativeDispatcher) Timeout(*river.Job[queuedCreativeJob]) time.Duration {
+func (w *creativeDispatcher) Timeout(job *river.Job[queuedCreativeJob]) time.Duration {
+	if t, ok := w.runtime.timeouts[job.Args.Request.Kind]; ok {
+		return t
+	}
 	return 2 * time.Minute
 }
 func (w *creativeDispatcher) Work(ctx context.Context, job *river.Job[queuedCreativeJob]) error {

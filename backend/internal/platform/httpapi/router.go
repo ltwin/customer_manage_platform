@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
@@ -72,6 +73,7 @@ type RouterDeps struct {
 	AnonymousShare            AnonymousShareDeps
 	PlanningMedia             *planningmedia.Application
 	PlanningIngestion         *ingestion.Application
+	CreativeMedia             *creativemedia.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -121,6 +123,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		trustedProxyCIDRs:   append([]netip.Prefix(nil), deps.TrustedProxyCIDRs...),
 		now:                 now,
 		anonymousShare:      deps.AnonymousShare,
+		creativeMedia:       deps.CreativeMedia,
 	}
 	if deps.PlanningMedia != nil {
 		h.planningMedia = &planningMediaHandlers{app: deps.PlanningMedia, scopeFactory: deps.ScopeFactory}
@@ -160,6 +163,8 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		key := c.GetHeader("Idempotency-Key")
 		h.SelfRevokeSharedAssignment(c, c.Param("token"), c.Param("assignmentRef"), SelfRevokeSharedAssignmentParams{IdempotencyKey: key})
 	})
+	// Ticket/signature-authorized byte routes live outside the bearer group.
+	registerCreativeMediaBytes(api, h)
 	protected := api.Group("", authMiddleware(deps.Auth))
 	registerCreativeCanvas(protected, h)
 	protected.GET("/creative/capabilities", h.GetCreativeCapabilities)

@@ -37,8 +37,13 @@ export default function ContentForm({
       setError('请填写资产名称')
       return
     }
-    if (!draft.value.trim()) {
+    const media = !['text', 'link'].includes(draft.kind)
+    if (!media && !draft.value.trim()) {
       setError(draft.kind === 'text' ? '请填写正文' : '请填写链接')
+      return
+    }
+    if (media && draft.value.length > 2000) {
+      setError('说明最多 2000 字')
       return
     }
     if (draft.kind === 'link') {
@@ -55,7 +60,7 @@ export default function ContentForm({
         return
       }
     }
-    if (needsRights && !source) {
+    if (needsRights && !media && !source) {
       setError('请确认内容来源')
       return
     }
@@ -113,15 +118,27 @@ export default function ContentForm({
         </>
       )}
       <label>
-        {draft.kind === 'text' ? '正文' : '链接地址'}
+        {draft.kind === 'text'
+          ? '正文'
+          : draft.kind === 'link'
+            ? '链接地址'
+            : '媒体说明'}
         <textarea
           className="input resize-none"
           style={{ resize: 'none' }}
-          rows={asset ? 4 : 9}
+          rows={asset ? 4 : draft.kind === 'text' ? 9 : 4}
           value={draft.value}
-          maxLength={draft.kind === 'text' ? 100000 : 4096}
+          maxLength={
+            draft.kind === 'text' ? 100000 : draft.kind === 'link' ? 4096 : 2000
+          }
           disabled={disabled}
-          aria-label={draft.kind === 'text' ? '正文' : '链接地址'}
+          aria-label={
+            draft.kind === 'text'
+              ? '正文'
+              : draft.kind === 'link'
+                ? '链接地址'
+                : '媒体说明'
+          }
           aria-invalid={!!error}
           aria-describedby={errorID}
           onCompositionStart={() => setComposing(true)}
@@ -129,7 +146,7 @@ export default function ContentForm({
           onChange={(e) => onChange({ ...draft, value: e.target.value })}
         />
       </label>
-      {needsRights && (
+      {needsRights && ['text', 'link'].includes(draft.kind) && (
         <label>
           内容来源
           <select
@@ -150,7 +167,9 @@ export default function ContentForm({
         {error ||
           (draft.kind === 'link'
             ? '只保存链接，不抓取网页内容。'
-            : '输入保存在本机；点击保存后才写入项目。')}
+            : !['text', 'link'].includes(draft.kind)
+              ? '说明随媒体保存为新修订；媒体文件本身不变。'
+              : '输入保存在本机；点击保存后才写入项目。')}
       </p>
       <button
         className="btn btn-primary"

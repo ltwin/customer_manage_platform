@@ -62,7 +62,7 @@ func (q Search) normalized() (Search, error) {
 		q.TagMode = "all"
 	}
 	q.Q = textindex.Normalize(q.Q)
-	if q.View != "all" && q.View != "favorites" && q.View != "unclassified" && q.View != "trash" || q.Sort != "recent" && q.Sort != "oldest" && q.Sort != "name" || q.TagMode != "all" && q.TagMode != "any" || q.Kind != "" && q.Kind != "text" && q.Kind != "link" || q.Limit < 1 || q.Limit > 100 || utf8.RuneCountInString(q.Q) > 200 || q.GroupID != "" && q.View == "unclassified" || q.Descendants && q.GroupID == "" {
+	if q.View != "all" && q.View != "favorites" && q.View != "unclassified" && q.View != "trash" || q.Sort != "recent" && q.Sort != "oldest" && q.Sort != "name" || q.TagMode != "all" && q.TagMode != "any" || q.Kind != "" && q.Kind != "text" && q.Kind != "link" && q.Kind != "image" && q.Kind != "video" && q.Kind != "audio" || q.Limit < 1 || q.Limit > 100 || utf8.RuneCountInString(q.Q) > 200 || q.GroupID != "" && q.View == "unclassified" || q.Descendants && q.GroupID == "" {
 		return q, creativeops.ErrValidation
 	}
 	var err error

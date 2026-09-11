@@ -63,6 +63,15 @@ func NewOSS(cfg OSSConfig) (*OSS, error) {
 	return &OSS{api: oss.NewClient(loader), bucket: cfg.Bucket}, nil
 }
 
+// NewOSSClient builds the SDK client with the shared credential chain so other
+// object namespaces (creative media) reuse one configuration and policy.
+func NewOSSClient(cfg OSSConfig) (*oss.Client, error) {
+	if cfg.Region == "" || cfg.Bucket == "" || cfg.UseCName && cfg.Endpoint == "" {
+		return nil, ErrOSSConfigInvalid
+	}
+	return oss.NewClient(newOSSClientConfig(cfg)), nil
+}
+
 func newOSSClientConfig(cfg OSSConfig) *oss.Config {
 	loader := oss.LoadDefaultConfig().
 		WithRegion(cfg.Region).

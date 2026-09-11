@@ -65,11 +65,13 @@ endpoint 建议：ECS 与 bucket 同地域时设置内网 endpoint（如 `oss-cn
   `go test ./internal/platform/immutablefs/ -run TestOSSConformanceRealBucket -count=1` 与
   `go test ./internal/avatarmedia/ -run TestOSSStoreConformanceRealBucket -count=1`；未设置自动 skip。
 
-## 创意画布新版媒体部署契约（待实施）
+## 创意画布新版媒体部署契约
 
-本节只适用于[创意画布基础框架](../product/creative-canvas-system/architecture.md)的后续实施；尚未配置生产 bucket、RAM、CORS 或新增签名接口。已有头像、planning 和创意空间先导继续沿用各自现行路径，不因本节被切换。
+本节适用于[创意画布基础框架](../product/creative-canvas-system/architecture.md)。FND-05 已实现 `internal/creativemedia`：local 与 OSS 两个流式适配器、上传状态机、内容校验、发布/候选与票据读取；OSS 适配器只有 fake conformance 与 SDK 调用形状验证，**真实 bucket、RAM 最小权限、CORS 尚未在授权测试环境执行**（PRE-05 待办），生产切换前必须补做。已有头像、planning 和创意空间先导继续沿用各自现行路径，不因本节被切换。
 
-新对象限于 `creative-v2/{account_id}/staging/{upload_id}/…` 和 `creative-v2/{account_id}/blobs/{blob_id}/{sha256}/{rendition}`。旧先导使用 `creative/{account_id}/assets/…`，它不属于新版孤立对象扫描范围。新 GC 只接受已校验的新前缀与账号，先核对 DB 保留根，再操作精确 key/version；旧文件由原生命周期或显式迁移接管规则负责。
+运行配置：`AVATAR_STORAGE_DRIVER` 统一决定驱动；local 下 `CREATIVE_MEDIA_LOCAL_ROOT` 存放 `creative-v2/{account}/staging/{upload}/sessions|versions` 与 `blobs/{blob}/versions/{sha256}`，分片经 API `PUT /creative/media-parts?token=` 写入，token 由服务器 HMAC 签发并绑定 key/会话/分片号/有效期。`CREATIVE_FFPROBE` 指向 ffprobe（音视频探测，不转码）；`CREATIVE_MEDIA_QUOTA_BYTES` 是每账号额度。API 与 `creative-worker` 两个进程都从 `AUTH_TOKEN_SECRET` 派生同一票据密钥；worker 必须在业务迁移 0041 与 River 迁移之后启动，API 只入队不执行上传阶段。
+
+新对象限于 `creative-v2/{account_id}/staging/{upload_id}/original` 和 `creative-v2/{account_id}/blobs/{blob_id}/{rendition}`（rendition 为 original/display）；OSS 以对象版本号固定内容，local 在该 key 下再以 `versions/{sha256}` 存放固定版本。旧先导使用 `creative/{account_id}/assets/…`，它不属于新版孤立对象扫描范围。新 GC 只接受已校验的新前缀与账号，先核对 DB 保留根，再操作精确 key/version；旧文件由原生命周期或显式迁移接管规则负责。
 
 上传采用服务端签发的短期分片 PUT URL；签名绑定准确对象、uploadId、partNumber 和所需请求头，客户端不能选择任意 key，也不获得 STS/长期凭证。完成、列分片和终止由已鉴权 API 发起；完成前服务端核实分片数量/实际大小，发布前仍做全文件校验，不能把签名或 ETag 当真实内容证明。签名过期后必须重新校验账号/会话再续签，取消会话后禁止续签并终止分片；已签 URL 不保证瞬时失效，永远只能写 staging，不能发布正式内容。实现依据：[OSS Go v2 预签名支持](https://github.com/aliyun/alibabacloud-oss-go-sdk-v2/blob/master/DEVGUIDE.md)、[UploadPart](https://www.alibabacloud.com/help/en/oss/developer-reference/uploadpart)。
 

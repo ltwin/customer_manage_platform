@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Minimize2, FileText } from 'lucide-react'
 import { read, type CreativeDocument } from './api.ts'
 import { errorMessage } from './queue.ts'
+import { contentText } from './content.ts'
 export default function DocumentView({
   id,
   onClose,
@@ -68,9 +69,7 @@ export default function DocumentView({
           <>
             <small>独立文档 · 开发验证</small>
             <p>
-              {'body' in document.content.payload
-                ? document.content.payload.body
-                : ''}
+              {contentText(document.content.payload)}
             </p>
           </>
         ) : (

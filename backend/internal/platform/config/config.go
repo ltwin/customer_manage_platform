@@ -38,6 +38,9 @@ type Config struct {
 	OSSBucket                     string // OSS_BUCKET（oss driver 必填；头像与策划素材共用，键前缀天然分区）
 	TelegramBotToken              string // TELEGRAM_BOT_TOKEN（可选，仅服务端环境）
 	TelegramBotUsername           string // TELEGRAM_BOT_USERNAME（可选，不含 @）
+	CreativeMediaLocalRoot        string // CREATIVE_MEDIA_LOCAL_ROOT（local driver；缺省 AvatarLocalRoot 同级 creative-media）
+	CreativeFFProbe               string // CREATIVE_FFPROBE（可选；空则默认 ffprobe，找不到时视频/音频不开放）
+	CreativeMediaQuotaBytes       int64  // CREATIVE_MEDIA_QUOTA_BYTES（每账号媒体额度；默认 20GiB）
 }
 
 // AccountAuthConfig 是 server/accountctl 共享的认证 composition 配置。
@@ -80,6 +83,7 @@ var (
 	ErrAvatarLocalRequireMountInvalid = errors.New("AVATAR_LOCAL_REQUIRE_MOUNT 必须是 true 或 false")
 	ErrAvatarLocalRootNotMount        = errors.New("AVATAR_LOCAL_ROOT 不是可验证的独立挂载点")
 	ErrAvatarLocalRootUnavailable     = errors.New("AVATAR_LOCAL_ROOT 不可用")
+	ErrCreativeMediaQuotaInvalid      = errors.New("CREATIVE_MEDIA_QUOTA_BYTES 必须是正整数")
 )
 
 // Load 读取环境变量并校验必填项。
@@ -109,6 +113,19 @@ func Load() (Config, error) {
 		cfg.HTTPAddr = ":8080"
 	}
 	cfg.PlanningMediaLocalRoot = strings.TrimSpace(os.Getenv("PLANNING_MEDIA_LOCAL_ROOT"))
+	cfg.CreativeMediaLocalRoot = strings.TrimSpace(os.Getenv("CREATIVE_MEDIA_LOCAL_ROOT"))
+	cfg.CreativeFFProbe = strings.TrimSpace(os.Getenv("CREATIVE_FFPROBE"))
+	if cfg.CreativeFFProbe == "" {
+		cfg.CreativeFFProbe = "ffprobe"
+	}
+	cfg.CreativeMediaQuotaBytes = 20 << 30
+	if raw := strings.TrimSpace(os.Getenv("CREATIVE_MEDIA_QUOTA_BYTES")); raw != "" {
+		quota, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || quota < 1 {
+			return Config{}, ErrCreativeMediaQuotaInvalid
+		}
+		cfg.CreativeMediaQuotaBytes = quota
+	}
 	cfg.OSSRegion = strings.TrimSpace(os.Getenv("OSS_REGION"))
 	cfg.OSSEndpoint = strings.TrimSpace(os.Getenv("OSS_ENDPOINT"))
 	cfg.OSSBucket = strings.TrimSpace(os.Getenv("OSS_BUCKET"))
@@ -138,6 +155,15 @@ func Load() (Config, error) {
 				return Config{}, fmt.Errorf("%w: resolve PLANNING_MEDIA_LOCAL_ROOT: %w", ErrAvatarLocalRootUnavailable, err)
 			}
 			cfg.PlanningMediaLocalRoot = absRoot
+		}
+		if cfg.CreativeMediaLocalRoot == "" {
+			cfg.CreativeMediaLocalRoot = filepath.Join(filepath.Dir(cfg.AvatarLocalRoot), "creative-media")
+		} else {
+			absRoot, err := filepath.Abs(cfg.CreativeMediaLocalRoot)
+			if err != nil {
+				return Config{}, fmt.Errorf("%w: resolve CREATIVE_MEDIA_LOCAL_ROOT: %w", ErrAvatarLocalRootUnavailable, err)
+			}
+			cfg.CreativeMediaLocalRoot = absRoot
 		}
 	case StorageDriverOSS:
 		if cfg.OSSRegion == "" {
