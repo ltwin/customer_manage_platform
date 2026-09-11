@@ -97,6 +97,7 @@ await page.addInitScript(() => {
   }
 })
 let qaAccount = 'qa-account'
+let hoverVideoURL = ''
 let posts = 0
 let started
 const requestStarted = new Promise((resolve) => { started = resolve })
@@ -110,6 +111,9 @@ await page.route('**/api/v1/**', async (route) => {
       expires_in: 600,
     })
   if (path.endsWith('/media-access-tickets')) {
+    const body = route.request().postDataJSON()
+    if (body?.content_revision_id === 'qa-video' && hoverVideoURL)
+      return json({ url: hoverVideoURL, expires_at: new Date(Date.now() + 3600000).toISOString() })
     const art = '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640"><rect width="640" height="640" fill="#deded3"/><circle cx="445" cy="165" r="70" fill="#d79768"/><path d="M0 430L170 190L365 455L480 300L640 455V640H0Z" fill="#748675"/><path d="M0 510L225 360L425 580L640 420V640H0Z" fill="#364d43"/></svg>'
     return json({ url: `data:image/svg+xml,${encodeURIComponent(art)}`, expires_at: new Date(Date.now() + 3600000).toISOString() })
   }
@@ -586,6 +590,88 @@ try {
     assert.equal(await page.getByRole('alert').filter({ hasText: '请选择' }).count(), 0)
   }
   page.off('filechooser', countChooser)
+  // Canvas video nodes preview on hover and never swallow the pointer: the
+  // surface plays muted while hovered, pauses when the pointer leaves, and
+  // dragging starting on the video moves the node.
+  hoverVideoURL = await page.evaluate(() => new Promise((resolve) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 64
+    canvas.height = 48
+    const ctx = canvas.getContext('2d')
+    let frame = 0
+    const timer = setInterval(() => {
+      ctx.fillStyle = frame % 2 ? '#20344a' : '#4a3420'
+      ctx.fillRect(0, 0, 64, 48)
+      frame++
+    }, 100)
+    const recorder = new MediaRecorder(canvas.captureStream(10), { mimeType: 'video/webm' })
+    const chunks = []
+    recorder.ondataavailable = (event) => chunks.push(event.data)
+    recorder.onstop = () => {
+      clearInterval(timer)
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result)
+      reader.readAsDataURL(new Blob(chunks, { type: 'video/webm' }))
+    }
+    recorder.start()
+    setTimeout(() => recorder.stop(), 1500)
+  }))
+  qaAccount = 'qa-video-hover-account'
+  canvas.archived = false
+  canvas.edges = []
+  const hoverNode = makeNode('video-hover', 200)
+  hoverNode.metadata.type_key = 'core.video'
+  hoverNode.content = {
+    id: 'qa-video',
+    kind: 'video',
+    payload: {},
+    media: [{ role: 'original', mime: 'video/webm' }],
+  }
+  canvas.nodes = [hoverNode]
+  await page.reload()
+  await waitCount(nodes, 1)
+  await page.getByRole('button', { name: '收起资产库', exact: true }).click()
+  await page.waitForTimeout(350)
+  await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
+  await page.waitForTimeout(350)
+  const hoverVideo = page.locator('[data-id="video-hover"] video')
+  await hoverVideo.waitFor()
+  assert.notEqual(await hoverVideo.getAttribute('controls'), null, 'canvas video keeps the native play button and progress bar')
+  assert.equal(await hoverVideo.evaluate((v) => v.muted), false, 'hover preview keeps sound; muting stays a user choice')
+  await hoverVideo.hover()
+  await page.waitForFunction(() => {
+    const v = document.querySelector('[data-id="video-hover"] video')
+    return v && !v.paused && v.currentTime > 0
+  })
+  // A manual pause holds while the pointer stays inside the node; only a
+  // fresh enter resumes playback.
+  await hoverVideo.evaluate((v) => v.pause())
+  const videoBox = await hoverVideo.boundingBox()
+  await page.mouse.move(videoBox.x + videoBox.width * 0.4, videoBox.y + videoBox.height * 0.25)
+  await page.waitForTimeout(150)
+  assert.equal(await hoverVideo.evaluate((v) => v.paused), true, 'moving inside the node never overrides a manual pause')
+  await page.mouse.move(16, 16)
+  assert.equal(await hoverVideo.evaluate((v) => v.paused), true, 'leaving the node pauses the preview')
+  await page.mouse.move(videoBox.x + videoBox.width / 2, videoBox.y + videoBox.height / 2)
+  await page.waitForFunction(() => {
+    const v = document.querySelector('[data-id="video-hover"] video')
+    return v && !v.paused
+  })
+  // The video surface drags the node; the control-bar strip scrubs instead.
+  const videoCard = page.locator('[data-id="video-hover"] .cc-node')
+  const videoBeforeDrag = await videoCard.boundingBox()
+  await page.mouse.down()
+  await page.mouse.move(videoBeforeDrag.x + videoBeforeDrag.width / 2 + 120, videoBeforeDrag.y + videoBeforeDrag.height / 2 + 70, { steps: 6 })
+  await page.mouse.up()
+  const videoAfterDrag = await videoCard.boundingBox()
+  assert.ok(videoAfterDrag.x - videoBeforeDrag.x > 60 && videoAfterDrag.y - videoBeforeDrag.y > 30, 'dragging on the video surface moves the node')
+  const stripBox = await hoverVideo.boundingBox()
+  await page.mouse.move(stripBox.x + stripBox.width / 2, stripBox.y + stripBox.height - 10)
+  await page.mouse.down()
+  await page.mouse.move(stripBox.x + stripBox.width / 2 + 70, stripBox.y + stripBox.height - 10, { steps: 4 })
+  await page.mouse.up()
+  const videoAfterScrub = await videoCard.boundingBox()
+  assert.ok(Math.abs(videoAfterScrub.x - videoAfterDrag.x) < 1 && Math.abs(videoAfterScrub.y - videoAfterDrag.y) < 1, 'control-bar presses scrub instead of dragging the node')
   assert.deepEqual(errors, [])
   if (process.env.CREATIVE_NODE_STYLE_QA === '1') {
     const mediaNode = (id, x, kind, content) => {
@@ -639,6 +725,7 @@ try {
       checks: [
         'inline title/body: geometry, blur save, Enter, Escape, IME, native undo and canvas undo',
         'empty media selects without upload; toolbar filters and validates each media kind',
+        'video node plays on hover, pauses on leave, resumes on re-hover after a manual pause; controls stay and the surface drags',
         'idle canvas makes no polling requests',
         'authenticated SSE invalidation updates remote nodes',
         'edge scissors follows midpoint at different zooms, deletes immediately, and supports undo',
