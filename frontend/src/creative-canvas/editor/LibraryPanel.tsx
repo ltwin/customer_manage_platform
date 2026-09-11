@@ -22,10 +22,19 @@ import {
   Pencil,
   ArrowRight,
   Tag as TagIcon,
+  Upload,
+  Image as ImageIcon,
+  Film,
+  AudioLines,
+  Maximize2,
 } from 'lucide-react'
+import { MediaFigure } from './MediaView.tsx'
+import MediaPreview from './MediaPreview.tsx'
+import { isMediaKind } from './media.ts'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import * as api from './api.ts'
 import { errorMessage } from './queue.ts'
+import { contentText } from './content.ts'
 import { emptyCatalog, type Catalog, type Editor } from './libraryState.ts'
 import LibraryEditor from './LibraryEditor.tsx'
 import './library.css'
@@ -57,6 +66,8 @@ export default function LibraryPanel({
   onCommand,
   canDrop,
   onDrop,
+  onImport,
+  importDisabled,
 }: {
   disabled: boolean
   busy: boolean
@@ -72,7 +83,11 @@ export default function LibraryPanel({
   onCommand: (path: string, payload: unknown) => Promise<boolean>
   canDrop: boolean
   onDrop: (asset: api.Asset) => void
+  onImport: (files: File[], groupID: string) => void
+  importDisabled: boolean
 }) {
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [dragOver, setDragOver] = useState(false)
   const [params, setParams] = useSearchParams()
   const [catalog, setCatalog] = useState(emptyCatalog)
   const [page, setPage] = useState(initialPage)
@@ -438,11 +453,28 @@ export default function LibraryPanel({
   return (
     <>
       <aside
-        className={`cc-library cl-library ${standalone ? 'cl-standalone' : ''} ${expanded ? 'cl-expanded' : ''} ${groupsOpen ? 'cl-groups-open' : ''}`}
+        className={`cc-library cl-library ${standalone ? 'cl-standalone' : ''} ${expanded ? 'cl-expanded' : ''} ${groupsOpen ? 'cl-groups-open' : ''} ${dragOver ? 'cl-drag-over' : ''}`}
         style={!standalone ? { width } : undefined}
         id="creative-library"
         aria-label="个人资产库"
         hidden={hidden}
+        onDragOver={(e) => {
+          if (!e.dataTransfer.types.includes('Files') || importDisabled) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+          setDragOver(true)
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+            setDragOver(false)
+        }}
+        onDrop={(e) => {
+          setDragOver(false)
+          const files = Array.from(e.dataTransfer.files ?? [])
+          if (!files.length || importDisabled) return
+          e.preventDefault()
+          onImport(files, group)
+        }}
       >
         <header className="cc-library-heading">
           <div>
@@ -498,6 +530,27 @@ export default function LibraryPanel({
               </button>
             )}
           </div>
+          <button
+            className="cc-icon-button cl-import"
+            aria-label="导入文件"
+            title="导入图片、视频或音频"
+            disabled={importDisabled}
+            onClick={() => fileInput.current?.click()}
+          >
+            <Upload size={17} />
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            hidden
+            multiple
+            accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/mpeg,audio/wav"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? [])
+              e.target.value = ''
+              if (files.length) onImport(files, group)
+            }}
+          />
           <button
             className="cc-icon-button cl-create"
             aria-label="新增资产"
@@ -649,6 +702,9 @@ export default function LibraryPanel({
                       onChange={(e) => filter('lkind', e.target.value)}
                     >
                       <option value="">全部类型</option>
+                      <option value="image">图片</option>
+                      <option value="video">视频</option>
+                      <option value="audio">音频</option>
                       <option value="text">文字</option>
                       <option value="link">链接</option>
                     </select>
@@ -790,7 +846,15 @@ export default function LibraryPanel({
                       onDragStart={(e) =>
                         e.dataTransfer.setData(
                           'application/creative-asset',
-                          a.id,
+                          (selection.includes(a.id) && selection.length > 1
+                            ? page.items
+                                .filter(
+                                  (x) =>
+                                    selection.includes(x.id) && !x.unavailable,
+                                )
+                                .map((x) => x.id)
+                            : [a.id]
+                          ).join(','),
                         )
                       }
                       onClick={(e) =>
@@ -804,21 +868,53 @@ export default function LibraryPanel({
                         }
                       }}
                     >
-                      <div className={`cl-thumbnail cl-thumbnail-${a.kind}`}>
-                        {a.kind === 'text' ? (
-                          <Type size={19} />
+                      <div
+                        className={`cl-thumbnail cl-thumbnail-${a.kind}`}
+                        style={
+                          a.kind === 'image' &&
+                          a.content?.media?.[0]?.width &&
+                          a.content.media[0].height
+                            ? {
+                                aspectRatio: `${a.content.media[0].width} / ${a.content.media[0].height}`,
+                              }
+                            : undefined
+                        }
+                      >
+                        {isMediaKind(a.kind) ? (
+                          a.unavailable || !a.content ? (
+                            <p>{a.unavailable ? '当前无权展示' : ''}</p>
+                          ) : (
+                            <MediaFigure
+                              content={a.content}
+                              kind={a.kind}
+                              title={a.title}
+                              className="cl-media"
+                            />
+                          )
                         ) : (
-                          <Link2 size={19} />
+                          <>
+                            {a.kind === 'text' ? (
+                              <Type size={19} />
+                            ) : (
+                              <Link2 size={19} />
+                            )}
+                            <p>
+                              {a.unavailable
+                                ? '当前无权展示'
+                                : contentText(a.content?.payload)}
+                            </p>
+                          </>
                         )}
-                        <p>
-                          {a.unavailable
-                            ? '当前无权展示'
-                            : a.content && 'body' in a.content.payload
-                              ? a.content.payload.body
-                              : a.content && 'url' in a.content.payload
-                                ? a.content.payload.url
-                                : ''}
-                        </p>
+                        <span className="cl-kind">
+                          {a.kind === 'image' ? (
+                            <ImageIcon size={10} />
+                          ) : a.kind === 'video' ? (
+                            <Film size={10} />
+                          ) : a.kind === 'audio' ? (
+                            <AudioLines size={10} />
+                          ) : null}
+                          {{ text: '文字', link: '链接', image: '图片', video: '视频', audio: '音频' }[a.kind]}
+                        </span>
                       </div>
                       <h3>{a.title}</h3>
                     </button>
@@ -829,7 +925,11 @@ export default function LibraryPanel({
                         disabled={a.unavailable}
                         onClick={() => setPreview(a)}
                       >
-                        <Eye size={14} />
+                        {isMediaKind(a.kind) ? (
+                          <Maximize2 size={14} />
+                        ) : (
+                          <Eye size={14} />
+                        )}
                       </button>
                       {canDrop && view !== 'trash' && (
                         <button
@@ -930,7 +1030,7 @@ export default function LibraryPanel({
                         ? '没有找到匹配的资产'
                         : '把灵感收进这里'}
                   </p>
-                  <small>可以调整筛选，或添加文字与链接。</small>
+                  <small>可以调整筛选，导入图片、视频、音频，或添加文字与链接。</small>
                 </div>
               )}
               {page.next_cursor && !stale && (
@@ -947,7 +1047,7 @@ export default function LibraryPanel({
         </div>
         {!standalone && (
           <footer className="cl-library-foot">
-            ↗　拖到画布，或点击素材上的 +
+            ↗　拖到画布，或点击素材上的 +　·　拖入文件即导入
           </footer>
         )}
         {!standalone && (
@@ -1134,7 +1234,15 @@ export default function LibraryPanel({
             />
           )}
 
-          {preview && (
+          {preview && isMediaKind(preview.kind) && preview.content && (
+            <MediaPreview
+              content={preview.content}
+              kind={preview.kind}
+              title={preview.title}
+              onClose={() => setPreview(null)}
+            />
+          )}
+          {preview && !(isMediaKind(preview.kind) && preview.content) && (
             <StudioDialog
               title={preview.title}
               onClose={() => setPreview(null)}
@@ -1144,9 +1252,7 @@ export default function LibraryPanel({
                   ? '当前无权展示此内容'
                   : previewError ||
                     (previewContent
-                      ? 'body' in previewContent.payload
-                        ? previewContent.payload.body
-                        : previewContent.payload.url
+                      ? contentText(previewContent.payload)
                       : '正在读取内容…')}
               </div>
             </StudioDialog>

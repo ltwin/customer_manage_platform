@@ -125,6 +125,84 @@ func lockLibrary(ctx context.Context, tx store.TxAccountScope) (creativeops.Revi
 	return creativeops.Revision(revision), nil
 }
 
+// LockLibraryInTx takes the library root lock for callers that must order it
+// before upload/candidate and canvas locks.
+func LockLibraryInTx(ctx context.Context, tx store.TxAccountScope) (creativeops.Revision, error) {
+	return lockLibrary(ctx, tx)
+}
+
+// ImportTarget is the library-side description of a media publication target.
+type ImportTarget struct {
+	Title       string   `json:"title"`
+	Description string   `json:"description,omitempty"`
+	GroupIDs    []string `json:"group_ids,omitempty"`
+	TagIDs      []string `json:"tag_ids,omitempty"`
+	NewTags     []NewTag `json:"new_tags,omitempty"`
+	Favorite    bool     `json:"is_favorite,omitempty"`
+}
+
+// ValidateImportTarget checks static field rules before any lock is taken.
+func ValidateImportTarget(t ImportTarget) error {
+	if strings.TrimSpace(t.Title) == "" || utf8.RuneCountInString(t.Title) > 200 || utf8.RuneCountInString(t.Description) > 2000 || len(t.NewTags) > 50 {
+		return creativeops.ErrValidation
+	}
+	if _, err := uniqueIDs(t.GroupIDs, 100); err != nil {
+		return err
+	}
+	_, err := uniqueIDs(t.TagIDs, 50)
+	return err
+}
+
+// ValidateImportTargetInTx verifies that referenced groups/tags still exist
+// under the library lock; publication re-runs it before creating the asset.
+func ValidateImportTargetInTx(ctx context.Context, tx store.TxAccountScope, t ImportTarget) error {
+	if err := ValidateImportTarget(t); err != nil {
+		return err
+	}
+	if _, err := lockLibrary(ctx, tx); err != nil {
+		return err
+	}
+	for _, g := range t.GroupIDs {
+		if err := requireEntity(ctx, tx, "creative_asset_groups", g); err != nil {
+			return err
+		}
+	}
+	for _, id := range t.TagIDs {
+		if err := requireEntity(ctx, tx, "creative_tags", id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CreateFromRevisionInTx creates an asset for an already retained, usable
+// revision inside the caller's operation. The caller has locked the library
+// root and verified the revision's usage; this never writes a second receipt.
+func CreateFromRevisionInTx(ctx context.Context, tx store.TxAccountScope, r creativecontent.Revision, t ImportTarget) (AssetResult, error) {
+	if err := ValidateImportTarget(t); err != nil {
+		return AssetResult{}, err
+	}
+	revision, err := lockLibrary(ctx, tx)
+	if err != nil {
+		return AssetResult{}, err
+	}
+	id := "ccas_" + uuid.NewString()
+	if err := tx.Insert(ctx, "creative_assets", []string{"id", "kind", "title", "normalized_title", "description", "content_id", "content_revision_id", "source_url", "is_favorite"}, id, r.Kind, t.Title, textindex.Normalize(t.Title), t.Description, r.ContentID, r.ID, r.Payload.URL, t.Favorite); err != nil {
+		return AssetResult{}, err
+	}
+	mapping, err := organizeNew(ctx, tx, id, t.GroupIDs, t.TagIDs, t.NewTags)
+	if err != nil {
+		return AssetResult{}, err
+	}
+	if err = indexAsset(ctx, tx, Asset{ID: id, Title: t.Title, Description: t.Description, Revision: 1}, r.Payload); err != nil {
+		return AssetResult{}, err
+	}
+	if _, err := tx.Update(ctx, "creative_library_settings", "library_revision=library_revision+1", ""); err != nil {
+		return AssetResult{}, err
+	}
+	return AssetResult{TagMapping: mapping, ID: id, Revision: 1, ContentRevisionID: r.ID, LibraryRevision: revision + 1}, nil
+}
+
 // ResolveAssetsInTx locks the library and selected asset before canvas locks.
 // It fixes identity/revision only; the canvas checks content usage after taking
 // its project/canvas locks, preserving the library -> canvas -> content order.

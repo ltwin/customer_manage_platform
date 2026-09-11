@@ -123,6 +123,9 @@ func TestOrdersPaymentFactsMigrationBackfillsExistingOrders(t *testing.T) {
 	// 0033 之上已叠加 0034（归因快照）与 0035（健康度参数）：先退 0035、0034 再退 0033，
 	// 本测试锁的是 0033 自身的可逆性。
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback creative-media migration: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback creative-canvas-commands migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {

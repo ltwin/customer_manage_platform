@@ -30,7 +30,7 @@ func (sc AccountScope) CreativeCapabilities(ctx context.Context) (CreativeCapabi
 		return CreativeCapabilities{}, err
 	}
 	active := status == "active"
-	return CreativeCapabilities{Read: active, ManualWrite: active}, nil
+	return CreativeCapabilities{Read: active, ManualWrite: active, MediaWrite: active}, nil
 }
 
 func (sc TxAccountScope) RequireCreativeCapability(ctx context.Context, capability string) error {

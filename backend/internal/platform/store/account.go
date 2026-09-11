@@ -34,3 +34,21 @@ func (s *Store) AccountByID(ctx context.Context, id string) (auth.Account, error
 	}
 	return acct, nil
 }
+
+// ActiveAccountIDs lists active accounts for trusted maintenance sweeps.
+func (s *Store) ActiveAccountIDs(ctx context.Context, limit int) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM accounts WHERE status='active' ORDER BY id LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

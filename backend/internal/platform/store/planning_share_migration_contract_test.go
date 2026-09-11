@@ -94,6 +94,9 @@ DELETE FROM share_generations;
 		t.Fatal(err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback creative-media migration: %v", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback creative-canvas-commands migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -273,6 +276,9 @@ SELECT EXISTS (
   WHERE table_name = 'share_assignment_source_event_v1'
 )`).Scan(&exists); err != nil || !exists {
 		t.Fatalf("0024 event table missing: exists=%v err=%v", exists, err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback creative-media migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback creative-canvas-commands migration: %v", err)

@@ -18,6 +18,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -195,6 +196,16 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	creativeMedia, err := creativemedia.Compose(cfg, deriveCreativeMediaTicketKey(cfg.AuthTokenSecret))
+	if err != nil {
+		return newStartupFailure("creative-media-init", "CREATIVE_MEDIA_LOCAL_ROOT", "object-storage", err)
+	}
+	// The API only enqueues; the creative-worker process executes media jobs.
+	creativeJobs, err := s.NewJobRuntime(creativeMedia.Handlers(), logger)
+	if err != nil {
+		return newStartupFailure("creative-jobs-init", "DATABASE_URL", "database", err)
+	}
+	creativeMedia.SetRuntime(creativeJobs)
 	planningMediaApp := planningmedia.NewApplication(
 		planningmedia.Repository{},
 		idempotencyExecutor,
@@ -343,6 +354,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		},
 		PlanningMedia:     planningMediaApp,
 		PlanningIngestion: planningIngestionApp,
+		CreativeMedia:     creativeMedia,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))
@@ -573,6 +585,16 @@ func waitForRunner(ctx context.Context, runnerDone <-chan struct{}) error {
 	case <-ctx.Done():
 		return fmt.Errorf("background runner shutdown timeout: %w", ctx.Err())
 	}
+}
+
+func deriveCreativeMediaTicketKey(rootSecret string) []byte {
+	extract := hmac.New(sha256.New, make([]byte, sha256.Size))
+	_, _ = extract.Write([]byte(rootSecret))
+	prk := extract.Sum(nil)
+	expand := hmac.New(sha256.New, prk)
+	_, _ = expand.Write([]byte("creative-media/v1/ticket"))
+	_, _ = expand.Write([]byte{1})
+	return expand.Sum(nil)
 }
 
 func derivePlanshareIPDigestKey(rootSecret string) []byte {

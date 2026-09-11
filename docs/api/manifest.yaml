@@ -133,3 +133,17 @@ entries:
     doc_path: docs/api/account-profile.md
     status: pending
     note: "2026-08-02 account-profile-center：/api/v1/account/profile*；共享 DecodeConfirm 原始字节；export schema v3；待 cs-docs 生成参考"
+
+  - entry: creative-media
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/creative_media.go
+      - backend/internal/creativemedia/service.go
+      - backend/internal/creativemedia/worker.go
+      - backend/internal/creativemedia/read.go
+      - frontend/src/creative-canvas/editor/media.ts
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/creative-media.md
+    status: pending
+    note: "2026-09-11 FND-05：/creative/uploads*、/upload-candidates*、/media-capabilities、/media-access-tickets、/media/{revision}/{role}、/assets/from-canvas-node；开发说明见 docs/dev/creative-media.md"

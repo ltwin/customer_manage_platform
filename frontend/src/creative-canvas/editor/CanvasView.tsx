@@ -51,10 +51,20 @@ import {
   Undo2,
   Redo2,
   X,
+  Image as ImageIcon,
+  Film,
+  AudioLines,
+  Download,
+  RefreshCw,
+  Library,
+  Upload,
 } from 'lucide-react'
 import type { Asset, Canvas, CanvasNode, GraphAction } from './api.ts'
+import { MediaFigure } from './MediaView.tsx'
+import { isMediaKind, type MediaKind } from './media.ts'
 import type { PositionDraft } from './journal.ts'
 import { parentFirst, selectionRoots, worldPoint } from './graph.ts'
+import { contentText } from './content.ts'
 import { attachMagneticPorts } from './magneticPorts.ts'
 import type { PendingConnection } from './connectionOverlay.ts'
 
@@ -74,23 +84,68 @@ type FlowNode = Node<
       x: number,
       y: number,
     ) => void
+    upload: (id: string, kind: MediaKind) => void
     disabled: boolean
   },
   'content'
 >
+export const nodeKind = (typeKey: string): string =>
+  typeKey.startsWith('core.') ? typeKey.slice(5) : typeKey
+const connectableTypes = [
+  'core.text',
+  'core.link',
+  'core.image',
+  'core.video',
+  'core.audio',
+]
+const kindLabel: Record<string, string> = {
+  text: '文字',
+  link: '链接',
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+  group: '布局分组',
+}
+export const untitled = (typeKey: string) =>
+  typeKey === 'core.group'
+    ? '未命名分组'
+    : `未命名${kindLabel[nodeKind(typeKey)] ?? '节点'}`
+function KindIcon({ typeKey, size = 14 }: { typeKey: string; size?: number }) {
+  switch (typeKey) {
+    case 'core.group':
+      return <Group size={size} />
+    case 'internal.document':
+      return <FileText size={size} />
+    case 'core.text':
+      return <Type size={size} />
+    case 'core.image':
+      return <ImageIcon size={size} />
+    case 'core.video':
+      return <Film size={size} />
+    case 'core.audio':
+      return <AudioLines size={size} />
+    default:
+      return <Link2 size={size} />
+  }
+}
 const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
   const n = data.item,
     p = n.content?.payload,
+    kind = nodeKind(n.metadata.type_key),
+    media = isMediaKind(kind),
     group = n.metadata.type_key === 'core.group',
     known = [
       'core.text',
       'core.link',
+      'core.image',
+      'core.video',
+      'core.audio',
       'core.group',
       'internal.document',
     ].includes(n.metadata.type_key)
   return (
     <article
-      className={`cc-node ${group ? 'cc-group-node' : n.metadata.type_key === 'core.text' ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
+      className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : n.metadata.type_key === 'core.text' ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
     >
       <NodeResizer
         isVisible={
@@ -105,23 +160,8 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
         }
       />
       <header className="cc-node-header">
-        {group ? (
-          <Group size={14} />
-        ) : n.metadata.type_key === 'internal.document' ? (
-          <FileText size={14} />
-        ) : n.metadata.type_key === 'core.text' ? (
-          <Type size={14} />
-        ) : (
-          <Link2 size={14} />
-        )}
-        <h3>
-          {n.metadata.title ||
-            (group
-              ? '未命名分组'
-              : n.metadata.type_key === 'core.text'
-                ? '未命名文字'
-                : '未命名链接')}
-        </h3>
+        <KindIcon typeKey={n.metadata.type_key} />
+        <h3>{n.metadata.title || untitled(n.metadata.type_key)}</h3>
         <button
           className="cc-icon-button nodrag"
           aria-label="节点操作"
@@ -131,25 +171,54 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
           <Ellipsis size={16} />
         </button>
       </header>
-      {!group && (
+      {!group && media && (
+        <div className="cc-node-content cc-node-media">
+          {!known || n.status.content_state === 'unavailable' ? (
+            <p>
+              {!known ? '此节点类型当前只读' : '当前无权展示此内容'}
+            </p>
+          ) : n.content ? (
+            <MediaFigure
+              content={n.content}
+              kind={kind}
+              title={n.metadata.title || untitled(n.metadata.type_key)}
+              controls={kind !== 'image'}
+            />
+          ) : (
+            <button
+              type="button"
+              className="cc-media-empty nodrag"
+              disabled={data.disabled}
+              aria-label={`上传${kindLabel[kind]}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                data.upload(n.id, kind as MediaKind)
+              }}
+            >
+              <Upload size={18} />
+              <span>上传{kindLabel[kind]}</span>
+            </button>
+          )}
+          <div className="cc-node-footer">
+            <span>{contentText(p) || kindLabel[kind]}</span>
+            <span>{kind.toUpperCase()}</span>
+          </div>
+        </div>
+      )}
+      {!group && !media && (
         <div className="cc-node-content">
           <p>
             {!known
               ? '此节点类型当前只读'
               : n.status.content_state === 'unavailable'
                 ? '当前无权展示此内容'
-                : p && 'body' in p
-                  ? p.body
-                  : p && 'url' in p
-                    ? p.url
-                    : '双击，写下你的想法。'}
+                : contentText(p) || '双击，写下你的想法。'}
           </p>
           {n.content?.truncated && <small>正文预览 · 编辑时载入全文</small>}
         </div>
       )}
       {!group &&
-        (n.metadata.type_key === 'core.text' ||
-          n.metadata.type_key === 'core.link') &&
+        connectableTypes.includes(n.metadata.type_key) &&
         (['input', 'output'] as const).map((side) => (
           <Handle
             key={side}
@@ -217,7 +286,7 @@ function connectionTarget(
     return n &&
       n.id !== fromID &&
       !n.data.disabled &&
-      ['core.text', 'core.link'].includes(n.data.item.metadata.type_key) &&
+      connectableTypes.includes(n.data.item.metadata.type_key) &&
       n.data.item.capabilities.actions.includes('move')
       ? n
       : null
@@ -337,6 +406,12 @@ export default function CanvasView({
   onMove,
   onMoveSelection,
   onDropAsset,
+  onDropAssets,
+  onDropFiles,
+  onUploadToNode,
+  onDownload,
+  onSaveToLibrary,
+  onPreview,
   onActions,
   onUndo,
   onRedo,
@@ -359,6 +434,12 @@ export default function CanvasView({
   onMove: (node: CanvasNode, x: number, y: number) => void
   onMoveSelection: (moves: { node: CanvasNode; x: number; y: number }[]) => void
   onDropAsset: (asset: Asset, x: number, y: number) => void
+  onDropAssets: (assets: Asset[], x: number, y: number) => void
+  onDropFiles: (files: File[], x: number, y: number) => void
+  onUploadToNode: (id: string, kind: MediaKind) => void
+  onDownload: (id: string) => void
+  onSaveToLibrary: (id: string) => void
+  onPreview: (id: string) => void
   onActions: (actions: GraphAction[]) => void
   onUndo: () => void
   onRedo: () => void
@@ -375,14 +456,19 @@ export default function CanvasView({
     onSelect,
     onSelection,
     onActions,
+    onUploadToNode,
     canvasNodes: canvas.nodes,
   })
   callbacks.current = {
     onSelect,
     onSelection,
     onActions,
+    onUploadToNode,
     canvasNodes: canvas.nodes,
   }
+  const uploadToNode = useCallback((id: string, kind: MediaKind) => {
+    callbacks.current.onUploadToNode(id, kind)
+  }, [])
   const resizePreviews = useRef(
     new Map<
       string,
@@ -572,6 +658,7 @@ export default function CanvasView({
             select: selectNode,
             port: openPort,
             resize,
+            upload: uploadToNode,
             disabled,
           },
           selected: isSelected,
@@ -593,6 +680,7 @@ export default function CanvasView({
     selectNode,
     openPort,
     resize,
+    uploadToNode,
     disabled,
   ])
   useEffect(() => {
@@ -721,7 +809,7 @@ export default function CanvasView({
       onMove(moves[0].node, moves[0].x, moves[0].y)
     else onMoveSelection(moves)
   }
-  function createConnected(kind: 'text' | 'link') {
+  function createConnected(kind: 'text' | 'link' | MediaKind) {
     if (!portMenu) return
     const id = `cwnode_${crypto.randomUUID()}`,
       isOutput = portMenu.side === 'output'
@@ -817,16 +905,22 @@ export default function CanvasView({
       onDrop={(e) => {
         e.preventDefault()
         if (disabled) return
-        const asset = assets.find(
-          (a) => a.id === e.dataTransfer.getData('application/creative-asset'),
-        )
-        if (asset) {
-          const point = flow.screenToFlowPosition({
-            x: e.clientX,
-            y: e.clientY,
-          })
-          onDropAsset(asset, point.x, point.y)
+        const point = flow.screenToFlowPosition({
+          x: e.clientX,
+          y: e.clientY,
+        })
+        const raw = e.dataTransfer.getData('application/creative-asset')
+        const ids = raw ? raw.split(',').filter(Boolean) : []
+        if (ids.length) {
+          const dropped = ids
+            .map((id) => assets.find((a) => a.id === id))
+            .filter((a): a is Asset => !!a)
+          if (dropped.length === 1) onDropAsset(dropped[0]!, point.x, point.y)
+          else if (dropped.length) onDropAssets(dropped, point.x, point.y)
+          return
         }
+        const files = Array.from(e.dataTransfer.files ?? [])
+        if (files.length) onDropFiles(files, point.x, point.y)
       }}
     >
       <ReactFlow<FlowNode>
@@ -1022,9 +1116,7 @@ export default function CanvasView({
               ? `${selection.length} 个节点`
               : active.data.item.metadata.type_key === 'core.group'
                 ? '布局分组'
-                : active.data.item.metadata.type_key === 'core.text'
-                  ? '文字节点'
-                  : '链接节点'}
+                : `${kindLabel[nodeKind(active.data.item.metadata.type_key)] ?? '文档'}节点`}
           </span>
           {selection.length === 1 && (
             <button
@@ -1044,6 +1136,65 @@ export default function CanvasView({
               )}
             </button>
           )}
+          {selection.length === 1 &&
+            active.data.item.capabilities.actions.includes('maximize') &&
+            isMediaKind(nodeKind(active.data.item.metadata.type_key)) &&
+            active.data.item.content && (
+              <button
+                className="cc-icon-button"
+                aria-label="放大预览"
+                title="放大预览"
+                onClick={() => onPreview(active.id)}
+              >
+                <Maximize2 size={16} />
+              </button>
+            )}
+          {selection.length === 1 &&
+            active.data.item.capabilities.actions.includes('download') &&
+            active.data.item.content && (
+              <button
+                className="cc-icon-button"
+                aria-label="下载媒体"
+                title="下载原件"
+                onClick={() => onDownload(active.id)}
+              >
+                <Download size={16} />
+              </button>
+            )}
+          {selection.length === 1 &&
+            active.data.item.capabilities.actions.includes('replace') && (
+              <button
+                className="cc-icon-button"
+                aria-label={active.data.item.content ? '替换媒体' : '上传媒体'}
+                title={active.data.item.content ? '替换媒体' : '上传媒体'}
+                disabled={disabled}
+                onClick={() =>
+                  onUploadToNode(
+                    active.id,
+                    nodeKind(active.data.item.metadata.type_key) as MediaKind,
+                  )
+                }
+              >
+                {active.data.item.content ? (
+                  <RefreshCw size={16} />
+                ) : (
+                  <Upload size={16} />
+                )}
+              </button>
+            )}
+          {selection.length === 1 &&
+            active.data.item.capabilities.actions.includes('save_to_library') &&
+            active.data.item.content && (
+              <button
+                className="cc-icon-button"
+                aria-label="存入个人资产库"
+                title="存入个人资产库"
+                disabled={disabled}
+                onClick={() => onSaveToLibrary(active.id)}
+              >
+                <Library size={16} />
+              </button>
+            )}
           <button
             className="cc-icon-button"
             aria-label="打组"
@@ -1133,6 +1284,18 @@ export default function CanvasView({
             <Link2 size={16} />
             链接
           </button>
+          <button disabled={disabled} onClick={() => createConnected('image')}>
+            <ImageIcon size={16} />
+            图片
+          </button>
+          <button disabled={disabled} onClick={() => createConnected('video')}>
+            <Film size={16} />
+            视频
+          </button>
+          <button disabled={disabled} onClick={() => createConnected('audio')}>
+            <AudioLines size={16} />
+            音频
+          </button>
           <label className="cc-connect-existing">
             连接已有节点
             <select
@@ -1167,10 +1330,7 @@ export default function CanvasView({
                 )
                 .map((n) => (
                   <option key={n.id} value={n.id}>
-                    {n.metadata.title ||
-                      (n.metadata.type_key === 'core.text'
-                        ? '未命名文字'
-                        : '未命名链接')}
+                    {n.metadata.title || untitled(n.metadata.type_key)}
                   </option>
                 ))}
             </select>

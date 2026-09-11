@@ -34,3 +34,12 @@
 - 删除分组不删除资产，直接子组提升一级；删除标签分类保留标签。回收站支持批量恢复和彻底移除个人库条目，已经引用到画布的内容保留。保留天数7/30/90/无限只影响此后移入回收站的资产；自动到期和物理GC属于FND-10。
 - 节点单击只选中，双击/浮条编辑打开`StudioDialog`；空白双击新建文字。窗口复用`useFocusTrap`，Escape与关闭按钮均保留本机内容草稿；成功保存关闭窗口。详情窗口通过portal留在工作台主题根内，不被玻璃侧栏裁切。
 - 原生select继续由操作系统管理选项弹层，中文标签覆盖类型、来源、排序、标签匹配、父组和保留设置；本期不自建Select/Listbox组件。
+
+## FND-05 媒体上传、双向保存与读取
+
+- `POST /creative/uploads` 受理后返回 202，客户端轮询 `GET /creative/uploads/{id}` 直到 `uploading`，再按 `part_size`/`part_count` 请求分片授权并 PUT；`complete` 同样 202，随后轮询到 `ready`/`failed`/`expired`/`cancelled`。`state=ready` 只表示文件发布结束，`binding.status` 单独表示目标结果：`applied` 已放入资产/节点，`needs_review` 进入候选，`discarded`/`expired` 已结束。
+- 服务器按文件内容判定格式：声明的类型（图片/视频/音频）与内容不符、内容属于未启用的格式、超限、分片不完整逐项失败并保留其他成功项；声明的 MIME 只用于创建时的准入，入库以服务端嗅探结果为准（如声明 image/png 实为 JPEG，则以 image/jpeg 入库）；失败项在托盘显示原因并可重试（重试是新会话）。`GET /creative/media-capabilities` 列出当前进程真实可校验的格式；ffprobe 不可用时不出现视频/音频。
+- 上传目标：`asset` 进入个人库（可带分组/标签/新标签）；`node` 绑定到指定画布节点并携带 `expected_data_revision`。发布时目标已变化（节点被编辑/删除、项目归档、目录被删）则转为 pending 候选，`GET /creative/upload-candidates` 列出，`adopt` 可指定新目标，`discard` 释放；采用/放弃/到期只能一方成功。
+- 节点绑定媒体是一次可撤销的画布 change；撤销恢复上一修订，不影响原资产或其他节点。`POST /creative/assets/from-canvas-node` 把节点当前修订固定为新资产，同操作重放不重复创建。
+- 浏览器读取只通过 `POST /creative/media-access-tickets` 返回的短期 URL（10 分钟，绑定账号/修订/角色/用途）；`GET/HEAD /creative/media/{revision}/{role}` 每次重新核验用途授权，支持单段 Range（206/416），撤销用途后票据与流均被拒绝。下载走 `purpose=download` 的票据并按节点/资产名生成文件名；票据不含存储 key，前端不拼接对象地址。
+- 每账号有媒体额度：创建会话预留声明大小，发布后转为已存储，失败/取消/到期释放预留。物理删除与自动到期清理属于 FND-10，本期只标记状态。

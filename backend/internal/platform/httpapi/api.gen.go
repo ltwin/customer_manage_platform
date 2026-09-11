@@ -226,19 +226,28 @@ func (e CreativeActionAddNodeType) Valid() bool {
 
 // Defines values for CreativeActionAddNodeTypeKey.
 const (
+	CreativeActionAddNodeTypeKeyCoreAudio CreativeActionAddNodeTypeKey = "core.audio"
 	CreativeActionAddNodeTypeKeyCoreGroup CreativeActionAddNodeTypeKey = "core.group"
+	CreativeActionAddNodeTypeKeyCoreImage CreativeActionAddNodeTypeKey = "core.image"
 	CreativeActionAddNodeTypeKeyCoreLink  CreativeActionAddNodeTypeKey = "core.link"
 	CreativeActionAddNodeTypeKeyCoreText  CreativeActionAddNodeTypeKey = "core.text"
+	CreativeActionAddNodeTypeKeyCoreVideo CreativeActionAddNodeTypeKey = "core.video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeActionAddNodeTypeKey enum.
 func (e CreativeActionAddNodeTypeKey) Valid() bool {
 	switch e {
+	case CreativeActionAddNodeTypeKeyCoreAudio:
+		return true
 	case CreativeActionAddNodeTypeKeyCoreGroup:
+		return true
+	case CreativeActionAddNodeTypeKeyCoreImage:
 		return true
 	case CreativeActionAddNodeTypeKeyCoreLink:
 		return true
 	case CreativeActionAddNodeTypeKeyCoreText:
+		return true
+	case CreativeActionAddNodeTypeKeyCoreVideo:
 		return true
 	default:
 		return false
@@ -562,16 +571,25 @@ func (e CreativeAddNodePayloadType) Valid() bool {
 
 // Defines values for CreativeAddNodePayloadTypeKey.
 const (
-	CreativeAddNodePayloadTypeKeyCoreLink CreativeAddNodePayloadTypeKey = "core.link"
-	CreativeAddNodePayloadTypeKeyCoreText CreativeAddNodePayloadTypeKey = "core.text"
+	CreativeAddNodePayloadTypeKeyCoreAudio CreativeAddNodePayloadTypeKey = "core.audio"
+	CreativeAddNodePayloadTypeKeyCoreImage CreativeAddNodePayloadTypeKey = "core.image"
+	CreativeAddNodePayloadTypeKeyCoreLink  CreativeAddNodePayloadTypeKey = "core.link"
+	CreativeAddNodePayloadTypeKeyCoreText  CreativeAddNodePayloadTypeKey = "core.text"
+	CreativeAddNodePayloadTypeKeyCoreVideo CreativeAddNodePayloadTypeKey = "core.video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAddNodePayloadTypeKey enum.
 func (e CreativeAddNodePayloadTypeKey) Valid() bool {
 	switch e {
+	case CreativeAddNodePayloadTypeKeyCoreAudio:
+		return true
+	case CreativeAddNodePayloadTypeKeyCoreImage:
+		return true
 	case CreativeAddNodePayloadTypeKeyCoreLink:
 		return true
 	case CreativeAddNodePayloadTypeKeyCoreText:
+		return true
+	case CreativeAddNodePayloadTypeKeyCoreVideo:
 		return true
 	default:
 		return false
@@ -610,16 +628,25 @@ func (e CreativeCancelExecutionPayloadType) Valid() bool {
 
 // Defines values for CreativeContentDraftKind.
 const (
-	CreativeContentDraftKindLink CreativeContentDraftKind = "link"
-	CreativeContentDraftKindText CreativeContentDraftKind = "text"
+	CreativeContentDraftKindAudio CreativeContentDraftKind = "audio"
+	CreativeContentDraftKindImage CreativeContentDraftKind = "image"
+	CreativeContentDraftKindLink  CreativeContentDraftKind = "link"
+	CreativeContentDraftKindText  CreativeContentDraftKind = "text"
+	CreativeContentDraftKindVideo CreativeContentDraftKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeContentDraftKind enum.
 func (e CreativeContentDraftKind) Valid() bool {
 	switch e {
+	case CreativeContentDraftKindAudio:
+		return true
+	case CreativeContentDraftKindImage:
+		return true
 	case CreativeContentDraftKindLink:
 		return true
 	case CreativeContentDraftKindText:
+		return true
+	case CreativeContentDraftKindVideo:
 		return true
 	default:
 		return false
@@ -628,16 +655,25 @@ func (e CreativeContentDraftKind) Valid() bool {
 
 // Defines values for CreativeContentRevisionKind.
 const (
-	CreativeContentRevisionKindLink CreativeContentRevisionKind = "link"
-	CreativeContentRevisionKindText CreativeContentRevisionKind = "text"
+	CreativeContentRevisionKindAudio CreativeContentRevisionKind = "audio"
+	CreativeContentRevisionKindImage CreativeContentRevisionKind = "image"
+	CreativeContentRevisionKindLink  CreativeContentRevisionKind = "link"
+	CreativeContentRevisionKindText  CreativeContentRevisionKind = "text"
+	CreativeContentRevisionKindVideo CreativeContentRevisionKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeContentRevisionKind enum.
 func (e CreativeContentRevisionKind) Valid() bool {
 	switch e {
+	case CreativeContentRevisionKindAudio:
+		return true
+	case CreativeContentRevisionKindImage:
+		return true
 	case CreativeContentRevisionKindLink:
 		return true
 	case CreativeContentRevisionKindText:
+		return true
+	case CreativeContentRevisionKindVideo:
 		return true
 	default:
 		return false
@@ -739,16 +775,25 @@ func (e CreativeInputSourceSlot) Valid() bool {
 
 // Defines values for CreativeLibraryAssetKind.
 const (
-	CreativeLibraryAssetKindLink CreativeLibraryAssetKind = "link"
-	CreativeLibraryAssetKindText CreativeLibraryAssetKind = "text"
+	CreativeLibraryAssetKindAudio CreativeLibraryAssetKind = "audio"
+	CreativeLibraryAssetKindImage CreativeLibraryAssetKind = "image"
+	CreativeLibraryAssetKindLink  CreativeLibraryAssetKind = "link"
+	CreativeLibraryAssetKindText  CreativeLibraryAssetKind = "text"
+	CreativeLibraryAssetKindVideo CreativeLibraryAssetKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the CreativeLibraryAssetKind enum.
 func (e CreativeLibraryAssetKind) Valid() bool {
 	switch e {
+	case CreativeLibraryAssetKindAudio:
+		return true
+	case CreativeLibraryAssetKindImage:
+		return true
 	case CreativeLibraryAssetKindLink:
 		return true
 	case CreativeLibraryAssetKindText:
+		return true
+	case CreativeLibraryAssetKindVideo:
 		return true
 	default:
 		return false
@@ -791,6 +836,102 @@ func (e CreativeLibrarySettingsPayloadRetentionDays) Valid() bool {
 	case CreativeLibrarySettingsPayloadRetentionDaysN7:
 		return true
 	case CreativeLibrarySettingsPayloadRetentionDaysN90:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeMediaCapabilitiesSchemaVersion.
+const (
+	CreativeMediaCapabilitiesSchemaVersionN1 CreativeMediaCapabilitiesSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeMediaCapabilitiesSchemaVersion enum.
+func (e CreativeMediaCapabilitiesSchemaVersion) Valid() bool {
+	switch e {
+	case CreativeMediaCapabilitiesSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeMediaFormatKind.
+const (
+	CreativeMediaFormatKindAudio CreativeMediaFormatKind = "audio"
+	CreativeMediaFormatKindImage CreativeMediaFormatKind = "image"
+	CreativeMediaFormatKindVideo CreativeMediaFormatKind = "video"
+)
+
+// Valid indicates whether the value is a known member of the CreativeMediaFormatKind enum.
+func (e CreativeMediaFormatKind) Valid() bool {
+	switch e {
+	case CreativeMediaFormatKindAudio:
+		return true
+	case CreativeMediaFormatKindImage:
+		return true
+	case CreativeMediaFormatKindVideo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeMediaObjectRole.
+const (
+	CreativeMediaObjectRoleAttachment CreativeMediaObjectRole = "attachment"
+	CreativeMediaObjectRoleDisplay    CreativeMediaObjectRole = "display"
+	CreativeMediaObjectRoleOriginal   CreativeMediaObjectRole = "original"
+	CreativeMediaObjectRoleThumbnail  CreativeMediaObjectRole = "thumbnail"
+)
+
+// Valid indicates whether the value is a known member of the CreativeMediaObjectRole enum.
+func (e CreativeMediaObjectRole) Valid() bool {
+	switch e {
+	case CreativeMediaObjectRoleAttachment:
+		return true
+	case CreativeMediaObjectRoleDisplay:
+		return true
+	case CreativeMediaObjectRoleOriginal:
+		return true
+	case CreativeMediaObjectRoleThumbnail:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeMediaTicketRequestPurpose.
+const (
+	CreativeMediaTicketRequestPurposeDisplay  CreativeMediaTicketRequestPurpose = "display"
+	CreativeMediaTicketRequestPurposeDownload CreativeMediaTicketRequestPurpose = "download"
+)
+
+// Valid indicates whether the value is a known member of the CreativeMediaTicketRequestPurpose enum.
+func (e CreativeMediaTicketRequestPurpose) Valid() bool {
+	switch e {
+	case CreativeMediaTicketRequestPurposeDisplay:
+		return true
+	case CreativeMediaTicketRequestPurposeDownload:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeMediaTicketRequestRole.
+const (
+	CreativeMediaTicketRequestRoleDisplay  CreativeMediaTicketRequestRole = "display"
+	CreativeMediaTicketRequestRoleOriginal CreativeMediaTicketRequestRole = "original"
+)
+
+// Valid indicates whether the value is a known member of the CreativeMediaTicketRequestRole enum.
+func (e CreativeMediaTicketRequestRole) Valid() bool {
+	switch e {
+	case CreativeMediaTicketRequestRoleDisplay:
+		return true
+	case CreativeMediaTicketRequestRoleOriginal:
 		return true
 	default:
 		return false
@@ -932,6 +1073,27 @@ func (e CreativeOperationReceiptHttpStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreativePublicationKind.
+const (
+	CreativePublicationKindAsset     CreativePublicationKind = "asset"
+	CreativePublicationKindCandidate CreativePublicationKind = "candidate"
+	CreativePublicationKindNode      CreativePublicationKind = "node"
+)
+
+// Valid indicates whether the value is a known member of the CreativePublicationKind enum.
+func (e CreativePublicationKind) Valid() bool {
+	switch e {
+	case CreativePublicationKindAsset:
+		return true
+	case CreativePublicationKindCandidate:
+		return true
+	case CreativePublicationKindNode:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeReplaceContentPayloadType.
 const (
 	CreativeReplaceContentPayloadTypeReplaceContent CreativeReplaceContentPayloadType = "replace_content"
@@ -995,6 +1157,192 @@ func (e CreativeUndoPayloadType) Valid() bool {
 	}
 }
 
+// Defines values for CreativeUploadIoPhase.
+const (
+	CreativeUploadIoPhaseCompleting   CreativeUploadIoPhase = "completing"
+	CreativeUploadIoPhaseInitializing CreativeUploadIoPhase = "initializing"
+	CreativeUploadIoPhaseNone         CreativeUploadIoPhase = "none"
+	CreativeUploadIoPhasePromoting    CreativeUploadIoPhase = "promoting"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadIoPhase enum.
+func (e CreativeUploadIoPhase) Valid() bool {
+	switch e {
+	case CreativeUploadIoPhaseCompleting:
+		return true
+	case CreativeUploadIoPhaseInitializing:
+		return true
+	case CreativeUploadIoPhaseNone:
+		return true
+	case CreativeUploadIoPhasePromoting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUploadKind.
+const (
+	CreativeUploadKindAudio CreativeUploadKind = "audio"
+	CreativeUploadKindImage CreativeUploadKind = "image"
+	CreativeUploadKindVideo CreativeUploadKind = "video"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadKind enum.
+func (e CreativeUploadKind) Valid() bool {
+	switch e {
+	case CreativeUploadKindAudio:
+		return true
+	case CreativeUploadKindImage:
+		return true
+	case CreativeUploadKindVideo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUploadState.
+const (
+	CreativeUploadStateCancelled CreativeUploadState = "cancelled"
+	CreativeUploadStateCreated   CreativeUploadState = "created"
+	CreativeUploadStateExpired   CreativeUploadState = "expired"
+	CreativeUploadStateFailed    CreativeUploadState = "failed"
+	CreativeUploadStateReady     CreativeUploadState = "ready"
+	CreativeUploadStateUploading CreativeUploadState = "uploading"
+	CreativeUploadStateVerifying CreativeUploadState = "verifying"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadState enum.
+func (e CreativeUploadState) Valid() bool {
+	switch e {
+	case CreativeUploadStateCancelled:
+		return true
+	case CreativeUploadStateCreated:
+		return true
+	case CreativeUploadStateExpired:
+		return true
+	case CreativeUploadStateFailed:
+		return true
+	case CreativeUploadStateReady:
+		return true
+	case CreativeUploadStateUploading:
+		return true
+	case CreativeUploadStateVerifying:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUploadTargetKind.
+const (
+	CreativeUploadTargetKindAsset CreativeUploadTargetKind = "asset"
+	CreativeUploadTargetKindNode  CreativeUploadTargetKind = "node"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadTargetKind enum.
+func (e CreativeUploadTargetKind) Valid() bool {
+	switch e {
+	case CreativeUploadTargetKindAsset:
+		return true
+	case CreativeUploadTargetKindNode:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUploadBindingStatus.
+const (
+	CreativeUploadBindingStatusApplied     CreativeUploadBindingStatus = "applied"
+	CreativeUploadBindingStatusDiscarded   CreativeUploadBindingStatus = "discarded"
+	CreativeUploadBindingStatusExpired     CreativeUploadBindingStatus = "expired"
+	CreativeUploadBindingStatusNeedsReview CreativeUploadBindingStatus = "needs_review"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadBindingStatus enum.
+func (e CreativeUploadBindingStatus) Valid() bool {
+	switch e {
+	case CreativeUploadBindingStatusApplied:
+		return true
+	case CreativeUploadBindingStatusDiscarded:
+		return true
+	case CreativeUploadBindingStatusExpired:
+		return true
+	case CreativeUploadBindingStatusNeedsReview:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUploadCandidateKind.
+const (
+	CreativeUploadCandidateKindAudio CreativeUploadCandidateKind = "audio"
+	CreativeUploadCandidateKindImage CreativeUploadCandidateKind = "image"
+	CreativeUploadCandidateKindVideo CreativeUploadCandidateKind = "video"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadCandidateKind enum.
+func (e CreativeUploadCandidateKind) Valid() bool {
+	switch e {
+	case CreativeUploadCandidateKindAudio:
+		return true
+	case CreativeUploadCandidateKindImage:
+		return true
+	case CreativeUploadCandidateKindVideo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUploadCandidateState.
+const (
+	CreativeUploadCandidateStateApplied   CreativeUploadCandidateState = "applied"
+	CreativeUploadCandidateStateDiscarded CreativeUploadCandidateState = "discarded"
+	CreativeUploadCandidateStateExpired   CreativeUploadCandidateState = "expired"
+	CreativeUploadCandidateStatePending   CreativeUploadCandidateState = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadCandidateState enum.
+func (e CreativeUploadCandidateState) Valid() bool {
+	switch e {
+	case CreativeUploadCandidateStateApplied:
+		return true
+	case CreativeUploadCandidateStateDiscarded:
+		return true
+	case CreativeUploadCandidateStateExpired:
+		return true
+	case CreativeUploadCandidateStatePending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeUploadCreatePayloadKind.
+const (
+	CreativeUploadCreatePayloadKindAudio CreativeUploadCreatePayloadKind = "audio"
+	CreativeUploadCreatePayloadKindImage CreativeUploadCreatePayloadKind = "image"
+	CreativeUploadCreatePayloadKindVideo CreativeUploadCreatePayloadKind = "video"
+)
+
+// Valid indicates whether the value is a known member of the CreativeUploadCreatePayloadKind enum.
+func (e CreativeUploadCreatePayloadKind) Valid() bool {
+	switch e {
+	case CreativeUploadCreatePayloadKindAudio:
+		return true
+	case CreativeUploadCreatePayloadKindImage:
+		return true
+	case CreativeUploadCreatePayloadKindVideo:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CustomerChannel.
 const (
 	CustomerChannelDouyin      CustomerChannel = "douyin"
@@ -1024,19 +1372,19 @@ func (e CustomerChannel) Valid() bool {
 
 // Defines values for CustomerHealthItemBaseline.
 const (
-	Fallback CustomerHealthItemBaseline = "fallback"
-	None     CustomerHealthItemBaseline = "none"
-	Personal CustomerHealthItemBaseline = "personal"
+	CustomerHealthItemBaselineFallback CustomerHealthItemBaseline = "fallback"
+	CustomerHealthItemBaselineNone     CustomerHealthItemBaseline = "none"
+	CustomerHealthItemBaselinePersonal CustomerHealthItemBaseline = "personal"
 )
 
 // Valid indicates whether the value is a known member of the CustomerHealthItemBaseline enum.
 func (e CustomerHealthItemBaseline) Valid() bool {
 	switch e {
-	case Fallback:
+	case CustomerHealthItemBaselineFallback:
 		return true
-	case None:
+	case CustomerHealthItemBaselineNone:
 		return true
-	case Personal:
+	case CustomerHealthItemBaselinePersonal:
 		return true
 	default:
 		return false
@@ -1303,16 +1651,16 @@ func (e PlanAssetState) Valid() bool {
 
 // Defines values for PlanAssetRenditionKind.
 const (
-	Display  PlanAssetRenditionKind = "display"
-	Original PlanAssetRenditionKind = "original"
+	PlanAssetRenditionKindDisplay  PlanAssetRenditionKind = "display"
+	PlanAssetRenditionKindOriginal PlanAssetRenditionKind = "original"
 )
 
 // Valid indicates whether the value is a known member of the PlanAssetRenditionKind enum.
 func (e PlanAssetRenditionKind) Valid() bool {
 	switch e {
-	case Display:
+	case PlanAssetRenditionKindDisplay:
 		return true
-	case Original:
+	case PlanAssetRenditionKindOriginal:
 		return true
 	default:
 		return false
@@ -1321,13 +1669,13 @@ func (e PlanAssetRenditionKind) Valid() bool {
 
 // Defines values for PlanAssetRightsDeclarationMatrixVersion.
 const (
-	PlanAssetRightsDeclarationMatrixVersionN1 PlanAssetRightsDeclarationMatrixVersion = 1
+	N1 PlanAssetRightsDeclarationMatrixVersion = 1
 )
 
 // Valid indicates whether the value is a known member of the PlanAssetRightsDeclarationMatrixVersion enum.
 func (e PlanAssetRightsDeclarationMatrixVersion) Valid() bool {
 	switch e {
-	case PlanAssetRightsDeclarationMatrixVersionN1:
+	case N1:
 		return true
 	default:
 		return false
@@ -1819,25 +2167,25 @@ func (e SharedShotFeedbackCreateInputV1PolicyVersion) Valid() bool {
 
 // Defines values for ShootPlanStatus.
 const (
-	ShootPlanStatusArchived   ShootPlanStatus = "archived"
-	ShootPlanStatusCompleted  ShootPlanStatus = "completed"
-	ShootPlanStatusDraft      ShootPlanStatus = "draft"
-	ShootPlanStatusInProgress ShootPlanStatus = "in_progress"
-	ShootPlanStatusReady      ShootPlanStatus = "ready"
+	Archived   ShootPlanStatus = "archived"
+	Completed  ShootPlanStatus = "completed"
+	Draft      ShootPlanStatus = "draft"
+	InProgress ShootPlanStatus = "in_progress"
+	Ready      ShootPlanStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the ShootPlanStatus enum.
 func (e ShootPlanStatus) Valid() bool {
 	switch e {
-	case ShootPlanStatusArchived:
+	case Archived:
 		return true
-	case ShootPlanStatusCompleted:
+	case Completed:
 		return true
-	case ShootPlanStatusDraft:
+	case Draft:
 		return true
-	case ShootPlanStatusInProgress:
+	case InProgress:
 		return true
-	case ShootPlanStatusReady:
+	case Ready:
 		return true
 	default:
 		return false
@@ -2104,16 +2452,25 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	ListCreativeAssetsParamsKindLink ListCreativeAssetsParamsKind = "link"
-	ListCreativeAssetsParamsKindText ListCreativeAssetsParamsKind = "text"
+	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
+	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
+	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
+	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
+	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
 func (e ListCreativeAssetsParamsKind) Valid() bool {
 	switch e {
+	case ListCreativeAssetsParamsKindAudio:
+		return true
+	case ListCreativeAssetsParamsKindImage:
+		return true
 	case ListCreativeAssetsParamsKindLink:
 		return true
 	case ListCreativeAssetsParamsKindText:
+		return true
+	case ListCreativeAssetsParamsKindVideo:
 		return true
 	default:
 		return false
@@ -2153,6 +2510,24 @@ func (e ListCreativeAssetsParamsSort) Valid() bool {
 	case Oldest:
 		return true
 	case Recent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetCreativeMediaParamsRole.
+const (
+	Display  GetCreativeMediaParamsRole = "display"
+	Original GetCreativeMediaParamsRole = "original"
+)
+
+// Valid indicates whether the value is a known member of the GetCreativeMediaParamsRole enum.
+func (e GetCreativeMediaParamsRole) Valid() bool {
+	switch e {
+	case Display:
+		return true
+	case Original:
 		return true
 	default:
 		return false
@@ -2371,6 +2746,13 @@ type BusinessDraftUnavailableDetails struct {
 	ScheduleDuration *UnavailableScheduleBusinessDraftItem `json:"schedule_duration,omitempty"`
 }
 
+// CancelCreativeUploadRequest defines model for CancelCreativeUploadRequest.
+type CancelCreativeUploadRequest struct {
+	ClientCreatedAt time.Time                   `json:"client_created_at"`
+	OperationId     openapi_types.UUID          `json:"operation_id"`
+	Payload         CreativeUploadCancelPayload `json:"payload"`
+}
+
 // ChurnThreshold defines model for ChurnThreshold.
 type ChurnThreshold struct {
 	Days      int       `json:"days"`
@@ -2382,6 +2764,13 @@ type CommandCreativeCanvasRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
 	OperationId     openapi_types.UUID           `json:"operation_id"`
 	Payload         CreativeCanvasCommandPayload `json:"payload"`
+}
+
+// CompleteCreativeUploadRequest defines model for CompleteCreativeUploadRequest.
+type CompleteCreativeUploadRequest struct {
+	ClientCreatedAt time.Time                     `json:"client_created_at"`
+	OperationId     openapi_types.UUID            `json:"operation_id"`
+	Payload         CreativeUploadCompletePayload `json:"payload"`
 }
 
 // CoreArchiveAcknowledgement defines model for CoreArchiveAcknowledgement.
@@ -2408,6 +2797,13 @@ type CreateAssetBindingInput struct {
 
 // CreateAssetBindingInputHolderKind defines model for CreateAssetBindingInput.HolderKind.
 type CreateAssetBindingInputHolderKind string
+
+// CreateCreativeAssetFromNodeRequest defines model for CreateCreativeAssetFromNodeRequest.
+type CreateCreativeAssetFromNodeRequest struct {
+	ClientCreatedAt time.Time                    `json:"client_created_at"`
+	OperationId     openapi_types.UUID           `json:"operation_id"`
+	Payload         CreativeAssetFromNodePayload `json:"payload"`
+}
 
 // CreateCreativeCategoryRequest defines model for CreateCreativeCategoryRequest.
 type CreateCreativeCategoryRequest struct {
@@ -2442,6 +2838,13 @@ type CreateCreativeTextAssetRequest struct {
 	ClientCreatedAt time.Time                  `json:"client_created_at"`
 	OperationId     openapi_types.UUID         `json:"operation_id"`
 	Payload         CreativeAssetCreatePayload `json:"payload"`
+}
+
+// CreateCreativeUploadRequest defines model for CreateCreativeUploadRequest.
+type CreateCreativeUploadRequest struct {
+	ClientCreatedAt time.Time                   `json:"client_created_at"`
+	OperationId     openapi_types.UUID          `json:"operation_id"`
+	Payload         CreativeUploadCreatePayload `json:"payload"`
 }
 
 // CreativeActionAddNode defines model for CreativeActionAddNode.
@@ -2689,6 +3092,16 @@ type CreativeAssetCreateResult struct {
 	TagMapping map[string]string `json:"tag_mapping"`
 }
 
+// CreativeAssetFromNodePayload defines model for CreativeAssetFromNodePayload.
+type CreativeAssetFromNodePayload struct {
+	CanvasId string `json:"canvas_id"`
+
+	// ExpectedDataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedDataRevision CreativeRevision          `json:"expected_data_revision"`
+	NodeId               string                    `json:"node_id"`
+	Target               CreativeUploadAssetTarget `json:"target"`
+}
+
 // CreativeAssetGroup defines model for CreativeAssetGroup.
 type CreativeAssetGroup struct {
 	Id       string                    `json:"id"`
@@ -2922,6 +3335,7 @@ type CreativeContentRevision struct {
 	ContentId string                      `json:"content_id"`
 	Id        string                      `json:"id"`
 	Kind      CreativeContentRevisionKind `json:"kind"`
+	Media     *[]CreativeMediaObject      `json:"media,omitempty"`
 	Payload   CreativeContentPayload      `json:"payload"`
 
 	// Sequence 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
@@ -3140,6 +3554,71 @@ type CreativeLinkPayload struct {
 	Title       *string `json:"title,omitempty"`
 	Url         string  `json:"url"`
 }
+
+// CreativeMediaCapabilities defines model for CreativeMediaCapabilities.
+type CreativeMediaCapabilities struct {
+	AvMaxBytes    int64                                  `json:"av_max_bytes"`
+	BatchLimit    int                                    `json:"batch_limit"`
+	Formats       []CreativeMediaFormat                  `json:"formats"`
+	ImageMaxBytes int64                                  `json:"image_max_bytes"`
+	PartSize      int64                                  `json:"part_size"`
+	SchemaVersion CreativeMediaCapabilitiesSchemaVersion `json:"schema_version"`
+}
+
+// CreativeMediaCapabilitiesSchemaVersion defines model for CreativeMediaCapabilities.SchemaVersion.
+type CreativeMediaCapabilitiesSchemaVersion int
+
+// CreativeMediaFormat defines model for CreativeMediaFormat.
+type CreativeMediaFormat struct {
+	Codecs     *[]string               `json:"codecs,omitempty"`
+	Extensions []string                `json:"extensions"`
+	Kind       CreativeMediaFormatKind `json:"kind"`
+	Mime       string                  `json:"mime"`
+}
+
+// CreativeMediaFormatKind defines model for CreativeMediaFormat.Kind.
+type CreativeMediaFormatKind string
+
+// CreativeMediaObject defines model for CreativeMediaObject.
+type CreativeMediaObject struct {
+	BlobId     string                   `json:"blob_id"`
+	ByteSize   int64                    `json:"byte_size"`
+	DurationMs nullable.Nullable[int64] `json:"duration_ms"`
+	Height     nullable.Nullable[int]   `json:"height"`
+	Mime       string                   `json:"mime"`
+	Role       CreativeMediaObjectRole  `json:"role"`
+	Width      nullable.Nullable[int]   `json:"width"`
+}
+
+// CreativeMediaObjectRole defines model for CreativeMediaObject.Role.
+type CreativeMediaObjectRole string
+
+// CreativeMediaPayload defines model for CreativeMediaPayload.
+type CreativeMediaPayload struct {
+	Caption *string `json:"caption,omitempty"`
+}
+
+// CreativeMediaTicket defines model for CreativeMediaTicket.
+type CreativeMediaTicket struct {
+	ByteSize  int64     `json:"byte_size"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Mime      string    `json:"mime"`
+	Url       string    `json:"url"`
+}
+
+// CreativeMediaTicketRequest defines model for CreativeMediaTicketRequest.
+type CreativeMediaTicketRequest struct {
+	ContentRevisionId string                            `json:"content_revision_id"`
+	FileName          *string                           `json:"file_name,omitempty"`
+	Purpose           CreativeMediaTicketRequestPurpose `json:"purpose"`
+	Role              CreativeMediaTicketRequestRole    `json:"role"`
+}
+
+// CreativeMediaTicketRequestPurpose defines model for CreativeMediaTicketRequest.Purpose.
+type CreativeMediaTicketRequestPurpose string
+
+// CreativeMediaTicketRequestRole defines model for CreativeMediaTicketRequest.Role.
+type CreativeMediaTicketRequestRole string
 
 // CreativeMoveNodePayload defines model for CreativeMoveNodePayload.
 type CreativeMoveNodePayload struct {
@@ -3376,6 +3855,18 @@ type CreativePromptResult struct {
 	DraftRevision CreativeRevision `json:"draft_revision"`
 }
 
+// CreativePublication defines model for CreativePublication.
+type CreativePublication struct {
+	Id   string                  `json:"id"`
+	Kind CreativePublicationKind `json:"kind"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativePublicationKind defines model for CreativePublication.Kind.
+type CreativePublicationKind string
+
 // CreativeReplaceContentPayload defines model for CreativeReplaceContentPayload.
 type CreativeReplaceContentPayload struct {
 	ExpectedContentRevisionId nullable.Nullable[string] `json:"expected_content_revision_id"`
@@ -3512,6 +4003,175 @@ type CreativeUndoPayload struct {
 
 // CreativeUndoPayloadType defines model for CreativeUndoPayload.Type.
 type CreativeUndoPayloadType string
+
+// CreativeUpload defines model for CreativeUpload.
+type CreativeUpload struct {
+	Binding           nullable.Nullable[CreativeUploadBinding] `json:"binding"`
+	ContentRevisionId nullable.Nullable[string]                `json:"content_revision_id"`
+	CreatedAt         time.Time                                `json:"created_at"`
+	ErrorCode         string                                   `json:"error_code"`
+	ExpiresAt         time.Time                                `json:"expires_at"`
+	FileName          string                                   `json:"file_name"`
+	Id                string                                   `json:"id"`
+	IoPhase           CreativeUploadIoPhase                    `json:"io_phase"`
+	Kind              CreativeUploadKind                       `json:"kind"`
+	Mime              string                                   `json:"mime"`
+	PartCount         int                                      `json:"part_count"`
+	PartSize          int64                                    `json:"part_size"`
+	Publication       nullable.Nullable[CreativePublication]   `json:"publication"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision      CreativeRevision         `json:"revision"`
+	Size          int64                    `json:"size"`
+	State         CreativeUploadState      `json:"state"`
+	TargetKind    CreativeUploadTargetKind `json:"target_kind"`
+	UploadedParts []int                    `json:"uploaded_parts"`
+}
+
+// CreativeUploadIoPhase defines model for CreativeUpload.IoPhase.
+type CreativeUploadIoPhase string
+
+// CreativeUploadKind defines model for CreativeUpload.Kind.
+type CreativeUploadKind string
+
+// CreativeUploadState defines model for CreativeUpload.State.
+type CreativeUploadState string
+
+// CreativeUploadTargetKind defines model for CreativeUpload.TargetKind.
+type CreativeUploadTargetKind string
+
+// CreativeUploadAssetTarget defines model for CreativeUploadAssetTarget.
+type CreativeUploadAssetTarget struct {
+	Description *string           `json:"description,omitempty"`
+	GroupIds    *[]string         `json:"group_ids,omitempty"`
+	IsFavorite  *bool             `json:"is_favorite,omitempty"`
+	NewTags     *[]CreativeNewTag `json:"new_tags,omitempty"`
+	TagIds      *[]string         `json:"tag_ids,omitempty"`
+	Title       string            `json:"title"`
+}
+
+// CreativeUploadBinding defines model for CreativeUploadBinding.
+type CreativeUploadBinding struct {
+	CandidateId nullable.Nullable[string]    `json:"candidate_id"`
+	ExpiresAt   nullable.Nullable[time.Time] `json:"expires_at"`
+	Status      CreativeUploadBindingStatus  `json:"status"`
+	TargetId    nullable.Nullable[string]    `json:"target_id"`
+	TargetKind  nullable.Nullable[string]    `json:"target_kind"`
+}
+
+// CreativeUploadBindingStatus defines model for CreativeUploadBinding.Status.
+type CreativeUploadBindingStatus string
+
+// CreativeUploadCancelPayload defines model for CreativeUploadCancelPayload.
+type CreativeUploadCancelPayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+}
+
+// CreativeUploadCandidate defines model for CreativeUploadCandidate.
+type CreativeUploadCandidate struct {
+	Adopted           nullable.Nullable[CreativePublication] `json:"adopted"`
+	ContentRevisionId nullable.Nullable[string]              `json:"content_revision_id"`
+	CreatedAt         time.Time                              `json:"created_at"`
+	ExpiresAt         time.Time                              `json:"expires_at"`
+	FileName          string                                 `json:"file_name"`
+	Id                string                                 `json:"id"`
+	Kind              CreativeUploadCandidateKind            `json:"kind"`
+	Reason            string                                 `json:"reason"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision             `json:"revision"`
+	State    CreativeUploadCandidateState `json:"state"`
+	Target   CreativeUploadTarget         `json:"target"`
+	UploadId string                       `json:"upload_id"`
+}
+
+// CreativeUploadCandidateKind defines model for CreativeUploadCandidate.Kind.
+type CreativeUploadCandidateKind string
+
+// CreativeUploadCandidateState defines model for CreativeUploadCandidate.State.
+type CreativeUploadCandidateState string
+
+// CreativeUploadCandidatePage defines model for CreativeUploadCandidatePage.
+type CreativeUploadCandidatePage struct {
+	Items []CreativeUploadCandidate `json:"items"`
+}
+
+// CreativeUploadCandidatePayload defines model for CreativeUploadCandidatePayload.
+type CreativeUploadCandidatePayload struct {
+	// CandidateRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	CandidateRevision CreativeRevision      `json:"candidate_revision"`
+	Target            *CreativeUploadTarget `json:"target,omitempty"`
+}
+
+// CreativeUploadCandidateRequest defines model for CreativeUploadCandidateRequest.
+type CreativeUploadCandidateRequest struct {
+	ClientCreatedAt time.Time                      `json:"client_created_at"`
+	OperationId     openapi_types.UUID             `json:"operation_id"`
+	Payload         CreativeUploadCandidatePayload `json:"payload"`
+}
+
+// CreativeUploadCompletePayload defines model for CreativeUploadCompletePayload.
+type CreativeUploadCompletePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision             `json:"expected_revision"`
+	Parts            []CreativeUploadReportedPart `json:"parts"`
+}
+
+// CreativeUploadCreatePayload defines model for CreativeUploadCreatePayload.
+type CreativeUploadCreatePayload struct {
+	FileName string                          `json:"file_name"`
+	Kind     CreativeUploadCreatePayloadKind `json:"kind"`
+	Mime     string                          `json:"mime"`
+	Rights   CreativeContentRights           `json:"rights"`
+	Size     int64                           `json:"size"`
+	Target   CreativeUploadTarget            `json:"target"`
+}
+
+// CreativeUploadCreatePayloadKind defines model for CreativeUploadCreatePayload.Kind.
+type CreativeUploadCreatePayloadKind string
+
+// CreativeUploadNodeTarget defines model for CreativeUploadNodeTarget.
+type CreativeUploadNodeTarget struct {
+	CanvasId string `json:"canvas_id"`
+
+	// ExpectedDataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedDataRevision CreativeRevision `json:"expected_data_revision"`
+	NodeId               string           `json:"node_id"`
+}
+
+// CreativeUploadPartAuthorization defines model for CreativeUploadPartAuthorization.
+type CreativeUploadPartAuthorization struct {
+	ExpiresAt  time.Time         `json:"expires_at"`
+	Headers    map[string]string `json:"headers"`
+	Method     string            `json:"method"`
+	PartNumber int               `json:"part_number"`
+	Url        string            `json:"url"`
+}
+
+// CreativeUploadPartAuthorizationRequest defines model for CreativeUploadPartAuthorizationRequest.
+type CreativeUploadPartAuthorizationRequest struct {
+	PartNumbers []int `json:"part_numbers"`
+}
+
+// CreativeUploadPartAuthorizations defines model for CreativeUploadPartAuthorizations.
+type CreativeUploadPartAuthorizations struct {
+	Parts    []CreativeUploadPartAuthorization `json:"parts"`
+	UploadId string                            `json:"upload_id"`
+}
+
+// CreativeUploadReportedPart defines model for CreativeUploadReportedPart.
+type CreativeUploadReportedPart struct {
+	Etag       string `json:"etag"`
+	PartNumber int    `json:"part_number"`
+}
+
+// CreativeUploadTarget defines model for CreativeUploadTarget.
+type CreativeUploadTarget struct {
+	Asset *CreativeUploadAssetTarget `json:"asset,omitempty"`
+	Kind  CreativeUploadTargetKind   `json:"kind"`
+	Node  *CreativeUploadNodeTarget  `json:"node,omitempty"`
+}
 
 // CreativeVersionInput defines model for CreativeVersionInput.
 type CreativeVersionInput struct {
@@ -4976,6 +5636,11 @@ type BatchTrashCreativeAssetsParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// CreateCreativeAssetFromNodeParams defines parameters for CreateCreativeAssetFromNode.
+type CreateCreativeAssetFromNodeParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // UpdateCreativeAssetMetadataParams defines parameters for UpdateCreativeAssetMetadata.
 type UpdateCreativeAssetMetadataParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -5015,6 +5680,19 @@ type RequestCreativeNodeExecutionParams struct {
 type SaveCreativeLibrarySettingsParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
+
+// PutCreativeMediaPartParams defines parameters for PutCreativeMediaPart.
+type PutCreativeMediaPartParams struct {
+	Token string `form:"token" json:"token"`
+}
+
+// GetCreativeMediaParams defines parameters for GetCreativeMedia.
+type GetCreativeMediaParams struct {
+	Ticket string `form:"ticket" json:"ticket"`
+}
+
+// GetCreativeMediaParamsRole defines parameters for GetCreativeMedia.
+type GetCreativeMediaParamsRole string
 
 // ListCreativeProjectsParams defines parameters for ListCreativeProjects.
 type ListCreativeProjectsParams struct {
@@ -5070,6 +5748,31 @@ type DeleteCreativeTagParams struct {
 
 // EditCreativeTagParams defines parameters for EditCreativeTag.
 type EditCreativeTagParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// AdoptCreativeUploadCandidateParams defines parameters for AdoptCreativeUploadCandidate.
+type AdoptCreativeUploadCandidateParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// DiscardCreativeUploadCandidateParams defines parameters for DiscardCreativeUploadCandidate.
+type DiscardCreativeUploadCandidateParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CreateCreativeUploadParams defines parameters for CreateCreativeUpload.
+type CreateCreativeUploadParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CancelCreativeUploadParams defines parameters for CancelCreativeUpload.
+type CancelCreativeUploadParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CompleteCreativeUploadParams defines parameters for CompleteCreativeUpload.
+type CompleteCreativeUploadParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -5462,6 +6165,9 @@ type BatchRestoreCreativeAssetsJSONRequestBody = BatchRestoreCreativeAssetsReque
 // BatchTrashCreativeAssetsJSONRequestBody defines body for BatchTrashCreativeAssets for application/json ContentType.
 type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
 
+// CreateCreativeAssetFromNodeJSONRequestBody defines body for CreateCreativeAssetFromNode for application/json ContentType.
+type CreateCreativeAssetFromNodeJSONRequestBody = CreateCreativeAssetFromNodeRequest
+
 // UpdateCreativeAssetMetadataJSONRequestBody defines body for UpdateCreativeAssetMetadata for application/json ContentType.
 type UpdateCreativeAssetMetadataJSONRequestBody = UpdateCreativeAssetMetadataRequest
 
@@ -5482,6 +6188,9 @@ type RequestCreativeNodeExecutionJSONRequestBody = CreativeRequestExecutionReque
 
 // SaveCreativeLibrarySettingsJSONRequestBody defines body for SaveCreativeLibrarySettings for application/json ContentType.
 type SaveCreativeLibrarySettingsJSONRequestBody = SaveCreativeLibrarySettingsRequest
+
+// IssueCreativeMediaTicketJSONRequestBody defines body for IssueCreativeMediaTicket for application/json ContentType.
+type IssueCreativeMediaTicketJSONRequestBody = CreativeMediaTicketRequest
 
 // CreateCreativeProjectJSONRequestBody defines body for CreateCreativeProject for application/json ContentType.
 type CreateCreativeProjectJSONRequestBody = CreateCreativeProjectRequest
@@ -5512,6 +6221,24 @@ type DeleteCreativeTagJSONRequestBody = DeleteCreativeTagRequest
 
 // EditCreativeTagJSONRequestBody defines body for EditCreativeTag for application/json ContentType.
 type EditCreativeTagJSONRequestBody = EditCreativeTagRequest
+
+// AdoptCreativeUploadCandidateJSONRequestBody defines body for AdoptCreativeUploadCandidate for application/json ContentType.
+type AdoptCreativeUploadCandidateJSONRequestBody = CreativeUploadCandidateRequest
+
+// DiscardCreativeUploadCandidateJSONRequestBody defines body for DiscardCreativeUploadCandidate for application/json ContentType.
+type DiscardCreativeUploadCandidateJSONRequestBody = CreativeUploadCandidateRequest
+
+// CreateCreativeUploadJSONRequestBody defines body for CreateCreativeUpload for application/json ContentType.
+type CreateCreativeUploadJSONRequestBody = CreateCreativeUploadRequest
+
+// CancelCreativeUploadJSONRequestBody defines body for CancelCreativeUpload for application/json ContentType.
+type CancelCreativeUploadJSONRequestBody = CancelCreativeUploadRequest
+
+// CompleteCreativeUploadJSONRequestBody defines body for CompleteCreativeUpload for application/json ContentType.
+type CompleteCreativeUploadJSONRequestBody = CompleteCreativeUploadRequest
+
+// AuthorizeCreativeUploadPartsJSONRequestBody defines body for AuthorizeCreativeUploadParts for application/json ContentType.
+type AuthorizeCreativeUploadPartsJSONRequestBody = CreativeUploadPartAuthorizationRequest
 
 // CreateCustomerJSONRequestBody defines body for CreateCustomer for application/json ContentType.
 type CreateCustomerJSONRequestBody CreateCustomerJSONBody
@@ -5955,6 +6682,32 @@ func (t *CreativeContentPayload) FromCreativeLinkPayload(v CreativeLinkPayload) 
 
 // MergeCreativeLinkPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeLinkPayload
 func (t *CreativeContentPayload) MergeCreativeLinkPayload(v CreativeLinkPayload) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeMediaPayload returns the union data inside the CreativeContentPayload as a CreativeMediaPayload
+func (t CreativeContentPayload) AsCreativeMediaPayload() (CreativeMediaPayload, error) {
+	var body CreativeMediaPayload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeMediaPayload overwrites any union data inside the CreativeContentPayload as the provided CreativeMediaPayload
+func (t *CreativeContentPayload) FromCreativeMediaPayload(v CreativeMediaPayload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeMediaPayload performs a merge with any union data inside the CreativeContentPayload, using the provided CreativeMediaPayload
+func (t *CreativeContentPayload) MergeCreativeMediaPayload(v CreativeMediaPayload) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -6949,6 +7702,9 @@ type ServerInterface interface {
 
 	// (POST /creative/assets/batch-trash)
 	BatchTrashCreativeAssets(c *gin.Context, params BatchTrashCreativeAssetsParams)
+	// 把画布节点当前内容固定为一条新的个人库资产
+	// (POST /creative/assets/from-canvas-node)
+	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
 
 	// (GET /creative/assets/{id})
 	GetCreativeTextAsset(c *gin.Context, id string)
@@ -6994,6 +7750,18 @@ type ServerInterface interface {
 
 	// (POST /creative/library-settings)
 	SaveCreativeLibrarySettings(c *gin.Context, params SaveCreativeLibrarySettingsParams)
+	// 为浏览器媒体标签签发短期访问票据；实际读取时再次核验用途
+	// (POST /creative/media-access-tickets)
+	IssueCreativeMediaTicket(c *gin.Context)
+	// 当前进程实际可校验的媒体格式与上限；未验证组合不出现
+	// (GET /creative/media-capabilities)
+	GetCreativeMediaCapabilities(c *gin.Context)
+	// local 驱动的分片写入端点；只接受服务端签发的一次性 token
+	// (PUT /creative/media-parts)
+	PutCreativeMediaPart(c *gin.Context, params PutCreativeMediaPartParams)
+	// 受票据保护的媒体字节；支持单段 Range 与 HEAD
+	// (GET /creative/media/{revision_id}/{role})
+	GetCreativeMedia(c *gin.Context, revisionId string, role GetCreativeMediaParamsRole, params GetCreativeMediaParams)
 	// 读取本账号持久回执；404不证明操作从未提交
 	// (GET /creative/operations/{operation_id})
 	GetCreativeOperation(c *gin.Context, operationId openapi_types.UUID)
@@ -7036,6 +7804,30 @@ type ServerInterface interface {
 
 	// (POST /creative/tags/{id}/edit)
 	EditCreativeTag(c *gin.Context, id string, params EditCreativeTagParams)
+
+	// (GET /creative/upload-candidates)
+	ListCreativeUploadCandidates(c *gin.Context)
+
+	// (POST /creative/upload-candidates/{id}/adopt)
+	AdoptCreativeUploadCandidate(c *gin.Context, id string, params AdoptCreativeUploadCandidateParams)
+
+	// (POST /creative/upload-candidates/{id}/discard)
+	DiscardCreativeUploadCandidate(c *gin.Context, id string, params DiscardCreativeUploadCandidateParams)
+	// 创建上传会话；同事务预留配额、保存来源声明并入队初始化
+	// (POST /creative/uploads)
+	CreateCreativeUpload(c *gin.Context, params CreateCreativeUploadParams)
+
+	// (GET /creative/uploads/{id})
+	GetCreativeUpload(c *gin.Context, id string)
+
+	// (POST /creative/uploads/{id}/cancel)
+	CancelCreativeUpload(c *gin.Context, id string, params CancelCreativeUploadParams)
+
+	// (POST /creative/uploads/{id}/complete)
+	CompleteCreativeUpload(c *gin.Context, id string, params CompleteCreativeUploadParams)
+	// 签发短期分片写入能力；不改变业务状态，无需操作封套
+	// (POST /creative/uploads/{id}/part-authorizations)
+	AuthorizeCreativeUploadParts(c *gin.Context, id string)
 	// 客户列表（q 匹配 display_name/real_name/phone/identity.handle）
 	// (GET /customers)
 	ListCustomers(c *gin.Context, params ListCustomersParams)
@@ -8083,6 +8875,51 @@ func (siw *ServerInterfaceWrapper) BatchTrashCreativeAssets(c *gin.Context) {
 	siw.Handler.BatchTrashCreativeAssets(c, params)
 }
 
+// CreateCreativeAssetFromNode operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromNode(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeAssetFromNodeParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeAssetFromNode(c, params)
+}
+
 // GetCreativeTextAsset operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeTextAsset(c *gin.Context) {
 
@@ -8660,6 +9497,112 @@ func (siw *ServerInterfaceWrapper) SaveCreativeLibrarySettings(c *gin.Context) {
 	}
 
 	siw.Handler.SaveCreativeLibrarySettings(c, params)
+}
+
+// IssueCreativeMediaTicket operation middleware
+func (siw *ServerInterfaceWrapper) IssueCreativeMediaTicket(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.IssueCreativeMediaTicket(c)
+}
+
+// GetCreativeMediaCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeMediaCapabilities(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeMediaCapabilities(c)
+}
+
+// PutCreativeMediaPart operation middleware
+func (siw *ServerInterfaceWrapper) PutCreativeMediaPart(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PutCreativeMediaPartParams
+
+	// ------------- Required query parameter "token" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "token", c.Request.URL.Query(), &params.Token, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter token: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PutCreativeMediaPart(c, params)
+}
+
+// GetCreativeMedia operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeMedia(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "revision_id" -------------
+	var revisionId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revision_id", c.Param("revision_id"), &revisionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "role" -------------
+	var role GetCreativeMediaParamsRole
+
+	err = runtime.BindStyledParameterWithOptions("simple", "role", c.Param("role"), &role, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter role: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCreativeMediaParams
+
+	// ------------- Required query parameter "ticket" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "ticket", c.Request.URL.Query(), &params.Ticket, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter ticket: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeMedia(c, revisionId, role, params)
 }
 
 // GetCreativeOperation operation middleware
@@ -9275,6 +10218,336 @@ func (siw *ServerInterfaceWrapper) EditCreativeTag(c *gin.Context) {
 	}
 
 	siw.Handler.EditCreativeTag(c, id, params)
+}
+
+// ListCreativeUploadCandidates operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeUploadCandidates(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeUploadCandidates(c)
+}
+
+// AdoptCreativeUploadCandidate operation middleware
+func (siw *ServerInterfaceWrapper) AdoptCreativeUploadCandidate(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdoptCreativeUploadCandidateParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdoptCreativeUploadCandidate(c, id, params)
+}
+
+// DiscardCreativeUploadCandidate operation middleware
+func (siw *ServerInterfaceWrapper) DiscardCreativeUploadCandidate(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DiscardCreativeUploadCandidateParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DiscardCreativeUploadCandidate(c, id, params)
+}
+
+// CreateCreativeUpload operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeUpload(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeUploadParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeUpload(c, params)
+}
+
+// GetCreativeUpload operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeUpload(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeUpload(c, id)
+}
+
+// CancelCreativeUpload operation middleware
+func (siw *ServerInterfaceWrapper) CancelCreativeUpload(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelCreativeUploadParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelCreativeUpload(c, id, params)
+}
+
+// CompleteCreativeUpload operation middleware
+func (siw *ServerInterfaceWrapper) CompleteCreativeUpload(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CompleteCreativeUploadParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CompleteCreativeUpload(c, id, params)
+}
+
+// AuthorizeCreativeUploadParts operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizeCreativeUploadParts(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AuthorizeCreativeUploadParts(c, id)
 }
 
 // ListCustomers operation middleware
@@ -11032,6 +12305,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/batch-purge", wrapper.BatchPurgeCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-restore", wrapper.BatchRestoreCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
+	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
 	router.POST(options.BaseURL+"/creative/assets/:id/metadata", wrapper.UpdateCreativeAssetMetadata)
 	router.POST(options.BaseURL+"/creative/assets/:id/purge", wrapper.PurgeCreativeAsset)
@@ -11047,6 +12321,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
 	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/library-settings", wrapper.SaveCreativeLibrarySettings)
+	router.POST(options.BaseURL+"/creative/media-access-tickets", wrapper.IssueCreativeMediaTicket)
+	router.GET(options.BaseURL+"/creative/media-capabilities", wrapper.GetCreativeMediaCapabilities)
+	router.PUT(options.BaseURL+"/creative/media-parts", wrapper.PutCreativeMediaPart)
+	router.GET(options.BaseURL+"/creative/media/:revision_id/:role", wrapper.GetCreativeMedia)
 	router.GET(options.BaseURL+"/creative/operations/:operation_id", wrapper.GetCreativeOperation)
 	router.GET(options.BaseURL+"/creative/projects", wrapper.ListCreativeProjects)
 	router.POST(options.BaseURL+"/creative/projects", wrapper.CreateCreativeProject)
@@ -11061,6 +12339,14 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/tags", wrapper.CreateCreativeTag)
 	router.POST(options.BaseURL+"/creative/tags/:id/delete", wrapper.DeleteCreativeTag)
 	router.POST(options.BaseURL+"/creative/tags/:id/edit", wrapper.EditCreativeTag)
+	router.GET(options.BaseURL+"/creative/upload-candidates", wrapper.ListCreativeUploadCandidates)
+	router.POST(options.BaseURL+"/creative/upload-candidates/:id/adopt", wrapper.AdoptCreativeUploadCandidate)
+	router.POST(options.BaseURL+"/creative/upload-candidates/:id/discard", wrapper.DiscardCreativeUploadCandidate)
+	router.POST(options.BaseURL+"/creative/uploads", wrapper.CreateCreativeUpload)
+	router.GET(options.BaseURL+"/creative/uploads/:id", wrapper.GetCreativeUpload)
+	router.POST(options.BaseURL+"/creative/uploads/:id/cancel", wrapper.CancelCreativeUpload)
+	router.POST(options.BaseURL+"/creative/uploads/:id/complete", wrapper.CompleteCreativeUpload)
+	router.POST(options.BaseURL+"/creative/uploads/:id/part-authorizations", wrapper.AuthorizeCreativeUploadParts)
 	router.GET(options.BaseURL+"/customers", wrapper.ListCustomers)
 	router.POST(options.BaseURL+"/customers", wrapper.CreateCustomer)
 	router.GET(options.BaseURL+"/customers/:id", wrapper.GetCustomer)

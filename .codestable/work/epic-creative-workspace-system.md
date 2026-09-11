@@ -2,8 +2,8 @@
 epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
-current_item: FND-04
-next_action: FND-04及画布交互修复完成提交；下一项FND-05图像/视频/音频与跨模块交接，继续遵循v5
+current_item: FND-05
+next_action: FND-05就绪未提交：等待owner提交授权；下一项按依赖可选FND-06（Gateway）或FND-13前置；真实OSS验收（PRE-05）待授权bucket
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -615,3 +615,19 @@ remote_publish: manual
 ### FND-04 提交里程碑（2026-09-11）
 
 owner明确授权提交本阶段feature。本提交包含FND-04基础能力、v5交互纠偏及连线松手延迟修复；沿用已通过的对应验证和owner不重复复审的决定。未推送远端、未合并develop、未应用开发数据库迁移；FND-05等待后续开发指令。
+
+### FND-05 开工（2026-09-11）
+
+- 依据已批准Epic FND-05、modules/media.md、content.md §1-4、library.md §5、canvas.md §5 与 docs/dev/object-storage.md 新版契约实现。上一项FND-04已提交c18430a；本项沿同一工作区继续，遵循v5暗色/玻璃，普通保存静默。
+- 归属：新建 `internal/creativemedia`（上传会话/状态机/StorageAdapter Local+OSS/校验/发布/候选/票据与read pin/Worker任务）；`creativecontent` 扩展 image/video/audio 修订与 content_objects 投影及候选根；`creativelibrary` 扩展 kind 过滤、`CreateFromRevisionInTx` 与「画布节点存入库」；`creativecanvas` 增加 core.image/video/audio 节点目录及 `ValidateNodeTargetInTx`/`BindNodeRevisionInTx` 端口；HTTP 新增 `/creative/uploads*`、`/upload-candidates*`、`/media-capabilities`、`/media-access-tickets`、`/media/{revision}/{role}`（票据鉴权，供浏览器媒体标签）、`/assets/from-canvas-node`；`cmd/server` 与 `cmd/creative-worker` 共同装配媒体 Worker（API 只注册不启动，Worker 启动）。
+- 必须修改：迁移0041（contents/assets kind 扩展、blobs/content_objects/uploads/parts/candidates/read_pins/quotas 正式表）、OpenAPI 与两份生成物、config（`CREATIVE_MEDIA_LOCAL_ROOT`、`CREATIVE_FFPROBE`、`CREATIVE_MEDIA_QUOTA_BYTES`）、前端资产侧栏导入队列/媒体缩略图/预览、画布媒体节点/拖入文件/替换/最大化/下载/存回库、多选拖入。
+- 需要验证：账号隔离；同事务入队与回滚；分片授权不能拿到 final key；假 MIME/超限/未知格式逐项失败不影响已成功项；complete/init 返回丢失可恢复且不重复发布；旧 epoch worker 不能写；目标变化转候选、adopt/discard/到期只能一方成功；ready 交接后 uploads.blob_id 清空；撤销用途后票据/读取拒绝；Range 206/416、HEAD、ETag；read pin 建立与续期；JPEG/PNG/WebP 逐项、WebM(VP9/Opus) 与 MP4(H.264/AAC) 视频、MP3/WAV 音频真实解码/播放；浏览器导入→拖入画布→预览/下载/替换→重开一致。
+- 仍待调查：真实 OSS bucket 验收（PRE-05）需授权测试 bucket，本项只能完成适配器与 fake conformance，不标 OSS 真实验收通过；物理删除/到期 GC 留 FND-10；Chromium headless 对 H.264 的播放支持以实际样本为准，不支持则只用 WebM 作浏览器证据。
+- 风险与保障：改 schema/迁移、并发/一致性语义与信任边界（票据、签名 URL）→ 定向 red→green 测试 + 一轮独立 change review（owner 既定：默认一轮，blocking 清零即关）。设计取舍：Local 分片 PUT 走鉴权 API 且带 HMAC 签名 query（与 OSS 预签名等价的临时能力），票据为 HMAC 无状态短期令牌（10 分钟），read pin 落表；图片在校验阶段生成 ≤1600px display 渲染件（原件仍保留），视频/音频用 ffprobe 只探测不转码。
+
+### FND-05 实现、审查与验证（2026-09-11）
+
+- 已实现：迁移0041（contents/assets kind扩展；blobs/content_objects/uploads/parts/candidates/read_pins/revision_holds/media_quotas）；`internal/creativemedia`（Local分片经API HMAC token、OSS预签名UploadPart+版本固定；状态机created→uploading→verifying→ready/failed/expired/cancelled+io_phase+execution_epoch/lease；Worker init/complete/verify/abort；mimetype嗅探+图片解码+ffprobe只探测；`publish_operation_id`下单份回执发布，目标变化转pending候选，adopt/discard/到期同行锁；HMAC无状态票据10分钟+read pin+精确版本读取；配额预留/结算/释放；SweepExpired只标记）。content：media kind、`WriteMediaAndRetain`、派生继承对象、候选/hold保留根。library：`ValidateImportTarget[InTx]`、`CreateFromRevisionInTx`、kind过滤。canvas：core.image/video/audio、`ValidateNodeTargetInTx`/`BindNodeRevisionInTx`（可撤销change）、`SaveNodeToLibrary`。HTTP新增uploads*/upload-candidates*/media-capabilities/media-access-tickets/media/{revision}/{role}（票据鉴权、单段Range 206/416、HEAD）/assets/from-canvas-node；server与creative-worker共享票据密钥，API只入队。前端：导入托盘/来源确认/媒体缩略图与节点（票据懒加载）/预览/下载/替换/说明编辑/存库/多选与文件拖入。文档：DESIGN、UX-CONTRACT、docs/dev/creative-media.md、object-storage、.env.example、api manifest。
+- 独立change review：Codex两次因CLI不支持`gpt-6-astra`失败无报告（不计轮次），回退宿主同构fresh reviewer。R1目标SHA256 `df2224c59edb236b915c52dee6afcfc66a60784b911a7a99657e79dff9a13f6a`：建议先改再合，1 blocking（前端重试不触发）+5 important（发布中断无救援、媒体节点编辑入口矛盾、契约文字、Range双开、任务超时），全部修复并加red→green。R2（同reviewer follow-up）目标 `284c702abaccf5554898deae59be438a287d4574b9495210b40d597891de7459`：有条件可合，0 blocking、1 important（N1 verify/promote阶段租约60s不续期，长任务可能被并发claim误判死亡）。N1修复：租约按阶段预算（init/abort 2min、complete 5min、verify 20min）并以测试固定「租约≥任务超时」不变量；owner明确要求最多一轮审查，故N1修复不再复审，由本机测试与门禁闭环。residual：RenewPin无调用方、`UploadView.ContentRevisionID`恒nil、票据/分片token共用签名器以哨兵区分。
+- 最终候选SHA256 `72475edd6b9d3440aeb475e3743dbacd03df3d31931421511a201b9512e98de2`（80 files, +9396/−194）。验证：`make check-go` exit0（40包、lint 0，`/tmp/fnd05-r3-go.log`）；`make check-frontend` 369/369、`make generate-check`、`git diff --check`通过（`/tmp/fnd05-r2-*.log`，R3只改后端）；`go test ./internal/creativemedia`覆盖7种格式真实校验、假MIME逐项失败、创建准入、候选/采用/放弃竞争、幂等重放、epoch/取消、票据/Range/撤销、发布中断救援与租约不变量；真实浏览器`creative-media.e2e.mjs` PASS（导入/假文件重试/筛选/预览/多选拖入/拖文件建节点/替换与撤销/说明编辑/放大/下载字节一致/HEAD-206-416-伪造角色403/视频播放Range/存回库/重开），既有两脚本回归PASS（`/tmp/fnd05-r2-browser-regress.log`）。截图 `/tmp/creative-media-qa/`。样本媒体入库 `internal/creativemedia/testdata`（WebM由Chromium MediaRecorder录制）。
+- 未做：真实OSS bucket验收（PRE-05，需授权测试bucket，文档已标注）；物理删除/自动到期清理归FND-10。开发数据库未应用0041，5173服务未动，临时5176已关闭。未提交、未push，等待owner授权。

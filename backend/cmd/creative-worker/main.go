@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -32,22 +36,66 @@ func run() error {
 	if *migrate {
 		return db.MigrateCreativeJobs(ctx)
 	}
-	// FND-01 intentionally registers no pretend content/generation handlers.
-	runtime, err := db.NewJobRuntime(nil, slog.Default())
+	if *check {
+		runtime, err := db.NewJobRuntime(nil, slog.Default())
+		if err != nil {
+			return err
+		}
+		return runtime.Check(ctx)
+	}
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}
-	if *check {
-		return runtime.Check(ctx)
+	media, err := creativemedia.Compose(cfg, deriveTicketKey(cfg.AuthTokenSecret))
+	if err != nil {
+		return err
 	}
+	// Media stages are the only registered handlers; generation stays absent.
+	runtime, err := db.NewJobRuntime(media.Handlers(), slog.Default())
+	if err != nil {
+		return err
+	}
+	media.SetRuntime(runtime)
 	if err := runtime.Start(ctx); err != nil {
 		return err
 	}
+	go sweepExpiredUploads(ctx, db, media)
 	<-ctx.Done()
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
 	return runtime.Stop(stopCtx)
 }
+
+// deriveTicketKey must match cmd/server so tickets issued by the API and
+// part signatures produced here validate in both processes.
+func deriveTicketKey(rootSecret string) []byte {
+	extract := hmac.New(sha256.New, make([]byte, sha256.Size))
+	_, _ = extract.Write([]byte(rootSecret))
+	prk := extract.Sum(nil)
+	expand := hmac.New(sha256.New, prk)
+	_, _ = expand.Write([]byte("creative-media/v1/ticket"))
+	_, _ = expand.Write([]byte{1})
+	return expand.Sum(nil)
+}
+
+// sweepExpiredUploads marks overdue sessions per active account. Objects
+// are never deleted here; retention/GC arrives with its own feature.
+func sweepExpiredUploads(ctx context.Context, db *store.Store, media *creativemedia.Service) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := media.SweepAllAccounts(ctx, db, 200); err != nil {
+				slog.Warn("creative media sweep", slog.String("error", err.Error()))
+			}
+		}
+	}
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "creative worker: %v\n", err)

@@ -212,6 +212,221 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/media-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 当前进程实际可校验的媒体格式与上限；未验证组合不出现 */
+        get: operations["getCreativeMediaCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 创建上传会话；同事务预留配额、保存来源声明并入队初始化 */
+        post: operations["createCreativeUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/uploads/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCreativeUpload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/uploads/{id}/part-authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 签发短期分片写入能力；不改变业务状态，无需操作封套 */
+        post: operations["authorizeCreativeUploadParts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/uploads/{id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeCreativeUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/uploads/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelCreativeUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/media-parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** local 驱动的分片写入端点；只接受服务端签发的一次性 token */
+        put: operations["putCreativeMediaPart"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/upload-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCreativeUploadCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/upload-candidates/{id}/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adoptCreativeUploadCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/upload-candidates/{id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["discardCreativeUploadCandidate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/media-access-tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 为浏览器媒体标签签发短期访问票据；实际读取时再次核验用途 */
+        post: operations["issueCreativeMediaTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/media/{revision_id}/{role}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 受票据保护的媒体字节；支持单段 Range 与 HEAD */
+        get: operations["getCreativeMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/assets/from-canvas-node": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 把画布节点当前内容固定为一条新的个人库资产 */
+        post: operations["createCreativeAssetFromNode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/capabilities": {
         parameters: {
             query?: never;
@@ -2043,7 +2258,22 @@ export interface components {
             title?: string;
             description?: string;
         };
-        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"];
+        CreativeMediaPayload: {
+            caption?: string;
+        };
+        CreativeContentPayload: components["schemas"]["CreativeTextPayload"] | components["schemas"]["CreativeLinkPayload"] | components["schemas"]["CreativeMediaPayload"];
+        CreativeMediaObject: {
+            /** @enum {string} */
+            role: "original" | "display" | "thumbnail" | "attachment";
+            blob_id: string;
+            mime: string;
+            /** Format: int64 */
+            byte_size: number;
+            width: number | null;
+            height: number | null;
+            /** Format: int64 */
+            duration_ms: number | null;
+        };
         CreativeContentRights: {
             source_class: string;
             rights_basis: string;
@@ -2051,7 +2281,7 @@ export interface components {
         };
         CreativeContentDraft: {
             /** @enum {string} */
-            kind: "text" | "link";
+            kind: "text" | "link" | "image" | "video" | "audio";
             payload: components["schemas"]["CreativeContentPayload"];
             rights: components["schemas"]["CreativeContentRights"];
         };
@@ -2061,16 +2291,17 @@ export interface components {
             id: string;
             content_id: string;
             /** @enum {string} */
-            kind: "text" | "link";
+            kind: "text" | "link" | "image" | "video" | "audio";
             sequence: components["schemas"]["CreativeRevision"];
             payload: components["schemas"]["CreativeContentPayload"];
+            media?: components["schemas"]["CreativeMediaObject"][];
         };
         CreativeLibraryAsset: {
             id: string;
             title: string;
             description: string;
             /** @enum {string} */
-            kind: "text" | "link";
+            kind: "text" | "link" | "image" | "video" | "audio";
             revision: components["schemas"]["CreativeRevision"];
             content_id: string;
             content_revision_id: string;
@@ -2179,7 +2410,7 @@ export interface components {
             type: "add_node";
             node_id: string;
             /** @enum {string} */
-            type_key: "core.text" | "core.link";
+            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio";
             title?: string;
             x: number;
             y: number;
@@ -4657,7 +4888,7 @@ export interface components {
             type: "add_node";
             node_id: string;
             /** @enum {string} */
-            type_key: "core.text" | "core.link" | "core.group";
+            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio" | "core.group";
             title?: string;
             x: number;
             y: number;
@@ -4917,6 +5148,207 @@ export interface components {
             revision: components["schemas"]["CreativeRevision"];
             content: components["schemas"]["CreativeContentRevision"];
         };
+        CreativeMediaFormat: {
+            /** @enum {string} */
+            kind: "image" | "video" | "audio";
+            mime: string;
+            extensions: string[];
+            codecs?: string[];
+        };
+        CreativeMediaCapabilities: {
+            /** @enum {integer} */
+            schema_version: 1;
+            formats: components["schemas"]["CreativeMediaFormat"][];
+            /** Format: int64 */
+            image_max_bytes: number;
+            /** Format: int64 */
+            av_max_bytes: number;
+            /** Format: int64 */
+            part_size: number;
+            batch_limit: number;
+        };
+        CreativeUploadAssetTarget: {
+            title: string;
+            description?: string;
+            group_ids?: string[];
+            tag_ids?: string[];
+            new_tags?: components["schemas"]["CreativeNewTag"][];
+            is_favorite?: boolean;
+        };
+        CreativeUploadNodeTarget: {
+            canvas_id: string;
+            node_id: string;
+            expected_data_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeUploadTarget: {
+            /** @enum {string} */
+            kind: "asset" | "node";
+            asset?: components["schemas"]["CreativeUploadAssetTarget"];
+            node?: components["schemas"]["CreativeUploadNodeTarget"];
+        };
+        CreativeUploadCreatePayload: {
+            file_name: string;
+            /** @enum {string} */
+            kind: "image" | "video" | "audio";
+            mime: string;
+            /** Format: int64 */
+            size: number;
+            rights: components["schemas"]["CreativeContentRights"];
+            target: components["schemas"]["CreativeUploadTarget"];
+        };
+        CreateCreativeUploadRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeUploadCreatePayload"];
+        };
+        CreativeUploadReportedPart: {
+            part_number: number;
+            etag: string;
+        };
+        CreativeUploadCompletePayload: {
+            expected_revision: components["schemas"]["CreativeRevision"];
+            parts: components["schemas"]["CreativeUploadReportedPart"][];
+        };
+        CompleteCreativeUploadRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeUploadCompletePayload"];
+        };
+        CreativeUploadCancelPayload: {
+            expected_revision: components["schemas"]["CreativeRevision"];
+        };
+        CancelCreativeUploadRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeUploadCancelPayload"];
+        };
+        CreativeUploadPartAuthorizationRequest: {
+            part_numbers: number[];
+        };
+        CreativeUploadPartAuthorization: {
+            part_number: number;
+            method: string;
+            url: string;
+            headers: {
+                [key: string]: string;
+            };
+            /** Format: date-time */
+            expires_at: string;
+        };
+        CreativeUploadPartAuthorizations: {
+            upload_id: string;
+            parts: components["schemas"]["CreativeUploadPartAuthorization"][];
+        };
+        CreativePublication: {
+            /** @enum {string} */
+            kind: "asset" | "node" | "candidate";
+            id: string;
+            revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeUploadBinding: {
+            /** @enum {string} */
+            status: "applied" | "needs_review" | "discarded" | "expired";
+            target_kind: string | null;
+            target_id: string | null;
+            candidate_id: string | null;
+            /** Format: date-time */
+            expires_at: string | null;
+        };
+        CreativeUpload: {
+            id: string;
+            /** @enum {string} */
+            state: "created" | "uploading" | "verifying" | "ready" | "failed" | "expired" | "cancelled";
+            /** @enum {string} */
+            io_phase: "none" | "initializing" | "completing" | "promoting";
+            revision: components["schemas"]["CreativeRevision"];
+            /** @enum {string} */
+            kind: "image" | "video" | "audio";
+            mime: string;
+            /** Format: int64 */
+            size: number;
+            file_name: string;
+            /** Format: int64 */
+            part_size: number;
+            part_count: number;
+            uploaded_parts: number[];
+            /** @enum {string} */
+            target_kind: "asset" | "node";
+            /** Format: date-time */
+            expires_at: string;
+            error_code: string;
+            publication: components["schemas"]["CreativePublication"] | null;
+            binding: components["schemas"]["CreativeUploadBinding"] | null;
+            content_revision_id: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeUploadCandidate: {
+            id: string;
+            upload_id: string;
+            /** @enum {string} */
+            state: "pending" | "applied" | "discarded" | "expired";
+            revision: components["schemas"]["CreativeRevision"];
+            reason: string;
+            /** @enum {string} */
+            kind: "image" | "video" | "audio";
+            file_name: string;
+            content_revision_id: string | null;
+            target: components["schemas"]["CreativeUploadTarget"];
+            /** Format: date-time */
+            expires_at: string;
+            adopted: components["schemas"]["CreativePublication"] | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeUploadCandidatePage: {
+            items: components["schemas"]["CreativeUploadCandidate"][];
+        };
+        CreativeUploadCandidatePayload: {
+            candidate_revision: components["schemas"]["CreativeRevision"];
+            target?: components["schemas"]["CreativeUploadTarget"];
+        };
+        CreativeUploadCandidateRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeUploadCandidatePayload"];
+        };
+        CreativeMediaTicketRequest: {
+            content_revision_id: string;
+            /** @enum {string} */
+            role: "original" | "display";
+            /** @enum {string} */
+            purpose: "display" | "download";
+            file_name?: string;
+        };
+        CreativeMediaTicket: {
+            url: string;
+            /** Format: date-time */
+            expires_at: string;
+            mime: string;
+            /** Format: int64 */
+            byte_size: number;
+        };
+        CreativeAssetFromNodePayload: {
+            canvas_id: string;
+            node_id: string;
+            expected_data_revision: components["schemas"]["CreativeRevision"];
+            target: components["schemas"]["CreativeUploadAssetTarget"];
+        };
+        CreateCreativeAssetFromNodeRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetFromNodePayload"];
+        };
         CreativeNodeExecution: {
             execution_id: string;
             node_id: string;
@@ -5093,7 +5525,7 @@ export interface operations {
                 view?: "all" | "favorites" | "unclassified" | "trash";
                 group_id?: string;
                 include_descendants?: boolean;
-                kind?: "text" | "link";
+                kind?: "text" | "link" | "image" | "video" | "audio";
                 q?: string;
                 tag_ids?: string[];
                 tag_mode?: "all" | "any";
@@ -5588,6 +6020,457 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeNodeExecution"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeMediaCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 媒体能力清单 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeMediaCapabilities"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description 已受理；同一操作回放原受理回执 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUpload"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前上传状态、已上传分片与发布/绑定结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUpload"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    authorizeCreativeUploadParts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeUploadPartAuthorizationRequest"];
+            };
+        };
+        responses: {
+            /** @description 分片授权 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUploadPartAuthorizations"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    completeCreativeUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteCreativeUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description 已受理完成；以服务端列举分片为准 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUpload"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancelCreativeUpload: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CancelCreativeUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description 取消回执 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUpload"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    putCreativeMediaPart: {
+        parameters: {
+            query: {
+                token: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/octet-stream": string;
+            };
+        };
+        responses: {
+            /** @description 分片已写入 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeUploadCandidates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 本账号待处理的上传成果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUploadCandidatePage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    adoptCreativeUploadCandidate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeUploadCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description 采用结果 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUploadCandidate"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    discardCreativeUploadCandidate: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeUploadCandidateRequest"];
+            };
+        };
+        responses: {
+            /** @description 放弃回执 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeUploadCandidate"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    issueCreativeMediaTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeMediaTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description 票据 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeMediaTicket"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeMedia: {
+        parameters: {
+            query: {
+                ticket: string;
+            };
+            header?: never;
+            path: {
+                revision_id: string;
+                role: "original" | "display";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 完整媒体 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description 部分媒体 */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": string;
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAssetFromNode: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAssetFromNodeRequest"];
+            };
+        };
+        responses: {
+            /** @description 已创建资产 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
                 };
             };
             /** @description 请求失败 */

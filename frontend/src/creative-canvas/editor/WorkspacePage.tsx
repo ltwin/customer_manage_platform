@@ -10,6 +10,9 @@ import {
   MousePointer2,
   Hand,
   CircleHelp,
+  Image as ImageIcon,
+  Film,
+  AudioLines,
 } from 'lucide-react'
 import {
   useCallback,
@@ -33,12 +36,18 @@ import DocumentView from './DocumentView.tsx'
 import CanvasView from './CanvasView.tsx'
 import ContentForm from './ContentForm.tsx'
 import StudioDialog from './StudioDialog.tsx'
-import { blankDraft } from './content.ts'
+import { blankDraft, contentText } from './content.ts'
 import '@xyflow/react/dist/style.css'
 import './workspace.css'
 import LibraryPanel from './LibraryPanel.tsx'
 import { emptyCatalog, emptyOrganization } from './libraryState.ts'
 import OrganizationPicker from './OrganizationPicker.tsx'
+import { useUploads } from './uploads.ts'
+import UploadTray from './UploadTray.tsx'
+import UploadDialog from './UploadDialog.tsx'
+import MediaPreview from './MediaPreview.tsx'
+import { downloadMedia } from './MediaView.tsx'
+import { isMediaKind, type ContentRights, type MediaKind, type UploadTarget } from './media.ts'
 
 export default function WorkspacePage() {
   const account = api.currentAccount()
@@ -101,6 +110,15 @@ function Workspace({ account }: { account: string }) {
   const [loading, setLoading] = useState(true)
   const [discard, setDiscard] = useState<string | null>(null)
   const [form, setForm] = useState<'asset' | null>(null)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
+  const [pendingImport, setPendingImport] = useState<{
+    files: File[]
+    destination: string
+    target: (file: File, index: number) => UploadTarget
+  } | null>(null)
+  const nodeFileInput = useRef<HTMLInputElement>(null)
+  const nodeUploadTarget = useRef<{ id: string; kind: MediaKind } | null>(null)
   const [compare, setCompare] = useState<{
     content: api.ContentDraft
     node: api.CanvasNode
@@ -135,6 +153,11 @@ function Workspace({ account }: { account: string }) {
   }, [])
   const positions = queue?.value.positions
   const canMove = !!queue && canEditLocal && !storageError && !localError
+  const uploads = useUploads((item) => {
+    if (item.upload?.binding?.status === 'needs_review')
+      setCopyNotice('文件已上传，但目标已变化；请在待处理项中选择放入位置。')
+    refresh()
+  })
   useEffect(() => {
     if (!queue || !canvas || canvas.id !== canvasID) return
     queue.connections.reconcile(canvas)
@@ -260,7 +283,11 @@ function Workspace({ account }: { account: string }) {
     setFull(null)
     if (!node) return
     const base: Draft = {
-      ...blankDraft(node.metadata.type_key === 'core.link' ? 'link' : 'text'),
+      ...blankDraft(
+        (node.metadata.type_key.startsWith('core.')
+          ? node.metadata.type_key.slice(5)
+          : 'text') as Draft['kind'],
+      ),
       title: node.metadata.title,
       dataRevision: node.data_revision,
       contentRevision: node.data.content_revision_id,
@@ -278,7 +305,7 @@ function Workspace({ account }: { account: string }) {
         if (!controller.signal.aborted)
           setFull({
             ...base,
-            value: 'body' in r.payload ? r.payload.body : r.payload.url,
+            value: contentText(r.payload),
           })
       })
       .catch((e: unknown) => {
@@ -406,7 +433,7 @@ function Workspace({ account }: { account: string }) {
       .catch((e: unknown) => setLocalError(errorMessage(e)))
   }
   function addEmptyNode(
-    kind: 'text' | 'link',
+    kind: 'text' | 'link' | MediaKind,
     x = 80 + (canvas?.nodes.length ?? 0) * 20,
     y = 80 + (canvas?.nodes.length ?? 0) * 20,
   ) {
@@ -420,6 +447,107 @@ function Workspace({ account }: { account: string }) {
       y,
       expected_topology_revision: canvas.topology_revision,
     } satisfies api.Command)
+  }
+  const mediaKindOfFile = (file: File): MediaKind | null =>
+    uploads.capabilities
+      ? ((uploads.capabilities.formats.find(
+          (f) =>
+            f.mime === file.type.split(';')[0].toLowerCase() ||
+            f.extensions.includes(
+              '.' + (file.name.split('.').pop() ?? '').toLowerCase(),
+            ),
+        )?.kind as MediaKind | undefined) ?? null)
+      : null
+  // Import into the library: each file becomes an asset in the current group.
+  function importToLibrary(files: File[], groupID: string) {
+    if (!uploads.capabilities || uploads.capabilitiesError) {
+      setLocalError(uploads.capabilitiesError || '媒体上传暂不可用')
+      return
+    }
+    setPendingImport({
+      files,
+      destination: '存入个人资产库',
+      target: (file) => ({
+        kind: 'asset',
+        asset: {
+          title: file.name.replace(/\.[^.]+$/, '').slice(0, 200) || file.name,
+          group_ids: groupID ? [groupID] : [],
+        },
+      }),
+    })
+  }
+  // Drop files on the canvas: create empty media nodes first, then upload
+  // into each node so the publication binds by node target.
+  async function dropFiles(files: File[], x: number, y: number) {
+    if (!canvas || !canWrite || !uploads.capabilities) return
+    const usable = files.filter((f) => mediaKindOfFile(f))
+    if (!usable.length) {
+      setLocalError('拖入的文件不是支持的图片、视频或音频格式')
+      return
+    }
+    const ids = usable.map(() => `cwnode_${crypto.randomUUID()}`)
+    const ok = await perform(`/canvases/${canvas.id}/commands`, {
+      type: 'batch',
+      expected_topology_revision: canvas.topology_revision,
+      read_set: [],
+      actions: usable.map((file, i) => ({
+        type: 'add_node' as const,
+        node_id: ids[i]!,
+        type_key: `core.${mediaKindOfFile(file)!}` as
+          | 'core.image'
+          | 'core.video'
+          | 'core.audio',
+        title: file.name.replace(/\.[^.]+$/, '').slice(0, 200),
+        x: x + i * 36,
+        y: y + i * 36,
+      })),
+    } satisfies api.Command)
+    if (!ok) return
+    setPendingImport({
+      files: usable,
+      destination: '放入画布节点',
+      target: (_, i) => ({
+        kind: 'node',
+        node: { canvas_id: canvas.id, node_id: ids[i]!, expected_data_revision: '1' },
+      }),
+    })
+  }
+  function uploadToNode(id: string, kind: MediaKind) {
+    nodeUploadTarget.current = { id, kind }
+    nodeFileInput.current?.click()
+  }
+  function nodeFileChosen(files: File[]) {
+    const target = nodeUploadTarget.current
+    nodeUploadTarget.current = null
+    const n = canvas?.nodes.find((n) => n.id === target?.id)
+    if (!target || !n || !canvas || !files.length) return
+    const file = files[0]!
+    if (mediaKindOfFile(file) !== target.kind) {
+      setLocalError(`请选择${{ image: '图片', video: '视频', audio: '音频' }[target.kind]}文件`)
+      return
+    }
+    setPendingImport({
+      files: [file],
+      destination: n.content ? '替换节点媒体' : '放入节点',
+      target: () => ({
+        kind: 'node',
+        node: { canvas_id: canvas.id, node_id: n.id, expected_data_revision: n.data_revision },
+      }),
+    })
+  }
+  function startImport(rights: ContentRights) {
+    if (!pendingImport) return
+    uploads.start(pendingImport.files, pendingImport.target, rights)
+    setPendingImport(null)
+  }
+  async function downloadNode(id: string) {
+    const n = canvas?.nodes.find((n) => n.id === id)
+    if (!n?.content) return
+    try {
+      await downloadMedia(n.content, n.metadata.title || n.id)
+    } catch (e) {
+      setLocalError(errorMessage(e))
+    }
   }
   function addAsset(asset: api.Asset, x = 80, y = 80) {
     if (!canvas || !canWrite || asset.unavailable) return
@@ -436,6 +564,35 @@ function Workspace({ account }: { account: string }) {
         expected_asset_revision: asset.revision,
         content_revision_id: asset.content_revision_id,
       },
+    } satisfies api.Command)
+  }
+  // Several selected assets land in one batch so the queue sends one command.
+  function addAssets(dropped: api.Asset[], x = 80, y = 80) {
+    if (!canvas || !canWrite) return
+    const usable = dropped.filter((a) => !a.unavailable)
+    if (!usable.length) return
+    void perform(`/canvases/${canvas.id}/commands`, {
+      type: 'batch',
+      expected_topology_revision: canvas.topology_revision,
+      read_set: [],
+      actions: usable.map((asset, i) => ({
+        type: 'add_node' as const,
+        node_id: `cwnode_${crypto.randomUUID()}`,
+        type_key: `core.${asset.kind}` as
+          | 'core.text'
+          | 'core.link'
+          | 'core.image'
+          | 'core.video'
+          | 'core.audio',
+        title: asset.title,
+        x: x + i * 36,
+        y: y + i * 36,
+        asset: {
+          asset_id: asset.id,
+          expected_asset_revision: asset.revision,
+          content_revision_id: asset.content_revision_id,
+        },
+      })),
     } satisfies api.Command)
   }
   function saveNode(content: api.ContentDraft, reapply?: api.CanvasNode) {
@@ -636,16 +793,24 @@ function Workspace({ account }: { account: string }) {
             role="menu"
             aria-label="新建节点"
           >
-            {(['text', 'link'] as const).map((kind) => (
+            {(
+              [
+                ['text', '文字', <Type size={17} key="t" />],
+                ['link', '链接', <Link2 size={17} key="l" />],
+                ['image', '图片', <ImageIcon size={17} key="i" />],
+                ['video', '视频', <Film size={17} key="v" />],
+                ['audio', '音频', <AudioLines size={17} key="a" />],
+              ] as const
+            ).map(([kind, label, icon]) => (
               <button
                 key={kind}
                 role="menuitem"
-                aria-label={kind === 'text' ? '新增文字节点' : '新增链接节点'}
+                aria-label={`新增${label}节点`}
                 disabled={blocked || !canWrite}
                 onClick={() => addEmptyNode(kind)}
               >
-                {kind === 'text' ? <Type size={17} /> : <Link2 size={17} />}
-                <span>{kind === 'text' ? '文字' : '链接'}</span>
+                {icon}
+                <span>{label}</span>
               </button>
             ))}
           </div>
@@ -733,6 +898,8 @@ function Workspace({ account }: { account: string }) {
           onCommand={perform}
           canDrop={!!canvas && canWrite}
           onDrop={addAsset}
+          onImport={importToLibrary}
+          importDisabled={blocked || !uploads.capabilities}
         />
         <section className="cc-stage" aria-label="创作画布">
           {canvas && canvas.id === canvasID ? (
@@ -776,9 +943,23 @@ function Workspace({ account }: { account: string }) {
                     }
                     if (
                       n &&
-                      !['core.text', 'core.link'].includes(n.metadata.type_key)
+                      ![
+                        'core.text',
+                        'core.link',
+                        'core.image',
+                        'core.video',
+                        'core.audio',
+                      ].includes(n.metadata.type_key)
                     )
                       return
+                    // Media nodes: an empty node edits by uploading; a filled node
+                    // edits its caption. Preview stays on the toolbar button.
+                    if (n && isMediaKind(n.metadata.type_key.slice(5))) {
+                      if (!n.content) {
+                        uploadToNode(n.id, n.metadata.type_key.slice(5) as MediaKind)
+                        return
+                      }
+                    }
                     setEditing(true)
                   }}
                   onAdd={(x, y) => addEmptyNode('text', x, y)}
@@ -788,6 +969,14 @@ function Workspace({ account }: { account: string }) {
                   positions={positions}
                   assets={assets.items}
                   onDropAsset={addAsset}
+                  onDropAssets={addAssets}
+                  onDropFiles={(files, x, y) => void dropFiles(files, x, y)}
+                  onUploadToNode={uploadToNode}
+                  onDownload={(id) => void downloadNode(id)}
+                  onSaveToLibrary={(id) =>
+                    setSavingNode(canvas.nodes.find((n) => n.id === id) ?? null)
+                  }
+                  onPreview={setPreview}
                   onMove={moveNode}
                 />
               </ReactFlowProvider>
@@ -938,6 +1127,85 @@ function Workspace({ account }: { account: string }) {
           </form>
         </StudioDialog>
       )}
+      <input
+        ref={nodeFileInput}
+        type="file"
+        hidden
+        accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,audio/mpeg,audio/wav"
+        aria-label="选择节点媒体文件"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          nodeFileChosen(files)
+        }}
+      />
+      <UploadTray
+        items={uploads.items}
+        onRetry={uploads.retry}
+        onDismiss={uploads.dismiss}
+      />
+      {pendingImport && (
+        <UploadDialog
+          files={pendingImport.files}
+          destination={pendingImport.destination}
+          onConfirm={startImport}
+          onCancel={() => setPendingImport(null)}
+        />
+      )}
+      {preview &&
+        (() => {
+          const n = canvas?.nodes.find((n) => n.id === preview)
+          return n?.content && isMediaKind(n.metadata.type_key.slice(5)) ? (
+            <MediaPreview
+              content={n.content}
+              kind={n.metadata.type_key.slice(5)}
+              title={n.metadata.title || '媒体节点'}
+              onClose={() => setPreview(null)}
+            />
+          ) : null
+        })()}
+      {savingNode && canvas && (
+        <StudioDialog title="存入个人资产库" onClose={() => setSavingNode(null)}>
+          <form
+            className="cc-form"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              const data = new FormData(e.currentTarget)
+              const title = String(data.get('title') ?? '').trim()
+              if (!title) {
+                setError('请填写资产名称')
+                return
+              }
+              void perform('/assets/from-canvas-node', {
+                canvas_id: canvas.id,
+                node_id: savingNode.id,
+                expected_data_revision: savingNode.data_revision,
+                target: { title },
+              }).then((ok) => {
+                if (ok) setSavingNode(null)
+              })
+            }}
+          >
+            <p className="cc-muted">
+              固定当前节点内容为一条新的个人库资产；后续修改节点不会影响它。
+            </p>
+            <label>
+              资产名称
+              <input
+                className="input"
+                name="title"
+                defaultValue={savingNode.metadata.title}
+                maxLength={200}
+                autoFocus
+              />
+            </label>
+            <button className="btn btn-primary" disabled={blocked}>
+              保存资产
+            </button>
+          </form>
+        </StudioDialog>
+      )}
       {help && (
         <StudioDialog title="画布快捷键" onClose={() => setHelp(false)}>
           <dl className="cc-shortcuts">
@@ -983,7 +1251,7 @@ function Workspace({ account }: { account: string }) {
           title="节点已有新的内容"
           body={[
             '你的草稿仍保留。确认后将基于当前版本保存草稿，其他节点不受影响。',
-            `当前内容：${compare.node.content ? ('body' in compare.node.content.payload ? compare.node.content.payload.body : compare.node.content.payload.url) : '空节点'}`,
+            `当前内容：${compare.node.content ? contentText(compare.node.content.payload) : '空节点'}`,
           ]}
           confirmLabel="将草稿应用到当前版本"
           onCancel={() => setCompare(null)}
