@@ -406,7 +406,13 @@ func (s *Service) Execute(
 		return Result{}, fmt.Errorf("%w: dispatch permit already consumed", ErrConflict)
 	}
 
-	result, callErr := provider.Invoke(ctx, ProviderRequest{
+	remaining := min(permit.Deadline.Sub(s.now().UTC()), permit.DispatchAt.Add(transportLifetime).Sub(s.now().UTC()))
+	transportCtx, stopTransport := context.WithTimeout(ctx, remaining)
+	defer stopTransport()
+	if err := transportCtx.Err(); err != nil {
+		return Result{}, s.finishFailure(ctx, scope, limits, permit, classifyTransport(err))
+	}
+	result, callErr := provider.Invoke(transportCtx, ProviderRequest{
 		Model:      model,
 		Snapshot:   permit.Snapshot,
 		Chat:       chat,
@@ -458,8 +464,8 @@ func (s *Service) claimPermit(ctx context.Context, scope store.AccountScope, per
 		// of the attempt id.
 		affected, err := tx.Update(ctx, "llm_attempts",
 			"permit_claimed_at=$3,updated_at=$3",
-			"id=$2 AND permit_digest=$4 AND permit_claimed_at IS NULL AND dispatch_state='dispatching'",
-			permit.AttemptID, s.now().UTC(), digest([]byte(permit.Token)))
+			"id=$2 AND permit_digest=$4 AND permit_claimed_at IS NULL AND dispatch_state='dispatching' AND dispatched_at>$5",
+			permit.AttemptID, s.now().UTC(), digest([]byte(permit.Token)), s.now().UTC().Add(-transportLifetime))
 		if err != nil {
 			return err
 		}
@@ -494,16 +500,22 @@ func (s *Service) finishSuccess(
 		if err := lockSharedAdmission(ctx, tx, limits, permit.LimitKey); err != nil {
 			return err
 		}
+		if err := s.lockBudgetForRequest(ctx, tx, permit.RequestID, now); err != nil {
+			return err
+		}
+		if err := s.lockFinishingAttempt(ctx, tx, permit); err != nil {
+			return err
+		}
 		if _, err := tx.Update(ctx, "llm_attempts",
 			"dispatch_state='succeeded',provider_request_id=$3,finished_at=$4,transport_finished_at=$4,updated_at=$4",
-			"id=$2 AND dispatch_state IN ('dispatching','streaming')",
+			"id=$2 AND dispatch_state IN ('dispatching','streaming','unknown')",
 			permit.AttemptID, nullableText(result.ProviderRequestID), now); err != nil {
 			return err
 		}
 		if _, err := tx.Update(ctx, "llm_requests",
 			"state='succeeded',result_payload=$3,result_hash=$4,result_revision=result_revision+1,"+
 				"revision=revision+1,updated_at=$5",
-			"id=$2 AND state IN ('dispatching','streaming')",
+			"id=$2 AND state IN ('dispatching','streaming','unknown')",
 			permit.RequestID, stored, resultHash, now); err != nil {
 			return err
 		}
@@ -553,6 +565,9 @@ func (s *Service) finishFailure(
 		if err != nil {
 			return err
 		}
+		if err := s.lockFinishingAttempt(ctx, tx, permit); err != nil {
+			return err
+		}
 		attemptState, requestState := "unknown", StateUnknown
 		retryEligible := false
 		switch providerErr.Outcome {
@@ -575,13 +590,13 @@ func (s *Service) finishFailure(
 
 		if _, err := tx.Update(ctx, "llm_attempts",
 			"dispatch_state=$3,error_class=$4,finished_at=$5,transport_finished_at=$5,updated_at=$5",
-			"id=$2 AND dispatch_state IN ('dispatching','streaming')",
+			"id=$2 AND dispatch_state IN ('dispatching','streaming','unknown')",
 			permit.AttemptID, attemptState, providerErr.Class, now); err != nil {
 			return err
 		}
 		if _, err := tx.Update(ctx, "llm_requests",
 			"state=$3,failure_class=$4,retry_eligible=$5,revision=revision+1,updated_at=$6",
-			"id=$2 AND state IN ('dispatching','streaming')",
+			"id=$2 AND state IN ('dispatching','streaming','unknown')",
 			permit.RequestID, string(requestState), providerErr.Class, retryEligible, now); err != nil {
 			return err
 		}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -61,7 +62,15 @@ func run() error {
 		return err
 	}
 	go sweepExpiredUploads(ctx, db, media)
+	// Recovery needs no provider credentials or catalog: it only reconciles
+	// persisted dispatches through account-scoped transactions.
+	recoveryDone := make(chan struct{})
+	go func() {
+		defer close(recoveryDone)
+		sweepLLMDispatches(ctx, db)
+	}()
 	<-ctx.Done()
+	<-recoveryDone
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
 	return runtime.Stop(stopCtx)
@@ -100,5 +109,27 @@ func main() {
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "creative worker: %v\n", err)
 		os.Exit(1)
+	}
+}
+
+// sweepLLMDispatches runs immediately on restart, then drains account pages.
+func sweepLLMDispatches(ctx context.Context, db *store.Store) {
+	gateway := llmgateway.NewRecoveryService()
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	cursor := ""
+	for {
+		sweepCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		next, err := gateway.SweepExpiredDispatches(sweepCtx, db, cursor, 100)
+		cancel()
+		cursor = next
+		if err != nil && ctx.Err() == nil {
+			slog.Warn("llm dispatch recovery", slog.String("error", err.Error()))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }

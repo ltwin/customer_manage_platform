@@ -52,3 +52,25 @@ func (s *Store) ActiveAccountIDs(ctx context.Context, limit int) ([]string, erro
 	}
 	return ids, rows.Err()
 }
+
+// MaintenanceAccountIDs pages account identities for trusted cleanup, including
+// disabled accounts. Business reads and writes still require an AccountScope.
+func (s *Store) MaintenanceAccountIDs(ctx context.Context, after string, limit int) ([]string, error) {
+	if limit < 1 || limit > 1000 {
+		return nil, fmt.Errorf("maintenance account page must be between 1 and 1000")
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id FROM accounts WHERE id>$1 ORDER BY id LIMIT $2`, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
