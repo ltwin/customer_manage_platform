@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
 current_item: FND-06
-next_action: FND-06实现完成、三轮独立change review终轮判定可合入（blocking清零），门禁与真实DeepSeek验收全绿，等owner授权提交；之后按依赖可开FND-07（Harness）；真实OSS验收（PRE-05）待授权bucket
+next_action: FND-06已由owner授权提交30c9367（未push、未合并develop）；下一项按依赖开FND-07（Harness），Gateway接入cmd/server属FND-07范围；真实OSS验收（PRE-05）待授权bucket；图片token映射与Anthropic缓存写入价格分量仍为未清债务
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -693,3 +693,9 @@ owner授权提交：`126da5f`（80 files，pre-commit lint通过）。未push、
     - **[P1] 目录更新会让旧请求发给新模型**：hash 用持久快照校验，但 `provider.Invoke` 用的是当前目录条目。红证：准备时 `vendor-model`，换目录后真的发给了 `different-paid-model`（付费调用已发生，事后判协议错误已晚）。新增 `sameDeployment`，发送前核对 catalog 版本 / deployment key / provider / 请求 model id / 接受别名 / 价格版本与币种，不一致直接 `ErrConflict` 拒发；两个适配器的线上 model id 改取冻结快照而非当前配置。
     - **[P2] 缺少缓存明细阻止已知 token 入账**：token 分量被 `inputUsable`（即缓存拆分是否可用）把住。红证：输入 1000 / 输出 200 / 无缓存明细 → `booked=0 hold=1456`。token 总量只依赖两个总数，改为与费用分量各自结算；缓存明细缺失或不自洽只保留费用 hold。
     - 新增 3 条定向测试（`TestCancelledTurnStillReleasesTheSharedSlot` / `TestCatalogChangeNeverRedirectsAPreparedRequest` / `TestTokenTotalIsBookedWithoutTheCacheSplit`），逐条回退修复复现上述红证后转绿。文档同步三条实现事实。
+
+### FND-06 提交里程碑（2026-09-12）
+
+- owner 授权提交 `30c9367`（38 files，+7979/−4，pre-commit 钩子通过，未用 `--no-verify`）。被提交内容即暂存哈希 `339ee328…`：终轮判定的 `86e16947…` 加上终轮 3 条 nit，再加 owner 复核三项修复。
+- 未 push、未合并 `develop`、未应用开发数据库迁移（0043 只在隔离测试库跑过）。凭证仍只经环境变量注入，`.env.example` 只有空占位。
+- 门禁记录一处需说明的失败：首次全量 `make check-go` 中 `llmgateway` / `planshare` / `reminder` 同时失败（各 ~64s），根因是共享测试 Postgres 容器在 4 路并行下掉连接（`unexpected EOF` / `connection reset by peer`）；三包单跑与随后的全量重跑均全绿，且 `planshare` / `reminder` 不 import 本次改动，判为环境抖动而非代码回归。
