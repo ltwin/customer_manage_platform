@@ -763,3 +763,10 @@ owner 授权后开一轮独立 change review，目标冻结为暂存差异 `60cd
 - 验证：`make check-go` 全绿、golangci-lint `0 issues`；llmgateway 60 非 live PASS / 3 live SKIP。供应商路径（`Execute` / `finishSuccess` / `finishFailure` / `provider_*.go` / 迁移）全程未改动，真实 DeepSeek 验收沿用 `30c9367`。
 
 - 2026-09-12 提交里程碑：owner 授权提交 `381e4a2`（9 files，+1134/−134，暂存哈希 `d8786efc…`，pre-commit 钩子通过，未用 `--no-verify`）。未 push、未合并 `develop`、未应用开发数据库迁移。审查阶段以 blocking 清零结束；唯一遗留 important（`dispatching` 无核实出口 + `active_count` 不回收）为 pre-existing，已在 owner 排期清单「完善异常恢复」内并写实覆盖面，owner 知情后授权提交。
+
+
+### 孤立 LLM 派发恢复修复（2026-09-13）
+
+owner 授权修复 `dispatching` 无核实出口及跨账号共享名额泄漏。原复现：两次 BeginDispatch 提交后丢弃许可，推进 48 小时，Verify 仍拒绝且另一账号 active_count=2 无法派发。实现固定传输期限、过期许可 fencing、账号范围恢复与创意 Worker 分页巡检；unknown 保留费用 hold，迟到完整结果仅允许更新尚未被核实/替换的同一 attempt，回收名额幂等。部署需停止旧执行器，不新增迁移；无 commit 授权。定向测试包含 orphan/过期旧许可/结果持久化失败/迟到结果与另一在飞名额/非 active 账号分页。
+
+验证闭环：`TestExpiredPermitCannotStartBeforeSweep` 对照 HEAD 的 dispatch.go 红（过期许可仍成功），当前版本五条恢复测试全绿；`make check-go` 全绿（首次仅 goimports 分组报错，修正后通过）。独立单轮 cs-review：候选快照 SHA-256 `ea12e95e902348e3305172251f45d4a176f7b1044cd8eec4ae61ae185975966b`，无 blocking/important，可合；仅本段记录在审查后追加。日志 `/tmp/gateway-recovery-red.log`、`/tmp/gateway-recovery-tests.log`、`/tmp/gateway-recovery-go.log`。未重复 review，未付费调用、未修改开发数据库、未提交。

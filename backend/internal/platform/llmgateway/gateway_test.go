@@ -54,6 +54,7 @@ func (p *fakeProvider) attempts() int {
 
 type fixture struct {
 	db       *sql.DB
+	database *store.Store
 	a, b     store.AccountScope
 	gateway  *llmgateway.Service
 	provider *fakeProvider
@@ -100,7 +101,7 @@ func setupGatewayWith(t *testing.T, budget llmgateway.BudgetPolicy, catalog *llm
 	}
 	t.Cleanup(st.Close)
 
-	f := &fixture{db: db, provider: &fakeProvider{result: okResult()}, now: time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)}
+	f := &fixture{db: db, database: st, provider: &fakeProvider{result: okResult()}, now: time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)}
 	f.gateway, err = llmgateway.New(llmgateway.Config{
 		Catalog:       catalog,
 		Providers:     map[llmgateway.ProviderKey]llmgateway.Provider{llmgateway.ProviderOpenAICompatible: f.provider},

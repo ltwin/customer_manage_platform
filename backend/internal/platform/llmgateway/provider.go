@@ -66,7 +66,9 @@ type ProviderRequest struct {
 }
 
 // Provider adapts one wire protocol. It performs exactly one attempt and must
-// not retry, fail over or switch models internally.
+// not retry, fail over or switch models internally. It must honor the supplied
+// context deadline for all local I/O; recovery depends on this hard transport
+// bound before reclaiming an orphaned slot.
 type Provider interface {
 	Key() ProviderKey
 	Invoke(context.Context, ProviderRequest) (Result, error)

@@ -115,3 +115,14 @@ set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgat
 - **FND-10 的预留到期清扫必须走 `ReleaseReservationInTx` / `CancelInTx`**，或完整复刻「锁预留行 → 读当时 hold → 按该值扣月桶 → 归零」。若改成从 `llm_reservation_expiry` 索引扫出行、在另一事务里直接减 `reserved_micros`，本模块任何守卫都拦不住额度被还两次——保护来自同事务内的 `FOR UPDATE` 重读，不是 UPDATE 上的 revision 条件。
 - **`dispatching` 没有核实出口（上线前必须补，已在 owner 排期清单「完善异常恢复」内）**：`BeginDispatchInTx` 提交后、`Execute` 的 `claimPermit` 之前进程退出（部署、OOM），或 `Execute` 成功但 `finishSuccess` 第一个事务没在 30s `finishTimeout` 内跑完（钱已花、结果已拿到却没落库），请求会永久停在 `dispatching`。此后每次 `Call` 都返回 `ErrUnknown` 要求核实，但 `VerifyUnacceptedInTx` 第一句就是 `state != StateUnknown → ErrState`——**核实入口不收 `dispatching`**，仓库里也没有任何 `dispatching → unknown` 的迁移。同一缺口还漏并发名额：`platform_llm_limits.active_count` 是纯计数器，没有租约或回收，每次这样崩溃都永久漏掉一个名额，而该行按 `limit_key` **跨账号共享**（内置目录三个部署共用 `deepseek/api`），漏够 `Concurrency` 次之后所有账号的派发都会 `ErrRateLimited` 且不自愈。补的时候两件事要一起做：给 `dispatching` 一个带证据的核实/降级入口，以及 `active_count` 的回收（按 attempt 的 `permit_claimed_at` / `permit_released_at` 与 `dispatched_at` 判定陈旧）。
 - 吞吐观察（不影响正确性）：`finishSuccess` / `finishFailure` 会把 `platform_llm_limits` 那一行持有到事务提交，而该行按 `limit_key` 跨账号共享（内置目录三个部署共用 `deepseek/api`），`finishFailure` 持锁期间还要写 3 条零费用证据与相应位置/预算。事务内无网络 I/O，语句都很短；若将来并发上去，可把 `releasePermit` 拆成紧随其后的独立短事务（收尾事务就不必取该行），或把 `finishFailure` 的核算移入第二个事务（`finishSuccess` 已是这个形状）。观测看「限流等待」与「收尾时延」两个维度。
+
+
+## 孤立派发恢复（2026-09-13）
+
+`creative-worker` 启动立即运行恢复巡检，此后每 15 秒扫描一页账号（每页 100 个、每账号最多 100 个 attempt，单轮 10 秒超时）。账号采用 keyset 游标，包含非 active 账号，错误会记录并在后续轮次重试。恢复不依赖模型目录或供应商凭证。
+
+每次派发从已持久的 `dispatched_at` 起最多允许 120 秒本地传输，且不超过请求 deadline；HTTP client 配置只能进一步缩短该时间。过期许可不能被领取。派发满 180 秒后，巡检按平台限流→预算→请求→attempt 的锁序，将未收尾的 dispatching/streaming 转为 unknown，并以 `permit_released_at IS NULL` 幂等归还名额。额度 hold 不释放，也不生成零费用证据。`transport_finished_at` 不伪填为观测时间，恢复只记录自己的状态与名额回收时间。
+
+完整结果的首个落库事务失败后，同样通过此路径解除阻塞；进程仍持有的迟到完整结果允许归并到同一 unknown attempt，已被核实或重试替换的旧 attempt 不得覆写当前请求。核实未受理仍必须走受信 `VerifyUnacceptedInTx`，扫到过期不等于供应商未收费。
+
+供应商适配器必须遵守传入 context 的硬截止时间。首次部署此修复须停止旧版执行器后再启动新版，旧代码没有这个传输上限，不能与回收器并行运行。没有新增数据库迁移，仍要求已有 0043；恢复依赖运行中的 `creative-worker`。持久化彻底失败且供应商无查询能力时，丢失的回答无法凭空重建，状态保留 unknown，费用交由核实。
