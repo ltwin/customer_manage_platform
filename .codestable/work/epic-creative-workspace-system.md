@@ -2,8 +2,8 @@
 epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
-current_item: FND-05
-next_action: 视频节点悬停预览已提交（36d3280，未push）；下一项按依赖可选FND-06（Gateway）或FND-13前置；真实OSS验收（PRE-05）待授权bucket
+current_item: FND-06
+next_action: FND-06实现完成、三轮独立change review终轮判定可合入（blocking清零），门禁与真实DeepSeek验收全绿，等owner授权提交；之后按依赖可开FND-07（Harness）；真实OSS验收（PRE-05）待授权bucket
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -657,3 +657,39 @@ owner授权提交：`126da5f`（80 files，pre-commit lint通过）。未push、
 - 验证：`make check-frontend` 381/381 通过，`git diff --check` 通过；`creative-canvas-interaction.e2e.mjs`（真实 Chromium、页内 MediaRecorder 录制 WebM、API 全 mock、临时 Vite 5177）连续两轮 PASS，新增断言：controls 属性存在、非静音、悬停后 `!paused && currentTime>0`、手动暂停后节点内移动仍暂停、离开暂停、再次进入续播、从视频表面拖动节点位移 >60px、控制条区域按压节点位移 <1px；既有交互回归全部保持。commands/media e2e 需真实后端与已迁移数据库（0041/0042 未应用于开发库），本轮未跑。
 - 文档：`docs/dev/creative-text-canvas.md` 新增「视频节点悬停预览（2026-09-11）」节。
 - 2026-09-11 提交里程碑：owner 授权提交 `36d3280`（5 files，pre-commit lint 通过）。未 push、未合并 develop。
+
+### FND-06 开工（2026-09-11）
+
+- 依据已批准 Epic FND-06、`docs/product/creative-canvas-system/modules/gateway.md`、`gateway-harness-data.md` §1/2/4/5、`gateway-harness-slices.md` GH-01 与 `eino-adoption.md` §1/8 实施。上一项 FND-05 及其补丁已提交（最新 `36d3280`）；owner 明确沿用当前 worktree 分支 `feat/creative-workspace-redesign`，不新开 worktree。
+- **PRE-06 本轮满足**：owner 提供 OpenAI 兼容供应商 DeepSeek 的 API Key，经 `.env` 的 `DEEPSEEK_API_KEY` 注入（`.env` 已在 `.gitignore` 第 2 行、未被 git 跟踪、权限 600）。密钥只经环境变量读取，不入库、不入文档、不进日志/快照/测试固件。因此本项按「真实供应商通话」验收推进，不再只做桩。
+- 供应商事实（Context7 `/websites/api-docs_deepseek` 核对）：OpenAI 兼容 `https://api.deepseek.com`；`usage` 含 `prompt_tokens`/`prompt_cache_hit_tokens`/`prompt_cache_miss_tokens`/`completion_tokens`/`completion_tokens_details.reasoning_tokens`，正好支撑 gateway.md §4 的「缓存输入 / 非缓存输入 / 输出」三不重叠分量，reasoning 已含于 output 不重复计；错误码 400/401/402/422/429/500/503；**无请求状态查询 API、无取消 API** → 目录记 `query=none`/`cancel=none`，unknown 只能「结束等待 + 费用待核实」。实际可用 model id 与价格以真实 `GET /models` 与官方计价页为准，不按文档快照猜测。
+- 归属：新建 `internal/platform/llmgateway`（统一契约与 hash、模型目录、Catalog/Admission/Requests/Accounting 四端口、供应商适配、派发许可与 unknown 核实、预算/用量/成本位置核算、GatewayModelAdapter）；平台级 `platform_llm_limits` 按 `securitybudget` 先例在 `internal/platform/store` 实现（无账号业务表不进 AccountScope 端口）。Gateway 不 import creativecanvas/creativecontent/creativemedia，不新增 HTTP 路由（只从服务端使用，客户端入口属 GH-02/FND-07）。
+- 必须修改：迁移 `0043`（llm_call_groups / llm_budgets / llm_usage_reservations / llm_requests / llm_attempts / llm_usage_measurements / llm_measurement_dispositions / llm_cost_positions / llm_token_positions / llm_settlement_receipts / llm_result_consumers + 平台 `platform_llm_limits`，全部显式 key、无外键、保留 PK/UNIQUE/CHECK/index）；config 增模型目录与凭证环境变量引用；`.env.example` 只记键名不记值；`docs/dev/` 增 Gateway 开发说明。
+- 必须验证：两种供应商协议（OpenAI 兼容 + Anthropic Messages）产出同一完整结果契约；工具碎片重组/截断/重复/非法 JSON 不产生可消费结果；缺失 usage 保留 settlement=unknown 不阻塞读取已知结果；能力缺失派发前拒绝、不静默删字段；供应商返回 model 不在允许别名内判协议错误；SDK/HTTP 隐藏重试关闭（假供应商计请求次数）；预留幂等回放不重复占额、初始预留只能被一个请求认领；A 预留 20 → 可靠未受理释放 → B 占满 20 → A 重新准入必须失败、B 释放后 A 才能按原身份重建 hold；跨月分组上限不重置；并发成本更正只有一方从当前值推进、另一方挂 pending；实际超预留全额入账并阻止后续准入；取消先于派发无外发、派发后取消不得伪称无费用；COMMIT unknown 不重领许可；账号隔离；凭证不出现在任何持久载荷/日志/回执中。
+- 真实通话验收：`GET /models` 确认部署别名，`chat/completions` 非流式与流式各至少一次真实调用，核对真实 usage 三分量入账与预算差额结算；测试预算设保守上限（单次输出 token 上限 + 账号月度上限），真实调用测试按 `DEEPSEEK_API_KEY` 存在与否 skip，不把真实调用塞进默认 `make check-go` 的必跑路径。
+- 仍待调查：真实计价数字与币种取官方计价页当时版本，写入目录配置的 `price_version` 并记录来源与日期；DeepSeek 无查询能力下 unknown 的运维核实入口本项只提供受信内部接口，运维 UI 不在本项；Harness/会话/River 驱动、SSE、工具执行归 FND-07/08。
+- 风险与保障：新增 schema 与迁移、并发/顺序/一致性语义（派发许可、预算 hold、Rearm、成本分叉）、信任边界（供应商凭证与外发）、不可恢复代码外副作用（真实付费调用）→ 定向 red→green 测试 + 一轮独立 change review（owner 既定：默认一轮，blocking 清零即关）+ 迁移 up/down 验证 + 真实调用的保守预算上限。
+
+- **FND-06 独立 change review 与修复（2026-09-11）**：
+  - 第 1 轮（fresh reviewer，Opus；codex 侧 MCP/CLI 均不可用、gemini 在 `cli-tools.json` 关闭，故按 FND-05 先例用宿主 fresh reviewer）目标 `c7c18fc7…`：2 blocking + 7 important。修复：B1 证据 rank/supersedes 从未生效（运维估算可回滚 900_092 micros 发票）；B2 `recomputeCostHold` 跨 attempt 统计（前次拒绝的零证据释放本次 attempt 的 hold）；I1 Eino 适配器预留泄漏；I2 截断结果把工具调用交回框架；I3 429 无条件判未受理；I4 measurement 未校验 attempt 归属；I5 锁序与契约相反；I6 上界估算漏工具 schema 且猜图片 token；I7 Prepare 未校验预留覆盖。B1/B2 均以临时回退复现 red 再转 green。
+  - 第 1 轮的 follow-up 复审在 4 秒内被账号级 session 限额（HTTP 429）打断、无任何分析产出，session 不可恢复 → 该轮不计入轮次；限额重置后按协议新建 fresh reviewer 承担同阶段 follow-up，并把前任报告原文一并交付。
+  - 第 2 轮目标 `e74a9706…`：确认 B2/I1/I2/I3/I4/I6/I7 与 7 项 nit 已解决；新增 1 blocking + 4 important。**修复如下，全部改代码而非改文档**：
+    - **F1（blocking）同级证据仍可静默回退账本**：`data-model.md:285` 在同一句内要求「同级只接受可验证且递增的供应商修订序号或明确更正链，`received_at` 不作为事实先后」。`outrankedByCurrent` 现读出当前证据的 `provider_revision`（此前是写入即死的字段）：同级且未填 `Supersedes` 时，只有可比较的**递增整数** `ProviderRev` 才放行，否则挂 `pending`；`Supersedes` 指向当前已入账证据是另一条放行路径（此前该字段无任何可达放行路径）。红证：临时去掉守卫后 `TestSameRankedEvidenceNeedsADecidableOrder` 复现 900_092 → 99 的账本回退。
+    - **F2 缺币种守卫**：同句还要求「币种/分量不一致挂起核实」。`applyMeasurement` 在推进位置前比对该请求预留的币种，不一致则留史 + `pending`，不开该币种位置、不进月桶；`recomputeCostHold` 只用预留币种的位置决定 hold 与 `actual_micros`。红证：临时去掉守卫后 `TestForeignCurrencyEvidenceIsParkedNotConverted` 把 900_000 EUR micros 记进 USD 月桶（120 → 900_120）。
+    - **F3 锁序分裂（模块内 ABBA）**：按 `gateway-harness-data.md:64-68` 与 `gateway.md:85` 统一为 平台限流记录 → 分组 → 预算桶 → request → reservation → attempt → position。`RearmInTx` 改为先锁分组/原预算桶再锁 request（并在锁后核对上界/月份未变，校验顺序保持「状态/generation 先于额度」以免把 stale generation 报成额度不足）；`releaseReservation` / `ReleaseReservationInTx` / `releaseHoldForRetry` 收敛到单一 `releaseHold`（先锁月桶再锁预留，UPDATE 带 revision 守卫，同一笔 hold 不可能被还两次）；`finishSuccess` / `finishFailure` / `VerifyUnacceptedInTx` / `CancelInTx` 在动 request 前先取平台限流行（`txcap.LLMLimitView` 新增 `Lock`，只取行锁不改计数）与月桶。同时修掉「取消一个已 settled/unknown 的预留会把状态覆写成 released」：只有 `reserved`（未认领口为 `unclaimed`）才可释放。
+    - **F4 下调 `Concurrency` 会触发 CHECK 违例**：`capacity=GREATEST(EXCLUDED.capacity, active_count)`，缩容随在飞许可自然回落生效，不再把该 limit_key 上所有派发打成裸 23505。
+    - **F5 账号隔离断言无判别力**：5 个端口改为断言具体错误（`ErrNotFound`/`RecordMeasurement` 的 `ErrConflict`），并同时断言本账号调用不会得到同一错误——否则断言与隔离无关。
+    - nit：`lockBudget` 不再顺手建空桶（缺桶按 `ErrConflict` 报错，避免把月上限钉成 policy 默认值）；Prepare 回放返回预留真实 settlement 状态；Eino 适配器直接用 Prepare 返回的 request id（补偿路径不会拿不到 id）；删除不可达的 `isDialFailure`/`not_delivered` 分支（Go 传输错误不能证明未送达，一律 unknown）；共用 `limit_key` 的部署参数不一致时 `NewCatalog` 直接拒绝；429 条目注明依据是厂商错误表而非实测；Anthropic cache-write 前置项与月桶上限固化边界写入 `docs/dev/creative-llm-gateway.md`。
+    - 测试另修：同级/币种/`Supersedes` 更正链新增 3 类用例；`gateway.md:87` 的「B 释放后 A 才能重占」改为走真实 `ReleaseReservationInTx`，删掉 `UPDATE llm_budgets` 的裸 SQL 固件；hold 断言从「非零」改为等于 inputBound；`ErrAttemptsUsed || ErrState` 析取断言改为精确断 `ErrState`（并注明 attempt 上界是防御层、不由该断言覆盖）。
+  - 验证：`make check-go` 全绿、golangci-lint `0 issues`；`llmgateway` 45 个非 live 用例 + `store` 全绿；真实 DeepSeek 三例重跑 PASS（`input=23 cached=0 output=27 booked=21 micros USD`，与价格配方逐项对账）。
+  - 第 3 轮（终轮）目标 `86e16947…`：**可合入，blocking 清零**。reviewer 对全部加锁点做穷举抽取，确认每个事务都是 `L1(platform_llm_limits) → L2(llm_call_groups, llm_budgets) → L4(request → reservation → attempt → position/consumer)` 的单调不减子集，两个 ABBA 对消解；独立复跑 `go vet` 干净、llmgateway 53 非 live PASS / 3 live SKIP、store 全绿。新增 3 项 nit 已在报告后顺手改掉（因此最终提交内容比被审哈希多这 4 处）：
+    - 文档第 31 行原称 `VerifyUnacceptedInTx` / `CancelInTx` 也先取平台限流行，实际只有 `finishSuccess` / `finishFailure` 取（那两个函数不碰该行，取 L2 起的后缀即合法）→ 改成逐函数的事实描述，避免 FND-07 依赖一句错的锁序。
+    - `RearmInTx` 锁后等值核对补上 `callerService` / `groupID`（它们决定了预读锁的是哪一行 group），并把「group 行缺失」从静默回落改为 `ErrConflict`——缺行意味着没有那把跨月串行锁。
+    - `releaseHold` 注释改写：真正防止同一笔 hold 被还两次的是同事务 `FOR UPDATE` 重读（扣的就是该行当时的 hold 并立即归零），UPDATE 上的 revision 条件只是针对事务内陈旧读的断言，不是并发控制——原注释会让后来者以为可以去掉重读。
+    - 文档「验证缺口」补两条：FND-10 的到期清扫必须走 `ReleaseReservationInTx` / `CancelInTx` 或复刻同一序列，否则额度会被还两次；`finishSuccess` / `finishFailure` 把跨账号共享的 `platform_llm_limits` 行持有到提交的吞吐观察及两条改法。
+  - 修复后复跑：`make check-go PKG=./internal/platform/llmgateway/...` 绿、golangci-lint `0 issues`、`store` 绿。
+  - **owner 复核（2026-09-11，目标 `d0501c54…`）**：三项已复现问题，全部核实成立并修复，每项都先复现红证：
+    - **[P1] 取消传输后并发名额无法释放**：`Execute` 把调用方 ctx 一路传给收尾事务，调用被取消时收尾整体失败。红证：attempt 停在 `dispatching`、`platform_llm_limits.active_count=1`。改为 `finishSuccess` / `finishFailure` 在 `context.WithoutCancel` + 30s 超时的独立 ctx 上持久化——「本次尝试证明了什么」与「归还已结束传输的名额」都不该依赖调用方是否还在等。费用疑问照旧保留（unknown 保 hold）。
+    - **[P1] 目录更新会让旧请求发给新模型**：hash 用持久快照校验，但 `provider.Invoke` 用的是当前目录条目。红证：准备时 `vendor-model`，换目录后真的发给了 `different-paid-model`（付费调用已发生，事后判协议错误已晚）。新增 `sameDeployment`，发送前核对 catalog 版本 / deployment key / provider / 请求 model id / 接受别名 / 价格版本与币种，不一致直接 `ErrConflict` 拒发；两个适配器的线上 model id 改取冻结快照而非当前配置。
+    - **[P2] 缺少缓存明细阻止已知 token 入账**：token 分量被 `inputUsable`（即缓存拆分是否可用）把住。红证：输入 1000 / 输出 200 / 无缓存明细 → `booked=0 hold=1456`。token 总量只依赖两个总数，改为与费用分量各自结算；缓存明细缺失或不自洽只保留费用 hold。
+    - 新增 3 条定向测试（`TestCancelledTurnStillReleasesTheSharedSlot` / `TestCatalogChangeNeverRedirectsAPreparedRequest` / `TestTokenTotalIsBookedWithoutTheCacheSplit`），逐条回退修复复现上述红证后转绿。文档同步三条实现事实。
