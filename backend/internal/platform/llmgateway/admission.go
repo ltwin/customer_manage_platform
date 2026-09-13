@@ -383,6 +383,11 @@ func (s *Service) releaseHold(
 // RearmInTx rebuilds the hold of a request that was reliably not accepted. It
 // re-checks the ceilings at the current moment, so a competitor that took the
 // freed budget in between makes this fail instead of overdrawing.
+//
+// It must commit together with the dispatch intent it re-admits for: on its own
+// it leaves a reservation that is held again while the request still says it is
+// waiting to be re-admitted, which no later call can resolve. Use
+// RedispatchInTx unless the caller is itself composing that one transaction.
 func (s *Service) RearmInTx(
 	ctx context.Context,
 	tx store.TxAccountScope,

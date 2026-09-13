@@ -80,6 +80,11 @@ func limitsOf(tx store.TxAccountScope) llmgateway.LimitView { return tx.LLMLimit
 
 func setupGateway(t *testing.T, budget llmgateway.BudgetPolicy) *fixture {
 	t.Helper()
+	return setupGatewayWith(t, budget, testCatalog(t, usablePrice()))
+}
+
+func setupGatewayWith(t *testing.T, budget llmgateway.BudgetPolicy, catalog *llmgateway.Catalog) *fixture {
+	t.Helper()
 	url := storetest.NewURL(t)
 	db, err := sql.Open("pgx", url)
 	if err != nil {
@@ -96,7 +101,6 @@ func setupGateway(t *testing.T, budget llmgateway.BudgetPolicy) *fixture {
 	t.Cleanup(st.Close)
 
 	f := &fixture{db: db, provider: &fakeProvider{result: okResult()}, now: time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)}
-	catalog := testCatalog(t, usablePrice())
 	f.gateway, err = llmgateway.New(llmgateway.Config{
 		Catalog:       catalog,
 		Providers:     map[llmgateway.ProviderKey]llmgateway.Provider{llmgateway.ProviderOpenAICompatible: f.provider},

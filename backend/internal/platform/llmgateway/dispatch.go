@@ -311,6 +311,55 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	return permit, nil
 }
 
+// RedispatchInTx re-admits a request the gateway proved was never accepted and
+// takes its dispatch permit in the same transaction.
+//
+// Re-arming in a transaction of its own is never correct. Between the two
+// commits the reservation is held again while the request still says it is
+// waiting to be re-admitted, so a crash — or simply a dispatch the shared
+// provider limit refuses — strands the identity: every later attempt fails
+// RearmInTx with "reservation is not released for retry" and the hold stays
+// occupied until it expires.
+func (s *Service) RedispatchInTx(
+	ctx context.Context,
+	tx store.TxAccountScope,
+	limits func(store.TxAccountScope) LimitView,
+	requestID string,
+	expectedGeneration int64,
+	accountLimitMicros, accountTokenLimit int64,
+) (Permit, Reservation, error) {
+	if limits == nil {
+		return Permit{}, Reservation{}, fmt.Errorf("%w: platform admission view required", ErrValidation)
+	}
+	// Global lock order: the shared provider record comes before the group and
+	// budget rows re-admission is about to take. The model key is immutable on a
+	// request, so the unlocked read that resolves the limit key is safe.
+	peek, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns, "id=$2", requestID))
+	if err != nil {
+		return Permit{}, Reservation{}, err
+	}
+	model, err := s.catalog.Model(peek.modelKey)
+	if err != nil {
+		return Permit{}, Reservation{}, err
+	}
+	// The row exists: this request has dispatched at least once already, which is
+	// what made it re-admissible. Without it lockSharedAdmission would silently do
+	// nothing and the Acquire below would create the row after the level 2 and 4
+	// locks — exactly the inversion this ordering exists to prevent.
+	if err := lockSharedAdmission(ctx, tx, limits, model.LimitKey); err != nil {
+		return Permit{}, Reservation{}, err
+	}
+	reservation, err := s.RearmInTx(ctx, tx, requestID, expectedGeneration, accountLimitMicros, accountTokenLimit)
+	if err != nil {
+		return Permit{}, Reservation{}, err
+	}
+	permit, err := s.BeginDispatchInTx(ctx, tx, limits(tx), requestID)
+	if err != nil {
+		return Permit{}, Reservation{}, err
+	}
+	return permit, reservation, nil
+}
+
 // Execute performs the network call outside any transaction and then persists
 // exactly what the attempt proved. A permit is consumed at most once; after a
 // restart the outcome is verified instead of re-sent.

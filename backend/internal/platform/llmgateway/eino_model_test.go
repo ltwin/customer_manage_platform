@@ -1,8 +1,10 @@
 package llmgateway_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,7 +16,20 @@ import (
 )
 
 func (f *fixture) session(scope store.AccountScope, group string) llmgateway.ModelSession {
+	// A real caller's turn key comes from its own persisted step; this counter
+	// stands in for that durable sequence.
+	turn := 0
 	return llmgateway.ModelSession{
+		CallSession: f.callSession(scope, group),
+		TurnKey: func(context.Context, llmgateway.ChatRequest) (string, error) {
+			turn++
+			return fmt.Sprintf("%s:turn-%d", group, turn), nil
+		},
+	}
+}
+
+func (f *fixture) callSession(scope store.AccountScope, group string) llmgateway.CallSession {
+	return llmgateway.CallSession{
 		Scope:            scope,
 		Limits:           limitsOf,
 		CallerService:    "creative_agent",
