@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
 current_item: FND-06
-next_action: FND-06已由owner授权提交30c9367（未push、未合并develop）；下一项按依赖开FND-07（Harness），Gateway接入cmd/server属FND-07范围；真实OSS验收（PRE-05）待授权bucket；图片token映射与Anthropic缓存写入价格分量仍为未清债务
+next_action: FND-06前置加固（Service.Call协调层：步骤身份绑定/消费原子衔接/补偿集中）已完成待授权提交；owner清单中P0三项清零，其余按其标注时机排期（见本文件同名章节表）；之后按依赖开FND-07（Harness），Gateway接入cmd/server属FND-07范围；真实OSS验收（PRE-05）待授权bucket
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -699,3 +699,65 @@ owner授权提交：`126da5f`（80 files，pre-commit lint通过）。未push、
 - owner 授权提交 `30c9367`（38 files，+7979/−4，pre-commit 钩子通过，未用 `--no-verify`）。被提交内容即暂存哈希 `339ee328…`：终轮判定的 `86e16947…` 加上终轮 3 条 nit，再加 owner 复核三项修复。
 - 未 push、未合并 `develop`、未应用开发数据库迁移（0043 只在隔离测试库跑过）。凭证仍只经环境变量注入，`.env.example` 只有空占位。
 - 门禁记录一处需说明的失败：首次全量 `make check-go` 中 `llmgateway` / `planshare` / `reminder` 同时失败（各 ~64s），根因是共享测试 Postgres 容器在 4 路并行下掉连接（`unexpected EOF` / `connection reset by peer`）；三包单跑与随后的全量重跑均全绿，且 `planshare` / `reminder` 不 import 本次改动，判为环境抖动而非代码回归。
+
+### FND-06 前置加固：调用协调与步骤身份（2026-09-12）
+
+owner 给出 FND-07 前置优化清单。三项 P0 逐条在代码里核实，全部成立，且是同一个缺口的三个面：网关备好了回放/消费/重试机制，却没有一个协调层去用它们，唯一的生产调用方（Eino 适配器）把三者都绕开了。
+
+- **P0-1 步骤与请求身份绑定**：`eino_model.go` 每次 `uuid.NewString()` 生成 operation id。`ReserveInTx` / `PrepareInTx` 按 `(caller_service, caller_operation_id)` 的回放分支因此在生产路径上不可达——恢复即新身份即再付一次钱。
+- **P0-2 消费与业务落库原子衔接**：`ConsumeInTx(..., nil)` 且结果由 `Execute` 直接返回，业务行与「已消费」标记落在两个事务。
+- **P0-3 调用协调集中化**：完整 reserve→prepare→dispatch→compensate 序列私有在 Eino 适配器内；`RearmInTx` 有实现有测试但**没有任何生产调用者**，真实重试从未发生过。
+
+实现（新增 `coordinate.go`，**无 schema 变更、无迁移**）：
+
+- `Service.Call(ctx, CallSession, CallInput)` 成为业务侧唯一入口，一次走完预留→准备→派发→执行→补偿→消费。
+- 步骤身份：`CallInput.BindingKey` 由调用方持久化，网关用固定命名空间对 `caller_service + binding_key + 用途` 做 UUIDv5 派生两个 operation id 与 consumer key。**刻意不建绑定表**——两张表上已有的 `(caller_service, caller_operation_id)` 唯一索引就是这份绑定，另建一张只会产生第二个自称权威的来源。
+- `CallInput.Consume(tx, result)` 跑在 `ConsumeInTx` 落「已消费」的同一事务里。
+- 补偿规则：Prepare 失败→释放未认领预留；派发失败→连同保留声明取消请求；**`ErrRateLimited` 例外**，保持 `prepared` 让同一 BindingKey 稍后可跑（把自愈条件变成永久失败更糟，占用交 FND-10 清扫）；只有网关自证未受理才走 `RearmInTx` 重试，`maxAttempts` 封顶；`dispatching`/`streaming`/`unknown` 一律 `ErrUnknown` 要求核实，绝不重发。
+- `ModelSession` 改为 `CallSession` + `TurnKey`（**必填、无默认**：框架无恢复概念，给默认值等于让每次恢复重新付费）+ `Consume` + `Stream`；适配器 152 行压到把一次 `Call` 包成框架形状。
+
+红证（逐条回退修复复现）：改回每次新 UUID → `a resumed step opened a new request: llmr_d90060cb… then llmr_2916dd8c…`；把 consume 移出消费事务 → `the result was marked "consumed" although the caller's write rolled back`；去掉补偿重试 → `a refused attempt must be retried by the coordinator: provider unaccepted (connect_refused)`。新增 5 条定向测试。
+
+验证：`make check-go` 全绿、golangci-lint `0 issues`；llmgateway 55 非 live PASS / 3 live SKIP。`dispatch.go` / `accounting.go` / `provider_*.go` / 迁移**未改动**（见 diff），真实 DeepSeek 验收沿用 `30c9367` 的结果，未重复付费重跑。
+
+**owner 清单中本轮不做的排期项**（按其标注时机，不从本轮推定进度）：
+
+| 时机 | 项 | 备注 |
+|---|---|---|
+| 上线前 | 完善异常恢复（进程退出、提交结果未知、未消费结果、遗留并发许可，明确核实出口） | 与 FND-10 到期清扫强耦合，`ErrRateLimited` 保留的 hold 由它兜底 |
+| 多模型接入时 | Provider 能力与计量契约（Claude cache-write 计价、Gemini 适配、GPT 逐模型验收） | cache-write 分量是启用任何真实 Anthropic 部署的前置项 |
+| FND-07 接入时 | 模型目录 API 与前端选择器 | 客户端可见入口本就属 GH-02/FND-07 |
+| 近期确定接口 | 点数计费衔接（独立点数账本、定价版本、冻结/扣点/退还、事务或 outbox 幂等） | 可能改变 FND-06/FND-13 子项定义，需要时走 `cs-epic` 边界重确认 |
+| 上线前 | 观测接口与指标（token/成本/耗时/错误/限流/未知结果/预留积压） | 吞吐观察维度已记在 `docs/dev/creative-llm-gateway.md` 验证缺口 |
+| 流式体验开发时 | 分离实时增量与最终结果 | 属 FND-08 流式体验；网关侧「片段不是结果」已成立 |
+| 数据增长前 | 数据保留与查询设计（载荷/结果/证据保留期、按账号/模型/时间聚合） | `retained_until` 已有，聚合查询未做 |
+| 压测后 | 数据库热点优化（共享限流行、账号预算桶锁等待） | 两条候选改法已写进文档 |
+| 扩展媒体生成时 | 独立异步生成契约（提交/查询/取消/取件） | 不硬套聊天接口；属 FND-13 |
+
+- **owner 复核（2026-09-12，目标 `133fbe69…`）**：两项恢复缺陷，均核实成立并修复，各自先复现红证：
+  - **[P1] 重新预留与派发分开提交 → 步骤卡死**：`rearm` 与 `beginDispatch` 是两个事务，中途进程退出或派发被限流，会留下「预留已重新占住（`reserved`）、请求仍标 `retry_eligible`」的组合，此后每次 `Call` 都在 `RearmInTx` 撞 `reservation is not released for retry`，额度占到过期。**可达路径正是上一轮我自己加的 `ErrRateLimited` 例外**——为让限流可恢复而提前返回，恰好把卡死状态变成常规路径。新增 `RedispatchInTx`：先取平台限流行（否则合并后会变成 L2→L4→L1 逆序）→ `RearmInTx` → `BeginDispatchInTx`，全在一个事务；失败整体回滚，步骤保持原样可恢复。`RearmInTx` 补上「必须与派发意图同事务提交」的契约注释。红证：改回两事务后 `the reservation was left "reserved" (retry_eligible=false) with no attempt to go with it`。
+  - **[P1] 并发恢复放弃他人已付费的结果**：派发拿到 `ErrState` 后仍进补偿，`endUndispatched` 又忽略 `CancelInTx` 的 `ErrState`，把一个 `pending` 的已付费结果标成 `abandoned`，此后无法消费。两处都改：`compensate` 对 `ErrState` 一律不补偿（这一回合不归本次调用——别人正在派发，或它已终态）；`endUndispatched` 只在本事务**确实把请求取消掉**（`view.State == StateCancelled`）时才放弃保留声明。红证：`the loser marked a paid result "abandoned"; it can never be consumed again`。
+  - 新增 2 条定向测试：`TestARefusedRedispatchLeavesTheStepResumable`（`RateLimitPerMin: 1` 的目录让重新派发被确定性拒绝）、`TestALostDispatchRaceNeverAbandonsAPaidResult`（用 `session.Limits` 作屏障，让败者停在取许可前，确定性复现竞态）。`setupGateway` 抽出 `setupGatewayWith(catalog)`。
+  - 验证：`make check-go` 全绿、golangci-lint `0 issues`；llmgateway 57 非 live PASS / 3 live SKIP。`dispatch.go` 本轮为纯新增（单 hunk 无删除行），`Execute` / `finishSuccess` / `finishFailure` / `provider_*.go` / 迁移仍未改动，真实 DeepSeek 验收沿用 `30c9367`。
+  - **追加 [P1]（同轮 owner 复核）重新准入撞预算上限会永久取消可恢复步骤**：`compensate` 当时是黑名单——只放过 `ErrRateLimited` / `ErrState`，其余一律取消。`ErrBudget` 恰恰是**共享且会变**的量（别人正占着的分组上限，或一笔低于 hold 的结算就会腾出的月桶），取消等于把别人腾出额度就能恢复的步骤就地作废。三条缺陷是同一个错误的三面：补偿用了「除非认识否则取消」的默认。改为白名单——只有 `ErrDeadline` / `ErrAttemptsUsed` / `ErrCancelled` 这类证明身份永不可再派发的条件才结束请求，其余（含无法识别的错误、连请求都没读出来的失败）一律不动。红证：改回黑名单后 `a temporary ceiling ended the step as "cancelled" after 1 attempts`。新增 `TestACeilingRefusalLeavesTheStepRecoverable`：hold 用 `CostMicros` + `EstimateInputTokens` 按协调层同一配方推导（不写死数字），分组上限恰好容一笔，竞争者经真实 `ReleaseReservationInTx` 释放后原身份恢复成功。
+  - 复跑：`make check-go` 全绿、golangci-lint `0 issues`；llmgateway 58 非 live PASS / 3 live SKIP。
+
+### FND-06 前置加固：独立 change review（2026-09-12）
+
+owner 授权后开一轮独立 change review，目标冻结为暂存差异 `60cdb855…`。
+
+- **reviewer 创建**：先按协议选异构——`maestro delegate --to codex`（gpt-5.5，cli-tools.json 中 enabled）。codex CLI 缺原生依赖 `@openai/codex-darwin-arm64`，退出码 0 但**无任何分析产出**，按协议属「运行失败无报告」，不计轮次、允许更换创建方式。opencode 亦不可用（缺 `opencode-aicodewith-auth`）；gemini 在 cli-tools.json 为 `enabled: false`，按 CLAUDE.md 不绕过。无合格异构候选，按 FND-05/FND-06 先例回退宿主 fresh reviewer 并**显式指定 Opus**。（环境待修项：codex 需 `npm install -g @openai/codex@latest`。）
+- **reviewer 判定**：核对哈希一致；5 项声称修复逐条独立验证**全部通过**（含锁序单调性穷举与 hold 双还推演）；结论「建议先修再合入」，1 blocking + 2 important + 2 nit。
+
+**[blocking] Prepare 失败后释放未认领预留 → 该 BindingKey 被永久毒化**（我方复核成立）：`requestFor` 对任何 Prepare 错误都释放预留，而 `released` 不是 `unclaimed`——下次同 key 的 `Call` 回放到它，`PrepareInTx` 的认领条件 `settlement_state='unclaimed'` 永不匹配，从此恒报 `ErrConflict: reservation already claimed`，全仓没有任何路径写回 `unclaimed`。可达触发面：`CheckCapability` 只在 Prepare 里跑（`ReserveInTx` 不查），`OutputLimit` 超部署上限即可；另有恢复时目录价格版本变更、两事务间期限过期。
+
+根因与上一轮的 [P1] 同源：**该在一个事务里的事被拆成了两个**。修法不是过滤补偿，是去掉补偿的必要性——新增 `admit` 把 `ReserveInTx` + `PrepareInTx` 合并为单事务，删除 `releaseUnclaimed`（净减代码）。红证：改回两事务后 `a refused preparation left 1 reservations behind`，把前置断言降级后进一步看到修正输入的第二次调用仍报 `gateway identity conflict: reservation already claimed`，与 reviewer 描述逐字一致。
+
+**[important] `compensate` 的「会取消」一侧零测试**：5 个用例全在断言「不取消」，把 `compensate` 函数体删空所有测试仍绿。新增 `TestATerminalRefusalEndsTheRequestAndReturnsTheHold`（用 `session.Limits` 屏障让请求期限在准备与取许可之间过期），断言请求 `cancelled`、hold 归零、保留声明 `abandoned`、provider 零调用。红证：删空 `compensate` 后 `a turn that can never dispatch was left "prepared" after 0 attempts`。
+
+**[important] `dispatching` 无核实出口 + `active_count` 不回收**（reviewer 判 pre-existing，我方同意不列入本轮 blocking）：派发事务提交后、`claimPermit` 前进程退出，或 `finishSuccess` 首个事务超 30s，请求永久停在 `dispatching`；而 `VerifyUnacceptedInTx` 只收 `unknown`，核实入口不适用。同一缺口永久漏掉跨账号共享的并发名额，漏够 `Concurrency` 次后全账号派发不自愈。**已按 reviewer 要求把排期项「完善异常恢复」的覆盖面写实**：必须同时覆盖 `dispatching`（不只 `unknown`）与 `active_count` 回收，细节写入 `docs/dev/creative-llm-gateway.md` 验证缺口第 4 条。
+
+**[nit] 两条均已处理**：`RedispatchInTx` 补注释说明限流行此时必然存在（否则 `lockSharedAdmission` 静默跳过会造成 L1 后置的逆序）；`CallOutcome.RequestID` / `Dispatched` 在 `Call` 返回错误时也填，否则调用方无法指名要核实哪个请求。
+
+- reviewer 对新增测试的质量评价：8 个用例「咬得相当实」，逐条列出了各自钉住的不变量；断言不足处即上述两条 important，已补。
+- 验证：`make check-go` 全绿、golangci-lint `0 issues`；llmgateway 60 非 live PASS / 3 live SKIP。供应商路径（`Execute` / `finishSuccess` / `finishFailure` / `provider_*.go` / 迁移）全程未改动，真实 DeepSeek 验收沿用 `30c9367`。

@@ -4,11 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/google/uuid"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -17,33 +15,25 @@ import (
 // and budget ceiling. Summarization and other auxiliary calls use the same
 // session, so they can never become a second, unmetered model exit.
 type ModelSession struct {
-	Scope              store.AccountScope
-	Limits             func(store.TxAccountScope) LimitView
-	CallerService      string
-	CallerGroupID      string
-	GroupLimitMicros   int64
-	GroupTokenLimit    int64
-	GroupDeadline      time.Time
-	AccountLimitMicros int64
-	AccountTokenLimit  int64
-	ModelKey           string
-	OutputLimit        int
-	Deadline           time.Time
-	Stream             bool
-	// EstimateInputTokens bounds the input before a request exists. A nil
-	// estimator falls back to a conservative built-in bound.
-	EstimateInputTokens func(ChatRequest) int64
+	CallSession
+	Stream bool
+	// TurnKey names the caller's own durable step for the turn about to run. The
+	// framework drives Generate without any notion of resumption, so this is the
+	// only place a persisted step identity can enter; there is deliberately no
+	// default, because a per-process one would make every resume pay again.
+	TurnKey func(context.Context, ChatRequest) (string, error)
+	// Consume joins the caller's own persistence to the transaction that marks
+	// the result consumed. A run that records steps must set it; a call with no
+	// business row of its own may leave it nil.
+	Consume func(store.TxAccountScope, Result) error
 }
 
 func (s ModelSession) validate() error {
-	if s.CallerService == "" || s.CallerGroupID == "" || s.ModelKey == "" {
-		return fmt.Errorf("%w: model session identity", ErrValidation)
+	if err := s.CallSession.validate(); err != nil {
+		return err
 	}
-	if s.OutputLimit <= 0 || s.Deadline.IsZero() || s.GroupDeadline.IsZero() {
-		return fmt.Errorf("%w: model session bounds", ErrValidation)
-	}
-	if s.Limits == nil {
-		return fmt.Errorf("%w: model session needs platform admission", ErrValidation)
+	if s.TurnKey == nil {
+		return fmt.Errorf("%w: model session needs a durable turn key", ErrValidation)
 	}
 	return nil
 }
@@ -118,115 +108,23 @@ func (a *GatewayModelAdapter) call(ctx context.Context, input []*schema.Message,
 		Tools:           tools,
 		OutputLimit:     a.session.OutputLimit,
 	}
-	if err := chat.Validate(); err != nil {
+	// The framework has no notion of resumption, so the durable step identity is
+	// asked for here and the coordinator does the rest: a replayed turn returns
+	// the result the earlier run already paid for.
+	bindingKey, err := a.session.TurnKey(ctx, chat)
+	if err != nil {
 		return Result{}, err
 	}
-
-	estimate := a.session.EstimateInputTokens
-	if estimate == nil {
-		estimate = EstimateInputTokens
-	}
-	reservationOp, requestOp := uuid.NewString(), uuid.NewString()
-	consumerKey := "eino:" + requestOp
-
-	var permit Permit
-	err = a.session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		if _, err := a.gateway.ReserveInTx(ctx, tx, ReserveInput{
-			CallerService:        a.session.CallerService,
-			CallerOperationID:    reservationOp,
-			CallerGroupID:        a.session.CallerGroupID,
-			GroupLimitMicros:     a.session.GroupLimitMicros,
-			GroupTokenLimit:      a.session.GroupTokenLimit,
-			GroupDeadline:        a.session.GroupDeadline,
-			ModelKey:             a.session.ModelKey,
-			InputTokenUpperBound: estimate(chat),
-			OutputLimit:          a.session.OutputLimit,
-			AccountLimitMicros:   a.session.AccountLimitMicros,
-			AccountTokenLimit:    a.session.AccountTokenLimit,
-			ExpiresAt:            a.session.Deadline,
-		}); err != nil {
-			return err
-		}
-		return nil
+	outcome, err := a.gateway.Call(ctx, a.session.CallSession, CallInput{
+		BindingKey: bindingKey,
+		Chat:       chat,
+		Stream:     stream,
+		Consume:    a.session.Consume,
 	})
 	if err != nil {
 		return Result{}, err
 	}
-
-	var reservationID, requestID string
-	// Anything that fails after the reservation committed must give the hold
-	// back; a refused dispatch may not park budget until the expiry sweep runs.
-	release := func() {
-		if reservationID == "" {
-			return
-		}
-		if err := a.session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-			return a.gateway.ReleaseReservationInTx(ctx, tx, reservationID)
-		}); err != nil {
-			a.gateway.logger.ErrorContext(ctx, "llm gateway could not release an unused reservation",
-				"reservation_id", reservationID, "error", err)
-		}
-	}
-	err = a.session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		row, err := scanReservation(tx.QueryRow(ctx, "llm_usage_reservations", reservationColumns,
-			"caller_service=$2 AND caller_operation_id=$3", a.session.CallerService, reservationOp))
-		if err != nil {
-			return err
-		}
-		reservationID = row.id
-		// The request id is taken from Prepare itself: reading it back in a later
-		// transaction would leave a committed request the compensation path below
-		// cannot name.
-		view, err := a.gateway.PrepareInTx(ctx, tx, PrepareInput{
-			CallerService:     a.session.CallerService,
-			CallerOperationID: requestOp,
-			CallerGroupID:     a.session.CallerGroupID,
-			ReservationID:     reservationID,
-			ConsumerKey:       consumerKey,
-			Chat:              chat,
-			Deadline:          a.session.Deadline,
-		})
-		if err != nil {
-			return err
-		}
-		requestID = view.ID
-		return nil
-	})
-	if err != nil {
-		release()
-		return Result{}, err
-	}
-
-	err = a.session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		var err error
-		permit, err = a.gateway.BeginDispatchInTx(ctx, tx, a.session.Limits(tx), requestID)
-		return err
-	})
-	if err != nil {
-		// The request exists and owns the reservation, so it is cancelled as a
-		// unit instead of releasing the hold behind its back.
-		if cancelErr := a.session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-			_, err := a.gateway.CancelInTx(ctx, tx, requestID)
-			return err
-		}); cancelErr != nil {
-			a.gateway.logger.ErrorContext(ctx, "llm gateway could not cancel an undispatched request",
-				"request_id", requestID, "error", cancelErr)
-		}
-		return Result{}, err
-	}
-
-	result, err := a.gateway.Execute(ctx, a.session.Scope, a.session.Limits, permit, chat, stream)
-	if err != nil {
-		return Result{}, err
-	}
-	err = a.session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		_, _, err := a.gateway.ConsumeInTx(ctx, tx, requestID, a.session.CallerService, consumerKey, nil)
-		return err
-	})
-	if err != nil {
-		return Result{}, err
-	}
-	return result, nil
+	return outcome.Result, nil
 }
 
 func (a *GatewayModelAdapter) toolDefinitions() ([]ToolDefinition, error) {
