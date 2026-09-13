@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
 current_item: FND-06
-next_action: FND-06前置加固（Service.Call协调层：步骤身份绑定/消费原子衔接/补偿集中）已完成待授权提交；owner清单中P0三项清零，其余按其标注时机排期（见本文件同名章节表）；之后按依赖开FND-07（Harness），Gateway接入cmd/server属FND-07范围；真实OSS验收（PRE-05）待授权bucket
+next_action: FND-06前置加固已由owner授权提交381e4a2（未push、未合并develop）；owner清单P0三项清零，其余按其标注时机排期（见本文件同名章节表）；下一项按依赖开FND-07（Harness），Gateway接入cmd/server属FND-07范围；真实OSS验收（PRE-05）待授权bucket
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -761,3 +761,5 @@ owner 授权后开一轮独立 change review，目标冻结为暂存差异 `60cd
 
 - reviewer 对新增测试的质量评价：8 个用例「咬得相当实」，逐条列出了各自钉住的不变量；断言不足处即上述两条 important，已补。
 - 验证：`make check-go` 全绿、golangci-lint `0 issues`；llmgateway 60 非 live PASS / 3 live SKIP。供应商路径（`Execute` / `finishSuccess` / `finishFailure` / `provider_*.go` / 迁移）全程未改动，真实 DeepSeek 验收沿用 `30c9367`。
+
+- 2026-09-12 提交里程碑：owner 授权提交 `381e4a2`（9 files，+1134/−134，暂存哈希 `d8786efc…`，pre-commit 钩子通过，未用 `--no-verify`）。未 push、未合并 `develop`、未应用开发数据库迁移。审查阶段以 blocking 清零结束；唯一遗留 important（`dispatching` 无核实出口 + `active_count` 不回收）为 pre-existing，已在 owner 排期清单「完善异常恢复」内并写实覆盖面，owner 知情后授权提交。
