@@ -19,8 +19,9 @@ func TestCanvasMigrationSeedsOnceAndRefusesLossyRollback(t *testing.T) {
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
-	// Roll back 0042 (events), 0041 (media) and 0040 (graph) so the old node lacks an identity.
-	for range 3 {
+	// Roll back 0043 (llm gateway), 0042 (events), 0041 (media) and 0040 (graph)
+	// so the old node lacks an identity.
+	for range 4 {
 		if err := store.MigrateDownOneForTest(url); err != nil {
 			t.Fatal(err)
 		}
@@ -73,6 +74,9 @@ func TestCanvasMigrationSeedsOnceAndRefusesLossyRollback(t *testing.T) {
 	}
 	if err = move(2); !errors.Is(err, creativecanvas.ErrGraphIntegrity) {
 		t.Fatal("missing heads silently reconstructed", err)
+	}
+	if err = store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("llm gateway rollback on an empty ledger", err)
 	}
 	if err = store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("events rollback", err)
