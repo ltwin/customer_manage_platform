@@ -5,10 +5,15 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
+
+// A vendor key is shown to the photographer and stored on egress consents, so
+// it stays a plain token rather than a path or a URL.
+var vendorKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,63}$`)
 
 // ProviderKey names an adapted wire protocol, not a company. Two deployments of
 // the same protocol share one adapter.
@@ -117,13 +122,17 @@ func CostMicros(tokens int64, ratePerMillion int64) int64 {
 // ModelConfig is one deployment entry of the versioned catalog. It is deployment
 // configuration, not an editable admin screen, and holds no credential value.
 type ModelConfig struct {
-	ModelKey       string      `json:"model_key"`
-	DisplayName    string      `json:"display_name"`
-	Provider       ProviderKey `json:"provider"`
-	DeploymentKey  string      `json:"deployment_key"`
-	BaseURL        string      `json:"base_url"`
-	CredentialEnv  string      `json:"credential_env"`
-	RequestModelID string      `json:"request_model_id"`
+	ModelKey    string      `json:"model_key"`
+	DisplayName string      `json:"display_name"`
+	Provider    ProviderKey `json:"provider"`
+	// VendorKey names the company that actually receives the bytes. Provider is
+	// only the wire protocol and DeploymentKey is per model, so neither answers
+	// the question an egress disclosure has to ask the photographer.
+	VendorKey      string `json:"vendor_key"`
+	DeploymentKey  string `json:"deployment_key"`
+	BaseURL        string `json:"base_url"`
+	CredentialEnv  string `json:"credential_env"`
+	RequestModelID string `json:"request_model_id"`
 	// Thinking fixes the deployment's reasoning mode ("", "enabled",
 	// "disabled"). It is deployment configuration, never a caller parameter.
 	Thinking         string        `json:"thinking"`
@@ -167,6 +176,7 @@ type CatalogEntry struct {
 	ModelKey        string     `json:"model_key"`
 	DisplayName     string     `json:"display_name"`
 	Provider        string     `json:"provider"`
+	VendorKey       string     `json:"vendor_key"`
 	Capability      Capability `json:"capability"`
 	CatalogVersion  string     `json:"catalog_version"`
 	Available       bool       `json:"available"`
@@ -251,6 +261,9 @@ func validateModel(m ModelConfig, currency string) error {
 	if m.ModelKey == "" || m.DeploymentKey == "" || m.RequestModelID == "" || m.LimitKey == "" {
 		return fmt.Errorf("%w: model %q identity", ErrValidation, m.ModelKey)
 	}
+	if !vendorKeyPattern.MatchString(m.VendorKey) {
+		return fmt.Errorf("%w: model %q vendor key", ErrValidation, m.ModelKey)
+	}
 	if !strings.HasPrefix(m.BaseURL, "https://") {
 		return fmt.Errorf("%w: model %q base url must be https", ErrValidation, m.ModelKey)
 	}
@@ -297,6 +310,23 @@ func (c *Catalog) Version() string { return c.version }
 // Currency reports the single configured settlement currency.
 func (c *Catalog) Currency() string { return c.currency }
 
+// Vendors lists every company this deployment can send to, including vendors
+// whose models are currently disabled: an existing consent stays meaningful
+// while a model is switched off.
+func (c *Catalog) Vendors() []string {
+	seen := make(map[string]bool, len(c.keys))
+	vendors := make([]string, 0, len(c.keys))
+	for _, key := range c.keys {
+		vendor := c.models[key].VendorKey
+		if !seen[vendor] {
+			seen[vendor] = true
+			vendors = append(vendors, vendor)
+		}
+	}
+	sort.Strings(vendors)
+	return vendors
+}
+
 // List returns the selectable models. Disabled entries keep a visible reason
 // instead of silently disappearing.
 func (c *Catalog) List() []CatalogEntry {
@@ -307,6 +337,7 @@ func (c *Catalog) List() []CatalogEntry {
 			ModelKey:        m.ModelKey,
 			DisplayName:     m.DisplayName,
 			Provider:        string(m.Provider),
+			VendorKey:       m.VendorKey,
 			Capability:      m.Capability,
 			CatalogVersion:  c.version,
 			Available:       m.Enabled,

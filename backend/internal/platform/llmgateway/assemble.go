@@ -22,6 +22,11 @@ type Options struct {
 	Logger             *slog.Logger
 	Credential         func(string) (string, bool)
 	Clock              func() time.Time
+	// Catalog lets the composition root resolve the directory once and hand
+	// the same instance to everyone who needs it. An egress consent whitelist
+	// built from a second, independently loaded catalog could authorise a
+	// vendor this gateway never dispatches to, or miss one it does.
+	Catalog *Catalog
 }
 
 const (
@@ -78,17 +83,12 @@ func Build(opts Options) (*Service, error) {
 		credential = osCredential
 	}
 
-	var (
-		catalog *Catalog
-		err     error
-	)
-	if opts.CatalogPath != "" {
-		catalog, err = LoadCatalogFile(opts.CatalogPath)
-	} else {
-		catalog, err = DefaultCatalog(credential)
-	}
-	if err != nil {
-		return nil, err
+	catalog := opts.Catalog
+	if catalog == nil {
+		var err error
+		if catalog, err = OpenCatalog(opts.CatalogPath, credential); err != nil {
+			return nil, err
+		}
 	}
 
 	client := NewHTTPClient(opts.Timeout)
@@ -106,4 +106,15 @@ func Build(opts Options) (*Service, error) {
 			MonthlyTokenLimit:  opts.MonthlyTokenLimit,
 		},
 	})
+}
+
+// OpenCatalog resolves the deployment's model directory from configuration.
+// Call it once per process and share the result through Options.Catalog; the
+// function itself has no singleton semantics, so two calls with different
+// arguments will happily produce two disagreeing directories.
+func OpenCatalog(path string, credential func(string) (string, bool)) (*Catalog, error) {
+	if path != "" {
+		return LoadCatalogFile(path)
+	}
+	return DefaultCatalog(credential)
 }

@@ -1224,7 +1224,7 @@ func TestCatalogChangeNeverRedirectsAPreparedRequest(t *testing.T) {
 	// The same model key now names a different vendor model: a process restarted
 	// with an updated catalog holds a permit that was frozen against the old one.
 	updated, err := llmgateway.NewCatalog("cat-2", "USD", []llmgateway.ModelConfig{{
-		ModelKey: "chat", DisplayName: "Chat", Provider: llmgateway.ProviderOpenAICompatible,
+		ModelKey: "chat", DisplayName: "Chat", Provider: llmgateway.ProviderOpenAICompatible, VendorKey: "testvendor",
 		DeploymentKey: "dep-2", BaseURL: "https://example.invalid", CredentialEnv: "TEST_KEY",
 		RequestModelID: "different-paid-model", AcceptedModelIDs: []string{"different-paid-model"},
 		Capability: llmgateway.Capability{ToolCalling: true, ContextTokens: 1000, MaxOutputTokens: 500},

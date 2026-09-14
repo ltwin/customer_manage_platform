@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
@@ -62,8 +63,10 @@ func creativeError(c *gin.Context, err error) {
 		abortError(c, 409, "idempotency_conflict", "操作标识已用于另一请求")
 	case errors.Is(err, creativeops.ErrExpired):
 		abortError(c, 409, "creative_operation_expired", "操作已超过恢复期限，请保留草稿")
-	case errors.Is(err, creativecanvas.ErrVersionConflict), errors.Is(err, creativelibrary.ErrVersionConflict):
+	case errors.Is(err, creativecanvas.ErrVersionConflict), errors.Is(err, creativelibrary.ErrVersionConflict), errors.Is(err, creativeagent.ErrRevisionConflict):
 		abortError(c, 409, "creative_revision_conflict", "内容已被其他窗口修改，本机这次修改未保存")
+	case errors.Is(err, creativeagent.ErrConsentRevoked), errors.Is(err, creativeagent.ErrLimit), errors.Is(err, creativeagent.ErrNotFound):
+		creativeAgentError(c, err)
 	case errors.Is(err, creativelibrary.ErrTrashed):
 		abortError(c, 409, "creative_asset_trashed", "资产已在回收站，请恢复后编辑")
 	case errors.Is(err, creativecanvas.ErrArchived):

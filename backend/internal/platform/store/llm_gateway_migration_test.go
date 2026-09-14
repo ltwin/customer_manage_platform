@@ -88,6 +88,11 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 	if _, err := db.Exec(`DELETE FROM llm_usage_measurements`); err != nil {
 		t.Fatal(err)
 	}
+	// 0044 (agent conversations) sits above the gateway; step past it first so
+	// this test still exercises the gateway's own rollback guard.
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback agent-conversations migration: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback on an empty ledger must succeed: %v", err)
 	}
@@ -98,6 +103,9 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 		INSERT INTO llm_budgets (account_id,period_start,currency,limit_micros,token_limit,spent_micros)
 		VALUES ('acc',date_trunc('month',now())::date,'USD',1000,1000,42)`); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback agent-conversations migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err == nil {
 		t.Fatal("a rollback that would drop recorded spend must be refused")
