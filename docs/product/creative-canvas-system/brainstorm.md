@@ -421,3 +421,7 @@ C1 内资产基础和画布交互可并行设计；C3 的只读检索可在条�
 - 当前原型：[v4 README](../../prototypes/creative-workspace/v4/README.md)。现有交互继续作为资产与策划部分的验证资产。
 - 平台探索：[资产平台头脑风暴](../creative-asset-platform/brainstorm.md)、[PRD v0.1](../../../.codestable/requirements/creative-asset-platform.md)。模板/Skill 发布是新候选，不自动加入其免费分享首期。
 - 执行状态：[当前工作游标](../../../.codestable/work/epic-creative-workspace-system.md)。讨论结论稳定后再回写 canonical requirement；旧已批准先导 Epic 保持冻结。
+
+## 2026-09-14：Skill 资源化与市场方向
+
+新增[自定义 Skill、市场、审核与版本发布灵感记录](skill-marketplace-brainstorm.md)。当前只把必要底座整理为[资源化与结构化输入方案](modules/skill-foundation.md)，市场和审核后台仍是后续方向，不作为本期完成项。

@@ -38,3 +38,7 @@ Agent运行时已收敛为[Eino ADK接入方案](../eino-adoption.md)；[隔离�
 ## 节点生成范围更新
 
 首期新增[node-generation](../node-generation.md)：data/status、每节点Prompt与真实生成、结果历史及长期引用。它补充canvas/media/Gateway/Harness模块；既有探针与SQL草案仅证明原有协议，不覆盖新增schema/生产生成。FND-13正式交付及08/10联合验收，具体顺序以永久Epic为准。
+
+## Skill 底座改造候选（2026-09-14）
+
+[Skill 资源化与结构化输入底座方案](skill-foundation.md)：FND-07 B 前的 proposed 改造方案，定义数据库/OSS、不可变版本、必要预留字段与类型化输入；后续[市场与审核](../skill-marketplace-brainstorm.md)单独排期。该方案尚未实现，批准实施时同步 Harness、数据和 API 契约。
