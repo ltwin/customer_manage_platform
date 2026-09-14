@@ -17,9 +17,9 @@ work: ../work/epic-creative-workspace-system.md
 
 - 摄影师无需项目即可整理个人资产，在项目画布中引用、编辑、连线、打组、关闭再打开；修改引用不静默传播到其他作品。
 - 首期包括图片、文字、链接、视频、音频导入及基础编辑/预览/引用/下载；每节点Prompt Box、文字/图片/视频/音频真实生成、历史预览与采用切换；实际启用格式按媒体样本验证。视频/音频不包含剪辑、转码或完整模型理解。
-- Agent经统一LLM Gateway完成真实对话与注册的受控工具，平台Skill为“整理参考与创作方向”；保留模型/Skill选择、选区引用、独立附件、授权、取消、恢复及真实用量。
+- Agent经统一LLM Gateway完成真实对话与注册的受控工具，平台Skill为“整理参考与创作方向”；保留模型/Skill选择、选区引用、独立附件、授权、取消、恢复及真实用量。Skill 是数据库与对象存储管理的产品资源，平台维护内容不必重新发布服务；身份、版本与 digest 固定，运行永不跟随“最新版”漂移。
 - 通用项目不关联任何CRM业务。专业文档节点通过内部独立文档测试扩展证明边界，完整策划/镜头表/订单发布/现场模式在后续业务迭代。
-- 本期不含3D导演台、RAG/向量库、公共市场/社区、CRM工具、第三方Skill安装、任意代码执行、多人实时协同、完整离线同步或摄影师商业计费。不得以这些未来能力拖延当前闭环。
+- 本期不含3D导演台、RAG/向量库、公共市场/社区、CRM工具、第三方Skill安装、任意代码执行、多人实时协同、完整离线同步或摄影师商业计费。摄影师自建Skill的编辑器、市场投稿、审核后台、安装与分成同样不在本期，方向记录见[Skill市场与审核灵感](../../docs/product/creative-canvas-system/skill-marketplace-brainstorm.md)；本期只保证将来加入这些规则时不必推翻Skill身份、版本引用与消息结构。不得以这些未来能力拖延当前闭环。
 
 ### 不变的架构决策
 
@@ -100,8 +100,11 @@ Eino选型与隔离验证见[接入契约](../../docs/product/creative-canvas-sy
 **会话、运行与可靠Harness** · owning_skill: cs-feat
 - depends_on: [FND-03, FND-04, FND-06]
 - 交付：会话/消息、模型与Skill目录、冻结选区/上游/历史、外发同意、真实对话；run/step/slot/epoch、Eino ChatModelAgent/Runner有界运行适配、受控Skill加载/摘要/结果卸载、版本化Checkpoint和上下文Backend、持久结果消费、等待/取消/对账/终态恢复；最小Agent面板可查询状态与历史。
+- 交付（2026-09-13 边界重确认追加）：Skill 运行时权威来源从随二进制发布改为数据库与对象存储——新增领域 `creativeskill`，Skill 身份/不可变版本/资源清单/受信导入四组结构，`reference-direction@1` 以一次性种子导入替代 `go:embed`；统一目录与固定版本查询两个端点；输入协议改为有序判别联合 `instruction_segments`（text / skill_ref / content_ref），消息正文升至 schema_version=2 并显式登记 Skill 引用；`creativemedia.Adapter` 上提为平台级对象端口。完整方案见[Skill 资源化与结构化输入底座](../../docs/product/creative-canvas-system/modules/skill-foundation.md)。
 - 验收：AG-01/02/05/07/08的运行部分；CreateRun与消息/预留/job原子；网络断开不取消；旧worker不能写；usage未知不妨碍使用已知结果，终态不重开；范围扩大不能热替换consent；过期/超限/能力失败保留草稿；框架状态与业务step水位一致、模型/工具重入身份可证实，版本不兼容或缺恢复证据不盲Query。
+- 验收（2026-09-13 追加）：同一导入操作重复调用只产生一个版本；新版激活后旧消息与旧运行仍解析到原正文、资源与工具声明，不重取 current_version_id；另一账号读不到私有版本、伪造 origin/作者无效（本期不开放摄影师自建 Skill，取证方式是用管理 CLI 为第二个账号导入一个私有版本，再以第一个账号请求）；禁用先提交则之后的派发不通过且缓存不能绕过；选框与斜杠命令产生同一请求结构；多 Skill、未知片段、版本归属不匹配均明确失败不隐式降级；过期导入回收与 finalize 竞争时不得删除已发布版本的资源对象；`creativemedia` 现有用例在端口上提后原样通过。
 - 范围：attached节点执行的queued等待/延期查询、父取消与子发布、slot不重复占用需联合验证；只开放真实对话/已验证只读能力；写工具和Skill达成在FND-08，独立附件在FND-09，不能仅有队列动画就宣布Agent完成。
+- 范围（2026-09-13 追加）：只做平台维护的受信导入，入口是内部端口与管理 CLI，不建后台页面、不开放摄影师发布或任意文件上传；`reference-direction@1` 的工具与达成仍在 FND-08，本项完成后它按部署真实能力显示可用性。Skill 版本本阶段不做物理删除，消息/run 的 Skill 引用只登记事实，跨账号保留根查询与定时回收随 FND-10 一并上线（见该项追加条款）。过期导入的暂存对象由管理 CLI 显式物理删除，这与「正式内容物理删除仍关闭」不冲突——媒体 Worker 早已在删除自己的过期 staging 对象，两者都不触及已发布版本。迁移编号按落地顺序分配不预留：本项取 0045，后续顺延。
 
 ### FND-08
 
@@ -116,6 +119,7 @@ Eino选型与隔离验证见[接入契约](../../docs/product/creative-canvas-sy
 **独立附件与上下文交接补齐** · owning_skill: cs-feat
 - depends_on: [FND-05, FND-07]
 - 交付：会话附件draft、agent_attachment上传目标、ready附件、发送到message/run的引用交接、绑定冲突候选、期限内显式存库；完善附件加号与自动选区引用的不同交互。
+- 交付（2026-09-13 追加）：向 FND-07 冻结的 `instruction_segments` 判别联合加入第四种片段类型（附件草稿引用），只解析同账号同会话的 ready 附件，发送时原子转为正式消息/run 引用。这是对已冻结契约的加性扩展，不改动既有三种片段的形状。
 - 验收：AG-01/02/08完整附件路径；send/过期/候选采用竞争只能有一方接收；发送后不允许后台改消息附件；未发送不强制收藏；图片预览外发能力与授权正确，音视频只读元信息的说明可见。
 - 范围：与FND-08可分别开发服务端部分，但共享Agent UI文件不能无隔离同时改；完整流式联验在两项合流后执行。
 
@@ -124,8 +128,11 @@ Eino选型与隔离验证见[接入契约](../../docs/product/creative-canvas-sy
 **全引用生命周期与恢复** · owning_skill: cs-feat
 - depends_on: [FND-08, FND-09]
 - 交付：后台到期回收、配额核实、上传/候选/附件/消息/运行/命令/文档fixture及Eino checkpoint/context items及node execution输入/未采纳产物、节点Prompt引用与全部生成版本/历史输入的显式根清单、只读异常扫描、宽限与精确版本删除、备份恢复工具及观测；费用unknown和结果消费者保留维护。
+- 交付（2026-09-13 边界重确认追加，接住 FND-07 转交的三项）：Skill 版本与其资源对象进入同一份显式根清单与只读异常扫描，根来源是 `creative_message_skill_refs` 与 `creative_run_skill_refs`；跨账号根查询按仓库既有的逐账号枚举清扫范式（`store.ActiveAccountIDs` / `MaintenanceAccountIDs`）实现并封装在 `creativeskill` 内，不发出无账号范围的查询；过期导入暂存对象的定时回收从 FND-07 的手工 CLI 升级为后台到期回收的一部分。
 - 验收：LIB-05完整与FLOW-06；跨域新引用/GC竞争、ready上传根释放、消息/已采纳作品仍可读、处置和重试不无限泄漏；恢复数据库+对象版本+必要配置一致。实际测试库和授权测试存储执行物理删除/恢复，生产删除开关保持关闭。
+- 验收（2026-09-13 追加）：只被历史消息或历史运行引用的 Skill 版本在扫描中不被判为孤立；扫描清单实际枚举到 Skill 相关关系，缺项即视为未覆盖；过期导入回收与 finalize 竞争时不得删除已发布版本的资源对象——执行载体已从 FND-07 的手工 CLI 换成后台 job，该守卫必须在新路径上重新取证，不沿用 FND-07 的证据。
 - 范围：CM-05/LC-05/GH清理合并验收，不能在Agent等根尚未实现时开启通用GC；生产启用资格在FND-12确认。
+- 范围（2026-09-13 追加）：按 [ADR-008](../requirements/adrs/008-creative-explicit-key-integrity.md)「新增关系扩展同一清单和扫描，未覆盖的关系不得进入破坏性 GC」，Skill 相关关系未进入清单与扫描之前，本项不得判为完成，也不得开启通用 GC。
 
 ### FND-11
 
@@ -158,6 +165,13 @@ Eino选型与隔离验证见[接入契约](../../docs/product/creative-canvas-sy
 正式依赖补丁版、媒体编码/资源清单、实际模型/价格/额度、目标环境RPO/RTO需在所属FND项准入前固定并实测；负责人、截止点和失败处理在实施计划列明。它们是局部适配工作，不扩展当前产品路线。账号能力开关、同库事务桥和旧writer切换必须有执行证据；探针通过不代表生产链已完成。
 
 粗估与关键路径只用于安排开发，不承诺未测试的上线日期。新scope影响已确认的目标/验收时更新本Epic并复审；普通实现细节与执行证据只在所属模块/work维护。批准前phase保持planning、approved_revision pending、current_item null，提交授权不从历史沿用。
+
+### 2026-09-13 边界重确认
+
+两项，均由 owner 当日拍板，随本次 contract review 一并生效：
+
+- **Skill 底座资源化**：见 FND-07 追加的交付/验收/范围三条。改的是 Skill 内容的权威来源与输入协议，不改 Agent 的产品语义；AG-04「平台维护的 Skill 有身份、版本、输入要求、工具范围、输出与完成检查」原样成立，只是身份与版本从此由数据库拥有而非二进制。
+- **外发权利边界**：[需求v0.4](../requirements/creative-canvas-foundation.md) 原文「账号外发同意与素材用途权利是两项独立校验」已按本次拍板修订。实际实现没有引入 `ai_analysis` 这项独立的外发权利校验——摄影师能在自己工作区正常展示的修订就能被授权外发，display 权利闸门仍然生效，逐项是：同账号归属、`state='ready'`、保留根存在、`planningmedia.ValidatePurpose(..., PurposeMoodboardDisplay)`（对 display 恒允许，只会因声明组合自相矛盾而拒绝）、`creative_usage_grants` 的 display 授权未撤销、`creative_content_required_grants` 的派生闭包。这是缩小校验面的产品决定，不是实现缺陷；此前记为「FND-12 验收前需重确认，否则记为不符」的偏差就此清除。页面已不再提供图片/视频来源选框，故也不恢复来源权利矩阵的人工选择。
 
 <details>
 <summary>历史候选路线（保留溯源，不可直接执行）</summary>

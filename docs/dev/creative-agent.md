@@ -55,16 +55,17 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
   第 3、4 条会返回 `ErrUsageDenied` → 403 `creative_usage_denied`。今天每条新修订创建时自动获得
   display grant，所以触发面很窄，但它确实存在，不能说成「只是身份完整性校验」。
   - 去掉这一调用之后，另一账号的修订可以被授权外发（已复现）。
-  - **与需求的偏差**：`.codestable/requirements/creative-canvas-foundation.md:119`
-    「账号外发同意与素材用途权利是两项独立校验，任何一项不满足都不能发送」。准确的偏差是：
-    **没有引入 `ai_analysis` 这项独立的外发权利校验**；display 权利闸门仍然生效。该句需要在
-    FND-12 验收前经 `cs-epic` 边界重确认修订，否则会被记为不符。
+  - **需求已对齐，不再是偏差**：`.codestable/requirements/creative-canvas-foundation.md` 原先要求
+    「账号外发同意与素材用途权利是两项独立校验」，该句已于 2026-09-13 经 `cs-epic` 边界重确认修订为
+    「外发同意 + 修订在自己工作区能正常展示」，见 Epic 的「2026-09-13 边界重确认」小节。实现无需改动。
 - **`vendor_key` 是接收字节的公司**，不是线路协议（`provider`，如 `openai_compatible`），也不是
   按模型的 `deployment_key`（如 `deepseek/api/flash`）。授权按公司记录，因此在同一家的两个模型
   之间切换不会重新索要授权。`llmgateway.ModelConfig.VendorKey` 为必填，缺失时目录加载即失败。
   - 设计稿 `agent-api-events.md` 原字段名为 `provider_key`，语义即本字段；实现统一改名为
     `vendor_key`，因为 `provider` 在 Gateway 里已被协议族占用。
-- **Skill 包随二进制发布**。`//go:embed skillpkg`；digest 覆盖包内每个文件的路径与内容哈希，
+- **Skill 包随二进制发布**（本节描述当前代码；2026-09-13 边界重确认已批准把权威来源改为数据库 +
+  对象存储，见[Skill 资源化与结构化输入底座](../product/creative-canvas-system/modules/skill-foundation.md)，
+  改造落地前下述事实仍然有效）。`//go:embed skillpkg`；digest 覆盖包内每个文件的路径与内容哈希，
   移动或改名同样改变身份。资源只按声明的相对路径做 map 查表，底下没有文件系统，
   `../../../etc/passwd` 这类路径按「未声明资源」拒绝。
   - 进出 registry 的 `SkillPackage` 各深拷贝一次（`NewSkillRegistry` 与 `Get`）。`SkillPackage` 是值，

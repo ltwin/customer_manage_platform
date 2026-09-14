@@ -29,7 +29,7 @@ created: 2026-09-10
 
 首期部署一个正式版本化Skill `reference-direction@1`（整理参考与创作方向），以及无专项Skill的普通对话模式。普通对话并非伪装成另一个Skill，默认只读；明确画布编辑请求通过已定义动作授权才可获写工具。第三方Skill安装、任意脚本、shell、MCP任意工具、CRM写入不开放。Skill目录经List只发现元信息，Get激活固定版本正文；包内只读资源按需加载，首期inline，模型覆盖/fork不自动启用。
 
-Skill package包括manifest_schema_version、key/version、digest、展示名/说明、输入类别/数量、instructions、tool_allowlist及各schema版本、required_model_capabilities、输出契约、limits、completion_check_key。包由平台随部署发布，启动时校验并拒绝重复key/version不同digest；活动运行保存完整无秘密包快照。升级新增version；停用版本禁止新run，安全撤销则通过能力barrier阻止旧run后续步骤并保留产物。
+Skill package包括manifest_schema_version、key/version、digest、展示名/说明、输入类别/数量、instructions、tool_allowlist及各schema版本、required_model_capabilities、输出契约、limits、completion_check_key。包由平台随部署发布，启动时校验并拒绝重复key/version不同digest；活动运行保存完整无秘密包快照。**「随部署发布」与「启动时校验」两条已被 FND-07 的边界重确认取代**：Skill 改由数据库与对象存储管理、经受信导入发布，校验随之改在导入时执行，不再有启动期加载。重复 key/version 不同 digest 的拒绝规则本身不变，本节其余约束（固定版本、digest 身份、运行持包快照）同样不变，详见[Skill 资源化与结构化输入底座](skill-foundation.md)。升级新增version；停用版本禁止新run，安全撤销则通过能力barrier阻止旧run后续步骤并保留产物。
 
 `reference-direction@1`要求明确主题、可搜索范围、目标画布和放置区域。流程为检索→读取候选→比较→生成一个原子AddAssetNodes+CreateTextNodes提案/命令→核对来源与数量。数量不足如实交付已有结果并说明缺口；成功标准验证实际新增节点、固定来源修订、方向文字和回执，模型说“完成”不能替代检查。一次“找三张图并写比较”尽量在一个change set落地，天然是一条撤销单元。
 

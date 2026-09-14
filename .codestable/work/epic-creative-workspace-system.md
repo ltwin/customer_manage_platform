@@ -1,9 +1,9 @@
 ---
 epic: ../epics/creative-workspace-system.md
 phase: executing
-approved_revision: b024c98b87c98c72fadc1ee04b539675d3d73481bba866c768f64fb1a618d951
-current_item: FND-06
-next_action: FND-06前置加固已由owner授权提交381e4a2（未push、未合并develop）；owner清单P0三项清零，其余按其标注时机排期（见本文件同名章节表）；下一项按依赖开FND-07（Harness），Gateway接入cmd/server属FND-07范围；真实OSS验收（PRE-05）待授权bucket
+approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
+current_item: FND-07
+next_action: 2026-09-13 边界重确认已获owner批准（Skill底座资源化 + 外发权利边界修订），批准hash已替换；里程碑A已提交59e3f8c。下一步按skill-foundation.md的S0→S3实施Skill底座（S0上提Adapter、S1迁移0045与creativeskill、S2受信导入与种子、S3目录与输入契约），再接里程碑B；文档变更本身待owner同意后提交（milestone_commit: manual）
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -840,3 +840,21 @@ owner 授权修复 `dispatching` 无核实出口及跨账号共享名额泄漏�
 - 文档同步：`docs/dev/creative-agent.md` 的「消息是保留根」补上执行点与红证，「验证缺口」第 5 条改为「保留根这一侧已生效，但一行指向不存在修订的 ref 仍写得进去」；Skill 一段补深拷贝的理由与 `packagesInOrder` 的例外。
 - **轮次已用满 3 轮**（本阶段：第 1 轮 `8410f13a…`、第 2 轮 `ac2cf312…`、第 3 轮 owner 转交）。按 attention.md，再加一轮需 owner 明确授权。
 - 复跑：`make check-go PKG=./...` 全绿（无 FAIL）、golangci-lint `0 issues`；`creativeagent` 18 例、`creativecontent` 全绿。最终候选 49 文件 +4272/−50（较第 2 轮多出 `internal/creativecontent/content.go`）。本轮不再冻结新的审查目标，故不记哈希。**未提交，等 owner 授权。**
+
+## 2026-09-13 边界重确认（contract review 阶段，已批准）
+
+- **触发**：FND-07 里程碑 B 前要把 Skill 从 `go:embed` 改为数据库 + 对象存储。这带来新领域包、4 张新表 + 消息引用表、迁移 0045、2 个新 REST 端点、消息 body v2、CreateRun 请求契约改为 `instruction_segments`、`limitsVersion` 递增、`creativemedia.Adapter` 上提——属子项交付定义变更，只在游标承接不够，故走本阶段。同批处理欠着的 `creative-canvas-foundation.md` 外发权利边界偏差。
+- **owner 拍板（2026-09-13）**：对象端口选「上提 Adapter 到 platform」；Skill 版本保留「本期只保证不删除」；边界重确认「先走再实施」；分支「当前 worktree 继续」。
+- **方案复核**：实施前对着工作区源码复核 `skill-foundation.md` 一轮，改正 6 处、补全 4 处。最关键一处是迁移编号——原文要为里程碑 B 预留 0045，但 golang-migrate 的 `Up()` 只向前推进版本号，避让后补写的低编号迁移永远不会执行。
+- **reviewer**：宿主 subagent，显式 `model: opus`。三个异构候选当日全部不可用（codex 缺 `@openai/codex-darwin-arm64`、gemini `settings.json` 非法、opencode 缺 `opencode-aicodewith-auth`），按 cs-epic 回退同构最强模型，与本 Epic 前几轮一致。
+- **第 1 轮**：目标 `660c9de9…`（Epic）+ `8958eefb…`（需求）+ `b4b05b0f…`（方案）。1 blocking、2 important、8 nit，不通过。
+  - **[blocking] FND-07 向 FND-10 转交三项义务，FND-10 契约一条未改**：跨账号保留根查询、过期导入对象定时回收、ADR-008 要求的新增关系入一致性扫描清单。FND-10 因此可在完全不覆盖 Skill 的情况下通过验收并开启通用 GC，而 ADR-008 明写「未覆盖的关系不得进入破坏性 GC」。修法：FND-10 补交付/验收/范围三条，范围直引 ADR-008 原句作硬门禁，并与 FND-07 互相指认。
+  - **[important] §4.5 的降级理由写错了**。原文论证「跨账号根查询与 ADR-001 冲突」——不成立。仓库已有范式：`creativemedia.SweepAllAccounts` 经 `store.ActiveAccountIDs` 枚举后逐账号 `ScopeFor`，`llmgateway.SweepExpiredDispatches` 用 `MaintenanceAccountIDs` 游标分页，两者都是系统级全库清扫却没有一条无账号范围的查询。降级本身对（本期无删除路径），理由错会让 FND-10 实施者去申请 ADR 豁免。已重写并点名两个范式。
+  - **[important] `harness.md:32` 仍按旧口径**说 Skill「包由平台随部署发布」。已就地加过期指针。
+- **第 2 轮**（同 reviewer 同 session follow-up）：目标 `1f2aefbd…` + `c429afdc…` + `ab4d0986…` + `cfc4d51d…`（`harness.md` 因修 I-2 被改，本轮起进冻结集，reviewer 确认此归类恰当）。blocking 与两项 important 全部 resolved，**通过**。新增 1 important + 3 nit：过期导入对象的物理回收在 FND-07 与 FND-10 两侧都只有交付、无验收断言（本次追加唯一的破坏性操作）；`harness.md` 指针漏了「启动时校验」时机也已变；需求文档「用途声明」与「display 授权」用词打架，应作「来源与权利声明」；FND-09 条目排序不齐。
+  - 首次派发因 API 限流中断、无终态报告，按 cs-epic 该次不计轮次，恢复同一 session 续跑。本阶段共 2 个有终态报告的轮次。
+- **通过后修复**：上述 1 important + 3 nit 均由 reviewer 给出确切修法，属机械修改，未再开第 3 轮（轮次仍余 1，owner 知情）。
+- **批准**：owner 2026-09-13 批准，`approved_revision` 由 `b024c98b…` 换为 `2b79fb8c…`。四份定稿零断链、禁用词「用户」各 0 处。
+- **连带更新**：`docs/dev/creative-agent.md` 的外发偏差待办随批准失效，改为指向 Epic 的边界重确认小节。
+- **提交注意**：`docs/product/creative-canvas-system/modules/skill-foundation.md` 与 `skill-marketplace-brainstorm.md` 仍是 untracked，必须与 Epic 同批提交，否则合回 `develop` 后 Epic 内链接立即断。
+- 本轮只改文档，代码一行未动，未提交、未发布。
