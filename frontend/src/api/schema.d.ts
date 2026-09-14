@@ -229,6 +229,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/agent/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力 */
+        get: operations["getCreativeAgentCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/canvases/{id}/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCreativeAgentConversations"];
+        put?: never;
+        post: operations["createCreativeAgentConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/conversations/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 从最新往回分页；每页按阅读顺序返回 */
+        get: operations["listCreativeAgentMessages"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/conversations/{id}/egress-consents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 记录本账号对某供应商的外发授权；这是内容离开账号的唯一闸门 */
+        post: operations["grantCreativeEgressConsent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/egress-consents/{id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 阻止后续外发；不承诺召回已发出的内容 */
+        post: operations["revokeCreativeEgressConsent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/media-capabilities": {
         parameters: {
             query?: never;
@@ -2506,6 +2590,179 @@ export interface components {
             /** Format: date-time */
             client_created_at: string;
             payload: components["schemas"]["CreativeCanvasCommandPayload"];
+        };
+        CreativeAgentLimits: {
+            version: string;
+            input_text_bytes: number;
+            message_body_bytes: number;
+            input_nodes: number;
+            upstream_depth: number;
+            attachments: number;
+            model_result_bytes: number;
+            tool_argument_bytes: number;
+            tool_result_bytes: number;
+            tool_calls_per_turn: number;
+            tool_calls: number;
+            model_turns: number;
+            run_duration_seconds: number;
+            /** Format: int64 */
+            image_preview_bytes: number;
+            image_preview_count: number;
+            /** Format: int64 */
+            image_preview_total_bytes: number;
+        };
+        CreativeAgentModelCapability: {
+            image_input: boolean;
+            tool_calling: boolean;
+            tool_choice: boolean;
+            json_object: boolean;
+            temperature: boolean;
+            context_tokens: number;
+            max_output_tokens: number;
+        };
+        CreativeAgentModel: {
+            model_key: string;
+            display_name: string;
+            /** @description 线路协议族，不是公司 */
+            provider: string;
+            /** @description 实际接收字节的公司；外发授权按它记录 */
+            vendor_key: string;
+            capability: components["schemas"]["CreativeAgentModelCapability"];
+            catalog_version: string;
+            available: boolean;
+            unavailable_reason?: string;
+            context_tokens: number;
+            max_output_tokens: number;
+        };
+        CreativeAgentSkill: {
+            key: string;
+            version: number;
+            digest: string;
+            display_name: string;
+            description: string;
+            max_inputs: number;
+            available: boolean;
+            unavailable_reason?: string;
+        };
+        CreativeAgentTool: {
+            key: string;
+            version: number;
+            display_name: string;
+            /** @enum {string} */
+            effect_class: "read" | "create" | "update" | "layout";
+            max_impact: number;
+        };
+        CreativeAgentCatalog: {
+            catalog_version: string;
+            limits_version: string;
+            policy_version: string;
+            vendors: string[];
+            models: components["schemas"]["CreativeAgentModel"][];
+            skills: components["schemas"]["CreativeAgentSkill"][];
+            tools: components["schemas"]["CreativeAgentTool"][];
+            limits: components["schemas"]["CreativeAgentLimits"];
+        };
+        CreativeAgentConversation: {
+            id: string;
+            project_id: string;
+            canvas_id: string;
+            title: string;
+            revision: components["schemas"]["CreativeRevision"];
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreativeAgentConversationPage: {
+            items: components["schemas"]["CreativeAgentConversation"][];
+            next_cursor: string;
+        };
+        CreativeAgentMessageBlock: {
+            /** @enum {string} */
+            type: "text" | "reference" | "tool_result" | "notice";
+            text?: string;
+            /** @description 定位一个引用或工具结果；本身不授予任何权限 */
+            ref_id?: string;
+            /** @description notice 的稳定机器原因 */
+            code?: string;
+        };
+        CreativeAgentMessageBody: {
+            blocks: components["schemas"]["CreativeAgentMessageBlock"][];
+        };
+        CreativeAgentMessage: {
+            id: string;
+            ordinal: components["schemas"]["CreativeRevision"];
+            run_id?: string;
+            /** @enum {string} */
+            role: "user" | "assistant" | "tool" | "system";
+            /** @enum {string} */
+            status: "streaming" | "complete" | "interrupted";
+            schema_version: number;
+            body: components["schemas"]["CreativeAgentMessageBody"];
+            revision: components["schemas"]["CreativeRevision"];
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeAgentMessagePage: {
+            items: components["schemas"]["CreativeAgentMessage"][];
+            /** @description 继续往回翻；留空表示会话从这里开始 */
+            prev_cursor: string;
+            conversation_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeAgentConversationCreatePayload: {
+            title: string;
+        };
+        CreateCreativeAgentConversationRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAgentConversationCreatePayload"];
+        };
+        CreativeEgressConsentScope: {
+            /** @enum {string} */
+            mode: "selected_revisions" | "account_library";
+            data_classes: ("text" | "image_preview" | "media_metadata")[];
+        };
+        CreativeEgressConsent: {
+            id: string;
+            vendor_key: string;
+            /** @enum {string} */
+            purpose: "creative_assistance";
+            conversation_id?: string;
+            scope: components["schemas"]["CreativeEgressConsentScope"];
+            policy_version: string;
+            revision: components["schemas"]["CreativeRevision"];
+            /** Format: date-time */
+            granted_at: string;
+            /** Format: date-time */
+            revoked_at?: string;
+            /** @description 本次授权覆盖的修订数量；清单另存不随回执外发 */
+            approved_revisions: number;
+        };
+        CreativeEgressConsentGrantPayload: {
+            vendor_key: string;
+            /** @enum {string} */
+            purpose: "creative_assistance";
+            /** @enum {string} */
+            mode: "selected_revisions" | "account_library";
+            data_classes: ("text" | "image_preview" | "media_metadata")[];
+            selected_revision_ids?: string[];
+        };
+        GrantCreativeEgressConsentRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeEgressConsentGrantPayload"];
+        };
+        CreativeEgressConsentRevokePayload: {
+            expected_revision: components["schemas"]["CreativeRevision"];
+        };
+        RevokeCreativeEgressConsentRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeEgressConsentRevokePayload"];
         };
         /** @description 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number */
         CreativeRevision: string;
@@ -6069,6 +6326,215 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeNodeExecution"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeAgentCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 目录 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentCatalog"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeAgentConversations: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentConversationPage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAgentConversation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAgentConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；同一操作回放原回执 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentConversation"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeAgentMessages: {
+        parameters: {
+            query?: {
+                /** @description 不含该序号；留空表示从最新开始 */
+                before_ordinal?: components["schemas"]["CreativeRevision"];
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentMessagePage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    grantCreativeEgressConsent: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantCreativeEgressConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；同一操作回放原回执 */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeEgressConsent"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    revokeCreativeEgressConsent: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevokeCreativeEgressConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；同一操作回放原回执 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeEgressConsent"];
                 };
             };
             /** @description 请求失败 */

@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 
@@ -74,6 +75,7 @@ type RouterDeps struct {
 	PlanningMedia             *planningmedia.Application
 	PlanningIngestion         *ingestion.Application
 	CreativeMedia             *creativemedia.Service
+	CreativeAgent             *creativeagent.Service
 }
 
 // NewRouter 组装 HTTP 编排骨架。中间件链固定顺序：
@@ -124,6 +126,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		now:                 now,
 		anonymousShare:      deps.AnonymousShare,
 		creativeMedia:       deps.CreativeMedia,
+		creativeAgent:       deps.CreativeAgent,
 	}
 	if deps.PlanningMedia != nil {
 		h.planningMedia = &planningMediaHandlers{app: deps.PlanningMedia, scopeFactory: deps.ScopeFactory}
@@ -167,6 +170,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 	registerCreativeMediaBytes(api, h)
 	protected := api.Group("", authMiddleware(deps.Auth))
 	registerCreativeCanvas(protected, h)
+	registerCreativeAgent(protected, h)
 	protected.GET("/creative/capabilities", h.GetCreativeCapabilities)
 	protected.GET("/creative/operations/:operation_id", func(c *gin.Context) {
 		id, err := uuid.Parse(c.Param("operation_id"))

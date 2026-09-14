@@ -147,3 +147,17 @@ entries:
     doc_path: docs/api/creative-media.md
     status: pending
     note: "2026-09-11 FND-05：/creative/uploads*、/upload-candidates*、/media-capabilities、/media-access-tickets、/media/{revision}/{role}、/assets/from-canvas-node；开发说明见 docs/dev/creative-media.md"
+
+  - entry: creative-agent
+    category: HTTP API
+    source_files:
+      - api/openapi.yaml
+      - backend/internal/platform/httpapi/creative_agent.go
+      - backend/internal/creativeagent/conversations.go
+      - backend/internal/creativeagent/consents.go
+      - backend/internal/creativeagent/catalog.go
+      - backend/internal/creativeagent/skills.go
+      - frontend/src/api/schema.d.ts
+    doc_path: docs/api/creative-agent.md
+    status: pending
+    note: "2026-09-13 FND-07 里程碑 A：/creative/agent/catalog、/canvases/{id}/conversations、/conversations/{id}/messages、/conversations/{id}/egress-consents、/egress-consents/{id}/revoke；run/step/SSE 随里程碑 B/C 与 FND-08；开发说明见 docs/dev/creative-agent.md"

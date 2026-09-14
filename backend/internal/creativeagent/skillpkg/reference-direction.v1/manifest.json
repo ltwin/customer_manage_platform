@@ -1,0 +1,19 @@
+{
+  "manifest_schema_version": 1,
+  "key": "reference-direction",
+  "version": 1,
+  "display_name": "参考整理与创作方向",
+  "description": "在个人库中检索参考、比较候选，产出一组参考节点和一段创作方向文字。",
+  "input_kinds": ["text", "canvas_selection"],
+  "max_inputs": 20,
+  "tool_allowlist": [
+    "search_assets@1",
+    "read_nodes@1",
+    "add_asset_nodes@1",
+    "create_text_nodes@1",
+    "arrange_selection@1"
+  ],
+  "required_model_capabilities": ["tool_calling"],
+  "output_contract": "一组来自真实检索结果的参考节点，加一个说明取舍的文字节点；数量不足时如实交付已有结果并说明缺口。",
+  "completion_check_key": "reference_direction_v1"
+}

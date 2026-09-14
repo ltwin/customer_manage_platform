@@ -612,6 +612,147 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreativeRequestExecutionRequest'
+  /creative/agent/catalog:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeAgentCatalog
+      summary: 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力
+      responses:
+        '200':
+          description: 目录
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentCatalog'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/canvases/{id}/conversations:
+    get:
+      tags: [creative-foundation]
+      operationId: listCreativeAgentConversations
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: query
+        name: limit
+        schema: {type: integer, minimum: 1, maximum: 100, default: 30}
+      - {in: query, name: cursor, schema: {type: string}}
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentConversationPage'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+    post:
+      tags: [creative-foundation]
+      operationId: createCreativeAgentConversation
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateCreativeAgentConversationRequest'}
+      responses:
+        '201':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentConversation'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/conversations/{id}/messages:
+    get:
+      tags: [creative-foundation]
+      operationId: listCreativeAgentMessages
+      summary: 从最新往回分页；每页按阅读顺序返回
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: query
+        name: before_ordinal
+        description: 不含该序号；留空表示从最新开始
+        schema: {$ref: '#/components/schemas/CreativeRevision'}
+      - in: query
+        name: limit
+        schema: {type: integer, minimum: 1, maximum: 100, default: 30}
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentMessagePage'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/conversations/{id}/egress-consents:
+    post:
+      tags: [creative-foundation]
+      operationId: grantCreativeEgressConsent
+      summary: 记录本账号对某供应商的外发授权；这是内容离开账号的唯一闸门
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GrantCreativeEgressConsentRequest'}
+      responses:
+        '201':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeEgressConsent'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/egress-consents/{id}/revoke:
+    post:
+      tags: [creative-foundation]
+      operationId: revokeCreativeEgressConsent
+      summary: 阻止后续外发；不承诺召回已发出的内容
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RevokeCreativeEgressConsentRequest'}
+      responses:
+        '200':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeEgressConsent'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /creative/media-capabilities:
     get:
       tags: [creative-foundation]
@@ -6624,6 +6765,241 @@ components:
           format: date-time
         payload:
           $ref: '#/components/schemas/CreativeCanvasCommandPayload'
+    CreativeAgentLimits:
+      type: object
+      additionalProperties: false
+      required: [version, input_text_bytes, message_body_bytes, input_nodes, upstream_depth,
+        attachments, model_result_bytes, tool_argument_bytes, tool_result_bytes,
+        tool_calls_per_turn, tool_calls, model_turns, run_duration_seconds,
+        image_preview_bytes, image_preview_count, image_preview_total_bytes]
+      properties:
+        version: {type: string}
+        input_text_bytes: {type: integer}
+        message_body_bytes: {type: integer}
+        input_nodes: {type: integer}
+        upstream_depth: {type: integer}
+        attachments: {type: integer}
+        model_result_bytes: {type: integer}
+        tool_argument_bytes: {type: integer}
+        tool_result_bytes: {type: integer}
+        tool_calls_per_turn: {type: integer}
+        tool_calls: {type: integer}
+        model_turns: {type: integer}
+        run_duration_seconds: {type: integer}
+        image_preview_bytes: {type: integer, format: int64}
+        image_preview_count: {type: integer}
+        image_preview_total_bytes: {type: integer, format: int64}
+    CreativeAgentModelCapability:
+      type: object
+      additionalProperties: false
+      required: [image_input, tool_calling, tool_choice, json_object, temperature,
+        context_tokens, max_output_tokens]
+      properties:
+        image_input: {type: boolean}
+        tool_calling: {type: boolean}
+        tool_choice: {type: boolean}
+        json_object: {type: boolean}
+        temperature: {type: boolean}
+        context_tokens: {type: integer}
+        max_output_tokens: {type: integer}
+    CreativeAgentModel:
+      type: object
+      additionalProperties: false
+      required: [model_key, display_name, provider, vendor_key, capability,
+        catalog_version, available, context_tokens, max_output_tokens]
+      properties:
+        model_key: {type: string}
+        display_name: {type: string}
+        provider: {type: string, description: 线路协议族，不是公司}
+        vendor_key: {type: string, description: 实际接收字节的公司；外发授权按它记录}
+        capability: {$ref: '#/components/schemas/CreativeAgentModelCapability'}
+        catalog_version: {type: string}
+        available: {type: boolean}
+        unavailable_reason: {type: string}
+        context_tokens: {type: integer}
+        max_output_tokens: {type: integer}
+    CreativeAgentSkill:
+      type: object
+      additionalProperties: false
+      required: [key, version, digest, display_name, description, max_inputs, available]
+      properties:
+        key: {type: string}
+        version: {type: integer}
+        digest: {type: string}
+        display_name: {type: string}
+        description: {type: string}
+        max_inputs: {type: integer}
+        available: {type: boolean}
+        unavailable_reason: {type: string}
+    CreativeAgentTool:
+      type: object
+      additionalProperties: false
+      required: [key, version, display_name, effect_class, max_impact]
+      properties:
+        key: {type: string}
+        version: {type: integer}
+        display_name: {type: string}
+        effect_class: {type: string, enum: [read, create, update, layout]}
+        max_impact: {type: integer}
+    CreativeAgentCatalog:
+      type: object
+      additionalProperties: false
+      required: [catalog_version, limits_version, policy_version, vendors, models, skills, tools, limits]
+      properties:
+        catalog_version: {type: string}
+        limits_version: {type: string}
+        policy_version: {type: string}
+        vendors:
+          type: array
+          items: {type: string}
+        models:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentModel'}
+        skills:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentSkill'}
+        tools:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentTool'}
+        limits: {$ref: '#/components/schemas/CreativeAgentLimits'}
+    CreativeAgentConversation:
+      type: object
+      additionalProperties: false
+      required: [id, project_id, canvas_id, title, revision, updated_at]
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        canvas_id: {type: string}
+        title: {type: string, minLength: 1, maxLength: 120}
+        revision: {$ref: '#/components/schemas/CreativeRevision'}
+        updated_at: {type: string, format: date-time}
+    CreativeAgentConversationPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentConversation'}
+        next_cursor: {type: string}
+    CreativeAgentMessageBlock:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type: {type: string, enum: [text, reference, tool_result, notice]}
+        text: {type: string}
+        ref_id: {type: string, description: 定位一个引用或工具结果；本身不授予任何权限}
+        code: {type: string, description: notice 的稳定机器原因}
+    CreativeAgentMessageBody:
+      type: object
+      additionalProperties: false
+      required: [blocks]
+      properties:
+        blocks:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentMessageBlock'}
+    CreativeAgentMessage:
+      type: object
+      additionalProperties: false
+      required: [id, ordinal, role, status, schema_version, body, revision, created_at]
+      properties:
+        id: {type: string}
+        ordinal: {$ref: '#/components/schemas/CreativeRevision'}
+        run_id: {type: string}
+        role: {type: string, enum: [user, assistant, tool, system]}
+        status: {type: string, enum: [streaming, complete, interrupted]}
+        schema_version: {type: integer}
+        body: {$ref: '#/components/schemas/CreativeAgentMessageBody'}
+        revision: {$ref: '#/components/schemas/CreativeRevision'}
+        created_at: {type: string, format: date-time}
+    CreativeAgentMessagePage:
+      type: object
+      additionalProperties: false
+      required: [items, prev_cursor, conversation_revision]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentMessage'}
+        prev_cursor: {type: string, description: 继续往回翻；留空表示会话从这里开始}
+        conversation_revision: {$ref: '#/components/schemas/CreativeRevision'}
+    CreativeAgentConversationCreatePayload:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 120}
+    CreateCreativeAgentConversationRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: '#/components/schemas/CreativeAgentConversationCreatePayload'}
+    CreativeEgressConsentScope:
+      type: object
+      additionalProperties: false
+      required: [mode, data_classes]
+      properties:
+        mode: {type: string, enum: [selected_revisions, account_library]}
+        data_classes:
+          type: array
+          minItems: 1
+          items: {type: string, enum: [text, image_preview, media_metadata]}
+    CreativeEgressConsent:
+      type: object
+      additionalProperties: false
+      required: [id, vendor_key, purpose, scope, policy_version, revision, granted_at, approved_revisions]
+      properties:
+        id: {type: string}
+        vendor_key: {type: string}
+        purpose: {type: string, enum: [creative_assistance]}
+        conversation_id: {type: string}
+        scope: {$ref: '#/components/schemas/CreativeEgressConsentScope'}
+        policy_version: {type: string}
+        revision: {$ref: '#/components/schemas/CreativeRevision'}
+        granted_at: {type: string, format: date-time}
+        revoked_at: {type: string, format: date-time}
+        approved_revisions: {type: integer, description: 本次授权覆盖的修订数量；清单另存不随回执外发}
+    CreativeEgressConsentGrantPayload:
+      type: object
+      additionalProperties: false
+      required: [vendor_key, purpose, mode, data_classes]
+      properties:
+        vendor_key: {type: string}
+        purpose: {type: string, enum: [creative_assistance]}
+        mode: {type: string, enum: [selected_revisions, account_library]}
+        data_classes:
+          type: array
+          minItems: 1
+          items: {type: string, enum: [text, image_preview, media_metadata]}
+        selected_revision_ids:
+          type: array
+          maxItems: 200
+          items: {type: string}
+    GrantCreativeEgressConsentRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: '#/components/schemas/CreativeEgressConsentGrantPayload'}
+    CreativeEgressConsentRevokePayload:
+      type: object
+      additionalProperties: false
+      required: [expected_revision]
+      properties:
+        expected_revision: {$ref: '#/components/schemas/CreativeRevision'}
+    RevokeCreativeEgressConsentRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: '#/components/schemas/CreativeEgressConsentRevokePayload'}
     CreativeRevision:
       type: string
       pattern: '^[1-9][0-9]*$'

@@ -596,6 +596,99 @@ func (e CreativeAddNodePayloadTypeKey) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentMessageRole.
+const (
+	Assistant CreativeAgentMessageRole = "assistant"
+	System    CreativeAgentMessageRole = "system"
+	Tool      CreativeAgentMessageRole = "tool"
+	User      CreativeAgentMessageRole = "user"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentMessageRole enum.
+func (e CreativeAgentMessageRole) Valid() bool {
+	switch e {
+	case Assistant:
+		return true
+	case System:
+		return true
+	case Tool:
+		return true
+	case User:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentMessageStatus.
+const (
+	Complete    CreativeAgentMessageStatus = "complete"
+	Interrupted CreativeAgentMessageStatus = "interrupted"
+	Streaming   CreativeAgentMessageStatus = "streaming"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentMessageStatus enum.
+func (e CreativeAgentMessageStatus) Valid() bool {
+	switch e {
+	case Complete:
+		return true
+	case Interrupted:
+		return true
+	case Streaming:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentMessageBlockType.
+const (
+	CreativeAgentMessageBlockTypeNotice     CreativeAgentMessageBlockType = "notice"
+	CreativeAgentMessageBlockTypeReference  CreativeAgentMessageBlockType = "reference"
+	CreativeAgentMessageBlockTypeText       CreativeAgentMessageBlockType = "text"
+	CreativeAgentMessageBlockTypeToolResult CreativeAgentMessageBlockType = "tool_result"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentMessageBlockType enum.
+func (e CreativeAgentMessageBlockType) Valid() bool {
+	switch e {
+	case CreativeAgentMessageBlockTypeNotice:
+		return true
+	case CreativeAgentMessageBlockTypeReference:
+		return true
+	case CreativeAgentMessageBlockTypeText:
+		return true
+	case CreativeAgentMessageBlockTypeToolResult:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentToolEffectClass.
+const (
+	Create CreativeAgentToolEffectClass = "create"
+	Layout CreativeAgentToolEffectClass = "layout"
+	Read   CreativeAgentToolEffectClass = "read"
+	Update CreativeAgentToolEffectClass = "update"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentToolEffectClass enum.
+func (e CreativeAgentToolEffectClass) Valid() bool {
+	switch e {
+	case Create:
+		return true
+	case Layout:
+		return true
+	case Read:
+		return true
+	case Update:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeBatchPayloadType.
 const (
 	Batch CreativeBatchPayloadType = "batch"
@@ -674,6 +767,114 @@ func (e CreativeContentRevisionKind) Valid() bool {
 	case CreativeContentRevisionKindText:
 		return true
 	case CreativeContentRevisionKindVideo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeEgressConsentPurpose.
+const (
+	CreativeEgressConsentPurposeCreativeAssistance CreativeEgressConsentPurpose = "creative_assistance"
+)
+
+// Valid indicates whether the value is a known member of the CreativeEgressConsentPurpose enum.
+func (e CreativeEgressConsentPurpose) Valid() bool {
+	switch e {
+	case CreativeEgressConsentPurposeCreativeAssistance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeEgressConsentGrantPayloadDataClasses.
+const (
+	CreativeEgressConsentGrantPayloadDataClassesImagePreview  CreativeEgressConsentGrantPayloadDataClasses = "image_preview"
+	CreativeEgressConsentGrantPayloadDataClassesMediaMetadata CreativeEgressConsentGrantPayloadDataClasses = "media_metadata"
+	CreativeEgressConsentGrantPayloadDataClassesText          CreativeEgressConsentGrantPayloadDataClasses = "text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeEgressConsentGrantPayloadDataClasses enum.
+func (e CreativeEgressConsentGrantPayloadDataClasses) Valid() bool {
+	switch e {
+	case CreativeEgressConsentGrantPayloadDataClassesImagePreview:
+		return true
+	case CreativeEgressConsentGrantPayloadDataClassesMediaMetadata:
+		return true
+	case CreativeEgressConsentGrantPayloadDataClassesText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeEgressConsentGrantPayloadMode.
+const (
+	CreativeEgressConsentGrantPayloadModeAccountLibrary    CreativeEgressConsentGrantPayloadMode = "account_library"
+	CreativeEgressConsentGrantPayloadModeSelectedRevisions CreativeEgressConsentGrantPayloadMode = "selected_revisions"
+)
+
+// Valid indicates whether the value is a known member of the CreativeEgressConsentGrantPayloadMode enum.
+func (e CreativeEgressConsentGrantPayloadMode) Valid() bool {
+	switch e {
+	case CreativeEgressConsentGrantPayloadModeAccountLibrary:
+		return true
+	case CreativeEgressConsentGrantPayloadModeSelectedRevisions:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeEgressConsentGrantPayloadPurpose.
+const (
+	CreativeEgressConsentGrantPayloadPurposeCreativeAssistance CreativeEgressConsentGrantPayloadPurpose = "creative_assistance"
+)
+
+// Valid indicates whether the value is a known member of the CreativeEgressConsentGrantPayloadPurpose enum.
+func (e CreativeEgressConsentGrantPayloadPurpose) Valid() bool {
+	switch e {
+	case CreativeEgressConsentGrantPayloadPurposeCreativeAssistance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeEgressConsentScopeDataClasses.
+const (
+	CreativeEgressConsentScopeDataClassesImagePreview  CreativeEgressConsentScopeDataClasses = "image_preview"
+	CreativeEgressConsentScopeDataClassesMediaMetadata CreativeEgressConsentScopeDataClasses = "media_metadata"
+	CreativeEgressConsentScopeDataClassesText          CreativeEgressConsentScopeDataClasses = "text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeEgressConsentScopeDataClasses enum.
+func (e CreativeEgressConsentScopeDataClasses) Valid() bool {
+	switch e {
+	case CreativeEgressConsentScopeDataClassesImagePreview:
+		return true
+	case CreativeEgressConsentScopeDataClassesMediaMetadata:
+		return true
+	case CreativeEgressConsentScopeDataClassesText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeEgressConsentScopeMode.
+const (
+	CreativeEgressConsentScopeModeAccountLibrary    CreativeEgressConsentScopeMode = "account_library"
+	CreativeEgressConsentScopeModeSelectedRevisions CreativeEgressConsentScopeMode = "selected_revisions"
+)
+
+// Valid indicates whether the value is a known member of the CreativeEgressConsentScopeMode enum.
+func (e CreativeEgressConsentScopeMode) Valid() bool {
+	switch e {
+	case CreativeEgressConsentScopeModeAccountLibrary:
+		return true
+	case CreativeEgressConsentScopeModeSelectedRevisions:
 		return true
 	default:
 		return false
@@ -2452,25 +2653,25 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
-	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
-	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
-	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
-	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
+	Audio ListCreativeAssetsParamsKind = "audio"
+	Image ListCreativeAssetsParamsKind = "image"
+	Link  ListCreativeAssetsParamsKind = "link"
+	Text  ListCreativeAssetsParamsKind = "text"
+	Video ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
 func (e ListCreativeAssetsParamsKind) Valid() bool {
 	switch e {
-	case ListCreativeAssetsParamsKindAudio:
+	case Audio:
 		return true
-	case ListCreativeAssetsParamsKindImage:
+	case Image:
 		return true
-	case ListCreativeAssetsParamsKindLink:
+	case Link:
 		return true
-	case ListCreativeAssetsParamsKindText:
+	case Text:
 		return true
-	case ListCreativeAssetsParamsKindVideo:
+	case Video:
 		return true
 	default:
 		return false
@@ -2798,6 +2999,13 @@ type CreateAssetBindingInput struct {
 // CreateAssetBindingInputHolderKind defines model for CreateAssetBindingInput.HolderKind.
 type CreateAssetBindingInputHolderKind string
 
+// CreateCreativeAgentConversationRequest defines model for CreateCreativeAgentConversationRequest.
+type CreateCreativeAgentConversationRequest struct {
+	ClientCreatedAt time.Time                              `json:"client_created_at"`
+	OperationId     openapi_types.UUID                     `json:"operation_id"`
+	Payload         CreativeAgentConversationCreatePayload `json:"payload"`
+}
+
 // CreateCreativeAssetFromNodeRequest defines model for CreateCreativeAssetFromNodeRequest.
 type CreateCreativeAssetFromNodeRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
@@ -3065,6 +3273,166 @@ type CreativeAddNodePayloadType string
 
 // CreativeAddNodePayloadTypeKey defines model for CreativeAddNodePayload.TypeKey.
 type CreativeAddNodePayloadTypeKey string
+
+// CreativeAgentCatalog defines model for CreativeAgentCatalog.
+type CreativeAgentCatalog struct {
+	CatalogVersion string               `json:"catalog_version"`
+	Limits         CreativeAgentLimits  `json:"limits"`
+	LimitsVersion  string               `json:"limits_version"`
+	Models         []CreativeAgentModel `json:"models"`
+	PolicyVersion  string               `json:"policy_version"`
+	Skills         []CreativeAgentSkill `json:"skills"`
+	Tools          []CreativeAgentTool  `json:"tools"`
+	Vendors        []string             `json:"vendors"`
+}
+
+// CreativeAgentConversation defines model for CreativeAgentConversation.
+type CreativeAgentConversation struct {
+	CanvasId  string `json:"canvas_id"`
+	Id        string `json:"id"`
+	ProjectId string `json:"project_id"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision  CreativeRevision `json:"revision"`
+	Title     string           `json:"title"`
+	UpdatedAt time.Time        `json:"updated_at"`
+}
+
+// CreativeAgentConversationCreatePayload defines model for CreativeAgentConversationCreatePayload.
+type CreativeAgentConversationCreatePayload struct {
+	Title string `json:"title"`
+}
+
+// CreativeAgentConversationPage defines model for CreativeAgentConversationPage.
+type CreativeAgentConversationPage struct {
+	Items      []CreativeAgentConversation `json:"items"`
+	NextCursor string                      `json:"next_cursor"`
+}
+
+// CreativeAgentLimits defines model for CreativeAgentLimits.
+type CreativeAgentLimits struct {
+	Attachments            int    `json:"attachments"`
+	ImagePreviewBytes      int64  `json:"image_preview_bytes"`
+	ImagePreviewCount      int    `json:"image_preview_count"`
+	ImagePreviewTotalBytes int64  `json:"image_preview_total_bytes"`
+	InputNodes             int    `json:"input_nodes"`
+	InputTextBytes         int    `json:"input_text_bytes"`
+	MessageBodyBytes       int    `json:"message_body_bytes"`
+	ModelResultBytes       int    `json:"model_result_bytes"`
+	ModelTurns             int    `json:"model_turns"`
+	RunDurationSeconds     int    `json:"run_duration_seconds"`
+	ToolArgumentBytes      int    `json:"tool_argument_bytes"`
+	ToolCalls              int    `json:"tool_calls"`
+	ToolCallsPerTurn       int    `json:"tool_calls_per_turn"`
+	ToolResultBytes        int    `json:"tool_result_bytes"`
+	UpstreamDepth          int    `json:"upstream_depth"`
+	Version                string `json:"version"`
+}
+
+// CreativeAgentMessage defines model for CreativeAgentMessage.
+type CreativeAgentMessage struct {
+	Body      CreativeAgentMessageBody `json:"body"`
+	CreatedAt time.Time                `json:"created_at"`
+	Id        string                   `json:"id"`
+
+	// Ordinal 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Ordinal CreativeRevision `json:"ordinal"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision      CreativeRevision           `json:"revision"`
+	Role          CreativeAgentMessageRole   `json:"role"`
+	RunId         *string                    `json:"run_id,omitempty"`
+	SchemaVersion int                        `json:"schema_version"`
+	Status        CreativeAgentMessageStatus `json:"status"`
+}
+
+// CreativeAgentMessageRole defines model for CreativeAgentMessage.Role.
+type CreativeAgentMessageRole string
+
+// CreativeAgentMessageStatus defines model for CreativeAgentMessage.Status.
+type CreativeAgentMessageStatus string
+
+// CreativeAgentMessageBlock defines model for CreativeAgentMessageBlock.
+type CreativeAgentMessageBlock struct {
+	// Code notice 的稳定机器原因
+	Code *string `json:"code,omitempty"`
+
+	// RefId 定位一个引用或工具结果；本身不授予任何权限
+	RefId *string                       `json:"ref_id,omitempty"`
+	Text  *string                       `json:"text,omitempty"`
+	Type  CreativeAgentMessageBlockType `json:"type"`
+}
+
+// CreativeAgentMessageBlockType defines model for CreativeAgentMessageBlock.Type.
+type CreativeAgentMessageBlockType string
+
+// CreativeAgentMessageBody defines model for CreativeAgentMessageBody.
+type CreativeAgentMessageBody struct {
+	Blocks []CreativeAgentMessageBlock `json:"blocks"`
+}
+
+// CreativeAgentMessagePage defines model for CreativeAgentMessagePage.
+type CreativeAgentMessagePage struct {
+	// ConversationRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ConversationRevision CreativeRevision       `json:"conversation_revision"`
+	Items                []CreativeAgentMessage `json:"items"`
+
+	// PrevCursor 继续往回翻；留空表示会话从这里开始
+	PrevCursor string `json:"prev_cursor"`
+}
+
+// CreativeAgentModel defines model for CreativeAgentModel.
+type CreativeAgentModel struct {
+	Available       bool                         `json:"available"`
+	Capability      CreativeAgentModelCapability `json:"capability"`
+	CatalogVersion  string                       `json:"catalog_version"`
+	ContextTokens   int                          `json:"context_tokens"`
+	DisplayName     string                       `json:"display_name"`
+	MaxOutputTokens int                          `json:"max_output_tokens"`
+	ModelKey        string                       `json:"model_key"`
+
+	// Provider 线路协议族，不是公司
+	Provider          string  `json:"provider"`
+	UnavailableReason *string `json:"unavailable_reason,omitempty"`
+
+	// VendorKey 实际接收字节的公司；外发授权按它记录
+	VendorKey string `json:"vendor_key"`
+}
+
+// CreativeAgentModelCapability defines model for CreativeAgentModelCapability.
+type CreativeAgentModelCapability struct {
+	ContextTokens   int  `json:"context_tokens"`
+	ImageInput      bool `json:"image_input"`
+	JsonObject      bool `json:"json_object"`
+	MaxOutputTokens int  `json:"max_output_tokens"`
+	Temperature     bool `json:"temperature"`
+	ToolCalling     bool `json:"tool_calling"`
+	ToolChoice      bool `json:"tool_choice"`
+}
+
+// CreativeAgentSkill defines model for CreativeAgentSkill.
+type CreativeAgentSkill struct {
+	Available         bool    `json:"available"`
+	Description       string  `json:"description"`
+	Digest            string  `json:"digest"`
+	DisplayName       string  `json:"display_name"`
+	Key               string  `json:"key"`
+	MaxInputs         int     `json:"max_inputs"`
+	UnavailableReason *string `json:"unavailable_reason,omitempty"`
+	Version           int     `json:"version"`
+}
+
+// CreativeAgentTool defines model for CreativeAgentTool.
+type CreativeAgentTool struct {
+	DisplayName string                       `json:"display_name"`
+	EffectClass CreativeAgentToolEffectClass `json:"effect_class"`
+	Key         string                       `json:"key"`
+	MaxImpact   int                          `json:"max_impact"`
+	Version     int                          `json:"version"`
+}
+
+// CreativeAgentToolEffectClass defines model for CreativeAgentTool.EffectClass.
+type CreativeAgentToolEffectClass string
 
 // CreativeAssetBatchPayload defines model for CreativeAssetBatchPayload.
 type CreativeAssetBatchPayload struct {
@@ -3370,6 +3738,62 @@ type CreativeDocument struct {
 	Title    string           `json:"title"`
 	TypeKey  string           `json:"type_key"`
 }
+
+// CreativeEgressConsent defines model for CreativeEgressConsent.
+type CreativeEgressConsent struct {
+	// ApprovedRevisions 本次授权覆盖的修订数量；清单另存不随回执外发
+	ApprovedRevisions int                          `json:"approved_revisions"`
+	ConversationId    *string                      `json:"conversation_id,omitempty"`
+	GrantedAt         time.Time                    `json:"granted_at"`
+	Id                string                       `json:"id"`
+	PolicyVersion     string                       `json:"policy_version"`
+	Purpose           CreativeEgressConsentPurpose `json:"purpose"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision  CreativeRevision           `json:"revision"`
+	RevokedAt *time.Time                 `json:"revoked_at,omitempty"`
+	Scope     CreativeEgressConsentScope `json:"scope"`
+	VendorKey string                     `json:"vendor_key"`
+}
+
+// CreativeEgressConsentPurpose defines model for CreativeEgressConsent.Purpose.
+type CreativeEgressConsentPurpose string
+
+// CreativeEgressConsentGrantPayload defines model for CreativeEgressConsentGrantPayload.
+type CreativeEgressConsentGrantPayload struct {
+	DataClasses         []CreativeEgressConsentGrantPayloadDataClasses `json:"data_classes"`
+	Mode                CreativeEgressConsentGrantPayloadMode          `json:"mode"`
+	Purpose             CreativeEgressConsentGrantPayloadPurpose       `json:"purpose"`
+	SelectedRevisionIds *[]string                                      `json:"selected_revision_ids,omitempty"`
+	VendorKey           string                                         `json:"vendor_key"`
+}
+
+// CreativeEgressConsentGrantPayloadDataClasses defines model for CreativeEgressConsentGrantPayload.DataClasses.
+type CreativeEgressConsentGrantPayloadDataClasses string
+
+// CreativeEgressConsentGrantPayloadMode defines model for CreativeEgressConsentGrantPayload.Mode.
+type CreativeEgressConsentGrantPayloadMode string
+
+// CreativeEgressConsentGrantPayloadPurpose defines model for CreativeEgressConsentGrantPayload.Purpose.
+type CreativeEgressConsentGrantPayloadPurpose string
+
+// CreativeEgressConsentRevokePayload defines model for CreativeEgressConsentRevokePayload.
+type CreativeEgressConsentRevokePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+}
+
+// CreativeEgressConsentScope defines model for CreativeEgressConsentScope.
+type CreativeEgressConsentScope struct {
+	DataClasses []CreativeEgressConsentScopeDataClasses `json:"data_classes"`
+	Mode        CreativeEgressConsentScopeMode          `json:"mode"`
+}
+
+// CreativeEgressConsentScopeDataClasses defines model for CreativeEgressConsentScope.DataClasses.
+type CreativeEgressConsentScopeDataClasses string
+
+// CreativeEgressConsentScopeMode defines model for CreativeEgressConsentScope.Mode.
+type CreativeEgressConsentScopeMode string
 
 // CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
 type CreativeFoundationCapabilities struct {
@@ -4498,6 +4922,13 @@ type FeedbackCreateResultV1 struct {
 // FeedbackCreateResultV1TargetKind defines model for FeedbackCreateResultV1.TargetKind.
 type FeedbackCreateResultV1TargetKind string
 
+// GrantCreativeEgressConsentRequest defines model for GrantCreativeEgressConsentRequest.
+type GrantCreativeEgressConsentRequest struct {
+	ClientCreatedAt time.Time                         `json:"client_created_at"`
+	OperationId     openapi_types.UUID                `json:"operation_id"`
+	Payload         CreativeEgressConsentGrantPayload `json:"payload"`
+}
+
 // HealthTiers 客户健康度分层参数组（§4.2 customer-health-tiers；跨字段校验 0 < sleeping_ratio < at_risk_ratio < lost_ratio，fallback 30-365；仅供 dashboard v2 customer_health 块消费，与 churn_thresholds 相互独立）
 type HealthTiers struct {
 	// AtRiskRatio 沉睡→高危 分界（个人节奏倍数，默认 2）
@@ -5016,6 +5447,13 @@ type RestoreCreativeProjectRequest struct {
 	ClientCreatedAt time.Time                   `json:"client_created_at"`
 	OperationId     openapi_types.UUID          `json:"operation_id"`
 	Payload         CreativeProjectStatePayload `json:"payload"`
+}
+
+// RevokeCreativeEgressConsentRequest defines model for RevokeCreativeEgressConsentRequest.
+type RevokeCreativeEgressConsentRequest struct {
+	ClientCreatedAt time.Time                          `json:"client_created_at"`
+	OperationId     openapi_types.UUID                 `json:"operation_id"`
+	Payload         CreativeEgressConsentRevokePayload `json:"payload"`
 }
 
 // SaveCreativeLibrarySettingsRequest defines model for SaveCreativeLibrarySettingsRequest.
@@ -5679,8 +6117,36 @@ type CommandCreativeCanvas200JSONResponseBody struct {
 	union json.RawMessage
 }
 
+// ListCreativeAgentConversationsParams defines parameters for ListCreativeAgentConversations.
+type ListCreativeAgentConversationsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateCreativeAgentConversationParams defines parameters for CreateCreativeAgentConversation.
+type CreateCreativeAgentConversationParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // RequestCreativeNodeExecutionParams defines parameters for RequestCreativeNodeExecution.
 type RequestCreativeNodeExecutionParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// GrantCreativeEgressConsentParams defines parameters for GrantCreativeEgressConsent.
+type GrantCreativeEgressConsentParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// ListCreativeAgentMessagesParams defines parameters for ListCreativeAgentMessages.
+type ListCreativeAgentMessagesParams struct {
+	// BeforeOrdinal 不含该序号；留空表示从最新开始
+	BeforeOrdinal *CreativeRevision `form:"before_ordinal,omitempty" json:"before_ordinal,omitempty"`
+	Limit         *int              `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// RevokeCreativeEgressConsentParams defines parameters for RevokeCreativeEgressConsent.
+type RevokeCreativeEgressConsentParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -6191,8 +6657,17 @@ type TrashCreativeAssetJSONRequestBody = TrashCreativeAssetRequest
 // CommandCreativeCanvasJSONRequestBody defines body for CommandCreativeCanvas for application/json ContentType.
 type CommandCreativeCanvasJSONRequestBody = CommandCreativeCanvasRequest
 
+// CreateCreativeAgentConversationJSONRequestBody defines body for CreateCreativeAgentConversation for application/json ContentType.
+type CreateCreativeAgentConversationJSONRequestBody = CreateCreativeAgentConversationRequest
+
 // RequestCreativeNodeExecutionJSONRequestBody defines body for RequestCreativeNodeExecution for application/json ContentType.
 type RequestCreativeNodeExecutionJSONRequestBody = CreativeRequestExecutionRequest
+
+// GrantCreativeEgressConsentJSONRequestBody defines body for GrantCreativeEgressConsent for application/json ContentType.
+type GrantCreativeEgressConsentJSONRequestBody = GrantCreativeEgressConsentRequest
+
+// RevokeCreativeEgressConsentJSONRequestBody defines body for RevokeCreativeEgressConsent for application/json ContentType.
+type RevokeCreativeEgressConsentJSONRequestBody = RevokeCreativeEgressConsentRequest
 
 // SaveCreativeLibrarySettingsJSONRequestBody defines body for SaveCreativeLibrarySettings for application/json ContentType.
 type SaveCreativeLibrarySettingsJSONRequestBody = SaveCreativeLibrarySettingsRequest
@@ -7677,6 +8152,9 @@ type ServerInterface interface {
 	// 注册 pending_verification 账号并尝试发送验证邮件
 	// (POST /auth/register)
 	Register(c *gin.Context)
+	// 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力
+	// (GET /creative/agent/catalog)
+	GetCreativeAgentCatalog(c *gin.Context)
 
 	// (GET /creative/asset-groups)
 	ListCreativeGroups(c *gin.Context)
@@ -7735,6 +8213,12 @@ type ServerInterface interface {
 	// (POST /creative/canvases/{id}/commands)
 	CommandCreativeCanvas(c *gin.Context, id string, params CommandCreativeCanvasParams)
 
+	// (GET /creative/canvases/{id}/conversations)
+	ListCreativeAgentConversations(c *gin.Context, id string, params ListCreativeAgentConversationsParams)
+
+	// (POST /creative/canvases/{id}/conversations)
+	CreateCreativeAgentConversation(c *gin.Context, id string, params CreateCreativeAgentConversationParams)
+
 	// (GET /creative/canvases/{id}/events)
 	WatchCreativeCanvas(c *gin.Context, id string)
 
@@ -7752,9 +8236,18 @@ type ServerInterface interface {
 
 	// (GET /creative/content-revisions/{id})
 	GetCreativeContentRevision(c *gin.Context, id string)
+	// 记录本账号对某供应商的外发授权；这是内容离开账号的唯一闸门
+	// (POST /creative/conversations/{id}/egress-consents)
+	GrantCreativeEgressConsent(c *gin.Context, id string, params GrantCreativeEgressConsentParams)
+	// 从最新往回分页；每页按阅读顺序返回
+	// (GET /creative/conversations/{id}/messages)
+	ListCreativeAgentMessages(c *gin.Context, id string, params ListCreativeAgentMessagesParams)
 
 	// (GET /creative/documents/{id})
 	GetCreativeDocument(c *gin.Context, id string)
+	// 阻止后续外发；不承诺召回已发出的内容
+	// (POST /creative/egress-consents/{id}/revoke)
+	RevokeCreativeEgressConsent(c *gin.Context, id string, params RevokeCreativeEgressConsentParams)
 
 	// (GET /creative/library-settings)
 	GetCreativeLibrarySettings(c *gin.Context)
@@ -8336,6 +8829,21 @@ func (siw *ServerInterfaceWrapper) Register(c *gin.Context) {
 	}
 
 	siw.Handler.Register(c)
+}
+
+// GetCreativeAgentCatalog operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeAgentCatalog(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeAgentCatalog(c)
 }
 
 // ListCreativeGroups operation middleware
@@ -9255,6 +9763,106 @@ func (siw *ServerInterfaceWrapper) CommandCreativeCanvas(c *gin.Context) {
 	siw.Handler.CommandCreativeCanvas(c, id, params)
 }
 
+// ListCreativeAgentConversations operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeAgentConversations(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreativeAgentConversationsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeAgentConversations(c, id, params)
+}
+
+// CreateCreativeAgentConversation operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeAgentConversation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeAgentConversationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeAgentConversation(c, id, params)
+}
+
 // WatchCreativeCanvas operation middleware
 func (siw *ServerInterfaceWrapper) WatchCreativeCanvas(c *gin.Context) {
 
@@ -9450,6 +10058,106 @@ func (siw *ServerInterfaceWrapper) GetCreativeContentRevision(c *gin.Context) {
 	siw.Handler.GetCreativeContentRevision(c, id)
 }
 
+// GrantCreativeEgressConsent operation middleware
+func (siw *ServerInterfaceWrapper) GrantCreativeEgressConsent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GrantCreativeEgressConsentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GrantCreativeEgressConsent(c, id, params)
+}
+
+// ListCreativeAgentMessages operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeAgentMessages(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreativeAgentMessagesParams
+
+	// ------------- Optional query parameter "before_ordinal" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before_ordinal", c.Request.URL.Query(), &params.BeforeOrdinal, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter before_ordinal: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeAgentMessages(c, id, params)
+}
+
 // GetCreativeDocument operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeDocument(c *gin.Context) {
 
@@ -9475,6 +10183,60 @@ func (siw *ServerInterfaceWrapper) GetCreativeDocument(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeDocument(c, id)
+}
+
+// RevokeCreativeEgressConsent operation middleware
+func (siw *ServerInterfaceWrapper) RevokeCreativeEgressConsent(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RevokeCreativeEgressConsentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RevokeCreativeEgressConsent(c, id, params)
 }
 
 // GetCreativeLibrarySettings operation middleware
@@ -12332,6 +13094,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/password/reset", wrapper.ResetPassword)
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
+	router.GET(options.BaseURL+"/creative/agent/catalog", wrapper.GetCreativeAgentCatalog)
 	router.GET(options.BaseURL+"/creative/asset-groups", wrapper.ListCreativeGroups)
 	router.POST(options.BaseURL+"/creative/asset-groups", wrapper.CreateCreativeGroup)
 	router.POST(options.BaseURL+"/creative/asset-groups/:id/delete", wrapper.DeleteCreativeGroup)
@@ -12351,13 +13114,18 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/:id/trash", wrapper.TrashCreativeAsset)
 	router.GET(options.BaseURL+"/creative/canvases/:id", wrapper.GetCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/commands", wrapper.CommandCreativeCanvas)
+	router.GET(options.BaseURL+"/creative/canvases/:id/conversations", wrapper.ListCreativeAgentConversations)
+	router.POST(options.BaseURL+"/creative/canvases/:id/conversations", wrapper.CreateCreativeAgentConversation)
 	router.GET(options.BaseURL+"/creative/canvases/:id/events", wrapper.WatchCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/executions", wrapper.RequestCreativeNodeExecution)
 	router.GET(options.BaseURL+"/creative/canvases/:id/executions/:execution_id", wrapper.GetCreativeNodeExecution)
 	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
+	router.POST(options.BaseURL+"/creative/conversations/:id/egress-consents", wrapper.GrantCreativeEgressConsent)
+	router.GET(options.BaseURL+"/creative/conversations/:id/messages", wrapper.ListCreativeAgentMessages)
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
+	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/library-settings", wrapper.SaveCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/media-access-tickets", wrapper.IssueCreativeMediaTicket)

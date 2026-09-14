@@ -57,7 +57,7 @@ func TestSettingsAvailabilityMigrationBackfillsExistingRowsAndRollsBack(t *testi
 		t.Fatalf("close before down migration: %v", err)
 	}
 	for index, label := range []string{
-		"llm-gateway",
+		"agent-conversations", "llm-gateway",
 		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",

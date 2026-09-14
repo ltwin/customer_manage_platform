@@ -421,6 +421,10 @@ func requireRoot(ctx context.Context, tx contentReader, revision Revision) error
 		return nil
 	}
 	for _, root := range []struct{ table, condition string }{
+		// A conversation is read long after the canvas moved on. What a message
+		// showed has to stay readable once the asset points at a newer revision,
+		// so the reference registered with the message is a root of its own.
+		{"creative_message_content_refs", "content_revision_id=$2"},
 		{"creative_change_content_refs", "content_revision_id=$2 AND expires_at>clock_timestamp()"},
 		{"creative_node_inputs", "content_revision_id=$2"},
 		{"creative_node_prompt_refs", "content_revision_id=$2"},

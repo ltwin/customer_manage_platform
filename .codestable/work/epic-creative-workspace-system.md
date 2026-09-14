@@ -770,3 +770,73 @@ owner 授权后开一轮独立 change review，目标冻结为暂存差异 `60cd
 owner 授权修复 `dispatching` 无核实出口及跨账号共享名额泄漏。原复现：两次 BeginDispatch 提交后丢弃许可，推进 48 小时，Verify 仍拒绝且另一账号 active_count=2 无法派发。实现固定传输期限、过期许可 fencing、账号范围恢复与创意 Worker 分页巡检；unknown 保留费用 hold，迟到完整结果仅允许更新尚未被核实/替换的同一 attempt，回收名额幂等。部署需停止旧执行器，不新增迁移；无 commit 授权。定向测试包含 orphan/过期旧许可/结果持久化失败/迟到结果与另一在飞名额/非 active 账号分页。
 
 验证闭环：`TestExpiredPermitCannotStartBeforeSweep` 对照 HEAD 的 dispatch.go 红（过期许可仍成功），当前版本五条恢复测试全绿；`make check-go` 全绿（首次仅 goimports 分组报错，修正后通过）。独立单轮 cs-review：候选快照 SHA-256 `ea12e95e902348e3305172251f45d4a176f7b1044cd8eec4ae61ae185975966b`，无 blocking/important，可合；仅本段记录在审查后追加。日志 `/tmp/gateway-recovery-red.log`、`/tmp/gateway-recovery-tests.log`、`/tmp/gateway-recovery-go.log`。未重复 review，未付费调用、未修改开发数据库、未提交。
+
+### FND-07 开工（2026-09-13）
+
+依据已批准 Epic FND-07、`modules/harness.md`、`modules/gateway-harness-data.md` §3/4/5、`modules/agent-api-events.md`、`eino-adoption.md`、`data-model.md` §7「运行状态机（唯一权威）」与 §8 实施。上一项 FND-06 及其两轮加固已提交（最新 `ce48635`）；owner 明确沿用当前 worktree 分支 `feat/creative-workspace-redesign`，不新开 worktree。
+
+- **依赖核实**：FND-03/04/06 均已提交。`gateway-harness-slices.md` §1 要求「River/pgx 桥接、同事务入队/回滚在 GH-02 接 run 之前证明」——已由 FND-05 的 `store/creative_jobs.go`（`river.InsertTx` 绑定同物理 `pgx.Tx`，`jobs.TxEnqueuer` 密封能力）落地并随媒体 Worker 验证，本项不重复建桥。Eino v0.9.19 与 River v0.40.0 已在 `backend/go.mod`。最新迁移 `0043_llm_gateway`，本项从 `0044` 起。`internal/creativeagent` 与前端 Agent 面板均为全新。
+- **范围边界**（由 Epic 自身划分推出，非本项缩窄）：SSE 流式与消息 chunk 持久化 → FND-08「流式体验」；独立附件 draft / `agent_attachment` → FND-09；画布写工具与提案采纳（AG-06）→ FND-08。FND-07 只开放真实对话与**只读运行时工具**（Skill List/Get、ReadSkillResource、ReadRunResult）——正是这三个只读工具为 ReAct 循环提供真实多轮，使 checkpoint/resume 有可验对象；没有它们，「有界运行适配」将无从验证。因无写工具，`waiting_apply` / `run_artifacts` 在本项只保留状态机出口，实际提案与采纳随 FND-08 的写工具落地。
+- **模型调用形态**：本项用 Gateway 非流式调用（`CallInput.Stream=false`），完整结果一次落库为完整 assistant 消息；`creative_message_chunks` 随 FND-08 流式一并落地，不提前建空表。
+- **owner 拍板（2026-09-13）交付粒度**：分 3 个里程碑提交，每段独立可验证、独立 review、逐段授权提交。理由是 `attention.md`「一个 feature 一个提交」写了「除非必要」，而本项一次性 diff 约 60+ 文件会让独立 review 失准。
+  - **A**：迁移 0044 + 会话/消息 + 外发同意 + 模型/Skill 目录 + 对应 REST/OpenAPI。
+  - **B**：迁移 0045 + run/step/slot/epoch 状态机 + Eino Runner/ChatModelAgent 接入 + checkpoint/context/skill 三个 backend + 只读运行时工具 + Gateway 结果消费 + River Worker。
+  - **C**：等待/取消/对账/终态恢复 + 最小 Agent 面板（轮询）+ 真实 DeepSeek 对话验收。
+- **风险与保障**：改 schema/迁移、并发/顺序/一致性语义（slot/epoch/lease/CAS、全局锁序第 2-4 层）、信任边界（外发同意、Skill 包 digest、跨账号）、不可恢复代码外副作用（付费模型调用）→ 每个里程碑各做定向 red→green 测试 + 一轮独立 change review（owner 既定：默认一轮，blocking 清零即关）。
+
+### FND-07 里程碑 A：会话、消息、外发同意与目录（2026-09-13）
+
+- **归属**：新建 `internal/creativeagent`（ConversationApplication / 外发同意 / SkillRegistry / Catalog）；迁移 `0044_creative_agent_conversations`（5 表：conversations / messages / message_content_refs / egress_consents / egress_consent_contents）；HTTP 新增 `/creative/agent/catalog`、`/canvases/{id}/conversations`（GET/POST）、`/conversations/{id}/messages`、`/conversations/{id}/egress-consents`、`/egress-consents/{id}/revoke`；`cmd/server` 装配 `creativeagent.Compose(catalog)`；开启 `agent_start` 能力（此前 `CreativeCapabilities` 恒为 false）。
+- **owner 拍板（2026-09-13）外发权利边界**：**不引入 `ai_analysis` 这项独立的外发权利校验**；`creativecontent` 一行未改。我在提问时已写明该选项与 AG-08「两项独立校验」直接矛盾，owner 知情后选定。
+  - **准确表述（经独立审查纠正）**：授权时对每个选中修订调的 `creativecontent.RequireUsable(..., "display")` **不只是身份完整性校验**，它实际执行四项：同账号 / `state='ready'` / `requireRoot` 保留根；`ValidatePurpose(..., PurposeMoodboardDisplay)` 权利矩阵（`PurposeAllowed` 对该用途恒 true，故不构成来源限制）；`creative_usage_grants` 存在未撤销的 `display` 授权；`creative_content_required_grants` 派生闭包。即 **display 权利闸门仍然生效**——摄影师自己能展示的修订可授权外发，display 授权被撤销的不能。逐条见 `docs/dev/creative-agent.md`。
+  - **需求偏差待处理**：`.codestable/requirements/creative-canvas-foundation.md:119`「账号外发同意与素材用途权利是两项独立校验，任何一项不满足都不能发送」与实现相反。需在 FND-12 前经 `cs-epic` 边界重确认修订该句，否则 FND-12 会记为不符。已写入 `docs/dev/creative-agent.md`。
+  - owner 同轮补充：后续也不启用图片/视频权利校验，因为页面已不提供来源选框。核实这一现状 FND-05 已成立——`RightsDeclarationInput.OrDefault()` 注释即「Clients no longer ask for a source」，文字与媒体都在服务端默认 `photographer_owned`/`ownership_attested` 并自动建 `display` grant。本项因此无需改动。
+- **Gateway 补 `VendorKey`**：外发同意需要「字节发给哪家公司」，而 FND-06 只有协议族 `Provider`（`openai_compatible`）和按模型的 `DeploymentKey`（`deepseek/api/flash`）。新增 `ModelConfig.VendorKey`（必填，`^[a-z][a-z0-9_-]{0,63}$`）、`CatalogEntry.VendorKey`、`Catalog.Vendors()`。按公司记录授权，同一家的两个模型间切换不重新索要授权。设计稿 `agent-api-events.md` 的 `provider_key` 语义即此字段，实现统一改名 `vendor_key` 并在设计稿标注。
+- **范围内的诚实缺口**：`tools` 目录恒空、内置 Skill `reference-direction@1` 一律 `available:false` 附原因（写工具属 FND-08）；消息 chunk 与流式不建表（FND-08）；附件草稿不建表（FND-09）。
+- **红证**：① 会话行锁降级为普通读 → `duplicate key value violates unique constraint "creative_agent_messages_account_id_conversation_id_ordinal_key"`，序号变成 1 和 0；② 去掉 `RequireUsable` 归属校验 → `a revision of another account must not be authorisable, got <nil>`。
+- **测试**：`creativeagent` 17 个用例（会话取画布的项目而非请求的、并发追加不共享序号、步骤重放不追加第二条消息、往回分页的阅读顺序与游标排他、跨账号修订不可授权、未知厂商不可授权、同一操作只生成一份同意、二次撤销被拒且证据保留、陈旧 revision 撤销不生效、Skill 在工具未注册前不可用、同 key/version 不同 digest 拒绝启动、包外资源拒绝、目录冻结上限与可达厂商）；`store` 新增 `TestAgentConversationMigrationShapeAndLossyRollback`（账号键、序号唯一、步骤按角色唯一、vendor_key 不收 URL、空历史可回滚、有历史拒绝回滚且提示先导出）；`llmgateway` 新增 `TestAModelWithoutAVendorCannotBeLoaded`。
+- **存量维护**：新增迁移使 9 个文件的逐级回滚列表各少一步，已补 `agent-conversations` 标签与对应 down 调用；`creative_graph_migration_test.go` 回滚步数 4→5。
+- **验证**：`make check-go PKG=./...` 全绿（golangci-lint `0 issues`）；`make check-frontend` 381 用例通过。`make generate` 已跑，Go/TS 两份生成物同提交。开发数据库未应用 0044，未启动任何服务。
+
+### FND-07 里程碑 A：独立 change review（2026-09-13）
+
+- **reviewer 创建**：先按协议选异构——`maestro delegate --to codex` 的 codex CLI 仍缺原生依赖 `@openai/codex-darwin-arm64`（与 FND-06 同一故障，未修复），`opencode` 亦不可用，`gemini` 在 `cli-tools.json` 为 `enabled: false`。无合格异构候选，按 FND-05/06 先例回退宿主 fresh reviewer 并显式指定 Opus。第 1 轮目标 `8410f13a…`。
+- **判定**：哈希核对一致，2 blocking + 6 important + 9 nit，结论「建议先修再合」。两条 blocking 均核实成立且都是实现者的错。
+
+**[blocking B-1] 六个 Agent 端点注册在未认证路由组，带合法 token 也恒 401**：`registerCreativeAgent(api, h)` 落在 `protected := api.Group("", authMiddleware(...))` 之前，即注释所述「ticket/签名授权」组，而 Agent 端点没有票据机制。fail closed 不构成越权，但里程碑 A 整个 REST 面在生产不可用。根因是插入时锚在 `registerCreativeMediaBytes` 上，位置正好错在分界线前。漏测原因：`creative_foundation_test.go` 的鉴权用例是**硬编码路径清单**，新路由不会进去。已改为遍历 `r.Routes()` 断言所有 `/api/v1/creative/*` 非票据路由返回 401，票据例外收窄为与 `registerCreativeMediaBytes` 一一对应的显式 map。红证：放回 `api` 组后新测试报 4 条路由非 401。
+
+**[blocking B-2] OpenAPI 把路径注入字段声明为必填，符合契约的客户端必被 400**：三个新 payload schema 把 `creativeWrite` 从 URL 注入的 `canvas_id`/`conversation_id`/`consent_id` 列进 `required`，而 `creative_canvas.go` 对客户端自带该键直接返回 400。既有 `CreativeProjectRenamePayload` 等四处都不含注入字段，新增三个是唯一例外。违反 CLAUDE.md 硬规则 3。已删除并重跑 `make generate`。
+
+- **important 处置**：
+  - **I-1**（采用 reviewer 选项②）`RequireUsable(..., "display")` 并非纯身份完整性校验——它还跑 `ValidatePurpose(..., PurposeMoodboardDisplay)`、要求未撤销的 display grant、要求 `creative_content_required_grants` 派生闭包。注释、`docs/dev/creative-agent.md` 与本游标的偏差记录已改为如实描述：**偏差是「没有引入 `ai_analysis` 这项独立外发权利校验」，display 权利闸门仍生效**。不选①（换成裸归属检查），因为那会放宽到允许 display 授权已撤销的内容外发，owner 没要这个。
+  - **I-2** `GrantConsent` 先插 consent 再锁 content，与全局锁序第 5 层相反（今天不死锁，里程碑 B 派发时复核 consent+content 就会双向）。改为先校验/取锁全部修订再插 consent 与 contents，顺带让「被拒授权不留 consent」从依赖回滚变成结构性。
+  - **I-3** `Compose()` 自建第二份目录，与 `llmgateway.Build` 的 `CatalogPath` 分支可能不同源；在「外发同意是唯一闸门」前提下闸门白名单必须与派发端同源。新增 `llmgateway.OpenCatalog(path, credential)` 作唯一入口，`Build` 改调它，`Compose` 改为接收注入，`cmd/server` 建一份传入。
+  - **I-4** (a) step 重放探测在会话行锁**之前**，并发消费同一 step 时双方都探测不到 → 败者撞唯一索引变成裸 500 而非重放。已移到行锁之后（step 属 run、run 属会话，必然争同一把锁）。(b) `messageForStepInTx` 未限定 `conversation_id`，传错会话会拿回另一会话的消息。已加。
+  - **I-5** 补 4 组测试：跨账号读/列表/撤销/在他人会话授权（四条断言，此前**零覆盖**）、`ContentRefs` 写入与三类坏引用、`validBody` 超限与六种坏 block、真实重复撤销路径。并按 reviewer 建议把 `RevokeConsent` 的 revoked 检查调到 revision 之前——原实现下客户端拿自己刚用过的 revision 重试会得到 409「内容已被其他窗口修改」，对已撤销授权是误导文案。
+  - **I-6** `creativeError` ⇄ `creativeAgentError` 互相递归，仅靠注释维持不爆栈。已把 `creativeAgentError` 的 default 改为终端处理。
+- **nit 已处理**：迁移 `scope` 加 CHECK（mode 枚举 + `data_classes` 非空数组）；`Catalog` 能力检查前置；`ContentRefs` 校验提到消息落库前并拒同次重复；`gateway-harness-data.md:52` 字段名同步。**CHECK 第一版有 NULL 语义漏洞**——缺键时 `jsonb_typeof` 返回 NULL、CHECK 只拒 FALSE，`{"mode":"account_library"}` 被放行；迁移测试的负例当场抓到，已用 `coalesce` 修正。
+- **未处理的 nit（已记为已知边界）**：skill digest 由加载方计算而非 registry 重算（改后测试无法构造不匹配分支）；`maxSkillFileBytes` 只约束 `Resources`；`ToolAllowlist` 条目形状未校验；`consents.go` 的 `tx.Update` 影响行数丢弃；`VendorKey` 必填对使用 `CatalogPath` 的部署是破坏性配置变更（`llmgateway.Build` 尚未接入 `cmd/server`，今天无实际影响）。
+- **复跑**：`make check-go PKG=./...` 全绿、golangci-lint `0 issues`、`make check-frontend` 381 例通过。第 2 轮目标冻结为 `ac2cf312ce8a79af0a6581ae8a3225be3f68568ccf1b0507c15baed265f1d51d`，已交回同一 reviewer 同 session 复核。
+
+**第 2 轮复核（同 reviewer 同 session，目标 `ac2cf312…`）**：首次重发因 API 限流中途终止且**无终态报告**，按协议属「运行失败无报告」，不计轮次；限流恢复后重发，工作区与冻结哈希均未漂移。
+
+- **判定：无 blocking，有条件可合**。第 1 轮的 B-1/B-2/I-2/I-4/I-5/I-6 与 5 条 nit 判 `resolved`；I-1、I-3 判**部分未解决**，条件即这两条。
+- **[R-1 important] I-1 只改了一半**：`docs/dev/creative-agent.md` 改准了，但 `consents.go` 的函数级 doc comment 仍写「the rights matrix deliberately does not participate」，本游标里程碑 A 段也仍是原话——同一份文档相隔 20 行自相矛盾，且错的那条排在前面、挂在 owner 会读的「外发权利边界」标题下。已**就地改正**（不是追加）：函数注释改为指向 dev 文档的四项清单，inline 注释补上 `ValidatePurpose` 与派生闭包，游标那段改为「不引入 `ai_analysis` 这项独立外发权利校验；display 权利闸门仍生效」。同段顺带修正 `Compose()` → `Compose(catalog)`、用例数 13 → 17。
+- **[R-2 important] I-3 的接缝建好了但组合根没接上**：`main.go` 仍是 `OpenCatalog("", nil)`，而 `OptionsFromEnv` 会读 `CREATIVE_LLM_CATALOG`。部署一旦设了该变量，里程碑 B 接入 `Build(OptionsFromEnv())` 后 Gateway 用文件目录、`creativeagent` 用内置目录，闸门白名单与派发端再次分叉——正是 I-3 要防的事；且 `Build` 当时的签名也不接受预解析的 catalog，注释里「milestone B hands this same instance」没有实现机制支撑。已给 `Options` 加 `Catalog *Catalog` 字段（`Build` 优先用注入的那份），`main.go` 改为 `OptionsFromEnv()` → `OpenCatalog(opts.CatalogPath, opts.Credential)` → 存回 `opts.Catalog` 传给 `Compose`；`OpenCatalog` 的注释也改成如实说明它没有单例语义。
+- **[R-3 nit] `scope` CHECK 的第三个合取项依赖 AND 短路**：`{"mode":"account_library","data_classes":"text"}` 会让 `jsonb_array_length` 对标量**抛错**而非返回 NULL，PG 不保证布尔子表达式求值顺序。已改用 `CASE`，并把该输入连同 `null` / 数组 / 标量三种 `scope` 加进迁移测试负例。
+- **[R-4 nit] 路由豁免 map 以路径为键、不含方法**：将来在 `/creative/media-parts` 上再注册一个未认证动词会被整条豁免。已改为 `method+" "+path`（三条），占位符正则补数字 `[a-zA-Z_0-9]+`。
+- **[R-5/R-6 nit] 已处理**：注释写明重放身份是 `(step, role)` 不含 body；补块数上限用例；测试局部变量 `append` 改名避免遮蔽内建；`TestRetryingTheSameRevoke…` 注释点明走的是领域路径而非回执重放。
+- **记为已知边界并写入 dev 文档「验证缺口」**：`ContentRefs` 不校验 `RevisionID` 归属/`ready`/保留根（与 `GrantConsent` 不对称，里程碑 B 接真实 run 时补）；重放不比对 body。reviewer 无 finding 的两处经核实成立：`OpenCatalog` 抽取未改变 `credential` 回落语义；`RevokeConsent` 检查顺序调换让并发撤销从 `creative_revision_conflict` 变为 `creative_egress_revoked`，两者 HTTP 同为 409 但 code 可区分，新语义更准确。
+- 第 2 轮后一度按 owner 既定规则（默认一轮、blocking 清零即关）收尾于候选 `d38aaee7…`；随后 owner 转交第 3 轮报告，见下。
+
+**第 3 轮（owner 转交，1 blocking + 1 important，两条均已复现并修复）**：
+
+- **[blocking] 消息引用没有真正成为保留根**。`appendMessageInTx` 写了 `creative_message_content_refs`，但 `creativecontent.requireRoot` 的根表清单里没有它——于是「消息是保留根」只在文档和迁移注释里成立，代码里不成立。原资产改指向新修订（或该资产消失）之后，只被历史消息引用的旧内容 `Read` 返回 `creative content not found`，即摄影师往回翻对话看到的是空。漏测原因：`TestAMessageKeepsTheContentItShowsReadable` 只数了 ref 行数，没有真的去读。
+  - 修法是在 `requireRoot` 的清单里加 `{"creative_message_content_refs", "content_revision_id=$2"}`，不加生命周期谓词——消息不会被删，这正是它作为根的意义；索引 `creative_message_ref_revision(account_id,content_revision_id)` 已覆盖该查询。核实过 `requireRoot` 是保留判定的唯一实现点，没有第二处枚举根表的清理器需要同步。
+  - 测试改为：移掉资产根后 `creativecontent.Read` 仍返回原文；并加一条对照——无人引用的修订在失去资产后必须读不到，证明这是一条根而不是一张放行票。红证：抽掉该行后逐字复现 `a message must keep what it shows readable: creative content not found`。
+- **[important] Skill 包可被调用方改写而 digest 不变**。`NewSkillRegistry` 与 `Get` 都是浅拷贝：`SkillPackage` 是值，但 `Resources` map、其中的 `[]byte` 与 manifest 的 `ToolAllowlist` / `InputKinds` / `RequiredModelCapabilities` 不随值语义复制。拿到包的调用方能改掉指令资源、凭空塞进一份参考、或放宽工具白名单，而 digest 纹丝不动——digest 唯一的用处（回答「当时跑的是哪份文本」）就此失效。
+  - 修法：`SkillPackage.clone()` 深拷贝全部可变字段，构造时与 `Get` 时各调一次；新增包内 `lookup` 供 `Resource` 与 `Get` 复用，避免读一个资源要深拷整个包。`packagesInOrder` 仍返回存量值（包内列举口，只投影 manifest 字段不写），避免一次目录请求复制全部资源字节；已在注释里写明这条约束。
+  - 红证分两半各自复现：只去掉 `Get` 的拷贝 → `a caller added …injected to a published package`；只去掉构造时的拷贝 → `…sneaked`，证明两处拷贝都不是死代码。
+- 文档同步：`docs/dev/creative-agent.md` 的「消息是保留根」补上执行点与红证，「验证缺口」第 5 条改为「保留根这一侧已生效，但一行指向不存在修订的 ref 仍写得进去」；Skill 一段补深拷贝的理由与 `packagesInOrder` 的例外。
+- **轮次已用满 3 轮**（本阶段：第 1 轮 `8410f13a…`、第 2 轮 `ac2cf312…`、第 3 轮 owner 转交）。按 attention.md，再加一轮需 owner 明确授权。
+- 复跑：`make check-go PKG=./...` 全绿（无 FAIL）、golangci-lint `0 issues`；`creativeagent` 18 例、`creativecontent` 全绿。最终候选 49 文件 +4272/−50（较第 2 轮多出 `internal/creativecontent/content.go`）。本轮不再冻结新的审查目标，故不记哈希。**未提交，等 owner 授权。**

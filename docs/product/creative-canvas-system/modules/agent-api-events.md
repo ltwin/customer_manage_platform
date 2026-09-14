@@ -20,7 +20,7 @@ created: 2026-09-10
 | GET /conversations/{id}/messages | before_ordinal/limit → 消息、prev_cursor、会话revision；ordinal十进制字符串，同快照消息有稳定message_id |
 | POST /conversations/{id}/drafts | 创建附件草稿 → draft_id/revision/expires_at；同一会话可有多个窗口草稿 |
 | GET /agent-drafts/{id} | 返回ready附件及待上传状态，不返回可复用对象密钥 |
-| POST /conversations/{id}/egress-consents | provider_key、purpose=creative_assistance、scope模式/数据类别、selected_revision_ids → consent_id与证据摘要；资源ID写显式关联表，scope不藏ID |
+| POST /conversations/{id}/egress-consents | vendor_key（实现改名，原稿作 provider_key；`provider` 在 Gateway 已指协议族，此处要的是接收字节的公司）、purpose=creative_assistance、scope模式/数据类别、selected_revision_ids → consent_id与证据摘要；资源ID写显式关联表，scope不藏ID |
 | POST /egress-consents/{id}/revoke | revision → revoked_at；先提交的撤销阻止之后派发；已发内容不能召回 |
 | POST /conversations/{id}/runs | text、selected_nodes[{id,data_revision}]、model_key/catalog_version、skill_key/version或null、egress_consent_id、可选draft_id/revision及attachment_ids、task_scope、允许额度 → 202 run_id/trigger_message_id/revision/state |
 | GET /agent-runs/{id} | 当前run/步骤摘要/产物/等待项/限制/费用状态，以及snapshot_seq、earliest_event_seq、finished_at；大输入/结果单独有界读取 |

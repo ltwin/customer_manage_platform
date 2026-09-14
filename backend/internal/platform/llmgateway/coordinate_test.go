@@ -249,7 +249,7 @@ func TestATransientAdmissionRefusalKeepsTheStepResumable(t *testing.T) {
 func oneCallPerMinuteCatalog(t *testing.T) *llmgateway.Catalog {
 	t.Helper()
 	c, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{
-		ModelKey: "chat", DisplayName: "Chat", Provider: llmgateway.ProviderOpenAICompatible,
+		ModelKey: "chat", DisplayName: "Chat", Provider: llmgateway.ProviderOpenAICompatible, VendorKey: "testvendor",
 		DeploymentKey: "dep-1", BaseURL: "https://example.invalid", CredentialEnv: "TEST_KEY",
 		RequestModelID: "vendor-model", AcceptedModelIDs: []string{"vendor-model"},
 		Capability: llmgateway.Capability{ToolCalling: true, ContextTokens: 1000, MaxOutputTokens: 500},

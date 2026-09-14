@@ -49,7 +49,7 @@ created: 2026-09-10
 | creative_run_artifacts | run_id、step_id?、content_revision_id?、proposal/preconditions/影响摘要、proposal_hash、planned_operation_id、revision、apply_state、applied_change_id?、expires_at?；应用时revision+state CAS；planned_operation固定；pending内容有下表完整引用 |
 | creative_artifact_content_refs | artifact_id、content_revision_id、role；PK(account,artifact,revision,role)，proposal涉及多修订不能只保留第一张图；pending保留至期限，applied时转正式根并释放临时refs |
 | creative_run_events | run_id、seq、schema_version、event_type、payload、created_at；PK(account,run,seq)，索引created_at；附属短期投影，不能充当回执或原始完整消息 |
-| creative_egress_consents | provider_key、purpose、conversation_id?、scope、policy_version、revision、granted/revoked_at；scope只存范围模式/类别，不存实际ID，撤销递增revision |
+| creative_egress_consents | vendor_key（实现改名，原稿作 provider_key；`provider` 在 Gateway 已指协议族，此处要的是接收字节的公司）、purpose、conversation_id?、scope、policy_version、revision、granted/revoked_at；scope只存范围模式/类别，不存实际ID，撤销递增revision |
 | creative_egress_consent_contents | consent_id、content_revision_id、approved_at；PK含账号；授权历史不作为媒体保留根 |
 | creative_agent_drafts | conversation_id、revision、state=open/submitted/expired/discarded、expires_at、submitted_message_id?；索引account/conversation/expires；禁止发到另一会话 |
 | creative_agent_attachments | draft_id、content_revision_id?、kind、state=ready/attached/discarded/expired、revision、attached_message_id?、content_revision_id_snapshot?；ready必须有revision且无message；attached必须有message且清空临时revision；ready是GC根 |

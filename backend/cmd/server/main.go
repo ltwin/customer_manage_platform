@@ -18,6 +18,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
@@ -34,6 +35,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
@@ -200,6 +202,22 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-media-init", "CREATIVE_MEDIA_LOCAL_ROOT", "object-storage", err)
 	}
+	// One catalog for the whole process, resolved from the same configuration the
+	// gateway itself reads. Milestone B passes these options, Catalog already
+	// set, straight to llmgateway.Build, so the vendors a photographer authorises
+	// are exactly the ones the dispatcher can reach.
+	gatewayOptions, err := llmgateway.OptionsFromEnv()
+	if err != nil {
+		return newStartupFailure("creative-agent-init", "CREATIVE_LLM_CATALOG", "model-catalog", err)
+	}
+	gatewayOptions.Catalog, err = llmgateway.OpenCatalog(gatewayOptions.CatalogPath, gatewayOptions.Credential)
+	if err != nil {
+		return newStartupFailure("creative-agent-init", "CREATIVE_LLM_CATALOG", "model-catalog", err)
+	}
+	creativeAgent, err := creativeagent.Compose(gatewayOptions.Catalog)
+	if err != nil {
+		return newStartupFailure("creative-agent-init", "skill-packages", "model-catalog", err)
+	}
 	// The API only enqueues; the creative-worker process executes media jobs.
 	creativeJobs, err := s.NewJobRuntime(creativeMedia.Handlers(), logger)
 	if err != nil {
@@ -365,6 +383,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		PlanningMedia:     planningMediaApp,
 		PlanningIngestion: planningIngestionApp,
 		CreativeMedia:     creativeMedia,
+		CreativeAgent:     creativeAgent,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

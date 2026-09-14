@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
@@ -97,6 +98,7 @@ type handlers struct {
 	planningMedia       *planningMediaHandlers
 	anonymousShare      anonymousShareRouteDeps
 	creativeMedia       *creativemedia.Service
+	creativeAgent       *creativeagent.Service
 }
 
 var _ ServerInterface = (*handlers)(nil)
