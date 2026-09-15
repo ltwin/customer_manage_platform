@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"time"
+	"unicode/utf8"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -116,6 +117,9 @@ func loadImport(ctx context.Context, tx store.TxAccountScope, forUpdate bool, co
 // than quietly becoming a second edit under the first attempt's name.
 func (s *Service) BeginImport(ctx context.Context, scope store.AccountScope, req ImportRequest) (Import, error) {
 	if err := req.validate(); err != nil {
+		return Import{}, err
+	}
+	if err := s.mayPublishAs(req.Origin, scope.AccountID()); err != nil {
 		return Import{}, err
 	}
 	manifest, err := req.Manifest.encoded()
@@ -239,16 +243,24 @@ func targetSkill(ctx context.Context, tx store.TxAccountScope, req ImportRequest
 	err := tx.QueryRow(ctx, "creative_skills", "id,origin,revision", "slug=$2", req.Slug).Scan(&id, &origin, &revision)
 	switch {
 	case errors.Is(err, store.ErrNoRows):
+		// Naming a revision of a skill that does not exist is a mistake in the
+		// request, not somebody else having published first. Reporting it as a
+		// conflict would tell the caller to re-read a revision and retry, and
+		// retrying never succeeds.
 		if req.ExpectedSkillRevision != 0 {
-			return "", ErrRevisionConflict
+			return "", ErrSkillIntent
 		}
 		return creativeops.NewResourceID("ccsk")
 	case err != nil:
 		return "", err
 	}
 	// Naming an existing skill without saying which revision is being extended
-	// is the "create" intent aimed at something that already exists.
-	if req.ExpectedSkillRevision == 0 || creativeops.Revision(revision) != req.ExpectedSkillRevision {
+	// is the "create" intent aimed at something that already exists — again the
+	// request's own mistake.
+	if req.ExpectedSkillRevision == 0 {
+		return "", ErrSkillIntent
+	}
+	if creativeops.Revision(revision) != req.ExpectedSkillRevision {
 		return "", ErrRevisionConflict
 	}
 	if origin != req.Origin {
@@ -304,6 +316,14 @@ func (s *Service) StageResource(ctx context.Context, scope store.AccountScope, i
 	}
 	if sum != declared.SHA256 {
 		return Import{}, ErrContentMismatch
+	}
+	// The declared types of this phase are UTF-8 reference text, and this is
+	// where that is decided: the bytes are here, and they are the claim. A mime
+	// or an extension cannot be the gate, because both are written by whoever is
+	// importing. Refusing after the object is published would leave bytes behind
+	// that no version references.
+	if !utf8.Valid(payload) {
+		return Import{}, fmt.Errorf("%w: %s is not UTF-8 text", creativeops.ErrValidation, name)
 	}
 	key, err := objectKey(scope.AccountID(), importID, name)
 	if err != nil {
@@ -374,8 +394,11 @@ func (s *Service) StageResource(ctx context.Context, scope store.AccountScope, i
 		// The bytes are published but nothing recorded them, so drop them here
 		// rather than leaving work for reclamation — except when the commit
 		// outcome is unknown, where the row may in fact reference them.
-		// A crash before this line still orphans the object, which is why
-		// reclamation sweeps the import's key prefix and not staged_objects.
+		//
+		// A crash before this line still orphans the object, and nothing finds
+		// it: ReclaimExpiredImports deletes what an import recorded, and the
+		// object port cannot enumerate a key prefix. That residue waits for the
+		// general collection in FND-10.
 		if !errors.Is(err, store.ErrCommitOutcomeUnknown) {
 			_ = s.objects.DeleteExact(ctx, mine.Key, mine.Version)
 		}

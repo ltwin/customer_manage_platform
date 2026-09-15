@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: S0（对象端口上提）与S1（迁移0045 + creativeskill领域）已实现并通过make check-go，待owner同意后提交（milestone_commit: manual）；随后做S2受信导入CLI与reference-direction@1种子导入、S3目录与输入契约，再接里程碑B
+next_action: S0+S1已提交7407637；S2（受信导入CLI creativectl、种子导入幂等、versionedfs一致性套件）已实现，change review两轮完成、blocking清零、round2的5项P2全部修复并验证，待owner同意后提交（milestone_commit: manual）；随后S3目录与输入契约（含去掉go:embed与catalog语义切换），再接里程碑B
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -910,3 +910,44 @@ owner 授权修复 `dispatching` 无核实出口及跨账号共享名额泄漏�
 
 1. **conformance 套件里最该先写的一条**：认领块的正确性现在依赖「local 同内容必同 version」这个前提，而它只写在注释里，没有任何测试或类型把它钉住。若将来有人把 local 的 version 改成随机值，认领块会静默退化成「每次都判为不同对象」，于是每次并发都删一次。
 2. **local 上不可达的分支**：`superseded != nil` 的「该删而删」路径在 local 驱动上结构性不可达（同内容必同 version），只在 OSS 上存在。S2 补 OSS fake 时一并覆盖。
+
+## FND-07 S2：受信导入 CLI、种子导入、端口一致性套件
+
+- S0+S1 已提交 `7407637`（38 文件 +2346/−137）。本节是 S2 的实现记录。
+- **转交事项 1（local 版本语义）已钉住**：新增 `platform/versionedfs/versionedfstest` 一致性套件，`VersionIdentity` 把「同 key 同内容是否同 version」升级为 adapter 必须声明并被断言的契约。`TestLocalAdapterConformsToThePort/VersionIdentityFollowsTheDeclaredContract` 不止断言两次发布返回同一 version，还断言它的后果——一次 delete 就让双方的对象都消失。把 local 的 version 改成随机值会直接红。
+- **转交事项 2（`superseded != nil` 分支）已覆盖**：写了 `versionedfstest.Memory`（per-write 版本身份）而不是 OSS fake。理由：这个分支要的不是「像 OSS 的 API」，而是「同样字节写两次得到两个能各自删除的对象」，而这正是 local 无法表达的那半个契约。`TestALosingConcurrentStageDropsItsOwnObjectWhenVersionsArePerWrite` 复用同一套 `gatedPort` 交错，断言败者删掉自己那份、`ObjectCount()` 回到 1、冻结版本仍读得出自己的字节。Memory 同时作为套件的第二个受试对象，证明套件测的是端口而不是 local。
+- **未核实**：当前 `versionedfs.OSS.PublishVerified` 带 `ForbidOverwrite:"true"`。阿里云文档说该 header 在开启版本控制的 bucket 上不生效（于是同 key 二次 PUT 生成新 version），但我没有拿到可引用的官方原文，也没有凭证实测。因此**没有**在任何地方断言「OSS 是 PerWrite」；Memory 只声明自己是 PerWrite。接入真实 OSS 前应实测这一条。
+- 新增 `creativeskill.ReadPackage`：包目录即输入格式，除 `manifest.json` / `SKILL.md` 外每个文件都是声明资源，不存在「目录里有但没被声明」。manifest 严格解析（`DisallowUnknownFields`）——写错一个授权字段名就该停住，而不是静默导入一个比文件描述得更窄的 Skill。`version` 字段读取但明示不采用：版本号由服务端在行锁下分配。
+- 新增 `Service.Publish`（Begin→Stage→Finalize 的唯一编排点）与 `Service.ReclaimExpiredImports`。回收顺序按方案 §6.6：行锁内先标 `expired`，再事务外删对象；`staged_objects` 清单**跨过删除阶段才清空**，否则中断的 sweep 会把清单丢掉、把对象变成永久孤儿。`FinalizeImport` 查同一个窗口同一把锁，所以标记过的导入不可能再冻结版本。
+- **明写的边界**：回收只处理导入记录在案的对象。上传成功、记录事务未提交时进程死亡留下的字节不在清单里，而 `versionedfs.Adapter` 没有按前缀枚举的能力——0045 注释里写的「按 key 前缀扫」这条在当前端口上做不到。没有偷偷扩端口，也没有假装覆盖：兜底随 FND-10 的通用回收上。
+- 新增 `backend/cmd/creativectl`（`skill import` / `skill reclaim`），JSON 单行输出 + 退出码 0/1/2/3/4（4 = 冲突，让部署脚本能把「别人先改了」和「我传错了」分开）。`--operation-id` 必填 UUID：重跑同一个 id 即重放，这就是种子导入的幂等性来源，钉死的种子 id 是 `4d8f4d0e-7a2b-4c6d-9f31-5eed00000001`。`--origin platform` 只认 `CREATIVE_PLATFORM_ACCOUNT_ID`，未配置即拒绝——哪个账号持有平台目录是部署事实，不该由一个打错的 flag 决定。命令已进 Dockerfile。
+- 种子导入证据：`TestTheSeedPackageImportsIdempotently` 读的是仓库里真实的 `reference-direction.v1` 目录（不是构造的 fixture），跑两遍同一个 operation id，断言只冻结一个版本且资源字节与磁盘文件逐字节相同。对应方案 §11.10 的「幂等种子导入」。
+- **S2 有意不做的两件事**：(1) 没有去掉 `creativeagent` 的 `go:embed`。方案 §10 的次序是「先建表、配发布账号、完成幂等导入，再切换目录读取」，而去掉 embed 就是切换目录读取本身——现在拿掉会留下一个目录为空的窗口。它和 catalog 语义切换、§11.11 的前后回归一起属于 S3。(2) 没有把 `creativeskill` 接进 `cmd/server`：S3 之前没有 HTTP 或运行时消费方，现在接进去只会多一个没人用的服务。
+- 验证：`make check-go` 全包 EXIT=0，lint 0 issues。新增 14 条端口一致性子测试（local 与 memory 各 7 条，无 skip）、5 条 creativeskill 用例、4 组 CLI 用例。
+
+### S2 change review round 1（无 blocking，7 important + 8 nit）
+
+- 冻结目标 `8f0c56544c46ebb2ee333b1274dd1cf3436c0c90342c92702a67938d8676306f`（16 文件 +1630/−1）。宿主 fresh subagent、显式 `model: opus`；codex / gemini 两个异构 CLI 的 MCP 本会话再次连不上（`Connection closed` / 配置无效），按协议回退同构最强模型并记录原因。
+- **我标的「ForbidOverwrite 未核实」被 reviewer 用我自己的仓库关掉了**：`docs/dev/object-storage.md:51` 早就写着「bucket 开启版本控制后 ForbidOverwrite 不生效，并发写同 key 时会留多版本」，而同文件 :72 又规定 bucket 必须开版本控制。所以 **OSS 在本部署就是 PerWrite**，Memory 建模的是准确的、`Driver()` 报 `"oss"` 不是将就。教训记一笔：我查了 Context7 的外部文档，没先查项目自己的 dev 文档，而结论就在里面。
+- **I1（必须在首次种子导入前修）**：`fs.WalkDir` 会把 `.DS_Store` 当作声明资源。darwin 上 Finder 访问过就会发生。首次导入前出现 → 一段二进制垃圾成为**永不删除**的冻结版本资源；首次导入后出现 → digest 变、钉死的 seed operation id 变成永久 `ErrImportConflict`。已改为对隐藏项、非常规文件（符号链接会被 `fs.ReadFile` 跟随）、空文件一律报错而非跳过——「目录里能看到什么就发布什么」这个承诺对看不见的文件本来就是假的。
+- **I2**：回收 sweep 有队头阻塞。`due` 按 `expires_at` 升序，`reclaimOne` 一出错整个 sweep 立即返回，于是最老的那个一旦永久删不掉，它后面的导入**永远轮不到**。可达路径是换驱动：oss 上暂存、切到 local 再回收，`Local.DeleteExact` 的 `validVersion` 对非 64 位 hex 返回 `ErrNotFound`（不是 nil），永久失败。已改为走完全部候选、累计 `Failed` 计数与首个原因；并在删之前校验 `object.Driver == s.objects.Driver()`，不匹配明确跳过而不是盲删。测试 `TestOneUnreclaimableImportDoesNotBlockTheRest` 特意让卡住的那个 expires_at 更早，否则这个测试会在不经过队头情形的前提下通过。
+- **I3**：`import.go:378` 与 `0045:100` 两处注释断言「回收按 key 前缀扫」，而 S2 实现的正是它们否定的方案。错的契约比没有注释更危险，两处都已改成指向实际边界与 FND-10。
+- **I4**：一致性套件头部写「against every adapter」，而生产用的 OSS 恰恰不在受试列表里，且最可能分叉的两条（版本身份、声明尺寸校验）都没在 OSS 上跑过——OSS 的尺寸契约靠 SDK 透传 `ContentLength`，本仓库从没验证过。已收窄措辞，并在 `PerWrite` 的注释里写明 OSS 属于哪一类及依据。
+- **I5**：exit 4 把「我传错了」和「别人先改了」混在一起。`targetSkill` 的两条分支（新建意图撞上已存在 / 追加意图没带 revision）本质是输入错误，却拿到 4 和一句「重新读取 revision 后重试」——而重试永远不会成功。已拆出 `ErrSkillIntent`，CLI 落到 exit 2。`reserveVersionNumber` 里的那两条保持 `ErrRevisionConflict`（那里确实是并发）。
+- **I6**：origin=platform 的闸门只在 `cmd/creativectl`。方案 §5 说「普通账号不能通过写 origin=platform 进入平台目录」，而这条今天成立只是因为没有第二个调用方。已把 barrier 下沉到 `Service.mayPublishAs`，`BeginImport` 自己核对 `scope.AccountID()`；`NewService` 多一个平台账号参数，未配置 = 本部署没有平台 Skill。S3 加 HTTP 端点时不必再记得检查。
+- **I7**：`Reclaimed` 的存在理由就是分辨「什么都没到期」和「有东西但删不掉」，而 `omitempty` 让 `objects:0` 整个字段消失，`Imports++` 又无条件执行（含被 finalize 抢走、实际没回收的）。已去掉 omitempty（顺带把 CLI 的单一 `commandReport` 拆成 import / reclaim 两个报表，不再让一半字段对另一半命令无意义），`reclaimOne` 改为返回「是否真的回收了」。
+- **nit 已修**：tx2 补 `AND state='expired'` 状态守卫；`Publish` 里那条不可达分支的注释从「能抓 X」改成「今天不可达，作为断言保留」；`versionedfs/local.go` 的三条错误文案不再写死 "creative media"（它现在有两个调用方）；空文件在 `ReadPackage` 就带路径拒绝；CLI 不再 `config.Load()` 两次。
+- **未修的 nit（residual）**：(1) 0045 的 CHECK 允许 `failed` 状态而回收查询硬编码 `preparing/ready/expired`——今天不漏因为没有任何代码写 `failed`，但这是「schema 允许集合增长、查询是子集」的组合，哪天有人写了就永远回收不到且没有测试会红；(2) `0045` 的部分索引 `WHERE state IN ('preparing','ready')` 对新的 OR 查询用不上，当前量级无所谓；(3) `loadImport` 自身驱动级读失败时 `StageResource` 仍会 blanket delete（round 3 已记，未变）。
+- reviewer 判定：完整候选可合回 `develop`，回收顺序与中断安全的正确性论证成立（他补了一条我没写进注释的更强依据：`expired` 是终态 + `objectKey` 按 importID 分区，两条一起才封死竞态，已补进 `ReclaimExpiredImports` 的文档注释），范围切分符合 §10。
+- 修复后 `make check-go` 全包 EXIT=0、lint 0 issues。新增用例：隐藏/非常规/空文件拒绝、队头阻塞、platform origin barrier（含未配置发布账号的部署）、intent 不匹配的两个镜像方向。
+
+### S2 change review round 2（owner 转交 5 项 P2，均已复现并修复）
+
+- 全部 5 项都在代码里核实成立，全部修掉，每项都有先红后绿的测试；其中 P2-1 / P2-2 做过显式回归验证（把修复改回原样，两条新测试同时红）。
+- **P2-1 换 bucket 会误清空对象清单**：`reclaimOne` 删除前只比驱动、不比 bucket。同为 oss 换了 bucket 时，删除发往新 bucket，而**删除一个不存在的对象不算错**——于是删除「成功」，清单随即被清空，原 bucket 的字节从此没有任何记录。这比换驱动危险：换驱动只是删不掉，换 bucket 是静默丢失。已改为驱动与 bucket 都必须对上，错误文案打印两边的 `driver/bucket`。测试 `TestReclaimRefusesAnObjectStagedIntoAnotherBucket`。
+- **P2-2 失败记录占满一页后后续导入永不回收**：round 1 的 I2 只修了「一次 sweep 内不中断」，没修「跨 sweep 的队头」——查询固定 `ORDER BY expires_at OFFSET 0 LIMIT n`，删不掉的导入保持原排序位置，攒够一页就把后面的全挡在页外。已改为 `ORDER BY updated_at`：每次尝试都在行锁里写 `updated_at`，所以失败的导入自己往后排，无需新增列或重试调度。同步把 0045 的部分索引换成 `(account_id,updated_at) WHERE state<>'finalized'`（顺带关掉 round 1 residual (2)；0045 尚未在任何环境 apply，`schema_migrations` 仍停在 43）。测试 `TestAStuckImportYieldsItsPlaceToTheNextSweep` 用 `--limit 1` 让卡住的那个填满整页。
+- **P2-3 CLI 丢掉追加版本必需的 revision**：`Version.SkillRevision` 是 `json:"-"`（API 投影有意不暴露），而 CLI 报表忘了显式映射，于是文档要求的「取上一次返回的 revision」只能去查库。已加 `skill_revision`，并在文档里写明它不是 `version_number`——Skill 的任何改动都会推进 revision。
+- **P2-4 非 UTF-8 二进制资源能被冻结**：`skill-foundation.md` §4.3「初版资源只开放 UTF-8 参考文本」在代码里没有任何执行点。已在**字节校验边界** `StageResource`（sha256 比对之后、publish 之前）加 `utf8.Valid`，这样任何导入方都过不去，且被拒的字节不会留在对象存储里；`ReadPackage` 里同样拒绝一次，好处只是能报出是哪个文件。同一条 §4.3 还写「不能仅凭客户端 mime 放开」，所以判定看字节不看扩展名；相应地 `resourceMime` 的未知扩展名默认从 `application/octet-stream` 改为 `text/plain; charset=utf-8`——本阶段根本没有能通过闸门的二进制，声明一个 octet-stream 是在描述一种已经被拒绝的字节。
+- **P2-5 整包读进内存之后才查上限**：`fs.ReadFile` 无界读，64 KiB / 20 文件 / 256 KiB 三条要到 `BeginImport` 才生效。已加 `readPackageFile`（先 `fs.Stat` 比大小再读，读完再比一次防 TOCTOU），walk 过程中即时累计文件数与总字节，manifest 与 SKILL.md 同样走这条路径。权威判定仍在 `validate()`，这里只是 fail-fast。测试 `TestReadPackageRefusesAnOversizedFileWithoutReadingIt` 用一个「Stat 正常但 Open 报错」的 FS，区分「按大小拒绝」与「读完再量」。
+- 验证：`make check-go PKG=./internal/creativeskill/...` EXIT=0、lint 0 issues；`go test ./cmd/creativectl/...` ok。migration 改动随 storetest 的 MigrateUp 一起验证通过。
+- 仍保留的 residual：round 1 的 (1)（0045 CHECK 允许 `failed` 而回收查询不覆盖，今天无写入方；扩进来需要一并改 `outOfWindow`，超出本轮范围）与 (3)（`loadImport` 驱动级失败时 `StageResource` 仍 blanket delete）。

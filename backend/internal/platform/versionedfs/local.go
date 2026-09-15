@@ -29,14 +29,14 @@ type Local struct {
 
 func NewLocal(root string, sign func(key, session string, part int, expires time.Time) PartAuthorization) (*Local, error) {
 	if root == "" || sign == nil {
-		return nil, errors.New("creative media local root and part signer are required")
+		return nil, errors.New("versionedfs local root and part signer are required")
 	}
 	if err := os.MkdirAll(root, 0o750); err != nil {
-		return nil, fmt.Errorf("create creative media root: %w", err)
+		return nil, fmt.Errorf("create versionedfs local root: %w", err)
 	}
 	real, err := filepath.EvalSymlinks(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve creative media root: %w", err)
+		return nil, fmt.Errorf("resolve versionedfs local root: %w", err)
 	}
 	return &Local{root: real, sign: sign}, nil
 }

@@ -24,6 +24,16 @@ var (
 	// ErrRevisionConflict means another publisher moved the skill first. The
 	// import is kept so the caller can decide explicitly, not overwritten.
 	ErrRevisionConflict = errors.New("creative skill revision conflict")
+	// ErrSkillIntent means the request's create-or-extend intent does not match
+	// what exists: a revision named for a skill that is not there, or no
+	// revision named for one that is. It is deliberately not a conflict —
+	// telling the caller to re-read a revision and retry would be advice that
+	// can never work, because nothing about their request is racing anyone.
+	ErrSkillIntent = errors.New("creative skill import intent does not match the existing skill")
+	// ErrOriginNotPermitted means this account may not publish under the origin
+	// it asked for. Which account owns the platform catalog is a deployment
+	// fact, so the answer does not depend on which entry point is calling.
+	ErrOriginNotPermitted = errors.New("creative skill origin not permitted for this account")
 	// ErrImportConflict means one operation id arrived carrying two different
 	// requests. Replaying an import is safe; redefining one is not.
 	ErrImportConflict = errors.New("creative skill import conflict")
