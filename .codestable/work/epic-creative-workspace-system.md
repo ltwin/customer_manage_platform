@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: 2026-09-13 边界重确认已获owner批准（Skill底座资源化 + 外发权利边界修订），批准hash已替换；里程碑A已提交59e3f8c。下一步按skill-foundation.md的S0→S3实施Skill底座（S0上提Adapter、S1迁移0045与creativeskill、S2受信导入与种子、S3目录与输入契约），再接里程碑B；文档变更本身待owner同意后提交（milestone_commit: manual）
+next_action: S0（对象端口上提）与S1（迁移0045 + creativeskill领域）已实现并通过make check-go，待owner同意后提交（milestone_commit: manual）；随后做S2受信导入CLI与reference-direction@1种子导入、S3目录与输入契约，再接里程碑B
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -858,3 +858,55 @@ owner 授权修复 `dispatching` 无核实出口及跨账号共享名额泄漏�
 - **连带更新**：`docs/dev/creative-agent.md` 的外发偏差待办随批准失效，改为指向 Epic 的边界重确认小节。
 - **提交注意**：`docs/product/creative-canvas-system/modules/skill-foundation.md` 与 `skill-marketplace-brainstorm.md` 仍是 untracked，必须与 Epic 同批提交，否则合回 `develop` 后 Epic 内链接立即断。
 - 本轮只改文档，代码一行未动，未提交、未发布。
+
+## 2026-09-14 Skill 底座 S0 + S1（实现，待 owner 同意提交）
+
+- **S0 对象端口上提**：`creativemedia` 的 `storage.go` / `local.go` / `oss.go` 移出为 `platform/versionedfs`（包名取「版本固定」与既有 `immutablefs` 对照）。`creativemedia` 现有用例原样通过——测试文件 diff 只有 7 行限定符改名（`creativemedia.X` → `versionedfs.X`），零断言改动，这是语义未变的证据。
+- **错误身份的处理**：`ErrNotFound / ErrState / ErrSizeLimit / ErrRange / ErrUnknownResult` 这五个条件由存储层和媒体域各自会抛出，API 边界对每个只映射一个状态码。`versionedfs` 拥有这五个值，`creativemedia` 直接采用（`var ErrNotFound = versionedfs.ErrNotFound`），而不是在每个 adapter 调用点翻译一次——后者要改约 20 处，漏一处就是静默 500。错误文案随之改为与存储无关的措辞，仓库无任何处依赖这些文案。
+- **S1 迁移 0045**：`creative_skills` / `creative_skill_versions` / `creative_skill_version_resources` / `creative_skill_imports` / `creative_message_skill_refs` 五张表，全部带 `account_id`、无外键。`marketplace_version_id` 按方案 §4.1 物理预留并用 `CHECK(... IS NULL)` 强制为空。down 迁移在已有冻结版本或消息 Skill 引用时拒绝回滚。
+- **迁移登记**：新增迁移必须在 13 个 store 测试的回滚 roster / 分步序列中登记（`skill-foundation` 领先 `agent-conversations`），这是仓库既有维护动作，0044 落地时做过同样的事。
+- **S1 领域 `creativeskill`**：ID 前缀 `ccsk_` / `ccsv_` / `ccsi_` 已登记进 `creativeops.NewResourceID` 白名单。端口按 §3 的窄接口要求，只声明 `PublishVerified / StatVersion / OpenVersion / DeleteExact` 四个操作加 `Driver/Bucket` 两个元信息读取，不暴露媒体的分片上传面。
+- **导入协议**：`BeginImport`（冻结意图 + request_hash）→ `StageResource`（事务外上传，按声明校验大小与 sha256）→ `FinalizeImport`（短事务冻结版本）。对象 I/O 全在事务外；同 operation 重放返回原版本，同 operation 换内容报 `ErrImportConflict`。版本号在 Skill 行锁下发放，新 Skill 的行到 finalize 才写入，失败的导入不留空 Skill 占住 slug。
+- **验证**：`make check-go`（全包）绿。creativeskill 6 个 DB 用例 + 2 个 digest 内部用例；store 新增 0045 形状与有损回滚用例。一次 `dataexport` 失败是 Docker 冷启动后容器就绪超时（`context deadline exceeded`），单独重跑与全量重跑均通过，与本次改动无关。
+- **范围**：受信导入 CLI、`reference-direction@1` 种子导入、去掉 `go:embed`、目录端点与 `instruction_segments` 均属 S2/S3，本次未做；`creativeagent` 的 `SkillRegistry` 仍在用，`docs/dev/creative-agent.md` 记录的事实因此仍然成立。平台 Skill 的跨账号解析端口留到 S3 与其真实调用方一起写，本次只做账号内解析。
+
+### change review（1 轮，无 blocking）
+
+- reviewer：宿主 `multi_agent_v1` fresh reviewer，显式 `model: opus`。异构候选再次全部不可用——`codex` 的 node 入口崩（`@openai/codex-darwin-arm64` 缺失延续）、`gemini` 报配置无效；codex / gemini MCP server 也连不上。遵循「没有合格异构候选时回退同构最强模型」。
+- 冻结目标：staged diff，SHA-256 `5eeae220e34c897e0962e8ea32a87bd74ad53eb3645d8b6206c6c0f00aa5c7a7`（37 文件 +1991/−112）。
+- 结论：**0 blocking**，5 important + 7 nit，全部已修。
+- **被证伪的一条**：reviewer 起初判定 OSS 的 `ForbidOverwrite: "true"` 会让重试 PUT 被 409 顶回、把 import 永久卡在 `preparing`（blocking 级）。它自己查了 `docs/dev/object-storage.md:51` 的既有记载「bucket 开启版本控制后 ForbidOverwrite 不生效」，而版本控制是本仓库的硬要求，于是撤回。记在这里是因为下一个读 `oss.go:164` 的人会产生同样的疑问。
+- **I-1**：`BeginImport` 的幂等是裸 check-then-insert，并发同 operation 会让败者撞 UNIQUE 并抛出无类型错误而非重放。已改用基座既有的 `tx.LockCreativeOperation`（`creativeops.Executor` 同款）。
+- **I-2**：过期 import 会被当活的重放回去，`expired` 状态无写入方。已实现过期转换与独立的 `ErrImportExpired`。**修的过程中撞到一个真问题**：最初把状态转换和错误放在同一个事务里返回，事务回滚把转换一起丢掉，测试直接抓出来（state 仍是 `preparing`）。改成事务内只置标志、提交后再抛错。
+- **I-3**（直接回答我交给 reviewer 的问题）：错误身份合一的取舍本身没错，但 `creativeskill` 让端口错误穿透了自己的边界。`httpapi/creative_canvas.go:86` 那串 `errors.Is` 是**路由闸门**不是渲染——裸的 `versionedfs.ErrNotFound` 会让一次冻结版本字节丢失（服务端完整性事故）被渲染成 404「上传会话不存在」。已在 `creativeskill` 的两个 adapter 调用点翻译为 `ErrResourceUnavailable`。今天没发生只因 creativeskill 零导入方。
+- **I-4**：我登记的 13 个文件全对，但漏了第 14 个 `creative_library_migration_test.go`——它裸调 4 次 `MigrateDownOneForTest`，注释写着落到 0038。这份注释在 0043/0044 落地时**就已经**错了，0045 让它错第三步；测试一直通过是因为回填由 `normalization_version` 驱动、与迁移深度无关，于是它承诺的「0039 回滚后重建」早已不再执行。已改成具名 roster `rollbackTo0038`，0039 的回滚与重建现在真的在跑并通过。
+- **I-5**：`staged_objects` 不是完整清单——上传成功到写行之间崩溃会留下它看不见的孤儿。0045 的注释原文声称它足以支撑 cleanup，已改写为「回收必须按 import 的 key 前缀扫，不能只信这张清单」。同时补了非崩溃路径的自清理（提交结果未知时不删，遵守 `ErrCommitOutcomeUnknown` 的既有约定）。
+- **nit 已修**：`based_on_version_id` 标为保留列（与 `marketplace_version_id` 一致）；`verified_manifest` 的注释说清它装的是整个 intent 而非 manifest（列名保留方案 §4.4 的叫法，不擅自改契约字段名）；`matchStaged` 的注释收窄到它真正能拦的范围；`objectKey` 的 `path.Clean(key)!=key` 是死代码——`path.Join` 已经 Clean 过——而真正的风险恰恰是 Clean 会让带 `..` 的段逃出命名空间，改为断言前缀存活；补「两个 import 同 revision 只能一个 finalize」与「manifest 变更必须改 digest」两个用例。
+- **未修的 nit（residual）**：`platform/versionedfs` 无自有测试。纯搬运阶段由 creativemedia 的端到端用例覆盖，但它现在有了第二个消费方，S2 接入真实种子导入时应补一套 conformance。
+- 修复后 `make check-go` 全包重跑 EXIT=0、lint 0 issues。
+
+### change review round 2（1 blocking，由 round 1 的修法引入）
+
+- 第一次派发被 429 掐断、无终态报告，按协议不计轮次；冻结目标重新核对未变后在同一 reviewer session 重发。
+- 冻结目标：`d34bc920aa335fea620a37b7bfae7999db5a8a6acaa01a15f20c95d85037d5ae`（38 文件 +2228/−136）。
+- 12 条（5 important + 7 nit）全部 `resolved`，修法经复核正确。三条值得记的确认：**I-2** 的「事务内置标志、提交后抛错」在并发下之所以无懈可击，恰恰是因为 **I-1** 加的 advisory 锁把同 operation 的重放串行化了——两个并发重放都拿到 `ErrImportExpired`，转换恰好发生一次；**I-3** 的 `%w: %v` 确实切断了 `errors.Is`，全包 5 个 `s.objects.*` 调用点无第三处穿透；**I-4** 的 0039 回滚与重建已真实执行。
+- **blocking（我引入的）**：round 1 给 StageResource 加的「事务失败则自删已发布对象」分支有两条早退路径排在 `stagedFor` 认领之前——`State != "preparing"` 与过期判定。local 驱动的 object version 是内容 sha256，而并发 stage 同一路径的字节必然相同（都先过 `declared.SHA256`），于是两个调用算出的 `(Key, Version)` 完全一致，「删掉自己的」就是删掉赢家的。后果：`FinalizeImport` 全程无对象 I/O，照常冻结成功，而 `ReadResource` 此后永远失败——**已冻结版本的字节被永久销毁，冻结本身报成功**。不需要真并行，管理员 CLI 一次客户端超时重试就能触发。OSS 上不触发（每次 PUT 不同 versionId），而测试全跑在 local 上。
+- **修法**：认领提到所有状态闸门之前——「这个路径是否已被他人 staged」与 import 此后走到什么状态无关；过期判定改用 `outOfWindow` 以保持与 I-2 一致的错误身份。
+- **回归测试**：`TestALosingConcurrentStageMustNotDeleteTheWinnersObject`。用包装 `ObjectPort` 的 `gatedPort` 把第一个调用卡在 PublishVerified 里（字节已落盘、记录未写），让第二个调用跑完整个事务，从而把竞态变成确定性交错。已验红绿：改回原顺序即 FAIL，恢复即 PASS。这也补上了 reviewer 指出的「creativeskill 零并发测试」。
+- **顺带**：`creative_graph_migration_test.go` 的 `for range 6` 今天正确但仍是裸计数，一并换成具名 roster，避免下一个迁移再手改数字。
+- **记一笔（非缺陷）**：`%w: %v` 的包装保留了底层错误文本但丢掉了身份，`versionedfs.ErrUnknownResult`（「bucket 未开版本控制」）这类可诊断信号只剩文案。受信 CLI 路径可接受。`ObjectPort` 的 `StatVersion` 目前无调用方，保留是因为方案 §3 明确列了这四个操作，S2 的回收命令很可能用到。
+- `expired` 标志是闭包外变量，依赖 `WithTxScope` 只执行闭包一次。当前 `withinTx` 无重试逻辑，成立；将来若给事务加重试，这个标志会变脏。
+- 修复后 `make check-go` 全包 EXIT=0、lint 0 issues。
+
+### change review round 3（终轮，blocking resolved）
+
+- 冻结目标：`2f88b294309a3cbf4f5b6df5ba5ce21194a1eac8cdee0e14b5f55a40877c6a46`（38 文件 +2333/−137）。三轮累计 1 blocking + 5 important + 8 nit，全部 resolved；reviewer 判定完整候选无 blocking、建议合回。
+- **修法的正确性有比「测试通过」更强的依据**：reviewer 审了全部 4 个 `loadImport` 调用点，三个写入方（BeginImport、StageResource 记录事务、FinalizeImport）全部 `forUpdate=true`，唯一 `false` 的是只写不读的预检。`creative_skill_imports` 没有绕过行锁的写入方，因此「认领时未 staged」严格蕴含「回滚时仍未 staged」，并发方无法在该窗口提交。认领前置后，所有触发 blanket delete 的出口都落在这条互斥之下。
+- 残留一条不修：`loadImport` 自身驱动级读失败时仍会 blanket delete，此刻无从判断并发方是否已提交引用。需要「DB 读失败」与「并发赢家」同时发生，不值得为它加复杂度。
+- 回归测试的确定性是结构保证而非概率：`sync.Once` 只放行第一个进入者，而主 goroutine 阻塞在 `<-gate.entered` 上直到有人进入，此时只有子 goroutine 在跑 StageResource。
+- **两个断言封的是两种独立回归**，不是冗余：断言「late 返回 nil」封闸门顺序；断言「`ReadResource` + `bytes.Equal`」封删除决策本身——若有人保留认领块但把 `superseded = &mine` 写成无条件，只有后者会红。reviewer 明确不建议再补「直接 stat 对象存在」的用例：那比 `ReadResource` 更弱（后者既开了记录的精确 key/version，又对着冻结时的 sha256 重验内容），且会把测试耦合到 local 的磁盘布局。
+
+#### 转交 S2 的两条具体事项（不是笼统的「versionedfs 缺测试」）
+
+1. **conformance 套件里最该先写的一条**：认领块的正确性现在依赖「local 同内容必同 version」这个前提，而它只写在注释里，没有任何测试或类型把它钉住。若将来有人把 local 的 version 改成随机值，认领块会静默退化成「每次都判为不同对象」，于是每次并发都删一次。
+2. **local 上不可达的分支**：`superseded != nil` 的「该删而删」路径在 local 驱动上结构性不可达（同内容必同 version），只在 OSS 上存在。S2 补 OSS fake 时一并覆盖。

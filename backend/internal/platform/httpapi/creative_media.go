@@ -15,6 +15,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
 // registerCreativeMedia adds the bearer-authenticated media routes.
@@ -214,7 +215,7 @@ func (h *handlers) PutCreativeMediaPart(c *gin.Context, params PutCreativeMediaP
 }
 
 // parseRange accepts exactly one bytes range; anything else is unsatisfiable.
-func parseRange(header string, size int64) (*creativemedia.ByteRange, error) {
+func parseRange(header string, size int64) (*versionedfs.ByteRange, error) {
 	if header == "" {
 		return nil, nil
 	}
@@ -226,7 +227,7 @@ func parseRange(header string, size int64) (*creativemedia.ByteRange, error) {
 	if !ok {
 		return nil, creativemedia.ErrRange
 	}
-	var r creativemedia.ByteRange
+	var r versionedfs.ByteRange
 	if start == "" {
 		suffix, err := strconv.ParseInt(end, 10, 64)
 		if err != nil || suffix <= 0 {
@@ -271,7 +272,7 @@ func (h *handlers) GetCreativeMedia(c *gin.Context, revisionID string, role GetC
 	// authorized size inside Open. Unsatisfiable ranges still answer 416 with
 	// the total size only after the ticket and usage checks passed.
 	header := c.GetHeader("Range")
-	stream, err := svc.Open(c.Request.Context(), scopeFor, params.Ticket, revisionID, string(role), func(size int64) (*creativemedia.ByteRange, error) {
+	stream, err := svc.Open(c.Request.Context(), scopeFor, params.Ticket, revisionID, string(role), func(size int64) (*versionedfs.ByteRange, error) {
 		return parseRange(header, size)
 	})
 	if errors.Is(err, creativemedia.ErrRange) && stream != nil {

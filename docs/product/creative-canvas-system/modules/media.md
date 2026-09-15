@@ -97,7 +97,9 @@ read pin 建议 120 秒有效、活跃读取每 30 秒续期；续期失败或�
 
 ## 5. 对象存储端口
 
-新增域内流式 StorageAdapter，旧 immutablefs.ObjectStore 保持不变。
+新增流式 StorageAdapter，旧 immutablefs.ObjectStore 保持不变。
+
+**2026-09-14 更新：该端口已不再域内。** 实现是 `platform/versionedfs` 的 `Adapter` 及其 local / oss 两个实现，媒体只是消费方之一；Skill 资源要记录并回读同一个对象版本，需要同一形状（见 [Skill 资源化与结构化输入底座 §3](skill-foundation.md)）。上提只搬接口与实现，下表的端口能力与媒体生命周期语义不变。
 
 | 端口能力 | 必须保证 |
 |---|---|

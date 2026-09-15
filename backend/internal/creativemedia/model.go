@@ -7,6 +7,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
 // AssetTarget describes the library entry a publication should create.
@@ -101,8 +102,8 @@ type UploadView struct {
 	CreatedAt         time.Time            `json:"created_at"`
 }
 type AuthorizedParts struct {
-	UploadID string              `json:"upload_id"`
-	Parts    []PartAuthorization `json:"parts"`
+	UploadID string                          `json:"upload_id"`
+	Parts    []versionedfs.PartAuthorization `json:"parts"`
 }
 type Candidate struct {
 	ID                string               `json:"id"`

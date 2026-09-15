@@ -9,6 +9,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
 const (
@@ -29,7 +30,7 @@ func Compose(cfg config.Config, ticketKey []byte, logger *slog.Logger) (*Service
 		if err != nil {
 			return nil, err
 		}
-		adapter, err := NewOSS(client, cfg.OSSBucket)
+		adapter, err := versionedfs.NewOSS(client, cfg.OSSBucket)
 		if err != nil {
 			return nil, err
 		}
@@ -46,7 +47,7 @@ func Compose(cfg config.Config, ticketKey []byte, logger *slog.Logger) (*Service
 		if err != nil {
 			return nil, err
 		}
-		adapter, err := NewLocal(cfg.CreativeMediaLocalRoot, signerOnly.PartSigner(partPath))
+		adapter, err := versionedfs.NewLocal(cfg.CreativeMediaLocalRoot, signerOnly.PartSigner(partPath))
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +62,7 @@ func Compose(cfg config.Config, ticketKey []byte, logger *slog.Logger) (*Service
 	}
 }
 
-type signerAdapter struct{ Adapter }
+type signerAdapter struct{ versionedfs.Adapter }
 
 func (signerAdapter) Driver() string { return "local" }
 func (signerAdapter) Bucket() string { return "" }

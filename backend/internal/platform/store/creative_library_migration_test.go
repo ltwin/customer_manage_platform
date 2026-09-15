@@ -13,18 +13,13 @@ func TestCreativeLibraryMigrationBackfillsAndCanRebuildAfterRollback(t *testing.
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatal(err)
-	} // 0042
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatal(err)
-	} // 0041
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatal(err)
-	} // 0040
-	if err := store.MigrateDownOneForTest(url); err != nil {
-		t.Fatal(err)
-	} // 0039 -> 0038 fixture
+	// Named rather than counted: the point of this test is that 0039 itself
+	// rolls back and rebuilds, so it has to land on 0038 no matter how many
+	// migrations have since been stacked above. Four bare steps silently
+	// stopped short once 0043 and 0044 arrived, and the test kept passing
+	// because the backfill is driven by normalization_version rather than by
+	// migration depth.
+	rollbackTo0038(t, url)
 	db, err := sql.Open("pgx", url)
 	if err != nil {
 		t.Fatal(err)
@@ -51,21 +46,26 @@ func TestCreativeLibraryMigrationBackfillsAndCanRebuildAfterRollback(t *testing.
 		if err = store.MigrateUp(url); err != nil {
 			t.Fatal("idempotent", err)
 		}
-		if err = store.MigrateDownOneForTest(url); err != nil {
-			t.Fatal(err)
-		} // 0042
-		if err = store.MigrateDownOneForTest(url); err != nil {
-			t.Fatal(err)
-		} // 0041
-		if err = store.MigrateDownOneForTest(url); err != nil {
-			t.Fatal(err)
-		} // 0040
-		if err = store.MigrateDownOneForTest(url); err != nil {
-			t.Fatal("rollback", err)
-		}
+		rollbackTo0038(t, url)
 		var n int
 		if err = db.QueryRow(`SELECT count(*) FROM creative_assets WHERE id='asset'`).Scan(&n); err != nil || n != 1 {
 			t.Fatal("rollback lost preexisting asset", err)
+		}
+	}
+}
+
+// rollbackTo0038 names every migration it steps past. Adding one above without
+// listing it here makes this test stop short of 0039 while still passing, which
+// is exactly what happened between 0043 and 0045.
+func rollbackTo0038(t *testing.T, url string) {
+	t.Helper()
+	for _, label := range []string{
+		"0045 skill-foundation", "0044 agent-conversations", "0043 llm-gateway",
+		"0042 creative-canvas-events", "0041 creative-media", "0040 creative-canvas-commands",
+		"0039 creative-library-organization",
+	} {
+		if err := store.MigrateDownOneForTest(url); err != nil {
+			t.Fatalf("rollback %s: %v", label, err)
 		}
 	}
 }

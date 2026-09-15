@@ -1,4 +1,4 @@
-package creativemedia
+package versionedfs
 
 import (
 	"context"
