@@ -27,6 +27,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
 func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
@@ -81,7 +82,7 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	local, err := creativemedia.NewLocal(root, stub.PartSigner(f.parts.URL+"/part"))
+	local, err := versionedfs.NewLocal(root, stub.PartSigner(f.parts.URL+"/part"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +101,7 @@ func setup(t *testing.T) *fixture {
 	return f
 }
 
-type stubAdapter struct{ creativemedia.Adapter }
+type stubAdapter struct{ versionedfs.Adapter }
 
 func (stubAdapter) Driver() string { return "local" }
 func (stubAdapter) Bucket() string { return "" }
@@ -322,13 +323,13 @@ func TestImageUploadPublishesAssetAndCanvasNodeRoundTrip(t *testing.T) {
 	}
 	token := ticket.URL[strings.Index(ticket.URL, "ticket=")+7:]
 	scopeFor := func(id string) store.AccountScope { return f.a }
-	rangeOf := func(r *creativemedia.ByteRange) func(int64) (*creativemedia.ByteRange, error) {
-		return func(int64) (*creativemedia.ByteRange, error) { return r, nil }
+	rangeOf := func(r *versionedfs.ByteRange) func(int64) (*versionedfs.ByteRange, error) {
+		return func(int64) (*versionedfs.ByteRange, error) { return r, nil }
 	}
 	if _, err := f.svc.Open(t.Context(), scopeFor, token, asset.ContentRevisionID, "display", nil); !errors.Is(err, creativemedia.ErrTicket) {
 		t.Fatal("ticket must bind role", err)
 	}
-	stream, err := f.svc.Open(t.Context(), scopeFor, token, asset.ContentRevisionID, "original", rangeOf(&creativemedia.ByteRange{Start: 4, End: 7}))
+	stream, err := f.svc.Open(t.Context(), scopeFor, token, asset.ContentRevisionID, "original", rangeOf(&versionedfs.ByteRange{Start: 4, End: 7}))
 	if err != nil || stream.Size != int64(len(png)) || !stream.Download {
 		t.Fatal("open", err)
 	}
@@ -341,7 +342,7 @@ func TestImageUploadPublishesAssetAndCanvasNodeRoundTrip(t *testing.T) {
 	if err := f.db.QueryRow(`SELECT count(*) FROM creative_blob_read_pins WHERE account_id='media-a' AND expires_at>now()`).Scan(&pins); err != nil || pins != 1 {
 		t.Fatal("read pin", pins, err)
 	}
-	if _, err := f.svc.Open(t.Context(), scopeFor, token, asset.ContentRevisionID, "original", rangeOf(&creativemedia.ByteRange{Start: 0, End: int64(len(png))})); !errors.Is(err, creativemedia.ErrRange) {
+	if _, err := f.svc.Open(t.Context(), scopeFor, token, asset.ContentRevisionID, "original", rangeOf(&versionedfs.ByteRange{Start: 0, End: int64(len(png))})); !errors.Is(err, creativemedia.ErrRange) {
 		t.Fatal("range beyond size", err)
 	}
 	if _, err := f.db.Exec(`UPDATE creative_usage_grants SET revoked_at=now() WHERE account_id='media-a' AND declaration_id=(SELECT rights_declaration_id FROM creative_content_revisions WHERE id=$1)`, asset.ContentRevisionID); err != nil {

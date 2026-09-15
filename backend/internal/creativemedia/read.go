@@ -17,6 +17,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
 // ticketSigner issues short-lived, opaque, stateless capabilities bound to
@@ -66,10 +67,10 @@ func (t ticketSigner) verify(token string, now time.Time) (ticketClaims, error) 
 
 // PartSigner signs local part uploads the same way; the URL is only usable
 // by the API's part endpoint and only for one key/session/part.
-func (s *Service) PartSigner(base string) func(key, session string, part int, expires time.Time) PartAuthorization {
-	return func(key, session string, part int, expires time.Time) PartAuthorization {
+func (s *Service) PartSigner(base string) func(key, session string, part int, expires time.Time) versionedfs.PartAuthorization {
+	return func(key, session string, part int, expires time.Time) versionedfs.PartAuthorization {
 		token := s.tickets.sign(ticketClaims{Account: "part", Revision: key, Role: session, Purpose: strconv.Itoa(part), ExpiresAt: expires.Unix()})
-		return PartAuthorization{Number: part, Method: "PUT", URL: base + "?token=" + url.QueryEscape(token), Headers: map[string]string{"Content-Type": "application/octet-stream"}, ExpiresAt: expires}
+		return versionedfs.PartAuthorization{Number: part, Method: "PUT", URL: base + "?token=" + url.QueryEscape(token), Headers: map[string]string{"Content-Type": "application/octet-stream"}, ExpiresAt: expires}
 	}
 }
 
@@ -79,7 +80,7 @@ func (s *Service) WriteLocalPart(ctx context.Context, token string, body io.Read
 	if err != nil || c.Account != "part" {
 		return ErrTicket
 	}
-	writer, ok := s.adapter.(LocalPartWriter)
+	writer, ok := s.adapter.(versionedfs.LocalPartWriter)
 	if !ok {
 		return ErrTicket
 	}
@@ -131,7 +132,7 @@ type Stream struct {
 	Mime        string
 	Size        int64
 	ETag        string
-	Range       *ByteRange
+	Range       *versionedfs.ByteRange
 	FileName    string
 	Download    bool
 	PinID       string
@@ -143,7 +144,7 @@ type Stream struct {
 // (it was issued to an authenticated session), never from the request. The
 // range is chosen after the size is known so authorization happens once and
 // the storage object is opened once.
-func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.AccountScope, token, revisionID, role string, chooseRange func(size int64) (*ByteRange, error)) (*Stream, error) {
+func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.AccountScope, token, revisionID, role string, chooseRange func(size int64) (*versionedfs.ByteRange, error)) (*Stream, error) {
 	c, err := s.tickets.verify(token, time.Now())
 	if err != nil || c.Account == "part" || c.Revision != revisionID || c.Role != role {
 		return nil, ErrTicket
@@ -194,7 +195,7 @@ func (s *Service) Open(ctx context.Context, scopeFor func(account string) store.
 	if err != nil {
 		return nil, err
 	}
-	var rng *ByteRange
+	var rng *versionedfs.ByteRange
 	if chooseRange != nil {
 		rng, err = chooseRange(media.ByteSize)
 		if err != nil {

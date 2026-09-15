@@ -20,6 +20,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
 const (
@@ -34,14 +35,14 @@ const (
 // process executes external I/O and publishes through the same code.
 type Service struct {
 	cfg      Config
-	adapter  Adapter
+	adapter  versionedfs.Adapter
 	verifier *Verifier
 	runtime  jobs.Runtime
 	tickets  ticketSigner
 	logger   *slog.Logger
 }
 
-func NewService(cfg Config, adapter Adapter, verifier *Verifier, ticketKey []byte, ticketBase string) (*Service, error) {
+func NewService(cfg Config, adapter versionedfs.Adapter, verifier *Verifier, ticketKey []byte, ticketBase string) (*Service, error) {
 	if adapter == nil || verifier == nil || len(ticketKey) < 32 || ticketBase == "" {
 		return nil, errors.New("creative media service requires adapter, verifier, ticket key and base path")
 	}
@@ -345,7 +346,7 @@ func (s *Service) AuthorizeParts(ctx context.Context, scope store.AccountScope, 
 	if err != nil {
 		return AuthorizedParts{}, err
 	}
-	result := AuthorizedParts{UploadID: u.ID, Parts: []PartAuthorization{}}
+	result := AuthorizedParts{UploadID: u.ID, Parts: []versionedfs.PartAuthorization{}}
 	expires := time.Now().Add(s.cfg.SignatureTTL)
 	seen := map[int]bool{}
 	for _, n := range numbers {

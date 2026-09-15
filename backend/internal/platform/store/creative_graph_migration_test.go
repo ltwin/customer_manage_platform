@@ -19,13 +19,18 @@ func TestCanvasMigrationSeedsOnceAndRefusesLossyRollback(t *testing.T) {
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
-	// Roll back 0044 (agent conversations), 0043 (llm gateway), 0042 (events),
-	// 0041 (media) and 0040 (graph) so the old node lacks an identity.
-	for range 5 {
+	// Named rather than counted, for the reason rollbackTo0038 spells out: a
+	// bare count silently stops short once another migration is stacked above,
+	// and the test keeps passing while no longer reaching what it is about.
+	for _, label := range []string{
+		"0045 skill-foundation", "0044 agent-conversations", "0043 llm-gateway",
+		"0042 creative-canvas-events", "0041 creative-media", "0040 creative-canvas-commands",
+	} {
 		if err := store.MigrateDownOneForTest(url); err != nil {
-			t.Fatal(err)
+			t.Fatalf("rollback %s: %v", label, err)
 		}
 	}
+	// 0040 is now off, so the old node has no graph identity.
 	db, err := sql.Open("pgx", url)
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +79,9 @@ func TestCanvasMigrationSeedsOnceAndRefusesLossyRollback(t *testing.T) {
 	}
 	if err = move(2); !errors.Is(err, creativecanvas.ErrGraphIntegrity) {
 		t.Fatal("missing heads silently reconstructed", err)
+	}
+	if err = store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("skill foundation rollback with no versions", err)
 	}
 	if err = store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("agent conversations rollback with no history", err)

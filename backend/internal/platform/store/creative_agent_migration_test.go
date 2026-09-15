@@ -40,6 +40,10 @@ func TestAgentConversationMigrationShapeAndLossyRollback(t *testing.T) {
 
 	// The empty rollback runs first: a refused one leaves the schema version
 	// dirty, so the recoverable case has to be proved before the refusal.
+	// 0045 (skill foundation) sits above this migration; step past it first.
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback skill-foundation migration: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback with no history must succeed: %v", err)
 	}
@@ -119,6 +123,9 @@ func TestAgentConversationMigrationShapeAndLossyRollback(t *testing.T) {
 		}
 	}
 
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback skill-foundation migration: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err == nil {
 		t.Fatal("a rollback that would drop conversation history must be refused")
 	} else if !strings.Contains(err.Error(), "export") {
