@@ -64,11 +64,19 @@ const (
 	// A skill is instructions, not a data set. These bounds keep one package
 	// from quietly consuming a run's whole input budget. They are part of the
 	// versioned limits policy; raising one is a limits change, not a tweak.
-	maxResourceBytes    = 64 << 10
-	maxResourceCount    = 20
+	//
+	// MaxResourceCount and MaxPackageBytes are exported because a run is judged
+	// by the limits it was created under, so they have to reach the assistant's
+	// published Limits. They are projected there rather than retyped: two
+	// spellings of one bound is how a package that imports cleanly starts
+	// failing at execution.
+	maxResourceBytes = 64 << 10
+	// MaxResourceCount bounds the declared files of one version.
+	MaxResourceCount    = 20
 	maxInstructionBytes = 64 << 10
 	maxManifestBytes    = 64 << 10
-	maxPackageBytes     = 256 << 10
+	// MaxPackageBytes bounds one package's whole text.
+	MaxPackageBytes = 256 << 10
 
 	// importTTL bounds how long an unfinished import keeps its staged objects.
 	// Nothing sweeps it automatically yet; the admin command reclaims them.
@@ -323,7 +331,7 @@ func (r ImportRequest) validate() error {
 	if err != nil {
 		return err
 	}
-	if len(r.Resources) > maxResourceCount {
+	if len(r.Resources) > MaxResourceCount {
 		return ErrLimit
 	}
 	total := len(r.Instructions) + len(manifest)
@@ -344,7 +352,7 @@ func (r ImportRequest) validate() error {
 		}
 		total += int(res.ByteSize)
 	}
-	if total > maxPackageBytes {
+	if total > MaxPackageBytes {
 		return ErrLimit
 	}
 	return nil

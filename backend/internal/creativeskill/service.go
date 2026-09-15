@@ -217,7 +217,7 @@ func (s *Service) resolveIn(ctx context.Context, scope store.AccountScope, skill
 func readResourceRows(ctx context.Context, tx store.TxAccountScope, versionID string) ([]stagedObject, error) {
 	rows, err := tx.QueryPage(ctx, "creative_skill_version_resources",
 		"path,mime,byte_size,sha256,storage_driver,bucket,object_key,object_version",
-		"skill_version_id=$2", []store.OrderBy{{Column: "path"}}, maxResourceCount, 0, versionID)
+		"skill_version_id=$2", []store.OrderBy{{Column: "path"}}, MaxResourceCount, 0, versionID)
 	if err != nil {
 		return nil, err
 	}

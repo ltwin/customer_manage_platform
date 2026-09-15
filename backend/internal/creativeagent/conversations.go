@@ -47,10 +47,26 @@ type ConversationPage struct {
 type Block struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
-	// RefID locates a reference or tool result; it grants nothing on its own.
+	// RefID locates a content revision or tool result; it grants nothing on its
+	// own.
 	RefID string `json:"ref_id,omitempty"`
 	// Code is a stable machine reason on a notice, e.g. a refusal.
 	Code string `json:"code,omitempty"`
+	// Skill is the server's own reading of a skill_ref segment. It is a nested
+	// value rather than five more flat fields, because it is one fact — which
+	// frozen version this message showed — and a half-filled one means nothing.
+	Skill *BlockSkill `json:"skill,omitempty"`
+}
+
+// BlockSkill is what a message froze about a skill: the identity to resolve it
+// again and the name and number it displayed at the time. A later rename must
+// not rewrite history, so the display fields are a snapshot, not a lookup.
+type BlockSkill struct {
+	SkillID       string `json:"skill_id"`
+	VersionID     string `json:"skill_version_id"`
+	VersionNumber int    `json:"version_number"`
+	Digest        string `json:"digest"`
+	DisplayName   string `json:"display_name"`
 }
 
 type Body struct {
@@ -77,7 +93,15 @@ type MessagePage struct {
 	ConversationRevision creativeops.Revision `json:"conversation_revision"`
 }
 
-const messageSchemaVersion = 1
+// messageSchemaVersion is the persisted body format. v2 names skill and content
+// references explicitly instead of leaving them as an untyped "reference"
+// locator, so a reader can tell a frozen skill from a content revision without
+// guessing at the id's prefix.
+//
+// Existing v1 rows keep their own number and read unchanged — the read path
+// does not revalidate a stored body, and an unknown historical reference is
+// never re-interpreted as a skill.
+const messageSchemaVersion = 2
 
 // newMessage is trusted server-side input. Clients never post a message
 // directly: one arrives with the run that triggered it, or from a step result.
@@ -92,6 +116,10 @@ type newMessage struct {
 	// ContentRefs are the revisions this message will keep readable after the
 	// run payload expires. Identifiers buried in the body are not roots.
 	ContentRefs []ContentRef
+	// SkillRefs registers which frozen version this message showed. The body
+	// renders it; this is the fact a later reader — and FND-10's collection —
+	// can query without parsing JSON.
+	SkillRefs []SkillRef
 }
 
 type ContentRef struct {
@@ -99,23 +127,58 @@ type ContentRef struct {
 	Role       string
 }
 
+// SkillRef is one message's use of one frozen version, keyed by the segment it
+// was named at. OwnerAccountID is recorded as a value rather than looked up
+// later: a platform skill belongs to the trusted publisher, and resolving it
+// again must never need another account's scope.
+type SkillRef struct {
+	SegmentOrdinal int
+	SkillID        string
+	VersionID      string
+	OwnerAccountID string
+	Digest         string
+}
+
+// SkillRefs projects a resolved submission into the rows a message registers.
+// The resolver already proved every field; this only changes its shape.
+func (r ResolvedInstruction) SkillRefs() []SkillRef {
+	if r.Skill == nil {
+		return nil
+	}
+	return []SkillRef{{
+		SegmentOrdinal: r.Skill.SegmentOrdinal,
+		SkillID:        r.Skill.Snapshot.SkillID,
+		VersionID:      r.Skill.Snapshot.ID,
+		OwnerAccountID: r.Skill.Snapshot.OwnerAccountID,
+		Digest:         r.Skill.Snapshot.Digest,
+	}}
+}
+
 func validBody(b Body, limits Limits) error {
-	if len(b.Blocks) == 0 || len(b.Blocks) > 200 {
+	if len(b.Blocks) == 0 || len(b.Blocks) > maxBlocks {
 		return creativeops.ErrValidation
 	}
-	total := 0
 	for _, block := range b.Blocks {
 		switch block.Type {
 		case "text":
-			if block.Text == "" || block.RefID != "" || block.Code != "" {
+			if block.Text == "" || block.RefID != "" || block.Code != "" || block.Skill != nil {
 				return creativeops.ErrValidation
 			}
-		case "reference", "tool_result":
-			if block.RefID == "" || block.Code != "" {
+		case "content_ref", "tool_result":
+			if block.RefID == "" || block.Code != "" || block.Skill != nil {
+				return creativeops.ErrValidation
+			}
+		case "skill_ref":
+			// A skill block is the one kind whose payload the server wrote, so
+			// every part of that reading has to be present. A half-filled one
+			// would render a version nobody can resolve again.
+			if block.Skill == nil || block.Skill.SkillID == "" || block.Skill.VersionID == "" ||
+				block.Skill.VersionNumber < 1 || block.Skill.Digest == "" || block.Skill.DisplayName == "" ||
+				block.Text != "" || block.RefID != "" || block.Code != "" {
 				return creativeops.ErrValidation
 			}
 		case "notice":
-			if block.Code == "" || block.RefID != "" {
+			if block.Code == "" || block.RefID != "" || block.Skill != nil {
 				return creativeops.ErrValidation
 			}
 		default:
@@ -124,12 +187,30 @@ func validBody(b Body, limits Limits) error {
 		if !utf8.ValidString(block.Text) || !utf8.ValidString(block.RefID) || !utf8.ValidString(block.Code) {
 			return creativeops.ErrValidation
 		}
-		total += len(block.Text) + len(block.RefID) + len(block.Code)
+		if block.Skill != nil && (!utf8.ValidString(block.Skill.DisplayName) || !utf8.ValidString(block.Skill.SkillID) ||
+			!utf8.ValidString(block.Skill.VersionID) || !utf8.ValidString(block.Skill.Digest)) {
+			return creativeops.ErrValidation
+		}
 	}
-	if total > limits.MessageBodyBytes {
+	if bodyBytes(b) > limits.MessageBodyBytes {
 		return ErrLimit
 	}
 	return nil
+}
+
+// bodyBytes is what a body costs against the budget: every stored string, not
+// only the words. A skill block carries no prose but still occupies a row and a
+// payload, and charging it nothing would let 200 of them cost zero.
+func bodyBytes(b Body) int {
+	total := 0
+	for _, block := range b.Blocks {
+		total += len(block.Text) + len(block.RefID) + len(block.Code)
+		if block.Skill != nil {
+			total += len(block.Skill.SkillID) + len(block.Skill.VersionID) +
+				len(block.Skill.Digest) + len(block.Skill.DisplayName)
+		}
+	}
+	return total
 }
 
 // appendMessageInTx takes the next ordinal under the conversation row lock, so
@@ -155,6 +236,19 @@ func (s *Service) appendMessageInTx(ctx context.Context, tx store.TxAccountScope
 		}
 		for _, earlier := range m.ContentRefs[:i] {
 			if earlier == ref {
+				return Message{}, creativeops.ErrValidation
+			}
+		}
+	}
+	for i, ref := range m.SkillRefs {
+		if ref.SegmentOrdinal < 0 || ref.SkillID == "" || ref.VersionID == "" ||
+			ref.OwnerAccountID == "" || ref.Digest == "" {
+			return Message{}, creativeops.ErrValidation
+		}
+		for _, earlier := range m.SkillRefs[:i] {
+			// The ordinal is the primary key's last column, so a repeat would
+			// surface as a raw unique violation instead of a typed refusal.
+			if earlier.SegmentOrdinal == ref.SegmentOrdinal {
 				return Message{}, creativeops.ErrValidation
 			}
 		}
@@ -212,6 +306,13 @@ func (s *Service) appendMessageInTx(ctx context.Context, tx store.TxAccountScope
 	for _, ref := range m.ContentRefs {
 		if err := tx.Insert(ctx, "creative_message_content_refs",
 			[]string{"message_id", "content_revision_id", "role"}, id, ref.RevisionID, ref.Role); err != nil {
+			return Message{}, err
+		}
+	}
+	for _, ref := range m.SkillRefs {
+		if err := tx.Insert(ctx, "creative_message_skill_refs",
+			[]string{"message_id", "segment_ordinal", "skill_id", "skill_version_id", "skill_owner_account_id", "digest"},
+			id, ref.SegmentOrdinal, ref.SkillID, ref.VersionID, ref.OwnerAccountID, ref.Digest); err != nil {
 			return Message{}, err
 		}
 	}

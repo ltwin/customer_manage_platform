@@ -501,9 +501,16 @@ func TestAnOversizedOrMalformedBodyIsRefused(t *testing.T) {
 		{},
 		{{Type: "text"}},                        // text with no words
 		{{Type: "text", Text: "x", RefID: "r"}}, // a text block is not a locator
-		{{Type: "reference"}},                   // a locator with nothing to locate
+		{{Type: "content_ref"}},                 // a locator with nothing to locate
+		{{Type: "reference", RefID: "ccrv_x"}},  // v1's untyped locator is not a v2 kind
 		{{Type: "notice", Text: "只有文案"}},        // a notice needs a stable code
 		{{Type: "invented", Text: "x"}},         // unknown kinds do not render
+		// A skill block is the server's own reading, so a partial one is not a
+		// smaller truth — it names a version nobody can resolve again.
+		{{Type: "skill_ref"}},
+		{{Type: "skill_ref", Skill: &BlockSkill{SkillID: "ccsk_x", VersionID: "ccsv_x"}}},
+		{{Type: "skill_ref", Text: "旁白", Skill: &BlockSkill{
+			SkillID: "ccsk_x", VersionID: "ccsv_x", VersionNumber: 1, Digest: "d", DisplayName: "n"}}},
 	} {
 		if err := write(newMessage{Role: "user", Status: "complete", Body: Body{Blocks: blocks}}); !errors.Is(err, creativeops.ErrValidation) {
 			t.Fatalf("blocks %+v must be refused, got %v", blocks, err)
@@ -555,16 +562,80 @@ func (f *fixture) publishSkill(slug, displayName string) creativeskill.Version {
 	return f.importSkill(slug, displayName, 0, true)
 }
 
+// mediaRevision stores one ready image revision the way the media worker does.
+// A test needs a real one because "may this account display it" and "can this
+// deployment send it to a model" are different questions, and only a genuine
+// media kind tells them apart.
+func (f *fixture) mediaRevision(scope store.AccountScope, kind, mime string) string {
+	f.t.Helper()
+	blobID := "ccbl_" + uuid.NewString()
+	if _, err := f.db.Exec(`INSERT INTO creative_blobs(id,account_id,storage_driver,object_key,object_version,
+		sha256,byte_size,mime,width,height,state,verified_at)
+		VALUES ($1,$2,'local',$3,'v1',$4,1024,$5,800,600,'ready',now())`,
+		blobID, scope.AccountID(), "blobs/"+blobID, "sha256-"+strings.Repeat("a", 64), mime); err != nil {
+		f.t.Fatal(err)
+	}
+	var id string
+	err := scope.WithTxScope(f.t.Context(), func(tx store.TxAccountScope) error {
+		if err := tx.RequireCreativeCapability(f.t.Context(), "manual_write"); err != nil {
+			return err
+		}
+		draft := creativecontent.Draft{Kind: kind}
+		r, err := creativecontent.WriteMediaAndRetain(f.t.Context(), tx, draft,
+			[]creativecontent.ObjectBinding{{Role: "original", BlobID: blobID}},
+			func(r creativecontent.Revision) error {
+				return tx.Insert(f.t.Context(), "creative_assets",
+					[]string{"id", "kind", "title", "normalized_title", "content_id", "content_revision_id"},
+					"ccas_"+uuid.NewString(), r.Kind, "参考图", "参考图", r.ContentID, r.ID)
+			})
+		id = r.ID
+		return err
+	})
+	if err != nil {
+		f.t.Fatalf("store media revision: %v", err)
+	}
+	return id
+}
+
+// registerSkillTools gives this deployment the tool the fixture's skills
+// declare. Without it every skill is correctly unavailable — FND-08 registers
+// the real ones — and a test about anything else would pass for that reason
+// instead of its own.
+func (f *fixture) registerSkillTools() {
+	f.t.Helper()
+	f.service.tools = []ToolEntry{{
+		Key: "search_assets", Version: 1, DisplayName: "检索素材",
+		EffectClass: "read_only", MaxImpact: 0,
+	}}
+}
+
+// publishOwnSkill publishes under an ordinary account rather than the platform
+// publisher, which is what a test needs to ask "can someone else reach this".
+func (f *fixture) publishOwnSkill(slug, displayName string) creativeskill.Version {
+	f.t.Helper()
+	req := skillRequest("account", slug, displayName)
+	req.Activate = true
+	return f.runImport(f.bob, req)
+}
+
 // importSkill is one run of the import protocol. Separating it from
 // publishSkill is what lets a test append a version to an existing skill
 // without moving its recommended pointer, which is the one case where the
 // catalog's text changes while its version ids do not.
 func (f *fixture) importSkill(slug, displayName string, expected creativeops.Revision, activate bool) creativeskill.Version {
 	f.t.Helper()
-	body := []byte("# 比较清单\n\n1. 光线\n2. 色调\n")
-	sum := sha256.Sum256(body)
-	req := creativeskill.ImportRequest{
-		OperationID: uuid.NewString(), Origin: "platform", Slug: slug,
+	req := skillRequest("platform", slug, displayName)
+	req.ExpectedSkillRevision = expected
+	req.Activate = activate
+	return f.runImport(f.platform, req)
+}
+
+var skillBody = []byte("# 比较清单\n\n1. 光线\n2. 色调\n")
+
+func skillRequest(origin, slug, displayName string) creativeskill.ImportRequest {
+	sum := sha256.Sum256(skillBody)
+	return creativeskill.ImportRequest{
+		OperationID: uuid.NewString(), Origin: origin, Slug: slug,
 		DisplayName: displayName, Description: "在个人库中检索参考、比较候选。",
 		Instructions: "先检索，再比较，最后写方向。",
 		Manifest: creativeskill.Manifest{
@@ -574,21 +645,23 @@ func (f *fixture) importSkill(slug, displayName string, expected creativeops.Rev
 		},
 		Resources: []creativeskill.ResourceDeclaration{{
 			Path: "references/comparison-checklist.md", Mime: "text/markdown; charset=utf-8",
-			ByteSize: int64(len(body)), SHA256: hex.EncodeToString(sum[:]),
+			ByteSize: int64(len(skillBody)), SHA256: hex.EncodeToString(sum[:]),
 		}},
-		ExpectedSkillRevision: expected,
-		Activate:              activate,
 	}
-	record, err := f.skills.BeginImport(f.t.Context(), f.platform, req)
+}
+
+func (f *fixture) runImport(scope store.AccountScope, req creativeskill.ImportRequest) creativeskill.Version {
+	f.t.Helper()
+	record, err := f.skills.BeginImport(f.t.Context(), scope, req)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	for _, pending := range record.Pending {
-		if _, err := f.skills.StageResource(f.t.Context(), f.platform, record.ID, pending, bytes.NewReader(body)); err != nil {
+		if _, err := f.skills.StageResource(f.t.Context(), scope, record.ID, pending, bytes.NewReader(skillBody)); err != nil {
 			f.t.Fatal(err)
 		}
 	}
-	version, err := f.skills.FinalizeImport(f.t.Context(), f.platform, record.ID)
+	version, err := f.skills.FinalizeImport(f.t.Context(), scope, record.ID)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -764,6 +837,44 @@ func TestACatalogReportsTheFrozenLimitsAndReachableVendors(t *testing.T) {
 	for _, model := range view.Models {
 		if model.VendorKey == "" {
 			t.Fatalf("model %s has no vendor to authorise", model.ModelKey)
+		}
+	}
+}
+
+// Every array the catalog declares is required and non-nullable, and a Go nil
+// slice marshals as null. A client looping over one would fault — so the
+// deployment with nothing registered, which is every deployment today, is
+// exactly the case that has to hold.
+//
+// This asserts the wire bytes rather than the Go values: a nil slice and an
+// empty one are indistinguishable at a length check, and the difference only
+// appears after encoding.
+func TestEveryCatalogArrayIsAnArrayOnTheWire(t *testing.T) {
+	f := setup(t)
+	view, err := f.service.Catalog(t.Context(), f.alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The premise: nothing is registered and nothing is imported, so every list
+	// below is empty. A populated catalog would pass for the wrong reason.
+	if len(view.Tools) != 0 || len(view.Skills) != 0 {
+		t.Fatalf("this deployment has something registered, so the empty case is untested: %+v", view)
+	}
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"vendors", "models", "skills", "tools"} {
+		raw, present := fields[name]
+		if !present {
+			t.Fatalf("%q is required by the contract but absent from %s", name, encoded)
+		}
+		if string(raw) == "null" {
+			t.Fatalf("%q serialised as null; the contract declares a non-nullable array", name)
 		}
 	}
 }

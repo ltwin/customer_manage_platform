@@ -45,6 +45,7 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
 | `Service.Catalog` | 本部署真正可用的模型、Skill、工具与冻结上限；Skill 摘要有界（20 条），完整目录走下面两个端口 |
 | `Service.ListSkills` | 选框与斜杠选择器的统一查询；自己的 Skill 与受信平台目录合成一页 |
 | `Service.SkillVersion` | 一个固定版本的摘要与声明；正文与对象地址不出这一层 |
+| `Service.ResolveInstruction` | 把一次提交解析成可存可执行的东西：每个引用都在本账号范围内回数据库重新推导，客户端送来的任何值都不当作凭据 |
 | `SkillDirectory` | 本包对 `creativeskill` 的窄接口，只有读。导入/激活/停用不在其中——发布是部署动作，HTTP 处理器不该离它只有一次类型断言 |
 
 ## 已确定的实现事实
@@ -98,8 +99,10 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
 ## 验证缺口
 
 1. 消息 chunk 表与流式落库不在本里程碑，`status='streaming'` 目前没有写入方。
-2. `GET /agent/catalog` 的 `tools` 为空，Skill 可用性判定逻辑因此只验证了「不可用」一侧；
-   工具注册后需补「可用」一侧的用例。
+2. ~~Skill 可用性判定只验证了「不可用」一侧~~ **S3b 已补**：`registeredTools` 改为读
+   `Service.tools` 字段而不是返回字面空切片，测试因此能给出一个真实注册表，两侧都跑到了
+   （`TestASkillWhoseToolsAreNotRegisteredCannotBeSubmitted`）。生产里该字段仍为空，
+   直到 FND-08 注册真实工具。
 3. 外发同意目前只有授予与撤销，**派发时的二次校验属里程碑 B**：撤销先提交则不外发这条
    不变量尚未有代码可验。
 4. 附件草稿（`creative_agent_drafts` / `creative_agent_attachments`）未建表，属 FND-09。
@@ -107,7 +110,28 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
    `ready` 状态或保留根**（与 `GrantConsent` 对每条修订调 `RequireUsable` 的严谨度不对称）。
    `account_id` 由 repository 基座强制，所以不构成跨账号影响；保留根这一侧已经生效，但一行指向
    不存在修订的 ref 仍写得进去（它只是永远保不住任何东西）。写入方全是受信服务端路径，
-   里程碑 B 接入真实 run 时应补齐。
+   里程碑 B 接入真实 run 时应补齐。**S3b 起经 `ResolveInstruction` 产生的那条路已经校验过**
+   （它对每个 `content_ref` 调 `RequireUsable`），但校验在解析器里而不在写入处，
+   所以直接构造 `newMessage` 的调用方仍绕得过去。`SkillRefs` 同理：字段非空与段序号不重复由
+   `appendMessageInTx` 保证，「这个版本真的存在且可见」由解析器保证。
 6. 重放身份是 `(source_step_id, role)`，**不含 body**：同一步骤用不同正文二次消费会静默返回首条消息，
    而不像 `creativeops.Executor` 那样比对 hash 后报冲突。里程碑 B 的 ConsumeResult 若可能产出
    「同一 step 两份不同正文」，需要在那一侧报出来。
+
+## 结构化输入（S3b）
+
+一次提交是**有序的判别联合** `instruction_segments`，三种片段：`text` / `skill_ref` / `content_ref`。每种只允许自身字段，写了别的字段会被**拒绝而不是忽略**——丢掉它等于把另一条指令发给模型。未知类型同理。契约见 OpenAPI 的 `CreativeAgentInstruction`。
+
+`ResolveInstruction` 在写入之前跑，回答的是「这次提交能不能被提交」：
+
+- **客户端只给 ID。** 名称、版本号、digest、作者全部由服务端读出。`skill_ref` 必须同时带 `skill_id` 与 `skill_version_id`——只给版本会让服务端替客户端挑 Skill，而那正是「一个 Skill 的 ID 配另一个 Skill 的版本」能读到不该读的东西的路子。
+- **两种「太多」是两种答案。** 片段数超过 200 是 `ErrLimit`（少发一点就行）；两个 `skill_ref` 是 `ErrValidation`——修法是二选一，回 413 等于让客户端去缩短一个并不长的东西。同一个 Skill 写两遍也是同样的拒绝，不做静默去重、不拼接。
+- **拒绝分三类**：不存在/看不见 → `creativeskill.ErrNotFound` 或 `ErrNotFound`（跨账号一律报「没有」，猜 ID 学不到任何东西）；本部署跑不了 → `ErrUnsupportedSegment`；请求本身不合法 → `ErrValidation`。`ErrUnsupportedSegment` 刻意不是 `ErrValidation`：请求是好的，摄影师换一个 Skill 就能继续，答「格式错误」是在撒谎。
+- **本部署目前没有注册任何工具**（FND-08 才注册），所以**任何声明了工具的 Skill 都会被 `ErrUnsupportedSegment` 拒绝**，和 catalog 里 `available: false` 是同一个事实。这不是缺陷，是如实反映能力；FND-08 注册后它自己就通了，不需要改这里的代码。
+- `content_ref` 走 `creativecontent.RequireUsable(..., "display")`，**并且检查它返回的修订 `Kind`——本阶段只收 `text`**。这两件事是两个问题：`RequireUsable` 回答「本账号能不能展示这个」，它对 image / video / audio 一律放行；而「本部署能不能把它发给模型」取决于模型链路，那条路现在没有图片能力。只看错误不看 kind 就会接受一张图，然后要么静默丢掉、要么抽帧外发——两种都没人授权过。图片按 `ErrUnsupportedSegment` 拒绝（能力问题，不是格式问题）。
+- 同一个修订写两遍只留一条保留根（主键是修订），但两个片段都照常显示——那是摄影师写的。
+- **重新校验的分工**：版本内容不可变，所以在这里读是成立的；但 Skill 可以被停用、内容授权可以被撤销，**里程碑 B 的 CreateRun 必须在自己的事务里再核一次**。这里回答的是「能不能提交」，不是「现在就可以派发」。
+
+消息正文升到 `schema_version=2`：`skill_ref` 与 `content_ref` 是明确的块类型，v1 的无类型 `reference` 不再写入，但历史消息**按原样读出**（读路径不重新校验正文），不会被重新猜成 Skill。`skill_ref` 块里的显示名和版本号是**快照**——之后改名不能改写历史里已经显示过的内容。消息同时把这次引用登记进 `creative_message_skill_refs`（段序号、Skill、版本、发布账号、digest），让后来者不必解析 JSON 就能查。
+
+`limits_version` 升到 `creative-agent-2`。新增的四个维度里，`skill_resource_files` 与 `skill_package_bytes` 是从 `creativeskill` 投影过来的，不是另写一份数字——两处写同一个上限，正是「导入时通过、执行时失败」的来源。**只增加维度也必须换号**：按 `-1` 创建的运行从没被片段数判定过，用 `-2` 的集合重放它等于套用它没同意过的规则。

@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: S2已提交7bd3684；S3a（creativeskill目录端口与跨账号平台解析、两个HTTP端点、catalog语义切换与skill_catalog_revision、去掉go:embed并把种子包移到deploy/creative-skills、OpenAPI+generate）已实现并通过make check-go与check-frontend，待change review与owner同意后提交（milestone_commit: manual）；随后S3b输入契约（instruction_segments、消息v2、limitsVersion升creative-agent-2），再接里程碑B
+next_action: S3a已提交6b56baa（含owner round-3的两条P2与一条P3修复）；进行中S3b输入契约：instruction_segments判别联合与ResolveInstruction、消息正文v2的skill_ref/content_ref块、limitsVersion升creative-agent-2（新增片段数/单次skill_ref数/资源文件数/包体上限四维，后两维从creativeskill投影不重复字面量）、OpenAPI+generate；随后里程碑B
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1014,3 +1014,34 @@ S2 已提交 `7bd3684`（21 文件 +2198/−24）。S3 按方案 §10 是一步�
 - **P3 文档路径**成立：`go run ./cmd/creativectl` 要 cwd 在 `backend/`（Go 模块在那），而 `--package-dir` 走 `os.DirFS(in.packageDir)`、按进程 cwd 解析、无任何仓库根锚定；旧示例写 `deploy/...` 两头都跑不通。已改成先 `cd backend`、路径 `../deploy/...`，并补一句镜像里不存在这个错位（二进制在 `/usr/local/bin`、包在 `/usr/local/share/creative-skills`，直接给绝对路径）。
 - 新增测试：`TestRenamingASkillWithoutActivatingMovesTheCatalogRevision`（agent，含「改名到了 + 推荐版本没动」两条前提断言，避免因错误原因变绿）、`TestTheManifestEncodingIsAPersistedContract`、`TestAnOmittedOptionalArrayIsStillRenderedAsAnArray`（省略的可选数组读出来仍是数组，两条读路径都断言）。两条 P2 的红态都是**把旧实现临时放回去跑出来的**，不是推断。
 - 验证：`make check-go PKG=./...` EXIT=0、lint 0 issues。
+
+### S3b 输入契约（实现完成，待 change review）
+
+基线 `6b56baa`。本切片只做输入契约与解析端口；`CreateRun` 属里程碑 B，所以 `ResolveInstruction` 今天没有 HTTP 调用方——这是 `契约先行`，不是预支。
+
+- **`instruction_segments` 判别联合**（`creativeagent/instruction.go`）：平铺结构体 + 严格字段校验，形状与既有 `Block` 一致，不引入第二套表达方式。FND-09 要加第四种片段类型（附件草稿），平铺 + `default: 拒绝` 的写法让加类型是纯加法。
+- **两种「太多」故意是两种错误**：片段数 > 200 → `ErrLimit`（少发就行）；两个 `skill_ref` → `ErrValidation`。后者回 413 等于让客户端去缩短一个并不长的东西，而正确动作是二选一。同一 Skill 写两遍同样拒绝，不静默去重也不拼接。
+- **`ErrUnsupportedSegment` 是新哨兵，刻意不复用 `ErrValidation`**：请求是好的，摄影师换一个 Skill 就能继续。用「格式错误」回答一个格式正确的请求是在撒谎。
+- **错误词汇的分工沿用既有惯例**：Skill 侧直接透传 `creativeskill.ErrNotFound`（边界已有 `creativeSkillError` 映射，压平会丢掉 413/500/503 的区别）；内容侧翻译成 `creativeagent` 词汇（`consents.go` 早就这么做，因为 `creativecontent` 的哨兵在边界没有映射）。
+- **测试写到一半发现的真问题**：`registeredTools()` 原本是 `return []ToolEntry{}` 字面量，于是**任何声明了工具的 Skill 都永远不可用**——`ResolveInstruction` 的 skill_ref 成功路径在本部署根本跑不到，测试也就没法跑。改成读 `Service.tools` 字段（注册表是部署事实，和 model catalog 同类，本来就该是数据而不是字面量）。生产行为一字未变（字段为空），但成功与失败两侧现在都被覆盖。这条同时关掉了 `docs/dev/creative-agent.md` 里挂着的验证缺口 #2。
+- **另一个「测试为错误原因变绿」**：`TestAWithdrawnVersionCannotBeSubmittedAgain` 最初也是因为工具没注册才红/绿，跟停用无关。已在停用前先注册工具，让停用成为唯一剩下的拒绝理由。
+- **消息正文 v2**：`Block` 加嵌套 `Skill *BlockSkill`（一个事实，半填的没有意义），不是摊平五个字段。`reference` 退出写入词汇表（生产代码从来没写过它，只在 `validBody` 的白名单里），v1 历史仍按原样读出——读路径本来就不校验存量正文。`bodyBytes` 抽出来并把 skill 块计入预算：skill 块没有正文，不计费的话 200 个就是 0 字节。
+- **`creative_message_skill_refs` 现在有写入方**（0045 建的表此前无人写）：`newMessage.SkillRefs` + `appendMessageInTx` 插行，段序号重复在这里报 `ErrValidation` 而不是撞主键抛裸错。
+- **`limitsVersion` → `creative-agent-2`**，新增四维。`skill_resource_files` / `skill_package_bytes` 从 `creativeskill.MaxResourceCount` / `MaxPackageBytes` **投影**，为此把这两个常量导出——两处写同一个上限正是「导入时通过、执行时失败」的来源。只增加维度也必须换号：按 `-1` 创建的运行从没被片段数判定过。
+- **已知不对称（需要 reviewer 知道）**：`make generate` 后 `CreativeAgentInstruction` / `...Segment` 只出现在 `frontend/src/api/schema.d.ts`，**不在 `api.gen.go`**——oapi-codegen 会裁掉没有被任何 path 引用的 schema，而 openapi-typescript 全量输出。里程碑 B 加 CreateRun 路径后 Go 侧自然出现。后果：这两个 schema 与手写的 `creativeagent.InstructionSegment` 之间**目前没有机械校验**，B 接上 handler 前只能靠人看。前端反而拿得到类型，这对「选框与斜杠选择器插入同一结构」是需要的。
+- 验证：`make check-go PKG=./...` EXIT=0、lint 0 issues；`make check-frontend` EXIT=0（381 passed）。测试容器 reaper 偶发启动失败两次（`No such container`），重跑即过，与改动无关。
+
+### S3b change review round 1（owner 直送 2 P2；均核实成立并已修，各有 red → green）
+
+两条都是我自己引入的，且都属于同一类：**「这个调用回答的问题」和「我需要回答的问题」不是一个问题**。
+
+- **P2-1「空工具目录从 `[]` 变成 `null`」是我这一轮亲手造的回归。** 原来 `registeredTools()` 返回字面量 `[]ToolEntry{}`；我为了让测试能给出一个真实注册表，把它改成读 `s.tools` 字段——但 `NewService` 没有初始化该字段，零值是 nil，nil 切片编码成 `null`。而 OpenAPI 把 `tools` 声明为必填、不可空数组，**今天每个部署都没注册工具，所以这条路 100% 命中**，按生成类型直接遍历的客户端会当场出错。
+  - 修法是在 `registeredTools()` 里把 nil 收敛成空切片，而不是在 `NewService` 里初始化字段。理由和 S3a 的 `decodeManifest` 是同一个：`registeredTools()` 是 `s.tools` 的**唯一读取点**（`Catalog` 与 `registeredToolRefs` 都经它），把规范化放在这里是结构性的；放在构造函数里，任何零值 `Service`、任何后来把字段设回 nil 的代码都会把问题带回来。
+  - 测试断言的是**编码后的字节**而不是 Go 值：`len()` 分不出 nil 和空切片，差别只在编码之后出现。而且它一次覆盖 `vendors` / `models` / `skills` / `tools` 四个数组，关掉的是这一类而不是这一个实例。测试里先断言「本部署确实什么都没注册」，否则一个非空 catalog 会让它为错误原因变绿。
+  - 顺带记一条：`Limits` 里没有切片，`SkillPage.Items` 与 `listSkills` 的 `items` 都是 `make(..., 0, n)`，`llmgateway` 的 `Vendors()` / `List()` 同样，所以四个数组里只有 `tools` 会 null——这也解释了为什么它此前一直是对的。
+- **P2-2「解析器接受当前不支持的图片引用」成立，方案 §7.1 已明写「本阶段支持 text、skill_ref 和可读的文字 content_ref」。** `resolveContentSegment` 丢掉了 `RequireUsable` 的返回值只看 error，而 `RequireUsable` 回答的是「本账号能不能**展示**这个修订」——它对 image / video / audio 一律放行（内部还有 `IsMediaKind` 分支去加载 blob）。「能展示」不等于「能发给模型」：模型链路现在没有图片能力，接受一张图之后要么静默丢掉、要么抽帧外发，**两种都没人授权过**。
+  - 修法就是用它已经返回的 `Kind`，不额外查一次库。拒绝用 `ErrUnsupportedSegment` 而不是 `ErrValidation`：修订是真的、权限是全的，摄影师换一个文字引用就能继续。
+  - 测试对 image / video / audio 三种都跑，并且**先断言 fixture 自身通得过 `RequireUsable`**（同账号、ready、有保留根、有 display 授权），这样 kind 是唯一剩下的拒绝理由——不然这个用例会因为「fixture 根本不合法」而为错误原因变绿。另加一条文字仍成功的用例，证明这道闸门管的是 kind 而不是 content_ref 本身。为此给 fixture 加了 `mediaRevision`（插一条 ready blob 再走 `WriteMediaAndRetain`，跟媒体 Worker 同一条路）。
+  - 影响面：`ResolveInstruction` 今天还没有 HTTP 调用方（`CreateRun` 属里程碑 B），所以**没有真实请求走过这条路**。修在这里是为了 B 接上 handler 时它已经是对的。
+- 两条红态都是把修复临时撤掉跑出来的：P2-1 `"tools" serialised as null`；P2-2 三个子用例全部 `got <nil>`。
+- 验证：`make check-go PKG=./...` EXIT=0、lint 0 issues、45 个包全 ok 无 FAIL；`make check-frontend` EXIT=0（381 passed）。
