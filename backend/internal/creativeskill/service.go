@@ -34,13 +34,31 @@ type ObjectPort interface {
 // entry points; no HTTP handler may reach them.
 type Service struct {
 	objects ObjectPort
+	// platformAccountID is the one account allowed to publish platform skills.
+	// It lives here rather than in the command that happens to call today,
+	// because the rule is about which account owns the platform catalog, not
+	// about which binary is running. Empty means this deployment has none.
+	platformAccountID string
 }
 
-func NewService(objects ObjectPort) (*Service, error) {
+func NewService(objects ObjectPort, platformAccountID string) (*Service, error) {
 	if objects == nil {
 		return nil, errors.New("creative skill service requires an object port")
 	}
-	return &Service{objects: objects}, nil
+	return &Service{objects: objects, platformAccountID: platformAccountID}, nil
+}
+
+// mayPublishAs is the §5 barrier. An ordinary account writing origin=platform
+// would otherwise put itself in every account's catalog, and the import path is
+// where that has to be refused — not in whichever caller remembered to check.
+func (s *Service) mayPublishAs(origin, accountID string) error {
+	if origin != "platform" {
+		return nil
+	}
+	if s.platformAccountID == "" || s.platformAccountID != accountID {
+		return ErrOriginNotPermitted
+	}
+	return nil
 }
 
 // stagedObject is one uploaded resource recorded on the import. It carries the

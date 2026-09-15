@@ -19,6 +19,7 @@ RUN cd backend && CGO_ENABLED=0 go build -o /out/server ./cmd/server \
     && CGO_ENABLED=0 go build -o /out/avatar-manifest ./cmd/avatar-manifest \
     && CGO_ENABLED=0 go build -o /out/planning-media-manifest ./cmd/planning-media-manifest \
     && CGO_ENABLED=0 go build -o /out/migrate ./cmd/migrate \
+    && CGO_ENABLED=0 go build -o /out/creativectl ./cmd/creativectl \
     && CGO_ENABLED=0 go build -ldflags "-X main.runtimeBuildRevision=${BUILD_REVISION}" -o /out/accountctl ./cmd/accountctl
 
 FROM alpine:3.22
@@ -31,6 +32,7 @@ COPY --from=backend /out/server /usr/local/bin/server
 COPY --from=backend /out/avatar-manifest /usr/local/bin/avatar-manifest
 COPY --from=backend /out/planning-media-manifest /usr/local/bin/planning-media-manifest
 COPY --from=backend /out/migrate /usr/local/bin/migrate
+COPY --from=backend /out/creativectl /usr/local/bin/creativectl
 COPY --from=backend /out/accountctl /usr/local/bin/accountctl
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/server"]

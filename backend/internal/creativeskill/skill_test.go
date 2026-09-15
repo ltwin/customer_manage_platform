@@ -20,6 +20,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs/versionedfstest"
 )
 
 func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
@@ -59,7 +60,9 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := creativeskill.NewService(local)
+	// skill-a is this fixture's trusted platform publisher; skill-b is an
+	// ordinary account, which is what makes the origin barrier testable.
+	svc, err := creativeskill.NewService(local, platformAccount)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +72,8 @@ func setup(t *testing.T) *fixture {
 		b: st.ScopeFor(auth.AccountContext{AccountID: "skill-b"}),
 	}
 }
+
+const platformAccount = "skill-a"
 
 func declare(path, mime string, body []byte) creativeskill.ResourceDeclaration {
 	sum := sha256.Sum256(body)
@@ -220,8 +225,11 @@ func TestAnotherAccountCannotReachAPrivateVersion(t *testing.T) {
 		t.Fatalf("another account read a private resource: %v", err)
 	}
 	// Publishing under the same slug from another account is a separate skill,
-	// not a collision and not a takeover.
-	theirs := publish(t, f, f.b, newRequest())
+	// not a collision and not a takeover. It publishes as an account skill,
+	// because skill-b is not this deployment's platform publisher.
+	ordinary := newRequest()
+	ordinary.Origin = "account"
+	theirs := publish(t, f, f.b, ordinary)
 	if theirs.SkillID == mine.SkillID {
 		t.Fatal("two accounts must not share one skill identity")
 	}
@@ -270,6 +278,36 @@ func TestStagedBytesMustMatchTheDeclaration(t *testing.T) {
 	}
 	if _, err := f.svc.ReadResource(t.Context(), f.a, version.ID, path); !errors.Is(err, creativeskill.ErrContentMismatch) {
 		t.Fatalf("a resource that no longer matches its hash must fail loudly: %v", err)
+	}
+}
+
+// Resources are UTF-8 reference text in this phase. The declaration cannot
+// decide that — a mime and a sha256 are both written by the importer — so the
+// refusal has to happen where the bytes are, and before anything is published.
+func TestBinaryResourceBytesAreRefusedBeforeTheyArePublished(t *testing.T) {
+	f := setup(t)
+	binary := []byte{0xff, 0xfe, 0xfd}
+	req := newRequest()
+	const path = "references/cover.md"
+	req.Resources = []creativeskill.ResourceDeclaration{declare(path, "text/markdown", binary)}
+	record, err := f.svc.BeginImport(t.Context(), f.a, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.svc.StageResource(t.Context(), f.a, record.ID, path, bytes.NewReader(binary)); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("binary bytes must be refused even when they match their declaration: %v", err)
+	}
+	// Refused before the upload, so there is nothing for a sweep to find later.
+	var staged string
+	if err := f.db.QueryRow(`SELECT staged_objects::text FROM creative_skill_imports WHERE id=$1`,
+		record.ID).Scan(&staged); err != nil {
+		t.Fatal(err)
+	}
+	if staged != "[]" {
+		t.Fatalf("a refused resource left %s behind", staged)
+	}
+	if _, err := f.svc.FinalizeImport(t.Context(), f.a, record.ID); !errors.Is(err, creativeskill.ErrImportState) {
+		t.Fatalf("an import missing its declared file must not freeze a version: %v", err)
 	}
 }
 
@@ -324,12 +362,50 @@ func TestExtendingASkillRequiresTheCurrentRevision(t *testing.T) {
 		t.Fatalf("a stale revision must be refused: %v", err)
 	}
 	// No revision at all is the "create this skill" intent aimed at a slug that
-	// already exists.
+	// already exists. That is the caller's own mistake, not a race, and it is
+	// reported as one — telling them to re-read a revision and retry would be
+	// advice that can never work.
 	blind := newRequest()
 	blind.Resources = nil
 	blind.Instructions = "第四版正文。"
-	if _, err := f.svc.BeginImport(t.Context(), f.a, blind); !errors.Is(err, creativeskill.ErrRevisionConflict) {
-		t.Fatalf("creating an existing slug must be refused: %v", err)
+	if _, err := f.svc.BeginImport(t.Context(), f.a, blind); !errors.Is(err, creativeskill.ErrSkillIntent) {
+		t.Fatalf("creating an existing slug must be refused as an intent mismatch: %v", err)
+	}
+	// And the mirror image: naming a revision of a skill that does not exist.
+	unborn := newRequest()
+	unborn.OperationID = uuid.NewString()
+	unborn.Slug = "not-published-yet"
+	unborn.Resources = nil
+	unborn.ExpectedSkillRevision = 1
+	if _, err := f.svc.BeginImport(t.Context(), f.a, unborn); !errors.Is(err, creativeskill.ErrSkillIntent) {
+		t.Fatalf("extending a skill that does not exist must be an intent mismatch: %v", err)
+	}
+}
+
+// The platform catalog belongs to the account the deployment names. An ordinary
+// account writing origin=platform would otherwise put itself in everyone's
+// catalog, and the refusal has to live here rather than in whichever entry point
+// remembered to check.
+func TestOnlyTheConfiguredPublisherCanPublishAPlatformSkill(t *testing.T) {
+	f := setup(t)
+	if _, err := f.svc.BeginImport(t.Context(), f.b, newRequest()); !errors.Is(err, creativeskill.ErrOriginNotPermitted) {
+		t.Fatalf("an ordinary account published a platform skill: %v", err)
+	}
+	// A deployment with no platform publisher has no platform skills at all,
+	// rather than whichever account asked first.
+	local, err := versionedfs.NewLocal(t.TempDir(),
+		func(string, string, int, time.Time) versionedfs.PartAuthorization {
+			return versionedfs.PartAuthorization{}
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unconfigured, err := creativeskill.NewService(local, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unconfigured.BeginImport(t.Context(), f.a, newRequest()); !errors.Is(err, creativeskill.ErrOriginNotPermitted) {
+		t.Fatalf("a deployment with no platform publisher accepted one: %v", err)
 	}
 }
 
@@ -446,7 +522,7 @@ func TestALosingConcurrentStageMustNotDeleteTheWinnersObject(t *testing.T) {
 		entered:    make(chan struct{}),
 		release:    make(chan struct{}),
 	}
-	svc, err := creativeskill.NewService(gate)
+	svc, err := creativeskill.NewService(gate, platformAccount)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,6 +555,64 @@ func TestALosingConcurrentStageMustNotDeleteTheWinnersObject(t *testing.T) {
 	body, err := svc.ReadResource(t.Context(), f.a, version.ID, declared)
 	if err != nil {
 		t.Fatalf("the frozen version lost its bytes to the late caller's cleanup: %v", err)
+	}
+	if !bytes.Equal(body, checklist) {
+		t.Fatal("the frozen version no longer reads its own content")
+	}
+}
+
+// The other half of the same race. Where a store mints a version per write, the
+// two callers hold two distinct objects and the loser really does own a stray
+// copy it must drop — the branch the local driver can never reach, because
+// there both callers converge on one content-addressed file. Memory stands in
+// for that identity; it reports the oss driver name because the version row it
+// ends up in enumerates the deployment's real drivers.
+func TestALosingConcurrentStageDropsItsOwnObjectWhenVersionsArePerWrite(t *testing.T) {
+	f := setup(t)
+	objects := versionedfstest.NewMemory("oss")
+	gate := &gatedPort{
+		ObjectPort: objects,
+		entered:    make(chan struct{}),
+		release:    make(chan struct{}),
+	}
+	svc, err := creativeskill.NewService(gate, platformAccount)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := svc.BeginImport(t.Context(), f.a, newRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const declared = "references/comparison-checklist.md"
+
+	late := make(chan error, 1)
+	go func() {
+		_, err := svc.StageResource(t.Context(), f.a, record.ID, declared, bytes.NewReader(checklist))
+		late <- err
+	}()
+	<-gate.entered
+	if _, err := svc.StageResource(t.Context(), f.a, record.ID, declared, bytes.NewReader(checklist)); err != nil {
+		t.Fatal(err)
+	}
+	close(gate.release)
+	if err := <-late; err != nil {
+		t.Fatalf("the late caller must find the file already recorded, not fail: %v", err)
+	}
+	// Two objects were published and one of them belongs to nobody. Leaving it
+	// would make every retry of a staging race add permanent storage that only
+	// a prefix sweep could ever find again.
+	if got := objects.ObjectCount(); got != 1 {
+		t.Fatalf("the losing caller left %d objects behind", got-1)
+	}
+	// And the one that survived is the one the import kept, not the one it
+	// dropped: the frozen version still reads its own bytes.
+	version, err := svc.FinalizeImport(t.Context(), f.a, record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := svc.ReadResource(t.Context(), f.a, version.ID, declared)
+	if err != nil {
+		t.Fatalf("the frozen version points at the object that was dropped: %v", err)
 	}
 	if !bytes.Equal(body, checklist) {
 		t.Fatal("the frozen version no longer reads its own content")

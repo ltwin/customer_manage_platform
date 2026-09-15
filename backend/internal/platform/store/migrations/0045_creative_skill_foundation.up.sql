@@ -97,10 +97,11 @@ CREATE TABLE creative_skill_imports (
  -- decision. Object upload and this database cannot share a transaction, so
  -- the intent has to survive between BeginImport and FinalizeImport.
  verified_manifest JSONB,
- -- The objects this import committed to owning. It is not a complete census:
- -- a crash between a successful upload and the row update leaves an orphan
- -- that only a prefix scan can find, so reclamation must sweep the import's
- -- key prefix rather than trust this list alone.
+ -- The objects this import committed to owning, and the only record reclamation
+ -- has. It is not a complete census: a crash between a successful upload and
+ -- the row update leaves an orphan only a prefix scan could find, and the
+ -- object port has no way to enumerate a prefix. Reclamation therefore deletes
+ -- what is listed here; the residue waits for FND-10's general collection.
  staged_objects JSONB NOT NULL DEFAULT '[]'::jsonb CHECK(jsonb_typeof(staged_objects)='array'),
  result_version_id TEXT,
  expires_at TIMESTAMPTZ NOT NULL,
@@ -111,8 +112,13 @@ CREATE TABLE creative_skill_imports (
  UNIQUE(account_id,operation_id),
  CHECK((state='finalized') = (result_version_id IS NOT NULL))
 );
-CREATE INDEX creative_skill_import_expiry
- ON creative_skill_imports(account_id,expires_at) WHERE state IN ('preparing','ready');
+-- Serves the reclamation sweep, which asks for the least recently touched
+-- candidates of one account. Finalized imports are excluded because they are
+-- the bulk of the table and are never candidates; the sweep orders by
+-- updated_at so that an import it cannot delete yields its place to the ones
+-- behind it instead of holding the head of every future page.
+CREATE INDEX creative_skill_import_reclaim
+ ON creative_skill_imports(account_id,updated_at) WHERE state<>'finalized';
 
 -- What a message actually showed. Registering the fact is all this phase needs:
 -- skill versions are never physically deleted yet, so nothing reads these as a
