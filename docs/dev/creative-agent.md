@@ -15,8 +15,22 @@
 checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、River Worker、等待/取消/对账/
 终态恢复、最小 Agent 面板。写工具与提案采纳属 FND-08，独立附件属 FND-09，SSE 流式属 FND-08。
 
-因此 `GET /creative/agent/catalog` 的 `tools` 目前恒为空数组，内置 Skill `reference-direction@1`
-一律报 `available: false` 并附原因「所需工具尚未在本部署注册」。这是如实反映部署能力，不是占位。
+因此 `GET /creative/agent/catalog` 的 `tools` 目前恒为空数组，任何声明了工具的 Skill 都报
+`available: false` 并附原因「所需工具尚未在本部署注册」。这是如实反映部署能力，不是占位。
+
+**S3 起 Skill 不再随二进制发布**：目录读 `creativeskill`（数据库 + 对象存储）。没跑过
+`creativectl skill import` 的部署，`skills` 就是空数组、`skill_catalog_revision` 是空摘要的哈希；
+普通对话不依赖它。导入见 [Skill 受信导入与回收](creative-skill-import.md)。
+
+`skills` 为空还有第二种成因：catalog 只带**有界**摘要（20 条，按 `updated_at` 倒序），如果最靠前的
+20 条 Skill 的推荐版本都被停用，摘要就是空的而目录里仍有内容。完整目录走 `GET /creative/agent/skills`，
+它的空页规则见 OpenAPI 里 `CreativeAgentSkillPage` 的说明——**空 items 加非空 next_cursor 是合法的一页**，
+客户端必须继续翻。
+
+`skill_catalog_revision` 是**整个 `skills` 数组序列化后的哈希**，不是挑几个字段拼出来的。挑字段的写法
+会漏掉「不激活地追加一个版本」这一类改动——导入总会改写 Skill 行的名称与描述，而推荐版本指针没动，
+于是答案里的每个 version id 和 digest 都不变。按这个标识判断是否刷新的客户端会一直显示旧名字。哈希
+整个答案则让「以后给 `SkillEntry` 加字段」不必再记得同步改哈希。
 
 ## 端口
 
@@ -28,8 +42,10 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
 | `Service.appendMessageInTx` | 受信服务端写入。客户端没有直接发消息的入口：消息要么随触发它的 run 产生，要么来自某个步骤结果 |
 | `Service.GrantConsent` | 记录外发授权。授权即许可外发，不额外引入 `ai_analysis` 权利判断；但选中修订仍须是摄影师自己能展示的（见下） |
 | `Service.RevokeConsent` | 阻止后续外发；不召回已发出的内容，授权证据保留 |
-| `Service.Catalog` | 本部署真正可用的模型、Skill、工具与冻结上限 |
-| `SkillRegistry` | 启动时加载内嵌包并校验；同 key/version 不同 digest 直接拒绝启动 |
+| `Service.Catalog` | 本部署真正可用的模型、Skill、工具与冻结上限；Skill 摘要有界（20 条），完整目录走下面两个端口 |
+| `Service.ListSkills` | 选框与斜杠选择器的统一查询；自己的 Skill 与受信平台目录合成一页 |
+| `Service.SkillVersion` | 一个固定版本的摘要与声明；正文与对象地址不出这一层 |
+| `SkillDirectory` | 本包对 `creativeskill` 的窄接口，只有读。导入/激活/停用不在其中——发布是部署动作，HTTP 处理器不该离它只有一次类型断言 |
 
 ## 已确定的实现事实
 
@@ -63,16 +79,19 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
   之间切换不会重新索要授权。`llmgateway.ModelConfig.VendorKey` 为必填，缺失时目录加载即失败。
   - 设计稿 `agent-api-events.md` 原字段名为 `provider_key`，语义即本字段；实现统一改名为
     `vendor_key`，因为 `provider` 在 Gateway 里已被协议族占用。
-- **Skill 包随二进制发布**（本节描述当前代码；2026-09-13 边界重确认已批准把权威来源改为数据库 +
-  对象存储，见[Skill 资源化与结构化输入底座](../product/creative-canvas-system/modules/skill-foundation.md)，
-  改造落地前下述事实仍然有效）。`//go:embed skillpkg`；digest 覆盖包内每个文件的路径与内容哈希，
-  移动或改名同样改变身份。资源只按声明的相对路径做 map 查表，底下没有文件系统，
-  `../../../etc/passwd` 这类路径按「未声明资源」拒绝。
-  - 进出 registry 的 `SkillPackage` 各深拷贝一次（`NewSkillRegistry` 与 `Get`）。`SkillPackage` 是值，
-    但 `Resources` map、其中的 `[]byte` 与 manifest 的几个切片不是；不拷贝的话，拿到包的调用方
-    能改掉指令、塞进资源或放宽 `ToolAllowlist`，而 digest 纹丝不动——digest 就失去了「当时跑的是
-    哪份文本」的意义（两侧均已复现）。`packagesInOrder` 是包内列举口，仍直接返回存量值，
-    只读不写，避免目录请求为了几个 manifest 字段复制全部资源字节。
+- **Skill 的权威来源是数据库与对象存储**（S3 起；此前是 `//go:embed skillpkg`，已随本切片移除，
+  种子包移到仓库根的 `deploy/creative-skills/`，只作可审计导入素材）。资源只按声明的相对路径查表，
+  底下没有文件系统，`../../../etc/passwd` 这类路径按「路径不合法」拒绝，未声明的名字按不存在拒绝。
+  深拷贝的那套不变量随 registry 一起消失：每次 `ResolveVersion` 都从行里现构值，没有共享可写状态。
+- **跨账号只有平台目录一条路，且在 `creativeskill` 内走完**。读者传自己的 scope，拿回值对象；
+  平台发布账号的 `AccountScope` 不出包。两处判定各自独立：`ListAccessibleSkills` 对平台侧加
+  `origin='platform'`（发布账号自己的私有 Skill 不因此外泄），`ReadResource` **两条分支**都从库里核对
+  「这个版本属于这个 Skill」，跨账号那条再加一问「这个 Skill 是 platform」——**不信调用方递进来的
+  snapshot**，因为 snapshot 是普通结构体，谁都能造一个。绑定检查只在跨账号分支做过一版，那样
+  同一个参数在一次调用里可能被校验也可能被忽略，签名就承诺了它只在一半情况下做的事。
+- **`skill_catalog_revision` 是摘要的哈希，不是单调计数器**，也刻意不复用 Gateway 的
+  `catalog_version`：模型来自部署随附的配置文件，Skill 来自任何一次导入都能改动的数据库。
+  客户端要的答案是「和我缓存的那份一样吗」，对一个按账号拼出来的视图，诚实的答案就是答案本身的哈希。
 - **`limits_version` 与 `policy_version` 是冻结常量**。调大任何一个上限都必须改
   `limitsVersion`，因为明天恢复的 run 要按它创建时的上限来判定。
 

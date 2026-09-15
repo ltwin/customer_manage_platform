@@ -14,6 +14,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -67,6 +68,9 @@ func creativeError(c *gin.Context, err error) {
 		abortError(c, 409, "creative_revision_conflict", "内容已被其他窗口修改，本机这次修改未保存")
 	case errors.Is(err, creativeagent.ErrConsentRevoked), errors.Is(err, creativeagent.ErrLimit), errors.Is(err, creativeagent.ErrNotFound):
 		creativeAgentError(c, err)
+	case errors.Is(err, creativeskill.ErrNotFound), errors.Is(err, creativeskill.ErrLimit),
+		errors.Is(err, creativeskill.ErrResourceUnavailable), errors.Is(err, creativeskill.ErrContentMismatch):
+		creativeSkillError(c, err)
 	case errors.Is(err, creativelibrary.ErrTrashed):
 		abortError(c, 409, "creative_asset_trashed", "资产已在回收站，请恢复后编辑")
 	case errors.Is(err, creativecanvas.ErrArchived):

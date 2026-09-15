@@ -665,6 +665,42 @@ func (e CreativeAgentMessageBlockType) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentSkillOrigin.
+const (
+	CreativeAgentSkillOriginAccount  CreativeAgentSkillOrigin = "account"
+	CreativeAgentSkillOriginPlatform CreativeAgentSkillOrigin = "platform"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentSkillOrigin enum.
+func (e CreativeAgentSkillOrigin) Valid() bool {
+	switch e {
+	case CreativeAgentSkillOriginAccount:
+		return true
+	case CreativeAgentSkillOriginPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentSkillVersionOrigin.
+const (
+	CreativeAgentSkillVersionOriginAccount  CreativeAgentSkillVersionOrigin = "account"
+	CreativeAgentSkillVersionOriginPlatform CreativeAgentSkillVersionOrigin = "platform"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentSkillVersionOrigin enum.
+func (e CreativeAgentSkillVersionOrigin) Valid() bool {
+	switch e {
+	case CreativeAgentSkillVersionOriginAccount:
+		return true
+	case CreativeAgentSkillVersionOriginPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentToolEffectClass.
 const (
 	Create CreativeAgentToolEffectClass = "create"
@@ -3281,9 +3317,12 @@ type CreativeAgentCatalog struct {
 	LimitsVersion  string               `json:"limits_version"`
 	Models         []CreativeAgentModel `json:"models"`
 	PolicyVersion  string               `json:"policy_version"`
-	Skills         []CreativeAgentSkill `json:"skills"`
-	Tools          []CreativeAgentTool  `json:"tools"`
-	Vendors        []string             `json:"vendors"`
+
+	// SkillCatalogRevision Skill 摘要的修订标识；内容变了它就变。刻意不复用 catalog_version： 模型来自部署随附的配置文件，Skill 来自任何一次导入都能改动的数据库。
+	SkillCatalogRevision string               `json:"skill_catalog_revision"`
+	Skills               []CreativeAgentSkill `json:"skills"`
+	Tools                []CreativeAgentTool  `json:"tools"`
+	Vendors              []string             `json:"vendors"`
 }
 
 // CreativeAgentConversation defines model for CreativeAgentConversation.
@@ -3412,15 +3451,80 @@ type CreativeAgentModelCapability struct {
 
 // CreativeAgentSkill defines model for CreativeAgentSkill.
 type CreativeAgentSkill struct {
-	Available         bool    `json:"available"`
-	Description       string  `json:"description"`
-	Digest            string  `json:"digest"`
-	DisplayName       string  `json:"display_name"`
-	Key               string  `json:"key"`
-	MaxInputs         int     `json:"max_inputs"`
+	Available   bool   `json:"available"`
+	Description string `json:"description"`
+	Digest      string `json:"digest"`
+	DisplayName string `json:"display_name"`
+	MaxInputs   int    `json:"max_inputs"`
+
+	// Origin 平台目录还是账号自建；两边的 slug 可以重名
+	Origin  CreativeAgentSkillOrigin `json:"origin"`
+	SkillId string                   `json:"skill_id"`
+
+	// SkillVersionId 当前推荐版本；消息与运行各自固定自己的版本，不重读这个指针
+	SkillVersionId    string  `json:"skill_version_id"`
+	Slug              string  `json:"slug"`
 	UnavailableReason *string `json:"unavailable_reason,omitempty"`
-	Version           int     `json:"version"`
+	VersionNumber     int     `json:"version_number"`
 }
+
+// CreativeAgentSkillOrigin 平台目录还是账号自建；两边的 slug 可以重名
+type CreativeAgentSkillOrigin string
+
+// CreativeAgentSkillManifest defines model for CreativeAgentSkillManifest.
+type CreativeAgentSkillManifest struct {
+	CompletionCheckKey        string   `json:"completion_check_key"`
+	InputKinds                []string `json:"input_kinds"`
+	ManifestSchemaVersion     int      `json:"manifest_schema_version"`
+	MaxInputs                 int      `json:"max_inputs"`
+	OutputContract            string   `json:"output_contract"`
+	RequiredModelCapabilities []string `json:"required_model_capabilities"`
+
+	// ToolAllowlist 上界，执行时与账号自身的操作范围取交集；Skill 永远不能扩权
+	ToolAllowlist []string `json:"tool_allowlist"`
+}
+
+// CreativeAgentSkillPage items 为空而 next_cursor 非空是合法且可达的一页：游标定位在 Skill 行上， 而整页 Skill 的推荐版本都被停用时就没有条目可返回。客户端必须按 next_cursor 继续翻，不能把空页当作目录结束。
+type CreativeAgentSkillPage struct {
+	Items []CreativeAgentSkill `json:"items"`
+
+	// NextCursor 留空表示目录到此为止
+	NextCursor string `json:"next_cursor"`
+}
+
+// CreativeAgentSkillResource defines model for CreativeAgentSkillResource.
+type CreativeAgentSkillResource struct {
+	ByteSize int64  `json:"byte_size"`
+	Mime     string `json:"mime"`
+	Path     string `json:"path"`
+	Sha256   string `json:"sha256"`
+}
+
+// CreativeAgentSkillVersion defines model for CreativeAgentSkillVersion.
+type CreativeAgentSkillVersion struct {
+	Available   bool      `json:"available"`
+	CreatedAt   time.Time `json:"created_at"`
+	Description string    `json:"description"`
+	Digest      string    `json:"digest"`
+
+	// DisplayName 该版本冻结时的名称快照，不是 Skill 今天叫什么
+	DisplayName string                          `json:"display_name"`
+	Manifest    CreativeAgentSkillManifest      `json:"manifest"`
+	Origin      CreativeAgentSkillVersionOrigin `json:"origin"`
+
+	// Resources 声明清单；对象存储地址是服务端内部字段，不在这里返回
+	Resources []CreativeAgentSkillResource `json:"resources"`
+
+	// SchemaVersion 版本文档格式号，不是版本号本身
+	SchemaVersion     int     `json:"schema_version"`
+	SkillId           string  `json:"skill_id"`
+	SkillVersionId    string  `json:"skill_version_id"`
+	UnavailableReason *string `json:"unavailable_reason,omitempty"`
+	VersionNumber     int     `json:"version_number"`
+}
+
+// CreativeAgentSkillVersionOrigin defines model for CreativeAgentSkillVersion.Origin.
+type CreativeAgentSkillVersionOrigin string
 
 // CreativeAgentTool defines model for CreativeAgentTool.
 type CreativeAgentTool struct {
@@ -6011,6 +6115,14 @@ type RegisterJSONBody struct {
 	Password string `json:"password"`
 }
 
+// ListCreativeAgentSkillsParams defines parameters for ListCreativeAgentSkills.
+type ListCreativeAgentSkillsParams struct {
+	// Q 按 slug 前缀与展示名匹配
+	Q      *string `form:"q,omitempty" json:"q,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // CreateCreativeGroupParams defines parameters for CreateCreativeGroup.
 type CreateCreativeGroupParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -8155,6 +8267,12 @@ type ServerInterface interface {
 	// 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力
 	// (GET /creative/agent/catalog)
 	GetCreativeAgentCatalog(c *gin.Context)
+	// 本账号可选的 Skill（自己的加受信平台目录），供选框与斜杠选择器统一查询
+	// (GET /creative/agent/skills)
+	ListCreativeAgentSkills(c *gin.Context, params ListCreativeAgentSkillsParams)
+	// 一个固定版本的摘要与声明；正文与对象地址不在返回内
+	// (GET /creative/agent/skills/{id}/versions/{version_id})
+	GetCreativeAgentSkillVersion(c *gin.Context, id string, versionId string)
 
 	// (GET /creative/asset-groups)
 	ListCreativeGroups(c *gin.Context)
@@ -8844,6 +8962,87 @@ func (siw *ServerInterfaceWrapper) GetCreativeAgentCatalog(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeAgentCatalog(c)
+}
+
+// ListCreativeAgentSkills operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeAgentSkills(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreativeAgentSkillsParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeAgentSkills(c, params)
+}
+
+// GetCreativeAgentSkillVersion operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeAgentSkillVersion(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "version_id" -------------
+	var versionId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "version_id", c.Param("version_id"), &versionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter version_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeAgentSkillVersion(c, id, versionId)
 }
 
 // ListCreativeGroups operation middleware
@@ -13095,6 +13294,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
 	router.GET(options.BaseURL+"/creative/agent/catalog", wrapper.GetCreativeAgentCatalog)
+	router.GET(options.BaseURL+"/creative/agent/skills", wrapper.ListCreativeAgentSkills)
+	router.GET(options.BaseURL+"/creative/agent/skills/:id/versions/:version_id", wrapper.GetCreativeAgentSkillVersion)
 	router.GET(options.BaseURL+"/creative/asset-groups", wrapper.ListCreativeGroups)
 	router.POST(options.BaseURL+"/creative/asset-groups", wrapper.CreateCreativeGroup)
 	router.POST(options.BaseURL+"/creative/asset-groups/:id/delete", wrapper.DeleteCreativeGroup)

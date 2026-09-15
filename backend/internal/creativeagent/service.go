@@ -9,10 +9,13 @@
 package creativeagent
 
 import (
+	"context"
 	"errors"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 var (
@@ -90,17 +93,34 @@ func DefaultLimits() Limits {
 	}
 }
 
-// Service is application composition. The model catalog and the skill registry
+// SkillDirectory is the slice of the skill store this assistant consumes. The
+// write ports — import, activate, disable — are deliberately absent: publishing
+// is a deployment act reached through the administrative command, and no HTTP
+// handler should be one interface assertion away from it.
+//
+// Cross-account resolution of a platform skill happens behind this port, in the
+// skill package, which is why nothing here takes an account other than the
+// caller's own (§5).
+type SkillDirectory interface {
+	ListAccessibleSkills(ctx context.Context, scope store.AccountScope, query, cursor string, limit int) (creativeskill.CatalogPage, error)
+	ResolveVersion(ctx context.Context, scope store.AccountScope, skillID, versionID string) (creativeskill.Snapshot, error)
+}
+
+// Service is application composition. The model catalog and the skill directory
 // are deployment facts; neither is ever selected by a request field.
+//
+// Skills no longer ship inside the binary. Until an administrator has run the
+// import, the directory is simply empty and the catalog says so — which is a
+// better answer than a copy compiled in months ago.
 type Service struct {
 	models *llmgateway.Catalog
-	skills *SkillRegistry
+	skills SkillDirectory
 	limits Limits
 }
 
-func NewService(models *llmgateway.Catalog, skills *SkillRegistry) (*Service, error) {
+func NewService(models *llmgateway.Catalog, skills SkillDirectory) (*Service, error) {
 	if models == nil || skills == nil {
-		return nil, errors.New("creative agent needs a model catalog and a skill registry")
+		return nil, errors.New("creative agent needs a model catalog and a skill directory")
 	}
 	return &Service{models: models, skills: skills, limits: DefaultLimits()}, nil
 }
@@ -108,19 +128,3 @@ func NewService(models *llmgateway.Catalog, skills *SkillRegistry) (*Service, er
 // Limits reports the frozen baseline so callers record the same numbers a run
 // will be judged by.
 func (s *Service) Limits() Limits { return s.limits }
-
-// Compose builds the assistant from the skill packages embedded in this binary
-// and the catalog the composition root resolved. The catalog is injected rather
-// than loaded again here: the consent whitelist must name exactly the companies
-// the dispatcher can reach, and two independent loads can disagree.
-func Compose(models *llmgateway.Catalog) (*Service, error) {
-	packages, err := LoadEmbeddedSkills()
-	if err != nil {
-		return nil, err
-	}
-	skills, err := NewSkillRegistry(packages)
-	if err != nil {
-		return nil, err
-	}
-	return NewService(models, skills)
-}

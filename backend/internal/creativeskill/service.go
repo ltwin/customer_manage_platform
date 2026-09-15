@@ -34,18 +34,24 @@ type ObjectPort interface {
 // entry points; no HTTP handler may reach them.
 type Service struct {
 	objects ObjectPort
-	// platformAccountID is the one account allowed to publish platform skills.
-	// It lives here rather than in the command that happens to call today,
-	// because the rule is about which account owns the platform catalog, not
-	// about which binary is running. Empty means this deployment has none.
-	platformAccountID string
+	// platform is the scope of the one account allowed to publish platform
+	// skills, and the only way this package reads them. It lives here rather
+	// than in whichever command calls today, because the rule is about which
+	// account owns the platform catalog, not about which binary is running.
+	//
+	// It is a scope rather than an identifier so that both halves — "may this
+	// caller publish as platform" and "read the platform catalog" — come from
+	// one value that cannot disagree with itself. The zero scope carries an
+	// empty account id and means this deployment has no platform catalog; it
+	// can never run a query, because the store refuses an empty scope.
+	platform store.AccountScope
 }
 
-func NewService(objects ObjectPort, platformAccountID string) (*Service, error) {
+func NewService(objects ObjectPort, platform store.AccountScope) (*Service, error) {
 	if objects == nil {
 		return nil, errors.New("creative skill service requires an object port")
 	}
-	return &Service{objects: objects, platformAccountID: platformAccountID}, nil
+	return &Service{objects: objects, platform: platform}, nil
 }
 
 // mayPublishAs is the §5 barrier. An ordinary account writing origin=platform
@@ -55,7 +61,7 @@ func (s *Service) mayPublishAs(origin, accountID string) error {
 	if origin != "platform" {
 		return nil
 	}
-	if s.platformAccountID == "" || s.platformAccountID != accountID {
+	if publisher := s.platform.AccountID(); publisher == "" || publisher != accountID {
 		return ErrOriginNotPermitted
 	}
 	return nil
@@ -131,9 +137,33 @@ const versionColumns = "id,skill_id,version_number,schema_version,display_name_s
 // ResolveVersion reads one fixed version and its declared resources. Callers
 // pass the version a message or a run already froze, never a current pointer.
 // Resource bytes are not read here; a catalog request must not touch storage.
+//
+// A version the viewer does not own is resolved once more against the platform
+// publisher, and only as a platform skill. This is the reading half of §5: the
+// caller names a skill and a version and gets back a value object, and the
+// publisher's scope stays inside this package. A miss in both places is
+// ErrNotFound rather than a denial — which account owns an id the viewer may
+// not read is not something the answer should reveal.
 func (s *Service) ResolveVersion(ctx context.Context, scope store.AccountScope, skillID, versionID string) (Snapshot, error) {
 	if skillID == "" || versionID == "" {
 		return Snapshot{}, creativeops.ErrValidation
+	}
+	snapshot, err := s.resolveIn(ctx, scope, skillID, versionID, false)
+	if errors.Is(err, ErrNotFound) {
+		if publisher := s.platform.AccountID(); publisher != "" && publisher != scope.AccountID() {
+			return s.resolveIn(ctx, s.platform, skillID, versionID, true)
+		}
+	}
+	return snapshot, err
+}
+
+// resolveIn reads one version in exactly one account's scope. platformOnly adds
+// the origin condition, so resolving through the publisher can only ever reach
+// what it published as platform — not its private skills.
+func (s *Service) resolveIn(ctx context.Context, scope store.AccountScope, skillID, versionID string, platformOnly bool) (Snapshot, error) {
+	skillCond := "id=$2"
+	if platformOnly {
+		skillCond = "id=$2 AND origin='platform'"
 	}
 	var snapshot Snapshot
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
@@ -152,13 +182,16 @@ func (s *Service) ResolveVersion(ctx context.Context, scope store.AccountScope, 
 		if reason != nil {
 			snapshot.DisabledReason = *reason
 		}
-		if err := json.Unmarshal(manifest, &snapshot.Manifest); err != nil {
+		if snapshot.Manifest, err = decodeManifest(manifest); err != nil {
 			return err
 		}
 		snapshot.OwnerAccountID = tx.AccountID()
 		var revision int64
-		if err := tx.QueryRow(ctx, "creative_skills", "availability,revision", "id=$2", skillID).
-			Scan(&snapshot.SkillAvailability, &revision); err != nil {
+		// Origin is read rather than inferred from "is this mine". The publisher
+		// reading its own platform skill would otherwise be told it is an account
+		// skill, and the same skill would have two origins depending on who asked.
+		if err := tx.QueryRow(ctx, "creative_skills", "availability,revision,origin", skillCond, skillID).
+			Scan(&snapshot.SkillAvailability, &revision, &snapshot.Origin); err != nil {
 			if errors.Is(err, store.ErrNoRows) {
 				return ErrNotFound
 			}
@@ -205,22 +238,25 @@ func readResourceRows(ctx context.Context, tx store.TxAccountScope, versionID st
 // caller never names a storage location. The content is re-verified against the
 // hash the version froze, so a replaced or corrupted object fails loudly rather
 // than reaching a model.
-func (s *Service) ReadResource(ctx context.Context, scope store.AccountScope, versionID, name string) ([]byte, error) {
-	if versionID == "" || !validResourcePath(name) {
+//
+// A platform skill's resource rows belong to the publisher, so reading one
+// needs the publisher's scope. Entitlement for that path is re-derived from the
+// database here rather than carried in an argument: a resolved snapshot is an
+// ordinary struct any caller can build, so trusting the owner recorded in one
+// would turn "I already checked" into the check itself.
+func (s *Service) ReadResource(ctx context.Context, scope store.AccountScope, skillID, versionID, name string) ([]byte, error) {
+	if skillID == "" || versionID == "" || !validResourcePath(name) {
 		return nil, creativeops.ErrValidation
 	}
-	var located stagedObject
-	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		err := tx.QueryRow(ctx, "creative_skill_version_resources",
-			"path,mime,byte_size,sha256,storage_driver,bucket,object_key,object_version",
-			"skill_version_id=$2 AND path=$3", versionID, name).
-			Scan(&located.Path, &located.Mime, &located.ByteSize, &located.SHA256,
-				&located.Driver, &located.Bucket, &located.Key, &located.Version)
-		if errors.Is(err, store.ErrNoRows) {
-			return ErrNotFound
+	// The binding is checked on both branches, not only the cross-account one.
+	// A parameter that is enforced in one path and ignored in the other reads as
+	// a guarantee this function does not actually make.
+	located, err := s.readableResource(ctx, scope, skillID, versionID, name, false)
+	if errors.Is(err, ErrNotFound) {
+		if publisher := s.platform.AccountID(); publisher != "" && publisher != scope.AccountID() {
+			located, err = s.readableResource(ctx, s.platform, skillID, versionID, name, true)
 		}
-		return err
-	})
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +279,45 @@ func (s *Service) ReadResource(ctx context.Context, scope store.AccountScope, ve
 		return nil, ErrContentMismatch
 	}
 	return bytes, nil
+}
+
+// readableResource locates one file only if the version really belongs to the
+// named skill in this scope. It asks two questions rather than one: without the
+// binding, naming a real platform skill alongside the id of one of the
+// publisher's private versions would read the private one.
+func (s *Service) readableResource(ctx context.Context, scope store.AccountScope,
+	skillID, versionID, name string, platformOnly bool) (stagedObject, error) {
+	skillCond := "id=$2"
+	if platformOnly {
+		skillCond = "id=$2 AND origin='platform'"
+	}
+	var located stagedObject
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var found string
+		err := tx.QueryRow(ctx, "creative_skill_versions", "id", "id=$2 AND skill_id=$3", versionID, skillID).Scan(&found)
+		if errors.Is(err, store.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if err := tx.QueryRow(ctx, "creative_skills", "id", skillCond, skillID).Scan(&found); err != nil {
+			if errors.Is(err, store.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		err = tx.QueryRow(ctx, "creative_skill_version_resources",
+			"path,mime,byte_size,sha256,storage_driver,bucket,object_key,object_version",
+			"skill_version_id=$2 AND path=$3", versionID, name).
+			Scan(&located.Path, &located.Mime, &located.ByteSize, &located.SHA256,
+				&located.Driver, &located.Bucket, &located.Key, &located.Version)
+		if errors.Is(err, store.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	})
+	return located, err
 }
 
 // readBounded reads exactly size bytes and hashes them. It reads one byte past

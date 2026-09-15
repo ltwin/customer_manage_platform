@@ -267,7 +267,7 @@ func openStore(ctx context.Context, cfg config.Config, accountID string) (applic
 	if err != nil {
 		return nil, store.AccountScope{}, nil, err
 	}
-	svc, err := creativeskill.Compose(cfg)
+	svc, err := creativeskill.Compose(cfg, database)
 	if err != nil {
 		database.Close()
 		return nil, store.AccountScope{}, nil, err

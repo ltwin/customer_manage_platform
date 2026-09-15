@@ -31,7 +31,10 @@ type fixture struct {
 	// objects is the same port svc holds, so a test can wrap it and control
 	// when an upload returns.
 	objects creativeskill.ObjectPort
-	a, b    store.AccountScope
+	// platform is the scope of this fixture's trusted publisher, so a test can
+	// build a second service on the same deployment facts.
+	platform store.AccountScope
+	a, b     store.AccountScope
 }
 
 func setup(t *testing.T) *fixture {
@@ -62,12 +65,13 @@ func setup(t *testing.T) *fixture {
 	}
 	// skill-a is this fixture's trusted platform publisher; skill-b is an
 	// ordinary account, which is what makes the origin barrier testable.
-	svc, err := creativeskill.NewService(local, platformAccount)
+	platform := st.ScopeFor(auth.AccountContext{AccountID: platformAccount})
+	svc, err := creativeskill.NewService(local, platform)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &fixture{
-		db: db, svc: svc, objects: local,
+		db: db, svc: svc, objects: local, platform: platform,
 		a: st.ScopeFor(auth.AccountContext{AccountID: "skill-a"}),
 		b: st.ScopeFor(auth.AccountContext{AccountID: "skill-b"}),
 	}
@@ -114,12 +118,20 @@ func newRequest() creativeskill.ImportRequest {
 // version instead of hand-inserted rows.
 func publish(t *testing.T, f *fixture, scope store.AccountScope, req creativeskill.ImportRequest) creativeskill.Version {
 	t.Helper()
+	return publishBody(t, f, scope, req, checklist)
+}
+
+// publishBody is publish for a request whose declared resource is not the
+// shared checklist. Only a test that pins an exact digest needs it; everything
+// else should stay on the shared fixture.
+func publishBody(t *testing.T, f *fixture, scope store.AccountScope, req creativeskill.ImportRequest, body []byte) creativeskill.Version {
+	t.Helper()
 	record, err := f.svc.BeginImport(t.Context(), scope, req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, pending := range record.Pending {
-		if _, err := f.svc.StageResource(t.Context(), scope, record.ID, pending, bytes.NewReader(checklist)); err != nil {
+		if _, err := f.svc.StageResource(t.Context(), scope, record.ID, pending, bytes.NewReader(body)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -204,7 +216,7 @@ func TestActivatingANewVersionLeavesTheOldOneUntouched(t *testing.T) {
 	if len(old.Resources) != 1 || old.Resources[0].Path != "references/comparison-checklist.md" {
 		t.Fatalf("the old version must keep its own files: %+v", old.Resources)
 	}
-	body, err := f.svc.ReadResource(t.Context(), f.a, first.ID, "references/comparison-checklist.md")
+	body, err := f.svc.ReadResource(t.Context(), f.a, first.SkillID, first.ID, "references/comparison-checklist.md")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,14 +226,20 @@ func TestActivatingANewVersionLeavesTheOldOneUntouched(t *testing.T) {
 }
 
 // Reading someone else's skill is not a different answer, it is no answer.
+//
+// The publisher is the interesting case rather than an arbitrary account: it is
+// the one account others may read *something* of, so "may read its platform
+// skills" must not decay into "may read its rows".
 func TestAnotherAccountCannotReachAPrivateVersion(t *testing.T) {
 	f := setup(t)
-	mine := publish(t, f, f.a, newRequest())
+	private := newRequest()
+	private.Origin = "account"
+	mine := publish(t, f, f.a, private)
 
 	if _, err := f.svc.ResolveVersion(t.Context(), f.b, mine.SkillID, mine.ID); !errors.Is(err, creativeskill.ErrNotFound) {
 		t.Fatalf("another account resolved a private version: %v", err)
 	}
-	if _, err := f.svc.ReadResource(t.Context(), f.b, mine.ID, "references/comparison-checklist.md"); !errors.Is(err, creativeskill.ErrNotFound) {
+	if _, err := f.svc.ReadResource(t.Context(), f.b, mine.SkillID, mine.ID, "references/comparison-checklist.md"); !errors.Is(err, creativeskill.ErrNotFound) {
 		t.Fatalf("another account read a private resource: %v", err)
 	}
 	// Publishing under the same slug from another account is a separate skill,
@@ -235,6 +253,67 @@ func TestAnotherAccountCannotReachAPrivateVersion(t *testing.T) {
 	}
 	if _, err := f.svc.ResolveVersion(t.Context(), f.a, theirs.SkillID, theirs.ID); !errors.Is(err, creativeskill.ErrNotFound) {
 		t.Fatalf("the first account reached the second account's skill: %v", err)
+	}
+}
+
+// The platform catalog is the one thing that does cross the account line, and
+// it crosses it inside this package: the reader hands in its own scope and gets
+// a value object back.
+func TestAPlatformSkillIsReadableByEveryAccount(t *testing.T) {
+	f := setup(t)
+	published := publish(t, f, f.a, newRequest())
+	const declared = "references/comparison-checklist.md"
+
+	resolved, err := f.svc.ResolveVersion(t.Context(), f.b, published.SkillID, published.ID)
+	if err != nil {
+		t.Fatalf("a platform skill must be readable by an ordinary account: %v", err)
+	}
+	// The publishing account travels with the version. A message recording this
+	// reference has to keep whose skill it was, not who was reading.
+	if resolved.OwnerAccountID != platformAccount || resolved.Digest != published.Digest {
+		t.Fatalf("resolved as %+v", resolved.Version)
+	}
+	body, err := f.svc.ReadResource(t.Context(), f.b, published.SkillID, published.ID, declared)
+	if err != nil {
+		t.Fatalf("a platform skill's declared resource must be readable: %v", err)
+	}
+	if !bytes.Equal(body, checklist) {
+		t.Fatal("the platform resource read back as something else")
+	}
+	// Naming a real platform skill next to the id of one of the publisher's
+	// private versions must not read the private one. Both halves of the
+	// entitlement check exist for this.
+	hidden := newRequest()
+	hidden.Origin = "account"
+	hidden.Slug = "private-line"
+	secret := publish(t, f, f.a, hidden)
+	if _, err := f.svc.ReadResource(t.Context(), f.b, published.SkillID, secret.ID, declared); !errors.Is(err, creativeskill.ErrNotFound) {
+		t.Fatalf("a platform skill id carried a private version's bytes out: %v", err)
+	}
+	if _, err := f.svc.ResolveVersion(t.Context(), f.b, published.SkillID, secret.ID); !errors.Is(err, creativeskill.ErrNotFound) {
+		t.Fatalf("a mismatched skill and version resolved: %v", err)
+	}
+}
+
+// A deployment with no platform publisher has no platform catalog, rather than
+// whichever account happens to own a skill marked platform.
+func TestWithoutAPlatformPublisherNothingCrossesAccounts(t *testing.T) {
+	f := setup(t)
+	published := publish(t, f, f.a, newRequest())
+
+	unconfigured, err := creativeskill.NewService(f.objects, store.AccountScope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := unconfigured.ResolveVersion(t.Context(), f.b, published.SkillID, published.ID); !errors.Is(err, creativeskill.ErrNotFound) {
+		t.Fatalf("a platform skill was reachable with no publisher configured: %v", err)
+	}
+	page, err := unconfigured.ListAccessibleSkills(t.Context(), f.b, "", "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 0 {
+		t.Fatalf("an account saw %d skills it does not own", len(page.Items))
 	}
 }
 
@@ -270,13 +349,22 @@ func TestStagedBytesMustMatchTheDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Reading is by declared path only. There is no directory under this call,
+	// so a traversal is refused as an invalid path and an undeclared name simply
+	// does not exist — neither turns into a storage location.
+	if _, err := f.svc.ReadResource(t.Context(), f.a, version.SkillID, version.ID, "../../../etc/passwd"); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("a traversal must be refused on read: %v", err)
+	}
+	if _, err := f.svc.ReadResource(t.Context(), f.a, version.SkillID, version.ID, "references/other.md"); !errors.Is(err, creativeskill.ErrNotFound) {
+		t.Fatalf("an undeclared path must not resolve: %v", err)
+	}
 	// A stored object that stops matching what the version froze is a fault to
 	// report, never content to hand to a model.
 	if _, err := f.db.Exec(`UPDATE creative_skill_version_resources SET sha256=repeat('f',64)
 		WHERE skill_version_id=$1`, version.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.svc.ReadResource(t.Context(), f.a, version.ID, path); !errors.Is(err, creativeskill.ErrContentMismatch) {
+	if _, err := f.svc.ReadResource(t.Context(), f.a, version.SkillID, version.ID, path); !errors.Is(err, creativeskill.ErrContentMismatch) {
 		t.Fatalf("a resource that no longer matches its hash must fail loudly: %v", err)
 	}
 }
@@ -400,7 +488,7 @@ func TestOnlyTheConfiguredPublisherCanPublishAPlatformSkill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	unconfigured, err := creativeskill.NewService(local, "")
+	unconfigured, err := creativeskill.NewService(local, store.AccountScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +610,7 @@ func TestALosingConcurrentStageMustNotDeleteTheWinnersObject(t *testing.T) {
 		entered:    make(chan struct{}),
 		release:    make(chan struct{}),
 	}
-	svc, err := creativeskill.NewService(gate, platformAccount)
+	svc, err := creativeskill.NewService(gate, f.platform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -552,7 +640,7 @@ func TestALosingConcurrentStageMustNotDeleteTheWinnersObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := svc.ReadResource(t.Context(), f.a, version.ID, declared)
+	body, err := svc.ReadResource(t.Context(), f.a, version.SkillID, version.ID, declared)
 	if err != nil {
 		t.Fatalf("the frozen version lost its bytes to the late caller's cleanup: %v", err)
 	}
@@ -575,7 +663,7 @@ func TestALosingConcurrentStageDropsItsOwnObjectWhenVersionsArePerWrite(t *testi
 		entered:    make(chan struct{}),
 		release:    make(chan struct{}),
 	}
-	svc, err := creativeskill.NewService(gate, platformAccount)
+	svc, err := creativeskill.NewService(gate, f.platform)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -610,7 +698,7 @@ func TestALosingConcurrentStageDropsItsOwnObjectWhenVersionsArePerWrite(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := svc.ReadResource(t.Context(), f.a, version.ID, declared)
+	body, err := svc.ReadResource(t.Context(), f.a, version.SkillID, version.ID, declared)
 	if err != nil {
 		t.Fatalf("the frozen version points at the object that was dropped: %v", err)
 	}

@@ -128,6 +128,9 @@ type Snapshot struct {
 	// SkillAvailability is the owning skill's switch as read alongside the
 	// version, so one lookup answers both halves of "may this start work now".
 	SkillAvailability string `json:"skill_availability"`
+	// Origin is the owning skill's catalog, read from the row rather than
+	// inferred from whether the reader happens to own it.
+	Origin string `json:"origin"`
 }
 
 // Skill is the mutable identity that owns a line of versions.
@@ -237,8 +240,48 @@ func (m Manifest) validate() error {
 	return nil
 }
 
-// encodedManifest is both what gets stored and what the digest covers, so the
-// stored declaration and the identity of the version can never drift apart.
+// normalized replaces absent lists with empty ones. A manifest that omits
+// required_model_capabilities is valid — the field means "needs nothing
+// special" — but a nil slice serialises as null, and the API declares an array.
+//
+// This runs on the way out and never on the way in. What the API shows is a
+// presentation rule that may change; what the digest covers is a persisted
+// identity that may not. Normalising before the digest would tie the two
+// together, so that relaxing an array's rendering silently re-hashes every
+// package imported under the old rule — see decodeManifest.
+func (m Manifest) normalized() Manifest {
+	if m.InputKinds == nil {
+		m.InputKinds = []string{}
+	}
+	if m.ToolAllowlist == nil {
+		m.ToolAllowlist = []string{}
+	}
+	if m.RequiredModelCapabilities == nil {
+		m.RequiredModelCapabilities = []string{}
+	}
+	return m
+}
+
+// decodeManifest is the only way a stored manifest re-enters the program, so
+// the nil-versus-empty distinction that the digest has to preserve cannot reach
+// a caller. Every read path goes through here; none of them normalises itself.
+func decodeManifest(raw []byte) (Manifest, error) {
+	var m Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return Manifest{}, err
+	}
+	return m.normalized(), nil
+}
+
+// encoded is both what gets stored and what the digest covers, so the stored
+// declaration and the identity of the version can never drift apart.
+//
+// It marshals the manifest exactly as it was declared. These bytes reach
+// contentDigest and, through it, the request_hash a retried import is compared
+// against — so any change to this encoding retroactively invalidates every
+// import already recorded, and a replay of a pinned operation id would report a
+// conflict that no retry can clear. TestTheManifestEncodingIsAPersistedContract
+// pins it for that reason.
 func (m Manifest) encoded() ([]byte, error) {
 	body, err := json.Marshal(m)
 	if err != nil {

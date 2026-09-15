@@ -14,11 +14,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 )
 
-// seedPackageDir is the platform package that shipped inside the binary. It
-// stays in the repository as auditable import material: the running server no
-// longer reads it, the import command does, and what is published is whatever
-// an operator can see in that directory.
-const seedPackageDir = "../creativeagent/skillpkg/reference-direction.v1"
+// seedPackageDir is the platform package this deployment publishes. It lives
+// outside the Go module's domain packages because nothing compiles it any more:
+// the running server reads skills from the database, the import command reads
+// this directory, and what gets published is whatever an operator can see here.
+const seedPackageDir = "../../../deploy/creative-skills/reference-direction.v1"
 
 // The deployment publishes this package once. Running the import again with the
 // same operation id has to be a replay, because that is what makes the seed
@@ -65,7 +65,7 @@ func TestTheSeedPackageImportsIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, err := f.svc.ReadResource(t.Context(), f.a, first.ID, declared)
+	body, err := f.svc.ReadResource(t.Context(), f.a, first.SkillID, first.ID, declared)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestReclaimDropsTheObjectsOfAnExpiredImportAndLeavesFrozenOnesAlone(t *test
 	// The frozen version published before the sweep keeps its bytes: retention
 	// for a version is that nothing deletes it, and reclamation is not an
 	// exception to that.
-	if _, err := f.svc.ReadResource(t.Context(), f.a, kept.ID, "references/comparison-checklist.md"); err != nil {
+	if _, err := f.svc.ReadResource(t.Context(), f.a, kept.SkillID, kept.ID, "references/comparison-checklist.md"); err != nil {
 		t.Fatalf("the sweep reached a frozen version: %v", err)
 	}
 	// A second sweep has nothing left to do rather than failing on objects it
@@ -145,7 +145,7 @@ func TestReclaimLeavesAnImportInsideItsWindowAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.svc.ReadResource(t.Context(), f.a, version.ID, "references/comparison-checklist.md"); err != nil {
+	if _, err := f.svc.ReadResource(t.Context(), f.a, version.SkillID, version.ID, "references/comparison-checklist.md"); err != nil {
 		t.Fatal(err)
 	}
 }

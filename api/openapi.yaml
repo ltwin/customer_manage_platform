@@ -628,6 +628,50 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/agent/skills:
+    get:
+      tags: [creative-foundation]
+      operationId: listCreativeAgentSkills
+      summary: 本账号可选的 Skill（自己的加受信平台目录），供选框与斜杠选择器统一查询
+      parameters:
+      - in: query
+        name: q
+        schema: {type: string, maxLength: 64}
+        description: 按 slug 前缀与展示名匹配
+      - {in: query, name: cursor, schema: {type: string}}
+      - in: query
+        name: limit
+        schema: {type: integer, minimum: 1, maximum: 50, default: 20}
+      responses:
+        '200':
+          description: 目录页
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentSkillPage'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/agent/skills/{id}/versions/{version_id}:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeAgentSkillVersion
+      summary: 一个固定版本的摘要与声明；正文与对象地址不在返回内
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - {in: path, name: version_id, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: 版本
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentSkillVersion'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
   /creative/canvases/{id}/conversations:
     get:
       tags: [creative-foundation]
@@ -6821,16 +6865,92 @@ components:
     CreativeAgentSkill:
       type: object
       additionalProperties: false
-      required: [key, version, digest, display_name, description, max_inputs, available]
+      required: [skill_id, skill_version_id, origin, slug, display_name, description, version_number, digest, max_inputs, available]
       properties:
-        key: {type: string}
-        version: {type: integer}
-        digest: {type: string}
+        skill_id: {type: string}
+        skill_version_id:
+          type: string
+          description: 当前推荐版本；消息与运行各自固定自己的版本，不重读这个指针
+        origin:
+          type: string
+          enum: [platform, account]
+          description: 平台目录还是账号自建；两边的 slug 可以重名
+        slug: {type: string}
         display_name: {type: string}
         description: {type: string}
+        version_number: {type: integer}
+        digest: {type: string}
         max_inputs: {type: integer}
         available: {type: boolean}
         unavailable_reason: {type: string}
+    CreativeAgentSkillPage:
+      type: object
+      additionalProperties: false
+      required: [items, next_cursor]
+      description: >-
+        items 为空而 next_cursor 非空是合法且可达的一页：游标定位在 Skill 行上，
+        而整页 Skill 的推荐版本都被停用时就没有条目可返回。客户端必须按 next_cursor
+        继续翻，不能把空页当作目录结束。
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentSkill'}
+        next_cursor:
+          type: string
+          description: 留空表示目录到此为止
+    CreativeAgentSkillManifest:
+      type: object
+      additionalProperties: false
+      required: [manifest_schema_version, input_kinds, max_inputs, tool_allowlist, required_model_capabilities, output_contract, completion_check_key]
+      properties:
+        manifest_schema_version: {type: integer}
+        input_kinds:
+          type: array
+          items: {type: string}
+        max_inputs: {type: integer}
+        tool_allowlist:
+          type: array
+          items: {type: string}
+          description: 上界，执行时与账号自身的操作范围取交集；Skill 永远不能扩权
+        required_model_capabilities:
+          type: array
+          items: {type: string}
+        output_contract: {type: string}
+        completion_check_key: {type: string}
+    CreativeAgentSkillResource:
+      type: object
+      additionalProperties: false
+      required: [path, mime, byte_size, sha256]
+      properties:
+        path: {type: string}
+        mime: {type: string}
+        byte_size: {type: integer, format: int64}
+        sha256: {type: string}
+    CreativeAgentSkillVersion:
+      type: object
+      additionalProperties: false
+      required: [skill_id, skill_version_id, origin, display_name, description, version_number, schema_version, digest, available, manifest, resources, created_at]
+      properties:
+        skill_id: {type: string}
+        skill_version_id: {type: string}
+        origin: {type: string, enum: [platform, account]}
+        display_name:
+          type: string
+          description: 该版本冻结时的名称快照，不是 Skill 今天叫什么
+        description: {type: string}
+        version_number: {type: integer}
+        schema_version:
+          type: integer
+          description: 版本文档格式号，不是版本号本身
+        digest: {type: string}
+        available: {type: boolean}
+        unavailable_reason: {type: string}
+        manifest: {$ref: '#/components/schemas/CreativeAgentSkillManifest'}
+        resources:
+          type: array
+          description: 声明清单；对象存储地址是服务端内部字段，不在这里返回
+          items: {$ref: '#/components/schemas/CreativeAgentSkillResource'}
+        created_at: {type: string, format: date-time}
     CreativeAgentTool:
       type: object
       additionalProperties: false
@@ -6844,9 +6964,14 @@ components:
     CreativeAgentCatalog:
       type: object
       additionalProperties: false
-      required: [catalog_version, limits_version, policy_version, vendors, models, skills, tools, limits]
+      required: [catalog_version, skill_catalog_revision, limits_version, policy_version, vendors, models, skills, tools, limits]
       properties:
         catalog_version: {type: string}
+        skill_catalog_revision:
+          type: string
+          description: >-
+            Skill 摘要的修订标识；内容变了它就变。刻意不复用 catalog_version：
+            模型来自部署随附的配置文件，Skill 来自任何一次导入都能改动的数据库。
         limits_version: {type: string}
         policy_version: {type: string}
         vendors:

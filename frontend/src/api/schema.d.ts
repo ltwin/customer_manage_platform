@@ -246,6 +246,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/agent/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 本账号可选的 Skill（自己的加受信平台目录），供选框与斜杠选择器统一查询 */
+        get: operations["listCreativeAgentSkills"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent/skills/{id}/versions/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 一个固定版本的摘要与声明；正文与对象地址不在返回内 */
+        get: operations["getCreativeAgentSkillVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/canvases/{id}/conversations": {
         parameters: {
             query?: never;
@@ -2635,14 +2669,65 @@ export interface components {
             max_output_tokens: number;
         };
         CreativeAgentSkill: {
-            key: string;
-            version: number;
-            digest: string;
+            skill_id: string;
+            /** @description 当前推荐版本；消息与运行各自固定自己的版本，不重读这个指针 */
+            skill_version_id: string;
+            /**
+             * @description 平台目录还是账号自建；两边的 slug 可以重名
+             * @enum {string}
+             */
+            origin: "platform" | "account";
+            slug: string;
             display_name: string;
             description: string;
+            version_number: number;
+            digest: string;
             max_inputs: number;
             available: boolean;
             unavailable_reason?: string;
+        };
+        /** @description items 为空而 next_cursor 非空是合法且可达的一页：游标定位在 Skill 行上， 而整页 Skill 的推荐版本都被停用时就没有条目可返回。客户端必须按 next_cursor 继续翻，不能把空页当作目录结束。 */
+        CreativeAgentSkillPage: {
+            items: components["schemas"]["CreativeAgentSkill"][];
+            /** @description 留空表示目录到此为止 */
+            next_cursor: string;
+        };
+        CreativeAgentSkillManifest: {
+            manifest_schema_version: number;
+            input_kinds: string[];
+            max_inputs: number;
+            /** @description 上界，执行时与账号自身的操作范围取交集；Skill 永远不能扩权 */
+            tool_allowlist: string[];
+            required_model_capabilities: string[];
+            output_contract: string;
+            completion_check_key: string;
+        };
+        CreativeAgentSkillResource: {
+            path: string;
+            mime: string;
+            /** Format: int64 */
+            byte_size: number;
+            sha256: string;
+        };
+        CreativeAgentSkillVersion: {
+            skill_id: string;
+            skill_version_id: string;
+            /** @enum {string} */
+            origin: "platform" | "account";
+            /** @description 该版本冻结时的名称快照，不是 Skill 今天叫什么 */
+            display_name: string;
+            description: string;
+            version_number: number;
+            /** @description 版本文档格式号，不是版本号本身 */
+            schema_version: number;
+            digest: string;
+            available: boolean;
+            unavailable_reason?: string;
+            manifest: components["schemas"]["CreativeAgentSkillManifest"];
+            /** @description 声明清单；对象存储地址是服务端内部字段，不在这里返回 */
+            resources: components["schemas"]["CreativeAgentSkillResource"][];
+            /** Format: date-time */
+            created_at: string;
         };
         CreativeAgentTool: {
             key: string;
@@ -2654,6 +2739,8 @@ export interface components {
         };
         CreativeAgentCatalog: {
             catalog_version: string;
+            /** @description Skill 摘要的修订标识；内容变了它就变。刻意不复用 catalog_version： 模型来自部署随附的配置文件，Skill 来自任何一次导入都能改动的数据库。 */
+            skill_catalog_revision: string;
             limits_version: string;
             policy_version: string;
             vendors: string[];
@@ -6355,6 +6442,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeAgentCatalog"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeAgentSkills: {
+        parameters: {
+            query?: {
+                /** @description 按 slug 前缀与展示名匹配 */
+                q?: string;
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 目录页 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentSkillPage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeAgentSkillVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                version_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 版本 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentSkillVersion"];
                 };
             };
             /** @description 请求失败 */

@@ -2,7 +2,9 @@
 status: proposed
 created: 2026-09-14
 scope: skill-storage-and-instruction-foundation
-implementation_status: not-started
+# S0-S3a 已落地（迁移 0045、creativeskill、creativectl、目录端点、去 go:embed）；
+# 剩 S3b 输入契约（instruction_segments、消息 v2、limitsVersion）与里程碑 B/C。
+implementation_status: in-progress
 ---
 
 # Skill 资源化与结构化输入底座方案
@@ -26,6 +28,8 @@ implementation_status: not-started
 “不在本阶段”是能力不开放，不返回伪造的可用状态。纯文本和固定 Skill 引用可在 B 的真实运行中使用；图片、视频的引用结构先定义，模型不支持时明确拒绝，不承诺当前可以理解媒体。
 
 ## 2. 当前事实与设计差异
+
+**本节记录的是撰写方案时（2026-09-13）的现状，不随实施更新**——它解释这些设计决定为什么成立，改写它就等于抹掉决策依据。已落地部分的当前事实见 `docs/dev/creative-agent.md` 与 `docs/dev/creative-skill-import.md`。下面第一条已于 S3a 失效（`skills.go` 与 `go:embed` 已删除，种子包移到 `deploy/creative-skills/`）。
 
 - 当前 `internal/creativeagent/skills.go` 使用 `go:embed skillpkg`，`SkillRegistry` 在启动时加载；`Catalog` 同时返回 Gateway 模型与 Skill 摘要，工具尚未注册时 Skill 不可用。
 - 当前消息采用 `schema_version=1` 与 `body.blocks`；`ContentRefs` 单独写入 `creative_message_content_refs`。
