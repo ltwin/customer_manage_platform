@@ -2,7 +2,9 @@ package creativeagent
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -11,23 +13,34 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
 func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 type fixture struct {
-	t        *testing.T
-	db       *sql.DB
+	t  *testing.T
+	db *sql.DB
+	// skills is the real skill store behind the assistant, published into by
+	// the real import protocol. A stub would exercise the projection but not
+	// the seam between the two packages, which is the part that is new.
+	skills   *creativeskill.Service
 	service  *Service
 	alice    store.AccountScope
 	bob      store.AccountScope
+	platform store.AccountScope
 	canvasID string
 }
+
+// platformPublisher is a third account, so that neither test account is the one
+// publishing: both read the platform catalog as ordinary accounts do.
+const platformPublisher = "agent-platform"
 
 func setup(t *testing.T) *fixture {
 	t.Helper()
@@ -37,7 +50,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	if _, err := db.Exec(`INSERT INTO accounts(id,password_hash,status) VALUES ('agent-a','test','active'),('agent-b','test','active');
+	if _, err := db.Exec(`INSERT INTO accounts(id,password_hash,status) VALUES ('agent-a','test','active'),('agent-b','test','active'),('agent-platform','test','active');
 		INSERT INTO creative_projects(id,account_id,name) VALUES ('ccpj_a','agent-a','项目'),('ccpj_b','agent-b','项目');
 		INSERT INTO creative_canvases(id,account_id,project_id,name) VALUES ('cccv_a','agent-a','ccpj_a','画布'),('cccv_b','agent-b','ccpj_b','画布')`); err != nil {
 		t.Fatal(err)
@@ -51,11 +64,25 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := Compose(models)
+	// Skill resources never arrive as browser uploads, so the local adapter's
+	// part signer is unreachable through the port this domain holds.
+	objects, err := versionedfs.NewLocal(t.TempDir(),
+		func(string, string, int, time.Time) versionedfs.PartAuthorization {
+			return versionedfs.PartAuthorization{}
+		})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{t: t, db: db, service: service,
+	platform := st.ScopeFor(auth.AccountContext{AccountID: platformPublisher})
+	skills, err := creativeskill.NewService(objects, platform)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(models, skills)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &fixture{t: t, db: db, skills: skills, service: service, platform: platform,
 		alice:    st.ScopeFor(auth.AccountContext{AccountID: "agent-a"}),
 		bob:      st.ScopeFor(auth.AccountContext{AccountID: "agent-b"}),
 		canvasID: "cccv_a"}
@@ -521,106 +548,204 @@ func TestRetryingTheSameRevokeSaysItIsAlreadyWithdrawn(t *testing.T) {
 	}
 }
 
-func TestASkillIsUnavailableUntilItsToolsAreRegistered(t *testing.T) {
+// publishSkill puts one skill into the platform catalog through the real
+// import protocol, which is the only way a version comes into existence.
+func (f *fixture) publishSkill(slug, displayName string) creativeskill.Version {
+	f.t.Helper()
+	return f.importSkill(slug, displayName, 0, true)
+}
+
+// importSkill is one run of the import protocol. Separating it from
+// publishSkill is what lets a test append a version to an existing skill
+// without moving its recommended pointer, which is the one case where the
+// catalog's text changes while its version ids do not.
+func (f *fixture) importSkill(slug, displayName string, expected creativeops.Revision, activate bool) creativeskill.Version {
+	f.t.Helper()
+	body := []byte("# 比较清单\n\n1. 光线\n2. 色调\n")
+	sum := sha256.Sum256(body)
+	req := creativeskill.ImportRequest{
+		OperationID: uuid.NewString(), Origin: "platform", Slug: slug,
+		DisplayName: displayName, Description: "在个人库中检索参考、比较候选。",
+		Instructions: "先检索，再比较，最后写方向。",
+		Manifest: creativeskill.Manifest{
+			ManifestSchemaVersion: 1, InputKinds: []string{"text"}, MaxInputs: 20,
+			ToolAllowlist: []string{"search_assets@1"}, RequiredModelCapabilities: []string{"tool_calling"},
+			OutputContract: "一组参考节点加一段创作方向文字。", CompletionCheckKey: "reference_direction_v1",
+		},
+		Resources: []creativeskill.ResourceDeclaration{{
+			Path: "references/comparison-checklist.md", Mime: "text/markdown; charset=utf-8",
+			ByteSize: int64(len(body)), SHA256: hex.EncodeToString(sum[:]),
+		}},
+		ExpectedSkillRevision: expected,
+		Activate:              activate,
+	}
+	record, err := f.skills.BeginImport(f.t.Context(), f.platform, req)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	for _, pending := range record.Pending {
+		if _, err := f.skills.StageResource(f.t.Context(), f.platform, record.ID, pending, bytes.NewReader(body)); err != nil {
+			f.t.Fatal(err)
+		}
+	}
+	version, err := f.skills.FinalizeImport(f.t.Context(), f.platform, record.ID)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return version
+}
+
+// skill_catalog_revision answers "has what I cached changed". A client that
+// caches on it and sees the same value will not refetch, so anything the
+// catalog renders has to be inside it.
+//
+// The case that breaks a hand-picked field list: importing a version without
+// activating it renames the skill — the import always writes the catalog text —
+// while the recommended pointer, and therefore every version id and digest in
+// the answer, stays where it was.
+func TestRenamingASkillWithoutActivatingMovesTheCatalogRevision(t *testing.T) {
+	f := setup(t)
+	first := f.publishSkill("reference-direction", "参考整理与创作方向")
+	before, err := f.service.Catalog(t.Context(), f.alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f.importSkill("reference-direction", "参考整理（改名后）", first.SkillRevision, false)
+	after, err := f.service.Catalog(t.Context(), f.alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The premise: the rename reached the catalog and the recommended version
+	// did not move. Without both, this test would pass for the wrong reason.
+	if len(after.Skills) != 1 || after.Skills[0].DisplayName != "参考整理（改名后）" {
+		t.Fatalf("the rename did not reach the catalog: %+v", after.Skills)
+	}
+	if after.Skills[0].VersionID != first.ID || after.Skills[0].Digest != first.Digest {
+		t.Fatalf("the recommended version moved, so this is not the case under test: %+v", after.Skills[0])
+	}
+	if before.SkillCatalogRevision == after.SkillCatalogRevision {
+		t.Fatalf("the catalog text changed but the revision did not (%s); a client caching on it keeps the old name",
+			after.SkillCatalogRevision)
+	}
+}
+
+// Nothing ships inside the binary any more. A deployment that has not run the
+// import yet says so plainly, rather than serving a copy compiled in months ago.
+func TestTheCatalogIsEmptyUntilSomethingIsImported(t *testing.T) {
 	f := setup(t)
 	view, err := f.service.Catalog(t.Context(), f.alice)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Skills) == 0 {
-		t.Fatal("the deployment ships at least one skill package")
+	if len(view.Skills) != 0 {
+		t.Fatalf("a deployment with no import reported %+v", view.Skills)
 	}
-	for _, skill := range view.Skills {
-		if skill.Available {
-			t.Fatalf("%s@%d claims to be available while no tool is registered", skill.Key, skill.Version)
-		}
-		if skill.UnavailableWhy == "" || skill.Digest == "" {
-			t.Fatalf("%s@%d must stay visible with its reason and digest", skill.Key, skill.Version)
-		}
+	// The rest of the catalog is unaffected: ordinary conversation does not
+	// depend on a skill being published.
+	if len(view.Models) == 0 || view.LimitsVersion != limitsVersion {
+		t.Fatalf("the catalog lost its other halves: %+v", view)
+	}
+	before := view.SkillCatalogRevision
+	f.publishSkill("reference-direction", "参考整理与创作方向")
+	after, err := f.service.Catalog(t.Context(), f.alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Skills) != 1 {
+		t.Fatalf("the imported skill did not reach the catalog: %+v", after.Skills)
+	}
+	// The revision exists so a client can tell "same answer" from "look again".
+	if after.SkillCatalogRevision == before || after.SkillCatalogRevision == "" {
+		t.Fatalf("the skill catalog revision did not move: %q", after.SkillCatalogRevision)
+	}
+	if after.SkillCatalogRevision == after.CatalogVersion {
+		t.Fatal("the skill catalog revision must not be the model catalog's version")
 	}
 }
 
-func TestTwoPackagesClaimingOneIdentityAreRefused(t *testing.T) {
-	packages, err := LoadEmbeddedSkills()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(packages) == 0 {
-		t.Fatal("no embedded skill packages")
-	}
-	forged := packages[0]
-	forged.Instructions += "\n偷偷改过的一句"
-	forged.Digest = "0000000000000000000000000000000000000000000000000000000000000000"
-	if _, err := NewSkillRegistry([]SkillPackage{packages[0], forged}); !errors.Is(err, ErrSkillUnavailable) {
-		t.Fatalf("one key and version must resolve to one text, got %v", err)
-	}
-}
-
-// TestAPublishedSkillCannotBeEditedBehindItsDigest pins what the digest is for:
-// whatever ran, the registry can still produce that exact text. A SkillPackage
-// is a value, but its map and slices are not, so neither the caller holding a
-// copy nor the slice the registry was built from may be a window into it.
-func TestAPublishedSkillCannotBeEditedBehindItsDigest(t *testing.T) {
-	packages, err := LoadEmbeddedSkills()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(packages) == 0 || packages[0].Manifest.Key != "reference-direction" {
-		t.Fatalf("this test edits the shipped package; got %+v", packages)
-	}
-	registry, err := NewSkillRegistry(packages)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const resource = "references/comparison-checklist.md"
-	original, err := registry.Get("reference-direction", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := append([]byte(nil), original.Resources[resource]...)
-	if len(want) == 0 || len(original.Manifest.ToolAllowlist) == 0 {
-		t.Fatal("the package must ship a resource and a tool allowlist to edit")
-	}
-	wantTool := original.Manifest.ToolAllowlist[0]
-
-	// Three reaches through what Get handed back: the map, the bytes behind one
-	// entry, and the manifest's own slice.
-	original.Resources[resource+".injected"] = []byte("凭空多出来的参考")
-	original.Resources[resource][0] = 'X'
-	original.Manifest.ToolAllowlist[0] = "delete_everything@1"
-	// And the same reaches through the slice NewSkillRegistry was handed.
-	packages[0].Resources[resource][0] = 'X'
-	packages[0].Manifest.ToolAllowlist[0] = "delete_everything@1"
-	packages[0].Resources[resource+".sneaked"] = []byte("构造之后塞进来的")
-
-	again, err := registry.Get("reference-direction", 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{resource + ".injected", resource + ".sneaked"} {
-		if _, forged := again.Resources[name]; forged {
-			t.Fatalf("a caller added %s to a published package", name)
-		}
-	}
-	if got := again.Resources[resource]; !bytes.Equal(got, want) {
-		t.Fatalf("the published resource changed while its digest did not: %q", got)
-	}
-	if got := again.Manifest.ToolAllowlist[0]; got != wantTool {
-		t.Fatalf("a caller widened the published tool allowlist to %q", got)
-	}
-	body, err := registry.Resource("reference-direction", 1, resource)
-	if err != nil || !bytes.Equal(body, want) {
-		t.Fatalf("the resource read followed the edit: %q %v", body, err)
-	}
-}
-
-func TestASkillResourceOutsideThePackageIsRefused(t *testing.T) {
+func TestASkillIsUnavailableUntilItsToolsAreRegistered(t *testing.T) {
 	f := setup(t)
-	if _, err := f.service.skills.Resource("reference-direction", 1, "../../../etc/passwd"); !errors.Is(err, ErrSkillUnavailable) {
-		t.Fatalf("resource lookup must be by declared key only, got %v", err)
+	published := f.publishSkill("reference-direction", "参考整理与创作方向")
+	view, err := f.service.Catalog(t.Context(), f.alice)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := f.service.skills.Resource("reference-direction", 1, "references/comparison-checklist.md"); err != nil {
-		t.Fatalf("a declared resource must be readable: %v", err)
+	if len(view.Skills) != 1 {
+		t.Fatalf("the published skill is missing from the catalog: %+v", view.Skills)
+	}
+	skill := view.Skills[0]
+	if skill.Available {
+		t.Fatalf("%s claims to be available while no tool is registered", skill.Slug)
+	}
+	if skill.UnavailableWhy == "" || skill.Digest != published.Digest {
+		t.Fatalf("a skill must stay visible with its reason and digest: %+v", skill)
+	}
+	// The same judgement applies to one version asked about directly.
+	version, err := f.service.SkillVersion(t.Context(), f.alice, published.SkillID, published.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if version.Available || version.UnavailableWhy == "" {
+		t.Fatalf("version %+v", version)
+	}
+}
+
+// The version endpoint answers with the declaration, and with nothing a caller
+// could use to reach the bytes another way.
+func TestAVersionAnswerCarriesItsDeclarationAndNoStorageAddress(t *testing.T) {
+	f := setup(t)
+	published := f.publishSkill("reference-direction", "参考整理与创作方向")
+
+	view, err := f.service.SkillVersion(t.Context(), f.alice, published.SkillID, published.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Origin != "platform" || view.VersionNumber != 1 || view.Digest != published.Digest {
+		t.Fatalf("version %+v", view)
+	}
+	if len(view.Resources) != 1 || view.Resources[0].Path != "references/comparison-checklist.md" {
+		t.Fatalf("the declaration is missing: %+v", view.Resources)
+	}
+	// Serialising the answer is the real check: a storage key added to the
+	// domain type later would show up here rather than in production.
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"object_key", "object_version", "bucket", "storage_driver", "instructions"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("the version answer carries %q: %s", forbidden, encoded)
+		}
+	}
+}
+
+// The picker endpoint searches, and it answers nothing at all to an account
+// that may not use the creative space.
+func TestTheSkillsEndpointSearchesAndChecksCapabilityFirst(t *testing.T) {
+	f := setup(t)
+	direction := f.publishSkill("reference-direction", "参考整理与创作方向")
+	f.publishSkill("retouch-notes", "修图要点")
+
+	page, err := f.service.ListSkills(t.Context(), f.alice, "reference", "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 || page.Items[0].SkillID != direction.SkillID {
+		t.Fatalf("search returned %+v", page.Items)
+	}
+	// Capability first, as everywhere else in this service: an account that is
+	// not active learns nothing about this deployment, not even an empty list
+	// built from real rows.
+	if _, err := f.db.Exec(`UPDATE accounts SET status='pending_verification' WHERE id='agent-b'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.ListSkills(t.Context(), f.bob, "", "", 20); !errors.Is(err, store.ErrCreativeAccessDenied) {
+		t.Fatalf("a suspended account read the directory: %v", err)
+	}
+	if _, err := f.service.SkillVersion(t.Context(), f.bob, direction.SkillID, direction.ID); !errors.Is(err, store.ErrCreativeAccessDenied) {
+		t.Fatalf("a suspended account read a version: %v", err)
 	}
 }
 

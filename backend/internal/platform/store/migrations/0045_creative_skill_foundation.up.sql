@@ -29,6 +29,12 @@ CREATE TABLE creative_skills (
  UNIQUE(account_id,id),
  UNIQUE(account_id,slug)
 );
+-- Serves the directory query, which the picker issues on every keystroke:
+-- one account's startable skills, newest first, paged by (updated_at,id).
+-- The search term is matched inside that set rather than by this index.
+CREATE INDEX creative_skill_directory
+ ON creative_skills(account_id,updated_at DESC,id DESC)
+ WHERE current_version_id IS NOT NULL AND availability='active';
 
 CREATE TABLE creative_skill_versions (
  id TEXT PRIMARY KEY CHECK(id ~ '^ccsv_[0-9a-f-]{36}$'), account_id TEXT NOT NULL,

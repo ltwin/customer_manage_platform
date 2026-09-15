@@ -20,6 +20,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage"
 	"github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore"
@@ -214,9 +215,17 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-agent-init", "CREATIVE_LLM_CATALOG", "model-catalog", err)
 	}
-	creativeAgent, err := creativeagent.Compose(gatewayOptions.Catalog)
+	// Skills come from the database and the object store, not from this binary.
+	// A deployment that has not run `creativectl skill import` yet starts fine
+	// and reports an empty skill catalog; ordinary conversation does not depend
+	// on it.
+	creativeSkills, err := creativeskill.Compose(cfg, s)
 	if err != nil {
-		return newStartupFailure("creative-agent-init", "skill-packages", "model-catalog", err)
+		return newStartupFailure("creative-skill-init", "CREATIVE_SKILL_LOCAL_ROOT", "object-storage", err)
+	}
+	creativeAgent, err := creativeagent.NewService(gatewayOptions.Catalog, creativeSkills)
+	if err != nil {
+		return newStartupFailure("creative-agent-init", "skill-directory", "model-catalog", err)
 	}
 	// The API only enqueues; the creative-worker process executes media jobs.
 	creativeJobs, err := s.NewJobRuntime(creativeMedia.Handlers(), logger)

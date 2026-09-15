@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 )
 
 func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
@@ -12,6 +13,8 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 		abortError(c, status, CodeValidationFailed, "请求参数不合法")
 	}}
 	r.GET("/creative/agent/catalog", w.GetCreativeAgentCatalog)
+	r.GET("/creative/agent/skills", w.ListCreativeAgentSkills)
+	r.GET("/creative/agent/skills/:id/versions/:version_id", w.GetCreativeAgentSkillVersion)
 	r.GET("/creative/canvases/:id/conversations", w.ListCreativeAgentConversations)
 	r.POST("/creative/canvases/:id/conversations", w.CreateCreativeAgentConversation)
 	r.GET("/creative/conversations/:id/messages", w.ListCreativeAgentMessages)
@@ -31,6 +34,35 @@ func creativeAgentError(c *gin.Context, err error) {
 		abortError(c, 413, "creative_context_limit", "内容超过本次对话的长度上限")
 	case errors.Is(err, creativeagent.ErrNotFound):
 		abortError(c, 404, CodeNotFound, "会话或授权不存在")
+	default:
+		_ = c.Error(err) // Shared middleware records and renders unexpected errors.
+	}
+}
+
+// creativeSkillError maps the skill store's own refusals. Its error values are
+// deliberately distinct from creativemedia's — the two share an object port, so
+// a shared sentinel would have the edge answer "upload session not found" about
+// a skill file — and that distinction only means something if both are mapped
+// here. A skill nobody may see is a 404: refusing across accounts is reported as
+// absence, and rendering that as a server fault would be both wrong and a way to
+// fill the error log with someone else's guesses.
+func creativeSkillError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, creativeskill.ErrNotFound):
+		abortError(c, 404, CodeNotFound, "Skill 或版本不存在")
+	case errors.Is(err, creativeskill.ErrLimit):
+		abortError(c, 413, "creative_skill_limit", "Skill 内容超过本部署的上限")
+	case errors.Is(err, creativeskill.ErrContentMismatch):
+		// On a read this means a frozen version's object no longer hashes to what
+		// it declared (§9). That is a server-side integrity fault the caller can
+		// do nothing about, so it is a 5xx — a 4xx would keep it out of the alert
+		// path and tell the client to retry something that cannot succeed. The
+		// same value means "the bytes contradict the declaration" on the import
+		// path, where 409 would be right; that path is the CLI and never reaches
+		// an HTTP edge.
+		abortError(c, 500, "creative_skill_content_mismatch", "Skill 资源与冻结时的声明不一致")
+	case errors.Is(err, creativeskill.ErrResourceUnavailable):
+		abortError(c, 503, "creative_skill_unavailable", "Skill 资源暂时不可读，请稍后重试")
 	default:
 		_ = c.Error(err) // Shared middleware records and renders unexpected errors.
 	}
@@ -58,6 +90,61 @@ func (h *handlers) GetCreativeAgentCatalog(c *gin.Context) {
 		creativeError(c, err)
 		return
 	}
+	// The catalog carries this account's own skill summary since S3, so it is a
+	// private directory like the two below and not the deployment-wide document
+	// it used to be.
+	noStore(c)
+	c.JSON(200, value)
+}
+
+// noStore marks a private directory answer as uncacheable. The account's own
+// skills and the platform catalog it may see are not a public document, and an
+// intermediate keeping a copy would serve one account's view to another.
+func noStore(c *gin.Context) { c.Header("Cache-Control", "no-store") }
+
+func (h *handlers) ListCreativeAgentSkills(c *gin.Context, p ListCreativeAgentSkillsParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	limit, query, cursor := 20, "", ""
+	if p.Limit != nil {
+		limit = *p.Limit
+	}
+	if p.Q != nil {
+		query = *p.Q
+	}
+	if p.Cursor != nil {
+		cursor = *p.Cursor
+	}
+	value, err := agent.ListSkills(c.Request.Context(), scope, query, cursor, limit)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	noStore(c)
+	c.JSON(200, value)
+}
+
+func (h *handlers) GetCreativeAgentSkillVersion(c *gin.Context, id string, versionID string) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	value, err := agent.SkillVersion(c.Request.Context(), scope, id, versionID)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	noStore(c)
 	c.JSON(200, value)
 }
 

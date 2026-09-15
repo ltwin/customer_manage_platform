@@ -21,21 +21,26 @@ reference-direction.v1/
 - 本阶段**只收 UTF-8 文本**。判定看字节，不看扩展名也不看 mime——两者都由导入方自己写，靠它们把关等于没关。图片、视频等资源类型按 `skill-foundation.md` §4.3 留给后续媒体能力。
 - 上限：单文件 64 KiB、至多 20 个文件、整包 256 KiB。读取时按目录报告的大小先判再读，所以 `--package-dir` 指错地方的代价是一次 stat，不是把那个目录读进内存。
 
-当前种子包仍在 `backend/internal/creativeagent/skillpkg/reference-direction.v1/`（S3 切换目录读取、去掉 `go:embed` 时会挪走）。
+种子包在仓库根的 `deploy/creative-skills/reference-direction.v1/`。它在 Go 模块之外，因为已经没有任何代码编译它——服务端从数据库读 Skill，这个目录只给导入命令读。镜像里这份目录在 `/usr/local/share/creative-skills/`：包不再随二进制发布之后，它必须作为数据被显式带进镜像。
 
 ## 导入
 
+下面两条命令都在 `backend/` 下跑（Go 模块在那里），而包目录在仓库根，所以路径要往上走一级：
+
 ```bash
+cd backend
 go run ./cmd/creativectl skill import \
-  --package-dir backend/internal/creativeagent/skillpkg/reference-direction.v1 \
+  --package-dir ../deploy/creative-skills/reference-direction.v1 \
   --account "$CREATIVE_PLATFORM_ACCOUNT_ID" \
   --operation-id 4d8f4d0e-7a2b-4c6d-9f31-5eed00000001 \
   --origin platform --activate
 ```
 
+镜像里不存在这个错位：`creativectl` 是 `/usr/local/bin/` 里的二进制，包在 `/usr/local/share/creative-skills/reference-direction.v1`，直接给绝对路径。
+
 | 参数 | 说明 |
 |---|---|
-| `--package-dir` | 包目录 |
+| `--package-dir` | 包目录，相对当前工作目录解析 |
 | `--account` | 发布账号 |
 | `--operation-id` | **必填 UUID**。重跑同一个 id 就是重放，返回它已经冻结的那个版本；换内容不换 id 会被判为冲突 |
 | `--origin` | `account`（默认）或 `platform` |
@@ -50,11 +55,14 @@ go run ./cmd/creativectl skill import \
 
 `4` 只表示**别人先改了**，重试有意义；「新建 Skill 却填了 `--expected-revision`」和「追加版本却没填」都是 `2`，因为原样重试永远不会成功。
 
+有一种 `4` 不是别人先改了：**manifest 的 JSON 编码是持久化契约**。重放靠的是 `request_hash`，而它由 manifest 的编码字节算出——改 `Manifest` 结构体、改 json tag、或在算 digest 前对字段做任何"规范化"，都会让同一个包算出不同的哈希，于是钉死的种子 operation id 永远报冲突且重试无用。`TestTheManifestEncodingIsAPersistedContract` 把这份编码钉在一个字面 digest 上，就是为了让这种改动必须是一次决定而不是副作用。API 要求的数组形状只在**读出时**补齐（`decodeManifest`），不参与哈希。
+
 ## 回收
 
 失败或过窗的导入会留下没人引用的对象。**本阶段没有任何定时任务在扫 `expires_at`**，回收就是显式跑这条命令：
 
 ```bash
+cd backend
 go run ./cmd/creativectl skill reclaim --account <id> --limit 50
 ```
 

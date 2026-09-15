@@ -33,6 +33,10 @@ COPY --from=backend /out/avatar-manifest /usr/local/bin/avatar-manifest
 COPY --from=backend /out/planning-media-manifest /usr/local/bin/planning-media-manifest
 COPY --from=backend /out/migrate /usr/local/bin/migrate
 COPY --from=backend /out/creativectl /usr/local/bin/creativectl
+# The seed skill package travels as data, not as bytes inside a binary. It used
+# to ship via go:embed; now creativectl reads it at deploy time, so the image has
+# to actually carry the directory.
+COPY deploy/creative-skills /usr/local/share/creative-skills
 COPY --from=backend /out/accountctl /usr/local/bin/accountctl
 EXPOSE 8080
 ENTRYPOINT ["/usr/local/bin/server"]

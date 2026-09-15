@@ -156,8 +156,8 @@ entries:
       - backend/internal/creativeagent/conversations.go
       - backend/internal/creativeagent/consents.go
       - backend/internal/creativeagent/catalog.go
-      - backend/internal/creativeagent/skills.go
+      - backend/internal/creativeskill/directory.go
       - frontend/src/api/schema.d.ts
     doc_path: docs/api/creative-agent.md
     status: pending
-    note: "2026-09-13 FND-07 里程碑 A：/creative/agent/catalog、/canvases/{id}/conversations、/conversations/{id}/messages、/conversations/{id}/egress-consents、/egress-consents/{id}/revoke；run/step/SSE 随里程碑 B/C 与 FND-08；开发说明见 docs/dev/creative-agent.md"
+    note: "2026-09-15 FND-07 S3：新增 /creative/agent/skills 与 /creative/agent/skills/{id}/versions/{version_id}（私有目录，Cache-Control: no-store）；catalog 的 skills 改为资源化身份并新增 skill_catalog_revision；里程碑 A 的 /creative/agent/catalog、/canvases/{id}/conversations、/conversations/{id}/messages、/conversations/{id}/egress-consents、/egress-consents/{id}/revoke 不变；run/step/SSE 随里程碑 B/C 与 FND-08；开发说明见 docs/dev/creative-agent.md"

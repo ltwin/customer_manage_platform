@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: S0+S1已提交7407637；S2（受信导入CLI creativectl、种子导入幂等、versionedfs一致性套件）已实现，change review两轮完成、blocking清零、round2的5项P2全部修复并验证，待owner同意后提交（milestone_commit: manual）；随后S3目录与输入契约（含去掉go:embed与catalog语义切换），再接里程碑B
+next_action: S2已提交7bd3684；S3a（creativeskill目录端口与跨账号平台解析、两个HTTP端点、catalog语义切换与skill_catalog_revision、去掉go:embed并把种子包移到deploy/creative-skills、OpenAPI+generate）已实现并通过make check-go与check-frontend，待change review与owner同意后提交（milestone_commit: manual）；随后S3b输入契约（instruction_segments、消息v2、limitsVersion升creative-agent-2），再接里程碑B
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -951,3 +951,66 @@ owner 授权修复 `dispatching` 无核实出口及跨账号共享名额泄漏�
 - **P2-5 整包读进内存之后才查上限**：`fs.ReadFile` 无界读，64 KiB / 20 文件 / 256 KiB 三条要到 `BeginImport` 才生效。已加 `readPackageFile`（先 `fs.Stat` 比大小再读，读完再比一次防 TOCTOU），walk 过程中即时累计文件数与总字节，manifest 与 SKILL.md 同样走这条路径。权威判定仍在 `validate()`，这里只是 fail-fast。测试 `TestReadPackageRefusesAnOversizedFileWithoutReadingIt` 用一个「Stat 正常但 Open 报错」的 FS，区分「按大小拒绝」与「读完再量」。
 - 验证：`make check-go PKG=./internal/creativeskill/...` EXIT=0、lint 0 issues；`go test ./cmd/creativectl/...` ok。migration 改动随 storetest 的 MigrateUp 一起验证通过。
 - 仍保留的 residual：round 1 的 (1)（0045 CHECK 允许 `failed` 而回收查询不覆盖，今天无写入方；扩进来需要一并改 `outOfWindow`，超出本轮范围）与 (3)（`loadImport` 驱动级失败时 `StageResource` 仍 blanket delete）。
+
+## FND-07 S3a：目录端口、两个端点、去 go:embed
+
+S2 已提交 `7bd3684`（21 文件 +2198/−24）。S3 按方案 §10 是一步，实现上切成两半：**S3a 目录**（Skill 从哪来）与 **S3b 输入契约**（请求怎么点名它）。前者要先落地，因为它拿掉的正是 catalog 现在读的那个 registry。
+
+- **`creativeskill.ListAccessibleSkills`**：自己的 Skill + 受信平台目录合成一页。跨账号那一半按 §5 在包内走完——读者传自己的 scope，拿回值对象，平台发布账号的 `AccountScope` 不出包。底下每条 SQL 仍是账号范围查询，没有「全库找版本」的口子。
+- **排序与游标**：`(updated_at DESC, id DESC)`，两个 scope 各查一页后归并。游标从**技能行**取，而不是从过滤后的条目取——否则整页都是已停用版本时会报「没有下一页」，把后面的全挡住。
+- **查询条件写成一条常量**：`($2::timestamptz IS NULL OR ...)` / `($4::text='' OR ...)`，参数位不随可选条件漂移，也符合 `AccountScope` 对 cond 必须是编译期常量的契约。搜索词转义后再拼 LIKE，`%` 是文本不是通配符（有用例）。
+- **`ReadResource` 的签名改了两次**。先改成收 `Snapshot`（照 §8 的 `ReadResource(authorizedVersion, path)` 字面读），写测试时发现这是个洞：snapshot 是普通结构体，谁都能造一个声称 owner 是平台账号的，于是「我已经校验过了」变成了校验本身。改回收 `(skillID, versionID)`，跨账号分支重新从库里核两件事——这个版本属于这个 Skill，且这个 Skill 是 platform。少核前一条，就能用真平台 Skill 的 id 配私有版本的 id 把私有字节读出来（有用例）。
+- **`NewService(objects, platform store.AccountScope)`**：原来传的是 `platformAccountID string`，现在传 scope，账号 id 从 scope 自己取。「能不能以 platform 身份发布」和「读平台目录用哪个 scope」从此是同一个值的两面，不会互相矛盾。零值 scope = 本部署没有平台目录，且它永远跑不了查询（store 拒绝空 scope）。
+- **`creativeagent` 侧**：`*SkillRegistry` 换成窄接口 `SkillDirectory`（只有 `ListAccessibleSkills` 与 `ResolveVersion`，没有任何写口——发布是部署动作，HTTP 处理器不该离它只有一次断言）。工具注册判定留在 creativeagent：creativeskill 只报 Skill 自己的开关，「本部署能不能真跑」不是 Skill 存储知道的事。
+- **`skill_catalog_revision`**：摘要的哈希，不是计数器，也不复用 Gateway 的 `catalog_version`（模型来自配置文件，Skill 来自数据库，一个字符串答不了两个问题）。
+- **去掉 `go:embed`**：`creativeagent/skills.go` 整个删除，种子包移到 `deploy/creative-skills/reference-direction.v1/`（Go 模块之外，因为再没有代码编译它）。**Dockerfile 补了一行 COPY**——包不随二进制发布之后，镜像必须显式带上这个目录，否则容器里 `creativectl skill import` 没有东西可指。这一行单独用一个最小 Dockerfile 验过（`deploy/` 不在 `.dockerignore` 里，三个文件都进了镜像）；完整镜像构建在本机跑不通，卡在前端 stage 的 `npm ci`，与本次改动无关。
+- **删掉的三个 registry 用例**及其去向：「同 key/version 必同文本」→ 表的 `UNIQUE(account_id,skill_id,version_number)` + 版本不可变（`TestOneImportOperationProducesExactlyOneVersion` / `TestActivatingANewVersionLeavesTheOldOneUntouched`）；「深拷贝」→ 语义消失，每次 `ResolveVersion` 都从行里现构值，没有共享可写状态；「遍历拒绝」→ 补进 `TestStagedBytesMustMatchTheDeclaration`（读侧的 `../../../etc/passwd` 与未声明路径各一条）。
+- **agent 测试用真的 `creativeskill.Service`**，不是 stub：这一刀的价值就在两个包的接缝上，stub 只会测到投影。fixture 里第三个账号 `agent-platform` 当发布方，于是 agent-a / agent-b 都是普通读者。
+- 两个端点走 `Cache-Control: no-store`（§8）。版本端点的「不泄露存储地址」用序列化后搜关键字来断言（`object_key` / `bucket` / `instructions` 等），这样将来谁往领域类型上加字段，红的是测试而不是生产。
+- OpenAPI 改了 `CreativeAgentSkill` 的形状（`key`+`version` → 资源化身份）并新增 4 个 schema 与 2 条路径，`make generate` 出 Go/TS 两份。前端目前没有 catalog 的真实消费方（只有生成的 `schema.d.ts`），所以这次形状变更不破坏任何页面。
+- 验证：`make check-go PKG=./...` EXIT=0、lint 0 issues；`make check-frontend` EXIT=0（381 用例）。中途一次 `creativeops` FAIL 是共享测试库在并发下的老毛病（64s 卡住，单跑 3.7s，重跑全绿），与本次改动无关。
+- **S3b 待做**：`instruction_segments` 判别联合与 `ResolveInstruction`、消息正文 v2 的 skill_ref / content_ref 块、`limitsVersion` → `creative-agent-2`（新增片段数 200、单次 skill_ref 数 1、资源文件数 20、包体上限四个维度，判定集合变了就必须换号）。
+
+### S3a change review round 1（1 blocking + 6 important + 6 nit，全部处理）
+
+- 冻结目标 `17441ebc0909f1b62c91df759ef369f96ac36e5fe8bd3b52566711bd7451da60`（25 文件 +1679/−506）。宿主 fresh subagent、显式 `model: opus`；codex / gemini 的 MCP 本会话仍连不上，按协议回退同构最强模型。reviewer 自己把两个生成器重跑到临时路径核对了同步性。
+- **B1（blocking）**：新端点的「不存在 / 不可见」这条**主路径**返回 500。`creativeError` 的 404 分支只认 creativeagent / creativecanvas / creativelibrary / creativecontent 四个 sentinel，整个 httpapi 包没有一处 import `creativeskill`。于是任意账号 `GET /creative/agent/skills/{随便}/versions/{随便}` → `ErrNotFound` 落到 `default:` → 500 + 一条 error 日志。更糟的是：跨账号拒绝是**故意**设计成 `ErrNotFound` 的（§5 不暴露归属），所以整条隔离语义在 HTTP 边界上被渲染成了服务端故障，而且谁都能用随机 id 稳定往 error 日志里灌数据。已加 `creativeSkillError`，四个 sentinel 各自映射（404/413/409/503），并补 `creative_agent_errors_test.go`——除状态码外还断言 `len(c.Errors)==0`，即确实没走 500-and-log 那条路。
+- **I2**：catalog 少了 `Cache-Control: no-store`。改动前它是全部署同一份（go:embed），缓存无害；这一刀之后它带的是这个账号自己的 Skill 摘要，按 §8 就是私有目录。仓库里没有全局中间件兜底，各端点都是显式设头。已补。
+- **I3**：`required_model_capabilities` 省略时是 nil，序列化成 `null`，而 OpenAPI 把它标成 required 的 array（生成的 TS 是非可选 `string[]`）。可达路径就是 manifest.json 里不写这个字段。已加 `Manifest.normalized()`，写入（含 digest）与两条读路径都过一遍。
+- **I4**：`readCatalogVersions` 跨账号读版本时只按 version id 查，没绑 `skill_id`——和 `requirePlatformVersion` 特意加的那个检查是同一形状，少了一半。当前不可达（三条写 `current_version_id` 的路径都正确），但 0045 里这列**没有 FK 也没有 CHECK**，一旦破了泄漏面是发布账号私有版本的 digest / manifest / tool_allowlist 直接进每个账号的目录。已在 `attachVersions` 里要求 `version.skillID == r.id`，并补测试直接用 SQL 把指针指歪——去掉守卫该测试变红（已验证）。
+- **I5**：「空 items + 非空 next_cursor」真实可达但没写进契约也没测试。已在 OpenAPI 的 `CreativeAgentSkillPage` 写明客户端必须继续翻，并补 `TestAnEmptyPageCanStillHaveANextPosition`（让停用的那条后发布、于是排第一页，断言首页空且有游标、次页拿到活的）。catalog 一侧没改：它按 §8 就是有界摘要，完整目录走 skills 端点；已在复审里请 reviewer 明确是否接受。
+- **I6**：分页测试从没让两个 scope 同时出行——三条 Skill 全由平台发布、读者是 b，`own` 恒为 nil，归并在页边界上从未真正跑过。已补两边交错各 2 条、limit=1 翻四页的用例。
+- **I7**：`ReadResource` 的 `skillID` 在两条分支含义不同（跨账号强制绑定、自己账号完全忽略）。不是泄漏，但签名承诺了一件它只在一半情况下做的事。已把 `locateResource` 换成 `readableResource`，两条分支都先核「版本属于这个 Skill」再核 Skill 行。
+- **N8（实为真 bug）**：`originOf` 从「归属是不是我」反推 origin，于是发布账号读自己的平台 Skill 时，列表端点说 `platform`（读 DB 列）、版本端点说 `account`（反推）。已改为 `resolveIn` 直接读 `origin` 列进 `Snapshot.Origin`，`originOf` 删除。
+- **N9 / N10 / N11**：转义测试补 `_` 与 `\`；0045 加目录查询的部分索引（该迁移尚未在任何环境 apply，故原地改）；测试改名到它真正验证的范围。
+- **N12 未修（residual）**：单条 manifest 反序列化失败会让整个目录请求 500，旧的 `NewSkillRegistry` 是启动期全量校验。写入侧全是服务端自己 marshal，风险很低，没有等价早失败点这一点接受。
+- **reviewer 独立核实并确认成立的部分**（我未采信 work 文档的说法，他逐条复核了）：跨账号四种参数组合全部封死；游标编码与 SQL 片段契约合规；`skill_catalog_revision` 找不到「内容变了但 revision 不变」的情形；`deploy/` 不在 `.dockerignore`、COPY 路径成立、全仓库 grep `skillpkg` / `LoadEmbeddedSkills` / `SkillRegistry` 代码脚本零残留；删掉的三个 registry 测试的不变量去向逐条成立（其中「同 key/version 必同文本」现在比原来更强：主键 + 唯一键 vs 启动时查重）；OpenAPI 与手写结构体逐字段吻合；ADR-001 / ADR-003 / 术语均无违反。
+- **他提的一个值得记的观察**：「深拷贝」不变量的前提现在消失了（没有共享可写状态），但 §6 要求将来加缓存（「缓存只保存不可变版本载荷」）——那一刻这条不变量会回来，而现在**没有测试为它占位**。里程碑 B 加缓存时必须重新钉。
+- 修复后 `make check-go PKG=./...` EXIT=0、lint 0 issues；`make check-frontend` EXIT=0。新目标 hash `d43a6122b2a4ab4c294f36bf6e6a4b2f9b9f3d0274b8afaf5778d7db39c1a25b`（30 文件 +1912/−509），已交同一 reviewer 同一 session 做 round 2 复审。
+
+### S3a change review round 2（同一 reviewer 同一 session；无 blocking，全部 resolved）
+
+- 目标 `d43a6122b2a4ab4c294f36bf6e6a4b2f9b9f3d0274b8afaf5778d7db39c1a25b`（30 文件 +1912/−509）。reviewer 再次把两份生成物重跑到临时目录核对同步。B1 与 I2–I7、N8–N11、N13 判定全部 resolved，N12 residual 他同意不修。
+- **他核实的两件我自己没法确信的事**：(1) `Manifest.normalized()` 不会让同一份包产生两个 digest——他追了整条链，`BeginImport` 只调一次 `encoded()`，同一份字节同时进 `importDocument.Manifest` / `contentDigest` / `requestHash`，`FinalizeImport` 用的是存下来的那份、**没有重算比对路径**；改动实际是把原来的两个 digest（`null` 与 `[]`）收敛成一个。(2) N10 的部分索引谓词与 `listSkillCond` 字面一致，PostgreSQL 的谓词蕴含能匹配，列序也与 ORDER BY 对齐。
+- **映射选择被他挑出一条，已改**：`ErrContentMismatch` 原本映射 409。读路径上它的含义是「冻结版本的对象字节不再哈希成当时的 digest」，按 §9 就是服务端完整性故障——4xx 会让它既进不了告警（只有 5xx 被盯），又对客户端说了一句不成立的话（「冲突，刷新重试」）。已改 500。它的 409 语义只对**写**路径（`StageResource` 字节与声明不符）成立，而那条路只走 CLI、永不经过 HTTP 边界。`ErrLimit` → 413 他判定可接受（读路径上也是服务端数据故障，但与既有 `creativeagent.ErrLimit` 一致，且导入真有 HTTP 入口时会变准），未改。
+- **他确认映射集 == 可达集**：`creativeskill` 的 10 个哨兵里未映射的 6 个（`ErrRevisionConflict` / `ErrSkillIntent` / `ErrOriginNotPermitted` / `ErrImportConflict` / `ErrImportState` / `ErrImportExpired`）全部只从写/导入路径产生，而 `SkillDirectory` 窄接口没有任何写口——**结构上到不了边界**。
+- **他点名的一个对的决定**：错误测试调的是 `creativeError`（分发器）而不是 `creativeSkillError`（映射器）。round 1 坏的正是分发器的守卫列表漏了 sentinel；测在分发器这一层，将来「给映射器加 case 却忘了给分发器加守卫」这张表会红。
+- **I5 的 catalog 一侧他明确接受不改**：§8 本就把 catalog 定义成有界摘要、完整目录归 skills 端点，`skills: []` 在两种成因下都不违反 §11.11。
+- **本轮新增 4 条 nit，已全部处理**：N14 `docs/dev/creative-agent.md` 还在描述 I7 修之前的不对称（只说跨账号分支核绑定），已改并补上「为什么两条都核」；N15 本游标缺 round-2 delta（即本节）；N16 openapi 多一个空行，已删并重跑 generate；N17 见下。
+- **N17（residual，需要人知道）**：0045 是**原地改**而不是补新迁移（加了 `creative_skill_directory` 索引、`creative_skill_import_reclaim` 换了定义）。测试容器每次全新 `MigrateUp` 所以永远拿得到；但**任何已经 apply 过 0045 的本地开发库**会停在 `schema_migrations=45` 却没有这些索引，而 `make check-go` 结构上看不见这种偏差。仓库记录显示 0045 只在临时测试容器跑过（dev 库停在 43），所以目前无人受影响；真有本地库的人需要 `migrate down 1 && migrate up` 一次。
+- **留给里程碑 B 的一条**：「深拷贝」不变量的前提现在消失了（没有共享可写状态），但 §6 要求将来加缓存（「缓存只保存不可变版本载荷」）——那一刻这条不变量会回来，而现在没有测试为它占位。加缓存时必须重新钉。
+
+### S3a owner review round 3（owner 直送 2 P2 + 1 P3；全部核实成立并已修）
+
+三条都在代码里复现成立，两条 P2 各有 red → green。
+
+- **P2-1「改名后 revision 不变」成立，修法不止补字段**。`publishVersion` 无条件写 `display_name`/`description`，`--activate` 只决定要不要移动 `current_version_id`；而 catalog entry 的名称取自 **Skill 行**、version id 与 digest 取自 **version 行**。所以「不激活地追加一版」= 目录文本变了而每个 id 都没变，正是挑字段的哈希看不见的那一格。**没有只补 display_name/description，而是改成哈希整个 `json.Marshal(entries)`**：挑字段这件事本身才是缺陷——以后给 `SkillEntry` 加字段还要记得同步改哈希，漏一次就又是一次静默的陈旧缓存。哈希整个答案把这个类别关掉了。代价只是重排结构体字段会让客户端多取一次，可接受。
+- **P2-2「旧导入无法重放」成立，且比「一个实例」更值得记**。核对 `git show 7bd3684:.../skill.go`：S2 的 `encoded()` 就是 `json.Marshal(m)`，S3a 加的 `.normalized()` 确实改了**持久化编码**。已按建议把规范化移出编码侧。
+  - 落法不是在各读取点撒 `normalized()`，而是加 `decodeManifest`——**存储 manifest 重新进入程序的唯一入口**（`resolveIn` 与 `readCatalogVersions` 两处，`readVersion` 那处 manifest 本来就是丢弃的占位）。这样「读出必须补数组」是结构性的，不是每个新读取点要记得的规矩。两个方向的风险都被关掉：写侧不污染 digest，读侧不可能漏。
+  - **round 2 的结论没有被推翻，是范围不同**：上一轮核的是「同一次导入内部不会分叉」（成立，只调一次 `encoded()`）；这一轮核的是「跨代码版本」。两者都对。
+  - 新增 `TestTheManifestEncodingIsAPersistedContract`：把一份全字面量的包钉在 digest `3ef4103137d443a2d1ce3965b779ea1e4059129fa446ee904eabd4235c8060bd` 上。**这个值就是 S2 的编码**（把 `.normalized()` 临时加回去跑，得到 `a9062e32…`，测试变红），所以这次修复是**还原**而不是引入第三种编码。这条测试的意义不在这一次：它让今后任何改 `Manifest` 结构体、json tag 或 `digest.go` framing 的人必须先回答「已经存下来的导入怎么办」，而不是改完毫无察觉。
+  - 为什么这条值得钉：重放靠 `request_hash`，种子导入的 operation id 是部署里钉死的字面量——编码一变，钉死的 id 永远报 `4`（冲突），而文档说 `4` 意味着重试有意义。这是一条会给运维错误指示的路。已在 `docs/dev/creative-skill-import.md` 退出码那段写明这种 `4` 不是「别人先改了」。
+  - 现实影响面：0045 从未在临时测试容器之外 apply 过（dev 库停在 43），`creative_skill_imports` 今天零行，所以**这次没有真实数据受损**。修它是为了这条路以后不会再被无声走一遍。
+- **P3 文档路径**成立：`go run ./cmd/creativectl` 要 cwd 在 `backend/`（Go 模块在那），而 `--package-dir` 走 `os.DirFS(in.packageDir)`、按进程 cwd 解析、无任何仓库根锚定；旧示例写 `deploy/...` 两头都跑不通。已改成先 `cd backend`、路径 `../deploy/...`，并补一句镜像里不存在这个错位（二进制在 `/usr/local/bin`、包在 `/usr/local/share/creative-skills`，直接给绝对路径）。
+- 新增测试：`TestRenamingASkillWithoutActivatingMovesTheCatalogRevision`（agent，含「改名到了 + 推荐版本没动」两条前提断言，避免因错误原因变绿）、`TestTheManifestEncodingIsAPersistedContract`、`TestAnOmittedOptionalArrayIsStillRenderedAsAnArray`（省略的可选数组读出来仍是数组，两条读路径都断言）。两条 P2 的红态都是**把旧实现临时放回去跑出来的**，不是推断。
+- 验证：`make check-go PKG=./...` EXIT=0、lint 0 issues。
