@@ -2626,9 +2626,17 @@ export interface components {
             payload: components["schemas"]["CreativeCanvasCommandPayload"];
         };
         CreativeAgentLimits: {
+            /** @description 本次判定所依据的整套上限。新增一个维度同样要换号：按旧版本创建的运行 从未被某条上限判定过，用新集合重放它等于套用它没有同意过的规则。 */
             version: string;
             input_text_bytes: number;
             message_body_bytes: number;
+            /** @description 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。 */
+            instruction_segments: number;
+            /** @description 本阶段为 1。两个 Skill 会被拒绝而不是拼接：把两份指令接在一起产生的是 第三份，两位作者都没写过。 */
+            skill_refs_per_instruction: number;
+            /** @description 一个 Skill 版本的声明文件数上限，与导入侧同源，不是另写一份数字。 */
+            skill_resource_files: number;
+            skill_package_bytes: number;
             input_nodes: number;
             upstream_depth: number;
             attachments: number;
@@ -2762,17 +2770,70 @@ export interface components {
             items: components["schemas"]["CreativeAgentConversation"][];
             next_cursor: string;
         };
+        /** @description 一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查—— 之后改名不能改写历史里已经显示过的内容。 */
+        CreativeAgentMessageSkill: {
+            skill_id: string;
+            skill_version_id: string;
+            version_number: number;
+            digest: string;
+            display_name: string;
+        };
+        /** @description `schema_version=2` 起 skill_ref 与 content_ref 是明确的块类型； v1 写下的 `reference` 仍按原样读出，不会被重新猜成 Skill。 */
         CreativeAgentMessageBlock: {
-            /** @enum {string} */
-            type: "text" | "reference" | "tool_result" | "notice";
+            /**
+             * @description reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
+             * @enum {string}
+             */
+            type: "text" | "skill_ref" | "content_ref" | "tool_result" | "notice" | "reference";
             text?: string;
-            /** @description 定位一个引用或工具结果；本身不授予任何权限 */
+            /** @description 定位一个内容修订或工具结果；本身不授予任何权限 */
             ref_id?: string;
             /** @description notice 的稳定机器原因 */
             code?: string;
+            skill?: components["schemas"]["CreativeAgentMessageSkill"];
         };
         CreativeAgentMessageBody: {
             blocks: components["schemas"]["CreativeAgentMessageBlock"][];
+        };
+        /** @description 一次提交的一个有序片段，是判别联合：每种 type 只允许自身字段，写了别的字段 会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID， ID 本身不授予任何读取权限，服务端一律重新核对。 */
+        CreativeAgentInstructionSegment: {
+            /** @enum {string} */
+            type: "text" | "skill_ref" | "content_ref";
+            text?: string;
+            /** @description 与 skill_version_id 必须同时出现；只给版本会让服务端替客户端挑 Skill。 */
+            skill_id?: string;
+            skill_version_id?: string;
+            content_revision_id?: string;
+        };
+        /**
+         * @description 提交协议。它与消息正文的 schema_version 是两份不同文档的版本号。 名称、版本号、digest 与作者都由服务端读出，客户端只给 ID。
+         * @example {
+         *       "schema_version": 1,
+         *       "instruction_segments": [
+         *         {
+         *           "type": "skill_ref",
+         *           "skill_id": "ccsk_1f0c9a52-4e7b-4a11-9d3e-6b2c8f5a01d4",
+         *           "skill_version_id": "ccsv_8b41d07e-2c96-4f58-a0b7-13de9c4a77f2"
+         *         },
+         *         {
+         *           "type": "text",
+         *           "text": "参考这张图片和这段视频，整理一个拍摄方案。"
+         *         },
+         *         {
+         *           "type": "content_ref",
+         *           "content_revision_id": "ccrv_3a7e51c8-9d02-4b6f-8e14-5c07b2fa9de3"
+         *         },
+         *         {
+         *           "type": "content_ref",
+         *           "content_revision_id": "ccrv_6d20b849-7f35-4c1a-b9e8-24af013c6b5d"
+         *         }
+         *       ]
+         *     }
+         */
+        CreativeAgentInstruction: {
+            /** @enum {integer} */
+            schema_version: 1;
+            instruction_segments: components["schemas"]["CreativeAgentInstructionSegment"][];
         };
         CreativeAgentMessage: {
             id: string;

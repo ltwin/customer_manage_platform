@@ -6812,14 +6812,32 @@ components:
     CreativeAgentLimits:
       type: object
       additionalProperties: false
-      required: [version, input_text_bytes, message_body_bytes, input_nodes, upstream_depth,
+      required: [version, input_text_bytes, message_body_bytes, instruction_segments,
+        skill_refs_per_instruction, skill_resource_files, skill_package_bytes,
+        input_nodes, upstream_depth,
         attachments, model_result_bytes, tool_argument_bytes, tool_result_bytes,
         tool_calls_per_turn, tool_calls, model_turns, run_duration_seconds,
         image_preview_bytes, image_preview_count, image_preview_total_bytes]
       properties:
-        version: {type: string}
+        version:
+          type: string
+          description: >-
+            本次判定所依据的整套上限。新增一个维度同样要换号：按旧版本创建的运行
+            从未被某条上限判定过，用新集合重放它等于套用它没有同意过的规则。
         input_text_bytes: {type: integer}
         message_body_bytes: {type: integer}
+        instruction_segments:
+          type: integer
+          description: 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。
+        skill_refs_per_instruction:
+          type: integer
+          description: >-
+            本阶段为 1。两个 Skill 会被拒绝而不是拼接：把两份指令接在一起产生的是
+            第三份，两位作者都没写过。
+        skill_resource_files:
+          type: integer
+          description: 一个 Skill 版本的声明文件数上限，与导入侧同源，不是另写一份数字。
+        skill_package_bytes: {type: integer}
         input_nodes: {type: integer}
         upstream_depth: {type: integer}
         attachments: {type: integer}
@@ -7007,15 +7025,35 @@ components:
           type: array
           items: {$ref: '#/components/schemas/CreativeAgentConversation'}
         next_cursor: {type: string}
+    CreativeAgentMessageSkill:
+      type: object
+      additionalProperties: false
+      required: [skill_id, skill_version_id, version_number, digest, display_name]
+      description: >-
+        一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查——
+        之后改名不能改写历史里已经显示过的内容。
+      properties:
+        skill_id: {type: string}
+        skill_version_id: {type: string}
+        version_number: {type: integer}
+        digest: {type: string}
+        display_name: {type: string}
     CreativeAgentMessageBlock:
       type: object
       additionalProperties: false
       required: [type]
+      description: >-
+        `schema_version=2` 起 skill_ref 与 content_ref 是明确的块类型；
+        v1 写下的 `reference` 仍按原样读出，不会被重新猜成 Skill。
       properties:
-        type: {type: string, enum: [text, reference, tool_result, notice]}
+        type:
+          type: string
+          enum: [text, skill_ref, content_ref, tool_result, notice, reference]
+          description: reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
         text: {type: string}
-        ref_id: {type: string, description: 定位一个引用或工具结果；本身不授予任何权限}
+        ref_id: {type: string, description: 定位一个内容修订或工具结果；本身不授予任何权限}
         code: {type: string, description: notice 的稳定机器原因}
+        skill: {$ref: '#/components/schemas/CreativeAgentMessageSkill'}
     CreativeAgentMessageBody:
       type: object
       additionalProperties: false
@@ -7024,6 +7062,47 @@ components:
         blocks:
           type: array
           items: {$ref: '#/components/schemas/CreativeAgentMessageBlock'}
+    CreativeAgentInstructionSegment:
+      type: object
+      additionalProperties: false
+      required: [type]
+      description: >-
+        一次提交的一个有序片段，是判别联合：每种 type 只允许自身字段，写了别的字段
+        会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID，
+        ID 本身不授予任何读取权限，服务端一律重新核对。
+      properties:
+        type: {type: string, enum: [text, skill_ref, content_ref]}
+        text: {type: string}
+        skill_id:
+          type: string
+          description: 与 skill_version_id 必须同时出现；只给版本会让服务端替客户端挑 Skill。
+        skill_version_id: {type: string}
+        content_revision_id: {type: string}
+    CreativeAgentInstruction:
+      type: object
+      additionalProperties: false
+      required: [schema_version, instruction_segments]
+      description: >-
+        提交协议。它与消息正文的 schema_version 是两份不同文档的版本号。
+        名称、版本号、digest 与作者都由服务端读出，客户端只给 ID。
+      properties:
+        schema_version: {type: integer, enum: [1]}
+        instruction_segments:
+          type: array
+          minItems: 1
+          items: {$ref: '#/components/schemas/CreativeAgentInstructionSegment'}
+      example:
+        schema_version: 1
+        instruction_segments:
+          - type: skill_ref
+            skill_id: ccsk_1f0c9a52-4e7b-4a11-9d3e-6b2c8f5a01d4
+            skill_version_id: ccsv_8b41d07e-2c96-4f58-a0b7-13de9c4a77f2
+          - type: text
+            text: 参考这张图片和这段视频，整理一个拍摄方案。
+          - type: content_ref
+            content_revision_id: ccrv_3a7e51c8-9d02-4b6f-8e14-5c07b2fa9de3
+          - type: content_ref
+            content_revision_id: ccrv_6d20b849-7f35-4c1a-b9e8-24af013c6b5d
     CreativeAgentMessage:
       type: object
       additionalProperties: false

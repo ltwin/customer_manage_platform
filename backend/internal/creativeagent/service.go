@@ -32,7 +32,12 @@ var (
 // limitsVersion is frozen with every run. Raising any number below is a
 // configuration change that must bump this string, because a run recovered
 // tomorrow has to be judged by the limits it was created under.
-const limitsVersion = "creative-agent-1"
+//
+// Adding a dimension bumps it too, even though no existing number moved. A run
+// created under -1 was never judged against a segment count or a skill package
+// bound; replaying it against -2's set would apply rules it never agreed to.
+// What is frozen is the whole judgement, not the individual numbers.
+const limitsVersion = "creative-agent-2"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -46,16 +51,28 @@ type Limits struct {
 	// InputTextBytes bounds everything sent to the model in one request:
 	// photographer text, frozen inputs, history, skill instructions and tool
 	// definitions together.
-	InputTextBytes    int `json:"input_text_bytes"`
-	MessageBodyBytes  int `json:"message_body_bytes"`
-	InputNodes        int `json:"input_nodes"`
-	UpstreamDepth     int `json:"upstream_depth"`
-	Attachments       int `json:"attachments"`
-	ModelResultBytes  int `json:"model_result_bytes"`
-	ToolArgumentBytes int `json:"tool_argument_bytes"`
-	ToolResultBytes   int `json:"tool_result_bytes"`
-	ToolCallsPerTurn  int `json:"tool_calls_per_turn"`
-	ToolCalls         int `json:"tool_calls"`
+	InputTextBytes   int `json:"input_text_bytes"`
+	MessageBodyBytes int `json:"message_body_bytes"`
+	// InstructionSegments bounds one submission's ordered pieces. It is the
+	// same number as the message body's block count because one is projected
+	// from the other: a submission that parses must be able to render.
+	InstructionSegments int `json:"instruction_segments"`
+	// SkillRefsPerInstruction is 1 in this phase. Two skills in one request is
+	// refused rather than concatenated — stitching two sets of instructions
+	// together produces a third that neither author wrote.
+	SkillRefsPerInstruction int `json:"skill_refs_per_instruction"`
+	// SkillResourceFiles and SkillPackageBytes are the skill store's own bounds,
+	// published here because a run is judged by the limits it was created under.
+	SkillResourceFiles int `json:"skill_resource_files"`
+	SkillPackageBytes  int `json:"skill_package_bytes"`
+	InputNodes         int `json:"input_nodes"`
+	UpstreamDepth      int `json:"upstream_depth"`
+	Attachments        int `json:"attachments"`
+	ModelResultBytes   int `json:"model_result_bytes"`
+	ToolArgumentBytes  int `json:"tool_argument_bytes"`
+	ToolResultBytes    int `json:"tool_result_bytes"`
+	ToolCallsPerTurn   int `json:"tool_calls_per_turn"`
+	ToolCalls          int `json:"tool_calls"`
 	// ModelTurns counts every real model call, including summarisation and any
 	// sub-agent, not only the main ReAct rounds.
 	ModelTurns             int   `json:"model_turns"`
@@ -74,22 +91,28 @@ func (l Limits) RunDuration() time.Duration {
 // DefaultLimits reproduces the first-release baseline of the harness design.
 func DefaultLimits() Limits {
 	return Limits{
-		Version:                limitsVersion,
-		InputTextBytes:         256 << 10,
-		MessageBodyBytes:       32 << 10,
-		InputNodes:             50,
-		UpstreamDepth:          2,
-		Attachments:            10,
-		ModelResultBytes:       256 << 10,
-		ToolArgumentBytes:      64 << 10,
-		ToolResultBytes:        64 << 10,
-		ToolCallsPerTurn:       4,
-		ToolCalls:              12,
-		ModelTurns:             13,
-		RunDurationSeconds:     300,
-		ImagePreviewBytes:      2 << 20,
-		ImagePreviewCount:      8,
-		ImagePreviewTotalBytes: 12 << 20,
+		Version:          limitsVersion,
+		InputTextBytes:   256 << 10,
+		MessageBodyBytes: 32 << 10,
+		// Projected, never retyped. Two spellings of one bound is how a package
+		// that imports cleanly starts failing at execution.
+		InstructionSegments:     maxBlocks,
+		SkillRefsPerInstruction: maxSkillRefs,
+		SkillResourceFiles:      creativeskill.MaxResourceCount,
+		SkillPackageBytes:       creativeskill.MaxPackageBytes,
+		InputNodes:              50,
+		UpstreamDepth:           2,
+		Attachments:             10,
+		ModelResultBytes:        256 << 10,
+		ToolArgumentBytes:       64 << 10,
+		ToolResultBytes:         64 << 10,
+		ToolCallsPerTurn:        4,
+		ToolCalls:               12,
+		ModelTurns:              13,
+		RunDurationSeconds:      300,
+		ImagePreviewBytes:       2 << 20,
+		ImagePreviewCount:       8,
+		ImagePreviewTotalBytes:  12 << 20,
 	}
 }
 
@@ -115,6 +138,10 @@ type SkillDirectory interface {
 type Service struct {
 	models *llmgateway.Catalog
 	skills SkillDirectory
+	// tools is what this deployment can dispatch. Empty until FND-08 registers
+	// the runtime and canvas tools; a skill declaring anything is reported as
+	// unavailable with its reason until then.
+	tools  []ToolEntry
 	limits Limits
 }
 

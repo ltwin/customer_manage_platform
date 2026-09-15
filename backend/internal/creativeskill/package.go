@@ -148,8 +148,8 @@ func ReadPackage(fsys fs.FS) (Package, error) {
 		if !validResourcePath(name) {
 			return fmt.Errorf("%w: resource path %q", creativeops.ErrValidation, name)
 		}
-		if len(pkg.Resources) == maxResourceCount {
-			return fmt.Errorf("%w: more than %d resources, starting at %q", ErrLimit, maxResourceCount, name)
+		if len(pkg.Resources) == MaxResourceCount {
+			return fmt.Errorf("%w: more than %d resources, starting at %q", ErrLimit, MaxResourceCount, name)
 		}
 		body, err := readPackageFile(fsys, name, maxResourceBytes)
 		if err != nil {
@@ -169,8 +169,8 @@ func ReadPackage(fsys fs.FS) (Package, error) {
 		if !utf8.Valid(body) {
 			return fmt.Errorf("%w: %q is not UTF-8 text", creativeops.ErrValidation, name)
 		}
-		if budget += len(body); budget > maxPackageBytes {
-			return fmt.Errorf("%w: the package passes %d bytes at %q", ErrLimit, maxPackageBytes, name)
+		if budget += len(body); budget > MaxPackageBytes {
+			return fmt.Errorf("%w: the package passes %d bytes at %q", ErrLimit, MaxPackageBytes, name)
 		}
 		sum := sha256.Sum256(body)
 		pkg.Resources = append(pkg.Resources, ResourceDeclaration{

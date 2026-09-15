@@ -643,8 +643,10 @@ func (e CreativeAgentMessageStatus) Valid() bool {
 
 // Defines values for CreativeAgentMessageBlockType.
 const (
+	CreativeAgentMessageBlockTypeContentRef CreativeAgentMessageBlockType = "content_ref"
 	CreativeAgentMessageBlockTypeNotice     CreativeAgentMessageBlockType = "notice"
 	CreativeAgentMessageBlockTypeReference  CreativeAgentMessageBlockType = "reference"
+	CreativeAgentMessageBlockTypeSkillRef   CreativeAgentMessageBlockType = "skill_ref"
 	CreativeAgentMessageBlockTypeText       CreativeAgentMessageBlockType = "text"
 	CreativeAgentMessageBlockTypeToolResult CreativeAgentMessageBlockType = "tool_result"
 )
@@ -652,9 +654,13 @@ const (
 // Valid indicates whether the value is a known member of the CreativeAgentMessageBlockType enum.
 func (e CreativeAgentMessageBlockType) Valid() bool {
 	switch e {
+	case CreativeAgentMessageBlockTypeContentRef:
+		return true
 	case CreativeAgentMessageBlockTypeNotice:
 		return true
 	case CreativeAgentMessageBlockTypeReference:
+		return true
+	case CreativeAgentMessageBlockTypeSkillRef:
 		return true
 	case CreativeAgentMessageBlockTypeText:
 		return true
@@ -3350,22 +3356,34 @@ type CreativeAgentConversationPage struct {
 
 // CreativeAgentLimits defines model for CreativeAgentLimits.
 type CreativeAgentLimits struct {
-	Attachments            int    `json:"attachments"`
-	ImagePreviewBytes      int64  `json:"image_preview_bytes"`
-	ImagePreviewCount      int    `json:"image_preview_count"`
-	ImagePreviewTotalBytes int64  `json:"image_preview_total_bytes"`
-	InputNodes             int    `json:"input_nodes"`
-	InputTextBytes         int    `json:"input_text_bytes"`
-	MessageBodyBytes       int    `json:"message_body_bytes"`
-	ModelResultBytes       int    `json:"model_result_bytes"`
-	ModelTurns             int    `json:"model_turns"`
-	RunDurationSeconds     int    `json:"run_duration_seconds"`
-	ToolArgumentBytes      int    `json:"tool_argument_bytes"`
-	ToolCalls              int    `json:"tool_calls"`
-	ToolCallsPerTurn       int    `json:"tool_calls_per_turn"`
-	ToolResultBytes        int    `json:"tool_result_bytes"`
-	UpstreamDepth          int    `json:"upstream_depth"`
-	Version                string `json:"version"`
+	Attachments            int   `json:"attachments"`
+	ImagePreviewBytes      int64 `json:"image_preview_bytes"`
+	ImagePreviewCount      int   `json:"image_preview_count"`
+	ImagePreviewTotalBytes int64 `json:"image_preview_total_bytes"`
+	InputNodes             int   `json:"input_nodes"`
+	InputTextBytes         int   `json:"input_text_bytes"`
+
+	// InstructionSegments 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。
+	InstructionSegments int `json:"instruction_segments"`
+	MessageBodyBytes    int `json:"message_body_bytes"`
+	ModelResultBytes    int `json:"model_result_bytes"`
+	ModelTurns          int `json:"model_turns"`
+	RunDurationSeconds  int `json:"run_duration_seconds"`
+	SkillPackageBytes   int `json:"skill_package_bytes"`
+
+	// SkillRefsPerInstruction 本阶段为 1。两个 Skill 会被拒绝而不是拼接：把两份指令接在一起产生的是 第三份，两位作者都没写过。
+	SkillRefsPerInstruction int `json:"skill_refs_per_instruction"`
+
+	// SkillResourceFiles 一个 Skill 版本的声明文件数上限，与导入侧同源，不是另写一份数字。
+	SkillResourceFiles int `json:"skill_resource_files"`
+	ToolArgumentBytes  int `json:"tool_argument_bytes"`
+	ToolCalls          int `json:"tool_calls"`
+	ToolCallsPerTurn   int `json:"tool_calls_per_turn"`
+	ToolResultBytes    int `json:"tool_result_bytes"`
+	UpstreamDepth      int `json:"upstream_depth"`
+
+	// Version 本次判定所依据的整套上限。新增一个维度同样要换号：按旧版本创建的运行 从未被某条上限判定过，用新集合重放它等于套用它没有同意过的规则。
+	Version string `json:"version"`
 }
 
 // CreativeAgentMessage defines model for CreativeAgentMessage.
@@ -3391,18 +3409,23 @@ type CreativeAgentMessageRole string
 // CreativeAgentMessageStatus defines model for CreativeAgentMessage.Status.
 type CreativeAgentMessageStatus string
 
-// CreativeAgentMessageBlock defines model for CreativeAgentMessageBlock.
+// CreativeAgentMessageBlock `schema_version=2` 起 skill_ref 与 content_ref 是明确的块类型； v1 写下的 `reference` 仍按原样读出，不会被重新猜成 Skill。
 type CreativeAgentMessageBlock struct {
 	// Code notice 的稳定机器原因
 	Code *string `json:"code,omitempty"`
 
-	// RefId 定位一个引用或工具结果；本身不授予任何权限
-	RefId *string                       `json:"ref_id,omitempty"`
-	Text  *string                       `json:"text,omitempty"`
-	Type  CreativeAgentMessageBlockType `json:"type"`
+	// RefId 定位一个内容修订或工具结果；本身不授予任何权限
+	RefId *string `json:"ref_id,omitempty"`
+
+	// Skill 一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查—— 之后改名不能改写历史里已经显示过的内容。
+	Skill *CreativeAgentMessageSkill `json:"skill,omitempty"`
+	Text  *string                    `json:"text,omitempty"`
+
+	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
+	Type CreativeAgentMessageBlockType `json:"type"`
 }
 
-// CreativeAgentMessageBlockType defines model for CreativeAgentMessageBlock.Type.
+// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
 type CreativeAgentMessageBlockType string
 
 // CreativeAgentMessageBody defines model for CreativeAgentMessageBody.
@@ -3418,6 +3441,15 @@ type CreativeAgentMessagePage struct {
 
 	// PrevCursor 继续往回翻；留空表示会话从这里开始
 	PrevCursor string `json:"prev_cursor"`
+}
+
+// CreativeAgentMessageSkill 一条消息当时冻结的 Skill 版本。显示名与版本号是**快照**而不是回查—— 之后改名不能改写历史里已经显示过的内容。
+type CreativeAgentMessageSkill struct {
+	Digest         string `json:"digest"`
+	DisplayName    string `json:"display_name"`
+	SkillId        string `json:"skill_id"`
+	SkillVersionId string `json:"skill_version_id"`
+	VersionNumber  int    `json:"version_number"`
 }
 
 // CreativeAgentModel defines model for CreativeAgentModel.
