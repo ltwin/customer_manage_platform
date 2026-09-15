@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: S3a已提交6b56baa（含owner round-3的两条P2与一条P3修复）；进行中S3b输入契约：instruction_segments判别联合与ResolveInstruction、消息正文v2的skill_ref/content_ref块、limitsVersion升creative-agent-2（新增片段数/单次skill_ref数/资源文件数/包体上限四维，后两维从creativeskill投影不重复字面量）、OpenAPI+generate；随后里程碑B
+next_action: S3b已提交a7dd438（含owner round-1的两条P2修复）；FND-07 S0-S3b全部落地，下一步里程碑B：run/step/slot/epoch状态机、Eino Runner/ChatModelAgent、checkpoint与context backend、只读运行时工具、Gateway结果消费、River Worker、派发前外发同意二次校验；CreateRun以instruction_segments为指令唯一来源，迁移编号取0046
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
