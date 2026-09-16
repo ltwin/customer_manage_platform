@@ -596,6 +596,42 @@ func (e CreativeAddNodePayloadTypeKey) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentInstructionSchemaVersion.
+const (
+	CreativeAgentInstructionSchemaVersionN1 CreativeAgentInstructionSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentInstructionSchemaVersion enum.
+func (e CreativeAgentInstructionSchemaVersion) Valid() bool {
+	switch e {
+	case CreativeAgentInstructionSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentInstructionSegmentType.
+const (
+	CreativeAgentInstructionSegmentTypeContentRef CreativeAgentInstructionSegmentType = "content_ref"
+	CreativeAgentInstructionSegmentTypeSkillRef   CreativeAgentInstructionSegmentType = "skill_ref"
+	CreativeAgentInstructionSegmentTypeText       CreativeAgentInstructionSegmentType = "text"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentInstructionSegmentType enum.
+func (e CreativeAgentInstructionSegmentType) Valid() bool {
+	switch e {
+	case CreativeAgentInstructionSegmentTypeContentRef:
+		return true
+	case CreativeAgentInstructionSegmentTypeSkillRef:
+		return true
+	case CreativeAgentInstructionSegmentTypeText:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentMessageRole.
 const (
 	Assistant CreativeAgentMessageRole = "assistant"
@@ -665,6 +701,69 @@ func (e CreativeAgentMessageBlockType) Valid() bool {
 	case CreativeAgentMessageBlockTypeText:
 		return true
 	case CreativeAgentMessageBlockTypeToolResult:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentRunSettlementState.
+const (
+	CreativeAgentRunSettlementStateNotStarted CreativeAgentRunSettlementState = "not_started"
+	CreativeAgentRunSettlementStatePending    CreativeAgentRunSettlementState = "pending"
+	CreativeAgentRunSettlementStateSettled    CreativeAgentRunSettlementState = "settled"
+	CreativeAgentRunSettlementStateUnknown    CreativeAgentRunSettlementState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentRunSettlementState enum.
+func (e CreativeAgentRunSettlementState) Valid() bool {
+	switch e {
+	case CreativeAgentRunSettlementStateNotStarted:
+		return true
+	case CreativeAgentRunSettlementStatePending:
+		return true
+	case CreativeAgentRunSettlementStateSettled:
+		return true
+	case CreativeAgentRunSettlementStateUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentRunState.
+const (
+	CreativeAgentRunStateCancelled    CreativeAgentRunState = "cancelled"
+	CreativeAgentRunStateFailed       CreativeAgentRunState = "failed"
+	CreativeAgentRunStatePartial      CreativeAgentRunState = "partial"
+	CreativeAgentRunStateQueued       CreativeAgentRunState = "queued"
+	CreativeAgentRunStateReconciling  CreativeAgentRunState = "reconciling"
+	CreativeAgentRunStateRunning      CreativeAgentRunState = "running"
+	CreativeAgentRunStateSucceeded    CreativeAgentRunState = "succeeded"
+	CreativeAgentRunStateWaitingApply CreativeAgentRunState = "waiting_apply"
+	CreativeAgentRunStateWaitingInput CreativeAgentRunState = "waiting_input"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentRunState enum.
+func (e CreativeAgentRunState) Valid() bool {
+	switch e {
+	case CreativeAgentRunStateCancelled:
+		return true
+	case CreativeAgentRunStateFailed:
+		return true
+	case CreativeAgentRunStatePartial:
+		return true
+	case CreativeAgentRunStateQueued:
+		return true
+	case CreativeAgentRunStateReconciling:
+		return true
+	case CreativeAgentRunStateRunning:
+		return true
+	case CreativeAgentRunStateSucceeded:
+		return true
+	case CreativeAgentRunStateWaitingApply:
+		return true
+	case CreativeAgentRunStateWaitingInput:
 		return true
 	default:
 		return false
@@ -1723,16 +1822,16 @@ func (e ExportDocumentSchemaVersion) Valid() bool {
 
 // Defines values for FeedbackCreateResultV1TargetKind.
 const (
-	FeedbackCreateResultV1TargetKindPlan FeedbackCreateResultV1TargetKind = "plan"
-	FeedbackCreateResultV1TargetKindShot FeedbackCreateResultV1TargetKind = "shot"
+	Plan FeedbackCreateResultV1TargetKind = "plan"
+	Shot FeedbackCreateResultV1TargetKind = "shot"
 )
 
 // Valid indicates whether the value is a known member of the FeedbackCreateResultV1TargetKind enum.
 func (e FeedbackCreateResultV1TargetKind) Valid() bool {
 	switch e {
-	case FeedbackCreateResultV1TargetKindPlan:
+	case Plan:
 		return true
-	case FeedbackCreateResultV1TargetKindShot:
+	case Shot:
 		return true
 	default:
 		return false
@@ -1912,13 +2011,13 @@ func (e PlanAssetRenditionKind) Valid() bool {
 
 // Defines values for PlanAssetRightsDeclarationMatrixVersion.
 const (
-	N1 PlanAssetRightsDeclarationMatrixVersion = 1
+	PlanAssetRightsDeclarationMatrixVersionN1 PlanAssetRightsDeclarationMatrixVersion = 1
 )
 
 // Valid indicates whether the value is a known member of the PlanAssetRightsDeclarationMatrixVersion enum.
 func (e PlanAssetRightsDeclarationMatrixVersion) Valid() bool {
 	switch e {
-	case N1:
+	case PlanAssetRightsDeclarationMatrixVersionN1:
 		return true
 	default:
 		return false
@@ -2254,28 +2353,28 @@ func (e ReminderType) Valid() bool {
 
 // Defines values for ScheduleBusinessDraftUnavailableReason.
 const (
-	ScheduleBusinessDraftUnavailableReasonDurationNotPositive     ScheduleBusinessDraftUnavailableReason = "duration_not_positive"
-	ScheduleBusinessDraftUnavailableReasonDurationOutOfRange      ScheduleBusinessDraftUnavailableReason = "duration_out_of_range"
-	ScheduleBusinessDraftUnavailableReasonDurationUnknown         ScheduleBusinessDraftUnavailableReason = "duration_unknown"
-	ScheduleBusinessDraftUnavailableReasonOrderRequired           ScheduleBusinessDraftUnavailableReason = "order_required"
-	ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture   ScheduleBusinessDraftUnavailableReason = "schedule_slot_not_future"
-	ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible ScheduleBusinessDraftUnavailableReason = "schedule_stage_ineligible"
+	DurationNotPositive     ScheduleBusinessDraftUnavailableReason = "duration_not_positive"
+	DurationOutOfRange      ScheduleBusinessDraftUnavailableReason = "duration_out_of_range"
+	DurationUnknown         ScheduleBusinessDraftUnavailableReason = "duration_unknown"
+	OrderRequired           ScheduleBusinessDraftUnavailableReason = "order_required"
+	ScheduleSlotNotFuture   ScheduleBusinessDraftUnavailableReason = "schedule_slot_not_future"
+	ScheduleStageIneligible ScheduleBusinessDraftUnavailableReason = "schedule_stage_ineligible"
 )
 
 // Valid indicates whether the value is a known member of the ScheduleBusinessDraftUnavailableReason enum.
 func (e ScheduleBusinessDraftUnavailableReason) Valid() bool {
 	switch e {
-	case ScheduleBusinessDraftUnavailableReasonDurationNotPositive:
+	case DurationNotPositive:
 		return true
-	case ScheduleBusinessDraftUnavailableReasonDurationOutOfRange:
+	case DurationOutOfRange:
 		return true
-	case ScheduleBusinessDraftUnavailableReasonDurationUnknown:
+	case DurationUnknown:
 		return true
-	case ScheduleBusinessDraftUnavailableReasonOrderRequired:
+	case OrderRequired:
 		return true
-	case ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture:
+	case ScheduleSlotNotFuture:
 		return true
-	case ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible:
+	case ScheduleStageIneligible:
 		return true
 	default:
 		return false
@@ -2695,25 +2794,25 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	Audio ListCreativeAssetsParamsKind = "audio"
-	Image ListCreativeAssetsParamsKind = "image"
-	Link  ListCreativeAssetsParamsKind = "link"
-	Text  ListCreativeAssetsParamsKind = "text"
-	Video ListCreativeAssetsParamsKind = "video"
+	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
+	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
+	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
+	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
+	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
 func (e ListCreativeAssetsParamsKind) Valid() bool {
 	switch e {
-	case Audio:
+	case ListCreativeAssetsParamsKindAudio:
 		return true
-	case Image:
+	case ListCreativeAssetsParamsKindImage:
 		return true
-	case Link:
+	case ListCreativeAssetsParamsKindLink:
 		return true
-	case Text:
+	case ListCreativeAssetsParamsKindText:
 		return true
-	case Video:
+	case ListCreativeAssetsParamsKindVideo:
 		return true
 	default:
 		return false
@@ -3048,6 +3147,15 @@ type CreateCreativeAgentConversationRequest struct {
 	Payload         CreativeAgentConversationCreatePayload `json:"payload"`
 }
 
+// CreateCreativeAgentRunRequest defines model for CreateCreativeAgentRunRequest.
+type CreateCreativeAgentRunRequest struct {
+	ClientCreatedAt time.Time          `json:"client_created_at"`
+	OperationId     openapi_types.UUID `json:"operation_id"`
+
+	// Payload 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。
+	Payload CreativeAgentRunPayload `json:"payload"`
+}
+
 // CreateCreativeAssetFromNodeRequest defines model for CreateCreativeAssetFromNodeRequest.
 type CreateCreativeAssetFromNodeRequest struct {
 	ClientCreatedAt time.Time                    `json:"client_created_at"`
@@ -3316,6 +3424,11 @@ type CreativeAddNodePayloadType string
 // CreativeAddNodePayloadTypeKey defines model for CreativeAddNodePayload.TypeKey.
 type CreativeAddNodePayloadTypeKey string
 
+// CreativeAgentBusyDetails 账号只有一个写槽位。告诉摄影师是哪一次运行占着它，比只说「忙」多出 一个他们真的能打开去看的东西。
+type CreativeAgentBusyDetails struct {
+	ActiveRunId string `json:"active_run_id"`
+}
+
 // CreativeAgentCatalog defines model for CreativeAgentCatalog.
 type CreativeAgentCatalog struct {
 	CatalogVersion string               `json:"catalog_version"`
@@ -3353,6 +3466,29 @@ type CreativeAgentConversationPage struct {
 	Items      []CreativeAgentConversation `json:"items"`
 	NextCursor string                      `json:"next_cursor"`
 }
+
+// CreativeAgentInstruction 提交协议。它与消息正文的 schema_version 是两份不同文档的版本号。 名称、版本号、digest 与作者都由服务端读出，客户端只给 ID。
+type CreativeAgentInstruction struct {
+	InstructionSegments []CreativeAgentInstructionSegment     `json:"instruction_segments"`
+	SchemaVersion       CreativeAgentInstructionSchemaVersion `json:"schema_version"`
+}
+
+// CreativeAgentInstructionSchemaVersion defines model for CreativeAgentInstruction.SchemaVersion.
+type CreativeAgentInstructionSchemaVersion int
+
+// CreativeAgentInstructionSegment 一次提交的一个有序片段，是判别联合：每种 type 只允许自身字段，写了别的字段 会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID， ID 本身不授予任何读取权限，服务端一律重新核对。
+type CreativeAgentInstructionSegment struct {
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+
+	// SkillId 与 skill_version_id 必须同时出现；只给版本会让服务端替客户端挑 Skill。
+	SkillId        *string                             `json:"skill_id,omitempty"`
+	SkillVersionId *string                             `json:"skill_version_id,omitempty"`
+	Text           *string                             `json:"text,omitempty"`
+	Type           CreativeAgentInstructionSegmentType `json:"type"`
+}
+
+// CreativeAgentInstructionSegmentType defines model for CreativeAgentInstructionSegment.Type.
+type CreativeAgentInstructionSegmentType string
 
 // CreativeAgentLimits defines model for CreativeAgentLimits.
 type CreativeAgentLimits struct {
@@ -3479,6 +3615,60 @@ type CreativeAgentModelCapability struct {
 	Temperature     bool `json:"temperature"`
 	ToolCalling     bool `json:"tool_calling"`
 	ToolChoice      bool `json:"tool_choice"`
+}
+
+// CreativeAgentRun defines model for CreativeAgentRun.
+type CreativeAgentRun struct {
+	// CanvasId 由服务端从会话读出；客户端给的对不上也不采信。
+	CanvasId       string    `json:"canvas_id"`
+	ConversationId string    `json:"conversation_id"`
+	CreatedAt      time.Time `json:"created_at"`
+
+	// DeadlineAt 本次运行的有界执行期限；等待与恢复都不延长它。
+	DeadlineAt      time.Time  `json:"deadline_at"`
+	EgressConsentId string     `json:"egress_consent_id"`
+	ErrorCode       *string    `json:"error_code,omitempty"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+	Id              string     `json:"id"`
+
+	// LastEventSeq 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。
+	LastEventSeq  CreativeSequence `json:"last_event_seq"`
+	LimitsVersion string           `json:"limits_version"`
+	ModelKey      string           `json:"model_key"`
+
+	// PrunedThroughSeq 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。
+	PrunedThroughSeq CreativeSequence `json:"pruned_through_seq"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+
+	// SettlementState 费用是另一个问题：未知的账单不阻止已交付的运行进入终态，终态也不关闭核算。 这是投影，允许短暂滞后。
+	SettlementState CreativeAgentRunSettlementState `json:"settlement_state"`
+	SkillId         *string                         `json:"skill_id,omitempty"`
+	SkillVersionId  *string                         `json:"skill_version_id,omitempty"`
+	StartedAt       *time.Time                      `json:"started_at,omitempty"`
+
+	// State 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
+	State            CreativeAgentRunState `json:"state"`
+	TriggerMessageId string                `json:"trigger_message_id"`
+}
+
+// CreativeAgentRunSettlementState 费用是另一个问题：未知的账单不阻止已交付的运行进入终态，终态也不关闭核算。 这是投影，允许短暂滞后。
+type CreativeAgentRunSettlementState string
+
+// CreativeAgentRunState 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
+type CreativeAgentRunState string
+
+// CreativeAgentRunPayload 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。
+type CreativeAgentRunPayload struct {
+	// EgressConsentId 本会话的外发授权。派发前会在记录派发意图的同一事务里再核一次， 所以先提交的撤销一定阻止外发；之后撤销则如实地太迟了。
+	EgressConsentId string `json:"egress_consent_id"`
+
+	// Instruction 提交协议。它与消息正文的 schema_version 是两份不同文档的版本号。 名称、版本号、digest 与作者都由服务端读出，客户端只给 ID。
+	Instruction CreativeAgentInstruction `json:"instruction"`
+
+	// ModelKey 必须来自目录。能力与可用性由部署决定，客户端不能据此推定模型支持图片。
+	ModelKey string `json:"model_key"`
 }
 
 // CreativeAgentSkill defines model for CreativeAgentSkill.
@@ -4504,6 +4694,9 @@ type CreativeSavePromptPayload struct {
 
 // CreativeSavePromptPayloadType defines model for CreativeSavePromptPayload.Type.
 type CreativeSavePromptPayloadType string
+
+// CreativeSequence 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。
+type CreativeSequence = string
 
 // CreativeStructureDeletePayload defines model for CreativeStructureDeletePayload.
 type CreativeStructureDeletePayload struct {
@@ -6289,6 +6482,11 @@ type ListCreativeAgentMessagesParams struct {
 	Limit         *int              `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// CreateCreativeAgentRunParams defines parameters for CreateCreativeAgentRun.
+type CreateCreativeAgentRunParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // RevokeCreativeEgressConsentParams defines parameters for RevokeCreativeEgressConsent.
 type RevokeCreativeEgressConsentParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -6809,6 +7007,9 @@ type RequestCreativeNodeExecutionJSONRequestBody = CreativeRequestExecutionReque
 
 // GrantCreativeEgressConsentJSONRequestBody defines body for GrantCreativeEgressConsent for application/json ContentType.
 type GrantCreativeEgressConsentJSONRequestBody = GrantCreativeEgressConsentRequest
+
+// CreateCreativeAgentRunJSONRequestBody defines body for CreateCreativeAgentRun for application/json ContentType.
+type CreateCreativeAgentRunJSONRequestBody = CreateCreativeAgentRunRequest
 
 // RevokeCreativeEgressConsentJSONRequestBody defines body for RevokeCreativeEgressConsent for application/json ContentType.
 type RevokeCreativeEgressConsentJSONRequestBody = RevokeCreativeEgressConsentRequest
@@ -7807,6 +8008,32 @@ func (t *CreativeGraphAction) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsCreativeAgentBusyDetails returns the union data inside the ErrorDetails as a CreativeAgentBusyDetails
+func (t ErrorDetails) AsCreativeAgentBusyDetails() (CreativeAgentBusyDetails, error) {
+	var body CreativeAgentBusyDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeAgentBusyDetails overwrites any union data inside the ErrorDetails as the provided CreativeAgentBusyDetails
+func (t *ErrorDetails) FromCreativeAgentBusyDetails(v CreativeAgentBusyDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeAgentBusyDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeAgentBusyDetails
+func (t *ErrorDetails) MergeCreativeAgentBusyDetails(v CreativeAgentBusyDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsScheduleConflictDetails returns the union data inside the ErrorDetails as a ScheduleConflictDetails
 func (t ErrorDetails) AsScheduleConflictDetails() (ScheduleConflictDetails, error) {
 	var body ScheduleConflictDetails
@@ -8296,6 +8523,9 @@ type ServerInterface interface {
 	// 注册 pending_verification 账号并尝试发送验证邮件
 	// (POST /auth/register)
 	Register(c *gin.Context)
+	// 一次运行的当前状态、终态与费用投影
+	// (GET /creative/agent-runs/{id})
+	GetCreativeAgentRun(c *gin.Context, id string)
 	// 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力
 	// (GET /creative/agent/catalog)
 	GetCreativeAgentCatalog(c *gin.Context)
@@ -8392,6 +8622,9 @@ type ServerInterface interface {
 	// 从最新往回分页；每页按阅读顺序返回
 	// (GET /creative/conversations/{id}/messages)
 	ListCreativeAgentMessages(c *gin.Context, id string, params ListCreativeAgentMessagesParams)
+	// 提交一次指令并开始一次运行；202 只表示已受理
+	// (POST /creative/conversations/{id}/runs)
+	CreateCreativeAgentRun(c *gin.Context, id string, params CreateCreativeAgentRunParams)
 
 	// (GET /creative/documents/{id})
 	GetCreativeDocument(c *gin.Context, id string)
@@ -8979,6 +9212,33 @@ func (siw *ServerInterfaceWrapper) Register(c *gin.Context) {
 	}
 
 	siw.Handler.Register(c)
+}
+
+// GetCreativeAgentRun operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeAgentRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeAgentRun(c, id)
 }
 
 // GetCreativeAgentCatalog operation middleware
@@ -10387,6 +10647,60 @@ func (siw *ServerInterfaceWrapper) ListCreativeAgentMessages(c *gin.Context) {
 	}
 
 	siw.Handler.ListCreativeAgentMessages(c, id, params)
+}
+
+// CreateCreativeAgentRun operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeAgentRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeAgentRunParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeAgentRun(c, id, params)
 }
 
 // GetCreativeDocument operation middleware
@@ -13325,6 +13639,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/password/reset", wrapper.ResetPassword)
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
+	router.GET(options.BaseURL+"/creative/agent-runs/:id", wrapper.GetCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/agent/catalog", wrapper.GetCreativeAgentCatalog)
 	router.GET(options.BaseURL+"/creative/agent/skills", wrapper.ListCreativeAgentSkills)
 	router.GET(options.BaseURL+"/creative/agent/skills/:id/versions/:version_id", wrapper.GetCreativeAgentSkillVersion)
@@ -13357,6 +13672,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
 	router.POST(options.BaseURL+"/creative/conversations/:id/egress-consents", wrapper.GrantCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/conversations/:id/messages", wrapper.ListCreativeAgentMessages)
+	router.POST(options.BaseURL+"/creative/conversations/:id/runs", wrapper.CreateCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
 	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)

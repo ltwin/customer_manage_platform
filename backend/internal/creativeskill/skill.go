@@ -21,6 +21,12 @@ import (
 
 var (
 	ErrNotFound = errors.New("creative skill not found")
+	// ErrDisabled means the version exists and this account may see it, but its
+	// author has withdrawn it — or the skill it belongs to — from new work.
+	// It is distinct from ErrNotFound because the difference is visible to the
+	// caller anyway: a withdrawn version still renders in the history that froze
+	// it, so reporting absence here would contradict what is on the screen.
+	ErrDisabled = errors.New("creative skill version is withdrawn from new work")
 	// ErrRevisionConflict means another publisher moved the skill first. The
 	// import is kept so the caller can decide explicitly, not overwritten.
 	ErrRevisionConflict = errors.New("creative skill revision conflict")

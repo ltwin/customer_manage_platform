@@ -381,6 +381,46 @@ func (s *Service) ActivateVersion(ctx context.Context, scope store.AccountScope,
 	})
 }
 
+// RequireRunnableInTx re-checks, inside the caller's own transaction, that a
+// version may still start work — and takes the version's control lock while
+// doing it, which is what makes the answer survive until that transaction
+// commits. A plain re-read cannot: a withdrawal committing between the read and
+// the dispatch intent would still let the bytes go out.
+//
+// The frozen content is not re-read here. A run already carries it, and re-
+// reading it would be how a run silently follows instructions other than the
+// ones it recorded following. What is asked is only the mutable half.
+//
+// Visibility is decided the same way the read ports decide it: the reader's own
+// skills, plus the platform catalog. A private version of another account is
+// reported as absent, so a guessed id learns nothing here either.
+func (s *Service) RequireRunnableInTx(ctx context.Context, tx store.TxAccountScope, skillID, versionID string) error {
+	if skillID == "" || versionID == "" {
+		return creativeops.ErrValidation
+	}
+	control := tx.SkillControlView()
+	if err := control.Lock(ctx, versionID); err != nil {
+		return err
+	}
+	found, ok, err := control.Read(ctx, versionID)
+	if err != nil {
+		return err
+	}
+	// The pairing is the question, exactly as in ResolveVersion: a version id
+	// that belongs to another skill is absence, not a version of the skill that
+	// was named.
+	if !ok || found.SkillID != skillID {
+		return ErrNotFound
+	}
+	if found.OwnerAccountID != tx.AccountID() && found.Origin != "platform" {
+		return ErrNotFound
+	}
+	if found.ExecutionStatus != "active" || found.SkillAvailability != "active" {
+		return ErrDisabled
+	}
+	return nil
+}
+
 // DisableVersion withdraws one version from new work without deleting it or
 // changing its digest. History keeps rendering what it always did.
 func (s *Service) DisableVersion(ctx context.Context, scope store.AccountScope, versionID, reason string) error {
@@ -391,6 +431,12 @@ func (s *Service) DisableVersion(ctx context.Context, scope store.AccountScope, 
 		return creativeops.ErrValidation
 	}
 	return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		// The version control lock, taken before the row is touched. A dispatch
+		// holding it commits first and is honestly too late to stop; one that
+		// takes it after this commits sees the withdrawal and refuses.
+		if err := tx.SkillControlView().Lock(ctx, versionID); err != nil {
+			return err
+		}
 		now, err := tx.CreativeNow(ctx)
 		if err != nil {
 			return err

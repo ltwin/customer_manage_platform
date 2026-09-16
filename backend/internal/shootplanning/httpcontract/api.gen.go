@@ -2635,6 +2635,11 @@ type CreateShootPlanInput struct {
 	Title   string `json:"title"`
 }
 
+// CreativeAgentBusyDetails 账号只有一个写槽位。告诉摄影师是哪一次运行占着它，比只说「忙」多出 一个他们真的能打开去看的东西。
+type CreativeAgentBusyDetails struct {
+	ActiveRunId string `json:"active_run_id"`
+}
+
 // CreativeBrief defines model for CreativeBrief.
 type CreativeBrief struct {
 	CharacterName  nullable.Nullable[string] `json:"character_name,omitempty"`
@@ -4143,6 +4148,32 @@ func (t ArchiveAcknowledgement) MarshalJSON() ([]byte, error) {
 
 func (t *ArchiveAcknowledgement) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeAgentBusyDetails returns the union data inside the ErrorDetails as a CreativeAgentBusyDetails
+func (t ErrorDetails) AsCreativeAgentBusyDetails() (CreativeAgentBusyDetails, error) {
+	var body CreativeAgentBusyDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeAgentBusyDetails overwrites any union data inside the ErrorDetails as the provided CreativeAgentBusyDetails
+func (t *ErrorDetails) FromCreativeAgentBusyDetails(v CreativeAgentBusyDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeAgentBusyDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeAgentBusyDetails
+func (t *ErrorDetails) MergeCreativeAgentBusyDetails(v CreativeAgentBusyDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
 	return err
 }
 

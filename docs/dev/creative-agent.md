@@ -7,13 +7,15 @@
 [eino-adoption.md](../product/creative-canvas-system/eino-adoption.md)，运行状态机唯一权威在
 [data-model.md §7](../product/creative-canvas-system/data-model.md)。本文只记实现事实与已知边界。
 
-## 当前交付范围（FND-07 里程碑 A）
+## 当前交付范围（FND-07 里程碑 A + B1）
 
-已落地：会话、持久消息、外发同意、模型/Skill/工具目录，以及迁移 `0044_creative_agent_conversations`。
+已落地：会话、持久消息、外发同意、模型/Skill/工具目录、迁移 `0044_creative_agent_conversations`；
+以及 B1 的 run/step/slot/epoch 持久结构（迁移 `0046_creative_agent_runs`）、`CreateRun` 的原子受理、
+River Worker 接管、派发前外发同意二次校验、经 Eino ChatModelAgent 的一轮模型调用与结果消费。
 
-**尚未落地**（随里程碑 B/C 与后续项）：run / step / slot / epoch 状态机、Eino Runner 接入、
-checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、River Worker、等待/取消/对账/
-终态恢复、最小 Agent 面板。写工具与提案采纳属 FND-08，独立附件属 FND-09，SSE 流式属 FND-08。
+**尚未落地**（随里程碑 B2/B3 与 C）：受控 Skill 加载/摘要/结果卸载与只读运行时工具、版本化
+Checkpoint 与上下文 Backend、多轮有界执行、等待/取消/对账/终态恢复、救援扫描、SSE、最小 Agent 面板。
+写工具与提案采纳属 FND-08，独立附件属 FND-09。
 
 因此 `GET /creative/agent/catalog` 的 `tools` 目前恒为空数组，任何声明了工具的 Skill 都报
 `available: false` 并附原因「所需工具尚未在本部署注册」。这是如实反映部署能力，不是占位。
@@ -46,6 +48,9 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
 | `Service.ListSkills` | 选框与斜杠选择器的统一查询；自己的 Skill 与受信平台目录合成一页 |
 | `Service.SkillVersion` | 一个固定版本的摘要与声明；正文与对象地址不出这一层 |
 | `Service.ResolveInstruction` | 把一次提交解析成可存可执行的东西：每个引用都在本账号范围内回数据库重新推导，客户端送来的任何值都不当作凭据 |
+| `Service.CreateRun` | 一次提交变成工作：消息、冻结输入、写槽位、预算预留、首个事件与 River 入队同事务，202 只表示受理 |
+| `Service.ReadRun` | 一次运行的当前状态、终态与费用投影；跨账号是「不存在」而非「拒绝」 |
+| `Service.Handlers` | Worker 注册入口。一个 run 只对应一种任务；任务载荷只有 run id，其余事实 Worker 自己回库读 |
 | `SkillDirectory` | 本包对 `creativeskill` 的窄接口，只有读。导入/激活/停用不在其中——发布是部署动作，HTTP 处理器不该离它只有一次类型断言 |
 
 ## 已确定的实现事实
@@ -103,8 +108,10 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
    `Service.tools` 字段而不是返回字面空切片，测试因此能给出一个真实注册表，两侧都跑到了
    （`TestASkillWhoseToolsAreNotRegisteredCannotBeSubmitted`）。生产里该字段仍为空，
    直到 FND-08 注册真实工具。
-3. 外发同意目前只有授予与撤销，**派发时的二次校验属里程碑 B**：撤销先提交则不外发这条
-   不变量尚未有代码可验。
+3. ~~外发同意目前只有授予与撤销，派发时的二次校验属里程碑 B~~ **B1 已补**：`CallSession.Admit` 在
+   记录派发意图的同一事务里重跑同意与内容校验，`TestAWithdrawnAuthorisationStopsTheDispatch`
+   验证撤销先提交时供应商一次都没被调用。仍未覆盖的是**运行中途**撤销——B1 只有一轮，撤销与派发
+   之间没有第二次机会；多轮的每轮复检随 B2。
 4. 附件草稿（`creative_agent_drafts` / `creative_agent_attachments`）未建表，属 FND-09。
 5. `appendMessageInTx` 的 `ContentRefs` 只校验角色枚举、非空与同次重复，**不校验 `RevisionID` 的归属、
    `ready` 状态或保留根**（与 `GrantConsent` 对每条修订调 `RequireUsable` 的严谨度不对称）。
@@ -130,8 +137,100 @@ checkpoint 与 context backend、只读运行时工具、Gateway 结果消费、
 - **本部署目前没有注册任何工具**（FND-08 才注册），所以**任何声明了工具的 Skill 都会被 `ErrUnsupportedSegment` 拒绝**，和 catalog 里 `available: false` 是同一个事实。这不是缺陷，是如实反映能力；FND-08 注册后它自己就通了，不需要改这里的代码。
 - `content_ref` 走 `creativecontent.RequireUsable(..., "display")`，**并且检查它返回的修订 `Kind`——本阶段只收 `text`**。这两件事是两个问题：`RequireUsable` 回答「本账号能不能展示这个」，它对 image / video / audio 一律放行；而「本部署能不能把它发给模型」取决于模型链路，那条路现在没有图片能力。只看错误不看 kind 就会接受一张图，然后要么静默丢掉、要么抽帧外发——两种都没人授权过。图片按 `ErrUnsupportedSegment` 拒绝（能力问题，不是格式问题）。
 - 同一个修订写两遍只留一条保留根（主键是修订），但两个片段都照常显示——那是摄影师写的。
-- **重新校验的分工**：版本内容不可变，所以在这里读是成立的；但 Skill 可以被停用、内容授权可以被撤销，**里程碑 B 的 CreateRun 必须在自己的事务里再核一次**。这里回答的是「能不能提交」，不是「现在就可以派发」。
+- **重新校验的分工**：版本内容不可变，所以在这里读是成立的；但 Skill 可以被停用、内容授权可以被撤销。
+  **B1 起这两件事分别在不同的事务里再核一次，而且位置不一样**：内容修订与本账号同域，所以
+  `CreateRun` 在创建 run 的同一事务里对每条 `content_ref` 重跑一次 `RequireUsable`；Skill 的可用性
+  **不可能**在那个事务里核——平台 Skill 属于发布账号，读它需要那个账号的 scope，账号隔离的事务看不见。
+  它由 Worker 在派发前经端口重新解析（无缓存），这也正是验收要求成立的地方：不变量说的是
+  「禁用先提交则之后的**派发**不通过」。这里回答的是「能不能提交」，不是「现在就可以派发」。
 
 消息正文升到 `schema_version=2`：`skill_ref` 与 `content_ref` 是明确的块类型，v1 的无类型 `reference` 不再写入，但历史消息**按原样读出**（读路径不重新校验正文），不会被重新猜成 Skill。`skill_ref` 块里的显示名和版本号是**快照**——之后改名不能改写历史里已经显示过的内容。消息同时把这次引用登记进 `creative_message_skill_refs`（段序号、Skill、版本、发布账号、digest），让后来者不必解析 JSON 就能查。
 
 `limits_version` 升到 `creative-agent-2`。新增的四个维度里，`skill_resource_files` 与 `skill_package_bytes` 是从 `creativeskill` 投影过来的，不是另写一份数字——两处写同一个上限，正是「导入时通过、执行时失败」的来源。**只增加维度也必须换号**：按 `-1` 创建的运行从没被片段数判定过，用 `-2` 的集合重放它等于套用它没同意过的规则。
+
+## 运行（B1）
+
+一次提交变成一次运行，`CreateRun` 的整个受理是**一个事实**：摄影师的消息、冻结输入、账号写槽位、
+预算预留、首个事件与 River 入队同事务提交。看得见的 run 却没有排队任务、或排了任务却没有 run，
+都是工作凭空消失的路子。202 只表示已受理，之后的结果不会改写这张回执。
+
+**锁序**（全局锁序的一段）：账号能力 → Agent slot → Gateway 分组准入行与预算桶 → 会话 → Skill 控制行
+→ 外发同意 → 内容修订。预算预留用的输入上界是本 run 自己的**每请求上限**（`InputTextBytes`），不是对
+首轮提示的测量——限额快照就是这个 run 将被判定的依据，由它推导出的 hold 不会被之后变长的组装拆穿，
+也不需要为了测量而把内容读取提到 slot 之前、破坏锁序。
+
+**一次 run 只占一笔额度**。创建时的预留用的正是**首轮自己的身份**
+（`llmgateway.ReserveOperationID(callerService, runID+"#1")`），所以 Worker 跑第一轮时 Gateway 回放这笔
+预留而不是在旁边再占一笔。换成任何别的 ID，创建时那笔就永远无人认领，而 run 却又占了第二笔——一个
+模型调用都没发生，账号的月度额度却在被吃掉。turn 的 binding key 因此是 `runID#ordinal`：ordinal 来自
+run 行锁下的计数器，是持久的，不是本进程编的（后者会让每次恢复都重新付一次钱）。
+
+**终态一定归还未花掉的额度**。`closeRunInTx` 是所有终态路径的必经点，它在那里释放这笔预留；已被请求
+认领的那笔由 Gateway 回一个 `ErrState`，这正是想要的答案——真发生过的调用不该被退钱。
+
+**历史在创建时冻结**。选取最近若干条已完成消息写进 `creative_run_inputs`，派发时不再重读会话：
+输入是历史事实，摄影师按下发送时看到的东西才是模型被告知的东西；另一个窗口随后追加的那条属于下一次
+运行。条数由 `limits.HistoryMessages` 约束，真正的上限是字节预算——`InputTextBytes` 扣掉本次提交与
+Skill 正文之后的余额。只有 `text` 块进入历史；引用块是定位符，把它指向的东西再发一遍等于一次没人
+授权过的外发。
+
+**派发前的二次校验在派发事务内**。`llmgateway.CallSession.Admit` 是本次为此新增的钩子，它在记录派发
+意图的那个事务里运行：先锁 run（epoch/claim_token/取消标记），再取 Skill 控制锁并复核可用性，再锁同意，
+最后重跑每条内容修订的 `RequireUsable`。放在自己的事务里做不行——撤销可能在检查通过之后、派发意图
+提交之前提交，字节就出去了。所以「撤销先提交则不外发」这条只有在同事务里才是真的。
+
+**Skill 的那一半靠共享的版本控制锁**，这是 [skill-foundation.md](../product/creative-canvas-system/modules/skill-foundation.md)
+指定的机制：禁用与派发意图取同一把锁。它不能是行锁、键里也不能带账号——平台 Skill 的发布者与读者
+天然是两个账号，账号范围的查询够不到对方的行，账号范围的键也无法把两边串起来。所以是
+`pg_advisory_xact_lock('creative-skill-version:<版本ID>')`，两侧都取：`DisableVersion` 在改行之前取，
+`creativeskill.RequireRunnableInTx` 在读之前取。跨账号读只读**控制事实**（执行状态、Skill 可用性、
+归属与 origin），经 `txcap.SkillControlView` 这个密封能力，由 store 独家产出；正文、资源与对象地址
+仍只走 `creativeskill` 自己的端口。可见性规则也留在 `creativeskill` 里，跨账号私有版本一律报「不存在」。
+
+派发前那次**只问可变的那一半**。正文不重读——run 已经带着冻结快照，重读它正是「run 悄悄按另一份指令
+执行」的路子。`executeTurn` 开头的 `stillRunnable` 仍在，但它只是便宜的前置拒绝（顺带核对 digest 与
+工具注册），**权威的那次在派发事务里**。
+
+**Worker 与 slot**。`claimRun` 先锁 slot 再锁 run（全局序），确认 slot 确实归这个 run，然后 epoch+1、
+轮换 claim_token（run 与 slot 两行一起轮换）、写租约并置 `running`。释放必须同时匹配 run 与
+claim_token，旧 run 不能清掉别人后来取得的占用。租约 30 秒、每 10 秒续租，只有仍是持有者才续得上；
+读它的救援扫描属里程碑 C，B1 里它已经如实记录「有没有人在干活」。
+
+**模型解析在接管事务之内**。目录是进程内的只读配置，所以它属于这个事务——而且必须在里面：排队期间
+模型被禁用、下线，或这台 Worker 根本没有凭证，若在事务外才发现，run 已经是 `running`、槽位已经占住，
+而失败没有回终态的路（重投的任务只认 `queued`，什么都 claim 不到就结束了），账号会一直收到 busy。
+现在它和「排队期间过期」走同一条出口：在事务内直接收成终态并释放槽位。
+
+**一次任务内必达终态**。turn 的错误不从 `workRun` 返回，而是写进终态：返回错误会让 River 重投一个
+run 状态已经不是 queued 的任务，结果是 run 卡在 `running` 而没有人推进它。重投的任务因此什么都
+claim 不到——至少一次投递由 River 保证，至多一次效果由 run 自己的状态保证。
+
+**模型步骤先于发送存在**。`prepareModelStep` 在 run 行锁下取 `next_step_ordinal`，把规范化请求与
+`RequestHash` 落库为 `prepared` 步骤；交给 Gateway 的 binding key 是 `runID#ordinal`，所以恢复时重放的是
+已经付过钱的那次请求，而不是买第二次。`llm_request_id` 是事后补写的**索引不是权威**——Gateway 存的
+binding 由该 key 派生，这一列没写上也不丢失关联。
+
+**256 KiB 输入上限在这里执行**，因为只有到这一步「实际要发出去的请求」才存在。创建时算的是
+`content_ref` 的**标识符**长度，而发出去的是那条修订的**全文**：一条合法引用就能比整个预算还大
+（内容层允许 100,000 字，中文即 300,000 字节）。用的是 Gateway 自己的 `EstimateInputTokens`——正文、
+历史、Skill 指令、分隔符与工具定义都在内，与 hold 的算法同源，不会一个放行一个拒绝。**不能靠 hold 代劳**：
+Gateway 拒绝时给的是「预算超限」，而摄影师遇到的其实是「引用太长」，前者他无从下手；而且 hold 的尺寸
+一旦为别的原因改变，这条上限就静默失效了。
+
+**结果消费与助手消息同事务**。`Consume` 在标记结果已消费的那个事务里写步骤结果与助手消息，所以不存在
+「付过钱、已消费、却看不到」的中间态。空白答复记步骤但不产生消息：对话里放一条空白轮次，摄影师无从
+处置。
+
+`limits_version` 升到 `creative-agent-3`：新增 `history_messages` 维度。**只增加维度也必须换号**——按
+`-2` 创建的运行从没被历史条数判定过。
+
+### B1 的已知边界
+
+1. **没有救援扫描**：进程在一轮中途死掉，run 会停在 `running` 直到里程碑 C 的救援按租约接管。
+   B1 已经堵掉的是**可预见**的那类搁浅（排队期间过期、模型不可用），它们都在接管事务里收成终态；
+   剩下的是真正的进程崩溃，那只能靠救援。
+2. **没有取消入口**：`cancel_requested_at` 列与派发前的检查都在，但还没有写它的 API（里程碑 C）。
+3. **单轮**：没有工具，所以 ChatModelAgent 只会走一轮。多轮上限与只读运行时工具在 B2。
+   预留按首轮认领，多轮的第二轮起会各自预留，届时 `closeRunInTx` 的释放只覆盖**初始**那一笔——
+   B2 加多轮时要把未认领的后续预留一并纳入。
+4. **没有 Checkpoint**：Runner 不带 `CheckPointStore`，中断即失败，不做恢复（B3）。

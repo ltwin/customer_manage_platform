@@ -371,6 +371,33 @@ func (s *Service) Get(ctx context.Context, scope store.AccountScope, requestID s
 	return view, err
 }
 
+// RequestForBinding resolves the request a caller's own durable step name
+// produced. The binding key is the same one Call was given, so a caller that
+// persisted a step can find what it bought without storing a gateway id of its
+// own — which matters because the id only exists after admission, while the
+// step exists before it.
+func (s *Service) RequestForBinding(ctx context.Context, scope store.AccountScope, callerService, bindingKey string) (RequestView, error) {
+	if callerService == "" || bindingKey == "" || len(bindingKey) > maxBindingKeyLen {
+		return RequestView{}, fmt.Errorf("%w: caller binding key", ErrValidation)
+	}
+	operationID := derivedOperationID(callerService, bindingKey, "request")
+	var view RequestView
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		row, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns,
+			"caller_service=$2 AND caller_operation_id=$3", callerService, operationID))
+		if err != nil {
+			return err
+		}
+		settlement, err := settlementOf(ctx, tx, row.id)
+		if err != nil {
+			return err
+		}
+		view = row.view(settlement)
+		return nil
+	})
+	return view, err
+}
+
 // CancelInTx stops a request. A prepared request ends atomically; a dispatched
 // or unknown one only records the intent, because the provider may already have
 // accepted and billed the call.
