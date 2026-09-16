@@ -40,6 +40,10 @@ func TestSkillFoundationMigrationShapeAndLossyRollback(t *testing.T) {
 
 	// The empty rollback runs first: a refused one leaves the schema version
 	// dirty, so the recoverable case has to be proved before the refusal.
+	// 0046 (agent runs) sits above this migration; step past it first.
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback agent-runs migration: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback with no versions must succeed: %v", err)
 	}
@@ -123,6 +127,9 @@ func TestSkillFoundationMigrationShapeAndLossyRollback(t *testing.T) {
 		t.Fatal("one operation id must identify one import")
 	}
 
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("rollback agent-runs migration: %v", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err == nil {
 		t.Fatal("a rollback that would drop frozen skill versions must be refused")
 	} else if !strings.Contains(err.Error(), "export") {

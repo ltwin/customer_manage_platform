@@ -60,7 +60,7 @@ func ValidateOperationKey(header, operationID string) error {
 
 func NewResourceID(prefix string) (string, error) {
 	switch prefix {
-	case "ccnt", "ccrv", "ccrd", "ccug", "ccup", "ccuc", "ccbl", "ccpn", "cchd", "ccas", "ccag", "cctg", "cctc", "ccpj", "cccv", "cwnode", "cwedge", "cwinp", "ccch", "ccco", "ccms", "ccec", "ccsk", "ccsv", "ccsi":
+	case "ccnt", "ccrv", "ccrd", "ccug", "ccup", "ccuc", "ccbl", "ccpn", "cchd", "ccas", "ccag", "cctg", "cctc", "ccpj", "cccv", "cwnode", "cwedge", "cwinp", "ccch", "ccco", "ccms", "ccec", "ccsk", "ccsv", "ccsi", "ccrn", "ccst":
 		return prefix + "_" + uuid.NewString(), nil
 	default:
 		return "", ErrValidation

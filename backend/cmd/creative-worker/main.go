@@ -14,7 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -52,12 +54,38 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// Media stages are the only registered handlers; generation stays absent.
-	runtime, err := db.NewJobRuntime(media.Handlers(), slog.Default())
+	// The worker is the process that actually executes a run, so it needs the
+	// same gateway and skill directory the API composed — not a second, quietly
+	// different one. Both read the deployment's own configuration.
+	gatewayOptions, err := llmgateway.OptionsFromEnv()
+	if err != nil {
+		return err
+	}
+	if gatewayOptions.Catalog, err = llmgateway.OpenCatalog(gatewayOptions.CatalogPath, gatewayOptions.Credential); err != nil {
+		return err
+	}
+	gatewayOptions.Logger = slog.Default()
+	gateway, err := llmgateway.Build(gatewayOptions)
+	if err != nil {
+		return err
+	}
+	skills, err := creativeskill.Compose(cfg, db)
+	if err != nil {
+		return err
+	}
+	agent, err := creativeagent.NewService(gateway, gatewayOptions.Catalog, skills)
+	if err != nil {
+		return err
+	}
+	agent.SetLogger(slog.Default())
+	// Media stages and agent runs are the registered handlers; generation stays
+	// absent until FND-13.
+	runtime, err := db.NewJobRuntime(append(media.Handlers(), agent.Handlers()...), slog.Default())
 	if err != nil {
 		return err
 	}
 	media.SetRuntime(runtime)
+	agent.SetRuntime(runtime)
 	if err := runtime.Start(ctx); err != nil {
 		return err
 	}

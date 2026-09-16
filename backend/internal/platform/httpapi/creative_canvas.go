@@ -66,7 +66,11 @@ func creativeError(c *gin.Context, err error) {
 		abortError(c, 409, "creative_operation_expired", "操作已超过恢复期限，请保留草稿")
 	case errors.Is(err, creativecanvas.ErrVersionConflict), errors.Is(err, creativelibrary.ErrVersionConflict), errors.Is(err, creativeagent.ErrRevisionConflict):
 		abortError(c, 409, "creative_revision_conflict", "内容已被其他窗口修改，本机这次修改未保存")
-	case errors.Is(err, creativeagent.ErrConsentRevoked), errors.Is(err, creativeagent.ErrLimit), errors.Is(err, creativeagent.ErrNotFound):
+	case errors.Is(err, creativeagent.ErrConsentRevoked), errors.Is(err, creativeagent.ErrLimit),
+		errors.Is(err, creativeagent.ErrNotFound), errors.Is(err, creativeagent.ErrBusy),
+		errors.Is(err, creativeagent.ErrEgressRequired), errors.Is(err, creativeagent.ErrBudgetExceeded),
+		errors.Is(err, creativeagent.ErrModelCapability), errors.Is(err, creativeagent.ErrUnsupportedSegment),
+		errors.Is(err, creativeagent.ErrRunState):
 		creativeAgentError(c, err)
 	case errors.Is(err, creativeskill.ErrNotFound), errors.Is(err, creativeskill.ErrLimit),
 		errors.Is(err, creativeskill.ErrResourceUnavailable), errors.Is(err, creativeskill.ErrContentMismatch):

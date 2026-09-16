@@ -11,9 +11,11 @@ package creativeagent
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -37,7 +39,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-2"
+const limitsVersion = "creative-agent-3"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -65,14 +67,19 @@ type Limits struct {
 	// published here because a run is judged by the limits it was created under.
 	SkillResourceFiles int `json:"skill_resource_files"`
 	SkillPackageBytes  int `json:"skill_package_bytes"`
-	InputNodes         int `json:"input_nodes"`
-	UpstreamDepth      int `json:"upstream_depth"`
-	Attachments        int `json:"attachments"`
-	ModelResultBytes   int `json:"model_result_bytes"`
-	ToolArgumentBytes  int `json:"tool_argument_bytes"`
-	ToolResultBytes    int `json:"tool_result_bytes"`
-	ToolCallsPerTurn   int `json:"tool_calls_per_turn"`
-	ToolCalls          int `json:"tool_calls"`
+	// HistoryMessages bounds how many earlier turns one run freezes. The real
+	// cap is InputTextBytes; this only bounds the number of rows written, since
+	// a thousand one-word turns would fit the byte budget and still be a
+	// thousand rows.
+	HistoryMessages   int `json:"history_messages"`
+	InputNodes        int `json:"input_nodes"`
+	UpstreamDepth     int `json:"upstream_depth"`
+	Attachments       int `json:"attachments"`
+	ModelResultBytes  int `json:"model_result_bytes"`
+	ToolArgumentBytes int `json:"tool_argument_bytes"`
+	ToolResultBytes   int `json:"tool_result_bytes"`
+	ToolCallsPerTurn  int `json:"tool_calls_per_turn"`
+	ToolCalls         int `json:"tool_calls"`
 	// ModelTurns counts every real model call, including summarisation and any
 	// sub-agent, not only the main ReAct rounds.
 	ModelTurns             int   `json:"model_turns"`
@@ -100,6 +107,7 @@ func DefaultLimits() Limits {
 		SkillRefsPerInstruction: maxSkillRefs,
 		SkillResourceFiles:      creativeskill.MaxResourceCount,
 		SkillPackageBytes:       creativeskill.MaxPackageBytes,
+		HistoryMessages:         20,
 		InputNodes:              50,
 		UpstreamDepth:           2,
 		Attachments:             10,
@@ -127,29 +135,68 @@ func DefaultLimits() Limits {
 type SkillDirectory interface {
 	ListAccessibleSkills(ctx context.Context, scope store.AccountScope, query, cursor string, limit int) (creativeskill.CatalogPage, error)
 	ResolveVersion(ctx context.Context, scope store.AccountScope, skillID, versionID string) (creativeskill.Snapshot, error)
+	// RequireRunnableInTx re-checks the mutable half — may this version still
+	// start work — inside the caller's own transaction, holding the version
+	// control lock. It takes a transaction rather than a scope because that is
+	// the whole point: an answer in a transaction of its own is already stale
+	// by the time the dispatch intent commits.
+	RequireRunnableInTx(ctx context.Context, tx store.TxAccountScope, skillID, versionID string) error
 }
 
-// Service is application composition. The model catalog and the skill directory
-// are deployment facts; neither is ever selected by a request field.
+// Service is application composition. The model catalog, the gateway and the
+// skill directory are deployment facts; none is ever selected by a request
+// field.
 //
 // Skills no longer ship inside the binary. Until an administrator has run the
 // import, the directory is simply empty and the catalog says so — which is a
 // better answer than a copy compiled in months ago.
 type Service struct {
-	models *llmgateway.Catalog
-	skills SkillDirectory
+	gateway *llmgateway.Service
+	models  *llmgateway.Catalog
+	skills  SkillDirectory
 	// tools is what this deployment can dispatch. Empty until FND-08 registers
 	// the runtime and canvas tools; a skill declaring anything is reported as
 	// unavailable with its reason until then.
 	tools  []ToolEntry
 	limits Limits
+	// runtime is the queue this service enqueues into inside its own
+	// transaction. A deployment whose queue schema is absent leaves it nil, and
+	// creating a run then fails in the transaction rather than leaving a run
+	// nobody will ever execute.
+	runtime jobs.Runtime
+	logger  *slog.Logger
 }
 
-func NewService(models *llmgateway.Catalog, skills SkillDirectory) (*Service, error) {
-	if models == nil || skills == nil {
-		return nil, errors.New("creative agent needs a model catalog and a skill directory")
+// NewService takes the gateway as well as its catalog. The two must be the same
+// deployment's: a consent whitelist built from one directory and a dispatcher
+// reading another could authorise a vendor this process never reaches.
+func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills SkillDirectory) (*Service, error) {
+	if gateway == nil || models == nil || skills == nil {
+		return nil, errors.New("creative agent needs a gateway, a model catalog and a skill directory")
 	}
-	return &Service{models: models, skills: skills, limits: DefaultLimits()}, nil
+	return &Service{gateway: gateway, models: models, skills: skills, limits: DefaultLimits(), logger: slog.Default()}, nil
+}
+
+// SetRuntime binds the queue used for same-transaction enqueue.
+func (s *Service) SetRuntime(runtime jobs.Runtime) { s.runtime = runtime }
+
+// SetLogger receives the process logger. Failure detail goes here, never into a
+// client-visible error code.
+func (s *Service) SetLogger(logger *slog.Logger) {
+	if logger != nil {
+		s.logger = logger
+	}
+}
+
+// Handlers registers the worker stages this service owns. One run advances
+// through one task kind; the payload names the run and nothing else, so the
+// worker re-reads every fact from the database.
+func (s *Service) Handlers() []store.JobHandler {
+	return []store.JobHandler{
+		// The attempt budget covers a whole bounded run, which is allowed to
+		// spend its full execution window inside one model turn.
+		{Kind: jobRunKind, Work: s.workRun, Timeout: s.limits.RunDuration() + time.Minute},
+	}
 }
 
 // Limits reports the frozen baseline so callers record the same numbers a run

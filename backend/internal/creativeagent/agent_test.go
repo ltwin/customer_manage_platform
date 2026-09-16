@@ -27,10 +27,15 @@ func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 type fixture struct {
 	t  *testing.T
 	db *sql.DB
+	st *store.Store
 	// skills is the real skill store behind the assistant, published into by
 	// the real import protocol. A stub would exercise the projection but not
 	// the seam between the two packages, which is the part that is new.
-	skills   *creativeskill.Service
+	skills *creativeskill.Service
+	// vendor stands in for the company that receives the bytes. Everything
+	// between this fixture and it — admission, the hold, the dispatch intent,
+	// the persisted complete result, the accounting — is the real gateway.
+	vendor   *stubVendor
 	service  *Service
 	alice    store.AccountScope
 	bob      store.AccountScope
@@ -60,7 +65,20 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
-	models, err := llmgateway.OpenCatalog("", nil)
+	// A credential is supplied so the deployment's model is actually enabled.
+	// Without one the catalog lists it as unavailable, and every run test would
+	// pass for the wrong reason — refused before anything was exercised.
+	models, err := llmgateway.DefaultCatalog(func(string) (string, bool) { return "test-credential", true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	vendor := &stubVendor{}
+	gateway, err := llmgateway.New(llmgateway.Config{
+		Catalog:       models,
+		Providers:     map[llmgateway.ProviderKey]llmgateway.Provider{llmgateway.ProviderOpenAICompatible: vendor},
+		Credential:    func(string) (string, bool) { return "test-credential", true },
+		DefaultBudget: llmgateway.BudgetPolicy{MonthlyLimitMicros: 20_000_000, MonthlyTokenLimit: 5_000_000},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,11 +96,11 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewService(models, skills)
+	service, err := NewService(gateway, models, skills)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{t: t, db: db, skills: skills, service: service, platform: platform,
+	return &fixture{t: t, db: db, st: st, skills: skills, vendor: vendor, service: service, platform: platform,
 		alice:    st.ScopeFor(auth.AccountContext{AccountID: "agent-a"}),
 		bob:      st.ScopeFor(auth.AccountContext{AccountID: "agent-b"}),
 		canvasID: "cccv_a"}

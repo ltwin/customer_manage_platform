@@ -215,6 +215,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-agent-init", "CREATIVE_LLM_CATALOG", "model-catalog", err)
 	}
+	gatewayOptions.Logger = logger
+	creativeGateway, err := llmgateway.Build(gatewayOptions)
+	if err != nil {
+		return newStartupFailure("creative-agent-init", "CREATIVE_LLM_CATALOG", "model-catalog", err)
+	}
 	// Skills come from the database and the object store, not from this binary.
 	// A deployment that has not run `creativectl skill import` yet starts fine
 	// and reports an empty skill catalog; ordinary conversation does not depend
@@ -223,12 +228,13 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-skill-init", "CREATIVE_SKILL_LOCAL_ROOT", "object-storage", err)
 	}
-	creativeAgent, err := creativeagent.NewService(gatewayOptions.Catalog, creativeSkills)
+	creativeAgent, err := creativeagent.NewService(creativeGateway, gatewayOptions.Catalog, creativeSkills)
 	if err != nil {
 		return newStartupFailure("creative-agent-init", "skill-directory", "model-catalog", err)
 	}
-	// The API only enqueues; the creative-worker process executes media jobs.
-	creativeJobs, err := s.NewJobRuntime(creativeMedia.Handlers(), logger)
+	creativeAgent.SetLogger(logger)
+	// The API only enqueues; the creative-worker process executes the tasks.
+	creativeJobs, err := s.NewJobRuntime(append(creativeMedia.Handlers(), creativeAgent.Handlers()...), logger)
 	if err != nil {
 		return newStartupFailure("creative-jobs-init", "DATABASE_URL", "database", err)
 	}
@@ -242,6 +248,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			slog.String("error", err.Error()))
 	} else {
 		creativeMedia.SetRuntime(creativeJobs)
+		creativeAgent.SetRuntime(creativeJobs)
 	}
 	planningMediaApp := planningmedia.NewApplication(
 		planningmedia.Repository{},

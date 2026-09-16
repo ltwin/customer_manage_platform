@@ -347,6 +347,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/conversations/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 提交一次指令并开始一次运行；202 只表示已受理 */
+        post: operations["createCreativeAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 一次运行的当前状态、终态与费用投影 */
+        get: operations["getCreativeAgentRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/media-capabilities": {
         parameters: {
             query?: never;
@@ -2835,6 +2869,60 @@ export interface components {
             schema_version: 1;
             instruction_segments: components["schemas"]["CreativeAgentInstructionSegment"][];
         };
+        /** @description 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。 */
+        CreativeAgentRunPayload: {
+            instruction: components["schemas"]["CreativeAgentInstruction"];
+            /** @description 必须来自目录。能力与可用性由部署决定，客户端不能据此推定模型支持图片。 */
+            model_key: string;
+            /** @description 本会话的外发授权。派发前会在记录派发意图的同一事务里再核一次， 所以先提交的撤销一定阻止外发；之后撤销则如实地太迟了。 */
+            egress_consent_id: string;
+        };
+        CreateCreativeAgentRunRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAgentRunPayload"];
+        };
+        /** @description 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。 */
+        CreativeSequence: string;
+        CreativeAgentRun: {
+            id: string;
+            conversation_id: string;
+            /** @description 由服务端从会话读出；客户端给的对不上也不采信。 */
+            canvas_id: string;
+            trigger_message_id: string;
+            egress_consent_id: string;
+            model_key: string;
+            skill_id?: string;
+            skill_version_id?: string;
+            /**
+             * @description 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
+             * @enum {string}
+             */
+            state: "queued" | "running" | "waiting_input" | "waiting_apply" | "reconciling" | "succeeded" | "partial" | "failed" | "cancelled";
+            /**
+             * @description 费用是另一个问题：未知的账单不阻止已交付的运行进入终态，终态也不关闭核算。 这是投影，允许短暂滞后。
+             * @enum {string}
+             */
+            settlement_state: "not_started" | "pending" | "settled" | "unknown";
+            error_code?: string;
+            limits_version: string;
+            revision: components["schemas"]["CreativeRevision"];
+            last_event_seq: components["schemas"]["CreativeSequence"];
+            pruned_through_seq: components["schemas"]["CreativeSequence"];
+            /**
+             * Format: date-time
+             * @description 本次运行的有界执行期限；等待与恢复都不延长它。
+             */
+            deadline_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
         CreativeAgentMessage: {
             id: string;
             ordinal: components["schemas"]["CreativeRevision"];
@@ -3111,7 +3199,11 @@ export interface components {
                 details?: components["schemas"]["ErrorDetails"];
             };
         };
-        ErrorDetails: components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"];
+        /** @description 账号只有一个写槽位。告诉摄影师是哪一次运行占着它，比只说「忙」多出 一个他们真的能打开去看的东西。 */
+        CreativeAgentBusyDetails: {
+            active_run_id: string;
+        };
+        ErrorDetails: components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"];
         /** @enum {string} */
         OrderBusinessDraftUnavailableReason: "order_required" | "order_cancelled" | "business_calculation_overflow";
         /** @enum {string} */
@@ -6749,6 +6841,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeEgressConsent"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeAgentRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeAgentRunRequest"];
+            };
+        };
+        responses: {
+            /** @description 已受理；同一操作回放原回执。202 不会被之后的结果改写 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRun"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeAgentRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRun"];
                 };
             };
             /** @description 请求失败 */

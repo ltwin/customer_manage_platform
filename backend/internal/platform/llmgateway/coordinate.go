@@ -42,6 +42,16 @@ type CallSession struct {
 	// raise the built-in bound: a hold smaller than what Prepare checks against
 	// would admit a call the budget does not actually cover.
 	EstimateInputTokens func(ChatRequest) int64
+
+	// Admit is the caller's own last check, run inside the transaction that
+	// records the dispatch intent. It exists because some refusals are only
+	// sound when they commit together with that intent: an authorisation
+	// withdrawn in a transaction that commits first must stop the bytes, and a
+	// check in an earlier transaction of its own leaves a window where the
+	// withdrawal commits after the check passed and before the intent does.
+	//
+	// It returns the caller's own error unchanged. Nil means no extra check.
+	Admit func(store.TxAccountScope) error
 }
 
 func (s CallSession) validate() error {
@@ -108,6 +118,18 @@ func (s CallSession) bindingOf(key string) callBinding {
 
 func derivedOperationID(callerService, bindingKey, purpose string) string {
 	return uuid.NewSHA1(callNamespace, []byte(callerService+"\x00"+bindingKey+"\x00"+purpose)).String()
+}
+
+// ReserveOperationID is the reservation identity a turn with this binding key
+// will claim. A caller that has to take a hold *before* that turn exists — a run
+// whose budget must be admitted when it is created, not when a worker picks it
+// up — creates the reservation under this id, and the turn then replays onto it
+// instead of taking a second hold beside the first.
+//
+// It is exported rather than left to callers to reproduce: the derivation is the
+// binding, and two spellings of it would silently double-book an account.
+func ReserveOperationID(callerService, bindingKey string) string {
+	return derivedOperationID(callerService, bindingKey, "reserve")
 }
 
 // Call is the one coordinated path from admission to consumption. Every
@@ -318,6 +340,9 @@ func (s *Service) redispatch(
 		reservation Reservation
 	)
 	err := session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := session.admit(tx); err != nil {
+			return err
+		}
 		var err error
 		permit, reservation, err = s.RedispatchInTx(ctx, tx, session.Limits, requestID, generation,
 			session.AccountLimitMicros, session.AccountTokenLimit)
@@ -332,6 +357,9 @@ func (s *Service) redispatch(
 func (s *Service) beginDispatch(ctx context.Context, session CallSession, binding callBinding, requestID string) (Permit, error) {
 	var permit Permit
 	err := session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := session.admit(tx); err != nil {
+			return err
+		}
 		var err error
 		permit, err = s.BeginDispatchInTx(ctx, tx, session.Limits(tx), requestID)
 		return err
@@ -340,6 +368,13 @@ func (s *Service) beginDispatch(ctx context.Context, session CallSession, bindin
 		return Permit{}, s.compensate(ctx, session, binding, requestID, err)
 	}
 	return permit, nil
+}
+
+func (s CallSession) admit(tx store.TxAccountScope) error {
+	if s.Admit == nil {
+		return nil
+	}
+	return s.Admit(tx)
 }
 
 // compensate decides what a refused dispatch leaves behind. It returns the

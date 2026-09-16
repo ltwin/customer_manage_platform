@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: S3b已提交a7dd438（含owner round-1的两条P2修复）；FND-07 S0-S3b全部落地，下一步里程碑B：run/step/slot/epoch状态机、Eino Runner/ChatModelAgent、checkpoint与context backend、只读运行时工具、Gateway结果消费、River Worker、派发前外发同意二次校验；CreateRun以instruction_segments为指令唯一来源，迁移编号取0046
+next_action: B1（运行骨架与一次模型轮次、迁移0046、派发前同意与Skill控制锁双重二次校验、Eino单轮）已完成owner round-1四条修复（2×P1预留泄漏/模型不可用搁浅，2×P2输入上限/Skill禁用原子性），全部红→绿取证，门禁全绿，未提交，等owner确认提交；随后B2：Eino Skill Backend固定版本加载、ReadSkillResource/ReadRunResult只读工具、context items卸载、12工具/13轮次有界多轮（须把第二轮起的未认领预留纳入closeRunInTx的释放）；再B3：版本化Checkpoint与恢复接缝。等待/取消/对账/终态恢复与最小Agent面板仍属里程碑C
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1045,3 +1045,28 @@ S2 已提交 `7bd3684`（21 文件 +2198/−24）。S3 按方案 §10 是一步�
   - 影响面：`ResolveInstruction` 今天还没有 HTTP 调用方（`CreateRun` 属里程碑 B），所以**没有真实请求走过这条路**。修在这里是为了 B 接上 handler 时它已经是对的。
 - 两条红态都是把修复临时撤掉跑出来的：P2-1 `"tools" serialised as null`；P2-2 三个子用例全部 `got <nil>`。
 - 验证：`make check-go PKG=./...` EXIT=0、lint 0 issues、45 个包全 ok 无 FAIL；`make check-frontend` EXIT=0（381 passed）。
+
+### 里程碑 B 拆片与 B1 落地（2026-09-15）
+
+- owner 明确「接下来开启B」。B 的体量拆为三片，都在已批准的 FND-07 契约内，不改边界：**B1** 运行骨架与一次模型轮次（迁移 0046）；**B2** Skill 运行时与有界多轮（Eino Skill Backend、ReadSkillResource/ReadRunResult 只读工具、context items、12 工具/13 轮次上限）；**B3** 版本化 Checkpoint 与恢复接缝。等待/取消/对账/终态恢复与最小 Agent 面板仍属里程碑 C，不提前做。
+- B1 已实现：0046 的 runs/slots/run_inputs/run_skill_refs/steps/events 六表；`CreateRun` 把触发消息、冻结输入、写槽位、Gateway 预留、首个事件与 River 入队收进一个事务；`Service.Handlers` 注册 `creative_agent_run`，Worker 接管时锁 slot→run、epoch+1、run 与 slot 两行一起轮换 claim_token、30 秒租约每 10 秒续租；经 Eino `ChatModelAgent`+`Runner` 跑一轮，`GatewayModelAdapter` 走真实 Gateway；结果消费与 assistant 消息同事务；终态释放 slot 并投影 `settlement_state`。HTTP 增 `POST /creative/conversations/{id}/runs`（202）与 `GET /creative/agent-runs/{id}`。
+- **为「撤销先提交则不外发」新增 `llmgateway.CallSession.Admit` 钩子**：它在记录派发意图的同一事务内运行。放在自己的事务里做不成立——撤销可能在检查通过之后、派发意图提交之前提交。这是实现 gateway.md「数据校验与派发意图同事务提交」，不是扩大契约。同时新增只读端口 `RequestForBinding`（按调用方 binding key 反查请求），因为请求 ID 只在准入之后才存在，而步骤在之前就存在。
+- **Skill 可用性的复核位置与 S3b 文档原先的说法不同，已改正**：平台 Skill 属于发布账号，读它需要那个账号的 scope，账号隔离的事务看不见它，所以**不可能**在 `CreateRun` 的事务里核。内容修订同域，因此在创建事务内重跑 `RequireUsable`；Skill 可用性由 Worker 在派发前经端口无缓存重解析。验收原文要求的也正是「禁用先提交则之后的**派发**不通过」。docs/dev/creative-agent.md 的对应条目已重写，不保留原先更强但做不到的表述。
+- 预算预留的输入上界取本 run 的**每请求上限** `InputTextBytes`，不是对首轮提示的测量：限额快照就是这个 run 将被判定的依据，由它推导的 hold 不会被之后变长的组装拆穿，也不必为了先测量而把内容读取提到 slot 之前破坏锁序。历史在创建事务内冻结进 `creative_run_inputs`，派发时不再重读会话。
+- `limits_version` → `creative-agent-3`（新增 `history_messages` 维度；只增加维度也必须换号）。`creativeops.NewResourceID` 前缀白名单补 `ccrn`/`ccst`。`callerService` 定为 `creative_agent`——Gateway 账本的列约束只收 `[a-z0-9_]`，不是风格选择。新增 `Seq` 类型：事件游标的 0 是合法值（「还没有记录」），`creativeops.Revision` 的 0 表示一行从未写入，两者不能共用。
+- 新测试 9 项（`runs_test.go`）：创建原子性（无队列时消息/run/输入/事件/槽位/预留全数回滚）、单写槽位与 `BusyError` 指名占用者、完整一轮（步骤 succeeded 且带 `llm_request_id`、assistant 消息是步骤投影、供应商恰好一次）、撤销先提交则供应商零调用、Skill 停用后派发被拒、历史冻结（创建后追加的消息不进提示）、队列中过期不派发、重投任务不产生第二条消息、跨账号运行不存在。HTTP 边新增 8 种运行拒绝的映射断言（含 `creative_agent_busy` 的 `active_run_id` 类型化 details）。迁移 0046 的形状与有损回滚另有 store 测试。
+- 供应商是 stub，其余全真：真实隔离 PostgreSQL、真实 River schema 与 `InsertTx`、真实 Gateway 准入/hold/派发意图/完整结果/核算、真实 Eino Runner。没有接通真实模型，DeepSeek 实调验收仍在里程碑 C。
+- 验证：`make check-go PKG=./...` 通过（build、golangci-lint 0 issues、45 包无 FAIL）；`make check-frontend` 381 项通过；`make generate-check` 通过；`git diff --check` 通过。迁移回滚清单已在 17 个既有测试文件中补 0046 一级；`creative_graph_migration_test.go` 第二段用了不同的标签文案，机械替换漏了一处，已单独补上并复跑。
+- 未提交（`milestone_commit: manual`）。B1 的已知边界：无救援扫描（进程中途死掉 run 停在 running）、无取消入口、单轮、无 Checkpoint——分别属 C、C、B2、B3，已写入 docs/dev/creative-agent.md。
+
+### B1 owner review round 1 修复（2026-09-15）
+
+owner 提出 2 项 P1、2 项 P2，四条全部在代码中确认为真并已修复，每条都有红→绿证明。
+
+- **P1-1 初始预留无人认领也无人释放**（确认）。`CreateRun` 用 `uuid.NewSHA1(operationID,"agent-run-reserve")` 建预留，而 Gateway 在执行时按 step 身份**另建**一笔，初始那笔永远 unclaimed。修法按 data-model §7 的原文「首个模型步骤…认领该预留，不再次占同一笔额度」：turn 的 binding key 改为 `runID#ordinal`（ordinal 取自 run 行锁下的计数器，持久而非进程内生成），创建时的预留即用首轮的身份 `llmgateway.ReserveOperationID(callerService, runID+"#1")` 建立，Worker 第一轮因此**回放**它。释放放在 `closeRunInTx`——所有终态路径的必经点；已被请求认领的那笔由 Gateway 回 `ErrState`，正是想要的答案。新增导出 `llmgateway.ReserveOperationID`，理由是这个派生**就是**绑定本身，两处各写一遍就会静默双占。红证：改回旧身份后 `TestOneRunHoldsBudgetOnceAndGivesItBackWhenItEnds` 报「2 reservations」；禁用释放后过期路径报「still hold 646144 tokens」，与 owner 独立复现的数字一致。
+- **P1-2 模型不可用导致 run 永久 running 并占死槽位**（确认）。接管事务已提交后才读目录，失败返回错误→River 重投→重投只认 queued→什么都 claim 不到就结束，槽位无人释放，账号从此一直 busy。目录是进程内只读配置，因此把解析**移进接管事务**，不可用时与「排队期间过期」走同一出口：事务内收成终态并释放槽位。红证：还原后 run 停在 `State:running / FinishedAt:<nil>`。测试断言的是不变量本身（不论 `work` 返回什么，run 必须进终态且槽位释放），不是错误管道。
+- **P2-3 引用展开后未复查输入总上限**（确认）。创建时算的是 `content_ref` 的**标识符**长度，发出去的是修订**全文**；内容层允许 100,000 字，中文即 300,000 字节，一条合法引用就能超过整个 256 KiB 预算。修法：在 `prepareModelStep` 用 Gateway 自己的 `EstimateInputTokens(chat)` 检查——正文/历史/Skill 指令/分隔符/工具定义都在内，与 hold 同源，不会一个放行一个拒绝。**须说明**：修复 P1-1 后 hold 被固定在 run 的上限，Gateway 顺带也会挡住超长请求，所以红态下供应商同样没被调用；区分红绿的是错误码——Gateway 给的是「预算超限」，而摄影师遇到的是「引用太长」，前者无从下手；且 hold 尺寸一旦因别的原因改变，这条上限就静默失效。测试注释已写明这一点，不含糊。红证：报 270,083 > 262,144，与 owner 复现数字一致。
+- **P2-4 Skill 可用性与派发非原子**（确认，且机制已有指定）。`skill-foundation.md:149` 原文即「禁用和派发意图通过**同一版本控制锁**协调」「B 的锁预取顺序需纳入 Skill 控制行」——是我漏实现，不是待决策。落地：`pg_advisory_xact_lock('creative-skill-version:<版本ID>')`，`DisableVersion` 与新端口 `creativeskill.RequireRunnableInTx` 两侧都取。键里**不能**带账号、也不能是行锁：平台 Skill 的发布者与读者天然是两个账号，账号范围的查询够不到对方的行。跨账号只读**控制事实**（执行状态/Skill 可用性/归属/origin），经新的密封能力 `txcap.SkillControlView`（沿用 `LLMLimitView` 的范式，只有 store 能产出）；正文、资源、对象地址仍只走 `creativeskill` 自己的端口，可见性规则也留在该包内，跨账号私有版本一律报「不存在」。派发前那次**只问可变的那一半**，不重读正文——重读正是「run 悄悄按另一份指令执行」的路子。锁序：run → Skill 控制行 → 同意 → 内容。红证：去掉该调用后 `TestSkillAvailabilityIsCheckedInsideTheDispatchTransaction` 报「dispatch never consulted the skill control port」。
+- 新增 7 项回归（`runs_budget_test.go`）：一次 run 只占一笔且结束归零、未派发即结束释放、队列中过期释放、模型不可用不搁浅且槽位释放、引用展开撞上限且合尺寸引用仍送达、派发事务确实调用控制端口、禁用与派发意图争同一把锁（两种顺序都断言）、控制端口对不可见者报「不存在」。其中「撤销先提交」那条在红态下仍绿——它的预留已被请求认领、走 `CancelInTx` 归还；真正隔离新增释放代码的是过期那条，测试注释已写明，避免后来者以为两条覆盖同一行。
+- 验证：`make check-go PKG=./...` 通过（build、lint 0 issues、45 包无 FAIL）；`make check-frontend` 381 项通过；`make generate-check` 通过；`git diff --check` 通过。
+- 遗留（已写入 docs/dev/creative-agent.md）：`closeRunInTx` 的释放只覆盖**初始**那一笔预留；B2 加多轮后第二轮起各自预留，届时须把未认领的后续预留一并纳入。真正的进程崩溃仍只能靠里程碑 C 的救援扫描。

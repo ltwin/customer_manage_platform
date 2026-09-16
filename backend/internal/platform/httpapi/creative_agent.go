@@ -18,6 +18,8 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/canvases/:id/conversations", w.ListCreativeAgentConversations)
 	r.POST("/creative/canvases/:id/conversations", w.CreateCreativeAgentConversation)
 	r.GET("/creative/conversations/:id/messages", w.ListCreativeAgentMessages)
+	r.POST("/creative/conversations/:id/runs", w.CreateCreativeAgentRun)
+	r.GET("/creative/agent-runs/:id", w.GetCreativeAgentRun)
 	r.POST("/creative/conversations/:id/egress-consents", w.GrantCreativeEgressConsent)
 	r.POST("/creative/egress-consents/:id/revoke", w.RevokeCreativeEgressConsent)
 }
@@ -27,13 +29,36 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 // added there but not here would recurse until the stack overflows rather than
 // degrade to a 500.
 func creativeAgentError(c *gin.Context, err error) {
+	var busy creativeagent.BusyError
 	switch {
+	case errors.As(err, &busy):
+		// The account has one write slot. Naming the run that holds it turns
+		// "try later" into something the photographer can actually open.
+		var details ErrorDetails
+		if buildErr := details.FromCreativeAgentBusyDetails(
+			CreativeAgentBusyDetails{ActiveRunId: busy.ActiveRunID}); buildErr != nil {
+			_ = c.Error(buildErr)
+			return
+		}
+		abortErrorWithTypedDetails(c, 429, "creative_agent_busy", "已有一次创作正在进行，完成后再提交", details)
 	case errors.Is(err, creativeagent.ErrConsentRevoked):
 		abortError(c, 409, "creative_egress_revoked", "该授权已撤销；已发出的内容无法召回")
+	case errors.Is(err, creativeagent.ErrEgressRequired):
+		abortError(c, 403, "creative_egress_required", "本次提交超出已授权的外发范围")
+	case errors.Is(err, creativeagent.ErrBudgetExceeded):
+		abortError(c, 429, "creative_llm_budget_exceeded", "本月模型额度已用尽")
+	case errors.Is(err, creativeagent.ErrModelCapability):
+		abortError(c, 422, "creative_model_capability_missing", "所选模型在本部署暂不可用")
+	case errors.Is(err, creativeagent.ErrUnsupportedSegment):
+		// The request is well formed and the photographer can act on it by
+		// choosing something else, so answering "malformed" would be a lie.
+		abortError(c, 422, "creative_segment_unsupported", "本部署暂不能执行该片段")
+	case errors.Is(err, creativeagent.ErrRunState):
+		abortError(c, 409, "creative_run_state_conflict", "该运行的当前状态不允许这个动作")
 	case errors.Is(err, creativeagent.ErrLimit):
 		abortError(c, 413, "creative_context_limit", "内容超过本次对话的长度上限")
 	case errors.Is(err, creativeagent.ErrNotFound):
-		abortError(c, 404, CodeNotFound, "会话或授权不存在")
+		abortError(c, 404, CodeNotFound, "会话、运行或授权不存在")
 	default:
 		_ = c.Error(err) // Shared middleware records and renders unexpected errors.
 	}
@@ -210,6 +235,37 @@ func (h *handlers) GrantCreativeEgressConsent(c *gin.Context, id string, _ Grant
 		return
 	}
 	h.creativeWrite(c, "conversation_id", id, agent.GrantConsent)
+}
+
+// CreateCreativeAgentRun answers 202: the submission was accepted, not
+// completed. The run's own resource is where the outcome appears, and a future
+// result never rewrites this receipt.
+func (h *handlers) CreateCreativeAgentRun(c *gin.Context, id string, _ CreateCreativeAgentRunParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "conversation_id", id, agent.CreateRun)
+}
+
+func (h *handlers) GetCreativeAgentRun(c *gin.Context, id string) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	run, err := agent.ReadRun(c.Request.Context(), scope, id)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	// A run is one account's own work in progress, not a document an
+	// intermediate may keep a copy of.
+	noStore(c)
+	c.JSON(200, run)
 }
 
 func (h *handlers) RevokeCreativeEgressConsent(c *gin.Context, id string, _ RevokeCreativeEgressConsentParams) {
