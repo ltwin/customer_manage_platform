@@ -41,6 +41,9 @@ func TestAgentRunMigrationShapeAndLossyRollback(t *testing.T) {
 	// The empty rollback runs first: a refused one leaves the schema version
 	// dirty, so the recoverable case has to be proved before the refusal.
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("agent context rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback with no runs must succeed: %v", err)
 	}
 	for _, table := range tables {
@@ -137,6 +140,9 @@ func TestAgentRunMigrationShapeAndLossyRollback(t *testing.T) {
 		t.Fatal("one model answer must expand into one tool call per index")
 	}
 
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("agent context rollback", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err == nil {
 		t.Fatal("a rollback that would drop recorded runs must be refused")
 	} else if !strings.Contains(err.Error(), "export") {

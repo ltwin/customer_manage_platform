@@ -7,18 +7,21 @@
 [eino-adoption.md](../product/creative-canvas-system/eino-adoption.md)，运行状态机唯一权威在
 [data-model.md §7](../product/creative-canvas-system/data-model.md)。本文只记实现事实与已知边界。
 
-## 当前交付范围（FND-07 里程碑 A + B1）
+## 当前交付范围（FND-07 里程碑 A + B1/B2）
 
 已落地：会话、持久消息、外发同意、模型/Skill/工具目录、迁移 `0044_creative_agent_conversations`；
 以及 B1 的 run/step/slot/epoch 持久结构（迁移 `0046_creative_agent_runs`）、`CreateRun` 的原子受理、
-River Worker 接管、派发前外发同意二次校验、经 Eino ChatModelAgent 的一轮模型调用与结果消费。
+River Worker 接管、派发前外发同意二次校验、经 Eino ChatModelAgent 的有界多轮模型/只读工具调用与结果消费。B2 增加迁移
+`0047_creative_agent_context`、固定 Skill Backend、持久工具计划及上下文材料。
 
-**尚未落地**（随里程碑 B2/B3 与 C）：受控 Skill 加载/摘要/结果卸载与只读运行时工具、版本化
-Checkpoint 与上下文 Backend、多轮有界执行、等待/取消/对账/终态恢复、救援扫描、SSE、最小 Agent 面板。
+**尚未落地**（随里程碑 B3 与 C）：版本化 Checkpoint、等待/取消/对账/终态恢复、救援扫描、
+SSE、最小 Agent 面板。自动模型摘要仍默认关闭，达到上下文上限明确失败。
 写工具与提案采纳属 FND-08，独立附件属 FND-09。
 
-因此 `GET /creative/agent/catalog` 的 `tools` 目前恒为空数组，任何声明了工具的 Skill 都报
-`available: false` 并附原因「所需工具尚未在本部署注册」。这是如实反映部署能力，不是占位。
+`GET /creative/agent/catalog` 的 `tools` 注册 `load_skill@1`、`read_skill_resource@1`、
+`read_run_result@1`。声明其他尚未注册工具（如画布/素材业务工具）的 Skill 仍报
+`available: false` 并附不可用原因。运行时仅开放本次固定 Skill 许可的工具；普通对话只开放
+`read_run_result`，无 Skill 目录和包资源读取权限。
 
 **S3 起 Skill 不再随二进制发布**：目录读 `creativeskill`（数据库 + 对象存储）。没跑过
 `creativectl skill import` 的部署，`skills` 就是空数组、`skill_catalog_revision` 是空摘要的哈希；
@@ -106,12 +109,12 @@ Checkpoint 与上下文 Backend、多轮有界执行、等待/取消/对账/终�
 1. 消息 chunk 表与流式落库不在本里程碑，`status='streaming'` 目前没有写入方。
 2. ~~Skill 可用性判定只验证了「不可用」一侧~~ **S3b 已补**：`registeredTools` 改为读
    `Service.tools` 字段而不是返回字面空切片，测试因此能给出一个真实注册表，两侧都跑到了
-   （`TestASkillWhoseToolsAreNotRegisteredCannotBeSubmitted`）。生产里该字段仍为空，
-   直到 FND-08 注册真实工具。
+   （`TestASkillWhoseToolsAreNotRegisteredCannotBeSubmitted`）。B2 已注册三个只读运行时工具，
+   画布业务工具仍等 FND-08。
 3. ~~外发同意目前只有授予与撤销，派发时的二次校验属里程碑 B~~ **B1 已补**：`CallSession.Admit` 在
    记录派发意图的同一事务里重跑同意与内容校验，`TestAWithdrawnAuthorisationStopsTheDispatch`
-   验证撤销先提交时供应商一次都没被调用。仍未覆盖的是**运行中途**撤销——B1 只有一轮，撤销与派发
-   之间没有第二次机会；多轮的每轮复检随 B2。
+   验证撤销先提交时供应商一次都没被调用。B2 对每轮派发、工具读取及工具结果落库再检查同意；
+   已经发送的字节无法收回，撤回后不再发送后续材料。
 4. 附件草稿（`creative_agent_drafts` / `creative_agent_attachments`）未建表，属 FND-09。
 5. `appendMessageInTx` 的 `ContentRefs` 只校验角色枚举、非空与同次重复，**不校验 `RevisionID` 的归属、
    `ready` 状态或保留根**（与 `GrantConsent` 对每条修订调 `RequireUsable` 的严谨度不对称）。
@@ -148,7 +151,7 @@ Checkpoint 与上下文 Backend、多轮有界执行、等待/取消/对账/终�
 
 `limits_version` 升到 `creative-agent-2`。新增的四个维度里，`skill_resource_files` 与 `skill_package_bytes` 是从 `creativeskill` 投影过来的，不是另写一份数字——两处写同一个上限，正是「导入时通过、执行时失败」的来源。**只增加维度也必须换号**：按 `-1` 创建的运行从没被片段数判定过，用 `-2` 的集合重放它等于套用它没同意过的规则。
 
-## 运行（B1）
+## 运行（B1/B2）
 
 一次提交变成一次运行，`CreateRun` 的整个受理是**一个事实**：摄影师的消息、冻结输入、账号写槽位、
 预算预留、首个事件与 River 入队同事务提交。看得见的 run 却没有排队任务、或排了任务却没有 run，
@@ -159,14 +162,15 @@ Checkpoint 与上下文 Backend、多轮有界执行、等待/取消/对账/终�
 首轮提示的测量——限额快照就是这个 run 将被判定的依据，由它推导出的 hold 不会被之后变长的组装拆穿，
 也不需要为了测量而把内容读取提到 slot 之前、破坏锁序。
 
-**一次 run 只占一笔额度**。创建时的预留用的正是**首轮自己的身份**
+**首轮只占一笔额度**。创建时的预留用的正是**首轮自己的身份**
 （`llmgateway.ReserveOperationID(callerService, runID+"#1")`），所以 Worker 跑第一轮时 Gateway 回放这笔
 预留而不是在旁边再占一笔。换成任何别的 ID，创建时那笔就永远无人认领，而 run 却又占了第二笔——一个
 模型调用都没发生，账号的月度额度却在被吃掉。turn 的 binding key 因此是 `runID#ordinal`：ordinal 来自
 run 行锁下的计数器，是持久的，不是本进程编的（后者会让每次恢复都重新付一次钱）。
 
-**终态一定归还未花掉的额度**。`closeRunInTx` 是所有终态路径的必经点，它在那里释放这笔预留；已被请求
-认领的那笔由 Gateway 回一个 `ErrState`，这正是想要的答案——真发生过的调用不该被退钱。
+**终态一定归还未花掉的额度**。`closeRunInTx` 是所有终态路径的必经点，它通过 Gateway 的 caller-group 清理端口释放所有未认领预留，并取消仍未派发的请求。
+已取消且不可能产生结果的请求同事务放弃本 caller 的消费保留。
+跨月份预算桶按固定顺序先锁定；已派发/未知/已结算请求保留真实核算，不能当作未花掉的额度释放。
 
 **历史在创建时冻结**。选取最近若干条已完成消息写进 `creative_run_inputs`，派发时不再重读会话：
 输入是历史事实，摄影师按下发送时看到的东西才是模型被告知的东西；另一个窗口随后追加的那条属于下一次
@@ -205,13 +209,13 @@ claim_token，旧 run 不能清掉别人后来取得的占用。租约 30 秒、
 分别占住 slot 和 run 后互相等待。已在运行的重复任务在 slot 锁内读取状态后退出，不再争用预算和 run。
 预算桶通过 Gateway 的 `LockReservationBudgetInTx` 预锁，Agent 不直接查询 Gateway 表。
 
-收尾使用独立的 30 秒清理期限，执行上下文取消后仍可释放槽位。数据库明确回滚的序列化失败或死锁
+最后请求定位查询和收尾事务各有独立的 30 秒清理期限，执行上下文取消后仍可释放槽位。数据库明确回滚的序列化失败或死锁
 最多尝试 3 次，只重试收尾事务，不重复调用模型或消费答复。其他错误、提交结果不明及重试耗尽仍返回错误，
 不能承诺数据库持续不可用时必达终态；这类遗留与进程崩溃同样需要里程碑 C 的救援。
 
 **模型步骤先于发送存在**。`prepareModelStep` 在 run 行锁下取 `next_step_ordinal`，把规范化请求与
-`RequestHash` 落库为 `prepared` 步骤；交给 Gateway 的 binding key 是 `runID#ordinal`，所以恢复时重放的是
-已经付过钱的那次请求，而不是买第二次。`llm_request_id` 是事后补写的**索引不是权威**——Gateway 存的
+`RequestHash` 落库为 `prepared` 步骤；交给 Gateway 的 binding key 是 `runID#ordinal`，后续恢复必须按这个持久身份定位
+已经付过钱的请求；B2 不从相同 prompt hash 推断重放，也尚未提供恢复入口。`llm_request_id` 是事后补写的**索引不是权威**——Gateway 存的
 binding 由该 key 派生，这一列没写上也不丢失关联。
 
 **256 KiB 输入上限在这里执行**，因为只有到这一步「实际要发出去的请求」才存在。创建时算的是
@@ -222,20 +226,47 @@ Gateway 拒绝时给的是「预算超限」，而摄影师遇到的其实是「
 一旦为别的原因改变，这条上限就静默失效了。
 
 **结果消费与助手消息同事务**。`Consume` 在标记结果已消费的那个事务里写步骤结果与助手消息，所以不存在
-「付过钱、已消费、却看不到」的中间态。空白答复记步骤但不产生消息；B1 只有文字交付，没有持久答复时
+「付过钱、已消费、却看不到」的中间态。空白答复记步骤但不产生消息；当前只读阶段仍只有文字答复算交付，没有持久答复时
 run 以 `creative_model_empty_result` 失败。Gateway 的完整结果仍记已消费，已发生的计费保留，重投不会
 为了补一条答复再次调用供应商。
 
-`limits_version` 升到 `creative-agent-3`：新增 `history_messages` 维度。**只增加维度也必须换号**——按
-`-2` 创建的运行从没被历史条数判定过。
+`limits_version` 当前为 `creative-agent-4`：B2 开启持久多轮/工具计数。Worker 使用创建时保存的
+limits_snapshot；旧版本记录不按新部署参数静默重算。此前 `-3` 增加 `history_messages` 维度。
 
-### B1 的已知边界
+### 当前已知边界
 
 1. **没有救援扫描**：进程在一轮中途死掉，run 会停在 `running` 直到里程碑 C 的救援按租约接管。
    B1 已经堵掉的是**可预见**的那类搁浅（排队期间过期、模型不可用），它们都在接管事务里收成终态；
    剩下的是真正的进程崩溃，那只能靠救援。
 2. **没有取消入口**：`cancel_requested_at` 列与派发前的检查都在，但还没有写它的 API（里程碑 C）。
-3. **单轮**：没有工具，所以 ChatModelAgent 只会走一轮。多轮上限与只读运行时工具在 B2。
-   预留按首轮认领，多轮的第二轮起会各自预留，届时 `closeRunInTx` 的释放只覆盖**初始**那一笔——
-   B2 加多轮时要把未认领的后续预留一并纳入。
+3. **只读运行时工具**：业务写工具、画布提案和采纳仍属 FND-08。
 4. **没有 Checkpoint**：Runner 不带 `CheckPointStore`，中断即失败，不做恢复（B3）。
+
+## B2：固定 Skill 与只读多轮
+
+- **Skill Backend**：本次 submission 仍最多选择一个 Skill。List 仅返回该固定版本的 ID/描述；
+  Get 按版本 ID 返回冻结正文，并重查停用状态和 digest；不会解析 latest。明确选择的正文在初始化
+  主动激活；只有 manifest 允许 `load_skill@1` 时才额外开放框架加载工具。平台包更新不改变旧 run。
+  不挂载宿主文件系统，不传 ModelHub/AgentHub，不启用 fork 或模型覆盖。
+- **工具身份和限额**：模型结果消费事务保存唯一 `(parent_model_step_id,tool_call_index)` 计划。
+  供应商 call ID 保留在计划输入；给 Eino 的 ID 按持久 model step/index 投影，跨轮重复 ID 不会混淆。
+  工具串行执行，每轮最多 4 个、run 最多 12 个，非法请求也占计划数；超出剩余额度的整批拒绝，
+  原调用保留在已消费模型结果和步骤输出中，不创建越限可执行计划。模型步骤独立累计最多 13 个，
+  相同提示也不复用另一轮的身份。Worker 使用 run 冻结的 limits，框架迭代上限只是第二道保护。
+- **资源与结果读取**：`read_skill_resource` 的模型可见 schema 列出固定 digest 和登记路径，调用仍逐项校验资源 hash，
+  拒绝未登记路径、越界路径及非 UTF-8 内容。`read_run_result` 只读同账号同 run 的未过期 item，
+  offset/limit 按 UTF-8 字节且必须从字符边界开始，一页最多 8 KiB；重新检查执行权、Skill、同意及来源用途。
+- **卸载与来源**：完整工具结果先入 `creative_agent_context_items`，单项最多 64 KiB；超过 8 KiB
+  的资源结果在具备 `read_run_result` 权限时向模型返回定位符、字节数和有界预览；没有读回权限时
+  保留完整 inline 结果，仍执行单项/总输入上限。Skill 正文及已分页的读取结果不再递归卸载。
+  source_manifest 保留工具参数、固定 Skill/version/digest 和来源修订；来源修订另入显式 refs，
+  供内容根查询使用；重复指令引用保留正文，授权来源及 refs 去重。保留期 90 天，清理扫描仍由 FND-10 落地。回滚有内容的 0047 会要求先导出。
+- **交付与退出**：只读工具成功不是最终交付；只有持久 assistant 答复才可成功。中途撤回同意时
+  已付费结果仍消费留档，不向模型继续传递工具结果。终止时关闭未执行工具计划，释放本组未用预留；
+  不恢复进程崩溃现场（B3/C）。自动摘要未启用，也不以静默截断绕过 256 KiB 输入上限。
+- **Eino 接缝**：v0.9.19 的工具 middleware 经每次 Generate/Stream 的 `model.WithTools` 传入
+  当前工具列表；Gateway 适配器处理这条路径并保持实例配置隔离，拒绝调用时更换模型或输出上限。
+
+B2 验证使用真实 PostgreSQL、River 受理、Eino Runner 和 Gateway 账本，供应商使用脚本桩；
+不产生真实模型费用。覆盖循环上限、重复供应商 call ID、固定版本加载、大结果卸载、账号/run 隔离、
+路径和 digest 拒绝、跨轮撤权、后续未认领预留释放及迁移无损回滚/有数据拒绝回滚。

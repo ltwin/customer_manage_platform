@@ -70,8 +70,12 @@ func (a *GatewayModelAdapter) WithTools(tools []*schema.ToolInfo) (model.ToolCal
 
 // Generate runs one complete gateway turn: admission, one-shot dispatch,
 // persisted complete result, then accounting.
-func (a *GatewayModelAdapter) Generate(ctx context.Context, input []*schema.Message, _ ...model.Option) (*schema.Message, error) {
-	result, err := a.call(ctx, input, a.session.Stream)
+func (a *GatewayModelAdapter) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	configured, err := a.forCall(opts)
+	if err != nil {
+		return nil, err
+	}
+	result, err := configured.call(ctx, input, a.session.Stream)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +85,12 @@ func (a *GatewayModelAdapter) Generate(ctx context.Context, input []*schema.Mess
 // Stream reassembles provider fragments inside the gateway and hands back the
 // single validated result. Fragment-level product streaming is the Harness's
 // job; a fragment is never a persisted result here.
-func (a *GatewayModelAdapter) Stream(ctx context.Context, input []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
-	result, err := a.call(ctx, input, true)
+func (a *GatewayModelAdapter) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	configured, err := a.forCall(opts)
+	if err != nil {
+		return nil, err
+	}
+	result, err := configured.call(ctx, input, true)
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +98,19 @@ func (a *GatewayModelAdapter) Stream(ctx context.Context, input []*schema.Messag
 	writer.Send(toEinoMessage(result), nil)
 	writer.Close()
 	return reader, nil
+}
+
+// Eino v0.9 middleware supplies its current tool set through call options,
+// including an explicit empty set. WithTools alone does not see those tools.
+func (a *GatewayModelAdapter) forCall(opts []model.Option) (*GatewayModelAdapter, error) {
+	options := model.GetCommonOptions(nil, opts...)
+	if options.Model != nil || options.MaxTokens != nil || options.Temperature != nil || options.TopP != nil || len(options.Stop) > 0 || options.ToolChoice != nil || options.AgenticToolChoice != nil || len(options.AllowedToolNames) > 0 || len(options.DeferredTools) > 0 || options.ToolSearchTool != nil {
+		return nil, fmt.Errorf("%w: model session does not permit call-time overrides", ErrCapability)
+	}
+	if options.Tools == nil {
+		return a, nil
+	}
+	return &GatewayModelAdapter{gateway: a.gateway, session: a.session, tools: append([]*schema.ToolInfo(nil), options.Tools...)}, nil
 }
 
 func (a *GatewayModelAdapter) call(ctx context.Context, input []*schema.Message, stream bool) (Result, error) {

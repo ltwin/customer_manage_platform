@@ -161,3 +161,28 @@ func TestEinoStreamReturnsOneValidatedResult(t *testing.T) {
 		t.Fatal("the gateway must expose exactly one complete result")
 	}
 }
+
+func TestEinoAdapterUsesCallTimeToolsWithoutChangingSession(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	adapter, err := f.gateway.NewEinoModel(f.session(f.a, "runtime-tools"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := &schema.ToolInfo{Name: "read_run_result", Desc: "读取运行结果", ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{"item_id": {Type: schema.String, Required: true}})}
+	var seen llmgateway.ProviderRequest
+	f.provider.observe = func(r llmgateway.ProviderRequest) { seen = r }
+	for _, tc := range []struct {
+		options []model.Option
+		tools   int
+	}{{[]model.Option{model.WithTools([]*schema.ToolInfo{info})}, 1}, {[]model.Option{model.WithTools(nil)}, 0}, {nil, 0}} {
+		if _, err = adapter.Generate(t.Context(), []*schema.Message{schema.UserMessage("读取")}, tc.options...); err != nil {
+			t.Fatal(err)
+		}
+		if len(seen.Chat.Tools) != tc.tools {
+			t.Fatalf("tools=%+v", seen.Chat.Tools)
+		}
+	}
+	if _, err = adapter.Generate(t.Context(), []*schema.Message{schema.UserMessage("读取")}, model.WithModel("another-model")); !errors.Is(err, llmgateway.ErrCapability) {
+		t.Fatalf("model override: %v", err)
+	}
+}
