@@ -425,6 +425,7 @@ func requireRoot(ctx context.Context, tx contentReader, revision Revision) error
 		// showed has to stay readable once the asset points at a newer revision,
 		// so the reference registered with the message is a root of its own.
 		{"creative_message_content_refs", "content_revision_id=$2"},
+		{"creative_checkpoint_content_refs", "content_revision_id=$2 AND checkpoint_id IN (SELECT id FROM creative_agent_checkpoints WHERE account_id=$1 AND retained_until>clock_timestamp())"},
 		{"creative_context_item_content_refs", "content_revision_id=$2 AND item_id IN (SELECT id FROM creative_agent_context_items WHERE account_id=$1 AND retained_until>clock_timestamp())"},
 		{"creative_change_content_refs", "content_revision_id=$2 AND expires_at>clock_timestamp()"},
 		{"creative_node_inputs", "content_revision_id=$2"},

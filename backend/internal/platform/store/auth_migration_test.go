@@ -87,7 +87,7 @@ func TestAccountAuthMigrationPreservesLegacyAccountAndRollsBack(t *testing.T) {
 		t.Fatalf("close before auth down migration: %v", err)
 	}
 	for index, label := range []string{
-		"agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
+		"agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
 		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",
@@ -149,7 +149,7 @@ func TestAccountAuthDownMigrationRejectsNewStyleAccount(t *testing.T) {
 	}
 
 	for index, label := range []string{
-		"agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
+		"agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
 		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",

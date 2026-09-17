@@ -74,6 +74,19 @@ func (h *runtimeHandler) AfterModelRewriteState(ctx context.Context, state *adk.
 		return ctx, state, err
 	}
 	err = h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var code *string
+		if err := tx.QueryRow(ctx, "creative_agent_steps", "error_code", "id=$2 AND run_id=$3", step, h.held.RunID).Scan(&code); err != nil {
+			return err
+		}
+		if code != nil {
+			h.mu.Lock()
+			rejected := h.resultErr
+			h.mu.Unlock()
+			if rejected != nil {
+				return rejected
+			}
+			return errCheckpointJournal
+		}
 		_, err := tx.Update(ctx, "creative_agent_steps", "llm_request_id=$3", "id=$2", step, view.ID)
 		return err
 	})
@@ -164,8 +177,16 @@ func (b *runSkillBackend) Get(ctx context.Context, name string) (einoskill.Skill
 
 func (h *runtimeHandler) planInTx(ctx context.Context, tx store.TxAccountScope, modelStep string, result llmgateway.Result) error {
 	if err := h.service.admitDispatchInTx(ctx, tx, h.held, h.revisions); err != nil {
-		h.setResultError(err)
-		return nil
+		// Consent revocation is irreversible and is checked only after locking
+		// and validating this claim. Keep that paid result consumed for audit,
+		// without publishing its text or making its tool plans executable.
+		if errors.Is(err, ErrConsentRevoked) {
+			h.setResultError(err)
+			return nil
+		}
+		// A stale holder or a failed check must leave the result pending for
+		// its successor; it is not a rejected answer we may mark consumed.
+		return err
 	}
 	calls := result.ToolCalls
 	resultBytes := len(result.Text)
@@ -353,7 +374,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		if readErr != nil {
 			terminal = "failed"
 		}
-		if _, err = tx.Update(ctx, "creative_agent_steps", "state=$3,output=$4,error_code=$5,finished_at=$6,updated_at=$6", "id=$2 AND state='prepared'", stepID, terminal, output, nullableText(code), now); err != nil {
+		if _, err = tx.Update(ctx, "creative_agent_steps", "state=$3,output=$4,error_code=$5,finished_at=$6,updated_at=$6,execution_epoch=$7", "id=$2 AND state='prepared'", stepID, terminal, output, nullableText(code), now, h.held.Epoch); err != nil {
 			return err
 		}
 		_, err = appendRunEventInTx(ctx, tx, h.held.RunID, "step.state_changed", map[string]string{"step_id": stepID, "kind": "tool", "state": terminal})

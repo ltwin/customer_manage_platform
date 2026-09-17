@@ -60,7 +60,7 @@ func TestCreativeLibraryMigrationBackfillsAndCanRebuildAfterRollback(t *testing.
 func rollbackTo0038(t *testing.T, url string) {
 	t.Helper()
 	for _, label := range []string{
-		"0047 agent-context", "0046 agent-runs", "0045 skill-foundation", "0044 agent-conversations",
+		"0048 agent-checkpoints", "0047 agent-context", "0046 agent-runs", "0045 skill-foundation", "0044 agent-conversations",
 		"0043 llm-gateway",
 		"0042 creative-canvas-events", "0041 creative-media", "0040 creative-canvas-commands",
 		"0039 creative-library-organization",

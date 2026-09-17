@@ -180,7 +180,8 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 			// The window closed while the task waited in the queue. Nothing is
 			// dispatched after it; the run ends here instead of being advanced.
 			ended = "creative_run_deadline_exceeded"
-			return s.closeRunInTx(ctx, tx, runID, token, RunFailed, ended, "", now)
+			_, err := s.closeRunInTx(ctx, tx, runCloseGuard{RunID: runID, Token: token, Epoch: epoch, State: RunQueued}, RunFailed, ended, "", now)
+			return err
 		}
 		// The deployment's own model configuration, resolved before the takeover
 		// commits. It is an in-memory catalog read, so it belongs inside this
@@ -191,7 +192,8 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		model, err := s.models.Model(modelKey)
 		if err != nil {
 			ended = "creative_model_capability_missing"
-			return s.closeRunInTx(ctx, tx, runID, token, RunFailed, ended, "", now)
+			_, err := s.closeRunInTx(ctx, tx, runCloseGuard{RunID: runID, Token: token, Epoch: epoch, State: RunQueued}, RunFailed, ended, "", now)
+			return err
 		}
 		if err := json.Unmarshal(limitsSnapshot, &held.Limits); err != nil {
 			return err
@@ -279,99 +281,11 @@ func (s *Service) renewLease(ctx context.Context, scope store.AccountScope, held
 func (s *Service) executeTurn(ctx context.Context, scope store.AccountScope, held claim) (turnOutcome, error) {
 	ctx, cancel := context.WithDeadline(ctx, held.Deadline)
 	defer cancel()
-	if err := s.stillRunnable(ctx, scope, held); err != nil {
-		return turnOutcome{}, err
-	}
-	prompt, revisions, err := s.assemble(ctx, scope, held)
+	execution, err := s.newRunExecution(ctx, scope, held)
 	if err != nil {
 		return turnOutcome{}, err
 	}
-
-	var outcome turnOutcome
-	var current currentStep
-	runtime := &runtimeHandler{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}, service: s, scope: scope, held: held, revisions: revisions, current: &current}
-	adapter, err := s.gateway.NewEinoModel(llmgateway.ModelSession{
-		CallSession: llmgateway.CallSession{
-			Scope:           scope,
-			Limits:          func(tx store.TxAccountScope) llmgateway.LimitView { return tx.LLMLimitView() },
-			CallerService:   callerService,
-			CallerGroupID:   held.RunID,
-			GroupTokenLimit: runTokenCeiling(s.limits, held.Model),
-			GroupDeadline:   held.Deadline,
-			ModelKey:        held.Model.ModelKey,
-			OutputLimit:     held.Model.Capability.MaxOutputTokens,
-			Deadline:        held.Deadline,
-			// The last check, inside the transaction that records the dispatch
-			// intent. An authorisation withdrawn in a transaction that commits
-			// first stops the bytes; one withdrawn after is honestly too late.
-			Admit: func(tx store.TxAccountScope) error {
-				return s.admitDispatchInTx(ctx, tx, held, revisions)
-			},
-		},
-		// The step is the durable name of this turn, so a resumed run replays
-		// the request it already paid for instead of buying a second one.
-		TurnKey: func(ctx context.Context, chat llmgateway.ChatRequest) (string, error) {
-			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, chat)
-			if err != nil {
-				return "", err
-			}
-			current.set(stepID, bindingKey)
-			return bindingKey, nil
-		},
-		Consume: func(tx store.TxAccountScope, result llmgateway.Result) error {
-			stepID, _ := current.get()
-			if err := runtime.planInTx(ctx, tx, stepID, result); err != nil {
-				return err
-			}
-			runtime.mu.Lock()
-			rejected := runtime.resultErr != nil
-			runtime.mu.Unlock()
-			if rejected {
-				result.Text = ""
-			}
-			delivered, err := s.consumeResultInTx(ctx, tx, held, stepID, result)
-			if err != nil {
-				return err
-			}
-			outcome.Delivered = outcome.Delivered || delivered
-			return nil
-		},
-	})
-	if err != nil {
-		return outcome, translateGateway(err)
-	}
-	toolsConfig, handlers, err := runtime.configure(ctx)
-	if err != nil {
-		return outcome, err
-	}
-	agent, err := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-		Name:        agentName,
-		Description: "创作助手",
-		Instruction: instructionOf(held.Skill),
-		Model:       adapter,
-		ToolsConfig: toolsConfig,
-		Handlers:    handlers,
-		// The framework's own ceiling is a second line of defence, never the
-		// budget: the run's persisted turn count is what actually bounds it.
-		MaxIterations: s.limits.ModelTurns,
-	})
-	if err != nil {
-		return outcome, err
-	}
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
-	runErr := drainAgent(runner.Run(ctx, prompt))
-	// The gateway id is resolved from the step rather than carried out of the
-	// call, because the step exists before admission and the id only after it:
-	// a turn that failed mid-dispatch still has a step to ask about.
-	stepID, bindingKey := current.get()
-	if outcome.StepID = stepID; bindingKey != "" {
-		lookupCtx, cancelLookup := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
-		defer cancelLookup()
-		if view, err := s.gateway.RequestForBinding(lookupCtx, scope, callerService, bindingKey); err == nil {
-			outcome.RequestID = view.ID
-		}
-	}
-	return outcome, translateGateway(runErr)
+	return execution.run(ctx)
 }
 
 // currentStep carries the step identity from the turn key to the consumer. The
@@ -596,7 +510,7 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 // prepareModelStep fixes this turn as a persisted step before anything is sent.
 // The ordinal comes from the run's own counter under its row lock, so two
 // workers cannot hand out the same position.
-func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope, held claim,
+func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope, held claim, previousModel string,
 	chat llmgateway.ChatRequest) (stepID, bindingKey string, err error) {
 	// The 256 KiB input contract, checked on the request as assembled — the
 	// system prompt the skill contributed, the history, the quoted bodies, the
@@ -636,6 +550,38 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 		}
 		if state != RunRunning || epoch != held.Epoch {
 			return ErrRunState
+		}
+		var previousOrdinal int64
+		if previousModel != "" {
+			if err := tx.QueryRow(ctx, "creative_agent_steps", "ordinal", "id=$2 AND run_id=$3 AND kind='model'", previousModel, held.RunID).Scan(&previousOrdinal); err != nil {
+				return errCheckpointJournal
+			}
+		}
+		// The predecessor frame selects the next recorded turn. Identical
+		// prompts in different positions remain different paid calls.
+		rows, err := tx.QueryPage(ctx, "creative_agent_steps", "id,ordinal,input_hash", "run_id=$2 AND kind='model' AND ordinal>$3", []store.OrderBy{{Column: "ordinal"}}, 1, 0, held.RunID, previousOrdinal)
+		if err != nil {
+			return err
+		}
+		var existingOrdinal int64
+		var existingHash string
+		if rows.Next() {
+			err = rows.Scan(&stepID, &existingOrdinal, &existingHash)
+		}
+		rowErr := rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		if rowErr != nil {
+			return rowErr
+		}
+		if stepID != "" {
+			if existingHash != hash {
+				return errCheckpointJournal
+			}
+			bindingKey = turnBindingKey(held.RunID, existingOrdinal)
+			return nil
 		}
 		count, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind='model'", held.RunID)
 		if err != nil {
@@ -732,6 +678,11 @@ func (s *Service) finishRun(ctx context.Context, scope store.AccountScope, held 
 	// cancel the short transaction that releases its slot and records the result.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
+	delivered, err := scope.Count(ctx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete'", held.RunID)
+	if err != nil {
+		return err
+	}
+	outcome.Delivered = outcome.Delivered || delivered > 0
 	if turnErr == nil && !outcome.Delivered {
 		// Read-only runtime tools do not deliver an answer: a provider success is
 		// not delivery. Keep consumed results and accounting, but fail the run.
@@ -750,14 +701,14 @@ func (s *Service) finishRun(ctx context.Context, scope store.AccountScope, held 
 			slog.String("error", turnErr.Error()))
 	}
 	settlement := s.settlementOfRun(ctx, scope, held.RunID, outcome.RequestID)
-	var err error
 	for attempt := 0; attempt < finishAttempts; attempt++ {
 		err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 			now, err := tx.CreativeNow(ctx)
 			if err != nil {
 				return err
 			}
-			if err := s.closeRunInTx(ctx, tx, held.RunID, held.Token, state, code, settlement, now); err != nil {
+			closed, err := s.closeRunInTx(ctx, tx, runCloseGuard{RunID: held.RunID, Token: held.Token, Epoch: held.Epoch, State: RunRunning}, state, code, settlement, now)
+			if err != nil || !closed {
 				return err
 			}
 			if turnErr != nil {
@@ -822,6 +773,15 @@ func (s *Service) settlementOf(ctx context.Context, scope store.AccountScope, re
 	}
 }
 
+// A terminal transition must match the control state as well as the worker
+// token: the controller invalidates an epoch before the next token is issued.
+type runCloseGuard struct {
+	RunID string
+	Token string
+	Epoch int64
+	State string
+}
+
 // closeRunInTx ends a run, gives the slot back and gives back any budget the
 // run reserved but never spent. The release names the run and the token
 // together, so a worker whose claim was taken over cannot free an occupancy
@@ -830,50 +790,63 @@ func (s *Service) settlementOf(ctx context.Context, scope store.AccountScope, re
 // Every terminal path comes through here, which is the point: the hold taken at
 // creation outlives the run otherwise, and an account whose runs all end before
 // dispatch would find its month spent without one model call having been made.
-func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, runID, token, state, code, settlement string, now time.Time) error {
+func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, expected runCloseGuard, state, code, settlement string, now time.Time) (bool, error) {
+	runID, token := expected.RunID, expected.Token
 	if settlement == "" {
 		settlement = "not_started"
 	}
 	// All terminal paths take slot -> budget -> run. Updating run before
 	// locking slot deadlocks with a concurrent claimant holding slot -> run.
-	var slotRun *string
-	if err := tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id", "").Scan(&slotRun); err != nil {
-		return err
+	var slotRun, slotToken *string
+	if err := tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id,claim_token", "").Scan(&slotRun, &slotToken); err != nil {
+		return false, err
+	}
+	if slotRun == nil || *slotRun != runID || slotToken == nil || *slotToken != token {
+		return false, nil
 	}
 	// Ownership is stable under the slot lock. Check it before releasing any
 	// group admission: an old claimant must not cancel a later epoch's work.
-	var currentToken string
+	var currentToken, currentState string
+	var currentEpoch int64
 	var finished *time.Time
-	err := tx.QueryRow(ctx, "creative_agent_runs", "claim_token,finished_at", "id=$2", runID).Scan(&currentToken, &finished)
+	err := tx.QueryRow(ctx, "creative_agent_runs", "claim_token,execution_epoch,state,finished_at", "id=$2", runID).Scan(&currentToken, &currentEpoch, &currentState, &finished)
 	if errors.Is(err, store.ErrNoRows) {
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
-	if currentToken != token || finished != nil {
-		return nil
+	if currentToken != token || currentEpoch != expected.Epoch || currentState != expected.State || finished != nil {
+		return false, nil
 	}
 	if err := s.gateway.ReleaseUnusedGroupInTx(ctx, tx, callerService, runID); err != nil {
-		return err
+		return false, err
 	}
 	updated, err := tx.Update(ctx, "creative_agent_runs",
 		"state=$3, error_code=$4, settlement_state=$5, finished_at=$6, lease_until=NULL, revision=revision+1, updated_at=$6",
-		"id=$2 AND claim_token=$7 AND finished_at IS NULL", runID, state, nullableText(code), settlement, now, token)
+		"id=$2 AND claim_token=$7 AND execution_epoch=$8 AND state=$9 AND finished_at IS NULL", runID, state, nullableText(code), settlement, now, token, expected.Epoch, expected.State)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if updated == 0 {
-		// Somebody else ended it, or the claim is no longer ours. Either way
-		// this worker has nothing left to write.
-		return nil
+		// The guarded transition did not commit. Roll back budget cleanup too;
+		// a no-op close must never leave earlier writes behind.
+		return false, ErrRunState
 	}
 	if err := releaseSlotInTx(ctx, tx, runID, token, now); err != nil {
-		return err
+		return false, err
+	}
+	// Checkpoint and context lifetimes share the run's terminal clock. Pending
+	// or unknown accounting evidence still needs the later cleanup controller's
+	// explicit preservation checks; this timestamp alone is not GC permission.
+	for _, table := range []string{"creative_agent_checkpoints", "creative_agent_context_items"} {
+		if _, err := tx.Update(ctx, table, "retained_until=GREATEST(retained_until,$3)", "run_id=$2", runID, now.Add(contextRetention)); err != nil {
+			return false, err
+		}
 	}
 	_, err = appendRunEventInTx(ctx, tx, runID, "run.finished",
 		map[string]string{"state": state, "error_code": code, "settlement_state": settlement})
-	return err
+	return err == nil, err
 }
 
 func nullableText(value string) any {
@@ -888,6 +861,14 @@ func nullableText(value string) any {
 // internals of a failure they cannot do anything about.
 func failureCode(err error) string {
 	switch {
+	case errors.Is(err, errCheckpointMissing):
+		return "creative_checkpoint_missing"
+	case errors.Is(err, errCheckpointVersion):
+		return "creative_checkpoint_incompatible"
+	case errors.Is(err, errCheckpointJournal), errors.Is(err, errCheckpointConflict):
+		return "creative_checkpoint_inconsistent"
+	case errors.Is(err, errRunInterrupted):
+		return "creative_run_interrupted"
 	case errors.Is(err, errToolLimit):
 		return "creative_tool_limit"
 	case errors.Is(err, errModelLimit):
@@ -925,35 +906,60 @@ func failureCode(err error) string {
 // is not taken from here: it is whatever the gateway persisted and this run
 // already consumed, so a stream that ends early cannot invent an answer.
 func drainAgent(it *adk.AsyncIterator[*adk.AgentEvent]) error {
+	var first error
 	for {
 		event, ok := it.Next()
 		if !ok {
-			return nil
+			return first
 		}
-		if event.Err != nil {
-			return event.Err
+		if event.Err != nil && first == nil {
+			first = event.Err
+		}
+		if event.Action != nil && event.Action.Interrupted != nil && first == nil {
+			first = errRunInterrupted
 		}
 	}
 }
 
 func (s *Service) settlementOfRun(ctx context.Context, scope store.AccountScope, runID, lastRequest string) string {
-	rows, err := scope.QueryPage(ctx, "creative_agent_steps", "llm_request_id", "run_id=$2 AND kind='model' AND llm_request_id IS NOT NULL", []store.OrderBy{{Column: "ordinal"}}, s.limits.ModelTurns, 0, runID)
+	rows, err := scope.QueryPage(ctx, "creative_agent_steps", "llm_request_id,ordinal", "run_id=$2 AND kind='model'", []store.OrderBy{{Column: "ordinal"}}, s.limits.ModelTurns, 0, runID)
 	if err != nil {
 		return "unknown"
 	}
-	requests := map[string]bool{}
+	type requestLink struct {
+		id      *string
+		ordinal int64
+	}
+	var links []requestLink
 	for rows.Next() {
-		var id string
-		if err = rows.Scan(&id); err != nil {
+		var link requestLink
+		if err = rows.Scan(&link.id, &link.ordinal); err != nil {
 			rows.Close()
 			return "unknown"
 		}
-		requests[id] = true
+		links = append(links, link)
 	}
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
 		return "unknown"
+	}
+	requests := map[string]bool{}
+	for _, link := range links {
+		if link.id != nil {
+			requests[*link.id] = true
+			continue
+		}
+		// The request may have reached the provider before its secondary index was
+		// written. A missing checkpoint must not turn that unknown bill into zero.
+		view, err := s.gateway.RequestForBinding(ctx, scope, callerService, turnBindingKey(runID, link.ordinal))
+		if errors.Is(err, llmgateway.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return "unknown"
+		}
+		requests[view.ID] = true
 	}
 	if lastRequest != "" {
 		requests[lastRequest] = true

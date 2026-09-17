@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: B2 实现、独立审查和完整 make check-go 已通过，owner 已授权提交本批改动并继续 B3；下一实现阶段为版本化 Checkpoint 与恢复接缝。C 的等待/取消/救援/SSE/面板尚未开始。
+next_action: B2 已提交 8612803；B3 实现、验证及三轮独立审查完成，owner 已授权提交并继续 C；C 的等待/取消/救援/SSE/面板即将启动。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1109,3 +1109,64 @@ owner 提出 2 项 P1、2 项 P2，四条全部在代码中确认为真并已修
   未创建新 lesson、未修改冻结 Epic、未提交/推送/部署；B3 与 C 保持未开始。
 
 - owner 后续授权：「提交，然后继续 B3」。本批 B2 按该授权提交；B3 沿用当前 worktree，新增改动仍待单独提交授权。
+
+
+### 2026-09-17 · B3 版本化 Checkpoint 与恢复接缝
+
+- B2 commit：`8612803`；owner 同轮授权继续 B3，沿用当前 worktree，B3 没有提交授权。
+- 延续 cs-feat，沿用已批准 Eino 接入 §6 / Harness / 数据模型契约。生产增加 `runCheckpoint` 与
+  `runExecution`，在 Eino 解码前校验版本/目录/claim/授权/步骤清单，再选择 Run 或 Resume。
+  0048 的 payload/refs 同事务；既有 rollback walks 同步最新迁移层级。
+- 执行身份由 Checkpoint 的持久 model frame 恢复；下一模型调用按前驱顺序定位，完整请求 hash 不符
+  拒绝，不从相同 prompt 猜重放。工具结果按原计划回放；Gateway 保存未消费结果复用原绑定；
+  unknown 不重发。缺 Checkpoint 时有记录的 run 明确停止。
+- 新增记录 `docs/dev/creative-agent.md` B3 节说明当前边界：只读工具不会主动产生等待动作，B3 提供
+  可验证恢复执行接缝，C 负责合法重新排队、等待/取消/救援与产品入口，FND-10 负责过期清理。
+- 定向证据：旧 B2「有 step 无 Checkpoint」测试红（供应商再次调用）；修复后拒绝重开。
+  真 Eino/PostgreSQL 回归覆盖工具前/后中断、跨进程接管、连续相同工具参数、多轮已付费回放、消费事务
+  40001 后重取原结果、新旧 epoch/CAS/跨账号/版本/授权拒绝、payload 与 refs 删除原子性及未知费用保留。
+- 图谱 Verify：当前 project/root 确认，generation 仍为 `2026-09-04T15:47:38Z`；Checkpoint/Resume/执行
+  符号查询 total 0/has_more false，相关文件 not_tracked，使用精确源码 fallback。Context7 未提供
+  callable 工具，Eino 依据官方说明与锁定 v0.9.19 的 Runner/interrupt 源码核对。
+- 验证进行中：定向 B3 测试已通过；首轮全量门禁出现多个包的 Testcontainers reaper 容器启动失败，
+  尚未运行到业务断言，按仓库规则单包重跑后再完整确认，不按 flake 直接放行。
+
+- B3 第一轮独立审查：宿主 collaboration，显式 `gpt-6-astra/xhigh`，run `/root/b3_review`；
+  无异构 provider 工具，回退同构最强模型。冻结 patch
+  `50e35d3c339e344e030815f607484e88d4b2eab0c3fba3caf0ff6a8e4df74d4c`。
+  发现 2 项 blocking：旧 holder 误消费新 epoch 待恢复结果；旧 finisher 在未关闭 run 时继续改步骤。
+- 两项均已修复并有红→绿：执行权失效/校验失败返回事务错误保留 pending（当前 holder 的不可逆同意撤销仍消费留档）；closeRunInTx 返回是否真正关闭，
+  未持有执行权则整个收尾不写步骤。新增已存结果→接管→旧回调→新 Resume，以及接管后迟到收尾的数据库测试。
+  同步修正终态 checkpoint/context 的保留期限为 finished_at 起 90 天，期限测试亦红→绿。
+- 首轮完整门禁的 reaper 启动失败后，四个受影响包分别重跑全绿，再以默认 `-p=4` 完整
+  `make check-go` exit 0（build、lint 0 issues、全部包通过；creativeagent 48.833s）。此前错误发生在共享
+  reaper 启动，未到业务断言；没有降低最终门禁并发度，也没有按 flake 跳过。子进程测试已复用父隔离库。
+  审查修复后三项定向回归通过（4.531s），将完成最终包验证和同 lineage 复审。
+
+- 首次修复后的整包回归发现 `TestRuntimeRechecksConsentBetweenTurns` 红：把同意已撤销也当成
+  可恢复 pending，改变了 B2 已确认的留档语义。已收窄：只有持有当前 run 行锁且确认当前 claim 后
+  返回的 `ErrConsentRevoked` 保持消费留档；旧 claim/其他校验失败一律回滚。保留原回归断言。
+
+- B3 审查修复后 `make check-go PKG=./internal/creativeagent/...` exit 0：全包 build、受影响包 lint 0 issues、
+  creativeagent 全部测试通过（23.453s），保留 B2 撤权消费回归与新增接管竞态回归。`git diff --check` 通过。
+
+- B3 第 2 轮同 lineage 审查：patch `74bcd14ea0d374edee52687694782ed071c0c47a7693d1e58cfd96c87806ff8a`。
+  消费竞态与终态保留期限 resolved；原收尾项仍有 epoch 已失效、token 尚未轮换的空窗，未通过。
+- 已补 `runCloseGuard`：同一 slot 锁下核对 slot/run/token/epoch/原状态，再执行预算/终态/步骤收尾。
+  Worker 必须仍为 running；队列中到期/模型缺失的合法关闭显式传 queued 和当前 epoch；
+  最终 guarded update 若没有更新行则回滚预算清理。新增六分支（仅 epoch、queued/reconciling 过渡、
+  仅状态、slot token 改变、slot 释放）均先观察旧 finisher 误写，再修复后通过；比较 run、步骤、slot、
+  checkpoint、预算完整快照不变。新旧消费/收尾/保留期限定向组通过（8.375s）。
+
+- B3 第二轮修复后 `make check-go PKG=./internal/creativeagent/...` exit 0：全包 build、lint 0 issues、
+  creativeagent 全包 33.578s；`git diff --check` 通过。完整候选冻结送同 reviewer 第 3 轮。
+
+- B3 第 3 轮同 lineage 审查通过：完整 patch
+  `4c76d9db7b116fd4eb065726f2c47118cf42debbe3fbd2d9f1dd814d78c14df3`；首轮两项 blocking
+  全部 resolved，unresolved/new findings 均无；未开启第 4 轮。返回后校验完整候选 SHA-256 未漂移。
+- 完成状态：B3 版本化 Checkpoint、安全多轮恢复接缝、旧 holder 消费/收尾隔离、终态保留窗口已完成。
+  先前全量 `make check-go` 通过；后续修复仅在 creativeagent 内，最终 scoped 门禁全绿，迁移未再变更。
+  开发事实与边界进 `docs/dev/creative-agent.md`，没有新建 lesson 或改写冻结 Epic；保留本 Epic work 游标。
+  无真实供应商调用、无生产迁移。B3 未提交/推送/部署；C 及 FND-10 后续范围保持未开始。
+
+- owner 后续授权「提交然后进入 C」；本次提交 B3 已审查候选，继续沿用当前 worktree。C 的新增改动不继承 B3 提交许可。
