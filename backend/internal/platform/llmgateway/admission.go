@@ -325,6 +325,18 @@ func (s *Service) releaseReservation(ctx context.Context, tx store.TxAccountScop
 	return s.releaseHold(ctx, tx, row, row.retryEligible, now)
 }
 
+// LockReservationBudgetInTx locks the reservation's immutable month bucket
+// without changing its hold. Callers closing a run take this after the slot
+// and before the run, so subsequent release/cancellation follows budget-first
+// ordering without exposing gateway tables to the caller.
+func (s *Service) LockReservationBudgetInTx(ctx context.Context, tx store.TxAccountScope, reservationID string) error {
+	row, err := scanReservation(tx.QueryRow(ctx, "llm_usage_reservations", reservationColumns, "id=$2", reservationID))
+	if err != nil {
+		return err
+	}
+	return s.lockBudget(ctx, tx, row.period, row.currency)
+}
+
 // ReleaseReservationInTx drops an unclaimed hold whose turn never reached a
 // request. Without it a refused dispatch would leave budget occupied until the
 // expiry sweep runs.
