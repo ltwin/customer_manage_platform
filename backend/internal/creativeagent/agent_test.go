@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -22,12 +23,20 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs"
 )
 
-func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
+func TestMain(m *testing.M) {
+	// The checkpoint subprocess connects to its parent's isolated test database;
+	// it must not create a second container or own the parent's cleanup lifecycle.
+	if os.Getenv("CREATIVE_B3_TEST_URL") != "" {
+		os.Exit(m.Run())
+	}
+	storetest.Main(m, store.MigrateUp)
+}
 
 type fixture struct {
-	t  *testing.T
-	db *sql.DB
-	st *store.Store
+	url string
+	t   *testing.T
+	db  *sql.DB
+	st  *store.Store
 	// skills is the real skill store behind the assistant, published into by
 	// the real import protocol. A stub would exercise the projection but not
 	// the seam between the two packages, which is the part that is new.
@@ -100,7 +109,7 @@ func setup(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &fixture{t: t, db: db, st: st, skills: skills, vendor: vendor, service: service, platform: platform,
+	return &fixture{url: url, t: t, db: db, st: st, skills: skills, vendor: vendor, service: service, platform: platform,
 		alice:    st.ScopeFor(auth.AccountContext{AccountID: "agent-a"}),
 		bob:      st.ScopeFor(auth.AccountContext{AccountID: "agent-b"}),
 		canvasID: "cccv_a"}

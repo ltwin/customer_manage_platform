@@ -7,14 +7,16 @@
 [eino-adoption.md](../product/creative-canvas-system/eino-adoption.md)，运行状态机唯一权威在
 [data-model.md §7](../product/creative-canvas-system/data-model.md)。本文只记实现事实与已知边界。
 
-## 当前交付范围（FND-07 里程碑 A + B1/B2）
+## 当前交付范围（FND-07 里程碑 A + B1/B2/B3）
 
 已落地：会话、持久消息、外发同意、模型/Skill/工具目录、迁移 `0044_creative_agent_conversations`；
 以及 B1 的 run/step/slot/epoch 持久结构（迁移 `0046_creative_agent_runs`）、`CreateRun` 的原子受理、
 River Worker 接管、派发前外发同意二次校验、经 Eino ChatModelAgent 的有界多轮模型/只读工具调用与结果消费。B2 增加迁移
 `0047_creative_agent_context`、固定 Skill Backend、持久工具计划及上下文材料。
 
-**尚未落地**（随里程碑 B3 与 C）：版本化 Checkpoint、等待/取消/对账/终态恢复、救援扫描、
+B3 增加版本化 Checkpoint 存储和恢复执行接缝（迁移 `0048_creative_agent_checkpoints`）。
+
+**尚未落地**（里程碑 C）：等待/取消/对账/终态恢复的产品入口、救援扫描、
 SSE、最小 Agent 面板。自动模型摘要仍默认关闭，达到上下文上限明确失败。
 写工具与提案采纳属 FND-08，独立附件属 FND-09。
 
@@ -240,7 +242,8 @@ limits_snapshot；旧版本记录不按新部署参数静默重算。此前 `-3`
    剩下的是真正的进程崩溃，那只能靠救援。
 2. **没有取消入口**：`cancel_requested_at` 列与派发前的检查都在，但还没有写它的 API（里程碑 C）。
 3. **只读运行时工具**：业务写工具、画布提案和采纳仍属 FND-08。
-4. **没有 Checkpoint**：Runner 不带 `CheckPointStore`，中断即失败，不做恢复（B3）。
+4. **恢复接缝已接入，调度入口仍待 C**：Runner 已绑定 `CheckPointStore`；当前三个只读工具不会
+   主动要求人工中断。C 将决定等待/救援后何时重新排队，本阶段不新增自动救援或公开 Resume API。
 
 ## B2：固定 Skill 与只读多轮
 
@@ -262,11 +265,61 @@ limits_snapshot；旧版本记录不按新部署参数静默重算。此前 `-3`
   source_manifest 保留工具参数、固定 Skill/version/digest 和来源修订；来源修订另入显式 refs，
   供内容根查询使用；重复指令引用保留正文，授权来源及 refs 去重。保留期 90 天，清理扫描仍由 FND-10 落地。回滚有内容的 0047 会要求先导出。
 - **交付与退出**：只读工具成功不是最终交付；只有持久 assistant 答复才可成功。中途撤回同意时
-  已付费结果仍消费留档，不向模型继续传递工具结果。终止时关闭未执行工具计划，释放本组未用预留；
-  不恢复进程崩溃现场（B3/C）。自动摘要未启用，也不以静默截断绕过 256 KiB 输入上限。
+  已付费结果仍消费留档，不向模型继续传递工具结果；消费事务先验证当前执行权，
+  旧 Worker 失权或校验未完成则回滚，保留 pending 结果给当前 holder。终止时关闭未执行工具计划，释放本组未用预留；
+  B3 仅允许有兼容 Checkpoint 与持久记录证据的接续；无证据时停止，救援调度仍属 C。自动摘要未启用，也不以静默截断绕过 256 KiB 输入上限。
 - **Eino 接缝**：v0.9.19 的工具 middleware 经每次 Generate/Stream 的 `model.WithTools` 传入
   当前工具列表；Gateway 适配器处理这条路径并保持实例配置隔离，拒绝调用时更换模型或输出上限。
 
 B2 验证使用真实 PostgreSQL、River 受理、Eino Runner 和 Gateway 账本，供应商使用脚本桩；
 不产生真实模型费用。覆盖循环上限、重复供应商 call ID、固定版本加载、大结果卸载、账号/run 隔离、
 路径和 digest 拒绝、跨轮撤权、后续未认领预留释放及迁移无损回滚/有数据拒绝回滚。
+
+
+## B3：Checkpoint 与恢复执行接缝
+
+### 版本、范围和保留
+
+`creative_agent_checkpoints` 保存 Eino 原始 gob payload（最多 1 MiB）及独立的受信元数据：
+账号/run、`eino/v0.9.19`、`adk-gob/creative-1`、registry/Skill 摘要、执行 epoch、CAS revision、
+当前 model step、步骤清单、payload SHA-256 和保留期。registry 摘要含运行时适配版本、部署工具目录、
+冻结限额及模型快照；Skill 摘要来自本 run 冻结包。升级 Eino、应用序列化类型或工具执行协议必须更新
+相应版本并验证迁移，版本不一致时在交给 Eino 解码**之前**拒绝。测试钉住 runtime 标签与 go.mod。
+
+Get/Set/Delete 都绑定本次新建的账号 scope 与当前 claim，检查运行状态、epoch、token、期限、Skill、
+外发同意及来源用途；不从 opaque payload 取账号/授权/模型实例。Set 通过 run 行锁和 checkpoint revision
+拒绝旧 Worker、并发旧 revision 覆盖；输入内容 refs 与 payload 同事务写入/删除。运行中保留期不早于
+活动运行期限，真正终态事务将 checkpoint/context items 延长至 `finished_at + 90 天`。unknown/未结算
+证据仍须清理器另外保留，不能仅按该时间戳删除。删除扫描属 FND-10；0048 有数据时拒绝有损回滚，要求先导出。
+
+### 框架进度与业务记录
+
+- 新运行必须没有既有 step 才能 `Runner.Run`。已有 step 却没有 Checkpoint 时返回
+  `creative_checkpoint_missing`，不能拿原问题重新发起一轮。
+- 兼容 Checkpoint 恢复最后 model frame；每次后续模型调用按**前一持久 model step 的顺序位置**
+  查找下一记录，并比对完整规范化请求 hash。相同参数/相同供应商 call ID 不合并成同一操作。
+  hash 不一致返回 `creative_checkpoint_inconsistent`；不存在下一记录才创建新步骤，并继续使用
+  run 的持久 13 轮计数。
+- 已完成的 checkpoint 前缀不可改写。尚 prepared 的只读工具可以在 Checkpoint 之后已提交；
+  恢复工具时按原 plan 返回保存的 output，不重新读取/创建 context item。已完成工具依赖的 context
+  bytes 必须存在、未过期并通过 digest 校验。未来写工具需要加入真实 operation receipt 水位，不能
+  直接把这条只读证明当作写效果恢复协议。
+- Checkpoint 落后于已保存模型结果时，通过原 binding 调 Gateway。已消费结果不重复写消息/展开计划；
+  已保存未消费的结果在原消费事务完成一次。派发未知只返回原核实需求，不再次发送。
+- Checkpoint 不兼容、输入链分歧、终态/取消/撤权/超期时拒绝执行；已持久答复仍计作实际交付。
+  收尾从所有 model ordinal 定位 Gateway 请求，即使二级 `llm_request_id` 索引尚未补齐，也不把未知费用
+  误报为未开始。
+
+### 与 C 的边界
+
+Checkpoint 由 Eino 的真实中断写入，不是每轮自动生成一份快照。应用执行器区分中断与最终答复；
+当前只读工具集没有产品上的等待动作，Worker 对意外中断采用失败并保留证据的保守出口。C 将消费
+该执行结果、实现等待/取消/人工继续及救援排队；不会由 B3 开放一个可绕过控制事务的直接恢复接口。
+一旦控制层按规则把同 run 重新排队，现有 claim/Worker 路径会在新 epoch 下选择兼容的 Runner.Resume。
+Worker 收尾在同一槽位锁事务内核对 run/slot 的 token、epoch 及 running 状态；控制层仅废止 epoch、
+尚未发出新 token 时，旧 Worker 也不能关闭 run 或修改步骤。排队中到期/模型缺失的关闭使用 queued 前置条件。
+
+验证使用真实 PostgreSQL、Gateway/Eino 与脚本供应商：工具前/后中断、同参数重复工具的多轮接续、
+Checkpoint 落后于已提交模型结果、消费事务回滚后重取原结果、独立 Go 子进程接管、接管后的旧消费/收尾拒绝、新旧 epoch/CAS、
+账号/run 隔离、版本不兼容、撤权/取消/期限/终态拒绝、引用删除回滚、无 Checkpoint 拒绝重开及未知费用保留。
+子进程复用父测试的独立 database，不新建容器。测试里的重新排队模拟 C 的控制动作，不表示救援扫描已上线。

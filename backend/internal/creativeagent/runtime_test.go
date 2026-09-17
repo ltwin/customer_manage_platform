@@ -351,14 +351,16 @@ func TestRuntimeModelLimitUsesDurableCountNotPromptHash(t *testing.T) {
 	}
 	chat := llmgateway.ChatRequest{ContractVersion: llmgateway.ContractVersion, ModelKey: held.Model.ModelKey, Messages: []llmgateway.Message{{Role: llmgateway.RoleUser, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "相同输入"}}}}, OutputLimit: 100}
 	seen := map[string]bool{}
+	previous := ""
 	for i := 0; i < f.service.limits.ModelTurns; i++ {
-		id, _, err := f.service.prepareModelStep(t.Context(), f.alice, held, chat)
+		id, _, err := f.service.prepareModelStep(t.Context(), f.alice, held, previous, chat)
 		if err != nil || seen[id] {
 			t.Fatalf("step %d: %s %v", i, id, err)
 		}
 		seen[id] = true
+		previous = id
 	}
-	if _, _, err = f.service.prepareModelStep(t.Context(), f.alice, held, chat); !errors.Is(err, errModelLimit) {
+	if _, _, err = f.service.prepareModelStep(t.Context(), f.alice, held, previous, chat); !errors.Is(err, errModelLimit) {
 		t.Fatalf("14th turn: %v", err)
 	}
 }
