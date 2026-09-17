@@ -30,7 +30,12 @@ const (
 	// is allowed to take the whole run window, so the lease cannot simply be set
 	// to the deadline — then it would say nothing about whether anyone is there.
 	leaseRenewal = 10 * time.Second
+	// Finishing retries persistence only, within its own bounded cleanup window.
+	finishTimeout  = 30 * time.Second
+	finishAttempts = 3
 )
+
+var errEmptyAnswer = errors.New("model returned no deliverable answer")
 
 // agentName is the framework's name for this agent. It is not shown to anyone
 // and is not a skill identity.
@@ -121,7 +126,31 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 			}
 			return err
 		}
+		if slotRun == nil || *slotRun != runID {
+			return ErrRunState
+		}
+		// An in-flight duplicate must stop before taking the budget/run locks:
+		// the executing worker may still be inside gateway admission. The slot
+		// lock prevents another claimant or finisher from changing ownership.
 		var state, token string
+		var reservationID *string
+		if err := tx.QueryRow(ctx, "creative_agent_runs", "state,initial_llm_reservation_id", "id=$2", runID).
+			Scan(&state, &reservationID); err != nil {
+			if errors.Is(err, store.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if state != RunQueued {
+			return ErrRunState
+		}
+		// Expiry and an unavailable model close the run in this transaction.
+		// Acquire their budget lock before the run lock, just as finishRun does.
+		if reservationID != nil {
+			if err := s.gateway.LockReservationBudgetInTx(ctx, tx, *reservationID); err != nil {
+				return err
+			}
+		}
 		var epoch int64
 		var modelKey string
 		var skillSnapshot []byte
@@ -652,10 +681,19 @@ func (s *Service) consumeResultInTx(ctx context.Context, tx store.TxAccountScope
 	return true, err
 }
 
-// finishRun records the terminal state. It always runs, so a turn that failed
-// anywhere still leaves a run somebody can read and a slot somebody else can
-// take.
+// finishRun records the outcome and releases ownership after the model turn.
+// Only confirmed transaction rollbacks are retried; database outages still
+// require the recovery path to finish the persisted run later.
 func (s *Service) finishRun(ctx context.Context, scope store.AccountScope, held claim, outcome turnOutcome, turnErr error) error {
+	// The provider call has ended. Cancellation of that call must not also
+	// cancel the short transaction that releases its slot and records the result.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
+	defer cancel()
+	if turnErr == nil && !outcome.Delivered {
+		// B1 has only a text answer: a successful provider response alone is
+		// not delivery. Keep its consumed result and accounting, but fail the run.
+		turnErr = errEmptyAnswer
+	}
 	state, code := RunSucceeded, ""
 	if turnErr != nil {
 		state, code = RunFailed, failureCode(turnErr)
@@ -669,37 +707,46 @@ func (s *Service) finishRun(ctx context.Context, scope store.AccountScope, held 
 			slog.String("error", turnErr.Error()))
 	}
 	settlement := s.settlementOf(ctx, scope, outcome.RequestID)
-	return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		now, err := tx.CreativeNow(ctx)
-		if err != nil {
-			return err
-		}
-		if err := s.closeRunInTx(ctx, tx, held.RunID, held.Token, state, code, settlement, now); err != nil {
-			return err
-		}
-		if outcome.RequestID == "" || outcome.StepID == "" {
+	var err error
+	for attempt := 0; attempt < finishAttempts; attempt++ {
+		err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			now, err := tx.CreativeNow(ctx)
+			if err != nil {
+				return err
+			}
+			if err := s.closeRunInTx(ctx, tx, held.RunID, held.Token, state, code, settlement, now); err != nil {
+				return err
+			}
+			if outcome.RequestID == "" || outcome.StepID == "" {
+				return nil
+			}
+			// The cross-reference is filled after the fact because the request id
+			// only exists once the gateway has prepared it. It is an index, not the
+			// authority: the binding the gateway stored is derived from the step id,
+			// so the link survives even if this update never happens.
+			if _, err := tx.Update(ctx, "creative_agent_steps", "llm_request_id=$3, updated_at=$4",
+				"id=$2 AND llm_request_id IS NULL", outcome.StepID, outcome.RequestID, now); err != nil {
+				return err
+			}
+			if turnErr == nil {
+				return nil
+			}
+			// A turn that never delivered leaves a request holding budget until it
+			// expires. Cancelling it here gives the hold back; a request another
+			// path already settled refuses, which is the answer we want.
+			if _, err := s.gateway.CancelInTx(ctx, tx, outcome.RequestID); err != nil &&
+				!errors.Is(err, llmgateway.ErrState) && !errors.Is(err, llmgateway.ErrNotFound) {
+				return err
+			}
 			return nil
-		}
-		// The cross-reference is filled after the fact because the request id
-		// only exists once the gateway has prepared it. It is an index, not the
-		// authority: the binding the gateway stored is derived from the step id,
-		// so the link survives even if this update never happens.
-		if _, err := tx.Update(ctx, "creative_agent_steps", "llm_request_id=$3, updated_at=$4",
-			"id=$2 AND llm_request_id IS NULL", outcome.StepID, outcome.RequestID, now); err != nil {
+		})
+		// Only retry errors that prove the transaction rolled back. A failed
+		// COMMIT acknowledgement is not permission to repeat unknown effects.
+		if !store.IsSerializationFailure(err) || ctx.Err() != nil {
 			return err
 		}
-		if turnErr == nil {
-			return nil
-		}
-		// A turn that never delivered leaves a request holding budget until it
-		// expires. Cancelling it here gives the hold back; a request another
-		// path already settled refuses, which is the answer we want.
-		if _, err := s.gateway.CancelInTx(ctx, tx, outcome.RequestID); err != nil &&
-			!errors.Is(err, llmgateway.ErrState) && !errors.Is(err, llmgateway.ErrNotFound) {
-			return err
-		}
-		return nil
-	})
+	}
+	return err
 }
 
 // settlementOf projects the gateway's money fact onto the run. It is a
@@ -737,10 +784,21 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, run
 	if settlement == "" {
 		settlement = "not_started"
 	}
+	// All terminal paths take slot -> budget -> run. Updating run before
+	// locking slot deadlocks with a concurrent claimant holding slot -> run.
+	var slotRun *string
+	if err := tx.QueryRowForUpdate(ctx, "creative_agent_slots", "run_id", "").Scan(&slotRun); err != nil {
+		return err
+	}
 	var reservationID *string
 	if err := tx.QueryRow(ctx, "creative_agent_runs", "initial_llm_reservation_id", "id=$2", runID).
 		Scan(&reservationID); err != nil && !errors.Is(err, store.ErrNoRows) {
 		return err
+	}
+	if reservationID != nil {
+		if err := s.gateway.LockReservationBudgetInTx(ctx, tx, *reservationID); err != nil {
+			return err
+		}
 	}
 	updated, err := tx.Update(ctx, "creative_agent_runs",
 		"state=$3, error_code=$4, settlement_state=$5, finished_at=$6, lease_until=NULL, revision=revision+1, updated_at=$6",
@@ -783,6 +841,8 @@ func nullableText(value string) any {
 // internals of a failure they cannot do anything about.
 func failureCode(err error) string {
 	switch {
+	case errors.Is(err, errEmptyAnswer):
+		return "creative_model_empty_result"
 	case errors.Is(err, ErrConsentRevoked):
 		return "creative_egress_revoked"
 	case errors.Is(err, ErrEgressRequired):
