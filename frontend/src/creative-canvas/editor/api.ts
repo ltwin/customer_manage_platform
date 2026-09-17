@@ -32,16 +32,16 @@ export function read<T>(path: string, signal?: AbortSignal): Promise<T> {
     return value
   })
 }
-export function send(
+export function send<T = unknown>(
   account: string,
   path: string,
   body: string,
   operation: string,
-): Promise<unknown> {
+): Promise<T> {
   if (currentAccount() !== account)
     return Promise.reject(new Error('账号已变化，请重新登录原账号恢复草稿'))
   const before = getAuthSnapshot()
-  return request(`/creative${path}`, {
+  return request<T>(`/creative${path}`, {
     method: 'POST',
     headers: { 'Idempotency-Key': operation },
     body,

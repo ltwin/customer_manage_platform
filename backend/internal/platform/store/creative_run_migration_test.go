@@ -41,6 +41,9 @@ func TestAgentRunMigrationShapeAndLossyRollback(t *testing.T) {
 	// The empty rollback runs first: a refused one leaves the schema version
 	// dirty, so the recoverable case has to be proved before the refusal.
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("agent control rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("agent checkpoint rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -143,6 +146,9 @@ func TestAgentRunMigrationShapeAndLossyRollback(t *testing.T) {
 		t.Fatal("one model answer must expand into one tool call per index")
 	}
 
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("agent control rollback", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("agent checkpoint rollback", err)
 	}

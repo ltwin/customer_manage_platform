@@ -19,6 +19,12 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/canvases/:id/conversations", w.CreateCreativeAgentConversation)
 	r.GET("/creative/conversations/:id/messages", w.ListCreativeAgentMessages)
 	r.POST("/creative/conversations/:id/runs", w.CreateCreativeAgentRun)
+	r.GET("/creative/conversations/:id/runs", w.ListCreativeAgentRuns)
+	r.GET("/creative/agent-runs/:id/steps", w.ListCreativeAgentRunSteps)
+	r.POST("/creative/agent-runs/:id/cancel", w.CancelCreativeAgentRun)
+	r.POST("/creative/agent-runs/:id/close-reconciliation", w.CloseCreativeAgentReconciliation)
+	r.POST("/creative/agent-runs/:id/supplements", w.SupplementCreativeAgentRun)
+	r.POST("/creative/agent-runs/:id/retry", w.RetryCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id", w.GetCreativeAgentRun)
 	r.POST("/creative/conversations/:id/egress-consents", w.GrantCreativeEgressConsent)
 	r.POST("/creative/egress-consents/:id/revoke", w.RevokeCreativeEgressConsent)
@@ -53,6 +59,8 @@ func creativeAgentError(c *gin.Context, err error) {
 		// The request is well formed and the photographer can act on it by
 		// choosing something else, so answering "malformed" would be a lie.
 		abortError(c, 422, "creative_segment_unsupported", "本部署暂不能执行该片段")
+	case errors.Is(err, creativeagent.ErrRecoveryEvidence):
+		abortError(c, 409, "creative_recovery_unavailable", "该步骤缺少安全恢复证据，或已经完成；请查看原结果")
 	case errors.Is(err, creativeagent.ErrRunState):
 		abortError(c, 409, "creative_run_state_conflict", "该运行的当前状态不允许这个动作")
 	case errors.Is(err, creativeagent.ErrLimit):
@@ -274,4 +282,67 @@ func (h *handlers) RevokeCreativeEgressConsent(c *gin.Context, id string, _ Revo
 		return
 	}
 	h.creativeWrite(c, "consent_id", id, agent.RevokeConsent)
+}
+
+func (h *handlers) ListCreativeAgentRuns(c *gin.Context, id string) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	page, err := agent.ListRuns(c.Request.Context(), scope, id)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	noStore(c)
+	c.JSON(200, page)
+}
+func (h *handlers) ListCreativeAgentRunSteps(c *gin.Context, id string) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	steps, err := agent.ReadSteps(c.Request.Context(), scope, id)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	noStore(c)
+	c.JSON(200, gin.H{"items": steps})
+}
+func (h *handlers) CancelCreativeAgentRun(c *gin.Context, id string, _ CancelCreativeAgentRunParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "run_id", id, agent.CancelRun)
+}
+func (h *handlers) CloseCreativeAgentReconciliation(c *gin.Context, id string, _ CloseCreativeAgentReconciliationParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "run_id", id, agent.CloseReconciliation)
+}
+func (h *handlers) SupplementCreativeAgentRun(c *gin.Context, id string, _ SupplementCreativeAgentRunParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "run_id", id, agent.SupplementRun)
+}
+func (h *handlers) RetryCreativeAgentRun(c *gin.Context, id string, _ RetryCreativeAgentRunParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "run_id", id, agent.RetryRun)
 }

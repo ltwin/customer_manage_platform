@@ -96,14 +96,26 @@ func (s *Service) workRun(ctx context.Context, scope store.AccountScope, request
 	execution := *s
 	execution.limits = held.Limits
 	s = &execution
-	stop := s.renewLease(ctx, scope, held)
-	outcome, turnErr := s.executeTurn(ctx, scope, held)
+	attemptCtx, cancelAttempt := context.WithCancel(ctx)
+	defer cancelAttempt()
+	stop := s.renewLease(attemptCtx, scope, held, cancelAttempt)
+	var source *string
+	queryErr := scope.QueryRow(attemptCtx, "creative_agent_runs", "source_run_id", "id=$2", held.RunID).Scan(&source)
+	var outcome turnOutcome
+	var turnErr error
+	if queryErr != nil {
+		turnErr = queryErr
+	} else if source != nil {
+		outcome, turnErr = s.executeRecordedRetry(attemptCtx, scope, held)
+	} else {
+		outcome, turnErr = s.executeTurn(attemptCtx, scope, held)
+	}
 	stop()
 	// The run reaches a terminal state inside the attempt that claimed it. The
 	// turn's error is recorded there rather than returned, because returning it
 	// would have River redeliver a task whose run is already past queued and
 	// leave it running with nobody advancing it.
-	return s.finishRun(ctx, scope, held, outcome, turnErr)
+	return s.completeAttempt(ctx, scope, held, outcome, turnErr)
 }
 
 // claimRun takes ownership. The slot is locked before the run, matching the
@@ -148,12 +160,10 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		if state != RunQueued {
 			return ErrRunState
 		}
-		// Expiry and an unavailable model close the run in this transaction.
-		// Acquire their budget lock before the run lock, just as finishRun does.
-		if reservationID != nil {
-			if err := s.gateway.LockReservationBudgetInTx(ctx, tx, *reservationID); err != nil {
-				return err
-			}
+		// Claim may close an expired recovered run. Lock Gateway facts before
+		// the run so a late consumer (request -> run) cannot deadlock it.
+		if _, err := s.gateway.LockCallerGroupInTx(ctx, tx, callerService, runID); err != nil {
+			return err
 		}
 		var epoch int64
 		var modelKey string
@@ -176,12 +186,20 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		if err != nil {
 			return err
 		}
+		endQueued := func(code string) error {
+			run, err := scanRun(tx.QueryRow(ctx, "creative_agent_runs", runColumns, "id=$2", runID))
+			if err != nil {
+				return err
+			}
+			// A recovered queued run can already have paid results. The
+			// common closer projects locked Gateway facts and delivered work.
+			return s.endControlledRun(ctx, tx, controlledRun{Run: run, token: token, epoch: epoch}, RunFailed, code, now)
+		}
 		if !now.Before(deadline) {
 			// The window closed while the task waited in the queue. Nothing is
 			// dispatched after it; the run ends here instead of being advanced.
 			ended = "creative_run_deadline_exceeded"
-			_, err := s.closeRunInTx(ctx, tx, runCloseGuard{RunID: runID, Token: token, Epoch: epoch, State: RunQueued}, RunFailed, ended, "", now)
-			return err
+			return endQueued(ended)
 		}
 		// The deployment's own model configuration, resolved before the takeover
 		// commits. It is an in-memory catalog read, so it belongs inside this
@@ -192,8 +210,7 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		model, err := s.models.Model(modelKey)
 		if err != nil {
 			ended = "creative_model_capability_missing"
-			_, err := s.closeRunInTx(ctx, tx, runCloseGuard{RunID: runID, Token: token, Epoch: epoch, State: RunQueued}, RunFailed, ended, "", now)
-			return err
+			return endQueued(ended)
 		}
 		if err := json.Unmarshal(limitsSnapshot, &held.Limits); err != nil {
 			return err
@@ -242,10 +259,12 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 // renewLease keeps the claim visibly alive while a turn is in flight and
 // returns the function that stops it. It never extends the run's deadline: the
 // lease says a worker is present, the deadline says the work may still happen.
-func (s *Service) renewLease(ctx context.Context, scope store.AccountScope, held claim) func() {
+func (s *Service) renewLease(ctx context.Context, scope store.AccountScope, held claim, cancelAttempt context.CancelFunc) func() {
 	done := make(chan struct{})
+	exited := make(chan struct{})
 	var once sync.Once
 	go func() {
+		defer close(exited)
 		ticker := time.NewTicker(leaseRenewal)
 		defer ticker.Stop()
 		for {
@@ -262,18 +281,23 @@ func (s *Service) renewLease(ctx context.Context, scope store.AccountScope, held
 					}
 					// Only the holder renews. A worker whose claim was taken over
 					// must not keep a lease alive for somebody else's epoch.
-					_, err = tx.Update(ctx, "creative_agent_runs", "lease_until=$4, updated_at=$5",
-						"id=$2 AND claim_token=$3 AND state='running'", held.RunID, held.Token,
-						now.Add(leaseDuration), now)
+					updated, err := tx.Update(ctx, "creative_agent_runs", "lease_until=$4, updated_at=$5",
+						"id=$2 AND claim_token=$3 AND state='running' AND execution_epoch=$6 AND lease_until>$5 AND cancel_requested_at IS NULL", held.RunID, held.Token,
+						now.Add(leaseDuration), now, held.Epoch)
+					if err == nil && updated == 0 {
+						return ErrRunState
+					}
 					return err
 				}); err != nil {
 					s.logger.WarnContext(ctx, "creative agent could not renew a run lease",
 						slog.String("run_id", held.RunID), slog.String("error", err.Error()))
+					cancelAttempt()
+					return
 				}
 			}
 		}
 	}()
-	return func() { once.Do(func() { close(done) }) }
+	return func() { once.Do(func() { close(done); cancelAttempt() }); <-exited }
 }
 
 // executeTurn runs the bounded model/tool loop through the framework. Everything the
@@ -468,16 +492,16 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	}
 	var state string
 	var epoch int64
-	var cancelRequested *time.Time
-	err = tx.QueryRowForUpdate(ctx, "creative_agent_runs", "state,execution_epoch,cancel_requested_at",
-		"id=$2 AND claim_token=$3", held.RunID, held.Token).Scan(&state, &epoch, &cancelRequested)
+	var cancelRequested, leaseUntil *time.Time
+	err = tx.QueryRowForUpdate(ctx, "creative_agent_runs", "state,execution_epoch,cancel_requested_at,lease_until",
+		"id=$2 AND claim_token=$3", held.RunID, held.Token).Scan(&state, &epoch, &cancelRequested, &leaseUntil)
 	if errors.Is(err, store.ErrNoRows) {
 		return ErrRunState
 	}
 	if err != nil {
 		return err
 	}
-	if state != RunRunning || epoch != held.Epoch || cancelRequested != nil {
+	if state != RunRunning || epoch != held.Epoch || cancelRequested != nil || leaseUntil == nil || !now.Before(*leaseUntil) {
 		return ErrRunState
 	}
 	// The skill control lock, between the run and the consent: the design puts
@@ -832,6 +856,9 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, exp
 		// The guarded transition did not commit. Roll back budget cleanup too;
 		// a no-op close must never leave earlier writes behind.
 		return false, ErrRunState
+	}
+	if err := s.gateway.AbandonCallerGroupResultsInTx(ctx, tx, callerService, runID); err != nil {
+		return false, err
 	}
 	if err := releaseSlotInTx(ctx, tx, runID, token, now); err != nil {
 		return false, err

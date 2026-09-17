@@ -354,7 +354,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 最近三十次运行，用于刷新后恢复面板 */
+        get: operations["listCreativeAgentRuns"];
         put?: never;
         /** 提交一次指令并开始一次运行；202 只表示已受理 */
         post: operations["createCreativeAgentRun"];
@@ -373,6 +374,91 @@ export interface paths {
         };
         /** 一次运行的当前状态、终态与费用投影 */
         get: operations["getCreativeAgentRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-runs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 取消当前运行；未知费用保留核实 */
+        post: operations["cancelCreativeAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-runs/{id}/close-reconciliation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 结束运行的核实等待；费用核实继续 */
+        post: operations["closeCreativeAgentReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-runs/{id}/supplements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 在原授权和期限内补充文字继续运行 */
+        post: operations["supplementCreativeAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-runs/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 恢复一个已记录且可证明安全的固定 Skill 资源读取步骤 */
+        post: operations["retryCreativeAgentRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/agent-runs/{id}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 运行步骤摘要，不返回模型私有推理 */
+        get: operations["listCreativeAgentRunSteps"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2886,6 +2972,54 @@ export interface components {
         };
         /** @description 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。 */
         CreativeSequence: string;
+        CreativeAgentRunPage: {
+            items: components["schemas"]["CreativeAgentRun"][];
+        };
+        CreativeAgentStepPage: {
+            items: components["schemas"]["CreativeAgentStepSummary"][];
+        };
+        CreativeAgentStepSummary: {
+            id: string;
+            /** @enum {string} */
+            kind: "model" | "tool" | "check";
+            /** @enum {string} */
+            state: "prepared" | "dispatched" | "succeeded" | "failed" | "unknown";
+            tool_key?: string;
+            error_code?: string;
+            retry_of_step_id?: string;
+        };
+        CreativeAgentControlPayload: Record<string, never>;
+        CreativeAgentControlRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAgentControlPayload"];
+        };
+        CreativeAgentSupplementPayload: {
+            expected_revision: components["schemas"]["CreativeRevision"];
+            waiting_token: string;
+            text: string;
+        };
+        CreativeAgentSupplementRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAgentSupplementPayload"];
+        };
+        CreativeAgentRetryPayload: {
+            /** @description 当前只恢复未提交结果的 read_skill_resource；模型、成功或未知步骤明确拒绝。 */
+            step_ids: string[];
+            egress_consent_id: string;
+        };
+        CreativeAgentRetryRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAgentRetryPayload"];
+        };
         CreativeAgentRun: {
             id: string;
             conversation_id: string;
@@ -2907,6 +3041,9 @@ export interface components {
              */
             settlement_state: "not_started" | "pending" | "settled" | "unknown";
             error_code?: string;
+            waiting_token?: string;
+            wait_reason?: string;
+            source_run_id?: string;
             limits_version: string;
             revision: components["schemas"]["CreativeRevision"];
             last_event_seq: components["schemas"]["CreativeSequence"];
@@ -2981,6 +3118,7 @@ export interface components {
             /** @enum {string} */
             mode: "selected_revisions" | "account_library";
             data_classes: ("text" | "image_preview" | "media_metadata")[];
+            /** @description selected_revisions 模式下的精确材料授权集合；空集合只允许本会话文字与选定 Skill，不授权素材库内容。 */
             selected_revision_ids?: string[];
         };
         GrantCreativeEgressConsentRequest: {
@@ -6854,6 +6992,37 @@ export interface operations {
             };
         };
     };
+    listCreativeAgentRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRunPage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     createCreativeAgentRun: {
         parameters: {
             query?: never;
@@ -6909,6 +7078,185 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeAgentRun"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    cancelCreativeAgentRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentControlRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；幂等回放原响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRun"];
+                };
+            };
+            /** @description 请求失败；证据不足或不支持的步骤拒绝自动恢复 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    closeCreativeAgentReconciliation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentControlRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；幂等回放原响应 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRun"];
+                };
+            };
+            /** @description 请求失败；证据不足或不支持的步骤拒绝自动恢复 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    supplementCreativeAgentRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentSupplementRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；幂等回放原响应 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRun"];
+                };
+            };
+            /** @description 请求失败；证据不足或不支持的步骤拒绝自动恢复 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    retryCreativeAgentRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentRetryRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；幂等回放原响应 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentRun"];
+                };
+            };
+            /** @description 请求失败；证据不足或不支持的步骤拒绝自动恢复 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeAgentRunSteps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentStepPage"];
                 };
             };
             /** @description 请求失败 */

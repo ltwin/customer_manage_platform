@@ -75,6 +75,7 @@ func TestARunRefusalIsAnAnswerAndNotAServerFault(t *testing.T) {
 		{"模型不可用", creativeagent.ErrModelCapability, 422, "creative_model_capability_missing"},
 		{"片段本部署跑不了", creativeagent.ErrUnsupportedSegment, 422, "creative_segment_unsupported"},
 		{"运行状态不允许", creativeagent.ErrRunState, 409, "creative_run_state_conflict"},
+		{"不能安全恢复", creativeagent.ErrRecoveryEvidence, 409, "creative_recovery_unavailable"},
 		{"运行不存在", creativeagent.ErrNotFound, 404, CodeNotFound},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

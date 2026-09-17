@@ -13,7 +13,7 @@ import (
 )
 
 // Consent modes. selected_revisions authorises exactly the revisions listed at
-// grant time; account_library authorises whatever the assistant's own search
+// grant time (an empty set permits no library content); account_library authorises whatever the assistant's own search
 // finds inside the personal library, which is the only way a search result can
 // ever be shown to a model.
 const (
@@ -86,7 +86,7 @@ func (s *Service) GrantConsent(ctx context.Context, scope store.AccountScope, co
 			}
 			switch input.Mode {
 			case ScopeSelectedRevisions:
-				if len(input.SelectedRevisionIDs) == 0 || len(input.SelectedRevisionIDs) > maxApprovedRevisions {
+				if len(input.SelectedRevisionIDs) > maxApprovedRevisions {
 					return creativeops.ErrValidation
 				}
 				for i, id := range input.SelectedRevisionIDs {
