@@ -63,7 +63,7 @@ func (p *checkpointPause) WrapInvokableToolCall(_ context.Context, next adk.Invo
 		return "", tool.StatefulInterrupt(ctx, "checkpoint boundary", args)
 	}, nil
 }
-func pauseCheckpointRun(t *testing.T, f *fixture, after bool) (Run, claim, *runExecution) {
+func pauseCheckpointRun(t *testing.T, f *fixture, after bool, missingUsage ...bool) (Run, claim, *runExecution) {
 	t.Helper()
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
@@ -71,7 +71,11 @@ func pauseCheckpointRun(t *testing.T, f *fixture, after bool) (Run, claim, *runE
 	consent := f.consent(f.alice, c.ID, revision)
 	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
 		if n == 1 {
-			return scriptedResult(r, llmgateway.ToolCall{ID: "reused-id", Name: readResultTool, Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)}), nil
+			result := scriptedResult(r, llmgateway.ToolCall{ID: "reused-id", Name: readResultTool, Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)})
+			if len(missingUsage) > 0 && missingUsage[0] {
+				result.Usage = llmgateway.UsageEvidence{}
+			}
+			return result, nil
 		}
 		return scriptedResult(r), nil
 	}

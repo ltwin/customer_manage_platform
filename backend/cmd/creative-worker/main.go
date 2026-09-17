@@ -92,6 +92,8 @@ func run() error {
 	go sweepExpiredUploads(ctx, db, media)
 	// Recovery needs no provider credentials or catalog: it only reconciles
 	// persisted dispatches through account-scoped transactions.
+	agentDone := make(chan struct{})
+	go func() { defer close(agentDone); sweepAgentRuns(ctx, db, agent) }()
 	recoveryDone := make(chan struct{})
 	go func() {
 		defer close(recoveryDone)
@@ -99,6 +101,7 @@ func run() error {
 	}()
 	<-ctx.Done()
 	<-recoveryDone
+	<-agentDone
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
 	return runtime.Stop(stopCtx)
@@ -153,6 +156,28 @@ func sweepLLMDispatches(ctx context.Context, db *store.Store) {
 		cursor = next
 		if err != nil && ctx.Err() == nil {
 			slog.Warn("llm dispatch recovery", slog.String("error", err.Error()))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// Every tick processes a bounded account page. Persisted run facts survive a
+// worker restart; browser polling is never responsible for advancing them.
+func sweepAgentRuns(ctx context.Context, db *store.Store, agent *creativeagent.Service) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	cursor := ""
+	for {
+		sweepCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		next, err := agent.SweepAllAccounts(sweepCtx, db, cursor, 100)
+		cancel()
+		cursor = next
+		if err != nil && ctx.Err() == nil {
+			slog.Warn("creative agent recovery", slog.String("error", err.Error()))
 		}
 		select {
 		case <-ctx.Done():

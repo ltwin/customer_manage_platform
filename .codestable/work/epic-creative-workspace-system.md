@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: B2 已提交 8612803；B3 实现、验证及三轮独立审查完成，owner 已授权提交并继续 C；C 的等待/取消/救援/SSE/面板即将启动。
+next_action: B3 已提交 0d316fd；C 已完成实现、验证及两轮独立审查，并随本提交落库。等待 owner 指定下一步；FND-08 尚未开始。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1170,3 +1170,51 @@ owner 提出 2 项 P1、2 项 P2，四条全部在代码中确认为真并已修
   无真实供应商调用、无生产迁移。B3 未提交/推送/部署；C 及 FND-10 后续范围保持未开始。
 
 - owner 后续授权「提交然后进入 C」；本次提交 B3 已审查候选，继续沿用当前 worktree。C 的新增改动不继承 B3 提交许可。
+
+
+### 2026-09-17 · C 执行控制与轮询面板
+
+- owner 授权「提交然后进入 C」；B3 已提交 `0d316fd`。沿用当前 worktree，C 新增改动未获提交许可。
+- 使用 cs-feat；以本 work「FND-07 开工」原批准边界为准：C 是等待/取消/对账/终态恢复 + **轮询**面板 +
+  DeepSeek 真实验收。上次交接的 SSE 用词已在对话中纠正；SSE/写工具仍归 FND-08，未扩大实现。
+- 归属：creativeagent 控制/救援/文字补充/受限只读步骤恢复；Gateway 暴露原子 caller-group 查询与已知结果
+  消费保留释放；creative-worker 按账号分页救援；httpapi/OpenAPI 与创作台最小面板。迁移0049及旧回滚walks更新。
+- 风险：取消/接管与派发/消费并发、unknown费用不可被清零、补充身份/期限、重试不能新建收费身份；
+  对应真实数据库/Eino测试、原子锁序、跨账号守卫与独立 change review。没有新建竞争运行循环。
+- 有界实现与当前限制：只接受文字补充；三个现有只读工具没有自然提问动作，但真实中断控制出口已落地；
+  终态一次只恢复一条未落结果的固定 Skill 资源读取，沿原参数/包/根步骤；不支持的模型/结果定位符/写操作
+  明确拒绝，不从原问题重新Query。面板展示最近30次运行及最近消息，不声称历史翻页或SSE已完成。
+- 图谱 Verify：project/root正确、generation仍 `2026-09-04T15:47:38Z`；控制/Resume/面板查询0条且无分页。
+  已查相关路径coverage均not_tracked；以精确源码fallback核对。Context7本会话无callable工具，Eino以固定
+  v0.9.19模块源码为准；React effect cleanup另核官方react.dev。
+- 验证：首批TestC真实数据库测试通过；全量 `make check-go` exit0（build/lint0issues/全部Go包，
+  creativeagent70.011s、httpapi57.133s、llmgateway21.311s、store99.067s）。前端384项全绿，generate-check绿。
+  之后补错误映射与停止续租协程的取消收尾，最终候选另跑受影响包验证。
+- 浏览器：真实AgentPanel组件+mock HTTP，2次POST保持同operation_id、只1次逻辑run；刷新确认/切会话/取消/
+  结束等待通过，1440×960与390×844无横向溢出，pageerror0。截图 `/tmp/creative-agent-desktop.png` 与
+  `/tmp/creative-agent-mobile.png` 已人工视觉检查；临时入口已删除。
+- 真实验收：TestCDeepSeekLiveHarness PASS，4.423s总测试；只发固定验收文本，隔离账号0.05USD预算/128输出token，
+  从Gateway/Eino到assistant落库、settled和释放slot全链通过；队列重投未新建第二个request。凭证只经环境注入，
+  没有输出或写入快照。后续非供应商路径修复不重复付费验收。
+
+- C change review 第1轮：native `/root/c_review`，gpt-6-astra / xhigh；无合格 callable Paseo/异构管理器，按skill回退宿主同构最强reviewer。
+  完整 patch `75851e755eb9954c8710c93ebc4d9caca57913fff6afbfb68c6326c7dc28ad72`（HEAD `0d316fd`）。
+  四项 blocking：空修订授权被拒；重开面板可生成双run身份；恢复queued关闭丢失未知费用；刷新后确定拒绝丢原草稿。
+- 修复：selected_revisions允许空集合且绝不覆盖库素材；授权前持久化下一run身份、卸载后不推进、存储CAS；
+  冻结草稿随命令保存并在确定拒绝后恢复；queued关闭复用锁内控制收尾，投影真实费用与已有交付。
+  另用数据库锁阻塞复现维护超时跳过未处理账号，cursor改为最后实际尝试账号。
+- 回归：文字授权先红后绿；真实Gateway无usage结果恢复后模型停用先红(not_started)后绿；deadline分支同验；
+  Playwright两种延迟授权响应顺序均只1次创建run，未知提交刷新后422仍完整恢复会话/模型/Skill/原文。
+  C第2轮前最终受影响门禁及完整候选重新冻结中；保持未提交。
+- 第2轮修复后验证：`make check-go PKG=./internal/creativeagent/...` exit0（build/lint0issues/26.849s），
+  `make check-frontend` 385项全绿，`make generate-check` 无漂移，新增真实组件浏览器竞态/草稿回归通过。
+  最初全量Go门禁仍为跨包/迁移证据；本轮未修改Gateway/迁移实现，未重复付费调用。
+
+- C 第2轮同lineage review通过：完整 patch `5e5dba57aa551566b4d083c8aff552fe595559bb42c30ade012f1472835ffb44`；
+  首轮4项 blocking及维护cursor项全部resolved；unresolved/new blocking/important均无。
+  返回后重建完整候选确认SHA-256一致，仅随后追加本工作游标完成记录。
+- 完成：C 控制/救援/文字补充/受限只读恢复、最小轮询面板与真实DeepSeek验收已交付；临时浏览器服务已停止。
+  C 保留未提交，未推送/部署/生产迁移。FND-08 流式与写工具、FND-09附件尚未开始。
+  开发契约与当前能力边界归档 `docs/dev/creative-agent.md`；无新lesson，永久Epic保持冻结，继续保留本work游标。
+
+- 2026-09-18 owner 明确授权「OK，你提交吧」。提交前核对 C 完整文件集合与已审候选一致，除 work 游标完成记录外全部内容逐字节一致；本提交落库 C。未推送、合并或部署，FND-08 未开始。

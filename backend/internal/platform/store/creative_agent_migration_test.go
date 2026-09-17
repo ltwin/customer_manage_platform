@@ -43,6 +43,9 @@ func TestAgentConversationMigrationShapeAndLossyRollback(t *testing.T) {
 	// 0045 (skill foundation) and 0046 (agent runs) sit above this migration;
 	// step past both first.
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("agent control rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("agent checkpoint rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -133,6 +136,9 @@ func TestAgentConversationMigrationShapeAndLossyRollback(t *testing.T) {
 		}
 	}
 
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("agent control rollback", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("agent checkpoint rollback", err)
 	}

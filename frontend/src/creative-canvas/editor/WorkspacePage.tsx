@@ -47,6 +47,7 @@ import { blankDraft, contentText, payload } from './content.ts'
 import '@xyflow/react/dist/style.css'
 import './workspace.css'
 import LibraryPanel from './LibraryPanel.tsx'
+import AgentPanel from './AgentPanel.tsx'
 import { emptyCatalog, emptyOrganization } from './libraryState.ts'
 import OrganizationPicker from './OrganizationPicker.tsx'
 import { useUploads } from './uploads.ts'
@@ -860,6 +861,7 @@ function Workspace({ account }: { account: string }) {
       style={{ '--shelf-width': `${libraryWidth}px` } as CSSProperties}
       className={`cc-workspace ${!canvasID ? 'is-library' : ''} ${libraryOpen ? 'has-library' : ''}`}
     >
+      {canvasID && <AgentPanel key={canvasID} account={account} canvasID={canvasID} />}
       <header className="cc-header">
         <div className="cc-heading">
           <Link

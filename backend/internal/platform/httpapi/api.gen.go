@@ -634,22 +634,22 @@ func (e CreativeAgentInstructionSegmentType) Valid() bool {
 
 // Defines values for CreativeAgentMessageRole.
 const (
-	Assistant CreativeAgentMessageRole = "assistant"
-	System    CreativeAgentMessageRole = "system"
-	Tool      CreativeAgentMessageRole = "tool"
-	User      CreativeAgentMessageRole = "user"
+	CreativeAgentMessageRoleAssistant CreativeAgentMessageRole = "assistant"
+	CreativeAgentMessageRoleSystem    CreativeAgentMessageRole = "system"
+	CreativeAgentMessageRoleTool      CreativeAgentMessageRole = "tool"
+	CreativeAgentMessageRoleUser      CreativeAgentMessageRole = "user"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAgentMessageRole enum.
 func (e CreativeAgentMessageRole) Valid() bool {
 	switch e {
-	case Assistant:
+	case CreativeAgentMessageRoleAssistant:
 		return true
-	case System:
+	case CreativeAgentMessageRoleSystem:
 		return true
-	case Tool:
+	case CreativeAgentMessageRoleTool:
 		return true
-	case User:
+	case CreativeAgentMessageRoleUser:
 		return true
 	default:
 		return false
@@ -800,6 +800,54 @@ func (e CreativeAgentSkillVersionOrigin) Valid() bool {
 	case CreativeAgentSkillVersionOriginAccount:
 		return true
 	case CreativeAgentSkillVersionOriginPlatform:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentStepSummaryKind.
+const (
+	CreativeAgentStepSummaryKindCheck CreativeAgentStepSummaryKind = "check"
+	CreativeAgentStepSummaryKindModel CreativeAgentStepSummaryKind = "model"
+	CreativeAgentStepSummaryKindTool  CreativeAgentStepSummaryKind = "tool"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentStepSummaryKind enum.
+func (e CreativeAgentStepSummaryKind) Valid() bool {
+	switch e {
+	case CreativeAgentStepSummaryKindCheck:
+		return true
+	case CreativeAgentStepSummaryKindModel:
+		return true
+	case CreativeAgentStepSummaryKindTool:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentStepSummaryState.
+const (
+	CreativeAgentStepSummaryStateDispatched CreativeAgentStepSummaryState = "dispatched"
+	CreativeAgentStepSummaryStateFailed     CreativeAgentStepSummaryState = "failed"
+	CreativeAgentStepSummaryStatePrepared   CreativeAgentStepSummaryState = "prepared"
+	CreativeAgentStepSummaryStateSucceeded  CreativeAgentStepSummaryState = "succeeded"
+	CreativeAgentStepSummaryStateUnknown    CreativeAgentStepSummaryState = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentStepSummaryState enum.
+func (e CreativeAgentStepSummaryState) Valid() bool {
+	switch e {
+	case CreativeAgentStepSummaryStateDispatched:
+		return true
+	case CreativeAgentStepSummaryStateFailed:
+		return true
+	case CreativeAgentStepSummaryStatePrepared:
+		return true
+	case CreativeAgentStepSummaryStateSucceeded:
+		return true
+	case CreativeAgentStepSummaryStateUnknown:
 		return true
 	default:
 		return false
@@ -2353,28 +2401,28 @@ func (e ReminderType) Valid() bool {
 
 // Defines values for ScheduleBusinessDraftUnavailableReason.
 const (
-	DurationNotPositive     ScheduleBusinessDraftUnavailableReason = "duration_not_positive"
-	DurationOutOfRange      ScheduleBusinessDraftUnavailableReason = "duration_out_of_range"
-	DurationUnknown         ScheduleBusinessDraftUnavailableReason = "duration_unknown"
-	OrderRequired           ScheduleBusinessDraftUnavailableReason = "order_required"
-	ScheduleSlotNotFuture   ScheduleBusinessDraftUnavailableReason = "schedule_slot_not_future"
-	ScheduleStageIneligible ScheduleBusinessDraftUnavailableReason = "schedule_stage_ineligible"
+	ScheduleBusinessDraftUnavailableReasonDurationNotPositive     ScheduleBusinessDraftUnavailableReason = "duration_not_positive"
+	ScheduleBusinessDraftUnavailableReasonDurationOutOfRange      ScheduleBusinessDraftUnavailableReason = "duration_out_of_range"
+	ScheduleBusinessDraftUnavailableReasonDurationUnknown         ScheduleBusinessDraftUnavailableReason = "duration_unknown"
+	ScheduleBusinessDraftUnavailableReasonOrderRequired           ScheduleBusinessDraftUnavailableReason = "order_required"
+	ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture   ScheduleBusinessDraftUnavailableReason = "schedule_slot_not_future"
+	ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible ScheduleBusinessDraftUnavailableReason = "schedule_stage_ineligible"
 )
 
 // Valid indicates whether the value is a known member of the ScheduleBusinessDraftUnavailableReason enum.
 func (e ScheduleBusinessDraftUnavailableReason) Valid() bool {
 	switch e {
-	case DurationNotPositive:
+	case ScheduleBusinessDraftUnavailableReasonDurationNotPositive:
 		return true
-	case DurationOutOfRange:
+	case ScheduleBusinessDraftUnavailableReasonDurationOutOfRange:
 		return true
-	case DurationUnknown:
+	case ScheduleBusinessDraftUnavailableReasonDurationUnknown:
 		return true
-	case OrderRequired:
+	case ScheduleBusinessDraftUnavailableReasonOrderRequired:
 		return true
-	case ScheduleSlotNotFuture:
+	case ScheduleBusinessDraftUnavailableReasonScheduleSlotNotFuture:
 		return true
-	case ScheduleStageIneligible:
+	case ScheduleBusinessDraftUnavailableReasonScheduleStageIneligible:
 		return true
 	default:
 		return false
@@ -3444,6 +3492,16 @@ type CreativeAgentCatalog struct {
 	Vendors              []string             `json:"vendors"`
 }
 
+// CreativeAgentControlPayload defines model for CreativeAgentControlPayload.
+type CreativeAgentControlPayload = map[string]interface{}
+
+// CreativeAgentControlRequest defines model for CreativeAgentControlRequest.
+type CreativeAgentControlRequest struct {
+	ClientCreatedAt time.Time                   `json:"client_created_at"`
+	OperationId     openapi_types.UUID          `json:"operation_id"`
+	Payload         CreativeAgentControlPayload `json:"payload"`
+}
+
 // CreativeAgentConversation defines model for CreativeAgentConversation.
 type CreativeAgentConversation struct {
 	CanvasId  string `json:"canvas_id"`
@@ -3617,6 +3675,21 @@ type CreativeAgentModelCapability struct {
 	ToolChoice      bool `json:"tool_choice"`
 }
 
+// CreativeAgentRetryPayload defines model for CreativeAgentRetryPayload.
+type CreativeAgentRetryPayload struct {
+	EgressConsentId string `json:"egress_consent_id"`
+
+	// StepIds 当前只恢复未提交结果的 read_skill_resource；模型、成功或未知步骤明确拒绝。
+	StepIds []string `json:"step_ids"`
+}
+
+// CreativeAgentRetryRequest defines model for CreativeAgentRetryRequest.
+type CreativeAgentRetryRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeAgentRetryPayload `json:"payload"`
+}
+
 // CreativeAgentRun defines model for CreativeAgentRun.
 type CreativeAgentRun struct {
 	// CanvasId 由服务端从会话读出；客户端给的对不上也不采信。
@@ -3646,11 +3719,14 @@ type CreativeAgentRun struct {
 	SettlementState CreativeAgentRunSettlementState `json:"settlement_state"`
 	SkillId         *string                         `json:"skill_id,omitempty"`
 	SkillVersionId  *string                         `json:"skill_version_id,omitempty"`
+	SourceRunId     *string                         `json:"source_run_id,omitempty"`
 	StartedAt       *time.Time                      `json:"started_at,omitempty"`
 
 	// State 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
 	State            CreativeAgentRunState `json:"state"`
 	TriggerMessageId string                `json:"trigger_message_id"`
+	WaitReason       *string               `json:"wait_reason,omitempty"`
+	WaitingToken     *string               `json:"waiting_token,omitempty"`
 }
 
 // CreativeAgentRunSettlementState 费用是另一个问题：未知的账单不阻止已交付的运行进入终态，终态也不关闭核算。 这是投影，允许短暂滞后。
@@ -3658,6 +3734,11 @@ type CreativeAgentRunSettlementState string
 
 // CreativeAgentRunState 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
 type CreativeAgentRunState string
+
+// CreativeAgentRunPage defines model for CreativeAgentRunPage.
+type CreativeAgentRunPage struct {
+	Items []CreativeAgentRun `json:"items"`
+}
 
 // CreativeAgentRunPayload 一次运行的创建输入。conversation_id 由服务端从路径注入，客户端不传； 指令本身原样引用上面冻结的提交协议，不把它的字段抄第二遍。
 type CreativeAgentRunPayload struct {
@@ -3747,6 +3828,42 @@ type CreativeAgentSkillVersion struct {
 
 // CreativeAgentSkillVersionOrigin defines model for CreativeAgentSkillVersion.Origin.
 type CreativeAgentSkillVersionOrigin string
+
+// CreativeAgentStepPage defines model for CreativeAgentStepPage.
+type CreativeAgentStepPage struct {
+	Items []CreativeAgentStepSummary `json:"items"`
+}
+
+// CreativeAgentStepSummary defines model for CreativeAgentStepSummary.
+type CreativeAgentStepSummary struct {
+	ErrorCode     *string                       `json:"error_code,omitempty"`
+	Id            string                        `json:"id"`
+	Kind          CreativeAgentStepSummaryKind  `json:"kind"`
+	RetryOfStepId *string                       `json:"retry_of_step_id,omitempty"`
+	State         CreativeAgentStepSummaryState `json:"state"`
+	ToolKey       *string                       `json:"tool_key,omitempty"`
+}
+
+// CreativeAgentStepSummaryKind defines model for CreativeAgentStepSummary.Kind.
+type CreativeAgentStepSummaryKind string
+
+// CreativeAgentStepSummaryState defines model for CreativeAgentStepSummary.State.
+type CreativeAgentStepSummaryState string
+
+// CreativeAgentSupplementPayload defines model for CreativeAgentSupplementPayload.
+type CreativeAgentSupplementPayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+	Text             string           `json:"text"`
+	WaitingToken     string           `json:"waiting_token"`
+}
+
+// CreativeAgentSupplementRequest defines model for CreativeAgentSupplementRequest.
+type CreativeAgentSupplementRequest struct {
+	ClientCreatedAt time.Time                      `json:"client_created_at"`
+	OperationId     openapi_types.UUID             `json:"operation_id"`
+	Payload         CreativeAgentSupplementPayload `json:"payload"`
+}
 
 // CreativeAgentTool defines model for CreativeAgentTool.
 type CreativeAgentTool struct {
@@ -4087,11 +4204,13 @@ type CreativeEgressConsentPurpose string
 
 // CreativeEgressConsentGrantPayload defines model for CreativeEgressConsentGrantPayload.
 type CreativeEgressConsentGrantPayload struct {
-	DataClasses         []CreativeEgressConsentGrantPayloadDataClasses `json:"data_classes"`
-	Mode                CreativeEgressConsentGrantPayloadMode          `json:"mode"`
-	Purpose             CreativeEgressConsentGrantPayloadPurpose       `json:"purpose"`
-	SelectedRevisionIds *[]string                                      `json:"selected_revision_ids,omitempty"`
-	VendorKey           string                                         `json:"vendor_key"`
+	DataClasses []CreativeEgressConsentGrantPayloadDataClasses `json:"data_classes"`
+	Mode        CreativeEgressConsentGrantPayloadMode          `json:"mode"`
+	Purpose     CreativeEgressConsentGrantPayloadPurpose       `json:"purpose"`
+
+	// SelectedRevisionIds selected_revisions 模式下的精确材料授权集合；空集合只允许本会话文字与选定 Skill，不授权素材库内容。
+	SelectedRevisionIds *[]string `json:"selected_revision_ids,omitempty"`
+	VendorKey           string    `json:"vendor_key"`
 }
 
 // CreativeEgressConsentGrantPayloadDataClasses defines model for CreativeEgressConsentGrantPayload.DataClasses.
@@ -6340,6 +6459,26 @@ type RegisterJSONBody struct {
 	Password string `json:"password"`
 }
 
+// CancelCreativeAgentRunParams defines parameters for CancelCreativeAgentRun.
+type CancelCreativeAgentRunParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CloseCreativeAgentReconciliationParams defines parameters for CloseCreativeAgentReconciliation.
+type CloseCreativeAgentReconciliationParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// RetryCreativeAgentRunParams defines parameters for RetryCreativeAgentRun.
+type RetryCreativeAgentRunParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// SupplementCreativeAgentRunParams defines parameters for SupplementCreativeAgentRun.
+type SupplementCreativeAgentRunParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // ListCreativeAgentSkillsParams defines parameters for ListCreativeAgentSkills.
 type ListCreativeAgentSkillsParams struct {
 	// Q 按 slug 前缀与展示名匹配
@@ -6953,6 +7092,18 @@ type ResetPasswordJSONRequestBody ResetPasswordJSONBody
 
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody RegisterJSONBody
+
+// CancelCreativeAgentRunJSONRequestBody defines body for CancelCreativeAgentRun for application/json ContentType.
+type CancelCreativeAgentRunJSONRequestBody = CreativeAgentControlRequest
+
+// CloseCreativeAgentReconciliationJSONRequestBody defines body for CloseCreativeAgentReconciliation for application/json ContentType.
+type CloseCreativeAgentReconciliationJSONRequestBody = CreativeAgentControlRequest
+
+// RetryCreativeAgentRunJSONRequestBody defines body for RetryCreativeAgentRun for application/json ContentType.
+type RetryCreativeAgentRunJSONRequestBody = CreativeAgentRetryRequest
+
+// SupplementCreativeAgentRunJSONRequestBody defines body for SupplementCreativeAgentRun for application/json ContentType.
+type SupplementCreativeAgentRunJSONRequestBody = CreativeAgentSupplementRequest
 
 // CreateCreativeGroupJSONRequestBody defines body for CreateCreativeGroup for application/json ContentType.
 type CreateCreativeGroupJSONRequestBody = CreateCreativeGroupRequest
@@ -8526,6 +8677,21 @@ type ServerInterface interface {
 	// 一次运行的当前状态、终态与费用投影
 	// (GET /creative/agent-runs/{id})
 	GetCreativeAgentRun(c *gin.Context, id string)
+	// 取消当前运行；未知费用保留核实
+	// (POST /creative/agent-runs/{id}/cancel)
+	CancelCreativeAgentRun(c *gin.Context, id string, params CancelCreativeAgentRunParams)
+	// 结束运行的核实等待；费用核实继续
+	// (POST /creative/agent-runs/{id}/close-reconciliation)
+	CloseCreativeAgentReconciliation(c *gin.Context, id string, params CloseCreativeAgentReconciliationParams)
+	// 恢复一个已记录且可证明安全的固定 Skill 资源读取步骤
+	// (POST /creative/agent-runs/{id}/retry)
+	RetryCreativeAgentRun(c *gin.Context, id string, params RetryCreativeAgentRunParams)
+	// 运行步骤摘要，不返回模型私有推理
+	// (GET /creative/agent-runs/{id}/steps)
+	ListCreativeAgentRunSteps(c *gin.Context, id string)
+	// 在原授权和期限内补充文字继续运行
+	// (POST /creative/agent-runs/{id}/supplements)
+	SupplementCreativeAgentRun(c *gin.Context, id string, params SupplementCreativeAgentRunParams)
 	// 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力
 	// (GET /creative/agent/catalog)
 	GetCreativeAgentCatalog(c *gin.Context)
@@ -8622,6 +8788,9 @@ type ServerInterface interface {
 	// 从最新往回分页；每页按阅读顺序返回
 	// (GET /creative/conversations/{id}/messages)
 	ListCreativeAgentMessages(c *gin.Context, id string, params ListCreativeAgentMessagesParams)
+	// 最近三十次运行，用于刷新后恢复面板
+	// (GET /creative/conversations/{id}/runs)
+	ListCreativeAgentRuns(c *gin.Context, id string)
 	// 提交一次指令并开始一次运行；202 只表示已受理
 	// (POST /creative/conversations/{id}/runs)
 	CreateCreativeAgentRun(c *gin.Context, id string, params CreateCreativeAgentRunParams)
@@ -9239,6 +9408,249 @@ func (siw *ServerInterfaceWrapper) GetCreativeAgentRun(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeAgentRun(c, id)
+}
+
+// CancelCreativeAgentRun operation middleware
+func (siw *ServerInterfaceWrapper) CancelCreativeAgentRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CancelCreativeAgentRunParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CancelCreativeAgentRun(c, id, params)
+}
+
+// CloseCreativeAgentReconciliation operation middleware
+func (siw *ServerInterfaceWrapper) CloseCreativeAgentReconciliation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CloseCreativeAgentReconciliationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CloseCreativeAgentReconciliation(c, id, params)
+}
+
+// RetryCreativeAgentRun operation middleware
+func (siw *ServerInterfaceWrapper) RetryCreativeAgentRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RetryCreativeAgentRunParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RetryCreativeAgentRun(c, id, params)
+}
+
+// ListCreativeAgentRunSteps operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeAgentRunSteps(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeAgentRunSteps(c, id)
+}
+
+// SupplementCreativeAgentRun operation middleware
+func (siw *ServerInterfaceWrapper) SupplementCreativeAgentRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SupplementCreativeAgentRunParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.SupplementCreativeAgentRun(c, id, params)
 }
 
 // GetCreativeAgentCatalog operation middleware
@@ -10647,6 +11059,33 @@ func (siw *ServerInterfaceWrapper) ListCreativeAgentMessages(c *gin.Context) {
 	}
 
 	siw.Handler.ListCreativeAgentMessages(c, id, params)
+}
+
+// ListCreativeAgentRuns operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeAgentRuns(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeAgentRuns(c, id)
 }
 
 // CreateCreativeAgentRun operation middleware
@@ -13640,6 +14079,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id", wrapper.GetCreativeAgentRun)
+	router.POST(options.BaseURL+"/creative/agent-runs/:id/cancel", wrapper.CancelCreativeAgentRun)
+	router.POST(options.BaseURL+"/creative/agent-runs/:id/close-reconciliation", wrapper.CloseCreativeAgentReconciliation)
+	router.POST(options.BaseURL+"/creative/agent-runs/:id/retry", wrapper.RetryCreativeAgentRun)
+	router.GET(options.BaseURL+"/creative/agent-runs/:id/steps", wrapper.ListCreativeAgentRunSteps)
+	router.POST(options.BaseURL+"/creative/agent-runs/:id/supplements", wrapper.SupplementCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/agent/catalog", wrapper.GetCreativeAgentCatalog)
 	router.GET(options.BaseURL+"/creative/agent/skills", wrapper.ListCreativeAgentSkills)
 	router.GET(options.BaseURL+"/creative/agent/skills/:id/versions/:version_id", wrapper.GetCreativeAgentSkillVersion)
@@ -13672,6 +14116,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
 	router.POST(options.BaseURL+"/creative/conversations/:id/egress-consents", wrapper.GrantCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/conversations/:id/messages", wrapper.ListCreativeAgentMessages)
+	router.GET(options.BaseURL+"/creative/conversations/:id/runs", wrapper.ListCreativeAgentRuns)
 	router.POST(options.BaseURL+"/creative/conversations/:id/runs", wrapper.CreateCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
 	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)

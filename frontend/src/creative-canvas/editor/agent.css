@@ -1,0 +1,215 @@
+.cc-agent-launch {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #c9d3d0;
+  border-radius: 24px;
+  background: #244a42;
+  color: #fff;
+  padding: 12px 18px;
+  box-shadow: 0 5px 24px #17382a22;
+  cursor: pointer;
+}
+.cc-agent-panel {
+  position: fixed;
+  right: 16px;
+  top: 76px;
+  bottom: 16px;
+  width: min(392px, calc(100vw - 32px));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #d4ddd7;
+  border-radius: 18px;
+  background: #fafbf8;
+  color: #20392f;
+  box-shadow: 0 18px 70px #162a2530;
+  overflow: hidden;
+}
+.cc-agent-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px;
+  border-bottom: 1px solid #e3e7e0;
+}
+.cc-agent-panel header small {
+  display: block;
+  margin-top: 4px;
+  color: #61736a;
+  font-size: 12px;
+}
+.cc-agent-panel button,
+.cc-agent-panel select,
+.cc-agent-panel textarea {
+  font: inherit;
+}
+.cc-agent-panel button {
+  cursor: pointer;
+}
+.cc-agent-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.cc-agent-panel select {
+  min-width: 0;
+  border: 1px solid #d6ddd6;
+  border-radius: 8px;
+  background: white;
+  padding: 7px;
+  color: inherit;
+}
+.cc-agent-conversations {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+}
+.cc-agent-conversations select {
+  flex: 1;
+}
+.cc-agent-conversations button {
+  border: 1px solid #d6ddd6;
+  background: white;
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+}
+.cc-agent-history {
+  flex: 1;
+  min-height: 110px;
+  overflow: auto;
+  padding: 4px 16px 14px;
+}
+.cc-agent-empty {
+  font-size: 13px;
+  line-height: 1.9;
+  color: #66756b;
+  text-align: center;
+  margin: 36px 0;
+}
+.cc-agent-message {
+  padding: 11px 13px;
+  margin: 9px 0;
+  border-radius: 12px;
+  background: #edf1ea;
+  overflow-wrap: anywhere;
+}
+.cc-agent-message.role-user {
+  margin-left: 24px;
+  background: #e1eae5;
+}
+.cc-agent-message small {
+  font-size: 11px;
+  color: #52685a;
+}
+.cc-agent-message p {
+  font-size: 13px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  margin: 6px 0;
+}
+.cc-agent-status {
+  margin: 0 16px 10px;
+  padding: 10px 12px;
+  border: 1px solid #d9e1d6;
+  border-radius: 10px;
+  font-size: 12px;
+  max-height: 180px;
+  overflow: auto;
+}
+.cc-agent-status > span {
+  display: block;
+  margin-top: 5px;
+  color: #5f6b61;
+}
+.cc-agent-status details {
+  margin-top: 7px;
+}
+.cc-agent-status ol {
+  padding-left: 18px;
+}
+.cc-agent-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cc-agent-controls button,
+.cc-agent-status li button,
+.cc-agent-notice button {
+  border: 1px solid #ccd5c9;
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: white;
+  font-size: 12px;
+  color: #314b3a;
+}
+.cc-agent-compose {
+  border-top: 1px solid #e0e5db;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cc-agent-options {
+  display: flex;
+  gap: 8px;
+}
+.cc-agent-options select {
+  flex: 1;
+  font-size: 12px;
+}
+.cc-agent-compose textarea {
+  resize: vertical;
+  max-height: 150px;
+  min-height: 65px;
+  border: 1px solid #cfd9cb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+  color: #243b2e;
+  font-size: 13px;
+}
+.cc-agent-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #53674f;
+}
+.cc-agent-consent input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+.cc-agent-compose > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.cc-agent-error,
+.cc-agent-notice {
+  margin: 0 16px 8px;
+  padding: 8px 10px;
+  background: #fff1e6;
+  color: #71411e;
+  border-radius: 8px;
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .cc-agent-panel {
+    top: 64px;
+    right: 8px;
+    bottom: 8px;
+    width: calc(100vw - 16px);
+  }
+  .cc-agent-launch {
+    bottom: 18px;
+    right: 14px;
+  }
+}

@@ -108,6 +108,9 @@ func (s *Seq) UnmarshalJSON(data []byte) error {
 // API as decimal strings for the same reason ordinals do.
 type Run struct {
 	ID               string               `json:"id"`
+	WaitingToken     string               `json:"waiting_token,omitempty"`
+	WaitReason       string               `json:"wait_reason,omitempty"`
+	SourceRunID      string               `json:"source_run_id,omitempty"`
 	ConversationID   string               `json:"conversation_id"`
 	CanvasID         string               `json:"canvas_id"`
 	TriggerMessageID string               `json:"trigger_message_id"`
@@ -130,16 +133,25 @@ type Run struct {
 
 const runColumns = "id,conversation_id,canvas_id,trigger_message_id,egress_consent_id,model_key," +
 	"skill_id,skill_version_id,state,settlement_state,error_code,limits_version,revision," +
-	"last_event_seq,pruned_through_seq,deadline_at,created_at,started_at,finished_at"
+	"last_event_seq,pruned_through_seq,deadline_at,created_at,started_at,finished_at,waiting_token,wait_reason,source_run_id"
 
 func scanRun(row interface{ Scan(...any) error }) (Run, error) {
 	var r Run
-	var skillID, versionID, errorCode *string
+	var skillID, versionID, errorCode, waiting, reason, source *string
 	var revision, lastSeq, prunedSeq int64
 	if err := row.Scan(&r.ID, &r.ConversationID, &r.CanvasID, &r.TriggerMessageID, &r.EgressConsentID,
 		&r.ModelKey, &skillID, &versionID, &r.State, &r.SettlementState, &errorCode, &r.LimitsVersion,
-		&revision, &lastSeq, &prunedSeq, &r.DeadlineAt, &r.CreatedAt, &r.StartedAt, &r.FinishedAt); err != nil {
+		&revision, &lastSeq, &prunedSeq, &r.DeadlineAt, &r.CreatedAt, &r.StartedAt, &r.FinishedAt, &waiting, &reason, &source); err != nil {
 		return Run{}, err
+	}
+	if waiting != nil {
+		r.WaitingToken = *waiting
+	}
+	if reason != nil {
+		r.WaitReason = *reason
+	}
+	if source != nil {
+		r.SourceRunID = *source
 	}
 	r.Revision = creativeops.Revision(revision)
 	r.LastEventSeq, r.PrunedThroughSeq = Seq(lastSeq), Seq(prunedSeq)
