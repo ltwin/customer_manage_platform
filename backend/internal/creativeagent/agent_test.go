@@ -869,6 +869,7 @@ func TestACatalogReportsTheFrozenLimitsAndReachableVendors(t *testing.T) {
 // appears after encoding.
 func TestEveryCatalogArrayIsAnArrayOnTheWire(t *testing.T) {
 	f := setup(t)
+	f.service.tools = nil // Explicitly exercise a deployment without tools.
 	view, err := f.service.Catalog(t.Context(), f.alice)
 	if err != nil {
 		t.Fatal(err)

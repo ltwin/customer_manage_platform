@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-07
-next_action: B1（运行骨架与一次模型轮次、迁移0046、派发前同意与Skill控制锁双重二次校验、Eino单轮）已完成owner round-1四条修复（2×P1预留泄漏/模型不可用搁浅，2×P2输入上限/Skill禁用原子性），全部红→绿取证，门禁全绿，未提交，等owner确认提交；随后B2：Eino Skill Backend固定版本加载、ReadSkillResource/ReadRunResult只读工具、context items卸载、12工具/13轮次有界多轮（须把第二轮起的未认领预留纳入closeRunInTx的释放）；再B3：版本化Checkpoint与恢复接缝。等待/取消/对账/终态恢复与最小Agent面板仍属里程碑C
+next_action: B2 实现、独立审查和完整 make check-go 已通过，owner 已授权提交本批改动并继续 B3；下一实现阶段为版本化 Checkpoint 与恢复接缝。C 的等待/取消/救援/SSE/面板尚未开始。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1070,3 +1070,42 @@ owner 提出 2 项 P1、2 项 P2，四条全部在代码中确认为真并已修
 - 新增 7 项回归（`runs_budget_test.go`）：一次 run 只占一笔且结束归零、未派发即结束释放、队列中过期释放、模型不可用不搁浅且槽位释放、引用展开撞上限且合尺寸引用仍送达、派发事务确实调用控制端口、禁用与派发意图争同一把锁（两种顺序都断言）、控制端口对不可见者报「不存在」。其中「撤销先提交」那条在红态下仍绿——它的预留已被请求认领、走 `CancelInTx` 归还；真正隔离新增释放代码的是过期那条，测试注释已写明，避免后来者以为两条覆盖同一行。
 - 验证：`make check-go PKG=./...` 通过（build、lint 0 issues、45 包无 FAIL）；`make check-frontend` 381 项通过；`make generate-check` 通过；`git diff --check` 通过。
 - 遗留（已写入 docs/dev/creative-agent.md）：`closeRunInTx` 的释放只覆盖**初始**那一笔预留；B2 加多轮后第二轮起各自预留，届时须把未认领的后续预留一并纳入。真正的进程崩溃仍只能靠里程碑 C 的救援扫描。
+
+
+### 2026-09-17 · B1 提交同步与 B2 执行
+
+- owner 已授权并完成 B1 提交：`da7315e`（首轮四项修复）及 `49b9eac`（收尾锁序/确认回滚重试、空白答复失败）。后者 `make check-go` 通过，工作树干净。
+- owner 本轮授权继续 B2，沿用 `feat/creative-workspace-redesign` worktree；本轮没有提交授权。
+- B2 归属：`creativeagent` 持久工具计划、Eino Skill Backend/工具 middleware、context items；
+  `llmgateway` 接受 Eino 调用时工具列表及 caller-group 未用预算清理；`creativecontent` 增加 context refs 根。
+  0047 新建 context items/refs；已有迁移回滚测试跟进最新迁移层级。无新 HTTP 请求形状。
+- 精确边界：仅本次显式选择的固定 Skill，普通对话无 Skill 发现目录；三个只读运行时工具，
+  不引入画布写工具、自动模型摘要、Checkpoint 或崩溃恢复。详细事实与限制见 `docs/dev/creative-agent.md` B2 节。
+- 图谱 Verify：目标 project 正确，但 generation 仍为 `2026-09-04T15:47:38Z`；相关符号查询无结果且无分页，
+  creativeagent/creativeskill/llmgateway 路径 not_tracked，使用实际源码核查，不作完整图谱覆盖断言。
+- Context7 当前会话无 callable 工具；Eino 接口以官方文档和锁定 `v0.9.19` 模块源码核对。
+- 验证进行中：旧实现的多轮回归红（只调用一次、无工具计划）；新运行时定向集成测试已绿。
+  首轮全量门禁发现两个新测试文件 import 分组问题，已修正并重跑。
+
+- B2 首轮独立审查：宿主 `collaboration`，`gpt-6-astra` / xhigh，run `/root/b2_review`。
+  当前没有异构供应商审查工具，回退最强同构模型；Paseo 偏好文件不存在，未调用其 daemon。
+  冻结 patch `f034f12ceb0ba9c061ca651e1bde875b10009fb2c2e31b955387caac521dee7c`，结论建议先改再合。
+- 首轮 4 blocking + 1 important 均已修复：模型可见 schema 提供固定 digest/登记路径；重复内容
+  授权闭包去重而保留重复正文；无读回工具权限时长资源保持有界 inline；末尾请求查询独立 30 秒超时；
+  取消未派发请求时同事务 abandoned 本 caller 消费保留，未知/成功请求的消费保留不释放。
+  digest 缺失、重复引用 23505、pending consumer 遗留均已从真实失败断言转绿；长资源无读回权限补永久回归。
+- 验证：一次完整 `make check-go` 已通过（build、lint 0 issues、全部 Go 包与 0047/历史回滚测试）；
+  审查修复后再次 build 全包、lint 受影响包通过，creativeagent 全包通过（43.941s）。
+  多路径 PKG 的子 Make 调用不支持空格，后续 Gateway 包单独执行；不把该命令拼接错误记作测试通过。
+  当前将重跑完整门禁，并由同一 reviewer 复核完整候选及修复增量。
+
+- B2 第 2 轮独立审查：同一 `/root/b2_review`，完整 patch
+  `de983fa55e3f7c8c5d6f51fef90f15699c93e0ea456a9d83227c11e086c8e737`，结论「可合，审查通过」。
+  首轮 5 项全部 resolved，unresolved/new findings 均无；无第三轮。
+- 最终验证：`make check-go` exit 0，build 全包、lint 0 issues、全部 Go 包通过；creativeagent
+  108.527s、llmgateway 37.076s、httpapi 62.567s、store（含新迁移与历史回滚）115.707s。
+  `git diff --check` 通过。供应商为脚本桩，无真实模型请求和费用。
+- 完成状态：B2 实现/验证/审查完成，开发事实与边界已同步 `docs/dev/creative-agent.md`。
+  未创建新 lesson、未修改冻结 Epic、未提交/推送/部署；B3 与 C 保持未开始。
+
+- owner 后续授权：「提交，然后继续 B3」。本批 B2 按该授权提交；B3 沿用当前 worktree，新增改动仍待单独提交授权。

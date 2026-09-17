@@ -39,7 +39,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-3"
+const limitsVersion = "creative-agent-4"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -133,6 +133,7 @@ func DefaultLimits() Limits {
 // skill package, which is why nothing here takes an account other than the
 // caller's own (§5).
 type SkillDirectory interface {
+	ReadResource(context.Context, store.AccountScope, string, string, string) ([]byte, error)
 	ListAccessibleSkills(ctx context.Context, scope store.AccountScope, query, cursor string, limit int) (creativeskill.CatalogPage, error)
 	ResolveVersion(ctx context.Context, scope store.AccountScope, skillID, versionID string) (creativeskill.Snapshot, error)
 	// RequireRunnableInTx re-checks the mutable half — may this version still
@@ -154,9 +155,7 @@ type Service struct {
 	gateway *llmgateway.Service
 	models  *llmgateway.Catalog
 	skills  SkillDirectory
-	// tools is what this deployment can dispatch. Empty until FND-08 registers
-	// the runtime and canvas tools; a skill declaring anything is reported as
-	// unavailable with its reason until then.
+	// tools lists deployed runtime capabilities; canvas tools remain in FND-08.
 	tools  []ToolEntry
 	limits Limits
 	// runtime is the queue this service enqueues into inside its own
@@ -174,7 +173,7 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 	if gateway == nil || models == nil || skills == nil {
 		return nil, errors.New("creative agent needs a gateway, a model catalog and a skill directory")
 	}
-	return &Service{gateway: gateway, models: models, skills: skills, limits: DefaultLimits(), logger: slog.Default()}, nil
+	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), logger: slog.Default()}, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.

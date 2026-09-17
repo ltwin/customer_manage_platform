@@ -24,18 +24,22 @@ import (
 // a test that observes "the vendor was never called" is observing the actual
 // dispatch path rather than a mock of it.
 type stubVendor struct {
-	mu    sync.Mutex
-	sent  []llmgateway.ChatRequest
-	reply string
-	fail  error
+	mu     sync.Mutex
+	sent   []llmgateway.ChatRequest
+	reply  string
+	fail   error
+	script func(context.Context, llmgateway.ProviderRequest, int) (llmgateway.Result, error)
 }
 
 func (v *stubVendor) Key() llmgateway.ProviderKey { return llmgateway.ProviderOpenAICompatible }
 
-func (v *stubVendor) Invoke(_ context.Context, r llmgateway.ProviderRequest) (llmgateway.Result, error) {
+func (v *stubVendor) Invoke(ctx context.Context, r llmgateway.ProviderRequest) (llmgateway.Result, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.sent = append(v.sent, r.Chat)
+	if v.script != nil {
+		return v.script(ctx, r, len(v.sent))
+	}
 	if v.fail != nil {
 		return llmgateway.Result{}, v.fail
 	}

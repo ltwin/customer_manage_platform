@@ -237,21 +237,8 @@ func (s *Service) registeredToolRefs() map[string]bool {
 	return refs
 }
 
-// registeredTools reports what this deployment can really dispatch. It is empty
-// until the read-only runtime tools and the canvas tools are registered
-// (FND-08), and the catalog reflects that honestly instead of advertising an
-// unreachable set.
-//
-// It reads a field rather than returning a literal because the registry is a
-// deployment fact like the model catalog, not a property of this type. Until
-// FND-08 fills it the answer is the same; what changes is that the seam exists,
-// so a skill's availability can be exercised against a registry that has
-// something in it.
-//
-// The nil check is the whole point of routing every reader through here: the
-// field's zero value is nil, the API declares a required array, and a nil slice
-// marshals as null. A client looping over the list would fault on a deployment
-// that has registered nothing — which is every deployment today.
+// registeredTools returns the deployment registry, preserving the API's array
+// shape even when a deployment explicitly registers nothing.
 func (s *Service) registeredTools() []ToolEntry {
 	if s.tools == nil {
 		return []ToolEntry{}

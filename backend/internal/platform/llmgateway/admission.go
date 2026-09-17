@@ -538,3 +538,62 @@ func maxPositive(value, fallback int64) int64 {
 	}
 	return fallback
 }
+
+// ReleaseUnusedGroupInTx closes only unused admission for a caller group.
+// The caller must exclude further admissions to this group (the Harness holds
+// its slot and verifies the claim). All month buckets are locked in order before
+// requests, including runs that crossed a month boundary. Dispatched/unknown
+// requests keep their accounting and are never treated as unused reservations.
+func (s *Service) ReleaseUnusedGroupInTx(ctx context.Context, tx store.TxAccountScope, caller, group string) error {
+	rows, err := tx.QueryPage(ctx, "llm_usage_reservations", "id,request_id,budget_period,currency",
+		"caller_service=$2 AND caller_group_id=$3", []store.OrderBy{{Column: "budget_period"}, {Column: "currency"}, {Column: "id"}}, 1000, 0, caller, group)
+	if err != nil {
+		return err
+	}
+	type entry struct {
+		id       string
+		request  *string
+		period   time.Time
+		currency string
+	}
+	var entries []entry
+	for rows.Next() {
+		var e entry
+		if err = rows.Scan(&e.id, &e.request, &e.period, &e.currency); err != nil {
+			rows.Close()
+			return err
+		}
+		entries = append(entries, e)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if len(entries) == 1000 {
+		return fmt.Errorf("%w: caller group exceeds cleanup bound", ErrValidation)
+	}
+	for _, e := range entries {
+		if err = s.lockBudget(ctx, tx, e.period, e.currency); err != nil {
+			return err
+		}
+	}
+	for _, e := range entries {
+		if e.request == nil {
+			err = s.ReleaseReservationInTx(ctx, tx, e.id)
+		} else {
+			var view RequestView
+			view, err = s.CancelInTx(ctx, tx, *e.request)
+			if (err == nil || errors.Is(err, ErrState)) && view.State == StateCancelled {
+				// A cancelled prepared request cannot produce a result. Release
+				// only this caller's consumers; unknown/successful requests keep
+				// their retention until reconciliation or consumption.
+				_, err = tx.Update(ctx, "llm_result_consumers", "state='abandoned',released_at=$4", "request_id=$2 AND caller_service=$3 AND state='pending'", *e.request, caller, s.now().UTC())
+			}
+		}
+		if err != nil && !errors.Is(err, ErrState) {
+			return err
+		}
+	}
+	return nil
+}
