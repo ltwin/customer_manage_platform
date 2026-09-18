@@ -14,6 +14,9 @@ func TestAgentContextMigrationRejectsLossyRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("execution continuation rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("control rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -38,6 +41,9 @@ func TestAgentContextMigrationRejectsLossyRollback(t *testing.T) {
 	}
 	if _, err = db.Exec(`INSERT INTO creative_agent_context_items(id,account_id,run_id,kind,source_manifest,payload,digest,revision,retained_until) VALUES('ccci_test','scope','run','tool_result','{}','saved',repeat('a',64),1,now()+interval '90 days')`); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("execution continuation rollback", err)
 	}
 	if err = store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("control rollback", err)

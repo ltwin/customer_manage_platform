@@ -43,7 +43,7 @@ func (s *ExecutionService) Publish(ctx context.Context, scope store.AccountScope
 		eligible := live && !canvas.Archived && n.ActiveExecutionID != nil && *n.ActiveExecutionID == execution.ID && execution.State == "succeeded" && execution.ApplyState == "pending" && now.Before(execution.Deadline) && s.executors[execution.ActionKey] != nil && s.executors[execution.ActionKey].Version() == execution.ExecutorVersion
 		if !eligible {
 			revision := canvas.Revision
-			if execution.State == "queued" || execution.State == "running" {
+			if execution.State == "queued" || execution.State == "running" || execution.State == "reconciling" {
 				return creativeops.Outcome{}, ErrVersionConflict
 			}
 			if execution.ApplyState == "pending" {

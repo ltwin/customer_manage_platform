@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: FND-13 统一工具入口首个切片已实现并通过验证/独立复审，待owner检查与提交授权；下一切片为执行与Gateway接缝，用同步/异步受控Adapter验证生命周期。模型选择继续后置。
+next_action: 统一工具入口已提交ff2453b；FND-13画布侧阶段续接已完成全量验证和独立review，新增代码未提交。下一切片为Gateway生成原子准入/请求绑定/观察及结果交接，模型选择继续后置。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1285,3 +1285,19 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 
 - 第二轮同一reviewer复审通过：完整候选SHA-256 `8888a8c8d98b4d4699c514b750093293fd96dd5f36b5b91f08a4cb2b6b4a08a9`；首轮blocking resolved，unresolved/new findings均无。已核对冻结候选与工作树一致；此后仅补本游标的结果和next_action，没有修改被审代码。
 - 首个公共入口切片完成且未提交；本结论不代表FND-13整体完成。下一切片按模块设计§10推进执行/Gateway接缝与同步/异步受控Adapter；真实供应商、结果取件/计费、Prompt界面及FND-08 Agent写工具/SSE尚未完成。本轮无迁移、付费调用或永久Epic变更。
+
+### 2026-09-18 · FND-13 画布侧执行续接
+
+- owner授权先提交已审改动再继续开发；统一工具入口已提交`ff2453b`。此前通过范围保持，后续实现授权不自动扩大成新提交授权。
+- 当前切片沿模块设计§13：NodeExecutor由同步Compose改为单次Step，内部文本沿统一观察协议执行；等待/未知结果保存恢复位置和下次唤醒，completed先保存有界结果再入库/发布。采用现有执行表、operation/epoch/lease与River原job，未增加通用任务账本。
+- 风险与保障：新增持久列/阶段顺序、改变队列延后语义→0050兼容/拒绝有损回滚测试、数据库恢复/取消/结果重试、实际River连续等待及独立change review。现有迁移测试必须先退0050再验证各自目标迁移，按原有命名列表补齐，未降低断言。
+- 图谱Verify：project/root正确，generation仍2026-09-04T15:47:38Z，Execution/Provider/Compose/Observe查询0且无分页；相关execution/publish/Gateway/jobs路径coverage均not_tracked，已精确源码回退。未宣称完整图谱。Context7无可调用工具，River延后语义核对官方API与当前v0.40.0；旧头像generation记录范围不适用本次纯JSON结果，没有新lesson。
+- 先写测试确认缺少Step/Defer编译红；随后定向真实测试绿（creativecanvas10.829s，store12.268s），包含跨worker续接、入库故障重试不再计算、reconciling核实/取消、固定恢复引用/到期、River最大尝试1且连续6次等待后完成、0050旧行兼容和有损回滚拒绝。
+- 当前仅内部文本生产驱动及受控测试执行器，不声称Gateway异步收费链路、供应商Adapter或完整FND-13已经完成；下一步Gateway原子准入/请求绑定/观察与结果交接仍需实现。未付费调用或提交本切片。
+
+- 实施自查补充：领取reconciling任务时保留该状态，避免worker在核实中重启后丢失未知受理事实；测试核对领取期间数据库状态。首次全量门禁仅两处测试import分组lint失败，已修正，当前全量build/lint0issues，测试执行中。
+- 首轮独立change review使用native collaboration新reviewer，gpt-6-astra/xhigh；没有callable异构provider discovery，Paseo偏好文件实际读取缺失，回退同构最强模型。冻结本轮完整patch，review期间不改工作树；只读、不提交、不运行额外容器/付费调用，最多3轮同一lineage。
+
+- 最终验证：`make check-go` exit0，全部build/lint/test通过；creativeagent90.457s、creativecanvas34.150s、httpapi44.952s、llmgateway15.981s，完整日志 `/tmp/fnd13-stage-check-go.log`。模块文档相对链接/代码围栏与git diff --check通过；本切片未改公开API/schema，无生成物漂移变更。
+- 独立review首轮通过（/root/fnd13_stage_review，gpt-6-astra/xhigh）：冻结34文件完整补丁SHA-256 `1aa4dfdcd929a0c218686b65d000ebf15cdcc4d6e4970c7d7180b8a6c17fb2de`；blocking/important/nit均无。已核对工作树仍与审查候选一致；此后只追加本工作游标状态和证据，没有改被审代码。
+- 本轮开发交付：画布侧阶段续接完成，可供检查；未提交。下一步仍需Gateway生成专属控制面/预算/结果消费者的真实事务桥，不能直接把测试executor替换成供应商HTTP即开放收费生成。

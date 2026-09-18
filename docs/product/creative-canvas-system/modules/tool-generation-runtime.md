@@ -379,3 +379,19 @@ owner确认架构理解后授权「补齐设计后开始开发」。先交付公
 - 保持原HTTP路由/响应与命令回执协议。注册器可承载HTTP command/execution；命令回放和202执行身份以领域回执为准。已有其他命令和三个Harness只读工具本批不迁移，不声称所有工具已完成统一接入，也不提前扩大Agent权限。
 - 输出schema不匹配属于服务端实现错误，保留已经取得的原回执，不自动重做业务；调用观测不含正文，观测回调异常不得把已提交命令变成重试信号。
 - 该切片不调用供应商、不涉及新迁移；媒体异步执行/计费适配、Prompt面板仍是本项后续切片。
+
+
+## 13. 执行续接切片（2026-09-18）
+
+本切片落实§10第二步的**画布侧阶段执行接缝**：生产内部文本合成迁入同一Step协议；同步完成、等待和需核实三类观察共用持久状态。Gateway生成请求、预算和供应商任务观察尚未实现；不得把本节测试执行器当作真实供应商适配或已完成收费恢复。
+
+- `NodeExecutor.Step` 是受信业务驱动端口，不是供应商Adapter。输入带固定execution_id、epoch、deadline、Prompt/输入修订与恢复位置；未来Gateway桥必须以execution_id绑定逻辑请求并在派发事务复核资格。恢复位置为空也必须先找回Gateway绑定，不能据此重复提交。
+- `ExecutionObservation` 只允许completed、waiting、reconciling；本期completed只支持已验证的文本Payload。waiting需非空、不可变的非秘密Gateway引用；reconciling可无引用，表示尚不能证明受理结果。已有引用不能被换成新请求。每步只执行一次有界动作，网络/计算不持数据库事务。
+- 迁移0050在现有`creative_node_executions`增加resume_token、next_step_at、result_payload。新增字段不作为公开DTO暴露；旧执行默认空恢复位置/无结果。已有结果或续接证据时down拒绝，防止回滚丢失事实。
+- 每次领取仍按账号→画布→execution锁序，使用数据库时钟检查期限/lease，递增epoch。Step上下文不晚于lease和任务期限；保存观察与发布均复核epoch和资格，旧worker不能覆盖新状态。
+- waiting/reconciling提交恢复位置、下一次可执行时间并清理lease，随后返回平台jobs.Defer。store转换为River JobSnooze，保留同一job而不消耗失败次数；队列确认丢失由原job重投恢复，提前送达只延后，不重复Step。此语义已核对现有River v0.40.0及[官方API说明](https://pkg.go.dev/github.com/riverqueue/river#JobSnooze)。没有新增旁路任务表或进程内轮询。
+- completed先保存有界Payload，再走现有不可变内容/衍生权利/版本/条件采用事务。后续失败从已保存结果重试，不再次运行Step。取消、归档、到期仍撤销采用资格，已保存结果留在原执行证据中。
+
+**本期边界**：仍仅生产注册内部文本合成，保持其30秒期限、文本目标和至少两份输入规则；这些限制属于该已开放动作，尚不能据此开放媒体生成。没有付费调用、模型选择、媒体下载、Gateway schema改造或SSE。后续须完成Gateway原子准入/绑定、Prepare/Dispatch/Observe及结果交接，才可注册外部生成驱动；实际媒体还需模态策略与取件端口。
+
+**验收**：真实数据库跨worker续接、提前重投、结果入库失败后不再计算、未知结果核实、等待中取消/到期、恢复身份替换拒绝；实际River超过初始最大尝试次数仍能完成等待；0050旧行兼容与有证据拒绝回滚；旧同步合成/版本/撤销及取消并发不回归。
