@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: 统一工具入口已提交ff2453b；FND-13画布侧阶段续接已完成全量验证和独立review，新增代码未提交。下一切片为Gateway生成原子准入/请求绑定/观察及结果交接，模型选择继续后置。
+next_action: 画布侧阶段续接已提交460d0f2；Gateway阶段控制入口已完成全量回归、修复后包检查及独立复审，新代码未提交。下一步为生成专属载荷/观察协议及画布原子事务桥；后续注释统一中文、日志与运行时错误消息统一英文，模型选择后置。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1301,3 +1301,23 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 - 最终验证：`make check-go` exit0，全部build/lint/test通过；creativeagent90.457s、creativecanvas34.150s、httpapi44.952s、llmgateway15.981s，完整日志 `/tmp/fnd13-stage-check-go.log`。模块文档相对链接/代码围栏与git diff --check通过；本切片未改公开API/schema，无生成物漂移变更。
 - 独立review首轮通过（/root/fnd13_stage_review，gpt-6-astra/xhigh）：冻结34文件完整补丁SHA-256 `1aa4dfdcd929a0c218686b65d000ebf15cdcc4d6e4970c7d7180b8a6c17fb2de`；blocking/important/nit均无。已核对工作树仍与审查候选一致；此后只追加本工作游标状态和证据，没有改被审代码。
 - 本轮开发交付：画布侧阶段续接完成，可供检查；未提交。下一步仍需Gateway生成专属控制面/预算/结果消费者的真实事务桥，不能直接把测试executor替换成供应商HTTP即开放收费生成。
+
+### 2026-09-18 · Gateway阶段控制入口
+
+- owner授权先提交后继续；画布阶段续接已提交`460d0f2`。新增要求：后续新增/修改的代码注释使用中文，已用于本切片。不将本次提交许可沿用到下一批。
+- `PrepareCallInTx`支持业务受理与预算/请求/消费者同事务；`AdvanceCall`只推进已有绑定且最多一次派发；沿用`RequestForBinding`只读观察；`ConsumeCallInTx`原子交接结果。原同步Call重用同一准入和单次派发实现，保留其循环策略。模块设计§14记录精确契约及尚未开放媒体/画布生成的边界。
+- 验证先行：新阶段符号缺失时编译红，随后真实数据库目标测试通过（5.435s），验证原子回滚、未知拒绝重发、并发一次派发、固定绑定/权限和到期补偿。补充部署移除后恢复/消费不重新计费与数据库微秒期限兼容。
+- 图谱Verify沿正确worktree/root，generation2026-09-04；Call/Reserve/Prepare/Dispatch/Consume查询0且无分页，相关coordinate/service/dispatch/admission/recovery/test路径coverage not_tracked，直接读取精确源码。没有新外部协议事实或模型选型，无付费调用/迁移/公开API变更。
+- 本轮修改原调用协调器的共享路径，风险为预算/持久身份/派发次数与多消费者兼容，因此运行Gateway包及全部后端检查，并按cs-feat创建独立change review；不把接口存在当作媒体生成验收。
+
+- Gateway全包门禁通过：build/lint0issues/test22.252s，日志 `/tmp/fnd13-gateway-stages-package.log`。全后端回归运行中；提取共享单次派发时保留同步循环对预留generation的更新，末次整理后还将跑Gateway包核验最终版本。新增代码注释全部中文。
+- 独立change review首轮：native collaboration新reviewer、gpt-6-astra/xhigh；无callable异构provider discovery，Paseo偏好实际读取不存在，按cs-feat回退同构最强模型。完整候选冻结，审查期不改工作树，最多3个终态round沿同一lineage复审。
+
+- 全后端`make check-go` exit0（build/lint0issues/全Go），日志 `/tmp/fnd13-gateway-stages-check-go.log`；creativeagent62.461s、creativecanvas29.056s、httpapi48.121s、llmgateway14.624s、store89.461s。
+- 独立review首轮（/root/fnd13_gateway_stages_review）目标SHA-256 `77938719d74b79b6979e0735d932fd1884adcad4dc825b3bc2c3a12c45a8d4ff`发现1 blocking：首次查无绑定与最终受理之间，另一事务可提交同key但不同group/deadline的请求，底层回放未核对这两个字段。已用EstimateInputTokens屏障确定复现两类错误受理（修复前均返回nil，日志 `/tmp/fnd13-gateway-stages-race-red.log`）；新建分支最终重新读取实际绑定并复核归属/期限/冻结hash，冲突回滚业务行，原提交请求与预算保持唯一。
+- 修复后`make check-go PKG=./internal/platform/llmgateway/...` exit0（含全build、包lint和全包测试），日志 `/tmp/fnd13-gateway-stages-review-green.log`。本轮只改变新阶段受理分支及并发回归，不重复跑无影响的全部后端。准备原reviewer第二轮完整候选与增量复审，保持未提交。
+
+- 第二轮原reviewer全文及增量复审通过：候选SHA-256 `508c1ab7f8b813f78159f805a545b55cf075db3c3d58e995611fb00d71dacedf`，首轮blocking resolved，unresolved/new findings无，blocking/important/nit均无。复审后核对候选未变化，此后只补本游标状态。
+- 本切片交付：Gateway阶段准入/单次推进/原子消费，以及稳定绑定、只读观察和配置移除后的历史结果恢复；代码未提交。全后端及修复后Gateway包验证已通过，新增注释中文。后续生成专属载荷/供应商任务观察、非token计费与画布事务桥仍待实现，不标FND-13整体完成。
+
+- owner纠正日志语言：注释中文，日志英文。本次将新Gateway stages的3条运行时错误消息、测试错误/诊断输出及测试场景名称改为英文；保留中文注释和中文业务测试输入，错误哨兵与业务逻辑未变。`go test ./internal/platform/llmgateway -run '^TestCallStages' -count=1`通过（8.598s），定向扫描无中文错误/日志消息，git diff --check通过。此为复审后的纯文案调整，无新提交。
