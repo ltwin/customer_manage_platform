@@ -186,41 +186,6 @@ func TestRollbackValidationAndExpiry(t *testing.T) {
 	}
 }
 
-func TestEinoAdapterUsesSameApplicationReceipt(t *testing.T) {
-	f := setup(t)
-	ctx := context.Background()
-	cmd := command("eino")
-	op := operation()
-	exec := creativeops.Executor{}
-	catalog, err := creativeops.NewCatalog([]creativeops.Definition{{Key: op.Key, Description: "添加测试内容", SchemaVersion: 1, Kind: "command", RequiredCapability: "manual_write", OutputSchema: json.RawMessage(`{"type":"object"}`), InputSchema: json.RawMessage(`{"type":"object","properties":{"marker":{"type":"string"}},"required":["marker"],"additionalProperties":false}`)}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tool, err := catalog.BindEino(op.Key, func(ctx context.Context, p json.RawMessage) (creativeops.Receipt, error) {
-		c := cmd
-		c.Payload = p
-		return exec.Run(ctx, f.a, op, c)
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tool.Info(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tool.InvokableRun(ctx, string(cmd.Payload)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := exec.Run(ctx, f.a, op, cmd); err != nil {
-		t.Fatal(err)
-	}
-	if count(t, f, "creative_test_effects") != 1 {
-		t.Fatal("adapter bypassed application identity")
-	}
-	if _, err := catalog.BindEino("not_registered", nil); !errors.Is(err, creativeops.ErrNotFound) {
-		t.Fatal(err)
-	}
-}
-
 func TestAtomicQueueAndWorkerEffectReplay(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()

@@ -58,6 +58,10 @@ func (h *handlers) creativeScope(c *gin.Context) (store.AccountScope, bool) {
 }
 func creativeError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, creativeops.ErrToolUnavailable):
+		abortError(c, 422, "creative_tool_unavailable", "此工具当前不可用")
+	case errors.Is(err, creativeops.ErrToolVersion):
+		abortError(c, 409, "creative_tool_version_conflict", "工具版本已变化，请重新读取能力目录")
 	case errors.Is(err, creativeops.ErrValidation):
 		abortError(c, 400, CodeValidationFailed, "请求字段不合法")
 	case errors.Is(err, creativeops.ErrConflict):
@@ -173,12 +177,9 @@ func (h *handlers) GetCreativeTextAsset(c *gin.Context, id string) {
 	creativeRead(c, func() (creativelibrary.Asset, error) { return creativelibrary.GetAsset(c.Request.Context(), scope, id) })
 }
 func (h *handlers) GetCreativeCanvas(c *gin.Context, id string) {
-	scope, ok := h.creativeScope(c)
-	if !ok {
-		return
-	}
-	creativeRead(c, func() (creativecanvas.Canvas, error) { return creativecanvas.GetCanvas(c.Request.Context(), scope, id) })
+	h.creativeToolRead(c, creativecanvas.ReadCanvasTool, map[string]string{"id": id})
 }
+
 func (h *handlers) GetCreativeContentRevision(c *gin.Context, id string) {
 	scope, ok := h.creativeScope(c)
 	if !ok {
@@ -292,13 +293,7 @@ func (h *handlers) CommandCreativeCanvas(c *gin.Context, id string, _ CommandCre
 }
 
 func (h *handlers) ListCreativeNodeVersions(c *gin.Context, id string, nodeID string) {
-	scope, ok := h.creativeScope(c)
-	if !ok {
-		return
-	}
-	creativeRead(c, func() (creativecanvas.VersionPage, error) {
-		return creativecanvas.ListNodeVersions(c.Request.Context(), scope, id, nodeID)
-	})
+	h.creativeToolRead(c, creativecanvas.ReadNodeVersionsTool, map[string]string{"id": id, "node_id": nodeID})
 }
 
 func (h *handlers) GetCreativeDocument(c *gin.Context, id string) {
@@ -311,14 +306,9 @@ func (h *handlers) GetCreativeDocument(c *gin.Context, id string) {
 	})
 }
 func (h *handlers) GetCreativeNodeExecution(c *gin.Context, id string, executionID string) {
-	scope, ok := h.creativeScope(c)
-	if !ok {
-		return
-	}
-	creativeRead(c, func() (creativecanvas.NodeExecution, error) {
-		return creativecanvas.GetNodeExecution(c.Request.Context(), scope, creativecanvas.ExecutionTarget{CanvasID: id, ExecutionID: executionID})
-	})
+	h.creativeToolRead(c, creativecanvas.ReadNodeExecutionTool, map[string]string{"id": id, "execution_id": executionID})
 }
+
 func (h *handlers) RequestCreativeNodeExecution(c *gin.Context, id string, _ RequestCreativeNodeExecutionParams) {
 	h.creativeWrite(c, "canvas_id", id, func(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
 		service, err := creativecanvas.NewExecutionService(nil)
@@ -327,4 +317,31 @@ func (h *handlers) RequestCreativeNodeExecution(c *gin.Context, id string, _ Req
 		}
 		return service.Request(ctx, scope, command, nil)
 	})
+}
+
+func (h *handlers) creativeToolRead(c *gin.Context, key string, input map[string]string) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	if h.creativeToolsError != nil {
+		creativeError(c, h.creativeToolsError)
+		return
+	}
+	if h.creativeTools == nil {
+		abortError(c, 503, "creative_dependency_unavailable", "创意工具暂不可用")
+		return
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	result, err := h.creativeTools.ForHTTP(scope).Invoke(c.Request.Context(), key, 1, creativeops.Command{Payload: raw})
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	setNoStore(c)
+	c.Data(http.StatusOK, "application/json; charset=utf-8", result.Response())
 }

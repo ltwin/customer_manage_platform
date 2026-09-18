@@ -2,8 +2,8 @@
 epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
-current_item: FND-07
-next_action: B3 已提交 0d316fd；C 已完成实现、验证及两轮独立审查，并随本提交落库。等待 owner 指定下一步；FND-08 尚未开始。
+current_item: FND-13
+next_action: FND-13 统一工具入口首个切片已实现并通过验证/独立复审，待owner检查与提交授权；下一切片为执行与Gateway接缝，用同步/异步受控Adapter验证生命周期。模型选择继续后置。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1218,3 +1218,70 @@ owner 提出 2 项 P1、2 项 P2，四条全部在代码中确认为真并已修
   开发契约与当前能力边界归档 `docs/dev/creative-agent.md`；无新lesson，永久Epic保持冻结，继续保留本work游标。
 
 - 2026-09-18 owner 明确授权「OK，你提交吧」。提交前核对 C 完整文件集合与已审候选一致，除 work 游标完成记录外全部内容逐字节一致；本提交落库 C。未推送、合并或部署，FND-08 未开始。
+
+
+### 2026-09-18 · FND-13 开工与 PRE-11
+
+**目标与授权**：owner 在确认节点 Prompt、四类真实生成、版本管理及异常验收后要求「OK，你继续」。沿用当前 worktree；FND-13 开始实施准备，未获新提交/远端发布授权。FND-07 C 已提交 `248d445`。完整范围仍由冻结 Epic 的 FND-13 拥有，不把其中某一媒体实现当整项完成。
+
+**现场核对**（HEAD `248d445`，无生产调用）：
+
+| 归属 | 已有实际能力 | 本项必须补齐 |
+|---|---|---|
+| creativecanvas/prompt.go | SaveNodePrompt、独立 draft revision、固定/动态引用与 CAS | 节点 Prompt 产品入口、按模型验证参数、独立附件交接 |
+| creativecanvas/versions.go | 列表、采用/删除、历史参数复用及版本输入引用 | 真实生成版本来源、完整前端预览/采用体验 |
+| creativecanvas/execution.go | 原子入队、任务身份/租约、取消与发布 | 当前 Request 只接 core.text、至少两个输入、30 秒期限；Compose 是同步纯内容端口，不能直接承接外部异步生成 |
+| platform/llmgateway | ChatRequest、一次派发、真实 DeepSeek、token 预留/费用与未知结果 | 类型化生成请求、持久异步任务身份、查询/取消/取件与非 token 费用维度 |
+| Gateway 0043 schema | 费用分量限定 input_cached/input_uncached/output 等现有枚举 | 媒体计费不能伪装为 token；迁移与价格快照需按实际供应商协议设计 |
+| 部署资源 | 只确认工作树配置存在 DEEPSEEK_API_KEY 名称（未输出值） | 图/视频/音频供应商、地域与凭证引用待确认；此前 C 的付费测试许可不扩成新媒体测试预算 |
+
+**实施顺序与风险出口**：先固定 PRE-11 的实际协议和资源；再穿透「节点提交→Gateway受理→持久结果→版本登记/条件采用」主路径，然后接 Prompt/版本界面与四类适配。不得先铺完整页面再发现异步恢复或计费无法落地。
+
+- 复用现有节点/内容/媒体归属与同一费用账本；不新建旁路业务存储或从画布直接调用供应商。
+- 必改面：creativecanvas 执行编排、Gateway 请求/任务/计费、creativemedia 结果取件、HTTP/OpenAPI/生成物、Prompt/版本界面。
+- 验证面：已有 Chat/Harness 不回归；版本/引用/撤销、账号隔离、迁移回滚与至少一次 job；八次真实生成及费用/结果存储证据。
+- 仍待调查：每个模型精确版本与参数、幂等/查询/取消证据、返回 URL 白名单/有效期、结果编码、部署币种与费用上限、按动作期限和并发。尚未冻结新接口/schema。
+- 第一条主路径验收必须证明重复提交不新增收费身份、结果保存失败只重试入库、目标修改/取消后不迟到覆盖；随后才扩展模型与界面。
+
+**官方协议初查（2026-09-18，仅候选，不代表已选型或实测）**：
+
+- 图片候选可从阿里云百炼 Wan/Qwen 图像系列中选。不同模型的文生图/图片编辑、同步/异步及参数并不相同，不能用一条统一 Chat 请求假装全部可用。[图像模型目录](https://help.aliyun.com/zh/model-studio/image-model)、[Wan 图像 API](https://help.aliyun.com/zh/model-studio/wan-image-generation-api-reference)。
+- 万相视频以提交 task_id 再查询为主；官方文档列出任务查询与结果链接的 24 小时窗口，因此取件持久化必须是任务的一部分。暂不宣称提交超时后可以按客户端 operation_id 找回 task。[视频 API](https://help.aliyun.com/zh/model-studio/text-to-video-api-reference)。
+- 若音频首版是旁白/配音，可考察 Qwen-TTS；它按待合成文字与音色等参数工作，返回音频 URL（有有效期），并不等同音乐/音效生成。[Qwen-TTS API](https://help.aliyun.com/zh/model-studio/qwen-tts-api)。
+- 供应商/地域尚未选择，价格与测试预算不在本次初查中擅自固定；没有发起真实收费请求或新增账号服务。
+
+**未决**：已向 owner 询问媒体供应商与音频首版（旁白/配音或音乐/音效）。这些是模型能力/费用/输入参数的设计事实，答案前不冻结依赖该选择的正式适配契约。PRE-11 明确要求在 FND-13 接口/适配冻结前固定四类资源；各类可分别推进，缺真实资源只记部分完成。
+
+**证据限制**：图谱 Verify project/root正确；search_graph 对当前 execution/prompt 查询0条且无分页。相关路径 coverage 的 freshness=not_tracked，generation仍2026-09-04；以上结论来自精确源码，不作图谱完备性断言。Context7无callable工具，本次外部API事实直接查官方文档。检索到头像不可变 generation 的旧compound，但其范围是附属二进制，现有creativecontent/versionedfs已经拥有本项存储不变量，未另套一份头像方案或新增lesson。
+
+本次仅更新此工作游标；生产代码、schema与永久Epic保持原样。文档差异检查通过，不以运行无关测试冒充生成验收。
+
+
+### 2026-09-18 · FND-13 架构优先的方向校正
+
+owner 要求暂不讨论具体模型，先设计可快速扩展/配置、统一且分层清晰的模块，并画架构图；媒体生成作为 Tool，同时服务前端 API 与 Agent，供应商/模型经 Adapter 接入。此前将 PRE-11 的适配准入误扩大为公共架构设计前置，本轮纠正：供应商选择影响具体适配，不阻塞工具、生命周期与结果语义设计。此前两项供应商/音频问题后置，不再要求 owner 先回答。
+
+使用 backend-architect 形成待讨论设计 [工具入口、媒体生成与供应商适配](../../docs/product/creative-canvas-system/modules/tool-generation-runtime.md)：复用creativeops目录/回执形成统一入口；NodeExecution继续拥有节点执行；Gateway持有请求与费用；可选能力Adapter翻译外部协议；媒体导入与画布发布各守现有归属。包含模块架构图、异步时序图、配置/扩展边界、持久生命周期与普通中间件区别、恢复与设计验收。
+
+本轮只新增模块设计并更新本游标，未改运行代码/迁移/永久Epic，未付费调用、未提交。不另建lesson；先由owner讨论模块边界，再按切片实施及风险安排独立审查，不把草案标成最终批准契约。
+
+
+### 2026-09-18 · FND-13 统一工具入口首个切片
+
+owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后开始开发。补充模块设计§3.1/3.2/12：双维分类、记忆与业务事实边界、将来计费服务拆分的许可/对账责任，以及首批Agent仅query的明确安全边界。
+
+已进入实现：creativeops核心移除Eino依赖，新增绑定目录/有效策略/校验/调用观测；独立einoadapter；画布快照、节点版本与节点执行状态三个HTTP查询接入相同Handler，工具schema从OpenAPI生成并加入漂移门禁。旧command/execution继续领域回执；没有旁路任务表。未开放新的Harness生产工具或实际模型生成。
+
+测试先行：不存在runtime/adapter时新测试编译红；初批核心用例绿。后续真实HTTP/Agent对照与撤权测试暴露测试前提误用旧creative_account_capabilities表，已按当前store事实改为账号active状态；这只是修正测试前提，没有修改生产权限模型。最终门禁与review另记。Context7本会话不可调用，kin-openapi依赖以现有v0.135.0源码及官方仓库文档核对，不升级版本。
+
+- 首个切片验证：`make check-go` exit0（build、lint0issues、全部Go包）；creativeagent73.408s、creativecanvas23.006s、creativeops6.234s、httpapi47.090s、store82.072s。日志 `/tmp/fnd13-tools-check-go.log`。
+- `make generate-check` exit0，新增工具schema生成物也进入漂移检查；Go/TS既有公开DTO无变化。补充execution身份/202回放/持久状态查询测试通过（3.934s），同operation只1次River入队。调用观测panic隔离、来源限制、配置拷贝、版本拒绝、账号停用和跨账号拒绝均有回归。
+- 准备首轮独立change review：创建方式native collaboration；无callable Paseo provider discovery，偏好文件不存在，回退宿主最强同构gpt-6-astra/xhigh。风险是统一入口的权限/来源边界、持久命令回放及3个现有HTTP消费者，不因本次只读查询就省略审查。审查期间冻结完整候选，保持未提交。
+
+- 独立change review首轮（/root/fnd13_tools_review，gpt-6-astra/xhigh）目标完整补丁SHA-256 `ce87bf84a055379fb517a422ab15e8d8467bad661d71021c607e4246353a4529`：1 blocking，输出复用输入64层上限，导致合法深层Prompt保存后查询500；其余来源/权限/回执/schema主链无新发现。已分离输出JSON完整性与输入策略，补真实HTTP保存62层参数→HTTP/Agent读取完整参数回归；修复前测试稳定复现500。输出残缺、多JSON串、类型错误和null继续拒绝。
+- 修复验证中：受影响包build/lint已通过，creativeops（5.823s）与creativecanvas（13.493s）全包回归通过。多包PKG传给make时因已有递归参数未加引号导致命令失败，改用等价直接go test跑三包；HTTP测试后续暴露测试用领域Node解码忽略prompt（字段json:"-"），已修正为读取公开响应结构，未改领域序列化。最后HTTP完整门禁另记。
+
+- 最终HTTP包 `make check-go PKG=./internal/platform/httpapi/...` exit0（build/lint/全包测试），深层Prompt通过公开API保存后，HTTP与Eino读取结果逐字一致；原权限撤销检查仍通过。日志 `/tmp/fnd13-tools-review-http.log`。输出规则修复后的三个受影响包均已全包通过，准备同一reviewer第二轮全文及增量复审。
+
+- 第二轮同一reviewer复审通过：完整候选SHA-256 `8888a8c8d98b4d4699c514b750093293fd96dd5f36b5b91f08a4cb2b6b4a08a9`；首轮blocking resolved，unresolved/new findings均无。已核对冻结候选与工作树一致；此后仅补本游标的结果和next_action，没有修改被审代码。
+- 首个公共入口切片完成且未提交；本结论不代表FND-13整体完成。下一切片按模块设计§10推进执行/Gateway接缝与同步/异步受控Adapter；真实供应商、结果取件/计费、Prompt界面及FND-08 Agent写工具/SSE尚未完成。本轮无迁移、付费调用或永久Epic变更。
