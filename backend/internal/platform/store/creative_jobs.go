@@ -152,7 +152,15 @@ func (w *creativeDispatcher) Work(ctx context.Context, job *river.Job[queuedCrea
 	// command executor still rechecks capability and active account at effect time.
 	scope := w.runtime.store.ScopeFor(auth.AccountContext{AccountID: a.AccountID})
 	a.Request.Payload = append(json.RawMessage(nil), a.Request.Payload...)
-	return handler(ctx, scope, a.Request)
+	err = handler(ctx, scope, a.Request)
+	var deferred *jobs.DeferredError
+	if errors.As(err, &deferred) {
+		if deferred.After <= 0 || deferred.After > time.Hour {
+			return jobs.ErrInvalidTask
+		}
+		return river.JobSnooze(deferred.After)
+	}
+	return err
 }
 
 // MigrateCreativeJobs is explicit and separate from application migrations.

@@ -229,13 +229,13 @@ type pausedComposer struct {
 	entered, release chan struct{}
 }
 
-func (p pausedComposer) Compose(ctx context.Context, prompt creativecanvas.NodePrompt, inputs []creativecontent.Revision) (creativecontent.Payload, error) {
+func (p pausedComposer) Step(ctx context.Context, scope store.AccountScope, step creativecanvas.ExecutionStep) (creativecanvas.ExecutionObservation, error) {
 	close(p.entered)
 	select {
 	case <-p.release:
-		return p.NodeExecutor.Compose(ctx, prompt, inputs)
+		return p.NodeExecutor.Step(ctx, scope, step)
 	case <-ctx.Done():
-		return creativecontent.Payload{}, ctx.Err()
+		return creativecanvas.ExecutionObservation{}, ctx.Err()
 	}
 }
 func TestCancellationDuringComposeCannotPublish(t *testing.T) {

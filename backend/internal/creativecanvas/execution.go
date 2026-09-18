@@ -22,7 +22,7 @@ var ErrActionUnavailable = errors.New("node action is not registered")
 type NodeExecutor interface {
 	ActionKey() string
 	Version() string
-	Compose(context.Context, NodePrompt, []creativecontent.Revision) (creativecontent.Payload, error)
+	Step(context.Context, store.AccountScope, ExecutionStep) (ExecutionObservation, error)
 }
 type ExecutionService struct{ executors map[string]NodeExecutor }
 
@@ -42,25 +42,26 @@ type textCompose struct{}
 func InternalTextCompose() NodeExecutor { return textCompose{} }
 func (textCompose) ActionKey() string   { return "internal.text-compose" }
 func (textCompose) Version() string     { return "1" }
-func (textCompose) Compose(ctx context.Context, _ NodePrompt, inputs []creativecontent.Revision) (creativecontent.Payload, error) {
+func (textCompose) Step(ctx context.Context, _ store.AccountScope, step ExecutionStep) (ExecutionObservation, error) {
+	inputs := step.Inputs
 	if err := ctx.Err(); err != nil {
-		return creativecontent.Payload{}, err
+		return ExecutionObservation{}, err
 	}
 	if len(inputs) < 2 {
-		return creativecontent.Payload{}, creativeops.ErrValidation
+		return ExecutionObservation{}, creativeops.ErrValidation
 	}
 	parts := []string{}
 	for _, r := range inputs {
 		if r.Kind != "text" || r.Payload.Body == nil {
-			return creativecontent.Payload{}, creativeops.ErrValidation
+			return ExecutionObservation{}, creativeops.ErrValidation
 		}
 		parts = append(parts, *r.Payload.Body)
 	}
 	body := strings.Join(parts, "\n\n")
 	if utf8.RuneCountInString(body) > 100000 {
-		return creativecontent.Payload{}, creativeops.ErrValidation
+		return ExecutionObservation{}, creativeops.ErrValidation
 	}
-	return creativecontent.Payload{Body: &body}, nil
+	return ExecutionObservation{State: ExecutionCompleted, Payload: &creativecontent.Payload{Body: &body}}, nil
 }
 
 type RequestExecutionInput struct {
@@ -76,25 +77,28 @@ type ExecutionTarget struct {
 	ExecutionID string `json:"execution_id"`
 }
 type NodeExecution struct {
-	ExecutorVersion  string               `json:"executor_version"`
-	ID               string               `json:"execution_id"`
-	NodeID           string               `json:"node_id"`
-	ActionKey        string               `json:"action_key"`
-	State            string               `json:"state"`
-	ApplyState       string               `json:"apply_state"`
-	Epoch            int64                `json:"execution_epoch"`
-	Deadline         time.Time            `json:"deadline"`
-	ChangeID         *string              `json:"change_id"`
-	Error            string               `json:"error"`
-	CanvasID         string               `json:"canvas_id"`
-	CreatedAt        time.Time            `json:"created_at"`
-	TargetData       creativeops.Revision `json:"-"`
-	Selected         *string              `json:"-"`
-	Prompt           NodePrompt           `json:"-"`
-	ReadSet          []ObjectRead         `json:"-"`
-	PublishOperation string               `json:"-"`
-	ResultOperation  string               `json:"-"`
-	Lease            *time.Time           `json:"-"`
+	ResumeToken      string                   `json:"-"`
+	NextStepAt       *time.Time               `json:"-"`
+	ResultPayload    *creativecontent.Payload `json:"-"`
+	ExecutorVersion  string                   `json:"executor_version"`
+	ID               string                   `json:"execution_id"`
+	NodeID           string                   `json:"node_id"`
+	ActionKey        string                   `json:"action_key"`
+	State            string                   `json:"state"`
+	ApplyState       string                   `json:"apply_state"`
+	Epoch            int64                    `json:"execution_epoch"`
+	Deadline         time.Time                `json:"deadline"`
+	ChangeID         *string                  `json:"change_id"`
+	Error            string                   `json:"error"`
+	CanvasID         string                   `json:"canvas_id"`
+	CreatedAt        time.Time                `json:"created_at"`
+	TargetData       creativeops.Revision     `json:"-"`
+	Selected         *string                  `json:"-"`
+	Prompt           NodePrompt               `json:"-"`
+	ReadSet          []ObjectRead             `json:"-"`
+	PublishOperation string                   `json:"-"`
+	ResultOperation  string                   `json:"-"`
+	Lease            *time.Time               `json:"-"`
 }
 
 func (s *ExecutionService) Request(ctx context.Context, scope store.AccountScope, c creativeops.Command, runtime jobs.Runtime) (creativeops.Receipt, error) {
@@ -241,10 +245,15 @@ func (s *ExecutionService) Request(ctx context.Context, scope store.AccountScope
 func readExecution(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) (NodeExecution, error) {
 	var e NodeExecution
 	var data int64
-	var prompt, reads json.RawMessage
-	err := tx.QueryRowForUpdate(ctx, "creative_node_executions", "id,node_id,action_key,state,apply_state,execution_epoch,deadline,change_id,error,canvas_id,created_at,target_data_revision,selected_version_id,prompt_snapshot,read_set,publish_operation_id,result_operation_id,lease_until,executor_version", "id=$2 AND canvas_id=$3", target.ExecutionID, target.CanvasID).Scan(&e.ID, &e.NodeID, &e.ActionKey, &e.State, &e.ApplyState, &e.Epoch, &e.Deadline, &e.ChangeID, &e.Error, &e.CanvasID, &e.CreatedAt, &data, &e.Selected, &prompt, &reads, &e.PublishOperation, &e.ResultOperation, &e.Lease, &e.ExecutorVersion)
+	var prompt, reads, result json.RawMessage
+	err := tx.QueryRowForUpdate(ctx, "creative_node_executions", "id,node_id,action_key,state,apply_state,execution_epoch,deadline,change_id,error,canvas_id,created_at,target_data_revision,selected_version_id,prompt_snapshot,read_set,publish_operation_id,result_operation_id,lease_until,executor_version,resume_token,next_step_at,result_payload", "id=$2 AND canvas_id=$3", target.ExecutionID, target.CanvasID).Scan(&e.ID, &e.NodeID, &e.ActionKey, &e.State, &e.ApplyState, &e.Epoch, &e.Deadline, &e.ChangeID, &e.Error, &e.CanvasID, &e.CreatedAt, &data, &e.Selected, &prompt, &reads, &e.PublishOperation, &e.ResultOperation, &e.Lease, &e.ExecutorVersion, &e.ResumeToken, &e.NextStepAt, &result)
 	if err != nil {
 		return e, notFound(err)
+	}
+	if len(result) > 0 {
+		if err = json.Unmarshal(result, &e.ResultPayload); err != nil {
+			return e, err
+		}
 	}
 	e.TargetData = creativeops.Revision(data)
 	if err = json.Unmarshal(prompt, &e.Prompt); err != nil {
@@ -304,6 +313,7 @@ func (s *ExecutionService) Work(ctx context.Context, scope store.AccountScope, j
 	var execution NodeExecution
 	var inputs []creativecontent.Revision
 	claimed := false
+	var deferFor time.Duration
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if err := tx.RequireCreativeCapability(ctx, "manual_write"); err != nil {
 			return err
@@ -326,8 +336,13 @@ func (s *ExecutionService) Work(ctx context.Context, scope store.AccountScope, j
 		if canvas.Archived || !now.Before(execution.Deadline) {
 			return finishExecution(ctx, tx, canvas, execution, "cancelled", "expired", "")
 		}
-		if execution.State == "running" && execution.Lease != nil && now.Before(*execution.Lease) {
-			return creativeops.ErrConflict
+		if execution.Lease != nil && now.Before(*execution.Lease) {
+			deferFor = min(execution.Lease.Sub(now), execution.Deadline.Sub(now))
+			return nil
+		}
+		if execution.NextStepAt != nil && now.Before(*execution.NextStepAt) {
+			deferFor = min(execution.NextStepAt.Sub(now), execution.Deadline.Sub(now))
+			return nil
 		}
 		if s.executors[execution.ActionKey] == nil || s.executors[execution.ActionKey].Version() != execution.ExecutorVersion {
 			return ErrActionUnavailable
@@ -337,8 +352,13 @@ func (s *ExecutionService) Work(ctx context.Context, scope store.AccountScope, j
 			return err
 		}
 		execution.Epoch++
-		lease := now.Add(15 * time.Second)
-		if _, err = tx.Update(ctx, "creative_node_executions", "state='running',execution_epoch=$2,lease_until=$3", "id=$4", execution.Epoch, lease, execution.ID); err != nil {
+		lease := minTime(now.Add(15*time.Second), execution.Deadline)
+		execution.Lease = &lease
+		state := "running"
+		if execution.State == "reconciling" {
+			state = execution.State
+		}
+		if _, err = tx.Update(ctx, "creative_node_executions", "state=$2,execution_epoch=$3,lease_until=$4", "id=$5", state, execution.Epoch, lease, execution.ID); err != nil {
 			return err
 		}
 		if _, err = tx.Update(ctx, "creative_nodes", "status_revision=status_revision+1", "id=$2 AND active_execution_id=$3", execution.NodeID, execution.ID); err != nil {
@@ -350,16 +370,32 @@ func (s *ExecutionService) Work(ctx context.Context, scope store.AccountScope, j
 	if err != nil {
 		return err
 	}
+	if deferFor > 0 {
+		return jobs.Defer(deferFor)
+	}
 	if !claimed {
 		if execution.State == "succeeded" && execution.ApplyState == "pending" {
 			_, err = s.Publish(ctx, scope, target)
 		}
 		return err
 	}
-	payload, err := s.executors[execution.ActionKey].Compose(ctx, execution.Prompt, inputs)
-	if err != nil {
-		return s.fail(ctx, scope, target, execution.Epoch, err)
+	payload := execution.ResultPayload
+	if payload == nil {
+		stepCtx, cancel := context.WithDeadline(ctx, *execution.Lease)
+		observation, stepErr := s.executors[execution.ActionKey].Step(stepCtx, scope, ExecutionStep{ExecutionID: execution.ID, Epoch: execution.Epoch, Deadline: execution.Deadline, Prompt: execution.Prompt, Inputs: inputs, ResumeToken: execution.ResumeToken, Reconciling: execution.State == "reconciling"})
+		cancel()
+		if stepErr != nil {
+			return s.fail(ctx, scope, target, execution.Epoch, stepErr)
+		}
+		if err = observation.validate(execution.ResumeToken); err != nil {
+			return s.fail(ctx, scope, target, execution.Epoch, err)
+		}
+		if err = s.checkpoint(ctx, scope, target, execution, observation); err != nil {
+			return err
+		}
+		payload = observation.Payload
 	}
+
 	resultCommand := creativeops.Command{OperationID: execution.ResultOperation, CreatedAt: execution.CreatedAt, Payload: creativegraph.Canonical(target)}
 	_, err = run(ctx, scope, "canvas.execution_result", resultCommand, func(ExecutionTarget) error { return nil }, func(ctx context.Context, tx store.TxAccountScope, v ExecutionTarget) (creativeops.Outcome, error) {
 		canvas, err := lockCanvas(ctx, tx, v.CanvasID, false)
@@ -370,7 +406,7 @@ func (s *ExecutionService) Work(ctx context.Context, scope store.AccountScope, j
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if current.State != "running" || current.Epoch != execution.Epoch {
+		if (current.State != "running" && current.State != "reconciling") || current.Epoch != execution.Epoch {
 			return creativeops.Outcome{}, ErrVersionConflict
 		}
 		now, err := tx.CreativeNow(ctx)
@@ -392,7 +428,7 @@ func (s *ExecutionService) Work(ctx context.Context, scope store.AccountScope, j
 		if len(sources) < 2 {
 			return creativeops.Outcome{}, ErrGraphIntegrity
 		}
-		draft := creativecontent.Draft{Kind: "text", Payload: payload}
+		draft := creativecontent.Draft{Kind: "text", Payload: *payload}
 		output, err := creativecontent.WriteAndRetain(ctx, tx, draft, sources[0].ID, &current.NodeID, func(r creativecontent.Revision) error {
 			return tx.Insert(ctx, "creative_execution_refs", []string{"execution_id", "direction", "ordinal", "content_revision_id", "role"}, current.ID, "output", 0, r.ID, "result")
 		})
@@ -421,7 +457,7 @@ func (s *ExecutionService) Work(ctx context.Context, scope store.AccountScope, j
 	return err
 }
 func finishExecution(ctx context.Context, tx store.TxAccountScope, canvas Canvas, e NodeExecution, state, apply, message string) error {
-	if _, err := tx.Update(ctx, "creative_node_executions", "state=$2,apply_state=$3,error=$4,execution_epoch=execution_epoch+1,lease_until=NULL", "id=$5", state, apply, message, e.ID); err != nil {
+	if _, err := tx.Update(ctx, "creative_node_executions", "state=$2,apply_state=$3,error=$4,execution_epoch=execution_epoch+1,lease_until=NULL,next_step_at=NULL", "id=$5", state, apply, message, e.ID); err != nil {
 		return err
 	}
 	if _, err := tx.Update(ctx, "creative_nodes", "active_execution_id=NULL,status_revision=status_revision+1", "id=$2 AND active_execution_id=$3", e.NodeID, e.ID); err != nil {
@@ -442,7 +478,7 @@ func (s *ExecutionService) fail(ctx context.Context, scope store.AccountScope, t
 		if err != nil {
 			return err
 		}
-		if e.Epoch != epoch || e.State != "running" {
+		if e.Epoch != epoch || (e.State != "running" && e.State != "reconciling") {
 			return nil
 		}
 		return finishExecution(ctx, tx, canvas, e, "failed", "discarded", cause.Error())
@@ -474,4 +510,11 @@ func CancelNodeExecution(ctx context.Context, scope store.AccountScope, c creati
 		}
 		return outcome(200, "node_execution", e.ID, resultRevision, e)
 	})
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }

@@ -61,6 +61,9 @@ func TestSettingsHealthTiersMigrationDefaultsExistingRowsAndRollsBack(t *testing
 		t.Fatalf("close before down migration: %v", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("execution continuation rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("agent control rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {

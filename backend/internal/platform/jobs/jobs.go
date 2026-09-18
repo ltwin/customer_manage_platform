@@ -64,3 +64,15 @@ func EnqueueInTx(ctx context.Context, tx TxEnqueuer, r Request) (int64, error) {
 	}
 	return tx.enqueue(ctx, r)
 }
+
+// DeferredError keeps the same durable job pending without spending a failure
+// attempt. Domain state must be committed before returning it.
+type DeferredError struct{ After time.Duration }
+
+func (e *DeferredError) Error() string { return "creative task deferred" }
+func Defer(after time.Duration) error {
+	if after <= 0 || after > time.Hour {
+		return ErrInvalidTask
+	}
+	return &DeferredError{After: after}
+}
