@@ -21,6 +21,7 @@ import (
 	orderdomain "github.com/samson/customer-manage-platform/backend/internal/order"
 	pkgcatalog "github.com/samson/customer-manage-platform/backend/internal/package"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
@@ -99,6 +100,8 @@ type handlers struct {
 	anonymousShare      anonymousShareRouteDeps
 	creativeMedia       *creativemedia.Service
 	creativeAgent       *creativeagent.Service
+	creativeTools       *creativeops.Runtime
+	creativeToolsError  error
 }
 
 var _ ServerInterface = (*handlers)(nil)

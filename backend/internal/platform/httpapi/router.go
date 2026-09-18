@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 
@@ -128,6 +129,11 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		creativeMedia:       deps.CreativeMedia,
 		creativeAgent:       deps.CreativeAgent,
 	}
+	h.creativeTools, h.creativeToolsError = creativecanvas.NewToolRuntime(nil, creativeops.WithObserver(func(ctx context.Context, event creativeops.ToolObservation) {
+		if h.logger != nil {
+			h.logger.DebugContext(ctx, "creative tool completed", "tool", event.Key, "version", event.Version, "entrypoint", event.Entrypoint, "duration", event.Duration, "outcome", event.Outcome)
+		}
+	}))
 	if deps.PlanningMedia != nil {
 		h.planningMedia = &planningMediaHandlers{app: deps.PlanningMedia, scopeFactory: deps.ScopeFactory}
 	}

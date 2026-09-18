@@ -6,14 +6,13 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-	"github.com/eino-contrib/jsonschema"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // Definition describes an implemented application capability. Future actions
 // must not be listed until a real invocation is wired by the application.
 type Definition struct {
+	Category           string
 	Key                string
 	Description        string
 	SchemaVersion      int
@@ -26,18 +25,22 @@ type Definition struct {
 	MayEgress          bool
 }
 
-type Catalog struct{ definitions map[string]Definition }
+type Catalog struct {
+	definitions map[string]Definition
+	inputs      map[string]*openapi3.Schema
+	outputs     map[string]*openapi3.Schema
+}
 
 var toolKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
 func NewCatalog(definitions []Definition) (*Catalog, error) {
-	c := &Catalog{definitions: make(map[string]Definition, len(definitions))}
+	c := &Catalog{definitions: make(map[string]Definition, len(definitions)), inputs: map[string]*openapi3.Schema{}, outputs: map[string]*openapi3.Schema{}}
 	for _, d := range definitions {
 		if !toolKeyPattern.MatchString(d.Key) || d.Description == "" || d.SchemaVersion < 1 {
 			return nil, ErrValidation
 		}
-		var input jsonschema.Schema
-		if json.Unmarshal(d.InputSchema, &input) != nil || input.Type != "object" {
+		input, err := compileSchema(d.InputSchema)
+		if err != nil {
 			return nil, ErrValidation
 		}
 		if d.Kind != "query" && d.Kind != "command" && d.Kind != "execution" {
@@ -48,8 +51,8 @@ func NewCatalog(definitions []Definition) (*Catalog, error) {
 		default:
 			return nil, ErrValidation
 		}
-		var output jsonschema.Schema
-		if json.Unmarshal(d.OutputSchema, &output) != nil || output.Type != "object" {
+		output, err := compileSchema(d.OutputSchema)
+		if err != nil {
 			return nil, ErrValidation
 		}
 		if _, exists := c.definitions[d.Key]; exists {
@@ -58,6 +61,7 @@ func NewCatalog(definitions []Definition) (*Catalog, error) {
 		d.InputSchema = append(json.RawMessage(nil), d.InputSchema...)
 		d.OutputSchema = append(json.RawMessage(nil), d.OutputSchema...)
 		c.definitions[d.Key] = d
+		c.inputs[d.Key], c.outputs[d.Key] = input, output
 	}
 	return c, nil
 }
@@ -72,42 +76,15 @@ func (c *Catalog) List() []Definition {
 	return result
 }
 
-// BindEino receives a trusted, per-invocation application closure. Operation/run
-// identities and account authority are captured there, never taken from the model.
-// Full Harness epoch/step guards are added by FND-07/08, not implied by this adapter.
-func (c *Catalog) BindEino(key string, invoke func(context.Context, json.RawMessage) (Receipt, error)) (tool.InvokableTool, error) {
-	d, ok := c.definitions[key]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	if invoke == nil {
+// Tool schemas are standalone OpenAPI 3.0 schema objects. The build generator
+// resolves references; runtime compilation never loads files or network URLs.
+func compileSchema(raw json.RawMessage) (*openapi3.Schema, error) {
+	var schema openapi3.Schema
+	if err := json.Unmarshal(raw, &schema); err != nil || schema.Type == nil || !schema.Type.Is("object") {
 		return nil, ErrValidation
 	}
-	return &einoCommand{definition: d, invoke: invoke}, nil
-}
-
-type einoCommand struct {
-	definition Definition
-	invoke     func(context.Context, json.RawMessage) (Receipt, error)
-}
-
-func (t *einoCommand) Info(context.Context) (*schema.ToolInfo, error) {
-	var input jsonschema.Schema
-	if err := json.Unmarshal(t.definition.InputSchema, &input); err != nil {
-		return nil, err
+	if err := schema.Validate(context.Background()); err != nil {
+		return nil, ErrValidation
 	}
-	return &schema.ToolInfo{Name: t.definition.Key, Desc: t.definition.Description, ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&input)}, nil
+	return &schema, nil
 }
-func (t *einoCommand) InvokableRun(ctx context.Context, arguments string, _ ...tool.Option) (string, error) {
-	var payload map[string]any
-	if err := Decode([]byte(arguments), &payload); err != nil {
-		return "", err
-	}
-	receipt, err := t.invoke(ctx, json.RawMessage(arguments))
-	if err != nil {
-		return "", err
-	}
-	return string(receipt.Outcome.Response), nil
-}
-
-var _ tool.InvokableTool = (*einoCommand)(nil)
