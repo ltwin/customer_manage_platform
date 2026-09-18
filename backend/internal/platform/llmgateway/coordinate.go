@@ -212,53 +212,14 @@ func (s *Service) admit(
 	binding callBinding,
 	chat ChatRequest,
 ) (Reservation, RequestView, error) {
-	// Prepare checks the request against the built-in bound, so a session
-	// estimator may only raise it. Reserving less than Prepare demands would
-	// admit a turn and then refuse it with a budget error it cannot act on.
-	bound := EstimateInputTokens(chat)
-	if session.EstimateInputTokens != nil {
-		if custom := session.EstimateInputTokens(chat); custom > bound {
-			bound = custom
-		}
-	}
-	var (
-		reservation Reservation
-		view        RequestView
-	)
+	var reservation Reservation
+	var view RequestView
 	err := session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		var err error
-		reservation, err = s.ReserveInTx(ctx, tx, ReserveInput{
-			CallerService:        session.CallerService,
-			CallerOperationID:    binding.reserveOp,
-			CallerGroupID:        session.CallerGroupID,
-			GroupLimitMicros:     session.GroupLimitMicros,
-			GroupTokenLimit:      session.GroupTokenLimit,
-			GroupDeadline:        session.GroupDeadline,
-			ModelKey:             session.ModelKey,
-			InputTokenUpperBound: bound,
-			OutputLimit:          chat.OutputLimit,
-			AccountLimitMicros:   session.AccountLimitMicros,
-			AccountTokenLimit:    session.AccountTokenLimit,
-			ExpiresAt:            session.Deadline,
-		})
-		if err != nil {
-			return err
-		}
-		view, err = s.PrepareInTx(ctx, tx, PrepareInput{
-			CallerService:     session.CallerService,
-			CallerOperationID: binding.requestOp,
-			CallerGroupID:     session.CallerGroupID,
-			ReservationID:     reservation.ID,
-			ConsumerKey:       binding.consumerKey,
-			Chat:              chat,
-			Deadline:          session.Deadline,
-		})
+		reservation, view, err = s.reserveCallInTx(ctx, tx, session, binding, chat)
 		return err
 	})
-	if err != nil {
-		return Reservation{}, RequestView{}, err
-	}
-	return reservation, view, nil
+	return reservation, view, err
 }
 
 // runTurn drives the request to a complete result. It dispatches only from
@@ -275,53 +236,16 @@ func (s *Service) runTurn(
 ) (RequestView, bool, error) {
 	dispatched := false
 	for {
-		switch view.State {
-		case StateSucceeded:
-			return view, dispatched, nil
-		case StateFailed:
-			return RequestView{}, dispatched, fmt.Errorf("%w: request failed as %q", ErrState, view.FailureClass)
-		case StateCancelled:
-			return RequestView{}, dispatched, fmt.Errorf("%w: request was cancelled", ErrCancelled)
-		case StateDispatching, StateStreaming, StateUnknown:
-			// The provider may already have answered and billed this identity.
-			// Re-sending it to find out is exactly the double charge the one-shot
-			// permit exists to prevent, so recovery goes through verification.
-			return RequestView{}, dispatched, fmt.Errorf(
-				"%w: request %s is unsettled and needs verification before it runs again", ErrUnknown, view.ID)
-		case StatePrepared:
-		default:
-			return RequestView{}, dispatched, fmt.Errorf("%w: request state %q", ErrState, view.State)
-		}
-
-		var (
-			permit Permit
-			err    error
-		)
-		if view.RetryEligible {
-			// The hold was given back with the rejection, so it has to be rebuilt
-			// at today's ceilings — in the same transaction as the dispatch intent
-			// it is rebuilt for. See RedispatchInTx for what splitting them costs.
-			permit, generation, err = s.redispatch(ctx, session, binding, view.ID, generation)
-		} else {
-			permit, err = s.beginDispatch(ctx, session, binding, view.ID)
-		}
+		next, sent, err := s.advanceTurn(ctx, session, binding, view, &generation, chat, stream)
+		dispatched = dispatched || sent
 		if err != nil {
 			return RequestView{}, dispatched, err
 		}
-		dispatched = true
-		_, execErr := s.Execute(ctx, session.Scope, session.Limits, permit, chat, stream)
-
-		next, err := s.Get(ctx, session.Scope, view.ID)
-		if err != nil {
-			if execErr != nil {
-				return RequestView{}, dispatched, errors.Join(execErr, err)
-			}
-			return RequestView{}, dispatched, err
+		if next.State == StatePrepared && next.RetryEligible {
+			view = next
+			continue
 		}
-		if execErr != nil && (next.State != StatePrepared || !next.RetryEligible) {
-			return RequestView{}, dispatched, execErr
-		}
-		view = next
+		return next, dispatched, nil
 	}
 }
 
