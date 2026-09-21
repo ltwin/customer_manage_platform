@@ -98,8 +98,8 @@ type ToolDefinition struct {
 	SchemaVersion int
 }
 
-// ChatRequest is the only request shape. Identity, deadline, budget and tracing
-// travel in the control envelope, never inside model messages.
+// ChatRequest 承载对话请求；独立生成载荷见GenerationRequest。
+// 身份、期限、预算与追踪信息属于控制信封，不进入模型消息。
 type ChatRequest struct {
 	ContractVersion string
 	ModelKey        string

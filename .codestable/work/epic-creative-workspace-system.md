@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: 画布侧阶段续接已提交460d0f2；Gateway阶段控制入口已完成全量回归、修复后包检查及独立复审，新代码未提交。下一步为生成专属载荷/观察协议及画布原子事务桥；后续注释统一中文、日志与运行时错误消息统一英文，模型选择后置。
+next_action: 当前模型模式契约、规则计价引擎、文件配置源已完成审查及最终Gateway包门禁，按owner本轮授权提交；后续依模块§19从G1可信事实/授权端口开始，再推进G2持久准入结算。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1321,3 +1321,105 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 - 本切片交付：Gateway阶段准入/单次推进/原子消费，以及稳定绑定、只读观察和配置移除后的历史结果恢复；代码未提交。全后端及修复后Gateway包验证已通过，新增注释中文。后续生成专属载荷/供应商任务观察、非token计费与画布事务桥仍待实现，不标FND-13整体完成。
 
 - owner纠正日志语言：注释中文，日志英文。本次将新Gateway stages的3条运行时错误消息、测试错误/诊断输出及测试场景名称改为英文；保留中文注释和中文业务测试输入，错误哨兵与业务逻辑未变。`go test ./internal/platform/llmgateway -run '^TestCallStages' -count=1`通过（8.598s），定向扫描无中文错误/日志消息，git diff --check通过。此为复审后的纯文案调整，无新提交。
+
+
+### 2026-09-18 · FND-13 生成专属契约
+
+- owner授权继续下一段开发；上一段已提交`040148e`。本轮提交须另获许可。
+- 沿模块设计§15实施生成载荷/profile、类型与能力交集校验、严格JSON恢复和完整输入指纹；生成观察区分受理/运行/完成/拒绝/失败/取消/未知，同步与异步使用相同结果规则。生产路径尚不注册该能力。
+- 归属为现有llmgateway，未新建执行引擎/账本；未改Chat运行语义、数据库、公开API或前端。`contract.go`仅修正文档注释中“唯一载荷”的过时描述。
+- 图谱Verify：项目/root正确，generation仍2026-09-04T15:47:38Z；llmgateway Request/Result/Provider/Catalog查询0且has_more=false；所有相关新旧契约路径coverage not_tracked，已精确源码回退。历史知识检索命中创意系统brainstorm与头像不可变generation记录，但后者范围为对象版本回收，不据此增加本次规则；无lesson写入。
+- 先写类型/能力测试，缺符号编译红；随后观察契约/严格解码各自先红后绿。日志`/tmp/fnd13-generation-contract-red.log`、`/tmp/fnd13-generation-observation-red.log`、`/tmp/fnd13-generation-decode-red.log`与`/tmp/fnd13-generation-contract-targeted.log`。没有真实供应商或付费调用。
+- 风险与保障：新增供应商结果/取件定位的校验边界→非法与混合观察、输出身份/数量/格式、保护字段不进JSON的定向测试及独立change review。只改一个Go包，使用Gateway包门禁；不把纯协议值测试说成数据库恢复或媒体生成端到端验收。
+
+- Gateway包门禁`make check-go PKG=./internal/platform/llmgateway/...`通过：全后端build、包lint 0 issues、包测试17.031s；日志`/tmp/fnd13-generation-contract-check-go.log`。首次lint提示布尔取反可简化，已改成显式字符分类switch后完整重跑通过。
+- 独立审查创建方式native collaboration、fresh gpt-6-astra/xhigh；本会话没有可调用Paseo provider discovery，偏好文件实际读取不存在，按cs-feat回退同构最强模型。以完整patch冻结候选，review期间不改工作树；最多3个终态round沿同一lineage。
+
+- 首轮独立审查`/root/fnd13_generation_contract_review`针对完整候选SHA-256 `f45f88706b7fc95e0d1cd16b48d23591abb457b03813923ba1c1a5b4e0307d1d`发现2 blocking（合法Prompt六倍转义超过恢复上限、Unicode损坏被静默替换）及1 important（重复字段/大小写别名覆盖）。新增`generation_json.go`集中恢复边界：按最大转义加有界元数据设上限、解码前校验UTF-8和代理对、递归检查唯一规范字段名并拒绝null。
+- 补边界测试后两次常规复现均卡在storetest.TestMain的PostgreSQL端口发布，尚未执行断言；没有修改storetest或调低门禁。用Go overlay加载首轮冻结的精确契约源码、按两个纯契约test文件运行，确定复现全部发现（`/tmp/fnd13-generation-review-red-pure.log`）；当前实际源码同测试通过（`/tmp/fnd13-generation-review-green-pure.log`，0.694s）。overlay在临时目录，未改工作树基线或跳过任何本次契约断言。
+- 修复后包门禁全build、lint 0 issues通过，但第三次容器启动仍失败，`/tmp/fnd13-generation-review-check-go.log`。已实际读取本次容器状态：PostgreSQL ready，运行中且未OOM，Docker返回`5432/tcp: []`（没有发布端口）；此时测试未开始。没有把失败当作已放行flake、没有重启Docker或触碰其他服务。初版完整包回归17.031s已通过；最终版本的完整包回归仍待补跑，纯契约测试与独立审查分别提供各自范围证据。
+
+- 第二轮原reviewer复审完整候选及修复增量通过：SHA-256 `7c1f22a303595be73e90080c8edc15a0e324eb3332d348e803bc9b3f4ac4a0d9`，3项resolved，unresolved/new findings无，blocking/important/nit均无；审查者独立纯契约测试0.587s通过。主流程最终纯契约测试0.826s、追加lint 0 issues通过；文档相对链接/围栏、语言扫描和diff --check通过。复审后核对冻结候选一致，仅追加本工作游标。
+- 当前交付为代码可审状态，尚不宣称最终包门禁通过或FND-13完成：Docker端口发布故障使最终全包回归仍待补跑。下一步先恢复测试环境并运行`make check-go PKG=./internal/platform/llmgateway/...`；未提交，未请求或复用旧提交许可。媒体实际调用、持久观察/费用及画布桥仍属后续切片。
+
+
+### 2026-09-18 · FND-13 模型模式归属修正
+
+- owner指出不同模型/同模型不同模式的参数规则不同，授权优化。当前未提交的四种固定参数结构被替换为统一信封+模型模式schema/校验器；业务/Tool层只保留操作权限、资源与外发同意等规则，平台JSON/解析上限仍有效。模块设计§4.3/7/15同步改为此边界。
+- 模型Profile持有模型修订、profile版本与模式目录；模式持有schema、版本、规范化/语义回调及输出规则。显式选择只检查指定模式，自动选择必须唯一匹配；回调是受信纯函数，schema前后校验阻止规范化绕过约束。快照固定模式和版本，恢复不再执行模式规则，不依赖当前目录。
+- 已移除公共Prompt必填、全局图片尺寸/视频时长/音频音色及单视频/单音频输出限制。参考新增角色，角色组合由模式负责；输出数量/格式/累计字节数按模式生成的冻结约束检查。未接生产模型/付费调用/数据库/HTTP或Agent写工具。
+- 先写多模式测试确认缺符号编译红，随后模型隔离、文生图/图生图、首尾帧、歧义、默认值、恢复与拷贝测试绿。再复现schema库浮点比较误放行整数精度/上界/枚举，以及未知format被忽略；增加精确数值检查与format注册验证，`/tmp/fnd13-model-schema-red.log`到`/tmp/fnd13-model-modes-targeted.log`（1.112s）红转绿。
+- 图谱Verify仍为2026-09-04T15:47:38Z，相关Generation/Schema查询0且无分页；所有generation文件和相邻creativeops catalog/runtime coverage为not_tracked，已读精确源码。没有复用旧图谱证明新代码。当前Context7发现无可调用工具；使用已锁定kin-openapi v0.135.0源码及官方包文档核对Validate/VisitJSON/格式选项，不升级依赖。
+- `make check-go PKG=./internal/platform/llmgateway/...`已通过（build、lint 0 issues、全包测试16.150s），`/tmp/fnd13-model-modes-check-go.log`。此前Docker端口发布阻塞本轮未再出现；未重启Docker、未调整测试设施或并发。本轮改变尚未落库的新契约、未改变现有Chat执行语义，采用单包门禁。
+- 本次是owner要求的模型模式契约重设，审查目的与上一轮通用载荷校验不同；需fresh reviewer检查完整未提交候选，重点是schema/模型隔离、信封与模式权限边界、快照冻结及观察规则。旧审查结论不覆盖本次替换。
+
+- 模型模式归属的独立change review采用native collaboration fresh reviewer，显式gpt-6-astra/xhigh；当前无callable Paseo provider discovery、偏好文件实际缺失，按cs-feat回退同构最强模型。完整未提交patch冻结，审查期间不改工作树，本阶段最多3轮。
+
+- 新审查阶段首轮`/root/fnd13_model_modes_review`目标SHA-256 `2a8008c779b2070d2369cef098d6e6992fe1042d06fa160e369bb2493e2df2c9`发现3 blocking：库认识但不执行的format、复合枚举中float64/json.Number不一致、空枚举及溢出长度约束被忽略。模式绑定/隔离/拷贝/恢复等主链无其他发现。
+- 先用`/tmp/fnd13-model-modes-review-red.log`复现全部发现；补规则注册检查（当前不开放format、非空且唯一的有界枚举、安全计数/长度及上下界顺序），将枚举从库的浮点/反射比较移至递归精确比较。数组/对象/嵌套大整数枚举有合法成员、非法成员与恢复回归。所有纯契约测试1.027s通过，`/tmp/fnd13-model-modes-review-green.log`；后续包门禁及同reviewer复审另记。
+
+- 修复后`make check-go PKG=./internal/platform/llmgateway/...`再次通过：全build、包lint 0 issues、完整Gateway测试11.316s，`/tmp/fnd13-model-modes-review-check-go.log`。冻结完整候选，准备原reviewer第2轮全文及增量复审；未提交。
+
+- 同一reviewer第2轮完整候选与增量复审通过：SHA-256 `d730f1310a8e3ba696548d564b2c89430c5fa24bc3ab187913564b27475ef299`，3项resolved，unresolved/new findings无，blocking/important/nit均无；审查者独立纯契约测试0.861s通过。复审后核对候选未变化，仅补本游标状态。文档链接/围栏、diff --check通过。
+- 本轮优化交付：模型版本/模式拥有输入schema、语义/default处理、参考角色和输出约束；公共信封只守安全与解析边界；模式选择和结果约束随快照固定，恢复不重新选择。仍未登记实际供应商、未增加公开API、未写持久生成任务或实现非token结算；FND-13整体未完成。新代码保持未提交。
+
+
+### 2026-09-18 · Buzzy规则与计价思想调研
+
+- owner要求参考本机buzzy-workflow与buzzy-apiserver，配置载体不限GrowthBook，重点是模型/模式条件限制与计价引擎。只读参考源码与测试，没有访问线上配置或修改参考项目，没有运行参考服务。
+- 核实mediaref的配置/事实探测/单项与聚合校验、pricing_engine的match/meter/rate/modifiers/min_charge、CreditQuote/CalcRule跨层与快照、前端/Agent目录投影。也识别参考实现的预校验失败放行、价格内嵌兜底、浮点积分及部分询价失败取零等既有语义，未直接迁移为本项目付费准入规则。
+- 将具体设计追加到模块文档§16：可信事实、按模型修订/模式/角色的有界条件规则、三态结果、共享事实的报价与预算上界、现有Gateway唯一结算、完整规则包冻结及配置发布。明确代码尚未实现规则引擎；§15的callback接缝保留，后续默认由规则编译器生成，避免每个普通阈值都写Go。
+- 图谱Verify：buzzy-apiserver generation2026-08-31T07:07:31Z、buzzy-workflow generation2026-08-31T07:08:17Z，根路径匹配。关键源码metadata_changed/mediaref与参考媒体活动not_tracked，已定向读源码；规则加载/CalculateCredit各做双向depth1调用追踪。宽查询有截断后改为目录/符号范围，未声明全仓审计。CRM generation仍旧，新生成契约及账本精确源码核对。
+- 本轮只改模块设计与本游标，先前代码和测试结果未变；不重复运行应用测试、不提交、不新增lesson。具体配置载体及商业模型选择继续后置，文中规则数值仅作示意。
+
+
+### 2026-09-18 · FND-13 模型规则与精确计价首个切片
+
+- owner批准按§16实施，沿用当前worktree，未授权本轮提交。使用cs-feat；归属现有llmgateway生成子模块，保留Profile/schema与原账本边界。
+- 实现严格JSON规则编译、必填零值检查、模型/部署/Adapter绑定、可信媒体Reader及不可变事实、按模式的三态约束、条件/聚合表达式、精确价阶/乘数/最低费用、可证明上界与冻结程序实际用量重算。只算价、不写第二套账本；没有上界不等于可收费派发。
+- 配置目录先编译后revision CAS发布；同版本不改内容、坏配置不替换、过期拒绝新请求、并发一方获胜。内存版本摘要上限256；持久发布控制面另接。没有读取线上配置、接GrowthBook或付费供应商。
+- Verify图谱项目根正确，generation2026-09-04T15:47:38Z；Generation/Measurement/Price查询0，目标路径与llmgateway范围未跟踪，已读精确源码回退。既有文档命中§15/16和本游标；未发现改变本次实施的lesson，不另建文档或lesson。
+- 测试先行缺API红证`/tmp/fnd13-policy-red.log`；核心及全部Generation定向测试通过`/tmp/fnd13-policy-green.log`。包门禁初轮发现2个staticcheck风格问题，已修复后重跑；最终结果及独立审查另记。
+- 本次信任边界（可信素材事实/配置→模型许可/报价）及配置并发语义触发cs-feat独立审查。可调用能力仅native collaboration；未发现异构provider工具，Paseo偏好文件实际读取不存在。fresh reviewer将使用gpt-6-astra/xhigh，审查完整未提交候选，首轮前冻结patch及SHA；不沿用旧模式审查结论。
+- 具体接口、配置语法、可运行示例与未实现边界归入模块文档§17。非token持久准入/结算、生产媒体服务读取与画布桥仍待后续切片；FND-13未整体完成。
+
+- 最终候选包门禁：`make check-go PKG=./internal/platform/llmgateway/...` exit0，后端全build、lint零问题、Gateway全包12.711s通过；日志`/tmp/fnd13-policy-check-go.log`。冻结目标进行fresh独立审查，期间不修改工作树。
+
+- Fresh reviewer `/root/fnd13_policy_review`（native/gpt-6-astra/xhigh）首轮完整20文件SHA `6de5c5e5b050d9937813777afc08f7c2310f88a9a5fdfed31201fb04fe3feaf5`：2 blocking（N/A掩盖unknown及否定放行、JSON转义后规则不可恢复），1 important（Adapter没有计量维度/单位声明）。独立探针`/tmp/fnd13-independent-policy-review/probes.log`已复现；规则深度0–12恢复探针通过。
+- 修复聚合全扫描合并状态；N/A仅可用exists检测，其他比较直接拒绝，不能否定/兜底放行。配置先规范化，统一持久表示大小检查；条件字符串按解码UTF-8长度计；编译和Prepare均守快照可恢复边界。受信target改为Usage维度声明（单位+可选硬上界），拒绝未知维度或单位重解释，复制上界指针并检查目录能力不可变。另收紧示例角色/模态枚举，防止未声明角色漏出示例选择器。
+- 四份Generation命名文件测试通过1.365s（无TestMain/Docker），日志`/tmp/fnd13-policy-review-fixes.log`。覆盖顺序对换/已知混合/N/A否定/显式存在、原始HTML字面量恢复/整个包转义膨胀、受信单位/未知维度/外部指针修改和示例非法角色。之前`-run TestGenerationPolicy`整包race与上界probe实际会执行storetest.TestMain初始化，不能记为无容器；它们在其他容器测试结束后串行执行并通过，分别4.929s与6.526s。
+
+- 首轮修复后最终门禁：`make check-go PKG=./internal/platform/llmgateway/...` exit0（build、lint零问题、包测试29.904s），日志`/tmp/fnd13-policy-review-check-go.log`；命名文件纯规则race通过4.989s，无TestMain/Docker，日志`/tmp/fnd13-policy-review-race.log`。冻结完整候选进入同一reviewer第2轮。
+
+- 同一reviewer第2轮完整候选与修复增量审查通过：SHA `eba1453018809112b35840e64261121082c8f484cfc7d1cfa21bea232ac2055a`，首轮3项全部resolved，unresolved/new/blocking/important/nit均无。独立四份Generation测试+旧失败探针1.247s通过，无TestMain/Docker；`/tmp/fnd13-independent-policy-review2/tests.log`。返回时20/20文件哈希、HEAD及patch一致。
+- 收尾再核对冻结候选完整性、文档链接/代码围栏与`git diff --check`；审查后仅补本游标的结果和next_action。实现语义、配置示例和边界已归入模块文档§17，没有新增lesson。规则引擎首切片完成，生产Reader、非token持久账本和画布桥继续后续项；FND-13整体未完成。未提交、未付费调用或发布。
+
+
+### 2026-09-21 · 文件规则源
+
+- owner指定先以文件管理、后接配置平台；沿当前worktree与cs-feat实施，未获提交许可。先查图谱OpenCatalog/OptionsFromEnv/GenerationPolicy，结果0；coverage generation2026-09-04，assemble/catalog_default/policy_catalog均not_tracked，已精确源码回退。现有Chat启动只接Chat目录，暂无受信生成Adapter可装配。
+- 增加Source消费接口、普通文件有界读取、PublishFromSource共用发布入口；示例移至deploy/generation-policies/example-video.v1.json，单一文件被测试直接消费。补使用说明及模块§18。首次和显式重载可调用，未添加自动监听/配置平台SDK/无消费者环境变量。
+- 风险是文件内容进入模型规则与报价边界；沿用编译器与Adapter受信声明，并验证读取/编译失败保留旧活动版本、取消、大小/文件类型边界与源替换。需要针对新增文件边界的fresh独立审查；旧规则引擎复审结论不覆盖新文件入口。
+
+- 文件入口验证：五份Generation命名文件测试1.337s通过，source定向race1.578s通过；日志`/tmp/fnd13-file-source-green.log`、`/tmp/fnd13-file-source-race.log`。make check-go全build/lint0通过，但TestMain启动容器失败`rootless Docker not found`；单包重跑同样失败，docker info确认本机docker.sock不存在。未重启Docker，未把门禁判绿，待环境恢复补跑；日志`/tmp/fnd13-file-source-check-go.log`、`/tmp/fnd13-file-source-package-retry.log`。
+- Fresh reviewer `/root/fnd13_file_source_review`（native gpt-6-astra/xhigh，工具发现无异构provider、既有Paseo偏好实际读取缺失）首轮审查通过，blocking/important/nit均无；完整23文件patch SHA `3990dcace4ec188df4c60260e0510f00c2bcc2930ac83cf8d4b4af17ce0ab9c6`，23/23 manifest一致。独立五份命名测试1.046s通过，无TestMain/Docker。审查通过不替代待补的Gateway全包门禁。
+- 收尾仅更新本游标；实现与说明归档到模块§18及deploy/generation-policies/README.md，无新lesson。文件源完成，当前无生产Adapter启动装配，显式重载入口可用。未提交、未付费调用、未发布。
+
+
+### 2026-09-21 · 下一阶段实施设计补齐
+
+- owner要求补设计，本轮只更新模块文档和本游标。使用backend-architect，对照当前Gateway、媒体/内容、画布、Agent控制和迁移源码补§19；未开始新实现、未提交、未改冻结Epic。
+- 明确生成用途授权当前仍被内容模块拒绝，不能复用display放行；original与模型角色分离、摘要前缀转换、提取器版本与缺事实补齐；新增请求扩展/任务/观察/输出/事实逻辑表及账号唯一键。
+- 选择复用原账本的generation_total成本位置，完整用量向量计算后原子结算，明细保留完整多组件价格程序；避免直接使用token预留/hold释放假设。BYTEA保存精确规则快照，JSONB仅投影；同key异证据、上界违约、零价未知、跨币种均明确处理。
+- 补T0–T5短事务、已核实锁偏序与实施前六条实际锁链核验、恢复失败矩阵、加法迁移与回退边界、G1–G4开发顺序及GEN-01–13验收。纯设计没有改变权限/数据库或发生外部副作用，不启动实现审查或容器测试；实现时按影响面门禁和独立审查执行。
+- Graph Verify：项目/root沿既有确认，generation2026-09-04；限定媒体/Gateway符号查询0且无分页，相关范围无记录，精确路径coverage not_tracked，已源码回退。本节区分当前事实与拟新增接口，不宣称已验证完整调用图；人工consent扩展、实际锁链和GC端口列为实施内前置核实。
+
+- 文档检查：相对链接有效、代码围栏成对、git diff --check通过；对照上一文件源审查manifest，除本模块文档/游标外原审查代码及配置示例哈希均未改变。未运行应用测试，Docker待补门禁状态保持。
+
+
+### 2026-09-21 · 当前阶段提交
+
+- owner明确授权提交当前模型模式契约、规则计价引擎、文件配置源及设计文档。本轮启动本机Docker Desktop后服务可用，补跑`make check-go PKG=./internal/platform/llmgateway/...` exit0：全后端build、lint零问题、Gateway全包14.771s通过；日志`/tmp/fnd13-precommit-check-go.log`。此前Docker不可用导致的门禁缺口已关闭。
+- 对照文件源独立审查的23文件manifest，代码和配置哈希保持一致；之后改动仅为已请求的实施设计及执行记录。当前阶段提交不表示FND-13整体完成；后续按§19的G1–G4实施。未推送远端或执行付费模型调用。
+
+- 提交前`make lint` exit0：后端零问题；前端无错误，保留未修改文件中的7条Fast Refresh导出警告。日志`/tmp/fnd13-precommit-lint.log`。
