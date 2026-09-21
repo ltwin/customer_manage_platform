@@ -1,0 +1,181 @@
+{
+  "engine_version": "generation-policy-v1",
+  "version": "example-v1",
+  "profile": {
+    "model_key": "example-video",
+    "model_revision": "revision-1",
+    "version": "profile-1"
+  },
+  "deployment_id": "example-deployment",
+  "adapter_version": "adapter-1",
+  "currency": "CNY",
+  "modes": [
+    {
+      "definition": {
+        "key": "reference_video",
+        "version": "mode-1",
+        "kind": "video",
+        "input_schema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prompt": {
+              "type": "string"
+            },
+            "references": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "role",
+                  "revision_id",
+                  "digest",
+                  "kind",
+                  "mime",
+                  "byte_size"
+                ],
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "reference_video"
+                    ]
+                  },
+                  "revision_id": {
+                    "type": "string"
+                  },
+                  "digest": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "video"
+                    ]
+                  },
+                  "mime": {
+                    "type": "string"
+                  },
+                  "byte_size": {
+                    "type": "integer"
+                  }
+                }
+              }
+            },
+            "parameters": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "duration"
+              ],
+              "properties": {
+                "duration": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 10000
+                }
+              }
+            }
+          }
+        }
+      },
+      "parameters": {
+        "duration": {
+          "type": "number",
+          "unit": "millisecond"
+        }
+      },
+      "defaults": {
+        "duration": 5000
+      },
+      "output": {
+        "kind": "video",
+        "min_outputs": 1,
+        "max_outputs": 1,
+        "mimes": [
+          "video/mp4"
+        ],
+        "max_bytes": 104857600
+      },
+      "rules": [
+        {
+          "id": "reference_count",
+          "assert": {
+            "op": "between",
+            "ref": {
+              "source": "references",
+              "aggregate": "count",
+              "kind": "video",
+              "role": "reference_video",
+              "unit": "count"
+            },
+            "values": [
+              1,
+              3
+            ]
+          }
+        },
+        {
+          "id": "reference_duration",
+          "assert": {
+            "op": "between",
+            "ref": {
+              "source": "references",
+              "aggregate": "each",
+              "kind": "video",
+              "role": "reference_video",
+              "unit": "millisecond",
+              "field": "duration_ms"
+            },
+            "values": [
+              1000,
+              15000
+            ]
+          }
+        },
+        {
+          "id": "reference_total_duration",
+          "assert": {
+            "op": "lte",
+            "ref": {
+              "source": "references",
+              "aggregate": "sum",
+              "kind": "video",
+              "role": "reference_video",
+              "unit": "millisecond",
+              "field": "duration_ms"
+            },
+            "values": [
+              20000
+            ]
+          }
+        }
+      ],
+      "pricing": [
+        {
+          "id": "video",
+          "estimate": {
+            "source": "parameter",
+            "field": "duration",
+            "unit": "millisecond"
+          },
+          "usage": "output_ms",
+          "unit": "millisecond",
+          "divisor": 1000,
+          "quantity_round": "ceil",
+          "tiers": [
+            {
+              "id": "standard",
+              "fallback": true,
+              "rate": {
+                "numerator": 125000,
+                "denominator": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
