@@ -12,6 +12,7 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
+	"github.com/riverqueue/river/rivertype"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -29,7 +30,9 @@ type JobHandler struct {
 }
 
 type queuedCreativeJob struct {
-	AccountID     string       `json:"account_id"`
+	// river:"unique" 标记与 Request 内的字段标记共同定义队列去重键：
+	// 账户 + 任务类型 + 载荷；operation_id 等每次入队都变化的字段不参与。
+	AccountID     string       `json:"account_id" river:"unique"`
 	SchemaVersion int          `json:"schema_version"`
 	Request       jobs.Request `json:"request"`
 }
@@ -109,7 +112,24 @@ func (sc TxAccountScope) Jobs(runtime jobs.Runtime) jobs.TxEnqueuer {
 		if _, registered := r.handlers[request.Kind]; !registered {
 			return 0, jobs.ErrInvalidTask
 		}
-		result, err := r.client.InsertTx(ctx, tx, queuedCreativeJob{AccountID: sc.AccountID(), SchemaVersion: 1, Request: request}, &river.InsertOpts{MaxAttempts: 5})
+		opts := &river.InsertOpts{MaxAttempts: 5}
+		if request.UniqueByArgs {
+			// 去重只认存活投递（available/pending/running/retryable/scheduled）。
+			// 刻意不含 completed：默认集合会把已完成任务也挡在去重范围内，
+			// 直到队列保留期清理，这会让「完成后补投递」失效；discarded 天然
+			// 不在集合中，队列耗尽丢弃后领域侧重投递即可重新入队。
+			opts.UniqueOpts = river.UniqueOpts{
+				ByArgs: true,
+				ByState: []rivertype.JobState{
+					rivertype.JobStateAvailable,
+					rivertype.JobStatePending,
+					rivertype.JobStateRetryable,
+					rivertype.JobStateRunning,
+					rivertype.JobStateScheduled,
+				},
+			}
+		}
+		result, err := r.client.InsertTx(ctx, tx, queuedCreativeJob{AccountID: sc.AccountID(), SchemaVersion: 1, Request: request}, opts)
 		if err != nil {
 			return 0, fmt.Errorf("enqueue creative task: %w", err)
 		}

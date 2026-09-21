@@ -39,6 +39,8 @@ type fixture struct {
 	runtime jobs.Runtime
 	parts   *httptest.Server
 	cfg     creativemedia.Config
+	local   versionedfs.Adapter
+	key     []byte
 }
 
 func setup(t *testing.T) *fixture {
@@ -95,7 +97,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	svc.SetRuntime(runtime)
-	f.svc, f.runtime = svc, runtime
+	f.svc, f.runtime, f.local, f.key = svc, runtime, local, key
 	f.a = st.ScopeFor(auth.AccountContext{AccountID: "media-a"})
 	f.b = st.ScopeFor(auth.AccountContext{AccountID: "media-b"})
 	return f

@@ -42,6 +42,9 @@ func TestSkillFoundationMigrationShapeAndLossyRollback(t *testing.T) {
 	// dirty, so the recoverable case has to be proved before the refusal.
 	// 0046 (agent runs) sits above this migration; step past it first.
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation media facts rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("execution continuation rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -139,6 +142,9 @@ func TestSkillFoundationMigrationShapeAndLossyRollback(t *testing.T) {
 		t.Fatal("one operation id must identify one import")
 	}
 
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation media facts rollback", err)
+	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("execution continuation rollback", err)
 	}

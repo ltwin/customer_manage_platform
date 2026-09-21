@@ -69,6 +69,7 @@ func (s *Service) Handlers() []store.JobHandler {
 		{Kind: jobComplete, Work: s.workComplete, Timeout: 5 * time.Minute},
 		{Kind: jobVerify, Work: s.workVerify, Timeout: 20 * time.Minute},
 		{Kind: jobAbort, Work: s.workAbort},
+		{Kind: jobFactsProbe, Work: s.workFactsProbe, Timeout: factsProbeLease},
 	}
 }
 func (s *Service) Capabilities() Capabilities {

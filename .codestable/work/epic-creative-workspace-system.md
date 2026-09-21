@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: 当前模型模式契约、规则计价引擎、文件配置源已完成审查及最终Gateway包门禁，按owner本轮授权提交；后续依模块§19从G1可信事实/授权端口开始，再推进G2持久准入结算。
+next_action: G1可信媒体事实与授权端口及恢复边界修复已完成最终复审和门禁，按owner本轮授权提交；下一切片依模块§19推进G2持久准入与非token结算。
 blocked_by: null
 item_progression: per-item
 milestone_commit: manual
@@ -1423,3 +1423,57 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 - 对照文件源独立审查的23文件manifest，代码和配置哈希保持一致；之后改动仅为已请求的实施设计及执行记录。当前阶段提交不表示FND-13整体完成；后续按§19的G1–G4实施。未推送远端或执行付费模型调用。
 
 - 提交前`make lint` exit0：后端零问题；前端无错误，保留未修改文件中的7条Fast Refresh导出警告。日志`/tmp/fnd13-precommit-lint.log`。
+
+### 2026-09-21 · FND-13 G1 可信事实与授权端口（实现完成，待 change review）
+
+- 按§19.9顺序实施G1。开工前确认§18包门禁缺口已在上一节提交前关闭（Docker恢复后 `make check-go PKG=./internal/platform/llmgateway/...` 已过），无需重跑。
+- creativecontent：requireUsable 重构出 requireRevision/requireRevisionState 共享核心（display/ai_analysis 语义不变）；新增 RequireGenerationReference/ReadGenerationReferenceSnapshot 显式生成用途守卫与 Grant/RevokeGenerationReference 受信登记撤销（manual_write）。licensed 素材因声明命名空间无外发许可位被权利矩阵保守拒绝，记录为待扩展边界。
+- creativemedia：Verifier.Probe（stageBody/detectStoredMime 复用；parseProbeDuration/parseProbeRational 纯函数，nil=未知、0=已知零；帧率有理数）；Service.GenerationReaderFor 实现 llmgateway.GenerationMediaReader（original 固定口径、身份不符 ErrConflict、跨账号不可见）；ScheduleFactsProbe 单事务去重登记+processing 读 pin+同事务入队；media.facts_probe worker（claim/epoch/lease 重启恢复、对象版本/digest 回写复核、unsupported 终态不重试、有界3次重试）。迁移0051 creative_media_facts/probes，down纯DROP。
+- 按仓库惯例（460d0f2 先例）为全部 head 锚定迁移测试回退串补 `generation-media-facts` 一步（auth×3、creative×8、llm_gateway、orders×3、settings×2、planning、telegram、store_test）。
+- 验证：creativemedia 8.1s 全绿（授权/跨账号/伪造/未知与0/original口径/探测去重/租约恢复/unsupported 终态）；creativecontent 5.6s 全绿；store 63.9s 全绿（含新增0051形状测试）；`make check-go` 全量 exit 0。日志 `/tmp/fnd13-g1-check-go.log`。
+- 未接生产组合根/HTTP；G2 未开始。待独立 change review（权限边界+schema 迁移触发）后报告 owner 提交。
+
+### 2026-09-21 · G1 change review round 1 修复（同一 reviewer follow-up 待复审）
+
+- Fresh reviewer（同构 general-purpose subagent；异构不可用——宿主 Agent 无 model 参数、4router 失效，见记忆条目）单轮 cs-review，冻结 patch SHA a2af3fc8…6738，结论 fail：B1 活租约×River MaxAttempts5×秒级退避在 worker 死亡时耗尽队列重试并永久搁浅 probe 行（creative_media_probe_due 无消费者、Schedule 不补派发）；I1 probe 去重键缺 extractor_version 阻断版本提升重探；I2 probeAV 把超时/执行失败等瞬时故障判为无重置终态 unsupported；N1–N6（并发登记唯一键报错、终态 pin 引用悬挂、Close 注释、Probe 注释失实、parseProbeDuration 溢出、Grant/Revoke TOCTOU）。
+- 修复：活租约改 `jobs.Defer(剩余租约+5s)`（snooze 不耗失败次数，复用 creative_jobs 的 DeferredError→JobSnooze 通路）；running 且租约过期的行在下次 Schedule 补一次派发，pending 保持单派发；probe 表与去重键加 extractor_version（0051 未发布，原地修订迁移+形状测试）；probeAV 按错误类别分流（ctx 超时/执行失败/输出不可读=瞬时有界重试，ExitError/无流布局=终态 unsupported）；ON CONFLICT DO NOTHING 收敛并发登记；终态 UPDATE 置空 read_pin_id；Revoke 先 FOR UPDATE 锁声明行；parseProbeDuration 上限 24h；两处注释修正。
+- 新增测试：活租约断言改为 DeferredError 且不打扰 running；死 worker（running+过期租约）补派发；提取器版本提升（facts-v0 历史行）后按新键重探并产出双版本 facts；迁移形状测试覆盖版本键去重；1e300 时长未知。creativemedia/creativecontent/store 三包全绿，`make check-go` 全量 exit 0（/tmp/fnd13-g1-check-go-r2.log，45 包 ok）。
+
+### 2026-09-21 · G1 change review round 2 收口
+
+- 同一 reviewer follow-up 复审（冻结 f476d16c…7085）：B1/I1/I2/N1–N6 全部 resolved，verdict pass-with-findings，新增 3 nit：N1' §20.4 probes 唯一键描述漂移、N2' create() 冲突路径孤儿 pin+无条件补 enqueue、N3' pending×连续5次claim瞬时故障耗尽 River MaxAttempts 后不补派发（低概率残留）。
+- 处理：N1' 文档已改；N2' create() 改为败者删自己的 pin、按重读胜者状态返回且不 enqueue（won 布尔分流）；N3' 以残留风险记入模块§20.5（due 索引暂无扫描方，场景现实化时补 pending 超阈值补派发或落地§19.7 due 扫描）。
+- 验证：creativemedia 全包 + 0051 形状测试全绿；`make check-go` 全量 exit 0（/tmp/fnd13-g1-check-go-r3.log）。round3 收口复审后待 owner 提交。
+
+### 2026-09-21 · G1 change review round 3 收口（pass）
+
+- 同一 reviewer 第 3 轮核验 nit 修复增量（冻结 8f514ee0…7bfe）：N1'/N2'/N3' 全部 resolved，无新增发现，无未决项。三轮累计 1 blocking + 2 important + 9 nit 全部解决。
+- 审查通过。当前 staged（与工作树一致）即为可提交候选：迁移 0051、creativecontent 生成授权端口、creativemedia Reader/探测任务及全部测试与文档。未提交——按仓库规则等待 owner 人工同意后再 commit；未推送、无真实付费调用。
+- 残留风险（已记模块§20.5）：pending×连续5次claim瞬时故障耗尽 MaxAttempts 不补派发（due 索引暂无扫描方）；外发同意归 G3。G2（持久准入与非token结算）为下一切片。
+
+### 2026-09-21 · G1 owner review 修复轮（3×P2 + 1×P3，全部修复）
+
+- Owner 对 staged G1 提出四项：①[P2] worker 不校验任务行 extractor_version，滚动升级混布时旧 worker 可把新版本任务标成功而事实缺失；②[P2] 失败回写用执行 ctx，整体超时后 attempts/终态/pin 释放全部无法提交，内部重试预算被绕过；③[P2] 队列耗尽丢弃唯一投递后 pending 探测连显式重试都无法恢复（确认缺口，非仅风险）；④[P3] G1 新增注释未按「注释中文、日志英文」约定。
+- 修复①：claim 读取并校验 extractor_version，非本版本以 jobs.Defer(1min) 原地等待（零写入、不动 pin）；completeFactsProbe 的 exists/insert 与 factsDigest 一律取任务行版本。回归 TestFactsProbeWorkerDefersForeignExtractorVersion。
+- 修复②：attempts+1 与 running 翻转合并进领取事务（worker 死亡不丢预算）；complete/retry/finish 内部经 probeFinishCtx（WithoutCancel+30s）落库，epoch 校验保留。回归内部测试 TestFactsProbeRetryAccountingSurvivesDeadContext（直接以已取消 ctx 调 retryFactsProbe，三次领取终态 failed）与外部 TestFactsProbeAttemptBudgetExhaustsToTerminalFailed（删除物理对象注入持续瞬时失败）。
+- 修复③：jobs.Request 增 UniqueByArgs；store enqueuer 映射 River UniqueOpts{ByArgs, ByState=available/pending/retryable/running/scheduled}（刻意排除 completed，否则已完成任务挡补投递至保留期清理；queuedCreativeJob.AccountID 与 Request.Kind/Payload 打 river:"unique"，operation_id/created_at 不进去重键）；ScheduleFactsProbe 对 pending 与租约过期 running 补投递，存活投递存在时由队列去重跳过。已核实 river v0.40 unique 落库为 unique_key+unique_states 位掩码部分唯一索引、ON CONFLICT DO NOTHING 不报错；卡死 running 投递由内建 JobRescuer 重回队列，running 计入存活集安全。回归 TestFactsProbeRedeliversAfterQueueDiscard；既有刷新用例改按队列去重语义断言（旧投递先标记 completed 再断言 +1）。
+- 修复④：generation.go/verify.go/content.go/creativecontent generation.go/generation_test.go/verify_probe_test.go/creative_facts_migration_test.go/0051 SQL 全部新增注释中文化；日志与错误文本保持英文；21 个迁移测试文件插入的 t.Fatal 文本属错误文本，按约定保留英文。
+- 验证：creativemedia 7.4s、creativecontent 3.9s、store 62.9s 全绿；`make check-go` 全量 exit 0。模块文档§20.3/§20.5/新增§20.6 记录修复与收窄后的残留（无自主扫描方，恢复依赖 Schedule 再调用；全旧集群对外版本任务每分钟顺延）。
+- 仍未提交：修复后改动已重新 stage，继续等待 owner 人工同意 commit。
+
+### 2026-09-21 · G1 恢复边界复审修复（2×P2 + 1×P3，验证通过，独立审查受阻）
+
+- 本轮先写回归并实际复现：无失败收尾的连续崩溃后第四次领取 attempts=4；旧 River 投递 running 时显式重试被去重吞掉，旧投递完成后 available=0；历史 succeeded/failed/unsupported 跨版本重投均返回 DeferredError。红灯日志 `/tmp/g1-recovery-red.log`。
+- 修复：claim 在活租约判断之后、读取对象之前检查 attempts 上限，耗尽即在原事务推进 epoch、写 failed/attempts_exhausted 并释放 pin；0051 未发布迁移加入 retry_round（非空、非负、默认0），仅显式重置 failed 时递增，同时清 completed_at；轮次进入队列载荷与唯一身份，初始轮省略字段保留旧键，同轮恢复去重，新轮不被旧 running 投递阻挡；领取先处理终态/失效轮次，再做提取器版本门禁；回写与释放 pin 均核对 epoch/round/state。
+- 回归：CrashRecoveryStopsAtAttemptBudget（不调用 retry 收尾、三次上限、活第三次租约保留、旧 worker 迟到拒绝）；ExplicitRetrySurvivesOldRunningDelivery（真实失败收尾与 River 表交错、新轮投递存活、旧载荷拒绝、同轮去重、最终成功）；HistoricalTerminalDeliveryCompletes（三种终态）；OldClaimCannotTouchNewRound（三类迟到回写不动新 pin）；迁移测试覆盖 round 默认值/负值/NULL。
+- 验证：三条原红灯转绿（`/tmp/g1-recovery-green.log`）；`make check-go` 真实进程 exit 0，build 成功、golangci-lint 0 issues、45 测试包通过（含新回归与迁移，`/tmp/g1-recovery-check-go.log`）。git diff --check 通过。规范与恢复契约已归入模块§20.3/§20.7，无新增 lesson。
+- 独立审查：本轮核心恢复协议变化后冻结完整 staged SHA256 `f66860fe740319ae7e03dc12aa78a4a0479f62eaccdca348f5003014546d236a`，本轮增量 `/tmp/g1-recovery-increment.patch` SHA256 `7dd70a76629a8b5de8fc74d6153f73478d187d5906ec109214c31a09e7acf8f1`。创建宿主 code-reviewer（agent_4af0d81a-ccf8-4b84-871e-b50a1997e039；宿主无 model 参数、异构不可用）后服务立即以额度不足失败，未产出任何审查报告，不计完成轮次，不得声称 review pass。本条执行记录是冻结之后唯一新增改动。
+- 当前修复与测试已暂存，未提交；仍需完成独立审查。0051 与旧草稿 worker 混布边界见§20.7；自主 due 扫描仍未实现，队列丢弃后恢复依赖显式调度。临时日志与冻结增量保留在 `/tmp/g1-recovery-*` 供追溯。
+
+
+### 2026-09-21 · G1 最终复审通过与提交授权
+
+- owner 请求最后复审后，backend-review 已完成恢复边界独立核验：上轮三项全部关闭，无新增实质发现；两轮累计六个独立复现用例全部转绿（`/tmp/fnd13-g1-final-review-probes.log`）。此前独立审查受阻的缺口已关闭。
+- 最终 `make check-go` exit 0：build 成功、lint 零问题、45 个测试包通过（`/tmp/fnd13-g1-final-review-check.log`）；审查期间39个文件哈希一致。owner 随后明确授权提交本次 G1 改动，提交前再次核验与最终复审 manifest 一致。
+- 提交前 `make lint` exit 0，后端零问题；前端保留未修改文件中的7条既有 Fast Refresh 警告（`/tmp/fnd13-g1-commit-lint.log`）。仅更新本游标以记录最终复审及授权，代码与迁移未再改变；未推送远端。
+- G1 完成不代表 FND-13 整体完成；G2 尚未开始。自主 due 扫描仍未实现，队列丢弃后恢复依赖显式调度；上线须使用完整 G1 worker，不与缺少轮次校验的草稿版本混跑。

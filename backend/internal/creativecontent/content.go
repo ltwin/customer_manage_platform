@@ -335,47 +335,45 @@ func RequireUsable(ctx context.Context, tx store.TxAccountScope, id, purpose str
 	return requireUsable(ctx, tx, tx.QueryRowForUpdate, id, purpose)
 }
 func requireUsable(ctx context.Context, tx contentReader, protectedRow func(context.Context, string, string, string, ...any) store.Row, id, purpose string) (Revision, error) {
-	if purpose != "display" && purpose != "ai_analysis" && purpose != "generation_reference" {
+	switch purpose {
+	case "display":
+		return requireRevision(ctx, tx, protectedRow, id, purpose, func(in planningmedia.RightsDeclarationInput) error {
+			return planningmedia.ValidatePurpose(in, planningmedia.PurposeMoodboardDisplay)
+		})
+	case "generation_reference":
+		return RequireGenerationReferenceRow(ctx, tx, protectedRow, id)
+	case "ai_analysis":
+		// FND-02 不授予 AI 使用。
+		return Revision{}, ErrUsageDenied
+	default:
 		return Revision{}, creativeops.ErrValidation
 	}
-	// Lock content/declaration before revision, matching the shared lock order.
-	var contentID, declarationID string
-	err := tx.QueryRow(ctx, "creative_content_revisions", "content_id, rights_declaration_id", "id=$2", id).Scan(&contentID, &declarationID)
-	if errors.Is(err, store.ErrNoRows) {
-		return Revision{}, ErrNotFound
-	}
+}
+
+// RequireGenerationReference 为显式生成用途保护修订：声明上要有存活的
+// generation_reference 授权，且权利矩阵允许所声明的素材来源用于生成。
+// 展示授权永远不能顶替它。
+func RequireGenerationReference(ctx context.Context, tx store.TxAccountScope, id string) (Revision, error) {
+	return RequireGenerationReferenceRow(ctx, tx, tx.QueryRowForUpdate, id)
+}
+
+// ReadGenerationReferenceSnapshot 是给可信读取方的只读变体。
+func ReadGenerationReferenceSnapshot(ctx context.Context, tx store.ReadTxAccountScope, id string) (Revision, error) {
+	return RequireGenerationReferenceRow(ctx, tx, tx.QueryRow, id)
+}
+
+func RequireGenerationReferenceRow(ctx context.Context, tx contentReader, protectedRow func(context.Context, string, string, string, ...any) store.Row, id string) (Revision, error) {
+	return requireRevision(ctx, tx, protectedRow, id, "generation_reference", generationGate)
+}
+
+// requireRevision 是共享的用途守卫。declarationGate 为该用途校验已锁定的
+// 声明；gate 为 nil 时该用途直接拒绝。锁序固定：先内容/声明，后修订，
+// 再授权。
+func requireRevision(ctx context.Context, tx contentReader, protectedRow func(context.Context, string, string, string, ...any) store.Row, id, purpose string, declarationGate func(planningmedia.RightsDeclarationInput) error) (Revision, error) {
+	r, payload, err := requireRevisionState(ctx, tx, protectedRow, id, declarationGate)
 	if err != nil {
 		return Revision{}, err
 	}
-	var r Revision
-	if err := protectedRow(ctx, "creative_contents", "kind, origin_node_id_snapshot", "id=$2", contentID).Scan(&r.Kind, &r.OriginNodeID); err != nil {
-		return Revision{}, fmt.Errorf("content identity: %w", err)
-	}
-	var source planningmedia.SourceClass
-	var basis planningmedia.RightsBasis
-	if err := protectedRow(ctx, "creative_rights_declarations", "source_class, rights_basis", "id=$2", declarationID).Scan(&source, &basis); err != nil {
-		if errors.Is(err, store.ErrNoRows) {
-			return Revision{}, ErrUsageDenied
-		}
-		return Revision{}, fmt.Errorf("read content declaration: %w", err)
-	}
-	if purpose != "display" {
-		return Revision{}, ErrUsageDenied
-	} // FND-02 does not grant AI use.
-	if err := planningmedia.ValidatePurpose(planningmedia.RightsDeclarationInput{SourceClass: source, RightsBasis: basis}, planningmedia.PurposeMoodboardDisplay); err != nil {
-		return Revision{}, ErrUsageDenied
-	}
-	var payload json.RawMessage
-	var state string
-	var sequence int64
-	err = protectedRow(ctx, "creative_content_revisions", "id, content_id, sequence, payload, rights_declaration_id, state", "id=$2", id).Scan(&r.ID, &r.ContentID, &sequence, &payload, &r.DeclarationID, &state)
-	if err != nil {
-		return Revision{}, err
-	}
-	if state != "ready" || r.ContentID != contentID || r.DeclarationID != declarationID {
-		return Revision{}, ErrNotFound
-	}
-	r.Sequence = creativeops.Revision(sequence)
 	granted, err := tx.Exists(ctx, "creative_usage_grants", "declaration_id=$2 AND purpose=$3 AND revoked_at IS NULL", r.DeclarationID, purpose)
 	if err != nil {
 		return Revision{}, err
@@ -401,6 +399,50 @@ func requireUsable(ctx context.Context, tx contentReader, protectedRow func(cont
 		r.Media = media
 	}
 	return r, nil
+}
+
+// requireRevisionState 校验修订身份、该用途的权利矩阵与 ready 状态；
+// 它刻意不查用途授权，授权流程可以在授权行还不存在时复用它。
+func requireRevisionState(ctx context.Context, tx contentReader, protectedRow func(context.Context, string, string, string, ...any) store.Row, id string, declarationGate func(planningmedia.RightsDeclarationInput) error) (Revision, json.RawMessage, error) {
+	// 按共享锁序，先锁内容/声明再锁修订。
+	var contentID, declarationID string
+	err := tx.QueryRow(ctx, "creative_content_revisions", "content_id, rights_declaration_id", "id=$2", id).Scan(&contentID, &declarationID)
+	if errors.Is(err, store.ErrNoRows) {
+		return Revision{}, nil, ErrNotFound
+	}
+	if err != nil {
+		return Revision{}, nil, err
+	}
+	var r Revision
+	if err := protectedRow(ctx, "creative_contents", "kind, origin_node_id_snapshot", "id=$2", contentID).Scan(&r.Kind, &r.OriginNodeID); err != nil {
+		return Revision{}, nil, fmt.Errorf("content identity: %w", err)
+	}
+	var source planningmedia.SourceClass
+	var basis planningmedia.RightsBasis
+	if err := protectedRow(ctx, "creative_rights_declarations", "source_class, rights_basis", "id=$2", declarationID).Scan(&source, &basis); err != nil {
+		if errors.Is(err, store.ErrNoRows) {
+			return Revision{}, nil, ErrUsageDenied
+		}
+		return Revision{}, nil, fmt.Errorf("read content declaration: %w", err)
+	}
+	if declarationGate == nil {
+		return Revision{}, nil, ErrUsageDenied
+	}
+	if err := declarationGate(planningmedia.RightsDeclarationInput{SourceClass: source, RightsBasis: basis}); err != nil {
+		return Revision{}, nil, ErrUsageDenied
+	}
+	var payload json.RawMessage
+	var state string
+	var sequence int64
+	err = protectedRow(ctx, "creative_content_revisions", "id, content_id, sequence, payload, rights_declaration_id, state", "id=$2", id).Scan(&r.ID, &r.ContentID, &sequence, &payload, &r.DeclarationID, &state)
+	if err != nil {
+		return Revision{}, nil, err
+	}
+	if state != "ready" || r.ContentID != contentID || r.DeclarationID != declarationID {
+		return Revision{}, nil, ErrNotFound
+	}
+	r.Sequence = creativeops.Revision(sequence)
+	return r, payload, nil
 }
 
 func requireRoot(ctx context.Context, tx contentReader, revision Revision) error {
