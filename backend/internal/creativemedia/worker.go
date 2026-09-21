@@ -37,6 +37,8 @@ func LeaseBudget(kind string) time.Duration {
 		return completeLease
 	case jobVerify:
 		return verifyLease
+	case jobFactsProbe:
+		return factsProbeLease
 	default:
 		return leaseDuration
 	}

@@ -834,3 +834,60 @@ G1/G2可独立开发；G3的媒体外发必须等待G1授权边界与G2预算都
 本轮定向读取：`llmgateway/stages.go`、`admission.go`、`accounting.go`、`caller_group.go`、`generation_observation.go`，`creativemedia/verify.go`、`read.go`，`creativecontent/content.go`，`creativecanvas/execution_stage.go`、`media_ports.go`，`creativeagent/control.go`及0041/0043迁移。图谱generation仍2026-09-04，相关符号查询0且has_more=false，目标路径未跟踪，采用精确源码补证，不声称已验证全仓完整调用图。
 
 实现前仍须核对：全部生产派发/取消/重试的实际锁链、人工媒体外发与现有consent契约的最小兼容扩展、现有对象GC根登记入口、具体提取器的方向/时长口径。这些是G1/G2对应任务内的前置检查与测试，不授权以默认允许、假事实或新账本绕过。商业模型、配置平台和计费微服务继续后置。
+
+
+## 20. G1 实现切片：可信媒体事实与授权端口（2026-09-21，已实现）
+
+本节落实§19.9 G1。产出与§19.2六点的对应关系及当前边界如下；G2（持久准入与非token结算）尚未开始，Gateway生成请求/预算/任务表仍未存在。
+
+### 20.1 生成用途授权（creativecontent）
+
+`RequireGenerationReference`（事务内 FOR UPDATE）与`ReadGenerationReferenceSnapshot`（只读快照）是生成参考用途的显式守卫：沿用 display 守卫锁序（content → declaration → revision），经 `planningmedia.ValidatePurpose(…, PurposeGenerationReference)` 核对权利矩阵，并要求该声明存在未撤销的 `generation_reference` 用途授权。`requireUsable` 重构为共享核心 `requireRevision`/`requireRevisionState`；display 语义不变，`ai_analysis` 仍拒绝。
+
+`GrantGenerationReference`/`RevokeGenerationReference` 是受信登记/撤销入口（`manual_write` 能力）：授权绑定账号与声明，幂等；撤销后下一次守卫即拒绝，不回滚已发生的读取。当前声明命名空间无法表达 licensed 素材的外发许可位，licensed 素材的生成授权被权利矩阵拒绝——这是保守边界，待未来契约扩展，不以放宽矩阵替代。产品侧授权 UI 未做，本切片端口仅供组合根与测试。
+
+### 20.2 受信读取与事实（creativemedia）
+
+`Service.GenerationReaderFor(scope)` 构造账号绑定的 `llmgateway.GenerationMediaReader` 实现。`ResolveGenerationMedia`：
+
+- 身份字段（digest/MIME/bytes/kind）一律取自 ready 状态 original blob 行；`sha256-` 前缀在受信映射层转换核对。参考永远读取 `original` rendition——模型角色（首帧/参考图）与存储 rendition 角色（original/display）是两个维度，display 派生图不参与事实。
+- 度量字段（宽高/时长/帧率）只来自 `creative_media_facts` 中（账号+blob+精确对象版本+当前提取器版本）的行；查不到即 nil（未知），绝不为 0 或取自未版本化的旧行。身份不符返回 `llmgateway.ErrConflict`（客户端伪造拒绝），跨账号不可见（not found）。
+
+`FactsExtractorVersion = "facts-v1"` 绑定探测语义：图像宽高为方向矫正后的显示口径（`dimension_basis='oriented'`），视频为容器口径（`'container'`），音频无尺寸（`'none'`）；时长为确定性毫秒取整，帧率为有理数。语义变更必须提升版本并按新键重探；旧 upload 行的未版本化字段不回填、不冒充。
+
+### 20.3 补齐任务（probe）
+
+`ScheduleFactsProbe(revisionID)` 在单事务内重核生成授权 → 定位 original 对象版本 → 按（账号+blob+对象版本+提取器版本）唯一键去重登记 `creative_media_probes` 行、`processing` 读 pin 与 River job。投递以 `UniqueByArgs` 请求队列按（账户+类型+载荷）去重，去重状态集刻意取「存活投递」（available/pending/running/retryable/scheduled，不含 completed）：存活投递存在时重复调度被队列跳过；唯一投递被队列侧耗尽 MaxAttempts 丢弃后，本入口对 pending/租约过期 running 的再次调用会补发新投递——队列丢弃不再是不可恢复缺口。`succeeded`/`unsupported` 为当前提取器版本下的终态——语义版本提升后按新键重新探测，旧版本事实与任务保留；`failed` 仅被显式再次调用重置（attempts 清零、retry_round 与 epoch 递增、completed_at 清空），无后台重置循环。并发首次登记以 ON CONFLICT DO NOTHING 收敛到唯一行。投递载荷包含 probe_id 与 retry_round：同轮恢复保持身份，显式重试开启新轮次，上一轮尚未完成的投递不占用新轮次的去重键。
+
+`media.facts_probe` worker：事务内 claim 先结束终态或失效轮次的重复投递，再校验行上的 `extractor_version`——滚动升级混布期间旧 worker 领到新版本任务时既不写事实也不完结任务，投递以 `jobs.Defer` 原地等待（不消耗队列失败次数），待能解释该版本的 worker 接手；事实回写一律落任务行携带的版本键。claim 允许 pending，或 running 且租约过期的重启恢复；活租约属他 worker——投递顺延到租约期满后重试。领取前检查本轮预算；三次已耗尽且没有活租约时，在同一事务内推进 epoch、转 failed（attempts_exhausted）、释放 pin，绝不启动第四次对象读取。领取事务即持久化尝试计数（attempts+1 与状态翻转同事务），worker 中途超时或死亡都不丢预算。执行阶段（对象读取与探测）用执行 ctx；全部回写（失败记账、终态翻转、pin 释放、事实写入）改用脱离执行取消的独立短超时 ctx（30s）并保留 epoch 校验——整体执行超时后原 ctx 已失效，收尾仍必须落库。对象版本/digest 在 claim 与回写两处锁定复核，失配终态 failed。`ErrUnsupported`（无 ffprobe、ffprobe 明确拒绝媒体、不可用流布局）终态 unsupported 不重试；执行失败/超时/输出不可读按瞬时故障有界重试（内部上限3次，按领取计数扣减）后终态 failed。探测只释放自己的读 pin，终态清空 pin 引用，不动其他执行的内容根。
+
+### 20.4 迁移与门禁
+
+迁移0051（加法）：`creative_media_facts`（唯一键 account+blob+object_version+extractor_version；按 kind 的适用性 CHECK：图像必带尺寸不带时长/帧率、视频必带尺寸、音频无尺寸帧率；nil=未知、0=已知值的存储层契约）与 `creative_media_probes`（唯一键 account+blob+object_version+extractor_version，epoch/lease/attempts/retry_round）。down 为纯 DROP，无历史数据派生。按既有惯例为全部 head 锚定的迁移测试回退串补一步 `generation-media-facts`。
+
+验证：creativemedia/creativecontent/store 三包数据库集成全绿（授权/跨账号/伪造拒绝、未知与0区分、original/display 口径、探测去重/活租约/过期恢复/终态不重试、无 ffprobe 终态 unsupported、迁移形状与无损回退）；`make check-go` 全量通过。
+
+### 20.5 边界
+
+- 未接生产组合根（Reader/Grant/探测调度均无 HTTP 入口），未创建任何 Gateway 持久请求、预算或费用事实；`ReadGenerationFacts`→`policy.Prepare` 的 needs_facts→显式补齐→重新预检闭环由后续切片接线。
+- 事实按对象版本与提取器版本缓存；授权结论不缓存（每次守卫现查），同一素材重复输入仍按条目计数（由§17 引用语义保证）。
+- 外发同意（发给供应商）与生成用途授权是两件事：本切片只交付后者；外发范围绑定在 G3 Adapter 派发许可落地。
+- 残留风险（owner review 修复后收窄）：队列侧耗尽 MaxAttempts 丢弃投递后，恢复依赖 `ScheduleFactsProbe` 的再次调用（队列按存活状态去重，丢弃后重投即建立新投递）——没有任何自主扫描方，若素材此后不再被引用，pending 探测将停留原地；`creative_media_probe_due` 索引仍无扫描方。若该场景现实化，应落地§19.7 的持久 due 扫描。另一窄口：全旧版本集群（回滚期间）会对仍需执行的外版本任务每分钟原地顺延，探测停留 pending 直至升级恢复。
+
+### 20.6 owner review 修复轮（2026-09-21）
+
+三轮评审通过后 owner 复审提出 4 项，全部修复并补回归测试：
+
+1. **[P2] worker 未遵守任务绑定的提取器版本**：claim 现读取并校验 `extractor_version`，非本版本任务以 `jobs.Defer` 等待（不写事实、不完结、不动 pin）；事实写入与去重查询一律取任务行上的版本。回归：`TestFactsProbeWorkerDefersForeignExtractorVersion`。
+2. **[P2] 执行超时后无法记录失败次数**：尝试计数移入领取事务（attempts+1 与 running 翻转同事务持久化）；`completeFactsProbe`/`retryFactsProbe`/`finishFactsProbe` 内部改用 `context.WithoutCancel`+30s 短超时的收尾 ctx，epoch 校验保留。回归：内部测试 `TestFactsProbeRetryAccountingSurvivesDeadContext`（死 ctx 下三次领取即终态 failed）与外部 `TestFactsProbeAttemptBudgetExhaustsToTerminalFailed`。
+3. **[P2] 队列丢弃后 pending 任务无法恢复**：`jobs.Request` 增 `UniqueByArgs`，store 侧映射为 River `UniqueOpts{ByArgs, ByState=存活集}`（结构体 `river:"unique"` 标记限定去重键为账户+类型+载荷，operation_id 不参与；ByState 刻意排除 completed）；`ScheduleFactsProbe` 对 pending 与租约过期 running 补投递。回归：`TestFactsProbeRedeliversAfterQueueDiscard`；既有去重/刷新用例改按队列去重语义断言。
+4. **[P3] 注释语言**：G1 全部新增注释（Go 与迁移 SQL）中文化；日志与错误文本保持英文。
+
+注：River v0.40 的 unique 落库为 `unique_key` 哈希 + `unique_states` 位掩码上的部分唯一索引，`ON CONFLICT DO NOTHING` 后取回存活行，不报错；卡死 running 的投递由 River 内建 JobRescuer 重回队列，因此把 running 计入存活集不会搁浅补投递。
+
+### 20.7 恢复边界复审修复（2026-09-21）
+
+- 崩溃预算：`TestFactsProbeCrashRecoveryStopsAtAttemptBudget` 连续三次领取后不执行任何失败收尾，只模拟租约过期。修复前第四次领取为 running/attempts=4；修复后第四次不领取，原子落 failed/attempts=3、清空租约与 pin，迟到 worker 因 epoch 失效无法覆盖终态。第三次仍持活租约时只延期，允许该次正常结束。
+- 显式重试轮次：`retry_round` 初始为 0，仅显式重置 failed 时加一；轮次随 probe_id 进入载荷与 River 去重键。同轮恢复共用投递身份，新轮不受旧 running 投递阻挡。领取先拒绝不匹配轮次；回写及 pin 释放同时核对 epoch/轮次/状态。`TestFactsProbeExplicitRetrySurvivesOldRunningDelivery` 使用真实失败收尾与 River 表交错，验证旧投递完成后仍有一个新轮投递，旧载荷不能消耗新轮预算，同轮调度不重复入队，最终正常生成事实；`TestFactsProbeOldClaimCannotTouchNewRound` 覆盖迟到回写不能释放新轮 pin。
+- 跨版本终态：`TestFactsProbeHistoricalTerminalDeliveryCompletes` 分别覆盖 succeeded/failed/unsupported。修复前三者均延期；修复后直接结束重复投递，事实、计数与终态不变。
+- 兼容边界：0051 尚在本次未提交、未发布 G1 中，因此在该迁移中加入非负、非空、默认 0 的 retry_round；形状测试覆盖默认值与非法值。初始轮载荷省略 retry_round，保持旧去重身份；缺失轮次的历史载荷仅代表第 0 轮，不映射到当前轮。上线须使用包含本次完整 G1 修复的 worker；不支持与尚未实现轮次校验的草稿 worker 混跑。

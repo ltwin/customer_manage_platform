@@ -14,6 +14,9 @@ func TestExecutionContinuationMigrationPreservesRecoveryEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation media facts rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal(err)
 	}
 	db, err := sql.Open("pgx", url)
@@ -34,6 +37,9 @@ func TestExecutionContinuationMigrationPreservesRecoveryEvidence(t *testing.T) {
 	}
 	if _, err = db.Exec(`UPDATE creative_node_executions SET result_payload='{"body":"retained"}' WHERE id='e'`); err != nil {
 		t.Fatal(err)
+	}
+	if err = store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation media facts rollback", err)
 	}
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "export") {
 		t.Fatalf("lossy rollback: %v", err)

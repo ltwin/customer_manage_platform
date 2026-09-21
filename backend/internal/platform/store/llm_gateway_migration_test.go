@@ -92,6 +92,9 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 	// gateway; step past them first so this test still exercises the gateway's
 	// own rollback guard.
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation media facts rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("execution continuation rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -122,6 +125,9 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 		INSERT INTO llm_budgets (account_id,period_start,currency,limit_micros,token_limit,spent_micros)
 		VALUES ('acc',date_trunc('month',now())::date,'USD',1000,1000,42)`); err != nil {
 		t.Fatal(err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation media facts rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("execution continuation rollback", err)

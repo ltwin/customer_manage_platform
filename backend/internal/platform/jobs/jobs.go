@@ -13,11 +13,17 @@ import (
 var ErrInvalidTask = errors.New("invalid creative task")
 var ErrNoHandlers = errors.New("no production creative workers are registered")
 
+// Request 的 river:"unique" 标记只标记参与队列去重的字段（任务类型与载荷）；
+// operation_id 与创建时间不进去重键，同一逻辑任务的补投递在各次入队之间保持同一键。
 type Request struct {
-	Kind        string          `json:"kind"`
+	Kind        string          `json:"kind" river:"unique"`
 	OperationID string          `json:"operation_id"`
 	CreatedAt   time.Time       `json:"client_created_at"`
-	Payload     json.RawMessage `json:"payload"`
+	Payload     json.RawMessage `json:"payload" river:"unique"`
+	// UniqueByArgs 请求队列按（账户、任务类型、载荷）去重：只要还有存活投递
+	// （available/pending/running/retryable/scheduled），重复入队被队列跳过；
+	// 投递被队列侧耗尽丢弃后，再次入队会建立新投递。
+	UniqueByArgs bool `json:"unique_by_args"`
 }
 
 func (r Request) Validate() error {
