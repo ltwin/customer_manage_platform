@@ -838,7 +838,7 @@ G1/G2可独立开发；G3的媒体外发必须等待G1授权边界与G2预算都
 
 ## 20. G1 实现切片：可信媒体事实与授权端口（2026-09-21，已实现）
 
-本节落实§19.9 G1。产出与§19.2六点的对应关系及当前边界如下；G2（持久准入与非token结算）尚未开始，Gateway生成请求/预算/任务表仍未存在。
+本节落实§19.9 G1。产出与§19.2六点的对应关系及当前边界如下；G2（持久准入与非token结算）见§21，供应商任务/观察/输出表（G3）仍未存在。
 
 ### 20.1 生成用途授权（creativecontent）
 
@@ -891,3 +891,74 @@ G1/G2可独立开发；G3的媒体外发必须等待G1授权边界与G2预算都
 - 显式重试轮次：`retry_round` 初始为 0，仅显式重置 failed 时加一；轮次随 probe_id 进入载荷与 River 去重键。同轮恢复共用投递身份，新轮不受旧 running 投递阻挡。领取先拒绝不匹配轮次；回写及 pin 释放同时核对 epoch/轮次/状态。`TestFactsProbeExplicitRetrySurvivesOldRunningDelivery` 使用真实失败收尾与 River 表交错，验证旧投递完成后仍有一个新轮投递，旧载荷不能消耗新轮预算，同轮调度不重复入队，最终正常生成事实；`TestFactsProbeOldClaimCannotTouchNewRound` 覆盖迟到回写不能释放新轮 pin。
 - 跨版本终态：`TestFactsProbeHistoricalTerminalDeliveryCompletes` 分别覆盖 succeeded/failed/unsupported。修复前三者均延期；修复后直接结束重复投递，事实、计数与终态不变。
 - 兼容边界：0051 尚在本次未提交、未发布 G1 中，因此在该迁移中加入非负、非空、默认 0 的 retry_round；形状测试覆盖默认值与非法值。初始轮载荷省略 retry_round，保持旧去重身份；缺失轮次的历史载荷仅代表第 0 轮，不映射到当前轮。上线须使用包含本次完整 G1 修复的 worker；不支持与尚未实现轮次校验的草稿 worker 混跑。
+
+## 21. G2 实现切片：持久准入与非token结算（2026-09-21，已实现）
+
+本节落实§19.9 G2。全部验证不调用任何供应商：受理、快照冻结恢复与结算都在数据库集成测试内完成。G3（供应商生命周期）与 G4（画布交接）未开始。
+
+### 21.1 迁移0052（加法）
+
+- `llm_requests` 增 `request_kind`（`chat`/`generation`，旧行默认 chat）；`output_limit` CHECK 按类别放宽——生成行固定 0，不再落伪 token 上限。
+- 新增 `llm_generation_requests`（每账号每请求唯一）：`policy_snapshot` 受信 BYTEA（长度上限与 Go 侧 `maxGenerationJSONBytes+maxGenerationPolicyBytes` 一致，6×1MiB+256KiB+512KiB=7077888；评审修复了初版算错的 6815744）、64 位小写 hex `fingerprint`、engine/policy 版本（≤64）、model_key（沿用旧列形态 `^[a-z][a-z0-9_.-]{0,63}$`，超长在准入前拒绝）、model_revision/deployment/adapter/mode（≤256）、币种、预留上界与报价明细 JSONB 投影。
+- `admission_control` JSONB 固定首次受理的控制输入：调用组、组/账号金额与 token 上限、请求/组截止时刻、consumer key。与生成指纹一起校验重放，不随组行配置或 consumer 状态演进；时间统一为 UTC 并保留原精度，额度保留调用方原值（含 0 默认值）。0052 尚未发布，本轮直接修订该迁移。
+- `llm_usage_measurements` 与 `llm_cost_positions` 的 `cost_component` CHECK 增加 `generation_total`。
+- 新增 `llm_generation_deployment_blocks`（每账号每部署唯一）：超上界争议写入的最小部署阻断事实，新准入检查它；解除需人工核实（GEN-10）。
+- down 在存在生成行时 RAISE 拒绝（代价是 schema_migrations 置 dirty，属强守卫的预期行为）；空库 down/up 无损，head 锚定回退串补 `generation-admission` 步。
+
+### 21.2 生成专属受理（T1）
+
+`PrepareGenerationInTx`：受信调用方传入 `PreparedPolicyGeneration` 与控制信封，在单事务内完成 组锁→组锁后重读→部署门→门内阻断检查→组上限→预算桶→预留→请求行→生成扩展行→结果保留根。要点：
+
+- 无可靠上界（`Quote().UpperBoundMicros == nil`）直接拒绝准入（`ErrBudget`），不以 0 预留冒充；币种必须与预算桶一致，拒绝异币种报价（§19.6 首版单币种）。
+- hold = 冻结上界（micros），token 维度恒 0、无伪 token 证据；组 token 上限按 0 增量检查。
+- 身份：请求指纹以 `sha256-`+fingerprint 存入 `request_hash`；`llm_requests` 落公开信封投影，规则本体只在快照 BYTEA。
+- 重放优先，且**组锁后重读**：组锁是同组受理的串行点，等锁期间先到者可能已提交同一operation，输方在锁内重读实际绑定并返回胜者回执，而不是把回放当新消费去撞额度（§19.5 竞争后重读绑定；修复初版只在锁前查一次导致紧额度下误报 ErrBudget 的缺陷）。新组首次创建的竞争以 ON CONFLICT DO NOTHING 等待后重读收敛，不再裸错误退出。并发同键最终恰好一份 hold/请求（GEN-05）。GEN-04 由调用方事务回滚测试锁定：六张表与预算桶全部归零。
+- 两处回读均比较生成指纹与冻结控制输入；任一字段变化返回 `ErrConflict`。相同时刻的不同时区表示等价；截止时间已过、consumer 已释放或组配置变化不妨碍原输入重放。受理重放不用于修改预算或重新绑定消费方。
+- 超上界争议阻断检查：该账号对该部署存在未解除的阻断时拒绝新operation（`ErrUnavailable`）；既有operation的幂等回放不受影响。
+- Chat 专属入口按 kind 拒绝生成请求（`boundRequest`/`BeginDispatchInTx`），生成模型键与 Chat 目录重合时不得持久化错误的 attempt 与派发状态（§19.8 先兼容读再开写）。
+
+### 21.3 generation_total 记账（T3 的本地侧）
+
+`RecordGenerationUsageInTx(request, attempt, event_key, usage, provider_revision)`：
+
+- attempt 归属服务内核验（ADR-008，无外键）；入口先取**部署门**（§21.6），锁序随后沿用 `RecordMeasurementInTx`（月桶先于请求级行）。
+- 计价程序一律 `RestorePolicyGeneration` 从持久快照恢复——进程重建、配置改版或删除后仍按受理时冻结的旧程序结算（GEN-06；跨 Service 实例测试锁定）。
+- 本地计算金额标记为 `derived_from_usage`（rank 5）；最终供应商账单是 `provider_reported`（rank 10）。账单无须与用量共享修订号便可替换推导值，迟到的用量修订不能覆盖账单。
+- 证据身份 = 原始 event_key 归集 + 内容摘要 + 定长内部key（哈希编码，不再受列宽挤压；合法上限的 60 字符事件键与 64 字符版本组合可正常结算）。**记账前先按（账号+attempt+原始event_key）核对既有证据**：同摘要幂等（不二次记账）；同键异摘要一律隔离为争议——不得绕过冲突判定凭更高 revision 直接改账（修复初版把摘要编进 key 使同事件异内容成为不同身份、更高修订可直接替换金额的缺陷）。
+- 合法更正使用**新事件身份**携带更高 provider 修订：替换总额、预算只记差额（GEN-08 更正只记差额）。修订号只证明先后顺序、不构成受信核实——普通更正**不解除费用争议**；费用争议的解除收敛到受信核实入口 `RecordMeasurementInTx`（对 `generation_total` 落 known 金额的账单/人工对账，§21.6），解除记录指向核实证据（`llmu_`）而非结算回执号。
+- 实际用量超冻结硬上界：引擎拒绝是正确契约——证据以 unknown certainty 落库并标 `disputed`（保留 provider 修订号），不落 0、不动账面，且**同一事务内写入部署阻断并重算 hold 与结算状态**：未决争议参与未决判定，已结清的请求会重新抬高 hold、已入账金额不回滚（修复初版争议不参与判定、两种到达顺序都会伪装 settled 的缺陷）。重新抬高若撞月度上限则降级为「结算重开、hold 维持现状」并记日志，证据不丢。缺维度返回 `ErrGenerationFactsUnavailable`，不动账面，由调用方补齐重投（GEN-09 未知不结清）。
+- hold 重算按类别分派：`recomputeGenerationHold` 只在请求的每个 attempt 都有 known `generation_total` 证据、无 unknown 派发**且无未决争议**时清零剩余 hold；`refreshSettlement` 对生成请求同样以证据齐备为结清条件，hold=0 不再把「零价未知」伪装成 settled（GEN-09）。已知零价（用量向量为 0）是确定事实，正常结清。
+- 部署阻断按（账号+部署）生效：单账号证据只阻断本账号对该部署的新准入；跨账号/全局紧急停用依赖部署控制修订与同步边界，归 G3 组合根。
+- `RecordMeasurementInTx` 的生成账单也在月桶前取部署门；实际推进账面的 known 金额若超过冻结费用上界，同事务写入部署阻断并关联账单证据。真实费用仍照实入账、已核实金额可释放 hold；部署恢复独立决定。等于上界不阻断，异币种、低等级或无可判定顺序而被留置的证据不触发阻断；失败回滚同时撤销账本与阻断。
+
+### 21.4 边界
+
+- 未接 HTTP/组合根：`PrepareGenerationInTx`/`RecordGenerationUsageInTx` 是受信内部端口，调用方（G4 画布 driver）负责 T0 预检、最终许可与配置 revision 复核（GEN-03 守卫归接线切片）。
+- 无派发：attempt 由 G3 的 Submit 创建（测试以 SQL 种子行替代），取消/超时/未受理零费证明沿 G3 的观察与恢复路径；`CancelInTx` 对 prepared 生成请求即时释放 hold。
+- 生成预留的价格版本列为策略版本；`llm_generation_tasks`/`observations`/`outputs` 三表未建（G3）。
+- 多 attempt 重试时 hold 语义保守：任一 attempt 缺证据或有未决争议即保留原上界，重试次数上限沿请求表 0–2 约束，重新占额走既有 `RearmInTx` 机制（G3 验证）。
+- 部署阻断的解除端口未建：G2 只写入与检查阻断事实，人工核实后的解除动作（删除阻断行或等价受信操作）随 G3 部署控制面落地。
+
+### 21.5 owner review 修复轮（2026-09-22，7 项：3×P1+4×P2）
+
+1. **[P1] 超上界争议参与结算判定**：争议保留 provider 修订号；未决判定（hold清零与settled条件）纳入未解决争议；登记争议同事务重算 hold 与结算——先争议后正常用量不释放 hold，先结清后争议重新抬高 hold 且已入账金额不回滚；重新抬高撞月度上限时降级为「结算重开、hold 维持」并记日志，证据不丢。更高修订的合法证据自动解除更早争议（obsolete + resolved_by 留痕）。回归 `TestGenerationDisputeBlocksSettlementAndAdmission`（双顺序）。
+2. **[P1] 事件身份冲突判定**：记账前按（账号+attempt+原始event_key）核对既有证据——同摘要幂等，异摘要一律隔离为争议，不得凭更高 revision 直接改账；合法更正使用新事件身份走 revision 机制。初版测试把「同key异内容凭rev2替换」当正确行为固定，已改为断言隔离。回归 `TestGenerationSettlementEvidenceIdempotencyAndCorrections`。
+3. **[P1] 超上界阻断部署新准入**：迁移增 `llm_generation_deployment_blocks`，争议事务写入最小阻断事实，新准入在受理事务内检查（`ErrUnavailable`）；既有 operation 回放与原请求核算保留。阻断按（账号+部署）生效，跨账号/全局停用归 G3。回归 `TestGenerationDisputeBlocksSettlementAndAdmission`/`TestGenerationDeploymentBlockIsScoped`。
+4. **[P2] 组锁后重读回执**：组锁串行点后、额度检查前再次回读 operation，紧额度下并发同键不再误报 ErrBudget；新组首次创建竞争以 ON CONFLICT DO NOTHING 收敛（`lockGroup` 重构，Chat 路径同步受益）。回归 `TestGenerationAdmissionConcurrentSameKeyUnderTightQuota`。
+5. **[P2] Chat 入口拒绝生成请求**：`boundRequest` 与 `BeginDispatchInTx` 按 kind 拒绝，模型键重合时不再持久化错误 attempt/派发状态。回归 `TestChatDispatchRefusesGenerationRequest`。
+6. **[P2] 快照上限算术错误**：6815744→7077888（6MiB+256KiB+512KiB），SQL/注释/文档一致；形状测试覆盖恰好上限放行与超限拒绝。
+7. **[P2] 证据 key 定长编码**：measurement 身份改为复合哈希定长（68字符），合法上限的 60 字符事件键+64 字符版本组合可正常结算；原始 event_key/版本/摘要在维度独立保留，事件冲突检查不受影响。回归 `TestGenerationSettlementAcceptsMaximalIdentities`。
+
+### 21.6 owner review 修复轮 2（2026-09-22，5 项：3×P1+2×P2）
+
+1. **[P1] 同部署第二份超界证据不再回滚**：部署阻断写入改为 ON CONFLICT DO NOTHING 幂等——首次争议的来源事实保留，后续每份争议证据完整落库，不再因 `(account_id,deployment_id)` 主键冲突（23505）回滚整笔核算事务。回归 `TestGenerationDisputeKeepsEveryOverBoundEvidence`（同 attempt 连续超界 + 同部署多请求分别超界）。
+2. **[P1] 部署门：阻断检查与写入的稳定同步边界**：store 层新增 `LockGenerationDeploymentGate`（账号+部署粒度 advisory transaction lock）。新准入在阻断检查前取门，核算入口 `RecordGenerationUsageInTx` 在预算桶之前取门，超界争议的阻断写入因此与新准入互斥——「读到未阻断→争议提交→准入继续」的交错被消除。仅把检查挪到预算锁之后并不够（月桶按月分行，跨月争议与新准入不共享行锁），这把门是跨月的唯一稳定边界；两侧锁序统一为「组锁→门→预算桶」与「门→预算桶」，与无门的 Chat 路径不成环。回归 `TestGenerationAdmissionWaitsForDeploymentGate`（同月跨组与跨月两种交错，经 pg_locks 观测准入确在门上等待、争议提交后看到阻断被拒）。
+3. **[P1] 争议解除收敛到受信核实入口**：普通 `RecordGenerationUsageInTx` 证据不再凭更高 provider 修订自动解除费用争议（修订号证明先后、不证明核实）；解除只发生在 `RecordMeasurementInTx`（账单/人工对账入口）对 `generation_total` 落 known 金额并实际推进账面时，被留置（parked）的证据不触发解除；部署是否恢复准入独立决定，阻断不随争议解除自动清除。回归 `TestGenerationDisputeBlocksSettlementAndAdmission`（rev3 不解除 + operator 对账被留置不解除 + 账单解除且阻断保留）、`TestGenerationSettlementEvidenceIdempotencyAndCorrections`。
+4. **[P2] 解除记录指向核实证据**：`resolveGenerationDisputes` 直接绑定本事务落账的 `llmu_` 测量号；`SettlementReceipt` 新增 `MeasurementID` 与回执号（`llmc_`）区分，`resolved_by_measurement_id` 可回查到测量行，证据追溯链不再断在回执号上。
+5. **[P2] 解除与 hold 释放并入同一张回执**：受信核实经 cost 位置的 pre-apply 钩子在「位置推进之后、hold 重算之前」解除争议——同一张回执完整解释金额替换（1000000→1375000）与 hold 释放（1250000→0），返回回执、持久回执与预算/预留行一致，不再出现「回执 NewHold=上界、账本 hold=0」的断链。
+
+### 21.7 owner review 修复轮 3（2026-09-24，3 项：2×P1+1×P2）
+
+1. **[P1] 最终账单高于用量推导**：生成用量经冻结程序计算的金额改为 `EvidenceDerivedFromUsage`；保留同类用量更正的修订排序。`TestGenerationInvoiceOutranksDerivedUsage` 覆盖无共同修订号时账单替换推导值，以及 rev99 用量不能覆盖 rev1 的 900000 微单位账单，两种顺序的预算最终均为 900000。
+2. **[P1] 直接账单的上界保护**：受信生成账单取部署门后再锁预算桶，实际落账金额超出冻结上界时写入部署阻断，来源直接指向已落账测量；费用与 hold 回执保持真实且与阻断原子提交。`TestGenerationInvoiceEnforcesFrozenUpperBound` 覆盖等于上界、超过上界及重放；`TestGenerationInvoiceBlockIsAtomicAndRequiresAppliedCost` 覆盖回滚、异币种/低等级/未知/无序证据；`TestGenerationAdmissionWaitsForDeploymentGate` 扩展为用量/账单 × 同月/跨月四种交错，验证准入等待并在提交后拒绝。跨月测试种子同步移动预算 hold，使账本与预留一致。
+3. **[P2] 冻结控制信封校验**：0052 的生成扩展表加入非空对象 `admission_control`，冻结八项控制输入；锁前、组锁后重读共同校验。`TestGenerationReplayValidatesFrozenControls` 覆盖八项独立冲突、时区等价、纳秒精度、截止已过与消费方/组状态变化；`TestGenerationReplayChecksControlsAfterGroupWait` 通过真实组锁等待验证并发异 consumer 返回 `ErrConflict`。冲突不新增预留、不改预算。迁移形状测试覆盖 NULL/数组/JSON null 拒绝。

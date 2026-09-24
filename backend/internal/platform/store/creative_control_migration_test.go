@@ -14,6 +14,9 @@ func TestAgentControlMigrationRefusesLossyRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation admission rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation media facts rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -34,6 +37,9 @@ func TestAgentControlMigrationRefusesLossyRollback(t *testing.T) {
  VALUES('ccrn_00000000-0000-4000-8000-000000000001','a','c','canvas','m','consent','model','{}','waiting_input','token','v','{}',now()+interval '1 hour','wait')`)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation admission rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation media facts rollback", err)

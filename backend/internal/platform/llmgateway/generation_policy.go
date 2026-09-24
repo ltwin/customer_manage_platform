@@ -158,6 +158,15 @@ func (p *CompiledGenerationPolicy) freeze(g PreparedGeneration, m GenerationPoli
 }
 func (p PreparedPolicyGeneration) Fingerprint() string            { return p.fingerprint }
 func (p PreparedPolicyGeneration) Generation() PreparedGeneration { return p.generation }
+
+// PolicyDefinition 返回冻结策略的公开身份投影（版本/部署/币种），供持久准入落库；
+// 不暴露规则本体，重算一律走RestorePolicyGeneration恢复的旧程序。
+func (p PreparedPolicyGeneration) PolicyDefinition() GenerationPolicyDefinition {
+	if p.policy == nil {
+		return GenerationPolicyDefinition{}
+	}
+	return p.policy.Definition()
+}
 func (p PreparedPolicyGeneration) Quote() GenerationQuote {
 	q := p.quote
 	if q.UpperBoundMicros != nil {

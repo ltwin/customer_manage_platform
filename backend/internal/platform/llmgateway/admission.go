@@ -138,7 +138,8 @@ func (s *Service) ReserveInTx(ctx context.Context, tx store.TxAccountScope, in R
 	period := monthStart(now)
 	currency := s.catalog.Currency()
 
-	group, err := s.lockGroup(ctx, tx, in, currency, now)
+	group, err := s.lockGroup(ctx, tx, in.CallerService, in.CallerGroupID, in.GroupLimitMicros,
+		in.GroupTokenLimit, in.GroupDeadline, currency, now)
 	if err != nil {
 		return Reservation{}, err
 	}
@@ -181,33 +182,53 @@ type groupRow struct {
 }
 
 // lockGroup serializes every reservation of one caller group, including across
-// 月 boundaries, and fixes the ceiling at first use.
-func (s *Service) lockGroup(ctx context.Context, tx store.TxAccountScope, in ReserveInput, currency string, now time.Time) (groupRow, error) {
-	limitMicros := in.GroupLimitMicros
+// 月 boundaries, and fixes the ceiling at first use. Chat与生成都经此取得组锁。
+// 新组首次创建的竞争：并发插入以ON CONFLICT DO NOTHING等待先到者提交后无操作
+// 返回，重读取得已提交的组行，输方得以在同一事务内重读绑定而不是裸错误退出。
+func (s *Service) lockGroup(
+	ctx context.Context,
+	tx store.TxAccountScope,
+	callerService, groupID string,
+	groupLimitMicros, groupTokenLimit int64,
+	groupDeadline time.Time,
+	currency string,
+	now time.Time,
+) (groupRow, error) {
+	limitMicros := groupLimitMicros
 	if limitMicros <= 0 || limitMicros > s.policy.MonthlyLimitMicros {
-		limitMicros = min64(s.policy.MonthlyLimitMicros, maxPositive(in.GroupLimitMicros, s.policy.MonthlyLimitMicros))
+		limitMicros = min64(s.policy.MonthlyLimitMicros, maxPositive(groupLimitMicros, s.policy.MonthlyLimitMicros))
 	}
-	tokenLimit := in.GroupTokenLimit
+	tokenLimit := groupTokenLimit
 	if tokenLimit <= 0 || tokenLimit > s.policy.MonthlyTokenLimit {
-		tokenLimit = min64(s.policy.MonthlyTokenLimit, maxPositive(in.GroupTokenLimit, s.policy.MonthlyTokenLimit))
+		tokenLimit = min64(s.policy.MonthlyTokenLimit, maxPositive(groupTokenLimit, s.policy.MonthlyTokenLimit))
 	}
-	row := tx.QueryRowForUpdate(ctx, "llm_call_groups", "limit_micros,token_limit,deadline_at",
-		"caller_service=$2 AND caller_group_id=$3", in.CallerService, in.CallerGroupID)
-	var group groupRow
-	err := row.Scan(&group.limitMicros, &group.tokenLimit, &group.deadline)
-	switch {
-	case err == nil:
+	readGroup := func() (groupRow, error) {
+		row := tx.QueryRowForUpdate(ctx, "llm_call_groups", "limit_micros,token_limit,deadline_at",
+			"caller_service=$2 AND caller_group_id=$3", callerService, groupID)
+		var group groupRow
+		err := row.Scan(&group.limitMicros, &group.tokenLimit, &group.deadline)
+		if errors.Is(err, store.ErrNoRows) {
+			return groupRow{}, ErrNotFound
+		}
+		return group, err
+	}
+	if group, err := readGroup(); err == nil {
 		return group, nil
-	case errors.Is(err, store.ErrNoRows):
-	default:
+	} else if !errors.Is(err, ErrNotFound) {
 		return groupRow{}, err
 	}
-	if err := tx.Insert(ctx, "llm_call_groups",
+	// ON CONFLICT DO NOTHING会在并发插入者上等待先到事务提交后无操作返回，
+	// 本事务不因唯一键冲突中止，随后的重读拿到已提交的组行继续串行语义。
+	var inserted string
+	row := tx.InsertOnConflictDoNothingReturning(ctx, "llm_call_groups",
 		[]string{"caller_service", "caller_group_id", "limit_micros", "token_limit", "currency", "deadline_at", "created_at", "updated_at"},
-		in.CallerService, in.CallerGroupID, limitMicros, tokenLimit, currency, in.GroupDeadline.UTC(), now, now); err != nil {
+		[]string{"account_id", "caller_service", "caller_group_id"},
+		[]string{"caller_group_id"},
+		callerService, groupID, limitMicros, tokenLimit, currency, groupDeadline.UTC(), now, now)
+	if err := row.Scan(&inserted); err != nil && !errors.Is(err, store.ErrNoRows) {
 		return groupRow{}, err
 	}
-	return groupRow{limitMicros: limitMicros, tokenLimit: tokenLimit, deadline: in.GroupDeadline.UTC()}, nil
+	return readGroup()
 }
 
 // checkGroupCeiling aggregates every month of the group from gateway facts, so

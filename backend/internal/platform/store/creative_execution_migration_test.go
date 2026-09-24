@@ -14,6 +14,9 @@ func TestExecutionContinuationMigrationPreservesRecoveryEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation admission rollback", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation media facts rollback", err)
 	}
 	if err := store.MigrateDownOneForTest(url); err != nil {
@@ -37,6 +40,9 @@ func TestExecutionContinuationMigrationPreservesRecoveryEvidence(t *testing.T) {
 	}
 	if _, err = db.Exec(`UPDATE creative_node_executions SET result_payload='{"body":"retained"}' WHERE id='e'`); err != nil {
 		t.Fatal(err)
+	}
+	if err = store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("generation admission rollback", err)
 	}
 	if err = store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation media facts rollback", err)

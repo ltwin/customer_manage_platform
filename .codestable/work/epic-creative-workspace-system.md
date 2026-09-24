@@ -1477,3 +1477,38 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 - 最终 `make check-go` exit 0：build 成功、lint 零问题、45 个测试包通过（`/tmp/fnd13-g1-final-review-check.log`）；审查期间39个文件哈希一致。owner 随后明确授权提交本次 G1 改动，提交前再次核验与最终复审 manifest 一致。
 - 提交前 `make lint` exit 0，后端零问题；前端保留未修改文件中的7条既有 Fast Refresh 警告（`/tmp/fnd13-g1-commit-lint.log`）。仅更新本游标以记录最终复审及授权，代码与迁移未再改变；未推送远端。
 - G1 完成不代表 FND-13 整体完成；G2 尚未开始。自主 due 扫描仍未实现，队列丢弃后恢复依赖显式调度；上线须使用完整 G1 worker，不与缺少轮次校验的草稿版本混跑。
+
+### 2026-09-21 · G2 持久准入与非token结算（开发中）
+
+- Owner 拍板跳过 G1 追加复审（G1 已于 0290bb1 提交闭环），开工 G2（§19.9：加法迁移、生成专属Prepare、快照、共用预算、generation_total、更正回执；退出条件全部不调用供应商验证）。
+- 迁移0052：llm_requests 增 request_kind（旧行默认chat；生成行 output_limit=0 免伪token上限）；新增 llm_generation_requests（快照BYTEA 上限6815744 与Go常量对齐、64hex指纹、策略/部署身份、预留上界、报价投影）；measurements/cost_positions 增 generation_total 分量；down 在存在生成行时 RAISE 拒绝（置dirty属强守卫预期）。9+1 个 head 锚定回退串补 generation-admission 步。
+- 受理 PrepareGenerationInTx：单事务 组锁→上限→预算→预留(金额上界/0 token)→请求行(sha256-指纹)→扩展行→保留根；无可靠上界 ErrBudget 拒绝、异币种拒绝；同operation重放/异输入冲突；并发同键唯一键裁决恰一份hold（GEN-05）；GEN-04 六表回滚测试。
+- 记账 RecordGenerationUsageInTx：RestorePolicyGeneration 从持久快照恢复冻结程序计价（GEN-06 跨Service实例）；一条 generation_total 证据原子登记（组件明细进维度、价格摘要进PriceRaw）；证据身份=事件键+内容摘要+版本（供应商修订号入摘要）：重放幂等、同键异内容无序留置、更高修订替换总额只记差额（GEN-08）；缺维度不动账面（GEN-09 未知不结清）；超硬上界入 disputed、hold 保留不落0（GEN-10）；recomputeGenerationHold/refreshSettlement 按证据齐备判定结清。
+- 验证：llmgateway 9 条 G2 集成测试 + store 迁移形状/守卫测试全绿；`make check-go` 全量 exit 0（build、lint 0 issues、45 测试包）。改动已暂存待 owner 决定提交。GEN-03 守卫与派发归 G3/G4 接线。
+
+### 2026-09-22 · G2 owner review 修复轮（3×P1 + 4×P2）
+
+- Owner 复审判 G2 暂不满足 §19 退出条件，阻断在费用争议、证据身份与超上界准入保护；七项全部确认存在并修复。
+- 修复：①争议保留修订号并参与未决判定（双顺序hold/结算重算、已入账不回滚、更高修订自动解除争议）；②记账前按原始event_key核对证据（同摘要幂等、异摘要隔离，更正须新事件身份）；③迁移增 llm_generation_deployment_blocks，超界争议写入部署阻断、新准入检查（账号+部署粒度）；④组锁串行点后重读回执+新组ON CONFLICT收敛（lockGroup重构，紧额度并发不再误报ErrBudget）；⑤Chat入口按kind拒绝生成请求；⑥快照上限6815744→7077888；⑦证据key定长哈希编码（60+64合法组合可结算）。
+- 回归：TestGenerationDisputeBlocksSettlementAndAdmission（双顺序）、EvidenceIdempotencyAndCorrections（翻转初版错误断言）、DeploymentBlockIsScoped、ConcurrentSameKeyUnderTightQuota、ChatDispatchRefusesGenerationRequest、SettlementAcceptsMaximalIdentities；既有 GEN-04/05/06/09/10 用例随语义更新（并发输方由报错改为重放回执）。
+- 验证：`make check-go` 全量 exit 0（build、lint 0 issues、45 测试包）；修复后改动已重新暂存，未提交。
+### 2026-09-22 · G2 owner review 修复轮 2（3×P1 + 2×P2）
+
+- Owner 二轮复验：上轮 7 项直接复现全部通过、`make check-go` 通过，但争议处理仍有 5 项缺陷；逐项核对源码后全部确认存在并修复（详见模块 §21.6）。
+- 修复：①部署阻断写入改 ON CONFLICT DO NOTHING——同部署第二份超界证据不再因主键冲突回滚整笔争议事务，阻断幂等且保留首次来源；②store 新增 LockGenerationDeploymentGate（账号+部署 advisory xact lock）：新准入在阻断检查前取门、核算入口在预算桶前取门，跨月争议与新准入有了稳定同步边界（仅挪检查到预算锁后不够，月桶按月分行不共享）；③争议解除从普通用量路径移除（修订号只证明先后、不构成核实），收敛到 RecordMeasurementInTx 受信入口对 generation_total 落 known 金额时（parked 证据不触发），部署恢复独立决定；④resolveGenerationDisputes 直接绑定本事务 llmu_ 测量号（SettlementReceipt 新增 MeasurementID 区分回执号），解除记录可回查测量行；⑤解除经 cost 位置 pre-apply 钩子发生在「落账后、hold 重算前」，金额替换与 hold 释放并入同一张回执。
+- 回归新增：TestGenerationDisputeKeepsEveryOverBoundEvidence（同attempt连续超界+同部署多请求超界）、TestGenerationAdmissionWaitsForDeploymentGate（同月跨组与跨月交错，pg_locks 观测准入在门上等待、争议提交后被拒）；语义更新：DisputeBlocksSettlementAndAdmission（rev3不解除+operator留置不解除+账单解除且阻断保留、单回执解释金额与hold）、EvidenceIdempotencyAndCorrections（普通更正不解除，账单解除）。
+- 验证：llmgateway/store 两包全绿；`make check-go` 全量 exit 0（45 包、lint 0 issues）。中途一次全量红灯经三判据分诊为环境事件（Docker Desktop daemon 掉线，错误文本 `rootless Docker not found`，非断言失败；恢复 daemon 后 httpapi 包连跑三轮全绿、全量复跑 exit 0）。改动已重新暂存，未提交。G2 修复循环第 2 轮（上限 3 轮）。
+
+### 2026-09-24 · G2 owner review 修复轮 3（2×P1 + 1×P2，验证通过）
+
+- 继续会话 `01a0a344-e42a-7b20-bc1f-e4800bc3be21` 的最新三项发现：用量推导金额与账单同等级、直接超上界账单漏阻断、幂等重放漏检控制字段。本轮仅修复并验证，未提交。
+- 推导费用标记改为 `EvidenceDerivedFromUsage`；最终账单无需共同修订号即可替换推导值，较晚用量不能覆盖账单。账单入口统一采用部署门→预算桶锁序，实际入账金额超过冻结上界时原子写入部署阻断并关联账单证据；已核实费用照实入账并按既有规则释放 hold，部署恢复独立决定。
+- 0052 尚未发布，原地增加 `admission_control` 非空 JSONB 对象，冻结调用组、组/账号金额与 token 上限、请求/组截止时刻和 consumer；两处重放回读均核验，变化返回 `ErrConflict`，时间统一 UTC 保留精度。迁移形状、回滚、时区等价、截止已过、consumer/组状态变化、真实组锁等待后的冲突均有回归；契约归入模块 §21.1–21.3/§21.7。
+- 修复前通过临时 Go overlay 使用原暂存源码运行新回归，复现三项缺陷（`/tmp/fnd13-g2-fix-r3-red.log`）；定向修复回归 exit 0（`/tmp/fnd13-g2-fix-r3-green.log`）。首次启动测试时 Docker 未运行，启动后正常执行；定向阶段另外修正了测试种子的 consumer released_at 与跨月预算 hold 一致性。
+- 最终 `make check-go` exit 0（`/tmp/fnd13-g2-fix-r3-check-go.log`）：build 成功、lint 0 issues、45 个测试包通过，包含新增全部回归及迁移测试；`git diff --check` 通过。图谱该模块未被当前代索引覆盖，按规则回退直接源码核验。没有调用真实供应商。
+- 原有暂存区保留；本轮增量与新增 `generation_review_test.go` 未暂存、未提交。当前是第 3 轮修复结果，不宣称额外独立复审通过；G3/G4 未开始。
+
+### 2026-09-24 · G2 提交授权
+
+- Owner 在本会话明确授权提交，提交范围为完整 G2 实现、三轮修复、0052 迁移、回归测试和文档；原暂存内容与第 3 轮修复一并纳入。
+- 沿用本轮通过的 `make check-go` 全量结果（45 个测试包、lint 0 issues），提交前差异空白检查通过；正常执行提交门禁，不跳过 hooks。G3/G4 尚未开始，本次不推送远端。

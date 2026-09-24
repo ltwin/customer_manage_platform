@@ -142,10 +142,12 @@ const (
 
 // RequestView is what a trusted caller may read back.
 type RequestView struct {
-	ID              string
-	CallerService   string
-	OperationID     string
-	GroupID         string
+	ID            string
+	CallerService string
+	OperationID   string
+	GroupID       string
+	// Kind区分chat与generation；生成请求的载荷与费用语义由扩展表承载。
+	Kind            string
 	ModelKey        string
 	RequestHash     string
 	State           RequestState
@@ -176,7 +178,7 @@ const (
 	requestColumns = "id,caller_service,caller_operation_id,caller_group_id,request_hash,model_key," +
 		"catalog_version,price_version,model_snapshot,price_snapshot,request_payload,payload_state," +
 		"output_limit,deadline_at,state,failure_class,attempts_used,retry_eligible,cancel_requested_at," +
-		"closed_at,result_payload,result_hash,result_revision,revision,retained_until"
+		"closed_at,result_payload,result_hash,result_revision,revision,retained_until,request_kind"
 )
 
 type requestRow struct {
@@ -205,6 +207,7 @@ type requestRow struct {
 	resultRevision int64
 	revision       int64
 	retainedUntil  time.Time
+	kind           string
 }
 
 func scanRequest(row store.Row) (requestRow, error) {
@@ -216,7 +219,8 @@ func scanRequest(row store.Row) (requestRow, error) {
 	err := row.Scan(&r.id, &r.callerService, &r.operationID, &r.groupID, &r.requestHash, &r.modelKey,
 		&r.catalogVersion, &r.priceVersion, &modelSnapshot, &priceSnapshot, &r.payload, &r.payloadState,
 		&r.outputLimit, &r.deadline, &r.state, &r.failureClass, &r.attemptsUsed, &r.retryEligible,
-		&r.cancelAt, &r.closedAt, &r.resultPayload, &r.resultHash, &r.resultRevision, &r.revision, &r.retainedUntil)
+		&r.cancelAt, &r.closedAt, &r.resultPayload, &r.resultHash, &r.resultRevision, &r.revision, &r.retainedUntil,
+		&r.kind)
 	if errors.Is(err, store.ErrNoRows) {
 		return requestRow{}, ErrNotFound
 	}
@@ -238,6 +242,7 @@ func (r requestRow) view(settlement SettlementState) RequestView {
 		CallerService:   r.callerService,
 		OperationID:     r.operationID,
 		GroupID:         r.groupID,
+		Kind:            r.kind,
 		ModelKey:        r.modelKey,
 		RequestHash:     r.requestHash,
 		State:           r.state,

@@ -68,6 +68,9 @@ func TestGenerationMediaFactsMigrationShape(t *testing.T) {
 	}
 	// 对这些增量而言回退无损：还没有任何历史数据派生自它们。
 	if err = store.MigrateDownOneForTest(url); err != nil {
+		t.Fatalf("generation admission rollback: %v", err)
+	}
+	if err = store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("additive rollback failed: %v", err)
 	}
 	var n int

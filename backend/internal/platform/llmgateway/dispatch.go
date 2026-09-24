@@ -257,6 +257,11 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	if err != nil {
 		return Permit{}, err
 	}
+	// Chat派发端口只处理Chat请求；生成请求的快照不是Chat形态，混入会在许可
+	// 与attempt上持久化错误的派发状态（§19.8先兼容读再开写）。
+	if request.kind != requestKindChat {
+		return Permit{}, fmt.Errorf("%w: chat dispatch received a %s request", ErrState, request.kind)
+	}
 	if request.state != StatePrepared {
 		return Permit{}, fmt.Errorf("%w: request state %s cannot dispatch", ErrState, request.state)
 	}

@@ -20,6 +20,9 @@ const (
 	ComponentInputUncached CostComponent = "input_uncached"
 	ComponentOutput        CostComponent = "output"
 	ComponentBudgetTokens  CostComponent = "budget_total_tokens"
+	// ComponentGenerationTotal 是生成attempt的唯一成本分量：一份完整用量证据
+	// 经冻结程序计价后原子登记总额，组件明细保存在证据维度，不逐个落账。
+	ComponentGenerationTotal CostComponent = "generation_total"
 )
 
 // EvidenceKind ranks how a number was obtained. A provider invoice outranks a
@@ -50,12 +53,15 @@ func (k EvidenceKind) rank() int {
 
 // Measurement is one immutable piece of usage or cost evidence.
 type Measurement struct {
-	AttemptID      string
-	Key            string
-	Component      CostComponent
-	Currency       string
-	Dimensions     map[string]any
-	Price          Rate
+	AttemptID  string
+	Key        string
+	Component  CostComponent
+	Currency   string
+	Dimensions map[string]any
+	Price      Rate
+	// PriceRaw 携带生成证据的冻结价格摘要（GenerationPrice）；为空时继续序列化
+	// Chat的Rate。生成维度没有token费率语义，禁止用零Rate冒充价格快照。
+	PriceRaw       json.RawMessage
 	CostMicros     *int64
 	TokenCount     *int64
 	Certainty      string
@@ -70,7 +76,11 @@ type Measurement struct {
 
 // SettlementReceipt is the replayable proof of exactly one ledger move.
 type SettlementReceipt struct {
+	// ID is the receipt identity (llmc_). MeasurementID is the evidence identity
+	// (llmu_) that drove this move: dispute resolution and audit chains point at
+	// the evidence, never at the receipt.
 	ID               string
+	MeasurementID    string
 	AttemptID        string
 	PositionKind     string
 	PositionKey      string
@@ -231,6 +241,9 @@ func (s *Service) RecordMeasurementInTx(ctx context.Context, tx store.TxAccountS
 	if m.Certainty == "unknown" && (m.CostMicros != nil || m.TokenCount != nil) {
 		return SettlementReceipt{}, fmt.Errorf("%w: unknown measurement carries no value", ErrValidation)
 	}
+	if m.Component == ComponentGenerationTotal && (m.TokenCount != nil || m.Certainty == "known" && m.CostMicros == nil) {
+		return SettlementReceipt{}, fmt.Errorf("%w: generation measurement requires a cost and no tokens", ErrValidation)
+	}
 	// ADR-008: explicit key relations are guarded by the service, not by a
 	// database foreign key. Booking an attempt of another request would move
 	// money into the wrong budget bucket.
@@ -242,12 +255,41 @@ func (s *Service) RecordMeasurementInTx(ctx context.Context, tx store.TxAccountS
 		return SettlementReceipt{}, fmt.Errorf("%w: attempt does not belong to this request", ErrConflict)
 	}
 	now := s.now().UTC()
-	// Ordering: the month bucket comes before any request-level row, so a
-	// reconciliation transaction cannot deadlock against a re-admission one.
+	// 生成账单与用量核算共用部署门，且都在月桶之前取得；直接到达的账单
+	// 也可能超出冻结上界，必须与跨月新准入的阻断检查串行。
+	var generation generationAdmissionRow
+	if m.Component == ComponentGenerationTotal {
+		generation, err = generationAdmissionOf(ctx, tx, requestID)
+		if err != nil {
+			return SettlementReceipt{}, err
+		}
+		if err := tx.LockGenerationDeploymentGate(ctx, generation.deploymentID); err != nil {
+			return SettlementReceipt{}, err
+		}
+	}
+	// 月桶先于任何请求级行，避免对账事务与重新准入事务锁序成环。
 	if err := s.lockBudgetForRequest(ctx, tx, requestID, now); err != nil {
 		return SettlementReceipt{}, err
 	}
-	receipt, err := s.applyMeasurement(ctx, tx, requestID, m, now)
+	// 受信入口对generation_total落下的known金额就是核实结论（账单/人工对账）：
+	// 在hold重算前解除同attempt的未决生成争议，使金额替换、争议解除与hold
+	// 释放落在同一张回执里（§19.6）。普通用量推导修订不自动充当核实；
+	// 被留置（parked）的证据不触发解除。
+	var preApply preApplyHook
+	if m.Component == ComponentGenerationTotal && m.Certainty == "known" {
+		preApply = func(ctx context.Context, tx store.TxAccountScope, measurementID string) error {
+			// 真实费用照实入账，超界作为独立部署阻断留痕；账单已经核实金额，
+			// 不伪造unknown证据或保留金额hold。留置证据不经过此钩子。
+			if *m.CostMicros > generation.upperMicros {
+				if err := blockGenerationDeployment(ctx, tx, requestID, measurementID, generation.deploymentID,
+					"verified generation cost exceeds the frozen upper bound", now); err != nil {
+					return err
+				}
+			}
+			return s.resolveGenerationDisputes(ctx, tx, m.AttemptID, measurementID, now)
+		}
+	}
+	receipt, err := s.applyMeasurementWithHook(ctx, tx, requestID, m, now, preApply)
 	if err != nil {
 		return SettlementReceipt{}, err
 	}
@@ -256,6 +298,11 @@ func (s *Service) RecordMeasurementInTx(ctx context.Context, tx store.TxAccountS
 	}
 	return receipt, nil
 }
+
+// preApplyHook 在成本位置已被本证据推进、预算与hold重算之前调用。受信核实
+// 证据借此把争议解除并入同一张回执：金额与hold变化一起可追溯。留置与重放
+// 分支不经过此处，不产生解除。
+type preApplyHook func(ctx context.Context, tx store.TxAccountScope, measurementID string) error
 
 // applyMeasurement books the difference between the new value and what is
 // already booked. Two concurrent corrections of the same position can never
@@ -267,6 +314,17 @@ func (s *Service) applyMeasurement(
 	m Measurement,
 	now time.Time,
 ) (SettlementReceipt, error) {
+	return s.applyMeasurementWithHook(ctx, tx, requestID, m, now, nil)
+}
+
+func (s *Service) applyMeasurementWithHook(
+	ctx context.Context,
+	tx store.TxAccountScope,
+	requestID string,
+	m Measurement,
+	now time.Time,
+	preApply preApplyHook,
+) (SettlementReceipt, error) {
 	dimensions, err := json.Marshal(m.Dimensions)
 	if err != nil {
 		return SettlementReceipt{}, err
@@ -274,9 +332,12 @@ func (s *Service) applyMeasurement(
 	if m.Dimensions == nil {
 		dimensions = []byte("{}")
 	}
-	price, err := json.Marshal(m.Price)
-	if err != nil {
-		return SettlementReceipt{}, err
+	price := m.PriceRaw
+	if len(price) == 0 {
+		price, err = json.Marshal(m.Price)
+		if err != nil {
+			return SettlementReceipt{}, err
+		}
 	}
 	id := newID("llmu")
 	row := tx.InsertOnConflictDoNothingReturning(ctx, "llm_usage_measurements",
@@ -303,7 +364,7 @@ func (s *Service) applyMeasurement(
 		return SettlementReceipt{}, err
 	}
 	if m.Certainty != "known" {
-		return SettlementReceipt{ID: storedID, AttemptID: m.AttemptID, PositionKey: string(m.Component)}, nil
+		return SettlementReceipt{ID: storedID, MeasurementID: storedID, AttemptID: m.AttemptID, PositionKey: string(m.Component)}, nil
 	}
 	// A request settles in exactly one currency: the one its reservation holds.
 	// Evidence in another currency is kept as history and parked, never added to
@@ -318,7 +379,7 @@ func (s *Service) applyMeasurement(
 	if m.Component == ComponentBudgetTokens {
 		return s.applyTokenPosition(ctx, tx, requestID, storedID, m, now)
 	}
-	return s.applyCostPosition(ctx, tx, requestID, storedID, m, now)
+	return s.applyCostPosition(ctx, tx, requestID, storedID, m, now, preApply)
 }
 
 func (s *Service) applyCostPosition(
@@ -327,6 +388,7 @@ func (s *Service) applyCostPosition(
 	requestID, measurementID string,
 	m Measurement,
 	now time.Time,
+	preApply preApplyHook,
 ) (SettlementReceipt, error) {
 	// Global lock order: budget bucket before request, reservation and
 	// position. The period is read without a lock first because it is fixed
@@ -375,6 +437,15 @@ func (s *Service) applyCostPosition(
 		}
 	}
 
+	// 位置已被本证据推进（留置分支在上面提前返回）：必须在「落账之后、hold
+	// 重算之前」发生的动作在此执行——受信核实解除争议，使金额与hold变化
+	// 落进下面同一张回执。
+	if preApply != nil {
+		if err := preApply(ctx, tx, measurementID); err != nil {
+			return SettlementReceipt{}, err
+		}
+	}
+
 	delta := *m.CostMicros - booked
 	if err := s.applyBudgetDelta(ctx, tx, reservation.period, reservation.currency, budgetDelta{
 		spentMicros: delta,
@@ -382,7 +453,13 @@ func (s *Service) applyCostPosition(
 		return SettlementReceipt{}, err
 	}
 	oldHold := reservation.holdMicros
-	newHold, err := s.recomputeCostHold(ctx, tx, requestID, m.AttemptID, reservation, now)
+	var newHold int64
+	if m.Component == ComponentGenerationTotal {
+		// 生成总额落账后按「证据是否齐备」重算hold；没有Chat的分量上界语义。
+		newHold, err = s.recomputeGenerationHold(ctx, tx, requestID, reservation, now)
+	} else {
+		newHold, err = s.recomputeCostHold(ctx, tx, requestID, m.AttemptID, reservation, now)
+	}
 	if err != nil {
 		return SettlementReceipt{}, err
 	}
@@ -391,6 +468,7 @@ func (s *Service) applyCostPosition(
 	}
 	receipt := SettlementReceipt{
 		ID:               newID("llmc"),
+		MeasurementID:    measurementID,
 		AttemptID:        m.AttemptID,
 		PositionKind:     "cost",
 		PositionKey:      string(m.Component),
@@ -480,6 +558,7 @@ func (s *Service) applyTokenPosition(
 	}
 	receipt := SettlementReceipt{
 		ID:               newID("llmc"),
+		MeasurementID:    measurementID,
 		AttemptID:        m.AttemptID,
 		PositionKind:     "token",
 		PositionKey:      string(ComponentBudgetTokens),
@@ -624,7 +703,7 @@ func (s *Service) park(
 		"state='pending',reason=$3,updated_at=$4", "measurement_id=$2", measurementID, reason, now); err != nil {
 		return SettlementReceipt{}, err
 	}
-	return SettlementReceipt{ID: measurementID, AttemptID: m.AttemptID, PositionKey: string(m.Component)}, nil
+	return SettlementReceipt{ID: measurementID, MeasurementID: measurementID, AttemptID: m.AttemptID, PositionKey: string(m.Component)}, nil
 }
 
 // recomputeCostHold keeps only the upper bound of components that are still
@@ -730,6 +809,25 @@ func (s *Service) refreshSettlement(ctx context.Context, tx store.TxAccountScope
 		state = SettlementSettled
 	case reservation.actualMicros == nil:
 		state = SettlementReserved
+	}
+	var kind string
+	err = tx.QueryRow(ctx, "llm_requests", "request_kind", "id=$2", requestID).Scan(&kind)
+	if errors.Is(err, store.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if kind == requestKindGeneration && state == SettlementSettled {
+		// 生成请求的结清以证据为准：hold清零还不够，每个attempt都要有known的
+		// generation_total证据；零价未知不得伪装settled（GEN-09）。
+		open, err := tx.Count(ctx, "llm_attempts", generationOpenAttemptsCond, requestID)
+		if err != nil {
+			return err
+		}
+		if open > 0 {
+			state = SettlementPartial
+		}
 	}
 	unknown, err := tx.Exists(ctx, "llm_attempts",
 		"request_id=$2 AND dispatch_state='unknown'", requestID)

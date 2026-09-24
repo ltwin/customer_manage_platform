@@ -123,6 +123,10 @@ func boundRequest(ctx context.Context, tx rowReader, session CallSession, bindin
 	if err != nil {
 		return requestRow{}, err
 	}
+	// Chat阶段入口不得接生成请求：快照解析按Chat进行，混入会持久化错误的派发状态。
+	if row.kind != requestKindChat {
+		return requestRow{}, fmt.Errorf("%w: operation is bound to a %s request", ErrConflict, row.kind)
+	}
 	if row.groupID != session.CallerGroupID || row.modelKey != session.ModelKey || !row.deadline.Equal(session.Deadline.Truncate(time.Microsecond)) {
 		return requestRow{}, fmt.Errorf("%w: bound request group, model, or deadline changed", ErrConflict)
 	}
