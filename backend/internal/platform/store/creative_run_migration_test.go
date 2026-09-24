@@ -40,6 +40,7 @@ func TestAgentRunMigrationShapeAndLossyRollback(t *testing.T) {
 
 	// The empty rollback runs first: a refused one leaves the schema version
 	// dirty, so the recoverable case has to be proved before the refusal.
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}
@@ -155,6 +156,7 @@ func TestAgentRunMigrationShapeAndLossyRollback(t *testing.T) {
 		t.Fatal("one model answer must expand into one tool call per index")
 	}
 
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

@@ -354,7 +354,7 @@ func (s *Service) refreshGenerationAfterEvidence(ctx context.Context, tx store.T
 
 // generationOpenAttemptsCond 匹配仍处于未决状态的attempt：没有known成本位置、
 // 派发结果未知，或存在未解决的生成争议证据。三者都必须保留预留（P1-1）。
-const generationOpenAttemptsCond = "request_id=$2 AND (dispatch_state='unknown' OR NOT EXISTS (" +
+const generationOpenAttemptsCond = "request_id=$2 AND (dispatch_state IN ('dispatching','streaming','unknown') OR NOT EXISTS (" +
 	"SELECT 1 FROM llm_cost_positions p WHERE p.account_id=$1 AND p.attempt_id=llm_attempts.id" +
 	" AND p.cost_component='generation_total' AND p.certainty='known')" +
 	" OR EXISTS (SELECT 1 FROM llm_usage_measurements m JOIN llm_measurement_dispositions d" +
@@ -395,6 +395,13 @@ func (s *Service) recomputeGenerationHold(
 	open, err := tx.Count(ctx, "llm_attempts", generationOpenAttemptsCond, requestID)
 	if err != nil {
 		return 0, err
+	}
+	if open > 0 && reservation.state == SettlementReleased {
+		// 明确拒绝后的迟到争议会重开结算。先退出released再抬高hold，
+		// 既满足数据库约束，也在预算不足时保留可见的未决结算状态。
+		if _, err := tx.Update(ctx, "llm_usage_reservations", "settlement_state='partially_settled',retry_eligible=FALSE", "id=$2", reservation.id); err != nil {
+			return 0, err
+		}
 	}
 	hold := reservation.initialMicros
 	if open == 0 {

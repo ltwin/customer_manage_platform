@@ -13,6 +13,7 @@ func TestAgentCheckpointMigrationPreservesRecoveryEvidence(t *testing.T) {
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}
@@ -46,6 +47,7 @@ func TestAgentCheckpointMigrationPreservesRecoveryEvidence(t *testing.T) {
  VALUES('cccp_00000000-0000-4000-8000-000000000001','a','r','eino','gob',repeat('a',64),repeat('b',64),1,1,'m','[]','payload',repeat('c',64),now(),now(),now()+interval '90 days')`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

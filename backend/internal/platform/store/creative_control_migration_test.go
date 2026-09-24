@@ -13,6 +13,7 @@ func TestAgentControlMigrationRefusesLossyRollback(t *testing.T) {
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}
@@ -38,6 +39,7 @@ func TestAgentControlMigrationRefusesLossyRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

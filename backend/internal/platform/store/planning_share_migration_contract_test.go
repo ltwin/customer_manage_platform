@@ -93,6 +93,7 @@ DELETE FROM share_generations;
 `); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}
@@ -310,6 +311,7 @@ SELECT EXISTS (
 )`).Scan(&exists); err != nil || !exists {
 		t.Fatalf("0024 event table missing: exists=%v err=%v", exists, err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

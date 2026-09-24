@@ -838,7 +838,7 @@ G1/G2可独立开发；G3的媒体外发必须等待G1授权边界与G2预算都
 
 ## 20. G1 实现切片：可信媒体事实与授权端口（2026-09-21，已实现）
 
-本节落实§19.9 G1。产出与§19.2六点的对应关系及当前边界如下；G2（持久准入与非token结算）见§21，供应商任务/观察/输出表（G3）仍未存在。
+本节落实§19.9 G1。产出与§19.2六点的对应关系及当前边界如下；后续 G2（持久准入与非token结算）见§21，G3（供应商任务/观察/输出）见§22。
 
 ### 20.1 生成用途授权（creativecontent）
 
@@ -962,3 +962,70 @@ G1/G2可独立开发；G3的媒体外发必须等待G1授权边界与G2预算都
 1. **[P1] 最终账单高于用量推导**：生成用量经冻结程序计算的金额改为 `EvidenceDerivedFromUsage`；保留同类用量更正的修订排序。`TestGenerationInvoiceOutranksDerivedUsage` 覆盖无共同修订号时账单替换推导值，以及 rev99 用量不能覆盖 rev1 的 900000 微单位账单，两种顺序的预算最终均为 900000。
 2. **[P1] 直接账单的上界保护**：受信生成账单取部署门后再锁预算桶，实际落账金额超出冻结上界时写入部署阻断，来源直接指向已落账测量；费用与 hold 回执保持真实且与阻断原子提交。`TestGenerationInvoiceEnforcesFrozenUpperBound` 覆盖等于上界、超过上界及重放；`TestGenerationInvoiceBlockIsAtomicAndRequiresAppliedCost` 覆盖回滚、异币种/低等级/未知/无序证据；`TestGenerationAdmissionWaitsForDeploymentGate` 扩展为用量/账单 × 同月/跨月四种交错，验证准入等待并在提交后拒绝。跨月测试种子同步移动预算 hold，使账本与预留一致。
 3. **[P2] 冻结控制信封校验**：0052 的生成扩展表加入非空对象 `admission_control`，冻结八项控制输入；锁前、组锁后重读共同校验。`TestGenerationReplayValidatesFrozenControls` 覆盖八项独立冲突、时区等价、纳秒精度、截止已过与消费方/组状态变化；`TestGenerationReplayChecksControlsAfterGroupWait` 通过真实组锁等待验证并发异 consumer 返回 `ErrConflict`。冲突不新增预留、不改预算。迁移形状测试覆盖 NULL/数组/JSON null 拒绝。
+
+## 22. G3 实现切片：受控供应商生命周期（2026-09-24）
+
+### 22.1 范围与装配边界
+
+G3 提供 `GenerationRuntime`：复用 G2 的受理/冻结规则/账本，新增受控 Adapter 的 Submit/Observe/Cancel，持久任务与观察输出、最终许可守卫、River handler 与 due 扫描。G4 的画布 driver、实际媒体下载/导入、候选与版本发布尚未接入。生产组合根未注册真实生成 Adapter，也未开放生成入口；本切片全部验收使用计数型受控 Adapter 和真实数据库。
+
+组合根显式提供 Gateway、按部署/版本注册的 Adapter、32 字节环境密钥、`GenerationGuard`；没有密钥或守卫不能构造可派发 runtime。注册 `Handlers()` 后以 `SetRuntime` 绑定同一队列实例；宿主启动队列并运行/等待 `RunRecovery(ctx, db)`，退出时由 ctx 结束扫描，无游离 goroutine。普通 G2 请求的 control_revision=0，不自动进入付费生命周期。
+
+`GenerationGuard` 在受理和最终派发事务中复核用途授权、外发同意、调用方执行资格；只允许数据库操作，网络/对象读取在事务外。该端口留给 G4/供应商组合根绑定真实业务守卫，受控测试使用显式守卫验证撤销；不能把测试允许守卫复制为生产默认。真实供应商能力、账单和外发许可核实之前，生产派发继续关闭。
+
+### 22.2 持久事实与保护
+
+0053 加法迁移新增四张账号表：
+
+- `llm_generation_deployments`：部署启停、策略内容摘要、Adapter 版本、有效期、控制修订。控制更新与许可获取共享 G2 部署门；`ConfigureDeploymentInTx` CAS 更新，跨进程停用不靠内存目录。`ResolveDeploymentBlockInTx` 是核实后的独立受信解除动作，账单不自动恢复新准入。
+- `llm_generation_tasks`：每 attempt 一行，一次性 submit、供应商任务绑定、状态/修订/进度、阶段 epoch/租约、取消已发送标记、失败次数与恢复期限。同账号同部署的 task 摘要唯一，已绑定 task 不能更换。
+- `llm_generation_observations`：原始事件键、摘要、受保护信封、处理结论及领取 epoch。同 key 同摘要回放；同 key 异摘要另存 conflict，部分唯一索引限制每事件只有一份正常证据。旧 epoch 先到的证据保留为 stale，新租约核实同一证据可推进一次，费用仍幂等。
+- `llm_generation_outputs`：attempt/output_id/ordinal 稳定身份、公开投影、加密取件定位和后续导入状态。位置刷新不改变作品身份；G4 再实现导入/consumer 交接。
+
+生成扩展表增加 control_revision、next_advance_at 与 verification_required；due 索引独立于队列的投递保留期。旧请求/Chat不改变类别。存在已启用 G3 的请求或任务时禁止破坏性 down；旧迁移测试剥离 0053 后继续验证其原目标层。
+
+TaskID、含签名 URL 的取件定位、完整观察信封以 AES-GCM 加密；AAD 绑定账号、attempt 和用途，数据库仅保存随机 nonce 和密文，密钥不落库。公开结果投影不解密 TaskID/URL。密钥丢失或旧 Adapter 不可用转待核实，保留预算与未明确结束的供应商名额。
+
+### 22.3 阶段与故障行为
+
+`PrepareInTx` 把 G2 请求/hold/consumer、控制修订、业务守卫、due 与 River job 放进同一事务。重放沿用冻结控制输入和原控制修订，不因当前配置变化重新收费。
+
+`AdvanceGeneration` 每次只执行一个有界阶段：
+
+1. 初次提交/明确未受理后的重试：取得全局供应商名额和最终许可，原子创建 attempt/task，并将一次性提交许可标为已消费；提交事务后才调用 Adapter。任何网络错误/提交后崩溃都不能再次 Submit。
+2. 已知 task：恢复仅 Observe 原任务；取消请求或截止后至多发出一次尽力 Cancel，再继续 Observe/核算。取消外部请求的 ctx 不代表供应商零费。
+3. 未知且没有 task：Adapter 若声明 `GenerationSubmissionLookup`，只按持久 AttemptID 查询受理身份；否则进入可见待核实，保留 hold/运行名额。不能以查不到 TaskID 证明未受理。
+4. 明确 rejected：仅无用量或完整可计价的全零用量可作为零费证明；正用量、非法/无法解释的用量先隔离，不能授权重试。独立零费证据、释放名额/hold；仍在期限内且未取消时，下一次推进原子重新占额并取得新 attempt（沿用最多 2 次上限）。已绑定 task 或已发生正费用与 rejected 矛盾时隔离为冲突。
+5. completed/failed/cancelled：供应商终态可释放运行名额，但无费用证据仍保留 hold；已知 task 继续查询费用。完成与本地取消竞争时保存输出事实、保持取消发布资格。旧 epoch 的用量可以登记，不能改结果/状态/作品。
+
+账本沿 G2 的证据等级与事件身份；dispatching/streaming/unknown 都保留原上界，防止运行中的累计用量提前释放预算。成功、空输出、取消都不能冒充零费。同步完成和异步观察使用同一结果校验与输出持久路径。
+
+每次外部操作最长 2 分钟，租约 3 分钟；收尾通过 WithoutCancel+30 秒上下文落库。连续失败最多 5 次、默认恢复窗口 24 小时，耗尽转 verification_required，不释放未知供应商名额。`ResumeVerificationInTx` 只重开受控核实窗口，保留原创建时间与一次性 submit 身份。`SweepGenerationDue` 分页扫描账号和到期请求，以队列去重补投递；handler 用延期保持后续阶段，队列被丢弃后可重新补投递。
+
+### 22.4 实际锁链与兼容边界
+
+| 路径 | 锁顺序 |
+|---|---|
+| 受理 | 账号 active 共享锁 → Gateway 组 → 账号部署门 → 预算桶 → 预留/请求 → 业务守卫 → 队列 |
+| 派发 | 账号 active 共享锁 → 供应商全局名额 → Gateway 组 → 账号部署门 → 预算桶 → 请求/预留 → 业务守卫 → task |
+| 取消 | 预算桶 → 请求 → 生成 due；不在请求锁后反取部署门/供应商锁 |
+| 重新占额 | 账号 active 共享锁 → 供应商名额 → 组 → 部署门 → 原预算桶 → 请求/预留 → task；Rearm 与新 attempt 原子提交 |
+| 观察/核算 | 供应商名额 → 部署门 → 原预算桶 → 请求 → task/证据/费用位置；账本不回调画布 |
+| 输出交接 | G3 只保存输出事实；G4 承接 §19.5 的外层预锁、内容根/ready 修订与 consumer 同事务交接，当前未实现 |
+
+Chat 的 RecoverExpired 明确只选 chat；其本地传输过期不能释放仍在供应商执行的生成任务名额。Chat 的 VerifyUnacceptedInTx 拒绝 generation，生成未受理证明只能经生成证据入口。原 Chat 行、token 账本与组取消接口保持兼容。
+
+### 22.5 独立审查修复
+
+首轮 change review（冻结 `8f5a1356…2069b`）通过真实数据库/队列的临时 overlay 复现三项 blocking，按以下边界修复：
+
+- **停用账号恢复**：`JobHandler.AllowInactiveAccount` 是组合根显式登记的维护权限，默认 false；仅生成维护 handler 开启，普通任务仍由 dispatcher 取消。生成受理/新 Submit 在供应商等锁之前通过账号行共享锁复核 active，停用账号只允许观察、尽力取消、费用核算以及关闭未派发请求，不获得新提交许可。`TestGenerationRuntimeInactiveAccountQueueRecovery` 经真实 River dispatcher 验证既有任务结算、待派发任务关闭、普通任务取消及名额/预算回收。
+- **拒绝与同事件用量矛盾**：在应用 rejected 状态前核对当前事件用量和既有费用；非零、非法或不完整用量保存 conflict/争议证据、保留 hold/供应商名额并转待核实。重放 conflict 不解除核实状态。`TestGenerationRuntimeRejectedUsageCannotAuthorizeRetry` 覆盖正数、负数、缺维度和可靠全零；`TestGenerationRuntimeRejectedReplayKeepsConflict` 覆盖已受理任务的矛盾拒绝重放。
+- **未派发收尾独立于供应商容量**：prepared 请求在申请名额前判断截止/取消/账号停用；预算→请求锁内重读，仍未派发才关闭并释放。部署禁止也在部署门内复核后走同样收尾，不反向申请名额。处于待核实的 prepared 请求保留截止 due，扫描器在过期时仍补投递，不永久占用未使用预算；已派发未知任务继续保留其预算和名额。`TestGenerationRuntimeExpiredPreparedIgnoresSupplierLimits` 覆盖容量及速率耗尽。
+
+第二轮确认以上三项已解决，并补齐两种证据交错：
+
+- **核实状态不能由普通事件清除**：正常历史事件重放以及新的正常事件都不能清除另一个事件造成的待核实状态或重开 due；普通阶段收尾只更新尚未处于待核实的请求，恢复必须显式调用受信 `ResumeVerificationInTx`。`TestGenerationRuntimeNormalEventCannotClearIndependentConflict` 覆盖两类事件及显式恢复。
+- **终态冲突不可被输出检查覆盖**：输出身份兼容检查只追加冲突，不消除先前判定的终态矛盾。`TestGenerationRuntimeCompletedCannotEraseTerminalConflict` 覆盖 cancelled/failed/rejected 之后出现 completed，证据持久隔离且重放幂等，不写作品、不登记矛盾费用。cancelled/failed 保持原业务状态；rejected 后待重试请求转 unknown 并撤回重试资格，避免当作未派发请求截止清理。迟到费用争议先将 released 结算重开，再按既有规则恢复原上界 hold；预算不足仍保留争议与未决结算，不能因 CHECK 约束丢证据。
+
+第三轮确认以上旧发现已解决，但发现 rejected 的反证不附带 Usage 时仍跳过费用争议。最终修复将「原未受理结论受到反驳」本身作为重开费用核实的证据，不依赖用量存在。`TestGenerationRuntimeRejectedContradictionWithoutUsageReopensSettlement` 覆盖预算充足/不足、重复送达及截止后保留；实际金额仍等待受信证据。此最终修复尚未独立复审，三轮上限后的继续审查等待 owner 裁决，不能据此宣称 G3 最终验收通过。

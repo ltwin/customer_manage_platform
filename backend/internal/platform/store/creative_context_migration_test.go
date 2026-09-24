@@ -13,6 +13,7 @@ func TestAgentContextMigrationRejectsLossyRollback(t *testing.T) {
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}
@@ -48,6 +49,7 @@ func TestAgentContextMigrationRejectsLossyRollback(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO creative_agent_context_items(id,account_id,run_id,kind,source_manifest,payload,digest,revision,retained_until) VALUES('ccci_test','scope','run','tool_result','{}','saved',repeat('a',64),1,now()+interval '90 days')`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

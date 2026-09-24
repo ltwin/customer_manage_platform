@@ -60,6 +60,7 @@ func TestSettingsHealthTiersMigrationDefaultsExistingRowsAndRollsBack(t *testing
 	if err := db.Close(); err != nil {
 		t.Fatalf("close before down migration: %v", err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

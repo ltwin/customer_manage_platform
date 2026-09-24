@@ -417,6 +417,7 @@ func (s *Service) CancelInTx(ctx context.Context, tx store.TxAccountScope, reque
 	if err != nil {
 		return RequestView{}, err
 	}
+	wasPrepared := row.state == StatePrepared
 	switch row.state {
 	case StatePrepared:
 		if _, err := tx.Update(ctx, "llm_requests",
@@ -429,7 +430,16 @@ func (s *Service) CancelInTx(ctx context.Context, tx store.TxAccountScope, reque
 		}
 		row.state, row.revision = StateCancelled, row.revision+1
 	case StateSucceeded, StateFailed, StateCancelled:
-		return row.view(SettlementUnclaimed), fmt.Errorf("%w: request already terminal", ErrState)
+		if row.kind != requestKindGeneration {
+			return row.view(SettlementUnclaimed), fmt.Errorf("%w: request already terminal", ErrState)
+		}
+		// 生成结果可能尚未交接：本地撤销发布资格不回滚供应商结果或费用。
+		if _, err := tx.Update(ctx, "llm_requests",
+			"cancel_requested_at=COALESCE(cancel_requested_at,$3),closed_at=COALESCE(closed_at,$3),revision=revision+1,updated_at=$3",
+			"id=$2", requestID, now); err != nil {
+			return RequestView{}, err
+		}
+		row.revision++
 	default:
 		// Dispatched or unknown: record the intent, keep the money facts open.
 		if _, err := tx.Update(ctx, "llm_requests",
@@ -439,7 +449,17 @@ func (s *Service) CancelInTx(ctx context.Context, tx store.TxAccountScope, reque
 		}
 		row.revision++
 	}
-	return row.view(SettlementUnclaimed), nil
+	row.cancelAt = &now
+	if row.kind == requestKindGeneration {
+		// 不在持有预算/请求后反向取得部署门；派发在同一请求锁下复核取消。
+		if _, err := tx.Update(ctx, "llm_generation_requests",
+			"next_advance_at=CASE WHEN $3 THEN NULL ELSE next_advance_at END",
+			"request_id=$2", requestID, wasPrepared); err != nil {
+			return RequestView{}, err
+		}
+	}
+	settlement, err := settlementOf(ctx, tx, requestID)
+	return row.view(settlement), err
 }
 
 // ConsumeInTx hands one complete result to the caller's own persistence and

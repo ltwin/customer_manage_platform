@@ -2,8 +2,23 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
+
+// LockGenerationAccount 将停用与新Submit许可串行；在供应商/组/预算锁之前调用。
+// 既有任务的必要观察、取消和核算不依赖账号仍处于active。
+func (sc TxAccountScope) LockGenerationAccount(ctx context.Context) (bool, error) {
+	if sc.AccountID() == "" {
+		return false, ErrEmptyAccountScope
+	}
+	var active bool
+	err := sc.scope.execRunner().QueryRow(ctx, "SELECT status='active' FROM accounts WHERE id=$1 FOR SHARE", sc.AccountID()).Scan(&active)
+	if errors.Is(err, ErrNoRows) {
+		return false, nil
+	}
+	return active, err
+}
 
 // LockGenerationDeploymentGate 是生成部署的准入/阻断同步门（llmgateway G2）：
 // 新准入的阻断检查与超界争议的阻断写入在同一把 advisory transaction lock 上

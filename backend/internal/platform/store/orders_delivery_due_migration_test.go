@@ -129,6 +129,7 @@ func TestOrdersDeliveryDueMigrationBackfillsExistingOrders(t *testing.T) {
 
 	// 0032 之上已叠加 0033（支付事实）、0034（归因快照）与 0035（健康度参数）：
 	// 先退 0035、0034、0033 再退 0032，本测试锁的是 0032 自身的可逆性。
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

@@ -39,7 +39,7 @@ func (s *Service) RecoverExpired(ctx context.Context, scope store.AccountScope, 
 	cutoff := s.now().UTC().Add(-transportLifetime - recoveryGrace)
 	var ids []string
 	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
-		rows, err := tx.QueryPage(ctx, "llm_attempts", "id", "dispatch_state IN ('dispatching','streaming') AND dispatched_at<=$2 AND permit_released_at IS NULL", []store.OrderBy{{Column: "dispatched_at"}, {Column: "id"}}, batch, 0, cutoff)
+		rows, err := tx.QueryPage(ctx, "llm_attempts", "id", "dispatch_state IN ('dispatching','streaming') AND dispatched_at<=$2 AND permit_released_at IS NULL AND request_id IN (SELECT id FROM llm_requests WHERE account_id=$1 AND request_kind='chat')", []store.OrderBy{{Column: "dispatched_at"}, {Column: "id"}}, batch, 0, cutoff)
 		if err != nil {
 			return err
 		}

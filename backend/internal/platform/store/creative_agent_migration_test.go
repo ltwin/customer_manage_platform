@@ -42,6 +42,7 @@ func TestAgentConversationMigrationShapeAndLossyRollback(t *testing.T) {
 	// dirty, so the recoverable case has to be proved before the refusal.
 	// 0045 (skill foundation) and 0046 (agent runs) sit above this migration;
 	// step past both first.
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}
@@ -145,6 +146,7 @@ func TestAgentConversationMigrationShapeAndLossyRollback(t *testing.T) {
 		}
 	}
 
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

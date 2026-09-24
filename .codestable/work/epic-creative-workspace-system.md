@@ -3,8 +3,8 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: G1可信媒体事实与授权端口及恢复边界修复已完成最终复审和门禁，按owner本轮授权提交；下一切片依模块§19推进G2持久准入与非token结算。
-blocked_by: null
+next_action: G3实现与三轮审查修复已落地；最终修复验证后待owner裁决追加复审，尚不宣称验收通过；生产派发关闭、G4未开始。
+blocked_by: owner-review-round-limit
 item_progression: per-item
 milestone_commit: manual
 remote_publish: manual
@@ -1512,3 +1512,23 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 
 - Owner 在本会话明确授权提交，提交范围为完整 G2 实现、三轮修复、0052 迁移、回归测试和文档；原暂存内容与第 3 轮修复一并纳入。
 - 沿用本轮通过的 `make check-go` 全量结果（45 个测试包、lint 0 issues），提交前差异空白检查通过；正常执行提交门禁，不跳过 hooks。G3/G4 尚未开始，本次不推送远端。
+
+### 2026-09-24 · G3 供应商生命周期（已实现，最终修复待追加复审裁决）
+
+- Owner 授权在当前工作区推进 G3；应用 cs-feat，范围按模块 §19，具体协议和装配边界写入 §22。没有新提交授权，不调用真实供应商。
+- 新增 0053 部署控制/task/观察/输出，G2 扩展增加持久 due/核实状态；生成 runtime 原子准入与队列、一次性 submit、版本化 Adapter 恢复、观察与取消、账本接入、加密任务/取件定位、due 补投递。Chat 恢复与未受理核实按 kind 隔离；旧迁移测试适配新增 head。
+- 首版验证：`make check-go` exit 0，45 包、lint 0 issues（`/tmp/g3-check-go.log`）；生命周期 race 通过（`/tmp/g3-race.log`）。迁移测试曾因第二次 MigrateUp 后回退串漏剥离新 head 失败，修正后定向通过（`/tmp/g3-migration-fix.log`）。
+- 独立审查按 cs-feat 创建 fresh 宿主 reviewer `/root/g3_review`，显式 gpt-6-astra/high；Paseo 配置文件不存在且没有可用异构 provider 工具，回退同构。图谱 Verify：当前工作区 generation 2026-09-04，相关符号查询空、coverage 为 not_tracked/metadata_changed，全部按精确源码和改动上下文核验，不宣称图谱完整。
+- Round 1 冻结完整补丁 `/tmp/g3-review-r1.patch` SHA256 `8f5a135636e41549b5d68d6d8f413b3fc883e6db9f4a59e1b530da59ef02069b`（39 文件 manifest 未漂移）。reviewer 真实 overlay 复现 3 blocking：停用账号队列拒绝既有任务恢复；rejected 同事件正用量被忽略成零费并允许重试；容量耗尽挡住未派发请求截止清理。报告证据 `/tmp/g3-review-repro.log`。
+- 三项修复及回归见模块 §22.5。真实队列维护权限默认关闭、生成新许可持账号 active 共享锁；矛盾拒绝先隔离且重放不解除；未派发截止/禁止路径不依赖供应商名额，待核实 prepared 保留截止 due。定向 race 回归已过（`/tmp/g3-r2-boundaries.log`），正在进行全量验证及同 reviewer follow-up。G4/真实供应商接线未开始。
+- Round 2 完整冻结补丁 `/tmp/g3-review-r2.patch` SHA256 `5b8801b811e8a7fea8f552dcc9c9713760ba194bec213957781757fb08178fcc`（42 文件 manifest 无漂移）。`make check-go` exit 0、45 包、lint 0 issues（`/tmp/g3-r2-check-go.log`），全部生命周期 race 通过（`/tmp/g3-r2-race.log`）。同 reviewer 确认旧 3 项 resolved，新增 2 blocking：正常旧事件重放清除另一事件造成的核实状态；输出兼容检查覆盖已有终态冲突。证据 `/tmp/g3-r2-review-repro.log`。
+- 第 3 轮修复：持久核实位仅由受信恢复入口解除；终态冲突与输出冲突取并集。新增正常重放/新正常事件与独立冲突、cancelled/failed/rejected→completed 三种交错回归，修复前全部复现（`/tmp/g3-r3-red.log`），修复说明见模块 §22.5。本轮正在验证并准备最终独立复审；工作区未提交。
+- 第 3 轮扩展回归还暴露 rejected→completed 的 released 预留无法直接恢复非零 hold：修复为先重开结算再重算 hold，保留矛盾证据；待重试请求转 unknown、撤回重试资格，避免后续当作未派发请求释放其待核实费用上界。
+- Round 3 完整冻结补丁 SHA256 `441d5587d5e623332ac25cd896ff48a4c5c952fc05b1537938b211b59e0b0b57`，42 文件无漂移。旧发现全部 resolved，新增 1 blocking：rejected 被无 Usage 的 completed 反驳后仍保留 released/零 hold。已达 cs-feat 同阶段 3 轮上限，没有开启第 4 轮，不宣称独立审查通过。
+- 最终有界修复：原 task 的 rejected 结论受到矛盾观察反驳时，无论附带用量与否均登记费用争议；空用量不再跳过结算重开。新增 `TestGenerationRuntimeRejectedContradictionWithoutUsageReopensSettlement`：预算充足恢复 1250000 hold，预算不足仍保留 partial/争议；重放只保存一份，截止后不释放争议或再次 Submit。红灯复现 `/tmp/g3-final-boundary-red.log`，全部生命周期 race 通过（13.499s，`/tmp/g3-final-race.log`）。中断后 Docker 未运行，重启后完成真实数据库回归；此前第 3 轮全量门禁进程与临时日志不可恢复，不补称其通过。
+- 最终增量限于网关包：`make check-go PKG=./internal/platform/llmgateway/...` exit 0（全后端 build、网关 lint 0 issues、网关全测试 20.580s，`/tmp/g3-final-check-go.log`），`git diff --check` 通过。第 2 轮完整后端 45 包通过仍是跨包基线；最终修复未声称重新完成全后端测试。当前 42 个变更文件均未提交；等待 owner 决定是否允许同 reviewer 追加一轮复审，G4和生产装配保持未开始。
+
+### 2026-09-24 · G3 当前快照提交授权
+
+- Owner 明确要求“先提交现有改动”，随后要求开启下一 feature；恢复现场确认此前提交因中断尚未执行，本次提交完整 G3 实现、三轮修复及最终有界修复、0053 迁移、测试与文档。
+- 提交沿用上述全量基线和最终网关门禁/race 结果，正常执行 hooks；该快照提交不代表最终独立复审通过，也不改变生产派发关闭状态。G4 对应 §19.9 画布与媒体交接，先梳理接口；额外复审仍待 owner 明确裁决。

@@ -42,8 +42,8 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 		WHERE table_schema='public' AND column_name='account_id' AND table_name LIKE 'llm\_%'`).Scan(&accountScoped); err != nil {
 		t.Fatal(err)
 	}
-	if accountScoped != 13 {
-		t.Fatalf("%d of 13 gateway business tables are account scoped", accountScoped)
+	if accountScoped != 17 {
+		t.Fatalf("%d of 17 gateway business tables are account scoped", accountScoped)
 	}
 	var platformAccountColumns int
 	if err := db.QueryRow(`
@@ -91,6 +91,7 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 	// 0044 (agent conversations) and 0045 (skill foundation) sit above the
 	// gateway; step past them first so this test still exercises the gateway's
 	// own rollback guard.
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}
@@ -129,6 +130,7 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 		VALUES ('acc',date_trunc('month',now())::date,'USD',1000,1000,42)`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("generation admission rollback", err)
 	}

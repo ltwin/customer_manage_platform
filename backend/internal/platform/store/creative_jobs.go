@@ -27,6 +27,9 @@ type JobHandler struct {
 	Work func(context.Context, AccountScope, jobs.Request) error
 	// Timeout bounds one attempt; zero keeps the default two minutes.
 	Timeout time.Duration
+	// AllowInactiveAccount 仅供已发生外部副作用的受信维护handler：允许观察/取消/
+	// 核算已受理任务。handler仍须在最终许可事务内阻止停用账号的新副作用。
+	AllowInactiveAccount bool
 }
 
 type queuedCreativeJob struct {
@@ -40,10 +43,11 @@ type queuedCreativeJob struct {
 func (queuedCreativeJob) Kind() string { return "creative_dispatch_v1" }
 
 type creativeJobRuntime struct {
-	store    *Store
-	client   *river.Client[pgx.Tx]
-	handlers map[string]func(context.Context, AccountScope, jobs.Request) error
-	timeouts map[string]time.Duration
+	store       *Store
+	client      *river.Client[pgx.Tx]
+	handlers    map[string]func(context.Context, AccountScope, jobs.Request) error
+	timeouts    map[string]time.Duration
+	maintenance map[string]bool
 }
 
 // NewJobRuntime shares the store's connection pool; no second pool or raw tx is
@@ -52,7 +56,7 @@ func (s *Store) NewJobRuntime(handlers []JobHandler, logger *slog.Logger) (jobs.
 	if s == nil || s.pool == nil {
 		return nil, errors.New("store is not open")
 	}
-	runtime := &creativeJobRuntime{store: s, handlers: make(map[string]func(context.Context, AccountScope, jobs.Request) error), timeouts: map[string]time.Duration{}}
+	runtime := &creativeJobRuntime{store: s, handlers: make(map[string]func(context.Context, AccountScope, jobs.Request) error), timeouts: map[string]time.Duration{}, maintenance: map[string]bool{}}
 	for _, h := range handlers {
 		if h.Kind == "" || h.Work == nil || h.Timeout < 0 {
 			return nil, jobs.ErrInvalidTask
@@ -61,6 +65,7 @@ func (s *Store) NewJobRuntime(handlers []JobHandler, logger *slog.Logger) (jobs.
 			return nil, jobs.ErrInvalidTask
 		}
 		runtime.handlers[h.Kind] = h.Work
+		runtime.maintenance[h.Kind] = h.AllowInactiveAccount
 		if h.Timeout > 0 {
 			runtime.timeouts[h.Kind] = h.Timeout
 		}
@@ -162,7 +167,7 @@ func (w *creativeDispatcher) Work(ctx context.Context, job *river.Job[queuedCrea
 	}
 	var status string
 	err := w.runtime.store.pool.QueryRow(ctx, "SELECT status FROM accounts WHERE id = $1", a.AccountID).Scan(&status)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status != "active") {
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && status != "active" && !w.runtime.maintenance[a.Request.Kind]) {
 		return river.JobCancel(ErrCreativeAccessDenied)
 	}
 	if err != nil {

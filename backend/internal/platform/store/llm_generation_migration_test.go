@@ -119,6 +119,7 @@ VALUES ('llmr_99999999-9999-9999-9999-999999999999','ga-2','creative_agent','999
 'sha256-` + hex64(t, "guard") + `','model_a','eng-1','policy-1','{}','{}',0,now(),now(),'generation')`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, guardURL)
 	if err := store.MigrateDownOneForTest(guardURL); err == nil {
 		t.Fatal("down migration must refuse while generation rows exist")
 	}
@@ -127,6 +128,7 @@ VALUES ('llmr_99999999-9999-9999-9999-999999999999','ga-2','creative_agent','999
 	if err := store.MigrateUp(cleanURL); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationLifecycle(t, cleanURL)
 	if err := store.MigrateDownOneForTest(cleanURL); err != nil {
 		t.Fatalf("rollback generation-admission: %v", err)
 	}

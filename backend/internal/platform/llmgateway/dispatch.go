@@ -704,6 +704,9 @@ func (s *Service) VerifyUnacceptedInTx(ctx context.Context, tx store.TxAccountSc
 	if err != nil {
 		return RequestView{}, err
 	}
+	if request.kind != requestKindChat {
+		return RequestView{}, fmt.Errorf("%w: generation verification requires generation evidence", ErrState)
+	}
 	if request.state != StateUnknown {
 		return RequestView{}, fmt.Errorf("%w: only unknown requests are verified", ErrState)
 	}
