@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -664,4 +665,45 @@ func factsDigest(extractorVersion string, f ProbedFacts) string {
 	})
 	sum := sha256.Sum256(raw)
 	return "sha256-" + hex.EncodeToString(sum[:])
+}
+
+// ValidateGenerationReferencesInTx 在最终派发事务中复核冻结引用与真实original。
+// 调用方先持有Gateway和画布锁；这里只做数据库操作，不复用预检授权结论。
+func (s *Service) ValidateGenerationReferencesInTx(ctx context.Context, tx store.TxAccountScope, refs []llmgateway.GenerationReference) error {
+	sorted := append([]llmgateway.GenerationReference(nil), refs...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].RevisionID < sorted[j].RevisionID })
+	for _, ref := range sorted {
+		r, err := creativecontent.RequireGenerationReference(ctx, tx, ref.RevisionID)
+		if err != nil {
+			return err
+		}
+		if r.Kind != string(ref.Kind) {
+			return llmgateway.ErrConflict
+		}
+		if r.Kind == "text" {
+			if r.Payload.Body == nil {
+				return llmgateway.ErrConflict
+			}
+			sum := sha256.Sum256([]byte(*r.Payload.Body))
+			if ref.MIME != "text/plain" || ref.ByteSize != int64(len(*r.Payload.Body)) || ref.Digest != hex.EncodeToString(sum[:]) {
+				return llmgateway.ErrConflict
+			}
+			continue
+		}
+		matched := false
+		for _, m := range r.Media {
+			if m.Role != "original" {
+				continue
+			}
+			var digest string
+			if err = tx.QueryRow(ctx, "creative_blobs", "sha256", "id=$2 AND state='ready'", m.BlobID).Scan(&digest); err != nil {
+				return err
+			}
+			matched = ref.Digest == strings.TrimPrefix(digest, "sha256-") && ref.MIME == m.Mime && ref.ByteSize == m.ByteSize
+		}
+		if !matched {
+			return llmgateway.ErrConflict
+		}
+	}
+	return nil
 }

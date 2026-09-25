@@ -102,6 +102,9 @@ func (r *GenerationRuntime) AdvanceGeneration(ctx context.Context, scope store.A
 }
 
 func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAccountScope, requestID string) (*generationAction, error) {
+	if err := r.prelockCaller(ctx, tx); err != nil {
+		return nil, err
+	}
 	s := r.gateway
 	now := s.now().UTC()
 	peek, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns, "id=$2", requestID))
@@ -385,7 +388,7 @@ func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.Tx
 	return err
 }
 func (r *GenerationRuntime) markGenerationVerification(ctx context.Context, tx store.TxAccountScope, id, reason string, now time.Time) error {
-	if _, err := tx.Update(ctx, "llm_generation_requests", "verification_required=TRUE,next_advance_at=(SELECT CASE WHEN state='prepared' THEN deadline_at ELSE NULL END FROM llm_requests WHERE account_id=$1 AND id=$2)", "request_id=$2", id); err != nil {
+	if _, err := tx.Update(ctx, "llm_generation_requests", "verification_required=TRUE,result_verification_required=result_verification_required OR $3,next_advance_at=(SELECT CASE WHEN state='prepared' THEN deadline_at ELSE NULL END FROM llm_requests WHERE account_id=$1 AND id=$2)", "request_id=$2", id, reason == "conflicting_observation"); err != nil {
 		return err
 	}
 	if _, err := tx.Update(ctx, "llm_requests", "state=CASE WHEN state IN ('dispatching','streaming') THEN 'unknown' ELSE state END,failure_class=$3,revision=revision+1,updated_at=$4", "id=$2", id, reason, now); err != nil {

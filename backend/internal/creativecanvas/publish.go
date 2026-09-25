@@ -3,6 +3,8 @@ package creativecanvas
 import (
 	"context"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -16,12 +18,35 @@ type PublishResult struct {
 }
 
 func (s *ExecutionService) Publish(ctx context.Context, scope store.AccountScope, target ExecutionTarget) (creativeops.Receipt, error) {
+	return publishExecution(ctx, scope, target, func(e NodeExecution) bool {
+		return s.executors[e.ActionKey] != nil && s.executors[e.ActionKey].Version() == e.ExecutorVersion
+	}, nil)
+}
+
+// PublishGenerationExecution 复用版本/撤销协议；prelock由生成driver取得Gateway部署/请求锁。
+func PublishGenerationExecution(ctx context.Context, scope store.AccountScope, target ExecutionTarget, prelock func(context.Context, store.TxAccountScope) (bool, error)) (creativeops.Receipt, error) {
+	if prelock == nil {
+		return creativeops.Receipt{}, creativeops.ErrValidation
+	}
+	return publishExecution(ctx, scope, target, func(e NodeExecution) bool {
+		return e.ActionKey == GenerationAction && e.ExecutorVersion == GenerationDriverVersion
+	}, prelock)
+}
+func publishExecution(ctx context.Context, scope store.AccountScope, target ExecutionTarget, registered func(NodeExecution) bool, prelock func(context.Context, store.TxAccountScope) (bool, error)) (creativeops.Receipt, error) {
 	saved, err := GetNodeExecution(ctx, scope, target)
 	if err != nil {
 		return creativeops.Receipt{}, err
 	}
 	command := creativeops.Command{OperationID: saved.PublishOperation, CreatedAt: saved.CreatedAt, Payload: creativegraph.Canonical(target)}
 	return run(ctx, scope, "canvas.publish_execution", command, func(ExecutionTarget) error { return nil }, func(ctx context.Context, tx store.TxAccountScope, v ExecutionTarget) (creativeops.Outcome, error) {
+		allowed := true
+		if prelock != nil {
+			var err error
+			allowed, err = prelock(ctx, tx)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+		}
 		canvas, err := lockCanvas(ctx, tx, v.CanvasID, false)
 		if err != nil {
 			return creativeops.Outcome{}, err
@@ -40,7 +65,19 @@ func (s *ExecutionService) Publish(ctx context.Context, scope store.AccountScope
 			return creativeops.Outcome{}, err
 		}
 		result := PublishResult{ExecutionID: execution.ID, ApplyState: "discarded", RegisteredVersionIDs: []string{}}
-		eligible := live && !canvas.Archived && n.ActiveExecutionID != nil && *n.ActiveExecutionID == execution.ID && execution.State == "succeeded" && execution.ApplyState == "pending" && now.Before(execution.Deadline) && s.executors[execution.ActionKey] != nil && s.executors[execution.ActionKey].Version() == execution.ExecutorVersion
+		eligible := allowed && live && !canvas.Archived && n.ActiveExecutionID != nil && *n.ActiveExecutionID == execution.ID && execution.State == "succeeded" && execution.ApplyState == "pending" && now.Before(execution.Deadline) && registered(execution)
+		if eligible && prelock != nil {
+			sources, err := generationSourceIdentities(ctx, tx, execution.ID)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			for _, source := range sources {
+				if _, err := creativecontent.RequireGenerationReference(ctx, tx, source.ID); err != nil {
+					eligible = false
+					break
+				}
+			}
+		}
 		if !eligible {
 			revision := canvas.Revision
 			if execution.State == "queued" || execution.State == "running" || execution.State == "reconciling" {
@@ -69,22 +106,64 @@ func (s *ExecutionService) Publish(ctx context.Context, scope store.AccountScope
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if len(outputs) != 1 {
+		if len(outputs) < 1 || len(outputs) > 64 {
 			return creativeops.Outcome{}, ErrGraphIntegrity
 		}
 		refs := []VersionInput{}
-		for _, r := range inputs {
-			refs = append(refs, VersionInput{RevisionID: r.ID, Role: "reference"})
-		}
-		version, err := makeVersion(ctx, tx, n.ID, outputs[0].ID, "generation", creativegraph.Canonical(map[string]any{"prompt": execution.Prompt, "executor_version": execution.ExecutorVersion}), refs)
+		inputRows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id,role", "execution_id=$2 AND direction='input'", []store.OrderBy{{Column: "ordinal"}}, 64, 0, execution.ID)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		ordinal := 0
-		version.ExecutionID = &execution.ID
-		version.Ordinal = &ordinal
+		for inputRows.Next() {
+			var ref VersionInput
+			if err = inputRows.Scan(&ref.RevisionID, &ref.Role); err != nil {
+				inputRows.Close()
+				return creativeops.Outcome{}, err
+			}
+			refs = append(refs, ref)
+		}
+		inputRows.Close()
+		if err = inputRows.Err(); err != nil {
+			return creativeops.Outcome{}, err
+		}
+		if len(refs) != len(inputs) {
+			return creativeops.Outcome{}, ErrGraphIntegrity
+		}
 		after := cloneGraph(before)
-		after.Versions[version.ID] = version
+		// 原ordinal来自执行根；部分成功不能把后续输出重新编号。
+		ordinals := map[string]int{}
+		rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id,ordinal", "execution_id=$2 AND direction='output'", []store.OrderBy{{Column: "ordinal"}}, 64, 0, execution.ID)
+		if err != nil {
+			return creativeops.Outcome{}, err
+		}
+		for rows.Next() {
+			var id string
+			var ordinal int
+			if err = rows.Scan(&id, &ordinal); err != nil {
+				rows.Close()
+				return creativeops.Outcome{}, err
+			}
+			ordinals[id] = ordinal
+		}
+		rows.Close()
+		if err = rows.Err(); err != nil {
+			return creativeops.Outcome{}, err
+		}
+		var firstVersion string
+		for _, output := range outputs {
+			version, err := makeVersion(ctx, tx, n.ID, output.ID, "generation", creativegraph.Canonical(map[string]any{"prompt": execution.Prompt, "executor_version": execution.ExecutorVersion}), refs)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			ordinal := ordinals[output.ID]
+			version.ExecutionID = &execution.ID
+			version.Ordinal = &ordinal
+			after.Versions[version.ID] = version
+			result.RegisteredVersionIDs = append(result.RegisteredVersionIDs, version.ID)
+			if firstVersion == "" {
+				firstVersion = version.ID
+			}
+		}
 		applied := n.DataRevision == execution.TargetData && equalValue(creativegraph.Canonical(n.SelectedVersionID), creativegraph.Canonical(execution.Selected))
 		for _, r := range execution.ReadSet {
 			if r.Kind != "node" || r.DataRevision < 1 {
@@ -98,7 +177,8 @@ func (s *ExecutionService) Publish(ctx context.Context, scope store.AccountScope
 		if applied {
 			n.ContentID = &outputs[0].ContentID
 			n.ContentRevisionID = &outputs[0].ID
-			n.SelectedVersionID = &version.ID
+			n.SelectedVersionID = &firstVersion
+			fitMediaSize(&n, outputs[0])
 			after.Nodes[n.ID] = n
 			result.ApplyState = "applied"
 		} else {
@@ -113,7 +193,6 @@ func (s *ExecutionService) Publish(ctx context.Context, scope store.AccountScope
 			return creativeops.Outcome{}, err
 		}
 		result.Change = &change
-		result.RegisteredVersionIDs = append(result.RegisteredVersionIDs, version.ID)
 		if _, err = tx.Update(ctx, "creative_node_executions", "apply_state=$2,change_id=$3", "id=$4", result.ApplyState, change.ChangeID, execution.ID); err != nil {
 			return creativeops.Outcome{}, err
 		}

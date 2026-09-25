@@ -11,6 +11,7 @@ import (
 // 旧迁移的形状/回退验证先剥离新head，再继续验证原来的目标层。
 func rollbackGenerationLifecycle(t *testing.T, url string) {
 	t.Helper()
+	rollbackGenerationHandoff(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatalf("rollback generation-lifecycle: %v", err)
 	}
@@ -53,6 +54,7 @@ func TestGenerationLifecycleMigration(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO llm_generation_observations(account_id,id,attempt_id,event_key,evidence_digest,evidence_cipher,disposition,claim_epoch,created_at) VALUES ('a','e2','attempt','event','d2','cipher','conflict',1,now())`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackGenerationHandoff(t, url)
 	if err := store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "generation lifecycle") {
 		t.Fatalf("live task down guard: %v", err)
 	}

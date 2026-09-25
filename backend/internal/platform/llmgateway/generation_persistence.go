@@ -186,7 +186,20 @@ func (r *GenerationRuntime) RecordGenerationObservationInTx(ctx context.Context,
 			}
 		}
 		if current {
-			return r.markGenerationVerification(ctx, tx, c.RequestID, "conflicting_observation", now)
+			reason := "conflicting_observation"
+			// 已完成作品身份完全相同的矛盾只涉及费用证据，不撤销已有作品事实。
+			sameTask := e.Observation.TaskID == "" || task.taskDigest != nil && *task.taskDigest == generationTaskDigest(tx.AccountID(), task.deploymentID, e.Observation.TaskID)
+			// 新TaskID不是原任务的证明，尤其不能覆盖此前发现的其他attempt绑定冲突。
+			if task.state == GenerationCompleted && e.Observation.State == GenerationCompleted && sameTask {
+				same, err := r.compatibleGenerationOutputs(ctx, tx, c.AttemptID, e.Observation.Outputs)
+				if err != nil {
+					return err
+				}
+				if same {
+					reason = "conflicting_usage_observation"
+				}
+			}
+			return r.markGenerationVerification(ctx, tx, c.RequestID, reason, now)
 		}
 		return nil
 	}
@@ -411,10 +424,11 @@ func (r *GenerationRuntime) finishGenerationStage(ctx context.Context, tx store.
 
 // GenerationProgress 不含task定位/签名URL，结果就绪与费用、人工核实状态分别呈现。
 type GenerationProgress struct {
-	Request              RequestView
-	Outputs              []GenerationOutput
-	VerificationRequired bool
-	NextAdvanceAt        *time.Time
+	ResultVerificationRequired bool
+	Request                    RequestView
+	Outputs                    []GenerationOutput
+	VerificationRequired       bool
+	NextAdvanceAt              *time.Time
 }
 
 func (r *GenerationRuntime) GetGeneration(ctx context.Context, scope store.AccountScope, id string) (GenerationProgress, error) {
@@ -432,7 +446,7 @@ func (r *GenerationRuntime) GetGeneration(ctx context.Context, scope store.Accou
 			return err
 		}
 		out.Request = request.view(settlement)
-		if err := tx.QueryRow(ctx, "llm_generation_requests", "verification_required,next_advance_at", "request_id=$2", id).Scan(&out.VerificationRequired, &out.NextAdvanceAt); err != nil {
+		if err := tx.QueryRow(ctx, "llm_generation_requests", "verification_required,result_verification_required,next_advance_at", "request_id=$2", id).Scan(&out.VerificationRequired, &out.ResultVerificationRequired, &out.NextAdvanceAt); err != nil {
 			return err
 		}
 		rows, err := tx.QueryPage(ctx, "llm_generation_outputs", "projection", "request_id=$2 AND attempt_id IN (SELECT id FROM llm_attempts WHERE account_id=$1 AND request_id=$2 AND attempt_number=$3)", []store.OrderBy{{Column: "ordinal"}}, 64, 0, id, request.attemptsUsed)

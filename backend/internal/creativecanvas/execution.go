@@ -275,7 +275,7 @@ func GetNodeExecution(ctx context.Context, scope store.AccountScope, target Exec
 	return e, err
 }
 func executionRefs(ctx context.Context, tx store.TxAccountScope, id, direction string) ([]creativecontent.Revision, error) {
-	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction=$3", []store.OrderBy{{Column: "ordinal"}}, 51, 0, id, direction)
+	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction=$3", []store.OrderBy{{Column: "ordinal"}}, 64, 0, id, direction)
 	if err != nil {
 		return nil, err
 	}

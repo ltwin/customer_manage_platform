@@ -321,3 +321,24 @@ func TestVersionReuseSelectionCopyAndDeletionUndo(t *testing.T) {
 		t.Fatal("version restore reset identity or physical guard", versions, err)
 	}
 }
+
+func TestExecutionVersionPreservesInputRoles(t *testing.T) {
+	db, scope, runtime, svc, p, ids := executionFixture(t)
+	e, command := requestExecution(t, scope, runtime, svc, p, ids[2])
+	_, err := db.Exec(`UPDATE creative_execution_refs SET role=CASE ordinal WHEN 0 THEN 'first_frame' ELSE 'last_frame' END WHERE execution_id=$1 AND direction='input'`, e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := creativecanvas.ExecutionTarget{CanvasID: p.CanvasID, ExecutionID: e.ID}
+	raw, _ := json.Marshal(target)
+	if err = svc.Work(t.Context(), scope, jobs.Request{Kind: "canvas.node_execution", OperationID: command.OperationID, CreatedAt: time.Now(), Payload: raw}); err != nil {
+		t.Fatal(err)
+	}
+	versions, err := creativecanvas.ListNodeVersions(t.Context(), scope, p.CanvasID, ids[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(versions.Items) != 1 || len(versions.Items[0].Inputs) != 2 || versions.Items[0].Inputs[0].Role != "first_frame" || versions.Items[0].Inputs[1].Role != "last_frame" {
+		t.Fatal("version lost input roles", versions)
+	}
+}

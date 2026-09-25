@@ -1028,4 +1028,81 @@ Chat 的 RecoverExpired 明确只选 chat；其本地传输过期不能释放仍
 - **核实状态不能由普通事件清除**：正常历史事件重放以及新的正常事件都不能清除另一个事件造成的待核实状态或重开 due；普通阶段收尾只更新尚未处于待核实的请求，恢复必须显式调用受信 `ResumeVerificationInTx`。`TestGenerationRuntimeNormalEventCannotClearIndependentConflict` 覆盖两类事件及显式恢复。
 - **终态冲突不可被输出检查覆盖**：输出身份兼容检查只追加冲突，不消除先前判定的终态矛盾。`TestGenerationRuntimeCompletedCannotEraseTerminalConflict` 覆盖 cancelled/failed/rejected 之后出现 completed，证据持久隔离且重放幂等，不写作品、不登记矛盾费用。cancelled/failed 保持原业务状态；rejected 后待重试请求转 unknown 并撤回重试资格，避免当作未派发请求截止清理。迟到费用争议先将 released 结算重开，再按既有规则恢复原上界 hold；预算不足仍保留争议与未决结算，不能因 CHECK 约束丢证据。
 
-第三轮确认以上旧发现已解决，但发现 rejected 的反证不附带 Usage 时仍跳过费用争议。最终修复将「原未受理结论受到反驳」本身作为重开费用核实的证据，不依赖用量存在。`TestGenerationRuntimeRejectedContradictionWithoutUsageReopensSettlement` 覆盖预算充足/不足、重复送达及截止后保留；实际金额仍等待受信证据。此最终修复尚未独立复审，三轮上限后的继续审查等待 owner 裁决，不能据此宣称 G3 最终验收通过。
+第三轮确认以上旧发现已解决，但发现 rejected 的反证不附带 Usage 时仍跳过费用争议。最终修复将「原未受理结论受到反驳」本身作为重开费用核实的证据，不依赖用量存在。`TestGenerationRuntimeRejectedContradictionWithoutUsageReopensSettlement` 覆盖预算充足/不足、重复送达及截止后保留；实际金额仍等待受信证据。此最终修复尚未独立复审；owner 已明确选择不追加复审、继续 G4，保留该审查缺口，不据此宣称 G3 最终复审通过。
+
+## 23. G4 开工梳理：画布与媒体交接（2026-09-24，尚未实现）
+
+沿用 §19.9 G4 的范围与 GEN-03/04/05/11/12/13 验收；当前只完成接口调查，不把此节视为实现或验收结果。G3 基线为 `270921d`，最终独立复审缺口仍按 §22.5 处理。
+
+### 23.1 已核实接缝与归属
+
+| 当前源码 | G4 所需改动 |
+|---|---|
+| `creativecanvas.ExecutionObservation` 只有文本 Payload；Request 仅允许 core.text、至少两个文本输入与 30 秒期限 | 保留 internal.text-compose 的现有行为，为生成 driver 定义媒体/文本结果交接和相应受理路径；不把供应商 Adapter 直接注册为 NodeExecutor |
+| `creativecanvas.Publish` 要求恰好一个输出，并用独立发布 operation 保存回执 | 扩展为稳定 ordinal 的多结果登记，沿用版本与撤销语义；自动采用只尝试第一个成功输出，目标读集变化仍登记未采用历史，资格失效仅候选保留 |
+| `creativemedia.Service` 已有校验器、存储端口与上传配额；上传候选绑定 upload_id，节点上传校验会拒绝 active execution | 复用校验和对象存储原语，增加生成输出导入职责；不伪造上传会话、不经普通上传绑定入口覆盖正在执行的节点 |
+| `GenerationRuntime` 已持久化 task/输出与受保护定位，但未实现媒体 consumer 交接 | Gateway 提供受控读取输出和事务内交接端口；媒体及画布负责 ready 修订、候选/执行根，Gateway 不读取业务模块表 |
+
+### 23.2 实施边界与验证顺序
+
+1. 先落实输出交接与媒体导入：身份包含 account/request/attempt/output，网络读取与对象写入在事务外；短事务复核 lease/epoch、精确对象版本与摘要，再登记 ready 修订和候选根。URL 只作为受保护定位，禁止充当输出身份或公开作品地址。
+2. 取件限制沿 §6 与媒体配置落地：供应商白名单、地址和重定向检查、字节/类型/时长上限、有限重试；过期定位只能刷新同一输出。导入失败、数据库交接失败与进程重启都不能触发新的 Submit。
+3. 接上画布 driver 与最终业务守卫：受理先取得 Gateway 预锁，再核对画布、内容用途与外发同意；当前受理函数已先锁 canvas，不能在该锁之后直接调用 Gateway 准入。新增路径须明确受理、派发、取消、重试、核算、交接的实际锁链。
+4. 在同一事务保存 ready 修订、输出身份、候选/执行保留根与 consumer 水位。全部输出完成交接或明确转交受控保留后，才释放请求级 consumer；部分失败保持每项事实。费用结算继续独立。
+5. 扩展条件发布和恢复扫描，并用故障注入及双事务屏障覆盖多输出部分失败、交接回滚、重复/旧 epoch、目标编辑、取消/撤销与发布竞争、GC 根和配额一致性。跨包及迁移验证使用 `make check-go`，并运行相关 race 用例。
+
+必须修改的责任模块为 llmgateway、creativemedia、creativecanvas、生成组合根与增量迁移；需要验证 creativecontent 保留根/用途、媒体 GC/配额、Chat/Agent 账本与取消、River 恢复。仍待实现前调查的是各现有事务端口能否满足上述锁序、对象写入与数据库交接失败后的恢复协议。当前不改变公开 HTTP/OpenAPI，不注册商业模型；真实供应商接入与 FND-13 整体验收仍遵循 §19 及冻结 Epic 的资源要求。
+
+## 24. G4 实现切片：生成结果交接（2026-09-24）
+
+### 24.1 受信装配与受理
+
+`creativegeneration.Service` 是生成执行 driver，显式组合 G3 Runtime、媒体服务及每个部署的取件器。`Request` 接受服务端的 PreparedPolicyGeneration 和额度控制，公开 JSON 仅表示画布目标。它以 operation 回执优先，在同一事务预留预算、校验目标/Prompt/读集、创建执行及输入根、绑定 Gateway 请求、登记两个阶段的队列任务。配置 revision 与 G3 最终守卫保持有效；同 operation 重放不重新取价或新增请求。
+
+现有 `internal.text-compose` 及其入口保持原行为。生成 driver 用独立队列和绑定表恢复，默认不装入 server/worker 组合根，不新增公开 HTTP 接口，不登记商业模型。账号的 `node_generate_enabled` / `generation_apply_enabled` 现由已有能力表读取且默认 false；它们在最终派发/发布事务持共享行锁，与停用更新线性化。人工编辑的既有能力行为不变。
+
+### 24.2 取件、对象恢复和交接
+
+- `GenerationHTTPFetcher` 使用部署明确列出的 HTTPS 域名，仅 443；逐次解析并固定公网地址，拒绝私网、回环、保留/转换地址，不使用代理、不跟随重定向。URL、供应商 task 与网络原始错误不进入公开投影或任务错误日志。
+- 每次 driver 最多处理一个输出。媒体校验器按真实内容核验 MIME、字节、图片尺寸与媒体探测结果；生成音视频的时长上限由 `Config.GeneratedMaxDuration` 控制，默认 10 分钟。网络/对象阶段 4 分钟，导入和 driver lease 5 分钟，收尾另限 30 秒。
+- `creative_generation_imports` 持久化输出身份摘要、epoch、原图/展示图 blob、精确对象版本、验证事实、媒体配额预留与最终修订。存储写入之前预留包括展示图的实际字节；数据库交接失败保留预留及 stored 对象。恢复时复核精确对象版本和 SHA-256，不重新取件。写入结果未知的旧 blob 进入精确对象清理路径，不覆盖它；费用、对象配额与结果 consumer 各自独立。
+- URL 过期只调用同一 task 的 Observe 获取同一输出定位；新结果身份/MIME/大小或终态不一致拒绝。已有 stored 对象无需 URL 刷新。刷新本身不推进费用或任务终态，G3 证据链仍负责费用核实。
+- `HandoffOutputInTx` 先锁 Gateway 请求/consumer/output，callback 在同一事务保存 ready 修订、衍生权利和执行候选根，随后标记该输出交接。全部输出交接才释放请求级 consumer；空输出的确定终态在本地收尾后释放空结果保留，未决费用不因此结清。
+
+### 24.3 发布、部分成功和恢复
+
+稳定 attempt/output/ordinal 决定身份和顺序。发布沿用现有 operation 回执、版本和撤销机制，登记多个成功输出，只尝试采用第一个成功结果。目标或来源读集改变仍登记未采用版本；取消、节点删除、用途撤销、停用或到期使自动发布失效，已导入结果仅保留为 execution 候选，保留期自交接至少 90 天。
+
+driver 失败后轮换未交接输出，坏结果不阻挡其他作品导入；最多累计 5 次失败或 24 小时恢复窗口，之后持久停在 verification 状态，已有作品可按当时资格作为部分成功发布，未交接项保留 Gateway consumer。受信 `Resume` 只恢复导入调度；若部分成功已发布，迟到补入的结果只增加候选，不重放自动采用或重复版本。G3 自身的证据争议仍需它独立的核实入口。
+
+`SweepDue` 可补投递丢失或 discarded 的任务，并包括停用账号的既有任务。`RunRecovery` 供组合根持有生命周期，当前没有自动启用生产。0054 是加法迁移；存在执行绑定或导入证据时 down 明确拒绝，须先导出并排空。
+
+### 24.4 实际锁序和验证
+
+本仓库还有 `LockCreativeWrite` 账号级串行锁；`GenerationRuntimeConfig.Prelock` 将该锁放到涉及画布的生成路径最外层，避免「受理持账号写锁等 Gateway，派发持 Gateway 等账号写锁」的逆序。
+
+| 路径 | 锁顺序 |
+|---|---|
+| 受理 | operation → creative-write/账号 → Gateway group/部署门/预算/request → canvas/execution/content → binding/job |
+| 派发与重试 | creative-write → 账号 → G3 供应商/group/部署门/预算/request → 最终账号能力/画布/内容守卫 |
+| 画布取消 | operation → creative-write/账号 → canvas/execution；driver 后续在独立事务记录 Gateway 取消，不持画布锁反向调用预算 |
+| 观察与核算 | 保留 G3 的供应商/部署门/预算/request/task 顺序，不回调画布 |
+| 输出交接 | creative-write → request/consumer/output → binding epoch → library/canvas/execution → import/配额/blob/content |
+| 条件发布 | operation → creative-write/账号 → 部署门/request → binding epoch → canvas/execution/content |
+
+数据库集成覆盖双输出文本/图片、受理回执故障整体回滚、同键并发、跨账号拒绝、生成开关撤销、对象已保存但交接回滚、部分失败保留 consumer、显式导入恢复、取消与发布竞争、节点编辑冲突、队列补投递。取件器另有地址/URL拒绝测试。最新验证与独立审查状态见 Epic work；本节不替代真实供应商及 FND-13 整体验收。
+
+### 24.5 独立审查修复
+
+首轮完整 G4 审查发现四项边界问题，全部有失败回归后修复：
+
+- 组合根将当前权限撤销、内容不可用、目标/来源读集冲突等已知业务拒绝映射为 Gateway 可识别的 `ErrCapability` / `ErrConflict`，使未派发预留原子释放；存储、上下文等未知错误不转换成明确拒绝。
+- 新增 `result_verification_required` 区分作品证据隔离与原供应商/费用核实。仅费用 Observe 失败、缺失用量，或已完成的同身份同输出发生用量证据冲突，不阻挡作品交接/条件发布；真正的 task、终态、输出身份冲突继续隔离。既有冲突在迁移时保守回填，普通事件不能清除隔离，只有显式受信核实恢复可以解除。输出交接不改变费用 hold 或已计金额。
+- driver 达到上限先撤回未派发许可、释放其预算；已经派发或受理未知时继续独立核算并保留 consumer。无结果且未终态导致无法发布/消费时，仍持久保存 verification/停驻状态，执行呈 reconciling，不能卡在 failures=4 无限重试。停驻未派发请求不会在名额恢复后自动收费；`Resume` 不重发已撤回请求，需要新的显式 operation 才能重新生成。
+- 版本输入按执行根的 ordinal 与原始 role 登记，`first_frame` / `last_frame` 等不再改写成 reference；历史 Prompt 复用沿用原角色。
+
+定向证据：`/tmp/g4-r2-red.log` 复现四项；修复后 `/tmp/g4-r2-green.log`、`/tmp/g4-r2-race.log` 通过。完整门禁和同 reviewer 复审结论由 Epic work 记录。
+
+第二轮确认上述四项已解决，并补充任务身份碰撞边界：原同步完成未返回 TaskID，后续观察携带另一 attempt 的 TaskID 时，即便输出投影相同也必须保留结果隔离。纯费用分类只接受未声明新任务身份或与原已绑定任务一致的观察；`TestGenerationHandoffNewTaskCollisionMustIsolateResult` 覆盖该碰撞，不能以 taskDigest 为空当作任意任务身份可兼容。
+
+最终受控验收：第三轮独立 change review 通过，历轮五项发现全部解决，无新增 blocking/important；最终 `make check-go`（46 个测试包、build、lint）及专项 race 通过。审查目标与证据记录在 Epic work。该结论不覆盖真实供应商调用、生产启用或 FND-13 整体验收。

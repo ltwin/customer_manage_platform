@@ -65,12 +65,15 @@ type GenerationRuntimeConfig struct {
 	ProtectionKey []byte
 	Adapters      []GenerationAdapterRegistration
 	Guard         GenerationGuard
+	// Prelock只取得调用方外层事务锁，不读取供应商或执行网络。
+	Prelock func(context.Context, store.TxAccountScope) error
 }
 
 type GenerationRuntime struct {
 	gateway  *Service
 	adapters map[string]GenerationAdapterRegistration
 	guard    GenerationGuard
+	prelock  func(context.Context, store.TxAccountScope) error
 	cipher   cipher.AEAD
 	runtime  jobs.Runtime
 }
@@ -87,7 +90,7 @@ func NewGenerationRuntime(cfg GenerationRuntimeConfig) (*GenerationRuntime, erro
 	if err != nil {
 		return nil, err
 	}
-	r := &GenerationRuntime{gateway: cfg.Gateway, guard: cfg.Guard, cipher: aead, adapters: make(map[string]GenerationAdapterRegistration)}
+	r := &GenerationRuntime{gateway: cfg.Gateway, guard: cfg.Guard, prelock: cfg.Prelock, cipher: aead, adapters: make(map[string]GenerationAdapterRegistration)}
 	for _, a := range cfg.Adapters {
 		key := a.DeploymentID + "/" + a.Version
 		if !generationToken(a.DeploymentID) || !generationToken(a.Version) || a.LimitKey == "" || len(a.LimitKey) > 120 || a.Concurrency < 1 || a.RateLimit < 1 || a.Adapter == nil {
@@ -197,6 +200,9 @@ func (r *GenerationRuntime) checkDeployment(ctx context.Context, tx store.TxAcco
 // PrepareInTx 原子复用G2准入、最终业务守卫与队列登记。纯G2请求没有control_revision，
 // 不会被恢复扫描器擅自派发；只有本入口受理的请求进入G3。
 func (r *GenerationRuntime) PrepareInTx(ctx context.Context, tx store.TxAccountScope, in GenerationAdmission, expectedRevision int64) (RequestView, error) {
+	if err := r.prelockCaller(ctx, tx); err != nil {
+		return RequestView{}, err
+	}
 	if expectedRevision < 1 || r.runtime == nil {
 		return RequestView{}, ErrValidation
 	}
@@ -257,7 +263,7 @@ func (r *GenerationRuntime) ResumeVerificationInTx(ctx context.Context, tx store
 	if _, err := tx.Update(ctx, "llm_generation_tasks", "failures=0,recovery_until=$4", "request_id=$2 AND (lease_until IS NULL OR lease_until<=$3)", requestID, r.gateway.now().UTC(), r.gateway.now().UTC().Add(generationRecoveryWindow)); err != nil {
 		return err
 	}
-	if _, err := tx.Update(ctx, "llm_generation_requests", "verification_required=FALSE,next_advance_at=$3", "request_id=$2 AND control_revision>0", requestID, r.gateway.now().UTC()); err != nil {
+	if _, err := tx.Update(ctx, "llm_generation_requests", "verification_required=FALSE,result_verification_required=FALSE,next_advance_at=$3", "request_id=$2 AND control_revision>0", requestID, r.gateway.now().UTC()); err != nil {
 		return err
 	}
 	return r.enqueue(ctx, tx, requestID)
@@ -270,4 +276,11 @@ func (r *GenerationRuntime) ResolveDeploymentBlockInTx(ctx context.Context, tx s
 	}
 	_, err := tx.Delete(ctx, "llm_generation_deployment_blocks", "deployment_id=$2", deploymentID)
 	return err
+}
+
+func (r *GenerationRuntime) prelockCaller(ctx context.Context, tx store.TxAccountScope) error {
+	if r.prelock != nil {
+		return r.prelock(ctx, tx)
+	}
+	return nil
 }

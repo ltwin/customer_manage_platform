@@ -3,8 +3,8 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: G3实现与三轮审查修复已落地；最终修复验证后待owner裁决追加复审，尚不宣称验收通过；生产派发关闭、G4未开始。
-blocked_by: owner-review-round-limit
+next_action: G4受控实现、全量门禁和三轮独立审查已完成；等待owner验收及本切片提交授权。FND-13真实供应商接入/生产装配仍未验收，不自动推进。
+blocked_by: none
 item_progression: per-item
 milestone_commit: manual
 remote_publish: manual
@@ -1532,3 +1532,31 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 
 - Owner 明确要求“先提交现有改动”，随后要求开启下一 feature；恢复现场确认此前提交因中断尚未执行，本次提交完整 G3 实现、三轮修复及最终有界修复、0053 迁移、测试与文档。
 - 提交沿用上述全量基线和最终网关门禁/race 结果，正常执行 hooks；该快照提交不代表最终独立复审通过，也不改变生产派发关闭状态。G4 对应 §19.9 画布与媒体交接，先梳理接口；额外复审仍待 owner 明确裁决。
+
+### 2026-09-24 · G4 开工准备
+
+- 按 owner 的“接下来开启下一个feature”在既有工作区继续，G3 当前快照已提交为 `270921d`。G4 尚无提交授权。
+- 接口梳理落入模块 §23：文本执行器/单输出发布、生成输出 consumer、媒体上传与生成导入的不同身份，以及 Gateway 预锁与画布锁的接线顺序。未新增产品代码或迁移，不宣称 G4 已实现。
+- 图谱 Verify：工作区项目 generation `2026-09-04T15:47:38Z`；相关符号搜索 total=0/has_more=false，候选文件 coverage 为 not_tracked，按精确源码回退核验。没有把旧图谱空结果作为缺少功能的证据。
+- G3 三轮上限后的追加复审授权已向 owner 发问；等待期间只完成提交及 G4 独立准备，不开启第四轮复审或宣称 G3 已通过。生产派发仍关闭。
+
+### 2026-09-24 · G4 实现与验证
+
+- Owner 明确答复“不需要了，继续吧”，接受 G3 最终修复未追加复审的现状并授权推进 G4；不把该决定记为 G3 复审通过。沿用既有工作区，本次 G4 没有提交或远端发布授权。
+- 新增 creativegeneration driver、Gateway 输出交接/定位刷新、媒体受控取件与持久导入、画布生成受理与多版本发布、0054 绑定/导入迁移。具体合同、真实锁链、恢复窗口与受控装配见模块 §24。
+- 实现中确认账号级 creative-write 锁参与所有画布写入；通过 Runtime.Prelock 在 Gateway 派发与业务交接外层取得它，避免与受理的 Gateway 预锁形成逆序。媒体原图/展示图在对象写入前预留实际空间，ready 修订/配额/执行根/consumer 同事务交接。
+- 专项真实数据库回归覆盖受理事务回滚、同键并发、跨账号、取消候选、目标编辑、双输出部分失败、stored 对象交接重试、显式恢复、队列修复；专项 race 通过（`/tmp/g4-race-final.log`）。没有调用真实供应商。
+- 首轮全量 build/lint 通过，store 的旧迁移回退序列漏算 0054，导致 9 个旧迁移断言失败（`/tmp/g4-check-go.log`）；补齐命名回退列表与新 head helper 后单包复跑，随后进行最终全量门禁。新迁移 live evidence 回退拒绝测试与 clean migration 回退分别使用隔离数据库，避免把预期失败留下的 dirty 版本当作成功路径继续。
+- G4 独立 change review 将使用 fresh 宿主 reviewer、显式 gpt-6-astra/high；无可调用异构 provider 工具，Paseo 偏好文件不存在，回退同构。G3 reviewer 不参与本阶段；冻结目标及终态报告在完成后补充。
+
+- G4 Round 1：完整冻结 patch `/tmp/g4-review-r1.patch` SHA256 `423ab8b58e053ec48640f11e0a42768e210d419c536a3860222cb4172fe26aa3`，31 文件 manifest 无漂移。fresh reviewer `/root/g4_review` 返回 4 blocking：业务拒绝错误未映射、费用核实阻挡输出、非终态无法停驻、版本输入 role 丢失。原全量 `make check-go` exit 0（`/tmp/g4-final-check-go.log`）未覆盖这些边界，不作为它们的正确性证明。
+- Round 1 修复见模块 §24.5；三个 reviewer PostgreSQL overlay 场景转正式测试，另增版本角色回归，修复前四项真实失败（`/tmp/g4-r2-red.log`）。修复后定向集成通过，G3完整生命周期及G4发现回归的 race 通过（`/tmp/g4-r2-race.log`）；新增费用证据矛盾与真正输出矛盾的对照回归，核对未知费用 hold 不随作品交接变化。
+- 新输出核实标志通过 0054 加法迁移引入；旧 G3 已有冲突保守回填、受信 Resume 同时解除。停驻先撤回未派发资格，非终态 consumer 不会被伪释放；其结果恢复仍需受信核实。正在进行修复后的全量门禁与同 reviewer Round 2。
+
+- G4 Round 2 完整冻结 patch `/tmp/g4-review-r2.patch` SHA256 `c088fed4db6cbe070066e620a5b6084c05d7eb4956dd2ecca899976949597272`，33 文件无漂移。原 reviewer 确认前四项 resolved；新增 1 blocking：无 TaskID 的同步完成后，新收到已属于另一 attempt 的 TaskID，被同输出分支误归为纯费用冲突。通过只读 overlay 复现（`/tmp/g4-r2-review-overlay.log`）。
+- Round 2 全量 build/lint 通过；dataexport 与 package 两包在 TestMain 的 PostgreSQL 容器启动阶段出现 Docker inspect/映射端口 context deadline exceeded，其他包（含 store/Gateway/G4）通过，没有业务断言红灯。两个失败包分别串行复跑三轮均绿（`/tmp/g4-r2-docker-retry-{1,2,3}.log`），不把失败的全量记为通过，最终仍复跑全量。
+- Round 3 修复只收紧任务身份兼容判断：新增非空 TaskID 必须匹配已绑定任务，不能用旧 taskDigest 为空绕过冲突。复现场景纳入正式回归，修复前红灯 `/tmp/g4-r3-red.log`；修复后进行 Gateway/G4 专项 race 与最终全量门禁，随后同 reviewer 最后一轮完整复审。
+
+- G4 Round 3 最终完整冻结 patch `/tmp/g4-review-r3.patch` SHA256 `af19ea000ca83967e4f3546da412e841d0d10182138f4d41d1625f9cf5ad4b5f`，33 文件 manifest 与暂存区一致。同 reviewer 终态“通过，可合”：历轮 5 项全部 resolved，无新增 blocking/important/nit；未开启第 4 轮。
+- 最终 `make check-go` exit 0（`/tmp/g4-r3-check-go.log`）：后端 build、lint 0 issues、46 个测试包全部通过；此前两个容器启动失败包在本轮也通过。最终 Gateway/G4 专项 race 通过（`/tmp/g4-r3-race.log`），代码差异空白检查通过。审查期间工作区无漂移，报告后仅补本记录及模块验收状态。
+- 本切片的受控合同已实现和验证；长期契约归入模块 §24，未新建 lesson。G4 改动已暂存供检查，未经本切片提交授权没有创建 commit；HEAD 仍为 G3 `270921d`，没有推送。真实商业模型、生产组合根和 FND-13 四类真实生成验收仍未完成，Epic 不标整体完成。
