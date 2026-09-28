@@ -1,0 +1,94 @@
+/* v6 设计 token：近黑中性、层级靠亮度与细线，白色是唯一主操作色。 */
+:root {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --dot: rgba(255, 255, 255, 0.075);
+  --s1: #151516; /* 节点 */
+  --s2: #1b1b1d; /* 浮层 */
+  --s3: #252527; /* hover / chip */
+  --s4: #2f2f32; /* pressed */
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --line-3: rgba(255, 255, 255, 0.2);
+  --fg: #ededee;
+  --fg-2: #a1a1a7;
+  --fg-3: #6d6d73;
+  --primary: #f4f4f5;
+  --on-primary: #0b0b0c;
+  --run: #e2a453;
+  --ok: #7bcf9b;
+  --danger: #ef7a70;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --shadow: 0 0 0 1px var(--line-2), 0 16px 40px -12px rgba(0, 0, 0, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  --font: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  background: var(--bg); color: var(--fg); font: 13px/1.5 var(--font);
+  -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; background: none; border: 0; padding: 0; }
+button:disabled { cursor: default; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.i { display: inline-flex; width: 16px; height: 16px; flex: none; }
+.i svg { width: 100%; height: 100%; }
+[hidden] { display: none !important; }
+
+.icon-btn {
+  display: inline-grid; place-items: center; width: 32px; height: 32px;
+  border-radius: var(--r-sm); color: var(--fg-2);
+  transition: background 0.12s, color 0.12s;
+}
+.icon-btn:hover { background: var(--s3); color: var(--fg); }
+.icon-btn[aria-pressed='true'] { background: var(--s4); color: var(--fg); }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+  border-radius: var(--r-sm); background: var(--s3); color: var(--fg); font-weight: 500;
+}
+.btn:hover { background: var(--s4); }
+.btn-primary { background: var(--primary); color: var(--on-primary); }
+.btn-primary:hover { background: #fff; }
+.send {
+  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  background: var(--primary); color: var(--on-primary); transition: opacity 0.12s, transform 0.12s;
+}
+.send:hover:not(:disabled) { transform: scale(1.05); }
+.send:disabled { background: var(--s4); color: var(--fg-3); }
+.send .i { width: 16px; height: 16px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 8px;
+  border-radius: var(--r-sm); color: var(--fg-2); font-size: 12px; white-space: nowrap;
+}
+.chip:hover, .chip[aria-expanded='true'] { background: var(--s3); color: var(--fg); }
+.chip .i { width: 14px; height: 14px; }
+.chip .chev { width: 12px; height: 12px; opacity: 0.6; }
+kbd {
+  font: 11px var(--font); color: var(--fg-3); padding: 1px 5px;
+  border: 1px solid var(--line-2); border-radius: 4px;
+}
+
+.tip {
+  position: fixed; z-index: 100; pointer-events: none; padding: 4px 8px;
+  border-radius: 6px; background: #000; color: var(--fg); font-size: 12px;
+  box-shadow: 0 0 0 1px var(--line-2); white-space: nowrap;
+}
+.tip kbd { margin-left: 6px; }
+.toast {
+  position: fixed; left: 50%; bottom: 24px; z-index: 90; translate: -50% 0;
+  padding: 8px 14px; border-radius: 999px; background: var(--s2); box-shadow: var(--shadow);
+  font-size: 13px; animation: rise 0.2s var(--ease);
+}
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

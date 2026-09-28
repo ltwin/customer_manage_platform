@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0c0c0d" />
+    <title>九月，向海而行 · 创意空间</title>
+    <link rel="icon" href="../v4/mark.svg" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="shell.css" />
+    <link rel="stylesheet" href="nodes.css" />
+    <link rel="stylesheet" href="composer.css" />
+    <link rel="stylesheet" href="panels.css" />
+  </head>
+  <body>
+    <main id="stage" class="stage" aria-label="画布">
+      <div id="world" class="world">
+        <svg id="edges" class="edges" aria-hidden="true"></svg>
+        <div id="nodes"></div>
+      </div>
+      <div id="marquee" class="marquee" hidden></div>
+    </main>
+
+    <div id="overlay" class="overlay"></div>
+
+    <header class="chrome tb-left">
+      <button class="icon-btn" id="back" aria-label="返回创意空间"></button>
+      <button class="project-btn" id="project">
+        <span id="project-name">九月，向海而行</span><span class="i chev"></span>
+      </button>
+      <span class="proto-tag">v6 原型</span>
+    </header>
+
+    <div class="tb-right">
+      <span class="credits" title="剩余点数"><span class="i" data-i="circle"></span>1,280</span>
+      <button class="chrome text-btn" id="agent-toggle" aria-pressed="false">
+        <span class="i" data-i="panel-right-open"></span>助手
+      </button>
+      <span class="avatar" aria-label="账号">S</span>
+    </div>
+
+    <nav class="chrome rail" aria-label="画布工具">
+      <button class="rail-btn add" id="tool-add" aria-label="添加节点" title="添加节点"></button>
+      <span class="rail-sep"></span>
+      <button class="rail-btn" data-tool="select" aria-label="选择 V" title="选择 V"></button>
+      <button class="rail-btn" data-tool="hand" aria-label="平移 H" title="平移 H"></button>
+      <span class="rail-sep"></span>
+      <button class="rail-btn" id="assets-toggle" aria-label="资产库" title="资产库" aria-pressed="false"></button>
+      <button class="rail-btn" id="help" aria-label="快捷键" title="快捷键"></button>
+    </nav>
+
+    <aside id="assets" class="drawer" aria-label="资产库" hidden></aside>
+    <aside id="agent" class="agent" aria-label="创作助手" hidden></aside>
+
+    <div class="chrome zoombar" id="zoombar"></div>
+    <canvas id="minimap" class="chrome minimap" width="200" height="128" hidden></canvas>
+
+    <div id="lightbox" class="lightbox" hidden></div>
+    <script type="module" src="app.mjs"></script>
+  </body>
+</html>
