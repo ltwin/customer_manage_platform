@@ -48,7 +48,7 @@ func AdmitGenerationInTx(ctx context.Context, tx store.TxAccountScope, in Reques
 	if !ok {
 		return NodeExecution{}, ErrNotFound
 	}
-	if n.TypeKey != "core."+spec.Kind || n.DataRevision != in.ExpectedDataRevision || n.ActiveExecutionID != nil {
+	if n.TypeVersion != 1 || n.TypeKey != "core."+spec.Kind || n.DataRevision != in.ExpectedDataRevision || n.ActiveExecutionID != nil {
 		return NodeExecution{}, ErrVersionConflict
 	}
 	p, err := readPrompt(ctx, tx, canvas.ID, n.ID)

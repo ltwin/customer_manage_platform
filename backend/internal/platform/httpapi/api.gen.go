@@ -1085,6 +1085,54 @@ func (e CreativeFoundationCapabilitiesSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for CreativeGenerationModelKind.
+const (
+	CreativeGenerationModelKindAudio CreativeGenerationModelKind = "audio"
+	CreativeGenerationModelKindImage CreativeGenerationModelKind = "image"
+	CreativeGenerationModelKindText  CreativeGenerationModelKind = "text"
+	CreativeGenerationModelKindVideo CreativeGenerationModelKind = "video"
+)
+
+// Valid indicates whether the value is a known member of the CreativeGenerationModelKind enum.
+func (e CreativeGenerationModelKind) Valid() bool {
+	switch e {
+	case CreativeGenerationModelKindAudio:
+		return true
+	case CreativeGenerationModelKindImage:
+		return true
+	case CreativeGenerationModelKindText:
+		return true
+	case CreativeGenerationModelKindVideo:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeGenerationParameterType.
+const (
+	Boolean CreativeGenerationParameterType = "boolean"
+	Integer CreativeGenerationParameterType = "integer"
+	Number  CreativeGenerationParameterType = "number"
+	String  CreativeGenerationParameterType = "string"
+)
+
+// Valid indicates whether the value is a known member of the CreativeGenerationParameterType enum.
+func (e CreativeGenerationParameterType) Valid() bool {
+	switch e {
+	case Boolean:
+		return true
+	case Integer:
+		return true
+	case Number:
+		return true
+	case String:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeGraphObjectResultKind.
 const (
 	CreativeGraphObjectResultKindEdge    CreativeGraphObjectResultKind = "edge"
@@ -2842,25 +2890,25 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsKind.
 const (
-	ListCreativeAssetsParamsKindAudio ListCreativeAssetsParamsKind = "audio"
-	ListCreativeAssetsParamsKindImage ListCreativeAssetsParamsKind = "image"
-	ListCreativeAssetsParamsKindLink  ListCreativeAssetsParamsKind = "link"
-	ListCreativeAssetsParamsKindText  ListCreativeAssetsParamsKind = "text"
-	ListCreativeAssetsParamsKindVideo ListCreativeAssetsParamsKind = "video"
+	Audio ListCreativeAssetsParamsKind = "audio"
+	Image ListCreativeAssetsParamsKind = "image"
+	Link  ListCreativeAssetsParamsKind = "link"
+	Text  ListCreativeAssetsParamsKind = "text"
+	Video ListCreativeAssetsParamsKind = "video"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsKind enum.
 func (e ListCreativeAssetsParamsKind) Valid() bool {
 	switch e {
-	case ListCreativeAssetsParamsKindAudio:
+	case Audio:
 		return true
-	case ListCreativeAssetsParamsKindImage:
+	case Image:
 		return true
-	case ListCreativeAssetsParamsKindLink:
+	case Link:
 		return true
-	case ListCreativeAssetsParamsKindText:
+	case Text:
 		return true
-	case ListCreativeAssetsParamsKindVideo:
+	case Video:
 		return true
 	default:
 		return false
@@ -4252,6 +4300,36 @@ type CreativeFoundationCapabilities struct {
 // CreativeFoundationCapabilitiesSchemaVersion defines model for CreativeFoundationCapabilities.SchemaVersion.
 type CreativeFoundationCapabilitiesSchemaVersion int
 
+// CreativeGenerationCatalog defines model for CreativeGenerationCatalog.
+type CreativeGenerationCatalog struct {
+	DisabledReason string                    `json:"disabled_reason"`
+	Models         []CreativeGenerationModel `json:"models"`
+}
+
+// CreativeGenerationModel defines model for CreativeGenerationModel.
+type CreativeGenerationModel struct {
+	ConfigurationRevision string                        `json:"configuration_revision"`
+	Key                   string                        `json:"key"`
+	Kind                  CreativeGenerationModelKind   `json:"kind"`
+	Label                 string                        `json:"label"`
+	Parameters            []CreativeGenerationParameter `json:"parameters"`
+}
+
+// CreativeGenerationModelKind defines model for CreativeGenerationModel.Kind.
+type CreativeGenerationModelKind string
+
+// CreativeGenerationParameter defines model for CreativeGenerationParameter.
+type CreativeGenerationParameter struct {
+	Key      string                          `json:"key"`
+	Label    string                          `json:"label"`
+	Options  []string                        `json:"options"`
+	Required bool                            `json:"required"`
+	Type     CreativeGenerationParameterType `json:"type"`
+}
+
+// CreativeGenerationParameterType defines model for CreativeGenerationParameter.Type.
+type CreativeGenerationParameterType string
+
 // CreativeGraphAction defines model for CreativeGraphAction.
 type CreativeGraphAction struct {
 	union json.RawMessage
@@ -4759,7 +4837,8 @@ type CreativeReplaceContentPayloadType string
 
 // CreativeRequestExecutionPayload defines model for CreativeRequestExecutionPayload.
 type CreativeRequestExecutionPayload struct {
-	ActionKey string `json:"action_key"`
+	ActionKey             string `json:"action_key"`
+	ConfigurationRevision string `json:"configuration_revision"`
 
 	// DraftRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	DraftRevision CreativeRevision `json:"draft_revision"`
@@ -8774,6 +8853,9 @@ type ServerInterface interface {
 	// (GET /creative/canvases/{id}/executions/{execution_id})
 	GetCreativeNodeExecution(c *gin.Context, id string, executionId string)
 
+	// (GET /creative/canvases/{id}/nodes/{node_id}/generation-catalog)
+	GetCreativeNodeGenerationCatalog(c *gin.Context, id string, nodeId string)
+
 	// (GET /creative/canvases/{id}/nodes/{node_id}/versions)
 	ListCreativeNodeVersions(c *gin.Context, id string, nodeId string)
 	// 查询当前已实现的创意能力；地基阶段不开放业务动作
@@ -10881,6 +10963,42 @@ func (siw *ServerInterfaceWrapper) GetCreativeNodeExecution(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeNodeExecution(c, id, executionId)
+}
+
+// GetCreativeNodeGenerationCatalog operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeNodeGenerationCatalog(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "node_id" -------------
+	var nodeId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "node_id", c.Param("node_id"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter node_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeNodeGenerationCatalog(c, id, nodeId)
 }
 
 // ListCreativeNodeVersions operation middleware
@@ -14111,6 +14229,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/canvases/:id/events", wrapper.WatchCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/executions", wrapper.RequestCreativeNodeExecution)
 	router.GET(options.BaseURL+"/creative/canvases/:id/executions/:execution_id", wrapper.GetCreativeNodeExecution)
+	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/generation-catalog", wrapper.GetCreativeNodeGenerationCatalog)
 	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)

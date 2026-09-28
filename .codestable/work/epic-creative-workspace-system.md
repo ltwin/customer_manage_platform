@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: G4受控实现、全量门禁和三轮独立审查已完成；等待owner验收及本切片提交授权。FND-13真实供应商接入/生产装配仍未验收，不自动推进。
+next_action: G4已提交916d1ec；配置与产品入口受控切片及Agent面板反馈/暗色修复已完成，owner已授权提交现有代码。真实供应商/独立附件/外发同意交互仍待接入，不自动推进。
 blocked_by: none
 item_progression: per-item
 milestone_commit: manual
@@ -1560,3 +1560,29 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 - G4 Round 3 最终完整冻结 patch `/tmp/g4-review-r3.patch` SHA256 `af19ea000ca83967e4f3546da412e841d0d10182138f4d41d1625f9cf5ad4b5f`，33 文件 manifest 与暂存区一致。同 reviewer 终态“通过，可合”：历轮 5 项全部 resolved，无新增 blocking/important/nit；未开启第 4 轮。
 - 最终 `make check-go` exit 0（`/tmp/g4-r3-check-go.log`）：后端 build、lint 0 issues、46 个测试包全部通过；此前两个容器启动失败包在本轮也通过。最终 Gateway/G4 专项 race 通过（`/tmp/g4-r3-race.log`），代码差异空白检查通过。审查期间工作区无漂移，报告后仅补本记录及模块验收状态。
 - 本切片的受控合同已实现和验证；长期契约归入模块 §24，未新建 lesson。G4 改动已暂存供检查，未经本切片提交授权没有创建 commit；HEAD 仍为 G3 `270921d`，没有推送。真实商业模型、生产组合根和 FND-13 四类真实生成验收仍未完成，Epic 不标整体完成。
+
+
+### 2026-09-25 · G4提交与配置/产品入口开工
+
+- Owner授权“提交之后进入下一步”；已正常提交全部G4为`916d1ec`，未推送。此授权不沿用到新切片提交。
+- 新切片依据模块§10第四步与node-generation契约，当前设计与边界归入模块§25。复用草稿/图操作/持久队列，新增模型目录和公共生成编排；空目录是正常可读状态，不以内部合成或契约桩代替真实供应商。
+- 风险事实：公开提交持有收费准入身份、旧操作重放不能受配置更新影响；增加数据库幂等/隔离回归、生成契约漂移检查与独立change review。没有另开worktree或修改永久Epic。
+- 首次完整`make check-go`通过构建、lint和46测试包（`/tmp/g5-check-go.log`）；之后增量为类型版本守卫及产品回滚测试。专项race通过creativegeneration，creativecanvas的该名称过滤未命中测试，不将其计为画布race覆盖。最终前端388测试、构建/lint及generate-check通过。一次多包PKG调用被Make解释为额外target失败，后续使用完整门禁复核，不把该命令记为通过。
+- 浏览器契约桩走查通过：一次生成、保存重开、预览无写入、采用具名命令、无模型保留草稿；桌面面板宽368px、390px窄屏宽314px、无pageerror（`/tmp/g5-browser.log`），截图`/tmp/g5-{desktop,mobile}.png`。最初面板被资产库遮挡已改为浮层并收紧可视边界。
+- 独立change review使用宿主collaboration fresh reviewer、gpt-6-astra/high；已发现当前创建/管理能力，没有可调用异构provider候选，Paseo偏好文件不存在，回退同构。目标为本次完整暂存差异，review返回前冻结工作树。
+
+- 产品入口Round 1：完整patch `/tmp/g5-review-r1.patch` SHA256 `dec39a5b18635fe5904f916b6faa35258490aeec6530a09f82f827f170385e29`，23文件无漂移。fresh `/root/g5_review` 终态需修改：B1明确配置冲突锁死队列，B2桌面溢出/手机助手遮挡，I1重复预览卡加载，I2复合种类误通过构造器。未提交该候选。
+- 四项修复落入模块§25.4。队列和枚举正式测试先红后绿（`/tmp/g5-r2-{front,go}-red.log`）；浏览器桌面/手机实际点击、重复预览通过（`/tmp/g5-r2-browser-{desktop,mobile}.log`），原交互e2e补新端点桩后全部通过（`/tmp/g5-r2-existing-interaction.log`）。原桩缺新端点引起崩溃和Prompt浮层占用旧拖动点分开处理，没有删除行为断言。
+- 修复前最终完整后端46包/lint通过（`/tmp/g5-final-full-go.log`）；修复后product专项race通过（`/tmp/g5-r2-race.log`）。增量后端仅creativegeneration构造校验及测试，按包补门禁；前端补完整门禁和生成漂移，再冻结完整候选交同reviewer Round2。
+
+- Round 2完整候选 `/tmp/g5-review-r2.patch` SHA256 `5a38e0a634d9e5f81099ce2a00e035c221b2b5686258b48a6ff29ce726f0f680`，25文件无漂移。同reviewer终态“通过，可合”：B1/B2/I1/I2全部resolved，无新增blocking/important/nit。没有第三轮或另换reviewer。
+- 最终验证：`make check-frontend`（389测试、build/lint）与`make generate-check`均exit0；`make check-go PKG=./internal/creativegeneration/...`全后端build、包lint和全包测试exit0，product race通过。46包全量基线 `/tmp/g5-final-full-go.log` 仍适用其余未变后端；不把包门禁冒称又跑了全后端测试。
+- 受控产品入口切片完成；长期契约与修复归模块§25，未创建lesson。审查后仅补本记录及模块验收记录，代码未变。25文件暂存供owner检查，未创建本切片commit，HEAD仍916d1ec，无远端推送；FND-13整体及生产启用仍未完成。
+
+### 2026-09-28 · 产品入口与 Agent 面板提交授权
+
+- Owner 明确要求「先提交现有代码」，范围包含此前暂存的配置与产品入口切片及本会话的 Agent 面板修复；不包含推送、合并或生产启用。
+- Agent 面板修复：新建按钮增加可见文字，统一消费工作台暗色变量（包括悬停态）；正常在途显示创建/提交进度，成功提示已创建，仅未知结果保留确认原操作入口。原操作身份、外发同意和恢复协议未改变。视觉与交互约定同步 DESIGN.md、UX-CONTRACT.md。
+- 浏览器隔离复现先红后绿：在途不再误报待确认；成功后选中会话并提示；断网后恢复使用同一操作编号。桌面及390px窄屏均检查通过，新建按钮文字对比度约12.4:1，无横向溢出，原生选择菜单为暗色。临时验证页已删除，未调用付费模型。截图及日志保留于 /tmp/agent-panel-*。
+- 最终 make check-frontend exit 0（389项测试、构建与lint），git diff --check 通过。通用UI审计本次面板无发现；其余两项为既有 InlineNodeEditor / NodeGenerationPanel 的 textarea resize 提示，未扩展修改范围。
+- 提交前对照产品入口 Round2 manifest：23个代码/契约/测试文件无漂移，沿用已记录的后端全量基线、增量包门禁和独立审查；本次补生成漂移检查及完整lint。当前仓库没有安装pre-commit hook，因此显式执行make lint，不使用跳过验证参数。

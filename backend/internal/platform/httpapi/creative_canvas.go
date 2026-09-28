@@ -12,12 +12,14 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
+	gw "github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -41,6 +43,7 @@ func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/content-revisions/:id", w.GetCreativeContentRevision)
 	r.GET("/creative/documents/:id", w.GetCreativeDocument)
 	r.GET("/creative/canvases/:id/nodes/:node_id/versions", w.ListCreativeNodeVersions)
+	r.GET("/creative/canvases/:id/nodes/:node_id/generation-catalog", w.GetCreativeNodeGenerationCatalog)
 	r.GET("/creative/canvases/:id/executions/:execution_id", w.GetCreativeNodeExecution)
 	r.POST("/creative/canvases/:id/executions", w.RequestCreativeNodeExecution)
 }
@@ -58,6 +61,16 @@ func (h *handlers) creativeScope(c *gin.Context) (store.AccountScope, bool) {
 }
 func creativeError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, gw.ErrBudget):
+		abortError(c, 422, "creative_budget_exceeded", "生成预算不足，请调整参数或稍后重试")
+	case errors.Is(err, gw.ErrGenerationFactsUnavailable):
+		abortError(c, 422, "creative_generation_facts_pending", "参考素材尚未完成校验，请稍后重试")
+	case errors.Is(err, gw.ErrConflict), errors.Is(err, gw.ErrState):
+		abortError(c, 409, "creative_generation_conflict", "生成配置或任务状态已变化，请重新读取后操作")
+	case errors.Is(err, gw.ErrValidation), errors.Is(err, gw.ErrCapability):
+		abortError(c, 422, "creative_generation_parameters", "模型参数或参考素材不符合要求")
+	case errors.Is(err, gw.ErrUnavailable):
+		abortError(c, 503, "creative_generation_unavailable", "生成服务暂不可用")
 	case errors.Is(err, creativeops.ErrToolUnavailable):
 		abortError(c, 422, "creative_tool_unavailable", "此工具当前不可用")
 	case errors.Is(err, creativeops.ErrToolVersion):
@@ -311,11 +324,7 @@ func (h *handlers) GetCreativeNodeExecution(c *gin.Context, id string, execution
 
 func (h *handlers) RequestCreativeNodeExecution(c *gin.Context, id string, _ RequestCreativeNodeExecutionParams) {
 	h.creativeWrite(c, "canvas_id", id, func(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
-		service, err := creativecanvas.NewExecutionService(nil)
-		if err != nil {
-			return creativeops.Receipt{}, err
-		}
-		return service.Request(ctx, scope, command, nil)
+		return h.creativeGeneration.Request(ctx, scope, command)
 	})
 }
 
@@ -344,4 +353,15 @@ func (h *handlers) creativeToolRead(c *gin.Context, key string, input map[string
 	}
 	setNoStore(c)
 	c.Data(http.StatusOK, "application/json; charset=utf-8", result.Response())
+}
+
+func (h *handlers) GetCreativeNodeGenerationCatalog(c *gin.Context, id string, nodeID string) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	setNoStore(c)
+	creativeRead(c, func() (creativegeneration.Catalog, error) {
+		return h.creativeGeneration.Catalog(c.Request.Context(), scope, id, nodeID)
+	})
 }

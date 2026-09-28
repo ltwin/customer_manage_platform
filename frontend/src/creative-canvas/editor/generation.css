@@ -1,0 +1,133 @@
+.cc-generation {
+  position: absolute;
+  z-index: 12;
+  width: min(368px, calc(100% - 16px));
+  max-height: min(560px, calc(100% - 60px));
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid #ffffff29;
+  border-radius: 18px;
+  background: #171c23f5;
+  color: #f0f2f5;
+  box-shadow: 0 12px 36px #0006;
+  backdrop-filter: blur(18px);
+  font-size: 12px;
+  line-height: 1.5;
+  overscroll-behavior: contain;
+}
+.cc-generation header,
+.cc-generation footer,
+.cc-generation-ref {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.cc-generation header span,
+.cc-generation small,
+.cc-generation-note,
+.cc-generation footer span {
+  color: #b3bdca;
+  font-size: 11px;
+}
+.cc-generation nav {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.cc-generation button {
+  border: 1px solid #ffffff30;
+  border-radius: 8px;
+  background: #ffffff0b;
+  color: inherit;
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.cc-generation button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cc-generation button[aria-pressed='true'],
+.cc-generation button.cc-generation-primary {
+  background: #e6f0db;
+  color: #172015;
+}
+.cc-generation label {
+  display: block;
+  margin: 10px 0;
+}
+.cc-generation textarea,
+.cc-generation select,
+.cc-generation input {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  padding: 8px;
+  color: #f0f2f5;
+  background: #242b35;
+  border: 1px solid #ffffff30;
+  border-radius: 8px;
+  font: inherit;
+}
+.cc-generation textarea {
+  resize: vertical;
+  min-height: 72px;
+  max-height: 240px;
+}
+.cc-generation fieldset {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+  margin: 12px 0;
+}
+.cc-generation-ref {
+  margin: 5px 0;
+}
+.cc-generation-ref span {
+  overflow-wrap: anywhere;
+}
+.cc-generation footer {
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.cc-generation-version {
+  border-top: 1px solid #ffffff20;
+  padding: 10px 0;
+}
+.cc-generation-version small {
+  display: block;
+}
+.cc-generation-version div {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.cc-generation pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 260px;
+  overflow: auto;
+}
+.cc-generation :focus-visible {
+  outline: 2px solid #d9eea5;
+  outline-offset: 2px;
+}
+.cc-generation [role='alert'] {
+  color: #ffc9ad;
+}
+.cc-generation section img,
+.cc-generation section video {
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+}
+@media (max-width: 760px) {
+  .cc-generation {
+    top: auto !important;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    left: 68px !important;
+    width: calc(100% - 76px);
+    max-height: 55% !important;
+  }
+}

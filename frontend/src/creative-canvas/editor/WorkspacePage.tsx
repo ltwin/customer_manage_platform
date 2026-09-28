@@ -41,6 +41,7 @@ import {
 import { historyOf, projectCanvas, type Intent } from './outbox.ts'
 import DocumentView from './DocumentView.tsx'
 import CanvasView from './CanvasView.tsx'
+import NodeGenerationPanel from './NodeGenerationPanel.tsx'
 import ContentForm from './ContentForm.tsx'
 import StudioDialog from './StudioDialog.tsx'
 import { blankDraft, contentText, payload } from './content.ts'
@@ -1191,6 +1192,13 @@ function Workspace({ account }: { account: string }) {
                   onPreview={setPreview}
                   onMove={(n, x, y) => moveSelection([{ node: n, x, y }])}
                 />
+                {node && queue && !inlineEditing && node.capabilities.prompt_mode !== 'unavailable' && <NodeGenerationPanel
+                  key={`${canvasID}:${node.id}`}
+                  canvas={view} node={node} queue={queue} assets={assets.items}
+                  leftInset={libraryOpen ? libraryWidth + 98 : 82}
+                  disabled={!editable || blocked || !online || outbox.some(i => i.canvasID === canvasID && i.state !== 'confirmed')}
+                  refresh={() => refreshCanvas.current()}
+                />}
               </ReactFlowProvider>
             </>
           ) : (

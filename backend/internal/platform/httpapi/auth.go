@@ -15,6 +15,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	customerdomain "github.com/samson/customer-manage-platform/backend/internal/customer"
 	dashboarddomain "github.com/samson/customer-manage-platform/backend/internal/dashboard"
@@ -99,6 +100,7 @@ type handlers struct {
 	planningMedia       *planningMediaHandlers
 	anonymousShare      anonymousShareRouteDeps
 	creativeMedia       *creativemedia.Service
+	creativeGeneration  *creativegeneration.Product
 	creativeAgent       *creativeagent.Service
 	creativeTools       *creativeops.Runtime
 	creativeToolsError  error

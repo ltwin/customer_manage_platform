@@ -494,6 +494,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/canvases/{id}/nodes/{node_id}/generation-catalog:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeNodeGenerationCatalog
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+      - {name: node_id, in: path, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: 节点可用模型；无配置或未开放时返回空目录和原因
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeGenerationCatalog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /creative/canvases/{id}/nodes/{node_id}/versions:
     get:
       tags:
@@ -12377,6 +12393,39 @@ components:
         disabled_reason:
           type: string
           nullable: true
+    CreativeGenerationParameter:
+      type: object
+      additionalProperties: false
+      required: [key, label, type, required, options]
+      properties:
+        key: {type: string}
+        label: {type: string}
+        type: {type: string, enum: [string, number, integer, boolean]}
+        required: {type: boolean}
+        options: {type: array, items: {type: string}}
+    CreativeGenerationModel:
+      type: object
+      additionalProperties: false
+      required: [key, label, kind, parameters, configuration_revision]
+      properties:
+        configuration_revision: {type: string}
+        key: {type: string}
+        label: {type: string}
+        kind: {type: string, enum: [text, image, video, audio]}
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGenerationParameter'
+    CreativeGenerationCatalog:
+      type: object
+      additionalProperties: false
+      required: [models, disabled_reason]
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGenerationModel'
+        disabled_reason: {type: string}
     CreativeNodePrompt:
       type: object
       additionalProperties: false
@@ -12925,7 +12974,9 @@ components:
       - expected_data_revision
       - draft_revision
       - read_set
+      - configuration_revision
       properties:
+        configuration_revision: {type: string, minLength: 1, maxLength: 64}
         node_id:
           type: string
         action_key:

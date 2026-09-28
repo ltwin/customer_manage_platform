@@ -1,3 +1,4 @@
+import type { components } from '../../api/schema'
 import type { Organization } from './libraryState.ts'
 import { intentKinds, intentStates, type Intent } from './outbox.ts'
 // The journal owns local recovery only. It never marks server data as saved.
@@ -13,6 +14,7 @@ export type Job = {
   intent?: string
 }
 export type Draft = {
+  prompt?: components['schemas']['CreativeSavePromptPayload']
   organization?: Organization
   value: string
   title: string

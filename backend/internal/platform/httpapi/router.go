@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
+	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 
@@ -76,6 +77,7 @@ type RouterDeps struct {
 	PlanningMedia             *planningmedia.Application
 	PlanningIngestion         *ingestion.Application
 	CreativeMedia             *creativemedia.Service
+	CreativeGeneration        *creativegeneration.Product
 	CreativeAgent             *creativeagent.Service
 }
 
@@ -127,6 +129,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		now:                 now,
 		anonymousShare:      deps.AnonymousShare,
 		creativeMedia:       deps.CreativeMedia,
+		creativeGeneration:  deps.CreativeGeneration,
 		creativeAgent:       deps.CreativeAgent,
 	}
 	h.creativeTools, h.creativeToolsError = creativecanvas.NewToolRuntime(nil, creativeops.WithObserver(func(ctx context.Context, event creativeops.ToolObservation) {

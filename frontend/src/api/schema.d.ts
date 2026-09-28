@@ -165,6 +165,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/canvases/{id}/nodes/{node_id}/generation-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCreativeNodeGenerationCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/canvases/{id}/nodes/{node_id}/versions": {
         parameters: {
             query?: never;
@@ -5716,6 +5732,26 @@ export interface components {
             prompt_mode: string;
             disabled_reason: string | null;
         };
+        CreativeGenerationParameter: {
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "string" | "number" | "integer" | "boolean";
+            required: boolean;
+            options: string[];
+        };
+        CreativeGenerationModel: {
+            configuration_revision: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            kind: "text" | "image" | "video" | "audio";
+            parameters: components["schemas"]["CreativeGenerationParameter"][];
+        };
+        CreativeGenerationCatalog: {
+            models: components["schemas"]["CreativeGenerationModel"][];
+            disabled_reason: string;
+        };
         CreativeNodePrompt: {
             draft_id: string;
             draft_revision: components["schemas"]["CreativeRevision"];
@@ -6020,6 +6056,7 @@ export interface components {
             created_at: string;
         };
         CreativeRequestExecutionPayload: {
+            configuration_revision: string;
             node_id: string;
             action_key: string;
             expected_data_revision: components["schemas"]["CreativeRevision"];
@@ -6583,6 +6620,30 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+        };
+    };
+    getCreativeNodeGenerationCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 节点可用模型；无配置或未开放时返回空目录和原因 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeGenerationCatalog"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     listCreativeNodeVersions: {

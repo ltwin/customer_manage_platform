@@ -65,12 +65,13 @@ func (textCompose) Step(ctx context.Context, _ store.AccountScope, step Executio
 }
 
 type RequestExecutionInput struct {
-	CanvasID             string               `json:"canvas_id"`
-	NodeID               string               `json:"node_id"`
-	ActionKey            string               `json:"action_key"`
-	ExpectedDataRevision creativeops.Revision `json:"expected_data_revision"`
-	DraftRevision        creativeops.Revision `json:"draft_revision"`
-	ReadSet              []ObjectRead         `json:"read_set"`
+	ConfigurationRevision string               `json:"configuration_revision,omitempty"`
+	CanvasID              string               `json:"canvas_id"`
+	NodeID                string               `json:"node_id"`
+	ActionKey             string               `json:"action_key"`
+	ExpectedDataRevision  creativeops.Revision `json:"expected_data_revision"`
+	DraftRevision         creativeops.Revision `json:"draft_revision"`
+	ReadSet               []ObjectRead         `json:"read_set"`
 }
 type ExecutionTarget struct {
 	CanvasID    string `json:"canvas_id"`

@@ -78,6 +78,7 @@ function AgentConversation({
   const [consented, setConsented] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [feedback, setFeedback] = useState('')
   const [storageBroken, setStorageBroken] = useState(false)
   const [pending, setPending] = useState<PendingAgentAction | null>(null)
   const [refresh, setRefresh] = useState(0)
@@ -212,6 +213,7 @@ function AgentConversation({
     performing.current = true
     setBusy(true)
     setError('')
+    setFeedback('')
     let current = command
     try {
       if (!savePending(pendingRef.current, command)) return
@@ -238,7 +240,10 @@ function AgentConversation({
         setConversation(reply.conversation_id)
         setDraft('')
         setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
-      } else if ('title' in reply) setConversation(reply.id)
+      } else if ('title' in reply) {
+        setConversation(reply.id)
+        setFeedback('对话已创建，可以开始输入问题。')
+      }
       savePending(current, null)
       setConsented(false)
       setRefresh((value) => value + 1)
@@ -319,9 +324,10 @@ function AgentConversation({
           <small>与你一起梳理创作方向</small>
         </div>
         <button
-          className="icon-btn"
+          className="cc-icon-button"
           onClick={onClose}
           aria-label="收起创作助手"
+          title="收起创作助手"
         >
           <X size={18} />
         </button>
@@ -337,6 +343,7 @@ function AgentConversation({
             setRuns([])
             setSteps([])
             setConsented(false)
+            setFeedback('')
           }}
         >
           <option value="">选择对话</option>
@@ -356,8 +363,10 @@ function AgentConversation({
             )
           }}
           aria-label="新建对话"
+          title="新建对话"
         >
           <Plus size={17} />
+          <span>新建对话</span>
         </button>
       </div>
       {error && (
@@ -365,11 +374,17 @@ function AgentConversation({
           {error}
         </div>
       )}
-      {pending && (
-        <div className="cc-agent-notice">
-          有一项提交等待确认。
+      <div className="cc-agent-feedback" role="status" aria-live="polite">
+        {busy
+          ? pending?.path.endsWith('/conversations')
+            ? '正在创建对话…'
+            : '正在提交…'
+          : !pending && feedback}
+      </div>
+      {pending && !busy && (
+        <div className="cc-agent-notice" role="status">
+          <span>上次提交的结果尚未确认。请确认原操作，避免重复提交。</span>
           <button
-            disabled={busy}
             onClick={() => {
               const saved = pendingRef.current
               if (saved) void perform(saved)
@@ -486,6 +501,7 @@ function AgentConversation({
       )}
       <form
         className="cc-agent-compose"
+        noValidate
         onSubmit={(event) => {
           event.preventDefault()
           sendDraft()
@@ -538,6 +554,7 @@ function AgentConversation({
         </label>
         <textarea
           id="creative-agent-draft"
+          className="resize-none"
           value={draft}
           disabled={locked || !!active}
           onChange={(event) => setDraft(event.target.value)}

@@ -119,7 +119,9 @@ func setup(t *testing.T, kind gw.GenerationKind) *fixture {
 		}
 		f.a.outputs = append(f.a.outputs, out)
 	}
-	s, err := creativegeneration.New(creativegeneration.Config{Gateway: gateway, Media: media, ProtectionKey: bytes.Repeat([]byte{2}, 32), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: "test-deployment", Version: "1", LimitKey: "g4-limit", Concurrency: 2, RateLimit: 100, Adapter: f.a}}, Fetchers: map[string]creativemedia.GenerationFetcher{"test-deployment": f.f}})
+	s, err := creativegeneration.New(creativegeneration.Config{Authorization: func(context.Context, store.TxAccountScope, gw.RequestView, gw.PreparedPolicyGeneration) error {
+		return nil
+	}, Gateway: gateway, Media: media, ProtectionKey: bytes.Repeat([]byte{2}, 32), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: "test-deployment", Version: "1", LimitKey: "g4-limit", Concurrency: 2, RateLimit: 100, Adapter: f.a}}, Fetchers: map[string]creativemedia.GenerationFetcher{"test-deployment": f.f}})
 	must(t, err)
 	f.svc = s
 	q, err := st.NewJobRuntime(s.Handlers(), nil)

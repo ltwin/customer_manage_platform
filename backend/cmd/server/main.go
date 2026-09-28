@@ -19,6 +19,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/accountprofile"
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
@@ -233,6 +234,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return newStartupFailure("creative-agent-init", "skill-directory", "model-catalog", err)
 	}
 	creativeAgent.SetLogger(logger)
+	// 真实模型须显式注册准备器、外发守卫和Worker；空目录保留草稿与历史入口。
+	creativeGeneration, err := creativegeneration.NewProduct(nil, nil)
+	if err != nil {
+		return err
+	}
 	// The API only enqueues; the creative-worker process executes the tasks.
 	creativeJobs, err := s.NewJobRuntime(append(creativeMedia.Handlers(), creativeAgent.Handlers()...), logger)
 	if err != nil {
@@ -396,10 +402,11 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			MutationDigest: planShareMutationDigest,
 			PublicBaseURL:  cfg.PublicBaseURL,
 		},
-		PlanningMedia:     planningMediaApp,
-		PlanningIngestion: planningIngestionApp,
-		CreativeMedia:     creativeMedia,
-		CreativeAgent:     creativeAgent,
+		PlanningMedia:      planningMediaApp,
+		PlanningIngestion:  planningIngestionApp,
+		CreativeMedia:      creativeMedia,
+		CreativeAgent:      creativeAgent,
+		CreativeGeneration: creativeGeneration,
 	})
 
 	logger.Info("HTTP 监听", slog.String("addr", cfg.HTTPAddr))

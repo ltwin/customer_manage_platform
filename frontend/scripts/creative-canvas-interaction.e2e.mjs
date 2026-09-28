@@ -124,6 +124,8 @@ await page.route('**/api/v1/**', async (route) => {
       created_at: '2026-01-01T00:00:00Z',
       timezone: 'Asia/Shanghai',
     })
+  if (path.endsWith('/generation-catalog')) return json({models: [], disabled_reason: '未配置生成模型'})
+  if (path.endsWith('/versions')) return json({items: [], selected_version_id: null, data_revision: '1'})
   if (path.endsWith('/commands')) {
     posts++
     started()
@@ -399,6 +401,8 @@ try {
 
   // Start from a group that is not selected: dragging its blank area selects
   // and moves it, while preserving the child's relative position.
+  // 新增Prompt浮层会占用孩子下方区域；先取消孩子选择，露出组空白再验证拖动。
+  await page.keyboard.press('Escape')
   const blank = { x: groupBox.x + groupBox.width - 8, y: groupBox.y + groupBox.height - 8 }
   await page.mouse.move(blank.x, blank.y)
   await page.mouse.down()

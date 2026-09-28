@@ -31,14 +31,16 @@ type Config struct {
 	Media         *creativemedia.Service
 	ProtectionKey []byte
 	Adapters      []gw.GenerationAdapterRegistration
+	Authorization gw.GenerationGuard
 	Fetchers      map[string]creativemedia.GenerationFetcher
 }
 type Service struct {
-	gateway    *gw.Service
-	generation *gw.GenerationRuntime
-	media      *creativemedia.Service
-	fetchers   map[string]creativemedia.GenerationFetcher
-	queue      jobs.Runtime
+	gateway       *gw.Service
+	generation    *gw.GenerationRuntime
+	media         *creativemedia.Service
+	fetchers      map[string]creativemedia.GenerationFetcher
+	queue         jobs.Runtime
+	authorization gw.GenerationGuard
 }
 
 // New 显式受信装配；没有默认Adapter或取件白名单，也不自动开启生产部署。
@@ -46,7 +48,7 @@ func New(cfg Config) (*Service, error) {
 	if cfg.Gateway == nil || cfg.Media == nil {
 		return nil, gw.ErrValidation
 	}
-	s := &Service{gateway: cfg.Gateway, media: cfg.Media, fetchers: map[string]creativemedia.GenerationFetcher{}}
+	s := &Service{gateway: cfg.Gateway, media: cfg.Media, fetchers: map[string]creativemedia.GenerationFetcher{}, authorization: cfg.Authorization}
 	for key, f := range cfg.Fetchers {
 		if f == nil {
 			return nil, gw.ErrValidation
@@ -80,39 +82,48 @@ func (s *Service) Request(ctx context.Context, scope store.AccountScope, c creat
 	// operation身份覆盖全部受信控制输入；重放先查回执，不重新执行预检、准入或入队。
 	c.Payload = creativegraph.Canonical(map[string]any{"target": in, "fingerprint": admission.Prepared.Fingerprint(), "control_revision": controlRevision, "deadline": admission.Deadline, "group_deadline": admission.GroupDeadline, "group_limit": admission.GroupLimitMicros, "account_limit": admission.AccountLimitMicros, "group_tokens": admission.GroupTokenLimit, "account_tokens": admission.AccountTokenLimit})
 	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "canvas.request_generation", Capability: "node_generate", Validate: func(json.RawMessage) error { return nil }, Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
-		// Executor已先锁账号；G2取得group/deployment/budget/request，业务锁随后进入。
-		request, err := s.gateway.PrepareGenerationInTx(ctx, tx, admission)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		snapshot := admission.Prepared.Generation().Snapshot().Request
-		spec := creativecanvas.GenerationSpec{Kind: string(snapshot.Kind), Prompt: snapshot.Input.Prompt, ModelKey: snapshot.ModelKey, Parameters: snapshot.Input.Parameters}
-		for _, mode := range admission.Prepared.PolicyDefinition().Modes {
-			if mode.Definition.Key == snapshot.Mode {
-				spec.ParameterDefaults = mode.Defaults
-			}
-		}
-		for _, ref := range snapshot.Input.References {
-			spec.References = append(spec.References, creativecanvas.GenerationReference{RevisionID: ref.RevisionID, Role: ref.Role})
-		}
-		e, err := creativecanvas.AdmitGenerationInTx(ctx, tx, in, spec, execution, c.OperationID, request.RequestHash, admission.Deadline)
-		if err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if err = tx.Insert(ctx, "creative_generation_bindings", []string{"execution_id", "request_id", "canvas_id", "next_step_at", "recovery_until"}, e.ID, request.ID, e.CanvasID, e.CreatedAt, e.CreatedAt.Add(24*time.Hour)); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if _, err = s.generation.PrepareInTx(ctx, tx, admission, controlRevision); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		target := creativecanvas.ExecutionTarget{CanvasID: e.CanvasID, ExecutionID: e.ID}
-		if err = s.enqueue(ctx, tx, target); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		body, err := json.Marshal(e)
-		return creativeops.Outcome{HTTPStatus: 202, ResultKind: "node_execution", ResultID: &e.ID, Response: body}, err
+		return s.requestInTx(ctx, tx, in, c.OperationID, admission, controlRevision)
 	}}, c)
 }
+func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in creativecanvas.RequestExecutionInput, operation string, admission gw.GenerationAdmission, controlRevision int64) (creativeops.Outcome, error) {
+	execution := "cwexec_" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(tx.AccountID()+"/"+operation)).String()
+	admission.CallerService = caller
+	admission.CallerOperationID = operation
+	admission.CallerGroupID = execution
+	admission.ConsumerKey = execution
+	// Executor已先锁账号；G2取得group/deployment/budget/request，业务锁随后进入。
+	request, err := s.gateway.PrepareGenerationInTx(ctx, tx, admission)
+	if err != nil {
+		return creativeops.Outcome{}, err
+	}
+	snapshot := admission.Prepared.Generation().Snapshot().Request
+	spec := creativecanvas.GenerationSpec{Kind: string(snapshot.Kind), Prompt: snapshot.Input.Prompt, ModelKey: snapshot.ModelKey, Parameters: snapshot.Input.Parameters}
+	for _, mode := range admission.Prepared.PolicyDefinition().Modes {
+		if mode.Definition.Key == snapshot.Mode {
+			spec.ParameterDefaults = mode.Defaults
+		}
+	}
+	for _, ref := range snapshot.Input.References {
+		spec.References = append(spec.References, creativecanvas.GenerationReference{RevisionID: ref.RevisionID, Role: ref.Role})
+	}
+	e, err := creativecanvas.AdmitGenerationInTx(ctx, tx, in, spec, execution, operation, request.RequestHash, admission.Deadline)
+	if err != nil {
+		return creativeops.Outcome{}, err
+	}
+	if err = tx.Insert(ctx, "creative_generation_bindings", []string{"execution_id", "request_id", "canvas_id", "next_step_at", "recovery_until"}, e.ID, request.ID, e.CanvasID, e.CreatedAt, e.CreatedAt.Add(24*time.Hour)); err != nil {
+		return creativeops.Outcome{}, err
+	}
+	if _, err = s.generation.PrepareInTx(ctx, tx, admission, controlRevision); err != nil {
+		return creativeops.Outcome{}, err
+	}
+	target := creativecanvas.ExecutionTarget{CanvasID: e.CanvasID, ExecutionID: e.ID}
+	if err = s.enqueue(ctx, tx, target); err != nil {
+		return creativeops.Outcome{}, err
+	}
+	body, err := json.Marshal(e)
+	return creativeops.Outcome{HTTPStatus: 202, ResultKind: "node_execution", ResultID: &e.ID, Response: body}, err
+}
+
 func (s *Service) guard(ctx context.Context, tx store.TxAccountScope, request gw.RequestView, p gw.PreparedPolicyGeneration) error {
 	if request.CallerService != caller {
 		return gw.ErrValidation
@@ -124,7 +135,13 @@ func (s *Service) guard(ctx context.Context, tx store.TxAccountScope, request gw
 	if err := creativecanvas.GuardGenerationInTx(ctx, tx, target); err != nil {
 		return generationGuardError(err)
 	}
-	return generationGuardError(s.media.ValidateGenerationReferencesInTx(ctx, tx, p.Generation().Snapshot().Request.Input.References))
+	if err := s.media.ValidateGenerationReferencesInTx(ctx, tx, p.Generation().Snapshot().Request.Input.References); err != nil {
+		return generationGuardError(err)
+	}
+	if s.authorization != nil {
+		return generationGuardError(s.authorization(ctx, tx, request, p))
+	}
+	return nil
 }
 
 // 已知业务拒绝证明未获派发许可；存储/上下文错误不假装明确拒绝。

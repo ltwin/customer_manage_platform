@@ -422,15 +422,29 @@ export class SaveQueue {
     } catch (e) {
       if (this.closed) return
       const code = codeOf(e)
+      // 此入口在查询回执后才执行模型/预算守卫。这些明确的领域拒绝证明
+      // 本operation没有提交；通用503和creative_commit_unknown仍保持unknown。
+      const generationRejected =
+        /^\/canvases\/[^/]+\/executions$/.test(job.path) &&
+        typeof code === 'string' &&
+        [
+          'creative_generation_conflict',
+          'creative_generation_parameters',
+          'creative_budget_exceeded',
+          'creative_generation_facts_pending',
+          'creative_generation_unavailable',
+          'creative_action_unavailable',
+        ].includes(code)
       const definitive =
-        !uncertain &&
-        (statusOf(e) === 400 ||
-          statusOf(e) === 403 ||
-          code === 'creative_revision_conflict' ||
-          code === 'archived_read_only' ||
-          code === 'creative_asset_trashed' ||
-          statusOf(e) === 422 ||
-          statusOf(e) === 404)
+        generationRejected ||
+        (!uncertain &&
+          (statusOf(e) === 400 ||
+            statusOf(e) === 403 ||
+            code === 'creative_revision_conflict' ||
+            code === 'archived_read_only' ||
+            code === 'creative_asset_trashed' ||
+            statusOf(e) === 422 ||
+            statusOf(e) === 404))
       // Version/state conflicts prove this operation never committed even after a retry:
       // an existing receipt would have replayed before these domain guards.
       if (
