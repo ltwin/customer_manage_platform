@@ -1088,3 +1088,13 @@ test('successive copies resolve nested provisional identities even when receipts
     { type: 'update_metadata', node_id: 'cwnode_first', title: first },
   ], 'identifier remapping must never rewrite literal text')
 })
+
+test('duplicate without optional offsets preserves coordinates instead of producing NaN', () => {
+  const preview = projectCanvas(positionCanvas, [{
+    id: 'duplicate', canvasID: positionCanvas.id, state: 'pending', kind: 'actions',
+    actions: [{ type: 'duplicate_selection', node_ids: [positionNode.id] }],
+  }])
+  assert.equal(preview.nodes.length, 2)
+  assert.equal(preview.nodes[1].metadata.x, positionNode.metadata.x)
+  assert.equal(preview.nodes[1].metadata.y, positionNode.metadata.y)
+})

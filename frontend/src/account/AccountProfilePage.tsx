@@ -149,9 +149,9 @@ export default function AccountProfilePage() {
 							disabled={savingAvatar}
 							onClick={() => fileInputRef.current?.click()}
 						>
-							{savingAvatar ? '处理中…' : data.avatar_url ? '替换头像' : '上传头像'}
+							{savingAvatar ? '处理中…' : profile.data.avatar_url ? '替换头像' : '上传头像'}
 						</button>
-						{data.avatar_url && (
+						{profile.data.avatar_url && (
 							<button className="btn" type="button" disabled={savingAvatar} onClick={() => void onRemoveAvatar()}>
 								移除头像
 							</button>

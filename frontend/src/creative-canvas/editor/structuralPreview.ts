@@ -214,8 +214,8 @@ export function structuralPreview(
             : n.parent_id,
         metadata: {
           ...n.metadata,
-          x: n.metadata.x + (roots.has(n.id) ? action.dx : 0),
-          y: n.metadata.y + (roots.has(n.id) ? action.dy : 0),
+          x: n.metadata.x + (roots.has(n.id) ? (action.dx ?? 0) : 0),
+          y: n.metadata.y + (roots.has(n.id) ? (action.dy ?? 0) : 0),
         },
         data: { ...n.data, selected_version_id: null },
         status: {

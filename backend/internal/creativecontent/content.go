@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/creativereference"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -446,48 +447,14 @@ func requireRevisionState(ctx context.Context, tx contentReader, protectedRow fu
 }
 
 func requireRoot(ctx context.Context, tx contentReader, revision Revision) error {
-	// Actual owner paths, including matching content identity/type; no arbitrary
-	// relationship insertion and no authorization from historical source IDs.
-	asset, err := tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND content_id=$3 AND kind=$4", revision.ID, revision.ContentID, revision.Kind)
+	live, err := creativereference.Live(ctx, tx, []string{revision.ID})
 	if err != nil {
 		return err
 	}
-	if asset {
-		return nil
+	if !live[revision.ID] {
+		return ErrMissingRoot
 	}
-	node, err := tx.Exists(ctx, "creative_nodes", "content_revision_id=$2 AND content_id=$3 AND type_key=$4", revision.ID, revision.ContentID, "core."+revision.Kind)
-	if err != nil {
-		return err
-	}
-	if node {
-		return nil
-	}
-	for _, root := range []struct{ table, condition string }{
-		// A conversation is read long after the canvas moved on. What a message
-		// showed has to stay readable once the asset points at a newer revision,
-		// so the reference registered with the message is a root of its own.
-		{"creative_message_content_refs", "content_revision_id=$2"},
-		{"creative_checkpoint_content_refs", "content_revision_id=$2 AND checkpoint_id IN (SELECT id FROM creative_agent_checkpoints WHERE account_id=$1 AND retained_until>clock_timestamp())"},
-		{"creative_context_item_content_refs", "content_revision_id=$2 AND item_id IN (SELECT id FROM creative_agent_context_items WHERE account_id=$1 AND retained_until>clock_timestamp())"},
-		{"creative_change_content_refs", "content_revision_id=$2 AND expires_at>clock_timestamp()"},
-		{"creative_node_inputs", "content_revision_id=$2"},
-		{"creative_node_prompt_refs", "content_revision_id=$2"},
-		{"creative_node_versions", "content_revision_id=$2 AND deleted_at IS NULL AND node_id IN (SELECT id FROM creative_nodes WHERE account_id=$1)"},
-		{"creative_node_version_input_refs", "content_revision_id=$2 AND version_id IN (SELECT id FROM creative_node_versions WHERE account_id=$1 AND deleted_at IS NULL AND node_id IN (SELECT id FROM creative_nodes WHERE account_id=$1))"},
-		{"creative_execution_refs", "content_revision_id=$2 AND execution_id IN (SELECT id FROM creative_node_executions WHERE account_id=$1 AND (retained_until>clock_timestamp() OR state IN ('queued','running','reconciling')))"},
-		{"creative_documents", "content_revision_id=$2"},
-		{"creative_upload_candidates", "content_revision_id=$2 AND state='pending' AND expires_at>clock_timestamp()"},
-		{"creative_revision_holds", "content_revision_id=$2 AND (expires_at IS NULL OR expires_at>clock_timestamp())"},
-	} {
-		exists, err := tx.Exists(ctx, root.table, root.condition, revision.ID)
-		if err != nil {
-			return err
-		}
-		if exists {
-			return nil
-		}
-	}
-	return ErrMissingRoot
+	return nil
 }
 
 func Read(ctx context.Context, scope store.AccountScope, id string) (Revision, error) {

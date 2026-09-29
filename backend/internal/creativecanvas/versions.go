@@ -63,7 +63,7 @@ func ListNodeVersions(ctx context.Context, scope store.AccountScope, canvas, nod
 	})
 	return page, err
 }
-func loadVersions(ctx context.Context, tx store.TxAccountScope, canvas string) (map[string]NodeVersion, error) {
+func loadVersions(ctx context.Context, tx canvasReader, canvas string) (map[string]NodeVersion, error) {
 	out := map[string]NodeVersion{}
 	rows, err := tx.QueryPage(ctx, "creative_node_versions", "id,node_id,version_no,origin_kind,content_revision_id,execution_id_snapshot,output_ordinal,generation_provenance,created_at,revision", "canvas_id=$2 AND deleted_at IS NULL", []store.OrderBy{{Column: "id"}}, 10001, 0, canvas)
 	if err != nil {
@@ -88,25 +88,35 @@ func loadVersions(ctx context.Context, tx store.TxAccountScope, canvas string) (
 	if len(out) > 10000 {
 		return nil, ErrLimit
 	}
-	for id, v := range out {
-		rows, err := tx.QueryPage(ctx, "creative_node_version_input_refs", "content_revision_id,role", "version_id=$2", []store.OrderBy{{Column: "ordinal"}}, 101, 0, id)
-		if err != nil {
+	if len(out) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(out))
+	for id := range out {
+		ids = append(ids, id)
+	}
+	rows, err = tx.QueryPage(ctx, "creative_node_version_input_refs", "version_id,content_revision_id,role", "version_id=ANY($2::text[])", []store.OrderBy{{Column: "version_id"}, {Column: "ordinal"}}, len(out)*101, 0, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		var input VersionInput
+		if err := rows.Scan(&id, &input.RevisionID, &input.Role); err != nil {
 			return nil, err
 		}
-		for rows.Next() {
-			var i VersionInput
-			if err = rows.Scan(&i.RevisionID, &i.Role); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			v.Inputs = append(v.Inputs, i)
+		v := out[id]
+		if len(v.Inputs) >= 100 {
+			return nil, ErrLimit
 		}
-		rows.Close()
-		if err = rows.Err(); err != nil {
-			return nil, err
-		}
+		v.Inputs = append(v.Inputs, input)
 		out[id] = v
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
 	return out, nil
 }
 func nextVersion(ctx context.Context, tx store.TxAccountScope, node string) (creativeops.Revision, error) {

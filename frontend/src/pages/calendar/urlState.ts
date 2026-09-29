@@ -88,12 +88,16 @@ export async function reconcileCalendarDeleteRefresh({
   deletedSlotID: string
   deletedSlotStartAt: string
   expectedRangeKey: string
-  readLocation(): { pathname: string; search: string; timezone: string }
+  readLocation(): { pathname: string; search: string; timezone: string | null }
   refreshOriginal(): Promise<void>
   requestCurrentReload(): void
 }): Promise<CalendarDeleteCompletion | null> {
   const initialLocation = readLocation()
   if (initialLocation.pathname !== '/calendar') return null
+  if (!initialLocation.timezone) {
+    requestCurrentReload()
+    return null
+  }
   const initialCompletion = calendarDeleteCompletion(
     new URLSearchParams(initialLocation.search),
     deletedSlotID,
@@ -112,7 +116,7 @@ export async function reconcileCalendarDeleteRefresh({
   await refreshOriginal()
 
   const currentLocation = readLocation()
-  if (currentLocation.pathname !== '/calendar') return null
+  if (currentLocation.pathname !== '/calendar' || !currentLocation.timezone) return null
   return calendarDeleteCompletion(
     new URLSearchParams(currentLocation.search),
     deletedSlotID,

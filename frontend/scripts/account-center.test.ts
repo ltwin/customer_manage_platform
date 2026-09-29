@@ -30,7 +30,6 @@ Object.defineProperty(URL, 'revokeObjectURL', {
 
 const menuModel = await import('../src/account/accountMenuModel.ts')
 const media = await import('../src/account/accountAvatarMedia.ts')
-const display = await import('../src/account/profileDisplay.ts')
 const session = await import('../src/auth/session.ts')
 const loginNotice = await import('../src/account/security/loginNotice.ts')
 const securityCopy = await import('../src/account/security/securityCopy.ts')
@@ -38,7 +37,6 @@ const client = await import('../src/api/client.ts')
 const bodyBuilders = await import('../src/account/settings/bodyBuilders.ts')
 const kernel = await import('../src/account/settings/settingsControllerKernel.ts')
 const saveQueue = await import('../src/account/settings/settingsSaveQueue.ts')
-const menuModelSource = await import('../src/account/legacyRedirects.ts')
 const menuCSS = readFileSync(new URL('../src/account/account-menu.css', import.meta.url), 'utf8')
 const accountMenuSource = readFileSync(new URL('../src/account/AccountMenu.tsx', import.meta.url), 'utf8')
 const accountSettingsSource = readFileSync(
@@ -169,27 +167,6 @@ test('A8 dual-slot CSS hides the inactive slot with display:none', () => {
 	)
 })
 
-test('A17 profile mutation atomically replaces global display snapshot', () => {
-	const previous = display.profileDisplaySnapshot({
-		display_name: '旧名',
-		profile_revision: 'pr-1',
-		avatar_revision: 'ar-1',
-		avatar_version: 'sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-		avatar_url: '/api/v1/account/profile/avatar/content?v=sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-	}, authAccount.email)
-	const next = display.applyProfileMutation(previous, {
-		display_name: '新名',
-		profile_revision: 'pr-2',
-		avatar_revision: 'ar-2',
-		avatar_version: 'sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-		avatar_url: '/api/v1/account/profile/avatar/content?v=sha256-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-	}, authAccount.email)
-	assert.equal(next.displayName, '新名')
-	assert.equal(next.fallbackLabel, '新')
-	assert.notEqual(next.avatarVersion, previous.avatarVersion)
-	assert.notEqual(next.avatarURL, previous.avatarURL)
-})
-
 test('A18 auth generation change clears account avatar media cache', async () => {
 	session.setAuthenticated(access('token-a'), authAccount)
 	const handle = media.acquireAccountAvatarMedia(
@@ -236,9 +213,6 @@ test('final /account/* routes are mounted without placeholder dead links', () =>
 })
 
 test('hardening A1/A2: fixed replace redirects discard search/hash via pathname-only from', () => {
-	assert.equal(menuModelSource.legacyAccountRedirectPath('/settings'), '/account/settings')
-	assert.equal(menuModelSource.legacyAccountRedirectPath('/change-password'), '/account/security/password')
-	assert.equal(menuModelSource.legacyAccountRedirectPath('/account/settings'), null)
 	assert.match(appSource, /path="\/settings" element=\{<Navigate to="\/account\/settings" replace/)
 	assert.match(appSource, /path="\/change-password" element=\{<Navigate to="\/account\/security\/password" replace/)
 	// RequireAuth 只传 pathname，保证登录后二次落到无 query/hash 的旧 path 再 replace

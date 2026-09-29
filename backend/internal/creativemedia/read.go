@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"strconv"
@@ -65,11 +66,18 @@ func (t ticketSigner) verify(token string, now time.Time) (ticketClaims, error) 
 	return c, nil
 }
 
-// PartSigner signs local part uploads the same way; the URL is only usable
-// by the API's part endpoint and only for one key/session/part.
-func (s *Service) PartSigner(base string) func(key, session string, part int, expires time.Time) versionedfs.PartAuthorization {
+// NewPartSigner creates local upload authorization without constructing a media
+// service or storage adapter. The key is copied so callers cannot mutate it.
+func NewPartSigner(key []byte, base string) (func(string, string, int, time.Time) versionedfs.PartAuthorization, error) {
+	if len(key) < 32 || base == "" {
+		return nil, fmt.Errorf("invalid creative media part signer configuration")
+	}
+	return (ticketSigner{key: append([]byte(nil), key...)}).partSigner(base), nil
+}
+
+func (t ticketSigner) partSigner(base string) func(key, session string, part int, expires time.Time) versionedfs.PartAuthorization {
 	return func(key, session string, part int, expires time.Time) versionedfs.PartAuthorization {
-		token := s.tickets.sign(ticketClaims{Account: "part", Revision: key, Role: session, Purpose: strconv.Itoa(part), ExpiresAt: expires.Unix()})
+		token := t.sign(ticketClaims{Account: "part", Revision: key, Role: session, Purpose: strconv.Itoa(part), ExpiresAt: expires.Unix()})
 		return versionedfs.PartAuthorization{Number: part, Method: "PUT", URL: base + "?token=" + url.QueryEscape(token), Headers: map[string]string{"Content-Type": "application/octet-stream"}, ExpiresAt: expires}
 	}
 }

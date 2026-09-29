@@ -1,14 +1,11 @@
 package creativecanvas
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
-	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 type NodeMetadata struct {
@@ -86,36 +83,6 @@ func (n Node) MarshalJSON() ([]byte, error) {
 		DataRevision      creativeops.Revision      `json:"data_revision"`
 		Content           *creativecontent.Revision `json:"content,omitempty"`
 	}{ID: n.ID, ParentID: n.ParentID, Metadata: NodeMetadata{TypeKey: n.TypeKey, TypeVersion: n.TypeVersion, Title: n.Title, Intent: n.Intent, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height, ZOrder: n.ZOrder}, Data: NodeData{SchemaVersion: 1, Config: n.Config, ContentID: n.ContentID, ContentRevisionID: n.ContentRevisionID, SelectedVersionID: n.SelectedVersionID, DocumentID: n.DocumentID}, Status: status, Prompt: n.Prompt, Capabilities: capabilities, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, Content: n.Content})
-}
-func fillNodeView(ctx context.Context, tx store.TxAccountScope, canvas string, n *Node) error {
-	if n.DocumentID != nil && n.TypeKey == "internal.document" {
-		doc, err := readDocument(ctx, tx, *n.DocumentID)
-		if errors.Is(err, creativecontent.ErrUsageDenied) || errors.Is(err, ErrNotFound) {
-			n.Unavailable = true
-		} else if err != nil {
-			return err
-		} else {
-			preview := creativecontent.Preview(*doc.Content)
-			n.Content = &preview
-		}
-	}
-	p, err := readPrompt(ctx, tx, canvas, n.ID)
-	if err != nil {
-		return err
-	}
-	n.Prompt = p
-	if n.LatestExecutionID == nil {
-		return nil
-	}
-	var state, apply, message string
-	if err = tx.QueryRow(ctx, "creative_node_executions", "state,apply_state,error", "id=$2 AND canvas_id=$3 AND node_id=$4", *n.LatestExecutionID, canvas, n.ID).Scan(&state, &apply, &message); err != nil {
-		return err
-	}
-	n.Status = NodeStatus{GenerationState: state, ApplyState: &apply}
-	if message != "" {
-		n.Status.Error = &message
-	}
-	return nil
 }
 
 // The persistence projection is deliberately independent from the public DTO.

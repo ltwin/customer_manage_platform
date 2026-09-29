@@ -1618,3 +1618,15 @@ class FailOnceRemoveStorage extends MemoryStorage {
     super.removeItem(key)
   }
 }
+
+test('delete refresh waits for an available account timezone instead of deriving a date from null', async () => {
+  let reloads = 0
+  const next = await reconcileCalendarDeleteRefresh({
+    deletedSlotID: 'slot-1', deletedSlotStartAt: '2026-08-05T01:00:00Z', expectedRangeKey: '',
+    readLocation: () => ({ pathname: '/calendar', search: '?slot=slot-1', timezone: null }),
+    refreshOriginal: async () => { assert.fail('must wait for timezone') },
+    requestCurrentReload: () => { reloads++ },
+  })
+  assert.equal(next, null)
+  assert.equal(reloads, 1)
+})

@@ -79,12 +79,11 @@ func setup(t *testing.T) *fixture {
 	}))
 	t.Cleanup(f.parts.Close)
 	root := filepath.Join(t.TempDir(), "media")
-	// The signer needs the service; build in two steps around the local adapter.
-	stub, err := creativemedia.NewService(cfg, stubAdapter{}, creativemedia.NewVerifier(cfg), key, "/api/v1/creative/media")
+	signer, err := creativemedia.NewPartSigner(key, f.parts.URL+"/part")
 	if err != nil {
 		t.Fatal(err)
 	}
-	local, err := versionedfs.NewLocal(root, stub.PartSigner(f.parts.URL+"/part"))
+	local, err := versionedfs.NewLocal(root, signer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,11 +101,6 @@ func setup(t *testing.T) *fixture {
 	f.b = st.ScopeFor(auth.AccountContext{AccountID: "media-b"})
 	return f
 }
-
-type stubAdapter struct{ versionedfs.Adapter }
-
-func (stubAdapter) Driver() string { return "local" }
-func (stubAdapter) Bucket() string { return "" }
 
 func command(t *testing.T, in any) creativeops.Command {
 	t.Helper()

@@ -16,7 +16,7 @@ export function deriveTransitionGuidance(
   code: string,
   plan: {
     readiness_items: Array<{ requirement: string; preflight_status: string; title: string }>
-    shots: Array<{ current_outcome: unknown }>
+    shots: Array<{ current_outcome?: unknown }>
   },
 ): TransitionGuidance | null {
   if (code === 'readiness_incomplete') {

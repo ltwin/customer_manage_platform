@@ -239,6 +239,8 @@ export default function BusinessPanel({
       </div>
       {confirmingDecision && confirmingDecision.draft.required_acknowledgement && (() => {
         const draft = confirmingDecision.draft
+        const acknowledgement = draft.required_acknowledgement
+        if (!acknowledgement) return null
         const isOrder = draft.kind === 'order_adjustment'
         const amountLine = isOrder && draft.proposed_total != null
           ? `订单价格将从 ${formatMoney(draft.base_price)} 更新为 ${formatMoney(draft.proposed_total)}；只改订单价格，不动档期，客户不会收到任何自动通知。`
@@ -246,7 +248,7 @@ export default function BusinessPanel({
         return (
           <ConfirmDialog
             title={isOrder && draft.proposed_total != null ? `把建议总价 ${formatMoney(draft.proposed_total)} 写入订单？` : '确认应用这份草稿？'}
-            body={amountLine ? [amountLine, ...draft.required_acknowledgement.effects.map(effectLabel)] : draft.required_acknowledgement.effects.map(effectLabel)}
+            body={amountLine ? [amountLine, ...acknowledgement.effects.map(effectLabel)] : acknowledgement.effects.map(effectLabel)}
             confirmLabel="确认继续"
             busy={working}
             onConfirm={() => { const pending = confirmingDecision; setConfirmingDecision(null); void decide(pending.draft, pending.decision) }}

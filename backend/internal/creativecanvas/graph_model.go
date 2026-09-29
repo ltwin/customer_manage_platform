@@ -169,7 +169,7 @@ func scanNode(row store.Row) (Node, error) {
 	n.StatusRevision = creativeops.Revision(s)
 	return n, notFound(err)
 }
-func fillGraphSnapshot(ctx context.Context, tx store.TxAccountScope, c *Canvas) error {
+func fillGraphSnapshot(ctx context.Context, tx canvasReader, c *Canvas) error {
 	edges, inputs, err := loadRelations(ctx, tx, c.ID)
 	if err != nil {
 		return err
@@ -249,7 +249,7 @@ func fillGraphSnapshot(ctx context.Context, tx store.TxAccountScope, c *Canvas) 
 	sort.Slice(c.ObjectStates, func(i, j int) bool { return c.ObjectStates[i].ID < c.ObjectStates[j].ID })
 	return rows.Err()
 }
-func loadRelations(ctx context.Context, tx store.TxAccountScope, id string) ([]Edge, []NodeInput, error) {
+func loadRelations(ctx context.Context, tx canvasReader, id string) ([]Edge, []NodeInput, error) {
 	edges := []Edge{}
 	inputs := []NodeInput{}
 	rows, err := tx.QueryPage(ctx, "creative_edges", "id,source_node_id,target_node_id,source_port,target_port,role,ordinal,revision", "canvas_id=$2", []store.OrderBy{{Column: "id"}}, 2001, 0, id)

@@ -30,9 +30,9 @@ import { errorMessage, isWithdrawn } from './queue.ts'
 import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
-import { watchCanvasEvents } from './canvasEvents.ts'
-import { ApiError } from '../../api/transport.ts'
-import { newerCanvas, matchesCanvas } from './snapshot.ts'
+import { useCanvasSnapshot } from './useCanvasSnapshot.ts'
+import { useNodeContent } from './useNodeContent.ts'
+import { matchesCanvas } from './snapshot.ts'
 import {
   previewAliases,
   resolvePreviewID,
@@ -95,7 +95,6 @@ function Workspace({ account }: { account: string }) {
   })
   const [catalog, setCatalog] = useState(emptyCatalog)
   const [libraryLoading, setLibraryLoading] = useState(true)
-  const [canvas, setCanvas] = useState<api.Canvas | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [selection, setSelection] = useState<string[]>([])
   const [inlineEditing, setInlineEditing] = useState<{
@@ -117,12 +116,13 @@ function Workspace({ account }: { account: string }) {
   const [tick, setTick] = useState(0)
   // Edits undone before they left this machine; redo replays them locally.
   const [redoStack, setRedoStack] = useState<Intent[]>([])
-  const [full, setFull] = useState<Draft | null>(null)
-  const [error, setError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [copyNotice, setCopyNotice] = useState('')
   const [localError, setLocalError] = useState('')
   const [mediaError, setMediaError] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [mutationLoading, setLoading] = useState(false)
+  const { canvas, syncError, loading: canvasLoading, refreshCanvas } = useCanvasSnapshot(canvasID, tick)
+  const loading = canvasLoading || mutationLoading
   const [discard, setDiscard] = useState<string | null>(null)
   const [form, setForm] = useState<'asset' | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -139,8 +139,6 @@ function Workspace({ account }: { account: string }) {
     name: string
     revision: string
   } | null>(null)
-  const readSequence = useRef(0)
-  const canvasReadSequence = useRef(0)
   const outbox = useMemo(() => queue?.value.outbox ?? [], [queue?.value.outbox])
   // The canvas the photographer sees: snapshot plus local edits on their way.
   const view = useMemo(
@@ -192,6 +190,7 @@ function Workspace({ account }: { account: string }) {
     onSelection(deferred.ids.filter((id) => live.has(id)))
   }, [canvas, onSelection])
   const node = view?.nodes.find((n) => n.id === selected)
+  const { full, error: nodeError, retry: retryNode } = useNodeContent(node)
   const nodeKey = `node:${canvasID}:${selected ?? ''}`
   const draft = queue?.value.drafts[nodeKey] ?? full
   // Non-canvas requests (library, projects) still wait for the single slot;
@@ -205,7 +204,7 @@ function Workspace({ account }: { account: string }) {
     libraryLoading ||
     loading
   const canEditLocal = matchesCanvas(canvas, canvasID) && !canvas?.archived
-  const canWrite = canEditLocal && !error && !!queue && !storageError && !localError
+  const canWrite = canEditLocal && !syncError && !!queue && !storageError && !localError
   // Local edits stay enabled while a rejected request awaits a decision only
   // if it is not a canvas command; a refused canvas edit must be resolved first.
   const editable =
@@ -215,7 +214,7 @@ function Workspace({ account }: { account: string }) {
     setLibraryLoading(true)
     setTick((v) => v + 1)
   }, [])
-  const canMove = !!queue && canEditLocal && !storageError && !localError
+  const canMove = editable
   const uploads = useUploads((item) => {
     if (item.upload?.binding?.status === 'needs_review')
       setCopyNotice('文件已上传，但目标已变化；请在待处理项中选择放入位置。')
@@ -265,153 +264,18 @@ function Workspace({ account }: { account: string }) {
     loading,
   ])
   useEffect(() => {
-    const controller = new AbortController()
-    const seq = ++readSequence.current
-    setLoading(true)
-    void (async () => {
-      const canvasSeq = ++canvasReadSequence.current
-      const c = canvasID
-        ? await api.read<api.Canvas>(
-            `/canvases/${encodeURIComponent(canvasID)}`,
-            controller.signal,
-          )
-        : null
-      if (controller.signal.aborted || seq !== readSequence.current) return
-      if (canvasSeq === canvasReadSequence.current)
-        setCanvas((old) => newerCanvas(old, c))
-      setError('')
-    })()
-      .catch((e: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(e))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
-      })
-    return () => controller.abort()
-  }, [canvasID, tick])
-  const refreshCanvas = useRef<() => Promise<void>>(() => Promise.resolve())
-  useEffect(() => {
-    const controller = new AbortController()
-    let fetching = false
-    let requested = false
-    let retry: ReturnType<typeof setTimeout> | undefined
-    let retryDelay = 1000
-    const reload = async () => {
-      if (controller.signal.aborted || document.hidden || !navigator.onLine || !canvasID) return
-      if (fetching) {
-        requested = true
-        return
-      }
-      clearTimeout(retry)
-      fetching = true
-      const canvasSeq = ++canvasReadSequence.current
-      try {
-        const c = await api.read<api.Canvas>(
-          `/canvases/${encodeURIComponent(canvasID)}`,
-          controller.signal,
-        )
-        if (
-          !controller.signal.aborted &&
-          canvasSeq === canvasReadSequence.current
-        ) {
-          setCanvas((old) => newerCanvas(old, c))
-          setError('')
-          retryDelay = 1000
-        }
-      } catch (e) {
-        if (!controller.signal.aborted) {
-          setError(errorMessage(e))
-          // Retry a failed invalidation read, never periodically read an idle canvas.
-          if (!(e instanceof ApiError && [401, 403, 404].includes(e.status))) {
-            retry = setTimeout(() => void reload(), retryDelay)
-            retryDelay = Math.min(retryDelay * 2, 30000)
-          }
-        }
-      } finally {
-        fetching = false
-        if (requested && !controller.signal.aborted) {
-          requested = false
-          void reload()
-        }
-      }
-    }
-    refreshCanvas.current = reload
-    let stream: AbortController | undefined
-    const connect = () => {
-      stream?.abort()
-      stream = undefined
-      if (document.hidden || !navigator.onLine || !canvasID) return
-      stream = new AbortController()
-      void watchCanvasEvents(
-        (signal) => api.connectCanvasEvents(canvasID, signal),
-        stream.signal,
-        () => void reload(),
-        setError,
-      )
-    }
-    connect()
-    window.addEventListener('online', connect)
-    window.addEventListener('offline', connect)
-    document.addEventListener('visibilitychange', connect)
-    return () => {
-      controller.abort()
-      stream?.abort()
-      clearTimeout(retry)
-      refreshCanvas.current = () => Promise.resolve()
-      window.removeEventListener('online', connect)
-      window.removeEventListener('offline', connect)
-      document.removeEventListener('visibilitychange', connect)
-    }
-  }, [canvasID])
-  useEffect(() => {
-    setCanvas(null)
     setSelected(null)
+    setActionError('')
     setSelection([])
     setInlineEditing(null)
     inlineRequest.current++
     setMaximized(null)
     setEditing(false)
-    setFull(null)
     setCompare(null)
     setRename(null)
     setDiscard(null)
     setRedoStack([])
   }, [canvasID])
-  useEffect(() => {
-    const controller = new AbortController()
-    setFull(null)
-    if (!node) return
-    const base: Draft = {
-      ...blankDraft(
-        (node.metadata.type_key.startsWith('core.')
-          ? node.metadata.type_key.slice(5)
-          : 'text') as Draft['kind'],
-      ),
-      title: node.metadata.title,
-      dataRevision: node.data_revision,
-      contentRevision: node.data.content_revision_id,
-    }
-    if (!node.data.content_revision_id) {
-      setFull(base)
-      return
-    }
-    void api
-      .read<api.Content>(
-        `/content-revisions/${encodeURIComponent(node.data.content_revision_id)}`,
-        controller.signal,
-      )
-      .then((r) => {
-        if (!controller.signal.aborted)
-          setFull({
-            ...base,
-            value: contentText(r.payload),
-          })
-      })
-      .catch((e: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(e))
-      })
-    return () => controller.abort()
-  }, [node])
   useEffect(() => {
     const leave = (e: BeforeUnloadEvent) => {
       if (localError || queue?.busy || queue?.localPending) {
@@ -440,7 +304,7 @@ function Workspace({ account }: { account: string }) {
     options: { select?: string[]; draftKey?: string } = {},
   ): Promise<boolean> {
     if (!queue || !view || view.id !== canvasID || !editable) return Promise.resolve(false)
-    setError('')
+    setActionError('')
     const staged = queue.stageIntent(canvasID, {
       ...intent,
       draftKey: options.draftKey,
@@ -485,7 +349,7 @@ function Workspace({ account }: { account: string }) {
   async function perform(path: string, value: unknown, draftKey?: string) {
     if (!queue || blocked || queue.busy || queue.value.job) return false
     if (path.startsWith('/canvases/')) return false
-    setError('')
+    setActionError('')
     setLoading(true)
     try {
       const result = await queue.enqueue(path, value, draftKey)
@@ -521,6 +385,7 @@ function Workspace({ account }: { account: string }) {
       if (!queue.value.job) {
         setForm(null)
         if (draftKey?.startsWith('node:')) setEditing(false)
+        setLoading(false)
         refresh()
         return true
       } else {
@@ -539,6 +404,7 @@ function Workspace({ account }: { account: string }) {
     try {
       await queue.flush()
       if (!queue.value.job) {
+        setLoading(false)
         refresh()
       } else {
         setLoading(false)
@@ -784,7 +650,7 @@ function Workspace({ account }: { account: string }) {
         .catch((error: unknown) => {
           if (inlineRequest.current === request) {
             setInlineEditing(null)
-            setError(errorMessage(error))
+            setActionError(errorMessage(error))
           }
         })
   }
@@ -850,7 +716,9 @@ function Workspace({ account }: { account: string }) {
   const hasDraft = !!queue?.value.drafts[nodeKey]
   const needsRecovery = !!job && !queue?.busy && !loading
   const showNotice = !!(
-    error ||
+    syncError ||
+    nodeError ||
+    actionError ||
     storageError ||
     localError ||
     !online ||
@@ -1016,12 +884,14 @@ function Workspace({ account }: { account: string }) {
             </p>
           )}
           {!online && <span>当前离线 · 输入仍保留在本机</span>}
-          {(error || storageError || localError) && (
+          {(syncError || nodeError || actionError || storageError || localError) && (
             <p role="alert">
-              {error || storageError || localError}{' '}
+              {syncError || nodeError || actionError || storageError || localError}{' '}
               <button
                 className="btn"
                 onClick={() => {
+                  setActionError('')
+                  retryNode()
                   refresh()
                   if (localError && queue)
                     void queue
@@ -1203,7 +1073,7 @@ function Workspace({ account }: { account: string }) {
             </>
           ) : (
             <div className="cc-canvas-empty">
-              <h2>{error ? '画布暂时没有打开' : '正在打开画布…'}</h2>
+              <h2>{syncError ? '画布暂时没有打开' : '正在打开画布…'}</h2>
             </div>
           )}
         </section>
@@ -1333,7 +1203,7 @@ function Workspace({ account }: { account: string }) {
               const data = new FormData(e.currentTarget)
               const title = String(data.get('title') ?? '').trim()
               if (!title) {
-                setError('请填写资产名称')
+                setActionError('请填写资产名称')
                 return
               }
               void perform('/assets/from-canvas-node', {

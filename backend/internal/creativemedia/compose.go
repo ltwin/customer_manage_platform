@@ -41,13 +41,11 @@ func Compose(cfg config.Config, ticketKey []byte, logger *slog.Logger) (*Service
 		svc.SetLogger(logger)
 		return svc, nil
 	case config.StorageDriverLocal:
-		// The local adapter needs the part signer, which needs the service key:
-		// build a signer-only service first, then the real one.
-		signerOnly, err := NewService(mediaCfg, signerAdapter{}, verifier, ticketKey, ticketBasePath)
+		signer, err := NewPartSigner(ticketKey, partPath)
 		if err != nil {
 			return nil, err
 		}
-		adapter, err := versionedfs.NewLocal(cfg.CreativeMediaLocalRoot, signerOnly.PartSigner(partPath))
+		adapter, err := versionedfs.NewLocal(cfg.CreativeMediaLocalRoot, signer)
 		if err != nil {
 			return nil, err
 		}
@@ -61,11 +59,6 @@ func Compose(cfg config.Config, ticketKey []byte, logger *slog.Logger) (*Service
 		return nil, fmt.Errorf("unsupported creative media driver %q", cfg.AvatarStorageDriver)
 	}
 }
-
-type signerAdapter struct{ versionedfs.Adapter }
-
-func (signerAdapter) Driver() string { return "local" }
-func (signerAdapter) Bucket() string { return "" }
 
 // SweepAllAccounts runs the expiry sweep for every active account.
 func (s *Service) SweepAllAccounts(ctx context.Context, db *store.Store, limit int) error {

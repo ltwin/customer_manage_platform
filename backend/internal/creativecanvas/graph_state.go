@@ -39,7 +39,7 @@ type changeDetail struct {
 	Fields        []fieldChange `json:"fields"`
 }
 
-func loadGraph(ctx context.Context, tx store.TxAccountScope, id string) (graphState, map[string]identity, error) {
+func loadGraph(ctx context.Context, tx canvasReader, id string) (graphState, map[string]identity, error) {
 	g := graphState{Versions: map[string]NodeVersion{}, Nodes: map[string]Node{}, Edges: map[string]Edge{}, Inputs: map[string]NodeInput{}}
 	ids := map[string]identity{}
 	rows, err := tx.QueryPage(ctx, "creative_nodes", nodeColumns, "canvas_id=$2", []store.OrderBy{{Column: "id"}}, maxNodes+1, 0, id)

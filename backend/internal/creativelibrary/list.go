@@ -212,12 +212,21 @@ func SearchAssets(ctx context.Context, sc store.AccountScope, query Search) (Ass
 			}
 			result.NextCursor = base64.RawURLEncoding.EncodeToString(data)
 		}
+		if err = attachPageRelations(ctx, tx, result.Items); err != nil {
+			return err
+		}
+		revisionIDs := make([]string, 0, len(result.Items))
+		for _, a := range result.Items {
+			revisionIDs = append(revisionIDs, a.ContentRevisionID)
+		}
+		content, err := creativecontent.ReadDisplayBatch(ctx, tx, revisionIDs)
+		if err != nil {
+			return err
+		}
 		for i := range result.Items {
 			a := &result.Items[i]
-			if err = attachRelations(ctx, tx, a); err != nil {
-				return err
-			}
-			r, e := creativecontent.ReadInSnapshot(ctx, tx, a.ContentRevisionID, "display")
+			item := content[a.ContentRevisionID]
+			r, e := item.Revision, item.Err
 			if errors.Is(e, creativecontent.ErrUsageDenied) {
 				a.Unavailable = true
 				continue
@@ -255,6 +264,45 @@ func attachRelations(ctx context.Context, tx libraryReader, a *Asset) error {
 		}
 		rows.Close()
 		if err = rows.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// attachPageRelations reads each relation once for the visible page.
+func attachPageRelations(ctx context.Context, tx libraryReader, assets []Asset) error {
+	if len(assets) == 0 {
+		return nil
+	}
+	ids := make([]string, len(assets))
+	index := make(map[string]*Asset, len(assets))
+	for i := range assets {
+		a := &assets[i]
+		ids[i] = a.ID
+		index[a.ID] = a
+		a.GroupIDs = []string{}
+		a.TagIDs = []string{}
+	}
+	for _, rel := range []struct{ table, column string }{{"creative_asset_group_members", "group_id"}, {"creative_asset_tags", "tag_id"}} {
+		rows, err := tx.Query(ctx, rel.table, "asset_id,"+rel.column, "asset_id=ANY($2::text[])", ids)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var assetID, id string
+			if err := rows.Scan(&assetID, &id); err != nil {
+				rows.Close()
+				return err
+			}
+			if rel.column == "group_id" {
+				index[assetID].GroupIDs = append(index[assetID].GroupIDs, id)
+			} else {
+				index[assetID].TagIDs = append(index[assetID].TagIDs, id)
+			}
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
 			return err
 		}
 	}

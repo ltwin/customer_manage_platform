@@ -286,16 +286,36 @@ func advanceCanvas(ctx context.Context, tx store.TxAccountScope, c Canvas, struc
 	_, err := tx.Update(ctx, "creative_canvases", "revision=revision+1,updated_at=clock_timestamp()", "id=$2", c.ID)
 	return err
 }
+func readCanvas(ctx context.Context, tx store.ReadTxAccountScope, id string) (Canvas, error) {
+	var c Canvas
+	c.ID = id
+	if err := tx.QueryRow(ctx, "creative_canvases", "project_id", "id=$2", id).Scan(&c.ProjectID); err != nil {
+		return Canvas{}, notFound(err)
+	}
+	var archived *time.Time
+	var projectRevision int64
+	if err := tx.QueryRow(ctx, "creative_projects", "archived_at,name,revision", "id=$2", c.ProjectID).Scan(&archived, &c.ProjectName, &projectRevision); err != nil {
+		return Canvas{}, notFound(err)
+	}
+	c.Archived = archived != nil
+	c.ProjectRevision = creativeops.Revision(projectRevision)
+	var revision, topology int64
+	if err := tx.QueryRow(ctx, "creative_canvases", "revision,topology_revision", "id=$2 AND project_id=$3", id, c.ProjectID).Scan(&revision, &topology); err != nil {
+		return Canvas{}, notFound(err)
+	}
+	c.Revision = creativeops.Revision(revision)
+	c.TopologyRevision = creativeops.Revision(topology)
+	return c, nil
+}
 func GetCanvas(ctx context.Context, scope store.AccountScope, id string) (Canvas, error) {
 	var c Canvas
-	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		// The current foundation barrier serializes this bounded snapshot with all
-		// participating writers, including capability and usage changes.
-		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		// Repeatable-read keeps graph, grants and capabilities in one snapshot.
+		if err := tx.RequireCreativeRead(ctx); err != nil {
 			return err
 		}
 		var err error
-		c, err = lockCanvas(ctx, tx, id, false)
+		c, err = readCanvas(ctx, tx, id)
 		if err != nil {
 			return err
 		}
@@ -319,28 +339,8 @@ func GetCanvas(ctx context.Context, scope store.AccountScope, id string) (Canvas
 		if len(c.Nodes) > maxNodes {
 			return ErrLimit
 		}
-		for i := range c.Nodes {
-			n := &c.Nodes[i]
-			n.ReadOnly = c.Archived
-			if err := fillNodeView(ctx, tx, id, n); err != nil {
-				return err
-			}
-			if n.ContentRevisionID == nil || !knownType(n.TypeKey) {
-				continue
-			}
-			r, err := creativecontent.RequireUsable(ctx, tx, *n.ContentRevisionID, "display")
-			if errors.Is(err, creativecontent.ErrUsageDenied) {
-				n.Unavailable = true
-				continue
-			}
-			if err != nil {
-				return err
-			}
-			if n.ContentID == nil || r.ContentID != *n.ContentID || n.TypeKey != "core."+r.Kind {
-				return creativecontent.ErrMissingRoot
-			}
-			preview := creativecontent.Preview(r)
-			n.Content = &preview
+		if err := fillNodeViews(ctx, tx, &c); err != nil {
+			return err
 		}
 		if err := fillGraphSnapshot(ctx, tx, &c); err != nil {
 			return err
