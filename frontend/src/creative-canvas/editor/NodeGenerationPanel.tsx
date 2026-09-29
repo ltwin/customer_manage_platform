@@ -242,7 +242,7 @@ export default function NodeGenerationPanel({
       className="cc-generation nodrag nopan nowheel"
       aria-label="节点生成"
       style={{
-        left: `clamp(min(${leftInset}px, max(8px, 100% - 376px)), ${point.x * viewport.zoom + viewport.x + 82}px, max(8px, 100% - 376px))`,
+        left: `clamp(min(${leftInset}px, max(8px, 100% - 376px)), ${point.x * viewport.zoom + viewport.x}px, max(8px, 100% - 376px))`,
         top: panelTop,
         maxHeight: `min(560px, calc(100% - ${panelTop} - 12px))`,
       }}

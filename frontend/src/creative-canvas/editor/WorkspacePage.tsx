@@ -1,10 +1,12 @@
 import {
-  Aperture,
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
+  LayoutGrid,
   Library,
+  PencilLine,
   Plus,
   Type,
-  LockKeyhole,
   ChevronDown,
   MousePointer2,
   Hand,
@@ -74,10 +76,10 @@ export default function WorkspacePage() {
 function Workspace({ account }: { account: string }) {
   const { queue, error: storageError } = useJournal(account)
   const online = useOnline()
-  const [libraryWidth, setLibraryWidth] = useState(318)
-  const [libraryOpen, setLibraryOpen] = useState(
-    () => !window.matchMedia('(max-width: 760px)').matches,
-  )
+  const [libraryWidth, setLibraryWidth] = useState(344)
+  // v6：资产库默认收起，从工具轨打开。
+  const [libraryOpen, setLibraryOpen] = useState(false)
+  const [projectMenu, setProjectMenu] = useState(false)
   const [maximized, setMaximized] = useState<{
     id: string
     libraryOpen: boolean
@@ -732,55 +734,72 @@ function Workspace({ account }: { account: string }) {
     >
       {canvasID && <AgentPanel key={canvasID} account={account} canvasID={canvasID} />}
       <header className="cc-header">
-        <div className="cc-heading">
-          <Link
-            className="cc-home"
-            to="/creative"
-            aria-label="返回创意空间"
-            title="返回创意空间"
+        <Link
+          className="cc-home"
+          to="/creative"
+          aria-label="返回创意空间"
+          title="返回创意空间"
+        >
+          <ArrowLeft size={16} />
+        </Link>
+        {activeProject ? (
+          <button
+            className="cc-project-name"
+            aria-label="项目菜单"
+            aria-haspopup="menu"
+            aria-expanded={projectMenu}
+            onClick={() => setProjectMenu(!projectMenu)}
           >
-            <ArrowLeft size={17} />
-          </Link>
-          <Aperture className="cc-brand-icon" size={25} strokeWidth={1.4} />
-          <span className="cc-brand">创意空间</span>
-          <span className="cc-divider" />
-          {activeProject ? (
+            <h1>{activeProject.name}</h1>
+            <ChevronDown size={14} />
+          </button>
+        ) : (
+          <h1 className="cc-project-name">个人资产库</h1>
+        )}
+        {canvas?.archived && <span className="cc-header-note">已归档</span>}
+      </header>
+      {projectMenu && activeProject && (
+        <>
+          <button
+            className="cc-menu-dismiss"
+            aria-label="关闭项目菜单"
+            onClick={() => setProjectMenu(false)}
+          />
+          <div className="cc-menu cc-project-menu" role="menu" aria-label="项目">
             <button
-              className="cc-project-name"
-              aria-label="改名"
+              role="menuitem"
               disabled={blocked || !canWrite}
-              onClick={() => setRename(activeProject)}
+              onClick={() => {
+                setProjectMenu(false)
+                setRename(activeProject)
+              }}
             >
-              <h1>{activeProject.name}</h1>
-              <ChevronDown size={13} />
+              <PencilLine size={16} />
+              <span>重命名</span>
             </button>
-          ) : (
-            <h1>个人资产库</h1>
-          )}
-          <span className="cc-private">
-            <LockKeyhole size={12} /> 私人创作
-          </span>
-        </div>
-        <nav className="cc-actions">
-          {activeProject && (
+            <Link role="menuitem" to="/creative">
+              <LayoutGrid size={16} />
+              <span>所有项目</span>
+            </Link>
+            <span className="cc-menu-sep" />
             <button
-              className="btn cc-quiet"
+              role="menuitem"
+              className={canvas?.archived ? '' : 'is-danger'}
               disabled={blocked}
-              onClick={() =>
+              onClick={() => {
+                setProjectMenu(false)
                 void perform(
                   `/projects/${activeProject.id}/${canvas?.archived ? 'restore' : 'archive'}`,
                   { expected_revision: activeProject.revision },
                 )
-              }
+              }}
             >
-              {canvas?.archived ? '恢复项目' : '归档项目'}
+              {canvas?.archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+              <span>{canvas?.archived ? '恢复项目' : '归档项目'}</span>
             </button>
-          )}
-          <Link className="btn" to="/creative">
-            所有项目
-          </Link>
-        </nav>
-      </header>
+          </div>
+        </>
+      )}
       <nav className="cc-tool-rail" aria-label="创作工具">
         <button
           className="cc-add-tool"
@@ -791,44 +810,41 @@ function Workspace({ account }: { account: string }) {
           disabled={blocked || !canWrite}
           onClick={() => setAddMenu(!addMenu)}
         >
-          <Plus size={24} />
-        </button>
-        <span className="cc-rail-line" />
-        <button
-          className={libraryOpen ? 'is-active' : ''}
-          aria-label="资产库"
-          aria-expanded={libraryOpen}
-          aria-controls="creative-library"
-          title="资产库"
-          onClick={() => setLibraryOpen(!libraryOpen)}
-        >
-          <Library size={20} strokeWidth={1.5} />
-          <span>资产</span>
+          <Plus size={18} />
         </button>
         <span className="cc-rail-line" />
         <button
           aria-label="选择工具"
-          title="选择工具"
+          title="选择 · V"
           aria-pressed={!panMode}
           onClick={() => setPanMode(false)}
         >
-          <MousePointer2 size={20} strokeWidth={1.5} />
+          <MousePointer2 size={18} strokeWidth={1.6} />
         </button>
         <button
           aria-label="移动画布"
-          title="移动画布 · 中键 / 空格"
+          title="平移 · 中键 / 空格"
           aria-pressed={panMode}
           onClick={() => setPanMode(true)}
         >
-          <Hand size={20} strokeWidth={1.5} />
+          <Hand size={18} strokeWidth={1.6} />
         </button>
-        <span className="cc-rail-spacer" />
+        <span className="cc-rail-line" />
+        <button
+          aria-label="资产库"
+          aria-pressed={libraryOpen}
+          aria-controls="creative-library"
+          title="资产库"
+          onClick={() => setLibraryOpen(!libraryOpen)}
+        >
+          <Library size={18} strokeWidth={1.6} />
+        </button>
         <button
           aria-label="画布快捷键"
-          title="画布快捷键"
+          title="快捷键"
           onClick={() => setHelp(true)}
         >
-          <CircleHelp size={19} strokeWidth={1.5} />
+          <CircleHelp size={18} strokeWidth={1.6} />
         </button>
       </nav>
       {addMenu && (
@@ -839,7 +855,7 @@ function Workspace({ account }: { account: string }) {
             onClick={() => setAddMenu(false)}
           />
           <div
-            className="cc-add-menu cc-glass"
+            className="cc-menu cc-add-menu"
             role="menu"
             aria-label="新建节点"
           >
@@ -971,11 +987,6 @@ function Workspace({ account }: { account: string }) {
         >
           {view && view.id === canvasID ? (
             <>
-              <div className="cc-canvas-caption">
-                <i />
-                主画布 <span>/</span> {view.nodes.length} 个节点{' '}
-                {view.archived && ' · 已归档'}
-              </div>
               <ReactFlowProvider key={view.id}>
                 <CanvasView
                   account={account}
@@ -1065,7 +1076,7 @@ function Workspace({ account }: { account: string }) {
                 {node && queue && !inlineEditing && node.capabilities.prompt_mode !== 'unavailable' && <NodeGenerationPanel
                   key={`${canvasID}:${node.id}`}
                   canvas={view} node={node} queue={queue} assets={assets.items}
-                  leftInset={libraryOpen ? libraryWidth + 98 : 82}
+                  leftInset={libraryOpen ? libraryWidth + 80 : 64}
                   disabled={!editable || blocked || !online || outbox.some(i => i.canvasID === canvasID && i.state !== 'confirmed')}
                   refresh={() => refreshCanvas.current()}
                 />}

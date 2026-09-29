@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
+
+// v6 窄屏隐藏缩放条：按钮不可见时走 ⇧1。
+async function fitAll(page) {
+  const button = page.getByRole('button', { name: '适应全部节点', exact: true })
+  if (await button.isVisible()) return button.click()
+  await page.locator('.react-flow').focus()
+  await page.keyboard.press('Shift+Digit1')
+}
+
 const url = process.env.CREATIVE_EDITOR_URL,
   api = process.env.CREATIVE_EDITOR_API,
   output = '/tmp/creative-editor-qa'
@@ -73,6 +82,8 @@ let releaseMove
 const moves = []
 let canvasReads = 0
 await context.route('**/api/v1/**', async (route) => {
+  // route.fetch 会等待完整响应体；SSE 长连接在这里断开，客户端按退避重连并继续用快照读取。
+  if (route.request().headers().accept === 'text/event-stream') return route.abort('failed')
   const u = new URL(route.request().url()),
     path = u.pathname + u.search
   if (u.pathname === failedCanvasPath && route.request().method() === 'GET') {
@@ -137,6 +148,13 @@ async function waitUntil(check, message) {
     await new Promise((resolve) => setTimeout(resolve, 25))
   }
 }
+// v6 资产库默认收起；本脚本多数步骤在画布页操作资产，加载后显式打开。
+async function openLibrary(p) {
+  if (!p.url().includes('/creative/canvases/')) return
+  const toggle = p.getByRole('button', { name: '资产库', exact: true })
+  if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click()
+  await p.locator('#creative-library').waitFor()
+}
 async function saved(p) {
   await p.waitForFunction(
     () => {
@@ -162,7 +180,15 @@ async function saved(p) {
   )
 }
 async function selectNode(p) {
-  await p.locator('.react-flow__node').first().dblclick()
+  // v6 抽屉浮在画布左侧；先让节点落在抽屉右边的可见区。
+  const node = p.locator('.react-flow__node').first()
+  const [box, shelf] = await Promise.all([
+    node.boundingBox(),
+    p.locator('#creative-library').boundingBox(),
+  ])
+  if (box && shelf && box.x < shelf.x + shelf.width)
+    await p.mouse.wheel(shelf.x + shelf.width - box.x + 80, 0)
+  await node.dblclick()
   await p.locator('.cc-editor-dialog textarea').waitFor()
 }
 try {
@@ -179,6 +205,7 @@ try {
   await page.waitForURL('**/dashboard')
   await page.goto(`${url}/creative`)
   await saved(page)
+  await openLibrary(page)
   await page.getByRole('heading', { name: '我的项目', exact: true }).waitFor()
   assert.equal(await page.locator('.react-flow').count(), 0)
   await page.screenshot({ path: `${output}/home-empty.png`, fullPage: true })
@@ -203,6 +230,7 @@ try {
     originalTab,
   )
   await saved(page)
+  await openLibrary(page)
   assert.equal(await page.locator('.cc-asset').count(), 1)
   async function createProject(name) {
     await page.getByRole('link', { name: '返回创意空间', exact: true }).click()
@@ -225,16 +253,19 @@ try {
     }
     await page.waitForURL('**/creative/canvases/*')
     await saved(page)
+    await openLibrary(page)
     await page
       .getByRole('heading', { name: '未命名项目', exact: true })
       .waitFor()
-    await page.getByRole('button', { name: '改名', exact: true }).click()
+    await page.getByRole('button', { name: '项目菜单', exact: true }).click()
+    await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
     await page.getByLabel('新名称', { exact: true }).fill(name)
     await page.getByRole('button', { name: '保存名称', exact: true }).click()
     await page.getByRole('heading', { name, exact: true }).waitFor()
     await saved(page)
     await page.reload()
     await saved(page)
+    await openLibrary(page)
     await page.getByRole('heading', { name, exact: true }).waitFor()
     if (name === '第一张画布') {
       loseNode = true
@@ -256,6 +287,7 @@ try {
     second = await createProject('第二张画布')
   await page.goto(first)
   await saved(page)
+  await openLibrary(page)
   await selectNode(page)
   await page.getByLabel('正文', { exact: true }).fill('第一张画布的本机草稿')
   await page
@@ -263,6 +295,7 @@ try {
     .waitFor()
   await page.reload()
   await saved(page)
+  await openLibrary(page)
   await selectNode(page)
   assert.equal(
     await page.getByLabel('正文', { exact: true }).inputValue(),
@@ -272,6 +305,7 @@ try {
   await saved(page)
   await page.goto(second)
   await saved(page)
+  await openLibrary(page)
   await selectNode(page)
   assert.equal(
     await page.getByLabel('正文', { exact: true }).inputValue(),
@@ -284,6 +318,7 @@ try {
   )
   await page.goto(first)
   await saved(page)
+  await openLibrary(page)
   await selectNode(page)
   await page.getByLabel('正文', { exact: true }).fill('保留我的冲突草稿')
   const other = await context.newPage()
@@ -315,14 +350,16 @@ try {
   await page.locator('.react-flow__node').first().focus()
   await page.keyboard.press('ArrowRight')
   await saved(page)
-  await page.getByRole('button', { name: '归档项目', exact: true }).click()
+  await page.getByRole('button', { name: '项目菜单', exact: true }).click()
+  await page.getByRole('menuitem', { name: '归档项目', exact: true }).click()
   await saved(page)
   assert(
     await page
       .getByRole('button', { name: '新建节点', exact: true })
       .isDisabled(),
   )
-  await page.getByRole('button', { name: '恢复项目', exact: true }).click()
+  await page.getByRole('button', { name: '项目菜单', exact: true }).click()
+  await page.getByRole('menuitem', { name: '恢复项目', exact: true }).click()
   await saved(page)
   assert(
     !(await page
@@ -363,6 +400,7 @@ try {
   await context.setOffline(false)
   await page.reload()
   await saved(page)
+  await openLibrary(page)
   await selectNode(page)
   assert.equal(
     await page.getByLabel('正文', { exact: true }).inputValue(),
@@ -416,6 +454,7 @@ try {
     .getByRole('link', { name: '打开项目：第一张画布', exact: true })
     .click()
   await saved(page)
+  await openLibrary(page)
   await selectNode(page)
   await page.screenshot({
     path: `${output}/desktop-editor.png`,
@@ -444,27 +483,31 @@ try {
     () =>
       document
         .querySelector('.cc-workspace')
-        .style.getPropertyValue('--shelf-width') === '318px',
+        .style.getPropertyValue('--shelf-width') === '344px',
   )
   const metrics = await page.evaluate(() => {
     const rail = document.querySelector('.cc-tool-rail'),
       shelf = document.querySelector('.cl-library'),
-      node = document.querySelector('.cc-node'),
-      text = document.querySelector('.cc-node p')
+      header = document.querySelector('.cc-header'),
+      text = document.querySelector('.cc-node p'),
+      chrome = [...document.querySelectorAll('.cc-workspace *')]
     return {
       rail: rail.getBoundingClientRect().width,
       shelf: shelf.getBoundingClientRect().width,
-      radius: getComputedStyle(node).borderRadius,
+      header: getComputedStyle(header).backgroundColor,
       font: getComputedStyle(text).fontFamily,
-      blur: getComputedStyle(shelf).backdropFilter,
+      blurred: chrome.filter((el) => getComputedStyle(el).backdropFilter !== 'none').length,
+      serif: chrome.filter((el) => /Songti|STSong|serif/.test(getComputedStyle(el).fontFamily.replace('sans-serif', ''))).length,
     }
   })
-  assert.equal(metrics.rail, 54)
-  assert.equal(metrics.shelf, 318)
-  assert.equal(metrics.radius, '13px')
-  assert(metrics.font.includes('Songti'))
-  assert(metrics.blur.includes('28px'))
-  await writeFile(`${output}/v5-metrics.json`, JSON.stringify(metrics, null, 2))
+  // v6：实色浮层、无衬线、无玻璃模糊（docs/prototypes/creative-workspace/v6）。
+  assert.equal(metrics.rail, 48)
+  assert.equal(metrics.shelf, 344)
+  assert.equal(metrics.header, 'rgb(27, 27, 29)')
+  assert(!metrics.font.includes('Songti'))
+  assert.equal(metrics.blurred, 0)
+  assert.equal(metrics.serif, 0)
+  await writeFile(`${output}/v6-metrics.json`, JSON.stringify(metrics, null, 2))
   await page.screenshot({ path: `${output}/desktop.png` })
   await page.getByRole('button', { name: '编辑节点', exact: true }).click()
   await page.setViewportSize({ width: 390, height: 844 })
@@ -484,7 +527,7 @@ try {
   })
   if (await page.locator('#creative-library').isVisible())
     await page.getByRole('button', { name: '收起资产库', exact: true }).click()
-  await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
+  await fitAll(page)
   const mobileNodeWidth = await page
     .locator('.react-flow__node')
     .first()
@@ -511,6 +554,7 @@ try {
   // New assets remain reachable without a project at a phone viewport.
   await page.goto(`${url}/creative/library`)
   await saved(page)
+  await openLibrary(page)
   for (const kind of ['text', 'link']) {
     await page.getByRole('button', { name: '新增资产', exact: true }).click()
     await page
@@ -605,6 +649,7 @@ try {
   // Deliberately stall the server while continuing real pointer drags.
   await page.goto(first)
   await saved(page)
+  await openLibrary(page)
   // Earlier wheel checks can now pan horizontally; frame the drag target explicitly.
   await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
   const dragged = page.locator('.react-flow__node').first()
@@ -659,6 +704,7 @@ try {
   const finalTransform = await dragged.evaluate((node) => node.style.transform)
   await page.reload()
   await saved(page)
+  await openLibrary(page)
   assert.equal(
     await dragged.evaluate((node) => node.style.transform),
     finalTransform,
@@ -683,8 +729,10 @@ try {
   )
   await page.getByRole('button', { name: '查询并恢复原保存' }).click()
   await saved(page)
+  await openLibrary(page)
   await page.reload()
   await saved(page)
+  await openLibrary(page)
   assert.equal(
     await dragged.evaluate((node) => node.style.transform),
     uncertainTransform,
@@ -703,6 +751,7 @@ try {
   await saved(page)
   await page.reload()
   await saved(page)
+  await openLibrary(page)
   assert.equal(
     await dragged.evaluate((node) => node.style.transform),
     offlineTransform,
@@ -711,6 +760,7 @@ try {
   // FND-03: the same library handles standalone organization and canvas reuse.
   await page.goto(`${url}/creative/library`)
   await saved(page)
+  await openLibrary(page)
   await page
     .getByRole('button', { name: '管理分组与标签', exact: true })
     .click()
@@ -920,6 +970,7 @@ try {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`${url}/creative/library`)
   await saved(page)
+  await openLibrary(page)
   const durations = []
   page.on('response', (r) => {
     const u = new URL(r.url())

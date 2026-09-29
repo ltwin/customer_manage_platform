@@ -22,7 +22,7 @@ export default function UploadTray({
   if (!items.length) return null
   const active = items.some((i) => !['done', 'failed', 'rejected'].includes(i.stage))
   return (
-    <section className="cc-upload-tray cc-glass" aria-label="导入文件" aria-live="polite">
+    <section className="cc-upload-tray cc-surface" aria-label="导入文件" aria-live="polite">
       <header>
         <span>导入文件</span>
         <button

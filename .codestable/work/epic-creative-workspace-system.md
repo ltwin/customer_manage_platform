@@ -3,7 +3,7 @@ epic: ../epics/creative-workspace-system.md
 phase: executing
 approved_revision: 2b79fb8c8111fd9dea326ca33923ba27af293c3231b60b373c4a055fd64bebab
 current_item: FND-13
-next_action: G4已提交916d1ec；配置与产品入口受控切片及Agent面板反馈/暗色修复已完成，owner已授权提交现有代码。真实供应商/独立附件/外发同意交互仍待接入，不自动推进。
+next_action: v6迁移阶段1（视觉底座与外框）开发中；每阶段完成后等owner确认提交。
 blocked_by: none
 item_progression: per-item
 milestone_commit: manual
@@ -1586,3 +1586,18 @@ owner确认统一Tool架构及Agent/Harness职责，授权补齐必要设计后�
 - 浏览器隔离复现先红后绿：在途不再误报待确认；成功后选中会话并提示；断网后恢复使用同一操作编号。桌面及390px窄屏均检查通过，新建按钮文字对比度约12.4:1，无横向溢出，原生选择菜单为暗色。临时验证页已删除，未调用付费模型。截图及日志保留于 /tmp/agent-panel-*。
 - 最终 make check-frontend exit 0（389项测试、构建与lint），git diff --check 通过。通用UI审计本次面板无发现；其余两项为既有 InlineNodeEditor / NodeGenerationPanel 的 textarea resize 提示，未扩展修改范围。
 - 提交前对照产品入口 Round2 manifest：23个代码/契约/测试文件无漂移，沿用已记录的后端全量基线、增量包门禁和独立审查；本次补生成漂移检查及完整lint。当前仓库没有安装pre-commit hook，因此显式执行make lint，不使用跳过验证参数。
+
+### 2026-09-28 · v6 原型迁移正式前端（开工）
+
+- Owner 确认 v6 原型完成，要求迁移到正式系统，沿用本 worktree 与分支。v6 取代 v5 成为正式前端的视觉与交互依据：近黑中性、白色唯一主操作色、琥珀只表示运行中、全部无衬线、不用玻璃模糊。
+- 基线：原型单独提交 `e5f4c47`，目录 `docs/prototypes/creative-workspace/v6/` tree `3934ffd7059c96975410bd27ffc1a129e01b9d2a`。
+- 差距分析（只读，四块并行）：视觉 token/外框/Agent、画布、生成输入框与 @ 引用、资产库与空节点填充。底层图命令、撤销、端口磁吸、视口记忆已具备；需后端/契约配合的集中在结构化 Prompt 与占位编号、主版本固定/跟随最新、按显示版本重算尺寸、组边框双向贴合、从资产填充已有节点、分组深度与同层重名、重复存入追加归类、节点生成外发授权、模型价格。
+- Owner 拍板：①保留文字节点输入端口（偏离 v6，text-compose 继续可由连线触发）；②派生工具条本轮只做「生成视频」与「合并为参考」，重绘/扩图/高清等模型能力就绪再加入口，不放空按钮；③全部 6 阶段迁移，逐阶段人工确认提交。
+- 阶段：1 视觉底座与外框 → 2 画布交互 → 3 资产库（前端 + 小后端项；最近使用/本画布/删除分组撤销排最后）→ 4 主版本与尺寸语义 → 5 生成输入框与 @ 引用契约 → 6 Agent 面板。
+
+#### 阶段 1 · 视觉底座与外框（完成，待 owner 确认提交）
+
+- token：`.cc-workspace` 换为 v6 全套变量，旧名作为语义别名；脚本把 5 个 CSS 的 v5 绿/蓝调换成中性灰、删除玻璃模糊与宋体（177 处），`cc-glass` 改名 `cc-surface`。节点、组、框选、连线、右键菜单、对话框、生成与助手面板消费 v6 变量。
+- 外框：左上「返回 + 项目名」浮块，项目菜单收纳重命名/所有项目/归档恢复；工具轨垂直居中（+ / 选择 / 平移 / 资产库 / 快捷键）；撤销重做与缩放、适应、小地图合并左下；资产库默认收起、344px；窄屏工具轨在底部并隐藏缩放条。新增 ⇧1 适应画布。保存恢复条（35）与导入托盘（34）提到资产抽屉（29）之上。
+- 文档：DESIGN.md 新增「正式创意工作台：v6 近黑中性」，v5 章节标注已取代；UX-CONTRACT.md 同步 Layout、项目菜单与资产库默认状态。
+- 验证：`make check-frontend` exit 0；模拟接口的 canvas-interaction、generation、agent 浏览器回归通过；计算样式审计（桌面/资产库/项目菜单/窄屏/项目首页）带色偏元素、模糊、衬线均为 0，外框几何与 v6 一致。真实后端 `TestCreativeEditorBrowser`：media 通过；text-canvas（等待旧编辑弹窗）与 canvas-commands（端口菜单未出现）在 HEAD 基线同一步失败，为既有问题，未在本阶段扩大修复，留阶段 2。三个真实后端脚本统一断开 SSE 长连接（`route.fetch` 会等响应结束，HEAD 同样卡住）。

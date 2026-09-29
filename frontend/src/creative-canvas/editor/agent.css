@@ -15,24 +15,20 @@
   cursor: pointer;
 }
 .cc-agent-panel {
-  --accent-solid: var(--accent);
-  --accent-solid-hover: var(--accent);
-  --on-accent-solid: var(--bg);
   position: fixed;
   right: 16px;
-  top: 76px;
-  bottom: 16px;
+  top: 64px;
+  bottom: 12px;
   width: min(392px, calc(100vw - 32px));
   z-index: 40;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-strong);
-  border-radius: 18px;
-  background: var(--glass-bg);
-  backdrop-filter: blur(28px);
+  border: 0;
+  border-radius: var(--r-lg);
+  background: var(--s2);
   color-scheme: dark;
   color: var(--fg);
-  box-shadow: var(--shadow-1), inset 0 1px 0 #ffffff10;
+  box-shadow: var(--shadow);
   overflow: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;

@@ -18,6 +18,8 @@ const mediaRequests = [],
   postedCommands = []
 let uploadsCreated = 0
 await context.route('**/api/v1/**', async (route) => {
+  // route.fetch 会等待完整响应体；SSE 长连接在这里断开，客户端按退避重连并继续用快照读取。
+  if (route.request().headers().accept === 'text/event-stream') return route.abort('failed')
   const request = route.request(),
     u = new URL(request.url())
   if (request.method() === 'POST' && u.pathname.endsWith('/commands'))
@@ -172,6 +174,8 @@ try {
   await saved()
   await page.getByRole('button', { name: '开启新的创作' }).click()
   await page.waitForURL('**/creative/canvases/*')
+  // v6 资产库默认收起，从工具轨打开。
+  await page.getByRole('button', { name: '资产库', exact: true }).click()
   await saved()
   const canvasURL = page.url()
   await until(async () => (await page.locator('.cc-asset').count()) === 3, 'shelf assets')

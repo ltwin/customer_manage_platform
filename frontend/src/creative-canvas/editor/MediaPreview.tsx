@@ -45,7 +45,7 @@ export default function MediaPreview({
       }}
     >
       <button
-        className="cc-icon-button cc-glass cc-media-preview-close"
+        className="cc-icon-button cc-surface cc-media-preview-close"
         aria-label="关闭预览"
         onClick={onClose}
       >

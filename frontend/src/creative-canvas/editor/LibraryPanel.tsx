@@ -99,7 +99,7 @@ export default function LibraryPanel({
   const [retry, setRetry] = useState(0)
   const [selection, setSelection] = useState<string[]>([])
   const [manager, setManager] = useState(false)
-  const [width, setWidth] = useState(318)
+  const [width, setWidth] = useState(344)
   const [groupsOpen, setGroupsOpen] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [preview, setPreview] = useState<api.Asset | null>(null)
@@ -365,7 +365,7 @@ export default function LibraryPanel({
               <summary aria-label={`分组操作：${g.name}`}>
                 <Ellipsis size={14} />
               </summary>
-              <div className="cl-row-menu cc-glass">
+              <div className="cl-row-menu cc-surface">
                 <button
                   aria-label={`重命名分组：${g.name}`}
                   disabled={disabled}
@@ -486,7 +486,7 @@ export default function LibraryPanel({
               <button
                 className="cc-icon-button"
                 aria-label={expanded ? '收起资产管理' : '展开资产管理'}
-                onClick={() => setWidth(expanded ? 318 : 720)}
+                onClick={() => setWidth(expanded ? 344 : 720)}
               >
                 {expanded ? <Minimize size={17} /> : <Maximize size={17} />}
               </button>
@@ -634,7 +634,7 @@ export default function LibraryPanel({
               </button>
             </div>
             {filtersOpen && (
-              <section className="cl-filters cc-glass" aria-label="资产筛选">
+              <section className="cl-filters cc-surface" aria-label="资产筛选">
                 <header>
                   <strong>
                     筛选资产{' '}
@@ -947,7 +947,7 @@ export default function LibraryPanel({
                       <summary aria-label={`资产操作：${a.title}`}>
                         <Ellipsis size={16} />
                       </summary>
-                      <div className="cl-row-menu cc-glass">
+                      <div className="cl-row-menu cc-surface">
                         {view !== 'trash' ? (
                           <>
                             <button

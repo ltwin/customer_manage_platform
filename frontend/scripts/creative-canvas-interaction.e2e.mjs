@@ -553,8 +553,8 @@ try {
   })
   await page.reload()
   await waitCount(nodes, 3)
-  await page.getByRole('button', { name: '收起资产库', exact: true }).click()
-  await page.waitForTimeout(350)
+  // v6：资产库默认收起。
+  assert.equal(await page.locator('#creative-library').isVisible(), false)
   await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
   await page.waitForTimeout(350)
   let choosers = 0
@@ -634,8 +634,6 @@ try {
   canvas.nodes = [hoverNode]
   await page.reload()
   await waitCount(nodes, 1)
-  await page.getByRole('button', { name: '收起资产库', exact: true }).click()
-  await page.waitForTimeout(350)
   await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
   await page.waitForTimeout(350)
   const hoverVideo = page.locator('[data-id="video-hover"] video')
@@ -696,8 +694,6 @@ try {
     qaAccount = 'qa-style-account'
     await page.reload()
     await waitCount(nodes, 3)
-    await page.getByRole('button', { name: '收起资产库', exact: true }).click()
-    await page.waitForTimeout(350)
     await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
     await page.locator('[data-id="image-ready"] img').waitFor()
     await page.locator('[data-id="image-ready"] .cc-node-header').click()

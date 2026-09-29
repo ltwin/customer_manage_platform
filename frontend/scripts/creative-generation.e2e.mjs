@@ -178,7 +178,7 @@ try{
  const mobile=await panel.boundingBox();assert(mobile.x>=0 && mobile.x+mobile.width<=390)
  available=false
  await page.reload()
- await page.getByRole('button',{name:'适应全部节点',exact:true}).click()
+ await page.locator('.react-flow').focus(); await page.keyboard.press('Shift+Digit1')
  await page.locator('.react-flow__node[data-id="first"]').click()
  await panel.getByText('尚未配置生成模型',{exact:true}).waitFor()
  assert(await panel.getByRole('button',{name:'生成新版本',exact:true}).isDisabled())

@@ -40,7 +40,7 @@ export default function DocumentView({
   }, [id, attempt])
   return (
     <section
-      className="cc-maximized-document cc-glass"
+      className="cc-maximized-document cc-surface"
       aria-label="文档最大化"
       onKeyDown={(e) => {
         if (e.key === 'Escape') {

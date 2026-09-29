@@ -21,7 +21,7 @@ export default function StudioDialog({
     >
       <div
         ref={ref}
-        className="dialog cc-editor-dialog cc-glass"
+        className="dialog cc-editor-dialog cc-surface"
         role="dialog"
         aria-modal="true"
         aria-label={title}

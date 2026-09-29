@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
+
+// v6 窄屏隐藏缩放条：按钮不可见时走 ⇧1。
+async function fitAll(page) {
+  const button = page.getByRole('button', { name: '适应全部节点', exact: true })
+  if (await button.isVisible()) return button.click()
+  await page.locator('.react-flow').focus()
+  await page.keyboard.press('Shift+Digit1')
+}
+
 const url = process.env.CREATIVE_EDITOR_URL,
   api = process.env.CREATIVE_EDITOR_API,
   output = '/tmp/creative-commands-qa'
@@ -17,6 +26,8 @@ let holdConnection = false,
 const postedCommands = []
 let checkedPendingSelection = false
 await context.route('**/api/v1/**', async (route) => {
+  // route.fetch 会等待完整响应体；SSE 长连接在这里断开，客户端按退避重连并继续用快照读取。
+  if (route.request().headers().accept === 'text/event-stream') return route.abort('failed')
   const request = route.request(),
     u = new URL(request.url())
   if (
@@ -244,7 +255,7 @@ try {
     ringWidth: getComputedStyle(el, '::after').width,
     background: getComputedStyle(el, '::after').backgroundColor,
   }))
-  assert.equal(visual.background, 'rgb(20, 22, 25)', '加号应使用 v5 暗色背景')
+  assert.equal(visual.background, 'rgb(11, 11, 12)', '加号底色应为 v6 --bg')
   const zoom =
     (await node(a).boundingBox()).width / snapshot.nodes[0].metadata.width
   checkInteraction(
@@ -586,7 +597,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   if (await page.locator('#creative-library').isVisible())
     await page.getByRole('button', { name: '收起资产库', exact: true }).click()
-  await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
+  await fitAll(page)
   await pause(250)
   const mobilePort = node(a).getByRole('button', {
     name: '添加下游节点',
@@ -609,10 +620,10 @@ try {
     name: '资产库',
     exact: true,
   })
-  if ((await shelfToggle.getAttribute('aria-expanded')) !== 'true')
+  if ((await shelfToggle.getAttribute('aria-pressed')) !== 'true')
     await shelfToggle.click()
   await page.getByRole('button', { name: '收起资产库', exact: true }).click()
-  await page.getByRole('button', { name: '适应全部节点', exact: true }).click()
+  await fitAll(page)
   await page.screenshot({ path: `${output}/grouped-mobile.png` })
   assert.equal(
     await page.evaluate(

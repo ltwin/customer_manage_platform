@@ -885,14 +885,13 @@ export default function CanvasView({
       markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
       style: {
         pointerEvents: persistedEdges.has(e.id) ? 'auto' : 'none',
-        stroke: 'var(--accent)',
-        strokeWidth: 1.3,
-        opacity:
-          selectedEdge === e.id ||
-          expanded.has(e.source_node_id) ||
-          expanded.has(e.target_node_id)
-            ? 0.9
-            : 0.42,
+        stroke:
+          selectedEdge === e.id
+            ? 'var(--primary)'
+            : expanded.has(e.source_node_id) || expanded.has(e.target_node_id)
+              ? 'rgba(255, 255, 255, 0.6)'
+              : 'rgba(255, 255, 255, 0.22)',
+        strokeWidth: 1.5,
       },
     }),
   )
@@ -1176,6 +1175,11 @@ export default function CanvasView({
             act([{ type: 'group_nodes', node_ids: selection }])
           return
         }
+        if (e.shiftKey && e.code === 'Digit1') {
+          e.preventDefault()
+          void flow.fitView({ padding: 0.25, maxZoom: 1 })
+          return
+        }
         if (command && key === 'd') {
           e.preventDefault()
           act([
@@ -1415,20 +1419,19 @@ export default function CanvasView({
           }
         }}
       >
-        <Background gap={24} size={1} color="#64757030" />
+        <Background gap={24} size={1} color="rgba(255, 255, 255, 0.075)" />
         {minimap && (
           <MiniMap
             pannable
             zoomable
-            nodeColor="#607a7180"
-            maskColor="#14161988"
-            style={{ background: '#252b30' }}
+            nodeColor="#3a3a3e"
+            maskColor="rgba(11, 11, 12, 0.6)"
           />
         )}
       </ReactFlow>
       {active && (
         <div
-          className="cc-selection-tools cc-glass"
+          className="cc-selection-tools cc-surface"
           role="toolbar"
           aria-label="节点操作"
           style={{ left: toolbarX, top: toolbarY }}
@@ -1579,7 +1582,7 @@ export default function CanvasView({
       )}
       {portMenu && (
         <div
-          className="cc-port-menu cc-glass"
+          className="cc-port-menu cc-surface"
           ref={menuRef}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
@@ -1659,7 +1662,7 @@ export default function CanvasView({
           </label>
         </div>
       )}
-      <div className="cc-history-tools cc-glass">
+      <div className="cc-canvas-controls" role="toolbar" aria-label="画布视图">
         <button
           aria-label="撤销"
           title="撤销 · ⌘Z"
@@ -1676,8 +1679,7 @@ export default function CanvasView({
         >
           <Redo2 size={17} />
         </button>
-      </div>
-      <div className="cc-viewport-controls cc-glass">
+        <span />
         <button aria-label="缩小" onClick={() => void flow.zoomOut()}>
           <Minus size={17} />
         </button>
