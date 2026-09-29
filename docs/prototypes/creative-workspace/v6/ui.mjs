@@ -98,15 +98,23 @@ document.addEventListener('pointerdown', (e) => {
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && floating) { e.stopPropagation(); closeFloating() } }, true)
 
 let toastTimer
-export function toast(text) {
+// action：{ label, run }，例如「撤销」；带动作时多停留一会儿
+export function toast(text, action) {
   document.querySelector('.toast')?.remove()
   const el = document.createElement('div')
   el.className = 'toast'
   el.setAttribute('role', 'status')
   el.textContent = text
+  if (action) {
+    const b = document.createElement('button')
+    b.className = 'toast-act'
+    b.textContent = action.label
+    b.addEventListener('click', () => { el.remove(); action.run() })
+    el.append(b)
+  }
   document.body.append(el)
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => el.remove(), 2200)
+  toastTimer = setTimeout(() => el.remove(), action ? 5000 : 2200)
 }
 
 export function confirmModal({ title, body, ok = '确定', cancel = '取消' }) {

@@ -51,7 +51,7 @@ function insets() {
   const assets = !document.getElementById('assets').hidden
   const agent = !document.getElementById('agent').hidden
   if (innerWidth <= 760) return { l: 16, r: 16, t: 72, b: 80 }
-  return { l: assets ? 400 : 80, r: agent ? 416 : 40, t: 90, b: 90 }
+  return { l: assets ? 432 : 80, r: agent ? 416 : 40, t: 90, b: 90 }
 }
 export function fitView(ids) {
   const list = ids ? state.nodes.filter((n) => ids.has(n.id)) : state.nodes
@@ -263,10 +263,30 @@ export function addMenu(screen, opts = {}) {
   ], screen)
 }
 
-export function pickFiles(at) {
-  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple: true })
-  input.onchange = () => addFiles([...input.files], at ?? toWorld(innerWidth / 2, innerHeight / 2))
+// into：填进这个空节点；否则在 at 处新建节点
+export function pickFiles(at, into) {
+  const input = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*', multiple: !into })
+  input.onchange = () => (into ? fillNode(into, input.files[0]) : addFiles([...input.files], at ?? toWorld(innerWidth / 2, innerHeight / 2)))
   input.click()
+}
+const DEFAULT_TITLES = new Set(['图片', '视频'])
+// 空媒体节点才能被填充；已有内容的节点走生成与版本
+export const fillable = (n) => Boolean(n) && (n.type === 'image' || n.type === 'video') && !cover(n)
+export function fillNode(id, file) {
+  const n = byId(id)
+  if (!fillable(n) || !file) return
+  if (!file.type.startsWith('image/')) return toast('原型只接收图片文件')
+  fillWith(n, { src: URL.createObjectURL(file), title: file.name.replace(/\.[^.]+$/, '') })
+}
+// 高度随后由 syncMediaSize 按图片真实比例更新
+export function fillWith(n, { src, title, assetId }) {
+  checkpoint()
+  n.versions = [src]
+  n.main = null
+  if (title && DEFAULT_TITLES.has(n.title)) n.title = title
+  if (assetId) n.assetId = assetId
+  select([n.id])
+  commit()
 }
 export function addFiles(files, at) {
   const imgs = files.filter((f) => f.type.startsWith('image/'))
@@ -281,13 +301,15 @@ export function addFiles(files, at) {
   select(ids)
   save()
 }
-export function addAsset(asset, at) {
-  checkpoint()
+// at 是节点中心；批量放入时由调用方统一 checkpoint，一次撤销整批
+export function addAsset(asset, at, { batch = false } = {}) {
+  if (!batch) checkpoint()
+  const from = asset.id ? { assetId: asset.id } : {}
   const n = asset.text
-    ? makeNode('text', at.x - 150, at.y - 110, { title: asset.title, text: asset.text })
-    : makeNode('image', at.x - 150, at.y - 150, { title: asset.title, versions: [asset.src], h: Math.round((300 * asset.h) / asset.w) })
-  select([n.id])
-  save()
+    ? makeNode('text', at.x - 150, at.y - 110, { title: asset.title, text: asset.text, ...from })
+    : makeNode('image', at.x - 150, at.y - 150, { title: asset.title, versions: [asset.src], h: Math.round((300 * asset.h) / asset.w), ...from })
+  n.y = at.y - n.h / 2
+  if (!batch) { select([n.id]); save(); emit('asset-used', asset.id) }
   return n
 }
 
@@ -401,7 +423,7 @@ export function nodeMenu(id, at) {
       ...(cover(n) ? [{ label: '全屏查看', icon: 'maximize', hint: 'Space', run: () => emit('lightbox', id) }, { label: '下载', icon: 'download', run: () => toast('原型不下载文件') }] : []),
     ]),
     { label: '复制', icon: 'copy', hint: '⌘D', run: () => duplicate([...ui.sel]) },
-    { label: '存入资产库', icon: 'bookmark', run: () => toast(`已存入资产库`) },
+    { label: '存入资产库…', icon: 'bookmark', run: () => emit('save-asset', { ids: [...ui.sel], at }) },
     'sep',
     { label: '删除', icon: 'trash-2', hint: '⌫', danger: true, run: () => remove(new Set(ui.sel)) },
   ], at)
@@ -469,8 +491,9 @@ stage.addEventListener('pointerdown', (e) => {
   } else if (t.closest('[data-act]')) {
     const act = t.closest('[data-act]').dataset.act
     select([id])
-    if (act === 'upload') pickFiles(toWorld(e.clientX, e.clientY))
-    else emit('assets')
+    // 空节点里的两个入口都填充这个节点本身
+    if (act === 'upload') pickFiles(undefined, id)
+    else emit('assets-fill', id)
     return
   } else if (t.closest('[contenteditable="true"]') || t.closest('.node-label input')) {
     return
@@ -524,6 +547,7 @@ stage.addEventListener('pointermove', (e) => {
     state.nodes.forEach(renderNode)
     renderEdges()
     emit('view')
+    emit('node-drag', { x: e.clientX, y: e.clientY })
   } else if (drag.kind === 'link') {
     drag.moved ||= Math.hypot(dx, dy) > 4
     const p = toWorld(e.clientX, e.clientY)
@@ -560,7 +584,14 @@ stage.addEventListener('pointerup', (e) => {
   drag = null
   stage.classList.remove('panning', 'linking')
   marquee.hidden = true
-  if (d.kind === 'move' && d.moved) { commit(); emit('dragend') }
+  if (d.kind === 'move' && d.moved) {
+    // 落在资产库上：收进资产库，节点回到原位
+    const out = { x: e.clientX, y: e.clientY, ids: d.starts.map((s) => s.n.id), taken: false }
+    emit('node-drop', out)
+    if (out.taken) for (const s of d.starts) { s.n.x = s.x; s.n.y = s.y }
+    if (out.taken) fitGroups()
+    commit(); emit('dragend')
+  }
   if (d.kind === 'box') { render(); emit('select') }
   if (d.kind === 'link') {
     document.querySelectorAll('.node.drop-target').forEach((el) => el.classList.remove('drop-target'))
@@ -638,9 +669,14 @@ stage.addEventListener('dragover', (e) => e.preventDefault())
 stage.addEventListener('drop', (e) => {
   e.preventDefault()
   const at = toWorld(e.clientX, e.clientY)
-  const asset = e.dataTransfer.getData('application/x-asset')
-  if (asset) return addAsset(JSON.parse(asset), at)
-  addFiles([...e.dataTransfer.files], at)
+  // 落在空的图片/视频节点上就填进去，不另建节点
+  const hit = byId(e.target.closest?.('.node')?.dataset.id)
+  const into = fillable(hit) ? hit.id : null
+  const ids = e.dataTransfer.getData('application/x-assets')
+  if (ids) return emit('asset-drop', { ids: JSON.parse(ids), at, into })
+  const files = [...e.dataTransfer.files]
+  if (into && files.length) return fillNode(into, files[0])
+  addFiles(files, at)
 })
 
 // 键盘可达：Tab 聚焦端口后按 Enter / Space 打开同一个添加菜单，菜单锚在端口中心

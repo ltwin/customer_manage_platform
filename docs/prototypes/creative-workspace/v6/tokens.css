@@ -92,3 +92,6 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+.toast:has(.toast-act) { display: flex; align-items: center; gap: 12px; padding-right: 6px; }
+.toast-act { height: 26px; padding: 0 10px; border-radius: 999px; background: var(--s3); font-weight: 500; font-size: 12px; }
+.toast-act:hover { background: var(--s4); }

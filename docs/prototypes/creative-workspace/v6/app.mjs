@@ -1,7 +1,8 @@
 // 入口：外框控件、资产抽屉、创作助手、全局快捷键。
-import { state, ui, byId, photos, undo, redo, canUndo, canRedo, reset, save, checkpoint, connect, descendants, roots, fitGroups, isGroup } from './store.mjs'
-import { on, emit, render, commit, select, applyView, restoreView, fitView, zoomBy, addMenu, addAsset, pickFiles, duplicate, remove, toWorld, groupSelection, ungroupSelection } from './canvas.mjs'
+import { state, ui, byId, undo, redo, canUndo, canRedo, reset, save, checkpoint, descendants, roots, fitGroups, isGroup } from './store.mjs'
+import { on, emit, render, commit, select, applyView, restoreView, fitView, zoomBy, addMenu, pickFiles, duplicate, remove, toWorld, groupSelection, ungroupSelection } from './canvas.mjs'
 import { initComposer } from './composer.mjs'
+import * as library from './library.mjs'
 import { ic, esc, hydrateIcons, openMenu, openPopover, toast, confirmModal } from './ui.mjs'
 
 const $ = (id) => document.getElementById(id)
@@ -79,84 +80,12 @@ $('help').addEventListener('click', (e) => {
   openPopover(`<div class="help">${rows.map(([a, b]) => `<div class="help-row"><span>${a}</span><span>${b.split(' ').map((k) => (/[a-zA-Z0-9⌘⇧⌫@/]/.test(k) ? `<kbd>${k}</kbd>` : k)).join(' ')}</span></div>`).join('')}</div>`,
     { x: r.right + 10, y: r.bottom - 360 }, e.currentTarget)
 })
-// ---------- 资产抽屉 ----------
-const TEXT_ASSETS = [
-  { title: '胶片暖调', text: '<p>低饱和暖调，高光微微溢出，暗部偏青，保留细腻颗粒。</p>' },
-  { title: '海边逆光', text: '<p>太阳在画面外左上方，发丝与裙摆形成轮廓光，脸部补一点反光板。</p>' },
-]
-const assets = $('assets')
-let assetTab = 'mine', assetFilter = 'all', assetQuery = ''
-function paintAssets() {
-  const items = [
-    ...photos.map((p) => ({ ...p, kind: 'image' })),
-    ...TEXT_ASSETS.map((t) => ({ ...t, kind: 'text' })),
-  ].filter((a) => (assetFilter === 'all' || a.kind === assetFilter) && a.title.includes(assetQuery))
-  const list = assetTab === 'mine' ? items : items.slice(3, 9)
-  assets.innerHTML = `<div class="panel-head"><h2>资产库</h2><span class="grow"></span>
-      <button class="icon-btn" data-a="upload" aria-label="上传">${ic('upload')}</button>
-      <button class="icon-btn" data-a="close" aria-label="收起资产库">${ic('panel-left-close')}</button></div>
-    <div class="tabs"><button data-tab="mine" class="${assetTab === 'mine' ? 'on' : ''}">我的</button><button data-tab="public" class="${assetTab === 'public' ? 'on' : ''}">公共</button></div>
-    <label class="search">${ic('search')}<input placeholder="搜索素材、标签" value="${esc(assetQuery)}" aria-label="搜索资产"></label>
-    <div class="filters">${[['all', '全部'], ['image', '图片'], ['text', '文本']].map(([k, l]) => `<button data-f="${k}" class="${assetFilter === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-    <div class="shelf">${list.map((a, i) => a.kind === 'text'
-      ? `<div class="tile tile-text" draggable="true" data-asset="${i}"><b>${esc(a.title)}</b>${a.text.replace(/<[^>]+>/g, '')}<button class="tile-add" data-add="${i}" aria-label="放入画布">${ic('plus')}</button></div>`
-      : `<div class="tile" draggable="true" data-asset="${i}"><img src="${a.src}" alt="${esc(a.title)}" loading="lazy"><span class="tile-name">${esc(a.title)}</span><button class="tile-add" data-add="${i}" aria-label="放入画布">${ic('plus')}</button></div>`).join('')
-      || '<p style="color:var(--fg-3);padding:24px 4px">没有匹配的素材</p>'}</div>
-    <div class="drawer-foot">拖入画布，或点 + 放到视图中央</div>`
-  assets._list = list
-}
-function toggleAssets(open = assets.hidden) {
-  assets.hidden = !open
-  if (!open) { pickFor = null; assets.classList.remove('picking') }
-  $('assets-toggle').setAttribute('aria-pressed', String(open))
-  if (open) paintAssets()
-}
-$('assets-toggle').addEventListener('click', () => toggleAssets())
-on('assets', () => toggleAssets(true))
-// 从 @ 选择器进入：选中的素材放到目标节点左侧、连线，并在它的提示词里引用
-let pickFor = null
-on('assets-pick', (id) => { pickFor = id; toggleAssets(true); assets.classList.add('picking'); toast('选择一个素材作为参考') })
-on('upload', () => pickFiles())
-assets.addEventListener('click', (e) => {
-  const a = e.target.closest('[data-a]')?.dataset.a
-  if (a === 'close') return toggleAssets(false)
-  if (a === 'upload') return pickFiles()
-  const tab = e.target.closest('[data-tab]')?.dataset.tab
-  if (tab) { assetTab = tab; return paintAssets() }
-  const f = e.target.closest('[data-f]')?.dataset.f
-  if (f) { assetFilter = f; return paintAssets() }
-  const tile = e.target.closest('[data-asset]')?.dataset.asset
-  if (pickFor && tile != null) {
-    const target = byId(pickFor)
-    if (!target) return toggleAssets(false)
-    const n = addAsset(assets._list[tile], { x: target.x - 290, y: target.y + target.h / 2 })
-    connect(n.id, target.id)
-    target.prompt = `${(target.prompt ?? '').replace(/\s*$/, target.prompt ? ' ' : '')}@[${n.id}] `
-    toggleAssets(false)
-    select([target.id])
-    commit()
-    emit('focus', target.id)
-    return
-  }
-  const add = e.target.closest('[data-add]')?.dataset.add
-  if (add) {
-    const c = toWorld(innerWidth / 2 + 150, innerHeight / 2)
-    addAsset(assets._list[add], c)
-  }
-})
-assets.addEventListener('input', (e) => {
-  assetQuery = e.target.value
-  const pos = e.target.selectionStart
-  paintAssets()
-  const inp = assets.querySelector('.search input')
-  inp.focus()
-  inp.setSelectionRange(pos, pos)
-})
-assets.addEventListener('dragstart', (e) => {
-  const i = e.target.closest('[data-asset]')?.dataset.asset
-  if (i != null) e.dataTransfer.setData('application/x-asset', JSON.stringify(assets._list[i]))
-})
-assets.addEventListener('keydown', (e) => e.stopPropagation())
+// ---------- 资产抽屉（见 library.mjs） ----------
+$('assets-toggle').addEventListener('click', () => library.toggle())
+on('assets', () => library.open())
+on('assets-pick', (id) => library.open({ pickFor: id }))
+on('upload', (id) => pickFiles(undefined, id))
+on('fit', (ids) => fitView(ids))
 
 // ---------- 创作助手 ----------
 const agent = $('agent')
