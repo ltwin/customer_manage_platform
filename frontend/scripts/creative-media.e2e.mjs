@@ -18,8 +18,11 @@ const mediaRequests = [],
   postedCommands = []
 let uploadsCreated = 0
 await context.route('**/api/v1/**', async (route) => {
-  // route.fetch 会等待完整响应体；SSE 长连接在这里断开，客户端按退避重连并继续用快照读取。
-  if (route.request().headers().accept === 'text/event-stream') return route.abort('failed')
+  // route.fetch 会等整个响应体结束，SSE 长连接必须原样转发给真实后端流式读取。
+  if (route.request().headers().accept === 'text/event-stream') {
+    const u = new URL(route.request().url())
+    return route.continue({ url: api + u.pathname + u.search })
+  }
   const request = route.request(),
     u = new URL(request.url())
   if (request.method() === 'POST' && u.pathname.endsWith('/commands'))
@@ -259,8 +262,9 @@ try {
     'undo replacement',
   )
   await saved()
-  // Double-clicking a filled media node edits its caption as a new revision.
-  await node(jpgNode.id).dblclick()
+  // v6 双击有内容的媒体是全屏查看；说明从右键「编辑节点」修改，保存为新修订。
+  await node(jpgNode.id).click({ button: 'right' })
+  await page.getByRole('menu', { name: '节点右键菜单' }).getByRole('menuitem', { name: '编辑节点', exact: true }).click()
   await page.getByLabel('媒体说明').fill('窗边的光')
   await page.getByRole('button', { name: '保存到节点', exact: true }).click()
   await until(

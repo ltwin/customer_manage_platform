@@ -98,6 +98,8 @@ await page.addInitScript(() => {
 })
 let qaAccount = 'qa-account'
 let hoverVideoURL = ''
+let versionPage = null
+const postedActions = []
 let posts = 0
 let started
 const requestStarted = new Promise((resolve) => { started = resolve })
@@ -125,9 +127,14 @@ await page.route('**/api/v1/**', async (route) => {
       timezone: 'Asia/Shanghai',
     })
   if (path.endsWith('/generation-catalog')) return json({models: [], disabled_reason: '未配置生成模型'})
-  if (path.endsWith('/versions')) return json({items: [], selected_version_id: null, data_revision: '1'})
+  if (path.endsWith('/versions')) return json(versionPage ?? {items: [], selected_version_id: null, data_revision: '1'})
+  if (path.includes('/content-revisions/')) {
+    const id = decodeURIComponent(path.split('/').pop())
+    return json({ id, kind: 'image', payload: {}, media: [{ role: 'display', mime: 'image/svg+xml' }] })
+  }
   if (path.endsWith('/commands')) {
     posts++
+    for (const a of route.request().postDataJSON()?.payload?.actions ?? []) postedActions.push(a.type)
     started()
     // Leave the command unanswered: visible feedback cannot come from a receipt.
     await new Promise((resolve) => setTimeout(resolve, 1500))
@@ -159,6 +166,12 @@ await page.route('**/api/v1/**', async (route) => {
     library_revision: '1',
   })
 })
+async function fitAll(p) {
+  const button = p.getByRole('button', { name: '适应全部节点', exact: true })
+  if (await button.isVisible()) return button.click()
+  await p.locator('.react-flow').focus()
+  await p.keyboard.press('Shift+Digit1')
+}
 async function waitCount(selector, count) {
   await page.waitForFunction(
     ({ selector, count }) =>
@@ -192,17 +205,29 @@ try {
     Object.defineProperty(navigator, 'onLine', { configurable: true, get: () => false })
     window.dispatchEvent(new Event('offline'))
   })
+  // v6：工具轨、双击、右键、端口共用一个添加菜单；独立添加还能上传或从资产库取。
   await page.getByRole('button', { name: '新建节点', exact: true }).click()
-  const createMenu = page.getByRole('menu', { name: '新建节点' })
-  assert.equal(await createMenu.getByRole('menuitem').count(), 4)
-  assert.equal(await createMenu.getByRole('menuitem', { name: '新增链接节点' }).count(), 0)
-  await page.getByRole('button', { name: '关闭新建菜单' }).click()
+  const createMenu = page.getByRole('menu', { name: '添加节点' })
+  // 菜单必须读到工作台主题：实色底、细线阴影、浅色文字，不能透明地叠在画布上。
+  const menuLook = await createMenu.evaluate((el) => ({
+    bg: getComputedStyle(el).backgroundColor,
+    shadow: getComputedStyle(el).boxShadow,
+    color: getComputedStyle(el.querySelector('button')).color,
+  }))
+  assert.equal(menuLook.bg, 'rgb(27, 27, 29)', 'add menu uses the v6 surface')
+  assert.notEqual(menuLook.shadow, 'none', 'add menu has the v6 shadow')
+  assert.equal(menuLook.color, 'rgb(237, 237, 238)', 'add menu text is light')
+  assert.deepEqual(await createMenu.getByRole('menuitem').allInnerTexts(), ['文字\nT', '图片\nI', '视频\nO', '音频', '上传文件', '从资产库添加'])
+  await page.keyboard.press('Escape')
+  await createMenu.waitFor({ state: 'detached' })
   await page.locator('[data-id="first"] .cc-node-header').click()
   await page.locator('[data-id="first"]').getByRole('button', { name: '添加下游节点' }).click()
-  const connectedMenu = page.getByRole('dialog', { name: '创建并连接节点' })
-  assert.equal(await connectedMenu.getByRole('button', { name: '链接', exact: true }).count(), 0)
-  await connectedMenu.getByRole('button', { name: '文字', exact: true }).waitFor()
-  await page.getByRole('button', { name: '关闭连接菜单' }).click()
+  const connectedMenu = page.getByRole('menu', { name: '创建并连接节点' })
+  assert.equal(await connectedMenu.getByRole('menuitem', { name: '链接', exact: true }).count(), 0)
+  assert.equal(await connectedMenu.getByRole('menuitem', { name: '上传文件', exact: true }).count(), 0)
+  await connectedMenu.getByRole('menuitem', { name: '文字', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await connectedMenu.waitFor({ state: 'detached' })
   assert.equal(await page.getByRole('button', { name: '编辑节点', exact: true }).count(), 0)
   await page.locator('[data-id="first"] .cc-node-content').dblclick()
   const textEditor = page.getByRole('textbox', { name: '正文', exact: true })
@@ -272,16 +297,17 @@ try {
   await canvasMenu.waitFor()
   const menuBounds = await canvasMenu.boundingBox()
   assert.ok(menuBounds.x >= 0 && menuBounds.x + menuBounds.width <= 1600 && menuBounds.y + menuBounds.height <= 1000, 'context menu stays inside viewport')
-  assert.equal(await canvasMenu.getByRole('menuitem', { name: '新增链接节点' }).count(), 0)
+  assert.equal(await canvasMenu.getByRole('menuitem', { name: '链接' }).count(), 0)
   await page.keyboard.press('ArrowDown')
-  assert.equal(await page.evaluate(() => document.activeElement.textContent), '新增图片节点')
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), '图片')
   await page.keyboard.press('Escape')
   await canvasMenu.waitFor({ state: 'hidden' })
   await page.mouse.click(blankContextPoint.x, blankContextPoint.y, { button: 'right' })
-  await canvasMenu.getByRole('menuitem', { name: '新增文字节点', exact: true }).click()
+  await canvasMenu.getByRole('menuitem', { name: '文字', exact: true }).click()
   await waitCount(nodes, 3)
   const createdBox = await page.locator('.react-flow__node').last().boundingBox()
-  assert.ok(Math.abs(createdBox.x - blankContextPoint.x) < 2 && Math.abs(createdBox.y - blankContextPoint.y) < 2, 'new node appears at right-click location')
+  // v6：新节点以指针为中心放下。
+  assert.ok(Math.abs(createdBox.x + createdBox.width / 2 - blankContextPoint.x) < 2 && Math.abs(createdBox.y + createdBox.height / 2 - blankContextPoint.y) < 2, 'new node centers on right-click location')
   await page.keyboard.press('Control+z')
   await waitCount(nodes, 2)
   const firstCard = page.locator('[data-id="first"] .cc-node-empty')
@@ -360,7 +386,10 @@ try {
   assert.ok(nodeTitle.x + nodeTitle.width < titleBlank.x, 'short title hit area ends with its text')
   await page.mouse.click(titleBlank.x, titleBlank.y)
   assert.equal(await page.getByRole('toolbar', { name: '节点操作' }).count(), 0, 'blank beside standalone title hits canvas')
+  // v6：单个节点不能打组，至少两个。
   await page.locator('[data-id="first"] .cc-node-header h3').click()
+  assert.equal(await page.getByRole('button', { name: '打组', exact: true }).count(), 0, 'single node cannot be grouped')
+  await page.locator('[data-id="second"] .cc-node-header h3').click({ modifiers: ['Shift'] })
   let start = Date.now()
   await page.getByRole('button', { name: '打组', exact: true }).click()
   await waitCount(group, 1)
@@ -379,14 +408,11 @@ try {
   assert.equal(await page.getByRole('button', { name: '解组', exact: true }).locator('.lucide-folder-minus').count(), 1)
   await page.locator('[data-id="first"] .cc-node-empty').click()
   assert.equal(await page.getByRole('button', { name: '解组', exact: true }).count(), 0, 'child node wins hit testing inside a group')
-  assert.equal(await page.getByRole('button', { name: '打组', exact: true }).count(), 1, 'normal node still offers grouping')
-  const childTitle = await page.locator('[data-id="first"] .cc-node-header').boundingBox()
-  const childCard = await page.locator('[data-id="first"] .cc-node').boundingBox()
-  await page.mouse.click(childCard.x + childCard.width - 12, childTitle.y + childTitle.height / 2)
-  await page.getByRole('button', { name: '解组', exact: true }).waitFor()
-  assert.equal(await page.locator('[data-id="first"] .cc-node.is-selected').count(), 0, 'blank beside child title selects parent group')
+  // 组内空白透传给画布：单击取消选择，不选中组。
+  const inner = { x: groupBox.x + groupBox.width - 8, y: groupBox.y + groupBox.height - 8 }
+  await page.mouse.click(inner.x, inner.y)
+  assert.equal(await page.getByRole('toolbar', { name: '节点操作' }).count(), 0, 'group blank area passes through to the canvas')
   await page.locator('[data-id="first"] .cc-node-header h3').click()
-  assert.equal(await page.getByRole('button', { name: '解组', exact: true }).count(), 0, 'visible title still selects child')
   const childBeforeDrag = await page.locator('[data-id="first"] .cc-node').boundingBox()
   await page.mouse.move(childBeforeDrag.x + childBeforeDrag.width / 2, childBeforeDrag.y + childBeforeDrag.height / 2)
   await page.mouse.down()
@@ -399,18 +425,16 @@ try {
   await page.keyboard.press('Control+z')
   await page.waitForFunction(({ x }) => Math.abs(document.querySelector('[data-id="first"] .cc-node').getBoundingClientRect().x - x) < 1, { x: childBeforeDrag.x })
 
-  // Start from a group that is not selected: dragging its blank area selects
-  // and moves it, while preserving the child's relative position.
-  // 新增Prompt浮层会占用孩子下方区域；先取消孩子选择，露出组空白再验证拖动。
+  // 拖组标题移动整组，保持子节点相对位置。
   await page.keyboard.press('Escape')
-  const blank = { x: groupBox.x + groupBox.width - 8, y: groupBox.y + groupBox.height - 8 }
-  await page.mouse.move(blank.x, blank.y)
+  const handle = { x: groupTitleBox.x + 30, y: groupTitleBox.y + groupTitleBox.height / 2 }
+  await page.mouse.move(handle.x, handle.y)
   await page.mouse.down()
-  await page.mouse.move(blank.x + 48, blank.y + 32, { steps: 8 })
+  await page.mouse.move(handle.x + 48, handle.y + 32, { steps: 8 })
   await page.mouse.up()
   const movedGroup = await page.locator(group).boundingBox()
   const movedChild = await page.locator('[data-id="first"] .cc-node').boundingBox()
-  assert.ok(movedGroup.x - groupBox.x > 30 && movedGroup.y - groupBox.y > 20, 'blank-area drag moves the group')
+  assert.ok(movedGroup.x - groupBox.x > 30 && movedGroup.y - groupBox.y > 20, 'title drag moves the group')
   assert.ok(Math.abs((movedChild.x - movedGroup.x) - (childBeforeDrag.x - groupBox.x)) < 1 && Math.abs((movedChild.y - movedGroup.y) - (childBeforeDrag.y - groupBox.y)) < 1, 'group drag preserves child placement')
   await page.keyboard.press('Control+z')
   await page.waitForFunction(({ x, y }) => {
@@ -419,13 +443,28 @@ try {
   }, { x: groupBox.x, y: groupBox.y })
   const restoredChild = await page.locator('[data-id="first"] .cc-node').boundingBox()
   assert.ok(Math.abs(restoredChild.x - childBeforeDrag.x) < 1 && Math.abs(restoredChild.y - childBeforeDrag.y) < 1, 'undo restores group and child together')
-  await page.mouse.click(groupBox.x + groupBox.width - 8, groupBox.y + groupBox.height - 8)
+
+  // 框选：没有完整框住组时只选中碰到的子节点，不选组。
+  await page.keyboard.press('Escape')
+  await page.mouse.move(groupBox.x + 20, groupBox.y + groupBox.height + 30)
+  await page.mouse.down()
+  await page.mouse.move(childBeforeDrag.x + 40, childBeforeDrag.y + 40, { steps: 8 })
+  await page.mouse.up()
+  assert.equal(await page.getByRole('button', { name: '解组', exact: true }).count(), 0, 'partial marquee does not select the group')
+  assert.equal(await page.locator('[data-id="first"] .cc-node.is-selected').count(), 1, 'partial marquee selects touched child')
+  // 完整框住组：只选中组本身。
+  await page.keyboard.press('Escape')
+  await page.mouse.move(groupBox.x - 30, groupTitleBox.y - 30)
+  await page.mouse.down()
+  await page.mouse.move(groupBox.x + groupBox.width + 30, groupBox.y + groupBox.height + 30, { steps: 10 })
+  await page.mouse.up()
   await page.getByRole('button', { name: '解组', exact: true }).waitFor()
-  assert.equal(await page.getByRole('button', { name: '打组', exact: true }).count(), 0, 'group blank area selects the group')
+  assert.equal(await page.locator('[data-id="first"] .cc-node.is-selected').count(), 0, 'selected group does not also select its children')
+  assert.equal(await page.getByRole('button', { name: '打组', exact: true }).count(), 0, 'single group cannot be grouped again')
   await page.keyboard.press('Control+g')
   assert.equal(await page.locator(group).count(), 1, 'single group cannot be nested through shortcut')
   await page.screenshot({ path: '/tmp/canvas-group-folder.png' })
-  await page.mouse.click(groupBox.x + groupBox.width - 8, groupBox.y + groupBox.height - 8, { button: 'right' })
+  await page.locator(`${group} .cc-node-header h3`).click({ button: 'right' })
   await nodeMenu.getByRole('menuitem', { name: '解组', exact: true }).waitFor()
   assert.equal(await nodeMenu.getByRole('menuitem', { name: '打组', exact: true }).count(), 0, 'single group context menu only offers ungroup')
   await page.screenshot({ path: '/tmp/canvas-context-menu.png' })
@@ -502,7 +541,7 @@ try {
   assert.equal(await readonlyMenu.getByRole('menuitem', { name: '移除节点', exact: true }).isDisabled(), true)
   await page.keyboard.press('Escape')
   await page.mouse.click(blankContextPoint.x, blankContextPoint.y, { button: 'right' })
-  assert.equal(await page.getByRole('menu', { name: '画布右键菜单' }).getByRole('menuitem', { name: '新增文字节点', exact: true }).isDisabled(), true)
+  assert.equal(await page.getByRole('menu', { name: '画布右键菜单' }).getByRole('menuitem', { name: '文字', exact: true }).isDisabled(), true)
   await page.keyboard.press('Escape')
   await page.locator('[data-id="first"] .cc-node-header h3').dblclick()
   assert.equal(await page.getByRole('textbox', { name: '节点名称', exact: true }).count(), 0, 'readonly titles cannot edit')
@@ -674,6 +713,78 @@ try {
   await page.mouse.up()
   const videoAfterScrub = await videoCard.boundingBox()
   assert.ok(Math.abs(videoAfterScrub.x - videoAfterDrag.x) < 1 && Math.abs(videoAfterScrub.y - videoAfterDrag.y) < 1, 'control-bar presses scrub instead of dragging the node')
+
+  // v6 画布：版本条预览不影响下游、派生下游节点、T 快捷键、运行中琥珀虚线、拖线到空白的占位虚线。
+  {
+    const img = makeNode('v6-image', 100)
+    img.metadata = { ...img.metadata, type_key: 'core.image', title: '晨光', width: 280, height: 280 }
+    img.content = { id: 'rev-2', kind: 'image', payload: {}, media: [{ role: 'display', mime: 'image/svg+xml' }] }
+    img.data.selected_version_id = 'ver-2'
+    img.capabilities.actions.push('replace', 'maximize', 'download')
+    const down = makeNode('v6-down', 700)
+    down.metadata = { ...down.metadata, type_key: 'core.video', title: '下游视频' }
+    down.status.generation_state = 'running'
+    canvas.archived = false
+    canvas.nodes = [img, down]
+    canvas.edges = [{ id: 'v6-edge', source_node_id: 'v6-image', target_node_id: 'v6-down', source_port: 'output', target_port: 'reference', role: 'reference', revision: '1' }]
+    canvas.revision = '20'
+    versionPage = {
+      items: [
+        { id: 'ver-1', node_id: 'v6-image', version_no: '1', origin_kind: 'generation', content_revision_id: 'rev-1', execution_id_snapshot: null, output_ordinal: 0, generation_provenance: {}, created_at: '2026-09-01T00:00:00Z', revision: '1', inputs: [] },
+        { id: 'ver-2', node_id: 'v6-image', version_no: '2', origin_kind: 'generation', content_revision_id: 'rev-2', execution_id_snapshot: null, output_ordinal: 0, generation_provenance: {}, created_at: '2026-09-02T00:00:00Z', revision: '1', inputs: [] },
+      ],
+      selected_version_id: 'ver-2',
+      data_revision: '1',
+    }
+    await page.reload()
+    await waitCount(nodes, 2)
+    await fitAll(page)
+    const edgePath = page.locator('.react-flow__edge[data-id="v6-edge"] path.react-flow__edge-path')
+    assert.equal(await edgePath.evaluate((el) => getComputedStyle(el).stroke), 'rgb(226, 164, 83)', 'running edge is amber')
+    assert.equal(await edgePath.evaluate((el) => getComputedStyle(el).strokeDasharray), '5px, 5px', 'running edge is dashed')
+    assert.equal(await edgePath.evaluate((el) => el.getAttribute('marker-end')), null, 'edges have no arrow')
+    await page.locator('[data-id="v6-image"] .cc-node-header').click()
+    const strip = page.getByRole('group', { name: '作品版本' })
+    await strip.waitFor()
+    assert.equal(await strip.getByRole('button', { name: '版本 2（主版本）' }).getAttribute('aria-pressed'), 'true')
+    await strip.getByRole('button', { name: '版本 1', exact: true }).click()
+    await page.getByText('预览版本 · 下游仍用主版本', { exact: true }).waitFor()
+    await strip.getByRole('button', { name: '设为主版本', exact: true }).waitFor()
+    await page.waitForTimeout(300)
+    assert.ok(!postedActions.includes('select_version'), 'previewing a version sends nothing')
+    await page.mouse.click(1560, 700)
+    await strip.waitFor({ state: 'detached' })
+    await page.locator('[data-id="v6-image"] .cc-node-header').click()
+    assert.equal(await page.getByText('预览版本 · 下游仍用主版本', { exact: true }).count(), 0, 'deselect returns to main version')
+    // 派生：生成视频在右侧新建节点并连线、选中。
+    await page.getByRole('toolbar', { name: '节点操作' }).getByRole('button', { name: '生成视频', exact: true }).click()
+    await waitCount(nodes, 3)
+    await waitCount('.react-flow__edge', 2)
+    const derived = await page.locator('.react-flow__node.selected').getAttribute('data-id')
+    assert.ok(derived && !['v6-image', 'v6-down'].includes(derived), 'derived node is selected')
+    await page.keyboard.press('Control+z')
+    await waitCount(nodes, 2)
+    // 单键快捷键：T 新建文字节点。
+    await page.mouse.click(1560, 700)
+    await page.keyboard.press('t')
+    await waitCount(nodes, 3)
+    await page.keyboard.press('Control+z')
+    await waitCount(nodes, 2)
+    // 拖线到空白：添加菜单打开时留下虚线占位，取消后消失。
+    await page.locator('[data-id="v6-image"] .cc-node-header').click()
+    const port = page.locator('[data-id="v6-image"] .cc-port-output button')
+    const portBox = await port.boundingBox()
+    await page.mouse.move(portBox.x + portBox.width / 2, portBox.y + portBox.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(portBox.x + 180, portBox.y + 260, { steps: 10 })
+    assert.equal(await page.locator('.cc-connection-preview').evaluate((el) => getComputedStyle(el).strokeDasharray), '4px, 4px', 'unsnapped preview is dashed')
+    await page.mouse.up()
+    await page.getByRole('menu', { name: '创建并连接节点' }).waitFor()
+    assert.equal(await page.locator('.cc-draft-link path').count(), 1, 'draft link stays while the menu is open')
+    await page.keyboard.press('Escape')
+    await waitCount('.cc-draft-link path', 0)
+    versionPage = null
+  }
   assert.deepEqual(errors, [])
   if (process.env.CREATIVE_NODE_STYLE_QA === '1') {
     const mediaNode = (id, x, kind, content) => {
@@ -731,8 +842,9 @@ try {
         'edge scissors follows midpoint at different zooms, deletes immediately, and supports undo',
         'only text/media creation entries, URL saved as text and undoable',
         'title hit area matches text; adjacent blank selects canvas or parent group',
-        'group blank-area selection and dragging, independent child dragging, and undo',
+        'group title-only hit, blank pass-through, full-enclosure marquee, title drag and undo',
         'context menus: position, keyboard, create, rename, multi-select copy, ungroup and undo',
+        'v6: version strip preview, derive downstream, T shortcut, amber running edge, draft link placeholder',
         'group/copy before network',
         'Ctrl/Cmd undo and redo from buttons/body',
         'Ctrl+Y redo',

@@ -26,8 +26,11 @@ let holdConnection = false,
 const postedCommands = []
 let checkedPendingSelection = false
 await context.route('**/api/v1/**', async (route) => {
-  // route.fetch 会等待完整响应体；SSE 长连接在这里断开，客户端按退避重连并继续用快照读取。
-  if (route.request().headers().accept === 'text/event-stream') return route.abort('failed')
+  // route.fetch 会等整个响应体结束，SSE 长连接必须原样转发给真实后端流式读取。
+  if (route.request().headers().accept === 'text/event-stream') {
+    const u = new URL(route.request().url())
+    return route.continue({ url: api + u.pathname + u.search })
+  }
   const request = route.request(),
     u = new URL(request.url())
   if (
@@ -219,13 +222,13 @@ try {
     async () => {
       await page.getByRole('button', { name: '新建节点', exact: true }).click()
       await page
-        .getByRole('menuitem', { name: '新增文字节点', exact: true })
+        .getByRole('menuitem', { name: '文字', exact: true })
         .click()
     },
     (c) => c.nodes.length === 1,
   )
   const a = snapshot.nodes[0].id
-  // v5 interaction regressions: screen-space magnet, click anchor and free pan.
+  // 画布交互回归：屏幕空间磁吸、点击锚点与自由平移。
   const interactionFailures = []
   const checkInteraction = (ok, message) => {
     if (!ok) interactionFailures.push(message)
@@ -263,14 +266,14 @@ try {
       visual.ring >= 1 &&
       visual.ring <= 1.5 &&
       visual.ringWidth === '24px',
-    '加号应遵循 v5 的 18px 图标和 1.5px 圆环',
+    '加号应为 18px 图标和 1.5px 圆环',
   )
   const clickPoint = {
     x: attracted.x + attracted.width / 2,
     y: attracted.y + attracted.height / 2,
   }
   await page.mouse.click(clickPoint.x, clickPoint.y)
-  const menu = page.getByRole('dialog', { name: '创建并连接节点' })
+  const menu = page.getByRole('menu', { name: '创建并连接节点' })
   await menu.waitFor()
   const menuBox = await menu.boundingBox()
   checkInteraction(
@@ -285,7 +288,8 @@ try {
       const matrix = new DOMMatrix(getComputedStyle(el).transform)
       return { x: matrix.e, y: matrix.f, zoom: matrix.a }
     })
-  await page.mouse.move(900, 850)
+  // 选中节点下方有生成面板，滚轮落在空白画布上才是平移。
+  await page.mouse.move(1200, 950)
   const beforePan = await viewportState()
   await page.mouse.wheel(140, 0)
   await pause(180)
@@ -296,7 +300,7 @@ try {
   )
   await page.mouse.wheel(-140, 0)
   await pause(180)
-  assert.deepEqual(interactionFailures, [], 'v5 画布交互回归')
+  assert.deepEqual(interactionFailures, [], '画布交互回归')
   await page.mouse.wheel(80, 100)
   await pause(180)
   const diagonal = await viewportState()
@@ -323,7 +327,8 @@ try {
   )
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   // Native Ctrl-wheel/pinch path still zooms, and magnets keep screen-pixel reach.
-  await page.mouse.move(900, 850)
+  // 缩放锚点放在节点右侧空白处，节点保持在视口内且不被生成面板遮住。
+  await page.mouse.move(resting.x + 120, resting.y)
   await page.keyboard.down('Control')
   await page.mouse.wheel(0, 160)
   await page.keyboard.up('Control')
@@ -332,7 +337,7 @@ try {
     (await viewportState()).zoom < beforePan.zoom,
     'Ctrl-wheel zoom remains available',
   )
-  await page.mouse.move(900, 850)
+  await page.mouse.move(resting.x + 200, resting.y - 200)
   await pause(400)
   const zoomRest = await port.boundingBox()
   await page.mouse.move(
@@ -366,8 +371,8 @@ try {
   await node(a).click()
   await page.getByRole('button', { name: '添加下游节点', exact: true }).click()
   await page
-    .getByRole('dialog', { name: '创建并连接节点' })
-    .getByRole('button', { name: '文字', exact: true })
+    .getByRole('menu', { name: '创建并连接节点' })
+    .getByRole('menuitem', { name: '文字', exact: true })
     .click()
   await until(
     () => snapshot.nodes.length === 2 && snapshot.edges.length === 1,
@@ -454,6 +459,8 @@ try {
       checkedPendingSelection = true
       const count = snapshot.nodes.length,
         requests = postedCommands.length
+      // 上面点过连线，选区已转到连线；重新选中节点再删除。
+      await node(source).locator('.cc-node-header').click()
       await node(source).focus()
       await page.keyboard.press('Delete')
       await until(
@@ -581,11 +588,16 @@ try {
     () => page.getByRole('button', { name: '移除节点', exact: true }).click(),
     (c) => !c.nodes.some((n) => n.id === secondCopy.id),
   )
-  await node(a).click()
-  await node(a)
-    .getByRole('button', { name: '添加上游参考', exact: true })
-    .click()
-  await page.getByLabel('连接已有节点', { exact: true }).selectOption(b)
+  // v6 没有「连接已有节点」下拉；拖线从 b 的输出落到 a 上，形成环路，由服务端拒绝。
+  await node(b).locator('.cc-node-header').click()
+  const cycleFrom = await node(b)
+    .getByRole('button', { name: '添加下游节点', exact: true })
+    .boundingBox()
+  const cycleTo = await node(a).boundingBox()
+  await page.mouse.move(cycleFrom.x + cycleFrom.width / 2, cycleFrom.y + cycleFrom.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(cycleTo.x + cycleTo.width * 0.5, cycleTo.y + cycleTo.height * 0.6, { steps: 12 })
+  await page.mouse.up()
   await page
     .getByRole('button', { name: '放弃被拒绝的请求', exact: true })
     .waitFor()

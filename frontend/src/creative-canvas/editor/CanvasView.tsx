@@ -2,9 +2,9 @@ import {
   memo,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from 'react'
 import {
   ReactFlow,
@@ -21,8 +21,8 @@ import {
   NodeResizer,
   BaseEdge,
   EdgeLabelRenderer,
+  ViewportPortal,
   getBezierPath,
-  MarkerType,
 } from '@xyflow/react'
 import type {
   Node,
@@ -52,7 +52,6 @@ import {
   Scissors,
   Undo2,
   Redo2,
-  X,
   Image as ImageIcon,
   Film,
   AudioLines,
@@ -60,6 +59,7 @@ import {
   RefreshCw,
   Library,
   Upload,
+  Sparkles,
 } from 'lucide-react'
 import type { Asset, Canvas, CanvasNode, GraphAction } from './api.ts'
 import { MediaFigure } from './MediaView.tsx'
@@ -68,6 +68,8 @@ import { parentFirst, selectionRoots, worldPoint } from './graph.ts'
 import { contentText } from './content.ts'
 import { attachMagneticPorts } from './magneticPorts.ts'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
+import NodeVersionStrip from './NodeVersionStrip.tsx'
+import type { Content } from './api.ts'
 import {
   InlineNodeTitle,
   InlineNodeText,
@@ -95,9 +97,21 @@ type FlowNode = Node<
       y: number,
     ) => void
     disabled: boolean
+    canvasID: string
+    selectVersion: (id: string, versionID: string) => void
+    /** 只有单选时才显示版本条，多选不打扰。 */
+    solo: boolean
   },
   'content'
 >
+type AddMenuState = {
+  screen: { x: number; y: number }
+  world: { x: number; y: number }
+  link?: { id: string; side: 'input' | 'output' }
+  dropped?: boolean
+}
+const NODE_W = 280,
+  NODE_H = 180
 export const nodeKind = (typeKey: string): string =>
   typeKey.startsWith('core.') ? typeKey.slice(5) : typeKey
 const connectableTypes = [
@@ -145,6 +159,12 @@ function KindIcon({
   }
 }
 const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
+  // 版本预览只存在于卡片内；取消选中即回到主版本，下游始终用主版本。
+  const [preview, setPreview] = useState<Content | null>(null)
+  const showVersions = !!selected && data.solo
+  useEffect(() => {
+    if (!showVersions) setPreview(null)
+  }, [showVersions])
   const n = data.item,
     p = n.content?.payload,
     kind = nodeKind(n.metadata.type_key),
@@ -205,13 +225,30 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
               {!known ? '此节点类型当前只读' : '当前无权展示此内容'}
             </p>
           ) : n.content ? (
-            <MediaFigure
-              content={n.content}
-              kind={kind}
-              title={n.metadata.title || untitled(n.metadata.type_key)}
-              controls={kind !== 'image'}
-              hoverPlay={kind === 'video'}
-            />
+            <>
+              <MediaFigure
+                content={preview ?? n.content}
+                kind={kind}
+                title={n.metadata.title || untitled(n.metadata.type_key)}
+                controls={kind !== 'image'}
+                hoverPlay={kind === 'video'}
+              />
+              {preview && (
+                <span className="cc-preview-flag">预览版本 · 下游仍用主版本</span>
+              )}
+              {showVersions && kind !== 'audio' && (
+                <NodeVersionStrip
+                  canvasID={data.canvasID}
+                  nodeID={n.id}
+                  kind={kind}
+                  dataRevision={n.data_revision}
+                  viewing={preview?.id ?? null}
+                  disabled={data.disabled}
+                  onPreview={setPreview}
+                  onSelectVersion={(versionID) => data.selectVersion(n.id, versionID)}
+                />
+              )}
+            </>
           ) : (
             <div
               className="cc-media-empty"
@@ -353,6 +390,29 @@ function connectionTarget(
   }
   return best
 }
+// 拖线松手打开添加菜单时，虚线停在松手点，菜单关闭即消失（选定后由真实连线替换）。
+function DraftLink({ link, to }: { link: { id: string; side: 'input' | 'output' }; to: { x: number; y: number } }) {
+  const flow = useReactFlow<FlowNode>()
+  const node = flow.getInternalNode(link.id)
+  if (!node) return null
+  const output = link.side === 'output',
+    from = edgeAnchor(node, link.side)
+  const [path] = getBezierPath({
+    sourceX: output ? from.x : to.x,
+    sourceY: output ? from.y : to.y,
+    sourcePosition: Position.Right,
+    targetX: output ? to.x : from.x,
+    targetY: output ? to.y : from.y,
+    targetPosition: Position.Left,
+  })
+  return (
+    <ViewportPortal>
+      <svg className="cc-draft-link" aria-hidden="true">
+        <path d={path} />
+      </svg>
+    </ViewportPortal>
+  )
+}
 function ConnectionPreview(props: ConnectionLineComponentProps<FlowNode>) {
   const flow = useReactFlow<FlowNode>(),
     viewport = flow.getViewport()
@@ -390,7 +450,7 @@ function ConnectionPreview(props: ConnectionLineComponentProps<FlowNode>) {
         />
       )}
       <path
-        className="react-flow__connection-path cc-connection-preview"
+        className={`react-flow__connection-path cc-connection-preview ${target ? 'is-snapped' : ''}`}
         d={path}
       />
       {target && (
@@ -406,6 +466,7 @@ function ConnectionPreview(props: ConnectionLineComponentProps<FlowNode>) {
 }
 type ReferenceFlowEdge = Edge<{
   showCut: boolean
+  running: boolean
   disconnect: () => void
 }>
 function ReferenceEdge(props: EdgeProps<ReferenceFlowEdge>) {
@@ -429,7 +490,9 @@ function ReferenceEdge(props: EdgeProps<ReferenceFlowEdge>) {
   return (
     <>
       <BaseEdge {...props} path={path} />
-      {props.selected && <path d={path} className="cc-reference-flow" />}
+      {props.selected && !props.data?.running && (
+        <path d={path} className="cc-reference-flow" />
+      )}
       {props.data?.showCut && (
         <EdgeLabelRenderer>
           <button
@@ -466,7 +529,9 @@ export default function CanvasView({
   onSelect,
   onEdit,
   inlineContent,
-  onAdd,
+  onPickFiles,
+  onOpenLibrary,
+  addRequest,
   panMode,
   onMove,
   onMoveSelection,
@@ -494,7 +559,10 @@ export default function CanvasView({
   onSelect: (id: string | null) => void
   onEdit: (id: string) => void
   inlineContent?: InlineContentEditing
-  onAdd: (x: number, y: number) => void
+  onPickFiles: (x: number, y: number) => void
+  onOpenLibrary: () => void
+  /** 工具轨「+」或 T/I/O 快捷键：递增 seq 打开添加菜单，kind 存在时直接创建。 */
+  addRequest: { seq: number; kind?: 'text' | 'image' | 'video'; anchor?: { x: number; y: number } }
   panMode: boolean
   onMove: (node: CanvasNode, x: number, y: number) => void
   onMoveSelection: (moves: { node: CanvasNode; x: number; y: number }[]) => void
@@ -571,14 +639,10 @@ export default function CanvasView({
   const [size, setSize] = useState({ width: 0, height: 0 }),
     [minimap, setMinimap] = useState(false),
     [nodes, setNodes] = useState<FlowNode[]>([])
-  const [portMenu, setPortMenu] = useState<{
-    id: string
-    side: 'input' | 'output'
-    x: number
-    y: number
-    screen: { x: number; y: number }
-  } | null>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
+  // 工具轨、双击空白、右键空白、端口共用一个添加菜单。
+  // link：从端口出发时要连到的节点；dropped：拖线松手时新节点端口落在松手点。
+  const [addMenu, setAddMenu] = useState<AddMenuState | null>(null)
+  const createNodeRef = useRef<(kind: 'text' | MediaKind, menu: AddMenuState) => void>(() => {})
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{
     x: number; y: number; nodeIDs: string[]; edgeID?: string
@@ -614,19 +678,31 @@ export default function CanvasView({
       const node = flow.getInternalNode(id)
       if (!node) return
       const p = node.internals.positionAbsolute
-      setPortMenu({
-        id,
-        side,
+      setAddMenu({
         screen,
-        x:
-          p.x + (side === 'output' ? (node.measured.width ?? 280) + 200 : -200),
-        y: p.y + (node.measured.height ?? 180) / 2,
+        link: { id, side },
+        // 未拖线时新节点放在来源节点旁 120 世界像素。
+        world: {
+          x: side === 'output' ? p.x + (node.measured.width ?? 280) + 120 : p.x - 120,
+          y: p.y + (node.measured.height ?? 180) / 2,
+        },
       })
     },
     [flow],
   )
+  const lastAddRequest = useRef(addRequest.seq)
+  useEffect(() => {
+    if (addRequest.seq === lastAddRequest.current) return
+    lastAddRequest.current = addRequest.seq
+    const bounds = element.current?.getBoundingClientRect()
+    if (!bounds) return
+    const center = { x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2 }
+    const menu = { screen: addRequest.anchor ?? center, world: flow.screenToFlowPosition(center) }
+    if (addRequest.kind) createNodeRef.current(addRequest.kind, menu)
+    else setAddMenu(menu)
+  }, [addRequest, flow])
   const magnetBlocked = useRef(false)
-  magnetBlocked.current = disabled || panMode || panHeld || !!portMenu
+  magnetBlocked.current = disabled || panMode || panHeld || !!addMenu || !!contextMenu
   useEffect(() => {
     if (!element.current) return
     return attachMagneticPorts(
@@ -635,23 +711,9 @@ export default function CanvasView({
       () => magnetBlocked.current || dragging.current.size > 0,
     )
   }, [flow])
-  useLayoutEffect(() => {
-    const menu = menuRef.current,
-      surface = element.current
-    if (!portMenu || !menu || !surface) return
-    // Menu coordinates are screen coordinates, independent of new-node placement.
-    const place = () => {
-      const bounds = surface.getBoundingClientRect()
-      menu.style.maxHeight = `${Math.max(0, bounds.height - 24)}px`
-      menu.style.left = `${Math.max(12, Math.min(bounds.width - menu.offsetWidth - 12, portMenu.screen.x - bounds.left))}px`
-      menu.style.top = `${Math.max(12, Math.min(bounds.height - menu.offsetHeight - 12, portMenu.screen.y - bounds.top))}px`
-    }
-    place()
-    const observer = new ResizeObserver(place)
-    observer.observe(surface)
-    observer.observe(menu)
-    return () => observer.disconnect()
-  }, [portMenu])
+  const selectVersion = useCallback((id: string, versionID: string) => {
+    callbacks.current.onActions([{ type: 'select_version', node_id: id, version_id: versionID }])
+  }, [])
   const resize = useCallback(
     (id: string, width: number, height: number, x: number, y: number) => {
       const source = callbacks.current.canvasNodes.find((n) => n.id === id)
@@ -721,6 +783,7 @@ export default function CanvasView({
           old.selected === isSelected &&
           old.draggable === draggable &&
           old.data.disabled === disabled &&
+          old.data.solo === (isSelected && selection.length === 1) &&
           old.data.renaming === (renamingNode === n.id) &&
           old.data.inlineContent === (inlineContent?.nodeID === n.id ? inlineContent : undefined) &&
           old.position.x === position.x &&
@@ -760,6 +823,9 @@ export default function CanvasView({
             port: openPort,
             resize,
             disabled,
+            canvasID: canvas.id,
+            selectVersion,
+            solo: isSelected && selection.length === 1,
           },
           selected: isSelected,
           draggable,
@@ -784,25 +850,11 @@ export default function CanvasView({
     openPort,
     resize,
     disabled,
+    selectVersion,
   ])
-  useEffect(() => {
-    if (!portMenu) return
-    const previous = document.activeElement
-    menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus()
-    const outside = (event: PointerEvent) => {
-      if (
-        event.target instanceof window.Node &&
-        !menuRef.current?.contains(event.target)
-      )
-        setPortMenu(null)
-    }
-    document.addEventListener('pointerdown', outside)
-    return () => {
-      document.removeEventListener('pointerdown', outside)
-      if (previous instanceof HTMLElement && previous.isConnected)
-        previous.focus()
-    }
-  }, [portMenu])
+  const pointerDown = useRef<{ x: number; y: number } | null>(null)
+  const selectionStart = useRef<{ x: number; y: number } | null>(null)
+  const selectionBox = useRef<{ x: number; y: number; width: number; height: number } | null>(null)
   const selectionRef = useRef(selection)
   selectionRef.current = selection
   const changeNodes = useCallback((changes: NodeChange<FlowNode>[]) => {
@@ -832,6 +884,8 @@ export default function CanvasView({
           .find((n) => n.id === id)
           ?.data.item.capabilities.actions.includes('move'),
     )
+  // v6：至少两个独立节点（组算一个）才能打组。
+  const canGroup = selectionRoots(canvas.nodes, selection).length >= 2
   const singleGroupSelected =
     selection.length === 1 && active?.data.item.metadata.type_key === 'core.group'
   const toolbarX = Math.max(
@@ -860,8 +914,16 @@ export default function CanvasView({
   const persistedEdges = new Set(
     canvas.edges.filter((e) => !e.id.startsWith('pending:')).map((e) => e.id),
   )
-  const edges: ReferenceFlowEdge[] = canvas.edges.map(
-    (e) => ({
+  const running = new Set(
+    canvas.nodes
+      .filter((n) => ['queued', 'running', 'reconciling'].includes(n.status.generation_state))
+      .map((n) => n.id),
+  )
+  // v6 连线：无箭头的中性白线；相关选中时提亮并沿数据流向走白光，运行中为琥珀虚线。
+  const edges: ReferenceFlowEdge[] = canvas.edges.map((e) => {
+    const hot = expanded.has(e.source_node_id) || expanded.has(e.target_node_id),
+      live = running.has(e.target_node_id)
+    return {
       id: e.id,
       selectable: persistedEdges.has(e.id),
       focusable: persistedEdges.has(e.id),
@@ -870,31 +932,30 @@ export default function CanvasView({
       sourceHandle: e.source_port,
       targetHandle: e.target_port,
       type: 'reference',
+      className: live ? 'cc-edge-running' : undefined,
       data: {
-        showCut:
-          selectedEdge === e.id && persistedEdges.has(e.id) && !disabled,
+        showCut: selectedEdge === e.id && persistedEdges.has(e.id) && !disabled,
+        running: live,
         disconnect: () => {
           act([{ type: 'disconnect_reference', edge_id: e.id }])
           setSelectedEdge(null)
         },
       },
-      selected:
-        selectedEdge === e.id ||
-        expanded.has(e.source_node_id) ||
-        expanded.has(e.target_node_id),
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
+      selected: selectedEdge === e.id || hot,
       style: {
         pointerEvents: persistedEdges.has(e.id) ? 'auto' : 'none',
-        stroke:
-          selectedEdge === e.id
+        stroke: live
+          ? 'var(--run)'
+          : selectedEdge === e.id
             ? 'var(--primary)'
-            : expanded.has(e.source_node_id) || expanded.has(e.target_node_id)
+            : hot
               ? 'rgba(255, 255, 255, 0.6)'
               : 'rgba(255, 255, 255, 0.22)',
         strokeWidth: 1.5,
+        strokeDasharray: live ? '5 5' : undefined,
       },
-    }),
-  )
+    }
+  })
   const act = (actions: GraphAction[]) => {
     if (!disabled) onActions(actions)
   }
@@ -927,28 +988,95 @@ export default function CanvasView({
       onMove(moves[0].node, moves[0].x, moves[0].y)
     else onMoveSelection(moves)
   }
-  function createConnected(kind: 'text' | MediaKind) {
-    if (!portMenu) return
+  // 新节点位置：拖线松手时端口正好落在松手点；从端口点「+」时放在来源旁；其余以指针为中心。
+  function createNode(kind: 'text' | MediaKind, menu: AddMenuState) {
     const id = `cwnode_${crypto.randomUUID()}`,
-      isOutput = portMenu.side === 'output'
-    act([
-      {
-        type: 'add_node',
-        node_id: id,
-        type_key: `core.${kind}`,
-        x: portMenu.x - (isOutput ? 0 : 280),
-        y: portMenu.y - 90,
-      },
-      {
+      link = menu.link,
+      output = link?.side === 'output'
+    const x = link
+        ? output
+          ? menu.world.x
+          : menu.world.x - NODE_W
+        : menu.world.x - NODE_W / 2,
+      y = menu.world.y - NODE_H / 2
+    const actions: GraphAction[] = [
+      { type: 'add_node', node_id: id, type_key: `core.${kind}`, x, y },
+    ]
+    if (link)
+      actions.push({
         type: 'connect_reference',
-        source_node_id: isOutput ? portMenu.id : id,
-        target_node_id: isOutput ? id : portMenu.id,
+        source_node_id: output ? link.id : id,
+        target_node_id: output ? id : link.id,
         source_port: 'output',
         target_port: 'reference',
         role: 'reference',
-      },
+      })
+    act(actions)
+    onSelection([id])
+    onSelect(id)
+  }
+  // v6 派生：在来源右侧 120 世界像素新建下游节点，逐个连线并选中它，生成面板随之出现。
+  function derive(sourceIDs: string[], kind: 'image' | 'video') {
+    const sources = sourceIDs
+      .map((id) => flow.getInternalNode(id))
+      .filter((n): n is InternalNode<FlowNode> => !!n)
+    if (!sources.length) return
+    const right = Math.max(...sources.map((n) => n.internals.positionAbsolute.x + (n.measured.width ?? NODE_W)))
+    const cy = sources.reduce((sum, n) => sum + n.internals.positionAbsolute.y + (n.measured.height ?? NODE_H) / 2, 0) / sources.length
+    const id = `cwnode_${crypto.randomUUID()}`
+    act([
+      { type: 'add_node', node_id: id, type_key: `core.${kind}`, x: right + 120, y: cy - NODE_H / 2 },
+      ...sources.map((n): GraphAction => ({
+        type: 'connect_reference',
+        source_node_id: n.id,
+        target_node_id: id,
+        source_port: 'output',
+        target_port: 'reference',
+        role: 'reference',
+      })),
     ])
-    setPortMenu(null)
+    onSelection([id])
+    onSelect(id)
+  }
+  createNodeRef.current = createNode
+  function addMenuItems(menu: AddMenuState): CanvasMenuItem[] {
+    const from = menu.link?.side === 'output' ? canvas.nodes.find((n) => n.id === menu.link?.id) : undefined
+    const fromText = from && ['core.text', 'core.link'].includes(from.metadata.type_key)
+    const kinds = [
+      ['text', '文字', 'T', ''],
+      ['image', '图片', 'I', fromText ? '以上游文字为提示词' : ''],
+      ['video', '视频', 'O', ''],
+      ['audio', '音频', '', ''],
+    ] as const
+    const items: CanvasMenuItem[] = [
+      {
+        section: !menu.link
+          ? '添加节点'
+          : menu.link.side === 'output'
+            ? '添加下游节点'
+            : '添加上游参考',
+      },
+      ...kinds.map(([kind, label, hint, sub]) => ({
+        label,
+        icon: <KindIcon typeKey={`core.${kind}`} size={16} />,
+        shortcut: hint || undefined,
+        sub: sub || undefined,
+        disabled,
+        action: () => createNode(kind, menu),
+      })),
+    ]
+    if (!menu.link)
+      items.push('separator', {
+        label: '上传文件',
+        icon: <Upload size={16} />,
+        disabled,
+        action: () => onPickFiles(menu.world.x, menu.world.y),
+      }, {
+        label: '从资产库添加',
+        icon: <Library size={16} />,
+        action: onOpenLibrary,
+      })
+    return items
   }
   const contextItems: CanvasMenuItem[] = []
   if (contextMenu) {
@@ -1039,7 +1167,7 @@ export default function CanvasView({
           disabled: locked,
           action: () => act([{ type: 'ungroup_nodes', node_id: target.id }]),
         })
-      else
+      else if (selectionRoots(canvas.nodes, ids).length >= 2)
         contextItems.push({
           label: '打组',
           icon: <FolderPlus size={16} />,
@@ -1072,25 +1200,7 @@ export default function CanvasView({
         x: contextMenu.x,
         y: contextMenu.y,
       })
-      for (const kind of ['text', 'image', 'video', 'audio'] as const)
-        contextItems.push({
-          label: `新增${kindLabel[kind]}节点`,
-          icon: <KindIcon typeKey={`core.${kind}`} size={16} />,
-          disabled,
-          action: () => {
-            const id = `cwnode_${crypto.randomUUID()}`
-            act([
-              {
-                type: 'add_node',
-                node_id: id,
-                type_key: `core.${kind}`,
-                x: at.x,
-                y: at.y,
-              },
-            ])
-            onSelection([id])
-          },
-        })
+      contextItems.push(...addMenuItems({ screen: contextMenu, world: at }), 'separator')
       contextItems.push({
         label: '适应全部节点',
         icon: <Scan size={16} />,
@@ -1120,6 +1230,20 @@ export default function CanvasView({
     <div
       className="cc-flow"
       ref={element}
+      onPointerDownCapture={(e) => {
+        pointerDown.current = { x: e.clientX, y: e.clientY }
+      }}
+      onPointerMove={(e) => {
+        const a = selectionStart.current
+        if (!a) return
+        const b = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+        selectionBox.current = {
+          x: Math.min(a.x, b.x),
+          y: Math.min(a.y, b.y),
+          width: Math.abs(a.x - b.x),
+          height: Math.abs(a.y - b.y),
+        }
+      }}
       onContextMenu={(event) => {
         const hit = event.target instanceof Element ? event.target : null
         if (
@@ -1139,7 +1263,7 @@ export default function CanvasView({
           return
         event.preventDefault()
         event.stopPropagation()
-        setPortMenu(null)
+        setAddMenu(null)
         const ids = nodeID
           ? selection.includes(nodeID)
             ? selection
@@ -1171,7 +1295,7 @@ export default function CanvasView({
             e.shiftKey && singleGroupSelected && active
           )
             act([{ type: 'ungroup_nodes', node_id: active.id }])
-          else if (!e.shiftKey && selection.length && !singleGroupSelected)
+          else if (!e.shiftKey && canGroup)
             act([{ type: 'group_nodes', node_ids: selection }])
           return
         }
@@ -1197,11 +1321,13 @@ export default function CanvasView({
           removeSelection()
           return
         }
-        const delta: Record<string, [number, number]> = {
-            ArrowLeft: [-20, 0],
-            ArrowRight: [20, 0],
-            ArrowUp: [0, -20],
-            ArrowDown: [0, 20],
+        // v6：方向键每次 1px，按住 Shift 10px。
+        const d = e.shiftKey ? 10 : 1,
+          delta: Record<string, [number, number]> = {
+            ArrowLeft: [-d, 0],
+            ArrowRight: [d, 0],
+            ArrowUp: [0, -d],
+            ArrowDown: [0, d],
           },
           step = delta[e.key]
         if (active && step && !moveDisabled) {
@@ -1213,7 +1339,7 @@ export default function CanvasView({
           if (active?.data.item.metadata.type_key === 'core.group') renameNode(selected)
           else onEdit(selected)
         } else if (e.key === 'Escape') {
-          setPortMenu(null)
+          setAddMenu(null)
           onSelection([])
         }
       }}
@@ -1259,13 +1385,48 @@ export default function CanvasView({
         onNodesChange={changeNodes}
         onNodeClick={() => setSelectedEdge(null)}
         onNodeDoubleClick={(_, n) => {
-          if (n.data.item.metadata.type_key === 'core.group') renameNode(n.id)
+          const item = n.data.item
+          if (item.metadata.type_key === 'core.group') return
+          // v6：双击有内容的媒体全屏查看，文字就地编辑。
+          if (isMediaKind(nodeKind(item.metadata.type_key)) && item.content && item.capabilities.actions.includes('maximize'))
+            onPreview(n.id)
           else onEdit(n.id)
+        }}
+        onSelectionStart={(e) => {
+          // React Flow 在越过拖动阈值后才触发，起点取按下时的位置。
+          selectionStart.current = flow.screenToFlowPosition(
+            pointerDown.current ?? { x: e.clientX, y: e.clientY },
+          )
+          selectionBox.current = null
+        }}
+        onSelectionEnd={() => {
+          // 框选时组要完整框住才选中；已选中组时不再重复选中组内节点。
+          const rect = selectionBox.current
+          selectionStart.current = null
+          selectionBox.current = null
+          if (!rect) return
+          const inside = (id: string) => {
+            const n = flow.getInternalNode(id)
+            if (!n) return false
+            const p = n.internals.positionAbsolute
+            return p.x >= rect.x && p.y >= rect.y &&
+              p.x + (n.measured.width ?? 0) <= rect.x + rect.width &&
+              p.y + (n.measured.height ?? 0) <= rect.y + rect.height
+          }
+          const kept = selectionRef.current.filter((id) => {
+            const n = callbacks.current.canvasNodes.find((v) => v.id === id)
+            return n?.metadata.type_key !== 'core.group' || inside(id)
+          })
+          const roots = selectionRoots(callbacks.current.canvasNodes, kept)
+          if (roots.length !== selectionRef.current.length) {
+            selectionRef.current = roots
+            callbacks.current.onSelection(roots)
+          }
         }}
         onPaneClick={() => {
           onSelect(null)
           onSelection([])
-          setPortMenu(null)
+          setAddMenu(null)
           setSelectedEdge(null)
         }}
         onDoubleClick={(e) => {
@@ -1274,8 +1435,8 @@ export default function CanvasView({
             !(e.target as HTMLElement).classList.contains('react-flow__pane')
           )
             return
-          const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY })
-          onAdd(p.x, p.y)
+          const screen = { x: e.clientX, y: e.clientY }
+          setAddMenu({ screen, world: flow.screenToFlowPosition(screen) })
         }}
         onNodeDragStart={(_, n, ns) => {
           const roots = selectionRoots(
@@ -1353,21 +1514,21 @@ export default function CanvasView({
             hit.closest('.react-flow__node')
           )
             return
-          const p = flow.screenToFlowPosition({
-            x: pointer.clientX,
-            y: pointer.clientY,
-          })
-          setPortMenu({
-            id: state.fromNode.id,
-            side: state.fromHandle?.type === 'target' ? 'input' : 'output',
-            ...p,
-            screen: { x: pointer.clientX, y: pointer.clientY },
+          // 虚线留在松手点，直到菜单选定（变实线）或取消（消失）。
+          setAddMenu({
+            screen,
+            world: flow.screenToFlowPosition(screen),
+            link: {
+              id: state.fromNode.id,
+              side: state.fromHandle?.type === 'target' ? 'input' : 'output',
+            },
+            dropped: true,
           })
         }}
         onEdgeClick={(_, edge) => {
           onSelect(null)
           onSelection([])
-          setPortMenu(null)
+          setAddMenu(null)
           setSelectedEdge(persistedEdges.has(edge.id) ? edge.id : null)
         }}
         onEdgeDoubleClick={(_, edge) => {
@@ -1407,7 +1568,7 @@ export default function CanvasView({
             /* Viewport preferences are optional. */
           }
         }}
-        onMoveStart={() => { setPortMenu(null); setContextMenu(null) }}
+        onMoveStart={() => { setAddMenu(null); setContextMenu(null) }}
         onMoveEnd={(_, v) => {
           try {
             localStorage.setItem(
@@ -1420,6 +1581,9 @@ export default function CanvasView({
         }}
       >
         <Background gap={24} size={1} color="rgba(255, 255, 255, 0.075)" />
+        {addMenu?.dropped && addMenu.link && (
+          <DraftLink link={addMenu.link} to={addMenu.world} />
+        )}
         {minimap && (
           <MiniMap
             pannable
@@ -1437,6 +1601,31 @@ export default function CanvasView({
           style={{ left: toolbarX, top: toolbarY }}
         >
           {selection.length > 1 && <span>{selection.length} 个节点</span>}
+          {(() => {
+            // 只有图片节点有内容时可生成视频，文字节点可生成图片；多选普通节点可合并为参考。
+            const refs = selectionRoots(canvas.nodes, selection)
+              .map((id) => canvas.nodes.find((n) => n.id === id))
+              .filter((n): n is CanvasNode => !!n && connectableTypes.includes(n.metadata.type_key))
+            const one = selection.length === 1 ? active.data.item : undefined
+            const tools: { label: string; icon: ReactNode; run: () => void }[] = []
+            if (one?.metadata.type_key === 'core.image' && one.content)
+              tools.push({ label: '生成视频', icon: <Film size={16} />, run: () => derive([one.id], 'video') })
+            if (one && ['core.text', 'core.link'].includes(one.metadata.type_key) && contentText(one.content?.payload))
+              tools.push({ label: '生成图片', icon: <ImageIcon size={16} />, run: () => derive([one.id], 'image') })
+            if (selection.length > 1 && refs.length > 1)
+              tools.push({ label: '合并为参考生成', icon: <Sparkles size={16} />, run: () => derive(refs.map((n) => n.id), 'image') })
+            return tools.length ? (
+              <>
+                {tools.map((t) => (
+                  <button key={t.label} className="cc-tool" disabled={disabled} onClick={t.run}>
+                    {t.icon}
+                    {t.label}
+                  </button>
+                ))}
+                <span className="cc-tool-sep" />
+              </>
+            ) : null
+          })()}
           {selection.length === 1 && active.data.item.metadata.type_key === 'internal.document' && (
             <button
               className="cc-icon-button"
@@ -1506,7 +1695,7 @@ export default function CanvasView({
                 <Library size={16} />
               </button>
             )}
-          {!singleGroupSelected && (
+          {canGroup && (
             <button
               className="cc-icon-button"
               aria-label="打组"
@@ -1580,87 +1769,15 @@ export default function CanvasView({
           onClose={() => setContextMenu(null)}
         />
       )}
-      {portMenu && (
-        <div
-          className="cc-port-menu cc-surface"
-          ref={menuRef}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.stopPropagation()
-              setPortMenu(null)
-            }
-          }}
-          role="dialog"
-          aria-label="创建并连接节点"
-        >
-          <div>
-            <span>
-              {portMenu.side === 'input' ? '添加上游参考' : '添加下游节点'}
-            </span>
-            <button
-              className="cc-icon-button"
-              aria-label="关闭连接菜单"
-              onClick={() => setPortMenu(null)}
-            >
-              <X size={14} />
-            </button>
-          </div>
-          <button disabled={disabled} onClick={() => createConnected('text')}>
-            <Type size={16} />
-            文字
-          </button>
-          <button disabled={disabled} onClick={() => createConnected('image')}>
-            <ImageIcon size={16} />
-            图片
-          </button>
-          <button disabled={disabled} onClick={() => createConnected('video')}>
-            <Film size={16} />
-            视频
-          </button>
-          <button disabled={disabled} onClick={() => createConnected('audio')}>
-            <AudioLines size={16} />
-            音频
-          </button>
-          <label className="cc-connect-existing">
-            连接已有节点
-            <select
-              className="input"
-              aria-label="连接已有节点"
-              value=""
-              disabled={disabled}
-              onChange={(e) => {
-                const id = e.target.value
-                if (!id) return
-                act([
-                  {
-                    type: 'connect_reference',
-                    source_node_id:
-                      portMenu.side === 'output' ? portMenu.id : id,
-                    target_node_id:
-                      portMenu.side === 'output' ? id : portMenu.id,
-                    source_port: 'output',
-                    target_port: 'reference',
-                    role: 'reference',
-                  },
-                ])
-                setPortMenu(null)
-              }}
-            >
-              <option value="">选择节点…</option>
-              {canvas.nodes
-                .filter(
-                  (n) =>
-                    n.id !== portMenu.id &&
-                    n.capabilities.actions.includes('reference'),
-                )
-                .map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.metadata.title || untitled(n.metadata.type_key)}
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
+      {addMenu && (
+        <CanvasContextMenu
+          key={`${addMenu.screen.x}:${addMenu.screen.y}:${addMenu.link?.id ?? ''}`}
+          x={addMenu.screen.x}
+          y={addMenu.screen.y}
+          label={addMenu.link ? '创建并连接节点' : '添加节点'}
+          items={addMenuItems(addMenu)}
+          onClose={() => setAddMenu(null)}
+        />
       )}
       <div className="cc-canvas-controls" role="toolbar" aria-label="画布视图">
         <button

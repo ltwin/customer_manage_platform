@@ -1,14 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
-export type CanvasMenuItem = {
-  label: string
-  icon: ReactNode
-  action: () => void
-  disabled?: boolean
-  danger?: boolean
-  shortcut?: string
-}
+export type CanvasMenuItem =
+  | {
+      label: string
+      icon: ReactNode
+      action: () => void
+      disabled?: boolean
+      danger?: boolean
+      shortcut?: string
+      /** 第二行说明，例如「以上游文本为提示词」。 */
+      sub?: string
+    }
+  | { section: string }
+  | 'separator'
 
 export default function CanvasContextMenu({
   x,
@@ -99,25 +104,37 @@ export default function CanvasContextMenu({
         buttons[next]?.focus()
       }}
     >
-      {items.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          role="menuitem"
-          aria-label={item.label}
-          disabled={item.disabled}
-          className={item.danger ? 'is-danger' : undefined}
-          onClick={() => {
-            onClose()
-            item.action()
-          }}
-        >
-          {item.icon}
-          <span>{item.label}</span>
-          {item.shortcut && <kbd>{item.shortcut}</kbd>}
-        </button>
-      ))}
+      {items.map((item, i) =>
+        item === 'separator' ? (
+          <span key={`sep-${i}`} className="cc-context-sep" role="separator" />
+        ) : 'section' in item ? (
+          <span key={`section-${i}`} className="cc-context-section">
+            {item.section}
+          </span>
+        ) : (
+          <button
+            key={item.label}
+            type="button"
+            role="menuitem"
+            aria-label={item.label}
+            disabled={item.disabled}
+            className={item.danger ? 'is-danger' : undefined}
+            onClick={() => {
+              onClose()
+              item.action()
+            }}
+          >
+            {item.icon}
+            <span>
+              {item.label}
+              {item.sub && <small>{item.sub}</small>}
+            </span>
+            {item.shortcut && <kbd>{item.shortcut}</kbd>}
+          </button>
+        ),
+      )}
     </div>,
-    document.body,
+    // 挂在工作台根内才能读到 v6 主题变量；挂到 body 上背景和阴影都会失效。
+    document.querySelector('.cc-workspace') ?? document.body,
   )
 }

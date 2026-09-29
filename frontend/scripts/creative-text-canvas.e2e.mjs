@@ -82,8 +82,11 @@ let releaseMove
 const moves = []
 let canvasReads = 0
 await context.route('**/api/v1/**', async (route) => {
-  // route.fetch 会等待完整响应体；SSE 长连接在这里断开，客户端按退避重连并继续用快照读取。
-  if (route.request().headers().accept === 'text/event-stream') return route.abort('failed')
+  // route.fetch 会等整个响应体结束，SSE 长连接必须原样转发给真实后端流式读取。
+  if (route.request().headers().accept === 'text/event-stream') {
+    const u = new URL(route.request().url())
+    return route.continue({ url: api + u.pathname + u.search })
+  }
   const u = new URL(route.request().url()),
     path = u.pathname + u.search
   if (u.pathname === failedCanvasPath && route.request().method() === 'GET') {
@@ -188,9 +191,12 @@ async function selectNode(p) {
   ])
   if (box && shelf && box.x < shelf.x + shelf.width)
     await p.mouse.wheel(shelf.x + shelf.width - box.x + 80, 0)
-  await node.dblclick()
-  await p.locator('.cc-editor-dialog textarea').waitFor()
+  // 文字节点在卡片内编辑：双击正文进入，⌘Enter 或失焦保存，Esc 退出。
+  await node.locator('.cc-node-content').dblclick()
+  await p.getByRole('textbox', { name: '正文', exact: true }).waitFor()
 }
+// 正文草稿写入本机日志是异步的，刷新前留出落盘时间。
+const draftSettled = (p) => p.waitForTimeout(400)
 try {
   const page = await context.newPage()
   page.on('pageerror', (e) => errors.push(e.message))
@@ -290,9 +296,7 @@ try {
   await openLibrary(page)
   await selectNode(page)
   await page.getByLabel('正文', { exact: true }).fill('第一张画布的本机草稿')
-  await page
-    .getByRole('button', { name: '放弃本机修改', exact: true })
-    .waitFor()
+  await draftSettled(page)
   await page.reload()
   await saved(page)
   await openLibrary(page)
@@ -301,7 +305,7 @@ try {
     await page.getByLabel('正文', { exact: true }).inputValue(),
     '第一张画布的本机草稿',
   )
-  await page.getByRole('button', { name: '保存到节点', exact: true }).click()
+  await page.getByLabel('正文', { exact: true }).press('Control+Enter')
   await saved(page)
   await page.goto(second)
   await saved(page)
@@ -327,7 +331,7 @@ try {
   await saved(other)
   await selectNode(other)
   await other.getByLabel('正文', { exact: true }).fill('另一窗口已经保存')
-  await other.getByRole('button', { name: '保存到节点', exact: true }).click()
+  await other.getByLabel('正文', { exact: true }).press('Control+Enter')
   await saved(other)
   await other.close()
   await page.waitForTimeout(5500)
@@ -335,7 +339,7 @@ try {
     await page.getByLabel('正文', { exact: true }).inputValue(),
     '保留我的冲突草稿',
   )
-  await page.getByRole('button', { name: '保存到节点', exact: true }).click()
+  await page.getByLabel('正文', { exact: true }).press('Control+Enter')
   await page.getByRole('alertdialog').waitFor()
   await page
     .getByRole('alertdialog')
@@ -377,25 +381,18 @@ try {
   await page.getByRole('button', { name: '保存资产', exact: true }).click()
   await saved(page)
   assert.equal(await page.locator('.cc-asset').count(), 2)
+  // 离线期间正文草稿留在本机，恢复联网并刷新后仍在。
   await selectNode(page)
+  await page.getByLabel('正文', { exact: true }).fill('离线输入仍保留')
+  await draftSettled(page)
   await context.setOffline(true)
   // route.fetch uses a separate request context; abort canvas reads to model the offline poll.
   failedCanvasPath =
     '/api/v1/creative/canvases/' + new URL(first).pathname.split('/').pop()
-  await page.waitForFunction(
-    () => {
-      const button = [...document.querySelectorAll('button')].find(
-        (b) => b.textContent === '保存到节点',
-      )
-      return button?.disabled
-    },
-    null,
-    { timeout: 10000 },
+  assert.equal(
+    await page.getByLabel('正文', { exact: true }).inputValue(),
+    '离线输入仍保留',
   )
-  await page.getByLabel('正文', { exact: true }).fill('离线输入仍保留')
-  await page
-    .getByRole('button', { name: '放弃本机修改', exact: true })
-    .waitFor()
   failedCanvasPath = null
   await context.setOffline(false)
   await page.reload()
@@ -406,35 +403,11 @@ try {
     await page.getByLabel('正文', { exact: true }).inputValue(),
     '离线输入仍保留',
   )
-  await page.getByRole('button', { name: '放弃本机修改', exact: true }).click()
-  await page.getByRole('alertdialog').waitFor()
-  await page
-    .getByRole('alertdialog')
-    .getByRole('button', { name: '取消', exact: true })
-    .focus()
-  await page.keyboard.press('Tab')
-  assert.equal(
-    await page.evaluate(() => document.activeElement.textContent),
-    '放弃草稿',
-    'top modal receives Tab',
-  )
-  await page.keyboard.press('Escape')
-  assert.equal(
-    await page.getByRole('dialog', { name: '编辑节点', exact: true }).count(),
-    1,
-    'Escape only closes confirmation',
-  )
-  assert.equal(
-    await page.getByLabel('正文', { exact: true }).inputValue(),
-    '离线输入仍保留',
-  )
-  await page.getByRole('button', { name: '放弃本机修改', exact: true }).click()
-  await page.getByRole('button', { name: '放弃草稿', exact: true }).click()
+  await page.getByLabel('正文', { exact: true }).press('Control+Enter')
   await saved(page)
   // Failed in-app navigation must never leave the previous canvas writable.
   failedCanvasPath =
     '/api/v1/creative/canvases/' + new URL(second).pathname.split('/').pop()
-  await page.getByRole('button', { name: '收起编辑面板', exact: true }).click()
   await page.getByRole('link', { name: '返回创意空间', exact: true }).click()
   await page
     .getByRole('link', { name: '打开项目：第二张画布', exact: true })
@@ -460,7 +433,7 @@ try {
     path: `${output}/desktop-editor.png`,
     fullPage: true,
   })
-  await page.getByRole('button', { name: '收起编辑面板', exact: true }).click()
+  await page.getByLabel('正文', { exact: true }).press('Escape')
   await page.locator('.react-flow__node').first().click()
   assert.equal(
     await page.getByRole('dialog').count(),
@@ -509,7 +482,7 @@ try {
   assert.equal(metrics.serif, 0)
   await writeFile(`${output}/v6-metrics.json`, JSON.stringify(metrics, null, 2))
   await page.screenshot({ path: `${output}/desktop.png` })
-  await page.getByRole('button', { name: '编辑节点', exact: true }).click()
+  await selectNode(page)
   await page.setViewportSize({ width: 390, height: 844 })
   await page.screenshot({ path: `${output}/mobile.png`, fullPage: true })
   assert(
@@ -518,7 +491,7 @@ try {
     ),
     'narrow overflow',
   )
-  await page.getByRole('button', { name: '收起编辑面板', exact: true }).click()
+  await page.getByLabel('正文', { exact: true }).press('Escape')
   await page.locator('.cc-flow').evaluate(async (el) => {
     await Promise.all(el.getAnimations().map((animation) => animation.finished))
     await new Promise((resolve) =>
@@ -683,8 +656,9 @@ try {
   const latestDrop = await dragged.boundingBox()
   assert(latestDrop.x - firstDrop.x > 80, 'pending save blocked later drags')
   const oldReads = canvasReads
-  // At least one real poll reads the unchanged server position during the held POST.
-  await waitUntil(() => canvasReads > oldReads, 'canvas poll did not run')
+  // 空闲画布不轮询；用一次重连触发真实快照读取，它带回的是尚未更新的服务器位置。
+  await page.evaluate(() => window.dispatchEvent(new Event('online')))
+  await waitUntil(() => canvasReads > oldReads, 'canvas snapshot read did not run')
   await page.waitForTimeout(150)
   const afterPoll = await dragged.boundingBox()
   assert(

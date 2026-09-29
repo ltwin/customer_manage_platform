@@ -683,6 +683,39 @@ button.cc-project-name:hover,
   max-width: calc(100% - 24px);
 }
 
+.cc-selection-tools .cc-icon-button {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-sm);
+  color: var(--fg-2);
+}
+.cc-selection-tools .cc-icon-button:hover:not(:disabled) {
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-selection-tools .cc-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cc-selection-tools .cc-tool:hover:not(:disabled) {
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-tool-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--line-2);
+}
 .cc-selection-tools > span {
   font-size: 11px;
   color: var(--muted);
@@ -763,8 +796,11 @@ button.cc-project-name:hover,
   height: 100%;
   overflow: hidden;
 }
-.cc-flow .react-flow__node.cc-group-container {
-  pointer-events: auto;
+/* v6：只有组标题可点；边框区域透传给画布，组内空白仍能框选、双击添加、右键画布菜单。 */
+.cc-flow .react-flow__node.cc-group-container,
+.cc-flow .react-flow__node.cc-group-container .cc-group-node {
+  /* React Flow 给可拖动节点写了内联 pointer-events: all，这里必须覆盖。 */
+  pointer-events: none !important;
 }
 .cc-group-container .cc-node-header,
 .cc-group-container .react-flow__resize-control {
@@ -800,6 +836,9 @@ button.cc-project-name:hover,
   right: -20px;
 }
 .cc-port-target {
+  /* React Flow 的 handle 默认 pointer-events: none，只在特定连接状态才打开；
+     「+」按钮必须始终可点，事件仍冒泡到 handle 以便拖线。 */
+  pointer-events: auto;
   position: absolute;
   top: -26px;
   left: -26px;
@@ -861,38 +900,6 @@ button.cc-project-name:hover,
     stroke-dashoffset: -192;
   }
 }
-.cc-port-menu {
-  max-width: calc(100% - 24px);
-  overflow: auto;
-  position: absolute;
-  z-index: 8;
-  width: 184px;
-  padding: 8px;
-  border-radius: 14px;
-}
-.cc-port-menu > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-left: 7px;
-  font-size: 11px;
-  color: var(--muted);
-}
-.cc-port-menu > button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px;
-  border: 0;
-  border-radius: 8px;
-  color: var(--fg);
-  background: transparent;
-  text-align: left;
-}
-.cc-port-menu > button:hover {
-  background: #ffffff0a;
-}
 
 .cc-flow .react-flow__selection {
   border: 1px solid rgba(255, 255, 255, 0.5);
@@ -913,7 +920,8 @@ button.cc-project-name:hover,
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .cc-reference-flow {
+  .cc-reference-flow,
+  .cc-edge-running path.react-flow__edge-path {
     animation: none;
   }
   .cc-port-target button {
@@ -928,8 +936,11 @@ button.cc-project-name:hover,
 .cc-document-body small { color: var(--muted); }
 .cc-document-body > p { max-width: 800px; white-space: pre-wrap; font-size: 17px; line-height: 1.9; }
 @media (max-width: 620px) { .cc-maximized-document { inset: 64px 8px 60px 8px; } .cc-maximized-document > header { padding: 16px; } }
-.cc-connect-existing { display: flex; flex-direction: column; gap: 6px; padding: 8px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
-.cc-connect-existing select { max-width: 100%; padding: 7px; font-size: 12px; }
+
+/* 组内节点的连线会被 React Flow 抬高 z-index，剪刀按钮所在的标签层需要更高才能点到。 */
+.cc-flow .react-flow__edgelabel-renderer {
+  z-index: 1002;
+}
 .cc-edge-cut {
   position: absolute;
   display: grid;
@@ -948,7 +959,13 @@ button.cc-project-name:hover,
 .cc-edge-cut:hover { background: var(--accent); color: var(--bg); }
 .cc-edge-cut:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-.cc-connection-preview { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+/* 拖线预览：未吸附是虚线，吸附到目标后变实线并落白点。 */
+.cc-connection-preview { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 1.5; stroke-dasharray: 4 4; }
+.cc-connection-preview.is-snapped { stroke: var(--primary); stroke-dasharray: none; }
+.cc-draft-link { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.cc-draft-link path { fill: none; stroke: rgba(255, 255, 255, 0.55); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.cc-edge-running path.react-flow__edge-path { animation: cc-edge-dash 0.6s linear infinite; }
+@keyframes cc-edge-dash { to { stroke-dashoffset: -10; } }
 .cc-connection-target { fill: #ffffff0a; stroke: var(--accent); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
 .cc-connection-snap { fill: var(--accent); stroke: var(--bg); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: none; }
 
@@ -1189,6 +1206,9 @@ button.cc-project-name:hover,
 .cc-context-menu button:focus-visible { background: var(--s3); outline: none; }
 .cc-context-menu button:disabled { opacity: 0.35; cursor: default; }
 .cc-context-menu button.is-danger { color: var(--danger); }
+.cc-context-menu button > span small { display: block; font-size: 11px; line-height: 1.3; color: var(--fg-3); }
+.cc-context-section { display: block; padding: 8px 10px 4px; font-size: 11px; color: var(--fg-3); }
+.cc-context-sep { display: block; height: 1px; margin: 4px 6px; background: var(--line); }
 
 /* In-place editing keeps the node's title and body geometry. */
 .cc-node .cc-inline-title {
@@ -1234,4 +1254,102 @@ button.cc-project-name:hover,
   background: var(--s3);
   color: var(--danger);
   font-size: 12px;
+}
+
+/* 版本条：选中且有多个版本时在卡片底部内侧；is-on 正在看，is-main 主版本（白色对勾常驻）。 */
+.cc-versions {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(12, 12, 13, 0.82);
+  overflow-x: auto;
+  cursor: default;
+}
+.cc-versions > button[aria-pressed] {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--s3);
+  opacity: 0.5;
+  transition: opacity 0.12s;
+}
+.cc-versions > button[aria-pressed] .cc-media {
+  width: 100%;
+  height: 100%;
+}
+.cc-versions > button[aria-pressed] :is(img, video) {
+  object-fit: cover;
+  pointer-events: none;
+}
+.cc-versions > button[aria-pressed]:hover {
+  opacity: 0.85;
+}
+.cc-versions > button.is-on {
+  opacity: 1;
+  box-shadow: 0 0 0 1.5px var(--primary);
+}
+.cc-main-dot {
+  position: absolute;
+  right: 1px;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.cc-versions-grow {
+  flex: 1;
+  min-width: 6px;
+}
+.cc-set-main {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cc-set-main:hover:not(:disabled) {
+  background: #fff;
+}
+.cc-main-state {
+  flex: none;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--fg-3);
+  white-space: nowrap;
+}
+.cc-preview-flag {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(12, 12, 13, 0.82);
+  color: var(--fg-2);
+  font-size: 11px;
+  pointer-events: none;
 }

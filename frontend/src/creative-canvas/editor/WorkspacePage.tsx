@@ -6,14 +6,10 @@ import {
   Library,
   PencilLine,
   Plus,
-  Type,
   ChevronDown,
   MousePointer2,
   Hand,
   CircleHelp,
-  Image as ImageIcon,
-  Film,
-  AudioLines,
 } from 'lucide-react'
 import {
   useCallback,
@@ -85,7 +81,11 @@ function Workspace({ account }: { account: string }) {
     libraryOpen: boolean
   } | null>(null)
   const [editing, setEditing] = useState(false)
-  const [addMenu, setAddMenu] = useState(false)
+  const [addRequest, setAddRequest] = useState<{
+    seq: number
+    kind?: 'text' | 'image' | 'video'
+    anchor?: { x: number; y: number }
+  }>({ seq: 0 })
   const [help, setHelp] = useState(false)
   const [panMode, setPanMode] = useState(false)
   const { canvasID = '' } = useParams<{ canvasID: string }>()
@@ -130,6 +130,8 @@ function Workspace({ account }: { account: string }) {
   const [preview, setPreview] = useState<string | null>(null)
   const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
   const nodeFileInput = useRef<HTMLInputElement>(null)
+  const canvasFileInput = useRef<HTMLInputElement>(null)
+  const canvasFileTarget = useRef({ x: 0, y: 0 })
   const nodeUploadTarget = useRef<{ id: string; kind: MediaKind } | null>(null)
   const [compare, setCompare] = useState<{
     content: api.ContentDraft
@@ -472,23 +474,6 @@ function Workspace({ account }: { account: string }) {
       if (!isWithdrawn(e)) setLocalError(errorMessage(e))
     })
   }
-  function addEmptyNode(
-    kind: 'text' | MediaKind,
-    x = 80 + (view?.nodes.length ?? 0) * 20,
-    y = 80 + (view?.nodes.length ?? 0) * 20,
-  ) {
-    setAddMenu(false)
-    if (!view || !editable) return
-    const id = `cwnode_${crypto.randomUUID()}`
-    setRedoStack([])
-    void stage(
-      {
-        kind: 'actions',
-        actions: [{ type: 'add_node', node_id: id, type_key: `core.${kind}`, x, y }],
-      },
-      { select: [id] },
-    )
-  }
   const mediaKindOfFile = (file: File): MediaKind | null => {
     if (!uploads.capabilities) return null
     const classified = classifyFile(file, uploads.capabilities)
@@ -713,6 +698,35 @@ function Workspace({ account }: { account: string }) {
       document.title = previous
     }
   }, [canvas?.project_name, canvasID])
+  // v6 单键快捷键：V 选择 / H 平移 / T I O 新建文字、图片、视频（落在视口中心）。
+  // 画布编辑走本机 outbox，不被资产库/项目请求占用的单通道阻塞。
+  const shortcutsLive = !!view && editable
+  useEffect(() => {
+    const keydown = (e: KeyboardEvent) => {
+      const t = e.target
+      if (
+        e.defaultPrevented ||
+        e.isComposing ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.altKey ||
+        !(t instanceof HTMLElement) ||
+        t.isContentEditable ||
+        t.closest('input,textarea,select,[role="textbox"],[role="dialog"],[role="menu"],[aria-modal="true"]')
+      )
+        return
+      const k = e.key.toLowerCase()
+      if (k === 'v') setPanMode(false)
+      else if (k === 'h') setPanMode(true)
+      else if (shortcutsLive && (k === 't' || k === 'i' || k === 'o')) {
+        const kind = k === 't' ? 'text' : k === 'i' ? 'image' : 'video'
+        setAddRequest((v) => ({ seq: v.seq + 1, kind }))
+      } else return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', keydown)
+    return () => window.removeEventListener('keydown', keydown)
+  }, [shortcutsLive])
   const assetDraft = queue?.value.drafts['asset-form'] ?? blankDraft()
   const job = queue?.value.job
   const hasDraft = !!queue?.value.drafts[nodeKey]
@@ -805,10 +819,12 @@ function Workspace({ account }: { account: string }) {
           className="cc-add-tool"
           aria-label="新建节点"
           title="新建节点"
-          aria-expanded={addMenu}
           aria-haspopup="menu"
-          disabled={blocked || !canWrite}
-          onClick={() => setAddMenu(!addMenu)}
+          disabled={!editable || !view}
+          onClick={(e) => {
+            const r = e.currentTarget.getBoundingClientRect()
+            setAddRequest((v) => ({ seq: v.seq + 1, anchor: { x: r.right + 8, y: r.top } }))
+          }}
         >
           <Plus size={18} />
         </button>
@@ -847,40 +863,6 @@ function Workspace({ account }: { account: string }) {
           <CircleHelp size={18} strokeWidth={1.6} />
         </button>
       </nav>
-      {addMenu && (
-        <>
-          <button
-            className="cc-menu-dismiss"
-            aria-label="关闭新建菜单"
-            onClick={() => setAddMenu(false)}
-          />
-          <div
-            className="cc-menu cc-add-menu"
-            role="menu"
-            aria-label="新建节点"
-          >
-            {(
-              [
-                ['text', '文字', <Type size={17} key="t" />],
-                ['image', '图片', <ImageIcon size={17} key="i" />],
-                ['video', '视频', <Film size={17} key="v" />],
-                ['audio', '音频', <AudioLines size={17} key="a" />],
-              ] as const
-            ).map(([kind, label, icon]) => (
-              <button
-                key={kind}
-                role="menuitem"
-                aria-label={`新增${label}节点`}
-                disabled={blocked || !canWrite}
-                onClick={() => addEmptyNode(kind)}
-              >
-                {icon}
-                <span>{label}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
       {(showNotice || mediaError) && (
         <section className="cc-save-status" aria-live="polite">
           {mediaError && (
@@ -1057,7 +1039,12 @@ function Workspace({ account }: { account: string }) {
                       setInlineEditing(null)
                     },
                   } : undefined}
-                  onAdd={(x, y) => addEmptyNode('text', x, y)}
+                  onPickFiles={(x, y) => {
+                    canvasFileTarget.current = { x, y }
+                    canvasFileInput.current?.click()
+                  }}
+                  onOpenLibrary={() => setLibraryOpen(true)}
+                  addRequest={addRequest}
                   panMode={panMode}
                   disabled={!editable}
                   moveDisabled={!canMove}
@@ -1187,6 +1174,19 @@ function Workspace({ account }: { account: string }) {
           nodeFileChosen(files)
         }}
       />
+      <input
+        ref={canvasFileInput}
+        type="file"
+        hidden
+        multiple
+        aria-label="选择要放入画布的文件"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          const { x, y } = canvasFileTarget.current
+          if (files.length) void dropFiles(files, x, y)
+        }}
+      />
       <UploadTray
         items={uploads.items}
         onRetry={uploads.retry}
@@ -1256,9 +1256,13 @@ function Workspace({ account }: { account: string }) {
             <dt>编辑节点</dt>
             <dd>双击标题改名，双击文字节点编辑正文；失焦保存，Esc 取消</dd>
             <dt>右键菜单</dt>
-            <dd>右键画布新建，右键节点、分组或连线查看操作</dd>
-            <dt>新建文字</dt>
-            <dd>双击画布空白处</dd>
+            <dd>右键画布添加节点，右键节点、分组或连线查看操作</dd>
+            <dt>添加节点</dt>
+            <dd>双击画布空白处，或按 T / I / O 直接新建文字、图片、视频</dd>
+            <dt>选择 / 平移工具</dt>
+            <dd>V / H</dd>
+            <dt>适应画布</dt>
+            <dd>Shift + 1</dd>
             <dt>打组 / 解组</dt>
             <dd>⌘ / Ctrl + G，按住 Shift 解组</dd>
             <dt>复制 / 撤销 / 重做</dt>
@@ -1266,7 +1270,7 @@ function Workspace({ account }: { account: string }) {
             <dt>断开参考</dt>
             <dd>双击参考连线</dd>
             <dt>微调节点</dt>
-            <dd>选中节点后按方向键</dd>
+            <dd>选中节点后按方向键，按住 Shift 每次 10px</dd>
           </dl>
         </StudioDialog>
       )}
