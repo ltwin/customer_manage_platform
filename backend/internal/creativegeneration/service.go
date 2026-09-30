@@ -91,6 +91,19 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	admission.CallerOperationID = operation
 	admission.CallerGroupID = execution
 	admission.ConsumerKey = execution
+	// 在预算冻结前编译句内引用；这里只读业务快照，不反向获取业务行锁。
+	prompt, err := creativecanvas.CompileGenerationPromptInTx(ctx, tx, in)
+	if err != nil {
+		return creativeops.Outcome{}, err
+	}
+	preparedPrompt := admission.Prepared.Generation().Snapshot().Request.Input.Prompt
+	if preparedPrompt != prompt.Raw && preparedPrompt != prompt.Text {
+		return creativeops.Outcome{}, creativecanvas.ErrVersionConflict
+	}
+	admission.Prepared, err = admission.Prepared.WithPrompt(prompt.Text)
+	if err != nil {
+		return creativeops.Outcome{}, err
+	}
 	// Executor已先锁账号；G2取得group/deployment/budget/request，业务锁随后进入。
 	request, err := s.gateway.PrepareGenerationInTx(ctx, tx, admission)
 	if err != nil {

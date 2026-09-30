@@ -117,14 +117,15 @@ try {
   await page.screenshot({ path: `${output}/library-import-tray.png` })
   const rows = await page.locator('.cc-upload-tray li').allInnerTexts()
   assert.equal(rows.filter((r) => r.includes('已完成')).length, 3, rows.join('|'))
-  await until(async () => (await page.locator('.cc-asset').count()) === 3, 'assets listed')
+  const tiles = page.locator('#creative-library .cl-tile')
+  await until(async () => (await tiles.count()) === 3, 'assets listed')
   // Thumbnails render through tickets, lazily.
   await until(
-    async () => (await page.locator('.cc-asset .cl-media.is-ready img').count()) === 1,
+    async () => (await page.locator('#creative-library .cl-tile .cl-media.is-ready img').count()) === 1,
     'image thumbnail ready',
   )
   await until(
-    async () => (await page.locator('.cc-asset .cl-media.is-ready video').count()) === 1,
+    async () => (await page.locator('#creative-library .cl-tile .cl-media.is-ready video').count()) === 1,
     'video thumbnail ready',
   )
   await page.screenshot({ path: `${output}/library-media.png` })
@@ -143,7 +144,7 @@ try {
     'fake media reported',
   )
   await page.getByRole('button', { name: '重试上传：fake.png' }).waitFor()
-  await until(async () => (await page.locator('.cc-asset').count()) === 3, 'no asset for fake media')
+  await until(async () => (await tiles.count()) === 3, 'no asset for fake media')
   // Retry while the queue is idle starts a brand-new session and fails again
   // with the same reason (the bytes did not change).
   const sessionsBefore = uploadsCreated
@@ -151,26 +152,24 @@ try {
   await until(() => uploadsCreated > sessionsBefore, 'retry created a new session')
   await trayIdle()
   await page.getByRole('button', { name: '重试上传：fake.png' }).waitFor()
-  await until(async () => (await page.locator('.cc-asset').count()) === 3, 'retry still no asset')
+  await until(async () => (await tiles.count()) === 3, 'retry still no asset')
   await page.getByRole('button', { name: '收起导入列表', exact: true }).click()
   // Kind filter and library preview.
-  await page.getByRole('button', { name: '分组与筛选', exact: true }).click()
-  await page.getByLabel('资产类型').selectOption('video')
-  await until(async () => (await page.locator('.cc-asset').count()) === 1, 'video filter')
-  await page.getByLabel('资产类型').selectOption('')
-  await until(async () => (await page.locator('.cc-asset').count()) === 3, 'filter cleared')
-  await page.getByRole('button', { name: '关闭筛选', exact: true }).click()
-  const imageCard = page.locator('.cc-asset', { hasText: '图片' }).first()
-  await imageCard.hover()
-  await imageCard.getByRole('button', { name: /预览资产/ }).click()
-  await page.getByRole('dialog', { name: /媒体预览/ }).waitFor()
-  await until(
-    async () => (await page.locator('.cc-media-preview img').count()) === 1,
-    'preview image',
-  )
+  const kindFilter = async (label) => {
+    await page.getByRole('button', { name: '资产类型', exact: true }).click()
+    await page.getByRole('menu', { name: '资产类型' }).getByRole('menuitem', { name: label, exact: true }).click()
+  }
+  await kindFilter('视频')
+  await until(async () => (await tiles.count()) === 1, 'video filter')
+  await kindFilter('全部')
+  await until(async () => (await tiles.count()) === 3, 'filter cleared')
+  // v6 点卡片即快速查看，Esc 关闭。
+  await page.locator('#creative-library .cl-tile[data-kind="image"]').click()
+  await page.getByRole('dialog', { name: /^快速查看：/ }).waitFor()
+  await until(async () => (await page.locator('.cl-look img').count()) === 1, 'preview image')
   await page.screenshot({ path: `${output}/library-preview.png` })
   await page.keyboard.press('Escape')
-  await page.getByRole('dialog', { name: /媒体预览/ }).waitFor({ state: 'hidden' })
+  await page.getByRole('dialog', { name: /^快速查看：/ }).waitFor({ state: 'hidden' })
 
   // 2. Project: drag assets in (multi-select), drop a file, upload to node.
   await page.goto(`${url}/creative`)
@@ -181,26 +180,21 @@ try {
   await page.getByRole('button', { name: '资产库', exact: true }).click()
   await saved()
   const canvasURL = page.url()
-  await until(async () => (await page.locator('.cc-asset').count()) === 3, 'shelf assets')
+  await until(async () => (await tiles.count()) === 3, 'shelf assets')
   // Uploads finish concurrently, so pick cards by kind rather than position.
-  const card = (kind) =>
-    page.locator('.cc-asset', { hasText: kind }).first().locator('.cl-card-content')
-  await card('图片').locator('h3').click()
+  const card = (kind) => page.locator(`#creative-library .cl-tile[data-kind="${kind}"]`)
+  await card('image').click({ modifiers: ['ControlOrMeta'] })
   await until(
-    async () => (await page.locator('.cc-asset.selected').count()) === 1,
+    async () => (await page.locator('#creative-library .cl-tile.is-on').count()) === 1,
     'first asset selected',
   )
-  await card('视频').locator('h3').click({ modifiers: ['Shift'] })
+  await card('video').click({ modifiers: ['ControlOrMeta'] })
   await until(
-    async () => (await page.locator('.cc-asset.selected').count()) === 2,
+    async () => (await page.locator('#creative-library .cl-tile.is-on').count()) === 2,
     'two assets selected: ' +
-      JSON.stringify(
-        await page
-          .locator('.cc-asset .cl-card-content')
-          .evaluateAll((b) => b.map((x) => x.getAttribute('aria-pressed'))),
-      ),
+      JSON.stringify(await page.locator('#creative-library .cl-tile').evaluateAll((b) => b.map((x) => x.getAttribute('aria-pressed')))),
   )
-  await card('图片').dragTo(page.locator('.react-flow__pane'), {
+  await card('image').dragTo(page.locator('.react-flow__pane'), {
     targetPosition: { x: 500, y: 300 },
   })
   await until(
@@ -230,12 +224,12 @@ try {
     'node media rendered',
   )
   // 64x48 samples: nodes never resized by hand take the picture's aspect
-  // ratio at the default width (74px chrome + 280 * 48 / 64 = 284), audio
+  // ratio at the default width (280 * 48 / 64 = 210), audio
   // keeps the default box.
   for (const n of snapshot.nodes) {
     const kind = n.metadata.type_key.slice(5)
     assert.equal(n.metadata.width, 280, `${kind} width`)
-    assert.equal(n.metadata.height, kind === 'audio' ? 180 : 284, `${kind} height`)
+    assert.equal(n.metadata.height, kind === 'audio' ? 180 : 210, `${kind} height`)
   }
   await page.screenshot({ path: `${output}/canvas-media.png` })
   const jpgNode = snapshot.nodes.find((n) => n.content.media[0].mime === 'image/jpeg')
@@ -320,7 +314,7 @@ try {
   await page.getByRole('button', { name: '存入个人资产库', exact: true }).click()
   await page.getByLabel('资产名称').fill('从节点存回')
   await page.getByRole('button', { name: '保存资产', exact: true }).click()
-  await until(async () => (await page.locator('.cc-asset').count()) === 4, 'saved asset listed')
+  await until(async () => (await tiles.count()) === 4, 'saved asset listed')
   await saved()
   // Reopen: everything is still there and renders.
   await page.goto(canvasURL)
@@ -341,7 +335,7 @@ try {
         scenarios: [
           'library import png/webm/mp3',
           'fake media rejected per item',
-          'kind filter and media preview',
+          'kind filter and quick look',
           'multi-select drag to canvas',
           'file drop creates and fills node',
           'replace media and undo',

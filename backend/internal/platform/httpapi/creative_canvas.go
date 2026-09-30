@@ -92,6 +92,10 @@ func creativeError(c *gin.Context, err error) {
 	case errors.Is(err, creativeskill.ErrNotFound), errors.Is(err, creativeskill.ErrLimit),
 		errors.Is(err, creativeskill.ErrResourceUnavailable), errors.Is(err, creativeskill.ErrContentMismatch):
 		creativeSkillError(c, err)
+	case errors.Is(err, creativelibrary.ErrGroupNameTaken):
+		abortError(c, 409, "creative_group_name_taken", "同一层已有同名分组")
+	case errors.Is(err, creativelibrary.ErrGroupDepth):
+		abortError(c, 422, "creative_group_depth", "分组最多两层")
 	case errors.Is(err, creativelibrary.ErrTrashed):
 		abortError(c, 409, "creative_asset_trashed", "资产已在回收站，请恢复后编辑")
 	case errors.Is(err, creativecanvas.ErrArchived):

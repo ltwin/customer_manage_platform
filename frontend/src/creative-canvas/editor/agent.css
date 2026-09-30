@@ -1,13 +1,14 @@
 .cc-agent-launch {
   position: fixed;
-  right: 24px;
-  bottom: 24px;
+  right: 12px;
+  top: 12px;
+  bottom: auto;
   z-index: 25;
   display: flex;
   align-items: center;
   gap: 8px;
   border: 1px solid var(--border-strong);
-  border-radius: 24px;
+  border-radius: var(--r);
   background: var(--surface-2);
   color: var(--fg);
   padding: 12px 18px;
@@ -224,8 +225,9 @@
     width: calc(100vw - 16px);
   }
   .cc-agent-launch {
-    bottom: 18px;
-    right: 14px;
+    top: 12px;
+    bottom: auto;
+    right: 8px;
   }
 }
 
@@ -263,4 +265,195 @@
 }
 .cc-agent-error {
   color: var(--danger);
+}
+
+/* v6：标题菜单收纳对话；输入框底部承载模型与 Skill。 */
+.cc-agent-panel {
+  right: 12px;
+  width: min(380px, calc(100vw - 16px));
+  overflow: hidden;
+}
+.cc-agent-panel > header {
+  height: 48px;
+  padding: 0 8px 0 14px;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.cc-agent-thread {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.cc-agent-thread > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.cc-agent-thread > summary::-webkit-details-marker {
+  display: none;
+}
+.cc-agent-thread > summary:hover {
+  background: var(--s3);
+}
+.cc-agent-thread > summary svg {
+  color: var(--fg-3);
+}
+.cc-agent-thread .cc-agent-conversations {
+  position: absolute;
+  z-index: 2;
+  top: 36px;
+  left: -4px;
+  width: min(320px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--r);
+  background: var(--s2);
+  box-shadow: var(--shadow);
+}
+.cc-agent-thread select {
+  flex: none;
+  width: 100%;
+  background: var(--s3);
+  border-color: var(--line-2);
+}
+.cc-agent-thread button {
+  justify-content: flex-start;
+  border: 0;
+  background: var(--s3);
+}
+.cc-agent-message {
+  padding: 0;
+  margin: 0 0 16px;
+  border: 0;
+  background: none;
+}
+.cc-agent-message.role-user {
+  width: fit-content;
+  max-width: 86%;
+  margin-left: auto;
+  padding: 8px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--s3);
+  border: 0;
+}
+.cc-agent-message p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.cc-agent-message small {
+  font-size: 10px;
+  color: var(--fg-3);
+}
+.cc-agent-compose {
+  padding: 0 12px 12px;
+  border: 0;
+  gap: 8px;
+}
+.cc-agent-box {
+  border-radius: var(--r);
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.cc-agent-box:focus-within {
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+.cc-agent-box textarea.resize-none {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  max-height: 160px;
+  padding: 10px 12px 2px;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cc-agent-box textarea.resize-none:focus-visible {
+  outline: none;
+}
+.cc-agent-composer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 4px 6px 6px;
+}
+.cc-agent-options {
+  min-width: 0;
+  gap: 4px;
+}
+.cc-agent-options select {
+  flex: 0 1 auto;
+  max-width: 140px;
+  height: 28px;
+  border: 0;
+  padding: 0 6px;
+  border-radius: 7px;
+  background: var(--s3);
+  color: var(--fg-2);
+  font-size: 11px;
+}
+.cc-agent-panel button.cc-agent-send {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.cc-agent-consent {
+  margin: 0 2px;
+  color: var(--fg-3);
+}
+.cc-agent-consent input {
+  accent-color: var(--primary);
+}
+.cc-agent-feedback:empty {
+  display: none;
+}
+.cc-agent-feedback {
+  min-height: 0;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.cc-agent-launch {
+  background: var(--s2);
+  border: 0;
+  box-shadow: var(--shadow);
+  padding: 10px 14px;
+}
+.cc-agent-panel summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+@media (max-width: 760px) {
+  .cc-agent-panel {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    height: 72dvh;
+  }
+  .cc-agent-options select {
+    max-width: 125px;
+  }
 }

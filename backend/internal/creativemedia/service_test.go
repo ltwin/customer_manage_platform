@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -307,10 +308,59 @@ func TestImageUploadPublishesAssetAndCanvasNodeRoundTrip(t *testing.T) {
 	if err != nil || *restored.Nodes[0].ContentRevisionID != asset.ContentRevisionID {
 		t.Fatalf("undo restored %+v %v", restored.Nodes[0], err)
 	}
-	// Save the node back to the library as a new, independent asset.
-	saved := must[creativelibrary.AssetResult](t)(creativecanvas.SaveNodeToLibrary(t.Context(), f.a, command(t, creativecanvas.SaveNodeInput{CanvasID: p.CanvasID, NodeID: nodeID, ExpectedDataRevision: restored.Nodes[0].DataRevision, Target: creativelibrary.ImportTarget{Title: "存回库"}})))
-	if saved.ID == asset.ID || saved.ContentRevisionID != asset.ContentRevisionID {
-		t.Fatalf("saved %+v", saved)
+	// Saving the node back while its revision is already in the library only
+	// adds classification: no duplicate asset, the new group is appended.
+	settings, err := creativelibrary.GetSettings(t.Context(), f.a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := must[creativelibrary.LibraryResult](t)(creativelibrary.CreateGroup(t.Context(), f.a, command(t, creativelibrary.GroupInput{Name: "存回", HierarchyRevision: settings.HierarchyRevision})))
+	saved := must[creativelibrary.AssetResult](t)(creativecanvas.SaveNodeToLibrary(t.Context(), f.a, command(t, creativecanvas.SaveNodeInput{CanvasID: p.CanvasID, NodeID: nodeID, ExpectedDataRevision: restored.Nodes[0].DataRevision, Target: creativelibrary.ImportTarget{Title: "存回库", GroupIDs: []string{group.ID}}})))
+	refiled, err := creativelibrary.GetAsset(t.Context(), f.a, asset.ID)
+	if saved.ID != asset.ID || !saved.Reused || saved.ContentRevisionID != asset.ContentRevisionID || err != nil || refiled.Title != asset.Title || !slices.Contains(refiled.GroupIDs, group.ID) || refiled.Revision != asset.Revision+1 {
+		t.Fatalf("saved %+v refiled %+v %v", saved, refiled, err)
+	}
+	again := must[creativelibrary.AssetResult](t)(creativecanvas.SaveNodeToLibrary(t.Context(), f.a, command(t, creativecanvas.SaveNodeInput{CanvasID: p.CanvasID, NodeID: nodeID, ExpectedDataRevision: restored.Nodes[0].DataRevision, Target: creativelibrary.ImportTarget{Title: "存回库", GroupIDs: []string{group.ID}}})))
+	if again.ID != asset.ID || again.Revision != refiled.Revision {
+		t.Fatalf("second save must not bump the asset %+v", again)
+	}
+	all, err := creativelibrary.SearchAssets(t.Context(), f.a, creativelibrary.Search{Kind: "image", Limit: 10})
+	if err != nil || len(all.Items) != 1 {
+		t.Fatalf("save back duplicated the asset %+v %v", all, err)
+	}
+	// An empty media node is filled from the asset in place and takes its title.
+	emptyID := "cwnode_" + uuid.NewString()
+	state, err := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := creativecanvas.ApplyCommands(t.Context(), f.a, command(t, creativecanvas.BatchInput{CanvasID: p.CanvasID, ExpectedTopologyRevision: state.TopologyRevision, Actions: []creativecanvas.Action{{Type: "add_node", NodeID: emptyID, TypeKey: "core.image", X: 400, Y: 20}}})); err != nil {
+		t.Fatal(err)
+	}
+	ref := &creativelibrary.AssetReference{ID: refiled.ID, Revision: refiled.Revision, ContentRevisionID: refiled.ContentRevisionID}
+	// Filling also fits the node to the picture, so placement is read too.
+	read := func(rev creativeops.Revision) []creativecanvas.ObjectRead {
+		return []creativecanvas.ObjectRead{{Kind: "node", ID: emptyID, DataRevision: rev, PlacementRevision: rev}}
+	}
+	if _, err := creativecanvas.ApplyCommands(t.Context(), f.a, command(t, creativecanvas.BatchInput{CanvasID: p.CanvasID, ReadSet: read(1), Actions: []creativecanvas.Action{{Type: "fill_from_asset", NodeID: emptyID, Asset: ref}}})); err != nil {
+		t.Fatal("fill", err)
+	}
+	filled, err := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var target *creativecanvas.Node
+	for i := range filled.Nodes {
+		if filled.Nodes[i].ID == emptyID {
+			target = &filled.Nodes[i]
+		}
+	}
+	if target == nil || target.ContentRevisionID == nil || *target.ContentRevisionID != refiled.ContentRevisionID || target.Title != refiled.Title || len(filled.Nodes) != 2 {
+		t.Fatalf("filled %+v", target)
+	}
+	// A node that already has content is not refilled; a group never is.
+	if _, err := creativecanvas.ApplyCommands(t.Context(), f.a, command(t, creativecanvas.BatchInput{CanvasID: p.CanvasID, ReadSet: read(target.DataRevision), Actions: []creativecanvas.Action{{Type: "fill_from_asset", NodeID: emptyID, Asset: ref}}})); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatal("refill must be rejected", err)
 	}
 	// Tickets authorize reads; a revoked usage grant denies both ticket and stream.
 	ticket, err := f.svc.IssueTicket(t.Context(), f.a, creativemedia.TicketInput{ContentRevisionID: asset.ContentRevisionID, Role: "original", Purpose: "download", FileName: "窗边.png"})

@@ -31,6 +31,8 @@ export type Intent = {
   actions?: GraphAction[]
   // Display-only content for nodes created from library assets.
   preview?: Record<string, Content>
+  /** 填充空节点时沿用的资产名称，只用于本机投影。 */
+  titles?: Record<string, string>
   draftKey?: string
   draftValue?: Draft
   state: 'pending' | 'sent' | 'confirmed'
@@ -105,25 +107,17 @@ const defaultActions: Record<string, string[]> = {
 }
 export const defaultNodeWidth = 280,
   defaultNodeHeight = 180
-// Same rule as the server's fitMediaSize: header + footer chrome around a
-// picture that keeps its aspect ratio at the default width.
-export function fitMediaHeight(content: Content | undefined): number {
+// 同服务端：媒体按原始画幅占满卡片，空图片/视频默认 1:1。
+export function fitMediaHeight(
+  content: Content | undefined,
+  width = defaultNodeWidth,
+  kind: string = content?.kind ?? 'image',
+): number {
+  if (kind !== 'image' && kind !== 'video') return defaultNodeHeight
   const original = content?.media?.find((m) => m.role === 'original')
-  if (
-    !content ||
-    content.kind === 'audio' ||
-    !original?.width ||
-    !original.height ||
-    original.width <= 0 ||
-    original.height <= 0
-  )
-    return defaultNodeHeight
-  return Math.round(
-    Math.min(
-      640,
-      Math.max(140, 74 + (defaultNodeWidth * original.height) / original.width),
-    ),
-  )
+  return original?.width && original.height
+    ? (width * original.height) / original.width
+    : width
 }
 const layoutOnly = (actions: GraphAction[] | undefined) =>
   !!actions?.length &&
@@ -300,7 +294,11 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
                 x: action.x,
                 y: action.y,
                 width: defaultNodeWidth,
-                height: fitMediaHeight(content),
+                height: fitMediaHeight(
+                  content,
+                  defaultNodeWidth,
+                  action.type_key.slice(5),
+                ),
                 z_order: 0,
               },
               data: {
@@ -400,6 +398,24 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
                 },
           }))
           break
+        case 'fill_from_asset': {
+          const preview = intent.preview?.[action.node_id]
+          setNode(action.node_id, (n) =>
+            n.content
+              ? n
+              : {
+                  ...n,
+                  metadata: {
+                    ...n.metadata,
+                    title:
+                      n.metadata.title || intent.titles?.[action.node_id] || '',
+                  },
+                  status: { ...n.status, content_state: 'ready' },
+                  content: preview,
+                },
+          )
+          break
+        }
         case 'connect_reference': {
           if (
             edges.some(
@@ -433,13 +449,7 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
         case 'group_nodes':
         case 'ungroup_nodes':
         case 'duplicate_selection': {
-          const preview = structuralPreview(
-            nodes,
-            edges,
-            intent,
-            index,
-            action,
-          )
+          const preview = structuralPreview(nodes, edges, intent, index, action)
           changed ||= preview.nodes !== nodes || preview.edges !== edges
           nodes = preview.nodes
           edges = preview.edges

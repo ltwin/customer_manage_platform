@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -153,6 +154,13 @@ func (e *editGraph) selectVersion(a Action) error {
 	if !ok || v.NodeID != n.ID {
 		return ErrNotFound
 	}
+	if a.FollowLatest {
+		for _, other := range e.g.Versions {
+			if other.NodeID == n.ID && other.Number > v.Number {
+				return ErrVersionConflict
+			}
+		}
+	}
 	e.need(v.ID, "data")
 	r, err := creativecontent.RequireUsable(e.ctx, e.tx, v.ContentRevisionID, "display")
 	if err != nil {
@@ -164,6 +172,8 @@ func (e *editGraph) selectVersion(a Action) error {
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
 	n.SelectedVersionID = &v.ID
+	n.Config = mainVersionConfig(n.Config, !a.FollowLatest)
+	fitMediaSize(&n, r)
 	e.g.Nodes[n.ID] = n
 	return nil
 }
@@ -251,4 +261,31 @@ func ReuseVersionPrompt(ctx context.Context, scope store.AccountScope, c creativ
 		}
 		return savePromptInTx(ctx, tx, SavePromptInput{CanvasID: v.CanvasID, NodeID: v.NodeID, ExpectedRevision: v.ExpectedDraftRevision, ExpectedTopologyRevision: v.ExpectedTopologyRevision, ReadSet: v.ReadSet, ActionKey: provenance.Prompt.ActionKey, Text: provenance.Prompt.Text, ModelKey: provenance.Prompt.ModelKey, Parameters: provenance.Prompt.Parameters, References: refs}, c.OperationID)
 	})
+}
+
+// 固定模式与选定版本一起进入图的 data 撤销链；旧节点默认跟随最新。
+func mainVersionPinned(n Node) bool {
+	if n.SelectedVersionID == nil {
+		return false
+	}
+	var config map[string]json.RawMessage
+	if json.Unmarshal(n.Config, &config) != nil {
+		return false
+	}
+	var mode string
+	_ = json.Unmarshal(config["main_version_mode"], &mode)
+	return mode == "pinned"
+}
+func mainVersionConfig(raw json.RawMessage, pinned bool) json.RawMessage {
+	var config map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &config)
+	if config == nil {
+		config = map[string]json.RawMessage{}
+	}
+	mode := "latest"
+	if pinned {
+		mode = "pinned"
+	}
+	config["main_version_mode"], _ = json.Marshal(mode)
+	return creativegraph.Canonical(config)
 }

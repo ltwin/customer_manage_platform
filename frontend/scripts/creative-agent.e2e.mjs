@@ -6,9 +6,11 @@ import { chromium } from 'playwright'
 const fixture = new URL('../.agent-command-qa.html', import.meta.url)
 await writeFile(
   fixture,
-  `<html><body><div id="root"></div><script type="module">
+  `<html><body><div id="root" class="cc-workspace"></div><script type="module">
 import React from 'react';
 import {createRoot} from 'react-dom/client';
+import '/src/index.css';
+import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
@@ -80,10 +82,20 @@ try {
     })
     await page.goto(url)
     await page.getByRole('button', { name: '打开创作助手' }).click()
+    assert(!await page.getByLabel('当前对话').isVisible(),'conversation picker starts in the title menu')
+    await page.getByLabel('对话菜单').click()
+    await page.getByLabel('当前对话').waitFor()
+    await page.getByLabel('创作问题').click()
+    assert(!await page.getByLabel('当前对话').isVisible(),'outside click closes the title menu')
     await page.getByLabel('创作问题').fill('保留原始问题')
+    const metrics=await page.getByRole('complementary',{name:'创作助手'}).evaluate(el=>{const s=getComputedStyle(el),b=el.querySelector('.cc-agent-send'),r=b.getBoundingClientRect();return {width:el.getBoundingClientRect().width,background:s.backgroundColor,send:[r.width,r.height,getComputedStyle(b).borderRadius]}})
+    assert.deepEqual(metrics,{width:380,background:'rgb(27, 27, 29)',send:[30,30,'50%']})
+    if(order==='old-first') await page.screenshot({path:'/tmp/creative-v6-agent-desktop.png'})
     await page.getByLabel('Skill', { exact: true }).selectOption('version')
+    await page.getByLabel('创作问题').press('Enter')
+    assert.equal(grants, 0, 'Enter cannot bypass the external-send consent')
     await page.getByRole('checkbox').check()
-    await page.getByRole('button', { name: '发送', exact: true }).click()
+    await page.getByLabel('创作问题').press('Enter')
     await page.waitForFunction(
       (k) => JSON.parse(sessionStorage.getItem(k)).nextOperation,
       key,
@@ -158,6 +170,7 @@ try {
   })
   await page.goto(url)
   await page.getByRole('button', { name: '打开创作助手' }).click()
+  await page.getByLabel('对话菜单').click()
   await page.getByLabel('当前对话').selectOption('other')
   await page.getByLabel('创作问题').fill('刷新后仍然保留的原文')
   await page.getByLabel('Skill', { exact: true }).selectOption('version')
@@ -184,6 +197,13 @@ try {
   )
   assert.equal(await page.getByRole('checkbox').isChecked(), false)
   assert.equal(runPosts, 2)
+  await page.setViewportSize({width:390,height:844})
+  await page.screenshot({path:'/tmp/creative-v6-agent-mobile.png'})
+  const panelBox=await page.getByRole('complementary',{name:'创作助手'}).boundingBox()
+  assert(panelBox.x>=0 && panelBox.x+panelBox.width<=390)
+  const compose=await page.locator('.cc-agent-box').boundingBox()
+  const footer=await page.locator('.cc-agent-composer-foot').boundingBox()
+  assert(footer.x>=compose.x && footer.x+footer.width<=compose.x+compose.width)
   await page.close()
   console.log(
     'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation',

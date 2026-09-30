@@ -690,7 +690,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 把画布节点当前内容固定为一条新的个人库资产 */
+        /** 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类 */
         post: operations["createCreativeAssetFromNode"];
         delete?: never;
         options?: never;
@@ -1966,6 +1966,7 @@ export interface paths {
         };
         get: operations["listCreativeGroups"];
         put?: never;
+        /** @description 分组最多两层（根分组与一层子分组）；同一层名称规范化后不得重复。超出层级返回 422 creative_group_depth，同层重名返回 409 creative_group_name_taken；重命名与移动遵守同样规则。 */
         post: operations["createCreativeGroup"];
         delete?: never;
         options?: never;
@@ -2612,6 +2613,8 @@ export interface components {
             tag_mapping: {
                 [key: string]: string;
             };
+            /** @description 从节点存入时同一内容修订已在库中，只追加所选分组/标签而没有新建资产。 */
+            reused?: boolean;
         };
         CreativeProject: {
             id: string;
@@ -5605,6 +5608,13 @@ export interface components {
             payload: components["schemas"]["CreativeContentPayload"];
             rights?: components["schemas"]["CreativeContentRights"];
         };
+        /** @description 用个人库资产填充同类型的空节点；已有内容的节点走生成与版本。节点标题为空时沿用资产名称。 */
+        CreativeActionFillFromAsset: {
+            /** @enum {string} */
+            type: "fill_from_asset";
+            node_id: string;
+            asset: components["schemas"]["CreativeAssetReference"];
+        };
         CreativeActionConnectReference: {
             /** @enum {string} */
             type: "connect_reference";
@@ -5658,7 +5668,7 @@ export interface components {
             /** @enum {string} */
             group_mode?: "subtree";
         };
-        CreativeGraphAction: components["schemas"]["CreativeActionAddNode"] | components["schemas"]["CreativeActionMoveNodes"] | components["schemas"]["CreativeActionMoveNode"] | components["schemas"]["CreativeActionResizeNode"] | components["schemas"]["CreativeActionUpdateMetadata"] | components["schemas"]["CreativeActionClearContent"] | components["schemas"]["CreativeActionReplaceContent"] | components["schemas"]["CreativeActionConnectReference"] | components["schemas"]["CreativeActionDisconnectReference"] | components["schemas"]["CreativeActionSetNodeInputs"] | components["schemas"]["CreativeActionGroupNodes"] | components["schemas"]["CreativeActionUngroupNodes"] | components["schemas"]["CreativeActionReparentNodes"] | components["schemas"]["CreativeActionDuplicateSelection"] | components["schemas"]["CreativeActionRemoveNodes"] | components["schemas"]["CreativeActionSelectVersion"] | components["schemas"]["CreativeActionDeleteVersion"];
+        CreativeGraphAction: components["schemas"]["CreativeActionAddNode"] | components["schemas"]["CreativeActionMoveNodes"] | components["schemas"]["CreativeActionMoveNode"] | components["schemas"]["CreativeActionResizeNode"] | components["schemas"]["CreativeActionUpdateMetadata"] | components["schemas"]["CreativeActionClearContent"] | components["schemas"]["CreativeActionReplaceContent"] | components["schemas"]["CreativeActionFillFromAsset"] | components["schemas"]["CreativeActionConnectReference"] | components["schemas"]["CreativeActionDisconnectReference"] | components["schemas"]["CreativeActionSetNodeInputs"] | components["schemas"]["CreativeActionGroupNodes"] | components["schemas"]["CreativeActionUngroupNodes"] | components["schemas"]["CreativeActionReparentNodes"] | components["schemas"]["CreativeActionDuplicateSelection"] | components["schemas"]["CreativeActionRemoveNodes"] | components["schemas"]["CreativeActionSelectVersion"] | components["schemas"]["CreativeActionDeleteVersion"];
         CreativeBatchPayload: {
             /** @enum {string} */
             type: "batch";
@@ -5791,6 +5801,8 @@ export interface components {
         CreativeActionSelectVersion: {
             /** @enum {string} */
             type: "select_version";
+            /** @description 为 true 时恢复自动主版本；version_id 必须是当前最新版本。省略或为 false 时固定选定版本。 */
+            follow_latest?: boolean;
             node_id: string;
             version_id: string;
         };
@@ -7762,6 +7774,15 @@ export interface operations {
             };
         };
         responses: {
+            /** @description 同一内容修订已在库中；已追加归类，reused 为 true */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetCreateResult"];
+                };
+            };
             /** @description 已创建资产 */
             201: {
                 headers: {

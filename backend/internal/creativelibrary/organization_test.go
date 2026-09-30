@@ -86,6 +86,54 @@ func TestGroupCycleDeletePromotesChildrenWithoutDeletingAssets(t *testing.T) {
 	}
 }
 
+func TestGroupsStayTwoLevelsWithUniqueSiblingNames(t *testing.T) {
+	_, a, _ := setup(t)
+	group := func(name string, parent *string, h creativeops.Revision) (creativelibrary.LibraryResult, error) {
+		r, err := creativelibrary.CreateGroup(t.Context(), a, cmd(t, creativelibrary.GroupInput{Name: name, ParentID: parent, HierarchyRevision: h}))
+		if err != nil {
+			return creativelibrary.LibraryResult{}, err
+		}
+		return decode[creativelibrary.LibraryResult](t, r, err), nil
+	}
+	root, err := group("客户样片", nil, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	child, err := group("海边婚纱", &root.ID, root.HierarchyRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = group("第三层", &child.ID, child.HierarchyRevision); !errors.Is(err, creativelibrary.ErrGroupDepth) {
+		t.Fatalf("third level %v", err)
+	}
+	// Names compare after normalization, only among siblings.
+	if _, err = group(" 客户样片 ", nil, child.HierarchyRevision); !errors.Is(err, creativelibrary.ErrGroupNameTaken) {
+		t.Fatalf("root duplicate %v", err)
+	}
+	cousin, err := group("海边婚纱", nil, child.HierarchyRevision)
+	if err != nil {
+		t.Fatal("same name on another level is allowed", err)
+	}
+	if _, err = creativelibrary.RenameGroup(t.Context(), a, cmd(t, creativelibrary.GroupInput{ID: cousin.ID, Name: "客户样片", ExpectedRevision: cousin.Revision, HierarchyRevision: cousin.HierarchyRevision})); !errors.Is(err, creativelibrary.ErrGroupNameTaken) {
+		t.Fatalf("rename duplicate %v", err)
+	}
+	// Moving the root-level "海边婚纱" under 客户样片 would collide with its child.
+	if _, err = creativelibrary.MoveGroup(t.Context(), a, cmd(t, creativelibrary.GroupInput{ID: cousin.ID, ParentID: &root.ID, ExpectedRevision: cousin.Revision, HierarchyRevision: cousin.HierarchyRevision})); !errors.Is(err, creativelibrary.ErrGroupNameTaken) {
+		t.Fatalf("move duplicate %v", err)
+	}
+	// A root with children cannot become a child: that would make three levels.
+	other, err := group("风格参考", nil, cousin.HierarchyRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = creativelibrary.MoveGroup(t.Context(), a, cmd(t, creativelibrary.GroupInput{ID: root.ID, ParentID: &other.ID, ExpectedRevision: root.Revision, HierarchyRevision: other.HierarchyRevision})); !errors.Is(err, creativelibrary.ErrGroupDepth) {
+		t.Fatalf("move subtree too deep %v", err)
+	}
+	if _, err = creativelibrary.MoveGroup(t.Context(), a, cmd(t, creativelibrary.GroupInput{ID: cousin.ID, ParentID: &other.ID, ExpectedRevision: cousin.Revision, HierarchyRevision: other.HierarchyRevision})); err != nil {
+		t.Fatal("leaf move", err)
+	}
+}
+
 func createAsset(t *testing.T, a store.AccountScope, title string, tags []creativelibrary.NewTag) creativelibrary.AssetResult {
 	t.Helper()
 	r, err := creativelibrary.CreateAsset(t.Context(), a, cmd(t, creativelibrary.CreateAssetInput{Title: title, Content: textDraft("窗边 光线 与100%真实参考"), NewTags: tags}))

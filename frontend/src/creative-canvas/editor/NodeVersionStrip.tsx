@@ -15,6 +15,7 @@ export default function NodeVersionStrip({
   dataRevision,
   viewing,
   disabled,
+  pinned,
   onPreview,
   onSelectVersion,
 }: {
@@ -25,8 +26,9 @@ export default function NodeVersionStrip({
   /** 正在卡片内预览的内容修订；null 表示显示主版本。 */
   viewing: string | null
   disabled: boolean
+  pinned: boolean
   onPreview: (content: api.Content | null) => void
-  onSelectVersion: (versionID: string) => void
+  onSelectVersion: (versionID: string, followLatest?: boolean) => void
 }) {
   const [versions, setVersions] = useState<Versions | null>(null)
   const [contents, setContents] = useState<Record<string, api.Content>>({})
@@ -102,7 +104,11 @@ export default function NodeVersionStrip({
             onClick={() => onPreview(v.id === main ? null : (content ?? null))}
           >
             {content && (
-              <MediaFigure content={content} kind={kind} title={`版本 ${v.version_no}`} />
+              <MediaFigure
+                content={content}
+                kind={kind}
+                title={`版本 ${v.version_no}`}
+              />
             )}
             {v.id === main && (
               <span className="cc-main-dot" aria-hidden="true">
@@ -119,13 +125,25 @@ export default function NodeVersionStrip({
           disabled={disabled}
           onClick={() => {
             onSelectVersion(viewingVersion.id)
-            onPreview(null)
           }}
         >
           设为主版本
         </button>
+      ) : pinned ? (
+        <button
+          className="cc-set-main"
+          disabled={disabled}
+          onClick={() => {
+            const latest = items.reduce((a, b) =>
+              BigInt(a.version_no) > BigInt(b.version_no) ? a : b,
+            )
+            onSelectVersion(latest.id, true)
+          }}
+        >
+          改为跟随最新
+        </button>
       ) : (
-        <span className="cc-main-state">主版本</span>
+        <span className="cc-main-state">主版本 · 自动</span>
       )}
     </div>
   )

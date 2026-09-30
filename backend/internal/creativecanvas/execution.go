@@ -95,6 +95,7 @@ type NodeExecution struct {
 	CreatedAt        time.Time                `json:"created_at"`
 	TargetData       creativeops.Revision     `json:"-"`
 	Selected         *string                  `json:"-"`
+	ReferenceSources map[string]string        `json:"-"`
 	Prompt           NodePrompt               `json:"-"`
 	ReadSet          []ObjectRead             `json:"-"`
 	PublishOperation string                   `json:"-"`
@@ -260,6 +261,14 @@ func readExecution(ctx context.Context, tx store.TxAccountScope, target Executio
 	if err = json.Unmarshal(prompt, &e.Prompt); err != nil {
 		return e, err
 	}
+	var sourceSnapshot struct {
+		Sources map[string]string `json:"reference_sources"`
+	}
+	if err = json.Unmarshal(prompt, &sourceSnapshot); err != nil {
+		return e, err
+	}
+	e.ReferenceSources = sourceSnapshot.Sources
+
 	err = json.Unmarshal(reads, &e.ReadSet)
 	return e, err
 }

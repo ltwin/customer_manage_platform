@@ -1290,7 +1290,7 @@ paths:
     post:
       tags: [creative-foundation]
       operationId: createCreativeAssetFromNode
-      summary: 把画布节点当前内容固定为一条新的个人库资产
+      summary: 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
       parameters:
       - in: header
         name: Idempotency-Key
@@ -1304,6 +1304,11 @@ paths:
       responses:
         "201":
           description: 已创建资产
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
+        "200":
+          description: 同一内容修订已在库中；已追加归类，reused 为 true
           content:
             application/json:
               schema: {$ref: "#/components/schemas/CreativeAssetCreateResult"}
@@ -4777,6 +4782,7 @@ paths:
                 $ref: '#/components/schemas/ErrorEnvelope'
     post:
       operationId: createCreativeGroup
+      description: 分组最多两层（根分组与一层子分组）；同一层名称规范化后不得重复。超出层级返回 422 creative_group_depth，同层重名返回 409 creative_group_name_taken；重命名与移动遵守同样规则。
       tags:
       - creative-foundation
       responses:
@@ -6569,6 +6575,9 @@ components:
           type: object
           additionalProperties:
             type: string
+        reused:
+          type: boolean
+          description: 从节点存入时同一内容修订已在库中，只追加所选分组/标签而没有新建资产。
     CreativeProject:
       type: object
       additionalProperties: false
@@ -11994,6 +12003,23 @@ components:
           $ref: '#/components/schemas/CreativeContentPayload'
         rights:
           $ref: '#/components/schemas/CreativeContentRights'
+    CreativeActionFillFromAsset:
+      type: object
+      additionalProperties: false
+      description: 用个人库资产填充同类型的空节点；已有内容的节点走生成与版本。节点标题为空时沿用资产名称。
+      required:
+      - type
+      - node_id
+      - asset
+      properties:
+        type:
+          type: string
+          enum:
+          - fill_from_asset
+        node_id:
+          type: string
+        asset:
+          $ref: '#/components/schemas/CreativeAssetReference'
     CreativeActionConnectReference:
       type: object
       additionalProperties: false
@@ -12150,6 +12176,7 @@ components:
       - $ref: '#/components/schemas/CreativeActionUpdateMetadata'
       - $ref: '#/components/schemas/CreativeActionClearContent'
       - $ref: '#/components/schemas/CreativeActionReplaceContent'
+      - $ref: '#/components/schemas/CreativeActionFillFromAsset'
       - $ref: '#/components/schemas/CreativeActionConnectReference'
       - $ref: '#/components/schemas/CreativeActionDisconnectReference'
       - $ref: '#/components/schemas/CreativeActionSetNodeInputs'
@@ -12539,6 +12566,9 @@ components:
           type: string
           enum:
           - select_version
+        follow_latest:
+          type: boolean
+          description: 为 true 时恢复自动主版本；version_id 必须是当前最新版本。省略或为 false 时固定选定版本。
         node_id:
           type: string
         version_id:

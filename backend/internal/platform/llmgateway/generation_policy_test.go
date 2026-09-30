@@ -738,3 +738,45 @@ func TestGenerationPolicyExampleRejectsUndeclaredRoles(t *testing.T) {
 		t.Fatalf("example accepted undeclared role: %+v %v", result, err)
 	}
 }
+
+func TestCompiledPromptRevalidatesAndRepricesFrozenPolicy(t *testing.T) {
+	d, target := policyFixture(t)
+	d.Modes[0].Rules = nil
+	d.Modes[0].Definition.InputSchema = bytes.Replace(d.Modes[0].Definition.InputSchema, []byte(`"minLength":1`), []byte(`"minLength":1,"maxLength":10000`), 1)
+	compiled := "以 [图1] 为参考\n参考编号说明"
+	encoded, _ := json.Marshal(compiled)
+	when := gw.GenerationCondition{Op: "eq", Ref: gw.GenerationValueRef{Source: "prompt"}, Values: []json.RawMessage{encoded}}
+	d.Modes[0].Pricing[0].Tiers = append(d.Modes[0].Pricing[0].Tiers, gw.GenerationPriceTier{ID: "compiled", When: &when, Rate: gw.GenerationRatio{Numerator: 1, Denominator: 1}})
+	policy := compilePolicy(t, d, target)
+	request := policyRequest()
+	facts, err := gw.ReadGenerationFacts(t.Context(), request, &policyMediaReader{duration: newInt64(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := policy.Prepare(request, facts)
+	if err != nil || result.Verdict != gw.GenerationAllow {
+		t.Fatalf("prepare: %v %v", result, err)
+	}
+	oldFingerprint := result.Prepared.Fingerprint()
+	next, err := result.Prepared.WithPrompt(compiled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.Quote().EstimateMicros != 5 || next.Fingerprint() == oldFingerprint {
+		t.Fatalf("compiled quote/fingerprint: %+v", next.Quote())
+	}
+	if result.Prepared.Generation().Snapshot().Request.Input.Prompt != request.Input.Prompt {
+		t.Fatal("mutated original paid snapshot")
+	}
+	raw, err := next.MarshalSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := gw.RestorePolicyGeneration(raw, next.Fingerprint())
+	if err != nil || restored.Quote().EstimateMicros != 5 {
+		t.Fatalf("restore compiled request: %v", err)
+	}
+	if _, err = next.WithPrompt(strings.Repeat("x", 200000)); err == nil {
+		t.Fatal("compiled prompt bypassed schema/size constraints")
+	}
+}

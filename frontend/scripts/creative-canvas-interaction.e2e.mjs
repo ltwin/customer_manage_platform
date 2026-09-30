@@ -130,7 +130,7 @@ await page.route('**/api/v1/**', async (route) => {
   if (path.endsWith('/versions')) return json(versionPage ?? {items: [], selected_version_id: null, data_revision: '1'})
   if (path.includes('/content-revisions/')) {
     const id = decodeURIComponent(path.split('/').pop())
-    return json({ id, kind: 'image', payload: {}, media: [{ role: 'display', mime: 'image/svg+xml' }] })
+    return json({ id, kind: 'image', payload: {}, media: [{ role: 'display', mime: 'image/svg+xml' },{role:'original',mime:'image/svg+xml',width:id==='rev-1'?400:640,height:id==='rev-1'?600:640}] })
   }
   if (path.endsWith('/commands')) {
     posts++
@@ -750,7 +750,21 @@ try {
     await strip.getByRole('button', { name: '版本 1', exact: true }).click()
     await page.getByText('预览版本 · 下游仍用主版本', { exact: true }).waitFor()
     await strip.getByRole('button', { name: '设为主版本', exact: true }).waitFor()
-    await page.waitForTimeout(300)
+    await page.waitForFunction(()=>{const el=document.querySelector('[data-id="v6-image"]');return el&&Math.abs(parseFloat(el.style.height)/parseFloat(el.style.width)-1.5)<.01})
+    const full=page.getByRole('dialog',{name:'媒体预览：晨光'})
+    await page.locator('[data-id="v6-image"] .cc-node-media > .cc-media').dblclick()
+    await full.waitFor()
+    await full.getByText('晨光 · 版本 1/2',{exact:true}).waitFor()
+    await full.getByRole('button',{name:'设为主版本',exact:true}).waitFor()
+    await full.press('ArrowRight')
+    await full.getByText('晨光 · 版本 2/2',{exact:true}).waitFor()
+    await full.getByText('主版本',{exact:true}).waitFor()
+    await full.getByRole('button',{name:'上一版',exact:true}).click()
+    await full.getByText('晨光 · 版本 1/2',{exact:true}).waitFor()
+    await full.locator('img').waitFor()
+    await full.locator('img').evaluate(img=>img.complete?Promise.resolve():new Promise(r=>img.addEventListener('load',r,{once:true})))
+    await page.screenshot({path:'/tmp/creative-v6-fullscreen-versions.png'})
+    await full.getByRole('button',{name:'关闭预览',exact:true}).click()
     assert.ok(!postedActions.includes('select_version'), 'previewing a version sends nothing')
     await page.mouse.click(1560, 700)
     await strip.waitFor({ state: 'detached' })

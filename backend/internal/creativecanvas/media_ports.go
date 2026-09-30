@@ -3,7 +3,6 @@ package creativecanvas
 import (
 	"context"
 	"errors"
-	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -87,7 +86,8 @@ type SaveNodeInput struct {
 	Target               creativelibrary.ImportTarget `json:"target"`
 }
 
-// SaveNodeToLibrary fixes the node's current revision as a new asset. Library
+// SaveNodeToLibrary fixes the node's current revision as an asset; the same
+// revision saved again only gains classification. Library
 // root, then project/canvas, then content: the shared lock order.
 func SaveNodeToLibrary(ctx context.Context, scope store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
 	return run(ctx, scope, "library.create_asset_from_node", c, func(v SaveNodeInput) error {
@@ -122,34 +122,34 @@ func SaveNodeToLibrary(ctx context.Context, scope store.AccountScope, c creative
 		if n.TypeKey != "core."+r.Kind {
 			return creativeops.Outcome{}, creativecontent.ErrMissingRoot
 		}
-		result, err := creativelibrary.CreateFromRevisionInTx(ctx, tx, r, v.Target)
+		result, err := creativelibrary.SaveRevisionInTx(ctx, tx, r, v.Target)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		return outcome(201, "asset", result.ID, result.Revision, result)
+		status := 201
+		if result.Reused {
+			status = 200
+		}
+		return outcome(status, "asset", result.ID, result.Revision, result)
 	})
 }
 
-// Default node box and the chrome a media card keeps around its picture
-// (41px header + 33px footer, per workspace.css). A node the photographer has
-// never resized adopts the media's aspect ratio so the whole picture shows.
-const (
-	defaultNodeWidth  = 280.0
-	defaultNodeHeight = 180.0
-	mediaChromeHeight = 74.0
-	minMediaHeight    = 140.0
-	maxMediaHeight    = 640.0
-)
-
+// v6 标题和版本条悬浮在卡片外/内，内容区不再额外预留 74px。
+// 真实媒体始终按当前宽度适配原始画幅；音频保持播放器布局。
 func fitMediaSize(n *Node, r creativecontent.Revision) {
-	if n.Width != defaultNodeWidth || n.Height != defaultNodeHeight || r.Kind == "audio" {
+	if r.Kind != "image" && r.Kind != "video" {
 		return
 	}
 	for _, m := range r.Media {
 		if m.Role != "original" || m.Width == nil || m.Height == nil || *m.Width <= 0 || *m.Height <= 0 {
 			continue
 		}
-		n.Height = math.Round(math.Min(maxMediaHeight, math.Max(minMediaHeight, mediaChromeHeight+defaultNodeWidth*float64(*m.Height)/float64(*m.Width))))
+		n.Height = n.Width * float64(*m.Height) / float64(*m.Width)
+		// 图布局有 100000 的维度上限，超长媒体等比缩小。
+		if n.Height > 100000 {
+			n.Width *= 100000 / n.Height
+			n.Height = 100000
+		}
 		return
 	}
 }

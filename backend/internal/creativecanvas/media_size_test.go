@@ -6,7 +6,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 )
 
-func TestFitMediaSizeKeepsAspectOnUntouchedNodesOnly(t *testing.T) {
+func TestFitMediaSizeTracksContentAtCurrentWidth(t *testing.T) {
 	t.Parallel()
 	ptr := func(v int) *int { return &v }
 	portrait := creativecontent.Revision{Kind: "image", Media: []creativecontent.MediaObject{{Role: "display", Width: ptr(400), Height: ptr(600)}, {Role: "original", Width: ptr(1000), Height: ptr(1500)}}}
@@ -16,10 +16,10 @@ func TestFitMediaSizeKeepsAspectOnUntouchedNodesOnly(t *testing.T) {
 		rev  creativecontent.Revision
 		want float64
 	}{
-		{"portrait image on default node", Node{Width: 280, Height: 180}, portrait, 494},
-		{"wide image clamps to minimum", Node{Width: 280, Height: 180}, creativecontent.Revision{Kind: "image", Media: []creativecontent.MediaObject{{Role: "original", Width: ptr(4000), Height: ptr(100)}}}, 140},
-		{"tall image clamps to maximum", Node{Width: 280, Height: 180}, creativecontent.Revision{Kind: "video", Media: []creativecontent.MediaObject{{Role: "original", Width: ptr(100), Height: ptr(4000)}}}, 640},
-		{"resized node is left alone", Node{Width: 320, Height: 180}, portrait, 180},
+		{"portrait image on default node", Node{Width: 280, Height: 180}, portrait, 420},
+		{"wide image keeps true aspect", Node{Width: 280, Height: 180}, creativecontent.Revision{Kind: "image", Media: []creativecontent.MediaObject{{Role: "original", Width: ptr(4000), Height: ptr(100)}}}, 7},
+		{"tall image keeps true aspect", Node{Width: 280, Height: 180}, creativecontent.Revision{Kind: "video", Media: []creativecontent.MediaObject{{Role: "original", Width: ptr(100), Height: ptr(4000)}}}, 11200},
+		{"resized width preserves content aspect", Node{Width: 320, Height: 180}, portrait, 480},
 		{"audio keeps the default box", Node{Width: 280, Height: 180}, creativecontent.Revision{Kind: "audio", Media: []creativecontent.MediaObject{{Role: "original"}}}, 180},
 		{"missing dimensions keep the default box", Node{Width: 280, Height: 180}, creativecontent.Revision{Kind: "image", Media: []creativecontent.MediaObject{{Role: "original"}}}, 180},
 	}

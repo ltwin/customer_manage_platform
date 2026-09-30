@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -191,6 +192,22 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 		for id, g := range byID {
 			original[id] = g
 		}
+		// 同层重名与层级上限只约束摄影师主动命名/移动的这一组；删除提升子组不改名。
+		if action == "create" || action == "rename" || action == "move" {
+			parent := target.ParentID
+			if action != "rename" {
+				parent = v.ParentID
+			}
+			name := target.Name
+			if action != "move" {
+				name = v.Name
+			}
+			for _, g := range groups {
+				if g.ID != target.ID && parentKey(g.ParentID) == parentKey(parent) && textindex.Normalize(g.Name) == textindex.Normalize(name) {
+					return LibraryResult{}, ErrGroupNameTaken
+				}
+			}
+		}
 		if action == "create" || action == "move" {
 			if v.ParentID != nil {
 				if _, ok := byID[*v.ParentID]; !ok {
@@ -203,6 +220,13 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 					return LibraryResult{}, creativeops.ErrValidation
 				}
 				seen[id] = true
+			}
+			depth := len(seen) + 1
+			if action == "move" {
+				depth += subtreeHeight(groups, target.ID) - 1
+			}
+			if depth > maxGroupDepth {
+				return LibraryResult{}, ErrGroupDepth
 			}
 			if action == "create" {
 				if len(groups) >= 10000 {
@@ -296,6 +320,22 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 		}
 		return libraryResult(ctx, tx, target.ID, rev, changed, true)
 	})
+}
+
+// maxGroupDepth keeps breadcrumbs and sub-group chips flat: a root group and
+// one level of children.
+const maxGroupDepth = 2
+
+func subtreeHeight(groups []Group, id string) int {
+	height := 1
+	for _, g := range groups {
+		if parentKey(g.ParentID) == id {
+			if h := subtreeHeight(groups, g.ID) + 1; h > height {
+				height = h
+			}
+		}
+	}
+	return height
 }
 func CreateGroup(ctx context.Context, s store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
 	return groupCommand(ctx, s, c, "create")

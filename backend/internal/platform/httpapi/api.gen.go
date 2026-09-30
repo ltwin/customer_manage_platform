@@ -374,6 +374,21 @@ func (e CreativeActionDuplicateSelectionType) Valid() bool {
 	}
 }
 
+// Defines values for CreativeActionFillFromAssetType.
+const (
+	FillFromAsset CreativeActionFillFromAssetType = "fill_from_asset"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionFillFromAssetType enum.
+func (e CreativeActionFillFromAssetType) Valid() bool {
+	switch e {
+	case FillFromAsset:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeActionGroupNodesType.
 const (
 	GroupNodes CreativeActionGroupNodesType = "group_nodes"
@@ -3381,6 +3396,16 @@ type CreativeActionDuplicateSelection struct {
 // CreativeActionDuplicateSelectionType defines model for CreativeActionDuplicateSelection.Type.
 type CreativeActionDuplicateSelectionType string
 
+// CreativeActionFillFromAsset 用个人库资产填充同类型的空节点；已有内容的节点走生成与版本。节点标题为空时沿用资产名称。
+type CreativeActionFillFromAsset struct {
+	Asset  CreativeAssetReference          `json:"asset"`
+	NodeId string                          `json:"node_id"`
+	Type   CreativeActionFillFromAssetType `json:"type"`
+}
+
+// CreativeActionFillFromAssetType defines model for CreativeActionFillFromAsset.Type.
+type CreativeActionFillFromAssetType string
+
 // CreativeActionGroupNodes defines model for CreativeActionGroupNodes.
 type CreativeActionGroupNodes struct {
 	NodeIds []string                     `json:"node_ids"`
@@ -3461,9 +3486,11 @@ type CreativeActionResizeNodeType string
 
 // CreativeActionSelectVersion defines model for CreativeActionSelectVersion.
 type CreativeActionSelectVersion struct {
-	NodeId    string                          `json:"node_id"`
-	Type      CreativeActionSelectVersionType `json:"type"`
-	VersionId string                          `json:"version_id"`
+	// FollowLatest 为 true 时恢复自动主版本；version_id 必须是当前最新版本。省略或为 false 时固定选定版本。
+	FollowLatest *bool                           `json:"follow_latest,omitempty"`
+	NodeId       string                          `json:"node_id"`
+	Type         CreativeActionSelectVersionType `json:"type"`
+	VersionId    string                          `json:"version_id"`
 }
 
 // CreativeActionSelectVersionType defines model for CreativeActionSelectVersion.Type.
@@ -3947,6 +3974,9 @@ type CreativeAssetCreateResult struct {
 
 	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	LibraryRevision CreativeRevision `json:"library_revision"`
+
+	// Reused 从节点存入时同一内容修订已在库中，只追加所选分组/标签而没有新建资产。
+	Reused *bool `json:"reused,omitempty"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision   CreativeRevision  `json:"revision"`
@@ -7968,6 +7998,32 @@ func (t *CreativeGraphAction) MergeCreativeActionReplaceContent(v CreativeAction
 	return err
 }
 
+// AsCreativeActionFillFromAsset returns the union data inside the CreativeGraphAction as a CreativeActionFillFromAsset
+func (t CreativeGraphAction) AsCreativeActionFillFromAsset() (CreativeActionFillFromAsset, error) {
+	var body CreativeActionFillFromAsset
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionFillFromAsset overwrites any union data inside the CreativeGraphAction as the provided CreativeActionFillFromAsset
+func (t *CreativeGraphAction) FromCreativeActionFillFromAsset(v CreativeActionFillFromAsset) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionFillFromAsset performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionFillFromAsset
+func (t *CreativeGraphAction) MergeCreativeActionFillFromAsset(v CreativeActionFillFromAsset) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsCreativeActionConnectReference returns the union data inside the CreativeGraphAction as a CreativeActionConnectReference
 func (t CreativeGraphAction) AsCreativeActionConnectReference() (CreativeActionConnectReference, error) {
 	var body CreativeActionConnectReference
@@ -8813,7 +8869,7 @@ type ServerInterface interface {
 
 	// (POST /creative/assets/batch-trash)
 	BatchTrashCreativeAssets(c *gin.Context, params BatchTrashCreativeAssetsParams)
-	// 把画布节点当前内容固定为一条新的个人库资产
+	// 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
 	// (POST /creative/assets/from-canvas-node)
 	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
 

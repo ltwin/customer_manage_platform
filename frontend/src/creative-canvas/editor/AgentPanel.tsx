@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { MessageCircle, X, Plus, Send } from 'lucide-react'
+import { MessageCircle, X, Plus, ArrowUp, ChevronDown } from 'lucide-react'
 import type { components } from '../../api/schema'
 import { ApiError } from '../../api/transport.ts'
 import * as api from './api.ts'
@@ -66,6 +66,8 @@ function AgentConversation({
   onClose: () => void
 }) {
   const storageKey = `creative-agent-pending:${account}:${canvasID}`
+  const threadMenu = useRef<HTMLDetailsElement>(null)
+  const threadButton = useRef<HTMLElement>(null)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversation, setConversation] = useState('')
@@ -90,6 +92,23 @@ function AgentConversation({
   const latest = active ?? waiting ?? runs[0]
   const chosenModel = catalog?.models.find((item) => item.model_key === model)
   const locked = busy || !!pending || storageBroken
+
+  useEffect(() => {
+    const close = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !threadMenu.current?.contains(event.target) &&
+        threadMenu.current
+      )
+        threadMenu.current.open = false
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [])
+  function closeThreadMenu() {
+    if (threadMenu.current) threadMenu.current.open = false
+    threadButton.current?.focus()
+  }
 
   function restoreDraft(value?: AgentDraft) {
     if (!value) return
@@ -267,7 +286,7 @@ function AgentConversation({
     }
   }
   function sendDraft() {
-    if (!conversation || !draft.trim() || locked) return
+    if (!conversation || !draft.trim() || locked || active) return
     const draftState = { conversation, model, skill, text: draft }
     if (waiting) {
       void perform(
@@ -284,7 +303,7 @@ function AgentConversation({
       )
       return
     }
-    if (!chosenModel || !consented || active) return
+    if (!chosenModel?.available || !consented) return
     const selected = catalog?.skills.find(
       (item) => item.skill_version_id === skill,
     )
@@ -319,10 +338,59 @@ function AgentConversation({
   return (
     <aside className="cc-agent-panel" aria-label="创作助手">
       <header>
-        <div>
-          <strong>创作助手</strong>
-          <small>与你一起梳理创作方向</small>
-        </div>
+        <details
+          className="cc-agent-thread"
+          ref={threadMenu}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              closeThreadMenu()
+            }
+          }}
+        >
+          <summary ref={threadButton} aria-label="对话菜单">
+            创作助手 <ChevronDown size={13} />
+          </summary>
+          <div className="cc-agent-conversations">
+            <select
+              aria-label="当前对话"
+              disabled={locked}
+              value={conversation}
+              onChange={(event) => {
+                setConversation(event.target.value)
+                setMessages([])
+                setRuns([])
+                setSteps([])
+                setConsented(false)
+                setFeedback('')
+                closeThreadMenu()
+              }}
+            >
+              <option value="">选择对话</option>
+              {conversations.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
+            </select>
+            <button
+              disabled={locked}
+              onClick={() => {
+                closeThreadMenu()
+                void perform(
+                  action(`/canvases/${canvasID}/conversations`, {
+                    title: '创作对话',
+                  }),
+                )
+              }}
+              aria-label="新建对话"
+              title="新建对话"
+            >
+              <Plus size={17} />
+              <span>新建对话</span>
+            </button>
+          </div>
+        </details>
         <button
           className="cc-icon-button"
           onClick={onClose}
@@ -332,43 +400,6 @@ function AgentConversation({
           <X size={18} />
         </button>
       </header>
-      <div className="cc-agent-conversations">
-        <select
-          aria-label="当前对话"
-          disabled={locked}
-          value={conversation}
-          onChange={(event) => {
-            setConversation(event.target.value)
-            setMessages([])
-            setRuns([])
-            setSteps([])
-            setConsented(false)
-            setFeedback('')
-          }}
-        >
-          <option value="">选择对话</option>
-          {conversations.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.title}
-            </option>
-          ))}
-        </select>
-        <button
-          disabled={locked}
-          onClick={() => {
-            void perform(
-              action(`/canvases/${canvasID}/conversations`, {
-                title: '创作对话',
-              }),
-            )
-          }}
-          aria-label="新建对话"
-          title="新建对话"
-        >
-          <Plus size={17} />
-          <span>新建对话</span>
-        </button>
-      </div>
       {error && (
         <div className="cc-agent-error" role="alert">
           {error}
@@ -507,62 +538,91 @@ function AgentConversation({
           sendDraft()
         }}
       >
-        {!waiting && (
-          <div className="cc-agent-options">
-            <select
-              aria-label="模型"
-              value={model}
-              disabled={locked || !!active}
-              onChange={(event) => {
-                setModel(event.target.value)
-                setConsented(false)
-              }}
-            >
-              {catalog?.models.map((item) => (
-                <option
-                  key={item.model_key}
-                  value={item.model_key}
-                  disabled={!item.available}
+        <div className="cc-agent-box">
+          <label className="sr-only" htmlFor="creative-agent-draft">
+            {waiting ? '补充内容' : '创作问题'}
+          </label>
+          <textarea
+            id="creative-agent-draft"
+            className="resize-none"
+            value={draft}
+            disabled={locked || !!active}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === 'Enter' &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault()
+                event.currentTarget.form?.requestSubmit()
+              }
+            }}
+            placeholder={
+              waiting ? '补充原任务所需的信息…' : '想讨论什么创作方向？'
+            }
+            rows={3}
+          />
+          <div className="cc-agent-composer-foot">
+            {!waiting && (
+              <div className="cc-agent-options">
+                <select
+                  aria-label="模型"
+                  value={model}
+                  disabled={locked || !!active}
+                  onChange={(event) => {
+                    setModel(event.target.value)
+                    setConsented(false)
+                  }}
                 >
-                  {item.display_name}
-                  {!item.available ? '（不可用）' : ''}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Skill"
-              value={skill}
-              disabled={locked || !!active}
-              onChange={(event) => setSkill(event.target.value)}
+                  {catalog?.models.map((item) => (
+                    <option
+                      key={item.model_key}
+                      value={item.model_key}
+                      disabled={!item.available}
+                    >
+                      {item.display_name}
+                      {!item.available ? '（不可用）' : ''}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Skill"
+                  value={skill}
+                  disabled={locked || !!active}
+                  onChange={(event) => setSkill(event.target.value)}
+                >
+                  <option value="">普通对话</option>
+                  {catalog?.skills
+                    .filter((item) => item.available)
+                    .map((item) => (
+                      <option
+                        key={item.skill_version_id}
+                        value={item.skill_version_id}
+                      >
+                        {item.display_name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+            <button
+              className="cc-agent-send"
+              aria-label={waiting ? '补充并继续' : '发送'}
+              title={waiting ? '补充并继续 · Enter' : '发送 · Enter'}
+              type="submit"
+              disabled={
+                locked ||
+                !!active ||
+                !conversation ||
+                !draft.trim() ||
+                (!waiting && (!consented || !chosenModel?.available))
+              }
             >
-              <option value="">普通对话</option>
-              {catalog?.skills
-                .filter((item) => item.available)
-                .map((item) => (
-                  <option
-                    key={item.skill_version_id}
-                    value={item.skill_version_id}
-                  >
-                    {item.display_name}
-                  </option>
-                ))}
-            </select>
+              <ArrowUp size={17} />
+            </button>
           </div>
-        )}
-        <label className="sr-only" htmlFor="creative-agent-draft">
-          {waiting ? '补充内容' : '创作问题'}
-        </label>
-        <textarea
-          id="creative-agent-draft"
-          className="resize-none"
-          value={draft}
-          disabled={locked || !!active}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={
-            waiting ? '补充原任务所需的信息…' : '想讨论什么创作方向？'
-          }
-          rows={3}
-        />
+        </div>
         {!waiting && (
           <label className="cc-agent-consent">
             <input
@@ -575,20 +635,6 @@ function AgentConversation({
             {chosenModel?.vendor_key || '所选模型供应商'}，用于创作协助。
           </label>
         )}
-        <button
-          className="btn btn-primary"
-          type="submit"
-          disabled={
-            locked ||
-            !!active ||
-            !conversation ||
-            !draft.trim() ||
-            (!waiting && (!consented || !chosenModel?.available))
-          }
-        >
-          <Send size={15} />
-          {waiting ? '补充并继续' : '发送'}
-        </button>
       </form>
     </aside>
   )

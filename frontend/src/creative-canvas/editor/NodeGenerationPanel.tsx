@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useViewport } from '@xyflow/react'
+import { useStore, useViewport } from '@xyflow/react'
 import type { components } from '../../api/schema'
 import * as api from './api.ts'
 import { graphActionReadSet, graphReadSet, worldPoint } from './graph.ts'
@@ -17,6 +17,23 @@ import {
   type Versions,
 } from './generation.ts'
 import { MediaFigure } from './MediaView.tsx'
+import {
+  ArrowUp,
+  ChevronDown,
+  History,
+  Save,
+  SlidersHorizontal,
+  Square,
+  X,
+} from 'lucide-react'
+import GenerationReference from './GenerationReference.tsx'
+import PromptEditor, { type PromptEditorHandle } from './PromptEditor.tsx'
+import {
+  cleanMentions,
+  connectedReferences,
+  promptReferences,
+} from './promptReferences.ts'
+import { mediaTicket, pickRendition } from './media.ts'
 import './generation.css'
 
 type Props = {
@@ -25,8 +42,13 @@ type Props = {
   node: api.CanvasNode
   queue: SaveQueue
   disabled: boolean
+  dragging: boolean
   assets: api.Asset[]
   refresh: () => Promise<void>
+  onPickReferences: () => void
+  onDisconnect: (edgeID: string) => void
+  referenceRequest: { seq: number; targetID: string; ids: string[] } | null
+  onReferencesInserted: () => void
 }
 
 // 本容器拥有读取与队列接线；展示表单只接收数据和回调。
@@ -36,14 +58,75 @@ export default function NodeGenerationPanel({
   node,
   queue,
   disabled,
+  dragging,
   assets,
   refresh,
+  onPickReferences,
+  onDisconnect,
+  referenceRequest,
+  onReferencesInserted,
 }: Props) {
   const viewport = useViewport()
   const point = worldPoint(canvas.nodes, node.id)
+  const renderedHeight = useStore(
+    (state) =>
+      state.nodes.find((n) => n.id === node.id)?.measured?.height ??
+      node.metadata.height,
+  )
   const key = `prompt:${canvas.id}:${node.id}`
   const local = queue.value.drafts[key]?.prompt
-  const prompt = local ?? promptFromNode(canvas, node)
+  const rawPrompt = local ?? promptFromNode(canvas, node)
+  const references = promptReferences(canvas, node, rawPrompt, assets)
+  const connected = connectedReferences(references)
+  const allowed = new Set(
+    connected.flatMap((r) => (r.sourceID ? [r.sourceID] : [])),
+  )
+  const prompt: Prompt = {
+    ...rawPrompt,
+    text: cleanMentions(rawPrompt.text, allowed),
+    // 草稿文字的 CAS 不变；图关系采用当前快照，由生成准入再次复核。
+    expected_topology_revision: canvas.topology_revision,
+    read_set: graphReadSet(canvas),
+  }
+  const editor = useRef<PromptEditorHandle>(null)
+  const insertedRequest = useRef(0)
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  const mediaRefs = useMemo(
+    () =>
+      canvas.nodes.filter((n) =>
+        canvas.edges.some(
+          (e) => e.target_node_id === node.id && e.source_node_id === n.id,
+        ),
+      ),
+    [canvas, node.id],
+  )
+  useEffect(() => {
+    let live = true
+    void Promise.all(
+      mediaRefs.map(async (ref) => {
+        const media = pickRendition(ref.content?.media, 'display')
+        if (ref.content?.kind !== 'image' || !media) return null
+        try {
+          const ticket = await mediaTicket(
+            ref.content.id,
+            media.role === 'original' ? 'original' : 'display',
+            'display',
+          )
+          return { id: ref.content.id, url: ticket.url }
+        } catch {
+          return null
+        }
+      }),
+    ).then((values) => {
+      if (live)
+        setThumbnails(
+          Object.fromEntries(values.flatMap((v) => (v ? [[v.id, v.url]] : []))),
+        )
+    })
+    return () => {
+      live = false
+    }
+  }, [mediaRefs])
   const [catalog, setCatalog] = useState<GenerationCatalog | null>(null)
   const [versions, setVersions] = useState<Versions | null>(null)
   const [execution, setExecution] = useState<Execution | null>(null)
@@ -54,6 +137,9 @@ export default function NodeGenerationPanel({
   const [busy, setBusy] = useState(false)
   const [tab, setTab] = useState<'prompt' | 'versions'>('prompt')
   const [reload, setReload] = useState(0)
+  const [optionsOpen, setOptionsOpen] = useState(false)
+  const options = useRef<HTMLDivElement>(null)
+  const optionsButton = useRef<HTMLButtonElement>(null)
   const mounted = useRef(true)
   const busyRef = useRef(false)
   const path = `/canvases/${encodeURIComponent(canvas.id)}`
@@ -142,6 +228,23 @@ export default function NodeGenerationPanel({
     return () => controller.abort()
   }, [previewID, reload])
 
+  useEffect(() => {
+    if (!optionsOpen) return
+    const close = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !options.current?.contains(event.target)
+      )
+        setOptionsOpen(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [optionsOpen])
+  useEffect(
+    () => setOptionsOpen(false),
+    [viewport.x, viewport.y, viewport.zoom],
+  )
+
   function edit(next: Prompt) {
     void queue
       .update({
@@ -159,6 +262,30 @@ export default function NodeGenerationPanel({
       .catch((e: unknown) => setError(errorMessage(e)))
   }
   const locked = disabled || busy || queue.busy || !!queue.value.job
+  useEffect(() => {
+    if (
+      !referenceRequest ||
+      referenceRequest.targetID !== node.id ||
+      referenceRequest.seq === insertedRequest.current ||
+      locked ||
+      !referenceRequest.ids.every((id) =>
+        connected.some((r) => r.sourceID === id),
+      )
+    )
+      return
+    insertedRequest.current = referenceRequest.seq
+    editor.current?.insertReferences(
+      referenceRequest.ids.filter((id) => !prompt.text.includes(`@[${id}]`)),
+    )
+    onReferencesInserted()
+  }, [
+    referenceRequest,
+    locked,
+    connected,
+    prompt.text,
+    node.id,
+    onReferencesInserted,
+  ])
   async function act(work: () => Promise<void>) {
     if (locked || busyRef.current) return
     busyRef.current = true
@@ -178,7 +305,8 @@ export default function NodeGenerationPanel({
     }
   }
   async function save() {
-    if (!local && node.prompt) return node.prompt.draft_revision
+    if (!local && node.prompt && prompt.text === node.prompt.text)
+      return node.prompt.draft_revision
     const result = await queue.enqueue(`${path}/commands`, prompt, key)
     if (
       !result ||
@@ -209,9 +337,17 @@ export default function NodeGenerationPanel({
   async function versionAction(
     type: 'select_version' | 'delete_version',
     id: string,
+    followLatest = false,
   ) {
     const actions: api.GraphAction[] = [
-      { type, node_id: node.id, version_id: id },
+      type === 'select_version'
+        ? {
+            type,
+            node_id: node.id,
+            version_id: id,
+            follow_latest: followLatest,
+          }
+        : { type, node_id: node.id, version_id: id },
     ]
     const value: api.Command = {
       type: 'batch',
@@ -223,8 +359,7 @@ export default function NodeGenerationPanel({
   }
   const conflict =
     !!local &&
-    (local.expected_draft_revision !== (node.prompt?.draft_revision ?? null) ||
-      local.expected_topology_revision !== canvas.topology_revision)
+    local.expected_draft_revision !== (node.prompt?.draft_revision ?? null)
   const model = catalog?.models.find((m) => m.key === prompt.model_key)
   const unsupported = ![
     'core.text',
@@ -236,39 +371,63 @@ export default function NodeGenerationPanel({
     execution?.execution_id === executionID
       ? execution.state
       : node.status.generation_state
-  const panelTop = `clamp(44px, ${(point.y + node.metadata.height) * viewport.zoom + viewport.y + 12}px, max(44px, 100% - 330px))`
+  const canGenerate =
+    !locked &&
+    !conflict &&
+    !unsupported &&
+    !!model &&
+    (!!prompt.text.trim() ||
+      prompt.references.length > 0 ||
+      canvas.edges.some((e) => e.target_node_id === node.id) ||
+      canvas.node_inputs.some((r) => r.node_id === node.id))
+  const parametersLabel =
+    model?.parameters
+      .map((f) => {
+        const value = prompt.parameters[f.key]
+        return value === undefined
+          ? ''
+          : `${value}${f.key === 'count' ? ' 张' : ''}`
+      })
+      .filter(Boolean)
+      .join(' · ') || '参数'
+  const panelTop = `clamp(64px, ${(point.y + renderedHeight) * viewport.zoom + viewport.y + 12}px, max(64px, 100% - ${tab === 'versions' ? 340 : 220}px))`
   return createPortal(
     <aside
-      className="cc-generation nodrag nopan nowheel"
+      className={`cc-generation nodrag nopan nowheel ${node.status.active_execution_id ? 'is-running' : ''}`}
       aria-label="节点生成"
+      hidden={dragging}
       style={{
-        left: `clamp(min(${leftInset}px, max(8px, 100% - 376px)), ${point.x * viewport.zoom + viewport.x}px, max(8px, 100% - 376px))`,
+        left: `clamp(min(${leftInset}px, max(8px, 100% - 468px)), ${(point.x + node.metadata.width / 2) * viewport.zoom + viewport.x - 230}px, max(8px, 100% - 468px))`,
         top: panelTop,
         maxHeight: `min(560px, calc(100% - ${panelTop} - 12px))`,
       }}
-      onKeyDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation()
+        if (e.key === 'Escape' && optionsOpen) {
+          e.preventDefault()
+          setOptionsOpen(false)
+          optionsButton.current?.focus()
+        }
+      }}
       onPointerDown={(e) => e.stopPropagation()}
     >
       <header>
-        <strong>{node.metadata.title || '节点'} · 创作</strong>
         <span role="status">{executionLabel(state)}</span>
-      </header>
-      <nav aria-label="生成面板">
         <button
           type="button"
-          aria-pressed={tab === 'prompt'}
-          onClick={() => setTab('prompt')}
-        >
-          提示词
-        </button>
-        <button
-          type="button"
+          className="cc-generation-history"
           aria-pressed={tab === 'versions'}
-          onClick={() => setTab('versions')}
+          onClick={() => {
+            setTab(tab === 'versions' ? 'prompt' : 'versions')
+            setOptionsOpen(false)
+          }}
         >
-          作品版本{versions ? ` · ${versions.items.length}` : ''}
+          <History size={13} />
+          {tab === 'versions'
+            ? '返回提示词'
+            : `作品版本${versions?.items.length ? ` · ${versions.items.length}` : ''}`}
         </button>
-      </nav>
+      </header>
       {(error || readError) && (
         <p role="alert">
           {error || readError}{' '}
@@ -284,189 +443,78 @@ export default function NodeGenerationPanel({
                 : '此类型暂未开放生成，当前可保存提示词。'}
             </p>
           )}
-          <label>
-            提示词
-            <textarea
-              aria-label="提示词"
-              rows={3}
-              maxLength={32000}
-              value={prompt.text}
-              disabled={locked}
-              onChange={(e) => edit({ ...prompt, text: e.target.value })}
-              placeholder="描述你想创作的内容…"
-            />
-          </label>
-          <label>
-            生成模型
-            <select
-              aria-label="生成模型"
-              value={prompt.model_key}
-              disabled={locked || unsupported}
-              onChange={(e) =>
-                edit({ ...prompt, model_key: e.target.value, parameters: {} })
-              }
-            >
-              <option value="">选择模型</option>
-              {prompt.model_key && !model && (
-                <option value={prompt.model_key}>
-                  {prompt.model_key}（当前不可用）
-                </option>
-              )}
-              {catalog?.models.map((m) => (
-                <option key={m.key} value={m.key}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {model?.parameters.map((field) => (
-            <label key={field.key}>
-              {field.label}
-              {field.required && ' *'}
-              {field.options.length || field.type === 'boolean' ? (
-                <select
-                  aria-label={field.label}
-                  disabled={locked}
-                  value={String(prompt.parameters[field.key] ?? '')}
-                  onChange={(e) => {
-                    try {
-                      const parameters = { ...prompt.parameters }
-                      const v = parameterValue(field, e.target.value)
-                      if (v === undefined) delete parameters[field.key]
-                      else parameters[field.key] = v
-                      edit({ ...prompt, parameters })
-                    } catch (e) {
-                      setError(errorMessage(e))
-                    }
-                  }}
-                >
-                  <option value="">使用模型默认值</option>
-                  {(field.type === 'boolean'
-                    ? ['true', 'false']
-                    : field.options
-                  ).map((v) => (
-                    <option key={v} value={v}>
-                      {v === 'true' ? '开启' : v === 'false' ? '关闭' : v}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  aria-label={field.label}
-                  disabled={locked}
-                  type={field.type === 'string' ? 'text' : 'number'}
-                  step={field.type === 'integer' ? 1 : 'any'}
-                  value={String(prompt.parameters[field.key] ?? '')}
-                  placeholder="使用模型默认值"
-                  onChange={(e) => {
-                    try {
-                      const parameters = { ...prompt.parameters }
-                      const v = parameterValue(field, e.target.value)
-                      if (v === undefined) delete parameters[field.key]
-                      else parameters[field.key] = v
-                      edit({ ...prompt, parameters })
-                    } catch (e) {
-                      setError(errorMessage(e))
-                    }
-                  }}
-                />
-              )}
-            </label>
-          ))}
-          {!model && Object.keys(prompt.parameters).length > 0 && (
-            <p>已保留历史模型参数，选择可用模型后可编辑。</p>
-          )}
-          <fieldset disabled={locked}>
-            <legend>参考素材 · {prompt.references.length}</legend>
-            {prompt.references.map((r, i) => (
-              <div
-                className="cc-generation-ref"
-                key={`${r.source_node_id ?? r.content_revision_id}:${i}`}
-              >
-                <span>
-                  {r.source_node_id
-                    ? canvas.nodes.find((n) => n.id === r.source_node_id)
-                        ?.metadata.title || '画布节点'
-                    : assets.find(
-                        (a) => a.content_revision_id === r.content_revision_id,
-                      )?.title || '固定素材'}{' '}
-                  · {r.role}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`移除参考 ${i + 1}`}
-                  onClick={() =>
-                    edit({
-                      ...prompt,
-                      references: prompt.references.filter((_, j) => j !== i),
-                    })
-                  }
-                >
-                  移除
-                </button>
-              </div>
+          <div
+            className="cc-generation-refs"
+            role="group"
+            aria-label="参考素材"
+          >
+            {references.map((r) => (
+              <GenerationReference
+                key={r.key}
+                title={r.title}
+                label={r.label}
+                content={r.content}
+                updated={
+                  !!r.sourceID &&
+                  !!versions?.items[0]?.generation_provenance
+                    ?.reference_sources &&
+                  typeof versions.items[0].generation_provenance
+                    .reference_sources === 'object' &&
+                  Object.entries(
+                    versions.items[0].generation_provenance.reference_sources,
+                  ).some(
+                    ([source, revision]) =>
+                      source === r.sourceID &&
+                      typeof revision === 'string' &&
+                      revision !== r.revisionID,
+                  )
+                }
+                disabled={locked}
+                onMention={
+                  r.connected && r.sourceID
+                    ? () => editor.current?.insertReferences([r.sourceID!])
+                    : undefined
+                }
+                onRemove={
+                  r.draftIndex !== undefined
+                    ? () =>
+                        edit({
+                          ...prompt,
+                          references: prompt.references.filter(
+                            (_, i) => i !== r.draftIndex,
+                          ),
+                        })
+                    : r.edgeID
+                      ? () => onDisconnect(r.edgeID!)
+                      : undefined
+                }
+              />
             ))}
-            <select
-              aria-label="添加参考素材"
-              value=""
-              disabled={prompt.references.length >= 50}
-              onChange={(e) => {
-                const [kind, id] = e.target.value.split('|')
-                if (!id) return
-                const ordinal =
-                  Math.max(-1, ...prompt.references.map((r) => r.ordinal)) + 1
-                edit({
-                  ...prompt,
-                  references: [
-                    ...prompt.references,
-                    {
-                      slot: 'reference',
-                      role: 'reference',
-                      ordinal,
-                      source_node_id: kind === 'node' ? id : null,
-                      content_revision_id: kind === 'revision' ? id : null,
-                    },
-                  ],
-                })
-              }}
+            <button
+              type="button"
+              className="cc-generation-ref-add"
+              disabled={locked}
+              aria-label="引用参考"
+              title="引用已连接的参考"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => editor.current?.openPicker()}
             >
-              <option value="">添加画布节点或个人库素材…</option>
-              <optgroup label="画布节点">
-                {canvas.nodes
-                  .filter(
-                    (n) =>
-                      n.id !== node.id &&
-                      n.data.content_revision_id &&
-                      !prompt.references.some((r) => r.source_node_id === n.id),
-                  )
-                  .map((n) => (
-                    <option key={n.id} value={`node|${n.id}`}>
-                      {n.metadata.title || '未命名节点'}
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="个人库">
-                {assets
-                  .filter(
-                    (a) =>
-                      !prompt.references.some(
-                        (r) => r.content_revision_id === a.content_revision_id,
-                      ),
-                  )
-                  .map((a) => (
-                    <option
-                      key={a.id}
-                      value={`revision|${a.content_revision_id}`}
-                    >
-                      {a.title || '未命名素材'}
-                    </option>
-                  ))}
-              </optgroup>
-            </select>
-            <small>
-              连线与节点内参考会在提交时一并读取；素材使用仍需生成授权。
-            </small>
-          </fieldset>
+              @
+            </button>
+          </div>
+          <PromptEditor
+            ref={editor}
+            text={prompt.text}
+            references={connected}
+            thumbnails={thumbnails}
+            disabled={locked}
+            onChange={(text) => edit({ ...prompt, text })}
+            onGenerate={() => {
+              if (canGenerate && !node.status.active_execution_id)
+                void act(generate)
+            }}
+            onLibrary={onPickReferences}
+          />
           {conflict && (
             <p role="alert">
               提示词或参考关系已变化。本机草稿已保留，请核对后处理。
@@ -490,14 +538,140 @@ export default function NodeGenerationPanel({
             {catalog?.disabled_reason || (!catalog ? '正在读取模型目录…' : '')}
           </p>
           <footer>
-            <span>
-              {local
-                ? '本机草稿待保存'
-                : node.prompt
-                  ? '草稿已保存'
-                  : '尚无草稿'}
-            </span>
+            <div className="cc-generation-model">
+              <select
+                aria-label="生成模型"
+                value={prompt.model_key}
+                disabled={locked || unsupported}
+                onChange={(e) =>
+                  edit({ ...prompt, model_key: e.target.value, parameters: {} })
+                }
+              >
+                <option value="">选择模型</option>
+                {prompt.model_key && !model && (
+                  <option value={prompt.model_key}>
+                    {prompt.model_key}（不可用）
+                  </option>
+                )}
+                {catalog?.models.map((m) => (
+                  <option key={m.key} value={m.key}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={12} aria-hidden="true" />
+            </div>
+            {!!model?.parameters.length && (
+              <div className="cc-generation-options" ref={options}>
+                <button
+                  ref={optionsButton}
+                  type="button"
+                  className="cc-generation-chip"
+                  aria-label="生成参数"
+                  aria-expanded={optionsOpen}
+                  aria-controls="cc-generation-parameters"
+                  disabled={locked}
+                  onClick={() => setOptionsOpen(!optionsOpen)}
+                >
+                  <SlidersHorizontal size={13} />
+                  <span>{parametersLabel}</span>
+                  <ChevronDown size={12} />
+                </button>
+                {optionsOpen && (
+                  <div
+                    id="cc-generation-parameters"
+                    className="cc-generation-popover"
+                    role="group"
+                    aria-label="生成参数设置"
+                  >
+                    <div className="cc-generation-popover-head">
+                      <span>生成参数</span>
+                      <button
+                        type="button"
+                        aria-label="关闭参数"
+                        onClick={() => {
+                          setOptionsOpen(false)
+                          optionsButton.current?.focus()
+                        }}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                    {model.parameters.map((field) => (
+                      <label key={field.key}>
+                        {field.label}
+                        {field.required && ' *'}
+                        {field.options.length || field.type === 'boolean' ? (
+                          <select
+                            aria-label={field.label}
+                            disabled={locked}
+                            value={String(prompt.parameters[field.key] ?? '')}
+                            onChange={(e) => {
+                              try {
+                                const parameters = { ...prompt.parameters }
+                                const value = parameterValue(
+                                  field,
+                                  e.target.value,
+                                )
+                                if (value === undefined)
+                                  delete parameters[field.key]
+                                else parameters[field.key] = value
+                                edit({ ...prompt, parameters })
+                              } catch (e) {
+                                setError(errorMessage(e))
+                              }
+                            }}
+                          >
+                            <option value="">使用模型默认值</option>
+                            {(field.type === 'boolean'
+                              ? ['true', 'false']
+                              : field.options
+                            ).map((v) => (
+                              <option key={v} value={v}>
+                                {v === 'true'
+                                  ? '开启'
+                                  : v === 'false'
+                                    ? '关闭'
+                                    : v}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            aria-label={field.label}
+                            disabled={locked}
+                            type={field.type === 'string' ? 'text' : 'number'}
+                            step={field.type === 'integer' ? 1 : 'any'}
+                            value={String(prompt.parameters[field.key] ?? '')}
+                            placeholder="使用模型默认值"
+                            onChange={(e) => {
+                              try {
+                                const parameters = { ...prompt.parameters }
+                                const value = parameterValue(
+                                  field,
+                                  e.target.value,
+                                )
+                                if (value === undefined)
+                                  delete parameters[field.key]
+                                else parameters[field.key] = value
+                                edit({ ...prompt, parameters })
+                              } catch (e) {
+                                setError(errorMessage(e))
+                              }
+                            }}
+                          />
+                        )}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <span className="cc-generation-grow" />
             <button
+              className="cc-generation-save"
+              aria-label="保存草稿"
+              title="保存草稿"
               disabled={locked || conflict}
               onClick={() =>
                 void act(async () => {
@@ -505,10 +679,13 @@ export default function NodeGenerationPanel({
                 })
               }
             >
-              保存草稿
+              <Save size={15} />
             </button>
             {node.status.active_execution_id ? (
               <button
+                className="cc-generation-send"
+                aria-label="停止"
+                title="停止生成"
                 disabled={locked}
                 onClick={() =>
                   void act(async () => {
@@ -519,17 +696,26 @@ export default function NodeGenerationPanel({
                   })
                 }
               >
-                停止
+                <Square size={13} fill="currentColor" />
               </button>
             ) : (
               <button
-                className="cc-generation-primary"
-                disabled={locked || conflict || unsupported || !model}
+                className="cc-generation-send"
+                aria-label="生成新版本"
+                title="生成新版本 · Enter"
+                disabled={!canGenerate}
                 onClick={() => void act(generate)}
               >
-                生成新版本
+                <ArrowUp size={18} />
               </button>
             )}
+            <span className="cc-generation-draft" role="status">
+              {local
+                ? '本机草稿待保存'
+                : node.prompt
+                  ? '草稿已保存'
+                  : '尚无草稿'}
+            </span>
           </footer>
         </>
       ) : (

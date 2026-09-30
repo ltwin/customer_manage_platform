@@ -61,7 +61,7 @@ func applyBatch(ctx context.Context, tx store.TxAccountScope, v BatchInput, oper
 	structural := false
 	for _, a := range v.Actions {
 		switch a.Type {
-		case "replace_content", "update_metadata", "clear_content", "select_version", "delete_version", "move_nodes", "move_node", "resize_node":
+		case "replace_content", "fill_from_asset", "update_metadata", "clear_content", "select_version", "delete_version", "move_nodes", "move_node", "resize_node":
 		default:
 			structural = true
 		}
@@ -277,6 +277,13 @@ func (e *editGraph) apply(a Action) error {
 		}
 		n.Width = a.Width
 		n.Height = a.Height
+		if n.ContentRevisionID != nil {
+			r, err := creativecontent.RequireUsable(e.ctx, e.tx, *n.ContentRevisionID, "display")
+			if err != nil {
+				return err
+			}
+			fitMediaSize(&n, r)
+		}
 		e.g.Nodes[n.ID] = n
 		return e.ancestors(n)
 	case "update_metadata":
@@ -307,6 +314,8 @@ func (e *editGraph) apply(a Action) error {
 		return nil
 	case "replace_content":
 		return e.replace(a)
+	case "fill_from_asset":
+		return e.fill(a)
 	case "connect_reference":
 		return e.connect(a)
 	case "disconnect_reference":
@@ -351,6 +360,9 @@ func (e *editGraph) add(a Action) error {
 		return ErrVersionConflict
 	}
 	n := Node{ID: a.NodeID, TypeKey: a.TypeKey, TypeVersion: 1, Title: a.Title, X: a.X, Y: a.Y, Width: 280, Height: 180, ParentID: a.ParentID, Config: json.RawMessage("{}"), PlacementRevision: 1, DataRevision: 1, StatusRevision: 1}
+	if n.TypeKey == "core.image" || n.TypeKey == "core.video" {
+		n.Height = n.Width
+	}
 	if n.TypeKey == "core.group" && (a.Content != nil || a.Asset != nil) {
 		return creativeops.ErrValidation
 	}
@@ -393,6 +405,38 @@ func (e *editGraph) add(a Action) error {
 		n.ContentID = &r.ContentID
 		n.ContentRevisionID = &r.ID
 	}
+	e.g.Nodes[n.ID] = n
+	return nil
+}
+
+// fill puts a library asset into an existing empty node of the same kind;
+// nodes with content change through generation and versions instead.
+func (e *editGraph) fill(a Action) error {
+	n, err := e.node(a.NodeID, "data")
+	if err != nil {
+		return err
+	}
+	if a.Asset == nil || n.TypeKey == "core.group" || n.ContentRevisionID != nil {
+		return creativeops.ErrValidation
+	}
+	asset, err := creativelibrary.ResolveAssetsInTx(e.ctx, e.tx, *a.Asset)
+	if err != nil {
+		return err
+	}
+	r, err := creativecontent.RequireUsable(e.ctx, e.tx, asset.ContentRevisionID, "display")
+	if err != nil {
+		return err
+	}
+	if n.TypeKey != "core."+r.Kind {
+		return creativeops.ErrValidation
+	}
+	n.ContentID = &r.ContentID
+	n.ContentRevisionID = &r.ID
+	n.SelectedVersionID = nil
+	if strings.TrimSpace(n.Title) == "" {
+		n.Title = asset.Title
+	}
+	fitMediaSize(&n, r)
 	e.g.Nodes[n.ID] = n
 	return nil
 }

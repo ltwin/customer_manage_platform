@@ -55,61 +55,20 @@ func AdmitGenerationInTx(ctx context.Context, tx store.TxAccountScope, in Reques
 	if err != nil {
 		return NodeExecution{}, err
 	}
-	if p == nil || p.Revision != in.DraftRevision || p.ActionKey != GenerationAction || p.Text != spec.Prompt || p.ModelKey != spec.ModelKey || !sameParameters(p.Parameters, spec.Parameters, spec.ParameterDefaults) {
+	if p == nil || p.Revision != in.DraftRevision || p.ActionKey != GenerationAction || p.ModelKey != spec.ModelKey || !sameParameters(p.Parameters, spec.Parameters, spec.ParameterDefaults) {
 		return NodeExecution{}, ErrVersionConflict
 	}
-	type orderedRef struct {
-		rank, ordinal            int
-		slot, id, revision, role string
+	refs, required, err := orderedGenerationRefs(g, n.ID)
+	if err != nil {
+		return NodeExecution{}, err
 	}
-	var refs []orderedRef
-	required := map[string]map[string]bool{n.ID: {"data": true}}
-	for _, v := range g.Inputs {
-		if v.NodeID != n.ID {
-			continue
-		}
-		rank := 1
-		if v.DraftID != nil {
-			rank = 0
-		}
-		revision := v.ContentRevisionID
-		if v.SourceNodeID != nil {
-			source, ok := g.Nodes[*v.SourceNodeID]
-			if !ok {
-				return NodeExecution{}, ErrGraphIntegrity
-			}
-			revision = source.ContentRevisionID
-			required[source.ID] = map[string]bool{"data": true}
-		}
-		if revision == nil {
-			return NodeExecution{}, ErrGraphIntegrity
-		}
-		refs = append(refs, orderedRef{rank, v.Ordinal, v.Slot, v.ID, *revision, v.Role})
+	compiled, err := compileGraphPrompt(ctx, tx, p.Text, refs)
+	if err != nil {
+		return NodeExecution{}, err
 	}
-	for _, v := range g.Edges {
-		if v.TargetNodeID != n.ID {
-			continue
-		}
-		source := g.Nodes[v.SourceNodeID]
-		if source.ContentRevisionID == nil {
-			return NodeExecution{}, ErrGraphIntegrity
-		}
-		required[source.ID] = map[string]bool{"data": true}
-		refs = append(refs, orderedRef{2, v.Ordinal, v.TargetPort, v.ID, *source.ContentRevisionID, v.Role})
+	if compiled != spec.Prompt {
+		return NodeExecution{}, ErrVersionConflict
 	}
-	sort.Slice(refs, func(i, j int) bool {
-		a, b := refs[i], refs[j]
-		if a.rank != b.rank {
-			return a.rank < b.rank
-		}
-		if a.slot != b.slot {
-			return a.slot < b.slot
-		}
-		if a.ordinal != b.ordinal {
-			return a.ordinal < b.ordinal
-		}
-		return a.id < b.id
-	})
 	if len(refs) != len(spec.References) || len(refs) > 50 {
 		return NodeExecution{}, ErrVersionConflict
 	}
@@ -134,12 +93,22 @@ func AdmitGenerationInTx(ctx context.Context, tx store.TxAccountScope, in Reques
 		return NodeExecution{}, creativeops.ErrValidation
 	}
 	e := NodeExecution{ID: executionID, CanvasID: canvas.ID, NodeID: n.ID, ActionKey: GenerationAction, ExecutorVersion: GenerationDriverVersion, State: "queued", ApplyState: "pending", CreatedAt: now, Deadline: deadline, PublishOperation: uuid.NewString(), ResultOperation: uuid.NewString()}
-	err = tx.Insert(ctx, "creative_node_executions", []string{"id", "canvas_id", "node_id", "action_key", "executor_version", "operation_id", "request_hash", "state", "deadline", "target_data_revision", "selected_version_id", "draft_revision", "prompt_snapshot", "read_set", "caller_kind", "publish_operation_id", "result_operation_id"}, e.ID, canvas.ID, n.ID, e.ActionKey, e.ExecutorVersion, operation, requestHash, e.State, deadline, int64(n.DataRevision), n.SelectedVersionID, int64(p.Revision), creativegraph.Canonical(p), creativegraph.Canonical(reads), "photographer", e.PublishOperation, e.ResultOperation)
+	sources := map[string]string{}
+	for _, ref := range refs {
+		if ref.source != "" {
+			sources[ref.source] = ref.revision
+		}
+	}
+	promptSnapshot := creativegraph.Canonical(struct {
+		*NodePrompt
+		ReferenceSources map[string]string `json:"reference_sources"`
+	}{p, sources})
+	err = tx.Insert(ctx, "creative_node_executions", []string{"id", "canvas_id", "node_id", "action_key", "executor_version", "operation_id", "request_hash", "state", "deadline", "target_data_revision", "selected_version_id", "draft_revision", "prompt_snapshot", "read_set", "caller_kind", "publish_operation_id", "result_operation_id"}, e.ID, canvas.ID, n.ID, e.ActionKey, e.ExecutorVersion, operation, requestHash, e.State, deadline, int64(n.DataRevision), n.SelectedVersionID, int64(p.Revision), promptSnapshot, creativegraph.Canonical(reads), "photographer", e.PublishOperation, e.ResultOperation)
 	if err != nil {
 		return NodeExecution{}, err
 	}
 	// 内容锁按修订ID稳定排序；输出列表保持原顺序与重复条目。
-	sorted := append([]orderedRef(nil), refs...)
+	sorted := append([]generationPromptRef(nil), refs...)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].revision < sorted[j].revision })
 	for _, v := range sorted {
 		if _, err = creativecontent.RequireGenerationReference(ctx, tx, v.revision); err != nil {

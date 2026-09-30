@@ -443,6 +443,7 @@ export class SaveQueue {
             code === 'creative_revision_conflict' ||
             code === 'archived_read_only' ||
             code === 'creative_asset_trashed' ||
+            code === 'creative_group_name_taken' ||
             statusOf(e) === 422 ||
             statusOf(e) === 404))
       // Version/state conflicts prove this operation never committed even after a retry:
@@ -450,7 +451,8 @@ export class SaveQueue {
       if (
         code === 'creative_revision_conflict' ||
         code === 'archived_read_only' ||
-        code === 'creative_asset_trashed'
+        code === 'creative_asset_trashed' ||
+        code === 'creative_group_name_taken'
       )
         uncertain = false
       const rejected =
@@ -458,7 +460,8 @@ export class SaveQueue {
         (!uncertain &&
           (code === 'creative_revision_conflict' ||
             code === 'archived_read_only' ||
-            code === 'creative_asset_trashed'))
+            code === 'creative_asset_trashed' ||
+            code === 'creative_group_name_taken'))
       // A rejected intent and everything queued after it on that canvas are
       // dropped now: the projection must not keep showing a refused edit.
       const outbox =

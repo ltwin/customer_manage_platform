@@ -159,6 +159,27 @@ func (p *CompiledGenerationPolicy) freeze(g PreparedGeneration, m GenerationPoli
 func (p PreparedPolicyGeneration) Fingerprint() string            { return p.fingerprint }
 func (p PreparedPolicyGeneration) Generation() PreparedGeneration { return p.generation }
 
+// WithPrompt 在调用域编译句内引用后重新校验并估价，仍使用同一份受信规则与媒体事实。
+// 编译增加的文字也必须进入预算与指纹，不能在付费快照冻结后修改请求。
+func (p PreparedPolicyGeneration) WithPrompt(prompt string) (PreparedPolicyGeneration, error) {
+	if p.policy == nil {
+		return PreparedPolicyGeneration{}, ErrValidation
+	}
+	request := p.generation.Snapshot().Request
+	if request.Input.Prompt == prompt {
+		return p, nil
+	}
+	request.Input.Prompt = prompt
+	result, err := p.policy.Prepare(request, p.facts)
+	if err != nil {
+		return PreparedPolicyGeneration{}, err
+	}
+	if result.Verdict != GenerationAllow {
+		return PreparedPolicyGeneration{}, ErrCapability
+	}
+	return result.Prepared, nil
+}
+
 // PolicyDefinition 返回冻结策略的公开身份投影（版本/部署/币种），供持久准入落库；
 // 不暴露规则本体，重算一律走RestorePolicyGeneration恢复的旧程序。
 func (p PreparedPolicyGeneration) PolicyDefinition() GenerationPolicyDefinition {

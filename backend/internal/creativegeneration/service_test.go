@@ -35,12 +35,12 @@ type adapter struct {
 	outputs []gw.GenerationOutput
 }
 
-func (a *adapter) Submit(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+func (a *adapter) Submit(_ context.Context, call gw.GenerationCall) (gw.GenerationEvent, error) {
 	a.calls.Add(1)
 	if a.noUsage {
-		return gw.GenerationEvent{EventKey: "done", Observation: gw.GenerationObservation{State: gw.GenerationCompleted, TaskID: "task", Outputs: a.outputs}}, nil
+		return gw.GenerationEvent{EventKey: "done", Observation: gw.GenerationObservation{State: gw.GenerationCompleted, TaskID: "task-" + call.RequestID, Outputs: a.outputs}}, nil
 	}
-	return gw.GenerationEvent{EventKey: "done", Observation: gw.GenerationObservation{State: gw.GenerationCompleted, TaskID: "task", Outputs: a.outputs}, Usage: map[string]int64{"count": 2}}, nil
+	return gw.GenerationEvent{EventKey: "done", Observation: gw.GenerationObservation{State: gw.GenerationCompleted, TaskID: "task-" + call.RequestID, Outputs: a.outputs}, Usage: map[string]int64{"count": 2}}, nil
 }
 func (a *adapter) Observe(ctx context.Context, c gw.GenerationCall) (gw.GenerationEvent, error) {
 	return gw.GenerationEvent{}, errors.New("unexpected observe")
@@ -476,4 +476,58 @@ func TestGenerationReviewSaturatedProviderParksAfterBound(t *testing.T) {
 		t.Fatal("parked undispatched generation retained permit", hold, f.a.calls.Load())
 	}
 
+}
+
+func TestMainVersionPinnedSurvivesNewGenerationAndCanFollowLatest(t *testing.T) {
+	f := setup(t, gw.GenerationText)
+	f.admit(t)
+	for range 4 {
+		f.step(t)
+	}
+	readVersions := func() creativecanvas.VersionPage {
+		v, err := creativecanvas.ListNodeVersions(t.Context(), f.scope, f.target.CanvasID, f.node)
+		must(t, err)
+		return v
+	}
+	versions := readVersions()
+	if versions.SelectedVersionID == nil || *versions.SelectedVersionID != versions.Items[0].ID {
+		t.Fatal("automatic main did not select last output")
+	}
+	selectMain := func(id string, follow bool) error {
+		canvas, err := creativecanvas.GetCanvas(t.Context(), f.scope, f.target.CanvasID)
+		if err != nil {
+			return err
+		}
+		_, err = creativecanvas.ApplyCommands(t.Context(), f.scope, cmd(creativecanvas.BatchInput{CanvasID: canvas.ID, ExpectedTopologyRevision: canvas.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(canvas), Actions: []creativecanvas.Action{{Type: "select_version", NodeID: f.node, VersionID: id, FollowLatest: follow}}}))
+		return err
+	}
+	pinned := versions.Items[len(versions.Items)-1].ID
+	must(t, selectMain(pinned, false))
+	runAgain := func() {
+		c, err := creativecanvas.GetCanvas(t.Context(), f.scope, f.target.CanvasID)
+		must(t, err)
+		for _, n := range c.Nodes {
+			if n.ID == f.node {
+				f.command = cmd(creativecanvas.RequestExecutionInput{CanvasID: c.ID, NodeID: n.ID, ExpectedDataRevision: n.DataRevision, DraftRevision: n.Prompt.Revision, ActionKey: creativecanvas.GenerationAction, ReadSet: creativecanvas.ReadSetFor(c)})
+			}
+		}
+		f.admit(t)
+		for range 4 {
+			f.step(t)
+		}
+	}
+	runAgain()
+	versions = readVersions()
+	if len(versions.Items) != 4 || versions.SelectedVersionID == nil || *versions.SelectedVersionID != pinned {
+		t.Fatalf("new generation overwrote pinned main: %+v", versions)
+	}
+	if err := selectMain(pinned, true); !errors.Is(err, creativecanvas.ErrVersionConflict) {
+		t.Fatalf("stale follow target: %v", err)
+	}
+	must(t, selectMain(versions.Items[0].ID, true))
+	runAgain()
+	versions = readVersions()
+	if len(versions.Items) != 6 || versions.SelectedVersionID == nil || *versions.SelectedVersionID != versions.Items[0].ID {
+		t.Fatal("follow latest did not advance")
+	}
 }

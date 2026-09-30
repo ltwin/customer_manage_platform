@@ -43,3 +43,34 @@ export const emptyOrganization = (): Organization => ({
   tagIDs: [],
   newTags: [],
 })
+
+export const kindLabel: Record<string, string> = {
+  text: '文字',
+  link: '链接',
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+}
+// 宽高比来自已核实的原图尺寸；文字与音频按固定比例排版。
+export function tileRatio(a: api.Asset): number {
+  const m = a.content?.media?.find((x) => x.role === 'original') ?? a.content?.media?.[0]
+  if ((a.kind === 'image' || a.kind === 'video') && m?.width && m.height)
+    return m.height / m.width
+  return a.kind === 'audio' ? 0.5 : 0.62
+}
+export function metaLine(a: api.Asset, groups: api.Group[], tags: api.Tag[]) {
+  const m = a.content?.media?.find((x) => x.role === 'original')
+  const size = m?.width && m.height ? `${m.width}×${m.height}` : kindLabel[a.kind]
+  const inGroups = a.group_ids
+    .map((id) => groups.find((g) => g.id === id)?.name)
+    .filter(Boolean)
+  const tagNames = a.tag_ids
+    .map((id) => tags.find((t) => t.id === id)?.name)
+    .filter(Boolean)
+  return [size, inGroups.join('、') || '未归类', tagNames.join(' · ')]
+    .filter(Boolean)
+    .join('　')
+}
+
+// 分组平铺浏览每组预览的格数。
+export const PREVIEW = 6

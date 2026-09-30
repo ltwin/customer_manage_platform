@@ -19,6 +19,8 @@ import (
 var (
 	ErrNotFound        = errors.New("creative asset not found")
 	ErrVersionConflict = errors.New("creative asset version conflict")
+	ErrGroupNameTaken  = errors.New("creative group name taken at this level")
+	ErrGroupDepth      = errors.New("creative group nesting too deep")
 )
 
 type CreateAssetInput struct {
@@ -35,6 +37,7 @@ type AssetResult struct {
 	Revision          creativeops.Revision `json:"revision"`
 	ContentRevisionID string               `json:"content_revision_id"`
 	LibraryRevision   creativeops.Revision `json:"library_revision"`
+	Reused            bool                 `json:"reused,omitempty"`
 }
 type AssetReference struct {
 	ID                string               `json:"asset_id"`
@@ -201,6 +204,52 @@ func CreateFromRevisionInTx(ctx context.Context, tx store.TxAccountScope, r crea
 		return AssetResult{}, err
 	}
 	return AssetResult{TagMapping: mapping, ID: id, Revision: 1, ContentRevisionID: r.ID, LibraryRevision: revision + 1}, nil
+}
+
+// SaveRevisionInTx files a canvas revision into the library. A live asset
+// already pinned to the same revision only gains the chosen groups and tags,
+// so saving the same picture twice never duplicates it.
+func SaveRevisionInTx(ctx context.Context, tx store.TxAccountScope, r creativecontent.Revision, t ImportTarget) (AssetResult, error) {
+	if err := ValidateImportTarget(t); err != nil {
+		return AssetResult{}, err
+	}
+	revision, err := lockLibrary(ctx, tx)
+	if err != nil {
+		return AssetResult{}, err
+	}
+	a, err := scanAsset(tx.QueryRowForUpdate(ctx, "creative_assets", assetColumns, "content_revision_id=$2 AND deleted_at IS NULL", r.ID))
+	if errors.Is(err, ErrNotFound) {
+		return CreateFromRevisionInTx(ctx, tx, r, t)
+	}
+	if err != nil {
+		return AssetResult{}, err
+	}
+	before, err := relationCount(ctx, tx, a.ID)
+	if err != nil {
+		return AssetResult{}, err
+	}
+	mapping, err := organizeExisting(ctx, tx, a.ID, t.GroupIDs, t.TagIDs, t.NewTags)
+	if err != nil {
+		return AssetResult{}, err
+	}
+	after, err := relationCount(ctx, tx, a.ID)
+	if err != nil {
+		return AssetResult{}, err
+	}
+	if after != before {
+		if _, err := tx.Update(ctx, "creative_assets", "revision=revision+1,updated_at=clock_timestamp()", "id=$2", a.ID); err != nil {
+			return AssetResult{}, err
+		}
+		a.Revision++
+		if _, err := tx.Update(ctx, "creative_asset_search", "asset_revision=$2", "asset_id=$3", a.Revision, a.ID); err != nil {
+			return AssetResult{}, err
+		}
+		if _, err := tx.Update(ctx, "creative_library_settings", "library_revision=library_revision+1", ""); err != nil {
+			return AssetResult{}, err
+		}
+		revision++
+	}
+	return AssetResult{TagMapping: mapping, ID: a.ID, Revision: a.Revision, ContentRevisionID: r.ID, LibraryRevision: revision, Reused: true}, nil
 }
 
 // ResolveAssetsInTx locks the library and selected asset before canvas locks.

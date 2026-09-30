@@ -149,9 +149,9 @@ func publishExecution(ctx context.Context, scope store.AccountScope, target Exec
 		if err = rows.Err(); err != nil {
 			return creativeops.Outcome{}, err
 		}
-		var firstVersion string
+		var lastVersion string
 		for _, output := range outputs {
-			version, err := makeVersion(ctx, tx, n.ID, output.ID, "generation", creativegraph.Canonical(map[string]any{"prompt": execution.Prompt, "executor_version": execution.ExecutorVersion}), refs)
+			version, err := makeVersion(ctx, tx, n.ID, output.ID, "generation", creativegraph.Canonical(map[string]any{"prompt": execution.Prompt, "executor_version": execution.ExecutorVersion, "reference_sources": execution.ReferenceSources}), refs)
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
@@ -160,9 +160,7 @@ func publishExecution(ctx context.Context, scope store.AccountScope, target Exec
 			version.Ordinal = &ordinal
 			after.Versions[version.ID] = version
 			result.RegisteredVersionIDs = append(result.RegisteredVersionIDs, version.ID)
-			if firstVersion == "" {
-				firstVersion = version.ID
-			}
+			lastVersion = version.ID
 		}
 		applied := n.DataRevision == execution.TargetData && equalValue(creativegraph.Canonical(n.SelectedVersionID), creativegraph.Canonical(execution.Selected))
 		for _, r := range execution.ReadSet {
@@ -175,11 +173,15 @@ func publishExecution(ctx context.Context, scope store.AccountScope, target Exec
 			}
 		}
 		if applied {
-			n.ContentID = &outputs[0].ContentID
-			n.ContentRevisionID = &outputs[0].ID
-			n.SelectedVersionID = &firstVersion
-			fitMediaSize(&n, outputs[0])
-			after.Nodes[n.ID] = n
+			if !mainVersionPinned(n) {
+				n.Config = mainVersionConfig(n.Config, false)
+				latest := outputs[len(outputs)-1]
+				n.ContentID = &latest.ContentID
+				n.ContentRevisionID = &latest.ID
+				n.SelectedVersionID = &lastVersion
+				fitMediaSize(&n, latest)
+				after.Nodes[n.ID] = n
+			}
 			result.ApplyState = "applied"
 		} else {
 			result.ApplyState = "conflicted"
