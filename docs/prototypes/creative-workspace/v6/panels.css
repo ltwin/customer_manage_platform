@@ -30,22 +30,6 @@
 .thread-btn { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 8px; margin-left: -8px; border-radius: 7px; font-weight: 600; font-size: 14px; }
 .thread-btn:hover { background: var(--s3); }
 .thread-btn .i { width: 13px; height: 13px; color: var(--fg-3); }
-.messages { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; user-select: text; }
-.msg-user {
-  align-self: flex-end; max-width: 86%; padding: 8px 12px; border-radius: 14px 14px 4px 14px;
-  background: var(--s3); line-height: 1.6;
-}
-.msg-ai { line-height: 1.75; color: var(--fg); }
-.msg-ai p { margin: 0 0 8px; }
-.msg-ai ol { margin: 0 0 8px; padding-left: 18px; color: var(--fg-2); }
-.msg-ai li { margin-bottom: 4px; }
-.msg-ai li b { color: var(--fg); font-weight: 500; }
-.msg-actions { display: flex; gap: 6px; margin-top: 4px; }
-.msg-actions .btn { height: 28px; font-size: 12px; }
-.thinking { display: inline-flex; gap: 4px; padding: 6px 0; }
-.thinking span { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-3); animation: blink 1s infinite; }
-.thinking span:nth-child(2) { animation-delay: 0.15s; }
-.thinking span:nth-child(3) { animation-delay: 0.3s; }
 .empty-agent { margin: auto 0; padding: 0 4px; }
 .empty-agent h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
 .empty-agent p { margin: 0 0 16px; color: var(--fg-3); }
@@ -56,13 +40,11 @@
 }
 .suggest button:hover { color: var(--fg); background: var(--s3); }
 .suggest .i { color: var(--fg-3); }
-.agent-box { margin: 0 12px 12px; border-radius: var(--r); background: var(--s1); box-shadow: inset 0 0 0 1px var(--line-2); }
+.agent-box { border-radius: var(--r); background: var(--s1); box-shadow: inset 0 0 0 1px var(--line-2); }
 .agent-box:focus-within { box-shadow: inset 0 0 0 1px var(--line-3); }
 .agent-box textarea { display: block; width: 100%; min-height: 56px; max-height: 160px; padding: 10px 12px 2px; border: 0; outline: none; resize: none; background: none; font-size: 13px; line-height: 1.6; user-select: text; }
 .agent-box textarea::placeholder { color: var(--fg-3); }
 .agent-box .composer-foot { padding: 4px 6px 6px; }
-.ctx-chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; margin: 8px 0 0 8px; padding: 0 8px; border-radius: 6px; background: var(--s3); font-size: 11px; color: var(--fg-2); }
-.ctx-chip .i { width: 12px; height: 12px; }
 
 .modal-back { position: fixed; inset: 0; z-index: 85; display: grid; place-items: center; background: rgba(0, 0, 0, 0.6); animation: rise 0.12s; }
 .modal { width: 400px; padding: 20px; border-radius: var(--r-lg); background: var(--s2); box-shadow: var(--shadow); }

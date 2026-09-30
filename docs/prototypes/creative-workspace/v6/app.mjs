@@ -1,7 +1,8 @@
-// 入口：外框控件、资产抽屉、创作助手、全局快捷键。
+// 入口：外框控件、资产抽屉、全局快捷键；创作助手在 agent.mjs。
 import { state, ui, byId, undo, redo, canUndo, canRedo, reset, save, checkpoint, descendants, roots, fitGroups, isGroup } from './store.mjs'
 import { on, emit, render, commit, select, applyView, restoreView, fitView, zoomBy, addMenu, pickFiles, duplicate, remove, toWorld, groupSelection, ungroupSelection } from './canvas.mjs'
 import { initComposer } from './composer.mjs'
+import { initAgent } from './agent.mjs'
 import * as library from './library.mjs'
 import { ic, esc, hydrateIcons, openMenu, openPopover, toast, confirmModal } from './ui.mjs'
 
@@ -86,102 +87,6 @@ on('assets', () => library.open())
 on('assets-pick', (id) => library.open({ pickFor: id }))
 on('upload', (id) => pickFiles(undefined, id))
 on('fit', (ids) => fitView(ids))
-
-// ---------- 创作助手 ----------
-const agent = $('agent')
-const thread = []
-let consented = false
-function paintAgent() {
-  const sel = [...ui.sel].map(byId).filter(Boolean)
-  agent.innerHTML = `<div class="panel-head">
-      <button class="thread-btn" data-g="threads">${thread.length ? '海边写真策划' : '新对话'}${ic('chevron-down')}</button>
-      <span class="grow"></span>
-      <button class="icon-btn" data-g="new" aria-label="新对话">${ic('plus')}</button>
-      <button class="icon-btn" data-g="close" aria-label="收起助手">${ic('panel-right-close')}</button></div>
-    <div class="messages">${thread.length ? thread.map((m) => m.role === 'user'
-      ? `<div class="msg-user">${esc(m.text)}</div>`
-      : m.thinking ? '<div class="thinking"><span></span><span></span><span></span></div>' : `<div class="msg-ai">${m.html}</div>`).join('')
-      : `<div class="empty-agent"><h3>想拍点什么？</h3><p>我可以读画布上的节点，帮你拆分镜、写提示词、整理拍摄清单。</p>
-        <div class="suggest">
-          <button data-s="根据拍摄概念拆 4 个分镜">${ic('clapperboard')}根据拍摄概念拆 4 个分镜</button>
-          <button data-s="给镜头 02 写一段提示词">${ic('pencil')}给镜头 02 写一段提示词</button>
-          <button data-s="整理一份现场拍摄清单">${ic('file-check')}整理一份现场拍摄清单</button>
-        </div></div>`}</div>
-    <div class="agent-box">
-      ${sel.length ? `<span class="ctx-chip">${ic('scan')}${sel.length === 1 ? esc(sel[0].title) : `${sel.length} 个节点`}</span>` : ''}
-      <textarea rows="2" aria-label="向助手提问" placeholder="描述任务，@ 引用画布节点"></textarea>
-      <div class="composer-foot">
-        <button class="chip" data-g="model">${ic('sparkles')}DeepSeek V4</button>
-        <button class="chip" data-g="skill">${ic('lightbulb')}拍摄策划</button>
-        <span class="grow"></span>
-        <button class="send" data-g="send" aria-label="发送" disabled>${ic('arrow-up')}</button>
-      </div></div>`
-  const m = agent.querySelector('.messages')
-  m.scrollTop = m.scrollHeight
-}
-function toggleAgent(open = agent.hidden) {
-  agent.hidden = !open
-  $('agent-toggle').setAttribute('aria-pressed', String(open))
-  if (open) { paintAgent(); agent.querySelector('textarea').focus() }
-}
-$('agent-toggle').querySelector('.i').innerHTML = ic('sparkles')
-$('agent-toggle').addEventListener('click', () => toggleAgent())
-on('select', () => { if (!agent.hidden && document.activeElement?.closest('#agent') == null) paintAgent() })
-
-async function ask(text) {
-  if (!consented) {
-    consented = await confirmModal({ title: '发送给外部模型？', body: '所选节点的文字和图片会发送给 DeepSeek 处理。本项目只需确认一次，可在设置中撤回。', ok: '同意并发送' })
-    if (!consented) return
-  }
-  thread.push({ role: 'user', text }, { role: 'ai', thinking: true })
-  paintAgent()
-  await new Promise((r) => setTimeout(r, 900))
-  thread[thread.length - 1] = { role: 'ai', html: `<p>按「九月，向海而行」的情绪，建议 4 个镜头，从远到近：</p>
-    <ol><li><b>远景 · 海平线</b>：人物占画面 1/6，大面积天空留白。</li>
-    <li><b>中景 · 逆光长裙</b>：太阳压在肩线，裙摆被风带起。</li>
-    <li><b>近景 · 回头</b>：发丝轮廓光，焦点在眼睛。</li>
-    <li><b>特写 · 手与裙摆</b>：浅景深，暖调高光溢出。</li></ol>
-    <div class="msg-actions"><button class="btn btn-primary" data-g="apply">${ic('plus')}放到画布</button><button class="btn" data-g="copy">复制</button></div>` }
-  paintAgent()
-}
-agent.addEventListener('input', (e) => {
-  if (e.target.matches('textarea')) agent.querySelector('[data-g="send"]').disabled = !e.target.value.trim()
-})
-agent.addEventListener('keydown', (e) => {
-  e.stopPropagation()
-  if (e.target.matches('textarea') && e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.target.value.trim()) {
-    e.preventDefault()
-    ask(e.target.value.trim())
-  }
-})
-agent.addEventListener('click', (e) => {
-  const s = e.target.closest('[data-s]')?.dataset.s
-  if (s) return ask(s)
-  const g = e.target.closest('[data-g]')
-  if (!g) return
-  const act = g.dataset.g
-  if (act === 'close') return toggleAgent(false)
-  if (act === 'send') return ask(agent.querySelector('textarea').value.trim())
-  if (act === 'new') { thread.length = 0; return paintAgent() }
-  if (act === 'copy') return toast('已复制')
-  if (act === 'threads') return openMenu([{ section: '最近对话' }, { label: '海边写真策划', icon: 'clock', checked: thread.length > 0 }, { label: '婚纱夜景提示词', icon: 'clock' }, { label: '产品静物布光', icon: 'clock' }], { rect: g.getBoundingClientRect() }, g)
-  if (act === 'model') return openMenu([{ label: 'DeepSeek V4', checked: true }, { label: 'Claude Sonnet 5' }, { label: 'Qwen 3.5' }], { rect: g.getBoundingClientRect() }, g)
-  if (act === 'skill') return openMenu([{ section: 'Skill' }, { label: '拍摄策划', sub: '分镜、清单、时间线', checked: true }, { label: '提示词润色', sub: '把描述改写为生成提示词' }, { label: '不使用 Skill' }], { rect: g.getBoundingClientRect() }, g)
-  if (act === 'apply') {
-    checkpoint()
-    const base = Math.max(...state.nodes.map((n) => n.y + n.h)) + 140
-    const titles = ['远景 · 海平线', '中景 · 逆光长裙', '近景 · 回头', '特写 · 手与裙摆']
-    const ids = titles.map((t, i) => {
-      const n = { id: `a-${Date.now()}-${i}`, type: 'text', x: i * 340, y: base, w: 300, h: 140, title: `镜头 ${String(i + 1).padStart(2, '0')}`, text: `<h4>${t}</h4>` }
-      state.nodes.push(n)
-      return n.id
-    })
-    commit()
-    select(ids)
-    fitView(new Set(ids))
-    toast('已添加 4 个节点')
-  }
-})
 
 // ---------- 缩放条 ----------
 const zoombar = $('zoombar')
@@ -306,4 +211,5 @@ document.title = `${state.name} · 创意空间`
 fitGroups()
 render()
 initComposer()
+initAgent()
 if (!restoreView()) fitView()
