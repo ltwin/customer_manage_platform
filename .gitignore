@@ -24,3 +24,5 @@ var/
 # AI Agents
 .reasonix/
 .workflow/
+.agents/
+.cursor/
