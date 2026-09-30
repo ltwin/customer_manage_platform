@@ -213,7 +213,7 @@ func (s *Service) executeRecordedRetry(ctx context.Context, scope store.AccountS
 		if state != "succeeded" {
 			return ErrRecoveryEvidence
 		}
-		exists, err := tx.Exists(ctx, "creative_agent_messages", "run_id=$2 AND source_step_id=$3", held.RunID, id)
+		exists, err := tx.Exists(ctx, "creative_agent_messages", "run_id=$2 AND source_step_id=$3 AND role='assistant' AND status='complete' AND NOT (body ? 'tool_calls')", held.RunID, id)
 		if err != nil {
 			return err
 		}
@@ -225,7 +225,11 @@ func (s *Service) executeRecordedRetry(ctx context.Context, scope store.AccountS
 		if len(text) > s.limits.MessageBodyBytes {
 			text = "已恢复原步骤的资源读取；完整结果保留在运行记录中。"
 		}
-		_, err = s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{Role: "assistant", Status: "complete", RunID: held.RunID, SourceStepID: id, Body: Body{Blocks: []Block{{Type: "text", Text: text}}}})
+		message, err := s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{Role: "assistant", Status: "complete", RunID: held.RunID, SourceStepID: id, Body: Body{Blocks: []Block{{Type: "text", Text: text}}}})
+		if err != nil {
+			return err
+		}
+		_, err = appendRunEventInTx(ctx, tx, held.RunID, "message.completed", map[string]string{"message_id": message.ID, "step_id": id})
 		delivered = err == nil
 		return err
 	})

@@ -283,6 +283,7 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			// The second read of every named revision, inside the transaction
 			// that creates the run. The first one happened before this function
 			// and could have been overtaken by a withdrawal; this one cannot.
+			imageCount := 0
 			for _, ref := range resolved.ContentRefs {
 				// Being able to display a revision and having authorised it to
 				// leave the account are two different permissions, and the run
@@ -295,8 +296,21 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				if !approved {
 					return creativeops.Outcome{}, ErrEgressRequired
 				}
-				if _, err := creativecontent.RequireUsable(ctx, tx, ref.RevisionID, "display"); err != nil {
+				rev, err := creativecontent.RequireUsable(ctx, tx, ref.RevisionID, "display")
+				if err != nil {
 					return creativeops.Outcome{}, translateContent(err)
+				}
+				if rev.Kind == "image" {
+					imageCount++
+					if imageCount > s.limits.ImagePreviewCount {
+						return creativeops.Outcome{}, ErrLimit
+					}
+					if !model.Capability.ImageInput || s.images == nil {
+						return creativeops.Outcome{}, ErrModelCapability
+					}
+					if !consentHas(consent, "image_preview") {
+						return creativeops.Outcome{}, ErrEgressRequired
+					}
 				}
 			}
 

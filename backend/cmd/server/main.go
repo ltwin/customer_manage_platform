@@ -234,6 +234,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return newStartupFailure("creative-agent-init", "skill-directory", "model-catalog", err)
 	}
 	creativeAgent.SetLogger(logger)
+	creativeAgent.SetImageReader(creativeMedia)
 	// 真实模型须显式注册准备器、外发守卫和Worker；空目录保留草稿与历史入口。
 	creativeGeneration, err := creativegeneration.NewProduct(nil, nil)
 	if err != nil {

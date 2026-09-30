@@ -18,7 +18,7 @@ import (
 const (
 	checkpointRuntime    = "eino/v0.9.19"
 	checkpointSerializer = "adk-gob/creative-1"
-	checkpointRegistry   = "creative-runtime/2"
+	checkpointRegistry   = "creative-runtime/3"
 	checkpointMaxBytes   = 1 << 20
 )
 

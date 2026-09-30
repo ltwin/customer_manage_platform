@@ -457,3 +457,102 @@
     max-width: 125px;
   }
 }
+
+.cc-agent-box .cc-prompt-editor {
+  min-height: 88px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 12px;
+  font-size: 13px;
+  outline: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cc-agent-add-material {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 12px 8px;
+  padding: 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.cc-agent-hint {
+  margin: 8px 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.cc-agent-message pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  max-height: 240px;
+  overflow: auto;
+}
+.cc-agent-reference {
+  margin: 8px 0;
+  font-size: 12px;
+}
+.cc-agent-reference code {
+  display: block;
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.cc-agent-reference .cc-media {
+  height: 180px;
+  margin-top: 8px;
+}
+.cc-agent-material-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: 75vh;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--s2);
+  color: var(--fg);
+  padding: 20px;
+}
+.cc-agent-material-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.cc-agent-material-dialog header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.cc-agent-material-dialog input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-agent-material-dialog p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.cc-agent-material-dialog button {
+  background: var(--s3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.cc-agent-material-list {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.cc-agent-material-list button {
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.cc-agent-material-list span {
+  display: inline-block;
+  margin-right: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}

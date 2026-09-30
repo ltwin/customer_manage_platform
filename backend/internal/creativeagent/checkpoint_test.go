@@ -138,7 +138,7 @@ func TestB3CheckpointResumesCommittedToolsAndModelResults(t *testing.T) {
 			if n := f.count("creative_agent_context_items", "run_id=$1", run.ID); n != 2 {
 				t.Fatalf("tool repeated: %d", n)
 			}
-			if n := f.count("creative_agent_messages", "run_id=$1 AND role='assistant'", run.ID); n != 1 {
+			if n := f.count("creative_agent_messages", "run_id=$1 AND role='assistant' AND NOT (body ? 'tool_calls')", run.ID); n != 1 {
 				t.Fatalf("answer repeated: %d", n)
 			}
 			if err = f.service.finishRun(t.Context(), f.alice, held, out, nil); err != nil {
@@ -488,7 +488,7 @@ func TestB3OldConsumerCannotStealResultAfterTakeover(t *testing.T) {
 	f := setup(t)
 	run, held, _ := pauseCheckpointRun(t, f, false)
 	if _, err := f.db.Exec(`CREATE FUNCTION fail_consume() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'rollback consume' USING ERRCODE='40001'; END $$;
- CREATE TRIGGER fail_consume BEFORE INSERT ON creative_agent_messages FOR EACH ROW EXECUTE FUNCTION fail_consume()`); err != nil {
+ CREATE TRIGGER fail_consume BEFORE INSERT ON creative_agent_messages FOR EACH ROW WHEN (NEW.role='assistant' AND NOT (NEW.body ? 'tool_calls')) EXECUTE FUNCTION fail_consume()`); err != nil {
 		t.Fatal(err)
 	}
 	old, err := f.service.newRunExecution(t.Context(), f.alice, held)

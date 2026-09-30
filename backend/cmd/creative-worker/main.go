@@ -78,6 +78,7 @@ func run() error {
 		return err
 	}
 	agent.SetLogger(slog.Default())
+	agent.SetImageReader(media)
 	// Media stages and agent runs are the registered handlers; generation stays
 	// absent until FND-13.
 	runtime, err := db.NewJobRuntime(append(media.Handlers(), agent.Handlers()...), slog.Default())

@@ -994,14 +994,17 @@ func (e CreativeEgressConsentPurpose) Valid() bool {
 
 // Defines values for CreativeEgressConsentGrantPayloadDataClasses.
 const (
-	CreativeEgressConsentGrantPayloadDataClassesImagePreview  CreativeEgressConsentGrantPayloadDataClasses = "image_preview"
-	CreativeEgressConsentGrantPayloadDataClassesMediaMetadata CreativeEgressConsentGrantPayloadDataClasses = "media_metadata"
-	CreativeEgressConsentGrantPayloadDataClassesText          CreativeEgressConsentGrantPayloadDataClasses = "text"
+	CreativeEgressConsentGrantPayloadDataClassesCanvasMetadata CreativeEgressConsentGrantPayloadDataClasses = "canvas_metadata"
+	CreativeEgressConsentGrantPayloadDataClassesImagePreview   CreativeEgressConsentGrantPayloadDataClasses = "image_preview"
+	CreativeEgressConsentGrantPayloadDataClassesMediaMetadata  CreativeEgressConsentGrantPayloadDataClasses = "media_metadata"
+	CreativeEgressConsentGrantPayloadDataClassesText           CreativeEgressConsentGrantPayloadDataClasses = "text"
 )
 
 // Valid indicates whether the value is a known member of the CreativeEgressConsentGrantPayloadDataClasses enum.
 func (e CreativeEgressConsentGrantPayloadDataClasses) Valid() bool {
 	switch e {
+	case CreativeEgressConsentGrantPayloadDataClassesCanvasMetadata:
+		return true
 	case CreativeEgressConsentGrantPayloadDataClassesImagePreview:
 		return true
 	case CreativeEgressConsentGrantPayloadDataClassesMediaMetadata:
@@ -1048,14 +1051,17 @@ func (e CreativeEgressConsentGrantPayloadPurpose) Valid() bool {
 
 // Defines values for CreativeEgressConsentScopeDataClasses.
 const (
-	CreativeEgressConsentScopeDataClassesImagePreview  CreativeEgressConsentScopeDataClasses = "image_preview"
-	CreativeEgressConsentScopeDataClassesMediaMetadata CreativeEgressConsentScopeDataClasses = "media_metadata"
-	CreativeEgressConsentScopeDataClassesText          CreativeEgressConsentScopeDataClasses = "text"
+	CreativeEgressConsentScopeDataClassesCanvasMetadata CreativeEgressConsentScopeDataClasses = "canvas_metadata"
+	CreativeEgressConsentScopeDataClassesImagePreview   CreativeEgressConsentScopeDataClasses = "image_preview"
+	CreativeEgressConsentScopeDataClassesMediaMetadata  CreativeEgressConsentScopeDataClasses = "media_metadata"
+	CreativeEgressConsentScopeDataClassesText           CreativeEgressConsentScopeDataClasses = "text"
 )
 
 // Valid indicates whether the value is a known member of the CreativeEgressConsentScopeDataClasses enum.
 func (e CreativeEgressConsentScopeDataClasses) Valid() bool {
 	switch e {
+	case CreativeEgressConsentScopeDataClassesCanvasMetadata:
+		return true
 	case CreativeEgressConsentScopeDataClassesImagePreview:
 		return true
 	case CreativeEgressConsentScopeDataClassesMediaMetadata:
@@ -3699,7 +3705,16 @@ type CreativeAgentMessageBlockType string
 
 // CreativeAgentMessageBody defines model for CreativeAgentMessageBody.
 type CreativeAgentMessageBody struct {
-	Blocks []CreativeAgentMessageBlock `json:"blocks"`
+	Blocks     []CreativeAgentMessageBlock `json:"blocks"`
+	ToolCallId *string                     `json:"tool_call_id,omitempty"`
+
+	// ToolCalls 保留模型工具调用，与 tool 消息的 tool_call_id 配对。
+	ToolCalls *[]struct {
+		Arguments string `json:"arguments"`
+		Id        string `json:"id"`
+		Name      string `json:"name"`
+	} `json:"tool_calls,omitempty"`
+	ToolName *string `json:"tool_name,omitempty"`
 }
 
 // CreativeAgentMessagePage defines model for CreativeAgentMessagePage.

@@ -232,65 +232,138 @@ func TestCExpiredLeaseRequeuesCompatibleCheckpoint(t *testing.T) {
 }
 
 func TestCTerminalRetryExecutesOnlyRecordedResourceRead(t *testing.T) {
-	f := setup(t)
-	f.queue()
-	req := skillRequest("platform", "retry-resource", "恢复测试")
-	req.Activate = true
-	req.Manifest.ToolAllowlist = []string{"read_skill_resource@1", "read_run_result@1"}
-	version := f.runImport(f.platform, req)
-	c := f.conversation(f.alice, f.canvasID)
-	consent := f.consent(f.alice, c.ID)
-	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
-		return scriptedResult(r, llmgateway.ToolCall{ID: "read", Name: readSkillTool, Arguments: resourceArgumentsFromRequest(t, r)}), nil
-	}
-	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "读取参考"}, InstructionSegment{Type: "skill_ref", SkillID: version.SkillID, SkillVersionID: version.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e, err := f.service.newRunExecution(t.Context(), f.alice, held)
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.config.Handlers = append([]adk.ChatModelAgentMiddleware{&checkpointPause{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}}}, e.config.Handlers...)
-	if _, err = e.run(t.Context()); !errors.Is(err, errRunInterrupted) {
-		t.Fatalf("pause %v", err)
-	}
-	if err = f.service.finishRun(t.Context(), f.alice, held, e.outcome, errRunInterrupted); err != nil {
-		t.Fatal(err)
-	}
-	var step string
-	if err = f.db.QueryRow(`SELECT id FROM creative_agent_steps WHERE run_id=$1 AND kind='tool'`, run.ID).Scan(&step); err != nil {
-		t.Fatal(err)
-	}
-	input := map[string]any{"run_id": run.ID, "step_ids": []string{step}, "egress_consent_id": consent.ID}
-	receipt, err := f.service.RetryRun(t.Context(), f.alice, command(t, input))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var retry Run
-	if err = json.Unmarshal(receipt.Outcome.Response, &retry); err != nil {
-		t.Fatal(err)
-	}
-	if retry.ID == run.ID || retry.SourceRunID != run.ID || retry.TriggerMessageID == run.TriggerMessageID {
-		t.Fatalf("retry=%+v", retry)
-	}
-	if err = f.work(f.alice, retry.ID); err != nil {
-		t.Fatal(err)
-	}
-	got, err := f.service.ReadRun(t.Context(), f.alice, retry.ID)
-	if err != nil || got.State != RunSucceeded || f.vendor.calls() != 1 {
-		t.Fatalf("retry=%+v err=%v calls=%d", got, err, f.vendor.calls())
-	}
-	if _, err = f.service.RetryRun(t.Context(), f.alice, command(t, input)); !errors.Is(err, ErrRecoveryEvidence) {
-		t.Fatalf("repeated completed recovery: %v", err)
-	}
-	assertRunReleased(t, f, retry.ID)
-}
+	for _, interrupted := range []bool{false, true} {
+		name := "normal"
+		if interrupted {
+			name = "interrupted delivery"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := setup(t)
+			f.queue()
+			req := skillRequest("platform", "retry-resource", "恢复测试")
+			req.Activate = true
+			req.Manifest.ToolAllowlist = []string{"read_skill_resource@1", "read_run_result@1"}
+			version := f.runImport(f.platform, req)
+			c := f.conversation(f.alice, f.canvasID)
+			consent := f.consent(f.alice, c.ID)
+			f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
+				return scriptedResult(r, llmgateway.ToolCall{ID: "read", Name: readSkillTool, Arguments: resourceArgumentsFromRequest(t, r)}), nil
+			}
+			run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "读取参考"}, InstructionSegment{Type: "skill_ref", SkillID: version.SkillID, SkillVersionID: version.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e, err := f.service.newRunExecution(t.Context(), f.alice, held)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.config.Handlers = append([]adk.ChatModelAgentMiddleware{&checkpointPause{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}}}, e.config.Handlers...)
+			if _, err = e.run(t.Context()); !errors.Is(err, errRunInterrupted) {
+				t.Fatalf("pause %v", err)
+			}
+			if err = f.service.finishRun(t.Context(), f.alice, held, e.outcome, errRunInterrupted); err != nil {
+				t.Fatal(err)
+			}
+			var step string
+			if err = f.db.QueryRow(`SELECT id FROM creative_agent_steps WHERE run_id=$1 AND kind='tool'`, run.ID).Scan(&step); err != nil {
+				t.Fatal(err)
+			}
+			input := map[string]any{"run_id": run.ID, "step_ids": []string{step}, "egress_consent_id": consent.ID}
+			receipt, err := f.service.RetryRun(t.Context(), f.alice, command(t, input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var retry Run
+			if err = json.Unmarshal(receipt.Outcome.Response, &retry); err != nil {
+				t.Fatal(err)
+			}
+			if retry.ID == run.ID || retry.SourceRunID != run.ID || retry.TriggerMessageID == run.TriggerMessageID {
+				t.Fatalf("retry=%+v", retry)
+			}
+			if interrupted {
+				retryClaim, err := f.service.claimRun(t.Context(), f.alice, retry.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.db.Exec(`CREATE FUNCTION fail_recovery_delivery() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'interrupt recovery delivery' USING ERRCODE='40001'; END $$;
+CREATE TRIGGER fail_recovery_delivery BEFORE INSERT ON creative_agent_messages FOR EACH ROW WHEN (NEW.role='assistant') EXECUTE FUNCTION fail_recovery_delivery()`); err != nil {
+					t.Fatal(err)
+				}
+				if _, err = f.service.executeRecordedRetry(t.Context(), f.alice, retryClaim); err == nil {
+					t.Fatal("expected interrupted delivery")
+				}
+				if n := f.count("creative_agent_steps", "run_id=$1 AND kind='tool' AND state='succeeded'", retry.ID); n != 1 {
+					t.Fatalf("committed recovery steps=%d", n)
+				}
+				if _, err = f.db.Exec(`DROP TRIGGER fail_recovery_delivery ON creative_agent_messages`); err != nil {
+					t.Fatal(err)
+				}
+				for i := 0; i < 2; i++ {
+					out, err := f.service.executeRecordedRetry(t.Context(), f.alice, retryClaim)
+					if err != nil || !out.Delivered {
+						t.Fatalf("resumed delivery=%+v err=%v", out, err)
+					}
+				}
+				if err = f.service.finishRun(t.Context(), f.alice, retryClaim, turnOutcome{}, nil); err != nil {
+					t.Fatal(err)
+				}
+			} else if err = f.work(f.alice, retry.ID); err != nil {
+				t.Fatal(err)
+			}
+			got, err := f.service.ReadRun(t.Context(), f.alice, retry.ID)
+			if err != nil || got.State != RunSucceeded || f.vendor.calls() != 1 {
+				t.Fatalf("retry=%+v err=%v calls=%d", got, err, f.vendor.calls())
+			}
+			if _, err = f.service.RetryRun(t.Context(), f.alice, command(t, input)); !errors.Is(err, ErrRecoveryEvidence) {
+				t.Fatalf("repeated completed recovery: %v", err)
+			}
+			if n := f.count("creative_agent_messages", "run_id=$1 AND role='assistant'", retry.ID); n != 1 {
+				t.Fatalf("recovery assistant deliveries=%d, want 1", n)
+			}
+			if n := f.count("creative_agent_messages", "run_id=$1 AND role='tool'", retry.ID); n != 0 {
+				t.Fatalf("recovery without model call produced %d orphan tool messages", n)
+			}
+			if err = f.work(f.alice, retry.ID); err != nil {
+				t.Fatal(err)
+			}
+			if n := f.count("creative_agent_messages", "run_id=$1 AND role='assistant'", retry.ID); n != 1 {
+				t.Fatalf("recovery replay duplicated delivery: %d", n)
+			}
+			if n := f.count("creative_run_events", "run_id=$1 AND event_type='message.completed'", retry.ID); n != 1 {
+				t.Fatalf("recovery delivery events=%d, want 1", n)
+			}
+			assertRunReleased(t, f, retry.ID)
+			f.vendor.script = func(_ context.Context, request llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
+				found := false
+				for _, message := range request.Chat.Messages {
+					for _, block := range message.Blocks {
+						found = found || strings.Contains(block.Text, "已恢复原步骤的资源读取")
+					}
+				}
+				if !found {
+					t.Error("next turn lost the completed recovery history")
+				}
+				return scriptedResult(request), nil
+			}
+			followup, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "继续整理恢复结果"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = f.work(f.alice, followup.ID); err != nil {
+				t.Fatal(err)
+			}
+			got, err = f.service.ReadRun(t.Context(), f.alice, followup.ID)
+			if err != nil || got.State != RunSucceeded || f.vendor.calls() != 2 {
+				t.Fatalf("followup=%+v err=%v calls=%d", got, err, f.vendor.calls())
+			}
 
+		})
+	}
+}
 func TestCTextOnlyConsentDoesNotGrantLibraryAccess(t *testing.T) {
 	f := setup(t)
 	f.queue()

@@ -181,3 +181,8 @@ epic: ../epics/creative-workspace-system.md
 ## 系统设计承接（2026-09-09）
 
 已形成[架构方案](../../docs/product/creative-canvas-system/architecture.md)和[数据模型](../../docs/product/creative-canvas-system/data-model.md)：技术选型、数据归属、模块接口边界、命令保存、媒体及 Agent 生命周期进入具体设计。首期范围不扩大，当前仍是设计文档；运行参数和验证预算按架构草案及后续实测冻结。
+
+
+### 2026-09-30 Agent 素材引用实现补充
+
+本轮在 v6 迁移工作树中实现：画布/素材库文本与图片的固定修订引用、`<<<修订ID>>>` 模型标记、图片真实输入绑定、成对工具历史、受预算控制的历史裁剪，以及按需读取素材/画布/历史的只读工具。交互保持普通对话、明确外发同意和可恢复提交；不复制 Buzzy 的旧兼容逻辑。具体限制见 [Harness 当前实现](../../docs/product/creative-canvas-system/modules/harness.md#2026-09-30素材引用与多模态首版落地)。这不代表独立附件上传、音视频理解或 Agent 画布写入已经交付。

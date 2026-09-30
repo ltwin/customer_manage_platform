@@ -7263,6 +7263,19 @@ components:
         blocks:
           type: array
           items: {$ref: '#/components/schemas/CreativeAgentMessageBlock'}
+        tool_calls:
+          type: array
+          description: 保留模型工具调用，与 tool 消息的 tool_call_id 配对。
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, arguments]
+            properties:
+              id: {type: string}
+              name: {type: string}
+              arguments: {type: string}
+        tool_call_id: {type: string}
+        tool_name: {type: string}
     CreativeAgentInstructionSegment:
       type: object
       additionalProperties: false
@@ -7504,7 +7517,7 @@ components:
         data_classes:
           type: array
           minItems: 1
-          items: {type: string, enum: [text, image_preview, media_metadata]}
+          items: {type: string, enum: [text, image_preview, media_metadata, canvas_metadata]}
     CreativeEgressConsent:
       type: object
       additionalProperties: false
@@ -7531,7 +7544,7 @@ components:
         data_classes:
           type: array
           minItems: 1
-          items: {type: string, enum: [text, image_preview, media_metadata]}
+          items: {type: string, enum: [text, image_preview, media_metadata, canvas_metadata]}
         selected_revision_ids:
           description: selected_revisions 模式下的精确材料授权集合；空集合只允许本会话文字与选定 Skill，不授权素材库内容。
           type: array

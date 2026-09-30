@@ -39,7 +39,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-4"
+const limitsVersion = "creative-agent-5"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -151,7 +151,12 @@ type SkillDirectory interface {
 // Skills no longer ship inside the binary. Until an administrator has run the
 // import, the directory is simply empty and the catalog says so — which is a
 // better answer than a copy compiled in months ago.
+type ImageReader interface {
+	AgentImage(context.Context, store.AccountScope, string, int64) (*llmgateway.ImageInput, error)
+}
+
 type Service struct {
+	images  ImageReader
 	gateway *llmgateway.Service
 	models  *llmgateway.Catalog
 	skills  SkillDirectory
@@ -201,3 +206,6 @@ func (s *Service) Handlers() []store.JobHandler {
 // Limits reports the frozen baseline so callers record the same numbers a run
 // will be judged by.
 func (s *Service) Limits() Limits { return s.limits }
+
+// SetImageReader binds the account-scoped media service at composition time.
+func (s *Service) SetImageReader(reader ImageReader) { s.images = reader }

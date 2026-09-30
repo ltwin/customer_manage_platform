@@ -155,5 +155,7 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 	if err = rows.Err(); err != nil && !errors.Is(err, store.ErrNoRows) {
 		return ctx, state, err
 	}
+	limitHistoryImages(state.Messages, h.service.limits.ImagePreviewCount)
+	state.Messages = compactMessages(state.Messages, contextBudget(h.service.limits, h.held.Model)-8192)
 	return ctx, state, nil
 }

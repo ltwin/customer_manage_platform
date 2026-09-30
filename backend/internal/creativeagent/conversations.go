@@ -69,8 +69,16 @@ type BlockSkill struct {
 	DisplayName   string `json:"display_name"`
 }
 
+type MessageCall struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
 type Body struct {
-	Blocks []Block `json:"blocks"`
+	Blocks     []Block       `json:"blocks"`
+	ToolCalls  []MessageCall `json:"tool_calls,omitempty"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
+	ToolName   string        `json:"tool_name,omitempty"`
 }
 
 type Message struct {
@@ -155,7 +163,20 @@ func (r ResolvedInstruction) SkillRefs() []SkillRef {
 }
 
 func validBody(b Body, limits Limits) error {
-	if len(b.Blocks) == 0 || len(b.Blocks) > maxBlocks {
+	if len(b.Blocks) == 0 && len(b.ToolCalls) == 0 || len(b.Blocks) > maxBlocks {
+		return creativeops.ErrValidation
+	}
+	if len(b.ToolCalls) > limits.ToolCallsPerTurn {
+		return ErrLimit
+	}
+	seenCalls := map[string]bool{}
+	for _, call := range b.ToolCalls {
+		if call.ID == "" || call.Name == "" || seenCalls[call.ID] || !json.Valid([]byte(call.Arguments)) {
+			return creativeops.ErrValidation
+		}
+		seenCalls[call.ID] = true
+	}
+	if (b.ToolCallID == "") != (b.ToolName == "") || len(b.ToolCalls) > 0 && b.ToolCallID != "" {
 		return creativeops.ErrValidation
 	}
 	for _, block := range b.Blocks {
@@ -192,7 +213,11 @@ func validBody(b Body, limits Limits) error {
 			return creativeops.ErrValidation
 		}
 	}
-	if bodyBytes(b) > limits.MessageBodyBytes {
+	bound := limits.MessageBodyBytes
+	if len(b.ToolCalls) > 0 {
+		bound = limits.ModelResultBytes + limits.ToolCallsPerTurn*128
+	} // durable call IDs replace provider IDs
+	if bodyBytes(b) > bound {
 		return ErrLimit
 	}
 	return nil
@@ -202,7 +227,10 @@ func validBody(b Body, limits Limits) error {
 // only the words. A skill block carries no prose but still occupies a row and a
 // payload, and charging it nothing would let 200 of them cost zero.
 func bodyBytes(b Body) int {
-	total := 0
+	total := len(b.ToolCallID) + len(b.ToolName)
+	for _, call := range b.ToolCalls {
+		total += len(call.ID) + len(call.Name) + len(call.Arguments)
+	}
 	for _, block := range b.Blocks {
 		total += len(block.Text) + len(block.RefID) + len(block.Code)
 		if block.Skill != nil {

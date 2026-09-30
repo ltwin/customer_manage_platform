@@ -47,9 +47,10 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 			// intent. An authorisation withdrawn in a transaction that commits
 			// first stops the bytes; one withdrawn after is honestly too late.
 			Admit: func(tx store.TxAccountScope) error {
-				return s.admitDispatchInTx(ctx, tx, held, revisions)
+				return s.admitDispatchInTx(ctx, tx, held, runtime.revisions)
 			},
 		},
+		BindMessages: runtime.bindMessages,
 		// The step is the durable name of this turn, so a resumed run replays
 		// the request it already paid for instead of buying a second one.
 		TurnKey: func(ctx context.Context, chat llmgateway.ChatRequest) (string, error) {
@@ -104,6 +105,7 @@ func (e *runExecution) consumeInTx(ctx context.Context, tx store.TxAccountScope,
 	rejected := h.resultErr != nil
 	h.mu.Unlock()
 	if rejected {
+		result.ToolCalls = nil
 		result.Text = ""
 	}
 	delivered, err := h.service.consumeResultInTx(ctx, tx, h.held, stepID, result)
@@ -155,7 +157,7 @@ func (e *runExecution) run(ctx context.Context) (turnOutcome, error) {
 			e.outcome.RequestID = view.ID
 		}
 	}
-	delivered, err := h.scope.Count(lookupCtx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete'", h.held.RunID)
+	delivered, err := h.scope.Count(lookupCtx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete' AND NOT (body ? 'tool_calls')", h.held.RunID)
 	if err != nil && runErr == nil {
 		runErr = err
 	}

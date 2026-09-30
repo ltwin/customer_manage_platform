@@ -2,124 +2,145 @@ package creativeagent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/cloudwego/eino/schema"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// historyItem is one earlier turn of the conversation as it will be sent. Only
-// words travel: a reference block locates something, and re-sending what it
-// located would be a second authorisation nobody asked for.
 type historyItem struct {
-	Role string
-	Text string
+	Role  string
+	Text  string
+	Body  Body
+	Group string
 }
 
-// perMessageOverhead matches the gateway's own input estimate, which charges a
-// fixed cost per message on top of its text. Counting history without it would
-// let a hundred one-word turns look free and overrun the hold the run took.
 const perMessageOverhead = 16
 
-// freezeHistoryInTx picks the recent completed turns this run will carry, newest
-// first and then reversed into reading order.
-//
-// It is selected once, inside the creation transaction, and written to
-// creative_run_inputs — it is not re-read at dispatch. A run's inputs are
-// historical facts: what the photographer saw when they pressed send is what
-// the model is told, even if another window appends a message a moment later.
-//
-// budget is what is left of the run's per-request input ceiling after the
-// submission and the skill instructions have taken their share, so the numbers
-// are derived from one bound rather than split by a second invented one.
+// Freeze recent messages, including tool calls and results. Whole run groups
+// are retained together so no orphan tool response reaches the model.
 func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, budget int) ([]historyItem, error) {
 	if budget <= 0 || s.limits.HistoryMessages <= 0 {
 		return nil, nil
 	}
-	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body",
-		"conversation_id=$2 AND status='complete' AND role IN ('user','assistant')",
-		[]store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID)
+	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body,run_id,id", "conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool')", []store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var newestFirst []historyItem
+	var items []historyItem
 	for rows.Next() {
-		var role string
+		var item historyItem
 		var payload []byte
-		if err := rows.Scan(&role, &payload); err != nil {
+		var runID *string
+		var messageID string
+		if err = rows.Scan(&item.Role, &payload, &runID, &messageID); err != nil {
+			rows.Close()
 			return nil, err
 		}
-		text := renderedText(payload)
-		if text == "" {
-			// A turn that showed only references has no words to re-send. It is
-			// dropped rather than sent as an empty message, which some providers
-			// refuse outright.
-			continue
+		item.Group = messageID
+		if runID != nil {
+			item.Group = *runID
 		}
-		cost := len(text) + perMessageOverhead
-		if cost > budget {
-			// Older turns cost the same or more attention than newer ones and
-			// are worth less; stopping here keeps the most recent exchange whole
-			// instead of truncating one message into nonsense.
-			break
+		if err = json.Unmarshal(payload, &item.Body); err != nil {
+			rows.Close()
+			return nil, err
 		}
-		budget -= cost
-		newestFirst = append(newestFirst, historyItem{Role: role, Text: text})
+		item.Text = renderedText(payload)
+		items = append(items, item)
 	}
-	if err := rows.Err(); err != nil {
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
 		return nil, err
 	}
-	for i, j := 0, len(newestFirst)-1; i < j; i, j = i+1, j-1 {
-		newestFirst[i], newestFirst[j] = newestFirst[j], newestFirst[i]
+	slices.Reverse(items)
+	// Drop the leading partial run when the row bound starts inside a tool pair.
+	for len(items) > 0 && items[0].Role != "user" {
+		items = items[1:]
 	}
-	return newestFirst, nil
+	var retained []historyItem
+	for end := len(items); end > 0; {
+		start := end - 1
+		for start > 0 && items[start-1].Group == items[end-1].Group {
+			start--
+		}
+		group := items[start:end]
+		cost := 0
+		calls := map[string]bool{}
+		results := map[string]bool{}
+		for _, item := range group {
+			cost += bodyBytes(item.Body) + perMessageOverhead
+			for _, call := range item.Body.ToolCalls {
+				calls[call.ID] = true
+			}
+			if item.Body.ToolCallID != "" {
+				results[item.Body.ToolCallID] = true
+			}
+		}
+		valid := true
+		for id := range calls {
+			if !results[id] {
+				valid = false
+			}
+		}
+		for id := range results {
+			if !calls[id] {
+				valid = false
+			}
+		}
+		if cost > budget {
+			break
+		}
+		if valid {
+			budget -= cost
+			retained = append(append([]historyItem(nil), group...), retained...)
+		}
+		end = start
+	}
+	return retained, nil
 }
 
-// renderedText is a stored body reduced to what a model can be told. Unknown
-// block types from an older schema contribute nothing rather than being guessed
-// at, and no reference is expanded into the words it points to.
 func renderedText(payload []byte) string {
 	var body Body
-	if err := unmarshalBody(payload, &body); err != nil {
+	if unmarshalBody(payload, &body) != nil {
 		return ""
 	}
-	var b strings.Builder
+	var pieces []string
 	for _, block := range body.Blocks {
-		if block.Type != "text" || block.Text == "" {
-			continue
+		if block.Type == "text" && block.Text != "" {
+			pieces = append(pieces, block.Text)
 		}
-		if b.Len() > 0 {
-			b.WriteString("\n")
-		}
-		b.WriteString(block.Text)
 	}
-	return b.String()
+	return strings.Join(pieces, "\n")
 }
 
-// freezeInputsInTx writes the run's immutable input manifest. Ordinal is the
-// order an item enters the prompt, which is the only ordering the assembler
-// needs; history comes first because it is what the submission answers.
-//
-// A located revision is stored as a column rather than inside a payload,
-// because these rows are retention roots: an id buried in JSON keeps nothing
-// readable.
-func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string,
-	history []historyItem, blocks []Block) error {
+func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, history []historyItem, blocks []Block) error {
 	ordinal := 0
-	insert := func(role, readLevel string, body, revisionID *string, snapshot any) error {
+	insert := func(role, level string, body, id *string, snapshot any) error {
 		defer func() { ordinal++ }()
-		return tx.Insert(ctx, "creative_run_inputs",
-			[]string{"run_id", "batch_ordinal", "ordinal", "input_role", "read_level", "body", "content_revision_id", "source_revision_snapshot"},
-			runID, initialInputBatch, ordinal, role, readLevel, body, revisionID, snapshot)
+		return tx.Insert(ctx, "creative_run_inputs", []string{"run_id", "batch_ordinal", "ordinal", "input_role", "read_level", "body", "content_revision_id", "source_revision_snapshot"}, runID, initialInputBatch, ordinal, role, level, body, id, snapshot)
 	}
+	refs := map[string]bool{}
 	for _, item := range history {
-		text := item.Text
-		snapshot, err := jsonValue(map[string]string{"role": item.Role})
+		snapshot, err := jsonValue(map[string]any{"role": item.Role, "body": item.Body, "group": item.Group})
 		if err != nil {
 			return err
 		}
-		if err := insert("history", "text", &text, nil, snapshot); err != nil {
+		if err = insert("history", "text", &item.Text, nil, snapshot); err != nil {
 			return err
+		}
+		for _, block := range item.Body.Blocks {
+			if block.Type == "content_ref" && !refs[block.RefID] {
+				id := block.RefID
+				if err = insert("attachment", "metadata_only", nil, &id, nil); err != nil {
+					return err
+				}
+				refs[id] = true
+			}
 		}
 	}
 	for _, block := range blocks {
@@ -130,19 +151,66 @@ func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope,
 				return err
 			}
 		case "content_ref":
-			revisionID := block.RefID
-			if err := insert("instruction", "text", nil, &revisionID, nil); err != nil {
+			id := block.RefID
+			revision, err := creativecontent.RequireUsable(ctx, tx, id, "display")
+			if err != nil {
+				return translateContent(err)
+			}
+			level := "text"
+			if revision.Kind == "image" {
+				level = "image_preview"
+			}
+			if err := insert("instruction", level, nil, &id, nil); err != nil {
 				return err
 			}
 		}
-		// A skill block names the frozen version the run already carries as a
-		// column; repeating it as an input would be a second place to disagree
-		// about which instructions were followed.
+	}
+	var canvasID, consentID string
+	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id,egress_consent_id", "id=$2", runID).Scan(&canvasID, &consentID); err != nil {
+		return err
+	}
+	consent, err := readConsentForUpdate(ctx, tx, consentID)
+	if err != nil {
+		return err
+	}
+	if consentHas(consent, "canvas_metadata") {
+		canvas, err := readCanvasContext(ctx, tx, canvasID, 0, 0)
+		if err != nil {
+			return err
+		}
+		text, err := marshalContext(canvas)
+		if err != nil {
+			return err
+		}
+		return insert("selection", "metadata_only", &text, nil, nil)
 	}
 	return nil
 }
 
-// initialInputBatch is the group fixed when the run was created. A supplement
-// appends a new batch rather than editing this one, so the original submission
-// stays readable exactly as it was sent.
+func bodyMessage(body Body, role string) *schema.Message {
+	m := &schema.Message{Role: schema.RoleType(role), ToolCallID: body.ToolCallID, ToolName: body.ToolName}
+	var parts []string
+	for _, b := range body.Blocks {
+		if b.Type == "text" {
+			parts = append(parts, b.Text)
+		}
+		if b.Type == "content_ref" && role != "tool" {
+			parts = append(parts, referenceLabel(b.RefID))
+		}
+	}
+	m.Content = strings.Join(parts, "\n")
+	for i, c := range body.ToolCalls {
+		index := i
+		m.ToolCalls = append(m.ToolCalls, schema.ToolCall{Index: &index, ID: c.ID, Type: "function", Function: schema.FunctionCall{Name: c.Name, Arguments: c.Arguments}})
+	}
+	return m
+}
+
+func historyTag(m *schema.Message, group string) {
+	if m.Extra == nil {
+		m.Extra = map[string]any{}
+	}
+	m.Extra["creative_history_group"] = fmt.Sprint(group)
+}
+
 const initialInputBatch = 0

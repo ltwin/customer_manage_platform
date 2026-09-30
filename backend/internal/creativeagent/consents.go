@@ -22,7 +22,7 @@ const (
 )
 
 // Data classes describe what kind of bytes may leave, not which resources.
-var dataClasses = []string{"text", "image_preview", "media_metadata"}
+var dataClasses = []string{"text", "image_preview", "media_metadata", "canvas_metadata"}
 
 // maxApprovedRevisions bounds one grant. A photographer approving more than
 // this is selecting a library, and should say so with account_library.

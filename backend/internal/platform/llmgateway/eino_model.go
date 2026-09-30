@@ -17,6 +17,10 @@ import (
 type ModelSession struct {
 	CallSession
 	Stream bool
+	// BindMessages lets the trusted caller attach authorized media handles after
+	// framework state is decoded. URLs and executable readers never live in a
+	// checkpoint; the caller must revalidate every referenced revision.
+	BindMessages func(context.Context, []*schema.Message, []Message) ([]Message, error)
 	// TurnKey names the caller's own durable step for the turn about to run. The
 	// framework drives Generate without any notion of resumption, so this is the
 	// only place a persisted step identity can enter; there is deliberately no
@@ -117,6 +121,12 @@ func (a *GatewayModelAdapter) call(ctx context.Context, input []*schema.Message,
 	messages, err := fromEinoMessages(input)
 	if err != nil {
 		return Result{}, err
+	}
+	if a.session.BindMessages != nil {
+		messages, err = a.session.BindMessages(ctx, input, messages)
+		if err != nil {
+			return Result{}, err
+		}
 	}
 	tools, err := a.toolDefinitions()
 	if err != nil {

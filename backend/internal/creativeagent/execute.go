@@ -337,9 +337,9 @@ func (c *currentStep) get() (stepID, bindingKey string) {
 // invented default would be instructions nobody wrote or reviewed.
 func instructionOf(skill *creativeskill.Snapshot) string {
 	if skill == nil {
-		return ""
+		return assistantInstruction
 	}
-	return skill.Instructions
+	return joinInstruction(skill.Instructions)
 }
 
 // runTokenCeiling is the most one run may ever consume: one request per model
@@ -387,73 +387,105 @@ func (s *Service) stillRunnable(ctx context.Context, scope store.AccountScope, h
 // was created, and a message appended since belongs to the next run.
 func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held claim) ([]*schema.Message, []string, error) {
 	var messages []*schema.Message
-	var instruction strings.Builder
 	var revisions []string
-	seenRevisions := make(map[string]bool)
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		rows, err := tx.QueryPage(ctx, "creative_run_inputs", "input_role,body,content_revision_id,source_revision_snapshot",
-			"run_id=$2 AND batch_ordinal=$3", []store.OrderBy{{Column: "ordinal"}}, s.limits.InstructionSegments+s.limits.HistoryMessages, 0,
-			held.RunID, initialInputBatch)
+		consent, err := readConsentForUpdate(ctx, tx, held.ConsentID)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		rows, err := tx.QueryPage(ctx, "creative_egress_consent_contents", "content_revision_id", "consent_id=$2", []store.OrderBy{{Column: "content_revision_id"}}, maxApprovedRevisions, 0, consent.ID)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			revisions = append(revisions, id)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		rows, err = tx.QueryPage(ctx, "creative_run_inputs", "input_role,body,content_revision_id,source_revision_snapshot", "run_id=$2 AND batch_ordinal=$3", []store.OrderBy{{Column: "ordinal"}}, s.limits.InstructionSegments+s.limits.HistoryMessages*(maxBlocks+1)+1, 0, held.RunID, initialInputBatch)
+		if err != nil {
+			return err
+		}
 		type frozen struct {
-			role       string
-			body       *string
-			revisionID *string
-			snapshot   []byte
+			role     string
+			body, id *string
+			snapshot []byte
 		}
 		var items []frozen
 		for rows.Next() {
 			var item frozen
-			if err := rows.Scan(&item.role, &item.body, &item.revisionID, &item.snapshot); err != nil {
+			if err = rows.Scan(&item.role, &item.body, &item.id, &item.snapshot); err != nil {
+				rows.Close()
 				return err
 			}
 			items = append(items, item)
 		}
-		if err := rows.Err(); err != nil {
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
 			return err
 		}
 		for _, item := range items {
-			switch {
-			case item.role == "history":
-				role := "user"
-				if len(item.snapshot) > 0 {
-					var meta struct {
-						Role string `json:"role"`
-					}
-					if err := json.Unmarshal(item.snapshot, &meta); err == nil && meta.Role != "" {
-						role = meta.Role
-					}
+			if item.role == "attachment" {
+				continue
+			}
+			if item.role == "history" {
+				var meta struct {
+					Role  string `json:"role"`
+					Body  *Body  `json:"body"`
+					Group string `json:"group"`
 				}
-				if item.body == nil {
+				if err = json.Unmarshal(item.snapshot, &meta); err != nil {
+					return err
+				}
+				if meta.Body == nil {
+					if item.body != nil {
+						m := &schema.Message{Role: schema.RoleType(meta.Role), Content: *item.body}
+						historyTag(m, meta.Group)
+						messages = append(messages, m)
+					}
 					continue
 				}
-				if role == "assistant" {
-					messages = append(messages, schema.AssistantMessage(*item.body, nil))
-					continue
+				m := bodyMessage(*meta.Body, meta.Role)
+				historyTag(m, meta.Group)
+				if m.Content != "" || len(m.ToolCalls) > 0 {
+					messages = append(messages, m)
 				}
-				messages = append(messages, schema.UserMessage(*item.body))
-			case item.body != nil:
-				appendParagraph(&instruction, *item.body)
-			case item.revisionID != nil:
-				// The located material is read here, under this account's scope,
-				// and its display permission is checked again. A revision is
-				// immutable, so the words cannot have changed; the permission to
-				// show them can have been taken back.
-				revision, err := creativecontent.RequireUsable(ctx, tx, *item.revisionID, "display")
+				for _, block := range meta.Body.Blocks {
+					if block.Type != "content_ref" || meta.Role == "tool" {
+						continue
+					}
+					ref, err := s.resolveReference(ctx, tx, block.RefID, consent, held.Model.Capability.ImageInput)
+					if errors.Is(err, ErrModelCapability) || errors.Is(err, ErrEgressRequired) {
+						ref = schema.UserMessage(referenceLabel(block.RefID) + "（历史图片本轮未加载；需要图片能力及授权）")
+					} else if err != nil {
+						return err
+					}
+					historyTag(ref, meta.Group)
+					messages = append(messages, ref)
+				}
+				continue
+			}
+			if item.role == "selection" && item.body != nil {
+				messages = append(messages, schema.UserMessage("当前画布概览（详细节点请用 read_canvas）："+*item.body))
+				continue
+			}
+			if item.id != nil {
+				ref, err := s.resolveReference(ctx, tx, *item.id, consent, held.Model.Capability.ImageInput)
 				if err != nil {
-					return translateContent(err)
+					return err
 				}
-				if revision.Kind != "text" || revision.Payload.Body == nil {
-					return ErrUnsupportedSegment
-				}
-				appendParagraph(&instruction, quotedContentOpen+"\n"+*revision.Payload.Body+"\n"+quotedContentClose)
-				if !seenRevisions[*item.revisionID] {
-					revisions = append(revisions, *item.revisionID)
-					seenRevisions[*item.revisionID] = true
-				}
+				messages = append(messages, ref)
+			} else if item.body != nil {
+				messages = append(messages, schema.UserMessage(*item.body))
 			}
 		}
 		return nil
@@ -461,19 +493,10 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 	if err != nil {
 		return nil, nil, err
 	}
-	if instruction.Len() == 0 {
-		// A run with nothing to say is refused rather than sent as an empty
-		// prompt, which some deployments answer and others reject.
+	if len(messages) == 0 {
 		return nil, nil, creativeops.ErrValidation
 	}
-	return append(messages, schema.UserMessage(instruction.String())), revisions, nil
-}
-
-func appendParagraph(b *strings.Builder, text string) {
-	if b.Len() > 0 {
-		b.WriteString("\n\n")
-	}
-	b.WriteString(text)
+	return messages, revisions, nil
 }
 
 // admitDispatchInTx is the last gate, run inside the dispatch transaction. The
@@ -550,7 +573,7 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 	// EstimateInputTokens is the gateway's own accounting, borrowed rather than
 	// reproduced: measuring the hold one way and the ceiling another is how a
 	// request passes one and fails the other.
-	if bytes := llmgateway.EstimateInputTokens(chat); bytes > int64(s.limits.InputTextBytes) {
+	if bytes := llmgateway.EstimateInputTokens(chat); bytes > int64(contextBudget(s.limits, held.Model)) {
 		return "", "", fmt.Errorf("%w: 本次请求 %d 字节，上限 %d", ErrLimit, bytes, s.limits.InputTextBytes)
 	}
 	hash, err := llmgateway.RequestHash(chat, s.models.Snapshot(held.Model))
@@ -676,22 +699,29 @@ func (s *Service) consumeResultInTx(ctx context.Context, tx store.TxAccountScope
 		return false, err
 	}
 	text := strings.TrimSpace(result.Text)
-	if text == "" || len(result.ToolCalls) > 0 || !result.Consumable() {
+	if text == "" && len(result.ToolCalls) == 0 || !result.Consumable() {
 		// An answer with no words is recorded as a step and produces no message.
 		// Writing an empty one would put a blank turn in the conversation the
 		// photographer cannot act on.
 		return false, nil
 	}
+	body := Body{Blocks: []Block{}}
+	if text != "" {
+		body.Blocks = append(body.Blocks, Block{Type: "text", Text: text})
+	}
+	for i, call := range result.ToolCalls {
+		body.ToolCalls = append(body.ToolCalls, MessageCall{ID: runtimeCallID(stepID, i), Name: call.Name, Arguments: string(call.Arguments)})
+	}
 	message, err := s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{
 		Role: "assistant", Status: "complete", RunID: held.RunID, SourceStepID: stepID,
-		Body: Body{Blocks: []Block{{Type: "text", Text: text}}},
+		Body: body,
 	})
 	if err != nil {
 		return false, err
 	}
 	_, err = appendRunEventInTx(ctx, tx, held.RunID, "message.completed",
 		map[string]string{"message_id": message.ID, "step_id": stepID})
-	return true, err
+	return len(result.ToolCalls) == 0, err
 }
 
 // finishRun records the outcome and releases ownership after the model turn.
@@ -702,7 +732,7 @@ func (s *Service) finishRun(ctx context.Context, scope store.AccountScope, held 
 	// cancel the short transaction that releases its slot and records the result.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
-	delivered, err := scope.Count(ctx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete'", held.RunID)
+	delivered, err := scope.Count(ctx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete' AND NOT (body ? 'tool_calls')", held.RunID)
 	if err != nil {
 		return err
 	}

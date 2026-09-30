@@ -33,6 +33,9 @@ export type PromptEditorHandle = {
 }
 type Props = {
   text: string
+  label?: string
+  placeholder?: string
+  referenceTitle?: string
   references: PromptReference[]
   thumbnails: Record<string, string>
   disabled: boolean
@@ -42,7 +45,18 @@ type Props = {
 }
 
 export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
-  { text, references, thumbnails, disabled, onChange, onGenerate, onLibrary },
+  {
+    text,
+    references,
+    thumbnails,
+    disabled,
+    onChange,
+    onGenerate,
+    onLibrary,
+    referenceTitle,
+    label = '提示词',
+    placeholder = '描述你想创作的内容，@ 引用已连接的参考…',
+  },
   ref,
 ) {
   const editor = useRef<HTMLDivElement>(null)
@@ -184,7 +198,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
         ref={editor}
         className="cc-generation-prompt cc-prompt-editor"
         role="textbox"
-        aria-label="提示词"
+        aria-label={label}
         aria-multiline="true"
         aria-disabled={disabled}
         aria-expanded={query !== null}
@@ -194,7 +208,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
         }
         contentEditable={!disabled}
         suppressContentEditableWarning
-        data-placeholder="描述你想创作的内容，@ 引用已连接的参考…"
+        data-placeholder={placeholder}
         tabIndex={0}
         onInput={() => {
           persist()
@@ -325,7 +339,8 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
             onMouseDown={(e) => e.preventDefault()}
           >
             <div className="cc-prompt-picker-title">
-              {references.length ? '已连接的参考' : '还没有连接参考'}
+              {referenceTitle ??
+                (references.length ? '已连接的参考' : '还没有连接参考')}
             </div>
             <div id={listID} role="listbox" aria-label="引用参考">
               {items.map((item, i) => (

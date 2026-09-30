@@ -196,6 +196,9 @@ func (s *Service) resolveContentSegment(ctx context.Context, scope store.Account
 			return nil
 		}
 	}
+	if len(out.ContentRefs) >= s.limits.Attachments {
+		return ErrLimit
+	}
 	var revision creativecontent.Revision
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		var err error
@@ -212,13 +215,9 @@ func (s *Service) resolveContentSegment(ctx context.Context, scope store.Account
 	case err != nil:
 		return err
 	}
-	// RequireUsable answers "may this account display this", which is not the
-	// same question as "can this deployment send it to a model". It admits
-	// images, video and audio, and this phase carries only readable text (§7.1):
-	// the model link has no image path yet, so accepting one would either drop
-	// it silently or sample frames nobody authorised. The refusal is capability,
-	// not validity — the photographer chose something real.
-	if revision.Kind != "text" {
+	// Content kind and model capability are separate checks; the latter is
+	// validated when the run chooses a model and consent.
+	if revision.Kind != "text" && (revision.Kind != "image" || s.images == nil) {
 		return ErrUnsupportedSegment
 	}
 	out.ContentRefs = append(out.ContentRefs, ContentRef{RevisionID: segment.ContentRevisionID, Role: "input"})

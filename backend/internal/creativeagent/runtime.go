@@ -43,6 +43,9 @@ func runtimeToolEntries() []ToolEntry {
 		{Key: loadSkillTool, Version: 1, DisplayName: "加载固定 Skill", EffectClass: "read_only"},
 		{Key: readSkillTool, Version: 1, DisplayName: "读取 Skill 资源", EffectClass: "read_only"},
 		{Key: readResultTool, Version: 1, DisplayName: "读取运行结果", EffectClass: "read_only"},
+		{Key: readAssetTool, Version: 1, DisplayName: "读取引用素材", EffectClass: "read_only"},
+		{Key: readCanvasTool, Version: 1, DisplayName: "读取画布", EffectClass: "read_only"},
+		{Key: readHistoryTool, Version: 1, DisplayName: "读取对话历史", EffectClass: "read_only"},
 	}
 }
 
@@ -106,6 +109,9 @@ func (h *runtimeHandler) AfterModelRewriteState(ctx context.Context, state *adk.
 	return ctx, state, h.resultErr
 }
 func (h *runtimeHandler) allowed(name string) bool {
+	if name == readAssetTool || name == readCanvasTool || name == readHistoryTool {
+		return true
+	}
 	if name != loadSkillTool && name != readSkillTool && name != readResultTool {
 		return false
 	}
@@ -125,6 +131,9 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 	handlers := []adk.ChatModelAgentMiddleware{h}
 	if !h.held.Model.Capability.ToolCalling {
 		return config, handlers, nil
+	}
+	for _, name := range []string{readAssetTool, readCanvasTool, readHistoryTool} {
+		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: name})
 	}
 	if h.allowed(readSkillTool) {
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: readSkillTool})
@@ -272,11 +281,12 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	parent, _ := h.current.get()
 	var stepID, state string
 	var saved []byte
+	var recordedRetry bool
 	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if err := h.service.admitDispatchInTx(ctx, tx, h.held, h.revisions); err != nil {
 			return err
 		}
-		rows, err := tx.QueryPage(ctx, "creative_agent_steps", "id,state,input,output,tool_call_index", "run_id=$2 AND parent_model_step_id=$3", []store.OrderBy{{Column: "tool_call_index"}}, h.service.limits.ToolCallsPerTurn, 0, h.held.RunID, parent)
+		rows, err := tx.QueryPage(ctx, "creative_agent_steps", "id,state,input,output,tool_call_index,retry_of_step_id", "run_id=$2 AND parent_model_step_id=$3", []store.OrderBy{{Column: "tool_call_index"}}, h.service.limits.ToolCallsPerTurn, 0, h.held.RunID, parent)
 		if err != nil {
 			return err
 		}
@@ -285,7 +295,8 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 			var id, st string
 			var raw, out []byte
 			var index int
-			if err = rows.Scan(&id, &st, &raw, &out, &index); err != nil {
+			var retryOf *string
+			if err = rows.Scan(&id, &st, &raw, &out, &index, &retryOf); err != nil {
 				return err
 			}
 			var c llmgateway.ToolCall
@@ -294,6 +305,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 			}
 			if runtimeCallID(parent, index) == callID && c.Name == name && string(c.Arguments) == args {
 				stepID, state, saved = id, st, out
+				recordedRetry = retryOf != nil
 			}
 		}
 		if err = rows.Err(); err != nil {
@@ -377,6 +389,18 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		if _, err = tx.Update(ctx, "creative_agent_steps", "state=$3,output=$4,error_code=$5,finished_at=$6,updated_at=$6,execution_epoch=$7", "id=$2 AND state='prepared'", stepID, terminal, output, nullableText(code), now, h.held.Epoch); err != nil {
 			return err
 		}
+		// A recorded recovery has no model call to pair with a tool message.
+		// Its result stays in the step journal; executeRecordedRetry publishes
+		// the separate assistant delivery, including after an interrupted retry.
+		if !recordedRetry {
+			message, err := h.persistToolMessage(ctx, tx, stepID, callID, name, projection, result)
+			if err != nil {
+				return err
+			}
+			if _, err = appendRunEventInTx(ctx, tx, h.held.RunID, "message.completed", map[string]string{"message_id": message.ID, "step_id": stepID}); err != nil {
+				return err
+			}
+		}
 		_, err = appendRunEventInTx(ctx, tx, h.held.RunID, "step.state_changed", map[string]string{"step_id": stepID, "kind": "tool", "state": terminal})
 		return err
 	})
@@ -419,6 +443,9 @@ type runtimeReadTool struct {
 var _ tool.InvokableTool = (*runtimeReadTool)(nil)
 
 func (t *runtimeReadTool) Info(context.Context) (*schema.ToolInfo, error) {
+	if t.name == readAssetTool || t.name == readCanvasTool || t.name == readHistoryTool {
+		return contextToolInfo(t.name), nil
+	}
 	params := map[string]*schema.ParameterInfo{}
 	desc := "读取本次运行已登记的结果片段；offset/limit 为 UTF-8 字节范围，limit 最多 8192。"
 	if t.name == readSkillTool {
@@ -441,6 +468,14 @@ func (t *runtimeReadTool) Info(context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{Name: t.name, Desc: desc, ParamsOneOf: schema.NewParamsOneOfByParams(params)}, nil
 }
 func (t *runtimeReadTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Option) (string, error) {
+	switch t.name {
+	case readAssetTool:
+		return t.handler.readAsset(ctx, raw)
+	case readCanvasTool:
+		return t.handler.readCanvas(ctx, raw)
+	case readHistoryTool:
+		return t.handler.readHistory(ctx, raw)
+	}
 	if t.name == readSkillTool {
 		return t.handler.readSkillResource(ctx, raw)
 	}

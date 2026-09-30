@@ -14,7 +14,7 @@ import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
-createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas'}));
+createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',canvas:{nodes:[{id:'node-image',metadata:{title:'主图'},data:{content_revision_id:'ccrv_image'},content:{id:'ccrv_image',kind:'image',payload:{},media:[],truncated:false}}]}}));
 </script></body></html>`,
 )
 const browser = await chromium.launch({ headless: true })
@@ -30,6 +30,7 @@ const delay = () => {
 try {
   for (const order of ['old-first', 'new-first']) {
     const page = await browser.newPage()
+    page.on('pageerror', (error) => console.error('page error:', error.message))
     const gates = [delay(), delay()]
     let grants = 0
     const posts = []
@@ -59,11 +60,13 @@ try {
       }
       if (path.endsWith('/catalog'))
         return json({
+          limits: { attachments: 10, image_preview_count: 8 },
           models: [
             {
               model_key: 'model',
               vendor_key: 'deepseek',
               display_name: 'Test model',
+              capability: { image_input: false },
               available: true,
             },
           ],
@@ -120,6 +123,7 @@ try {
   }
   // A dropped response, refresh, and definitive rejection must retain the editable draft.
   const page = await browser.newPage()
+    page.on('pageerror', (error) => console.error('page error:', error.message))
   let runPosts = 0
   await page.route('**/api/v1/creative/**', async (route) => {
     const path = new URL(route.request().url()).pathname
@@ -142,11 +146,13 @@ try {
     }
     if (path.endsWith('/catalog'))
       return json({
-        models: [
+        limits: { attachments: 10, image_preview_count: 8 },
+          models: [
           {
             model_key: 'model',
             vendor_key: 'deepseek',
             display_name: 'Test model',
+              capability: { image_input: false },
             available: true,
           },
         ],
@@ -182,7 +188,7 @@ try {
   await page.getByRole('button', { name: '确认原操作' }).click()
   await page.waitForFunction((k) => sessionStorage.getItem(k) === null, key)
   assert.equal(
-    await page.getByLabel('创作问题').inputValue(),
+    await page.getByLabel('创作问题').textContent(),
     '刷新后仍然保留的原文',
   )
   assert.equal(await page.getByLabel('创作问题').isEnabled(), true)
@@ -205,8 +211,57 @@ try {
   const footer=await page.locator('.cc-agent-composer-foot').boundingBox()
   assert(footer.x>=compose.x && footer.x+footer.width<=compose.x+compose.width)
   await page.close()
+  const materialPage = await browser.newPage()
+  const submissions = []
+  const approvals = []
+  let failOnce = true
+  materialPage.on('pageerror', (error) => { throw error })
+  await materialPage.route('**/api/v1/creative/**', async (route) => {
+    const req = route.request(), path = new URL(req.url()).pathname
+    const json = (body) => route.fulfill({json: body})
+    if (req.method() === 'POST') {
+      if (path.endsWith('/egress-consents')) { approvals.push(req.postDataJSON()); return json({id:'consent',vendor_key:'test'}) }
+      if (path.endsWith('/runs')) {
+        submissions.push(req.postDataJSON())
+        if (failOnce) { failOnce = false; return route.abort('failed') }
+        return json({id:'run',trigger_message_id:'message',conversation_id:'conversation',state:'succeeded',settlement_state:'settled'})
+      }
+    }
+    if(path.endsWith('/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'text',vendor_key:'test',display_name:'文字模型',available:true,capability:{image_input:false}},{model_key:'vision',vendor_key:'test',display_name:'视觉模型',available:true,capability:{image_input:true}}]})
+    if(path.endsWith('/conversations')) return json({items:[{id:'conversation',title:'素材讨论'}]})
+    if(path.endsWith('/assets')) return json({items:[{id:'asset',title:'拍摄方案',content_revision_id:'ccrv_text',content:{id:'ccrv_text',kind:'text',payload:{body:'方案'},truncated:false}}],next_cursor:''})
+    return json({items:[]})
+  })
+  await materialPage.goto(url)
+  await materialPage.getByRole('button',{name:'打开创作助手'}).click()
+  await materialPage.getByLabel('创作问题').fill('参考 @')
+  await materialPage.getByRole('option',{name:/主图/}).click()
+  await materialPage.getByText('当前模型不支持图片理解，请切换视觉模型或移除图片引用。').waitFor()
+  await materialPage.getByRole('checkbox').check()
+  assert(await materialPage.getByRole('button',{name:'发送',exact:true}).isDisabled())
+  await materialPage.getByLabel('模型',{exact:true}).selectOption('vision')
+  assert(!await materialPage.getByRole('checkbox').isChecked(), 'model change resets consent')
+  await materialPage.getByRole('button',{name:'引用素材',exact:true}).click()
+  await materialPage.getByRole('dialog',{name:'引用素材库'}).getByRole('button',{name:/拍摄方案/}).click()
+  assert.equal(await materialPage.locator('.cc-agent-box [data-ref]').count(),2)
+  await materialPage.getByRole('checkbox').check()
+  await materialPage.getByRole('button',{name:'发送',exact:true}).click()
+  await materialPage.getByRole('alert').waitFor()
+  await materialPage.reload()
+  await materialPage.getByRole('button',{name:'打开创作助手'}).click()
+  await materialPage.locator('.cc-agent-box [data-ref]').nth(1).waitFor()
+  assert.equal(await materialPage.locator('.cc-agent-box [data-ref]').count(),2,'reference chips survive refresh')
+  await materialPage.getByRole('button',{name:'确认原操作'}).click()
+  await materialPage.waitForFunction((k)=>sessionStorage.getItem(k)===null,key)
+  assert.equal(submissions.length,2)
+  assert.deepEqual(submissions[0],submissions[1],'retry keeps original reference payload')
+  assert.deepEqual(approvals[0].payload.selected_revision_ids,['ccrv_image','ccrv_text'])
+  assert(approvals[0].payload.data_classes.includes('image_preview'))
+  assert(approvals[0].payload.data_classes.includes('canvas_metadata'))
+  assert.deepEqual(submissions[0].payload.instruction.instruction_segments.filter((s)=>s.type==='content_ref').map((s)=>s.content_revision_id),['ccrv_image','ccrv_text'])
+  await materialPage.close()
   console.log(
-    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation',
+    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified',
   )
 } finally {
   await browser.close()

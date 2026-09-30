@@ -2933,6 +2933,14 @@ export interface components {
         };
         CreativeAgentMessageBody: {
             blocks: components["schemas"]["CreativeAgentMessageBlock"][];
+            /** @description 保留模型工具调用，与 tool 消息的 tool_call_id 配对。 */
+            tool_calls?: {
+                id: string;
+                name: string;
+                arguments: string;
+            }[];
+            tool_call_id?: string;
+            tool_name?: string;
         };
         /** @description 一次提交的一个有序片段，是判别联合：每种 type 只允许自身字段，写了别的字段 会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID， ID 本身不授予任何读取权限，服务端一律重新核对。 */
         CreativeAgentInstructionSegment: {
@@ -3112,7 +3120,7 @@ export interface components {
         CreativeEgressConsentScope: {
             /** @enum {string} */
             mode: "selected_revisions" | "account_library";
-            data_classes: ("text" | "image_preview" | "media_metadata")[];
+            data_classes: ("text" | "image_preview" | "media_metadata" | "canvas_metadata")[];
         };
         CreativeEgressConsent: {
             id: string;
@@ -3136,7 +3144,7 @@ export interface components {
             purpose: "creative_assistance";
             /** @enum {string} */
             mode: "selected_revisions" | "account_library";
-            data_classes: ("text" | "image_preview" | "media_metadata")[];
+            data_classes: ("text" | "image_preview" | "media_metadata" | "canvas_metadata")[];
             /** @description selected_revisions 模式下的精确材料授权集合；空集合只允许本会话文字与选定 Skill，不授权素材库内容。 */
             selected_revision_ids?: string[];
         };

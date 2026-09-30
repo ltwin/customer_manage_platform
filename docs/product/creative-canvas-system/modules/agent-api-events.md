@@ -8,6 +8,14 @@ created: 2026-09-10
 
 遵循[公共契约](common-contracts.md)，路径均以 `/api/v1/creative` 为前缀，尚未部署。正式 DTO 与事件union在 GH-02/GH-05写入OpenAPI生成两侧类型；模型供应商格式不直接暴露为产品API。
 
+## 当前实现补充（2026-09-30）
+
+提交中的 `content_ref` 支持已保存的文本与图片修订，后者需要模型图片能力与 `image_preview` 同意；图片读取句柄由服务端绑定。`canvas_metadata` 同意允许发送小画布概览及调用 `read_canvas`。素材权限仍由 `selected_revision_ids` 的精确集合约束。
+
+消息正文保留 `blocks`，并可有 `tool_calls[{id,name,arguments}]`；工具消息带 `tool_call_id` 与 `tool_name`，形成稳定配对。调用 ID 来自持久模型步骤和调用序号，不复用供应商可能重复的 ID。历史界面折叠工具记录，`content_ref` 可展开查看原修订。
+
+运行新增只读工具 `read_asset`、`read_canvas`、`read_history`。恢复注册表升级为 `creative-runtime/3`，输入限制版本为 `creative-agent-5`；旧 checkpoint 按既有版本门禁处理，不用新工具集静默恢复旧状态。独立附件草稿、画布写工具和采纳接口仍以各自交付阶段为准。
+
 ## 1. REST
 
 所有写入携带operation_id/client_created_at，header key与body一致；有对象修改时携带对应expected_revision。返回稳定身份/状态，详细内容走GET。首次创建run固定模型/Skill/同意，浏览器不传账号、epoch、step/tool授权或供应商URL。

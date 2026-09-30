@@ -117,3 +117,43 @@ test('consent confirmation reuses the successor identity and stale owners cannot
   assert.equal(raw, JSON.stringify(first))
   assert.deepEqual(pendingAgentAction(raw)?.draft, command.draft)
 })
+
+test('material references preserve order, immutable revisions and retry identity', async () => {
+  const { agentReferences, agentSegments, referencedMaterials } =
+    await import('../src/creative-canvas/editor/agentReferences.ts')
+  const materials = [
+    { id: 'ccrv_image', title: '构图', kind: 'image' as const },
+    { id: 'ccrv_text', title: '方案', kind: 'text' as const },
+  ]
+  const refs = agentReferences(null, materials)
+  const text = '将 @[ccrv_image] 用于 @[ccrv_text]，保留构图'
+  const segments = agentSegments(text, refs)
+  assert.deepEqual(segments, [
+    { type: 'text', text: '将 ' },
+    { type: 'content_ref', content_revision_id: 'ccrv_image' },
+    { type: 'text', text: ' 用于 ' },
+    { type: 'content_ref', content_revision_id: 'ccrv_text' },
+    { type: 'text', text: '，保留构图' },
+  ])
+  assert.deepEqual(referencedMaterials(text, refs), materials)
+  assert.throws(() => agentSegments('@[unknown]', refs))
+  const original = agentAction(
+    '/conversations/c/egress-consents',
+    { selected_revision_ids: materials.map((item) => item.id) },
+    {
+      model_key: 'vision',
+      egress_consent_id: '',
+      instruction: { schema_version: 1, instruction_segments: segments },
+    },
+    { conversation: 'c', model: 'vision', skill: '', text, materials },
+  )
+  const restored = pendingAgentAction(JSON.stringify(original))!
+  assert.deepEqual(restored, original)
+  assert.deepEqual(
+    consentedRunAction(restored, 'consent'),
+    consentedRunAction(original, 'consent'),
+  )
+  assert.deepEqual(referencedMaterials('只使用 @[ccrv_text]', refs), [
+    materials[1],
+  ])
+})

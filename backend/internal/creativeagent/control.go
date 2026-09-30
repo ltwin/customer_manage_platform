@@ -165,6 +165,7 @@ func (s *Service) controlCommand(ctx context.Context, scope store.AccountScope, 
 		return runOutcome(run, 200)
 	}}, command)
 }
+
 func (s *Service) moveControlledRun(ctx context.Context, tx store.TxAccountScope, c controlledRun, state, code string, now time.Time) error {
 	if _, err := tx.Update(ctx, "creative_agent_runs", "state=$3,error_code=$4,settlement_state=$5,execution_epoch=execution_epoch+1,lease_until=NULL,revision=revision+1,updated_at=$6", "id=$2", c.ID, state, nullableText(code), c.settlement(), now); err != nil {
 		return err
@@ -172,8 +173,9 @@ func (s *Service) moveControlledRun(ctx context.Context, tx store.TxAccountScope
 	_, err := appendRunEventInTx(ctx, tx, c.ID, "run.state_changed", map[string]string{"state": state, "reason": code, "settlement_state": c.settlement()})
 	return err
 }
+
 func (s *Service) endControlledRun(ctx context.Context, tx store.TxAccountScope, c controlledRun, state, code string, now time.Time) error {
-	delivered, err := tx.Count(ctx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete'", c.ID)
+	delivered, err := tx.Count(ctx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete' AND NOT (body ? 'tool_calls')", c.ID)
 	if err != nil {
 		return err
 	}
@@ -349,7 +351,7 @@ func (s *Service) sweepRun(ctx context.Context, scope store.AccountScope, id str
 		if err != nil {
 			return err
 		}
-		delivered, err := tx.Count(ctx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete'", c.ID)
+		delivered, err := tx.Count(ctx, "creative_agent_messages", "run_id=$2 AND role='assistant' AND status='complete' AND NOT (body ? 'tool_calls')", c.ID)
 		if err != nil {
 			return err
 		}

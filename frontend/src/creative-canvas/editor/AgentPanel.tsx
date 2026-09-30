@@ -19,6 +19,14 @@ import {
   type AgentRun,
   type PendingAgentAction,
 } from './agentState.ts'
+import PromptEditor from './PromptEditor.tsx'
+import {
+  agentReferences,
+  agentSegments,
+  referencedMaterials,
+  type AgentMaterial,
+} from './agentReferences.ts'
+import { AgentMaterialPicker, AgentReference } from './AgentMaterials.tsx'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
@@ -31,9 +39,11 @@ type Reply = AgentRun | Conversation | Consent
 export default function AgentPanel({
   account,
   canvasID,
+  canvas,
 }: {
   account: string
   canvasID: string
+  canvas?: api.Canvas | null
 }) {
   const [open, setOpen] = useState(false)
   return (
@@ -50,6 +60,7 @@ export default function AgentPanel({
           key={`${account}:${canvasID}`}
           account={account}
           canvasID={canvasID}
+          canvas={canvas}
           onClose={() => setOpen(false)}
         />
       )}
@@ -59,10 +70,12 @@ export default function AgentPanel({
 function AgentConversation({
   account,
   canvasID,
+  canvas,
   onClose,
 }: {
   account: string
   canvasID: string
+  canvas?: api.Canvas | null
   onClose: () => void
 }) {
   const storageKey = `creative-agent-pending:${account}:${canvasID}`
@@ -77,7 +90,12 @@ function AgentConversation({
   const [model, setModel] = useState('')
   const [skill, setSkill] = useState('')
   const [draft, setDraft] = useState('')
+  const [materials, setMaterials] = useState<AgentMaterial[]>([])
+  const [pickingMaterial, setPickingMaterial] = useState(false)
+  const references = agentReferences(canvas, materials)
+  const referenced = referencedMaterials(draft, references)
   const [consented, setConsented] = useState(false)
+  const [includeHistoryMaterials, setIncludeHistoryMaterials] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState('')
@@ -90,8 +108,35 @@ function AgentConversation({
   const active = runs.find(isActiveRun)
   const waiting = runs.find((run) => run.state === 'waiting_input')
   const latest = active ?? waiting ?? runs[0]
+  const historyIDs = [
+    ...new Set(
+      messages
+        .slice()
+        .sort((a, b) => (BigInt(a.ordinal) > BigInt(b.ordinal) ? -1 : 1))
+        .slice(0, 20)
+        .flatMap((message) =>
+          message.body.blocks.flatMap((block) =>
+            block.type === 'content_ref' && block.ref_id ? [block.ref_id] : [],
+          ),
+        ),
+    ),
+  ]
+  const approvedIDs = [
+    ...new Set([
+      ...(includeHistoryMaterials ? historyIDs : []),
+      ...referenced.map((item) => item.id),
+    ]),
+  ]
   const chosenModel = catalog?.models.find((item) => item.model_key === model)
   const locked = busy || !!pending || storageBroken
+  const unsupportedImage =
+    referenced.some((item) => item.kind === 'image') &&
+    !chosenModel?.capability.image_input
+  const referenceLimit =
+    approvedIDs.length > 200 ||
+    referenced.length > (catalog?.limits.attachments ?? 10) ||
+    referenced.filter((item) => item.kind === 'image').length >
+      (catalog?.limits.image_preview_count ?? 8)
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
@@ -115,6 +160,7 @@ function AgentConversation({
     setConversation(value.conversation)
     setModel(value.model)
     setSkill(value.skill)
+    setMaterials(value.materials ?? [])
     setDraft(value.text)
     setConsented(false)
   }
@@ -258,6 +304,7 @@ function AgentConversation({
       if ('trigger_message_id' in reply) {
         setConversation(reply.conversation_id)
         setDraft('')
+        setMaterials([])
         setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
       } else if ('title' in reply) {
         setConversation(reply.id)
@@ -287,7 +334,13 @@ function AgentConversation({
   }
   function sendDraft() {
     if (!conversation || !draft.trim() || locked || active) return
-    const draftState = { conversation, model, skill, text: draft }
+    const draftState = {
+      conversation,
+      model,
+      skill,
+      text: draft,
+      materials: referenced,
+    }
     if (waiting) {
       void perform(
         action(
@@ -303,12 +356,23 @@ function AgentConversation({
       )
       return
     }
-    if (!chosenModel?.available || !consented) return
+    if (
+      !chosenModel?.available ||
+      !consented ||
+      unsupportedImage ||
+      referenceLimit
+    )
+      return
     const selected = catalog?.skills.find(
       (item) => item.skill_version_id === skill,
     )
-    const segments: components['schemas']['CreativeAgentInstructionSegment'][] =
-      [{ type: 'text', text: draft }]
+    let segments: components['schemas']['CreativeAgentInstructionSegment'][]
+    try {
+      segments = agentSegments(draft, references)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '引用不可用')
+      return
+    }
     if (selected)
       segments.unshift({
         type: 'skill_ref',
@@ -327,8 +391,12 @@ function AgentConversation({
           vendor_key: chosenModel.vendor_key,
           purpose: 'creative_assistance',
           mode: 'selected_revisions',
-          data_classes: ['text'],
-          selected_revision_ids: [],
+          data_classes: [
+            'text',
+            'canvas_metadata',
+            ...(chosenModel.capability.image_input ? ['image_preview'] : []),
+          ],
+          selected_revision_ids: approvedIDs,
         },
         nextRun,
         draftState,
@@ -430,7 +498,7 @@ function AgentConversation({
           <p className="cc-agent-empty">
             把你的想法写下来，从一个创作问题开始。
             <br />
-            当前支持文字对话与固定 Skill。
+            支持文字对话、素材引用与固定 Skill。输入 @ 引用画布中的文本或图片。
           </p>
         )}
         {[...messages]
@@ -447,13 +515,32 @@ function AgentConversation({
                     ? '我'
                     : '运行记录'}
               </small>
-              {message.body.blocks.map((block, index) => (
-                <p key={index}>
-                  {block.text ||
-                    block.skill?.display_name ||
-                    (block.type === 'reference' ? '引用内容' : '')}
-                </p>
-              ))}
+              {message.body.tool_calls?.length ? (
+                <details>
+                  <summary>
+                    调用 {message.body.tool_calls.length} 个工具
+                  </summary>
+                  {message.body.tool_calls.map((call) => (
+                    <p key={call.id}>{call.name}</p>
+                  ))}
+                </details>
+              ) : null}
+              {message.body.blocks.map((block, index) =>
+                block.type === 'content_ref' && block.ref_id ? (
+                  <AgentReference key={index} id={block.ref_id} />
+                ) : message.role === 'tool' ? (
+                  <details key={index}>
+                    <summary>{message.body.tool_name || '工具结果'}</summary>
+                    <pre>{block.text}</pre>
+                  </details>
+                ) : (
+                  <p key={index}>
+                    {block.text ||
+                      block.skill?.display_name ||
+                      (block.type === 'reference' ? '引用内容' : '')}
+                  </p>
+                ),
+              )}
             </article>
           ))}
       </div>
@@ -542,27 +629,66 @@ function AgentConversation({
           <label className="sr-only" htmlFor="creative-agent-draft">
             {waiting ? '补充内容' : '创作问题'}
           </label>
-          <textarea
-            id="creative-agent-draft"
-            className="resize-none"
-            value={draft}
-            disabled={locked || !!active}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                event.key === 'Enter' &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault()
-                event.currentTarget.form?.requestSubmit()
+          {waiting ? (
+            <textarea
+              id="creative-agent-draft"
+              className="resize-none"
+              value={draft}
+              disabled={locked || !!active}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter' &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault()
+                  event.currentTarget.form?.requestSubmit()
+                }
+              }}
+              placeholder={
+                waiting ? '补充原任务所需的信息…' : '想讨论什么创作方向？'
               }
-            }}
-            placeholder={
-              waiting ? '补充原任务所需的信息…' : '想讨论什么创作方向？'
-            }
-            rows={3}
-          />
+              rows={3}
+            />
+          ) : (
+            <PromptEditor
+              text={draft}
+              references={references}
+              thumbnails={{}}
+              disabled={locked || !!active}
+              label="创作问题"
+              referenceTitle="可引用的画布素材"
+              placeholder="想讨论什么创作方向？输入 @ 引用画布素材…"
+              onChange={(text) => {
+                setMaterials(referencedMaterials(text, references))
+                setDraft(text)
+                setConsented(false)
+              }}
+              onGenerate={sendDraft}
+              onLibrary={() => setPickingMaterial(true)}
+            />
+          )}
+          {!waiting && (
+            <button
+              className="cc-agent-add-material"
+              type="button"
+              disabled={locked || !!active}
+              onClick={() => setPickingMaterial(true)}
+            >
+              <Plus size={14} /> 引用素材
+            </button>
+          )}
+          {!waiting && unsupportedImage && (
+            <p className="cc-agent-hint" role="status">
+              当前模型不支持图片理解，请切换视觉模型或移除图片引用。
+            </p>
+          )}
+          {!waiting && referenceLimit && (
+            <p className="cc-agent-hint" role="status">
+              引用数量超过本轮上限，请减少素材。
+            </p>
+          )}
           <div className="cc-agent-composer-foot">
             {!waiting && (
               <div className="cc-agent-options">
@@ -616,13 +742,32 @@ function AgentConversation({
                 !!active ||
                 !conversation ||
                 !draft.trim() ||
-                (!waiting && (!consented || !chosenModel?.available))
+                (!waiting &&
+                  (!consented ||
+                    !chosenModel?.available ||
+                    unsupportedImage ||
+                    referenceLimit))
               }
             >
               <ArrowUp size={17} />
             </button>
           </div>
         </div>
+        {!waiting && historyIDs.length > 0 && (
+          <label className="cc-agent-consent">
+            <input
+              type="checkbox"
+              checked={includeHistoryMaterials}
+              disabled={locked || !!active}
+              onChange={(event) => {
+                setIncludeHistoryMaterials(event.target.checked)
+                setConsented(false)
+              }}
+            />
+            带入最近对话引用的 {historyIDs.length}{' '}
+            份素材；取消后保留文字与引用标识。
+          </label>
+        )}
         {!waiting && (
           <label className="cc-agent-consent">
             <input
@@ -631,11 +776,30 @@ function AgentConversation({
               disabled={locked || !!active}
               onChange={(event) => setConsented(event.target.checked)}
             />
-            同意将本会话文字、选定 Skill 指令及其资源发送给{' '}
-            {chosenModel?.vendor_key || '所选模型供应商'}，用于创作协助。
+            同意将会话文字与工具记录、画布概览、本次与最近对话引用的{' '}
+            {approvedIDs.length} 份素材，以及选定 Skill 指令和资源发送给{' '}
+            {chosenModel?.vendor_key || '所选模型供应商'}
+            ，用于创作协助。图片仅发送给支持视觉输入的模型。
           </label>
         )}
       </form>
+      {pickingMaterial && (
+        <AgentMaterialPicker
+          onClose={() => setPickingMaterial(false)}
+          onPick={(item) => {
+            setMaterials((old) => [
+              ...old.filter((m) => m.id !== item.id),
+              item,
+            ])
+            setDraft(
+              (old) =>
+                `${old}${old && !old.endsWith(' ') ? ' ' : ''}@[${item.id}] `,
+            )
+            setConsented(false)
+            setPickingMaterial(false)
+          }}
+        />
+      )}
     </aside>
   )
 }

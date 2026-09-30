@@ -1,3 +1,4 @@
+import type { AgentMaterial } from './agentReferences.ts'
 import type { components } from '../../api/schema'
 
 export type AgentRun = components['schemas']['CreativeAgentRun']
@@ -40,6 +41,7 @@ export type AgentDraft = {
   model: string
   skill: string
   text: string
+  materials?: AgentMaterial[]
 }
 export function ownsPendingAction(
   storage: Pick<Storage, 'getItem'>,
@@ -153,11 +155,24 @@ export function pendingAgentAction(
       typeof d.text !== 'string'
     )
       throw new Error('待发送草稿损坏')
+    if (
+      d.materials !== undefined &&
+      (!Array.isArray(d.materials) ||
+        !d.materials.every(
+          (m: unknown) =>
+            record(m) &&
+            typeof m.id === 'string' &&
+            typeof m.title === 'string' &&
+            (m.kind === 'text' || m.kind === 'image'),
+        ))
+    )
+      throw new Error('待发送素材记录损坏')
     pending.draft = {
       conversation: d.conversation,
       model: d.model,
       skill: d.skill,
       text: d.text,
+      ...(d.materials ? { materials: d.materials as AgentMaterial[] } : {}),
     }
   }
   if (value.nextRun !== undefined) {
@@ -193,6 +208,14 @@ export function pendingAgentAction(
           type: 'skill_ref',
           skill_id: segment.skill_id,
           skill_version_id: segment.skill_version_id,
+        })
+      else if (
+        segment.type === 'content_ref' &&
+        typeof segment.content_revision_id === 'string'
+      )
+        segments.push({
+          type: 'content_ref',
+          content_revision_id: segment.content_revision_id,
         })
       else throw new Error('待发送片段类型不可恢复')
     }

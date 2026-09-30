@@ -1024,7 +1024,7 @@ function Workspace({ account }: { account: string }) {
       className={`cc-workspace ${!canvasID ? 'is-library' : ''} ${libraryOpen ? 'has-library' : ''}`}
     >
       {canvasID && (
-        <AgentPanel key={canvasID} account={account} canvasID={canvasID} />
+        <AgentPanel key={canvasID} account={account} canvasID={canvasID} canvas={view} />
       )}
       <header className="cc-header">
         <Link
