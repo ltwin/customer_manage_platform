@@ -26,3 +26,19 @@ var/
 .workflow/
 .agents/
 .cursor/
+
+# >>> lti managed ignore rules
+# Versioned workflow artifacts; machine state stays local.
+!/.lti/
+!/.lti/**/
+!/.lti/**/*.md
+!/.lti/**/*.yaml
+!/.lti/**/*.yml
+!/.lti/features/**/meta.json
+!/.lti/snapshots/*.json
+/.lti/local/
+/.lti/locks/
+/.lti/transactions/
+/.lti/cache/
+/.lti/worktrees/
+# <<< lti managed ignore rules

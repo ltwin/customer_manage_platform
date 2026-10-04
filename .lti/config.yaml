@@ -4,6 +4,8 @@ tools:
   - codex
   - cursor
 schema: default
+workspaces:
+  mode: current
 
 # 验证命令(可选)。`lti verify <id> --run` 会执行它们,把 {命令, 退出码,
 # 输出尾部, 当时的 commit} 记进 change.yaml —— 验收工位据此拿到真实结果,不是转述。
