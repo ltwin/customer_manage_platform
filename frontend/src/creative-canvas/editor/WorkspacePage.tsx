@@ -1297,6 +1297,7 @@ function Workspace({ account }: { account: string }) {
                   onRedo={() => reverseChange(true)}
                   canUndo={history.canUndo}
                   canRedo={history.canRedo}
+                  onNotice={setCopyNotice}
                   onSelect={(id) => {
                     setSelected(id)
                   }}

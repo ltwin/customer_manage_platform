@@ -16,7 +16,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | SH-03 | P0 | 右上角依次为点数余额、「助手」开关、账号头像 | [V6-022](items/V6-022.md) | [V6-044](items/V6-044.md) |  |  |
 | SH-04 | P0 | 左侧垂直居中的工具轨：添加 `+` / 选择 V / 平移 H / … | [V6-044](items/V6-044.md) | — |  |  |
 | SH-05 | P1 | 快捷键帮助弹层列出全部快捷键 | [V6-045](items/V6-045.md) | — |  |  |
-| SH-06 | P0 | 左下角缩放条：撤销、重做、缩小、百分比、放大、适应、小地图 | [V6-055](items/V6-055.md) | — |  |  |
+| SH-06 | P0 | 左下角缩放条：撤销、重做、缩小、百分比、放大、适应、小地图 | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | SH-07 | P2 | 小地图 200×128，默认隐藏 | [V6-049](items/V6-049.md) | — |  |  |
 | SH-08 | P1 | 窄屏（≤760px）适配 | [V6-045](items/V6-045.md) | — |  |  |
 | CV-01 | P0 | 平移：中键拖动；平移工具下左键拖动；未选中任何对象时按住 Space… | [V6-002](items/V6-002.md) | — |  |  |
@@ -33,23 +33,23 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-16 | P1 | 视频节点悬停即预览 | [V6-058](items/V6-058.md) | — |  |  |
 | CV-17 | P0 | 手动调整节点尺寸（2026-10-04 拍板） | [V6-004](items/V6-004.md) | — |  |  |
 | CV-18 | P0 | 手动尺寸与内容比例的关系 | [V6-004](items/V6-004.md) | [V6-021](items/V6-021.md) |  |  |
-| CV-20 | P0 | 单击选中节点；Shift、⌘ 或 Ctrl 加单击切换该节点的选中状… | [V6-055](items/V6-055.md) | — |  |  |
+| CV-20 | P0 | 单击选中节点；Shift、⌘ 或 Ctrl 加单击切换该节点的选中状… | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-21 | P0 | 框选 | [V6-005](items/V6-005.md) | — |  |  |
-| CV-22 | P0 | 组只能点击标题栏来选中；⌘A 全选；Esc 依次关闭浮层、关闭全屏、… | [V6-055](items/V6-055.md) | — |  |  |
+| CV-22 | P0 | 组只能点击标题栏来选中；⌘A 全选；Esc 依次关闭浮层、关闭全屏、… | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-23 | P0 | 拖动 | [V6-005](items/V6-005.md) | — |  |  |
-| CV-24 | P1 | 方向键移动 1px，按住 Shift 移动 10px | [V6-055](items/V6-055.md) | — |  |  |
+| CV-24 | P1 | 方向键移动 1px，按住 Shift 移动 10px | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-25 | P0 | 拖动节点不会改变它的所属组（2026-10-04 拍板） | [V6-005](items/V6-005.md) | — |  |  |
 | CV-26 | P1 | 节点拖到资产库的分组标题或抽屉上松手，即存入资产库，节点回到原位 | [V6-019](items/V6-019.md) | — |  |  |
 | CV-30 | P0 | 输出端口在节点右侧，输入端口在左侧，图标为 `+`；仅在悬停、选中、… | [V6-046](items/V6-046.md) | — |  |  |
 | CV-31 | P1 | 指针靠近端口 48px 内时显现，端口轻微吸向指针 | [V6-046](items/V6-046.md) | — |  |  |
 | CV-32 | P0 | 拖线：移动超过 4px 后显示虚线预览；指针在节点上或距节点 18p… | [V6-046](items/V6-046.md) | — |  |  |
-| CV-33 | P0 | 拖线在空白处松手 → 在松手位置弹出添加菜单，虚线保持不消失 | [V6-055](items/V6-055.md) | — |  |  |
-| CV-34 | P0 | 只点击端口不拖动，或在键盘聚焦端口后按 Enter / Space … | [V6-055](items/V6-055.md) | — |  |  |
+| CV-33 | P0 | 拖线在空白处松手 → 在松手位置弹出添加菜单，虚线保持不消失 | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
+| CV-34 | P0 | 只点击端口不拖动，或在键盘聚焦端口后按 Enter / Space … | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-35 | P0 | 连线规则 | [V6-009](items/V6-009.md) | — |  |  |
-| CV-36 | P0 | 文本节点可以作为下游 | [V6-055](items/V6-055.md) | — |  |  |
-| CV-37 | P0 | 拒绝引用环 | [V6-055](items/V6-055.md) | — |  |  |
+| CV-36 | P0 | 文本节点可以作为下游 | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
+| CV-37 | P0 | 拒绝引用环 | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-38 | P0 | 连线渲染：从上游右侧中点到下游左侧中点的贝塞尔曲线；不带箭头 | [V6-046](items/V6-046.md) | — |  |  |
-| CV-39 | P0 | 断开连线：选中连线后，连线中点上方出现「断开连线」浮条；双击连线；选… | [V6-055](items/V6-055.md) | — |  |  |
+| CV-39 | P0 | 断开连线：选中连线后，连线中点上方出现「断开连线」浮条；双击连线；选… | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-3A | P0 | 断开连线后，下游提示词里对该上游的引用随之移除 | [V6-012](items/V6-012.md) | — |  |  |
 | CV-40 | P0 | 打组（⌘G、工具条、右键菜单）至少需要 2 个独立节点 | [V6-005](items/V6-005.md) | — |  |  |
 | CV-41 | P0 | 解组（⇧⌘G）：子节点上提到原组的父级，并保持各自的世界坐标；解组后… | [V6-005](items/V6-005.md) | — |  |  |
@@ -80,7 +80,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-93 | P0 | 视频节点接收视频文件 | [V6-008](items/V6-008.md) | — |  |  |
 | CV-94 | P0 | 上传过程中目标节点已经变化时，成果进入「待绑定上传候选」，不静默丢弃 | [V6-008](items/V6-008.md) | — |  |  |
 | CV-A0 | P0 | 复制（⌘D） | [V6-003](items/V6-003.md) | — |  |  |
-| CV-A1 | P0 | 删除（⌫ / Delete） | [V6-055](items/V6-055.md) | — |  |  |
+| CV-A1 | P0 | 删除（⌫ / Delete） | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-A2 | P0 | 撤销 / 重做：每个可理解的编辑记一步 | [V6-008](items/V6-008.md) | [V6-038](items/V6-038.md) |  |  |
 | CV-A3 | P0 | 撤销不退还已经消耗的点数 | [V6-022](items/V6-022.md) | [V6-013](items/V6-013.md)、[V6-038](items/V6-038.md) |  |  |
 | CV-A4 | P0 | 保存状态可见，服务端确认后才显示「已保存」；断网时保留草稿；多窗口冲… | [V6-059](items/V6-059.md) | — |  |  |

@@ -518,7 +518,7 @@ function ConnectionPreview(props: ConnectionLineComponentProps<FlowNode>) {
 type ReferenceFlowEdge = Edge<{
   showCut: boolean
   running: boolean
-  disconnect: () => void
+  disconnect: (byDoubleClick: boolean) => void
 }>
 function ReferenceEdge(props: EdgeProps<ReferenceFlowEdge>) {
   const { zoom } = useViewport()
@@ -560,7 +560,8 @@ function ReferenceEdge(props: EdgeProps<ReferenceFlowEdge>) {
             onDoubleClick={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation()
-              props.data?.disconnect()
+              // 双击连线中点时第二击会落在这个按钮上，按双击断线处理并给出撤销提示。
+              props.data?.disconnect(event.detail >= 2)
             }}
           >
             <Scissors size={16} aria-hidden="true" />
@@ -614,6 +615,7 @@ export default function CanvasView({
   moveDisabled,
   assets,
   account,
+  onNotice,
 }: {
   canvas: Canvas
   selected: string | null
@@ -660,6 +662,8 @@ export default function CanvasView({
   moveDisabled: boolean
   assets: Asset[]
   account: string
+  /** 画布内操作的说明提示，例如连线被拒的原因、双击断线可撤销。 */
+  onNotice: (message: string) => void
 }) {
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
@@ -692,12 +696,14 @@ export default function CanvasView({
     onSelection,
     onActions,
     canvasNodes: canvas.nodes,
+    selection,
   })
   callbacks.current = {
     onSelect,
     onSelection,
     onActions,
     canvasNodes: canvas.nodes,
+    selection,
   }
   const resizePreviews = useRef(
     new Map<
@@ -755,10 +761,13 @@ export default function CanvasView({
   const element = useRef<HTMLDivElement>(null),
     dragging = useRef(new Set<string>()),
     dragBases = useRef(new Map<string, CanvasNode>())
+  // 单击已在多选集合中的节点只切换焦点节点，不打散多选（PRD CV-20）。
   const selectNode = useCallback((id: string) => {
     setSelectedEdge(null)
     callbacks.current.onSelect(id)
-    callbacks.current.onSelection([id])
+    const current = callbacks.current.selection
+    if (!(current.length > 1 && current.includes(id)))
+      callbacks.current.onSelection([id])
   }, [])
   const openPort = useCallback(
     (
@@ -1156,9 +1165,10 @@ export default function CanvasView({
       data: {
         showCut: selectedEdge === e.id && persistedEdges.has(e.id) && !disabled,
         running: live,
-        disconnect: () => {
+        disconnect: (byDoubleClick: boolean) => {
           act([{ type: 'disconnect_reference', edge_id: e.id }])
           setSelectedEdge(null)
+          if (byDoubleClick) onNotice('已断开连线，⌘Z 可撤销')
         },
       },
       selected: selectedEdge === e.id || hot,
@@ -1178,6 +1188,51 @@ export default function CanvasView({
   })
   const act = (actions: GraphAction[]) => {
     if (!disabled) onActions(actions)
+  }
+  // 连线规则在本机先拦下并说明原因（PRD CV-35/37），不把必然被服务端拒绝的请求发出去。
+  function connectionProblem(sourceID: string, targetID: string): string {
+    if (sourceID === targetID) return '不能把节点连到它自己'
+    const kind = (id: string) =>
+      canvas.nodes.find((n) => n.id === id)?.metadata.type_key
+    if (kind(sourceID) === 'core.group' || kind(targetID) === 'core.group')
+      return '组不能作为连线的端点，请连到组内的节点'
+    if (
+      canvas.edges.some(
+        (e) => e.source_node_id === sourceID && e.target_node_id === targetID,
+      )
+    )
+      return '这两个节点已经连接'
+    const next = new Map<string, string[]>()
+    for (const e of canvas.edges)
+      next.set(e.source_node_id, [
+        ...(next.get(e.source_node_id) ?? []),
+        e.target_node_id,
+      ])
+    // 目标节点能沿连线走回源节点，说明新连线会形成引用环。
+    const seen = new Set<string>()
+    const stack = [targetID]
+    while (stack.length) {
+      const id = stack.pop()!
+      if (id === sourceID) return '这条连线会形成引用环，引用只能单向传递'
+      if (seen.has(id)) continue
+      seen.add(id)
+      stack.push(...(next.get(id) ?? []))
+    }
+    return ''
+  }
+  function connect(sourceID: string, targetID: string) {
+    const problem = connectionProblem(sourceID, targetID)
+    if (problem) return onNotice(problem)
+    act([
+      {
+        type: 'connect_reference',
+        source_node_id: sourceID,
+        target_node_id: targetID,
+        source_port: 'output',
+        target_port: 'reference',
+        role: 'reference',
+      },
+    ])
   }
   function removeSelection() {
     if (selectedEdge) {
@@ -1541,8 +1596,11 @@ export default function CanvasView({
         })
       }}
       onKeyDown={(e) => {
+        const target = e.target as HTMLElement
+        // 按钮本身不用 Esc：焦点停在端口等按钮上时 Esc 仍逐层生效（PRD CV-22）。
         if (
-          (e.target as HTMLElement).closest('button,input,textarea,select') ||
+          target.closest('input,textarea,select') ||
+          (target.closest('button') && e.key !== 'Escape') ||
           e.nativeEvent.isComposing
         )
           return
@@ -1559,6 +1617,18 @@ export default function CanvasView({
         if (e.shiftKey && e.code === 'Digit1') {
           e.preventDefault()
           void flow.fitView({ padding: 0.25, maxZoom: 1 })
+          return
+        }
+        // ⌘A 全选：选中所有顶层节点与组，组内子节点随组计入（PRD CV-22）。
+        if (command && key === 'a') {
+          e.preventDefault()
+          const roots = canvas.nodes
+            .filter((n) => !n.parent_id)
+            .map((n) => n.id)
+          setSelectedEdge(null)
+          setAddMenu(null)
+          onSelection(roots)
+          onSelect(roots[0] ?? null)
           return
         }
         if (command && key === 'd') {
@@ -1597,8 +1667,14 @@ export default function CanvasView({
             renameNode(selected)
           else onEdit(selected)
         } else if (e.key === 'Escape') {
-          setAddMenu(null)
-          onSelection([])
+          // 逐层：先关浮层，再清空选中（PRD CV-22）。
+          if (addMenu || contextMenu) {
+            setAddMenu(null)
+            setContextMenu(null)
+          } else {
+            setSelectedEdge(null)
+            onSelection([])
+          }
         }
       }}
       onDragOver={(e) => {
@@ -1793,16 +1869,7 @@ export default function CanvasView({
             connection.sourceHandle === 'output' &&
             connection.targetHandle === 'reference'
           )
-            act([
-              {
-                type: 'connect_reference',
-                source_node_id: connection.source,
-                target_node_id: connection.target,
-                source_port: 'output',
-                target_port: 'reference',
-                role: 'reference',
-              },
-            ])
+            connect(connection.source, connection.target)
         }}
         connectOnClick={false}
         onConnectEnd={(event, state) => {
@@ -1814,19 +1881,30 @@ export default function CanvasView({
           const target = connectionTarget(flow, state.fromNode.id, screen)
           if (target) {
             const output = state.fromHandle?.type === 'source'
-            act([
-              {
-                type: 'connect_reference',
-                source_node_id: output ? state.fromNode.id : target.id,
-                target_node_id: output ? target.id : state.fromNode.id,
-                source_port: 'output',
-                target_port: 'reference',
-                role: 'reference',
-              },
-            ])
+            connect(
+              output ? state.fromNode.id : target.id,
+              output ? target.id : state.fromNode.id,
+            )
             return
           }
           const hit = document.elementFromPoint(screen.x, screen.y)
+          // 松手在自己或组上：connectionTarget 不会选中它们，这里说明为什么没连上。
+          const dropped = hit
+            ?.closest<HTMLElement>('.react-flow__node')
+            ?.getAttribute('data-id')
+          if (dropped) {
+            const problem =
+              dropped === state.fromNode.id
+                ? '不能把节点连到它自己'
+                : canvas.nodes.find((n) => n.id === dropped)?.metadata
+                      .type_key === 'core.group'
+                  ? '组不能作为连线的端点，请连到组内的节点'
+                  : ''
+            if (problem) {
+              onNotice(problem)
+              return
+            }
+          }
           if (
             !hit?.closest('.react-flow__pane') ||
             hit.closest('.react-flow__node')
@@ -1850,8 +1928,9 @@ export default function CanvasView({
           setSelectedEdge(persistedEdges.has(edge.id) ? edge.id : null)
         }}
         onEdgeDoubleClick={(_, edge) => {
-          if (persistedEdges.has(edge.id))
-            act([{ type: 'disconnect_reference', edge_id: edge.id }])
+          if (!persistedEdges.has(edge.id)) return
+          act([{ type: 'disconnect_reference', edge_id: edge.id }])
+          if (!disabled) onNotice('已断开连线，⌘Z 可撤销')
         }}
         panOnScroll
         panOnScrollMode={PanOnScrollMode.Free}
