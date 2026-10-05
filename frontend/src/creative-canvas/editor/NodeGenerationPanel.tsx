@@ -390,7 +390,8 @@ export default function NodeGenerationPanel({
       })
       .filter(Boolean)
       .join(' · ') || '参数'
-  const panelTop = `clamp(64px, ${(point.y + renderedHeight) * viewport.zoom + viewport.y + 12}px, max(64px, 100% - ${tab === 'versions' ? 340 : 220}px))`
+  // 贴在节点下方 14px（PRD GN-01）。
+  const panelTop = `clamp(64px, ${(point.y + renderedHeight) * viewport.zoom + viewport.y + 14}px, max(64px, 100% - ${tab === 'versions' ? 340 : 220}px))`
   return createPortal(
     <aside
       className={`cc-generation nodrag nopan nowheel ${node.status.active_execution_id ? 'is-running' : ''}`}

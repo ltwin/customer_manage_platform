@@ -107,11 +107,11 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | VR-08 | P0 | 采用的主版本在刷新、重开后保持；预览状态不持久化 | [V6-013](items/V6-013.md) | — |  |  |
 | VR-09 | P0 | 全屏查看 | [V6-013](items/V6-013.md) | — |  |  |
 | VR-0A | P1 | 删除历史版本 | [V6-013](items/V6-013.md) | — |  |  |
-| GN-01 | P0 | 只在单选图片、视频、音频节点时出现（链接节点见 CV-B5），位置贴… | [V6-056](items/V6-056.md) | — |  |  |
-| GN-02 | P0 | 输入框跟随画布的平移和缩放 | [V6-056](items/V6-056.md) | — |  |  |
-| GN-03 | P0 | 结构从上到下：参考行、提示词、底栏 | [V6-056](items/V6-056.md) | — |  |  |
-| GN-04 | P0 | 在输入框内点击不会取消选中，按键不会触发画布快捷键 | [V6-056](items/V6-056.md) | — |  |  |
-| GN-05 | P0 | 提示词草稿按节点保存 | [V6-056](items/V6-056.md) | — |  |  |
+| GN-01 | P0 | 只在单选图片、视频、音频节点时出现（链接节点见 CV-B5），位置贴… | [V6-056](items/V6-056.md) | — |  | [fix-note](../../issues/2026-10-05-composer-baseline-regression/composer-baseline-regression-fix-note.md) |
+| GN-02 | P0 | 输入框跟随画布的平移和缩放 | [V6-056](items/V6-056.md) | — |  | [fix-note](../../issues/2026-10-05-composer-baseline-regression/composer-baseline-regression-fix-note.md) |
+| GN-03 | P0 | 结构从上到下：参考行、提示词、底栏 | [V6-056](items/V6-056.md) | — | 比例/数量 chip 由 V6-021、点数由 V6-022 验收 | [fix-note](../../issues/2026-10-05-composer-baseline-regression/composer-baseline-regression-fix-note.md) |
+| GN-04 | P0 | 在输入框内点击不会取消选中，按键不会触发画布快捷键 | [V6-056](items/V6-056.md) | — |  | [fix-note](../../issues/2026-10-05-composer-baseline-regression/composer-baseline-regression-fix-note.md) |
+| GN-05 | P0 | 提示词草稿按节点保存 | [V6-056](items/V6-056.md) | — |  | [fix-note](../../issues/2026-10-05-composer-baseline-regression/composer-baseline-regression-fix-note.md) |
 | GN-10 | P0 | 参考集合由连线决定 | [V6-011](items/V6-011.md) | [V6-012](items/V6-012.md) |  |  |
 | GN-11 | P0 | 编号规则 | [V6-011](items/V6-011.md) | — |  |  |
 | GN-12 | P1 | 点击参考行中的某一项，把它的引用插入到光标处；没有光标时插到句末 | [V6-012](items/V6-012.md) | — |  |  |
@@ -132,7 +132,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | GN-31 | P0 | 比例/数量弹层 | [V6-021](items/V6-021.md) | — |  |  |
 | GN-32 | P1 | 类型专属参数 | [V6-021](items/V6-021.md) | — |  |  |
 | GN-33 | P0 | 点数显示为「单价 × 数量」，生成中显示「生成中…」 | [V6-022](items/V6-022.md) | — |  |  |
-| GN-34 | P0 | 生成键 | [V6-056](items/V6-056.md) | — |  |  |
+| GN-34 | P0 | 生成键 | [V6-056](items/V6-056.md) | — |  | [fix-note](../../issues/2026-10-05-composer-baseline-regression/composer-baseline-regression-fix-note.md) |
 | GN-35 | P2 | `/` 预设 | [V6-052](items/V6-052.md) | — |  |  |
 | GN-36 | P0 | 生成状态 | [V6-027](items/V6-027.md) | [V6-023](items/V6-023.md) |  |  |
 | GN-37 | P0 | 生成完成后的主版本 | [V6-027](items/V6-027.md) | — |  |  |

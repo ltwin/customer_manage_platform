@@ -1435,9 +1435,11 @@ function Workspace({ account }: { account: string }) {
                   }
                   onMove={(n, x, y) => moveSelection([{ node: n, x, y }])}
                 />
+                {/* 只在单选节点时出现（PRD GN-01）：多选时不显示，避免误以为只对焦点节点生成。 */}
                 {node &&
                   queue &&
                   !inlineEditing &&
+                  selection.length <= 1 &&
                   node.capabilities.prompt_mode !== 'unavailable' && (
                     <NodeGenerationPanel
                       key={`${canvasID}:${node.id}`}
