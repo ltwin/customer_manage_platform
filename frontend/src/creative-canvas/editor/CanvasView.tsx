@@ -1914,7 +1914,8 @@ export default function CanvasView({
           />
         )}
       </ReactFlow>
-      {active && (
+      {/* 文字编辑期间隐藏工具条，结束编辑后恢复（PRD CV-60）。 */}
+      {active && !inlineContent && (
         <div
           className="cc-selection-tools cc-surface"
           role="toolbar"
@@ -1933,6 +1934,15 @@ export default function CanvasView({
             const one = selection.length === 1 ? active.data.item : undefined
             const tools: { label: string; icon: ReactNode; run: () => void }[] =
               []
+            if (
+              one?.metadata.type_key === 'core.text' &&
+              one.capabilities.actions.includes('edit')
+            )
+              tools.push({
+                label: '编辑',
+                icon: <Pencil size={16} />,
+                run: () => onEdit(one.id),
+              })
             if (one?.metadata.type_key === 'core.image' && one.content)
               tools.push({
                 label: '生成视频',

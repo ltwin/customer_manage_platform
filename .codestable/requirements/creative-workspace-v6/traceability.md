@@ -61,9 +61,9 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-52 | P1 | T/I/O/A/L 直接在屏幕中心新建节点 | [V6-006](items/V6-006.md) | [V6-009](items/V6-009.md)、[V6-010](items/V6-010.md) |  |  |
 | CV-53 | P0 | 新建后只选中新节点 | [V6-006](items/V6-006.md) | — |  |  |
 | CV-54 | P0 | 双击的含义按位置区分 | [V6-006](items/V6-006.md) | — |  |  |
-| CV-60 | P0 | 文本节点在卡片内直接编辑 | [V6-001](items/V6-001.md) | — |  |  |
-| CV-61 | P1 | 编辑中按 Esc 退出并保存 | [V6-001](items/V6-001.md) | — |  |  |
-| CV-62 | P0 | 双击标题就地重命名，组标题同样适用 | [V6-001](items/V6-001.md) | — |  |  |
+| CV-60 | P0 | 文本节点在卡片内直接编辑 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
+| CV-61 | P1 | 编辑中按 Esc 退出并保存 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
+| CV-62 | P0 | 双击标题就地重命名，组标题同样适用 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
 | CV-70 | P0 | 工具条按选中内容显示不同按钮 | [V6-007](items/V6-007.md) | — |  |  |
 | CV-71 | P0 | 派生：新建下游节点并预填引用，不自动开始生成 | [V6-007](items/V6-007.md) | — |  |  |
 | CV-72 | P0 | 已确定的派生项 | [V6-007](items/V6-007.md) | — |  |  |

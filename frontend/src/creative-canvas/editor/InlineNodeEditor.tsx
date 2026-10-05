@@ -27,7 +27,9 @@ export function InlineNodeTitle({
   function finish(save: boolean) {
     if (finished.current) return
     finished.current = true
-    if (save && !disabled && value.trim() !== title) onSave(value.trim())
+    // 空名称与未改动都不提交，避免写入空标题或留下空撤销步骤。
+    const next = value.trim()
+    if (save && !disabled && next && next !== title) onSave(next)
     onClose()
   }
   return (
@@ -123,10 +125,10 @@ export function InlineNodeText({
         onKeyDown={(event) => {
           event.stopPropagation()
           if (event.nativeEvent.isComposing) return
+          // Esc 退出编辑并保存，与点击空白处一致（PRD CV-61）；无改动时直接退出。
           if (event.key === 'Escape') {
             event.preventDefault()
-            finished.current = true
-            onCancel(original)
+            save()
           } else if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
             event.preventDefault()
             save()
