@@ -150,6 +150,11 @@ export default function LibraryPanel({
   const [columns, setColumns] = useState(2)
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [nameEdit, setNameEdit] = useState<NameEdit | null>(null)
+  // 分组名称提交中的锁；进入新的编辑或结束编辑时释放。
+  const naming = useRef(false)
+  useEffect(() => {
+    naming.current = false
+  }, [nameEdit])
   const [notice, setNotice] = useState('')
   const [menu, setMenu] = useState<Menu | null>(null)
   const [tagsOpen, setTagsOpen] = useState<DOMRect | null>(null)
@@ -586,15 +591,21 @@ export default function LibraryPanel({
       })
     setNameEdit({ kind: 'new', parent })
   }
-  function commitName(value: string) {
+  // 校验或提交失败时保留输入框和已输入的名称，让摄影师就地修改；只有成功、
+  // 空名称或名称未变才关闭。提交中再按 Enter 或失焦不会重复发请求。
+  function commitName(input: HTMLInputElement, refocus: boolean) {
     const e = nameEdit
-    setNameEdit(null)
-    const name = value.trim()
-    if (!e || !name) return
-    if ([...name].length > 80) return setNotice('分组名称最多 80 个字')
+    if (!e || naming.current) return
+    const keep = (message: string) => {
+      setNotice(message)
+      if (refocus) input.focus()
+    }
+    const name = input.value.trim()
+    if (!name) return setNameEdit(null)
+    if ([...name].length > 80) return keep('分组名称最多 80 个字')
     const parent = e.kind === 'new' ? e.parent : (groupOf(e.id)?.parent_id ?? null)
     const current = e.kind === 'rename' ? groupOf(e.id) : undefined
-    if (current && current.name === name) return
+    if (current && current.name === name) return setNameEdit(null)
     if (
       catalog.groups.some(
         (g) =>
@@ -603,7 +614,8 @@ export default function LibraryPanel({
           normalizeName(g.name) === normalizeName(name),
       )
     )
-      return setNotice(`同一层已有「${name}」`)
+      return keep(`同一层已有「${name}」，换个名称再确认`)
+    naming.current = true
     void (
       e.kind === 'new'
         ? onCommand('/asset-groups', { name, parent_id: parent, hierarchy_revision: catalog.hierarchy })
@@ -613,7 +625,14 @@ export default function LibraryPanel({
             hierarchy_revision: catalog.hierarchy,
           })
     ).then((ok) => {
-      if (ok && e.kind === 'new') setNotice(`已新建「${name}」`)
+      if (!ok) {
+        naming.current = false
+        if (refocus && input.isConnected) input.focus()
+        return
+      }
+      // 成功后锁保持到编辑状态切换（见上方 effect），避免输入框卸载时补发的失焦再提交一次。
+      setNameEdit(null)
+      if (e.kind === 'new') setNotice(`已新建「${name}」`)
     })
   }
   function nameInput(value: string, label: string) {
@@ -632,16 +651,15 @@ export default function LibraryPanel({
           if (e.nativeEvent.isComposing) return
           if (e.key === 'Enter') {
             e.preventDefault()
-            commitName(e.currentTarget.value)
+            commitName(e.currentTarget, true)
           } else if (e.key === 'Escape') {
             e.preventDefault()
             setNameEdit(null)
           }
         }}
         // 失焦等于确认，和画布上重命名节点的习惯一致；空名称视为取消。
-        onBlur={(e) => {
-          if (nameEdit) commitName(e.currentTarget.value)
-        }}
+        // 失焦时校验失败不抢回焦点，输入框留在原位等摄影师回来修改。
+        onBlur={(e) => commitName(e.currentTarget, false)}
       />
     )
   }

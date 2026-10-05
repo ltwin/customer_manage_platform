@@ -62,6 +62,8 @@ const commands = []
 const posts = []
 let revision = 1
 let hierarchy = 1
+// 模拟另一窗口抢先占用的分组名：本机目录里没有，只有服务端会拒绝。
+const takenOnServer = new Set(['棚拍布光'])
 
 await page.addInitScript(() => {
   const original = window.fetch.bind(window)
@@ -118,6 +120,8 @@ await page.route('**/api/v1/**', async (route) => {
     const body = route.request().postDataJSON()
     posts.push({ path, payload: body?.payload })
     if (path.endsWith('/asset-groups')) {
+      if (takenOnServer.has(body.payload.name))
+        return json({ error: { code: 'creative_group_name_taken', message: '同一层已有同名分组' } }, 409)
       hierarchy++
       groups.push({ id: `g-new-${hierarchy}`, parent_id: body.payload.parent_id, name: body.payload.name, position: 9, revision: '1' })
       return json({ id: `g-new-${hierarchy}`, revision: '1', hierarchy_revision: String(hierarchy), library_revision: '1' })
@@ -259,17 +263,56 @@ try {
   await drawer.getByRole('button', { name: '移除标签筛选：逆光' }).click()
   await drawer.locator('.cl-groups-bar').waitFor()
 
-  // 7. 就地新建分组：同层重名本机即拦下，不发请求。
+  // 7. 就地新建分组：同层重名本机即拦下，不发请求，并保留已输入的名称继续修改（V6-017）。
+  const groupPosts = () => posts.filter((p) => p.path.endsWith('/asset-groups'))
   await drawer.getByRole('button', { name: '新建分组', exact: true }).click()
-  await drawer.getByLabel('新建分组').fill('客户样片')
+  const nameField = drawer.locator('input.cl-name-input')
+  await nameField.fill('客户样片')
   await page.keyboard.press('Enter')
   await drawer.getByRole('status').filter({ hasText: '同一层已有「客户样片」' }).waitFor()
-  assert(!posts.some((p) => p.path.endsWith('/asset-groups')))
-  await drawer.getByRole('button', { name: '新建分组', exact: true }).click()
-  await drawer.getByLabel('新建分组').fill('光线与时刻')
+  assert.equal(groupPosts().length, 0)
+  assert.equal(await nameField.inputValue(), '客户样片', 'duplicate name keeps the typed input')
+  assert(await nameField.evaluate((el) => el === document.activeElement), 'input keeps focus after Enter rejection')
+  // 失焦校验失败也不清空输入、不抢回焦点。
+  await drawer.locator('.cl-head h2').click()
+  assert.equal(await nameField.inputValue(), '客户样片', 'blur rejection keeps the typed input')
+  // 服务端拒绝（另一窗口已占用）：输入框和名称保留，关闭拒绝提示后改名即可提交。
+  await nameField.fill('棚拍布光')
   await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: '放弃被拒绝的请求' }).waitFor()
+  assert.equal(groupPosts().length, 1)
+  assert.equal(await nameField.inputValue(), '棚拍布光', 'server rejection keeps the typed input')
+  await page.getByRole('button', { name: '放弃被拒绝的请求' }).click()
+  await page.getByRole('button', { name: '放弃被拒绝的请求' }).waitFor({ state: 'detached' })
+  // 连按两次 Enter 只提交一次，成功后关闭输入框且不留空分组。
+  await nameField.fill('光线与时刻')
+  // 同一 tick 内连按两次，第二次落在请求仍在途时。关闭拒绝提示后队列可能仍在刷新，
+  // 此时 Enter 被忽略但输入保留；像摄影师一样重按，直到请求真正发出。
+  for (let i = 0; i < 20 && groupPosts().length < 2; i++) {
+    await nameField.evaluate((el) => {
+      for (let k = 0; k < 2; k++) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    })
+    await page.waitForTimeout(250)
+  }
   await drawer.getByRole('region', { name: '光线与时刻' }).waitFor()
-  assert.deepEqual(posts.find((p) => p.path.endsWith('/asset-groups')).payload, { name: '光线与时刻', parent_id: null, hierarchy_revision: '1' })
+  assert.equal(groupPosts().length, 2, 'double Enter sends one create request')
+  assert.deepEqual(groupPosts().at(-1).payload, { name: '光线与时刻', parent_id: null, hierarchy_revision: '1' })
+  assert.equal(await drawer.locator('input.cl-name-input').count(), 0, 'input closes after success')
+  // Esc 取消不发请求；输入法组字中的 Enter 不提交；失焦提交一次。
+  await drawer.getByRole('button', { name: '新建分组', exact: true }).click()
+  await nameField.fill('取消的分组')
+  await nameField.press('Escape')
+  assert.equal(await drawer.locator('input.cl-name-input').count(), 0, 'Esc closes the input')
+  assert.equal(groupPosts().length, 2, 'Esc sends nothing')
+  await drawer.getByRole('button', { name: '新建分组', exact: true }).click()
+  await nameField.fill('婚纱外景')
+  await nameField.evaluate((el) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })))
+  await page.waitForTimeout(250)
+  assert.equal(groupPosts().length, 2, 'Enter during IME composition does not submit')
+  assert.equal(await nameField.inputValue(), '婚纱外景')
+  await drawer.locator('.cl-head h2').click()
+  await drawer.getByRole('region', { name: '婚纱外景' }).waitFor()
+  assert.equal(groupPosts().length, 3, 'blur submits once')
 
   // 8. 节点拖到分组标题上：存入该组，节点回到原处。
   const node = page.locator('.react-flow__node[data-id="filled"]')
