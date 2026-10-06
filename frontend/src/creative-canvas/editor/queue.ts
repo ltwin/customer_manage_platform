@@ -473,6 +473,9 @@ export class SaveQueue {
           ...job,
           state: rejected ? 'rejected' : 'unknown',
           message: errorMessage(e),
+          ...(rejected && code === 'creative_revision_conflict'
+            ? { conflict: true }
+            : {}),
         },
       })
     } finally {

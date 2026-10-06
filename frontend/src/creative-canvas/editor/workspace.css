@@ -372,6 +372,22 @@ button.cc-project-name:hover,
   font-size: 11px;
   color: var(--fg-3);
 }
+/* 保存状态：只读文字，不抢焦点、不挡画布。 */
+.cc-save-state {
+  margin: 0 8px 0 4px;
+  font-size: 11px;
+  color: var(--fg-3);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.cc-save-state[data-state="offline"],
+.cc-save-state[data-state="unconfirmed"] {
+  color: var(--warning);
+}
+.cc-save-state[data-state="conflict"],
+.cc-save-state[data-state="rejected"] {
+  color: var(--danger);
+}
 .cc-menu-dismiss {
   position: absolute;
   inset: 0;

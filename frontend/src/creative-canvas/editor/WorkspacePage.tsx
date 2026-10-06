@@ -37,6 +37,7 @@ import {
   remapActions,
 } from './structuralPreview.ts'
 import { historyOf, projectCanvas, type Intent } from './outbox.ts'
+import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
 import CanvasView from './CanvasView.tsx'
 import NodeGenerationPanel from './NodeGenerationPanel.tsx'
@@ -167,6 +168,15 @@ function Workspace({ account }: { account: string }) {
     revision: string
   } | null>(null)
   const outbox = useMemo(() => queue?.value.outbox ?? [], [queue?.value.outbox])
+  // 本会话在哪张画布上拿到过服务端保存回执；之前不显示「已保存」。
+  const [confirmedCanvas, setConfirmedCanvas] = useState<string | null>(null)
+  useEffect(() => {
+    if (
+      canvasID &&
+      outbox.some((i) => i.canvasID === canvasID && i.state === 'confirmed')
+    )
+      setConfirmedCanvas(canvasID)
+  }, [outbox, canvasID])
   // The canvas the photographer sees: snapshot plus local edits on their way.
   const view = useMemo(
     () =>
@@ -1008,6 +1018,17 @@ function Workspace({ account }: { account: string }) {
   const job = queue?.value.job
   const hasDraft = !!queue?.value.drafts[nodeKey]
   const needsRecovery = !!job && !queue?.busy && !loading
+  const status = canvasID
+    ? saveStatus({
+        canvasID,
+        outbox,
+        job,
+        busy: !!queue?.busy,
+        online,
+        comparing: !!compare,
+        confirmedOnce: confirmedCanvas === canvasID,
+      })
+    : 'idle'
   const showNotice = !!(
     syncError ||
     nodeError ||
@@ -1050,6 +1071,15 @@ function Workspace({ account }: { account: string }) {
           <h1 className="cc-project-name">个人资产库</h1>
         )}
         {canvas?.archived && <span className="cc-header-note">已归档</span>}
+        {status !== 'idle' && (
+          <span
+            className="cc-save-state"
+            role="status"
+            data-state={status}
+          >
+            {saveStatusText[status]}
+          </span>
+        )}
       </header>
       {projectMenu && activeProject && (
         <>

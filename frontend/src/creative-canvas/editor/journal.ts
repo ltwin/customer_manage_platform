@@ -12,6 +12,8 @@ export type Job = {
   draftValue?: Draft
   // The outbox intent this immutable request carries, if any.
   intent?: string
+  // Rejected because another window saved first (creative_revision_conflict).
+  conflict?: boolean
 }
 export type Draft = {
   prompt?: components['schemas']['CreativeSavePromptPayload']

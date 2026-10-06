@@ -83,7 +83,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-A1 | P0 | 删除（⌫ / Delete） | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-A2 | P0 | 撤销 / 重做：每个可理解的编辑记一步 | [V6-008](items/V6-008.md) | [V6-038](items/V6-038.md) |  |  |
 | CV-A3 | P0 | 撤销不退还已经消耗的点数 | [V6-022](items/V6-022.md) | [V6-013](items/V6-013.md)、[V6-038](items/V6-038.md) |  |  |
-| CV-A4 | P0 | 保存状态可见，服务端确认后才显示「已保存」；断网时保留草稿；多窗口冲… | [V6-059](items/V6-059.md) | — |  |  |
+| CV-A4 | P0 | 保存状态可见，服务端确认后才显示「已保存」；断网时保留草稿；多窗口冲… | [V6-059](items/V6-059.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-save-status-visible/canvas-save-status-visible-fix-note.md) |
 | CV-B0 | P0 | 链接节点用来保存一个 HTTP/HTTPS 地址，以及标题、描述 | [V6-009](items/V6-009.md) | — |  |  |
 | CV-B1 | P0 | 新建方式：添加菜单「链接 L」；在画布上粘贴一段 URL 文本；从资… | [V6-009](items/V6-009.md) | — |  |  |
 | CV-B2 | P0 | 卡片上提供「打开来源」按钮，只在摄影师主动点击时才在新标签页打开 | [V6-009](items/V6-009.md) | — |  |  |
