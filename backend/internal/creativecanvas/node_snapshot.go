@@ -2,7 +2,9 @@ package creativecanvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"sort"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -82,6 +84,9 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		return err
+	}
+	if err := fillVersionSummaries(ctx, tx, c.ID, nodes); err != nil {
 		return err
 	}
 	foundExecutions := map[string]bool{}
@@ -166,4 +171,66 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 		n.Content = &preview
 	}
 	return nil
+}
+
+// versionRow 是汇总版本元信息所需的最少字段。
+type versionRow struct {
+	id         string
+	number     int64
+	provenance json.RawMessage
+}
+
+// fillVersionSummaries 一次读取本画布未删除的版本，按节点汇总版本元信息。
+func fillVersionSummaries(ctx context.Context, tx canvasReader, canvas string, nodes map[string]*Node) error {
+	byNode := map[string][]versionRow{}
+	total := 0
+	err := snapshotRows(ctx, tx, "creative_node_versions", "id,node_id,version_no,generation_provenance", "canvas_id=$2 AND deleted_at IS NULL", func(r store.Row) error {
+		var v versionRow
+		var node string
+		if err := r.Scan(&v.id, &node, &v.number, &v.provenance); err != nil {
+			return err
+		}
+		total++
+		if nodes[node] != nil {
+			byNode[node] = append(byNode[node], v)
+		}
+		return nil
+	}, canvas)
+	if err != nil {
+		return err
+	}
+	// 与 loadVersions 同一上限；超限时只是不显示元信息，不让快照失败。
+	if total > 10000 {
+		return nil
+	}
+	for id, versions := range byNode {
+		nodes[id].Versions = summarizeVersions(versions, nodes[id].SelectedVersionID)
+	}
+	return nil
+}
+
+// summarizeVersions：主版本为 selected，为空或找不到时取 version_no 最大的一版。
+func summarizeVersions(versions []versionRow, selected *string) *VersionSummary {
+	if len(versions) == 0 {
+		return nil
+	}
+	sort.Slice(versions, func(i, j int) bool { return versions[i].number < versions[j].number })
+	main := len(versions) - 1
+	if selected != nil {
+		for i, v := range versions {
+			if v.id == *selected {
+				main = i
+			}
+		}
+	}
+	var provenance struct {
+		Prompt struct {
+			ModelKey string `json:"model_key"`
+		} `json:"prompt"`
+	}
+	var model *string
+	if json.Unmarshal(versions[main].provenance, &provenance) == nil && provenance.Prompt.ModelKey != "" {
+		model = &provenance.Prompt.ModelKey
+	}
+	return &VersionSummary{Count: len(versions), MainOrdinal: main + 1, MainModelKey: model}
 }

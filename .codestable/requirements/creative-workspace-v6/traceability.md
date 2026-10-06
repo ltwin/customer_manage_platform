@@ -24,11 +24,11 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-03 | P0 | 适应画布（⇧1） | [V6-002](items/V6-002.md) | — |  |  |
 | CV-04 | P0 | 视口按账号和画布存在本机，重新打开时回到原位置 | [V6-002](items/V6-002.md) | — |  |  |
 | CV-05 | P2 | 背景点阵随缩放变化 | [V6-049](items/V6-049.md) | — |  |  |
-| CV-10 | P0 | 节点由两部分组成：卡片外上方 26px 高的标签（类型图标 + 标题… | [V6-003](items/V6-003.md) | — |  |  |
+| CV-10 | P0 | 节点由两部分组成：卡片外上方 26px 高的标签（类型图标 + 标题… | [V6-003](items/V6-003.md) | — |  | [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | CV-11 | P0 | 卡片状态：默认细线框；悬停时线框变亮；选中时 1.5px 白框；作为… | [V6-046](items/V6-046.md) | — |  |  |
-| CV-12 | P0 | 空节点有引导 | [V6-003](items/V6-003.md) | — |  |  |
+| CV-12 | P0 | 空节点有引导 | [V6-003](items/V6-003.md) | — |  | [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | CV-13 | P0 | 运行中状态 | [V6-027](items/V6-027.md) | — |  |  |
-| CV-14 | P0 | 新建节点默认宽 300；图片 / 视频默认 1:1，空节点可以通过比… | [V6-003](items/V6-003.md) | [V6-021](items/V6-021.md) |  |  |
+| CV-14 | P0 | 新建节点默认宽 300；图片 / 视频默认 1:1，空节点可以通过比… | [V6-003](items/V6-003.md) | [V6-021](items/V6-021.md) |  | [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | CV-15 | P0 | 图片 / 视频有内容后，宽度保持当前值（默认 300，或手动调整后的… | [V6-004](items/V6-004.md) | — |  |  |
 | CV-16 | P1 | 视频节点悬停即预览 | [V6-058](items/V6-058.md) | — |  |  |
 | CV-17 | P0 | 手动调整节点尺寸（2026-10-04 拍板） | [V6-004](items/V6-004.md) | — |  |  |
@@ -79,7 +79,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-92 | P0 | 填充后的效果 | [V6-008](items/V6-008.md) | — |  |  |
 | CV-93 | P0 | 视频节点接收视频文件 | [V6-008](items/V6-008.md) | — |  |  |
 | CV-94 | P0 | 上传过程中目标节点已经变化时，成果进入「待绑定上传候选」，不静默丢弃 | [V6-008](items/V6-008.md) | — |  |  |
-| CV-A0 | P0 | 复制（⌘D） | [V6-003](items/V6-003.md) | — |  |  |
+| CV-A0 | P0 | 复制（⌘D） | [V6-003](items/V6-003.md) | — |  | [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | CV-A1 | P0 | 删除（⌫ / Delete） | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-A2 | P0 | 撤销 / 重做：每个可理解的编辑记一步 | [V6-008](items/V6-008.md) | [V6-038](items/V6-038.md) |  |  |
 | CV-A3 | P0 | 撤销不退还已经消耗的点数 | [V6-022](items/V6-022.md) | [V6-013](items/V6-013.md)、[V6-038](items/V6-038.md) |  |  |

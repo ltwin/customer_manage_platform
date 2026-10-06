@@ -36,7 +36,13 @@ import {
   resolvePreviewID,
   remapActions,
 } from './structuralPreview.ts'
-import { historyOf, projectCanvas, type Intent } from './outbox.ts'
+import {
+  defaultNodeSize,
+  defaultNodeWidth,
+  historyOf,
+  projectCanvas,
+  type Intent,
+} from './outbox.ts'
 import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
 import CanvasView from './CanvasView.tsx'
@@ -65,8 +71,7 @@ import {
 } from './media.ts'
 
 // 与后端新建节点的默认尺寸一致。
-const NODE_WIDTH = 280,
-  NODE_HEIGHT = 180
+const NODE_WIDTH = defaultNodeWidth
 
 export default function WorkspacePage() {
   const account = api.currentAccount()
@@ -684,7 +689,7 @@ function Workspace({ account }: { account: string }) {
             | 'core.audio',
           title: asset.title,
           x: x0 + i * (NODE_WIDTH + gap),
-          y: at.y - NODE_HEIGHT / 2,
+          y: at.y - defaultNodeSize(`core.${asset.kind}`).height / 2,
           asset: {
             asset_id: asset.id,
             expected_asset_revision: asset.revision,
@@ -736,7 +741,7 @@ function Workspace({ account }: { account: string }) {
         ? (NODE_WIDTH * m.height) / m.width
         : a.kind === 'image' || a.kind === 'video'
           ? NODE_WIDTH
-          : NODE_HEIGHT
+          : defaultNodeSize(`core.${a.kind}`).height
     })
     const gap = 32
     const column =

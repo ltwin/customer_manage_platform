@@ -224,12 +224,12 @@ try {
     'node media rendered',
   )
   // 64x48 samples: nodes never resized by hand take the picture's aspect
-  // ratio at the default width (280 * 48 / 64 = 210), audio
-  // keeps the default box.
+  // ratio at the default width (300 * 48 / 64 = 225), audio
+  // keeps the default box (300x120, PRD CV-C0).
   for (const n of snapshot.nodes) {
     const kind = n.metadata.type_key.slice(5)
-    assert.equal(n.metadata.width, 280, `${kind} width`)
-    assert.equal(n.metadata.height, kind === 'audio' ? 180 : 210, `${kind} height`)
+    assert.equal(n.metadata.width, 300, `${kind} width`)
+    assert.equal(n.metadata.height, kind === 'audio' ? 120 : 225, `${kind} height`)
   }
   await page.screenshot({ path: `${output}/canvas-media.png` })
   const jpgNode = snapshot.nodes.find((n) => n.content.media[0].mime === 'image/jpeg')

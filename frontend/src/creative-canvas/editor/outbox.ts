@@ -105,15 +105,32 @@ const defaultActions: Record<string, string[]> = {
   ],
   'core.group': ['move', 'resize', 'rename', 'duplicate', 'remove', 'ungroup'],
 }
-export const defaultNodeWidth = 280,
-  defaultNodeHeight = 180
-// 同服务端：媒体按原始画幅占满卡片，空图片/视频默认 1:1。
+// 新建节点的默认尺寸，与服务端 defaultNodeSize 一致（PRD CV-14 / CV-B0 / CV-C0）。
+export function defaultNodeSize(typeKey: string): {
+  width: number
+  height: number
+} {
+  switch (typeKey) {
+    case 'core.image':
+    case 'core.video':
+      return { width: 300, height: 300 }
+    case 'core.link':
+      return { width: 300, height: 140 }
+    case 'core.audio':
+      return { width: 300, height: 120 }
+    default:
+      return { width: 300, height: 220 }
+  }
+}
+export const defaultNodeWidth = 300
+// 同服务端：媒体按原始画幅占满卡片，空图片/视频默认 1:1；其余类型取默认高度。
 export function fitMediaHeight(
   content: Content | undefined,
   width = defaultNodeWidth,
   kind: string = content?.kind ?? 'image',
 ): number {
-  if (kind !== 'image' && kind !== 'video') return defaultNodeHeight
+  if (kind !== 'image' && kind !== 'video')
+    return defaultNodeSize(`core.${kind}`).height
   const original = content?.media?.find((m) => m.role === 'original')
   return original?.width && original.height
     ? (width * original.height) / original.width

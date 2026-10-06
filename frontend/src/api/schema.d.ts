@@ -2660,6 +2660,15 @@ export interface components {
             placement_revision: components["schemas"]["CreativeRevision"];
             data_revision: components["schemas"]["CreativeRevision"];
             content?: components["schemas"]["CreativeContentRevision"];
+            version_summary?: components["schemas"]["CreativeNodeVersionSummary"];
+        };
+        /** @description 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。 */
+        CreativeNodeVersionSummary: {
+            count: number;
+            /** @description 主版本在未删除版本按 version_no 升序排列中的位置，从 1 开始。 */
+            main_ordinal: number;
+            /** @description 主版本生成时使用的模型；非生成版本为 null。 */
+            main_model_key: string | null;
         };
         CreativeCanvasSnapshot: {
             object_states: components["schemas"]["CreativeGraphObjectResult"][];

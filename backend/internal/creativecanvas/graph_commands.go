@@ -348,6 +348,34 @@ func (e *editGraph) apply(a Action) error {
 		return creativeops.ErrValidation
 	}
 }
+
+// 新建节点的默认尺寸（PRD CV-14 / CV-B0 / CV-C0）；前端 outbox.defaultNodeSize 与此一致。
+func defaultNodeSize(typeKey string) (width, height float64) {
+	switch typeKey {
+	case "core.image", "core.video":
+		return 300, 300
+	case "core.link":
+		return 300, 140
+	case "core.audio":
+		return 300, 120
+	default:
+		return 300, 220
+	}
+}
+
+// copyTitle 给复制的根节点加「 副本」；超出标题上限时截原标题，保留完整后缀。
+func copyTitle(title string) string {
+	const suffix = " 副本"
+	if title == "" {
+		return "副本"
+	}
+	limit := 200 - utf8.RuneCountInString(suffix)
+	if r := []rune(title); len(r) > limit {
+		title = string(r[:limit])
+	}
+	return title + suffix
+}
+
 func (e *editGraph) add(a Action) error {
 	if !validNodeID(a.NodeID) || !knownType(a.TypeKey) || a.TypeKey == "internal.document" || a.Asset != nil && a.Content != nil {
 		return creativeops.ErrValidation
@@ -359,10 +387,8 @@ func (e *editGraph) add(a Action) error {
 	if _, ok := e.g.Nodes[a.NodeID]; ok || exists {
 		return ErrVersionConflict
 	}
-	n := Node{ID: a.NodeID, TypeKey: a.TypeKey, TypeVersion: 1, Title: a.Title, X: a.X, Y: a.Y, Width: 280, Height: 180, ParentID: a.ParentID, Config: json.RawMessage("{}"), PlacementRevision: 1, DataRevision: 1, StatusRevision: 1}
-	if n.TypeKey == "core.image" || n.TypeKey == "core.video" {
-		n.Height = n.Width
-	}
+	w, h := defaultNodeSize(a.TypeKey)
+	n := Node{ID: a.NodeID, TypeKey: a.TypeKey, TypeVersion: 1, Title: a.Title, X: a.X, Y: a.Y, Width: w, Height: h, ParentID: a.ParentID, Config: json.RawMessage("{}"), PlacementRevision: 1, DataRevision: 1, StatusRevision: 1}
 	if n.TypeKey == "core.group" && (a.Content != nil || a.Asset != nil) {
 		return creativeops.ErrValidation
 	}
@@ -698,6 +724,7 @@ func (e *editGraph) duplicate(a Action) error {
 		if rootSet[id] {
 			n.X += a.DX
 			n.Y += a.DY
+			n.Title = copyTitle(n.Title)
 		}
 		n.ActiveExecutionID = nil
 		n.LatestExecutionID = nil

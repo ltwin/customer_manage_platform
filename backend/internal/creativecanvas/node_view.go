@@ -82,7 +82,8 @@ func (n Node) MarshalJSON() ([]byte, error) {
 		PlacementRevision creativeops.Revision      `json:"placement_revision"`
 		DataRevision      creativeops.Revision      `json:"data_revision"`
 		Content           *creativecontent.Revision `json:"content,omitempty"`
-	}{ID: n.ID, ParentID: n.ParentID, Metadata: NodeMetadata{TypeKey: n.TypeKey, TypeVersion: n.TypeVersion, Title: n.Title, Intent: n.Intent, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height, ZOrder: n.ZOrder}, Data: NodeData{SchemaVersion: 1, Config: n.Config, ContentID: n.ContentID, ContentRevisionID: n.ContentRevisionID, SelectedVersionID: n.SelectedVersionID, DocumentID: n.DocumentID}, Status: status, Prompt: n.Prompt, Capabilities: capabilities, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, Content: n.Content})
+		VersionSummary    *VersionSummary           `json:"version_summary,omitempty"`
+	}{ID: n.ID, ParentID: n.ParentID, Metadata: NodeMetadata{TypeKey: n.TypeKey, TypeVersion: n.TypeVersion, Title: n.Title, Intent: n.Intent, X: n.X, Y: n.Y, Width: n.Width, Height: n.Height, ZOrder: n.ZOrder}, Data: NodeData{SchemaVersion: 1, Config: n.Config, ContentID: n.ContentID, ContentRevisionID: n.ContentRevisionID, SelectedVersionID: n.SelectedVersionID, DocumentID: n.DocumentID}, Status: status, Prompt: n.Prompt, Capabilities: capabilities, PlacementRevision: n.PlacementRevision, DataRevision: n.DataRevision, Content: n.Content, VersionSummary: n.Versions})
 }
 
 // The persistence projection is deliberately independent from the public DTO.

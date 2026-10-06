@@ -70,9 +70,12 @@ import { contentText } from './content.ts'
 import { attachMagneticPorts } from './magneticPorts.ts'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
 import NodeVersionStrip from './NodeVersionStrip.tsx'
-import { fitMediaHeight } from './outbox.ts'
+import { defaultNodeSize, fitMediaHeight } from './outbox.ts'
 import { libraryDropZone, markLibraryDrop } from './libraryDrop.ts'
 import type { Content } from './api.ts'
+import * as api from './api.ts'
+import { needsModelLabel, nodeLabelMeta } from './labelMeta.ts'
+import type { GenerationCatalog } from './generation.ts'
 import {
   InlineNodeTitle,
   InlineNodeText,
@@ -110,6 +113,8 @@ type FlowNode = Node<
     previewContent: Content | null
     previewVersion: (id: string, content: Content | null) => void
     solo: boolean
+    /** 卡片外标签右侧的版本/模型元信息，空串不显示。 */
+    meta: string
     /** 空媒体节点里的两个入口都填充这个节点本身。 */
     fillEmpty: (id: string, kind: MediaKind, via: 'upload' | 'library') => void
   },
@@ -121,8 +126,10 @@ type AddMenuState = {
   link?: { id: string; side: 'input' | 'output' }
   dropped?: boolean
 }
-const NODE_W = 280,
-  NODE_H = 180
+const NODE_W = defaultNodeSize('core.text').width,
+  NODE_H = defaultNodeSize('core.text').height
+// 复制偏移（PRD CV-A0）。
+const COPY_OFFSET = 40
 export const nodeKind = (typeKey: string): string =>
   typeKey.startsWith('core.') ? typeKey.slice(5) : typeKey
 const connectableTypes = [
@@ -229,6 +236,9 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
             {n.metadata.title || untitled(n.metadata.type_key)}
           </h3>
         )}
+        {data.meta && !data.renaming && (
+          <span className="cc-node-meta">{data.meta}</span>
+        )}
       </header>
       {!group && media && (
         <div className="cc-node-content cc-node-media">
@@ -272,6 +282,13 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
             >
               <KindIcon typeKey={n.metadata.type_key} size={36} />
               {kind !== 'audio' && <span className="cc-empty-ratio">1:1</span>}
+              {kind !== 'audio' && (
+                <span className="cc-empty-hint">
+                  选中后输入提示词生成
+                  <br />
+                  或拖入{kindLabel[kind]}
+                </span>
+              )}
               {!data.disabled && n.capabilities.actions.includes('replace') && (
                 <span className="cc-empty-actions nodrag">
                   <button
@@ -321,6 +338,11 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
               title="双击编辑节点"
             >
               <KindIcon typeKey={n.metadata.type_key} size={40} />
+              <span className="cc-empty-hint">
+                {n.metadata.type_key === 'core.link'
+                  ? '双击填写链接地址'
+                  : '双击输入文字'}
+              </span>
             </div>
           ) : (
             <p>
@@ -384,8 +406,8 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
 function edgeAnchor(node: InternalNode<FlowNode>, side: 'input' | 'output') {
   const p = node.internals.positionAbsolute
   return {
-    x: p.x + (side === 'output' ? (node.measured.width ?? 280) : 0),
-    y: p.y + (node.measured.height ?? 180) / 2,
+    x: p.x + (side === 'output' ? (node.measured.width ?? NODE_W) : 0),
+    y: p.y + (node.measured.height ?? NODE_H) / 2,
   }
 }
 // Preview and drop resolve the same painted node, with an 18 screen-pixel halo.
@@ -425,8 +447,8 @@ function connectionTarget(
     const p = n.internals.positionAbsolute
     const d =
       Math.hypot(
-        Math.max(p.x - point.x, 0, point.x - p.x - (n.measured.width ?? 280)),
-        Math.max(p.y - point.y, 0, point.y - p.y - (n.measured.height ?? 180)),
+        Math.max(p.x - point.x, 0, point.x - p.x - (n.measured.width ?? NODE_W)),
+        Math.max(p.y - point.y, 0, point.y - p.y - (n.measured.height ?? NODE_H)),
       ) * zoom
     if (d < distance) {
       best = n
@@ -785,9 +807,9 @@ export default function CanvasView({
         world: {
           x:
             side === 'output'
-              ? p.x + (node.measured.width ?? 280) + 120
+              ? p.x + (node.measured.width ?? NODE_W) + 120
               : p.x - 120,
-          y: p.y + (node.measured.height ?? 180) / 2,
+          y: p.y + (node.measured.height ?? NODE_H) / 2,
         },
       })
     },
@@ -945,6 +967,29 @@ export default function CanvasView({
     if (element.current) observer.observe(element.current)
     return () => observer.disconnect()
   }, [])
+  // 单版本节点显示模型名：目录按画布读一次，失败时直接显示模型 key。
+  const [modelLabels, setModelLabels] = useState<Record<string, string>>({})
+  const labelSource = canvas.nodes.find(needsModelLabel)?.id
+  const hasLabels = Object.keys(modelLabels).length > 0
+  useEffect(() => {
+    if (!labelSource || hasLabels) return
+    const controller = new AbortController()
+    api
+      .read<GenerationCatalog>(
+        `/canvases/${encodeURIComponent(canvas.id)}/nodes/${encodeURIComponent(labelSource)}/generation-catalog`,
+        controller.signal,
+      )
+      .then((catalog) => {
+        if (!controller.signal.aborted)
+          setModelLabels(
+            Object.fromEntries(catalog.models.map((m) => [m.key, m.label])),
+          )
+      })
+      .catch(() => {
+        /* 元信息是辅助展示，读不到目录时显示模型 key。 */
+      })
+    return () => controller.abort()
+  }, [canvas.id, labelSource, hasLabels])
   useEffect(() => {
     setNodes((previous) => {
       const byID = new Map(previous.map((n) => [n.id, n])),
@@ -967,6 +1012,7 @@ export default function CanvasView({
               ? (cardPreviews[n.id] ?? null)
               : null,
           kind = nodeKind(n.metadata.type_key),
+          meta = nodeLabelMeta(n, modelLabels),
           mediaHeight =
             kind === 'image' || kind === 'video'
               ? fitMediaHeight(
@@ -989,6 +1035,7 @@ export default function CanvasView({
           old.draggable === draggable &&
           old.data.disabled === disabled &&
           old.data.solo === (isSelected && selection.length === 1) &&
+          old.data.meta === meta &&
           old.data.renaming === (renamingNode === n.id) &&
           old.data.inlineContent ===
             (inlineContent?.nodeID === n.id ? inlineContent : undefined) &&
@@ -1037,6 +1084,7 @@ export default function CanvasView({
             previewContent,
             previewVersion,
             solo: isSelected && selection.length === 1,
+            meta,
             fillEmpty,
           },
           selected: isSelected,
@@ -1066,6 +1114,7 @@ export default function CanvasView({
     fillEmpty,
     cardPreviews,
     previewVersion,
+    modelLabels,
   ])
   const pointerDown = useRef<{ x: number; y: number } | null>(null)
   const selectionStart = useRef<{ x: number; y: number } | null>(null)
@@ -1114,7 +1163,7 @@ export default function CanvasView({
       Math.min(
         size.width - 340,
         viewport.x +
-          (point.x + (active?.width ?? 280) / 2) * viewport.zoom -
+          (point.x + (active?.width ?? NODE_W) / 2) * viewport.zoom -
           160,
       ),
     ),
@@ -1268,12 +1317,13 @@ export default function CanvasView({
     const id = `cwnode_${crypto.randomUUID()}`,
       link = menu.link,
       output = link?.side === 'output'
+    const size = defaultNodeSize(`core.${kind}`)
     const x = link
         ? output
           ? menu.world.x
-          : menu.world.x - NODE_W
-        : menu.world.x - NODE_W / 2,
-      y = menu.world.y - NODE_H / 2
+          : menu.world.x - size.width
+        : menu.world.x - size.width / 2,
+      y = menu.world.y - size.height / 2
     const actions: GraphAction[] = [
       { type: 'add_node', node_id: id, type_key: `core.${kind}`, x, y },
     ]
@@ -1316,7 +1366,7 @@ export default function CanvasView({
         node_id: id,
         type_key: `core.${kind}`,
         x: right + 120,
-        y: cy - NODE_H / 2,
+        y: cy - defaultNodeSize(`core.${kind}`).height / 2,
       },
       ...sources.map((n): GraphAction => ({
         type: 'connect_reference',
@@ -1492,7 +1542,7 @@ export default function CanvasView({
         shortcut: '⌘D',
         disabled: locked,
         action: () =>
-          act([{ type: 'duplicate_selection', node_ids: ids, dx: 36, dy: 36 }]),
+          act([{ type: 'duplicate_selection', node_ids: ids, dx: COPY_OFFSET, dy: COPY_OFFSET }]),
       })
       contextItems.push({
         label: groupOnly
@@ -1637,8 +1687,8 @@ export default function CanvasView({
             {
               type: 'duplicate_selection',
               node_ids: selection,
-              dx: 36,
-              dy: 36,
+              dx: COPY_OFFSET,
+              dy: COPY_OFFSET,
             },
           ])
           return
@@ -2174,8 +2224,8 @@ export default function CanvasView({
                 {
                   type: 'duplicate_selection',
                   node_ids: selection,
-                  dx: 36,
-                  dy: 36,
+                  dx: COPY_OFFSET,
+                  dy: COPY_OFFSET,
                 },
               ])
             }

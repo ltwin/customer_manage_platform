@@ -842,9 +842,9 @@ test('media nodes from assets take the picture aspect ratio at the default width
       },
     ],
   }
-  assert.equal(fitMediaHeight(content), 420)
-  assert.equal(fitMediaHeight({ ...content, kind: 'audio' }), 180)
-  assert.equal(fitMediaHeight(undefined), 280)
+  assert.equal(fitMediaHeight(content), 450)
+  assert.equal(fitMediaHeight({ ...content, kind: 'audio' }), 120)
+  assert.equal(fitMediaHeight(undefined), 300)
   const view = projectCanvas(positionCanvas, [
     {
       id: 'i',
@@ -865,7 +865,7 @@ test('media nodes from assets take the picture aspect ratio at the default width
   ])
   assert.equal(
     view.nodes.find((n) => n.id === 'cwnode_img')?.metadata.height,
-    420,
+    450,
   )
 })
 

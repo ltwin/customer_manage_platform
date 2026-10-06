@@ -4144,6 +4144,9 @@ type CreativeCanvasNode struct {
 	PlacementRevision CreativeRevision                      `json:"placement_revision"`
 	Prompt            nullable.Nullable[CreativeNodePrompt] `json:"prompt"`
 	Status            CreativeNodeStatus                    `json:"status"`
+
+	// VersionSummary 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。
+	VersionSummary *CreativeNodeVersionSummary `json:"version_summary,omitempty"`
 }
 
 // CreativeCanvasSnapshot defines model for CreativeCanvasSnapshot.
@@ -4768,6 +4771,17 @@ type CreativeNodeVersionPage struct {
 	DataRevision      CreativeRevision          `json:"data_revision"`
 	Items             []CreativeNodeVersion     `json:"items"`
 	SelectedVersionId nullable.Nullable[string] `json:"selected_version_id"`
+}
+
+// CreativeNodeVersionSummary 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。
+type CreativeNodeVersionSummary struct {
+	Count int `json:"count"`
+
+	// MainModelKey 主版本生成时使用的模型；非生成版本为 null。
+	MainModelKey nullable.Nullable[string] `json:"main_model_key"`
+
+	// MainOrdinal 主版本在未删除版本按 version_no 升序排列中的位置，从 1 开始。
+	MainOrdinal int `json:"main_ordinal"`
 }
 
 // CreativeOperationReceipt defines model for CreativeOperationReceipt.

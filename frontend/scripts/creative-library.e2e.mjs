@@ -402,7 +402,7 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.react-flow__node').length === 9)
   assert.equal(placed.length, 3)
   assert.equal(new Set(placed.map((a) => a.y)).size, 1, 'batch lands in one row')
-  assert.deepEqual(placed.map((a, i) => (i ? a.x - placed[i - 1].x : 0)), [0, 320, 320])
+  assert.deepEqual(placed.map((a, i) => (i ? a.x - placed[i - 1].x : 0)), [0, 340, 340])
   assert(placed.every((a) => a.asset?.asset_id), 'placed nodes keep their asset source')
 
   assert.deepEqual(errors, [])

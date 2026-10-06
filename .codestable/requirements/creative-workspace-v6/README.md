@@ -33,7 +33,7 @@
 |---|---|---|---|---|---|
 | [V6-001 · 文本编辑与节点重命名语义](items/V6-001.md) | P0；Esc 保存 P1 | 交付 | 已完成 | — | 轻量修复（无 design）· 实现与验证：[fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
 | [V6-002 · 视口缩放、平移与面板避让](items/V6-002.md) | P0 | 交付 | 待设计 | — | — |
-| [V6-003 · 节点标题元信息、空态与默认尺寸](items/V6-003.md) | P0 | 交付 | 待设计 | — | — |
+| [V6-003 · 节点标题元信息、空态与默认尺寸](items/V6-003.md) | P0 | 交付 | 已完成 | — | [design](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-design.md) · [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | [V6-004 · 节点手动缩放与媒体比例](items/V6-004.md) | P0 | 交付 | 待设计 | — | — |
 | [V6-005 · 画布组选择、包围框与固定归属](items/V6-005.md) | P0 | 交付 | 待设计 | —（组尺寸与 V6-004 协作） | — |
 | [V6-006 · 新建入口、快捷键与编辑焦点](items/V6-006.md) | P0；端口菜单标题、单键 P1 | 交付 | 待设计 | —（A/L 由 V6-009/010 接入） | — |

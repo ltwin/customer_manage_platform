@@ -6710,6 +6710,28 @@ components:
           $ref: '#/components/schemas/CreativeRevision'
         content:
           $ref: '#/components/schemas/CreativeContentRevision'
+        version_summary:
+          $ref: '#/components/schemas/CreativeNodeVersionSummary'
+    CreativeNodeVersionSummary:
+      type: object
+      additionalProperties: false
+      description: 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。
+      required:
+      - count
+      - main_ordinal
+      - main_model_key
+      properties:
+        count:
+          type: integer
+          minimum: 1
+        main_ordinal:
+          type: integer
+          minimum: 1
+          description: 主版本在未删除版本按 version_no 升序排列中的位置，从 1 开始。
+        main_model_key:
+          type: string
+          nullable: true
+          description: 主版本生成时使用的模型；非生成版本为 null。
     CreativeCanvasSnapshot:
       type: object
       additionalProperties: false

@@ -639,11 +639,11 @@ button.cc-project-name:hover,
 }
 .cc-node-header {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 8px;
+  bottom: calc(100% + 2px);
+  left: 2px;
   width: max-content;
-  max-width: calc(100% - 16px);
-  height: 22px;
+  max-width: calc(100% - 4px);
+  height: 26px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -662,6 +662,14 @@ button.cc-project-name:hover,
   min-width: 0;
 }
 .cc-node.is-selected .cc-node-header { color: var(--fg); }
+/* 元信息跟在标题后面；标签只占内容宽度，旁边空白仍点到画布（CV-20）。 */
+.cc-node-header h3 { flex: 0 1 auto; }
+.cc-node-meta {
+  margin-left: 4px;
+  flex: none;
+  color: var(--fg-3);
+  white-space: nowrap;
+}
 .cc-node-content {
   height: 100%;
   border-radius: inherit;
@@ -681,7 +689,15 @@ button.cc-project-name:hover,
 .cc-node-empty {
   height: 100%;
   display: grid;
-  place-items: center;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  color: var(--fg-3);
+}
+.cc-empty-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
   color: var(--fg-3);
 }
 .cc-node small {

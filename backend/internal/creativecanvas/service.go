@@ -108,6 +108,15 @@ type Node struct {
 	ContentRevisionID *string                   `json:"content_revision_id"`
 	Content           *creativecontent.Revision `json:"content,omitempty"`
 	Unavailable       bool                      `json:"unavailable"`
+	// 只读展示：快照读取时填，不进持久化投影和撤销链。
+	Versions *VersionSummary `json:"-"`
+}
+
+// VersionSummary 是卡片外标签的版本元信息（PRD CV-10）。
+type VersionSummary struct {
+	Count        int     `json:"count"`
+	MainOrdinal  int     `json:"main_ordinal"`
+	MainModelKey *string `json:"main_model_key"`
 }
 type Canvas struct {
 	ObjectStates     []ObjectResult       `json:"object_states"`

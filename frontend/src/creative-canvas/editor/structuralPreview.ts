@@ -23,6 +23,14 @@ export function previewAliases(intent: Intent): Record<string, string> {
   return aliases
 }
 
+// 与服务端 copyTitle 一致：只有复制的根节点加「 副本」，总长不超过 200 字。
+export function copyTitle(title: string): string {
+  const suffix = ' 副本'
+  if (!title) return '副本'
+  const chars = Array.from(title)
+  return chars.slice(0, 200 - Array.from(suffix).length).join('') + suffix
+}
+
 export function resolvePreviewID(
   id: string,
   aliases: Record<string, string>,
@@ -214,6 +222,7 @@ export function structuralPreview(
             : n.parent_id,
         metadata: {
           ...n.metadata,
+          title: roots.has(n.id) ? copyTitle(n.metadata.title) : n.metadata.title,
           x: n.metadata.x + (roots.has(n.id) ? (action.dx ?? 0) : 0),
           y: n.metadata.y + (roots.has(n.id) ? (action.dy ?? 0) : 0),
         },
