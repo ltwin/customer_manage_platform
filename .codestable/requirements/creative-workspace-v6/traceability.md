@@ -139,13 +139,13 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | GN-38 | P0 | 停止生成 | [V6-027](items/V6-027.md) | [V6-023](items/V6-023.md) |  |  |
 | GN-39 | P0 | 多个节点可以同时生成，彼此独立 | [V6-027](items/V6-027.md) | [V6-023](items/V6-023.md) |  |  |
 | GN-3A | P1 | 「已更新」提示 | [V6-012](items/V6-012.md) | — |  |  |
-| AL-01 | P0 | 左侧抽屉宽 344，默认收起 | [V6-057](items/V6-057.md) | — |  |  |
+| AL-01 | P0 | 左侧抽屉宽 344，默认收起 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-02 | P0 | 抽屉打开时，「适应画布」为它让出左侧空间 | [V6-002](items/V6-002.md) | — |  |  |
 | AL-03 | P1 | 普通打开时保留上次的浏览状态；带任务打开（选参考、填充）时重置为「全… | [V6-019](items/V6-019.md) | — |  |  |
 | AL-04 | P0 | 固定视图：全部 / 最近使用 / 本画布 / 最爱 / 未归类 | [V6-014](items/V6-014.md) | [V6-015](items/V6-015.md) |  |  |
-| AL-05 | P0 | 默认按分组平铺 | [V6-057](items/V6-057.md) | — |  |  |
-| AL-06 | P0 | 进入组后 | [V6-057](items/V6-057.md) | — |  |  |
-| AL-07 | P0 | 分组计数包含子组内容；一项资产可以同时属于多个分组 | [V6-057](items/V6-057.md) | — |  |  |
+| AL-05 | P0 | 默认按分组平铺 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
+| AL-06 | P0 | 进入组后 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
+| AL-07 | P0 | 分组计数包含子组内容；一项资产可以同时属于多个分组 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-08 | P1 | 卡片角标 | [V6-015](items/V6-015.md) | [V6-019](items/V6-019.md) |  |  |
 | AL-09 | P1 | 悬停 360ms 后在抽屉右侧放大预览 | [V6-019](items/V6-019.md) | — |  |  |
 | AL-0A | P1 | 快速查看 | [V6-019](items/V6-019.md) | — |  |  |
@@ -157,19 +157,19 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | AL-15 | P0 | 在「全部」中有关键词或标签时，平铺视图改为单张结果网格 | [V6-016](items/V6-016.md) | — |  |  |
 | AL-16 | P0 | 空结果 | [V6-016](items/V6-016.md) | — |  |  |
 | AL-17 | P0 | 标签管理：创建、改名、改颜色、管理分类，以及为资产打标签 | [V6-016](items/V6-016.md) | — |  |  |
-| AL-20 | P0 | 多选 | [V6-057](items/V6-057.md) | — |  |  |
-| AL-21 | P0 | 整批拖入画布，或点「放入画布」 | [V6-057](items/V6-057.md) | — |  |  |
-| AL-22 | P0 | 库内选中不改变画布选区 | [V6-057](items/V6-057.md) | — |  |  |
+| AL-20 | P0 | 多选 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
+| AL-21 | P0 | 整批拖入画布，或点「放入画布」 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
+| AL-22 | P0 | 库内选中不改变画布选区 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-50 | P1 | 选参考模式（从 `@` 进入） | [V6-019](items/V6-019.md) | — |  |  |
-| AL-51 | P0 | 填充模式（从空节点进入） | [V6-057](items/V6-057.md) | — |  |  |
+| AL-51 | P0 | 填充模式（从空节点进入） | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-60 | P1 | 画布节点拖到某个分组标题上松手 → 存入该组；拖到抽屉其他位置 → … | [V6-019](items/V6-019.md) | — |  |  |
-| AL-61 | P0 | 右键菜单「存入资产库…」或工具条书签按钮，弹出分组选择 | [V6-057](items/V6-057.md) | — |  |  |
-| AL-62 | P0 | 重复存入只追加归类 | [V6-057](items/V6-057.md) | — |  |  |
+| AL-61 | P0 | 右键菜单「存入资产库…」或工具条书签按钮，弹出分组选择 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
+| AL-62 | P0 | 重复存入只追加归类 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-63 | P0 | 新建分组 | [V6-017](items/V6-017.md) | — |  | [fix-note](../../issues/2026-10-05-library-group-name-input-kept/library-group-name-input-kept-fix-note.md) |
-| AL-64 | P0 | 分组菜单：重命名 / 新建子分组（最多两层）/ 删除 | [V6-057](items/V6-057.md) | — |  |  |
+| AL-64 | P0 | 分组菜单：重命名 / 新建子分组（最多两层）/ 删除 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-65 | P0 | 删除分组 | [V6-018](items/V6-018.md) | — |  |  |
 | AL-66 | P1 | 最爱 | [V6-019](items/V6-019.md) | — |  |  |
-| AL-67 | P0 | 上传到资产库 | [V6-057](items/V6-057.md) | — |  |  |
+| AL-67 | P0 | 上传到资产库 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-68 | P1 | 整理模式（分组树拖拽、批量归类、检查器）与回收站 | [V6-020](items/V6-020.md) | [V6-054](items/V6-054.md) | 整理模式范围见 V6-054 与 D-02 |  |
 | AS-01 | P0 | 思考块按 §7.1 展示 | [V6-030](items/V6-030.md) | — |  |  |
 | AS-02 | P1 | 计划块按 §7.1 展示，步骤状态随执行实时更新 | [V6-030](items/V6-030.md) | — |  |  |
