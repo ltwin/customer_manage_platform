@@ -54,3 +54,15 @@ test('copy title adds suffix within 200 characters', () => {
   // 代理对按一个字计，与服务端 rune 计数一致。
   assert.equal(Array.from(copyTitle('🎞'.repeat(199))).length, 200)
 })
+
+test('resize limits and media height fallback (V6-004)', async () => {
+  const { nodeSizeLimits, fitMediaHeight } = await import('../src/creative-canvas/editor/outbox.ts')
+  assert.deepEqual(nodeSizeLimits, { minWidth: 160, maxWidth: 1200, minHeight: 100 })
+  const unread = { id: 'r', content_id: 'c', kind: 'image', revision_no: '1', title: '', payload: {}, truncated: false, media: [{ role: 'original', blob_id: 'b', mime: 'image/png', byte_size: 1, width: null, height: null, duration_ms: null }] }
+  // 尺寸未读到：卡片保持当前高度，新建预览仍 1:1。
+  assert.equal(fitMediaHeight(unread as never, 480, 'image', 270), 270)
+  assert.equal(fitMediaHeight(unread as never, 480, 'image'), 480)
+  const wide = { ...unread, media: [{ ...unread.media[0], width: 1600, height: 900 }] }
+  assert.equal(fitMediaHeight(wide as never, 480, 'image', 270), 270)
+  assert.equal(fitMediaHeight(wide as never, 640, 'video', 999), 360, 'known ratio wins over fallback')
+})

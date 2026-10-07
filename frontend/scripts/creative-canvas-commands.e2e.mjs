@@ -520,7 +520,13 @@ try {
   const afterMove = world(snapshot, a)
   assert(afterMove.x > beforeMove.x + 20)
   assert.equal(world(snapshot, b).x - oldB.x, afterMove.x - oldA.x)
-  await verifyResizeHandles(group, [a, b])
+  // V6-004：组不能手动缩放，始终由子节点撑开（PRD CV-17）。
+  await node(group).locator('.cc-node-header').click()
+  assert.equal(
+    await node(group).locator('.react-flow__resize-control').count(),
+    0,
+    'group has no resize handles',
+  )
   await disconnectAB()
   await page.getByRole('button', { name: '缩小', exact: true }).click()
   await connectBody(a, b)

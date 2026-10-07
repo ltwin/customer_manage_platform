@@ -272,7 +272,7 @@ func (e *editGraph) apply(a Action) error {
 		if err != nil {
 			return err
 		}
-		if a.Width < 80 || a.Height < 80 {
+		if !validResize(n, a.Width, a.Height) {
 			return creativeops.ErrValidation
 		}
 		n.Width = a.Width
@@ -347,6 +347,23 @@ func (e *editGraph) apply(a Action) error {
 	default:
 		return creativeops.ErrValidation
 	}
+}
+
+// 手动缩放的尺寸约束（PRD CV-17，owner 2026-10-06 定稿）；前端 outbox.nodeSizeLimits 与此一致。
+const (
+	minNodeWidth  = 160
+	maxNodeWidth  = 1200
+	minNodeHeight = 100
+)
+
+// validResize：组不能手动缩放，由子节点撑开。有内容的图片/视频高度随后按
+// 内容比例重算，只校验宽度；其余节点宽高都要在约束内。
+func validResize(n Node, width, height float64) bool {
+	if n.TypeKey == "core.group" || width < minNodeWidth || width > maxNodeWidth {
+		return false
+	}
+	media := (n.TypeKey == "core.image" || n.TypeKey == "core.video") && n.ContentRevisionID != nil
+	return media || height >= minNodeHeight
 }
 
 // 新建节点的默认尺寸（PRD CV-14 / CV-B0 / CV-C0）；前端 outbox.defaultNodeSize 与此一致。

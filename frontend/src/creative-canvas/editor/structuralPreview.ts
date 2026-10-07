@@ -158,7 +158,7 @@ export function structuralPreview(
       placement_revision: '1',
       data_revision: '1',
       capabilities: {
-        actions: ['move', 'resize', 'rename', 'duplicate', 'remove', 'ungroup'],
+        actions: ['move', 'rename', 'duplicate', 'remove', 'ungroup'],
         prompt_mode: 'draft',
         disabled_reason: null,
       },

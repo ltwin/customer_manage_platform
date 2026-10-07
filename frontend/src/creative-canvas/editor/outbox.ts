@@ -103,7 +103,7 @@ const defaultActions: Record<string, string[]> = {
     'replace',
     'save_to_library',
   ],
-  'core.group': ['move', 'resize', 'rename', 'duplicate', 'remove', 'ungroup'],
+  'core.group': ['move', 'rename', 'duplicate', 'remove', 'ungroup'],
 }
 // 新建节点的默认尺寸，与服务端 defaultNodeSize 一致（PRD CV-14 / CV-B0 / CV-C0）。
 export function defaultNodeSize(typeKey: string): {
@@ -123,18 +123,22 @@ export function defaultNodeSize(typeKey: string): {
   }
 }
 export const defaultNodeWidth = 300
-// 同服务端：媒体按原始画幅占满卡片，空图片/视频默认 1:1；其余类型取默认高度。
+// 手动缩放约束，与服务端 minNodeWidth/maxNodeWidth/minNodeHeight 一致（PRD CV-17）。
+export const nodeSizeLimits = { minWidth: 160, maxWidth: 1200, minHeight: 100 }
+// 同服务端：媒体按原始画幅占满卡片；其余类型取默认高度。
+// 读不到原始宽高时返回 fallback：画布卡片传当前高度（保持原高），新建预览默认 1:1。
 export function fitMediaHeight(
   content: Content | undefined,
   width = defaultNodeWidth,
   kind: string = content?.kind ?? 'image',
+  fallback = width,
 ): number {
   if (kind !== 'image' && kind !== 'video')
     return defaultNodeSize(`core.${kind}`).height
   const original = content?.media?.find((m) => m.role === 'original')
   return original?.width && original.height
     ? (width * original.height) / original.width
-    : width
+    : fallback
 }
 const layoutOnly = (actions: GraphAction[] | undefined) =>
   !!actions?.length &&

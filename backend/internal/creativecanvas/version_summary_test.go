@@ -57,3 +57,21 @@ func TestDefaultNodeSizeAndCopyTitle(t *testing.T) {
 		t.Fatal("copy title")
 	}
 }
+
+func TestValidResize(t *testing.T) {
+	t.Parallel()
+	content := "rev"
+	image := Node{TypeKey: "core.image", ContentRevisionID: &content}
+	if !validResize(image, 160, 4) {
+		t.Fatal("filled media height follows content ratio; only width is checked")
+	}
+	if validResize(Node{TypeKey: "core.image"}, 160, 99) {
+		t.Fatal("empty media keeps the height floor")
+	}
+	if validResize(Node{TypeKey: "core.group"}, 400, 400) {
+		t.Fatal("groups cannot be resized by hand")
+	}
+	if validResize(Node{TypeKey: "core.audio"}, 300, 99) || !validResize(Node{TypeKey: "core.audio"}, 300, 100) {
+		t.Fatal("audio height floor")
+	}
+}

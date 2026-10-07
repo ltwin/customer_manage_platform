@@ -662,6 +662,20 @@ button.cc-project-name:hover,
   min-width: 0;
 }
 .cc-node.is-selected .cc-node-header { color: var(--fg); }
+/* 拖动缩放时的尺寸提示：贴在卡片右下角外侧，不挡手柄。 */
+.cc-resize-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--s3);
+  color: var(--fg-2);
+  font: 11px/1.4 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
 /* 元信息跟在标题后面；标签只占内容宽度，旁边空白仍点到画布（CV-20）。 */
 .cc-node-header h3 { flex: 0 1 auto; }
 .cc-node-meta {
@@ -837,8 +851,7 @@ button.cc-project-name:hover,
   /* React Flow 给可拖动节点写了内联 pointer-events: all，这里必须覆盖。 */
   pointer-events: none !important;
 }
-.cc-group-container .cc-node-header,
-.cc-group-container .react-flow__resize-control {
+.cc-group-container .cc-node-header {
   pointer-events: auto;
 }
 .cc-flow .cc-group-node {

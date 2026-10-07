@@ -70,7 +70,7 @@ import { contentText } from './content.ts'
 import { attachMagneticPorts } from './magneticPorts.ts'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
 import NodeVersionStrip from './NodeVersionStrip.tsx'
-import { defaultNodeSize, fitMediaHeight } from './outbox.ts'
+import { defaultNodeSize, fitMediaHeight, nodeSizeLimits } from './outbox.ts'
 import { libraryDropZone, markLibraryDrop } from './libraryDrop.ts'
 import type { Content } from './api.ts'
 import * as api from './api.ts'
@@ -180,6 +180,11 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     [changePreview, previewNodeID],
   )
   const showVersions = !!selected && data.solo
+  // 拖动缩放时的实时尺寸提示，只是卡片内显示用。
+  const [resizing, setResizing] = useState<{
+    width: number
+    height: number
+  } | null>(null)
   useEffect(() => {
     if (preview && preview.id === data.item.content?.id) setPreview(null)
   }, [preview, data.item.content?.id, setPreview])
@@ -188,6 +193,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     kind = nodeKind(n.metadata.type_key),
     media = isMediaKind(kind),
     group = n.metadata.type_key === 'core.group',
+    proportional = kind === 'image' || kind === 'video',
     known = [
       'core.text',
       'core.link',
@@ -201,19 +207,36 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     <article
       className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : ['core.text', 'core.link'].includes(n.metadata.type_key) ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
     >
+      {/* 只有单选的普通节点能缩放（PRD CV-17）；组由子节点撑开。 */}
       <NodeResizer
         isVisible={
           !!selected &&
+          data.solo &&
+          !group &&
           !data.disabled &&
           n.capabilities.actions.includes('resize')
         }
-        minWidth={160}
-        minHeight={100}
-        keepAspectRatio={media && kind !== 'audio'}
-        onResizeEnd={(_, size) =>
-          data.resize(n.id, size.width, size.height, size.x, size.y)
+        minWidth={nodeSizeLimits.minWidth}
+        maxWidth={nodeSizeLimits.maxWidth}
+        // 等比的媒体只约束宽度，高度跟内容比例走。
+        minHeight={proportional ? 0 : nodeSizeLimits.minHeight}
+        keepAspectRatio={proportional}
+        onResize={(_, size) =>
+          setResizing({
+            width: Math.round(size.width),
+            height: Math.round(size.height),
+          })
         }
+        onResizeEnd={(_, size) => {
+          setResizing(null)
+          data.resize(n.id, size.width, size.height, size.x, size.y)
+        }}
       />
+      {resizing && (
+        <span className="cc-resize-tip" role="status">
+          {resizing.width} × {resizing.height}
+        </span>
+      )}
       <header
         className="cc-node-header"
         onClick={() => data.select(n.id)}
@@ -936,22 +959,6 @@ export default function CanvasView({
         { type: 'move_node', node_id: id, x, y },
         { type: 'resize_node', node_id: id, width, height },
       ]
-      if (source.metadata.type_key === 'core.group') {
-        for (const child of callbacks.current.canvasNodes.filter(
-          (n) => n.parent_id === id,
-        )) {
-          const px = child.metadata.x + source.metadata.x - x
-          const py = child.metadata.y + source.metadata.y - y
-          resizePreviews.current.set(child.id, {
-            item: child,
-            x: px,
-            y: py,
-            width: child.metadata.width,
-            height: child.metadata.height,
-          })
-          actions.push({ type: 'move_node', node_id: child.id, x: px, y: py })
-        }
-      }
       callbacks.current.onActions(actions)
     },
     [],
@@ -1019,6 +1026,7 @@ export default function CanvasView({
                   previewContent ?? n.content,
                   n.metadata.width,
                   kind,
+                  n.metadata.height,
                 )
               : n.metadata.height,
           draggable =

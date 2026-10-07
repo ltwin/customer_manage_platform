@@ -29,10 +29,10 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-12 | P0 | 空节点有引导 | [V6-003](items/V6-003.md) | — |  | [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | CV-13 | P0 | 运行中状态 | [V6-027](items/V6-027.md) | — |  |  |
 | CV-14 | P0 | 新建节点默认宽 300；图片 / 视频默认 1:1，空节点可以通过比… | [V6-003](items/V6-003.md) | [V6-021](items/V6-021.md) |  | [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
-| CV-15 | P0 | 图片 / 视频有内容后，宽度保持当前值（默认 300，或手动调整后的… | [V6-004](items/V6-004.md) | — |  |  |
+| CV-15 | P0 | 图片 / 视频有内容后，宽度保持当前值（默认 300，或手动调整后的… | [V6-004](items/V6-004.md) | — |  | 部分：[verification](../../features/2026-10-06-node-manual-resize/node-manual-resize-verification.md)（比例 chip 待 V6-021） |
 | CV-16 | P1 | 视频节点悬停即预览 | [V6-058](items/V6-058.md) | — |  |  |
-| CV-17 | P0 | 手动调整节点尺寸（2026-10-04 拍板） | [V6-004](items/V6-004.md) | — |  |  |
-| CV-18 | P0 | 手动尺寸与内容比例的关系 | [V6-004](items/V6-004.md) | [V6-021](items/V6-021.md) |  |  |
+| CV-17 | P0 | 手动调整节点尺寸（2026-10-04 拍板） | [V6-004](items/V6-004.md) | — |  | [verification](../../features/2026-10-06-node-manual-resize/node-manual-resize-verification.md) |
+| CV-18 | P0 | 手动尺寸与内容比例的关系 | [V6-004](items/V6-004.md) | [V6-021](items/V6-021.md) |  | 部分：[verification](../../features/2026-10-06-node-manual-resize/node-manual-resize-verification.md)（比例 chip 待 V6-021） |
 | CV-20 | P0 | 单击选中节点；Shift、⌘ 或 Ctrl 加单击切换该节点的选中状… | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | CV-21 | P0 | 框选 | [V6-005](items/V6-005.md) | — |  |  |
 | CV-22 | P0 | 组只能点击标题栏来选中；⌘A 全选；Esc 依次关闭浮层、关闭全屏、… | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
