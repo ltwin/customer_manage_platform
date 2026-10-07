@@ -368,7 +368,7 @@ try {
   await record('AC-07', async () => {
     const save = async () => {
       await node('filled').click({ button: 'right' })
-      await page.getByRole('menuitem', { name: '存入个人资产库', exact: true }).click()
+      await page.getByRole('menuitem', { name: '存入资产库…', exact: true }).click()
       return page.getByRole('dialog', { name: '存入个人资产库' })
     }
     let dialog = await save()
@@ -387,7 +387,7 @@ try {
     await page.mouse.click(1500, 940)
     await node('empty').click({ button: 'right' })
     await page.getByRole('menu').first().waitFor()
-    const hasEntry = await page.getByRole('menuitem', { name: '存入个人资产库', exact: true }).count()
+    const hasEntry = await page.getByRole('menuitem', { name: '存入资产库…', exact: true }).count()
     await page.keyboard.press('Escape')
     if (hasEntry) throw new Error('empty node still offers saving without a hint')
     at('empty node dragged into the library')

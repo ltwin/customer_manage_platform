@@ -64,15 +64,15 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-60 | P0 | 文本节点在卡片内直接编辑 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
 | CV-61 | P1 | 编辑中按 Esc 退出并保存 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
 | CV-62 | P0 | 双击标题就地重命名，组标题同样适用 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
-| CV-70 | P0 | 工具条按选中内容显示不同按钮 | [V6-007](items/V6-007.md) | — |  |  |
-| CV-71 | P0 | 派生：新建下游节点并预填引用，不自动开始生成 | [V6-007](items/V6-007.md) | — |  |  |
-| CV-72 | P0 | 已确定的派生项 | [V6-007](items/V6-007.md) | — |  |  |
+| CV-70 | P0 | 工具条按选中内容显示不同按钮 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
+| CV-71 | P0 | 派生：新建下游节点并预填引用，不自动开始生成 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
+| CV-72 | P0 | 已确定的派生项 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
 | CV-73 | P2 | 重绘、扩图、高清等派生项 | [V6-052](items/V6-052.md) | — |  |  |
-| CV-74 | P0 | 「更多」打开该节点的右键菜单 | [V6-007](items/V6-007.md) | — |  |  |
-| CV-80 | P0 | 在节点上右键 | [V6-007](items/V6-007.md) | — |  |  |
-| CV-81 | P0 | 多选时右键 | [V6-007](items/V6-007.md) | — |  |  |
-| CV-82 | P0 | 在组标题上右键 | [V6-007](items/V6-007.md) | — |  |  |
-| CV-83 | P0 | 在空白处或连线上右键 | [V6-007](items/V6-007.md) | — |  |  |
+| CV-74 | P0 | 「更多」打开该节点的右键菜单 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
+| CV-80 | P0 | 在节点上右键 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
+| CV-81 | P0 | 多选时右键 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
+| CV-82 | P0 | 在组标题上右键 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
+| CV-83 | P0 | 在空白处或连线上右键 | [V6-007](items/V6-007.md) | — |  | [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md) |
 | CV-84 | P0 | 所有菜单共用一套规则 | [V6-045](items/V6-045.md) | — |  |  |
 | CV-90 | P0 | 本地文件拖到空白处，每个文件新建一个节点 | [V6-008](items/V6-008.md) | — |  |  |
 | CV-91 | P0 | 空的图片 / 视频节点可以被填充 | [V6-008](items/V6-008.md) | — |  |  |

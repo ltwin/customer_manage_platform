@@ -44,6 +44,8 @@ import {
   Minus,
   Plus,
   Scan,
+  Ellipsis,
+  SquareDashedMousePointer,
   Map as MapIcon,
   Folder,
   FolderPlus,
@@ -57,7 +59,6 @@ import {
   Film,
   AudioLines,
   Download,
-  RefreshCw,
   Library,
   Upload,
   Sparkles,
@@ -652,6 +653,7 @@ export default function CanvasView({
   onDownload,
   onSaveToLibrary,
   onSaveNodes,
+  onSaveNodesAsk,
   onFillNode,
   onUploadFileToNode,
   onLibraryFill,
@@ -678,7 +680,7 @@ export default function CanvasView({
   onSelect: (id: string | null) => void
   onEdit: (id: string) => void
   /** 新建节点后：文本进入编辑，媒体把焦点交给生成输入框（PRD CV-53）。 */
-  onCreated: (id: string, kind: 'text' | MediaKind) => void
+  onCreated: (id: string, kind: 'text' | MediaKind, prompt?: string) => void
   /** 双击空媒体节点：只聚焦生成输入框，不上传也不生成（PRD CV-54）。 */
   onFocusPrompt: (id: string) => void
   inlineContent?: InlineContentEditing
@@ -701,6 +703,8 @@ export default function CanvasView({
   onSaveToLibrary: (id: string) => void
   /** 节点拖到资产抽屉上松手：存入资产库，groupID 为空即不归类。 */
   onSaveNodes: (ids: string[], groupID: string | null) => void
+  /** 多选「存入资产库…」：先选分组再批量入库。 */
+  onSaveNodesAsk: (ids: string[]) => void
   onFillNode: (id: string, asset: Asset) => void
   onUploadFileToNode: (id: string, file: File) => void
   onLibraryFill: (id: string, kind: MediaKind) => void
@@ -872,9 +876,12 @@ export default function CanvasView({
   }, [addRequest, flow])
   // 适应画布：包住全部节点（含 28px 标题区），避开资产库和助手面板（PRD CV-03、AL-02）。
   const fitCanvas = useCallback(
-    (duration = 240) => {
+    (duration = 240, ids?: string[]) => {
       const stage = element.current?.getBoundingClientRect()
-      const bounds = nodeBounds(callbacks.current.canvasNodes)
+      const all = callbacks.current.canvasNodes
+      const bounds = nodeBounds(
+        ids ? all.filter((n) => ids.includes(n.id)) : all,
+      )
       if (!stage || !bounds) return
       const library = document.getElementById('creative-library')
       const agent = document.querySelector('.cc-agent-panel')
@@ -1194,7 +1201,9 @@ export default function CanvasView({
           ?.data.item.capabilities.actions.includes('move'),
     )
   // v6：至少两个独立节点（组算一个）才能打组。
-  const canGroup = selectionRoots(canvas.nodes, selection).length >= 2
+  const canGroupIDs = (ids: string[]) =>
+    selectionRoots(canvas.nodes, ids).length >= 2
+  const canGroup = canGroupIDs(selection)
   const singleGroupSelected =
     selection.length === 1 &&
     active?.data.item.metadata.type_key === 'core.group'
@@ -1382,6 +1391,7 @@ export default function CanvasView({
     onCreated(id, kind)
   }
   // v6 派生：在来源右侧 120 世界像素新建下游节点，逐个连线并选中它，生成面板随之出现。
+  // 派生预填（PRD CV-72）：文本→图片 `@文本`；图片→视频 `@源 镜头缓慢推进，`；多选→依次 `@`。
   function derive(sourceIDs: string[], kind: 'image' | 'video') {
     const sources = sourceIDs
       .map((id) => flow.getInternalNode(id))
@@ -1420,6 +1430,8 @@ export default function CanvasView({
     ])
     onSelection([id])
     onSelect(id)
+    const mentions = sources.map((n) => `@[${n.id}]`).join(' ')
+    onCreated(id, kind, kind === 'video' ? `${mentions} 镜头缓慢推进，` : `${mentions} `)
   }
   createNodeRef.current = createNode
   function addMenuItems(menu: AddMenuState): CanvasMenuItem[] {
@@ -1469,12 +1481,20 @@ export default function CanvasView({
       )
     return items
   }
-  const contextItems: CanvasMenuItem[] = []
-  if (contextMenu) {
-    const ids = contextMenu.nodeIDs
+  function selectAll() {
+    const roots = canvas.nodes.filter((n) => !n.parent_id).map((n) => n.id)
+    setSelectedEdge(null)
+    setAddMenu(null)
+    onSelection(roots)
+    onSelect(roots[0] ?? null)
+  }
+  // 节点/选区菜单：右键与工具条「更多」共用（PRD CV-74/80/81/82）。
+  function nodeMenuItems(ids: string[]): CanvasMenuItem[] {
+    const items: CanvasMenuItem[] = []
     const target = canvas.nodes.find((n) => n.id === ids[0])
+    if (!target) return items
     const one = ids.length === 1
-    const groupOnly = one && target?.metadata.type_key === 'core.group'
+    const groupOnly = one && target.metadata.type_key === 'core.group'
     const locked =
       disabled ||
       ids.some(
@@ -1483,6 +1503,155 @@ export default function CanvasView({
             .find((n) => n.id === id)
             ?.capabilities.actions.includes('move'),
       )
+    const groups = ids.filter(
+      (id) =>
+        canvas.nodes.find((n) => n.id === id)?.metadata.type_key ===
+        'core.group',
+    )
+    const copy: CanvasMenuItem = {
+      label: groupOnly ? '复制整组' : '复制',
+      icon: <Copy size={16} />,
+      shortcut: '⌘D',
+      disabled: locked,
+      action: () =>
+        act([
+          {
+            type: 'duplicate_selection',
+            node_ids: ids,
+            dx: COPY_OFFSET,
+            dy: COPY_OFFSET,
+          },
+        ]),
+    }
+    const remove: CanvasMenuItem = {
+      label: groupOnly ? '删除分组及内容' : '删除',
+      icon: <Trash2 size={16} />,
+      shortcut: '⌫',
+      disabled: locked,
+      danger: true,
+      action: () =>
+        act([{ type: 'remove_nodes', node_ids: ids, group_mode: 'subtree' }]),
+    }
+    const ungroup: CanvasMenuItem = {
+      label: '解组',
+      icon: <FolderMinus size={16} />,
+      shortcut: '⇧⌘G',
+      disabled: locked,
+      action: () =>
+        act(groups.map((id) => ({ type: 'ungroup_nodes' as const, node_id: id }))),
+    }
+    if (groupOnly) {
+      items.push(
+        {
+          label: '重命名分组',
+          icon: <Pencil size={16} />,
+          disabled: disabled || !target.capabilities.actions.includes('rename'),
+          action: () => renameNode(target.id),
+        },
+        ungroup,
+        copy,
+        {
+          label: '适应到分组',
+          icon: <Scan size={16} />,
+          action: () => fitCanvas(240, [target.id]),
+        },
+        'separator',
+        remove,
+      )
+      return items
+    }
+    if (!one) {
+      if (canGroupIDs(ids))
+        items.push({
+          label: '打组',
+          icon: <FolderPlus size={16} />,
+          shortcut: '⌘G',
+          disabled: locked,
+          action: () => act([{ type: 'group_nodes', node_ids: ids }]),
+        })
+      if (groups.length) items.push(ungroup)
+      items.push(copy, {
+        label: '存入资产库…',
+        icon: <Library size={16} />,
+        disabled,
+        action: () => onSaveNodesAsk(ids),
+      }, 'separator', remove)
+      return items
+    }
+    const kind = nodeKind(target.metadata.type_key)
+    items.push({
+      label: '重命名',
+      icon: <Pencil size={16} />,
+      disabled: disabled || !target.capabilities.actions.includes('rename'),
+      action: () => renameNode(target.id),
+    })
+    if (target.metadata.type_key === 'core.text')
+      items.push({
+        label: '编辑文字',
+        icon: <FileText size={16} />,
+        shortcut: 'Enter',
+        disabled: disabled || !target.capabilities.actions.includes('edit'),
+        action: () => onEdit(target.id),
+      })
+    else if (
+      ['core.link', 'internal.document'].includes(target.metadata.type_key)
+    )
+      items.push({
+        label: target.metadata.type_key === 'core.link' ? '编辑链接' : '最大化文档',
+        icon: <FileText size={16} />,
+        disabled: disabled || !target.capabilities.actions.includes('edit'),
+        action: () => onEdit(target.id),
+      })
+    // 媒体说明的编辑入口（PRD 没列，但它是改说明的唯一途径，保留）。
+    if (isMediaKind(kind) && target.content && target.capabilities.actions.includes('edit'))
+      items.push({
+        label: '编辑说明',
+        icon: <FileText size={16} />,
+        disabled,
+        action: () => onEdit(target.id),
+      })
+    if (isMediaKind(kind) && target.content) {
+      if (target.capabilities.actions.includes('maximize'))
+        items.push({
+          label: '全屏查看',
+          icon: <Maximize2 size={16} />,
+          shortcut: 'Space',
+          action: () => onPreview(target.id, cardPreviews[target.id]?.id),
+        })
+      if (target.capabilities.actions.includes('download'))
+        items.push({
+          label: '下载',
+          icon: <Download size={16} />,
+          action: () => onDownload(target.id),
+        })
+    }
+    if (isMediaKind(kind) && target.capabilities.actions.includes('replace'))
+      items.push({
+        label: target.content ? '替换媒体' : '上传媒体',
+        icon: <Upload size={16} />,
+        disabled,
+        action: () => onUploadToNode(target.id, kind),
+      })
+    if (connectableTypes.includes(target.metadata.type_key))
+      items.push({
+        label: '从资产库添加参考',
+        icon: <Library size={16} />,
+        disabled,
+        action: () => onPickReferences(target.id),
+      })
+    items.push(copy)
+    if (target.content && target.capabilities.actions.includes('save_to_library'))
+      items.push({
+        label: '存入资产库…',
+        icon: <Library size={16} />,
+        disabled,
+        action: () => onSaveToLibrary(target.id),
+      })
+    items.push('separator', remove)
+    return items
+  }
+  const contextItems: CanvasMenuItem[] = []
+  if (contextMenu) {
     if (contextMenu.edgeID) {
       const edgeID = contextMenu.edgeID
       contextItems.push({
@@ -1495,141 +1664,46 @@ export default function CanvasView({
           setSelectedEdge(null)
         },
       })
-    } else if (target) {
-      if (one) {
-        contextItems.push({
-          label: groupOnly ? '重命名分组' : '编辑节点',
-          icon: <Pencil size={16} />,
-          disabled:
-            disabled ||
-            (groupOnly
-              ? !target.capabilities.actions.includes('rename')
-              : !target.capabilities.actions.includes('edit')),
-          action: () => (groupOnly ? renameNode(target.id) : onEdit(target.id)),
-        })
-        if (!groupOnly)
-          contextItems.push({
-            label: '重命名',
-            icon: <FileText size={16} />,
-            disabled:
-              disabled || !target.capabilities.actions.includes('rename'),
-            action: () => renameNode(target.id),
-          })
-        const kind = nodeKind(target.metadata.type_key)
-        if (isMediaKind(kind)) {
-          if (target.capabilities.actions.includes('replace'))
-            contextItems.push({
-              label: target.content ? '替换媒体' : '上传媒体',
-              icon: <Upload size={16} />,
-              disabled,
-              action: () => onUploadToNode(target.id, kind),
-            })
-          if (
-            target.content &&
-            target.capabilities.actions.includes('maximize')
-          )
-            contextItems.push({
-              label: '放大预览',
-              icon: <Maximize2 size={16} />,
-              action: () => onPreview(target.id, cardPreviews[target.id]?.id),
-            })
-          if (
-            target.content &&
-            target.capabilities.actions.includes('download')
-          )
-            contextItems.push({
-              label: '下载媒体',
-              icon: <Download size={16} />,
-              action: () => onDownload(target.id),
-            })
-        }
-        if (connectableTypes.includes(target.metadata.type_key))
-          contextItems.push({
-            label: '从资产库添加参考',
-            icon: <Library size={16} />,
-            disabled,
-            action: () => onPickReferences(target.id),
-          })
-        if (
-          target.content &&
-          target.capabilities.actions.includes('save_to_library')
-        )
-          contextItems.push({
-            label: '存入个人资产库',
-            icon: <Library size={16} />,
-            disabled,
-            action: () => onSaveToLibrary(target.id),
-          })
-      }
-      if (groupOnly)
-        contextItems.push({
-          label: '解组',
-          icon: <FolderMinus size={16} />,
-          shortcut: '⇧⌘G',
-          disabled: locked,
-          action: () => act([{ type: 'ungroup_nodes', node_id: target.id }]),
-        })
-      else if (selectionRoots(canvas.nodes, ids).length >= 2)
-        contextItems.push({
-          label: '打组',
-          icon: <FolderPlus size={16} />,
-          shortcut: '⌘G',
-          disabled: locked,
-          action: () => act([{ type: 'group_nodes', node_ids: ids }]),
-        })
-      contextItems.push({
-        label: ids.length > 1 ? '复制选中节点' : '复制节点',
-        icon: <Copy size={16} />,
-        shortcut: '⌘D',
-        disabled: locked,
-        action: () =>
-          act([{ type: 'duplicate_selection', node_ids: ids, dx: COPY_OFFSET, dy: COPY_OFFSET }]),
-      })
-      contextItems.push({
-        label: groupOnly
-          ? '移除分组及其中节点'
-          : ids.length > 1
-            ? '移除选中节点'
-            : '移除节点',
-        icon: <Trash2 size={16} />,
-        disabled: locked,
-        danger: true,
-        action: () =>
-          act([{ type: 'remove_nodes', node_ids: ids, group_mode: 'subtree' }]),
-      })
-    } else if (!ids.length) {
+    } else if (contextMenu.nodeIDs.length) {
+      contextItems.push(...nodeMenuItems(contextMenu.nodeIDs))
+    } else {
       const at = flow.screenToFlowPosition({
         x: contextMenu.x,
         y: contextMenu.y,
       })
+      // 空白处（PRD CV-83）：添加 / 上传 / 资产库，撤销、重做，全选，适应画布。
       contextItems.push(
         ...addMenuItems({ screen: contextMenu, world: at }),
         'separator',
-      )
-      contextItems.push({
-        label: '适应全部节点',
-        icon: <Scan size={16} />,
-        action: () => {
-          fitCanvas()
+        {
+          label: '撤销',
+          icon: <Undo2 size={16} />,
+          shortcut: '⌘Z',
+          disabled: disabled || !canUndo,
+          action: onUndo,
         },
-      })
+        {
+          label: '重做',
+          icon: <Redo2 size={16} />,
+          shortcut: '⇧⌘Z',
+          disabled: disabled || !canRedo,
+          action: onRedo,
+        },
+        'separator',
+        {
+          label: '全选',
+          icon: <SquareDashedMousePointer size={16} />,
+          shortcut: '⌘A',
+          action: selectAll,
+        },
+        {
+          label: '适应画布',
+          icon: <Scan size={16} />,
+          shortcut: '⇧1',
+          action: () => fitCanvas(),
+        },
+      )
     }
-    contextItems.push(
-      {
-        label: '撤销',
-        icon: <Undo2 size={16} />,
-        shortcut: '⌘Z',
-        disabled: disabled || !canUndo,
-        action: onUndo,
-      },
-      {
-        label: '重做',
-        icon: <Redo2 size={16} />,
-        shortcut: '⇧⌘Z',
-        disabled: disabled || !canRedo,
-        action: onRedo,
-      },
-    )
   }
   return (
     <div
@@ -1736,13 +1810,7 @@ export default function CanvasView({
         // ⌘A 全选：选中所有顶层节点与组，组内子节点随组计入（PRD CV-22）。
         if (command && key === 'a') {
           e.preventDefault()
-          const roots = canvas.nodes
-            .filter((n) => !n.parent_id)
-            .map((n) => n.id)
-          setSelectedEdge(null)
-          setAddMenu(null)
-          onSelection(roots)
-          onSelect(roots[0] ?? null)
+          selectAll()
           return
         }
         if (command && key === 'd') {
@@ -2101,7 +2169,7 @@ export default function CanvasView({
           />
         )}
       </ReactFlow>
-      {/* 文字编辑期间隐藏工具条，结束编辑后恢复（PRD CV-60）。 */}
+      {/* 文字编辑期间隐藏工具条，结束编辑后恢复（PRD CV-60）。按选区显示 CV-70 规定的按钮。 */}
       {active && !inlineContent && (
         <div
           className="cc-selection-tools cc-surface"
@@ -2109,200 +2177,90 @@ export default function CanvasView({
           aria-label="节点操作"
           style={{ left: toolbarX, top: toolbarY }}
         >
-          {selection.length > 1 && <span>{selection.length} 个节点</span>}
           {(() => {
-            // 只有图片节点有内容时可生成视频，文字节点可生成图片；多选普通节点可合并为参考。
-            const refs = selectionRoots(canvas.nodes, selection)
-              .map((id) => canvas.nodes.find((n) => n.id === id))
-              .filter(
-                (n): n is CanvasNode =>
-                  !!n && connectableTypes.includes(n.metadata.type_key),
-              )
             const one = selection.length === 1 ? active.data.item : undefined
-            const tools: { label: string; icon: ReactNode; run: () => void }[] =
-              []
-            if (
-              one?.metadata.type_key === 'core.text' &&
-              one.capabilities.actions.includes('edit')
+            const type = one?.metadata.type_key
+            const kind = one ? nodeKind(one.metadata.type_key) : ''
+            const media = !!one && isMediaKind(kind)
+            const sep = (key: string) => <span key={key} className="cc-tool-sep" />
+            const tool = (label: string, icon: ReactNode, run: () => void, off = disabled) => (
+              <button key={label} className="cc-tool" disabled={off} onClick={run}>
+                {icon}
+                {label}
+              </button>
             )
-              tools.push({
-                label: '编辑',
-                icon: <Pencil size={16} />,
-                run: () => onEdit(one.id),
-              })
-            if (one?.metadata.type_key === 'core.image' && one.content)
-              tools.push({
-                label: '生成视频',
-                icon: <Film size={16} />,
-                run: () => derive([one.id], 'video'),
-              })
-            if (
-              one &&
-              ['core.text', 'core.link'].includes(one.metadata.type_key) &&
-              contentText(one.content?.payload)
+            const icon = (label: string, node: ReactNode, run: () => void, title = label, off = false) => (
+              <button key={label} className="cc-icon-button" aria-label={label} title={title} disabled={off} onClick={run}>
+                {node}
+              </button>
             )
-              tools.push({
-                label: '生成图片',
-                icon: <ImageIcon size={16} />,
-                run: () => derive([one.id], 'image'),
-              })
-            if (selection.length > 1 && refs.length > 1)
-              tools.push({
-                label: '合并为参考生成',
-                icon: <Sparkles size={16} />,
-                run: () =>
-                  derive(
-                    refs.map((n) => n.id),
-                    'image',
-                  ),
-              })
-            return tools.length ? (
-              <>
-                {tools.map((t) => (
-                  <button
-                    key={t.label}
-                    className="cc-tool"
-                    disabled={disabled}
-                    onClick={t.run}
-                  >
-                    {t.icon}
-                    {t.label}
-                  </button>
-                ))}
-                <span className="cc-tool-sep" />
-              </>
-            ) : null
+            const copy = (label: string) =>
+              icon(label, <Copy size={16} />, () =>
+                act([{ type: 'duplicate_selection', node_ids: selection, dx: COPY_OFFSET, dy: COPY_OFFSET }]),
+              `${label} · ⌘D`, disabled || selectionReadOnly)
+            // 「更多」在按钮下方打开与右键相同的菜单（PRD CV-74）。
+            const more = icon('更多', <Ellipsis size={16} />, () => {
+              const b = document.querySelector<HTMLElement>('.cc-selection-tools [aria-label="更多"]')?.getBoundingClientRect()
+              setAddMenu(null)
+              setContextMenu({ x: b ? b.left : toolbarX, y: b ? b.bottom + 6 : toolbarY + 40, nodeIDs: selection })
+            })
+            if (!one) {
+              const refs = selectionRoots(canvas.nodes, selection)
+                .map((id) => canvas.nodes.find((n) => n.id === id))
+                .filter((n): n is CanvasNode => !!n && connectableTypes.includes(n.metadata.type_key))
+              const groups = selection.filter((id) => canvas.nodes.find((n) => n.id === id)?.metadata.type_key === 'core.group')
+              return [
+                <span key="count">已选 {selection.length} 项</span>,
+                sep('s0'),
+                canGroup && tool('打组', <FolderPlus size={16} />, () => act([{ type: 'group_nodes', node_ids: selection }]), disabled || selectionReadOnly),
+                groups.length > 0 && tool('解组', <FolderMinus size={16} />, () => act(groups.map((id) => ({ type: 'ungroup_nodes' as const, node_id: id }))), disabled || selectionReadOnly),
+                refs.length > 1 && tool('合并为参考生成', <Sparkles size={16} />, () => derive(refs.map((n) => n.id), 'image')),
+                sep('s1'),
+                copy('复制'),
+                icon('删除', <Trash2 size={16} />, removeSelection, '删除 · ⌫', disabled || selectionReadOnly),
+              ]
+            }
+            if (type === 'core.group')
+              return [
+                tool('重命名', <Pencil size={16} />, () => renameNode(one.id), disabled || !one.capabilities.actions.includes('rename')),
+                tool('解组', <FolderMinus size={16} />, () => act([{ type: 'ungroup_nodes', node_id: one.id }]), disabled || selectionReadOnly),
+                sep('s0'),
+                copy('复制整组'),
+                more,
+              ]
+            if (type === 'core.text')
+              return [
+                one.capabilities.actions.includes('edit') && tool('编辑', <Pencil size={16} />, () => onEdit(one.id)),
+                contentText(one.content?.payload) && tool('生成图片', <ImageIcon size={16} />, () => derive([one.id], 'image')),
+                sep('s0'),
+                more,
+              ]
+            if (media && !one.content)
+              return [
+                one.capabilities.actions.includes('replace') &&
+                  tool('上传', <Upload size={16} />, () => onUploadToNode(one.id, kind as MediaKind)),
+                sep('s0'),
+                more,
+              ]
+            if (media && one.content)
+              return [
+                type === 'core.image' && tool('生成视频', <Film size={16} />, () => derive([one.id], 'video')),
+                type === 'core.image' && sep('s0'),
+                one.capabilities.actions.includes('maximize') &&
+                  icon('全屏查看', <Maximize2 size={16} />, () => onPreview(one.id, cardPreviews[one.id]?.id), '全屏查看 · Space'),
+                one.capabilities.actions.includes('save_to_library') &&
+                  icon('存入资产库', <Library size={16} />, () => onSaveToLibrary(one.id), '存入资产库', disabled),
+                one.capabilities.actions.includes('download') &&
+                  icon('下载', <Download size={16} />, () => onDownload(one.id), '下载原件'),
+                more,
+              ]
+            // 链接、文档等：主要动作 + 更多；链接/音频的完整工具条由 V6-009/010 交付。
+            return [
+              type === 'internal.document' && icon('最大化文档', <Maximize2 size={16} />, () => onEdit(one.id)),
+              type === 'core.link' && one.capabilities.actions.includes('edit') && tool('编辑', <Pencil size={16} />, () => onEdit(one.id)),
+              more,
+            ]
           })()}
-          {selection.length === 1 &&
-            active.data.item.metadata.type_key === 'internal.document' && (
-              <button
-                className="cc-icon-button"
-                aria-label="最大化文档"
-                title="最大化文档"
-                onClick={() => onEdit(active.id)}
-              >
-                <Maximize2 size={16} />
-              </button>
-            )}
-          {selection.length === 1 &&
-            active.data.item.capabilities.actions.includes('maximize') &&
-            isMediaKind(nodeKind(active.data.item.metadata.type_key)) &&
-            active.data.item.content && (
-              <button
-                className="cc-icon-button"
-                aria-label="放大预览"
-                title="放大预览"
-                onClick={() =>
-                  onPreview(active.id, cardPreviews[active.id]?.id)
-                }
-              >
-                <Maximize2 size={16} />
-              </button>
-            )}
-          {selection.length === 1 &&
-            active.data.item.capabilities.actions.includes('download') &&
-            active.data.item.content && (
-              <button
-                className="cc-icon-button"
-                aria-label="下载媒体"
-                title="下载原件"
-                onClick={() => onDownload(active.id)}
-              >
-                <Download size={16} />
-              </button>
-            )}
-          {selection.length === 1 &&
-            active.data.item.capabilities.actions.includes('replace') && (
-              <button
-                className="cc-icon-button"
-                aria-label={active.data.item.content ? '替换媒体' : '上传媒体'}
-                title={active.data.item.content ? '替换媒体' : '上传媒体'}
-                disabled={disabled}
-                onClick={() =>
-                  onUploadToNode(
-                    active.id,
-                    nodeKind(active.data.item.metadata.type_key) as MediaKind,
-                  )
-                }
-              >
-                {active.data.item.content ? (
-                  <RefreshCw size={16} />
-                ) : (
-                  <Upload size={16} />
-                )}
-              </button>
-            )}
-          {selection.length === 1 &&
-            active.data.item.capabilities.actions.includes('save_to_library') &&
-            active.data.item.content && (
-              <button
-                className="cc-icon-button"
-                aria-label="存入个人资产库"
-                title="存入个人资产库"
-                disabled={disabled}
-                onClick={() => onSaveToLibrary(active.id)}
-              >
-                <Library size={16} />
-              </button>
-            )}
-          {canGroup && (
-            <button
-              className="cc-icon-button"
-              aria-label="打组"
-              title="打组 · ⌘G"
-              disabled={disabled || selectionReadOnly}
-              onClick={() =>
-                act([{ type: 'group_nodes', node_ids: selection }])
-              }
-            >
-              <FolderPlus size={16} />
-            </button>
-          )}
-          {selection.length === 1 &&
-            active.data.item.metadata.type_key === 'core.group' && (
-              <button
-                className="cc-icon-button"
-                aria-label="解组"
-                title="解组 · ⇧⌘G"
-                disabled={disabled || selectionReadOnly}
-                onClick={() =>
-                  act([{ type: 'ungroup_nodes', node_id: active.id }])
-                }
-              >
-                <FolderMinus size={16} />
-              </button>
-            )}
-          <button
-            className="cc-icon-button"
-            aria-label="复制节点"
-            title="复制 · ⌘D"
-            disabled={disabled || selectionReadOnly}
-            onClick={() =>
-              act([
-                {
-                  type: 'duplicate_selection',
-                  node_ids: selection,
-                  dx: COPY_OFFSET,
-                  dy: COPY_OFFSET,
-                },
-              ])
-            }
-          >
-            <Copy size={16} />
-          </button>
-          <button
-            className="cc-icon-button"
-            aria-label={
-              active.data.item.metadata.type_key === 'core.group'
-                ? '移除分组及其中节点'
-                : '移除节点'
-            }
-            title="移除选区，可撤销"
-            disabled={disabled || selectionReadOnly}
-            onClick={removeSelection}
-          >
-            <Trash2 size={16} />
-          </button>
         </div>
       )}
       {contextMenu && (

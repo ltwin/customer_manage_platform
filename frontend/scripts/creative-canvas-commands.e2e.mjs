@@ -3,6 +3,17 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
 // v6 窄屏隐藏缩放条：按钮不可见时走 ⇧1。
+// V6-007：单选时复制/删除在「更多」菜单里（PRD CV-70/74/80）。
+async function fromMore(label) {
+  await page
+    .getByRole('toolbar', { name: '节点操作' })
+    .getByRole('button', { name: '更多', exact: true })
+    .click()
+  await page
+    .getByRole('menu', { name: '节点右键菜单' })
+    .getByRole('menuitem', { name: label, exact: true })
+    .click()
+}
 async function fitAll(page) {
   const button = page.getByRole('button', { name: '适应全部节点', exact: true })
   if (await button.isVisible()) return button.click()
@@ -534,7 +545,11 @@ try {
   await page.screenshot({ path: `${output}/grouped-desktop.png` })
   const beforeCopy = snapshot.nodes.length
   await snapshotAfter(
-    () => page.getByRole('button', { name: '复制节点', exact: true }).click(),
+    () =>
+      page
+        .getByRole('toolbar', { name: '节点操作' })
+        .getByRole('button', { name: '复制整组', exact: true })
+        .click(),
     (c) => c.nodes.length === beforeCopy + 3,
   )
   assert.equal(snapshot.edges.length, 2)
@@ -573,13 +588,13 @@ try {
   })
   const existingIDs = new Set(snapshot.nodes.map((n) => n.id))
   await snapshotAfter(
-    () => page.getByRole('button', { name: '复制节点', exact: true }).click(),
+    () => fromMore('复制'),
     (c) => c.nodes.length === existingIDs.size + 1,
   )
   const secondCopy = snapshot.nodes.find((n) => !existingIDs.has(n.id))
   assert(secondCopy.data.selected_version_id)
   await snapshotAfter(
-    () => page.getByRole('button', { name: '移除节点', exact: true }).click(),
+    () => fromMore('删除'),
     (c) => !c.nodes.some((n) => n.id === secondCopy.id),
   )
   await snapshotAfter(
@@ -591,7 +606,7 @@ try {
     secondCopy.data.selected_version_id,
   )
   await snapshotAfter(
-    () => page.getByRole('button', { name: '移除节点', exact: true }).click(),
+    () => fromMore('删除'),
     (c) => !c.nodes.some((n) => n.id === secondCopy.id),
   )
   // v6 没有「连接已有节点」下拉；拖线从 b 的输出落到 a 上，形成环路，由服务端拒绝。
@@ -672,7 +687,7 @@ try {
     viewport,
   )
   await snapshotAfter(
-    () => page.getByRole('button', { name: '移除节点', exact: true }).click(),
+    () => fromMore('删除'),
     (c) => c.nodes.length === 0,
   )
   const referenced = await page.request.post(

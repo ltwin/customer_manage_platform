@@ -111,6 +111,8 @@ function Workspace({ account }: { account: string }) {
   const clearPromptFocus = useCallback(() => setPromptFocus(null), [])
   // 新建的文本节点等它出现在投影里再进入编辑。
   const pendingTextEdit = useRef<string | null>(null)
+  // 派生节点的预填提示词：节点出现在投影里后写进本机草稿（PRD CV-71/72）。
+  const pendingPrefill = useRef<{ id: string; text: string } | null>(null)
   const [help, setHelp] = useState(false)
   const [panMode, setPanMode] = useState(false)
   const { canvasID = '' } = useParams<{ canvasID: string }>()
@@ -171,6 +173,8 @@ function Workspace({ account }: { account: string }) {
     revision?: string
   } | null>(null)
   const [savingNode, setSavingNode] = useState<api.CanvasNode | null>(null)
+  // 多选「存入资产库…」：一次选分组，逐个入库（PRD CV-81）。
+  const [savingMany, setSavingMany] = useState<string[] | null>(null)
   const nodeFileInput = useRef<HTMLInputElement>(null)
   const canvasFileInput = useRef<HTMLInputElement>(null)
   const canvasFileTarget = useRef({ x: 0, y: 0 })
@@ -934,6 +938,25 @@ function Workspace({ account }: { account: string }) {
           }
         })
   }
+  useEffect(() => {
+    const p = pendingPrefill.current
+    if (!p || !queue || !view || !canvasID) return
+    const n = view.nodes.find((v) => v.id === p.id)
+    if (!n) return
+    pendingPrefill.current = null
+    const key = `prompt:${canvasID}:${n.id}`
+    if (queue.value.drafts[key]) return
+    const prompt = { ...promptFromNode(view, n), text: p.text }
+    void queue
+      .update({
+        ...queue.value,
+        drafts: {
+          ...queue.value.drafts,
+          [key]: { kind: 'text', title: prompt.model_key, value: prompt.text, prompt },
+        },
+      })
+      .catch((e: unknown) => setLocalError(errorMessage(e)))
+  })
   // 新建文本节点后直接进入卡片内编辑（PRD CV-53）。
   useEffect(() => {
     const id = pendingTextEdit.current
@@ -1362,9 +1385,12 @@ function Workspace({ account }: { account: string }) {
                   onSelect={(id) => {
                     setSelected(id)
                   }}
-                  onCreated={(id, kind) => {
+                  onCreated={(id, kind, prompt) => {
                     if (kind === 'text') pendingTextEdit.current = id
-                    else focusPrompt(id)
+                    else {
+                      if (prompt) pendingPrefill.current = { id, text: prompt }
+                      focusPrompt(id)
+                    }
                   }}
                   onFocusPrompt={focusPrompt}
                   onEdit={(id) => {
@@ -1472,6 +1498,7 @@ function Workspace({ account }: { account: string }) {
                     setSavingNode(view.nodes.find((n) => n.id === id) ?? null)
                   }
                   onSaveNodes={(ids, groupID) => void saveNodes(ids, groupID)}
+                  onSaveNodesAsk={setSavingMany}
                   onFillNode={fillNode}
                   onUploadFileToNode={uploadFileToNode}
                   onLibraryFill={(id, kind) => {
@@ -1753,6 +1780,50 @@ function Workspace({ account }: { account: string }) {
                 autoFocus
               />
             </label>
+            <label>
+              归入分组
+              <select className="input" name="group" defaultValue="">
+                <option value="">不归类，只存入</option>
+                {catalog.groups
+                  .filter((g) => !g.parent_id)
+                  .flatMap((g) => [
+                    g,
+                    ...catalog.groups.filter((c) => c.parent_id === g.id),
+                  ])
+                  .map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.parent_id ? `　${g.name}` : g.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <button className="btn btn-primary" disabled={blocked}>
+              保存资产
+            </button>
+          </form>
+        </StudioDialog>
+      )}
+      {savingMany && view && (
+        <StudioDialog
+          title="存入个人资产库"
+          onClose={() => setSavingMany(null)}
+        >
+          <form
+            className="cc-form"
+            noValidate
+            onSubmit={(e) => {
+              e.preventDefault()
+              const groupID = String(
+                new FormData(e.currentTarget).get('group') ?? '',
+              )
+              const ids = savingMany
+              setSavingMany(null)
+              void saveNodes(ids, groupID || null)
+            }}
+          >
+            <p className="cc-muted">
+              已选 {savingMany.length} 项，有内容的节点各存为一份资产，名称取节点标题。
+            </p>
             <label>
               归入分组
               <select className="input" name="group" defaultValue="">

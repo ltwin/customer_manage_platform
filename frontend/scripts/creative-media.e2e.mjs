@@ -237,7 +237,9 @@ try {
   // Replace via the toolbar; the asset in the library stays untouched.
   await node(jpgNode.id).click()
   const chooser3 = page.waitForEvent('filechooser')
-  await page.getByRole('button', { name: '替换媒体', exact: true }).click()
+  // V6-007：替换媒体在「更多」菜单里（工具条按 CV-70 不再单列）。
+  await page.getByRole('toolbar', { name: '节点操作' }).getByRole('button', { name: '更多', exact: true }).click()
+  await page.getByRole('menu', { name: '节点右键菜单' }).getByRole('menuitem', { name: '替换媒体', exact: true }).click()
   await (await chooser3).setFiles([sample('sample.webp')])
   await trayIdle()
   await until(
@@ -256,9 +258,9 @@ try {
     'undo replacement',
   )
   await saved()
-  // v6 双击有内容的媒体是全屏查看；说明从右键「编辑节点」修改，保存为新修订。
+  // v6 双击有内容的媒体是全屏查看；说明从右键菜单修改，保存为新修订。
   await node(jpgNode.id).click({ button: 'right' })
-  await page.getByRole('menu', { name: '节点右键菜单' }).getByRole('menuitem', { name: '编辑节点', exact: true }).click()
+  await page.getByRole('menu', { name: '节点右键菜单' }).getByRole('menuitem', { name: '编辑说明', exact: true }).click()
   await page.getByLabel('媒体说明').fill('窗边的光')
   await page.getByRole('button', { name: '保存到节点', exact: true }).click()
   await until(
@@ -272,14 +274,14 @@ try {
   await saved()
   // Maximize preview and download from the toolbar.
   await node(jpgNode.id).click()
-  await page.getByRole('button', { name: '放大预览', exact: true }).click()
+  await page.getByRole('toolbar', { name: '节点操作' }).getByRole('button', { name: '全屏查看', exact: true }).click()
   await page.getByRole('dialog', { name: /媒体预览/ }).waitFor()
   await until(async () => (await page.locator('.cc-media-preview img').count()) === 1, 'node preview')
   await page.screenshot({ path: `${output}/canvas-preview.png` })
   await page.getByRole('button', { name: '关闭预览', exact: true }).click()
   await node(jpgNode.id).click()
   const download = page.waitForEvent('download')
-  await page.getByRole('button', { name: '下载媒体', exact: true }).click()
+  await page.getByRole('toolbar', { name: '节点操作' }).getByRole('button', { name: '下载', exact: true }).click()
   const file = await download
   assert.equal(file.suggestedFilename(), 'drop.jpg')
   const body = await readFile(await file.path())
@@ -311,7 +313,7 @@ try {
   assert(mediaRequests.some((r) => r.range), 'browser used Range for media')
   // Save a node back to the library as a new asset.
   await node(jpgNode.id).click()
-  await page.getByRole('button', { name: '存入个人资产库', exact: true }).click()
+  await page.getByRole('toolbar', { name: '节点操作' }).getByRole('button', { name: '存入资产库', exact: true }).click()
   await page.getByLabel('资产名称').fill('从节点存回')
   await page.getByRole('button', { name: '保存资产', exact: true }).click()
   await until(async () => (await tiles.count()) === 4, 'saved asset listed')
