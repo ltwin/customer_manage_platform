@@ -977,6 +977,7 @@ button.cc-project-name:hover,
   }
 }
 .cc-stage { z-index: 0; }
+.cc-flow:focus { outline: none; }
 .cc-maximized-document { position: absolute; z-index: 31; inset: 64px 12px 12px 64px; display: flex; flex-direction: column; border-radius: var(--r-lg); overflow: hidden; }
 .cc-maximized-document > header { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--border); }
 .cc-maximized-document h2 { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0; font-family: var(--font-body); font-size: 22px; }

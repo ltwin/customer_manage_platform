@@ -32,7 +32,7 @@
 | ID / 需求 | 优先级 | 类型 | 状态 | 前置依赖 | 产物 / 阻塞说明 |
 |---|---|---|---|---|---|
 | [V6-001 · 文本编辑与节点重命名语义](items/V6-001.md) | P0；Esc 保存 P1 | 交付 | 已完成 | — | 轻量修复（无 design）· 实现与验证：[fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
-| [V6-002 · 视口缩放、平移与面板避让](items/V6-002.md) | P0 | 交付 | 待设计 | — | — |
+| [V6-002 · 视口缩放、平移与面板避让](items/V6-002.md) | P0 | 交付 | 已完成 | — | [design](../../features/2026-10-06-canvas-viewport/canvas-viewport-design.md) · [verification](../../features/2026-10-06-canvas-viewport/canvas-viewport-verification.md)；顺带修复点画布空白后快捷键失效 |
 | [V6-003 · 节点标题元信息、空态与默认尺寸](items/V6-003.md) | P0 | 交付 | 已完成 | — | [design](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-design.md) · [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | [V6-004 · 节点手动缩放与媒体比例](items/V6-004.md) | P0 | 交付 | 待验收 | V6-021（仅 AC-05 比例 chip 部分） | [design](../../features/2026-10-06-node-manual-resize/node-manual-resize-design.md) · [verification](../../features/2026-10-06-node-manual-resize/node-manual-resize-verification.md)；AC-01–04 已通过，AC-05 除比例 chip 外已满足，比例 chip 随 V6-021 AC-03 一并验收 |
 | [V6-005 · 画布组选择、包围框与固定归属](items/V6-005.md) | P0 | 交付 | 待设计 | —（组尺寸与 V6-004 协作） | — |

@@ -75,6 +75,13 @@ import { libraryDropZone, markLibraryDrop } from './libraryDrop.ts'
 import type { Content } from './api.ts'
 import * as api from './api.ts'
 import { needsModelLabel, nodeLabelMeta } from './labelMeta.ts'
+import {
+  fitViewport,
+  nodeBounds,
+  panelInsets,
+  validViewport,
+  zoomLimits,
+} from './viewport.ts'
 import type { GenerationCatalog } from './generation.ts'
 import {
   InlineNodeTitle,
@@ -764,7 +771,9 @@ export default function CanvasView({
   )
   const flow = useReactFlow<FlowNode>(),
     viewport = useViewport(),
-    panHeld = useKeyPress('Space')
+    spaceHeld = useKeyPress('Space'),
+    // Space 只在没有选中时平移；有选中时交给全屏预览（PRD CV-01、§7 快捷键）。
+    panHeld = spaceHeld && !selection.length
   const [size, setSize] = useState({ width: 0, height: 0 }),
     [minimap, setMinimap] = useState(false),
     [nodes, setNodes] = useState<FlowNode[]>([])
@@ -855,6 +864,23 @@ export default function CanvasView({
     if (addRequest.kind) createNodeRef.current(addRequest.kind, menu)
     else setAddMenu(menu)
   }, [addRequest, flow])
+  // 适应画布：包住全部节点（含 28px 标题区），避开资产库和助手面板（PRD CV-03、AL-02）。
+  const fitCanvas = useCallback(
+    (duration = 240) => {
+      const stage = element.current?.getBoundingClientRect()
+      const bounds = nodeBounds(callbacks.current.canvasNodes)
+      if (!stage || !bounds) return
+      const library = document.getElementById('creative-library')
+      const agent = document.querySelector('.cc-agent-panel')
+      const insets = panelInsets(
+        stage,
+        library && !library.hidden ? library.getBoundingClientRect() : null,
+        agent ? agent.getBoundingClientRect() : null,
+      )
+      void flow.setViewport(fitViewport(bounds, stage, insets), { duration })
+    },
+    [flow],
+  )
   const lastFocus = useRef(focusRequest.seq)
   useEffect(() => {
     if (focusRequest.seq === lastFocus.current) return
@@ -1577,7 +1603,7 @@ export default function CanvasView({
         label: '适应全部节点',
         icon: <Scan size={16} />,
         action: () => {
-          void flow.fitView({ padding: 0.25, maxZoom: 1 })
+          fitCanvas()
         },
       })
     }
@@ -1602,6 +1628,8 @@ export default function CanvasView({
     <div
       className="cc-flow"
       ref={element}
+      // 点画布空白时焦点落到画布上，⇧1、⌘± 等画布快捷键才收得到。
+      tabIndex={-1}
       onPointerDownCapture={(e) => {
         pointerDown.current = { x: e.clientX, y: e.clientY }
       }}
@@ -1674,7 +1702,28 @@ export default function CanvasView({
         }
         if (e.shiftKey && e.code === 'Digit1') {
           e.preventDefault()
-          void flow.fitView({ padding: 0.25, maxZoom: 1 })
+          fitCanvas()
+          return
+        }
+        // ⌘+ / ⌘- 以屏幕中心按 1.2 倍缩放，⌘0 回到 100%（PRD CV-02）；拦下浏览器页面缩放。
+        if (command && !e.altKey && ['=', '+', '-', '0'].includes(e.key)) {
+          e.preventDefault()
+          if (e.key === '-') void flow.zoomOut()
+          else if (e.key === '0') void flow.zoomTo(1)
+          else void flow.zoomIn()
+          return
+        }
+        // 单选一个有内容的媒体节点时 Space 打开全屏，与双击、工具条入口一致。
+        if (e.key === ' ' && !command && !e.repeat) {
+          const only = selection.length === 1 ? canvas.nodes.find((n) => n.id === selection[0]) : undefined
+          if (
+            only?.content &&
+            isMediaKind(nodeKind(only.metadata.type_key)) &&
+            only.capabilities.actions.includes('maximize')
+          ) {
+            e.preventDefault()
+            onPreview(only.id, cardPreviews[only.id]?.id)
+          }
           return
         }
         // ⌘A 全选：选中所有顶层节点与组，组内子节点随组计入（PRD CV-22）。
@@ -1995,33 +2044,25 @@ export default function CanvasView({
         zoomOnScroll={false}
         zoomActivationKeyCode={['Control', 'Meta']}
         panOnDrag={panMode ? true : [1]}
-        panActivationKeyCode="Space"
-        fitView
-        fitViewOptions={{ maxZoom: 1, padding: 0.25 }}
-        minZoom={0.15}
-        maxZoom={2}
+        panActivationKeyCode={selection.length ? null : 'Space'}
+        minZoom={zoomLimits.min}
+        maxZoom={zoomLimits.max}
         zoomOnDoubleClick={false}
         onInit={(instance) => {
           try {
             const raw = localStorage.getItem(
               `creative-viewport:${account}:${canvas.id}`,
             )
-            if (raw) {
-              const v = JSON.parse(raw) as {
-                x: number
-                y: number
-                zoom: number
-              }
-              if (
-                [v.x, v.y, v.zoom].every(Number.isFinite) &&
-                v.zoom >= 0.15 &&
-                v.zoom <= 2
-              )
-                void instance.setViewport(v)
+            const v: unknown = raw ? JSON.parse(raw) : null
+            if (validViewport(v)) {
+              void instance.setViewport(v)
+              return
             }
           } catch {
             /* Viewport preferences are optional. */
           }
+          // 没有或无效的本机视口：适应画布（PRD CV-04）。
+          fitCanvas(0)
         }}
         onMoveStart={() => {
           setAddMenu(null)
@@ -2314,7 +2355,7 @@ export default function CanvasView({
         </button>
         <button
           aria-label="适应全部节点"
-          onClick={() => void flow.fitView({ maxZoom: 1, padding: 0.25 })}
+          onClick={() => fitCanvas()}
         >
           <Scan size={17} />
         </button>

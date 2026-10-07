@@ -1164,7 +1164,7 @@ function Workspace({ account }: { account: string }) {
         </button>
         <button
           aria-label="移动画布"
-          title="平移 · 中键 / 空格"
+          title="平移 · H / 中键 / 空格"
           aria-pressed={panMode}
           onClick={() => setPanMode(true)}
         >
@@ -1747,9 +1747,11 @@ function Workspace({ account }: { account: string }) {
         <StudioDialog title="画布快捷键" onClose={() => setHelp(false)}>
           <dl className="cc-shortcuts">
             <dt>平移画布</dt>
-            <dd>滚轮 / 中键拖动 / 按住空格拖动</dd>
+            <dd>滚轮 / 中键拖动 / 未选中时按住空格拖动</dd>
             <dt>缩放画布</dt>
-            <dd>Ctrl / ⌘ + 滚轮</dd>
+            <dd>Ctrl / ⌘ + 滚轮；⌘+ / ⌘- 放大缩小，⌘0 回到 100%，⇧1 适应画布</dd>
+            <dt>全屏查看</dt>
+            <dd>选中一张有内容的图片或视频后按空格</dd>
             <dt>编辑节点</dt>
             <dd>双击标题改名，双击文字节点编辑正文；失焦保存，Esc 取消</dd>
             <dt>右键菜单</dt>

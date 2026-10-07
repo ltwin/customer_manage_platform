@@ -19,10 +19,10 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | SH-06 | P0 | 左下角缩放条：撤销、重做、缩小、百分比、放大、适应、小地图 | [V6-055](items/V6-055.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-baseline-regression/canvas-baseline-regression-fix-note.md) |
 | SH-07 | P2 | 小地图 200×128，默认隐藏 | [V6-049](items/V6-049.md) | — |  |  |
 | SH-08 | P1 | 窄屏（≤760px）适配 | [V6-045](items/V6-045.md) | — |  |  |
-| CV-01 | P0 | 平移：中键拖动；平移工具下左键拖动；未选中任何对象时按住 Space… | [V6-002](items/V6-002.md) | — |  |  |
-| CV-02 | P0 | 缩放范围 10%–400% | [V6-002](items/V6-002.md) | — |  |  |
-| CV-03 | P0 | 适应画布（⇧1） | [V6-002](items/V6-002.md) | — |  |  |
-| CV-04 | P0 | 视口按账号和画布存在本机，重新打开时回到原位置 | [V6-002](items/V6-002.md) | — |  |  |
+| CV-01 | P0 | 平移：中键拖动；平移工具下左键拖动；未选中任何对象时按住 Space… | [V6-002](items/V6-002.md) | — |  | [verification](../../features/2026-10-06-canvas-viewport/canvas-viewport-verification.md) |
+| CV-02 | P0 | 缩放范围 10%–400% | [V6-002](items/V6-002.md) | — |  | [verification](../../features/2026-10-06-canvas-viewport/canvas-viewport-verification.md) |
+| CV-03 | P0 | 适应画布（⇧1） | [V6-002](items/V6-002.md) | — |  | [verification](../../features/2026-10-06-canvas-viewport/canvas-viewport-verification.md) |
+| CV-04 | P0 | 视口按账号和画布存在本机，重新打开时回到原位置 | [V6-002](items/V6-002.md) | — |  | [verification](../../features/2026-10-06-canvas-viewport/canvas-viewport-verification.md) |
 | CV-05 | P2 | 背景点阵随缩放变化 | [V6-049](items/V6-049.md) | — |  |  |
 | CV-10 | P0 | 节点由两部分组成：卡片外上方 26px 高的标签（类型图标 + 标题… | [V6-003](items/V6-003.md) | — |  | [verification](../../features/2026-10-06-node-label-meta-defaults/node-label-meta-defaults-verification.md) |
 | CV-11 | P0 | 卡片状态：默认细线框；悬停时线框变亮；选中时 1.5px 白框；作为… | [V6-046](items/V6-046.md) | — |  |  |
@@ -140,7 +140,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | GN-39 | P0 | 多个节点可以同时生成，彼此独立 | [V6-027](items/V6-027.md) | [V6-023](items/V6-023.md) |  |  |
 | GN-3A | P1 | 「已更新」提示 | [V6-012](items/V6-012.md) | — |  |  |
 | AL-01 | P0 | 左侧抽屉宽 344，默认收起 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
-| AL-02 | P0 | 抽屉打开时，「适应画布」为它让出左侧空间 | [V6-002](items/V6-002.md) | — |  |  |
+| AL-02 | P0 | 抽屉打开时，「适应画布」为它让出左侧空间 | [V6-002](items/V6-002.md) | — |  | [verification](../../features/2026-10-06-canvas-viewport/canvas-viewport-verification.md) |
 | AL-03 | P1 | 普通打开时保留上次的浏览状态；带任务打开（选参考、填充）时重置为「全… | [V6-019](items/V6-019.md) | — |  |  |
 | AL-04 | P0 | 固定视图：全部 / 最近使用 / 本画布 / 最爱 / 未归类 | [V6-014](items/V6-014.md) | [V6-015](items/V6-015.md) |  |  |
 | AL-05 | P0 | 默认按分组平铺 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |

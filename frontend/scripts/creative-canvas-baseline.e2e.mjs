@@ -259,7 +259,8 @@ try {
     }
     // 拖到空白：虚线保留；取消消失；选中类型后新节点端口落在虚线终点并连实线。
     const port = await node('c').locator('.cc-port-output button').boundingBox()
-    const drop = { x: port.x + 160, y: port.y + 260 }
+    // 落点留在窗口内：适应画布按 110% 上限放大后（V6-002），源节点可能靠近右边缘。
+    const drop = { x: Math.min(port.x + 160, 1540), y: port.y + 260 }
     const drag = async () => {
       await page.mouse.move(port.x + port.width / 2, port.y + port.height / 2)
       await page.mouse.down()
