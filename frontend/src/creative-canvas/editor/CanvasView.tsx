@@ -636,6 +636,8 @@ export default function CanvasView({
   onSelection,
   onSelect,
   onEdit,
+  onCreated,
+  onFocusPrompt,
   inlineContent,
   onPickFiles,
   onOpenLibrary,
@@ -675,13 +677,17 @@ export default function CanvasView({
   onSelection: (ids: string[]) => void
   onSelect: (id: string | null) => void
   onEdit: (id: string) => void
+  /** 新建节点后：文本进入编辑，媒体把焦点交给生成输入框（PRD CV-53）。 */
+  onCreated: (id: string, kind: 'text' | MediaKind) => void
+  /** 双击空媒体节点：只聚焦生成输入框，不上传也不生成（PRD CV-54）。 */
+  onFocusPrompt: (id: string) => void
   inlineContent?: InlineContentEditing
   onPickFiles: (x: number, y: number) => void
   onOpenLibrary: () => void
-  /** 工具轨「+」或 T/I/O 快捷键：递增 seq 打开添加菜单，kind 存在时直接创建。 */
+  /** 工具轨「+」或 T/I/O/A 快捷键：递增 seq 打开添加菜单，kind 存在时直接创建。 */
   addRequest: {
     seq: number
-    kind?: 'text' | 'image' | 'video'
+    kind?: 'text' | MediaKind
     anchor?: { x: number; y: number }
   }
   panMode: boolean
@@ -1373,6 +1379,7 @@ export default function CanvasView({
     act(actions)
     onSelection([id])
     onSelect(id)
+    onCreated(id, kind)
   }
   // v6 派生：在来源右侧 120 世界像素新建下游节点，逐个连线并选中它，生成面板随之出现。
   function derive(sourceIDs: string[], kind: 'image' | 'video') {
@@ -1424,16 +1431,16 @@ export default function CanvasView({
       from && ['core.text', 'core.link'].includes(from.metadata.type_key)
     const kinds = [
       ['text', '文字', 'T', ''],
-      ['image', '图片', 'I', fromText ? '以上游文字为提示词' : ''],
+      ['image', '图片', 'I', fromText ? '以上游文本为提示词' : ''],
       ['video', '视频', 'O', ''],
-      ['audio', '音频', '', ''],
+      ['audio', '音频', 'A', ''],
     ] as const
     const items: CanvasMenuItem[] = [
       {
         section: !menu.link
           ? '添加节点'
           : menu.link.side === 'output'
-            ? '添加下游节点'
+            ? '生成下游节点'
             : '添加上游参考',
       },
       ...kinds.map(([kind, label, hint, sub]) => ({
@@ -1860,6 +1867,8 @@ export default function CanvasView({
             item.capabilities.actions.includes('maximize')
           )
             onPreview(n.id, cardPreviews[n.id]?.id)
+          else if (isMediaKind(nodeKind(item.metadata.type_key)) && !item.content)
+            onFocusPrompt(n.id)
           else onEdit(n.id)
         }}
         onSelectionStart={(e) => {

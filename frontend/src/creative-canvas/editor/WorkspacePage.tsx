@@ -95,9 +95,22 @@ function Workspace({ account }: { account: string }) {
   const [editing, setEditing] = useState(false)
   const [addRequest, setAddRequest] = useState<{
     seq: number
-    kind?: 'text' | 'image' | 'video'
+    kind?: 'text' | 'image' | 'video' | 'audio'
     anchor?: { x: number; y: number }
   }>({ seq: 0 })
+  // 把焦点交给某个节点的生成输入框；面板解锁并聚焦后清掉（PRD CV-53/54）。
+  const [promptFocus, setPromptFocus] = useState<{
+    seq: number
+    nodeID: string
+  } | null>(null)
+  const focusPrompt = useCallback(
+    (nodeID: string) =>
+      setPromptFocus((v) => ({ seq: (v?.seq ?? 0) + 1, nodeID })),
+    [],
+  )
+  const clearPromptFocus = useCallback(() => setPromptFocus(null), [])
+  // 新建的文本节点等它出现在投影里再进入编辑。
+  const pendingTextEdit = useRef<string | null>(null)
   const [help, setHelp] = useState(false)
   const [panMode, setPanMode] = useState(false)
   const { canvasID = '' } = useParams<{ canvasID: string }>()
@@ -921,6 +934,15 @@ function Workspace({ account }: { account: string }) {
           }
         })
   }
+  // 新建文本节点后直接进入卡片内编辑（PRD CV-53）。
+  useEffect(() => {
+    const id = pendingTextEdit.current
+    if (!id || !editable) return
+    const n = view?.nodes.find((v) => v.id === id)
+    if (!n) return
+    pendingTextEdit.current = null
+    editInline(n)
+  })
   function saveNode(
     content: api.ContentDraft,
     reapply?: api.CanvasNode,
@@ -1010,8 +1032,12 @@ function Workspace({ account }: { account: string }) {
       const k = e.key.toLowerCase()
       if (k === 'v') setPanMode(false)
       else if (k === 'h') setPanMode(true)
-      else if (shortcutsLive && (k === 't' || k === 'i' || k === 'o')) {
-        const kind = k === 't' ? 'text' : k === 'i' ? 'image' : 'video'
+      else if (
+        shortcutsLive &&
+        (k === 't' || k === 'i' || k === 'o' || k === 'a')
+      ) {
+        const kind =
+          k === 't' ? 'text' : k === 'i' ? 'image' : k === 'o' ? 'video' : 'audio'
         setAddRequest((v) => ({ seq: v.seq + 1, kind }))
       } else return
       e.preventDefault()
@@ -1336,6 +1362,11 @@ function Workspace({ account }: { account: string }) {
                   onSelect={(id) => {
                     setSelected(id)
                   }}
+                  onCreated={(id, kind) => {
+                    if (kind === 'text') pendingTextEdit.current = id
+                    else focusPrompt(id)
+                  }}
+                  onFocusPrompt={focusPrompt}
                   onEdit={(id) => {
                     setSelected(id)
                     const n = view.nodes.find((n) => n.id === id)
@@ -1503,6 +1534,8 @@ function Workspace({ account }: { account: string }) {
                       }
                       referenceRequest={referenceRequest}
                       onReferencesInserted={() => setReferenceRequest(null)}
+                      focusRequest={promptFocus}
+                      onFocused={clearPromptFocus}
                       onDisconnect={(edgeID) =>
                         graphActions([
                           { type: 'disconnect_reference', edge_id: edgeID },
@@ -1757,7 +1790,7 @@ function Workspace({ account }: { account: string }) {
             <dt>右键菜单</dt>
             <dd>右键画布添加节点，右键节点、分组或连线查看操作</dd>
             <dt>添加节点</dt>
-            <dd>双击画布空白处，或按 T / I / O 直接新建文字、图片、视频</dd>
+            <dd>双击画布空白处，或按 T / I / O / A 直接新建文字、图片、视频、音频</dd>
             <dt>选择 / 平移工具</dt>
             <dd>V / H</dd>
             <dt>适应画布</dt>

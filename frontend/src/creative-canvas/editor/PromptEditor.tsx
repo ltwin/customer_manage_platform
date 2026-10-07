@@ -30,6 +30,8 @@ import {
 export type PromptEditorHandle = {
   insertReferences: (ids: string[]) => void
   openPicker: () => void
+  /** 聚焦输入框，光标放到末尾（新建或双击空媒体后，PRD CV-53/54）。 */
+  focus: () => void
 }
 type Props = {
   text: string
@@ -152,6 +154,17 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
     openPicker: () => {
       editor.current?.focus()
       picker(null, '')
+    },
+    focus: () => {
+      const el = editor.current
+      if (!el) return
+      el.focus()
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      range.collapse(false)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
     },
   }))
   useLayoutEffect(() => {

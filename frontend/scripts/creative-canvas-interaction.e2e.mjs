@@ -217,7 +217,7 @@ try {
   assert.equal(menuLook.bg, 'rgb(27, 27, 29)', 'add menu uses the v6 surface')
   assert.notEqual(menuLook.shadow, 'none', 'add menu has the v6 shadow')
   assert.equal(menuLook.color, 'rgb(237, 237, 238)', 'add menu text is light')
-  assert.deepEqual(await createMenu.getByRole('menuitem').allInnerTexts(), ['文字\nT', '图片\nI', '视频\nO', '音频', '上传文件', '从资产库添加'])
+  assert.deepEqual(await createMenu.getByRole('menuitem').allInnerTexts(), ['文字\nT', '图片\nI', '视频\nO', '音频\nA', '上传文件', '从资产库添加'])
   await page.keyboard.press('Escape')
   await createMenu.waitFor({ state: 'detached' })
   await page.locator('[data-id="first"] .cc-node-header').click()
@@ -357,6 +357,8 @@ try {
   const createdBox = await page.locator('.react-flow__node').last().boundingBox()
   // v6：新节点以指针为中心放下。
   assert.ok(Math.abs(createdBox.x + createdBox.width / 2 - blankContextPoint.x) < 2 && Math.abs(createdBox.y + createdBox.height / 2 - blankContextPoint.y) < 2, 'new node centers on right-click location')
+  // V6-006：新文本节点直接进入编辑；Esc 退出（未改动不留步骤）后再撤销创建。
+  await page.getByRole('textbox', { name: '正文', exact: true }).press('Escape')
   await page.keyboard.press('Control+z')
   await waitCount(nodes, 2)
   const firstCard = page.locator('[data-id="first"] .cc-node-empty')
@@ -831,6 +833,7 @@ try {
     await page.mouse.click(1560, 700)
     await page.keyboard.press('t')
     await waitCount(nodes, 3)
+    await page.getByRole('textbox', { name: '正文', exact: true }).press('Escape')
     await page.keyboard.press('Control+z')
     await waitCount(nodes, 2)
     // 拖线到空白：添加菜单打开时留下虚线占位，取消后消失。

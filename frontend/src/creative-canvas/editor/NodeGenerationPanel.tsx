@@ -49,6 +49,9 @@ type Props = {
   onDisconnect: (edgeID: string) => void
   referenceRequest: { seq: number; targetID: string; ids: string[] } | null
   onReferencesInserted: () => void
+  /** 待处理的聚焦请求：面板解锁后才真正聚焦，随后由 onFocused 清掉。 */
+  focusRequest: { seq: number; nodeID: string } | null
+  onFocused: () => void
 }
 
 // 本容器拥有读取与队列接线；展示表单只接收数据和回调。
@@ -65,6 +68,8 @@ export default function NodeGenerationPanel({
   onDisconnect,
   referenceRequest,
   onReferencesInserted,
+  focusRequest,
+  onFocused,
 }: Props) {
   const viewport = useViewport()
   const point = worldPoint(canvas.nodes, node.id)
@@ -262,6 +267,12 @@ export default function NodeGenerationPanel({
       .catch((e: unknown) => setError(errorMessage(e)))
   }
   const locked = disabled || busy || queue.busy || !!queue.value.job
+  // 新建节点在服务端确认前是锁定的；请求一直保留，解锁后再把焦点交给输入框。
+  useEffect(() => {
+    if (!focusRequest || focusRequest.nodeID !== node.id || locked) return
+    editor.current?.focus()
+    onFocused()
+  }, [focusRequest, node.id, locked, onFocused])
   useEffect(() => {
     if (
       !referenceRequest ||

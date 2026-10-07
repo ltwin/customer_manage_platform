@@ -245,6 +245,8 @@ try {
     assert.ok(Math.abs((newBox.y + newBox.height / 2) - (srcBox.y + srcBox.height / 2)) < 2 * zoom, 'new node vertically centred on source')
     at('auto-connect')
     await present('.react-flow__edge', 2)
+    // V6-006：新文本节点直接进入编辑；先 Esc 退出（未改动不留撤销步骤），再撤销创建。
+    await page.getByRole('textbox', { name: '正文', exact: true }).press('Escape')
     await page.keyboard.press('Control+z')
     await present(nodeSel(created), 0)
     at('keyboard port')
@@ -288,6 +290,7 @@ try {
     }))
     assert.ok(Math.abs(card.x - drop.x) < 3 && Math.abs(card.y + card.height / 2 - drop.y) < 3, 'input port lands on the draft-link end')
     assert.ok(ends.some((e) => Math.abs(e.x - drop.x) < 3 && Math.abs(e.y - drop.y) < 3), 'draft link became a solid edge ending there')
+    await page.getByRole('textbox', { name: '正文', exact: true }).press('Escape')
     await page.keyboard.press('Control+z')
     await present(nodeSel(dropped), 0)
   })

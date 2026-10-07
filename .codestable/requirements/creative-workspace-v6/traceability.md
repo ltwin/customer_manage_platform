@@ -56,11 +56,11 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | CV-42 | P0 | 组框自动包住所有子节点 | [V6-005](items/V6-005.md) | — |  |  |
 | CV-43 | P0 | 组可以多层嵌套；拖动标题栏移动整组；双击标题栏重命名；标题栏显示「N… | [V6-005](items/V6-005.md) | — |  |  |
 | CV-44 | P0 | 复制组：连同整棵子树和内部连线一起复制，与外部节点的连线不复制。删除… | [V6-005](items/V6-005.md) | — |  |  |
-| CV-50 | P0 | 统一的添加菜单 | [V6-006](items/V6-006.md) | — |  |  |
-| CV-51 | P1 | 从端口进入时，菜单标题改为「生成下游节点」或「添加上游参考」 | [V6-006](items/V6-006.md) | — |  |  |
-| CV-52 | P1 | T/I/O/A/L 直接在屏幕中心新建节点 | [V6-006](items/V6-006.md) | [V6-009](items/V6-009.md)、[V6-010](items/V6-010.md) |  |  |
-| CV-53 | P0 | 新建后只选中新节点 | [V6-006](items/V6-006.md) | — |  |  |
-| CV-54 | P0 | 双击的含义按位置区分 | [V6-006](items/V6-006.md) | — |  |  |
+| CV-50 | P0 | 统一的添加菜单 | [V6-006](items/V6-006.md) | — |  | [verification](../../features/2026-10-06-node-create-focus/node-create-focus-verification.md) |
+| CV-51 | P1 | 从端口进入时，菜单标题改为「生成下游节点」或「添加上游参考」 | [V6-006](items/V6-006.md) | — |  | [verification](../../features/2026-10-06-node-create-focus/node-create-focus-verification.md) |
+| CV-52 | P1 | T/I/O/A/L 直接在屏幕中心新建节点 | [V6-006](items/V6-006.md) | [V6-009](items/V6-009.md)、[V6-010](items/V6-010.md) |  | [verification](../../features/2026-10-06-node-create-focus/node-create-focus-verification.md) |
+| CV-53 | P0 | 新建后只选中新节点 | [V6-006](items/V6-006.md) | — |  | [verification](../../features/2026-10-06-node-create-focus/node-create-focus-verification.md) |
+| CV-54 | P0 | 双击的含义按位置区分 | [V6-006](items/V6-006.md) | — |  | [verification](../../features/2026-10-06-node-create-focus/node-create-focus-verification.md) |
 | CV-60 | P0 | 文本节点在卡片内直接编辑 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
 | CV-61 | P1 | 编辑中按 Esc 退出并保存 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
 | CV-62 | P0 | 双击标题就地重命名，组标题同样适用 | [V6-001](items/V6-001.md) | — |  | [fix-note](../../issues/2026-10-05-canvas-text-edit-rename-semantics/canvas-text-edit-rename-semantics-fix-note.md) |
