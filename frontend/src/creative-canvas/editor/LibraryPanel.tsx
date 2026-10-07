@@ -90,7 +90,6 @@ export default function LibraryPanel({
   standalone,
   tick,
   task,
-  usage,
   onCreate,
   onClose,
   onWidth,
@@ -102,7 +101,6 @@ export default function LibraryPanel({
   onPlace,
   onFill,
   onPick,
-  onLocate,
   onImport,
   importDisabled,
 }: {
@@ -112,8 +110,6 @@ export default function LibraryPanel({
   standalone: boolean
   tick: number
   task: LibraryTask | null
-  /** 画布上每个内容修订对应的节点，用于「已在画布上」角标与定位。 */
-  usage: Map<string, string[]>
   onCreate: () => void
   onClose: () => void
   onWidth: (width: number) => void
@@ -125,7 +121,6 @@ export default function LibraryPanel({
   onPlace: (assets: api.Asset[]) => void
   onFill: (asset: api.Asset) => void
   onPick: (assets: api.Asset[]) => void
-  onLocate: (nodeIDs: string[]) => void
   onImport: (files: File[], groupID: string) => void
   importDisabled: boolean
 }) {
@@ -739,14 +734,12 @@ export default function LibraryPanel({
       square={square}
       selected={selection.includes(a.id)}
       mode={mode}
-      used={usage.get(a.content_revision_id)?.length ?? 0}
       canPlace={canPlace && view !== 'trash'}
       draggable={canPlace && !disabled && !a.unavailable && view !== 'trash' && mode === 'browse'}
       onClick={clickTile}
       onToggle={toggle}
       onPlace={(x) => onPlace([x])}
       onMenu={assetMenu}
-      onLocate={(x) => onLocate(usage.get(x.content_revision_id) ?? [])}
       onDragStart={dragStart}
       onKey={tileKey}
       onPeek={showPeek}

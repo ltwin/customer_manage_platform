@@ -13,7 +13,6 @@ export type TileProps = {
   asset: api.Asset
   selected: boolean
   mode: TileMode
-  used: number
   square?: boolean
   canPlace: boolean
   draggable: boolean
@@ -21,7 +20,6 @@ export type TileProps = {
   onToggle: (a: api.Asset, range: boolean) => void
   onPlace: (a: api.Asset) => void
   onMenu: (a: api.Asset, at: { x: number; y: number }) => void
-  onLocate: (a: api.Asset) => void
   onDragStart: (a: api.Asset, e: React.DragEvent) => void
   onKey: (a: api.Asset, e: React.KeyboardEvent<HTMLElement>) => void
   onPeek: (a: api.Asset | null, el?: HTMLElement) => void
@@ -76,21 +74,6 @@ export function Tile(p: TileProps) {
         <span className="cl-tile-fav" aria-label="最爱">
           <Heart size={12} />
         </span>
-      )}
-      {p.used > 0 && (
-        <button
-          type="button"
-          className="cl-tile-used"
-          aria-label={`已在画布上，定位：${a.title}`}
-          title="已在画布上，点击定位"
-          onClick={(e) => {
-            e.stopPropagation()
-            p.onLocate(a)
-          }}
-        >
-          <Check size={11} />
-          {p.used > 1 ? p.used : ''}
-        </button>
       )}
       {p.mode !== 'fill' && (
         <button

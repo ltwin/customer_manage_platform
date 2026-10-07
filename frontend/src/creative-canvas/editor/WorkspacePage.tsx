@@ -126,10 +126,6 @@ function Workspace({ account }: { account: string }) {
   const referenceSeq = useRef(0)
   const [nodeDragging, setNodeDragging] = useState(false)
   const [libraryTask, setLibraryTask] = useState<LibraryTask | null>(null)
-  const [focusRequest, setFocusRequest] = useState<{
-    seq: number
-    ids: string[]
-  }>({ seq: 0, ids: [] })
   const viewCenter = useRef<(() => { x: number; y: number }) | null>(null)
   const [catalog, setCatalog] = useState(emptyCatalog)
   const [libraryLoading, setLibraryLoading] = useState(true)
@@ -244,15 +240,6 @@ function Workspace({ account }: { account: string }) {
     const live = new Set(canvas.nodes.map((n) => n.id))
     onSelection(deferred.ids.filter((id) => live.has(id)))
   }, [canvas, onSelection])
-  // 画布上每个内容修订对应的节点，资产库据此显示「已在画布上」并定位。
-  const usage = useMemo(() => {
-    const out = new Map<string, string[]>()
-    for (const n of view?.nodes ?? []) {
-      const id = n.data.content_revision_id
-      if (id) out.set(id, [...(out.get(id) ?? []), n.id])
-    }
-    return out
-  }, [view?.nodes])
   const node = view?.nodes.find((n) => n.id === selected)
   const { full, error: nodeError, retry: retryNode } = useNodeContent(node)
   const nodeKey = `node:${canvasID}:${selected ?? ''}`
@@ -1327,7 +1314,6 @@ function Workspace({ account }: { account: string }) {
           standalone={!canvasID}
           tick={tick}
           task={canvasID ? libraryTask : null}
-          usage={usage}
           onCreate={() => setForm('asset')}
           onClose={closeLibrary}
           onWidth={setLibraryWidth}
@@ -1346,11 +1332,6 @@ function Workspace({ account }: { account: string }) {
           onPick={(list) => {
             if (libraryTask?.kind === 'pick')
               pickReferences(libraryTask.nodeID, list)
-          }}
-          onLocate={(ids) => {
-            if (!ids.length) return
-            onSelection(ids)
-            setFocusRequest((v) => ({ seq: v.seq + 1, ids }))
           }}
           onImport={importToLibrary}
           importDisabled={blocked || !uploads.capabilities}
@@ -1520,7 +1501,6 @@ function Workspace({ account }: { account: string }) {
                         title: n.metadata.title || '节点',
                       })
                   }}
-                  focusRequest={focusRequest}
                   centerRef={viewCenter}
                   onDraggingChange={setNodeDragging}
                   onPreview={(nodeID, revision) =>

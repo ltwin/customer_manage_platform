@@ -313,7 +313,7 @@ try {
     await page.keyboard.press('Control+z')
     await page.waitForFunction(() => document.querySelectorAll('.react-flow__node').length === 3)
   })
-  // AC-05（续）：节点记录来源资产，同一资产再放入引用同一份内容，不重新上传。
+  // AC-05（续）：请求按资产取内容，节点不记录来源资产（owner 2026-10-07）；同一资产再放入引用同一份内容，不重新上传。
   await record('AC-05b', async () => {
     // 放入后抽屉保持打开，第二次直接复用。
     const placeOne = async () => {
@@ -326,7 +326,7 @@ try {
     const first = await placeOne()
     const second = await placeOne()
     assert.equal(first.length, 1, 'one asset places one node')
-    assert.deepEqual([first[0].asset?.asset_id, second[0].asset?.asset_id], ['a4', 'a4'], 'both nodes record the source asset')
+    assert.deepEqual([first[0].asset?.asset_id, second[0].asset?.asset_id], ['a4', 'a4'], 'both requests name the asset to copy from')
     assert.equal(first[0].asset.content_revision_id, second[0].asset.content_revision_id, 'both reuse the same content revision')
     assert.equal(state.posts.filter((p) => p.path.includes('/creative/uploads')).length, 0, 'no upload is started')
   })

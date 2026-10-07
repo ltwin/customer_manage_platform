@@ -189,9 +189,8 @@ try {
     return { bg: s.backgroundColor, width: Math.round(el.getBoundingClientRect().width), left: Math.round(el.getBoundingClientRect().left) }
   })
   assert.deepEqual(metrics.drawer, { bg: 'rgb(27, 27, 29)', width: 344, left: 64 })
-  // 已在画布上的素材带定位角标。
-  await tile('日落海边').getByRole('button', { name: '已在画布上，定位：日落海边' }).click()
-  await page.locator('.react-flow__node[data-id="filled"].selected').waitFor()
+  // 资产库不记录素材是否已在画布上（owner 2026-10-07 决定）。
+  assert.equal(await drawer.locator('.cl-tile-used').count(), 0, 'no on-canvas badge')
 
   // 2. 进组：面包屑、子组标签、保持比例的两列瀑布流。
   await client.locator('.cl-sec-head').hover()

@@ -658,7 +658,6 @@ export default function CanvasView({
   onUploadFileToNode,
   onLibraryFill,
   onPickReferences,
-  focusRequest,
   centerRef,
   onPreview,
   onDraggingChange,
@@ -709,8 +708,6 @@ export default function CanvasView({
   onUploadFileToNode: (id: string, file: File) => void
   onLibraryFill: (id: string, kind: MediaKind) => void
   onPickReferences: (id: string) => void
-  /** 资产库「已在画布上」角标的定位请求。 */
-  focusRequest: { seq: number; ids: string[] }
   /** 画布可见区域的世界坐标中心，供资产库放入时使用。 */
   centerRef: MutableRefObject<(() => { x: number; y: number }) | null>
   onPreview: (id: string, revision?: string) => void
@@ -894,18 +891,6 @@ export default function CanvasView({
     },
     [flow],
   )
-  const lastFocus = useRef(focusRequest.seq)
-  useEffect(() => {
-    if (focusRequest.seq === lastFocus.current) return
-    lastFocus.current = focusRequest.seq
-    if (!focusRequest.ids.length) return
-    void flow.fitView({
-      nodes: focusRequest.ids.map((id) => ({ id })),
-      padding: 0.4,
-      maxZoom: 1,
-      duration: 240,
-    })
-  }, [focusRequest, flow])
   useEffect(() => {
     // 资产抽屉盖住左侧时，放入点往右让，落在看得见的地方。
     centerRef.current = () => {

@@ -212,7 +212,7 @@
 .cl-tile-body { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .cl-tile-kind { position: absolute; left: 6px; bottom: 6px; padding: 1px 5px; border-radius: 4px; background: rgba(12, 12, 13, 0.72); color: var(--fg-2); font-size: 10px; pointer-events: none; }
 .cl-tile-text .cl-tile-kind { left: auto; right: 8px; bottom: 8px; background: none; color: var(--fg-3); }
-.cl-tile-check, .cl-tile-actions button, .cl-tile-used { position: absolute; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; transition: opacity 0.12s, background 0.12s; }
+.cl-tile-check, .cl-tile-actions button { position: absolute; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; transition: opacity 0.12s, background 0.12s; }
 .cl-tile-check { left: 6px; top: 6px; background: rgba(0, 0, 0, 0.45) !important; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.7); color: transparent !important; opacity: 0; }
 .cl-tile-actions { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s; }
 .cl-tile-actions button { position: static; background: rgba(12, 12, 13, 0.72) !important; color: var(--fg) !important; }
@@ -222,11 +222,6 @@
 .cl-tile-fav svg { fill: currentColor; }
 .cl-tile:hover .cl-tile-fav { opacity: 0; }
 .cl-tile-text .cl-tile-fav { color: var(--fg-3); filter: none; top: 10px; bottom: auto; }
-/* 已在画布上：左下角小勾，点一下定位；次数大于 1 时带数字 */
-.cl-tile-used { left: 6px; bottom: 6px; width: auto; min-width: 20px; height: 20px; padding: 0 5px; gap: 2px; display: flex !important; align-items: center; border-radius: 10px; background: rgba(12, 12, 13, 0.72) !important; color: var(--fg) !important; font-size: 10px !important; }
-.cl-tile-used:hover { background: var(--primary) !important; color: var(--on-primary) !important; }
-.cl-tile-media:has(.cl-tile-kind) .cl-tile-used { bottom: 28px; }
-.cl-tile-text .cl-tile-used { left: auto; right: 8px; bottom: auto; top: 34px; }
 .cl-tile.is-on { box-shadow: 0 0 0 2px var(--primary); }
 .cl-tile.is-on .cl-media img { filter: brightness(0.82); }
 .cl-tile.is-on .cl-tile-check { opacity: 1; background: var(--primary) !important; box-shadow: none; color: var(--on-primary) !important; }
