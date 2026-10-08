@@ -35,6 +35,7 @@ var/
 !/.lti/**/*.yaml
 !/.lti/**/*.yml
 !/.lti/features/**/meta.json
+!/.lti/releases/**/meta.json
 !/.lti/snapshots/*.json
 /.lti/local/
 /.lti/locks/
