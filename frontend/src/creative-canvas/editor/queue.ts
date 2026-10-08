@@ -263,6 +263,7 @@ export class SaveQueue {
         expected_topology_revision: view.topology_revision,
         read_set: intentReadSet(view, head, undefined, local),
         actions: head.actions ?? [],
+        ...(head.changeGroupID ? { change_group_id: head.changeGroupID } : {}),
       }
     } else {
       const history = canvasHistory(view.changes)
@@ -281,11 +282,18 @@ export class SaveQueue {
         }
         return
       }
-      payload = {
-        type: head.kind,
-        change_id: changeID,
-        read_set: intentReadSet(view, head, changeID, local),
-      }
+      const group = head.kind === 'undo' ? history.undoGroup : undefined
+      payload = group
+        ? {
+            type: 'undo',
+            change_group_id: group,
+            read_set: intentReadSet(view, head, changeID, local, history.undoIDs),
+          }
+        : {
+            type: head.kind,
+            change_id: changeID,
+            read_set: intentReadSet(view, head, changeID, local),
+          }
     }
     const outbox = this.outbox.map((i) =>
       i.id === head.id ? { ...i, state: 'sent' as const, changeID } : i,

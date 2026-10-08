@@ -38,7 +38,7 @@
 | [V6-005 · 画布组选择、包围框与固定归属](items/V6-005.md) | P0 | 交付 | 待设计 | —（组尺寸与 V6-004 协作） | — |
 | [V6-006 · 新建入口、快捷键与编辑焦点](items/V6-006.md) | P0；端口菜单标题、单键 P1 | 交付 | 已完成 | —（A/L 由 V6-009/010 接入） | [design](../../features/2026-10-06-node-create-focus/node-create-focus-design.md) · [verification](../../features/2026-10-06-node-create-focus/node-create-focus-verification.md)；A 快捷键已接入，L 由 V6-009 接入 |
 | [V6-007 · 节点工具条、右键菜单与派生](items/V6-007.md) | P0 | 交付 | 已完成 | — | [design](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-design.md) · [verification](../../features/2026-10-06-node-toolbar-menu-derive/node-toolbar-menu-derive-verification.md)；链接/音频工具条由 V6-009/010 补齐 |
-| [V6-008 · 批量文件导入与整批撤销](items/V6-008.md) | P0 | 交付 | 待设计 | — | — |
+| [V6-008 · 批量文件导入与整批撤销](items/V6-008.md) | P0 | 交付 | 已完成 | — | [design](../../features/2026-10-07-batch-file-import-undo/batch-file-import-undo-design.md) · [验证](../../features/2026-10-07-batch-file-import-undo/batch-file-import-undo-verification.md) |
 | [V6-009 · 链接节点完整人工操作](items/V6-009.md) | P0 | 交付 | 待设计 | — | — |
 | [V6-010 · 音频节点播放、填充与全屏](items/V6-010.md) | P0；全屏 P1 | 交付 | 待设计 | — | — |
 | [V6-053 · 链接标题与描述的模型整理提案](items/V6-053.md) | P1 | 交付 | 待设计 | V6-009（另需可用文本模型与局部提案） | — |

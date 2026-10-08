@@ -120,7 +120,10 @@ func (s *Service) AdoptCandidate(ctx context.Context, scope store.AccountScope, 
 			}
 			publication = Publication{Kind: "asset", ID: asset.ID, Revision: asset.Revision}
 		} else {
-			change, err := creativecanvas.BindNodeRevisionInTx(ctx, tx, target.Node.canvas(), r, c.OperationID)
+			// 采用候选是单独一步，不并入原批次的撤销组。
+			node := target.Node.canvas()
+			node.ChangeGroupID = ""
+			change, err := creativecanvas.BindNodeRevisionInTx(ctx, tx, node, r, c.OperationID)
 			if errors.Is(err, creativecanvas.ErrTargetChanged) {
 				return creativeops.Outcome{}, creativecanvas.ErrVersionConflict
 			}

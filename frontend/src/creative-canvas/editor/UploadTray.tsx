@@ -9,6 +9,7 @@ const stageText: Record<UploadItem['stage'], string> = {
   done: '已完成',
   failed: '失败',
   rejected: '未上传',
+  cancelled: '已撤销',
 }
 export default function UploadTray({
   items,
@@ -20,7 +21,9 @@ export default function UploadTray({
   onDismiss: () => void
 }) {
   if (!items.length) return null
-  const active = items.some((i) => !['done', 'failed', 'rejected'].includes(i.stage))
+  const active = items.some(
+    (i) => !['done', 'failed', 'rejected', 'cancelled'].includes(i.stage),
+  )
   return (
     <section className="cc-upload-tray cc-surface" aria-label="导入文件" aria-live="polite">
       <header>
@@ -36,7 +39,7 @@ export default function UploadTray({
       </header>
       <ul>
         {items.map((i) => {
-          const done = i.stage === 'done'
+          const done = i.stage === 'done' || i.stage === 'cancelled'
           const failed = i.stage === 'failed' || i.stage === 'rejected'
           const percent = i.size ? Math.round((i.sent / i.size) * 100) : 0
           return (
@@ -53,7 +56,7 @@ export default function UploadTray({
                       ? '已上传 · 目标已变化，待处理'
                       : stageText[i.stage]}
               </small>
-              {failed && (
+              {failed && !i.final && (
                 <button
                   className="cc-icon-button"
                   aria-label={`重试上传：${i.name}`}

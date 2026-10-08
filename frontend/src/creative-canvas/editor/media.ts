@@ -197,6 +197,48 @@ export async function uploadFile(
   return upload
 }
 
+// 撤销导入时取消会话；已经结束的会话（ready/failed 等）服务器会拒绝，
+// 这时内容已随撤销组回退或从未写入，调用方忽略即可。
+export async function cancelUpload(upload: Upload): Promise<void> {
+  const operation = crypto.randomUUID()
+  await request<Upload>(
+    `/creative/uploads/${encodeURIComponent(upload.id)}/cancel`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': operation },
+      body: JSON.stringify({
+        operation_id: operation,
+        client_created_at: new Date().toISOString(),
+        payload: { expected_revision: upload.revision },
+      }),
+    },
+  )
+}
+
+// 撤销后迟到的上传会落成待绑定候选；导入已撤销，直接放弃它。
+export async function discardCandidate(id: string, revision: string) {
+  const operation = crypto.randomUUID()
+  await request<UploadCandidate>(
+    `/creative/upload-candidates/${encodeURIComponent(id)}/discard`,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': operation },
+      body: JSON.stringify({
+        operation_id: operation,
+        client_created_at: new Date().toISOString(),
+        payload: { candidate_revision: revision },
+      }),
+    },
+  )
+}
+
+// 取消没赶上（会话已在校验或已发布）时，等它结束再看结果。
+export function settledUpload(id: string): Promise<Upload> {
+  return poll(id, (u) =>
+    ['ready', 'failed', 'expired', 'cancelled'].includes(u.state),
+  )
+}
+
 async function poll(
   id: string,
   done: (u: Upload) => boolean,

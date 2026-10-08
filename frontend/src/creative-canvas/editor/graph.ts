@@ -86,16 +86,24 @@ export function parentFirst(nodes: CanvasNode[]): CanvasNode[] {
   nodes.forEach(visit)
   return result
 }
+// 撤销栈的一项是一步可理解的编辑。同一撤销组的连续改动（拖入文件的建节点
+// 与随后的上传绑定）合成一项：撤销按组发出，服务器合成一条反向改动，
+// 反向改动指向组内最后一条。
+type Step = { ids: string[]; group: string | null }
 export function canvasHistory(changes: Canvas['changes']) {
-  const undo: string[] = [],
+  const undo: Step[] = [],
     redo: string[] = []
+  const owner = (id: string | null) => undo.findIndex((s) => !!id && s.ids.includes(id))
   for (const change of [...(changes ?? [])].reverse()) {
     if (!change.inverse_of) {
-      undo.push(change.id)
+      const top = undo.at(-1)
+      if (change.change_group_id && top?.group === change.change_group_id)
+        top.ids.push(change.id)
+      else undo.push({ ids: [change.id], group: change.change_group_id ?? null })
       redo.length = 0
       continue
     }
-    const original = undo.indexOf(change.inverse_of)
+    const original = owner(change.inverse_of)
     if (original >= 0) {
       undo.splice(original, 1)
       redo.push(change.id)
@@ -104,10 +112,25 @@ export function canvasHistory(changes: Canvas['changes']) {
     const reversed = redo.indexOf(change.inverse_of)
     if (reversed >= 0) {
       redo.splice(reversed, 1)
-      undo.push(change.id)
+      undo.push({ ids: [change.id], group: null })
     }
   }
-  return { undo: undo.at(-1), redo: redo.at(-1) }
+  const top = undo.at(-1)
+  // 服务器按组撤销会回退组内全部改动，所以只有这一项装着整组时才按组发；
+  // 组被别的改动隔开时退回逐条撤销。
+  const whole =
+    !!top?.group &&
+    top.ids.length > 1 &&
+    (changes ?? []).filter((c) => !c.inverse_of && c.change_group_id === top.group)
+      .length === top.ids.length
+  return {
+    undo: top?.ids.at(-1),
+    undoGroup: whole ? top.group! : undefined,
+    /** 栈顶这一步所属的撤销组（只有一条改动时也有），撤销时据此取消上传。 */
+    undoStepGroup: top?.group ?? undefined,
+    undoIDs: top?.ids ?? [],
+    redo: redo.at(-1),
+  }
 }
 
 // Version history belongs to its node; only copy/remove/version commands read it.

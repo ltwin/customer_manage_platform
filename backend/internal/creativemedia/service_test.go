@@ -637,3 +637,65 @@ func TestInterruptedPromotionFailsExplicitlyAndReleasesQuota(t *testing.T) {
 		t.Fatal("live promotion was disturbed", view)
 	}
 }
+
+// V6-008：拖入的一批节点与它们的上传绑定同属一个撤销组，一次撤销整批，
+// 一次重做整批恢复；空标题用文件名补上，已有标题不改。
+func TestBatchImportUndoesAsOneGroup(t *testing.T) {
+	f := setup(t)
+	p := project(t, f.a)
+	group := "import_" + uuid.NewString()
+	a, b := "cwnode_"+uuid.NewString(), "cwnode_"+uuid.NewString()
+	canvas, err := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := creativecanvas.ApplyCommands(t.Context(), f.a, command(t, creativecanvas.BatchInput{CanvasID: p.CanvasID, ExpectedTopologyRevision: canvas.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(canvas), ChangeGroupID: group, Actions: []creativecanvas.Action{
+		{Type: "add_node", NodeID: a, TypeKey: "core.image", X: 0, Y: 0},
+		{Type: "add_node", NodeID: b, TypeKey: "core.image", Title: "保留", X: 330, Y: 0},
+	}})); err != nil {
+		t.Fatal(err)
+	}
+	png := sample(t, "sample.png")
+	for _, id := range []string{a, b} {
+		done := f.uploadFile(t, f.a, "窗边.晨光.png", "image/png", "image", png, creativemedia.Target{Kind: "node", Node: &creativemedia.NodeTarget{CanvasID: p.CanvasID, NodeID: id, ExpectedDataRevision: 1, ChangeGroupID: group}})
+		// 已经绑定的上传不能再取消；前端撤销时吃掉这个错误，内容随组撤销。
+		if _, err := f.svc.CancelUpload(t.Context(), f.a, command(t, creativemedia.CancelUploadInput{UploadID: done.ID, ExpectedRevision: done.Revision})); !errors.Is(err, creativemedia.ErrState) {
+			t.Fatal("cancel after ready", err)
+		}
+	}
+	filled, err := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	titles := map[string]string{}
+	for _, n := range filled.Nodes {
+		if n.ContentRevisionID == nil {
+			t.Fatalf("node %s not bound", n.ID)
+		}
+		titles[n.ID] = n.Title
+	}
+	if titles[a] != "窗边.晨光" || titles[b] != "保留" {
+		t.Fatalf("titles %+v", titles)
+	}
+	grouped := 0
+	for _, c := range filled.Changes {
+		if c.GroupID != nil && *c.GroupID == group {
+			grouped++
+		}
+	}
+	if grouped != 3 {
+		t.Fatalf("grouped changes %d, want add + 2 binds", grouped)
+	}
+	undone := must[creativecanvas.ChangeResult](t)(creativecanvas.Undo(t.Context(), f.a, command(t, creativecanvas.UndoInput{CanvasID: p.CanvasID, ChangeGroupID: group, ReadSet: creativecanvas.ReadSetFor(filled)})))
+	empty, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if len(empty.Nodes) != 0 {
+		t.Fatalf("one undo should remove the whole batch, left %d", len(empty.Nodes))
+	}
+	if _, err := creativecanvas.Redo(t.Context(), f.a, command(t, creativecanvas.UndoInput{CanvasID: p.CanvasID, ChangeID: undone.ChangeID, ReadSet: creativecanvas.ReadSetFor(empty)})); err != nil {
+		t.Fatal("redo group", err)
+	}
+	back, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if len(back.Nodes) != 2 || back.Nodes[0].ContentRevisionID == nil || back.Nodes[1].ContentRevisionID == nil {
+		t.Fatalf("redo restores nodes with bound content %+v", back.Nodes)
+	}
+}

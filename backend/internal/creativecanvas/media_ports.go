@@ -21,6 +21,10 @@ type NodeTarget struct {
 	CanvasID             string               `json:"canvas_id"`
 	NodeID               string               `json:"node_id"`
 	ExpectedDataRevision creativeops.Revision `json:"expected_data_revision"`
+	// ChangeGroupID 让绑定与创建该节点的批量命令同组，一次撤销整批。
+	ChangeGroupID string `json:"change_group_id,omitempty"`
+	// Title 在节点标题为空时补上（上传文件名）。
+	Title string `json:"-"`
 }
 
 // ValidateNodeTargetInTx locks the project/canvas and checks the node can
@@ -69,13 +73,16 @@ func BindNodeRevisionInTx(ctx context.Context, tx store.TxAccountScope, t NodeTa
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
 	n.SelectedVersionID = nil
+	if strings.TrimSpace(n.Title) == "" {
+		n.Title = t.Title
+	}
 	fitMediaSize(&n, r)
 	after.Nodes[n.ID] = n
 	changes, err := planChanges(before, after, ids)
 	if err != nil {
 		return ChangeResult{}, err
 	}
-	return persistGraph(ctx, tx, c, before, after, ids, changes, operation, newChangeID(), "", "", nil, nil)
+	return persistGraph(ctx, tx, c, before, after, ids, changes, operation, newChangeID(), t.ChangeGroupID, "", nil, nil)
 }
 
 // SaveNodeInput saves a node's current content into the personal library.

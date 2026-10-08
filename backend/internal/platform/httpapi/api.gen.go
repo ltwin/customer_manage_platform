@@ -5153,6 +5153,9 @@ type CreativeUploadCreatePayloadKind string
 type CreativeUploadNodeTarget struct {
 	CanvasId string `json:"canvas_id"`
 
+	// ChangeGroupId 与创建该节点的批量命令相同的撤销组；绑定并入该组，一次撤销整批
+	ChangeGroupId *string `json:"change_group_id,omitempty"`
+
 	// ExpectedDataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	ExpectedDataRevision CreativeRevision `json:"expected_data_revision"`
 	NodeId               string           `json:"node_id"`

@@ -66,9 +66,9 @@ import {
   isMediaKind,
   classifyFile,
   mediaFileAccept,
-  readableFileName,
   type MediaKind,
 } from './media.ts'
+import { fileTitle, importPlan, importSlot } from './fileImport.ts'
 
 // 与后端新建节点的默认尺寸一致。
 const NODE_WIDTH = defaultNodeWidth
@@ -474,7 +474,13 @@ function Workspace({ account }: { account: string }) {
   }
   const history = view
     ? historyOf(view, outbox, redoStack)
-    : { canUndo: false, canRedo: false, undo: undefined, redo: undefined }
+    : {
+        canUndo: false,
+        canRedo: false,
+        undo: undefined,
+        undoStepGroup: undefined,
+        redo: undefined,
+      }
   function graphActions(actions: api.GraphAction[]) {
     if (!view || !editable) return
     setRedoStack([])
@@ -487,6 +493,7 @@ function Workspace({ account }: { account: string }) {
     if (!redo) {
       const cancelled = queue.cancelTail(canvasID)
       if (cancelled) {
+        if (cancelled.changeGroupID) uploads.cancelBatch(cancelled.changeGroupID)
         if (
           cancelled.draftKey &&
           JSON.stringify(queue.value.drafts[cancelled.draftKey]) ===
@@ -503,6 +510,8 @@ function Workspace({ account }: { account: string }) {
       }
       if (!history.canUndo) return
       setRedoStack([])
+      // 撤销整批导入时，这一批还在上传的文件一并取消。
+      if (history.undoStepGroup) uploads.cancelBatch(history.undoStepGroup)
       void stage({ kind: 'undo' })
       return
     }
@@ -516,6 +525,7 @@ function Workspace({ account }: { account: string }) {
         kind: 'actions',
         actions: local.actions,
         preview: local.preview,
+        changeGroupID: local.changeGroupID,
       })
       return
     }
@@ -534,11 +544,6 @@ function Workspace({ account }: { account: string }) {
       if (!isWithdrawn(e)) setLocalError(errorMessage(e))
     })
   }
-  const mediaKindOfFile = (file: File): MediaKind | null => {
-    if (!uploads.capabilities) return null
-    const classified = classifyFile(file, uploads.capabilities)
-    return 'error' in classified ? null : classified.kind
-  }
   // Import into the library: each file becomes an asset in the current group.
   function importToLibrary(files: File[], groupID: string) {
     if (!uploads.capabilities || uploads.capabilitiesError) {
@@ -549,49 +554,67 @@ function Workspace({ account }: { account: string }) {
       kind: 'asset',
       asset: {
         title:
-          readableFileName(file.name)
-            .replace(/\.[^.]+$/, '')
-            .slice(0, 200) || readableFileName(file.name),
+          fileTitle(file.name),
         group_ids: groupID ? [groupID] : [],
       },
     }))
   }
   // Drop files on the canvas: create empty media nodes first, then upload
   // into each node so the publication binds by node target. The nodes must
-  // exist on the server before an upload can target them.
+  // exist on the server before an upload can target them. Node creation and
+  // every binding share one change group, so a single undo removes the batch
+  // and cancels whatever is still uploading.
   async function dropFiles(files: File[], x: number, y: number) {
     if (!view || !editable || !uploads.capabilities) return
-    const usable = files.filter((f) => mediaKindOfFile(f))
-    if (!usable.length) {
-      setLocalError('拖入的文件不是支持的图片、视频或音频格式')
-      return
-    }
-    const ids = usable.map(() => `cwnode_${crypto.randomUUID()}`)
+    const caps = uploads.capabilities
+    const plan = importPlan(files, caps)
+    uploads.reject(plan.rejected)
+    if (!plan.accepted.length) return
+    const ids = plan.accepted.map(() => `cwnode_${crypto.randomUUID()}`)
+    const group = `import_${crypto.randomUUID()}`
     setRedoStack([])
     const ok = await stage(
       {
         kind: 'actions',
-        actions: usable.map((file, i) => ({
-          type: 'add_node' as const,
-          node_id: ids[i]!,
-          type_key: `core.${mediaKindOfFile(file)!}` as
-            'core.image' | 'core.video' | 'core.audio',
-          title: readableFileName(file.name)
-            .replace(/\.[^.]+$/, '')
-            .slice(0, 200),
-          x: x + i * 36,
-          y: y + i * 36,
-        })),
+        changeGroupID: group,
+        actions: plan.accepted.map(({ file, kind }, i) => {
+          const at = importSlot(i, { x, y }, `core.${kind}`)
+          return {
+            type: 'add_node' as const,
+            node_id: ids[i]!,
+            type_key: `core.${kind}` as const,
+            title: fileTitle(file.name),
+            x: at.x,
+            y: at.y,
+          }
+        }),
       },
       { select: ids },
     )
-    if (!ok) return
-    uploads.start(usable, (_, i) => ({
+    // 建节点确认前就撤销了：节点已回退，不再上传。
+    if (!ok || uploads.isCancelled(group)) return
+    uploads.start(
+      plan.accepted.map((a) => a.file),
+      (_, i) => ({
+        kind: 'node',
+        node: {
+          canvas_id: canvasID,
+          node_id: ids[i]!,
+          expected_data_revision: '1',
+          change_group_id: group,
+        },
+      }),
+      group,
+    )
+  }
+  // Filling one empty node: its binding is a single undo step of its own.
+  function uploadIntoNode(n: api.CanvasNode, file: File) {
+    uploads.start([file], () => ({
       kind: 'node',
       node: {
         canvas_id: canvasID,
-        node_id: ids[i]!,
-        expected_data_revision: '1',
+        node_id: n.id,
+        expected_data_revision: n.data_revision,
       },
     }))
   }
@@ -623,14 +646,7 @@ function Workspace({ account }: { account: string }) {
       return
     }
     setMediaError('')
-    uploads.start([file], () => ({
-      kind: 'node',
-      node: {
-        canvas_id: view.id,
-        node_id: n.id,
-        expected_data_revision: n.data_revision,
-      },
-    }))
+    uploadIntoNode(n, file)
   }
   function uploadFileToNode(id: string, file: File) {
     const n = view?.nodes.find((v) => v.id === id)
@@ -642,14 +658,7 @@ function Workspace({ account }: { account: string }) {
       return
     }
     setMediaError('')
-    uploads.start([file], () => ({
-      kind: 'node',
-      node: {
-        canvas_id: view.id,
-        node_id: n.id,
-        expected_data_revision: n.data_revision,
-      },
-    }))
+    uploadIntoNode(n, file)
   }
   async function downloadNode(id: string) {
     const n = view?.nodes.find((n) => n.id === id)

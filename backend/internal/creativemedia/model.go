@@ -25,6 +25,7 @@ type NodeTarget struct {
 	CanvasID             string               `json:"canvas_id"`
 	NodeID               string               `json:"node_id"`
 	ExpectedDataRevision creativeops.Revision `json:"expected_data_revision"`
+	ChangeGroupID        string               `json:"change_group_id,omitempty"`
 }
 
 // Target is a strict union; exactly one branch must be present.

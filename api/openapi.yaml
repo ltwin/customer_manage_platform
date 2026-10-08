@@ -12773,6 +12773,7 @@ components:
         canvas_id: {type: string}
         node_id: {type: string}
         expected_data_revision: {$ref: "#/components/schemas/CreativeRevision"}
+        change_group_id: {type: string, maxLength: 100, description: "与创建该节点的批量命令相同的撤销组；绑定并入该组，一次撤销整批"}
     CreativeUploadTarget:
       type: object
       additionalProperties: false

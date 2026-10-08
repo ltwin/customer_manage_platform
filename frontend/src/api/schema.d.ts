@@ -5897,6 +5897,8 @@ export interface components {
             canvas_id: string;
             node_id: string;
             expected_data_revision: components["schemas"]["CreativeRevision"];
+            /** @description 与创建该节点的批量命令相同的撤销组；绑定并入该组，一次撤销整批 */
+            change_group_id?: string;
         };
         CreativeUploadTarget: {
             /** @enum {string} */

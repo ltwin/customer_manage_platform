@@ -107,7 +107,7 @@ func (t Target) validate() error {
 		}
 		return creativelibrary.ValidateImportTarget(t.Asset.library())
 	case "node":
-		if t.Node == nil || t.Asset != nil || t.Node.CanvasID == "" || t.Node.NodeID == "" || t.Node.ExpectedDataRevision < 1 {
+		if t.Node == nil || t.Asset != nil || t.Node.CanvasID == "" || t.Node.NodeID == "" || t.Node.ExpectedDataRevision < 1 || len(t.Node.ChangeGroupID) > 100 {
 			return creativeops.ErrValidation
 		}
 		return nil
@@ -118,7 +118,19 @@ func (a AssetTarget) library() creativelibrary.ImportTarget {
 	return creativelibrary.ImportTarget{Title: a.Title, Description: a.Description, GroupIDs: a.GroupIDs, TagIDs: a.TagIDs, NewTags: a.NewTags, Favorite: a.Favorite}
 }
 func (n NodeTarget) canvas() creativecanvas.NodeTarget {
-	return creativecanvas.NodeTarget{CanvasID: n.CanvasID, NodeID: n.NodeID, ExpectedDataRevision: n.ExpectedDataRevision}
+	return creativecanvas.NodeTarget{CanvasID: n.CanvasID, NodeID: n.NodeID, ExpectedDataRevision: n.ExpectedDataRevision, ChangeGroupID: n.ChangeGroupID}
+}
+
+// uploadTitle 是节点标题为空时补上的名称：去掉扩展名的文件名，最多 200 字。
+func uploadTitle(name string) string {
+	title := strings.TrimSuffix(name, path.Ext(name))
+	if strings.TrimSpace(title) == "" {
+		title = name
+	}
+	if r := []rune(title); len(r) > 200 {
+		title = string(r[:200])
+	}
+	return title
 }
 
 // validateTargetInTx takes the target's own locks in the shared order and

@@ -35,6 +35,8 @@ export type Intent = {
   titles?: Record<string, string>
   draftKey?: string
   draftValue?: Draft
+  /** 撤销组：拖入文件的建节点与随后的上传绑定同组，一次撤销整批。 */
+  changeGroupID?: string
   state: 'pending' | 'sent' | 'confirmed'
   // Undo/redo target resolved when the request was built.
   changeID?: string
@@ -204,11 +206,14 @@ export function objectRead(
       }
     : { kind: o.kind, id: o.id, revision: o.revision }
 }
-export function receiptSummary(r: Receipt): Canvas['changes'][number] {
+export function receiptSummary(
+  r: Receipt,
+  group?: string,
+): Canvas['changes'][number] {
   return {
     id: r.change_id,
     inverse_of: r.inverse_of,
-    change_group_id: null,
+    change_group_id: group ?? null,
     result_revision: r.result_revision,
     read_set: r.object_results.map(objectRead),
   }
@@ -228,10 +233,15 @@ export function intentReadSet(
   intent: Intent,
   changeID: string | undefined,
   localIDs: Set<string>,
+  changeIDs?: string[],
 ): GraphRead[] {
   if (intent.kind === 'actions')
     return serverReads(graphActionReadSet(view, intent.actions ?? []), localIDs)
-  const change = view.changes.find((c) => c.id === changeID)
+  // 按组撤销时读集是组内所有改动读集的并集。
+  const ids = new Set(changeIDs ?? (changeID ? [changeID] : []))
+  const reads = new Map<string, GraphRead>()
+  for (const c of view.changes)
+    if (ids.has(c.id)) for (const r of c.read_set) reads.set(r.id, r)
   const byID = new Map<string, GraphRead>([
     ...view.nodes.map((n): [string, GraphRead] => [
       n.id,
@@ -255,7 +265,7 @@ export function intentReadSet(
       objectRead(o),
     ]),
   ])
-  return (change?.read_set ?? []).map((r) => byID.get(r.id) ?? r)
+  return [...reads.values()].map((r) => byID.get(r.id) ?? r)
 }
 
 // projectCanvas paints live intents and newer receipts over the snapshot.
@@ -483,7 +493,7 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
     }
     const receipt = intent.receipt
     if (receipt) {
-      changes = [receiptSummary(receipt), ...changes]
+      changes = [receiptSummary(receipt, intent.changeGroupID), ...changes]
       if (BigInt(receipt.result_topology_revision) > BigInt(topology))
         topology = receipt.result_topology_revision
       changed = true
@@ -585,6 +595,7 @@ export function historyOf(view: Canvas, outbox: Intent[], redo: Intent[]) {
       redo.some((i) => i.canvasID === view.id) ||
       (!inFlight && !!server.redo),
     undo: server.undo,
+    undoStepGroup: inFlight ? undefined : server.undoStepGroup,
     redo: server.redo,
   }
 }

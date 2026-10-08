@@ -418,7 +418,9 @@ func (s *Service) bindOrCandidate(ctx context.Context, tx store.TxAccountScope, 
 		var change creativecanvas.ChangeResult
 		_, err := creativecontent.WriteMediaAndRetain(ctx, tx, draft, objects, func(r creativecontent.Revision) error {
 			var e error
-			change, e = creativecanvas.BindNodeRevisionInTx(ctx, tx, target.Node.canvas(), r, operation)
+			node := target.Node.canvas()
+			node.Title = uploadTitle(current.Name)
+			change, e = creativecanvas.BindNodeRevisionInTx(ctx, tx, node, r, operation)
 			return e
 		})
 		if err == nil {
