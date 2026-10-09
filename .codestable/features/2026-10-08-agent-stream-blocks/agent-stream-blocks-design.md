@@ -93,7 +93,7 @@ AC-04 要求「没有公开摘要时，不伪造内部推理」。现有草案 �
 | type | payload | 说明 |
 |---|---|---|
 | `block.created` | 完整块 | 新块出现，`ordinal` 决定位置 |
-| `block.updated` | `{block_id, revision, state?, patch}` | 增量更新。`patch` 只允许两种形式：`{append: {path, text}}`（流式追加文本）或 `{set: payload}`（整个 payload 替换） |
+| `block.updated` | `{block_id, revision, state?, finished_at?, payload_version?, patch?}` | 增量更新，只带这次写入改变的字段，依次应用后与快照里的同一块逐字段相等。`patch` 只允许两种形式：`{append: {path, text}}`（流式追加文本）或 `{set: payload}`（整个 payload 替换）；只改状态时没有 `patch`。块进入终态的那次写入带 `finished_at`，`set` 带 `payload_version`（2026-10-09 code review 后补充：缺这两项时持续订阅者算不出耗时，和刷新后的快照不一致） |
 | `block.deleted` | — | 不提供。块只追加不删除，撤回用 state 表达 |
 | `run.state_changed` / `run.finished` / `usage.updated` | 已有 | 保留不变；新增字段 `current_block_id`，供状态条显示当前步骤 |
 

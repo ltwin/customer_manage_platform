@@ -63,6 +63,8 @@ type ProviderRequest struct {
 	Chat       ChatRequest
 	Credential string
 	Stream     bool
+	// Sink, when set on a streamed request, sees text fragments as they arrive.
+	Sink Sink
 }
 
 // Provider adapts one wire protocol. It performs exactly one attempt and must

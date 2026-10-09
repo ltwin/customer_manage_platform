@@ -231,8 +231,7 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 			"claim_token=$3, updated_at=$4", "run_id=$2", runID, next, now); err != nil {
 			return err
 		}
-		if _, err := appendRunEventInTx(ctx, tx, runID, "run.state_changed",
-			map[string]string{"state": RunRunning}); err != nil {
+		if err := runStateChangedInTx(ctx, tx, runID, map[string]string{"state": RunRunning}); err != nil {
 			return err
 		}
 		held.RunID, held.Epoch, held.Token, held.Deadline = runID, epoch+1, next, deadline
@@ -657,12 +656,10 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 			stepID, held.RunID, ordinal, "model", "prepared", held.Epoch, hash, payload, now); err != nil {
 			return err
 		}
-		if _, err := tx.Update(ctx, "creative_agent_runs",
-			"next_step_ordinal=next_step_ordinal+1, updated_at=$3", "id=$2", held.RunID, now); err != nil {
-			return err
-		}
-		_, err = appendRunEventInTx(ctx, tx, held.RunID, "step.state_changed",
-			map[string]string{"step_id": stepID, "kind": "model", "state": "prepared"})
+		// A model step has no block of its own: its text block appears with the
+		// first streamed words, and its tool blocks with the answer.
+		_, err = tx.Update(ctx, "creative_agent_runs",
+			"next_step_ordinal=next_step_ordinal+1, updated_at=$3", "id=$2", held.RunID, now)
 		return err
 	})
 	if err != nil {
@@ -699,6 +696,14 @@ func (s *Service) consumeResultInTx(ctx context.Context, tx store.TxAccountScope
 		return false, err
 	}
 	text := strings.TrimSpace(result.Text)
+	if !result.Consumable() {
+		text = ""
+	}
+	// The block becomes exactly the validated text; a streamed preview of an
+	// answer that is empty or rejected is withdrawn here.
+	if err := finishTextBlocksInTx(ctx, tx, held.RunID, stepID, text); err != nil {
+		return false, err
+	}
 	if text == "" && len(result.ToolCalls) == 0 || !result.Consumable() {
 		// An answer with no words is recorded as a step and produces no message.
 		// Writing an empty one would put a blank turn in the conversation the
@@ -712,16 +717,13 @@ func (s *Service) consumeResultInTx(ctx context.Context, tx store.TxAccountScope
 	for i, call := range result.ToolCalls {
 		body.ToolCalls = append(body.ToolCalls, MessageCall{ID: runtimeCallID(stepID, i), Name: call.Name, Arguments: string(call.Arguments)})
 	}
-	message, err := s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{
+	if _, err := s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{
 		Role: "assistant", Status: "complete", RunID: held.RunID, SourceStepID: stepID,
 		Body: body,
-	})
-	if err != nil {
+	}); err != nil {
 		return false, err
 	}
-	_, err = appendRunEventInTx(ctx, tx, held.RunID, "message.completed",
-		map[string]string{"message_id": message.ID, "step_id": stepID})
-	return len(result.ToolCalls) == 0, err
+	return len(result.ToolCalls) == 0, nil
 }
 
 // finishRun records the outcome and releases ownership after the model turn.
@@ -900,6 +902,9 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, exp
 		if _, err := tx.Update(ctx, table, "retained_until=GREATEST(retained_until,$3)", "run_id=$2", runID, now.Add(contextRetention)); err != nil {
 			return false, err
 		}
+	}
+	if err := settleBlocksInTx(ctx, tx, runID, state == RunSucceeded); err != nil {
+		return false, err
 	}
 	_, err = appendRunEventInTx(ctx, tx, runID, "run.finished",
 		map[string]string{"state": state, "error_code": code, "settlement_state": settlement})

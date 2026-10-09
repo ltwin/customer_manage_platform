@@ -294,3 +294,43 @@ func TestDuplicateToolCallIdentityIsRefused(t *testing.T) {
 		t.Fatalf("duplicate call ids must be refused, got %v", err)
 	}
 }
+
+type recordingSink struct{ deltas, resets []string }
+
+func (s *recordingSink) Delta(kind llmgateway.DeltaKind, text string) {
+	if kind == llmgateway.DeltaText {
+		s.deltas = append(s.deltas, text)
+	}
+}
+func (s *recordingSink) Reset() { s.resets = append(s.resets, "reset") }
+
+// Both protocols hand visible text fragments to the sink as they arrive, while
+// the result itself is still only the reassembled, validated answer.
+func TestStreamedTextReachesTheSinkWithoutChangingTheResult(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		stream   string
+		key      llmgateway.ProviderKey
+		provider func(*http.Client) llmgateway.Provider
+	}{
+		{"openai", openAIToolStream, llmgateway.ProviderOpenAICompatible, func(c *http.Client) llmgateway.Provider { return llmgateway.NewOpenAICompatible(c) }},
+		{"anthropic", anthropicToolStream, llmgateway.ProviderAnthropicMessage, func(c *http.Client) llmgateway.Provider { return llmgateway.NewAnthropicMessages(c, "") }},
+	} {
+		fixture := newProtocolFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, tc.stream)
+		})
+		model := fixture.model(t, tc.key)
+		sink := &recordingSink{}
+		result, err := tc.provider(llmgateway.NewHTTPClient(5*time.Second)).Invoke(context.Background(), llmgateway.ProviderRequest{
+			Model: model, Snapshot: snapshotFor(model), Chat: toolRequest(), Credential: "k", Stream: true, Sink: sink,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		// Tool argument fragments are not text and never reach a DeltaText sink.
+		if strings.Join(sink.deltas, "") != "好的" || result.Text != "好的" || len(sink.resets) != 0 {
+			t.Fatalf("%s: deltas %q result %q resets %v", tc.name, sink.deltas, result.Text, sink.resets)
+		}
+	}
+}

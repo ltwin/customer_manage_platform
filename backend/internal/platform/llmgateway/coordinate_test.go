@@ -149,15 +149,21 @@ func TestARefusedAttemptRetriesOnTheSameIdentity(t *testing.T) {
 	}
 
 	session := f.callSession(f.a, "run-retry")
+	sink := &recordingSink{}
 	outcome, err := f.gateway.Call(t.Context(), session, llmgateway.CallInput{
 		BindingKey: "run-retry:step-1",
 		Chat:       textRequest("chat"),
+		Sink:       sink,
 	})
 	if err != nil {
 		t.Fatalf("a refused attempt must be retried by the coordinator: %v", err)
 	}
 	if calls := f.provider.attempts(); calls != 2 {
 		t.Fatalf("provider calls %d", calls)
+	}
+	// Whatever the replaced attempt showed is withdrawn before the next one.
+	if len(sink.resets) != 1 {
+		t.Fatalf("sink resets %v", sink.resets)
 	}
 	state, attempts := f.requestState(t, outcome.RequestID)
 	if state != "succeeded" || attempts != 2 {

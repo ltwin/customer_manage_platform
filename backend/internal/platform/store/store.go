@@ -12,9 +12,9 @@ import (
 
 // Store 持有连接池，是所有仓储访问的入口。
 type Store struct {
-	pool             *pgxpool.Pool
-	canvasEventsOnce sync.Once
-	canvasEvents     *canvasEventHub
+	pool         *pgxpool.Pool
+	realtimeOnce sync.Once
+	realtime     *realtimeHub
 }
 
 type ScopedAccount struct {
@@ -37,7 +37,7 @@ func Open(ctx context.Context, databaseURL string) (*Store, error) {
 
 // Close 释放连接池。
 func (s *Store) Close() {
-	s.StopCanvasEvents()
+	s.StopRealtime()
 	s.pool.Close()
 }
 

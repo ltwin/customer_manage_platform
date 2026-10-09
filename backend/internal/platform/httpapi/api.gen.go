@@ -3584,6 +3584,45 @@ type CreativeAddNodePayloadType string
 // CreativeAddNodePayloadTypeKey defines model for CreativeAddNodePayload.TypeKey.
 type CreativeAddNodePayloadTypeKey string
 
+// CreativeAgentBlock 助手可见过程的一块。只追加、不删除、不重排；每次变化 revision 加 1。 type 与 state 由服务端注册表约束，客户端遇到未知 type 或更高的 payload_version 时只把这一块降级显示，不猜测其含义。
+type CreativeAgentBlock struct {
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+
+	// Hidden 过程工具（如 update_plan）的调用块，效果另有专门的块，不显示成工具行。
+	Hidden bool   `json:"hidden"`
+	Id     string `json:"id"`
+
+	// Ordinal 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Ordinal CreativeRevision `json:"ordinal"`
+
+	// Payload 按 (type, payload_version) 解释，见 CreativeAgentTextPayload 等。
+	Payload        map[string]interface{} `json:"payload"`
+	PayloadVersion int                    `json:"payload_version"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision  CreativeRevision `json:"revision"`
+	RunId     string           `json:"run_id"`
+	StartedAt time.Time        `json:"started_at"`
+
+	// State 类型自身的状态，另有通用终态 interrupted。
+	State string `json:"state"`
+
+	// Type 本期 text、thinking、tool、plan、notice；question、confirm、proposal、changes、suggestions 由后续条目登记。
+	Type string `json:"type"`
+}
+
+// CreativeAgentBlockDetail defines model for CreativeAgentBlockDetail.
+type CreativeAgentBlockDetail struct {
+	Arguments map[string]interface{} `json:"arguments"`
+	BlockId   string                 `json:"block_id"`
+	ErrorCode *string                `json:"error_code,omitempty"`
+
+	// Result 模型实际看到的有界结果；超长结果为带定位符的预览。
+	Result  *string `json:"result,omitempty"`
+	StepId  string  `json:"step_id"`
+	ToolKey string  `json:"tool_key"`
+}
+
 // CreativeAgentBusyDetails 账号只有一个写槽位。告诉摄影师是哪一次运行占着它，比只说「忙」多出 一个他们真的能打开去看的东西。
 type CreativeAgentBusyDetails struct {
 	ActiveRunId string `json:"active_run_id"`
@@ -3813,6 +3852,9 @@ type CreativeAgentRetryRequest struct {
 
 // CreativeAgentRun defines model for CreativeAgentRun.
 type CreativeAgentRun struct {
+	// Blocks 仅 GET /creative/agent-runs/{id} 返回：按 ordinal 排序的全部块，含 hidden 块。
+	Blocks *[]CreativeAgentBlock `json:"blocks,omitempty"`
+
 	// CanvasId 由服务端从会话读出；客户端给的对不上也不采信。
 	CanvasId       string    `json:"canvas_id"`
 	ConversationId string    `json:"conversation_id"`
@@ -3840,8 +3882,11 @@ type CreativeAgentRun struct {
 	SettlementState CreativeAgentRunSettlementState `json:"settlement_state"`
 	SkillId         *string                         `json:"skill_id,omitempty"`
 	SkillVersionId  *string                         `json:"skill_version_id,omitempty"`
-	SourceRunId     *string                         `json:"source_run_id,omitempty"`
-	StartedAt       *time.Time                      `json:"started_at,omitempty"`
+
+	// SnapshotSeq 仅 GET 返回：blocks 所对应的事件位置，从这里开始订阅。
+	SnapshotSeq *CreativeSequence `json:"snapshot_seq,omitempty"`
+	SourceRunId *string           `json:"source_run_id,omitempty"`
+	StartedAt   *time.Time        `json:"started_at,omitempty"`
 
 	// State 运行状态机的唯一权威是 data-model §7。step 的状态是另一套，两者互不填充。
 	State            CreativeAgentRunState `json:"state"`
@@ -6643,6 +6688,12 @@ type CloseCreativeAgentReconciliationParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// WatchCreativeAgentRunParams defines parameters for WatchCreativeAgentRun.
+type WatchCreativeAgentRunParams struct {
+	AfterSeq    *CreativeSequence `form:"after_seq,omitempty" json:"after_seq,omitempty"`
+	LastEventID *CreativeSequence `json:"Last-Event-ID,omitempty"`
+}
+
 // RetryCreativeAgentRunParams defines parameters for RetryCreativeAgentRun.
 type RetryCreativeAgentRunParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -8900,15 +8951,21 @@ type ServerInterface interface {
 	// 注册 pending_verification 账号并尝试发送验证邮件
 	// (POST /auth/register)
 	Register(c *gin.Context)
-	// 一次运行的当前状态、终态与费用投影
+	// 一次运行的快照：状态、费用投影与全部有序块
 	// (GET /creative/agent-runs/{id})
 	GetCreativeAgentRun(c *gin.Context, id string)
+	// 工具块的参数与有界结果，展开时按需读取
+	// (GET /creative/agent-runs/{id}/blocks/{block_id}/detail)
+	GetCreativeAgentRunBlockDetail(c *gin.Context, id string, blockId string)
 	// 取消当前运行；未知费用保留核实
 	// (POST /creative/agent-runs/{id}/cancel)
 	CancelCreativeAgentRun(c *gin.Context, id string, params CancelCreativeAgentRunParams)
 	// 结束运行的核实等待；费用核实继续
 	// (POST /creative/agent-runs/{id}/close-reconciliation)
 	CloseCreativeAgentReconciliation(c *gin.Context, id string, params CloseCreativeAgentReconciliationParams)
+	// 运行事件流（SSE），从 after_seq 之后补读并追尾
+	// (GET /creative/agent-runs/{id}/events)
+	WatchCreativeAgentRun(c *gin.Context, id string, params WatchCreativeAgentRunParams)
 	// 恢复一个已记录且可证明安全的固定 Skill 资源读取步骤
 	// (POST /creative/agent-runs/{id}/retry)
 	RetryCreativeAgentRun(c *gin.Context, id string, params RetryCreativeAgentRunParams)
@@ -9639,6 +9696,42 @@ func (siw *ServerInterfaceWrapper) GetCreativeAgentRun(c *gin.Context) {
 	siw.Handler.GetCreativeAgentRun(c, id)
 }
 
+// GetCreativeAgentRunBlockDetail operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeAgentRunBlockDetail(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "block_id" -------------
+	var blockId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "block_id", c.Param("block_id"), &blockId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter block_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeAgentRunBlockDetail(c, id, blockId)
+}
+
 // CancelCreativeAgentRun operation middleware
 func (siw *ServerInterfaceWrapper) CancelCreativeAgentRun(c *gin.Context) {
 
@@ -9745,6 +9838,65 @@ func (siw *ServerInterfaceWrapper) CloseCreativeAgentReconciliation(c *gin.Conte
 	}
 
 	siw.Handler.CloseCreativeAgentReconciliation(c, id, params)
+}
+
+// WatchCreativeAgentRun operation middleware
+func (siw *ServerInterfaceWrapper) WatchCreativeAgentRun(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params WatchCreativeAgentRunParams
+
+	// ------------- Optional query parameter "after_seq" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after_seq", c.Request.URL.Query(), &params.AfterSeq, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter after_seq: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	headers := c.Request.Header
+
+	// ------------- Optional header parameter "Last-Event-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Last-Event-ID")]; found {
+		var LastEventID CreativeSequence
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Last-Event-ID, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Last-Event-ID", valueList[0], &LastEventID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Last-Event-ID: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.LastEventID = &LastEventID
+
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.WatchCreativeAgentRun(c, id, params)
 }
 
 // RetryCreativeAgentRun operation middleware
@@ -14344,8 +14496,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/auth/refresh", wrapper.Refresh)
 	router.POST(options.BaseURL+"/auth/register", wrapper.Register)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id", wrapper.GetCreativeAgentRun)
+	router.GET(options.BaseURL+"/creative/agent-runs/:id/blocks/:block_id/detail", wrapper.GetCreativeAgentRunBlockDetail)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/cancel", wrapper.CancelCreativeAgentRun)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/close-reconciliation", wrapper.CloseCreativeAgentReconciliation)
+	router.GET(options.BaseURL+"/creative/agent-runs/:id/events", wrapper.WatchCreativeAgentRun)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/retry", wrapper.RetryCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/agent-runs/:id/steps", wrapper.ListCreativeAgentRunSteps)
 	router.POST(options.BaseURL+"/creative/agent-runs/:id/supplements", wrapper.SupplementCreativeAgentRun)

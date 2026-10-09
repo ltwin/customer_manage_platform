@@ -434,7 +434,7 @@ paths:
         Bearer 认证的 SSE 失效通知。订阅就绪及每次数据库监听恢复后发送 invalidate，
         客户端据此读取最新画布快照；后续只在事务提交后通知。无历史事件回放，
         不使用 Last-Event-ID；重连通过首次 invalidate 补齐。unavailable 表示权限或画布已失效。
-        每 20 秒发送注释心跳，连接最多维持 5 分钟后由客户端重连。
+        每 15 秒发送注释心跳，连接最多维持 5 分钟后由客户端重连；每账号最多 5 条实时连接。
       parameters:
       - in: path
         name: id
@@ -861,17 +861,67 @@ paths:
     get:
       tags: [creative-foundation]
       operationId: getCreativeAgentRun
-      summary: 一次运行的当前状态、终态与费用投影
+      summary: 一次运行的快照：状态、费用投影与全部有序块
+      description: >-
+        blocks 与 snapshot_seq 在同一可重复读事务内读出；把 seq 大于 snapshot_seq
+        的事件依次应用到 blocks 上，得到与持续订阅者相同的列表。
       parameters:
       - {in: path, name: id, required: true, schema: {type: string}}
       responses:
         '200':
-          description: 成功
+          description: 成功；含 blocks 与 snapshot_seq
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CreativeAgentRun'}
         default:
           description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/agent-runs/{id}/events:
+    get:
+      tags: [creative-foundation]
+      operationId: watchCreativeAgentRun
+      summary: 运行事件流（SSE），从 after_seq 之后补读并追尾
+      description: >-
+        Bearer 认证。每帧 id 为 seq，event 为事件类型（block.created、block.updated、
+        run.state_changed、run.finished、usage.updated），data 为 CreativeAgentRunEvent 信封。
+        也接受 Last-Event-ID 作为游标；两者都给时以 after_seq 为准。游标低于
+        pruned_through_seq 或大于 last_event_seq 时返回 409 creative_snapshot_required。
+        运行结束且事件发完后服务端关闭连接；运行中游标被裁剪时发 control.snapshot_required
+        后关闭；访问失效时发 unavailable 后关闭。每 15 秒注释心跳，连接最长 5 分钟，
+        每账号最多 5 条实时连接（超出 429 realtime_stream_limit）。
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - {in: query, name: after_seq, required: false, schema: {$ref: '#/components/schemas/CreativeSequence'}}
+      - {in: header, name: Last-Event-ID, required: false, schema: {$ref: '#/components/schemas/CreativeSequence'}}
+      responses:
+        '200':
+          description: SSE 流
+          content:
+            text/event-stream:
+              schema: {type: string}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/agent-runs/{id}/blocks/{block_id}/detail:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeAgentRunBlockDetail
+      summary: 工具块的参数与有界结果，展开时按需读取
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - {in: path, name: block_id, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentBlockDetail'}
+        default:
+          description: 请求失败；非工具块为 404
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
@@ -7492,6 +7542,170 @@ components:
         created_at: {type: string, format: date-time}
         started_at: {type: string, format: date-time}
         finished_at: {type: string, format: date-time}
+        blocks:
+          type: array
+          maxItems: 2000
+          description: 仅 GET /creative/agent-runs/{id} 返回：按 ordinal 排序的全部块，含 hidden 块。
+          items: {$ref: '#/components/schemas/CreativeAgentBlock'}
+        snapshot_seq:
+          allOf: [{$ref: '#/components/schemas/CreativeSequence'}]
+          description: 仅 GET 返回：blocks 所对应的事件位置，从这里开始订阅。
+    CreativeAgentBlock:
+      type: object
+      additionalProperties: false
+      required: [id, run_id, ordinal, type, state, revision, payload_version, hidden, payload, started_at]
+      description: >-
+        助手可见过程的一块。只追加、不删除、不重排；每次变化 revision 加 1。
+        type 与 state 由服务端注册表约束，客户端遇到未知 type 或更高的 payload_version
+        时只把这一块降级显示，不猜测其含义。
+      properties:
+        id: {type: string, pattern: '^ccbk_'}
+        run_id: {type: string}
+        ordinal: {$ref: '#/components/schemas/CreativeRevision'}
+        type:
+          type: string
+          description: 本期 text、thinking、tool、plan、notice；question、confirm、proposal、changes、suggestions 由后续条目登记。
+        state:
+          type: string
+          description: 类型自身的状态，另有通用终态 interrupted。
+        revision: {$ref: '#/components/schemas/CreativeRevision'}
+        payload_version: {type: integer, minimum: 1}
+        hidden:
+          type: boolean
+          description: 过程工具（如 update_plan）的调用块，效果另有专门的块，不显示成工具行。
+        payload:
+          type: object
+          additionalProperties: true
+          description: 按 (type, payload_version) 解释，见 CreativeAgentTextPayload 等。
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+    CreativeAgentTextPayload:
+      type: object
+      additionalProperties: false
+      required: [markdown]
+      properties:
+        markdown: {type: string}
+    CreativeAgentThinkingPayload:
+      type: object
+      additionalProperties: false
+      required: [summary, duration_ms]
+      description: 只来自供应商给出的公开摘要，不展示模型私有推理。
+      properties:
+        summary: {type: string}
+        duration_ms: {type: integer, format: int64}
+    CreativeAgentToolPayload:
+      type: object
+      additionalProperties: false
+      required: [step_id, tool_key, title, started_at, detail_ref, node_refs]
+      properties:
+        step_id: {type: string}
+        tool_key: {type: string}
+        title: {type: string, description: 服务端工具注册表给出的人话标题}
+        started_at: {type: string, format: date-time}
+        duration_ms: {type: integer, format: int64}
+        detail_ref: {type: string, description: "交给 blocks/{block_id}/detail 读取参数与结果"}
+        node_refs:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentNodeRef'}
+        error_code: {type: string}
+    CreativeAgentNodeRef:
+      type: object
+      additionalProperties: false
+      required: [node_id]
+      properties:
+        node_id: {type: string}
+        revision_id: {type: string}
+    CreativeAgentPlanPayload:
+      type: object
+      additionalProperties: false
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [key, title, state]
+            properties:
+              key: {type: string}
+              title: {type: string}
+              state: {type: string, enum: [todo, doing, done, skipped]}
+    CreativeAgentNoticePayload:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code: {type: string}
+        message: {type: string}
+    CreativeAgentBlockPatch:
+      type: object
+      additionalProperties: false
+      description: 只有两种形式：append 把 text 追加到 payload[path]；set 整体替换 payload。
+      properties:
+        append:
+          type: object
+          additionalProperties: false
+          required: [path, text]
+          properties:
+            path: {type: string}
+            text: {type: string}
+        set:
+          type: object
+          additionalProperties: true
+    CreativeAgentBlockUpdated:
+      type: object
+      additionalProperties: false
+      required: [block_id, revision]
+      description: >-
+        block.updated 的 payload，只带这次写入改变的字段；依次应用后与快照里的同一块逐字段相等。
+        revision 不等于本地 revision+1 时丢弃本地块并回读快照。只改状态时没有 patch。
+      properties:
+        block_id: {type: string}
+        revision: {$ref: '#/components/schemas/CreativeRevision'}
+        state: {type: string}
+        payload_version:
+          type: integer
+          minimum: 1
+          description: 随 patch.set 出现：payload 按这个版本重写。
+        finished_at:
+          type: string
+          format: date-time
+          description: 块在这次写入中进入终态时出现；耗时由 started_at 与它算出。
+        patch: {$ref: '#/components/schemas/CreativeAgentBlockPatch'}
+    CreativeAgentRunEvent:
+      type: object
+      additionalProperties: false
+      required: [schema_version, run_id, seq, type, created_at, payload]
+      description: >-
+        事件信封。schema_version 只在信封或合并规则变化时升级；未知版本停止增量合并并回读快照。
+        block.created 的 payload 是完整 CreativeAgentBlock；block.updated 的是 CreativeAgentBlockUpdated；
+        run.state_changed 可带 current_block_id。
+      properties:
+        schema_version: {type: integer, enum: [1]}
+        run_id: {type: string}
+        seq: {$ref: '#/components/schemas/CreativeSequence'}
+        type: {type: string}
+        created_at: {type: string, format: date-time}
+        payload:
+          type: object
+          additionalProperties: true
+    CreativeAgentBlockDetail:
+      type: object
+      additionalProperties: false
+      required: [block_id, step_id, tool_key, arguments]
+      properties:
+        block_id: {type: string}
+        step_id: {type: string}
+        tool_key: {type: string}
+        arguments:
+          type: object
+          additionalProperties: true
+        result:
+          type: string
+          description: 模型实际看到的有界结果；超长结果为带定位符的预览。
+        error_code: {type: string}
     CreativeAgentMessage:
       type: object
       additionalProperties: false

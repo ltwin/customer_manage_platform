@@ -12,6 +12,7 @@ import (
 // starts here.
 func rollbackStagedUploads(t *testing.T, url string) {
 	t.Helper()
+	rollbackAgentBlocks(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-staged-uploads", err)
 	}
@@ -33,6 +34,7 @@ VALUES('up-staged','staged-a',gen_random_uuid(),'decl',gen_random_uuid(),'image'
 	if err != nil {
 		t.Fatal("staged target accepted after 0055", err)
 	}
+	rollbackAgentBlocks(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "staged uploads exist") {
 		t.Fatal("lossy staged rollback allowed", err)
 	}

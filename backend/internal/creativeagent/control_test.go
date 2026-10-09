@@ -333,8 +333,12 @@ CREATE TRIGGER fail_recovery_delivery BEFORE INSERT ON creative_agent_messages F
 			if n := f.count("creative_agent_messages", "run_id=$1 AND role='assistant'", retry.ID); n != 1 {
 				t.Fatalf("recovery replay duplicated delivery: %d", n)
 			}
-			if n := f.count("creative_run_events", "run_id=$1 AND event_type='message.completed'", retry.ID); n != 1 {
-				t.Fatalf("recovery delivery events=%d, want 1", n)
+			// The delivery is one text block, beside the recovered step's own row.
+			if n := f.count("creative_agent_blocks", "run_id=$1 AND type='text' AND state='complete'", retry.ID); n != 1 {
+				t.Fatalf("recovery delivery blocks=%d, want 1", n)
+			}
+			if n := f.count("creative_agent_blocks", "run_id=$1 AND type='tool' AND state='succeeded'", retry.ID); n != 1 {
+				t.Fatalf("recovered tool blocks=%d, want 1", n)
 			}
 			assertRunReleased(t, f, retry.ID)
 			f.vendor.script = func(_ context.Context, request llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {

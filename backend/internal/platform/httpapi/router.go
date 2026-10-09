@@ -26,6 +26,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/planshare"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/realtime"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/webui"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
@@ -131,6 +132,11 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		creativeMedia:       deps.CreativeMedia,
 		creativeGeneration:  deps.CreativeGeneration,
 		creativeAgent:       deps.CreativeAgent,
+	}
+	// The store's LISTEN hub is the wake-up bus; a factory without one (unit
+	// fakes) simply serves no streams.
+	if notifier, ok := deps.ScopeFactory.(realtime.Notifier); ok {
+		h.realtime = realtime.NewServer(notifier, realtime.Options{})
 	}
 	h.creativeTools, h.creativeToolsError = creativecanvas.NewToolRuntime(nil, creativeops.WithObserver(func(ctx context.Context, event creativeops.ToolObservation) {
 		if h.logger != nil {

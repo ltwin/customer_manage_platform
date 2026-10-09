@@ -170,8 +170,7 @@ func (s *Service) moveControlledRun(ctx context.Context, tx store.TxAccountScope
 	if _, err := tx.Update(ctx, "creative_agent_runs", "state=$3,error_code=$4,settlement_state=$5,execution_epoch=execution_epoch+1,lease_until=NULL,revision=revision+1,updated_at=$6", "id=$2", c.ID, state, nullableText(code), c.settlement(), now); err != nil {
 		return err
 	}
-	_, err := appendRunEventInTx(ctx, tx, c.ID, "run.state_changed", map[string]string{"state": state, "reason": code, "settlement_state": c.settlement()})
-	return err
+	return runStateChangedInTx(ctx, tx, c.ID, map[string]string{"state": state, "reason": code, "settlement_state": c.settlement()})
 }
 
 func (s *Service) endControlledRun(ctx context.Context, tx store.TxAccountScope, c controlledRun, state, code string, now time.Time) error {
@@ -205,6 +204,9 @@ func (s *Service) endControlledRun(ctx context.Context, tx store.TxAccountScope,
 		if _, err = tx.Update(ctx, table, "retained_until=GREATEST(retained_until,$3)", "run_id=$2", c.ID, now.Add(contextRetention)); err != nil {
 			return err
 		}
+	}
+	if err = settleBlocksInTx(ctx, tx, c.ID, state == RunSucceeded); err != nil {
+		return err
 	}
 	_, err = appendRunEventInTx(ctx, tx, c.ID, "run.finished", map[string]string{"state": state, "error_code": code, "settlement_state": c.settlement()})
 	return err

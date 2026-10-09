@@ -423,6 +423,7 @@ func (s *Service) Execute(
 		Chat:       chat,
 		Credential: credential,
 		Stream:     stream,
+		Sink:       sinkOf(ctx),
 	})
 	if callErr != nil {
 		return Result{}, s.finishFailure(ctx, scope, limits, permit, callErr)

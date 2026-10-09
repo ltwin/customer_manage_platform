@@ -130,7 +130,7 @@ func (a *OpenAICompatible) Invoke(ctx context.Context, p ProviderRequest) (Resul
 	}
 	var result Result
 	if p.Stream {
-		result, err = a.readStream(resp.Body)
+		result, err = a.readStream(resp.Body, p.Sink)
 	} else {
 		result, err = a.readSingle(resp.Body)
 	}
@@ -254,7 +254,7 @@ const maxResultBytes = 256 << 10
 
 // readStream reassembles fragments by choice and tool index. A fragment stream
 // is never a result: only a fully terminated, validated answer is returned.
-func (a *OpenAICompatible) readStream(body io.Reader) (Result, error) {
+func (a *OpenAICompatible) readStream(body io.Reader, sink Sink) (Result, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxResultBytes)
 	var (
@@ -297,6 +297,7 @@ func (a *OpenAICompatible) readStream(body io.Reader) (Result, error) {
 				return Result{}, &ProviderError{Outcome: OutcomeProtocol, Class: "unexpected_choice", Detail: payload}
 			}
 			text.WriteString(choice.Delta.Content)
+			emit(sink, DeltaText, choice.Delta.Content)
 			for _, fragment := range choice.Delta.ToolCalls {
 				index := 0
 				if fragment.Index != nil {

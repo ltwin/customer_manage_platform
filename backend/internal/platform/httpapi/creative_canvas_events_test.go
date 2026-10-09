@@ -155,7 +155,7 @@ func TestCreativeCanvasSSEStopsWithStore(t *testing.T) {
 			break
 		}
 	}
-	database.StopCanvasEvents()
+	database.StopRealtime()
 	if _, err := io.ReadAll(reader); err != nil {
 		t.Fatalf("stream must finish before shutdown timeout: %v", err)
 	}

@@ -10,46 +10,63 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// A single dedicated LISTEN connection serves every canvas subscription in this
+// realtimeChannel is the one PostgreSQL channel every realtime stream shares.
+// Notifications only wake readers; they carry a topic, never content, and may
+// be lost or merged without losing data because readers re-read the database.
+const realtimeChannel = "creative_realtime"
+
+// realtimeTopic names what changed. An empty ID in a notification reaches every
+// subscriber of that kind in the account (e.g. a project rename invalidates all
+// of its canvases).
+type realtimeTopic struct {
+	Kind    string `json:"Kind"`
+	Account string `json:"Account"`
+	ID      string `json:"ID"`
+}
+
+// A single dedicated LISTEN connection serves every subscription in this
 // process. PostgreSQL delivers notifications only after the writing transaction
 // commits, including writes made by other API instances and creative workers.
-type canvasEventKey struct {
-	Account string `json:"Account"`
-	Canvas  string `json:"Canvas"`
-}
-type canvasEventHub struct {
+type realtimeHub struct {
 	mu          sync.Mutex
-	subscribers map[canvasEventKey]map[chan struct{}]struct{}
+	subscribers map[realtimeTopic]map[chan struct{}]struct{}
 	ready       bool
 	stopped     bool
 	cancel      context.CancelFunc
 	done        chan struct{}
 }
 
-// SubscribeCanvas invalidates snapshots; it is not an event log. The caller must
-// authorize the canvas first. The initial signal is sent only AFTER LISTEN has
-// committed; every listener reconnect invalidates all snapshots to cover gaps.
-func (s *Store) SubscribeCanvas(ctx context.Context, scope AccountScope, id string) (<-chan struct{}, func(), error) {
+var errRealtimeStopped = errors.New("realtime listener stopped")
+
+// SubscribeRealtime wakes the caller whenever a committed write touches the
+// topic. It is not an event log. The caller must authorize the object first;
+// the account always comes from the scope. The first wake-up is sent only AFTER
+// LISTEN has committed, and every listener reconnect wakes everyone to cover
+// notifications missed meanwhile.
+func (s *Store) SubscribeRealtime(ctx context.Context, scope AccountScope, kind, id string) (<-chan struct{}, func(), error) {
 	if scope.accountID == "" || scope.pool != s.pool {
 		return nil, nil, ErrEmptyAccountScope
 	}
-	s.canvasEventsOnce.Do(func() {
+	if kind == "" || id == "" {
+		return nil, nil, errors.New("realtime topic needs kind and id")
+	}
+	s.realtimeOnce.Do(func() {
 		runCtx, cancel := context.WithCancel(context.Background())
-		h := &canvasEventHub{subscribers: make(map[canvasEventKey]map[chan struct{}]struct{}), cancel: cancel, done: make(chan struct{})}
-		s.canvasEvents = h
+		h := &realtimeHub{subscribers: make(map[realtimeTopic]map[chan struct{}]struct{}), cancel: cancel, done: make(chan struct{})}
+		s.realtime = h
 		config := s.pool.Config().ConnConfig.Copy()
 		go h.run(runCtx, config)
 	})
-	h := s.canvasEvents
+	h := s.realtime
 	if h == nil {
-		return nil, nil, errors.New("canvas event listener stopped")
+		return nil, nil, errRealtimeStopped
 	}
-	key := canvasEventKey{Account: scope.accountID, Canvas: id}
+	key := realtimeTopic{Kind: kind, Account: scope.accountID, ID: id}
 	ch := make(chan struct{}, 1)
 	h.mu.Lock()
 	if h.stopped {
 		h.mu.Unlock()
-		return nil, nil, errors.New("canvas event listener stopped")
+		return nil, nil, errRealtimeStopped
 	}
 	if h.subscribers[key] == nil {
 		h.subscribers[key] = make(map[chan struct{}]struct{})
@@ -76,7 +93,7 @@ func (s *Store) SubscribeCanvas(ctx context.Context, scope AccountScope, id stri
 		if h.stopped {
 			h.mu.Unlock()
 			unsubscribe()
-			return nil, nil, errors.New("canvas event listener stopped")
+			return nil, nil, errRealtimeStopped
 		}
 		select {
 		case ch <- struct{}{}:
@@ -89,26 +106,28 @@ func (s *Store) SubscribeCanvas(ctx context.Context, scope AccountScope, id stri
 		return nil, nil, ctx.Err()
 	case <-h.done:
 		unsubscribe()
-		return nil, nil, errors.New("canvas event listener stopped")
+		return nil, nil, errRealtimeStopped
 	}
 }
 
-// StopCanvasEvents closes live streams before HTTP shutdown waits for handlers.
+// StopRealtime closes live streams before HTTP shutdown waits for handlers.
 // It is idempotent and permanently prevents new subscriptions on this Store.
-func (s *Store) StopCanvasEvents() {
-	s.canvasEventsOnce.Do(func() {})
-	if s.canvasEvents != nil {
-		s.canvasEvents.close()
+func (s *Store) StopRealtime() {
+	s.realtimeOnce.Do(func() {})
+	if s.realtime != nil {
+		s.realtime.close()
 	}
 }
 
-func (h *canvasEventHub) close() { h.cancel(); <-h.done }
+func (h *realtimeHub) close() { h.cancel(); <-h.done }
 
-func (h *canvasEventHub) invalidate(key canvasEventKey) {
+func (h *realtimeHub) invalidate(key realtimeTopic) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for target, subscribers := range h.subscribers {
-		if key.Account != "" && (target.Account != key.Account || (key.Canvas != "" && target.Canvas != key.Canvas)) {
+		// The zero topic is the reconnect broadcast; otherwise account and kind
+		// must match and an empty ID covers every object of that kind.
+		if key.Account != "" && (target.Account != key.Account || target.Kind != key.Kind || (key.ID != "" && target.ID != key.ID)) {
 			continue
 		}
 		for ch := range subscribers {
@@ -120,7 +139,7 @@ func (h *canvasEventHub) invalidate(key canvasEventKey) {
 	}
 }
 
-func (h *canvasEventHub) run(ctx context.Context, config *pgx.ConnConfig) {
+func (h *realtimeHub) run(ctx context.Context, config *pgx.ConnConfig) {
 	defer func() {
 		h.mu.Lock()
 		h.stopped = true
@@ -138,14 +157,14 @@ func (h *canvasEventHub) run(ctx context.Context, config *pgx.ConnConfig) {
 		connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		conn, err := pgx.ConnectConfig(connectCtx, config)
 		if err == nil {
-			_, err = conn.Exec(connectCtx, "LISTEN creative_canvas_changed")
+			_, err = conn.Exec(connectCtx, "LISTEN "+realtimeChannel)
 		}
 		cancel()
 		if err == nil {
 			h.mu.Lock()
 			h.ready = true
 			h.mu.Unlock()
-			h.invalidate(canvasEventKey{})
+			h.invalidate(realtimeTopic{})
 			delay = time.Second
 			for ctx.Err() == nil {
 				waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -162,8 +181,8 @@ func (h *canvasEventHub) run(ctx context.Context, config *pgx.ConnConfig) {
 				if waitErr != nil {
 					break
 				}
-				var key canvasEventKey
-				if json.Unmarshal([]byte(notification.Payload), &key) == nil && key.Account != "" {
+				var key realtimeTopic
+				if json.Unmarshal([]byte(notification.Payload), &key) == nil && key.Account != "" && key.Kind != "" {
 					h.invalidate(key)
 				}
 			}

@@ -50,6 +50,10 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 				return s.admitDispatchInTx(ctx, tx, held, runtime.revisions)
 			},
 		},
+		// Streamed so the photographer sees the answer form; the framework still
+		// receives only the complete validated result.
+		Stream:       true,
+		Sink:         &textSink{service: s, scope: scope, held: held, current: &current, ctx: ctx},
 		BindMessages: runtime.bindMessages,
 		// The step is the durable name of this turn, so a resumed run replays
 		// the request it already paid for instead of buying a second one.
@@ -110,6 +114,9 @@ func (e *runExecution) consumeInTx(ctx context.Context, tx store.TxAccountScope,
 	}
 	delivered, err := h.service.consumeResultInTx(ctx, tx, h.held, stepID, result)
 	if err != nil {
+		return err
+	}
+	if err := h.service.writeToolBlocksForModelStepInTx(ctx, tx, h.held.RunID, stepID); err != nil {
 		return err
 	}
 	e.outcome.Delivered = e.outcome.Delivered || delivered

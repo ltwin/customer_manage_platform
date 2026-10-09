@@ -84,6 +84,9 @@ type CallInput struct {
 	// Consume runs inside the transaction that marks the result consumed, so the
 	// caller's own rows and that mark commit together or not at all.
 	Consume func(store.TxAccountScope, Result) error
+	// Sink sees text fragments of a streamed attempt, for display only. It is
+	// told to Reset before the gateway replaces an attempt it proved unaccepted.
+	Sink Sink
 }
 
 // CallOutcome reports what the turn settled on.
@@ -157,7 +160,7 @@ func (s *Service) Call(ctx context.Context, session CallSession, in CallInput) (
 	// From here on the identity exists, so every return carries it: a caller that
 	// has to ask for verification needs to name the request it is asking about.
 	outcome := CallOutcome{RequestID: view.ID}
-	view, outcome.Dispatched, err = s.runTurn(ctx, session, binding, view, reservation.HoldGeneration, chat, in.Stream)
+	view, outcome.Dispatched, err = s.runTurn(withSink(ctx, in.Sink), session, binding, view, reservation.HoldGeneration, chat, in.Stream)
 	if err != nil {
 		return outcome, err
 	}
@@ -242,6 +245,10 @@ func (s *Service) runTurn(
 			return RequestView{}, dispatched, err
 		}
 		if next.State == StatePrepared && next.RetryEligible {
+			// Fragments shown so far came from an attempt that never counted.
+			if sink := sinkOf(ctx); sink != nil && sent {
+				sink.Reset()
+			}
 			view = next
 			continue
 		}

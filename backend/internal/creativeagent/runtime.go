@@ -46,6 +46,7 @@ func runtimeToolEntries() []ToolEntry {
 		{Key: readAssetTool, Version: 1, DisplayName: "读取引用素材", EffectClass: "read_only"},
 		{Key: readCanvasTool, Version: 1, DisplayName: "读取画布", EffectClass: "read_only"},
 		{Key: readHistoryTool, Version: 1, DisplayName: "读取对话历史", EffectClass: "read_only"},
+		{Key: updatePlanTool, Version: 1, DisplayName: "更新计划", EffectClass: "read_only"},
 	}
 }
 
@@ -109,7 +110,7 @@ func (h *runtimeHandler) AfterModelRewriteState(ctx context.Context, state *adk.
 	return ctx, state, h.resultErr
 }
 func (h *runtimeHandler) allowed(name string) bool {
-	if name == readAssetTool || name == readCanvasTool || name == readHistoryTool {
+	if name == readAssetTool || name == readCanvasTool || name == readHistoryTool || name == updatePlanTool {
 		return true
 	}
 	if name != loadSkillTool && name != readSkillTool && name != readResultTool {
@@ -135,6 +136,7 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 	for _, name := range []string{readAssetTool, readCanvasTool, readHistoryTool} {
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: name})
 	}
+	config.Tools = append(config.Tools, planTool{})
 	if h.allowed(readSkillTool) {
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: readSkillTool})
 	}
@@ -257,10 +259,9 @@ func (h *runtimeHandler) planInTx(ctx context.Context, tx store.TxAccountScope, 
 		if state == "failed" {
 			finished = now
 		}
-		if err = tx.Insert(ctx, "creative_agent_steps", []string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "tool_key", "tool_version", "parent_model_step_id", "tool_call_index", "input_hash", "input", "error_code", "finished_at"}, id, h.held.RunID, ordinal+int64(index), "tool", state, h.held.Epoch, c.Name, 1, modelStep, index, hex.EncodeToString(sum[:]), input, nullableText(code), finished); err != nil {
-			return err
-		}
-		if _, err = appendRunEventInTx(ctx, tx, h.held.RunID, "step.state_changed", map[string]string{"step_id": id, "kind": "tool", "state": state}); err != nil {
+		// The blocks for these plans are written after the answer's text, in
+		// consumeInTx, so the order on screen is the order the model spoke in.
+		if err = tx.Insert(ctx, "creative_agent_steps", []string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "tool_key", "tool_version", "parent_model_step_id", "tool_call_index", "input_hash", "input", "error_code", "started_at", "finished_at"}, id, h.held.RunID, ordinal+int64(index), "tool", state, h.held.Epoch, c.Name, 1, modelStep, index, hex.EncodeToString(sum[:]), input, nullableText(code), now, finished); err != nil {
 			return err
 		}
 	}
@@ -393,16 +394,20 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		// Its result stays in the step journal; executeRecordedRetry publishes
 		// the separate assistant delivery, including after an interrupted retry.
 		if !recordedRetry {
-			message, err := h.persistToolMessage(ctx, tx, stepID, callID, name, projection, result)
-			if err != nil {
-				return err
-			}
-			if _, err = appendRunEventInTx(ctx, tx, h.held.RunID, "message.completed", map[string]string{"message_id": message.ID, "step_id": stepID}); err != nil {
+			if _, err := h.persistToolMessage(ctx, tx, stepID, callID, name, projection, result); err != nil {
 				return err
 			}
 		}
-		_, err = appendRunEventInTx(ctx, tx, h.held.RunID, "step.state_changed", map[string]string{"step_id": stepID, "kind": "tool", "state": terminal})
-		return err
+		if name == updatePlanTool && readErr == nil {
+			plan, err := parsePlan(args)
+			if err != nil {
+				return err
+			}
+			if _, err = writeBlockInTx(ctx, tx, h.held.RunID, "plan", blockChange{Type: BlockPlan, State: planState(plan.Steps), Set: plan}); err != nil {
+				return err
+			}
+		}
+		return h.service.writeToolBlockInTx(ctx, tx, h.held.RunID, stepID)
 	})
 	return projection, err
 }

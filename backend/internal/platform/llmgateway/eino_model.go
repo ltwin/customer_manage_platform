@@ -30,6 +30,9 @@ type ModelSession struct {
 	// the result consumed. A run that records steps must set it; a call with no
 	// business row of its own may leave it nil.
 	Consume func(store.TxAccountScope, Result) error
+	// Sink sees visible text while a streamed turn is in flight. The framework
+	// still receives only the complete validated result.
+	Sink Sink
 }
 
 func (s ModelSession) validate() error {
@@ -151,6 +154,7 @@ func (a *GatewayModelAdapter) call(ctx context.Context, input []*schema.Message,
 		Chat:       chat,
 		Stream:     stream,
 		Consume:    a.session.Consume,
+		Sink:       a.session.Sink,
 	})
 	if err != nil {
 		return Result{}, err

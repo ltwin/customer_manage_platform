@@ -225,11 +225,10 @@ func (s *Service) executeRecordedRetry(ctx context.Context, scope store.AccountS
 		if len(text) > s.limits.MessageBodyBytes {
 			text = "已恢复原步骤的资源读取；完整结果保留在运行记录中。"
 		}
-		message, err := s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{Role: "assistant", Status: "complete", RunID: held.RunID, SourceStepID: id, Body: Body{Blocks: []Block{{Type: "text", Text: text}}}})
-		if err != nil {
+		if _, err := s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{Role: "assistant", Status: "complete", RunID: held.RunID, SourceStepID: id, Body: Body{Blocks: []Block{{Type: "text", Text: text}}}}); err != nil {
 			return err
 		}
-		_, err = appendRunEventInTx(ctx, tx, held.RunID, "message.completed", map[string]string{"message_id": message.ID, "step_id": id})
+		err = finishTextBlocksInTx(ctx, tx, held.RunID, id, text)
 		delivered = err == nil
 		return err
 	})

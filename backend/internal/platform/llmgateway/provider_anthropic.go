@@ -100,7 +100,7 @@ func (a *AnthropicMessages) Invoke(ctx context.Context, p ProviderRequest) (Resu
 	}
 	var result Result
 	if p.Stream {
-		result, err = a.readStream(resp.Body)
+		result, err = a.readStream(resp.Body, p.Sink)
 	} else {
 		result, err = a.readSingle(resp.Body)
 	}
@@ -234,7 +234,7 @@ type anthropicEvent struct {
 }
 
 // readStream reassembles Anthropic events into the same complete result shape.
-func (a *AnthropicMessages) readStream(body io.Reader) (Result, error) {
+func (a *AnthropicMessages) readStream(body io.Reader, sink Sink) (Result, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxResultBytes)
 	var (
@@ -271,6 +271,7 @@ func (a *AnthropicMessages) readStream(body io.Reader) (Result, error) {
 			switch event.Delta.Type {
 			case "text_delta":
 				text.WriteString(event.Delta.Text)
+				emit(sink, DeltaText, event.Delta.Text)
 			case "input_json_delta":
 				if builder, ok := args[event.Index]; ok {
 					builder.WriteString(event.Delta.PartialJSON)

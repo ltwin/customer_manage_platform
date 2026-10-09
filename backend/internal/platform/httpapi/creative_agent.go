@@ -26,6 +26,8 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/agent-runs/:id/supplements", w.SupplementCreativeAgentRun)
 	r.POST("/creative/agent-runs/:id/retry", w.RetryCreativeAgentRun)
 	r.GET("/creative/agent-runs/:id", w.GetCreativeAgentRun)
+	r.GET("/creative/agent-runs/:id/events", w.WatchCreativeAgentRun)
+	r.GET("/creative/agent-runs/:id/blocks/:block_id/detail", w.GetCreativeAgentRunBlockDetail)
 	r.POST("/creative/conversations/:id/egress-consents", w.GrantCreativeEgressConsent)
 	r.POST("/creative/egress-consents/:id/revoke", w.RevokeCreativeEgressConsent)
 }
@@ -265,7 +267,7 @@ func (h *handlers) GetCreativeAgentRun(c *gin.Context, id string) {
 	if !ok {
 		return
 	}
-	run, err := agent.ReadRun(c.Request.Context(), scope, id)
+	run, err := agent.ReadRunSnapshot(c.Request.Context(), scope, id)
 	if err != nil {
 		creativeError(c, err)
 		return
@@ -274,6 +276,41 @@ func (h *handlers) GetCreativeAgentRun(c *gin.Context, id string) {
 	// intermediate may keep a copy of.
 	noStore(c)
 	c.JSON(200, run)
+}
+
+// WatchCreativeAgentRun follows one run's event log from the client's cursor.
+// after_seq wins over Last-Event-ID: a client that read a fresh snapshot knows
+// better than the browser's memory of the last stream.
+//
+// Reading the log needs no model runtime, so it stays available even when this
+// deployment cannot start runs.
+func (h *handlers) WatchCreativeAgentRun(c *gin.Context, id string, p WatchCreativeAgentRunParams) {
+	cursor := ""
+	if p.LastEventID != nil {
+		cursor = *p.LastEventID
+	}
+	if p.AfterSeq != nil {
+		cursor = *p.AfterSeq
+	}
+	h.serveRealtime(c, creativeagent.RunEventSource{}, id, cursor)
+}
+
+func (h *handlers) GetCreativeAgentRunBlockDetail(c *gin.Context, id string, blockID string) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	detail, err := agent.ReadBlockDetail(c.Request.Context(), scope, id, blockID)
+	if err != nil {
+		creativeError(c, err)
+		return
+	}
+	noStore(c)
+	c.JSON(200, detail)
 }
 
 func (h *handlers) RevokeCreativeEgressConsent(c *gin.Context, id string, _ RevokeCreativeEgressConsentParams) {

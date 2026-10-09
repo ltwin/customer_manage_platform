@@ -8,7 +8,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 )
 
-func TestCanvasEventsCommitIsolationAndReconnect(t *testing.T) {
+func TestRealtimeCanvasCommitIsolationAndReconnect(t *testing.T) {
 	db, scope := openReadSnapshotTestStore(t, "events-a")
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
 	defer cancel()
@@ -18,7 +18,7 @@ func TestCanvasEventsCommitIsolationAndReconnect(t *testing.T) {
 	}
 	subscribe := func(s AccountScope, id string) <-chan struct{} {
 		t.Helper()
-		ch, stop, err := db.SubscribeCanvas(ctx, s, id)
+		ch, stop, err := db.SubscribeRealtime(ctx, s, "canvas", id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -92,7 +92,7 @@ func TestCanvasEventsCommitIsolationAndReconnect(t *testing.T) {
 	quiet(b)
 	// Break the listener from another connection, as a DB failover would.
 	var terminated int
-	err = db.pool.QueryRow(ctx, `WITH listeners AS MATERIALIZED (SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND query='LISTEN creative_canvas_changed' AND pid <> pg_backend_pid()) SELECT count(*) FROM listeners WHERE pg_terminate_backend(pid)`).Scan(&terminated)
+	err = db.pool.QueryRow(ctx, `WITH listeners AS MATERIALIZED (SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND query='LISTEN creative_realtime' AND pid <> pg_backend_pid()) SELECT count(*) FROM listeners WHERE pg_terminate_backend(pid)`).Scan(&terminated)
 	if err != nil || terminated != 1 {
 		t.Fatalf("terminate listener: %d %v", terminated, err)
 	}
@@ -103,4 +103,28 @@ func TestCanvasEventsCommitIsolationAndReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	event(a)
+	// Run events wake only their own run topic; canvas subscribers stay quiet.
+	run := subscribeKind(ctx, t, db, scope, "agent_run", "ccrn_x")
+	otherRun := subscribeKind(ctx, t, db, scope, "agent_run", "ccrn_y")
+	if _, err := db.pool.Exec(ctx, "INSERT INTO creative_run_events(account_id,run_id,seq,schema_version,event_type,payload) VALUES('events-a','ccrn_x',1,1,'run.accepted','{}')"); err != nil {
+		t.Fatal(err)
+	}
+	event(run)
+	quiet(otherRun)
+	quiet(a)
+}
+
+func subscribeKind(ctx context.Context, t *testing.T, db *Store, s AccountScope, kind, id string) <-chan struct{} {
+	t.Helper()
+	ch, stop, err := db.SubscribeRealtime(ctx, s, kind, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		t.Fatal("missing initial resync")
+	}
+	return ch
 }

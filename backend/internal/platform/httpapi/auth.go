@@ -24,6 +24,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/idempotency"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/realtime"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
@@ -102,6 +103,7 @@ type handlers struct {
 	creativeMedia       *creativemedia.Service
 	creativeGeneration  *creativegeneration.Product
 	creativeAgent       *creativeagent.Service
+	realtime            *realtime.Server
 	creativeTools       *creativeops.Runtime
 	creativeToolsError  error
 }
