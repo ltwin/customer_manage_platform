@@ -78,16 +78,16 @@
 | `CREATIVE_LLM_MONTHLY_LIMIT_MICROS` | 每账号月度费用上限（micros，默认 20_000_000 = 20 USD） |
 | `CREATIVE_LLM_MONTHLY_TOKEN_LIMIT` | 每账号月度 token 上限（默认 5_000_000） |
 
-内置目录 `DefaultCatalog` 版本 `deepseek-2026-09-11`，价格来源见
+内置目录 `DefaultCatalog` 版本 `deepseek-2026-10-09`，价格来源见
 <https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个部署：
 
 | model_key | 供应商模型 | 思考模式 | tool_choice | 图片输入 |
 |---|---|---|---|---|
-| `deepseek-flash` | `deepseek-flash` | disabled | ✓ | ✗ |
-| `deepseek-flash-thinking` | `deepseek-flash` | enabled | ✗（派发前拒绝） | ✗ |
+| `deepseek-flash` | `deepseek-flash` | disabled | ✓ | ✓ |
+| `deepseek-flash-thinking` | `deepseek-flash` | enabled | ✗（派发前拒绝） | ✓ |
 | `deepseek-v4-pro` | `deepseek-v4-pro` | disabled | ✓ | ✗ |
 
-图片输入虽然 flash 官方支持，但**目前没有实测的字节→token 映射**，硬预算无法给出可信上界，因此目录里关闭；恢复它需要先补该映射（属 FND-07 接入图片上下文前的前置项）。
+flash 的图片输入 2026-10-09 按实测开启：64–400 px 约 184 个输入 token，1600 px 起封顶约 994（3000 px 相同），在 `EstimateInputTokens` 每图 4096 的上界之内；证据见 `TestLiveDeepSeekFlashSeesAnImage`。v4-pro 保持关闭：发图只多 5 个 token，却照样描述了一张没收到的图。
 
 共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则 `NewCatalog` 直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
 

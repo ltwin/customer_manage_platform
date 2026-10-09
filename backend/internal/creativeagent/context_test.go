@@ -205,6 +205,7 @@ func TestCompactionPreservesCurrentInstructionAndToolPairs(t *testing.T) {
 
 func TestImageReferenceRejectedBeforeQueueForTextModel(t *testing.T) {
 	f := setup(t)
+	useTextOnlyModel(t, f)
 	f.queue()
 	f.service.SetImageReader(testImageReader{})
 	c := f.conversation(f.alice, f.canvasID)
@@ -352,5 +353,75 @@ SELECT 'ccnd_concept','agent-a','cccv_a','core.text',0,0,'拍摄概念',content_
 	}
 	if strings.Contains(prompt, "只在资产库里的笔记") || !strings.Contains(prompt, "creative_tool_not_authorized") {
 		t.Fatalf("library content leaked or was not refused: %s", prompt)
+	}
+}
+
+// A model that cannot see images is told exactly that when it reads one on the
+// canvas, not that it lacks authorisation.
+func TestReadingAnImageWithoutVisionSaysSo(t *testing.T) {
+	f := setup(t)
+	useTextOnlyModel(t, f)
+	f.service.SetImageReader(testImageReader{})
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	image := f.mediaRevision(f.alice, "image", "image/png")
+	if _, err := f.db.Exec(`INSERT INTO creative_nodes(id,account_id,canvas_id,type_key,x,y,title,content_id,content_revision_id)
+SELECT 'ccnd_photo','agent-a','cccv_a','core.text',0,0,'木偶',content_id,id FROM creative_content_revisions WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	consent := f.consent(f.alice, c.ID)
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r, llmgateway.ToolCall{ID: "photo", Name: readAssetTool, Arguments: json.RawMessage(fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, image))}), nil
+		}
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "看看木偶"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if prompt := f.vendor.prompt(); !strings.Contains(prompt, "creative_tool_model_capability") {
+		t.Fatalf("image refusal not named as capability: %s", prompt)
+	}
+}
+
+// With a model that sees images, an image on the canvas reaches the model on
+// the next turn without the photographer referencing it.
+func TestCanvasImageReachesAVisionModel(t *testing.T) {
+	f := setup(t)
+	useModel(t, f, func(m *llmgateway.ModelConfig) { m.Capability.ImageInput = true })
+	f.service.SetImageReader(testImageReader{})
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	image := f.mediaRevision(f.alice, "image", "image/png")
+	if _, err := f.db.Exec(`INSERT INTO creative_nodes(id,account_id,canvas_id,type_key,x,y,title,content_id,content_revision_id)
+SELECT 'ccnd_photo','agent-a','cccv_a','core.text',0,0,'木偶',content_id,id FROM creative_content_revisions WHERE id=$1`, image); err != nil {
+		t.Fatal(err)
+	}
+	consent := contextConsent(t, f, c.ID)
+	sawImage := false
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r, llmgateway.ToolCall{ID: "photo", Name: readAssetTool, Arguments: json.RawMessage(fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":1}`, image))}), nil
+		}
+		for _, m := range r.Chat.Messages {
+			for _, b := range m.Blocks {
+				sawImage = sawImage || b.Kind == llmgateway.BlockImageInput && b.Image.RevisionID == image
+			}
+		}
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "看看木偶"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !sawImage {
+		t.Fatalf("canvas image was not attached: %s", f.vendor.prompt())
 	}
 }

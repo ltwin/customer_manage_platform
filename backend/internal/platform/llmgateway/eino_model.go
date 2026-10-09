@@ -336,9 +336,9 @@ func EstimateInputTokens(r ChatRequest) int64 {
 				continue
 			}
 			if b.Image != nil {
-				// No measured byte-to-token mapping exists yet, so image input
-				// stays disabled in the catalog. This bound is only a floor for
-				// deployments that enable it with their own verified mapping.
+				// A per-image bound. DeepSeek Flash was measured at most ~1000
+				// tokens per image (see catalog_default.go); a deployment whose
+				// images cost more must not enable ImageInput on this bound.
 				bytes += 4096
 			}
 		}

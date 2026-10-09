@@ -349,14 +349,17 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	code := ""
 	switch {
 	case readErr == nil:
-	case errors.Is(readErr, errReadRefused), errors.Is(readErr, ErrEgressRequired):
-		// Distinct from bad input: the model must say what is missing instead
-		// of retrying or guessing the content.
+	// Each refusal says what is actually missing, so the model can tell the
+	// photographer instead of retrying or guessing the content.
+	case errors.Is(readErr, errReadRefused):
 		code = "creative_tool_not_authorized"
 		result = `{"success":false,"code":"creative_tool_not_authorized","message":"这项内容不在当前画布上，也没有被引用"}`
+	case errors.Is(readErr, ErrEgressRequired):
+		code = "creative_tool_not_authorized"
+		result = `{"success":false,"code":"creative_tool_not_authorized","message":"本次对话没有授权发送这类内容"}`
 	case errors.Is(readErr, ErrModelCapability):
 		code = "creative_tool_model_capability"
-		result = `{"success":false,"code":"creative_tool_model_capability","message":"当前模型不能查看图片"}`
+		result = `{"success":false,"code":"creative_tool_model_capability","message":"这是一张图片，当前模型不能查看图片内容；如需分析画面，请换用支持图片的模型"}`
 	case errors.Is(readErr, ErrNotFound), errors.Is(readErr, creativeops.ErrValidation):
 		code = "creative_tool_input_invalid"
 		result = `{"success":false,"code":"creative_tool_input_invalid"}`

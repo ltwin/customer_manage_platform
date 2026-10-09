@@ -572,16 +572,15 @@ func TestThinkingReasoningReturnsWithItsTurn(t *testing.T) {
 	}
 }
 
-// useThinkingModel swaps the fixture's model for the same deployment in
-// thinking mode.
-func useThinkingModel(t *testing.T, f *fixture) {
+// useModel swaps the fixture's model for a variant of the same deployment.
+func useModel(t *testing.T, f *fixture, change func(*llmgateway.ModelConfig)) {
 	t.Helper()
 	model, err := f.service.models.Model(testModelKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	model.Thinking, model.Capability.ToolChoice = "enabled", false
-	models, err := llmgateway.NewCatalog("thinking-test", model.Price.Currency, []llmgateway.ModelConfig{model})
+	change(&model)
+	models, err := llmgateway.NewCatalog("variant-test", model.Price.Currency, []llmgateway.ModelConfig{model})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -592,6 +591,14 @@ func useThinkingModel(t *testing.T, f *fixture) {
 	if f.service, err = NewService(gateway, models, f.skills); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func useThinkingModel(t *testing.T, f *fixture) {
+	useModel(t, f, func(m *llmgateway.ModelConfig) { m.Thinking, m.Capability.ToolChoice = "enabled", false })
+}
+
+func useTextOnlyModel(t *testing.T, f *fixture) {
+	useModel(t, f, func(m *llmgateway.ModelConfig) { m.Capability.ImageInput = false })
 }
 
 // Reasoning outlives its run: the next run in the conversation hands every

@@ -69,11 +69,14 @@ func (s *Service) resolveReference(ctx context.Context, tx store.TxAccountScope,
 			message.Content += "\n" + quotedContentOpen + "\n" + *rev.Payload.Body + "\n" + quotedContentClose
 		}
 	case "image":
-		if !consentHas(consent, "image_preview") {
-			return nil, ErrEgressRequired
-		}
+		// Capability first: a model that cannot see images never asks for
+		// image egress, and saying "not authorised" would send the
+		// photographer looking for a permission that does not exist.
 		if !imageCapable || s.images == nil {
 			return nil, ErrModelCapability
+		}
+		if !consentHas(consent, "image_preview") {
+			return nil, ErrEgressRequired
 		}
 		message.Extra = map[string]any{imageRefsKey: id}
 	default:

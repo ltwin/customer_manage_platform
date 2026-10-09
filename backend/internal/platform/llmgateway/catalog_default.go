@@ -3,7 +3,7 @@ package llmgateway
 // DefaultCatalogVersion changes whenever a deployment entry, capability or
 // price recipe below changes. It is persisted with every request, so an edit
 // never rewrites an in-flight call.
-const DefaultCatalogVersion = "deepseek-2026-09-11"
+const DefaultCatalogVersion = "deepseek-2026-10-09"
 
 // priceSourceDeepSeek records where the rates came from and when, because a
 // price recipe without a provenance cannot be reconciled against an invoice.
@@ -51,10 +51,12 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 		// The retired aliases still answer, and are billed at the Flash price.
 		AcceptedModelIDs: []string{"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"},
 		Capability: Capability{
-			// Vision is published as supported, but no measured byte-to-token
-			// mapping exists yet, so a hard budget could not bound an image
-			// request. It stays off until that mapping is verified.
-			ImageInput:      false,
+			// Measured 2026-10-09 against the real API (non-thinking and
+			// thinking): an image costs about 184 prompt tokens at 64–400 px
+			// and levels off near 994 from 1600 px up (3000 px costs the same),
+			// so the 4096-token bound per image in EstimateInputTokens holds
+			// with room to spare.
+			ImageInput:      true,
 			ToolCalling:     true,
 			ToolChoice:      true,
 			JSONObject:      true,
@@ -111,7 +113,10 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 		Thinking:         "disabled",
 		AcceptedModelIDs: []string{"deepseek-v4-pro"},
 		Capability: Capability{
-			// The published matrix lists vision as unsupported for V4 Pro.
+			// The published matrix lists vision as unsupported for V4 Pro, and the
+			// API proves it the dangerous way: a 1600 px image added 5 prompt
+			// tokens and the answer still described a picture it never saw
+			// (measured 2026-10-09). It must never receive one.
 			ImageInput:      false,
 			ToolCalling:     true,
 			ToolChoice:      true,

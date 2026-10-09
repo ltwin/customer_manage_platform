@@ -70,6 +70,14 @@ owner 让助手读某个节点，`read_asset` 返回 `creative_tool_input_invali
 - 读到的画布图片在后续轮次按同样规则绑定；工具说明和系统提示同步改为「read_asset 读取画布节点或引用素材」。
 - 证据：`TestAssistantReadsItsOwnCanvas`（去掉画布判断后失败）、`TestContextToolsAndPairedHistoryReachProvider`。
 
+## 走查修复：助手看不了画布图片（2026-10-09）
+
+助手读画布上的图片节点时返回「不在当前画布上」。实际原因是目录里 DeepSeek Flash 关着看图能力，后端又先查授权、后查能力，报错张冠李戴。
+
+- 报错：读图先判断模型能力，不能看图时如实说明；「不在画布上」和「未授权这类内容」分开。
+- 开启 DeepSeek Flash（含思考模式）的看图能力。真实接口实测：64–400 px 的图约 184 个输入 token，1600 px 起封顶约 994（3000 px 相同），在每图 4096 的预算上限之内。V4 Pro 保持关闭：发 1600 px 图只多 5 个 token，却照样描述了一张没看到的图。
+- 证据：`TestLiveDeepSeekFlashSeesAnImage`（真实接口，左红右蓝图被正确描述，输入 211 token）、`TestCanvasImageReachesAVisionModel`、`TestReadingAnImageWithoutVisionSaysSo`（换回旧的检查顺序后失败）。
+
 ## 已知取舍
 
 - 打开对话时，每个 run 各读一次快照，没有做懒加载。对话很长时会有一批并发请求。

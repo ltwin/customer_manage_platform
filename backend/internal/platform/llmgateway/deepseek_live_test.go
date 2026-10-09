@@ -1,8 +1,16 @@
 package llmgateway_test
 
 import (
+	"bytes"
+	"compress/zlib"
+	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"hash/crc32"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -271,4 +279,62 @@ func TestLiveDeepSeekThinkingToolLoop(t *testing.T) {
 		t.Fatalf("the second turn carried no answer: %+v", second)
 	}
 	t.Logf("reasoning %d bytes; answer: %s", len(first.Reasoning), second.Text)
+}
+
+// TestLiveDeepSeekFlashSeesAnImage is the evidence behind enabling image input
+// on DeepSeek Flash: the image is billed within the per-image bound and the
+// answer is about its pixels.
+func TestLiveDeepSeekFlashSeesAnImage(t *testing.T) {
+	gateway, scope, _ := liveFixture(t)
+	raw := liveGradientPNG(400, 400)
+	sum := sha256.Sum256(raw)
+	chat := liveChat(200, "这张图左半边和右半边分别是什么颜色？一句话。")
+	chat.Messages[1].Blocks = append(chat.Messages[1].Blocks, llmgateway.Block{Kind: llmgateway.BlockImageInput, Image: &llmgateway.ImageInput{
+		RevisionID: "ccrv_live", Digest: "sha256-" + hex.EncodeToString(sum[:]), MIME: "image/png", ByteSize: int64(len(raw)),
+		Open: func(context.Context) (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(raw)), nil },
+	}})
+	_, result := liveTurn(t, gateway, scope, "live-vision", chat, true)
+	if result.Usage.InputTotalTokens == nil || *result.Usage.InputTotalTokens < 100 || *result.Usage.InputTotalTokens > 4096+200 {
+		t.Fatalf("image input tokens outside the measured range: %+v", result.Usage)
+	}
+	if !strings.Contains(result.Text, "红") || !strings.Contains(result.Text, "蓝") {
+		t.Fatalf("the answer does not describe the image: %s", result.Text)
+	}
+	t.Logf("input tokens %d; answer: %s", *result.Usage.InputTotalTokens, result.Text)
+}
+
+// liveGradientPNG is a left-red, right-blue image built without image libraries.
+func liveGradientPNG(w, h int) []byte {
+	row := make([]byte, 1+w*3)
+	for x := 0; x < w; x++ {
+		if x < w/2 {
+			row[1+x*3] = 220
+		} else {
+			row[1+x*3+2] = 220
+		}
+	}
+	var pixels bytes.Buffer
+	for y := 0; y < h; y++ {
+		pixels.Write(row)
+	}
+	var compressed bytes.Buffer
+	z := zlib.NewWriter(&compressed)
+	_, _ = z.Write(pixels.Bytes())
+	_ = z.Close()
+	var out bytes.Buffer
+	out.WriteString("\x89PNG\r\n\x1a\n")
+	chunk := func(kind string, data []byte) {
+		_ = binary.Write(&out, binary.BigEndian, uint32(len(data)))
+		out.WriteString(kind)
+		out.Write(data)
+		_ = binary.Write(&out, binary.BigEndian, crc32.ChecksumIEEE(append([]byte(kind), data...)))
+	}
+	header := make([]byte, 13)
+	binary.BigEndian.PutUint32(header[0:], uint32(w))
+	binary.BigEndian.PutUint32(header[4:], uint32(h))
+	header[8], header[9] = 8, 2
+	chunk("IHDR", header)
+	chunk("IDAT", compressed.Bytes())
+	chunk("IEND", nil)
+	return out.Bytes()
 }
