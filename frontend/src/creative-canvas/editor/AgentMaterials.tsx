@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import * as api from './api.ts'
-import { contentText } from './content.ts'
-import { MediaFigure } from './MediaView.tsx'
 import type { AgentMaterial } from './agentReferences.ts'
 
 export function AgentMaterialPicker({
@@ -118,40 +116,5 @@ export function AgentMaterialPicker({
         </button>
       )}
     </dialog>
-  )
-}
-export function AgentReference({ id }: { id: string }) {
-  const [content, setContent] = useState<api.Content>()
-  const [error, setError] = useState(false)
-  useEffect(() => {
-    const abort = new AbortController()
-    void api
-      .read<api.Content>(
-        `/content-revisions/${encodeURIComponent(id)}`,
-        abort.signal,
-      )
-      .then(setContent)
-      .catch(() => {
-        if (!abort.signal.aborted) setError(true)
-      })
-    return () => abort.abort()
-  }, [id])
-  return (
-    <details className="cc-agent-reference">
-      <summary>
-        {error
-          ? '素材暂不可读'
-          : content?.kind === 'image'
-            ? '引用图片'
-            : '引用素材'}{' '}
-        · {id.slice(-8)}
-      </summary>
-      <code>{`<<<${id}>>>`}</code>
-      {content?.kind === 'image' ? (
-        <MediaFigure content={content} kind="image" title="引用图片" />
-      ) : (
-        <p>{content ? contentText(content.payload) : '正在读取…'}</p>
-      )}
-    </details>
   )
 }

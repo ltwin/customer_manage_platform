@@ -18,8 +18,27 @@ createRoot(document.getElementById('root')).render(React.createElement(AgentPane
 </script></body></html>`,
 )
 const browser = await chromium.launch({ headless: true })
-const url = `${process.env.CREATIVE_AGENT_URL || 'http://127.0.0.1:5179'}/.agent-command-qa.html`
+const url = `${process.env.CREATIVE_AGENT_URL || 'http://localhost:5179'}/.agent-command-qa.html`
 const key = 'creative-agent-pending:qa-account:canvas'
+const finishedRun = {
+  id: 'run',
+  conversation_id: 'conversation',
+  canvas_id: 'canvas',
+  trigger_message_id: 'message',
+  egress_consent_id: 'consent',
+  model_key: 'model',
+  state: 'succeeded',
+  settlement_state: 'settled',
+  limits_version: '1',
+  revision: '1',
+  last_event_seq: '0',
+  pruned_through_seq: '0',
+  deadline_at: '2026-10-09T01:00:00Z',
+  created_at: '2026-10-09T00:00:00Z',
+  finished_at: '2026-10-09T00:00:10Z',
+  blocks: [],
+  snapshot_seq: '0',
+}
 const delay = () => {
   let release
   const promise = new Promise((resolve) => {
@@ -58,6 +77,7 @@ try {
           })
         }
       }
+      if (path.endsWith('/agent-runs/run')) return json(finishedRun)
       if (path.endsWith('/catalog'))
         return json({
           limits: { attachments: 10, image_preview_count: 8 },
@@ -95,9 +115,7 @@ try {
     assert.deepEqual(metrics,{width:380,background:'rgb(27, 27, 29)',send:[30,30,'50%']})
     if(order==='old-first') await page.screenshot({path:'/tmp/creative-v6-agent-desktop.png'})
     await page.getByLabel('Skill', { exact: true }).selectOption('version')
-    await page.getByLabel('创作问题').press('Enter')
-    assert.equal(grants, 0, 'Enter cannot bypass the external-send consent')
-    await page.getByRole('checkbox').check()
+    assert.equal(await page.getByRole('checkbox').count(), 0, 'sending needs no consent tick')
     await page.getByLabel('创作问题').press('Enter')
     await page.waitForFunction(
       (k) => JSON.parse(sessionStorage.getItem(k)).nextOperation,
@@ -105,7 +123,7 @@ try {
     )
     await page.getByRole('button', { name: '收起创作助手' }).click()
     await page.getByRole('button', { name: '打开创作助手' }).click()
-    await page.getByRole('button', { name: '确认原操作' }).click()
+    await page.getByRole('button', { name: '重新发送' }).click()
     for (let i = 0; grants < 2 && i < 500; i++)
       await new Promise((resolve) => setTimeout(resolve, 10))
     assert.equal(grants, 2)
@@ -180,12 +198,11 @@ try {
   await page.getByLabel('当前对话').selectOption('other')
   await page.getByLabel('创作问题').fill('刷新后仍然保留的原文')
   await page.getByLabel('Skill', { exact: true }).selectOption('version')
-  await page.getByRole('checkbox').check()
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await page.getByRole('alert').waitFor()
   await page.reload()
   await page.getByRole('button', { name: '打开创作助手' }).click()
-  await page.getByRole('button', { name: '确认原操作' }).click()
+  await page.getByRole('button', { name: '重新发送' }).click()
   await page.waitForFunction((k) => sessionStorage.getItem(k) === null, key)
   assert.equal(
     await page.getByLabel('创作问题').textContent(),
@@ -201,7 +218,6 @@ try {
     await page.getByLabel('Skill', { exact: true }).inputValue(),
     'version',
   )
-  assert.equal(await page.getByRole('checkbox').isChecked(), false)
   assert.equal(runPosts, 2)
   await page.setViewportSize({width:390,height:844})
   await page.screenshot({path:'/tmp/creative-v6-agent-mobile.png'})
@@ -227,6 +243,7 @@ try {
         return json({id:'run',trigger_message_id:'message',conversation_id:'conversation',state:'succeeded',settlement_state:'settled'})
       }
     }
+    if(path.endsWith('/agent-runs/run')) return json(finishedRun)
     if(path.endsWith('/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'text',vendor_key:'test',display_name:'文字模型',available:true,capability:{image_input:false}},{model_key:'vision',vendor_key:'test',display_name:'视觉模型',available:true,capability:{image_input:true}}]})
     if(path.endsWith('/conversations')) return json({items:[{id:'conversation',title:'素材讨论'}]})
     if(path.endsWith('/assets')) return json({items:[{id:'asset',title:'拍摄方案',content_revision_id:'ccrv_text',content:{id:'ccrv_text',kind:'text',payload:{body:'方案'},truncated:false}}],next_cursor:''})
@@ -237,21 +254,18 @@ try {
   await materialPage.getByLabel('创作问题').fill('参考 @')
   await materialPage.getByRole('option',{name:/主图/}).click()
   await materialPage.getByText('当前模型不支持图片理解，请切换视觉模型或移除图片引用。').waitFor()
-  await materialPage.getByRole('checkbox').check()
   assert(await materialPage.getByRole('button',{name:'发送',exact:true}).isDisabled())
   await materialPage.getByLabel('模型',{exact:true}).selectOption('vision')
-  assert(!await materialPage.getByRole('checkbox').isChecked(), 'model change resets consent')
   await materialPage.getByRole('button',{name:'引用素材',exact:true}).click()
   await materialPage.getByRole('dialog',{name:'引用素材库'}).getByRole('button',{name:/拍摄方案/}).click()
   assert.equal(await materialPage.locator('.cc-agent-box [data-ref]').count(),2)
-  await materialPage.getByRole('checkbox').check()
   await materialPage.getByRole('button',{name:'发送',exact:true}).click()
   await materialPage.getByRole('alert').waitFor()
   await materialPage.reload()
   await materialPage.getByRole('button',{name:'打开创作助手'}).click()
   await materialPage.locator('.cc-agent-box [data-ref]').nth(1).waitFor()
   assert.equal(await materialPage.locator('.cc-agent-box [data-ref]').count(),2,'reference chips survive refresh')
-  await materialPage.getByRole('button',{name:'确认原操作'}).click()
+  await materialPage.getByRole('button',{name:'重新发送'}).click()
   await materialPage.waitForFunction((k)=>sessionStorage.getItem(k)===null,key)
   assert.equal(submissions.length,2)
   assert.deepEqual(submissions[0],submissions[1],'retry keeps original reference payload')

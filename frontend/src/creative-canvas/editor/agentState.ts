@@ -21,10 +21,6 @@ export function hasUnsettledCost(run: AgentRun): boolean {
     run.settlement_state === 'unknown' || run.settlement_state === 'pending'
   )
 }
-export function pollDelay(hidden: boolean): number {
-  return hidden ? 15000 : 2000
-}
-
 // Persist the exact command before sending it. An uncertain response may only
 // retry this identity, including after refresh, never create a second run.
 export type PendingAgentAction = {
@@ -243,14 +239,4 @@ export function runFailure(code?: string): string {
     creative_tool_limit: '已达到本次工具调用上限',
   }
   return messages[code] ?? '本次执行未能完成，已有结果已保留'
-}
-export const stepLabels: Record<
-  components['schemas']['CreativeAgentStepSummary']['state'],
-  string
-> = {
-  prepared: '等待执行',
-  dispatched: '已发送',
-  succeeded: '完成',
-  failed: '未完成',
-  unknown: '待核实',
 }

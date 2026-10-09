@@ -86,14 +86,14 @@
 | ID / 需求 | 优先级 | 类型 | 状态 | 前置依赖 | 产物 / 阻塞说明 |
 |---|---|---|---|---|---|
 | [V6-028 · 助手选区跟随与冻结节点上下文](items/V6-028.md) | P0 | 交付 | 待设计 | — | — |
-| [V6-029 · 首次外发授权与覆盖范围复用](items/V6-029.md) | P0 | 交付 | 待设计 | — | — |
+| [V6-029 · 首次外发授权与覆盖范围复用](items/V6-029.md) | P0 | 交付 | 待设计 | — | 每轮勾选框已随 V6-030.2 删除（owner 2026-10-09），发送即按本条消息的范围创建授权；首次说明与范围复用仍待设计 |
 | [V6-043 · 聊天独立上传附件](items/V6-043.md) | P1 | 交付 | 待设计 | V6-029 | — |
 
 ### 助手交互
 
 | ID / 需求 | 优先级 | 类型 | 状态 | 前置依赖 | 产物 / 阻塞说明 |
 |---|---|---|---|---|---|
-| [V6-030 · 助手有序回复块与增量过程展示](items/V6-030.md) | P0；计划/详情/缩略图 P1 | 交付 | 实现中 | — | [design](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-design.md)（推送底座，兼冻结 031/032/033/038/040 共用协议；D1–D4 已拍板并回写 PRD §11.3 #11–12）；拆 030.1 后端 / 030.2 前端；030.1 已实现待提交：[实现记录](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-030.1-implementation.md)；030.2 未开始 |
+| [V6-030 · 助手有序回复块与增量过程展示](items/V6-030.md) | P0；计划/详情/缩略图 P1 | 交付 | 待验收 | — | [design](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-design.md)（推送底座，兼冻结 031/032/033/038/040 共用协议）· [030.1 实现记录](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-030.1-implementation.md) · [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md)；AC-01–04 有 mock e2e 与后端 DB 测试证据，接真实模型的走查未做；缩略图真实链路随 V6-034/036 |
 | [V6-031 · 助手结构化提问与回答恢复](items/V6-031.md) | P0；数字键 P1 | 交付 | 待设计 | V6-030 | — |
 | [V6-032 · 人工内容改写提案与 diff 应用](items/V6-032.md) | P0 | 交付 | 待设计 | V6-030 | — |
 | [V6-033 · 助手生成确认与执行模式](items/V6-033.md) | P0 | 交付 | 待设计 | V6-022、V6-030、V6-032 | — |

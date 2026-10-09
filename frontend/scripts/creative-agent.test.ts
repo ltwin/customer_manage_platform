@@ -7,7 +7,6 @@ import {
   pendingAgentAction,
   isActiveRun,
   hasUnsettledCost,
-  pollDelay,
 } from '../src/creative-canvas/editor/agentState.ts'
 import type { AgentRun } from '../src/creative-canvas/editor/agentState.ts'
 
@@ -80,7 +79,6 @@ test('terminal execution and unresolved money remain separate', () => {
   assert.equal(isActiveRun(run), false)
   assert.equal(hasUnsettledCost(run), true)
   assert.equal(isActiveRun({ ...run, state: 'reconciling' }), true)
-  assert.ok(pollDelay(true) > pollDelay(false))
 })
 
 test('consent confirmation reuses the successor identity and stale owners cannot erase it', () => {

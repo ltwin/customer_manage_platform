@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { MessageCircle, X, Plus, ArrowUp, ChevronDown } from 'lucide-react'
 import type { components } from '../../api/schema'
 import { ApiError } from '../../api/transport.ts'
@@ -9,13 +10,8 @@ import {
   replacePendingAction,
   ownsPendingAction,
   type AgentDraft,
-  hasUnsettledCost,
   isActiveRun,
   pendingAgentAction,
-  pollDelay,
-  runLabels,
-  runFailure,
-  stepLabels,
   type AgentRun,
   type PendingAgentAction,
 } from './agentState.ts'
@@ -26,14 +22,23 @@ import {
   referencedMaterials,
   type AgentMaterial,
 } from './agentReferences.ts'
-import { AgentMaterialPicker, AgentReference } from './AgentMaterials.tsx'
+import { AgentMaterialPicker } from './AgentMaterials.tsx'
+import { Markdown, RunTurn } from './AgentBlocks.tsx'
+import { currentStep } from './agentBlocks.ts'
+import {
+  AgentTurnContext,
+  followRun,
+  forgetRuns,
+  useAgentRuns,
+  type TurnContext,
+} from './agentRuns.ts'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
 type Conversation = components['schemas']['CreativeAgentConversation']
 type MessagePage = components['schemas']['CreativeAgentMessagePage']
 type Consent = components['schemas']['CreativeEgressConsent']
-type Step = components['schemas']['CreativeAgentStepSummary']
+type Message = MessagePage['items'][number]
 type Reply = AgentRun | Conversation | Consent
 
 export default function AgentPanel({
@@ -46,12 +51,22 @@ export default function AgentPanel({
   canvas?: api.Canvas | null
 }) {
   const [open, setOpen] = useState(false)
+  // Runs are followed for as long as this canvas is open, panel or no panel.
+  useEffect(() => forgetRuns, [account, canvasID])
+  const state = useAgentRuns((store) => {
+    const runs = Object.values(store.runs)
+    if (runs.some((view) => view && isActiveRun(view.run))) return 'run'
+    return runs.some((view) => view?.run.state === 'waiting_input')
+      ? 'wait'
+      : undefined
+  })
   return (
     <>
       <button
         className="cc-agent-launch"
         onClick={() => setOpen(true)}
         aria-label="打开创作助手"
+        data-state={state}
       >
         <MessageCircle size={18} /> 创作助手
       </button>
@@ -86,7 +101,6 @@ function AgentConversation({
   const [conversation, setConversation] = useState('')
   const [messages, setMessages] = useState<MessagePage['items']>([])
   const [runs, setRuns] = useState<AgentRun[]>([])
-  const [steps, setSteps] = useState<Step[]>([])
   const [model, setModel] = useState('')
   const [skill, setSkill] = useState('')
   const [draft, setDraft] = useState('')
@@ -94,20 +108,24 @@ function AgentConversation({
   const [pickingMaterial, setPickingMaterial] = useState(false)
   const references = agentReferences(canvas, materials)
   const referenced = referencedMaterials(draft, references)
-  const [consented, setConsented] = useState(false)
-  const [includeHistoryMaterials, setIncludeHistoryMaterials] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [feedback, setFeedback] = useState('')
   const [storageBroken, setStorageBroken] = useState(false)
   const [pending, setPending] = useState<PendingAgentAction | null>(null)
   const [refresh, setRefresh] = useState(0)
   const pendingRef = useRef<PendingAgentAction | null>(null)
   const mounted = useRef(false)
   const performing = useRef(false)
-  const active = runs.find(isActiveRun)
-  const waiting = runs.find((run) => run.state === 'waiting_input')
-  const latest = active ?? waiting ?? runs[0]
+  const history = useRef<HTMLDivElement>(null)
+  const pinned = useRef(true)
+  // The list is read once; what a run is doing now comes from its stream.
+  const followed = useAgentRuns(
+    useShallow((store) => runs.map((run) => store.runs[run.id]?.run)),
+  )
+  const live = runs.map((run, index) => followed[index] ?? run)
+  const active = live.find(isActiveRun)
+  const waiting = live.find((run) => run.state === 'waiting_input')
+  const latest = active ?? waiting
   const historyIDs = [
     ...new Set(
       messages
@@ -123,7 +141,7 @@ function AgentConversation({
   ]
   const approvedIDs = [
     ...new Set([
-      ...(includeHistoryMaterials ? historyIDs : []),
+      ...historyIDs,
       ...referenced.map((item) => item.id),
     ]),
   ]
@@ -162,7 +180,6 @@ function AgentConversation({
     setSkill(value.skill)
     setMaterials(value.materials ?? [])
     setDraft(value.text)
-    setConsented(false)
   }
   useEffect(() => {
     mounted.current = true
@@ -211,48 +228,46 @@ function AgentConversation({
   useEffect(() => {
     if (!conversation) return
     const abort = new AbortController()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    async function poll() {
-      try {
-        const [page, history] = await Promise.all([
-          api.read<components['schemas']['CreativeAgentRunPage']>(
-            `/conversations/${conversation}/runs`,
-            abort.signal,
-          ),
-          api.read<MessagePage>(
-            `/conversations/${conversation}/messages`,
-            abort.signal,
-          ),
-        ])
+    void Promise.all([
+      api.read<components['schemas']['CreativeAgentRunPage']>(
+        `/conversations/${conversation}/runs`,
+        abort.signal,
+      ),
+      api.read<MessagePage>(
+        `/conversations/${conversation}/messages`,
+        abort.signal,
+      ),
+    ])
+      .then(([page, thread]) => {
         if (abort.signal.aborted) return
         setRuns(page.items)
-        setMessages(history.items)
-        const focus =
-          page.items.find(isActiveRun) ??
-          page.items.find((run) => run.state === 'waiting_input') ??
-          page.items[0]
-        if (focus) {
-          const detail = await api.read<
-            components['schemas']['CreativeAgentStepPage']
-          >(`/agent-runs/${focus.id}/steps`, abort.signal)
-          if (!abort.signal.aborted) setSteps(detail.items)
-        } else setSteps([])
-      } catch (e) {
-        if (abort.signal.aborted) return
-        setError(e instanceof Error ? e.message : '对话暂时无法更新')
-        if (e instanceof ApiError && [401, 403, 404].includes(e.status)) return
-      }
-      if (!abort.signal.aborted)
-        timer = setTimeout(() => {
-          void poll()
-        }, pollDelay(document.hidden))
-    }
-    void poll()
-    return () => {
-      abort.abort()
-      if (timer) clearTimeout(timer)
-    }
+        setMessages(thread.items)
+      })
+      .catch((e: unknown) => {
+        if (!abort.signal.aborted)
+          setError(e instanceof Error ? e.message : '对话暂时无法更新')
+      })
+    return () => abort.abort()
   }, [conversation, refresh])
+  useEffect(() => {
+    for (const run of runs) followRun(run.id)
+  }, [runs])
+  // A run that moved on (finished, started waiting) changes what the lists hold.
+  const moved = runs.some(
+    (run, index) => followed[index] && followed[index].state !== run.state,
+  )
+  useEffect(() => {
+    if (moved) setRefresh((value) => value + 1)
+  }, [moved])
+  // Follow the newest content unless the photographer has scrolled away.
+  useEffect(() => {
+    const stick = () => {
+      const log = history.current
+      if (log && pinned.current) log.scrollTop = log.scrollHeight
+    }
+    stick()
+    return useAgentRuns.subscribe(() => requestAnimationFrame(stick))
+  }, [messages])
 
   function savePending(
     expected: PendingAgentAction | null,
@@ -278,7 +293,6 @@ function AgentConversation({
     performing.current = true
     setBusy(true)
     setError('')
-    setFeedback('')
     let current = command
     try {
       if (!savePending(pendingRef.current, command)) return
@@ -306,12 +320,11 @@ function AgentConversation({
         setDraft('')
         setMaterials([])
         setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
+        pinned.current = true
       } else if ('title' in reply) {
         setConversation(reply.id)
-        setFeedback('对话已创建，可以开始输入问题。')
       }
       savePending(current, null)
-      setConsented(false)
       setRefresh((value) => value + 1)
     } catch (e) {
       if (!owns(current)) return
@@ -332,15 +345,25 @@ function AgentConversation({
       if (mounted.current) setBusy(false)
     }
   }
-  function sendDraft() {
-    if (!conversation || !draft.trim() || locked || active) return
-    const draftState = {
-      conversation,
-      model,
-      skill,
-      text: draft,
-      materials: referenced,
-    }
+  // The first message opens the conversation; nobody should have to create
+  // an empty one before they can type.
+  async function openConversation(): Promise<string> {
+    if (conversation) return conversation
+    const command = action(`/canvases/${canvasID}/conversations`, {
+      title: '创作对话',
+    })
+    const created = await api.send<Conversation>(
+      account,
+      command.path,
+      command.body,
+      command.operation,
+    )
+    setConversations((old) => [created, ...old])
+    setConversation(created.id)
+    return created.id
+  }
+  async function sendDraft() {
+    if (!draft.trim() || locked || active) return
     if (waiting) {
       void perform(
         action(
@@ -351,18 +374,12 @@ function AgentConversation({
             text: draft,
           },
           undefined,
-          draftState,
+          { conversation, model, skill, text: draft, materials: referenced },
         ),
       )
       return
     }
-    if (
-      !chosenModel?.available ||
-      !consented ||
-      unsupportedImage ||
-      referenceLimit
-    )
-      return
+    if (!chosenModel?.available || unsupportedImage || referenceLimit) return
     const selected = catalog?.skills.find(
       (item) => item.skill_version_id === skill,
     )
@@ -379,14 +396,22 @@ function AgentConversation({
         skill_id: selected.skill_id,
         skill_version_id: selected.skill_version_id,
       })
-    const nextRun: components['schemas']['CreativeAgentRunPayload'] = {
-      model_key: model,
-      egress_consent_id: '',
-      instruction: { schema_version: 1, instruction_segments: segments },
+    let target: string
+    setBusy(true)
+    try {
+      target = await openConversation()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '暂时无法开始对话')
+      return
+    } finally {
+      setBusy(false)
     }
+    if (!mounted.current) return
+    // Sending is the consent: the grant names exactly what this message uses,
+    // and the server checks every run against it.
     void perform(
       action(
-        `/conversations/${conversation}/egress-consents`,
+        `/conversations/${target}/egress-consents`,
         {
           vendor_key: chosenModel.vendor_key,
           purpose: 'creative_assistance',
@@ -398,11 +423,51 @@ function AgentConversation({
           ],
           selected_revision_ids: approvedIDs,
         },
-        nextRun,
-        draftState,
+        {
+          model_key: model,
+          egress_consent_id: '',
+          instruction: { schema_version: 1, instruction_segments: segments },
+        },
+        {
+          conversation: target,
+          model,
+          skill,
+          text: draft,
+          materials: referenced,
+        },
       ),
     )
   }
+  const turn = useMemo<TurnContext>(
+    () => ({
+      canvas,
+      retry: locked
+        ? undefined
+        : (runID, stepID) => {
+            const run = runs.find((item) => item.id === runID)
+            if (run)
+              void perform(
+                action(`/agent-runs/${runID}/retry`, {
+                  step_ids: [stepID],
+                  egress_consent_id: run.egress_consent_id,
+                }),
+              )
+          },
+    }),
+    // perform only reads refs and setters; it is stable in what it does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canvas, locked, runs],
+  )
+  const triggers = new Map(runs.map((run) => [run.trigger_message_id, run.id]))
+  const thread = [...messages].sort((a, b) =>
+    BigInt(a.ordinal) < BigInt(b.ordinal) ? -1 : 1,
+  )
+  const sendable =
+    !locked &&
+    !active &&
+    !!draft.trim() &&
+    (!!waiting ||
+      (!!chosenModel?.available && !unsupportedImage && !referenceLimit))
   return (
     <aside className="cc-agent-panel" aria-label="创作助手">
       <header>
@@ -428,9 +493,6 @@ function AgentConversation({
                 setConversation(event.target.value)
                 setMessages([])
                 setRuns([])
-                setSteps([])
-                setConsented(false)
-                setFeedback('')
                 closeThreadMenu()
               }}
             >
@@ -473,158 +535,78 @@ function AgentConversation({
           {error}
         </div>
       )}
-      <div className="cc-agent-feedback" role="status" aria-live="polite">
-        {busy
-          ? pending?.path.endsWith('/conversations')
-            ? '正在创建对话…'
-            : '正在提交…'
-          : !pending && feedback}
-      </div>
       {pending && !busy && (
         <div className="cc-agent-notice" role="status">
-          <span>上次提交的结果尚未确认。请确认原操作，避免重复提交。</span>
+          <span>上一条还没有确认送达。</span>
           <button
             onClick={() => {
               const saved = pendingRef.current
               if (saved) void perform(saved)
             }}
           >
-            确认原操作
+            重新发送
           </button>
         </div>
       )}
-      <div className="cc-agent-history" aria-label="对话消息">
-        {!messages.length && (
-          <p className="cc-agent-empty">
-            把你的想法写下来，从一个创作问题开始。
-            <br />
-            支持文字对话、素材引用与固定 Skill。输入 @ 引用画布中的文本或图片。
-          </p>
+      <div
+        className="cc-agent-history"
+        aria-label="对话消息"
+        role="log"
+        ref={history}
+        onScroll={(event) => {
+          const log = event.currentTarget
+          pinned.current =
+            log.scrollHeight - log.scrollTop - log.clientHeight < 48
+        }}
+      >
+        {!thread.length && (
+          <div className="cc-agent-empty">
+            <h3>想拍点什么？</h3>
+            <p>
+              把想法写下来，助手会读画布上的内容，陪你把方案想清楚。输入 @
+              引用画布里的文本或图片。
+            </p>
+          </div>
         )}
-        {[...messages]
-          .sort((a, b) => (BigInt(a.ordinal) < BigInt(b.ordinal) ? -1 : 1))
-          .map((message) => (
-            <article
-              className={`cc-agent-message role-${message.role}`}
-              key={message.id}
-            >
-              <small>
-                {message.role === 'assistant'
-                  ? '创作助手'
-                  : message.role === 'user'
-                    ? '我'
-                    : '运行记录'}
-              </small>
-              {message.body.tool_calls?.length ? (
-                <details>
-                  <summary>
-                    调用 {message.body.tool_calls.length} 个工具
-                  </summary>
-                  {message.body.tool_calls.map((call) => (
-                    <p key={call.id}>{call.name}</p>
-                  ))}
-                </details>
-              ) : null}
-              {message.body.blocks.map((block, index) =>
-                block.type === 'content_ref' && block.ref_id ? (
-                  <AgentReference key={index} id={block.ref_id} />
-                ) : message.role === 'tool' ? (
-                  <details key={index}>
-                    <summary>{message.body.tool_name || '工具结果'}</summary>
-                    <pre>{block.text}</pre>
-                  </details>
-                ) : (
-                  <p key={index}>
-                    {block.text ||
-                      block.skill?.display_name ||
-                      (block.type === 'reference' ? '引用内容' : '')}
-                  </p>
-                ),
-              )}
-            </article>
-          ))}
+        <AgentTurnContext.Provider value={turn}>
+          {thread.map((message) => {
+            const runID = triggers.get(message.id)
+            if (message.role === 'user')
+              return (
+                <div className="cc-agent-exchange" key={message.id}>
+                  <UserMessage message={message} references={references} />
+                  {runID && <RunTurn runID={runID} />}
+                </div>
+              )
+            // Runs from before blocks existed have only their messages.
+            return message.role === 'assistant' ? (
+              <LegacyAnswer key={message.id} message={message} />
+            ) : null
+          })}
+        </AgentTurnContext.Provider>
       </div>
-      {latest && (
-        <section className="cc-agent-status" aria-label="运行状态">
-          <strong>{runLabels[latest.state]}</strong>
-          <span>
-            {hasUnsettledCost(latest)
-              ? '费用待核实，取消不会抹去已发生的费用。'
-              : latest.settlement_state === 'settled'
-                ? '用量已结算'
-                : '尚未产生模型用量'}
-          </span>
-          {latest.error_code && (
-            <span>停止原因：{runFailure(latest.error_code)}</span>
-          )}
-          {steps.length > 0 && (
-            <details>
-              <summary>查看 {steps.length} 个步骤</summary>
-              <ol>
-                {steps.map((step) => (
-                  <li key={step.id}>
-                    {step.tool_key ||
-                      (step.kind === 'model' ? '模型回复' : '恢复检查')}{' '}
-                    · {stepLabels[step.state]}
-                    {latest.finished_at &&
-                      step.state === 'failed' &&
-                      step.tool_key === 'read_skill_resource' && (
-                        <button
-                          disabled={locked}
-                          onClick={() => {
-                            void perform(
-                              action(`/agent-runs/${latest.id}/retry`, {
-                                step_ids: [step.id],
-                                egress_consent_id: latest.egress_consent_id,
-                              }),
-                            )
-                          }}
-                        >
-                          恢复此读取
-                        </button>
-                      )}
-                  </li>
-                ))}
-              </ol>
-            </details>
-          )}
-          {!latest.finished_at && (
-            <div className="cc-agent-controls">
-              <button
-                disabled={locked}
-                onClick={() => {
-                  void perform(action(`/agent-runs/${latest.id}/cancel`, {}))
-                }}
-              >
-                取消运行
-              </button>
-              {latest.state === 'reconciling' && (
-                <button
-                  disabled={locked}
-                  onClick={() => {
-                    void perform(
-                      action(
-                        `/agent-runs/${latest.id}/close-reconciliation`,
-                        {},
-                      ),
-                    )
-                  }}
-                >
-                  结束等待，释放运行占用
-                </button>
-              )}
-            </div>
-          )}
-        </section>
-      )}
       <form
         className="cc-agent-compose"
         noValidate
         onSubmit={(event) => {
           event.preventDefault()
-          sendDraft()
+          void sendDraft()
         }}
       >
+        {latest && (
+          <RunStatus
+            run={latest}
+            disabled={locked}
+            onStop={() => {
+              void perform(action(`/agent-runs/${latest.id}/cancel`, {}))
+            }}
+            onRelease={() => {
+              void perform(
+                action(`/agent-runs/${latest.id}/close-reconciliation`, {}),
+              )
+            }}
+          />
+        )}
         <div className="cc-agent-box">
           <label className="sr-only" htmlFor="creative-agent-draft">
             {waiting ? '补充内容' : '创作问题'}
@@ -646,9 +628,7 @@ function AgentConversation({
                   event.currentTarget.form?.requestSubmit()
                 }
               }}
-              placeholder={
-                waiting ? '补充原任务所需的信息…' : '想讨论什么创作方向？'
-              }
+              placeholder="补充原任务所需的信息…"
               rows={3}
             />
           ) : (
@@ -663,21 +643,10 @@ function AgentConversation({
               onChange={(text) => {
                 setMaterials(referencedMaterials(text, references))
                 setDraft(text)
-                setConsented(false)
               }}
-              onGenerate={sendDraft}
+              onGenerate={() => void sendDraft()}
               onLibrary={() => setPickingMaterial(true)}
             />
-          )}
-          {!waiting && (
-            <button
-              className="cc-agent-add-material"
-              type="button"
-              disabled={locked || !!active}
-              onClick={() => setPickingMaterial(true)}
-            >
-              <Plus size={14} /> 引用素材
-            </button>
           )}
           {!waiting && unsupportedImage && (
             <p className="cc-agent-hint" role="status">
@@ -692,14 +661,21 @@ function AgentConversation({
           <div className="cc-agent-composer-foot">
             {!waiting && (
               <div className="cc-agent-options">
+                <button
+                  className="cc-agent-attach"
+                  type="button"
+                  aria-label="引用素材"
+                  title="引用素材库里的文本或图片"
+                  disabled={locked || !!active}
+                  onClick={() => setPickingMaterial(true)}
+                >
+                  <Plus size={15} />
+                </button>
                 <select
                   aria-label="模型"
                   value={model}
                   disabled={locked || !!active}
-                  onChange={(event) => {
-                    setModel(event.target.value)
-                    setConsented(false)
-                  }}
+                  onChange={(event) => setModel(event.target.value)}
                 >
                   {catalog?.models.map((item) => (
                     <option
@@ -737,51 +713,12 @@ function AgentConversation({
               aria-label={waiting ? '补充并继续' : '发送'}
               title={waiting ? '补充并继续 · Enter' : '发送 · Enter'}
               type="submit"
-              disabled={
-                locked ||
-                !!active ||
-                !conversation ||
-                !draft.trim() ||
-                (!waiting &&
-                  (!consented ||
-                    !chosenModel?.available ||
-                    unsupportedImage ||
-                    referenceLimit))
-              }
+              disabled={!sendable}
             >
               <ArrowUp size={17} />
             </button>
           </div>
         </div>
-        {!waiting && historyIDs.length > 0 && (
-          <label className="cc-agent-consent">
-            <input
-              type="checkbox"
-              checked={includeHistoryMaterials}
-              disabled={locked || !!active}
-              onChange={(event) => {
-                setIncludeHistoryMaterials(event.target.checked)
-                setConsented(false)
-              }}
-            />
-            带入最近对话引用的 {historyIDs.length}{' '}
-            份素材；取消后保留文字与引用标识。
-          </label>
-        )}
-        {!waiting && (
-          <label className="cc-agent-consent">
-            <input
-              type="checkbox"
-              checked={consented}
-              disabled={locked || !!active}
-              onChange={(event) => setConsented(event.target.checked)}
-            />
-            同意将会话文字与工具记录、画布概览、本次与最近对话引用的{' '}
-            {approvedIDs.length} 份素材，以及选定 Skill 指令和资源发送给{' '}
-            {chosenModel?.vendor_key || '所选模型供应商'}
-            ，用于创作协助。图片仅发送给支持视觉输入的模型。
-          </label>
-        )}
       </form>
       {pickingMaterial && (
         <AgentMaterialPicker
@@ -795,11 +732,82 @@ function AgentConversation({
               (old) =>
                 `${old}${old && !old.endsWith(' ') ? ' ' : ''}@[${item.id}] `,
             )
-            setConsented(false)
             setPickingMaterial(false)
           }}
         />
       )}
     </aside>
+  )
+}
+
+// What the photographer sent: their words, with what they referenced as chips.
+function UserMessage({
+  message,
+  references,
+}: {
+  message: Message
+  references: { revisionID?: string | null; title: string }[]
+}) {
+  return (
+    <div className="cc-agent-user">
+      {message.body.blocks.map((block, index) =>
+        block.type === 'text' ? (
+          <span key={index}>{block.text}</span>
+        ) : (
+          <span className="cc-agent-chip" key={index}>
+            {block.skill?.display_name ??
+              references.find((item) => item.revisionID === block.ref_id)
+                ?.title ??
+              '引用素材'}
+          </span>
+        ),
+      )}
+    </div>
+  )
+}
+
+function LegacyAnswer({ message }: { message: Message }) {
+  const hasBlocks = useAgentRuns(
+    (store) => !!store.runs[message.run_id ?? '']?.blocks.length,
+  )
+  const words = message.body.blocks
+    .map((block) => (block.type === 'text' ? (block.text ?? '') : ''))
+    .join('')
+  if (hasBlocks || !words) return null
+  return <Markdown source={words} />
+}
+
+// The row above the input while a run is going: what it is doing, and stop.
+function RunStatus({
+  run,
+  disabled,
+  onStop,
+  onRelease,
+}: {
+  run: AgentRun
+  disabled: boolean
+  onStop: () => void
+  onRelease: () => void
+}) {
+  const step = useAgentRuns((store) => {
+    const view = store.runs[run.id]
+    return view ? currentStep(view) : ''
+  })
+  const waiting = run.state === 'waiting_input'
+  return (
+    <div className="cc-agent-status" role="status" aria-label="运行状态">
+      <span className={waiting ? 'cc-agent-dot is-wait' : 'cc-agent-dot'} />
+      <span className={`cc-agent-status-label${waiting ? '' : ' cc-agent-shimmer'}`}>
+        {waiting ? '等你补充后继续' : step || '正在处理'}
+      </span>
+      {run.state === 'reconciling' && (
+        <button type="button" disabled={disabled} onClick={onRelease}>
+          结束等待
+        </button>
+      )}
+      <button type="button" disabled={disabled} onClick={onStop}>
+        停止
+      </button>
+    </div>
   )
 }

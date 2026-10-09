@@ -22,7 +22,9 @@ export interface WatchStreamOptions {
   connect: (cursor: string | undefined, signal: AbortSignal) => Promise<Response>
   signal: AbortSignal
   cursor?: () => string | undefined
-  onEvent: (event: StreamEvent) => void
+  // Returning 'snapshot' means the event cannot be merged into what the caller
+  // holds; the stream is dropped and onSnapshotRequired runs before resuming.
+  onEvent: (event: StreamEvent) => void | 'snapshot'
   // The cursor is outside what the server still holds (409 on connect, or
   // control.snapshot_required mid-stream). Re-read the snapshot; the watch
   // reconnects afterwards from the cursor that snapshot set.
@@ -130,7 +132,7 @@ export async function watchStream(options: WatchStreamOptions): Promise<void> {
         if (event.event === 'control.snapshot_required') throw new SnapshotRequired()
         if (event.event === 'unavailable') throw new StreamUnavailable()
         attempt = 0
-        options.onEvent(event)
+        if (options.onEvent(event) === 'snapshot') throw new SnapshotRequired()
       })
     } catch (error) {
       if (error instanceof SnapshotRequired) {

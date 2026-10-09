@@ -171,12 +171,12 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | AL-66 | P1 | 最爱 | [V6-019](items/V6-019.md) | — |  |  |
 | AL-67 | P0 | 上传到资产库 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
 | AL-68 | P1 | 整理模式（分组树拖拽、批量归类、检查器）与回收站 | [V6-020](items/V6-020.md) | [V6-054](items/V6-054.md) | 整理模式范围见 V6-054 与 D-02 |  |
-| AS-01 | P0 | 思考块按 §7.1 展示 | [V6-030](items/V6-030.md) | — |  |  |
-| AS-02 | P1 | 计划块按 §7.1 展示，步骤状态随执行实时更新 | [V6-030](items/V6-030.md) | — |  |  |
-| AS-03 | P0 | 工具调用块按 §7.1 展示 | [V6-030](items/V6-030.md) | [V6-034](items/V6-034.md) |  |  |
-| AS-04 | P1 | 工具详情 | [V6-030](items/V6-030.md) | — |  |  |
-| AS-05 | P1 | 生成结果缩略图挂在对应的工具行下面 | [V6-030](items/V6-030.md) | [V6-039](items/V6-039.md) | V6-030 主责缩略图展示，V6-039 主责点击定位 |  |
-| AS-06 | P0 | 一轮结束后，过程块折叠为一行「已处理 N 秒 · M 次操作」 | [V6-030](items/V6-030.md) | — |  |  |
+| AS-01 | P0 | 思考块按 §7.1 展示 | [V6-030](items/V6-030.md) | — |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
+| AS-02 | P1 | 计划块按 §7.1 展示，步骤状态随执行实时更新 | [V6-030](items/V6-030.md) | — |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
+| AS-03 | P0 | 工具调用块按 §7.1 展示 | [V6-030](items/V6-030.md) | [V6-034](items/V6-034.md) |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
+| AS-04 | P1 | 工具详情 | [V6-030](items/V6-030.md) | — |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
+| AS-05 | P1 | 生成结果缩略图挂在对应的工具行下面 | [V6-030](items/V6-030.md) | [V6-039](items/V6-039.md) | V6-030 主责缩略图展示，V6-039 主责点击定位 | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
+| AS-06 | P0 | 一轮结束后，过程块折叠为一行「已处理 N 秒 · M 次操作」 | [V6-030](items/V6-030.md) | — |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
 | AS-07 | P1 | 每轮回复末尾有操作区：复制、重新回答；最后一轮额外显示「后续建议」c… | [V6-042](items/V6-042.md) | — |  |  |
 | AS-10 | P0 | 对话中提到画布节点的地方统一使用节点 chip | [V6-039](items/V6-039.md) | — |  |  |
 | AS-11 | P0 | 悬停联动 | [V6-039](items/V6-039.md) | — |  |  |

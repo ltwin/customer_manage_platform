@@ -74,3 +74,16 @@ export function connectCanvasEvents(id: string, signal: AbortSignal): Promise<Re
     headers: { Accept: 'text/event-stream' },
   })
 }
+
+// after is the last seq already held; the server replays what follows it.
+export function connectRunEvents(
+  id: string,
+  after: string | undefined,
+  signal: AbortSignal,
+): Promise<Response> {
+  const query = after ? `?after_seq=${encodeURIComponent(after)}` : ''
+  return authorizedFetch(
+    `/api/v1/creative/agent-runs/${encodeURIComponent(id)}/events${query}`,
+    { signal, cache: 'no-store', headers: { Accept: 'text/event-stream' } },
+  )
+}

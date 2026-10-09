@@ -2,13 +2,13 @@
 doc_type: feature-implementation-note
 feature: 2026-10-08-agent-stream-blocks
 requirement: V6-030.1
-status: implemented-uncommitted
+status: committed
 date: 2026-10-09
 ---
 
 # V6-030.1 后端推送底座：实现记录
 
-对应 design §6 的 030.1 子项。代码未提交，等 owner 过目。030.1 不单独勾选 AC：AC-01–04 都需要 030.2 的前端证据。
+对应 design §6 的 030.1 子项，已提交（`bdd50bc`）。030.1 不单独勾选 AC：AC-01–04 的证据见[验证记录](agent-stream-blocks-verification.md)。
 
 ## 落地内容
 
