@@ -186,3 +186,40 @@ func TestEinoAdapterUsesCallTimeToolsWithoutChangingSession(t *testing.T) {
 		t.Fatalf("model override: %v", err)
 	}
 }
+
+// The framework keeps a thinking model's reasoning on the assistant message,
+// and a replay of the same turn returns it too: the next turn can only hand
+// back what both paths preserve.
+func TestEinoAdapterCarriesReasoningBothWays(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	result := okResult()
+	result.Reasoning = "先看画布"
+	f.provider.result = result
+	var sent []llmgateway.Message
+	f.provider.observe = func(r llmgateway.ProviderRequest) { sent = r.Chat.Messages }
+	session := f.session(f.a, "run-reasoning")
+	session.TurnKey = func(context.Context, llmgateway.ChatRequest) (string, error) { return "run-reasoning:turn", nil }
+	adapter, err := f.gateway.NewEinoModel(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlier := &schema.Message{Role: schema.Assistant, Content: "好", ReasoningContent: "上一轮的思考"}
+	input := []*schema.Message{schema.UserMessage("你好"), earlier, schema.UserMessage("继续")}
+	message, err := adapter.Generate(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.ReasoningContent != "先看画布" {
+		t.Fatalf("reasoning %q", message.ReasoningContent)
+	}
+	if len(sent) != 3 || sent[1].Reasoning != "上一轮的思考" {
+		t.Fatalf("sent %+v", sent)
+	}
+	replayed, err := adapter.Generate(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.provider.calls != 1 || replayed.ReasoningContent != "先看画布" {
+		t.Fatalf("replay called the provider %d times, reasoning %q", f.provider.calls, replayed.ReasoningContent)
+	}
+}

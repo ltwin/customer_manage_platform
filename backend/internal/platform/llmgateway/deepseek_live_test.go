@@ -235,3 +235,40 @@ func TestLiveDeepSeekProducesValidatedToolCalls(t *testing.T) {
 	}
 	t.Logf("real DeepSeek tool call: %s(%s)", call.Name, call.Arguments)
 }
+
+// TestLiveDeepSeekThinkingToolLoop is the evidence that the thinking
+// deployment can carry a tool loop: the second request hands the first turn's
+// reasoning back, and an earlier answer without any reasoning goes back as an
+// empty one. Before the gateway did this DeepSeek answered 400 "The
+// reasoning_content in the thinking mode must be passed back to the API".
+func TestLiveDeepSeekThinkingToolLoop(t *testing.T) {
+	gateway, scope, _ := liveFixture(t)
+	chat := liveChat(2000, "先调用 read_canvas 看看画布，再用一句话打招呼。")
+	chat.ModelKey = "deepseek-flash-thinking"
+	chat.Messages = append(chat.Messages[:1],
+		llmgateway.Message{Role: llmgateway.RoleUser, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "你好"}}},
+		llmgateway.Message{Role: llmgateway.RoleAssistant, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "你好！"}}},
+		chat.Messages[1],
+	)
+	chat.Tools = []llmgateway.ToolDefinition{{
+		Name: "read_canvas", Description: "读取画布上的节点", SchemaVersion: 1,
+		InputSchema: json.RawMessage(`{"type":"object","additionalProperties":false,"properties":{}}`),
+	}}
+	_, first := liveTurn(t, gateway, scope, "live-thinking", chat, true)
+	if len(first.ToolCalls) == 0 || first.Reasoning == "" {
+		t.Fatalf("expected a reasoned tool call: %+v", first)
+	}
+	answer := llmgateway.Message{Role: llmgateway.RoleAssistant, Reasoning: first.Reasoning, ToolCalls: first.ToolCalls}
+	if first.Text != "" {
+		answer.Blocks = []llmgateway.Block{{Kind: llmgateway.BlockText, Text: first.Text}}
+	}
+	chat.Messages = append(chat.Messages, answer)
+	for _, call := range first.ToolCalls {
+		chat.Messages = append(chat.Messages, llmgateway.Message{Role: llmgateway.RoleTool, ToolCallID: call.ID, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "画布上有 3 个节点"}}})
+	}
+	_, second := liveTurn(t, gateway, scope, "live-thinking", chat, true)
+	if strings.TrimSpace(second.Text) == "" {
+		t.Fatalf("the second turn carried no answer: %+v", second)
+	}
+	t.Logf("reasoning %d bytes; answer: %s", len(first.Reasoning), second.Text)
+}

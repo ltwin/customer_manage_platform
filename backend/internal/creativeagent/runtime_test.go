@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/google/uuid"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
@@ -506,4 +507,176 @@ func TestRuntimeResourceWithoutReadbackPermissionStaysInline(t *testing.T) {
 		t.Fatalf("run=%+v err=%v", got, err)
 	}
 	assertRunReleased(t, f, run.ID)
+}
+
+// A thinking model's reasoning must come back with its own assistant turn on
+// the next request of the run, including after the run resumes from a
+// checkpoint. DeepSeek refuses the request otherwise (V6-030 走查, 2026-10-09).
+func TestThinkingReasoningReturnsWithItsTurn(t *testing.T) {
+	for _, pause := range []bool{false, true} {
+		t.Run(fmt.Sprintf("checkpoint-%t", pause), func(t *testing.T) {
+			f := setup(t)
+			f.queue()
+			c := f.conversation(f.alice, f.canvasID)
+			consent := f.consent(f.alice, c.ID)
+			var later [][]llmgateway.Message
+			f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+				if n == 1 {
+					result := scriptedResult(r, llmgateway.ToolCall{ID: "call", Name: readResultTool, Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)})
+					result.Reasoning = "先读一下结果"
+					return result, nil
+				}
+				later = append(later, r.Chat.Messages)
+				return scriptedResult(r), nil
+			}
+			run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "整理"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pause {
+				held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				execution, err := f.service.newRunExecution(t.Context(), f.alice, held)
+				if err != nil {
+					t.Fatal(err)
+				}
+				execution.config.Handlers = append([]adk.ChatModelAgentMiddleware{&checkpointPause{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}, after: true}}, execution.config.Handlers...)
+				if _, err = execution.run(t.Context()); !errors.Is(err, errRunInterrupted) {
+					t.Fatalf("interrupt: %v", err)
+				}
+				resumed, err := f.service.newRunExecution(t.Context(), f.alice, held)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if out, err := resumed.run(t.Context()); err != nil || !out.Delivered {
+					t.Fatalf("resume: %+v %v", out, err)
+				}
+			} else if err = f.work(f.alice, run.ID); err != nil {
+				t.Fatal(err)
+			}
+			if len(later) == 0 {
+				t.Fatal("the run never asked the model again")
+			}
+			var reasoning []string
+			for _, m := range later[len(later)-1] {
+				if m.Role == llmgateway.RoleAssistant {
+					reasoning = append(reasoning, m.Reasoning)
+				}
+			}
+			if len(reasoning) != 1 || reasoning[0] != "先读一下结果" {
+				t.Fatalf("assistant reasoning sent back: %q", reasoning)
+			}
+		})
+	}
+}
+
+// useThinkingModel swaps the fixture's model for the same deployment in
+// thinking mode.
+func useThinkingModel(t *testing.T, f *fixture) {
+	t.Helper()
+	model, err := f.service.models.Model(testModelKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	model.Thinking, model.Capability.ToolChoice = "enabled", false
+	models, err := llmgateway.NewCatalog("thinking-test", model.Price.Currency, []llmgateway.ModelConfig{model})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := llmgateway.New(llmgateway.Config{Catalog: models, Providers: map[llmgateway.ProviderKey]llmgateway.Provider{llmgateway.ProviderOpenAICompatible: f.vendor}, Credential: func(string) (string, bool) { return "test", true }, DefaultBudget: llmgateway.BudgetPolicy{MonthlyLimitMicros: 20_000_000, MonthlyTokenLimit: 5_000_000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.service, err = NewService(gateway, models, f.skills); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Reasoning outlives its run: the next run in the conversation hands every
+// earlier assistant turn's reasoning back, so a thinking model keeps its
+// line of thought. It is never part of what the page reads.
+func TestThinkingReasoningCarriesIntoLaterRuns(t *testing.T) {
+	f := setup(t)
+	useThinkingModel(t, f)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	consent := f.consent(f.alice, c.ID)
+	var second []llmgateway.Message
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		switch n {
+		case 1:
+			result := scriptedResult(r, llmgateway.ToolCall{ID: "call", Name: readResultTool, Arguments: json.RawMessage(`{"item_id":"missing","offset":0,"limit":100}`)})
+			result.Reasoning = "第一步的思考"
+			return result, nil
+		case 2:
+			result := scriptedResult(r)
+			result.Reasoning = "回答前的思考"
+			return result, nil
+		}
+		if second == nil {
+			second = r.Chat.Messages
+		}
+		return scriptedResult(r), nil
+	}
+	for _, text := range []string{"整理", "继续"} {
+		run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: text})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = f.work(f.alice, run.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var reasoning []string
+	for _, m := range second {
+		if m.Role == llmgateway.RoleAssistant {
+			reasoning = append(reasoning, m.Reasoning)
+		}
+	}
+	if strings.Join(reasoning, "|") != "第一步的思考|回答前的思考" {
+		t.Fatalf("history reasoning sent back: %q", reasoning)
+	}
+	page, err := f.service.ListMessages(t.Context(), f.alice, c.ID, "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(page)
+	if strings.Contains(string(raw), "思考") {
+		t.Fatalf("reasoning reached the page: %s", raw)
+	}
+}
+
+// A vendor's definitive refusal is named, so the page can say what happened
+// instead of a generic failure.
+func TestProviderRefusalIsNamed(t *testing.T) {
+	for _, tc := range []struct{ class, code string }{
+		{"invalid_request", "creative_model_rejected"},
+		{"insufficient_balance", "creative_model_balance_exhausted"},
+	} {
+		t.Run(tc.class, func(t *testing.T) {
+			f := setup(t)
+			f.queue()
+			c := f.conversation(f.alice, f.canvasID)
+			consent := f.consent(f.alice, c.ID)
+			f.vendor.script = func(context.Context, llmgateway.ProviderRequest, int) (llmgateway.Result, error) {
+				return llmgateway.Result{}, &llmgateway.ProviderError{Outcome: llmgateway.OutcomeRejected, Class: tc.class, StatusCode: 400}
+			}
+			run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "你好"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = f.work(f.alice, run.ID); err != nil {
+				t.Fatal(err)
+			}
+			got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.State != RunFailed || got.ErrorCode != tc.code {
+				t.Fatalf("state=%s code=%s", got.State, got.ErrorCode)
+			}
+		})
+	}
 }

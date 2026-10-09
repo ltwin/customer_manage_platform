@@ -21,14 +21,17 @@ import (
 const ContractVersion = "v1"
 
 var (
-	ErrValidation   = errors.New("invalid gateway request")
-	ErrCapability   = errors.New("model does not support this request")
-	ErrNotFound     = errors.New("gateway record not found")
-	ErrState        = errors.New("gateway state does not allow this action")
-	ErrBudget       = errors.New("budget exceeded")
-	ErrConflict     = errors.New("gateway identity conflict")
-	ErrProtocol     = errors.New("provider violated the model contract")
-	ErrUnknown      = errors.New("model result unknown")
+	ErrValidation = errors.New("invalid gateway request")
+	ErrCapability = errors.New("model does not support this request")
+	ErrNotFound   = errors.New("gateway record not found")
+	ErrState      = errors.New("gateway state does not allow this action")
+	ErrBudget     = errors.New("budget exceeded")
+	ErrConflict   = errors.New("gateway identity conflict")
+	ErrProtocol   = errors.New("provider violated the model contract")
+	ErrUnknown    = errors.New("model result unknown")
+	// ErrRejected is the provider's definitive refusal of a request it did not
+	// process, such as a malformed request or an exhausted vendor balance.
+	ErrRejected     = errors.New("provider rejected the request")
 	ErrUnavailable  = errors.New("model deployment unavailable")
 	ErrRateLimited  = errors.New("provider admission unavailable")
 	ErrDeadline     = errors.New("gateway deadline exceeded")
@@ -87,6 +90,10 @@ type Message struct {
 	Blocks     []Block
 	ToolCallID string
 	ToolCalls  []ToolCall
+	// Reasoning is what a thinking model reasoned before this assistant turn.
+	// It is model context only: a thinking deployment must receive it back on
+	// later turns that offer tools, and it is never shown to anyone.
+	Reasoning string
 }
 
 // ToolDefinition is the versioned schema the model may call. Harness validates
@@ -139,8 +146,11 @@ func (u UsageEvidence) Complete() bool {
 // Result is the single complete assistant answer. Stream fragments are never a
 // result; only a reassembled, validated answer is persisted.
 type Result struct {
-	Text              string
-	ToolCalls         []ToolCall
+	Text      string
+	ToolCalls []ToolCall
+	// Reasoning is a thinking model's chain of thought. It is not part of the
+	// answer; the caller hands it back with this turn's message and nothing more.
+	Reasoning         string
 	FinishReason      FinishReason
 	Usage             UsageEvidence
 	Model             string
@@ -243,6 +253,9 @@ func (m Message) validate(seenCalls map[string]struct{}) error {
 	}
 	if m.Role != RoleAssistant && len(m.ToolCalls) > 0 {
 		return errors.New("only assistant messages carry tool calls")
+	}
+	if m.Reasoning != "" && (m.Role != RoleAssistant || len(m.Reasoning) > maxTextBytes || !utf8.ValidString(m.Reasoning)) {
+		return errors.New("invalid assistant reasoning")
 	}
 	for _, c := range m.ToolCalls {
 		if c.ID == "" || !toolNamePattern(c.Name) || len(c.Arguments) > maxToolArgsBytes {
@@ -395,6 +408,7 @@ type hashableMessage struct {
 	CallID    string          `json:"tool_call_id,omitempty"`
 	Blocks    []hashableBlock `json:"blocks"`
 	ToolCalls []hashableCall  `json:"tool_calls,omitempty"`
+	Reasoning string          `json:"reasoning,omitempty"`
 }
 
 type hashableBlock struct {
@@ -437,7 +451,7 @@ func RequestHash(r ChatRequest, m ModelSnapshot) (string, error) {
 		h.Tools = append(h.Tools, hashableTool{Name: t.Name, Desc: t.Description, Version: t.SchemaVersion, Schema: canonical})
 	}
 	for _, msg := range r.Messages {
-		entry := hashableMessage{Role: string(msg.Role), CallID: msg.ToolCallID, Blocks: make([]hashableBlock, 0, len(msg.Blocks))}
+		entry := hashableMessage{Role: string(msg.Role), CallID: msg.ToolCallID, Reasoning: msg.Reasoning, Blocks: make([]hashableBlock, 0, len(msg.Blocks))}
 		for _, b := range msg.Blocks {
 			block := hashableBlock{Kind: string(b.Kind), Text: b.Text}
 			if b.Image != nil {

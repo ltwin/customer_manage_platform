@@ -36,6 +36,9 @@ var (
 	errToolLimit  = errors.New("creative run tool limit exceeded")
 	errModelLimit = errors.New("creative run model limit exceeded")
 	errToolDenied = errors.New("creative run tool is not allowed")
+	// errReadRefused is a read the run's authorisation does not reach. The
+	// model is told so in the tool result; it is not a failed run.
+	errReadRefused = errors.New("creative run read is not authorised")
 )
 
 func runtimeToolEntries() []ToolEntry {
@@ -344,12 +347,21 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		result, readErr = read()
 	}
 	code := ""
-	if readErr != nil {
-		if !errors.Is(readErr, ErrNotFound) && !errors.Is(readErr, creativeops.ErrValidation) {
-			return "", readErr
-		}
+	switch {
+	case readErr == nil:
+	case errors.Is(readErr, errReadRefused), errors.Is(readErr, ErrEgressRequired):
+		// Distinct from bad input: the model must say what is missing instead
+		// of retrying or guessing the content.
+		code = "creative_tool_not_authorized"
+		result = `{"success":false,"code":"creative_tool_not_authorized","message":"本次对话未授权读取这项内容；请告诉摄影师在消息里用 @ 引用它"}`
+	case errors.Is(readErr, ErrModelCapability):
+		code = "creative_tool_model_capability"
+		result = `{"success":false,"code":"creative_tool_model_capability","message":"当前模型不能查看图片"}`
+	case errors.Is(readErr, ErrNotFound), errors.Is(readErr, creativeops.ErrValidation):
 		code = "creative_tool_input_invalid"
 		result = `{"success":false,"code":"creative_tool_input_invalid"}`
+	default:
+		return "", readErr
 	}
 	if !utf8.ValidString(result) || len(result) > h.service.limits.ToolResultBytes {
 		return "", ErrLimit

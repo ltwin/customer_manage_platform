@@ -17,17 +17,21 @@ type historyItem struct {
 	Text  string
 	Body  Body
 	Group string
+	// Reasoning is kept only for a thinking model, which needs it back.
+	Reasoning string
 }
 
 const perMessageOverhead = 16
 
 // Freeze recent messages, including tool calls and results. Whole run groups
 // are retained together so no orphan tool response reaches the model.
-func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, budget int) ([]historyItem, error) {
+// withReasoning keeps each assistant turn's reasoning for a thinking model; it
+// spends the same input budget as the words around it.
+func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, budget int, withReasoning bool) ([]historyItem, error) {
 	if budget <= 0 || s.limits.HistoryMessages <= 0 {
 		return nil, nil
 	}
-	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body,run_id,id", "conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool')", []store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID)
+	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body,run_id,id,reasoning", "conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool')", []store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -37,11 +41,15 @@ func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope
 		var payload []byte
 		var runID *string
 		var messageID string
-		if err = rows.Scan(&item.Role, &payload, &runID, &messageID); err != nil {
+		var reasoning *string
+		if err = rows.Scan(&item.Role, &payload, &runID, &messageID, &reasoning); err != nil {
 			rows.Close()
 			return nil, err
 		}
 		item.Group = messageID
+		if reasoning != nil && withReasoning {
+			item.Reasoning = *reasoning
+		}
 		if runID != nil {
 			item.Group = *runID
 		}
@@ -73,7 +81,7 @@ func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope
 		calls := map[string]bool{}
 		results := map[string]bool{}
 		for _, item := range group {
-			cost += bodyBytes(item.Body) + perMessageOverhead
+			cost += bodyBytes(item.Body) + len(item.Reasoning) + perMessageOverhead
 			for _, call := range item.Body.ToolCalls {
 				calls[call.ID] = true
 			}
@@ -126,7 +134,11 @@ func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope,
 	}
 	refs := map[string]bool{}
 	for _, item := range history {
-		snapshot, err := jsonValue(map[string]any{"role": item.Role, "body": item.Body, "group": item.Group})
+		frozen := map[string]any{"role": item.Role, "body": item.Body, "group": item.Group}
+		if item.Reasoning != "" {
+			frozen["reasoning"] = item.Reasoning
+		}
+		snapshot, err := jsonValue(frozen)
 		if err != nil {
 			return err
 		}

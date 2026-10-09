@@ -438,9 +438,10 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 			}
 			if item.role == "history" {
 				var meta struct {
-					Role  string `json:"role"`
-					Body  *Body  `json:"body"`
-					Group string `json:"group"`
+					Role      string `json:"role"`
+					Body      *Body  `json:"body"`
+					Group     string `json:"group"`
+					Reasoning string `json:"reasoning"`
 				}
 				if err = json.Unmarshal(item.snapshot, &meta); err != nil {
 					return err
@@ -454,6 +455,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 					continue
 				}
 				m := bodyMessage(*meta.Body, meta.Role)
+				m.ReasoningContent = meta.Reasoning
 				historyTag(m, meta.Group)
 				if m.Content != "" || len(m.ToolCalls) > 0 {
 					messages = append(messages, m)
@@ -719,7 +721,7 @@ func (s *Service) consumeResultInTx(ctx context.Context, tx store.TxAccountScope
 	}
 	if _, err := s.appendMessageInTx(ctx, tx, held.ConversationID, newMessage{
 		Role: "assistant", Status: "complete", RunID: held.RunID, SourceStepID: stepID,
-		Body: body,
+		Body: body, Reasoning: result.Reasoning,
 	}); err != nil {
 		return false, err
 	}
@@ -922,6 +924,7 @@ func nullableText(value string) any {
 // can act on; anything unrecognised stays generic rather than leaking the
 // internals of a failure they cannot do anything about.
 func failureCode(err error) string {
+	var refused *llmgateway.ProviderError
 	switch {
 	case errors.Is(err, errCheckpointMissing):
 		return "creative_checkpoint_missing"
@@ -953,6 +956,12 @@ func failureCode(err error) string {
 		return "creative_run_superseded"
 	case errors.Is(err, llmgateway.ErrUnknown):
 		return "creative_model_result_unknown"
+	case errors.As(err, &refused) && refused.Class == "insufficient_balance":
+		return "creative_model_balance_exhausted"
+	case errors.Is(err, llmgateway.ErrRejected):
+		// The vendor refused a request it did not process. The detail stays in
+		// the gateway record; the photographer can retry or pick another model.
+		return "creative_model_rejected"
 	case errors.Is(err, llmgateway.ErrDeadline), errors.Is(err, context.DeadlineExceeded):
 		return "creative_run_deadline_exceeded"
 	case errors.Is(err, ErrLimit):

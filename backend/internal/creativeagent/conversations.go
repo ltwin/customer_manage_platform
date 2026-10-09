@@ -117,7 +117,10 @@ type newMessage struct {
 	Role   string
 	Status string
 	Body   Body
-	RunID  string
+	// Reasoning is a thinking model's reasoning for this assistant turn. It is
+	// handed back to the model on later requests and never shown.
+	Reasoning string
+	RunID     string
 	// SourceStepID makes a step's projection idempotent. Replaying a consumed
 	// result returns the original message instead of appending a duplicate.
 	SourceStepID string
@@ -326,9 +329,13 @@ func (s *Service) appendMessageInTx(ctx context.Context, tx store.TxAccountScope
 	if m.SourceStepID != "" {
 		stepID = &m.SourceStepID
 	}
+	var reasoning *string
+	if m.Reasoning != "" {
+		reasoning = &m.Reasoning
+	}
 	if err := tx.Insert(ctx, "creative_agent_messages",
-		[]string{"id", "conversation_id", "ordinal", "run_id", "role", "status", "schema_version", "body", "source_step_id", "created_at", "updated_at"},
-		id, conversationID, ordinal, runID, m.Role, m.Status, messageSchemaVersion, payload, stepID, now, now); err != nil {
+		[]string{"id", "conversation_id", "ordinal", "run_id", "role", "status", "schema_version", "body", "source_step_id", "reasoning", "created_at", "updated_at"},
+		id, conversationID, ordinal, runID, m.Role, m.Status, messageSchemaVersion, payload, stepID, reasoning, now, now); err != nil {
 		return Message{}, err
 	}
 	for _, ref := range m.ContentRefs {

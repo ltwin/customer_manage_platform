@@ -224,19 +224,34 @@ export function pendingAgentAction(
   return pending
 }
 
+// Every code the run can end with has its own words; the fallback is only for
+// a server newer than this page.
+const failures: Record<string, string> = {
+  creative_run_cancelled: '已取消后续执行',
+  creative_run_deadline_exceeded: '已超过本次运行期限',
+  creative_run_interrupted: '运行被中断，请重新发送',
+  creative_run_superseded: '这次运行已被新的操作取代',
+  creative_reconciliation_closed: '已结束等待，费用仍会继续核实',
+  creative_checkpoint_missing: '恢复记录不完整，已停止自动继续',
+  creative_checkpoint_incompatible: '运行版本已变化，无法自动恢复',
+  creative_checkpoint_inconsistent: '恢复记录不一致，已停止自动继续',
+  creative_llm_unknown: '供应商是否完成调用尚未确认',
+  creative_model_result_unknown: '供应商是否完成调用尚未确认',
+  creative_model_rejected: '模型服务拒绝了这次请求，请重试或换一个模型',
+  creative_model_balance_exhausted: '模型服务额度不足，请稍后再试或换一个模型',
+  creative_model_capability_missing: '当前模型不支持这次请求，请换一个模型',
+  creative_model_empty_result: '模型没有给出回答，请重试',
+  creative_model_turn_limit: '已达到本次思考轮数上限',
+  creative_tool_limit: '已达到本次工具调用上限',
+  creative_tool_not_allowed: '模型调用了未授权的工具，已停止',
+  creative_egress_revoked: '外发授权已撤销',
+  creative_egress_required: '这次请求需要新的外发授权',
+  creative_skill_unavailable: '所选 Skill 已不可用',
+  creative_llm_budget_exceeded: '本月模型额度已用完',
+  creative_context_limit: '内容超过本次运行的长度上限',
+  creative_input_unavailable: '引用的内容已不可读',
+}
 export function runFailure(code?: string): string {
   if (!code) return ''
-  const messages: Record<string, string> = {
-    creative_run_cancelled: '已取消后续执行',
-    creative_run_deadline_exceeded: '已超过本次运行期限',
-    creative_reconciliation_closed: '已结束等待，费用仍会继续核实',
-    creative_checkpoint_missing: '恢复记录不完整，已停止自动继续',
-    creative_checkpoint_incompatible: '运行版本已变化，无法自动恢复',
-    creative_checkpoint_inconsistent: '恢复记录不一致，已停止自动继续',
-    creative_llm_unknown: '供应商是否完成调用尚未确认',
-    creative_egress_revoked: '外发授权已撤销',
-    creative_context_limit: '内容超过本次运行的长度上限',
-    creative_tool_limit: '已达到本次工具调用上限',
-  }
-  return messages[code] ?? '本次执行未能完成，已有结果已保留'
+  return failures[code] ?? '本次执行未能完成，请重试'
 }

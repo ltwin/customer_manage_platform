@@ -334,3 +334,95 @@ func TestStreamedTextReachesTheSinkWithoutChangingTheResult(t *testing.T) {
 		}
 	}
 }
+
+const openAIThinkingStream = `data: {"id":"req-1","model":"vendor-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"先看"}}]}
+
+data: {"id":"req-1","model":"vendor-model","choices":[{"index":0,"delta":{"reasoning_content":"画布"}}]}
+
+data: {"id":"req-1","model":"vendor-model","choices":[{"index":0,"delta":{"content":"好的"}}]}
+
+data: {"id":"req-1","model":"vendor-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"req-1","model":"vendor-model","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
+
+data: [DONE]
+`
+
+// A thinking deployment refuses a request offering tools unless every earlier
+// assistant turn carries its reasoning back (DeepSeek: 400 "The
+// reasoning_content in the thinking mode must be passed back"). The reasoning
+// is read from the answer, never streamed as visible text, and sent back on
+// every assistant message — empty when it is not known.
+func TestThinkingReasoningIsReadAndHandedBack(t *testing.T) {
+	fixture := newProtocolFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, openAIThinkingStream)
+	})
+	model := fixture.model(t, llmgateway.ProviderOpenAICompatible)
+	model.Thinking = "enabled"
+	chat := toolRequest()
+	chat.ToolChoice = ""
+	chat.Messages = append(chat.Messages,
+		llmgateway.Message{Role: llmgateway.RoleAssistant, Reasoning: "上一轮的思考", ToolCalls: []llmgateway.ToolCall{{ID: "call_1", Name: "search_assets", Arguments: json.RawMessage(`{"query":"逆光"}`)}}},
+		llmgateway.Message{Role: llmgateway.RoleTool, ToolCallID: "call_1", Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "无结果"}}},
+		llmgateway.Message{Role: llmgateway.RoleAssistant, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "没找到"}}},
+		llmgateway.Message{Role: llmgateway.RoleUser, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "再试试"}}},
+	)
+	if err := chat.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	sink := &recordingSink{}
+	invokeWith := func(model llmgateway.ModelConfig) llmgateway.Result {
+		t.Helper()
+		result, err := llmgateway.NewOpenAICompatible(llmgateway.NewHTTPClient(5*time.Second)).Invoke(context.Background(), llmgateway.ProviderRequest{
+			Model: model, Snapshot: snapshotFor(model), Chat: chat, Credential: "k", Stream: true, Sink: sink,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	result := invokeWith(model)
+	if result.Reasoning != "先看画布" || result.Text != "好的" || strings.Join(sink.deltas, "") != "好的" {
+		t.Fatalf("reasoning %q text %q deltas %q", result.Reasoning, result.Text, sink.deltas)
+	}
+	var sent struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(fixture.body.Load().(string)), &sent); err != nil {
+		t.Fatal(err)
+	}
+	var reasoning []any
+	for _, m := range sent.Messages {
+		if m["role"] == "assistant" {
+			value, ok := m["reasoning_content"]
+			if !ok {
+				t.Fatalf("assistant message without reasoning_content: %v", m)
+			}
+			reasoning = append(reasoning, value)
+		} else if _, ok := m["reasoning_content"]; ok {
+			t.Fatalf("%v message carries reasoning_content", m["role"])
+		}
+	}
+	if len(reasoning) != 2 || reasoning[0] != "上一轮的思考" || reasoning[1] != "" {
+		t.Fatalf("reasoning sent back: %q", reasoning)
+	}
+
+	// A deployment without thinking never receives the field.
+	model.Thinking = "disabled"
+	invokeWith(model)
+	if strings.Contains(fixture.body.Load().(string), "reasoning_content") {
+		t.Fatal("non-thinking deployment received reasoning_content")
+	}
+
+	// The reasoning is part of what the request says, so it is in its identity.
+	other := chat
+	other.Messages = append([]llmgateway.Message(nil), chat.Messages...)
+	other.Messages[1].Reasoning = "另一种思考"
+	snapshot := snapshotFor(model)
+	a, _ := llmgateway.RequestHash(chat, snapshot)
+	b, _ := llmgateway.RequestHash(other, snapshot)
+	if a == b {
+		t.Fatal("reasoning does not change the request hash")
+	}
+}

@@ -48,6 +48,8 @@ func (e *ProviderError) Is(target error) bool {
 		return e.Outcome == OutcomeUnknown
 	case ErrProtocol:
 		return e.Outcome == OutcomeProtocol
+	case ErrRejected:
+		return e.Outcome == OutcomeRejected
 	}
 	return false
 }

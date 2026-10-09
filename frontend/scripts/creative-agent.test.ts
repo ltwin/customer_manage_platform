@@ -7,6 +7,7 @@ import {
   pendingAgentAction,
   isActiveRun,
   hasUnsettledCost,
+  runFailure,
 } from '../src/creative-canvas/editor/agentState.ts'
 import type { AgentRun } from '../src/creative-canvas/editor/agentState.ts'
 
@@ -154,4 +155,10 @@ test('material references preserve order, immutable revisions and retry identity
   assert.deepEqual(referencedMaterials('只使用 @[ccrv_text]', refs), [
     materials[1],
   ])
+})
+
+test('a refused request says what to do next', () => {
+  assert.equal(runFailure('creative_model_rejected'), '模型服务拒绝了这次请求，请重试或换一个模型')
+  assert.equal(runFailure('creative_from_a_newer_server'), '本次执行未能完成，请重试')
+  assert.equal(runFailure(undefined), '')
 })

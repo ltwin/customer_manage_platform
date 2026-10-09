@@ -24,10 +24,14 @@ func NewOpenAICompatible(client *http.Client) *OpenAICompatible {
 func (a *OpenAICompatible) Key() ProviderKey { return ProviderOpenAICompatible }
 
 type openAIMessage struct {
-	Role       string          `json:"role"`
-	Content    any             `json:"content,omitempty"`
-	ToolCallID string          `json:"tool_call_id,omitempty"`
-	ToolCalls  []openAIToolRef `json:"tool_calls,omitempty"`
+	Role    string `json:"role"`
+	Content any    `json:"content,omitempty"`
+	// ReasoningContent is set on every assistant message sent to a thinking
+	// deployment. DeepSeek answers 400 when a request that offers tools lacks
+	// it on an earlier turn; an empty string is accepted (verified 2026-10-09).
+	ReasoningContent *string         `json:"reasoning_content,omitempty"`
+	ToolCallID       string          `json:"tool_call_id,omitempty"`
+	ToolCalls        []openAIToolRef `json:"tool_calls,omitempty"`
 }
 
 type openAIToolRef struct {
@@ -93,12 +97,14 @@ type openAIResponse struct {
 		Index        int    `json:"index"`
 		FinishReason string `json:"finish_reason"`
 		Message      struct {
-			Content   string          `json:"content"`
-			ToolCalls []openAIToolRef `json:"tool_calls"`
+			Content          string          `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
+			ToolCalls        []openAIToolRef `json:"tool_calls"`
 		} `json:"message"`
 		Delta struct {
-			Content   string          `json:"content"`
-			ToolCalls []openAIToolRef `json:"tool_calls"`
+			Content          string          `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
+			ToolCalls        []openAIToolRef `json:"tool_calls"`
 		} `json:"delta"`
 	} `json:"choices"`
 	Usage *openAIUsage `json:"usage"`
@@ -171,6 +177,10 @@ func (a *OpenAICompatible) encode(ctx context.Context, p ProviderRequest) ([]byt
 		if err != nil {
 			return nil, err
 		}
+		if m.Role == RoleAssistant && p.Model.Thinking == "enabled" {
+			reasoning := m.Reasoning
+			encoded.ReasoningContent = &reasoning
+		}
 		out.Messages = append(out.Messages, encoded)
 	}
 	return json.Marshal(out)
@@ -234,6 +244,7 @@ func (a *OpenAICompatible) readSingle(body io.Reader) (Result, error) {
 	choice := payload.Choices[0]
 	result := Result{
 		Text:              choice.Message.Content,
+		Reasoning:         choice.Message.ReasoningContent,
 		FinishReason:      mapOpenAIFinish(choice.FinishReason),
 		Model:             payload.Model,
 		ProviderRequestID: payload.ID,
@@ -259,6 +270,7 @@ func (a *OpenAICompatible) readStream(body io.Reader, sink Sink) (Result, error)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxResultBytes)
 	var (
 		text      strings.Builder
+		reasoning strings.Builder
 		result    Result
 		calls     = map[int]*ToolCall{}
 		args      = map[int]*strings.Builder{}
@@ -297,6 +309,7 @@ func (a *OpenAICompatible) readStream(body io.Reader, sink Sink) (Result, error)
 				return Result{}, &ProviderError{Outcome: OutcomeProtocol, Class: "unexpected_choice", Detail: payload}
 			}
 			text.WriteString(choice.Delta.Content)
+			reasoning.WriteString(choice.Delta.ReasoningContent)
 			emit(sink, DeltaText, choice.Delta.Content)
 			for _, fragment := range choice.Delta.ToolCalls {
 				index := 0
@@ -331,6 +344,7 @@ func (a *OpenAICompatible) readStream(body io.Reader, sink Sink) (Result, error)
 		return Result{}, &ProviderError{Outcome: OutcomeUnknown, Class: "incomplete_stream", Detail: "stream ended before a terminal chunk"}
 	}
 	result.Text = text.String()
+	result.Reasoning = reasoning.String()
 	indexes := make([]int, 0, len(calls))
 	for index := range calls {
 		indexes = append(indexes, index)

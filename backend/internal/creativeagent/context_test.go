@@ -82,6 +82,11 @@ func TestContextToolsAndPairedHistoryReachProvider(t *testing.T) {
 	if !strings.Contains(prompt, "主画面") || !strings.Contains(prompt, "受授权的素材正文") || strings.Contains(prompt, "绝不能外发") {
 		t.Fatalf("context authorization failed: %s", prompt)
 	}
+	// A read outside the grant is named as such, so the model explains what is
+	// missing instead of treating it as a typo.
+	if !strings.Contains(prompt, "creative_tool_not_authorized") {
+		t.Fatalf("refused read not named: %s", prompt)
+	}
 }
 
 type testImageReader struct{}

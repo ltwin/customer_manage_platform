@@ -276,6 +276,7 @@ func (r requestRow) view(settlement SettlementState) RequestView {
 // and credentials never appear here.
 type storedResult struct {
 	Text              string       `json:"text"`
+	Reasoning         string       `json:"reasoning,omitempty"`
 	ToolCalls         []storedCall `json:"tool_calls,omitempty"`
 	FinishReason      string       `json:"finish_reason"`
 	Model             string       `json:"model"`
@@ -300,6 +301,7 @@ type storedUsage struct {
 func newStoredResult(r Result) storedResult {
 	stored := storedResult{
 		Text:              r.Text,
+		Reasoning:         r.Reasoning,
 		FinishReason:      string(r.FinishReason),
 		Model:             r.Model,
 		ProviderRequestID: r.ProviderRequestID,
@@ -319,6 +321,7 @@ func newStoredResult(r Result) storedResult {
 func (s storedResult) toResult() Result {
 	result := Result{
 		Text:              s.Text,
+		Reasoning:         s.Reasoning,
 		FinishReason:      FinishReason(s.FinishReason),
 		Model:             s.Model,
 		ProviderRequestID: s.ProviderRequestID,

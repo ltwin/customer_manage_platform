@@ -252,7 +252,7 @@ func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, err
 	}
 	// This set was read from the explicit consent, not from model-provided IDs.
 	if !slices.Contains(h.revisions, args.RevisionID) {
-		return "", ErrNotFound
+		return "", errReadRefused
 	}
 	var result map[string]any
 	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {

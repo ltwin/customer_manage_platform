@@ -241,7 +241,7 @@ func fromEinoMessages(input []*schema.Message) ([]Message, error) {
 		if m == nil {
 			return nil, fmt.Errorf("%w: nil message", ErrValidation)
 		}
-		converted := Message{ToolCallID: m.ToolCallID}
+		converted := Message{ToolCallID: m.ToolCallID, Reasoning: m.ReasoningContent}
 		switch m.Role {
 		case schema.System:
 			converted.Role = RoleSystem
@@ -282,8 +282,9 @@ func fromEinoMessages(input []*schema.Message) ([]Message, error) {
 
 func toEinoMessage(r Result) *schema.Message {
 	message := &schema.Message{
-		Role:    schema.Assistant,
-		Content: r.Text,
+		Role:             schema.Assistant,
+		Content:          r.Text,
+		ReasoningContent: r.Reasoning,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(r.FinishReason),
 		},
@@ -344,6 +345,7 @@ func EstimateInputTokens(r ChatRequest) int64 {
 		for _, c := range m.ToolCalls {
 			bytes += int64(len(c.Arguments)) + int64(len(c.Name))
 		}
+		bytes += int64(len(m.Reasoning))
 	}
 	// One token per byte is an upper bound for UTF-8 text in every language.
 	return bytes

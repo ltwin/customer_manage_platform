@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackAgentBlocks steps past 0056; every chain that walks below it starts
-// here.
+// rollbackAgentBlocks steps past 0057 and 0056; every chain that walks below
+// them starts here.
 func rollbackAgentBlocks(t *testing.T, url string) {
 	t.Helper()
+	rollbackAgentReasoning(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-agent-blocks", err)
 	}
@@ -37,6 +38,7 @@ VALUES('ccbk_00000000-0000-0000-0000-000000000001','a','ccrn_x',1,'text','comple
 VALUES('ccbk_00000000-0000-0000-0000-000000000002','a','ccrn_x',2,'text','complete','k2','[]')`); err == nil {
 		t.Fatal("non-object payload accepted")
 	}
+	rollbackAgentReasoning(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "agent blocks exist") {
 		t.Fatal("lossy agent blocks rollback allowed", err)
 	}

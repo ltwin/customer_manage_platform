@@ -49,6 +49,7 @@ type storedChatMessage struct {
 	ToolCallID string            `json:"tool_call_id,omitempty"`
 	Blocks     []storedChatBlock `json:"blocks"`
 	ToolCalls  []storedCall      `json:"tool_calls,omitempty"`
+	Reasoning  string            `json:"reasoning,omitempty"`
 }
 
 type storedChatBlock struct {
@@ -71,7 +72,7 @@ func newStoredChat(r ChatRequest) storedChat {
 		Tools:           r.Tools,
 	}
 	for _, m := range r.Messages {
-		message := storedChatMessage{Role: string(m.Role), ToolCallID: m.ToolCallID}
+		message := storedChatMessage{Role: string(m.Role), ToolCallID: m.ToolCallID, Reasoning: m.Reasoning}
 		for _, b := range m.Blocks {
 			block := storedChatBlock{Kind: string(b.Kind), Text: b.Text}
 			if b.Image != nil {
