@@ -1430,3 +1430,17 @@ button.cc-project-name:hover,
 @media(max-width:620px) { .cc-media-preview-nav.is-prev { left: 8px; } .cc-media-preview-nav.is-next { right: 8px; } .cc-media-preview-caption { bottom: 16px; font-size: 12px; } }
 
 .cc-empty-ratio { display: inline-block; border-radius: 5px; padding: 2px 7px; background: var(--s3); color: var(--fg-3); font-size: 11px; }
+
+/* 拖入/上传：服务器内容到达前直接显示本机文件，变暗加转圈表示上传中；
+   服务器图片加载完成前本机图仍盖在上面，避免闪空 */
+.cc-node-media { position: relative; }
+.cc-local-media { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; border-radius: inherit; background: var(--s1); }
+.cc-local-media > img, .cc-local-media > video { width: 100%; height: 100%; object-fit: cover; filter: brightness(0.45); transition: filter 0.2s; }
+.cc-local-media.is-done { pointer-events: none; z-index: 1; }
+.cc-local-media.is-done > img, .cc-local-media.is-done > video { filter: none; }
+.cc-local-state { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; color: #fff; font-size: 12px; text-align: center; padding: 12px; }
+.cc-local-state small { font-variant-numeric: tabular-nums; opacity: 0.85; }
+.cc-local-media.is-failed .cc-local-state { color: var(--danger, #f87171); }
+.cc-spin { animation: cc-spin 0.9s linear infinite; }
+@keyframes cc-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cc-spin { animation-duration: 2.4s; } }

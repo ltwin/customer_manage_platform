@@ -10,6 +10,7 @@ import (
 
 func rollbackGenerationHandoff(t *testing.T, url string) {
 	t.Helper()
+	rollbackStagedUploads(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback generation handoff", err)
 	}
@@ -27,6 +28,7 @@ func TestGenerationHandoffMigration(t *testing.T) {
 	if _, err = db.Exec(`INSERT INTO creative_generation_bindings(account_id,execution_id,request_id,canvas_id,recovery_until) VALUES('a','e','r','c',now())`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackStagedUploads(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "generation handoff") {
 		t.Fatal("lossy handoff rollback allowed", err)
 	}

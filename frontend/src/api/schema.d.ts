@@ -5632,6 +5632,13 @@ export interface components {
             node_id: string;
             asset: components["schemas"]["CreativeAssetReference"];
         };
+        /** @description 用一个已就绪的暂存上传填充同类型的空节点；一个暂存上传只能放入一次。节点标题为空时用文件名（去掉扩展名）。 */
+        CreativeActionFillFromUpload: {
+            /** @enum {string} */
+            type: "fill_from_upload";
+            node_id: string;
+            upload_id: string;
+        };
         CreativeActionConnectReference: {
             /** @enum {string} */
             type: "connect_reference";
@@ -5685,7 +5692,7 @@ export interface components {
             /** @enum {string} */
             group_mode?: "subtree";
         };
-        CreativeGraphAction: components["schemas"]["CreativeActionAddNode"] | components["schemas"]["CreativeActionMoveNodes"] | components["schemas"]["CreativeActionMoveNode"] | components["schemas"]["CreativeActionResizeNode"] | components["schemas"]["CreativeActionUpdateMetadata"] | components["schemas"]["CreativeActionClearContent"] | components["schemas"]["CreativeActionReplaceContent"] | components["schemas"]["CreativeActionFillFromAsset"] | components["schemas"]["CreativeActionConnectReference"] | components["schemas"]["CreativeActionDisconnectReference"] | components["schemas"]["CreativeActionSetNodeInputs"] | components["schemas"]["CreativeActionGroupNodes"] | components["schemas"]["CreativeActionUngroupNodes"] | components["schemas"]["CreativeActionReparentNodes"] | components["schemas"]["CreativeActionDuplicateSelection"] | components["schemas"]["CreativeActionRemoveNodes"] | components["schemas"]["CreativeActionSelectVersion"] | components["schemas"]["CreativeActionDeleteVersion"];
+        CreativeGraphAction: components["schemas"]["CreativeActionAddNode"] | components["schemas"]["CreativeActionMoveNodes"] | components["schemas"]["CreativeActionMoveNode"] | components["schemas"]["CreativeActionResizeNode"] | components["schemas"]["CreativeActionUpdateMetadata"] | components["schemas"]["CreativeActionClearContent"] | components["schemas"]["CreativeActionReplaceContent"] | components["schemas"]["CreativeActionFillFromAsset"] | components["schemas"]["CreativeActionFillFromUpload"] | components["schemas"]["CreativeActionConnectReference"] | components["schemas"]["CreativeActionDisconnectReference"] | components["schemas"]["CreativeActionSetNodeInputs"] | components["schemas"]["CreativeActionGroupNodes"] | components["schemas"]["CreativeActionUngroupNodes"] | components["schemas"]["CreativeActionReparentNodes"] | components["schemas"]["CreativeActionDuplicateSelection"] | components["schemas"]["CreativeActionRemoveNodes"] | components["schemas"]["CreativeActionSelectVersion"] | components["schemas"]["CreativeActionDeleteVersion"];
         CreativeBatchPayload: {
             /** @enum {string} */
             type: "batch";
@@ -5902,7 +5909,7 @@ export interface components {
         };
         CreativeUploadTarget: {
             /** @enum {string} */
-            kind: "asset" | "node";
+            kind: "asset" | "node" | "staged";
             asset?: components["schemas"]["CreativeUploadAssetTarget"];
             node?: components["schemas"]["CreativeUploadNodeTarget"];
         };
@@ -5972,8 +5979,11 @@ export interface components {
             revision: components["schemas"]["CreativeRevision"];
         };
         CreativeUploadBinding: {
-            /** @enum {string} */
-            status: "applied" | "needs_review" | "discarded" | "expired";
+            /**
+             * @description staged：暂存上传已就绪，等待 fill_from_upload
+             * @enum {string}
+             */
+            status: "applied" | "needs_review" | "staged" | "discarded" | "expired";
             target_kind: string | null;
             target_id: string | null;
             candidate_id: string | null;
@@ -5998,7 +6008,7 @@ export interface components {
             part_count: number;
             uploaded_parts: number[];
             /** @enum {string} */
-            target_kind: "asset" | "node";
+            target_kind: "asset" | "node" | "staged";
             /** Format: date-time */
             expires_at: string;
             error_code: string;

@@ -69,6 +69,7 @@ import {
   type MediaKind,
 } from './media.ts'
 import { fileTitle, importPlan, importSlot } from './fileImport.ts'
+import { localMedia, readMediaSize } from './localMedia.ts'
 
 // 与后端新建节点的默认尺寸一致。
 const NODE_WIDTH = defaultNodeWidth
@@ -267,11 +268,69 @@ function Workspace({ account }: { account: string }) {
     setTick((v) => v + 1)
   }, [])
   const canMove = editable
-  const uploads = useUploads((item) => {
-    if (item.upload?.binding?.status === 'needs_review')
-      setCopyNotice('文件已上传，但目标已变化；请在待处理项中选择放入位置。')
-    refresh()
-  })
+  const uploads = useUploads(
+    (item) => {
+      const nodeID = item.nodeID
+      if (!nodeID) {
+        if (item.upload?.binding?.status === 'needs_review')
+          setCopyNotice('文件已上传，但目标已变化；请在待处理项中选择放入位置。')
+        refresh()
+        return
+      }
+      if (item.stage === 'failed') {
+        localMedia.patch(nodeID, { failed: true })
+        return
+      }
+      if (item.batch) pendingFills.current.delete(item.batch)
+      // 上传期间节点被删掉或已经有了别的内容：不再放进去，放弃暂存。
+      const target = view?.nodes.find((n) => n.id === nodeID)
+      if (!target || target.content) {
+        localMedia.clear(nodeID)
+        if (item.upload) uploads.discardStaged(item.upload)
+        return
+      }
+      // 暂存就绪：放进节点也是一次用户编辑，和建节点同组、按顺序发出。
+      uploads.markPlaced(item.id)
+      const g = item.batch ? importGroups.current.get(item.batch) : undefined
+      if (g) g.fills++
+      void stage({
+        kind: 'actions',
+        changeGroupID: item.batch,
+        actions: [
+          { type: 'fill_from_upload', node_id: nodeID, upload_id: item.upload!.id },
+        ],
+      })
+    },
+    (item, sent) => {
+      if (item.nodeID)
+        localMedia.patch(item.nodeID, { progress: item.size ? sent / item.size : 1 })
+    },
+  )
+  // 单节点填充还在上传时，⌘Z 先撤掉这次上传，不越过它去撤更早的编辑。
+  // edits 记下开始上传时的编辑序号：之后有新编辑，就轮不到它。
+  const pendingFills = useRef(
+    new Map<string, { nodes: string[]; edits: number }>(),
+  )
+  const editCount = useRef(0)
+  // 每个导入组建了哪些节点（created）或填了哪个已有节点，撤销时据此立刻画出结果。
+  // edits/fills 用来判断这一批之后有没有插进别的编辑：插进了就只会撤掉其中一步，
+  // 不能提前把整批画没。
+  const importGroups = useRef(
+    new Map<
+      string,
+      { nodes: string[]; created: boolean; edits: number; fills: number }
+    >(),
+  )
+  const undoPaint = (group: string | undefined) => {
+    const g = group ? importGroups.current.get(group) : undefined
+    if (!g || editCount.current !== g.edits + g.fills) return {}
+    return g.created ? { hides: g.nodes } : { empties: g.nodes }
+  }
+  // 撤掉一批导入时，本机预览随节点一起消失。
+  const clearLocal = (group: string) => {
+    for (const item of uploads.items)
+      if (item.batch === group && item.nodeID) localMedia.clear(item.nodeID)
+  }
   useEffect(() => {
     if (!queue || !canvas || canvas.id !== canvasID) return
     void queue
@@ -359,6 +418,7 @@ function Workspace({ account }: { account: string }) {
     if (!queue || !view || view.id !== canvasID || !editable)
       return Promise.resolve(false)
     setActionError('')
+    editCount.current++
     const staged = queue.stageIntent(canvasID, {
       ...intent,
       draftKey: options.draftKey,
@@ -472,6 +532,13 @@ function Workspace({ account }: { account: string }) {
       setLocalError(errorMessage(e))
     }
   }
+  // 单节点填充还在上传时也可以撤销（撤销即取消这次上传）。
+  const fillUploading = uploads.items.some(
+    (i) =>
+      !!i.batch &&
+      pendingFills.current.has(i.batch) &&
+      !['done', 'failed', 'rejected', 'cancelled'].includes(i.stage),
+  )
   const history = view
     ? historyOf(view, outbox, redoStack)
     : {
@@ -491,6 +558,32 @@ function Workspace({ account }: { account: string }) {
   function reverseChange(redo = false) {
     if (!queue || !view || !editable) return
     if (!redo) {
+      // 单节点填充还在上传、之后没有别的编辑：这次上传就是最近的一步。
+      const fill = [...pendingFills.current].at(-1)
+      if (fill && fill[1].edits === editCount.current) {
+        pendingFills.current.delete(fill[0])
+        uploads.cancelBatch(fill[0])
+        fill[1].nodes.forEach((id) => localMedia.clear(id))
+        return
+      }
+      // 一批导入（建节点与已入队的填充）是一步：本机还没发出的部分一起撤回，
+      // 已经发出的按组交给服务器撤销。
+      const tail = queue.outbox.filter((i) => i.canvasID === canvasID).at(-1)
+      const group = tail?.kind === 'actions' ? tail.changeGroupID : undefined
+      if (group) {
+        const withdrawn = queue.cancelTailGroup(canvasID, group)
+        uploads.cancelBatch(group)
+        clearLocal(group)
+        const created = withdrawn.filter((i) =>
+          i.actions?.some((a) => a.type === 'add_node'),
+        )
+        if (created.length) setRedoStack((old) => [...old, ...created])
+        else {
+          setRedoStack([])
+          void stage({ kind: 'undo', ...undoPaint(group) })
+        }
+        return
+      }
       const cancelled = queue.cancelTail(canvasID)
       if (cancelled) {
         if (cancelled.changeGroupID) uploads.cancelBatch(cancelled.changeGroupID)
@@ -511,8 +604,11 @@ function Workspace({ account }: { account: string }) {
       if (!history.canUndo) return
       setRedoStack([])
       // 撤销整批导入时，这一批还在上传的文件一并取消。
-      if (history.undoStepGroup) uploads.cancelBatch(history.undoStepGroup)
-      void stage({ kind: 'undo' })
+      if (history.undoStepGroup) {
+        uploads.cancelBatch(history.undoStepGroup)
+        clearLocal(history.undoStepGroup)
+      }
+      void stage({ kind: 'undo', ...undoPaint(history.undoStepGroup) })
       return
     }
     if (!history.canRedo) return
@@ -539,6 +635,7 @@ function Workspace({ account }: { account: string }) {
     if (!queue || !view || view.id !== canvasID || !canMove) return
     const staged = queue.stageMoves(view, moves)
     if (!staged) return
+    editCount.current++
     setRedoStack([])
     void staged.done.catch((e: unknown) => {
       if (!isWithdrawn(e)) setLocalError(errorMessage(e))
@@ -559,21 +656,20 @@ function Workspace({ account }: { account: string }) {
       },
     }))
   }
-  // Drop files on the canvas: create empty media nodes first, then upload
-  // into each node so the publication binds by node target. The nodes must
-  // exist on the server before an upload can target them. Node creation and
-  // every binding share one change group, so a single undo removes the batch
-  // and cancels whatever is still uploading.
-  async function dropFiles(files: File[], x: number, y: number) {
+  // Drop files on the canvas. Each file shows at once from the local blob and
+  // uploads into staging; the canvas only changes through the user's own
+  // ordered edits — the node creation now, a fill_from_upload once the bytes
+  // are ready — so an undo at any moment never races a server-side write.
+  function dropFiles(files: File[], x: number, y: number) {
     if (!view || !editable || !uploads.capabilities) return
-    const caps = uploads.capabilities
-    const plan = importPlan(files, caps)
+    const plan = importPlan(files, uploads.capabilities)
     uploads.reject(plan.rejected)
     if (!plan.accepted.length) return
     const ids = plan.accepted.map(() => `cwnode_${crypto.randomUUID()}`)
     const group = `import_${crypto.randomUUID()}`
     setRedoStack([])
-    const ok = await stage(
+    plan.accepted.forEach(({ file, kind }, i) => showLocal(ids[i]!, file, kind))
+    void stage(
       {
         kind: 'actions',
         changeGroupID: group,
@@ -591,32 +687,39 @@ function Workspace({ account }: { account: string }) {
       },
       { select: ids },
     )
-    // 建节点确认前就撤销了：节点已回退，不再上传。
-    if (!ok || uploads.isCancelled(group)) return
+    importGroups.current.set(group, {
+      nodes: ids,
+      created: true,
+      edits: editCount.current,
+      fills: 0,
+    })
     uploads.start(
       plan.accepted.map((a) => a.file),
-      (_, i) => ({
-        kind: 'node',
-        node: {
-          canvas_id: canvasID,
-          node_id: ids[i]!,
-          expected_data_revision: '1',
-          change_group_id: group,
-        },
-      }),
+      () => ({ kind: 'staged' }),
       group,
+      ids,
     )
   }
-  // Filling one empty node: its binding is a single undo step of its own.
+  // Filling one empty node takes the same path: local preview now, a fill
+  // edit once staged. It is its own undo group; undo cancels the upload.
   function uploadIntoNode(n: api.CanvasNode, file: File) {
-    uploads.start([file], () => ({
-      kind: 'node',
-      node: {
-        canvas_id: canvasID,
-        node_id: n.id,
-        expected_data_revision: n.data_revision,
-      },
-    }))
+    const kind = n.metadata.type_key.slice(5) as MediaKind
+    const group = `import_${crypto.randomUUID()}`
+    showLocal(n.id, file, kind)
+    importGroups.current.set(group, {
+      nodes: [n.id],
+      created: false,
+      edits: editCount.current,
+      fills: 0,
+    })
+    pendingFills.current.set(group, { nodes: [n.id], edits: editCount.current })
+    uploads.start([file], () => ({ kind: 'staged' }), group, [n.id])
+  }
+  function showLocal(nodeID: string, file: File, kind: MediaKind) {
+    const entry = localMedia.set(nodeID, file, kind)
+    void readMediaSize(entry.url, kind).then((size) => {
+      if (size) localMedia.patch(nodeID, size)
+    })
   }
   function uploadToNode(id: string, kind: MediaKind) {
     if (!uploads.capabilities || uploads.capabilitiesError) {
@@ -1369,7 +1472,7 @@ function Workspace({ account }: { account: string }) {
                   onMoveSelection={moveSelection}
                   onUndo={() => reverseChange()}
                   onRedo={() => reverseChange(true)}
-                  canUndo={history.canUndo}
+                  canUndo={history.canUndo || fillUploading}
                   canRedo={history.canRedo}
                   onNotice={setCopyNotice}
                   onSelect={(id) => {

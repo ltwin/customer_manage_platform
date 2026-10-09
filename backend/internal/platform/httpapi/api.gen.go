@@ -389,6 +389,21 @@ func (e CreativeActionFillFromAssetType) Valid() bool {
 	}
 }
 
+// Defines values for CreativeActionFillFromUploadType.
+const (
+	FillFromUpload CreativeActionFillFromUploadType = "fill_from_upload"
+)
+
+// Valid indicates whether the value is a known member of the CreativeActionFillFromUploadType enum.
+func (e CreativeActionFillFromUploadType) Valid() bool {
+	switch e {
+	case FillFromUpload:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeActionGroupNodesType.
 const (
 	GroupNodes CreativeActionGroupNodesType = "group_nodes"
@@ -1696,8 +1711,9 @@ func (e CreativeUploadState) Valid() bool {
 
 // Defines values for CreativeUploadTargetKind.
 const (
-	CreativeUploadTargetKindAsset CreativeUploadTargetKind = "asset"
-	CreativeUploadTargetKindNode  CreativeUploadTargetKind = "node"
+	CreativeUploadTargetKindAsset  CreativeUploadTargetKind = "asset"
+	CreativeUploadTargetKindNode   CreativeUploadTargetKind = "node"
+	CreativeUploadTargetKindStaged CreativeUploadTargetKind = "staged"
 )
 
 // Valid indicates whether the value is a known member of the CreativeUploadTargetKind enum.
@@ -1706,6 +1722,8 @@ func (e CreativeUploadTargetKind) Valid() bool {
 	case CreativeUploadTargetKindAsset:
 		return true
 	case CreativeUploadTargetKindNode:
+		return true
+	case CreativeUploadTargetKindStaged:
 		return true
 	default:
 		return false
@@ -1718,6 +1736,7 @@ const (
 	CreativeUploadBindingStatusDiscarded   CreativeUploadBindingStatus = "discarded"
 	CreativeUploadBindingStatusExpired     CreativeUploadBindingStatus = "expired"
 	CreativeUploadBindingStatusNeedsReview CreativeUploadBindingStatus = "needs_review"
+	CreativeUploadBindingStatusStaged      CreativeUploadBindingStatus = "staged"
 )
 
 // Valid indicates whether the value is a known member of the CreativeUploadBindingStatus enum.
@@ -1730,6 +1749,8 @@ func (e CreativeUploadBindingStatus) Valid() bool {
 	case CreativeUploadBindingStatusExpired:
 		return true
 	case CreativeUploadBindingStatusNeedsReview:
+		return true
+	case CreativeUploadBindingStatusStaged:
 		return true
 	default:
 		return false
@@ -3412,6 +3433,16 @@ type CreativeActionFillFromAsset struct {
 // CreativeActionFillFromAssetType defines model for CreativeActionFillFromAsset.Type.
 type CreativeActionFillFromAssetType string
 
+// CreativeActionFillFromUpload 用一个已就绪的暂存上传填充同类型的空节点；一个暂存上传只能放入一次。节点标题为空时用文件名（去掉扩展名）。
+type CreativeActionFillFromUpload struct {
+	NodeId   string                           `json:"node_id"`
+	Type     CreativeActionFillFromUploadType `json:"type"`
+	UploadId string                           `json:"upload_id"`
+}
+
+// CreativeActionFillFromUploadType defines model for CreativeActionFillFromUpload.Type.
+type CreativeActionFillFromUploadType string
+
 // CreativeActionGroupNodes defines model for CreativeActionGroupNodes.
 type CreativeActionGroupNodes struct {
 	NodeIds []string                     `json:"node_ids"`
@@ -5070,12 +5101,14 @@ type CreativeUploadAssetTarget struct {
 type CreativeUploadBinding struct {
 	CandidateId nullable.Nullable[string]    `json:"candidate_id"`
 	ExpiresAt   nullable.Nullable[time.Time] `json:"expires_at"`
-	Status      CreativeUploadBindingStatus  `json:"status"`
-	TargetId    nullable.Nullable[string]    `json:"target_id"`
-	TargetKind  nullable.Nullable[string]    `json:"target_kind"`
+
+	// Status staged：暂存上传已就绪，等待 fill_from_upload
+	Status     CreativeUploadBindingStatus `json:"status"`
+	TargetId   nullable.Nullable[string]   `json:"target_id"`
+	TargetKind nullable.Nullable[string]   `json:"target_kind"`
 }
 
-// CreativeUploadBindingStatus defines model for CreativeUploadBinding.Status.
+// CreativeUploadBindingStatus staged：暂存上传已就绪，等待 fill_from_upload
 type CreativeUploadBindingStatus string
 
 // CreativeUploadCancelPayload defines model for CreativeUploadCancelPayload.
@@ -8046,6 +8079,32 @@ func (t *CreativeGraphAction) FromCreativeActionFillFromAsset(v CreativeActionFi
 
 // MergeCreativeActionFillFromAsset performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionFillFromAsset
 func (t *CreativeGraphAction) MergeCreativeActionFillFromAsset(v CreativeActionFillFromAsset) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeActionFillFromUpload returns the union data inside the CreativeGraphAction as a CreativeActionFillFromUpload
+func (t CreativeGraphAction) AsCreativeActionFillFromUpload() (CreativeActionFillFromUpload, error) {
+	var body CreativeActionFillFromUpload
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeActionFillFromUpload overwrites any union data inside the CreativeGraphAction as the provided CreativeActionFillFromUpload
+func (t *CreativeGraphAction) FromCreativeActionFillFromUpload(v CreativeActionFillFromUpload) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeActionFillFromUpload performs a merge with any union data inside the CreativeGraphAction, using the provided CreativeActionFillFromUpload
+func (t *CreativeGraphAction) MergeCreativeActionFillFromUpload(v CreativeActionFillFromUpload) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

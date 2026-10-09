@@ -62,7 +62,14 @@ import {
   Library,
   Upload,
   Sparkles,
+  LoaderCircle,
 } from 'lucide-react'
+import {
+  localMedia,
+  useLocalMedia,
+  useLocalMediaVersion,
+  type LocalMedia,
+} from './localMedia.ts'
 import type { Asset, Canvas, CanvasNode, GraphAction } from './api.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind, type MediaKind } from './media.ts'
@@ -125,6 +132,8 @@ type FlowNode = Node<
     meta: string
     /** 空媒体节点里的两个入口都填充这个节点本身。 */
     fillEmpty: (id: string, kind: MediaKind, via: 'upload' | 'library') => void
+    /** 本机预览读出的尺寸；变化时按比例重算高度。 */
+    localSize: string
   },
   'content'
 >
@@ -178,6 +187,38 @@ function KindIcon({ typeKey, size = 14 }: { typeKey: string; size?: number }) {
       return <Link2 size={size} />
   }
 }
+// 本机文件预览：上传中变暗加转圈和进度；服务器内容到达后叠在下面等它加载完。
+function LocalPreview({ local, done = false }: { local: LocalMedia; done?: boolean }) {
+  const percent = Math.round((local.progress ?? 0) * 100)
+  return (
+    <div
+      className={`cc-local-media ${done ? 'is-done' : ''} ${local.failed ? 'is-failed' : ''}`}
+      role="status"
+      aria-label={local.failed ? '上传失败' : done ? '正在显示' : `上传中 ${percent}%`}
+    >
+      {local.kind === 'image' ? (
+        <img src={local.url} alt="" draggable={false} />
+      ) : local.kind === 'video' ? (
+        <video src={local.url} muted playsInline preload="metadata" />
+      ) : (
+        <AudioLines size={26} />
+      )}
+      {!done && (
+        <span className="cc-local-state">
+          {local.failed ? (
+            '上传失败 · 可在导入列表重试'
+          ) : (
+            <>
+              <LoaderCircle size={22} className="cc-spin" />
+              <small>{percent}%</small>
+            </>
+          )}
+        </span>
+      )}
+    </div>
+  )
+}
+
 const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
   // 版本预览只存在于卡片内；取消选中即回到主版本，下游始终用主版本。
   const preview = data.previewContent
@@ -196,6 +237,16 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
   useEffect(() => {
     if (preview && preview.id === data.item.content?.id) setPreview(null)
   }, [preview, data.item.content?.id, setPreview])
+  // 拖入或上传的文件在服务器内容加载出来之前直接用本机文件显示。
+  const local = useLocalMedia(data.item.id)
+  const serverReady = useCallback(
+    () => localMedia.clear(previewNodeID),
+    [previewNodeID],
+  )
+  useEffect(() => {
+    // 音频卡片只显示图标，没有可等的加载完成事件。
+    if (local && data.item.content && local.kind === 'audio') serverReady()
+  }, [local, data.item.content, serverReady])
   const n = data.item,
     p = n.content?.payload,
     kind = nodeKind(n.metadata.type_key),
@@ -283,7 +334,9 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
                 title={n.metadata.title || untitled(n.metadata.type_key)}
                 controls={kind !== 'image'}
                 hoverPlay={kind === 'video'}
+                onReady={local ? serverReady : undefined}
               />
+              {local && <LocalPreview local={local} done />}
               {preview && (
                 <span className="cc-preview-flag">
                   预览版本 · 下游仍用主版本
@@ -305,6 +358,8 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
                 />
               )}
             </>
+          ) : local ? (
+            <LocalPreview local={local} />
           ) : (
             <div
               className="cc-media-empty"
@@ -929,6 +984,8 @@ export default function CanvasView({
       release()
     }
   }, [onDraggingChange])
+  // 本机预览尺寸读出后重算节点高度。
+  const localVersion = useLocalMediaVersion()
   const [cardPreviews, setCardPreviews] = useState<
     Record<string, Content | null>
   >({})
@@ -1044,14 +1101,18 @@ export default function CanvasView({
               : null,
           kind = nodeKind(n.metadata.type_key),
           meta = nodeLabelMeta(n, modelLabels),
+          local = n.content ? null : localMedia.get(n.id),
+          localSize = local?.width ? `${local.width}x${local.height}` : '',
           mediaHeight =
             kind === 'image' || kind === 'video'
-              ? fitMediaHeight(
-                  previewContent ?? n.content,
-                  n.metadata.width,
-                  kind,
-                  n.metadata.height,
-                )
+              ? local?.width && local.height
+                ? (n.metadata.width * local.height) / local.width
+                : fitMediaHeight(
+                    previewContent ?? n.content,
+                    n.metadata.width,
+                    kind,
+                    n.metadata.height,
+                  )
               : n.metadata.height,
           draggable =
             !moveDisabled &&
@@ -1063,6 +1124,7 @@ export default function CanvasView({
           old &&
           old.data.item === n &&
           old.data.previewContent === previewContent &&
+          old.data.localSize === localSize &&
           old.selected === isSelected &&
           old.draggable === draggable &&
           old.data.disabled === disabled &&
@@ -1091,7 +1153,9 @@ export default function CanvasView({
             n.metadata.width,
           height:
             resized?.height ??
-            (old?.data.item === n && old.data.previewContent === previewContent
+            (old?.data.item === n &&
+            old.data.previewContent === previewContent &&
+            old.data.localSize === localSize
               ? old.height
               : undefined) ??
             mediaHeight,
@@ -1118,6 +1182,7 @@ export default function CanvasView({
             solo: isSelected && selection.length === 1,
             meta,
             fillEmpty,
+            localSize,
           },
           selected: isSelected,
           draggable,
@@ -1147,6 +1212,7 @@ export default function CanvasView({
     cardPreviews,
     previewVersion,
     modelLabels,
+    localVersion,
   ])
   const pointerDown = useRef<{ x: number; y: number } | null>(null)
   const selectionStart = useRef<{ x: number; y: number } | null>(null)

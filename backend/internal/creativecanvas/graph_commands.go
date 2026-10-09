@@ -3,6 +3,7 @@ package creativecanvas
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -26,6 +28,14 @@ type editGraph struct {
 	changeID  string
 	mapping   map[string]string
 	omitted   []string
+	staged    []placedUpload
+}
+
+// placedUpload is a staged upload consumed by this batch; it is marked placed
+// once the node's final data revision is known.
+type placedUpload struct {
+	staged creativestaging.Staged
+	nodeID string
 }
 
 func ApplyCommands(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
@@ -61,7 +71,7 @@ func applyBatch(ctx context.Context, tx store.TxAccountScope, v BatchInput, oper
 	structural := false
 	for _, a := range v.Actions {
 		switch a.Type {
-		case "replace_content", "fill_from_asset", "update_metadata", "clear_content", "select_version", "delete_version", "move_nodes", "move_node", "resize_node":
+		case "replace_content", "fill_from_asset", "fill_from_upload", "update_metadata", "clear_content", "select_version", "delete_version", "move_nodes", "move_node", "resize_node":
 		default:
 			structural = true
 		}
@@ -104,6 +114,17 @@ func applyBatch(ctx context.Context, tx store.TxAccountScope, v BatchInput, oper
 	result, err := persistGraph(ctx, tx, c, before, e.g, ids, changes, operation, e.changeID, v.ChangeGroupID, "", e.mapping, e.omitted)
 	if err != nil {
 		return ChangeResult{}, err
+	}
+	for _, p := range e.staged {
+		var revision creativeops.Revision
+		for _, r := range result.ObjectResults {
+			if r.ID == p.nodeID {
+				revision = r.DataRevision
+			}
+		}
+		if err = creativestaging.Place(ctx, tx, p.staged, result.ChangeID, p.nodeID, int64(revision)); err != nil {
+			return ChangeResult{}, err
+		}
 	}
 	// Successful move receipts acknowledge every submitted target, including no-ops.
 	seen := map[string]bool{}
@@ -316,6 +337,8 @@ func (e *editGraph) apply(a Action) error {
 		return e.replace(a)
 	case "fill_from_asset":
 		return e.fill(a)
+	case "fill_from_upload":
+		return e.fillUpload(a)
 	case "connect_reference":
 		return e.connect(a)
 	case "disconnect_reference":
@@ -481,6 +504,47 @@ func (e *editGraph) fill(a Action) error {
 	}
 	fitMediaSize(&n, r)
 	e.g.Nodes[n.ID] = n
+	return nil
+}
+
+// fillUpload places a staged upload into an empty node of the same kind. It is
+// an ordinary user edit: ordered with the rest of the batch and undoable.
+func (e *editGraph) fillUpload(a Action) error {
+	n, err := e.node(a.NodeID, "data")
+	if err != nil {
+		return err
+	}
+	if a.UploadID == "" || n.TypeKey == "core.group" || n.ContentRevisionID != nil {
+		return creativeops.ErrValidation
+	}
+	for _, p := range e.staged {
+		if p.staged.UploadID == a.UploadID || p.nodeID == n.ID {
+			return creativeops.ErrValidation
+		}
+	}
+	s, err := creativestaging.Lock(e.ctx, e.tx, a.UploadID)
+	if errors.Is(err, creativestaging.ErrUnavailable) {
+		return ErrVersionConflict
+	}
+	if err != nil {
+		return err
+	}
+	r, err := creativecontent.RequireUsable(e.ctx, e.tx, s.ContentRevisionID, "display")
+	if err != nil {
+		return err
+	}
+	if n.TypeKey != "core."+r.Kind || s.Kind != r.Kind {
+		return creativeops.ErrValidation
+	}
+	n.ContentID = &r.ContentID
+	n.ContentRevisionID = &r.ID
+	n.SelectedVersionID = nil
+	if strings.TrimSpace(n.Title) == "" {
+		n.Title = creativestaging.Title(s.FileName)
+	}
+	fitMediaSize(&n, r)
+	e.g.Nodes[n.ID] = n
+	e.staged = append(e.staged, placedUpload{staged: s, nodeID: n.ID})
 	return nil
 }
 func (e *editGraph) replace(a Action) error {

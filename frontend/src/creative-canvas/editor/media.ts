@@ -108,10 +108,11 @@ export async function uploadFile(
   if ('error' in classified) throw new Error(classified.error)
   onProgress({ stage: 'creating', sent: 0, total: file.size })
   const operation = crypto.randomUUID()
+  // 建会话不随撤销中止：请求一旦发出，服务器可能已经建好会话，
+  // 拿到会话后再取消，不留下占着额度的孤儿会话。
   let upload = await request<Upload>('/creative/uploads', {
     method: 'POST',
     headers: { 'Idempotency-Key': operation },
-    signal,
     body: JSON.stringify({
       operation_id: operation,
       client_created_at: new Date().toISOString(),
@@ -124,6 +125,11 @@ export async function uploadFile(
       },
     }),
   })
+  onProgress({ stage: 'creating', sent: 0, total: file.size, upload })
+  if (signal?.aborted) {
+    await cancelUpload(upload).catch(() => {})
+    throw new Error('已取消')
+  }
   upload = await poll(upload.id, (u) => u.state !== 'created', signal)
   if (upload.state !== 'uploading')
     throw new Error(describeFailure(upload) ?? '上传会话未能初始化')

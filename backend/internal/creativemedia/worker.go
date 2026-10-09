@@ -14,6 +14,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -403,6 +404,16 @@ func (s *Service) bindOrCandidate(ctx context.Context, tx store.TxAccountScope, 
 	if targetErr != nil && !errors.Is(targetErr, creativecanvas.ErrTargetChanged) {
 		return Publication{}, targetErr
 	}
+	if target.Kind == "staged" {
+		// 暂存：只发布内容，等用户在画布上用 fill_from_upload 放进节点。
+		id := "ccuc_" + uuid.NewString()
+		if _, err := creativecontent.WriteMediaAndRetain(ctx, tx, draft, objects, func(r creativecontent.Revision) error {
+			return tx.Insert(ctx, "creative_upload_candidates", []string{"id", "upload_id", "content_id", "content_revision_id", "state", "reason", "target_snapshot", "original_name", "declared_kind", "expires_at"}, id, current.ID, r.ContentID, r.ID, "pending", creativestaging.Reason, current.Target, current.Name, current.Kind, now.Add(s.cfg.CandidateTTL))
+		}); err != nil {
+			return Publication{}, err
+		}
+		return Publication{Kind: "candidate", ID: id, Revision: 1}, nil
+	}
 	if targetErr == nil && target.Kind == "asset" {
 		var asset creativelibrary.AssetResult
 		if _, err := creativecontent.WriteMediaAndRetain(ctx, tx, draft, objects, func(r creativecontent.Revision) error {
@@ -419,7 +430,7 @@ func (s *Service) bindOrCandidate(ctx context.Context, tx store.TxAccountScope, 
 		_, err := creativecontent.WriteMediaAndRetain(ctx, tx, draft, objects, func(r creativecontent.Revision) error {
 			var e error
 			node := target.Node.canvas()
-			node.Title = uploadTitle(current.Name)
+			node.Title = creativestaging.Title(current.Name)
 			change, e = creativecanvas.BindNodeRevisionInTx(ctx, tx, node, r, operation)
 			return e
 		})

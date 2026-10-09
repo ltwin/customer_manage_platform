@@ -201,6 +201,22 @@ export class SaveQueue {
     void this.update({ ...this.value, outbox: outbox.slice(0, -1) })
     return tail
   }
+  // cancelTailGroup withdraws the still-pending tail intents of one undo
+  // group (an import batch and its fills) in one step.
+  cancelTailGroup(canvasID: string, group: string): Intent[] {
+    const outbox = this.outbox
+    let cut = outbox.length
+    while (cut > 0) {
+      const i = outbox[cut - 1]!
+      if (i.canvasID !== canvasID || i.state !== 'pending' || i.changeGroupID !== group) break
+      cut--
+    }
+    const removed = outbox.slice(cut)
+    if (!removed.length) return []
+    for (const i of removed) this.settle(i.id, withdrawn.cancelled)
+    void this.update({ ...this.value, outbox: outbox.slice(0, cut) })
+    return removed
+  }
   private settle(id: string, error: string | null, receipt?: Receipt) {
     const waiter = this.confirmations.get(id)
     this.confirmations.delete(id)

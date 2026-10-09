@@ -25,15 +25,18 @@ export type UploadItem = {
   upload?: Upload
   /** 拖入画布的一批：与建节点同一撤销组，撤销时整批取消。 */
   batch?: string
+  /** 暂存上传完成后要放进的节点。 */
+  nodeID?: string
   /** 只是说明为什么没导入，没有可重试的目标。 */
   final?: boolean
 }
 
 const concurrency = 3
-// 撤销之后才完成的上传：已绑定的内容随撤销组回退；落成候选的直接放弃。
+// 撤销之后才完成的上传：暂存或落成候选的内容直接放弃，不写回画布。
 function dropLate(upload: Upload) {
   const p = upload.publication
-  if (upload.binding?.status === 'needs_review' && p?.kind === 'candidate')
+  const status = upload.binding?.status
+  if ((status === 'staged' || status === 'needs_review') && p?.kind === 'candidate')
     void discardCandidate(p.id, p.revision).catch(() => {})
 }
 const settled = (stage: UploadItem['stage']) =>
@@ -47,7 +50,10 @@ const settled = (stage: UploadItem['stage']) =>
 // Starting is driven by an effect over the item list, so retries (which only
 // change a stage) and batch additions both schedule work without a side
 // effect inside a state updater.
-export function useUploads(onDone: (item: UploadItem) => void) {
+export function useUploads(
+  onDone: (item: UploadItem) => void,
+  onProgress?: (item: UploadItem, sent: number) => void,
+) {
   const [capabilities, setCapabilities] = useState<MediaCapabilities | null>(
     null,
   )
@@ -57,8 +63,13 @@ export function useUploads(onDone: (item: UploadItem) => void) {
   // 进行中会话的中止器与最新会话，撤销时据此取消。
   const running = useRef(new Map<string, { abort: AbortController; upload?: Upload }>())
   const cancelled = useRef(new Set<string>())
+  // 已经入队填充的上传：它的内容由撤销组负责回退，不能再放弃暂存，
+  // 否则路上的填充会撞上已放弃的暂存而冲突。
+  const placed = useRef(new Set<string>())
   const done = useRef(onDone)
   done.current = onDone
+  const progress = useRef(onProgress)
+  progress.current = onProgress
   useEffect(() => {
     const controller = new AbortController()
     void read<MediaCapabilities>('/media-capabilities', controller.signal)
@@ -95,8 +106,10 @@ export function useUploads(onDone: (item: UploadItem) => void) {
         capabilities,
         (p) => {
           if (p.upload) live.upload = p.upload
-          if (!live.abort.signal.aborted)
+          if (!live.abort.signal.aborted) {
             patch(item.id, { stage: p.stage, sent: p.sent, upload: p.upload })
+            progress.current?.(item, p.sent)
+          }
         },
         live.abort.signal,
       )
@@ -116,10 +129,13 @@ export function useUploads(onDone: (item: UploadItem) => void) {
         })
         .catch((e: unknown) => {
           if (live.abort.signal.aborted) return
-          patch(item.id, {
-            stage: 'failed',
+          const failed = {
+            ...item,
+            stage: 'failed' as const,
             message: e instanceof Error ? e.message : '上传失败',
-          })
+          }
+          patch(item.id, failed)
+          done.current(failed)
         })
         .finally(() => {
           started.current.delete(item.id)
@@ -132,6 +148,7 @@ export function useUploads(onDone: (item: UploadItem) => void) {
       files: File[],
       target: (file: File, index: number) => UploadTarget,
       batch?: string,
+      nodeIDs?: string[],
     ) => {
       if (!capabilities) return []
       const items: UploadItem[] = files
@@ -148,6 +165,7 @@ export function useUploads(onDone: (item: UploadItem) => void) {
             sent: 0,
             message: 'error' in classified ? classified.error : '',
             batch,
+            nodeID: nodeIDs?.[i],
           }
         })
       setItems((old) => [...old, ...items])
@@ -176,12 +194,16 @@ export function useUploads(onDone: (item: UploadItem) => void) {
     },
     [],
   )
-  // 撤销导入：没开始的直接取消，进行中的中止本机请求并取消服务器会话。
+  // 撤销导入：没开始的直接取消，进行中的中止本机请求并取消服务器会话；
+  // 已经传完、还没放进节点的暂存一并放弃（已放进的服务器会拒绝，忽略）。
   const cancelBatch = useCallback(
     (batch: string) => {
       cancelled.current.add(batch)
       for (const item of items) {
-        if (item.batch !== batch || settled(item.stage)) continue
+        if (item.batch !== batch) continue
+        if (item.stage === 'done' && item.upload && !placed.current.has(item.id))
+          dropLate(item.upload)
+        if (settled(item.stage)) continue
         const live = running.current.get(item.id)
         live?.abort.abort()
         const upload = live?.upload ?? item.upload
@@ -215,6 +237,10 @@ export function useUploads(onDone: (item: UploadItem) => void) {
   const dismiss = useCallback(() => {
     setItems((old) => old.filter((i) => !settled(i.stage)))
   }, [])
+  const discardStaged = useCallback((upload: Upload) => dropLate(upload), [])
+  const markPlaced = useCallback((id: string) => {
+    placed.current.add(id)
+  }, [])
   const isCancelled = useCallback(
     (batch: string) => cancelled.current.has(batch),
     [],
@@ -227,6 +253,8 @@ export function useUploads(onDone: (item: UploadItem) => void) {
     start,
     reject,
     cancelBatch,
+    discardStaged,
+    markPlaced,
     isCancelled,
     retry,
     dismiss,

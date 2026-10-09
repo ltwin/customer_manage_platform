@@ -68,6 +68,7 @@ type Action struct {
 	Rights       *creativecontent.RightsDeclarationInput `json:"rights,omitempty"`
 	FollowLatest bool                                    `json:"follow_latest,omitempty"`
 	VersionID    string                                  `json:"version_id,omitempty"`
+	UploadID     string                                  `json:"upload_id,omitempty"`
 }
 type BatchInput struct {
 	CanvasID                 string               `json:"canvas_id"`
@@ -333,7 +334,7 @@ func (a *Action) UnmarshalJSON(raw []byte) error {
 		"connect_reference": "source_node_id target_node_id source_port target_port role", "disconnect_reference": "edge_id",
 		"set_node_inputs": "node_id inputs", "group_nodes": "node_ids", "ungroup_nodes": "node_id", "reparent_nodes": "node_ids parent_id",
 		"duplicate_selection": "node_ids dx dy", "select_version": "node_id version_id follow_latest", "delete_version": "node_id version_id",
-		"remove_nodes": "node_ids group_mode", "fill_from_asset": "node_id asset",
+		"remove_nodes": "node_ids group_mode", "fill_from_asset": "node_id asset", "fill_from_upload": "node_id upload_id",
 	}
 	if kind == "add_node" || kind == "move_node" {
 		for _, key := range []string{"x", "y"} {

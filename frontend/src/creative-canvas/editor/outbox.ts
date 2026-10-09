@@ -37,6 +37,10 @@ export type Intent = {
   draftValue?: Draft
   /** 撤销组：拖入文件的建节点与随后的上传绑定同组，一次撤销整批。 */
   changeGroupID?: string
+  /** 撤销一批导入时立刻在本机隐藏的节点，不等服务器回执。 */
+  hides?: string[]
+  /** 撤销单节点填充时立刻在本机清空的节点。 */
+  empties?: string[]
   state: 'pending' | 'sent' | 'confirmed'
   // Undo/redo target resolved when the request was built.
   changeID?: string
@@ -295,6 +299,28 @@ export function projectCanvas(canvas: Canvas, intents: Intent[]): Canvas {
       ),
   )
   for (const intent of live) {
+    // 撤销本身不在本机重放；知道效果的（撤销一批导入）先画出来，失败时意图被丢弃，节点自然回来。
+    if (intent.hides?.length) {
+      const hidden = new Set(intent.hides)
+      if (nodes.some((n) => hidden.has(n.id))) {
+        nodes = nodes.filter((n) => !hidden.has(n.id))
+        edges = edges.filter(
+          (e) => !hidden.has(e.source_node_id) && !hidden.has(e.target_node_id),
+        )
+        changed = true
+      }
+    }
+    for (const id of intent.empties ?? [])
+      setNode(id, (n) =>
+        n.content
+          ? {
+              ...n,
+              content: undefined,
+              status: { ...n.status, content_state: 'empty' },
+              data: { ...n.data, content_id: null, content_revision_id: null },
+            }
+          : n,
+      )
     for (const [index, action] of (intent.actions ?? []).entries()) {
       switch (action.type) {
         case 'add_node': {

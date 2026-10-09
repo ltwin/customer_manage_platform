@@ -699,3 +699,80 @@ func TestBatchImportUndoesAsOneGroup(t *testing.T) {
 		t.Fatalf("redo restores nodes with bound content %+v", back.Nodes)
 	}
 }
+
+// V6-008 v2：暂存上传不改画布；放进节点是用户的一次编辑（fill_from_upload），
+// 与建节点同组，一次撤销整批、一次重做恢复；一个暂存只能用一次。
+func TestStagedUploadFillsNodeOnlyByUserEdit(t *testing.T) {
+	f := setup(t)
+	p := project(t, f.a)
+	png := sample(t, "sample.png")
+	staged := creativemedia.Target{Kind: "staged"}
+	a := f.uploadFile(t, f.a, "窗边.晨光.png", "image/png", "image", png, staged)
+	b := f.uploadFile(t, f.a, "b.png", "image/png", "image", png, staged)
+	if a.State != "ready" || a.Binding == nil || a.Binding.Status != "staged" {
+		t.Fatalf("staged view %+v", a)
+	}
+	if list, _ := f.svc.ListCandidates(t.Context(), f.a); len(list.Items) != 0 {
+		t.Fatalf("staged uploads are not review candidates: %+v", list.Items)
+	}
+	canvas, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if len(canvas.Changes) != 0 {
+		t.Fatal("a staged upload must not change the canvas")
+	}
+	group := "import_" + uuid.NewString()
+	n1, n2 := "cwnode_"+uuid.NewString(), "cwnode_"+uuid.NewString()
+	add := func(input creativecanvas.BatchInput) (creativeops.Receipt, error) {
+		input.CanvasID, input.ChangeGroupID = p.CanvasID, group
+		return creativecanvas.ApplyCommands(t.Context(), f.a, command(t, input))
+	}
+	if _, err := add(creativecanvas.BatchInput{ExpectedTopologyRevision: canvas.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(canvas), Actions: []creativecanvas.Action{
+		{Type: "add_node", NodeID: n1, TypeKey: "core.image", X: 0, Y: 0},
+		{Type: "add_node", NodeID: n2, TypeKey: "core.image", Title: "保留", X: 330, Y: 0},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, fill := range []struct{ node, upload string }{{n1, a.ID}, {n2, b.ID}} {
+		now, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+		if _, err := add(creativecanvas.BatchInput{ReadSet: creativecanvas.ReadSetFor(now), Actions: []creativecanvas.Action{{Type: "fill_from_upload", NodeID: fill.node, UploadID: fill.upload}}}); err != nil {
+			t.Fatal("fill", err)
+		}
+	}
+	filled, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	titles := map[string]string{}
+	for _, n := range filled.Nodes {
+		if n.ContentRevisionID == nil || n.Content == nil || n.Height == n.Width && n.Content.Media[0].Width != n.Content.Media[0].Height {
+			t.Fatalf("node %s not filled to ratio %+v", n.ID, n)
+		}
+		titles[n.ID] = n.Title
+	}
+	if titles[n1] != "窗边.晨光" || titles[n2] != "保留" {
+		t.Fatalf("titles %+v", titles)
+	}
+	if view, _ := f.svc.GetUpload(t.Context(), f.a, a.ID); view.Binding == nil || view.Binding.Status != "applied" || view.Binding.TargetID == nil || *view.Binding.TargetID != n1 {
+		t.Fatalf("placed binding %+v", view.Binding)
+	}
+	// 同一个暂存不能再放一次。
+	extra := "cwnode_" + uuid.NewString()
+	if _, err := creativecanvas.ApplyCommands(t.Context(), f.a, command(t, creativecanvas.BatchInput{CanvasID: p.CanvasID, ExpectedTopologyRevision: filled.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(filled), Actions: []creativecanvas.Action{
+		{Type: "add_node", NodeID: extra, TypeKey: "core.image", X: 0, Y: 400},
+		{Type: "fill_from_upload", NodeID: extra, UploadID: a.ID},
+	}})); !errors.Is(err, creativecanvas.ErrVersionConflict) {
+		t.Fatal("staged upload reused", err)
+	}
+	undone := must[creativecanvas.ChangeResult](t)(creativecanvas.Undo(t.Context(), f.a, command(t, creativecanvas.UndoInput{CanvasID: p.CanvasID, ChangeGroupID: group, ReadSet: creativecanvas.ReadSetFor(filled)})))
+	if empty, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID); len(empty.Nodes) != 0 {
+		t.Fatalf("one undo removes the batch, left %d", len(empty.Nodes))
+	}
+	empty, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID)
+	if _, err := creativecanvas.Redo(t.Context(), f.a, command(t, creativecanvas.UndoInput{CanvasID: p.CanvasID, ChangeID: undone.ChangeID, ReadSet: creativecanvas.ReadSetFor(empty)})); err != nil {
+		t.Fatal("redo", err)
+	}
+	if back, _ := creativecanvas.GetCanvas(t.Context(), f.a, p.CanvasID); len(back.Nodes) != 2 || back.Nodes[0].Content == nil || back.Nodes[1].Content == nil {
+		t.Fatalf("redo restores filled nodes %+v", back.Nodes)
+	}
+	// 撤销后没放进去的暂存可以放弃。
+	c := must[creativemedia.UploadView](t)(f.svc.CreateUpload(t.Context(), f.a, command(t, creativemedia.CreateUploadInput{FileName: "c.png", Kind: "image", Mime: "image/png", Size: int64(len(png)), Rights: rights(), Target: staged})))
+	if _, err := f.svc.CancelUpload(t.Context(), f.a, command(t, creativemedia.CancelUploadInput{UploadID: c.ID, ExpectedRevision: c.Revision})); err != nil {
+		t.Fatal("cancel staged before upload", err)
+	}
+}

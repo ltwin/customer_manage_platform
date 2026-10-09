@@ -8,6 +8,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -44,7 +45,8 @@ func (s *Service) ListCandidates(ctx context.Context, scope store.AccountScope) 
 		if err := tx.RequireCreativeRead(ctx); err != nil {
 			return err
 		}
-		rows, err := tx.QueryPage(ctx, "creative_upload_candidates", candidateColumns, "state='pending' AND expires_at>clock_timestamp()", []store.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}}, 100, 0)
+		// 暂存上传等用户放进节点，不是待处理的绑定，不列出。
+		rows, err := tx.QueryPage(ctx, "creative_upload_candidates", candidateColumns, "state='pending' AND reason<>'"+creativestaging.Reason+"' AND expires_at>clock_timestamp()", []store.OrderBy{{Column: "created_at", Desc: true}, {Column: "id", Desc: true}}, 100, 0)
 		if err != nil {
 			return err
 		}

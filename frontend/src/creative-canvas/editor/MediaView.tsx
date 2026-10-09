@@ -80,6 +80,7 @@ export function MediaFigure({
   controls = false,
   prefer = 'display',
   hoverPlay = false,
+  onReady,
 }: {
   content: Content | undefined
   kind: string
@@ -88,6 +89,8 @@ export function MediaFigure({
   controls?: boolean
   prefer?: 'display' | 'original'
   hoverPlay?: boolean
+  /** 媒体真正可以显示时回调（图片解码完成、视频拿到首帧）。 */
+  onReady?: () => void
 }) {
   const { ref, near } = useNearViewport<HTMLDivElement>()
   const video = useRef<HTMLVideoElement>(null)
@@ -137,6 +140,7 @@ export function MediaFigure({
           alt={title}
           draggable={false}
           decoding="async"
+          onLoad={onReady}
           onError={() => setFailed(true)}
         />
       ) : kind === 'video' ? (
@@ -167,12 +171,13 @@ export function MediaFigure({
                 }
               : undefined
           }
+          onLoadedData={onReady}
           onError={() => setFailed(true)}
         />
       ) : controls ? (
         <div className="cc-audio nodrag">
           <AudioLines size={26} />
-          <audio src={url} controls preload="metadata" onError={() => setFailed(true)} />
+          <audio src={url} controls preload="metadata" onLoadedMetadata={onReady} onError={() => setFailed(true)} />
         </div>
       ) : (
         <span className="cc-audio" aria-hidden="true">

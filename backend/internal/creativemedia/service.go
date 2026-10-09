@@ -15,6 +15,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -111,6 +112,11 @@ func (t Target) validate() error {
 			return creativeops.ErrValidation
 		}
 		return nil
+	case "staged":
+		if t.Node != nil || t.Asset != nil {
+			return creativeops.ErrValidation
+		}
+		return nil
 	}
 	return creativeops.ErrValidation
 }
@@ -121,21 +127,12 @@ func (n NodeTarget) canvas() creativecanvas.NodeTarget {
 	return creativecanvas.NodeTarget{CanvasID: n.CanvasID, NodeID: n.NodeID, ExpectedDataRevision: n.ExpectedDataRevision, ChangeGroupID: n.ChangeGroupID}
 }
 
-// uploadTitle 是节点标题为空时补上的名称：去掉扩展名的文件名，最多 200 字。
-func uploadTitle(name string) string {
-	title := strings.TrimSuffix(name, path.Ext(name))
-	if strings.TrimSpace(title) == "" {
-		title = name
-	}
-	if r := []rune(title); len(r) > 200 {
-		title = string(r[:200])
-	}
-	return title
-}
-
 // validateTargetInTx takes the target's own locks in the shared order and
 // reports a classifiable conflict for changed targets.
 func validateTargetInTx(ctx context.Context, tx store.TxAccountScope, t Target, kind string) error {
+	if t.Kind == "staged" {
+		return nil
+	}
 	if t.Kind == "asset" {
 		err := creativelibrary.ValidateImportTargetInTx(ctx, tx, t.Asset.library())
 		if errors.Is(err, creativelibrary.ErrNotFound) {
@@ -285,6 +282,9 @@ func (s *Service) view(u upload, parts []int, candidate *Candidate) UploadView {
 }
 func candidateBinding(c Candidate) *Binding {
 	b := &Binding{Status: "needs_review", CandidateID: &c.ID}
+	if c.Reason == creativestaging.Reason {
+		b.Status = "staged"
+	}
 	expires := c.ExpiresAt
 	b.ExpiresAt = &expires
 	switch c.State {

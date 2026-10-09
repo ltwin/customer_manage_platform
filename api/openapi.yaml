@@ -12055,6 +12055,23 @@ components:
           type: string
         asset:
           $ref: '#/components/schemas/CreativeAssetReference'
+    CreativeActionFillFromUpload:
+      type: object
+      additionalProperties: false
+      description: 用一个已就绪的暂存上传填充同类型的空节点；一个暂存上传只能放入一次。节点标题为空时用文件名（去掉扩展名）。
+      required:
+      - type
+      - node_id
+      - upload_id
+      properties:
+        type:
+          type: string
+          enum:
+          - fill_from_upload
+        node_id:
+          type: string
+        upload_id:
+          type: string
     CreativeActionConnectReference:
       type: object
       additionalProperties: false
@@ -12212,6 +12229,7 @@ components:
       - $ref: '#/components/schemas/CreativeActionClearContent'
       - $ref: '#/components/schemas/CreativeActionReplaceContent'
       - $ref: '#/components/schemas/CreativeActionFillFromAsset'
+      - $ref: '#/components/schemas/CreativeActionFillFromUpload'
       - $ref: '#/components/schemas/CreativeActionConnectReference'
       - $ref: '#/components/schemas/CreativeActionDisconnectReference'
       - $ref: '#/components/schemas/CreativeActionSetNodeInputs'
@@ -12779,7 +12797,8 @@ components:
       additionalProperties: false
       required: [kind]
       properties:
-        kind: {type: string, enum: [asset, node]}
+        # staged：只发布内容不指定目标，由画布动作 fill_from_upload 放进节点。
+        kind: {type: string, enum: [asset, node, staged]}
         asset: {$ref: "#/components/schemas/CreativeUploadAssetTarget"}
         node: {$ref: "#/components/schemas/CreativeUploadNodeTarget"}
     CreativeUploadCreatePayload:
@@ -12873,7 +12892,7 @@ components:
       additionalProperties: false
       required: [status, target_kind, target_id, candidate_id, expires_at]
       properties:
-        status: {type: string, enum: [applied, needs_review, discarded, expired]}
+        status: {type: string, enum: [applied, needs_review, staged, discarded, expired], description: "staged：暂存上传已就绪，等待 fill_from_upload"}
         target_kind: {type: string, nullable: true}
         target_id: {type: string, nullable: true}
         candidate_id: {type: string, nullable: true}
@@ -12894,7 +12913,7 @@ components:
         part_size: {type: integer, format: int64}
         part_count: {type: integer}
         uploaded_parts: {type: array, items: {type: integer}}
-        target_kind: {type: string, enum: [asset, node]}
+        target_kind: {type: string, enum: [asset, node, staged]}
         expires_at: {type: string, format: date-time}
         error_code: {type: string}
         publication:
