@@ -62,6 +62,14 @@ owner 用「DeepSeek Flash（思考模式）」说「你好」，助手调用两
 - 失败说明：供应商的明确拒绝不再落到通用的 `creative_run_failed`，而是 `creative_model_rejected`（额度不足为 `creative_model_balance_exhausted`）；前端给每个运行错误码配了具体说明，兜底文案改为「本次执行未能完成，请重试」。
 - 证据：`TestThinkingReasoningIsReadAndHandedBack`、`TestEinoAdapterCarriesReasoningBothWays`、`TestThinkingReasoningReturnsWithItsTurn`（去掉适配器的回传后失败）、`TestThinkingReasoningCarriesIntoLaterRuns`（关掉历史冻结后失败；同时断言消息接口不含推理）、`TestProviderRefusalIsNamed`、`TestAgentReasoningOnlyBelongsToAssistantTurns`；真实 DeepSeek `TestLiveDeepSeekThinkingToolLoop`：思考模式下先调用工具，再带着回传的推理拿到最终回答，前面还有一轮不带推理的历史回答。
 
+## 走查修复：助手直接读取画布（2026-10-09）
+
+owner 让助手读某个节点，`read_asset` 返回 `creative_tool_input_invalid`。原因是助手只能读外发授权里列出的修订，而授权只含消息里 @ 过的素材，画布上的节点都读不了。owner 要求去掉这层限制。
+
+- 现在助手可以读当前画布上任意节点的内容，外加本轮引用的素材；判断依据是数据库里节点是否在本 run 的画布上，不采信模型给的 ID。只在资产库里、不在画布上的内容仍然读不到，返回 `creative_tool_not_authorized`，模型会如实说明。
+- 读到的画布图片在后续轮次按同样规则绑定；工具说明和系统提示同步改为「read_asset 读取画布节点或引用素材」。
+- 证据：`TestAssistantReadsItsOwnCanvas`（去掉画布判断后失败）、`TestContextToolsAndPairedHistoryReachProvider`。
+
 ## 已知取舍
 
 - 打开对话时，每个 run 各读一次快照，没有做懒加载。对话很长时会有一批并发请求。

@@ -464,7 +464,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 					if block.Type != "content_ref" || meta.Role == "tool" {
 						continue
 					}
-					ref, err := s.resolveReference(ctx, tx, block.RefID, consent, held.Model.Capability.ImageInput)
+					ref, err := s.resolveReference(ctx, tx, held.RunID, block.RefID, consent, held.Model.Capability.ImageInput)
 					if errors.Is(err, ErrModelCapability) || errors.Is(err, ErrEgressRequired) {
 						ref = schema.UserMessage(referenceLabel(block.RefID) + "（历史图片本轮未加载；需要图片能力及授权）")
 					} else if err != nil {
@@ -480,7 +480,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 				continue
 			}
 			if item.id != nil {
-				ref, err := s.resolveReference(ctx, tx, *item.id, consent, held.Model.Capability.ImageInput)
+				ref, err := s.resolveReference(ctx, tx, held.RunID, *item.id, consent, held.Model.Capability.ImageInput)
 				if err != nil {
 					return err
 				}

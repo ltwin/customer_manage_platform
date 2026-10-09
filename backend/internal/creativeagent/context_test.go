@@ -314,3 +314,43 @@ func TestImageBudgetPrioritizesCurrentReferences(t *testing.T) {
 		})
 	}
 }
+
+// The assistant reads what is on its canvas without the photographer naming
+// it first. Content elsewhere in the library still needs a reference.
+func TestAssistantReadsItsOwnCanvas(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	onCanvas := f.revision(f.alice, "画布节点上的拍摄概念")
+	elsewhere := f.revision(f.alice, "只在资产库里的笔记")
+	if _, err := f.db.Exec(`INSERT INTO creative_nodes(id,account_id,canvas_id,type_key,x,y,title,content_id,content_revision_id)
+SELECT 'ccnd_concept','agent-a','cccv_a','core.text',0,0,'拍摄概念',content_id,id FROM creative_content_revisions WHERE id=$1`, onCanvas); err != nil {
+		t.Fatal(err)
+	}
+	consent := contextConsent(t, f, c.ID)
+	read := func(id string) json.RawMessage {
+		return json.RawMessage(fmt.Sprintf(`{"content_revision_id":%q,"offset":0,"limit":8192}`, id))
+	}
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r,
+				llmgateway.ToolCall{ID: "canvas", Name: readAssetTool, Arguments: read(onCanvas)},
+				llmgateway.ToolCall{ID: "library", Index: 1, Name: readAssetTool, Arguments: read(elsewhere)}), nil
+		}
+		return scriptedResult(r), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "读一下拍摄概念"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	prompt := f.vendor.prompt()
+	if !strings.Contains(prompt, "画布节点上的拍摄概念") {
+		t.Fatalf("canvas node was not readable: %s", prompt)
+	}
+	if strings.Contains(prompt, "只在资产库里的笔记") || !strings.Contains(prompt, "creative_tool_not_authorized") {
+		t.Fatalf("library content leaked or was not refused: %s", prompt)
+	}
+}

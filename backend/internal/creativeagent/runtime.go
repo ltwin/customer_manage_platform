@@ -353,7 +353,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		// Distinct from bad input: the model must say what is missing instead
 		// of retrying or guessing the content.
 		code = "creative_tool_not_authorized"
-		result = `{"success":false,"code":"creative_tool_not_authorized","message":"本次对话未授权读取这项内容；请告诉摄影师在消息里用 @ 引用它"}`
+		result = `{"success":false,"code":"creative_tool_not_authorized","message":"这项内容不在当前画布上，也没有被引用"}`
 	case errors.Is(readErr, ErrModelCapability):
 		code = "creative_tool_model_capability"
 		result = `{"success":false,"code":"creative_tool_model_capability","message":"当前模型不能查看图片"}`
