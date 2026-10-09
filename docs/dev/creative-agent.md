@@ -85,11 +85,12 @@ SSE、最小 Agent 面板。自动模型摘要仍默认关闭，达到上下文�
   - **需求已对齐，不再是偏差**：`.codestable/requirements/creative-canvas-foundation.md` 原先要求
     「账号外发同意与素材用途权利是两项独立校验」，该句已于 2026-09-13 经 `cs-epic` 边界重确认修订为
     「外发同意 + 修订在自己工作区能正常展示」，见 Epic 的「2026-09-13 边界重确认」小节。实现无需改动。
-- **`vendor_key` 是接收字节的公司**，不是线路协议（`provider`，如 `openai_compatible`），也不是
-  按模型的 `deployment_key`（如 `deepseek/api/flash`）。授权按公司记录，因此在同一家的两个模型
-  之间切换不会重新索要授权。`llmgateway.ModelConfig.VendorKey` 为必填，缺失时目录加载即失败。
-  - 设计稿 `agent-api-events.md` 原字段名为 `provider_key`，语义即本字段；实现统一改名为
-    `vendor_key`，因为 `provider` 在 Gateway 里已被协议族占用。
+- **外发授权是平台级的，不按供应商记录**（2026-10-09 起，`policyVersion = egress-2026-10-1`，设计见
+  `.codestable/features/2026-10-09-model-routing/`）。摄影师选的是模型；由哪家服务商的哪个部署提供
+  是 Gateway 的路由决定，目录 API 与授权契约都不出现供应商。授权的含义是「本会话内容可发给平台签约的
+  模型服务商」（名单见隐私说明，可由 `Catalog.Vendors()` 生成）；`creative_egress_consents.vendor_key`
+  列固定写 `platform`，`coversRun` 不再比对供应商。每次调用实际发往哪个部署、哪家公司，由请求快照上的
+  `deployment_key` 与部署的 `vendor_key` 留证，可按会话追查。
 - **Skill 的权威来源是数据库与对象存储**（S3 起；此前是 `//go:embed skillpkg`，已随本切片移除，
   种子包移到仓库根的 `deploy/creative-skills/`，只作可审计导入素材）。资源只按声明的相对路径查表，
   底下没有文件系统，`../../../etc/passwd` 这类路径按「路径不合法」拒绝，未声明的名字按不存在拒绝。

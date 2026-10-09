@@ -2850,13 +2850,10 @@ export interface components {
             context_tokens: number;
             max_output_tokens: number;
         };
+        /** @description 摄影师可选的模型。由哪家服务商、经哪个部署提供属于平台路由，不对外暴露。 */
         CreativeAgentModel: {
             model_key: string;
             display_name: string;
-            /** @description 线路协议族，不是公司 */
-            provider: string;
-            /** @description 实际接收字节的公司；外发授权按它记录 */
-            vendor_key: string;
             capability: components["schemas"]["CreativeAgentModelCapability"];
             catalog_version: string;
             available: boolean;
@@ -2939,7 +2936,6 @@ export interface components {
             skill_catalog_revision: string;
             limits_version: string;
             policy_version: string;
-            vendors: string[];
             models: components["schemas"]["CreativeAgentModel"][];
             skills: components["schemas"]["CreativeAgentSkill"][];
             tools: components["schemas"]["CreativeAgentTool"][];
@@ -3284,9 +3280,9 @@ export interface components {
             mode: "selected_revisions" | "account_library";
             data_classes: ("text" | "image_preview" | "media_metadata" | "canvas_metadata")[];
         };
+        /** @description 本会话内容可发送给平台签约的模型服务商；名单见隐私说明，每次调用实际发往哪家记录在调用证据上。 */
         CreativeEgressConsent: {
             id: string;
-            vendor_key: string;
             /** @enum {string} */
             purpose: "creative_assistance";
             conversation_id?: string;
@@ -3301,7 +3297,6 @@ export interface components {
             approved_revisions: number;
         };
         CreativeEgressConsentGrantPayload: {
-            vendor_key: string;
             /** @enum {string} */
             purpose: "creative_assistance";
             /** @enum {string} */

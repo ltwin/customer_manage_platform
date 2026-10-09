@@ -79,8 +79,36 @@
 | `CREATIVE_LLM_MONTHLY_LIMIT_MICROS` | 每账号月度费用上限（micros，默认 20_000_000 = 20 USD） |
 | `CREATIVE_LLM_MONTHLY_TOKEN_LIMIT` | 每账号月度 token 上限（默认 5_000_000） |
 
-内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-2026-10-09`。DeepSeek 价格来源见
-<https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个部署：
+### 模型与部署
+
+目录分两层（设计：`.codestable/features/2026-10-09-model-routing/model-routing-design.md`）：
+
+- **模型**（`Model`）是摄影师选择的对象：`model_key`、显示名、声明的能力、按优先级排列的部署列表。目录 API 只暴露这一层，不出现供应商。
+- **部署**（`Deployment`）是某家服务商对这个模型的一次具体接入：协议、`vendor_key`、地址、凭证变量、`request_model_id`（各家叫法不同就写在这里，如 `gpt-6-astra-0907`）、`accepted_model_ids`、价格、限流。一个部署只属于一个模型。
+- 加载时校验：模型声明的每项能力，它列出的每个部署都必须支持（上下文与最大输出不得小于声明值），否则拒绝加载——路由到任何一个部署都不会超出请求被准入的能力。请求按模型声明的能力检查，不按部署实际更强的能力。
+- **路由**（`Catalog.route`）：按优先级取第一个已启用的部署；没配凭证的部署被禁用并带原因。所有部署都不可用时模型显示为不可用，原因取优先级最高的那个部署。管理后台将来在这一处接入数据库里的顺序与开关。
+- 请求在 `PrepareInTx` 时冻结路由选中的部署（`model_snapshot.deployment_key`）；派发、重新准入与执行都按冻结的部署取配置（`Catalog.Deployment`），优先级之后怎么变都不会把已准备的调用挪走；冻结的部署从目录里删掉时以 `ErrConflict` 拒绝，不发送。
+- 网关启动时要求**每个已启用的部署**都有适配器和凭证，而不只是当前排第一的那个。
+- 请求内换部署的故障切换、熔断、尝试级快照属于设计的第二步，接入第二家服务商时再做；本期每个模型只有一个部署。
+
+`CREATIVE_LLM_CATALOG` 文件格式与内置目录同构：
+
+```jsonc
+{
+  "version": "…", "currency": "USD",
+  "models": [{"model_key": "gpt-6-astra", "display_name": "GPT-6 Astra", "capability": {…},
+              "deployments": ["aicodewith/api/gpt-6-astra"]}],
+  "deployments": [{"deployment_key": "aicodewith/api/gpt-6-astra", "vendor_key": "aicodewith",
+                   "provider": "openai_responses", "credential_env": "AICODEWITH_API_KEY", "enabled": true, …}]
+}
+```
+
+文件里 `enabled: true` 的部署若凭证变量未设置，加载时同样被禁用并写明原因。2026-10-09 之前的扁平格式（`models` 直接是部署条目）已作废。
+
+### 内置目录
+
+内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-2026-10-09`，每个模型目前只有一个部署。DeepSeek 价格来源见
+<https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个模型：
 
 | model_key | 供应商模型 | 思考模式 | tool_choice | 图片输入 |
 |---|---|---|---|---|
@@ -100,7 +128,7 @@ GPT-6 系列经 AiCodeWith 中转（`vendor_key=aicodewith`，`https://api.aicod
 
 价格是 OpenAI 官方价（经 Artificial Analysis 2026-10-09 读取）。AiCodeWith 按「官方价 × 渠道折扣」扣费（订阅渠道约 1 折），便宜渠道被风控时自动切到更贵的渠道，所以目录按官方价记账，作为始终成立的上界；账面费用会高于中转实扣。中转未公开任何「处理前拒绝」的状态码，`UnacceptedStatuses` 为空。三个部署共用 `aicodewith/api` 限流键。
 
-共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则 `NewCatalog` 直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
+共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则目录加载直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
 
 **启用真实 Anthropic 部署前的前置项**：`provider_anthropic.go` 的 usage 映射没有独立的 cache-write 分量，而 Anthropic 对写入缓存单独计价——直接开一个真实部署会系统性少计该笔费用。必须先补第四个不重叠分量（及其价格配方）再启用；目录里当前没有任何 Anthropic 部署，`CREATIVE_LLM_CATALOG` 覆盖时也不要自行加。
 

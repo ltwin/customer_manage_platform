@@ -129,7 +129,7 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if err = coversRun(consent, source.ConversationID, model.VendorKey, nil); err != nil {
+		if err = coversRun(consent, source.ConversationID, nil); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		body := Body{Blocks: []Block{{Type: "text", Text: "恢复已记录的 Skill 资源读取步骤；不重新规划原任务。"}}}

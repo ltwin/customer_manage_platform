@@ -161,14 +161,23 @@ func TestPriceScheduleUsesWindowRateAndConservativeBound(t *testing.T) {
 
 func testCatalog(t *testing.T, price llmgateway.PriceSchedule) *llmgateway.Catalog {
 	t.Helper()
-	c, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{
-		ModelKey: "chat", DisplayName: "Chat", Provider: llmgateway.ProviderOpenAICompatible, VendorKey: "testvendor",
-		DeploymentKey: "dep-1", BaseURL: "https://example.invalid", CredentialEnv: "TEST_KEY",
-		RequestModelID: "vendor-model", AcceptedModelIDs: []string{"vendor-model"},
-		Capability: llmgateway.Capability{ToolCalling: true, ContextTokens: 1000, MaxOutputTokens: 500},
-		Price:      price, LimitKey: "dep-1", Concurrency: 2, RateLimitPerMin: 10,
-		QueryCapability: "none", CancelCapability: "none", Enabled: true,
-	}})
+	c, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{ModelKey: "chat", DisplayName: "Chat", Deployment: llmgateway.Deployment{
+		Provider:         llmgateway.ProviderOpenAICompatible,
+		VendorKey:        "testvendor",
+		DeploymentKey:    "dep-1",
+		BaseURL:          "https://example.invalid",
+		CredentialEnv:    "TEST_KEY",
+		RequestModelID:   "vendor-model",
+		AcceptedModelIDs: []string{"vendor-model"},
+		Capability:       llmgateway.Capability{ToolCalling: true, ContextTokens: 1000, MaxOutputTokens: 500},
+		Price:            price,
+		LimitKey:         "dep-1",
+		Concurrency:      2,
+		RateLimitPerMin:  10,
+		QueryCapability:  "none",
+		CancelCapability: "none",
+		Enabled:          true,
+	}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,14 +195,23 @@ func usablePrice() llmgateway.PriceSchedule {
 func TestCatalogRefusesModelWithoutUsablePrice(t *testing.T) {
 	price := usablePrice()
 	price.Peak, price.OffPeak = llmgateway.Rate{}, llmgateway.Rate{}
-	_, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{
-		ModelKey: "chat", Provider: llmgateway.ProviderOpenAICompatible, VendorKey: "testvendor", DeploymentKey: "dep-1",
-		BaseURL: "https://example.invalid", CredentialEnv: "TEST_KEY", RequestModelID: "m",
+	_, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{ModelKey: "chat", Deployment: llmgateway.Deployment{
+		Provider:         llmgateway.ProviderOpenAICompatible,
+		VendorKey:        "testvendor",
+		DeploymentKey:    "dep-1",
+		BaseURL:          "https://example.invalid",
+		CredentialEnv:    "TEST_KEY",
+		RequestModelID:   "m",
 		AcceptedModelIDs: []string{"m"},
 		Capability:       llmgateway.Capability{ContextTokens: 10, MaxOutputTokens: 10},
-		Price:            price, LimitKey: "dep-1", Concurrency: 1, RateLimitPerMin: 1,
-		QueryCapability: "none", CancelCapability: "none", Enabled: true,
-	}})
+		Price:            price,
+		LimitKey:         "dep-1",
+		Concurrency:      1,
+		RateLimitPerMin:  1,
+		QueryCapability:  "none",
+		CancelCapability: "none",
+		Enabled:          true,
+	}}})
 	if !errors.Is(err, llmgateway.ErrValidation) {
 		t.Fatalf("a model without a price recipe must not be admitted: %v", err)
 	}
@@ -234,29 +252,46 @@ func TestCheckCapabilityRefusesBeforeDispatch(t *testing.T) {
 // A deployment with no named company cannot be disclosed to a photographer, so
 // it is refused at load rather than reaching an egress consent screen unnamed.
 func TestAModelWithoutAVendorCannotBeLoaded(t *testing.T) {
-	_, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{
-		ModelKey: "chat", Provider: llmgateway.ProviderOpenAICompatible, DeploymentKey: "dep-1",
-		BaseURL: "https://example.invalid", CredentialEnv: "TEST_KEY", RequestModelID: "m",
+	_, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{ModelKey: "chat", Deployment: llmgateway.Deployment{
+		Provider:         llmgateway.ProviderOpenAICompatible,
+		DeploymentKey:    "dep-1",
+		BaseURL:          "https://example.invalid",
+		CredentialEnv:    "TEST_KEY",
+		RequestModelID:   "m",
 		AcceptedModelIDs: []string{"m"},
 		Capability:       llmgateway.Capability{ContextTokens: 10, MaxOutputTokens: 10},
-		Price:            usablePrice(), LimitKey: "dep-1", Concurrency: 1, RateLimitPerMin: 1,
-		QueryCapability: "none", CancelCapability: "none", Enabled: true,
-	}})
+		Price:            usablePrice(),
+		LimitKey:         "dep-1",
+		Concurrency:      1,
+		RateLimitPerMin:  1,
+		QueryCapability:  "none",
+		CancelCapability: "none",
+		Enabled:          true,
+	}}})
 	if !errors.Is(err, llmgateway.ErrValidation) {
 		t.Fatalf("a model must name the company that receives the bytes, got %v", err)
 	}
 }
 
 func TestDisabledModelKeepsAVisibleReason(t *testing.T) {
-	catalog, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{
-		ModelKey: "chat", Provider: llmgateway.ProviderOpenAICompatible, VendorKey: "testvendor", DeploymentKey: "dep-1",
-		BaseURL: "https://example.invalid", CredentialEnv: "TEST_KEY", RequestModelID: "m",
+	catalog, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{ModelKey: "chat", Deployment: llmgateway.Deployment{
+		Provider:         llmgateway.ProviderOpenAICompatible,
+		VendorKey:        "testvendor",
+		DeploymentKey:    "dep-1",
+		BaseURL:          "https://example.invalid",
+		CredentialEnv:    "TEST_KEY",
+		RequestModelID:   "m",
 		AcceptedModelIDs: []string{"m"},
 		Capability:       llmgateway.Capability{ContextTokens: 10, MaxOutputTokens: 10},
-		Price:            usablePrice(), LimitKey: "dep-1", Concurrency: 1, RateLimitPerMin: 1,
-		QueryCapability: "none", CancelCapability: "none",
-		Enabled: false, DisabledReason: "尚未取得供应商额度",
-	}})
+		Price:            usablePrice(),
+		LimitKey:         "dep-1",
+		Concurrency:      1,
+		RateLimitPerMin:  1,
+		QueryCapability:  "none",
+		CancelCapability: "none",
+		Enabled:          false,
+		DisabledReason:   "尚未取得供应商额度",
+	}}})
 	if err != nil {
 		t.Fatal(err)
 	}

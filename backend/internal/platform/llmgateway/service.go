@@ -72,22 +72,17 @@ func New(cfg Config) (*Service, error) {
 		}
 		s.providers[key] = provider
 	}
-	for _, entry := range cfg.Catalog.List() {
-		if !entry.Available {
-			continue
+	if s.credential == nil {
+		s.credential = osCredential
+	}
+	// Every deployment that may be routed to must be dispatchable, not only
+	// the one that happens to rank first today.
+	for _, d := range cfg.Catalog.enabledDeployments() {
+		if _, ok := s.providers[d.Provider]; !ok {
+			return nil, fmt.Errorf("%w: deployment %q has no adapter", ErrValidation, d.DeploymentKey)
 		}
-		model, err := cfg.Catalog.Model(entry.ModelKey)
-		if err != nil {
-			return nil, err
-		}
-		if _, ok := s.providers[model.Provider]; !ok {
-			return nil, fmt.Errorf("%w: model %q has no adapter", ErrValidation, entry.ModelKey)
-		}
-		if s.credential == nil {
-			s.credential = osCredential
-		}
-		if _, ok := s.credential(model.CredentialEnv); !ok {
-			return nil, fmt.Errorf("%w: model %q credential %s is not set", ErrUnavailable, entry.ModelKey, model.CredentialEnv)
+		if _, ok := s.credential(d.CredentialEnv); !ok {
+			return nil, fmt.Errorf("%w: deployment %q credential %s is not set", ErrUnavailable, d.DeploymentKey, d.CredentialEnv)
 		}
 	}
 	if s.credential == nil {

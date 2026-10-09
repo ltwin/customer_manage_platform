@@ -241,7 +241,11 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	if err != nil {
 		return Permit{}, err
 	}
-	model, err := s.catalog.Model(peek.modelKey)
+	if peek.kind != requestKindChat {
+		// Immutable on a request; a generation request has no chat deployment.
+		return Permit{}, fmt.Errorf("%w: chat dispatch received a %s request", ErrState, peek.kind)
+	}
+	model, err := s.catalog.Deployment(peek.modelKey, peek.modelSnapshot.DeploymentKey)
 	if err != nil {
 		return Permit{}, err
 	}
@@ -344,7 +348,7 @@ func (s *Service) RedispatchInTx(
 	if err != nil {
 		return Permit{}, Reservation{}, err
 	}
-	model, err := s.catalog.Model(peek.modelKey)
+	model, err := s.catalog.Deployment(peek.modelKey, peek.modelSnapshot.DeploymentKey)
 	if err != nil {
 		return Permit{}, Reservation{}, err
 	}
@@ -377,14 +381,14 @@ func (s *Service) Execute(
 	chat ChatRequest,
 	stream bool,
 ) (Result, error) {
-	model, err := s.catalog.Model(chat.ModelKey)
+	model, err := s.catalog.Deployment(chat.ModelKey, permit.Snapshot.DeploymentKey)
 	if err != nil {
 		return Result{}, err
 	}
 	// The hold, the price and the identity were all fixed against the deployment
-	// frozen at Prepare. A catalog update between then and now may not move this
-	// call onto a different paid model, so the live entry has to still be that
-	// deployment; when it is not, nothing is sent.
+	// frozen at Prepare, and the call goes to that deployment even if another
+	// now ranks first. A catalog update that changed its price or wiring may
+	// not move this call onto different terms; when it did, nothing is sent.
 	if err := sameDeployment(permit.Snapshot, s.catalog.Snapshot(model)); err != nil {
 		return Result{}, err
 	}

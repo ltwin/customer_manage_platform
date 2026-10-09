@@ -277,7 +277,7 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			if err := coversRun(consent, input.ConversationID, model.VendorKey, resolved.ContentRefs); err != nil {
+			if err := coversRun(consent, input.ConversationID, resolved.ContentRefs); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			// The second read of every named revision, inside the transaction
@@ -409,17 +409,13 @@ func jsonValue(value any) (any, error) {
 // coversRun decides whether the authorisation on file reaches what this run
 // would actually send. Every clause answers a different question, and a run may
 // only start when all of them say yes.
-func coversRun(consent Consent, conversationID, vendorKey string, refs []ContentRef) error {
+func coversRun(consent Consent, conversationID string, refs []ContentRef) error {
 	switch {
 	case consent.RevokedAt != nil:
 		return ErrConsentRevoked
 	case consent.ConversationID != conversationID:
 		// A consent granted for another conversation authorises another set of
 		// words; the photographer's own messages are part of what leaves.
-		return ErrEgressRequired
-	case consent.VendorKey != vendorKey:
-		// The company that receives the bytes is what was disclosed. Switching
-		// models inside one vendor is free; crossing to another is not.
 		return ErrEgressRequired
 	case consent.PolicyVersion != policyVersion:
 		// A new disclosure needs a new consent rather than a silent reuse of an

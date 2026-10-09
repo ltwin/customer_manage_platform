@@ -3640,7 +3640,6 @@ type CreativeAgentCatalog struct {
 	SkillCatalogRevision string               `json:"skill_catalog_revision"`
 	Skills               []CreativeAgentSkill `json:"skills"`
 	Tools                []CreativeAgentTool  `json:"tools"`
-	Vendors              []string             `json:"vendors"`
 }
 
 // CreativeAgentControlPayload defines model for CreativeAgentControlPayload.
@@ -3806,22 +3805,16 @@ type CreativeAgentMessageSkill struct {
 	VersionNumber  int    `json:"version_number"`
 }
 
-// CreativeAgentModel defines model for CreativeAgentModel.
+// CreativeAgentModel 摄影师可选的模型。由哪家服务商、经哪个部署提供属于平台路由，不对外暴露。
 type CreativeAgentModel struct {
-	Available       bool                         `json:"available"`
-	Capability      CreativeAgentModelCapability `json:"capability"`
-	CatalogVersion  string                       `json:"catalog_version"`
-	ContextTokens   int                          `json:"context_tokens"`
-	DisplayName     string                       `json:"display_name"`
-	MaxOutputTokens int                          `json:"max_output_tokens"`
-	ModelKey        string                       `json:"model_key"`
-
-	// Provider 线路协议族，不是公司
-	Provider          string  `json:"provider"`
-	UnavailableReason *string `json:"unavailable_reason,omitempty"`
-
-	// VendorKey 实际接收字节的公司；外发授权按它记录
-	VendorKey string `json:"vendor_key"`
+	Available         bool                         `json:"available"`
+	Capability        CreativeAgentModelCapability `json:"capability"`
+	CatalogVersion    string                       `json:"catalog_version"`
+	ContextTokens     int                          `json:"context_tokens"`
+	DisplayName       string                       `json:"display_name"`
+	MaxOutputTokens   int                          `json:"max_output_tokens"`
+	ModelKey          string                       `json:"model_key"`
+	UnavailableReason *string                      `json:"unavailable_reason,omitempty"`
 }
 
 // CreativeAgentModelCapability defines model for CreativeAgentModelCapability.
@@ -4354,7 +4347,7 @@ type CreativeDocument struct {
 	TypeKey  string           `json:"type_key"`
 }
 
-// CreativeEgressConsent defines model for CreativeEgressConsent.
+// CreativeEgressConsent 本会话内容可发送给平台签约的模型服务商；名单见隐私说明，每次调用实际发往哪家记录在调用证据上。
 type CreativeEgressConsent struct {
 	// ApprovedRevisions 本次授权覆盖的修订数量；清单另存不随回执外发
 	ApprovedRevisions int                          `json:"approved_revisions"`
@@ -4368,7 +4361,6 @@ type CreativeEgressConsent struct {
 	Revision  CreativeRevision           `json:"revision"`
 	RevokedAt *time.Time                 `json:"revoked_at,omitempty"`
 	Scope     CreativeEgressConsentScope `json:"scope"`
-	VendorKey string                     `json:"vendor_key"`
 }
 
 // CreativeEgressConsentPurpose defines model for CreativeEgressConsent.Purpose.
@@ -4382,7 +4374,6 @@ type CreativeEgressConsentGrantPayload struct {
 
 	// SelectedRevisionIds selected_revisions 模式下的精确材料授权集合；空集合只允许本会话文字与选定 Skill，不授权素材库内容。
 	SelectedRevisionIds *[]string `json:"selected_revision_ids,omitempty"`
-	VendorKey           string    `json:"vendor_key"`
 }
 
 // CreativeEgressConsentGrantPayloadDataClasses defines model for CreativeEgressConsentGrantPayload.DataClasses.

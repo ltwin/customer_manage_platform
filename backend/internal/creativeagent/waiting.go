@@ -86,15 +86,15 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		if batches >= s.limits.ToolCalls {
 			return creativeops.Outcome{}, ErrLimit
 		}
-		model, err := s.models.Model(c.ModelKey)
-		if err != nil {
+		// The run resumes on its model only if something can still serve it.
+		if _, err := s.models.Model(c.ModelKey); err != nil {
 			return creativeops.Outcome{}, translateGateway(err)
 		}
 		consent, err := readConsentForUpdate(ctx, tx, c.EgressConsentID)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if err = coversRun(consent, c.ConversationID, model.VendorKey, nil); err != nil {
+		if err = coversRun(consent, c.ConversationID, nil); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if err = acquireSlotInTx(ctx, tx, c.ID, c.token, now); err != nil {

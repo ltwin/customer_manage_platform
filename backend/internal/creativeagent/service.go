@@ -43,7 +43,14 @@ const limitsVersion = "creative-agent-5"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
-const policyVersion = "egress-2026-09-1"
+// egress-2026-10-1 moved from "this vendor" to "the platform's contracted
+// model providers": which company serves a model is the platform's routing
+// decision, recorded per attempt, not something the photographer picks.
+const policyVersion = "egress-2026-10-1"
+
+// consentRecipient fills the recipient column every consent row still has.
+// The disclosure names the platform's providers as a group (privacy notice).
+const consentRecipient = "platform"
 
 // Limits are the deployment's development baseline, not measured capacity.
 // Byte counts are UTF-8 bytes; a rune budget would let one emoji cost as much

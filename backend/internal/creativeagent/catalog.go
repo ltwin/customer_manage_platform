@@ -83,7 +83,6 @@ type CatalogView struct {
 	SkillCatalogRevision string                    `json:"skill_catalog_revision"`
 	LimitsVersion        string                    `json:"limits_version"`
 	PolicyVersion        string                    `json:"policy_version"`
-	Vendors              []string                  `json:"vendors"`
 	Models               []llmgateway.CatalogEntry `json:"models"`
 	Skills               []SkillEntry              `json:"skills"`
 	Tools                []ToolEntry               `json:"tools"`
@@ -113,7 +112,6 @@ func (s *Service) Catalog(ctx context.Context, scope store.AccountScope) (Catalo
 		SkillCatalogRevision: revision,
 		LimitsVersion:        s.limits.Version,
 		PolicyVersion:        policyVersion,
-		Vendors:              s.models.Vendors(),
 		Models:               s.models.List(),
 		Skills:               skills.Items,
 		Tools:                s.registeredTools(),

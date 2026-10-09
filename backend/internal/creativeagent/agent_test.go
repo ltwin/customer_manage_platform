@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -301,7 +300,7 @@ func TestPagingBackwardsReturnsEachPageInReadingOrder(t *testing.T) {
 
 func grant(t *testing.T, f *fixture, conversationID string, revisions []string) (Consent, error) {
 	t.Helper()
-	payload := map[string]any{"conversation_id": conversationID, "vendor_key": "deepseek",
+	payload := map[string]any{"conversation_id": conversationID,
 		"purpose": "creative_assistance", "mode": ScopeSelectedRevisions,
 		"data_classes": []string{"text"}, "selected_revision_ids": revisions}
 	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, payload))
@@ -327,16 +326,25 @@ func TestAnotherAccountsRevisionCannotBeAuthorisedForEgress(t *testing.T) {
 	}
 }
 
-func TestAnUnknownVendorCannotBeAuthorised(t *testing.T) {
+// The photographer authorises the platform's model providers as a group;
+// which company serves a model is routing, so a grant cannot name one.
+func TestAGrantNamesNoVendor(t *testing.T) {
 	f := setup(t)
 	c := f.conversation(f.alice, f.canvasID)
 	mine := f.revision(f.alice, "我的素材")
-	payload := map[string]any{"conversation_id": c.ID, "vendor_key": "some-other-company",
+	payload := map[string]any{"conversation_id": c.ID, "vendor_key": "deepseek",
 		"purpose": "creative_assistance", "mode": ScopeSelectedRevisions,
 		"data_classes": []string{"text"}, "selected_revision_ids": []string{mine}}
-	_, err := f.service.GrantConsent(t.Context(), f.alice, command(t, payload))
-	if !errors.Is(err, creativeops.ErrValidation) {
-		t.Fatalf("a destination this deployment cannot reach must be refused, got %v", err)
+	if _, err := f.service.GrantConsent(t.Context(), f.alice, command(t, payload)); !errors.Is(err, creativeops.ErrValidation) {
+		t.Fatalf("a grant naming a vendor must be refused, got %v", err)
+	}
+	consent := f.consent(f.alice, c.ID, mine)
+	var recipient, policy string
+	if err := f.db.QueryRow(`SELECT vendor_key, policy_version FROM creative_egress_consents WHERE id=$1`, consent.ID).Scan(&recipient, &policy); err != nil {
+		t.Fatal(err)
+	}
+	if recipient != "platform" || policy != policyVersion {
+		t.Fatalf("recipient %q policy %q", recipient, policy)
 	}
 }
 
@@ -344,7 +352,7 @@ func TestTheSameGrantOperationReplaysOneConsent(t *testing.T) {
 	f := setup(t)
 	c := f.conversation(f.alice, f.canvasID)
 	mine := f.revision(f.alice, "我的素材")
-	payload := map[string]any{"conversation_id": c.ID, "vendor_key": "deepseek",
+	payload := map[string]any{"conversation_id": c.ID,
 		"purpose": "creative_assistance", "mode": ScopeSelectedRevisions,
 		"data_classes": []string{"text"}, "selected_revision_ids": []string{mine}}
 	cmd := command(t, payload)
@@ -444,7 +452,7 @@ func TestNoReadOrWriteCrossesAnAccountBoundary(t *testing.T) {
 	// Granting on someone else's conversation is refused even though the
 	// conversation id is real: the id arrives from the URL, not from ownership.
 	_, err = f.service.GrantConsent(ctx, f.bob, command(t, map[string]any{
-		"conversation_id": hers.ID, "vendor_key": "deepseek", "purpose": "creative_assistance",
+		"conversation_id": hers.ID, "purpose": "creative_assistance",
 		"mode": ScopeAccountLibrary, "data_classes": []string{"text"}}))
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account granted egress on the conversation, got %v", err)
@@ -850,7 +858,7 @@ func TestTheSkillsEndpointSearchesAndChecksCapabilityFirst(t *testing.T) {
 	}
 }
 
-func TestACatalogReportsTheFrozenLimitsAndReachableVendors(t *testing.T) {
+func TestACatalogReportsTheFrozenLimitsAndOnlyModels(t *testing.T) {
 	f := setup(t)
 	view, err := f.service.Catalog(t.Context(), f.alice)
 	if err != nil {
@@ -859,14 +867,13 @@ func TestACatalogReportsTheFrozenLimitsAndReachableVendors(t *testing.T) {
 	if view.LimitsVersion != limitsVersion || view.Limits.Version != limitsVersion {
 		t.Fatalf("limits version must be frozen, got %q", view.LimitsVersion)
 	}
-	// Every company the deployment can send to, configured or not.
-	if !slices.Equal(view.Vendors, []string{"aicodewith", "deepseek"}) {
-		t.Fatalf("the catalog must name the companies it can reach, got %v", view.Vendors)
+	// Models only: who serves them is the platform's choice.
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, model := range view.Models {
-		if model.VendorKey == "" {
-			t.Fatalf("model %s has no vendor to authorise", model.ModelKey)
-		}
+	if strings.Contains(string(raw), "vendor") || len(view.Models) == 0 {
+		t.Fatalf("the catalog names a vendor or no model: %s", raw)
 	}
 }
 
@@ -898,7 +905,7 @@ func TestEveryCatalogArrayIsAnArrayOnTheWire(t *testing.T) {
 	if err := json.Unmarshal(encoded, &fields); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"vendors", "models", "skills", "tools"} {
+	for _, name := range []string{"models", "skills", "tools"} {
 		raw, present := fields[name]
 		if !present {
 			t.Fatalf("%q is required by the contract but absent from %s", name, encoded)

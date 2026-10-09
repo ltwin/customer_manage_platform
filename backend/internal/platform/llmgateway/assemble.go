@@ -115,7 +115,7 @@ func Build(opts Options) (*Service, error) {
 // arguments will happily produce two disagreeing directories.
 func OpenCatalog(path string, credential func(string) (string, bool)) (*Catalog, error) {
 	if path != "" {
-		return LoadCatalogFile(path)
+		return LoadCatalogFile(path, credential)
 	}
 	return DefaultCatalog(credential)
 }

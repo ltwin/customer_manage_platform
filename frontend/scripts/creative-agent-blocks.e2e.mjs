@@ -107,7 +107,6 @@ async function scene(options = {}) {
         models: [
           {
             model_key: 'model',
-            vendor_key: 'deepseek',
             display_name: 'Test model',
             capability: { image_input: false },
             available: true,

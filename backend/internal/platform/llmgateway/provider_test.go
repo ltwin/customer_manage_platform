@@ -38,14 +38,22 @@ func newProtocolFixture(t *testing.T, handler func(w http.ResponseWriter, r *htt
 
 func (f *protocolFixture) model(t *testing.T, provider llmgateway.ProviderKey) llmgateway.ModelConfig {
 	t.Helper()
-	return llmgateway.ModelConfig{
-		ModelKey: "chat", Provider: provider, DeploymentKey: "dep-1",
-		BaseURL: f.server.URL, CredentialEnv: "TEST_KEY", RequestModelID: "vendor-model",
+	return llmgateway.ModelConfig{ModelKey: "chat", Deployment: llmgateway.Deployment{
+		Provider:         provider,
+		DeploymentKey:    "dep-1",
+		BaseURL:          f.server.URL,
+		CredentialEnv:    "TEST_KEY",
+		RequestModelID:   "vendor-model",
 		AcceptedModelIDs: []string{"vendor-model"},
 		Capability:       llmgateway.Capability{ToolCalling: true, ContextTokens: 10000, MaxOutputTokens: 1000},
-		Price:            usablePrice(), LimitKey: "dep-1", Concurrency: 2, RateLimitPerMin: 10,
-		QueryCapability: "none", CancelCapability: "none", Enabled: true,
-	}
+		Price:            usablePrice(),
+		LimitKey:         "dep-1",
+		Concurrency:      2,
+		RateLimitPerMin:  10,
+		QueryCapability:  "none",
+		CancelCapability: "none",
+		Enabled:          true,
+	}}
 }
 
 func snapshotFor(model llmgateway.ModelConfig) llmgateway.ModelSnapshot {

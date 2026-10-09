@@ -35,7 +35,6 @@ type ConsentScope struct {
 
 type Consent struct {
 	ID             string               `json:"id"`
-	VendorKey      string               `json:"vendor_key"`
 	Purpose        string               `json:"purpose"`
 	ConversationID string               `json:"conversation_id,omitempty"`
 	Scope          ConsentScope         `json:"scope"`
@@ -50,7 +49,6 @@ type Consent struct {
 
 type grantConsent struct {
 	ConversationID      string   `json:"conversation_id"`
-	VendorKey           string   `json:"vendor_key"`
 	Purpose             string   `json:"purpose"`
 	Mode                string   `json:"mode"`
 	DataClasses         []string `json:"data_classes"`
@@ -71,9 +69,6 @@ func (s *Service) GrantConsent(ctx context.Context, scope store.AccountScope, co
 				return err
 			}
 			if input.ConversationID == "" || input.Purpose != "creative_assistance" {
-				return creativeops.ErrValidation
-			}
-			if !slices.Contains(s.models.Vendors(), input.VendorKey) {
 				return creativeops.ErrValidation
 			}
 			if len(input.DataClasses) == 0 {
@@ -145,7 +140,7 @@ func (s *Service) GrantConsent(ctx context.Context, scope store.AccountScope, co
 			}
 			if err := tx.Insert(ctx, "creative_egress_consents",
 				[]string{"id", "vendor_key", "purpose", "conversation_id", "scope", "policy_version", "granted_at", "created_at", "updated_at"},
-				id, input.VendorKey, input.Purpose, input.ConversationID, encoded, policyVersion, now, now, now); err != nil {
+				id, consentRecipient, input.Purpose, input.ConversationID, encoded, policyVersion, now, now, now); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			for _, revisionID := range input.SelectedRevisionIDs {
@@ -154,7 +149,7 @@ func (s *Service) GrantConsent(ctx context.Context, scope store.AccountScope, co
 					return creativeops.Outcome{}, err
 				}
 			}
-			consent := Consent{ID: id, VendorKey: input.VendorKey, Purpose: input.Purpose,
+			consent := Consent{ID: id, Purpose: input.Purpose,
 				ConversationID: input.ConversationID, Scope: consentScope, PolicyVersion: policyVersion,
 				Revision: 1, GrantedAt: now, ApprovedRevisions: len(input.SelectedRevisionIDs)}
 			response, err := json.Marshal(consent)
@@ -228,8 +223,8 @@ func readConsentForUpdate(ctx context.Context, tx store.TxAccountScope, id strin
 	var conversationID *string
 	var encodedScope []byte
 	err := tx.QueryRowForUpdate(ctx, "creative_egress_consents",
-		"id, vendor_key, purpose, conversation_id, scope, policy_version, revision, granted_at, revoked_at", "id=$2", id).
-		Scan(&c.ID, &c.VendorKey, &c.Purpose, &conversationID, &encodedScope, &c.PolicyVersion, &revision, &c.GrantedAt, &c.RevokedAt)
+		"id, purpose, conversation_id, scope, policy_version, revision, granted_at, revoked_at", "id=$2", id).
+		Scan(&c.ID, &c.Purpose, &conversationID, &encodedScope, &c.PolicyVersion, &revision, &c.GrantedAt, &c.RevokedAt)
 	if errors.Is(err, store.ErrNoRows) {
 		return Consent{}, ErrNotFound
 	}

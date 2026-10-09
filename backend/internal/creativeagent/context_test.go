@@ -16,7 +16,7 @@ import (
 
 func contextConsent(t *testing.T, f *fixture, conversation string, ids ...string) Consent {
 	t.Helper()
-	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation, "vendor_key": "deepseek", "purpose": "creative_assistance", "mode": ScopeSelectedRevisions, "data_classes": []string{"text", "image_preview", "canvas_metadata"}, "selected_revision_ids": ids}))
+	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{"conversation_id": conversation, "purpose": "creative_assistance", "mode": ScopeSelectedRevisions, "data_classes": []string{"text", "image_preview", "canvas_metadata"}, "selected_revision_ids": ids}))
 	if err != nil {
 		t.Fatal(err)
 	}

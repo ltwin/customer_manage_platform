@@ -373,7 +373,7 @@ func TestCTextOnlyConsentDoesNotGrantLibraryAccess(t *testing.T) {
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
 	receipt, err := f.service.GrantConsent(t.Context(), f.alice, command(t, map[string]any{
-		"conversation_id": c.ID, "vendor_key": "deepseek", "purpose": "creative_assistance",
+		"conversation_id": c.ID, "purpose": "creative_assistance",
 		"mode": "selected_revisions", "data_classes": []string{"text"}, "selected_revision_ids": []string{},
 	}))
 	if err != nil {

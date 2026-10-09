@@ -100,7 +100,6 @@ func (f *fixture) consent(scope store.AccountScope, conversationID string, revis
 	f.t.Helper()
 	payload := map[string]any{
 		"conversation_id": conversationID,
-		"vendor_key":      "deepseek",
 		"purpose":         "creative_assistance",
 		"mode":            ScopeAccountLibrary,
 		"data_classes":    []string{"text"},

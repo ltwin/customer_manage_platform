@@ -544,7 +544,7 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	// The content refs were matched against this consent when the run was
 	// created and a consent's scope never changes afterwards, so what is
 	// re-checked here is whether it still stands at all.
-	if err := coversRun(consent, held.ConversationID, held.Model.VendorKey, nil); err != nil {
+	if err := coversRun(consent, held.ConversationID, nil); err != nil {
 		return err
 	}
 	for _, revisionID := range revisions {

@@ -42,9 +42,7 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 	// Two entries share one vendor model because the reasoning mode is fixed
 	// per deployment: it changes both the output budget and whether an
 	// explicit tool_choice is accepted at all.
-	flash := ModelConfig{
-		ModelKey:       "deepseek-flash",
-		DisplayName:    "DeepSeek Flash",
+	flash := Deployment{
 		Provider:       ProviderOpenAICompatible,
 		VendorKey:      "deepseek",
 		DeploymentKey:  "deepseek/api/flash",
@@ -101,15 +99,11 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 	// real API: it answers 400 "Thinking mode does not support this
 	// tool_choice", so the capability is refused before dispatch instead.
 	flashThinking := flash
-	flashThinking.ModelKey = "deepseek-flash-thinking"
-	flashThinking.DisplayName = "DeepSeek Flash（思考模式）"
 	flashThinking.DeploymentKey = "deepseek/api/flash-thinking"
 	flashThinking.Thinking = "enabled"
 	flashThinking.Capability.ToolChoice = false
 
-	pro := ModelConfig{
-		ModelKey:         "deepseek-v4-pro",
-		DisplayName:      "DeepSeek V4 Pro",
+	pro := Deployment{
 		Provider:         ProviderOpenAICompatible,
 		VendorKey:        "deepseek",
 		DeploymentKey:    "deepseek/api/v4-pro",
@@ -149,22 +143,29 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 		DisabledReason:     disabled,
 	}
 
-	return NewCatalog(DefaultCatalogVersion, "USD", append([]ModelConfig{flash, flashThinking, pro}, aicodewithModels(credential)...))
+	// Each model lists its deployments in priority order. A second vendor for
+	// the same model is one more deployment appended to its list.
+	models := []Model{
+		{ModelKey: "deepseek-flash", DisplayName: "DeepSeek Flash", Capability: flash.Capability, Deployments: []string{flash.DeploymentKey}},
+		{ModelKey: "deepseek-flash-thinking", DisplayName: "DeepSeek Flash（思考模式）", Capability: flashThinking.Capability, Deployments: []string{flashThinking.DeploymentKey}},
+		{ModelKey: "deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro", Capability: pro.Capability, Deployments: []string{pro.DeploymentKey}},
+	}
+	deployments := []Deployment{flash, flashThinking, pro}
+	gptModels, gptDeployments := aicodewithModels(credential)
+	return NewRoutedCatalog(DefaultCatalogVersion, "USD", append(models, gptModels...), append(deployments, gptDeployments...))
 }
 
 // aicodewithModels are OpenAI's GPT-6 line, reached through the AiCodeWith
 // relay. They speak the Responses protocol so their reasoning can come back on
 // later turns; over chat completions it would be dropped between tool calls.
-func aicodewithModels(credential func(string) (string, bool)) []ModelConfig {
+func aicodewithModels(credential func(string) (string, bool)) ([]Model, []Deployment) {
 	_, enabled := credential("AICODEWITH_API_KEY")
 	disabled := ""
 	if !enabled {
 		disabled = "未配置 AICODEWITH_API_KEY"
 	}
-	model := func(id, name string, rate Rate) ModelConfig {
-		return ModelConfig{
-			ModelKey:         id,
-			DisplayName:      name,
+	deployment := func(id string, rate Rate) Deployment {
+		return Deployment{
 			Provider:         ProviderOpenAIResponses,
 			VendorKey:        "aicodewith",
 			DeploymentKey:    "aicodewith/api/" + id,
@@ -200,10 +201,16 @@ func aicodewithModels(credential func(string) (string, bool)) []ModelConfig {
 			DisabledReason:   disabled,
 		}
 	}
-	return []ModelConfig{
+	deployments := []Deployment{
 		// The relay's everyday default: near Astra's capability at Sol's price.
-		model("gpt-6.1-sol", "GPT-6.1 Sol", Rate{InputCached: 100_000, InputUncached: 2_000_000, Output: 10_000_000}),
-		model("gpt-6-sol", "GPT-6 Sol", Rate{InputCached: 200_000, InputUncached: 2_000_000, Output: 10_000_000}),
-		model("gpt-6-astra", "GPT-6 Astra", Rate{InputCached: 1_000_000, InputUncached: 10_000_000, Output: 50_000_000}),
+		deployment("gpt-6.1-sol", Rate{InputCached: 100_000, InputUncached: 2_000_000, Output: 10_000_000}),
+		deployment("gpt-6-sol", Rate{InputCached: 200_000, InputUncached: 2_000_000, Output: 10_000_000}),
+		deployment("gpt-6-astra", Rate{InputCached: 1_000_000, InputUncached: 10_000_000, Output: 50_000_000}),
 	}
+	names := []string{"GPT-6.1 Sol", "GPT-6 Sol", "GPT-6 Astra"}
+	models := make([]Model, len(deployments))
+	for i, d := range deployments {
+		models[i] = Model{ModelKey: d.RequestModelID, DisplayName: names[i], Capability: d.Capability, Deployments: []string{d.DeploymentKey}}
+	}
+	return models, deployments
 }

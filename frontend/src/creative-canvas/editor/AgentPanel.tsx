@@ -303,7 +303,7 @@ function AgentConversation({
         current.operation,
       )
       if (!owns(current)) return
-      if (current.nextRun && 'vendor_key' in reply) {
+      if (current.nextRun && 'approved_revisions' in reply) {
         const next = consentedRunAction(current, reply.id)
         if (!savePending(current, next)) return
         current = next
@@ -413,7 +413,6 @@ function AgentConversation({
       action(
         `/conversations/${target}/egress-consents`,
         {
-          vendor_key: chosenModel.vendor_key,
           purpose: 'creative_assistance',
           mode: 'selected_revisions',
           data_classes: [

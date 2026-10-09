@@ -7140,13 +7140,12 @@ components:
     CreativeAgentModel:
       type: object
       additionalProperties: false
-      required: [model_key, display_name, provider, vendor_key, capability,
+      description: 摄影师可选的模型。由哪家服务商、经哪个部署提供属于平台路由，不对外暴露。
+      required: [model_key, display_name, capability,
         catalog_version, available, context_tokens, max_output_tokens]
       properties:
         model_key: {type: string}
         display_name: {type: string}
-        provider: {type: string, description: 线路协议族，不是公司}
-        vendor_key: {type: string, description: 实际接收字节的公司；外发授权按它记录}
         capability: {$ref: '#/components/schemas/CreativeAgentModelCapability'}
         catalog_version: {type: string}
         available: {type: boolean}
@@ -7255,7 +7254,7 @@ components:
     CreativeAgentCatalog:
       type: object
       additionalProperties: false
-      required: [catalog_version, skill_catalog_revision, limits_version, policy_version, vendors, models, skills, tools, limits]
+      required: [catalog_version, skill_catalog_revision, limits_version, policy_version, models, skills, tools, limits]
       properties:
         catalog_version: {type: string}
         skill_catalog_revision:
@@ -7265,9 +7264,6 @@ components:
             模型来自部署随附的配置文件，Skill 来自任何一次导入都能改动的数据库。
         limits_version: {type: string}
         policy_version: {type: string}
-        vendors:
-          type: array
-          items: {type: string}
         models:
           type: array
           items: {$ref: '#/components/schemas/CreativeAgentModel'}
@@ -7757,10 +7753,10 @@ components:
     CreativeEgressConsent:
       type: object
       additionalProperties: false
-      required: [id, vendor_key, purpose, scope, policy_version, revision, granted_at, approved_revisions]
+      description: 本会话内容可发送给平台签约的模型服务商；名单见隐私说明，每次调用实际发往哪家记录在调用证据上。
+      required: [id, purpose, scope, policy_version, revision, granted_at, approved_revisions]
       properties:
         id: {type: string}
-        vendor_key: {type: string}
         purpose: {type: string, enum: [creative_assistance]}
         conversation_id: {type: string}
         scope: {$ref: '#/components/schemas/CreativeEgressConsentScope'}
@@ -7772,9 +7768,8 @@ components:
     CreativeEgressConsentGrantPayload:
       type: object
       additionalProperties: false
-      required: [vendor_key, purpose, mode, data_classes]
+      required: [purpose, mode, data_classes]
       properties:
-        vendor_key: {type: string}
         purpose: {type: string, enum: [creative_assistance]}
         mode: {type: string, enum: [selected_revisions, account_library]}
         data_classes:

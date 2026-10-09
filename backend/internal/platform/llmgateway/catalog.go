@@ -121,23 +121,24 @@ func CostMicros(tokens int64, ratePerMillion int64) int64 {
 	return quotient.Int64()
 }
 
-// ModelConfig is one deployment entry of the versioned catalog. It is deployment
+// Deployment is one vendor's way of serving a model: where to send, under
+// what name, at what price and within which admission limits. It is deployment
 // configuration, not an editable admin screen, and holds no credential value.
-type ModelConfig struct {
-	ModelKey    string      `json:"model_key"`
-	DisplayName string      `json:"display_name"`
-	Provider    ProviderKey `json:"provider"`
-	// VendorKey names the company that actually receives the bytes. Provider is
-	// only the wire protocol and DeploymentKey is per model, so neither answers
-	// the question an egress disclosure has to ask the photographer.
-	VendorKey      string `json:"vendor_key"`
-	DeploymentKey  string `json:"deployment_key"`
-	BaseURL        string `json:"base_url"`
-	CredentialEnv  string `json:"credential_env"`
+// The photographer never sees it; it exists for dispatch, billing and audit.
+type Deployment struct {
+	DeploymentKey string      `json:"deployment_key"`
+	Provider      ProviderKey `json:"provider"`
+	// VendorKey names the company that actually receives the bytes. Every
+	// attempt records it, so where content went stays auditable.
+	VendorKey     string `json:"vendor_key"`
+	BaseURL       string `json:"base_url"`
+	CredentialEnv string `json:"credential_env"`
+	// RequestModelID is the vendor's own name for the model, which differs
+	// between vendors (gpt-6-astra here, gpt-6-astra-0907 there).
 	RequestModelID string `json:"request_model_id"`
 	// Thinking fixes the deployment's reasoning mode ("", "enabled",
 	// "disabled"). It is deployment configuration, never a caller parameter.
-	Thinking string `json:"thinking"`
+	Thinking string `json:"thinking,omitempty"`
 	// ReasoningEffort fixes how hard a Responses reasoning model thinks
 	// ("low", "medium", "high"). Empty means the deployment does not reason.
 	ReasoningEffort  string        `json:"reasoning_effort,omitempty"`
@@ -155,7 +156,26 @@ type ModelConfig struct {
 	QueryCapability    string `json:"query_capability"`
 	CancelCapability   string `json:"cancel_capability"`
 	Enabled            bool   `json:"enabled"`
-	DisabledReason     string `json:"disabled_reason"`
+	DisabledReason     string `json:"disabled_reason,omitempty"`
+}
+
+// Model is what a photographer chooses. Its deployments are listed in priority
+// order; every one of them must support the declared capability, so whichever
+// serves a request, nothing admitted against the model is beyond it.
+type Model struct {
+	ModelKey    string     `json:"model_key"`
+	DisplayName string     `json:"display_name"`
+	Capability  Capability `json:"capability"`
+	Deployments []string   `json:"deployments"`
+}
+
+// ModelConfig is a model as served by one of its deployments: the model's
+// identity and declared capability over that deployment's wiring. It is what
+// admission, dispatch and the adapters work with.
+type ModelConfig struct {
+	ModelKey    string
+	DisplayName string
+	Deployment
 }
 
 // ModelSnapshot is the credential-free projection stored with every request.
@@ -176,12 +196,11 @@ type ModelSnapshot struct {
 	CancelCapability string      `json:"cancel_capability"`
 }
 
-// CatalogEntry is what a trusted caller may show; it never leaks endpoints.
+// CatalogEntry is what a trusted caller may show. It names neither endpoints
+// nor vendors: which company serves a model is the platform's choice.
 type CatalogEntry struct {
 	ModelKey        string     `json:"model_key"`
 	DisplayName     string     `json:"display_name"`
-	Provider        string     `json:"provider"`
-	VendorKey       string     `json:"vendor_key"`
 	Capability      Capability `json:"capability"`
 	CatalogVersion  string     `json:"catalog_version"`
 	Available       bool       `json:"available"`
@@ -192,21 +211,24 @@ type CatalogEntry struct {
 
 // Catalog is the immutable, versioned model directory of one deployment.
 type Catalog struct {
-	version  string
-	currency string
-	models   map[string]ModelConfig
-	keys     []string
+	version     string
+	currency    string
+	models      map[string]Model
+	deployments map[string]Deployment
+	keys        []string
 }
 
 type catalogFile struct {
-	Version  string        `json:"version"`
-	Currency string        `json:"currency"`
-	Models   []ModelConfig `json:"models"`
+	Version     string       `json:"version"`
+	Currency    string       `json:"currency"`
+	Models      []Model      `json:"models"`
+	Deployments []Deployment `json:"deployments"`
 }
 
 // LoadCatalogFile reads the deployment catalog. Credential values never appear
-// in the file; only the environment variable name is configured.
-func LoadCatalogFile(path string) (*Catalog, error) {
+// in the file; only the environment variable name is configured, and a
+// deployment whose credential is absent is disabled with that reason.
+func LoadCatalogFile(path string, credential func(string) (string, bool)) (*Catalog, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read model catalog: %w", err)
@@ -217,101 +239,171 @@ func LoadCatalogFile(path string) (*Catalog, error) {
 	if err := decoder.Decode(&file); err != nil {
 		return nil, fmt.Errorf("%w: model catalog: %w", ErrValidation, err)
 	}
-	return NewCatalog(file.Version, file.Currency, file.Models)
+	if credential == nil {
+		credential = osCredential
+	}
+	for i, d := range file.Deployments {
+		if _, ok := credential(d.CredentialEnv); d.Enabled && !ok {
+			file.Deployments[i].Enabled = false
+			file.Deployments[i].DisabledReason = "未配置 " + d.CredentialEnv
+		}
+	}
+	return NewRoutedCatalog(file.Version, file.Currency, file.Models, file.Deployments)
 }
 
-// NewCatalog validates a directory. A model without a usable price recipe or
-// output bound cannot be enabled, because no conservative hold could be built.
+// NewCatalog builds a directory where every model has exactly one deployment,
+// described together with it.
 func NewCatalog(version, currency string, models []ModelConfig) (*Catalog, error) {
+	routed := make([]Model, 0, len(models))
+	deployments := make([]Deployment, 0, len(models))
+	for _, m := range models {
+		routed = append(routed, Model{
+			ModelKey: m.ModelKey, DisplayName: m.DisplayName,
+			Capability: m.Capability, Deployments: []string{m.DeploymentKey},
+		})
+		deployments = append(deployments, m.Deployment)
+	}
+	return NewRoutedCatalog(version, currency, routed, deployments)
+}
+
+// NewRoutedCatalog validates a directory. A deployment without a usable price
+// recipe or output bound cannot be enabled, because no conservative hold could
+// be built; a model must be fully supported by every deployment it lists.
+func NewRoutedCatalog(version, currency string, models []Model, deployments []Deployment) (*Catalog, error) {
 	if version == "" || len(currency) != 3 || strings.ToUpper(currency) != currency {
 		return nil, fmt.Errorf("%w: catalog version or currency", ErrValidation)
 	}
-	c := &Catalog{version: version, currency: currency, models: make(map[string]ModelConfig, len(models))}
-	for _, m := range models {
-		if err := validateModel(m, currency); err != nil {
+	c := &Catalog{
+		version: version, currency: currency,
+		models:      make(map[string]Model, len(models)),
+		deployments: make(map[string]Deployment, len(deployments)),
+	}
+	for _, d := range deployments {
+		if err := validateDeployment(d, currency); err != nil {
 			return nil, err
+		}
+		if _, dup := c.deployments[d.DeploymentKey]; dup {
+			return nil, fmt.Errorf("%w: duplicate deployment key %q", ErrValidation, d.DeploymentKey)
+		}
+		c.deployments[d.DeploymentKey] = d
+	}
+	owner := make(map[string]string, len(deployments))
+	for _, m := range models {
+		if m.ModelKey == "" || len(m.Deployments) == 0 {
+			return nil, fmt.Errorf("%w: model %q needs a key and at least one deployment", ErrValidation, m.ModelKey)
 		}
 		if _, dup := c.models[m.ModelKey]; dup {
 			return nil, fmt.Errorf("%w: duplicate model key %q", ErrValidation, m.ModelKey)
 		}
+		if m.Capability.ContextTokens <= 0 || m.Capability.MaxOutputTokens <= 0 {
+			return nil, fmt.Errorf("%w: model %q capability bounds", ErrValidation, m.ModelKey)
+		}
+		for _, key := range m.Deployments {
+			d, ok := c.deployments[key]
+			if !ok {
+				return nil, fmt.Errorf("%w: model %q lists unknown deployment %q", ErrValidation, m.ModelKey, key)
+			}
+			// One deployment, one model: its accepted ids and price answer for
+			// exactly one thing the photographer chose.
+			if other, taken := owner[key]; taken {
+				return nil, fmt.Errorf("%w: deployment %q serves both %q and %q", ErrValidation, key, other, m.ModelKey)
+			}
+			owner[key] = m.ModelKey
+			if !d.Capability.covers(m.Capability) {
+				return nil, fmt.Errorf("%w: deployment %q cannot serve everything model %q declares", ErrValidation, key, m.ModelKey)
+			}
+		}
 		c.models[m.ModelKey] = m
 		c.keys = append(c.keys, m.ModelKey)
+	}
+	for key := range c.deployments {
+		if _, ok := owner[key]; !ok {
+			return nil, fmt.Errorf("%w: deployment %q serves no model", ErrValidation, key)
+		}
 	}
 	sort.Strings(c.keys)
 	// Deployments that share one credential share one admission record, so they
 	// must agree on its shape; otherwise every dispatch would rewrite the
 	// capacity of the previous one.
-	shared := make(map[string]ModelConfig, len(models))
-	for _, key := range c.keys {
-		m := c.models[key]
-		first, seen := shared[m.LimitKey]
+	shared := make(map[string]Deployment, len(deployments))
+	for _, d := range deployments {
+		first, seen := shared[d.LimitKey]
 		if !seen {
-			shared[m.LimitKey] = m
+			shared[d.LimitKey] = d
 			continue
 		}
-		if first.Concurrency != m.Concurrency || first.RateLimitPerMin != m.RateLimitPerMin {
-			return nil, fmt.Errorf("%w: models %q and %q share limit key %q with different limits",
-				ErrValidation, first.ModelKey, m.ModelKey, m.LimitKey)
+		if first.Concurrency != d.Concurrency || first.RateLimitPerMin != d.RateLimitPerMin {
+			return nil, fmt.Errorf("%w: deployments %q and %q share limit key %q with different limits",
+				ErrValidation, first.DeploymentKey, d.DeploymentKey, d.LimitKey)
 		}
 	}
 	return c, nil
 }
 
-func validateModel(m ModelConfig, currency string) error {
+// covers reports whether a deployment really supports everything declared.
+func (c Capability) covers(declared Capability) bool {
+	need := func(have, want bool) bool { return have || !want }
+	return need(c.ImageInput, declared.ImageInput) && need(c.ToolCalling, declared.ToolCalling) &&
+		need(c.ToolChoice, declared.ToolChoice) && need(c.JSONObject, declared.JSONObject) &&
+		need(c.Temperature, declared.Temperature) &&
+		c.ContextTokens >= declared.ContextTokens && c.MaxOutputTokens >= declared.MaxOutputTokens
+}
+
+func validateDeployment(m Deployment, currency string) error {
 	switch m.Provider {
 	case ProviderOpenAICompatible, ProviderAnthropicMessage, ProviderOpenAIResponses:
 	default:
-		return fmt.Errorf("%w: model %q unknown provider", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q unknown provider", ErrValidation, m.DeploymentKey)
 	}
-	if m.ModelKey == "" || m.DeploymentKey == "" || m.RequestModelID == "" || m.LimitKey == "" {
-		return fmt.Errorf("%w: model %q identity", ErrValidation, m.ModelKey)
+	if m.DeploymentKey == "" || m.RequestModelID == "" || m.LimitKey == "" {
+		return fmt.Errorf("%w: deployment %q identity", ErrValidation, m.DeploymentKey)
 	}
 	if !vendorKeyPattern.MatchString(m.VendorKey) {
-		return fmt.Errorf("%w: model %q vendor key", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q vendor key", ErrValidation, m.DeploymentKey)
 	}
 	if !strings.HasPrefix(m.BaseURL, "https://") {
-		return fmt.Errorf("%w: model %q base url must be https", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q base url must be https", ErrValidation, m.DeploymentKey)
 	}
 	if m.CredentialEnv == "" || strings.ContainsAny(m.CredentialEnv, " \t\n") {
-		return fmt.Errorf("%w: model %q credential env reference", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q credential env reference", ErrValidation, m.DeploymentKey)
 	}
 	if len(m.AcceptedModelIDs) == 0 {
-		return fmt.Errorf("%w: model %q needs accepted model ids", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q needs accepted model ids", ErrValidation, m.DeploymentKey)
 	}
 	if m.Capability.ContextTokens <= 0 || m.Capability.MaxOutputTokens <= 0 {
-		return fmt.Errorf("%w: model %q capability bounds", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q capability bounds", ErrValidation, m.DeploymentKey)
 	}
 	if m.Concurrency <= 0 || m.RateLimitPerMin <= 0 {
-		return fmt.Errorf("%w: model %q admission limits", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q admission limits", ErrValidation, m.DeploymentKey)
 	}
 	switch m.Thinking {
 	case "", "enabled", "disabled":
 	default:
-		return fmt.Errorf("%w: model %q thinking mode", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q thinking mode", ErrValidation, m.DeploymentKey)
 	}
 	switch {
 	case m.ReasoningEffort == "":
 	case m.Provider != ProviderOpenAIResponses:
-		return fmt.Errorf("%w: model %q reasoning effort needs the responses protocol", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q reasoning effort needs the responses protocol", ErrValidation, m.DeploymentKey)
 	case !slices.Contains([]string{"low", "medium", "high", "xhigh"}, m.ReasoningEffort):
-		return fmt.Errorf("%w: model %q reasoning effort", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q reasoning effort", ErrValidation, m.DeploymentKey)
 	}
 	switch m.QueryCapability {
 	case "none", "provider_query":
 	default:
-		return fmt.Errorf("%w: model %q query capability", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q query capability", ErrValidation, m.DeploymentKey)
 	}
 	switch m.CancelCapability {
 	case "none", "provider_cancel":
 	default:
-		return fmt.Errorf("%w: model %q cancel capability", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q cancel capability", ErrValidation, m.DeploymentKey)
 	}
 	if m.Price.Version == "" || m.Price.Currency != currency {
-		return fmt.Errorf("%w: model %q price version or currency", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q price version or currency", ErrValidation, m.DeploymentKey)
 	}
 	bound := m.Price.UpperBound()
 	if bound.InputUncached <= 0 || bound.Output <= 0 || bound.InputCached < 0 {
-		return fmt.Errorf("%w: model %q has no usable price recipe", ErrValidation, m.ModelKey)
+		return fmt.Errorf("%w: deployment %q has no usable price recipe", ErrValidation, m.DeploymentKey)
 	}
 	return nil
 }
@@ -326,13 +418,12 @@ func (c *Catalog) Currency() string { return c.currency }
 // whose models are currently disabled: an existing consent stays meaningful
 // while a model is switched off.
 func (c *Catalog) Vendors() []string {
-	seen := make(map[string]bool, len(c.keys))
-	vendors := make([]string, 0, len(c.keys))
-	for _, key := range c.keys {
-		vendor := c.models[key].VendorKey
-		if !seen[vendor] {
-			seen[vendor] = true
-			vendors = append(vendors, vendor)
+	seen := make(map[string]bool, len(c.deployments))
+	vendors := make([]string, 0, len(c.deployments))
+	for _, d := range c.deployments {
+		if !seen[d.VendorKey] {
+			seen[d.VendorKey] = true
+			vendors = append(vendors, d.VendorKey)
 		}
 	}
 	sort.Strings(vendors)
@@ -345,32 +436,84 @@ func (c *Catalog) List() []CatalogEntry {
 	entries := make([]CatalogEntry, 0, len(c.keys))
 	for _, key := range c.keys {
 		m := c.models[key]
-		entries = append(entries, CatalogEntry{
+		_, err := c.route(m)
+		entry := CatalogEntry{
 			ModelKey:        m.ModelKey,
 			DisplayName:     m.DisplayName,
-			Provider:        string(m.Provider),
-			VendorKey:       m.VendorKey,
 			Capability:      m.Capability,
 			CatalogVersion:  c.version,
-			Available:       m.Enabled,
-			UnavailableWhy:  m.DisabledReason,
+			Available:       err == nil,
 			ContextTokens:   m.Capability.ContextTokens,
 			MaxOutputTokens: m.Capability.MaxOutputTokens,
-		})
+		}
+		if err != nil {
+			entry.UnavailableWhy = c.deployments[m.Deployments[0]].DisabledReason
+		}
+		entries = append(entries, entry)
 	}
 	return entries
 }
 
-// Model resolves an enabled deployment for dispatch.
+// Model resolves a model to the deployment that serves it right now.
 func (c *Catalog) Model(key string) (ModelConfig, error) {
 	m, ok := c.models[key]
 	if !ok {
 		return ModelConfig{}, fmt.Errorf("%w: model %q", ErrNotFound, key)
 	}
-	if !m.Enabled {
-		return ModelConfig{}, fmt.Errorf("%w: model %q: %s", ErrUnavailable, key, m.DisabledReason)
+	d, err := c.route(m)
+	if err != nil {
+		return ModelConfig{}, err
 	}
-	return m, nil
+	return serve(m, d), nil
+}
+
+// Deployment resolves a model through the deployment a request was frozen
+// against, so a later change of priority never moves a prepared call.
+func (c *Catalog) Deployment(modelKey, deploymentKey string) (ModelConfig, error) {
+	m, ok := c.models[modelKey]
+	if !ok {
+		return ModelConfig{}, fmt.Errorf("%w: model %q", ErrNotFound, modelKey)
+	}
+	if !slices.Contains(m.Deployments, deploymentKey) {
+		// What was frozen is no longer offered: a conflict with the live
+		// directory, never a reason to send somewhere else.
+		return ModelConfig{}, fmt.Errorf("%w: model %q no longer has deployment %q", ErrConflict, modelKey, deploymentKey)
+	}
+	d := c.deployments[deploymentKey]
+	if !d.Enabled {
+		return ModelConfig{}, fmt.Errorf("%w: deployment %q: %s", ErrUnavailable, deploymentKey, d.DisabledReason)
+	}
+	return serve(m, d), nil
+}
+
+// route picks the deployment that serves a model: the first enabled one in
+// priority order. This is the one place an administrator's ordering will plug
+// in later; everything downstream only sees its answer.
+func (c *Catalog) route(m Model) (Deployment, error) {
+	for _, key := range m.Deployments {
+		if d := c.deployments[key]; d.Enabled {
+			return d, nil
+		}
+	}
+	return Deployment{}, fmt.Errorf("%w: model %q: %s", ErrUnavailable, m.ModelKey, c.deployments[m.Deployments[0]].DisabledReason)
+}
+
+// enabledDeployments lists what may be dispatched to, for wiring checks.
+func (c *Catalog) enabledDeployments() []Deployment {
+	var out []Deployment
+	for _, d := range c.deployments {
+		if d.Enabled {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// serve presents a deployment under the model it serves. The declared
+// capability is the model's: that is what requests are admitted against.
+func serve(m Model, d Deployment) ModelConfig {
+	d.Capability = m.Capability
+	return ModelConfig{ModelKey: m.ModelKey, DisplayName: m.DisplayName, Deployment: d}
 }
 
 // Snapshot freezes the credential-free identity persisted with a request.
@@ -396,7 +539,7 @@ func (c *Catalog) Snapshot(m ModelConfig) ModelSnapshot {
 
 // HandsBackReasoning reports whether earlier turns' reasoning must travel back
 // to this deployment, so history keeps it instead of dropping it.
-func (m ModelConfig) HandsBackReasoning() bool {
+func (m Deployment) HandsBackReasoning() bool {
 	return m.Thinking == "enabled" || m.ReasoningEffort != ""
 }
 
