@@ -55,7 +55,12 @@ func decodeResponsesReasoning(raw string) (responsesReasoning, bool) {
 }
 
 type responsesRequest struct {
-	Model           string             `json:"model"`
+	Model string `json:"model"`
+	// Instructions carries the leading system messages. A relay may fill an
+	// absent one with its own prompt — AiCodeWith injects a ~4,300-token
+	// coding-agent prompt that makes the model introduce itself as Codex
+	// (measured 2026-10-09) — so the caller's system text must travel here.
+	Instructions    string             `json:"instructions,omitempty"`
 	Input           []any              `json:"input"`
 	MaxOutputTokens int                `json:"max_output_tokens"`
 	Stream          bool               `json:"stream,omitempty"`
@@ -188,7 +193,19 @@ func (a *OpenAIResponses) encode(ctx context.Context, p ProviderRequest) ([]byte
 			Type: "function", Name: t.Name, Description: t.Description, Parameters: t.InputSchema,
 		})
 	}
-	for _, m := range p.Chat.Messages {
+	messages := p.Chat.Messages
+	var instructions []string
+	for len(messages) > 0 && messages[0].Role == RoleSystem && onlyText(messages[0].Blocks) {
+		var text strings.Builder
+		for _, b := range messages[0].Blocks {
+			text.WriteString(b.Text)
+		}
+		instructions = append(instructions, text.String())
+		messages = messages[1:]
+	}
+	out.Instructions = strings.Join(instructions, "\n\n")
+	// A system message later in the conversation keeps its place in input.
+	for _, m := range messages {
 		items, err := encodeResponsesMessage(ctx, m, p.Model.DeploymentKey, p.Snapshot.RequestModelID)
 		if err != nil {
 			return nil, err
@@ -247,6 +264,15 @@ func encodeResponsesMessage(ctx context.Context, m Message, deployment, model st
 		}
 		return []any{map[string]any{"role": string(m.Role), "content": parts}}, nil
 	}
+}
+
+func onlyText(blocks []Block) bool {
+	for _, b := range blocks {
+		if b.Kind != BlockText {
+			return false
+		}
+	}
+	return true
 }
 
 func responsesParts(ctx context.Context, blocks []Block) ([]map[string]any, bool, error) {

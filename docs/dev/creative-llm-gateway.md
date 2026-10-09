@@ -126,6 +126,10 @@ GPT-6 系列经 AiCodeWith 中转（`vendor_key=aicodewith`，`https://api.aicod
 | `gpt-6-sol` | medium | 2 / 0.2 / 10 | 1M / 128K |
 | `gpt-6-astra` | medium | 10 / 1 / 50 | 1M / 128K |
 
+**中转注入的系统提示**（2026-10-09 实测）：请求不带 `instructions` 时，AiCodeWith 会塞入约 2.2 万字符、约 4300 token 的 Codex 编程助手提示词，模型会自称 Codex，每次调用也多出这部分输入。所以适配器把**开头的纯文字系统消息合并进顶层 `instructions`**（对话中途的系统消息仍留在 `input` 原位）；带上自己的指令后，一句话提问的输入从约 4300 token 降到约 120。中转仍会在指令末尾追加一段 `<gateway_time_context>`，时区写的是 `America/Los_Angeles`，并声明它优先于其他来源的当前时间——北京上午时它给出的「今天」是前一天，涉及日期的提示词要注意这一点。
+
+其他实测：三个模型回包的模型名与请求 ID 完全一致；400 px 图片约 200 个输入 token 且描述正确；加密推理连续三轮跨轮交回都被接受；medium 强度下一轮 3–8 秒，远低于 2 分钟传输上限；medium 下简单步骤经常不产生推理（推理 token 为 0），这是模型自己的选择。真实接口测试为保证产生推理，工具循环用 high 强度。
+
 价格是 OpenAI 官方价（经 Artificial Analysis 2026-10-09 读取）。AiCodeWith 按「官方价 × 渠道折扣」扣费（订阅渠道约 1 折），便宜渠道被风控时自动切到更贵的渠道，所以目录按官方价记账，作为始终成立的上界；账面费用会高于中转实扣。中转未公开任何「处理前拒绝」的状态码，`UnacceptedStatuses` 为空。三个部署共用 `aicodewith/api` 限流键。
 
 共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则目录加载直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
@@ -147,7 +151,7 @@ set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgat
 set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveAICodeWith -count=1 -v
 ```
 
-AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次、加密推理跨轮交回的流式工具循环、看图。
+AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次（并断言输入没有被注入提示词撑大）、加密推理跨轮交回的流式工具循环（连跑三轮）、看图。中转的 Cloudflare 会以 403「error code: 1010」拦截 Python urllib 默认 UA，手工探测时需要带 `User-Agent`；Go 客户端不受影响。
 
 真实调用测试自带 0.05 USD 的月度上限，三个用例覆盖非流式、流式重组与真实工具调用；它不进入默认 `make check-go` 的必跑路径。默认 `-run` 全跑时是 60 个非 live 用例通过 + 3 个 live 用例按凭证缺失 skip。
 

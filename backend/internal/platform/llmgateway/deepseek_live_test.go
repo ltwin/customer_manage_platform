@@ -39,6 +39,12 @@ func liveFixture(t *testing.T) (*llmgateway.Service, store.AccountScope, *sql.DB
 // credential, and capped at budget for the whole test account.
 func liveFixtureFor(t *testing.T, credential string, budget int64) (*llmgateway.Service, store.AccountScope, *sql.DB) {
 	t.Helper()
+	return liveFixtureWith(t, credential, budget, nil)
+}
+
+// liveFixtureWith runs against a given catalog; nil means the built-in one.
+func liveFixtureWith(t *testing.T, credential string, budget int64, catalog *llmgateway.Catalog) (*llmgateway.Service, store.AccountScope, *sql.DB) {
+	t.Helper()
 	if strings.TrimSpace(os.Getenv(credential)) == "" {
 		t.Skip(credential + " not set: skipping the real provider acceptance")
 	}
@@ -58,6 +64,7 @@ func liveFixtureFor(t *testing.T, credential string, budget int64) (*llmgateway.
 	t.Cleanup(st.Close)
 
 	gateway, err := llmgateway.Build(llmgateway.Options{
+		Catalog:            catalog,
 		MonthlyLimitMicros: budget,
 		MonthlyTokenLimit:  200_000,
 		Timeout:            90 * time.Second,

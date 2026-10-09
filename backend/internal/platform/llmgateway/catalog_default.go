@@ -158,6 +158,13 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 // aicodewithModels are OpenAI's GPT-6 line, reached through the AiCodeWith
 // relay. They speak the Responses protocol so their reasoning can come back on
 // later turns; over chat completions it would be dropped between tool calls.
+//
+// Measured 2026-10-09 against the relay (TestLiveAICodeWith*): each model
+// answers under exactly its own id; a 400 px image costs about 200 input
+// tokens and is described correctly; sealed reasoning handed back on the next
+// turn is accepted, three loops in a row; a turn takes 3–8 s at medium effort,
+// well inside the two-minute transport bound. At medium a simple step often
+// carries no reasoning at all, which is the model's choice, not a lost item.
 func aicodewithModels(credential func(string) (string, bool)) ([]Model, []Deployment) {
 	_, enabled := credential("AICODEWITH_API_KEY")
 	disabled := ""

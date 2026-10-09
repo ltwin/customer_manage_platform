@@ -97,6 +97,10 @@ func TestResponsesProtocolProducesTheSameCompleteResult(t *testing.T) {
 		if input["role"] != "user" || part["type"] != "input_text" {
 			t.Fatalf("input %v", input)
 		}
+		// No system text of ours, so none is sent; see the instructions test.
+		if _, ok := sent["instructions"]; ok {
+			t.Fatalf("instructions without a system message: %v", sent["instructions"])
+		}
 		if strings.Contains(fixture.body.Load().(string), "secret-value") {
 			t.Fatal("credential in the body")
 		}
@@ -231,5 +235,35 @@ func TestResponsesUnfinishedAnswersAreNeverSuccess(t *testing.T) {
 				t.Fatalf("result %+v err %v", result, err)
 			}
 		})
+	}
+}
+
+// The leading system text goes out as instructions: a relay fills an absent
+// one with its own prompt. A later system message keeps its place in input.
+func TestResponsesSystemTextTravelsAsInstructions(t *testing.T) {
+	fixture := newProtocolFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, responsesToolBody)
+	})
+	system := func(text string) llmgateway.Message {
+		return llmgateway.Message{Role: llmgateway.RoleSystem, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: text}}}
+	}
+	chat := toolRequest()
+	chat.Messages = append([]llmgateway.Message{system("你是摄影创作助手。"), system("回答尽量简短。")},
+		append(chat.Messages, system("以下是之前对话的摘要。"))...)
+	if _, err := invokeResponses(t, fixture.model(t, llmgateway.ProviderOpenAIResponses), chat, false, nil); err != nil {
+		t.Fatal(err)
+	}
+	var sent struct {
+		Instructions string           `json:"instructions"`
+		Input        []map[string]any `json:"input"`
+	}
+	if err := json.Unmarshal([]byte(fixture.body.Load().(string)), &sent); err != nil {
+		t.Fatal(err)
+	}
+	if sent.Instructions != "你是摄影创作助手。\n\n回答尽量简短。" {
+		t.Fatalf("instructions %q", sent.Instructions)
+	}
+	if len(sent.Input) != 2 || sent.Input[0]["role"] != "user" || sent.Input[1]["role"] != "system" {
+		t.Fatalf("input %v", sent.Input)
 	}
 }
