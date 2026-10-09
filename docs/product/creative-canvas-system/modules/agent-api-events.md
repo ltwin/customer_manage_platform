@@ -8,6 +8,10 @@ created: 2026-09-10
 
 遵循[公共契约](common-contracts.md)，路径均以 `/api/v1/creative` 为前缀，尚未部署。正式 DTO 与事件union在 GH-02/GH-05写入OpenAPI生成两侧类型；模型供应商格式不直接暴露为产品API。
 
+## 2026-10-09 收敛（V6-030）
+
+事件模型由 [V6-030 design](../../../../.codestable/features/2026-10-08-agent-stream-blocks/agent-stream-blocks-design.md) 取代 §2 的事件表：所有可见过程统一为持久化的有序块，事件只剩 `block.created`、`block.updated` 和已有的 run 级事件（`run.state_changed`、`run.finished`、`usage.updated`）。`message.delta` 和 `step.state_changed` 不再使用。用户回应统一走 `POST /agent-runs/{id}/blocks/{block_id}/respond`。信封、`seq`、快照加 `after_seq` 补读、水位和重连规则（§1 末行、§3）继续有效。思考块只展示供应商的公开摘要，见 PRD §11.3 #11。
+
 ## 当前实现补充（2026-09-30）
 
 提交中的 `content_ref` 支持已保存的文本与图片修订，后者需要模型图片能力与 `image_preview` 同意；图片读取句柄由服务端绑定。`canvas_metadata` 同意允许发送小画布概览及调用 `read_canvas`。素材权限仍由 `selected_revision_ids` 的精确集合约束。
