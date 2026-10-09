@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -77,7 +78,7 @@ func setup(t *testing.T) *fixture {
 	// A credential is supplied so the deployment's model is actually enabled.
 	// Without one the catalog lists it as unavailable, and every run test would
 	// pass for the wrong reason — refused before anything was exercised.
-	models, err := llmgateway.DefaultCatalog(func(string) (string, bool) { return "test-credential", true })
+	models, err := llmgateway.DefaultCatalog(deepSeekOnly)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,7 +859,8 @@ func TestACatalogReportsTheFrozenLimitsAndReachableVendors(t *testing.T) {
 	if view.LimitsVersion != limitsVersion || view.Limits.Version != limitsVersion {
 		t.Fatalf("limits version must be frozen, got %q", view.LimitsVersion)
 	}
-	if len(view.Vendors) == 0 || view.Vendors[0] != "deepseek" {
+	// Every company the deployment can send to, configured or not.
+	if !slices.Equal(view.Vendors, []string{"aicodewith", "deepseek"}) {
 		t.Fatalf("the catalog must name the companies it can reach, got %v", view.Vendors)
 	}
 	for _, model := range view.Models {
@@ -905,4 +907,10 @@ func TestEveryCatalogArrayIsAnArrayOnTheWire(t *testing.T) {
 			t.Fatalf("%q serialised as null; the contract declares a non-nullable array", name)
 		}
 	}
+}
+
+// deepSeekOnly configures the DeepSeek credential alone, so the stub vendor
+// serves every enabled model in the default catalog.
+func deepSeekOnly(env string) (string, bool) {
+	return "test-credential", env == "DEEPSEEK_API_KEY"
 }

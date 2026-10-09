@@ -74,11 +74,12 @@
 | 环境变量 | 作用 |
 |---|---|
 | `DEEPSEEK_API_KEY` | DeepSeek 凭证；**只经环境变量注入**，不入库不入 git |
+| `AICODEWITH_API_KEY` | AiCodeWith 中转凭证（GPT-6 系列）；同上 |
 | `CREATIVE_LLM_CATALOG` | 可选，覆盖内置目录的 JSON 文件路径 |
 | `CREATIVE_LLM_MONTHLY_LIMIT_MICROS` | 每账号月度费用上限（micros，默认 20_000_000 = 20 USD） |
 | `CREATIVE_LLM_MONTHLY_TOKEN_LIMIT` | 每账号月度 token 上限（默认 5_000_000） |
 
-内置目录 `DefaultCatalog` 版本 `deepseek-2026-10-09`，价格来源见
+内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-2026-10-09`。DeepSeek 价格来源见
 <https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个部署：
 
 | model_key | 供应商模型 | 思考模式 | tool_choice | 图片输入 |
@@ -88,6 +89,16 @@
 | `deepseek-v4-pro` | `deepseek-v4-pro` | disabled | ✓ | ✗ |
 
 flash 的图片输入 2026-10-09 按实测开启：64–400 px 约 184 个输入 token，1600 px 起封顶约 994（3000 px 相同），在 `EstimateInputTokens` 每图 4096 的上界之内；证据见 `TestLiveDeepSeekFlashSeesAnImage`。v4-pro 保持关闭：发图只多 5 个 token，却照样描述了一张没收到的图。
+
+GPT-6 系列经 AiCodeWith 中转（`vendor_key=aicodewith`，`https://api.aicodewith.ai/v1`），走 **Responses 协议**（`openai_responses` 适配器）而不是 chat completions：OpenAI 文档写明 chat completions 不把推理带回后续轮次，多步工具调用会降质。请求固定 `store:false` + `include:["reasoning.encrypted_content"]` + `reasoning.context:"all_turns"`，加密推理条目随助手消息存入 `reasoning` 列、下一轮原样交回。推理只回给**产生它的同一部署、同一模型**：加密内容绑定上游组织，同一个模型换到另一家服务商会被 400 拒绝，而 400 不允许切换；换了部署就丢弃推理，只损失这一轮的连续性与缓存。DeepSeek 的明文推理与 GPT 的加密条目互不串用，DeepSeek 思考部署收到 GPT 轮次时 `reasoning_content` 置空。
+
+| model_key | 推理强度 | 输入 / 缓存 / 输出（USD 每百万） | 上下文 / 最大输出 |
+|---|---|---|---|
+| `gpt-6.1-sol` | medium | 2 / 0.1 / 10 | 1M / 128K |
+| `gpt-6-sol` | medium | 2 / 0.2 / 10 | 1M / 128K |
+| `gpt-6-astra` | medium | 10 / 1 / 50 | 1M / 128K |
+
+价格是 OpenAI 官方价（经 Artificial Analysis 2026-10-09 读取）。AiCodeWith 按「官方价 × 渠道折扣」扣费（订阅渠道约 1 折），便宜渠道被风控时自动切到更贵的渠道，所以目录按官方价记账，作为始终成立的上界；账面费用会高于中转实扣。中转未公开任何「处理前拒绝」的状态码，`UnacceptedStatuses` 为空。三个部署共用 `aicodewith/api` 限流键。
 
 共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则 `NewCatalog` 直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
 
@@ -105,7 +116,10 @@ make check-go PKG=./internal/platform/llmgateway/...
 
 ```bash
 set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveDeepSeek -count=1 -v
+set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveAICodeWith -count=1 -v
 ```
+
+AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次、加密推理跨轮交回的流式工具循环、看图。
 
 真实调用测试自带 0.05 USD 的月度上限，三个用例覆盖非流式、流式重组与真实工具调用；它不进入默认 `make check-go` 的必跑路径。默认 `-run` 全跑时是 60 个非 live 用例通过 + 3 个 live 用例按凭证缺失 skip。
 

@@ -3,11 +3,17 @@ package llmgateway
 // DefaultCatalogVersion changes whenever a deployment entry, capability or
 // price recipe below changes. It is persisted with every request, so an edit
 // never rewrites an in-flight call.
-const DefaultCatalogVersion = "deepseek-2026-10-09"
+const DefaultCatalogVersion = "deepseek-aicodewith-2026-10-09"
 
 // priceSourceDeepSeek records where the rates came from and when, because a
 // price recipe without a provenance cannot be reconciled against an invoice.
 const priceSourceDeepSeek = "https://api-docs.deepseek.com/quick_start/pricing (read 2026-09-11)"
+
+// priceSourceOpenAI records the official rates AiCodeWith bills against. It
+// charges them times a channel discount (1–1.1 of 10 on the subscription
+// channels), and falls back to a dearer channel when a cheap one is throttled,
+// so the official rate is the only bound that always holds.
+const priceSourceOpenAI = "https://artificialanalysis.ai/models (official OpenAI rates, read 2026-10-09); https://docs.aicodewith.ai/zh/docs/subscription-package-selection"
 
 // deepSeekPeakWindows are the published UTC peak hours, Monday through Friday.
 // Off-peak is half of peak, so every reservation is bounded by the peak rate.
@@ -143,5 +149,61 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 		DisabledReason:     disabled,
 	}
 
-	return NewCatalog(DefaultCatalogVersion, "USD", []ModelConfig{flash, flashThinking, pro})
+	return NewCatalog(DefaultCatalogVersion, "USD", append([]ModelConfig{flash, flashThinking, pro}, aicodewithModels(credential)...))
+}
+
+// aicodewithModels are OpenAI's GPT-6 line, reached through the AiCodeWith
+// relay. They speak the Responses protocol so their reasoning can come back on
+// later turns; over chat completions it would be dropped between tool calls.
+func aicodewithModels(credential func(string) (string, bool)) []ModelConfig {
+	_, enabled := credential("AICODEWITH_API_KEY")
+	disabled := ""
+	if !enabled {
+		disabled = "未配置 AICODEWITH_API_KEY"
+	}
+	model := func(id, name string, rate Rate) ModelConfig {
+		return ModelConfig{
+			ModelKey:         id,
+			DisplayName:      name,
+			Provider:         ProviderOpenAIResponses,
+			VendorKey:        "aicodewith",
+			DeploymentKey:    "aicodewith/api/" + id,
+			BaseURL:          "https://api.aicodewith.ai/v1",
+			CredentialEnv:    "AICODEWITH_API_KEY",
+			RequestModelID:   id,
+			ReasoningEffort:  "medium",
+			AcceptedModelIDs: []string{id},
+			Capability: Capability{
+				ImageInput:  true,
+				ToolCalling: true,
+				ToolChoice:  true,
+				JSONObject:  true,
+				// Reasoning models fix their own sampling.
+				Temperature:     false,
+				ContextTokens:   1_000_000,
+				MaxOutputTokens: 128_000,
+			},
+			Price: PriceSchedule{
+				Version:  id + "-2026-10-09",
+				Currency: "USD",
+				Source:   priceSourceOpenAI,
+				Peak:     rate,
+				OffPeak:  rate,
+			},
+			// The relay documents no status as refused before processing.
+			LimitKey:         "aicodewith/api",
+			Concurrency:      4,
+			RateLimitPerMin:  60,
+			QueryCapability:  "none",
+			CancelCapability: "none",
+			Enabled:          enabled,
+			DisabledReason:   disabled,
+		}
+	}
+	return []ModelConfig{
+		// The relay's everyday default: near Astra's capability at Sol's price.
+		model("gpt-6.1-sol", "GPT-6.1 Sol", Rate{InputCached: 100_000, InputUncached: 2_000_000, Output: 10_000_000}),
+		model("gpt-6-sol", "GPT-6 Sol", Rate{InputCached: 200_000, InputUncached: 2_000_000, Output: 10_000_000}),
+		model("gpt-6-astra", "GPT-6 Astra", Rate{InputCached: 1_000_000, InputUncached: 10_000_000, Output: 50_000_000}),
+	}
 }

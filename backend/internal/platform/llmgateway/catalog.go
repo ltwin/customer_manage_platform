@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ type ProviderKey string
 const (
 	ProviderOpenAICompatible ProviderKey = "openai_compatible"
 	ProviderAnthropicMessage ProviderKey = "anthropic_messages"
+	ProviderOpenAIResponses  ProviderKey = "openai_responses"
 )
 
 // Capability is what the deployment really supports. A request that needs more
@@ -135,7 +137,10 @@ type ModelConfig struct {
 	RequestModelID string `json:"request_model_id"`
 	// Thinking fixes the deployment's reasoning mode ("", "enabled",
 	// "disabled"). It is deployment configuration, never a caller parameter.
-	Thinking         string        `json:"thinking"`
+	Thinking string `json:"thinking"`
+	// ReasoningEffort fixes how hard a Responses reasoning model thinks
+	// ("low", "medium", "high"). Empty means the deployment does not reason.
+	ReasoningEffort  string        `json:"reasoning_effort,omitempty"`
 	AcceptedModelIDs []string      `json:"accepted_model_ids"`
 	Capability       Capability    `json:"capability"`
 	Price            PriceSchedule `json:"price"`
@@ -254,7 +259,7 @@ func NewCatalog(version, currency string, models []ModelConfig) (*Catalog, error
 
 func validateModel(m ModelConfig, currency string) error {
 	switch m.Provider {
-	case ProviderOpenAICompatible, ProviderAnthropicMessage:
+	case ProviderOpenAICompatible, ProviderAnthropicMessage, ProviderOpenAIResponses:
 	default:
 		return fmt.Errorf("%w: model %q unknown provider", ErrValidation, m.ModelKey)
 	}
@@ -283,6 +288,13 @@ func validateModel(m ModelConfig, currency string) error {
 	case "", "enabled", "disabled":
 	default:
 		return fmt.Errorf("%w: model %q thinking mode", ErrValidation, m.ModelKey)
+	}
+	switch {
+	case m.ReasoningEffort == "":
+	case m.Provider != ProviderOpenAIResponses:
+		return fmt.Errorf("%w: model %q reasoning effort needs the responses protocol", ErrValidation, m.ModelKey)
+	case !slices.Contains([]string{"low", "medium", "high", "xhigh"}, m.ReasoningEffort):
+		return fmt.Errorf("%w: model %q reasoning effort", ErrValidation, m.ModelKey)
 	}
 	switch m.QueryCapability {
 	case "none", "provider_query":
@@ -380,6 +392,12 @@ func (c *Catalog) Snapshot(m ModelConfig) ModelSnapshot {
 		QueryCapability:  m.QueryCapability,
 		CancelCapability: m.CancelCapability,
 	}
+}
+
+// HandsBackReasoning reports whether earlier turns' reasoning must travel back
+// to this deployment, so history keeps it instead of dropping it.
+func (m ModelConfig) HandsBackReasoning() bool {
+	return m.Thinking == "enabled" || m.ReasoningEffort != ""
 }
 
 // CheckCapability refuses a request the deployment cannot really serve.

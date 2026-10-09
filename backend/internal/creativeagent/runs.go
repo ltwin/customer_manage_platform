@@ -319,7 +319,7 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			// fills the remainder rather than competing for a second budget.
 			history, err := s.freezeHistoryInTx(ctx, tx, input.ConversationID,
 				s.limits.InputTextBytes-resolved.Bytes-skillInstructionBytes(resolved.Skill),
-				model.Thinking == "enabled")
+				model.HandsBackReasoning())
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}

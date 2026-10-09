@@ -65,7 +65,7 @@ func OptionsFromEnv() (Options, error) {
 	return opts, nil
 }
 
-// Build assembles the gateway with both wire adapters registered. A deployment
+// Build assembles the gateway with every wire adapter registered. A deployment
 // whose credential is absent stays listed and disabled instead of failing the
 // process, so the manual canvas keeps working without any model.
 func Build(opts Options) (*Service, error) {
@@ -97,6 +97,7 @@ func Build(opts Options) (*Service, error) {
 		Providers: map[ProviderKey]Provider{
 			ProviderOpenAICompatible: NewOpenAICompatible(client),
 			ProviderAnthropicMessage: NewAnthropicMessages(client, ""),
+			ProviderOpenAIResponses:  NewOpenAIResponses(client),
 		},
 		Credential: credential,
 		Clock:      opts.Clock,

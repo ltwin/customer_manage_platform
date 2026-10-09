@@ -90,9 +90,10 @@ type Message struct {
 	Blocks     []Block
 	ToolCallID string
 	ToolCalls  []ToolCall
-	// Reasoning is what a thinking model reasoned before this assistant turn.
-	// It is model context only: a thinking deployment must receive it back on
-	// later turns that offer tools, and it is never shown to anyone.
+	// Reasoning is what a thinking model reasoned before this assistant turn,
+	// as the adapter that produced it recorded it: plain text, or the vendor's
+	// sealed items. It is model context only — handed back on later turns, read
+	// only by the adapter that wrote it, and never shown to anyone.
 	Reasoning string
 }
 
@@ -148,8 +149,9 @@ func (u UsageEvidence) Complete() bool {
 type Result struct {
 	Text      string
 	ToolCalls []ToolCall
-	// Reasoning is a thinking model's chain of thought. It is not part of the
-	// answer; the caller hands it back with this turn's message and nothing more.
+	// Reasoning is a thinking model's chain of thought, opaque to the caller.
+	// It is not part of the answer; the caller hands it back with this turn's
+	// message and nothing more.
 	Reasoning         string
 	FinishReason      FinishReason
 	Usage             UsageEvidence

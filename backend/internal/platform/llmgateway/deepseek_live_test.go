@@ -32,8 +32,15 @@ const liveTestBudgetMicros = 50_000
 // never makes a paid call.
 func liveFixture(t *testing.T) (*llmgateway.Service, store.AccountScope, *sql.DB) {
 	t.Helper()
-	if strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY")) == "" {
-		t.Skip("DEEPSEEK_API_KEY not set: skipping the real provider acceptance")
+	return liveFixtureFor(t, "DEEPSEEK_API_KEY", liveTestBudgetMicros)
+}
+
+// liveFixtureFor is liveFixture for any vendor: skipped without its
+// credential, and capped at budget for the whole test account.
+func liveFixtureFor(t *testing.T, credential string, budget int64) (*llmgateway.Service, store.AccountScope, *sql.DB) {
+	t.Helper()
+	if strings.TrimSpace(os.Getenv(credential)) == "" {
+		t.Skip(credential + " not set: skipping the real provider acceptance")
 	}
 	url := storetest.NewURL(t)
 	db, err := sql.Open("pgx", url)
@@ -51,7 +58,7 @@ func liveFixture(t *testing.T) (*llmgateway.Service, store.AccountScope, *sql.DB
 	t.Cleanup(st.Close)
 
 	gateway, err := llmgateway.Build(llmgateway.Options{
-		MonthlyLimitMicros: liveTestBudgetMicros,
+		MonthlyLimitMicros: budget,
 		MonthlyTokenLimit:  200_000,
 		Timeout:            90 * time.Second,
 	})
@@ -75,10 +82,11 @@ func liveTurn(
 	if err := scope.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
 		var err error
 		reservation, err = gateway.ReserveInTx(t.Context(), tx, llmgateway.ReserveInput{
-			CallerService:        "creative_agent",
-			CallerOperationID:    uuid.NewString(),
-			CallerGroupID:        group,
-			GroupLimitMicros:     liveTestBudgetMicros,
+			CallerService:     "creative_agent",
+			CallerOperationID: uuid.NewString(),
+			CallerGroupID:     group,
+			// Zero takes the account's monthly cap, which the fixture set.
+			GroupLimitMicros:     0,
 			GroupTokenLimit:      200_000,
 			GroupDeadline:        deadline,
 			ModelKey:             chat.ModelKey,

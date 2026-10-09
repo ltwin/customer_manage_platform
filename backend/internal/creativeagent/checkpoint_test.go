@@ -345,7 +345,7 @@ func TestB3CheckpointChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer st.Close()
-	models, err := llmgateway.DefaultCatalog(func(string) (string, bool) { return "test-credential", true })
+	models, err := llmgateway.DefaultCatalog(deepSeekOnly)
 	if err != nil {
 		t.Fatal(err)
 	}

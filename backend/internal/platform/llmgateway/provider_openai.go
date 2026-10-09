@@ -178,7 +178,12 @@ func (a *OpenAICompatible) encode(ctx context.Context, p ProviderRequest) ([]byt
 			return nil, err
 		}
 		if m.Role == RoleAssistant && p.Model.Thinking == "enabled" {
+			// Another protocol's reasoning is not this model's thought; the
+			// field still has to be present, so it goes back empty.
 			reasoning := m.Reasoning
+			if _, foreign := decodeResponsesReasoning(reasoning); foreign {
+				reasoning = ""
+			}
 			encoded.ReasoningContent = &reasoning
 		}
 		out.Messages = append(out.Messages, encoded)
