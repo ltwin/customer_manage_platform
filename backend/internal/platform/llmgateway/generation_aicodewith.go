@@ -87,7 +87,8 @@ type aicodewithCost struct {
 func (a *AICodeWithImages) Submit(ctx context.Context, call GenerationCall) (GenerationEvent, error) {
 	body, err := a.requestBody(ctx, call)
 	if err != nil {
-		return GenerationEvent{}, err
+		// 请求体没组装成，什么都没有发出。
+		return GenerationEvent{}, fmt.Errorf("%w: %w", ErrNotDispatched, err)
 	}
 	status, raw, err := a.do(ctx, http.MethodPost, "/v1/images/generations", body)
 	if err != nil {
@@ -220,7 +221,7 @@ func (a *AICodeWithImages) do(ctx context.Context, method, route string, body []
 	}
 	req, err := http.NewRequestWithContext(ctx, method, a.baseURL+route, reader)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, fmt.Errorf("%w: %w", ErrNotDispatched, err)
 	}
 	req.Header.Set("Authorization", "Bearer "+a.key)
 	if body != nil {

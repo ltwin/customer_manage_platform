@@ -3,6 +3,7 @@ package llmgateway_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -154,5 +155,26 @@ func TestGenerationRuntimeLostSubmitNeverResends(t *testing.T) {
 	}
 	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 1 {
 		t.Fatalf("unknown released supplier capacity: %d", n)
+	}
+}
+
+// A submit that failed before sending anything holds neither money nor the
+// shared supplier slot, and needs no human to verify it.
+func TestGenerationRuntimeUnsentSubmitReleasesHoldAndSlot(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	a := &generationAdapter{submit: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+		return gw.GenerationEvent{}, fmt.Errorf("%w: reference unreadable", gw.ErrNotDispatched)
+	}}
+	r, p, _ := generationRuntime(t, f, a)
+	view := admitRuntime(t, f, r, p)
+	result, err := r.AdvanceGeneration(t.Context(), f.a, view.ID)
+	if err != nil || result.VerificationRequired || result.Request.State == gw.StateUnknown {
+		t.Fatalf("unsent submit: %+v %v", result, err)
+	}
+	if held, spent := f.reservedMicros(t); held != 0 || spent != 0 {
+		t.Fatalf("unsent ledger: %d %d", held, spent)
+	}
+	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 0 {
+		t.Fatalf("unsent submit kept supplier capacity: %d", n)
 	}
 }

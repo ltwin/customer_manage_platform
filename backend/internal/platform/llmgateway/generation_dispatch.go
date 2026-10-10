@@ -87,6 +87,10 @@ func (r *GenerationRuntime) AdvanceGeneration(ctx context.Context, scope store.A
 			}
 		}
 		cancel()
+		// 确定没有发出的提交与明确拒绝等价：释放预留与名额，按拒绝规则重试。
+		if action.kind == "submit" && errors.Is(callErr, ErrNotDispatched) {
+			event, callErr = GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: "not_dispatched"}}, nil
+		}
 		finishCtx, finish := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 		defer finish()
 		err = scope.WithTxScope(finishCtx, func(tx store.TxAccountScope) error {

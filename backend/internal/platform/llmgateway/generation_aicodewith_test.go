@@ -185,7 +185,7 @@ func TestAICodeWithImageSubmitSendsVerifiedReferencesOnly(t *testing.T) {
 	refs["a"] = []byte("tampered!!!")
 	calls := 0
 	r.submit = func(map[string]any) (int, string) { calls++; return http.StatusOK, `{"id":"x"}` }
-	if _, err := a.Submit(t.Context(), gw.GenerationCall{Prepared: result.Prepared, References: refs}); !errors.Is(err, gw.ErrConflict) || calls != 0 {
+	if _, err := a.Submit(t.Context(), gw.GenerationCall{Prepared: result.Prepared, References: refs}); !errors.Is(err, gw.ErrConflict) || !errors.Is(err, gw.ErrNotDispatched) || calls != 0 {
 		t.Fatalf("tampered reference: %v calls=%d", err, calls)
 	}
 }

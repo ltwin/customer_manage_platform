@@ -31,12 +31,15 @@ var (
 	ErrUnknown    = errors.New("model result unknown")
 	// ErrRejected is the provider's definitive refusal of a request it did not
 	// process, such as a malformed request or an exhausted vendor balance.
-	ErrRejected     = errors.New("provider rejected the request")
-	ErrUnavailable  = errors.New("model deployment unavailable")
-	ErrRateLimited  = errors.New("provider admission unavailable")
-	ErrDeadline     = errors.New("gateway deadline exceeded")
-	ErrCancelled    = errors.New("gateway request cancelled")
-	ErrAttemptsUsed = errors.New("gateway attempts exhausted")
+	ErrRejected = errors.New("provider rejected the request")
+	// ErrNotDispatched marks a generation submit that failed before any byte
+	// left for the provider, so nothing can have been accepted or charged.
+	ErrNotDispatched = errors.New("generation request was not sent")
+	ErrUnavailable   = errors.New("model deployment unavailable")
+	ErrRateLimited   = errors.New("provider admission unavailable")
+	ErrDeadline      = errors.New("gateway deadline exceeded")
+	ErrCancelled     = errors.New("gateway request cancelled")
+	ErrAttemptsUsed  = errors.New("gateway attempts exhausted")
 )
 
 // Role is the closed message role set. Provider-specific roles are adapted.
