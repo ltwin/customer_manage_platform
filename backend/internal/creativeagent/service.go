@@ -39,7 +39,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-6"
+const limitsVersion = "creative-agent-7"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -123,9 +123,9 @@ func DefaultLimits() Limits {
 		ToolResultBytes:         64 << 10,
 		ToolCallsPerTurn:        64,
 		RunDurationSeconds:      1800,
-		ImagePreviewBytes:       2 << 20,
+		ImagePreviewBytes:       20 << 20,
 		ImagePreviewCount:       8,
-		ImagePreviewTotalBytes:  12 << 20,
+		ImagePreviewTotalBytes:  20 << 20,
 	}
 }
 

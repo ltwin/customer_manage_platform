@@ -3,6 +3,7 @@ package creativeagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -134,17 +136,46 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 		if !readable[id] || h.service.images == nil || !h.held.Model.Capability.ImageInput || !imageAuthorized {
 			continue // Historical tool locators carry no renewed image authority.
 		}
-		handle, err := h.service.images.AgentImage(ctx, h.scope, id, h.service.limits.ImagePreviewBytes)
-		if err != nil {
-			return nil, err
+		optional := message.Role == schema.Tool
+		if group, _ := message.Extra["creative_history_group"].(string); group != "" {
+			optional = true
 		}
-		if len(seen) >= h.service.limits.ImagePreviewCount || total+handle.ByteSize > h.service.limits.ImagePreviewTotalBytes {
-			if group, _ := message.Extra["creative_history_group"].(string); group != "" || message.Role == schema.Tool {
-				omitImage(message)
+		handle, err := h.service.images.AgentImage(ctx, h.scope, id, h.service.limits.ImagePreviewBytes)
+		var sizeLimit *creativemedia.ImagePreviewLimitError
+		if errors.As(err, &sizeLimit) {
+			reason := fmt.Sprintf("图片大小为 %s，超过单图上限 %s，压缩后的预览仍无法满足限制。", imageBytesLabel(sizeLimit.SizeBytes), imageBytesLabel(sizeLimit.LimitBytes))
+			if err := h.omitLimitedImage(ctx, message, &messages[i], id, "creative_image_size_limit", reason); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err != nil && unreadableImage(err) {
+			// An earlier image that can no longer be prepared must not take the
+			// whole conversation down with it; the model is told it is missing.
+			if optional {
+				delete(message.Extra, imageRefsKey)
+				message.Content = referenceLabel(id) + "（这张图片已无法读取，没有发送给你）"
 				messages[i].Blocks = []llmgateway.Block{{Kind: llmgateway.BlockText, Text: message.Content}}
 				continue
 			}
-			return nil, ErrLimit
+			return nil, fmt.Errorf("%w: image %s: %v", ErrNotFound, id, err)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if len(seen) >= h.service.limits.ImagePreviewCount {
+			reason := fmt.Sprintf("图片数量超过上下文容量：本轮已加载 %d 张，最多允许 %d 张。", len(seen), h.service.limits.ImagePreviewCount)
+			if err := h.omitLimitedImage(ctx, message, &messages[i], id, "creative_image_count_limit", reason); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if total+handle.ByteSize > h.service.limits.ImagePreviewTotalBytes {
+			reason := fmt.Sprintf("图片总大小超过上下文容量：已加载 %s，本图 %s，合计 %s，每轮上限 %s。", imageBytesLabel(total), imageBytesLabel(handle.ByteSize), imageBytesLabel(total+handle.ByteSize), imageBytesLabel(h.service.limits.ImagePreviewTotalBytes))
+			if err := h.omitLimitedImage(ctx, message, &messages[i], id, "creative_image_total_limit", reason); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		seen[id] = true
 		total += handle.ByteSize
@@ -508,6 +539,13 @@ func (h *runtimeHandler) persistToolMessage(ctx context.Context, tx store.TxAcco
 		}
 	}
 	return h.service.appendMessageInTx(ctx, tx, h.held.ConversationID, message)
+}
+
+// unreadableImage is a failure of this one image — gone, not allowed, not a
+// picture we can decode — as opposed to the store being unavailable.
+func unreadableImage(err error) bool {
+	return errors.Is(err, creativecontent.ErrNotFound) || errors.Is(err, creativecontent.ErrUsageDenied) || errors.Is(err, creativemedia.ErrUnsupported) ||
+		errors.Is(err, llmgateway.ErrValidation) || errors.Is(err, llmgateway.ErrCapability)
 }
 
 // Keep newer visual inputs within the bounded attachment window. Removing an

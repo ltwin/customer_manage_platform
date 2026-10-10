@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -180,6 +181,81 @@ func TestImageReferenceSurvivesHistoryAndNeedsRenewedConsent(t *testing.T) {
 	}
 }
 
+// unreadableImages fails every image the way a vanished or undecodable one
+// does, until it is told the image is back.
+type unreadableImages struct{ readable bool }
+
+func (u *unreadableImages) AgentImage(ctx context.Context, scope store.AccountScope, id string, limit int64) (*llmgateway.ImageInput, error) {
+	if !u.readable {
+		return nil, creativecontent.ErrNotFound
+	}
+	return testImageReader{}.AgentImage(ctx, scope, id, limit)
+}
+
+// 2026-10-10: an image the model could not receive failed its run and then
+// every later run in the conversation, because it stayed in the history. The
+// current message still says the input is unavailable; history drops it.
+func TestUnreadableImageDoesNotPoisonTheConversation(t *testing.T) {
+	f := setup(t)
+	original, err := f.service.models.Model(testModelKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original.Capability.ImageInput = true
+	models, err := llmgateway.NewCatalog("visual-test", original.Price.Currency, []llmgateway.ModelConfig{original})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := llmgateway.New(llmgateway.Config{Catalog: models, Providers: map[llmgateway.ProviderKey]llmgateway.Provider{llmgateway.ProviderOpenAICompatible: f.vendor}, Credential: func(string) (string, bool) { return "test", true }, DefaultBudget: llmgateway.BudgetPolicy{MonthlyLimitMicros: 20_000_000, MonthlyTokenLimit: 5_000_000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.service, err = NewService(gateway, models, f.skills); err != nil {
+		t.Fatal(err)
+	}
+	f.service.SetImageReader(&unreadableImages{})
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	id := f.mediaRevision(f.alice, "image", "image/png")
+	consent := contextConsent(t, f, c.ID, id)
+	var prompt string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, _ int) (llmgateway.Result, error) {
+		prompt = ""
+		for _, m := range r.Chat.Messages {
+			for _, b := range m.Blocks {
+				if b.Image != nil {
+					t.Fatal("an unreadable image was attached")
+				}
+				prompt += b.Text
+			}
+		}
+		return scriptedResult(r), nil
+	}
+	first, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "content_ref", ContentRevisionID: id}, InstructionSegment{Type: "text", Text: "优化这张图"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, first.ID); got.State != RunFailed || got.ErrorCode != "creative_input_unavailable" {
+		t.Fatalf("first run %s %s", got.State, got.ErrorCode)
+	}
+	second, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "你好"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.service.ReadRun(t.Context(), f.alice, second.ID); got.State != RunSucceeded {
+		t.Fatalf("second run %s %s", got.State, got.ErrorCode)
+	}
+	if !strings.Contains(prompt, "已无法读取") {
+		t.Fatalf("the model was not told the image is missing: %s", prompt)
+	}
+}
+
 func TestCompactionPreservesCurrentInstructionAndToolPairs(t *testing.T) {
 	user := schema.UserMessage("之前的任务")
 	historyTag(user, "old")
@@ -236,21 +312,26 @@ func TestImageBudgetPrioritizesCurrentReferences(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := setup(t)
+			useModel(t, f, func(m *llmgateway.ModelConfig) { m.Capability.ImageInput = true })
 			f.service.SetImageReader(testImageReader{})
 			f.service.limits.ImagePreviewCount = tt.count
 			f.service.limits.ImagePreviewTotalBytes = tt.total
+			f.queue()
 			c := f.conversation(f.alice, f.canvasID)
 			ids := make([]string, tt.current+1)
 			for i := range ids {
 				ids[i] = f.mediaRevision(f.alice, "image", "image/png")
 			}
 			consent := contextConsent(t, f, c.ID, ids...)
-			model, err := f.service.models.Model(testModelKey)
+			run, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "描述图片"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			model.Capability.ImageInput = true
-			h := &runtimeHandler{service: f.service, scope: f.alice, held: claim{ConsentID: consent.ID, Model: model}, revisions: ids}
+			held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h := &runtimeHandler{service: f.service, scope: f.alice, held: held, revisions: ids}
 			var source []*schema.Message
 			for _, id := range ids[:tt.current] {
 				m := schema.UserMessage(referenceLabel(id))
@@ -276,12 +357,6 @@ func TestImageBudgetPrioritizesCurrentReferences(t *testing.T) {
 				messages[i] = llmgateway.Message{Role: llmgateway.Role(m.Role), Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: m.Content}}, ToolCallID: m.ToolCallID}
 			}
 			bound, err := h.bindMessages(t.Context(), source, messages)
-			if tt.wantLimit {
-				if !errors.Is(err, ErrLimit) {
-					t.Fatalf("explicit overflow: %v", err)
-				}
-				return
-			}
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -297,6 +372,29 @@ func TestImageBudgetPrioritizesCurrentReferences(t *testing.T) {
 			}
 			if len(images) > tt.count || bytes > tt.total {
 				t.Fatalf("images=%v bytes=%d", images, bytes)
+			}
+			if tt.wantLimit {
+				if images[ids[0]] != 0 || images[ids[1]] != 1 || images[ids[2]] != 1 {
+					t.Fatalf("overflow did not preserve the newest images: %v", images)
+				}
+				if !strings.Contains(bound[0].Blocks[0].Text, "上限") && !strings.Contains(bound[0].Blocks[0].Text, "最多允许") {
+					t.Fatalf("model did not receive the limit: %+v", bound[0])
+				}
+				if f.count("creative_agent_blocks", "run_id=$1 AND type='notice'", run.ID) == 0 {
+					t.Fatal("photographer did not receive a notice")
+				}
+				var code, notice string
+				if err := f.db.QueryRow(`SELECT payload->>'code',payload->>'message' FROM creative_agent_blocks WHERE run_id=$1 AND source_key=$2`, run.ID, "image-limit:"+ids[0]).Scan(&code, &notice); err != nil {
+					t.Fatal(err)
+				}
+				if tt.name == "explicit bytes overflow" {
+					if code != "creative_image_total_limit" || !strings.Contains(notice, "15 字节") || !strings.Contains(notice, "10 字节") {
+						t.Fatalf("total limit notice lacks actual bytes or ceiling: %s %s", code, notice)
+					}
+				} else if code != "creative_image_count_limit" || !strings.Contains(notice, "最多允许 2 张") {
+					t.Fatalf("count limit notice lacks ceiling: %s %s", code, notice)
+				}
+				return
 			}
 			for _, id := range ids[:tt.current] {
 				if images[id] != 1 {
