@@ -1059,7 +1059,7 @@ Chat 的 RecoverExpired 明确只选 chat；其本地传输过期不能释放仍
 
 `creativegeneration.Service` 是生成执行 driver，显式组合 G3 Runtime、媒体服务及每个部署的取件器。`Request` 接受服务端的 PreparedPolicyGeneration 和额度控制，公开 JSON 仅表示画布目标。它以 operation 回执优先，在同一事务预留预算、校验目标/Prompt/读集、创建执行及输入根、绑定 Gateway 请求、登记两个阶段的队列任务。配置 revision 与 G3 最终守卫保持有效；同 operation 重放不重新取价或新增请求。
 
-现有 `internal.text-compose` 及其入口保持原行为。生成 driver 用独立队列和绑定表恢复，默认不装入 server/worker 组合根，不新增公开 HTTP 接口，不登记商业模型。账号的 `node_generate_enabled` / `generation_apply_enabled` 现由已有能力表读取且默认 false；它们在最终派发/发布事务持共享行锁，与停用更新线性化。人工编辑的既有能力行为不变。
+现有 `internal.text-compose` 及其入口保持原行为。生成 driver 用独立队列和绑定表恢复，默认不装入 server/worker 组合根，不新增公开 HTTP 接口，不登记商业模型。节点生成与生成落版本不设按账号开关（2026-10-09 删除）：账号状态为 active 即可用，派发/发布事务内仍重查账号状态。人工编辑的既有能力行为不变。
 
 ### 24.2 取件、对象恢复和交接
 

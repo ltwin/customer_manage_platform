@@ -202,6 +202,17 @@ function Workspace({ account }: { account: string }) {
       canvas && canvas.id === canvasID ? projectCanvas(canvas, outbox) : canvas,
     [canvas, canvasID, outbox],
   )
+  // 空媒体节点的比例标签跟随面板里尚未保存的选择（V6-021 AC-03）。
+  const draftRatios = useMemo(() => {
+    const prefix = `prompt:${view?.id ?? ''}:`
+    const out: Record<string, string> = {}
+    for (const [key, draft] of Object.entries(queue?.value.drafts ?? {})) {
+      const ratio = draft.prompt?.parameters.aspect_ratio
+      if (key.startsWith(prefix) && typeof ratio === 'string')
+        out[key.slice(prefix.length)] = ratio
+    }
+    return out
+  }, [queue?.value.drafts, view?.id])
   useEffect(() => {
     if (!view) return
     const live = new Set(view.nodes.map((n) => n.id))
@@ -1486,6 +1497,7 @@ function Workspace({ account }: { account: string }) {
                     }
                   }}
                   onFocusPrompt={focusPrompt}
+                  draftRatios={draftRatios}
                   onEdit={(id) => {
                     setSelected(id)
                     const n = view.nodes.find((n) => n.id === id)

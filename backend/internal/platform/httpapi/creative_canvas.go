@@ -258,7 +258,7 @@ func (h *handlers) creativeWrite(c *gin.Context, targetKey, target string, apply
 		case "reuse_version_prompt":
 			apply = creativecanvas.ReuseVersionPrompt
 		case "cancel_execution":
-			apply = creativecanvas.CancelNodeExecution
+			apply = creativecanvas.CancelPhotographerExecution
 		case "save_prompt":
 			apply = creativecanvas.SaveNodePrompt
 		case "batch":

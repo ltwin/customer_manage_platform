@@ -77,7 +77,7 @@ async function fresh({ keepStorage = false } = {}) {
     if (path.endsWith('/executions') && route.request().method() === 'POST') {
       generationPosts++
       const n = canvas.nodes.find((x) => x.id === route.request().postDataJSON().payload.node_id) ?? canvas.nodes[0]
-      // 保持运行中：用于检查生成键变为「停止」。
+      // 保持运行中：用于检查生成键变为「生成中」。
       n.status = { ...n.status, generation_state: 'running', active_execution_id: 'e-run', latest_execution_id: 'e-run' }
       canvas.revision = String(Number(canvas.revision) + 1)
       return json({ execution_id: 'e-run', node_id: n.id, canvas_id: 'qa', action_key: 'gateway.generation', executor_version: '1', state: 'running', apply_state: null, execution_epoch: 1, deadline: new Date(Date.now() + 3600000).toISOString(), change_id: null, error: '', created_at: new Date().toISOString() })
@@ -263,7 +263,7 @@ try {
     await header('img').click()
     await page.waitForFunction(() => document.querySelector('.cc-generation [aria-label="提示词"]')?.innerText === '图片一：逆光人像')
   })
-  // AC-06 生成键：空提示词且无上游时禁用；Enter 生成、Shift+Enter 换行、组字不误触发；生成中变为「停止」。
+  // AC-06 生成键：空提示词且无上游时禁用；Enter 生成、Shift+Enter 换行、组字不误触发；生成中变为不可点的「生成中」（生成不提供停止，owner 2026-10-09）。
   await record('AC-06', async () => {
     await header('img').click()
     await panel().getByLabel('生成模型', { exact: true }).selectOption('qa-model')
@@ -284,7 +284,7 @@ try {
     await page.waitForTimeout(200)
     assert.equal(generationPosts, 0, 'IME Enter does not generate')
     await editor().press('Enter')
-    await page.waitForFunction(() => document.querySelector('.cc-generation [aria-label="停止"]'), null, { timeout: 4000 })
+    await page.waitForFunction(() => document.querySelector('.cc-generation [aria-label="生成中"]:disabled'), null, { timeout: 4000 })
     assert.equal(generationPosts, 1, 'Enter generates once')
   })
 

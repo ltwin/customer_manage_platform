@@ -92,7 +92,7 @@ func setup(t *testing.T, kind gw.GenerationKind) *fixture {
 	db, err := sql.Open("pgx", url)
 	must(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	_, err = db.Exec(`INSERT INTO accounts(id,password_hash,status) VALUES('g4','test','active'),('g4-other','test','active'); INSERT INTO creative_account_capabilities(account_id,node_generate_enabled,generation_apply_enabled)VALUES('g4',true,true)`)
+	_, err = db.Exec(`INSERT INTO accounts(id,password_hash,status) VALUES('g4','test','active'),('g4-other','test','active')`)
 	must(t, err)
 	st, err := store.Open(t.Context(), url)
 	must(t, err)
@@ -307,7 +307,7 @@ func TestGenerationPartialSuccessAndExplicitImportResume(t *testing.T) {
 func TestGenerationCapabilityRevocationAndCrossAccount(t *testing.T) {
 	f := setup(t, gw.GenerationText)
 	f.admit(t)
-	_, err := f.db.Exec(`UPDATE creative_account_capabilities SET node_generate_enabled=false,generation_apply_enabled=false WHERE account_id='g4'`)
+	_, err := f.db.Exec(`UPDATE accounts SET status='legacy_unclaimed' WHERE id='g4'`)
 	must(t, err)
 	f.step(t)
 	if f.a.calls.Load() != 0 {
@@ -400,7 +400,7 @@ func TestGenerationQueueRepairAfterDiscard(t *testing.T) {
 func TestGenerationReviewRevokedBeforeDispatchReleasesHold(t *testing.T) {
 	f := setup(t, gw.GenerationText)
 	f.admit(t)
-	_, err := f.db.Exec(`UPDATE creative_account_capabilities SET node_generate_enabled=false WHERE account_id='g4'`)
+	_, err := f.db.Exec(`UPDATE accounts SET status='legacy_unclaimed' WHERE id='g4'`)
 	must(t, err)
 	for range 6 {
 		_, err = f.db.Exec(`UPDATE creative_generation_bindings SET next_step_at=clock_timestamp()-interval '1 second',lease_until=NULL`)

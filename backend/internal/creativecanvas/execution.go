@@ -495,6 +495,17 @@ func (s *ExecutionService) fail(ctx context.Context, scope store.AccountScope, t
 	})
 }
 func CancelNodeExecution(ctx context.Context, scope store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
+	return cancelNodeExecution(ctx, scope, c, true)
+}
+
+// CancelPhotographerExecution 是摄影师可用的取消入口。生成任务一经供应商受理就会
+// 跑完并扣费，取消不能省钱，只会造成"停了还收费"，所以生成类执行不开放取消
+// （owner 2026-10-09）；内部的截止、停用仍走 CancelNodeExecution。
+func CancelPhotographerExecution(ctx context.Context, scope store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
+	return cancelNodeExecution(ctx, scope, c, false)
+}
+
+func cancelNodeExecution(ctx context.Context, scope store.AccountScope, c creativeops.Command, generation bool) (creativeops.Receipt, error) {
 	return run(ctx, scope, "canvas.cancel_execution", c, func(v ExecutionTarget) error {
 		if v.CanvasID == "" || v.ExecutionID == "" {
 			return creativeops.ErrValidation
@@ -508,6 +519,9 @@ func CancelNodeExecution(ctx context.Context, scope store.AccountScope, c creati
 		e, err := readExecution(ctx, tx, v)
 		if err != nil {
 			return creativeops.Outcome{}, err
+		}
+		if e.ActionKey == GenerationAction && !generation {
+			return creativeops.Outcome{}, ErrActionUnavailable
 		}
 		resultRevision := canvas.Revision
 		if e.ApplyState == "pending" {

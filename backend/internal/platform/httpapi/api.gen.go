@@ -4435,6 +4435,8 @@ type CreativeGenerationModelKind string
 
 // CreativeGenerationParameter defines model for CreativeGenerationParameter.
 type CreativeGenerationParameter struct {
+	// Default 与 options 相同的字符串表示；缺省表示没有默认值，服务端按规则补齐。
+	Default  *string                         `json:"default,omitempty"`
 	Key      string                          `json:"key"`
 	Label    string                          `json:"label"`
 	Options  []string                        `json:"options"`

@@ -40,7 +40,6 @@ func queuedProbeRequest(t *testing.T, db *sql.DB, probeID string, latest bool) (
 func TestFactsProbeExplicitRetrySurvivesOldRunningDelivery(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "重试.png", "image/png", "image", sample(t, "sample.png"))
-	grantGeneration(t, f.a, revision)
 	status, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision)
 	if err != nil {
 		t.Fatal(err)
@@ -107,7 +106,6 @@ func TestFactsProbeHistoricalTerminalDeliveryCompletes(t *testing.T) {
 		t.Run(terminal, func(t *testing.T) {
 			f := setup(t)
 			_, revision := uploadAsset(t, f, "历史.png", "image/png", "image", sample(t, "sample.png"))
-			grantGeneration(t, f.a, revision)
 			status, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision)
 			if err != nil {
 				t.Fatal(err)

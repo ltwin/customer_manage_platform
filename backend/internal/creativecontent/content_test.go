@@ -73,13 +73,20 @@ func TestCreateRequiresMatchingRootAndCurrentUsage(t *testing.T) {
 	if _, err := creativecontent.Read(t.Context(), b, r.ID); !errors.Is(err, creativecontent.ErrNotFound) {
 		t.Fatal(err)
 	}
-	if err := a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
-		_, err := creativecontent.RequireUsable(t.Context(), tx, r.ID, "generation_reference")
-		return err
-	}); !errors.Is(err, creativecontent.ErrUsageDenied) {
+	// 可展示的自有素材即可作生成参考；撤回展示授权后两种用途一起被拒。
+	generation := func() error {
+		return a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			_, err := creativecontent.RequireUsable(t.Context(), tx, r.ID, "generation_reference")
+			return err
+		})
+	}
+	if err := generation(); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec("UPDATE creative_usage_grants SET revoked_at=clock_timestamp() WHERE account_id='content-a'"); err != nil {
+		t.Fatal(err)
+	}
+	if err := generation(); !errors.Is(err, creativecontent.ErrUsageDenied) {
 		t.Fatal(err)
 	}
 	if _, err := creativecontent.Read(t.Context(), a, r.ID); !errors.Is(err, creativecontent.ErrUsageDenied) {

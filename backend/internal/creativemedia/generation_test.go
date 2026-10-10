@@ -7,6 +7,7 @@ import (
 	"errors"
 	"image"
 	"image/png"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -53,9 +54,14 @@ func uploadAsset(t *testing.T, f *fixture, name, mime, kind string, body []byte)
 	return view.Publication.ID, asset.ContentRevisionID
 }
 
-func grantGeneration(t *testing.T, scope store.AccountScope, revisionID string) {
+// revokeDisplay 撤回或恢复素材的展示授权；生成参考与展示共用这一份授权。
+func revokeDisplay(t *testing.T, f *fixture, revisionID string, revoked bool) {
 	t.Helper()
-	if err := creativecontent.GrantGenerationReference(t.Context(), scope, revisionID); err != nil {
+	at := "NULL"
+	if revoked {
+		at = "clock_timestamp()"
+	}
+	if _, err := f.db.Exec(`UPDATE creative_usage_grants SET revoked_at=`+at+` WHERE purpose='display' AND declaration_id=(SELECT rights_declaration_id FROM creative_content_revisions WHERE id=$1)`, revisionID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -114,10 +120,6 @@ func TestGenerationReaderAuthorizationAndAccountIsolation(t *testing.T) {
 	ref := originalReference(t, f.db, "media-a", revision)
 	reader := f.svc.GenerationReaderFor(f.a)
 
-	// 没有显式生成授权时引用被拒，尽管同一修订用于展示完全可读。
-	if _, err := reader.ResolveGenerationMedia(t.Context(), ref); !errors.Is(err, creativecontent.ErrUsageDenied) {
-		t.Fatalf("ungranted reference resolved: %v", err)
-	}
 	if err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
 		_, err := creativecontent.RequireUsable(t.Context(), tx, revision, "ai_analysis")
 		return err
@@ -125,7 +127,7 @@ func TestGenerationReaderAuthorizationAndAccountIsolation(t *testing.T) {
 		t.Fatal("ai_analysis must stay denied", err)
 	}
 
-	grantGeneration(t, f.a, revision)
+	// 可展示的自有素材即可作生成参考，不需要按素材另行授权。
 	meta, err := reader.ResolveGenerationMedia(t.Context(), ref)
 	if err != nil || meta.RevisionID != revision || meta.MIME != "image/png" || meta.ByteSize != ref.ByteSize || meta.ExtractorVersion != creativemedia.FactsExtractorVersion {
 		t.Fatalf("granted reference %+v %v", meta, err)
@@ -138,37 +140,27 @@ func TestGenerationReaderAuthorizationAndAccountIsolation(t *testing.T) {
 	if _, err := f.svc.GenerationReaderFor(f.b).ResolveGenerationMedia(t.Context(), ref); !errors.Is(err, creativecontent.ErrNotFound) {
 		t.Fatalf("cross-account reference resolved: %v", err)
 	}
-	// 授权本身按账户隔离：另一个账户无法授权。
-	if err := creativecontent.GrantGenerationReference(t.Context(), f.b, revision); !errors.Is(err, creativecontent.ErrNotFound) {
-		t.Fatalf("cross-account grant accepted: %v", err)
-	}
-
-	// 撤回在下一次守卫生效前收回同意。
-	if err := creativecontent.RevokeGenerationReference(t.Context(), f.a, revision); err != nil {
-		t.Fatal(err)
-	}
+	// 撤回展示授权后，下一次守卫即拒绝。
+	revokeDisplay(t, f, revision, true)
 	if _, err := reader.ResolveGenerationMedia(t.Context(), ref); !errors.Is(err, creativecontent.ErrUsageDenied) {
 		t.Fatalf("revoked reference resolved: %v", err)
 	}
-	if err := creativecontent.RevokeGenerationReference(t.Context(), f.a, revision); err != nil {
-		t.Fatal("revoke not idempotent", err)
-	}
 
-	// 授权素材在本声明命名空间下表达不了出站标志：授权被拒，而不是
-	// 悄悄放宽矩阵。
+	// 授权素材在本声明命名空间下表达不了出站标志：权利矩阵拒绝，而不是
+	// 悄悄放宽。
 	_, licensedRevision := uploadAsset(t, f, "授权图.png", "image/png", "image", sample(t, "sample.png"))
 	if _, err := f.db.Exec(`UPDATE creative_rights_declarations SET source_class='licensed', rights_basis='license_recorded' WHERE id=(SELECT rights_declaration_id FROM creative_content_revisions WHERE account_id='media-a' AND id=$1)`, licensedRevision); err != nil {
 		t.Fatal(err)
 	}
-	if err := creativecontent.GrantGenerationReference(t.Context(), f.a, licensedRevision); !errors.Is(err, creativecontent.ErrUsageDenied) {
-		t.Fatalf("licensed generation grant accepted: %v", err)
+	licensed := originalReference(t, f.db, "media-a", licensedRevision)
+	if _, err := reader.ResolveGenerationMedia(t.Context(), licensed); !errors.Is(err, creativecontent.ErrUsageDenied) {
+		t.Fatalf("licensed reference resolved: %v", err)
 	}
 }
 
 func TestGenerationReaderRejectsForgedIdentity(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "窗边.png", "image/png", "image", sample(t, "sample.png"))
-	grantGeneration(t, f.a, revision)
 	reader := f.svc.GenerationReaderFor(f.a)
 
 	cases := map[string]func(*llmgateway.GenerationReference){
@@ -201,9 +193,6 @@ func TestGenerationFactsUnknownUntilProbed(t *testing.T) {
 	_, imageRevision := uploadAsset(t, f, "窗边.png", "image/png", "image", sample(t, "sample.png"))
 	_, audioRevision := uploadAsset(t, f, "旁白.mp3", "audio/mpeg", "audio", sample(t, "sample.mp3"))
 	_, videoRevision := uploadAsset(t, f, "片段.mp4", "video/mp4", "video", sample(t, "sample.mp4"))
-	for _, r := range []string{imageRevision, audioRevision, videoRevision} {
-		grantGeneration(t, f.a, r)
-	}
 	reader := f.svc.GenerationReaderFor(f.a)
 
 	imageRef := originalReference(t, f.db, "media-a", imageRevision)
@@ -261,7 +250,6 @@ func TestGenerationFactsUnknownUntilProbed(t *testing.T) {
 func TestFactsProbeDeduplicatesAndRecoversAfterRestart(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "窗边.png", "image/png", "image", sample(t, "sample.png"))
-	grantGeneration(t, f.a, revision)
 
 	first, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision)
 	if err != nil || first.State != "pending" {
@@ -275,15 +263,11 @@ func TestFactsProbeDeduplicatesAndRecoversAfterRestart(t *testing.T) {
 		t.Fatalf("expected one queued probe job, got %d", n)
 	}
 	// 调度与读取走同一套授权守卫。
-	if err := creativecontent.RevokeGenerationReference(t.Context(), f.a, revision); err != nil {
-		t.Fatal(err)
-	}
+	revokeDisplay(t, f, revision, true)
 	if _, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision); !errors.Is(err, creativecontent.ErrUsageDenied) {
 		t.Fatalf("schedule after revoke accepted: %v", err)
 	}
-	if err := creativecontent.GrantGenerationReference(t.Context(), f.a, revision); err != nil {
-		t.Fatal(err)
-	}
+	revokeDisplay(t, f, revision, false)
 
 	handler := probeHandler(t, f)
 	// 存活租约属于别的 worker：投递延期到租约过期而不是报错，等待不
@@ -365,7 +349,6 @@ func TestFactsProbeDeduplicatesAndRecoversAfterRestart(t *testing.T) {
 func TestFactsProbeWorkerDefersForeignExtractorVersion(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "窗边.png", "image/png", "image", sample(t, "sample.png"))
-	grantGeneration(t, f.a, revision)
 	status, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision)
 	if err != nil || status.State != "pending" {
 		t.Fatalf("schedule %+v %v", status, err)
@@ -414,7 +397,6 @@ func TestFactsProbeWorkerDefersForeignExtractorVersion(t *testing.T) {
 func TestFactsProbeRedeliversAfterQueueDiscard(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "窗边.png", "image/png", "image", sample(t, "sample.png"))
-	grantGeneration(t, f.a, revision)
 	status, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision)
 	if err != nil || status.State != "pending" {
 		t.Fatalf("schedule %+v %v", status, err)
@@ -455,7 +437,6 @@ func TestFactsProbeRedeliversAfterQueueDiscard(t *testing.T) {
 func TestFactsProbeAttemptBudgetExhaustsToTerminalFailed(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "窗边.png", "image/png", "image", sample(t, "sample.png"))
-	grantGeneration(t, f.a, revision)
 	status, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision)
 	if err != nil || status.State != "pending" {
 		t.Fatalf("schedule %+v %v", status, err)
@@ -503,7 +484,6 @@ func TestFactsProbeAttemptBudgetExhaustsToTerminalFailed(t *testing.T) {
 func TestFactsProbeReprobesUnderNewExtractorVersion(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "窗边.png", "image/png", "image", sample(t, "sample.png"))
-	grantGeneration(t, f.a, revision)
 	if _, err := f.svc.ScheduleFactsProbe(t.Context(), f.a, revision); err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +529,6 @@ func TestGenerationReferenceReadsOriginalRendition(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, revision := uploadAsset(t, f, "大图.png", "image/png", "image", big.Bytes())
-	grantGeneration(t, f.a, revision)
 
 	var renditions int
 	if err := f.db.QueryRow(`SELECT count(*) FROM creative_content_objects WHERE account_id='media-a' AND content_revision_id=$1`, revision).Scan(&renditions); err != nil || renditions != 2 {
@@ -580,7 +559,6 @@ func TestGenerationReferenceReadsOriginalRendition(t *testing.T) {
 func TestFactsProbeUnsupportedWithoutFFProbeIsTerminal(t *testing.T) {
 	f := setup(t)
 	_, revision := uploadAsset(t, f, "旁白.mp3", "audio/mpeg", "audio", sample(t, "sample.mp3"))
-	grantGeneration(t, f.a, revision)
 
 	noAV := f.cfg
 	noAV.FFProbe = ""
@@ -621,5 +599,54 @@ func TestFactsProbeUnsupportedWithoutFFProbeIsTerminal(t *testing.T) {
 	}
 	if n := availableProbeJobs(t, f.db); n != beforeJobs {
 		t.Fatalf("unsupported probe re-enqueued: %d -> %d", beforeJobs, n)
+	}
+}
+
+// 外发前的三道关：素材可用、冻结身份与真实字节。
+func TestGenerationReferenceOpenerSendsOnlyGrantedBytes(t *testing.T) {
+	f := setup(t)
+	raw := sample(t, "sample.png")
+	_, revision := uploadAsset(t, f, "窗边.png", "image/png", "image", raw)
+	var refs []llmgateway.GenerationReference
+	resolve := func() error {
+		return f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+			var err error
+			refs, err = f.svc.GenerationReferencesInTx(t.Context(), tx, []creativemedia.GenerationSource{{RevisionID: revision, Role: "reference"}})
+			return err
+		})
+	}
+	if err := resolve(); err != nil {
+		t.Fatal(err)
+	}
+	if want := originalReference(t, f.db, "media-a", revision); refs[0].Digest != want.Digest || refs[0].ByteSize != want.ByteSize || refs[0].MIME != "image/png" {
+		t.Fatalf("pinned %+v want %+v", refs[0], want)
+	}
+	if err := f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		_, err := f.svc.GenerationReaderInTx(tx).ResolveGenerationMedia(t.Context(), refs[0])
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := f.svc.GenerationReferenceOpenerFor(f.a).OpenGenerationReference(t.Context(), refs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := io.ReadAll(body)
+	_ = body.Close()
+	if !bytes.Equal(got, raw) {
+		t.Fatal("opened bytes differ from the upload")
+	}
+	forged := refs[0]
+	forged.Digest = strings.Repeat("c", 64)
+	if _, err := f.svc.GenerationReferenceOpenerFor(f.a).OpenGenerationReference(t.Context(), forged); err == nil {
+		t.Fatal("forged identity opened")
+	}
+	if _, err := f.svc.GenerationReferenceOpenerFor(f.b).OpenGenerationReference(t.Context(), refs[0]); err == nil {
+		t.Fatal("another account opened the reference")
+	}
+	revokeDisplay(t, f, revision, true)
+	if _, err := f.svc.GenerationReferenceOpenerFor(f.a).OpenGenerationReference(t.Context(), refs[0]); !errors.Is(err, creativecontent.ErrUsageDenied) {
+		t.Fatalf("revoked reference opened: %v", err)
 	}
 }

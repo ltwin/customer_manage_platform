@@ -12692,6 +12692,9 @@ components:
         type: {type: string, enum: [string, number, integer, boolean]}
         required: {type: boolean}
         options: {type: array, items: {type: string}}
+        default:
+          type: string
+          description: 与 options 相同的字符串表示；缺省表示没有默认值，服务端按规则补齐。
     CreativeGenerationModel:
       type: object
       additionalProperties: false

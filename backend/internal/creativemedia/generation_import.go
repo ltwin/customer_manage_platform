@@ -47,7 +47,8 @@ func generatedObjectKey(account, id, role string) string {
 
 // PrepareGeneratedMedia 有界地获取、校验并保存对象。重试只复用输出身份，
 // stored阶段按精确版本和摘要复核，不依赖临时URL，不重复保存ready修订。
-func (s *Service) PrepareGeneratedMedia(ctx context.Context, scope store.AccountScope, identity, kind, mime string, size int64, fetch func(context.Context) (io.ReadCloser, error)) (PreparedMediaImport, error) {
+// exact为false时size只是取件上限（供应商不给字节数），实际字节以校验结果为准。
+func (s *Service) PrepareGeneratedMedia(ctx context.Context, scope store.AccountScope, identity, kind, mime string, size int64, exact bool, fetch func(context.Context) (io.ReadCloser, error)) (PreparedMediaImport, error) {
 	if identity == "" || len(identity) > 1024 || !creativecontent.IsMediaKind(kind) || size < 1 || size > s.verifier.MaxBytes(kind) || fetch == nil {
 		return PreparedMediaImport{}, ErrSizeLimit
 	}
@@ -117,7 +118,7 @@ func (s *Service) PrepareGeneratedMedia(ctx context.Context, scope store.Account
 	}
 	callCtx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	defer cancel()
-	err = s.writeGeneratedMedia(callCtx, scope, &p, kind, mime, size, fetch)
+	err = s.writeGeneratedMedia(callCtx, scope, &p, kind, mime, size, exact, fetch)
 	if err != nil {
 		// 仅释放自己的lease；失败详情不包含签名URL。崩溃由lease到期恢复。
 		finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
@@ -130,7 +131,7 @@ func (s *Service) PrepareGeneratedMedia(ctx context.Context, scope store.Account
 	}
 	return p, nil
 }
-func (s *Service) writeGeneratedMedia(ctx context.Context, scope store.AccountScope, p *PreparedMediaImport, kind, mime string, size int64, fetch func(context.Context) (io.ReadCloser, error)) error {
+func (s *Service) writeGeneratedMedia(ctx context.Context, scope store.AccountScope, p *PreparedMediaImport, kind, mime string, size int64, exact bool, fetch func(context.Context) (io.ReadCloser, error)) error {
 	body, err := fetch(ctx)
 	if err != nil {
 		return err
@@ -153,7 +154,7 @@ func (s *Service) writeGeneratedMedia(ctx context.Context, scope store.AccountSc
 	if verified.DurationMs != nil && (s.cfg.GeneratedMaxDuration <= 0 || *verified.DurationMs > s.cfg.GeneratedMaxDuration.Milliseconds()) {
 		return ErrSizeLimit
 	}
-	if verified.Size != size || verified.Mime != mime {
+	if exact && verified.Size != size || verified.Size > size || verified.Mime != mime {
 		return ErrSizeLimit
 	}
 	p.verified = verified

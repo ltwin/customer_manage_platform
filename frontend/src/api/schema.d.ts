@@ -5921,6 +5921,8 @@ export interface components {
             type: "string" | "number" | "integer" | "boolean";
             required: boolean;
             options: string[];
+            /** @description 与 options 相同的字符串表示；缺省表示没有默认值，服务端按规则补齐。 */
+            default?: string;
         };
         CreativeGenerationModel: {
             configuration_revision: string;

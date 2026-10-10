@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { useStore, useViewport } from '@xyflow/react'
 import type { components } from '../../api/schema'
@@ -9,7 +15,10 @@ import {
   assertGenerationSnapshot,
   executionLabel,
   generationReadSet,
+  imageParameterKeys,
+  imageSummary,
   parameterValue,
+  selectedOption,
   promptFromNode,
   type Execution,
   type GenerationCatalog,
@@ -21,11 +30,12 @@ import {
   ArrowUp,
   ChevronDown,
   History,
+  LoaderCircle,
   Save,
   SlidersHorizontal,
-  Square,
   X,
 } from 'lucide-react'
+import ImageParameters, { RatioGlyph } from './ImageParameters.tsx'
 import GenerationReference from './GenerationReference.tsx'
 import PromptEditor, { type PromptEditorHandle } from './PromptEditor.tsx'
 import {
@@ -55,6 +65,14 @@ type Props = {
 }
 
 // 本容器拥有读取与队列接线；展示表单只接收数据和回调。
+// 版本从哪里来：人工放进节点的素材也是版本，生成不会让它从列表消失。
+const versionOrigins: Record<string, string> = {
+  generation: '生成',
+  upload: '上传',
+  asset: '资产库',
+  copy: '复制',
+}
+
 export default function NodeGenerationPanel({
   leftInset,
   canvas,
@@ -145,6 +163,8 @@ export default function NodeGenerationPanel({
   const [optionsOpen, setOptionsOpen] = useState(false)
   const options = useRef<HTMLDivElement>(null)
   const optionsButton = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLElement>(null)
+  const [optionsPlace, setOptionsPlace] = useState<CSSProperties>()
   const mounted = useRef(true)
   const busyRef = useRef(false)
   const path = `/canvases/${encodeURIComponent(canvas.id)}`
@@ -391,20 +411,58 @@ export default function NodeGenerationPanel({
       prompt.references.length > 0 ||
       canvas.edges.some((e) => e.target_node_id === node.id) ||
       canvas.node_inputs.some((r) => r.node_id === node.id))
+  const imageFields =
+    model?.parameters.filter(
+      (f) =>
+        (imageParameterKeys as readonly string[]).includes(f.key) &&
+        f.options.length > 0,
+    ) ?? []
+  const otherFields =
+    model?.parameters.filter((f) => !imageFields.includes(f)) ?? []
+  const ratioField = imageFields.find((f) => f.key === 'aspect_ratio')
+  const ratio = ratioField ? selectedOption(ratioField, prompt.parameters) : ''
   const parametersLabel =
-    model?.parameters
-      .map((f) => {
+    [
+      imageSummary(imageFields, prompt.parameters),
+      ...otherFields.map((f) => {
         const value = prompt.parameters[f.key]
-        return value === undefined
-          ? ''
-          : `${value}${f.key === 'count' ? ' 张' : ''}`
-      })
+        return value === undefined ? '' : String(value)
+      }),
+    ]
       .filter(Boolean)
       .join(' · ') || '参数'
+  // 空图片/视频节点随比例调整高度，保持当前宽度（V6-021 AC-03）；已有作品不受草稿影响。
+  async function fitEmptyNode(next: string) {
+    const [w, h] = next.split(':').map(Number)
+    if (
+      node.content ||
+      !w ||
+      !h ||
+      !['core.image', 'core.video'].includes(node.metadata.type_key)
+    )
+      return
+    const height = Math.round((node.metadata.width * h) / w)
+    if (Math.abs(height - node.metadata.height) < 1) return
+    const actions: api.GraphAction[] = [
+      {
+        type: 'resize_node',
+        node_id: node.id,
+        width: node.metadata.width,
+        height,
+      },
+    ]
+    await queue.enqueue(`${path}/commands`, {
+      type: 'batch',
+      expected_topology_revision: canvas.topology_revision,
+      read_set: graphActionReadSet(canvas, actions),
+      actions,
+    })
+  }
   // 贴在节点下方 14px（PRD GN-01）。
   const panelTop = `clamp(64px, ${(point.y + renderedHeight) * viewport.zoom + viewport.y + 14}px, max(64px, 100% - ${tab === 'versions' ? 340 : 220}px))`
   return createPortal(
     <aside
+      ref={panel}
       className={`cc-generation nodrag nopan nowheel ${node.status.active_execution_id ? 'is-running' : ''}`}
       aria-label="节点生成"
       hidden={dragging}
@@ -583,9 +641,16 @@ export default function NodeGenerationPanel({
                   aria-expanded={optionsOpen}
                   aria-controls="cc-generation-parameters"
                   disabled={locked}
-                  onClick={() => setOptionsOpen(!optionsOpen)}
+                  onClick={() => {
+                    setOptionsPlace(placeOptions(panel.current))
+                    setOptionsOpen(!optionsOpen)
+                  }}
                 >
-                  <SlidersHorizontal size={13} />
+                  {ratio ? (
+                    <RatioGlyph ratio={ratio} size={14} />
+                  ) : (
+                    <SlidersHorizontal size={13} />
+                  )}
                   <span>{parametersLabel}</span>
                   <ChevronDown size={12} />
                 </button>
@@ -593,6 +658,7 @@ export default function NodeGenerationPanel({
                   <div
                     id="cc-generation-parameters"
                     className="cc-generation-popover"
+                    style={optionsPlace}
                     role="group"
                     aria-label="生成参数设置"
                   >
@@ -609,7 +675,25 @@ export default function NodeGenerationPanel({
                         <X size={14} />
                       </button>
                     </div>
-                    {model.parameters.map((field) => (
+                    {imageFields.length > 0 && (
+                      <ImageParameters
+                        fields={imageFields}
+                        values={prompt.parameters}
+                        disabled={locked}
+                        onError={setError}
+                        onChange={(key, value) => {
+                          edit({
+                            ...prompt,
+                            parameters: { ...prompt.parameters, [key]: value },
+                          })
+                          if (key === 'aspect_ratio')
+                            void fitEmptyNode(String(value)).catch(
+                              (e: unknown) => setError(errorMessage(e)),
+                            )
+                        }}
+                      />
+                    )}
+                    {otherFields.map((field) => (
                       <label key={field.key}>
                         {field.label}
                         {field.required && ' *'}
@@ -694,21 +778,14 @@ export default function NodeGenerationPanel({
               <Save size={15} />
             </button>
             {node.status.active_execution_id ? (
+              // 生成一经受理就会跑完并计费，不提供停止（owner 2026-10-09）。
               <button
                 className="cc-generation-send"
-                aria-label="停止"
-                title="停止生成"
-                disabled={locked}
-                onClick={() =>
-                  void act(async () => {
-                    await queue.enqueue(`${path}/commands`, {
-                      type: 'cancel_execution',
-                      execution_id: node.status.active_execution_id,
-                    })
-                  })
-                }
+                aria-label="生成中"
+                title="生成中，完成后自动写入作品版本"
+                disabled
               >
-                <Square size={13} fill="currentColor" />
+                <LoaderCircle size={16} className="cc-spin" />
               </button>
             ) : (
               <button
@@ -740,6 +817,9 @@ export default function NodeGenerationPanel({
             <div className="cc-generation-version" key={v.id}>
               <strong>
                 版本 {v.version_no}
+                {versionOrigins[v.origin_kind]
+                  ? ` · ${versionOrigins[v.origin_kind]}`
+                  : ''}
                 {versions.selected_version_id === v.id ? ' · 当前采用' : ''}
               </strong>
               <small>{new Date(v.created_at).toLocaleString()}</small>
@@ -828,4 +908,31 @@ export default function NodeGenerationPanel({
     </aside>,
     document.querySelector('.cc-layout') ?? document.body,
   )
+}
+
+// 参数面板浮在输入框外侧（优先上方），不被输入框自身的滚动区裁切。
+function placeOptions(panel: HTMLElement | null): CSSProperties | undefined {
+  const r = panel?.getBoundingClientRect()
+  if (!r) return undefined
+  const above = r.top - 16
+  const below = window.innerHeight - r.bottom - 16
+  const base = {
+    position: 'fixed',
+    left: r.left,
+    width: r.width,
+    right: 'auto',
+  } as const
+  return above >= 320 || above >= below
+    ? {
+        ...base,
+        top: 'auto',
+        bottom: window.innerHeight - r.top + 8,
+        maxHeight: Math.min(560, above),
+      }
+    : {
+        ...base,
+        bottom: 'auto',
+        top: r.bottom + 8,
+        maxHeight: Math.min(560, below),
+      }
 }

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
@@ -79,14 +80,26 @@ func run() error {
 	}
 	agent.SetLogger(slog.Default())
 	agent.SetImageReader(media)
-	// Media stages and agent runs are the registered handlers; generation stays
-	// absent until FND-13.
-	runtime, err := db.NewJobRuntime(append(media.Handlers(), agent.Handlers()...), slog.Default())
+	generation, err := creativegeneration.Compose(gateway, gatewayOptions.Catalog.Currency(), media, gatewayOptions.Credential)
+	if err != nil {
+		return err
+	}
+	if generation.Disabled != "" {
+		slog.Info("creative generation disabled", slog.String("reason", generation.Disabled))
+	}
+	handlers := append(media.Handlers(), agent.Handlers()...)
+	if generation.Service != nil {
+		handlers = append(handlers, generation.Service.Handlers()...)
+	}
+	runtime, err := db.NewJobRuntime(handlers, slog.Default())
 	if err != nil {
 		return err
 	}
 	media.SetRuntime(runtime)
 	agent.SetRuntime(runtime)
+	if generation.Service != nil {
+		generation.Service.SetRuntime(runtime)
+	}
 	if err := runtime.Start(ctx); err != nil {
 		return err
 	}
@@ -100,9 +113,17 @@ func run() error {
 		defer close(recoveryDone)
 		sweepLLMDispatches(ctx, db)
 	}()
+	generationDone := make(chan struct{})
+	go func() {
+		defer close(generationDone)
+		if generation.Service != nil {
+			generation.Service.RunRecovery(ctx, db, slog.Default())
+		}
+	}()
 	<-ctx.Done()
 	<-recoveryDone
 	<-agentDone
+	<-generationDone
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
 	return runtime.Stop(stopCtx)

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -24,7 +23,8 @@ type GenerationHTTPFetcher struct {
 	client *http.Client
 }
 
-// NewGenerationHTTPFetcher 只允许明确列出的HTTPS域名，每次连接解析并固定公网地址。
+// NewGenerationHTTPFetcher 只允许明确列出的HTTPS域名；域名写死加证书校验已足够，
+// 不再检查解析出的地址（2026-10-09 拍板）。
 // 不用系统代理，不跟随重定向，不将含签名的URL或底层网络错误暴露给调用方。
 func NewGenerationHTTPFetcher(hosts []string) (*GenerationHTTPFetcher, error) {
 	f := &GenerationHTTPFetcher{hosts: map[string]bool{}}
@@ -44,33 +44,11 @@ func NewGenerationHTTPFetcher(hosts []string) (*GenerationHTTPFetcher, error) {
 		if err != nil || port != "443" || !f.hosts[strings.ToLower(host)] {
 			return nil, ErrGenerationFetch
 		}
-		ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", host)
-		if err != nil || len(ips) == 0 {
-			return nil, ErrGenerationFetch
-		}
-		for _, ip := range ips {
-			if !publicGenerationAddress(ip) {
-				return nil, ErrGenerationFetch
-			}
-		}
 		dialer := net.Dialer{Timeout: 10 * time.Second}
-		return dialer.DialContext(ctx, network, net.JoinHostPort(ips[0].String(), port))
+		return dialer.DialContext(ctx, network, address)
 	}
 	f.client = &http.Client{Transport: transport, Timeout: 4 * time.Minute, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return f, nil
-}
-func publicGenerationAddress(ip netip.Addr) bool {
-	ip = ip.Unmap()
-	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
-		return false
-	}
-	for _, cidr := range []string{"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "2001:db8::/32", "2001::/32", "2002::/16", "64:ff9b::/96", "64:ff9b:1::/48"} {
-		prefix, err := netip.ParsePrefix(cidr)
-		if err != nil || prefix.Contains(ip) {
-			return false
-		}
-	}
-	return true
 }
 func (f *GenerationHTTPFetcher) Open(ctx context.Context, location string) (io.ReadCloser, error) {
 	u, err := url.Parse(location)

@@ -72,7 +72,9 @@ func BindNodeRevisionInTx(ctx context.Context, tx store.TxAccountScope, t NodeTa
 	n := after.Nodes[t.NodeID]
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
-	n.SelectedVersionID = nil
+	if err = manualVersion(ctx, tx, &after, &n, r, "upload"); err != nil {
+		return ChangeResult{}, err
+	}
 	if strings.TrimSpace(n.Title) == "" {
 		n.Title = t.Title
 	}

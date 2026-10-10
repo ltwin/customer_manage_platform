@@ -2,6 +2,7 @@ package creativecanvas
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -165,4 +166,41 @@ func compilePromptText(text string, refs []numberedPromptRef) (string, error) {
 		compiled += "\n\n参考编号说明：" + strings.Join(rules, "；") + "。按提示词描述使用对应附件，未点名的附件仍作为整体风格与内容参考。"
 	}
 	return compiled, nil
+}
+
+// GenerationDraft 是节点草稿在当前图上的生成输入：编译后的提示词、模型、参数
+// 与按发送顺序排列的参考。最终准入在锁内再次核对同一份内容。
+type GenerationDraft struct {
+	ModelKey   string
+	Prompt     string
+	Parameters json.RawMessage
+	References []GenerationReference
+}
+
+// GenerationDraftInTx 只读账号范围内的快照，供模型注册在准入前组装请求。
+func GenerationDraftInTx(ctx context.Context, tx store.TxAccountScope, in RequestExecutionInput) (GenerationDraft, error) {
+	p, err := readPrompt(ctx, tx, in.CanvasID, in.NodeID)
+	if err != nil {
+		return GenerationDraft{}, err
+	}
+	if p == nil || p.Revision != in.DraftRevision || p.ActionKey != GenerationAction {
+		return GenerationDraft{}, ErrVersionConflict
+	}
+	g, _, err := loadGraph(ctx, tx, in.CanvasID)
+	if err != nil {
+		return GenerationDraft{}, err
+	}
+	refs, _, err := orderedGenerationRefs(g, in.NodeID)
+	if err != nil {
+		return GenerationDraft{}, err
+	}
+	text, err := compileGraphPrompt(ctx, tx, p.Text, refs)
+	if err != nil {
+		return GenerationDraft{}, err
+	}
+	d := GenerationDraft{ModelKey: p.ModelKey, Prompt: text, Parameters: p.Parameters}
+	for _, ref := range refs {
+		d.References = append(d.References, GenerationReference{RevisionID: ref.revision, Role: ref.role})
+	}
+	return d, nil
 }

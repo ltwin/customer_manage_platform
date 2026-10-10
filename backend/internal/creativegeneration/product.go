@@ -18,6 +18,8 @@ type Parameter struct {
 	Type     string   `json:"type"`
 	Required bool     `json:"required"`
 	Options  []string `json:"options"`
+	// Default 与Options同为字符串表示；空表示没有默认值。
+	Default string `json:"default,omitempty"`
 }
 type Model struct {
 	ConfigurationRevision string      `json:"configuration_revision"`
@@ -31,12 +33,14 @@ type Catalog struct {
 	DisabledReason string  `json:"disabled_reason"`
 }
 
-// Registration 仅由组合根构建。PrepareInTx只读数据库、编译规则及验证授权，
+// Registration 仅由组合根构建。PrepareInTx只读数据库、编译规则及验证素材授权，
 // 不执行网络或反向取得资源锁；返回的期限/预算/价格不得来自客户端。
 // 同意与引用在Service.Authorization的最终派发事务中再次复核。
 type Registration struct {
 	Model       Model
 	PrepareInTx func(context.Context, store.TxAccountScope, creativecanvas.RequestExecutionInput) (gw.GenerationAdmission, int64, error)
+	// Ensure 可选：在受理事务之外为当前账号登记部署，必须幂等。
+	Ensure func(context.Context, store.AccountScope) error
 }
 type Product struct {
 	runtime       *Service
@@ -52,7 +56,7 @@ func NewProduct(runtime *Service, registrations []Registration) (*Product, error
 	}
 	for _, r := range registrations {
 		m := r.Model
-		if runtime == nil || runtime.authorization == nil || r.PrepareInTx == nil || m.Key == "" || m.Label == "" || m.ConfigurationRevision == "" || len(m.Key) > 64 || (m.Kind != "text" && m.Kind != "image" && m.Kind != "video" && m.Kind != "audio") {
+		if runtime == nil || r.PrepareInTx == nil || m.Key == "" || m.Label == "" || m.ConfigurationRevision == "" || len(m.Key) > 64 || (m.Kind != "text" && m.Kind != "image" && m.Kind != "video" && m.Kind != "audio") {
 			return nil, gw.ErrValidation
 		}
 		if _, ok := p.registrations[m.Key]; ok {
@@ -103,7 +107,7 @@ func (p *Product) Catalog(ctx context.Context, scope store.AccountScope, canvasI
 		return Catalog{}, err
 	}
 	if !caps.NodeGenerate || !caps.GenerationApply {
-		out.DisabledReason = "此账号尚未开放节点生成"
+		out.DisabledReason = "账号当前不可用"
 		return out, nil
 	}
 	if p != nil && p.runtime != nil && p.runtime.queue != nil {
@@ -126,6 +130,15 @@ func (p *Product) Catalog(ctx context.Context, scope store.AccountScope, canvasI
 }
 
 func (p *Product) Request(ctx context.Context, scope store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
+	if p != nil && p.runtime != nil {
+		for _, m := range p.models {
+			if ensure := p.registrations[m.Key].Ensure; ensure != nil {
+				if err := ensure(ctx, scope); err != nil {
+					return creativeops.Receipt{}, err
+				}
+			}
+		}
+	}
 	// 公共操作只以不可变客户端意图作hash；重放在查目录、预算和当前草稿前返回。
 	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "canvas.submit_generation", Capability: "node_generate", Validate: func(raw json.RawMessage) error {
 		var in creativecanvas.RequestExecutionInput

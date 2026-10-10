@@ -295,6 +295,14 @@ func TestImageUploadPublishesAssetAndCanvasNodeRoundTrip(t *testing.T) {
 	if err != nil || *after.Nodes[0].ContentRevisionID == asset.ContentRevisionID || after.Nodes[0].Content.Media[0].Mime != "image/jpeg" || after.Nodes[0].DataRevision != canvas.Nodes[0].DataRevision+1 {
 		t.Fatalf("replaced canvas %+v %v", after, err)
 	}
+	// Both pieces of media a person put into the node stay in its versions, so a
+	// later generation on the node cannot make either disappear.
+	versions, err := creativecanvas.ListNodeVersions(t.Context(), f.a, p.CanvasID, nodeID)
+	// Newest first.
+	if err != nil || len(versions.Items) != 2 || versions.Items[1].Origin != "asset" || versions.Items[1].ContentRevisionID != asset.ContentRevisionID ||
+		versions.Items[0].Origin != "upload" || versions.SelectedVersionID == nil || *versions.SelectedVersionID != versions.Items[0].ID {
+		t.Fatalf("versions %+v %v", versions, err)
+	}
 	original, err := creativelibrary.GetAsset(t.Context(), f.a, asset.ID)
 	if err != nil || original.ContentRevisionID != asset.ContentRevisionID {
 		t.Fatal("asset changed by node replacement", err)

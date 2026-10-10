@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/jobs"
@@ -25,6 +26,14 @@ type GenerationCall struct {
 	AttemptID string
 	TaskID    string
 	Prepared  PreparedPolicyGeneration
+	// References 只在Submit时提供，按账号绑定；其他阶段为nil。
+	References GenerationReferenceOpener
+}
+
+// GenerationReferenceOpener 打开已冻结参考素材的受保护字节。授权由实现按账号
+// 复核；返回的字节仍须由Adapter按冻结摘要核对后才能外发。
+type GenerationReferenceOpener interface {
+	OpenGenerationReference(context.Context, GenerationReference) (io.ReadCloser, error)
 }
 
 // GenerationEvent 是受信Adapter归一化的单份证据。EventKey在attempt内稳定；
@@ -67,6 +76,8 @@ type GenerationRuntimeConfig struct {
 	Guard         GenerationGuard
 	// Prelock只取得调用方外层事务锁，不读取供应商或执行网络。
 	Prelock func(context.Context, store.TxAccountScope) error
+	// References 为Submit绑定账号的参考素材读取端口；缺省时带参考的请求无法提交。
+	References func(store.AccountScope) GenerationReferenceOpener
 }
 
 type GenerationRuntime struct {
@@ -74,6 +85,7 @@ type GenerationRuntime struct {
 	adapters map[string]GenerationAdapterRegistration
 	guard    GenerationGuard
 	prelock  func(context.Context, store.TxAccountScope) error
+	refs     func(store.AccountScope) GenerationReferenceOpener
 	cipher   cipher.AEAD
 	runtime  jobs.Runtime
 }
@@ -90,7 +102,7 @@ func NewGenerationRuntime(cfg GenerationRuntimeConfig) (*GenerationRuntime, erro
 	if err != nil {
 		return nil, err
 	}
-	r := &GenerationRuntime{gateway: cfg.Gateway, guard: cfg.Guard, prelock: cfg.Prelock, cipher: aead, adapters: make(map[string]GenerationAdapterRegistration)}
+	r := &GenerationRuntime{gateway: cfg.Gateway, guard: cfg.Guard, prelock: cfg.Prelock, refs: cfg.References, cipher: aead, adapters: make(map[string]GenerationAdapterRegistration)}
 	for _, a := range cfg.Adapters {
 		key := a.DeploymentID + "/" + a.Version
 		if !generationToken(a.DeploymentID) || !generationToken(a.Version) || a.LimitKey == "" || len(a.LimitKey) > 120 || a.Concurrency < 1 || a.RateLimit < 1 || a.Adapter == nil {
@@ -169,6 +181,43 @@ func (r *GenerationRuntime) ConfigureDeploymentInTx(ctx context.Context, tx stor
 	_, err = tx.Update(ctx, "llm_generation_deployments", "revision=revision+1,enabled=$3,policy_digest=$4,adapter_version=$5,valid_until=$6", "deployment_id=$2", d.DeploymentID, enabled, generationPolicyDigest(d), d.AdapterVersion, validUntil)
 	return rev + 1, err
 }
+
+// EnsureDeploymentInTx 为当前账号登记内置部署：没有记录时启用；策略或Adapter
+// 版本变化、有效期将尽时续期。被人工停用的部署保持停用，这里不会重新打开。
+// 返回当前控制修订号。
+func (r *GenerationRuntime) EnsureDeploymentInTx(ctx context.Context, tx store.TxAccountScope, d GenerationPolicyDefinition, validFor time.Duration) (int64, error) {
+	if validFor <= 0 {
+		return 0, ErrValidation
+	}
+	if err := tx.LockGenerationDeploymentGate(ctx, d.DeploymentID); err != nil {
+		return 0, err
+	}
+	var rev int64
+	var enabled bool
+	var hash, version string
+	var until time.Time
+	err := tx.QueryRow(ctx, "llm_generation_deployments", "revision,enabled,policy_digest,adapter_version,valid_until", "deployment_id=$2", d.DeploymentID).Scan(&rev, &enabled, &hash, &version, &until)
+	if err != nil && !errors.Is(err, store.ErrNoRows) {
+		return 0, err
+	}
+	now := r.gateway.now()
+	if rev > 0 && (!enabled || hash == generationPolicyDigest(d) && version == d.AdapterVersion && until.After(now.Add(validFor/4))) {
+		return rev, nil
+	}
+	return r.ConfigureDeploymentInTx(ctx, tx, d, true, now.Add(validFor), rev)
+}
+
+// DeploymentRevisionInTx 只读当前账号的部署控制修订号；派发前仍由PrepareInTx在
+// 部署门内复核启用状态与策略摘要。
+func (r *GenerationRuntime) DeploymentRevisionInTx(ctx context.Context, tx store.TxAccountScope, deploymentID string) (int64, error) {
+	var rev int64
+	err := tx.QueryRow(ctx, "llm_generation_deployments", "revision", "deployment_id=$2", deploymentID).Scan(&rev)
+	if errors.Is(err, store.ErrNoRows) {
+		return 0, ErrUnavailable
+	}
+	return rev, err
+}
+
 func (r *GenerationRuntime) checkDeployment(ctx context.Context, tx store.TxAccountScope, d GenerationPolicyDefinition, expected int64) error {
 	var rev int64
 	var enabled bool

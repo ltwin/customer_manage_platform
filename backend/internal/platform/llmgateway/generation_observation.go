@@ -30,10 +30,12 @@ const (
 // URL语法校验不代替取件白名单、DNS/重定向校验和实际内容校验。
 // 保护字段不进入普通JSON投影；后续持久层须显式保存并按账号保护，不能直接序列化本类型恢复。
 type GeneratedMedia struct {
-	MIME      string    `json:"mime"`
-	ByteSize  int64     `json:"byte_size"`
-	FetchURL  string    `json:"-"`
-	ExpiresAt time.Time `json:"expires_at"`
+	MIME     string `json:"mime"`
+	ByteSize int64  `json:"byte_size"`
+	// SizeIsLimit 表示供应商不提供字节数，ByteSize只是取件上限；导入按实际字节记录。
+	SizeIsLimit bool      `json:"size_is_limit,omitempty"`
+	FetchURL    string    `json:"-"`
+	ExpiresAt   time.Time `json:"expires_at"`
 }
 
 // GenerationOutput.ID 必须在同一逻辑请求中稳定，不能使用会轮换的签名URL。

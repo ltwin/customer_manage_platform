@@ -64,15 +64,11 @@ func (s *Service) GenerationReaderFor(scope store.AccountScope) llmgateway.Gener
 // 才会上报，否则保持 nil（未知），绝不是零。摘要不匹配、MIME/大小/类型
 // 不符或跨账户修订都会被拒绝；客户端声称的元数据永远不能替代存储事实。
 func (r *generationReader) ResolveGenerationMedia(ctx context.Context, ref llmgateway.GenerationReference) (llmgateway.GenerationMediaMetadata, error) {
-	digest, err := hex.DecodeString(ref.Digest)
-	if err != nil || len(digest) != 32 || strings.ToLower(ref.Digest) != ref.Digest ||
-		ref.RevisionID == "" || len(ref.RevisionID) > 256 || ref.Role == "" || len(ref.Role) > 256 ||
-		ref.ByteSize <= 0 || len(ref.MIME) < 3 || len(ref.MIME) > 120 ||
-		(ref.Kind != llmgateway.GenerationImage && ref.Kind != llmgateway.GenerationVideo && ref.Kind != llmgateway.GenerationAudio) {
-		return llmgateway.GenerationMediaMetadata{}, creativeops.ErrValidation
+	if err := validGenerationReference(ref); err != nil {
+		return llmgateway.GenerationMediaMetadata{}, err
 	}
 	var meta llmgateway.GenerationMediaMetadata
-	err = r.scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+	err := r.scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
 		if err := tx.RequireCreativeRead(ctx); err != nil {
 			return err
 		}
@@ -80,6 +76,35 @@ func (r *generationReader) ResolveGenerationMedia(ctx context.Context, ref llmga
 		if err != nil {
 			return err
 		}
+		meta, err = resolveGenerationMedia(ctx, tx, rev, ref)
+		return err
+	})
+	if err != nil {
+		return llmgateway.GenerationMediaMetadata{}, err
+	}
+	return meta, nil
+}
+
+func validGenerationReference(ref llmgateway.GenerationReference) error {
+	digest, err := hex.DecodeString(ref.Digest)
+	if err != nil || len(digest) != 32 || strings.ToLower(ref.Digest) != ref.Digest ||
+		ref.RevisionID == "" || len(ref.RevisionID) > 256 || ref.Role == "" || len(ref.Role) > 256 ||
+		ref.ByteSize <= 0 || len(ref.MIME) < 3 || len(ref.MIME) > 120 ||
+		(ref.Kind != llmgateway.GenerationImage && ref.Kind != llmgateway.GenerationVideo && ref.Kind != llmgateway.GenerationAudio) {
+		return creativeops.ErrValidation
+	}
+	return nil
+}
+
+type generationRowReader interface {
+	QueryRow(context.Context, string, string, string, ...any) store.Row
+}
+
+// resolveGenerationMedia 对照修订的 original 对象给出事实；调用方已完成生成用途授权。
+func resolveGenerationMedia(ctx context.Context, tx generationRowReader, rev creativecontent.Revision, ref llmgateway.GenerationReference) (llmgateway.GenerationMediaMetadata, error) {
+	var meta llmgateway.GenerationMediaMetadata
+	err := func() error {
+		var err error
 		if rev.Kind != string(ref.Kind) {
 			return fmt.Errorf("%w: generation reference kind", llmgateway.ErrConflict)
 		}
@@ -152,11 +177,8 @@ func (r *generationReader) ResolveGenerationMedia(ctx context.Context, ref llmga
 			meta.FrameRate = &llmgateway.GenerationRatio{Numerator: *frameNum, Denominator: *frameDen}
 		}
 		return nil
-	})
-	if err != nil {
-		return llmgateway.GenerationMediaMetadata{}, err
-	}
-	return meta, nil
+	}()
+	return meta, err
 }
 
 // FactsProbeStatus 报告一个精确对象版本下去重后的探测任务；State 是任务

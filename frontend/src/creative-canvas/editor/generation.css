@@ -210,7 +210,7 @@
   font-size: 10px;
 }
 .cc-generation-options {
-  max-width: 155px;
+  max-width: 240px;
 }
 .cc-generation .cc-generation-chip {
   height: 30px;
@@ -503,4 +503,57 @@
   flex: none;
   color: var(--fg-3);
   font-size: 10px;
+}
+
+/* 图片模型参数：分节按钮与比例网格（参考 owner 2026-10-09 截图）。 */
+.cc-image-params fieldset {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.cc-image-params fieldset:disabled {
+  opacity: 0.45;
+}
+.cc-image-params legend {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: var(--fg-2);
+}
+.cc-image-params legend small {
+  color: var(--fg-3);
+  font-size: 10px;
+}
+.cc-segment {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.cc-ratio-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+.cc-generation .cc-image-params button {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid var(--line-2);
+  background: transparent;
+  color: var(--fg-2);
+}
+.cc-generation .cc-ratio-grid button {
+  flex-direction: column;
+  gap: 2px;
+  height: 52px;
+  font-size: 11px;
+}
+.cc-generation .cc-image-params button.is-active {
+  border-color: var(--fg-2);
+  background: var(--s4);
+  color: var(--fg);
+}
+.cc-generation .cc-image-params button:hover:not(:disabled) {
+  color: var(--fg);
 }

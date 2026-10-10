@@ -130,6 +130,8 @@ type FlowNode = Node<
     solo: boolean
     /** 卡片外标签右侧的版本/模型元信息，空串不显示。 */
     meta: string
+    /** 空媒体节点显示的比例：本机草稿优先，其次已保存的提示词。 */
+    ratio: string
     /** 空媒体节点里的两个入口都填充这个节点本身。 */
     fillEmpty: (id: string, kind: MediaKind, via: 'upload' | 'library') => void
     /** 本机预览读出的尺寸；变化时按比例重算高度。 */
@@ -168,6 +170,12 @@ export const untitled = (typeKey: string) =>
   typeKey === 'core.group'
     ? '未命名分组'
     : `未命名${kindLabel[nodeKind(typeKey)] ?? '节点'}`
+// 空媒体节点显示草稿里的比例；未选时与默认画幅一致。
+function emptyRatio(ratio: string) {
+  if (ratio === 'auto') return '自动'
+  return ratio || '1:1'
+}
+
 function KindIcon({ typeKey, size = 14 }: { typeKey: string; size?: number }) {
   switch (typeKey) {
     case 'core.group':
@@ -367,7 +375,11 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
               role="group"
             >
               <KindIcon typeKey={n.metadata.type_key} size={36} />
-              {kind !== 'audio' && <span className="cc-empty-ratio">1:1</span>}
+              {kind !== 'audio' && (
+                <span className="cc-empty-ratio">
+                  {emptyRatio(data.ratio)}
+                </span>
+              )}
               {kind !== 'audio' && (
                 <span className="cc-empty-hint">
                   选中后输入提示词生成
@@ -694,6 +706,7 @@ export default function CanvasView({
   onEdit,
   onCreated,
   onFocusPrompt,
+  draftRatios,
   inlineContent,
   onPickFiles,
   onOpenLibrary,
@@ -737,6 +750,8 @@ export default function CanvasView({
   onCreated: (id: string, kind: 'text' | MediaKind, prompt?: string) => void
   /** 双击空媒体节点：只聚焦生成输入框，不上传也不生成（PRD CV-54）。 */
   onFocusPrompt: (id: string) => void
+  /** 节点生成面板里尚未保存的比例，按节点ID。 */
+  draftRatios?: Record<string, string>
   inlineContent?: InlineContentEditing
   onPickFiles: (x: number, y: number) => void
   onOpenLibrary: () => void
@@ -1101,6 +1116,10 @@ export default function CanvasView({
               : null,
           kind = nodeKind(n.metadata.type_key),
           meta = nodeLabelMeta(n, modelLabels),
+          savedRatio = n.prompt?.parameters?.aspect_ratio,
+          ratio =
+            draftRatios?.[n.id] ??
+            (typeof savedRatio === 'string' ? savedRatio : ''),
           local = n.content ? null : localMedia.get(n.id),
           localSize = local?.width ? `${local.width}x${local.height}` : '',
           mediaHeight =
@@ -1130,6 +1149,7 @@ export default function CanvasView({
           old.data.disabled === disabled &&
           old.data.solo === (isSelected && selection.length === 1) &&
           old.data.meta === meta &&
+          old.data.ratio === ratio &&
           old.data.renaming === (renamingNode === n.id) &&
           old.data.inlineContent ===
             (inlineContent?.nodeID === n.id ? inlineContent : undefined) &&
@@ -1181,6 +1201,7 @@ export default function CanvasView({
             previewVersion,
             solo: isSelected && selection.length === 1,
             meta,
+            ratio,
             fillEmpty,
             localSize,
           },
@@ -1213,6 +1234,7 @@ export default function CanvasView({
     previewVersion,
     modelLabels,
     localVersion,
+    draftRatios,
   ])
   const pointerDown = useRef<{ x: number; y: number } | null>(null)
   const selectionStart = useRef<{ x: number; y: number } | null>(null)

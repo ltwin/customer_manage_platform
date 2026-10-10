@@ -351,9 +351,9 @@ func requireUsable(ctx context.Context, tx contentReader, protectedRow func(cont
 	}
 }
 
-// RequireGenerationReference 为显式生成用途保护修订：声明上要有存活的
-// generation_reference 授权，且权利矩阵允许所声明的素材来源用于生成。
-// 展示授权永远不能顶替它。
+// RequireGenerationReference 为生成用途保护修订：素材可展示，且权利矩阵允许
+// 所声明的素材来源用于生成。不设按素材的单独生成授权（2026-10-09 拍板）：
+// 摄影师放上画布并连作参考即是意图，授权素材仍由权利矩阵拒绝。
 func RequireGenerationReference(ctx context.Context, tx store.TxAccountScope, id string) (Revision, error) {
 	return RequireGenerationReferenceRow(ctx, tx, tx.QueryRowForUpdate, id)
 }
@@ -364,7 +364,7 @@ func ReadGenerationReferenceSnapshot(ctx context.Context, tx store.ReadTxAccount
 }
 
 func RequireGenerationReferenceRow(ctx context.Context, tx contentReader, protectedRow func(context.Context, string, string, string, ...any) store.Row, id string) (Revision, error) {
-	return requireRevision(ctx, tx, protectedRow, id, "generation_reference", generationGate)
+	return requireRevision(ctx, tx, protectedRow, id, "display", generationGate)
 }
 
 // requireRevision 是共享的用途守卫。declarationGate 为该用途校验已锁定的

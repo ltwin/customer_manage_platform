@@ -235,13 +235,21 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	creativeAgent.SetLogger(logger)
 	creativeAgent.SetImageReader(creativeMedia)
-	// 真实模型须显式注册准备器、外发守卫和Worker；空目录保留草稿与历史入口。
-	creativeGeneration, err := creativegeneration.NewProduct(nil, nil)
+	// 缺凭证或保护密钥时生成关闭，目录为空；草稿与历史入口照常可用。
+	generation, err := creativegeneration.Compose(creativeGateway, gatewayOptions.Catalog.Currency(), creativeMedia, gatewayOptions.Credential)
 	if err != nil {
-		return err
+		return newStartupFailure("creative-generation-init", "CREATIVE_GENERATION_PROTECTION_KEY", "model-catalog", err)
+	}
+	if generation.Disabled != "" {
+		logger.Info("creative generation disabled", slog.String("reason", generation.Disabled))
+	}
+	creativeGeneration := generation.Product
+	handlers := append(creativeMedia.Handlers(), creativeAgent.Handlers()...)
+	if generation.Service != nil {
+		handlers = append(handlers, generation.Service.Handlers()...)
 	}
 	// The API only enqueues; the creative-worker process executes the tasks.
-	creativeJobs, err := s.NewJobRuntime(append(creativeMedia.Handlers(), creativeAgent.Handlers()...), logger)
+	creativeJobs, err := s.NewJobRuntime(handlers, logger)
 	if err != nil {
 		return newStartupFailure("creative-jobs-init", "DATABASE_URL", "database", err)
 	}
@@ -256,6 +264,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	} else {
 		creativeMedia.SetRuntime(creativeJobs)
 		creativeAgent.SetRuntime(creativeJobs)
+		if generation.Service != nil {
+			generation.Service.SetRuntime(creativeJobs)
+		}
 	}
 	planningMediaApp := planningmedia.NewApplication(
 		planningmedia.Repository{},

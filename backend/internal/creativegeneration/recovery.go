@@ -2,6 +2,7 @@ package creativegeneration
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
@@ -72,24 +73,27 @@ func (s *Service) Resume(ctx context.Context, scope store.AccountScope, target c
 	})
 }
 
-// RunRecovery由组合根持有生命周期，同时扫描Gateway与交接due；未自动挂入生产。
-func (s *Service) RunRecovery(ctx context.Context, db *store.Store) error {
+// RunRecovery由组合根持有生命周期，同时扫描Gateway与交接due。单轮失败只记录，
+// 下一轮从头重扫，不让一次数据库抖动停掉整个worker。
+func (s *Service) RunRecovery(ctx context.Context, db *store.Store, logger *slog.Logger) {
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
 	gatewayCursor, canvasCursor := "", ""
 	for {
+		sweepCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		var err error
-		gatewayCursor, err = s.generation.SweepGenerationDue(ctx, db, gatewayCursor, 100)
-		if err != nil {
-			return err
+		if gatewayCursor, err = s.generation.SweepGenerationDue(sweepCtx, db, gatewayCursor, 100); err != nil && ctx.Err() == nil {
+			gatewayCursor = ""
+			logger.Warn("creative generation recovery", slog.String("stage", "gateway"), slog.String("error", err.Error()))
 		}
-		canvasCursor, err = s.SweepDue(ctx, db, canvasCursor, 100)
-		if err != nil {
-			return err
+		if canvasCursor, err = s.SweepDue(sweepCtx, db, canvasCursor, 100); err != nil && ctx.Err() == nil {
+			canvasCursor = ""
+			logger.Warn("creative generation recovery", slog.String("stage", "handoff"), slog.String("error", err.Error()))
 		}
+		cancel()
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return
 		case <-ticker.C:
 		}
 	}

@@ -31,8 +31,12 @@ type Config struct {
 	Media         *creativemedia.Service
 	ProtectionKey []byte
 	Adapters      []gw.GenerationAdapterRegistration
+	// Authorization 可选的附加守卫。外发不做逐次授权（owner 2026-10-09：同类产品只在
+	// 注册时同意一次协议），素材生成用途与画布资格始终由guard复核。
 	Authorization gw.GenerationGuard
 	Fetchers      map[string]creativemedia.GenerationFetcher
+	// References 在Submit时按账号打开参考字节；不带参考的部署可以留空。
+	References func(store.AccountScope) gw.GenerationReferenceOpener
 }
 type Service struct {
 	gateway       *gw.Service
@@ -55,7 +59,7 @@ func New(cfg Config) (*Service, error) {
 		}
 		s.fetchers[key] = f
 	}
-	runtime, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: cfg.Gateway, ProtectionKey: cfg.ProtectionKey, Adapters: cfg.Adapters, Guard: s.guard, Prelock: func(ctx context.Context, tx store.TxAccountScope) error { return tx.LockCreativeWrite(ctx) }})
+	runtime, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: cfg.Gateway, ProtectionKey: cfg.ProtectionKey, Adapters: cfg.Adapters, Guard: s.guard, References: cfg.References, Prelock: func(ctx context.Context, tx store.TxAccountScope) error { return tx.LockCreativeWrite(ctx) }})
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +336,7 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 			return false, gw.ErrUnavailable
 		}
 		m := item.Output.Media
-		media, err = s.media.PrepareGeneratedMedia(ctx, scope, b.request+"/"+item.AttemptID+"/"+item.Output.ID, string(item.Output.Kind), m.MIME, m.ByteSize, func(ctx context.Context) (io.ReadCloser, error) {
+		media, err = s.media.PrepareGeneratedMedia(ctx, scope, b.request+"/"+item.AttemptID+"/"+item.Output.ID, string(item.Output.Kind), m.MIME, m.ByteSize, !m.SizeIsLimit, func(ctx context.Context) (io.ReadCloser, error) {
 			if !m.ExpiresAt.After(time.Now()) {
 				refreshed, err := s.generation.RefreshImportLocation(ctx, scope, item)
 				if err != nil {

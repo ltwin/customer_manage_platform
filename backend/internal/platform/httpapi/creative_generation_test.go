@@ -50,10 +50,6 @@ func TestCreativeGenerationHTTPEmptyCatalogAndTrustedInput(t *testing.T) {
 	if response.Code != 200 || !strings.Contains(response.Body.String(), `"models":[]`) || !strings.Contains(response.Header().Get("Cache-Control"), "no-store") {
 		t.Fatalf("catalog: %d %s", response.Code, response.Body.String())
 	}
-	_, err = db.Exec("INSERT INTO creative_account_capabilities(account_id,node_generate_enabled,generation_apply_enabled) VALUES($1,true,true) ON CONFLICT(account_id) DO UPDATE SET node_generate_enabled=true,generation_apply_enabled=true", testAcctID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, field := range []string{"account_id", "price", "deadline", "prepared"} {
 		payload := map[string]any{"node_id": node, "action_key": "gateway.generation", "draft_revision": "1", "expected_data_revision": "1", "configuration_revision": "1", "read_set": []any{}, field: "untrusted"}
 		c := command(payload)

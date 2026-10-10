@@ -30,14 +30,7 @@ func (sc AccountScope) CreativeCapabilities(ctx context.Context) (CreativeCapabi
 		return CreativeCapabilities{}, err
 	}
 	active := status == "active"
-	c := CreativeCapabilities{Read: active, ManualWrite: active, MediaWrite: active, AgentStart: active}
-	err = sc.execRunner().QueryRow(ctx, "SELECT node_generate_enabled,generation_apply_enabled FROM creative_account_capabilities WHERE account_id=$1", sc.AccountID()).Scan(&c.NodeGenerate, &c.GenerationApply)
-	if errors.Is(err, ErrNoRows) {
-		err = nil
-	}
-	c.NodeGenerate = c.NodeGenerate && active
-	c.GenerationApply = c.GenerationApply && active
-	return c, err
+	return CreativeCapabilities{Read: active, ManualWrite: active, MediaWrite: active, AgentStart: active, NodeGenerate: active, GenerationApply: active}, nil
 }
 
 func (sc TxAccountScope) RequireCreativeCapability(ctx context.Context, capability string) error {
@@ -54,16 +47,6 @@ func (sc TxAccountScope) RequireCreativeCapability(ctx context.Context, capabili
 	c, err := sc.scope.CreativeCapabilities(ctx)
 	if err != nil {
 		return err
-	}
-	// 生成开关与本事务派发/发布共享行锁；缺省行仍禁止生成。
-	if capability == "node_generate" || capability == "generation_apply" {
-		err = sc.scope.execRunner().QueryRow(ctx, "SELECT node_generate_enabled,generation_apply_enabled FROM creative_account_capabilities WHERE account_id=$1 FOR SHARE", sc.AccountID()).Scan(&c.NodeGenerate, &c.GenerationApply)
-		if errors.Is(err, ErrNoRows) {
-			return ErrCreativeAccessDenied
-		}
-		if err != nil {
-			return err
-		}
 	}
 	enabled := false
 	switch capability {

@@ -118,3 +118,52 @@ export function assertGenerationSnapshot(
   }
   return target
 }
+
+// 这些参数有专用控件；其余参数仍走通用表单，接入其他模型时不会丢参数。
+export const imageParameterKeys = [
+  'quality',
+  'resolution',
+  'background',
+  'aspect_ratio',
+  'count',
+] as const
+
+const optionLabels: Record<string, Record<string, string>> = {
+  quality: { low: '低画质', medium: '标准画质', high: '高画质' },
+  background: { auto: '自动', opaque: '不透明', transparent: '透明背景' },
+  aspect_ratio: { auto: '自动' },
+}
+
+export function optionLabel(key: string, value: string) {
+  if (key === 'count') return `${value}张`
+  return optionLabels[key]?.[value] ?? value
+}
+
+export function selectedOption(
+  field: GenerationParameter,
+  values: Record<string, unknown>,
+) {
+  const v = values[field.key]
+  return v === undefined || v === null ? (field.default ?? '') : String(v)
+}
+
+/** 底栏 chip 的摘要，例如「2:3 · 标准画质 · 2K · 1张」。 */
+export function imageSummary(
+  fields: GenerationParameter[],
+  values: Record<string, unknown>,
+) {
+  const value = (key: string) => {
+    const field = fields.find((f) => f.key === key)
+    return field ? selectedOption(field, values) : ''
+  }
+  const ratio = value('aspect_ratio')
+  return [
+    ratio && optionLabel('aspect_ratio', ratio),
+    value('quality') && optionLabel('quality', value('quality')),
+    // 自动比例由模型决定尺寸，清晰度不生效。
+    ratio !== 'auto' && value('resolution'),
+    value('count') && optionLabel('count', value('count')),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}

@@ -459,6 +459,9 @@ func (e *editGraph) add(a Action) error {
 		n.ContentID = &r.ContentID
 		n.ContentRevisionID = &r.ID
 		fitMediaSize(&n, r)
+		if err = e.manualVersion(&n, r, "asset"); err != nil {
+			return err
+		}
 	}
 	if a.Content != nil {
 		if n.TypeKey != "core."+a.Content.Kind {
@@ -472,6 +475,27 @@ func (e *editGraph) add(a Action) error {
 		n.ContentRevisionID = &r.ID
 	}
 	e.g.Nodes[n.ID] = n
+	return nil
+}
+
+func (e *editGraph) manualVersion(n *Node, r creativecontent.Revision, origin string) error {
+	return manualVersion(e.ctx, e.tx, &e.g, n, r, origin)
+}
+
+// manualVersion registers media a person put into a node as one of its
+// versions, so generating on the node later never drops it from the list.
+// Text bodies are edited and saved continuously and are not versioned.
+func manualVersion(ctx context.Context, tx store.TxAccountScope, g *graphState, n *Node, r creativecontent.Revision, origin string) error {
+	n.SelectedVersionID = nil
+	if !creativecontent.IsMediaKind(r.Kind) {
+		return nil
+	}
+	v, err := makeVersion(ctx, tx, n.ID, r.ID, origin, json.RawMessage(`{}`), []VersionInput{})
+	if err != nil {
+		return err
+	}
+	g.Versions[v.ID] = v
+	n.SelectedVersionID = &v.ID
 	return nil
 }
 
@@ -498,7 +522,9 @@ func (e *editGraph) fill(a Action) error {
 	}
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
-	n.SelectedVersionID = nil
+	if err = e.manualVersion(&n, r, "asset"); err != nil {
+		return err
+	}
 	if strings.TrimSpace(n.Title) == "" {
 		n.Title = asset.Title
 	}
@@ -538,7 +564,9 @@ func (e *editGraph) fillUpload(a Action) error {
 	}
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
-	n.SelectedVersionID = nil
+	if err = e.manualVersion(&n, r, "upload"); err != nil {
+		return err
+	}
 	if strings.TrimSpace(n.Title) == "" {
 		n.Title = creativestaging.Title(s.FileName)
 	}

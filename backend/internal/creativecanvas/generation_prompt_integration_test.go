@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
-	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -15,13 +14,6 @@ func TestGenerationMentionCompileUsesLiveScopedReference(t *testing.T) {
 	c, err := creativecanvas.GetCanvas(t.Context(), scope, p.CanvasID)
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, n := range c.Nodes {
-		if n.ContentRevisionID != nil {
-			if err := creativecontent.GrantGenerationReference(t.Context(), scope, *n.ContentRevisionID); err != nil {
-				t.Fatal(err)
-			}
-		}
 	}
 	var target creativecanvas.Node
 	for _, n := range c.Nodes {
