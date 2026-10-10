@@ -55,7 +55,7 @@ func TestLiveAICodeWithReasoningToolLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := defaults.Model("gpt-6.1-sol")
+	model, err := defaults.Deployment("gpt-6.1-sol", "aicodewith/api/gpt-6.1-sol")
 	if err != nil {
 		t.Skip("gpt-6.1-sol is not configured: ", err)
 	}

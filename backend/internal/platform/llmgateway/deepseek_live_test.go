@@ -48,6 +48,15 @@ func liveFixtureWith(t *testing.T, credential string, budget int64, catalog *llm
 	if strings.TrimSpace(os.Getenv(credential)) == "" {
 		t.Skip(credential + " not set: skipping the real provider acceptance")
 	}
+	if catalog == nil {
+		var err error
+		catalog, err = llmgateway.DefaultCatalog(func(env string) (string, bool) {
+			return os.Getenv(env), env == credential && strings.TrimSpace(os.Getenv(env)) != ""
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
 	url := storetest.NewURL(t)
 	db, err := sql.Open("pgx", url)
 	if err != nil {

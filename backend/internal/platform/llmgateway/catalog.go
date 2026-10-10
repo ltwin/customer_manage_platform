@@ -141,7 +141,9 @@ type Deployment struct {
 	Thinking string `json:"thinking,omitempty"`
 	// ReasoningEffort fixes how hard a Responses reasoning model thinks
 	// ("low", "medium", "high"). Empty means the deployment does not reason.
-	ReasoningEffort  string        `json:"reasoning_effort,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
+	// ReasoningContext is an optional relay extension; empty omits it.
+	ReasoningContext string        `json:"reasoning_context,omitempty"`
 	AcceptedModelIDs []string      `json:"accepted_model_ids"`
 	Capability       Capability    `json:"capability"`
 	Price            PriceSchedule `json:"price"`
@@ -387,6 +389,9 @@ func validateDeployment(m Deployment, currency string) error {
 		return fmt.Errorf("%w: deployment %q reasoning effort needs the responses protocol", ErrValidation, m.DeploymentKey)
 	case !slices.Contains([]string{"low", "medium", "high", "xhigh"}, m.ReasoningEffort):
 		return fmt.Errorf("%w: deployment %q reasoning effort", ErrValidation, m.DeploymentKey)
+	}
+	if m.ReasoningContext != "" && (m.ReasoningContext != "all_turns" || m.Provider != ProviderOpenAIResponses || m.ReasoningEffort == "") {
+		return fmt.Errorf("%w: deployment %q reasoning context", ErrValidation, m.DeploymentKey)
 	}
 	switch m.QueryCapability {
 	case "none", "provider_query":

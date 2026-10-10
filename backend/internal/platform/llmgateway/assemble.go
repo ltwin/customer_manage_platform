@@ -93,7 +93,8 @@ func Build(opts Options) (*Service, error) {
 
 	client := NewHTTPClient(opts.Timeout)
 	return New(Config{
-		Catalog: catalog,
+		Catalog:   catalog,
+		ChatRetry: true,
 		Providers: map[ProviderKey]Provider{
 			ProviderOpenAICompatible: NewOpenAICompatible(client),
 			ProviderAnthropicMessage: NewAnthropicMessages(client, ""),

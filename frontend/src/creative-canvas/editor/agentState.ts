@@ -237,6 +237,8 @@ const failures: Record<string, string> = {
   creative_checkpoint_inconsistent: '恢复记录不一致，已停止自动继续',
   creative_llm_unknown: '供应商是否完成调用尚未确认',
   creative_model_result_unknown: '供应商是否完成调用尚未确认',
+  creative_model_providers_exhausted: '当前负载较高，请稍后尝试',
+  creative_model_unavailable: '当前模型暂无可用的服务渠道，请换一个模型',
   creative_model_rejected: '模型服务拒绝了这次请求，请重试或换一个模型',
   creative_model_balance_exhausted: '模型服务额度不足，请稍后再试或换一个模型',
   creative_model_capability_missing: '当前模型不支持这次请求，请换一个模型',

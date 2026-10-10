@@ -154,7 +154,7 @@ func (s *Service) reserveCallInTx(ctx context.Context, tx store.TxAccountScope, 
 	reservation, err := s.ReserveInTx(ctx, tx, ReserveInput{
 		CallerService: session.CallerService, CallerOperationID: binding.reserveOp, CallerGroupID: session.CallerGroupID,
 		GroupLimitMicros: session.GroupLimitMicros, GroupTokenLimit: session.GroupTokenLimit, GroupDeadline: session.GroupDeadline,
-		ModelKey: session.ModelKey, InputTokenUpperBound: bound, OutputLimit: chat.OutputLimit,
+		ModelKey: session.ModelKey, deploymentKey: session.deploymentKey, InputTokenUpperBound: bound, OutputLimit: chat.OutputLimit,
 		AccountLimitMicros: session.AccountLimitMicros, AccountTokenLimit: session.AccountTokenLimit, ExpiresAt: session.Deadline,
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func (s *Service) reserveCallInTx(ctx context.Context, tx store.TxAccountScope, 
 	}
 	view, err := s.PrepareInTx(ctx, tx, PrepareInput{
 		CallerService: session.CallerService, CallerOperationID: binding.requestOp, CallerGroupID: session.CallerGroupID,
-		ReservationID: reservation.ID, ConsumerKey: binding.consumerKey, Chat: chat, Deadline: session.Deadline,
+		ReservationID: reservation.ID, ConsumerKey: binding.consumerKey, Chat: chat, Deadline: session.Deadline, deploymentKey: session.deploymentKey,
 	})
 	return reservation, view, err
 }

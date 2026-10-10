@@ -34,9 +34,10 @@ type CallSession struct {
 	AccountLimitMicros int64
 	AccountTokenLimit  int64
 
-	ModelKey    string
-	OutputLimit int
-	Deadline    time.Time
+	ModelKey      string
+	deploymentKey string // gateway-owned selection for a separately metered attempt
+	OutputLimit   int
+	Deadline      time.Time
 
 	// EstimateInputTokens bounds the input before a request exists. It may only
 	// raise the built-in bound: a hold smaller than what Prepare checks against
@@ -84,8 +85,8 @@ type CallInput struct {
 	// Consume runs inside the transaction that marks the result consumed, so the
 	// caller's own rows and that mark commit together or not at all.
 	Consume func(store.TxAccountScope, Result) error
-	// Sink sees text fragments of a streamed attempt, for display only. It is
-	// told to Reset before the gateway replaces an attempt it proved unaccepted.
+	// Sink sees text fragments for display only. Reset withdraws the previous
+	// failed attempt before a separately metered retry replaces it.
 	Sink Sink
 }
 
@@ -140,9 +141,9 @@ func ReserveOperationID(callerService, bindingKey string) string {
 // dispatch → compensate sequence, because each step of that sequence has a
 // compensation and a lock order that only hold when they run together.
 //
-// It is safe to call again with the same binding key after any failure or
-// restart: a turn that already produced a result replays it, and a turn whose
-// transport outcome was never settled refuses to run rather than paying twice.
+// A completed turn replays its result. With ChatRetry enabled, a durable route
+// coordinates separately metered attempts after completed transient failures.
+// In-flight or orphaned transports without completion evidence are not resent.
 func (s *Service) Call(ctx context.Context, session CallSession, in CallInput) (CallOutcome, error) {
 	chat, err := session.chatOf(in.Chat)
 	if err != nil {
@@ -152,10 +153,31 @@ func (s *Service) Call(ctx context.Context, session CallSession, in CallInput) (
 		return CallOutcome{}, fmt.Errorf("%w: caller binding key", ErrValidation)
 	}
 	binding := session.bindingOf(in.BindingKey)
+	if s.chatRetry {
+		// A turn that already froze its route replays along it. Re-admitting the
+		// root through live routing would hash a different deployment once the
+		// directory changed, and refuse the replay forever as a conflict.
+		if root, err := s.requestByOperation(ctx, session.Scope, session.CallerService, binding.requestOp); err == nil {
+			if plan, found, err := s.chatRoute(ctx, session.Scope, root.ID); err != nil {
+				return CallOutcome{RequestID: root.ID}, err
+			} else if found {
+				return s.callRouted(ctx, session, in, chat, root, plan)
+			}
+		} else if !errors.Is(err, ErrNotFound) {
+			return CallOutcome{}, err
+		}
+	}
 
 	reservation, view, err := s.admit(ctx, session, binding, chat)
 	if err != nil {
 		return CallOutcome{}, err
+	}
+	if s.chatRetry {
+		if plan, found, err := s.chatRoute(ctx, session.Scope, view.ID); err != nil {
+			return CallOutcome{RequestID: view.ID}, err
+		} else if found {
+			return s.callRouted(ctx, session, in, chat, view, plan)
+		}
 	}
 	// From here on the identity exists, so every return carries it: a caller that
 	// has to ask for verification needs to name the request it is asking about.
@@ -220,6 +242,9 @@ func (s *Service) admit(
 	err := session.Scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		var err error
 		reservation, view, err = s.reserveCallInTx(ctx, tx, session, binding, chat)
+		if err == nil && s.chatRetry && session.deploymentKey == "" && view.State == StatePrepared && !view.RetryEligible {
+			err = s.ensureChatRoute(ctx, tx, view)
+		}
 		return err
 	})
 	return reservation, view, err

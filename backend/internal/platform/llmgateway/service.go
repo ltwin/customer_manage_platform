@@ -29,6 +29,10 @@ type Config struct {
 	Logger           *slog.Logger
 	RequestRetention time.Duration
 	DefaultBudget    BudgetPolicy
+	// ChatRetry enables the coordinated, independently metered retry chain.
+	ChatRetry bool
+	// RetryWait is injectable for deterministic tests; nil uses a cancellable timer.
+	RetryWait func(context.Context, time.Duration) error
 }
 
 // BudgetPolicy is the server-side ceiling. The photographer's own limit may
@@ -47,6 +51,8 @@ type Service struct {
 	logger     *slog.Logger
 	retention  time.Duration
 	policy     BudgetPolicy
+	chatRetry  bool
+	retryWait  func(context.Context, time.Duration) error
 }
 
 // New validates the assembly. Every enabled model must have an adapter.
@@ -65,6 +71,8 @@ func New(cfg Config) (*Service, error) {
 		logger:     cfg.Logger,
 		retention:  cfg.RequestRetention,
 		policy:     cfg.DefaultBudget,
+		chatRetry:  cfg.ChatRetry,
+		retryWait:  cfg.RetryWait,
 	}
 	for key, provider := range cfg.Providers {
 		if provider == nil || provider.Key() != key {
@@ -87,6 +95,9 @@ func New(cfg Config) (*Service, error) {
 	}
 	if s.credential == nil {
 		s.credential = osCredential
+	}
+	if s.retryWait == nil {
+		s.retryWait = waitChatRetry
 	}
 	if s.now == nil {
 		s.now = time.Now
@@ -383,7 +394,22 @@ func (s *Service) RequestForBinding(ctx context.Context, scope store.AccountScop
 	if callerService == "" || bindingKey == "" || len(bindingKey) > maxBindingKeyLen {
 		return RequestView{}, fmt.Errorf("%w: caller binding key", ErrValidation)
 	}
-	operationID := derivedOperationID(callerService, bindingKey, "request")
+	view, err := s.requestByOperation(ctx, scope, callerService, derivedOperationID(callerService, bindingKey, "request"))
+	if err != nil {
+		return view, err
+	}
+	plan, found, err := s.chatRoute(ctx, scope, view.ID)
+	if err != nil {
+		return view, err
+	}
+	if found && plan.State == "succeeded" {
+		return s.Get(ctx, scope, plan.FinalID)
+	}
+	return view, nil
+}
+
+// requestByOperation reads the request a caller operation prepared, if any.
+func (s *Service) requestByOperation(ctx context.Context, scope store.AccountScope, callerService, operationID string) (RequestView, error) {
 	var view RequestView
 	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
 		row, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns,

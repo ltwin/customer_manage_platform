@@ -28,6 +28,7 @@ type PrepareInput struct {
 	ReservationID     string
 	ConsumerKey       string
 	Chat              ChatRequest
+	deploymentKey     string
 	Deadline          time.Time
 }
 
@@ -101,7 +102,7 @@ func (s *Service) PrepareInTx(ctx context.Context, tx store.TxAccountScope, in P
 	if err := in.Chat.Validate(); err != nil {
 		return RequestView{}, err
 	}
-	model, err := s.catalog.Model(in.Chat.ModelKey)
+	model, err := s.chatDeployment(in.Chat.ModelKey, in.deploymentKey)
 	if err != nil {
 		return RequestView{}, err
 	}
@@ -606,9 +607,9 @@ func (s *Service) finishFailure(
 			return err
 		}
 		if _, err := tx.Update(ctx, "llm_requests",
-			"state=$3,failure_class=$4,retry_eligible=$5,revision=revision+1,updated_at=$6",
+			"state=$3,failure_class=$4,retry_eligible=$5,revision=revision+1,updated_at=$6,failure_http_status=$7",
 			"id=$2 AND state IN ('dispatching','streaming','unknown')",
-			permit.RequestID, string(requestState), providerErr.Class, retryEligible, now); err != nil {
+			permit.RequestID, string(requestState), providerErr.Class, retryEligible, now, nullableStatus(providerErr.StatusCode)); err != nil {
 			return err
 		}
 		if err := s.releasePermit(ctx, tx, limits, permit, now); err != nil {
@@ -696,6 +697,10 @@ func (s *Service) releaseHoldForRetry(ctx context.Context, tx store.TxAccountSco
 // VerifyUnacceptedInTx applies trusted, sourced evidence that an unknown attempt
 // was never accepted and never billed. Deployments without a provider query API
 // reach this only through an operator entry, never through a photographer.
+//
+// A failed request may still carry an unknown attempt: a protocol violation, or
+// a chat attempt a later retry superseded. Its money question is just as open,
+// so it is verifiable too, but it only releases the hold and is never revived.
 func (s *Service) VerifyUnacceptedInTx(ctx context.Context, tx store.TxAccountScope, requestID, evidenceSource string) (RequestView, error) {
 	if evidenceSource == "" {
 		return RequestView{}, fmt.Errorf("%w: verification needs a source", ErrValidation)
@@ -713,8 +718,9 @@ func (s *Service) VerifyUnacceptedInTx(ctx context.Context, tx store.TxAccountSc
 	if request.kind != requestKindChat {
 		return RequestView{}, fmt.Errorf("%w: generation verification requires generation evidence", ErrState)
 	}
-	if request.state != StateUnknown {
-		return RequestView{}, fmt.Errorf("%w: only unknown requests are verified", ErrState)
+	superseded := request.state == StateFailed
+	if request.state != StateUnknown && !superseded {
+		return RequestView{}, fmt.Errorf("%w: only requests with an unknown attempt are verified", ErrState)
 	}
 	var attemptID string
 	err = tx.QueryRowForUpdate(ctx, "llm_attempts", "id",
@@ -730,7 +736,7 @@ func (s *Service) VerifyUnacceptedInTx(ctx context.Context, tx store.TxAccountSc
 		"id=$2 AND dispatch_state='unknown'", attemptID, now); err != nil {
 		return RequestView{}, err
 	}
-	retryEligible := request.attemptsUsed < maxAttempts && request.cancelAt == nil &&
+	retryEligible := !superseded && request.attemptsUsed < maxAttempts && request.cancelAt == nil &&
 		request.closedAt == nil && request.deadline.After(now)
 	state := StateFailed
 	if retryEligible {
@@ -738,7 +744,7 @@ func (s *Service) VerifyUnacceptedInTx(ctx context.Context, tx store.TxAccountSc
 	}
 	if _, err := tx.Update(ctx, "llm_requests",
 		"state=$3,failure_class='verified_not_accepted',retry_eligible=$4,revision=revision+1,updated_at=$5",
-		"id=$2 AND state='unknown'", requestID, string(state), retryEligible, now); err != nil {
+		"id=$2 AND state IN ('unknown','failed')", requestID, string(state), retryEligible, now); err != nil {
 		return RequestView{}, err
 	}
 	if err := s.recordVerifiedRejection(ctx, tx, Permit{AttemptID: attemptID, RequestID: requestID,
@@ -781,4 +787,13 @@ func nullableText(value string) any {
 		return nil
 	}
 	return value
+}
+
+// nullableStatus stores "no HTTP answer" as NULL, so a transport failure is not
+// mistaken for retry evidence by readers or by the rollback guard.
+func nullableStatus(code int) any {
+	if code == 0 {
+		return nil
+	}
+	return code
 }

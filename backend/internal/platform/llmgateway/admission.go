@@ -21,6 +21,7 @@ type ReserveInput struct {
 	GroupTokenLimit      int64
 	GroupDeadline        time.Time
 	ModelKey             string
+	deploymentKey        string
 	InputTokenUpperBound int64
 	OutputLimit          int
 	AccountLimitMicros   int64
@@ -111,7 +112,7 @@ func (s *Service) ReserveInTx(ctx context.Context, tx store.TxAccountScope, in R
 	if in.InputTokenUpperBound < 0 || in.OutputLimit <= 0 {
 		return Reservation{}, fmt.Errorf("%w: reservation bounds", ErrValidation)
 	}
-	model, err := s.catalog.Model(in.ModelKey)
+	model, err := s.chatDeployment(in.ModelKey, in.deploymentKey)
 	if err != nil {
 		return Reservation{}, err
 	}

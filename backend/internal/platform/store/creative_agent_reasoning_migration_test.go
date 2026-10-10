@@ -10,6 +10,7 @@ import (
 
 func rollbackAgentReasoning(t *testing.T, url string) {
 	t.Helper()
+	rollbackChatFailover(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-agent-reasoning", err)
 	}

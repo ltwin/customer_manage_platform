@@ -3,7 +3,7 @@ package llmgateway
 // DefaultCatalogVersion changes whenever a deployment entry, capability or
 // price recipe below changes. It is persisted with every request, so an edit
 // never rewrites an in-flight call.
-const DefaultCatalogVersion = "deepseek-aicodewith-2026-10-09"
+const DefaultCatalogVersion = "deepseek-aicodewith-krill-2026-10-10"
 
 // priceSourceDeepSeek records where the rates came from and when, because a
 // price recipe without a provenance cannot be reconciled against an invoice.
@@ -152,6 +152,14 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 	}
 	deployments := []Deployment{flash, flashThinking, pro}
 	gptModels, gptDeployments := aicodewithModels(credential)
+	krill := krillDeployments(credential)
+	for i := range gptModels {
+		if d, ok := krill[gptModels[i].ModelKey]; ok {
+			// Krill leads when configured; AiCodeWith stays the fallback.
+			gptModels[i].Deployments = append([]string{d.DeploymentKey}, gptModels[i].Deployments...)
+			gptDeployments = append(gptDeployments, d)
+		}
+	}
 	return NewRoutedCatalog(DefaultCatalogVersion, "USD", append(models, gptModels...), append(deployments, gptDeployments...))
 }
 
@@ -180,6 +188,7 @@ func aicodewithModels(credential func(string) (string, bool)) ([]Model, []Deploy
 			CredentialEnv:    "AICODEWITH_API_KEY",
 			RequestModelID:   id,
 			ReasoningEffort:  "medium",
+			ReasoningContext: "all_turns",
 			AcceptedModelIDs: []string{id},
 			Capability: Capability{
 				ImageInput:  true,

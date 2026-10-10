@@ -936,12 +936,18 @@ func failureCode(err error) string {
 		return "creative_egress_required"
 	case errors.Is(err, ErrUnsupportedSegment):
 		return "creative_skill_unavailable"
+	case errors.Is(err, llmgateway.ErrProvidersExhausted) && errors.Is(err, llmgateway.ErrUnavailable):
+		// No deployment of the model could be admitted at all: nothing was
+		// overloaded, so "try later" would not help.
+		return "creative_model_unavailable"
 	case errors.Is(err, ErrBudgetExceeded):
 		return "creative_llm_budget_exceeded"
 	case errors.Is(err, ErrModelCapability):
 		return "creative_model_capability_missing"
 	case errors.Is(err, ErrRunState):
 		return "creative_run_superseded"
+	case errors.Is(err, llmgateway.ErrProvidersExhausted):
+		return "creative_model_providers_exhausted"
 	case errors.Is(err, llmgateway.ErrUnknown):
 		return "creative_model_result_unknown"
 	case errors.As(err, &refused) && refused.Class == "insufficient_balance":
@@ -1022,6 +1028,15 @@ func (s *Service) settlementOfRun(ctx context.Context, scope store.AccountScope,
 	}
 	if lastRequest != "" {
 		requests[lastRequest] = true
+	}
+	// A step links only the request that finally answered. Attempts a retry
+	// superseded belong to the same run group and keep their own money facts.
+	grouped, err := s.gateway.CallerGroupRequestIDs(ctx, scope, callerService, runID)
+	if err != nil {
+		return "unknown"
+	}
+	for _, id := range grouped {
+		requests[id] = true
 	}
 	state := "not_started"
 	for id := range requests {

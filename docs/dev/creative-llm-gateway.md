@@ -22,7 +22,7 @@
 | `Models()` | 版本化模型目录；未配置凭证的部署**保持可见但禁用并带原因**，不静默消失 |
 | `ReserveInTx` / `RearmInTx` | 保守上界预留；同 caller operation 回放不重复占额；未受理后按固定原上界重建 hold 并递增 generation |
 | `PrepareInTx` / `BeginDispatchInTx` / `Execute` | 固定请求身份与 model/price 快照；一次性派发许可；事务外网络 I/O；结果完整校验后才持久 |
-| `RedispatchInTx` | 重新准入 + 派发意图**同一事务**；重试一律走它，不要自己拼 `RearmInTx` + `BeginDispatchInTx` |
+| `RedispatchInTx` | 重新准入 + 派发意图**同一事务**；同一请求的已证实未受理重试走它，不要自己拼 `RearmInTx` + `BeginDispatchInTx` |
 | `ConsumeInTx` / `AbandonConsumerInTx` | 把完整结果交给调用方自己的持久化，并在同一事务里落「已消费」 |
 | `RecordMeasurementInTx` / `GetUsage` | 只追加证据 + 唯一当前位置 + 差额结算 + 结算回执 |
 
@@ -36,8 +36,8 @@
   - `ErrRateLimited`：共享并发名额，自己会清。
   - `ErrBudget`：别人此刻正占着的上限，或一笔低于 hold 的结算就会腾出来的月桶。Harness 把它呈现为账号可处理的状态，网关无权替它宣判步骤已死。
   - `ErrState`：这一回合不归本次调用——别的 worker 正在派发，或它已终态。
-  另外 `endUndispatched` 只在本事务**确实把请求取消掉**时才放弃保留声明：否则一个已付费、尚未消费的结果会被标成 `abandoned` 而永远取不回来。准备阶段不需要补偿——`admit` 同事务，失败即整体回滚。执行失败后只有网关**自己证明了未受理**（请求回到 `prepared` 且 `retry_eligible`）才重试一次，`maxAttempts` 封顶。
-- **未结清的尝试永不重发**：请求处于 `dispatching` / `streaming` / `unknown` 时，同 `BindingKey` 再次 `Call` 直接返回 `ErrUnknown` 要求核实，不会「发一次看看到底受理没有」——那正是一次性许可要防的重复计费。`CallOutcome.RequestID` 在 `Call` 返回错误时**也会填**（`Dispatched` 同理），否则调用方无法说出要核实的是哪个请求。**已知缺口见下方「验证缺口」第 4 条：卡在 `dispatching` 的请求目前没有核实入口。**
+  另外 `endUndispatched` 只在本事务**确实把请求取消掉**时才放弃保留声明：否则一个已付费、尚未消费的结果会被标成 `abandoned` 而永远取不回来。准备阶段不需要补偿——`admit` 同事务，失败即整体回滚。底层单请求模式在网关**证明未受理**后可重试一次，`maxAttempts` 封顶。生产 `Call` 使用下述独立计量的对话容灾链，每次额外尝试创建自己的请求和预留，不改写上一笔未知费用。
+- **未结束传输的尝试不重复派发（底层单请求模式）**：请求处于 `dispatching` / `streaming` / `unknown` 时，同 `BindingKey` 再次 `Call` 直接返回 `ErrUnknown` 要求核实，不会「发一次看看到底受理没有」——那正是一次性许可要防的重复计费。`CallOutcome.RequestID` 在 `Call` 返回错误时**也会填**（`Dispatched` 同理），否则调用方无法说出要核实的是哪个请求。**已知缺口见下方「验证缺口」第 4 条：卡在 `dispatching` 的请求目前没有核实入口。**
 - **请求身份**：`(account_id, caller_service, caller_operation_id)` 唯一；`request_hash` 覆盖精确消息、工具 schema、model/price 快照、输出上限与媒体内容摘要，不含 epoch、临时 URL 与 trace。价格版本变化会产生新 hash，但**不会改写已有请求**。
 - **派发许可**：`llm_attempts.permit_digest` 全账号唯一，且 `permit_claimed_at` 只能由一次 `Execute` 置位；旧进程迟到或 worker 接管都领不到第二个许可。`Execute` 还会用 `request_hash` 核对调用方传入的载荷，不一致直接拒发。
 - **按冻结的部署发送**：`Execute` 在发送前用 `sameDeployment` 核对当前目录条目仍是准备时冻结的那个部署（catalog 版本、deployment key、provider、请求 model id、接受别名、价格版本与币种），不一致直接 `ErrConflict` **拒发**；线上请求体里的 model id 取自冻结快照而非当前配置。否则「改一次目录」就会把已按旧模型定价、定 hold 的请求发到另一个收费模型上——等结果回来再判协议错误，钱已经花了。
@@ -55,7 +55,7 @@
 
 ## Eino 模型出口
 
-`Service.NewEinoModel(ModelSession)` 返回实现 `model.ToolCallingChatModel` 的适配器：`Generate` / `Stream` 都只是把一次 `Call` 包成框架形状，`WithTools` 返回隔离配置而非改共享实例。框架重试、failover 与 Skill 模型覆盖不开放——真实重试只由协调层的 `RedispatchInTx` 控制，补偿规则与上面一致。
+`Service.NewEinoModel(ModelSession)` 返回实现 `model.ToolCallingChatModel` 的适配器：`Generate` / `Stream` 都只是把一次 `Call` 包成框架形状，`WithTools` 返回隔离配置而非改共享实例。框架重试、failover 与 Skill 模型覆盖不开放——真实重试只由 Gateway 协调层控制（对话容灾链或底层 `RedispatchInTx`），补偿规则与上面一致。
 
 `ModelSession` = `CallSession` + 三项框架侧配置：
 
@@ -75,6 +75,7 @@
 |---|---|
 | `DEEPSEEK_API_KEY` | DeepSeek 凭证；**只经环境变量注入**，不入库不入 git |
 | `AICODEWITH_API_KEY` | AiCodeWith 中转凭证（GPT-6 系列）；同上 |
+| `KRILL_AI_API_KEY` | Krill AI Openai 官渠凭证；配置后 GPT-6 对话优先走 Krill |
 | `CREATIVE_LLM_CATALOG` | 可选，覆盖内置目录的 JSON 文件路径 |
 | `CREATIVE_LLM_MONTHLY_LIMIT_MICROS` | 每账号月度费用上限（micros，默认 20_000_000 = 20 USD） |
 | `CREATIVE_LLM_MONTHLY_TOKEN_LIMIT` | 每账号月度 token 上限（默认 5_000_000） |
@@ -89,7 +90,7 @@
 - **路由**（`Catalog.route`）：按优先级取第一个已启用的部署；没配凭证的部署被禁用并带原因。所有部署都不可用时模型显示为不可用，原因取优先级最高的那个部署。管理后台将来在这一处接入数据库里的顺序与开关。
 - 请求在 `PrepareInTx` 时冻结路由选中的部署（`model_snapshot.deployment_key`）；派发、重新准入与执行都按冻结的部署取配置（`Catalog.Deployment`），优先级之后怎么变都不会把已准备的调用挪走；冻结的部署从目录里删掉时以 `ErrConflict` 拒绝，不发送。
 - 网关启动时要求**每个已启用的部署**都有适配器和凭证，而不只是当前排第一的那个。
-- 请求内换部署的故障切换、熔断、尝试级快照属于设计的第二步，接入第二家服务商时再做；本期每个模型只有一个部署。
+- 2026-10-10 起，生产对话 `Call` 按下述策略重试和切换；每个实际请求保留自己的部署/价格快照。Owner 明确要求暂不做熔断，每轮重新从最高优先级开始。
 
 `CREATIVE_LLM_CATALOG` 文件格式与内置目录同构：
 
@@ -107,7 +108,7 @@
 
 ### 内置目录
 
-内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-2026-10-09`，每个模型目前只有一个部署。DeepSeek 价格来源见
+内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-krill-2026-10-10`，GPT-6 模型依次尝试选择已配置凭证的 Krill、AiCodeWith 部署，DeepSeek 保持单部署。DeepSeek 价格来源见
 <https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个模型：
 
 | model_key | 供应商模型 | 思考模式 | tool_choice | 图片输入 |
@@ -118,7 +119,7 @@
 
 flash 的图片输入 2026-10-09 按实测开启：64–400 px 约 184 个输入 token，1600 px 起封顶约 994（3000 px 相同），在 `EstimateInputTokens` 每图 4096 的上界之内；证据见 `TestLiveDeepSeekFlashSeesAnImage`。v4-pro 保持关闭：发图只多 5 个 token，却照样描述了一张没收到的图。
 
-GPT-6 系列经 AiCodeWith 中转（`vendor_key=aicodewith`，`https://api.aicodewith.ai/v1`），走 **Responses 协议**（`openai_responses` 适配器）而不是 chat completions：OpenAI 文档写明 chat completions 不把推理带回后续轮次，多步工具调用会降质。请求固定 `store:false` + `include:["reasoning.encrypted_content"]` + `reasoning.context:"all_turns"`，加密推理条目随助手消息存入 `reasoning` 列、下一轮原样交回。推理只回给**产生它的同一部署、同一模型**：加密内容绑定上游组织，同一个模型换到另一家服务商会被 400 拒绝，而 400 不允许切换；换了部署就丢弃推理，只损失这一轮的连续性与缓存。DeepSeek 的明文推理与 GPT 的加密条目互不串用，DeepSeek 思考部署收到 GPT 轮次时 `reasoning_content` 置空。
+GPT-6 系列原有 AiCodeWith 部署经 AiCodeWith 中转（`vendor_key=aicodewith`，`https://api.aicodewith.ai/v1`），走 **Responses 协议**（`openai_responses` 适配器）而不是 chat completions：OpenAI 文档写明 chat completions 不把推理带回后续轮次，多步工具调用会降质。请求固定 `store:false` + `include:["reasoning.encrypted_content"]` + `reasoning.context:"all_turns"`，加密推理条目随助手消息存入 `reasoning` 列、下一轮原样交回。推理只回给**产生它的同一部署、同一模型**：加密内容绑定上游组织，同一个模型换到另一家服务商会被 400 拒绝，而 400 不允许切换；换了部署就丢弃推理，只损失这一轮的连续性与缓存。DeepSeek 的明文推理与 GPT 的加密条目互不串用，DeepSeek 思考部署收到 GPT 轮次时 `reasoning_content` 置空。
 
 | model_key | 推理强度 | 输入 / 缓存 / 输出（USD 每百万） | 上下文 / 最大输出 |
 |---|---|---|---|
@@ -132,11 +133,62 @@ GPT-6 系列经 AiCodeWith 中转（`vendor_key=aicodewith`，`https://api.aicod
 
 价格是 OpenAI 官方价（经 Artificial Analysis 2026-10-09 读取）。AiCodeWith 按「官方价 × 渠道折扣」扣费（订阅渠道约 1 折），便宜渠道被风控时自动切到更贵的渠道，所以目录按官方价记账，作为始终成立的上界；账面费用会高于中转实扣。中转未公开任何「处理前拒绝」的状态码，`UnacceptedStatuses` 为空。三个部署共用 `aicodewith/api` 限流键。
 
+### Krill AI 接入（2026-10-10）
+
+依据登录后的 [Openai 官渠教程](https://www.krill-code.com/app/tutorial?channel=Openai+%E5%AE%98%E6%B8%A0&client=api-code)、同页 OpenCode 配置和[模型广场](https://www.krill-code.com/app/pricing)：
+
+- `vendor_key=krill-ai`，部署键为 `krill-ai/codex/<model_key>`，API Base URL 为 `https://api.krill-code.net/codex/v1`；使用 Bearer 鉴权，凭证环境变量为 `KRILL_AI_API_KEY`。
+- 接入现有 `gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-astra` 模型，同名发送；复用 Responses 适配器，POST `/codex/v1/responses`，medium 推理、`store:false`、加密推理回传。`reasoning_context` 是部署可选扩展，Krill 留空不发送，AiCodeWith 继续设置 `all_turns`。
+- 模型广场给出 1.05M 上下文、128K 输出，目录沿用保守的 1M/128K；教程 OpenCode 示例统一写 272K，不用该客户端示例覆盖模型广场的能力表。
+- 两个密钥都配置时，新请求优先 Krill；没有 Krill 密钥时继续使用 AiCodeWith。已冻结的 AiCodeWith 请求仍使用原部署。超时、429、5xx 按下述对话容灾策略重试和切换，每次单独记账。历史文本与工具结果保留，其他部署的加密推理不发给 Krill。
+- 三个模型共享 `krill-ai/codex` 限流键（并发 4、每分钟 60）；查询、取消能力暂不声明。生图仍使用 AiCodeWith。
+
+平台费用继续采用**保守上界**，不是 Krill 钱包扣款镜像。登录价格表显示 Standard 渠道倍率 0.15，且钱包有单独的充值换算；平台不把折扣或钱包单位直接当 USD 结算。按未打折价格、Sol 的 >272K 长上下文档，以及非缓存输入可能包含的缓存写入上界记账：
+
+| model_key | 输入 / 缓存读取 / 输出（平台 USD 每百万 token） |
+|---|---|
+| `gpt-6.1-sol` | 5 / 0.4 / 15 |
+| `gpt-6-sol` | 5 / 0.8 / 15 |
+| `gpt-6-astra` | 12.5 / 2 / 50 |
+
+缓存写入包含于未命中输入，按较高输入单价保守计入，不重复相加。未启用 Fast / Ultrafast。若要精确映射钱包账单，应另行扩展阶梯价格、缓存写入分量与币种换算。
+
+在 API 与 creative-worker 的环境中配置密钥并重启两者即可启用；若设置了 `CREATIVE_LLM_CATALOG`，该文件会完全覆盖内置目录，需要同步增加 Krill 部署。不同线路可在自定义目录调整 `base_url`，不要把密钥写进目录文件。
+
+本次模拟协议测试覆盖路由优先级、缺失凭证、旧部署可恢复、路径与鉴权、JSON/SSE、工具调用、usage 和跨供应商历史隔离；真实供应商验收已于 2026-10-10 16:02（Asia/Shanghai）通过：
+
+```bash
+# 从项目工作区根目录运行；会调用真实供应商，测试账号预算上限 1 USD。
+set -a && . ./.env && set +a
+cd backend
+KRILL_AI_LIVE=1 go test ./internal/platform/llmgateway/ -run '^TestLiveKrill' -count=1 -v
+```
+
+实测 `TestLiveKrillModelsAndToolHistory` 全部通过：共 5 次请求，三个模型的非流式回答均返回匹配的模型 ID 和输入/输出用量；GPT-6.1 Sol 完成图片识别、流式工具调用及工具结果回传后的回答。主体耗时 85.83 秒，其中三个单轮回答分别为 56.49 / 11.87 / 5.46 秒。测试账号预算上限 1 USD，不代表实际消费 1 USD；未核对供应商钱包扣款。该用例允许模型不产生加密推理，因此不单独证明每轮均有非空加密推理回传。
+
+真实测试覆盖三个模型、图片与流式工具回合；仅有密钥不会触发，必须显式设置 `KRILL_AI_LIVE=1`。AiCodeWith 的真实测试固定选用其自身部署，不因 Krill 优先级而误测另一家。
+
 共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则目录加载直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
 
 **启用真实 Anthropic 部署前的前置项**：`provider_anthropic.go` 的 usage 映射没有独立的 cache-write 分量，而 Anthropic 对写入缓存单独计价——直接开一个真实部署会系统性少计该笔费用。必须先补第四个不重叠分量（及其价格配方）再启用；目录里当前没有任何 Anthropic 部署，`CREATIVE_LLM_CATALOG` 覆盖时也不要自行加。
 
 思考模式是**固定的部署参数**而非调用方参数：2026-09-11 实测确认，思考模式下带 `tool_choice` 会被供应商以 400 `Thinking mode does not support this tool_choice` 拒绝，因此该能力在目录里关掉、由 `CheckCapability` 在派发前拒绝，不浪费一次尝试去换这个结论。同时思考模式会把输出预算大量用在 reasoning 上，小 `max_tokens` 会直接 `finish_reason=length` 且正文为空。
+
+## 对话重试与供应商容灾（2026-10-10 owner 决策）
+
+本节取代此前“不确定结果不重试”的生产对话策略；生图任务不受本次调整影响。
+
+- 每轮模型调用从目录优先级最高的已启用部署开始，没有熔断或跨轮降级记忆。Krill → AiCodeWith，仅切换同一模型的部署。
+- 每家首次调用失败后，最多再重试 5 次，即每家最多 6 次；距离上次传输结束至少 5 秒后再派发，切换下一家也沿用该间隔。
+- HTTP 429、500/502/503/504、网络错误、超时、断流和上游响应失败可重试。401/402/403 直接跳到下一家；参数错误等不可恢复错误不反复发送。每次派发重新执行授权、运行资格、额度和限流检查；取消和截止时间会中断等待及后续派发。
+- 所有供应商尝试耗尽后返回 `ErrProvidersExhausted`，Agent 结束本轮并释放运行槽，显示“当前负载较高，请稍后尝试”。费用结算可继续为 unknown，不因此展示无限核实进度。
+- 耗尽有两种可区分的原因，错误同时包裹 `ErrProvidersExhausted` 与具体原因：后续尝试因月度额度放不下新预留而无法准入（包裹 `ErrBudget`，先尝试下一家，仍不行即结束，Agent 显示 `creative_llm_budget_exceeded`）；模型的所有部署都已禁用或从目录撤下、一次也没准入（包裹 `ErrUnavailable`，Agent 显示 `creative_model_unavailable`）。已撤下或禁用的部署在准入前跳过，不会让进行中的路线在重放时永久冲突。
+- **额度算术（默认配置下的已知限制）**：每次尝试按上界独立预留（输入上界 256K token、输出上界 128K token），未知结果的预留在核实前不释放。GPT-6 Astra 每次约 9–9.7 USD，Sol 经 Krill 每次约 3.2 USD，每次约 39 万 token；默认月度上限 20 USD / 500 万 token 下，连续 5xx 时 Astra 约第 3 次、Sol 约第 6 次就会因额度停止，到不了“每家 6 次再切换”。收紧预留和核实释放由计费整改 issue 处理。
+- `Build` 启用 `Config.ChatRetry`，低层 `New`/阶段端口仍可使用原有单请求协议。`llm_chat_routes` 冻结本轮部署顺序并指向最终成功请求；后续尝试采用由首请求和序号派生的稳定绑定。一次完整结果最多消费一次；已结束的对话调用重放不会重新购买尝试。
+- 每次网络尝试独立准入、冻结部署/价格、预留和记账。未知结果的请求在已确认本地传输结束后标为响应失败，原 attempt 的 unknown 和预算预留继续保留；`VerifyUnacceptedInTx` 接受这类“failed 但仍有 unknown attempt”的请求，核实后只释放预留，不会把它恢复成可派发。Agent 的运行结算按整个调用组汇总，重试后成功的运行仍会因被取代的 unknown 尝试显示待核实。重试可能重复产生上游费用，这是 owner 授权的新可用性策略；不会伪造“未受理”来释放旧预留。计费核实与清理仍由独立整改 issue 跟踪。
+- 仅有明确的本地传输结束记录才进入额外尝试。进程中断、正在派发的并发调用、无结束证据的历史 unknown 请求保持原有核实路径，不因升级自动重发。
+- 流式重试会清除失败尝试的正文预览；只有完整验证并落库的工具调用才交给 Agent 执行。跨部署时仍不传递另一家产生的加密推理。
+- 新增迁移 `0058_chat_failover`，以及请求的 `failure_http_status` 字段，用于保留具体 HTTP 错误码；没有 HTTP 应答的失败（超时、断连）记为 NULL。部署时先启动 API 完成迁移，再启动 creative-worker。
 
 ## 验证
 

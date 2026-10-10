@@ -53,18 +53,22 @@ LiteLLM 的标准流和工具碎片形式是兼容参考，具体参数仍以本
 | prepared → dispatching | 账号能力、调用方执行权、用途、同意、期限、限流都通过；短事务原子保存唯一attempt派发意图与消费许可摘要 |
 | dispatching → streaming | 原执行器观测到供应商响应；结果仍不完整 |
 | dispatching/streaming → succeeded | 完整且合法结果已持久；usage缺失可保留 settlement=unknown，不阻止读取已知结果 |
-| dispatching/streaming → unknown | 网络/进程中断、非可靠拒绝或无法证明结果；禁止再发请求 |
+| dispatching/streaming → unknown | 网络/进程中断、非可靠拒绝或无法证明结果；禁止重用原attempt许可 |
 | dispatching → prepared | 可靠证明未受理且无费用，记录attempt rejected/零核实证据并释放旧hold；仍在期限内、未取消/关闭且尝试未耗尽时保留原request身份待重新准入，prepared不等于当前已有额度 |
 | dispatching/streaming → failed | 已明确不可恢复的请求拒绝，或可靠未受理但取消/关闭/到期/尝试耗尽；核算按实际证据处理，模型内容拒答仍是完整result的refused finish_reason |
 | prepared → failed/cancelled | 不可恢复校验失败/截止/取消，尚未派发；释放未用额度 |
 | unknown → prepared | 查询可靠证明未受理且零费用，未取消/关闭、仍在期限内、尝试未耗尽；原attempt置rejected，释放旧hold，保存可重新准入标记，不生成新request/operation |
-| unknown → succeeded/failed | 获得完整结果则succeeded；已知不可重试拒绝，或未受理但已取消/关闭/到期/次数耗尽则failed并保存原因；没有可靠证据保持unknown |
+| unknown → succeeded/failed | 获得完整结果则succeeded；已知不可重试拒绝，或未受理但已取消/关闭/到期/次数耗尽则failed并保存原因；没有可靠证据保持unknown；生产对话容灾在已有本地传输结束及失败证据时可结束响应为failed，费用/attempt仍保留unknown，再以独立请求继续 |
 
 succeeded/failed/cancelled无新派发出边；只有上表明确的prepared恢复分支允许原身份再次派发。Harness按Gateway的retry_eligible/原因决定queued或结束，不把任意failed当可重试；unknown可在执行关闭后长期保持，但不再占Harness slot。request.closed_at表示调用方停止等待，不证明无费用；后续查询只补结果和核算。Cancel在prepared时原子终结；已dispatching/streaming/unknown时设置cancel_requested_at，尽力取消，按已知事实归并，不能将unknown强转无费cancelled。
 
 派发意图提交和真正发HTTP之间无法原子：事务成功后、发送前崩溃也按unknown核实，首期宁可产生可解释的未执行任务，也不重复潜在收费请求。仅原进程拿到成功COMMIT并持有一次性许可时才发出；COMMIT unknown不发送。Worker租约转移/旧进程迟到不能获得第二个许可；逻辑派发先于撤销视为已经外发，原调用可能完成，后续结果只按当前执行权决定是否用于工具。
 
-可靠未受理由具体适配器证据分类，不能把任意429/5xx/timeout等同未受理。最多2次实际尝试，只重试可证实未受理无费用的情况；不对冲、不静默降级、不自动切供应商。返回结果未知且供应商没有查询能力时提供“结束等待”，费用保持待核实。人工核实使用带来源的受信运维入口，不让摄影师直接提交cost=0。
+可靠未受理由具体适配器证据分类，不能把任意429/5xx/timeout等同未受理。人工核实使用带来源的受信运维入口，不让摄影师直接提交cost=0。
+
+2026-10-10 owner 修订生产对话策略：每轮按部署优先级开始，同一供应商首次调用后最多重试5次，每次距上次传输结束至少5秒，仍失败则尝试下一家同模型供应商；暂不实现熔断，不保留跨轮降级状态。429/5xx/网络超时与断流按该策略处理，凭证或余额拒绝直接尝试下一家，参数错误不重发。全部供应商耗尽后本轮失败并释放前台运行槽，提示“当前负载较高，请稍后尝试”，费用核实独立继续。
+
+逻辑对话由 `llm_chat_routes` 绑定多笔独立准入的请求，每次额外尝试具有自己的请求、预留、部署/价格快照和一次性许可；失败的未知费用证据保留，不能伪装未受理或复用已占用的预算。每次派发重新检查授权、预算、取消与deadline；流式失败预览在重试前清除，完整工具调用只消费一次。已结束结果按稳定绑定回放，不追加真实调用。进程中断或仍在派发、缺乏传输结束证据的请求不自动重发，升级前历史unknown继续沿用“结束等待”路径。生图不受本次对话策略调整影响。
 
 ## 4. 预算与核算
 
@@ -80,7 +84,7 @@ run_limit_micros必须来自服务端配置与摄影师允许上限的较小值�
 
 ### 未受理后的再次准入
 
-同request最多两次attempt；其reservation固定原budget_period/currency和价格，不因跨月重试搬走已预留的桶。每轮新模型请求才可按当前月份新建预留。旧attempt零核实并释放hold后，prepared请求的reservation处于released、retry_eligible=true；只是可申请，不保证一定执行。
+底层同request仍最多两次attempt（仅对已证实未受理的重新准入）；生产对话容灾的额外尝试使用独立request，不突破这个单请求约束。其reservation固定原budget_period/currency和价格，不因跨月重试搬走已预留的桶。每轮新模型请求才可按当前月份新建预留。旧attempt零核实并释放hold后，prepared请求的reservation处于released、retry_eligible=true；只是可申请，不保证一定执行。
 
 再次派发事务先锁分组/原预算桶，再锁run/request/reservation/attempt，确认最近attempt有可靠未受理零费用证据、无活动/unknown attempt、次数未满，且执行权/同意/期限仍有效。Rearm按固定请求的上界将remaining_hold从0恢复，检查月桶 `spent+reserved+新hold<=limit` 与跨月group总量，递增hold_generation；同事务增加预算reserved、创建下一attempt（保存reservation_generation）、写派发意图。任一失败整体回滚，不生成许可、不增加attempt次数。重复事务凭同generation/request状态回放已记录派发事实，不能领到第二个可消费许可；COMMIT unknown继续核实，不重领。
 

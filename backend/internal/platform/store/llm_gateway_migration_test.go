@@ -42,8 +42,8 @@ func TestLLMGatewayMigrationShapeAndLossyRollback(t *testing.T) {
 		WHERE table_schema='public' AND column_name='account_id' AND table_name LIKE 'llm\_%'`).Scan(&accountScoped); err != nil {
 		t.Fatal(err)
 	}
-	if accountScoped != 17 {
-		t.Fatalf("%d of 17 gateway business tables are account scoped", accountScoped)
+	if accountScoped != 18 {
+		t.Fatalf("%d of 18 gateway business tables are account scoped", accountScoped)
 	}
 	var platformAccountColumns int
 	if err := db.QueryRow(`

@@ -77,7 +77,7 @@ type responsesThinking struct {
 	Effort string `json:"effort"`
 	// Context asks for every earlier turn's reasoning to stay in view, which
 	// is the point of handing it back at all.
-	Context string `json:"context"`
+	Context string `json:"context,omitempty"`
 }
 
 type responsesText struct {
@@ -183,7 +183,7 @@ func (a *OpenAIResponses) encode(ctx context.Context, p ProviderRequest) ([]byte
 	}
 	if p.Model.ReasoningEffort != "" {
 		out.Include = []string{"reasoning.encrypted_content"}
-		out.Reasoning = &responsesThinking{Effort: p.Model.ReasoningEffort, Context: "all_turns"}
+		out.Reasoning = &responsesThinking{Effort: p.Model.ReasoningEffort, Context: p.Model.ReasoningContext}
 	}
 	if p.Chat.ResponseFormat == "json_object" {
 		out.Text = &responsesText{Format: responseFormat{Type: "json_object"}}

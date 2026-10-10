@@ -56,6 +56,7 @@ func TestResponsesProtocolProducesTheSameCompleteResult(t *testing.T) {
 		})
 		model := fixture.model(t, llmgateway.ProviderOpenAIResponses)
 		model.ReasoningEffort = "medium"
+		model.ReasoningContext = "all_turns"
 		sink := &recordingSink{}
 		result, err := invokeResponses(t, model, toolRequest(), stream, sink)
 		if err != nil {

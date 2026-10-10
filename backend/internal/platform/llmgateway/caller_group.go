@@ -74,6 +74,35 @@ func (s *Service) LockCallerGroupInTx(ctx context.Context, tx store.TxAccountSco
 	return views, nil
 }
 
+// CallerGroupRequestIDs lists every request the group admitted, without locks.
+// A logical chat turn may own several separately metered requests, so a caller
+// summarising what a group cost must read the group, not its own step links.
+func (s *Service) CallerGroupRequestIDs(ctx context.Context, scope store.AccountScope, caller, group string) ([]string, error) {
+	if caller == "" || group == "" {
+		return nil, ErrValidation
+	}
+	rows, err := scope.QueryPage(ctx, "llm_usage_reservations", "request_id", "caller_service=$2 AND caller_group_id=$3 AND request_id IS NOT NULL", []store.OrderBy{{Column: "id"}}, 1000, 0, caller, group)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 1000 {
+		return nil, fmt.Errorf("%w: caller group bound", ErrValidation)
+	}
+	return ids, nil
+}
+
 // AbandonCallerGroupResultsInTx releases this caller's completed-result retains
 // only after its application has closed the run in the same transaction. Unknown
 // and in-flight results remain available for accounting/reconciliation.
