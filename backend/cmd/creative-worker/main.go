@@ -87,6 +87,9 @@ func run() error {
 	if generation.Disabled != "" {
 		slog.Info("creative generation disabled", slog.String("reason", generation.Disabled))
 	}
+	if generation.Service != nil {
+		agent.SetGenerator(generation.Product)
+	}
 	handlers := append(media.Handlers(), agent.Handlers()...)
 	if generation.Service != nil {
 		handlers = append(handlers, generation.Service.Handlers()...)

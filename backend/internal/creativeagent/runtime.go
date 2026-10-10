@@ -34,7 +34,6 @@ const (
 
 var (
 	errToolLimit  = errors.New("creative run tool limit exceeded")
-	errModelLimit = errors.New("creative run model limit exceeded")
 	errToolDenied = errors.New("creative run tool is not allowed")
 	// errReadRefused is a read the run's authorisation does not reach. The
 	// model is told so in the tool result; it is not a failed run.
@@ -50,6 +49,7 @@ func runtimeToolEntries() []ToolEntry {
 		{Key: readCanvasTool, Version: 1, DisplayName: "读取画布", EffectClass: "read_only"},
 		{Key: readHistoryTool, Version: 1, DisplayName: "读取对话历史", EffectClass: "read_only"},
 		{Key: updatePlanTool, Version: 1, DisplayName: "更新计划", EffectClass: "read_only"},
+		{Key: editCanvasTool, Version: 1, DisplayName: "修改画布", EffectClass: "write", MaxImpact: 100},
 	}
 }
 
@@ -65,10 +65,18 @@ type runtimeHandler struct {
 	current   *currentStep
 	mu        sync.Mutex
 	resultErr error
+	// step is the journal row of the tool call in flight. Calls run one at a
+	// time, so a tool that writes can take its identity from here.
+	step string
 }
 
 var _ adk.ChatModelAgentMiddleware = (*runtimeHandler)(nil)
 
+func (h *runtimeHandler) toolStep() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.step
+}
 func (h *runtimeHandler) setResultError(err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -116,6 +124,12 @@ func (h *runtimeHandler) allowed(name string) bool {
 	if name == readAssetTool || name == readCanvasTool || name == readHistoryTool || name == updatePlanTool {
 		return true
 	}
+	if name == editCanvasTool {
+		return true
+	}
+	if name == setNodePromptTool || name == generateNodeTool {
+		return len(h.service.generationModels()) > 0
+	}
 	if name != loadSkillTool && name != readSkillTool && name != readResultTool {
 		return false
 	}
@@ -140,6 +154,11 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: name})
 	}
 	config.Tools = append(config.Tools, planTool{})
+	for _, name := range []string{editCanvasTool, setNodePromptTool, generateNodeTool} {
+		if h.allowed(name) {
+			config.Tools = append(config.Tools, &canvasTool{handler: h, name: name})
+		}
+	}
 	if h.allowed(readSkillTool) {
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: readSkillTool})
 	}
@@ -218,19 +237,15 @@ func (h *runtimeHandler) planInTx(ctx context.Context, tx store.TxAccountScope, 
 	if len(calls) == 0 {
 		return nil
 	}
-	count, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind='tool'", h.held.RunID)
-	if err != nil {
-		return err
-	}
-	if len(calls) > h.service.limits.ToolCallsPerTurn || count+int64(len(calls)) > int64(h.service.limits.ToolCalls) {
+	if len(calls) > h.service.limits.ToolCallsPerTurn {
 		// Keep the paid result consumed, but do not create executable plans beyond
-		// the remaining allowance. The failed model step records the rejected batch.
+		// one page. The failed model step records the rejected batch.
 		h.setResultError(errToolLimit)
-		_, err = tx.Update(ctx, "creative_agent_steps", "error_code='creative_tool_limit'", "id=$2", modelStep)
+		_, err := tx.Update(ctx, "creative_agent_steps", "error_code='creative_tool_limit'", "id=$2", modelStep)
 		return err
 	}
 	var ordinal int64
-	if err = tx.QueryRow(ctx, "creative_agent_runs", "next_step_ordinal", "id=$2", h.held.RunID).Scan(&ordinal); err != nil {
+	if err := tx.QueryRow(ctx, "creative_agent_runs", "next_step_ordinal", "id=$2", h.held.RunID).Scan(&ordinal); err != nil {
 		return err
 	}
 	now, err := tx.CreativeNow(ctx)
@@ -344,11 +359,22 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		readErr = strictArguments(args, &request)
 	}
 	if readErr == nil {
+		h.mu.Lock()
+		h.step = stepID
+		h.mu.Unlock()
 		result, readErr = read()
 	}
 	code := ""
+	var refusal *toolRefusal
 	switch {
 	case readErr == nil:
+	case errors.As(readErr, &refusal):
+		code = "creative_tool_refused"
+		raw, err := json.Marshal(map[string]any{"success": false, "code": code, "message": refusal.message})
+		if err != nil {
+			return "", err
+		}
+		result = string(raw)
 	// Each refusal says what is actually missing, so the model can tell the
 	// photographer instead of retrying or guessing the content.
 	case errors.Is(readErr, errReadRefused):

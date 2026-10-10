@@ -15,6 +15,10 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
+// maxSupplements bounds how many times the photographer can add input to one
+// waiting run. It was the old tool call count and keeps that number.
+const maxSupplements = 12
+
 func (s *Service) waitForInput(ctx context.Context, tx store.TxAccountScope, c controlledRun, reason string, now time.Time) error {
 	token, err := randomClaimToken()
 	if err != nil {
@@ -83,7 +87,7 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		if rowErr != nil {
 			return creativeops.Outcome{}, rowErr
 		}
-		if batches >= s.limits.ToolCalls {
+		if batches >= maxSupplements {
 			return creativeops.Outcome{}, ErrLimit
 		}
 		// The run resumes on its model only if something can still serve it.
@@ -129,7 +133,7 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 			seen[key] = true
 		}
 	}
-	rows, err := h.scope.QueryPage(ctx, "creative_run_inputs", "batch_ordinal,body", "run_id=$2 AND batch_ordinal>0", []store.OrderBy{{Column: "batch_ordinal"}, {Column: "ordinal"}}, h.service.limits.ToolCalls+1, 0, h.held.RunID)
+	rows, err := h.scope.QueryPage(ctx, "creative_run_inputs", "batch_ordinal,body", "run_id=$2 AND batch_ordinal>0", []store.OrderBy{{Column: "batch_ordinal"}, {Column: "ordinal"}}, maxSupplements+1, 0, h.held.RunID)
 	if err != nil {
 		return ctx, state, err
 	}
@@ -137,7 +141,7 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 	count := 0
 	for rows.Next() {
 		count++
-		if count > h.service.limits.ToolCalls {
+		if count > maxSupplements {
 			return ctx, state, ErrLimit
 		}
 		var batch int

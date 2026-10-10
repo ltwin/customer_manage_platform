@@ -242,7 +242,7 @@ const failures: Record<string, string> = {
   creative_model_capability_missing: '当前模型不支持这次请求，请换一个模型',
   creative_model_empty_result: '模型没有给出回答，请重试',
   creative_model_turn_limit: '已达到本次思考轮数上限',
-  creative_tool_limit: '已达到本次工具调用上限',
+  creative_tool_limit: '模型一次发起的工具调用过多，已停止',
   creative_tool_not_allowed: '模型调用了未授权的工具，已停止',
   creative_egress_revoked: '外发授权已撤销',
   creative_egress_required: '这次请求需要新的外发授权',

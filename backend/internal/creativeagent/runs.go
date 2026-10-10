@@ -466,9 +466,7 @@ func (s *Service) reserveInTx(ctx context.Context, tx store.TxAccountScope, runI
 		// One run is one caller group, so its whole ceiling is enforced across
 		// every turn it will make and cannot reset at a month boundary.
 		CallerGroupID: runID,
-		// Derived, not chosen: at most one request per model turn, each bounded
-		// by the run's own input and output ceilings.
-		GroupTokenLimit:      int64(s.limits.ModelTurns) * int64(s.limits.InputTextBytes+model.Capability.MaxOutputTokens),
+		// No group ceiling of its own: the account's monthly budget bounds it.
 		GroupDeadline:        deadline,
 		ModelKey:             model.ModelKey,
 		InputTokenUpperBound: int64(s.limits.InputTextBytes),

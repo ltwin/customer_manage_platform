@@ -7089,7 +7089,7 @@ components:
         skill_refs_per_instruction, skill_resource_files, skill_package_bytes,
         input_nodes, upstream_depth,
         attachments, model_result_bytes, tool_argument_bytes, tool_result_bytes,
-        tool_calls_per_turn, tool_calls, model_turns, run_duration_seconds,
+        tool_calls_per_turn, run_duration_seconds,
         image_preview_bytes, image_preview_count, image_preview_total_bytes]
       properties:
         version:
@@ -7117,9 +7117,11 @@ components:
         model_result_bytes: {type: integer}
         tool_argument_bytes: {type: integer}
         tool_result_bytes: {type: integer}
-        tool_calls_per_turn: {type: integer}
-        tool_calls: {type: integer}
-        model_turns: {type: integer}
+        tool_calls_per_turn:
+          type: integer
+          description: >-
+            一次模型回复里同时发起的工具调用上限，是存储分页而不是策略。一次运行调用多少次工具、
+            多少轮模型由模型自己决定，运行时长与账号预算是唯一的约束（creative-agent-6）。
         run_duration_seconds: {type: integer}
         image_preview_bytes: {type: integer, format: int64}
         image_preview_count: {type: integer}

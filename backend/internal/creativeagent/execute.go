@@ -341,13 +341,10 @@ func instructionOf(skill *creativeskill.Snapshot) string {
 	return joinInstruction(skill.Instructions)
 }
 
-// runTokenCeiling is the most one run may ever consume: one request per model
-// turn, each bounded by the run's own input ceiling and the model's output one.
-// It is derived rather than configured so it cannot drift from the limits the
-// run was created under.
-func runTokenCeiling(limits Limits, model llmgateway.ModelConfig) int64 {
-	return int64(limits.ModelTurns) * int64(limits.InputTextBytes+model.Capability.MaxOutputTokens)
-}
+// maxRunSteps is a storage bound on one run's journal, not a policy. How many
+// turns and tools a run takes is the model's decision; its duration and the
+// account budget are what stop it.
+const maxRunSteps = 100_000
 
 // stillRunnable re-reads the skill through the directory port, with no cache.
 // A version withdrawn between creating the run and dispatching it must stop the
@@ -630,13 +627,6 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 			}
 			bindingKey = turnBindingKey(held.RunID, existingOrdinal)
 			return nil
-		}
-		count, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind='model'", held.RunID)
-		if err != nil {
-			return err
-		}
-		if count >= int64(s.limits.ModelTurns) {
-			return errModelLimit
 		}
 		pending, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind='tool' AND state='prepared'", held.RunID)
 		if err != nil {
@@ -936,8 +926,6 @@ func failureCode(err error) string {
 		return "creative_run_interrupted"
 	case errors.Is(err, errToolLimit):
 		return "creative_tool_limit"
-	case errors.Is(err, errModelLimit):
-		return "creative_model_turn_limit"
 	case errors.Is(err, errToolDenied):
 		return "creative_tool_not_allowed"
 	case errors.Is(err, errEmptyAnswer):
@@ -993,7 +981,7 @@ func drainAgent(it *adk.AsyncIterator[*adk.AgentEvent]) error {
 }
 
 func (s *Service) settlementOfRun(ctx context.Context, scope store.AccountScope, runID, lastRequest string) string {
-	rows, err := scope.QueryPage(ctx, "creative_agent_steps", "llm_request_id,ordinal", "run_id=$2 AND kind='model'", []store.OrderBy{{Column: "ordinal"}}, s.limits.ModelTurns, 0, runID)
+	rows, err := scope.QueryPage(ctx, "creative_agent_steps", "llm_request_id,ordinal", "run_id=$2 AND kind='model'", []store.OrderBy{{Column: "ordinal"}}, maxRunSteps, 0, runID)
 	if err != nil {
 		return "unknown"
 	}

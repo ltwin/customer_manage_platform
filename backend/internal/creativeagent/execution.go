@@ -34,15 +34,14 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 	runtime := &runtimeHandler{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}, service: s, scope: scope, held: held, revisions: revisions, current: &current}
 	adapter, err := s.gateway.NewEinoModel(llmgateway.ModelSession{
 		CallSession: llmgateway.CallSession{
-			Scope:           scope,
-			Limits:          func(tx store.TxAccountScope) llmgateway.LimitView { return tx.LLMLimitView() },
-			CallerService:   callerService,
-			CallerGroupID:   held.RunID,
-			GroupTokenLimit: runTokenCeiling(s.limits, held.Model),
-			GroupDeadline:   held.Deadline,
-			ModelKey:        held.Model.ModelKey,
-			OutputLimit:     held.Model.Capability.MaxOutputTokens,
-			Deadline:        held.Deadline,
+			Scope:         scope,
+			Limits:        func(tx store.TxAccountScope) llmgateway.LimitView { return tx.LLMLimitView() },
+			CallerService: callerService,
+			CallerGroupID: held.RunID,
+			GroupDeadline: held.Deadline,
+			ModelKey:      held.Model.ModelKey,
+			OutputLimit:   held.Model.Capability.MaxOutputTokens,
+			Deadline:      held.Deadline,
 			// The last check, inside the transaction that records the dispatch
 			// intent. An authorisation withdrawn in a transaction that commits
 			// first stops the bytes; one withdrawn after is honestly too late.
@@ -84,9 +83,8 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 		Model:       adapter,
 		ToolsConfig: toolsConfig,
 		Handlers:    handlers,
-		// The framework's own ceiling is a second line of defence, never the
-		// budget: the run's persisted turn count is what actually bounds it.
-		MaxIterations: s.limits.ModelTurns,
+		// Not a policy: the run's duration and the account budget bound it.
+		MaxIterations: maxRunSteps,
 	}
 
 	execution.runtime = runtime

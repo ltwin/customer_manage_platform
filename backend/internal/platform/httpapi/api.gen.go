@@ -3711,7 +3711,6 @@ type CreativeAgentLimits struct {
 	InstructionSegments int `json:"instruction_segments"`
 	MessageBodyBytes    int `json:"message_body_bytes"`
 	ModelResultBytes    int `json:"model_result_bytes"`
-	ModelTurns          int `json:"model_turns"`
 	RunDurationSeconds  int `json:"run_duration_seconds"`
 	SkillPackageBytes   int `json:"skill_package_bytes"`
 
@@ -3721,10 +3720,11 @@ type CreativeAgentLimits struct {
 	// SkillResourceFiles 一个 Skill 版本的声明文件数上限，与导入侧同源，不是另写一份数字。
 	SkillResourceFiles int `json:"skill_resource_files"`
 	ToolArgumentBytes  int `json:"tool_argument_bytes"`
-	ToolCalls          int `json:"tool_calls"`
-	ToolCallsPerTurn   int `json:"tool_calls_per_turn"`
-	ToolResultBytes    int `json:"tool_result_bytes"`
-	UpstreamDepth      int `json:"upstream_depth"`
+
+	// ToolCallsPerTurn 一次模型回复里同时发起的工具调用上限，是存储分页而不是策略。一次运行调用多少次工具、 多少轮模型由模型自己决定，运行时长与账号预算是唯一的约束（creative-agent-6）。
+	ToolCallsPerTurn int `json:"tool_calls_per_turn"`
+	ToolResultBytes  int `json:"tool_result_bytes"`
+	UpstreamDepth    int `json:"upstream_depth"`
 
 	// Version 本次判定所依据的整套上限。新增一个维度同样要换号：按旧版本创建的运行 从未被某条上限判定过，用新集合重放它等于套用它没有同意过的规则。
 	Version string `json:"version"`

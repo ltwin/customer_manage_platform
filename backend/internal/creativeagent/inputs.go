@@ -186,7 +186,7 @@ func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope,
 		return err
 	}
 	if consentHas(consent, "canvas_metadata") {
-		canvas, err := readCanvasContext(ctx, tx, canvasID, 0, 0)
+		canvas, err := canvasSummary(ctx, tx, canvasID)
 		if err != nil {
 			return err
 		}

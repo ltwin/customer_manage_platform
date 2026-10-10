@@ -39,7 +39,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-5"
+const limitsVersion = "creative-agent-6"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -85,11 +85,11 @@ type Limits struct {
 	ModelResultBytes  int `json:"model_result_bytes"`
 	ToolArgumentBytes int `json:"tool_argument_bytes"`
 	ToolResultBytes   int `json:"tool_result_bytes"`
-	ToolCallsPerTurn  int `json:"tool_calls_per_turn"`
-	ToolCalls         int `json:"tool_calls"`
-	// ModelTurns counts every real model call, including summarisation and any
-	// sub-agent, not only the main ReAct rounds.
-	ModelTurns             int   `json:"model_turns"`
+	// ToolCallsPerTurn bounds one model answer's parallel calls. It is a
+	// storage page, not a policy: how many tools a run uses is the model's
+	// call. creative-agent-6 dropped the total call and model turn counts; a
+	// run is bounded by its duration and the account's budget.
+	ToolCallsPerTurn       int   `json:"tool_calls_per_turn"`
 	RunDurationSeconds     int   `json:"run_duration_seconds"`
 	ImagePreviewBytes      int64 `json:"image_preview_bytes"`
 	ImagePreviewCount      int   `json:"image_preview_count"`
@@ -121,10 +121,8 @@ func DefaultLimits() Limits {
 		ModelResultBytes:        256 << 10,
 		ToolArgumentBytes:       64 << 10,
 		ToolResultBytes:         64 << 10,
-		ToolCallsPerTurn:        4,
-		ToolCalls:               12,
-		ModelTurns:              13,
-		RunDurationSeconds:      300,
+		ToolCallsPerTurn:        64,
+		RunDurationSeconds:      1800,
 		ImagePreviewBytes:       2 << 20,
 		ImagePreviewCount:       8,
 		ImagePreviewTotalBytes:  12 << 20,
@@ -163,10 +161,13 @@ type ImageReader interface {
 }
 
 type Service struct {
-	images  ImageReader
-	gateway *llmgateway.Service
-	models  *llmgateway.Catalog
-	skills  SkillDirectory
+	images ImageReader
+	// generator is nil until composition binds node generation.
+	generator      Generator
+	generationWait time.Duration
+	gateway        *llmgateway.Service
+	models         *llmgateway.Catalog
+	skills         SkillDirectory
 	// tools lists deployed runtime capabilities; canvas tools remain in FND-08.
 	tools  []ToolEntry
 	limits Limits
@@ -185,7 +186,7 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 	if gateway == nil || models == nil || skills == nil {
 		return nil, errors.New("creative agent needs a gateway, a model catalog and a skill directory")
 	}
-	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), logger: slog.Default()}, nil
+	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), generationWait: generationWait, logger: slog.Default()}, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.

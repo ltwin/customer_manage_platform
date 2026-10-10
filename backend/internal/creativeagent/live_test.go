@@ -1,6 +1,7 @@
 package creativeagent
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -38,7 +39,6 @@ func TestCDeepSeekLiveHarness(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.service.limits.InputTextBytes = 4096
-	f.service.limits.ModelTurns = 1
 	f.queue()
 	conversation := f.conversation(f.alice, f.canvasID)
 	consent := f.consent(f.alice, conversation.ID)
@@ -64,4 +64,62 @@ func TestCDeepSeekLiveHarness(t *testing.T) {
 	}
 	assertRunReleased(t, f, run.ID)
 	t.Log("real Gateway → Eino → persisted assistant reply succeeded; redelivery did not create a second request")
+}
+
+// The real model must accept the tool schemas and use them in order from
+// plain words. Generation itself is stubbed: this spends chat tokens only.
+func TestLiveAssistantBuildsAndGenerates(t *testing.T) {
+	if os.Getenv("CREATIVE_AGENT_LIVE") != "1" || strings.TrimSpace(os.Getenv("AICODEWITH_API_KEY")) == "" {
+		t.Skip("explicit live acceptance not enabled")
+	}
+	const model = "gpt-6.1-sol"
+	f := setup(t)
+	catalog, err := llmgateway.DefaultCatalog(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := llmgateway.Build(llmgateway.Options{Catalog: catalog, MonthlyLimitMicros: 20_000_000, MonthlyTokenLimit: 5_000_000, Timeout: 2 * time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.service, err = NewService(gateway, catalog, f.skills); err != nil {
+		t.Fatal(err)
+	}
+	generator := &stubGenerator{}
+	f.service.SetGenerator(generator)
+	f.queue()
+	conversation := f.conversation(f.alice, f.canvasID)
+	consent := contextConsent(t, f, conversation.ID)
+	receipt, err := f.service.CreateRun(t.Context(), f.alice, command(t, map[string]any{
+		"conversation_id": conversation.ID, "model_key": model, "egress_consent_id": consent.ID,
+		"instruction": map[string]any{"schema_version": instructionSchemaVersion, "instruction_segments": []InstructionSegment{
+			{Type: "text", Text: "直接动手，不用再问我：新建一个文字节点写上「金色逆光、胶片颗粒」作为参考，再新建一个图片节点连上它，用 GPT Image 2 生成海边日出的逆光人像，16:9，高画质，4K，出 2 张。"}}},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var run Run
+	if err = json.Unmarshal(receipt.Outcome.Response, &run); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || got.State != RunSucceeded {
+		t.Fatalf("live run state=%s error=%s err=%v", got.State, got.ErrorCode, err)
+	}
+	var params string
+	if err = f.db.QueryRow(`SELECT parameters::text FROM creative_node_prompt_drafts WHERE account_id='agent-a' AND model_key='gpt-image-2'`).Scan(&params); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("parameters %s, generate calls %+v", params, generator.calls)
+	if len(generator.calls) != 1 || f.count("creative_nodes", "canvas_id=$1", f.canvasID) != 2 || f.count("creative_edges", "canvas_id=$1", f.canvasID) != 1 {
+		t.Fatal("the canvas was not built and generated as asked")
+	}
+	for _, want := range []string{`"16:9"`, `"high"`, `"4K"`, `2`} {
+		if !strings.Contains(params, want) {
+			t.Fatalf("parameters %s missing %s", params, want)
+		}
+	}
 }

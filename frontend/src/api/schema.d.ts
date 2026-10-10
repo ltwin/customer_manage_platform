@@ -2831,9 +2831,8 @@ export interface components {
             model_result_bytes: number;
             tool_argument_bytes: number;
             tool_result_bytes: number;
+            /** @description 一次模型回复里同时发起的工具调用上限，是存储分页而不是策略。一次运行调用多少次工具、 多少轮模型由模型自己决定，运行时长与账号预算是唯一的约束（creative-agent-6）。 */
             tool_calls_per_turn: number;
-            tool_calls: number;
-            model_turns: number;
             run_duration_seconds: number;
             /** Format: int64 */
             image_preview_bytes: number;

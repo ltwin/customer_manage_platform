@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,7 +35,7 @@ func TestRuntimeToolsArePersistedAndBounded(t *testing.T) {
 		rounds int
 		state  string
 		calls  int
-	}{{"answer", 1, RunSucceeded, 2}, {"loop", 20, RunFailed, 13}} {
+	}{{"answer", 1, RunSucceeded, 2}, {"many rounds are the model's call", 20, RunSucceeded, 21}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := setup(t)
 			f.queue()
@@ -63,7 +64,7 @@ func TestRuntimeToolsArePersistedAndBounded(t *testing.T) {
 			if got.State != tc.state || f.vendor.calls() != tc.calls {
 				t.Fatalf("state=%s code=%s calls=%d", got.State, got.ErrorCode, f.vendor.calls())
 			}
-			if n := f.count("creative_agent_steps", "run_id=$1 AND kind='tool'", run.ID); n == 0 || n > 12 {
+			if n := f.count("creative_agent_steps", "run_id=$1 AND kind='tool'", run.ID); n != tc.rounds {
 				t.Fatalf("plans=%d", n)
 			}
 			if err = f.work(f.alice, run.ID); err != nil {
@@ -154,7 +155,7 @@ func TestRuntimeRejectsToolRequestsBeforeAnyExecution(t *testing.T) {
 		code  string
 	}{
 		{"unknown", []llmgateway.ToolCall{{ID: "bad", Name: "shell", Arguments: json.RawMessage(`{}`)}}, "creative_tool_not_allowed"},
-		{"batch above four", []llmgateway.ToolCall{{ID: "1", Name: readResultTool, Arguments: json.RawMessage(`{}`)}, {ID: "2", Name: readResultTool, Arguments: json.RawMessage(`{}`)}, {ID: "3", Name: readResultTool, Arguments: json.RawMessage(`{}`)}, {ID: "4", Name: readResultTool, Arguments: json.RawMessage(`{}`)}, {ID: "5", Name: readResultTool, Arguments: json.RawMessage(`{}`)}}, "creative_tool_limit"},
+		{"batch above one page", oversizedBatch(), "creative_tool_limit"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := setup(t)
@@ -322,7 +323,7 @@ func TestRuntimeFinishingReleasesLaterUnclaimedReservations(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
-		_, err := f.service.gateway.ReserveInTx(t.Context(), tx, llmgateway.ReserveInput{CallerService: callerService, CallerOperationID: uuid.NewString(), CallerGroupID: run.ID, GroupTokenLimit: runTokenCeiling(f.service.limits, held.Model), GroupDeadline: held.Deadline, ModelKey: held.Model.ModelKey, InputTokenUpperBound: 100, OutputLimit: 100, ExpiresAt: held.Deadline})
+		_, err := f.service.gateway.ReserveInTx(t.Context(), tx, llmgateway.ReserveInput{CallerService: callerService, CallerOperationID: uuid.NewString(), CallerGroupID: run.ID, GroupDeadline: held.Deadline, ModelKey: held.Model.ModelKey, InputTokenUpperBound: 100, OutputLimit: 100, ExpiresAt: held.Deadline})
 		return err
 	})
 	if err != nil {
@@ -337,7 +338,15 @@ func TestRuntimeFinishingReleasesLaterUnclaimedReservations(t *testing.T) {
 	assertRunReleased(t, f, run.ID)
 }
 
-func TestRuntimeModelLimitUsesDurableCountNotPromptHash(t *testing.T) {
+func oversizedBatch() []llmgateway.ToolCall {
+	calls := make([]llmgateway.ToolCall, DefaultLimits().ToolCallsPerTurn+1)
+	for i := range calls {
+		calls[i] = llmgateway.ToolCall{ID: strconv.Itoa(i), Index: i, Name: readResultTool, Arguments: json.RawMessage(`{}`)}
+	}
+	return calls
+}
+
+func TestRuntimeModelStepsUseDurableCountNotPromptHash(t *testing.T) {
 	f := setup(t)
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
@@ -353,16 +362,13 @@ func TestRuntimeModelLimitUsesDurableCountNotPromptHash(t *testing.T) {
 	chat := llmgateway.ChatRequest{ContractVersion: llmgateway.ContractVersion, ModelKey: held.Model.ModelKey, Messages: []llmgateway.Message{{Role: llmgateway.RoleUser, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "相同输入"}}}}, OutputLimit: 100}
 	seen := map[string]bool{}
 	previous := ""
-	for i := 0; i < f.service.limits.ModelTurns; i++ {
+	for i := 0; i < 20; i++ {
 		id, _, err := f.service.prepareModelStep(t.Context(), f.alice, held, previous, chat)
 		if err != nil || seen[id] {
 			t.Fatalf("step %d: %s %v", i, id, err)
 		}
 		seen[id] = true
 		previous = id
-	}
-	if _, _, err = f.service.prepareModelStep(t.Context(), f.alice, held, previous, chat); !errors.Is(err, errModelLimit) {
-		t.Fatalf("14th turn: %v", err)
 	}
 }
 

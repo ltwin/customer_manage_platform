@@ -79,7 +79,7 @@ type checkpointStep struct {
 
 func (c *runCheckpoint) journal(ctx context.Context, tx store.TxAccountScope) ([]checkpointStep, error) {
 	h := c.runtime
-	limit := h.service.limits.ModelTurns + h.service.limits.ToolCalls
+	limit := maxRunSteps
 	rows, err := tx.QueryPage(ctx, "creative_agent_steps", "id,ordinal,kind,input_hash,parent_model_step_id,state,output",
 		"run_id=$2", []store.OrderBy{{Column: "ordinal"}}, limit+1, 0, h.held.RunID)
 	if err != nil {

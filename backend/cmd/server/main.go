@@ -243,6 +243,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if generation.Disabled != "" {
 		logger.Info("creative generation disabled", slog.String("reason", generation.Disabled))
 	}
+	if generation.Service != nil {
+		creativeAgent.SetGenerator(generation.Product)
+	}
 	creativeGeneration := generation.Product
 	handlers := append(creativeMedia.Handlers(), creativeAgent.Handlers()...)
 	if generation.Service != nil {
