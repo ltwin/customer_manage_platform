@@ -205,6 +205,9 @@ func (s *Service) endControlledRun(ctx context.Context, tx store.TxAccountScope,
 			return err
 		}
 	}
+	if err = s.answerOpenCallsInTx(ctx, tx, c.ID, code); err != nil {
+		return err
+	}
 	if err = settleBlocksInTx(ctx, tx, c.ID, state == RunSucceeded); err != nil {
 		return err
 	}

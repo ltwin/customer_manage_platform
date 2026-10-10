@@ -473,10 +473,10 @@ func strictArguments(raw string, out any) error {
 	d := json.NewDecoder(strings.NewReader(raw))
 	d.DisallowUnknownFields()
 	if err := d.Decode(out); err != nil {
-		return creativeops.ErrValidation
+		return errToolArguments
 	}
 	if err := d.Decode(new(any)); err != io.EOF {
-		return creativeops.ErrValidation
+		return errToolArguments
 	}
 	return nil
 }

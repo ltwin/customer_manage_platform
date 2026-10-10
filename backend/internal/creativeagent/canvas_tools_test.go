@@ -3,6 +3,7 @@ package creativeagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -140,9 +141,9 @@ func TestAssistantEditsTheCanvasThenGenerates(t *testing.T) {
 	}
 }
 
-// A canvas whose stored state disagrees with its history refuses every edit;
-// the run says so instead of inviting a retry that cannot succeed.
-func TestCorruptCanvasEndsRunWithIntegrityCode(t *testing.T) {
+// A canvas whose stored state disagrees with its history refuses every edit.
+// The model is told why, in words it can relay, and the run goes on.
+func TestCorruptCanvasIsExplainedToTheModel(t *testing.T) {
 	f := setup(t)
 	f.queue()
 	h := &runtimeHandler{service: f.service, scope: f.alice}
@@ -153,8 +154,13 @@ func TestCorruptCanvasEndsRunWithIntegrityCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := f.conversation(f.alice, f.canvasID)
+	var relayed string
 	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
-		return scriptedResult(r, call("edit", 0, editCanvasTool, `{"actions":[{"type":"add_node","key":"m","node_type":"text","text":"新增"}]}`)), nil
+		if n == 1 {
+			return scriptedResult(r, call("edit", 0, editCanvasTool, `{"actions":[{"type":"add_node","key":"m","node_type":"text","text":"新增"}]}`)), nil
+		}
+		relayed = toolResult(r, 0)
+		return scriptedResult(r), nil
 	}
 	run, err := f.startRun(f.alice, c.ID, contextConsent(t, f, c.ID).ID, InstructionSegment{Type: "text", Text: "加一个文字节点"})
 	if err != nil {
@@ -164,7 +170,84 @@ func TestCorruptCanvasEndsRunWithIntegrityCode(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
-	if err != nil || got.State != RunFailed || got.ErrorCode != "creative_canvas_integrity" {
+	if err != nil || got.State != RunSucceeded {
 		t.Fatalf("run=%+v %v", got, err)
+	}
+	if !strings.Contains(relayed, "画布数据校验未通过") || f.count("creative_agent_steps", "tool_key=$1 AND error_code='creative_tool_refused'", editCanvasTool) != 1 {
+		t.Fatalf("relayed %q", relayed)
+	}
+}
+
+// A batch the canvas turns down, or arguments outside the schema, come back
+// as a reason the model can correct, not as a bare failure.
+func TestRefusedEditSaysWhy(t *testing.T) {
+	f := setup(t)
+	h := &runtimeHandler{service: f.service, scope: f.alice}
+	out, err := h.editCanvas(t.Context(), f.canvasID, "seed-node", `{"actions":[{"type":"add_node","key":"n","node_type":"text","text":"正文"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := out.(map[string]any)["created"].(map[string]string)["n"]
+	for _, tc := range []struct{ args, reason string }{
+		{fmt.Sprintf(`{"actions":[{"type":"resize_node","node_id":%q,"width":50,"height":200}]}`, node), "160 到 1200"},
+		{`{"actions":[{"type":"add_node","key":"m","node_type":"text"}],"layout":"grid"}`, "参数不符合工具说明"},
+	} {
+		_, err = h.editCanvas(t.Context(), f.canvasID, "seed-"+tc.reason, tc.args)
+		var refusal *toolRefusal
+		if !errors.As(asRefusal(err), &refusal) || !strings.Contains(refusal.message, tc.reason) {
+			t.Fatalf("%s: %v", tc.args, err)
+		}
+	}
+}
+
+// brokenGenerator fails the way an outage does: nothing the model can act on.
+type brokenGenerator struct{ stubGenerator }
+
+func (*brokenGenerator) GenerateNode(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error) {
+	return creativegeneration.AgentGenerationResult{}, errors.New("generation backend unreachable")
+}
+
+// A call cut short by a failed run still gets a result, so the next turn
+// keeps the run in its history and the model knows the call did not finish.
+func TestInterruptedCallStaysInHistory(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	f.service.SetGenerator(&brokenGenerator{})
+	c := f.conversation(f.alice, f.canvasID)
+	consent := contextConsent(t, f, c.ID)
+	var remembered string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n == 1 {
+			return scriptedResult(r, call("gen", 0, generateNodeTool, `{"node_id":"cwnode_x","draft_revision":1}`)), nil
+		}
+		for _, m := range r.Chat.Messages {
+			for _, b := range m.Blocks {
+				if strings.Contains(b.Text, "creative_tool_interrupted") {
+					remembered = b.Text
+				}
+			}
+		}
+		return scriptedResult(r), nil
+	}
+	first, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "生成这张图"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.service.ReadRun(t.Context(), f.alice, first.ID)
+	if err != nil || got.State != RunFailed || got.ErrorCode != "creative_run_failed" {
+		t.Fatalf("run=%+v %v", got, err)
+	}
+	second, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "刚才怎么了"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(remembered, `"run_error_code":"creative_run_failed"`) || !strings.Contains(remembered, "效果未确认") {
+		t.Fatalf("history %q", remembered)
 	}
 }

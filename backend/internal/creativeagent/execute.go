@@ -896,12 +896,97 @@ func (s *Service) closeRunInTx(ctx context.Context, tx store.TxAccountScope, exp
 			return false, err
 		}
 	}
+	if err := s.answerOpenCallsInTx(ctx, tx, runID, code); err != nil {
+		return false, err
+	}
 	if err := settleBlocksInTx(ctx, tx, runID, state == RunSucceeded); err != nil {
 		return false, err
 	}
 	_, err = appendRunEventInTx(ctx, tx, runID, "run.finished",
 		map[string]string{"state": state, "error_code": code, "settlement_state": settlement})
 	return err == nil, err
+}
+
+// interruptedCall is the result a call gets when its run ended before it
+// returned. Whether a write landed is not known here, so it says so.
+const interruptedCall = "这次调用因运行中断没有返回结果，效果未确认；如果它会修改画布，继续之前请先读取画布核对"
+
+// answerOpenCallsInTx answers each call of the run's last tool round that
+// never got a result. A call without one drops the whole run from the next
+// turn's history, and the model would not know it tried, or that it was cut
+// short. Earlier rounds were answered in full, or the model could not have
+// spoken again.
+func (s *Service) answerOpenCallsInTx(ctx context.Context, tx store.TxAccountScope, runID, code string) error {
+	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "conversation_id,ordinal,source_step_id,body",
+		"run_id=$2 AND role='assistant' AND status='complete' AND body ? 'tool_calls'", []store.OrderBy{{Column: "ordinal", Desc: true}}, 1, 0, runID)
+	if err != nil {
+		return err
+	}
+	var conversationID string
+	var ordinal int64
+	var modelStep *string
+	var raw []byte
+	found := rows.Next()
+	if found {
+		err = rows.Scan(&conversationID, &ordinal, &modelStep, &raw)
+	}
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	if err = rows.Err(); err != nil || !found {
+		return err
+	}
+	var round Body
+	if err = json.Unmarshal(raw, &round); err != nil {
+		return err
+	}
+	rows, err = tx.QueryPage(ctx, "creative_agent_messages", "body", "run_id=$2 AND role='tool' AND ordinal>$3",
+		[]store.OrderBy{{Column: "ordinal"}}, len(round.ToolCalls), 0, runID, ordinal)
+	if err != nil {
+		return err
+	}
+	answered := map[string]bool{}
+	for rows.Next() {
+		var body Body
+		if err = rows.Scan(&raw); err != nil {
+			break
+		}
+		if err = json.Unmarshal(raw, &body); err != nil {
+			break
+		}
+		answered[body.ToolCallID] = true
+	}
+	rows.Close()
+	if err == nil {
+		err = rows.Err()
+	}
+	if err != nil {
+		return err
+	}
+	for index, call := range round.ToolCalls {
+		if answered[call.ID] {
+			continue
+		}
+		// The call's own step makes the answer a replay rather than a second
+		// message if this close is ever repeated.
+		var step string
+		if modelStep != nil {
+			err = tx.QueryRow(ctx, "creative_agent_steps", "id", "run_id=$2 AND parent_model_step_id=$3 AND tool_call_index=$4", runID, *modelStep, index).Scan(&step)
+			if err != nil && !errors.Is(err, store.ErrNoRows) {
+				return err
+			}
+		}
+		result, err := json.Marshal(map[string]any{"success": false, "code": "creative_tool_interrupted", "run_error_code": code, "message": interruptedCall})
+		if err != nil {
+			return err
+		}
+		if _, err = s.appendMessageInTx(ctx, tx, conversationID, newMessage{Role: "tool", Status: "complete", RunID: runID, SourceStepID: step,
+			Body: Body{Blocks: []Block{{Type: "text", Text: string(result)}}, ToolCallID: call.ID, ToolName: call.Name}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func nullableText(value string) any {

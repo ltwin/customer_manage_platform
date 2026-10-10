@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -75,8 +76,18 @@ func refuseTool(format string, args ...any) error {
 	return &toolRefusal{message: fmt.Sprintf(format, args...)}
 }
 
-// asRefusal turns a failure the model can act on into words.
+// errToolArguments is a call whose arguments do not fit the tool's schema.
+var errToolArguments = fmt.Errorf("%w: tool arguments do not match the schema", creativeops.ErrValidation)
+
+// asRefusal turns a failure the model can act on into words. Canvas commands
+// run in one transaction, so a refused command changed nothing.
 func asRefusal(err error) error {
+	switch {
+	case errors.Is(err, errToolArguments):
+		return refuseTool("参数不符合工具说明：须是一个 JSON 对象，且只能使用说明里列出的字段")
+	case errors.Is(err, creativecanvas.ErrGraphIntegrity):
+		return refuseTool("画布数据校验未通过，本次修改没有生效。这不是参数问题，重试也不会成功；请如实告诉摄影师，并请其联系我们处理")
+	}
 	var generation *creativegeneration.Refusal
 	if errors.As(creativegeneration.AgentRefusal(err), &generation) {
 		return &toolRefusal{message: generation.Message}
@@ -177,6 +188,11 @@ func (t *canvasTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opt
 	default:
 		out, err = h.generateNode(ctx, canvasID, seed, raw)
 	}
+	if errors.Is(err, creativecanvas.ErrGraphIntegrity) {
+		// The model is told; whoever repairs the canvas has to hear it too.
+		h.service.logger.ErrorContext(ctx, "creative canvas failed its integrity check",
+			slog.String("run_id", h.held.RunID), slog.String("canvas_id", canvasID), slog.String("tool", t.name))
+	}
 	if err != nil {
 		return "", asRefusal(err)
 	}
@@ -275,9 +291,21 @@ func (h *runtimeHandler) editCanvas(ctx context.Context, canvasID, seed, raw str
 	}
 	_, replayed, err := h.applyOnce(ctx, canvasID, toolOperation(seed), build, creativecanvas.ApplyCommands)
 	if err != nil {
-		return nil, err
+		return nil, editRefusal(err)
 	}
 	return map[string]any{"success": true, "created": created, "replayed": replayed}, nil
+}
+
+// editRefusal says why the canvas turned a batch down. The batch is one
+// command, so none of its actions were applied.
+func editRefusal(err error) error {
+	switch {
+	case errors.Is(err, creativeops.ErrValidation):
+		return refuseTool("画布拒绝了这批动作，全部未生效：缩放时宽度须在 160 到 1200 之间、高度不小于 100，分组不能缩放；坐标绝对值不超过 10000000；连线不能成环。请重新读取画布核对后修正")
+	case errors.Is(err, creativecanvas.ErrLimit):
+		return refuseTool("超出画布上限，这批动作全部未生效：画布最多 500 个节点、2000 条连线，一次修改最多牵动 100 个对象")
+	}
+	return err
 }
 
 // canvasActions translates the model's vocabulary into canvas commands against
