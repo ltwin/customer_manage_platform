@@ -307,7 +307,7 @@ func editRefusal(err error) error {
 	var public creativeops.Public
 	switch {
 	case errors.As(err, &public):
-		return err
+		return refuseTool("这批动作全部未生效：%s", public.PublicMessage())
 	case errors.Is(err, creativeops.ErrValidation):
 		return refuseTool("画布拒绝了这批动作，全部未生效：缩放时宽度须在 160 到 1200 之间、高度不小于 100，分组不能缩放；坐标绝对值不超过 10000000；连线不能成环。请重新读取画布核对后修正")
 	case errors.Is(err, creativecanvas.ErrLimit):
@@ -350,6 +350,7 @@ func canvasActions(canvas creativecanvas.Canvas, in []canvasAction, created map[
 		return &creativecontent.Payload{Body: &body}, nil
 	}
 	var out []creativecanvas.Action
+	added := map[string]string{} // nodes this call adds, by type key
 	placed := 0
 	for index, a := range in {
 		i := index + 1
@@ -359,6 +360,7 @@ func canvasActions(canvas creativecanvas.Canvas, in []canvasAction, created map[
 				return nil, refuseTool("第 %d 个动作：不支持的节点类型 %q", i, a.NodeType)
 			}
 			action := creativecanvas.Action{Type: "add_node", NodeID: created[a.Key], TypeKey: "core." + a.NodeType}
+			added[action.NodeID] = action.TypeKey
 			if a.Title != nil {
 				action.Title = *a.Title
 			}
@@ -408,7 +410,11 @@ func canvasActions(canvas creativecanvas.Canvas, in []canvasAction, created map[
 			if err != nil {
 				return nil, err
 			}
-			if n, ok := nodes[id]; ok && n.TypeKey != "core.text" {
+			kind, ok := added[id]
+			if !ok {
+				kind = nodes[id].TypeKey
+			}
+			if kind != "" && kind != "core.text" {
 				return nil, refuseTool("第 %d 个动作：节点 %s 不是文字节点", i, id)
 			}
 			payload, err := text(i, a.Text)

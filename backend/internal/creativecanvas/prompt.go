@@ -37,12 +37,21 @@ type SavePromptInput struct {
 
 func SaveNodePrompt(ctx context.Context, scope store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
 	return run(ctx, scope, "canvas.save_prompt", c, func(v SavePromptInput) error {
-		if v.CanvasID == "" || v.NodeID == "" || utf8.RuneCountInString(v.Text) > 32000 || len(v.References) > 50 || len(v.ActionKey) > 100 || len(v.ModelKey) > 200 || len(v.Parameters) > 8192 {
-			return creativeops.ErrValidation
+		switch {
+		case v.CanvasID == "" || v.NodeID == "":
+			return creativeops.Explain(creativeops.ErrValidation, "缺少画布或节点")
+		case utf8.RuneCountInString(v.Text) > 32000:
+			return creativeops.Explain(creativeops.ErrValidation, "提示词不能超过 32000 字")
+		case len(v.References) > 50:
+			return creativeops.Explain(creativeops.ErrValidation, "一个提示词最多 50 个参考")
+		case len(v.ActionKey) > 100 || len(v.ModelKey) > 200:
+			return creativeops.Explain(creativeops.ErrValidation, "动作标识最长 100 个字符，模型标识最长 200 个字符")
+		case len(v.Parameters) > 8192:
+			return creativeops.Explain(creativeops.ErrValidation, "生成参数不能超过 8KB")
 		}
 		var parameters map[string]any
 		if err := json.Unmarshal(v.Parameters, &parameters); err != nil || parameters == nil {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "生成参数须是一个 JSON 对象")
 		}
 		return nil
 	}, func(ctx context.Context, tx store.TxAccountScope, v SavePromptInput) (creativeops.Outcome, error) {
@@ -53,7 +62,7 @@ func SaveNodePrompt(ctx context.Context, scope store.AccountScope, c creativeops
 			return err
 		}
 		if _, ok := f["expected_draft_revision"]; !ok {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "需要 expected_draft_revision，还没有草稿时传 null")
 		}
 		return nil
 	})
@@ -103,8 +112,11 @@ func savePromptInTx(ctx context.Context, tx store.TxAccountScope, v SavePromptIn
 		return creativeops.Outcome{}, ErrNotFound
 	}
 	d, known := definition(n.TypeKey)
-	if !known || d.SchemaVersion != n.TypeVersion || d.PromptMode == "unavailable" {
-		return creativeops.Outcome{}, creativeops.ErrValidation
+	if !known || d.SchemaVersion != n.TypeVersion {
+		return creativeops.Outcome{}, unsupportedType(n)
+	}
+	if d.PromptMode == "unavailable" {
+		return creativeops.Outcome{}, creativeops.Explain(creativeops.ErrValidation, "%s 节点 %s 不能写提示词", n.TypeKey, n.ID)
 	}
 	existing, err := readPrompt(ctx, tx, canvas.ID, n.ID)
 	if err != nil {
@@ -128,21 +140,19 @@ func savePromptInTx(ctx context.Context, tx store.TxAccountScope, v SavePromptIn
 	slots := map[string]bool{}
 	for _, source := range v.References {
 		i := inputFromSource(source)
-		if i.Slot != "reference" || i.Role != "reference" || i.Ordinal < 0 || (i.SourceNodeID == nil) == (i.ContentRevisionID == nil) {
-			return creativeops.Outcome{}, creativeops.ErrValidation
+		if err := validReference(i, slots); err != nil {
+			return creativeops.Outcome{}, err
 		}
-		key := string(creativegraph.Canonical([]any{i.Slot, i.Ordinal}))
-		if slots[key] {
-			return creativeops.Outcome{}, creativeops.ErrValidation
-		}
-		slots[key] = true
 		if i.SourceNodeID != nil {
 			source, err := e.node(*i.SourceNodeID, "data")
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			if !hasPorts(source.TypeKey) || !hasPorts(n.TypeKey) {
-				return creativeops.Outcome{}, creativeops.ErrValidation
+			if !hasPorts(n.TypeKey) {
+				return creativeops.Outcome{}, noPorts(n)
+			}
+			if !hasPorts(source.TypeKey) {
+				return creativeops.Outcome{}, noPorts(source)
 			}
 		} else {
 			if _, err := creativecontent.RequireUsable(ctx, tx, *i.ContentRevisionID, "display"); err != nil {

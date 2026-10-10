@@ -321,11 +321,11 @@ func (a *Action) UnmarshalJSON(raw []byte) error {
 	type actionAlias Action
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return creativeops.ErrValidation
+		return creativeops.Explain(creativeops.ErrValidation, "每个动作须是一个 JSON 对象")
 	}
 	var kind string
 	if err := json.Unmarshal(fields["type"], &kind); err != nil {
-		return creativeops.ErrValidation
+		return creativeops.Explain(creativeops.ErrValidation, "动作缺少字符串类型的 type")
 	}
 	allowedByType := map[string]string{
 		"add_node":  "node_id type_key title x y parent_id asset content",
@@ -339,21 +339,24 @@ func (a *Action) UnmarshalJSON(raw []byte) error {
 	if kind == "add_node" || kind == "move_node" {
 		for _, key := range []string{"x", "y"} {
 			if _, ok := fields[key]; !ok {
-				return creativeops.ErrValidation
+				return creativeops.Explain(creativeops.ErrValidation, "%s 动作需要 x 和 y", kind)
 			}
 		}
 	}
 	list, ok := allowedByType[kind]
 	if !ok {
-		return creativeops.ErrValidation
+		return creativeops.Explain(creativeops.ErrValidation, "不支持的动作类型 %q", kind)
 	}
 	allowed := map[string]bool{"type": true}
 	for _, key := range strings.Fields(list) {
 		allowed[key] = true
 	}
 	for key, value := range fields {
-		if !allowed[key] || string(value) == "null" && key != "parent_id" {
-			return creativeops.ErrValidation
+		if !allowed[key] {
+			return creativeops.Explain(creativeops.ErrValidation, "%s 动作不接受字段 %q，可用字段：%s", kind, key, list)
+		}
+		if string(value) == "null" && key != "parent_id" {
+			return creativeops.Explain(creativeops.ErrValidation, "%s 动作的字段 %q 不能为 null", kind, key)
 		}
 	}
 	var value actionAlias

@@ -184,14 +184,20 @@ func TestCorruptCanvasIsExplainedToTheModel(t *testing.T) {
 func TestRefusedEditSaysWhy(t *testing.T) {
 	f := setup(t)
 	h := &runtimeHandler{service: f.service, scope: f.alice}
-	out, err := h.editCanvas(t.Context(), f.canvasID, "seed-node", `{"actions":[{"type":"add_node","key":"n","node_type":"text","text":"正文"}]}`)
+	out, err := h.editCanvas(t.Context(), f.canvasID, "seed-node", `{"actions":[{"type":"add_node","key":"n","node_type":"text","text":"正文"},{"type":"add_node","key":"o","node_type":"text"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	node := out.(map[string]any)["created"].(map[string]string)["n"]
+	created := out.(map[string]any)["created"].(map[string]string)
+	node, other := created["n"], created["o"]
 	for _, tc := range []struct{ args, reason string }{
-		{fmt.Sprintf(`{"actions":[{"type":"resize_node","node_id":%q,"width":50,"height":200}]}`, node), node + "：宽度须在 160 到 1200"},
+		{fmt.Sprintf(`{"actions":[{"type":"resize_node","node_id":%q,"width":50,"height":200}]}`, node), "全部未生效：节点 " + node + "：宽度须在 160 到 1200"},
 		{`{"actions":[{"type":"add_node","key":"m","node_type":"text"}],"layout":"grid"}`, "参数不符合工具说明"},
+		{fmt.Sprintf(`{"actions":[{"type":"connect","source_node_id":%q,"target_node_id":%q}]}`, node, node), node + " 不能连到自己"},
+		{fmt.Sprintf(`{"actions":[{"type":"connect","source_node_id":%[1]q,"target_node_id":%[2]q},{"type":"connect","source_node_id":%[1]q,"target_node_id":%[2]q}]}`, node, other), "已经有连线"},
+		{fmt.Sprintf(`{"actions":[{"type":"move_node","node_id":%q,"x":1e8,"y":0}]}`, node), "第 1 个动作：坐标和位移的绝对值不能超过 10000000"},
+		{fmt.Sprintf(`{"actions":[{"type":"move_node","node_id":%q,"x":0,"y":0},{"type":"update_node","node_id":%q,"title":%q}]}`, node, node, strings.Repeat("长", 201)), "第 2 个动作：标题不能超过 200 字"},
+		{`{"actions":[{"type":"add_node","key":"p","node_type":"image"},{"type":"set_text","node_id":"p","text":"字"}]}`, "第 2 个动作：节点 "},
 	} {
 		_, err = h.editCanvas(t.Context(), f.canvasID, "seed-"+tc.reason, tc.args)
 		var public creativeops.Public

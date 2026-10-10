@@ -48,12 +48,24 @@ func ApplyCommands(ctx context.Context, scope store.AccountScope, command creati
 	})
 }
 func validateBatch(v BatchInput) error {
-	if v.CanvasID == "" || len(v.Actions) == 0 || len(v.Actions) > 100 || len(v.ReadSet) > 5000 || len(v.ChangeGroupID) > 100 {
-		return creativeops.ErrValidation
+	switch {
+	case v.CanvasID == "":
+		return creativeops.Explain(creativeops.ErrValidation, "缺少画布")
+	case len(v.Actions) == 0 || len(v.Actions) > 100:
+		return creativeops.Explain(creativeops.ErrValidation, "一次需要 1 到 100 个动作")
+	case len(v.ReadSet) > 5000 || len(v.ChangeGroupID) > 100:
+		return creativeops.Explain(creativeops.ErrValidation, "读取集合最多 5000 项，变更分组标识最长 100 个字符")
 	}
-	for _, a := range v.Actions {
-		if !validPoint(a.X, a.Y) || !validPoint(a.DX, a.DY) || len(a.NodeIDs) > 100 || utf8.RuneCountInString(a.Title) > 200 || utf8.RuneCountInString(a.Intent) > 2000 {
-			return creativeops.ErrValidation
+	for i, a := range v.Actions {
+		switch {
+		case !validPoint(a.X, a.Y) || !validPoint(a.DX, a.DY):
+			return creativeops.Explain(creativeops.ErrValidation, "第 %d 个动作：坐标和位移的绝对值不能超过 10000000", i+1)
+		case len(a.NodeIDs) > 100:
+			return creativeops.Explain(creativeops.ErrValidation, "第 %d 个动作：一次最多选 100 个节点", i+1)
+		case utf8.RuneCountInString(a.Title) > 200:
+			return creativeops.Explain(creativeops.ErrValidation, "第 %d 个动作：标题不能超过 200 字", i+1)
+		case utf8.RuneCountInString(a.Intent) > 2000:
+			return creativeops.Explain(creativeops.ErrValidation, "第 %d 个动作：意图说明不能超过 2000 字", i+1)
 		}
 	}
 	return nil
@@ -161,7 +173,7 @@ func validateReadSet(reads []ObjectRead, required map[string]map[string]bool, id
 	by := map[string]ObjectRead{}
 	for _, r := range reads {
 		if _, ok := by[r.ID]; ok {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "读取集合里 %s 出现了不止一次", r.ID)
 		}
 		by[r.ID] = r
 	}
@@ -172,12 +184,12 @@ func validateReadSet(reads []ObjectRead, required map[string]map[string]bool, id
 		}
 		r, ok := by[id]
 		if !ok || r.Kind != ident.Kind {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "修改 %s 之前要先读取它，请重新读取画布", id)
 		}
 		if ident.Kind == "node" {
 			if fields["placement"] {
 				if r.PlacementRevision < 1 {
-					return creativeops.ErrValidation
+					return unreadRevision(id)
 				}
 				if r.PlacementRevision != ident.P {
 					return ErrVersionConflict
@@ -185,7 +197,7 @@ func validateReadSet(reads []ObjectRead, required map[string]map[string]bool, id
 			}
 			if fields["data"] {
 				if r.DataRevision < 1 {
-					return creativeops.ErrValidation
+					return unreadRevision(id)
 				}
 				if r.DataRevision != ident.D {
 					return ErrVersionConflict
@@ -193,7 +205,7 @@ func validateReadSet(reads []ObjectRead, required map[string]map[string]bool, id
 			}
 		} else {
 			if r.Revision < 1 {
-				return creativeops.ErrValidation
+				return unreadRevision(id)
 			}
 			if r.Revision != ident.D {
 				return ErrVersionConflict
@@ -202,22 +214,28 @@ func validateReadSet(reads []ObjectRead, required map[string]map[string]bool, id
 	}
 	return nil
 }
+func unreadRevision(id string) error {
+	return creativeops.Explain(creativeops.ErrValidation, "读取集合里 %s 的版本号无效，请重新读取画布", id)
+}
 func (e *editGraph) node(id, field string) (Node, error) {
 	n, ok := e.g.Nodes[id]
 	if !ok {
 		return n, ErrNotFound
 	}
 	if d, ok := definition(n.TypeKey); !ok || d.SchemaVersion != n.TypeVersion {
-		return n, creativeops.ErrValidation
+		return n, unsupportedType(n)
 	}
 	e.need(id, field)
 	return n, nil
+}
+func unsupportedType(n Node) error {
+	return creativeops.Explain(creativeops.ErrValidation, "节点 %s 的类型 %s（第 %d 版）已不受支持，不能修改", n.ID, n.TypeKey, n.TypeVersion)
 }
 func (e *editGraph) ancestors(n Node) error {
 	seen := map[string]bool{}
 	for n.ParentID != nil {
 		if seen[*n.ParentID] {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "节点 %s 的分组层级绕成了环", n.ID)
 		}
 		seen[*n.ParentID] = true
 		p, err := e.node(*n.ParentID, "placement")
@@ -230,7 +248,7 @@ func (e *editGraph) ancestors(n Node) error {
 }
 func (e *editGraph) roots(ids []string) ([]string, error) {
 	if len(ids) == 0 {
-		return nil, creativeops.ErrValidation
+		return nil, creativeops.Explain(creativeops.ErrValidation, "至少要选一个节点")
 	}
 	selected := map[string]bool{}
 	for _, id := range ids {
@@ -326,7 +344,7 @@ func (e *editGraph) apply(a Action) error {
 			return err
 		}
 		if n.TypeKey == "core.group" {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "%s 是分组，没有内容可清空", n.ID)
 		}
 		n.ContentID = nil
 		n.ContentRevisionID = nil
@@ -368,7 +386,7 @@ func (e *editGraph) apply(a Action) error {
 	case "remove_nodes":
 		return e.remove(a)
 	default:
-		return creativeops.ErrValidation
+		return creativeops.Explain(creativeops.ErrValidation, "不支持的动作类型 %q", a.Type)
 	}
 }
 
@@ -417,8 +435,13 @@ func copyTitle(title string) string {
 }
 
 func (e *editGraph) add(a Action) error {
-	if !validNodeID(a.NodeID) || !knownType(a.TypeKey) || a.TypeKey == "internal.document" || a.Asset != nil && a.Content != nil {
-		return creativeops.ErrValidation
+	switch {
+	case !validNodeID(a.NodeID):
+		return creativeops.Explain(creativeops.ErrValidation, "新节点 ID %q 格式不对，须是 cwnode_ 加 UUID", a.NodeID)
+	case !knownType(a.TypeKey) || a.TypeKey == "internal.document":
+		return creativeops.Explain(creativeops.ErrValidation, "不能新建 %q 类型的节点", a.TypeKey)
+	case a.Asset != nil && a.Content != nil:
+		return creativeops.Explain(creativeops.ErrValidation, "新建节点时素材和正文只能二选一")
 	}
 	exists, err := e.tx.Exists(e.ctx, "creative_graph_identities", "id=$2", a.NodeID)
 	if err != nil {
@@ -430,7 +453,7 @@ func (e *editGraph) add(a Action) error {
 	w, h := defaultNodeSize(a.TypeKey)
 	n := Node{ID: a.NodeID, TypeKey: a.TypeKey, TypeVersion: 1, Title: a.Title, X: a.X, Y: a.Y, Width: w, Height: h, ParentID: a.ParentID, Config: json.RawMessage("{}"), PlacementRevision: 1, DataRevision: 1, StatusRevision: 1}
 	if n.TypeKey == "core.group" && (a.Content != nil || a.Asset != nil) {
-		return creativeops.ErrValidation
+		return creativeops.Explain(creativeops.ErrValidation, "分组不能带内容或素材")
 	}
 	if a.ParentID != nil {
 		p, err := e.node(*a.ParentID, "placement")
@@ -438,7 +461,7 @@ func (e *editGraph) add(a Action) error {
 			return err
 		}
 		if p.TypeKey != "core.group" {
-			return creativeops.ErrValidation
+			return notGroup(p)
 		}
 		if err = e.ancestors(p); err != nil {
 			return err
@@ -454,7 +477,7 @@ func (e *editGraph) add(a Action) error {
 			return err
 		}
 		if n.TypeKey != "core."+r.Kind {
-			return creativeops.ErrValidation
+			return kindMismatch(n, r.Kind)
 		}
 		n.ContentID = &r.ContentID
 		n.ContentRevisionID = &r.ID
@@ -465,7 +488,7 @@ func (e *editGraph) add(a Action) error {
 	}
 	if a.Content != nil {
 		if n.TypeKey != "core."+a.Content.Kind {
-			return creativeops.ErrValidation
+			return kindMismatch(n, a.Content.Kind)
 		}
 		r, err := creativecontent.WriteAndRetain(e.ctx, e.tx, *a.Content, "", &n.ID, func(r creativecontent.Revision) error { return retainChange(e.ctx, e.tx, e.changeID, r.ID) })
 		if err != nil {
@@ -475,6 +498,26 @@ func (e *editGraph) add(a Action) error {
 		n.ContentRevisionID = &r.ID
 	}
 	e.g.Nodes[n.ID] = n
+	return nil
+}
+
+func notGroup(n Node) error {
+	return creativeops.Explain(creativeops.ErrValidation, "%s 不是分组，不能作为上级", n.ID)
+}
+
+// kindMismatch is content of one kind going into a node of another.
+func kindMismatch(n Node, kind string) error {
+	return creativeops.Explain(creativeops.ErrValidation, "%s 内容不能放进 %s 节点 %s", kind, strings.TrimPrefix(n.TypeKey, "core."), n.ID)
+}
+
+// fillable is a node that can take its first content.
+func fillable(n Node) error {
+	switch {
+	case n.TypeKey == "core.group":
+		return creativeops.Explain(creativeops.ErrValidation, "%s 是分组，不能放内容", n.ID)
+	case n.ContentRevisionID != nil:
+		return creativeops.Explain(creativeops.ErrValidation, "节点 %s 已有内容，只能往空节点里放；要换内容请重新生成", n.ID)
+	}
 	return nil
 }
 
@@ -506,8 +549,11 @@ func (e *editGraph) fill(a Action) error {
 	if err != nil {
 		return err
 	}
-	if a.Asset == nil || n.TypeKey == "core.group" || n.ContentRevisionID != nil {
-		return creativeops.ErrValidation
+	if a.Asset == nil {
+		return creativeops.Explain(creativeops.ErrValidation, "需要指定要放进节点 %s 的素材", n.ID)
+	}
+	if err = fillable(n); err != nil {
+		return err
 	}
 	asset, err := creativelibrary.ResolveAssetsInTx(e.ctx, e.tx, *a.Asset)
 	if err != nil {
@@ -518,7 +564,7 @@ func (e *editGraph) fill(a Action) error {
 		return err
 	}
 	if n.TypeKey != "core."+r.Kind {
-		return creativeops.ErrValidation
+		return kindMismatch(n, r.Kind)
 	}
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
@@ -540,12 +586,15 @@ func (e *editGraph) fillUpload(a Action) error {
 	if err != nil {
 		return err
 	}
-	if a.UploadID == "" || n.TypeKey == "core.group" || n.ContentRevisionID != nil {
-		return creativeops.ErrValidation
+	if a.UploadID == "" {
+		return creativeops.Explain(creativeops.ErrValidation, "需要指定要放进节点 %s 的上传文件", n.ID)
+	}
+	if err = fillable(n); err != nil {
+		return err
 	}
 	for _, p := range e.staged {
 		if p.staged.UploadID == a.UploadID || p.nodeID == n.ID {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "一批动作里，同一个上传文件或同一个节点只能用一次")
 		}
 	}
 	s, err := creativestaging.Lock(e.ctx, e.tx, a.UploadID)
@@ -560,7 +609,7 @@ func (e *editGraph) fillUpload(a Action) error {
 		return err
 	}
 	if n.TypeKey != "core."+r.Kind || s.Kind != r.Kind {
-		return creativeops.ErrValidation
+		return kindMismatch(n, r.Kind)
 	}
 	n.ContentID = &r.ContentID
 	n.ContentRevisionID = &r.ID
@@ -580,8 +629,11 @@ func (e *editGraph) replace(a Action) error {
 	if err != nil {
 		return err
 	}
-	if n.TypeKey == "core.group" || a.Payload == nil {
-		return creativeops.ErrValidation
+	if n.TypeKey == "core.group" {
+		return creativeops.Explain(creativeops.ErrValidation, "%s 是分组，没有内容可改", n.ID)
+	}
+	if a.Payload == nil {
+		return creativeops.Explain(creativeops.ErrValidation, "缺少节点 %s 的新内容", n.ID)
 	}
 	d := creativecontent.Draft{Kind: strings.TrimPrefix(n.TypeKey, "core."), Payload: *a.Payload}
 	source := ""
@@ -591,7 +643,7 @@ func (e *editGraph) replace(a Action) error {
 		}
 	} else {
 		if a.Rights != nil {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "节点 %s 已有内容，修改时不能再改授权信息", n.ID)
 		}
 		source = *n.ContentRevisionID
 	}
@@ -614,12 +666,19 @@ func (e *editGraph) connect(a Action) error {
 	if err != nil {
 		return err
 	}
-	if !hasPorts(source.TypeKey) || !hasPorts(target.TypeKey) || a.SourcePort != "output" || a.TargetPort != "reference" || a.Role != "reference" || source.ID == target.ID {
-		return creativeops.ErrValidation
+	switch {
+	case !hasPorts(source.TypeKey):
+		return noPorts(source)
+	case !hasPorts(target.TypeKey):
+		return noPorts(target)
+	case a.SourcePort != "output" || a.TargetPort != "reference" || a.Role != "reference":
+		return creativeops.Explain(creativeops.ErrValidation, "连线只能从 output 端口连到 reference 端口，角色为 reference")
+	case source.ID == target.ID:
+		return creativeops.Explain(creativeops.ErrValidation, "节点 %s 不能连到自己", source.ID)
 	}
 	for _, edge := range e.g.Edges {
 		if edge.SourceNodeID == source.ID && edge.TargetNodeID == target.ID {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "%s 到 %s 已经有连线", source.ID, target.ID)
 		}
 	}
 	id := "cwedge_" + uuid.NewString()
@@ -637,8 +696,11 @@ func (e *editGraph) setInputs(a Action) error {
 	if err != nil {
 		return err
 	}
-	if !hasPorts(n.TypeKey) || len(a.Inputs) > 50 {
-		return creativeops.ErrValidation
+	if !hasPorts(n.TypeKey) {
+		return noPorts(n)
+	}
+	if len(a.Inputs) > 50 {
+		return creativeops.Explain(creativeops.ErrValidation, "一个节点最多 50 个输入")
 	}
 	for id, i := range e.g.Inputs {
 		if i.NodeID == n.ID && i.DraftID == nil {
@@ -649,21 +711,19 @@ func (e *editGraph) setInputs(a Action) error {
 	slots := map[string]bool{}
 	for _, source := range a.Inputs {
 		i := inputFromSource(source)
-		if i.DraftID != nil || i.Slot != "reference" || i.Role != "reference" || i.Ordinal < 0 || (i.SourceNodeID == nil) == (i.ContentRevisionID == nil) {
-			return creativeops.ErrValidation
+		if i.DraftID != nil {
+			return creativeops.Explain(creativeops.ErrValidation, "提示词草稿的参考要通过保存提示词修改")
 		}
-		key := string(creativegraph.Canonical([]any{i.Slot, i.Ordinal}))
-		if slots[key] {
-			return creativeops.ErrValidation
+		if err := validReference(i, slots); err != nil {
+			return err
 		}
-		slots[key] = true
 		if i.SourceNodeID != nil {
 			source, err := e.node(*i.SourceNodeID, "data")
 			if err != nil {
 				return err
 			}
 			if !hasPorts(source.TypeKey) {
-				return creativeops.ErrValidation
+				return noPorts(source)
 			}
 		} else {
 			if _, err := creativecontent.RequireUsable(e.ctx, e.tx, *i.ContentRevisionID, "display"); err != nil {
@@ -675,6 +735,28 @@ func (e *editGraph) setInputs(a Action) error {
 		i.Revision = 1
 		e.g.Inputs[i.ID] = i
 	}
+	return nil
+}
+
+func noPorts(n Node) error {
+	return creativeops.Explain(creativeops.ErrValidation, "%s 节点 %s 没有端口，不能连线或作为参考", strings.TrimPrefix(n.TypeKey, "core."), n.ID)
+}
+
+// validReference checks one reference slot and claims its position in slots.
+func validReference(i NodeInput, slots map[string]bool) error {
+	switch {
+	case i.Slot != "reference" || i.Role != "reference":
+		return creativeops.Explain(creativeops.ErrValidation, "参考的 slot 和 role 都须是 reference")
+	case i.Ordinal < 0:
+		return creativeops.Explain(creativeops.ErrValidation, "参考的序号不能为负")
+	case (i.SourceNodeID == nil) == (i.ContentRevisionID == nil):
+		return creativeops.Explain(creativeops.ErrValidation, "每个参考须且只能指定来源节点或内容版本之一")
+	}
+	key := string(creativegraph.Canonical([]any{i.Slot, i.Ordinal}))
+	if slots[key] {
+		return creativeops.Explain(creativeops.ErrValidation, "参考序号 %d 重复了", i.Ordinal)
+	}
+	slots[key] = true
 	return nil
 }
 func (e *editGraph) group(a Action) error {
@@ -745,7 +827,7 @@ func (e *editGraph) ungroup(id string) error {
 		return err
 	}
 	if g.TypeKey != "core.group" {
-		return creativeops.ErrValidation
+		return creativeops.Explain(creativeops.ErrValidation, "%s 不是分组，不能取消分组", g.ID)
 	}
 	for child, n := range e.g.Nodes {
 		if n.ParentID != nil && *n.ParentID == id {
@@ -772,7 +854,7 @@ func (e *editGraph) reparent(a Action) error {
 			return err
 		}
 		if p.TypeKey != "core.group" {
-			return creativeops.ErrValidation
+			return notGroup(p)
 		}
 		origin = pos[p.ID]
 		if err = e.ancestors(p); err != nil {
@@ -921,7 +1003,7 @@ func (e *editGraph) remove(a Action) error {
 	}
 	for _, id := range roots {
 		if e.g.Nodes[id].TypeKey == "core.group" && a.GroupMode != "subtree" {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "删除分组 %s 要连同其中的节点一起删除（group_mode 为 subtree）", id)
 		}
 	}
 	closure := e.closure(roots)
@@ -974,13 +1056,13 @@ func validateGraph(g graphState) error {
 		if n.SelectedVersionID != nil {
 			v, ok := g.Versions[*n.SelectedVersionID]
 			if !ok || v.NodeID != n.ID || n.ContentRevisionID == nil || v.ContentRevisionID != *n.ContentRevisionID {
-				return creativeops.ErrValidation
+				return creativeops.Explain(creativeops.ErrValidation, "节点 %s 选中的版本与它当前的内容对不上", n.ID)
 			}
 		}
 	}
 	for _, v := range g.Versions {
 		if _, ok := g.Nodes[v.NodeID]; !ok {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "版本 %s 所属的节点 %s 已不在画布上", v.ID, v.NodeID)
 		}
 	}
 	graph := map[string][]string{}
