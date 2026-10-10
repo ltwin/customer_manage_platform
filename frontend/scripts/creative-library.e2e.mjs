@@ -88,7 +88,7 @@ await page.route('**/api/v1/**', async (route) => {
     const art = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="500"><rect width="400" height="500" fill="#8a8f86"/><circle cx="280" cy="140" r="60" fill="#d79768"/></svg>'
     return json({ url: `data:image/svg+xml,${encodeURIComponent(art)}`, expires_at: new Date(Date.now() + 3600000).toISOString() })
   }
-  if (path.endsWith('/generation-catalog')) return json({ models: [], disabled_reason: '未配置生成模型' })
+  if (path.endsWith('/generation/catalog')) return json({ models: [], disabled_reason: '未配置生成模型' })
   if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
   if (path.endsWith('/media-capabilities'))
     return json({ formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 1000000, av_max_bytes: 10000000, batch_limit: 10 })

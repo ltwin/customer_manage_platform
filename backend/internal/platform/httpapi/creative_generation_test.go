@@ -46,9 +46,12 @@ func TestCreativeGenerationHTTPEmptyCatalogAndTrustedInput(t *testing.T) {
 	}
 	token := issueToken(t, tokens, testAcctID)
 	base := "/api/v1/creative/canvases/" + project.CanvasID
-	response := shootPlanningRequest(t, router, "GET", base+"/nodes/"+node+"/generation-catalog", token, "", "")
-	if response.Code != 200 || !strings.Contains(response.Body.String(), `"models":[]`) || !strings.Contains(response.Header().Get("Cache-Control"), "no-store") {
+	response := shootPlanningRequest(t, router, "GET", "/api/v1/creative/generation/catalog", token, "", "")
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"models":[]`) || !strings.Contains(response.Header().Get("Cache-Control"), "no-store") || strings.Contains(response.Body.String(), "account_id") {
 		t.Fatalf("catalog: %d %s", response.Code, response.Body.String())
+	}
+	if response = shootPlanningRequest(t, router, "GET", base+"/nodes/"+node+"/generation-catalog", token, "", ""); response.Code != 404 {
+		t.Fatalf("node catalog is gone: %d", response.Code)
 	}
 	for _, field := range []string{"account_id", "price", "deadline", "prepared"} {
 		payload := map[string]any{"node_id": node, "action_key": "gateway.generation", "draft_revision": "1", "expected_data_revision": "1", "configuration_revision": "1", "read_set": []any{}, field: "untrusted"}

@@ -494,22 +494,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
-  /creative/canvases/{id}/nodes/{node_id}/generation-catalog:
-    get:
-      tags: [creative-foundation]
-      operationId: getCreativeNodeGenerationCatalog
-      parameters:
-      - {name: id, in: path, required: true, schema: {type: string}}
-      - {name: node_id, in: path, required: true, schema: {type: string}}
-      responses:
-        '200':
-          description: 节点可用模型；无配置或未开放时返回空目录和原因
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreativeGenerationCatalog'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
   /creative/canvases/{id}/nodes/{node_id}/versions:
     get:
       tags:
@@ -644,6 +628,20 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/generation/catalog:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeGenerationCatalog
+      summary: 本账号可用的全部生成模型；节点能否生成由客户端按节点类型、版本和画布状态判断，提交时服务端仍会复核
+      responses:
+        '200':
+          description: 账号级目录；账号不可用或未配置模型时返回空目录和原因
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeGenerationCatalog'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /creative/agent/skills:
     get:
       tags: [creative-foundation]

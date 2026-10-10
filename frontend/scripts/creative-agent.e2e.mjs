@@ -83,7 +83,7 @@ try {
         }
       }
       if (path.endsWith('/agent-runs/run')) return json(finishedRun)
-      if (path.endsWith('/catalog'))
+      if (path.endsWith('/agent/catalog'))
         return json({
           limits: { attachments: 10, image_preview_count: 8 },
           models: [
@@ -167,7 +167,7 @@ try {
         })
       }
     }
-    if (path.endsWith('/catalog'))
+    if (path.endsWith('/agent/catalog'))
       return json({
         limits: { attachments: 10, image_preview_count: 8 },
           models: [
@@ -247,7 +247,7 @@ try {
       }
     }
     if(path.endsWith('/agent-runs/run')) return json(finishedRun)
-    if(path.endsWith('/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'text',display_name:'文字模型',available:true,capability:{image_input:false}},{model_key:'vision',display_name:'视觉模型',available:true,capability:{image_input:true}}]})
+    if(path.endsWith('/agent/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'text',display_name:'文字模型',available:true,capability:{image_input:false}},{model_key:'vision',display_name:'视觉模型',available:true,capability:{image_input:true}}]})
     if(path.endsWith('/conversations')) return json({items:[{id:'conversation',title:'素材讨论'}]})
     if(path.endsWith('/assets')) return json({items:[{id:'asset',title:'拍摄方案',content_revision_id:'ccrv_text',content:{id:'ccrv_text',kind:'text',payload:{body:'方案'},truncated:false}}],next_cursor:''})
     return json({items:[]})

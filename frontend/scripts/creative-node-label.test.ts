@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { nodeLabelMeta, needsModelLabel } from '../src/creative-canvas/editor/labelMeta.ts'
+import { nodeLabelMeta } from '../src/creative-canvas/editor/labelMeta.ts'
 import { defaultNodeSize } from '../src/creative-canvas/editor/outbox.ts'
 import { copyTitle } from '../src/creative-canvas/editor/structuralPreview.ts'
 import type { CanvasNode } from '../src/creative-canvas/editor/api.ts'
@@ -33,8 +33,6 @@ test('label meta follows PRD CV-10', () => {
   assert.equal(nodeLabelMeta(node('core.text', many), labels), '', 'text never shows meta')
   assert.equal(nodeLabelMeta(node('core.link', many), labels), '')
   assert.equal(nodeLabelMeta(node('core.group', many), labels), '')
-  assert.equal(needsModelLabel(node('core.image', one)), true)
-  assert.equal(needsModelLabel(node('core.image', many)), false)
 })
 
 test('default sizes match the server table', () => {

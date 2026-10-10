@@ -79,47 +79,21 @@ func NewProduct(runtime *Service, registrations []Registration) (*Product, error
 	return p, nil
 }
 
-func (p *Product) Catalog(ctx context.Context, scope store.AccountScope, canvasID, nodeID string) (Catalog, error) {
-	canvas, err := creativecanvas.GetCanvas(ctx, scope, canvasID)
-	if err != nil {
-		return Catalog{}, err
-	}
-	var node *creativecanvas.Node
-	for i := range canvas.Nodes {
-		if canvas.Nodes[i].ID == nodeID {
-			node = &canvas.Nodes[i]
-			break
-		}
-	}
-	if node == nil {
-		return Catalog{}, creativecanvas.ErrNotFound
-	}
-	out := Catalog{Models: []Model{}}
-	if node.TypeVersion != 1 {
-		out.DisabledReason = "此节点版本暂不支持生成"
-		return out, nil
-	}
-	if canvas.Archived {
-		out.DisabledReason = "项目已归档，恢复后可生成"
-		return out, nil
-	}
+// Catalog 是账号级目录：列出全部已接线模型，节点能否生成由客户端按节点类型、
+// 版本和画布状态判断，提交时 Request 与受理事务仍会复核。
+func (p *Product) Catalog(ctx context.Context, scope store.AccountScope) (Catalog, error) {
 	caps, err := scope.CreativeCapabilities(ctx)
 	if err != nil {
 		return Catalog{}, err
 	}
+	out := Catalog{Models: []Model{}}
 	if !caps.NodeGenerate || !caps.GenerationApply {
 		out.DisabledReason = "账号当前不可用"
 		return out, nil
 	}
-	if p != nil && p.runtime != nil && p.runtime.queue != nil {
-		for _, m := range p.models {
-			if "core."+m.Kind == node.TypeKey {
-				out.Models = append(out.Models, m)
-			}
-		}
-	}
+	out.Models = append(out.Models, p.Models()...)
 	if len(out.Models) == 0 {
-		out.DisabledReason = "此节点类型尚未配置生成模型，仍可保存提示词和查看作品版本"
+		out.DisabledReason = "尚未配置生成模型"
 	}
 	// 不允许调用方修改服务内配置。
 	raw, err := json.Marshal(out)

@@ -81,7 +81,7 @@ async function fresh() {
     const json = (value, status = 200) => route.fulfill({ status, json: value })
     if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
     if (path.endsWith('/me')) return json({ id: 'qa-node-label', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
-    if (path.endsWith('/generation-catalog'))
+    if (path.endsWith('/generation/catalog'))
       return json({ models: [{ key: 'seedream', label: 'Seedream 4', kind: 'image', configuration_revision: '1', parameters: [] }], disabled_reason: '' })
     if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
     if (path.includes('/content-urls') || path.includes('/download-url') || path.includes('/media-url'))

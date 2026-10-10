@@ -75,6 +75,11 @@ import {
 } from './media.ts'
 import { fileTitle, importPlan, importSlot } from './fileImport.ts'
 import { localMedia, readMediaSize } from './localMedia.ts'
+import {
+  catalogRejections,
+  keepGenerationCatalogFresh,
+  refreshGenerationCatalog,
+} from './generationCatalog.ts'
 
 // 与后端新建节点的默认尺寸一致。
 const NODE_WIDTH = defaultNodeWidth
@@ -90,6 +95,21 @@ export default function WorkspacePage() {
 function Workspace({ account }: { account: string }) {
   const { queue, error: storageError } = useJournal(account)
   const online = useOnline()
+  // 模型目录与画布无关：进工作区就预取，切换画布不重读。
+  useEffect(() => keepGenerationCatalogFresh(), [])
+  // 生成被服务端明确拒绝可能是目录过期（模型撤下、配置版本变化）：
+  // 每个被拒操作只刷新一次目录，不改原请求，也不重新提交。
+  const rejected = queue?.value.job
+  const staleCatalog =
+    rejected?.state === 'rejected' &&
+    /^\/canvases\/[^/]+\/executions$/.test(rejected.path) &&
+    !!rejected.code &&
+    catalogRejections.includes(rejected.code)
+      ? rejected.operation
+      : ''
+  useEffect(() => {
+    if (staleCatalog) refreshGenerationCatalog()
+  }, [staleCatalog])
   const [libraryWidth, setLibraryWidth] = useState(344)
   // v6：资产库默认收起，从工具轨打开。
   const [libraryOpen, setLibraryOpen] = useState(false)

@@ -126,7 +126,7 @@ await page.route('**/api/v1/**', async (route) => {
       created_at: '2026-01-01T00:00:00Z',
       timezone: 'Asia/Shanghai',
     })
-  if (path.endsWith('/generation-catalog')) return json({models: [], disabled_reason: '未配置生成模型'})
+  if (path.endsWith('/generation/catalog')) return json({models: [], disabled_reason: '未配置生成模型'})
   if (path.endsWith('/versions')) return json(versionPage ?? {items: [], selected_version_id: null, data_revision: '1'})
   if (path.includes('/content-revisions/')) {
     const id = decodeURIComponent(path.split('/').pop())

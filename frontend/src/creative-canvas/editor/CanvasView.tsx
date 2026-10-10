@@ -2,6 +2,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MutableRefObject,
@@ -81,8 +82,7 @@ import NodeVersionStrip from './NodeVersionStrip.tsx'
 import { defaultNodeSize, fitMediaHeight, nodeSizeLimits } from './outbox.ts'
 import { libraryDropZone, markLibraryDrop } from './libraryDrop.ts'
 import type { Content } from './api.ts'
-import * as api from './api.ts'
-import { needsModelLabel, nodeLabelMeta } from './labelMeta.ts'
+import { nodeLabelMeta } from './labelMeta.ts'
 import {
   fitViewport,
   nodeBounds,
@@ -90,7 +90,7 @@ import {
   validViewport,
   zoomLimits,
 } from './viewport.ts'
-import type { GenerationCatalog } from './generation.ts'
+import { useGenerationCatalog } from './generationCatalog.ts'
 import {
   InlineNodeTitle,
   InlineNodeText,
@@ -1070,29 +1070,15 @@ export default function CanvasView({
     if (element.current) observer.observe(element.current)
     return () => observer.disconnect()
   }, [])
-  // 单版本节点显示模型名：目录按画布读一次，失败时直接显示模型 key。
-  const [modelLabels, setModelLabels] = useState<Record<string, string>>({})
-  const labelSource = canvas.nodes.find(needsModelLabel)?.id
-  const hasLabels = Object.keys(modelLabels).length > 0
-  useEffect(() => {
-    if (!labelSource || hasLabels) return
-    const controller = new AbortController()
-    api
-      .read<GenerationCatalog>(
-        `/canvases/${encodeURIComponent(canvas.id)}/nodes/${encodeURIComponent(labelSource)}/generation-catalog`,
-        controller.signal,
-      )
-      .then((catalog) => {
-        if (!controller.signal.aborted)
-          setModelLabels(
-            Object.fromEntries(catalog.models.map((m) => [m.key, m.label])),
-          )
-      })
-      .catch(() => {
-        /* 元信息是辅助展示，读不到目录时显示模型 key。 */
-      })
-    return () => controller.abort()
-  }, [canvas.id, labelSource, hasLabels])
+  // 单版本节点显示模型名：用工作区共享的模型目录，没读到时直接显示模型 key。
+  const { catalog: generationCatalog } = useGenerationCatalog()
+  const modelLabels = useMemo(
+    () =>
+      Object.fromEntries(
+        (generationCatalog?.models ?? []).map((m) => [m.key, m.label]),
+      ),
+    [generationCatalog],
+  )
   useEffect(() => {
     setNodes((previous) => {
       const byID = new Map(previous.map((n) => [n.id, n])),

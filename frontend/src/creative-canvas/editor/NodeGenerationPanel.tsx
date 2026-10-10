@@ -21,11 +21,16 @@ import {
   selectedOption,
   promptFromNode,
   type Execution,
-  type GenerationCatalog,
   type Prompt,
   type Versions,
 } from './generation.ts'
 import { MediaFigure } from './MediaView.tsx'
+import {
+  generationUnavailable,
+  modelsForNode,
+  refreshGenerationCatalog,
+  useGenerationCatalog,
+} from './generationCatalog.ts'
 import {
   ArrowUp,
   AudioLines,
@@ -162,7 +167,7 @@ export default function NodeGenerationPanel({
       live = false
     }
   }, [mediaRefs])
-  const [catalog, setCatalog] = useState<GenerationCatalog | null>(null)
+  const { catalog, error: catalogError } = useGenerationCatalog()
   const [versions, setVersions] = useState<Versions | null>(null)
   const [execution, setExecution] = useState<Execution | null>(null)
   const [preview, setPreview] = useState<api.Content | null>(null)
@@ -190,18 +195,13 @@ export default function NodeGenerationPanel({
       mounted.current = false
     }
   }, [])
+  // 模型目录是账号级的共享数据，不在这里读；作品版本跟着画布刷新。
   useEffect(() => {
     const controller = new AbortController()
-    void Promise.all([
-      api.read<GenerationCatalog>(
-        `${nodePath}/generation-catalog`,
-        controller.signal,
-      ),
-      api.read<Versions>(`${nodePath}/versions`, controller.signal),
-    ])
-      .then(([c, v]) => {
+    void api
+      .read<Versions>(`${nodePath}/versions`, controller.signal)
+      .then((v) => {
         if (!controller.signal.aborted) {
-          setCatalog(c)
           setVersions(v)
           setReadError('')
         }
@@ -404,7 +404,10 @@ export default function NodeGenerationPanel({
   const conflict =
     !!local &&
     local.expected_draft_revision !== (node.prompt?.draft_revision ?? null)
-  const model = catalog?.models.find((m) => m.key === prompt.model_key)
+  const models = modelsForNode(catalog, node)
+  const model = models.find((m) => m.key === prompt.model_key)
+  // 目录不再按节点清空，节点版本、归档等原因要显式挡住生成键。
+  const unavailable = catalog ? generationUnavailable(catalog, canvas, node) : ''
   const unsupported = ![
     'core.text',
     'core.image',
@@ -419,6 +422,7 @@ export default function NodeGenerationPanel({
     !locked &&
     !conflict &&
     !unsupported &&
+    !unavailable &&
     !!model &&
     (!!prompt.text.trim() ||
       prompt.references.length > 0 ||
@@ -436,7 +440,7 @@ export default function NodeGenerationPanel({
     ...(prompt.model_key && !model
       ? [{ value: prompt.model_key, label: `${prompt.model_key}（不可用）`, disabled: true }]
       : []),
-    ...(catalog?.models.map((m) => {
+    ...models.map((m) => {
       const Icon = kindIcons[m.kind]
       return {
         value: m.key,
@@ -444,7 +448,7 @@ export default function NodeGenerationPanel({
         description: m.description,
         icon: <Icon size={15} />,
       }
-    }) ?? []),
+    }),
   ]
   function setParameter(field: (typeof otherFields)[number], raw: string) {
     try {
@@ -535,10 +539,17 @@ export default function NodeGenerationPanel({
             : `作品版本${versions?.items.length ? ` · ${versions.items.length}` : ''}`}
         </button>
       </header>
-      {(error || readError) && (
+      {(error || readError || catalogError) && (
         <p role="alert">
-          {error || readError}{' '}
-          <button onClick={() => setReload((n) => n + 1)}>重新读取</button>
+          {error || readError || catalogError}{' '}
+          <button
+            onClick={() => {
+              if (catalogError) refreshGenerationCatalog()
+              setReload((n) => n + 1)
+            }}
+          >
+            重新读取
+          </button>
         </p>
       )}
       {tab === 'prompt' ? (
@@ -642,7 +653,7 @@ export default function NodeGenerationPanel({
             </p>
           )}
           <p className="cc-generation-note">
-            {catalog?.disabled_reason || (!catalog ? '正在读取模型目录…' : '')}
+            {unavailable || (!catalog && !catalogError ? '正在读取模型目录…' : '')}
           </p>
           <footer>
             <Picker

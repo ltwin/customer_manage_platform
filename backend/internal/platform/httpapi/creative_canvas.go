@@ -43,7 +43,7 @@ func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/content-revisions/:id", w.GetCreativeContentRevision)
 	r.GET("/creative/documents/:id", w.GetCreativeDocument)
 	r.GET("/creative/canvases/:id/nodes/:node_id/versions", w.ListCreativeNodeVersions)
-	r.GET("/creative/canvases/:id/nodes/:node_id/generation-catalog", w.GetCreativeNodeGenerationCatalog)
+	r.GET("/creative/generation/catalog", w.GetCreativeGenerationCatalog)
 	r.GET("/creative/canvases/:id/executions/:execution_id", w.GetCreativeNodeExecution)
 	r.POST("/creative/canvases/:id/executions", w.RequestCreativeNodeExecution)
 }
@@ -359,13 +359,13 @@ func (h *handlers) creativeToolRead(c *gin.Context, key string, input map[string
 	c.Data(http.StatusOK, "application/json; charset=utf-8", result.Response())
 }
 
-func (h *handlers) GetCreativeNodeGenerationCatalog(c *gin.Context, id string, nodeID string) {
+func (h *handlers) GetCreativeGenerationCatalog(c *gin.Context) {
 	scope, ok := h.creativeScope(c)
 	if !ok {
 		return
 	}
 	setNoStore(c)
 	creativeRead(c, func() (creativegeneration.Catalog, error) {
-		return h.creativeGeneration.Catalog(c.Request.Context(), scope, id, nodeID)
+		return h.creativeGeneration.Catalog(c.Request.Context(), scope)
 	})
 }

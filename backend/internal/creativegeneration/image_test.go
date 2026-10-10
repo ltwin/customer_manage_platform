@@ -144,7 +144,7 @@ func (f *imageFixture) advance(t *testing.T) {
 
 func TestImageGenerationRunsThroughTheRelayOnce(t *testing.T) {
 	f := setupImages(t)
-	catalog, err := f.product.Catalog(t.Context(), f.scope, f.target.CanvasID, mustNode(t, f))
+	catalog, err := f.product.Catalog(t.Context(), f.scope)
 	must(t, err)
 	if len(catalog.Models) != 3 || catalog.Models[0].Parameters[0].Default != "1:1" {
 		t.Fatalf("catalog %+v", catalog)

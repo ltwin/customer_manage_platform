@@ -14,6 +14,8 @@ export type Job = {
   intent?: string
   // Rejected because another window saved first (creative_revision_conflict).
   conflict?: boolean
+  // 被拒时服务端给出的错误码；早于此字段写下的草稿没有它。
+  code?: string
 }
 export type Draft = {
   prompt?: components['schemas']['CreativeSavePromptPayload']
@@ -92,6 +94,8 @@ export function journalStorage(key: string): JournalStorage {
                 (typeof value.job.body !== 'string' ||
                   typeof value.job.operation !== 'string' ||
                   typeof value.job.path !== 'string' ||
+                  (value.job.code !== undefined &&
+                    typeof value.job.code !== 'string') ||
                   !['ready', 'unknown', 'rejected'].includes(value.job.state))))
           ) {
             reject(new Error('本机草稿格式无法识别；请保留此浏览器数据'))

@@ -7,7 +7,7 @@ import { chromium } from 'playwright'
 const base = process.env.CREATIVE_EDITOR_URL ?? 'http://localhost:5173'
 const browser = await chromium.launch({ headless: true })
 const errors = []
-let context, page, canvas, generationPosts
+let context, page, canvas, generationPosts, catalogReads, slowVersions
 const caps = (media) => ['move', 'resize', 'rename', 'duplicate', 'remove', 'edit', 'reference', ...(media ? ['replace', 'maximize', 'download'] : [])]
 const makeNode = (id, typeKey, x, y, extra = {}) => ({
   id,
@@ -40,6 +40,8 @@ async function fresh({ keepStorage = false } = {}) {
     canvas = fixture()
   }
   generationPosts = 0
+  catalogReads = 0
+  slowVersions = false
   page = await context.newPage()
   page.setDefaultTimeout(6000)
   page.on('pageerror', (error) => errors.push(error.message))
@@ -60,9 +62,16 @@ async function fresh({ keepStorage = false } = {}) {
     const json = (value, status = 200) => route.fulfill({ status, json: value })
     if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
     if (path.endsWith('/me')) return json({ id: 'qa-composer', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
-    if (path.endsWith('/generation-catalog'))
+    if (path.endsWith('/generation/catalog')) {
+      catalogReads++
       return json({ models: [{ key: 'qa-model', label: '契约模型', kind: 'image', configuration_revision: '1', parameters: [] }], disabled_reason: '' })
-    if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
+    }
+    if (path.endsWith('/versions')) {
+      // 作品版本慢不能拖住模型列表。
+      if (slowVersions) await new Promise((resolve) => setTimeout(resolve, 5000))
+      // 慢响应可能晚于页面关闭，此时放弃即可。
+      return json({ items: [], selected_version_id: null, data_revision: '1' }).catch(() => {})
+    }
     if (path.endsWith('/commands')) {
       const v = route.request().postDataJSON().payload
       const n = canvas.nodes.find((x) => x.id === v.node_id)
@@ -291,6 +300,19 @@ try {
     await page.waitForFunction(() => document.querySelector('.cc-generation [aria-label="生成中"]:disabled'), null, { timeout: 4000 })
     assert.equal(generationPosts, 1, 'Enter generates once')
   })
+  // 模型目录是账号级的：进画布读一次，切换节点不再请求，也不等作品版本。
+  await record('AC-07', async () => {
+    slowVersions = true
+    for (const id of ['img', 'img2', 'gc']) {
+      at(`open ${id}`)
+      await page.mouse.click(blank.x, blank.y)
+      await header(id).click()
+      await panel().getByRole('combobox', { name: '生成模型', exact: true }).click()
+      await page.getByRole('listbox', { name: '生成模型' }).getByRole('option', { name: '契约模型' }).waitFor({ timeout: 1000 })
+      await page.keyboard.press('Escape')
+    }
+    assert.equal(catalogReads, 1, 'one catalog read for the whole workspace')
+  })
 
   assert.deepEqual(errors, [])
 } finally {
@@ -299,4 +321,4 @@ try {
   await browser.close()
 }
 const failed = Object.entries(results).filter(([, r]) => r !== 'pass')
-if (failed.length || (!only && Object.keys(results).length !== 6)) process.exitCode = 1
+if (failed.length || (!only && Object.keys(results).length !== 7)) process.exitCode = 1

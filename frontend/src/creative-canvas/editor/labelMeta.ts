@@ -17,7 +17,3 @@ export function nodeLabelMeta(
   const key = summary.main_model_key
   return key ? (modelLabels[key] ?? key) : ''
 }
-
-// 需要模型名的节点：单版本且有模型 key。目录只为它们读一次。
-export const needsModelLabel = (node: CanvasNode) =>
-  node.version_summary?.count === 1 && !!node.version_summary.main_model_key

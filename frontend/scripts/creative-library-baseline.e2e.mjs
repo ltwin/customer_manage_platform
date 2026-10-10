@@ -58,7 +58,7 @@ async function routes(route) {
   if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
   if (path.endsWith('/me')) return json({ id: 'qa-libbase', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
   if (path.endsWith('/media-access-tickets')) return json({ url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="8" height="10"><rect width="8" height="10" fill="#888"/></svg>'), expires_at: new Date(Date.now() + 3600000).toISOString() })
-  if (path.endsWith('/generation-catalog')) return json({ models: [], disabled_reason: '未配置生成模型' })
+  if (path.endsWith('/generation/catalog')) return json({ models: [], disabled_reason: '未配置生成模型' })
   if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
   if (path.endsWith('/media-capabilities')) return json({ formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 1000000, av_max_bytes: 10000000, batch_limit: 10 })
   if (path.endsWith('/canvases/qa')) return json(state.canvas)

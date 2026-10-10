@@ -61,7 +61,7 @@ async function fresh({ stored } = {}) {
     const json = (value, status = 200) => route.fulfill({ status, json: value })
     if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
     if (path.endsWith('/me')) return json({ id: 'qa-viewport', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
-    if (path.endsWith('/generation-catalog')) return json({ models: [], disabled_reason: '未配置生成模型' })
+    if (path.endsWith('/generation/catalog')) return json({ models: [], disabled_reason: '未配置生成模型' })
     if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
     if (path.includes('/content-urls') || path.includes('/download-url') || path.includes('/media-url'))
       return json({ url: `data:image/svg+xml,${encodeURIComponent(art)}`, expires_at: new Date(Date.now() + 3600000).toISOString() })

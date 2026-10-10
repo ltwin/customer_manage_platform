@@ -9053,9 +9053,6 @@ type ServerInterface interface {
 	// (GET /creative/canvases/{id}/executions/{execution_id})
 	GetCreativeNodeExecution(c *gin.Context, id string, executionId string)
 
-	// (GET /creative/canvases/{id}/nodes/{node_id}/generation-catalog)
-	GetCreativeNodeGenerationCatalog(c *gin.Context, id string, nodeId string)
-
 	// (GET /creative/canvases/{id}/nodes/{node_id}/versions)
 	ListCreativeNodeVersions(c *gin.Context, id string, nodeId string)
 	// 查询当前已实现的创意能力；地基阶段不开放业务动作
@@ -9082,6 +9079,9 @@ type ServerInterface interface {
 	// 阻止后续外发；不承诺召回已发出的内容
 	// (POST /creative/egress-consents/{id}/revoke)
 	RevokeCreativeEgressConsent(c *gin.Context, id string, params RevokeCreativeEgressConsentParams)
+	// 本账号可用的全部生成模型；节点能否生成由客户端按节点类型、版本和画布状态判断，提交时服务端仍会复核
+	// (GET /creative/generation/catalog)
+	GetCreativeGenerationCatalog(c *gin.Context)
 
 	// (GET /creative/library-settings)
 	GetCreativeLibrarySettings(c *gin.Context)
@@ -11260,42 +11260,6 @@ func (siw *ServerInterfaceWrapper) GetCreativeNodeExecution(c *gin.Context) {
 	siw.Handler.GetCreativeNodeExecution(c, id, executionId)
 }
 
-// GetCreativeNodeGenerationCatalog operation middleware
-func (siw *ServerInterfaceWrapper) GetCreativeNodeGenerationCatalog(c *gin.Context) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	// ------------- Path parameter "node_id" -------------
-	var nodeId string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "node_id", c.Param("node_id"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter node_id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(string(BearerAuthScopes), []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.GetCreativeNodeGenerationCatalog(c, id, nodeId)
-}
-
 // ListCreativeNodeVersions operation middleware
 func (siw *ServerInterfaceWrapper) ListCreativeNodeVersions(c *gin.Context) {
 
@@ -11634,6 +11598,21 @@ func (siw *ServerInterfaceWrapper) RevokeCreativeEgressConsent(c *gin.Context) {
 	}
 
 	siw.Handler.RevokeCreativeEgressConsent(c, id, params)
+}
+
+// GetCreativeGenerationCatalog operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeGenerationCatalog(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeGenerationCatalog(c)
 }
 
 // GetCreativeLibrarySettings operation middleware
@@ -14526,7 +14505,6 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/canvases/:id/events", wrapper.WatchCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/executions", wrapper.RequestCreativeNodeExecution)
 	router.GET(options.BaseURL+"/creative/canvases/:id/executions/:execution_id", wrapper.GetCreativeNodeExecution)
-	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/generation-catalog", wrapper.GetCreativeNodeGenerationCatalog)
 	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
@@ -14536,6 +14514,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/conversations/:id/runs", wrapper.CreateCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
 	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)
+	router.GET(options.BaseURL+"/creative/generation/catalog", wrapper.GetCreativeGenerationCatalog)
 	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/library-settings", wrapper.SaveCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/media-access-tickets", wrapper.IssueCreativeMediaTicket)

@@ -121,7 +121,7 @@ async function fresh({ offline = false, hold = false } = {}) {
     const canvas = server.canvas
     if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
     if (path.endsWith('/me')) return json({ id: 'qa-import', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
-    if (path.endsWith('/generation-catalog')) return json({ models: [], disabled_reason: '' })
+    if (path.endsWith('/generation/catalog')) return json({ models: [], disabled_reason: '' })
     if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
     if (path.includes('/content-urls') || path.includes('/download-url') || path.includes('/media-url') || path.endsWith('/media-access-tickets'))
       return json({ url: `data:image/svg+xml,${encodeURIComponent(art)}`, expires_at: new Date(Date.now() + 3600000).toISOString() })

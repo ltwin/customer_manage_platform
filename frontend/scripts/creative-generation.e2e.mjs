@@ -96,7 +96,7 @@ await page.addInitScript(() => {
     }), { headers: { 'Content-Type': 'text/event-stream' } })
   }
 })
-let generationPosts=0, commandPosts=0, available=true
+let generationPosts=0, commandPosts=0, available=true, withdrawn=false, catalogReads=0
 const versions=[]
 const execution={execution_id:'e-1',node_id:'first',canvas_id:'qa',action_key:'gateway.generation',executor_version:'1',state:'succeeded',apply_state:'conflicted',execution_epoch:1,deadline:new Date(Date.now()+3600000).toISOString(),change_id:null,error:'',created_at:new Date().toISOString()}
 await page.route('**/api/v1/**', async route=>{
@@ -104,7 +104,11 @@ await page.route('**/api/v1/**', async route=>{
  const json=value=>route.fulfill({json:value})
  if(path.endsWith('/auth/refresh'))return json({access_token:'qa-token',token_type:'Bearer',expires_in:600})
  if(path.endsWith('/me'))return json({id:'g5-qa',email:'g5@example.test',created_at:'2026-01-01T00:00:00Z',timezone:'Asia/Shanghai'})
- if(path.endsWith('/generation-catalog'))return json({models:available?[{key:'qa-model',label:'契约文字模型',kind:'text',configuration_revision:'1',parameters:[{key:'count',label:'数量',type:'integer',required:true,options:[]}]}]:[],disabled_reason:available?'':'尚未配置生成模型'})
+ if(path.endsWith('/generation/catalog')){
+  catalogReads++
+  if(withdrawn)return json({models:[{key:'qa-model-2',label:'新文字模型',kind:'text',configuration_revision:'1',parameters:[]}],disabled_reason:''})
+  return json({models:available?[{key:'qa-model',label:'契约文字模型',kind:'text',configuration_revision:'1',parameters:[{key:'count',label:'数量',type:'integer',required:true,options:[]}]}]:[],disabled_reason:available?'':'尚未配置生成模型'})
+ }
  if(path.endsWith('/versions'))return json({items:versions,selected_version_id:canvas.nodes[0].data.selected_version_id,data_revision:canvas.nodes[0].data_revision})
  if(path.endsWith('/commands')){
   commandPosts++
@@ -126,6 +130,7 @@ await page.route('**/api/v1/**', async route=>{
  }
  if(path.endsWith('/executions') && route.request().method()==='POST'){
   generationPosts++
+  if(withdrawn)return route.fulfill({status:422,json:{error:{code:'creative_action_unavailable',message:'此节点动作尚未配置'}}})
   const v=route.request().postDataJSON().payload
   assert.equal(v.configuration_revision,'1');assert.equal(v.draft_revision,canvas.nodes[0].prompt.draft_revision);assert(!('price' in v))
   canvas.nodes[0].status.latest_execution_id='e-1';canvas.nodes[0].status.generation_state='succeeded'
@@ -266,6 +271,20 @@ try{
  await panel.getByRole('button',{name:'保存草稿',exact:true}).click()
  await page.waitForFunction(()=>document.querySelector('.cc-generation footer')?.textContent.includes('草稿已保存'))
  assert(!canvas.nodes[1].prompt.text.includes('@[first]'),'disconnect clears dangling mention before save')
+ // 模型被撤下、页面一直在前台：提交被拒后重读目录，草稿里的模型显示不可用，不自动重新提交。
+ withdrawn=true
+ const readsBefore=catalogReads,postsBefore=generationPosts
+ await page.locator('.react-flow__node[data-id="first"]').click({position:{x:40,y:30}})
+ await panel.getByRole('button',{name:'生成新版本',exact:true}).click()
+ await page.getByRole('button',{name:'放弃被拒绝的请求',exact:true}).waitFor()
+ await page.waitForFunction(()=>document.querySelector('.cc-generation [role="combobox"][aria-label="生成模型"]')?.textContent.includes('（不可用）'))
+ assert.equal(catalogReads,readsBefore+1,'the rejection refreshes the catalog once')
+ assert.equal(generationPosts,postsBefore+1,'a rejected generation is not resubmitted')
+ assert.equal(canvas.nodes[0].prompt.model_key,'qa-model','the draft keeps its model')
+ await page.getByRole('button',{name:'放弃被拒绝的请求',exact:true}).click()
+ assert(await panel.getByRole('button',{name:'生成新版本',exact:true}).isDisabled())
+ assert.equal(catalogReads,readsBefore+1)
+ withdrawn=false
  available=false
  await page.reload()
  await page.locator('.react-flow').focus(); await page.keyboard.press('Shift+Digit1')

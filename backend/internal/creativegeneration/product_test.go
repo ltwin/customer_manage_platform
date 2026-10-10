@@ -27,10 +27,17 @@ func TestProductGenerationReplayDoesNotPrepareAgain(t *testing.T) {
 		return f.admission, 1, nil
 	}}})
 	must(t, err)
-	catalog, err := p.Catalog(t.Context(), f.scope, f.target.CanvasID, f.node)
+	catalog, err := p.Catalog(t.Context(), f.scope)
 	must(t, err)
 	if len(catalog.Models) != 1 || catalog.DisabledReason != "" {
 		t.Fatal(catalog)
+	}
+	// 账号不可用时不列出任何模型。
+	_, err = f.db.Exec(`INSERT INTO accounts(id,password_hash,status) VALUES('g4-pending','test','pending_verification')`)
+	must(t, err)
+	pending := f.st.ScopeFor(auth.AccountContext{AccountID: "g4-pending"})
+	if c, err := p.Catalog(t.Context(), pending); err != nil || len(c.Models) != 0 || c.DisabledReason != "账号当前不可用" {
+		t.Fatalf("inactive account catalog: %+v %v", c, err)
 	}
 	first, err := p.Request(t.Context(), f.scope, f.command)
 	must(t, err)
@@ -62,18 +69,14 @@ func TestProductGenerationReplayDoesNotPrepareAgain(t *testing.T) {
 	}
 }
 
-func TestProductCatalogIsolationAndDisabled(t *testing.T) {
+func TestProductCatalogWithoutModelsExplainsWhy(t *testing.T) {
 	f := setup(t, gw.GenerationText)
 	p, err := creativegeneration.NewProduct(nil, nil)
 	must(t, err)
-	c, err := p.Catalog(t.Context(), f.scope, f.target.CanvasID, f.node)
+	c, err := p.Catalog(t.Context(), f.scope)
 	must(t, err)
-	if len(c.Models) != 0 || c.DisabledReason == "" {
+	if len(c.Models) != 0 || c.DisabledReason != "尚未配置生成模型" {
 		t.Fatal(c)
-	}
-	other := f.st.ScopeFor(auth.AccountContext{AccountID: "g4-other"})
-	if _, err = p.Catalog(t.Context(), other, f.target.CanvasID, f.node); err == nil {
-		t.Fatal("cross-account catalog")
 	}
 	if _, err = p.Request(t.Context(), f.scope, f.command); !errors.Is(err, creativecanvas.ErrActionUnavailable) {
 		t.Fatal(err)

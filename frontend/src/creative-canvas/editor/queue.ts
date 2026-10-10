@@ -500,6 +500,7 @@ export class SaveQueue {
           ...(rejected && code === 'creative_revision_conflict'
             ? { conflict: true }
             : {}),
+          ...(rejected && typeof code === 'string' ? { code } : {}),
         },
       })
     } finally {

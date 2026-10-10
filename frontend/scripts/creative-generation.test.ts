@@ -152,6 +152,8 @@ test('明确的生成配置冲突可解除队列，失联后的原操作仍保�
         assert.deepEqual(sent[0], sent[1])
       }
       assert.equal(q.value.job?.state, 'rejected')
+      // 工作区据此让模型目录失效（首次提交与恢复原操作两条路径）。
+      assert.equal(q.value.job?.code, rejectionCode)
       await q.dismissRejected()
       assert.equal(q.value.job, null)
     }

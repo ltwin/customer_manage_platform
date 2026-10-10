@@ -65,7 +65,7 @@ test('one failed node read leaves other nodes and creation editable; retry recov
     if (path.endsWith('/canvases/test-canvas')) return route.fulfill({ json: snapshot })
     if (path.endsWith('/content-revisions/revision-bad') && failing) return route.fulfill({ status: 500, json: { error: { code: 'read_failed', message: '单个节点读取失败' } } })
     if (path.includes('/content-revisions/')) return route.fulfill({ json: snapshot.nodes.find(n => path.endsWith(n.data.content_revision_id)).content })
-    if ((path.endsWith('/agent/catalog') || path.endsWith('/generation-catalog'))) return route.fulfill({ json: { models: [], skills: [] } })
+    if ((path.endsWith('/agent/catalog') || path.endsWith('/generation/catalog'))) return route.fulfill({ json: { models: [], skills: [] } })
     if (path.endsWith('/library-settings')) return route.fulfill({ json: { hierarchy_revision: '1', library_revision: '1', revision: '1', retention_days: 30 } })
     if (path.endsWith('/media-capabilities')) return route.fulfill({ status: 503, json: { error: { code: 'disabled', message: 'fixture' } } })
     return route.fulfill({ json: { items: [], total_count: 0, next_cursor: '', hierarchy_revision: '1', library_revision: '1' } })

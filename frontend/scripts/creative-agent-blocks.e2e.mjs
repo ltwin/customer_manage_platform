@@ -101,7 +101,7 @@ async function scene(options = {}) {
     const json = (body) => route.fulfill({ json: body })
     if (path.endsWith('/media-access-tickets'))
       return json({ url: pixel, expires_at: '2099-01-01T00:00:00Z' })
-    if (path.endsWith('/catalog'))
+    if (path.endsWith('/agent/catalog'))
       return json({
         limits: { attachments: 10, image_preview_count: 8 },
         models: [

@@ -165,22 +165,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/creative/canvases/{id}/nodes/{node_id}/generation-catalog": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getCreativeNodeGenerationCatalog"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/creative/canvases/{id}/nodes/{node_id}/versions": {
         parameters: {
             query?: never;
@@ -254,6 +238,23 @@ export interface paths {
         };
         /** 本部署真正可用的模型、Skill、工具与运行上限；浏览器不自行推断能力 */
         get: operations["getCreativeAgentCatalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/generation/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 本账号可用的全部生成模型；节点能否生成由客户端按节点类型、版本和画布状态判断，提交时服务端仍会复核 */
+        get: operations["getCreativeGenerationCatalog"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6814,30 +6815,6 @@ export interface operations {
             };
         };
     };
-    getCreativeNodeGenerationCatalog: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-                node_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description 节点可用模型；无配置或未开放时返回空目录和原因 */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CreativeGenerationCatalog"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-        };
-    };
     listCreativeNodeVersions: {
         parameters: {
             query?: never;
@@ -6997,6 +6974,27 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+        };
+    };
+    getCreativeGenerationCatalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 账号级目录；账号不可用或未配置模型时返回空目录和原因 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeGenerationCatalog"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     listCreativeAgentSkills: {
