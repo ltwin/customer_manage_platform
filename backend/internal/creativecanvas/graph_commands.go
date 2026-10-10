@@ -294,7 +294,7 @@ func (e *editGraph) apply(a Action) error {
 			return err
 		}
 		if !validResize(n, a.Width, a.Height) {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "节点 %s：宽度须在 %d 到 %d 之间、高度不小于 %d，分组不能缩放", n.ID, minNodeWidth, maxNodeWidth, minNodeHeight)
 		}
 		n.Width = a.Width
 		n.Height = a.Height
@@ -954,17 +954,17 @@ func (e *editGraph) remove(a Action) error {
 }
 func validateGraph(g graphState) error {
 	if len(g.Nodes) > maxNodes || len(g.Edges) > 2000 || len(g.Inputs) > 2000 {
-		return ErrLimit
+		return creativeops.Explain(ErrLimit, "画布最多 %d 个节点、2000 条连线和 2000 个输入引用", maxNodes)
 	}
 	for _, n := range g.Nodes {
 		if !validPoint(n.X, n.Y) || !validPoint(n.Width, n.Height) || n.Width <= 0 || n.Height <= 0 || n.Width > 100000 || n.Height > 100000 {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "节点 %s 的位置或尺寸超出范围：坐标绝对值不超过 10000000，宽高须大于 0 且不超过 100000", n.ID)
 		}
 		seen := map[string]bool{n.ID: true}
 		for p := n.ParentID; p != nil; {
 			parent, ok := g.Nodes[*p]
 			if !ok || parent.TypeKey != "core.group" || seen[*p] {
-				return creativeops.ErrValidation
+				return creativeops.Explain(creativeops.ErrValidation, "节点 %s 的上级不是有效的分组", n.ID)
 			}
 			seen[*p] = true
 			p = parent.ParentID
@@ -1015,7 +1015,7 @@ func validateGraph(g graphState) error {
 	}
 	for id := range graph {
 		if !visit(id) {
-			return creativeops.ErrValidation
+			return creativeops.Explain(creativeops.ErrValidation, "连线不能形成环，从节点 %s 出发的连线会绕回起点或指向不存在的节点", id)
 		}
 	}
 	return nil

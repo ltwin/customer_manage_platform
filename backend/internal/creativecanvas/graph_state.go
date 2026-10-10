@@ -334,7 +334,7 @@ func persistGraph(ctx context.Context, tx store.TxAccountScope, c Canvas, before
 	}
 
 	if len(touched) > 100 {
-		return result, ErrLimit
+		return result, creativeops.Explain(ErrLimit, "一次修改最多牵动 100 个对象")
 	}
 	// Keep precisely the affected revisions, not an entire-canvas content snapshot.
 	oldRoots, newRoots := graphState{Versions: map[string]NodeVersion{}, Nodes: map[string]Node{}, Inputs: map[string]NodeInput{}}, graphState{Versions: map[string]NodeVersion{}, Nodes: map[string]Node{}, Inputs: map[string]NodeInput{}}

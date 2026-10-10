@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -189,22 +190,68 @@ func TestRefusedEditSaysWhy(t *testing.T) {
 	}
 	node := out.(map[string]any)["created"].(map[string]string)["n"]
 	for _, tc := range []struct{ args, reason string }{
-		{fmt.Sprintf(`{"actions":[{"type":"resize_node","node_id":%q,"width":50,"height":200}]}`, node), "160 到 1200"},
+		{fmt.Sprintf(`{"actions":[{"type":"resize_node","node_id":%q,"width":50,"height":200}]}`, node), node + "：宽度须在 160 到 1200"},
 		{`{"actions":[{"type":"add_node","key":"m","node_type":"text"}],"layout":"grid"}`, "参数不符合工具说明"},
 	} {
 		_, err = h.editCanvas(t.Context(), f.canvasID, "seed-"+tc.reason, tc.args)
-		var refusal *toolRefusal
-		if !errors.As(asRefusal(err), &refusal) || !strings.Contains(refusal.message, tc.reason) {
+		var public creativeops.Public
+		if !errors.As(asRefusal(err), &public) || !strings.Contains(public.PublicMessage(), tc.reason) {
 			t.Fatalf("%s: %v", tc.args, err)
 		}
 	}
 }
 
-// brokenGenerator fails the way an outage does: nothing the model can act on.
-type brokenGenerator struct{ stubGenerator }
+// brokenGenerator fails with whatever error it is given, as a backend would.
+type brokenGenerator struct {
+	stubGenerator
+	err error
+}
 
-func (*brokenGenerator) GenerateNode(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error) {
-	return creativegeneration.AgentGenerationResult{}, errors.New("generation backend unreachable")
+func (g *brokenGenerator) GenerateNode(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error) {
+	return creativegeneration.AgentGenerationResult{}, g.err
+}
+
+// A failure nobody explained goes back to the model as a plain failure it can
+// report, with a reference for support. Failing the same way again and again
+// stops the run instead of letting the model retry blind.
+func TestUnexpectedToolFailureGoesBackToTheModel(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	f.service.SetGenerator(&brokenGenerator{err: errors.New("generation backend unreachable")})
+	c := f.conversation(f.alice, f.canvasID)
+	var results []string
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		if n > 1 {
+			results = append(results, toolResult(r, 0))
+		}
+		return scriptedResult(r, call(fmt.Sprint("gen", n), 0, generateNodeTool, fmt.Sprintf(`{"node_id":"cwnode_x","draft_revision":%d}`, n))), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, contextConsent(t, f, c.ID).ID, InstructionSegment{Type: "text", Text: "生成这张图"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != unexpectedFailures-1 {
+		t.Fatalf("results %q", results)
+	}
+	var first struct {
+		Code      string `json:"code"`
+		Ref       string `json:"ref"`
+		Effect    string `json:"effect"`
+		Retryable bool   `json:"retryable"`
+		Message   string `json:"message"`
+	}
+	if err = json.Unmarshal([]byte(results[0]), &first); err != nil || first.Code != "creative_tool_failed" || first.Effect != "unknown" || first.Retryable ||
+		!strings.Contains(first.Message, "「生成」") || strings.Contains(first.Message, "unreachable") ||
+		f.count("creative_agent_steps", "id=$1 AND error_code='creative_tool_failed'", first.Ref) != 1 {
+		t.Fatalf("result %q", results[0])
+	}
+	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || got.State != RunFailed || got.ErrorCode != "creative_tool_failing" {
+		t.Fatalf("run=%+v %v", got, err)
+	}
 }
 
 // A call cut short by a failed run still gets a result, so the next turn
@@ -212,7 +259,7 @@ func (*brokenGenerator) GenerateNode(context.Context, store.AccountScope, creati
 func TestInterruptedCallStaysInHistory(t *testing.T) {
 	f := setup(t)
 	f.queue()
-	f.service.SetGenerator(&brokenGenerator{})
+	f.service.SetGenerator(&brokenGenerator{err: fmt.Errorf("generation wait: %w", context.DeadlineExceeded)})
 	c := f.conversation(f.alice, f.canvasID)
 	consent := contextConsent(t, f, c.ID)
 	var remembered string
@@ -237,7 +284,7 @@ func TestInterruptedCallStaysInHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := f.service.ReadRun(t.Context(), f.alice, first.ID)
-	if err != nil || got.State != RunFailed || got.ErrorCode != "creative_run_failed" {
+	if err != nil || got.State != RunFailed || got.ErrorCode != "creative_run_deadline_exceeded" {
 		t.Fatalf("run=%+v %v", got, err)
 	}
 	second, err := f.startRun(f.alice, c.ID, consent.ID, InstructionSegment{Type: "text", Text: "刚才怎么了"})
@@ -247,7 +294,7 @@ func TestInterruptedCallStaysInHistory(t *testing.T) {
 	if err = f.work(f.alice, second.ID); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(remembered, `"run_error_code":"creative_run_failed"`) || !strings.Contains(remembered, "效果未确认") {
+	if !strings.Contains(remembered, `"run_error_code":"creative_run_deadline_exceeded"`) || !strings.Contains(remembered, "效果未确认") {
 		t.Fatalf("history %q", remembered)
 	}
 }

@@ -6,7 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +38,9 @@ const (
 var (
 	errToolLimit  = errors.New("creative run tool limit exceeded")
 	errToolDenied = errors.New("creative run tool is not allowed")
+	// errToolFailing is one tool failing, unexplained, often enough that the
+	// model would only be retrying blind.
+	errToolFailing = errors.New("creative run tool keeps failing")
 	// errReadRefused is a read the run's authorisation does not reach. The
 	// model is told so in the tool result; it is not a failed run.
 	errReadRefused = errors.New("creative run read is not authorised")
@@ -68,6 +74,8 @@ type runtimeHandler struct {
 	// step is the journal row of the tool call in flight. Calls run one at a
 	// time, so a tool that writes can take its identity from here.
 	step string
+	// failures counts unexplained failures per tool in this execution.
+	failures map[string]int
 }
 
 var _ adk.ChatModelAgentMiddleware = (*runtimeHandler)(nil)
@@ -365,12 +373,14 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		result, readErr = read()
 	}
 	code := ""
-	var refusal *toolRefusal
+	var public creativeops.Public
 	switch {
 	case readErr == nil:
-	case errors.As(readErr, &refusal):
+	case stopsRun(ctx, readErr):
+		return "", readErr
+	case errors.As(readErr, &public):
 		code = "creative_tool_refused"
-		raw, err := json.Marshal(map[string]any{"success": false, "code": code, "message": refusal.message})
+		raw, err := json.Marshal(map[string]any{"success": false, "code": code, "message": public.PublicMessage()})
 		if err != nil {
 			return "", err
 		}
@@ -388,9 +398,12 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		result = `{"success":false,"code":"creative_tool_model_capability","message":"这是一张图片，当前模型不能查看图片内容；如需分析画面，请换用支持图片的模型"}`
 	case errors.Is(readErr, ErrNotFound), errors.Is(readErr, creativeops.ErrValidation):
 		code = "creative_tool_input_invalid"
-		result = `{"success":false,"code":"creative_tool_input_invalid"}`
+		result = `{"success":false,"code":"creative_tool_input_invalid","message":"参数或引用的对象不合法，请核对后再调用"}`
 	default:
-		return "", readErr
+		code = "creative_tool_failed"
+		if result, err = h.unexpected(ctx, name, stepID, readErr); err != nil {
+			return "", err
+		}
 	}
 	if !utf8.ValidString(result) || len(result) > h.service.limits.ToolResultBytes {
 		return "", ErrLimit
@@ -451,6 +464,56 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		return h.service.writeToolBlockInTx(ctx, tx, h.held.RunID, stepID)
 	})
 	return projection, err
+}
+
+// stopsRun names the failures that end the run whichever tool met them: the
+// run itself cannot go on. Every other failure belongs to the tool and goes
+// back to the model as a result.
+func stopsRun(ctx context.Context, err error) bool {
+	return ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, llmgateway.ErrDeadline) || errors.Is(err, errRunInterrupted) || errors.Is(err, ErrRunState) ||
+		errors.Is(err, ErrConsentRevoked) || errors.Is(err, ErrBudgetExceeded) || errors.Is(err, ErrLimit)
+}
+
+// unexpectedFailures is how often one tool may fail for reasons nobody
+// explained before the run stops: past that, the model is retrying blind.
+const unexpectedFailures = 3
+
+// unexpected answers a failure no layer explained. The model learns which
+// call failed, whether anything changed and whether to try again; the error
+// itself goes to the log under the step id the photographer can quote.
+func (h *runtimeHandler) unexpected(ctx context.Context, name, stepID string, err error) (string, error) {
+	h.service.logger.ErrorContext(ctx, "creative agent tool failed unexpectedly",
+		slog.String("run_id", h.held.RunID), slog.String("step_id", stepID), slog.String("tool", name), slog.String("error", err.Error()))
+	h.mu.Lock()
+	if h.failures == nil {
+		h.failures = map[string]int{}
+	}
+	h.failures[name]++
+	failures := h.failures[name]
+	h.mu.Unlock()
+	if failures >= unexpectedFailures {
+		return "", fmt.Errorf("%w: %w", errToolFailing, err)
+	}
+	title, effect := name, "unknown"
+	for _, t := range h.service.registeredTools() {
+		if t.Key == name {
+			title = t.DisplayName
+			if t.EffectClass == "read_only" {
+				effect = "none"
+			}
+		}
+	}
+	message := fmt.Sprintf("「%s」因系统内部错误失败，原因已记录（编号 %s）。", title, stepID)
+	if effect == "none" {
+		message += "这次调用没有改动任何内容。"
+	} else {
+		message += "改动可能已生效也可能没有，继续之前请先读取画布核对。"
+	}
+	var timeout net.Error
+	retryable := store.IsSerializationFailure(err) || errors.As(err, &timeout) && timeout.Timeout()
+	raw, jsonErr := json.Marshal(map[string]any{"success": false, "code": "creative_tool_failed", "ref": stepID, "effect": effect, "retryable": retryable, "message": message})
+	return string(raw), jsonErr
 }
 
 type toolProjection struct {

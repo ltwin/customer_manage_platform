@@ -70,7 +70,8 @@ func (s *Service) generationModels() []creativegeneration.Model {
 // step without failing the run.
 type toolRefusal struct{ message string }
 
-func (r *toolRefusal) Error() string { return r.message }
+func (r *toolRefusal) Error() string         { return r.message }
+func (r *toolRefusal) PublicMessage() string { return r.message }
 
 func refuseTool(format string, args ...any) error {
 	return &toolRefusal{message: fmt.Sprintf(format, args...)}
@@ -82,7 +83,11 @@ var errToolArguments = fmt.Errorf("%w: tool arguments do not match the schema", 
 // asRefusal turns a failure the model can act on into words. Canvas commands
 // run in one transaction, so a refused command changed nothing.
 func asRefusal(err error) error {
+	var public creativeops.Public
 	switch {
+	case errors.As(err, &public):
+		// Explained where it happened; that is better than any guess from here.
+		return err
 	case errors.Is(err, errToolArguments):
 		return refuseTool("参数不符合工具说明：须是一个 JSON 对象，且只能使用说明里列出的字段")
 	case errors.Is(err, creativecanvas.ErrGraphIntegrity):
@@ -299,7 +304,10 @@ func (h *runtimeHandler) editCanvas(ctx context.Context, canvasID, seed, raw str
 // editRefusal says why the canvas turned a batch down. The batch is one
 // command, so none of its actions were applied.
 func editRefusal(err error) error {
+	var public creativeops.Public
 	switch {
+	case errors.As(err, &public):
+		return err
 	case errors.Is(err, creativeops.ErrValidation):
 		return refuseTool("画布拒绝了这批动作，全部未生效：缩放时宽度须在 160 到 1200 之间、高度不小于 100，分组不能缩放；坐标绝对值不超过 10000000；连线不能成环。请重新读取画布核对后修正")
 	case errors.Is(err, creativecanvas.ErrLimit):

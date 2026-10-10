@@ -1014,6 +1014,8 @@ func failureCode(err error) string {
 		return "creative_tool_limit"
 	case errors.Is(err, errToolDenied):
 		return "creative_tool_not_allowed"
+	case errors.Is(err, errToolFailing):
+		return "creative_tool_failing"
 	case errors.Is(err, errEmptyAnswer):
 		return "creative_model_empty_result"
 	case errors.Is(err, ErrConsentRevoked):

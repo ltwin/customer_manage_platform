@@ -23,6 +23,29 @@ var (
 	ErrNotFound   = errors.New("creative operation not found")
 )
 
+// Public is an error that carries a reason safe to show the photographer, and
+// the assistant acting for them. The error underneath still decides how the
+// failure is handled; the reason only says why.
+type Public interface {
+	error
+	PublicMessage() string
+}
+
+type explained struct {
+	err     error
+	message string
+}
+
+func (e *explained) Error() string         { return e.err.Error() + ": " + e.message }
+func (e *explained) Unwrap() error         { return e.err }
+func (e *explained) PublicMessage() string { return e.message }
+
+// Explain attaches a reason to err without changing what err is: errors.Is
+// still matches it, so every caller maps it as before.
+func Explain(err error, format string, args ...any) error {
+	return &explained{err: err, message: fmt.Sprintf(format, args...)}
+}
+
 // Revision is an optimistic concurrency token, never a floating point JSON number.
 type Revision int64
 
