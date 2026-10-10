@@ -54,7 +54,12 @@ import '@xyflow/react/dist/style.css'
 import './workspace.css'
 import LibraryPanel, { type LibraryTask } from './LibraryPanel.tsx'
 import AgentPanel from './AgentPanel.tsx'
-import { emptyCatalog, emptyOrganization } from './libraryState.ts'
+import {
+  emptyCatalog,
+  emptyOrganization,
+  groupOptions,
+} from './libraryState.ts'
+import Picker from './Picker.tsx'
 import OrganizationPicker from './OrganizationPicker.tsx'
 import { useUploads } from './uploads.ts'
 import UploadTray from './UploadTray.tsx'
@@ -1886,20 +1891,7 @@ function Workspace({ account }: { account: string }) {
             </label>
             <label>
               归入分组
-              <select className="input" name="group" defaultValue="">
-                <option value="">不归类，只存入</option>
-                {catalog.groups
-                  .filter((g) => !g.parent_id)
-                  .flatMap((g) => [
-                    g,
-                    ...catalog.groups.filter((c) => c.parent_id === g.id),
-                  ])
-                  .map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.parent_id ? `　${g.name}` : g.name}
-                    </option>
-                  ))}
-              </select>
+              <GroupField groups={catalog.groups} />
             </label>
             <button className="btn btn-primary" disabled={blocked}>
               保存资产
@@ -1930,20 +1922,7 @@ function Workspace({ account }: { account: string }) {
             </p>
             <label>
               归入分组
-              <select className="input" name="group" defaultValue="">
-                <option value="">不归类，只存入</option>
-                {catalog.groups
-                  .filter((g) => !g.parent_id)
-                  .flatMap((g) => [
-                    g,
-                    ...catalog.groups.filter((c) => c.parent_id === g.id),
-                  ])
-                  .map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.parent_id ? `　${g.name}` : g.name}
-                    </option>
-                  ))}
-              </select>
+              <GroupField groups={catalog.groups} />
             </label>
             <button className="btn btn-primary" disabled={blocked}>
               保存资产
@@ -2037,5 +2016,23 @@ function Workspace({ account }: { account: string }) {
         />
       )}
     </main>
+  )
+}
+
+// 存入资产库时选分组：表单照常从 FormData 读 group。
+function GroupField({ groups }: { groups: api.Group[] }) {
+  const [group, setGroup] = useState('')
+  return (
+    <Picker
+      variant="field"
+      label="归入分组"
+      name="group"
+      value={group}
+      options={[
+        { value: '', label: '不归类，只存入' },
+        ...groupOptions(groups),
+      ]}
+      onChange={setGroup}
+    />
   )
 }

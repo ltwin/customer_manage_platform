@@ -263,15 +263,19 @@ try {
     await header('img').click()
     await page.waitForFunction(() => document.querySelector('.cc-generation [aria-label="提示词"]')?.innerText === '图片一：逆光人像')
   })
+  async function pickModel() {
+    await panel().getByRole('combobox', { name: '生成模型', exact: true }).click()
+    await page.getByRole('listbox', { name: '生成模型' }).getByRole('option', { name: '契约模型' }).click()
+  }
   // AC-06 生成键：空提示词且无上游时禁用；Enter 生成、Shift+Enter 换行、组字不误触发；生成中变为不可点的「生成中」（生成不提供停止，owner 2026-10-09）。
   await record('AC-06', async () => {
     await header('img').click()
-    await panel().getByLabel('生成模型', { exact: true }).selectOption('qa-model')
+    await pickModel()
     const send = () => panel().getByRole('button', { name: '生成新版本', exact: true })
     assert.equal(await send().isDisabled(), true, 'disabled with empty prompt and no upstream')
     at('upstream enables')
     await header('img2').click()
-    await panel().getByLabel('生成模型', { exact: true }).selectOption('qa-model')
+    await pickModel()
     assert.equal(await send().isDisabled(), false, 'an upstream reference is enough')
     at('keys')
     await header('img').click()

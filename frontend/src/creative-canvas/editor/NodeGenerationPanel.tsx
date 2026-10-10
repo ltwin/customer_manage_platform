@@ -28,13 +28,18 @@ import {
 import { MediaFigure } from './MediaView.tsx'
 import {
   ArrowUp,
+  AudioLines,
   ChevronDown,
+  Clapperboard,
   History,
+  Image as ImageIcon,
   LoaderCircle,
   Save,
   SlidersHorizontal,
+  Type,
   X,
 } from 'lucide-react'
+import Picker, { type PickerOption } from './Picker.tsx'
 import ImageParameters, { RatioGlyph } from './ImageParameters.tsx'
 import GenerationReference from './GenerationReference.tsx'
 import PromptEditor, { type PromptEditorHandle } from './PromptEditor.tsx'
@@ -63,6 +68,13 @@ type Props = {
   focusRequest: { seq: number; nodeID: string } | null
   onFocused: () => void
 }
+
+const kindIcons = {
+  text: Type,
+  image: ImageIcon,
+  video: Clapperboard,
+  audio: AudioLines,
+} as const
 
 // 本容器拥有读取与队列接线；展示表单只接收数据和回调。
 // 版本从哪里来：人工放进节点的素材也是版本，生成不会让它从列表消失。
@@ -163,7 +175,6 @@ export default function NodeGenerationPanel({
   const [optionsOpen, setOptionsOpen] = useState(false)
   const options = useRef<HTMLDivElement>(null)
   const optionsButton = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLElement>(null)
   const [optionsPlace, setOptionsPlace] = useState<CSSProperties>()
   const mounted = useRef(true)
   const busyRef = useRef(false)
@@ -256,9 +267,11 @@ export default function NodeGenerationPanel({
   useEffect(() => {
     if (!optionsOpen) return
     const close = (event: PointerEvent) => {
+      // 参数里的下拉列表浮在工作区顶层，不在弹层的 DOM 里。
       if (
-        event.target instanceof Node &&
-        !options.current?.contains(event.target)
+        event.target instanceof Element &&
+        !options.current?.contains(event.target) &&
+        !event.target.closest('.cc-picker-list')
       )
         setOptionsOpen(false)
     }
@@ -419,6 +432,31 @@ export default function NodeGenerationPanel({
     ) ?? []
   const otherFields =
     model?.parameters.filter((f) => !imageFields.includes(f)) ?? []
+  const modelOptions: PickerOption[] = [
+    ...(prompt.model_key && !model
+      ? [{ value: prompt.model_key, label: `${prompt.model_key}（不可用）`, disabled: true }]
+      : []),
+    ...(catalog?.models.map((m) => {
+      const Icon = kindIcons[m.kind]
+      return {
+        value: m.key,
+        label: m.label,
+        description: m.description,
+        icon: <Icon size={15} />,
+      }
+    }) ?? []),
+  ]
+  function setParameter(field: (typeof otherFields)[number], raw: string) {
+    try {
+      const parameters = { ...prompt.parameters }
+      const value = parameterValue(field, raw)
+      if (value === undefined) delete parameters[field.key]
+      else parameters[field.key] = value
+      edit({ ...prompt, parameters })
+    } catch (e) {
+      setError(errorMessage(e))
+    }
+  }
   const ratioField = imageFields.find((f) => f.key === 'aspect_ratio')
   const ratio = ratioField ? selectedOption(ratioField, prompt.parameters) : ''
   const parametersLabel =
@@ -462,7 +500,6 @@ export default function NodeGenerationPanel({
   const panelTop = `clamp(64px, ${(point.y + renderedHeight) * viewport.zoom + viewport.y + 14}px, max(64px, 100% - ${tab === 'versions' ? 340 : 220}px))`
   return createPortal(
     <aside
-      ref={panel}
       className={`cc-generation nodrag nopan nowheel ${node.status.active_execution_id ? 'is-running' : ''}`}
       aria-label="节点生成"
       hidden={dragging}
@@ -608,29 +645,19 @@ export default function NodeGenerationPanel({
             {catalog?.disabled_reason || (!catalog ? '正在读取模型目录…' : '')}
           </p>
           <footer>
-            <div className="cc-generation-model">
-              <select
-                aria-label="生成模型"
-                value={prompt.model_key}
-                disabled={locked || unsupported}
-                onChange={(e) =>
-                  edit({ ...prompt, model_key: e.target.value, parameters: {} })
-                }
-              >
-                <option value="">选择模型</option>
-                {prompt.model_key && !model && (
-                  <option value={prompt.model_key}>
-                    {prompt.model_key}（不可用）
-                  </option>
-                )}
-                {catalog?.models.map((m) => (
-                  <option key={m.key} value={m.key}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={12} aria-hidden="true" />
-            </div>
+            <Picker
+              className="cc-generation-model"
+              label="生成模型"
+              placeholder="选择模型"
+              value={prompt.model_key}
+              options={modelOptions}
+              minWidth={300}
+              empty={catalog ? '暂无可用模型' : '正在读取模型目录…'}
+              disabled={locked || unsupported}
+              onChange={(key) =>
+                edit({ ...prompt, model_key: key, parameters: {} })
+              }
+            />
             {!!model?.parameters.length && (
               <div className="cc-generation-options" ref={options}>
                 <button
@@ -642,7 +669,7 @@ export default function NodeGenerationPanel({
                   aria-controls="cc-generation-parameters"
                   disabled={locked}
                   onClick={() => {
-                    setOptionsPlace(placeOptions(panel.current))
+                    setOptionsPlace(placeOptions(optionsButton.current))
                     setOptionsOpen(!optionsOpen)
                   }}
                 >
@@ -693,46 +720,40 @@ export default function NodeGenerationPanel({
                         }}
                       />
                     )}
-                    {otherFields.map((field) => (
-                      <label key={field.key}>
-                        {field.label}
-                        {field.required && ' *'}
-                        {field.options.length || field.type === 'boolean' ? (
-                          <select
-                            aria-label={field.label}
+                    {otherFields.map((field) =>
+                      field.options.length || field.type === 'boolean' ? (
+                        <div className="cc-generation-field" key={field.key}>
+                          <span>
+                            {field.label}
+                            {field.required && ' *'}
+                          </span>
+                          <Picker
+                            className="cc-generation-select"
+                            label={field.label}
                             disabled={locked}
                             value={String(prompt.parameters[field.key] ?? '')}
-                            onChange={(e) => {
-                              try {
-                                const parameters = { ...prompt.parameters }
-                                const value = parameterValue(
-                                  field,
-                                  e.target.value,
-                                )
-                                if (value === undefined)
-                                  delete parameters[field.key]
-                                else parameters[field.key] = value
-                                edit({ ...prompt, parameters })
-                              } catch (e) {
-                                setError(errorMessage(e))
-                              }
-                            }}
-                          >
-                            <option value="">使用模型默认值</option>
-                            {(field.type === 'boolean'
-                              ? ['true', 'false']
-                              : field.options
-                            ).map((v) => (
-                              <option key={v} value={v}>
-                                {v === 'true'
-                                  ? '开启'
-                                  : v === 'false'
-                                    ? '关闭'
-                                    : v}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
+                            options={[
+                              { value: '', label: '使用模型默认值' },
+                              ...(field.type === 'boolean'
+                                ? ['true', 'false']
+                                : field.options
+                              ).map((v) => ({
+                                value: v,
+                                label:
+                                  v === 'true'
+                                    ? '开启'
+                                    : v === 'false'
+                                      ? '关闭'
+                                      : v,
+                              })),
+                            ]}
+                            onChange={(v) => setParameter(field, v)}
+                          />
+                        </div>
+                      ) : (
+                        <label key={field.key}>
+                          {field.label}
+                          {field.required && ' *'}
                           <input
                             aria-label={field.label}
                             disabled={locked}
@@ -740,25 +761,11 @@ export default function NodeGenerationPanel({
                             step={field.type === 'integer' ? 1 : 'any'}
                             value={String(prompt.parameters[field.key] ?? '')}
                             placeholder="使用模型默认值"
-                            onChange={(e) => {
-                              try {
-                                const parameters = { ...prompt.parameters }
-                                const value = parameterValue(
-                                  field,
-                                  e.target.value,
-                                )
-                                if (value === undefined)
-                                  delete parameters[field.key]
-                                else parameters[field.key] = value
-                                edit({ ...prompt, parameters })
-                              } catch (e) {
-                                setError(errorMessage(e))
-                              }
-                            }}
+                            onChange={(e) => setParameter(field, e.target.value)}
                           />
-                        )}
-                      </label>
-                    ))}
+                        </label>
+                      ),
+                    )}
                   </div>
                 )}
               </div>
@@ -910,19 +917,26 @@ export default function NodeGenerationPanel({
   )
 }
 
-// 参数面板浮在输入框外侧（优先上方），不被输入框自身的滚动区裁切。
-function placeOptions(panel: HTMLElement | null): CSSProperties | undefined {
-  const r = panel?.getBoundingClientRect()
+// 参数面板从参数 chip 处展开（优先朝上），左缘对齐 chip 并夹在视口内；
+// fixed 定位，不被输入框自身的滚动区裁切。
+const optionsWidth = 360
+function placeOptions(chip: HTMLElement | null): CSSProperties | undefined {
+  const r = chip?.getBoundingClientRect()
   if (!r) return undefined
   const above = r.top - 16
   const below = window.innerHeight - r.bottom - 16
+  const width = Math.min(optionsWidth, window.innerWidth - 16)
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - width - 8))
+  const up = above >= 320 || above >= below
   const base = {
     position: 'fixed',
-    left: r.left,
-    width: r.width,
+    left,
+    width,
     right: 'auto',
+    // 动画从 chip 所在的那条边长出来。
+    transformOrigin: `${r.left + r.width / 2 - left}px ${up ? '100%' : '0'}`,
   } as const
-  return above >= 320 || above >= below
+  return up
     ? {
         ...base,
         top: 'auto',

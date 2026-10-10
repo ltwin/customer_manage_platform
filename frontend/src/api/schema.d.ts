@@ -5927,6 +5927,8 @@ export interface components {
             configuration_revision: string;
             key: string;
             label: string;
+            /** @description 选择模型时显示的一句话说明；缺省表示没有说明。 */
+            description?: string;
             /** @enum {string} */
             kind: "text" | "image" | "video" | "audio";
             parameters: components["schemas"]["CreativeGenerationParameter"][];

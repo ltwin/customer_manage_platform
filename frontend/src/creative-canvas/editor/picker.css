@@ -1,0 +1,205 @@
+/* 画布下拉：触发按钮是安静的 chip，列表是带图标的行，高亮行展开一句说明。 */
+.cc-picker {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.cc-picker > .cc-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 30px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.cc-picker > .cc-picker-trigger:hover:not(:disabled),
+.cc-picker > .cc-picker-trigger[aria-expanded='true'] {
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-picker > .cc-picker-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cc-picker > .cc-picker-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.cc-picker > .cc-picker-trigger svg {
+  flex: none;
+}
+.cc-picker-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-picker-chev {
+  color: var(--fg-3);
+  transition: transform 0.15s var(--ease);
+}
+.cc-picker-trigger[aria-expanded='true'] > .cc-picker-chev {
+  transform: rotate(180deg);
+}
+
+.cc-picker-list {
+  position: fixed;
+  z-index: 90;
+  max-width: min(380px, calc(100vw - 16px));
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border-radius: var(--r-lg);
+  background: var(--s2);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.4;
+  scrollbar-width: thin;
+  transform-origin: top left;
+  animation: cc-picker-in 0.14s var(--ease);
+}
+.cc-picker-list[data-side='top'] {
+  transform-origin: bottom left;
+}
+.cc-picker-list .cc-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 5px 10px 5px 5px;
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.cc-picker-list .cc-picker-option + .cc-picker-option {
+  margin-top: 2px;
+}
+.cc-picker-list .cc-picker-option.is-active {
+  background: var(--s3);
+}
+.cc-picker-list .cc-picker-option[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.cc-picker-list .cc-picker-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-picker-list .cc-picker-option.is-active .cc-picker-icon {
+  background: var(--s4);
+}
+.cc-picker-list .cc-picker-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.cc-picker-list .cc-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-picker-list .cc-picker-option.is-selected .cc-picker-label {
+  font-weight: 600;
+}
+.cc-picker-list .cc-picker-desc {
+  margin-top: 2px;
+  color: var(--fg-3);
+  font-size: 11.5px;
+}
+.cc-picker-list .cc-picker-meta {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--s3);
+  color: var(--fg-2);
+  font-size: 11px;
+}
+.cc-picker-list .cc-picker-option.is-active .cc-picker-meta {
+  background: var(--s4);
+}
+.cc-picker-list .cc-picker-check {
+  flex: none;
+  color: var(--fg-2);
+}
+.cc-picker-list .cc-picker-empty {
+  padding: 10px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+@keyframes cc-picker-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-picker-list {
+    animation: none;
+  }
+}
+
+/* 表单里的整行字段：和 .input 同高同底色，值靠左、箭头靠右。 */
+.cc-picker.is-field {
+  display: flex;
+  width: 100%;
+}
+.cc-picker.is-field > .cc-picker-trigger {
+  justify-content: space-between;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--fg);
+  font-size: 12px;
+}
+.cc-picker.is-field > .cc-picker-trigger:hover:not(:disabled),
+.cc-picker.is-field > .cc-picker-trigger[aria-expanded='true'] {
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+.cc-picker.is-field .cc-picker-value {
+  flex: 1;
+  text-align: left;
+}
+.cc-picker-value.is-empty {
+  color: var(--fg-3);
+}
+.cc-picker-list .cc-picker-box {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px var(--line-3);
+  color: var(--on-primary);
+}
+.cc-picker-list .cc-picker-option.is-selected .cc-picker-box {
+  background: var(--primary);
+  box-shadow: none;
+}

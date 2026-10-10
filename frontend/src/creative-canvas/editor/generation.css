@@ -151,30 +151,12 @@
   padding: 6px 8px 8px;
 }
 .cc-generation-model {
-  position: relative;
-  min-width: 0;
-  max-width: 180px;
   flex-shrink: 1;
+  max-width: 190px;
 }
-.cc-generation-model select {
-  width: 100%;
-  height: 30px;
-  padding: 0 24px 0 9px;
-  border: 0;
-  border-radius: 7px;
+.cc-generation-model > .cc-picker-trigger {
   background: var(--s3);
-  color: var(--fg-2);
-  font: inherit;
-  appearance: none;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-.cc-generation-model svg {
-  position: absolute;
-  right: 7px;
-  top: 9px;
-  pointer-events: none;
-  color: var(--fg-3);
+  color: var(--fg);
 }
 .cc-generation-grow {
   flex: 1;
@@ -229,10 +211,34 @@
   z-index: 1;
   inset: 38px 8px 60px;
   overflow: auto;
-  padding: 10px 12px;
-  border-radius: var(--r);
+  padding: 12px 14px 14px;
+  border-radius: var(--r-lg);
   background: var(--s2);
   box-shadow: var(--shadow);
+  animation: cc-generation-pop 0.14s var(--ease);
+}
+@keyframes cc-generation-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-generation-popover {
+    animation: none;
+  }
+}
+.cc-generation-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0;
+  color: var(--fg-2);
+}
+.cc-generation-select > .cc-picker-trigger {
+  background: var(--s3);
+  color: var(--fg);
 }
 .cc-generation-popover-head {
   display: flex;
@@ -249,7 +255,6 @@
   margin: 8px 0;
   color: var(--fg-2);
 }
-.cc-generation-popover select,
 .cc-generation-popover input {
   display: block;
   width: 100%;

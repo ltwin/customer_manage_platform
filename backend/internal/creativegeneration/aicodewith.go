@@ -24,6 +24,9 @@ var imageLabels = map[string]string{
 	"gpt-image-2.5-flare":    "GPT Image 2.5 Flare",
 }
 
+// 三个模型参数与能力相同；说明只讲摄影师能用它做什么，不写未核实的差异。
+const imageDescription = "文生图；连上参考图即按参考生成"
+
 // ImageParameters 是GPT Image面板的表单投影，取值与规则schema一致。
 func ImageParameters() []Parameter {
 	return []Parameter{
@@ -43,7 +46,7 @@ func ImageRegistrations(svc *Service, policies []gw.AICodeWithImagePolicy) []Reg
 		policy := p
 		model := policy.Target.ModelKey
 		out = append(out, Registration{
-			Model: Model{ConfigurationRevision: policy.Definition.Version, Key: model, Label: imageLabels[model], Kind: "image", Parameters: ImageParameters()},
+			Model: Model{ConfigurationRevision: policy.Definition.Version, Key: model, Label: imageLabels[model], Description: imageDescription, Kind: "image", Parameters: ImageParameters()},
 			Ensure: func(ctx context.Context, scope store.AccountScope) error {
 				return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 					_, err := svc.generation.EnsureDeploymentInTx(ctx, tx, policy.Definition, imageDeploymentValidity)

@@ -2,6 +2,15 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
+// 创意空间的下拉是 combobox + 浮层 listbox，不是原生 select。
+async function pickOption(page, label, option) {
+  await page.getByRole('combobox', { name: label, exact: true }).click()
+  await page
+    .getByRole('listbox', { name: label, exact: true })
+    .getByRole('option', { name: option, exact: true })
+    .click()
+}
+
 // v6 窄屏隐藏缩放条：按钮不可见时走 ⇧1。
 async function fitAll(page) {
   const button = page.getByRole('button', { name: '适应全部节点', exact: true })
@@ -374,7 +383,7 @@ try {
   // Link input and manual draft discard use the same real save/recovery path.
   await page.getByRole('button', { name: '新增资产', exact: true }).click()
   await page.getByLabel('资产名称').fill('只保存链接')
-  await page.getByLabel('内容类型').selectOption('link')
+  await pickOption(page, '内容类型', '链接')
   await page
     .getByLabel('链接地址', { exact: true })
     .fill('https://example.invalid/reference')
@@ -533,7 +542,7 @@ try {
     await page
       .getByLabel('资产名称')
       .fill(kind === 'text' ? '手机文字灵感' : '手机链接参考')
-    await page.getByLabel('内容类型').selectOption(kind)
+    await pickOption(page, '内容类型', kind === 'text' ? '文字' : '链接')
     await page
       .getByLabel(kind === 'text' ? '正文' : '链接地址', { exact: true })
       .fill(
@@ -744,10 +753,7 @@ try {
     else await page.getByRole('button', { name: button, exact: true }).click()
     const dialog = page.getByRole('dialog', { name: title, exact: true })
     await dialog.getByLabel('名称', { exact: true }).fill(name)
-    if (parent)
-      await dialog
-        .getByLabel('上级分组', { exact: true })
-        .selectOption({ label: parent })
+    if (parent) await pickOption(page, '上级分组', parent)
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
     await saved(page)
@@ -774,15 +780,10 @@ try {
     .click()
   await page.getByLabel('资产名称', { exact: true }).fill('窗边光线 100%')
   await page.getByLabel('正文', { exact: true }).fill('自然光布光参考')
-  await page.locator('.cl-picker summary').click()
-  await page
-    .locator('.cl-picker')
-    .getByLabel('人像参考', { exact: true })
-    .check()
+  await pickOption(page, '选择分组', '人像参考')
+  await page.keyboard.press('Escape')
   await page.getByLabel('查找标签', { exact: true }).fill('自然光')
-  await page
-    .getByLabel('新标签分类', { exact: true })
-    .selectOption({ label: '拍摄风格' })
+  await pickOption(page, '新标签分类', '拍摄风格')
   await page
     .getByRole('button', { name: '新建标签「自然光」', exact: true })
     .click()

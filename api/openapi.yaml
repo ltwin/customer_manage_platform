@@ -12705,6 +12705,9 @@ components:
         configuration_revision: {type: string}
         key: {type: string}
         label: {type: string}
+        description:
+          type: string
+          description: 选择模型时显示的一句话说明；缺省表示没有说明。
         kind: {type: string, enum: [text, image, video, audio]}
         parameters:
           type: array

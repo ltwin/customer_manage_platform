@@ -18,6 +18,11 @@ createRoot(document.getElementById('root')).render(React.createElement(AgentPane
 </script></body></html>`,
 )
 const browser = await chromium.launch({ headless: true })
+// 画布下拉是 combobox + 浮在工作区顶层的 listbox，不是原生 select。
+async function pick(page, label, option) {
+  await page.getByRole('combobox', { name: label, exact: true }).click()
+  await page.getByRole('listbox', { name: label, exact: true }).getByRole('option', { name: option }).click()
+}
 const url = `${process.env.CREATIVE_AGENT_URL || 'http://localhost:5179'}/.agent-command-qa.html`
 const key = 'creative-agent-pending:qa-account:canvas'
 const finishedRun = {
@@ -104,16 +109,17 @@ try {
     })
     await page.goto(url)
     await page.getByRole('button', { name: '打开创作助手' }).click()
-    assert(!await page.getByLabel('当前对话').isVisible(),'conversation picker starts in the title menu')
-    await page.getByLabel('对话菜单').click()
-    await page.getByLabel('当前对话').waitFor()
+    assert.equal(await page.locator('.cc-agent-title').textContent(), 'First', 'the header names the current conversation')
+    assert.equal(await page.getByRole('listbox', { name: '历史对话' }).count(), 0, 'history starts closed')
+    await page.getByRole('combobox', { name: '历史对话' }).click()
+    await page.getByRole('listbox', { name: '历史对话' }).waitFor()
     await page.getByLabel('创作问题').click()
-    assert(!await page.getByLabel('当前对话').isVisible(),'outside click closes the title menu')
+    assert.equal(await page.getByRole('listbox', { name: '历史对话' }).count(), 0, 'outside click closes the history list')
     await page.getByLabel('创作问题').fill('保留原始问题')
     const metrics=await page.getByRole('complementary',{name:'创作助手'}).evaluate(el=>{const s=getComputedStyle(el),b=el.querySelector('.cc-agent-send'),r=b.getBoundingClientRect();return {width:el.getBoundingClientRect().width,background:s.backgroundColor,send:[r.width,r.height,getComputedStyle(b).borderRadius]}})
     assert.deepEqual(metrics,{width:380,background:'rgb(27, 27, 29)',send:[30,30,'50%']})
     if(order==='old-first') await page.screenshot({path:'/tmp/creative-v6-agent-desktop.png'})
-    await page.getByLabel('Skill', { exact: true }).selectOption('version')
+    await pick(page, 'Skill', 'Test skill')
     assert.equal(await page.getByRole('checkbox').count(), 0, 'sending needs no consent tick')
     await page.getByLabel('创作问题').press('Enter')
     await page.waitForFunction(
@@ -192,10 +198,9 @@ try {
   })
   await page.goto(url)
   await page.getByRole('button', { name: '打开创作助手' }).click()
-  await page.getByLabel('对话菜单').click()
-  await page.getByLabel('当前对话').selectOption('other')
+  await pick(page, '历史对话', 'Other')
   await page.getByLabel('创作问题').fill('刷新后仍然保留的原文')
-  await page.getByLabel('Skill', { exact: true }).selectOption('version')
+  await pick(page, 'Skill', 'Test skill')
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await page.getByRole('alert').waitFor()
   await page.reload()
@@ -207,14 +212,14 @@ try {
     '刷新后仍然保留的原文',
   )
   assert.equal(await page.getByLabel('创作问题').isEnabled(), true)
-  assert.equal(await page.getByLabel('当前对话').inputValue(), 'other')
+  assert.equal(await page.locator('.cc-agent-title').textContent(), 'Other')
   assert.equal(
-    await page.getByLabel('模型', { exact: true }).inputValue(),
-    'model',
+    await page.getByRole('combobox', { name: '模型', exact: true }).textContent(),
+    'Test model',
   )
   assert.equal(
-    await page.getByLabel('Skill', { exact: true }).inputValue(),
-    'version',
+    await page.getByRole('combobox', { name: 'Skill', exact: true }).textContent(),
+    'Test skill',
   )
   assert.equal(runPosts, 2)
   await page.setViewportSize({width:390,height:844})
@@ -253,7 +258,7 @@ try {
   await materialPage.getByRole('option',{name:/主图/}).click()
   await materialPage.getByText('当前模型不支持图片理解，请切换视觉模型或移除图片引用。').waitFor()
   assert(await materialPage.getByRole('button',{name:'发送',exact:true}).isDisabled())
-  await materialPage.getByLabel('模型',{exact:true}).selectOption('vision')
+  await pick(materialPage, '模型', '视觉模型')
   await materialPage.getByRole('button',{name:'引用素材',exact:true}).click()
   await materialPage.getByRole('dialog',{name:'引用素材库'}).getByRole('button',{name:/拍摄方案/}).click()
   assert.equal(await materialPage.locator('.cc-agent-box [data-ref]').count(),2)

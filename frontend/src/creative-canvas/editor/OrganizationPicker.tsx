@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Group, Tag, Category } from './api.ts'
-import type { Organization } from './libraryState.ts'
+import { groupOptions, type Organization } from './libraryState.ts'
+import Picker from './Picker.tsx'
 export default function OrganizationPicker({
   groups,
   tags,
@@ -33,22 +34,19 @@ export default function OrganizationPicker({
   return (
     <fieldset className="cl-picker" disabled={disabled}>
       <legend>分组与标签</legend>
-      <details>
-        <summary>选择分组 · {value.groupIDs.length}</summary>
-        <div className="cl-options">
-          {groups.map((g) => (
-            <label key={g.id}>
-              <input
-                type="checkbox"
-                checked={value.groupIDs.includes(g.id)}
-                onChange={() => toggle('groupIDs', g.id)}
-              />
-              {g.name}
-            </label>
-          ))}
-          {!groups.length && <p>尚未创建分组</p>}
-        </div>
-      </details>
+      <label>
+        分组
+        <Picker
+          variant="field"
+          label="选择分组"
+          placeholder="不归入分组"
+          values={value.groupIDs}
+          options={groupOptions(groups)}
+          empty="尚未创建分组"
+          disabled={disabled}
+          onToggle={(id) => toggle('groupIDs', id)}
+        />
+      </label>
       <label>
         查找标签
         <div className="cl-search">
@@ -123,19 +121,16 @@ export default function OrganizationPicker({
             </label>
             <label>
               新标签分类
-              <select
-                className="input"
-                aria-label="新标签分类"
+              <Picker
+                variant="field"
+                label="新标签分类"
                 value={category}
-                onChange={(e) => setCategory(e.target.value)}
-              >
-                <option value="">未分类</option>
-                {categories.map((c) => (
-                  <option value={c.id} key={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: '', label: '未分类' },
+                  ...categories.map((c) => ({ value: c.id, label: c.name })),
+                ]}
+                onChange={setCategory}
+              />
             </label>
             <button
               className="btn"

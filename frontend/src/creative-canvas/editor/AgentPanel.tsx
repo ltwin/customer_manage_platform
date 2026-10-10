@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { MessageCircle, X, Plus, ArrowUp, ChevronDown } from 'lucide-react'
+import {
+  ArrowRight,
+  ArrowUp,
+  ClipboardList,
+  Cpu,
+  History,
+  MessageCircle,
+  Minus,
+  Paperclip,
+  Plus,
+  ScanSearch,
+  SquarePen,
+  Wand2,
+  Sparkles,
+  type LucideIcon,
+} from 'lucide-react'
 import type { components } from '../../api/schema'
 import { ApiError } from '../../api/transport.ts'
 import * as api from './api.ts'
@@ -15,7 +30,8 @@ import {
   type AgentRun,
   type PendingAgentAction,
 } from './agentState.ts'
-import PromptEditor from './PromptEditor.tsx'
+import PromptEditor, { type PromptEditorHandle } from './PromptEditor.tsx'
+import Picker, { type PickerOption } from './Picker.tsx'
 import {
   agentReferences,
   agentSegments,
@@ -40,6 +56,32 @@ type MessagePage = components['schemas']['CreativeAgentMessagePage']
 type Consent = components['schemas']['CreativeEgressConsent']
 type Message = MessagePage['items'][number]
 type Reply = AgentRun | Conversation | Consent
+
+// 新会话先用这个名字；第一次回答完成后由服务端按对话内容改名。
+const untitled = '新对话'
+// 自动命名在回答结束后异步完成，期间按这个间隔重读几次会话列表。
+const namingPolls = 4
+const namingInterval = 2500
+
+// 空会话的起点：点一下填进输入框，摄影师改完再发。
+const starters: { icon: LucideIcon; label: string; text?: string }[] = [
+  {
+    icon: ScanSearch,
+    label: '读一读画布，理清下一步',
+    text: '读一下当前画布，帮我梳理已有的内容，并建议下一步可以做什么。',
+  },
+  {
+    icon: ClipboardList,
+    label: '为这次拍摄写一份方案',
+    text: '根据画布上的内容，帮我写一份拍摄方案：主题、场景、光线、服装道具和镜头安排。',
+  },
+  {
+    icon: Wand2,
+    label: '优化画布里的提示词',
+    text: '帮我检查画布上图片节点的提示词，把画面描述改得更具体、更好出图。',
+  },
+  { icon: Paperclip, label: '引用素材开始讨论' },
+]
 
 export default function AgentPanel({
   account,
@@ -94,8 +136,8 @@ function AgentConversation({
   onClose: () => void
 }) {
   const storageKey = `creative-agent-pending:${account}:${canvasID}`
-  const threadMenu = useRef<HTMLDetailsElement>(null)
-  const threadButton = useRef<HTMLElement>(null)
+  const editor = useRef<PromptEditorHandle>(null)
+  const loaded = useRef(false)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversation, setConversation] = useState('')
@@ -113,6 +155,7 @@ function AgentConversation({
   const [storageBroken, setStorageBroken] = useState(false)
   const [pending, setPending] = useState<PendingAgentAction | null>(null)
   const [refresh, setRefresh] = useState(0)
+  const [naming, setNaming] = useState(0)
   const pendingRef = useRef<PendingAgentAction | null>(null)
   const mounted = useRef(false)
   const performing = useRef(false)
@@ -155,23 +198,6 @@ function AgentConversation({
     referenced.length > (catalog?.limits.attachments ?? 10) ||
     referenced.filter((item) => item.kind === 'image').length >
       (catalog?.limits.image_preview_count ?? 8)
-
-  useEffect(() => {
-    const close = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !threadMenu.current?.contains(event.target) &&
-        threadMenu.current
-      )
-        threadMenu.current.open = false
-    }
-    document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [])
-  function closeThreadMenu() {
-    if (threadMenu.current) threadMenu.current.open = false
-    threadButton.current?.focus()
-  }
 
   function restoreDraft(value?: AgentDraft) {
     if (!value) return
@@ -217,7 +243,11 @@ function AgentConversation({
             directory.models.find((item) => item.available)?.model_key ||
             '',
         )
-        setConversation((old) => old || page.items[0]?.id || '')
+        // 只在第一次打开时落到最近的会话；之后空会话是摄影师自己选的「新对话」。
+        if (!loaded.current) {
+          loaded.current = true
+          setConversation((old) => old || page.items[0]?.id || '')
+        }
       })
       .catch((e: unknown) => {
         if (!abort.signal.aborted)
@@ -257,8 +287,35 @@ function AgentConversation({
     (run, index) => followed[index] && followed[index].state !== run.state,
   )
   useEffect(() => {
-    if (moved) setRefresh((value) => value + 1)
+    if (!moved) return
+    setRefresh((value) => value + 1)
+    setNaming(namingPolls)
   }, [moved])
+  const current = conversations.find((item) => item.id === conversation)
+  const waitingForName = naming > 0 && current?.title === untitled
+  // 服务端在第一次回答之后才起名，这里短暂地多读几次列表把新名字接回来。
+  useEffect(() => {
+    if (!waitingForName) return
+    const abort = new AbortController()
+    const timer = setTimeout(() => {
+      void api
+        .read<components['schemas']['CreativeAgentConversationPage']>(
+          `/canvases/${encodeURIComponent(canvasID)}/conversations`,
+          abort.signal,
+        )
+        .then((page) => {
+          if (!abort.signal.aborted) setConversations(page.items)
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (!abort.signal.aborted) setNaming((value) => value - 1)
+        })
+    }, namingInterval)
+    return () => {
+      clearTimeout(timer)
+      abort.abort()
+    }
+  }, [waitingForName, naming, canvasID])
   // Follow the newest content unless the photographer has scrolled away.
   useEffect(() => {
     const stick = () => {
@@ -350,7 +407,7 @@ function AgentConversation({
   async function openConversation(): Promise<string> {
     if (conversation) return conversation
     const command = action(`/canvases/${canvasID}/conversations`, {
-      title: '创作对话',
+      title: untitled,
     })
     const created = await api.send<Conversation>(
       account,
@@ -461,6 +518,53 @@ function AgentConversation({
   const thread = [...messages].sort((a, b) =>
     BigInt(a.ordinal) < BigInt(b.ordinal) ? -1 : 1,
   )
+  const modelOptions: PickerOption[] =
+    catalog?.models.map((item) => ({
+      value: item.model_key,
+      label: item.display_name,
+      icon: <Cpu size={15} />,
+      meta: item.capability.image_input ? '识图' : undefined,
+      description: item.available
+        ? undefined
+        : item.unavailable_reason || '暂不可用',
+      disabled: !item.available,
+    })) ?? []
+  const skillOptions: PickerOption[] = [
+    {
+      value: '',
+      label: '普通对话',
+      description: '自由讨论创作想法，助手按需读写画布',
+      icon: <MessageCircle size={15} />,
+    },
+    ...(catalog?.skills
+      .filter((item) => item.available)
+      .map((item) => ({
+        value: item.skill_version_id,
+        label: item.display_name,
+        description: item.description,
+        icon: <Wand2 size={15} />,
+      })) ?? []),
+  ]
+  const conversationOptions: PickerOption[] = conversations.map((item) => ({
+    value: item.id,
+    label: item.title,
+    meta: shortTime(item.updated_at),
+  }))
+  function startNew() {
+    setConversation('')
+    setMessages([])
+    setRuns([])
+    setError('')
+    editor.current?.focus()
+  }
+  function applyStarter(starter: (typeof starters)[number]) {
+    if (!starter.text) {
+      setPickingMaterial(true)
+      return
+    }
+    setDraft(starter.text)
+    requestAnimationFrame(() => editor.current?.focus())
+  }
   const sendable =
     !locked &&
     !active &&
@@ -470,63 +574,42 @@ function AgentConversation({
   return (
     <aside className="cc-agent-panel" aria-label="创作助手">
       <header>
-        <details
-          className="cc-agent-thread"
-          ref={threadMenu}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              closeThreadMenu()
-            }
+        <h2 className="cc-agent-title" title={current?.title ?? untitled}>
+          {current?.title ?? untitled}
+        </h2>
+        <button
+          className="cc-agent-tool"
+          disabled={locked || !conversation}
+          onClick={startNew}
+          aria-label="新对话"
+          title="新对话"
+        >
+          <SquarePen size={16} />
+        </button>
+        <Picker
+          className="cc-agent-tool"
+          label="历史对话"
+          align="end"
+          minWidth={280}
+          value={conversation}
+          options={conversationOptions}
+          disabled={locked}
+          empty="还没有历史对话"
+          onChange={(id) => {
+            setConversation(id)
+            setMessages([])
+            setRuns([])
           }}
         >
-          <summary ref={threadButton} aria-label="对话菜单">
-            创作助手 <ChevronDown size={13} />
-          </summary>
-          <div className="cc-agent-conversations">
-            <select
-              aria-label="当前对话"
-              disabled={locked}
-              value={conversation}
-              onChange={(event) => {
-                setConversation(event.target.value)
-                setMessages([])
-                setRuns([])
-                closeThreadMenu()
-              }}
-            >
-              <option value="">选择对话</option>
-              {conversations.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.title}
-                </option>
-              ))}
-            </select>
-            <button
-              disabled={locked}
-              onClick={() => {
-                closeThreadMenu()
-                void perform(
-                  action(`/canvases/${canvasID}/conversations`, {
-                    title: '创作对话',
-                  }),
-                )
-              }}
-              aria-label="新建对话"
-              title="新建对话"
-            >
-              <Plus size={17} />
-              <span>新建对话</span>
-            </button>
-          </div>
-        </details>
+          <History size={16} />
+        </Picker>
         <button
-          className="cc-icon-button"
+          className="cc-agent-tool"
           onClick={onClose}
           aria-label="收起创作助手"
-          title="收起创作助手"
+          title="收起"
         >
-          <X size={18} />
+          <Minus size={18} />
         </button>
       </header>
       {error && (
@@ -560,11 +643,28 @@ function AgentConversation({
       >
         {!thread.length && (
           <div className="cc-agent-empty">
-            <h3>想拍点什么？</h3>
-            <p>
-              把想法写下来，助手会读画布上的内容，陪你把方案想清楚。输入 @
-              引用画布里的文本或图片。
-            </p>
+            <span className="cc-agent-empty-mark" aria-hidden="true">
+              <Sparkles size={22} />
+            </span>
+            <h3>让创作助手陪你把想法落到画布上</h3>
+            <p>助手会读画布，输入 @ 引用画布里的文本或图片</p>
+            {!waiting && (
+              <ul className="cc-agent-starters" aria-label="从这里开始">
+                {starters.map((starter) => (
+                  <li key={starter.label}>
+                    <button
+                      type="button"
+                      disabled={locked}
+                      onClick={() => applyStarter(starter)}
+                    >
+                      <starter.icon size={16} />
+                      <span>{starter.label}</span>
+                      <ArrowRight size={15} className="cc-agent-starter-go" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         <AgentTurnContext.Provider value={turn}>
@@ -632,6 +732,7 @@ function AgentConversation({
             />
           ) : (
             <PromptEditor
+              ref={editor}
               text={draft}
               references={references}
               thumbnails={{}}
@@ -670,41 +771,25 @@ function AgentConversation({
                 >
                   <Plus size={15} />
                 </button>
-                <select
-                  aria-label="模型"
-                  value={model}
-                  disabled={locked || !!active}
-                  onChange={(event) => setModel(event.target.value)}
-                >
-                  {catalog?.models.map((item) => (
-                    <option
-                      key={item.model_key}
-                      value={item.model_key}
-                      disabled={!item.available}
-                    >
-                      {item.display_name}
-                      {!item.available ? '（不可用）' : ''}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  aria-label="Skill"
+                <Picker
+                  className="cc-agent-mode"
+                  label="Skill"
                   value={skill}
+                  options={skillOptions}
+                  minWidth={260}
                   disabled={locked || !!active}
-                  onChange={(event) => setSkill(event.target.value)}
-                >
-                  <option value="">普通对话</option>
-                  {catalog?.skills
-                    .filter((item) => item.available)
-                    .map((item) => (
-                      <option
-                        key={item.skill_version_id}
-                        value={item.skill_version_id}
-                      >
-                        {item.display_name}
-                      </option>
-                    ))}
-                </select>
+                  onChange={setSkill}
+                />
+                <Picker
+                  className="cc-agent-model"
+                  label="模型"
+                  align="end"
+                  value={model}
+                  options={modelOptions}
+                  minWidth={240}
+                  disabled={locked || !!active}
+                  onChange={setModel}
+                />
               </div>
             )}
             <button
@@ -737,6 +822,13 @@ function AgentConversation({
       )}
     </aside>
   )
+}
+
+function shortTime(value: string): string {
+  const date = new Date(value)
+  return date.toDateString() === new Date().toDateString()
+    ? date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
 // What the photographer sent: their words, with what they referenced as chips.

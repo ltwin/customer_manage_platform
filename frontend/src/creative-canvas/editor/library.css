@@ -21,19 +21,6 @@
   color: var(--muted);
   font-size: 12px;
 }
-.cl-options {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  max-height: 160px;
-  overflow-y: auto;
-}
-.cl-options label {
-  flex-direction: row;
-  align-items: center;
-  display: flex;
-  gap: 8px;
-}
 .cl-new-tag {
   display: grid;
   grid-template-columns: 65px 1fr;
@@ -308,3 +295,6 @@
 .cl-picker .cl-tags button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border: 0; border-radius: 7px; background: var(--s1); box-shadow: inset 0 0 0 1px var(--line); color: var(--fg-2); font-size: 11px; }
 .cl-picker .cl-tags button[aria-pressed='true'] { background: var(--s3); color: var(--fg); }
 .cl-picker .cl-tags i { width: 6px; height: 6px; border-radius: 50%; }
+.cl-picker .cc-picker.is-field {
+  margin-bottom: 10px;
+}

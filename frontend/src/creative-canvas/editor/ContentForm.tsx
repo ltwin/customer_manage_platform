@@ -3,6 +3,7 @@ import type { Draft } from './journal.ts'
 import type { ContentDraft } from './api.ts'
 
 import { payload, validateContentValue } from './content.ts'
+import Picker from './Picker.tsx'
 
 type Props = {
   draft: Draft
@@ -66,21 +67,23 @@ export default function ContentForm({
           </label>
           <label>
             内容类型
-            <select
-              className="input"
+            <Picker
+              variant="field"
+              label="内容类型"
               value={draft.kind}
               disabled={disabled}
-              onChange={(e) =>
+              options={[
+                { value: 'text', label: '文字' },
+                { value: 'link', label: '链接' },
+              ]}
+              onChange={(kind) =>
                 onChange({
                   ...draft,
-                  kind: e.target.value === 'link' ? 'link' : 'text',
+                  kind: kind === 'link' ? 'link' : 'text',
                   value: '',
                 })
               }
-            >
-              <option value="text">文字</option>
-              <option value="link">链接</option>
-            </select>
+            />
           </label>
         </>
       )}

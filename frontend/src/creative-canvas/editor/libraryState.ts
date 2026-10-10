@@ -1,5 +1,6 @@
 import type * as api from './api.ts'
 import type { NewTag } from './api.ts'
+import type { PickerOption } from './Picker.tsx'
 export type Catalog = {
   groups: api.Group[]
   tags: api.Tag[]
@@ -74,3 +75,20 @@ export function metaLine(a: api.Asset, groups: api.Group[], tags: api.Tag[]) {
 
 // 分组平铺浏览每组预览的格数。
 export const PREVIEW = 6
+
+/** 分组按层级排成下拉选项：父分组在前，子分组紧随其后并缩进。 */
+export function groupOptions(
+  groups: api.Group[],
+  exclude?: string,
+): PickerOption[] {
+  const out: PickerOption[] = []
+  const visit = (parent: string | null, depth: number) => {
+    for (const g of groups) {
+      if ((g.parent_id ?? null) !== parent || g.id === exclude) continue
+      out.push({ value: g.id, label: g.name, depth })
+      visit(g.id, depth + 1)
+    }
+  }
+  visit(null, 0)
+  return out
+}

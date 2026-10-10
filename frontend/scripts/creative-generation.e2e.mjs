@@ -147,7 +147,8 @@ try{
  const panel=page.getByRole('complementary',{name:'节点生成'})
  await panel.waitFor()
  await panel.getByLabel('提示词',{exact:true}).fill('秋日森林里的摄影布景')
- await panel.getByLabel('生成模型',{exact:true}).selectOption('qa-model')
+ await panel.getByRole('combobox',{name:'生成模型',exact:true}).click()
+ await page.getByRole('listbox',{name:'生成模型'}).getByRole('option',{name:'契约文字模型'}).click()
  await panel.getByRole('button',{name:'生成参数',exact:true}).click()
  await panel.getByLabel('数量',{exact:true}).fill('2')
  await page.keyboard.press('Escape')
@@ -185,7 +186,7 @@ try{
  assert.equal(canvas.nodes[0].data.selected_version_id,null)
  const before=commandPosts
  await panel.getByRole('button',{name:'用于节点',exact:true}).click()
- await panel.getByText('版本 1 · 当前采用',{exact:true}).waitFor()
+ await panel.getByText('版本 1 · 生成 · 当前采用',{exact:true}).waitFor()
  assert.equal(commandPosts,before+1)
  await page.screenshot({path:'/tmp/g5-desktop.png'})
  const desktop=await panel.evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return {x:r.x,y:r.y,width:r.width,height:r.height,background:s.backgroundColor,color:s.color}})

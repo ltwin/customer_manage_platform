@@ -1,7 +1,13 @@
 import { useState } from 'react'
 import { useFocusTrap } from '../../components/useFocusTrap'
 import OrganizationPicker from './OrganizationPicker.tsx'
-import { emptyOrganization, type Editor, type Catalog } from './libraryState.ts'
+import Picker from './Picker.tsx'
+import {
+  emptyOrganization,
+  groupOptions,
+  type Editor,
+  type Catalog,
+} from './libraryState.ts'
 import { errorMessage } from './queue.ts'
 export default function LibraryEditor({
   editor,
@@ -178,21 +184,16 @@ export default function LibraryEditor({
             (editor.kind === 'group' && !editor.id)) && (
             <label>
               上级分组
-              <select
-                className="input"
-                aria-label="上级分组"
+              <Picker
+                variant="field"
+                label="上级分组"
                 value={parent}
-                onChange={(e) => setParent(e.target.value)}
-              >
-                <option value="">顶层</option>
-                {catalog.groups
-                  .filter((g) => g.id !== editor.id)
-                  .map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-              </select>
+                options={[
+                  { value: '', label: '顶层' },
+                  ...groupOptions(catalog.groups, editor.id),
+                ]}
+                onChange={setParent}
+              />
             </label>
           )}
           {editor.kind === 'move' && (
@@ -220,19 +221,19 @@ export default function LibraryEditor({
               </label>
               <label>
                 标签分类
-                <select
-                  aria-label="标签分类"
-                  className="input"
+                <Picker
+                  variant="field"
+                  label="标签分类"
                   value={parent}
-                  onChange={(e) => setParent(e.target.value)}
-                >
-                  <option value="">未分类</option>
-                  {catalog.categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: '未分类' },
+                    ...catalog.categories.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                    })),
+                  ]}
+                  onChange={setParent}
+                />
               </label>
             </>
           )}
@@ -240,14 +241,16 @@ export default function LibraryEditor({
             <>
               <label>
                 整理方式
-                <select
-                  className="input"
+                <Picker
+                  variant="field"
+                  label="整理方式"
                   value={mode}
-                  onChange={(e) => setMode(e.target.value)}
-                >
-                  <option value="add">添加到所选分组 / 标签</option>
-                  <option value="remove">移出所选分组 / 标签</option>
-                </select>
+                  options={[
+                    { value: 'add', label: '添加到所选分组 / 标签' },
+                    { value: 'remove', label: '移出所选分组 / 标签' },
+                  ]}
+                  onChange={setMode}
+                />
               </label>
               <OrganizationPicker
                 groups={catalog.groups}
@@ -264,16 +267,18 @@ export default function LibraryEditor({
             <>
               <label>
                 默认保留时长
-                <select
-                  className="input"
+                <Picker
+                  variant="field"
+                  label="默认保留时长"
                   value={retention}
-                  onChange={(e) => setRetention(e.target.value)}
-                >
-                  <option value="">一直保留</option>
-                  <option value="7">7 天</option>
-                  <option value="30">30 天</option>
-                  <option value="90">90 天</option>
-                </select>
+                  options={[
+                    { value: '', label: '一直保留' },
+                    { value: '7', label: '7 天' },
+                    { value: '30', label: '30 天' },
+                    { value: '90', label: '90 天' },
+                  ]}
+                  onChange={setRetention}
+                />
               </label>
               <p>
                 仅影响之后移入回收站的资产。自动到期清理尚未启用，目前需手动彻底删除。

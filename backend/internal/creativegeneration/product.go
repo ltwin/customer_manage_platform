@@ -25,6 +25,7 @@ type Model struct {
 	ConfigurationRevision string      `json:"configuration_revision"`
 	Key                   string      `json:"key"`
 	Label                 string      `json:"label"`
+	Description           string      `json:"description,omitempty"`
 	Kind                  string      `json:"kind"`
 	Parameters            []Parameter `json:"parameters"`
 }

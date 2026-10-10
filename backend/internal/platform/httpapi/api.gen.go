@@ -4423,11 +4423,14 @@ type CreativeGenerationCatalog struct {
 
 // CreativeGenerationModel defines model for CreativeGenerationModel.
 type CreativeGenerationModel struct {
-	ConfigurationRevision string                        `json:"configuration_revision"`
-	Key                   string                        `json:"key"`
-	Kind                  CreativeGenerationModelKind   `json:"kind"`
-	Label                 string                        `json:"label"`
-	Parameters            []CreativeGenerationParameter `json:"parameters"`
+	ConfigurationRevision string `json:"configuration_revision"`
+
+	// Description 选择模型时显示的一句话说明；缺省表示没有说明。
+	Description *string                       `json:"description,omitempty"`
+	Key         string                        `json:"key"`
+	Kind        CreativeGenerationModelKind   `json:"kind"`
+	Label       string                        `json:"label"`
+	Parameters  []CreativeGenerationParameter `json:"parameters"`
 }
 
 // CreativeGenerationModelKind defines model for CreativeGenerationModel.Kind.
