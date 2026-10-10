@@ -208,6 +208,7 @@ func (s *Service) Handlers() []store.JobHandler {
 		// The attempt budget covers a whole bounded run, which is allowed to
 		// spend its full execution window inside one model turn.
 		{Kind: jobRunKind, Work: s.workRun, Timeout: s.limits.RunDuration() + time.Minute},
+		{Kind: jobTitleKind, Work: s.workTitle, Timeout: titleTimeout + time.Minute},
 	}
 }
 

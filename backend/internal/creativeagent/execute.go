@@ -760,6 +760,11 @@ func (s *Service) finishRun(ctx context.Context, scope store.AccountScope, held 
 			if err != nil || !closed {
 				return err
 			}
+			if state != RunFailed {
+				if err := s.queueTitleInTx(ctx, tx, held, now); err != nil {
+					return err
+				}
+			}
 			if turnErr != nil {
 				if _, err := tx.Update(ctx, "creative_agent_steps", "state='failed',error_code=$4,finished_at=$5,updated_at=$5", "run_id=$2 AND execution_epoch=$3 AND kind='tool' AND state='prepared'", held.RunID, held.Epoch, code, now); err != nil {
 					return err
