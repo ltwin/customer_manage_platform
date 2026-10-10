@@ -139,3 +139,32 @@ func TestAssistantEditsTheCanvasThenGenerates(t *testing.T) {
 		t.Fatal("a replayed edit applied twice")
 	}
 }
+
+// A canvas whose stored state disagrees with its history refuses every edit;
+// the run says so instead of inviting a retry that cannot succeed.
+func TestCorruptCanvasEndsRunWithIntegrityCode(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	h := &runtimeHandler{service: f.service, scope: f.alice}
+	if _, err := h.editCanvas(t.Context(), f.canvasID, "seed-existing", `{"actions":[{"type":"add_node","key":"n","node_type":"text","text":"已有"}]}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE creative_graph_identities SET effect_heads=jsonb_set(effect_heads,'{data,value_hash}','"tampered"') WHERE canvas_id=$1 AND kind='node'`, f.canvasID); err != nil {
+		t.Fatal(err)
+	}
+	c := f.conversation(f.alice, f.canvasID)
+	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
+		return scriptedResult(r, call("edit", 0, editCanvasTool, `{"actions":[{"type":"add_node","key":"m","node_type":"text","text":"新增"}]}`)), nil
+	}
+	run, err := f.startRun(f.alice, c.ID, contextConsent(t, f, c.ID).ID, InstructionSegment{Type: "text", Text: "加一个文字节点"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil || got.State != RunFailed || got.ErrorCode != "creative_canvas_integrity" {
+		t.Fatalf("run=%+v %v", got, err)
+	}
+}

@@ -161,6 +161,7 @@ test('a refused request says what to do next', () => {
   assert.equal(runFailure('creative_model_providers_exhausted'), '当前负载较高，请稍后尝试')
   assert.equal(runFailure('creative_model_unavailable'), '当前模型暂无可用的服务渠道，请换一个模型')
   assert.equal(runFailure('creative_model_rejected'), '模型服务拒绝了这次请求，请重试或换一个模型')
+  assert.equal(runFailure('creative_canvas_integrity'), '画布数据校验未通过，已停止修改，请联系我们处理')
   assert.equal(runFailure('creative_from_a_newer_server'), '本次执行未能完成，请重试')
   assert.equal(runFailure(undefined), '')
 })

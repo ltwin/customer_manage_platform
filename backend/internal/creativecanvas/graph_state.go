@@ -34,6 +34,34 @@ type fieldChange struct {
 	Before creativegraph.Head `json:"before"`
 	After  creativegraph.Head `json:"after"`
 }
+
+// upgradeHead re-renders a version head written before versions were hashed
+// in UTC, when its creation time still carried the writer's local offset.
+// Only a head that matches its own value is re-rendered, so real corruption
+// still fails; the rewrite is deterministic, so identity heads and the change
+// log upgrade to the same hash and undo chains keep linking.
+func upgradeHead(kind, field string, h creativegraph.Head) creativegraph.Head {
+	if kind != "version" || field != "data" || h.Hash != creativegraph.Hash(h.Value) {
+		return h
+	}
+	var v NodeVersion
+	if err := json.Unmarshal(h.Value, &v); err != nil {
+		return h
+	}
+	value := creativegraph.Canonical(v)
+	if equalValue(value, h.Value) {
+		return h
+	}
+	return creativegraph.Head{Token: h.Token, Hash: creativegraph.Hash(value), Value: value}
+}
+
+func (d *changeDetail) upgrade() {
+	for i, f := range d.Fields {
+		d.Fields[i].Before = upgradeHead(f.Kind, f.Field, f.Before)
+		d.Fields[i].After = upgradeHead(f.Kind, f.Field, f.After)
+	}
+}
+
 type changeDetail struct {
 	SchemaVersion int           `json:"schema_version"`
 	Fields        []fieldChange `json:"fields"`
@@ -88,6 +116,9 @@ func loadGraph(ctx context.Context, tx canvasReader, id string) (graphState, map
 		if err = json.Unmarshal(raw, &i.Heads); err != nil {
 			rows.Close()
 			return g, nil, err
+		}
+		for field, h := range i.Heads {
+			i.Heads[field] = upgradeHead(i.Kind, field, h)
 		}
 		i.P = creativeops.Revision(p)
 		i.D = creativeops.Revision(d)

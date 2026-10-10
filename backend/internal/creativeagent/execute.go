@@ -13,6 +13,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -962,6 +963,10 @@ func failureCode(err error) string {
 		return "creative_context_limit"
 	case errors.Is(err, ErrNotFound):
 		return "creative_input_unavailable"
+	case errors.Is(err, creativecanvas.ErrGraphIntegrity):
+		// The stored canvas disagrees with its own history; retrying the
+		// same edit cannot succeed.
+		return "creative_canvas_integrity"
 	default:
 		return "creative_run_failed"
 	}

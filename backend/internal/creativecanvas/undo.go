@@ -76,6 +76,7 @@ func reverse(ctx context.Context, scope store.AccountScope, command creativeops.
 				rows.Close()
 				return creativeops.Outcome{}, ErrGraphIntegrity
 			}
+			detail.upgrade()
 			inverseOf = id
 			for _, f := range detail.Fields {
 				k := f.ID + ":" + f.Field

@@ -30,6 +30,17 @@ type NodeVersion struct {
 	Revision          creativeops.Revision `json:"revision"`
 	Inputs            []VersionInput       `json:"inputs"`
 }
+
+// MarshalJSON writes CreatedAt in UTC. A version's JSON is hashed into its
+// graph head, so it must not depend on the time zone of the process that
+// happened to load or create it.
+func (v NodeVersion) MarshalJSON() ([]byte, error) {
+	type plain NodeVersion
+	p := plain(v)
+	p.CreatedAt = p.CreatedAt.UTC()
+	return json.Marshal(p)
+}
+
 type VersionPage struct {
 	Items             []NodeVersion        `json:"items"`
 	SelectedVersionID *string              `json:"selected_version_id"`
