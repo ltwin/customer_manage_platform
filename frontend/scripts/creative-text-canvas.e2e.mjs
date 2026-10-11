@@ -218,7 +218,7 @@ try {
     .fill(process.env.CREATIVE_EDITOR_PASSWORD)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.waitForURL('**/dashboard')
-  await page.goto(`${url}/creative`)
+  await page.goto(`${url}/creative/projects`)
   await saved(page)
   await openLibrary(page)
   await page.getByRole('heading', { name: '我的项目', exact: true }).waitFor()

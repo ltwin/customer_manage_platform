@@ -30,7 +30,8 @@ import ShootPlanRunPage from './planning/ShootPlanRunPage'
 import ShootPlanIngestionPage from './planning/ShootPlanIngestionPage'
 import SharedPlanPage from './planning/share/SharedPlanPage'
 
-const CreativeProjectsPage = lazy(() => import('./creative-canvas/editor/ProjectsPage'))
+const CreativeHomePage = lazy(() => import('./creative-canvas/home/HomePage'))
+const CreativeProjectsPage = lazy(() => import('./creative-canvas/home/ProjectsPage'))
 
 const CreativeCanvasPage = lazy(() => import('./creative-canvas/editor/WorkspacePage'))
 
@@ -121,7 +122,8 @@ export default function App() {
         <Route path="/customers/new" element={<CustomerNewPage />} />
         <Route path="/customers/:id" element={<CustomerDetailPage />} />
         <Route path="/orders" element={<OrdersPage />} />
-        <Route path="/creative" element={<Suspense fallback={<p role="status">正在打开创意空间…</p>}><CreativeProjectsPage /></Suspense>} />
+        <Route path="/creative" element={<Suspense fallback={<p role="status">正在打开创意空间…</p>}><CreativeHomePage /></Suspense>} />
+        <Route path="/creative/projects" element={<Suspense fallback={<p role="status">正在打开项目…</p>}><CreativeProjectsPage /></Suspense>} />
         <Route path="/creative/canvases/:canvasID" element={<Suspense fallback={<p role="status">正在打开创作台…</p>}><CreativeCanvasPage /></Suspense>} />
         <Route path="/creative/library" element={<Suspense fallback={<p role="status">正在打开资产库…</p>}><CreativeCanvasPage /></Suspense>} />
         <Route path="/calendar" element={<CalendarPage />} />

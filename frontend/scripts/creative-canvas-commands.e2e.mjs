@@ -221,7 +221,7 @@ try {
     .fill(process.env.CREATIVE_EDITOR_PASSWORD)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await page.waitForURL('**/dashboard')
-  await page.goto(`${url}/creative`)
+  await page.goto(`${url}/creative/projects`)
   await saved()
   await page.getByRole('button', { name: '开启新的创作' }).click()
   await page.waitForURL('**/creative/canvases/*')

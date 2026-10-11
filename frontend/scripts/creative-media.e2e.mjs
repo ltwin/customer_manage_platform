@@ -172,7 +172,7 @@ try {
   await page.getByRole('dialog', { name: /^快速查看：/ }).waitFor({ state: 'hidden' })
 
   // 2. Project: drag assets in (multi-select), drop a file, upload to node.
-  await page.goto(`${url}/creative`)
+  await page.goto(`${url}/creative/projects`)
   await saved()
   await page.getByRole('button', { name: '开启新的创作' }).click()
   await page.waitForURL('**/creative/canvases/*')
