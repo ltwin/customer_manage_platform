@@ -1,0 +1,57 @@
+/* 应用侧栏（side.mjs）：展开 216px 显示全称，折叠 56px 只剩图标。图标在两种状态下位置不变，折叠只是把右边的字收起来。 */
+.side {
+  display: flex; flex-direction: column; gap: 2px; width: 216px; height: 100vh; padding: 16px 10px; overflow: hidden;
+  border-right: 1px solid var(--line); background: var(--bg); transition: width 0.18s var(--ease);
+}
+.side.collapsed { width: 56px; }
+.side-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: opacity 0.12s; }
+.side.collapsed .side-t { opacity: 0; }
+
+.side-top { display: flex; align-items: center; gap: 4px; margin-bottom: 14px; }
+.side-brand { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; height: 36px; padding: 0 8px; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+.side-brand .i { width: 20px; height: 20px; }
+.side-toggle { flex: none; color: var(--fg-3); }
+.side.collapsed .side-top { flex-direction: column; align-items: stretch; gap: 2px; }
+.side.collapsed .side-toggle { width: 36px; }
+.side.forced .side-toggle { display: none; }
+
+.side-nav { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; }
+.side-nav a, .side-recent a, .side-link {
+  display: flex; align-items: center; gap: 10px; min-width: 0; height: 34px; padding: 0 10px; overflow: hidden;
+  border-radius: var(--r-sm); color: var(--fg-2);
+}
+.side-nav a:hover, .side-recent a:hover, .side-link:hover { background: var(--s2); color: var(--fg); }
+.side-nav a[aria-current='page'] { background: var(--s3); color: var(--fg); }
+
+/* 最近打开排在导航后面：导航加条目时它整体下移，空间不够就在自己的区域里滚动 */
+.side-recent-sec { display: flex; flex-direction: column; flex: 0 1 auto; min-width: 0; min-height: 0; }
+.side-label { margin: 18px 10px 4px; font-size: 11px; color: var(--fg-3); white-space: nowrap; }
+.side.collapsed .side-label { height: 1px; margin: 14px 8px 8px; background: var(--line); }
+.side-recent { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; min-height: 0; overflow: hidden auto; scrollbar-width: none; }
+.side-recent a { gap: 10px; padding: 0 8px; font-size: 12px; }
+.side-recent .thumb { position: relative; width: 20px; height: 20px; flex: none; border-radius: 5px; background: var(--s3) center / cover; }
+.side-recent .dot { position: absolute; top: -2px; right: -2px; width: 7px; height: 7px; border-radius: 50%; background: var(--run); box-shadow: 0 0 0 2px var(--bg); }
+.side-recent .dot.wait { background: var(--primary); }
+
+.side-foot { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; margin-top: auto; padding-top: 8px; }
+.side-account { display: flex; align-items: center; gap: 10px; min-width: 0; overflow: hidden; margin-top: 6px; padding: 14px 4px 4px; border-top: 1px solid var(--line); }
+.side-account .avatar { display: grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--s4); font-weight: 600; font-size: 12px; }
+.side-account .who { display: grid; font-size: 12px; line-height: 1.35; }
+.side-account .who small { color: var(--fg-3); font-size: 11px; }
+
+.side-tip {
+  position: fixed; z-index: 80; translate: 0 -50%; padding: 4px 8px; border-radius: 6px; pointer-events: none;
+  background: var(--s3); box-shadow: var(--shadow); font-size: 12px; color: var(--fg); white-space: nowrap;
+}
+
+/* 手机：收成顶栏，只留品牌和三个入口 */
+@media (max-width: 760px) {
+  .side { flex-direction: row; align-items: center; width: auto; height: auto; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .side-top { margin: 0 auto 0 0; }
+  .side-nav { display: flex; }
+  .side-nav a { gap: 6px; }
+  .side-recent-sec, .side-foot { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .side, .side-t { transition: none; }
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0b0c" />
+    <title>资产库 · 创意空间</title>
+    <link rel="icon" href="../v4/mark.svg" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="shell.css" />
+    <link rel="stylesheet" href="panels.css" />
+    <link rel="stylesheet" href="side.css" />
+    <link rel="stylesheet" href="viewer.css" />
+    <link rel="stylesheet" href="assets.css" />
+  </head>
+  <body class="lib">
+    <aside id="side"></aside>
+
+    <aside class="tree" aria-label="资料库">
+      <div class="tree-top">
+        <strong>资产库</strong>
+        <button class="btn btn-primary btn-sm" id="import" aria-expanded="false"><span class="i" data-i="plus"></span>导入</button>
+      </div>
+      <div class="tree-scroll">
+        <nav class="tree-views" id="views"></nav>
+        <section class="tree-sec">
+          <header><span>智能分组</span><button class="icon-btn sm" id="newSmart" aria-label="新建智能分组"><span class="i" data-i="plus"></span></button></header>
+          <div id="smart"></div>
+        </section>
+        <section class="tree-sec">
+          <header><span>分组</span><button class="icon-btn sm" id="newGroup" aria-label="新建分组"><span class="i" data-i="plus"></span></button></header>
+          <div id="groups" role="tree"></div>
+        </section>
+        <section class="tree-sec">
+          <header><span>标签</span><button class="icon-btn sm" id="manageTags" aria-label="管理标签"><span class="i" data-i="settings-2"></span></button></header>
+          <div id="tags"></div>
+        </section>
+      </div>
+      <footer class="tree-foot" id="usage"></footer>
+    </aside>
+
+    <main class="board" id="board" aria-label="资产">
+      <header class="board-head">
+        <div class="crumb" id="crumb"></div>
+        <label class="search"><span class="i" data-i="search"></span><input id="q" placeholder="搜索标题、备注、标签" /><kbd>/</kbd></label>
+        <button class="chip" id="sort" aria-expanded="false"><span class="v">最近添加</span><span class="i chev" data-i="chevron-down"></span></button>
+        <div class="seg seg-icon" role="group" aria-label="布局">
+          <button aria-pressed="true" data-layout="masonry" aria-label="瀑布流" title="瀑布流"><span class="i" data-i="masonry"></span></button>
+          <button aria-pressed="false" data-layout="grid" aria-label="方格" title="方格"><span class="i" data-i="layout-grid"></span></button>
+        </div>
+        <input class="zoom" id="zoom" type="range" min="140" max="360" step="20" value="220" aria-label="缩略图大小" />
+        <button class="icon-btn" id="toggleInspector" aria-pressed="true" aria-label="检查器"><span class="i" data-i="panel-right-close"></span></button>
+      </header>
+      <div class="filters" id="filters">
+        <div class="seg" id="kinds" role="group" aria-label="类型"></div>
+        <button class="chip" id="fColor" aria-expanded="false"><span class="swatch-dot" id="fColorDot"></span>颜色<span class="i chev" data-i="chevron-down"></span></button>
+        <button class="chip" id="fShape" aria-expanded="false"><span class="i" data-i="scan"></span><span class="v">画幅</span><span class="i chev" data-i="chevron-down"></span></button>
+        <button class="chip" id="fRating" aria-expanded="false"><span class="i" data-i="star"></span><span class="v">评分</span><span class="i chev" data-i="chevron-down"></span></button>
+        <button class="chip" id="fTags" aria-expanded="false"><span class="i" data-i="tag"></span><span class="v">标签</span><span class="i chev" data-i="chevron-down"></span></button>
+      </div>
+      <div class="active" id="active"></div>
+      <div class="subgroups" id="subgroups"></div>
+      <div class="trash-note" id="trashNote" hidden><span class="i" data-i="clock"></span>回收站里的素材 30 天后自动清除<span class="grow"></span><button class="btn btn-sm" id="emptyTrash">清空回收站</button></div>
+      <div class="scroll" id="scroll">
+        <div class="tiles" id="tiles"></div>
+        <div class="empty" id="empty" hidden></div>
+      </div>
+      <div class="batch" id="batch" hidden></div>
+      <div class="drop" id="drop" hidden><div><span class="i" data-i="upload"></span><strong>松手导入</strong><span id="dropTarget"></span></div></div>
+    </main>
+
+    <aside class="inspector" id="inspector" aria-label="检查器"></aside>
+
+    <input type="file" id="file" multiple hidden />
+    <script type="module" src="assets.mjs"></script>
+  </body>
+</html>

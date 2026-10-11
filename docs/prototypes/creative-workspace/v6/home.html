@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0b0c" />
+    <title>创意空间</title>
+    <link rel="icon" href="../v4/mark.svg" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="shell.css" />
+    <link rel="stylesheet" href="panels.css" />
+    <link rel="stylesheet" href="side.css" />
+    <link rel="stylesheet" href="home.css" />
+  </head>
+  <body class="home">
+    <aside id="side"></aside>
+
+    <main class="main" id="main">
+      <!-- 首页 -->
+      <section class="view" id="view-home">
+        <div class="hero">
+          <p class="hello" id="hello"></p>
+          <h1>这次想拍点什么？</h1>
+          <form class="ask" id="ask" novalidate>
+            <div class="ask-refs" id="refs" aria-label="参考素材"></div>
+            <label class="sr-only" for="prompt">创作想法</label>
+            <textarea id="prompt" rows="2" placeholder="说说这次拍摄的想法，助手会在新画布上帮你展开…  输入 @ 引用资产库"></textarea>
+            <div class="ask-foot">
+              <button type="button" class="icon-btn" id="addRef" aria-label="添加参考"><span class="i" data-i="plus"></span></button>
+              <button type="button" class="chip" id="skill" aria-expanded="false"><span class="i" data-i="sparkles"></span><span class="v">普通对话</span><span class="i chev" data-i="chevron-down"></span></button>
+              <button type="button" class="chip" id="model" aria-expanded="false"><span class="i" data-i="box"></span><span class="v">DeepSeek V3.2</span><span class="i chev" data-i="chevron-down"></span></button>
+              <span class="grow"></span>
+              <button type="button" class="ask-blank" id="blank">空白画布</button>
+              <button type="submit" class="send" id="send" aria-label="交给助手" disabled><span class="i" data-i="arrow-up"></span></button>
+            </div>
+            <div class="ask-drop" aria-hidden="true">松手放入参考</div>
+          </form>
+          <div class="starters" id="starters" aria-label="从一个场景开始"></div>
+        </div>
+
+        <section class="block" aria-labelledby="recentTitle">
+          <header class="block-head">
+            <h2 id="recentTitle">继续创作</h2>
+            <a class="more" href="#projects">全部项目<span class="i" data-i="chevron-right"></span></a>
+          </header>
+          <div class="grid grid-recent" id="recent"></div>
+        </section>
+
+        <section class="block" aria-labelledby="templateTitle">
+          <header class="block-head">
+            <h2 id="templateTitle">从模板开始</h2>
+            <p class="block-sub">带好参考组、分镜和说明的画布，打开后直接改成你的</p>
+          </header>
+          <div class="grid grid-template" id="templates"></div>
+        </section>
+
+        <section class="block" aria-labelledby="assetTitle">
+          <header class="block-head">
+            <h2 id="assetTitle">资产库 · 最近添加</h2>
+            <a class="more" href="./assets.html">打开资产库<span class="i" data-i="chevron-right"></span></a>
+          </header>
+          <div class="assets" id="assets"></div>
+        </section>
+      </section>
+
+      <!-- 项目 -->
+      <section class="view" id="view-projects" hidden>
+        <header class="list-head">
+          <h1>项目</h1>
+          <div class="seg" role="group" aria-label="项目状态">
+            <button aria-pressed="true" data-archived="0">当前</button>
+            <button aria-pressed="false" data-archived="1">已归档</button>
+          </div>
+          <span class="grow"></span>
+          <label class="search"><span class="i" data-i="search"></span><input id="search" placeholder="搜索项目" /></label>
+          <button class="chip" id="sort" aria-expanded="false"><span class="v">最近编辑</span><span class="i chev" data-i="chevron-down"></span></button>
+          <button class="btn btn-primary" id="newProject"><span class="i" data-i="plus"></span>新建项目</button>
+        </header>
+        <div class="grid grid-all" id="all"></div>
+        <p class="list-empty" id="listEmpty" hidden></p>
+      </section>
+    </main>
+
+    <input type="file" id="file" accept="image/*" multiple hidden />
+    <script type="module" src="home.mjs"></script>
+  </body>
+</html>
