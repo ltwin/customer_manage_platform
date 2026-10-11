@@ -320,6 +320,68 @@ try {
   await settle()
   assert.equal(await chosen(), '文字模型')
   await recallPage.close()
+  // 读取中：列表、消息、运行详情依次到达，每一步都不能先露出空状态或旧答复。
+  const loadPage = await browser.newPage()
+  loadPage.on('pageerror', (error) => { throw error })
+  const list = delay(), thread = delay(), snapshot = delay()
+  let failThread = true
+  await loadPage.route('**/api/v1/creative/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    const json = (body) => route.fulfill({ json: body })
+    if (path.endsWith('/agent/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'model',display_name:'文字模型',available:true,capability:{image_input:false}}]})
+    if (path.endsWith('/conversations')) {
+      await list.promise
+      return json({ items: [{ id: 'conversation', title: '雪山婚纱' }, { id: 'broken', title: '读不出的对话' }] })
+    }
+    if (path.startsWith('/api/v1/creative/conversations/broken/') && failThread)
+      return route.fulfill({ status: 500, json: { error: { code: 'internal', message: '对话暂时无法更新' } } })
+    if (path.endsWith('/runs')) {
+      await thread.promise
+      return json({ items: path.includes('/conversation/') ? [finishedRun] : [] })
+    }
+    if (path.endsWith('/messages')) {
+      await thread.promise
+      return json({ items: path.includes('/conversation/') ? [
+        { id: 'message', role: 'user', ordinal: '1', status: 'complete', run_id: null, body: { blocks: [{ type: 'text', text: '布光怎么安排' }] } },
+        { id: 'answer', role: 'assistant', ordinal: '2', status: 'complete', run_id: 'run', body: { blocks: [{ type: 'text', text: '侧逆光为主' }] } },
+      ] : [] })
+    }
+    if (path.endsWith('/agent-runs/run')) {
+      await snapshot.promise
+      return json(finishedRun)
+    }
+    return json({ items: [] })
+  })
+  const log = loadPage.getByRole('log', { name: '对话消息' })
+  const welcome = loadPage.getByText('让创作助手陪你把想法落到画布上')
+  await loadPage.goto(url)
+  await loadPage.getByRole('button', { name: '打开创作助手' }).click()
+  await loadPage.locator('.cc-agent-loading').waitFor()
+  assert.equal(await log.getAttribute('aria-busy'), 'true')
+  assert.equal(await welcome.count(), 0, 'no welcome before the list is read')
+  assert.equal(await loadPage.locator('.cc-agent-title').textContent(), '正在读取', 'no placeholder title before the list is read')
+  await loadPage.screenshot({ path: '/tmp/creative-v6-agent-loading.png', animations: 'disabled' })
+  list.release()
+  await loadPage.locator('.cc-agent-title', { hasText: '雪山婚纱' }).waitFor()
+  assert.equal(await loadPage.locator('.cc-agent-loading').count(), 1, 'still reading the opened conversation')
+  assert.equal(await welcome.count(), 0, 'no welcome while the thread is read')
+  thread.release()
+  await loadPage.getByText('布光怎么安排').waitFor()
+  assert.equal(await loadPage.locator('.cc-agent-loading').count(), 0)
+  assert.equal(await loadPage.locator('.cc-agent-loading-answer').count(), 1, 'the answer is outlined until its run is read')
+  assert.equal(await loadPage.getByText('侧逆光为主').count(), 0, 'the plain answer waits for the run')
+  snapshot.release()
+  await loadPage.getByText('侧逆光为主').waitFor()
+  assert.equal(await loadPage.locator('.cc-agent-loading-answer').count(), 0)
+  assert.equal(await log.getAttribute('aria-busy'), 'false')
+  await pick(loadPage, '历史对话', '读不出的对话')
+  await loadPage.getByText('对话没有读出来。').waitFor()
+  assert.equal(await welcome.count(), 0, 'a failed read is not an empty conversation')
+  failThread = false
+  await loadPage.getByRole('button', { name: '重新读取' }).click()
+  await welcome.waitFor()
+  assert.equal(await loadPage.getByText('对话没有读出来。').count(), 0)
+  await loadPage.close()
   // 改名、归档、查看已归档、恢复：服务端状态在这里模拟，面板只看回执与列表。
   const managePage = await browser.newPage()
   managePage.on('pageerror', (error) => { throw error })

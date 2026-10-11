@@ -41,7 +41,7 @@ import {
   type AgentMaterial,
 } from './agentReferences.ts'
 import { AgentMaterialPicker } from './AgentMaterials.tsx'
-import { Markdown, RunTurn } from './AgentBlocks.tsx'
+import { Markdown, RunTurn, TurnLoading } from './AgentBlocks.tsx'
 import { currentStep } from './agentBlocks.ts'
 import {
   AgentTurnContext,
@@ -144,6 +144,14 @@ function AgentConversation({
   const recalled = useRef('')
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
+  // 读回来之前不画空状态：先闪一下「新对话」再跳出历史，像是丢了东西。
+  const [listRead, setListRead] = useState<'loading' | 'ready' | 'failed'>(
+    'loading',
+  )
+  const [threadRead, setThreadRead] = useState<{
+    id: string
+    failed: boolean
+  } | null>(null)
   // 已归档的对话单独一份列表；查看时整个面板只读，恢复后才能继续。
   const [archivedView, setArchivedView] = useState(false)
   const [archived, setArchived] = useState<Conversation[] | null>(null)
@@ -243,6 +251,7 @@ function AgentConversation({
         if (abort.signal.aborted) return
         setCatalog(directory)
         setConversations(page.items)
+        setListRead('ready')
         setModel(
           (old) =>
             old ||
@@ -256,8 +265,9 @@ function AgentConversation({
         }
       })
       .catch((e: unknown) => {
-        if (!abort.signal.aborted)
-          setError(e instanceof Error ? e.message : '暂时无法加载对话')
+        if (abort.signal.aborted) return
+        setError(e instanceof Error ? e.message : '暂时无法加载对话')
+        setListRead((old) => (old === 'ready' ? old : 'failed'))
       })
     return () => abort.abort()
   }, [canvasID, refresh])
@@ -298,10 +308,15 @@ function AgentConversation({
         if (abort.signal.aborted) return
         setRuns(page.items)
         setMessages(thread.items)
+        setThreadRead({ id: conversation, failed: false })
       })
       .catch((e: unknown) => {
-        if (!abort.signal.aborted)
-          setError(e instanceof Error ? e.message : '对话暂时无法更新')
+        if (abort.signal.aborted) return
+        setError(e instanceof Error ? e.message : '对话暂时无法更新')
+        // 已经读出来的内容留着，只有一次都没读到才算读取失败。
+        setThreadRead((old) =>
+          old?.id === conversation ? old : { id: conversation, failed: true },
+        )
       })
     return () => abort.abort()
   }, [conversation, refresh])
@@ -416,6 +431,7 @@ function AgentConversation({
         setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
         pinned.current = true
       } else if ('title' in reply) {
+        setThreadRead({ id: reply.id, failed: false })
         setConversation(reply.id)
       }
       savePending(current, null)
@@ -453,6 +469,7 @@ function AgentConversation({
       command.operation,
     )
     setConversations((old) => [created, ...old])
+    setThreadRead({ id: created.id, failed: false })
     setConversation(created.id)
     return created.id
   }
@@ -553,9 +570,27 @@ function AgentConversation({
     [canvas, locked, archivedView, runs],
   )
   const triggers = new Map(runs.map((run) => [run.trigger_message_id, run.id]))
+  const followedRuns = new Set(triggers.values())
   const thread = [...messages].sort((a, b) =>
     BigInt(a.ordinal) < BigInt(b.ordinal) ? -1 : 1,
   )
+  // 刚发出的运行已经在列表里，它的消息还在路上：同样算在读。
+  const reading: 'loading' | 'failed' | null =
+    listRead !== 'ready'
+      ? listRead
+      : conversation && threadRead?.id !== conversation
+        ? 'loading'
+        : threadRead?.failed
+          ? 'failed'
+          : !thread.length && runs.length
+            ? 'loading'
+            : null
+  function reread() {
+    setError('')
+    if (listRead === 'failed') setListRead('loading')
+    setThreadRead(null)
+    setRefresh((value) => value + 1)
+  }
   const modelOptions: PickerOption[] =
     catalog?.models.map((item) => ({
       value: item.model_key,
@@ -741,7 +776,17 @@ function AgentConversation({
           />
         ) : (
           <h2 className="cc-agent-title" title={current?.title ?? untitled}>
-            {current?.title ?? (archivedView ? '已归档的对话' : untitled)}
+            {listRead === 'loading' ? (
+              <>
+                <span className="sr-only">正在读取</span>
+                <span
+                  className="cc-agent-bone cc-agent-title-bone"
+                  aria-hidden="true"
+                />
+              </>
+            ) : (
+              (current?.title ?? (archivedView ? '已归档的对话' : untitled))
+            )}
           </h2>
         )}
         <Picker
@@ -810,13 +855,23 @@ function AgentConversation({
         aria-label="对话消息"
         role="log"
         ref={history}
+        aria-busy={reading === 'loading'}
         onScroll={(event) => {
           const log = event.currentTarget
           pinned.current =
             log.scrollHeight - log.scrollTop - log.clientHeight < 48
         }}
       >
-        {!thread.length && !archivedView && (
+        {reading === 'loading' && <ThreadLoading />}
+        {reading === 'failed' && (
+          <div className="cc-agent-read-failed" role="status">
+            <span>对话没有读出来。</span>
+            <button type="button" onClick={reread}>
+              重新读取
+            </button>
+          </div>
+        )}
+        {!reading && !thread.length && !archivedView && (
           <div className="cc-agent-empty">
             <span className="cc-agent-empty-mark" aria-hidden="true">
               <Sparkles size={22} />
@@ -854,7 +909,11 @@ function AgentConversation({
               )
             // Runs from before blocks existed have only their messages.
             return message.role === 'assistant' ? (
-              <LegacyAnswer key={message.id} message={message} />
+              <LegacyAnswer
+                key={message.id}
+                message={message}
+                followed={followedRuns.has(message.run_id ?? '')}
+              />
             ) : null
           })}
         </AgentTurnContext.Provider>
@@ -1049,15 +1108,36 @@ function UserMessage({
   )
 }
 
-function LegacyAnswer({ message }: { message: Message }) {
-  const hasBlocks = useAgentRuns(
-    (store) => !!store.runs[message.run_id ?? '']?.blocks.length,
-  )
+// A followed run is still being read until its snapshot arrives; showing the
+// plain answer meanwhile would swap it for the blocks a moment later.
+function LegacyAnswer({
+  message,
+  followed,
+}: {
+  message: Message
+  followed: boolean
+}) {
+  const view = useAgentRuns((store) => store.runs[message.run_id ?? ''])
   const words = message.body.blocks
     .map((block) => (block.type === 'text' ? (block.text ?? '') : ''))
     .join('')
-  if (hasBlocks || !words) return null
+  if ((followed && !view) || view?.blocks.length || !words) return null
   return <Markdown source={words} />
+}
+
+// 读取中的对话：一问一答的轮廓，位置和真内容一致，读到后原地替换。
+function ThreadLoading() {
+  return (
+    <div className="cc-agent-loading" role="status">
+      <span className="sr-only">正在读取对话</span>
+      {[0, 1].map((index) => (
+        <div className="cc-agent-loading-turn" key={index} aria-hidden="true">
+          <span className="cc-agent-bone cc-agent-bone-ask" />
+          <TurnLoading />
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // The row above the input while a run is going: what it is doing, and stop.

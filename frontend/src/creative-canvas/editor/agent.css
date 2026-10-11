@@ -431,6 +431,64 @@
 .cc-agent-empty p {
   margin: 0;
 }
+/* 读取中：一问一答的轮廓，位置与真内容对齐，读到后原地替换 */
+.cc-agent-bone {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    var(--s3) 0%,
+    var(--s3) 35%,
+    var(--s4) 50%,
+    var(--s3) 65%,
+    var(--s3) 100%
+  );
+  background-size: 250% 100%;
+  animation: cc-agent-shimmer 1.6s linear infinite;
+}
+.cc-agent-title-bone {
+  width: 96px;
+  height: 12px;
+}
+.cc-agent-loading-turn + .cc-agent-loading-turn {
+  margin-top: 28px;
+  opacity: 0.6;
+}
+.cc-agent-bone-ask {
+  width: 46%;
+  height: 34px;
+  margin: 0 0 14px auto;
+  border-radius: 14px 14px 4px 14px;
+}
+.cc-agent-loading-answer {
+  display: grid;
+  gap: 9px;
+  padding: 4px 0 8px;
+}
+.cc-agent-loading-answer .cc-agent-bone:nth-child(2) {
+  width: 86%;
+}
+.cc-agent-loading-answer .cc-agent-bone.is-short {
+  width: 52%;
+}
+.cc-agent-read-failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 10vh 4px 0;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.cc-agent-panel .cc-agent-read-failed button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--s3);
+  color: var(--fg);
+  font-size: 12px;
+}
 .cc-agent-starters {
   margin: 22px 0 0;
   padding: 0;
@@ -921,7 +979,8 @@
   .cc-agent-shimmer,
   .cc-agent-caret,
   .cc-agent-dot,
-  .cc-agent-launch[data-state]::after {
+  .cc-agent-launch[data-state]::after,
+  .cc-agent-bone {
     animation: none;
   }
   .cc-agent-shimmer {

@@ -354,7 +354,7 @@ function Segment({
 // The blocks of one run, in the order they happened.
 export function RunTurn({ runID }: { runID: string }) {
   const view = useAgentRuns((state) => state.runs[runID])
-  if (!view) return null
+  if (!view) return <TurnLoading />
   const items = layout(view.blocks)
   const finished = isFinished(view.run)
   const { run } = view
@@ -383,6 +383,17 @@ export function RunTurn({ runID }: { runID: string }) {
           {hasUnsettledCost(run) && '；已发生的费用仍在核实'}
         </p>
       )}
+    </div>
+  )
+}
+
+// The outline of an answer while its run is still being read.
+export function TurnLoading() {
+  return (
+    <div className="cc-agent-loading-answer" aria-hidden="true">
+      <span className="cc-agent-bone" />
+      <span className="cc-agent-bone" />
+      <span className="cc-agent-bone is-short" />
     </div>
   )
 }
