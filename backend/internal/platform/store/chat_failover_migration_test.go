@@ -9,6 +9,7 @@ import (
 
 func rollbackChatFailover(t *testing.T, url string) {
 	t.Helper()
+	rollbackConversationManage(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback chat-failover", err)
 	}
@@ -37,6 +38,7 @@ VALUES ('llmr_00000000-0000-4000-8000-000000000001','acc','test','00000000-0000-
 					t.Fatal(err)
 				}
 			}
+			rollbackConversationManage(t, url)
 			err := store.MigrateDownOneForTest(url)
 			if evidence != "empty" {
 				if err == nil || !strings.Contains(err.Error(), "chat failover evidence exists") {

@@ -313,6 +313,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/conversations/{id}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 摄影师给对话改名；之后自动命名不再改它
+         * @description 不带期望修订号：每条消息都会推进会话修订号，带了会输给自己的回答。已归档的对话不能改名（409 creative_conversation_archived）。
+         */
+        post: operations["renameCreativeAgentConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/conversations/{id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 归档对话：从列表移走，恢复前不能再发起运行
+         * @description 消息、运行与它们保留的内容都不变，也不改变 updated_at。还有未结束的运行时拒绝（409 creative_run_state_conflict）。已归档时回放当前状态。
+         */
+        post: operations["archiveCreativeAgentConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/conversations/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 恢复已归档的对话
+         * @description 未归档时回放当前状态。
+         */
+        post: operations["restoreCreativeAgentConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/conversations/{id}/messages": {
         parameters: {
             query?: never;
@@ -2946,6 +3006,12 @@ export interface components {
             project_id: string;
             canvas_id: string;
             title: string;
+            /**
+             * @description 标题由谁写下：创建时的默认标题、自动命名、摄影师自己。自动命名只替换 default， 所以摄影师改过的名字不会被覆盖。
+             * @enum {string}
+             */
+            title_source: "default" | "generated" | "manual";
+            archived: boolean;
             revision: components["schemas"]["CreativeRevision"];
             /** Format: date-time */
             updated_at: string;
@@ -3267,6 +3333,24 @@ export interface components {
         };
         CreativeAgentConversationCreatePayload: {
             title: string;
+        };
+        CreativeAgentConversationRenamePayload: {
+            /** @description 首尾空白会被去掉，去掉后不能为空。 */
+            title: string;
+        };
+        RenameCreativeAgentConversationRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAgentConversationRenamePayload"];
+        };
+        CreativeAgentConversationStateRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: Record<string, never>;
         };
         CreateCreativeAgentConversationRequest: {
             /** Format: uuid */
@@ -7066,6 +7150,8 @@ export interface operations {
     listCreativeAgentConversations: {
         parameters: {
             query?: {
+                /** @description true 只列已归档的对话，缺省只列未归档的；两份列表互不混排。 */
+                archived?: boolean;
                 limit?: number;
                 cursor?: string;
             };
@@ -7116,6 +7202,117 @@ export interface operations {
         responses: {
             /** @description 成功；同一操作回放原回执 */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentConversation"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    renameCreativeAgentConversation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameCreativeAgentConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；同一操作回放原回执 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentConversation"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    archiveCreativeAgentConversation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentConversationStateRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；同一操作回放原回执 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAgentConversation"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    restoreCreativeAgentConversation: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeAgentConversationStateRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功；同一操作回放原回执 */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

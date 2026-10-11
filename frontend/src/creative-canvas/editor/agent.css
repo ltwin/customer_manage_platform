@@ -187,6 +187,49 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cc-agent-title-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  margin-right: 4px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cc-agent-panel .cc-agent-title-input:focus-visible {
+  outline: 0;
+}
+/* 查看已归档对话时，输入区换成这一条：说明只读，并给出恢复。 */
+.cc-agent-archived {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding: 10px 12px;
+  border-radius: var(--r);
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--fg-2);
+  font-size: 13px;
+}
+.cc-agent-panel .cc-agent-archived button {
+  flex: none;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+}
 .cc-agent-panel button.cc-agent-tool,
 .cc-agent-tool > .cc-picker-trigger {
   display: inline-grid;

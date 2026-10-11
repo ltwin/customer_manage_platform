@@ -265,14 +265,11 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			var canvasID string
-			err = tx.QueryRowForUpdate(ctx, "creative_agent_conversations", "canvas_id", "id=$2", input.ConversationID).Scan(&canvasID)
-			if errors.Is(err, store.ErrNoRows) {
-				return creativeops.Outcome{}, ErrNotFound
-			}
+			conversation, err := lockOpenConversationInTx(ctx, tx, input.ConversationID)
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
+			canvasID := conversation.CanvasID
 			consent, err := readConsentForUpdate(ctx, tx, input.EgressConsentID)
 			if err != nil {
 				return creativeops.Outcome{}, err

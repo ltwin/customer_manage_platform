@@ -2,6 +2,7 @@ package creativeagent
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -32,7 +33,7 @@ func TestTheFirstAnsweredRunNamesItsConversation(t *testing.T) {
 		t.Fatalf("queued title task: %+v", task)
 	}
 
-	before, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, 10, "")
+	before, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, false, 10, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestTheFirstAnsweredRunNamesItsConversation(t *testing.T) {
 	if prompt := f.vendor.prompt(); !strings.Contains(prompt, "摄影师：帮我想一组雪山婚纱的布光方案") || !strings.Contains(prompt, "助手：") {
 		t.Fatalf("title source:\n%s", prompt)
 	}
-	page, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, 10, "")
+	page, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, false, 10, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func TestTheFirstAnsweredRunNamesItsConversation(t *testing.T) {
 	}
 	// The conversation has grown since; a replay still sends nothing new.
 	calls := f.vendor.calls()
-	if err := f.service.nameConversation(t.Context(), f.alice, task); err != nil || f.vendor.calls() != calls {
+	if err := f.service.nameConversation(t.Context(), f.alice, task); !errors.Is(err, errTitleSettled) || f.vendor.calls() != calls {
 		t.Fatalf("replay after the conversation grew: %v, provider calls %d -> %d", err, calls, f.vendor.calls())
 	}
 }
@@ -94,7 +95,7 @@ func TestARevokedConsentStopsNaming(t *testing.T) {
 		command(t, map[string]any{"consent_id": consent.ID, "expected_revision": consent.Revision})); err != nil {
 		t.Fatal(err)
 	}
-	before, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, 10, "")
+	before, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, false, 10, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestARevokedConsentStopsNaming(t *testing.T) {
 	if f.vendor.calls() != calls {
 		t.Fatalf("naming went out after the consent was withdrawn, provider calls %d -> %d", calls, f.vendor.calls())
 	}
-	page, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, 10, "")
+	page, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, false, 10, "")
 	if err != nil {
 		t.Fatal(err)
 	}

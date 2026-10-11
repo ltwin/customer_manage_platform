@@ -132,6 +132,9 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 		if err = coversRun(consent, source.ConversationID, nil); err != nil {
 			return creativeops.Outcome{}, err
 		}
+		if _, err = lockOpenConversationInTx(ctx, tx, source.ConversationID); err != nil {
+			return creativeops.Outcome{}, err
+		}
 		body := Body{Blocks: []Block{{Type: "text", Text: "恢复已记录的 Skill 资源读取步骤；不重新规划原任务。"}}}
 		message, err := s.appendMessageInTx(ctx, tx, source.ConversationID, newMessage{Role: "user", Status: "complete", RunID: id, Body: body})
 		if err != nil {

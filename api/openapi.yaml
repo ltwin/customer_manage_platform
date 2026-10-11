@@ -693,6 +693,10 @@ paths:
       parameters:
       - {in: path, name: id, required: true, schema: {type: string}}
       - in: query
+        name: archived
+        description: true 只列已归档的对话，缺省只列未归档的；两份列表互不混排。
+        schema: {type: boolean, default: false}
+      - in: query
         name: limit
         schema: {type: integer, minimum: 1, maximum: 100, default: 30}
       - {in: query, name: cursor, schema: {type: string}}
@@ -723,6 +727,92 @@ paths:
             schema: {$ref: '#/components/schemas/CreateCreativeAgentConversationRequest'}
       responses:
         '201':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentConversation'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/conversations/{id}/rename:
+    post:
+      tags: [creative-foundation]
+      operationId: renameCreativeAgentConversation
+      summary: 摄影师给对话改名；之后自动命名不再改它
+      description: >-
+        不带期望修订号：每条消息都会推进会话修订号，带了会输给自己的回答。已归档的对话不能改名（409 creative_conversation_archived）。
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RenameCreativeAgentConversationRequest'}
+      responses:
+        '200':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentConversation'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/conversations/{id}/archive:
+    post:
+      tags: [creative-foundation]
+      operationId: archiveCreativeAgentConversation
+      summary: 归档对话：从列表移走，恢复前不能再发起运行
+      description: >-
+        消息、运行与它们保留的内容都不变，也不改变 updated_at。还有未结束的运行时拒绝（409 creative_run_state_conflict）。已归档时回放当前状态。
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeAgentConversationStateRequest'}
+      responses:
+        '200':
+          description: 成功；同一操作回放原回执
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreativeAgentConversation'}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/conversations/{id}/restore:
+    post:
+      tags: [creative-foundation]
+      operationId: restoreCreativeAgentConversation
+      summary: 恢复已归档的对话
+      description: 未归档时回放当前状态。
+      parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreativeAgentConversationStateRequest'}
+      responses:
+        '200':
           description: 成功；同一操作回放原回执
           content:
             application/json:
@@ -7277,12 +7367,19 @@ components:
     CreativeAgentConversation:
       type: object
       additionalProperties: false
-      required: [id, project_id, canvas_id, title, revision, updated_at]
+      required: [id, project_id, canvas_id, title, title_source, archived, revision, updated_at]
       properties:
         id: {type: string}
         project_id: {type: string}
         canvas_id: {type: string}
         title: {type: string, minLength: 1, maxLength: 120}
+        title_source:
+          type: string
+          enum: [default, generated, manual]
+          description: >-
+            标题由谁写下：创建时的默认标题、自动命名、摄影师自己。自动命名只替换 default，
+            所以摄影师改过的名字不会被覆盖。
+        archived: {type: boolean}
         revision: {$ref: '#/components/schemas/CreativeRevision'}
         updated_at: {type: string, format: date-time}
     CreativeAgentConversationPage:
@@ -7732,6 +7829,28 @@ components:
       required: [title]
       properties:
         title: {type: string, minLength: 1, maxLength: 120}
+    CreativeAgentConversationRenamePayload:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: {type: string, minLength: 1, maxLength: 120, description: 首尾空白会被去掉，去掉后不能为空。}
+    RenameCreativeAgentConversationRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {$ref: '#/components/schemas/CreativeAgentConversationRenamePayload'}
+    CreativeAgentConversationStateRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload: {type: object, additionalProperties: false}
     CreateCreativeAgentConversationRequest:
       type: object
       additionalProperties: false

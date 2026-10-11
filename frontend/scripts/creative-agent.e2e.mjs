@@ -320,8 +320,95 @@ try {
   await settle()
   assert.equal(await chosen(), '文字模型')
   await recallPage.close()
+  // 改名、归档、查看已归档、恢复：服务端状态在这里模拟，面板只看回执与列表。
+  const managePage = await browser.newPage()
+  managePage.on('pageerror', (error) => { throw error })
+  const store = [
+    { id: 'a', title: '会话甲', title_source: 'generated', archived: false, updated_at: '2026-10-09T02:00:00Z' },
+    { id: 'b', title: '会话乙', title_source: 'generated', archived: false, updated_at: '2026-10-09T01:00:00Z' },
+  ]
+  const commands = []
+  await managePage.route('**/api/v1/creative/**', async (route) => {
+    const req = route.request(), url = new URL(req.url()), path = url.pathname
+    const json = (body) => route.fulfill({ json: body })
+    const command = path.match(/\/conversations\/(\w+)\/(rename|archive|restore)$/)
+    if (req.method() === 'POST' && command) {
+      const body = req.postDataJSON()
+      commands.push([command[2], command[1], body.payload])
+      const item = store.find((c) => c.id === command[1])
+      if (body.payload.title === '冲突') return route.fulfill({ status: 409, json: { error: { code: 'creative_conversation_archived', message: '这个对话已归档，恢复后才能继续' } } })
+      if (command[2] === 'rename') Object.assign(item, { title: body.payload.title, title_source: 'manual' })
+      else item.archived = command[2] === 'archive'
+      return json(item)
+    }
+    if (path.endsWith('/agent/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'text',display_name:'文字模型',available:true,capability:{image_input:false}}]})
+    if (path.endsWith('/conversations')) {
+      const archived = url.searchParams.get('archived') === 'true'
+      return json({ items: store.filter((c) => c.archived === archived) })
+    }
+    return json({ items: [] })
+  })
+  const title = () => managePage.locator('.cc-agent-title').textContent()
+  // 菜单项名字互相包含（归档 / 查看已归档），按全名点。
+  const menu = async (option) => {
+    await managePage.getByRole('combobox', { name: '对话操作', exact: true }).click()
+    await managePage.getByRole('listbox', { name: '对话操作', exact: true }).getByRole('option', { name: option, exact: true }).click()
+  }
+  const options = async (label) => {
+    await managePage.getByRole('combobox', { name: label, exact: true }).click()
+    const names = await managePage.getByRole('listbox', { name: label, exact: true }).getByRole('option').allTextContents()
+    await managePage.keyboard.press('Escape')
+    return names
+  }
+  await managePage.goto(url)
+  await managePage.getByRole('button', { name: '打开创作助手' }).click()
+  await managePage.locator('.cc-agent-title', { hasText: '会话甲' }).waitFor()
+  await managePage.getByRole('combobox', { name: '对话操作', exact: true }).click()
+  await managePage.getByRole('listbox', { name: '对话操作', exact: true }).waitFor()
+  await managePage.screenshot({ path: '/tmp/creative-v6-agent-manage.png', animations: 'disabled' })
+  await managePage.keyboard.press('Escape')
+  await menu('重命名')
+  const name = managePage.getByRole('textbox', { name: '对话名称' })
+  assert.equal(await name.inputValue(), '会话甲')
+  await managePage.screenshot({ path: '/tmp/creative-v6-agent-rename.png', clip: { x: 880, y: 60, width: 400, height: 70 } })
+  await name.fill('  雪山婚纱 · 二稿 ')
+  await name.press('Enter')
+  await managePage.locator('.cc-agent-title', { hasText: '雪山婚纱 · 二稿' }).waitFor()
+  assert.deepEqual(commands.at(-1), ['rename', 'a', { title: '雪山婚纱 · 二稿' }])
+  await menu('重命名')
+  await name.fill('不要了')
+  await name.press('Escape')
+  assert.equal(await title(), '雪山婚纱 · 二稿', 'Escape keeps the old name')
+  assert.equal(commands.length, 1, 'Escape sends nothing')
+  await menu('重命名')
+  await name.fill('冲突')
+  await name.press('Enter')
+  await managePage.getByRole('alert').waitFor()
+  assert.equal(await title(), '雪山婚纱 · 二稿', 'a refused rename puts the old name back')
+
+  await menu('归档')
+  await managePage.locator('.cc-agent-title', { hasText: '会话乙' }).waitFor()
+  assert.deepEqual(commands.at(-1), ['archive', 'a', {}])
+  assert.equal((await options('历史对话')).some((text) => text.includes('雪山婚纱')), false, 'an archived conversation leaves the list')
+
+  await menu('查看已归档')
+  await managePage.locator('.cc-agent-title', { hasText: '雪山婚纱 · 二稿' }).waitFor()
+  await managePage.getByText('这个对话已归档，恢复后可以继续。').waitFor()
+  await managePage.screenshot({ path: '/tmp/creative-v6-agent-archived.png' })
+  assert.equal(await managePage.getByLabel('创作问题').count(), 0, 'an archived conversation takes no new message')
+  assert.deepEqual(await options('对话操作'), ['返回对话列表'])
+  await managePage.getByRole('button', { name: '恢复', exact: true }).click()
+  await managePage.getByLabel('创作问题').waitFor()
+  assert.deepEqual(commands.at(-1), ['restore', 'a', {}])
+  assert.equal(await title(), '雪山婚纱 · 二稿', 'restoring stays on the conversation')
+
+  await menu('查看已归档')
+  await managePage.getByText('没有已归档的对话').waitFor()
+  await menu('返回对话列表')
+  await managePage.getByLabel('创作问题').waitFor()
+  await managePage.close()
   console.log(
-    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model',
+    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model; rename, archive, read-only archive view and restore',
   )
 } finally {
   await browser.close()

@@ -626,6 +626,27 @@ func (e CreativeAddNodePayloadTypeKey) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentConversationTitleSource.
+const (
+	CreativeAgentConversationTitleSourceDefault   CreativeAgentConversationTitleSource = "default"
+	CreativeAgentConversationTitleSourceGenerated CreativeAgentConversationTitleSource = "generated"
+	CreativeAgentConversationTitleSourceManual    CreativeAgentConversationTitleSource = "manual"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentConversationTitleSource enum.
+func (e CreativeAgentConversationTitleSource) Valid() bool {
+	switch e {
+	case CreativeAgentConversationTitleSourceDefault:
+		return true
+	case CreativeAgentConversationTitleSourceGenerated:
+		return true
+	case CreativeAgentConversationTitleSourceManual:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentInstructionSchemaVersion.
 const (
 	CreativeAgentInstructionSchemaVersionN1 CreativeAgentInstructionSchemaVersion = 1
@@ -3654,15 +3675,22 @@ type CreativeAgentControlRequest struct {
 
 // CreativeAgentConversation defines model for CreativeAgentConversation.
 type CreativeAgentConversation struct {
+	Archived  bool   `json:"archived"`
 	CanvasId  string `json:"canvas_id"`
 	Id        string `json:"id"`
 	ProjectId string `json:"project_id"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	Revision  CreativeRevision `json:"revision"`
-	Title     string           `json:"title"`
-	UpdatedAt time.Time        `json:"updated_at"`
+	Revision CreativeRevision `json:"revision"`
+	Title    string           `json:"title"`
+
+	// TitleSource 标题由谁写下：创建时的默认标题、自动命名、摄影师自己。自动命名只替换 default， 所以摄影师改过的名字不会被覆盖。
+	TitleSource CreativeAgentConversationTitleSource `json:"title_source"`
+	UpdatedAt   time.Time                            `json:"updated_at"`
 }
+
+// CreativeAgentConversationTitleSource 标题由谁写下：创建时的默认标题、自动命名、摄影师自己。自动命名只替换 default， 所以摄影师改过的名字不会被覆盖。
+type CreativeAgentConversationTitleSource string
 
 // CreativeAgentConversationCreatePayload defines model for CreativeAgentConversationCreatePayload.
 type CreativeAgentConversationCreatePayload struct {
@@ -3673,6 +3701,19 @@ type CreativeAgentConversationCreatePayload struct {
 type CreativeAgentConversationPage struct {
 	Items      []CreativeAgentConversation `json:"items"`
 	NextCursor string                      `json:"next_cursor"`
+}
+
+// CreativeAgentConversationRenamePayload defines model for CreativeAgentConversationRenamePayload.
+type CreativeAgentConversationRenamePayload struct {
+	// Title 首尾空白会被去掉，去掉后不能为空。
+	Title string `json:"title"`
+}
+
+// CreativeAgentConversationStateRequest defines model for CreativeAgentConversationStateRequest.
+type CreativeAgentConversationStateRequest struct {
+	ClientCreatedAt time.Time              `json:"client_created_at"`
+	OperationId     openapi_types.UUID     `json:"operation_id"`
+	Payload         map[string]interface{} `json:"payload"`
 }
 
 // CreativeAgentInstruction 提交协议。它与消息正文的 schema_version 是两份不同文档的版本号。 名称、版本号、digest 与作者都由服务端读出，客户端只给 ID。
@@ -6084,6 +6125,13 @@ type ReminderStatus string
 // ReminderType defines model for ReminderType.
 type ReminderType string
 
+// RenameCreativeAgentConversationRequest defines model for RenameCreativeAgentConversationRequest.
+type RenameCreativeAgentConversationRequest struct {
+	ClientCreatedAt time.Time                              `json:"client_created_at"`
+	OperationId     openapi_types.UUID                     `json:"operation_id"`
+	Payload         CreativeAgentConversationRenamePayload `json:"payload"`
+}
+
 // RenameCreativeGroupRequest defines model for RenameCreativeGroupRequest.
 type RenameCreativeGroupRequest struct {
 	ClientCreatedAt time.Time                  `json:"client_created_at"`
@@ -6816,8 +6864,10 @@ type CommandCreativeCanvas200JSONResponseBody struct {
 
 // ListCreativeAgentConversationsParams defines parameters for ListCreativeAgentConversations.
 type ListCreativeAgentConversationsParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	// Archived true 只列已归档的对话，缺省只列未归档的；两份列表互不混排。
+	Archived *bool   `form:"archived,omitempty" json:"archived,omitempty"`
+	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // CreateCreativeAgentConversationParams defines parameters for CreateCreativeAgentConversation.
@@ -6827,6 +6877,11 @@ type CreateCreativeAgentConversationParams struct {
 
 // RequestCreativeNodeExecutionParams defines parameters for RequestCreativeNodeExecution.
 type RequestCreativeNodeExecutionParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// ArchiveCreativeAgentConversationParams defines parameters for ArchiveCreativeAgentConversation.
+type ArchiveCreativeAgentConversationParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -6840,6 +6895,16 @@ type ListCreativeAgentMessagesParams struct {
 	// BeforeOrdinal 不含该序号；留空表示从最新开始
 	BeforeOrdinal *CreativeRevision `form:"before_ordinal,omitempty" json:"before_ordinal,omitempty"`
 	Limit         *int              `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// RenameCreativeAgentConversationParams defines parameters for RenameCreativeAgentConversation.
+type RenameCreativeAgentConversationParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// RestoreCreativeAgentConversationParams defines parameters for RestoreCreativeAgentConversation.
+type RestoreCreativeAgentConversationParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
 // CreateCreativeAgentRunParams defines parameters for CreateCreativeAgentRun.
@@ -7377,8 +7442,17 @@ type CreateCreativeAgentConversationJSONRequestBody = CreateCreativeAgentConvers
 // RequestCreativeNodeExecutionJSONRequestBody defines body for RequestCreativeNodeExecution for application/json ContentType.
 type RequestCreativeNodeExecutionJSONRequestBody = CreativeRequestExecutionRequest
 
+// ArchiveCreativeAgentConversationJSONRequestBody defines body for ArchiveCreativeAgentConversation for application/json ContentType.
+type ArchiveCreativeAgentConversationJSONRequestBody = CreativeAgentConversationStateRequest
+
 // GrantCreativeEgressConsentJSONRequestBody defines body for GrantCreativeEgressConsent for application/json ContentType.
 type GrantCreativeEgressConsentJSONRequestBody = GrantCreativeEgressConsentRequest
+
+// RenameCreativeAgentConversationJSONRequestBody defines body for RenameCreativeAgentConversation for application/json ContentType.
+type RenameCreativeAgentConversationJSONRequestBody = RenameCreativeAgentConversationRequest
+
+// RestoreCreativeAgentConversationJSONRequestBody defines body for RestoreCreativeAgentConversation for application/json ContentType.
+type RestoreCreativeAgentConversationJSONRequestBody = CreativeAgentConversationStateRequest
 
 // CreateCreativeAgentRunJSONRequestBody defines body for CreateCreativeAgentRun for application/json ContentType.
 type CreateCreativeAgentRunJSONRequestBody = CreateCreativeAgentRunRequest
@@ -9061,12 +9135,21 @@ type ServerInterface interface {
 
 	// (GET /creative/content-revisions/{id})
 	GetCreativeContentRevision(c *gin.Context, id string)
+	// 归档对话：从列表移走，恢复前不能再发起运行
+	// (POST /creative/conversations/{id}/archive)
+	ArchiveCreativeAgentConversation(c *gin.Context, id string, params ArchiveCreativeAgentConversationParams)
 	// 记录本账号对某供应商的外发授权；这是内容离开账号的唯一闸门
 	// (POST /creative/conversations/{id}/egress-consents)
 	GrantCreativeEgressConsent(c *gin.Context, id string, params GrantCreativeEgressConsentParams)
 	// 从最新往回分页；每页按阅读顺序返回
 	// (GET /creative/conversations/{id}/messages)
 	ListCreativeAgentMessages(c *gin.Context, id string, params ListCreativeAgentMessagesParams)
+	// 摄影师给对话改名；之后自动命名不再改它
+	// (POST /creative/conversations/{id}/rename)
+	RenameCreativeAgentConversation(c *gin.Context, id string, params RenameCreativeAgentConversationParams)
+	// 恢复已归档的对话
+	// (POST /creative/conversations/{id}/restore)
+	RestoreCreativeAgentConversation(c *gin.Context, id string, params RestoreCreativeAgentConversationParams)
 	// 最近三十次运行，用于刷新后恢复面板
 	// (GET /creative/conversations/{id}/runs)
 	ListCreativeAgentRuns(c *gin.Context, id string)
@@ -11063,6 +11146,14 @@ func (siw *ServerInterfaceWrapper) ListCreativeAgentConversations(c *gin.Context
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListCreativeAgentConversationsParams
 
+	// ------------- Optional query parameter "archived" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "archived", c.Request.URL.Query(), &params.Archived, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archived: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	// ------------- Optional query parameter "limit" -------------
 
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
@@ -11338,6 +11429,60 @@ func (siw *ServerInterfaceWrapper) GetCreativeContentRevision(c *gin.Context) {
 	siw.Handler.GetCreativeContentRevision(c, id)
 }
 
+// ArchiveCreativeAgentConversation operation middleware
+func (siw *ServerInterfaceWrapper) ArchiveCreativeAgentConversation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ArchiveCreativeAgentConversationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ArchiveCreativeAgentConversation(c, id, params)
+}
+
 // GrantCreativeEgressConsent operation middleware
 func (siw *ServerInterfaceWrapper) GrantCreativeEgressConsent(c *gin.Context) {
 
@@ -11436,6 +11581,114 @@ func (siw *ServerInterfaceWrapper) ListCreativeAgentMessages(c *gin.Context) {
 	}
 
 	siw.Handler.ListCreativeAgentMessages(c, id, params)
+}
+
+// RenameCreativeAgentConversation operation middleware
+func (siw *ServerInterfaceWrapper) RenameCreativeAgentConversation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RenameCreativeAgentConversationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RenameCreativeAgentConversation(c, id, params)
+}
+
+// RestoreCreativeAgentConversation operation middleware
+func (siw *ServerInterfaceWrapper) RestoreCreativeAgentConversation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RestoreCreativeAgentConversationParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RestoreCreativeAgentConversation(c, id, params)
 }
 
 // ListCreativeAgentRuns operation middleware
@@ -14508,8 +14761,11 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
+	router.POST(options.BaseURL+"/creative/conversations/:id/archive", wrapper.ArchiveCreativeAgentConversation)
 	router.POST(options.BaseURL+"/creative/conversations/:id/egress-consents", wrapper.GrantCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/conversations/:id/messages", wrapper.ListCreativeAgentMessages)
+	router.POST(options.BaseURL+"/creative/conversations/:id/rename", wrapper.RenameCreativeAgentConversation)
+	router.POST(options.BaseURL+"/creative/conversations/:id/restore", wrapper.RestoreCreativeAgentConversation)
 	router.GET(options.BaseURL+"/creative/conversations/:id/runs", wrapper.ListCreativeAgentRuns)
 	router.POST(options.BaseURL+"/creative/conversations/:id/runs", wrapper.CreateCreativeAgentRun)
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)

@@ -17,6 +17,9 @@ func registerCreativeAgent(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/agent/skills/:id/versions/:version_id", w.GetCreativeAgentSkillVersion)
 	r.GET("/creative/canvases/:id/conversations", w.ListCreativeAgentConversations)
 	r.POST("/creative/canvases/:id/conversations", w.CreateCreativeAgentConversation)
+	r.POST("/creative/conversations/:id/rename", w.RenameCreativeAgentConversation)
+	r.POST("/creative/conversations/:id/archive", w.ArchiveCreativeAgentConversation)
+	r.POST("/creative/conversations/:id/restore", w.RestoreCreativeAgentConversation)
 	r.GET("/creative/conversations/:id/messages", w.ListCreativeAgentMessages)
 	r.POST("/creative/conversations/:id/runs", w.CreateCreativeAgentRun)
 	r.GET("/creative/conversations/:id/runs", w.ListCreativeAgentRuns)
@@ -67,6 +70,8 @@ func creativeAgentError(c *gin.Context, err error) {
 		abortError(c, 409, "creative_run_state_conflict", "该运行的当前状态不允许这个动作")
 	case errors.Is(err, creativeagent.ErrLimit):
 		abortError(c, 413, "creative_context_limit", "内容超过本次对话的长度上限")
+	case errors.Is(err, creativeagent.ErrConversationArchived):
+		abortError(c, 409, "creative_conversation_archived", "这个对话已归档，恢复后才能继续")
 	case errors.Is(err, creativeagent.ErrNotFound):
 		abortError(c, 404, CodeNotFound, "会话、运行或授权不存在")
 	default:
@@ -192,14 +197,17 @@ func (h *handlers) ListCreativeAgentConversations(c *gin.Context, id string, p L
 	if !ok {
 		return
 	}
-	limit, cursor := 30, ""
+	limit, cursor, archived := 30, "", false
 	if p.Limit != nil {
 		limit = *p.Limit
 	}
 	if p.Cursor != nil {
 		cursor = *p.Cursor
 	}
-	value, err := agent.ListConversations(c.Request.Context(), scope, id, limit, cursor)
+	if p.Archived != nil {
+		archived = *p.Archived
+	}
+	value, err := agent.ListConversations(c.Request.Context(), scope, id, archived, limit, cursor)
 	if err != nil {
 		creativeError(c, err)
 		return
@@ -213,6 +221,30 @@ func (h *handlers) CreateCreativeAgentConversation(c *gin.Context, id string, _ 
 		return
 	}
 	h.creativeWrite(c, "canvas_id", id, agent.CreateConversation)
+}
+
+func (h *handlers) RenameCreativeAgentConversation(c *gin.Context, id string, _ RenameCreativeAgentConversationParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "conversation_id", id, agent.RenameConversation)
+}
+
+func (h *handlers) ArchiveCreativeAgentConversation(c *gin.Context, id string, _ ArchiveCreativeAgentConversationParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "conversation_id", id, agent.ArchiveConversation)
+}
+
+func (h *handlers) RestoreCreativeAgentConversation(c *gin.Context, id string, _ RestoreCreativeAgentConversationParams) {
+	agent, ok := h.agentService(c)
+	if !ok {
+		return
+	}
+	h.creativeWrite(c, "conversation_id", id, agent.RestoreConversation)
 }
 
 func (h *handlers) ListCreativeAgentMessages(c *gin.Context, id string, p ListCreativeAgentMessagesParams) {

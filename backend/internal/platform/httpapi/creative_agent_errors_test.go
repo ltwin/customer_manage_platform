@@ -77,6 +77,7 @@ func TestARunRefusalIsAnAnswerAndNotAServerFault(t *testing.T) {
 		{"运行状态不允许", creativeagent.ErrRunState, 409, "creative_run_state_conflict"},
 		{"不能安全恢复", creativeagent.ErrRecoveryEvidence, 409, "creative_recovery_unavailable"},
 		{"运行不存在", creativeagent.ErrNotFound, 404, CodeNotFound},
+		{"对话已归档", creativeagent.ErrConversationArchived, 409, "creative_conversation_archived"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()

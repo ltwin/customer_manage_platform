@@ -8,6 +8,7 @@ import {
   History,
   MessageCircle,
   Minus,
+  MoreHorizontal,
   Paperclip,
   Plus,
   ScanSearch,
@@ -58,7 +59,8 @@ type Consent = components['schemas']['CreativeEgressConsent']
 type Message = MessagePage['items'][number]
 type Reply = AgentRun | Conversation | Consent
 
-// 新会话先用这个名字；第一次回答完成后由服务端按对话内容改名。
+// 新会话先用这个名字；第一次回答完成后由服务端按对话内容改名，
+// 摄影师自己改过名的不再被自动命名覆盖。
 const untitled = '新对话'
 // 自动命名在回答结束后异步完成，期间按这个间隔重读几次会话列表。
 const namingPolls = 4
@@ -142,6 +144,11 @@ function AgentConversation({
   const recalled = useRef('')
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
+  // 已归档的对话单独一份列表；查看时整个面板只读，恢复后才能继续。
+  const [archivedView, setArchivedView] = useState(false)
+  const [archived, setArchived] = useState<Conversation[] | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const cancelRename = useRef(false)
   const [conversation, setConversation] = useState('')
   const [messages, setMessages] = useState<MessagePage['items']>([])
   const [runs, setRuns] = useState<AgentRun[]>([])
@@ -185,10 +192,7 @@ function AgentConversation({
     ),
   ]
   const approvedIDs = [
-    ...new Set([
-      ...historyIDs,
-      ...referenced.map((item) => item.id),
-    ]),
+    ...new Set([...historyIDs, ...referenced.map((item) => item.id)]),
   ]
   const chosenModel = catalog?.models.find((item) => item.model_key === model)
   const locked = busy || !!pending || storageBroken
@@ -258,6 +262,26 @@ function AgentConversation({
     return () => abort.abort()
   }, [canvasID, refresh])
   useEffect(() => {
+    if (!archivedView) return
+    const abort = new AbortController()
+    void api
+      .read<components['schemas']['CreativeAgentConversationPage']>(
+        `/canvases/${encodeURIComponent(canvasID)}/conversations?archived=true`,
+        abort.signal,
+      )
+      .then((page) => {
+        if (abort.signal.aborted) return
+        setArchived(page.items)
+        // 进来时落到最近归档的那个，免得面板空着。
+        setConversation((old) => old || page.items[0]?.id || '')
+      })
+      .catch((e: unknown) => {
+        if (!abort.signal.aborted)
+          setError(e instanceof Error ? e.message : '暂时无法读取已归档的对话')
+      })
+    return () => abort.abort()
+  }, [archivedView, canvasID, refresh])
+  useEffect(() => {
     if (!conversation) return
     const abort = new AbortController()
     void Promise.all([
@@ -303,8 +327,9 @@ function AgentConversation({
     setRefresh((value) => value + 1)
     setNaming(namingPolls)
   }, [moved])
-  const current = conversations.find((item) => item.id === conversation)
-  const waitingForName = naming > 0 && current?.title === untitled
+  const listed = archivedView ? (archived ?? []) : conversations
+  const current = listed.find((item) => item.id === conversation)
+  const waitingForName = naming > 0 && current?.title_source === 'default'
   // 服务端在第一次回答之后才起名，这里短暂地多读几次列表把新名字接回来。
   useEffect(() => {
     if (!waitingForName) return
@@ -509,22 +534,23 @@ function AgentConversation({
   const turn = useMemo<TurnContext>(
     () => ({
       canvas,
-      retry: locked
-        ? undefined
-        : (runID, stepID) => {
-            const run = runs.find((item) => item.id === runID)
-            if (run)
-              void perform(
-                action(`/agent-runs/${runID}/retry`, {
-                  step_ids: [stepID],
-                  egress_consent_id: run.egress_consent_id,
-                }),
-              )
-          },
+      retry:
+        locked || archivedView
+          ? undefined
+          : (runID, stepID) => {
+              const run = runs.find((item) => item.id === runID)
+              if (run)
+                void perform(
+                  action(`/agent-runs/${runID}/retry`, {
+                    step_ids: [stepID],
+                    egress_consent_id: run.egress_consent_id,
+                  }),
+                )
+            },
     }),
     // perform only reads refs and setters; it is stable in what it does.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [canvas, locked, runs],
+    [canvas, locked, archivedView, runs],
   )
   const triggers = new Map(runs.map((run) => [run.trigger_message_id, run.id]))
   const thread = [...messages].sort((a, b) =>
@@ -557,17 +583,120 @@ function AgentConversation({
         icon: <Wand2 size={15} />,
       })) ?? []),
   ]
-  const conversationOptions: PickerOption[] = conversations.map((item) => ({
+  const conversationOptions: PickerOption[] = listed.map((item) => ({
     value: item.id,
     label: item.title,
     meta: shortTime(item.updated_at),
   }))
-  function startNew() {
-    setConversation('')
+  function show(id: string) {
+    setConversation(id)
     setMessages([])
     setRuns([])
+    setRenaming(null)
+  }
+  function startNew() {
+    setArchivedView(false)
+    show('')
     setError('')
     editor.current?.focus()
+  }
+  // 改名、归档、恢复只是整理列表，不涉及外发，按操作标识重放即可，
+  // 不进待确认的那套存储。
+  async function manage(
+    path: string,
+    payload: Record<string, string>,
+    apply: (reply: Conversation) => void,
+  ): Promise<boolean> {
+    if (locked) return false
+    setBusy(true)
+    setError('')
+    try {
+      const command = action(path, payload)
+      const reply = await api.send<Conversation>(
+        account,
+        command.path,
+        command.body,
+        command.operation,
+      )
+      if (mounted.current) apply(reply)
+      return true
+    } catch (e) {
+      if (mounted.current)
+        setError(e instanceof Error ? e.message : '操作没有完成，请重试')
+      return false
+    } finally {
+      if (mounted.current) setBusy(false)
+    }
+  }
+  const replace = (reply: Conversation) => (old: Conversation[]) =>
+    old.map((item) => (item.id === reply.id ? reply : item))
+  function commitRename(value: string) {
+    setRenaming(null)
+    const title = value.trim()
+    const target = current
+    if (!target || !title || title === target.title) return
+    // 先显示新名字；没改成就换回原来的。
+    setConversations(replace({ ...target, title }))
+    void manage(`/conversations/${target.id}/rename`, { title }, (reply) =>
+      setConversations(replace(reply)),
+    ).then((done) => {
+      if (!done && mounted.current) setConversations(replace(target))
+    })
+  }
+  function archiveCurrent() {
+    const target = current
+    if (!target) return
+    void manage(`/conversations/${target.id}/archive`, {}, (reply) => {
+      const rest = conversations.filter((item) => item.id !== reply.id)
+      setConversations(rest)
+      setArchived((old) => old && [reply, ...old])
+      show(rest[0]?.id ?? '')
+    })
+  }
+  function restoreCurrent() {
+    const target = current
+    if (!target) return
+    void manage(`/conversations/${target.id}/restore`, {}, (reply) => {
+      setArchived((old) => old && old.filter((item) => item.id !== reply.id))
+      setConversations((old) =>
+        [reply, ...old.filter((item) => item.id !== reply.id)].sort(
+          (a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at),
+        ),
+      )
+      setArchivedView(false)
+    })
+  }
+  // 还有没结束的运行时不能归档：服务端同样会拒绝。
+  const unfinished = live.some(
+    (run) => run.conversation_id === conversation && !run.finished_at,
+  )
+  const manageOptions: PickerOption[] = archivedView
+    ? [{ value: 'leave', label: '返回对话列表' }]
+    : [
+        ...(current
+          ? [
+              { value: 'rename', label: '重命名' },
+              {
+                value: 'archive',
+                label: '归档',
+                description: unfinished ? '这次运行结束后才能归档' : undefined,
+                disabled: unfinished,
+              },
+            ]
+          : []),
+        { value: 'archived', label: '查看已归档' },
+      ]
+  function onManage(value: string) {
+    if (value === 'rename' && current) setRenaming(current.title)
+    else if (value === 'archive') archiveCurrent()
+    else if (value === 'archived') {
+      setArchivedView(true)
+      setArchived(null)
+      show('')
+    } else if (value === 'leave') {
+      setArchivedView(false)
+      show(conversations[0]?.id ?? '')
+    }
   }
   function applyStarter(starter: (typeof starters)[number]) {
     if (!starter.text) {
@@ -586,9 +715,47 @@ function AgentConversation({
   return (
     <aside className="cc-agent-panel" aria-label="创作助手">
       <header>
-        <h2 className="cc-agent-title" title={current?.title ?? untitled}>
-          {current?.title ?? untitled}
-        </h2>
+        {renaming !== null ? (
+          <input
+            className="cc-agent-title-input"
+            aria-label="对话名称"
+            value={renaming}
+            maxLength={120}
+            autoFocus
+            onFocus={(event) => event.currentTarget.select()}
+            onChange={(event) => setRenaming(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return
+              if (event.key === 'Escape') cancelRename.current = true
+              if (event.key === 'Enter' || event.key === 'Escape') {
+                event.preventDefault()
+                event.currentTarget.blur()
+              }
+            }}
+            onBlur={(event) => {
+              if (cancelRename.current) {
+                cancelRename.current = false
+                setRenaming(null)
+              } else commitRename(event.currentTarget.value)
+            }}
+          />
+        ) : (
+          <h2 className="cc-agent-title" title={current?.title ?? untitled}>
+            {current?.title ?? (archivedView ? '已归档的对话' : untitled)}
+          </h2>
+        )}
+        <Picker
+          className="cc-agent-tool"
+          label="对话操作"
+          align="end"
+          minWidth={180}
+          value=""
+          options={manageOptions}
+          disabled={locked}
+          onChange={onManage}
+        >
+          <MoreHorizontal size={16} />
+        </Picker>
         <button
           className="cc-agent-tool"
           disabled={locked || !conversation}
@@ -606,12 +773,8 @@ function AgentConversation({
           value={conversation}
           options={conversationOptions}
           disabled={locked}
-          empty="还没有历史对话"
-          onChange={(id) => {
-            setConversation(id)
-            setMessages([])
-            setRuns([])
-          }}
+          empty={archivedView ? '没有已归档的对话' : '还没有历史对话'}
+          onChange={show}
         >
           <History size={16} />
         </Picker>
@@ -653,7 +816,7 @@ function AgentConversation({
             log.scrollHeight - log.scrollTop - log.clientHeight < 48
         }}
       >
-        {!thread.length && (
+        {!thread.length && !archivedView && (
           <div className="cc-agent-empty">
             <span className="cc-agent-empty-mark" aria-hidden="true">
               <Sparkles size={22} />
@@ -696,126 +859,143 @@ function AgentConversation({
           })}
         </AgentTurnContext.Provider>
       </div>
-      <form
-        className="cc-agent-compose"
-        noValidate
-        onSubmit={(event) => {
-          event.preventDefault()
-          void sendDraft()
-        }}
-      >
-        {latest && (
-          <RunStatus
-            run={latest}
-            disabled={locked}
-            onStop={() => {
-              void perform(action(`/agent-runs/${latest.id}/cancel`, {}))
-            }}
-            onRelease={() => {
-              void perform(
-                action(`/agent-runs/${latest.id}/close-reconciliation`, {}),
-              )
-            }}
-          />
-        )}
-        <div className="cc-agent-box">
-          <label className="sr-only" htmlFor="creative-agent-draft">
-            {waiting ? '补充内容' : '创作问题'}
-          </label>
-          {waiting ? (
-            <textarea
-              id="creative-agent-draft"
-              className="resize-none"
-              value={draft}
-              disabled={locked || !!active}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (
-                  event.key === 'Enter' &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault()
-                  event.currentTarget.form?.requestSubmit()
-                }
-              }}
-              placeholder="补充原任务所需的信息…"
-              rows={3}
-            />
+      {archivedView ? (
+        <div className="cc-agent-archived" role="status">
+          {current ? (
+            <>
+              <span>这个对话已归档，恢复后可以继续。</span>
+              <button type="button" disabled={locked} onClick={restoreCurrent}>
+                恢复
+              </button>
+            </>
           ) : (
-            <PromptEditor
-              ref={editor}
-              text={draft}
-              references={references}
-              thumbnails={{}}
-              disabled={locked || !!active}
-              label="创作问题"
-              referenceTitle="可引用的画布素材"
-              placeholder="想讨论什么创作方向？输入 @ 引用画布素材…"
-              onChange={(text) => {
-                setMaterials(referencedMaterials(text, references))
-                setDraft(text)
+            <span>
+              {archived ? '没有已归档的对话' : '正在读取已归档的对话…'}
+            </span>
+          )}
+        </div>
+      ) : (
+        <form
+          className="cc-agent-compose"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault()
+            void sendDraft()
+          }}
+        >
+          {latest && (
+            <RunStatus
+              run={latest}
+              disabled={locked}
+              onStop={() => {
+                void perform(action(`/agent-runs/${latest.id}/cancel`, {}))
               }}
-              onGenerate={() => void sendDraft()}
-              onLibrary={() => setPickingMaterial(true)}
+              onRelease={() => {
+                void perform(
+                  action(`/agent-runs/${latest.id}/close-reconciliation`, {}),
+                )
+              }}
             />
           )}
-          {!waiting && unsupportedImage && (
-            <p className="cc-agent-hint" role="status">
-              当前模型不支持图片理解，请切换视觉模型或移除图片引用。
-            </p>
-          )}
-          {!waiting && referenceLimit && (
-            <p className="cc-agent-hint" role="status">
-              引用数量超过本轮上限，请减少素材。
-            </p>
-          )}
-          <div className="cc-agent-composer-foot">
-            {!waiting && (
-              <div className="cc-agent-options">
-                <button
-                  className="cc-agent-attach"
-                  type="button"
-                  aria-label="引用素材"
-                  title="引用素材库里的文本或图片"
-                  disabled={locked || !!active}
-                  onClick={() => setPickingMaterial(true)}
-                >
-                  <Plus size={15} />
-                </button>
-                <Picker
-                  className="cc-agent-mode"
-                  label="Skill"
-                  value={skill}
-                  options={skillOptions}
-                  minWidth={260}
-                  disabled={locked || !!active}
-                  onChange={setSkill}
-                />
-                <Picker
-                  className="cc-agent-model"
-                  label="模型"
-                  align="end"
-                  value={model}
-                  options={modelOptions}
-                  minWidth={240}
-                  disabled={locked || !!active}
-                  onChange={setModel}
-                />
-              </div>
+          <div className="cc-agent-box">
+            <label className="sr-only" htmlFor="creative-agent-draft">
+              {waiting ? '补充内容' : '创作问题'}
+            </label>
+            {waiting ? (
+              <textarea
+                id="creative-agent-draft"
+                className="resize-none"
+                value={draft}
+                disabled={locked || !!active}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (
+                    event.key === 'Enter' &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault()
+                    event.currentTarget.form?.requestSubmit()
+                  }
+                }}
+                placeholder="补充原任务所需的信息…"
+                rows={3}
+              />
+            ) : (
+              <PromptEditor
+                ref={editor}
+                text={draft}
+                references={references}
+                thumbnails={{}}
+                disabled={locked || !!active}
+                label="创作问题"
+                referenceTitle="可引用的画布素材"
+                placeholder="想讨论什么创作方向？输入 @ 引用画布素材…"
+                onChange={(text) => {
+                  setMaterials(referencedMaterials(text, references))
+                  setDraft(text)
+                }}
+                onGenerate={() => void sendDraft()}
+                onLibrary={() => setPickingMaterial(true)}
+              />
             )}
-            <button
-              className="cc-agent-send"
-              aria-label={waiting ? '补充并继续' : '发送'}
-              title={waiting ? '补充并继续 · Enter' : '发送 · Enter'}
-              type="submit"
-              disabled={!sendable}
-            >
-              <ArrowUp size={17} />
-            </button>
+            {!waiting && unsupportedImage && (
+              <p className="cc-agent-hint" role="status">
+                当前模型不支持图片理解，请切换视觉模型或移除图片引用。
+              </p>
+            )}
+            {!waiting && referenceLimit && (
+              <p className="cc-agent-hint" role="status">
+                引用数量超过本轮上限，请减少素材。
+              </p>
+            )}
+            <div className="cc-agent-composer-foot">
+              {!waiting && (
+                <div className="cc-agent-options">
+                  <button
+                    className="cc-agent-attach"
+                    type="button"
+                    aria-label="引用素材"
+                    title="引用素材库里的文本或图片"
+                    disabled={locked || !!active}
+                    onClick={() => setPickingMaterial(true)}
+                  >
+                    <Plus size={15} />
+                  </button>
+                  <Picker
+                    className="cc-agent-mode"
+                    label="Skill"
+                    value={skill}
+                    options={skillOptions}
+                    minWidth={260}
+                    disabled={locked || !!active}
+                    onChange={setSkill}
+                  />
+                  <Picker
+                    className="cc-agent-model"
+                    label="模型"
+                    align="end"
+                    value={model}
+                    options={modelOptions}
+                    minWidth={240}
+                    disabled={locked || !!active}
+                    onChange={setModel}
+                  />
+                </div>
+              )}
+              <button
+                className="cc-agent-send"
+                aria-label={waiting ? '补充并继续' : '发送'}
+                title={waiting ? '补充并继续 · Enter' : '发送 · Enter'}
+                type="submit"
+                disabled={!sendable}
+              >
+                <ArrowUp size={17} />
+              </button>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      )}
       {pickingMaterial && (
         <AgentMaterialPicker
           onClose={() => setPickingMaterial(false)}
@@ -900,7 +1080,9 @@ function RunStatus({
   return (
     <div className="cc-agent-status" role="status" aria-label="运行状态">
       <span className={waiting ? 'cc-agent-dot is-wait' : 'cc-agent-dot'} />
-      <span className={`cc-agent-status-label${waiting ? '' : ' cc-agent-shimmer'}`}>
+      <span
+        className={`cc-agent-status-label${waiting ? '' : ' cc-agent-shimmer'}`}
+      >
         {waiting ? '等你补充后继续' : step || '正在处理'}
       </span>
       {run.state === 'reconciling' && (

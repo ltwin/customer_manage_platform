@@ -438,7 +438,7 @@ func TestNoReadOrWriteCrossesAnAccountBoundary(t *testing.T) {
 	if _, err := f.service.ListMessages(ctx, f.bob, hers.ID, "", 10); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another account read the conversation, got %v", err)
 	}
-	if page, err := f.service.ListConversations(ctx, f.bob, f.canvasID, 10, ""); err != nil || len(page.Items) != 0 {
+	if page, err := f.service.ListConversations(ctx, f.bob, f.canvasID, false, 10, ""); err != nil || len(page.Items) != 0 {
 		t.Fatalf("another account listed the conversation: %+v %v", page.Items, err)
 	}
 	_, err = f.service.RevokeConsent(ctx, f.bob,

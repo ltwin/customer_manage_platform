@@ -29,6 +29,9 @@ var (
 	// Content already sent cannot be recalled, and we never pretend otherwise.
 	ErrConsentRevoked = errors.New("creative egress consent revoked")
 	ErrLimit          = errors.New("creative agent limit exceeded")
+	// ErrConversationArchived refuses a write into an archived conversation.
+	// Restoring it is the photographer's call, never a side effect of sending.
+	ErrConversationArchived = errors.New("creative agent conversation archived")
 )
 
 // limitsVersion is frozen with every run. Raising any number below is a

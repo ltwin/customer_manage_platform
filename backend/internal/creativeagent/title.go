@@ -3,6 +3,7 @@ package creativeagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -33,6 +34,11 @@ const (
 	titleSourceTotal  = 2000
 	titleSourceWindow = 12
 )
+
+// errTitleSettled ends a task whose conversation already has a title other than
+// the default, written by naming or by the photographer. It is not a failure,
+// but the task still hands back whatever an earlier delivery's call left.
+var errTitleSettled = errors.New("creative agent conversation already titled")
 
 const titleInstruction = "你负责给一段创作对话起标题。根据对话内容，用不超过 12 个字概括摄影师在讨论的主题。" +
 	"只输出标题本身，不加引号、书名号、句末标点或任何解释；使用摄影师所用的语言。"
@@ -92,9 +98,11 @@ func (s *Service) workTitle(ctx context.Context, scope store.AccountScope, reque
 	if err == nil {
 		return nil
 	}
-	s.logger.WarnContext(ctx, "creative agent conversation was not named",
-		slog.String("conversation_id", task.ConversationID), slog.String("run_id", task.RunID),
-		slog.String("error", err.Error()))
+	if !errors.Is(err, errTitleSettled) {
+		s.logger.WarnContext(ctx, "creative agent conversation was not named",
+			slog.String("conversation_id", task.ConversationID), slog.String("run_id", task.RunID),
+			slog.String("error", err.Error()))
+	}
 	// Giving up is final, so what the call left behind is handed back here: the
 	// run's own cleanup only reaches the run's caller service.
 	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
@@ -109,11 +117,15 @@ func (s *Service) workTitle(ctx context.Context, scope store.AccountScope, reque
 // abandonTitleInTx releases an unused hold, cancels a request that never went
 // out, and gives up the retention of finished results nobody will consume.
 // Requests whose outcome is unknown keep their accounting for reconciliation.
+// A task that never reached the gateway has no group, and nothing to give up.
 func (s *Service) abandonTitleInTx(ctx context.Context, tx store.TxAccountScope, runID string) error {
 	if err := s.gateway.ReleaseUnusedGroupInTx(ctx, tx, titleCallerService, runID); err != nil {
 		return err
 	}
 	if _, err := s.gateway.LockCallerGroupInTx(ctx, tx, titleCallerService, runID); err != nil {
+		if errors.Is(err, llmgateway.ErrNotFound) {
+			return nil
+		}
 		return err
 	}
 	return s.gateway.AbandonCallerGroupResultsInTx(ctx, tx, titleCallerService, runID)
@@ -134,6 +146,16 @@ func admitTitleInTx(ctx context.Context, tx store.TxAccountScope, task titleTask
 }
 
 func (s *Service) nameConversation(ctx context.Context, scope store.AccountScope, task titleTask) error {
+	// A photographer who already chose a name is not overruled, so there is
+	// nothing to pay for. Renaming after this read is caught where it is written.
+	var written string
+	if err := scope.QueryRow(ctx, "creative_agent_conversations", "title_source",
+		"id=$2", task.ConversationID).Scan(&written); err != nil {
+		return err
+	}
+	if written != titleDefault {
+		return errTitleSettled
+	}
 	var modelKey string
 	if err := scope.QueryRow(ctx, "creative_agent_runs", "model_key",
 		"id=$2 AND conversation_id=$3", task.RunID, task.ConversationID).Scan(&modelKey); err != nil {
@@ -175,8 +197,11 @@ func (s *Service) nameConversation(ctx context.Context, scope store.AccountScope
 			if err != nil {
 				return err
 			}
+			// Only a default title is replaced: one the photographer typed
+			// meanwhile wins, even over a name already paid for.
 			_, err = tx.Update(ctx, "creative_agent_conversations",
-				"title=$3, revision=revision+1, updated_at=$4", "id=$2", task.ConversationID, title, now)
+				"title=$3, title_source='generated', revision=revision+1, updated_at=$4",
+				"id=$2 AND title_source='default'", task.ConversationID, title, now)
 			return err
 		},
 	})

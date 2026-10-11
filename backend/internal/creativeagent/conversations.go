@@ -28,12 +28,36 @@ func (o *Ordinal) UnmarshalJSON(data []byte) error {
 }
 
 type Conversation struct {
-	ID        string               `json:"id"`
-	ProjectID string               `json:"project_id"`
-	CanvasID  string               `json:"canvas_id"`
-	Title     string               `json:"title"`
-	Revision  creativeops.Revision `json:"revision"`
-	UpdatedAt time.Time            `json:"updated_at"`
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id"`
+	CanvasID  string `json:"canvas_id"`
+	Title     string `json:"title"`
+	// TitleSource says who wrote the title: the creation default, automatic
+	// naming, or the photographer. Naming only ever replaces a default.
+	TitleSource string               `json:"title_source"`
+	Archived    bool                 `json:"archived"`
+	Revision    creativeops.Revision `json:"revision"`
+	UpdatedAt   time.Time            `json:"updated_at"`
+}
+
+const (
+	titleDefault   = "default"
+	titleGenerated = "generated"
+	titleManual    = "manual"
+)
+
+// conversationColumns is what scanConversation reads, in its order.
+const conversationColumns = "id,project_id,canvas_id,title,title_source,archived_at,revision,updated_at"
+
+func scanConversation(row messageRow) (Conversation, error) {
+	var c Conversation
+	var revision int64
+	var archivedAt *time.Time
+	if err := row.Scan(&c.ID, &c.ProjectID, &c.CanvasID, &c.Title, &c.TitleSource, &archivedAt, &revision, &c.UpdatedAt); err != nil {
+		return Conversation{}, err
+	}
+	c.Archived, c.Revision = archivedAt != nil, creativeops.Revision(revision)
+	return c, nil
 }
 
 type ConversationPage struct {
@@ -440,7 +464,7 @@ func (s *Service) CreateConversation(ctx context.Context, scope store.AccountSco
 				id, projectID, input.CanvasID, input.Title, now, now); err != nil {
 				return creativeops.Outcome{}, err
 			}
-			c := Conversation{ID: id, ProjectID: projectID, CanvasID: input.CanvasID, Title: input.Title, Revision: 1, UpdatedAt: now}
+			c := Conversation{ID: id, ProjectID: projectID, CanvasID: input.CanvasID, Title: input.Title, TitleSource: titleDefault, Revision: 1, UpdatedAt: now}
 			response, err := json.Marshal(c)
 			if err != nil {
 				return creativeops.Outcome{}, err
@@ -451,11 +475,16 @@ func (s *Service) CreateConversation(ctx context.Context, scope store.AccountSco
 	}, command)
 }
 
-func (s *Service) ListConversations(ctx context.Context, scope store.AccountScope, canvasID string, limit int, cursor string) (ConversationPage, error) {
+// ListConversations lists either the open or the archived conversations of a
+// canvas, never both: the two lists are separate places in the panel.
+func (s *Service) ListConversations(ctx context.Context, scope store.AccountScope, canvasID string, archived bool, limit int, cursor string) (ConversationPage, error) {
 	if canvasID == "" || limit < 1 || limit > 100 {
 		return ConversationPage{}, creativeops.ErrValidation
 	}
 	query := "agent_conversations:" + canvasID
+	if archived {
+		query += ":archived"
+	}
 	key, err := creativeops.DecodePageCursor(cursor, scope.AccountID(), query)
 	if err != nil {
 		return ConversationPage{}, err
@@ -465,25 +494,26 @@ func (s *Service) ListConversations(ctx context.Context, scope store.AccountScop
 		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
 			return err
 		}
-		cond := "canvas_id=$2"
+		cond := "canvas_id=$2 AND archived_at IS NULL"
+		if archived {
+			cond = "canvas_id=$2 AND archived_at IS NOT NULL"
+		}
 		args := []any{canvasID}
 		if cursor != "" {
 			cond += " AND (updated_at,id)<($3,$4)"
 			args = append(args, key.Time, key.ID)
 		}
-		rows, err := tx.QueryPage(ctx, "creative_agent_conversations", "id,project_id,canvas_id,title,revision,updated_at", cond,
+		rows, err := tx.QueryPage(ctx, "creative_agent_conversations", conversationColumns, cond,
 			[]store.OrderBy{{Column: "updated_at", Desc: true}, {Column: "id", Desc: true}}, limit+1, 0, args...)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var c Conversation
-			var revision int64
-			if err := rows.Scan(&c.ID, &c.ProjectID, &c.CanvasID, &c.Title, &revision, &c.UpdatedAt); err != nil {
+			c, err := scanConversation(rows)
+			if err != nil {
 				return err
 			}
-			c.Revision = creativeops.Revision(revision)
 			page.Items = append(page.Items, c)
 		}
 		if err := rows.Err(); err != nil {
