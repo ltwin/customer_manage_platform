@@ -101,6 +101,37 @@ func TestAModelIsServedByItsFirstEnabledDeployment(t *testing.T) {
 	}
 }
 
+// How hard a deployment thinks is configuration that can change between
+// releases; a request remembers the setting it was prepared under.
+func TestASnapshotRemembersHowTheDeploymentReasoned(t *testing.T) {
+	reasoning := routedDeployment("reasoning", "r")
+	reasoning.Provider, reasoning.ReasoningEffort = llmgateway.ProviderOpenAIResponses, "high"
+	catalog, err := llmgateway.NewRoutedCatalog("cat-1", "USD", []llmgateway.Model{routedModel("reasoning")}, []llmgateway.Deployment{reasoning})
+	if err != nil {
+		t.Fatal(err)
+	}
+	served, err := catalog.Model("chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(catalog.Snapshot(served))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(raw, &stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored["reasoning_effort"] != "high" {
+		t.Fatalf("snapshot %s", raw)
+	}
+	// A deployment that does not reason leaves nothing behind, so snapshots
+	// written before these fields existed read the same as new ones.
+	if _, ok := stored["thinking"]; ok {
+		t.Fatalf("snapshot %s", raw)
+	}
+}
+
 func TestACatalogFileRoutesAroundAMissingCredential(t *testing.T) {
 	primary, backup := routedDeployment("primary", "first-vendor"), routedDeployment("backup", "second-vendor")
 	primary.CredentialEnv, backup.CredentialEnv = "PRIMARY_KEY", "BACKUP_KEY"

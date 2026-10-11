@@ -7,6 +7,7 @@ import {
   pendingAgentAction,
   isActiveRun,
   hasUnsettledCost,
+  recalledModel,
   runFailure,
 } from '../src/creative-canvas/editor/agentState.ts'
 import type { AgentRun } from '../src/creative-canvas/editor/agentState.ts'
@@ -82,6 +83,59 @@ test('terminal execution and unresolved money remain separate', () => {
   assert.equal(isActiveRun({ ...run, state: 'reconciling' }), true)
 })
 
+test('returning to a conversation picks up the model its last run used', () => {
+  const run = (
+    id: string,
+    conversation_id: string,
+    model_key: string,
+    created_at: string,
+  ): AgentRun => ({
+    id,
+    conversation_id,
+    canvas_id: 'canvas',
+    trigger_message_id: id,
+    egress_consent_id: 'consent',
+    model_key,
+    state: 'succeeded',
+    settlement_state: 'settled',
+    limits_version: 'v',
+    revision: '1',
+    last_event_seq: '0',
+    pruned_through_seq: '0',
+    deadline_at: '',
+    created_at,
+  })
+  const model = (model_key: string, available = true) => ({
+    model_key,
+    display_name: model_key,
+    capability: {
+      image_input: true,
+      tool_calling: true,
+      tool_choice: true,
+      json_object: true,
+      temperature: true,
+      context_tokens: 1000,
+      max_output_tokens: 100,
+    },
+    catalog_version: 'v',
+    available,
+    context_tokens: 1000,
+    max_output_tokens: 100,
+  })
+  // 列表顺序不算数：按时间取最近一次，其他会话的运行不参与。
+  const runs = [
+    run('old', 'a', 'fast', '2026-10-10T08:00:00.5Z'),
+    run('new', 'a', 'deep', '2026-10-10T08:00:00.25Z'),
+    run('other', 'b', 'fast', '2026-10-10T09:00:00Z'),
+  ]
+  assert.equal(recalledModel(runs, 'a', [model('fast'), model('deep')]), 'fast')
+  runs[1] = run('new', 'a', 'deep', '2026-10-10T08:00:01Z')
+  assert.equal(recalledModel(runs, 'a', [model('fast'), model('deep')]), 'deep')
+  // 已下架或暂不可用的模型不沿用，交给面板原来的默认值。
+  assert.equal(recalledModel(runs, 'a', [model('fast')]), '')
+  assert.equal(recalledModel(runs, 'a', [model('deep', false)]), '')
+  assert.equal(recalledModel(runs, 'c', [model('fast')]), '')
+})
 test('consent confirmation reuses the successor identity and stale owners cannot erase it', () => {
   const command = agentAction(
     '/conversations/c/egress-consents',

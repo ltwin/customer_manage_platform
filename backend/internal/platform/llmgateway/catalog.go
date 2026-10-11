@@ -196,6 +196,11 @@ type ModelSnapshot struct {
 	LimitKey         string      `json:"limit_key"`
 	QueryCapability  string      `json:"query_capability"`
 	CancelCapability string      `json:"cancel_capability"`
+	// How the deployment reasoned when the request was prepared. Both are
+	// deployment configuration, so a later edit must not rewrite what an old
+	// request is remembered to have asked for.
+	Thinking        string `json:"thinking,omitempty"`
+	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 }
 
 // CatalogEntry is what a trusted caller may show. It names neither endpoints
@@ -539,6 +544,8 @@ func (c *Catalog) Snapshot(m ModelConfig) ModelSnapshot {
 		LimitKey:         m.LimitKey,
 		QueryCapability:  m.QueryCapability,
 		CancelCapability: m.CancelCapability,
+		Thinking:         m.Thinking,
+		ReasoningEffort:  m.ReasoningEffort,
 	}
 }
 

@@ -27,6 +27,7 @@ import {
   type AgentDraft,
   isActiveRun,
   pendingAgentAction,
+  recalledModel,
   type AgentRun,
   type PendingAgentAction,
 } from './agentState.ts'
@@ -138,6 +139,7 @@ function AgentConversation({
   const storageKey = `creative-agent-pending:${account}:${canvasID}`
   const editor = useRef<PromptEditorHandle>(null)
   const loaded = useRef(false)
+  const recalled = useRef('')
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [conversation, setConversation] = useState('')
@@ -282,6 +284,16 @@ function AgentConversation({
   useEffect(() => {
     for (const run of runs) followRun(run.id)
   }, [runs])
+  // 每进入一个会话沿用一次它上次的模型；之后在本会话里改选的不再被刷新覆盖。
+  // 待确认的草稿记着摄影师当时选的模型，以草稿为准。
+  useEffect(() => {
+    if (!catalog || recalled.current === conversation) return
+    if (!runs.some((run) => run.conversation_id === conversation)) return
+    recalled.current = conversation
+    if (pendingRef.current?.draft?.conversation === conversation) return
+    const key = recalledModel(runs, conversation, catalog.models)
+    if (key) setModel(key)
+  }, [catalog, conversation, runs])
   // A run that moved on (finished, started waiting) changes what the lists hold.
   const moved = runs.some(
     (run, index) => followed[index] && followed[index].state !== run.state,

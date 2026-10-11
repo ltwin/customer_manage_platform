@@ -21,6 +21,23 @@ export function hasUnsettledCost(run: AgentRun): boolean {
     run.settlement_state === 'unknown' || run.settlement_state === 'pending'
   )
 }
+// 回到一个会话时沿用它最近一次运行的模型；模型已下架或不可用就不沿用。
+export function recalledModel(
+  runs: readonly AgentRun[],
+  conversation: string,
+  models: readonly components['schemas']['CreativeAgentModel'][],
+): string {
+  let last: AgentRun | undefined
+  for (const run of runs) {
+    if (run.conversation_id !== conversation) continue
+    if (!last || Date.parse(run.created_at) > Date.parse(last.created_at))
+      last = run
+  }
+  return (
+    models.find((m) => m.available && m.model_key === last?.model_key)
+      ?.model_key ?? ''
+  )
+}
 // Persist the exact command before sending it. An uncertain response may only
 // retry this identity, including after refresh, never create a second run.
 export type PendingAgentAction = {

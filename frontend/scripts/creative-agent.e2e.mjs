@@ -250,6 +250,8 @@ try {
     if(path.endsWith('/agent/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'text',display_name:'文字模型',available:true,capability:{image_input:false}},{model_key:'vision',display_name:'视觉模型',available:true,capability:{image_input:true}}]})
     if(path.endsWith('/conversations')) return json({items:[{id:'conversation',title:'素材讨论'}]})
     if(path.endsWith('/assets')) return json({items:[{id:'asset',title:'拍摄方案',content_revision_id:'ccrv_text',content:{id:'ccrv_text',kind:'text',payload:{body:'方案'},truncated:false}}],next_cursor:''})
+    // 会话上次用的是文字模型；刷新后待确认草稿里的视觉模型必须胜出。
+    if(req.method()==='GET' && path.endsWith('/conversations/conversation/runs')) return json({items:[{...finishedRun,model_key:'text'}]})
     return json({items:[]})
   })
   await materialPage.goto(url)
@@ -268,6 +270,8 @@ try {
   await materialPage.getByRole('button',{name:'打开创作助手'}).click()
   await materialPage.locator('.cc-agent-box [data-ref]').nth(1).waitFor()
   assert.equal(await materialPage.locator('.cc-agent-box [data-ref]').count(),2,'reference chips survive refresh')
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  assert.equal(await materialPage.getByRole('combobox',{name:'模型',exact:true}).textContent(),'视觉模型','a pending draft keeps the model it was written with')
   await materialPage.getByRole('button',{name:'重新发送'}).click()
   await materialPage.waitForFunction((k)=>sessionStorage.getItem(k)===null,key)
   assert.equal(submissions.length,2)
@@ -277,8 +281,47 @@ try {
   assert(approvals[0].payload.data_classes.includes('canvas_metadata'))
   assert.deepEqual(submissions[0].payload.instruction.instruction_segments.filter((s)=>s.type==='content_ref').map((s)=>s.content_revision_id),['ccrv_image','ccrv_text'])
   await materialPage.close()
+  // 回到一个会话沿用它最近一次运行的模型；已下架的不沿用。
+  const recallPage = await browser.newPage()
+  recallPage.on('pageerror', (error) => { throw error })
+  const history = {
+    a: [{ ...finishedRun, id: 'a1', conversation_id: 'a', model_key: 'vision' }],
+    b: [
+      { ...finishedRun, id: 'b1', conversation_id: 'b', model_key: 'vision', created_at: '2026-10-09T01:00:00Z' },
+      { ...finishedRun, id: 'b2', conversation_id: 'b', model_key: 'text', created_at: '2026-10-09T02:00:00Z' },
+    ],
+    c: [{ ...finishedRun, id: 'c1', conversation_id: 'c', model_key: 'gone' }],
+  }
+  await recallPage.route('**/api/v1/creative/**', async (route) => {
+    const path = new URL(route.request().url()).pathname
+    const json = (body) => route.fulfill({ json: body })
+    const runs = path.match(/\/conversations\/(\w+)\/runs$/)
+    if (runs) return json({ items: history[runs[1]] ?? [] })
+    const run = path.match(/\/agent-runs\/(\w+)$/)
+    if (run) return json(Object.values(history).flat().find((item) => item.id === run[1]))
+    if (path.endsWith('/agent/catalog')) return json({limits:{attachments:10,image_preview_count:8},skills:[],models:[{model_key:'text',display_name:'文字模型',available:true,capability:{image_input:false}},{model_key:'vision',display_name:'视觉模型',available:true,capability:{image_input:true}}]})
+    if (path.endsWith('/conversations')) return json({ items: [{ id: 'a', title: '会话甲' }, { id: 'b', title: '会话乙' }, { id: 'c', title: '会话丙' }] })
+    return json({ items: [] })
+  })
+  const chosen = () => recallPage.getByRole('combobox', { name: '模型', exact: true }).textContent()
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 150))
+  await recallPage.goto(url)
+  await recallPage.getByRole('button', { name: '打开创作助手' }).click()
+  await settle()
+  assert.equal(await chosen(), '视觉模型', 'the conversation opened on arrival recalls its model')
+  await pick(recallPage, '历史对话', '会话乙')
+  await settle()
+  assert.equal(await chosen(), '文字模型', 'the most recent run decides, not the list order')
+  await pick(recallPage, '历史对话', '会话丙')
+  await settle()
+  assert.equal(await chosen(), '文字模型', 'a withdrawn model is not recalled')
+  await pick(recallPage, '模型', '视觉模型')
+  await pick(recallPage, '历史对话', '会话乙')
+  await settle()
+  assert.equal(await chosen(), '文字模型')
+  await recallPage.close()
   console.log(
-    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified',
+    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model',
   )
 } finally {
   await browser.close()
