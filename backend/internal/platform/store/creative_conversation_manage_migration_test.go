@@ -10,6 +10,7 @@ import (
 
 func rollbackConversationManage(t *testing.T, url string) {
 	t.Helper()
+	rollbackProjectHome(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback agent-conversation-manage", err)
 	}
@@ -47,6 +48,7 @@ VALUES('ccco_00000000-0000-0000-0000-000000000001','a','p','c','新对话'),
 			if err != nil {
 				t.Fatal(err)
 			}
+			rollbackProjectHome(t, url)
 			err = store.MigrateDownOneForTest(url)
 			if choice != "none" {
 				if err == nil || !strings.Contains(err.Error(), "archived or renamed conversations exist") {

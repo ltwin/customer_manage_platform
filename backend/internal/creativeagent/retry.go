@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
@@ -39,6 +40,9 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 			return creativeops.Outcome{}, ErrNotFound
 		}
 		if err != nil {
+			return creativeops.Outcome{}, err
+		}
+		if err = creativecanvas.LockProjectForWorkInTx(ctx, tx, peek.CanvasID); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		id, err := creativeops.NewResourceID("ccrn")

@@ -121,7 +121,7 @@ activity_counts:
 ### 2.4 归档与运行入口
 
 - `POST /creative/projects/{id}/archive` 新增错误码 `creative_project_busy`（409）：项目里有排队中、运行中或核实中的助手运行或生成任务。只有「等你确认」的运行时可以归档（D6）。
-- 建运行、补充消息、重试这三个入口新增错误码 `creative_project_archived`（409）：项目已归档，恢复后才能继续。以后让运行重新进入活跃状态的入口（例如 V6-033 的确认执行），都要用同一个错误码（§3.4）。
+- 建运行、补充消息、重试这三个入口在项目已归档时返回 409 `archived_read_only`（「项目已归档，请恢复后编辑」）。实现时决定复用画布写入已有的这个错误码，不再另起 `creative_project_archived`：同一个事实只用一个码。以后让运行重新进入活跃状态的入口（例如 V6-033 的确认执行），都返回同一个错误码（§3.4）。
 
 ### 2.5 不变的部分
 
@@ -159,7 +159,7 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
 
 ### 3.2 写入点
 
-- **画布提交**：`advanceCanvas` 里加一句 `UPDATE creative_projects SET edited_at=clock_timestamp() WHERE id=$2`。`lockCanvas` 已经对这一行加了 `FOR UPDATE`，所以不会增加锁竞争。助手工具改画布、生成结果落到节点，都走画布命令，自然也被覆盖。
+- **画布提交**：生成任务的状态推进（排队、运行、完成）也经过 `advanceCanvas`，所以也算编辑。这符合「最近有动静的项目排在前面」，不另做区分。`advanceCanvas` 里加一句 `UPDATE creative_projects SET edited_at=clock_timestamp() WHERE id=$2`。`lockCanvas` 已经对这一行加了 `FOR UPDATE`，所以不会增加锁竞争。助手工具改画布、生成结果落到节点，都走画布命令，自然也被覆盖。
 - **建项目**：两个新列都由数据库填，插入语句不变。
 - **改名**：同时更新 `name` 和 `edited_at`；`normalized_name` 由生成列跟上。
 - **归档、恢复**：只改 `archived_at`、`revision` 和 `updated_at`，不动 `edited_at`。
@@ -167,6 +167,9 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
 ### 3.3 `ListProjects`
 
 签名改为接收一个 `ProjectQuery{Archived, Q, Sort, Limit, Cursor}`。
+
+- **只读快照**：整次列表读取放在 `WithReadSnapshot` 里，用 `RequireCreativeRead` 校验权限，不用写事务和 `RequireCreativeCapability`。后者会拿账号级的创意写锁，列表读取期间同账号的画布写入和运行入口都得等（2026-10-11 审计第 3 条）。
+- **游标只带自己排序需要的字段**：名称排序带规范化名称，按时间排序带 `edited_at`。名称在规范化前最多 200 字，NFKC 最坏把一个字符展开成 33 字节（U+FDFA），编码后的游标约 9KB，所以解码上限定为 16KB。服务前面没有反向代理，Go 默认允许 1MB 的请求头。不截断名称，因为截断后的排序键会让翻页漏项或重复（审计第 2 条）。
 
 - **排序与游标**：按 `edited_at` 或 `normalized_name` 加 `id` 分页。名称排序用 `"C"` 排序规则（码位序），和资产库标题排序是同一规则（D4）。
 - **默认画布**：改成一次查询，`project_id = ANY($2)`，不再按项目逐个查。
@@ -177,6 +180,7 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
 - **封面**：每个项目对默认画布执行一次 `QueryPage(creative_nodes, canvas_id=$2, ORDER BY id, LIMIT 61)`，走现有的 `creative_nodes_canvas(account_id, canvas_id, id)` 索引。读到 61 行时 `more = true`，丢掉多出来的那行。
   - 连线一次查完整页：`canvas_id = ANY($2) AND source_node_id = ANY($3) AND target_node_id = ANY($3)`，`$3` 是全部抽样节点的 ID。每个画布最多保留 60 条。
   - 节点 ID 由客户端随机生成，所以按 ID 取前 60 个，相当于一个稳定的随机抽样。版式的边界框按抽样计算。
+  - **世界坐标**：分组里的节点存的是相对父组的坐标。抽样后逐层补读不在样本里的祖先（每层整页一次查询），把坐标累加成世界坐标再返回，和编辑器的 `worldPoint` 同一算法。画布最多 500 个节点，所以最多补读 500 层。没被抽中的分组本身不画（审计第 1 条）。
   - 耗时只随「每页项目数 × 60」增长，不随画布大小增长（V6-063 AC-03）。
 - **查询次数与负载**：满页 30 个项目时，一次列表请求约 35 次查询：列表 1 次、画布 1 次、状态 4 次、节点 30 次、连线 1 次，都在同一个只读事务里，每次都是走索引的有界读取。评审按 100 个活跃页面、20 秒轮询估算约 5 次列表请求/秒，对应约 175 次查询/秒。实际只有页面上有 `running` 项目时才轮询（§4.5），侧栏和首页只取 5 个项目，所以这是上限。
 - **账号隔离**：所有查询都走 `TxAccountScope`，`account_id=$1` 由基座加上。手写的子查询要显式写 `account_id=$1`。
@@ -186,7 +190,7 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
 规则：**运行进入活跃状态的每个入口，都要在项目行锁之下确认项目未归档；归档在同一把锁之下确认没有活跃任务。**两边拿同一把锁，所以总有一方先提交，另一方看到的是对方的结果（2026-10-11 评审第 2 条）。
 
 - **归档**（`setArchived`，`archive = true`）：项目行已经是 `FOR UPDATE`。在同一个事务里查这个项目所有画布上有没有排队中、运行中或核实中的运行和生成任务（用上面两个部分索引）。有就返回 `ErrProjectBusy`，对应 409 `creative_project_busy`。只有等待中的运行时允许归档（D6）。恢复不做这项检查。
-- **运行入口**：入口在 `lockControlledRun` 或抢占槽位之前，先锁项目行（`creative_projects FOR UPDATE`，经由会话的 `project_id` 找到）。项目已归档就返回 `ErrProjectArchived`，对应 409 `creative_project_archived`。要改的入口：
+- **运行入口**：入口在 `lockControlledRun` 或抢占槽位之前，先锁项目行（`creativecanvas.LockProjectForWorkInTx`：由画布找到项目，`creative_projects FOR UPDATE`）。项目已归档就返回 `creativecanvas.ErrArchived`，对应 409 `archived_read_only`。要改的入口：
   - `CreateRun`（`runs.go:203`）：现在完全不检查归档，这是本期顺带补上的现有缺口。
   - `SupplementRun`（`waiting.go:37`）：会把 waiting_input 的运行重新入队。
   - `RetryRun`（`retry.go:21`）。
@@ -197,7 +201,7 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
 - **测试**（storetest，起两个并发事务）：
   - 一边归档，一边补充同一个等待中的运行：只有一方成功，最终状态不会是「已归档且运行中」。
   - 一边归档，一边新建运行：结果同上。
-  - 已归档项目上的建运行、补充、重试都返回 `creative_project_archived`；恢复项目后，补充可以成功。
+  - 已归档项目上的建运行、补充、重试都返回 `archived_read_only`；恢复项目后，补充可以成功。
 
 ## 4. 前端
 
@@ -433,5 +437,11 @@ D1–D6 均按下表建议拍板（owner 2026-10-11）。
 5. **首页恢复链找不回来**（建议）：属实。已加首页待办记录和四种恢复分支（§4.3）。
 
 评审的负载估算（满页约 90 次查询）也被采纳：画布和连线改为整页一次查询，满页约 35 次（§3.3）。
+
+2026-10-11 实现后审计给出 3 个 P2，逐项核实后全部修复，各补一条回归测试；把修复撤回后，三条测试都会失败：
+
+1. **分组节点的封面坐标错误**：属实，封面直接返回了相对父组的坐标。已改为世界坐标（§3.3）。
+2. **合法游标会被下一页拒绝**：属实，游标总是带上完整的规范化名称，而解码上限只有 2048 字节。已改为只带排序需要的字段，并放宽上限（§3.3）。
+3. **列表读取持有账号写锁**：属实。已改为只读快照（§3.3）。
 
 评审认可的取舍不变：新增 `edited_at`、前端串联现有接口、复用暂存附件、首页轮询；不做组合接口、MQ、独立工作流服务或封面预计算。

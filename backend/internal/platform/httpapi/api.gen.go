@@ -2998,19 +2998,19 @@ func (e ListCreativeAssetsParamsTagMode) Valid() bool {
 
 // Defines values for ListCreativeAssetsParamsSort.
 const (
-	Name   ListCreativeAssetsParamsSort = "name"
-	Oldest ListCreativeAssetsParamsSort = "oldest"
-	Recent ListCreativeAssetsParamsSort = "recent"
+	ListCreativeAssetsParamsSortName   ListCreativeAssetsParamsSort = "name"
+	ListCreativeAssetsParamsSortOldest ListCreativeAssetsParamsSort = "oldest"
+	ListCreativeAssetsParamsSortRecent ListCreativeAssetsParamsSort = "recent"
 )
 
 // Valid indicates whether the value is a known member of the ListCreativeAssetsParamsSort enum.
 func (e ListCreativeAssetsParamsSort) Valid() bool {
 	switch e {
-	case Name:
+	case ListCreativeAssetsParamsSortName:
 		return true
-	case Oldest:
+	case ListCreativeAssetsParamsSortOldest:
 		return true
-	case Recent:
+	case ListCreativeAssetsParamsSortRecent:
 		return true
 	default:
 		return false
@@ -3029,6 +3029,27 @@ func (e GetCreativeMediaParamsRole) Valid() bool {
 	case Display:
 		return true
 	case Original:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListCreativeProjectsParamsSort.
+const (
+	ListCreativeProjectsParamsSortEditedAsc  ListCreativeProjectsParamsSort = "edited_asc"
+	ListCreativeProjectsParamsSortEditedDesc ListCreativeProjectsParamsSort = "edited_desc"
+	ListCreativeProjectsParamsSortName       ListCreativeProjectsParamsSort = "name"
+)
+
+// Valid indicates whether the value is a known member of the ListCreativeProjectsParamsSort enum.
+func (e ListCreativeProjectsParamsSort) Valid() bool {
+	switch e {
+	case ListCreativeProjectsParamsSortEditedAsc:
+		return true
+	case ListCreativeProjectsParamsSortEditedDesc:
+		return true
+	case ListCreativeProjectsParamsSortName:
 		return true
 	default:
 		return false
@@ -4917,14 +4938,52 @@ type CreativeOperationReceiptHttpStatus int
 
 // CreativeProject defines model for CreativeProject.
 type CreativeProject struct {
-	Archived        bool   `json:"archived"`
-	DefaultCanvasId string `json:"default_canvas_id"`
-	Id              string `json:"id"`
-	Name            string `json:"name"`
+	Archived bool `json:"archived"`
+
+	// Cover 默认画布的有界缩影：只有几何与类型，不含文字内容
+	Cover           CreativeProjectCover `json:"cover"`
+	DefaultCanvasId string               `json:"default_canvas_id"`
+
+	// EditedAt 最近编辑：画布内容提交与改名推进它，归档、恢复不推进
+	EditedAt time.Time `json:"edited_at"`
+	Id       string    `json:"id"`
+	Name     string    `json:"name"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	Revision  CreativeRevision `json:"revision"`
-	UpdatedAt time.Time        `json:"updated_at"`
+	Revision CreativeRevision `json:"revision"`
+
+	// Running 有排队中、运行中或核实中的助手运行或生成任务；归档禁用与状态轮询只看它
+	Running bool `json:"running"`
+
+	// UpdatedAt 项目元数据（名称、归档状态）最后一次变化；排序请用 edited_at
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// Waiting 有等你确认的运行（waiting_input / waiting_apply）；只用于展示
+	Waiting bool `json:"waiting"`
+}
+
+// CreativeProjectCover 默认画布的有界缩影：只有几何与类型，不含文字内容
+type CreativeProjectCover struct {
+	// Edges 两端都在抽样里的连线
+	Edges []struct {
+		Source string `json:"source"`
+		Target string `json:"target"`
+	} `json:"edges"`
+
+	// More 画布节点超过 60 个，缩影只画了其中一部分
+	More  bool `json:"more"`
+	Nodes []struct {
+		// ContentRevisionId 只有 image、video 节点才给，用于取图
+		ContentRevisionId *string `json:"content_revision_id,omitempty"`
+		Height            float32 `json:"height"`
+		Id                string  `json:"id"`
+
+		// Kind 节点类型去掉 core. 前缀；没有内容时为 empty（分组除外）
+		Kind  string  `json:"kind"`
+		Width float32 `json:"width"`
+		X     float32 `json:"x"`
+		Y     float32 `json:"y"`
+	} `json:"nodes"`
 }
 
 // CreativeProjectCreatePayload defines model for CreativeProjectCreatePayload.
@@ -4943,6 +5002,11 @@ type CreativeProjectCreateResult struct {
 
 // CreativeProjectPage defines model for CreativeProjectPage.
 type CreativeProjectPage struct {
+	// ActivityCounts 本账号所有未归档项目中 running、waiting 为真的项目数，两边独立计数，与本页筛选无关
+	ActivityCounts struct {
+		Running int `json:"running"`
+		Waiting int `json:"waiting"`
+	} `json:"activity_counts"`
 	Items      []CreativeProject `json:"items"`
 	NextCursor string            `json:"next_cursor"`
 }
@@ -6940,7 +7004,16 @@ type ListCreativeProjectsParams struct {
 	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
 	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Archived *bool   `form:"archived,omitempty" json:"archived,omitempty"`
+
+	// Q 按名称包含匹配；NFKC 后转小写，大小写与全半角都不敏感，% 与 _ 按普通字符处理
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Sort 最近编辑（edited_at 倒序）、最早编辑、名称（规范化名称的码位序）；游标与 archived、q、sort 绑定
+	Sort *ListCreativeProjectsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
 }
+
+// ListCreativeProjectsParamsSort defines parameters for ListCreativeProjects.
+type ListCreativeProjectsParamsSort string
 
 // CreateCreativeProjectParams defines parameters for CreateCreativeProject.
 type CreateCreativeProjectParams struct {
@@ -12093,6 +12166,22 @@ func (siw *ServerInterfaceWrapper) ListCreativeProjects(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "archived", c.Request.URL.Query(), &params.Archived, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archived: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", c.Request.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter sort: %w", err), http.StatusBadRequest)
 		return
 	}
 

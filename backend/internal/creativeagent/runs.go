@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -255,7 +256,17 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			}
 			deadline := now.Add(s.limits.RunDuration())
 
-			// Lock order: the account's write slot, then the gateway's group and
+			var canvasOfConversation string
+			if err := tx.QueryRow(ctx, "creative_agent_conversations", "canvas_id", "id=$2", input.ConversationID).Scan(&canvasOfConversation); err != nil {
+				if errors.Is(err, store.ErrNoRows) {
+					return creativeops.Outcome{}, ErrNotFound
+				}
+				return creativeops.Outcome{}, err
+			}
+			if err := creativecanvas.LockProjectForWorkInTx(ctx, tx, canvasOfConversation); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			// Lock order: the project row (above), the account's write slot, then the gateway's group and
 			// budget rows, then the conversation, then the consent, then the
 			// content revisions it authorises.
 			if err := acquireSlotInTx(ctx, tx, runID, claim, now); err != nil {

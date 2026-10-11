@@ -22,6 +22,8 @@ var (
 	ErrArchived        = errors.New("creative project is archived")
 	ErrVersionConflict = errors.New("creative canvas version conflict")
 	ErrLimit           = errors.New("creative canvas node limit reached")
+	// ErrProjectBusy refuses archiving while a run or generation is active.
+	ErrProjectBusy = errors.New("creative project has active work")
 )
 
 const maxNodes = 500
@@ -217,6 +219,15 @@ func setArchived(ctx context.Context, scope store.AccountScope, c creativeops.Co
 		if (archived != nil) != archive {
 			var value *time.Time
 			if archive {
+				// Same row lock as every entry that activates work (§3.4), so
+				// whichever commits first is what the other one sees.
+				busy, err := projectHasLiveWork(ctx, tx, v.ProjectID)
+				if err != nil {
+					return creativeops.Outcome{}, err
+				}
+				if busy {
+					return creativeops.Outcome{}, ErrProjectBusy
+				}
 				now, err := tx.CreativeNow(ctx)
 				if err != nil {
 					return creativeops.Outcome{}, err
@@ -253,7 +264,7 @@ func RenameProject(ctx context.Context, scope store.AccountScope, c creativeops.
 		if creativeops.Revision(revision) != v.ExpectedRevision {
 			return creativeops.Outcome{}, ErrVersionConflict
 		}
-		if _, err := tx.Update(ctx, "creative_projects", "name=$2,revision=revision+1,updated_at=clock_timestamp()", "id=$3", v.Name, v.ProjectID); err != nil {
+		if _, err := tx.Update(ctx, "creative_projects", "name=$2,revision=revision+1,updated_at=clock_timestamp(),edited_at=clock_timestamp()", "id=$3", v.Name, v.ProjectID); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		return outcome(200, "project", v.ProjectID, creativeops.Revision(revision+1), struct {
@@ -288,11 +299,16 @@ func lockCanvas(ctx context.Context, tx store.TxAccountScope, id string, write b
 	return c, nil
 }
 func advanceCanvas(ctx context.Context, tx store.TxAccountScope, c Canvas, structural bool) error {
+	set := "revision=revision+1,updated_at=clock_timestamp()"
 	if structural {
-		_, err := tx.Update(ctx, "creative_canvases", "revision=revision+1,topology_revision=topology_revision+1,updated_at=clock_timestamp()", "id=$2", c.ID)
+		set = "revision=revision+1,topology_revision=topology_revision+1,updated_at=clock_timestamp()"
+	}
+	if _, err := tx.Update(ctx, "creative_canvases", set, "id=$2", c.ID); err != nil {
 		return err
 	}
-	_, err := tx.Update(ctx, "creative_canvases", "revision=revision+1,updated_at=clock_timestamp()", "id=$2", c.ID)
+	// 「最近编辑」跟着画布内容走。lockCanvas 已锁住这一行；只改 edited_at
+	// 不触发账号级的画布通知（迁移 0060）。
+	_, err := tx.Update(ctx, "creative_projects", "edited_at=clock_timestamp()", "id=$2", c.ProjectID)
 	return err
 }
 func readCanvas(ctx context.Context, tx store.ReadTxAccountScope, id string) (Canvas, error) {

@@ -30,7 +30,8 @@ func terminalRun(state string) bool {
 	return state == RunSucceeded || state == RunPartial || state == RunFailed || state == RunCancelled
 }
 
-// Slot -> Gateway group/budgets/requests -> run. Dispatch uses request -> run,
+// Project row (entries that activate work, see creativecanvas.LockProjectForWorkInTx)
+// -> Slot -> Gateway group/budgets/requests -> run. Dispatch uses request -> run,
 // so cancellation can neither miss a committed dispatch nor deadlock behind it.
 func (s *Service) lockControlledRun(ctx context.Context, tx store.TxAccountScope, id string) (controlledRun, error) {
 	var c controlledRun

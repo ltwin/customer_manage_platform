@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -99,6 +100,8 @@ func creativeError(c *gin.Context, err error) {
 		abortError(c, 422, "creative_group_depth", "分组最多两层")
 	case errors.Is(err, creativelibrary.ErrTrashed):
 		abortError(c, 409, "creative_asset_trashed", "资产已在回收站，请恢复后编辑")
+	case errors.Is(err, creativecanvas.ErrProjectBusy):
+		abortError(c, 409, "creative_project_busy", "项目里还有任务在运行，结束后再归档")
 	case errors.Is(err, creativecanvas.ErrArchived):
 		abortError(c, 409, "archived_read_only", "项目已归档，请恢复后编辑")
 	case errors.Is(err, creativecanvas.ErrNotFound), errors.Is(err, creativelibrary.ErrNotFound), errors.Is(err, creativecontent.ErrNotFound):
@@ -173,18 +176,24 @@ func (h *handlers) ListCreativeProjects(c *gin.Context, p ListCreativeProjectsPa
 	if !ok {
 		return
 	}
-	limit, cursor, archived := 30, "", false
+	q := creativecanvas.ProjectQuery{Limit: 30}
 	if p.Limit != nil {
-		limit = *p.Limit
+		q.Limit = *p.Limit
 	}
 	if p.Cursor != nil {
-		cursor = *p.Cursor
+		q.Cursor = *p.Cursor
 	}
 	if p.Archived != nil {
-		archived = *p.Archived
+		q.Archived = *p.Archived
+	}
+	if p.Q != nil {
+		q.Q = strings.TrimSpace(*p.Q)
+	}
+	if p.Sort != nil {
+		q.Sort = string(*p.Sort)
 	}
 	creativeRead(c, func() (creativecanvas.ProjectPage, error) {
-		return creativecanvas.ListProjects(c.Request.Context(), scope, archived, limit, cursor)
+		return creativecanvas.ListProjects(c.Request.Context(), scope, q)
 	})
 }
 func (h *handlers) GetCreativeTextAsset(c *gin.Context, id string) {

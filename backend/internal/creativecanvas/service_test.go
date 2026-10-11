@@ -274,17 +274,17 @@ func TestListsPaginationAccountAndArchiveFilters(t *testing.T) {
 	if _, err := creativelibrary.ListAssets(t.Context(), b, 2, first.NextCursor); !errors.Is(err, creativeops.ErrValidation) {
 		t.Fatalf("cross account cursor: %v", err)
 	}
-	projects, err := creativecanvas.ListProjects(t.Context(), a, false, 2, "")
+	projects, err := creativecanvas.ListProjects(t.Context(), a, creativecanvas.ProjectQuery{Limit: 2})
 	if err != nil || len(projects.Items) != 2 || projects.NextCursor == "" {
 		t.Fatalf("projects %+v %v", projects, err)
 	}
-	if _, err := creativecanvas.ListProjects(t.Context(), a, true, 2, projects.NextCursor); !errors.Is(err, creativeops.ErrValidation) {
+	if _, err := creativecanvas.ListProjects(t.Context(), a, creativecanvas.ProjectQuery{Archived: true, Limit: 2, Cursor: projects.NextCursor}); !errors.Is(err, creativeops.ErrValidation) {
 		t.Fatalf("changed filter cursor %v", err)
 	}
 	if _, err := creativecanvas.ArchiveProject(t.Context(), a, command(t, creativecanvas.ProjectStateInput{ProjectID: projects.Items[0].ID, ExpectedRevision: 1})); err != nil {
 		t.Fatal(err)
 	}
-	archived, err := creativecanvas.ListProjects(t.Context(), a, true, 30, "")
+	archived, err := creativecanvas.ListProjects(t.Context(), a, creativecanvas.ProjectQuery{Archived: true, Limit: 30})
 	if err != nil || len(archived.Items) != 1 || !archived.Items[0].Archived || archived.Items[0].DefaultCanvasID == "" {
 		t.Fatalf("archived %+v %v", archived, err)
 	}

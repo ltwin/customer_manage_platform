@@ -11,6 +11,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -54,6 +55,18 @@ func (s *Service) SupplementRun(ctx context.Context, scope store.AccountScope, c
 		}
 		return nil
 	}, Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
+		// A waiting run may sit in an archived project; it continues only
+		// after the project is restored (owner 2026-10-11, D6).
+		var canvasID string
+		if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id", "id=$2", in.RunID).Scan(&canvasID); err != nil {
+			if errors.Is(err, store.ErrNoRows) {
+				return creativeops.Outcome{}, ErrNotFound
+			}
+			return creativeops.Outcome{}, err
+		}
+		if err := creativecanvas.LockProjectForWorkInTx(ctx, tx, canvasID); err != nil {
+			return creativeops.Outcome{}, err
+		}
 		c, err := s.lockControlledRun(ctx, tx, in.RunID)
 		if err != nil {
 			return creativeops.Outcome{}, err

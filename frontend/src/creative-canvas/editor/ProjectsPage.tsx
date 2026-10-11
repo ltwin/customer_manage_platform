@@ -16,6 +16,12 @@ import { useJournal } from './useJournal.ts'
 import './workspace.css'
 import './projects.css'
 
+const emptyPage: api.ProjectPage = {
+  items: [],
+  next_cursor: '',
+  activity_counts: { running: 0, waiting: 0 },
+}
+
 export default function ProjectsPage() {
   const account = api.currentAccount()
   return account ? (
@@ -37,10 +43,7 @@ function Projects({ account }: { account: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const archived = params.get('view') === 'archived'
-  const [page, setPage] = useState<api.ProjectPage>({
-    items: [],
-    next_cursor: '',
-  })
+  const [page, setPage] = useState<api.ProjectPage>(emptyPage)
   const [loading, setLoading] = useState(true)
   const [moreLoading, setMoreLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -70,7 +73,7 @@ function Projects({ account }: { account: string }) {
     const current = ++generation.current
     setLoading(true)
     setMoreLoading(false)
-    setPage({ items: [], next_cursor: '' })
+    setPage(emptyPage)
     void api
       .read<api.ProjectPage>(
         `/projects?archived=${archived}`,

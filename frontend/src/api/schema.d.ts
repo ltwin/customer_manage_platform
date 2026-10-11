@@ -77,6 +77,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description 项目里有排队中、运行中或核实中的助手运行或生成任务时拒绝，409 creative_project_busy； 只有等待中的运行时可以归档，归档后它要等项目恢复才能继续。 */
         post: operations["archiveCreativeProject"];
         delete?: never;
         options?: never;
@@ -434,7 +435,10 @@ export interface paths {
         /** 最近三十次运行，用于刷新后恢复面板 */
         get: operations["listCreativeAgentRuns"];
         put?: never;
-        /** 提交一次指令并开始一次运行；202 只表示已受理 */
+        /**
+         * 提交一次指令并开始一次运行；202 只表示已受理
+         * @description 项目已归档时拒绝，409 archived_read_only；补充与重试同样如此。
+         */
         post: operations["createCreativeAgentRun"];
         delete?: never;
         options?: never;
@@ -2723,12 +2727,51 @@ export interface components {
             default_canvas_id: string;
             revision: components["schemas"]["CreativeRevision"];
             archived: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @description 项目元数据（名称、归档状态）最后一次变化；排序请用 edited_at
+             */
             updated_at: string;
+            /**
+             * Format: date-time
+             * @description 最近编辑：画布内容提交与改名推进它，归档、恢复不推进
+             */
+            edited_at: string;
+            /** @description 有排队中、运行中或核实中的助手运行或生成任务；归档禁用与状态轮询只看它 */
+            running: boolean;
+            /** @description 有等你确认的运行（waiting_input / waiting_apply）；只用于展示 */
+            waiting: boolean;
+            cover: components["schemas"]["CreativeProjectCover"];
+        };
+        /** @description 默认画布的有界缩影：只有几何与类型，不含文字内容 */
+        CreativeProjectCover: {
+            nodes: {
+                id: string;
+                x: number;
+                y: number;
+                width: number;
+                height: number;
+                /** @description 节点类型去掉 core. 前缀；没有内容时为 empty（分组除外） */
+                kind: string;
+                /** @description 只有 image、video 节点才给，用于取图 */
+                content_revision_id?: string;
+            }[];
+            /** @description 两端都在抽样里的连线 */
+            edges: {
+                source: string;
+                target: string;
+            }[];
+            /** @description 画布节点超过 60 个，缩影只画了其中一部分 */
+            more: boolean;
         };
         CreativeProjectPage: {
             items: components["schemas"]["CreativeProject"][];
             next_cursor: string;
+            /** @description 本账号所有未归档项目中 running、waiting 为真的项目数，两边独立计数，与本页筛选无关 */
+            activity_counts: {
+                running: number;
+                waiting: number;
+            };
         };
         CreativeProjectCreatePayload: {
             name: string;
@@ -6627,6 +6670,10 @@ export interface operations {
                 limit?: number;
                 cursor?: string;
                 archived?: boolean;
+                /** @description 按名称包含匹配；NFKC 后转小写，大小写与全半角都不敏感，% 与 _ 按普通字符处理 */
+                q?: string;
+                /** @description 最近编辑（edited_at 倒序）、最早编辑、名称（规范化名称的码位序）；游标与 archived、q、sort 绑定 */
+                sort?: "edited_desc" | "edited_asc" | "name";
             };
             header?: never;
             path?: never;

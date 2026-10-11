@@ -128,3 +128,41 @@ func subscribeKind(ctx context.Context, t *testing.T, db *Store, s AccountScope,
 	}
 	return ch
 }
+
+// Every canvas commit moves its project's edited_at. A project row change is
+// an account-wide canvas event, so that one column alone must stay quiet
+// (migration 0060); any other project change still notifies.
+func TestRealtimeProjectEditedAtIsQuiet(t *testing.T) {
+	db, scope := openReadSnapshotTestStore(t, "events-a")
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	if err := scope.Insert(ctx, "creative_projects", []string{"id", "name"}, "project-a", "项目"); err != nil {
+		t.Fatal(err)
+	}
+	ch, stop, err := db.SubscribeRealtime(ctx, scope, "canvas", "canvas-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		t.Fatal("missing initial resync")
+	}
+	if _, err := scope.Update(ctx, "creative_projects", "edited_at=clock_timestamp()", "id=$2", "project-a"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ch:
+		t.Fatal("edited_at alone woke every canvas of the account")
+	case <-time.After(200 * time.Millisecond):
+	}
+	if _, err := scope.Update(ctx, "creative_projects", "name=$2,edited_at=clock_timestamp()", "id=$3", "改名", "project-a"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		t.Fatal("rename did not notify")
+	}
+}
