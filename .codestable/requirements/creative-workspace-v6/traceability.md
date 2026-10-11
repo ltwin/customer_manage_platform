@@ -170,7 +170,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | AL-65 | P0 | 删除分组 | [V6-018](items/V6-018.md) | — |  |  |
 | AL-66 | P1 | 最爱 | [V6-019](items/V6-019.md) | — |  |  |
 | AL-67 | P0 | 上传到资产库 | [V6-057](items/V6-057.md) | — |  | [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
-| AL-68 | P1 | 整理模式（分组树拖拽、批量归类、检查器）与回收站 | [V6-020](items/V6-020.md) | [V6-054](items/V6-054.md) | 整理模式范围见 V6-054 与 D-02 |  |
+| AL-68 | P1 | 整理模式（分组树拖拽、批量归类、检查器）与回收站 | [V6-020](items/V6-020.md) | [V6-054](items/V6-054.md)、[V6-067](items/V6-067.md) | D-02 已拍板（2026-10-11）：整理模式由 V6-067 承接，回收站由 V6-020 验收 |  |
 | AS-01 | P0 | 思考块按 §7.1 展示 | [V6-030](items/V6-030.md) | — |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
 | AS-02 | P1 | 计划块按 §7.1 展示，步骤状态随执行实时更新 | [V6-030](items/V6-030.md) | — |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
 | AS-03 | P0 | 工具调用块按 §7.1 展示 | [V6-030](items/V6-030.md) | [V6-034](items/V6-034.md) |  | [verification](../../features/2026-10-08-agent-stream-blocks/agent-stream-blocks-verification.md) |
