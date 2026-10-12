@@ -40,6 +40,7 @@ import LibraryEditor from './LibraryEditor.tsx'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
 import { Masonry, Peek, PreviewGrid, QuickLook, Tile, type TileMode } from './LibraryTiles.tsx'
 import TagPopover from './TagPopover.tsx'
+import { deleteGroupCommand, groupRestoreCommand } from './groupDeletion.ts'
 import './library.css'
 
 type Confirmation = {
@@ -98,6 +99,7 @@ export default function LibraryPanel({
   onLoading,
   onCatalog,
   onCommand,
+  undoGroup,
   canPlace,
   onPlace,
   onFill,
@@ -118,6 +120,7 @@ export default function LibraryPanel({
   onLoading: (loading: boolean) => void
   onCatalog: (catalog: Catalog) => void
   onCommand: (path: string, payload: unknown) => Promise<boolean>
+  undoGroup: ReturnType<typeof groupRestoreCommand>
   canPlace: boolean
   onPlace: (assets: api.Asset[]) => void
   onFill: (asset: api.Asset) => void
@@ -164,10 +167,10 @@ export default function LibraryPanel({
   useEffect(() => onWidth(width), [width, onWidth])
   const expanded = standalone || width >= 500
   useEffect(() => {
-    if (!notice) return
+    if (!notice || undoGroup) return
     const timer = setTimeout(() => setNotice(''), 4000)
     return () => clearTimeout(timer)
-  }, [notice])
+  }, [notice, undoGroup])
 
   const view = params.get('lview') ?? 'all',
     group = params.get('lgroup') ?? '',
@@ -726,8 +729,8 @@ export default function LibraryPanel({
           disabled,
           action: () =>
             confirm(
-              `/asset-groups/${g.id}/delete`,
-              { expected_revision: g.revision, hierarchy_revision: catalog.hierarchy },
+              deleteGroupCommand(g, catalog.hierarchy).path,
+              deleteGroupCommand(g, catalog.hierarchy).payload,
               `删除分组「${g.name}」？`,
               children ? '素材保留在资产库，子分组移到上一级。' : '素材保留在资产库。',
               '删除分组',
@@ -1187,9 +1190,12 @@ export default function LibraryPanel({
             </button>
           </div>
         )}
-        {notice && (
+        {(notice || undoGroup) && (
           <p className="cl-notice" role="status">
-            {notice}
+            {undoGroup ? '已删除分组' : notice}
+            {undoGroup && <button type="button" disabled={disabled || busy} onClick={() => {
+              void onCommand(undoGroup.path, undoGroup.payload).then((ok) => { if (ok) { setNotice('已恢复分组与归类') } })
+            }}>撤销</button>}
           </p>
         )}
         <div className="cl-shelf" ref={shelf} onScroll={() => setPeek(null)}>

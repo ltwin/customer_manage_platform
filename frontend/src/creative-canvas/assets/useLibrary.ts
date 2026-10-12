@@ -7,6 +7,8 @@ import { listPath, type LibraryQuery } from './query.ts'
 export type Usage = components['schemas']['CreativeLibraryUsage']
 export type Facets = components['schemas']['CreativeAssetFacets']
 export type LibraryCatalog = {
+  hierarchy: string
+  tagHierarchy: string
   groups: api.Group[]
   counts: Record<string, number>
   tags: api.Tag[]
@@ -37,6 +39,8 @@ export function useCatalog(refresh: number) {
         if (signal.aborted) return
         setError('')
         setCatalog({
+          hierarchy: groups.hierarchy_revision,
+          tagHierarchy: tags.hierarchy_revision,
           groups: groups.items,
           counts: groups.asset_counts,
           tags: tags.items,

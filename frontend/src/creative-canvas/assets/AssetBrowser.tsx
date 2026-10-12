@@ -1,4 +1,5 @@
 import {
+  Check,
   ChevronDown,
   Heart,
   LayoutDashboard,
@@ -30,6 +31,8 @@ import {
   type Prefs,
   type View,
 } from './query.ts'
+import { boxSelection, type Modifiers, type Box } from './selection.ts'
+import type { Point } from './popover.ts'
 import type { LibraryCatalog, useAssetList } from './useLibrary.ts'
 
 type List = ReturnType<typeof useAssetList>
@@ -51,18 +54,24 @@ export default function AssetBrowser({
   onPrefs,
   onSelect,
   onRetry,
+  onBox,
+  onMenu,
+  toolbar,
 }: {
   query: LibraryQuery
   catalog: LibraryCatalog | null
   list: List
   prefs: Prefs
-  selected: string | null
+  selected: string[]
   onQuery: (q: LibraryQuery) => void
   onView: (view: View) => void
   onGroup: (id: string) => void
   onPrefs: (p: Prefs) => void
-  onSelect: (id: string | null) => void
+  onSelect: (id: string | null, keys?: Modifiers) => void
   onRetry: () => void
+  onBox: (ids: string[]) => void
+  onMenu: (asset: api.Asset, at: Point) => void
+  toolbar?: React.ReactNode
 }) {
   const groups = catalog?.groups ?? []
   const group = groups.find((g) => g.id === query.group)
@@ -301,11 +310,14 @@ export default function AssetBrowser({
         selected={selected}
         filtered={filtered}
         onSelect={onSelect}
+        onBox={onBox}
+        onMenu={onMenu}
         onRetry={onRetry}
         onClear={() => onQuery(clearFilters(query))}
         onWiden={() => onQuery({ ...query, view: 'all', group: '' })}
       />
 
+      {toolbar}
       {tagsAt && catalog && (
         <TagPopover
           anchor={tagsAt}
@@ -465,17 +477,29 @@ function Tiles({
   onRetry,
   onClear,
   onWiden,
+  onBox,
+  onMenu,
 }: {
   query: LibraryQuery
   list: List
   prefs: Prefs
-  selected: string | null
+  selected: string[]
   filtered: boolean
-  onSelect: (id: string | null) => void
+  onSelect: (id: string | null, keys?: Modifiers) => void
   onRetry: () => void
   onClear: () => void
   onWiden: () => void
+  onBox: (ids: string[]) => void
+  onMenu: (asset: api.Asset, at: Point) => void
 }) {
+  const dragBox = useRef<{
+    x: number
+    y: number
+    base: string[]
+    moved: boolean
+  } | null>(null)
+  const suppressClick = useRef(false)
+  const [marquee, setMarquee] = useState<Box | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLDivElement>(null)
   const end = useRef<HTMLDivElement>(null)
@@ -520,19 +544,97 @@ function Tiles({
       key={a.id}
       asset={a}
       square={prefs.layout === 'grid'}
-      selected={selected === a.id}
+      selected={selected.includes(a.id)}
+      selection={selected}
       onSelect={onSelect}
+      onMenu={onMenu}
     />
   )
   return (
     <div
       ref={scroller}
       className="al-scroll"
+      onPointerDown={(e) => {
+        if (
+          e.button !== 0 ||
+          !(e.target instanceof Element) ||
+          e.target.closest('.al-tile, button, input, textarea, .al-empty')
+        )
+          return
+        dragBox.current = {
+          x: e.clientX,
+          y: e.clientY,
+          base: e.metaKey || e.ctrlKey ? selected : [],
+          moved: false,
+        }
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }}
+      onPointerMove={(e) => {
+        const start = dragBox.current
+        if (
+          !start ||
+          Math.abs(e.clientX - start.x) + Math.abs(e.clientY - start.y) < 6
+        )
+          return
+        start.moved = true
+        const bounds = e.currentTarget.getBoundingClientRect()
+        const rect = {
+          left: Math.max(bounds.left, Math.min(start.x, e.clientX)),
+          right: Math.min(bounds.right, Math.max(start.x, e.clientX)),
+          top: Math.max(bounds.top, Math.min(start.y, e.clientY)),
+          bottom: Math.min(bounds.bottom, Math.max(start.y, e.clientY)),
+        }
+        setMarquee(rect)
+        const cards = Array.from(
+          box.current?.querySelectorAll<HTMLElement>('[data-asset]') ?? [],
+        ).map((el) => ({
+          id: el.dataset.asset!,
+          ...(() => {
+            const r = el.getBoundingClientRect()
+            return {
+              left: r.left,
+              right: r.right,
+              top: r.top,
+              bottom: r.bottom,
+            }
+          })(),
+        }))
+        onBox(boxSelection(start.base, cards, rect))
+      }}
+      onPointerUp={(e) => {
+        suppressClick.current = !!dragBox.current?.moved
+        if (e.currentTarget.hasPointerCapture(e.pointerId))
+          e.currentTarget.releasePointerCapture(e.pointerId)
+        dragBox.current = null
+        setMarquee(null)
+      }}
+      onPointerCancel={() => {
+        dragBox.current = null
+        setMarquee(null)
+      }}
       onClick={(e) => {
-        if (e.target === e.currentTarget || e.target === box.current)
+        if (suppressClick.current) {
+          suppressClick.current = false
+          return
+        }
+        if (
+          e.target instanceof Element &&
+          !e.target.closest('.al-tile, button, input, textarea')
+        )
           onSelect(null)
       }}
     >
+      {marquee && (
+        <div
+          className="al-marquee"
+          style={{
+            left: marquee.left,
+            top: marquee.top,
+            width: marquee.right - marquee.left,
+            height: marquee.bottom - marquee.top,
+          }}
+        />
+      )}
       {list.error && (
         <div className="al-state" role="alert">
           <p>{list.error}</p>
@@ -616,11 +718,15 @@ function AssetCard({
   square,
   selected,
   onSelect,
+  onMenu,
+  selection,
 }: {
   asset: api.Asset
   square: boolean
   selected: boolean
-  onSelect: (id: string) => void
+  onSelect: (id: string | null, keys?: Modifiers) => void
+  onMenu: (asset: api.Asset, at: Point) => void
+  selection: string[]
 }) {
   const visual = a.kind === 'image' || a.kind === 'video'
   return (
@@ -632,13 +738,41 @@ function AssetCard({
       tabIndex={0}
       aria-pressed={selected}
       aria-label={a.title}
-      onClick={() => onSelect(a.id)}
+      draggable={!a.deleted_at}
+      onDragStart={(e) => {
+        const ids = selected ? selection : [a.id]
+        if (!selected) onSelect(a.id)
+        e.dataTransfer.setData(
+          'application/creative-library-selection',
+          ids.join(','),
+        )
+        e.dataTransfer.effectAllowed = 'copy'
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onMenu(a, { x: e.clientX, y: e.clientY })
+      }}
+      onClick={(e) =>
+        onSelect(a.id, { additive: e.metaKey || e.ctrlKey, shift: e.shiftKey })
+      }
       onKeyDown={(e) => {
-        if (e.key !== 'Enter') return
+        if (e.target !== e.currentTarget || e.key !== 'Enter') return
         e.preventDefault()
         onSelect(a.id)
       }}
     >
+      <button
+        type="button"
+        className="al-tick"
+        aria-label={`选择：${a.title}`}
+        aria-pressed={selected}
+        onClick={(e) => {
+          e.stopPropagation()
+          onSelect(a.id, { additive: true })
+        }}
+      >
+        <Check size={11} />
+      </button>
       <div
         className={`al-thumb${visual ? '' : ' is-card'}`}
         style={

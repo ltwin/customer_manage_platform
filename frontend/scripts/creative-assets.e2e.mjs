@@ -77,9 +77,9 @@ const fixture = () => [
 
 const key = (s) => s.normalize('NFKC').toLowerCase().trim()
 function mockServer(assets) {
-  const s = { assets, reads: [], other: [], revision: '1', hold: null }
+  const s = { assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null }
   const live = () => s.assets.filter((a) => !a.deleted_at)
-  const descendants = (id) => [id, ...groups.filter((g) => g.parent_id === id).map((g) => g.id)]
+  const descendants = (id) => [id, ...s.groups.filter((g) => g.parent_id === id).map((g) => g.id)]
   function scope(q, { kind = true, tagFilter = true } = {}) {
     const view = q.get('view') ?? 'all'
     let items = view === 'trash' ? s.assets.filter((a) => a.deleted_at) : live()
@@ -95,7 +95,7 @@ function mockServer(assets) {
     const text = key(q.get('q') ?? '')
     if (text)
       items = items.filter((a) =>
-        key([a.title, a.description, a.content.payload.body ?? '', a.content.payload.url ?? '', ...a.tag_ids.map((t) => tags.find((x) => x.id === t).name)].join(' ')).includes(text),
+        key([a.title, a.description, a.content.payload.body ?? '', a.content.payload.url ?? '', ...a.tag_ids.map((t) => s.tags.find((x) => x.id === t).name)].join(' ')).includes(text),
       )
     if (q.get('unrated') === 'true') items = items.filter((a) => a.rating === null)
     if (q.get('min_rating')) items = items.filter((a) => a.rating !== null && a.rating >= Number(q.get('min_rating')))
@@ -119,12 +119,12 @@ function mockServer(assets) {
     if (path.endsWith('/auth/refresh')) return json({ access_token: 'qa', token_type: 'Bearer', expires_in: 600 })
     if (path.endsWith('/me')) return json({ id: 'qa-assets', email: 'qa@example.test', created_at: '2026-01-01T00:00:00Z', timezone: 'Asia/Shanghai' })
     if (path.endsWith('/account/profile')) return json({ display_name: 'Samson', profile_revision: '1', avatar_revision: '0' })
-    if (path.endsWith('/creative/projects')) return json({ items: [], next_cursor: '', activity_counts: { running: 0, waiting: 0 } })
-    if (path.endsWith('/creative/asset-groups')) {
-      const counts = Object.fromEntries(groups.map((g) => [g.id, live().filter((a) => a.group_ids.some((x) => descendants(g.id).includes(x))).length]))
-      return json({ items: groups, hierarchy_revision: '1', asset_counts: counts })
+    if (path.endsWith('/creative/projects') && request.method() === 'GET') return json({ items: s.projects.filter((p) => !p.archived && p.name.includes(url.searchParams.get('q') ?? '')), next_cursor: '', activity_counts: { running: 0, waiting: 0 } })
+    if (path.endsWith('/creative/asset-groups') && request.method() === 'GET') {
+      const counts = Object.fromEntries(s.groups.map((g) => [g.id, live().filter((a) => a.group_ids.some((x) => descendants(g.id).includes(x))).length]))
+      return json({ items: s.groups, hierarchy_revision: s.hierarchy, asset_counts: counts })
     }
-    if (path.endsWith('/creative/tags')) return json({ items: tags, hierarchy_revision: '1' })
+    if (path.endsWith('/creative/tags') && request.method() === 'GET') return json({ items: s.tags, hierarchy_revision: '1' })
     if (path.endsWith('/creative/tag-categories')) return json({ items: categories, hierarchy_revision: '1' })
     if (path.endsWith('/creative/library-usage')) return json({ asset_count: live().length, stored_bytes: Math.round(3.24 * GiB), limit_bytes: 20 * GiB })
     if (path.endsWith('/creative/media-access-tickets')) {
@@ -154,13 +154,71 @@ function mockServer(assets) {
         const loose = scope(q, { tagFilter: false })
         facets = {
           kinds: Object.fromEntries(['text', 'link', 'image', 'video', 'audio'].map((k) => [k, byKind.filter((a) => a.kind === k).length])),
-          tags: tags.map((t) => ({
+          tags: s.tags.map((t) => ({
             tag_id: t.id,
             count: loose.filter((a) => (q.get('tag_mode') === 'any' ? a.tag_ids.includes(t.id) : [...selected, t.id].every((x) => a.tag_ids.includes(x)))).length,
           })),
         }
       }
       return json({ items: items.slice(offset, offset + limit), next_cursor: offset + limit < items.length ? String(offset + limit) : '', total_count: items.length, library_revision: s.revision, ...(facets ? { facets } : {}) })
+    }
+    if (/\/creative\/assets\/[^/]+$/.test(path) && request.method() === 'GET') {
+      const a = s.assets.find((a) => a.id === path.split('/').at(-1))
+      return a ? json(a) : json({ error: { code: 'not_found', message: '素材不存在' } }, 404)
+    }
+    if (/\/creative\/canvases\/[^/]+$/.test(path) && request.method() === 'GET') return json(s.canvases.get(path.split('/').at(-1)))
+    if (request.method() === 'POST' && path.includes('/creative/')) {
+      const body = request.postDataJSON(), payload = body.payload, op = body.operation_id
+      s.writes.push({ path, body, key: request.headers()['idempotency-key'] })
+      if (s.receipts.has(op)) return json(s.receipts.get(op))
+      if (s.failNext && path.endsWith(s.failNext.path)) {
+        const failure = s.failNext; s.failNext = null
+        return json({ error: { code: failure.code ?? 'creative_revision_conflict', message: failure.message ?? '测试请求失败' } }, failure.status ?? 409)
+      }
+      let result = { id: 'ok', revision: '2', hierarchy_revision: s.hierarchy, library_revision: s.revision }
+      const versions = payload.items ?? payload.assets ?? (payload.expected_revision ? [{ asset_id: path.split('/').at(-2), expected_revision: payload.expected_revision }] : [])
+      if (path.includes('/assets/') && versions.some((v) => s.assets.find((a) => a.id === v.asset_id)?.revision !== v.expected_revision)) return json({ error: { code: 'creative_revision_conflict', message: '版本冲突' } }, 409)
+      if (path.endsWith('/assets/batch-rate')) {
+        for (const item of payload.items) { const a = s.assets.find((a) => a.id === item.asset_id); a.rating = item.rating; a.revision = String(Number(a.revision) + 1) }
+        result = { items: payload.items.map((item) => { const a = s.assets.find((a) => a.id === item.asset_id); return { id: a.id, revision: a.revision } }), library_revision: String(Number(s.revision) + 1) }
+      } else if (path.endsWith('/metadata')) {
+        const a = s.assets.find((a) => a.id === path.split('/').at(-2)); const { expected_revision: _rev, ...patch } = payload
+        Object.assign(a, patch); a.revision = String(Number(a.revision) + 1); result.id = a.id; result.revision = a.revision
+      } else if (path.endsWith('/assets/batch-organize')) {
+        for (const v of payload.assets) { const a = s.assets.find((a) => a.id === v.asset_id); for (const field of ['group_ids', 'tag_ids']) a[field] = [...new Set([...a[field].filter((id) => !(payload['remove_' + field] ?? []).includes(id)), ...(payload['add_' + field] ?? [])])]; a.revision = String(Number(a.revision) + 1) }
+      } else if (path.endsWith('/assets/batch-trash')) {
+        for (const v of payload.assets) { const a = s.assets.find((a) => a.id === v.asset_id); a.deleted_at = new Date().toISOString(); a.revision = String(Number(a.revision) + 1) }
+      } else if (path.endsWith('/creative/asset-groups')) {
+        const g = { id: 'g-new-' + s.groups.length, parent_id: payload.parent_id ?? null, name: payload.name, position: s.groups.length, revision: '1' }; s.groups.push(g); s.hierarchy = String(Number(s.hierarchy) + 1); result.id = g.id
+      } else if (/\/asset-groups\/[^/]+\/rename$/.test(path)) {
+        const g = s.groups.find((g) => g.id === path.split('/').at(-2)); g.name = payload.name; g.revision = String(Number(g.revision) + 1); s.hierarchy = String(Number(s.hierarchy) + 1)
+      } else if (path.endsWith('/creative/tags')) {
+        const t = { id: 't-new-' + s.tags.length, ...payload, revision: '1' }; s.tags.push(t); result.id = t.id
+      } else if (/\/asset-groups\/[^/]+\/delete$/.test(path)) {
+        const id = path.split('/').at(-2), g = s.groups.find((g) => g.id === id)
+        if (payload.hierarchy_revision !== s.hierarchy || !g) return json({ error: { code: 'creative_revision_conflict', message: '分组已经有新的调整，无法撤销' } }, 409)
+        const deletion = 'delete-' + id
+        s.deletions.set(deletion, { group: structuredClone(g), members: s.assets.filter((a) => a.group_ids.includes(id)).map((a) => a.id), children: s.groups.filter((g) => g.parent_id === id).map((g) => g.id) })
+        s.groups = s.groups.filter((g) => g.id !== id); s.groups.filter((g) => g.parent_id === id).forEach((g) => { g.parent_id = null })
+        s.assets.forEach((a) => { a.group_ids = a.group_ids.filter((v) => v !== id) }); s.hierarchy = String(Number(s.hierarchy) + 1)
+        result = { ...result, deletion_id: deletion, hierarchy_revision: s.hierarchy }
+      } else if (/\/asset-groups\/deletions\/[^/]+\/restore$/.test(path)) {
+        const snap = s.deletions.get(path.split('/').at(-2)); s.groups.push(snap.group)
+        s.groups.filter((g) => snap.children.includes(g.id)).forEach((g) => { g.parent_id = snap.group.id })
+        s.assets.filter((a) => snap.members.includes(a.id)).forEach((a) => { a.group_ids = [...new Set([...a.group_ids, snap.group.id])] }); s.hierarchy = String(Number(s.hierarchy) + 1)
+      } else if (path.endsWith('/creative/projects')) {
+        const id = 'project-' + (s.projects.length + 1), canvas = 'canvas-' + id
+        s.projects.push({ id, name: payload.name, default_canvas_id: canvas, revision: '1', archived: false, edited_at: new Date().toISOString(), running: false, waiting: false, cover: { nodes: [], edges: [] } })
+        s.canvases.set(canvas, { id: canvas, nodes: [], topology_revision: '1' }); result = { project_id: id, default_canvas_id: canvas, revision: '1' }
+      } else if (path.endsWith('/commands')) {
+        const c = s.canvases.get(path.split('/').at(-2))
+        if (c.topology_revision !== payload.expected_topology_revision) return json({ error: { code: 'creative_revision_conflict', message: '结构版本冲突' } }, 409)
+        c.nodes.push(...payload.actions.map((a) => ({ id: a.node_id, parent_id: null, metadata: { x: a.x, y: a.y, width: 300, height: 300 } }))); c.topology_revision = String(Number(c.topology_revision) + 1)
+        result = { change_id: 'change-' + op, result_revision: c.topology_revision, result_topology_revision: c.topology_revision, object_results: [], created_ids: payload.actions.map((a) => a.node_id) }
+      } else return json({ error: { code: 'unavailable', message: 'not modelled' } }, 503)
+      s.revision = String(Number(s.revision) + 1); s.receipts.set(op, structuredClone(result))
+      if (s.loseNext && path.endsWith(s.loseNext)) { s.loseNext = null; return route.abort('failed') }
+      return json(result)
     }
     s.other.push(`${request.method()} ${path}`)
     return json({ error: { code: 'unavailable', message: 'not modelled' } }, 503)
@@ -582,12 +640,206 @@ await check('AC-09', async () => {
   // 单击选中，检查器显示详情；点空白处取消。
   await tile('白纱与拱门').click()
   const inspector = page.getByRole('complementary', { name: '检查器' })
-  await inspector.getByRole('heading', { name: '白纱与拱门' }).waitFor()
+  assert.equal(await inspector.getByRole('textbox', { name: '标题', exact: true }).inputValue(), '白纱与拱门')
   assert.match(await inspector.innerText(), /1600 × 1067/)
   assert.match(await inspector.innerText(), /外景/)
   await page.screenshot({ path: `${output}/ac09-inspector.png` })
   await page.locator('.al-scroll').click({ position: { x: 5, y: 600 } })
   await inspector.getByText('没有选中素材').waitFor()
+})
+
+
+const saved = async () => { await page.waitForFunction(() => document.querySelector('.al-page')?.getAttribute('aria-busy') === 'false') }
+const selectedIDs = () => page.locator('.al-tile.is-on').evaluateAll((els) => els.map((e) => e.dataset.asset))
+await check('AC-04-selection', async () => {
+  await fresh({ layout: 'grid' }); await open('?view=recent')
+  await tile('海边逆光').getByRole('button', { name: '选择：海边逆光', exact: true }).focus()
+  await page.keyboard.press('Enter'); assert.deepEqual(await selectedIDs(), ['f-sea'])
+  await page.keyboard.press('Enter'); assert.deepEqual(await selectedIDs(), [])
+  await tile('海边逆光').click()
+  await tile('棚拍布光').click({ modifiers: ['Shift'] })
+  assert.deepEqual(await selectedIDs(), ['f-sea', 'f-veil', 'f-studio'])
+  await tile('白纱与拱门').click({ modifiers: ['Meta'] })
+  assert.deepEqual(await selectedIDs(), ['f-sea', 'f-studio'])
+  await page.keyboard.press('Escape'); assert.deepEqual(await selectedIDs(), [])
+  await page.keyboard.press('Meta+a'); assert.equal((await selectedIDs()).length, 6)
+  await page.keyboard.press('Escape')
+  await tile('海边逆光').click(); await tile('白纱与拱门').click({ modifiers: ['Meta'] })
+  const transfer = await page.evaluateHandle(() => new DataTransfer())
+  await tile('海边逆光').dispatchEvent('dragstart', { dataTransfer: transfer })
+  await row('棚拍').dispatchEvent('drop', { dataTransfer: transfer }); await saved()
+  assert(server.assets.filter((a) => ['f-sea', 'f-veil'].includes(a.id)).every((a) => a.group_ids.includes('g-in')))
+  await page.screenshot({ path: `${output}/step3-multi-inspector.png` })
+  assert.equal(await page.getByRole('toolbar', { name: '批量操作' }).isVisible(), false)
+  await page.getByRole('button', { name: '检查器', exact: true }).click()
+  assert(await page.getByRole('toolbar', { name: '批量操作' }).isVisible())
+  await page.setViewportSize({ width: 390, height: 844 })
+  await noHorizontalScroll('step3 phone batch')
+  await page.screenshot({ path: `${output}/step3-phone-batch.png` })
+})
+await check('AC-05-edit-rate', async () => {
+  await fresh(); await open('?view=recent'); await tile('白纱与拱门').click()
+  const inspector = page.getByRole('complementary', { name: '检查器' })
+  const title = inspector.getByRole('textbox', { name: '标题', exact: true })
+  await title.fill('白纱新标题'); await title.press('Tab'); await saved()
+  assert.equal(server.assets.find((a) => a.id === 'f-veil').title, '白纱新标题')
+  const slider = inspector.getByRole('slider', { name: '评分', exact: true })
+  const third = slider.locator('[data-star="3"]')
+  await third.click({ position: { x: 3, y: 8 } }); await saved()
+  assert.equal(server.assets.find((a) => a.id === 'f-veil').rating, 2.5)
+  await third.click({ position: { x: 3, y: 8 } }); await saved()
+  assert.equal(server.assets.find((a) => a.id === 'f-veil').rating, null)
+  await slider.focus(); await page.keyboard.press('ArrowRight'); await saved()
+  assert.equal(server.assets.find((a) => a.id === 'f-veil').rating, .5)
+  await tile('海边逆光').click({ modifiers: ['Meta'] }); await page.keyboard.press('4'); await saved()
+  assert.equal(server.assets.find((a) => a.id === 'f-sea').rating, 4)
+  await page.locator('.al-toast').getByRole('button', { name: '撤销', exact: true }).click(); await saved()
+  assert.equal(server.assets.find((a) => a.id === 'f-sea').rating, 5)
+  assert.equal(server.assets.find((a) => a.id === 'f-veil').rating, .5)
+  await inspector.getByRole('button', { name: '标签', exact: true }).click()
+  await page.getByRole('textbox', { name: '搜索或新建标签' }).fill('新风格')
+  await page.getByRole('button', { name: '新建标签「新风格」' }).click(); await saved()
+  const newTag = server.tags.find((t) => t.name === '新风格')
+  assert(newTag && server.assets.filter((a) => ['f-sea', 'f-veil'].includes(a.id)).every((a) => a.tag_ids.includes(newTag.id)))
+  await page.getByRole('dialog', { name: '打标签', exact: true }).press('Escape')
+  server.failNext = { path: '/assets/batch-rate', status: 409 }
+  await page.keyboard.press('2'); await saved()
+  await page.locator('.al-toast').getByText('已在别处修改，已刷新').waitFor()
+  assert.equal(server.assets.find((a) => a.id === 'f-sea').rating, 5)
+  server.loseNext = '/assets/batch-rate'
+  await page.keyboard.press('3')
+  await page.locator('.al-toast').getByRole('button', { name: '重试' }).waitFor()
+  await page.locator('.al-toast').getByRole('button', { name: '重试' }).click(); await saved()
+  const rates = server.writes.filter((w) => w.path.endsWith('/assets/batch-rate'))
+  assert.equal(rates.at(-1).key, rates.at(-2).key)
+  assert.equal(server.assets.find((a) => a.id === 'f-sea').rating, 3)
+})
+await check('AC-06-place', async () => {
+  await fresh(); await open('?view=recent'); await tile('海边逆光').click(); await tile('白纱与拱门').click({ modifiers: ['Meta'] })
+  const inspector = page.getByRole('complementary', { name: '检查器' })
+  await inspector.getByRole('button', { name: '放入项目…', exact: true }).click()
+  await page.getByRole('button', { name: '新建项目并放入', exact: true }).click()
+  await page.getByRole('textbox', { name: '新项目名称' }).fill('素材整理测试')
+  server.failNext = { path: '/commands', status: 503, code: 'temporary' }
+  await page.getByRole('button', { name: '新建并放入', exact: true }).click()
+  await page.locator('.al-toast').getByRole('button', { name: '重试' }).waitFor()
+  assert.equal(server.projects.length, 1)
+  await page.locator('.al-toast').getByRole('button', { name: '重试' }).click(); await saved()
+  assert.equal(server.projects.length, 1)
+  const writes = server.writes.filter((w) => w.path.endsWith('/commands'))
+  assert.equal(writes[0].key, writes[1].key)
+  const first = writes[1].body.payload
+  assert.equal(first.type, 'batch'); assert.equal(first.actions.length, 2)
+  assert.deepEqual(first.actions.map((a) => [a.x, a.y]), [[0, 0], [340, 0]])
+  assert(first.change_group_id)
+  // 同一项目已有节点：右边缘+40，结构冲突时重读并换新命令再试一次。
+  await inspector.getByRole('button', { name: '放入项目…', exact: true }).click()
+  server.failNext = { path: '/commands', status: 409, code: 'creative_revision_conflict' }
+  await page.getByRole('dialog', { name: '放入项目', exact: true }).getByRole('button', { name: '素材整理测试', exact: true }).click(); await saved()
+  const again = server.writes.filter((w) => w.path.endsWith('/commands')).slice(-2)
+  assert.notEqual(again[0].key, again[1].key)
+  assert.deepEqual(again[1].body.payload.actions.map((a) => [a.x, a.y]), [[680, 0], [1020, 0]])
+  assert.equal(server.canvases.values().next().value.nodes.length, 4)
+})
+await check('marquee-limit', async () => {
+  await fresh({ layout: 'grid' }); await open('?view=recent')
+  const scroll = await page.locator('.al-scroll').boundingBox(), first = await tiles().first().boundingBox()
+  await page.mouse.move(scroll.x + 2, scroll.y + 2); await page.mouse.down()
+  await page.mouse.move(first.x + first.width - 4, first.y + first.height - 4, { steps: 6 }); await page.mouse.up()
+  assert.deepEqual(await selectedIDs(), ['f-sea'])
+  await page.keyboard.press('Escape')
+  await fresh({ layout: 'grid', assets: Array.from({ length: 120 }, (_, i) => asset({ id: 'limit-' + i, title: '素材 ' + i, age: i })) }); await open()
+  await page.locator('.al-end').scrollIntoViewIfNeeded(); await page.waitForFunction(() => document.querySelectorAll('.al-tile').length === 120)
+  await page.keyboard.press('Meta+a'); assert.equal((await selectedIDs()).length, 120)
+  await page.getByRole('complementary', { name: '检查器' }).getByText('一次最多处理 100 项').waitFor()
+  assert(await page.getByRole('complementary', { name: '检查器' }).getByRole('button', { name: '放入项目…', exact: true }).isDisabled())
+  await page.keyboard.press('4'); assert.equal(server.writes.length, 0)
+})
+await check('group-and-tag-editors', async () => {
+  await fresh(); await open('?view=recent')
+  await tree().getByRole('button', { name: '新建分组', exact: true }).click()
+  await tree().getByRole('textbox', { name: '新分组名称', exact: true }).fill('新建分类')
+  await tree().getByRole('textbox', { name: '新分组名称', exact: true }).press('Enter'); await saved()
+  await row('新建分类').waitFor()
+  await row('新建分类').click({ button: 'right' }); await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
+  await tree().getByRole('textbox', { name: '分组名称', exact: true }).fill('改名分类'); await tree().getByRole('textbox', { name: '分组名称', exact: true }).press('Enter'); await saved()
+  await row('改名分类').waitFor()
+  await tile('海边逆光').click(); await tile('白纱与拱门').click({ modifiers: ['Meta'] })
+  const inspector = page.getByRole('complementary', { name: '检查器' })
+  assert.equal(await inspector.locator('.al-tagchip.partial').filter({ hasText: '品牌' }).count(), 1)
+  await inspector.getByRole('button', { name: '补齐分组：品牌', exact: true }).click(); await saved()
+  assert(server.assets.filter((a) => ['f-sea', 'f-veil'].includes(a.id)).every((a) => a.group_ids.includes('g-brand')))
+  await inspector.getByRole('button', { name: '标签', exact: true }).click()
+  const pop = page.getByRole('dialog', { name: '打标签', exact: true })
+  await pop.getByRole('button', { name: '暖调', exact: true }).click(); await saved()
+  assert(server.assets.filter((a) => ['f-sea', 'f-veil'].includes(a.id)).every((a) => !a.tag_ids.includes('t-warm')))
+  assert(await pop.isVisible())
+  await page.screenshot({ path: `${output}/step3-tag-picker.png` })
+})
+await check('V6-018-undo', async () => {
+  await fresh(); await open()
+  await row('婚礼').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click(); await saved()
+  assert(!server.groups.some((g) => g.id === 'g-wed'))
+  assert.equal(server.groups.find((g) => g.id === 'g-out').parent_id, null)
+  assert.equal(server.assets.length, 71)
+  await page.locator('.al-toast').getByRole('button', { name: '撤销', exact: true }).click(); await saved()
+  assert(server.groups.some((g) => g.id === 'g-wed'))
+  assert.equal(server.groups.find((g) => g.id === 'g-out').parent_id, 'g-wed')
+  await page.reload(); await settled(); await row('婚礼').waitFor()
+})
+
+await check('V6-018-restore-refusal', async () => {
+  for (const [code, text] of [
+    ['creative_revision_conflict', '分组已经有新的调整，无法撤销；请刷新后查看'],
+    ['creative_group_restore_limit', '部分素材已达到分组数量上限，无法恢复'],
+  ]) {
+    await fresh(); await open()
+    await row('婚礼').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click(); await saved()
+    server.failNext = { path: '/restore', status: 409, code, message: text }
+    await page.locator('.al-toast').getByRole('button', { name: '撤销', exact: true }).click(); await saved()
+    await page.getByText(text, { exact: true }).waitFor()
+    assert(!server.groups.some((g) => g.id === 'g-wed'))
+    assert(await page.getByRole('button', { name: '关闭提示', exact: true }).isEnabled())
+  }
+})
+
+await check('failure-recovery-guards', async () => {
+  const unavailable = fixture(); unavailable[0].unavailable = true
+  await fresh({ assets: unavailable }); await open()
+  await tile('海边逆光').click({ button: 'right' })
+  assert(await page.getByRole('menuitem', { name: '下载', exact: true }).isDisabled())
+  assert(await page.getByRole('menuitem', { name: '放入项目…', exact: true }).isDisabled())
+  await page.keyboard.press('Escape')
+  await tile('白纱与拱门').click()
+  // 列表仍可用，但详细读取发现内容已不可用；不能把只读失败留成 pending。
+  server.assets.find((a) => a.id === 'f-veil').unavailable = true
+  await page.getByRole('complementary', { name: '检查器' }).getByRole('button', { name: '下载', exact: true }).click()
+  await page.getByText('素材当前无法下载', { exact: true }).waitFor()
+  assert(await page.getByRole('button', { name: '关闭提示', exact: true }).isEnabled())
+  await tile('棚拍布光').click()
+  assert(await page.getByRole('textbox', { name: '标题', exact: true }).isEnabled())
+  assert.equal(server.writes.length, 0)
+
+  await fresh({ layout: 'grid', assets: Array.from({ length: 120 }, (_, i) => asset({ id: 'limit-' + i, title: '素材 ' + i, age: i })) }); await open()
+  await page.locator('.al-end').scrollIntoViewIfNeeded()
+  await page.waitForFunction(() => document.querySelectorAll('.al-tile').length === 120)
+  await tile('素材 0').click(); server.loseNext = '/assets/batch-rate'; await page.keyboard.press('3')
+  await page.locator('.al-toast').getByRole('button', { name: '重试', exact: true }).waitFor()
+  await page.keyboard.press('Meta+a')
+  const transfer = await page.evaluateHandle(() => new DataTransfer())
+  await tile('素材 0').dispatchEvent('dragstart', { dataTransfer: transfer })
+  await row('棚拍').dispatchEvent('drop', { dataTransfer: transfer })
+  const retry = page.locator('.al-toast').getByRole('button', { name: '重试', exact: true })
+  assert.equal(await retry.count(), 1, 'invalid drop must preserve unknown-operation recovery')
+  await retry.click(); await saved()
+  assert.equal(server.writes.length, 2)
+  assert.equal(server.writes[0].body.operation_id, server.writes[1].body.operation_id)
+  await tile('素材 1').click()
+  assert(await page.getByRole('textbox', { name: '标题', exact: true }).isEnabled())
 })
 
 await context?.close()

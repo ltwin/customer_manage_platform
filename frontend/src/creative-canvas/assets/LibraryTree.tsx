@@ -6,8 +6,11 @@ import {
   Images,
   Inbox,
   Trash2,
+  Plus,
+  Pencil,
 } from 'lucide-react'
 import { useState } from 'react'
+import CanvasContextMenu from '../editor/CanvasContextMenu.tsx'
 import type * as api from '../editor/api.ts'
 import { formatBytes } from '../editor/libraryState.ts'
 import {
@@ -17,6 +20,7 @@ import {
   type LibraryQuery,
   type View,
 } from './query.ts'
+import type { Point } from './popover.ts'
 import type { Facets, LibraryCatalog } from './useLibrary.ts'
 
 const viewIcons: Record<View, typeof Images> = {
@@ -39,6 +43,10 @@ export default function LibraryTree({
   onView,
   onGroup,
   onTag,
+  onDropAssets,
+  onDeleteGroup,
+  onSaveGroup,
+  blocked,
 }: {
   query: LibraryQuery
   catalog: LibraryCatalog | null
@@ -47,7 +55,63 @@ export default function LibraryTree({
   onView: (view: View) => void
   onGroup: (id: string) => void
   onTag: (id: string) => void
+  onDropAssets: (ids: string[], group: string) => void
+  onDeleteGroup: (group: api.Group) => void
+  onSaveGroup: (
+    group: api.Group | null,
+    parent: string | null,
+    name: string,
+    done: () => void,
+  ) => void
+  blocked: boolean
 }) {
+  const [editor, setEditor] = useState<{
+    group: api.Group | null
+    parent: string | null
+  } | null>(null)
+  const [groupMenu, setGroupMenu] = useState<{
+    group: api.Group
+    at: Point
+  } | null>(null)
+  function nameInput() {
+    return (
+      editor && (
+        <input
+          className="al-group-input"
+          aria-label={editor.group ? '分组名称' : '新分组名称'}
+          defaultValue={editor.group?.name ?? ''}
+          placeholder="分组名称"
+          maxLength={80}
+          autoFocus
+          disabled={blocked}
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              setEditor(null)
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
+          }}
+          onBlur={(e) => {
+            const name = e.currentTarget.value.trim()
+            if (!name || name === editor.group?.name) {
+              setEditor(null)
+              return
+            }
+            onSaveGroup(editor.group, editor.parent, name, () =>
+              setEditor(null),
+            )
+          }}
+        />
+      )
+    )
+  }
+  const onGroupMenu = (group: api.Group, at: Point) =>
+    setGroupMenu({ group, at })
   const [closed, setClosed] = useState<Set<string>>(() => new Set())
   const groups = catalog?.groups ?? []
   const current = groups.find((g) => g.id === query.group)
@@ -55,6 +119,43 @@ export default function LibraryTree({
   const usage = catalog?.usage
   return (
     <aside className="al-tree" aria-label="资料库">
+      {groupMenu && (
+        <CanvasContextMenu
+          x={groupMenu.at.x}
+          y={groupMenu.at.y}
+          label="分组操作"
+          onClose={() => setGroupMenu(null)}
+          items={[
+            {
+              label: '重命名',
+              icon: <Pencil size={14} />,
+              disabled: blocked,
+              action: () =>
+                setEditor({
+                  group: groupMenu.group,
+                  parent: groupMenu.group.parent_id,
+                }),
+            },
+            {
+              label: '新建子分组',
+              icon: <Plus size={14} />,
+              disabled: blocked || !!groupMenu.group.parent_id,
+              sub: groupMenu.group.parent_id ? '最多两层' : undefined,
+              action: () =>
+                setEditor({ group: null, parent: groupMenu.group.id }),
+            },
+            'separator',
+            {
+              label: '删除分组',
+              icon: <Trash2 size={14} />,
+              danger: true,
+              disabled: blocked,
+              sub: '素材仍在库里，子分组升到上一级',
+              action: () => onDeleteGroup(groupMenu.group),
+            },
+          ]}
+        />
+      )}
       <div className="al-tree-top">
         <h1>资产库</h1>
       </div>
@@ -84,7 +185,19 @@ export default function LibraryTree({
           })}
         </nav>
         <section className="al-sec" aria-labelledby="alGroups">
-          <header id="alGroups">分组</header>
+          <header id="alGroups">
+            分组
+            <button
+              type="button"
+              className="al-icon-btn"
+              aria-label="新建分组"
+              disabled={blocked}
+              onClick={() => setEditor({ group: null, parent: null })}
+            >
+              <Plus size={12} />
+            </button>
+          </header>
+          {editor && !editor.group && !editor.parent && nameInput()}
           {!groups.length && catalog && (
             <p className="al-sec-empty">还没有分组</p>
           )}
@@ -112,24 +225,40 @@ export default function LibraryTree({
                         <ChevronRight size={13} />
                       </button>
                     )}
-                    <GroupRow
-                      group={g}
-                      query={query}
-                      count={catalog?.counts[g.id]}
-                      onGroup={onGroup}
-                    />
+                    {editor?.group?.id === g.id ? (
+                      nameInput()
+                    ) : (
+                      <GroupRow
+                        group={g}
+                        query={query}
+                        count={catalog?.counts[g.id]}
+                        onGroup={onGroup}
+                        onDropAssets={onDropAssets}
+                        onGroupMenu={onGroupMenu}
+                      />
+                    )}
                   </div>
+                  {editor &&
+                    !editor.group &&
+                    editor.parent === g.id &&
+                    nameInput()}
                   {children.length > 0 && open && (
                     <ul>
                       {children.map((c) => (
                         <li key={c.id}>
-                          <GroupRow
-                            group={c}
-                            query={query}
-                            count={catalog?.counts[c.id]}
-                            onGroup={onGroup}
-                            child
-                          />
+                          {editor?.group?.id === c.id ? (
+                            nameInput()
+                          ) : (
+                            <GroupRow
+                              group={c}
+                              query={query}
+                              count={catalog?.counts[c.id]}
+                              onGroup={onGroup}
+                              onDropAssets={onDropAssets}
+                              onGroupMenu={onGroupMenu}
+                              child
+                            />
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -197,12 +326,16 @@ function GroupRow({
   count,
   child = false,
   onGroup,
+  onDropAssets,
+  onGroupMenu,
 }: {
   group: api.Group
   query: LibraryQuery
   count: number | undefined
   child?: boolean
   onGroup: (id: string) => void
+  onDropAssets: (ids: string[], group: string) => void
+  onGroupMenu: (group: api.Group, at: Point) => void
 }) {
   return (
     <button
@@ -210,6 +343,35 @@ function GroupRow({
       className={`al-row${child ? ' al-child' : ''}`}
       aria-current={query.group === group.id ? 'page' : undefined}
       onClick={() => onGroup(group.id)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onGroupMenu(group, { x: e.clientX, y: e.clientY })
+      }}
+      onDragOver={(e) => {
+        if (
+          e.dataTransfer.types.includes(
+            'application/creative-library-selection',
+          )
+        ) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'copy'
+          e.currentTarget.classList.add('is-drop')
+        }
+      }}
+      onDragLeave={(e) => e.currentTarget.classList.remove('is-drop')}
+      onDrop={(e) => {
+        e.preventDefault()
+        e.currentTarget.classList.remove('is-drop')
+        const ids = [
+          ...new Set(
+            e.dataTransfer
+              .getData('application/creative-library-selection')
+              .split(',')
+              .filter(Boolean),
+          ),
+        ]
+        if (ids.length) onDropAssets(ids, group.id)
+      }}
     >
       <Folder size={15} />
       <span className="al-name">{group.name}</span>

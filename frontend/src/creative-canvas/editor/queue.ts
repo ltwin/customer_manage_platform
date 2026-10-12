@@ -451,6 +451,9 @@ export class SaveQueue {
     } catch (e) {
       if (this.closed) return
       const code = codeOf(e)
+      const groupRestoreRefused =
+        /^\/asset-groups\/deletions\/[^/]+\/restore$/.test(job.path) &&
+        code === 'creative_group_restore_limit'
       // 此入口在查询回执后才执行模型/预算守卫。这些明确的领域拒绝证明
       // 本operation没有提交；通用503和creative_commit_unknown仍保持unknown。
       const generationRejected =
@@ -466,6 +469,7 @@ export class SaveQueue {
         ].includes(code)
       const definitive =
         generationRejected ||
+        groupRestoreRefused ||
         (!uncertain &&
           (statusOf(e) === 400 ||
             statusOf(e) === 403 ||
@@ -501,7 +505,11 @@ export class SaveQueue {
         job: {
           ...job,
           state: rejected ? 'rejected' : 'unknown',
-          message: errorMessage(e),
+          message:
+            /^\/asset-groups\/deletions\/[^/]+\/restore$/.test(job.path) &&
+            code === 'creative_revision_conflict'
+              ? '分组已经有新的调整，无法撤销'
+              : errorMessage(e),
           ...(rejected && code === 'creative_revision_conflict'
             ? { conflict: true }
             : {}),

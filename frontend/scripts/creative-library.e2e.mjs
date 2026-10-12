@@ -39,6 +39,9 @@ const canvas = {
   ],
   edges: [], node_inputs: [], changes: [], object_states: [],
 }
+const groupDeletions = new Map()
+const receipts = new Map()
+let loseGroupDelete = false
 const groups = [
   { id: 'g1', parent_id: null, name: '客户样片', position: 0, revision: '1' },
   { id: 'g1a', parent_id: 'g1', name: '海边婚纱', position: 0, revision: '1' },
@@ -94,6 +97,7 @@ await page.route('**/api/v1/**', async (route) => {
   if (path.endsWith('/versions')) return json({ items: [], selected_version_id: null, data_revision: '1' })
   if (path.endsWith('/media-capabilities'))
     return json({ formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 1000000, av_max_bytes: 10000000, batch_limit: 10 })
+  if (path.includes('/operations/')) return receipts.has(path.split('/').at(-1)) ? json({ response: receipts.get(path.split('/').at(-1)) }) : json({}, 404)
   if (path.endsWith('/canvases/qa')) return json(canvas)
   if (path.endsWith('/commands')) {
     const actions = route.request().postDataJSON()?.payload?.actions ?? []
@@ -127,6 +131,19 @@ await page.route('**/api/v1/**', async (route) => {
       hierarchy++
       groups.push({ id: `g-new-${hierarchy}`, parent_id: body.payload.parent_id, name: body.payload.name, position: 9, revision: '1' })
       return json({ id: `g-new-${hierarchy}`, revision: '1', hierarchy_revision: String(hierarchy), library_revision: '1' })
+    }
+    if (/\/asset-groups\/[^/]+\/delete$/.test(path)) {
+      const id = path.split('/').at(-2), index = groups.findIndex((g) => g.id === id)
+      groupDeletions.set('d-' + id, { group: structuredClone(groups[index]), children: groups.filter((g) => g.parent_id === id).map((g) => g.id), members: all.filter((a) => a.group_ids.includes(id)).map((a) => a.id) })
+      groups.splice(index, 1); groups.forEach((g) => { if (g.parent_id === id) g.parent_id = null }); all.forEach((a) => { a.group_ids = a.group_ids.filter((g) => g !== id) }); hierarchy++
+      const receipt = { id, revision: '2', hierarchy_revision: String(hierarchy), library_revision: '2', deletion_id: 'd-' + id }
+      receipts.set(route.request().postDataJSON().operation_id, receipt)
+      if (loseGroupDelete) { loseGroupDelete = false; return route.abort('failed') }
+      return json(receipt)
+    }
+    if (/\/asset-groups\/deletions\/[^/]+\/restore$/.test(path)) {
+      const d = groupDeletions.get(path.split('/').at(-2)); groups.push(d.group); groups.forEach((g) => { if (d.children.includes(g.id)) g.parent_id = d.group.id }); all.forEach((a) => { if (d.members.includes(a.id)) a.group_ids.push(d.group.id) }); hierarchy++
+      return json({ id: d.group.id, revision: '3', hierarchy_revision: String(hierarchy), library_revision: '3' })
     }
     if (path.endsWith('/assets/from-canvas-node'))
       return json({ asset_id: 'a1', revision: '2', content_revision_id: 'rev-a1', library_revision: '2', tag_mapping: {}, reused: true })
@@ -423,6 +440,34 @@ try {
   assert.equal(new Set(placed.map((a) => a.y)).size, 1, 'batch lands in one row')
   assert.deepEqual(placed.map((a, i) => (i ? a.x - placed[i - 1].x : 0)), [0, 340, 340])
   assert(placed.every((a) => a.asset?.asset_id), 'placed nodes keep their asset source')
+
+  // 13. 抽屉的删除也使用服务端撤销快照；不是本机重建分组。
+  if ((await page.getByRole('button', { name: '资产库', exact: true }).getAttribute('aria-pressed')) !== 'true') await page.getByRole('button', { name: '资产库', exact: true }).click()
+  await drawer.getByRole('button', { name: '分组操作：客户样片', exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '删除分组', exact: true }).click()
+  await drawer.locator('.cl-notice').getByRole('button', { name: '撤销', exact: true }).waitFor()
+  assert(!groups.some((g) => g.id === 'g1'))
+  assert.equal(groups.find((g) => g.id === 'g1a').parent_id, null)
+  await drawer.locator('.cl-notice').getByRole('button', { name: '撤销', exact: true }).click()
+  await drawer.getByText('已恢复分组与归类', { exact: true }).waitFor()
+  assert(groups.some((g) => g.id === 'g1'))
+  assert.equal(groups.find((g) => g.id === 'g1a').parent_id, 'g1')
+  assert(all.filter((a) => groupDeletions.get('d-g1').members.includes(a.id)).every((a) => a.group_ids.includes('g1')))
+
+  // 14. 删除已提交但响应丢失：查回执后仍须提供同一快照的撤销入口。
+  loseGroupDelete = true
+  await drawer.getByRole('button', { name: '分组操作：客户样片', exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '删除分组', exact: true }).click()
+  await page.getByRole('button', { name: '查询并恢复原保存', exact: true }).waitFor()
+  await page.getByRole('alertdialog').getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '查询并恢复原保存', exact: true }).click()
+  await page.getByRole('button', { name: '查询并恢复原保存', exact: true }).waitFor({ state: 'detached' })
+  await drawer.locator('.cl-notice').getByRole('button', { name: '撤销', exact: true }).click()
+  await drawer.getByText('已恢复分组与归类', { exact: true }).waitFor()
+  assert(groups.some((g) => g.id === 'g1'))
+  assert.equal(groups.find((g) => g.id === 'g1a').parent_id, 'g1')
 
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ ok: true, metrics, commands: commands.length, assetQueries: assetQueries.length }))

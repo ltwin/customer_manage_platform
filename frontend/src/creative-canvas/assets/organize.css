@@ -1,0 +1,452 @@
+/* 对齐 v6/assets.css 与 viewer.css；仅补入当前步骤已实现的操作。 */
+.al-board,
+.al-tile {
+  position: relative;
+}
+.al-tick {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 6px;
+  background: rgba(11, 11, 12, 0.4);
+  color: transparent;
+  opacity: 0;
+}
+.al-tile:hover .al-tick,
+.al-tile:focus-within .al-tick,
+.al-tile.is-on .al-tick {
+  opacity: 1;
+}
+.al-tile.is-on .al-tick {
+  color: var(--bg);
+  background: var(--fg);
+  border-color: var(--fg);
+}
+.al-row.is-drop {
+  box-shadow: inset 0 0 0 1px var(--fg-2);
+  background: var(--s3);
+}
+.al-marquee {
+  position: fixed;
+  z-index: 4;
+  border: 1px solid var(--fg-2);
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+.al-ins-fields {
+  display: grid;
+  gap: 8px;
+}
+.al-ins-title-input {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  border: 0;
+  border-radius: 6px;
+  outline: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+.al-ins-title-input:hover,
+.al-ins-title-input:focus {
+  background: var(--s2);
+}
+.al-ins-note-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  outline: 0;
+  resize: vertical;
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line);
+  font: inherit;
+  font-size: 12px;
+  color: var(--fg);
+  line-height: 1.6;
+}
+.al-ins-note-input:focus {
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+.al-ins-sec > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.al-ins-sec > header span {
+  font-size: 10px;
+}
+.al-ins-actions {
+  position: sticky;
+  bottom: -16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--line);
+  background: #0d0d0e;
+}
+.al-ins-actions .btn {
+  justify-content: center;
+}
+.al-ins-actions .wide {
+  grid-column: span 2;
+}
+.al-stack {
+  position: relative;
+  height: 170px;
+}
+.al-stack > div {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  width: 120px;
+  height: 140px;
+  margin-left: -60px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--s3);
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    0 8px 20px rgba(0, 0, 0, 0.5);
+}
+.al-stack > div:nth-child(1) {
+  transform: rotate(-8deg) translateX(-34px);
+}
+.al-stack > div:nth-child(2) {
+  transform: rotate(6deg) translateX(34px);
+}
+.al-stack > div:nth-child(3) {
+  z-index: 1;
+}
+.al-stack img,
+.al-stack video {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+}
+.al-tagchip {
+  max-width: 100%;
+  padding: 0 4px 0 8px;
+}
+.al-tagchip.partial {
+  opacity: 0.6;
+}
+.al-tagchip button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-3);
+}
+.al-tagchip button:hover {
+  background: var(--s4);
+  color: var(--fg);
+}
+.al-tagchip .al-chip-name {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.al-tagchip .al-chip-name:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.al-addchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.al-addchip:hover {
+  color: var(--fg);
+  background: var(--s2);
+}
+.al-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  color: rgba(255, 255, 255, 0.28);
+  cursor: pointer;
+  border-radius: 4px;
+  outline-offset: 4px;
+}
+.al-rating .cl-star {
+  width: 18px;
+  height: 18px;
+}
+.al-rating .cl-star-fill {
+  pointer-events: none;
+}
+.al-rating[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+.al-rating-value {
+  min-width: 24px;
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.al-batch {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  z-index: 5;
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 24px);
+  padding: 6px 6px 6px 14px;
+  border-radius: 999px;
+  background: var(--s2);
+  box-shadow: var(--shadow);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.al-batch > * {
+  flex: none;
+}
+.al-batch strong {
+  margin-right: 8px;
+  font-weight: 500;
+}
+.al-batch .al-chip {
+  height: 30px;
+  border-radius: 999px;
+}
+.al-danger {
+  color: var(--danger);
+}
+.al-limit {
+  margin: 0;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.al-pop {
+  position: fixed;
+  z-index: 110;
+  width: 290px;
+  max-width: calc(100vw - 16px);
+  max-height: min(70vh, 560px);
+  overflow: auto;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--s2);
+  color: var(--fg);
+  box-shadow:
+    var(--shadow),
+    inset 0 0 0 1px var(--line-2);
+}
+.al-pop-heading {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.al-pop-list {
+  max-height: 300px;
+  overflow: auto;
+}
+.al-pop-list > button,
+.al-pop-foot > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg-2);
+  text-align: left;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+.al-pop-list > button > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.al-pop-list > button > svg {
+  flex: none;
+}
+.al-pop-list > button:hover,
+.al-pop-foot > button:hover {
+  background: var(--s3);
+  color: var(--fg);
+}
+.al-pop-list p {
+  margin: 8px 10px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.al-pop-foot {
+  padding: 6px 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+.al-pop-foot form,
+form.al-pop-foot {
+  display: grid;
+  gap: 8px;
+}
+.al-pop input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px;
+  color: var(--fg);
+  background: var(--s1);
+}
+.al-rate-pop {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.al-rate-pop p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.al-rate-pop small {
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.al-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--s3);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+.al-toast button {
+  flex: none;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg);
+  padding: 3px;
+}
+.al-toast button:hover {
+  background: var(--s4);
+}
+.cs-app:has(.al-batch) .al-toast {
+  bottom: 78px;
+}
+@media (min-width: 1101px) {
+  .al-page:not(.no-inspector) .al-batch {
+    display: none;
+  }
+  .cs-app:has(.al-page:not(.no-inspector)) .al-toast {
+    bottom: 24px;
+  }
+}
+@media (max-width: 760px) {
+  .al-batch {
+    bottom: 16px;
+    border-radius: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: calc(100% - 24px);
+    white-space: normal;
+  }
+  .cs-app:has(.al-batch) .al-toast {
+    bottom: 160px;
+  }
+}
+.al-tag-assign {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+.al-tag-assign p {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.al-tag-assign input {
+  width: 100%;
+}
+.al-tag-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border: 0;
+  border-radius: 6px;
+  background: var(--s3);
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.al-tag-choice[aria-pressed='true'] {
+  background: var(--fg);
+  color: var(--bg);
+}
+.al-ins-actions {
+  bottom: 0;
+}
+.al-rating > .cl-star > svg {
+  fill: var(--s4);
+}
+.al-sec > header .al-icon-btn {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+}
+.al-group-input {
+  width: calc(100% - 16px);
+  margin: 3px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-3);
+  border-radius: 6px;
+  background: var(--s2);
+  color: var(--fg);
+  font: inherit;
+}

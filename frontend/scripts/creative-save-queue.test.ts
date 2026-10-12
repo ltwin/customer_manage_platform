@@ -1131,3 +1131,17 @@ test('receipt handoff is durable before the original operation is cleared, inclu
   assert.equal(storage.get().job, null)
   assert.equal(sends, 1)
 })
+
+test('group restore capacity refusal is definitive even after unknown dispatch', async () => {
+  let first = true
+  const q = new SaveQueue(memory(), {
+    lookup: async () => { throw error(404) },
+    send: async () => { if (first) { first = false; throw new Error('lost receipt') } throw error(409, 'creative_group_restore_limit') },
+  }, () => {})
+  await q.enqueue('/asset-groups/deletions/d1/restore', {})
+  assert.equal(q.value.job?.state, 'unknown')
+  await q.flush()
+  assert.equal(q.value.job?.state, 'rejected')
+  await q.dismissRejected()
+  assert.equal(q.value.job, null)
+})

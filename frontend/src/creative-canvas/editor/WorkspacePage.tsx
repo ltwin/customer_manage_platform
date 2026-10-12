@@ -1,3 +1,4 @@
+import { groupRestoreCommand } from './groupDeletion.ts'
 import {
   Archive,
   ArchiveRestore,
@@ -28,6 +29,7 @@ import { errorMessage, isWithdrawn } from './queue.ts'
 import type { Draft } from './journal.ts'
 
 import * as api from './api.ts'
+import { assetActions } from './assetPlacement.ts'
 import { useCanvasSnapshot } from './useCanvasSnapshot.ts'
 import { useNodeContent } from './useNodeContent.ts'
 import { matchesCanvas } from './snapshot.ts'
@@ -156,6 +158,7 @@ function Workspace({ account }: { account: string }) {
   const [libraryTask, setLibraryTask] = useState<LibraryTask | null>(null)
   const viewCenter = useRef<(() => { x: number; y: number }) | null>(null)
   const [catalog, setCatalog] = useState(emptyCatalog)
+  const [undoGroup, setUndoGroup] = useState<ReturnType<typeof groupRestoreCommand>>(null)
   const [libraryLoading, setLibraryLoading] = useState(true)
   const [selected, setSelected] = useState<string | null>(null)
   const [selection, setSelection] = useState<string[]>([])
@@ -496,6 +499,14 @@ function Workspace({ account }: { account: string }) {
       },
     )
   }
+  function acceptLibraryReceipt(result: unknown, job: { path: string }) {
+    if (/^\/asset-groups\/[^/]+\/delete$/.test(job.path)) {
+      const undo = groupRestoreCommand(result)
+      if (undo) setUndoGroup(undo)
+    } else if (/^\/asset-groups\/deletions\/[^/]+\/restore$/.test(job.path)) {
+      setUndoGroup(null)
+    }
+  }
   async function perform(
     path: string,
     value: unknown,
@@ -507,7 +518,7 @@ function Workspace({ account }: { account: string }) {
     setActionError('')
     setLoading(true)
     try {
-      const result = await queue.enqueue(path, value, draftKey)
+      const result = await queue.enqueue(path, value, draftKey, acceptLibraryReceipt)
       onResult?.(result)
       if (
         result &&
@@ -558,7 +569,7 @@ function Workspace({ account }: { account: string }) {
     setLocalError('')
     setLoading(true)
     try {
-      await queue.flush()
+      await queue.flush(true, acceptLibraryReceipt)
       if (!queue.value.job) {
         setLoading(false)
         refresh()
@@ -832,23 +843,9 @@ function Workspace({ account }: { account: string }) {
       {
         kind: 'actions',
         preview,
-        actions: usable.map((asset, i) => ({
-          type: 'add_node' as const,
-          node_id: ids[i]!,
-          type_key: `core.${asset.kind}` as
-            | 'core.text'
-            | 'core.link'
-            | 'core.image'
-            | 'core.video'
-            | 'core.audio',
-          title: asset.title,
+        actions: assetActions(usable, ids, (i, asset) => ({
           x: x0 + i * (NODE_WIDTH + gap),
           y: at.y - defaultNodeSize(`core.${asset.kind}`).height / 2,
-          asset: {
-            asset_id: asset.id,
-            expected_asset_revision: asset.revision,
-            content_revision_id: asset.content_revision_id,
-          },
         })),
       },
       { select: ids },
@@ -1471,6 +1468,7 @@ function Workspace({ account }: { account: string }) {
           onLoading={setLibraryLoading}
           onCatalog={setCatalog}
           onCommand={(path, payload) => perform(path, payload)}
+          undoGroup={undoGroup}
           canPlace={!!view && editable}
           onPlace={(list) => addAssets(list)}
           onFill={(asset) => {
