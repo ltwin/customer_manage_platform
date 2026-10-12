@@ -26,6 +26,7 @@ import { AgentTurnContext, setOpen, useAgentRuns } from './agentRuns.ts'
 import { hasUnsettledCost, runFailure } from './agentState.ts'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
 import { MediaFigure } from './MediaView.tsx'
+import { isMediaKind } from './media.ts'
 
 type Detail = components['schemas']['CreativeAgentBlockDetail']
 
@@ -126,24 +127,36 @@ function ToolDetail({ block }: { block: AgentBlock }) {
 }
 
 // Results a tool produced, shown under its row. Nodes that have left the
-// canvas simply have no thumbnail.
+// canvas simply have no preview.
 function ToolThumbs({ ids }: { ids: string[] }) {
   const { canvas } = useContext(AgentTurnContext)
   const nodes = ids.flatMap((id) => {
     const node = canvas?.nodes.find((item) => item.id === id)
-    return node?.content?.kind === 'image' ? [node] : []
+    return node?.content && isMediaKind(node.content.kind) ? [node] : []
   })
   if (!nodes.length) return null
   return (
     <div className="cc-agent-thumbs">
-      {nodes.map((node) => (
-        <MediaFigure
-          key={node.id}
-          content={node.content}
-          kind="image"
-          title={node.metadata.title || '生成结果'}
-        />
-      ))}
+      {nodes.map((node) =>
+        node.content?.kind === 'image' ? (
+          <MediaFigure
+            key={node.id}
+            content={node.content}
+            kind="image"
+            title={node.metadata.title || '生成结果'}
+          />
+        ) : (
+          <figure key={node.id} className="cc-agent-media-result">
+            <MediaFigure
+              content={node.content}
+              kind={node.content?.kind ?? ''}
+              title={node.metadata.title || '生成结果'}
+              controls
+            />
+            <figcaption>{node.metadata.title || '生成结果'}</figcaption>
+          </figure>
+        ),
+      )}
     </div>
   )
 }

@@ -3,7 +3,7 @@
 // Everything is mocked: HTTP by route, the SSE stream by a fetch wrapper the
 // test feeds frame by frame. Each acceptance criterion gets a fresh context.
 import assert from 'node:assert/strict'
-import { writeFile, rm } from 'node:fs/promises'
+import { readFile, writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
 
 const fixture = new URL('../.agent-blocks-qa.html', import.meta.url)
@@ -20,7 +20,8 @@ import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
 const media=[{role:'display',blob_id:'blob',mime:'image/png',byte_size:1,width:1,height:1,duration_ms:null}];
-createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',canvas:{nodes:[{id:'node-image',metadata:{title:'分镜 01'},data:{content_revision_id:'ccrv_image'},content:{id:'ccrv_image',kind:'image',payload:{},media,truncated:false}}]}}));
+const nodes = ['image','video','audio'].map(kind=>({id:'node-'+kind,metadata:{title:{image:'分镜 01',video:'视频样片',audio:'配乐试听'}[kind]},data:{content_revision_id:'ccrv_'+kind},content:{id:'ccrv_'+kind,kind,payload:{},media:kind==='image'?media:[{role:'original',blob_id:'blob',mime:kind==='video'?'video/webm':'audio/wav',byte_size:1,width:null,height:null,duration_ms:3000}],truncated:false}}));
+createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',canvas:{nodes}}));
 </script></body></html>`,
 )
 const url = `${process.env.CREATIVE_AGENT_URL || 'http://localhost:5179'}/.agent-blocks-qa.html`
@@ -95,12 +96,20 @@ async function scene(options = {}) {
       window.__sse.controller = null
     }
   })
+  await page.route('https://media.example/**', async (route) => {
+    const file = new URL(route.request().url()).pathname.split('/').at(-1)
+    return route.fulfill({ contentType: file === 'video.webm' ? 'video/webm' : 'audio/wav', body: await readFile(new URL(`./fixtures/agent-media/${file}`, import.meta.url)) })
+  })
   await page.route('**/api/v1/creative/**', async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     const json = (body) => route.fulfill({ json: body })
-    if (path.endsWith('/media-access-tickets'))
-      return json({ url: pixel, expires_at: '2099-01-01T00:00:00Z' })
+    if (path.endsWith('/media-access-tickets')) {
+      const payload = request.postDataJSON()
+      const kind = payload.content_revision_id.replace('ccrv_', '')
+      assert.equal(payload.role, kind === 'image' ? 'display' : 'original')
+      return json({ url: kind === 'image' ? pixel : `https://media.example/${kind === 'video' ? 'video.webm' : 'audio.wav'}`, expires_at: '2099-01-01T00:00:00Z' })
+    }
     if (path.endsWith('/agent/catalog'))
       return json({
         limits: { attachments: 10, image_preview_count: 8 },
@@ -361,6 +370,34 @@ try {
     await thumb.waitFor()
     assert.equal(await thumb.getAttribute('alt'), '分镜 01')
     assert.equal(await s.page.locator(`[data-block="${other}"] .cc-agent-thumbs`).count(), 0)
+    const av = await s.tool('生成音视频', { node_refs: [{ node_id: 'node-video' }, { node_id: 'node-audio' }] })
+    const answer = await s.create('text', 'streaming', { markdown: '继续说明' })
+    await s.page.locator('.cc-agent-fold').click()
+    const media = s.page.locator(`[data-block="${av}"]`)
+    for (const kind of ['video', 'audio']) {
+      const player = media.locator(kind)
+      await player.waitFor()
+      await player.scrollIntoViewIfNeeded()
+      await s.page.waitForFunction((selector) => document.querySelector(selector)?.readyState >= 2, `[data-block="${av}"] ${kind}`)
+      assert.equal(await player.evaluate(el => el.controls && !el.autoplay && el.paused), true)
+      await player.evaluate(async el => { el.dataset.probe = 'stable'; await el.play() })
+      await s.page.waitForFunction((selector) => document.querySelector(selector)?.currentTime > 0, `[data-block="${av}"] ${kind}`)
+      await player.evaluate(el => el.pause())
+    }
+    await s.update(answer, { payload_version: 1, patch: { append: { path: 'markdown', text: '音视频结果' } } })
+    assert.equal(await media.locator('video').getAttribute('data-probe'), 'stable')
+    assert.equal(await media.locator('audio').getAttribute('data-probe'), 'stable')
+    await s.page.setViewportSize({ width: 375, height: 812 })
+    await media.locator('audio').scrollIntoViewIfNeeded()
+    assert(await s.page.locator('.cc-agent-history').evaluate(el => el.scrollWidth <= el.clientWidth + 1))
+    assert(await media.locator('video').evaluate(el => el.getBoundingClientRect().height >= 100))
+    assert(await media.locator('audio').evaluate(el => el.getBoundingClientRect().width >= 200))
+    await s.page.screenshot({ path: '/tmp/creative-agent-media-mobile.png' })
+    await s.page.reload()
+    await s.page.getByRole('button', { name: '打开创作助手' }).click()
+    await s.page.locator('.cc-agent-fold').click()
+    await s.page.locator(`[data-block="${av}"] audio`).scrollIntoViewIfNeeded()
+    await s.page.waitForFunction((selector) => document.querySelector(selector)?.readyState >= 2, `[data-block="${av}"] audio`)
     await s.page.screenshot({ path: '/tmp/creative-v6-agent-blocks-plan.png' })
     await s.close()
   }
