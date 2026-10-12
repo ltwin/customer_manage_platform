@@ -193,10 +193,11 @@ function MediaStage({
   mediaRef: (el: HTMLMediaElement | null) => void
 }) {
   const isMedia = ['image', 'video', 'audio'].includes(item.kind)
+  // 浮窗用于看清细节，图片也取原图；列表与画布仍用展示图。
   const ticket = useMediaURL(
     item.content?.id,
     item.content?.media,
-    item.kind === 'image' ? 'display' : 'original',
+    'original',
     isMedia,
   )
   const [failed, setFailed] = useState(false)

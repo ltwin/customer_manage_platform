@@ -17,7 +17,7 @@ date: 2026-10-12
 
 - `frontend/src/creative-canvas/editor/LibraryTiles.tsx` 的图片卡片通过 `MediaFigure` 默认选择 `display`；`editor/media.ts` 在不存在该版本时回退 `original`。已有临近视口懒加载。
 - `backend/internal/creativemedia/config.go` 的展示图最长边默认 1600px；`verify.go` 只为超过该尺寸的图片生成 JPEG 展示图。因此不超过 1600px 的图片，列表仍可能下载体积较大的原图。
-- 第 4 步 `frontend/src/creative-canvas/viewer/MediaViewer.tsx` 对图片也选择 `display`，打开浮窗未切换到原图。
+- 第 4 步 `frontend/src/creative-canvas/viewer/MediaViewer.tsx` 对图片也选择 `display`，打开浮窗未切换到原图。2026-10-12 已先行修复：浮窗图片改取 `original`，`viewer-image-zoom` 回归断言浮窗为当前素材请求原图票据（修复前该断言超时失败）。缩略图占位与列表缩略图仍属本 issue。
 - 媒体对象角色已有 `thumbnail` 枚举，但当前上传、生成图片导入和取图 ticket 尚未形成可用的独立缩略图链路。仅增加前端 CSS 或缩小现有展示图不能完整解决问题。
 
 ## 边界

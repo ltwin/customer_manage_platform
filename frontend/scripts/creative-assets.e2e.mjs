@@ -891,7 +891,11 @@ await check('viewer-opening', async () => {
 const viewer = () => page.locator('.viewer')
 const viewerReady = async () => { await viewer().waitFor(); await until(async () => await viewer().getByRole('textbox', { name: '标题', exact: true }).isEnabled(), 'viewer detail') }
 await check('viewer-image-zoom', async () => {
-  await fresh(); await open(); await tile('海边逆光').dblclick(); await viewerReady()
+  await fresh(); await open()
+  // 卡片取展示图；浮窗必须另取原图，不能沿用卡片那张。
+  const id = await tile('海边逆光').getAttribute('data-asset')
+  const original = page.waitForRequest((r) => r.url().endsWith('/media-access-tickets') && r.postDataJSON()?.content_revision_id === `r-${id}` && r.postDataJSON()?.role === 'original', { timeout: 5000 })
+  await tile('海边逆光').dblclick(); await viewerReady(); await original
   await page.waitForFunction(() => document.querySelector('.v-image img')?.naturalWidth > 0)
   const metrics = await viewer().evaluate((el) => {
     const stage = el.querySelector('.v-stage'), img = el.querySelector('.v-image img'), panel = el.querySelector('.v-panel')

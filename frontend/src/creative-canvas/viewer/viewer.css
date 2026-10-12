@@ -64,6 +64,10 @@ body:has(.viewer-back) :is(.menu, .popover) {
   display: block;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
   transform-origin: center;
+}
+/* 常驻 will-change 会让 Chrome 按适应窗口的尺寸栅格化后拉伸位图，放大即糊；
+   只在拖动时提升图层，松手后按当前倍数重新栅格化。 */
+.v-image.panning img {
   will-change: transform;
 }
 .zoomed .v-image {
