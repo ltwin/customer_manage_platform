@@ -228,11 +228,13 @@ export default function AssetInspector({
             <dd>{dateFormat.format(new Date(single.created_at))}</dd>
           </dl>
         )}
-        {!assets.some((a) => a.deleted_at) && (
-          <div className="al-ins-actions">
-            <ActionButtons assets={assets} {...actions} blocked={disabled} />
-          </div>
-        )}
+        <div className="al-ins-actions">
+          <ActionButtons
+            assets={assets}
+            {...actions}
+            blocked={actions.blocked || assets.length > 100}
+          />
+        </div>
       </div>
     </aside>
   )

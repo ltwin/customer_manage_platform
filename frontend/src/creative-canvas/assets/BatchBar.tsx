@@ -7,11 +7,20 @@ import {
   Tag,
   Trash2,
   X,
+  Undo2,
 } from 'lucide-react'
 import type { Asset } from '../editor/api.ts'
 import { anchorPoint, type Point } from './popover.ts'
 export type Action =
-  'group' | 'tag' | 'rate' | 'favorite' | 'project' | 'download' | 'trash'
+  | 'group'
+  | 'tag'
+  | 'rate'
+  | 'favorite'
+  | 'project'
+  | 'download'
+  | 'trash'
+  | 'restore'
+  | 'purge'
 export type Actions = {
   blocked: boolean
   onAction: (action: Action, at: Point) => void
@@ -23,35 +32,45 @@ export function ActionButtons({
   compact = false,
 }: Actions & { assets: Asset[]; compact?: boolean }) {
   const favorite = assets.every((a) => a.is_favorite)
-  const entries = compact
+  const trashed = assets.every((a) => !!a.deleted_at)
+  const entries = trashed
     ? ([
-        { key: 'group', label: '归入分组', Icon: Folder },
-        { key: 'tag', label: '打标签', Icon: Tag },
-        { key: 'rate', label: '评分', Icon: Star },
-        { key: 'favorite', label: favorite ? '取消最爱' : '最爱', Icon: Heart },
-        { key: 'project', label: '放入项目', Icon: ArrowUpRight },
-        { key: 'trash', label: '回收站', Icon: Trash2 },
+        { key: 'restore', label: '恢复', Icon: Undo2 },
+        { key: 'purge', label: '永久删除', Icon: Trash2 },
       ] as const)
-    : ([
-        { key: 'project', label: '放入项目…', Icon: ArrowUpRight },
-        {
-          key: 'favorite',
-          label: favorite ? '取消最爱' : '加入最爱',
-          Icon: Heart,
-        },
-        { key: 'download', label: '下载', Icon: Download },
-        { key: 'trash', label: '移到回收站', Icon: Trash2 },
-      ] as const)
+    : compact
+      ? ([
+          { key: 'group', label: '归入分组', Icon: Folder },
+          { key: 'tag', label: '打标签', Icon: Tag },
+          { key: 'rate', label: '评分', Icon: Star },
+          {
+            key: 'favorite',
+            label: favorite ? '取消最爱' : '最爱',
+            Icon: Heart,
+          },
+          { key: 'project', label: '放入项目', Icon: ArrowUpRight },
+          { key: 'trash', label: '回收站', Icon: Trash2 },
+        ] as const)
+      : ([
+          { key: 'project', label: '放入项目…', Icon: ArrowUpRight },
+          {
+            key: 'favorite',
+            label: favorite ? '取消最爱' : '加入最爱',
+            Icon: Heart,
+          },
+          { key: 'download', label: '下载', Icon: Download },
+          { key: 'trash', label: '移到回收站', Icon: Trash2 },
+        ] as const)
   return (
     <>
       {entries.map(({ key, label, Icon }) => (
         <button
           type="button"
           key={key}
-          className={`${compact ? 'al-chip' : 'btn'}${key === 'project' && !compact ? ' btn-primary wide' : ''}${key === 'trash' ? ' al-danger wide' : ''}`}
+          className={`${compact ? 'al-chip' : 'btn'}${(key === 'project' || key === 'restore') && !compact ? ' btn-primary wide' : ''}${key === 'trash' || key === 'purge' ? ' al-danger wide' : ''}`}
           disabled={
             blocked ||
-            assets.some((a) => !!a.deleted_at) ||
+            (!trashed && assets.some((a) => !!a.deleted_at)) ||
             ((key === 'project' || key === 'download') &&
               assets.some((a) => a.unavailable))
           }
@@ -69,7 +88,7 @@ export default function BatchBar({
   onClear,
   ...actions
 }: Actions & { assets: Asset[]; onClear: () => void }) {
-  if (!assets.length || assets.some((a) => a.deleted_at)) return null
+  if (!assets.length) return null
   return (
     <div className="al-batch" role="toolbar" aria-label="批量操作">
       <strong>已选 {assets.length} 项</strong>

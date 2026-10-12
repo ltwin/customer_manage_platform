@@ -27,12 +27,14 @@ export function useOrganization({
   actions,
   actual,
   onTrash,
+  onPurge,
 }: {
   account: string
   catalog: LibraryCatalog | null
   actions: ReturnType<typeof useActions>
   actual: (asset: api.Asset) => api.Asset
   onTrash?: () => void
+  onPurge?: (ids: string[]) => void
 }) {
   const [popup, setPopup] = useState<Popup | null>(null)
   const [confirm, setConfirm] = useState<Confirmation | null>(null)
@@ -81,6 +83,48 @@ export function useOrganization({
     )
   }
   function action(kind: Action, at: Point, assets: api.Asset[]) {
+    if (kind === 'restore' || kind === 'purge') {
+      if (
+        actions.isBlocked() ||
+        !assets.length ||
+        assets.length > 100 ||
+        assets.some((a) => !a.deleted_at)
+      )
+        return
+      const run = () =>
+        void actions.execute({
+          before: kind === 'restore' ? assets : undefined,
+          optimistic:
+            kind === 'restore'
+              ? assets.map((a) => ({
+                  ...a,
+                  deleted_at: null,
+                  purge_after: null,
+                }))
+              : undefined,
+          run: operation(account, `/assets/batch-${kind}`, {
+            assets: assets.map((a) => ({
+              asset_id: a.id,
+              expected_revision: a.revision,
+            })),
+          } satisfies components['schemas']['CreativeAssetBatchPayload']),
+          success: () => {
+            if (kind === 'purge') onPurge?.(assets.map((a) => a.id))
+            onTrash?.()
+            return {
+              text: kind === 'restore' ? '已恢复素材' : '已永久删除素材',
+            }
+          },
+        })
+      if (kind === 'restore') run()
+      else
+        setConfirm({
+          title: `永久删除 ${assets.length} 项？`,
+          body: '画布里已有的节点不受影响，此操作不可撤销。',
+          run,
+        })
+      return
+    }
     if (
       actions.blocked ||
       !assets.length ||

@@ -173,6 +173,18 @@ export default function AssetInfoPanel({
               <Undo2 size={14} />
               恢复
             </button>
+            <button
+              className="btn danger"
+              disabled={blocked}
+              onClick={(e) =>
+                organization.action('purge', anchorPoint(e.currentTarget), [
+                  asset,
+                ])
+              }
+            >
+              <Trash2 size={14} />
+              永久删除
+            </button>
           </>
         ) : (
           <>

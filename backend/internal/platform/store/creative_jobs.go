@@ -24,7 +24,9 @@ const creativeQueueSchema = "creative_jobs"
 // Work must use the request's operation identity for durable effect deduplication.
 type JobHandler struct {
 	Kind string
-	Work func(context.Context, AccountScope, jobs.Request) error
+	// Queue is chosen by trusted composition, never by request input.
+	Queue string
+	Work  func(context.Context, AccountScope, jobs.Request) error
 	// Timeout bounds one attempt; zero keeps the default two minutes.
 	Timeout time.Duration
 	// AllowInactiveAccount 仅供已发生外部副作用的受信维护handler：允许观察/取消/
@@ -48,6 +50,7 @@ type creativeJobRuntime struct {
 	handlers    map[string]func(context.Context, AccountScope, jobs.Request) error
 	timeouts    map[string]time.Duration
 	maintenance map[string]bool
+	queues      map[string]string
 }
 
 // NewJobRuntime shares the store's connection pool; no second pool or raw tx is
@@ -56,15 +59,16 @@ func (s *Store) NewJobRuntime(handlers []JobHandler, logger *slog.Logger) (jobs.
 	if s == nil || s.pool == nil {
 		return nil, errors.New("store is not open")
 	}
-	runtime := &creativeJobRuntime{store: s, handlers: make(map[string]func(context.Context, AccountScope, jobs.Request) error), timeouts: map[string]time.Duration{}, maintenance: map[string]bool{}}
+	runtime := &creativeJobRuntime{store: s, handlers: make(map[string]func(context.Context, AccountScope, jobs.Request) error), timeouts: map[string]time.Duration{}, maintenance: map[string]bool{}, queues: map[string]string{}}
 	for _, h := range handlers {
-		if h.Kind == "" || h.Work == nil || h.Timeout < 0 {
+		if h.Kind == "" || h.Work == nil || h.Timeout < 0 || (h.Queue != "" && h.Queue != "maintenance") {
 			return nil, jobs.ErrInvalidTask
 		}
 		if _, exists := runtime.handlers[h.Kind]; exists {
 			return nil, jobs.ErrInvalidTask
 		}
 		runtime.handlers[h.Kind] = h.Work
+		runtime.queues[h.Kind] = h.Queue
 		runtime.maintenance[h.Kind] = h.AllowInactiveAccount
 		if h.Timeout > 0 {
 			runtime.timeouts[h.Kind] = h.Timeout
@@ -74,7 +78,7 @@ func (s *Store) NewJobRuntime(handlers []JobHandler, logger *slog.Logger) (jobs.
 	river.AddWorker(workers, &creativeDispatcher{runtime: runtime})
 	client, err := river.NewClient(riverpgxv5.New(s.pool), &river.Config{
 		Schema: creativeQueueSchema, Workers: workers, Logger: logger,
-		Queues: map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}},
+		Queues: map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, "maintenance": {MaxWorkers: 1}},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create creative jobs: %w", err)
@@ -117,7 +121,7 @@ func (sc TxAccountScope) Jobs(runtime jobs.Runtime) jobs.TxEnqueuer {
 		if _, registered := r.handlers[request.Kind]; !registered {
 			return 0, jobs.ErrInvalidTask
 		}
-		opts := &river.InsertOpts{MaxAttempts: 5}
+		opts := &river.InsertOpts{MaxAttempts: 5, Queue: r.queues[request.Kind]}
 		if request.UniqueByArgs {
 			// 去重只认存活投递（available/pending/running/retryable/scheduled）。
 			// 刻意不含 completed：默认集合会把已完成任务也挡在去重范围内，

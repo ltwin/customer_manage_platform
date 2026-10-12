@@ -78,7 +78,7 @@ const fixture = () => [
 
 const key = (s) => s.normalize('NFKC').toLowerCase().trim()
 function mockServer(assets) {
-  const s = { assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null }
+  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null }
   const live = () => s.assets.filter((a) => !a.deleted_at)
   const descendants = (id) => [id, ...s.groups.filter((g) => g.parent_id === id).map((g) => g.id)]
   function scope(q, { kind = true, tagFilter = true } = {}) {
@@ -127,6 +127,11 @@ function mockServer(assets) {
     }
     if (path.endsWith('/creative/tags') && request.method() === 'GET') return json({ items: s.tags, hierarchy_revision: '1' })
     if (path.endsWith('/creative/tag-categories')) return json({ items: categories, hierarchy_revision: '1' })
+    if(path.endsWith('/creative/media-capabilities')) return json({formats:[{kind:'image',mime:'image/png',extensions:['.png']}],image_max_bytes:1024,av_max_bytes:1024,batch_limit:20,part_size:1024})
+    if(path.endsWith('/creative/library-settings') && request.method()==='GET')return json(s.settings)
+    if(/\/creative\/uploads\/[^/]+$/.test(path)&&request.method()==='GET')return json(s.uploads.get(path.split('/').at(-1)))
+    if(path.endsWith('/part-authorizations'))return json({parts:[{part_number:1,url:base+'/api/v1/__qa_part',method:'PUT',headers:{}}]})
+    if(path.endsWith('/__qa_part'))return route.fulfill({status:200,body:''})
     if (path.endsWith('/creative/library-usage')) return json({ asset_count: live().length, stored_bytes: Math.round(3.24 * GiB), limit_bytes: 20 * GiB })
     if (path.endsWith('/creative/media-access-tickets')) {
       const id = request.postDataJSON().content_revision_id.slice(2)
@@ -180,7 +185,22 @@ function mockServer(assets) {
       let result = { id: 'ok', revision: '2', hierarchy_revision: s.hierarchy, library_revision: s.revision }
       const versions = payload.items ?? payload.assets ?? (payload.expected_revision ? [{ asset_id: path.split('/').at(-2), expected_revision: payload.expected_revision }] : [])
       if (path.includes('/assets/') && versions.some((v) => s.assets.find((a) => a.id === v.asset_id)?.revision !== v.expected_revision)) return json({ error: { code: 'creative_revision_conflict', message: '版本冲突' } }, 409)
-      if (path.endsWith('/assets/batch-rate')) {
+      if(path.endsWith('/creative/assets')) {
+        const a=asset({id:'new-'+op,title:payload.title,kind:payload.content.kind,body:payload.content.payload.body,url:payload.content.payload.url,groups:payload.group_ids,age:0});s.assets.unshift(a);result={asset_id:a.id,revision:a.revision,content_revision_id:a.content_revision_id,library_revision:s.revision,tag_mapping:{}}
+      } else if(path.endsWith('/creative/uploads')) {
+        const id='upload-'+op;result={id,state:'uploading',revision:'1',part_count:1,part_size:1024,target:payload.target,name:payload.file_name};s.uploads.set(id,result)
+      } else if(path.endsWith('/complete')) {
+        const u=s.uploads.get(path.split('/').at(-2));const a=asset({id:'file-'+op,title:u.target.asset.title,groups:u.target.asset.group_ids,age:0});s.assets.unshift(a);u.state='ready';u.publication={kind:'asset',id:a.id,revision:'1'};result=u
+      } else if(path.endsWith('/creative/library-settings')) {
+        s.settings={...s.settings,retention_days:payload.retention_days,revision:String(Number(s.settings.revision)+1)}
+      } else if(path.endsWith('/library/empty-trash')) {
+        if(payload.expected_library_revision!==s.revision)return json({error:{code:'creative_revision_conflict',message:'版本冲突'}},409)
+        const purged_count=s.assets.filter(a=>a.deleted_at).length;s.assets=s.assets.filter(a=>!a.deleted_at);result={purged_count,library_revision:String(Number(s.revision)+1)}
+      } else if(path.endsWith('/assets/batch-restore')) {
+        for(const v of payload.assets){const a=s.assets.find(a=>a.id===v.asset_id);a.deleted_at=null;a.purge_after=null;a.revision=String(Number(a.revision)+1)}
+      } else if(path.endsWith('/assets/batch-purge')) {
+        s.assets=s.assets.filter(a=>!payload.assets.some(v=>v.asset_id===a.id))
+      } else if (path.endsWith('/assets/batch-rate')) {
         for (const item of payload.items) { const a = s.assets.find((a) => a.id === item.asset_id); a.rating = item.rating; a.revision = String(Number(a.revision) + 1) }
         result = { items: payload.items.map((item) => { const a = s.assets.find((a) => a.id === item.asset_id); return { id: a.id, revision: a.revision } }), library_revision: String(Number(s.revision) + 1) }
       } else if (path.endsWith('/metadata')) {
@@ -1017,6 +1037,150 @@ await check('viewer-detail-recovery', async () => {
   await page.route('**/creative/content-revisions/r-f-note', (route) => route.fulfill({ json: { ...note.content, truncated: false, payload: { body: '完整正文来自详情修订' } } }))
   await tile('拍摄脚本 v2').dblclick(); await viewerReady()
   assert.equal(await viewer().locator('.v-text p').innerText(), '完整正文来自详情修订')
+})
+
+await check('step5-import-text-link-paste',async()=>{
+ await fresh();await open('?group=g-out')
+ await tree().getByRole('button',{name:'导入',exact:true}).click();await page.getByRole('menuitem',{name:'新建文字'}).click()
+ const dialog=page.getByRole('dialog',{name:'新建文字'});await dialog.getByLabel('标题（可选）').fill('新脚本');await dialog.getByLabel('文字内容').fill('完整的脚本正文');await dialog.getByRole('button',{name:'添加',exact:true}).click()
+ await until(()=>server.assets.some(a=>a.title==='新脚本'),'text saved');assert.deepEqual(server.assets.find(a=>a.title==='新脚本').group_ids,['g-out'])
+ await until(()=>!page.isClosed(),'live');await settled()
+ await page.locator('.al-board').focus()
+ await page.evaluate(()=>{const data=new DataTransfer();data.setData('text/plain','https://example.com/reference');document.querySelector('.al-board').dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))})
+ await until(()=>server.assets.some(a=>a.title==='example.com'),'link paste saved')
+ assert.deepEqual(server.assets.find(a=>a.title==='example.com').group_ids,['g-out'])
+ const count=server.writes.length;await page.getByRole('searchbox').focus()
+ await page.getByRole('searchbox').evaluate(el=>{const data=new DataTransfer();data.setData('text/plain','not an asset');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))})
+ await page.waitForTimeout(60);assert.equal(server.writes.length,count)
+})
+await check('step5-import-files-same-name-and-skips',async()=>{
+ await fresh();await open('?group=g-out')
+ await page.getByLabel('上传素材文件').setInputFiles([{name:'same.png',mimeType:'image/png',buffer:Buffer.from('first')},{name:'same.png',mimeType:'image/png',buffer:Buffer.from('second')},{name:'bad.exe',mimeType:'application/octet-stream',buffer:Buffer.from('bad')},{name:'huge.png',mimeType:'image/png',buffer:Buffer.alloc(1025)}])
+ await until(()=>server.assets.filter(a=>a.title==='same').length===2,'duplicate filenames accepted')
+ assert(server.assets.filter(a=>a.title==='same').every(a=>a.group_ids.includes('g-out')))
+ const text=await page.locator('.cc-upload-tray').innerText();assert(text.includes('暂不支持此文件格式'));assert(text.includes('超过'))
+ await page.screenshot({path:output+'/step5-import.png'})
+})
+await check('step5-trash-restore-purge',async()=>{
+ await fresh();await open('?view=trash')
+ await page.getByText('移入回收站 30 天后自动清除',{exact:true}).waitFor()
+ assert((await page.locator('.al-trash-left').innerText()).includes('还剩'))
+ await tile('旧照片').click();await page.getByRole('complementary',{name:'检查器'}).getByRole('button',{name:'恢复',exact:true}).click()
+ await until(()=>!server.assets.find(a=>a.id==='f-old').deleted_at,'restored');await settled()
+ server.assets.find(a=>a.id==='f-old').deleted_at=new Date().toISOString();server.assets.find(a=>a.id==='f-old').revision='3'
+ await open('?view=trash');await tile('旧照片').click({button:'right'});await page.getByRole('menuitem',{name:'永久删除'}).click()
+ await page.getByRole('alertdialog').getByRole('button',{name:'取消',exact:true}).click();assert(server.assets.some(a=>a.id==='f-old'))
+ await tile('旧照片').click({button:'right'});await page.getByRole('menuitem',{name:'永久删除'}).click();await page.getByRole('alertdialog').getByRole('button',{name:'确认',exact:true}).click()
+ await until(()=>!server.assets.some(a=>a.id==='f-old'),'purged')
+})
+await check('step5-empty-trash-conflict-and-unknown',async()=>{
+ await fresh();await open('?view=trash');await page.getByRole('button',{name:'清空回收站',exact:true}).click()
+ await page.getByText(/将永久删除 1 项/).waitFor();server.assets.push(asset({id:'extra-old',title:'另一个旧图',trashed:true}));server.revision='2'
+ await page.getByRole('alertdialog').getByRole('button',{name:'永久删除',exact:true}).click()
+ await page.getByText('回收站有变化，请再确认一次',{exact:true}).waitFor();await page.getByText(/将永久删除 2 项/).waitFor()
+ assert.equal(server.assets.filter(a=>a.deleted_at).length,2)
+ server.loseNext='/library/empty-trash';await page.getByRole('alertdialog').getByRole('button',{name:'永久删除',exact:true}).click()
+ await page.getByRole('button',{name:'重试原操作',exact:true}).waitFor();await page.getByRole('button',{name:'重试原操作',exact:true}).click()
+ await page.getByRole('alertdialog').waitFor({state:'detached'})
+ const writes=server.writes.filter(w=>w.path.endsWith('/empty-trash'));assert.equal(writes.length,3);assert.notEqual(writes[0].key,writes[1].key);assert.equal(writes[1].key,writes[2].key)
+ assert.equal(server.assets.filter(a=>a.deleted_at).length,0)
+})
+await check('step5-trash-settings-mobile',async()=>{
+ await fresh({width:390,height:844});server.settings.retention_days=7;await open('?view=trash')
+ await page.getByText('移入回收站 7 天后自动清除',{exact:true}).waitFor();await noHorizontalScroll('trash phone')
+ await page.getByLabel('回收站保留期限').selectOption('');await page.getByText('不会自动清除',{exact:true}).first().waitFor()
+ assert.equal(server.settings.retention_days,null)
+ await tile('旧照片').click();assert(await page.getByRole('toolbar',{name:'批量操作'}).getByRole('button',{name:'恢复',exact:true}).isEnabled())
+ assert(await page.locator('.al-phone-import').isVisible());await page.screenshot({path:output+'/step5-trash-phone.png'})
+})
+
+await check('step5-file-drop-paste-quota',async()=>{
+ await fresh();await open('?group=g-brand')
+ assert.equal(await page.locator('.al-head .al-phone-import').isVisible(),false)
+ const data=await page.evaluateHandle(()=>{const d=new DataTransfer();d.items.add(new File(['pixels'],'drop.png',{type:'image/png'}));return d})
+ await board().dispatchEvent('dragover',{dataTransfer:data});await page.getByText('松手导入',{exact:true}).waitFor();await page.screenshot({path:output+'/step5-drop.png'})
+ await board().dispatchEvent('drop',{dataTransfer:data})
+ await until(()=>server.assets.some(a=>a.title==='drop'),'file drop');assert.deepEqual(server.assets.find(a=>a.title==='drop').group_ids,['g-brand'])
+ await settled();await page.waitForFunction(()=>!document.querySelector('.cc-upload-tray .cc-upload-bar'))
+ server.failNext={path:'/creative/uploads',status:413,code:'creative_media_quota_exceeded',message:'空间不足'}
+ await board().evaluate(el=>{const d=new DataTransfer();d.items.add(new File(['pixels'],'clipboard.png',{type:'image/png'}));el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))})
+ await page.locator('.cc-upload-tray').getByText('空间不足',{exact:true}).waitFor()
+ assert(!(server.assets.some(a=>a.title==='clipboard')));assert((await page.locator('.al-toast').innerText()).includes('clipboard.png'))
+})
+await check('step5-viewer-permanent-delete',async()=>{
+ await fresh();await open('?view=trash');await tile('旧照片').dblclick();await until(async()=>await viewer().getByRole('button',{name:'永久删除',exact:true}).isEnabled(),'trash detail loaded')
+ await viewer().getByRole('button',{name:'永久删除',exact:true}).click();await page.getByRole('alertdialog').getByRole('button',{name:'确认',exact:true}).click()
+ await page.locator('.viewer-back').waitFor({state:'detached'});await until(()=>!server.assets.some(a=>a.id==='f-old'),'viewer purge')
+})
+
+await check('step5-r2-rejected-import-keeps-draft',async()=>{
+ await fresh();await open();await tree().getByRole('button',{name:'导入',exact:true}).click();await page.getByRole('menuitem',{name:'新建文字'}).click()
+ const dialog=page.getByRole('dialog',{name:'新建文字'});await dialog.getByLabel('文字内容').fill('不可丢失的正文');server.failNext={path:'/creative/assets',status:400,code:'validation_failed',message:'请检查内容'}
+ await dialog.getByRole('button',{name:'添加',exact:true}).click();await page.getByText('请检查内容',{exact:true}).first().waitFor()
+ assert.equal(await dialog.getByLabel('文字内容').inputValue(),'不可丢失的正文');assert(await dialog.getByRole('button',{name:'添加',exact:true}).isEnabled())
+ server.loseNext='/creative/assets';await dialog.getByRole('button',{name:'添加',exact:true}).click();await dialog.getByRole('button',{name:'重试原操作',exact:true}).click();await dialog.waitFor({state:'detached'})
+ assert.equal(server.assets.filter(a=>a.content.payload.body==='不可丢失的正文').length,1)
+ const w=server.writes.filter(w=>w.path.endsWith('/creative/assets'));assert.equal(w[1].key,w[2].key)
+})
+await check('step5-r2-upload-keeps-unknown-empty-trash',async()=>{
+ await fresh();await open();let release;const wait=new Promise(r=>{release=r})
+ await page.route('**/creative/uploads/*/complete',async route=>{await wait;await route.fallback()})
+ await page.getByLabel('上传素材文件').setInputFiles({name:'delayed.png',mimeType:'image/png',buffer:Buffer.from('pixels')})
+ await until(()=>server.uploads.size===1,'upload started');await after(()=>row('回收站').click())
+ await page.getByRole('button',{name:'清空回收站',exact:true}).click();await page.getByText(/将永久删除 1 项/).waitFor();server.loseNext='/library/empty-trash'
+ await page.getByRole('alertdialog').getByRole('button',{name:'永久删除',exact:true}).click();await page.getByRole('button',{name:'重试原操作',exact:true}).waitFor()
+ release();await until(()=>server.assets.some(a=>a.title==='delayed'),'upload completed');await page.waitForTimeout(200)
+ assert.equal(params().get('view'),'trash');await page.getByRole('alertdialog').getByRole('button',{name:'重试原操作',exact:true}).click();await page.getByRole('alertdialog').waitFor({state:'detached'})
+ const writes=server.writes.filter(w=>w.path.endsWith('/empty-trash'));assert.equal(writes[0].key,writes[1].key)
+})
+
+await check('step5-r2-paste-validation-retains-content',async()=>{
+ await fresh();await open();const before=server.writes.length
+ await board().evaluate(el=>{const d=new DataTransfer();d.setData('text/plain','字'.repeat(100001));el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))})
+ let dialog=page.getByRole('dialog',{name:'新建文字'});await dialog.getByText('文字内容最多 100000 字，请缩短后再试',{exact:true}).waitFor();assert.equal((await dialog.getByLabel('文字内容').inputValue()).length,100001);assert.equal(server.writes.length,before)
+ await dialog.getByRole('button',{name:'取消',exact:true}).click()
+ await board().evaluate(el=>{const d=new DataTransfer();d.setData('text/plain','https://name:secret@example.com');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))})
+ dialog=page.getByRole('dialog',{name:'添加链接'});await dialog.getByText('网址不能包含账号或密码',{exact:true}).waitFor();assert.equal(await dialog.getByLabel('网址',{exact:true}).inputValue(),'https://name:secret@example.com');assert.equal(server.writes.length,before)
+ await dialog.getByRole('button',{name:'取消',exact:true}).click()
+ server.failNext={path:'/creative/assets',status:400,code:'validation_failed',message:'正文校验未通过'}
+ await board().evaluate(el=>{const d=new DataTransfer();d.setData('text/plain','服务端拒绝也不能丢失');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))})
+ dialog=page.getByRole('dialog',{name:'新建文字'});await dialog.getByText('正文校验未通过',{exact:true}).waitFor();assert.equal(await dialog.getByLabel('文字内容').inputValue(),'服务端拒绝也不能丢失')
+})
+
+await check('step5-followup-drop-preserves-empty-trash',async()=>{
+ await fresh();await open('?view=trash');await page.getByRole('button',{name:'清空回收站',exact:true}).click();await page.getByText(/将永久删除 1 项/).waitFor()
+ server.loseNext='/library/empty-trash';await page.getByRole('alertdialog').getByRole('button',{name:'永久删除',exact:true}).click();await page.getByRole('button',{name:'重试原操作',exact:true}).waitFor()
+ const dialog=page.getByRole('alertdialog'),overlay=page.locator('.overlay').filter({has:dialog})
+ const data=await page.evaluateHandle(()=>{const d=new DataTransfer();d.items.add(new File(['pixels'],'blocked.png',{type:'image/png'}));return d})
+ // 遮罩并非 role=alertdialog 的后代，不能只检查 target.closest(dialog)。
+ assert.equal(await overlay.evaluate(el=>!!el.closest('[role="dialog"],[role="alertdialog"]')),false)
+ for(const target of [overlay,dialog,board()]) {
+  await target.dispatchEvent('dragover',{dataTransfer:data})
+  await target.dispatchEvent('drop',{dataTransfer:data});await page.waitForTimeout(50)
+  assert.equal(params().get('view'),'trash');assert(await dialog.isVisible());assert.equal(server.uploads.size,0);assert.equal(await page.locator('.al-drop').count(),0)
+ }
+ await page.getByLabel('上传素材文件').setInputFiles({name:'late-chooser.png',mimeType:'image/png',buffer:Buffer.from('pixels')});await page.waitForTimeout(50);assert.equal(server.uploads.size,0)
+ await dialog.getByRole('button',{name:'重试原操作',exact:true}).click();await dialog.waitFor({state:'detached'})
+ const writes=server.writes.filter(w=>w.path.endsWith('/empty-trash'));assert.equal(writes.length,2);assert.equal(writes[0].key,writes[1].key)
+})
+await check('step5-followup-import-error-isolation',async()=>{
+ await fresh();await open();let release;const wait=new Promise(r=>{release=r})
+ await page.route('**/creative/uploads/*/complete',async route=>{await wait;await route.fulfill({status:413,json:{error:{code:'creative_media_quota_exceeded',message:'空间不足'}}})})
+ await page.getByLabel('上传素材文件').setInputFiles({name:'background.png',mimeType:'image/png',buffer:Buffer.from('pixels')});await until(()=>server.uploads.size===1,'upload started')
+ await tree().getByRole('button',{name:'导入',exact:true}).click();await page.getByRole('menuitem',{name:'添加链接'}).click()
+ const dialog=page.getByRole('dialog',{name:'添加链接'});await dialog.getByLabel('网址',{exact:true}).fill('https://example.com/new')
+ release();await page.locator('.al-toast').getByText('background.png：空间不足',{exact:true}).waitFor();assert.equal(await dialog.getByRole('alert').count(),0)
+ server.failNext={path:'/creative/assets',status:400,code:'validation_failed',message:'链接创建失败'};await dialog.getByRole('button',{name:'添加',exact:true}).click()
+ await dialog.getByRole('alert').getByText('链接创建失败',{exact:true}).waitFor();assert.equal(await dialog.getByLabel('网址',{exact:true}).inputValue(),'https://example.com/new')
+})
+await check('step5-followup-import-visible-view',async()=>{
+ await fresh();await open('?view=favorites')
+ await board().evaluate(el=>{const d=new DataTransfer();d.setData('text/plain','最爱视图导入的新文字');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))})
+ await until(()=>server.assets.some(a=>a.title==='最爱视图导入的新文字'),'import saved');assert.equal(params().get('view'),null);await tile('最爱视图导入的新文字').waitFor()
+ await open('?group=g-out');await page.getByLabel('上传素材文件').setInputFiles({name:'keep-group.png',mimeType:'image/png',buffer:Buffer.from('pixels')})
+ await until(()=>server.assets.some(a=>a.title==='keep-group'),'file saved');assert.equal(params().get('group'),'g-out');await tile('keep-group').waitFor()
+ await open('?view=recent');await board().evaluate(el=>{const d=new DataTransfer();d.setData('text/plain','最近添加视图导入');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))})
+ await until(()=>server.assets.some(a=>a.title==='最近添加视图导入'),'recent saved');assert.equal(params().get('view'),'recent');await tile('最近添加视图导入').waitFor()
 })
 
 await context?.close()

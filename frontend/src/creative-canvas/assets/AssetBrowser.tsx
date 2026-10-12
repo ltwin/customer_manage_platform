@@ -1,5 +1,6 @@
 import {
   Check,
+  Upload,
   Maximize2,
   ChevronDown,
   Heart,
@@ -15,6 +16,7 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type * as api from '../editor/api.ts'
 import { Masonry, TileFace } from '../editor/LibraryTiles.tsx'
+import { remainingTime } from './importContent.ts'
 import { tileRatio } from '../editor/libraryState.ts'
 import Picker from '../editor/Picker.tsx'
 import { Stars } from '../editor/StarRating.tsx'
@@ -59,6 +61,10 @@ export default function AssetBrowser({
   onMenu,
   onOpen,
   toolbar,
+  importButton,
+  onImportFiles,
+  importBlocked,
+  notice,
 }: {
   query: LibraryQuery
   catalog: LibraryCatalog | null
@@ -74,8 +80,13 @@ export default function AssetBrowser({
   onBox: (ids: string[]) => void
   onMenu: (asset: api.Asset, at: Point) => void
   onOpen: (asset: api.Asset) => void
+  importButton?: React.ReactNode
+  notice?: React.ReactNode
+  onImportFiles: (files: File[]) => void
+  importBlocked: boolean
   toolbar?: React.ReactNode
 }) {
+  const [dropping, setDropping] = useState(false)
   const groups = catalog?.groups ?? []
   const group = groups.find((g) => g.id === query.group)
   const parent = groups.find((g) => g.id === group?.parent_id)
@@ -95,9 +106,46 @@ export default function AssetBrowser({
         : [...query.tags, id],
     })
 
+  // A modal's backdrop is outside its role=dialog element; checking only
+  // event.target.closest(dialog) would still admit drops on that backdrop.
+  const fileDropBlocked = () =>
+    importBlocked ||
+    !!document.querySelector('[role="dialog"], [role="alertdialog"]')
+
   return (
-    <section className="al-board" aria-label="资产" tabIndex={-1}>
+    <section
+      className="al-board"
+      aria-label="资产"
+      tabIndex={-1}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        const blocked = fileDropBlocked()
+        e.dataTransfer.dropEffect = blocked ? 'none' : 'copy'
+        setDropping(!blocked)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+          setDropping(false)
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        setDropping(false)
+        if (!fileDropBlocked()) onImportFiles(Array.from(e.dataTransfer.files))
+      }}
+    >
+      {dropping && (
+        <div className="al-drop">
+          <div>
+            <Upload size={26} />
+            <strong>松手导入</strong>
+            <span>{group ? `到「${group.name}」` : '到资产库'}</span>
+          </div>
+        </div>
+      )}
       <header className="al-head">
+        {importButton}
         <div className="al-crumb">
           <h2>
             {group ? (
@@ -184,6 +232,7 @@ export default function AssetBrowser({
         </button>
       </header>
 
+      {notice}
       <PhoneViews
         query={query}
         groups={groups}
@@ -307,6 +356,7 @@ export default function AssetBrowser({
       )}
 
       <Tiles
+        importButton={importButton}
         query={query}
         list={list}
         prefs={prefs}
@@ -486,7 +536,9 @@ function Tiles({
   onBox,
   onMenu,
   onOpen,
+  importButton,
 }: {
+  importButton?: React.ReactNode
   query: LibraryQuery
   list: List
   prefs: Prefs
@@ -700,11 +752,8 @@ function Tiles({
           ) : (
             <>
               <strong>这里还没有素材</strong>
-              <span>
-                {query.group
-                  ? '在画布或其他视图里把素材归入这个分组，就会出现在这里。'
-                  : '在画布里上传或生成的内容存入资产库后，会出现在这里。'}
-              </span>
+              <span>把文件拖进来，或者通过「导入」添加文件、链接与文字。</span>
+              <div className="al-empty-btns">{importButton}</div>
             </>
           )}
         </div>
@@ -812,7 +861,10 @@ function AssetCard({
         }
       >
         <TileFace asset={a} />
-        {a.is_favorite && (
+        {a.deleted_at && (
+          <span className="al-trash-left">{remainingTime(a.purge_after)}</span>
+        )}
+        {!a.deleted_at && a.is_favorite && (
           <span className="al-fav" role="img" aria-label="最爱">
             <Heart size={12} />
           </span>

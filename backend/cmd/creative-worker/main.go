@@ -16,6 +16,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
+	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
@@ -90,7 +91,9 @@ func run() error {
 	if generation.Service != nil {
 		agent.SetGenerator(generation.Product)
 	}
+	trashExpiry := creativelibrary.NewTrashExpiry(nil)
 	handlers := append(media.Handlers(), agent.Handlers()...)
+	handlers = append(handlers, trashExpiry.Handler())
 	if generation.Service != nil {
 		handlers = append(handlers, generation.Service.Handlers()...)
 	}
@@ -99,6 +102,7 @@ func run() error {
 		return err
 	}
 	media.SetRuntime(runtime)
+	trashExpiry.SetRuntime(runtime)
 	agent.SetRuntime(runtime)
 	if generation.Service != nil {
 		generation.Service.SetRuntime(runtime)
@@ -107,6 +111,8 @@ func run() error {
 		return err
 	}
 	go sweepExpiredUploads(ctx, db, media)
+	trashDone := make(chan struct{})
+	go func() { defer close(trashDone); trashExpiry.Run(ctx, db, slog.Default()) }()
 	// Recovery needs no provider credentials or catalog: it only reconciles
 	// persisted dispatches through account-scoped transactions.
 	agentDone := make(chan struct{})
@@ -127,6 +133,7 @@ func run() error {
 	<-recoveryDone
 	<-agentDone
 	<-generationDone
+	<-trashDone
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
 	return runtime.Stop(stopCtx)

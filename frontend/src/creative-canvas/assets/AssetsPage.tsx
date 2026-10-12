@@ -1,3 +1,5 @@
+import { useAssetImport } from './AssetImport.tsx'
+import TrashControls from './TrashControls.tsx'
 import AssetViewer from '../viewer/AssetViewer.tsx'
 import { useOrganization } from './useOrganization.tsx'
 import { useEffect, useRef, useState } from 'react'
@@ -11,6 +13,7 @@ import {
   Tag,
   Trash2,
   X,
+  Undo2,
 } from 'lucide-react'
 import type { components } from '../../api/schema'
 import * as api from '../editor/api.ts'
@@ -121,11 +124,23 @@ function Assets({ account }: { account: string }) {
     actual: (a) =>
       actual(newer(a, known.current.get(a.id)) ? a : known.current.get(a.id)!),
     onTrash: clear,
+    onPurge: () => setViewer(null),
   })
   const { metadata, organize, popup, confirm, setPopup, setConfirm } =
     organization
   const action = (kind: Action, at: Point, assets = selected) =>
     organization.action(kind, at, assets)
+  const importer = useAssetImport({
+    account,
+    group: query.group,
+    actions,
+    blocked: actions.blocked || !!viewer || !!popup || !!confirm || !!menu,
+    onDone: reload,
+    onStart: () => {
+      if (!query.group && query.view !== 'all' && query.view !== 'recent')
+        go(enter(query, 'all'), true)
+    },
+  })
   const blocked = actions.blocked || selected.length > 100
   function pick(id: string | null, keys: Modifiers = {}) {
     if (!id) return clear()
@@ -161,6 +176,28 @@ function Assets({ account }: { account: string }) {
   function assetMenu(asset: api.Asset, at: Point) {
     const assets = selection.ids.includes(asset.id) ? selected : [asset]
     if (!selection.ids.includes(asset.id)) pick(asset.id)
+    if (assets.every((a) => a.deleted_at)) {
+      setMenu({
+        at,
+        label: '回收站操作',
+        items: [
+          {
+            label: '恢复',
+            icon: <Undo2 size={14} />,
+            disabled: actions.blocked || assets.length > 100,
+            action: () => action('restore', at, assets),
+          },
+          {
+            label: '永久删除',
+            icon: <Trash2 size={14} />,
+            danger: true,
+            disabled: actions.blocked || assets.length > 100,
+            action: () => action('purge', at, assets),
+          },
+        ],
+      })
+      return
+    }
     if (assets.some((a) => a.deleted_at)) return
     const entries: { kind: Action; label: string; Icon: typeof Star }[] = [
       { kind: 'rate', label: '评分…', Icon: Star },
@@ -238,6 +275,7 @@ function Assets({ account }: { account: string }) {
       target?.closest(
         'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="alertdialog"], [role="menu"]',
       ) ||
+      importer.open ||
       viewer ||
       popup ||
       confirm ||
@@ -279,7 +317,7 @@ function Assets({ account }: { account: string }) {
       className="cc-workspace cs-app"
       onClickCapture={(e) => {
         if (
-          actions.blocked &&
+          (actions.blocked || importer.busy) &&
           e.target instanceof Element &&
           e.target.closest('a[href]')
         )
@@ -292,6 +330,7 @@ function Assets({ account }: { account: string }) {
         className={`cs-main al-page${prefs.inspector ? '' : ' no-inspector'}`}
       >
         <LibraryTree
+          importButton={importer.button()}
           query={query}
           catalog={catalog}
           error={catalogError}
@@ -346,6 +385,29 @@ function Assets({ account }: { account: string }) {
           }}
         />
         <AssetBrowser
+          importButton={importer.button('al-phone-import')}
+          onImportFiles={importer.files}
+          importBlocked={
+            actions.blocked ||
+            importer.open ||
+            !!viewer ||
+            !!confirm ||
+            !!popup ||
+            !!menu
+          }
+          notice={
+            query.view === 'trash' ? (
+              <TrashControls
+                account={account}
+                refresh={refresh}
+                actions={actions}
+                onDone={() => {
+                  clear()
+                  reload()
+                }}
+              />
+            ) : null
+          }
           query={query}
           catalog={catalog}
           list={list}
@@ -389,6 +451,7 @@ function Assets({ account }: { account: string }) {
           />
         )}
       </main>
+      {importer.overlays}
       {menu && (
         <CanvasContextMenu
           x={menu.at.x}

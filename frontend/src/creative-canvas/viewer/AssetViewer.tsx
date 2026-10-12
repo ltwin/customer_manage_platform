@@ -150,7 +150,13 @@ export function LibraryViewer({
       ? override
       : a
   }
-  const organization = useOrganization({ account, catalog, actions, actual })
+  const organization = useOrganization({
+    account,
+    catalog,
+    actions,
+    actual,
+    onPurge: onClose,
+  })
   return (
     <AssetViewer
       items={items}

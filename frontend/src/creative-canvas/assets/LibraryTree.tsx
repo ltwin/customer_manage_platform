@@ -47,6 +47,7 @@ export default function LibraryTree({
   onDeleteGroup,
   onSaveGroup,
   blocked,
+  importButton,
 }: {
   query: LibraryQuery
   catalog: LibraryCatalog | null
@@ -63,6 +64,7 @@ export default function LibraryTree({
     name: string,
     done: () => void,
   ) => void
+  importButton?: React.ReactNode
   blocked: boolean
 }) {
   const [editor, setEditor] = useState<{
@@ -158,6 +160,7 @@ export default function LibraryTree({
       )}
       <div className="al-tree-top">
         <h1>资产库</h1>
+        {importButton}
       </div>
       <div className="al-tree-scroll">
         {error && (
