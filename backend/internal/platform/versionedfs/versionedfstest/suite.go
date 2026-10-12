@@ -83,6 +83,27 @@ func RunAdapterSuite(t *testing.T, identity VersionIdentity, open func(*testing.
 		}
 	})
 
+	t.Run("DeletingTheCurrentObjectIsIdempotentAndStaysOnItsKey", func(t *testing.T) {
+		adapter := open(t)
+		body := []byte("当前对象")
+		publish(t, adapter, suiteKey, body)
+		theirs := publish(t, adapter, suiteKey+"-other", body)
+		// Whether a fixed version stays recoverable is the store's choice; what
+		// every adapter owes reclamation is a repeatable call that never reaches
+		// a neighbouring key and accepts a key that was never written.
+		for range 2 {
+			if err := adapter.DeleteCurrent(t.Context(), suiteKey); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := adapter.DeleteCurrent(t.Context(), suiteKey+"-never"); err != nil {
+			t.Fatalf("missing key: %v", err)
+		}
+		if got := read(t, adapter, suiteKey+"-other", theirs, nil); !bytes.Equal(got, body) {
+			t.Fatal("deleting one key's current object reached another key")
+		}
+	})
+
 	t.Run("RangesAreInclusiveAndBoundedByTheObject", func(t *testing.T) {
 		adapter := open(t)
 		body := []byte("0123456789")

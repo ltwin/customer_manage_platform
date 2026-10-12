@@ -130,7 +130,7 @@ Local 与 OSS 各提供适配器。Local 的分片由鉴权 API 写本地受控�
 
 | 层级 | 持有方 |
 |---|---|
-| 修订 | `creativereference` 的 `liveOwnerCondition`：资产（含回收站）、节点、消息、Agent checkpoint / context、撤销记录（未过期）、节点输入、Prompt 引用、未删除版本及其输入、执行引用（保留期内或未结束）、文档、待处理上传候选、受信 hold；新增：未结束 Agent 运行的冻结输入、未结束且未过期的图片编辑候选的源修订 |
+| 修订 | `creativereference` 的 `LiveOwnerCondition`：资产（含回收站）、节点、消息、Agent checkpoint / context、撤销记录（未过期）、节点输入、Prompt 引用、未删除版本及其输入、执行引用（保留期内或未结束）、文档、待处理上传候选、受信 hold；新增：未结束 Agent 运行的冻结输入、未结束且未过期的图片编辑候选的源修订 |
 | blob | 修订的对象绑定 `creative_content_objects`；未结束上传的 `blob_id`；写入中 / 已存储的生成导入（陈旧者按 §6.3 第 2 步重置）；未结束且未过期的图片编辑候选；未过期的读 pin |
 | 随 blob 删除 | `creative_blob_palettes`、`creative_media_facts` 等派生事实 |
 
@@ -147,11 +147,11 @@ Local 与 OSS 各提供适配器。Local 的分片由鉴权 API 写本地受控�
 
 ### 6.3 回收步骤
 
-GC 是 creative-worker `maintenance` 队列（并发 1）中的周期任务，建议每 10 分钟逐账号执行，每批约 100 行，单批事务保持短小以免长时间占用账号写屏障。停用账号同样回收，GC 直接取写屏障，不走 `RequireCreativeCapability`。
+GC 是 creative-worker 进程内的周期循环（与上传过期扫描同一写法，不经 River 队列：每步都是「取写屏障 → 锁行重查 → 状态迁移」，天然幂等，失败留到下一轮），每 10 分钟逐账号执行，每批 100 行，单批事务保持短小以免长时间占用账号写屏障。停用账号同样回收，GC 直接取写屏障，不走 `RequireCreativeCapability`。
 
 1. **修订**：扫描 state=ready 的图片 / 视频 / 音频修订中无持有方者；事务内取写屏障 → `FOR UPDATE` 重查 → 置 `deleted` 并删除其对象绑定。这一步不碰外部存储，不需要中间态。文本修订不占字节，一期不回收。
 2. **blob**：扫描 ready 且无对象绑定、无持有方的 blob；事务内取写屏障 → `FOR UPDATE` 重查 → 置 deleting 并写 `delete_after`。verifying blob 不按年龄回收：上传的由上传过期路径处理；生成导入的，由 GC 对 lease 已过期且 48 小时没有进展的写入中 / 已存储导入执行与 `PrepareGeneratedMedia` 相同的重置（epoch+1、清空 blob 字段、退还 `reserved_bytes`、旧 blob 置 deleting）。为此给 `creative_generation_imports` 补 `updated_at`。重置后，迟到的 Commit 会因 epoch 不符而失败，之后的重试会重新拉取。
-3. **删除对象**：`delete_after` 到期后在事务外删除对象并做 HEAD 不存在确认；再在事务内置 deleted，若已计额度且未释放，则扣减 `stored_bytes` 并写 `quota_released_at`，同时删除派生事实。失败或结果未知保持 deleting，下一轮重试。
+3. **删除对象**：每批先在账号写屏障内检查资产 / 节点引用一致性，异常则停止该账号本轮回收。到期对象在分页前按当前驱动与 bucket 过滤，不匹配者单独计数；选中批次先把 `delete_after` 推迟 10 分钟作为下次重试时间，再在事务外删除对象并做 HEAD 不存在确认；再在事务内置 deleted，若已计额度且未释放，则扣减 `stored_bytes` 并写 `quota_released_at`，同时删除派生事实。失败或结果未知保持 deleting，下一轮重试。
 
 | blob 类别 | 宽限 | 理由 |
 |---|---|---|
@@ -167,7 +167,7 @@ GC 是 creative-worker `maintenance` 队列（并发 1）中的周期任务，�
 
 ### 6.5 上线顺序
 
-GC 用一个运行模式配置区分「只读扫描」与「标记并删除」。创意空间截至 2026-10-12 尚未上生产，没有存量数据可扫，因此：
+GC 用运行模式配置 `CREATIVE_MEDIA_GC_MODE`（off / scan / delete，缺省 scan）区分「只读扫描」与「标记并删除」。创意空间截至 2026-10-12 尚未上生产，没有存量数据可扫，因此：
 
 1. 完成持有方登记与守卫测试；任一表未定性，不进入下一步。
 2. 本地 / 测试库只读扫描：先走完上传、生成、Agent 运行、撤销、版本删除、资产永久删除等真实流程，再按账号输出「应回收」的修订数、blob 数与字节，逐项核对与预期一致，不做任何标记。

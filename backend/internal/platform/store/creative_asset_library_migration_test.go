@@ -10,6 +10,7 @@ import (
 
 func rollbackAssetLibrary(t *testing.T, url string) {
 	t.Helper()
+	rollbackMediaGC(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-asset-library", err)
 	}
@@ -52,6 +53,7 @@ func TestAssetLibraryMigrationRefusesToDropRatings(t *testing.T) {
 	if _, err := db.Exec(`UPDATE creative_assets SET rating_halves=9`); err != nil {
 		t.Fatal(err)
 	}
+	rollbackMediaGC(t, url)
 	if err := store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "rated assets exist") {
 		t.Fatal("rollback dropped ratings", err)
 	}

@@ -183,6 +183,18 @@ func (s *OSS) DeleteExact(ctx context.Context, key, version string) error {
 	}
 	return nil
 }
+func (s *OSS) DeleteCurrent(ctx context.Context, key string) error {
+	if err := validKey(key); err != nil {
+		return err
+	}
+	// No version id: on a versioned bucket this writes a delete marker and the
+	// fixed versions become noncurrent instead of disappearing.
+	_, err := s.api.DeleteObject(ctx, &oss.DeleteObjectRequest{Bucket: oss.Ptr(s.bucket), Key: oss.Ptr(key)})
+	if err != nil && !errors.Is(classify(err), ErrNotFound) {
+		return classify(err)
+	}
+	return nil
+}
 func deref(v *string) string {
 	if v == nil {
 		return ""

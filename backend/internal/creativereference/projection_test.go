@@ -16,7 +16,7 @@ func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 type columnRole int
 
 const (
-	// revisionHolder must appear in liveOwnerCondition.
+	// revisionHolder must appear in LiveOwnerCondition.
 	revisionHolder columnRole = iota
 	// blobHolder must keep the blob out of GC while its row is unfinished.
 	blobHolder
@@ -98,8 +98,8 @@ func TestEveryReferenceColumnIsClassified(t *testing.T) {
 			t.Errorf("%s is classified but no longer exists", column)
 		}
 		table, _, _ := strings.Cut(column, ".")
-		if held := strings.Contains(liveOwnerCondition, " "+table+" "); held != (role == revisionHolder) {
-			t.Errorf("%s: classified as %v but liveOwnerCondition mention is %v", column, role, held)
+		if held := strings.Contains(LiveOwnerCondition, " "+table+" "); held != (role == revisionHolder) {
+			t.Errorf("%s: classified as %v but LiveOwnerCondition mention is %v", column, role, held)
 		}
 	}
 }

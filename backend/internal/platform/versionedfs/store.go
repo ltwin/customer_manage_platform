@@ -72,6 +72,11 @@ type Adapter interface {
 	// PublishVerified writes trusted bytes to a preallocated final key.
 	PublishVerified(ctx context.Context, key string, body io.Reader, size int64, mime string) (string, error)
 	DeleteExact(ctx context.Context, key, version string) error
+	// DeleteCurrent leaves key without a current object and is idempotent.
+	// Where the store keeps versions (OSS), fixed versions stay recoverable
+	// until the bucket's noncurrent lifecycle removes them; elsewhere every
+	// version goes with it.
+	DeleteCurrent(ctx context.Context, key string) error
 }
 
 // LocalPartWriter is satisfied by the local adapter only; the API forwards

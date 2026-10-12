@@ -14,7 +14,25 @@
 | workVerify | worker | 流式读取固定版本到私有临时文件，mimetype 嗅探 + 图片解码/ffprobe，预分配 blob 身份与正式 key 后写正式对象（图片 >1600px 另生成 display 渲染件），再以 `publish_operation_id` 执行发布命令 |
 | publish | worker | 库根 → upload → 候选/画布 → 内容锁序；目标仍有效则创建资产或绑定节点（可撤销 change），已变化则写 pending 候选；同事务清空 `blob_id`、写 `handed_off_at`、结算配额、置 `ready` |
 
-执行权由 `execution_epoch + lease_until` 控制：取消/失败/到期都递增 epoch，旧 worker 的每次写都校验 epoch，迟到结果不会发布。`SweepExpired` 只标记到期并释放预留，不删除对象；物理清理归 FND-10。
+执行权由 `execution_epoch + lease_until` 控制：取消/失败/到期都递增 epoch，旧 worker 的每次写都校验 epoch，迟到结果不会发布。`SweepExpired` 只标记到期并释放预留，不删除对象；物理清理归媒体 GC。
+
+## 媒体 GC
+
+设计见 [媒体模块 §6](../product/creative-canvas-system/modules/media.md#6-gc恢复和上线约束)。`creative-worker` 每 10 分钟逐账号（含已停用账号）执行 `CollectGarbage`，模式由 `CREATIVE_MEDIA_GC_MODE` 决定：
+
+| 模式 | 行为 |
+|---|---|
+| `off` | 不运行 |
+| `scan`（缺省） | 只读：每个有可回收内容的账号输出一行 `creative media gc` 日志（陈旧导入、无持有方修订、可回收 blob 与已计额度字节、deleting 中的字节），不写任何行 |
+| `delete` | 依次重置陈旧生成导入、删除无持有方的媒体修订及其对象绑定、把无持有方的 ready blob 置 `deleting`（已计额度宽限 24 小时，未计额度 15 分钟）、到期后删除对象并恰好释放一次额度 |
+
+对象删除用 `versionedfs.Adapter.DeleteCurrent`：OSS 只写 delete marker，固定版本转 noncurrent，生命周期规则清除前可按库里的 `object_key` + `object_version` 恢复；local 驱动直接删除全部版本。blob 的存储驱动或 bucket 与当前配置不符时跳过并计入 `skipped_blobs`。
+
+每个扫描 / 标记批次在账号写屏障内复核资产和节点的修订身份；发现内容 ID 或类型关系异常时，整账号本轮停止回收并报错，不把异常引用当成无引用。其他账号照常处理。
+
+删除候选在取前 100 条之前按当前驱动与 bucket 过滤；不匹配的到期记录单独计数。已选批次在对象 I/O 前把 `delete_after` 推迟 10 分钟作为下次重试时间，故障、超时或进程退出均不会让同一批记录持续挡住更早到期的其他对象；状态保持 deleting，额度直到删除确认后才释放。
+
+持有方以 `creativereference.LiveOwnerCondition` 和 `gc.go` 的 `blobHolders` 为准；新增引用修订或 blob 的列时，`creativereference` 的守卫测试会要求先登记持有与否。
 
 ## 进程配置
 

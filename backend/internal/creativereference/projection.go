@@ -21,7 +21,7 @@ func Live(ctx context.Context, tx Reader, revisionIDs []string) (map[string]bool
 	if len(revisionIDs) == 0 {
 		return out, nil
 	}
-	rows, err := tx.QueryPage(ctx, "creative_content_revisions", "id", "id=ANY($2::text[]) AND ("+liveOwnerCondition+")", []store.OrderBy{{Column: "id"}}, len(revisionIDs), 0, revisionIDs)
+	rows, err := tx.QueryPage(ctx, "creative_content_revisions", "id", "id=ANY($2::text[]) AND ("+LiveOwnerCondition+")", []store.OrderBy{{Column: "id"}}, len(revisionIDs), 0, revisionIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,10 @@ func Live(ctx context.Context, tx Reader, revisionIDs []string) (map[string]bool
 	return out, rows.Err()
 }
 
-const liveOwnerCondition = `EXISTS (SELECT 1 FROM creative_assets a JOIN creative_contents c ON c.account_id=a.account_id AND c.id=a.content_id WHERE a.account_id=$1 AND a.content_revision_id=creative_content_revisions.id AND a.content_id=creative_content_revisions.content_id AND a.kind=c.kind)
+// LiveOwnerCondition is the owner test as SQL, for callers that must select
+// revisions by it (media GC). It names creative_content_revisions by table, not
+// alias, and binds the account as $1, so it only fits a scoped query.
+const LiveOwnerCondition = `EXISTS (SELECT 1 FROM creative_assets a JOIN creative_contents c ON c.account_id=a.account_id AND c.id=a.content_id WHERE a.account_id=$1 AND a.content_revision_id=creative_content_revisions.id AND a.content_id=creative_content_revisions.content_id AND a.kind=c.kind)
 OR EXISTS (SELECT 1 FROM creative_nodes n JOIN creative_contents c ON c.account_id=n.account_id AND c.id=n.content_id WHERE n.account_id=$1 AND n.content_revision_id=creative_content_revisions.id AND n.content_id=creative_content_revisions.content_id AND n.type_key='core.'||c.kind)
 OR EXISTS (SELECT 1 FROM creative_message_content_refs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)
 OR EXISTS (SELECT 1 FROM creative_checkpoint_content_refs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND checkpoint_id IN (SELECT id FROM creative_agent_checkpoints WHERE account_id=$1 AND retained_until>clock_timestamp()))

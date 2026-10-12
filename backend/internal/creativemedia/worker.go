@@ -333,19 +333,7 @@ func (s *Service) publish(ctx context.Context, scope store.AccountScope, u uploa
 			}
 			return outcome(200, "upload", u.ID, creativeops.Revision(current.Revision+1), map[string]string{"state": "expired"})
 		}
-		if _, err := tx.Update(ctx, "creative_blobs", "state='ready',object_version=$2,verified_at=$3,quota_booked_at=$3", "id=$4 AND state='verifying'", originalVersion, now, blobID); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		if err := creativepalette.WriteInTx(ctx, tx, blobID, verified.Palette); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: blobID}}
-		if displayID != "" {
-			if _, err := tx.Update(ctx, "creative_blobs", "state='ready',object_version=$2,verified_at=$3,quota_booked_at=$3", "id=$4 AND state='verifying'", displayVersion, now, displayID); err != nil {
-				return creativeops.Outcome{}, err
-			}
-			objects = append(objects, creativecontent.ObjectBinding{Role: "display", BlobID: displayID})
-		}
+
 		stored := verified.Size
 		if verified.Display != nil {
 			stored += verified.Display.Size
@@ -362,6 +350,21 @@ func (s *Service) publish(ctx context.Context, scope store.AccountScope, u uploa
 				return creativeops.Outcome{}, err
 			}
 			return outcome(200, "upload", u.ID, creativeops.Revision(current.Revision+1), map[string]string{"state": "failed"})
+		}
+		// Only book blobs after the full original + rendition quota check.
+		// A rejected upload keeps verifying blobs for finish to retire unbooked.
+		if _, err := tx.Update(ctx, "creative_blobs", "state='ready',object_version=$2,verified_at=$3,quota_booked_at=$3", "id=$4 AND state='verifying'", originalVersion, now, blobID); err != nil {
+			return creativeops.Outcome{}, err
+		}
+		if err := creativepalette.WriteInTx(ctx, tx, blobID, verified.Palette); err != nil {
+			return creativeops.Outcome{}, err
+		}
+		objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: blobID}}
+		if displayID != "" {
+			if _, err := tx.Update(ctx, "creative_blobs", "state='ready',object_version=$2,verified_at=$3,quota_booked_at=$3", "id=$4 AND state='verifying'", displayVersion, now, displayID); err != nil {
+				return creativeops.Outcome{}, err
+			}
+			objects = append(objects, creativecontent.ObjectBinding{Role: "display", BlobID: displayID})
 		}
 		if _, err := tx.Update(ctx, "creative_media_quotas", "reserved_bytes=GREATEST(reserved_bytes-$2,0),stored_bytes=stored_bytes+$3,revision=revision+1", "", current.Reserved, stored); err != nil {
 			return creativeops.Outcome{}, err

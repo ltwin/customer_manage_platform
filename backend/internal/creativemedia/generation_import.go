@@ -91,22 +91,8 @@ func (s *Service) PrepareGeneratedMedia(ctx context.Context, scope store.Account
 		if lease != nil && now.Before(*lease) {
 			return ErrEpoch
 		}
-		// 前次写入可能成功但回执丢失：旧身份仅供对象清理，绝不覆盖或复用。
-		for _, blob := range []string{p.original, p.display} {
-			if blob != "" {
-				if _, err = tx.Update(ctx, "creative_blobs", "state='deleting',delete_after=$3", "id=$2 AND state='verifying'", blob, now.Add(48*time.Hour)); err != nil {
-					return err
-				}
-			}
-		}
-		if p.reserved > 0 {
-			if _, err = tx.Update(ctx, "creative_media_quotas", "reserved_bytes=reserved_bytes-$2,revision=revision+1", "", p.reserved); err != nil {
-				return err
-			}
-		}
-		p.epoch++
-		_, err = tx.Update(ctx, "creative_generation_imports", "epoch=$3,lease_until=$4,original_blob='',display_blob='',original_version='',display_version='',verified='{}',reserved_bytes=0", "id=$2", id, p.epoch, now.Add(generationImportLease))
-		return err
+		next := now.Add(generationImportLease)
+		return resetImportInTx(ctx, tx, &p, now, &next)
 	})
 	if err != nil {
 		return p, err
@@ -132,6 +118,30 @@ func (s *Service) PrepareGeneratedMedia(ctx context.Context, scope store.Account
 	}
 	return p, nil
 }
+
+// resetImportInTx 放弃导入的当前尝试：旧 blob 交给回收，预留额度退还，epoch 前移
+// 使迟到的写入与提交失败。lease 为新尝试的租约；GC 重置时为 nil，无人接手。
+func resetImportInTx(ctx context.Context, tx store.TxAccountScope, p *PreparedMediaImport, now time.Time, lease *time.Time) error {
+	// 前次写入可能成功但回执丢失：旧身份仅供对象清理，绝不覆盖或复用。
+	for _, blob := range []string{p.original, p.display} {
+		if blob != "" {
+			if _, err := tx.Update(ctx, "creative_blobs", "state='deleting',delete_after=$3", "id=$2 AND state='verifying'", blob, now.Add(48*time.Hour)); err != nil {
+				return err
+			}
+		}
+	}
+	if p.reserved > 0 {
+		if _, err := tx.Update(ctx, "creative_media_quotas", "reserved_bytes=reserved_bytes-$2,revision=revision+1", "", p.reserved); err != nil {
+			return err
+		}
+	}
+	p.epoch++
+	p.state = "writing"
+	p.original, p.display, p.originalVersion, p.displayVersion, p.reserved = "", "", "", "", 0
+	_, err := tx.Update(ctx, "creative_generation_imports", "state='writing',epoch=$3,lease_until=$4,original_blob='',display_blob='',original_version='',display_version='',verified='{}',reserved_bytes=0,updated_at=clock_timestamp()", "id=$2", p.id, p.epoch, lease)
+	return err
+}
+
 func (s *Service) writeGeneratedMedia(ctx context.Context, scope store.AccountScope, p *PreparedMediaImport, kind, mime string, size int64, exact bool, fetch func(context.Context) (io.ReadCloser, error)) error {
 	body, err := fetch(ctx)
 	if err != nil {
@@ -195,7 +205,7 @@ func (s *Service) writeGeneratedMedia(ctx context.Context, scope store.AccountSc
 				return err
 			}
 		}
-		_, err = tx.Update(ctx, "creative_generation_imports", "original_blob=$3,display_blob=$4,verified=$5", "id=$2", p.id, p.original, p.display, creativegraph.Canonical(verified))
+		_, err = tx.Update(ctx, "creative_generation_imports", "original_blob=$3,display_blob=$4,verified=$5,updated_at=clock_timestamp()", "id=$2", p.id, p.original, p.display, creativegraph.Canonical(verified))
 		return err
 	})
 	if err != nil {
@@ -236,7 +246,7 @@ func (s *Service) writeGeneratedMedia(ctx context.Context, scope store.AccountSc
 		d.Path = ""
 	}
 	err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		n, err := tx.Update(ctx, "creative_generation_imports", "state='stored',original_version=$4,display_version=$5,verified=$6,lease_until=NULL", "id=$2 AND epoch=$3 AND state='writing'", p.id, p.epoch, p.originalVersion, p.displayVersion, creativegraph.Canonical(p.verified))
+		n, err := tx.Update(ctx, "creative_generation_imports", "state='stored',original_version=$4,display_version=$5,verified=$6,lease_until=NULL,updated_at=clock_timestamp()", "id=$2 AND epoch=$3 AND state='writing'", p.id, p.epoch, p.originalVersion, p.displayVersion, creativegraph.Canonical(p.verified))
 		if err != nil {
 			return err
 		}
@@ -331,6 +341,6 @@ func (s *Service) CommitGeneratedMediaInTx(ctx context.Context, tx store.TxAccou
 	if err != nil {
 		return creativecontent.Revision{}, err
 	}
-	_, err = tx.Update(ctx, "creative_generation_imports", "state='ready',content_revision_id=$3,reserved_bytes=0", "id=$2", p.id, revision.ID)
+	_, err = tx.Update(ctx, "creative_generation_imports", "state='ready',content_revision_id=$3,reserved_bytes=0,updated_at=clock_timestamp()", "id=$2", p.id, revision.ID)
 	return revision, err
 }

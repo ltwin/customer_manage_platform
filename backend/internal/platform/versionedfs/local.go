@@ -364,3 +364,16 @@ func (l *Local) DeleteExact(ctx context.Context, key, version string) error {
 	}
 	return err
 }
+
+// DeleteCurrent removes every version: the local driver has no versioned
+// backstop, which is why it serves development and self-hosting only.
+func (l *Local) DeleteCurrent(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	dir, err := l.dir(key)
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(dir)
+}

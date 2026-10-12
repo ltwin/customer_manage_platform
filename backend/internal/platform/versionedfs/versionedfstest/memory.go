@@ -252,6 +252,16 @@ func (m *Memory) OpenVersion(ctx context.Context, key, version string, rng *vers
 	return io.NopCloser(bytes.NewReader(payload[rng.Start : rng.End+1])), stat, nil
 }
 
+func (m *Memory) DeleteCurrent(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.objects, key)
+	return nil
+}
+
 func (m *Memory) DeleteExact(ctx context.Context, key, version string) error {
 	if err := ctx.Err(); err != nil {
 		return err

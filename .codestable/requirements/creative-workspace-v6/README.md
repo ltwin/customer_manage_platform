@@ -163,7 +163,7 @@
 
 | ID / 需求 | 优先级 | 类型 | 状态 | 前置依赖 | 产物 / 阻塞说明 |
 |---|---|---|---|---|---|
-| [V6-075 · 媒体 GC 与资产库空间释放](items/V6-075.md) | P0 | 交付 | 待实现 | — | [design：媒体模块 §6](../../../docs/product/creative-canvas-system/modules/media.md#6-gc恢复和上线约束)（owner 2026-10-12 拍板）；四张未登记的表已定性（§6.2），带出 Agent dispatch 复核范围与生成导入陈旧重置两处修正；尚未上生产，先在本地 / 测试库只读扫描并做恢复演练，首次上生产先只读 3 天 |
+| [V6-075 · 媒体 GC 与资产库空间释放](items/V6-075.md) | P0 | 交付 | 实现中 | — | [design：媒体模块 §6](../../../docs/product/creative-canvas-system/modules/media.md#6-gc恢复和上线约束)（owner 2026-10-12 拍板）；四张未登记的表已定性（§6.2），带出 Agent dispatch 复核范围与生成导入陈旧重置两处修正；GC 本体（scan / delete 模式）已实现，AC-01/02/05/06/08 已满足，余 AC-03 并发测试、AC-04 故障注入与恢复演练、AC-07 界面；[verification](../../features/2026-10-12-media-gc/media-gc-verification.md)；尚未上生产，先在本地 / 测试库只读扫描并做恢复演练，首次上生产先只读 3 天 |
 | [V6-076 · 图片编辑一期：压缩、裁切与 Agent 压缩](items/V6-076.md) | P1 | 交付 | 待实现 | V6-075 | [产品设计](../../../docs/product/creative-canvas-system/image-editing.md) · [后端设计第三稿](../../../docs/product/creative-canvas-system/modules/image-editing-backend.md)（owner 2026-10-12 拍板）；实现第一步是带 libvips 的 worker 镜像与编解码穿刺 |
 
 ## 待拍板事项

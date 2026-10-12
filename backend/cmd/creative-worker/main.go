@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -53,6 +54,10 @@ func run() error {
 		return err
 	}
 	media, err := creativemedia.Compose(cfg, deriveTicketKey(cfg.AuthTokenSecret), slog.Default())
+	if err != nil {
+		return err
+	}
+	gcMode, err := creativemedia.ParseGCMode(strings.TrimSpace(os.Getenv("CREATIVE_MEDIA_GC_MODE")))
 	if err != nil {
 		return err
 	}
@@ -113,6 +118,8 @@ func run() error {
 	go sweepExpiredUploads(ctx, db, media)
 	paletteDone := make(chan struct{})
 	go func() { defer close(paletteDone); media.RunPaletteBackfill(ctx, db, slog.Default()) }()
+	gcDone := make(chan struct{})
+	go func() { defer close(gcDone); media.RunGC(ctx, db, gcMode, slog.Default()) }()
 	trashDone := make(chan struct{})
 	go func() { defer close(trashDone); trashExpiry.Run(ctx, db, slog.Default()) }()
 	// Recovery needs no provider credentials or catalog: it only reconciles
@@ -136,6 +143,7 @@ func run() error {
 	<-agentDone
 	<-generationDone
 	<-trashDone
+	<-gcDone
 	<-paletteDone
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
@@ -155,7 +163,7 @@ func deriveTicketKey(rootSecret string) []byte {
 }
 
 // sweepExpiredUploads marks overdue sessions per active account. Objects
-// are never deleted here; retention/GC arrives with its own feature.
+// are never deleted here; media GC (RunGC) reclaims them.
 func sweepExpiredUploads(ctx context.Context, db *store.Store, media *creativemedia.Service) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
