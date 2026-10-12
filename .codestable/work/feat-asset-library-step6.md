@@ -63,7 +63,7 @@ R1 修复验证：`make check-go PKG=./internal/creativemedia/...` 全部通过�
 本次授权仅修复，不提交；沿用本 feature 同一 reviewer，拟用剩余第 3 轮完整候选复核，不重置轮次。
 
 - 缺对象：`OpenVersion` 的 `versionedfs.ErrNotFound` 归类为 `failed/object_missing`。55 张图片的真实 PG 回归中，首张缺失仍能提交其余首批 49 张，续批完成后总计 54 张 ready，重复执行与读取锁释放通过；超时、短读的整批重试逻辑保留。
-- 视频画幅：采用 owner 提供的方案 2。当前素材/媒体事实保存的是编码尺寸，完整显示方向支持需要新旧媒体一致的探测及历史修正；本次画幅筛选只匹配图片，视频详情标为「编码尺寸」且不显示横/竖/方形标签。API 描述、mock 与 canonical AC 范围同步，[后续 issue](issue-asset-video-orientation.md) 保留完整方向修正验收。没有执行 iPhone 真机上传，也不宣称视频方向已修好。
+- 视频画幅：审计提出两种处置，owner 选择方案 2。当前素材/媒体事实保存的是编码尺寸，完整显示方向支持需要新旧媒体一致的探测及历史修正；本次画幅筛选只匹配图片，视频详情标为「编码尺寸」且不显示横/竖/方形标签。API 描述、mock 与 canonical AC 范围同步，[后续 issue](issue-asset-video-orientation.md) 保留完整方向修正验收。没有执行 iPhone 真机上传，也不宣称视频方向已修好。
 - 颜色匹配：删除仅测试使用的 Go `Matches`，SQL 为唯一实现。`TestPalettePhotoMatchingUsesProductionSQL` 覆盖 12 张真实照片经上传校验、入库、搜索、总数和 facets 的路径；`TestPaletteSQLThresholdBoundaries` 覆盖色度分界、色相环绕、明度范围与最低占比。
 - 同色 hex：检查器 key 使用序号+hex，真实浏览器捕获控制台告警的回归已由红变绿。`narrowed` 注释补齐画幅、颜色。
 
