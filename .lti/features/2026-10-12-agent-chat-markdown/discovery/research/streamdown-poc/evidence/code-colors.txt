@@ -1,0 +1,50 @@
+[
+  {
+    text: 'const plan = { aperture: 2.8, iso: 100 };',
+    style: null,
+    class: 'block before:content-[counter(line)] before:inline-block before:[counter-increment:line] before:w-6 before:mr-4 before:text-[13px] before:text-right before:text-muted-foreground/50 before:font-mono before:select-none',
+    color: 'rgb(237, 237, 238)'
+  },
+  {
+    text: 'const',
+    style: '--sdm-c: #D73A49; --shiki-dark: #F97583;',
+    class: 'text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]',
+    color: 'rgb(249, 117, 131)'
+  },
+  {
+    text: ' ',
+    style: '--sdm-c: #24292E; --shiki-dark: #E1E4E8;',
+    class: 'text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]',
+    color: 'rgb(225, 228, 232)'
+  },
+  {
+    text: 'plan',
+    style: '--sdm-c: #005CC5; --shiki-dark: #79B8FF;',
+    class: 'text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]',
+    color: 'rgb(121, 184, 255)'
+  },
+  {
+    text: ' ',
+    style: '--sdm-c: #24292E; --shiki-dark: #E1E4E8;',
+    class: 'text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]',
+    color: 'rgb(225, 228, 232)'
+  },
+  {
+    text: '=',
+    style: '--sdm-c: #D73A49; --shiki-dark: #F97583;',
+    class: 'text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]',
+    color: 'rgb(249, 117, 131)'
+  },
+  {
+    text: ' { aperture: ',
+    style: '--sdm-c: #24292E; --shiki-dark: #E1E4E8;',
+    class: 'text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]',
+    color: 'rgb(225, 228, 232)'
+  },
+  {
+    text: '2.8',
+    style: '--sdm-c: #005CC5; --shiki-dark: #79B8FF;',
+    class: 'text-[var(--sdm-c,inherit)] dark:text-[var(--shiki-dark,var(--sdm-c,inherit))]',
+    color: 'rgb(121, 184, 255)'
+  }
+]

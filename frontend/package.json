@@ -37,12 +37,18 @@
   },
   "dependencies": {
     "@js-temporal/polyfill": "^0.5.1",
+    "@streamdown/code": "2.0.0",
+    "@streamdown/math": "1.0.3",
+    "@streamdown/mermaid": "1.0.3",
     "@xyflow/react": "12.11.6",
     "clsx": "^2.1.1",
     "lucide-react": "^1.27.0",
+    "marked": "18.0.11",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1",
+    "remend": "1.4.0",
+    "streamdown": "2.7.0",
     "zustand": "5.0.15"
   },
   "devDependencies": {

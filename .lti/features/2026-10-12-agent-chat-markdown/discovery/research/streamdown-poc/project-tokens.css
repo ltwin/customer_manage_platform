@@ -1,0 +1,51 @@
+/* Snapshot from workspace.css; prototype only */
+.cc-workspace {
+  color-scheme: dark;
+  --bg: #0b0b0c;
+  --dot: rgba(255, 255, 255, 0.075);
+  --s1: #151516; /* 节点 */
+  --s2: #1b1b1d; /* 浮层 */
+  --s3: #252527; /* hover / chip */
+  --s4: #2f2f32; /* pressed */
+  --line: rgba(255, 255, 255, 0.07);
+  --line-2: rgba(255, 255, 255, 0.11);
+  --line-3: rgba(255, 255, 255, 0.2);
+  --fg: #ededee;
+  --fg-2: #a1a1a7;
+  --fg-3: #6d6d73;
+  --primary: #f4f4f5;
+  --on-primary: #0b0b0c;
+  --run: #e2a453;
+  --ok: #7bcf9b;
+  --danger: #ef7a70;
+  --warning: #d7bf98;
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --shadow: 0 0 0 1px var(--line-2), 0 16px 40px -12px rgba(0, 0, 0, 0.7),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* 旧名映射到 v6 语义，避免逐文件改引用。 */
+  --muted: var(--fg-2);
+  --surface: var(--s1);
+  --surface-2: var(--s3);
+  --accent: var(--primary);
+  --accent-weak: var(--s3);
+  --border: var(--line-2);
+  --border-strong: var(--line-3);
+  --glass-bg: var(--s2);
+  --ring: 0 0 0 3px rgba(255, 255, 255, 0.12);
+  --shadow-1: var(--shadow);
+  --font-body: -apple-system, BlinkMacSystemFont, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  color: var(--fg);
+  background: var(--bg);
+  font: 13px/1.5 var(--font-body);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}

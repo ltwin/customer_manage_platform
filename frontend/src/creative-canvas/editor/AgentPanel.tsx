@@ -51,7 +51,9 @@ import {
   agentSkillOptions,
   defaultAgentModel,
 } from './agentOptions.tsx'
-import { Markdown, RunTurn, TurnLoading } from './AgentBlocks.tsx'
+import { RunTurn, TurnLoading } from './AgentBlocks.tsx'
+import { AgentMarkdown } from './AgentMarkdown.tsx'
+import { useAgentScroll } from './useAgentScroll.ts'
 import { currentStep } from './agentBlocks.ts'
 import {
   AgentTurnContext,
@@ -196,8 +198,12 @@ function AgentConversation({
   const pendingRef = useRef<PendingAgentChain | null>(null)
   const mounted = useRef(false)
   const performing = useRef(false)
-  const history = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
+  const {
+    history,
+    content: historyContent,
+    onScroll: onHistoryScroll,
+    follow: followLatest,
+  } = useAgentScroll(conversation)
   // The list is read once; what a run is doing now comes from its stream.
   const followed = useAgentRuns(
     useShallow((store) => runs.map((run) => store.runs[run.id]?.run)),
@@ -383,16 +389,6 @@ function AgentConversation({
       abort.abort()
     }
   }, [waitingForName, naming, canvasID])
-  // Follow the newest content unless the photographer has scrolled away.
-  useEffect(() => {
-    const stick = () => {
-      const log = history.current
-      if (log && pinned.current) log.scrollTop = log.scrollHeight
-    }
-    stick()
-    return useAgentRuns.subscribe(() => requestAnimationFrame(stick))
-  }, [messages])
-
   function savePending(
     expected: PendingAgentChain | null,
     value: PendingAgentChain | null,
@@ -432,7 +428,7 @@ function AgentConversation({
           setDraft('')
           setMaterials([])
           setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
-          pinned.current = true
+          followLatest()
         }
       } else {
         setError(
@@ -791,67 +787,65 @@ function AgentConversation({
         role="log"
         ref={history}
         aria-busy={reading === 'loading'}
-        onScroll={(event) => {
-          const log = event.currentTarget
-          pinned.current =
-            log.scrollHeight - log.scrollTop - log.clientHeight < 48
-        }}
+        onScroll={onHistoryScroll}
       >
-        {reading === 'loading' && <ThreadLoading />}
-        {reading === 'failed' && (
-          <div className="cc-agent-read-failed" role="status">
-            <span>对话没有读出来。</span>
-            <button type="button" onClick={reread}>
-              重新读取
-            </button>
-          </div>
-        )}
-        {!reading && !thread.length && !archivedView && (
-          <div className="cc-agent-empty">
-            <span className="cc-agent-empty-mark" aria-hidden="true">
-              <Sparkles size={22} />
-            </span>
-            <h3>让创作助手陪你把想法落到画布上</h3>
-            <p>助手会读画布，输入 @ 引用画布里的文本或图片</p>
-            {!waiting && (
-              <ul className="cc-agent-starters" aria-label="从这里开始">
-                {starters.map((starter) => (
-                  <li key={starter.label}>
-                    <button
-                      type="button"
-                      disabled={locked}
-                      onClick={() => applyStarter(starter)}
-                    >
-                      <starter.icon size={16} />
-                      <span>{starter.label}</span>
-                      <ArrowRight size={15} className="cc-agent-starter-go" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-        <AgentTurnContext.Provider value={turn}>
-          {thread.map((message) => {
-            const runID = triggers.get(message.id)
-            if (message.role === 'user')
-              return (
-                <div className="cc-agent-exchange" key={message.id}>
-                  <UserMessage message={message} references={references} />
-                  {runID && <RunTurn runID={runID} />}
-                </div>
-              )
-            // Runs from before blocks existed have only their messages.
-            return message.role === 'assistant' ? (
-              <LegacyAnswer
-                key={message.id}
-                message={message}
-                followed={followedRuns.has(message.run_id ?? '')}
-              />
-            ) : null
-          })}
-        </AgentTurnContext.Provider>
+        <div ref={historyContent} className="cc-agent-history-content">
+          {reading === 'loading' && <ThreadLoading />}
+          {reading === 'failed' && (
+            <div className="cc-agent-read-failed" role="status">
+              <span>对话没有读出来。</span>
+              <button type="button" onClick={reread}>
+                重新读取
+              </button>
+            </div>
+          )}
+          {!reading && !thread.length && !archivedView && (
+            <div className="cc-agent-empty">
+              <span className="cc-agent-empty-mark" aria-hidden="true">
+                <Sparkles size={22} />
+              </span>
+              <h3>让创作助手陪你把想法落到画布上</h3>
+              <p>助手会读画布，输入 @ 引用画布里的文本或图片</p>
+              {!waiting && (
+                <ul className="cc-agent-starters" aria-label="从这里开始">
+                  {starters.map((starter) => (
+                    <li key={starter.label}>
+                      <button
+                        type="button"
+                        disabled={locked}
+                        onClick={() => applyStarter(starter)}
+                      >
+                        <starter.icon size={16} />
+                        <span>{starter.label}</span>
+                        <ArrowRight size={15} className="cc-agent-starter-go" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          <AgentTurnContext.Provider value={turn}>
+            {thread.map((message) => {
+              const runID = triggers.get(message.id)
+              if (message.role === 'user')
+                return (
+                  <div className="cc-agent-exchange" key={message.id}>
+                    <UserMessage message={message} references={references} />
+                    {runID && <RunTurn runID={runID} />}
+                  </div>
+                )
+              // Runs from before blocks existed have only their messages.
+              return message.role === 'assistant' ? (
+                <LegacyAnswer
+                  key={message.id}
+                  message={message}
+                  followed={followedRuns.has(message.run_id ?? '')}
+                />
+              ) : null
+            })}
+          </AgentTurnContext.Provider>
+        </div>
       </div>
       {archivedView ? (
         <div className="cc-agent-archived" role="status">
@@ -1058,7 +1052,7 @@ function LegacyAnswer({
     .map((block) => (block.type === 'text' ? (block.text ?? '') : ''))
     .join('')
   if ((followed && !view) || view?.blocks.length || !words) return null
-  return <Markdown source={words} />
+  return <AgentMarkdown source={words} />
 }
 
 // 读取中的对话：一问一答的轮廓，位置和真内容一致，读到后原地替换。

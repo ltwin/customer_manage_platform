@@ -1,0 +1,269 @@
+{
+  "date": "2026-10-12",
+  "browser": "Playwright Chromium",
+  "results": [
+    {
+      "name": "complete: table, math, nested list, code, Mermaid",
+      "pass": true,
+      "data": {
+        "client": 365,
+        "scroll": 365,
+        "overflow": 0,
+        "bottomGap": 0
+      }
+    },
+    {
+      "name": "narrow 375px: table and formula stay within panel",
+      "pass": true,
+      "data": {
+        "table": {
+          "client": 336,
+          "scroll": 336,
+          "overflow": 0,
+          "bottomGap": 0
+        },
+        "formula": {
+          "client": 336,
+          "scroll": 336,
+          "overflow": 0,
+          "bottomGap": 0
+        },
+        "formulaScroll": {
+          "client": 304,
+          "scroll": 686
+        }
+      }
+    },
+    {
+      "name": "stream: Mermaid renders only after closing fence and not on later tokens",
+      "pass": true,
+      "data": {
+        "requestsWhileOpen": 0,
+        "requestsAfterFence": 1,
+        "requestsAfterSettled": 1
+      }
+    },
+    {
+      "name": "stream: complete sample, one-character chunks",
+      "pass": true,
+      "data": {
+        "chars": 587
+      }
+    },
+    {
+      "name": "invalid Mermaid and math preserve content without page crash",
+      "pass": true,
+      "data": {
+        "badMathText": "\\unknownCommand\n𝑥\n\\unknownCommandx"
+      }
+    },
+    {
+      "name": "HTML and dangerous URL are inert",
+      "pass": true
+    },
+    {
+      "name": "async diagram growth: original scroll versus ResizeObserver",
+      "pass": true,
+      "data": [
+        {
+          "fix": false,
+          "client": 661,
+          "scroll": 661,
+          "overflow": 0,
+          "bottomGap": 348
+        },
+        {
+          "fix": true,
+          "client": 661,
+          "scroll": 661,
+          "overflow": 0,
+          "bottomGap": 0
+        }
+      ]
+    },
+    {
+      "name": "cold network stages: closed, plain text, math, code, Mermaid",
+      "pass": true,
+      "data": [
+        {
+          "label": "closed",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-8CNQsZKJ.js",
+            "index-Bfr2cwzu.css"
+          ],
+          "jsBytes": 198003,
+          "jsGzipBytes": 63495,
+          "cssBytes": 17603,
+          "fontBytes": 0
+        },
+        {
+          "label": "text",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-8CNQsZKJ.js",
+            "index-Bfr2cwzu.css",
+            "Renderer-w4V4SxbB.js",
+            "chunk-D32TOXHM-DdqCHdcV.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-S_JPIPbn.css",
+            "dist-bpUjjG08.js"
+          ],
+          "jsBytes": 705783,
+          "jsGzipBytes": 220354,
+          "cssBytes": 20693,
+          "fontBytes": 0
+        },
+        {
+          "label": "math",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-8CNQsZKJ.js",
+            "index-Bfr2cwzu.css",
+            "Renderer-w4V4SxbB.js",
+            "chunk-D32TOXHM-DdqCHdcV.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-S_JPIPbn.css",
+            "dist-bpUjjG08.js",
+            "MathPlugin-CBd5gWyM.js",
+            "katex.min-Cw91Fjk9.js",
+            "katex-DEcVZfaU.css",
+            "katex-BjSPyWz5.js",
+            "KaTeX_Math-Italic-t53AETM-.woff2",
+            "KaTeX_Main-Regular-B22Nviop.woff2"
+          ],
+          "jsBytes": 976963,
+          "jsGzipBytes": 301752,
+          "cssBytes": 49529,
+          "fontBytes": 42712
+        },
+        {
+          "label": "code",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-8CNQsZKJ.js",
+            "index-Bfr2cwzu.css",
+            "Renderer-w4V4SxbB.js",
+            "chunk-D32TOXHM-DdqCHdcV.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-S_JPIPbn.css",
+            "dist-bpUjjG08.js",
+            "MathPlugin-CBd5gWyM.js",
+            "katex.min-Cw91Fjk9.js",
+            "katex-DEcVZfaU.css",
+            "katex-BjSPyWz5.js",
+            "KaTeX_Math-Italic-t53AETM-.woff2",
+            "KaTeX_Main-Regular-B22Nviop.woff2",
+            "highlighted-body-KQOG7T2V-CFZK-ZTw.js",
+            "CodePlugin-CIBMIreM.js",
+            "dist-CvD0F_DZ.js",
+            "typescript-DOu2WMV5.js",
+            "github-light-EUqPIrTm.js",
+            "github-dark-C-LZuMrd.js"
+          ],
+          "jsBytes": 1373604,
+          "jsGzipBytes": 383554,
+          "cssBytes": 49529,
+          "fontBytes": 42712
+        },
+        {
+          "label": "mermaid",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-8CNQsZKJ.js",
+            "index-Bfr2cwzu.css",
+            "Renderer-w4V4SxbB.js",
+            "chunk-D32TOXHM-DdqCHdcV.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-S_JPIPbn.css",
+            "dist-bpUjjG08.js",
+            "MathPlugin-CBd5gWyM.js",
+            "katex.min-Cw91Fjk9.js",
+            "katex-DEcVZfaU.css",
+            "katex-BjSPyWz5.js",
+            "KaTeX_Math-Italic-t53AETM-.woff2",
+            "KaTeX_Main-Regular-B22Nviop.woff2",
+            "highlighted-body-KQOG7T2V-CFZK-ZTw.js",
+            "CodePlugin-CIBMIreM.js",
+            "dist-CvD0F_DZ.js",
+            "typescript-DOu2WMV5.js",
+            "github-light-EUqPIrTm.js",
+            "github-dark-C-LZuMrd.js",
+            "chunk-Y2CYZVJY-DsF7k-Jl.js",
+            "dist-CxnIQshQ.js",
+            "src-_wZywoZs.js",
+            "chunk-75Z2AOVW-DGdNfuUO.js",
+            "chunk-DU6HZSFF-vSra2cl8.js",
+            "dist-D9sYb5Oa.js",
+            "chunk-CLGD4ZFX-DZjZJASp.js",
+            "chunk-P2QGCYS3-CXu9ABxm.js",
+            "chunk-PWAF6VOD-DVdSd4LQ.js",
+            "chunk-GMAD6QVW-CphizbNy.js",
+            "chunk-4HAMMTFA-nEeTxhVW.js",
+            "rough.esm-CSKSodPl.js",
+            "chunk-GVQU2GXP-VXoZ1Vls.js",
+            "chunk-L3NEJ4N5-BCEPUjn7.js",
+            "chunk-OSK3NFVY-CcGWdGe6.js",
+            "line-BNPkuyEN.js",
+            "path-BWPyau1x.js",
+            "array-BifhSqXX.js",
+            "chunk-2E4U76K2-CSmPiLB2.js",
+            "graphlib-DS17s2tU.js",
+            "chunk-TLUHSLCS-D2Mio9__.js",
+            "chunk-LNGE3PJU-DNNNwF8Y.js",
+            "flowDiagram-HODETNUW-CuJx9V5o.js",
+            "chunk-F27PBJKO-DnJGoCE5.js",
+            "chunk-XXDRQBXY-BuE3VzE_.js",
+            "chunk-POPQ4Y6H-COLF_27c.js",
+            "channel-D0Y2LdUY.js",
+            "chunk-5VM5RSS4-ZNzvKenW.js",
+            "chunk-SHT3W25Y-CoRt5-P1.js",
+            "dagre-GXQ25YYZ-BUKT6cut.js",
+            "dagre-CNOzUhxk.js"
+          ],
+          "jsBytes": 2167050,
+          "jsGzipBytes": 593868,
+          "cssBytes": 49529,
+          "fontBytes": 42712
+        }
+      ]
+    },
+    {
+      "name": "long streaming response remains interactive",
+      "pass": true,
+      "data": {
+        "chars": 22210,
+        "wallMs": 1407,
+        "longTasks": 0,
+        "maxLongTask": 0,
+        "client": 365,
+        "scroll": 365,
+        "overflow": 0,
+        "bottomGap": 24442
+      }
+    }
+  ],
+  "observations": [
+    {
+      "name": "stopped incomplete fence behavior",
+      "data": {
+        "incomplete": "false",
+        "svg": 1,
+        "text": "**尚未闭合\n\nMermaid\n复制源码\n放大\n\nA\n\nB"
+      }
+    }
+  ],
+  "errors": [],
+  "assets": {
+    "count": 498,
+    "totalBytes": 15352682
+  }
+}

@@ -30,7 +30,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 // One mocked run: the server-side truth (blocks + event log) lives here, and
 // every emit both records it and pushes it down the open stream.
 async function scene(options = {}) {
-  const context = await browser.newContext({ viewport: { width: 1280, height: 860 } })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 860 }, permissions: ['clipboard-read', 'clipboard-write'] })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -271,11 +271,10 @@ try {
     const answer = await s.create('text', 'streaming', { markdown: '' })
     const body = s.page.locator(`[data-block="${answer}"]`)
     await s.append(answer, '先定 **主')
-    await body.getByText('先定 **主').waitFor()
-    assert.equal(await body.locator('b').count(), 0, 'an unclosed marker is plain text')
+    await body.locator('strong', { hasText: '主' }).waitFor()
     assert.equal(await body.locator('.cc-agent-caret').count(), 1)
     await s.append(answer, '光**，再看：\n\n1. 清晨\n2. 逆光')
-    await body.locator('b', { hasText: '主光' }).waitFor()
+    await body.locator('strong', { hasText: '主光' }).waitFor()
     assert.deepEqual(await body.locator('ol li').allTextContents(), ['清晨', '逆光'])
     await row.hover()
     for (const piece of ['\n3. 侧', '光', '\n\n用 `f/2.8`。']) await s.append(answer, piece)
@@ -448,6 +447,80 @@ try {
     await s.page.locator(`[data-block="${answer}"]`).getByText('开头，中间，结尾。').waitFor()
     assert.equal(await row.getByRole('button').getAttribute('aria-expanded'), 'true')
     assert(s.server.snapshots <= snapshots + 1, 'content came from the stream, not from re-reading')
+    await s.close()
+  }
+
+  // Rich Markdown in the real panel, including interrupted fences and replay.
+  {
+    const s = await scene()
+    const answer = await s.create('text', 'streaming', { markdown: '' })
+    const body = s.page.locator(`[data-block="${answer}"]`)
+    const intro =
+      '## 方案\n\n| 项目 | 费用 |\n| --- | ---: |\n| 灯光 | 300 |\n\n行内 $$E=mc^2$$，价格 $5 和 $10。\n\n'
+    await s.append(
+      answer,
+      intro + '```mermaid\ngraph TD\n A[主题] --> B[拍摄]\n B --> C[交付]\n',
+    )
+    await body.getByText('图表正在接收…').waitFor()
+    assert.equal(await body.locator('.cc-md-diagram-image svg').count(), 0)
+    await s.update(answer, { state: 'interrupted' })
+    await body.getByText('图表未完整，保留源码').waitFor()
+    assert.equal(await body.locator('.cc-md-diagram-image svg').count(), 0)
+    await s.page.reload()
+    await s.open()
+    await body.getByText('图表未完整，保留源码').waitFor()
+    await s.update(answer, { state: 'streaming' })
+    await s.append(answer, '```')
+    await body.locator('.cc-md-diagram-image svg').waitFor()
+    assert.equal(await body.locator('table tbody tr').count(), 1)
+    assert.equal(await body.locator('.katex').count(), 1)
+    await body
+      .locator('.cc-md-diagram-image svg')
+      .evaluate((el) => (el.dataset.probe = 'stable'))
+    await s.append(answer, '\n\n后续内容')
+    await s.update(answer, { state: 'complete' })
+    await s.page.waitForTimeout(100)
+    assert.equal(
+      await body.locator('.cc-md-diagram-image svg').getAttribute('data-probe'),
+      'stable',
+    )
+    await body.getByRole('button', { name: '复制源码' }).click()
+    assert(
+      (await s.page.evaluate(() => navigator.clipboard.readText())).includes(
+        'graph TD',
+      ),
+    )
+    await body.getByRole('button', { name: '放大', exact: true }).click()
+    assert.equal(
+      await body.locator('dialog').evaluate((el) => el.matches(':modal')),
+      true,
+    )
+    await s.page.keyboard.press('Escape')
+    const log = s.page.locator('.cc-agent-history')
+    await log.evaluate((el) => (el.scrollTop = el.scrollHeight))
+    await s.page.waitForTimeout(100)
+    const more = await s.create('text', 'streaming', { markdown: '' })
+    for (let i = 0; i < 20; i++)
+      await s.append(more, '补充拍摄说明。'.repeat(10) + '\n\n')
+    await s.page.waitForTimeout(200)
+    assert(
+      await log.evaluate(
+        (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 2,
+      ),
+      'follows growing content',
+    )
+    await log.evaluate((el) => (el.scrollTop = 0))
+    await s.page.waitForTimeout(100)
+    await s.append(more, '追加内容，不抢滚动位置。')
+    await s.page.waitForTimeout(100)
+    assert.equal(await log.evaluate((el) => el.scrollTop), 0)
+    await s.page.setViewportSize({ width: 375, height: 812 })
+    await s.page.waitForTimeout(100)
+    assert(
+      await log.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+      'no horizontal panel overflow',
+    )
+    await s.page.screenshot({ path: '/tmp/agent-markdown-mobile.png' })
     await s.close()
   }
 

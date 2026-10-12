@@ -1,0 +1,230 @@
+{
+  "date": "2026-10-12",
+  "browser": "Playwright Chromium",
+  "results": [
+    {
+      "name": "complete: table, math, nested list, code, Mermaid",
+      "pass": true,
+      "data": {
+        "client": 365,
+        "scroll": 365,
+        "overflow": 0,
+        "bottomGap": 0
+      }
+    },
+    {
+      "name": "narrow 375px: table and formula stay within panel",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:\n\n  assert.ok(formula.overflow<=1)\n\n    at file:///Users/samson/workspace/my_project/customer_manage_platform/.lti/features/2026-10-12-agent-chat-markdown/discovery/research/streamdown-poc/verify.mjs:40:44\n    at async test (file:///Users/samson/workspace/my_project/customer_manage_platform/.lti/features/2026-10-12-agent-chat-markdown/discovery/research/streamdown-poc/verify.mjs:9:46)\n    at async file:///Users/samson/workspace/my_project/customer_manage_platform/.lti/features/2026-10-12-agent-chat-markdown/discovery/research/streamdown-poc/verify.mjs:36:1"
+    },
+    {
+      "name": "stream: Mermaid renders only after closing fence and not on later tokens",
+      "pass": true,
+      "data": {
+        "requestsWhileOpen": 0,
+        "requestsAfterFence": 1,
+        "requestsAfterSettled": 1
+      }
+    },
+    {
+      "name": "stream: complete sample, one-character chunks",
+      "pass": true,
+      "data": {
+        "chars": 587
+      }
+    },
+    {
+      "name": "invalid Mermaid and math preserve content without page crash",
+      "pass": true,
+      "data": {
+        "badMathText": "\\unknownCommand\n𝑥\n\\unknownCommandx"
+      }
+    },
+    {
+      "name": "stopped incomplete fence behavior",
+      "pass": true,
+      "data": {
+        "incomplete": "false",
+        "svg": 1,
+        "text": "**尚未闭合\n\nMermaid\n复制源码\n放大\n\nA\n\nB"
+      }
+    },
+    {
+      "name": "HTML and dangerous URL are inert",
+      "pass": true
+    },
+    {
+      "name": "async diagram growth: original scroll versus ResizeObserver",
+      "pass": true,
+      "data": [
+        {
+          "fix": false,
+          "client": 661,
+          "scroll": 661,
+          "overflow": 0,
+          "bottomGap": 347
+        },
+        {
+          "fix": true,
+          "client": 661,
+          "scroll": 661,
+          "overflow": 0,
+          "bottomGap": 0
+        }
+      ]
+    },
+    {
+      "name": "cold network stages: closed, plain text, math, code, Mermaid",
+      "pass": true,
+      "data": [
+        {
+          "label": "closed",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-Bfr2cwzu.css",
+            "index-CPSoeQgX.js"
+          ],
+          "jsBytes": 198003,
+          "jsGzipBytes": 63497,
+          "cssBytes": 17603,
+          "fontBytes": 0
+        },
+        {
+          "label": "text",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-Bfr2cwzu.css",
+            "index-CPSoeQgX.js",
+            "Renderer-JuEJrV7w.js",
+            "chunk-D32TOXHM-C5mPIIB2.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-Bjb4w-jR.css",
+            "dist-DkTIVYs7.js"
+          ],
+          "jsBytes": 705723,
+          "jsGzipBytes": 220324,
+          "cssBytes": 20473,
+          "fontBytes": 0
+        },
+        {
+          "label": "math",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-Bfr2cwzu.css",
+            "index-CPSoeQgX.js",
+            "Renderer-JuEJrV7w.js",
+            "chunk-D32TOXHM-C5mPIIB2.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-Bjb4w-jR.css",
+            "dist-DkTIVYs7.js",
+            "CodePlugin-0FylbkQ7.js",
+            "dist-DE54G8S6.js",
+            "MathPlugin-CBd5gWyM.js",
+            "katex.min-Cw91Fjk9.js",
+            "katex-BjSPyWz5.js"
+          ],
+          "jsBytes": 1169167,
+          "jsGzipBytes": 361960,
+          "cssBytes": 20473,
+          "fontBytes": 0
+        },
+        {
+          "label": "code",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-Bfr2cwzu.css",
+            "index-CPSoeQgX.js",
+            "Renderer-JuEJrV7w.js",
+            "chunk-D32TOXHM-C5mPIIB2.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-Bjb4w-jR.css",
+            "dist-DkTIVYs7.js",
+            "CodePlugin-0FylbkQ7.js",
+            "dist-DE54G8S6.js",
+            "MathPlugin-CBd5gWyM.js",
+            "katex.min-Cw91Fjk9.js",
+            "katex-BjSPyWz5.js",
+            "highlighted-body-KQOG7T2V-DojWiTqr.js",
+            "typescript-DOu2WMV5.js",
+            "github-light-EUqPIrTm.js",
+            "github-dark-C-LZuMrd.js"
+          ],
+          "jsBytes": 1373544,
+          "jsGzipBytes": 383521,
+          "cssBytes": 20473,
+          "fontBytes": 0
+        },
+        {
+          "label": "mermaid",
+          "files": [
+            "rolldown-runtime-QTnfLwEv.js",
+            "index-Bfr2cwzu.css",
+            "index-CPSoeQgX.js",
+            "Renderer-JuEJrV7w.js",
+            "chunk-D32TOXHM-C5mPIIB2.js",
+            "lib-BvGd2E-G.js",
+            "space-separated-tokens-IJiqTQpk.js",
+            "micromark-factory-space-BlnZgDIc.js",
+            "Renderer-Bjb4w-jR.css",
+            "dist-DkTIVYs7.js",
+            "CodePlugin-0FylbkQ7.js",
+            "dist-DE54G8S6.js",
+            "MathPlugin-CBd5gWyM.js",
+            "katex.min-Cw91Fjk9.js",
+            "katex-BjSPyWz5.js",
+            "highlighted-body-KQOG7T2V-DojWiTqr.js",
+            "typescript-DOu2WMV5.js",
+            "github-light-EUqPIrTm.js",
+            "github-dark-C-LZuMrd.js",
+            "dist-CFjk_NZY.js",
+            "chunk-Y2CYZVJY-DsF7k-Jl.js",
+            "src-_wZywoZs.js",
+            "chunk-DU6HZSFF-Du2ZHwSo.js",
+            "chunk-75Z2AOVW-u3bq2EjE.js",
+            "dist-D9sYb5Oa.js",
+            "chunk-CLGD4ZFX-sVfAlgiH.js",
+            "chunk-P2QGCYS3-090Jd4MW.js",
+            "chunk-PWAF6VOD-D9U4ZJc6.js",
+            "chunk-GMAD6QVW-apSdC1yV.js",
+            "chunk-4HAMMTFA-DmyQrqLH.js",
+            "rough.esm-CSKSodPl.js",
+            "chunk-GVQU2GXP-C04DmLzO.js",
+            "chunk-L3NEJ4N5-7u2gQptx.js",
+            "line-ZHlok0Wo.js",
+            "chunk-OSK3NFVY-B2rp1jUP.js",
+            "path-BWPyau1x.js",
+            "array-BifhSqXX.js",
+            "chunk-2E4U76K2-C0NweCVh.js",
+            "graphlib-DS17s2tU.js",
+            "chunk-LNGE3PJU-DNNNwF8Y.js",
+            "chunk-TLUHSLCS-B4GGDTzT.js",
+            "flowDiagram-HODETNUW-BuKnifp7.js",
+            "chunk-F27PBJKO-CvB8nNkh.js",
+            "chunk-POPQ4Y6H-J4Oybiip.js",
+            "chunk-XXDRQBXY-BuE3VzE_.js",
+            "channel-D988f3So.js",
+            "chunk-SHT3W25Y-u9_aLYKX.js",
+            "chunk-5VM5RSS4-ZNzvKenW.js",
+            "dagre-GXQ25YYZ-CqBCFA2K.js",
+            "dagre-CNOzUhxk.js"
+          ],
+          "jsBytes": 2166990,
+          "jsGzipBytes": 593848,
+          "cssBytes": 20473,
+          "fontBytes": 0
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "assets": {
+    "count": 498,
+    "totalBytes": 15352402
+  }
+}
