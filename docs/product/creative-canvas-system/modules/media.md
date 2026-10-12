@@ -79,7 +79,7 @@ Create 和 Complete 各自使用客户端 operation_id，成功后保存各自�
 
 创建会话在账号配额锁内预留声明大小；完成后以可信字节数核算。实际超过许可/预留上限时不得擅自发布；如需增加预留仍须锁配额核验，失败清理临时对象并返回限额原因。
 
-预留会话在上传阶段代表占用；首次正式 Blob 入库时以幂等结算标记将 reserved_bytes 转为 stored_bytes，重复任务不重复加容量。派生对象也是独立 Blob，产生前预留预算；非必要预览容量不足时回落类型卡，不破坏可用原件。staging 重试产生的临时占用需单独限制和对账，不因不计入摄影师 stored_bytes 而允许无界耗盘。
+预留会话在上传阶段代表占用；首次正式 Blob 入库时以幂等结算标记将 reserved_bytes 转为 stored_bytes，重复任务不重复加容量。派生对象也是独立 Blob，产生前预留预算；非必要预览容量不足时回落类型卡，不破坏可用原件。staging 重试产生的临时占用需单独限制和对账，不因不计入摄影师 stored_bytes 而允许无界耗盘。图片编辑预览是另一类不计额度的 ready blob（`quota_booked_at` 为空），只由有效候选持有，采用时才绑定内容并计入额度，数量由候选上限与创建频率约束，回收见 §6。
 
 发布短事务按统一锁序核对账号/库配额、上传、目标根和修订/Blob，建立有效使用方引用；失败回滚，外部对象暂存给恢复任务。目标变化导致候选时，pending 候选本身持有修订引用。清空上传临时 blob_id 与建立新保留在同一事务，不允许中间存在无主窗口。
 
@@ -115,11 +115,60 @@ Local 与 OSS 各提供适配器。Local 的分片由鉴权 API 写本地受控�
 
 ## 6. GC、恢复和上线约束
 
-新对象仅在 creative-v2/{account}/staging 与 blobs，旧 creative/、planning/、avatars/ 不属于新清理范围。GC 按内容保留→对象占有的顺序核实；读取保护/校验任务/上传临时持有/受信 hold 均参与判断。关系异常隔离该范围，禁止把漏引用当孤立对象删除。
+新对象仅在 creative-v2/{account}/staging 与 blobs，旧 creative/、planning/、avatars/ 不属于新清理范围。GC 按内容保留→对象占有的顺序核实；读取保护/校验任务/上传临时持有/受信 hold 均参与判断。关系异常隔离该范围，禁止把漏引用当孤立对象删除。任何永久 hold 只由迁移/备份受信流程创建并记录理由，普通请求不能制造无限保留。正式恢复需覆盖数据库与固定对象版本，不能只备份当前列表。
 
-新对象标 deleting 后至少留配置宽限，建议起点 48 小时；完整恢复与生命周期验收前只运行只读扫描，不启用物理删除。任何永久 hold 只由迁移/备份受信流程创建并记录理由，普通请求不能制造无限保留。正式恢复需覆盖数据库与固定对象版本，不能只备份当前列表。
+**2026-10-12 修订（owner 拍板本期实现）**：schema 早已预留 blob 的 deleting/deleted、delete_after、quota_booked_at/quota_released_at 与到期索引，但回收程序一直没有实现：`stored_bytes` 全仓只增不减，资产库永久删除（`purgeAsset`）只删资产行，文件与额度都不回收。本期补齐下列设计，并作为图片编辑一期的前置（编辑预览依赖它回收，见[图片编辑后端设计](image-editing-backend.md)）。
 
-测试矩阵与分阶段验证见 [实施切片](implementation-slices.md)。具体 OSS 权限/CORS 仍沿[部署契约](../../../dev/object-storage.md#创意画布新版媒体部署契约待实施)，未执行真实环境验证时必须标明。
+### 6.1 不变量
+
+- 节点、资产、版本共享同一份不可变修订和 blob；放进画布在行为上等同复制，存储上不复制。额度按 blob 计一次，与被多少处使用无关。
+- 只回收「没有任何持有方」的修订和 blob。持有方没有登记完整，不能开启物理删除。
+- 标记事务先取账号写屏障 `LockCreativeWrite`，与该账号全部创意写入串行（`RequireCreativeCapability` 内部也取这把锁）；新增引用仍须经 `RequireUsable` / `requireReadyBlob` 锁行并要求 ready，被标记后的修订和 blob 不能再被引用。
+- 额度只在对象删除确认后释放一次，以 `quota_released_at` 为唯一释放标记；结果未知保持 deleting，不提前退额度，也不回到 ready。
+
+### 6.2 持有方登记
+
+| 层级 | 持有方 |
+|---|---|
+| 修订 | `creativereference` 的 `liveOwnerCondition`：资产（含回收站）、节点、消息、Agent checkpoint / context、撤销记录（未过期）、节点输入、Prompt 引用、未删除版本及其输入、执行引用（保留期内或未结束）、文档、待处理上传候选、受信 hold；新增：未结束且未过期的图片编辑候选的源修订 |
+| blob | 修订的对象绑定 `creative_content_objects`；未结束上传的 `blob_id`；写入中 / 已存储的生成导入；未结束且未过期的图片编辑候选；未过期的读 pin |
+| 随 blob 删除 | `creative_blob_palettes`、`creative_media_facts` 等派生事实 |
+
+开启前必须逐表定性、目前尚未登记的引用：`creative_run_inputs`、`creative_egress_consent_contents`、`llm_generation_outputs`，以及 `creative_generation_imports`（它没有执行外键，需确定「导入的所属生成已终结且 lease 过期」的判定方法，届时一并释放其 reserved_bytes，修正「停在 stored 无人提交」的遗留）。
+
+新增 schema 守卫测试：枚举创意表中所有引用修订或 blob 的列，每列必须登记为「持有」或「不持有」，漏登记即失败，防止以后新表静默漏引用。
+
+### 6.3 回收步骤
+
+GC 是 creative-worker `maintenance` 队列（并发 1）中的周期任务，建议每 10 分钟逐账号执行，每批约 100 行，单批事务保持短小以免长时间占用账号写屏障。停用账号同样回收，GC 直接取写屏障，不走 `RequireCreativeCapability`。
+
+1. **修订**：扫描 state=ready 的图片 / 视频 / 音频修订中无持有方者；事务内取写屏障 → `FOR UPDATE` 重查 → 置 `deleted` 并删除其对象绑定。这一步不碰外部存储，不需要中间态。文本修订不占字节，一期不回收。
+2. **blob**：扫描 ready 且无对象绑定、无持有方的 blob，以及超过最长 lease（建议 1 小时）仍无人认领的 verifying blob；事务内取写屏障 → `FOR UPDATE` 重查 → 置 deleting 并写 `delete_after`。
+3. **删除对象**：`delete_after` 到期后在事务外删除对象并做 HEAD 不存在确认；再在事务内置 deleted，若已计额度且未释放，则扣减 `stored_bytes` 并写 `quota_released_at`，同时删除派生事实。失败或结果未知保持 deleting，下一轮重试。
+
+| blob 类别 | 宽限 | 理由 |
+|---|---|---|
+| 已计额度（曾绑定内容） | 24 小时 | 误删兜底，并覆盖票据与 read pin |
+| 从未绑定、未计额度（图片编辑预览） | 15 分钟 | 不可能被内容引用，只需覆盖 10 分钟读票据与 120 秒 read pin |
+
+对象删除方式：`versionedfs.Adapter` 现有 `DeleteExact(key, version)` 会永久删除指定版本。OSS 侧新增「删除当前对象」方法，只留 delete marker，固定版本转为 noncurrent，由 bucket 生命周期规则在 N 天后清除（[部署契约](../../../dev/object-storage.md)建议 30 天）；这段时间内可凭库中保留的 key 与 version 恢复。Local 驱动没有版本兜底，沿用 `DeleteExact`，仅用于开发与自部署。
+
+### 6.4 额度与资产库体验
+
+- 永久删除后空间不会立即释放：需要等 24 小时宽限，并且该内容不再被任何画布、历史版本、撤销记录或生成记录使用（生成执行结果保留 90 天）。确认弹窗写明「画布里已经用到的副本会保留，空间在它们也不再使用后释放」；资产库按约定不展示具体被哪个画布使用。
+- 用量面板增加「待释放」：已计额度且处于 deleting 的 blob 字节合计。
+
+### 6.5 上线顺序
+
+GC 用一个运行模式配置区分「只读扫描」与「标记并删除」。创意空间截至 2026-10-12 尚未上生产，没有存量数据可扫，因此：
+
+1. 完成持有方登记与守卫测试；任一表未定性，不进入下一步。
+2. 本地 / 测试库只读扫描：先走完上传、生成、Agent 运行、撤销、版本删除、资产永久删除等真实流程，再按账号输出「应回收」的修订数、blob 数与字节，逐项核对与预期一致，不做任何标记。
+3. 恢复演练：从 deleted 的 blob 记录按 key 与 version 找回对象。通过后在本地 / 测试环境开启标记与删除。
+4. 首次上生产时 GC 先以只读模式运行 3 天，核对指标后再切到删除模式。creative-worker 的镜像与部署随创意空间发布一起补齐，不算本条前置。
+5. 图片编辑在此之上上线，不另做回收程序。
+
+指标：每轮扫描 / 标记 / 删除数量与字节、deleting 积压、删除失败、待释放额度、单批持锁时长。测试矩阵与分阶段验证见 [实施切片](implementation-slices.md)。具体 OSS 权限/CORS 仍沿[部署契约](../../../dev/object-storage.md#创意画布新版媒体部署契约待实施)；新增的删除当前对象需要 `oss:DeleteObject`，未执行真实环境验证时必须标明。
 
 
 ## 第三批附件目标接入
