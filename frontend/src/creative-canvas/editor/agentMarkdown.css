@@ -225,3 +225,29 @@
   outline: 2px solid #a9cbef;
   outline-offset: 2px;
 }
+.cc-agent-markdown .cc-md-image {
+  display: block;
+  max-width: 100%;
+  max-height: 360px;
+  height: auto;
+  object-fit: contain;
+  margin: 8px 0;
+  border-radius: 6px;
+}
+.cc-md-media {
+  display: block;
+  min-width: 0;
+  margin: 10px 0;
+}
+.cc-md-media :is(video, audio) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: 360px;
+  border-radius: 6px;
+}
+.cc-md-media-link {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}

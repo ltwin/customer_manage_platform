@@ -147,6 +147,7 @@ export function MediaFigure({
         <video
           ref={video}
           src={url}
+          aria-label={title}
           controls={controls}
           preload="metadata"
           playsInline
@@ -177,7 +178,7 @@ export function MediaFigure({
       ) : controls ? (
         <div className="cc-audio nodrag">
           <AudioLines size={26} />
-          <audio src={url} controls preload="metadata" onLoadedMetadata={onReady} onError={() => setFailed(true)} />
+          <audio src={url} aria-label={title} controls preload="metadata" onLoadedMetadata={onReady} onError={() => setFailed(true)} />
         </div>
       ) : (
         <span className="cc-audio" aria-hidden="true">

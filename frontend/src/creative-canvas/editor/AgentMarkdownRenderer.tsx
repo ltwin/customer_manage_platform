@@ -18,6 +18,7 @@ import {
 import remend from 'remend'
 import { closedCodeFence, markdownFeatures } from './markdown.ts'
 import type { AgentMarkdownProps } from './AgentMarkdown.tsx'
+import { MarkdownImage, MarkdownLink } from './AgentMarkdownMedia.tsx'
 
 import Diagram from './MermaidDiagram.tsx'
 const BlockSource = createContext('')
@@ -68,13 +69,13 @@ function MarkdownCode(props: ComponentProps<typeof defaultComponents.code>) {
 const components: Components = {
   code: MarkdownCode,
   strong: ({ children }) => <strong>{children}</strong>,
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer">
-      {children}
-    </a>
-  ),
-  img: ({ alt }) => (
-    <span className="cc-md-image-alt">[图片：{alt || '外部图片'}]</span>
+  a: ({ href, children }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
+  img: ({ src, alt, title }) => (
+    <MarkdownImage
+      src={typeof src === 'string' ? src : undefined}
+      alt={alt}
+      title={title}
+    />
   ),
 }
 const translations = { copyCode: '复制代码', copied: '已复制' }

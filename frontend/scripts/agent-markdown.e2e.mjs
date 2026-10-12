@@ -1,7 +1,7 @@
 // Rendering acceptance against the actual component and project styles.
 // Start Vite first, then: node scripts/agent-markdown.e2e.mjs
 import assert from 'node:assert/strict'
-import { writeFile, rm, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, rm, mkdir } from 'node:fs/promises'
 import { chromium } from 'playwright'
 const fixture = new URL('../.markdown-qa.html', import.meta.url)
 const output = process.env.MARKDOWN_EVIDENCE || '/tmp/agent-markdown-evidence'
@@ -21,6 +21,27 @@ const errors = []
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 950 } })
   page.on('pageerror', (error) => errors.push(error.message))
+  let imageFailures = 0
+  await page.route('https://media.example/**', async (route) => {
+    const name = new URL(route.request().url()).pathname.split('/').at(-1)
+    if (name === 'retry.png' && imageFailures++ === 0)
+      return route.fulfill({ status: 404, body: 'missing' })
+    if (name === 'bad.webm')
+      return route.fulfill({ status: 404, body: 'missing' })
+    const file = name === 'retry.png' ? 'image.png' : name
+    const mime = {
+      'image.png': 'image/png',
+      'video.webm': 'video/webm',
+      'audio.wav': 'audio/wav',
+    }[file]
+    if (!mime) return route.abort()
+    return route.fulfill({
+      contentType: mime,
+      body: await readFile(
+        new URL(`./fixtures/agent-media/${file}`, import.meta.url),
+      ),
+    })
+  })
   await page.goto(
     `${process.env.CREATIVE_AGENT_URL || 'http://127.0.0.1:5179'}/.markdown-qa.html`,
   )
@@ -141,13 +162,74 @@ try {
     ),
   )
   await show(
-    '<script>window.__bad=1</script>\n\n[bad](javascript:alert(1))\n\n![外部图](https://example.com/track.png)',
+    '<script>window.__bad=1</script>\n\n[bad](javascript:alert(1))\n\n![不可用](javascript:alert%281%29)\n\n安全正文',
   )
-  await page.getByText('[图片：外部图]').waitFor()
+  await page.getByText('安全正文', { exact: true }).waitFor()
   assert.equal(await page.locator('.cc-agent-markdown script').count(), 0)
   assert.equal(await page.locator('.cc-agent-markdown img').count(), 0)
   assert.equal(await page.locator('a[href^="javascript:"]').count(), 0)
   assert.equal(await page.evaluate(() => window.__bad), undefined)
+  // Actual media decoding/playback, failure recovery and stable streaming nodes.
+  const mediaSource =
+    '![拍摄参考](https://media.example/image.png)\n\n[视频样片](https://media.example/video.webm?signature=example)\n\n[配乐试听](https://media.example/audio.wav)'
+  await show(mediaSource, true)
+  await page.waitForFunction(
+    () => document.querySelector('.cc-md-image')?.naturalWidth === 1280,
+  )
+  const video = page.locator('.cc-md-media video')
+  const audio = page.locator('.cc-md-media audio')
+  for (const player of [video, audio]) {
+    await player.scrollIntoViewIfNeeded()
+    await page.waitForFunction(
+      (selector) => document.querySelector(selector)?.readyState >= 2,
+      await player.evaluate((el) => el.tagName.toLowerCase()),
+    )
+    assert.equal(
+      await player.evaluate((el) => el.controls && !el.autoplay && el.paused),
+      true,
+    )
+    await player.evaluate(async (el) => {
+      el.dataset.probe = 'stable'
+      await el.play()
+    })
+    await page.waitForFunction(
+      (selector) => document.querySelector(selector)?.currentTime > 0,
+      await player.evaluate((el) => el.tagName.toLowerCase()),
+    )
+    await player.evaluate((el) => el.pause())
+  }
+  await show(mediaSource + '\n\n继续生成文字', true)
+  await page.getByText('继续生成文字').waitFor()
+  assert.equal(await video.getAttribute('data-probe'), 'stable')
+  assert.equal(await audio.getAttribute('data-probe'), 'stable')
+  assert.equal(
+    await log.evaluate((el) => el.scrollWidth <= el.clientWidth + 1),
+    true,
+  )
+  assert.equal(
+    await page.locator('.cc-md-image').getAttribute('referrerpolicy'),
+    'no-referrer',
+  )
+  await page.screenshot({ path: `${output}/media-mobile.png` })
+  await page.setViewportSize({ width: 1280, height: 950 })
+  await page.screenshot({ path: `${output}/media-desktop.png` })
+  await show('![重试图片](https://media.example/retry.png)')
+  await page.getByText('图片加载失败：重试图片').waitFor()
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('.cc-md-image')?.naturalWidth === 1280,
+  )
+  assert.equal(imageFailures, 2)
+  await show('[失效视频](https://media.example/bad.webm)')
+  await page.getByText('媒体无法播放，可打开原链接查看。').waitFor()
+  assert.equal(
+    await page.getByRole('link', { name: '失效视频' }).getAttribute('href'),
+    'https://media.example/bad.webm',
+  )
+  await show('[恢复视频](https://media.example/video.webm)')
+  await page.waitForFunction(
+    () => document.querySelector('video')?.readyState >= 2,
+  )
   const failedPage = await browser.newPage()
   await failedPage.route('**/*streamdown*mermaid*', (route) =>
     route.abort('failed'),
@@ -168,7 +250,7 @@ try {
   await failedPage.close()
   assert.deepEqual(errors, [])
   console.log(
-    'PASS: rich Markdown, computed styles, 375px overflow, nested/duplicate diagrams, actual fence closure, malformed content and inert HTML/URLs',
+    'PASS: rich Markdown, computed styles, 375px overflow, nested/duplicate diagrams, actual fence closure, malformed content, inert HTML/URLs, image recovery and real audio/video playback',
   )
 } finally {
   await browser.close()
