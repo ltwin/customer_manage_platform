@@ -1293,7 +1293,7 @@ function Workspace({ account }: { account: string }) {
               <PencilLine size={16} />
               <span>重命名</span>
             </button>
-            <Link role="menuitem" to="/creative">
+            <Link role="menuitem" to="/creative/projects">
               <LayoutGrid size={16} />
               <span>所有项目</span>
             </Link>

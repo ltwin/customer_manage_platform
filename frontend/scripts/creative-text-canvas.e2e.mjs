@@ -171,7 +171,7 @@ async function saved(p) {
   await p.waitForFunction(
     () => {
       const button = document.querySelector(
-        'button.ch-create, .cc-library button[aria-label="新增资产"]',
+        '.pp-head button.btn-primary, .cc-library button[aria-label="新增资产"]',
       )
       return (
         button &&
@@ -221,7 +221,7 @@ try {
   await page.goto(`${url}/creative/projects`)
   await saved(page)
   await openLibrary(page)
-  await page.getByRole('heading', { name: '我的项目', exact: true }).waitFor()
+  await page.getByRole('heading', { name: '项目', exact: true }).waitFor()
   assert.equal(await page.locator('.react-flow').count(), 0)
   await page.screenshot({ path: `${output}/home-empty.png`, fullPage: true })
   await page
@@ -249,14 +249,11 @@ try {
   assert.equal(await page.locator('.cc-asset').count(), 1)
   async function createProject(name) {
     await page.getByRole('link', { name: '返回创意空间', exact: true }).click()
+    // 返回的是首页；新建入口只在项目页右上角。
+    await page.getByRole('complementary', { name: '创意空间导航' }).getByRole('link', { name: '项目', exact: true }).click()
     await saved(page)
-    assert.equal(await page.locator('.ch-create input').count(), 0)
     if (name === '第一张画布') loseProject = true
-    // Every creation entry uses the same one-click flow.
-    const createButton =
-      name === '第一张画布'
-        ? page.getByRole('button', { name: '创建项目', exact: true })
-        : page.getByRole('button', { name: '开启新的创作' })
+    const createButton = page.getByRole('button', { name: '新建项目', exact: true })
     await createButton.evaluate((button) => {
       button.click()
       button.click()
@@ -573,9 +570,9 @@ try {
   await page.screenshot({ path: `${output}/home-desktop.png`, fullPage: true })
   await page.getByRole('button', { name: '已归档', exact: true }).click()
   await page
-    .getByRole('heading', { name: '还没有归档项目', exact: true })
+    .getByText('还没有归档的项目。归档后项目会留在这里，随时可以恢复。')
     .waitFor()
-  await page.getByRole('button', { name: '进行中', exact: true }).click()
+  await page.getByRole('button', { name: '当前', exact: true }).click()
   await page
     .getByRole('link', { name: '打开项目：第一张画布', exact: true })
     .waitFor()
@@ -595,7 +592,7 @@ try {
       await page.evaluate(() => {
         window.holdProjectCompletion = true
       })
-    await page.getByRole('button', { name: '创建项目', exact: true }).click()
+    await page.getByRole('button', { name: '新建项目', exact: true }).click()
     if (recover) {
       await page.getByRole('button', { name: '查询并恢复原保存' }).waitFor()
       await page.evaluate(() => {

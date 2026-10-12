@@ -1,13 +1,75 @@
-import { Aperture, ArrowUpRight, Archive, FolderOpen, Plus } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import {
+  Archive,
+  ArchiveRestore,
+  Ellipsis,
+  ExternalLink,
+  PencilLine,
+  Plus,
+  Search,
+} from 'lucide-react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { ApiError } from '../../api/transport.ts'
 import * as api from '../editor/api.ts'
 import { errorMessage } from '../editor/queue.ts'
 import { useJournal } from '../editor/useJournal.ts'
 import '../editor/workspace.css'
 import AppSidebar from './AppSidebar.tsx'
-import { emptyProjectPage as emptyPage } from './projectList.ts'
+import ProjectCover from './ProjectCover.tsx'
+import {
+  canvasPath,
+  editedAgo,
+  parseSort,
+  projectSorts,
+  projectState,
+  useProjectList,
+} from './projectList.ts'
+import { decideProjectName, projectNameMessages } from './projectName.ts'
 import './projects.css'
+
+type Toast = { text: string; action?: { label: string; run: () => void } }
+type StateResult = { project_id: string; revision: string; archived?: boolean }
+type Op = { path: string; body: string; operation: string }
+
+const busyNote = '有任务在运行，结束后可归档'
+
+// 每次点击生成一个操作身份；结果未知时重试复用同一个身份，服务端按它回放。
+function newOp(path: string, payload: unknown): Op {
+  const operation = crypto.randomUUID()
+  return {
+    path,
+    operation,
+    body: JSON.stringify({
+      operation_id: operation,
+      client_created_at: new Date().toISOString(),
+      payload,
+    }),
+  }
+}
+
+// 4xx（408、429 除外）说明服务端明确拒绝了这次操作；其余情况结果未知。
+function definitelyRejected(e: unknown): e is ApiError {
+  return (
+    e instanceof ApiError &&
+    e.status >= 400 &&
+    e.status < 500 &&
+    e.status !== 408 &&
+    e.status !== 429
+  )
+}
+
+// 空值表示去掉这个参数，默认值不写进网址。
+function withParams(
+  current: URLSearchParams,
+  changes: Record<string, string>,
+): URLSearchParams {
+  const next = new URLSearchParams(current)
+  for (const [name, value] of Object.entries(changes)) {
+    if (value) next.set(name, value)
+    else next.delete(name)
+  }
+  return next
+}
 
 export default function ProjectsPage() {
   const account = api.currentAccount()
@@ -22,7 +84,7 @@ function Projects({ account }: { account: string }) {
   const { queue, error: storageError } = useJournal(account)
   useEffect(() => {
     const previous = document.title
-    document.title = '创意空间 · 我的项目'
+    document.title = '项目 · 创意空间'
     return () => {
       document.title = previous
     }
@@ -30,13 +92,19 @@ function Projects({ account }: { account: string }) {
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const archived = params.get('view') === 'archived'
-  const [page, setPage] = useState<api.ProjectPage>(emptyPage)
-  const [loading, setLoading] = useState(true)
-  const [moreLoading, setMoreLoading] = useState(false)
+  const q = (params.get('q') ?? '').trim().slice(0, 100)
+  const sort = parseSort(params.get('sort'))
+  const list = useProjectList(archived, q, sort)
+  const page = list.page
+  // 输入框的草稿跟着网址里的搜索词走：网址被别处改了（返回、清除）就显示网址里的。
+  const [draft, setDraft] = useState({ q, text: q })
+  const text = draft.q === q ? draft.text : q
   const [submitting, setSubmitting] = useState(false)
-  const [error, setError] = useState('')
   const [localError, setLocalError] = useState('')
-  const [tick, setTick] = useState(0)
+  const [toast, setToast] = useState<Toast | null>(null)
+  const [menu, setMenu] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [changes, setChanges] = useState(0)
   const lifetime = useRef(0)
   useEffect(() => {
     lifetime.current += 1
@@ -44,7 +112,6 @@ function Projects({ account }: { account: string }) {
       lifetime.current += 1
     }
   }, [])
-  const generation = useRef(0)
   const job = queue?.value.job
   const blocked =
     !queue ||
@@ -54,31 +121,28 @@ function Projects({ account }: { account: string }) {
     !!localError ||
     submitting
 
+  function update(changes: Record<string, string>) {
+    setParams((current) => withParams(current, changes), { replace: true })
+  }
+
+  // 搜索词防抖 300ms 再写进网址，网址变化才会请求。
   useEffect(() => {
-    const controller = new AbortController()
-    const current = ++generation.current
-    setLoading(true)
-    setMoreLoading(false)
-    setPage(emptyPage)
-    void api
-      .read<api.ProjectPage>(
-        `/projects?archived=${archived}`,
-        controller.signal,
-      )
-      .then((result) => {
-        if (!controller.signal.aborted && current === generation.current) {
-          setPage(result)
-          setError('')
-        }
+    const next = text.trim()
+    if (next === q) return
+    const timer = setTimeout(() => {
+      setDraft({ q: next, text })
+      setParams((current) => withParams(current, { q: next }), {
+        replace: true,
       })
-      .catch((e: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(e))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
-      })
-    return () => controller.abort()
-  }, [archived, tick])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [text, q, setParams])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), toast.action ? 6000 : 2400)
+    return () => clearTimeout(timer)
+  }, [toast])
 
   useEffect(() => {
     const leave = (event: BeforeUnloadEvent) => {
@@ -103,10 +167,10 @@ function Projects({ account }: { account: string }) {
         `/creative/canvases/${encodeURIComponent(result.default_canvas_id)}`,
       )
     } else {
-      setParams({})
-      setTick((value) => value + 1)
+      list.reload()
     }
   }
+  // 新建走 journal：结果不确定时按操作身份查回执，不会建出两个项目。
   async function create() {
     if (!queue || blocked || queue.value.job || queue.busy) return
     const currentLifetime = lifetime.current
@@ -122,9 +186,7 @@ function Projects({ account }: { account: string }) {
         'project-form',
       )
       if (!isCurrentPage()) return
-      if (!queue.value.job) {
-        openCreatedProject(result)
-      }
+      if (!queue.value.job) openCreatedProject(result)
     } catch (e) {
       if (isCurrentPage()) setLocalError(errorMessage(e))
     } finally {
@@ -145,7 +207,7 @@ function Projects({ account }: { account: string }) {
       if (!isCurrentPage()) return
       if (!queue.value.job) {
         if (creatingProject) openCreatedProject(result)
-        else setTick((value) => value + 1)
+        else list.reload()
       }
     } catch (e) {
       if (isCurrentPage()) setLocalError(errorMessage(e))
@@ -153,90 +215,151 @@ function Projects({ account }: { account: string }) {
       if (isCurrentPage()) setSubmitting(false)
     }
   }
-  async function more() {
-    if (loading || moreLoading || !page.next_cursor) return
-    const current = generation.current
-    setMoreLoading(true)
+
+  // 改名、归档、恢复直接发请求，不占 journal，不影响新建。
+  async function perform(
+    op: Op,
+    label: string,
+    done: (result: StateResult) => void,
+  ) {
     try {
-      const result = await api.read<api.ProjectPage>(
-        `/projects?archived=${archived}&cursor=${encodeURIComponent(page.next_cursor)}`,
-      )
-      if (current === generation.current)
-        setPage((previous) => ({
-          ...result,
-          items: [
-            ...previous.items,
-            ...result.items.filter(
-              (p) => !previous.items.some((old) => old.id === p.id),
-            ),
-          ],
-        }))
+      done(await api.send<StateResult>(account, op.path, op.body, op.operation))
+      setChanges((value) => value + 1)
     } catch (e) {
-      if (current === generation.current) setError(errorMessage(e))
-    } finally {
-      if (current === generation.current) setMoreLoading(false)
+      if (definitelyRejected(e)) {
+        setToast({
+          text:
+            e.code === 'creative_revision_conflict'
+              ? projectNameMessages.conflict
+              : e.code === 'creative_project_busy'
+                ? busyNote
+                : e.message,
+        })
+      } else {
+        setToast({
+          text: `${label}结果未确认`,
+          action: { label: '重试', run: () => void perform(op, label, done) },
+        })
+      }
+      list.reload()
     }
   }
 
+  function rename(project: api.Project, input: string) {
+    setRenaming(null)
+    const decision = decideProjectName(input, project.name)
+    if (decision.kind === 'keep') return
+    if (decision.kind === 'too-long') {
+      setToast({ text: projectNameMessages.tooLong })
+      return
+    }
+    const { name } = decision
+    list.patch((items) =>
+      items.map((p) => (p.id === project.id ? { ...p, name } : p)),
+    )
+    void perform(
+      newOp(`/projects/${encodeURIComponent(project.id)}/rename`, {
+        expected_revision: project.revision,
+        name,
+      }),
+      '改名',
+      list.reload,
+    )
+  }
+
+  // 归档或恢复成功后卡片移出当前标签；撤销就是用新的修订号发相反的操作。
+  function setArchived(
+    project: api.Project,
+    archive: boolean,
+    revision: string,
+    undoing = false,
+  ) {
+    const action = archive ? 'archive' : 'restore'
+    void perform(
+      newOp(`/projects/${encodeURIComponent(project.id)}/${action}`, {
+        expected_revision: revision,
+      }),
+      archive ? '归档' : '恢复',
+      (result) => {
+        list.patch((items) => items.filter((p) => p.id !== project.id))
+        list.reload()
+        setToast(
+          undoing
+            ? { text: `已撤销${archive ? '恢复' : '归档'}「${project.name}」` }
+            : {
+                text: `已${archive ? '归档' : '恢复'}「${project.name}」`,
+                action: {
+                  label: '撤销',
+                  run: () =>
+                    setArchived(project, !archive, result.revision, true),
+                },
+              },
+        )
+      },
+    )
+  }
+
+  const empty = page && !page.items.length
   return (
     <div className="cc-workspace cs-app">
-      <AppSidebar current="projects" />
-      <main className="cs-main ch-home">
-        {(storageError || localError || error) && (
-          <section className="ch-notice" role="alert">
-            <p>{storageError || localError || error}</p>
-            <button
-              className="btn"
-              onClick={() => {
-                setTick((value) => value + 1)
-                if (localError && queue)
-                  void queue
-                    .update(queue.value)
-                    .then(() => setLocalError(''))
-                    .catch((e: unknown) => setLocalError(errorMessage(e)))
-              }}
-            >
-              重试
-            </button>
-          </section>
-        )}
-        {job && !queue?.busy && !submitting && (
-          <section className="ch-notice" aria-live="polite">
-            <p>
-              {job.state === 'rejected'
-                ? job.message
-                : '有一笔保存尚未确认，恢复后可继续创建项目。'}
-            </p>
-            {job.state === 'rejected' ? (
+      <AppSidebar current="projects" refresh={changes} />
+      <main className="cs-main">
+        <div className="pp-view">
+          <header className="pp-head">
+            <h1>项目</h1>
+            <div className="pp-seg" role="group" aria-label="项目状态">
               <button
-                className="btn"
-                onClick={() => {
-                  void queue
-                    ?.dismissRejected()
-                    .catch((e: unknown) => setLocalError(errorMessage(e)))
-                }}
+                type="button"
+                aria-pressed={!archived}
+                onClick={() => update({ view: '' })}
               >
-                关闭被拒绝的请求，保留草稿
+                当前
               </button>
-            ) : (
-              <button className="btn" onClick={() => void recover()}>
-                查询并恢复原保存
+              <button
+                type="button"
+                aria-pressed={archived}
+                onClick={() => update({ view: 'archived' })}
+              >
+                已归档
               </button>
-            )}
-          </section>
-        )}
-
-        <section
-          className="ch-projects"
-          aria-labelledby="creativeProjectsTitle"
-        >
-          <div className="ch-section-heading">
-            <div>
-              <p className="ch-eyebrow">A WORK IN PROGRESS</p>
-              <h1 id="creativeProjectsTitle">我的项目</h1>
             </div>
+            <span className="pp-grow" />
+            <label className="pp-search">
+              <Search size={14} />
+              <input
+                type="search"
+                aria-label="搜索项目"
+                placeholder="搜索项目"
+                maxLength={100}
+                value={text}
+                onChange={(event) =>
+                  setDraft({ q, text: event.currentTarget.value })
+                }
+              />
+            </label>
+            <label className="pp-sort">
+              <select
+                aria-label="排序"
+                value={sort}
+                onChange={(event) =>
+                  update({
+                    sort:
+                      event.currentTarget.value === 'edited_desc'
+                        ? ''
+                        : event.currentTarget.value,
+                  })
+                }
+              >
+                {projectSorts.map((s) => (
+                  <option key={s.value} value={s.value}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
-              className="btn"
+              className="btn btn-primary"
+              type="button"
               disabled={blocked}
               aria-busy={submitting}
               onClick={() => void create()}
@@ -244,107 +367,325 @@ function Projects({ account }: { account: string }) {
               <Plus size={16} />
               新建项目
             </button>
-          </div>
-          <div className="ch-list-toolbar">
-            <div className="ch-tabs" role="group" aria-label="项目状态">
-              <button aria-pressed={!archived} onClick={() => setParams({})}>
-                进行中
-              </button>
-              <button
-                aria-pressed={archived}
-                onClick={() => setParams({ view: 'archived' })}
-              >
-                <Archive size={13} />
-                已归档
-              </button>
-            </div>
-            <span>按最近编辑排列</span>
-          </div>
-          {loading ? (
-            <div className="ch-list-state" role="status">
-              正在加载项目…
-            </div>
-          ) : (
-            <>
-              {!error && !page.items.length && (
-                <div className="ch-list-state">
-                  <FolderOpen size={28} strokeWidth={1.2} />
-                  <h3>
-                    {archived ? '还没有归档项目' : '这里，留给你的第一份创作'}
-                  </h3>
-                  <p>
-                    {archived
-                      ? '归档的项目会留在这里，随时可以继续。'
-                      : '新建一个项目，或先去个人资产库收集灵感。'}
-                  </p>
-                </div>
+          </header>
+
+          {(storageError || localError) && (
+            <section className="pp-notice" role="alert">
+              <p>{storageError || localError}</p>
+              {localError && queue && (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() =>
+                    void queue
+                      .update(queue.value)
+                      .then(() => setLocalError(''))
+                      .catch((e: unknown) => setLocalError(errorMessage(e)))
+                  }
+                >
+                  重试
+                </button>
               )}
-              <div className="ch-project-grid">
-                {!archived && (
-                  <button
-                    className="ch-new-card"
-                    disabled={blocked}
-                    aria-busy={submitting}
-                    onClick={() => void create()}
-                  >
-                    <span>
-                      <Plus size={25} strokeWidth={1.2} />
-                    </span>
-                    <strong>开启新的创作</strong>
-                    <small>文字、链接与创作灵感</small>
-                  </button>
-                )}
-                {page.items.map((project, index) => (
-                  <Link
-                    className="ch-project-card"
-                    key={project.id}
-                    to={`/creative/canvases/${encodeURIComponent(project.default_canvas_id)}`}
-                    aria-label={`打开项目：${project.name}`}
-                  >
-                    <div
-                      className={`ch-project-cover ch-cover-${index % 4}`}
-                      aria-hidden="true"
-                    >
-                      <div className="ch-cover-grid" />
-                      <div className="ch-cover-sheet">
-                        <Aperture size={31} strokeWidth={0.8} />
-                        <span>{project.name.slice(0, 1)}</span>
-                      </div>
-                      <span className="ch-cover-caption">CREATIVE CANVAS</span>
-                      <span className="ch-open-arrow">
-                        <ArrowUpRight size={19} />
-                      </span>
-                    </div>
-                    <div className="ch-project-details">
-                      <h3>{project.name}</h3>
-                      <p>
-                        <span>{project.archived ? '已归档' : '私人项目'}</span>
-                        <time dateTime={project.updated_at}>
-                          {new Date(project.updated_at).toLocaleDateString(
-                            'zh-CN',
-                            { month: 'long', day: 'numeric' },
-                          )}
-                        </time>
-                      </p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-              {page.next_cursor && (
-                <div className="ch-more">
+            </section>
+          )}
+          {job && !queue?.busy && !submitting && (
+            <section className="pp-notice" aria-live="polite">
+              <p>
+                {job.state === 'rejected'
+                  ? job.message
+                  : '有一笔保存尚未确认，恢复后可继续创建项目。'}
+              </p>
+              {job.state === 'rejected' ? (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => {
+                    void queue
+                      ?.dismissRejected()
+                      .catch((e: unknown) => setLocalError(errorMessage(e)))
+                  }}
+                >
+                  关闭被拒绝的请求，保留草稿
+                </button>
+              ) : (
+                <button
+                  className="btn"
+                  type="button"
+                  onClick={() => void recover()}
+                >
+                  查询并恢复原保存
+                </button>
+              )}
+            </section>
+          )}
+          {list.error && (
+            <section className="pp-notice" role="alert">
+              <p>{list.error}</p>
+              <button className="btn" type="button" onClick={list.reload}>
+                重试
+              </button>
+            </section>
+          )}
+
+          {!page ? (
+            !list.error && (
+              <p className="pp-empty" role="status">
+                正在加载项目…
+              </p>
+            )
+          ) : empty ? (
+            <div className="pp-empty">
+              {q ? (
+                <>
+                  <p>没有名称包含「{q}」的项目</p>
                   <button
                     className="btn"
-                    disabled={moreLoading}
-                    onClick={() => void more()}
+                    type="button"
+                    onClick={() => {
+                      setDraft({ q: '', text: '' })
+                      update({ q: '' })
+                    }}
                   >
-                    {moreLoading ? '正在加载项目…' : '加载更多项目'}
+                    清除搜索
                   </button>
-                </div>
+                </>
+              ) : archived ? (
+                <p>还没有归档的项目。归档后项目会留在这里，随时可以恢复。</p>
+              ) : (
+                <>
+                  <p>还没有项目</p>
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    disabled={blocked}
+                    onClick={() => void create()}
+                  >
+                    <Plus size={16} />
+                    新建项目
+                  </button>
+                </>
               )}
-            </>
+            </div>
+          ) : (
+            <div className="pp-grid">
+              {page.items.map((project) => (
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  menuOpen={menu === project.id}
+                  renaming={renaming === project.id}
+                  onMenu={(open) => setMenu(open ? project.id : null)}
+                  onRename={() => {
+                    setMenu(null)
+                    setRenaming(project.id)
+                  }}
+                  onRenamed={(value) => rename(project, value)}
+                  onArchive={(archive) => {
+                    setMenu(null)
+                    setArchived(project, archive, project.revision)
+                  }}
+                />
+              ))}
+            </div>
           )}
-        </section>
+          {page?.next_cursor && (
+            <div className="pp-more">
+              <button
+                className="btn"
+                type="button"
+                disabled={list.moreLoading}
+                onClick={() => void list.more()}
+              >
+                {list.moreLoading ? '正在加载项目…' : '加载更多项目'}
+              </button>
+            </div>
+          )}
+        </div>
       </main>
+      {toast && (
+        <div className="pp-toast" role="status">
+          <span>{toast.text}</span>
+          {toast.action && (
+            <button
+              type="button"
+              onClick={() => {
+                const run = toast.action?.run
+                setToast(null)
+                run?.()
+              }}
+            >
+              {toast.action.label}
+            </button>
+          )}
+        </div>
+      )}
     </div>
+  )
+}
+
+function ProjectCard({
+  project,
+  menuOpen,
+  renaming,
+  onMenu,
+  onRename,
+  onRenamed,
+  onArchive,
+}: {
+  project: api.Project
+  menuOpen: boolean
+  renaming: boolean
+  onMenu: (open: boolean) => void
+  onRename: () => void
+  onRenamed: (value: string) => void
+  onArchive: (archive: boolean) => void
+}) {
+  const trigger = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // Enter 和失焦都会提交，只认第一次。
+  const settled = useRef(false)
+
+  const latestOnMenu = useRef(onMenu)
+  useEffect(() => {
+    latestOnMenu.current = onMenu
+  })
+  // 打开时把焦点放到第一项；点菜单外关闭。
+  useEffect(() => {
+    if (!menuOpen) return
+    menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node
+      if (
+        !menuRef.current?.contains(target) &&
+        !trigger.current?.contains(target)
+      )
+        latestOnMenu.current(false)
+    }
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [menuOpen])
+
+  function menuKey(event: KeyboardEvent) {
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>(
+        '[role="menuitem"]:not(:disabled)',
+      ) ?? [],
+    )
+    const index = items.indexOf(document.activeElement as HTMLElement)
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onMenu(false)
+      trigger.current?.focus()
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const step = event.key === 'ArrowDown' ? 1 : -1
+      items[(index + step + items.length) % items.length]?.focus()
+    }
+  }
+
+  return (
+    <article className="pp-card">
+      <Link
+        className="pp-open"
+        to={canvasPath(project)}
+        aria-label={`打开项目：${project.name}`}
+      >
+        <ProjectCover project={project} state={projectState(project)} />
+      </Link>
+      <div className="pp-meta">
+        <span className="pp-title">
+          {renaming ? (
+            <input
+              className="pp-rename"
+              aria-label="项目名称"
+              defaultValue={project.name}
+              autoFocus
+              onFocus={(event) => {
+                settled.current = false
+                event.currentTarget.select()
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return
+                if (event.key === 'Enter' || event.key === 'Escape') {
+                  event.preventDefault()
+                  settled.current = true
+                  onRenamed(
+                    event.key === 'Enter'
+                      ? event.currentTarget.value
+                      : project.name,
+                  )
+                }
+              }}
+              onBlur={(event) => {
+                if (!settled.current) onRenamed(event.currentTarget.value)
+              }}
+            />
+          ) : (
+            <strong title={project.name}>{project.name}</strong>
+          )}
+          <small>
+            {project.archived ? '已归档 · ' : ''}
+            {editedAgo(project.edited_at)}
+          </small>
+        </span>
+        <button
+          ref={trigger}
+          className="pp-menu-btn"
+          type="button"
+          aria-label={`项目操作：${project.name}`}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => onMenu(!menuOpen)}
+        >
+          <Ellipsis size={16} />
+        </button>
+        {menuOpen && (
+          <div
+            ref={menuRef}
+            className="cc-menu pp-menu"
+            role="menu"
+            aria-label={`项目操作：${project.name}`}
+            onKeyDown={menuKey}
+          >
+            <Link role="menuitem" to={canvasPath(project)}>
+              <ExternalLink size={16} />
+              <span>打开</span>
+            </Link>
+            {project.archived ? (
+              <button
+                role="menuitem"
+                type="button"
+                onClick={() => onArchive(false)}
+              >
+                <ArchiveRestore size={16} />
+                <span>恢复</span>
+              </button>
+            ) : (
+              <>
+                <button role="menuitem" type="button" onClick={onRename}>
+                  <PencilLine size={16} />
+                  <span>重命名</span>
+                </button>
+                <span className="cc-menu-sep" />
+                {/* 归档只看 running：显示「等你确认」但也在跑的项目同样不能归档 */}
+                <button
+                  role="menuitem"
+                  type="button"
+                  className="pp-menu-two"
+                  disabled={project.running}
+                  onClick={() => onArchive(true)}
+                >
+                  <Archive size={16} />
+                  <span>
+                    归档
+                    {project.running && <small>{busyNote}</small>}
+                  </span>
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </article>
   )
 }

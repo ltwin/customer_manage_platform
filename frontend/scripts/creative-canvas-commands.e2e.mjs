@@ -95,7 +95,7 @@ async function until(check, label) {
 async function saved() {
   await page.waitForFunction(() => {
     const button = document.querySelector(
-      '.cc-library button[aria-label="新增资产"],button.ch-create',
+      '.cc-library button[aria-label="新增资产"],.pp-head button.btn-primary',
     )
     return (
       button &&
@@ -223,7 +223,7 @@ try {
   await page.waitForURL('**/dashboard')
   await page.goto(`${url}/creative/projects`)
   await saved()
-  await page.getByRole('button', { name: '开启新的创作' }).click()
+  await page.getByRole('button', { name: '新建项目', exact: true }).click()
   await page.waitForURL('**/creative/canvases/*')
   await saved()
   const canvasURL = page.url()

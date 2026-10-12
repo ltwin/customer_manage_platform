@@ -61,8 +61,8 @@ function useMedia(query: string): boolean {
   )
 }
 
-// 不在首页时侧栏自己读最近项目；切回标签页时重读，读失败就保留上一份。
-function useOwnRecent(enabled: boolean): api.Project[] {
+// 不在首页时侧栏自己读最近项目；切回标签页、refresh 变化时重读，读失败就保留上一份。
+function useOwnRecent(enabled: boolean, refresh: number): api.Project[] {
   const [items, setItems] = useState<api.Project[]>([])
   useEffect(() => {
     if (!enabled) return
@@ -83,7 +83,7 @@ function useOwnRecent(enabled: boolean): api.Project[] {
       controller.abort()
       document.removeEventListener('visibilitychange', visible)
     }
-  }, [enabled])
+  }, [enabled, refresh])
   return items
 }
 
@@ -92,8 +92,11 @@ type Tip = { text: string; left: number; top: number }
 export default function AppSidebar({
   current,
   recent,
+  refresh = 0,
 }: {
   current: SidebarView
+  // 页面改动了项目（改名、归档、恢复）后加一，侧栏随之重读。
+  refresh?: number
   // 首页与「继续创作」共用同一次请求，传进来；不传时侧栏自己读。
   recent?: api.Project[]
 }) {
@@ -104,7 +107,7 @@ export default function AppSidebar({
   const collapsed = !phone && (preference || narrow)
   const forced = narrow || phone
   const [tip, setTip] = useState<Tip | null>(null)
-  const own = useOwnRecent(recent === undefined)
+  const own = useOwnRecent(recent === undefined, refresh)
   const projects = (recent ?? own).slice(0, recentLimit)
   const center = useOptionalAccountCenter()
   const profile = center?.profile.kind === 'ready' ? center.profile.data : null

@@ -58,7 +58,7 @@ async function until(check, label, timeout = 30000) {
 async function saved() {
   await page.waitForFunction(() => {
     const button = document.querySelector(
-      '.cc-library button[aria-label="新增资产"],button.ch-create',
+      '.cc-library button[aria-label="新增资产"],.pp-head button.btn-primary',
     )
     return (
       button &&
@@ -174,7 +174,7 @@ try {
   // 2. Project: drag assets in (multi-select), drop a file, upload to node.
   await page.goto(`${url}/creative/projects`)
   await saved()
-  await page.getByRole('button', { name: '开启新的创作' }).click()
+  await page.getByRole('button', { name: '新建项目', exact: true }).click()
   await page.waitForURL('**/creative/canvases/*')
   // v6 资产库默认收起，从工具轨打开。
   await page.getByRole('button', { name: '资产库', exact: true }).click()
