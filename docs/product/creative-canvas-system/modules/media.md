@@ -130,11 +130,18 @@ Local 与 OSS 各提供适配器。Local 的分片由鉴权 API 写本地受控�
 
 | 层级 | 持有方 |
 |---|---|
-| 修订 | `creativereference` 的 `liveOwnerCondition`：资产（含回收站）、节点、消息、Agent checkpoint / context、撤销记录（未过期）、节点输入、Prompt 引用、未删除版本及其输入、执行引用（保留期内或未结束）、文档、待处理上传候选、受信 hold；新增：未结束且未过期的图片编辑候选的源修订 |
-| blob | 修订的对象绑定 `creative_content_objects`；未结束上传的 `blob_id`；写入中 / 已存储的生成导入；未结束且未过期的图片编辑候选；未过期的读 pin |
+| 修订 | `creativereference` 的 `liveOwnerCondition`：资产（含回收站）、节点、消息、Agent checkpoint / context、撤销记录（未过期）、节点输入、Prompt 引用、未删除版本及其输入、执行引用（保留期内或未结束）、文档、待处理上传候选、受信 hold；新增：未结束 Agent 运行的冻结输入、未结束且未过期的图片编辑候选的源修订 |
+| blob | 修订的对象绑定 `creative_content_objects`；未结束上传的 `blob_id`；写入中 / 已存储的生成导入（陈旧者按 §6.3 第 2 步重置）；未结束且未过期的图片编辑候选；未过期的读 pin |
 | 随 blob 删除 | `creative_blob_palettes`、`creative_media_facts` 等派生事实 |
 
-开启前必须逐表定性、目前尚未登记的引用：`creative_run_inputs`、`creative_egress_consent_contents`、`llm_generation_outputs`，以及 `creative_generation_imports`（它没有执行外键，需确定「导入的所属生成已终结且 lease 过期」的判定方法，届时一并释放其 reserved_bytes，修正「停在 stored 无人提交」的遗留）。
+2026-10-12 逐表定性（依据代码核对）：
+
+| 表 | 定性 | 依据 |
+|---|---|---|
+| `creative_run_inputs` | 运行未结束（`creative_agent_runs.finished_at IS NULL`）时持有修订，结束后不持有 | 只有 `assemble` 与等待补充在运行期间读取；冻结时已校验可用，运行中节点被删也必须仍能发送。结束后输入只是历史事实，历史消息里的附件另由消息引用持有 |
+| `creative_egress_consent_contents` | 不持有 | 迁移 0044 已声明它是授权记录而非保留根。前提是修正 `admitDispatchInTx`：现在它对授权批准过的全部修订（最多 200 个）逐个 `RequireUsable`，任何一个被回收都会让该授权下后续的所有运行失败；改为只复核本次实际发送的修订 |
+| `llm_generation_outputs` | 不持有 | `content_revision_id` 只在导入成功的同一事务里写入，此时修订已由执行保留持有；之后无读取 |
+| `creative_generation_imports` | 修订列不持有；写入中 / 已存储时持有其 blob 与 `reserved_bytes` | ready 时修订已由执行保留持有。未提交的导入可能被生成恢复（每次续 24 小时）再次拾起，不能按 blob 年龄回收；陈旧者由 GC 按 Prepare 已有的过期重置路径处理，之后的重试会重新拉取 |
 
 新增 schema 守卫测试：枚举创意表中所有引用修订或 blob 的列，每列必须登记为「持有」或「不持有」，漏登记即失败，防止以后新表静默漏引用。
 
@@ -143,7 +150,7 @@ Local 与 OSS 各提供适配器。Local 的分片由鉴权 API 写本地受控�
 GC 是 creative-worker `maintenance` 队列（并发 1）中的周期任务，建议每 10 分钟逐账号执行，每批约 100 行，单批事务保持短小以免长时间占用账号写屏障。停用账号同样回收，GC 直接取写屏障，不走 `RequireCreativeCapability`。
 
 1. **修订**：扫描 state=ready 的图片 / 视频 / 音频修订中无持有方者；事务内取写屏障 → `FOR UPDATE` 重查 → 置 `deleted` 并删除其对象绑定。这一步不碰外部存储，不需要中间态。文本修订不占字节，一期不回收。
-2. **blob**：扫描 ready 且无对象绑定、无持有方的 blob，以及超过最长 lease（建议 1 小时）仍无人认领的 verifying blob；事务内取写屏障 → `FOR UPDATE` 重查 → 置 deleting 并写 `delete_after`。
+2. **blob**：扫描 ready 且无对象绑定、无持有方的 blob；事务内取写屏障 → `FOR UPDATE` 重查 → 置 deleting 并写 `delete_after`。verifying blob 不按年龄回收：上传的由上传过期路径处理；生成导入的，由 GC 对 lease 已过期且 48 小时没有进展的写入中 / 已存储导入执行与 `PrepareGeneratedMedia` 相同的重置（epoch+1、清空 blob 字段、退还 `reserved_bytes`、旧 blob 置 deleting）。为此给 `creative_generation_imports` 补 `updated_at`。重置后，迟到的 Commit 会因 epoch 不符而失败，之后的重试会重新拉取。
 3. **删除对象**：`delete_after` 到期后在事务外删除对象并做 HEAD 不存在确认；再在事务内置 deleted，若已计额度且未释放，则扣减 `stored_bytes` 并写 `quota_released_at`，同时删除派生事实。失败或结果未知保持 deleting，下一轮重试。
 
 | blob 类别 | 宽限 | 理由 |

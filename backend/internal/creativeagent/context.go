@@ -50,23 +50,25 @@ func readableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID
 
 // resolveReference builds serializable framework input. Executable image
 // handles are bound later, outside checkpoint state, at the gateway boundary.
-func (s *Service) resolveReference(ctx context.Context, tx store.TxAccountScope, runID, id string, consent Consent, imageCapable bool) (*schema.Message, error) {
+// The flag reports whether the revision's content is attached, which is what
+// the dispatch check has to keep re-examining; a bare label carries nothing.
+func (s *Service) resolveReference(ctx context.Context, tx store.TxAccountScope, runID, id string, consent Consent, imageCapable bool) (*schema.Message, bool, error) {
 	approved, err := readableInTx(ctx, tx, runID, consent.ID, id)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !approved {
-		return schema.UserMessage(referenceLabel(id) + "（本轮未授权读取，只有引用标识）"), nil
+		return schema.UserMessage(referenceLabel(id) + "（本轮未授权读取，只有引用标识）"), false, nil
 	}
 	rev, err := creativecontent.RequireUsable(ctx, tx, id, "display")
 	if err != nil {
-		return nil, translateContent(err)
+		return nil, false, translateContent(err)
 	}
 	message := schema.UserMessage(referenceLabel(id))
 	switch rev.Kind {
 	case "text":
 		if !consentHas(consent, "text") {
-			return nil, ErrEgressRequired
+			return nil, false, ErrEgressRequired
 		}
 		if rev.Payload.Body != nil {
 			message.Content += "\n" + quotedContentOpen + "\n" + *rev.Payload.Body + "\n" + quotedContentClose
@@ -76,16 +78,16 @@ func (s *Service) resolveReference(ctx context.Context, tx store.TxAccountScope,
 		// image egress, and saying "not authorised" would send the
 		// photographer looking for a permission that does not exist.
 		if !imageCapable || s.images == nil {
-			return nil, ErrModelCapability
+			return nil, false, ErrModelCapability
 		}
 		if !consentHas(consent, "image_preview") {
-			return nil, ErrEgressRequired
+			return nil, false, ErrEgressRequired
 		}
 		message.Extra = map[string]any{imageRefsKey: id}
 	default:
-		return nil, ErrUnsupportedSegment
+		return nil, false, ErrUnsupportedSegment
 	}
-	return message, nil
+	return message, true, nil
 }
 
 func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Message, messages []llmgateway.Message) ([]llmgateway.Message, error) {
@@ -336,7 +338,7 @@ func (h *runtimeHandler) readAsset(ctx context.Context, raw string) (string, err
 		if !readable {
 			return errReadRefused
 		}
-		message, err := h.service.resolveReference(ctx, tx, h.held.RunID, args.RevisionID, c, h.held.Model.Capability.ImageInput)
+		message, _, err := h.service.resolveReference(ctx, tx, h.held.RunID, args.RevisionID, c, h.held.Model.Capability.ImageInput)
 		if err != nil {
 			return err
 		}

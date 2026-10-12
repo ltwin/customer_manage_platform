@@ -535,6 +535,40 @@ func TestTheAuthorisationMustBeForThisConversation(t *testing.T) {
 	}
 }
 
+// An approval is a record, not a retention root. Once one approved revision has
+// nothing holding it, runs under the same authorisation that never send it must
+// still dispatch; checking every approval would let one cleaned-up reference
+// stop the whole conversation.
+func TestAnUnsentApprovalThatLostItsHolderDoesNotStopTheDispatch(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	sent := f.revision(f.alice, "要发送的参考")
+	gone := f.revision(f.alice, "已经删掉的参考")
+	consent := f.consent(f.alice, c.ID, sent, gone)
+	if _, err := f.db.Exec(`DELETE FROM creative_assets WHERE content_revision_id=$1`, gone); err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.startRun(f.alice, c.ID, consent.ID,
+		InstructionSegment{Type: "content_ref", ContentRevisionID: sent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.work(f.alice, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	after, err := f.service.ReadRun(t.Context(), f.alice, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.State != RunSucceeded {
+		t.Fatalf("run %+v", after)
+	}
+	if prompt := f.vendor.prompt(); !strings.Contains(prompt, "要发送的参考") || strings.Contains(prompt, "已经删掉的参考") {
+		t.Fatalf("the model saw the wrong content:\n%s", prompt)
+	}
+}
+
 // Another account's run is absent, not refused: the scope decides what exists
 // before the identifier does.
 func TestAnotherAccountsRunIsAbsent(t *testing.T) {

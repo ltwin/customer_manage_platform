@@ -49,4 +49,5 @@ OR EXISTS (SELECT 1 FROM creative_node_version_input_refs WHERE account_id=$1 AN
 OR EXISTS (SELECT 1 FROM creative_execution_refs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND execution_id IN (SELECT id FROM creative_node_executions WHERE account_id=$1 AND (retained_until>clock_timestamp() OR state IN ('queued','running','reconciling'))))
 OR EXISTS (SELECT 1 FROM creative_documents WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)
 OR EXISTS (SELECT 1 FROM creative_upload_candidates WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND state='pending' AND expires_at>clock_timestamp())
-OR EXISTS (SELECT 1 FROM creative_revision_holds WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND (expires_at IS NULL OR expires_at>clock_timestamp()))`
+OR EXISTS (SELECT 1 FROM creative_revision_holds WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND (expires_at IS NULL OR expires_at>clock_timestamp()))
+OR EXISTS (SELECT 1 FROM creative_run_inputs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND run_id IN (SELECT id FROM creative_agent_runs WHERE account_id=$1 AND finished_at IS NULL))`

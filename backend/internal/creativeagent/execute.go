@@ -379,6 +379,9 @@ func (s *Service) stillRunnable(ctx context.Context, scope store.AccountScope, h
 
 // assemble turns the frozen inputs into the messages that will be sent, and
 // reports the revisions among them so the dispatch check can re-examine each.
+// Only what is attached counts: a consent's approvals are a record, not a
+// retention root, and one approved revision being cleaned up must not stop
+// runs that never send it.
 //
 // Nothing here re-reads the conversation: the inputs were fixed when the run
 // was created, and a message appended since belongs to the next run.
@@ -390,24 +393,16 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 		if err != nil {
 			return err
 		}
-		rows, err := tx.QueryPage(ctx, "creative_egress_consent_contents", "content_revision_id", "consent_id=$2", []store.OrderBy{{Column: "content_revision_id"}}, maxApprovedRevisions, 0, consent.ID)
-		if err != nil {
-			return err
-		}
-		for rows.Next() {
-			var id string
-			if err = rows.Scan(&id); err != nil {
-				rows.Close()
-				return err
+		attached := map[string]bool{}
+		resolve := func(id string) (*schema.Message, error) {
+			ref, sent, err := s.resolveReference(ctx, tx, held.RunID, id, consent, held.Model.Capability.ImageInput)
+			if sent && !attached[id] {
+				attached[id] = true
+				revisions = append(revisions, id)
 			}
-			revisions = append(revisions, id)
+			return ref, err
 		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return err
-		}
-		rows, err = tx.QueryPage(ctx, "creative_run_inputs", "input_role,body,content_revision_id,source_revision_snapshot", "run_id=$2 AND batch_ordinal=$3", []store.OrderBy{{Column: "ordinal"}}, s.limits.InstructionSegments+s.limits.HistoryMessages*(maxBlocks+1)+1, 0, held.RunID, initialInputBatch)
+		rows, err := tx.QueryPage(ctx, "creative_run_inputs", "input_role,body,content_revision_id,source_revision_snapshot", "run_id=$2 AND batch_ordinal=$3", []store.OrderBy{{Column: "ordinal"}}, s.limits.InstructionSegments+s.limits.HistoryMessages*(maxBlocks+1)+1, 0, held.RunID, initialInputBatch)
 		if err != nil {
 			return err
 		}
@@ -462,7 +457,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 					if block.Type != "content_ref" || meta.Role == "tool" {
 						continue
 					}
-					ref, err := s.resolveReference(ctx, tx, held.RunID, block.RefID, consent, held.Model.Capability.ImageInput)
+					ref, err := resolve(block.RefID)
 					if errors.Is(err, ErrModelCapability) || errors.Is(err, ErrEgressRequired) {
 						ref = schema.UserMessage(referenceLabel(block.RefID) + "（历史图片本轮未加载；需要图片能力及授权）")
 					} else if err != nil {
@@ -478,7 +473,7 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 				continue
 			}
 			if item.id != nil {
-				ref, err := s.resolveReference(ctx, tx, held.RunID, *item.id, consent, held.Model.Capability.ImageInput)
+				ref, err := resolve(*item.id)
 				if err != nil {
 					return err
 				}
