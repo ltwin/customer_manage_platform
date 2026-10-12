@@ -389,3 +389,25 @@ export function sendRefusal(
   if (code === 'not_found' && hasImages) return '参考图已过期，请重新添加'
   return failures[code] ?? refusals[code] ?? error.message
 }
+
+// 首次外发说明（V6-029）：第一次发送前弹窗说明一次，按账号和说明版本记在本机。
+// 这条记录只决定弹不弹窗；每次发送照样按本条消息的范围建授权，由后端核对。
+// 版本与后端 creativeagent.policyVersion 一致，两边一起改（单测会核对）。
+// 助手要发送新的数据类型时改写说明并升级版本，所有账号会再看一次。
+export const egressNoticeVersion = 'egress-2026-10-1'
+const noticeKey = (account: string) => `creative-egress-notice:${account}`
+// 读不到本机存储时当作没看过：宁可多弹一次，也不漏掉说明。
+export function noticeSeen(storage: Storage | null, account: string): boolean {
+  try {
+    return storage?.getItem(noticeKey(account)) === egressNoticeVersion
+  } catch {
+    return false
+  }
+}
+export function rememberNotice(storage: Storage | null, account: string) {
+  try {
+    storage?.setItem(noticeKey(account), egressNoticeVersion)
+  } catch {
+    // 记不住只是下次再弹一次。
+  }
+}

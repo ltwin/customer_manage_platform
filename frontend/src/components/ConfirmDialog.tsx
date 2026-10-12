@@ -1,9 +1,10 @@
 import { useFocusTrap } from './useFocusTrap'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 
 export interface ConfirmDialogProps {
   title: string
-  body: string | readonly string[]
+  // 每一项是一段；需要链接等内联内容时可以传节点。
+  body: string | readonly ReactNode[]
   confirmLabel?: string
   cancelLabel?: string
   danger?: boolean
@@ -72,6 +73,8 @@ export default function ConfirmDialog({
             className="btn"
             type="button"
             disabled={busy}
+            // 没有输入框时焦点先落在「取消」，正文里的链接不会抢走 Enter。
+            data-autofocus={requiredInput ? undefined : true}
             onClick={onCancel}
           >
             {cancelLabel ?? '取消'}

@@ -1,8 +1,11 @@
 // Run with the frontend Vite server on CREATIVE_AGENT_URL (default :5179).
 // Exercises the real component with delayed HTTP replies; never calls a vendor.
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
+// 默认已看过首次外发说明；地址带 ?notice=0 时从没看过开始（V6-029）。
+const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 const fixture = new URL('../.agent-command-qa.html', import.meta.url)
 await writeFile(
   fixture,
@@ -14,6 +17,7 @@ import '/src/creative-canvas/editor/workspace.css';
 import AgentPanel from '/src/creative-canvas/editor/AgentPanel.tsx';
 import {setAuthenticated} from '/src/auth/session.ts';
 setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'},{id:'qa-account',username:'qa'});
+if (!location.search.includes('notice=0')) localStorage.setItem('creative-egress-notice:qa-account', '${noticeVersion}');
 createRoot(document.getElementById('root')).render(React.createElement(AgentPanel,{account:'qa-account',canvasID:'canvas',canvas:{nodes:[{id:'node-image',metadata:{title:'主图'},data:{content_revision_id:'ccrv_image'},content:{id:'ccrv_image',kind:'image',payload:{},media:[],truncated:false}}]}}));
 </script></body></html>`,
 )
@@ -495,12 +499,24 @@ try {
     if (path.endsWith('/agent-runs/run')) return json(finishedRun)
     return json({ items: [] })
   })
-  await chainPage.goto(url)
+  // 从没看过首次外发说明：新消息先弹窗，取消什么都不发、草稿留着。
+  await chainPage.goto(`${url}?notice=0`)
   await chainPage.getByRole('button', { name: '打开创作助手' }).click()
   await chainPage.getByLabel('创作问题').fill('第一条消息')
+  const notice = chainPage.getByRole('alertdialog', { name: '发送前说明' })
   await chainPage.getByRole('button', { name: '发送', exact: true }).click()
+  await notice.getByText('平台签约的模型服务商', { exact: false }).waitFor()
+  await notice.getByRole('button', { name: '取消' }).click()
+  await notice.waitFor({ state: 'detached' })
+  assert.deepEqual(chainPosts, [], 'cancelling the notice sends nothing')
+  assert.equal(await chainPage.getByLabel('创作问题').textContent(), '第一条消息', 'the draft stays')
+  await chainPage.getByRole('button', { name: '发送', exact: true }).click()
+  await notice.getByRole('button', { name: '知道了，发送' }).click()
   await chainPage.getByRole('alert').waitFor()
   assert.equal(made.size, 1, 'the server created the conversation')
+  assert.equal(await chainPage.evaluate(() => localStorage.getItem('creative-egress-notice:qa-account')), noticeVersion)
+  // 重放是此前确认过的发送，不再弹窗：清掉本机记录也一样。
+  await chainPage.evaluate(() => localStorage.clear())
   await chainPage.reload()
   await chainPage.getByRole('button', { name: '打开创作助手' }).click()
   await chainPage.getByRole('button', { name: '重新发送' }).click()
@@ -529,9 +545,10 @@ try {
     ['/conversations/conv1/egress-consents', 'legacy-consent'],
     ['/conversations/conv1/runs', 'legacy-run'],
   ])
+  assert.equal(await notice.count(), 0, 'replays never ask again')
   await chainPage.close()
   console.log(
-    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model; rename, archive, read-only archive view and restore; a lost conversation reply replays one operation; legacy pending records resend',
+    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model; rename, archive, read-only archive view and restore; a lost conversation reply replays one operation; legacy pending records resend; the first-send notice gates new messages but not replays',
   )
 } finally {
   await browser.close()

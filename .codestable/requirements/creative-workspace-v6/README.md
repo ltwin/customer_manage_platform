@@ -86,7 +86,7 @@
 | ID / 需求 | 优先级 | 类型 | 状态 | 前置依赖 | 产物 / 阻塞说明 |
 |---|---|---|---|---|---|
 | [V6-028 · 助手选区跟随与冻结节点上下文](items/V6-028.md) | P0 | 交付 | 待设计 | — | 相关缺口见 [issue: 助手节点引用](../../issues/2026-10-10-agent-node-references/agent-node-references-report.md)（对话 @ 引用的是内容而非节点、助手不知道选区） |
-| [V6-029 · 首次外发授权与覆盖范围复用](items/V6-029.md) | P0 | 交付 | 待设计 | — | 每轮勾选框已随 V6-030.2 删除（owner 2026-10-09），发送即按本条消息的范围创建授权；授权改为平台级、不展示服务商（PRD §11.3 #13，[model-routing](../../features/2026-10-09-model-routing/model-routing-design.md)），AC 已同步改写；首次说明与范围变化时的重新询问保留，owner 2026-10-11 明确它们是说明项而不是需要同意的条款，与「外发不做逐次授权」不冲突；首页发送（V6-062）走同一套规则；仍待设计 |
+| [V6-029 · 首次外发授权与覆盖范围复用](items/V6-029.md) | P0 | 交付 | 已完成 | — | [design](../../features/2026-10-11-egress-notice/egress-notice-design.md)：发送即按本条消息的范围建授权（V6-030.2 起），后端逐次核对，本条只补首次说明；owner 2026-10-11 拍板：首次发送时弹窗、本机按账号和说明版本记、只管助手不管生成、不做撤销入口；画布助手和首页一句话开始共用 `useEgressNotice`；隐私说明初版为公开页 `/privacy`（owner 2026-10-11：先写一版，后续再改；不列具体服务商）；AC 全部满足· [验证记录](../../features/2026-10-11-egress-notice/egress-notice-verification.md) |
 | [V6-043 · 聊天独立上传附件](items/V6-043.md) | P1 | 交付 | 待设计 | V6-029 | — |
 
 ### 助手交互
@@ -143,7 +143,7 @@
 | ID / 需求 | 优先级 | 类型 | 状态 | 前置依赖 | 产物 / 阻塞说明 |
 |---|---|---|---|---|---|
 | [V6-061 · 创意空间应用侧栏与页面路由](items/V6-061.md) | P0 | 交付 | 已完成 | —（状态点 V6-063，点数 V6-022） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)（D1–D6 owner 2026-10-11 拍板）；「最近打开」与「继续创作」同按 `edited_at`（最近编辑）排序；白点用 mock 验证，真实数据随 V6-031/033 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
-| [V6-062 · 首页一句话开始](items/V6-062.md) | P0 | 交付 | 待验收 | V6-061、V6-029（外发规则）；附件机制与 V6-043 共用 | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；附件共用模块 `chatAttachments.ts` 由本条交付；助手面板的待确认记录改成「建对话 → 授权 → 运行」一条链，首页和画布共用 `performAgentChain`；场景 chip 只放已上线的「参考整理与创作方向」（owner 2026-10-11）；AC-01/03/04/05/06 已满足，AC-02 的首次外发说明随 V6-029 验收 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
+| [V6-062 · 首页一句话开始](items/V6-062.md) | P0 | 交付 | 已完成 | V6-061、V6-029（外发规则）；附件机制与 V6-043 共用 | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；附件共用模块 `chatAttachments.ts` 由本条交付；助手面板的待确认记录改成「建对话 → 授权 → 运行」一条链，首页和画布共用 `performAgentChain`；场景 chip 只放已上线的「参考整理与创作方向」（owner 2026-10-11）；AC 全部满足；AC-02 的首次外发说明随 V6-029 落地（2026-10-11） · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
 | [V6-063 · 继续创作与项目封面缩影](items/V6-063.md) | P0 | 交付 | 待验收 | —（白点随 V6-031/033） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；项目列表补封面摘要与进行中状态；AC-01/03/04 已满足，AC-02 白点的真实数据随 V6-031/033 验收 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
 | [V6-064 · 项目页搜索、排序与归档撤销](items/V6-064.md) | P0 | 交付 | 已完成 | —（复制项目 V6-050） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；改名规则 `projectName.ts` 与 V6-044 共用；运行入口统一检查项目归档（design §3.4）；「复制项目」菜单项随 V6-050 再加 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
 | [V6-065 · 从模板开始](items/V6-065.md) | P1 | 交付 | 待设计 | V6-050（复制画布） | 模板单列：第 1 期之后、与 V6-050 的复制画布能力同批做；首批模板内容待 owner 拍板（D-06） |

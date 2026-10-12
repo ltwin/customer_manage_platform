@@ -1,14 +1,17 @@
 // Browser regression for the creative home (V6-061 sidebar and routes, V6-062
-// one-sentence start, V6-063 continue cards and covers). All API
+// one-sentence start, V6-063 continue cards and covers, V6-029 first-send
+// notice). All API
 // traffic is mocked; each AC runs in a fresh context.
 // Run against the Vite dev server: node scripts/creative-home.e2e.mjs.
 import assert from 'node:assert/strict'
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
 import { chromium } from 'playwright'
 
 const base = process.env.CREATIVE_EDITOR_URL ?? 'http://localhost:5173'
 const output = process.env.CREATIVE_QA_OUTPUT_DIR ?? '/tmp/creative-home-qa'
 mkdirSync(output, { recursive: true })
+// 首次外发说明的版本跟着源码走，升级版本时不用改这里。
+const noticeVersion = /egressNoticeVersion = '([^']+)'/.exec(readFileSync(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 const browser = await chromium.launch({ headless: true })
 const errors = []
 const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8z8DwHwAFhAJ/wlseKgAAAABJRU5ErkJggg=='
@@ -83,7 +86,8 @@ const fixture = () => {
     project(5, '未命名项目'),
   ]
 }
-async function fresh({ width = 1280, height = 800, init, clock = false } = {}) {
+// 默认已看过首次外发说明，其余用例不被弹窗挡住；只有 029 的用例从没看过开始。
+async function fresh({ width = 1280, height = 800, init, clock = false, notice = noticeVersion } = {}) {
   await context?.close()
   context = await browser.newContext({ viewport: { width, height } })
   projectReads = []
@@ -94,6 +98,7 @@ async function fresh({ width = 1280, height = 800, init, clock = false } = {}) {
   if (clock) await page.clock.install()
   page.setDefaultTimeout(6000)
   page.on('pageerror', (error) => errors.push(error.message))
+  if (notice) await page.addInitScript((version) => localStorage.setItem('creative-egress-notice:qa-home', version), notice)
   if (init) await page.addInitScript(init)
   // 开发模式的 StrictMode 会挂载两次、取消第一次请求，只数真正完成的读取。
   page.on('requestfinished', (request) => {
@@ -246,8 +251,8 @@ const pick = async (label, option) => {
 const refs = () => ask().getByRole('list', { name: '参考图' }).getByRole('listitem')
 const keys = (list) => [...new Set(list.map((p) => p.key))]
 // 进入新画布时助手面板已经打开（画布页读到 openAgent 标记）。
-const openedWithAgent = async () => {
-  await page.waitForURL(/\/creative\/canvases\/cn1$/)
+const openedWithAgent = async (canvas = 'cn1') => {
+  await page.waitForURL(new RegExp(`/creative/canvases/${canvas}$`))
   await page.getByRole('complementary', { name: '创作助手' }).waitFor()
   return page.evaluate(() => history.state?.usr?.openAgent === true)
 }
@@ -731,6 +736,97 @@ try {
   })
 
   // V6-062 AC-06 「最近添加」显示资产库最近的图片，「+ 参考」放进输入框；资产库为空时不出现这一行。
+  await record('029-AC-01', async () => {
+    await fresh({ notice: null })
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    const dialog = page.getByRole('alertdialog', { name: '发送前说明' })
+    const seen = () => page.evaluate(() => localStorage.getItem('creative-egress-notice:qa-home'))
+    at('first send explains before anything is created')
+    await prompt().fill('海边婚纱外景')
+    await prompt().press('Enter')
+    await dialog.waitFor()
+    await dialog.getByText('平台签约的模型服务商').waitFor()
+    // 名单链接到公开的隐私说明页，新标签页打开，草稿和弹窗都还在。
+    const privacy = dialog.getByRole('link', { name: '隐私说明' })
+    assert.equal(await privacy.getAttribute('href'), '/privacy')
+    assert.equal(await privacy.getAttribute('target'), '_blank')
+    // 焦点先落在「取消」，不是正文里的链接：再按一次 Enter 只会关掉说明。
+    await page.waitForFunction(() => document.activeElement?.textContent === '取消')
+    await dialog.getByText('资产库里没有被引用的素材不会发送', { exact: false }).waitFor()
+    assert.equal(server.posts.projects.length, 0, 'no project before the notice is acknowledged')
+    await page.evaluate(() => Promise.all(document.querySelector(".overlay.open").getAnimations({ subtree: true }).map((a) => a.finished)))
+    await page.screenshot({ path: `${output}/egress-notice.png` })
+    at('cancel keeps the draft and sends nothing')
+    await dialog.getByRole('button', { name: '取消' }).click()
+    await dialog.waitFor({ state: 'detached' })
+    assert.equal(await prompt().inputValue(), '海边婚纱外景')
+    assert.equal(await prompt().evaluate((el) => el === document.activeElement), true, 'focus returns to the input')
+    assert.equal(await seen(), null)
+    at('escape is a cancel too, and the notice comes back')
+    await sendButton().click()
+    await dialog.waitFor()
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached' })
+    assert.equal(server.posts.projects.length, 0)
+    assert.equal(await prompt().inputValue(), '海边婚纱外景')
+    at('manual work still goes on: a blank canvas needs no notice')
+    await page.getByRole('button', { name: '空白画布' }).click()
+    await page.waitForURL(/\/creative\/canvases\//)
+    assert.equal(await dialog.count(), 0)
+    assert.equal(server.posts.projects.length, 1)
+    await page.goto(`${base}/creative`)
+    at('acknowledge then send')
+    await prompt().fill('海边婚纱外景')
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await sendButton().click()
+    await dialog.getByRole('button', { name: '知道了，发送' }).click()
+    assert.equal(await openedWithAgent('cn2'), true)
+    assert.equal(await seen(), noticeVersion)
+    assert.equal(server.created.runs, 1)
+    at('the same account is not asked again')
+    await page.goto(`${base}/creative`)
+    await prompt().fill('第二句话')
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await sendButton().click()
+    await page.waitForURL(/\/creative\/canvases\//)
+    assert.equal(await dialog.count(), 0)
+    assert.equal(server.created.runs, 2)
+  })
+
+  await record('029-privacy', async () => {
+    // 隐私说明是公开页面：不读会话也能打开，不点名具体服务商，手机宽度不横向滚动。
+    await fresh({ width: 390, height: 800 })
+    const reads = []
+    page.on('request', (request) => { if (request.url().includes('/api/v1/')) reads.push(request.url()) })
+    await page.goto(`${base}/privacy`)
+    await page.getByRole('heading', { name: '你的内容会去哪里' }).waitFor()
+    await page.getByRole('region', { name: '谁会处理这些内容' }).getByText('平台签约的模型服务商', { exact: false }).waitFor()
+    const text = await page.locator('main').innerText()
+    for (const vendor of ['DeepSeek', 'Krill', 'AiCodeWith', 'OpenAI'])
+      assert.ok(!text.toLowerCase().includes(vendor.toLowerCase()), `the notice names ${vendor}`)
+    await page.getByText('至少保留 3 天', { exact: false }).waitFor()
+    assert.deepEqual(reads, [], 'the notice needs no session')
+    const sizes = await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth])
+    assert.ok(sizes[0] <= sizes[1], `page scrolls sideways ${sizes}`)
+    await page.screenshot({ path: `${output}/privacy-390.png`, fullPage: true })
+  })
+
+  await record('029-AC-03', async () => {
+    // 看过的是旧版说明：再问一次。
+    await fresh({ notice: 'egress-2000-01-1' })
+    await page.goto(`${base}/creative`)
+    await prompt().fill('说明升级之后')
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await prompt().press('Enter')
+    const dialog = page.getByRole('alertdialog', { name: '发送前说明' })
+    await dialog.waitFor()
+    assert.equal(server.posts.projects.length, 0)
+    await dialog.getByRole('button', { name: '知道了，发送' }).click()
+    assert.equal(await openedWithAgent(), true)
+    assert.equal(await page.evaluate(() => localStorage.getItem('creative-egress-notice:qa-home')), noticeVersion)
+  })
+
   await record('062-AC-06', async () => {
     await fresh()
     server.assets = Array.from({ length: 3 }, (_, i) => ({ id: `a${i}`, title: `素材 ${i}`, kind: 'image', content_revision_id: `ccrv_lib${i}`, unavailable: false }))
@@ -974,4 +1070,4 @@ try {
   await browser.close()
 }
 const failed = Object.entries(results).filter(([, r]) => r !== 'pass')
-if (failed.length || (!only && Object.keys(results).length !== 17)) process.exitCode = 1
+if (failed.length || (!only && Object.keys(results).length !== 20)) process.exitCode = 1

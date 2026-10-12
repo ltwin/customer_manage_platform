@@ -3407,7 +3407,7 @@ export interface components {
             mode: "selected_revisions" | "account_library";
             data_classes: ("text" | "image_preview" | "media_metadata" | "canvas_metadata")[];
         };
-        /** @description 本会话内容可发送给平台签约的模型服务商；名单见隐私说明，每次调用实际发往哪家记录在调用证据上。 */
+        /** @description 本会话内容可发送给平台签约的模型服务商；不对摄影师列出具体服务商，每次调用实际发往哪家记录在调用证据上。 */
         CreativeEgressConsent: {
             id: string;
             /** @enum {string} */

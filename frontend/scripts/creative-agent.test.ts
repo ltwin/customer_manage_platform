@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import {
   advanceChain,
   conversationSlot,
@@ -14,6 +15,9 @@ import {
   hasUnsettledCost,
   recalledModel,
   runFailure,
+  egressNoticeVersion,
+  noticeSeen,
+  rememberNotice,
 } from '../src/creative-canvas/editor/agentState.ts'
 import type {
   AgentRun,
@@ -405,4 +409,41 @@ test('a refused request says what to do next', () => {
   assert.equal(runFailure('creative_canvas_integrity'), '画布数据校验未通过，已停止修改，请联系我们处理')
   assert.equal(runFailure('creative_from_a_newer_server'), '本次执行未能完成，请重试')
   assert.equal(runFailure(undefined), '')
+})
+
+test('the first-send notice is remembered per account and per notice version', () => {
+  const items = new Map<string, string>()
+  const storage = {
+    getItem: (key: string) => items.get(key) ?? null,
+    setItem: (key: string, value: string) => void items.set(key, value),
+  } as Storage
+  assert.equal(noticeSeen(storage, 'acc_a'), false)
+  rememberNotice(storage, 'acc_a')
+  assert.equal(noticeSeen(storage, 'acc_a'), true)
+  // 另一个账号在同一台设备上仍要看一次。
+  assert.equal(noticeSeen(storage, 'acc_b'), false)
+  // 说明升级了版本：看过旧版的也要再看一次。
+  items.set('creative-egress-notice:acc_a', 'egress-2026-01-1')
+  assert.equal(noticeSeen(storage, 'acc_a'), false)
+  // 读不到本机存储时宁可多弹：当作没看过，写入失败也不打断发送。
+  const broken = {
+    getItem: () => {
+      throw new Error('denied')
+    },
+    setItem: () => {
+      throw new Error('denied')
+    },
+  } as unknown as Storage
+  assert.equal(noticeSeen(broken, 'acc_a'), false)
+  assert.doesNotThrow(() => rememberNotice(broken, 'acc_a'))
+  assert.equal(noticeSeen(null, 'acc_a'), false)
+})
+
+test('the notice version moves together with the backend egress policy version', () => {
+  const service = readFileSync(
+    new URL('../../backend/internal/creativeagent/service.go', import.meta.url),
+    'utf8',
+  )
+  const policy = /const policyVersion = "([^"]+)"/.exec(service)?.[1]
+  assert.equal(policy, egressNoticeVersion)
 })

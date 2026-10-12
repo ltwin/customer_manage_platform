@@ -29,6 +29,7 @@ import ShootPlanWorkspacePage from './planning/ShootPlanWorkspacePage'
 import ShootPlanRunPage from './planning/ShootPlanRunPage'
 import ShootPlanIngestionPage from './planning/ShootPlanIngestionPage'
 import SharedPlanPage from './planning/share/SharedPlanPage'
+import PrivacyPage from './pages/privacy/PrivacyPage'
 
 const CreativeHomePage = lazy(() => import('./creative-canvas/home/HomePage'))
 const CreativeProjectsPage = lazy(() => import('./creative-canvas/home/ProjectsPage'))
@@ -65,7 +66,7 @@ export default function App() {
   const auth = useSyncExternalStore(subscribeAuth, getAuthSnapshot)
   const isActionTokenRoute = location.pathname === '/verify-email' || location.pathname === '/reset-password'
   const isPublicShareRoute = location.pathname.startsWith('/shared/plans/')
-  const skipSessionRestore = isActionTokenRoute || isPublicShareRoute
+  const skipSessionRestore = isActionTokenRoute || isPublicShareRoute || location.pathname === '/privacy'
 
   useEffect(() => {
     if (!skipSessionRestore && auth.status === 'restoring') void restoreSession()
@@ -109,6 +110,7 @@ export default function App() {
       />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/shared/plans/:token" element={<SharedPlanPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/" element={<RootEntry status={auth.status} />} />
       <Route
         element={

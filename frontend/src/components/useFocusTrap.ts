@@ -35,7 +35,10 @@ export function useFocusTrap<T extends HTMLElement>(
     focusTrapStack.push(container)
     const focusInitial = () => {
       if (focusTrapStack.at(-1) !== container) return
-      const first = focusableElements(container)[0]
+      // 标了 data-autofocus 的元素优先，例如正文里有链接时把焦点留给「取消」。
+      const first =
+        container.querySelector<HTMLElement>('[data-autofocus]') ??
+        focusableElements(container)[0]
       ;(first ?? container).focus()
     }
     let secondFrame = 0

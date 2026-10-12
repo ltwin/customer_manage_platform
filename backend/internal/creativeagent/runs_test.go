@@ -478,6 +478,29 @@ func TestARedeliveredTaskDoesNothingTwice(t *testing.T) {
 	}
 }
 
+// A consent recorded under an earlier disclosure does not cover a new run: the
+// photographer has to see the current notice and send again (V6-029 AC-03).
+// The notice the browser remembers decides only whether to show it; this
+// check is what keeps an old record from being reused.
+func TestAConsentUnderAnEarlierNoticeDoesNotStartARun(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	old := f.consent(f.alice, c.ID)
+	if _, err := f.db.Exec(`UPDATE creative_egress_consents SET policy_version='egress-2000-01-1' WHERE id=$1`, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.startRun(f.alice, c.ID, old.ID,
+		InstructionSegment{Type: "text", Text: "帮我理一理。"}); !errors.Is(err, ErrEgressRequired) {
+		t.Fatalf("a consent under an earlier notice must not start a run, got %v", err)
+	}
+	current := f.consent(f.alice, c.ID)
+	if _, err := f.startRun(f.alice, c.ID, current.ID,
+		InstructionSegment{Type: "text", Text: "帮我理一理。"}); err != nil {
+		t.Fatalf("a consent under the current notice must start the run: %v", err)
+	}
+}
+
 // An authorisation granted for another conversation does not cover this one:
 // the photographer's own earlier turns are part of what leaves the account.
 func TestTheAuthorisationMustBeForThisConversation(t *testing.T) {

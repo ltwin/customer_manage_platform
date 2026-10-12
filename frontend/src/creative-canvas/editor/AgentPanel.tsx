@@ -45,6 +45,7 @@ import {
   type AgentMaterial,
 } from './agentReferences.ts'
 import { AgentMaterialPicker } from './AgentMaterials.tsx'
+import { useEgressNotice } from './EgressNotice.tsx'
 import {
   agentModelOptions,
   agentSkillOptions,
@@ -157,6 +158,7 @@ function AgentConversation({
   onClose: () => void
 }) {
   const storageKey = agentPendingKey(account, canvasID)
+  const notice = useEgressNotice(account)
   const editor = useRef<PromptEditorHandle>(null)
   const loaded = useRef(false)
   const recalled = useRef('')
@@ -489,7 +491,7 @@ function AgentConversation({
       })
     // 第一条消息顺带建对话，三步一起记进待确认链：建对话的结果不确定时，
     // 重放的也是同一个操作，不会多出空对话。
-    void perform({
+    const chain = {
       steps: [
         ...(conversation ? [] : [conversationStep(canvasID)]),
         ...messageSteps(conversation || conversationSlot, {
@@ -500,6 +502,10 @@ function AgentConversation({
         }),
       ],
       draft: saved,
+    }
+    // 新消息才会带出新内容，先过首次外发说明；取消时草稿原样留在输入框。
+    void notice.confirm().then((ok) => {
+      if (ok) void perform(chain)
     })
   }
   const turn = useMemo<TurnContext>(
@@ -1000,6 +1006,7 @@ function AgentConversation({
           }}
         />
       )}
+      {notice.dialog}
     </aside>
   )
 }

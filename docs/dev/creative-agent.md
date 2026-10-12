@@ -88,7 +88,7 @@ SSE、最小 Agent 面板。自动模型摘要仍默认关闭，达到上下文�
 - **外发授权是平台级的，不按供应商记录**（2026-10-09 起，`policyVersion = egress-2026-10-1`，设计见
   `.codestable/features/2026-10-09-model-routing/`）。摄影师选的是模型；由哪家服务商的哪个部署提供
   是 Gateway 的路由决定，目录 API 与授权契约都不出现供应商。授权的含义是「本会话内容可发给平台签约的
-  模型服务商」（名单见隐私说明，可由 `Catalog.Vendors()` 生成）；`creative_egress_consents.vendor_key`
+  模型服务商」（隐私说明 `/privacy` 不列具体服务商，owner 2026-10-11）；`creative_egress_consents.vendor_key`
   列固定写 `platform`，`coversRun` 不再比对供应商。每次调用实际发往哪个部署、哪家公司，由请求快照上的
   `deployment_key` 与部署的 `vendor_key` 留证，可按会话追查。
 - **Skill 的权威来源是数据库与对象存储**（S3 起；此前是 `//go:embed skillpkg`，已随本切片移除，

@@ -24,6 +24,7 @@ import {
   defaultAgentModel,
 } from '../editor/agentOptions.tsx'
 import { AgentMaterialPicker } from '../editor/AgentMaterials.tsx'
+import { useEgressNotice } from '../editor/EgressNotice.tsx'
 import Picker from '../editor/Picker.tsx'
 import { errorMessage } from '../editor/queue.ts'
 import { useJournal } from '../editor/useJournal.ts'
@@ -89,6 +90,7 @@ export default function HomeComposer({
 }) {
   const navigate = useNavigate()
   const { queue, error: storageError } = useJournal(account)
+  const egress = useEgressNotice(account)
   const storeKey = homeStartKey(account)
   const [catalog, setCatalog] = useState<Catalog | null>(null)
   const [catalogError, setCatalogError] = useState('')
@@ -312,6 +314,8 @@ export default function HomeComposer({
   }
   async function send() {
     if (!canSend || !queue) return
+    // 首次外发说明放在建项目之前：取消时什么都不建，输入和参考图原样留着。
+    if (!(await egress.confirm()) || !alive.current) return
     setNotice('')
     setBusy(true)
     let current: HomeStart = {
@@ -660,6 +664,7 @@ export default function HomeComposer({
           }}
         />
       )}
+      {egress.dialog}
     </div>
   )
 }

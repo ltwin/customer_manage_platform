@@ -4409,7 +4409,7 @@ type CreativeDocument struct {
 	TypeKey  string           `json:"type_key"`
 }
 
-// CreativeEgressConsent 本会话内容可发送给平台签约的模型服务商；名单见隐私说明，每次调用实际发往哪家记录在调用证据上。
+// CreativeEgressConsent 本会话内容可发送给平台签约的模型服务商；不对摄影师列出具体服务商，每次调用实际发往哪家记录在调用证据上。
 type CreativeEgressConsent struct {
 	// ApprovedRevisions 本次授权覆盖的修订数量；清单另存不随回执外发
 	ApprovedRevisions int                          `json:"approved_revisions"`
