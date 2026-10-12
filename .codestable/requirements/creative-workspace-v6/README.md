@@ -144,7 +144,7 @@
 |---|---|---|---|---|---|
 | [V6-061 · 创意空间应用侧栏与页面路由](items/V6-061.md) | P0 | 交付 | 已完成 | —（状态点 V6-063，点数 V6-022） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)（D1–D6 owner 2026-10-11 拍板）；「最近打开」与「继续创作」同按 `edited_at`（最近编辑）排序；白点用 mock 验证，真实数据随 V6-031/033 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
 | [V6-062 · 首页一句话开始](items/V6-062.md) | P0 | 交付 | 待实现 | V6-061、V6-029（外发规则）；附件机制与 V6-043 共用 | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；附件共用模块由本条交付 |
-| [V6-063 · 继续创作与项目封面缩影](items/V6-063.md) | P0 | 交付 | 实现中 | —（白点随 V6-031/033） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；项目列表补封面摘要与进行中状态 |
+| [V6-063 · 继续创作与项目封面缩影](items/V6-063.md) | P0 | 交付 | 待验收 | —（白点随 V6-031/033） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；项目列表补封面摘要与进行中状态；AC-01/03/04 已满足，AC-02 白点的真实数据随 V6-031/033 验收 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
 | [V6-064 · 项目页搜索、排序与归档撤销](items/V6-064.md) | P0 | 交付 | 实现中 | —（复制项目 V6-050） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；改名规则与 V6-044 共用；运行入口统一检查项目归档（design §3.4） |
 | [V6-065 · 从模板开始](items/V6-065.md) | P1 | 交付 | 待设计 | V6-050（复制画布） | 模板单列：第 1 期之后、与 V6-050 的复制画布能力同批做；首批模板内容待 owner 拍板（D-06） |
 | [V6-066 · 共用查看浮窗](items/V6-066.md) | P0 | 交付 | 待设计 | V6-067（宿主）、V6-068（评分区块） | 第 2 期；「生成信息」区块随 V6-071 验收 |

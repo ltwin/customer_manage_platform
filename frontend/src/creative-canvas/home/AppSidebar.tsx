@@ -12,9 +12,9 @@ import { Link } from 'react-router-dom'
 import { useOptionalAccountCenter } from '../../account/AccountCenterContext.tsx'
 import { fallbackAvatarLabel } from '../../account/accountAvatarMedia.ts'
 import type * as api from '../editor/api.ts'
-import { mediaTicket } from '../editor/media.ts'
 import {
   canvasPath,
+  coverMedia,
   firstImage,
   projectState,
   readRecentProjects,
@@ -238,7 +238,7 @@ function RecentThumb({
   useEffect(() => {
     if (!revision) return
     let active = true
-    mediaTicket(revision, 'display', 'display')
+    coverMedia(revision)
       .then((ticket) => {
         if (active) setImage({ revision, url: ticket.url })
       })

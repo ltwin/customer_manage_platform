@@ -1,0 +1,123 @@
+/* 项目封面缩影，视觉依据 docs/prototypes/creative-workspace/v6/home.css 的 .cover。
+   照片和缩影是页面上唯一的颜色来源；琥珀只表示运行中。 */
+.pc-cover {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: var(--r);
+  background: var(--s1) radial-gradient(var(--dot) 1px, transparent 1.2px) 0 0 /
+    10px 10px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow 0.15s;
+}
+.pc-cover > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.pc-cover > svg path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.pc-node {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--s3);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.pc-node img,
+.pc-node video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s var(--ease);
+}
+.pc-text {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 6px;
+  padding: 8px 7px;
+  background: #1f1f22;
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.pc-text i {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: #3a3a3f;
+}
+.pc-text i:first-child {
+  width: 55%;
+  height: 4px;
+  background: #5a5a60;
+}
+.pc-text i:nth-child(3) {
+  width: 70%;
+}
+.pc-empty {
+  border: 1px dashed var(--line-3);
+  background: transparent;
+  box-shadow: none;
+}
+.pc-group {
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.pc-blank {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.pc-more {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  color: var(--fg-3);
+  font-size: 10px;
+}
+.pc-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: rgba(11, 11, 12, 0.78);
+  color: var(--fg);
+  font-size: 11px;
+}
+.pc-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--run);
+  animation: pc-blink 1s ease-in-out infinite;
+}
+.pc-badge.wait::before {
+  background: var(--primary);
+  animation: none;
+}
+@keyframes pc-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-badge::before {
+    animation: none;
+  }
+}

@@ -1,15 +1,17 @@
 import { ChevronRight } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
+import { useOptionalAccountCenter } from '../../account/AccountCenterContext.tsx'
 import * as api from '../editor/api.ts'
-import { errorMessage } from '../editor/queue.ts'
 import '../editor/workspace.css'
 import AppSidebar from './AppSidebar.tsx'
+import ProjectCover from './ProjectCover.tsx'
 import {
   canvasPath,
-  emptyProjectPage,
+  greeting,
   projectState,
-  readRecentProjects,
+  recentPath,
+  useProjectPage,
 } from './projectList.ts'
 import './home.css'
 
@@ -23,10 +25,11 @@ export default function HomePage() {
 }
 
 function Home() {
-  const [page, setPage] = useState<api.ProjectPage>(emptyProjectPage)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [tick, setTick] = useState(0)
+  // 侧栏「最近打开」与「继续创作」共用这一次读取：前 5 个给侧栏，前 4 个做卡片。
+  const { page, error, reload } = useProjectPage(recentPath)
+  const center = useOptionalAccountCenter()
+  const profile = center?.profile.kind === 'ready' ? center.profile.data : null
+  const name = profile?.display_name?.trim() ?? ''
 
   useEffect(() => {
     const previous = document.title
@@ -36,37 +39,20 @@ function Home() {
     }
   }, [])
 
-  useEffect(() => {
-    const controller = new AbortController()
-    readRecentProjects(controller.signal)
-      .then((result) => {
-        setPage(result)
-        setError('')
-      })
-      .catch((e: unknown) => {
-        if (!controller.signal.aborted) setError(errorMessage(e))
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
-      })
-    return () => controller.abort()
-  }, [tick])
-
-  useEffect(() => {
-    const visible = () => {
-      if (document.visibilityState === 'visible') setTick((value) => value + 1)
-    }
-    document.addEventListener('visibilitychange', visible)
-    return () => document.removeEventListener('visibilitychange', visible)
-  }, [])
-
-  const continuing = page.items.slice(0, 4)
+  const continuing = page?.items.slice(0, 4) ?? []
   return (
     <div className="cc-workspace cs-app">
-      <AppSidebar current="home" recent={page.items} />
+      <AppSidebar current="home" recent={page?.items ?? []} />
       <main className="cs-main">
         <div className="hp-view">
-          {/* 一句话开始（V6-062）与封面缩影（V6-063）在后续提交里补上 */}
+          {/* 一句话开始（V6-062）在后续提交里补上 */}
+          <p className="hp-hello">
+            {greeting(
+              new Date().getHours(),
+              name,
+              page?.activity_counts ?? { running: 0, waiting: 0 },
+            )}
+          </p>
           <section className="hp-block" aria-labelledby="homeContinueTitle">
             <div className="hp-block-head">
               <h1 id="homeContinueTitle">继续创作</h1>
@@ -78,39 +64,30 @@ function Home() {
             {error ? (
               <div className="hp-state" role="alert">
                 <p>{error}</p>
-                <button
-                  className="btn"
-                  type="button"
-                  onClick={() => setTick((value) => value + 1)}
-                >
+                <button className="btn" type="button" onClick={reload}>
                   重试
                 </button>
               </div>
-            ) : loading ? (
+            ) : !page ? (
               <div className="hp-state" role="status">
                 正在加载项目…
               </div>
             ) : continuing.length ? (
               <div className="hp-grid">
-                {continuing.map((project) => {
-                  const state = projectState(project)
-                  return (
-                    <Link
-                      key={project.id}
-                      className="hp-card"
-                      to={canvasPath(project)}
-                    >
-                      <span className="hp-cover">
-                        {state && (
-                          <span className={`hp-badge ${state}`}>
-                            {state === 'wait' ? '等你确认' : '运行中'}
-                          </span>
-                        )}
-                      </span>
-                      <strong>{project.name}</strong>
-                    </Link>
-                  )
-                })}
+                {continuing.map((project) => (
+                  <Link
+                    key={project.id}
+                    className="hp-card"
+                    to={canvasPath(project)}
+                    aria-label={`打开项目：${project.name}`}
+                  >
+                    <ProjectCover
+                      project={project}
+                      state={projectState(project)}
+                    />
+                    <strong>{project.name}</strong>
+                  </Link>
+                ))}
               </div>
             ) : (
               <div className="hp-state">
