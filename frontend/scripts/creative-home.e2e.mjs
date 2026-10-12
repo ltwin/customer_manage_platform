@@ -1,5 +1,5 @@
-// Browser regression for the creative home (V6-061 sidebar and routes, V6-063
-// continue cards and covers). All API
+// Browser regression for the creative home (V6-061 sidebar and routes, V6-062
+// one-sentence start, V6-063 continue cards and covers). All API
 // traffic is mocked; each AC runs in a fresh context.
 // Run against the Vite dev server: node scripts/creative-home.e2e.mjs.
 import assert from 'node:assert/strict'
@@ -27,7 +27,35 @@ const project = (n, name, extra = {}) => ({
   ...extra,
 })
 const node = (id, kind, x, y, width, height, revision) => ({ id, kind, x, y, width, height, ...(revision ? { content_revision_id: revision } : {}) })
-let projects, counts
+let projects, counts, server
+// V6-062 的服务端：建项目、建对话、授权、建运行都按 Idempotency-Key 回放回执，
+// 只有第一次受理才真正建出东西；fault 控制每一步的故障。
+const catalog = (skills = true) => ({
+  catalog_version: '1',
+  skill_catalog_revision: '1',
+  limits_version: '1',
+  policy_version: '1',
+  limits: { attachments: 10, image_preview_count: 8 },
+  tools: [],
+  models: [
+    { model_key: 'off', display_name: '停用模型', available: false, unavailable_reason: '维护中', capability: { image_input: true } },
+    { model_key: 'vision', display_name: '识图模型', available: true, capability: { image_input: true } },
+    { model_key: 'plain', display_name: '纯文本模型', available: true, capability: { image_input: false } },
+  ],
+  skills: skills
+    ? [{ skill_id: 'sk', skill_version_id: 'skv', origin: 'platform', slug: 'reference-direction', display_name: '参考整理与创作方向', description: '检索参考、给出创作方向', available: true }]
+    : [],
+})
+const freshServer = () => ({
+  fault: {},
+  posts: { projects: [], conversations: [], consents: [], runs: [], uploads: [] },
+  receipts: new Map(),
+  created: { projects: 0, conversations: 0, consents: 0, runs: 0 },
+  assets: [],
+  skills: true,
+  uploadGate: null,
+  uploads: new Map(),
+})
 const fixture = () => {
   counts = { running: 2, waiting: 2 }
   projects = [
@@ -61,6 +89,7 @@ async function fresh({ width = 1280, height = 800, init, clock = false } = {}) {
   projectReads = []
   ticketReads = []
   fixture()
+  server = freshServer()
   page = await context.newPage()
   if (clock) await page.clock.install()
   page.setDefaultTimeout(6000)
@@ -82,13 +111,145 @@ async function fresh({ width = 1280, height = 800, init, clock = false } = {}) {
       ticketReads.push(route.request().postDataJSON().content_revision_id)
       return json({ url: pixel, expires_at: new Date(Date.now() + 3600000).toISOString(), mime: 'image/png', byte_size: 68 })
     }
-    if (path.endsWith('/creative/projects')) {
+    if (path.endsWith('/creative/projects') && route.request().method() === 'GET') {
       const limit = Number(url.searchParams.get('limit') ?? 50)
       const items = url.searchParams.get('archived') === 'true' ? [] : projects.slice(0, limit)
       return json({ items, next_cursor: '', activity_counts: counts })
     }
+    if ((await startRoutes(route, url, json)) !== false) return
     return json({ error: { code: 'unavailable', message: 'not modelled' } }, 503)
   })
+  await page.route('**/qa-storage/**', (route) => route.fulfill({ status: 200, body: '' }))
+}
+async function startRoutes(route, url, json) {
+  const path = url.pathname.replace('/api/v1/creative', '')
+  const method = route.request().method()
+  const key = route.request().headers()['idempotency-key']
+  const body = method === 'POST' ? route.request().postDataJSON() : null
+  if (method === 'GET' && path === '/agent/catalog') return json(catalog(server.skills))
+  if (method === 'GET' && path === '/media-capabilities')
+    return json({ schema_version: 1, formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 10485760, av_max_bytes: 10485760, part_size: 5242880, batch_limit: 20 })
+  if (method === 'GET' && path === '/assets') {
+    server.assetQuery = url.search
+    return json({ items: server.assets, next_cursor: '', total_count: server.assets.length, library_revision: '1' })
+  }
+  if (method === 'GET' && path.startsWith('/operations/')) {
+    const receipt = server.receipts.get(path.slice('/operations/'.length))
+    return receipt ? json({ response: receipt }) : json({ error: { code: 'not_found', message: 'none' } }, 404)
+  }
+  // 同一操作身份回放原回执，不再建一次。
+  const replay = (list, make) => {
+    list.push({ key, body })
+    if (server.receipts.has(key)) return json(server.receipts.get(key), 201)
+    const value = make()
+    server.receipts.set(key, value)
+    return value
+  }
+  if (method === 'POST' && path === '/projects') {
+    if (server.fault.project500) {
+      server.posts.projects.push({ key, body })
+      server.fault.project500 = false
+      return json({ error: { code: 'internal', message: '服务暂时不可用' } }, 500)
+    }
+    const made = replay(server.posts.projects, () => {
+      const n = ++server.created.projects
+      return { id: `pn${n}`, name: body.payload.name, default_canvas_id: `cn${n}`, revision: '1', archived: false, updated_at: '2026-10-11T00:00:00Z', edited_at: '2026-10-11T00:00:00Z', running: false, waiting: false, cover: { nodes: [], edges: [], more: false } }
+    })
+    return typeof made.then === 'function' ? made : json(made, 201)
+  }
+  if (method === 'POST' && /^\/canvases\/[^/]+\/conversations$/.test(path)) {
+    const made = replay(server.posts.conversations, () => ({ id: `conv${++server.created.conversations}`, project_id: 'pn1', canvas_id: path.split('/')[2], title: '新对话', title_source: 'default', archived: false, revision: '1', updated_at: '2026-10-11T00:00:00Z' }))
+    return typeof made.then === 'function' ? made : json(made, 201)
+  }
+  if (method === 'POST' && path.endsWith('/egress-consents')) {
+    if (server.fault.consent503) {
+      server.posts.consents.push({ key, body })
+      server.fault.consent503 = false
+      return json({ error: { code: 'unavailable', message: '服务暂时不可用' } }, 503)
+    }
+    const made = replay(server.posts.consents, () => ({ id: `consent${++server.created.consents}`, conversation_id: path.split('/')[2], approved_revisions: body.payload.selected_revision_ids.length }))
+    return typeof made.then === 'function' ? made : json(made, 201)
+  }
+  if (method === 'POST' && path.endsWith('/runs')) {
+    if (server.fault.run503) {
+      server.posts.runs.push({ key, body })
+      server.fault.run503 = false
+      return json({ error: { code: 'unavailable', message: '服务暂时不可用' } }, 503)
+    }
+    if (server.fault.run422) {
+      server.posts.runs.push({ key, body })
+      server.fault.run422 = false
+      return json({ error: { code: 'creative_model_unavailable', message: 'Model unavailable' } }, 422)
+    }
+    const made = replay(server.posts.runs, () => ({ id: `run${++server.created.runs}`, conversation_id: path.split('/')[2], canvas_id: 'cn1', trigger_message_id: 'm1', egress_consent_id: body.payload.egress_consent_id, model_key: body.payload.model_key, state: 'queued', settlement_state: 'pending', limits_version: '1', revision: '1', last_event_seq: '0', pruned_through_seq: '0', deadline_at: '2026-10-11T01:00:00Z', created_at: '2026-10-11T00:00:00Z' }))
+    // 服务端已经受理，但响应在路上断了。
+    if (server.fault.runLost) {
+      server.fault.runLost = false
+      return route.abort('failed')
+    }
+    return typeof made.then === 'function' ? made : json(made, 202)
+  }
+  // 暂存上传：建会话 → 上传分片 → 完成 → 轮询到 ready。
+  if (method === 'POST' && path === '/uploads') {
+    server.posts.uploads.push(body.payload)
+    const id = `up${server.posts.uploads.length}`
+    const fail = body.payload.file_name.startsWith('bad') && !server.uploads.has(`retried:${body.payload.file_name}`)
+    if (fail) server.uploads.set(`retried:${body.payload.file_name}`, true)
+    server.uploads.set(id, { state: 'uploading', fail, name: body.payload.file_name })
+    return json(uploadView(id), 201)
+  }
+  const upload = /^\/uploads\/([^/]+)(\/[a-z-]+)?$/.exec(path)
+  if (upload) {
+    const [, id, action] = upload
+    if (action === '/part-authorizations')
+      return json({ upload_id: id, parts: [{ part_number: 1, url: `${base}/qa-storage/${id}`, method: 'PUT', headers: {} }] })
+    if (action === '/complete') {
+      if (server.uploadGate) await server.uploadGate.promise
+      const item = server.uploads.get(id)
+      item.state = item.fail ? 'failed' : 'ready'
+      return json(uploadView(id))
+    }
+    if (action === '/cancel') {
+      server.uploads.get(id).state = 'cancelled'
+      return json(uploadView(id))
+    }
+    if (!action) return json(uploadView(id))
+  }
+  return false
+}
+function uploadView(id) {
+  const item = server.uploads.get(id)
+  return {
+    id, state: item.state, io_phase: 'none', revision: '1', kind: 'image', mime: 'image/png', size: 68, file_name: item.name,
+    part_size: 5242880, part_count: 1, uploaded_parts: [], target_kind: 'staged', expires_at: '2026-10-12T00:00:00Z',
+    error_code: item.state === 'failed' ? 'verify_failed' : '', publication: null, binding: null,
+    content_revision_id: item.state === 'ready' ? `ccrv_${id}` : null, created_at: '2026-10-11T00:00:00Z',
+  }
+}
+const gate = () => {
+  let release
+  const promise = new Promise((resolve) => { release = resolve })
+  return { promise, release }
+}
+const png = (name, seed = name) => ({
+  name,
+  mimeType: 'image/png',
+  buffer: Buffer.concat([Buffer.from(pixel.split(',')[1], 'base64'), Buffer.from(seed)]),
+})
+const ask = () => page.getByRole('form', { name: '一句话开始' })
+const prompt = () => page.getByLabel('创作想法')
+const sendButton = () => page.getByRole('button', { name: '交给助手' })
+const pick = async (label, option) => {
+  await ask().getByRole('combobox', { name: label, exact: true }).click()
+  await page.getByRole('listbox', { name: label, exact: true }).getByRole('option', { name: option }).click()
+}
+const refs = () => ask().getByRole('list', { name: '参考图' }).getByRole('listitem')
+const keys = (list) => [...new Set(list.map((p) => p.key))]
+// 进入新画布时助手面板已经打开（画布页读到 openAgent 标记）。
+const openedWithAgent = async () => {
+  await page.waitForURL(/\/creative\/canvases\/cn1$/)
+  await page.getByRole('complementary', { name: '创作助手' }).waitFor()
+  return page.evaluate(() => history.state?.usr?.openAgent === true)
 }
 const side = () => page.getByRole('complementary', { name: '创意空间导航' })
 const navLink = (name) => side().getByRole('link', { name, exact: true })
@@ -193,7 +354,8 @@ try {
     await page.screenshot({ path: `${output}/side-tip.png` })
     at('expanded has no tip')
     await page.mouse.move(800, 400)
-    await page.locator('body').click({ position: { x: 800, y: 400 } })
+    // 点标题让焦点离开侧栏；页面中部现在是输入框，不能随手点空白处。
+    await page.getByRole('heading', { name: '这次想拍点什么？' }).click()
     await side().getByRole('button', { name: '展开侧栏' }).click()
     await navLink('项目').hover()
     await page.waitForTimeout(200)
@@ -313,6 +475,288 @@ try {
   const card = (name) => page.getByRole('link', { name: `打开项目：${name}` })
   const cover = (name) => card(name).locator('.pc-cover')
   const box = async (locator) => locator.boundingBox()
+
+  // V6-062 AC-01 Enter 发送（Shift+Enter 换行），建好项目并带着打开助手的标记进入画布；
+  // 同一次提交无论第 3 步失败重试、响应丢失、刷新找回还是被拒后改了再发，都不重复建项目。
+  await record('062-AC-01', async () => {
+    await fresh()
+    server.fault.run503 = true
+    await page.goto(`${base}/creative`)
+    await prompt().waitFor()
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    at('shift+enter is a newline')
+    await prompt().fill('海边婚纱外景，傍晚逆光')
+    await prompt().press('Shift+Enter')
+    await prompt().pressSequentially('想要安静克制')
+    assert.equal(await prompt().inputValue(), '海边婚纱外景，傍晚逆光\n想要安静克制')
+    assert.equal(server.posts.projects.length, 0)
+    at('step 3 fails once')
+    await prompt().press('Enter')
+    const notice = page.getByText('消息还没确认送达')
+    await notice.waitFor()
+    assert.equal(await prompt().getAttribute('readonly'), '', 'input locked while the outcome is unknown')
+    assert.equal(await page.evaluate(() => JSON.parse(sessionStorage.getItem('creative-home-start:qa-home')).name), '海边婚纱外景，傍晚逆光')
+    await page.screenshot({ path: `${output}/start-unknown.png` })
+    await page.getByRole('button', { name: '重试发送' }).click()
+    assert.equal(await openedWithAgent(), true, 'canvas opens with the assistant')
+    assert.equal(server.posts.projects.length, 1, 'one project')
+    assert.equal(server.posts.conversations.length, 1)
+    assert.equal(server.posts.consents.length, 1)
+    assert.equal(server.posts.runs.length, 2)
+    assert.equal(keys(server.posts.runs).length, 1, 'retry keeps the run identity')
+    assert.equal(server.created.runs, 1)
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('creative-home-start:qa-home')), null, 'record cleared after acceptance')
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('creative-agent-pending:qa-home:cn1')), null, 'chain cleared after acceptance')
+
+    at('accepted but the response was lost')
+    await fresh()
+    server.fault.runLost = true
+    await page.goto(`${base}/creative`)
+    await prompt().fill('响应丢失的一句话')
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await prompt().press('Enter')
+    await page.getByText('消息还没确认送达').waitFor()
+    assert.equal(server.created.runs, 1, 'server accepted the run')
+    assert.equal(await prompt().getAttribute('readonly'), '')
+    at('refresh finds it again')
+    await page.reload()
+    await page.getByText('消息还没确认送达').waitFor()
+    assert.equal(await prompt().inputValue(), '响应丢失的一句话')
+    assert.equal(await prompt().getAttribute('readonly'), '', 'still locked after refresh')
+    assert.equal(await sendButton().isDisabled(), true)
+    await page.getByRole('button', { name: '重试发送' }).click()
+    assert.equal(await openedWithAgent(), true)
+    assert.equal(server.posts.projects.length, 1)
+    assert.equal(server.posts.runs.length, 2)
+    assert.equal(keys(server.posts.runs).length, 1)
+    assert.equal(server.created.runs, 1, 'the replay did not start a second run')
+
+    at('refused, edited and sent again')
+    await fresh()
+    server.fault.run422 = true
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await prompt().fill('第一次的说法')
+    await prompt().press('Enter')
+    await page.getByRole('alert').filter({ hasText: '当前模型暂无可用的服务渠道，请换一个模型' }).waitFor()
+    await page.getByText('项目「第一次的说法」已建好，消息还没发出。').waitFor()
+    assert.equal(await prompt().getAttribute('readonly'), null, 'unlocked after a definite refusal')
+    assert.equal(await prompt().inputValue(), '第一次的说法')
+    await page.reload()
+    await page.getByText('项目「第一次的说法」已建好，消息还没发出。').waitFor()
+    await prompt().fill('改过的说法')
+    await prompt().press('Enter')
+    assert.equal(await openedWithAgent(), true)
+    assert.equal(server.posts.projects.length, 1, 'no second project')
+    assert.equal(server.posts.conversations.length, 1, 'the conversation is reused')
+    assert.equal(server.posts.consents.length, 2)
+    assert.equal(keys(server.posts.consents).length, 2, 'a new message gets new identities')
+    assert.deepEqual(server.posts.runs.at(-1).body.payload.instruction.instruction_segments, [{ type: 'text', text: '改过的说法' }])
+  })
+
+  // V6-062 AC-02 参考图、Skill、模型随首条消息进入助手；默认模型是第一个可用的；授权只覆盖这条消息的参考图。
+  await record('062-AC-02', async () => {
+    await fresh()
+    server.assets = [
+      { id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', unavailable: false },
+    ]
+    await page.goto(`${base}/creative`)
+    at('default model')
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    at('library and upload references')
+    await page.getByRole('button', { name: '加为参考：海边逆光' }).click()
+    await ask().getByRole('combobox', { name: '添加参考图' }).click()
+    const chooser = page.waitForEvent('filechooser')
+    await page.getByRole('option', { name: '上传图片' }).click()
+    await (await chooser).setFiles(png('a.png'))
+    await refs().nth(1).and(page.locator('[data-state="ready"]')).waitFor()
+    assert.equal(server.posts.uploads[0].target.kind, 'staged', 'uploads are staged, not stored in the library')
+    await pick('Skill', '参考整理与创作方向')
+    await prompt().fill('按这两张图出方向')
+    await prompt().press('Enter')
+    await openedWithAgent()
+    const consent = server.posts.consents[0].body.payload
+    assert.deepEqual(consent, {
+      purpose: 'creative_assistance',
+      mode: 'selected_revisions',
+      data_classes: ['text', 'canvas_metadata', 'image_preview'],
+      selected_revision_ids: ['ccrv_lib1', 'ccrv_up1'],
+    })
+    const run = server.posts.runs[0].body.payload
+    assert.equal(run.model_key, 'vision')
+    assert.equal(run.egress_consent_id, 'consent1')
+    assert.deepEqual(run.instruction.instruction_segments, [
+      { type: 'skill_ref', skill_id: 'sk', skill_version_id: 'skv' },
+      { type: 'text', text: '按这两张图出方向' },
+      { type: 'content_ref', content_revision_id: 'ccrv_lib1' },
+      { type: 'content_ref', content_revision_id: 'ccrv_up1' },
+    ])
+  })
+
+  // V6-062 AC-03 上传完成前不能发送；失败逐项说明可重试；可移除；重复拦截；最多 6 张；模型不识图时提示。
+  await record('062-AC-03', async () => {
+    await fresh()
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await prompt().fill('参考图规则')
+    const upload = async (...files) => {
+      await ask().getByRole('combobox', { name: '添加参考图' }).click()
+      const chooser = page.waitForEvent('filechooser')
+      await page.getByRole('option', { name: '上传图片' }).click()
+      await (await chooser).setFiles(files)
+    }
+    at('uploading blocks sending')
+    server.uploadGate = gate()
+    await upload(png('one.png'))
+    await refs().first().and(page.locator('[data-state="uploading"]')).waitFor()
+    await page.getByText('参考图上传完成后才能发送').waitFor()
+    assert.equal(await sendButton().isDisabled(), true)
+    server.uploadGate.release()
+    server.uploadGate = null
+    await refs().first().and(page.locator('[data-state="ready"]')).waitFor()
+    assert.equal(await sendButton().isDisabled(), false)
+    at('duplicate is refused')
+    await upload(png('one-again.png', 'one.png'))
+    await page.getByText('这张图已经添加过').waitFor()
+    assert.equal(await refs().count(), 1)
+    at('failure explained per item, retry works')
+    await upload(png('bad.png'))
+    await page.getByText('bad.png：媒体校验失败').waitFor()
+    await page.getByText('有参考图上传失败，重试或移除后再发送').waitFor()
+    assert.equal(await sendButton().isDisabled(), true)
+    await page.getByRole('button', { name: '重试上传：bad.png' }).click()
+    await refs().nth(1).and(page.locator('[data-state="ready"]')).waitFor()
+    at('drag and drop')
+    const drop = await page.evaluateHandle(async (src) => {
+      const data = new DataTransfer()
+      const bytes = await (await fetch(src)).blob()
+      data.items.add(new File([bytes, 'dropped'], 'dropped.png', { type: 'image/png' }))
+      return data
+    }, pixel)
+    await ask().dispatchEvent('dragover', { dataTransfer: drop })
+    await ask().dispatchEvent('drop', { dataTransfer: drop })
+    await refs().nth(2).and(page.locator('[data-state="ready"]')).waitFor()
+    at('limit of six')
+    await upload(png('p4.png'), png('p5.png'), png('p6.png'), png('p7.png'))
+    await page.getByText('最多 6 张').waitFor()
+    assert.equal(await refs().count(), 3, 'the whole batch is refused')
+    await upload(png('p4.png'), png('p5.png'), png('p6.png'))
+    await refs().nth(5).and(page.locator('[data-state="ready"]')).waitFor()
+    await upload(png('p7.png'))
+    await page.getByText('最多 6 张').waitFor()
+    assert.equal(await refs().count(), 6)
+    await page.screenshot({ path: `${output}/start-references.png` })
+    at('remove')
+    await page.getByRole('button', { name: '移除参考图：p6.png' }).click()
+    assert.equal(await refs().count(), 5)
+    at('model without image input')
+    await pick('模型', '纯文本模型')
+    await page.getByText('所选模型不支持图片，换一个识图模型或移除图片').waitFor()
+    assert.equal(await sendButton().isDisabled(), true)
+    assert.equal(server.posts.projects.length, 0, 'nothing was sent')
+    assert.ok(server.posts.uploads.every((u) => u.target.kind === 'staged'))
+  })
+
+  // V6-062 AC-04 点场景 chip 填入示例文字并切换 Skill，不发送；目录里没有这个 Skill 时只填文字。
+  await record('062-AC-04', async () => {
+    await fresh()
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: 'Skill', exact: true }).filter({ hasText: '普通对话' }).waitFor()
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await page.getByRole('button', { name: '参考整理与创作方向' }).click()
+    assert.match(await prompt().inputValue(), /^春季品牌 Lookbook/)
+    await ask().getByRole('combobox', { name: 'Skill', exact: true }).filter({ hasText: '参考整理与创作方向' }).waitFor()
+    await page.waitForTimeout(200)
+    assert.equal(server.posts.projects.length, 0, 'a chip never sends')
+    at('skill missing from the catalog')
+    await fresh()
+    server.skills = false
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await page.getByRole('button', { name: '参考整理与创作方向' }).click()
+    assert.match(await prompt().inputValue(), /^春季品牌 Lookbook/)
+    await ask().getByRole('combobox', { name: 'Skill', exact: true }).filter({ hasText: '普通对话' }).waitFor()
+  })
+
+  // V6-062 AC-05 「空白画布」建空项目进入画布；建项目或某一步失败时停在首页说明原因，文字和参考图保留。
+  await record('062-AC-05', async () => {
+    await fresh()
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    at('blank canvas')
+    await page.getByRole('button', { name: '空白画布' }).click()
+    await page.waitForURL(/\/creative\/canvases\/cn1$/)
+    await page.getByRole('button', { name: '打开创作助手' }).waitFor()
+    assert.equal(await page.getByRole('complementary', { name: '创作助手' }).count(), 0, 'a blank canvas opens without the assistant')
+    assert.deepEqual(server.posts.projects.map((p) => p.body.payload), [{ name: '未命名项目' }])
+    assert.equal(server.posts.conversations.length, 0)
+
+    at('creating the project fails')
+    await fresh()
+    server.fault.project500 = true
+    server.assets = [{ id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', unavailable: false }]
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await page.getByRole('button', { name: '加为参考：海边逆光' }).click()
+    await prompt().fill('建项目失败也要留着')
+    await prompt().press('Enter')
+    await page.getByRole('button', { name: '查询并恢复原保存' }).waitFor()
+    assert.ok(page.url().endsWith('/creative'), 'stays on the home page')
+    assert.equal(await prompt().inputValue(), '建项目失败也要留着')
+    assert.equal(await refs().count(), 1)
+    await page.screenshot({ path: `${output}/start-project-failed.png` })
+    await page.getByRole('button', { name: '查询并恢复原保存' }).click()
+    assert.equal(await openedWithAgent(), true)
+    assert.equal(server.created.projects, 1, 'recovery created exactly one project')
+    assert.equal(keys(server.posts.projects).length, 1, 'recovery replays the same operation')
+
+    at('step 2 returns 503')
+    await fresh()
+    server.fault.consent503 = true
+    server.assets = [{ id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', unavailable: false }]
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await page.getByRole('button', { name: '加为参考：海边逆光' }).click()
+    await prompt().fill('授权失败也要留着')
+    await prompt().press('Enter')
+    await page.getByText('项目「授权失败也要留着」已建好，消息还没确认送达。').waitFor()
+    assert.ok(page.url().endsWith('/creative'))
+    assert.equal(await prompt().inputValue(), '授权失败也要留着')
+    assert.equal(await refs().count(), 1)
+    await page.getByRole('button', { name: '重试发送' }).click()
+    assert.equal(await openedWithAgent(), true)
+    assert.equal(keys(server.posts.consents).length, 1)
+    assert.equal(server.created.consents, 1)
+    assert.equal(server.posts.projects.length, 1)
+  })
+
+  // V6-062 AC-06 「最近添加」显示资产库最近的图片，「+ 参考」放进输入框；资产库为空时不出现这一行。
+  await record('062-AC-06', async () => {
+    await fresh()
+    server.assets = Array.from({ length: 3 }, (_, i) => ({ id: `a${i}`, title: `素材 ${i}`, kind: 'image', content_revision_id: `ccrv_lib${i}`, unavailable: false }))
+    await page.goto(`${base}/creative`)
+    const row = page.getByRole('heading', { name: '资产库 · 最近添加' })
+    await row.waitFor()
+    assert.equal(new URLSearchParams(server.assetQuery).get('sort'), 'recent')
+    assert.equal(new URLSearchParams(server.assetQuery).get('kind'), 'image')
+    assert.equal(new URLSearchParams(server.assetQuery).get('limit'), '12')
+    await page.locator('.hp-asset img').nth(2).waitFor()
+    const heights = await page.locator('.hp-asset').evaluateAll((items) => items.map((el) => Math.round(el.getBoundingClientRect().height)))
+    assert.deepEqual(heights, [132, 132, 132], 'one row of equal height')
+    await page.locator('.hp-asset').first().hover()
+    await page.getByRole('button', { name: '加为参考：素材 0' }).click()
+    await refs().first().waitFor()
+    assert.equal(server.posts.uploads.length, 0, 'library references are not uploaded')
+    await page.getByRole('button', { name: '加为参考：素材 0' }).click()
+    await page.getByText('这张图已经添加过').waitFor()
+    await page.screenshot({ path: `${output}/home-start-1280.png` })
+    at('empty library hides the row')
+    await fresh()
+    await page.goto(`${base}/creative`)
+    await prompt().waitFor()
+    await page.waitForTimeout(400)
+    assert.equal(await page.getByRole('heading', { name: '资产库 · 最近添加' }).count(), 0)
+  })
 
   // V6-063 AC-01 首页 4 个最近编辑的项目；封面按画布比例缩影，图片用真实缩略图，空项目写「空白画布」。
   await record('063-AC-01', async () => {
@@ -440,6 +884,89 @@ try {
     assert.equal(projectReads.length, before, 'waiting alone does not poll')
   })
 
+
+  await record('062-fix-project-handoff', async () => {
+    for (const recovering of [false, true]) {
+      await fresh({ init: () => {
+        const put = IDBObjectStore.prototype.put
+        IDBObjectStore.prototype.put = function (value, ...args) {
+          if (this.name === 'journals' && value.job?.path === '/projects') window.reviewProjectPending = true
+          if (this.name === 'journals' && window.reviewProjectPending && value.job === null && !sessionStorage.getItem('handoff-interrupted')) {
+            this.transaction.addEventListener('complete', (event) => {
+              // 模拟 journal 清空落盘后立刻中断，后续 Promise 不再有机会执行。
+              event.stopImmediatePropagation()
+              sessionStorage.setItem('handoff-interrupted', '1')
+              location.reload()
+            })
+          }
+          return put.call(this, value, ...args)
+        }
+      } })
+      server.fault.project500 = recovering
+      await page.goto(`${base}/creative`)
+      await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+      await prompt().fill('交接中断后仍用同一个项目')
+      await sendButton().click()
+      if (recovering) await page.getByRole('button', { name: '查询并恢复原保存' }).click()
+      await page.getByText('项目「交接中断后仍用同一个项目」已建好，消息还没发出。').waitFor()
+      await page.waitForFunction(() => sessionStorage.getItem('handoff-interrupted') === '1')
+      assert.equal(await prompt().inputValue(), '交接中断后仍用同一个项目')
+      await sendButton().click()
+      assert.equal(await openedWithAgent(), true)
+      assert.equal(server.created.projects, 1)
+      assert.equal(keys(server.posts.projects).length, 1)
+    }
+  })
+
+  await record('062-fix-hashing-blocks-send', async () => {
+    await fresh({ init: () => {
+      const digest = crypto.subtle.digest.bind(crypto.subtle)
+      crypto.subtle.digest = async (...args) => {
+        window.reviewHashStarted = true
+        await new Promise(resolve => { window.reviewReleaseHash = resolve })
+        return digest(...args)
+      }
+    } })
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await prompt().fill('必须带上刚选的参考图')
+    // 先等媒体能力响应，保证进入摘要计算。
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/media-capabilities')))
+    await page.locator('input[type=file]').setInputFiles(png('hashing.png'))
+    await page.waitForFunction(() => window.reviewHashStarted)
+    assert.equal(await sendButton().isDisabled(), true)
+    await prompt().press('Enter')
+    assert.equal(server.posts.projects.length, 0)
+    await page.evaluate(() => window.reviewReleaseHash())
+    await refs().first().and(page.locator('[data-state="ready"]')).waitFor()
+    await sendButton().click()
+    assert.equal(await openedWithAgent(), true)
+    assert.deepEqual(server.posts.runs[0].body.payload.instruction.instruction_segments, [
+      { type: 'text', text: '必须带上刚选的参考图' },
+      { type: 'content_ref', content_revision_id: 'ccrv_up1' },
+    ])
+  })
+
+  await record('062-fix-refresh-deduplication', async () => {
+    await fresh()
+    server.fault.run422 = true
+    await page.goto(`${base}/creative`)
+    await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
+    await prompt().fill('刷新后仍然判重')
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/media-capabilities')))
+    await page.locator('input[type=file]').setInputFiles(png('same.png'))
+    await refs().first().and(page.locator('[data-state="ready"]')).waitFor()
+    await sendButton().click()
+    await page.getByRole('alert').filter({ hasText: '当前模型暂无可用的服务渠道' }).waitFor()
+    await page.reload()
+    await refs().first().and(page.locator('[data-state="ready"]')).waitFor()
+    await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/media-capabilities')))
+    await page.locator('input[type=file]').setInputFiles(png('renamed.png', 'same.png'))
+    await page.getByText('这张图已经添加过').waitFor()
+    assert.equal(await refs().count(), 1)
+    assert.equal(server.posts.uploads.length, 1)
+  })
+
   assert.deepEqual(errors, [])
 } finally {
   console.log(JSON.stringify(results, null, 1))
@@ -447,4 +974,4 @@ try {
   await browser.close()
 }
 const failed = Object.entries(results).filter(([, r]) => r !== 'pass')
-if (failed.length || (!only && Object.keys(results).length !== 9)) process.exitCode = 1
+if (failed.length || (!only && Object.keys(results).length !== 17)) process.exitCode = 1

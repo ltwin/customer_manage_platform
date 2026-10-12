@@ -19,7 +19,7 @@ import {
   useState,
   type CSSProperties,
 } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { ReactFlowProvider } from '@xyflow/react'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useOnline } from './useOnline.ts'
@@ -142,6 +142,8 @@ function Workspace({ account }: { account: string }) {
   const [help, setHelp] = useState(false)
   const [panMode, setPanMode] = useState(false)
   const { canvasID = '' } = useParams<{ canvasID: string }>()
+  // 首页一句话开始进入画布时带着 openAgent，助手面板直接打开。
+  const openAgent = (useLocation().state as { openAgent?: boolean } | null)?.openAgent === true
   // 资产库当前已载入的素材（结果网格与分组预览），供画布拖放与参考标题查找。
   const [assets, setAssets] = useState<api.Asset[]>([])
   const [referenceRequest, setReferenceRequest] = useState<{
@@ -1234,7 +1236,7 @@ function Workspace({ account }: { account: string }) {
       className={`cc-workspace ${!canvasID ? 'is-library' : ''} ${libraryOpen ? 'has-library' : ''}`}
     >
       {canvasID && (
-        <AgentPanel key={canvasID} account={account} canvasID={canvasID} canvas={view} />
+        <AgentPanel key={canvasID} account={account} canvasID={canvasID} canvas={view} defaultOpen={openAgent} />
       )}
       <header className="cc-header">
         <Link

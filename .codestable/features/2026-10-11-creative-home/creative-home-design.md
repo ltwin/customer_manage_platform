@@ -269,10 +269,10 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
 **首页待办记录**（2026-10-11 评审第 5 条）：
 
 - 待确认链按画布存放，首页刷新后只靠它是找不回来的。所以首页另存一条记录：`sessionStorage['creative-home-start:{account}']`，和 journal 一样是每个标签页一份。
-- 内容：`{text, model, skill, attachments: [{id, title, kind, source}], projectID?, canvasID?, name?, chain?: {operations}}`。`chain` 只存这条链的操作身份，用来认出画布槽位里是不是同一条链，请求体仍然以画布槽位为准。
+- 内容：`{text, model, skill, attachments: [{id, title, kind, source, digest?}], projectOperation?, projectID?, canvasID?, name?, conversation?, chain?: {operations}}`。`conversation` 是被明确拒绝之前已经建好的对话，改了再发时接着用，不再建一个（实现时补充）。`chain` 只存这条链的操作身份，用来认出画布槽位里是不是同一条链，请求体仍然以画布槽位为准。
 - 写入时机：
   1. 按下发送、通过本地检查后，写入草稿部分。
-  2. 建项目成功后，补上 `projectID`、`canvasID` 和 `name`。journal 在刷新后恢复出建项目的结果时也补上。
+  2. 建项目成功后，先持久保存 `projectID`、`canvasID`、`name` 和 `projectOperation`，再由 journal 清除原操作；保存失败时保留 journal 原身份。刷新后查询回执也遵循这个顺序。`projectOperation` 用来识别项目回执已保存、journal 尚未清除的中断情况。
   3. 组装好链、写进画布槽位后，补上 `chain`。
 - 清除时机：运行受理；被明确拒绝后摄影师自己清空输入框；或者首页发现这条链已经在别处处理掉了（见下）。
 - 首页加载时读这条记录：
@@ -295,12 +295,13 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
   - 只有重放得到明确的结果，才会解锁：受理了就进入画布；被明确拒绝就按下一条处理。不提供「放弃这条、改了再发」的出口。否则旧请求实际已经受理时，新请求会再起一次运行。
 - **明确被拒**（模型不可用、Skill 不可用、引用失效、参考图过期、项目已归档）：
   - 清掉这条链，输入框解锁，文字和参考图保留，上方说明原因（文案沿用 `agentState.ts:268` 的映射）。
-  - 摄影师修改后再发送：在同一个项目上组装新链，用新的操作身份，不建第二个项目。
+  - 摄影师修改后再发送：在同一个项目上组装新链，用新的操作身份，不建第二个项目；对话已经建好的话也接着用。
 
 **其他入口**：
 
 - 「空白画布」：只走第 1 步，项目名用「未命名项目」，然后进入画布，和现在的新建一样。
-- **场景 chip**：前端写死 5 个，每个是 `{标签, 示例文字, skill slug}`。点击后把示例文字填进输入框；目录里有这个 slug 的平台 Skill 时一并选上，没有就只填文字。点击不会发送。
+- **场景 chip**：前端写死，每个是 `{标签, 示例文字, skill slug}`。点击后把示例文字填进输入框；目录里有这个 slug 的平台 Skill 时一并选上，没有就只填文字。点击不会发送。
+  - 只写已经上线的平台 Skill，不照搬原型的 5 个场景。现在只有一个，「参考整理与创作方向」（`reference-direction`）；以后加了 Skill 再补（owner 2026-10-11）。
 - **资产库最近添加**：
   - 请求 `GET /creative/assets?sort=recent&kind=image&limit=12`，显示成一行，等高、保持原比例。
   - 悬停时出现「+ 参考」，点击后把这个素材的内容修订加为参考图。从资产库加的参考图不经过上传。
@@ -315,7 +316,7 @@ CREATE INDEX creative_execution_live ON creative_node_executions(account_id, can
   - 从资产库选：直接用素材的内容修订。
 - **数量**：一次最多 6 张。超出时整批拒绝，并说明「最多 6 张」。这个上限同时受目录的 `limits.attachments` 和 `image_preview_count` 约束，取三者中最小的。
 - **去重**：
-  - 上传的文件按内容的 SHA-256 判重（`crypto.subtle`），在开始上传之前计算。
+  - 上传的文件按内容的 SHA-256 判重（`crypto.subtle`），在开始上传之前计算。从读取文件、计算摘要到上传完成，全程阻止发送；页面卸载后不再追加附件或启动上传。摘要随附件保存到首页恢复记录，刷新后仍能判重；旧记录没有摘要时仍可恢复。
   - 从资产库选的按修订 ID 判重。
   - 同一张图一次来自上传、一次来自资产库时，本期认不出来，算作已知限制。
   - 判重命中时提示「这张图已经添加过」。

@@ -149,7 +149,7 @@ function CoverCell({
   )
 }
 
-function CoverMedia({ revision }: { revision: string }) {
+export function CoverMedia({ revision }: { revision: string }) {
   const [media, setMedia] = useState<{
     revision: string
     url: string

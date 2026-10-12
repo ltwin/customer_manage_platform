@@ -123,7 +123,7 @@ try {
     assert.equal(await page.getByRole('checkbox').count(), 0, 'sending needs no consent tick')
     await page.getByLabel('创作问题').press('Enter')
     await page.waitForFunction(
-      (k) => JSON.parse(sessionStorage.getItem(k)).nextOperation,
+      (k) => JSON.parse(sessionStorage.getItem(k))?.steps?.length === 2,
       key,
     )
     await page.getByRole('button', { name: '收起创作助手' }).click()
@@ -469,8 +469,69 @@ try {
   await menu('返回对话列表')
   await managePage.getByLabel('创作问题').waitFor()
   await managePage.close()
+
+  // 第一条消息顺带建对话：建对话的响应丢了，刷新后「重新发送」重放同一个操作，
+  // 不会多出一个空对话；旧版本存下的待确认记录照样能重新发送。
+  const chainPage = await browser.newPage()
+  chainPage.on('pageerror', (error) => { throw error })
+  const chainPosts = []
+  const made = new Map()
+  let dropConversation = true
+  await chainPage.route('**/api/v1/creative/**', async (route) => {
+    const req = route.request(), path = new URL(req.url()).pathname
+    const json = (body) => route.fulfill({ json: body })
+    if (req.method() === 'POST') {
+      const id = req.headers()['idempotency-key']
+      chainPosts.push([path.replace('/api/v1/creative', ''), id])
+      if (path.endsWith('/canvases/canvas/conversations')) {
+        if (!made.has(id)) made.set(id, `conv${made.size + 1}`)
+        if (dropConversation) { dropConversation = false; return route.abort('failed') }
+        return json({ id: made.get(id), title: '新对话' })
+      }
+      if (path.endsWith('/egress-consents')) return json({ id: 'consent', approved_revisions: 0 })
+      if (path.endsWith('/runs')) return json({ ...finishedRun, conversation_id: path.split('/').at(-2) })
+    }
+    if (path.endsWith('/agent/catalog')) return json({ limits: { attachments: 10, image_preview_count: 8 }, skills: [], models: [{ model_key: 'model', display_name: 'Test model', available: true, capability: { image_input: false } }] })
+    if (path.endsWith('/agent-runs/run')) return json(finishedRun)
+    return json({ items: [] })
+  })
+  await chainPage.goto(url)
+  await chainPage.getByRole('button', { name: '打开创作助手' }).click()
+  await chainPage.getByLabel('创作问题').fill('第一条消息')
+  await chainPage.getByRole('button', { name: '发送', exact: true }).click()
+  await chainPage.getByRole('alert').waitFor()
+  assert.equal(made.size, 1, 'the server created the conversation')
+  await chainPage.reload()
+  await chainPage.getByRole('button', { name: '打开创作助手' }).click()
+  await chainPage.getByRole('button', { name: '重新发送' }).click()
+  await chainPage.waitForFunction((k) => sessionStorage.getItem(k) === null, key)
+  const conversationPosts = chainPosts.filter(([p]) => p.endsWith('/conversations'))
+  assert.equal(conversationPosts.length, 2)
+  assert.equal(conversationPosts[0][1], conversationPosts[1][1], 'the retry replays the same conversation operation')
+  assert.equal(made.size, 1, 'no second, empty conversation')
+  assert.deepEqual(chainPosts.slice(2).map(([p]) => p), ['/conversations/conv1/egress-consents', '/conversations/conv1/runs'])
+  // 旧格式：当前一步加上下一次运行的身份。
+  chainPosts.length = 0
+  await chainPage.evaluate((k) => sessionStorage.setItem(k, JSON.stringify({
+    path: '/conversations/conv1/egress-consents',
+    operation: 'legacy-consent',
+    body: JSON.stringify({ operation_id: 'legacy-consent', client_created_at: '2026-10-01T00:00:00Z', payload: { purpose: 'creative_assistance', mode: 'selected_revisions', data_classes: ['text', 'canvas_metadata'], selected_revision_ids: [] } }),
+    nextOperation: 'legacy-run',
+    nextCreatedAt: '2026-10-01T00:00:00Z',
+    nextRun: { model_key: 'model', egress_consent_id: '', instruction: { schema_version: 1, instruction_segments: [{ type: 'text', text: '旧记录' }] } },
+    draft: { conversation: 'conv1', model: 'model', skill: '', text: '旧记录' },
+  })), key)
+  await chainPage.reload()
+  await chainPage.getByRole('button', { name: '打开创作助手' }).click()
+  await chainPage.getByRole('button', { name: '重新发送' }).click()
+  await chainPage.waitForFunction((k) => sessionStorage.getItem(k) === null, key)
+  assert.deepEqual(chainPosts, [
+    ['/conversations/conv1/egress-consents', 'legacy-consent'],
+    ['/conversations/conv1/runs', 'legacy-run'],
+  ])
+  await chainPage.close()
   console.log(
-    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model; rename, archive, read-only archive view and restore',
+    'PASS: both delayed-consent orders create one run; refresh + 422 restores draft/model/skill/conversation; image/text references, model capability and retry identity verified; conversations recall their last model; rename, archive, read-only archive view and restore; a lost conversation reply replays one operation; legacy pending records resend',
   )
 } finally {
   await browser.close()

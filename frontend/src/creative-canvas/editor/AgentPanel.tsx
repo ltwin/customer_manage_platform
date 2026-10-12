@@ -4,7 +4,6 @@ import {
   ArrowRight,
   ArrowUp,
   ClipboardList,
-  Cpu,
   History,
   MessageCircle,
   Minus,
@@ -18,19 +17,24 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { components } from '../../api/schema'
-import { ApiError } from '../../api/transport.ts'
 import * as api from './api.ts'
 import {
-  agentAction,
-  consentedRunAction,
-  replacePendingAction,
-  ownsPendingAction,
-  type AgentDraft,
+  agentPendingKey,
+  agentStep,
+  conversationSlot,
+  conversationStep,
   isActiveRun,
-  pendingAgentAction,
+  messageSteps,
+  ownsPendingChain,
+  pendingAgentChain,
+  performAgentChain,
   recalledModel,
+  replacePendingChain,
+  stepBody,
+  untitledConversation as untitled,
+  type AgentDraft,
   type AgentRun,
-  type PendingAgentAction,
+  type PendingAgentChain,
 } from './agentState.ts'
 import PromptEditor, { type PromptEditorHandle } from './PromptEditor.tsx'
 import Picker, { type PickerOption } from './Picker.tsx'
@@ -41,6 +45,11 @@ import {
   type AgentMaterial,
 } from './agentReferences.ts'
 import { AgentMaterialPicker } from './AgentMaterials.tsx'
+import {
+  agentModelOptions,
+  agentSkillOptions,
+  defaultAgentModel,
+} from './agentOptions.tsx'
 import { Markdown, RunTurn, TurnLoading } from './AgentBlocks.tsx'
 import { currentStep } from './agentBlocks.ts'
 import {
@@ -59,9 +68,6 @@ type Consent = components['schemas']['CreativeEgressConsent']
 type Message = MessagePage['items'][number]
 type Reply = AgentRun | Conversation | Consent
 
-// 新会话先用这个名字；第一次回答完成后由服务端按对话内容改名，
-// 摄影师自己改过名的不再被自动命名覆盖。
-const untitled = '新对话'
 // 自动命名在回答结束后异步完成，期间按这个间隔重读几次会话列表。
 const namingPolls = 4
 const namingInterval = 2500
@@ -86,16 +92,28 @@ const starters: { icon: LucideIcon; label: string; text?: string }[] = [
   { icon: Paperclip, label: '引用素材开始讨论' },
 ]
 
+// 只有一步的待确认链：补充、取消、结束核实、重试。
+function single(
+  path: string,
+  payload: Record<string, unknown>,
+  draft?: AgentDraft,
+): PendingAgentChain {
+  return { steps: [agentStep(path, payload)], ...(draft ? { draft } : {}) }
+}
+
 export default function AgentPanel({
   account,
   canvasID,
   canvas,
+  defaultOpen = false,
 }: {
   account: string
   canvasID: string
   canvas?: api.Canvas | null
+  // 从首页一句话开始进来时，面板直接打开。
+  defaultOpen?: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   // Runs are followed for as long as this canvas is open, panel or no panel.
   useEffect(() => forgetRuns, [account, canvasID])
   const state = useAgentRuns((store) => {
@@ -138,7 +156,7 @@ function AgentConversation({
   canvas?: api.Canvas | null
   onClose: () => void
 }) {
-  const storageKey = `creative-agent-pending:${account}:${canvasID}`
+  const storageKey = agentPendingKey(account, canvasID)
   const editor = useRef<PromptEditorHandle>(null)
   const loaded = useRef(false)
   const recalled = useRef('')
@@ -170,10 +188,10 @@ function AgentConversation({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [storageBroken, setStorageBroken] = useState(false)
-  const [pending, setPending] = useState<PendingAgentAction | null>(null)
+  const [pending, setPending] = useState<PendingAgentChain | null>(null)
   const [refresh, setRefresh] = useState(0)
   const [naming, setNaming] = useState(0)
-  const pendingRef = useRef<PendingAgentAction | null>(null)
+  const pendingRef = useRef<PendingAgentChain | null>(null)
   const mounted = useRef(false)
   const performing = useRef(false)
   const history = useRef<HTMLDivElement>(null)
@@ -229,7 +247,7 @@ function AgentConversation({
   }, [])
   useEffect(() => {
     try {
-      const saved = pendingAgentAction(sessionStorage.getItem(storageKey))
+      const saved = pendingAgentChain(sessionStorage.getItem(storageKey))
       pendingRef.current = saved
       setPending(saved)
       restoreDraft(saved?.draft)
@@ -252,12 +270,7 @@ function AgentConversation({
         setCatalog(directory)
         setConversations(page.items)
         setListRead('ready')
-        setModel(
-          (old) =>
-            old ||
-            directory.models.find((item) => item.available)?.model_key ||
-            '',
-        )
+        setModel((old) => old || defaultAgentModel(directory))
         // 只在第一次打开时落到最近的会话；之后空会话是摄影师自己选的「新对话」。
         if (!loaded.current) {
           loaded.current = true
@@ -379,113 +392,80 @@ function AgentConversation({
   }, [messages])
 
   function savePending(
-    expected: PendingAgentAction | null,
-    value: PendingAgentAction | null,
+    expected: PendingAgentChain | null,
+    value: PendingAgentChain | null,
   ): boolean {
     if (
       !mounted.current ||
-      !replacePendingAction(sessionStorage, storageKey, expected, value)
+      !replacePendingChain(sessionStorage, storageKey, expected, value)
     )
       return false
     pendingRef.current = value
     setPending(value)
     return true
   }
-  function owns(command: PendingAgentAction): boolean {
+  function owns(chain: PendingAgentChain): boolean {
     return (
-      mounted.current && ownsPendingAction(sessionStorage, storageKey, command)
+      mounted.current && ownsPendingChain(sessionStorage, storageKey, chain)
     )
   }
-  const action = agentAction
-  async function perform(command: PendingAgentAction) {
+  async function perform(command: PendingAgentChain) {
     if (performing.current || !mounted.current) return
     performing.current = true
     setBusy(true)
     setError('')
-    let current = command
     try {
       if (!savePending(pendingRef.current, command)) return
-      let reply = await api.send<Reply>(
-        account,
-        current.path,
-        current.body,
-        current.operation,
+      const outcome = await performAgentChain(
+        command,
+        { owns, save: savePending },
+        (path, body, operation) =>
+          api.send<Reply>(account, path, body, operation),
       )
-      if (!owns(current)) return
-      if (current.nextRun && 'approved_revisions' in reply) {
-        const next = consentedRunAction(current, reply.id)
-        if (!savePending(current, next)) return
-        current = next
-        reply = await api.send<Reply>(
-          account,
-          current.path,
-          current.body,
-          current.operation,
+      if (outcome.kind === 'lost') return
+      if (outcome.kind === 'done') {
+        const reply = outcome.reply as Reply
+        if ('trigger_message_id' in reply) {
+          setConversation(reply.conversation_id)
+          setDraft('')
+          setMaterials([])
+          setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
+          pinned.current = true
+        }
+      } else {
+        setError(
+          outcome.error instanceof Error
+            ? outcome.error.message
+            : '提交结果暂不确定，请确认原操作',
         )
-        if (!owns(current)) return
+        // 明确被拒：链已清掉，原文回到输入框；建好的对话照样留着。
+        if (outcome.kind === 'rejected') restoreDraft(outcome.chain.draft)
       }
-      if ('trigger_message_id' in reply) {
-        setConversation(reply.conversation_id)
-        setDraft('')
-        setMaterials([])
-        setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
-        pinned.current = true
-      } else if ('title' in reply) {
-        setThreadRead({ id: reply.id, failed: false })
-        setConversation(reply.id)
-      }
-      savePending(current, null)
       setRefresh((value) => value + 1)
-    } catch (e) {
-      if (!owns(current)) return
-      setError(
-        e instanceof Error ? e.message : '提交结果暂不确定，请确认原操作',
-      )
-      if (
-        e instanceof ApiError &&
-        e.status >= 400 &&
-        e.status < 500 &&
-        ![408, 429].includes(e.status)
-      ) {
-        restoreDraft(current.draft)
-        savePending(current, null)
-      }
     } finally {
       performing.current = false
       if (mounted.current) setBusy(false)
     }
   }
-  // The first message opens the conversation; nobody should have to create
-  // an empty one before they can type.
-  async function openConversation(): Promise<string> {
-    if (conversation) return conversation
-    const command = action(`/canvases/${canvasID}/conversations`, {
-      title: untitled,
-    })
-    const created = await api.send<Conversation>(
-      account,
-      command.path,
-      command.body,
-      command.operation,
-    )
-    setConversations((old) => [created, ...old])
-    setThreadRead({ id: created.id, failed: false })
-    setConversation(created.id)
-    return created.id
-  }
-  async function sendDraft() {
+  function sendDraft() {
     if (!draft.trim() || locked || active) return
+    const saved = {
+      conversation,
+      model,
+      skill,
+      text: draft,
+      materials: referenced,
+    }
     if (waiting) {
       void perform(
-        action(
+        single(
           `/agent-runs/${waiting.id}/supplements`,
           {
             expected_revision: waiting.revision,
             waiting_token: waiting.waiting_token,
             text: draft,
           },
-          undefined,
-          { conversation, model, skill, text: draft, materials: referenced },
+          saved,
         ),
       )
       return
@@ -507,46 +487,20 @@ function AgentConversation({
         skill_id: selected.skill_id,
         skill_version_id: selected.skill_version_id,
       })
-    let target: string
-    setBusy(true)
-    try {
-      target = await openConversation()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '暂时无法开始对话')
-      return
-    } finally {
-      setBusy(false)
-    }
-    if (!mounted.current) return
-    // Sending is the consent: the grant names exactly what this message uses,
-    // and the server checks every run against it.
-    void perform(
-      action(
-        `/conversations/${target}/egress-consents`,
-        {
-          purpose: 'creative_assistance',
-          mode: 'selected_revisions',
-          data_classes: [
-            'text',
-            'canvas_metadata',
-            ...(chosenModel.capability.image_input ? ['image_preview'] : []),
-          ],
-          selected_revision_ids: approvedIDs,
-        },
-        {
-          model_key: model,
-          egress_consent_id: '',
-          instruction: { schema_version: 1, instruction_segments: segments },
-        },
-        {
-          conversation: target,
+    // 第一条消息顺带建对话，三步一起记进待确认链：建对话的结果不确定时，
+    // 重放的也是同一个操作，不会多出空对话。
+    void perform({
+      steps: [
+        ...(conversation ? [] : [conversationStep(canvasID)]),
+        ...messageSteps(conversation || conversationSlot, {
           model,
-          skill,
-          text: draft,
-          materials: referenced,
-        },
-      ),
-    )
+          imageInput: chosenModel.capability.image_input,
+          revisionIDs: approvedIDs,
+          segments,
+        }),
+      ],
+      draft: saved,
+    })
   }
   const turn = useMemo<TurnContext>(
     () => ({
@@ -558,7 +512,7 @@ function AgentConversation({
               const run = runs.find((item) => item.id === runID)
               if (run)
                 void perform(
-                  action(`/agent-runs/${runID}/retry`, {
+                  single(`/agent-runs/${runID}/retry`, {
                     step_ids: [stepID],
                     egress_consent_id: run.egress_consent_id,
                   }),
@@ -591,33 +545,8 @@ function AgentConversation({
     setThreadRead(null)
     setRefresh((value) => value + 1)
   }
-  const modelOptions: PickerOption[] =
-    catalog?.models.map((item) => ({
-      value: item.model_key,
-      label: item.display_name,
-      icon: <Cpu size={15} />,
-      meta: item.capability.image_input ? '识图' : undefined,
-      description: item.available
-        ? undefined
-        : item.unavailable_reason || '暂不可用',
-      disabled: !item.available,
-    })) ?? []
-  const skillOptions: PickerOption[] = [
-    {
-      value: '',
-      label: '普通对话',
-      description: '自由讨论创作想法，助手按需读写画布',
-      icon: <MessageCircle size={15} />,
-    },
-    ...(catalog?.skills
-      .filter((item) => item.available)
-      .map((item) => ({
-        value: item.skill_version_id,
-        label: item.display_name,
-        description: item.description,
-        icon: <Wand2 size={15} />,
-      })) ?? []),
-  ]
+  const modelOptions = agentModelOptions(catalog)
+  const skillOptions = agentSkillOptions(catalog)
   const conversationOptions: PickerOption[] = listed.map((item) => ({
     value: item.id,
     label: item.title,
@@ -646,12 +575,12 @@ function AgentConversation({
     setBusy(true)
     setError('')
     try {
-      const command = action(path, payload)
+      const step = agentStep(path, payload)
       const reply = await api.send<Conversation>(
         account,
-        command.path,
-        command.body,
-        command.operation,
+        step.path,
+        stepBody(step),
+        step.operation,
       )
       if (mounted.current) apply(reply)
       return true
@@ -939,7 +868,7 @@ function AgentConversation({
           noValidate
           onSubmit={(event) => {
             event.preventDefault()
-            void sendDraft()
+            sendDraft()
           }}
         >
           {latest && (
@@ -947,11 +876,11 @@ function AgentConversation({
               run={latest}
               disabled={locked}
               onStop={() => {
-                void perform(action(`/agent-runs/${latest.id}/cancel`, {}))
+                void perform(single(`/agent-runs/${latest.id}/cancel`, {}))
               }}
               onRelease={() => {
                 void perform(
-                  action(`/agent-runs/${latest.id}/close-reconciliation`, {}),
+                  single(`/agent-runs/${latest.id}/close-reconciliation`, {}),
                 )
               }}
             />
@@ -994,7 +923,7 @@ function AgentConversation({
                   setMaterials(referencedMaterials(text, references))
                   setDraft(text)
                 }}
-                onGenerate={() => void sendDraft()}
+                onGenerate={() => sendDraft()}
                 onLibrary={() => setPickingMaterial(true)}
               />
             )}

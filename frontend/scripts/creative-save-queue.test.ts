@@ -1098,3 +1098,36 @@ test('duplicate without optional offsets preserves coordinates instead of produc
   assert.equal(preview.nodes[1].metadata.x, positionNode.metadata.x)
   assert.equal(preview.nodes[1].metadata.y, positionNode.metadata.y)
 })
+
+
+test('receipt handoff is durable before the original operation is cleared, including lookup recovery', async () => {
+  const storage = memory()
+  const receipt = { id: 'project', default_canvas_id: 'canvas' }
+  let sends = 0
+  const transport = {
+    send: async () => { sends++; return receipt },
+    lookup: async () => receipt,
+  }
+  const queue = new SaveQueue(storage, transport, () => {})
+  let original = ''
+  await queue.enqueue('/projects', { name: 'home' }, undefined, (result, job) => {
+    assert.deepEqual(result, receipt)
+    original = job.operation
+    assert.equal(storage.get().job?.operation, original)
+    throw new Error('home storage full')
+  })
+  assert.equal(storage.get().job?.operation, original)
+  assert.equal(storage.get().job?.state, 'unknown')
+  const recovered = new SaveQueue(storage, transport, () => {})
+  await recovered.load()
+  let handedOff = false
+  await recovered.flush(true, (result, job) => {
+    assert.deepEqual(result, receipt)
+    assert.equal(job.operation, original)
+    assert.equal(storage.get().job?.operation, original)
+    handedOff = true
+  })
+  assert.equal(handedOff, true)
+  assert.equal(storage.get().job, null)
+  assert.equal(sends, 1)
+})

@@ -13,6 +13,9 @@ import {
   type Receipt,
 } from './outbox.ts'
 
+// 消费方先持久接收回执，再由队列清除原操作；失败时保留原身份供恢复。
+export type ReceiptHandoff = (result: unknown, job: Readonly<Job>) => void
+
 export type QueueTransport = {
   send(job: Job): Promise<unknown>
   lookup(operation: string): Promise<unknown>
@@ -358,9 +361,10 @@ export class SaveQueue {
     path: string,
     payload: unknown,
     draftKey?: string,
+    handoff?: ReceiptHandoff,
   ): Promise<unknown> {
     await this.claim()
-    return this.dispatch(this.value, path, payload, draftKey)
+    return this.dispatch(this.value, path, payload, draftKey, undefined, handoff)
   }
   // dispatch persists the immutable request in the claimed slot, then sends.
   private async dispatch(
@@ -369,6 +373,7 @@ export class SaveQueue {
     payload: unknown,
     draftKey?: string,
     intent?: Intent,
+    handoff?: ReceiptHandoff,
   ): Promise<unknown> {
     if (this.closed) {
       this.busy = false
@@ -412,9 +417,9 @@ export class SaveQueue {
       this.changed()
       this.release()
     }
-    return this.flush(false)
+    return this.flush(false, handoff)
   }
-  async flush(recover = true): Promise<unknown> {
+  async flush(recover = true, handoff?: ReceiptHandoff): Promise<unknown> {
     if (this.closed || this.busy || !this.value.job) return
     const job = structuredClone(this.value.job)
     if (job.state === 'rejected') return
@@ -432,7 +437,7 @@ export class SaveQueue {
         try {
           const result = await this.transport.lookup(job.operation)
           if (this.closed) return
-          await this.complete(job, result)
+          await this.complete(job, result, handoff)
           return result
         } catch (e) {
           if (statusOf(e) !== 404) throw e
@@ -441,7 +446,7 @@ export class SaveQueue {
       if (this.closed) return
       const result = await this.transport.send(job)
       if (this.closed) return
-      await this.complete(job, result)
+      await this.complete(job, result, handoff)
       return result
     } catch (e) {
       if (this.closed) return
@@ -524,7 +529,8 @@ export class SaveQueue {
     }
     return kept
   }
-  private async complete(job: Job, result: unknown) {
+  private async complete(job: Job, result: unknown, handoff?: ReceiptHandoff) {
+    handoff?.(result, job)
     const drafts = { ...this.value.drafts }
     if (
       job.draftKey &&
