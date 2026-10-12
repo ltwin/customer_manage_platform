@@ -11,6 +11,7 @@ const base = process.env.CREATIVE_EDITOR_URL ?? 'http://localhost:5173'
 const output = process.env.CREATIVE_QA_OUTPUT_DIR ?? '/tmp/creative-assets-qa'
 mkdirSync(output, { recursive: true })
 const webm = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.webm', import.meta.url)))
+const mp3 = readFileSync(fileURLToPath(new URL('../../backend/internal/creativemedia/testdata/sample.mp3', import.meta.url)))
 const browser = await chromium.launch({ headless: true })
 const errors = []
 const results = {}
@@ -130,6 +131,7 @@ function mockServer(assets) {
     if (path.endsWith('/creative/media-access-tickets')) {
       const id = request.postDataJSON().content_revision_id.slice(2)
       const a = s.assets.find((x) => x.id === id)
+      if (a?.kind === 'audio') return json({ url: `${base}/__qa_media/${id}.mp3`, expires_at: new Date(Date.now() + 3600000).toISOString() })
       if (a?.kind === 'video') return json({ url: `${base}/__qa_media/${id}.webm`, expires_at: new Date(Date.now() + 3600000).toISOString() })
       const hue = [...id].reduce((h, c) => h + c.charCodeAt(0), 0) % 360
       const m = a.content.media[0]
@@ -188,6 +190,8 @@ function mockServer(assets) {
         for (const v of payload.assets) { const a = s.assets.find((a) => a.id === v.asset_id); for (const field of ['group_ids', 'tag_ids']) a[field] = [...new Set([...a[field].filter((id) => !(payload['remove_' + field] ?? []).includes(id)), ...(payload['add_' + field] ?? [])])]; a.revision = String(Number(a.revision) + 1) }
       } else if (path.endsWith('/assets/batch-trash')) {
         for (const v of payload.assets) { const a = s.assets.find((a) => a.id === v.asset_id); a.deleted_at = new Date().toISOString(); a.revision = String(Number(a.revision) + 1) }
+      } else if (/\/assets\/[^/]+\/restore$/.test(path)) {
+        const a = s.assets.find((a) => a.id === path.split('/').at(-2)); a.deleted_at = null; a.purge_after = null; a.revision = String(Number(a.revision) + 1)
       } else if (path.endsWith('/creative/asset-groups')) {
         const g = { id: 'g-new-' + s.groups.length, parent_id: payload.parent_id ?? null, name: payload.name, position: s.groups.length, revision: '1' }; s.groups.push(g); s.hierarchy = String(Number(s.hierarchy) + 1); result.id = g.id
       } else if (/\/asset-groups\/[^/]+\/rename$/.test(path)) {
@@ -240,7 +244,7 @@ async function fresh({ width = 1440, height = 900, assets = fixture(), layout = 
   page.setDefaultTimeout(6000)
   page.on('pageerror', (error) => errors.push(error.message))
   await page.route('**/api/v1/**', server.handle)
-  await page.route('**/__qa_media/**', (route) => route.fulfill({ status: 200, contentType: 'video/webm', body: webm }))
+  await page.route('**/__qa_media/**', (route) => route.fulfill({ status: 200, contentType: route.request().url().endsWith('.mp3') ? 'audio/mpeg' : 'video/webm', body: route.request().url().endsWith('.mp3') ? mp3 : webm }))
 }
 const open = async (query = '') => {
   await page.goto(`${base}/creative/library${query}`)
@@ -278,6 +282,7 @@ const noHorizontalScroll = async (label) => {
   assert(r.board.every((d) => d <= 0), `${label}: board scrolls sideways ${r.board}`)
 }
 async function check(name, run) {
+  if (process.env.CREATIVE_QA_CHECK && !name.includes(process.env.CREATIVE_QA_CHECK)) return
   try {
     await run()
     results[name] = 'pass'
@@ -840,6 +845,178 @@ await check('failure-recovery-guards', async () => {
   assert.equal(server.writes[0].body.operation_id, server.writes[1].body.operation_id)
   await tile('素材 1').click()
   assert(await page.getByRole('textbox', { name: '标题', exact: true }).isEnabled())
+})
+
+await check('viewer-opening', async () => {
+  await fresh(); await open()
+  const card = tile('海边逆光')
+  await card.click()
+  assert.equal(await page.locator('.viewer-back').count(), 0)
+  await card.dblclick()
+  await page.getByRole('dialog', { name: '查看：海边逆光', exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await page.locator('.viewer-back').waitFor({ state: 'detached' })
+  assert(await card.evaluate((el) => el === document.activeElement))
+  await card.press('Enter')
+  await page.locator('.viewer-back').waitFor()
+  await page.keyboard.press('Escape')
+  await card.press('Space')
+  await page.locator('.viewer-back').waitFor()
+  await page.keyboard.press('Escape')
+  await card.hover()
+  await card.getByRole('button', { name: '查看：海边逆光', exact: true }).click()
+  await page.locator('.viewer-back').waitFor()
+})
+
+const viewer = () => page.locator('.viewer')
+const viewerReady = async () => { await viewer().waitFor(); await until(async () => await viewer().getByRole('textbox', { name: '标题', exact: true }).isEnabled(), 'viewer detail') }
+await check('viewer-image-zoom', async () => {
+  await fresh(); await open(); await tile('海边逆光').dblclick(); await viewerReady()
+  await page.waitForFunction(() => document.querySelector('.v-image img')?.naturalWidth > 0)
+  const metrics = await viewer().evaluate((el) => {
+    const stage = el.querySelector('.v-stage'), img = el.querySelector('.v-image img'), panel = el.querySelector('.v-panel')
+    return { panel: panel.getBoundingClientRect().width, fit: getComputedStyle(img).objectFit, ratio: img.offsetHeight / img.offsetWidth,
+      bodyPadding: getComputedStyle(el.querySelector('.v-body')).padding, star: el.querySelector('[data-star]').getBoundingClientRect().width,
+      skinBlur: getComputedStyle(el).backdropFilter, backdrop: getComputedStyle(el.querySelector('.v-backdrop')).filter,
+      fits: img.offsetWidth <= stage.clientWidth && img.offsetHeight <= stage.clientHeight }
+  })
+  assert.equal(metrics.panel, 340); assert.equal(metrics.fit, 'contain'); assert(Math.abs(metrics.ratio - 1.5) < 0.01); assert(metrics.fits)
+  assert.equal(metrics.bodyPadding, '18px 18px 12px'); assert.equal(metrics.star, 22); assert.equal(metrics.skinBlur, 'none'); assert(metrics.backdrop.includes('blur(48px)'))
+  const img = page.locator('.v-image img'), surface = page.locator('.v-image')
+  await img.click(); assert.equal(await page.getByRole('button', { name: '还原缩放' }).count(), 0)
+  const box = await surface.boundingBox()
+  await surface.dispatchEvent('wheel', { deltaY: -400, deltaX: 0, ctrlKey: true, clientX: box.x + box.width * .6, clientY: box.y + box.height * .4 })
+  await page.getByRole('button', { name: '还原缩放' }).waitFor()
+  assert.match(await page.getByRole('button', { name: '还原缩放' }).innerText(), /800%/)
+  await surface.dispatchEvent('wheel', { deltaY: 8.5, deltaX: 40.5 })
+  const pan = await img.evaluate((el) => { const m = new DOMMatrix(getComputedStyle(el).transform); return { s: m.a, x: m.e, y: m.f } })
+  assert.equal(pan.s, 8)
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.mouse.move(box.x + box.width - 10, box.y + box.height - 10); await page.mouse.up()
+  await page.getByRole('button', { name: '还原缩放' }).click()
+  assert.equal(await page.getByRole('button', { name: '还原缩放' }).count(), 0)
+  await surface.dispatchEvent('wheel', { deltaY: -100, deltaX: 0, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 })
+  await viewer().getByRole('button', { name: '下一项' }).click(); await viewerReady()
+  assert.equal(await page.getByRole('button', { name: '还原缩放' }).count(), 0)
+  await page.screenshot({ path: `${output}/step4-viewer-desktop.png` })
+})
+await check('viewer-edit-and-popovers', async () => {
+  await fresh(); await open(); await tile('海边逆光').dblclick(); await viewerReady()
+  const title = viewer().getByRole('textbox', { name: '标题', exact: true })
+  await title.fill('浮窗改名'); await title.press('Enter'); await saved()
+  assert.equal(server.assets[0].title, '浮窗改名')
+  const note = viewer().getByRole('textbox', { name: '备注', exact: true })
+  await note.fill('浮窗备注'); await note.press('Tab'); await saved(); assert.equal(server.assets[0].description, '浮窗备注')
+  const star = viewer().getByRole('slider', { name: '评分', exact: true })
+  await star.focus(); await star.press('ArrowLeft'); await saved(); assert.equal(server.assets[0].rating, 4.5)
+  await star.press('2'); await saved(); assert.equal(server.assets[0].rating, 2, 'focused rating accepts digit keys')
+  await star.press('0'); await saved(); assert.equal(server.assets[0].rating, null, 'focused rating accepts clearing')
+  await viewer().getByRole('button', { name: '关闭查看' }).focus(); await page.keyboard.press('2'); await saved(); assert.equal(server.assets[0].rating, 2)
+  await viewer().getByRole('button', { name: '标签', exact: true }).click()
+  const pop = viewer().getByRole('dialog', { name: '打标签', exact: true })
+  await pop.waitFor(); assert(await pop.evaluate((el) => !!el.closest('.viewer')))
+  await pop.getByRole('button', { name: '胶片', exact: true }).click(); await saved(); assert(server.assets[0].tag_ids.includes('t-film'))
+  await page.keyboard.press('Escape'); await pop.waitFor({ state: 'detached' }); assert(await viewer().isVisible())
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent?.trim()), '标签')
+  await viewer().getByRole('button', { name: '归入分组', exact: true }).click()
+  await viewer().getByRole('dialog', { name: '归入分组', exact: true }).getByRole('button', { name: '品牌', exact: true }).click(); await saved()
+  assert(server.assets[0].group_ids.includes('g-brand'))
+  await viewer().getByRole('button', { name: '移出分组：品牌', exact: true }).click(); await saved(); assert(!server.assets[0].group_ids.includes('g-brand'))
+  server.failNext = { path: '/metadata', status: 409 }
+  await title.fill('冲突改名'); await title.press('Enter'); await saved()
+  assert.equal(await title.inputValue(), '浮窗改名')
+  await viewer().getByText('已在别处修改，已刷新', { exact: true }).waitFor()
+  server.loseNext = '/assets/batch-rate'
+  await viewer().getByRole('button', { name: '关闭查看' }).focus(); await page.keyboard.press('3')
+  await viewer().getByRole('button', { name: '重试', exact: true }).waitFor()
+  assert(await viewer().getByRole('button', { name: '关闭查看' }).isDisabled())
+  await page.keyboard.press('Escape'); assert(await viewer().isVisible())
+  await viewer().getByRole('button', { name: '重试', exact: true }).click(); await saved()
+  assert.equal(server.writes.at(-1).key, server.writes.at(-2).key)
+  for (let i = 0; i < 30; i++) { await page.keyboard.press('Tab'); assert(await page.evaluate(() => !!document.activeElement?.closest('.viewer'))) }
+})
+await check('viewer-project-download-trash', async () => {
+  await fresh(); await open(); await tile('海边逆光').dblclick(); await viewerReady()
+  await viewer().getByRole('button', { name: '放入项目…', exact: true }).click()
+  const project = viewer().getByRole('dialog', { name: '放入项目', exact: true })
+  await project.getByRole('button', { name: '新建项目并放入', exact: true }).click()
+  await project.getByRole('textbox', { name: '新项目名称', exact: true }).fill('浮窗项目')
+  await project.getByRole('button', { name: '新建并放入', exact: true }).click(); await saved()
+  assert.equal(server.projects.length, 1); assert.equal([...server.canvases.values()][0].nodes.length, 1)
+  await viewer().getByRole('button', { name: '打开画布', exact: true }).waitFor()
+  const ticket = page.waitForRequest((r) => r.url().endsWith('/media-access-tickets') && r.postDataJSON()?.purpose === 'download')
+  const download = page.waitForEvent('download')
+  await viewer().getByRole('button', { name: '下载', exact: true }).click(); await download; assert.equal((await ticket).postDataJSON().role, 'original'); await saved()
+  await viewer().getByRole('button', { name: '移到回收站', exact: true }).click()
+  await viewer().getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click(); await saved()
+  assert(server.assets[0].deleted_at); await viewer().getByText('已移到回收站', { exact: true }).first().waitFor()
+  await viewer().getByRole('button', { name: '恢复', exact: true }).click(); await saved()
+  assert.equal(server.assets[0].deleted_at, null); assert.equal(await viewer().getByRole('button', { name: '恢复', exact: true }).count(), 0)
+  await page.keyboard.press('Escape'); await tile('海边逆光').waitFor()
+  await until(async () => tile('海边逆光').evaluate((el) => document.activeElement === el), 'restored tile regains focus even after DOM replacement')
+})
+await check('viewer-types-responsive', async () => {
+  await fresh(); await open()
+  for (const [title, kind] of [['海风走位', 'video'], ['现场环境音', 'audio']]) {
+    await tile(title).dblclick(); await viewerReady()
+    const media = viewer().locator(`.v-media ${kind}`)
+    await media.waitFor(); assert(await media.evaluate((el) => el.controls))
+    await viewer().getByRole('button', { name: '关闭查看' }).focus()
+    let reached = false
+    for (let i = 0; i < 40 && !reached; i++) { await page.keyboard.press('Tab'); reached = await media.evaluate((el) => document.activeElement === el) }
+    assert(reached, `${kind} native controls participate in keyboard focus loop`)
+    await media.evaluate((el) => new Promise((resolve) => { if (el.readyState >= 1) resolve(); else el.addEventListener('loadedmetadata', resolve, { once: true }) }))
+    await viewer().getByRole('button', { name: '关闭查看' }).focus(); await page.keyboard.press('Space')
+    await until(async () => await media.evaluate((el) => !el.paused), 'media plays on Space')
+    await page.keyboard.press('Space'); assert(await media.evaluate((el) => el.paused))
+    await page.keyboard.press('Escape')
+  }
+  server.assets.find((a) => a.id === 'f-note').content.payload.body = '完整正文\n'.repeat(500)
+  await tile('拍摄脚本 v2').dblclick(); await viewerReady(); assert.equal((await viewer().locator('.v-text p').innerText()).trim(), '完整正文\n'.repeat(500).trim())
+  await page.keyboard.press('Escape')
+  await tile('布光参考').dblclick(); await viewerReady()
+  assert.equal(await viewer().getByRole('link', { name: '打开网址' }).getAttribute('href'), 'https://www.example.com/lighting/101')
+  await page.keyboard.press('Escape')
+  await page.setViewportSize({ width: 390, height: 844 }); await tile('海边逆光').dblclick(); await viewerReady()
+  assert.equal(await viewer().evaluate((el) => getComputedStyle(el).gridTemplateColumns), '390px')
+  await noHorizontalScroll('phone viewer')
+  await page.screenshot({ path: `${output}/step4-viewer-phone.png` })
+})
+
+await check('viewer-blur-close-recovery', async () => {
+  await fresh(); await open(); await tile('海边逆光').dblclick(); await viewerReady()
+  await viewer().getByRole('textbox', { name: '标题', exact: true }).fill('保留待确认改名')
+  server.loseNext = '/metadata'
+  await page.locator('.viewer-back').click({ position: { x: 4, y: 4 } })
+  await viewer().getByRole('button', { name: '重试', exact: true }).waitFor()
+  await viewer().getByRole('button', { name: '重试', exact: true }).click(); await saved()
+  assert.equal(server.writes[0].key, server.writes[1].key)
+  await viewer().getByRole('button', { name: '关闭查看' }).click()
+  await page.locator('.viewer-back').waitFor({ state: 'detached' })
+})
+
+await check('viewer-detail-recovery', async () => {
+  await fresh(); await open()
+  let release
+  const waiting = new Promise((r) => { release = r })
+  await page.route('**/creative/assets/f-sea', async (route) => { await waiting; await route.fulfill({ json: server.assets[0] }).catch(() => {}) })
+  await tile('海边逆光').dblclick()
+  await viewer().getByText('正在读取素材…', { exact: true }).waitFor()
+  await viewer().getByRole('button', { name: '下一项' }).click(); await viewerReady()
+  release(); await page.waitForTimeout(80)
+  assert.equal(await viewer().getByRole('textbox', { name: '标题', exact: true }).inputValue(), '白纱与拱门')
+  await page.keyboard.press('Escape')
+  await page.unroute('**/creative/assets/f-sea')
+  let failed = true
+  await page.route('**/creative/assets/f-ref', async (route) => failed ? route.fulfill({ status: 503, json: { error: { code: 'temporary', message: '详情暂时读不到' } } }) : route.fallback())
+  await tile('布光参考').dblclick(); await viewer().getByText('详情暂时读不到', { exact: true }).waitFor()
+  assert(await viewer().getByRole('textbox', { name: '标题', exact: true }).isDisabled())
+  failed = false; await viewer().getByRole('button', { name: '重试', exact: true }).click(); await viewerReady()
+  await page.keyboard.press('Escape')
+  const note = server.assets.find((a) => a.id === 'f-note')
+  note.content.truncated = true; note.content.payload.body = '摘要'
+  await page.route('**/creative/content-revisions/r-f-note', (route) => route.fulfill({ json: { ...note.content, truncated: false, payload: { body: '完整正文来自详情修订' } } }))
+  await tile('拍摄脚本 v2').dblclick(); await viewerReady()
+  assert.equal(await viewer().locator('.v-text p').innerText(), '完整正文来自详情修订')
 })
 
 await context?.close()

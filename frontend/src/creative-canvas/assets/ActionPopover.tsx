@@ -45,6 +45,8 @@ export default function ActionPopover({
     >
       {children}
     </div>,
-    document.querySelector('.cc-workspace') ?? document.body,
+    document.querySelector('.viewer') ??
+      document.querySelector('.cc-workspace') ??
+      document.body,
   )
 }

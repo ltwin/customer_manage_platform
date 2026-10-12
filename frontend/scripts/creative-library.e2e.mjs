@@ -98,6 +98,7 @@ await page.route('**/api/v1/**', async (route) => {
   if (path.endsWith('/media-capabilities'))
     return json({ formats: [{ kind: 'image', mime: 'image/png', extensions: ['.png'] }], image_max_bytes: 1000000, av_max_bytes: 10000000, batch_limit: 10 })
   if (path.includes('/operations/')) return receipts.has(path.split('/').at(-1)) ? json({ response: receipts.get(path.split('/').at(-1)) }) : json({}, 404)
+  if (/\/assets\/[^/]+$/.test(path) && method === 'GET') return json(all.find((a) => a.id === path.split('/').at(-1)))
   if (path.endsWith('/canvases/qa')) return json(canvas)
   if (path.endsWith('/commands')) {
     const actions = route.request().postDataJSON()?.payload?.actions ?? []
@@ -125,6 +126,14 @@ await page.route('**/api/v1/**', async (route) => {
   if (method === 'POST') {
     const body = route.request().postDataJSON()
     posts.push({ path, payload: body?.payload })
+    if (path.endsWith('/assets/batch-trash')) {
+      for (const item of body.payload.assets) { const a = all.find((a) => a.id === item.asset_id); a.deleted_at = new Date().toISOString(); a.revision = String(Number(a.revision) + 1) }
+      return json({ library_revision: '3' })
+    }
+    if (/\/assets\/[^/]+\/restore$/.test(path)) {
+      const a = all.find((a) => a.id === path.split('/').at(-2)); a.deleted_at = null; a.revision = String(Number(a.revision) + 1)
+      return json({ id: a.id, revision: a.revision, library_revision: '4' })
+    }
     if (path.endsWith('/asset-groups')) {
       if (takenOnServer.has(body.payload.name))
         return json({ error: { code: 'creative_group_name_taken', message: '同一层已有同名分组' } }, 409)
@@ -156,11 +165,11 @@ await page.route('**/api/v1/**', async (route) => {
   if (path.endsWith('/assets')) {
     const q = url.searchParams
     assetQueries.push(q.toString())
-    let items = all
+    let items = all.filter((a) => !a.deleted_at)
     const view = q.get('view') ?? 'all'
     if (view === 'favorites') items = items.filter((a) => a.is_favorite)
     if (view === 'unclassified') items = items.filter((a) => !a.group_ids.length)
-    if (view === 'trash') items = []
+    if (view === 'trash') items = all.filter((a) => a.deleted_at)
     const g = q.get('group_id')
     if (g) {
       const scope = q.get('include_descendants') === 'true' ? groups.filter((x) => x.id === g || x.parent_id === g).map((x) => x.id) : [g]
@@ -249,7 +258,7 @@ try {
   await tile('逆光发丝').click()
   const look = page.getByRole('dialog', { name: '快速查看：逆光发丝' })
   await look.waitFor()
-  assert.match(await look.locator('figcaption').innerText(), /800×1000.*客户样片.*逆光/s)
+  assert.match(await look.locator('.v-panel').innerText(), /800×1000.*客户样片.*逆光/s)
   await page.keyboard.press('ArrowRight')
   await page.getByRole('dialog', { name: /^快速查看：/ }).waitFor()
   assert.notEqual(await page.getByRole('dialog', { name: /^快速查看：/ }).getAttribute('aria-label'), '快速查看：逆光发丝')
@@ -468,6 +477,19 @@ try {
   await drawer.getByText('已恢复分组与归类', { exact: true }).waitFor()
   assert(groups.some((g) => g.id === 'g1'))
   assert.equal(groups.find((g) => g.id === 'g1a').parent_id, 'g1')
+
+  // 15. 浮窗内回收/恢复刷新抽屉卡片后，按素材身份归还焦点。
+  await tile('日落海边').press('Space')
+  const assetViewer = page.locator('.viewer')
+  await assetViewer.getByRole('textbox', { name: '标题', exact: true }).waitFor()
+  await assetViewer.getByRole('button', { name: '移到回收站', exact: true }).click()
+  await assetViewer.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click()
+  await assetViewer.getByRole('button', { name: '恢复', exact: true }).click()
+  await assetViewer.getByRole('button', { name: '移到回收站', exact: true }).waitFor()
+  await page.waitForFunction(() => document.querySelector('.v-close') && !document.querySelector('.v-close').disabled)
+  await page.keyboard.press('Escape')
+  await assetViewer.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-asset') === 'a1')
 
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ ok: true, metrics, commands: commands.length, assetQueries: assetQueries.length }))

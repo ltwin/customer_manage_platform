@@ -164,6 +164,7 @@ export function useAssetList(query: LibraryQuery, refresh: number) {
     facets: current?.facets ?? null,
     error: current?.error ?? '',
     loading: !page && !current?.error,
+    refreshing: !ready && !current?.error,
     more: current?.more ?? 'idle',
     stale: current?.stale ?? false,
     loadMore,

@@ -43,11 +43,13 @@ export function StarRating({
   onChange,
   disabled = false,
   label = '评分',
+  size = 18,
 }: {
   value: number | null
   onChange: (value: number | null) => void
   disabled?: boolean
   label?: string
+  size?: number
 }) {
   const [preview, setPreview] = useState<number | null>(null)
   const displayed = preview ?? value ?? 0
@@ -64,7 +66,13 @@ export function StarRating({
       aria-disabled={disabled}
       onPointerLeave={() => setPreview(null)}
       onKeyDown={(e) => {
-        if (disabled) return
+        if (disabled || e.nativeEvent.isComposing) return
+        if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[0-5]$/.test(e.key)) {
+          e.preventDefault()
+          e.stopPropagation()
+          onChange(Number(e.key) || null)
+          return
+        }
         if (
           [
             'ArrowRight',
@@ -115,14 +123,14 @@ export function StarRating({
               }
             }}
           >
-            <Star size={18} />
+            <Star size={size} />
             <span
               className="cl-star-fill"
               style={{
                 width: `${Math.max(0, Math.min(1, displayed - n + 1)) * 100}%`,
               }}
             >
-              <Star size={18} />
+              <Star size={size} />
             </span>
           </span>
         )

@@ -177,6 +177,7 @@ export function useActions(account: string, reload: () => void) {
   }
   return {
     busy,
+    isBlocked: () => running.current || !!pending.current,
     blocked: busy || !!pending.current,
     toast,
     setToast: (notice: Toast | null) => {

@@ -1,5 +1,6 @@
 import {
   Check,
+  Maximize2,
   ChevronDown,
   Heart,
   LayoutDashboard,
@@ -56,6 +57,7 @@ export default function AssetBrowser({
   onRetry,
   onBox,
   onMenu,
+  onOpen,
   toolbar,
 }: {
   query: LibraryQuery
@@ -71,6 +73,7 @@ export default function AssetBrowser({
   onRetry: () => void
   onBox: (ids: string[]) => void
   onMenu: (asset: api.Asset, at: Point) => void
+  onOpen: (asset: api.Asset) => void
   toolbar?: React.ReactNode
 }) {
   const groups = catalog?.groups ?? []
@@ -93,7 +96,7 @@ export default function AssetBrowser({
     })
 
   return (
-    <section className="al-board" aria-label="资产">
+    <section className="al-board" aria-label="资产" tabIndex={-1}>
       <header className="al-head">
         <div className="al-crumb">
           <h2>
@@ -312,6 +315,7 @@ export default function AssetBrowser({
         onSelect={onSelect}
         onBox={onBox}
         onMenu={onMenu}
+        onOpen={onOpen}
         onRetry={onRetry}
         onClear={() => onQuery(clearFilters(query))}
         onWiden={() => onQuery({ ...query, view: 'all', group: '' })}
@@ -388,7 +392,9 @@ function SearchBox({
         e.key !== '/' ||
         e.metaKey ||
         e.ctrlKey ||
-        t?.closest('input, textarea, [contenteditable="true"]')
+        t?.closest(
+          'input, textarea, [contenteditable="true"], [role="dialog"], [role="alertdialog"]',
+        )
       )
         return
       e.preventDefault()
@@ -479,6 +485,7 @@ function Tiles({
   onWiden,
   onBox,
   onMenu,
+  onOpen,
 }: {
   query: LibraryQuery
   list: List
@@ -491,6 +498,7 @@ function Tiles({
   onWiden: () => void
   onBox: (ids: string[]) => void
   onMenu: (asset: api.Asset, at: Point) => void
+  onOpen: (asset: api.Asset) => void
 }) {
   const dragBox = useRef<{
     x: number
@@ -548,6 +556,7 @@ function Tiles({
       selection={selected}
       onSelect={onSelect}
       onMenu={onMenu}
+      onOpen={onOpen}
     />
   )
   return (
@@ -719,6 +728,7 @@ function AssetCard({
   selected,
   onSelect,
   onMenu,
+  onOpen,
   selection,
 }: {
   asset: api.Asset
@@ -726,6 +736,7 @@ function AssetCard({
   selected: boolean
   onSelect: (id: string | null, keys?: Modifiers) => void
   onMenu: (asset: api.Asset, at: Point) => void
+  onOpen: (asset: api.Asset) => void
   selection: string[]
 }) {
   const visual = a.kind === 'image' || a.kind === 'video'
@@ -752,13 +763,22 @@ function AssetCard({
         e.preventDefault()
         onMenu(a, { x: e.clientX, y: e.clientY })
       }}
-      onClick={(e) =>
+      onClick={(e) => {
+        e.currentTarget.focus()
         onSelect(a.id, { additive: e.metaKey || e.ctrlKey, shift: e.shiftKey })
-      }
+      }}
+      onDoubleClick={(e) => {
+        if (!(e.target instanceof Element) || !e.target.closest('button')) {
+          e.currentTarget.focus()
+          onOpen(a)
+        }
+      }}
       onKeyDown={(e) => {
-        if (e.target !== e.currentTarget || e.key !== 'Enter') return
+        if (e.target !== e.currentTarget || !['Enter', ' '].includes(e.key))
+          return
         e.preventDefault()
         onSelect(a.id)
+        onOpen(a)
       }}
     >
       <button
@@ -772,6 +792,18 @@ function AssetCard({
         }}
       >
         <Check size={11} />
+      </button>
+      <button
+        type="button"
+        className="al-view"
+        aria-label={`查看：${a.title}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          e.currentTarget.closest<HTMLElement>('.al-tile')?.focus()
+          onOpen(a)
+        }}
+      >
+        <Maximize2 size={13} />
       </button>
       <div
         className={`al-thumb${visual ? '' : ' is-card'}`}

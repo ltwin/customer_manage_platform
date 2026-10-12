@@ -1,3 +1,4 @@
+import { LibraryViewer } from '../viewer/AssetViewer.tsx'
 import { createPortal } from 'react-dom'
 import StudioDialog from './StudioDialog.tsx'
 import {
@@ -38,7 +39,7 @@ import { errorMessage } from './queue.ts'
 import { PREVIEW, emptyCatalog, kindLabel, metaLine, type Catalog, type Editor } from './libraryState.ts'
 import LibraryEditor from './LibraryEditor.tsx'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
-import { Masonry, Peek, PreviewGrid, QuickLook, Tile, type TileMode } from './LibraryTiles.tsx'
+import { Masonry, Peek, PreviewGrid, Tile, type TileMode } from './LibraryTiles.tsx'
 import TagPopover from './TagPopover.tsx'
 import { deleteGroupCommand, groupRestoreCommand } from './groupDeletion.ts'
 import './library.css'
@@ -157,7 +158,21 @@ export default function LibraryPanel({
   const [notice, setNotice] = useState('')
   const [menu, setMenu] = useState<Menu | null>(null)
   const [tagsOpen, setTagsOpen] = useState<DOMRect | null>(null)
-  const [look, setLook] = useState<string | null>(null)
+  const [look, setLook] = useState<{ initialID: string; items: api.Asset[] } | null>(null)
+  const viewerReturnFocus = useRef<string | null>(null)
+  useEffect(() => {
+    if (look || !viewerReturnFocus.current || loading || previewLoading) return
+    const frame = requestAnimationFrame(() => {
+      const id = viewerReturnFocus.current
+      if (!id) return
+      const card = shelf.current?.querySelector<HTMLElement>(`[data-asset="${CSS.escape(id)}"]`)
+        ?? shelf.current?.querySelector<HTMLElement>('[data-asset]')
+        ?? document.getElementById('creative-library')
+      card?.focus({ preventScroll: true })
+      viewerReturnFocus.current = null
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [look, loading, previewLoading, page, previews])
   const [peek, setPeek] = useState<{ asset: api.Asset; el: HTMLElement } | null>(null)
   const peekTimer = useRef(0)
   const [editor, setEditor] = useState<Editor | null>(null)
@@ -473,7 +488,7 @@ export default function LibraryPanel({
     // 选参考、已有多选或按住 ⌘ / Shift 时点击就是选择；否则快速查看。
     if (task?.kind === 'pick' || selection.length || e.metaKey || e.ctrlKey || e.shiftKey)
       return toggle(a, e.shiftKey)
-    setLook(a.id)
+    setLook({ initialID: a.id, items: tileIDs().flatMap((id) => { const item = known.get(id); return item ? [item] : [] }) })
   }
   // 方向键在卡片间移动：取目标方向上中心最近的一张，瀑布流与方格通用。
   function moveFocus(from: HTMLElement, key: string) {
@@ -506,7 +521,7 @@ export default function LibraryPanel({
     if (e.key === ' ') {
       e.preventDefault()
       setPeek(null)
-      setLook(a.id)
+      setLook({ initialID: a.id, items: tileIDs().flatMap((id) => { const item = known.get(id); return item ? [item] : [] }) })
     } else if (e.key === 'Enter') {
       e.preventDefault()
       activate(a)
@@ -889,7 +904,6 @@ export default function LibraryPanel({
       : task?.kind === 'pick'
         ? '选择参考素材'
         : '资产库'
-  const lookAsset = look ? known.get(look) : undefined
   const portalRoot = document.querySelector('.cc-workspace') ?? document.body
   const emptyText =
     view === 'trash'
@@ -909,6 +923,7 @@ export default function LibraryPanel({
         className={`cc-library cl-library ${standalone ? 'cl-standalone' : ''} ${expanded ? 'cl-expanded' : ''} ${dragOver ? 'is-drop-hot' : ''} ${task ? `is-${task.kind}` : ''}`}
         style={!standalone ? { width } : undefined}
         id="creative-library"
+        tabIndex={-1}
         aria-label="个人资产库"
         data-scope-group={group}
         hidden={hidden}
@@ -1354,32 +1369,11 @@ export default function LibraryPanel({
           {peek && !look && (
             <Peek asset={peek.asset} anchor={peek.el} meta={metaLine(peek.asset, catalog.groups, catalog.tags)} />
           )}
-          {lookAsset && (
-            <QuickLook
-              asset={lookAsset}
-              meta={metaLine(lookAsset, catalog.groups, catalog.tags)}
-              canPlace={canPlace && view !== 'trash'}
-              disabled={disabled}
-              onClose={() => {
-                const id = lookAsset.id
-                setLook(null)
-                shelf.current?.querySelector<HTMLElement>(`[data-asset="${id}"]`)?.focus()
-              }}
-              onStep={(delta) => {
-                const ids = tileIDs()
-                const next = ids[(ids.indexOf(lookAsset.id) + delta + ids.length) % ids.length]
-                if (next) setLook(next)
-              }}
-              onPlace={() => {
-                setLook(null)
-                onPlace([lookAsset])
-              }}
-              onFavorite={() =>
-                void onCommand(`/assets/${lookAsset.id}/metadata`, {
-                  expected_revision: lookAsset.revision,
-                  is_favorite: !lookAsset.is_favorite,
-                })
-              }
+          {look && (
+            <LibraryViewer {...look} blocked={disabled || busy}
+              onClose={() => { viewerReturnFocus.current = look.initialID; setLook(null) }}
+              onChanged={() => setRetry((n) => n + 1)}
+              onPlace={canPlace && view !== 'trash' ? (asset) => { setLook(null); onPlace([asset]) } : undefined}
             />
           )}
           {manager && (
