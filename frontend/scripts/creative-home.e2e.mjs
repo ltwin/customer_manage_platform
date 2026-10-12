@@ -563,7 +563,7 @@ try {
   await record('062-AC-02', async () => {
     await fresh()
     server.assets = [
-      { id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', unavailable: false },
+      { id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', revision: '1', unavailable: false },
     ]
     await page.goto(`${base}/creative`)
     at('default model')
@@ -699,7 +699,7 @@ try {
     at('creating the project fails')
     await fresh()
     server.fault.project500 = true
-    server.assets = [{ id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', unavailable: false }]
+    server.assets = [{ id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', revision: '1', unavailable: false }]
     await page.goto(`${base}/creative`)
     await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
     await page.getByRole('button', { name: '加为参考：海边逆光' }).click()
@@ -718,7 +718,7 @@ try {
     at('step 2 returns 503')
     await fresh()
     server.fault.consent503 = true
-    server.assets = [{ id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', unavailable: false }]
+    server.assets = [{ id: 'a1', title: '海边逆光', kind: 'image', content_revision_id: 'ccrv_lib1', revision: '1', unavailable: false }]
     await page.goto(`${base}/creative`)
     await ask().getByRole('combobox', { name: '模型', exact: true }).filter({ hasText: '识图模型' }).waitFor()
     await page.getByRole('button', { name: '加为参考：海边逆光' }).click()
@@ -829,7 +829,7 @@ try {
 
   await record('062-AC-06', async () => {
     await fresh()
-    server.assets = Array.from({ length: 3 }, (_, i) => ({ id: `a${i}`, title: `素材 ${i}`, kind: 'image', content_revision_id: `ccrv_lib${i}`, unavailable: false }))
+    server.assets = Array.from({ length: 3 }, (_, i) => ({ id: `a${i}`, title: `素材 ${i}`, kind: 'image', content_revision_id: `ccrv_lib${i}`, revision: '1', unavailable: false }))
     await page.goto(`${base}/creative`)
     const row = page.getByRole('heading', { name: '资产库 · 最近添加' })
     await row.waitFor()

@@ -19,7 +19,12 @@ type Popup = {
   at: Point
   assets: api.Asset[]
 }
-type Confirmation = { title: string; body: string; run: () => void }
+type Confirmation = {
+  title: string
+  body: string
+  label?: string
+  run: () => void
+}
 /** 独立页与查看浮窗共用同一组保存、整理、放入与恢复动作。 */
 export function useOrganization({
   account,
@@ -236,6 +241,7 @@ export function useOrganization({
         <ConfirmDialog
           title={confirm.title}
           body={confirm.body}
+          confirmLabel={confirm.label}
           danger
           busy={actions.busy}
           onCancel={() => setConfirm(null)}

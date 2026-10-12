@@ -14,6 +14,11 @@ import {
   writeQuery,
 } from '../src/creative-canvas/assets/query.ts'
 import {
+  deleteConfirmation,
+  nameTaken,
+  tagCommand,
+} from '../src/creative-canvas/assets/tagCommands.ts'
+import {
   audioBars,
   formatBytes,
   formatDuration,
@@ -205,6 +210,70 @@ test('groups nest two levels and tags list by category with uncategorized last',
       ['光线', ['soft']],
       ['未分类', ['loose']],
     ],
+  )
+})
+
+test('tag tree keeps empty categories and builds tag commands', () => {
+  const categories = [
+    { id: 'style', name: '风格', position: 0, revision: '3' },
+    { id: 'empty', name: '空分类', position: 1, revision: '1' },
+  ] as never
+  assert.deepEqual(
+    tagSections([], categories, true).map((s) => s.name),
+    ['风格', '空分类', '未分类'],
+  )
+  const tag = {
+    id: 't/1',
+    name: '暖调',
+    color: '#d9a07a',
+    category_id: 'style',
+    revision: '4',
+    asset_count: 3,
+  }
+  assert.equal(nameTaken([tag], ' 暖调 '), true)
+  assert.equal(nameTaken([tag], '暖调', 't/1'), false)
+  assert.equal(nameTaken([tag], 'ＡＩ'), false)
+  assert.equal(nameTaken([{ id: 'x', name: 'ai' }], 'ＡＩ'), true)
+  assert.deepEqual(
+    tagCommand({ kind: 'editTag', tag, patch: { category_id: null } }, '9'),
+    {
+      path: '/tags/t%2F1/edit',
+      payload: {
+        name: '暖调',
+        color: '#d9a07a',
+        category_id: null,
+        expected_revision: '4',
+        hierarchy_revision: '9',
+      },
+      text: '已移动标签',
+    },
+  )
+  assert.deepEqual(
+    tagCommand({ kind: 'createTag', name: '逆光', category: 'style' }, '9')
+      .payload,
+    {
+      name: '逆光',
+      color: '#a1a1a7',
+      category_id: 'style',
+      hierarchy_revision: '9',
+    },
+  )
+  assert.equal(
+    deleteConfirmation({ kind: 'deleteTag', tag }).body,
+    '3 项素材（含回收站）会去掉这个标签，素材本身保留。删除后无法撤销。',
+  )
+  assert.equal(
+    deleteConfirmation({ kind: 'deleteTag', tag: { ...tag, asset_count: 0 } })
+      .body,
+    '还没有素材用这个标签。',
+  )
+  assert.match(
+    deleteConfirmation({
+      kind: 'deleteCategory',
+      category: categories[0],
+      tags: 2,
+    }).body,
+    /2 个标签会保留/,
   )
 })
 

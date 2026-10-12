@@ -70,6 +70,9 @@ export default function AssetBrowser({
   onImportFiles,
   importBlocked,
   notice,
+  drawer = false,
+  views = false,
+  onCardDrag,
 }: {
   query: LibraryQuery
   catalog: LibraryCatalog | null
@@ -90,6 +93,12 @@ export default function AssetBrowser({
   onImportFiles: (files: File[]) => void
   importBlocked: boolean
   toolbar?: React.ReactNode
+  /** 画布抽屉：不显示布局、缩放和检查器开关。 */
+  drawer?: boolean
+  /** 资料库树放不下时，视图和分组收进顶部下拉。 */
+  views?: boolean
+  /** 自定义卡片拖出的数据（抽屉拖进画布）。 */
+  onCardDrag?: (asset: api.Asset, e: React.DragEvent) => void
 }) {
   const [dropping, setDropping] = useState(false)
   const groups = catalog?.groups ?? []
@@ -120,7 +129,7 @@ export default function AssetBrowser({
 
   return (
     <section
-      className="al-board"
+      className={`al-board${drawer ? ' is-drawer' : ''}${views ? ' has-views' : ''}`}
       aria-label="资产"
       tabIndex={-1}
       onDragOver={(e) => {
@@ -151,7 +160,7 @@ export default function AssetBrowser({
         </div>
       )}
       <header className="al-head">
-        {importButton}
+        {!drawer && importButton}
         <div className="al-crumb">
           <h2>
             {group ? (
@@ -190,52 +199,56 @@ export default function AssetBrowser({
             onQuery({ ...query, sort: sort as LibraryQuery['sort'] })
           }
         />
-        <div className="al-seg al-seg-icon" role="group" aria-label="布局">
-          <button
-            type="button"
-            aria-pressed={prefs.layout === 'masonry'}
-            aria-label="瀑布流"
-            title="瀑布流"
-            onClick={() => onPrefs({ ...prefs, layout: 'masonry' })}
-          >
-            <LayoutDashboard size={14} />
-          </button>
-          <button
-            type="button"
-            aria-pressed={prefs.layout === 'grid'}
-            aria-label="方格"
-            title="方格"
-            onClick={() => onPrefs({ ...prefs, layout: 'grid' })}
-          >
-            <LayoutGrid size={14} />
-          </button>
-        </div>
-        <input
-          className="al-zoom"
-          type="range"
-          min={SIZE.min}
-          max={SIZE.max}
-          step={SIZE.step}
-          value={prefs.size}
-          aria-label="缩略图大小"
-          onChange={(e) =>
-            onPrefs({ ...prefs, size: Number(e.currentTarget.value) })
-          }
-        />
-        <button
-          type="button"
-          className="al-icon-btn al-inspector-toggle"
-          aria-pressed={prefs.inspector}
-          aria-label="检查器"
-          title={prefs.inspector ? '收起检查器' : '打开检查器'}
-          onClick={() => onPrefs({ ...prefs, inspector: !prefs.inspector })}
-        >
-          {prefs.inspector ? (
-            <PanelRightClose size={16} />
-          ) : (
-            <PanelRightOpen size={16} />
-          )}
-        </button>
+        {!drawer && (
+          <>
+            <div className="al-seg al-seg-icon" role="group" aria-label="布局">
+              <button
+                type="button"
+                aria-pressed={prefs.layout === 'masonry'}
+                aria-label="瀑布流"
+                title="瀑布流"
+                onClick={() => onPrefs({ ...prefs, layout: 'masonry' })}
+              >
+                <LayoutDashboard size={14} />
+              </button>
+              <button
+                type="button"
+                aria-pressed={prefs.layout === 'grid'}
+                aria-label="方格"
+                title="方格"
+                onClick={() => onPrefs({ ...prefs, layout: 'grid' })}
+              >
+                <LayoutGrid size={14} />
+              </button>
+            </div>
+            <input
+              className="al-zoom"
+              type="range"
+              min={SIZE.min}
+              max={SIZE.max}
+              step={SIZE.step}
+              value={prefs.size}
+              aria-label="缩略图大小"
+              onChange={(e) =>
+                onPrefs({ ...prefs, size: Number(e.currentTarget.value) })
+              }
+            />
+            <button
+              type="button"
+              className="al-icon-btn al-inspector-toggle"
+              aria-pressed={prefs.inspector}
+              aria-label="检查器"
+              title={prefs.inspector ? '收起检查器' : '打开检查器'}
+              onClick={() => onPrefs({ ...prefs, inspector: !prefs.inspector })}
+            >
+              {prefs.inspector ? (
+                <PanelRightClose size={16} />
+              ) : (
+                <PanelRightOpen size={16} />
+              )}
+            </button>
+          </>
+        )}
       </header>
 
       {notice}
@@ -433,6 +446,7 @@ export default function AssetBrowser({
         onMenu={onMenu}
         onOpen={onOpen}
         onRetry={onRetry}
+        onCardDrag={onCardDrag}
         onClear={() => onQuery(clearFilters(query))}
         onWiden={() => onQuery({ ...query, view: 'all', group: '' })}
       />
@@ -563,6 +577,13 @@ function SearchBox({
         onChange={(e) => setDraft({ q: value, text: e.currentTarget.value })}
         onCompositionStart={() => setComposing(true)}
         onCompositionEnd={() => setComposing(false)}
+        onKeyDown={(e) => {
+          // Esc 先清空关键词；已经是空的就交给外层（抽屉接着清选择、收起）。
+          if (e.key !== 'Escape' || e.nativeEvent.isComposing || !text) return
+          e.preventDefault()
+          setDraft({ q: '', text: '' })
+          if (value) search.current('')
+        }}
       />
       <kbd aria-hidden="true">/</kbd>
     </label>
@@ -633,8 +654,10 @@ function Tiles({
   onBox,
   onMenu,
   onOpen,
+  onCardDrag,
   importButton,
 }: {
+  onCardDrag?: (asset: api.Asset, e: React.DragEvent) => void
   importButton?: React.ReactNode
   query: LibraryQuery
   list: List
@@ -706,6 +729,7 @@ function Tiles({
       onSelect={onSelect}
       onMenu={onMenu}
       onOpen={onOpen}
+      onDrag={onCardDrag}
     />
   )
   return (
@@ -875,8 +899,10 @@ function AssetCard({
   onSelect,
   onMenu,
   onOpen,
+  onDrag,
   selection,
 }: {
+  onDrag?: (asset: api.Asset, e: React.DragEvent) => void
   asset: api.Asset
   square: boolean
   selected: boolean
@@ -897,6 +923,7 @@ function AssetCard({
       aria-label={a.title}
       draggable={!a.deleted_at}
       onDragStart={(e) => {
+        if (onDrag) return onDrag(a, e)
         const ids = selected ? selection : [a.id]
         if (!selected) onSelect(a.id)
         e.dataTransfer.setData(

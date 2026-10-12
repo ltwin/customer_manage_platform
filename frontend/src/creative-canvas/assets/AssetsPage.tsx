@@ -4,26 +4,10 @@ import AssetViewer from '../viewer/AssetViewer.tsx'
 import { useOrganization } from './useOrganization.tsx'
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import {
-  ArrowUpRight,
-  Download,
-  Folder,
-  Heart,
-  Star,
-  Tag,
-  Trash2,
-  X,
-  Undo2,
-} from 'lucide-react'
-import type { components } from '../../api/schema'
 import * as api from '../editor/api.ts'
 import CanvasContextMenu, {
   type CanvasMenuItem,
 } from '../editor/CanvasContextMenu.tsx'
-import {
-  deleteGroupCommand,
-  groupRestoreCommand,
-} from '../editor/groupDeletion.ts'
 import '../editor/workspace.css'
 import '../editor/library.css'
 import AppSidebar from '../home/AppSidebar.tsx'
@@ -32,7 +16,8 @@ import AssetInspector from './AssetInspector.tsx'
 import LibraryTree from './LibraryTree.tsx'
 import BatchBar, { type Action } from './BatchBar.tsx'
 import type { Point } from './popover.ts'
-import { operation } from './operations.ts'
+import { assetMenuItems } from './assetMenu.tsx'
+import { useTreeCommands } from './useTreeCommands.ts'
 import { useActions } from './useActions.ts'
 import { clickSelection, type Modifiers, type Selection } from './selection.ts'
 import {
@@ -126,8 +111,7 @@ function Assets({ account }: { account: string }) {
     onTrash: clear,
     onPurge: () => setViewer(null),
   })
-  const { metadata, organize, popup, confirm, setPopup, setConfirm } =
-    organization
+  const { metadata, organize, popup, confirm, setPopup } = organization
   const action = (kind: Action, at: Point, assets = selected) =>
     organization.action(kind, at, assets)
   const importer = useAssetImport({
@@ -176,96 +160,28 @@ function Assets({ account }: { account: string }) {
   function assetMenu(asset: api.Asset, at: Point) {
     const assets = selection.ids.includes(asset.id) ? selected : [asset]
     if (!selection.ids.includes(asset.id)) pick(asset.id)
-    if (assets.every((a) => a.deleted_at)) {
-      setMenu({
-        at,
-        label: '回收站操作',
-        items: [
-          {
-            label: '恢复',
-            icon: <Undo2 size={14} />,
-            disabled: actions.blocked || assets.length > 100,
-            action: () => action('restore', at, assets),
-          },
-          {
-            label: '永久删除',
-            icon: <Trash2 size={14} />,
-            danger: true,
-            disabled: actions.blocked || assets.length > 100,
-            action: () => action('purge', at, assets),
-          },
-        ],
-      })
-      return
-    }
-    if (assets.some((a) => a.deleted_at)) return
-    const entries: { kind: Action; label: string; Icon: typeof Star }[] = [
-      { kind: 'rate', label: '评分…', Icon: Star },
-      { kind: 'project', label: '放入项目…', Icon: ArrowUpRight },
-      { kind: 'group', label: '归入分组…', Icon: Folder },
-      { kind: 'tag', label: '打标签…', Icon: Tag },
-      {
-        kind: 'favorite',
-        label: assets.every((a) => a.is_favorite) ? '取消最爱' : '加入最爱',
-        Icon: Heart,
-      },
-      { kind: 'download', label: '下载', Icon: Download },
-      { kind: 'trash', label: '移到回收站', Icon: Trash2 },
-    ]
-    const items: CanvasMenuItem[] = entries.map(({ kind, label, Icon }) => ({
-      label,
-      icon: <Icon size={14} />,
-      danger: kind === 'trash',
-      disabled:
-        actions.blocked ||
-        assets.length > 100 ||
-        ((kind === 'project' || kind === 'download') &&
-          assets.some((a) => a.unavailable)),
-      action: () => action(kind, at, assets),
-    }))
-    if (query.group)
-      items.splice(5, 0, {
-        label: '移出这个分组',
-        icon: <X size={14} />,
-        disabled: actions.blocked || assets.length > 100,
-        action: () => organize(assets, 'group', query.group, false),
-      })
-    setMenu({ at, label: '素材操作', items })
-  }
-  function deleteGroup(group: api.Group) {
-    if (!catalog || actions.blocked) return
-    const command = deleteGroupCommand(group, catalog.hierarchy)
-    setConfirm({
-      title: `删除分组「${group.name}」？`,
-      body: '素材保留在资产库，子分组移到上一级。',
-      run: () =>
-        void actions.execute({
-          run: operation(account, command.path, command.payload),
-          success: (result) => {
-            if (query.group === group.id)
-              go(enter(query, 'all', group.parent_id ?? ''), true)
-            const undo = groupRestoreCommand(result)
-            return {
-              text: '已删除分组',
-              ...(undo
-                ? {
-                    action: {
-                      label: '撤销',
-                      run: () =>
-                        void actions.execute({
-                          conflictText:
-                            '分组已经有新的调整，无法撤销；请刷新后查看',
-                          run: operation(account, undo.path, undo.payload),
-                          success: () => ({ text: '已恢复分组与归类' }),
-                        }),
-                    },
-                  }
-                : {}),
-            }
-          },
-        }),
+    const menu = assetMenuItems({
+      assets,
+      blocked: actions.blocked,
+      group: query.group,
+      onAction: (kind) => action(kind, at, assets),
+      onRemoveFromGroup: () => organize(assets, 'group', query.group, false),
     })
+    if (menu) setMenu({ at, ...menu })
   }
+  const tree = useTreeCommands({
+    account,
+    catalog,
+    actions,
+    organization,
+    query,
+    go,
+    resolve: (ids) =>
+      ids.flatMap((id) => {
+        const a = known.current.get(id)
+        return a ? [actual(a)] : []
+      }),
+  })
   // 按键只作用于素材选择；输入框、弹层和菜单有各自的键盘行为。
   const keyboard = useRef<(e: KeyboardEvent) => void>(() => {})
   keyboard.current = (e) => {
@@ -345,44 +261,8 @@ function Assets({ account }: { account: string }) {
                 : [...query.tags, id],
             })
           }
-          onDropAssets={(ids, group) => {
-            if (actions.blocked) return
-            const assets = ids.flatMap((id) => {
-              const a = known.current.get(id)
-              return a ? [actual(a)] : []
-            })
-            if (assets.length !== ids.length || assets.length > 100) {
-              actions.setToast({ text: '一次最多处理 100 项，请重新选择素材' })
-              return
-            }
-            organize(assets, 'group', group, true)
-          }}
+          {...tree}
           blocked={actions.blocked}
-          onDeleteGroup={deleteGroup}
-          onSaveGroup={(group, parent, name, done) => {
-            if (!catalog) return
-            const path = group
-              ? `/asset-groups/${encodeURIComponent(group.id)}/rename`
-              : '/asset-groups'
-            const payload = group
-              ? ({
-                  name,
-                  expected_revision: group.revision,
-                  hierarchy_revision: catalog.hierarchy,
-                } satisfies components['schemas']['CreativeGroupRenamePayload'])
-              : ({
-                  name,
-                  parent_id: parent,
-                  hierarchy_revision: catalog.hierarchy,
-                } satisfies components['schemas']['CreativeGroupCreatePayload'])
-            void actions.execute({
-              run: operation(account, path, payload),
-              success: () => {
-                done()
-                return { text: group ? '已重命名分组' : '已新建分组' }
-              },
-            })
-          }}
         />
         <AssetBrowser
           importButton={importer.button('al-phone-import')}

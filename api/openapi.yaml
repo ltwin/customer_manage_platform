@@ -5979,6 +5979,7 @@ components:
       - color
       - category_id
       - revision
+      - asset_count
       properties:
         id:
           type: string
@@ -5992,6 +5993,11 @@ components:
           nullable: true
         revision:
           $ref: '#/components/schemas/CreativeRevision'
+        asset_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 打了这个标签的素材数，含回收站；删除标签会从这些素材上移除它
     CreativeTagCategory:
       type: object
       additionalProperties: false

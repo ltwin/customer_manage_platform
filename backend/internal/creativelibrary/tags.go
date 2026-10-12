@@ -19,6 +19,8 @@ type Tag struct {
 	Color      string               `json:"color"`
 	CategoryID *string              `json:"category_id"`
 	Revision   creativeops.Revision `json:"revision"`
+	// AssetCount 是打了这个标签的素材数，含回收站；删除标签会从这些素材上移除它。
+	AssetCount int64 `json:"asset_count"`
 }
 type TagCategory struct {
 	ID       string               `json:"id"`
@@ -96,7 +98,18 @@ func ListTags(ctx context.Context, sc store.AccountScope) (TagPage, error) {
 			}
 			p.Items = append(p.Items, t)
 		}
-		return rows.Err()
+		if err = rows.Err(); err != nil {
+			return err
+		}
+		rows.Close()
+		counts, err := tx.GroupCount(ctx, "creative_asset_tags", "tag_id", "")
+		if err != nil {
+			return err
+		}
+		for i := range p.Items {
+			p.Items[i].AssetCount = counts[p.Items[i].ID]
+		}
+		return nil
 	})
 	return p, err
 }

@@ -213,8 +213,12 @@ export function groupTree(groups: api.Group[]) {
   }))
 }
 
-/** 按分类列出标签；没有分类的放在最后的「未分类」里，空分类不显示。 */
-export function tagSections(tags: api.Tag[], categories: api.Category[]) {
+/** 按分类列出标签；没有分类的放在最后的「未分类」里。空分类默认不显示，管理时保留。 */
+export function tagSections(
+  tags: api.Tag[],
+  categories: api.Category[],
+  keepEmpty = false,
+) {
   const sections = [
     ...categories.map((c) => ({ id: c.id, name: c.name })),
     { id: null as string | null, name: '未分类' },
@@ -224,5 +228,5 @@ export function tagSections(tags: api.Tag[], categories: api.Category[]) {
       ...s,
       tags: tags.filter((t) => (t.category_id ?? null) === s.id),
     }))
-    .filter((s) => s.tags.length)
+    .filter((s) => keepEmpty || s.tags.length)
 }

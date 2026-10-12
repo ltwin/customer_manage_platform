@@ -4796,6 +4796,8 @@ type CreativeLibrarySettingsPayloadRetentionDays int
 
 // CreativeLibraryTag defines model for CreativeLibraryTag.
 type CreativeLibraryTag struct {
+	// AssetCount 打了这个标签的素材数，含回收站；删除标签会从这些素材上移除它
+	AssetCount int64                     `json:"asset_count"`
 	CategoryId nullable.Nullable[string] `json:"category_id"`
 	Color      string                    `json:"color"`
 	Id         string                    `json:"id"`

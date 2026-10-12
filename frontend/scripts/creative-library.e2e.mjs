@@ -1,4 +1,5 @@
-// Browser regression for the v6 asset drawer. All API traffic is mocked; run
+// Browser regression for the canvas asset drawer, rebuilt on the standalone
+// asset library components (cards, filters, tree, menus, viewer). All API traffic is mocked; run
 // against the Vite dev server: node scripts/creative-library.e2e.mjs.
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright'
@@ -154,12 +155,24 @@ await page.route('**/api/v1/**', async (route) => {
       const d = groupDeletions.get(path.split('/').at(-2)); groups.push(d.group); groups.forEach((g) => { if (d.children.includes(g.id)) g.parent_id = d.group.id }); all.forEach((a) => { if (d.members.includes(a.id)) a.group_ids.push(d.group.id) }); hierarchy++
       return json({ id: d.group.id, revision: '3', hierarchy_revision: String(hierarchy), library_revision: '3' })
     }
+    if (path.endsWith('/assets/batch-organize')) {
+      for (const item of body.payload.assets) {
+        const a = all.find((a) => a.id === item.asset_id)
+        a.group_ids = [...new Set([...a.group_ids.filter((g) => !(body.payload.remove_group_ids ?? []).includes(g)), ...(body.payload.add_group_ids ?? [])])]
+        a.revision = String(Number(a.revision) + 1)
+      }
+      return json({ library_revision: '5' })
+    }
     if (path.endsWith('/assets/from-canvas-node'))
       return json({ asset_id: 'a1', revision: '2', content_revision_id: 'rev-a1', library_revision: '2', tag_mapping: {}, reused: true })
     return json({})
   }
-  if (path.endsWith('/asset-groups')) return json({ items: groups, hierarchy_revision: String(hierarchy) })
-  if (path.endsWith('/tags')) return json({ items: tags, hierarchy_revision: String(hierarchy) })
+  if (path.endsWith('/asset-groups')) {
+    const counts = Object.fromEntries(groups.map((g) => [g.id, all.filter((a) => !a.deleted_at && a.group_ids.some((id) => id === g.id || groups.find((x) => x.id === id)?.parent_id === g.id)).length]))
+    return json({ items: groups, hierarchy_revision: String(hierarchy), asset_counts: counts })
+  }
+  if (path.endsWith('/library-usage')) return json({ asset_count: all.length, stored_bytes: 1024 ** 3, limit_bytes: 20 * 1024 ** 3 })
+  if (path.endsWith('/tags')) return json({ items: tags.map((t) => ({ ...t, asset_count: all.filter((a) => a.tag_ids.includes(t.id)).length })), hierarchy_revision: String(hierarchy) })
   if (path.endsWith('/tag-categories')) return json({ items: [], hierarchy_revision: String(hierarchy) })
   if (path.endsWith('/library-settings')) return json({ retention_days: 30, revision: '1', hierarchy_revision: String(hierarchy), library_revision: '1' })
   if (path.endsWith('/assets')) {
@@ -178,7 +191,8 @@ await page.route('**/api/v1/**', async (route) => {
     if (q.get('kind')) items = items.filter((a) => a.kind === q.get('kind'))
     if (q.get('q')) items = items.filter((a) => a.title.includes(q.get('q')))
     // 标签数量只按「满足任一」模型：在其余条件下数每个标签。
-    const facets = q.get('include_facets') === 'true' ? { kinds: {}, tags: tags.map((t) => ({ tag_id: t.id, count: items.filter((a) => a.tag_ids.includes(t.id)).length })) } : undefined
+    const kinds = Object.fromEntries(['image', 'video', 'audio', 'text', 'link'].map((k) => [k, items.filter((a) => a.kind === k).length]))
+    const facets = q.get('include_facets') === 'true' ? { kinds, tags: tags.map((t) => ({ tag_id: t.id, count: items.filter((a) => a.tag_ids.includes(t.id)).length })) } : undefined
     if (q.get('tag_ids')) items = items.filter((a) => a.tag_ids.some((t) => q.get('tag_ids').split(',').includes(t)))
     const limit = Number(q.get('limit') ?? 30)
     return json({ ...page_(items.slice(0, limit), items.length), facets })
@@ -187,14 +201,18 @@ await page.route('**/api/v1/**', async (route) => {
 })
 
 const drawer = page.locator('#creative-library')
-const tile = (title) => drawer.locator('.cl-tile', { has: page.getByText(title, { exact: true }) }).first()
-const lastCommand = () => commands.at(-1) ?? []
+const tile = (title) => drawer.locator('.al-tile', { has: page.getByText(title, { exact: true }) }).first()
+const tiles = () => drawer.locator('.al-tile')
+const scope = () => drawer.getByRole('combobox', { name: '视图' })
+const treeRow = (name) => drawer.locator('.al-tree .al-row', { has: page.locator('.al-name', { hasText: new RegExp(`^${name}$`) }) })
+const until = async (fn, label) => { for (let i = 0; i < 80; i++) { if (await fn()) return; await page.waitForTimeout(50) } throw new Error(`timeout: ${label}`) }
+const count = (n) => until(async () => (await tiles().count()) === n, `${n} tiles`)
 // 画布编辑先在本机投影，250ms 后才发出；断言请求内容前等它真正离开。
 async function nextCommand(run) {
-  const count = commands.length
+  const n = commands.length
   await run()
-  for (let i = 0; i < 40 && commands.length === count; i++) await page.waitForTimeout(100)
-  assert(commands.length > count, 'canvas command was sent')
+  for (let i = 0; i < 40 && commands.length === n; i++) await page.waitForTimeout(100)
+  assert(commands.length > n, 'canvas command was sent')
   return commands.at(-1)
 }
 const metrics = {}
@@ -204,166 +222,93 @@ try {
   await page.getByRole('button', { name: '资产库', exact: true }).click()
   await drawer.waitFor()
 
-  // 1. 平铺浏览：每个根分组一节，未归类放最后；方格预览，超出的最后一格是「+N」。
-  await drawer.getByRole('region', { name: '客户样片' }).locator('.cl-tile').first().waitFor()
-  assert.deepEqual(await drawer.locator('.cl-sec-toggle > span').allInnerTexts(), ['客户样片', '风格参考', '未归类'])
-  assert.equal(await drawer.locator('.cl-groups-bar > span').innerText(), '2 个分组')
-  const client = drawer.getByRole('region', { name: '客户样片' })
-  assert.equal(await client.locator('.cl-grid .cl-tile').count(), 5)
-  assert.equal(await client.getByRole('button', { name: '查看「客户样片」全部 7 项' }).innerText(), '+2')
-  assert.equal(await client.locator('.cl-sub-chips button').innerText(), '海边婚纱')
-  assert(assetQueries.some((q) => q.includes('group_id=g1') && q.includes('include_descendants=true') && q.includes('limit=6')), 'group preview reads descendants')
+  // 1. 与独立页同一套浏览区：一张结果网格、视图下拉、类型/颜色/画幅/评分/标签筛选；旧的分组平铺与悬停大图都没有了。
+  await count(12)
   await drawer.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)))
   metrics.drawer = await drawer.evaluate((el) => {
     const s = getComputedStyle(el)
     return { bg: s.backgroundColor, width: Math.round(el.getBoundingClientRect().width), left: Math.round(el.getBoundingClientRect().left) }
   })
   assert.deepEqual(metrics.drawer, { bg: 'rgb(27, 27, 29)', width: 344, left: 64 })
-  // 卡片样式（V6-060）：音频是装饰条加时长，链接只显示域名；带评分的有只读星级。悬停放大用同一形态。
-  const loose = drawer.getByRole('region', { name: '未归类' })
-  const voice = loose.locator('.cl-tile', { has: page.getByText('现场环境音', { exact: true }) })
+  assert.equal(await drawer.locator('.cl-sec, .cl-tile, .cl-views').count(), 0, 'old drawer layout is gone')
+  assert.equal(await drawer.locator('.al-tree').count(), 0, 'narrow drawer has no tree')
+  await scope().waitFor()
+  for (const name of ['颜色', '画幅', '评分', '标签']) assert(await drawer.locator('.al-filters').getByText(name, { exact: true }).count(), `filter ${name}`)
+  assert.equal(await drawer.getByRole('group', { name: '布局' }).count(), 0, 'no layout toggle in the drawer')
+  assert.equal(await drawer.getByRole('slider', { name: '缩略图大小' }).count(), 0)
+  assert.equal(await drawer.locator('.cl-masonry-col').count(), 2)
+  const noSideScroll = await drawer.evaluate((el) => [...el.querySelectorAll('.al-board, .al-scroll, .al-filters')].every((e) => e.scrollWidth <= e.clientWidth))
+  assert(noSideScroll, 'drawer does not scroll sideways')
+  // 卡片与独立页一致（V6-060）：音频装饰条与时长、链接只显示域名、只读星级。
+  const voice = tile('现场环境音')
   assert.equal(await voice.locator('.cl-wave i').count(), 36)
   assert.equal((await voice.locator('.cl-card-row small').innerText()).trim(), '3:04')
-  assert.equal(await voice.getByRole('img', { name: '4.5 星' }).count(), 0, 'square previews hide stars')
-  assert.equal((await loose.locator('.cl-card-link small').innerText()).trim(), 'example.com')
-  await voice.hover()
-  await page.locator('.cl-peek .cl-wave').waitFor()
-  await page.screenshot({ path: '/tmp/creative-library-cards.png' })
-  await page.mouse.move(900, 900)
-  // 资产库不记录素材是否已在画布上（owner 2026-10-07 决定）。
-  assert.equal(await drawer.locator('.cl-tile-used').count(), 0, 'no on-canvas badge')
+  await voice.getByRole('img', { name: '4.5 星' }).waitFor()
+  assert.equal((await tile('布光参考').locator('.cl-card-link small').innerText()).trim(), 'example.com')
+  await tile('白裙').hover(); await page.waitForTimeout(500)
+  assert.equal(await page.locator('.cl-peek').count(), 0, 'no hover peek')
+  await page.screenshot({ path: '/tmp/creative-library-drawer.png' })
 
-  // 2. 进组：面包屑、子组标签、保持比例的两列瀑布流。
-  await client.locator('.cl-sec-head').hover()
-  await client.getByRole('button', { name: '查看全部', exact: true }).click()
-  await drawer.locator('.cl-crumb b', { hasText: '客户样片' }).waitFor()
-  await page.waitForFunction(() => document.querySelectorAll('#creative-library .cl-masonry .cl-tile').length === 7)
-  assert.equal(await drawer.locator('.cl-masonry-col').count(), 2)
-  assert.equal(await drawer.locator('.cl-crumb em').innerText(), '7 项')
-  assert.match(page.url(), /lgroup=g1/)
-  const ratio = await tile('日落海边').evaluate((el) => el.getBoundingClientRect().height / el.getBoundingClientRect().width)
-  assert(Math.abs(ratio - 1.5) < 0.03, `masonry keeps the aspect ratio: ${ratio}`)
-  await drawer.locator('.cl-sub-chips').getByRole('button', { name: '海边婚纱' }).click()
-  await drawer.locator('.cl-crumb b', { hasText: '海边婚纱' }).waitFor()
-  assert.equal((await drawer.locator('.cl-path').innerText()).replace(/\s+/g, ''), '客户样片/海边婚纱')
-  // 最多两层：子分组的菜单里没有「新建子分组」。
-  await drawer.getByRole('button', { name: '分组操作：海边婚纱' }).click()
-  const childMenu = page.getByRole('menu', { name: '分组操作：海边婚纱' })
-  assert.deepEqual(await childMenu.getByRole('menuitem').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label'))), ['重命名分组', '移动分组', '删除分组'])
-  await page.keyboard.press('Escape')
-  await drawer.getByRole('button', { name: '返回', exact: true }).click()
-  await drawer.locator('.cl-crumb b', { hasText: '客户样片' }).waitFor()
-
-  // 3. 快速查看：点卡片打开，左右键翻看，空格关闭并把焦点还给卡片。
+  // 2. 单击是选择（不再直接打开浮窗），双击或回车查看，Esc 先清选择。
   await tile('逆光发丝').click()
+  assert.equal(await drawer.locator('.al-tile.is-on').count(), 1)
+  assert.equal(await page.locator('.viewer').count(), 0, 'single click does not open the viewer')
+  assert.equal(await drawer.locator('.cl-foot > span').first().innerText(), '已选 1 项')
+  await page.keyboard.press('Escape')
+  assert.equal(await drawer.locator('.al-tile.is-on').count(), 0)
+  assert(await drawer.isVisible(), 'Esc with a selection keeps the drawer open')
+  await tile('逆光发丝').dblclick()
   const look = page.getByRole('dialog', { name: '快速查看：逆光发丝' })
   await look.waitFor()
-  assert.match(await look.locator('.v-panel').innerText(), /800×1000.*客户样片.*逆光/s)
   await page.keyboard.press('ArrowRight')
   await page.getByRole('dialog', { name: /^快速查看：/ }).waitFor()
   assert.notEqual(await page.getByRole('dialog', { name: /^快速查看：/ }).getAttribute('aria-label'), '快速查看：逆光发丝')
   await page.keyboard.press('ArrowLeft')
   await look.waitFor()
-  await page.keyboard.press(' ')
-  await look.waitFor({ state: 'detached' })
-  assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '逆光发丝')
-  // 方向键在卡片间移动焦点。
-  await page.keyboard.press('ArrowDown')
-  assert.notEqual(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '逆光发丝')
-  assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('cl-tile')), true)
-
-  // 4. 悬停放大出现在抽屉右侧。
-  await tile('白裙').hover()
-  await page.locator('.cl-peek').waitFor()
-  const peek = await page.locator('.cl-peek').boundingBox()
-  assert(peek.x >= 64 + 344, 'peek sits right of the drawer')
-  await drawer.locator('.cl-crumb').hover()
-  await page.locator('.cl-peek').waitFor({ state: 'detached' })
-
-  // 6. 视图、类型与标签筛选。
-  await drawer.getByRole('tab', { name: '最爱' }).click()
-  await page.waitForFunction(() => document.querySelectorAll('#creative-library .cl-masonry .cl-tile').length === 1)
-  assert(assetQueries.at(-1).includes('view=favorites'))
-  await drawer.getByRole('tab', { name: '全部' }).click()
-  await drawer.locator('.cl-groups-bar').waitFor()
-  await drawer.getByRole('button', { name: '资产类型' }).click()
-  await page.getByRole('menu', { name: '资产类型' }).getByRole('menuitem', { name: '文字' }).click()
-  await drawer.locator('.cl-crumb b', { hasText: '筛选结果' }).waitFor()
-  await page.waitForFunction(() => document.querySelectorAll('#creative-library .cl-masonry .cl-tile').length === 1)
-  assert(assetQueries.at(-1).includes('kind=text'))
-  await drawer.getByRole('button', { name: '资产类型' }).click()
-  await page.getByRole('menu', { name: '资产类型' }).getByRole('menuitem', { name: '全部' }).click()
-  await drawer.locator('.cl-groups-bar').waitFor()
-  await drawer.getByRole('button', { name: '标签', exact: true }).click()
-  const tagPop = page.getByRole('dialog', { name: '标签筛选' })
-  // 标签数量随当前条件变化（V6-016 AC-01），来自带 include_facets 的请求。
-  await tagPop.locator('.cl-tag-n', { hasText: '1' }).waitFor()
-  assert(assetQueries.some((q) => q.includes('include_facets=true') && q.includes('limit=1')))
-  await tagPop.getByRole('button', { name: '逆光' }).click()
-  await page.waitForFunction(() => document.querySelectorAll('#creative-library .cl-masonry .cl-tile').length === 1)
-  assert(assetQueries.at(-1).includes('tag_ids=t1') || assetQueries.at(-2).includes('tag_ids=t1'))
-  // 只选一个标签时没有「同时满足 / 满足任一」之分（V6-016 AC-05）。
-  assert.equal(await tagPop.getByRole('button', { name: /同时满足|满足任一/ }).count(), 0)
   await page.keyboard.press('Escape')
-  await drawer.getByRole('button', { name: '移除标签筛选：逆光' }).click()
-  await drawer.locator('.cl-groups-bar').waitFor()
+  await look.waitFor({ state: 'detached' })
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '逆光发丝')
 
-  // 7. 就地新建分组：同层重名本机即拦下，不发请求，并保留已输入的名称继续修改（V6-017）。
-  const groupPosts = () => posts.filter((p) => p.path.endsWith('/asset-groups'))
-  await drawer.getByRole('button', { name: '新建分组', exact: true }).click()
-  const nameField = drawer.locator('input.cl-name-input')
-  await nameField.fill('客户样片')
-  await page.keyboard.press('Enter')
-  await drawer.getByRole('status').filter({ hasText: '同一层已有「客户样片」' }).waitFor()
-  assert.equal(groupPosts().length, 0)
-  assert.equal(await nameField.inputValue(), '客户样片', 'duplicate name keeps the typed input')
-  assert(await nameField.evaluate((el) => el === document.activeElement), 'input keeps focus after Enter rejection')
-  // 失焦校验失败也不清空输入、不抢回焦点。
-  await drawer.locator('.cl-head h2').click()
-  assert.equal(await nameField.inputValue(), '客户样片', 'blur rejection keeps the typed input')
-  // 服务端拒绝（另一窗口已占用）：输入框和名称保留，关闭拒绝提示后改名即可提交。
-  await nameField.fill('棚拍布光')
-  await page.keyboard.press('Enter')
-  await page.getByRole('button', { name: '放弃被拒绝的请求' }).waitFor()
-  assert.equal(groupPosts().length, 1)
-  assert.equal(await nameField.inputValue(), '棚拍布光', 'server rejection keeps the typed input')
-  await page.getByRole('button', { name: '放弃被拒绝的请求' }).click()
-  await page.getByRole('button', { name: '放弃被拒绝的请求' }).waitFor({ state: 'detached' })
-  // 连按两次 Enter 只提交一次，成功后关闭输入框且不留空分组。
-  await nameField.fill('光线与时刻')
-  // 同一 tick 内连按两次，第二次落在请求仍在途时。关闭拒绝提示后队列可能仍在刷新，
-  // 此时 Enter 被忽略但输入保留；像摄影师一样重按，直到请求真正发出。
-  for (let i = 0; i < 20 && groupPosts().length < 2; i++) {
-    await nameField.evaluate((el) => {
-      for (let k = 0; k < 2; k++) el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    })
-    await page.waitForTimeout(250)
-  }
-  await drawer.getByRole('region', { name: '光线与时刻' }).waitFor()
-  assert.equal(groupPosts().length, 2, 'double Enter sends one create request')
-  assert.deepEqual(groupPosts().at(-1).payload, { name: '光线与时刻', parent_id: null, hierarchy_revision: '1' })
-  assert.equal(await drawer.locator('input.cl-name-input').count(), 0, 'input closes after success')
-  // Esc 取消不发请求；输入法组字中的 Enter 不提交；失焦提交一次。
-  await drawer.getByRole('button', { name: '新建分组', exact: true }).click()
-  await nameField.fill('取消的分组')
-  await nameField.press('Escape')
-  assert.equal(await drawer.locator('input.cl-name-input').count(), 0, 'Esc closes the input')
-  assert.equal(groupPosts().length, 2, 'Esc sends nothing')
-  await drawer.getByRole('button', { name: '新建分组', exact: true }).click()
-  await nameField.fill('婚纱外景')
-  await nameField.evaluate((el) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true, cancelable: true })))
-  await page.waitForTimeout(250)
-  assert.equal(groupPosts().length, 2, 'Enter during IME composition does not submit')
-  assert.equal(await nameField.inputValue(), '婚纱外景')
-  await drawer.locator('.cl-head h2').click()
-  await drawer.getByRole('region', { name: '婚纱外景' }).waitFor()
-  assert.equal(groupPosts().length, 3, 'blur submits once')
+  // 3. 视图下拉进分组（含子组）；类型与标签筛选。
+  await scope().selectOption({ label: '客户样片' })
+  await count(7)
+  assert(assetQueries.at(-1).includes('group_id=g1') && assetQueries.at(-1).includes('include_descendants=true'))
+  assert.equal(await drawer.locator('.al-subgroup').innerText().then((t) => t.split('\n')[0]), '海边婚纱')
+  assert.equal(await drawer.getAttribute('data-scope-group'), 'g1', 'canvas nodes dropped on the drawer go into the browsed group')
+  await scope().selectOption({ label: '全部' })
+  await count(12)
+  await drawer.getByRole('group', { name: '类型' }).getByRole('button', { name: /^文字/ }).click()
+  await count(1)
+  assert(assetQueries.at(-1).includes('kind=text'))
+  await drawer.getByRole('group', { name: '类型' }).getByRole('button', { name: /^全部/ }).click()
+  await count(12)
+  await drawer.locator('.al-filters').getByRole('button', { name: /^标签/ }).click()
+  const tagPop = page.getByRole('dialog', { name: '标签筛选' })
+  await tagPop.getByRole('button', { name: /逆光/ }).click()
+  await count(1)
+  assert(assetQueries.at(-1).includes('tag_ids=t1'))
+  await page.keyboard.press('Escape')
+  await drawer.getByRole('button', { name: '清除全部', exact: true }).click()
+  await count(12)
 
-  // 8. 节点拖到分组标题上：存入该组，节点回到原处。
+  // 4. 加宽后左侧出现资料库树（与独立页同一组件）：点分组浏览，节点拖到分组上存入该组。
+  await drawer.getByRole('button', { name: '加宽资产库', exact: true }).click()
+  await treeRow('风格参考').waitFor()
+  assert.equal(Math.round((await drawer.boundingBox()).width), 760)
+  assert.equal(await scope().isVisible(), false, 'wide drawer uses the tree instead of the dropdown')
+  await treeRow('风格参考').click()
+  await count(2)
+  assert(assetQueries.at(-1).includes('group_id=g2'))
+  await page.screenshot({ path: '/tmp/creative-library-drawer-wide.png' })
+  await treeRow('全部').click().catch(() => drawer.locator('.al-tree nav .al-row').first().click())
+  await count(12)
   const node = page.locator('.react-flow__node[data-id="filled"]')
+  // 宽抽屉盖住了节点：把画布往右平移，让它露出来。
+  await page.mouse.move(1300, 800)
+  for (let i = 0; i < 12 && (await node.boundingBox()).x < 880; i++) { await page.mouse.wheel(-120, 0); await page.waitForTimeout(60) }
+  assert((await node.boundingBox()).x >= 860, `node visible beside the wide drawer: ${(await node.boundingBox()).x}`)
   const before = await node.boundingBox()
-  const head = await drawer.getByRole('region', { name: '风格参考' }).locator('.cl-sec-head').boundingBox()
-  // 刚放入的节点可能叠在上面：找一处确实按在 filled 上的点。
+  const head = await treeRow('风格参考').boundingBox()
   const grip = await page.evaluate(({ x, y, width, height }) => {
     for (let dy = 8; dy < height; dy += 12)
       for (let dx = 8; dx < width; dx += 24)
@@ -374,112 +319,95 @@ try {
   await page.mouse.move(grip.x, grip.y)
   await page.mouse.down()
   await page.mouse.move(grip.x - 60, grip.y + 4, { steps: 4 })
-  await page.mouse.move(head.x + 120, head.y + head.height / 2, { steps: 12 })
-  assert.equal(await drawer.getByRole('region', { name: '风格参考' }).locator('.cl-sec-head.is-drop-hot').count(), 1)
+  await page.mouse.move(head.x + 60, head.y + head.height / 2, { steps: 12 })
+  assert.equal(await treeRow('风格参考').and(page.locator('.is-drop-hot')).count(), 1)
   await page.mouse.up()
   await page.locator('.cc-save-status').filter({ hasText: '已归入「风格参考」' }).waitFor()
   const save = posts.find((p) => p.path.endsWith('/assets/from-canvas-node'))
   assert.deepEqual(save.payload.target.group_ids, ['g2'])
-  assert.equal(save.payload.node_id, 'filled')
   const after = await node.boundingBox()
   assert.deepEqual([Math.round(after.x), Math.round(after.y)], [Math.round(before.x), Math.round(before.y)])
-  assert.equal(await drawer.locator('.is-drop-hot').count(), 0)
+  assert.equal(await page.locator('.is-drop-hot').count(), 0)
+
+  // 5. 树里删除分组：确认后用服务端快照撤销（V6-018），与独立页同一流程。
+  await treeRow('客户样片').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
+  await page.getByRole('alertdialog').getByRole('button', { name: '删除分组', exact: true }).click()
+  await page.locator('.al-toast').getByRole('button', { name: '撤销', exact: true }).waitFor()
+  assert(!groups.some((g) => g.id === 'g1'))
+  await page.locator('.al-toast').getByRole('button', { name: '撤销', exact: true }).click()
+  await page.locator('.al-toast').getByText('已恢复分组与归类').waitFor()
+  assert(groups.some((g) => g.id === 'g1'))
+  assert.equal(groups.find((g) => g.id === 'g1a').parent_id, 'g1')
+  await drawer.getByRole('button', { name: '收窄资产库', exact: true }).click()
   await drawer.getByRole('button', { name: '收起资产库', exact: true }).click()
 
-  // 9. 空节点：「资产库」入口按节点类型筛选，点一份就填进去。
+  // 6. 空节点：按节点类型筛选，点一份就填进去。
   const empty = page.locator('.react-flow__node[data-id="empty"]')
   await empty.getByRole('button', { name: '从资产库填充' }).click()
   await drawer.getByRole('heading', { name: '选择图片' }).waitFor()
   assert.equal(await drawer.locator('.cl-foot').innerText(), '点一份图片填进「空图片」\n取消')
-  await drawer.getByRole('region', { name: '风格参考' }).locator('.cl-tile').first().waitFor()
+  await count(9)
   assert(assetQueries.at(-1).includes('kind=image'))
-  assert.equal(await drawer.getByRole('region', { name: '未归类' }).count(), 0, 'fill task hides other kinds')
   const fill = await nextCommand(() => tile('胶片暖调').click())
   await drawer.waitFor({ state: 'hidden' })
   assert.deepEqual(fill, [{ type: 'fill_from_asset', node_id: 'empty', asset: { asset_id: 'a8', expected_asset_revision: '1', content_revision_id: 'rev-a8' } }])
   await empty.locator('.cc-media').waitFor()
 
-  // 10. 素材直接拖到空节点上也是填充，不另建节点。先取消选中，别让生成面板挡住落点。
+  // 7. 素材直接拖到空节点上也是填充，不另建节点。
   await page.locator('.react-flow__pane').click({ position: { x: 1500, y: 60 } })
   await page.getByRole('button', { name: '资产库', exact: true }).click()
-  await drawer.getByRole('region', { name: '风格参考' }).locator('.cl-tile').first().waitFor()
+  await count(12)
   const dropFill = await nextCommand(() => tile('冷调').dragTo(page.locator('.react-flow__node[data-id="empty2"] .cc-media-empty')))
   await page.waitForFunction(() => document.querySelector('.react-flow__node[data-id="empty2"] .cc-media'))
   assert.equal(dropFill[0].type, 'fill_from_asset')
   assert.equal(dropFill[0].node_id, 'empty2')
-  // 没有名称的节点沿用素材名。
   assert.equal(await page.locator('.react-flow__node[data-id="empty2"] .cc-node-header h3').innerText(), '冷调')
   await drawer.getByRole('button', { name: '收起资产库', exact: true }).click()
 
-  // 11. 为节点选参考：多选后在目标左侧竖排并连线。
+  // 8. 为节点选参考：点选即多选，确认后在目标左侧竖排并连线。
   await page.locator('.react-flow__node[data-id="brief"]').click({ button: 'right' })
   await page.getByRole('menuitem', { name: '从资产库添加参考' }).click()
   await drawer.getByRole('heading', { name: '选择参考素材' }).waitFor()
-  await drawer.getByRole('region', { name: '客户样片' }).locator('.cl-tile').first().waitFor()
+  await count(12)
   await tile('白裙').click()
   await tile('花艺').click()
   const pick = await nextCommand(() => drawer.getByRole('button', { name: '添加 2 项' }).click())
   await drawer.waitFor({ state: 'hidden' })
   assert.deepEqual(pick.map((a) => a.type), ['add_node', 'add_node', 'connect_reference', 'connect_reference'])
   assert(pick.slice(2).every((a) => a.target_node_id === 'brief'))
-  assert(pick[0].x < 700 - 280 && pick[0].x === pick[1].x && pick[1].y > pick[0].y, 'references stack left of the target')
   await page.locator('.cc-save-status').filter({ hasText: '已连接 2 个参考' }).waitFor()
-  await page.locator('.react-flow__node[data-id="brief"] .cc-node-header').click()
-  const prompt=page.getByRole('complementary',{name:'节点生成'}).getByRole('textbox',{name:'提示词',exact:true})
-  await page.waitForFunction(()=>document.querySelectorAll('.cc-prompt-editor [data-ref]').length===2)
-  assert.deepEqual(await prompt.locator('[data-ref]').evaluateAll(chips=>chips.map(chip=>chip.dataset.ref)),pick.slice(0,2).map(a=>a.node_id),'library picks automatically become prompt references')
 
-  // 12. 多选：勾选一张后 Shift 范围选，底栏批量放入画布，横排一次撤销。
+  // 9. 多选：单击后 Shift 范围选，底栏「放入画布」横排放下。
+  await page.locator('.react-flow__pane').click({ position: { x: 1500, y: 60 } })
   await page.getByRole('button', { name: '资产库', exact: true }).click()
-  await drawer.getByRole('region', { name: '客户样片' }).locator('.cl-sec-head').hover()
-  await drawer.getByRole('region', { name: '客户样片' }).getByRole('button', { name: '查看全部', exact: true }).click()
-  await page.waitForFunction(() => document.querySelectorAll('#creative-library .cl-masonry .cl-tile').length === 7)
-  await tile('逆光发丝').hover()
-  await drawer.getByRole('button', { name: '选择资产：逆光发丝' }).click()
-  const ids = await drawer.locator('.cl-masonry .cl-tile').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))
-  const target = ids[ids.indexOf('逆光发丝') + 2]
-  await drawer.getByRole('button', { name: `选择资产：${target}` }).click({ modifiers: ['Shift'] })
-  assert.equal(await drawer.locator('.cl-tile.is-on').count(), 3)
+  await scope().selectOption({ label: '客户样片' })
+  await count(7)
+  // 范围按列表顺序（瀑布流的 DOM 顺序是按列的）：a1 日落海边 … a3 白裙。
+  await tile('日落海边').click()
+  await tile('白裙').click({ modifiers: ['Shift'] })
+  assert.equal(await drawer.locator('.al-tile.is-on').count(), 3)
   assert.equal(await drawer.locator('.cl-foot > span').first().innerText(), '已选 3 项')
-  // 底栏一行放下全部操作。
   assert((await drawer.locator('.cl-foot').boundingBox()).height < 48, 'selection footer stays on one line')
+  const nodesBefore = await page.locator('.react-flow__node').count()
   const placed = (await nextCommand(() => drawer.getByRole('button', { name: '放入画布', exact: true }).click())).filter((a) => a.type === 'add_node')
-  await page.waitForFunction(() => document.querySelectorAll('.react-flow__node').length === 9)
+  await page.waitForFunction((n) => document.querySelectorAll('.react-flow__node').length === n + 3, nodesBefore)
   assert.equal(placed.length, 3)
   assert.equal(new Set(placed.map((a) => a.y)).size, 1, 'batch lands in one row')
-  assert.deepEqual(placed.map((a, i) => (i ? a.x - placed[i - 1].x : 0)), [0, 340, 340])
   assert(placed.every((a) => a.asset?.asset_id), 'placed nodes keep their asset source')
 
-  // 13. 抽屉的删除也使用服务端撤销快照；不是本机重建分组。
-  if ((await page.getByRole('button', { name: '资产库', exact: true }).getAttribute('aria-pressed')) !== 'true') await page.getByRole('button', { name: '资产库', exact: true }).click()
-  await drawer.getByRole('button', { name: '分组操作：客户样片', exact: true }).click()
-  await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: '删除分组', exact: true }).click()
-  await drawer.locator('.cl-notice').getByRole('button', { name: '撤销', exact: true }).waitFor()
-  assert(!groups.some((g) => g.id === 'g1'))
-  assert.equal(groups.find((g) => g.id === 'g1a').parent_id, null)
-  await drawer.locator('.cl-notice').getByRole('button', { name: '撤销', exact: true }).click()
-  await drawer.getByText('已恢复分组与归类', { exact: true }).waitFor()
-  assert(groups.some((g) => g.id === 'g1'))
-  assert.equal(groups.find((g) => g.id === 'g1a').parent_id, 'g1')
-  assert(all.filter((a) => groupDeletions.get('d-g1').members.includes(a.id)).every((a) => a.group_ids.includes('g1')))
+  // 10. 右键菜单与独立页相同，多一项「放入画布」。
+  await tile('礁石').click({ button: 'right' })
+  const menu = page.getByRole('menu', { name: '素材操作' })
+  const labels = await menu.getByRole('menuitem').evaluateAll((els) => els.map((e) => e.getAttribute('aria-label') ?? e.textContent.trim()))
+  assert.equal(labels[0], '放入画布')
+  for (const label of ['评分…', '归入分组…', '打标签…', '移出这个分组', '移到回收站']) assert(labels.includes(label), `menu has ${label}: ${labels}`)
+  const one = (await nextCommand(() => menu.getByRole('menuitem', { name: '放入画布' }).click())).filter((a) => a.type === 'add_node')
+  assert.equal(one.length, 1)
 
-  // 14. 删除已提交但响应丢失：查回执后仍须提供同一快照的撤销入口。
-  loseGroupDelete = true
-  await drawer.getByRole('button', { name: '分组操作：客户样片', exact: true }).click()
-  await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: '删除分组', exact: true }).click()
-  await page.getByRole('button', { name: '查询并恢复原保存', exact: true }).waitFor()
-  await page.getByRole('alertdialog').getByRole('button', { name: '取消', exact: true }).click()
-  await page.getByRole('button', { name: '查询并恢复原保存', exact: true }).click()
-  await page.getByRole('button', { name: '查询并恢复原保存', exact: true }).waitFor({ state: 'detached' })
-  await drawer.locator('.cl-notice').getByRole('button', { name: '撤销', exact: true }).click()
-  await drawer.getByText('已恢复分组与归类', { exact: true }).waitFor()
-  assert(groups.some((g) => g.id === 'g1'))
-  assert.equal(groups.find((g) => g.id === 'g1a').parent_id, 'g1')
-
-  // 15. 浮窗内回收/恢复刷新抽屉卡片后，按素材身份归还焦点。
-  await tile('日落海边').press('Space')
+  // 11. 浮窗内回收/恢复刷新抽屉卡片后，按素材身份归还焦点。
+  await tile('日落海边').focus()
+  await page.keyboard.press('Enter')
   const assetViewer = page.locator('.viewer')
   await assetViewer.getByRole('textbox', { name: '标题', exact: true }).waitFor()
   await assetViewer.getByRole('button', { name: '移到回收站', exact: true }).click()

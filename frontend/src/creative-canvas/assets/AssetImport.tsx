@@ -20,6 +20,7 @@ export function useAssetImport({
   actions,
   onDone,
   onStart,
+  paste = true,
 }: {
   account: string
   group: string
@@ -27,6 +28,8 @@ export function useAssetImport({
   actions: ReturnType<typeof useActions>
   onStart: () => void
   onDone: () => void
+  /** 画布页的 ⌘V 归画布，抽屉里不接管粘贴。 */
+  paste?: boolean
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [menu, setMenu] = useState<Point | null>(null)
@@ -156,10 +159,11 @@ export function useAssetImport({
     }
   }
   useEffect(() => {
-    const paste = (e: ClipboardEvent) => pasteRef.current(e)
-    document.addEventListener('paste', paste)
-    return () => document.removeEventListener('paste', paste)
-  }, [])
+    if (!paste) return
+    const listener = (e: ClipboardEvent) => pasteRef.current(e)
+    document.addEventListener('paste', listener)
+    return () => document.removeEventListener('paste', listener)
+  }, [paste])
   const button = (className = '') => (
     <button
       type="button"

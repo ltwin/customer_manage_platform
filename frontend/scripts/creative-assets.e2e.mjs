@@ -79,7 +79,7 @@ const fixture = () => [
 
 const key = (s) => s.normalize('NFKC').toLowerCase().trim()
 function mockServer(assets) {
-  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null }
+  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null }
   const live = () => s.assets.filter((a) => !a.deleted_at)
   const descendants = (id) => [id, ...s.groups.filter((g) => g.parent_id === id).map((g) => g.id)]
   function scope(q, { kind = true, tagFilter = true } = {}) {
@@ -134,8 +134,8 @@ function mockServer(assets) {
       const counts = Object.fromEntries(s.groups.map((g) => [g.id, live().filter((a) => a.group_ids.some((x) => descendants(g.id).includes(x))).length]))
       return json({ items: s.groups, hierarchy_revision: s.hierarchy, asset_counts: counts })
     }
-    if (path.endsWith('/creative/tags') && request.method() === 'GET') return json({ items: s.tags, hierarchy_revision: '1' })
-    if (path.endsWith('/creative/tag-categories')) return json({ items: categories, hierarchy_revision: '1' })
+    if (path.endsWith('/creative/tags') && request.method() === 'GET') return json({ items: s.tags.map((t) => ({ ...t, asset_count: s.assets.filter((a) => a.tag_ids.includes(t.id)).length })), hierarchy_revision: '1' })
+    if (path.endsWith('/creative/tag-categories') && request.method() === 'GET') return json({ items: s.categories, hierarchy_revision: '1' })
     if(path.endsWith('/creative/media-capabilities')) return json({formats:[{kind:'image',mime:'image/png',extensions:['.png']}],image_max_bytes:1024,av_max_bytes:1024,batch_limit:20,part_size:1024})
     if(path.endsWith('/creative/library-settings') && request.method()==='GET')return json(s.settings)
     if(/\/creative\/uploads\/[^/]+$/.test(path)&&request.method()==='GET')return json(s.uploads.get(path.split('/').at(-1)))
@@ -227,6 +227,19 @@ function mockServer(assets) {
         const g = s.groups.find((g) => g.id === path.split('/').at(-2)); g.name = payload.name; g.revision = String(Number(g.revision) + 1); s.hierarchy = String(Number(s.hierarchy) + 1)
       } else if (path.endsWith('/creative/tags')) {
         const t = { id: 't-new-' + s.tags.length, ...payload, revision: '1' }; s.tags.push(t); result.id = t.id
+      } else if (/\/tags\/[^/]+\/edit$/.test(path)) {
+        const t = s.tags.find((t) => t.id === path.split('/').at(-2)); const { expected_revision: _r, hierarchy_revision: _h, ...patch } = payload
+        Object.assign(t, patch); t.revision = String(Number(t.revision) + 1)
+      } else if (/\/tags\/[^/]+\/delete$/.test(path)) {
+        const id = path.split('/').at(-2); s.tags = s.tags.filter((t) => t.id !== id)
+        s.assets.filter((a) => a.tag_ids.includes(id)).forEach((a) => { a.tag_ids = a.tag_ids.filter((v) => v !== id); a.revision = String(Number(a.revision) + 1) })
+      } else if (path.endsWith('/creative/tag-categories')) {
+        const c = { id: 'c-new-' + s.categories.length, name: payload.name, position: s.categories.length, revision: '1' }; s.categories.push(c); result.id = c.id
+      } else if (/\/tag-categories\/[^/]+\/edit$/.test(path)) {
+        const c = s.categories.find((c) => c.id === path.split('/').at(-2)); c.name = payload.name; c.revision = String(Number(c.revision) + 1)
+      } else if (/\/tag-categories\/[^/]+\/delete$/.test(path)) {
+        const id = path.split('/').at(-2); s.categories = s.categories.filter((c) => c.id !== id)
+        s.tags.filter((t) => t.category_id === id).forEach((t) => { t.category_id = null; t.revision = String(Number(t.revision) + 1) })
       } else if (/\/asset-groups\/[^/]+\/delete$/.test(path)) {
         const id = path.split('/').at(-2), g = s.groups.find((g) => g.id === id)
         if (payload.hierarchy_revision !== s.hierarchy || !g) return json({ error: { code: 'creative_revision_conflict', message: '分组已经有新的调整，无法撤销' } }, 409)
@@ -814,7 +827,7 @@ await check('V6-018-undo', async () => {
   await fresh(); await open()
   await row('婚礼').click({ button: 'right' })
   await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
-  await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click(); await saved()
+  await page.getByRole('alertdialog').getByRole('button', { name: '删除分组', exact: true }).click(); await saved()
   assert(!server.groups.some((g) => g.id === 'g-wed'))
   assert.equal(server.groups.find((g) => g.id === 'g-out').parent_id, null)
   assert.equal(server.assets.length, 71)
@@ -832,7 +845,7 @@ await check('V6-018-restore-refusal', async () => {
     await fresh(); await open()
     await row('婚礼').click({ button: 'right' })
     await page.getByRole('menuitem', { name: '删除分组', exact: true }).click()
-    await page.getByRole('alertdialog').getByRole('button', { name: '确认', exact: true }).click(); await saved()
+    await page.getByRole('alertdialog').getByRole('button', { name: '删除分组', exact: true }).click(); await saved()
     server.failNext = { path: '/restore', status: 409, code, message: text }
     await page.locator('.al-toast').getByRole('button', { name: '撤销', exact: true }).click(); await saved()
     await page.getByText(text, { exact: true }).waitFor()
@@ -1262,6 +1275,60 @@ await check('step6-audit-inspector-video-and-duplicate-colors',async()=>{
  await inspector.getByText('编码尺寸',{exact:true}).waitFor()
  const props=await inspector.locator('.al-props').innerText()
  assert(!props.includes('横幅')&&!props.includes('竖幅')&&!props.includes('方形'),props)
+})
+await check('tag-tree-manage', async () => {
+  await fresh(); await open()
+  const tags = tree().locator('section[aria-labelledby="alTags"]')
+  const cat = (name) => tags.locator('.al-tag-cat', { has: page.locator('.al-name', { hasText: new RegExp(`^${name}$`) }) })
+  // 新建分类，再在分类下新建标签；重名留在输入框提示。
+  await tree().getByRole('button', { name: '新建标签或分类', exact: true }).click()
+  await page.getByRole('menuitem', { name: '新建分类', exact: true }).click()
+  await tree().getByRole('textbox', { name: '新分类名称', exact: true }).fill('场景')
+  await tree().getByRole('textbox', { name: '新分类名称', exact: true }).press('Enter'); await saved()
+  await cat('场景').waitFor()
+  await cat('场景').click({ button: 'right' }); await page.getByRole('menuitem', { name: '新建标签', exact: true }).click()
+  const input = tree().getByRole('textbox', { name: '新标签名称', exact: true })
+  await input.fill('暖调'); await input.press('Enter')
+  await tree().getByRole('alert').getByText('已有「暖调」，换个名称').waitFor()
+  await input.fill('海边'); await input.press('Enter'); await saved()
+  const sea = server.tags.find((t) => t.name === '海边')
+  assert.equal(sea.category_id, server.categories.find((c) => c.name === '场景').id)
+  await row('海边').waitFor()
+  // 改名、改颜色、移到分类。
+  await row('海边').click({ button: 'right' }); await page.getByRole('menuitem', { name: '重命名', exact: true }).click()
+  await tree().getByRole('textbox', { name: '标签名称', exact: true }).fill('海景'); await tree().getByRole('textbox', { name: '标签名称', exact: true }).press('Enter'); await saved()
+  assert.equal(server.tags.find((t) => t.id === sea.id).name, '海景')
+  await row('海景').click({ button: 'right' }); await page.getByRole('menuitem', { name: '颜色…', exact: true }).click()
+  await page.getByRole('dialog', { name: '标签颜色' }).getByRole('button', { name: '蓝', exact: true }).click(); await saved()
+  assert.equal(server.tags.find((t) => t.id === sea.id).color, '#5f7ea8')
+  await row('海景').click({ button: 'right' }); await page.getByRole('menuitem', { name: '移到分类…', exact: true }).click()
+  await page.getByRole('dialog', { name: '移到分类' }).getByRole('button', { name: '光线', exact: true }).click(); await saved()
+  assert.equal(server.tags.find((t) => t.id === sea.id).category_id, 'c-light')
+  // 拖到分类上也能移动。
+  await row('待整理').dragTo(cat('风格')); await saved()
+  assert.equal(server.tags.find((t) => t.id === 't-misc').category_id, 'c-style')
+  // 删除被引用的标签：确认框说明影响的素材数，取消不删，确认后从素材上移除并退出筛选。
+  await row('暖调').click()
+  await until(async () => params().get('tags') === 't-warm', 'tag filter')
+  await row('暖调').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: /删除标签/ }).click()
+  const dialog = page.getByRole('alertdialog')
+  await dialog.getByText('2 项素材（含回收站）会去掉这个标签，素材本身保留。删除后无法撤销。').waitFor()
+  await page.screenshot({ path: `${output}/tag-delete-confirm.png` })
+  await dialog.getByRole('button', { name: '取消', exact: true }).click()
+  assert(server.tags.some((t) => t.id === 't-warm'))
+  await row('暖调').click({ button: 'right' }); await page.getByRole('menuitem', { name: /删除标签/ }).click()
+  await dialog.getByRole('button', { name: '删除标签', exact: true }).click(); await saved()
+  assert(!server.tags.some((t) => t.id === 't-warm'))
+  assert(server.assets.every((a) => !a.tag_ids.includes('t-warm')))
+  await until(async () => !params().get('tags'), 'filter cleared')
+  // 删除分类：标签归入未分类。
+  await cat('光线').click({ button: 'right' }); await page.getByRole('menuitem', { name: '删除分类', exact: true }).click()
+  await dialog.getByText('其中 2 个标签会保留，归入「未分类」；素材上的标签不受影响。').waitFor()
+  await dialog.getByRole('button', { name: '删除分类', exact: true }).click(); await saved()
+  assert.equal(server.tags.find((t) => t.id === 't-back').category_id, null)
+  await cat('未分类').waitFor()
+  await page.screenshot({ path: `${output}/tag-tree.png` })
 })
 
 await context?.close()

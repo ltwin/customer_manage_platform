@@ -3,7 +3,7 @@ import * as api from '../editor/api.ts'
 import { errorMessage } from '../editor/queue.ts'
 import { useActions } from '../assets/useActions.ts'
 import { useOrganization } from '../assets/useOrganization.tsx'
-import { useCatalog, type LibraryCatalog } from '../assets/useLibrary.ts'
+import type { LibraryCatalog } from '../assets/useLibrary.ts'
 import MediaViewer from './MediaViewer.tsx'
 import AssetInfoPanel from './AssetInfoPanel.tsx'
 import '../assets/organize.css'
@@ -116,59 +116,6 @@ export default function AssetViewer({
         />
       }
       overlays={organization.overlays}
-    />
-  )
-}
-
-/** 抽屉宿主：目录与写入生命周期独立，关闭前等待未决操作完成。 */
-export function LibraryViewer({
-  items,
-  initialID,
-  onClose,
-  onChanged,
-  blocked,
-  onPlace,
-}: {
-  items: api.Asset[]
-  initialID: string
-  onClose: () => void
-  onChanged: () => void
-  blocked: boolean
-  onPlace?: (asset: api.Asset) => void
-}) {
-  const account = api.currentAccount()!
-  const [refresh, setRefresh] = useState(0)
-  const reload = () => {
-    setRefresh((n) => n + 1)
-    onChanged()
-  }
-  const actions = useActions(account, reload)
-  const { catalog } = useCatalog(refresh)
-  const actual = (a: api.Asset) => {
-    const override = actions.overrides.get(a.id)
-    return override && BigInt(override.revision) >= BigInt(a.revision)
-      ? override
-      : a
-  }
-  const organization = useOrganization({
-    account,
-    catalog,
-    actions,
-    actual,
-    onPurge: onClose,
-  })
-  return (
-    <AssetViewer
-      items={items}
-      initialID={initialID}
-      catalog={catalog}
-      actions={actions}
-      organization={organization}
-      refresh={refresh}
-      onClose={onClose}
-      blocked={blocked}
-      onPlace={onPlace}
-      label="快速查看"
     />
   )
 }

@@ -208,8 +208,8 @@ func TestAtomicOrganizeAndTagDeleteProtectStaleAssetVersions(t *testing.T) {
 	r, err := creativelibrary.Organize(t.Context(), a, cmd(t, input))
 	_ = decode[creativelibrary.LibraryResult](t, r, err)
 	tags, err := creativelibrary.ListTags(t.Context(), a)
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || tags.Items[0].AssetCount != 2 {
+		t.Fatalf("tag asset count %+v %v", tags.Items, err)
 	}
 	r, err = creativelibrary.DeleteTag(t.Context(), a, cmd(t, creativelibrary.TagInput{ID: tags.Items[0].ID, ExpectedRevision: 1, HierarchyRevision: tags.HierarchyRevision}))
 	_ = decode[creativelibrary.LibraryResult](t, r, err)

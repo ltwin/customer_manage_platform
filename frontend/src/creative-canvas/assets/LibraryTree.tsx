@@ -13,14 +13,10 @@ import { useState } from 'react'
 import CanvasContextMenu from '../editor/CanvasContextMenu.tsx'
 import type * as api from '../editor/api.ts'
 import { formatBytes } from '../editor/libraryState.ts'
-import {
-  VIEWS,
-  groupTree,
-  tagSections,
-  type LibraryQuery,
-  type View,
-} from './query.ts'
+import { VIEWS, groupTree, type LibraryQuery, type View } from './query.ts'
 import type { Point } from './popover.ts'
+import type { TagCommand } from './tagCommands.ts'
+import TagTree from './TagTree.tsx'
 import type { Facets, LibraryCatalog } from './useLibrary.ts'
 
 const viewIcons: Record<View, typeof Images> = {
@@ -33,7 +29,7 @@ const viewIcons: Record<View, typeof Images> = {
 
 /**
  * 资料库树（V6-067 AC-02）：固定视图、最多两层的分组（计数包含子组）、
- * 按分类列出的标签（点一下加入筛选，数量随当前条件变化）、底部用量。
+ * 按分类列出的标签（点一下加入筛选，数量随当前条件变化，可就地整理）、底部用量。
  */
 export default function LibraryTree({
   query,
@@ -46,6 +42,7 @@ export default function LibraryTree({
   onDropAssets,
   onDeleteGroup,
   onSaveGroup,
+  onTagCommand,
   blocked,
   importButton,
 }: {
@@ -64,6 +61,7 @@ export default function LibraryTree({
     name: string,
     done: () => void,
   ) => void
+  onTagCommand: (command: TagCommand, done: () => void) => void
   importButton?: React.ReactNode
   blocked: boolean
 }) {
@@ -271,31 +269,14 @@ export default function LibraryTree({
             })}
           </ul>
         </section>
-        <section className="al-sec" aria-labelledby="alTags">
-          <header id="alTags">标签</header>
-          {!catalog?.tags.length && catalog && (
-            <p className="al-sec-empty">还没有标签</p>
-          )}
-          {catalog &&
-            tagSections(catalog.tags, catalog.categories).map((s) => (
-              <div key={s.id ?? 'none'} role="group" aria-label={s.name}>
-                <div className="al-tag-cat">{s.name}</div>
-                {s.tags.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className="al-row"
-                    aria-pressed={query.tags.includes(t.id)}
-                    onClick={() => onTag(t.id)}
-                  >
-                    <i className="al-tag-dot" style={{ background: t.color }} />
-                    <span className="al-name">{t.name}</span>
-                    <span className="al-n">{tagCounts.get(t.id) ?? ''}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-        </section>
+        <TagTree
+          catalog={catalog}
+          selected={query.tags}
+          counts={tagCounts}
+          blocked={blocked}
+          onTag={onTag}
+          onCommand={onTagCommand}
+        />
       </div>
       {usage && (
         <footer className="al-usage">
@@ -345,6 +326,8 @@ function GroupRow({
       type="button"
       className={`al-row${child ? ' al-child' : ''}`}
       aria-current={query.group === group.id ? 'page' : undefined}
+      // 画布抽屉里，节点拖到分组上即存入该组（editor/libraryDrop.ts）。
+      data-drop-group={group.id}
       onClick={() => onGroup(group.id)}
       onContextMenu={(e) => {
         e.preventDefault()

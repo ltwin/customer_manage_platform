@@ -1,4 +1,3 @@
-import { groupRestoreCommand } from './groupDeletion.ts'
 import {
   Archive,
   ArchiveRestore,
@@ -51,18 +50,13 @@ import CanvasView from './CanvasView.tsx'
 import NodeGenerationPanel from './NodeGenerationPanel.tsx'
 import ContentForm from './ContentForm.tsx'
 import StudioDialog from './StudioDialog.tsx'
-import { blankDraft, contentText, payload } from './content.ts'
+import { contentText, payload } from './content.ts'
 import '@xyflow/react/dist/style.css'
 import './workspace.css'
-import LibraryPanel, { type LibraryTask } from './LibraryPanel.tsx'
+import LibraryDrawer, { type LibraryTask } from './LibraryDrawer.tsx'
 import AgentPanel from './AgentPanel.tsx'
-import {
-  emptyCatalog,
-  emptyOrganization,
-  groupOptions,
-} from './libraryState.ts'
+import { emptyCatalog, groupOptions } from './libraryState.ts'
 import Picker from './Picker.tsx'
-import OrganizationPicker from './OrganizationPicker.tsx'
 import { useUploads } from './uploads.ts'
 import UploadTray from './UploadTray.tsx'
 import MediaPreview from './MediaPreview.tsx'
@@ -158,8 +152,6 @@ function Workspace({ account }: { account: string }) {
   const [libraryTask, setLibraryTask] = useState<LibraryTask | null>(null)
   const viewCenter = useRef<(() => { x: number; y: number }) | null>(null)
   const [catalog, setCatalog] = useState(emptyCatalog)
-  const [undoGroup, setUndoGroup] = useState<ReturnType<typeof groupRestoreCommand>>(null)
-  const [libraryLoading, setLibraryLoading] = useState(true)
   const [selected, setSelected] = useState<string | null>(null)
   const [selection, setSelection] = useState<string[]>([])
   const [inlineEditing, setInlineEditing] = useState<{
@@ -194,7 +186,6 @@ function Workspace({ account }: { account: string }) {
   } = useCanvasSnapshot(canvasID, tick)
   const loading = canvasLoading || mutationLoading
   const [discard, setDiscard] = useState<string | null>(null)
-  const [form, setForm] = useState<'asset' | null>(null)
   const [preview, setPreview] = useState<{
     nodeID: string
     revision?: string
@@ -294,7 +285,6 @@ function Workspace({ account }: { account: string }) {
     !!queue.value.job ||
     !!storageError ||
     !!localError ||
-    libraryLoading ||
     loading
   const canEditLocal = matchesCanvas(canvas, canvasID) && !canvas?.archived
   const canWrite =
@@ -305,7 +295,6 @@ function Workspace({ account }: { account: string }) {
     canWrite &&
     !(queue.value.job?.state === 'rejected' && queue.value.job.intent)
   const refresh = useCallback(() => {
-    setLibraryLoading(true)
     setTick((v) => v + 1)
   }, [])
   const canMove = editable
@@ -499,14 +488,6 @@ function Workspace({ account }: { account: string }) {
       },
     )
   }
-  function acceptLibraryReceipt(result: unknown, job: { path: string }) {
-    if (/^\/asset-groups\/[^/]+\/delete$/.test(job.path)) {
-      const undo = groupRestoreCommand(result)
-      if (undo) setUndoGroup(undo)
-    } else if (/^\/asset-groups\/deletions\/[^/]+\/restore$/.test(job.path)) {
-      setUndoGroup(null)
-    }
-  }
   async function perform(
     path: string,
     value: unknown,
@@ -518,7 +499,7 @@ function Workspace({ account }: { account: string }) {
     setActionError('')
     setLoading(true)
     try {
-      const result = await queue.enqueue(path, value, draftKey, acceptLibraryReceipt)
+      const result = await queue.enqueue(path, value, draftKey)
       onResult?.(result)
       if (
         result &&
@@ -550,7 +531,6 @@ function Workspace({ account }: { account: string }) {
         onSelection([result.node_id])
       }
       if (!queue.value.job) {
-        setForm(null)
         if (draftKey?.startsWith('node:')) setEditing(false)
         setLoading(false)
         refresh()
@@ -569,7 +549,7 @@ function Workspace({ account }: { account: string }) {
     setLocalError('')
     setLoading(true)
     try {
-      await queue.flush(true, acceptLibraryReceipt)
+      await queue.flush(true)
       if (!queue.value.job) {
         setLoading(false)
         refresh()
@@ -689,21 +669,6 @@ function Workspace({ account }: { account: string }) {
     void staged.done.catch((e: unknown) => {
       if (!isWithdrawn(e)) setLocalError(errorMessage(e))
     })
-  }
-  // Import into the library: each file becomes an asset in the current group.
-  function importToLibrary(files: File[], groupID: string) {
-    if (!uploads.capabilities || uploads.capabilitiesError) {
-      setLocalError(uploads.capabilitiesError || '媒体上传暂不可用')
-      return
-    }
-    uploads.start(files, (file) => ({
-      kind: 'asset',
-      asset: {
-        title:
-          fileTitle(file.name),
-        group_ids: groupID ? [groupID] : [],
-      },
-    }))
   }
   // Drop files on the canvas. Each file shows at once from the local blob and
   // uploads into staging; the canvas only changes through the user's own
@@ -1202,7 +1167,6 @@ function Workspace({ account }: { account: string }) {
     window.addEventListener('keydown', keydown)
     return () => window.removeEventListener('keydown', keydown)
   }, [shortcutsLive])
-  const assetDraft = queue?.value.drafts['asset-form'] ?? blankDraft()
   const job = queue?.value.job
   const hasDraft = !!queue?.value.drafts[nodeKey]
   const needsRecovery = !!job && !queue?.busy && !loading
@@ -1454,21 +1418,10 @@ function Workspace({ account }: { account: string }) {
         </section>
       )}
       <div className="cc-layout">
-        <LibraryPanel
-          disabled={blocked}
-          busy={!!queue?.busy || loading}
-          hidden={!!canvasID && !libraryOpen}
-          standalone={!canvasID}
+        <LibraryDrawer
+          hidden={!libraryOpen}
           tick={tick}
-          task={canvasID ? libraryTask : null}
-          onCreate={() => setForm('asset')}
-          onClose={closeLibrary}
-          onWidth={setLibraryWidth}
-          onAssets={setAssets}
-          onLoading={setLibraryLoading}
-          onCatalog={setCatalog}
-          onCommand={(path, payload) => perform(path, payload)}
-          undoGroup={undoGroup}
+          task={libraryTask}
           canPlace={!!view && editable}
           onPlace={(list) => addAssets(list)}
           onFill={(asset) => {
@@ -1481,8 +1434,10 @@ function Workspace({ account }: { account: string }) {
             if (libraryTask?.kind === 'pick')
               pickReferences(libraryTask.nodeID, list)
           }}
-          onImport={importToLibrary}
-          importDisabled={blocked || !uploads.capabilities}
+          onClose={closeLibrary}
+          onWidth={setLibraryWidth}
+          onAssets={setAssets}
+          onCatalog={setCatalog}
         />
         <section
           className="cc-stage"
@@ -1707,49 +1662,9 @@ function Workspace({ account }: { account: string }) {
             </div>
           )}
         </section>
-        {(form || (editing && node)) && (
-          <StudioDialog
-            title={form === 'asset' ? '存入个人库' : '编辑节点'}
-            onClose={() => {
-              setForm(null)
-              setEditing(false)
-            }}
-          >
-            {form === 'asset' ? (
-              <ContentForm
-                key="asset"
-                asset
-                draft={assetDraft}
-                onChange={(d) => writeDraft('asset-form', d)}
-                disabled={blocked}
-                extraFields={
-                  <OrganizationPicker
-                    groups={catalog.groups}
-                    tags={catalog.tags}
-                    categories={catalog.categories}
-                    value={assetDraft.organization ?? emptyOrganization()}
-                    onChange={(organization) =>
-                      writeDraft('asset-form', { ...assetDraft, organization })
-                    }
-                    disabled={blocked}
-                  />
-                }
-                label="保存资产"
-                onSave={(content) =>
-                  void perform(
-                    '/assets',
-                    {
-                      title: assetDraft.title,
-                      content,
-                      group_ids: assetDraft.organization?.groupIDs ?? [],
-                      tag_ids: assetDraft.organization?.tagIDs ?? [],
-                      new_tags: assetDraft.organization?.newTags ?? [],
-                    },
-                    'asset-form',
-                  )
-                }
-              />
-            ) : node && draft ? (
+        {editing && node && (
+          <StudioDialog title="编辑节点" onClose={() => setEditing(false)}>
+            {draft ? (
               <>
                 <p className="cc-muted">
                   {hasDraft

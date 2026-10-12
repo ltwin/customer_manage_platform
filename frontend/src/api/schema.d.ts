@@ -2459,6 +2459,11 @@ export interface components {
             color: string;
             category_id: string | null;
             revision: components["schemas"]["CreativeRevision"];
+            /**
+             * Format: int64
+             * @description 打了这个标签的素材数，含回收站；删除标签会从这些素材上移除它
+             */
+            asset_count: number;
         };
         CreativeTagCategory: {
             id: string;

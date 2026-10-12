@@ -1,5 +1,4 @@
 import type * as api from './api.ts'
-import type { NewTag } from './api.ts'
 import type { PickerOption } from './Picker.tsx'
 export type Catalog = {
   groups: api.Group[]
@@ -15,36 +14,6 @@ export const emptyCatalog = (): Catalog => ({
   hierarchy: '1',
   settings: null,
 })
-export type Editor = {
-  kind:
-    | 'group'
-    | 'move'
-    | 'tag'
-    | 'category'
-    | 'metadata'
-    | 'organize'
-    | 'settings'
-  id?: string
-  name?: string
-  description?: string
-  parent?: string
-  position?: number
-  color?: string
-  revision?: string
-  hierarchy: string
-  selected?: api.Asset[]
-}
-export type Organization = {
-  groupIDs: string[]
-  tagIDs: string[]
-  newTags: NewTag[]
-}
-export const emptyOrganization = (): Organization => ({
-  groupIDs: [],
-  tagIDs: [],
-  newTags: [],
-})
-
 export const kindLabel: Record<string, string> = {
   text: '文字',
   link: '链接',
@@ -59,23 +28,6 @@ export function tileRatio(a: api.Asset): number {
     return m.height / m.width
   return a.kind === 'audio' ? 0.5 : 0.62
 }
-export function metaLine(a: api.Asset, groups: api.Group[], tags: api.Tag[]) {
-  const m = a.content?.media?.find((x) => x.role === 'original')
-  const size = m?.width && m.height ? `${m.width}×${m.height}` : kindLabel[a.kind]
-  const inGroups = a.group_ids
-    .map((id) => groups.find((g) => g.id === id)?.name)
-    .filter(Boolean)
-  const tagNames = a.tag_ids
-    .map((id) => tags.find((t) => t.id === id)?.name)
-    .filter(Boolean)
-  return [size, inGroups.join('、') || '未归类', tagNames.join(' · ')]
-    .filter(Boolean)
-    .join('　')
-}
-
-// 分组平铺浏览每组预览的格数。
-export const PREVIEW = 6
-
 /** 分组按层级排成下拉选项：父分组在前，子分组紧随其后并缩进。 */
 export function groupOptions(
   groups: api.Group[],

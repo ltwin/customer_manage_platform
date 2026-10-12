@@ -117,15 +117,15 @@ try {
   await page.screenshot({ path: `${output}/library-import-tray.png` })
   const rows = await page.locator('.cc-upload-tray li').allInnerTexts()
   assert.equal(rows.filter((r) => r.includes('已完成')).length, 3, rows.join('|'))
-  const tiles = page.locator('#creative-library .cl-tile')
+  const tiles = page.locator('#creative-library .al-tile')
   await until(async () => (await tiles.count()) === 3, 'assets listed')
   // Thumbnails render through tickets, lazily.
   await until(
-    async () => (await page.locator('#creative-library .cl-tile .cl-media.is-ready img').count()) === 1,
+    async () => (await page.locator('#creative-library .al-tile .cl-media.is-ready img').count()) === 1,
     'image thumbnail ready',
   )
   await until(
-    async () => (await page.locator('#creative-library .cl-tile .cl-media.is-ready video').count()) === 1,
+    async () => (await page.locator('#creative-library .al-tile .cl-media.is-ready video').count()) === 1,
     'video thumbnail ready',
   )
   await page.screenshot({ path: `${output}/library-media.png` })
@@ -164,7 +164,7 @@ try {
   await kindFilter('全部')
   await until(async () => (await tiles.count()) === 3, 'filter cleared')
   // v6 点卡片即快速查看，Esc 关闭。
-  await page.locator('#creative-library .cl-tile[data-kind="image"]').click()
+  await page.locator('#creative-library .al-tile[data-kind="image"]').click()
   await page.getByRole('dialog', { name: /^快速查看：/ }).waitFor()
   await until(async () => (await page.locator('.cl-look img').count()) === 1, 'preview image')
   await page.screenshot({ path: `${output}/library-preview.png` })
@@ -182,17 +182,17 @@ try {
   const canvasURL = page.url()
   await until(async () => (await tiles.count()) === 3, 'shelf assets')
   // Uploads finish concurrently, so pick cards by kind rather than position.
-  const card = (kind) => page.locator(`#creative-library .cl-tile[data-kind="${kind}"]`)
+  const card = (kind) => page.locator(`#creative-library .al-tile[data-kind="${kind}"]`)
   await card('image').click({ modifiers: ['ControlOrMeta'] })
   await until(
-    async () => (await page.locator('#creative-library .cl-tile.is-on').count()) === 1,
+    async () => (await page.locator('#creative-library .al-tile.is-on').count()) === 1,
     'first asset selected',
   )
   await card('video').click({ modifiers: ['ControlOrMeta'] })
   await until(
-    async () => (await page.locator('#creative-library .cl-tile.is-on').count()) === 2,
+    async () => (await page.locator('#creative-library .al-tile.is-on').count()) === 2,
     'two assets selected: ' +
-      JSON.stringify(await page.locator('#creative-library .cl-tile').evaluateAll((b) => b.map((x) => x.getAttribute('aria-pressed')))),
+      JSON.stringify(await page.locator('#creative-library .al-tile').evaluateAll((b) => b.map((x) => x.getAttribute('aria-pressed')))),
   )
   await card('image').dragTo(page.locator('.react-flow__pane'), {
     targetPosition: { x: 500, y: 300 },
