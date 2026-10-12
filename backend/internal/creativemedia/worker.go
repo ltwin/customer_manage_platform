@@ -14,6 +14,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativepalette"
 	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -40,6 +41,8 @@ func LeaseBudget(kind string) time.Duration {
 		return verifyLease
 	case jobFactsProbe:
 		return factsProbeLease
+	case PaletteBackfillKind:
+		return paletteTimeout + time.Minute
 	default:
 		return leaseDuration
 	}
@@ -331,6 +334,9 @@ func (s *Service) publish(ctx context.Context, scope store.AccountScope, u uploa
 			return outcome(200, "upload", u.ID, creativeops.Revision(current.Revision+1), map[string]string{"state": "expired"})
 		}
 		if _, err := tx.Update(ctx, "creative_blobs", "state='ready',object_version=$2,verified_at=$3,quota_booked_at=$3", "id=$4 AND state='verifying'", originalVersion, now, blobID); err != nil {
+			return creativeops.Outcome{}, err
+		}
+		if err := creativepalette.WriteInTx(ctx, tx, blobID, verified.Palette); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: blobID}}

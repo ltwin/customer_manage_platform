@@ -1,3 +1,4 @@
+import { SHAPES, colorValue, type Shape } from './appearance.ts'
 import type * as api from '../editor/api.ts'
 
 // 资产库页的浏览条件：网址参数 ↔ 条件 ↔ 列表请求，以及记在本机的显示偏好。
@@ -46,6 +47,8 @@ export type LibraryQuery = {
   mode: 'all' | 'any'
   kind: Kind | ''
   q: string
+  shape: Shape | ''
+  color: string
   rating: Rating | ''
   sort: Sort
 }
@@ -68,6 +71,8 @@ export function readQuery(params: URLSearchParams): LibraryQuery {
           'all',
         ),
     group,
+    shape: pick(params.get('shape'), [...SHAPES.map((s) => s.value), ''], ''),
+    color: colorValue(params.get('color')),
     tags: [
       ...new Set((params.get('tags') ?? '').split(',').filter(Boolean)),
     ].slice(0, 50),
@@ -96,6 +101,8 @@ export function writeQuery(q: LibraryQuery): URLSearchParams {
   if (q.tags.length > 1 && q.mode === 'any') out.set('mode', 'any')
   if (q.kind) out.set('kind', q.kind)
   if (q.q) out.set('q', q.q)
+  if (q.shape) out.set('shape', q.shape)
+  if (q.color) out.set('color', q.color)
   if (q.rating) out.set('rating', q.rating)
   if (q.sort !== 'recent') out.set('sort', q.sort)
   return out
@@ -113,12 +120,14 @@ export const blank = (): LibraryQuery => ({
   kind: '',
   q: '',
   rating: '',
+  shape: '',
+  color: '',
   sort: 'recent',
 })
 
-/** 有没有会缩小结果的条件（类型、关键词、标签、评分）。 */
+/** 有没有会缩小结果的条件（类型、关键词、标签、评分、画幅、颜色）。 */
 export const narrowed = (q: LibraryQuery) =>
-  !!(q.kind || q.q || q.tags.length || q.rating)
+  !!(q.kind || q.q || q.tags.length || q.rating || q.shape || q.color)
 export const clearFilters = (q: LibraryQuery): LibraryQuery => ({
   ...q,
   kind: '',
@@ -126,6 +135,8 @@ export const clearFilters = (q: LibraryQuery): LibraryQuery => ({
   tags: [],
   mode: 'all',
   rating: '',
+  shape: '',
+  color: '',
 })
 
 /** 首屏请求带上计数；翻页只带游标，不再统计。 */
@@ -147,6 +158,8 @@ export function listPath(q: LibraryQuery, limit: number, cursor = ''): string {
   }
   if (q.rating === 'none') out.set('unrated', 'true')
   else if (q.rating) out.set('min_rating', q.rating)
+  if (q.shape) out.set('shape', q.shape)
+  if (q.color) out.set('color', q.color)
   if (cursor) out.set('cursor', cursor)
   else out.set('include_facets', 'true')
   return `/assets?${out.toString()}`

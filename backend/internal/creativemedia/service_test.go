@@ -34,6 +34,7 @@ import (
 func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 type fixture struct {
+	store   *store.Store
 	db      *sql.DB
 	a, b    store.AccountScope
 	svc     *creativemedia.Service
@@ -69,7 +70,7 @@ func setup(t *testing.T) *fixture {
 	cfg.MaxParts = 2000
 	cfg.QuotaLimitBytes = 2 << 20
 	key := bytes.Repeat([]byte{7}, 32)
-	f := &fixture{db: db, cfg: cfg}
+	f := &fixture{db: db, cfg: cfg, store: st}
 	var svc *creativemedia.Service
 	f.parts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := svc.WriteLocalPart(r.Context(), r.URL.Query().Get("token"), r.Body); err != nil {

@@ -36,6 +36,8 @@ type TagCount struct {
 	Count int64  `json:"count"`
 }
 type Search struct {
+	Shape       string   `json:"shape,omitempty"`
+	Color       string   `json:"color,omitempty"`
 	View        string   `json:"view"`
 	GroupID     string   `json:"group_id"`
 	Descendants bool     `json:"include_descendants"`
@@ -89,6 +91,13 @@ func (q Search) normalized() (Search, error) {
 		return q, creativeops.ErrValidation
 	}
 	var err error
+	if q.Shape != "" && !slices.Contains([]string{"landscape", "square", "portrait"}, q.Shape) {
+		return q, creativeops.ErrValidation
+	}
+	q.Color, err = normalizedColor(q.Color)
+	if err != nil {
+		return q, creativeops.ErrValidation
+	}
 	q.TagIDs, err = uniqueIDs(q.TagIDs, 50)
 	return q, err
 }
@@ -147,7 +156,7 @@ func (f searchFilter) condition(withKind, withTags bool, args *sqlArgs) string {
 		// Revoked/deleted content cannot be inferred through keyword matches.
 		cond += ` AND (normalized_title LIKE ` + p + ` ESCAPE '\' OR EXISTS(SELECT 1 FROM creative_asset_search s WHERE s.account_id=$1 AND s.asset_id=creative_assets.id AND s.normalized_text LIKE ` + p + ` ESCAPE '\' AND ` + readableContent("creative_assets.content_revision_id", args) + `) OR EXISTS(SELECT 1 FROM creative_asset_tags a JOIN creative_tags t ON t.account_id=a.account_id AND t.id=a.tag_id WHERE a.account_id=$1 AND a.asset_id=creative_assets.id AND t.normalized_name LIKE ` + p + ` ESCAPE '\'))`
 	}
-	return cond
+	return cond + appearanceCondition(q, args)
 }
 
 // displayRights lists the declaration pairs that allow moodboard display.
@@ -290,7 +299,7 @@ func SearchAssets(ctx context.Context, sc store.AccountScope, query Search) (Ass
 			preview := creativecontent.Preview(r)
 			a.Content = &preview
 		}
-		return nil
+		return attachPalettes(ctx, tx, result.Items)
 	})
 	return result, err
 }

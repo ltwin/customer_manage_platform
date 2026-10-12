@@ -19,6 +19,7 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/gabriel-vasile/mimetype"
+	"github.com/samson/customer-manage-platform/backend/internal/creativepalette"
 	_ "golang.org/x/image/webp"
 )
 
@@ -49,6 +50,7 @@ func avFormats() []Format {
 
 // Verified is the trusted result of a full-content check.
 type Verified struct {
+	Palette    creativepalette.Result
 	Mime       string
 	Kind       string
 	SHA256     string
@@ -221,6 +223,7 @@ func (v *Verifier) verifyImage(path string, out *Verified) error {
 	if !v.validDimensions(w, h) {
 		return fmt.Errorf("%w: image dimensions", ErrSizeLimit)
 	}
+	out.Palette = creativepalette.Extract(decoded)
 	out.Width, out.Height = &w, &h
 	out.Codecs = json.RawMessage(`{"format":"` + actual + `"}`)
 	if w <= v.cfg.DisplayMaxEdge && h <= v.cfg.DisplayMaxEdge {

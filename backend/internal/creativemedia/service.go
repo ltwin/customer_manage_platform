@@ -70,6 +70,7 @@ func (s *Service) SetLogger(logger *slog.Logger) {
 func (s *Service) Handlers() []store.JobHandler {
 	return []store.JobHandler{
 		{Kind: jobInit, Work: s.workInit},
+		{Kind: PaletteBackfillKind, Queue: "maintenance", Work: s.workPalette, Timeout: paletteTimeout},
 		{Kind: jobComplete, Work: s.workComplete, Timeout: 5 * time.Minute},
 		{Kind: jobVerify, Work: s.workVerify, Timeout: 20 * time.Minute},
 		{Kind: jobAbort, Work: s.workAbort},

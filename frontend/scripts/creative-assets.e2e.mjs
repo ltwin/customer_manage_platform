@@ -47,6 +47,7 @@ function asset(o) {
     title: o.title,
     description: o.description ?? '',
     rating: o.rating ?? null,
+    palette: kind === 'image' ? (o.palette ?? [{ hex: '#d9a07a', weight: 1 }]) : [],
     kind,
     revision: '1',
     content_id: `c-${o.id}`,
@@ -98,6 +99,14 @@ function mockServer(assets) {
       items = items.filter((a) =>
         key([a.title, a.description, a.content.payload.body ?? '', a.content.payload.url ?? '', ...a.tag_ids.map((t) => s.tags.find((x) => x.id === t).name)].join(' ')).includes(text),
       )
+    if (q.get('shape')) items = items.filter(a => {
+      const m = a.content?.media?.find(m => m.role === 'original')
+      if (a.unavailable || a.kind !== 'image' || !m?.width || !m.height) return false
+      const shape = Math.max(m.width,m.height)*10 <= Math.min(m.width,m.height)*11 ? 'square' : m.width > m.height ? 'landscape' : 'portrait'
+      return shape === q.get('shape')
+    })
+    // UI mock tests parameter propagation; matching math has real Go/PG tests.
+    if (q.get('color')) items = items.filter(a => !a.unavailable && a.palette.some(c => c.hex === q.get('color')))
     if (q.get('unrated') === 'true') items = items.filter((a) => a.rating === null)
     if (q.get('min_rating')) items = items.filter((a) => a.rating !== null && a.rating >= Number(q.get('min_rating')))
     const selected = (q.get('tag_ids') ?? '').split(',').filter(Boolean)
@@ -1185,6 +1194,74 @@ await check('step5-followup-import-visible-view',async()=>{
  await until(()=>server.assets.some(a=>a.title==='keep-group'),'file saved');assert.equal(params().get('group'),'g-out');await tile('keep-group').waitFor()
  await open('?view=recent');await board().evaluate(el=>{const d=new DataTransfer();d.setData('text/plain','最近添加视图导入');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}))})
  await until(()=>server.assets.some(a=>a.title==='最近添加视图导入'),'recent saved');assert.equal(params().get('view'),'recent');await tile('最近添加视图导入').waitFor()
+})
+
+await check('step6-appearance-filters', async () => {
+  await fresh({assets:[asset({id:'warm',title:'暖色竖幅',w:100,h:150,palette:[{hex:'#d9a07a',weight:.7},{hex:'#8a6550',weight:.3}]}),asset({id:'gray',title:'黑白方形',w:110,h:100,palette:[{hex:'#a1a1a7',weight:1}]}),asset({id:'wide',title:'横幅图片',w:1920,h:1080,palette:[{hex:'#ffffff',weight:1}]}),asset({id:'video',title:'横幅视频',kind:'video',w:1920,h:1080}),asset({id:'text',title:'文字',kind:'text',body:'正文'})]})
+  await open()
+  await page.getByRole('button',{name:'颜色',exact:true}).click()
+  const pop = page.getByRole('dialog',{name:'颜色筛选'})
+  assert.equal(await pop.locator('.al-pal-grid button').count(),12)
+  await page.screenshot({path:`${output}/step6-colors.png`})
+  if (process.env.CREATIVE_PROTOTYPE_URL) {
+    const reference = await context.newPage()
+    await reference.goto(process.env.CREATIVE_PROTOTYPE_URL)
+    await reference.locator('#fColor').click()
+    const values = (el) => {const s=getComputedStyle(el);return {width:s.width,padding:s.padding,font:s.fontSize,gap:s.gap,radius:s.borderRadius,bg:s.backgroundColor,shadow:s.boxShadow}}
+    for (const [actual, expected] of [['.al-pal-pop','.pal-pop'],['.al-pal-grid','.pal-grid'],['.al-pal-grid button','.pal-grid button'],['.al-pal-pop p','.pal-pop p']]) {
+      assert.deepEqual(await page.locator(actual).first().evaluate(values),await reference.locator(expected).first().evaluate(values),actual)
+    }
+    await reference.screenshot({path:`${output}/step6-prototype-colors.png`})
+    await reference.close()
+  }
+
+  await after(()=>pop.getByRole('button',{name:'橙 #d9a07a',exact:true}).click())
+  assert.equal(params().get('color'),'#d9a07a');assert.equal(lastRead().get('color'),'#d9a07a');assert.equal(await tiles().count(),1)
+  await tile('暖色竖幅').click()
+  const inspector=page.getByRole('complementary',{name:'检查器'})
+  assert.equal(await inspector.locator('.al-palette button').count(),2)
+  const palStyle=await inspector.locator('.al-palette button').first().evaluate(el=>({height:getComputedStyle(el).height,radius:getComputedStyle(el).borderRadius,gap:getComputedStyle(el.parentElement).gap}))
+  assert.deepEqual(palStyle,{height:'26px',radius:'6px',gap:'6px'})
+  await page.screenshot({path:`${output}/step6-inspector.png`})
+  await after(()=>inspector.getByRole('button',{name:'按 #8a6550 筛选',exact:true}).click())
+  assert.equal(lastRead().get('color'),'#8a6550')
+  await after(()=>page.getByRole('button',{name:'清除颜色',exact:true}).click())
+  await page.getByRole('combobox',{name:'画幅',exact:true}).click()
+  await after(()=>page.getByRole('option',{name:'方形',exact:true}).click())
+  assert.equal(params().get('shape'),'square');assert.equal(await tiles().count(),1);await tile('黑白方形').waitFor()
+  await after(()=>page.getByRole('button',{name:'清除画幅',exact:true}).click())
+  await page.getByRole('combobox',{name:'画幅',exact:true}).click()
+  await after(()=>page.getByRole('option',{name:'横幅',exact:true}).click())
+  await tile('横幅图片').waitFor();assert.equal(await tiles().count(),1);assert.equal(await tile('横幅视频').count(),0)
+  await after(()=>page.getByRole('button',{name:'清除全部',exact:true}).click())
+  assert.equal(await tiles().count(),5)
+})
+await check('step6-appearance-mobile-and-url',async()=>{
+  await fresh({width:390,height:844})
+  await open('?color=%23d9a07a&shape=portrait')
+  assert.equal(lastRead().get('shape'),'portrait');assert.equal(lastRead().get('color'),'#d9a07a')
+  await noHorizontalScroll('appearance phone')
+  await page.getByRole('button',{name:'颜色',exact:true}).click()
+  const pop=page.getByRole('dialog',{name:'颜色筛选'})
+  const box=await pop.boundingBox();assert(box.x>=0&&box.x+box.width<=390)
+  await page.screenshot({path:`${output}/step6-phone.png`})
+  await page.keyboard.press('Escape');assert.equal(await pop.count(),0)
+  await after(()=>page.getByRole('button',{name:'清除全部',exact:true}).click())
+  assert.equal(params().get('color'),null);assert.equal(params().get('shape'),null)
+})
+
+await check('step6-audit-inspector-video-and-duplicate-colors',async()=>{
+ await fresh({assets:[asset({id:'video-rotated',title:'旋转视频',kind:'video',w:1920,h:1080}),asset({id:'duplicate',title:'同色聚类',palette:[{hex:'#a1a1a7',weight:.6},{hex:'#a1a1a7',weight:.4}]})]})
+ const warnings=[]
+ page.on('console',msg=>{if(msg.type()==='error'||msg.type()==='warning')warnings.push(msg.text())})
+ await open();await tile('同色聚类').click()
+ const inspector=page.getByRole('complementary',{name:'检查器'})
+ assert.equal(await inspector.locator('.al-palette button').count(),2)
+ assert(!warnings.some(w=>w.includes('same key')),warnings.join('\n'))
+ await tile('旋转视频').click()
+ await inspector.getByText('编码尺寸',{exact:true}).waitFor()
+ const props=await inspector.locator('.al-props').innerText()
+ assert(!props.includes('横幅')&&!props.includes('竖幅')&&!props.includes('方形'),props)
 })
 
 await context?.close()

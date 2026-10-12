@@ -48,6 +48,7 @@ type AssetReference struct {
 	ContentRevisionID string               `json:"content_revision_id"`
 }
 type Asset struct {
+	Palette           []PaletteColor            `json:"palette"`
 	Favorite          bool                      `json:"is_favorite"`
 	CreatedAt         time.Time                 `json:"created_at"`
 	DeletedAt         *time.Time                `json:"deleted_at"`
@@ -279,7 +280,7 @@ func ResolveAssetsInTx(ctx context.Context, tx store.TxAccountScope, ref AssetRe
 const assetColumns = "id,title,description,kind,revision,content_id,content_revision_id,is_favorite,created_at,deleted_at,purge_after,rating_halves"
 
 func scanAsset(row store.Row) (Asset, error) {
-	a := Asset{GroupIDs: []string{}, TagIDs: []string{}}
+	a := Asset{GroupIDs: []string{}, TagIDs: []string{}, Palette: []PaletteColor{}}
 	var revision int64
 	var halves *int16
 	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.Kind, &revision, &a.ContentID, &a.ContentRevisionID, &a.Favorite, &a.CreatedAt, &a.DeletedAt, &a.PurgeAfter, &halves)
@@ -319,7 +320,10 @@ func GetAsset(ctx context.Context, scope store.AccountScope, id string) (Asset, 
 			return creativecontent.ErrMissingRoot
 		}
 		a.Content = &r
-		return nil
+		items := []Asset{a}
+		err = attachPalettes(ctx, tx, items)
+		a = items[0]
+		return err
 	})
 	if err != nil {
 		return Asset{}, err

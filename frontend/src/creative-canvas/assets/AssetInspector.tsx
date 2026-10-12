@@ -1,3 +1,4 @@
+import { SHAPES, shapeOf } from './appearance.ts'
 import { Plus, X } from 'lucide-react'
 import type * as api from '../editor/api.ts'
 import { TileFace } from '../editor/LibraryTiles.tsx'
@@ -18,12 +19,14 @@ export default function AssetInspector({
   assets,
   catalog,
   onRate,
+  onColor,
   onMetadata,
   onOrganize,
   ...actions
 }: Actions & {
   assets: api.Asset[]
   catalog: LibraryCatalog | null
+  onColor: (color: string) => void
   onRate: (rating: number | null) => void
   onMetadata: (
     asset: api.Asset,
@@ -123,6 +126,26 @@ export default function AssetInspector({
             </section>
           </>
         )}
+        {single && !single.unavailable && single.palette?.length > 0 && (
+          <section className="al-ins-sec" aria-label="主色">
+            <header>
+              主色<span>点一下找相近颜色</span>
+            </header>
+            <div className="al-palette">
+              {single.palette.map((c, i) => (
+                <button
+                  type="button"
+                  key={`${i}:${c.hex}`}
+                  style={{ background: c.hex }}
+                  title={c.hex}
+                  aria-label={`按 ${c.hex} 筛选`}
+                  disabled={actions.blocked}
+                  onClick={() => onColor(c.hex)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
         {assets.length > 100 && <p className="al-limit">一次最多处理 100 项</p>}
         {(['group', 'tag'] as const).map((type) => {
           const entries =
@@ -206,9 +229,22 @@ export default function AssetInspector({
             <dd>{kindLabel[single.kind]}</dd>
             {original?.width && original.height ? (
               <>
-                <dt>尺寸</dt>
+                <dt>{single.kind === 'video' ? '编码尺寸' : '尺寸'}</dt>
                 <dd>
                   {original.width} × {original.height}
+                  {single.kind === 'image' && (
+                    <>
+                      {' '}
+                      ·{' '}
+                      {
+                        SHAPES.find(
+                          (s) =>
+                            s.value ===
+                            shapeOf(original.width, original.height),
+                        )?.label
+                      }
+                    </>
+                  )}
                 </dd>
               </>
             ) : null}

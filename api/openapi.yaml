@@ -157,6 +157,18 @@ paths:
         description: 只要未评分的素材
         schema:
           type: boolean
+      - name: shape
+        in: query
+        schema:
+          type: string
+          enum: [landscape, square, portrait]
+        description: 仅内容可读的图片；长短边比不超过 1.1 为方形。视频需待显示方向修正后支持
+      - name: color
+        in: query
+        schema:
+          type: string
+          pattern: '^#[0-9a-fA-F]{6}$'
+        description: 匹配占比至少 10% 的图片主色；中性色与有彩色分开匹配
       - name: include_facets
         in: query
         required: false
@@ -6764,6 +6776,7 @@ components:
       - group_ids
       - tag_ids
       - rating
+      - palette
       properties:
         id:
           type: string
@@ -6771,6 +6784,22 @@ components:
           type: string
         description:
           type: string
+        palette:
+          type: array
+          maxItems: 5
+          description: 按占比降序；未计算、失败、非图片或内容不可读时为空
+          items:
+            type: object
+            additionalProperties: false
+            required: [hex, weight]
+            properties:
+              hex:
+                type: string
+                pattern: '^#[0-9a-f]{6}$'
+              weight:
+                type: number
+                minimum: 0
+                maximum: 1
         rating:
           $ref: '#/components/schemas/CreativeAssetRating'
         kind:

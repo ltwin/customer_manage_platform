@@ -441,6 +441,7 @@ function Assets({ account }: { account: string }) {
         />
         {prefs.inspector && (
           <AssetInspector
+            onColor={(color) => go({ ...query, color })}
             assets={selected}
             catalog={catalog}
             blocked={blocked}

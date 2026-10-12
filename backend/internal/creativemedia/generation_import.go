@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativepalette"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -322,6 +323,9 @@ func (s *Service) CommitGeneratedMediaInTx(ctx context.Context, tx store.TxAccou
 		if v.role == "display" {
 			objects = append(objects, creativecontent.ObjectBinding{Role: v.role, BlobID: v.id})
 		}
+	}
+	if err := creativepalette.WriteInTx(ctx, tx, current.original, current.verified.Palette); err != nil {
+		return creativecontent.Revision{}, err
 	}
 	revision, err := creativecontent.WriteMediaAndRetain(ctx, tx, creativecontent.Draft{Kind: current.verified.Kind}, objects, retain)
 	if err != nil {

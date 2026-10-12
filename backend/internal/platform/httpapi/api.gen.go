@@ -3023,6 +3023,27 @@ func (e ListCreativeAssetsParamsSort) Valid() bool {
 	}
 }
 
+// Defines values for ListCreativeAssetsParamsShape.
+const (
+	Landscape ListCreativeAssetsParamsShape = "landscape"
+	Portrait  ListCreativeAssetsParamsShape = "portrait"
+	Square    ListCreativeAssetsParamsShape = "square"
+)
+
+// Valid indicates whether the value is a known member of the ListCreativeAssetsParamsShape enum.
+func (e ListCreativeAssetsParamsShape) Valid() bool {
+	switch e {
+	case Landscape:
+		return true
+	case Portrait:
+		return true
+	case Square:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetCreativeMediaParamsRole.
 const (
 	Display  GetCreativeMediaParamsRole = "display"
@@ -4713,7 +4734,13 @@ type CreativeLibraryAsset struct {
 	Id                string                       `json:"id"`
 	IsFavorite        bool                         `json:"is_favorite"`
 	Kind              CreativeLibraryAssetKind     `json:"kind"`
-	PurgeAfter        nullable.Nullable[time.Time] `json:"purge_after"`
+
+	// Palette 按占比降序；未计算、失败、非图片或内容不可读时为空
+	Palette []struct {
+		Hex    string  `json:"hex"`
+		Weight float32 `json:"weight"`
+	} `json:"palette"`
+	PurgeAfter nullable.Nullable[time.Time] `json:"purge_after"`
 
 	// Rating 半星评分；null 表示未评分，不使用 0
 	Rating nullable.Nullable[CreativeAssetRating] `json:"rating"`
@@ -6986,6 +7013,12 @@ type ListCreativeAssetsParams struct {
 	// Unrated 只要未评分的素材
 	Unrated *bool `form:"unrated,omitempty" json:"unrated,omitempty"`
 
+	// Shape 仅内容可读的图片；长短边比不超过 1.1 为方形。视频需待显示方向修正后支持
+	Shape *ListCreativeAssetsParamsShape `form:"shape,omitempty" json:"shape,omitempty"`
+
+	// Color 匹配占比至少 10% 的图片主色；中性色与有彩色分开匹配
+	Color *string `form:"color,omitempty" json:"color,omitempty"`
+
 	// IncludeFacets 只在首屏（无 cursor）允许；响应带上与 items、total_count 同一快照的 facets，带 cursor 时返回 400
 	IncludeFacets *bool `form:"include_facets,omitempty" json:"include_facets,omitempty"`
 }
@@ -7001,6 +7034,9 @@ type ListCreativeAssetsParamsTagMode string
 
 // ListCreativeAssetsParamsSort defines parameters for ListCreativeAssets.
 type ListCreativeAssetsParamsSort string
+
+// ListCreativeAssetsParamsShape defines parameters for ListCreativeAssets.
+type ListCreativeAssetsParamsShape string
 
 // CreateCreativeTextAssetParams defines parameters for CreateCreativeTextAsset.
 type CreateCreativeTextAssetParams struct {
@@ -10829,6 +10865,22 @@ func (siw *ServerInterfaceWrapper) ListCreativeAssets(c *gin.Context) {
 	err = runtime.BindQueryParameterWithOptions("form", true, false, "unrated", c.Request.URL.Query(), &params.Unrated, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
 	if err != nil {
 		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter unrated: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "shape" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "shape", c.Request.URL.Query(), &params.Shape, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter shape: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "color" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "color", c.Request.URL.Query(), &params.Color, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter color: %w", err), http.StatusBadRequest)
 		return
 	}
 

@@ -7,8 +7,10 @@ export default function ActionPopover({
   label,
   children,
   onClose,
+  className = '',
 }: {
   at: Point
+  className?: string
   label: string
   children: ReactNode
   onClose: () => void
@@ -41,7 +43,7 @@ export default function ActionPopover({
       role="dialog"
       aria-label={label}
       tabIndex={-1}
-      className="al-pop"
+      className={`al-pop ${className}`}
     >
       {children}
     </div>,

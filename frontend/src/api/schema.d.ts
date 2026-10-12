@@ -2751,6 +2751,11 @@ export interface components {
             id: string;
             title: string;
             description: string;
+            /** @description 按占比降序；未计算、失败、非图片或内容不可读时为空 */
+            palette: {
+                hex: string;
+                weight: number;
+            }[];
             rating: components["schemas"]["CreativeAssetRating"];
             /** @enum {string} */
             kind: "text" | "link" | "image" | "video" | "audio";
@@ -6705,6 +6710,10 @@ export interface operations {
                 min_rating?: number;
                 /** @description 只要未评分的素材 */
                 unrated?: boolean;
+                /** @description 仅内容可读的图片；长短边比不超过 1.1 为方形。视频需待显示方向修正后支持 */
+                shape?: "landscape" | "square" | "portrait";
+                /** @description 匹配占比至少 10% 的图片主色；中性色与有彩色分开匹配 */
+                color?: string;
                 /** @description 只在首屏（无 cursor）允许；响应带上与 items、total_count 同一快照的 facets，带 cursor 时返回 400 */
                 include_facets?: boolean;
             };

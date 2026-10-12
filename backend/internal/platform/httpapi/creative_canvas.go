@@ -171,6 +171,12 @@ func (h *handlers) ListCreativeAssets(c *gin.Context, p ListCreativeAssetsParams
 			q.Sort = string(*p.Sort)
 		}
 		q.MinRating = p.MinRating
+		if p.Shape != nil {
+			q.Shape = string(*p.Shape)
+		}
+		if p.Color != nil {
+			q.Color = *p.Color
+		}
 		if p.Unrated != nil {
 			q.Unrated = *p.Unrated
 		}

@@ -111,6 +111,8 @@ func run() error {
 		return err
 	}
 	go sweepExpiredUploads(ctx, db, media)
+	paletteDone := make(chan struct{})
+	go func() { defer close(paletteDone); media.RunPaletteBackfill(ctx, db, slog.Default()) }()
 	trashDone := make(chan struct{})
 	go func() { defer close(trashDone); trashExpiry.Run(ctx, db, slog.Default()) }()
 	// Recovery needs no provider credentials or catalog: it only reconciles
@@ -134,6 +136,7 @@ func run() error {
 	<-agentDone
 	<-generationDone
 	<-trashDone
+	<-paletteDone
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
 	return runtime.Stop(stopCtx)

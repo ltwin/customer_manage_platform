@@ -1,5 +1,10 @@
+import { SHAPES, SWATCHES } from './appearance.ts'
+import ActionPopover from './ActionPopover.tsx'
+import { anchorPoint } from './popover.ts'
 import {
   Check,
+  Palette,
+  RectangleHorizontal,
   Upload,
   Maximize2,
   ChevronDown,
@@ -92,6 +97,7 @@ export default function AssetBrowser({
   const parent = groups.find((g) => g.id === group?.parent_id)
   const tagName = (id: string) =>
     catalog?.tags.find((t) => t.id === id)?.name ?? '已删除的标签'
+  const [colorAt, setColorAt] = useState<Point | null>(null)
   const [tagsAt, setTagsAt] = useState<DOMRect | null>(null)
   const kinds = list.facets?.kinds
   const total = kinds ? Object.values(kinds).reduce((a, b) => a + b, 0) : null
@@ -263,6 +269,41 @@ export default function AssetBrowser({
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          className={`al-chip${query.color ? ' is-on' : ''}`}
+          aria-label="颜色"
+          aria-expanded={!!colorAt}
+          aria-haspopup="dialog"
+          onClick={(e) =>
+            setColorAt(colorAt ? null : anchorPoint(e.currentTarget))
+          }
+        >
+          {query.color ? (
+            <i className="al-color-dot" style={{ background: query.color }} />
+          ) : (
+            <Palette size={13} />
+          )}
+          <span>颜色</span>
+          <ChevronDown size={12} />
+        </button>
+        <Picker
+          label="画幅"
+          className={query.shape ? 'is-on' : ''}
+          options={SHAPES}
+          value={query.shape}
+          minWidth={140}
+          onChange={(value) => {
+            const shape = SHAPES.find((s) => s.value === value)?.value ?? ''
+            onQuery({ ...query, shape: shape === query.shape ? '' : shape })
+          }}
+        >
+          <RectangleHorizontal size={13} />
+          <span title="画幅筛选仅适用于图片">
+            {SHAPES.find((s) => s.value === query.shape)?.label ?? '画幅'}
+          </span>
+          <ChevronDown size={12} />
+        </Picker>
         <Picker
           label="评分"
           className={query.rating ? 'is-on' : ''}
@@ -299,6 +340,31 @@ export default function AssetBrowser({
 
       {(filtered || query.tags.length > 0) && (
         <div className="al-pills" aria-label="生效的条件">
+          {query.color && (
+            <span className="al-pill">
+              <i className="al-color-dot" style={{ background: query.color }} />
+              相近颜色
+              <button
+                type="button"
+                aria-label="清除颜色"
+                onClick={() => onQuery({ ...query, color: '' })}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          )}
+          {query.shape && (
+            <span className="al-pill">
+              {SHAPES.find((s) => s.value === query.shape)?.label}
+              <button
+                type="button"
+                aria-label="清除画幅"
+                onClick={() => onQuery({ ...query, shape: '' })}
+              >
+                <X size={10} />
+              </button>
+            </span>
+          )}
           {query.rating && (
             <Pill
               label={RATINGS.find((r) => r.value === query.rating)?.label ?? ''}
@@ -372,6 +438,37 @@ export default function AssetBrowser({
       />
 
       {toolbar}
+      {colorAt && (
+        <ActionPopover
+          at={colorAt}
+          label="颜色筛选"
+          className="al-color-popover"
+          onClose={() => setColorAt(null)}
+        >
+          <div className="al-pal-pop">
+            <p>找颜色相近的素材（取自每张图的主色）</p>
+            <div className="al-pal-grid">
+              {SWATCHES.map((c) => (
+                <button
+                  key={c.hex}
+                  type="button"
+                  style={{ background: c.hex }}
+                  aria-label={`${c.label} ${c.hex}`}
+                  title={c.label}
+                  aria-pressed={query.color === c.hex}
+                  onClick={() => {
+                    setColorAt(null)
+                    onQuery({
+                      ...query,
+                      color: query.color === c.hex ? '' : c.hex,
+                    })
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </ActionPopover>
+      )}
       {tagsAt && catalog && (
         <TagPopover
           anchor={tagsAt}
