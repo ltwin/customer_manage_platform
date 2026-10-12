@@ -21,6 +21,9 @@ var (
 	ErrVersionConflict = errors.New("creative asset version conflict")
 	ErrGroupNameTaken  = errors.New("creative group name taken at this level")
 	ErrGroupDepth      = errors.New("creative group nesting too deep")
+	// ErrGroupRestoreLimit refuses a group undo that would push an asset past
+	// its 100-group limit; nothing is restored and the undo stays available.
+	ErrGroupRestoreLimit = errors.New("creative group restore exceeds per-asset group limit")
 )
 
 type CreateAssetInput struct {
@@ -60,6 +63,7 @@ type Asset struct {
 	ContentRevisionID string                    `json:"content_revision_id"`
 	Content           *creativecontent.Revision `json:"content,omitempty"`
 	Unavailable       bool                      `json:"unavailable"`
+	Rating            *float64                  `json:"rating"`
 }
 
 func CreateAsset(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
@@ -272,16 +276,21 @@ func ResolveAssetsInTx(ctx context.Context, tx store.TxAccountScope, ref AssetRe
 	return a, nil
 }
 
-const assetColumns = "id,title,description,kind,revision,content_id,content_revision_id,is_favorite,created_at,deleted_at,purge_after"
+const assetColumns = "id,title,description,kind,revision,content_id,content_revision_id,is_favorite,created_at,deleted_at,purge_after,rating_halves"
 
 func scanAsset(row store.Row) (Asset, error) {
 	a := Asset{GroupIDs: []string{}, TagIDs: []string{}}
 	var revision int64
-	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.Kind, &revision, &a.ContentID, &a.ContentRevisionID, &a.Favorite, &a.CreatedAt, &a.DeletedAt, &a.PurgeAfter)
+	var halves *int16
+	err := row.Scan(&a.ID, &a.Title, &a.Description, &a.Kind, &revision, &a.ContentID, &a.ContentRevisionID, &a.Favorite, &a.CreatedAt, &a.DeletedAt, &a.PurgeAfter, &halves)
 	if errors.Is(err, store.ErrNoRows) {
 		return Asset{}, ErrNotFound
 	}
 	a.Revision = creativeops.Revision(revision)
+	if halves != nil {
+		r := float64(*halves) / 2
+		a.Rating = &r
+	}
 	return a, err
 }
 func GetAsset(ctx context.Context, scope store.AccountScope, id string) (Asset, error) {

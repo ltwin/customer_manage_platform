@@ -417,12 +417,7 @@ func assetState(ctx context.Context, sc store.AccountScope, c creativeops.Comman
 				if a.DeletedAt == nil {
 					return LibraryResult{}, creativeops.ErrValidation
 				}
-				for _, table := range []string{"creative_asset_group_members", "creative_asset_tags", "creative_asset_search"} {
-					if _, err = tx.Delete(ctx, table, "asset_id=$2", a.ID); err != nil {
-						return LibraryResult{}, err
-					}
-				}
-				_, err = tx.Delete(ctx, "creative_assets", "id=$2", a.ID)
+				err = purgeAsset(ctx, tx, a.ID)
 			}
 			if err != nil {
 				return LibraryResult{}, err
@@ -440,6 +435,103 @@ func assetState(ctx context.Context, sc store.AccountScope, c creativeops.Comman
 		return libraryResult(ctx, tx, v.Assets[0].ID, revision, true, false)
 	})
 }
+
+// purgeAsset deletes a trashed entry and its relations. Its content is not
+// touched here: nodes and runs keep their own references, and media is only
+// reclaimed once the last one is gone.
+func purgeAsset(ctx context.Context, tx store.TxAccountScope, id string) error {
+	for _, table := range []string{"creative_asset_group_members", "creative_asset_tags", "creative_asset_search"} {
+		if _, err := tx.Delete(ctx, table, "asset_id=$2", id); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Delete(ctx, "creative_assets", "id=$2", id)
+	return err
+}
+
+type EmptyTrashInput struct {
+	ExpectedLibraryRevision creativeops.Revision `json:"expected_library_revision"`
+}
+type EmptyTrashResult struct {
+	PurgedCount     int                  `json:"purged_count"`
+	LibraryRevision creativeops.Revision `json:"library_revision"`
+}
+
+// EmptyTrash purges exactly the batch the confirmation counted. Trashing and
+// restoring both advance library_revision under the root lock, so an unchanged
+// revision means the recycle bin holds the same entries; no clock is involved.
+func EmptyTrash(ctx context.Context, sc store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
+	return libraryCommand(ctx, sc, c, "empty_trash", func(v EmptyTrashInput) error {
+		if v.ExpectedLibraryRevision < 1 {
+			return creativeops.ErrValidation
+		}
+		return nil
+	}, func(ctx context.Context, tx store.TxAccountScope, v EmptyTrashInput) (EmptyTrashResult, string, creativeops.Revision, error) {
+		settings, err := readSettings(ctx, tx)
+		if err != nil {
+			return EmptyTrashResult{}, "", 0, err
+		}
+		if settings.LibraryRevision != v.ExpectedLibraryRevision {
+			return EmptyTrashResult{}, "", 0, ErrVersionConflict
+		}
+		rows, err := tx.Query(ctx, "creative_assets", "id", "deleted_at IS NOT NULL")
+		if err != nil {
+			return EmptyTrashResult{}, "", 0, err
+		}
+		ids := []string{}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return EmptyTrashResult{}, "", 0, err
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return EmptyTrashResult{}, "", 0, err
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			if _, err := scanAsset(tx.QueryRowForUpdate(ctx, "creative_assets", assetColumns, "id=$2", id)); err != nil {
+				return EmptyTrashResult{}, "", 0, err
+			}
+			if err := purgeAsset(ctx, tx, id); err != nil {
+				return EmptyTrashResult{}, "", 0, err
+			}
+		}
+		r, err := libraryResult(ctx, tx, "trash", settings.LibraryRevision, len(ids) > 0, false)
+		return EmptyTrashResult{PurgedCount: len(ids), LibraryRevision: r.LibraryRevision}, r.ID, r.LibraryRevision, err
+	})
+}
+
+type Usage struct {
+	AssetCount  int64 `json:"asset_count"`
+	StoredBytes int64 `json:"stored_bytes"`
+	LimitBytes  int64 `json:"limit_bytes"`
+}
+
+// GetUsage reports the whole creative space's media footprint, the figure the
+// upload quota charges against; an account without a quota row has used nothing.
+func GetUsage(ctx context.Context, sc store.AccountScope, defaultLimit int64) (Usage, error) {
+	u := Usage{LimitBytes: defaultLimit}
+	err := sc.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		if err := tx.RequireCreativeRead(ctx); err != nil {
+			return err
+		}
+		var err error
+		if u.AssetCount, err = tx.Count(ctx, "creative_assets", "deleted_at IS NULL"); err != nil {
+			return err
+		}
+		err = tx.QueryRow(ctx, "creative_media_quotas", "stored_bytes,limit_bytes", "").Scan(&u.StoredBytes, &u.LimitBytes)
+		if errors.Is(err, store.ErrNoRows) {
+			return nil
+		}
+		return err
+	})
+	return u, err
+}
+
 func Trash(ctx context.Context, s store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
 	return assetState(ctx, s, c, "trash", false)
 }

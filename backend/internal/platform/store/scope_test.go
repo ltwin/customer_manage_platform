@@ -426,3 +426,38 @@ func TestAccountScopeScalarAggregate(t *testing.T) {
 		t.Fatal("invalid aggregate column should fail")
 	}
 }
+
+func TestAccountScopeGroupCount(t *testing.T) {
+	url := startPostgres(t)
+	s := openMigrated(t, url)
+	if err := store.MigrateProbeUpForTest(url); err != nil {
+		t.Fatalf("migrate probe table: %v", err)
+	}
+	ctx := context.Background()
+	for _, id := range []string{"acct-a", "acct-b"} {
+		if err := s.CreateAccount(ctx, id, "test-hash"); err != nil {
+			t.Fatalf("create account %s: %v", id, err)
+		}
+	}
+	scopeA := s.ScopeFor(auth.AccountContext{AccountID: "acct-a"})
+	scopeB := s.ScopeFor(auth.AccountContext{AccountID: "acct-b"})
+	for i, note := range []string{"x", "x", "y"} {
+		if err := scopeA.Insert(ctx, "probe_items", []string{"id", "note", "score"}, fmt.Sprintf("p-a%d", i), note, i); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := scopeB.Insert(ctx, "probe_items", []string{"id", "note", "score"}, "p-b", "x", 9); err != nil {
+		t.Fatal(err)
+	}
+	got, err := scopeA.GroupCount(ctx, "probe_items", "note", "")
+	if err != nil || len(got) != 2 || got["x"] != 2 || got["y"] != 1 {
+		t.Fatalf("group count A = %v %v", got, err)
+	}
+	got, err = scopeA.GroupCount(ctx, "probe_items", "note", "score >= $2", 1)
+	if err != nil || len(got) != 2 || got["x"] != 1 || got["y"] != 1 {
+		t.Fatalf("filtered group count A = %v %v", got, err)
+	}
+	if _, err = scopeA.GroupCount(ctx, "probe_items", "note; DROP", ""); err == nil {
+		t.Fatal("non-identifier column accepted")
+	}
+}

@@ -50,6 +50,9 @@ func NewService(cfg Config, adapter versionedfs.Adapter, verifier *Verifier, tic
 	return &Service{cfg: cfg, adapter: adapter, verifier: verifier, tickets: ticketSigner{key: ticketKey, base: ticketBase}, logger: slog.Default()}, nil
 }
 
+// QuotaLimit is the per-account limit an account without a quota row gets.
+func (s *Service) QuotaLimit() int64 { return s.cfg.QuotaLimitBytes }
+
 // SetRuntime binds the queue used for same-transaction enqueue.
 func (s *Service) SetRuntime(runtime jobs.Runtime) { s.runtime = runtime }
 

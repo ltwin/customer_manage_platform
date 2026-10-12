@@ -160,6 +160,9 @@ func (sc AccountScope) QueryPage(ctx context.Context, table, columns, cond strin
 		if o.Desc {
 			dir = "DESC"
 		}
+		if o.NullsLast {
+			dir += " NULLS LAST"
+		}
 		orderCols = append(orderCols, o.Column+" "+dir)
 	}
 	if limit < 1 || offset < 0 {
@@ -180,8 +183,9 @@ func (sc AccountScope) QueryPage(ctx context.Context, table, columns, cond strin
 
 // OrderBy 是 QueryPage 的排序项；Column 必须是编译期常量列名。
 type OrderBy struct {
-	Column string
-	Desc   bool
+	Column    string
+	Desc      bool
+	NullsLast bool
 }
 
 const (
@@ -234,6 +238,40 @@ func (sc AccountScope) ScalarAggregate(ctx context.Context, table, op, column, c
 		sql += " AND (" + cond + ")"
 	}
 	return sc.execRunner().QueryRow(ctx, sql, append([]any{sc.accountID}, args...)...)
+}
+
+// GroupCount 按一列分组计数，返回「列值 → 行数」；cond 占位符从 $2 起编号。
+// table/column 必须是标识符字面量；空值分组不返回。
+func (sc AccountScope) GroupCount(ctx context.Context, table, column, cond string, args ...any) (map[string]int64, error) {
+	if sc.accountID == "" {
+		return nil, ErrEmptyAccountScope
+	}
+	if err := validateIdents(table, column); err != nil {
+		return nil, err
+	}
+	sql := fmt.Sprintf(`SELECT %s, count(*) FROM %s WHERE account_id = $1 AND %s IS NOT NULL`, column, table, column)
+	if cond != "" {
+		sql += " AND (" + cond + ")"
+	}
+	sql += " GROUP BY " + column
+	rows, err := sc.execRunner().Query(ctx, sql, append([]any{sc.accountID}, args...)...)
+	if err != nil {
+		return nil, fmt.Errorf("scoped group count %s: %w", table, err)
+	}
+	defer rows.Close()
+	out := map[string]int64{}
+	for rows.Next() {
+		var key string
+		var n int64
+		if err := rows.Scan(&key, &n); err != nil {
+			return nil, fmt.Errorf("scoped group count %s: %w", table, err)
+		}
+		out[key] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("scoped group count %s: %w", table, err)
+	}
+	return out, nil
 }
 
 // Exists 判断当前账号 scope 内是否存在匹配行；cond 占位符从 $2 起编号。

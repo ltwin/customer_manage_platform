@@ -96,6 +96,8 @@ func creativeError(c *gin.Context, err error) {
 		creativeSkillError(c, err)
 	case errors.Is(err, creativelibrary.ErrGroupNameTaken):
 		abortError(c, 409, "creative_group_name_taken", "同一层已有同名分组")
+	case errors.Is(err, creativelibrary.ErrGroupRestoreLimit):
+		abortError(c, 409, "creative_group_restore_limit", "有素材已归入 100 个分组，无法恢复到这个分组；先移出一些分组再撤销")
 	case errors.Is(err, creativelibrary.ErrGroupDepth):
 		abortError(c, 422, "creative_group_depth", "分组最多两层")
 	case errors.Is(err, creativelibrary.ErrTrashed):
@@ -167,6 +169,13 @@ func (h *handlers) ListCreativeAssets(c *gin.Context, p ListCreativeAssetsParams
 		}
 		if p.Sort != nil {
 			q.Sort = string(*p.Sort)
+		}
+		q.MinRating = p.MinRating
+		if p.Unrated != nil {
+			q.Unrated = *p.Unrated
+		}
+		if p.IncludeFacets != nil {
+			q.IncludeFacets = *p.IncludeFacets
 		}
 		return creativelibrary.SearchAssets(c.Request.Context(), scope, q)
 	})

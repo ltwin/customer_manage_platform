@@ -139,6 +139,10 @@ func (sc TxAccountScope) ScalarAggregate(ctx context.Context, table, op, column,
 	return sc.scope.ScalarAggregate(ctx, table, op, column, cond, args...)
 }
 
+func (sc TxAccountScope) GroupCount(ctx context.Context, table, column, cond string, args ...any) (map[string]int64, error) {
+	return sc.scope.GroupCount(ctx, table, column, cond, args...)
+}
+
 func (sc TxAccountScope) Exists(ctx context.Context, table, cond string, args ...any) (bool, error) {
 	return sc.scope.Exists(ctx, table, cond, args...)
 }
@@ -195,6 +199,10 @@ func (sc ReadTxAccountScope) Count(ctx context.Context, table, cond string, args
 
 func (sc ReadTxAccountScope) ScalarAggregate(ctx context.Context, table, op, column, cond string, args ...any) pgx.Row {
 	return sc.scope.ScalarAggregate(ctx, table, op, column, cond, args...)
+}
+
+func (sc ReadTxAccountScope) GroupCount(ctx context.Context, table, column, cond string, args ...any) (map[string]int64, error) {
+	return sc.scope.GroupCount(ctx, table, column, cond, args...)
 }
 
 func (sc ReadTxAccountScope) Exists(ctx context.Context, table, cond string, args ...any) (bool, error) {

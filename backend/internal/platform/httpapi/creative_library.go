@@ -3,6 +3,7 @@ package httpapi
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
+	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 )
 
 func registerCreativeLibrary(r *gin.RouterGroup, h *handlers) {
@@ -13,6 +14,7 @@ func registerCreativeLibrary(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/asset-groups/:id/rename", w.RenameCreativeGroup)
 	r.POST("/creative/asset-groups/:id/move", w.MoveCreativeGroup)
 	r.POST("/creative/asset-groups/:id/delete", w.DeleteCreativeGroup)
+	r.POST("/creative/asset-groups/deletions/:deletion_id/restore", w.RestoreCreativeGroupDeletion)
 	r.POST("/creative/tags", w.CreateCreativeTag)
 	r.POST("/creative/tags/:id/edit", w.EditCreativeTag)
 	r.POST("/creative/tags/:id/delete", w.DeleteCreativeTag)
@@ -28,10 +30,13 @@ func registerCreativeLibrary(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/assets/batch-restore", w.BatchRestoreCreativeAssets)
 	r.POST("/creative/assets/:id/purge", w.PurgeCreativeAsset)
 	r.POST("/creative/assets/batch-purge", w.BatchPurgeCreativeAssets)
+	r.POST("/creative/assets/batch-rate", w.BatchRateCreativeAssets)
+	r.POST("/creative/library/empty-trash", w.EmptyCreativeTrash)
 	r.GET("/creative/asset-groups", w.ListCreativeGroups)
 	r.GET("/creative/tags", w.ListCreativeTags)
 	r.GET("/creative/tag-categories", w.ListCreativeCategories)
 	r.GET("/creative/library-settings", w.GetCreativeLibrarySettings)
+	r.GET("/creative/library-usage", w.GetCreativeLibraryUsage)
 }
 func (h *handlers) CreateCreativeGroup(c *gin.Context, _ CreateCreativeGroupParams) {
 	h.creativeWrite(c, "", "", creativelibrary.CreateGroup)
@@ -44,6 +49,9 @@ func (h *handlers) MoveCreativeGroup(c *gin.Context, id string, _ MoveCreativeGr
 }
 func (h *handlers) DeleteCreativeGroup(c *gin.Context, id string, _ DeleteCreativeGroupParams) {
 	h.creativeWrite(c, "group_id", id, creativelibrary.DeleteGroup)
+}
+func (h *handlers) RestoreCreativeGroupDeletion(c *gin.Context, id string, _ RestoreCreativeGroupDeletionParams) {
+	h.creativeWrite(c, "deletion_id", id, creativelibrary.RestoreGroup)
 }
 func (h *handlers) CreateCreativeTag(c *gin.Context, _ CreateCreativeTagParams) {
 	h.creativeWrite(c, "", "", creativelibrary.CreateTag)
@@ -90,6 +98,12 @@ func (h *handlers) PurgeCreativeAsset(c *gin.Context, id string, _ PurgeCreative
 func (h *handlers) BatchPurgeCreativeAssets(c *gin.Context, _ BatchPurgeCreativeAssetsParams) {
 	h.creativeWrite(c, "", "", creativelibrary.BatchPurge)
 }
+func (h *handlers) BatchRateCreativeAssets(c *gin.Context, _ BatchRateCreativeAssetsParams) {
+	h.creativeWrite(c, "", "", creativelibrary.BatchRate)
+}
+func (h *handlers) EmptyCreativeTrash(c *gin.Context, _ EmptyCreativeTrashParams) {
+	h.creativeWrite(c, "", "", creativelibrary.EmptyTrash)
+}
 func (h *handlers) ListCreativeGroups(c *gin.Context) {
 	scope, ok := h.creativeScope(c)
 	if !ok {
@@ -122,5 +136,19 @@ func (h *handlers) GetCreativeLibrarySettings(c *gin.Context) {
 	}
 	creativeRead(c, func() (creativelibrary.Settings, error) {
 		return creativelibrary.GetSettings(c.Request.Context(), scope)
+	})
+}
+func (h *handlers) GetCreativeLibraryUsage(c *gin.Context) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	// Usage is a database read; without media wiring the default limit applies.
+	limit := creativemedia.DefaultConfig().QuotaLimitBytes
+	if h.creativeMedia != nil {
+		limit = h.creativeMedia.QuotaLimit()
+	}
+	creativeRead(c, func() (creativelibrary.Usage, error) {
+		return creativelibrary.GetUsage(c.Request.Context(), scope, limit)
 	})
 }

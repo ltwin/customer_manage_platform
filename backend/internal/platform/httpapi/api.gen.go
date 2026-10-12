@@ -2931,6 +2931,7 @@ func (e ForgotPassword202JSONResponseBodyStatus) Valid() bool {
 const (
 	ListCreativeAssetsParamsViewAll          ListCreativeAssetsParamsView = "all"
 	ListCreativeAssetsParamsViewFavorites    ListCreativeAssetsParamsView = "favorites"
+	ListCreativeAssetsParamsViewRecent       ListCreativeAssetsParamsView = "recent"
 	ListCreativeAssetsParamsViewTrash        ListCreativeAssetsParamsView = "trash"
 	ListCreativeAssetsParamsViewUnclassified ListCreativeAssetsParamsView = "unclassified"
 )
@@ -2941,6 +2942,8 @@ func (e ListCreativeAssetsParamsView) Valid() bool {
 	case ListCreativeAssetsParamsViewAll:
 		return true
 	case ListCreativeAssetsParamsViewFavorites:
+		return true
+	case ListCreativeAssetsParamsViewRecent:
 		return true
 	case ListCreativeAssetsParamsViewTrash:
 		return true
@@ -3000,6 +3003,7 @@ func (e ListCreativeAssetsParamsTagMode) Valid() bool {
 const (
 	ListCreativeAssetsParamsSortName   ListCreativeAssetsParamsSort = "name"
 	ListCreativeAssetsParamsSortOldest ListCreativeAssetsParamsSort = "oldest"
+	ListCreativeAssetsParamsSortRating ListCreativeAssetsParamsSort = "rating"
 	ListCreativeAssetsParamsSortRecent ListCreativeAssetsParamsSort = "recent"
 )
 
@@ -3009,6 +3013,8 @@ func (e ListCreativeAssetsParamsSort) Valid() bool {
 	case ListCreativeAssetsParamsSortName:
 		return true
 	case ListCreativeAssetsParamsSortOldest:
+		return true
+	case ListCreativeAssetsParamsSortRating:
 		return true
 	case ListCreativeAssetsParamsSortRecent:
 		return true
@@ -3243,6 +3249,13 @@ type BatchPurgeCreativeAssetsRequest struct {
 	ClientCreatedAt time.Time                 `json:"client_created_at"`
 	OperationId     openapi_types.UUID        `json:"operation_id"`
 	Payload         CreativeAssetBatchPayload `json:"payload"`
+}
+
+// BatchRateCreativeAssetsRequest defines model for BatchRateCreativeAssetsRequest.
+type BatchRateCreativeAssetsRequest struct {
+	ClientCreatedAt time.Time                `json:"client_created_at"`
+	OperationId     openapi_types.UUID       `json:"operation_id"`
+	Payload         CreativeAssetRatePayload `json:"payload"`
 }
 
 // BatchRestoreCreativeAssetsRequest defines model for BatchRestoreCreativeAssetsRequest.
@@ -4129,6 +4142,21 @@ type CreativeAssetCreateResult struct {
 	TagMapping map[string]string `json:"tag_mapping"`
 }
 
+// CreativeAssetFacets 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
+type CreativeAssetFacets struct {
+	Kinds struct {
+		Audio int64 `json:"audio"`
+		Image int64 `json:"image"`
+		Link  int64 `json:"link"`
+		Text  int64 `json:"text"`
+		Video int64 `json:"video"`
+	} `json:"kinds"`
+	Tags []struct {
+		Count int64  `json:"count"`
+		TagId string `json:"tag_id"`
+	} `json:"tags"`
+}
+
 // CreativeAssetFromNodePayload defines model for CreativeAssetFromNodePayload.
 type CreativeAssetFromNodePayload struct {
 	CanvasId string `json:"canvas_id"`
@@ -4171,13 +4199,44 @@ type CreativeAssetOrganizePayload struct {
 
 // CreativeAssetPage defines model for CreativeAssetPage.
 type CreativeAssetPage struct {
-	Items []CreativeLibraryAsset `json:"items"`
+	// Facets 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
+	Facets *CreativeAssetFacets   `json:"facets,omitempty"`
+	Items  []CreativeLibraryAsset `json:"items"`
 
 	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	LibraryRevision CreativeRevision `json:"library_revision"`
 	NextCursor      string           `json:"next_cursor"`
 	TotalCount      int64            `json:"total_count"`
 }
+
+// CreativeAssetRatePayload defines model for CreativeAssetRatePayload.
+type CreativeAssetRatePayload struct {
+	Items []struct {
+		AssetId string `json:"asset_id"`
+
+		// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+		ExpectedRevision CreativeRevision `json:"expected_revision"`
+
+		// Rating 半星评分；null 表示未评分，不使用 0
+		Rating nullable.Nullable[CreativeAssetRating] `json:"rating"`
+	} `json:"items"`
+}
+
+// CreativeAssetRateResult defines model for CreativeAssetRateResult.
+type CreativeAssetRateResult struct {
+	Items []struct {
+		Id string `json:"id"`
+
+		// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+		Revision CreativeRevision `json:"revision"`
+	} `json:"items"`
+
+	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	LibraryRevision CreativeRevision `json:"library_revision"`
+}
+
+// CreativeAssetRating 半星评分；null 表示未评分，不使用 0
+type CreativeAssetRating = float64
 
 // CreativeAssetReference defines model for CreativeAssetReference.
 type CreativeAssetReference struct {
@@ -4465,6 +4524,22 @@ type CreativeEgressConsentScopeDataClasses string
 // CreativeEgressConsentScopeMode defines model for CreativeEgressConsentScope.Mode.
 type CreativeEgressConsentScopeMode string
 
+// CreativeEmptyPayload defines model for CreativeEmptyPayload.
+type CreativeEmptyPayload = map[string]interface{}
+
+// CreativeEmptyTrashPayload defines model for CreativeEmptyTrashPayload.
+type CreativeEmptyTrashPayload struct {
+	// ExpectedLibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedLibraryRevision CreativeRevision `json:"expected_library_revision"`
+}
+
+// CreativeEmptyTrashResult defines model for CreativeEmptyTrashResult.
+type CreativeEmptyTrashResult struct {
+	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	LibraryRevision CreativeRevision `json:"library_revision"`
+	PurgedCount     int              `json:"purged_count"`
+}
+
 // CreativeFoundationCapabilities defines model for CreativeFoundationCapabilities.
 type CreativeFoundationCapabilities struct {
 	Available     bool                                        `json:"available"`
@@ -4564,6 +4639,22 @@ type CreativeGroupCreatePayload struct {
 	Position          *int                      `json:"position,omitempty"`
 }
 
+// CreativeGroupDeleteResult defines model for CreativeGroupDeleteResult.
+type CreativeGroupDeleteResult struct {
+	// DeletionId 撤销这次删除时使用，30 天内有效
+	DeletionId string `json:"deletion_id"`
+
+	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
+	Id                string           `json:"id"`
+
+	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	LibraryRevision CreativeRevision `json:"library_revision"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
 // CreativeGroupMovePayload defines model for CreativeGroupMovePayload.
 type CreativeGroupMovePayload struct {
 	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
@@ -4577,6 +4668,9 @@ type CreativeGroupMovePayload struct {
 
 // CreativeGroupPage defines model for CreativeGroupPage.
 type CreativeGroupPage struct {
+	// AssetCounts 每个分组不在回收站里的素材数；顶层分组包含子组，同一素材只算一次
+	AssetCounts map[string]int64 `json:"asset_counts"`
+
 	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	HierarchyRevision CreativeRevision     `json:"hierarchy_revision"`
 	Items             []CreativeAssetGroup `json:"items"`
@@ -4620,6 +4714,9 @@ type CreativeLibraryAsset struct {
 	IsFavorite        bool                         `json:"is_favorite"`
 	Kind              CreativeLibraryAssetKind     `json:"kind"`
 	PurgeAfter        nullable.Nullable[time.Time] `json:"purge_after"`
+
+	// Rating 半星评分；null 表示未评分，不使用 0
+	Rating nullable.Nullable[CreativeAssetRating] `json:"rating"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision    CreativeRevision `json:"revision"`
@@ -4679,6 +4776,13 @@ type CreativeLibraryTag struct {
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeLibraryUsage defines model for CreativeLibraryUsage.
+type CreativeLibraryUsage struct {
+	AssetCount  int64 `json:"asset_count"`
+	LimitBytes  int64 `json:"limit_bytes"`
+	StoredBytes int64 `json:"stored_bytes"`
 }
 
 // CreativeLinkPayload defines model for CreativeLinkPayload.
@@ -5596,6 +5700,13 @@ type EditCreativeTagRequest struct {
 	Payload         CreativeTagEditPayload `json:"payload"`
 }
 
+// EmptyCreativeTrashRequest defines model for EmptyCreativeTrashRequest.
+type EmptyCreativeTrashRequest struct {
+	ClientCreatedAt time.Time                 `json:"client_created_at"`
+	OperationId     openapi_types.UUID        `json:"operation_id"`
+	Payload         CreativeEmptyTrashPayload `json:"payload"`
+}
+
 // ErrorDetails defines model for ErrorDetails.
 type ErrorDetails struct {
 	union json.RawMessage
@@ -6217,6 +6328,13 @@ type RestoreCreativeAssetRequest struct {
 	Payload         CreativeAssetStatePayload `json:"payload"`
 }
 
+// RestoreCreativeGroupDeletionRequest defines model for RestoreCreativeGroupDeletionRequest.
+type RestoreCreativeGroupDeletionRequest struct {
+	ClientCreatedAt time.Time            `json:"client_created_at"`
+	OperationId     openapi_types.UUID   `json:"operation_id"`
+	Payload         CreativeEmptyPayload `json:"payload"`
+}
+
 // RestoreCreativeProjectRequest defines model for RestoreCreativeProjectRequest.
 type RestoreCreativeProjectRequest struct {
 	ClientCreatedAt time.Time                   `json:"client_created_at"`
@@ -6825,6 +6943,11 @@ type CreateCreativeGroupParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// RestoreCreativeGroupDeletionParams defines parameters for RestoreCreativeGroupDeletion.
+type RestoreCreativeGroupDeletionParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // DeleteCreativeGroupParams defines parameters for DeleteCreativeGroup.
 type DeleteCreativeGroupParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -6842,8 +6965,10 @@ type RenameCreativeGroupParams struct {
 
 // ListCreativeAssetsParams defines parameters for ListCreativeAssets.
 type ListCreativeAssetsParams struct {
-	Limit              *int                             `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor             *string                          `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// View recent 为最近 7 天内添加、未进回收站的素材
 	View               *ListCreativeAssetsParamsView    `form:"view,omitempty" json:"view,omitempty"`
 	GroupId            *string                          `form:"group_id,omitempty" json:"group_id,omitempty"`
 	IncludeDescendants *bool                            `form:"include_descendants,omitempty" json:"include_descendants,omitempty"`
@@ -6851,7 +6976,18 @@ type ListCreativeAssetsParams struct {
 	Q                  *string                          `form:"q,omitempty" json:"q,omitempty"`
 	TagIds             *[]string                        `form:"tag_ids,omitempty" json:"tag_ids,omitempty"`
 	TagMode            *ListCreativeAssetsParamsTagMode `form:"tag_mode,omitempty" json:"tag_mode,omitempty"`
-	Sort               *ListCreativeAssetsParamsSort    `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// Sort name 按规范化标题（NFKC、小写、去首尾空白）的 Unicode 码位排序，同名按 id；rating 评分高的在前，未评分的排最后，同分按添加时间倒序、再按 id
+	Sort *ListCreativeAssetsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+
+	// MinRating 评分不低于此值；不能与 unrated 同时出现
+	MinRating *float64 `form:"min_rating,omitempty" json:"min_rating,omitempty"`
+
+	// Unrated 只要未评分的素材
+	Unrated *bool `form:"unrated,omitempty" json:"unrated,omitempty"`
+
+	// IncludeFacets 只在首屏（无 cursor）允许；响应带上与 items、total_count 同一快照的 facets，带 cursor 时返回 400
+	IncludeFacets *bool `form:"include_facets,omitempty" json:"include_facets,omitempty"`
 }
 
 // ListCreativeAssetsParamsView defines parameters for ListCreativeAssets.
@@ -6878,6 +7014,11 @@ type OrganizeCreativeAssetsParams struct {
 
 // BatchPurgeCreativeAssetsParams defines parameters for BatchPurgeCreativeAssets.
 type BatchPurgeCreativeAssetsParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// BatchRateCreativeAssetsParams defines parameters for BatchRateCreativeAssets.
+type BatchRateCreativeAssetsParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -6983,6 +7124,11 @@ type RevokeCreativeEgressConsentParams struct {
 
 // SaveCreativeLibrarySettingsParams defines parameters for SaveCreativeLibrarySettings.
 type SaveCreativeLibrarySettingsParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// EmptyCreativeTrashParams defines parameters for EmptyCreativeTrash.
+type EmptyCreativeTrashParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -7467,6 +7613,9 @@ type SupplementCreativeAgentRunJSONRequestBody = CreativeAgentSupplementRequest
 // CreateCreativeGroupJSONRequestBody defines body for CreateCreativeGroup for application/json ContentType.
 type CreateCreativeGroupJSONRequestBody = CreateCreativeGroupRequest
 
+// RestoreCreativeGroupDeletionJSONRequestBody defines body for RestoreCreativeGroupDeletion for application/json ContentType.
+type RestoreCreativeGroupDeletionJSONRequestBody = RestoreCreativeGroupDeletionRequest
+
 // DeleteCreativeGroupJSONRequestBody defines body for DeleteCreativeGroup for application/json ContentType.
 type DeleteCreativeGroupJSONRequestBody = DeleteCreativeGroupRequest
 
@@ -7484,6 +7633,9 @@ type OrganizeCreativeAssetsJSONRequestBody = OrganizeCreativeAssetsRequest
 
 // BatchPurgeCreativeAssetsJSONRequestBody defines body for BatchPurgeCreativeAssets for application/json ContentType.
 type BatchPurgeCreativeAssetsJSONRequestBody = BatchPurgeCreativeAssetsRequest
+
+// BatchRateCreativeAssetsJSONRequestBody defines body for BatchRateCreativeAssets for application/json ContentType.
+type BatchRateCreativeAssetsJSONRequestBody = BatchRateCreativeAssetsRequest
 
 // BatchRestoreCreativeAssetsJSONRequestBody defines body for BatchRestoreCreativeAssets for application/json ContentType.
 type BatchRestoreCreativeAssetsJSONRequestBody = BatchRestoreCreativeAssetsRequest
@@ -7535,6 +7687,9 @@ type RevokeCreativeEgressConsentJSONRequestBody = RevokeCreativeEgressConsentReq
 
 // SaveCreativeLibrarySettingsJSONRequestBody defines body for SaveCreativeLibrarySettings for application/json ContentType.
 type SaveCreativeLibrarySettingsJSONRequestBody = SaveCreativeLibrarySettingsRequest
+
+// EmptyCreativeTrashJSONRequestBody defines body for EmptyCreativeTrash for application/json ContentType.
+type EmptyCreativeTrashJSONRequestBody = EmptyCreativeTrashRequest
 
 // IssueCreativeMediaTicketJSONRequestBody defines body for IssueCreativeMediaTicket for application/json ContentType.
 type IssueCreativeMediaTicketJSONRequestBody = CreativeMediaTicketRequest
@@ -9134,6 +9289,9 @@ type ServerInterface interface {
 	// (POST /creative/asset-groups)
 	CreateCreativeGroup(c *gin.Context, params CreateCreativeGroupParams)
 
+	// (POST /creative/asset-groups/deletions/{deletion_id}/restore)
+	RestoreCreativeGroupDeletion(c *gin.Context, deletionId string, params RestoreCreativeGroupDeletionParams)
+
 	// (POST /creative/asset-groups/{id}/delete)
 	DeleteCreativeGroup(c *gin.Context, id string, params DeleteCreativeGroupParams)
 
@@ -9154,6 +9312,9 @@ type ServerInterface interface {
 
 	// (POST /creative/assets/batch-purge)
 	BatchPurgeCreativeAssets(c *gin.Context, params BatchPurgeCreativeAssetsParams)
+
+	// (POST /creative/assets/batch-rate)
+	BatchRateCreativeAssets(c *gin.Context, params BatchRateCreativeAssetsParams)
 
 	// (POST /creative/assets/batch-restore)
 	BatchRestoreCreativeAssets(c *gin.Context, params BatchRestoreCreativeAssetsParams)
@@ -9244,6 +9405,12 @@ type ServerInterface interface {
 
 	// (POST /creative/library-settings)
 	SaveCreativeLibrarySettings(c *gin.Context, params SaveCreativeLibrarySettingsParams)
+
+	// (GET /creative/library-usage)
+	GetCreativeLibraryUsage(c *gin.Context)
+
+	// (POST /creative/library/empty-trash)
+	EmptyCreativeTrash(c *gin.Context, params EmptyCreativeTrashParams)
 	// 为浏览器媒体标签签发短期访问票据；实际读取时再次核验用途
 	// (POST /creative/media-access-tickets)
 	IssueCreativeMediaTicket(c *gin.Context)
@@ -10342,6 +10509,60 @@ func (siw *ServerInterfaceWrapper) CreateCreativeGroup(c *gin.Context) {
 	siw.Handler.CreateCreativeGroup(c, params)
 }
 
+// RestoreCreativeGroupDeletion operation middleware
+func (siw *ServerInterfaceWrapper) RestoreCreativeGroupDeletion(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "deletion_id" -------------
+	var deletionId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "deletion_id", c.Param("deletion_id"), &deletionId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter deletion_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RestoreCreativeGroupDeletionParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.RestoreCreativeGroupDeletion(c, deletionId, params)
+}
+
 // DeleteCreativeGroup operation middleware
 func (siw *ServerInterfaceWrapper) DeleteCreativeGroup(c *gin.Context) {
 
@@ -10595,6 +10816,30 @@ func (siw *ServerInterfaceWrapper) ListCreativeAssets(c *gin.Context) {
 		return
 	}
 
+	// ------------- Optional query parameter "min_rating" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "min_rating", c.Request.URL.Query(), &params.MinRating, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter min_rating: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "unrated" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "unrated", c.Request.URL.Query(), &params.Unrated, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter unrated: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "include_facets" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_facets", c.Request.URL.Query(), &params.IncludeFacets, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter include_facets: %w", err), http.StatusBadRequest)
+		return
+	}
+
 	for _, middleware := range siw.HandlerMiddlewares {
 		middleware(c)
 		if c.IsAborted() {
@@ -10738,6 +10983,51 @@ func (siw *ServerInterfaceWrapper) BatchPurgeCreativeAssets(c *gin.Context) {
 	}
 
 	siw.Handler.BatchPurgeCreativeAssets(c, params)
+}
+
+// BatchRateCreativeAssets operation middleware
+func (siw *ServerInterfaceWrapper) BatchRateCreativeAssets(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params BatchRateCreativeAssetsParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.BatchRateCreativeAssets(c, params)
 }
 
 // BatchRestoreCreativeAssets operation middleware
@@ -11999,6 +12289,66 @@ func (siw *ServerInterfaceWrapper) SaveCreativeLibrarySettings(c *gin.Context) {
 	}
 
 	siw.Handler.SaveCreativeLibrarySettings(c, params)
+}
+
+// GetCreativeLibraryUsage operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeLibraryUsage(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeLibraryUsage(c)
+}
+
+// EmptyCreativeTrash operation middleware
+func (siw *ServerInterfaceWrapper) EmptyCreativeTrash(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EmptyCreativeTrashParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.EmptyCreativeTrash(c, params)
 }
 
 // IssueCreativeMediaTicket operation middleware
@@ -14825,6 +15175,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/agent/skills/:id/versions/:version_id", wrapper.GetCreativeAgentSkillVersion)
 	router.GET(options.BaseURL+"/creative/asset-groups", wrapper.ListCreativeGroups)
 	router.POST(options.BaseURL+"/creative/asset-groups", wrapper.CreateCreativeGroup)
+	router.POST(options.BaseURL+"/creative/asset-groups/deletions/:deletion_id/restore", wrapper.RestoreCreativeGroupDeletion)
 	router.POST(options.BaseURL+"/creative/asset-groups/:id/delete", wrapper.DeleteCreativeGroup)
 	router.POST(options.BaseURL+"/creative/asset-groups/:id/move", wrapper.MoveCreativeGroup)
 	router.POST(options.BaseURL+"/creative/asset-groups/:id/rename", wrapper.RenameCreativeGroup)
@@ -14832,6 +15183,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets", wrapper.CreateCreativeTextAsset)
 	router.POST(options.BaseURL+"/creative/assets/batch-organize", wrapper.OrganizeCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-purge", wrapper.BatchPurgeCreativeAssets)
+	router.POST(options.BaseURL+"/creative/assets/batch-rate", wrapper.BatchRateCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-restore", wrapper.BatchRestoreCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
@@ -14862,6 +15214,8 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/generation/catalog", wrapper.GetCreativeGenerationCatalog)
 	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/library-settings", wrapper.SaveCreativeLibrarySettings)
+	router.GET(options.BaseURL+"/creative/library-usage", wrapper.GetCreativeLibraryUsage)
+	router.POST(options.BaseURL+"/creative/library/empty-trash", wrapper.EmptyCreativeTrash)
 	router.POST(options.BaseURL+"/creative/media-access-tickets", wrapper.IssueCreativeMediaTicket)
 	router.GET(options.BaseURL+"/creative/media-capabilities", wrapper.GetCreativeMediaCapabilities)
 	router.PUT(options.BaseURL+"/creative/media-parts", wrapper.PutCreativeMediaPart)

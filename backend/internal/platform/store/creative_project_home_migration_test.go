@@ -10,6 +10,7 @@ import (
 
 func rollbackProjectHome(t *testing.T, url string) {
 	t.Helper()
+	rollbackAssetLibrary(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-project-home", err)
 	}

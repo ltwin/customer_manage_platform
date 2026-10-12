@@ -80,9 +80,11 @@ paths:
           type: string
           enum:
           - all
+          - recent
           - favorites
           - unclassified
           - trash
+        description: recent 为最近 7 天内添加、未进回收站的素材
       - name: group_id
         in: query
         required: false
@@ -137,6 +139,30 @@ paths:
           - recent
           - oldest
           - name
+          - rating
+        description: name 按规范化标题（NFKC、小写、去首尾空白）的 Unicode 码位排序，同名按 id；rating 评分高的在前，未评分的排最后，同分按添加时间倒序、再按 id
+      - name: min_rating
+        in: query
+        required: false
+        description: 评分不低于此值；不能与 unrated 同时出现
+        schema:
+          type: number
+          format: double
+          minimum: 0.5
+          maximum: 5
+          multipleOf: 0.5
+      - name: unrated
+        in: query
+        required: false
+        description: 只要未评分的素材
+        schema:
+          type: boolean
+      - name: include_facets
+        in: query
+        required: false
+        description: 只在首屏（无 cursor）允许；响应带上与 items、total_count 同一快照的 facets，带 cursor 时返回 400
+        schema:
+          type: boolean
       responses:
         '200':
           description: 成功
@@ -5185,6 +5211,7 @@ paths:
   /creative/asset-groups/{id}/delete:
     post:
       operationId: deleteCreativeGroup
+      description: 删除分组；子组提升到上一级，素材不删除。返回的 deletion_id 可在 30 天内撤销这次删除
       tags:
       - creative-foundation
       responses:
@@ -5193,7 +5220,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreativeLibraryResult'
+                $ref: '#/components/schemas/CreativeGroupDeleteResult'
         default:
           description: 请求失败
           content:
@@ -5630,6 +5657,126 @@ paths:
         schema:
           type: string
           format: uuid
+  /creative/assets/batch-rate:
+    post:
+      operationId: batchRateCreativeAssets
+      description: 逐项写入评分（0.5–5，步长 0.5；null 清除）。整批要么全部成功，要么一项都不写：任何一项 revision 不一致返回 409；回收站里的素材返回 409 creative_asset_trashed
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeAssetRateResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchRateCreativeAssetsRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/library/empty-trash:
+    post:
+      operationId: emptyCreativeTrash
+      description: 永久删除回收站里的全部素材。先锁资料库根再核对 expected_library_revision，不一致返回 409、一项都不删；画布节点持有的内容不受影响
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeEmptyTrashResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyCreativeTrashRequest'
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/asset-groups/deletions/{deletion_id}/restore:
+    post:
+      operationId: restoreCreativeGroupDeletion
+      description: 撤销一次分组删除（30 天内）：恢复分组、被提升的子组和当时的成员关系（与现有归类取并集，已永久删除的素材跳过）。删除之后分组结构有过变化，或这次删除已经撤销过，返回 409；有素材期间已归入 100 个分组、恢复会超出上限时返回 409 creative_group_restore_limit，什么都不改，撤销机会保留
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreCreativeGroupDeletionRequest'
+      parameters:
+      - name: deletion_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /creative/library-usage:
+    get:
+      operationId: getCreativeLibraryUsage
+      description: 资产库素材数（不含回收站），以及整个创作空间的媒体占用与上限，口径和上传配额一致
+      tags:
+      - creative-foundation
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryUsage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
 components:
   securitySchemes:
     bearerAuth:
@@ -5857,6 +6004,7 @@ components:
       required:
       - items
       - hierarchy_revision
+      - asset_counts
       properties:
         items:
           type: array
@@ -5864,6 +6012,12 @@ components:
             $ref: '#/components/schemas/CreativeAssetGroup'
         hierarchy_revision:
           $ref: '#/components/schemas/CreativeRevision'
+        asset_counts:
+          type: object
+          description: 每个分组不在回收站里的素材数；顶层分组包含子组，同一素材只算一次
+          additionalProperties:
+            type: integer
+            format: int64
     CreativeTagPage:
       type: object
       additionalProperties: false
@@ -6609,6 +6763,7 @@ components:
       - purge_after
       - group_ids
       - tag_ids
+      - rating
       properties:
         id:
           type: string
@@ -6616,6 +6771,8 @@ components:
           type: string
         description:
           type: string
+        rating:
+          $ref: '#/components/schemas/CreativeAssetRating'
         kind:
           type: string
           enum:
@@ -6677,6 +6834,222 @@ components:
           format: int64
         library_revision:
           $ref: '#/components/schemas/CreativeRevision'
+        facets:
+          $ref: '#/components/schemas/CreativeAssetFacets'
+    BatchRateCreativeAssetsRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetRatePayload'
+    EmptyCreativeTrashRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeEmptyTrashPayload'
+    RestoreCreativeGroupDeletionRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeEmptyPayload'
+    CreativeAssetRating:
+      type: number
+      format: double
+      minimum: 0.5
+      maximum: 5
+      multipleOf: 0.5
+      nullable: true
+      description: 半星评分；null 表示未评分，不使用 0
+    CreativeAssetRatePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - asset_id
+            - expected_revision
+            - rating
+            properties:
+              asset_id:
+                type: string
+                minLength: 1
+              expected_revision:
+                $ref: '#/components/schemas/CreativeRevision'
+              rating:
+                $ref: '#/components/schemas/CreativeAssetRating'
+    CreativeAssetRateResult:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - library_revision
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - id
+            - revision
+            properties:
+              id:
+                type: string
+              revision:
+                $ref: '#/components/schemas/CreativeRevision'
+        library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeEmptyTrashPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_library_revision
+      properties:
+        expected_library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeEmptyTrashResult:
+      type: object
+      additionalProperties: false
+      required:
+      - purged_count
+      - library_revision
+      properties:
+        purged_count:
+          type: integer
+          minimum: 0
+        library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+    CreativeEmptyPayload:
+      type: object
+      additionalProperties: false
+    CreativeGroupDeleteResult:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - revision
+      - hierarchy_revision
+      - library_revision
+      - deletion_id
+      properties:
+        id:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        hierarchy_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        library_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        deletion_id:
+          type: string
+          description: 撤销这次删除时使用，30 天内有效
+    CreativeLibraryUsage:
+      type: object
+      additionalProperties: false
+      required:
+      - asset_count
+      - stored_bytes
+      - limit_bytes
+      properties:
+        asset_count:
+          type: integer
+          format: int64
+          minimum: 0
+        stored_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+        limit_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+    CreativeAssetFacets:
+      type: object
+      additionalProperties: false
+      required:
+      - kinds
+      - tags
+      description: 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
+      properties:
+        kinds:
+          type: object
+          additionalProperties: false
+          required:
+          - text
+          - link
+          - image
+          - video
+          - audio
+          properties:
+            text:
+              type: integer
+              format: int64
+            link:
+              type: integer
+              format: int64
+            image:
+              type: integer
+              format: int64
+            video:
+              type: integer
+              format: int64
+            audio:
+              type: integer
+              format: int64
+        tags:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - tag_id
+            - count
+            properties:
+              tag_id:
+                type: string
+              count:
+                type: integer
+                format: int64
     CreativeAssetCreatePayload:
       type: object
       additionalProperties: false

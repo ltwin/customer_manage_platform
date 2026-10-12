@@ -32,6 +32,8 @@ type LibraryResult struct {
 	Revision          creativeops.Revision `json:"revision"`
 	HierarchyRevision creativeops.Revision `json:"hierarchy_revision"`
 	LibraryRevision   creativeops.Revision `json:"library_revision"`
+	// DeletionID is set by a group delete; it names the snapshot an undo restores.
+	DeletionID string `json:"deletion_id,omitempty"`
 }
 type Group struct {
 	ID       string               `json:"id"`
@@ -43,6 +45,9 @@ type Group struct {
 type GroupPage struct {
 	Items             []Group              `json:"items"`
 	HierarchyRevision creativeops.Revision `json:"hierarchy_revision"`
+	// AssetCounts counts assets outside the recycle bin; a root group includes
+	// its children and counts an asset filed in both only once.
+	AssetCounts map[string]int64 `json:"asset_counts"`
 }
 type GroupInput struct {
 	ID                string               `json:"group_id"`
@@ -55,6 +60,15 @@ type GroupInput struct {
 
 func validName(s string) bool { return strings.TrimSpace(s) != "" && utf8.RuneCountInString(s) <= 80 }
 func libraryRun[T any](ctx context.Context, sc store.AccountScope, c creativeops.Command, key string, validate func(T) error, apply func(context.Context, store.TxAccountScope, T) (LibraryResult, error)) (creativeops.Receipt, error) {
+	return libraryCommand(ctx, sc, c, key, validate, func(ctx context.Context, tx store.TxAccountScope, v T) (LibraryResult, string, creativeops.Revision, error) {
+		r, err := apply(ctx, tx, v)
+		return r, r.ID, r.Revision, err
+	})
+}
+
+// libraryCommand runs a library write under the root lock; apply returns the
+// response body plus the receipt's result identity.
+func libraryCommand[T, R any](ctx context.Context, sc store.AccountScope, c creativeops.Command, key string, validate func(T) error, apply func(context.Context, store.TxAccountScope, T) (R, string, creativeops.Revision, error)) (creativeops.Receipt, error) {
 	return (creativeops.Executor{}).Run(ctx, sc, creativeops.Operation{Key: "library." + key, Capability: "manual_write", Validate: func(raw json.RawMessage) error {
 		var v T
 		if err := creativeops.Decode(raw, &v); err != nil {
@@ -69,7 +83,7 @@ func libraryRun[T any](ctx context.Context, sc store.AccountScope, c creativeops
 		if _, err := lockLibrary(ctx, tx); err != nil {
 			return creativeops.Outcome{}, err
 		}
-		result, err := apply(ctx, tx, v)
+		result, id, revision, err := apply(ctx, tx, v)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
@@ -77,7 +91,7 @@ func libraryRun[T any](ctx context.Context, sc store.AccountScope, c creativeops
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		return creativeops.Outcome{HTTPStatus: 200, Response: body, ResultKind: "library", ResultID: &result.ID, ResultRevision: &result.Revision}, nil
+		return creativeops.Outcome{HTTPStatus: 200, Response: body, ResultKind: "library", ResultID: &id, ResultRevision: &revision}, nil
 	}}, c)
 }
 func readSettings(ctx context.Context, tx libraryReader) (Settings, error) {
@@ -150,10 +164,48 @@ func ListGroups(ctx context.Context, sc store.AccountScope) (GroupPage, error) {
 			return err
 		}
 		p.HierarchyRevision = s.HierarchyRevision
-		p.Items, err = readGroups(ctx, tx)
+		if p.Items, err = readGroups(ctx, tx); err != nil {
+			return err
+		}
+		p.AssetCounts, err = groupCounts(ctx, tx, p.Items)
 		return err
 	})
 	return p, err
+}
+
+func groupCounts(ctx context.Context, tx libraryReader, groups []Group) (map[string]int64, error) {
+	root := make(map[string]string, len(groups))
+	for _, g := range groups {
+		root[g.ID] = g.ID
+		if g.ParentID != nil {
+			root[g.ID] = *g.ParentID
+		}
+	}
+	rows, err := tx.Query(ctx, "creative_asset_group_members", "asset_id,group_id", "asset_id IN (SELECT id FROM creative_assets WHERE account_id=$1 AND deleted_at IS NULL)")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := make(map[string]int64, len(groups))
+	underRoot := map[[2]string]bool{}
+	for _, g := range groups {
+		counts[g.ID] = 0
+	}
+	for rows.Next() {
+		var asset, group string
+		if err := rows.Scan(&asset, &group); err != nil {
+			return nil, err
+		}
+		r := root[group]
+		if r != group {
+			counts[group]++
+		}
+		if key := [2]string{r, asset}; r != "" && !underRoot[key] {
+			underRoot[key] = true
+			counts[r]++
+		}
+	}
+	return counts, rows.Err()
 }
 func parentKey(p *string) string {
 	if p == nil {
@@ -188,6 +240,7 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 		if err := hierarchy(ctx, tx, v.HierarchyRevision); err != nil {
 			return LibraryResult{}, err
 		}
+		var deletion groupDeletion
 		original := map[string]Group{}
 		for id, g := range byID {
 			original[id] = g
@@ -271,6 +324,9 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 			target.Name = v.Name
 			byID[target.ID] = target
 		} else if action == "delete" {
+			if deletion, err = snapshotGroup(ctx, tx, target, groups); err != nil {
+				return LibraryResult{}, err
+			}
 			if err := removeRelations(ctx, tx, "creative_asset_group_members", "group_id", target.ID); err != nil {
 				return LibraryResult{}, err
 			}
@@ -318,7 +374,12 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 		if g, ok := byID[target.ID]; ok {
 			rev = g.Revision
 		}
-		return libraryResult(ctx, tx, target.ID, rev, changed, true)
+		result, err := libraryResult(ctx, tx, target.ID, rev, changed, true)
+		if err != nil || action != "delete" {
+			return result, err
+		}
+		result.DeletionID, err = deletion.save(ctx, tx, result.HierarchyRevision)
+		return result, err
 	})
 }
 

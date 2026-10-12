@@ -60,13 +60,13 @@
 |---|---|---|---|---|---|
 | [V6-014 · 资产库最近使用视图](items/V6-014.md) | P0 | 交付 | 待设计 | —（D-03） | V6-015 已暂缓，本条单独 design |
 | [V6-015 · 资产库本画布视图与使用标记](items/V6-015.md) | P0 | 交付 | 暂缓 | — | 2026-10-07 owner 决定不做：资产库不记录资产是否已在画布上，节点也不记录来源资产。迁移时带入的「已在画布上」角标与定位已一并删除 |
-| [V6-016 · 资产库条件计数与中文排序](items/V6-016.md) | P0 | 交付 | 设计中 | — | 并入第 2 期（owner 2026-10-11）：标签计数随列表首屏返回，名称排序沿用码位规则；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
+| [V6-016 · 资产库条件计数与中文排序](items/V6-016.md) | P0 | 交付 | 实现中 | — | 并入第 2 期（owner 2026-10-11）：标签计数随列表首屏返回，名称排序沿用码位规则；后端第 1 步已实现，AC-02 已满足；[design](../../features/2026-10-11-asset-library/asset-library-design.md) · [verification](../../features/2026-10-11-asset-library/asset-library-verification.md) |
 | [V6-017 · 分组重名与校验失败保留输入](items/V6-017.md) | P0 | 交付 | 已完成 | — | 轻量修复（无 design）· 实现与验证：[fix-note](../../issues/2026-10-05-library-group-name-input-kept/library-group-name-input-kept-fix-note.md) |
-| [V6-018 · 删除资产分组的可恢复撤销](items/V6-018.md) | P0 | 交付 | 设计中 | — | 并入第 2 期（owner 2026-10-11）：删除时记快照，提供恢复接口；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
+| [V6-018 · 删除资产分组的可恢复撤销](items/V6-018.md) | P0 | 交付 | 实现中 | — | 并入第 2 期（owner 2026-10-11）：删除时记快照，提供恢复接口；后端第 1 步已实现，AC-04 已满足，界面随 067.2；[design](../../features/2026-10-11-asset-library/asset-library-design.md) · [verification](../../features/2026-10-11-asset-library/asset-library-verification.md) |
 | [V6-019 · 资产浏览与画布互操作验收](items/V6-019.md) | P1 | 验证 | 待验证 | — | — |
-| [V6-020 · 回收站与到期清理验收](items/V6-020.md) | P1 | 验证 | 待验证 | — | 随第 2 期 067.3 验收（owner 2026-10-11）；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
+| [V6-020 · 回收站与到期清理验收](items/V6-020.md) | P1 | 验证 | 待验证 | — | 随第 2 期 067.3 验收（owner 2026-10-11）；2026-10-12 发现没有到期清理任务（AC-02 缺口），由 067.3 补 `library.trash_expiry`（design §3.7）；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
 | [V6-057 · 资产库浏览与入库基线回归验收](items/V6-057.md) | P0 | 验证 | 已完成 | — | 9 条 AC 均已满足，无需改代码；帮助文案移交 V6-045 · [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md) |
-| [V6-060 · 资产库类型分段与缩略形态](items/V6-060.md) | P0 | 交付 | 设计中 | — | 并入第 2 期（owner 2026-10-11）：卡片资产库页与抽屉共用；音频卡片先用装饰条，走查认可后作为等效形态，真实波形由 V6-074 补（design D-2，owner 2026-10-12）；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
+| [V6-060 · 资产库类型分段与缩略形态](items/V6-060.md) | P0 | 交付 | 待实现 | — | 并入第 2 期（owner 2026-10-11）：卡片资产库页与抽屉共用；音频卡片先用装饰条，走查认可后作为等效形态，真实波形由 V6-074 补（design D-2，owner 2026-10-12）；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
 
 ### 节点生成
 
@@ -147,10 +147,10 @@
 | [V6-063 · 继续创作与项目封面缩影](items/V6-063.md) | P0 | 交付 | 待验收 | —（白点随 V6-031/033） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；项目列表补封面摘要与进行中状态；AC-01/03/04 已满足，AC-02 白点的真实数据随 V6-031/033 验收 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
 | [V6-064 · 项目页搜索、排序与归档撤销](items/V6-064.md) | P0 | 交付 | 已完成 | —（复制项目 V6-050） | 第 1 期；[design](../../features/2026-10-11-creative-home/creative-home-design.md)；改名规则 `projectName.ts` 与 V6-044 共用；运行入口统一检查项目归档（design §3.4）；「复制项目」菜单项随 V6-050 再加 · [验证记录](../../features/2026-10-11-creative-home/creative-home-verification.md) |
 | [V6-065 · 从模板开始](items/V6-065.md) | P1 | 交付 | 待设计 | V6-050（复制画布） | 模板单列：第 1 期之后、与 V6-050 的复制画布能力同批做；首批模板内容待 owner 拍板（D-06） |
-| [V6-066 · 共用查看浮窗](items/V6-066.md) | P0 | 交付 | 设计中 | V6-067（宿主）、V6-068（评分区块） | 第 2 期；「生成信息」区块随 V6-071 验收；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
-| [V6-067 · 资产库独立页面与整理操作](items/V6-067.md) | P0 | 交付 | 设计中 | V6-061 | 第 2 期；预拆 067.1 骨架与浏览筛选 / 067.2 选择与整理 / 067.3 导入与回收站；承接原候选 V6-054；画布抽屉保留，负责取用；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
-| [V6-068 · 素材评分（半星）](items/V6-068.md) | P0 | 交付 | 设计中 | — | 第 2 期；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
-| [V6-069 · 素材主色与画幅筛选](items/V6-069.md) | P1 | 交付 | 设计中 | — | 第 2 期；画幅用已有宽高，主色在入库时计算并回填；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
+| [V6-066 · 共用查看浮窗](items/V6-066.md) | P0 | 交付 | 待实现 | V6-067（宿主）、V6-068（评分区块） | 第 2 期；「生成信息」区块随 V6-071 验收；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
+| [V6-067 · 资产库独立页面与整理操作](items/V6-067.md) | P0 | 交付 | 实现中 | V6-061 | 第 2 期；预拆 067.1 骨架与浏览筛选 / 067.2 选择与整理 / 067.3 导入与回收站；承接原候选 V6-054；画布抽屉保留，负责取用；后端第 1 步（最近添加、分组计数、用量、清空回收站）已实现；[design](../../features/2026-10-11-asset-library/asset-library-design.md) · [verification](../../features/2026-10-11-asset-library/asset-library-verification.md) |
+| [V6-068 · 素材评分（半星）](items/V6-068.md) | P0 | 交付 | 实现中 | — | 第 2 期；后端第 1 步已实现，AC-05 已满足，界面随 067.1 / 067.2；[design](../../features/2026-10-11-asset-library/asset-library-design.md) · [verification](../../features/2026-10-11-asset-library/asset-library-verification.md) |
+| [V6-069 · 素材主色与画幅筛选](items/V6-069.md) | P1 | 交付 | 待实现 | — | 第 2 期；画幅用已有宽高，主色在入库时计算并回填；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
 | [V6-070 · 生成记录与存入资产库](items/V6-070.md) | P0 | 交付 | 待设计 | V6-066、V6-067 | 第 3 期 |
 | [V6-071 · 素材自带的生成信息](items/V6-071.md) | P1 | 交付 | 待设计 | V6-070 | 第 3 期 |
 | [V6-072 · 智能分组](items/V6-072.md) | P1 | 交付 | 待设计 | V6-068、V6-069 | 第 3 期 |

@@ -2168,6 +2168,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description 删除分组；子组提升到上一级，素材不删除。返回的 deletion_id 可在 30 天内撤销这次删除 */
         post: operations["deleteCreativeGroup"];
         delete?: never;
         options?: never;
@@ -2367,6 +2368,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/assets/batch-rate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 逐项写入评分（0.5–5，步长 0.5；null 清除）。整批要么全部成功，要么一项都不写：任何一项 revision 不一致返回 409；回收站里的素材返回 409 creative_asset_trashed */
+        post: operations["batchRateCreativeAssets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/library/empty-trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 永久删除回收站里的全部素材。先锁资料库根再核对 expected_library_revision，不一致返回 409、一项都不删；画布节点持有的内容不受影响 */
+        post: operations["emptyCreativeTrash"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/asset-groups/deletions/{deletion_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 撤销一次分组删除（30 天内）：恢复分组、被提升的子组和当时的成员关系（与现有归类取并集，已永久删除的素材跳过）。删除之后分组结构有过变化，或这次删除已经撤销过，返回 409；有素材期间已归入 100 个分组、恢复会超出上限时返回 409 creative_group_restore_limit，什么都不改，撤销机会保留 */
+        post: operations["restoreCreativeGroupDeletion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/library-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 资产库素材数（不含回收站），以及整个创作空间的媒体占用与上限，口径和上传配额一致 */
+        get: operations["getCreativeLibraryUsage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2400,6 +2469,10 @@ export interface components {
         CreativeGroupPage: {
             items: components["schemas"]["CreativeAssetGroup"][];
             hierarchy_revision: components["schemas"]["CreativeRevision"];
+            /** @description 每个分组不在回收站里的素材数；顶层分组包含子组，同一素材只算一次 */
+            asset_counts: {
+                [key: string]: number;
+            };
         };
         CreativeTagPage: {
             items: components["schemas"]["CreativeLibraryTag"][];
@@ -2678,6 +2751,7 @@ export interface components {
             id: string;
             title: string;
             description: string;
+            rating: components["schemas"]["CreativeAssetRating"];
             /** @enum {string} */
             kind: "text" | "link" | "image" | "video" | "audio";
             revision: components["schemas"]["CreativeRevision"];
@@ -2701,6 +2775,91 @@ export interface components {
             /** Format: int64 */
             total_count: number;
             library_revision: components["schemas"]["CreativeRevision"];
+            facets?: components["schemas"]["CreativeAssetFacets"];
+        };
+        BatchRateCreativeAssetsRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetRatePayload"];
+        };
+        EmptyCreativeTrashRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeEmptyTrashPayload"];
+        };
+        RestoreCreativeGroupDeletionRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeEmptyPayload"];
+        };
+        /**
+         * Format: double
+         * @description 半星评分；null 表示未评分，不使用 0
+         */
+        CreativeAssetRating: number | null;
+        CreativeAssetRatePayload: {
+            items: {
+                asset_id: string;
+                expected_revision: components["schemas"]["CreativeRevision"];
+                rating: components["schemas"]["CreativeAssetRating"];
+            }[];
+        };
+        CreativeAssetRateResult: {
+            items: {
+                id: string;
+                revision: components["schemas"]["CreativeRevision"];
+            }[];
+            library_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeEmptyTrashPayload: {
+            expected_library_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeEmptyTrashResult: {
+            purged_count: number;
+            library_revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeEmptyPayload: Record<string, never>;
+        CreativeGroupDeleteResult: {
+            id: string;
+            revision: components["schemas"]["CreativeRevision"];
+            hierarchy_revision: components["schemas"]["CreativeRevision"];
+            library_revision: components["schemas"]["CreativeRevision"];
+            /** @description 撤销这次删除时使用，30 天内有效 */
+            deletion_id: string;
+        };
+        CreativeLibraryUsage: {
+            /** Format: int64 */
+            asset_count: number;
+            /** Format: int64 */
+            stored_bytes: number;
+            /** Format: int64 */
+            limit_bytes: number;
+        };
+        /** @description 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出 */
+        CreativeAssetFacets: {
+            kinds: {
+                /** Format: int64 */
+                text: number;
+                /** Format: int64 */
+                link: number;
+                /** Format: int64 */
+                image: number;
+                /** Format: int64 */
+                video: number;
+                /** Format: int64 */
+                audio: number;
+            };
+            tags: {
+                tag_id: string;
+                /** Format: int64 */
+                count: number;
+            }[];
         };
         CreativeAssetCreatePayload: {
             title: string;
@@ -6532,14 +6691,22 @@ export interface operations {
             query?: {
                 limit?: number;
                 cursor?: string;
-                view?: "all" | "favorites" | "unclassified" | "trash";
+                /** @description recent 为最近 7 天内添加、未进回收站的素材 */
+                view?: "all" | "recent" | "favorites" | "unclassified" | "trash";
                 group_id?: string;
                 include_descendants?: boolean;
                 kind?: "text" | "link" | "image" | "video" | "audio";
                 q?: string;
                 tag_ids?: string[];
                 tag_mode?: "all" | "any";
-                sort?: "recent" | "oldest" | "name";
+                /** @description name 按规范化标题（NFKC、小写、去首尾空白）的 Unicode 码位排序，同名按 id；rating 评分高的在前，未评分的排最后，同分按添加时间倒序、再按 id */
+                sort?: "recent" | "oldest" | "name" | "rating";
+                /** @description 评分不低于此值；不能与 unrated 同时出现 */
+                min_rating?: number;
+                /** @description 只要未评分的素材 */
+                unrated?: boolean;
+                /** @description 只在首屏（无 cursor）允许；响应带上与 items、total_count 同一快照的 facets，带 cursor 时返回 400 */
+                include_facets?: boolean;
             };
             header?: never;
             path?: never;
@@ -11999,7 +12166,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreativeLibraryResult"];
+                    "application/json": components["schemas"]["CreativeGroupDeleteResult"];
                 };
             };
             /** @description 请求失败 */
@@ -12436,6 +12603,142 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeLibraryResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    batchRateCreativeAssets: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRateCreativeAssetsRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetRateResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    emptyCreativeTrash: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmptyCreativeTrashRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeEmptyTrashResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    restoreCreativeGroupDeletion: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                deletion_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RestoreCreativeGroupDeletionRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeLibraryResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeLibraryUsage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeLibraryUsage"];
                 };
             };
             /** @description 请求失败 */

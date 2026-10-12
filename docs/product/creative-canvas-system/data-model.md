@@ -140,10 +140,11 @@ LEFT JOIN 返回的修订缺失不能把节点静默过滤掉；读取侧呈现�
 | `creative_content_objects` | `content_revision_id, blob_id, role, position` | 逻辑引用 revision/blob；主键 `(account_id,content_revision_id,role,position)`；role 为 original/thumbnail/display/attachment 等 |
 | `creative_rights_declarations` | `id, source_class, rights_basis, source_url, attribution, evidence_summary, declared_at` | 声明版本不可改，修订通过 `rights_declaration_id` 显式关联；声明不是媒体所有权凭证 |
 | `creative_usage_grants` | `id, declaration_id, purpose, granted_at, revoked_at, evidence` | purpose 区分展示、AI 分析/外发、生成引用等；有效唯一声明/用途；读取/外发实时检查，不因快照绕过撤销 |
-| `creative_assets` | `id, kind, title, normalized_title, description, content_id, content_revision_id, is_favorite, source_url, deleted_at?, purge_after?, revision` | 逻辑引用 content/revision；普通查询 deleted_at IS NULL；purge_after NULL 表示不自动清理；标题可变不改内容修订 |
+| `creative_assets` | `id, kind, title, normalized_title, description, content_id, content_revision_id, is_favorite, rating_halves?, source_url, deleted_at?, purge_after?, revision` | 逻辑引用 content/revision；普通查询 deleted_at IS NULL；purge_after NULL 表示不自动清理；标题可变不改内容修订；rating_halves 为半星评分 1–10，NULL 表示未评分 |
 | `creative_library_settings` | `retention_days?, revision, hierarchy_revision, library_revision` | 每账号一行主键 account_id；retention_days 为 7/30/90 或 NULL；管理分组/标签结构的根锁及检索水位 |
 | `creative_asset_groups` | `id, parent_id?, name, position, revision` | 按 key 校验同账号 parent；父子循环服务校验；删组先提升子组，不级联删除子组 |
 | `creative_asset_group_members` | `asset_id, group_id, position` | 逻辑引用 asset/group；主键 `(account_id,asset_id,group_id)`；asset 软删除时关系保留，彻底删除时同事务显式删除成员关系 |
+| `creative_asset_group_deletions` | `id, group_snapshot JSONB, promoted_child_ids[], member_asset_ids[], hierarchy_revision_after, restored_at?, created_at` | 删除分组的撤销快照，保留 30 天。里面的分组、子组、素材 id 都是**历史来源 key**：允许失效，不算悬空引用；恢复时在资料库根锁下逐个核对存在与账号归属，已不存在的素材跳过，`hierarchy_revision` 与删除后记下的值不一致时整体拒绝 |
 | `creative_tags` | `id, name, normalized_name, color, category_id?, revision` | 同账号 normalized_name 唯一；颜色为校验格式；分类删除时同事务显式清空对应 category_id |
 | `creative_tag_categories` | `id, name, position, revision` | 一级标签分类，与资产组独立 |
 | `creative_asset_tags` | `asset_id, tag_id` | 主键三列含账号；删除标签时同事务显式删除标签关联，不删除资产；软删资产仍保留 |
@@ -193,6 +194,7 @@ CREATE INDEX tag_assets
 | `creative_blobs` | `id, storage_driver, bucket?, object_key, object_version?, sha256, byte_size, mime, width?, height?, duration_ms?, codec_metadata JSONB, state, verified_at, delete_after?` | 对象 location 唯一；size > 0；只有 ready 可绑定；同 checksum 不强制合并权利或来源，首期不做跨账号去重 |
 | `creative_upload_parts` | `upload_id, part_number, etag, byte_size` | 主键含账号/upload/part；服务端完成前核实分片清单；客户端回报不等于已验证内容 |
 | `creative_blob_read_pins` | `id, blob_id, owner_kind, expires_at` | 逻辑引用 blob；授权播放/下载和长处理的有期保留；过期回收，正常结束主动释放 |
+| `creative_blob_palettes` | `blob_id, algorithm, state, failure_reason, colors JSONB, computed_at` | 主键 `(account_id,blob_id)`；从 blob 派生的主色，**不是保留根**，媒体保留和清理判断都不读它。只在同账号、ready 的 blob 上写入（入库事务里写，或回填时在读取 pin 下写）；blob 最终删除时同事务删除对应行。一致性扫描：指向的 blob 不存在时记异常、不自动删除 |
 | `creative_revision_holds` | `id, content_revision_id, reason, expires_at?` | 逻辑引用 revision；迁移、备份等受信平台保留；不接受客户端任意创建永久 hold |
 | `creative_media_quotas` | `reserved_bytes, stored_bytes, limit_bytes, revision` | 每账号一行；预留/提交/释放同上传生命周期，超时对账修复，拒绝并发超配额 |
 
