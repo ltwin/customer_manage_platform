@@ -1,0 +1,38 @@
+/* Prototype adapter, scoped to the existing chat content; no Tailwind. */
+.adapted{min-width:0;--background:var(--s2);--foreground:var(--fg);--muted:var(--s3);--muted-foreground:var(--fg-2);--border:var(--line-2)}
+.adapted .cc-agent-text{min-width:0}
+.adapted .cc-agent-text :is(h1,h2,h3,h4,h5,h6){font-size:15px;line-height:1.5;margin:20px 0 10px;font-weight:600}
+.adapted .cc-agent-text>:first-child{margin-top:0}
+.adapted .cc-agent-text strong{color:var(--fg);font-weight:600}
+.adapted .cc-agent-text p{white-space:normal;margin:0 0 12px}
+.adapted blockquote{margin:12px 0;padding:2px 12px;border-left:2px solid var(--line-3);color:var(--fg-2)}
+.adapted blockquote p:last-child{margin-bottom:0}
+.adapted a{color:#a9cbef;text-underline-offset:3px}
+.adapted [data-streamdown="table-wrapper"]{overflow-x:auto;max-width:100%;margin:14px 0;border:1px solid var(--line-2);border-radius:8px}
+.adapted table{border-collapse:collapse;min-width:100%;font-size:12px}
+.adapted :is(th,td){padding:8px 10px;border-bottom:1px solid var(--line-2);vertical-align:top;min-width:70px;max-width:220px;overflow-wrap:anywhere}
+.adapted th{background:var(--s3);text-align:left;white-space:nowrap}
+.adapted [data-streamdown="code-block"]{border:1px solid var(--line-2);border-radius:8px;margin:12px 0;overflow:hidden}
+.adapted [data-streamdown="code-block-header"]{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;background:var(--s3);color:var(--fg-2)}
+.adapted [data-streamdown="code-block-actions"]{display:flex;align-items:center;gap:6px}
+.adapted [data-streamdown="code-block"] button{padding:4px 7px;background:var(--s2);border:1px solid var(--line-2)}
+.adapted [data-streamdown="code-block"] button svg{display:block;width:14px;height:14px}
+.adapted .cc-agent-text pre{margin:0;max-width:100%;white-space:pre;overflow:auto}
+.adapted .cc-agent-text pre code{padding:0;background:transparent;border-radius:0;white-space:pre}
+.adapted .katex-display{max-width:100%;overflow:auto hidden;padding:4px 0;margin:12px 0}
+.adapted .katex{font-size:1.12em}
+.adapted .diagram{margin:16px 0;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+.adapted .diagram-bar{display:flex;gap:6px;align-items:center;padding:8px 10px;background:var(--s3);font-size:11px;color:var(--fg-2)}
+.adapted .diagram-bar>span{margin-right:auto}
+.adapted .diagram-image{padding:12px;overflow:auto}
+.adapted .diagram-image svg{display:block;max-width:100%;height:auto;margin:auto}
+.adapted .diagram-fallback{padding:10px}
+.adapted .diagram-fallback small{color:var(--fg-2)}
+.adapted .diagram-fallback pre{margin-top:8px}
+.adapted dialog{background:var(--s2);color:var(--fg);border:1px solid var(--line-3);border-radius:12px;width:min(92vw,1000px);max-height:90vh;padding:16px}
+.adapted dialog::backdrop{background:#000b}
+.adapted dialog>div{overflow:auto;margin-top:12px}
+.adapted dialog svg{display:block;min-width:400px;margin:auto}
+.adapted :focus-visible{outline:2px solid #a9cbef;outline-offset:2px}
+.adapted [data-streamdown="code-block"] pre code>span{display:block}
+.adapted [data-streamdown="code-block"] pre code span[style]{color:var(--shiki-dark,var(--sdm-c,inherit));background-color:var(--shiki-dark-bg,transparent)}

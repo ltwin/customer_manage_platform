@@ -1,10 +1,4 @@
-import {
-  memo,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from 'react'
+import { memo, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
   Check,
   ChevronRight,
@@ -30,58 +24,10 @@ import {
 } from './agentBlocks.ts'
 import { AgentTurnContext, setOpen, useAgentRuns } from './agentRuns.ts'
 import { hasUnsettledCost, runFailure } from './agentState.ts'
-import { parseMarkdown, type Inline } from './markdown.ts'
+import { AgentMarkdown } from './AgentMarkdown.tsx'
 import { MediaFigure } from './MediaView.tsx'
 
 type Detail = components['schemas']['CreativeAgentBlockDetail']
-
-function inline(parts: Inline[]): ReactNode[] {
-  return parts.map((part, index) =>
-    typeof part === 'string' ? (
-      part
-    ) : 'code' in part ? (
-      <code key={index}>{part.code}</code>
-    ) : (
-      <b key={index}>{inline(part.bold)}</b>
-    ),
-  )
-}
-
-// Nodes are keyed by position: streamed text only grows, so a node keeps its
-// place and React updates the last one instead of rebuilding the answer.
-export const Markdown = memo(function Markdown({
-  source,
-  caret = false,
-}: {
-  source: string
-  caret?: boolean
-}) {
-  return (
-    <div className="cc-agent-text">
-      {parseMarkdown(source).map((node, index) => {
-        if (node.type === 'code') return <pre key={index}>{node.text}</pre>
-        if (node.type === 'heading') {
-          const Tag = `h${Math.min(node.level + 2, 6)}` as 'h3'
-          return <Tag key={index}>{inline(node.content)}</Tag>
-        }
-        if (node.type === 'list') {
-          const items = node.items.map((item, at) => (
-            <li key={at}>{inline(item)}</li>
-          ))
-          return node.ordered ? (
-            <ol key={index} start={node.start}>
-              {items}
-            </ol>
-          ) : (
-            <ul key={index}>{items}</ul>
-          )
-        }
-        return <p key={index}>{inline(node.content)}</p>
-      })}
-      {caret && <span className="cc-agent-caret" aria-hidden />}
-    </div>
-  )
-})
 
 function Chevron({ open }: { open: boolean }) {
   return (
@@ -110,14 +56,16 @@ function ThinkingRow({ block }: { block: AgentBlock }) {
         <span className="cc-agent-ico">
           <Lightbulb size={14} />
         </span>
-        <span className={`cc-agent-row-title${live ? ' cc-agent-shimmer' : ''}`}>
+        <span
+          className={`cc-agent-row-title${live ? ' cc-agent-shimmer' : ''}`}
+        >
           {live ? '思考中' : took ? `已思考 ${seconds(took)}` : '已思考'}
         </span>
         <Chevron open={open} />
       </button>
       {open ? (
         <div className="cc-agent-think">
-          <Markdown source={summary} />
+          <AgentMarkdown source={summary} streaming={live} />
         </div>
       ) : (
         live &&
@@ -209,10 +157,7 @@ function ToolRetry({ block }: { block: AgentBlock }) {
   const step = text(block.payload.step_id)
   if (!retry || !finished || !step) return null
   return (
-    <button
-      className="cc-agent-link"
-      onClick={() => retry(block.run_id, step)}
-    >
+    <button className="cc-agent-link" onClick={() => retry(block.run_id, step)}>
       重试这一步
     </button>
   )
@@ -301,9 +246,9 @@ export const BlockView = memo(function BlockView({
     body = <p className="cc-agent-peek">此内容需要更新页面后查看</p>
   else if (block.type === 'text')
     body = (
-      <Markdown
+      <AgentMarkdown
         source={text(block.payload.markdown)}
-        caret={block.state === 'streaming'}
+        streaming={block.state === 'streaming'}
       />
     )
   else if (block.type === 'thinking') body = <ThinkingRow block={block} />

@@ -1,101 +1,40 @@
-// The subset of Markdown the assistant writes: paragraphs, headings, lists,
-// fenced code, bold and inline code. It parses to a tree, never to HTML, and
-// it is re-run on every streamed chunk: a marker that has not closed yet stays
-// plain text until it does.
+import { marked } from 'marked'
 
-export type Inline = string | { bold: Inline[] } | { code: string }
-
-export type MarkdownNode =
-  | { type: 'paragraph'; content: Inline[] }
-  | { type: 'heading'; level: number; content: Inline[] }
-  | { type: 'list'; ordered: boolean; start: number; items: Inline[][] }
-  | { type: 'code'; text: string }
-
-export function parseInline(source: string): Inline[] {
-  const out: Inline[] = []
-  let plain = ''
-  const flush = () => {
-    if (plain) out.push(plain)
-    plain = ''
-  }
-  let i = 0
-  while (i < source.length) {
-    if (source[i] === '`') {
-      const end = source.indexOf('`', i + 1)
-      if (end > i + 1) {
-        flush()
-        out.push({ code: source.slice(i + 1, end) })
-        i = end + 1
-        continue
-      }
+// Inspect syntax for optional downloads; Marked never emits HTML here.
+export function markdownFeatures(source: string) {
+  let code = false
+  let hasCodeBlock = false
+  let math = false
+  marked.walkTokens(marked.lexer(source), (token) => {
+    if (token.type === 'code') {
+      hasCodeBlock = true
+      code ||= !!token.lang && token.lang.split(/\s/)[0] !== 'mermaid'
+    } else if (token.type === 'text') {
+      math ||= token.raw.includes('$$')
     }
-    if (source.startsWith('**', i)) {
-      const end = source.indexOf('**', i + 2)
-      if (end > i + 2) {
-        flush()
-        out.push({ bold: parseInline(source.slice(i + 2, end)) })
-        i = end + 2
-        continue
-      }
-    }
-    plain += source[i++]
-  }
-  flush()
-  return out
+  })
+  return { code, math, hasCodeBlock }
 }
 
-export function parseMarkdown(source: string): MarkdownNode[] {
-  const nodes: MarkdownNode[] = []
-  let paragraph: string[] = []
-  const flush = () => {
-    if (paragraph.length)
-      nodes.push({ type: 'paragraph', content: parseInline(paragraph.join('\n')) })
-    paragraph = []
-  }
-  const lines = source.split('\n')
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    if (line.trimStart().startsWith('```')) {
-      flush()
-      const code: string[] = []
-      // An unclosed fence is still code: the rest of the text is inside it.
-      for (i++; i < lines.length && !lines[i].trimStart().startsWith('```'); i++)
-        code.push(lines[i])
-      nodes.push({ type: 'code', text: code.join('\n') })
-      continue
-    }
-    const heading = /^(#{1,4})\s+(.+)$/.exec(line)
-    if (heading) {
-      flush()
-      nodes.push({
-        type: 'heading',
-        level: heading[1].length,
-        content: parseInline(heading[2]),
-      })
-      continue
-    }
-    const item = /^\s*(?:(\d+)\.|[-*])\s+(.*)$/.exec(line)
-    if (item) {
-      flush()
-      const ordered = item[1] !== undefined
-      const last = nodes.at(-1)
-      if (last?.type === 'list' && last.ordered === ordered)
-        last.items.push(parseInline(item[2]))
-      else
-        nodes.push({
-          type: 'list',
-          ordered,
-          start: ordered ? Number(item[1]) : 1,
-          items: [parseInline(item[2])],
-        })
-      continue
-    }
-    if (!line.trim()) {
-      flush()
-      continue
-    }
-    paragraph.push(line)
-  }
-  flush()
-  return nodes
+// Marked removes list/blockquote containers from code tokens. Count code nodes
+// before the HAST offset to distinguish identical diagrams in one parent block.
+function codeBlocks(source: string): string[] {
+  const blocks: string[] = []
+  marked.walkTokens(marked.lexer(source), (token) => {
+    if (token.type === 'code') blocks.push(token.raw)
+  })
+  return blocks
+}
+
+export function closedCodeFence(source: string, offset = 0): boolean {
+  const index = offset ? codeBlocks(source.slice(0, offset)).length : 0
+  const raw = codeBlocks(source)[index]
+  if (!raw) return false
+  const lines = raw.replaceAll('\r\n', '\n').trimEnd().split('\n')
+  if (lines.length < 2) return false
+  const fence = /^ {0,3}(`{3,}|~{3,})/.exec(lines[0])?.[1]
+  if (!fence) return false
+  return new RegExp(`^ {0,3}${fence[0]}{${fence.length},}[ \t]*$`).test(
+    lines.at(-1) ?? '',
+  )
 }

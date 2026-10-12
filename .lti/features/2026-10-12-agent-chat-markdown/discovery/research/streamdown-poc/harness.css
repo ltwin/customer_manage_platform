@@ -1,0 +1,4 @@
+*{box-sizing:border-box}body{margin:0}.intro{padding:48px;max-width:calc(100vw - 440px)}.intro h1{font-size:28px}.intro small{color:var(--run)}.intro p{color:var(--fg-2)}button{font:inherit;padding:6px 10px;background:#252527;border:1px solid #444;border-radius:6px;color:#ededee;cursor:pointer}a{color:#bbd9ff}.cc-agent-panel{top:24px;bottom:24px}.cc-agent-panel footer{padding:12px 16px;color:var(--fg-3);border-top:1px solid var(--line)}.cc-agent-history{padding-top:18px}.cc-agent-panel header{flex:none}.cc-agent-panel{overflow:hidden}
+@media(max-width:700px){.intro{display:none}.cc-agent-panel{top:16px;bottom:16px;right:16px}}
+
+.cc-agent-history{overflow-anchor:none}

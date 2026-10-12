@@ -1,0 +1,18 @@
+{
+  "uid": "68c5ea77-722b-420d-afc5-e16e9b35a86e",
+  "revision": 1,
+  "id": "agent-chat-markdown",
+  "title": "Agent 助手 chatbox Markdown 渲染增强：表格、公式、Mermaid 与流式输出",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-12T10:15:45.982Z",
+  "updatedAt": "2026-10-12T10:32:32.788Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

@@ -14,10 +14,7 @@ import {
   type RunView,
 } from '../src/creative-canvas/editor/agentBlocks.ts'
 import type { AgentRun } from '../src/creative-canvas/editor/agentState.ts'
-import {
-  parseInline,
-  parseMarkdown,
-} from '../src/creative-canvas/editor/markdown.ts'
+
 
 const run: AgentRun = {
   id: 'run',
@@ -245,29 +242,4 @@ test('the status row names the step in progress', () => {
     '读取画布',
   )
   assert.equal(currentStep(view([block(1, 'text', 'streaming')])), '正在回复')
-})
-
-test('markdown covers what the assistant writes', () => {
-  assert.deepEqual(
-    parseMarkdown('## 方案\n先看 **主光**，再定 `f/2.8`。\n第二行\n\n1. 清晨\n2. 逆光\n\n- a\n- b\n\n```\nx = 1\n```'),
-    [
-      { type: 'heading', level: 2, content: ['方案'] },
-      {
-        type: 'paragraph',
-        content: ['先看 ', { bold: ['主光'] }, '，再定 ', { code: 'f/2.8' }, '。\n第二行'],
-      },
-      { type: 'list', ordered: true, start: 1, items: [['清晨'], ['逆光']] },
-      { type: 'list', ordered: false, start: 1, items: [['a'], ['b']] },
-      { type: 'code', text: 'x = 1' },
-    ],
-  )
-})
-
-test('half-written markers stay plain text until they close', () => {
-  assert.deepEqual(parseInline('这是 **重点'), ['这是 **重点'])
-  assert.deepEqual(parseInline('这是 **重点**'), ['这是 ', { bold: ['重点'] }])
-  assert.deepEqual(parseInline('用 `f/2'), ['用 `f/2'])
-  assert.deepEqual(parseInline('<b>x</b>'), ['<b>x</b>'])
-  // An open fence already reads as code, so the block does not jump on close.
-  assert.deepEqual(parseMarkdown('```\nx = 1'), [{ type: 'code', text: 'x = 1' }])
 })

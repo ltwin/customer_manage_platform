@@ -1,0 +1,218 @@
+{
+  "date": "2026-10-12",
+  "browser": "Playwright Chromium",
+  "results": [
+    {
+      "name": "complete: table, math, nested list, code, Mermaid",
+      "pass": true,
+      "data": {
+        "client": 365,
+        "scroll": 365,
+        "overflow": 0,
+        "bottomGap": 0
+      }
+    },
+    {
+      "name": "narrow 375px: table and formula stay within panel",
+      "pass": true,
+      "data": {
+        "table": {
+          "client": 336,
+          "scroll": 336,
+          "overflow": 0,
+          "bottomGap": 0
+        },
+        "formula": {
+          "client": 336,
+          "scroll": 336,
+          "overflow": 0,
+          "bottomGap": 0
+        },
+        "formulaScroll": {
+          "client": 304,
+          "scroll": 686
+        }
+      }
+    },
+    {
+      "name": "stream: Mermaid renders only after closing fence and not on later tokens",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nnull !== 'stable'\n\n    at file:///Users/samson/workspace/my_project/customer_manage_platform/.lti/features/2026-10-12-agent-chat-markdown/discovery/research/streamdown-poc/verify.mjs:59:9\n    at async test (file:///Users/samson/workspace/my_project/customer_manage_platform/.lti/features/2026-10-12-agent-chat-markdown/discovery/research/streamdown-poc/verify.mjs:9:46)\n    at async file:///Users/samson/workspace/my_project/customer_manage_platform/.lti/features/2026-10-12-agent-chat-markdown/discovery/research/streamdown-poc/verify.mjs:46:1"
+    },
+    {
+      "name": "stream: complete sample, one-character chunks",
+      "pass": true,
+      "data": {
+        "chars": 587
+      }
+    },
+    {
+      "name": "invalid Mermaid and math preserve content without page crash",
+      "pass": true,
+      "data": {
+        "badMathText": "\\unknownCommand\n𝑥\n\\unknownCommandx"
+      }
+    },
+    {
+      "name": "stopped incomplete fence behavior",
+      "pass": true,
+      "data": {
+        "incomplete": "false",
+        "svg": 1,
+        "text": "**尚未闭合\n\nMermaid\n复制源码\n放大\n\nA\n\nB"
+      }
+    },
+    {
+      "name": "HTML and dangerous URL are inert",
+      "pass": true
+    },
+    {
+      "name": "async diagram growth: original scroll versus ResizeObserver",
+      "pass": true,
+      "data": [
+        {
+          "fix": false,
+          "client": 661,
+          "scroll": 661,
+          "overflow": 0,
+          "bottomGap": 348
+        },
+        {
+          "fix": true,
+          "client": 661,
+          "scroll": 661,
+          "overflow": 0,
+          "bottomGap": 0
+        }
+      ]
+    },
+    {
+      "name": "cold network stages: closed, plain text, math, code, Mermaid",
+      "pass": true,
+      "data": [
+        {
+          "label": "closed",
+          "files": [
+            "index-COvzqTUz.js",
+            "index-Bfr2cwzu.css",
+            "rolldown-runtime-QTnfLwEv.js"
+          ],
+          "jsBytes": 197591,
+          "jsGzipBytes": 63268,
+          "cssBytes": 17603,
+          "fontBytes": 0
+        },
+        {
+          "label": "text",
+          "files": [
+            "index-COvzqTUz.js",
+            "index-Bfr2cwzu.css",
+            "rolldown-runtime-QTnfLwEv.js",
+            "Renderer-CANn-77w.js",
+            "katex-DEcVZfaU.css",
+            "katex.min-vjKexUfI.js",
+            "Renderer-Bjb4w-jR.css"
+          ],
+          "jsBytes": 1168338,
+          "jsGzipBytes": 358967,
+          "cssBytes": 49309,
+          "fontBytes": 0
+        },
+        {
+          "label": "math",
+          "files": [
+            "index-COvzqTUz.js",
+            "index-Bfr2cwzu.css",
+            "rolldown-runtime-QTnfLwEv.js",
+            "Renderer-CANn-77w.js",
+            "katex-DEcVZfaU.css",
+            "katex.min-vjKexUfI.js",
+            "Renderer-Bjb4w-jR.css",
+            "KaTeX_Math-Italic-t53AETM-.woff2",
+            "KaTeX_Main-Regular-B22Nviop.woff2"
+          ],
+          "jsBytes": 1168338,
+          "jsGzipBytes": 358967,
+          "cssBytes": 49309,
+          "fontBytes": 42712
+        },
+        {
+          "label": "code",
+          "files": [
+            "index-COvzqTUz.js",
+            "index-Bfr2cwzu.css",
+            "rolldown-runtime-QTnfLwEv.js",
+            "Renderer-CANn-77w.js",
+            "katex-DEcVZfaU.css",
+            "katex.min-vjKexUfI.js",
+            "Renderer-Bjb4w-jR.css",
+            "KaTeX_Math-Italic-t53AETM-.woff2",
+            "KaTeX_Main-Regular-B22Nviop.woff2",
+            "highlighted-body-KQOG7T2V-BnGnikDg.js",
+            "typescript-DOu2WMV5.js",
+            "github-light-EUqPIrTm.js",
+            "github-dark-C-LZuMrd.js"
+          ],
+          "jsBytes": 1372710,
+          "jsGzipBytes": 380519,
+          "cssBytes": 49309,
+          "fontBytes": 42712
+        },
+        {
+          "label": "mermaid",
+          "files": [
+            "index-COvzqTUz.js",
+            "index-Bfr2cwzu.css",
+            "rolldown-runtime-QTnfLwEv.js",
+            "Renderer-CANn-77w.js",
+            "katex-DEcVZfaU.css",
+            "katex.min-vjKexUfI.js",
+            "Renderer-Bjb4w-jR.css",
+            "KaTeX_Math-Italic-t53AETM-.woff2",
+            "KaTeX_Main-Regular-B22Nviop.woff2",
+            "highlighted-body-KQOG7T2V-BnGnikDg.js",
+            "typescript-DOu2WMV5.js",
+            "github-light-EUqPIrTm.js",
+            "github-dark-C-LZuMrd.js",
+            "dist-DDA5PwbY.js",
+            "chunk-Y2CYZVJY-DsF7k-Jl.js",
+            "src-_wZywoZs.js",
+            "chunk-DU6HZSFF-MMfbHXIz.js",
+            "chunk-75Z2AOVW-_lok8NjE.js",
+            "dist-D9sYb5Oa.js",
+            "chunk-P2QGCYS3-XO0zP98f.js",
+            "chunk-PWAF6VOD-C7B6Ty_t.js",
+            "chunk-GMAD6QVW-B5-jM4PN.js",
+            "chunk-4HAMMTFA-CWxqxsyh.js",
+            "rough.esm-CSKSodPl.js",
+            "chunk-GVQU2GXP-BZqEWpXU.js",
+            "chunk-L3NEJ4N5-B3DgtdSW.js",
+            "chunk-OSK3NFVY-u-XogOBQ.js",
+            "line-DqSd3Spa.js",
+            "path-BWPyau1x.js",
+            "array-BifhSqXX.js",
+            "graphlib-DS17s2tU.js",
+            "flowDiagram-HODETNUW-VBEwhP59.js",
+            "chunk-F27PBJKO-Odsp5tCm.js",
+            "chunk-XXDRQBXY-BuE3VzE_.js",
+            "chunk-POPQ4Y6H-CEFkntib.js",
+            "channel-C6Y0eiKb.js",
+            "chunk-5VM5RSS4-ZNzvKenW.js",
+            "chunk-SHT3W25Y-aX8cdPzQ.js",
+            "dagre-GXQ25YYZ-BF6haFWW.js",
+            "dagre-CNOzUhxk.js"
+          ],
+          "jsBytes": 2163004,
+          "jsGzipBytes": 589669,
+          "cssBytes": 49309,
+          "fontBytes": 42712
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "assets": {
+    "count": 470,
+    "totalBytes": 15345276
+  }
+}

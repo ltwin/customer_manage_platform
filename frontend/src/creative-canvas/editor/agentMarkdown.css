@@ -1,0 +1,227 @@
+.cc-agent-history {
+  overflow-anchor: none;
+}
+.cc-agent-history-content {
+  display: flow-root;
+  min-width: 0;
+}
+.cc-agent-markdown {
+  min-width: 0;
+  --background: var(--s2);
+  --foreground: var(--fg);
+  --muted-foreground: var(--fg-2);
+}
+.cc-agent-markdown .cc-agent-text {
+  min-width: 0;
+}
+.cc-agent-markdown .cc-agent-text :is(h1, h2, h3, h4, h5, h6) {
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+.cc-agent-markdown .cc-agent-text > :first-child {
+  margin-top: 0;
+}
+.cc-agent-markdown .cc-agent-text strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.cc-agent-markdown .cc-agent-text p {
+  white-space: normal;
+  margin: 0 0 10px;
+}
+.cc-agent-markdown blockquote {
+  margin: 12px 0;
+  padding: 2px 12px;
+  border-left: 2px solid var(--line-3);
+  color: var(--fg-2);
+}
+.cc-agent-markdown blockquote p:last-child {
+  margin-bottom: 0;
+}
+.cc-agent-markdown a {
+  color: #a9cbef;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.cc-agent-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--line-2);
+  margin: 14px 0;
+}
+.cc-agent-markdown [data-streamdown='table-wrapper'] {
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 12px 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+}
+.cc-agent-markdown table {
+  border-collapse: collapse;
+  min-width: 100%;
+  font-size: 12px;
+}
+.cc-agent-markdown :is(th, td) {
+  color: var(--fg);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: top;
+  min-width: 70px;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+.cc-agent-markdown th {
+  background: var(--s3);
+  text-align: left;
+  white-space: nowrap;
+}
+.cc-agent-markdown [data-streamdown='code-block'] {
+  position: relative;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+.cc-agent-markdown [data-streamdown='code-block-header'] {
+  padding: 8px 44px 8px 10px;
+  background: var(--s3);
+  color: var(--fg-2);
+  font-size: 11px;
+}
+.cc-agent-markdown [data-streamdown='code-block-actions'] {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  display: flex;
+  gap: 6px;
+}
+.cc-agent-markdown button {
+  font: inherit;
+  color: var(--fg-2);
+  background: var(--s3);
+  border: 1px solid var(--line-2);
+  border-radius: 5px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.cc-agent-markdown button:hover {
+  color: var(--fg);
+  background: var(--s4);
+}
+.cc-agent-markdown [data-streamdown='code-block'] button svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+.cc-agent-markdown .cc-agent-text pre {
+  margin: 0;
+  max-width: 100%;
+  white-space: pre;
+  overflow: auto;
+}
+.cc-agent-markdown .cc-agent-text pre code {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  white-space: pre;
+}
+.cc-agent-markdown [data-streamdown='code-block'] pre code > span {
+  display: block;
+}
+.cc-agent-markdown [data-streamdown='code-block'] pre code span[style] {
+  color: var(--shiki-dark, var(--sdm-c, inherit));
+  background-color: var(--shiki-dark-bg, transparent);
+}
+.cc-agent-markdown .katex-display {
+  max-width: 100%;
+  overflow: auto hidden;
+  padding: 4px 0;
+  margin: 12px 0;
+}
+.cc-agent-markdown .katex {
+  font-size: 1.12em;
+}
+.cc-md-diagram {
+  margin: 14px 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cc-md-diagram-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--s3);
+  font-size: 11px;
+  color: var(--fg-2);
+}
+.cc-md-diagram-bar > span {
+  margin-right: auto;
+}
+.cc-md-diagram-image {
+  padding: 12px;
+  overflow: auto;
+}
+.cc-md-diagram-image svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: auto;
+}
+.cc-md-fallback {
+  padding: 10px;
+  min-width: 0;
+}
+.cc-md-fallback small,
+.cc-md-copy-status,
+.cc-md-image-alt {
+  color: var(--fg-2);
+}
+.cc-md-fallback button {
+  margin-left: 8px;
+}
+.cc-agent-markdown .cc-md-fallback pre,
+.cc-agent-markdown .cc-md-loading {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 8px 0 0;
+}
+.cc-md-source {
+  padding: 8px 10px;
+  color: var(--fg-2);
+  border-top: 1px solid var(--line);
+}
+.cc-md-source summary {
+  cursor: pointer;
+}
+.cc-md-copy-status {
+  display: block;
+  padding: 6px 10px;
+}
+.cc-md-dialog {
+  background: var(--s2);
+  color: var(--fg);
+  border: 1px solid var(--line-3);
+  border-radius: 12px;
+  width: min(92vw, 1000px);
+  max-height: 90dvh;
+  padding: 16px;
+}
+.cc-md-dialog::backdrop {
+  background: #000b;
+}
+.cc-md-dialog > div {
+  overflow: auto;
+  margin-top: 12px;
+}
+.cc-md-dialog svg {
+  display: block;
+  min-width: 400px;
+  margin: auto;
+}
+.cc-agent-markdown :focus-visible {
+  outline: 2px solid #a9cbef;
+  outline-offset: 2px;
+}
