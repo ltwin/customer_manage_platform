@@ -1,0 +1,771 @@
+/* 资产库独立页：应用侧栏 + 资料库树 + 浏览区 + 检查器。
+   视觉依据 docs/prototypes/creative-workspace/v6/assets.css；照片是唯一的颜色来源。 */
+.cs-main.al-page {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr) 300px;
+  height: 100dvh;
+  overflow: hidden;
+}
+.cs-main.al-page.no-inspector {
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+/* 资料库树 */
+.al-tree {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: #0d0d0e;
+}
+.al-tree-top {
+  padding: 16px 16px 10px;
+}
+.al-tree-top h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.al-tree-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 12px;
+}
+.al-tree-error {
+  margin: 0 8px 8px;
+  color: var(--danger);
+  font-size: 12px;
+}
+.al-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.al-row-wrap {
+  position: relative;
+}
+.al-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px 0 22px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--fg-2);
+  text-align: left;
+  white-space: nowrap;
+}
+nav .al-row {
+  padding-left: 8px;
+}
+.al-row:hover {
+  background: var(--s2);
+  color: var(--fg);
+}
+.al-row[aria-current='page'],
+.al-row[aria-pressed='true'] {
+  background: var(--s3);
+  color: var(--fg);
+}
+.al-row svg {
+  flex: none;
+}
+.al-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.al-n {
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.al-twist {
+  position: absolute;
+  left: 4px;
+  top: 7px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-3);
+  transition: transform 0.12s;
+}
+.al-twist.open {
+  transform: rotate(90deg);
+}
+.al-twist:hover {
+  color: var(--fg);
+}
+.al-sec {
+  margin-top: 14px;
+}
+.al-sec > header {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.al-sec-empty {
+  margin: 2px 8px 6px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.al-sec .al-row {
+  padding-left: 8px;
+}
+.al-sec .al-row-wrap .al-row {
+  padding-left: 22px;
+}
+.al-sec .al-row.al-child {
+  padding-left: 38px;
+}
+.al-tag-cat {
+  margin: 6px 8px 2px;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.al-tag-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 3px;
+  border-radius: 50%;
+}
+.al-usage {
+  display: grid;
+  gap: 6px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--line);
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.al-meter {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--s3);
+  overflow: hidden;
+}
+.al-meter i {
+  display: block;
+  height: 100%;
+  background: var(--fg-2);
+}
+
+/* 浏览区 */
+.al-board {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  container-type: inline-size;
+}
+.al-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px 8px;
+}
+.al-crumb {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: baseline;
+  gap: 8px;
+  min-width: min(140px, 100%);
+}
+.al-crumb h2 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.al-crumb h2 button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-3);
+  font-weight: 500;
+}
+.al-crumb h2 button:hover {
+  color: var(--fg);
+}
+.al-crumb-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.al-sep {
+  flex: none;
+  color: var(--fg-3);
+  font-weight: 400;
+}
+.al-crumb small {
+  flex: none;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.al-head > .cc-picker {
+  flex: none;
+}
+.al-search {
+  display: flex;
+  flex: 0 1 300px;
+  align-items: center;
+  gap: 6px;
+  min-width: 140px;
+  height: 32px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--fg-3);
+}
+.al-search:focus-within {
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+.al-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--fg);
+}
+.al-search input::placeholder {
+  color: var(--fg-3);
+}
+.al-search kbd {
+  padding: 0 5px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  font: inherit;
+  font-size: 11px;
+}
+.al-seg {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.al-seg button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.al-seg button small {
+  margin-left: 4px;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.al-seg button[aria-pressed='true'] {
+  background: var(--s3);
+  color: var(--fg);
+}
+.al-seg-icon button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  padding: 0;
+}
+.al-zoom {
+  flex: none;
+  width: 84px;
+  accent-color: var(--fg-2);
+}
+.al-icon-btn {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--fg-2);
+}
+.al-icon-btn:hover,
+.al-icon-btn[aria-pressed='true'] {
+  background: var(--s3);
+  color: var(--fg);
+}
+.al-phone-views {
+  display: none;
+}
+.al-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 20px 8px;
+}
+.al-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.al-chip:hover,
+.al-chip[aria-expanded='true'],
+.al-chip.is-on,
+.al-filters .cc-picker.is-on > .cc-picker-trigger {
+  background: var(--s3);
+  color: var(--fg);
+}
+.al-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 20px 8px;
+}
+.al-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 4px 0 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--s2);
+  color: var(--fg-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.al-pill button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+}
+.al-pill > span,
+.al-subgroup > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.al-pill button:hover {
+  background: var(--s4);
+}
+.al-pill-mode,
+.al-pill-clear {
+  padding: 0 9px;
+}
+.al-pill-mode:hover {
+  background: var(--s3);
+  color: var(--fg);
+}
+.al-pill-clear {
+  background: none;
+  color: var(--fg-3);
+}
+.al-pill-clear:hover {
+  color: var(--fg);
+}
+.al-subgroups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 20px 10px;
+}
+.al-subgroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--fg);
+  font-size: 12px;
+}
+.al-subgroup:hover {
+  background: var(--s2);
+}
+.al-subgroup small {
+  flex: none;
+  color: var(--fg-3);
+}
+
+/* 瀑布流 / 方格 */
+.al-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 20px 80px;
+}
+.al-tiles {
+  --al-size: 220px;
+}
+.al-tiles .cl-masonry,
+.al-tiles .cl-masonry-col {
+  gap: 12px;
+}
+.al-tiles.is-grid {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(min(var(--al-size), 100%), 1fr)
+  );
+  gap: 12px;
+}
+.al-tile {
+  position: relative;
+  min-width: 0;
+  border-radius: 10px;
+  cursor: default;
+}
+.al-tile:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.al-thumb {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.al-thumb .cl-media {
+  width: 100%;
+  height: 100%;
+}
+.al-thumb .cl-media img,
+.al-thumb .cl-media video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.al-thumb .cc-media-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--fg-3);
+}
+.al-thumb .cl-tile-note {
+  margin: 0;
+  padding: 12px;
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.al-tiles.is-grid .al-thumb {
+  aspect-ratio: 1;
+}
+.al-tiles.is-grid .cl-card {
+  height: 100%;
+}
+.al-tiles.is-grid .cl-card-audio {
+  align-content: center;
+}
+.al-tile.is-on .al-thumb {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+.al-fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(11, 11, 12, 0.72);
+  color: #f2b8b5;
+}
+.al-fav svg {
+  fill: currentColor;
+}
+.al-cap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 2px 0;
+  font-size: 12px;
+}
+.al-cap > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.al-state {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin: 12vh auto 0;
+  max-width: 360px;
+  color: var(--fg-2);
+  text-align: center;
+}
+.al-state p {
+  margin: 0;
+}
+.al-state-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: none;
+  margin: 0 0 12px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--r-sm);
+  background: var(--s1);
+  font-size: 12px;
+  text-align: left;
+}
+.al-loading {
+  margin: 12vh 0 0;
+  color: var(--fg-3);
+  text-align: center;
+}
+.al-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  max-width: 340px;
+  margin: 12vh auto 0;
+  color: var(--fg-3);
+  text-align: center;
+}
+.al-empty strong {
+  color: var(--fg);
+  font-size: 14px;
+  font-weight: 500;
+}
+.al-empty-btns {
+  display: flex;
+  gap: 8px;
+}
+.al-end {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+
+/* 检查器（本步只读） */
+.al-inspector {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: #0d0d0e;
+}
+.al-ins-pad {
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+.al-ins-preview {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--r);
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.al-ins-preview .cl-media img,
+.al-ins-preview .cl-media video {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+  background: #000;
+}
+.al-ins-title {
+  display: grid;
+  gap: 4px;
+}
+.al-ins-title h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.al-ins-note {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+.al-ins-sec {
+  display: grid;
+  gap: 8px;
+}
+.al-ins-sec > header {
+  color: var(--fg-3);
+  font-size: 11px;
+}
+.al-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.al-tagchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: var(--s2);
+  font-size: 12px;
+}
+.al-tagchip .al-tag-dot {
+  margin: 0;
+}
+.al-muted {
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.al-props {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 6px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+.al-props dt {
+  color: var(--fg-3);
+}
+.al-props dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--fg-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.al-ins-empty {
+  display: grid;
+  gap: 6px;
+  padding: 40px 20px;
+  color: var(--fg-3);
+  font-size: 12px;
+  text-align: center;
+}
+.al-ins-empty strong {
+  color: var(--fg-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+.al-ins-empty p {
+  margin: 0;
+}
+
+/* 侧栏展开、检查器打开时浏览区会变窄：放不下时先收掉缩放滑杆，搜索框换到下一行 */
+@container (max-width: 640px) {
+  .al-zoom {
+    display: none;
+  }
+  .al-head {
+    flex-wrap: wrap;
+  }
+  .al-search {
+    order: 1;
+    flex: 1 1 100%;
+  }
+}
+
+/* ≤1100px：收起检查器，开关一起隐藏 */
+@media (max-width: 1100px) {
+  .cs-main.al-page,
+  .cs-main.al-page.no-inspector {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .al-inspector,
+  .al-inspector-toggle {
+    display: none;
+  }
+}
+/* ≤760px：只保留浏览区，资料库树收进顶部的「视图」下拉；侧栏变顶栏（sidebar.css） */
+@media (max-width: 760px) {
+  .cs-main.al-page,
+  .cs-main.al-page.no-inspector {
+    grid-template-columns: minmax(0, 1fr);
+    height: 100%;
+    min-height: 0;
+  }
+  .al-tree {
+    display: none;
+  }
+  .al-head {
+    padding: 12px 16px 6px;
+  }
+  .al-phone-views {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px 6px;
+    color: var(--fg-3);
+    font-size: 12px;
+  }
+  .al-phone-views select {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: var(--s1);
+    box-shadow: inset 0 0 0 1px var(--line);
+    color: var(--fg);
+  }
+  .al-filters,
+  .al-pills,
+  .al-subgroups {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .al-scroll {
+    padding: 4px 16px 80px;
+  }
+  .al-tiles.is-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

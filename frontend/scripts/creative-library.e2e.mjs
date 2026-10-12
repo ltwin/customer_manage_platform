@@ -55,6 +55,8 @@ const all = [
   asset(1, '日落海边', 'image', 1000, 1500), asset(2, '逆光发丝'), asset(3, '白裙', 'image', 1200, 800), asset(4, '花艺'),
   asset(5, '城市夜景', 'image', 900, 600), asset(6, '礁石'), asset(7, '海风'), asset(8, '胶片暖调'), asset(9, '冷调', 'image', 600, 900),
   asset(10, '客户偏好', 'text'),
+  asset(11, '现场环境音', 'audio', 0, 0, { rating: 4.5, content: content('rev-a11', 'audio', { media: [{ role: 'original', blob_id: 'b', mime: 'audio/mpeg', byte_size: 1, width: null, height: null, duration_ms: 184000 }] }) }),
+  asset(12, '布光参考', 'link', 0, 0, { content: content('rev-a12', 'link', { payload: { url: 'https://www.example.com/lighting' } }) }),
 ]
 const page_ = (items, total = items.length) => ({ items, next_cursor: '', total_count: total, library_revision: '1' })
 const assetQueries = []
@@ -148,10 +150,12 @@ await page.route('**/api/v1/**', async (route) => {
       items = items.filter((a) => a.group_ids.some((id) => scope.includes(id)))
     }
     if (q.get('kind')) items = items.filter((a) => a.kind === q.get('kind'))
-    if (q.get('tag_ids')) items = items.filter((a) => a.tag_ids.some((t) => q.get('tag_ids').split(',').includes(t)))
     if (q.get('q')) items = items.filter((a) => a.title.includes(q.get('q')))
+    // 标签数量只按「满足任一」模型：在其余条件下数每个标签。
+    const facets = q.get('include_facets') === 'true' ? { kinds: {}, tags: tags.map((t) => ({ tag_id: t.id, count: items.filter((a) => a.tag_ids.includes(t.id)).length })) } : undefined
+    if (q.get('tag_ids')) items = items.filter((a) => a.tag_ids.some((t) => q.get('tag_ids').split(',').includes(t)))
     const limit = Number(q.get('limit') ?? 30)
-    return json(page_(items.slice(0, limit), items.length))
+    return json({ ...page_(items.slice(0, limit), items.length), facets })
   }
   return json(page_([]))
 })
@@ -189,6 +193,17 @@ try {
     return { bg: s.backgroundColor, width: Math.round(el.getBoundingClientRect().width), left: Math.round(el.getBoundingClientRect().left) }
   })
   assert.deepEqual(metrics.drawer, { bg: 'rgb(27, 27, 29)', width: 344, left: 64 })
+  // 卡片样式（V6-060）：音频是装饰条加时长，链接只显示域名；带评分的有只读星级。悬停放大用同一形态。
+  const loose = drawer.getByRole('region', { name: '未归类' })
+  const voice = loose.locator('.cl-tile', { has: page.getByText('现场环境音', { exact: true }) })
+  assert.equal(await voice.locator('.cl-wave i').count(), 36)
+  assert.equal((await voice.locator('.cl-card-row small').innerText()).trim(), '3:04')
+  assert.equal(await voice.getByRole('img', { name: '4.5 星' }).count(), 0, 'square previews hide stars')
+  assert.equal((await loose.locator('.cl-card-link small').innerText()).trim(), 'example.com')
+  await voice.hover()
+  await page.locator('.cl-peek .cl-wave').waitFor()
+  await page.screenshot({ path: '/tmp/creative-library-cards.png' })
+  await page.mouse.move(900, 900)
   // 资产库不记录素材是否已在画布上（owner 2026-10-07 决定）。
   assert.equal(await drawer.locator('.cl-tile-used').count(), 0, 'no on-canvas badge')
 
@@ -255,9 +270,14 @@ try {
   await drawer.locator('.cl-groups-bar').waitFor()
   await drawer.getByRole('button', { name: '标签', exact: true }).click()
   const tagPop = page.getByRole('dialog', { name: '标签筛选' })
+  // 标签数量随当前条件变化（V6-016 AC-01），来自带 include_facets 的请求。
+  await tagPop.locator('.cl-tag-n', { hasText: '1' }).waitFor()
+  assert(assetQueries.some((q) => q.includes('include_facets=true') && q.includes('limit=1')))
   await tagPop.getByRole('button', { name: '逆光' }).click()
   await page.waitForFunction(() => document.querySelectorAll('#creative-library .cl-masonry .cl-tile').length === 1)
-  assert(assetQueries.at(-1).includes('tag_ids=t1'))
+  assert(assetQueries.at(-1).includes('tag_ids=t1') || assetQueries.at(-2).includes('tag_ids=t1'))
+  // 只选一个标签时没有「同时满足 / 满足任一」之分（V6-016 AC-05）。
+  assert.equal(await tagPop.getByRole('button', { name: /同时满足|满足任一/ }).count(), 0)
   await page.keyboard.press('Escape')
   await drawer.getByRole('button', { name: '移除标签筛选：逆光' }).click()
   await drawer.locator('.cl-groups-bar').waitFor()

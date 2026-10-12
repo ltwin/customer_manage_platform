@@ -192,13 +192,13 @@
 .cl-tile .cc-media-placeholder { display: grid; place-items: center; width: 100%; height: 100%; color: var(--fg-3); }
 .cl-tile .cc-audio { display: grid; place-items: center; width: 100%; height: 100%; color: var(--fg-3); }
 .cl-tile-note { margin: 0; padding: 12px; color: var(--fg-3); font-size: 11px; }
-.cl-tile-name { position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 8px 6px; font-size: 11px; line-height: 1.35; background: linear-gradient(transparent, rgba(0, 0, 0, 0.72)); opacity: 0; transition: opacity 0.12s; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.cl-tile-name { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 6px; padding: 18px 8px 6px; font-size: 11px; line-height: 1.35; background: linear-gradient(transparent, rgba(0, 0, 0, 0.72)); opacity: 0; transition: opacity 0.12s; pointer-events: none; }
+.cl-tile-name > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cl-tile:hover .cl-tile-name, .cl-tile:focus-visible .cl-tile-name { opacity: 1; }
-.cl-tile-text { min-height: 96px; padding: 10px 10px 12px; font-size: 12px; line-height: 1.6; color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--line); }
-.cl-tile-text b { display: block; margin-bottom: 4px; padding-right: 20px; color: var(--fg); font-weight: 500; overflow-wrap: anywhere; }
-.cl-tile-body { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.cl-tile-kind { position: absolute; left: 6px; bottom: 6px; padding: 1px 5px; border-radius: 4px; background: rgba(12, 12, 13, 0.72); color: var(--fg-2); font-size: 10px; pointer-events: none; }
-.cl-tile-text .cl-tile-kind { left: auto; right: 8px; bottom: 8px; background: none; color: var(--fg-3); }
+.cl-tile:hover .cl-video-badge, .cl-tile:focus-visible .cl-video-badge { opacity: 0; }
+.cl-tile-card { box-shadow: inset 0 0 0 1px var(--line); }
+.cl-tile-card .cl-card b { padding-right: 20px; }
+.cl-tile-stars { position: absolute; right: 8px; bottom: 7px; pointer-events: none; }
 .cl-tile-check, .cl-tile-actions button { position: absolute; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; transition: opacity 0.12s, background 0.12s; }
 .cl-tile-check { left: 6px; top: 6px; background: rgba(0, 0, 0, 0.45) !important; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.7); color: transparent !important; opacity: 0; }
 .cl-tile-actions { position: absolute; right: 6px; top: 6px; display: flex; gap: 4px; opacity: 0; transition: opacity 0.12s; }
@@ -208,7 +208,7 @@
 .cl-tile-fav { position: absolute; right: 8px; bottom: 7px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)); pointer-events: none; }
 .cl-tile-fav svg { fill: currentColor; }
 .cl-tile:hover .cl-tile-fav { opacity: 0; }
-.cl-tile-text .cl-tile-fav { color: var(--fg-3); filter: none; top: 10px; bottom: auto; }
+.cl-tile-card .cl-tile-fav { color: var(--fg-3); filter: none; top: 10px; bottom: auto; }
 .cl-tile.is-on { box-shadow: 0 0 0 2px var(--primary); }
 .cl-tile.is-on .cl-media img { filter: brightness(0.82); }
 .cl-tile.is-on .cl-tile-check { opacity: 1; background: var(--primary) !important; box-shadow: none; color: var(--on-primary) !important; }
@@ -219,9 +219,14 @@
 .cl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
 .cl-expanded .cl-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 .cl-grid .cl-tile { aspect-ratio: 1; border-radius: 7px; }
-.cl-grid .cl-tile-text { min-height: 0; padding: 8px; font-size: 11px; line-height: 1.5; }
-.cl-grid .cl-tile-text b { margin-bottom: 2px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cl-grid .cl-tile-body { -webkit-line-clamp: 3; }
+.cl-grid .cl-card { height: 100%; padding: 8px; font-size: 11px; line-height: 1.5; }
+.cl-grid .cl-card-text b, .cl-grid .cl-card-link b { font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.cl-grid .cl-card-text p { -webkit-line-clamp: 3; }
+.cl-grid .cl-card-audio { align-content: center; }
+.cl-grid .cl-wave { gap: 1px; height: 28px; }
+.cl-grid .cl-card-row b { display: none; }
+.cl-grid .cl-card-row small { margin-left: auto; }
+.cl-grid .cl-tile-stars { display: none; }
 .cl-grid .cl-tile-name { display: none; }
 .cl-grid .cl-tile-actions button:first-child { display: none; }
 .cl-more-cell { position: relative; display: grid; place-items: center; aspect-ratio: 1; border-radius: 7px; overflow: hidden; background: var(--s1) !important; color: var(--fg) !important; font-size: 13px !important; font-weight: 500; }
@@ -247,6 +252,9 @@
 .cl-tag-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .cl-tag-item:hover, .cl-tag-item[aria-pressed='true'] { background: var(--s3); }
 .cl-tag-item span { flex: 1; }
+.cl-tag-item svg { flex: none; }
+.cl-tag-item .cl-tag-blank { flex: none; width: 13px; }
+.cl-tag-n { min-width: 2ch; color: var(--fg-3); font-size: 11px; text-align: right; }
 .cl-tag-foot { display: flex; align-items: center; gap: 4px; margin-top: 4px; padding: 6px 2px 0; border-top: 1px solid var(--line); }
 .cl-tag-foot button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--fg-2); font: inherit; font-size: 12px; cursor: pointer; }
 .cl-tag-foot button:hover:not(:disabled) { background: var(--s3); color: var(--fg); }
@@ -256,7 +264,6 @@
 /* 悬停放大：出现在抽屉右侧，不挡住正在看的那一列 */
 .cl-peek { position: fixed; z-index: 90; width: 260px; overflow: hidden; border-radius: var(--r); background: var(--s2); box-shadow: var(--shadow); pointer-events: none; }
 .cl-peek .cl-media img, .cl-peek .cl-media video { display: block; width: 100%; max-height: 340px; object-fit: contain; background: #000; }
-.cl-peek .cc-audio { display: grid; place-items: center; height: 120px; color: var(--fg-3); }
 .cl-peek-text { max-height: 260px; overflow: hidden; padding: 14px 16px; color: var(--fg); font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
 .cl-peek-cap { display: grid; gap: 2px; padding: 8px 12px 10px; font-size: 11px; color: var(--fg-3); }
 .cl-peek-cap b { color: var(--fg); font-size: 12px; font-weight: 500; }

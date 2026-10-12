@@ -39,6 +39,7 @@ import { PREVIEW, emptyCatalog, kindLabel, metaLine, type Catalog, type Editor }
 import LibraryEditor from './LibraryEditor.tsx'
 import CanvasContextMenu, { type CanvasMenuItem } from './CanvasContextMenu.tsx'
 import { Masonry, Peek, PreviewGrid, QuickLook, Tile, type TileMode } from './LibraryTiles.tsx'
+import TagPopover from './TagPopover.tsx'
 import './library.css'
 
 type Confirmation = {
@@ -247,6 +248,25 @@ export default function LibraryPanel({
   if (tagIDs.length) query.set('tag_ids', tagIDs.join(','))
   if (kind) query.set('kind', kind)
   const queryKey = query.toString()
+  // 标签弹层的数量随当前范围、类型、关键词和标签模式变化（V6-016）：弹层开着时条件一变就重读，
+  // 只认与当前条件对应的那次响应。
+  const [tagCounts, setTagCounts] = useState<{ key: string; counts: Map<string, number> } | null>(null)
+  const facetKey = tagsOpen ? queryKey : ''
+  useEffect(() => {
+    if (!facetKey) return
+    const controller = new AbortController()
+    const q = new URLSearchParams(facetKey)
+    q.set('limit', '1')
+    q.set('include_facets', 'true')
+    void api
+      .read<api.AssetPage>(`/assets?${q.toString()}`, controller.signal)
+      .then((p) => {
+        if (!controller.signal.aborted)
+          setTagCounts({ key: facetKey, counts: new Map(p.facets?.tags.map((t) => [t.tag_id, t.count])) })
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [facetKey, tick])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -987,7 +1007,7 @@ export default function LibraryPanel({
           <input
             ref={queryInput}
             aria-label="搜索个人资产"
-            placeholder={group ? `在「${scopeName}」中搜索` : '搜索名称、描述或标签'}
+            placeholder={group ? `在「${scopeName}」中搜索` : '搜索标题、备注、正文、网址、标签'}
             value={queryDraft}
             onChange={(e) => setQueryDraft(e.target.value)}
             onCompositionStart={() => setComposing(true)}
@@ -1309,9 +1329,11 @@ export default function LibraryPanel({
           {tagsOpen && (
             <TagPopover
               anchor={tagsOpen}
-              catalog={catalog}
+              tags={catalog.tags}
+              categories={catalog.categories}
               selected={tagIDs}
               mode={tagMode}
+              counts={tagCounts?.key === queryKey ? tagCounts.counts : null}
               onToggle={(id) =>
                 filter('ltags', (tagIDs.includes(id) ? tagIDs.filter((x) => x !== id) : [...tagIDs, id]).join(','))
               }
@@ -1472,103 +1494,5 @@ export default function LibraryPanel({
         portalRoot,
       )}
     </>
-  )
-}
-
-// 标签筛选弹层：按分类列出，色点 + 选中勾；继续输入即过滤。
-function TagPopover({
-  anchor,
-  catalog,
-  selected,
-  mode,
-  onToggle,
-  onMode,
-  onClear,
-  onClose,
-}: {
-  anchor: DOMRect
-  catalog: Catalog
-  selected: string[]
-  mode: string
-  onToggle: (id: string) => void
-  onMode: () => void
-  onClear: () => void
-  onClose: () => void
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [q, setQ] = useState('')
-  const close = useRef(onClose)
-  close.current = onClose
-  useLayoutEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.left = `${Math.max(8, Math.min(anchor.right - el.offsetWidth, window.innerWidth - el.offsetWidth - 8))}px`
-    el.style.top = `${Math.min(anchor.bottom + 4, window.innerHeight - el.offsetHeight - 8)}px`
-  }, [anchor])
-  useEffect(() => {
-    const outside = (e: PointerEvent) => {
-      if (e.target instanceof Node && !ref.current?.contains(e.target)) close.current()
-    }
-    document.addEventListener('pointerdown', outside, true)
-    return () => document.removeEventListener('pointerdown', outside, true)
-  }, [])
-  const match = (t: api.Tag) => !q.trim() || t.name.toLowerCase().includes(q.trim().toLowerCase())
-  const cats: { id: string | null; name: string }[] = [
-    ...catalog.categories.map((c) => ({ id: c.id as string | null, name: c.name })),
-    { id: null, name: '未分类' },
-  ]
-  return (
-    <div
-      ref={ref}
-      className="cl-tag-pop"
-      role="dialog"
-      aria-label="标签筛选"
-      onKeyDown={(e) => {
-        e.stopPropagation()
-        if (e.key === 'Escape') {
-          e.preventDefault()
-          onClose()
-        }
-      }}
-    >
-      <label className="cl-find">
-        <Search size={13} />
-        <input aria-label="筛选标签" placeholder="查找标签" value={q} autoFocus onChange={(e) => setQ(e.target.value)} />
-      </label>
-      <div className="cl-tag-list">
-        {cats.map((c) => {
-          const tags = catalog.tags.filter((t) => (t.category_id ?? null) === c.id && match(t))
-          if (!tags.length) return null
-          return (
-            <div key={c.id ?? 'none'}>
-              <div className="cl-tag-cat">{c.name}</div>
-              {tags.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="cl-tag-item"
-                  aria-pressed={selected.includes(t.id)}
-                  onClick={() => onToggle(t.id)}
-                >
-                  <i style={{ background: t.color }} />
-                  <span>{t.name}</span>
-                  {selected.includes(t.id) && <Check size={13} />}
-                </button>
-              ))}
-            </div>
-          )
-        })}
-        {!catalog.tags.some(match) && <p className="cl-sec-empty">{catalog.tags.length ? '没有匹配的标签' : '还没有标签'}</p>}
-      </div>
-      <div className="cl-tag-foot">
-        <button type="button" onClick={onMode}>
-          {mode === 'all' ? '同时满足全部所选' : '满足任一所选'}
-        </button>
-        <span className="cl-grow" />
-        <button type="button" disabled={!selected.length} onClick={onClear}>
-          清除
-        </button>
-      </div>
-    </div>
   )
 }

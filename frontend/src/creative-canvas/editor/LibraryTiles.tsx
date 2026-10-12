@@ -1,12 +1,72 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, Ellipsis, Heart, Plus } from 'lucide-react'
+import { Check, Ellipsis, Globe, Heart, Play, Plus } from 'lucide-react'
 import * as api from './api.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind } from './media.ts'
 import { contentText } from './content.ts'
-import { PREVIEW, kindLabel, tileRatio } from './libraryState.ts'
+import { PREVIEW, audioBars, linkDomain, mediaDuration, tileRatio } from './libraryState.ts'
 import { errorMessage } from './queue.ts'
+import { Stars } from './StarRating.tsx'
+import './cards.css'
+
+const isVisual = (kind: string) => kind === 'image' || kind === 'video'
+
+/**
+ * 卡片主体（V6-060）：图片和视频显示画面，视频带时长；文字、链接、音频各有自己的样式，
+ * 不用通用图标代替。抽屉、悬停放大和资产库页共用。链接只显示域名，不抓取网页。
+ */
+export function TileFace({ asset: a }: { asset: api.Asset }) {
+  if (isVisual(a.kind)) {
+    if (a.unavailable || !a.content) return <p className="cl-tile-note">{a.unavailable ? '当前无权展示' : ''}</p>
+    const time = a.kind === 'video' ? mediaDuration(a) : ''
+    return (
+      <>
+        <MediaFigure content={a.content} kind={a.kind} title={a.title} className="cl-media" />
+        {a.kind === 'video' && (
+          <span className="cl-video-badge">
+            <Play size={10} />
+            {time}
+          </span>
+        )}
+      </>
+    )
+  }
+  const text = a.unavailable ? '' : contentText(a.content?.payload)
+  if (a.kind === 'audio')
+    return (
+      <div className="cl-card cl-card-audio">
+        <span className="cl-wave" aria-hidden="true">
+          {audioBars(a.id).map((h, i) => (
+            <i key={i} style={{ height: `${Math.round(h * 100)}%` }} />
+          ))}
+        </span>
+        <span className="cl-card-row">
+          <span className="cl-play" aria-hidden="true">
+            <Play size={10} />
+          </span>
+          <b>{a.title}</b>
+          <small>{a.unavailable ? '当前无权展示' : mediaDuration(a)}</small>
+        </span>
+      </div>
+    )
+  if (a.kind === 'link')
+    return (
+      <div className="cl-card cl-card-link">
+        <b>{a.title}</b>
+        <small>
+          <Globe size={12} />
+          {a.unavailable ? '当前无权展示' : linkDomain(text)}
+        </small>
+      </div>
+    )
+  return (
+    <div className="cl-card cl-card-text">
+      <b>{a.title}</b>
+      <p>{a.unavailable ? '当前无权展示' : text}</p>
+    </div>
+  )
+}
 
 export type TileMode = 'browse' | 'fill' | 'pick'
 export type TileProps = {
@@ -26,10 +86,10 @@ export type TileProps = {
 }
 export function Tile(p: TileProps) {
   const a = p.asset
-  const media = isMediaKind(a.kind)
+  const visual = isVisual(a.kind)
   return (
     <div
-      className={`cl-tile cl-tile-${media ? 'media' : 'text'} ${p.selected ? 'is-on' : ''}`}
+      className={`cl-tile cl-tile-${visual ? 'media' : 'card'} ${p.selected ? 'is-on' : ''}`}
       data-asset={a.id}
       data-kind={a.kind}
       tabIndex={0}
@@ -37,7 +97,7 @@ export function Tile(p: TileProps) {
       aria-label={a.title}
       aria-pressed={p.mode !== 'fill' ? p.selected : undefined}
       draggable={p.draggable}
-      style={!p.square && media ? { aspectRatio: `1 / ${tileRatio(a)}` } : undefined}
+      style={!p.square && visual ? { aspectRatio: `1 / ${tileRatio(a)}` } : undefined}
       onClick={(e) => p.onClick(a, e)}
       onKeyDown={(e) => p.onKey(a, e)}
       onContextMenu={(e) => {
@@ -52,24 +112,19 @@ export function Tile(p: TileProps) {
       onPointerEnter={(e) => p.onPeek(a, e.currentTarget)}
       onPointerLeave={() => p.onPeek(null)}
     >
-      {media ? (
-        a.unavailable || !a.content ? (
-          <p className="cl-tile-note">{a.unavailable ? '当前无权展示' : ''}</p>
-        ) : (
-          <MediaFigure content={a.content} kind={a.kind} title={a.title} className="cl-media" />
-        )
+      <TileFace asset={a} />
+      {visual ? (
+        <span className="cl-tile-name">
+          <span>{a.title}</span>
+          <Stars value={a.rating} />
+        </span>
       ) : (
-        <>
-          <b>{a.title}</b>
-          <span className="cl-tile-body">
-            {a.unavailable ? '当前无权展示' : contentText(a.content?.payload)}
+        a.rating !== null && (
+          <span className="cl-tile-stars">
+            <Stars value={a.rating} />
           </span>
-        </>
+        )
       )}
-      {media && <span className="cl-tile-name">{a.title}</span>}
-      {a.kind === 'video' || a.kind === 'audio' || a.kind === 'link' ? (
-        <span className="cl-tile-kind">{kindLabel[a.kind]}</span>
-      ) : null}
       {a.is_favorite && (
         <span className="cl-tile-fav" aria-label="最爱">
           <Heart size={12} />
@@ -207,10 +262,10 @@ export function Peek({
   })
   return createPortal(
     <div ref={ref} className="cl-peek" aria-hidden="true">
-      {isMediaKind(asset.kind) && asset.content ? (
-        <MediaFigure content={asset.content} kind={asset.kind} title={asset.title} className="cl-media" />
-      ) : (
+      {asset.kind === 'text' ? (
         <div className="cl-peek-text">{contentText(asset.content?.payload)}</div>
+      ) : (
+        <TileFace asset={asset} />
       )}
       <div className="cl-peek-cap">
         <b>{asset.title}</b>

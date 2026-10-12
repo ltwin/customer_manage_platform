@@ -33,6 +33,7 @@ import PrivacyPage from './pages/privacy/PrivacyPage'
 
 const CreativeHomePage = lazy(() => import('./creative-canvas/home/HomePage'))
 const CreativeProjectsPage = lazy(() => import('./creative-canvas/home/ProjectsPage'))
+const CreativeAssetsPage = lazy(() => import('./creative-canvas/assets/AssetsPage'))
 
 const CreativeCanvasPage = lazy(() => import('./creative-canvas/editor/WorkspacePage'))
 
@@ -127,7 +128,7 @@ export default function App() {
         <Route path="/creative" element={<Suspense fallback={<p role="status">正在打开创意空间…</p>}><CreativeHomePage /></Suspense>} />
         <Route path="/creative/projects" element={<Suspense fallback={<p role="status">正在打开项目…</p>}><CreativeProjectsPage /></Suspense>} />
         <Route path="/creative/canvases/:canvasID" element={<Suspense fallback={<p role="status">正在打开创作台…</p>}><CreativeCanvasPage /></Suspense>} />
-        <Route path="/creative/library" element={<Suspense fallback={<p role="status">正在打开资产库…</p>}><CreativeCanvasPage /></Suspense>} />
+        <Route path="/creative/library" element={<Suspense fallback={<p role="status">正在打开资产库…</p>}><CreativeAssetsPage /></Suspense>} />
         <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/shoot-plans" element={<ShootPlansPage />} />
         <Route path="/shoot-plans/:id" element={<ShootPlanWorkspacePage />} />
