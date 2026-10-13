@@ -219,7 +219,7 @@ func AgentRefusal(err error) error {
 	case errors.Is(err, creativecanvas.ErrVersionConflict), errors.Is(err, gw.ErrConflict), errors.Is(err, creativeops.ErrConflict):
 		return refuse("画布刚被改动，请重新读取画布后再试")
 	case errors.Is(err, creativeops.ErrValidation), errors.Is(err, gw.ErrValidation):
-		return refuse("提示词、参数或参考不符合该模型的要求（图片参考最多 9 张，仅支持 JPEG/PNG/WebP，单张不超过 10MB）")
+		return refuse("提示词、参数或参考不符合该模型的要求（图片参考最多 9 张，仅支持 JPEG/PNG/WebP，单张不超过 25MiB）")
 	case errors.Is(err, gw.ErrBudget):
 		return refuse("本月生成额度不足")
 	case errors.Is(err, creativecanvas.ErrActionUnavailable), errors.Is(err, gw.ErrUnavailable):

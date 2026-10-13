@@ -6,15 +6,16 @@ import (
 )
 
 // AICodeWithImagePolicyVersion 是内置生图规则的版本；改价格、上界或参数须升级。
-const AICodeWithImagePolicyVersion = "aicodewith-images-2026-10-09"
+const AICodeWithImagePolicyVersion = "aicodewith-images-2026-10-13"
 
 // AICodeWithImageMode 是三个GPT Image模型唯一的模式：带图片参考即为图生图。
 const AICodeWithImageMode = "image"
 
-// 参考图上限是产品决策（owner 2026-10-09），中转本身允许16张；单张10MB与中转官方页面一致。
+// 参考图数量上限是产品决策（owner 2026-10-09），中转本身允许16张。
+// 单张大小上限为25 MiB（owner 2026-10-13），属于本地策略，供应商API上限尚未确认。
 const (
 	aicodewithMaxReferenceImages = 9
-	aicodewithMaxReferenceBytes  = 10 << 20
+	aicodewithMaxReferenceBytes  = 25 << 20
 	aicodewithMaxImages          = 4
 )
 
