@@ -417,7 +417,7 @@ func jsonValue(value any) (any, error) {
 // coversRun decides whether the authorisation on file reaches what this run
 // would actually send. Every clause answers a different question, and a run may
 // only start when all of them say yes.
-func coversRun(consent Consent, conversationID string, refs []ContentRef) error {
+func coversRun(consent Consent, conversationID string, _ []ContentRef) error {
 	switch {
 	case consent.RevokedAt != nil:
 		return ErrConsentRevoked
@@ -431,10 +431,7 @@ func coversRun(consent Consent, conversationID string, refs []ContentRef) error 
 		return ErrEgressRequired
 	case !slices.Contains(consent.Scope.DataClasses, "text"):
 		return ErrEgressRequired
-	case len(refs) > 0 && consent.Scope.Mode != ScopeSelectedRevisions:
-		// account_library authorises whatever a search finds in the library. A
-		// revision the photographer named by hand is not that, so it needs to
-		// have been listed. The listed-ness itself is checked below.
+	case consent.Scope.Mode != ScopeSelectedRevisions && consent.Scope.Mode != ScopeAccountLibrary:
 		return ErrEgressRequired
 	}
 	return nil

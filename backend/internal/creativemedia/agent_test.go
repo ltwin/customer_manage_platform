@@ -90,3 +90,49 @@ func TestAgentImageSendsAPreviewOfALargeImage(t *testing.T) {
 		t.Fatal("preview handle does not describe its own bytes")
 	}
 }
+
+// Sent chat images survive staged expiry and GC without a library entry.
+func TestMessageReferenceKeepsStagedImageAfterExpiry(t *testing.T) {
+	f := setup(t)
+	upload := f.uploadFile(t, f.a, "会话截图.png", "image/png", "image", sample(t, "sample.png"), creativemedia.Target{Kind: "staged"})
+	if upload.ContentRevisionID == nil {
+		t.Fatal("staged upload has no revision")
+	}
+	id := *upload.ContentRevisionID
+	if _, err := f.db.Exec(`INSERT INTO creative_message_content_refs(account_id,message_id,content_revision_id,role) VALUES('media-a','sent-message',$1,'input')`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE creative_upload_candidates SET expires_at=clock_timestamp()-interval '30 days' WHERE content_revision_id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	report, err := f.svc.CollectGarbage(t.Context(), f.a, creativemedia.GCDelete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.UnheldRevisions != 0 || report.ReclaimableBlobs != 0 {
+		t.Fatalf("referenced image collected: %+v", report)
+	}
+	image, err := f.svc.AgentImage(t.Context(), f.a, id, 2<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := image.Open(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(reader)
+	_ = reader.Close()
+	if err != nil || len(data) == 0 {
+		t.Fatalf("kept image bytes: %v", err)
+	}
+	if _, err := f.db.Exec(`DELETE FROM creative_message_content_refs WHERE account_id='media-a' AND content_revision_id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	report, err = f.svc.CollectGarbage(t.Context(), f.a, creativemedia.GCDelete)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.UnheldRevisions != 1 {
+		t.Fatalf("unreferenced expired image retained: %+v", report)
+	}
+}

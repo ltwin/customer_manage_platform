@@ -1,0 +1,10 @@
+cd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
+cd backend/internal/shootplanning/httpcontract && go tool oapi-codegen -config oapi-codegen.yaml ../../../../api/openapi.yaml
+cd backend && go run ./cmd/creative-tool-schema-gen ../api/openapi.yaml internal/creativecanvas/tool_schemas.gen.go
+cd frontend && npm run generate
+
+> frontend@0.0.0 generate
+> openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts
+
+✨ openapi-typescript 7.13.0
+🚀 ../api/openapi.yaml → src/api/schema.d.ts [166.5ms]

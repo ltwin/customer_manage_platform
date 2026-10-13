@@ -1,0 +1,22 @@
+{
+ "061-AC-01": "pass",
+ "061-AC-02": "pass",
+ "061-AC-03": "pass",
+ "061-AC-04": "pass",
+ "061-AC-05": "pass",
+ "062-AC-01": "pass",
+ "062-AC-02": "pass",
+ "062-AC-03": "pass",
+ "062-AC-04": "pass",
+ "062-AC-05": "pass",
+ "029-AC-01": "pass",
+ "029-privacy": "pass",
+ "029-AC-03": "pass",
+ "062-AC-06": "pass",
+ "063-AC-01": "pass",
+ "063-AC-02": "pass",
+ "063-AC-04": "pass",
+ "062-fix-project-handoff": "pass",
+ "062-fix-hashing-blocks-send": "pass",
+ "062-fix-refresh-deduplication": "pass"
+}

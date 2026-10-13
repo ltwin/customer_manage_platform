@@ -1,0 +1,58 @@
+2026/10/13 10:59:42 github.com/testcontainers/testcontainers-go - Connected to docker:
+  Server Version: 29.2.1
+  API Version: 1.53
+  Operating System: Docker Desktop
+  Total Memory: 7836 MB
+  Labels:
+    com.docker.desktop.address=unix:///Users/samson/Library/Containers/com.docker.docker/Data/docker-cli.sock
+  Testcontainers for Go Version: v0.43.0
+  Resolved Docker Host: unix:///var/run/docker.sock
+  Resolved Docker Socket Path: /var/run/docker.sock
+  Test SessionID: 2b1736be580dab3689aae958f26e4fcd3d83f57d980872f3a4a21ae58aac0874
+  Test ProcessID: 66bc969a-216e-4514-9d02-44b7a9991ab8
+2026/10/13 10:59:42 🐳 Creating container for image postgres:17-alpine
+2026/10/13 10:59:42 🐳 Creating container for image testcontainers/ryuk:0.14.0
+2026/10/13 10:59:42 ✅ Container created: 290d993c2ffd
+2026/10/13 10:59:42 🐳 Starting container: 290d993c2ffd
+2026/10/13 10:59:42 ✅ Container started: 290d993c2ffd
+2026/10/13 10:59:42 ⏳ Waiting for container id 290d993c2ffd image: testcontainers/ryuk:0.14.0. Waiting for: all of: [log message "Started", port 8080/tcp to be listening]
+2026/10/13 10:59:43 Shell not found in container
+2026/10/13 10:59:43 🔔 Container is ready: 290d993c2ffd
+2026/10/13 10:59:43 ✅ Container created: 2481371cb602
+2026/10/13 10:59:43 🐳 Starting container: 2481371cb602
+2026/10/13 10:59:43 ✅ Container started: 2481371cb602
+2026/10/13 10:59:43 ⏳ Waiting for container id 2481371cb602 image: postgres:17-alpine. Waiting for: all of: [all of: [log message "database system is ready to accept connections" (occurrence: 2), port 5432/tcp to be listening]]
+2026/10/13 10:59:44 🔔 Container is ready: 2481371cb602
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/latest
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/photographer
+    asset_lookup_audit_test.go:93: missing ccrv_0d5eb1ab-ef2a-4c1f-9f33-f75d4d1b669a after assistant read
+    asset_lookup_audit_test.go:93: missing ccrv_15d983fd-5c16-4f74-a4d1-596af50e95be after assistant read
+    asset_lookup_audit_test.go:93: missing ccrv_6b487df8-3eaf-427d-b6af-b7537cd9f86b after assistant read
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/keyword
+    asset_lookup_audit_test.go:93: missing ccrv_0d5eb1ab-ef2a-4c1f-9f33-f75d4d1b669a after assistant read
+    asset_lookup_audit_test.go:93: missing ccrv_15d983fd-5c16-4f74-a4d1-596af50e95be after assistant read
+    asset_lookup_audit_test.go:93: missing ccrv_6b487df8-3eaf-427d-b6af-b7537cd9f86b after assistant read
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/combined
+    asset_lookup_audit_test.go:93: missing ccrv_0d5eb1ab-ef2a-4c1f-9f33-f75d4d1b669a after assistant read
+    asset_lookup_audit_test.go:93: missing ccrv_15d983fd-5c16-4f74-a4d1-596af50e95be after assistant read
+    asset_lookup_audit_test.go:93: missing ccrv_6b487df8-3eaf-427d-b6af-b7537cd9f86b after assistant read
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/assistant
+--- FAIL: TestConversationAssetFiltersPrecedeDeduplication (0.43s)
+    --- PASS: TestConversationAssetFiltersPrecedeDeduplication/latest (0.01s)
+    --- FAIL: TestConversationAssetFiltersPrecedeDeduplication/photographer (0.00s)
+    --- FAIL: TestConversationAssetFiltersPrecedeDeduplication/keyword (0.00s)
+    --- FAIL: TestConversationAssetFiltersPrecedeDeduplication/combined (0.00s)
+    --- PASS: TestConversationAssetFiltersPrecedeDeduplication/assistant (0.01s)
+=== RUN   TestLargeAssetSearchKeepsPaginationAndRunAlive
+    asset_lookup_audit_test.go:130: result 74460 exceeds 65536 bytes
+2026/10/13 10:59:45 WARN creative agent run did not complete run_id=ccrn_fac627c1-c796-4121-b4f7-08319c7e0bd6 error_code=creative_context_limit error="[NodeRunError] failed to invoke tool[name:search_assets id:ccst_9f3ea77c-b20c-4ca2-919b-e844dad0d2f0_0]: creative agent limit exceeded\n------------------------\nnode path: [node_1, ToolNode]"
+    asset_lookup_audit_test.go:204: run {ID:ccrn_fac627c1-c796-4121-b4f7-08319c7e0bd6 WaitingToken: WaitReason: SourceRunID: ConversationID:ccco_ac77dda2-102e-47f3-b70d-5ab824b564f8 CanvasID:cccv_a TriggerMessageID:ccms_22714eb7-3bd8-4a07-bc7f-1dfb6f99ae71 EgressConsentID:ccec_ea51edc8-87d5-4927-9627-8a4902d017f2 ModelKey:deepseek-flash SkillID:ccsk_defe8911-0e2b-4ed3-b55e-c943fc4a40e2 SkillVersionID:ccsv_5f376f50-4ba1-46bf-a762-d28c084169ec State:failed SettlementState:settled ErrorCode:creative_context_limit LimitsVersion:creative-agent-7 Revision:3 LastEventSeq:5 PrunedThroughSeq:0 DeadlineAt:2026-10-13 11:29:45.649144 -0700 PDT CreatedAt:2026-10-13 10:59:45.649144 -0700 PDT StartedAt:2026-10-13 10:59:45.659113 -0700 PDT FinishedAt:2026-10-13 10:59:45.711254 -0700 PDT} calls=1 <nil>
+--- FAIL: TestLargeAssetSearchKeepsPaginationAndRunAlive (0.69s)
+FAIL
+2026/10/13 10:59:45 🐳 Stopping container: 2481371cb602
+2026/10/13 10:59:45 ✅ Container stopped: 2481371cb602
+2026/10/13 10:59:45 🐳 Terminating container: 2481371cb602
+2026/10/13 10:59:46 🚫 Container terminated: 2481371cb602
+FAIL	github.com/samson/customer-manage-platform/backend/internal/creativeagent	5.250s
+FAIL

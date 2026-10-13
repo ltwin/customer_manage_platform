@@ -37,7 +37,7 @@ Skill package包括manifest_schema_version、key/version、digest、展示名/�
 
 | 工具与schema v1 | 输入 / 输出 | 写范围与并发 |
 |---|---|---|
-| SearchAssets | q、kind、group、tag IDs/all-any、limit≤20；返回asset_ref别名、标题/标签、实际修订、摘要/截断标志、库水位 | 复用库搜索，默认活跃视图，不搜索回收站；结果外发须覆盖account_library或明确修订授权 |
+| SearchAssets / search_assets | 精确检索、每页 ≤20，返回资产 ID 与内容修订 ID，不返回图片 | account_library + media_metadata；完整契约见 [资产查找设计](../../../../.codestable/features/2026-10-13-agent-asset-lookup/agent-asset-lookup-design.md)，当前读取与附件规则见 [开发说明](../../../dev/creative-agent.md#2026-10-13按需查库会话找回与直接上传) |
 | ReadNodes | 本次选择/已授权图范围内的node_ref≤20；返回实际内容修订、类型、参考关系、data/placement版本及读取说明 | 只读，不允许凭模型猜ID扩大范围；读取完整文字或明确报告超限 |
 | AddAssetNodes | 已登记asset_ref、目标区域、位置；返回节点别名与真实命令回执 | 只可用实际查到/摄影师选定的资产；原子验证asset_revision/current revision和画布拓扑 |
 | CreateTextNodes | 标题、正文、目标位置/父组；返回节点与内容修订 | 内容模块创建新内容和声明，画布建引用；与来源输入建立可追溯记录 |
@@ -86,6 +86,8 @@ run_inputs/input_manifest是历史事实，永不更新为最新节点内容。�
 已prepared的B、已展示待采纳artifact及终态恢复的旧命令都保持原operation/hash/preconditions；自身承接不重写它们。必须重新计划时生成明确新提案/新步骤，不能冒用旧操作。Worker接管从持久receipt与执行水位恢复，重复消费同receipt不再次推进。独立读工具发现外部变化时先报冲突/待确认；明确新任务可以读取新输入，不在旧写计划中静默rebase。取消、用途与对象状态检查仍在每次提交执行。
 
 ## 4. 独立附件
+
+以下是早期附件草稿设想；当前实现复用 `staged` 上传，发送后由消息引用保留，不创建 `agent_attachment`/独立 draft 表。现行规则见 `docs/dev/creative-agent.md` 的 2026-10-13 小节。
 
 附件不要求先收藏到个人库。`agent_attachment` 是媒体模块的新增类型化上传目标：先创建同会话open draft，再按draft_revision上传。成功发布创建 `creative_agent_attachments` 与明确内容修订引用，draft内新增附件并递增revision；发送消息在同事务建立message_refs/run_inputs后把附件置attached并清空临时修订根，保存目标消息身份。取消/过期释放临时根，发送与过期锁同一draft，只能成功一方。
 

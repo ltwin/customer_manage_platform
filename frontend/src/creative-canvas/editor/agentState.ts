@@ -83,7 +83,7 @@ export function conversationStep(canvasID: string): AgentStep {
     title: untitledConversation,
   })
 }
-// 发一条消息的两步：发送即授权，授权只覆盖这条消息用到的修订；首页和画布内
+// 发一条消息的两步：发送即授权，清单只放本条引用，另允许按需查库与读取本对话内容；首页和画布内
 // 助手都用它组装，两处的外发规则因此不会走样。
 export function messageSteps(
   conversation: string,
@@ -100,10 +100,11 @@ export function messageSteps(
       `/conversations/${conversation}/egress-consents`,
       {
         purpose: 'creative_assistance',
-        mode: 'selected_revisions',
+        mode: 'account_library',
         data_classes: [
           'text',
           'canvas_metadata',
+          'media_metadata',
           ...(message.imageInput ? ['image_preview'] : []),
         ],
         selected_revision_ids: message.revisionIDs,
@@ -394,7 +395,7 @@ export function sendRefusal(
 // 这条记录只决定弹不弹窗；每次发送照样按本条消息的范围建授权，由后端核对。
 // 版本与后端 creativeagent.policyVersion 一致，两边一起改（单测会核对）。
 // 助手要发送新的数据类型时改写说明并升级版本，所有账号会再看一次。
-export const egressNoticeVersion = 'egress-2026-10-1'
+export const egressNoticeVersion = 'egress-2026-10-2'
 const noticeKey = (account: string) => `creative-egress-notice:${account}`
 // 读不到本机存储时当作没看过：宁可多弹一次，也不漏掉说明。
 export function noticeSeen(storage: Storage | null, account: string): boolean {

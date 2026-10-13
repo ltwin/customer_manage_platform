@@ -280,6 +280,7 @@ func (s *Service) view(u upload, parts []int, candidate *Candidate) UploadView {
 			v.Binding = &Binding{Status: "applied", TargetKind: &kind, TargetID: &id}
 		} else if candidate != nil {
 			v.Binding = candidateBinding(*candidate)
+			v.ContentRevisionID = candidate.ContentRevisionID
 		}
 	}
 	return v

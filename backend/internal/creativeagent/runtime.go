@@ -22,6 +22,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
@@ -51,6 +52,10 @@ func runtimeToolEntries() []ToolEntry {
 		{Key: loadSkillTool, Version: 1, DisplayName: "加载固定 Skill", EffectClass: "read_only"},
 		{Key: readSkillTool, Version: 1, DisplayName: "读取 Skill 资源", EffectClass: "read_only"},
 		{Key: readResultTool, Version: 1, DisplayName: "读取运行结果", EffectClass: "read_only"},
+		{Key: searchAssetsTool, Version: 1, DisplayName: "查找资产库", EffectClass: "read_only"},
+		{Key: readLibraryTool, Version: 1, DisplayName: "读取资产库结构", EffectClass: "read_only"},
+		{Key: conversationAssetsTool, Version: 1, DisplayName: "找回对话内容", EffectClass: "read_only"},
+		{Key: saveLibraryTool, Version: 1, DisplayName: "存入资产库", EffectClass: "write", MaxImpact: 1},
 		{Key: readAssetTool, Version: 1, DisplayName: "读取引用素材", EffectClass: "read_only"},
 		{Key: readCanvasTool, Version: 1, DisplayName: "读取画布", EffectClass: "read_only"},
 		{Key: readHistoryTool, Version: 1, DisplayName: "读取对话历史", EffectClass: "read_only"},
@@ -63,6 +68,7 @@ func runtimeToolEntries() []ToolEntry {
 // never shared between accounts. All durable identities come from model step +
 // tool index; framework call IDs are only used to locate that recorded plan.
 type runtimeHandler struct {
+	libraryEnabled bool
 	*adk.BaseChatModelAgentMiddleware
 	service   *Service
 	scope     store.AccountScope
@@ -129,6 +135,12 @@ func (h *runtimeHandler) AfterModelRewriteState(ctx context.Context, state *adk.
 	return ctx, state, h.resultErr
 }
 func (h *runtimeHandler) allowed(name string) bool {
+	if name == searchAssetsTool || name == readLibraryTool {
+		return h.libraryEnabled
+	}
+	if name == conversationAssetsTool || name == saveLibraryTool {
+		return true
+	}
 	if name == readAssetTool || name == readCanvasTool || name == readHistoryTool || name == updatePlanTool {
 		return true
 	}
@@ -161,11 +173,26 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 	if !h.held.Model.Capability.ToolCalling {
 		return config, handlers, nil
 	}
+	if err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		consent, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
+		if err != nil {
+			return err
+		}
+		h.libraryEnabled = consent.Scope.Mode == ScopeAccountLibrary
+		return nil
+	}); err != nil {
+		return config, handlers, err
+	}
+	for _, name := range []string{searchAssetsTool, readLibraryTool, conversationAssetsTool} {
+		if h.allowed(name) {
+			config.Tools = append(config.Tools, &libraryTool{handler: h, name: name})
+		}
+	}
 	for _, name := range []string{readAssetTool, readCanvasTool, readHistoryTool} {
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: name})
 	}
 	config.Tools = append(config.Tools, planTool{})
-	for _, name := range []string{editCanvasTool, setNodePromptTool, generateNodeTool, compressImageTool} {
+	for _, name := range []string{editCanvasTool, setNodePromptTool, generateNodeTool, compressImageTool, saveLibraryTool} {
 		if h.allowed(name) {
 			config.Tools = append(config.Tools, &canvasTool{handler: h, name: name})
 		}
@@ -392,7 +419,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	// photographer instead of retrying or guessing the content.
 	case errors.Is(readErr, errReadRefused):
 		code = "creative_tool_not_authorized"
-		result = `{"success":false,"code":"creative_tool_not_authorized","message":"这项内容不在当前画布上，也没有被引用"}`
+		result = `{"success":false,"code":"creative_tool_not_authorized","message":"这项内容不在本次可读取范围内，或相关授权已撤销"}`
 	case errors.Is(readErr, ErrEgressRequired):
 		code = "creative_tool_not_authorized"
 		result = `{"success":false,"code":"creative_tool_not_authorized","message":"本次对话没有授权发送这类内容"}`
@@ -641,11 +668,44 @@ func (h *runtimeHandler) readRunResult(ctx context.Context, raw string) (string,
 	}
 	var body []byte
 	var digest string
+	var revisions []string
 	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if err := h.service.admitDispatchInTx(ctx, tx, h.held, h.revisions); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, "creative_agent_context_items", "payload,digest", "id=$2 AND run_id=$3 AND retained_until>clock_timestamp()", args.ItemID, h.held.RunID).Scan(&body, &digest)
+		if err := tx.QueryRow(ctx, "creative_agent_context_items", "payload,digest", "id=$2 AND run_id=$3 AND retained_until>clock_timestamp()", args.ItemID, h.held.RunID).Scan(&body, &digest); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, "creative_context_item_content_refs", "content_revision_id", "item_id=$2", args.ItemID)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			revisions = append(revisions, id)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		for _, id := range revisions {
+			readable, err := readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+			if err != nil {
+				return err
+			}
+			if !readable {
+				return errReadRefused
+			}
+			if _, err := creativecontent.RequireUsable(ctx, tx, id, "display"); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if errors.Is(err, store.ErrNoRows) {
 		return "", ErrNotFound
@@ -661,7 +721,7 @@ func (h *runtimeHandler) readRunResult(ctx context.Context, raw string) (string,
 		return "", creativeops.ErrValidation
 	}
 	part := utf8Prefix(string(body[args.Offset:]), args.Limit)
-	result, err := json.Marshal(map[string]any{"success": true, "text": part, "next_offset": args.Offset + len(part), "eof": args.Offset+len(part) == len(body)})
+	result, err := json.Marshal(map[string]any{"success": true, "content_revision_ids": revisions, "text": part, "next_offset": args.Offset + len(part), "eof": args.Offset+len(part) == len(body)})
 	return string(result), err
 }
 
@@ -675,7 +735,12 @@ func (h *runtimeHandler) persistContextInTx(ctx context.Context, tx store.TxAcco
 	if err := tx.QueryRow(ctx, "creative_agent_steps", "input", "id=$2 AND run_id=$3", stepID, h.held.RunID).Scan(&toolInput); err != nil {
 		return "", err
 	}
-	manifest := map[string]any{"content_revision_ids": h.revisions, "tool_input": toolInput}
+	var call llmgateway.ToolCall
+	if err := json.Unmarshal(toolInput, &call); err != nil {
+		return "", err
+	}
+	revisions := toolContentRevisions(call.Name, payload)
+	manifest := map[string]any{"content_revision_ids": revisions, "input_revision_ids": h.revisions, "tool_input": toolInput}
 	if h.held.Skill != nil {
 		manifest["skill_version_id"] = h.held.Skill.ID
 		manifest["skill_digest"] = h.held.Skill.Digest
@@ -691,7 +756,7 @@ func (h *runtimeHandler) persistContextInTx(ctx context.Context, tx store.TxAcco
 	if err = tx.Insert(ctx, "creative_agent_context_items", []string{"id", "run_id", "kind", "source_step_id_snapshot", "source_manifest", "payload", "digest", "revision", "retained_until"}, id, h.held.RunID, kind, stepID, source, []byte(payload), hex.EncodeToString(sum[:]), 1, now.Add(contextRetention)); err != nil {
 		return "", err
 	}
-	for _, revision := range h.revisions {
+	for _, revision := range revisions {
 		if err = tx.Insert(ctx, "creative_context_item_content_refs", []string{"item_id", "content_revision_id"}, id, revision); err != nil {
 			return "", err
 		}

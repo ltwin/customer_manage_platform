@@ -440,8 +440,8 @@ func (e *editGraph) add(a Action) error {
 		return creativeops.Explain(creativeops.ErrValidation, "新节点 ID %q 格式不对，须是 cwnode_ 加 UUID", a.NodeID)
 	case !knownType(a.TypeKey) || a.TypeKey == "internal.document":
 		return creativeops.Explain(creativeops.ErrValidation, "不能新建 %q 类型的节点", a.TypeKey)
-	case a.Asset != nil && a.Content != nil:
-		return creativeops.Explain(creativeops.ErrValidation, "新建节点时素材和正文只能二选一")
+	case a.Asset != nil && a.Content != nil || a.ContentRevisionID != "" && (a.Asset != nil || a.Content != nil):
+		return creativeops.Explain(creativeops.ErrValidation, "新建节点时素材、已有内容修订和正文只能选一项")
 	}
 	exists, err := e.tx.Exists(e.ctx, "creative_graph_identities", "id=$2", a.NodeID)
 	if err != nil {
@@ -452,7 +452,7 @@ func (e *editGraph) add(a Action) error {
 	}
 	w, h := defaultNodeSize(a.TypeKey)
 	n := Node{ID: a.NodeID, TypeKey: a.TypeKey, TypeVersion: 1, Title: a.Title, X: a.X, Y: a.Y, Width: w, Height: h, ParentID: a.ParentID, Config: json.RawMessage("{}"), PlacementRevision: 1, DataRevision: 1, StatusRevision: 1}
-	if n.TypeKey == "core.group" && (a.Content != nil || a.Asset != nil) {
+	if n.TypeKey == "core.group" && (a.Content != nil || a.Asset != nil || a.ContentRevisionID != "") {
 		return creativeops.Explain(creativeops.ErrValidation, "分组不能带内容或素材")
 	}
 	if a.ParentID != nil {
@@ -483,6 +483,20 @@ func (e *editGraph) add(a Action) error {
 		n.ContentRevisionID = &r.ID
 		fitMediaSize(&n, r)
 		if err = e.manualVersion(&n, r, "asset"); err != nil {
+			return err
+		}
+	}
+	if a.ContentRevisionID != "" {
+		r, err := creativecontent.RequireUsable(e.ctx, e.tx, a.ContentRevisionID, "display")
+		if err != nil {
+			return err
+		}
+		if n.TypeKey != "core."+r.Kind {
+			return kindMismatch(n, r.Kind)
+		}
+		n.ContentID, n.ContentRevisionID = &r.ContentID, &r.ID
+		fitMediaSize(&n, r)
+		if err := e.manualVersion(&n, r, "conversation"); err != nil {
 			return err
 		}
 	}

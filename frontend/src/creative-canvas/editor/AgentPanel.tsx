@@ -62,6 +62,7 @@ import {
   useAgentRuns,
   type TurnContext,
 } from './agentRuns.ts'
+import { attachmentCap, useChatAttachments } from '../home/chatAttachments.ts'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
@@ -186,9 +187,15 @@ function AgentConversation({
   const [skill, setSkill] = useState('')
   const [draft, setDraft] = useState('')
   const [materials, setMaterials] = useState<AgentMaterial[]>([])
+  const attachments = useChatAttachments(attachmentCap(catalog?.limits))
+  const uploadInput = useRef<HTMLInputElement>(null)
   const [pickingMaterial, setPickingMaterial] = useState(false)
   const references = agentReferences(canvas, materials)
-  const referenced = referencedMaterials(draft, references)
+  const mentioned = referencedMaterials(draft, references)
+  const uploaded: AgentMaterial[] = attachments.items.flatMap((item) =>
+    item.state === 'ready' && item.revisionID ? [{id:item.revisionID, title:item.title, kind:'image' as const}] : [],
+  )
+  const referenced = [...new Map([...mentioned, ...uploaded].map((item) => [item.id,item])).values()]
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [storageBroken, setStorageBroken] = useState(false)
@@ -212,22 +219,7 @@ function AgentConversation({
   const active = live.find(isActiveRun)
   const waiting = live.find((run) => run.state === 'waiting_input')
   const latest = active ?? waiting
-  const historyIDs = [
-    ...new Set(
-      messages
-        .slice()
-        .sort((a, b) => (BigInt(a.ordinal) > BigInt(b.ordinal) ? -1 : 1))
-        .slice(0, 20)
-        .flatMap((message) =>
-          message.body.blocks.flatMap((block) =>
-            block.type === 'content_ref' && block.ref_id ? [block.ref_id] : [],
-          ),
-        ),
-    ),
-  ]
-  const approvedIDs = [
-    ...new Set([...historyIDs, ...referenced.map((item) => item.id)]),
-  ]
+  const approvedIDs = referenced.map((item) => item.id)
   const chosenModel = catalog?.models.find((item) => item.model_key === model)
   const locked = busy || !!pending || storageBroken
   const unsupportedImage =
@@ -427,6 +419,7 @@ function AgentConversation({
           setConversation(reply.conversation_id)
           setDraft('')
           setMaterials([])
+          attachments.clear()
           setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
           followLatest()
         }
@@ -446,12 +439,12 @@ function AgentConversation({
     }
   }
   function sendDraft() {
-    if (!draft.trim() || locked || active) return
+    if ((!draft.trim() && !uploaded.length) || locked || active || attachments.uploading || attachments.failed) return
     const saved = {
       conversation,
       model,
       skill,
-      text: draft,
+      text: [draft, ...uploaded.filter((item) => !mentioned.some((m) => m.id === item.id)).map((item) => `@[${item.id}]`)].filter(Boolean).join(' '),
       materials: referenced,
     }
     if (waiting) {
@@ -475,6 +468,9 @@ function AgentConversation({
     let segments: components['schemas']['CreativeAgentInstructionSegment'][]
     try {
       segments = agentSegments(draft, references)
+      for (const item of uploaded) {
+        if (!mentioned.some((m) => m.id === item.id)) segments.push({type:'content_ref',content_revision_id:item.id})
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : '引用不可用')
       return
@@ -555,6 +551,7 @@ function AgentConversation({
     meta: shortTime(item.updated_at),
   }))
   function show(id: string) {
+    attachments.clear()
     setConversation(id)
     setMessages([])
     setRuns([])
@@ -675,7 +672,8 @@ function AgentConversation({
   const sendable =
     !locked &&
     !active &&
-    !!draft.trim() &&
+    (!!draft.trim() || uploaded.length > 0) &&
+    !attachments.uploading && !attachments.failed &&
     (!!waiting ||
       (!!chosenModel?.available && !unsupportedImage && !referenceLimit))
   return (
@@ -865,6 +863,12 @@ function AgentConversation({
       ) : (
         <form
           className="cc-agent-compose"
+          onDragOver={(event) => { if (!locked && !active && !waiting && event.dataTransfer.types.includes('Files')) event.preventDefault() }}
+          onDrop={(event) => {
+            if (!event.dataTransfer.files.length) return
+            event.preventDefault()
+            if (!locked && !active && !waiting) void attachments.addFiles(Array.from(event.dataTransfer.files))
+          }}
           noValidate
           onSubmit={(event) => {
             event.preventDefault()
@@ -925,8 +929,20 @@ function AgentConversation({
                 }}
                 onGenerate={() => sendDraft()}
                 onLibrary={() => setPickingMaterial(true)}
+                onFiles={(files) => { if (!locked && !active) void attachments.addFiles(files) }}
               />
             )}
+            {!waiting && attachments.items.length > 0 && (
+              <ul className="cc-agent-uploads" aria-label="上传的参考图">
+                {attachments.items.map((item) => <li key={item.key}>
+                  {item.preview && <img src={item.preview} alt={item.title} />}
+                  <span>{item.title}{item.state === 'uploading' ? ' · 上传中' : ''}{item.error ? ` · ${item.error}` : ''}</span>
+                  {item.state === 'failed' && <button type="button" disabled={locked || !!active} onClick={() => attachments.retry(item.key)}>重试</button>}
+                  <button type="button" disabled={locked || !!active} onClick={() => attachments.remove(item.key)}>移除</button>
+                </li>)}
+              </ul>
+            )}
+            {!waiting && attachments.message && <p role="status">{attachments.message}</p>}
             {!waiting && unsupportedImage && (
               <p className="cc-agent-hint" role="status">
                 当前模型不支持图片理解，请切换视觉模型或移除图片引用。
@@ -950,6 +966,8 @@ function AgentConversation({
                   >
                     <Plus size={15} />
                   </button>
+                  <button type="button" className="cc-agent-attach" aria-label="上传参考图" title="上传或粘贴图片，不会自动存入资产库" disabled={locked || !!active} onClick={() => uploadInput.current?.click()}><Paperclip size={15} /></button>
+                  <input ref={uploadInput} type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (!locked && !active) void attachments.addFiles(files) }} />
                   <Picker
                     className="cc-agent-mode"
                     label="Skill"

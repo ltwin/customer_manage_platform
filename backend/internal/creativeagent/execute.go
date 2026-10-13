@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -448,6 +449,39 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 					continue
 				}
 				m := bodyMessage(*meta.Body, meta.Role)
+				// Historical read results contain content bytes, not just locators.
+				// Recheck them just like ordinary content references.
+				if meta.Role == "tool" && contentReadTool(meta.Body.ToolName) {
+					hasSource := false
+					for _, block := range meta.Body.Blocks {
+						if block.Type != "content_ref" {
+							continue
+						}
+						hasSource = true
+						readable, err := readableInTx(ctx, tx, held.RunID, consent.ID, block.RefID)
+						if err != nil {
+							return err
+						}
+						if !readable {
+							m.Content = referenceLabel(block.RefID) + "（历史内容本轮不可读取）"
+							break
+						}
+						if _, err := creativecontent.RequireUsable(ctx, tx, block.RefID, "display"); err != nil {
+							if unreadableImage(err) || errors.Is(err, creativecontent.ErrMissingRoot) {
+								m.Content = referenceLabel(block.RefID) + "（历史内容已不可用）"
+								break
+							}
+							return err
+						}
+						if !attached[block.RefID] {
+							attached[block.RefID] = true
+							revisions = append(revisions, block.RefID)
+						}
+					}
+					if !hasSource {
+						m.Content = "历史读取结果没有内容来源记录，需要时请重新读取"
+					}
+				}
 				m.ReasoningContent = meta.Reasoning
 				historyTag(m, meta.Group)
 				if m.Content != "" || len(m.ToolCalls) > 0 {
@@ -540,7 +574,35 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	if err := coversRun(consent, held.ConversationID, nil); err != nil {
 		return err
 	}
-	for _, revisionID := range revisions {
+	// Include content read by tools in this run, including restored checkpoints.
+	rows, err := tx.Query(ctx, "creative_message_content_refs", "content_revision_id", "role='result' AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND run_id=$2 AND body->>'tool_name' IN ('read_asset','read_canvas','read_run_result'))", held.RunID)
+	if err != nil {
+		return err
+	}
+	checked := append([]string(nil), revisions...)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		if !slices.Contains(checked, id) {
+			checked = append(checked, id)
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, revisionID := range checked {
+		readable, err := readableInTx(ctx, tx, held.RunID, held.ConsentID, revisionID)
+		if err != nil {
+			return err
+		}
+		if !readable {
+			return ErrEgressRequired
+		}
 		if _, err := creativecontent.RequireUsable(ctx, tx, revisionID, "display"); err != nil {
 			return translateContent(err)
 		}

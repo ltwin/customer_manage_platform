@@ -1,0 +1,73 @@
+cd backend && go build ./...
+cd backend && golangci-lint run ./...
+0 issues.
+/Library/Developer/CommandLineTools/usr/bin/make test-go PKG=./...
+cd backend && go test -p=4 ./... -count=1 -parallel=4
+ok  	github.com/samson/customer-manage-platform/backend/cmd/accountctl	0.577s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/avatar-manifest	0.975s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/creative-palette	1.322s
+?   	github.com/samson/customer-manage-platform/backend/cmd/creative-tool-schema-gen	[no test files]
+?   	github.com/samson/customer-manage-platform/backend/cmd/creative-worker	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/cmd/creativectl	1.469s
+?   	github.com/samson/customer-manage-platform/backend/cmd/migrate	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/cmd/planning-media-manifest	1.622s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/planningctl	1.611s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/server	1.219s
+ok  	github.com/samson/customer-manage-platform/backend/internal/accountprofile	6.239s
+ok  	github.com/samson/customer-manage-platform/backend/internal/avatarmedia	2.010s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeagent	60.291s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativecanvas	20.502s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativecontent	6.587s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativegeneration	12.575s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeimageedit	13.020s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeimageedit/dbtest	20.245s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativelibrary	11.707s
+?   	github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativemedia	35.377s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativepalette	0.595s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativereference	5.961s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeskill	9.935s
+?   	github.com/samson/customer-manage-platform/backend/internal/creativestaging	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer	27.879s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarbackup	0.429s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage	0.468s
+?   	github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/dashboard	6.600s
+ok  	github.com/samson/customer-manage-platform/backend/internal/dataexport	12.573s
+ok  	github.com/samson/customer-manage-platform/backend/internal/order	5.709s
+ok  	github.com/samson/customer-manage-platform/backend/internal/package	4.341s
+ok  	github.com/samson/customer-manage-platform/backend/internal/planningmedia	4.670s
+ok  	github.com/samson/customer-manage-platform/backend/internal/planshare	5.167s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/auth	0.731s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/authevent	0.781s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/authmail	1.047s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/clock	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/config	1.489s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/creativeops	3.947s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/creativeops/einoadapter	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/httpapi	29.073s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/idempotency	4.059s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs	0.865s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/jobs	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway	22.841s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/realtime	1.072s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/securitybudget	0.387s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/store	82.876s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest	[no test files]
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/txcap	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs	1.296s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs/versionedfstest	[no test files]
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/webui	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder	17.211s
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest	12.966s
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram	0.442s
+ok  	github.com/samson/customer-manage-platform/backend/internal/schedule	3.501s
+ok  	github.com/samson/customer-manage-platform/backend/internal/settings	2.807s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning	5.035s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/business	3.284s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm	0.424s
+?   	github.com/samson/customer-manage-platform/backend/internal/shootplanning/httpcontract	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion	3.189s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder	0.821s

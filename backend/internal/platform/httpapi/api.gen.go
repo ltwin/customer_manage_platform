@@ -3536,15 +3536,18 @@ type CreateCreativeUploadRequest struct {
 
 // CreativeActionAddNode defines model for CreativeActionAddNode.
 type CreativeActionAddNode struct {
-	Asset    *CreativeAssetReference      `json:"asset,omitempty"`
-	Content  *CreativeContentDraft        `json:"content,omitempty"`
-	NodeId   string                       `json:"node_id"`
-	ParentId nullable.Nullable[string]    `json:"parent_id,omitempty"`
-	Title    *string                      `json:"title,omitempty"`
-	Type     CreativeActionAddNodeType    `json:"type"`
-	TypeKey  CreativeActionAddNodeTypeKey `json:"type_key"`
-	X        float32                      `json:"x"`
-	Y        float32                      `json:"y"`
+	Asset   *CreativeAssetReference `json:"asset,omitempty"`
+	Content *CreativeContentDraft   `json:"content,omitempty"`
+
+	// ContentRevisionId 引用已有内容修订，与 asset、content 互斥；按账号和可展示性校验。
+	ContentRevisionId *string                      `json:"content_revision_id,omitempty"`
+	NodeId            string                       `json:"node_id"`
+	ParentId          nullable.Nullable[string]    `json:"parent_id,omitempty"`
+	Title             *string                      `json:"title,omitempty"`
+	Type              CreativeActionAddNodeType    `json:"type"`
+	TypeKey           CreativeActionAddNodeTypeKey `json:"type_key"`
+	X                 float32                      `json:"x"`
+	Y                 float32                      `json:"y"`
 }
 
 // CreativeActionAddNodeType defines model for CreativeActionAddNode.Type.
@@ -4629,7 +4632,7 @@ type CreativeEgressConsentGrantPayload struct {
 	Mode        CreativeEgressConsentGrantPayloadMode          `json:"mode"`
 	Purpose     CreativeEgressConsentGrantPayloadPurpose       `json:"purpose"`
 
-	// SelectedRevisionIds selected_revisions 模式下的精确材料授权集合；空集合只允许本会话文字与选定 Skill，不授权素材库内容。
+	// SelectedRevisionIds 本条消息显式引用的内容修订，两种模式均可提供且运行引用必须在清单内。account_library 另允许助手按需查找资产库；历史内容按本对话引用判定。
 	SelectedRevisionIds *[]string `json:"selected_revision_ids,omitempty"`
 }
 

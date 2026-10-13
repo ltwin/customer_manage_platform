@@ -41,34 +41,35 @@ type ObjectRead struct {
 	Revision          creativeops.Revision `json:"revision,omitempty"`
 }
 type Action struct {
-	Type         string                                  `json:"type"`
-	NodeID       string                                  `json:"node_id,omitempty"`
-	NodeIDs      []string                                `json:"node_ids,omitempty"`
-	TypeKey      string                                  `json:"type_key,omitempty"`
-	Title        string                                  `json:"title,omitempty"`
-	Intent       string                                  `json:"intent,omitempty"`
-	ParentID     *string                                 `json:"parent_id,omitempty"`
-	X            float64                                 `json:"x,omitempty"`
-	Y            float64                                 `json:"y,omitempty"`
-	DX           float64                                 `json:"dx,omitempty"`
-	DY           float64                                 `json:"dy,omitempty"`
-	Width        float64                                 `json:"width,omitempty"`
-	Height       float64                                 `json:"height,omitempty"`
-	SourceNodeID string                                  `json:"source_node_id,omitempty"`
-	TargetNodeID string                                  `json:"target_node_id,omitempty"`
-	SourcePort   string                                  `json:"source_port,omitempty"`
-	TargetPort   string                                  `json:"target_port,omitempty"`
-	Role         string                                  `json:"role,omitempty"`
-	EdgeID       string                                  `json:"edge_id,omitempty"`
-	GroupMode    string                                  `json:"group_mode,omitempty"`
-	Inputs       []InputSource                           `json:"inputs,omitempty"`
-	Asset        *creativelibrary.AssetReference         `json:"asset,omitempty"`
-	Content      *creativecontent.Draft                  `json:"content,omitempty"`
-	Payload      *creativecontent.Payload                `json:"payload,omitempty"`
-	Rights       *creativecontent.RightsDeclarationInput `json:"rights,omitempty"`
-	FollowLatest bool                                    `json:"follow_latest,omitempty"`
-	VersionID    string                                  `json:"version_id,omitempty"`
-	UploadID     string                                  `json:"upload_id,omitempty"`
+	ContentRevisionID string                                  `json:"content_revision_id,omitempty"`
+	Type              string                                  `json:"type"`
+	NodeID            string                                  `json:"node_id,omitempty"`
+	NodeIDs           []string                                `json:"node_ids,omitempty"`
+	TypeKey           string                                  `json:"type_key,omitempty"`
+	Title             string                                  `json:"title,omitempty"`
+	Intent            string                                  `json:"intent,omitempty"`
+	ParentID          *string                                 `json:"parent_id,omitempty"`
+	X                 float64                                 `json:"x,omitempty"`
+	Y                 float64                                 `json:"y,omitempty"`
+	DX                float64                                 `json:"dx,omitempty"`
+	DY                float64                                 `json:"dy,omitempty"`
+	Width             float64                                 `json:"width,omitempty"`
+	Height            float64                                 `json:"height,omitempty"`
+	SourceNodeID      string                                  `json:"source_node_id,omitempty"`
+	TargetNodeID      string                                  `json:"target_node_id,omitempty"`
+	SourcePort        string                                  `json:"source_port,omitempty"`
+	TargetPort        string                                  `json:"target_port,omitempty"`
+	Role              string                                  `json:"role,omitempty"`
+	EdgeID            string                                  `json:"edge_id,omitempty"`
+	GroupMode         string                                  `json:"group_mode,omitempty"`
+	Inputs            []InputSource                           `json:"inputs,omitempty"`
+	Asset             *creativelibrary.AssetReference         `json:"asset,omitempty"`
+	Content           *creativecontent.Draft                  `json:"content,omitempty"`
+	Payload           *creativecontent.Payload                `json:"payload,omitempty"`
+	Rights            *creativecontent.RightsDeclarationInput `json:"rights,omitempty"`
+	FollowLatest      bool                                    `json:"follow_latest,omitempty"`
+	VersionID         string                                  `json:"version_id,omitempty"`
+	UploadID          string                                  `json:"upload_id,omitempty"`
 }
 type BatchInput struct {
 	CanvasID                 string               `json:"canvas_id"`
@@ -328,7 +329,7 @@ func (a *Action) UnmarshalJSON(raw []byte) error {
 		return creativeops.Explain(creativeops.ErrValidation, "动作缺少字符串类型的 type")
 	}
 	allowedByType := map[string]string{
-		"add_node":  "node_id type_key title x y parent_id asset content",
+		"add_node":  "node_id type_key title x y parent_id asset content content_revision_id",
 		"move_node": "node_id x y", "move_nodes": "node_ids dx dy", "resize_node": "node_id width height",
 		"update_metadata": "node_id title intent", "clear_content": "node_id", "replace_content": "node_id payload rights",
 		"connect_reference": "source_node_id target_node_id source_port target_port role", "disconnect_reference": "edge_id",

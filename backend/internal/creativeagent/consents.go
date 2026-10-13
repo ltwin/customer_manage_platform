@@ -80,7 +80,7 @@ func (s *Service) GrantConsent(ctx context.Context, scope store.AccountScope, co
 				}
 			}
 			switch input.Mode {
-			case ScopeSelectedRevisions:
+			case ScopeSelectedRevisions, ScopeAccountLibrary:
 				if len(input.SelectedRevisionIDs) > maxApprovedRevisions {
 					return creativeops.ErrValidation
 				}
@@ -88,11 +88,6 @@ func (s *Service) GrantConsent(ctx context.Context, scope store.AccountScope, co
 					if id == "" || slices.Contains(input.SelectedRevisionIDs[:i], id) {
 						return creativeops.ErrValidation
 					}
-				}
-			case ScopeAccountLibrary:
-				// A library-wide grant names no resource, by definition.
-				if len(input.SelectedRevisionIDs) != 0 {
-					return creativeops.ErrValidation
 				}
 			default:
 				return creativeops.ErrValidation

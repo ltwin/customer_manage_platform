@@ -34,18 +34,32 @@ func approvedRevision(ctx context.Context, tx store.TxAccountScope, consentID, i
 	return tx.Exists(ctx, "creative_egress_consent_contents", "consent_id=$2 AND content_revision_id=$3", consentID, id)
 }
 
-// readableInTx is what a run may read: anything on its own canvas right now,
-// plus what the photographer referenced. The assistant works on the canvas;
-// asking for every node to be named first would make it useless.
+// readableInTx combines explicit input, current canvas, conversation and library
+// access. Revoked references are denied before any branch can grant access.
 func readableInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string) (bool, error) {
+	return readableRevisionInTx(ctx, tx, runID, consentID, id, true)
+}
+
+func readableRevisionInTx(ctx context.Context, tx store.TxAccountScope, runID, consentID, id string, library bool) (bool, error) {
+	var canvasID, conversationID string
+	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id,conversation_id", "id=$2", runID).Scan(&canvasID, &conversationID); err != nil {
+		return false, err
+	}
+	revoked, err := tx.Exists(ctx, "creative_egress_consent_contents", "content_revision_id=$2 AND consent_id IN (SELECT id FROM creative_egress_consents WHERE account_id=$1 AND conversation_id=$3 AND revoked_at IS NOT NULL)", id, conversationID)
+	if err != nil || revoked {
+		return false, err
+	}
 	if approved, err := approvedRevision(ctx, tx, consentID, id); approved || err != nil {
 		return approved, err
 	}
-	var canvasID string
-	if err := tx.QueryRow(ctx, "creative_agent_runs", "canvas_id", "id=$2", runID).Scan(&canvasID); err != nil {
-		return false, err
+	if present, err := tx.Exists(ctx, "creative_nodes", "canvas_id=$2 AND content_revision_id=$3", canvasID, id); present || err != nil {
+		return present, err
 	}
-	return tx.Exists(ctx, "creative_nodes", "canvas_id=$2 AND content_revision_id=$3", canvasID, id)
+	present, err := tx.Exists(ctx, "creative_message_content_refs", "content_revision_id=$2 AND message_id IN (SELECT id FROM creative_agent_messages WHERE account_id=$1 AND conversation_id=$3 AND status='complete' AND (ordinal < (SELECT ordinal FROM creative_agent_messages WHERE account_id=$1 AND id=(SELECT trigger_message_id FROM creative_agent_runs WHERE account_id=$1 AND id=$4)) OR run_id=$4))", id, conversationID, runID)
+	if err != nil || present || !library {
+		return present, err
+	}
+	return tx.Exists(ctx, "creative_assets", "content_revision_id=$2 AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM creative_egress_consents WHERE account_id=$1 AND id=$3 AND scope->>'mode'='account_library' AND revoked_at IS NULL)", id, consentID)
 }
 
 // resolveReference builds serializable framework input. Executable image
@@ -217,12 +231,13 @@ type canvasNodeContext struct {
 }
 
 type canvasContext struct {
-	ID         string              `json:"canvas_id"`
-	Name       string              `json:"name"`
-	NodeCount  int                 `json:"node_count"`
-	Nodes      []canvasNodeContext `json:"nodes"`
-	Edges      []map[string]string `json:"edges"`
-	NextOffset *int                `json:"next_offset,omitempty"`
+	ContentRevisionIDs []string            `json:"content_revision_ids,omitempty"`
+	ID                 string              `json:"canvas_id"`
+	Name               string              `json:"name"`
+	NodeCount          int                 `json:"node_count"`
+	Nodes              []canvasNodeContext `json:"nodes"`
+	Edges              []map[string]string `json:"edges"`
+	NextOffset         *int                `json:"next_offset,omitempty"`
 }
 
 // canvasSummary is the canvas line frozen into a run's input: its name and
@@ -308,7 +323,34 @@ func (h *runtimeHandler) readCanvas(ctx context.Context, raw string) (string, er
 	if err != nil {
 		return "", err
 	}
-	out, err := json.Marshal(canvasView(canvas, args.Offset, args.Limit))
+	view := canvasView(canvas, args.Offset, args.Limit)
+	err = h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		for i := range view.Nodes {
+			node := &view.Nodes[i]
+			if node.Text == "" || node.Revision == nil {
+				continue
+			}
+			readable, err := readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, *node.Revision)
+			if err != nil {
+				return err
+			}
+			if !readable {
+				node.Text = ""
+				continue
+			}
+			if _, err := creativecontent.RequireUsable(ctx, tx, *node.Revision, "display"); err != nil {
+				return err
+			}
+			if !slices.Contains(view.ContentRevisionIDs, *node.Revision) {
+				view.ContentRevisionIDs = append(view.ContentRevisionIDs, *node.Revision)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	out, err := json.Marshal(view)
 	return string(out), err
 }
 
@@ -420,7 +462,11 @@ func (h *runtimeHandler) readHistory(ctx context.Context, raw string) (string, e
 				refs = append(refs, block.RefID)
 			}
 		}
-		items = append(items, map[string]any{"ordinal": fmt.Sprint(ordinal), "role": role, "text": utf8Prefix(renderedText(body), 1024), "references": refs, "tool_call_id": b.ToolCallID})
+		text := utf8Prefix(renderedText(body), 1024)
+		if contentReadTool(b.ToolName) {
+			text = "曾读取内容；正文请用 read_asset 重新读取"
+		}
+		items = append(items, map[string]any{"ordinal": fmt.Sprint(ordinal), "role": role, "text": text, "references": refs, "tool_call_id": b.ToolCallID})
 		next = ordinal
 	}
 	if err = rows.Err(); err != nil {
@@ -509,7 +555,7 @@ func contextToolInfo(name string) *schema.ToolInfo {
 	desc := ""
 	switch name {
 	case readAssetTool:
-		desc = "读取当前画布上节点的内容，或本轮引用的素材。ID 取自 read_canvas 的 content_revision_id 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。"
+		desc = "读取当前画布、本次引用、本对话出现过的内容或资产库素材。内容修订 ID 取自 read_canvas、list_conversation_assets、search_assets 或 <<<...>>> 引用。图片作为真实模型附件返回；文字按 UTF-8 字节分页。"
 		params["content_revision_id"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "内容修订 ID"}
 		params["offset"] = integer("文字起始字节，初次读取填 0")
 		params["limit"] = integer("文字最多字节数，1 到 8192；图片也填写此参数")
@@ -526,19 +572,33 @@ func contextToolInfo(name string) *schema.ToolInfo {
 }
 
 func (h *runtimeHandler) persistToolMessage(ctx context.Context, tx store.TxAccountScope, stepID, callID, name, result, original string) (Message, error) {
-	if len(result) > h.service.limits.MessageBodyBytes-512 {
-		result = utf8Prefix(result, h.service.limits.MessageBodyBytes-512) + "\n[omitted: 完整结果保存在原运行步骤中]"
-	}
 	message := newMessage{Role: "tool", Status: "complete", RunID: h.held.RunID, SourceStepID: stepID, Body: Body{Blocks: []Block{{Type: "text", Text: result}}, ToolCallID: callID, ToolName: name}}
-	if name == readAssetTool {
-		var asset struct {
-			ID string `json:"content_revision_id"`
+	for _, id := range toolContentRevisions(name, original) {
+		if contentReadTool(name) {
+			readable, err := readableInTx(ctx, tx, h.held.RunID, h.held.ConsentID, id)
+			if err != nil {
+				return Message{}, err
+			}
+			if !readable {
+				return Message{}, errReadRefused
+			}
+			if _, err := creativecontent.RequireUsable(ctx, tx, id, "display"); err != nil {
+				return Message{}, err
+			}
 		}
-		// Only a successful read names its revision; a refusal carries a code.
-		if json.Unmarshal([]byte(original), &asset) == nil && asset.ID != "" {
-			message.ContentRefs = []ContentRef{{RevisionID: asset.ID, Role: "result"}}
-			message.Body.Blocks = append(message.Body.Blocks, Block{Type: "content_ref", RefID: asset.ID})
+		message.ContentRefs = append(message.ContentRefs, ContentRef{RevisionID: id, Role: "result"})
+		message.Body.Blocks = append(message.Body.Blocks, Block{Type: "content_ref", RefID: id})
+	}
+
+	// Provenance is retained even when the displayed text is shortened. Charge
+	// every source ID and tool identity before choosing the text budget.
+	available := h.service.limits.MessageBodyBytes - (bodyBytes(message.Body) - len(result))
+	if len(result) > available {
+		const omitted = "\n[omitted: 完整结果保存在原运行步骤中]"
+		if available < len(omitted) {
+			return Message{}, ErrLimit
 		}
+		message.Body.Blocks[0].Text = utf8Prefix(result, available-len(omitted)) + omitted
 	}
 	return h.service.appendMessageInTx(ctx, tx, h.held.ConversationID, message)
 }

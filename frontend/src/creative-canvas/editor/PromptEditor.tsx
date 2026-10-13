@@ -43,6 +43,7 @@ type Props = {
   disabled: boolean
   onChange: (text: string) => void
   onGenerate: () => void
+  onFiles?: (files: File[]) => void
   onLibrary: () => void
 }
 
@@ -55,6 +56,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
     onChange,
     onGenerate,
     onLibrary,
+    onFiles,
     referenceTitle,
     label = '提示词',
     placeholder = '描述你想创作的内容，@ 引用已连接的参考…',
@@ -266,6 +268,9 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
         }}
         onPaste={(e) => {
           e.preventDefault()
+          if (disabled) return
+          const files = Array.from(e.clipboardData.files)
+          if (files.length && onFiles) { onFiles(files); return }
           const fragment = document.createElement('div')
           renderPromptDOM(
             fragment,

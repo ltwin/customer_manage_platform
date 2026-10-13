@@ -419,3 +419,25 @@ Gateway 未结费用；数据库锁阻塞至扫描超时后分页不跳账号。
 - 查看已归档时整个面板只读：输入区换成「恢复」条，步骤重试也会隐藏。
 - 恢复后回到普通列表，停留在这个对话上。
 - `scripts/creative-agent.e2e.mjs` 覆盖了改名、Esc 取消、改名被拒后回滚、归档后切到下一个对话、只读查看、恢复和空列表。
+
+
+## 2026-10-13：按需查库、会话找回与直接上传
+
+本节取代上文早期阶段关于“最近 20 条引用需重新授权”、库搜索尚未开放和独立附件尚未接入的描述。原设计见 `.codestable/features/2026-10-13-agent-asset-lookup/agent-asset-lookup-design.md`。
+
+发送使用 `account_library`，`selected_revision_ids` 只包含本条引用，数据类别增加 `media_metadata`。两种授权模式都可携带显式引用，运行引用仍逐项核对清单。说明版本为 `egress-2026-10-2`；旧说明的运行在下一次派发被拒，需要重新发送。有效版本的 `selected_revisions` 仍能使用会话工具，但不提供资产库检索工具。
+
+读取按账号限定：本条清单、当前画布内容、本对话在触发消息前的完成消息及本运行消息引用、account_library 下未入回收站素材的当前修订。任何分支前先检查本对话被撤销授权列过的内容；所有读取继续检查 RequireUsable(display) 和图片外发类别。读过的库素材有消息引用后，即使资产入回收站，仍可按会话内容读取；内容本身删除或权利撤销仍拒绝。read_asset、read_canvas 正文预览及 read_run_result 分页结果都登记内容来源；分页继承原结果的来源，派发和历史重放重新校验。没有来源记录的旧读取结果不直接重放正文；read_history 与素材摘录也不绕过此门禁。
+
+| 工具 | 行为 |
+|---|---|
+| search_assets | 复用资产库精确检索；每页 1–20；禁止 trash；返回资产和内容修订、名称、描述、分类、评分、尺寸，不返回图片。超出工具字节预算时缩减标签/分组列表，tags_omitted/groups_omitted 标明省略数量；保留整页素材、总数和原游标 |
+| read_library | 返回分组、分类及标签，最多 500 项，超过数量或工具字节预算标 truncated；素材数排除回收站 |
+| list_conversation_assets | 只查本对话，按 kind/source/query 筛选，先按来源和消息文字筛选，再对同修订保留匹配的最新一次；同时回传 next_before_ordinal 与 next_before_revision_id 才能无遗漏翻页 |
+| read_asset | 共用的内容读取器，参数是 content_revision_id，不要求 asset_id；沿用文字分页和图片预算，未增加音视频解码或链接抓取 |
+| edit_canvas | add_node 支持库素材或会话内容；fill_node 用素材填同类型空节点；库素材必须校验当前修订 |
+| save_to_library | 保存节点当前内容；操作身份来自工具步骤，重放相同回执；相同修订复用并追加已有归类，拒绝 new_tags |
+
+成功采用的 generate_node（apply_state=applied）记录全部 content_revision_ids；compress_image（state=applied）记录 content_revision_id。拒绝、未采用结果不登记。消息引用是无时间期限的 GC 保留根。
+
+首页与画布助手支持粘贴图片；画布助手也支持文件上传和拖入。使用媒体 `target.kind=staged`，只创建内容与暂存引用，不自动入库或建节点。上传回执返回 content_revision_id；发送后在事务内建立消息引用。未发送暂存受媒体候选有效期约束；成功发送的内容只要消息引用存在，就不会仅因时间久被 GC 清理。切换会话会取消尚在准备的附件，避免异步摘要完成后把图片加入另一会话。

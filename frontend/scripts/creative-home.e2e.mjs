@@ -583,8 +583,8 @@ try {
     const consent = server.posts.consents[0].body.payload
     assert.deepEqual(consent, {
       purpose: 'creative_assistance',
-      mode: 'selected_revisions',
-      data_classes: ['text', 'canvas_metadata', 'image_preview'],
+      mode: 'account_library',
+      data_classes: ['text', 'canvas_metadata', 'media_metadata', 'image_preview'],
       selected_revision_ids: ['ccrv_lib1', 'ccrv_up1'],
     })
     const run = server.posts.runs[0].body.payload
@@ -753,7 +753,7 @@ try {
     assert.equal(await privacy.getAttribute('target'), '_blank')
     // 焦点先落在「取消」，不是正文里的链接：再按一次 Enter 只会关掉说明。
     await page.waitForFunction(() => document.activeElement?.textContent === '取消')
-    await dialog.getByText('资产库里没有被引用的素材不会发送', { exact: false }).waitFor()
+    await dialog.getByText(/助手还会按需查找资产库/).waitFor()
     assert.equal(server.posts.projects.length, 0, 'no project before the notice is acknowledged')
     await page.evaluate(() => Promise.all(document.querySelector(".overlay.open").getAnimations({ subtree: true }).map((a) => a.finished)))
     await page.screenshot({ path: `${output}/egress-notice.png` })

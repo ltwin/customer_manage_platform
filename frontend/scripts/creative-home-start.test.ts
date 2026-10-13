@@ -197,8 +197,8 @@ test('the home chain matches the canvas assistant and keeps a draft', () => {
   )
   assert.deepEqual(chain.steps[1].payload, {
     purpose: 'creative_assistance',
-    mode: 'selected_revisions',
-    data_classes: ['text', 'canvas_metadata', 'image_preview'],
+    mode: 'account_library',
+    data_classes: ['text', 'canvas_metadata', 'media_metadata', 'image_preview'],
     selected_revision_ids: ['ccrv_a', 'ccrv_b'],
   })
   // 指令：先 Skill，再文字，参考图按添加顺序排在后面。
@@ -239,6 +239,7 @@ test('the home chain matches the canvas assistant and keeps a draft', () => {
   assert.deepEqual(again.steps[0].payload.data_classes, [
     'text',
     'canvas_metadata',
+    'media_metadata',
   ])
 })
 

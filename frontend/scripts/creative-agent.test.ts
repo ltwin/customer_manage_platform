@@ -158,8 +158,8 @@ test('a chain carries the new conversation and grant into the later steps', () =
   assert.equal(steps[0].path, '/canvases/canvas/conversations')
   assert.deepEqual(steps[1].payload, {
     purpose: 'creative_assistance',
-    mode: 'selected_revisions',
-    data_classes: ['text', 'canvas_metadata', 'image_preview'],
+    mode: 'account_library',
+    data_classes: ['text', 'canvas_metadata', 'media_metadata', 'image_preview'],
     selected_revision_ids: ['ccrv_a'],
   })
   const opened = advanceChain(chain, { id: 'conversation' })!
@@ -188,7 +188,7 @@ test('a chain carries the new conversation and grant into the later steps', () =
       revisionIDs: [],
       segments: [],
     })[0].payload.data_classes,
-    ['text', 'canvas_metadata'],
+    ['text', 'canvas_metadata', 'media_metadata'],
   )
 })
 test('an uncertain step keeps the chain; a retry replays the same identities', async () => {

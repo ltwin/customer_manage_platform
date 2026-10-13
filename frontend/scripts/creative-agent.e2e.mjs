@@ -69,7 +69,7 @@ try {
       if (req.method() === 'POST') {
         const body = req.postDataJSON()
         if (path.endsWith('/egress-consents')) {
-          assert.equal(body.payload.mode, 'selected_revisions')
+          assert.equal(body.payload.mode, 'account_library')
           assert.deepEqual(body.payload.selected_revision_ids, [])
           const index = grants++
           await gates[index].promise

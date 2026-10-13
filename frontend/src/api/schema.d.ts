@@ -3695,7 +3695,7 @@ export interface components {
             /** @enum {string} */
             mode: "selected_revisions" | "account_library";
             data_classes: ("text" | "image_preview" | "media_metadata" | "canvas_metadata")[];
-            /** @description selected_revisions 模式下的精确材料授权集合；空集合只允许本会话文字与选定 Skill，不授权素材库内容。 */
+            /** @description 本条消息显式引用的内容修订，两种模式均可提供且运行引用必须在清单内。account_library 另允许助手按需查找资产库；历史内容按本对话引用判定。 */
             selected_revision_ids?: string[];
         };
         GrantCreativeEgressConsentRequest: {
@@ -6219,6 +6219,8 @@ export interface components {
             y: number;
             parent_id?: string | null;
             asset?: components["schemas"]["CreativeAssetReference"];
+            /** @description 引用已有内容修订，与 asset、content 互斥；按账号和可展示性校验。 */
+            content_revision_id?: string;
             content?: components["schemas"]["CreativeContentDraft"];
         };
         CreativeActionMoveNodes: {

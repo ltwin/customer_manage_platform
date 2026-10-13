@@ -1017,3 +1017,9 @@
     color: var(--fg-2);
   }
 }
+
+.cc-agent-uploads { list-style: none; padding: 0; margin: 8px 0; }
+.cc-agent-uploads li { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.cc-agent-uploads img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; }
+.cc-agent-uploads span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.cc-agent-uploads button { flex-shrink: 0; font-size: 12px; }

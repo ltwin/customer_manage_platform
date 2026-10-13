@@ -1,0 +1,47 @@
+2026/10/13 11:00:19 github.com/testcontainers/testcontainers-go - Connected to docker:
+  Server Version: 29.2.1
+  API Version: 1.53
+  Operating System: Docker Desktop
+  Total Memory: 7836 MB
+  Labels:
+    com.docker.desktop.address=unix:///Users/samson/Library/Containers/com.docker.docker/Data/docker-cli.sock
+  Testcontainers for Go Version: v0.43.0
+  Resolved Docker Host: unix:///var/run/docker.sock
+  Resolved Docker Socket Path: /var/run/docker.sock
+  Test SessionID: ca8d0dc532752e995c2b3112a9daafd2d7401007b78249ee480694fca10a0649
+  Test ProcessID: 4c83c074-bb08-4a1a-a2cf-b0b2211448ca
+2026/10/13 11:00:19 🐳 Creating container for image postgres:17-alpine
+2026/10/13 11:00:19 🐳 Creating container for image testcontainers/ryuk:0.14.0
+2026/10/13 11:00:19 ✅ Container created: 044bb6424994
+2026/10/13 11:00:19 🐳 Starting container: 044bb6424994
+2026/10/13 11:00:19 ✅ Container started: 044bb6424994
+2026/10/13 11:00:19 ⏳ Waiting for container id 044bb6424994 image: testcontainers/ryuk:0.14.0. Waiting for: all of: [log message "Started", port 8080/tcp to be listening]
+2026/10/13 11:00:19 Shell not found in container
+2026/10/13 11:00:19 🔔 Container is ready: 044bb6424994
+2026/10/13 11:00:19 ✅ Container created: 37b692f917cb
+2026/10/13 11:00:19 🐳 Starting container: 37b692f917cb
+2026/10/13 11:00:19 ✅ Container started: 37b692f917cb
+2026/10/13 11:00:19 ⏳ Waiting for container id 37b692f917cb image: postgres:17-alpine. Waiting for: all of: [all of: [log message "database system is ready to accept connections" (occurrence: 2), port 5432/tcp to be listening]]
+2026/10/13 11:00:20 🔔 Container is ready: 37b692f917cb
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/latest
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/photographer
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/keyword
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/combined
+=== RUN   TestConversationAssetFiltersPrecedeDeduplication/assistant
+--- PASS: TestConversationAssetFiltersPrecedeDeduplication (0.45s)
+    --- PASS: TestConversationAssetFiltersPrecedeDeduplication/latest (0.01s)
+    --- PASS: TestConversationAssetFiltersPrecedeDeduplication/photographer (0.01s)
+    --- PASS: TestConversationAssetFiltersPrecedeDeduplication/keyword (0.01s)
+    --- PASS: TestConversationAssetFiltersPrecedeDeduplication/combined (0.01s)
+    --- PASS: TestConversationAssetFiltersPrecedeDeduplication/assistant (0.01s)
+=== RUN   TestLargeAssetSearchKeepsPaginationAndRunAlive
+--- PASS: TestLargeAssetSearchKeepsPaginationAndRunAlive (0.80s)
+=== RUN   TestConversationAssetsPaginationAndIsolation
+--- PASS: TestConversationAssetsPaginationAndIsolation (0.20s)
+PASS
+2026/10/13 11:00:22 🐳 Stopping container: 37b692f917cb
+2026/10/13 11:00:23 ✅ Container stopped: 37b692f917cb
+2026/10/13 11:00:23 🐳 Terminating container: 37b692f917cb
+2026/10/13 11:00:23 🚫 Container terminated: 37b692f917cb
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeagent	5.550s

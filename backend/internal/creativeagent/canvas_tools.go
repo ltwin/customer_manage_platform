@@ -18,6 +18,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
+	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -90,6 +91,12 @@ func asRefusal(err error) error {
 		return err
 	case errors.Is(err, errToolArguments):
 		return refuseTool("参数不符合工具说明：须是一个 JSON 对象，且只能使用说明里列出的字段")
+	case errors.Is(err, creativelibrary.ErrNotFound), errors.Is(err, creativecanvas.ErrNotFound):
+		return refuseTool("素材、节点或归类已不存在，请重新查找")
+	case errors.Is(err, creativelibrary.ErrVersionConflict):
+		return refuseTool("素材已更新，重新查找")
+	case errors.Is(err, creativecontent.ErrUsageDenied), errors.Is(err, creativecontent.ErrMissingRoot), errors.Is(err, creativecontent.ErrNotFound):
+		return refuseTool("内容已删除、失去引用或不可展示，请重新选择")
 	case errors.Is(err, creativecanvas.ErrGraphIntegrity):
 		return refuseTool("画布数据校验未通过，本次修改没有生效。这不是参数问题，重试也不会成功；请如实告诉摄影师，并请其联系我们处理")
 	}
@@ -113,21 +120,25 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 	str := func(desc string) *schema.ParameterInfo { return &schema.ParameterInfo{Type: schema.String, Desc: desc} }
 	num := func(desc string) *schema.ParameterInfo { return &schema.ParameterInfo{Type: schema.Number, Desc: desc} }
 	switch t.name {
+	case saveLibraryTool:
+		return assetToolInfo(saveLibraryTool), nil
 	case editCanvasTool:
 		action := map[string]*schema.ParameterInfo{
-			"type":           {Type: schema.String, Required: true, Desc: "动作类型", Enum: []string{"add_node", "update_node", "move_node", "resize_node", "set_text", "connect", "disconnect", "remove_nodes"}},
-			"key":            str("add_node 必填：本次调用内给新节点起的临时名，后续动作可用它代替节点 ID，结果里返回真实 ID"),
-			"node_type":      {Type: schema.String, Desc: "add_node 必填：节点类型", Enum: nodeTypes},
-			"node_id":        str("update_node / move_node / resize_node / set_text 的目标节点 ID 或本次新建节点的临时名"),
-			"node_ids":       {Type: schema.Array, Desc: "remove_nodes 要删除的节点 ID", ElemInfo: &schema.ParameterInfo{Type: schema.String}},
-			"title":          str("add_node / update_node：节点标题"),
-			"text":           str("add_node（文字节点）/ set_text：文字节点的完整正文"),
-			"x":              num("add_node / move_node：左上角横坐标；新建时省略则自动放在画布右侧"),
-			"y":              num("add_node / move_node：左上角纵坐标"),
-			"width":          num("resize_node：宽度，160 到 1200"),
-			"height":         num("resize_node：高度，不小于 100；有内容的图片和视频按比例自动计算"),
-			"source_node_id": str("connect / disconnect：参考来源节点"),
-			"target_node_id": str("connect / disconnect：使用参考的节点"),
+			"type":                {Type: schema.String, Required: true, Desc: "动作类型", Enum: []string{"add_node", "fill_node", "update_node", "move_node", "resize_node", "set_text", "connect", "disconnect", "remove_nodes"}},
+			"asset_id":            str("add_node / fill_node：资产库素材 ID，必须同时传搜索结果的 content_revision_id"),
+			"content_revision_id": str("add_node：只有此字段时使用本对话或画布内容；fill_node 必须与 asset_id 一起提供"),
+			"key":                 str("add_node 必填：本次调用内给新节点起的临时名，后续动作可用它代替节点 ID，结果里返回真实 ID"),
+			"node_type":           {Type: schema.String, Desc: "add_node 必填：节点类型", Enum: nodeTypes},
+			"node_id":             str("update_node / move_node / resize_node / set_text 的目标节点 ID 或本次新建节点的临时名"),
+			"node_ids":            {Type: schema.Array, Desc: "remove_nodes 要删除的节点 ID", ElemInfo: &schema.ParameterInfo{Type: schema.String}},
+			"title":               str("add_node / update_node：节点标题"),
+			"text":                str("add_node（文字节点）/ set_text：文字节点的完整正文"),
+			"x":                   num("add_node / move_node：左上角横坐标；新建时省略则自动放在画布右侧"),
+			"y":                   num("add_node / move_node：左上角纵坐标"),
+			"width":               num("resize_node：宽度，160 到 1200"),
+			"height":              num("resize_node：高度，不小于 100；有内容的图片和视频按比例自动计算"),
+			"source_node_id":      str("connect / disconnect：参考来源节点"),
+			"target_node_id":      str("connect / disconnect：使用参考的节点"),
 		}
 		return &schema.ToolInfo{
 			Name: editCanvasTool,
@@ -188,6 +199,8 @@ func (t *canvasTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opt
 	seed := h.held.RunID + "/" + h.toolStep()
 	var out any
 	switch t.name {
+	case saveLibraryTool:
+		out, err = h.saveToLibrary(ctx, canvasID, seed, raw)
 	case editCanvasTool:
 		out, err = h.editCanvas(ctx, canvasID, seed, raw)
 	case setNodePromptTool:
@@ -254,19 +267,21 @@ func toolOperation(seed string) string {
 }
 
 type canvasAction struct {
-	Type         string   `json:"type"`
-	Key          string   `json:"key"`
-	NodeType     string   `json:"node_type"`
-	NodeID       string   `json:"node_id"`
-	NodeIDs      []string `json:"node_ids"`
-	Title        *string  `json:"title"`
-	Text         *string  `json:"text"`
-	X            *float64 `json:"x"`
-	Y            *float64 `json:"y"`
-	Width        float64  `json:"width"`
-	Height       float64  `json:"height"`
-	SourceNodeID string   `json:"source_node_id"`
-	TargetNodeID string   `json:"target_node_id"`
+	AssetID           string   `json:"asset_id"`
+	ContentRevisionID string   `json:"content_revision_id"`
+	Type              string   `json:"type"`
+	Key               string   `json:"key"`
+	NodeType          string   `json:"node_type"`
+	NodeID            string   `json:"node_id"`
+	NodeIDs           []string `json:"node_ids"`
+	Title             *string  `json:"title"`
+	Text              *string  `json:"text"`
+	X                 *float64 `json:"x"`
+	Y                 *float64 `json:"y"`
+	Width             float64  `json:"width"`
+	Height            float64  `json:"height"`
+	SourceNodeID      string   `json:"source_node_id"`
+	TargetNodeID      string   `json:"target_node_id"`
 }
 
 func (h *runtimeHandler) editCanvas(ctx context.Context, canvasID, seed, raw string) (any, error) {
@@ -294,6 +309,9 @@ func (h *runtimeHandler) editCanvas(ctx context.Context, canvasID, seed, raw str
 	build := func(canvas creativecanvas.Canvas) (any, error) {
 		actions, err := canvasActions(canvas, args.Actions, created)
 		if err != nil {
+			return nil, err
+		}
+		if err := h.resolveCanvasAssets(ctx, args.Actions, actions); err != nil {
 			return nil, err
 		}
 		return creativecanvas.BatchInput{CanvasID: canvas.ID, ExpectedTopologyRevision: canvas.TopologyRevision, ReadSet: creativecanvas.ReadSetFor(canvas), Actions: actions}, nil
@@ -363,7 +381,7 @@ func canvasActions(canvas creativecanvas.Canvas, in []canvasAction, created map[
 			if !slices.Contains(nodeTypes, a.NodeType) {
 				return nil, refuseTool("第 %d 个动作：不支持的节点类型 %q", i, a.NodeType)
 			}
-			action := creativecanvas.Action{Type: "add_node", NodeID: created[a.Key], TypeKey: "core." + a.NodeType}
+			action := creativecanvas.Action{Type: "add_node", NodeID: created[a.Key], TypeKey: "core." + a.NodeType, ContentRevisionID: a.ContentRevisionID}
 			added[action.NodeID] = action.TypeKey
 			if a.Title != nil {
 				action.Title = *a.Title
@@ -385,6 +403,15 @@ func canvasActions(canvas creativecanvas.Canvas, in []canvasAction, created map[
 				action.Content = &creativecontent.Draft{Kind: "text", Payload: *payload}
 			}
 			out = append(out, action)
+		case "fill_node":
+			if a.AssetID == "" || a.ContentRevisionID == "" {
+				return nil, refuseTool("填空节点需要 asset_id 和 content_revision_id")
+			}
+			id, err := resolve(i, a.NodeID)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, creativecanvas.Action{Type: "fill_from_asset", NodeID: id})
 		case "update_node":
 			id, err := resolve(i, a.NodeID)
 			if err != nil {

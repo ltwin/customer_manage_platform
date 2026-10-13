@@ -105,6 +105,7 @@ export function useChatAttachments(cap: number) {
   const [message, setMessage] = useState('')
   const [preparing, setPreparing] = useState(0)
   const mounted = useRef(false)
+  const draftEpoch = useRef(0)
   const [capabilities, setCapabilities] = useState<MediaCapabilities | null>(
     null,
   )
@@ -190,10 +191,11 @@ export function useChatAttachments(cap: number) {
       }
     }
     // 读文件和计算摘要也属于发送前的准备，不能等上传开始才锁住发送。
+    const epoch = draftEpoch.current
     setPreparing((count) => count + 1)
     try {
       const digests = await Promise.all(files.map(sha256))
-      if (!mounted.current) return
+      if (!mounted.current || epoch !== draftEpoch.current) return
       // 算摘要期间列表可能变了，以当时的列表为准。
       const { accepted, message: note } = admitAttachments(
         itemsRef.current,
@@ -215,12 +217,12 @@ export function useChatAttachments(cap: number) {
       setItems(itemsRef.current)
       for (const item of added) upload(item.key, item.file, capabilities)
     } catch (error) {
-      if (mounted.current)
+      if (mounted.current && epoch === draftEpoch.current)
         setMessage(
           error instanceof Error ? error.message : '无法读取参考图，请重新添加',
         )
     } finally {
-      if (mounted.current) setPreparing((count) => count - 1)
+      if (mounted.current && epoch === draftEpoch.current) setPreparing((count) => count - 1)
     }
   }
   function addRevision(revisionID: string, title: string) {
@@ -270,6 +272,8 @@ export function useChatAttachments(cap: number) {
     setItems(itemsRef.current)
   }, [])
   function clear() {
+    draftEpoch.current++
+    setPreparing(0)
     for (const item of itemsRef.current) remove(item.key)
   }
   return {

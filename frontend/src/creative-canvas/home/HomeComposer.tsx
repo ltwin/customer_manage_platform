@@ -453,6 +453,12 @@ export default function HomeComposer({
           event.preventDefault()
           void send()
         }}
+        onPaste={(event) => {
+          const files = Array.from(event.clipboardData.files)
+          if (!files.length) return
+          event.preventDefault()
+          if (!locked) void attachments.addFiles(files)
+        }}
         onDragOver={(event) => {
           if (locked || !event.dataTransfer.types.includes('Files')) return
           event.preventDefault()

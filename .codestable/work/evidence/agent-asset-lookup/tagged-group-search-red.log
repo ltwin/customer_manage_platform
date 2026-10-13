@@ -1,0 +1,39 @@
+2026/10/13 10:28:12 github.com/testcontainers/testcontainers-go - Connected to docker:
+  Server Version: 29.2.1
+  API Version: 1.53
+  Operating System: Docker Desktop
+  Total Memory: 7836 MB
+  Labels:
+    com.docker.desktop.address=unix:///Users/samson/Library/Containers/com.docker.docker/Data/docker-cli.sock
+  Testcontainers for Go Version: v0.43.0
+  Resolved Docker Host: unix:///var/run/docker.sock
+  Resolved Docker Socket Path: /var/run/docker.sock
+  Test SessionID: ab8076d402f3d9d5ac00784445becb76e6002c209585b1e8caa347f0a9b18468
+  Test ProcessID: e5bc707f-eae5-45ac-ad9e-3929799f2c9d
+2026/10/13 10:28:12 🐳 Creating container for image postgres:17-alpine
+2026/10/13 10:28:12 🐳 Creating container for image testcontainers/ryuk:0.14.0
+2026/10/13 10:28:12 ✅ Container created: 7086042607d1
+2026/10/13 10:28:12 🐳 Starting container: 7086042607d1
+2026/10/13 10:28:12 ✅ Container started: 7086042607d1
+2026/10/13 10:28:12 ⏳ Waiting for container id 7086042607d1 image: testcontainers/ryuk:0.14.0. Waiting for: all of: [log message "Started", port 8080/tcp to be listening]
+2026/10/13 10:28:12 Shell not found in container
+2026/10/13 10:28:12 🔔 Container is ready: 7086042607d1
+2026/10/13 10:28:12 ✅ Container created: 4267b015bed3
+2026/10/13 10:28:12 🐳 Starting container: 4267b015bed3
+2026/10/13 10:28:13 ✅ Container started: 4267b015bed3
+2026/10/13 10:28:13 ⏳ Waiting for container id 4267b015bed3 image: postgres:17-alpine. Waiting for: all of: [all of: [log message "database system is ready to accept connections" (occurrence: 2), port 5432/tcp to be listening]]
+2026/10/13 10:28:14 🔔 Container is ready: 4267b015bed3
+=== RUN   TestSearchTaggedImageReturnsGroupNames
+=== RUN   TestSearchTaggedImageReturnsGroupNames/grouped=false
+=== RUN   TestSearchTaggedImageReturnsGroupNames/grouped=true
+    asset_lookup_test.go:571: scoped query page creative_groups: ERROR: relation "creative_groups" does not exist (SQLSTATE 42P01)
+--- FAIL: TestSearchTaggedImageReturnsGroupNames (0.18s)
+    --- PASS: TestSearchTaggedImageReturnsGroupNames/grouped=false (0.01s)
+    --- FAIL: TestSearchTaggedImageReturnsGroupNames/grouped=true (0.01s)
+FAIL
+2026/10/13 10:28:14 🐳 Stopping container: 4267b015bed3
+2026/10/13 10:28:15 ✅ Container stopped: 4267b015bed3
+2026/10/13 10:28:15 🐳 Terminating container: 4267b015bed3
+2026/10/13 10:28:15 🚫 Container terminated: 4267b015bed3
+FAIL	github.com/samson/customer-manage-platform/backend/internal/creativeagent	3.388s
+FAIL

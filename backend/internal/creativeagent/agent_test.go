@@ -640,7 +640,7 @@ func (f *fixture) mediaRevision(scope store.AccountScope, kind, mime string) str
 func (f *fixture) registerSkillTools() {
 	f.t.Helper()
 	f.service.tools = []ToolEntry{{
-		Key: "search_assets", Version: 1, DisplayName: "检索素材",
+		Key: "fixture_reference_search", Version: 1, DisplayName: "检索素材",
 		EffectClass: "read_only", MaxImpact: 0,
 	}}
 }
@@ -676,7 +676,7 @@ func skillRequest(origin, slug, displayName string) creativeskill.ImportRequest 
 		Instructions: "先检索，再比较，最后写方向。",
 		Manifest: creativeskill.Manifest{
 			ManifestSchemaVersion: 1, InputKinds: []string{"text"}, MaxInputs: 20,
-			ToolAllowlist: []string{"search_assets@1"}, RequiredModelCapabilities: []string{"tool_calling"},
+			ToolAllowlist: []string{"fixture_reference_search@1"}, RequiredModelCapabilities: []string{"tool_calling"},
 			OutputContract: "一组参考节点加一段创作方向文字。", CompletionCheckKey: "reference_direction_v1",
 		},
 		Resources: []creativeskill.ResourceDeclaration{{
