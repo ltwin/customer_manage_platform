@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 )
@@ -29,10 +30,36 @@ func DefaultCodecConfig() CodecConfig {
 	cfg := CodecConfig{
 		Vips: "vips", VipsHeader: "vipsheader",
 		TempRoot: filepath.Join(os.TempDir(), "creative-image-edit"),
-		MaxEdge:  media.MaxImageEdge, MaxPixels: media.MaxImagePixels,
+		MaxEdge:  min(media.MaxImageEdge, maxCropEdge), MaxPixels: media.MaxImagePixels,
 	}
 	if runtime.GOOS == "linux" {
 		cfg.Choom = "choom"
 	}
 	return cfg
+}
+
+// Enabled applies the same switch and GC precondition in API and worker.
+func Enabled(value string, gcMode creativemedia.GCMode) (bool, error) {
+	on, err := ParseSwitch(strings.TrimSpace(value))
+	if err != nil || !on {
+		return false, err
+	}
+	if gcMode != creativemedia.GCDelete {
+		return false, fmt.Errorf("CREATIVE_IMAGE_EDIT=on requires CREATIVE_MEDIA_GC_MODE=delete: unapplied edit results are only reclaimed by media GC")
+	}
+	return true, nil
+}
+
+// EnabledFromValues leaves unrelated GC configuration alone when the API has
+// image editing disabled. The worker still validates its own GC runner config.
+func EnabledFromValues(value, gcValue string) (bool, error) {
+	on, err := ParseSwitch(strings.TrimSpace(value))
+	if err != nil || !on {
+		return false, err
+	}
+	mode, err := creativemedia.ParseGCMode(strings.TrimSpace(gcValue))
+	if err != nil {
+		return false, err
+	}
+	return Enabled(value, mode)
 }

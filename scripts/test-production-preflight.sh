@@ -236,6 +236,20 @@ run_preflight binary-valid 0 \
 grep -qx 'readiness/registration=secure-baseline-ready' "$work_dir/binary-valid.out"
 grep -qx 'complete/preflight=secure-baseline-ready' "$work_dir/binary-valid.out"
 
+# Image editing needs an explicitly matching worker deployment configuration.
+image_api_env="$work_dir/image-api.env"
+cp "$valid_env" "$image_api_env"
+printf '%s\n' 'CREATIVE_IMAGE_EDIT=on' 'CREATIVE_MEDIA_GC_MODE=delete' >>"$image_api_env"
+run_preflight image-worker-missing 4 --mode binary --seed-state initialized --env-file "$image_api_env"
+grep -q 'key=CREATIVE_IMAGE_EDIT' "$work_dir/image-worker-missing.err"
+image_worker_env="$work_dir/image-worker.env"
+printf '%s\n' 'CREATIVE_IMAGE_EDIT=off' 'CREATIVE_MEDIA_GC_MODE=delete' >"$image_worker_env"
+run_preflight image-worker-mismatch 4 --mode binary --seed-state initialized --env-file "$image_api_env" --creative-worker-env "$image_worker_env"
+printf '%s\n' 'CREATIVE_IMAGE_EDIT=on' 'CREATIVE_MEDIA_GC_MODE=scan' >"$image_worker_env"
+run_preflight image-worker-gc-disabled 4 --mode binary --seed-state initialized --env-file "$image_api_env" --creative-worker-env "$image_worker_env"
+printf '%s\n' 'CREATIVE_IMAGE_EDIT=on' 'CREATIVE_MEDIA_GC_MODE=delete' >"$image_worker_env"
+run_preflight image-worker-matched 0 --mode binary --seed-state initialized --env-file "$image_api_env" --creative-worker-env "$image_worker_env"
+
 oss_binary_env="$work_dir/oss-binary.env"
 write_oss_binary_env "$oss_binary_env"
 run_preflight binary-oss-valid 0 \

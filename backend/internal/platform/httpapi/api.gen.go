@@ -209,6 +209,24 @@ func (e CreateAssetBindingInputHolderKind) Valid() bool {
 	}
 }
 
+// Defines values for CreateCreativeImageEditRenderRequestAction.
+const (
+	CreateCreativeImageEditRenderRequestActionCompress CreateCreativeImageEditRenderRequestAction = "compress"
+	CreateCreativeImageEditRenderRequestActionCrop     CreateCreativeImageEditRenderRequestAction = "crop"
+)
+
+// Valid indicates whether the value is a known member of the CreateCreativeImageEditRenderRequestAction enum.
+func (e CreateCreativeImageEditRenderRequestAction) Valid() bool {
+	switch e {
+	case CreateCreativeImageEditRenderRequestActionCompress:
+		return true
+	case CreateCreativeImageEditRenderRequestActionCrop:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeActionAddNodeType.
 const (
 	CreativeActionAddNodeTypeAddNode CreativeActionAddNodeType = "add_node"
@@ -1238,6 +1256,78 @@ func (e CreativeGraphReadKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeImageEditCapabilitiesActions.
+const (
+	CreativeImageEditCapabilitiesActionsCompress CreativeImageEditCapabilitiesActions = "compress"
+	CreativeImageEditCapabilitiesActionsCrop     CreativeImageEditCapabilitiesActions = "crop"
+)
+
+// Valid indicates whether the value is a known member of the CreativeImageEditCapabilitiesActions enum.
+func (e CreativeImageEditCapabilitiesActions) Valid() bool {
+	switch e {
+	case CreativeImageEditCapabilitiesActionsCompress:
+		return true
+	case CreativeImageEditCapabilitiesActionsCrop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeImageEditRenderAction.
+const (
+	Compress CreativeImageEditRenderAction = "compress"
+	Crop     CreativeImageEditRenderAction = "crop"
+)
+
+// Valid indicates whether the value is a known member of the CreativeImageEditRenderAction enum.
+func (e CreativeImageEditRenderAction) Valid() bool {
+	switch e {
+	case Compress:
+		return true
+	case Crop:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeImageEditRenderState.
+const (
+	CreativeImageEditRenderStateApplied    CreativeImageEditRenderState = "applied"
+	CreativeImageEditRenderStateDiscarded  CreativeImageEditRenderState = "discarded"
+	CreativeImageEditRenderStateExpired    CreativeImageEditRenderState = "expired"
+	CreativeImageEditRenderStateFailed     CreativeImageEditRenderState = "failed"
+	CreativeImageEditRenderStateNotReduced CreativeImageEditRenderState = "not_reduced"
+	CreativeImageEditRenderStateQueued     CreativeImageEditRenderState = "queued"
+	CreativeImageEditRenderStateReady      CreativeImageEditRenderState = "ready"
+	CreativeImageEditRenderStateRunning    CreativeImageEditRenderState = "running"
+)
+
+// Valid indicates whether the value is a known member of the CreativeImageEditRenderState enum.
+func (e CreativeImageEditRenderState) Valid() bool {
+	switch e {
+	case CreativeImageEditRenderStateApplied:
+		return true
+	case CreativeImageEditRenderStateDiscarded:
+		return true
+	case CreativeImageEditRenderStateExpired:
+		return true
+	case CreativeImageEditRenderStateFailed:
+		return true
+	case CreativeImageEditRenderStateNotReduced:
+		return true
+	case CreativeImageEditRenderStateQueued:
+		return true
+	case CreativeImageEditRenderStateReady:
+		return true
+	case CreativeImageEditRenderStateRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeInputSourceRole.
 const (
 	CreativeInputSourceRoleReference CreativeInputSourceRole = "reference"
@@ -1981,16 +2071,16 @@ func (e ExportDocumentSchemaVersion) Valid() bool {
 
 // Defines values for FeedbackCreateResultV1TargetKind.
 const (
-	Plan FeedbackCreateResultV1TargetKind = "plan"
-	Shot FeedbackCreateResultV1TargetKind = "shot"
+	FeedbackCreateResultV1TargetKindPlan FeedbackCreateResultV1TargetKind = "plan"
+	FeedbackCreateResultV1TargetKindShot FeedbackCreateResultV1TargetKind = "shot"
 )
 
 // Valid indicates whether the value is a known member of the FeedbackCreateResultV1TargetKind enum.
 func (e FeedbackCreateResultV1TargetKind) Valid() bool {
 	switch e {
-	case Plan:
+	case FeedbackCreateResultV1TargetKindPlan:
 		return true
-	case Shot:
+	case FeedbackCreateResultV1TargetKindShot:
 		return true
 	default:
 		return false
@@ -3173,6 +3263,18 @@ type AccountProfile struct {
 	UpdatedAt       *time.Time                `json:"updated_at,omitempty"`
 }
 
+// ApplyCreativeImageEditRequest defines model for ApplyCreativeImageEditRequest.
+type ApplyCreativeImageEditRequest struct {
+	ClientCreatedAt time.Time          `json:"client_created_at"`
+	OperationId     openapi_types.UUID `json:"operation_id"`
+	Payload         struct {
+		// ExpectedDataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+		ExpectedDataRevision     CreativeRevision `json:"expected_data_revision"`
+		ExpectedSourceRevisionId string           `json:"expected_source_revision_id"`
+		RenderId                 string           `json:"render_id"`
+	} `json:"payload"`
+}
+
 // ArchiveAcknowledgement defines model for ArchiveAcknowledgement.
 type ArchiveAcknowledgement struct {
 	union json.RawMessage
@@ -3390,6 +3492,19 @@ type CreateCreativeGroupRequest struct {
 	OperationId     openapi_types.UUID         `json:"operation_id"`
 	Payload         CreativeGroupCreatePayload `json:"payload"`
 }
+
+// CreateCreativeImageEditRenderRequest defines model for CreateCreativeImageEditRenderRequest.
+type CreateCreativeImageEditRenderRequest struct {
+	Action           CreateCreativeImageEditRenderRequestAction `json:"action"`
+	CanvasId         string                                     `json:"canvas_id"`
+	NodeId           string                                     `json:"node_id"`
+	OperationId      openapi_types.UUID                         `json:"operation_id"`
+	Parameters       CreativeImageEditParameters                `json:"parameters"`
+	SourceRevisionId string                                     `json:"source_revision_id"`
+}
+
+// CreateCreativeImageEditRenderRequestAction defines model for CreateCreativeImageEditRenderRequest.Action.
+type CreateCreativeImageEditRenderRequestAction string
 
 // CreateCreativeProjectRequest defines model for CreateCreativeProjectRequest.
 type CreateCreativeProjectRequest struct {
@@ -4706,6 +4821,103 @@ type CreativeGroupRenamePayload struct {
 	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
 	Name              string           `json:"name"`
 }
+
+// CreativeImageEditApplyResult defines model for CreativeImageEditApplyResult.
+type CreativeImageEditApplyResult struct {
+	// BeforeTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	BeforeTopologyRevision CreativeRevision            `json:"before_topology_revision"`
+	ChangeId               string                      `json:"change_id"`
+	ContentRevisionId      string                      `json:"content_revision_id"`
+	CreatedIds             []string                    `json:"created_ids"`
+	IdMapping              map[string]string           `json:"id_mapping"`
+	ObjectResults          []CreativeGraphObjectResult `json:"object_results"`
+	OmittedReferenceIds    []string                    `json:"omitted_reference_ids"`
+	RemovedIds             []string                    `json:"removed_ids"`
+
+	// ResultRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultRevision CreativeRevision `json:"result_revision"`
+
+	// ResultTopologyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ResultTopologyRevision CreativeRevision `json:"result_topology_revision"`
+	VersionId              string           `json:"version_id"`
+}
+
+// CreativeImageEditBusyDetails defines model for CreativeImageEditBusyDetails.
+type CreativeImageEditBusyDetails struct {
+	RenderId string `json:"render_id"`
+}
+
+// CreativeImageEditCapabilities defines model for CreativeImageEditCapabilities.
+type CreativeImageEditCapabilities struct {
+	Actions         []CreativeImageEditCapabilitiesActions `json:"actions"`
+	Available       bool                                   `json:"available"`
+	InputMimeTypes  []string                               `json:"input_mime_types"`
+	MaxEdge         int                                    `json:"max_edge"`
+	MaxOutputBytes  int64                                  `json:"max_output_bytes"`
+	MaxPixels       int64                                  `json:"max_pixels"`
+	QualityMax      int                                    `json:"quality_max"`
+	QualityMin      int                                    `json:"quality_min"`
+	ReadyTtlSeconds int                                    `json:"ready_ttl_seconds"`
+}
+
+// CreativeImageEditCapabilitiesActions defines model for CreativeImageEditCapabilities.Actions.
+type CreativeImageEditCapabilitiesActions string
+
+// CreativeImageEditOutput defines model for CreativeImageEditOutput.
+type CreativeImageEditOutput struct {
+	Height int    `json:"height"`
+	Mime   string `json:"mime"`
+	Sha256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+	Width  int    `json:"width"`
+}
+
+// CreativeImageEditParameters defines model for CreativeImageEditParameters.
+type CreativeImageEditParameters struct {
+	union json.RawMessage
+}
+
+// CreativeImageEditParameters0 defines model for .
+type CreativeImageEditParameters0 struct {
+	Quality int `json:"quality"`
+}
+
+// CreativeImageEditParameters1 defines model for .
+type CreativeImageEditParameters1 struct {
+	Height int `json:"height"`
+	Left   int `json:"left"`
+	Top    int `json:"top"`
+	Width  int `json:"width"`
+}
+
+// CreativeImageEditRender defines model for CreativeImageEditRender.
+type CreativeImageEditRender struct {
+	Action           CreativeImageEditRenderAction `json:"action"`
+	AppliedVersionId *string                       `json:"applied_version_id,omitempty"`
+	CanvasId         string                        `json:"canvas_id"`
+	CreatedAt        time.Time                     `json:"created_at"`
+	ErrorCode        *string                       `json:"error_code,omitempty"`
+	ExpiresAt        time.Time                     `json:"expires_at"`
+	Id               string                        `json:"id"`
+	NodeId           string                        `json:"node_id"`
+	OperationId      openapi_types.UUID            `json:"operation_id"`
+
+	// Output 仅 ready 或 applied 提供真实校验输出；其他状态省略
+	Output           *CreativeImageEditOutput    `json:"output,omitempty"`
+	Parameters       CreativeImageEditParameters `json:"parameters"`
+	ResultRevisionId *string                     `json:"result_revision_id,omitempty"`
+	SourceRevisionId string                      `json:"source_revision_id"`
+
+	// SourceSize 已知的原始文件字节数，不依赖是否成功编码
+	SourceSize *int64                       `json:"source_size,omitempty"`
+	State      CreativeImageEditRenderState `json:"state"`
+}
+
+// CreativeImageEditRenderAction defines model for CreativeImageEditRender.Action.
+type CreativeImageEditRenderAction string
+
+// CreativeImageEditRenderState defines model for CreativeImageEditRender.State.
+type CreativeImageEditRenderState string
 
 // CreativeInputSource defines model for CreativeInputSource.
 type CreativeInputSource struct {
@@ -7126,6 +7338,11 @@ type RequestCreativeNodeExecutionParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// ApplyCreativeImageEditParams defines parameters for ApplyCreativeImageEdit.
+type ApplyCreativeImageEditParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // ArchiveCreativeAgentConversationParams defines parameters for ArchiveCreativeAgentConversation.
 type ArchiveCreativeAgentConversationParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -7160,6 +7377,11 @@ type CreateCreativeAgentRunParams struct {
 
 // RevokeCreativeEgressConsentParams defines parameters for RevokeCreativeEgressConsent.
 type RevokeCreativeEgressConsentParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// CreateCreativeImageEditRenderParams defines parameters for CreateCreativeImageEditRender.
+type CreateCreativeImageEditRenderParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -7708,6 +7930,9 @@ type CreateCreativeAgentConversationJSONRequestBody = CreateCreativeAgentConvers
 // RequestCreativeNodeExecutionJSONRequestBody defines body for RequestCreativeNodeExecution for application/json ContentType.
 type RequestCreativeNodeExecutionJSONRequestBody = CreativeRequestExecutionRequest
 
+// ApplyCreativeImageEditJSONRequestBody defines body for ApplyCreativeImageEdit for application/json ContentType.
+type ApplyCreativeImageEditJSONRequestBody = ApplyCreativeImageEditRequest
+
 // ArchiveCreativeAgentConversationJSONRequestBody defines body for ArchiveCreativeAgentConversation for application/json ContentType.
 type ArchiveCreativeAgentConversationJSONRequestBody = CreativeAgentConversationStateRequest
 
@@ -7725,6 +7950,9 @@ type CreateCreativeAgentRunJSONRequestBody = CreateCreativeAgentRunRequest
 
 // RevokeCreativeEgressConsentJSONRequestBody defines body for RevokeCreativeEgressConsent for application/json ContentType.
 type RevokeCreativeEgressConsentJSONRequestBody = RevokeCreativeEgressConsentRequest
+
+// CreateCreativeImageEditRenderJSONRequestBody defines body for CreateCreativeImageEditRender for application/json ContentType.
+type CreateCreativeImageEditRenderJSONRequestBody = CreateCreativeImageEditRenderRequest
 
 // SaveCreativeLibrarySettingsJSONRequestBody defines body for SaveCreativeLibrarySettings for application/json ContentType.
 type SaveCreativeLibrarySettingsJSONRequestBody = SaveCreativeLibrarySettingsRequest
@@ -8775,6 +9003,94 @@ func (t *CreativeGraphAction) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsCreativeImageEditParameters0 returns the union data inside the CreativeImageEditParameters as a CreativeImageEditParameters0
+func (t CreativeImageEditParameters) AsCreativeImageEditParameters0() (CreativeImageEditParameters0, error) {
+	var body CreativeImageEditParameters0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeImageEditParameters0 overwrites any union data inside the CreativeImageEditParameters as the provided CreativeImageEditParameters0
+func (t *CreativeImageEditParameters) FromCreativeImageEditParameters0(v CreativeImageEditParameters0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeImageEditParameters0 performs a merge with any union data inside the CreativeImageEditParameters, using the provided CreativeImageEditParameters0
+func (t *CreativeImageEditParameters) MergeCreativeImageEditParameters0(v CreativeImageEditParameters0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeImageEditParameters1 returns the union data inside the CreativeImageEditParameters as a CreativeImageEditParameters1
+func (t CreativeImageEditParameters) AsCreativeImageEditParameters1() (CreativeImageEditParameters1, error) {
+	var body CreativeImageEditParameters1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeImageEditParameters1 overwrites any union data inside the CreativeImageEditParameters as the provided CreativeImageEditParameters1
+func (t *CreativeImageEditParameters) FromCreativeImageEditParameters1(v CreativeImageEditParameters1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeImageEditParameters1 performs a merge with any union data inside the CreativeImageEditParameters, using the provided CreativeImageEditParameters1
+func (t *CreativeImageEditParameters) MergeCreativeImageEditParameters1(v CreativeImageEditParameters1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeImageEditParameters) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeImageEditParameters) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeImageEditBusyDetails returns the union data inside the ErrorDetails as a CreativeImageEditBusyDetails
+func (t ErrorDetails) AsCreativeImageEditBusyDetails() (CreativeImageEditBusyDetails, error) {
+	var body CreativeImageEditBusyDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeImageEditBusyDetails overwrites any union data inside the ErrorDetails as the provided CreativeImageEditBusyDetails
+func (t *ErrorDetails) FromCreativeImageEditBusyDetails(v CreativeImageEditBusyDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeImageEditBusyDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeImageEditBusyDetails
+func (t *ErrorDetails) MergeCreativeImageEditBusyDetails(v CreativeImageEditBusyDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 // AsCreativeAgentBusyDetails returns the union data inside the ErrorDetails as a CreativeAgentBusyDetails
 func (t ErrorDetails) AsCreativeAgentBusyDetails() (CreativeAgentBusyDetails, error) {
 	var body CreativeAgentBusyDetails
@@ -9401,6 +9717,9 @@ type ServerInterface interface {
 
 	// (GET /creative/canvases/{id}/executions/{execution_id})
 	GetCreativeNodeExecution(c *gin.Context, id string, executionId string)
+	// 同步采用现成候选；扣额度、创建版本、更新节点和回执在同一事务内完成
+	// (POST /creative/canvases/{id}/nodes/{node_id}/image-edits/apply)
+	ApplyCreativeImageEdit(c *gin.Context, id string, nodeId string, params ApplyCreativeImageEditParams)
 
 	// (GET /creative/canvases/{id}/nodes/{node_id}/versions)
 	ListCreativeNodeVersions(c *gin.Context, id string, nodeId string)
@@ -9440,6 +9759,18 @@ type ServerInterface interface {
 	// 本账号可用的全部生成模型；节点能否生成由客户端按节点类型、版本和画布状态判断，提交时服务端仍会复核
 	// (GET /creative/generation/catalog)
 	GetCreativeGenerationCatalog(c *gin.Context)
+	// 图片编辑静态能力与功能开关；不表示 worker 心跳
+	// (GET /creative/image-edit-capabilities)
+	GetCreativeImageEditCapabilities(c *gin.Context)
+	// 固定当前图片来源并异步渲染候选；同 operation_id 重试返回同一候选
+	// (POST /creative/image-edit-renders)
+	CreateCreativeImageEditRender(c *gin.Context, params CreateCreativeImageEditRenderParams)
+	// 查询候选；超过截止时间立即投影为 expired
+	// (GET /creative/image-edit-renders/{id})
+	GetCreativeImageEditRender(c *gin.Context, id string)
+	// 幂等丢弃尚未采用的候选；已终结候选保持原状态
+	// (POST /creative/image-edit-renders/{id}/discard)
+	DiscardCreativeImageEditRender(c *gin.Context, id string)
 
 	// (GET /creative/library-settings)
 	GetCreativeLibrarySettings(c *gin.Context)
@@ -11771,6 +12102,69 @@ func (siw *ServerInterfaceWrapper) GetCreativeNodeExecution(c *gin.Context) {
 	siw.Handler.GetCreativeNodeExecution(c, id, executionId)
 }
 
+// ApplyCreativeImageEdit operation middleware
+func (siw *ServerInterfaceWrapper) ApplyCreativeImageEdit(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "node_id" -------------
+	var nodeId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "node_id", c.Param("node_id"), &nodeId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter node_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ApplyCreativeImageEditParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ApplyCreativeImageEdit(c, id, nodeId, params)
+}
+
 // ListCreativeNodeVersions operation middleware
 func (siw *ServerInterfaceWrapper) ListCreativeNodeVersions(c *gin.Context) {
 
@@ -12286,6 +12680,120 @@ func (siw *ServerInterfaceWrapper) GetCreativeGenerationCatalog(c *gin.Context) 
 	}
 
 	siw.Handler.GetCreativeGenerationCatalog(c)
+}
+
+// GetCreativeImageEditCapabilities operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeImageEditCapabilities(c *gin.Context) {
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeImageEditCapabilities(c)
+}
+
+// CreateCreativeImageEditRender operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreativeImageEditRender(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateCreativeImageEditRenderParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CreateCreativeImageEditRender(c, params)
+}
+
+// GetCreativeImageEditRender operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeImageEditRender(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeImageEditRender(c, id)
+}
+
+// DiscardCreativeImageEditRender operation middleware
+func (siw *ServerInterfaceWrapper) DiscardCreativeImageEditRender(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.DiscardCreativeImageEditRender(c, id)
 }
 
 // GetCreativeLibrarySettings operation middleware
@@ -15256,6 +15764,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/canvases/:id/events", wrapper.WatchCreativeCanvas)
 	router.POST(options.BaseURL+"/creative/canvases/:id/executions", wrapper.RequestCreativeNodeExecution)
 	router.GET(options.BaseURL+"/creative/canvases/:id/executions/:execution_id", wrapper.GetCreativeNodeExecution)
+	router.POST(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/image-edits/apply", wrapper.ApplyCreativeImageEdit)
 	router.GET(options.BaseURL+"/creative/canvases/:id/nodes/:node_id/versions", wrapper.ListCreativeNodeVersions)
 	router.GET(options.BaseURL+"/creative/capabilities", wrapper.GetCreativeCapabilities)
 	router.GET(options.BaseURL+"/creative/content-revisions/:id", wrapper.GetCreativeContentRevision)
@@ -15269,6 +15778,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
 	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/generation/catalog", wrapper.GetCreativeGenerationCatalog)
+	router.GET(options.BaseURL+"/creative/image-edit-capabilities", wrapper.GetCreativeImageEditCapabilities)
+	router.POST(options.BaseURL+"/creative/image-edit-renders", wrapper.CreateCreativeImageEditRender)
+	router.GET(options.BaseURL+"/creative/image-edit-renders/:id", wrapper.GetCreativeImageEditRender)
+	router.POST(options.BaseURL+"/creative/image-edit-renders/:id/discard", wrapper.DiscardCreativeImageEditRender)
 	router.GET(options.BaseURL+"/creative/library-settings", wrapper.GetCreativeLibrarySettings)
 	router.POST(options.BaseURL+"/creative/library-settings", wrapper.SaveCreativeLibrarySettings)
 	router.GET(options.BaseURL+"/creative/library-usage", wrapper.GetCreativeLibraryUsage)

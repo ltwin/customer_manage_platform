@@ -58,7 +58,7 @@ type Renderer interface {
 }
 
 // Service owns edit candidates. The API process composes it without a
-// renderer: it only accepts, reads and discards; the worker renders.
+// renderer: it accepts, reads, discards and applies; the worker renders.
 type Service struct {
 	media    *creativemedia.Service
 	renderer Renderer
@@ -95,30 +95,32 @@ type CreateInput struct {
 // unfinished candidate past its deadline reads as expired before the sweep
 // records it.
 type Render struct {
-	ID               string          `json:"id"`
-	OperationID      string          `json:"operation_id"`
-	CanvasID         string          `json:"canvas_id"`
-	NodeID           string          `json:"node_id"`
-	SourceRevisionID string          `json:"source_revision_id"`
-	Action           string          `json:"action"`
-	Parameters       json.RawMessage `json:"parameters"`
-	State            string          `json:"state"`
-	ExpiresAt        time.Time       `json:"expires_at"`
-	ErrorCode        string          `json:"error_code,omitempty"`
-	Output           *Output         `json:"output,omitempty"`
-	ResultRevisionID *string         `json:"result_revision_id,omitempty"`
-	AppliedVersionID *string         `json:"applied_version_id,omitempty"`
-	CreatedAt        time.Time       `json:"created_at"`
+	ID               string                   `json:"id"`
+	OperationID      string                   `json:"operation_id"`
+	CanvasID         string                   `json:"canvas_id"`
+	NodeID           string                   `json:"node_id"`
+	SourceRevisionID string                   `json:"source_revision_id"`
+	Action           string                   `json:"action"`
+	Parameters       json.RawMessage          `json:"parameters"`
+	State            string                   `json:"state"`
+	ExpiresAt        time.Time                `json:"expires_at"`
+	ErrorCode        string                   `json:"error_code,omitempty"`
+	SourceSize       int64                    `json:"source_size,omitempty"`
+	Output           *creativemedia.EditFacts `json:"output,omitempty"`
+	ResultRevisionID *string                  `json:"result_revision_id,omitempty"`
+	AppliedVersionID *string                  `json:"applied_version_id,omitempty"`
+	CreatedAt        time.Time                `json:"created_at"`
 
-	requestHash string
-	callerKind  string
-	original    *string
-	display     *string
+	encoderPolicy string
+	requestHash   string
+	callerKind    string
+	original      *string
+	display       *string
 }
 
-// Output is what the encode actually produced; SourceSize lets callers
-// report the change without trusting a client's number.
-type Output struct {
+// storedOutput preserves the existing database representation. Public renders
+// expose source_size separately and only expose verified output facts.
+type storedOutput struct {
 	creativemedia.EditFacts
 	SourceSize int64 `json:"source_size"`
 }
@@ -127,16 +129,16 @@ func (r Render) active() bool {
 	return r.State == "queued" || r.State == "running" || r.State == "ready"
 }
 
-func parameters(in CreateInput) (json.RawMessage, error) {
+func parameters(in CreateInput, maxEdge int) (json.RawMessage, error) {
 	switch in.Action {
 	case ActionCompress:
-		if in.Quality < 1 || in.Quality > 100 {
+		if in.Quality < qualityMin || in.Quality > qualityMax {
 			return nil, creativeops.ErrValidation
 		}
 		return creativegraph.Canonical(map[string]int{"quality": in.Quality}), nil
 	case ActionCrop:
 		c := in.Crop
-		if c.Left < 0 || c.Top < 0 || c.Width < 1 || c.Height < 1 {
+		if !cropFits(c, maxEdge, maxEdge) {
 			return nil, creativeops.ErrValidation
 		}
 		return creativegraph.Canonical(map[string]int{"left": c.Left, "top": c.Top, "width": c.Width, "height": c.Height}), nil
@@ -148,7 +150,7 @@ func parameters(in CreateInput) (json.RawMessage, error) {
 // account's limits and queues the encode, all in one transaction. Lock
 // order: account write barrier, then project/canvas, then candidates.
 func (s *Service) Create(ctx context.Context, scope store.AccountScope, in CreateInput) (Render, error) {
-	params, err := parameters(in)
+	params, err := parameters(in, s.Capabilities().MaxEdge)
 	if err != nil {
 		return Render{}, err
 	}
@@ -169,6 +171,13 @@ func (s *Service) Create(ctx context.Context, scope store.AccountScope, in Creat
 			if existing.requestHash != hash {
 				return ErrIdempotency
 			}
+			now, err := tx.CreativeNow(ctx)
+			if err != nil {
+				return err
+			}
+			if existing.active() && !now.Before(existing.ExpiresAt) {
+				existing.State = "expired"
+			}
 			out = existing
 			return nil
 		}
@@ -176,6 +185,9 @@ func (s *Service) Create(ctx context.Context, scope store.AccountScope, in Creat
 			return err
 		}
 		current, err := creativecanvas.ImageEditSourceInTx(ctx, tx, in.CanvasID, in.NodeID)
+		if errors.Is(err, creativecanvas.ErrVersionConflict) {
+			return ErrNodeBusy
+		}
 		if err != nil {
 			return err
 		}
@@ -192,12 +204,13 @@ func (s *Service) Create(ctx context.Context, scope store.AccountScope, in Creat
 		if _, err := expireOverdueInTx(ctx, tx, now); err != nil {
 			return err
 		}
-		busy, err := tx.Exists(ctx, "creative_image_edit_renders", "canvas_id=$2 AND node_id=$3 AND state IN ('queued','running','ready')", in.CanvasID, in.NodeID)
-		if err != nil {
-			return err
+		var busyID string
+		err = tx.QueryRow(ctx, "creative_image_edit_renders", "id", "canvas_id=$2 AND node_id=$3 AND state IN ('queued','running','ready')", in.CanvasID, in.NodeID).Scan(&busyID)
+		if err == nil {
+			return BusyError{RenderID: busyID}
 		}
-		if busy {
-			return ErrNodeBusy
+		if !errors.Is(err, store.ErrNoRows) {
+			return err
 		}
 		working, err := tx.Count(ctx, "creative_image_edit_renders", "state IN ('queued','running')")
 		if err != nil {
@@ -231,15 +244,15 @@ func (s *Service) Create(ctx context.Context, scope store.AccountScope, in Creat
 func (s *Service) Get(ctx context.Context, scope store.AccountScope, id string) (Render, error) {
 	var out Render
 	var now time.Time
-	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		if err := tx.RequireCreativeRead(ctx); err != nil {
 			return err
 		}
 		var err error
 		if now, err = tx.CreativeNow(ctx); err != nil {
 			return err
 		}
-		out, err = readRender(ctx, tx, false, "id=$2", id)
+		out, err = scanRender(tx.QueryRow(ctx, "creative_image_edit_renders", renderColumns, "id=$2", id))
 		return err
 	})
 	return out.effective(now), err
@@ -276,19 +289,26 @@ func (r Render) effective(now time.Time) Render {
 	if r.active() && !now.Before(r.ExpiresAt) {
 		r.State = "expired"
 	}
+	if r.State != "ready" && r.State != "applied" {
+		r.Output = nil
+	}
 	return r
 }
 
-const renderColumns = "id,operation_id,request_hash,canvas_id,node_id,source_revision_id,action,parameters,caller_kind,state,expires_at,error_code,original_blob_id,display_blob_id,output,result_revision_id,applied_version_id,created_at"
+const renderColumns = "id,operation_id,request_hash,canvas_id,node_id,source_revision_id,action,parameters,caller_kind,state,expires_at,error_code,original_blob_id,display_blob_id,output,result_revision_id,applied_version_id,created_at,encoder_policy"
 
 func readRender(ctx context.Context, tx store.TxAccountScope, lock bool, cond string, args ...any) (Render, error) {
 	read := tx.QueryRow
 	if lock {
 		read = tx.QueryRowForUpdate
 	}
+	return scanRender(read(ctx, "creative_image_edit_renders", renderColumns, cond, args...))
+}
+
+func scanRender(row store.Row) (Render, error) {
 	var r Render
 	var output []byte
-	err := read(ctx, "creative_image_edit_renders", renderColumns, cond, args...).Scan(&r.ID, &r.OperationID, &r.requestHash, &r.CanvasID, &r.NodeID, &r.SourceRevisionID, &r.Action, &r.Parameters, &r.callerKind, &r.State, &r.ExpiresAt, &r.ErrorCode, &r.original, &r.display, &output, &r.ResultRevisionID, &r.AppliedVersionID, &r.CreatedAt)
+	err := row.Scan(&r.ID, &r.OperationID, &r.requestHash, &r.CanvasID, &r.NodeID, &r.SourceRevisionID, &r.Action, &r.Parameters, &r.callerKind, &r.State, &r.ExpiresAt, &r.ErrorCode, &r.original, &r.display, &output, &r.ResultRevisionID, &r.AppliedVersionID, &r.CreatedAt, &r.encoderPolicy)
 	if errors.Is(err, store.ErrNoRows) {
 		return Render{}, ErrNotFound
 	}
@@ -296,9 +316,13 @@ func readRender(ctx context.Context, tx store.TxAccountScope, lock bool, cond st
 		return Render{}, err
 	}
 	if len(output) > 2 {
-		r.Output = &Output{}
-		if err := json.Unmarshal(output, r.Output); err != nil {
+		var stored storedOutput
+		if err := json.Unmarshal(output, &stored); err != nil {
 			return Render{}, err
+		}
+		r.SourceSize = stored.SourceSize
+		if (r.State == "ready" || r.State == "applied") && stored.Size > 0 && stored.Mime != "" {
+			r.Output = &stored.EditFacts
 		}
 	}
 	return r, nil
@@ -306,7 +330,7 @@ func readRender(ctx context.Context, tx store.TxAccountScope, lock bool, cond st
 
 // finishInTx moves an unfinished candidate to a terminal state. Blobs still
 // verifying are handed to GC; ready ones lose their holder with this row.
-func finishInTx(ctx context.Context, tx store.TxAccountScope, r Render, state, code string, output *Output) error {
+func finishInTx(ctx context.Context, tx store.TxAccountScope, r Render, state, code string, output *storedOutput) error {
 	set, args := "state=$3,error_code=$4,revision=revision+1,updated_at=clock_timestamp()", []any{r.ID, state, code}
 	if output != nil {
 		set += ",output=$5"
@@ -431,7 +455,7 @@ func (s *Service) Work(ctx context.Context, scope store.AccountScope, req jobs.R
 	}
 	result, err := s.renderer.Render(ctx, Request{Source: source, Mime: src.Mime, Action: r.Action, Quality: params.Quality, Crop: params.Crop})
 	if err != nil {
-		return s.settle(ctx, scope, r, err, renderErrorCode(err), &Output{SourceSize: src.Size})
+		return s.settle(ctx, scope, r, err, renderErrorCode(err), &storedOutput{SourceSize: src.Size})
 	}
 	defer func() { _ = result.Close() }()
 	out, err := s.media.VerifyEditOutput(ctx, scope, result.Path, result.Mime)
@@ -562,7 +586,7 @@ func permanent(err error) bool {
 // retryable until the candidate's own deadline, even when wrapped as a
 // permanent verification error. Only database time under the candidate lock
 // can establish expiry; a cancelled old attempt must not stop its successor.
-func (s *Service) settle(ctx context.Context, scope store.AccountScope, r Render, cause error, code string, output *Output) error {
+func (s *Service) settle(ctx context.Context, scope store.AccountScope, r Render, cause error, code string, output *storedOutput) error {
 	state := ""
 	cancelled := ctx.Err() != nil
 	switch {
@@ -658,7 +682,7 @@ func (s *Service) store(ctx context.Context, scope store.AccountScope, r Render,
 		if err := s.media.ReadyEditBlobsInTx(finishCtx, tx, out); err != nil {
 			return err
 		}
-		output := creativegraph.Canonical(Output{EditFacts: out.Facts(), SourceSize: sourceSize})
+		output := creativegraph.Canonical(storedOutput{EditFacts: out.Facts(), SourceSize: sourceSize})
 		_, err = tx.Update(finishCtx, "creative_image_edit_renders", "state='ready',expires_at=$3,output=$4,revision=revision+1,updated_at=clock_timestamp()", "id=$2 AND state='running'", r.ID, now.Add(readyTTL), output)
 		return err
 	})

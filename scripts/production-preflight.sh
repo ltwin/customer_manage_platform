@@ -13,6 +13,7 @@ readonly AUTH_LIMITER_KDF_VERSION='crm-auth/v1/limiter-hmac@v1'
 MODE=""
 SEED_STATE=""
 ENV_FILE=""
+CREATIVE_WORKER_ENV=""
 COMPOSE_FILE=""
 DOCKER_CONTEXT_NAME=""
 PROJECT_NAME=""
@@ -78,6 +79,11 @@ while [[ $# -gt 0 ]]; do
     --env-file)
       [[ $# -ge 2 ]] || usage_failure
       ENV_FILE="$2"
+      shift 2
+      ;;
+    --creative-worker-env)
+      [[ $# -ge 2 ]] || usage_failure
+      CREATIVE_WORKER_ENV="$2"
       shift 2
       ;;
     --compose-file)
@@ -247,6 +253,16 @@ parse_env_file() {
 parse_env_file || \
   fail "$EXIT_ENV" "env-parse" "ENV_FILE" "use-strict-unique-dotenv-data"
 status "env-parse" "file" "ok"
+
+image_edit_args=(--api-env "$ENV_FILE")
+if [[ -n "$CREATIVE_WORKER_ENV" ]]; then
+  image_edit_args+=(--worker-env "$CREATIVE_WORKER_ENV")
+fi
+if ! python3 "$SCRIPT_DIR/lib/creative_image_edit_config.py" "${image_edit_args[@]}" 2>/dev/null; then
+  fail "$EXIT_CONFIG" "image-edit-config" "CREATIVE_IMAGE_EDIT" "provide-matching-worker-env-and-delete-gc-when-enabled"
+fi
+status "image-edit-config" "deployment" "ok"
+
 
 get_value() {
   local requested="$1"

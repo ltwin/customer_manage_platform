@@ -2658,6 +2658,11 @@ type CreativeBriefPatch struct {
 	WorkTitle      nullable.Nullable[string]   `json:"work_title,omitempty"`
 }
 
+// CreativeImageEditBusyDetails defines model for CreativeImageEditBusyDetails.
+type CreativeImageEditBusyDetails struct {
+	RenderId string `json:"render_id"`
+}
+
 // DefaultQuoteV1 defines model for DefaultQuoteV1.
 type DefaultQuoteV1 struct {
 	EvaluatedAt             time.Time                   `json:"evaluated_at"`
@@ -4148,6 +4153,32 @@ func (t ArchiveAcknowledgement) MarshalJSON() ([]byte, error) {
 
 func (t *ArchiveAcknowledgement) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeImageEditBusyDetails returns the union data inside the ErrorDetails as a CreativeImageEditBusyDetails
+func (t ErrorDetails) AsCreativeImageEditBusyDetails() (CreativeImageEditBusyDetails, error) {
+	var body CreativeImageEditBusyDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeImageEditBusyDetails overwrites any union data inside the ErrorDetails as the provided CreativeImageEditBusyDetails
+func (t *ErrorDetails) FromCreativeImageEditBusyDetails(v CreativeImageEditBusyDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeImageEditBusyDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeImageEditBusyDetails
+func (t *ErrorDetails) MergeCreativeImageEditBusyDetails(v CreativeImageEditBusyDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
 	return err
 }
 

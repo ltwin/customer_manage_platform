@@ -149,11 +149,11 @@ func (r Request) validate() error {
 	}
 	switch r.Action {
 	case ActionCompress:
-		if r.Quality < 1 || r.Quality > 100 {
+		if r.Quality < qualityMin || r.Quality > qualityMax {
 			return fmt.Errorf("%w: quality %d", ErrParameters, r.Quality)
 		}
 	case ActionCrop:
-		if r.Crop.Left < 0 || r.Crop.Top < 0 || r.Crop.Width < 1 || r.Crop.Height < 1 {
+		if !cropFits(r.Crop, maxCropEdge, maxCropEdge) {
 			return fmt.Errorf("%w: crop %+v", ErrParameters, r.Crop)
 		}
 	default:
@@ -237,7 +237,7 @@ func (p *pipeline) render(req Request) (Result, error) {
 	}
 	if req.Action == ActionCrop {
 		box := req.Crop
-		if box.Left+box.Width > h.width || box.Top+box.Height > h.height {
+		if !cropFits(box, h.width, h.height) {
 			return Result{}, fmt.Errorf("%w: crop %+v outside %dx%d", ErrParameters, box, h.width, h.height)
 		}
 		if err := p.step("extract_area", nil, []string{itoa(box.Left), itoa(box.Top), itoa(box.Width), itoa(box.Height)}); err != nil {

@@ -27,6 +27,7 @@ import (
 func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	registerCreativeLibrary(r, h)
 	registerCreativeMedia(r, h)
+	registerCreativeImageEdit(r, h)
 	w := ServerInterfaceWrapper{Handler: h, ErrorHandler: func(c *gin.Context, _ error, status int) {
 		abortError(c, status, CodeValidationFailed, "请求参数不合法")
 	}}
@@ -61,6 +62,9 @@ func (h *handlers) creativeScope(c *gin.Context) (store.AccountScope, bool) {
 	return h.scopeFactory.ScopeFor(ac), true
 }
 func creativeError(c *gin.Context, err error) {
+	if imageEditError(c, err) {
+		return
+	}
 	switch {
 	case errors.Is(err, gw.ErrBudget):
 		abortError(c, 422, "creative_budget_exceeded", "生成预算不足，请调整参数或稍后重试")
@@ -238,6 +242,14 @@ type creativeEnvelope struct {
 }
 
 func (h *handlers) creativeWrite(c *gin.Context, targetKey, target string, apply creativeApplication) {
+	targets := map[string]string{}
+	if targetKey != "" {
+		targets[targetKey] = target
+	}
+	h.creativeWriteTargets(c, targets, apply)
+}
+
+func (h *handlers) creativeWriteTargets(c *gin.Context, targets map[string]string, apply creativeApplication) {
 	scope, ok := h.creativeScope(c)
 	if !ok {
 		return
@@ -261,7 +273,7 @@ func (h *handlers) creativeWrite(c *gin.Context, targetKey, target string, apply
 		creativeError(c, err)
 		return
 	}
-	if targetKey != "" {
+	for targetKey, target := range targets {
 		if _, exists := payload[targetKey]; exists {
 			creativeError(c, creativeops.ErrValidation)
 			return

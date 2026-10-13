@@ -14,6 +14,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 
@@ -77,6 +78,7 @@ type RouterDeps struct {
 	AnonymousShare            AnonymousShareDeps
 	PlanningMedia             *planningmedia.Application
 	PlanningIngestion         *ingestion.Application
+	CreativeImageEdit         *creativeimageedit.Service
 	CreativeMedia             *creativemedia.Service
 	CreativeGeneration        *creativegeneration.Product
 	CreativeAgent             *creativeagent.Service
@@ -130,6 +132,7 @@ func NewRouter(deps RouterDeps) *gin.Engine {
 		now:                 now,
 		anonymousShare:      deps.AnonymousShare,
 		creativeMedia:       deps.CreativeMedia,
+		creativeImageEdit:   deps.CreativeImageEdit,
 		creativeGeneration:  deps.CreativeGeneration,
 		creativeAgent:       deps.CreativeAgent,
 	}

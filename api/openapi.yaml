@@ -1182,6 +1182,125 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/ErrorEnvelope'}
+  /creative/image-edit-capabilities:
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeImageEditCapabilities
+      summary: 图片编辑静态能力与功能开关；不表示 worker 心跳
+      responses:
+        "200":
+          description: 能力清单（关闭时 available=false）
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeImageEditCapabilities"}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/image-edit-renders:
+    post:
+      tags: [creative-foundation]
+      operationId: createCreativeImageEditRender
+      summary: 固定当前图片来源并异步渲染候选；同 operation_id 重试返回同一候选
+      parameters:
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateCreativeImageEditRenderRequest"}
+      responses:
+        "202":
+          description: 候选当前状态；此时尚未扣额度或改写节点
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeImageEditRender"}
+        default:
+          description: 参数 400；权限 403；来源变化或节点忙 409；限流 429；关闭或队列未就绪 503
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/image-edit-renders/{id}:
+    parameters:
+    - in: path
+      name: id
+      required: true
+      schema: {type: string}
+    get:
+      tags: [creative-foundation]
+      operationId: getCreativeImageEditRender
+      summary: 查询候选；超过截止时间立即投影为 expired
+      responses:
+        "200":
+          description: 当前状态和经校验的输出事实；编码失败由 state 与 error_code 表达
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeImageEditRender"}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/image-edit-renders/{id}/discard:
+    parameters:
+    - in: path
+      name: id
+      required: true
+      schema: {type: string}
+    post:
+      tags: [creative-foundation]
+      operationId: discardCreativeImageEditRender
+      summary: 幂等丢弃尚未采用的候选；已终结候选保持原状态
+      responses:
+        "200":
+          description: 候选当前状态
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeImageEditRender"}
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
+  /creative/canvases/{id}/nodes/{node_id}/image-edits/apply:
+    post:
+      tags: [creative-foundation]
+      operationId: applyCreativeImageEdit
+      summary: 同步采用现成候选；扣额度、创建版本、更新节点和回执在同一事务内完成
+      description: 同一命令信封可重放。canvas_id/node_id 只取路径，payload 不可重复指定。额度不足时保留 ready 候选。仅数据修订不符返回 creative_revision_conflict，刷新修订后可重试原候选；图片清空或来源实际变化返回 creative_image_edit_source_changed。采用不下载或重编码。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema: {type: string}
+      - in: path
+        name: node_id
+        required: true
+        schema: {type: string}
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ApplyCreativeImageEditRequest"}
+      responses:
+        "200":
+          description: 已采用；版本、变更及最新修订
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreativeImageEditApplyResult"}
+        default:
+          description: 参数 400；权限 403；不存在 404；来源或数据修订变化、节点忙、未 ready、幂等冲突 409；过期或丢弃 410；未减小或色彩未知 422；额度不足 429；关闭 503
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorEnvelope"}
   /creative/media-capabilities:
     get:
       tags: [creative-foundation]
@@ -8433,6 +8552,140 @@ components:
         reason: {type: string}
         node_types: {type: array, items: {type: string}}
         tools: {type: array, items: {type: string}}
+    CreativeImageEditCapabilities:
+      type: object
+      additionalProperties: false
+      required: [available, actions, input_mime_types, quality_min, quality_max, max_edge, max_pixels, max_output_bytes, ready_ttl_seconds]
+      properties:
+        available: {type: boolean}
+        actions: {type: array, items: {type: string, enum: [compress, crop]}}
+        input_mime_types: {type: array, items: {type: string}}
+        quality_min: {type: integer}
+        quality_max: {type: integer}
+        max_edge: {type: integer}
+        max_pixels: {type: integer, format: int64}
+        max_output_bytes: {type: integer, format: int64}
+        ready_ttl_seconds: {type: integer}
+    CreativeImageEditParameters:
+      oneOf:
+      - type: object
+        additionalProperties: false
+        required: [quality]
+        properties:
+          quality: {type: integer, minimum: 1, maximum: 100}
+      - type: object
+        additionalProperties: false
+        required: [left, top, width, height]
+        properties:
+          left: {type: integer, minimum: 0, maximum: 12000}
+          top: {type: integer, minimum: 0, maximum: 12000}
+          width: {type: integer, minimum: 1, maximum: 12000}
+          height: {type: integer, minimum: 1, maximum: 12000}
+    CreateCreativeImageEditRenderRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, canvas_id, node_id, source_revision_id, action, parameters]
+      properties:
+        operation_id: {type: string, format: uuid}
+        canvas_id: {type: string}
+        node_id: {type: string}
+        source_revision_id: {type: string}
+        action: {type: string, enum: [compress, crop]}
+        parameters: {$ref: "#/components/schemas/CreativeImageEditParameters"}
+    CreativeImageEditOutput:
+      type: object
+      additionalProperties: false
+      required: [mime, width, height, size, sha256]
+      properties:
+        mime: {type: string}
+        width: {type: integer}
+        height: {type: integer}
+        size: {type: integer, format: int64}
+        sha256: {type: string}
+    CreativeImageEditRender:
+      type: object
+      additionalProperties: false
+      required: [id, operation_id, canvas_id, node_id, source_revision_id, action, parameters, state, expires_at, created_at]
+      properties:
+        id: {type: string}
+        operation_id: {type: string, format: uuid}
+        canvas_id: {type: string}
+        node_id: {type: string}
+        source_revision_id: {type: string}
+        action: {type: string, enum: [compress, crop]}
+        parameters: {$ref: "#/components/schemas/CreativeImageEditParameters"}
+        state: {type: string, enum: [queued, running, ready, not_reduced, failed, discarded, expired, applied]}
+        expires_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        error_code: {type: string}
+        source_size: {type: integer, format: int64, minimum: 1, description: 已知的原始文件字节数，不依赖是否成功编码}
+        output:
+          description: 仅 ready 或 applied 提供真实校验输出；其他状态省略
+          allOf:
+          - {$ref: "#/components/schemas/CreativeImageEditOutput"}
+        result_revision_id: {type: string}
+        applied_version_id: {type: string}
+    ApplyCreativeImageEditRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_id, client_created_at, payload]
+      properties:
+        operation_id: {type: string, format: uuid}
+        client_created_at: {type: string, format: date-time}
+        payload:
+          type: object
+          additionalProperties: false
+          required: [render_id, expected_source_revision_id, expected_data_revision]
+          properties:
+            render_id: {type: string}
+            expected_source_revision_id: {type: string}
+            expected_data_revision: {$ref: "#/components/schemas/CreativeRevision"}
+    CreativeImageEditApplyResult:
+      type: object
+      additionalProperties: false
+      required:
+      - version_id
+      - content_revision_id
+      - change_id
+      - result_revision
+      - before_topology_revision
+      - result_topology_revision
+      - object_results
+      - created_ids
+      - removed_ids
+      - id_mapping
+      - omitted_reference_ids
+      properties:
+        version_id: {type: string}
+        content_revision_id: {type: string}
+        change_id:
+          type: string
+        result_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        before_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        result_topology_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        object_results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeGraphObjectResult'
+        created_ids:
+          type: array
+          items:
+            type: string
+        removed_ids:
+          type: array
+          items:
+            type: string
+        id_mapping:
+          type: object
+          additionalProperties:
+            type: string
+        omitted_reference_ids:
+          type: array
+          items:
+            type: string
     CreativeOperationReceipt:
       type: object
       additionalProperties: false
@@ -8678,8 +8931,16 @@ components:
       properties:
         active_run_id: {type: string}
 
+    CreativeImageEditBusyDetails:
+      type: object
+      additionalProperties: false
+      required: [render_id]
+      properties:
+        render_id: {type: string}
+
     ErrorDetails:
       oneOf:
+        - $ref: "#/components/schemas/CreativeImageEditBusyDetails"
         - $ref: "#/components/schemas/CreativeAgentBusyDetails"
         - $ref: "#/components/schemas/ScheduleConflictDetails"
         - $ref: "#/components/schemas/ArchiveAcknowledgementRequiredDetails"

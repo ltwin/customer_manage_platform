@@ -588,6 +588,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/image-edit-capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 图片编辑静态能力与功能开关；不表示 worker 心跳 */
+        get: operations["getCreativeImageEditCapabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/image-edit-renders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 固定当前图片来源并异步渲染候选；同 operation_id 重试返回同一候选 */
+        post: operations["createCreativeImageEditRender"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/image-edit-renders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** 查询候选；超过截止时间立即投影为 expired */
+        get: operations["getCreativeImageEditRender"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/image-edit-renders/{id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 幂等丢弃尚未采用的候选；已终结候选保持原状态 */
+        post: operations["discardCreativeImageEditRender"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/canvases/{id}/nodes/{node_id}/image-edits/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 同步采用现成候选；扣额度、创建版本、更新节点和回执在同一事务内完成
+         * @description 同一命令信封可重放。canvas_id/node_id 只取路径，payload 不可重复指定。额度不足时保留 ready 候选。仅数据修订不符返回 creative_revision_conflict，刷新修订后可重试原候选；图片清空或来源实际变化返回 creative_image_edit_source_changed。采用不下载或重编码。
+         */
+        post: operations["applyCreativeImageEdit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/media-capabilities": {
         parameters: {
             query?: never;
@@ -3633,6 +3725,98 @@ export interface components {
             node_types: string[];
             tools: string[];
         };
+        CreativeImageEditCapabilities: {
+            available: boolean;
+            actions: ("compress" | "crop")[];
+            input_mime_types: string[];
+            quality_min: number;
+            quality_max: number;
+            max_edge: number;
+            /** Format: int64 */
+            max_pixels: number;
+            /** Format: int64 */
+            max_output_bytes: number;
+            ready_ttl_seconds: number;
+        };
+        CreativeImageEditParameters: {
+            quality: number;
+        } | {
+            left: number;
+            top: number;
+            width: number;
+            height: number;
+        };
+        CreateCreativeImageEditRenderRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            canvas_id: string;
+            node_id: string;
+            source_revision_id: string;
+            /** @enum {string} */
+            action: "compress" | "crop";
+            parameters: components["schemas"]["CreativeImageEditParameters"];
+        };
+        CreativeImageEditOutput: {
+            mime: string;
+            width: number;
+            height: number;
+            /** Format: int64 */
+            size: number;
+            sha256: string;
+        };
+        CreativeImageEditRender: {
+            id: string;
+            /** Format: uuid */
+            operation_id: string;
+            canvas_id: string;
+            node_id: string;
+            source_revision_id: string;
+            /** @enum {string} */
+            action: "compress" | "crop";
+            parameters: components["schemas"]["CreativeImageEditParameters"];
+            /** @enum {string} */
+            state: "queued" | "running" | "ready" | "not_reduced" | "failed" | "discarded" | "expired" | "applied";
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            created_at: string;
+            error_code?: string;
+            /**
+             * Format: int64
+             * @description 已知的原始文件字节数，不依赖是否成功编码
+             */
+            source_size?: number;
+            /** @description 仅 ready 或 applied 提供真实校验输出；其他状态省略 */
+            output?: components["schemas"]["CreativeImageEditOutput"];
+            result_revision_id?: string;
+            applied_version_id?: string;
+        };
+        ApplyCreativeImageEditRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: {
+                render_id: string;
+                expected_source_revision_id: string;
+                expected_data_revision: components["schemas"]["CreativeRevision"];
+            };
+        };
+        CreativeImageEditApplyResult: {
+            version_id: string;
+            content_revision_id: string;
+            change_id: string;
+            result_revision: components["schemas"]["CreativeRevision"];
+            before_topology_revision: components["schemas"]["CreativeRevision"];
+            result_topology_revision: components["schemas"]["CreativeRevision"];
+            object_results: components["schemas"]["CreativeGraphObjectResult"][];
+            created_ids: string[];
+            removed_ids: string[];
+            id_mapping: {
+                [key: string]: string;
+            };
+            omitted_reference_ids: string[];
+        };
         CreativeOperationReceipt: {
             /** Format: uuid */
             operation_id: string;
@@ -3826,7 +4010,10 @@ export interface components {
         CreativeAgentBusyDetails: {
             active_run_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"];
+        CreativeImageEditBusyDetails: {
+            render_id: string;
+        };
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"];
         /** @enum {string} */
         OrderBusinessDraftUnavailableReason: "order_required" | "order_cancelled" | "business_calculation_overflow";
         /** @enum {string} */
@@ -8008,6 +8195,170 @@ export interface operations {
                 };
             };
             /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeImageEditCapabilities: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 能力清单（关闭时 available=false） */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeImageEditCapabilities"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    createCreativeImageEditRender: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCreativeImageEditRenderRequest"];
+            };
+        };
+        responses: {
+            /** @description 候选当前状态；此时尚未扣额度或改写节点 */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeImageEditRender"];
+                };
+            };
+            /** @description 参数 400；权限 403；来源变化或节点忙 409；限流 429；关闭或队列未就绪 503 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeImageEditRender: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 当前状态和经校验的输出事实；编码失败由 state 与 error_code 表达 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeImageEditRender"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    discardCreativeImageEditRender: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 候选当前状态 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeImageEditRender"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    applyCreativeImageEdit: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplyCreativeImageEditRequest"];
+            };
+        };
+        responses: {
+            /** @description 已采用；版本、变更及最新修订 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeImageEditApplyResult"];
+                };
+            };
+            /** @description 参数 400；权限 403；不存在 404；来源或数据修订变化、节点忙、未 ready、幂等冲突 409；过期或丢弃 410；未减小或色彩未知 422；额度不足 429；关闭 503 */
             default: {
                 headers: {
                     [name: string]: unknown;

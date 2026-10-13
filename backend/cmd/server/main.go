@@ -20,6 +20,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/avatarmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
 	"github.com/samson/customer-manage-platform/backend/internal/customer"
@@ -204,6 +205,14 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return newStartupFailure("creative-media-init", "CREATIVE_MEDIA_LOCAL_ROOT", "object-storage", err)
 	}
+	imageEditEnabled, err := creativeimageedit.EnabledFromValues(os.Getenv("CREATIVE_IMAGE_EDIT"), os.Getenv("CREATIVE_MEDIA_GC_MODE"))
+	if err != nil {
+		return newStartupFailure("creative-image-edit-init", "CREATIVE_IMAGE_EDIT", "configuration", err)
+	}
+	var imageEdit *creativeimageedit.Service
+	if imageEditEnabled {
+		imageEdit = creativeimageedit.NewService(creativeMedia, nil, "")
+	}
 	// One catalog for the whole process, resolved from the same configuration the
 	// gateway itself reads. Milestone B passes these options, Catalog already
 	// set, straight to llmgateway.Build, so the vendors a photographer authorises
@@ -251,6 +260,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if generation.Service != nil {
 		handlers = append(handlers, generation.Service.Handlers()...)
 	}
+	if imageEdit != nil {
+		handlers = append(handlers, imageEdit.Handlers()...)
+	}
 	// The API only enqueues; the creative-worker process executes the tasks.
 	creativeJobs, err := s.NewJobRuntime(handlers, logger)
 	if err != nil {
@@ -266,6 +278,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 			slog.String("error", err.Error()))
 	} else {
 		creativeMedia.SetRuntime(creativeJobs)
+		if imageEdit != nil {
+			imageEdit.SetRuntime(creativeJobs)
+		}
 		creativeAgent.SetRuntime(creativeJobs)
 		if generation.Service != nil {
 			generation.Service.SetRuntime(creativeJobs)
@@ -420,6 +435,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		PlanningMedia:      planningMediaApp,
 		PlanningIngestion:  planningIngestionApp,
 		CreativeMedia:      creativeMedia,
+		CreativeImageEdit:  imageEdit,
 		CreativeAgent:      creativeAgent,
 		CreativeGeneration: creativeGeneration,
 	})

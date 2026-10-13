@@ -2,7 +2,9 @@ package creativemedia
 
 import (
 	"context"
+	"errors"
 	"io"
+	"math"
 	"os"
 
 	"github.com/google/uuid"
@@ -203,4 +205,55 @@ func AbandonEditBlobsInTx(ctx context.Context, tx store.TxAccountScope, ids ...s
 	}
 	_, err = tx.Update(ctx, "creative_blobs", "state='deleting',delete_after=$3", "id=ANY($2::text[]) AND state='verifying'", live, now.Add(gcUnbookedGrace))
 	return err
+}
+
+// BindEditBlobsInTx adopts the exact, already verified candidate objects. It
+// performs no storage I/O or encoding. The caller holds the account write
+// barrier and candidate row lock; quota, roots and the candidate transition
+// must commit together. Blob ids come only from that locked candidate.
+func (s *Service) BindEditBlobsInTx(ctx context.Context, tx store.TxAccountScope, source creativecontent.Revision, original, display string, retain func(creativecontent.Revision) error) (creativecontent.Revision, error) {
+	if source.Kind != "image" || source.DeclarationID == "" || original == "" || original == display {
+		return creativecontent.Revision{}, ErrState
+	}
+	objects := []creativecontent.ObjectBinding{{Role: "original", BlobID: original}}
+	if display != "" {
+		objects = append(objects, creativecontent.ObjectBinding{Role: "display", BlobID: display})
+	}
+	var total int64
+	for _, b := range objects {
+		var size int64
+		err := tx.QueryRowForUpdate(ctx, "creative_blobs", "byte_size", "id=$2 AND state='ready' AND verified_at IS NOT NULL AND quota_booked_at IS NULL AND storage_driver=$3 AND bucket=$4", b.BlobID, s.adapter.Driver(), s.adapter.Bucket()).Scan(&size)
+		if errors.Is(err, store.ErrNoRows) {
+			return creativecontent.Revision{}, ErrExpired
+		}
+		if err != nil {
+			return creativecontent.Revision{}, err
+		}
+		if size < 1 || size > math.MaxInt64-total {
+			return creativecontent.Revision{}, ErrState
+		}
+		total += size
+	}
+	if err := s.reserveQuota(ctx, tx, total); err != nil {
+		return creativecontent.Revision{}, err
+	}
+	if _, err := tx.Update(ctx, "creative_media_quotas", "reserved_bytes=reserved_bytes-$2,stored_bytes=stored_bytes+$2,revision=revision+1", "", total); err != nil {
+		return creativecontent.Revision{}, err
+	}
+	for _, b := range objects {
+		if _, err := tx.Update(ctx, "creative_blobs", "quota_booked_at=clock_timestamp()", "id=$2", b.BlobID); err != nil {
+			return creativecontent.Revision{}, err
+		}
+	}
+	return creativecontent.WriteMediaAndRetain(ctx, tx, creativecontent.Draft{Kind: "image", Payload: source.Payload, DeclarationID: source.DeclarationID}, objects, func(r creativecontent.Revision) error {
+		if err := creativecontent.RetainDerivativeRights(ctx, tx, r.ID, []creativecontent.Revision{source}); err != nil {
+			return err
+		}
+		return retain(r)
+	})
+}
+
+// ImageEditLimits exposes the limits enforced by this running media service.
+func (s *Service) ImageEditLimits() (maxEdge int, maxPixels int64, maxBytes int64) {
+	return s.cfg.MaxImageEdge, s.cfg.MaxImagePixels, s.cfg.ImageMaxBytes
 }

@@ -101,3 +101,10 @@ func (sc ReadTxAccountScope) RequireCreativeRead(ctx context.Context) error {
 	}
 	return nil
 }
+
+// CreativeNow reads database time without taking the creative write barrier.
+func (sc ReadTxAccountScope) CreativeNow(ctx context.Context) (time.Time, error) {
+	var now time.Time
+	err := sc.scope.execRunner().QueryRow(ctx, "SELECT clock_timestamp()").Scan(&now)
+	return now, err
+}

@@ -173,14 +173,14 @@ func run() error {
 // worker refuses to start without GC deletion (unapplied results would only
 // accumulate) or without a codec that passes its self-check.
 func composeImageEdit(ctx context.Context, media *creativemedia.Service, gcMode creativemedia.GCMode) (*creativeimageedit.Service, error) {
-	on, err := creativeimageedit.ParseSwitch(strings.TrimSpace(os.Getenv("CREATIVE_IMAGE_EDIT")))
+	on, err := creativeimageedit.Enabled(os.Getenv("CREATIVE_IMAGE_EDIT"), gcMode)
 	if err != nil || !on {
 		return nil, err
 	}
-	if gcMode != creativemedia.GCDelete {
-		return nil, errors.New("CREATIVE_IMAGE_EDIT=on requires CREATIVE_MEDIA_GC_MODE=delete: unapplied edit results are only reclaimed by media GC")
-	}
 	codecConfig := creativeimageedit.DefaultCodecConfig()
+	edge, pixels, _ := media.ImageEditLimits()
+	codecConfig.MaxEdge = min(codecConfig.MaxEdge, edge)
+	codecConfig.MaxPixels = pixels
 	codec, err := creativeimageedit.NewCodec(codecConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creative image edit: %w", err)

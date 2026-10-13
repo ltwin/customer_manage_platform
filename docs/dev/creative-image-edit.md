@@ -14,8 +14,25 @@
 
 - `creativeimageedit.Service`：`Create` 在点击应用时受理一个候选（固定源修订、节点忙、账号并发与频率上限都在同一事务里检查），`Get` 读取，`Discard` 丢弃，`Work` 是 River `image_edit` 队列（并发 1）的任务，`SweepExpired` / `RunSweep` 每 5 分钟把过期候选记为 expired。
 - 结果写入顺序：先由 creativemedia 的上传校验器校验编码结果，再在事务里认领候选并写入 verifying 的 blob 行，事务外上传对象，最后把 blob 置为 ready（不计额度）、候选置为 ready（30 分钟内可采用）。认领后写对象失败时释放认领，半成品 blob 转为 deleting；若 ready 落库失败、释放认领失败或进程异常退出，重投递会在账号写屏障下将旧认领的半成品交给 GC，再以新 blob 身份重试。仍存活的旧写入无法通过 blob 状态与候选身份复核。已 ready 或终结的候选重投递不写任何 blob，包含上次提交成功但响应未知的情况。 worker 上下文提前取消时保留候选并返回可重试错误；只有锁内数据库时间达到候选自身期限才记为 expired，旧尝试取消不回收新尝试的认领。
-- 开关：`CREATIVE_IMAGE_EDIT=on` 只在 worker 读取；开启要求 `CREATIVE_MEDIA_GC_MODE=delete`，并在启动时 `SweepTemp` + `SelfCheck`，任一失败即拒绝启动。HTTP 接口与采用在第 3 步。
+- 开关：`CREATIVE_IMAGE_EDIT=on` 由 API 与 worker 共同读取，两侧必须配置一致；开启要求 `CREATIVE_MEDIA_GC_MODE=delete`。worker 启动时额外执行 `SweepTemp` + `SelfCheck`，任一失败即拒绝启动；API 不运行编解码器。关闭时 capabilities 返回 `available=false`，候选及采用接口返回 503。
 - 数据库测试在 `creativeimageedit/dbtest`，用假渲染器；编解码样张测试留在包内，因为它们在没有 Docker 的 vips 容器里跑。
+
+## HTTP 与同步采用
+
+- `GET /api/v1/creative/image-edit-capabilities` 返回领域策略、当前媒体服务的限制与开关，不用 worker 心跳决定是否显示能力；查询候选和能力均使用只读快照，不取得账号写屏障。
+- `POST /api/v1/creative/image-edit-renders` 接受 `operation_id`（与 `Idempotency-Key` 一致）、`canvas_id`、`node_id`、`source_revision_id`、`action` 和 `parameters`，返回 202。压缩参数为 `{quality}`；裁切为完整整数框 `{left, top, width, height}`，每个值不超过 12000，整体选区还必须满足运行配置与实际图像边界；计算边界用减法避免整数溢出。摄影师入口的 `caller_kind` 固定由服务器赋值。
+- `GET /api/v1/creative/image-edit-renders/{id}` 查询状态。编码失败以 `state/error_code` 表达。已知的源字节数放在顶层 `source_size`；只有 ready/applied 才提供真实校验后的 `output`，失败/未减小/丢弃/过期均不伪造输出事实。`POST .../{id}/discard` 幂等丢弃未完成候选；已采用的候选不会被此操作撤销。
+- `POST /api/v1/creative/canvases/{id}/nodes/{node_id}/image-edits/apply` 采用已有结果并同步返回 200。沿用画布命令信封 `operation_id/client_created_at/payload` 与 `Idempotency-Key`；payload 只有 `render_id/expected_source_revision_id/expected_data_revision`，修订值为十进制字符串。重试必须保留完整信封（含创建时间），画布与节点只取路径。
+- `Apply` 使用 `creativeops.Executor`：先恢复已有回执，再检查当前权限、可写画布、来源和数据修订、执行槽、候选期限。`BindEditBlobsInTx` 只绑定已经校验的原始/展示 blob 并计入额度，不做对象读写、复制或重新编码；复用来源声明并通过 `RetainDerivativeRights` 保留传递授权。`PrepareImageEditInTx` 一次性锁定并检查目标，返回与事务绑定的目标；其 `ApplyInTx` 经 `makeVersion(edit)`、`fitMediaSize` 和 `persistGraph` 保存可撤销变更；最后与候选 applied、操作回执一起提交。
+- 结果返回 `version_id/content_revision_id/change_id/result_revision` 及标准画布变更字段（节点最新数据修订在 `object_results`）。来源冲突、节点忙或未 ready 返回 409；只有数据修订变化（如标题/意图改变）时返回 `creative_revision_conflict`，刷新修订后可重试原候选；图片被清空或替换才返回 `creative_image_edit_source_changed`。由候选占用节点时，忙错误的 `details.render_id` 指向现有候选。过期/丢弃返回 410；额度不足返回既有 429，候选保持 ready。取消或失败的事务不留下版本、额度或成功回执。原请求即使在撤销后重放也只返回原回执，不重新采用。
+
+机器契约在 `api/openapi.yaml`；手工注册的认证路由与 Go/TypeScript 生成物同时维护。数据库测试 `creativeimageedit/dbtest/apply_test.go`、`http_test.go` 覆盖额度回滚、字节身份、尺寸与撤销/重做、来源/权限/归档/修订/执行槽守卫、采用与回收/丢弃/重复请求竞争，以及 HTTP 鉴权、账号隔离、参数边界和功能关闭。UI 与 Agent 的实际接入仍属于第 4 步。
+
+## 部署开关预检
+
+`production-preflight.sh` 在 API env 开启图片编辑时要求 `--creative-worker-env /实际部署/worker.env`，校验两份 env 的 `CREATIVE_IMAGE_EDIT` 一致且 `CREATIVE_MEDIA_GC_MODE=delete`。可以单独执行 `python3 scripts/lib/creative_image_edit_config.py --api-env /实际部署/api.env --worker-env /实际部署/worker.env`。只读取配置数据，不执行 dotenv，也不输出凭证；该检查保证所提供的部署配置一致，不承诺 worker 心跳或可用性。现有 Compose 未定义 worker，不能用 API 的 env 文件冒充独立 worker 的实际配置。
+
+图片编辑关闭时 API 不解析 GC 模式，避免无关配置影响 API 启动；worker 的 GC 本身仍独立校验。配置回归与 56 项部署预检夹具进入 `make check-ops`。
 
 ## 镜像
 

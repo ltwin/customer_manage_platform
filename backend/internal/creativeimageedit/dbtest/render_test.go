@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"image"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -76,6 +77,12 @@ func (f *fakeRenderer) Render(_ context.Context, req creativeimageedit.Request) 
 	if err != nil {
 		return creativeimageedit.Result{}, err
 	}
+	if req.Action == creativeimageedit.ActionCrop {
+		c := req.Crop
+		cropped := image.NewNRGBA(image.Rect(0, 0, c.Width, c.Height))
+		draw.Draw(cropped, cropped.Bounds(), img, image.Pt(c.Left, c.Top), draw.Src)
+		img = cropped
+	}
 	out := filepath.Join(f.root, "fake-render-"+uuid.NewString()+".jpg")
 	var buf bytes.Buffer
 	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: req.Quality}); err != nil {
@@ -115,6 +122,7 @@ func (a *flakyAdapter) PublishVerified(ctx context.Context, key string, body io.
 }
 
 type fixture struct {
+	st       *store.Store
 	db       *sql.DB
 	a        store.AccountScope
 	media    *creativemedia.Service
@@ -124,7 +132,9 @@ type fixture struct {
 	canvas   string
 }
 
-func setup(t *testing.T) *fixture {
+func setup(t *testing.T) *fixture { return setupWithConfig(t, nil) }
+
+func setupWithConfig(t *testing.T, configure func(*creativemedia.Config)) *fixture {
 	t.Helper()
 	url := storetest.NewURL(t)
 	db, err := sql.Open("pgx", url)
@@ -145,6 +155,9 @@ func setup(t *testing.T) *fixture {
 	}
 	cfg := creativemedia.DefaultConfig()
 	cfg.QuotaLimitBytes = 64 << 20
+	if configure != nil {
+		configure(&cfg)
+	}
 	key := bytes.Repeat([]byte{7}, 32)
 	signer, err := creativemedia.NewPartSigner(key, "http://127.0.0.1/part")
 	if err != nil {
@@ -166,7 +179,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	svc.SetRuntime(runtime)
-	f := &fixture{db: db, a: st.ScopeFor(auth.AccountContext{AccountID: "edit-a"}), media: media, svc: svc, renderer: renderer, adapter: adapter}
+	f := &fixture{st: st, db: db, a: st.ScopeFor(auth.AccountContext{AccountID: "edit-a"}), media: media, svc: svc, renderer: renderer, adapter: adapter}
 	r, err := creativecanvas.CreateProject(t.Context(), f.a, command(t, creativecanvas.CreateProjectInput{Name: "编辑"}))
 	if err != nil {
 		t.Fatal(err)
@@ -335,7 +348,7 @@ func TestRenderBecomesReadyWithoutBookingQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	r = f.get(t, r.ID)
-	if r.State != "ready" || r.Output == nil || r.Output.Mime != "image/jpeg" || r.Output.Width != 96 || r.Output.Height != 64 || r.Output.Size >= r.Output.SourceSize {
+	if r.State != "ready" || r.Output == nil || r.Output.Mime != "image/jpeg" || r.Output.Width != 96 || r.Output.Height != 64 || r.Output.Size >= r.SourceSize {
 		t.Fatalf("ready %+v %+v", r, r.Output)
 	}
 	if until := time.Until(r.ExpiresAt); until < 25*time.Minute || until > 31*time.Minute {
@@ -684,7 +697,7 @@ func TestOutcomesThatAreNotAResult(t *testing.T) {
 		}
 		return f.get(t, r.ID)
 	}
-	if r := run(creativeimageedit.ErrNotReduced); r.State != "not_reduced" || r.Output == nil || r.Output.SourceSize == 0 {
+	if r := run(creativeimageedit.ErrNotReduced); r.State != "not_reduced" || r.Output != nil || r.SourceSize == 0 {
 		t.Fatalf("not reduced %+v", r)
 	}
 	if r := run(creativeimageedit.ErrColour); r.State != "failed" || r.ErrorCode != "colour_unknown" {

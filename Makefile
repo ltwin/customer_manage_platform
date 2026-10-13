@@ -54,6 +54,8 @@ test-frontend: frontend/node_modules
 	cd frontend && node --test --experimental-transform-types "scripts/*.test.ts" "scripts/*.test.mjs"
 
 test-ops:
+	python3 ./scripts/lib/test_creative_image_edit_config.py
+	bash ./scripts/test-production-preflight.sh
 	./scripts/test-auth-legacy-cutover.sh
 	./scripts/test-auth-security-catalog.sh
 	bash ./scripts/test-v1-ops-common.sh
