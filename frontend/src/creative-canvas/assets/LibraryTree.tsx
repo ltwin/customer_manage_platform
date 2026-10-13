@@ -298,6 +298,11 @@ export default function LibraryTree({
               }}
             />
           </span>
+          {usage.pending_release_bytes > 0 && (
+            <span title="已永久删除、且不再被画布等使用的文件，删除完成后从已用空间中扣除">
+              其中 {formatBytes(usage.pending_release_bytes)} 待释放
+            </span>
+          )}
         </footer>
       )}
     </aside>

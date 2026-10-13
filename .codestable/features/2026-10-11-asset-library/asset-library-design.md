@@ -124,10 +124,11 @@ facets:
 
 ### 2.5 `GET /creative/library-usage`（新）
 
-返回 `{ asset_count, stored_bytes, limit_bytes }`。
+返回 `{ asset_count, stored_bytes, limit_bytes, pending_release_bytes }`。
 
 - `asset_count`：不在回收站里的素材数。
 - `stored_bytes`、`limit_bytes`：来自 `creative_media_quotas`。账号还没有配额记录时，返回 0 和配置里的上限。
+- `pending_release_bytes`（V6-075 增补，2026-10-12）：`stored_bytes` 中已被媒体 GC 标记删除、对象删除后即释放的字节，见[媒体模块 §6.4](../../../docs/product/creative-canvas-system/modules/media.md)。
 
 ### 2.6 `POST /creative/library/empty-trash`（新）
 

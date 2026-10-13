@@ -103,7 +103,7 @@ async function routes(route) {
     const scope = (id) => state.groups.filter((g) => g.id === id || g.parent_id === id).map((g) => g.id)
     return json({ items: state.groups, hierarchy_revision: String(state.hierarchy), asset_counts: Object.fromEntries(state.groups.map((g) => [g.id, state.assets.filter((a) => a.group_ids.some((x) => scope(g.id).includes(x))).length])) })
   }
-  if (path.endsWith('/library-usage')) return json({ asset_count: state.assets.length, stored_bytes: 1024 ** 3, limit_bytes: 20 * 1024 ** 3 })
+  if (path.endsWith('/library-usage')) return json({ asset_count: state.assets.length, stored_bytes: 1024 ** 3, limit_bytes: 20 * 1024 ** 3, pending_release_bytes: 0 })
   if (path.endsWith('/tags')) return json({ items: [], hierarchy_revision: String(state.hierarchy) })
   if (path.endsWith('/tag-categories')) return json({ items: [], hierarchy_revision: String(state.hierarchy) })
   if (path.endsWith('/library-settings')) return json({ retention_days: 30, revision: '1', hierarchy_revision: String(state.hierarchy), library_revision: '1' })

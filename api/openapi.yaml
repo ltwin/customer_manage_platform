@@ -5773,7 +5773,7 @@ paths:
   /creative/library-usage:
     get:
       operationId: getCreativeLibraryUsage
-      description: 资产库素材数（不含回收站），以及整个创作空间的媒体占用与上限，口径和上传配额一致
+      description: 资产库素材数（不含回收站），以及整个创作空间的媒体占用与上限，口径和上传配额一致；pending_release_bytes 是占用中已被回收标记、对象删除后即释放的部分
       tags:
       - creative-foundation
       responses:
@@ -7025,6 +7025,7 @@ components:
       - asset_count
       - stored_bytes
       - limit_bytes
+      - pending_release_bytes
       properties:
         asset_count:
           type: integer
@@ -7038,6 +7039,11 @@ components:
           type: integer
           format: int64
           minimum: 0
+        pending_release_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: stored_bytes 中已标记回收、对象删除后释放的字节；永久删除的内容需等宽限期过后且不再被画布等使用才会计入
     CreativeAssetFacets:
       type: object
       additionalProperties: false

@@ -197,7 +197,7 @@ function EmptyTrash({
           {snapshot
             ? `将永久删除 ${snapshot.total_count} 项。`
             : '正在核对回收站数量。'}
-          画布里已有的节点不受影响，此操作不可撤销。
+          此操作不可撤销。画布里已经用到的副本会保留，空间在它们也不再使用后释放。
         </span>,
         ...(error
           ? [

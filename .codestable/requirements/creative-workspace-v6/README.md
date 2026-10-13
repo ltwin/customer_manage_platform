@@ -66,7 +66,7 @@
 | [V6-019 · 资产浏览与画布互操作验收](items/V6-019.md) | P1 | 验证 | 待验证 | — | — |
 | [V6-020 · 回收站与到期清理验收](items/V6-020.md) | P1 | 验证 | 已完成 | — | 第 5 步补齐 `library.trash_expiry`：启动/每小时调度、100 项原子续批、过期分组快照清理；真实数据库与 local 存储验证恢复、各删除路径及独立引用保留，AC-01～04 完成。物理 GC 不在本步范围，回收资格与字节回收不混称；[第 5 步验收](../../work/feat-asset-library-step5.md)；[design](../../features/2026-10-11-asset-library/asset-library-design.md) |
 | [V6-057 · 资产库浏览与入库基线回归验收](items/V6-057.md) | P0 | 验证 | 已完成 | — | 9 条 AC 均已满足，无需改代码；帮助文案移交 V6-045 · [验收记录](../../issues/2026-10-05-library-baseline-verification/library-baseline-verification-note.md)；2026-10-12 抽屉按 D-07 复用独立页组件重建，AC-02/03/08 随 PRD §11.3 #15 修订并重新验收 · [记录](../../work/feat-asset-tags-and-drawer.md) |
-| [V6-060 · 资产库类型分段与缩略形态](items/V6-060.md) | P0 | 交付 | 实现中 | — | 并入第 2 期（owner 2026-10-11）：卡片资产库页与抽屉共用；音频卡片先用装饰条，走查认可后作为等效形态，真实波形由 V6-074 补（design D-2，owner 2026-10-12）；067.1 已交付卡片样式，AC-01 已满足；AC-02 待 owner 走查音频装饰条，AC-03 的快速查看随 V6-066 浮窗；[design](../../features/2026-10-11-asset-library/asset-library-design.md) · [verification](../../features/2026-10-11-asset-library/asset-library-verification.md) |
+| [V6-060 · 资产库类型分段与缩略形态](items/V6-060.md) | P0 | 交付 | 待验收 | — | 并入第 2 期（owner 2026-10-11）：卡片资产库页与抽屉共用；音频卡片先用装饰条，走查认可后作为等效形态，真实波形由 V6-074 补（design D-2，owner 2026-10-12）；067.1 已交付卡片样式，AC-01 已满足；AC-02 待 owner 走查音频装饰条，AC-03 的快速查看随 V6-066 浮窗；[design](../../features/2026-10-11-asset-library/asset-library-design.md) · [verification](../../features/2026-10-11-asset-library/asset-library-verification.md) |
 
 ### 节点生成
 
@@ -163,7 +163,7 @@
 
 | ID / 需求 | 优先级 | 类型 | 状态 | 前置依赖 | 产物 / 阻塞说明 |
 |---|---|---|---|---|---|
-| [V6-075 · 媒体 GC 与资产库空间释放](items/V6-075.md) | P0 | 交付 | 实现中 | — | [design：媒体模块 §6](../../../docs/product/creative-canvas-system/modules/media.md#6-gc恢复和上线约束)（owner 2026-10-12 拍板）；四张未登记的表已定性（§6.2），带出 Agent dispatch 复核范围与生成导入陈旧重置两处修正；GC 本体（scan / delete 模式）已实现，AC-01/02/05/06/08 已满足，余 AC-03 并发测试、AC-04 OSS 恢复演练、AC-07 界面；[verification](../../features/2026-10-12-media-gc/media-gc-verification.md)；尚未上生产，先在本地 / 测试库只读扫描并做恢复演练，首次上生产先只读 3 天 |
+| [V6-075 · 媒体 GC 与资产库空间释放](items/V6-075.md) | P0 | 交付 | 实现中 | — | [design：媒体模块 §6](../../../docs/product/creative-canvas-system/modules/media.md#6-gc恢复和上线约束)（owner 2026-10-12 拍板）；四张未登记的表已定性（§6.2），带出 Agent dispatch 复核范围与生成导入陈旧重置两处修正；功能代码已完成（GC scan / delete、确认文案与「待释放」），除 AC-04 外全部满足；AC-04 余真实 OSS bucket 恢复演练；[verification](../../features/2026-10-12-media-gc/media-gc-verification.md)；尚未上生产，先在本地 / 测试库只读扫描并做恢复演练，首次上生产先只读 3 天 |
 | [V6-076 · 图片编辑一期：压缩、裁切与 Agent 压缩](items/V6-076.md) | P1 | 交付 | 待实现 | V6-075 | [产品设计](../../../docs/product/creative-canvas-system/image-editing.md) · [后端设计第三稿](../../../docs/product/creative-canvas-system/modules/image-editing-backend.md)（owner 2026-10-12 拍板）；实现第一步是带 libvips 的 worker 镜像与编解码穿刺 |
 
 ## 待拍板事项

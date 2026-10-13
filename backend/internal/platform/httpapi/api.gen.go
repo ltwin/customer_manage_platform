@@ -4809,9 +4809,12 @@ type CreativeLibraryTag struct {
 
 // CreativeLibraryUsage defines model for CreativeLibraryUsage.
 type CreativeLibraryUsage struct {
-	AssetCount  int64 `json:"asset_count"`
-	LimitBytes  int64 `json:"limit_bytes"`
-	StoredBytes int64 `json:"stored_bytes"`
+	AssetCount int64 `json:"asset_count"`
+	LimitBytes int64 `json:"limit_bytes"`
+
+	// PendingReleaseBytes stored_bytes 中已标记回收、对象删除后释放的字节；永久删除的内容需等宽限期过后且不再被画布等使用才会计入
+	PendingReleaseBytes int64 `json:"pending_release_bytes"`
+	StoredBytes         int64 `json:"stored_bytes"`
 }
 
 // CreativeLinkPayload defines model for CreativeLinkPayload.

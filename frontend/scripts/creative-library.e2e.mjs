@@ -171,7 +171,7 @@ await page.route('**/api/v1/**', async (route) => {
     const counts = Object.fromEntries(groups.map((g) => [g.id, all.filter((a) => !a.deleted_at && a.group_ids.some((id) => id === g.id || groups.find((x) => x.id === id)?.parent_id === g.id)).length]))
     return json({ items: groups, hierarchy_revision: String(hierarchy), asset_counts: counts })
   }
-  if (path.endsWith('/library-usage')) return json({ asset_count: all.length, stored_bytes: 1024 ** 3, limit_bytes: 20 * 1024 ** 3 })
+  if (path.endsWith('/library-usage')) return json({ asset_count: all.length, stored_bytes: 1024 ** 3, limit_bytes: 20 * 1024 ** 3, pending_release_bytes: 0 })
   if (path.endsWith('/tags')) return json({ items: tags.map((t) => ({ ...t, asset_count: all.filter((a) => a.tag_ids.includes(t.id)).length })), hierarchy_revision: String(hierarchy) })
   if (path.endsWith('/tag-categories')) return json({ items: [], hierarchy_revision: String(hierarchy) })
   if (path.endsWith('/library-settings')) return json({ retention_days: 30, revision: '1', hierarchy_revision: String(hierarchy), library_revision: '1' })

@@ -79,7 +79,7 @@ const fixture = () => [
 
 const key = (s) => s.normalize('NFKC').toLowerCase().trim()
 function mockServer(assets) {
-  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null }
+  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null, pendingRelease: 0 }
   const live = () => s.assets.filter((a) => !a.deleted_at)
   const descendants = (id) => [id, ...s.groups.filter((g) => g.parent_id === id).map((g) => g.id)]
   function scope(q, { kind = true, tagFilter = true } = {}) {
@@ -141,7 +141,7 @@ function mockServer(assets) {
     if(/\/creative\/uploads\/[^/]+$/.test(path)&&request.method()==='GET')return json(s.uploads.get(path.split('/').at(-1)))
     if(path.endsWith('/part-authorizations'))return json({parts:[{part_number:1,url:base+'/api/v1/__qa_part',method:'PUT',headers:{}}]})
     if(path.endsWith('/__qa_part'))return route.fulfill({status:200,body:''})
-    if (path.endsWith('/creative/library-usage')) return json({ asset_count: live().length, stored_bytes: Math.round(3.24 * GiB), limit_bytes: 20 * GiB })
+    if (path.endsWith('/creative/library-usage')) return json({ asset_count: live().length, stored_bytes: Math.round(3.24 * GiB), limit_bytes: 20 * GiB, pending_release_bytes: s.pendingRelease })
     if (path.endsWith('/creative/media-access-tickets')) {
       const id = request.postDataJSON().content_revision_id.slice(2)
       const a = s.assets.find((x) => x.id === id)
@@ -417,6 +417,7 @@ await check('AC-02', async () => {
   assert.equal(await n('胶片'), '1')
   const usage = await tree().locator('.al-usage').innerText()
   assert.match(usage, /70 项 · 已用 3\.2 GB \/ 20 GB/)
+  assert.doesNotMatch(usage, /待释放/)
   const meter = await tree().getByRole('meter', { name: '空间用量' }).locator('i').evaluate((e) => e.style.width)
   assert.match(meter, /^16\.\d+%$/)
   await page.screenshot({ path: `${output}/ac02-tree.png` })
@@ -1098,6 +1099,25 @@ await check('step5-trash-restore-purge',async()=>{
  await page.getByRole('alertdialog').getByRole('button',{name:'取消',exact:true}).click();assert(server.assets.some(a=>a.id==='f-old'))
  await tile('旧照片').click({button:'right'});await page.getByRole('menuitem',{name:'永久删除'}).click();await page.getByRole('alertdialog').getByRole('button',{name:'确认',exact:true}).click()
  await until(()=>!server.assets.some(a=>a.id==='f-old'),'purged')
+})
+// V6-075 AC-07：永久删除说清空间何时释放；已标记回收的字节在用量面板单列。
+await check('V6-075-AC-07', async () => {
+  const notice = '此操作不可撤销。画布里已经用到的副本会保留，空间在它们也不再使用后释放。'
+  await fresh()
+  server.pendingRelease = Math.round(1.5 * GiB)
+  await open('?view=trash')
+  const usage = tree().locator('.al-usage')
+  assert.match(await usage.innerText(), /其中 1\.5 GB 待释放/)
+  await page.screenshot({ path: `${output}/v6-075-ac07-usage.png` })
+  await tile('旧照片').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: '永久删除' }).click()
+  const purge = page.getByRole('alertdialog')
+  await purge.getByText(notice, { exact: true }).waitFor()
+  await page.screenshot({ path: `${output}/v6-075-ac07-purge.png` })
+  await purge.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '清空回收站', exact: true }).click()
+  await page.getByRole('alertdialog').getByText(/将永久删除 1 项。此操作不可撤销。画布里已经用到的副本会保留，空间在它们也不再使用后释放。/).waitFor()
+  await page.screenshot({ path: `${output}/v6-075-ac07-empty-trash.png` })
 })
 await check('step5-empty-trash-conflict-and-unknown',async()=>{
  await fresh();await open('?view=trash');await page.getByRole('button',{name:'清空回收站',exact:true}).click()

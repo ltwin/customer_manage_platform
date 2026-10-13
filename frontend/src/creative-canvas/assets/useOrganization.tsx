@@ -125,7 +125,7 @@ export function useOrganization({
       else
         setConfirm({
           title: `永久删除 ${assets.length} 项？`,
-          body: '画布里已有的节点不受影响，此操作不可撤销。',
+          body: '此操作不可撤销。画布里已经用到的副本会保留，空间在它们也不再使用后释放。',
           run,
         })
       return

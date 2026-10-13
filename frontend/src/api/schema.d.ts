@@ -2426,7 +2426,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description 资产库素材数（不含回收站），以及整个创作空间的媒体占用与上限，口径和上传配额一致 */
+        /** @description 资产库素材数（不含回收站），以及整个创作空间的媒体占用与上限，口径和上传配额一致；pending_release_bytes 是占用中已被回收标记、对象删除后即释放的部分 */
         get: operations["getCreativeLibraryUsage"];
         put?: never;
         post?: never;
@@ -2850,6 +2850,11 @@ export interface components {
             stored_bytes: number;
             /** Format: int64 */
             limit_bytes: number;
+            /**
+             * Format: int64
+             * @description stored_bytes 中已标记回收、对象删除后释放的字节；永久删除的内容需等宽限期过后且不再被画布等使用才会计入
+             */
+            pending_release_bytes: number;
         };
         /** @description 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出 */
         CreativeAssetFacets: {

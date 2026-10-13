@@ -509,6 +509,9 @@ type Usage struct {
 	AssetCount  int64 `json:"asset_count"`
 	StoredBytes int64 `json:"stored_bytes"`
 	LimitBytes  int64 `json:"limit_bytes"`
+	// PendingReleaseBytes is the part of StoredBytes media GC has already
+	// marked for deletion: it leaves the quota once the objects are gone.
+	PendingReleaseBytes int64 `json:"pending_release_bytes"`
 }
 
 // GetUsage reports the whole creative space's media footprint, the figure the
@@ -521,6 +524,9 @@ func GetUsage(ctx context.Context, sc store.AccountScope, defaultLimit int64) (U
 		}
 		var err error
 		if u.AssetCount, err = tx.Count(ctx, "creative_assets", "deleted_at IS NULL"); err != nil {
+			return err
+		}
+		if err = tx.ScalarAggregate(ctx, "creative_blobs", store.AggregateSum, "byte_size", "state='deleting' AND quota_booked_at IS NOT NULL AND quota_released_at IS NULL").Scan(&u.PendingReleaseBytes); err != nil {
 			return err
 		}
 		err = tx.QueryRow(ctx, "creative_media_quotas", "stored_bytes,limit_bytes", "").Scan(&u.StoredBytes, &u.LimitBytes)

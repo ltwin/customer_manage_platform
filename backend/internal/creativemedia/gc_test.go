@@ -9,7 +9,9 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
@@ -53,6 +55,15 @@ func (f *fixture) storedBytes(t *testing.T, account string) int64 {
 		t.Fatal(err)
 	}
 	return n
+}
+
+func (f *fixture) usage(t *testing.T) creativelibrary.Usage {
+	t.Helper()
+	u, err := creativelibrary.GetUsage(t.Context(), f.a, f.cfg.QuotaLimitBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
 }
 
 func (f *fixture) scalar(t *testing.T, query string, args ...any) string {
@@ -126,6 +137,9 @@ func TestGCReleasesAPurgedAssetsSpaceExactlyOnce(t *testing.T) {
 	if f.storedBytes(t, "media-a") != total {
 		t.Fatal("quota released before the object was deleted")
 	}
+	if u := f.usage(t); u.StoredBytes != total || u.PendingReleaseBytes != total {
+		t.Fatalf("usage while deleting: %+v", u)
+	}
 
 	if _, err := f.db.Exec(`UPDATE creative_blobs SET delete_after=clock_timestamp()-interval '1 second' WHERE account_id='media-a' AND state='deleting'`); err != nil {
 		t.Fatal(err)
@@ -136,6 +150,9 @@ func TestGCReleasesAPurgedAssetsSpaceExactlyOnce(t *testing.T) {
 	}
 	if got := f.storedBytes(t, "media-a"); got != 0 {
 		t.Fatalf("stored %d after release", got)
+	}
+	if u := f.usage(t); u.PendingReleaseBytes != 0 {
+		t.Fatalf("usage after release: %+v", u)
 	}
 	for _, b := range blobs {
 		if _, err := f.local.StatVersion(t.Context(), b.key, b.version); !errors.Is(err, versionedfs.ErrNotFound) {
@@ -420,5 +437,108 @@ func TestGCStillCollectsInactiveAccounts(t *testing.T) {
 	}
 	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 || r.ReclaimableBlobs != 1 {
 		t.Fatalf("inactive account: %+v", r)
+	}
+}
+
+// A new reference and GC never both win. Whoever holds the account write
+// barrier first decides: GC waits for a writer that is adding a holder and then
+// sees it; a reference that arrives after GC deleted the revision is refused
+// instead of pointing at deleted content.
+func TestGCSerializesWithANewReference(t *testing.T) {
+	f := setup(t)
+	asset := f.uploadAndPurge(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	locked, release, written := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	// Release and cancel before joining, including when a readiness wait fails.
+	letGo := sync.OnceFunc(func() { close(release) })
+	var workers sync.WaitGroup
+	defer func() {
+		cancel()
+		letGo()
+		workers.Wait()
+	}()
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		written <- f.a.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			if err := tx.LockCreativeWrite(ctx); err != nil {
+				return err
+			}
+			if err := tx.Insert(ctx, "creative_revision_holds", []string{"id", "content_revision_id", "reason"}, "gc-hold", asset.ContentRevisionID, "recovery"); err != nil {
+				return err
+			}
+			close(locked)
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+	}()
+	select {
+	case <-locked:
+	case err := <-written:
+		t.Fatalf("writer exited before acquiring the reference: %v", err)
+	case <-ctx.Done():
+		t.Fatalf("waiting for writer readiness: %v", ctx.Err())
+	}
+	type collectionResult struct {
+		report creativemedia.GCReport
+		err    error
+	}
+	collected := make(chan collectionResult, 1)
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		r, err := f.svc.CollectGarbage(ctx, f.a, creativemedia.GCDelete)
+		collected <- collectionResult{report: r, err: err}
+	}()
+	select {
+	case r := <-collected:
+		t.Fatalf("GC ran past a writer holding the barrier: %+v", r)
+	case <-time.After(300 * time.Millisecond):
+	case <-ctx.Done():
+		t.Fatalf("waiting for GC to block: %v", ctx.Err())
+	}
+	letGo()
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Fatalf("writer failed: %v", err)
+		}
+	case <-ctx.Done():
+		t.Fatalf("waiting for writer completion: %v", ctx.Err())
+	}
+	select {
+	case result := <-collected:
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if r := result.report; r.UnheldRevisions != 0 || r.ReclaimableBlobs != 0 {
+			t.Fatalf("GC collected what the writer had just referenced: %+v", r)
+		}
+	case <-ctx.Done():
+		t.Fatalf("waiting for GC completion: %v", ctx.Err())
+	}
+	if f.scalar(t, `SELECT state FROM creative_content_revisions WHERE id=$1`, asset.ContentRevisionID) != "ready" {
+		t.Fatal("referenced revision deleted")
+	}
+
+	if _, err := f.db.Exec(`DELETE FROM creative_revision_holds WHERE id='gc-hold'`); err != nil {
+		t.Fatal(err)
+	}
+	if r := f.collect(t, creativemedia.GCDelete); r.UnheldRevisions != 1 {
+		t.Fatalf("unreferenced revision kept: %+v", r)
+	}
+	err := f.a.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := tx.LockCreativeWrite(ctx); err != nil {
+			return err
+		}
+		_, err := creativecontent.RequireUsable(ctx, tx, asset.ContentRevisionID, "display")
+		return err
+	})
+	if !errors.Is(err, creativecontent.ErrNotFound) {
+		t.Fatalf("reference to deleted content: want ErrNotFound, got %v", err)
 	}
 }
