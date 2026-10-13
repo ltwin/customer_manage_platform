@@ -1,6 +1,6 @@
 # 命令基线：make check 是全 roadmap 后续 feature 的验证入口（roadmap §6）。
 
-.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening test-go test-frontend test-ops check-frontend check-go check-ops
+.PHONY: check build lint test generate generate-check db-up migrate-up backend-build frontend-build frontend-install webui-sync planning-ops-safety planning-hardening test-go test-frontend test-ops check-frontend check-go check-ops check-image-codec
 
 BUILD_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null || printf development)
 
@@ -80,6 +80,13 @@ check-go:
 
 # 部署脚本 / ops 契约改动
 check-ops: test-ops
+
+# 图片编辑编解码（creativeimageedit）：本机没有 vips 时这些样张测试会跳过，改动编解码或
+# 升级 libvips 时在与 creative-worker 镜像同版本的 vips 下跑。VIPS_APK 须与 Dockerfile 一致。
+VIPS_APK ?= vips-tools=8.16.1-r0
+check-image-codec:
+	docker run --rm -v "$(CURDIR)/backend":/src -w /src golang:1.25-alpine3.22 \
+		sh -c 'apk add --no-cache $(VIPS_APK) util-linux-misc >/dev/null && go test ./internal/creativeimageedit/ -count=1'
 
 planning-ops-safety:
 	bash ./scripts/test-planning-ops-backup-restore-safety.sh

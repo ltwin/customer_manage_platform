@@ -2,7 +2,7 @@
 
 **档位 S1；推荐 Go 业务编排 + worker 内受控 libvips 子进程，异步只负责渲染，采用是同步画布命令。**
 
-状态：技术设计第三稿，2026-10-12；已处理两轮评审意见，预览存储与回收按 owner 拍板改为「不计额度的预览 blob + 媒体 GC」，未实现、未做性能穿刺。对应[产品设计](../image-editing.md)。本文的「设计」是拟议契约，不是现有代码行为；「已验证」指本次直接读取源码或官方资料确认；容量数据为规划假设。
+状态：技术设计第三稿，2026-10-12；已处理两轮评审意见，预览存储与回收按 owner 拍板改为「不计额度的预览 blob + 媒体 GC」。编解码穿刺（§11 第 1 步）已完成，结论见[穿刺记录](../../../../.codestable/features/2026-10-12-image-editing/image-editing-spike.md)，§8 已按结论回写；其余部分未实现。对应[产品设计](../image-editing.md)。本文的「设计」是拟议契约，不是现有代码行为；「已验证」指本次直接读取源码或官方资料确认；容量数据为规划假设。
 
 ## 1. 目标、规模与边界
 
@@ -29,7 +29,7 @@
 | [worker.go](../../../../backend/internal/creativemedia/worker.go) `SweepExpired` 只扫上传与上传候选 | 本功能不另写清理；预览 blob 由媒体 GC 按「无持有方」回收 |
 | [canvas_tools.go](../../../../backend/internal/creativeagent/canvas_tools.go) `edit_canvas` / `generate_node` 写画布时不在事务内复核 run 资格 | 压缩工具与之对齐，不单独增加事务内 run 钩子 |
 
-attached 持久续跑不作为本期可复用能力，后续单独设计。当前 [Dockerfile](../../../../Dockerfile) 未打包 libvips / creative-worker，仍需补现有 worker 的构建运行支持。来源授权沿用 [RetainDerivativeRights](../../../../backend/internal/creativecontent/derivation.go)。
+attached 持久续跑不作为本期可复用能力，后续单独设计。[Dockerfile](../../../../Dockerfile) 已有 `creative-worker` 目标（Alpine 3.22 + libvips 8.16.1 + choom，§11 第 1 步补齐）。来源授权沿用 [RetainDerivativeRights](../../../../backend/internal/creativecontent/derivation.go)。
 
 ## 3. 技术选型
 
@@ -136,10 +136,10 @@ compress 参数为 quality 整数 1–100；crop 为方向校正后的整数像�
 
 - 压缩：JPEG → JPEG；无透明像素 PNG → JPEG；透明 PNG / 静态 WebP → WebP。Q 使用传入 1–100；WebP alpha_q 固定 100。质量数值在不同格式间不代表相同视觉损失。
 - 裁切：PNG → PNG；JPEG → JPEG Q95；WebP → lossless WebP，防止基础裁切再损失其已解码像素。PNG/WebP 更大仍允许裁切，但须满足输出大小及配额上限。固定策略的改变需递增版本。
-- 无 ICC 的普通 RGB 图按 sRGB 处理；有有效 ICC 则转换。未标定 CMYK、损坏 ICC 或不支持的高位深输入返回明确错误，不能猜测颜色。具体可支持范围由样张验证写入 capabilities。
+- 无 ICC 的普通 RGB 图按 sRGB 处理；有有效 ICC 则转换。未标定 CMYK、损坏 ICC 返回明确错误，不能猜测颜色。libvips 加载时会静默丢弃无法解析的 ICC，因此先在 Go 侧扫描容器结构：文件声明了 profile 而加载后没有，即判为颜色不可知。16 位输入统一输出 8 位（含 PNG 裁切）。支持范围以穿刺样张为准写入 capabilities。
 - 输出只保留 sRGB ICC，移除 EXIF/GPS/XMP；源文件不变。应用前明确告知格式与元数据变化，不能以编码默认值代替该策略。
 
-CLI 通过 `exec.CommandContext` 的独立参数调用，不经过 shell，不接受自定义命令、文件路径、URL、loader 名或编码参数字符串。文件名由服务端生成；libvips 方括号格式选项完全由白名单常量及已验证数值构造。运行目录私有、禁止网络输入；loader 限定图片格式，不让自动 loader 扩展到 SVG/PDF 等内容。
+CLI 通过 `exec.CommandContext` 的独立参数调用，不经过 shell，不接受自定义命令、文件路径、URL、loader 名或编码参数字符串。文件名由服务端生成；libvips 方括号格式选项完全由白名单常量及已验证数值构造。运行目录私有、禁止网络输入；源文件按已校验类型显式调用 jpegload / pngload / webpload，从不自动识别，SVG/PDF 等 loader 不可达。不设 `VIPS_BLOCK_UNTRUSTED`：libvips 8.16 把 vipsload 也标为 untrusted，设置后连自己的 `.v` 中间文件都读不了。APNG 与动画 WebP 同样由 Go 侧扫描拒绝。
 
 多阶段使用无损内部临时格式，禁止 JPEG 作为 autorotate / 色彩转换 / 裁切的中间文件；只在末尾做有损编码。中间文件可能数百 MB，必须有磁盘预算和启动清扫；终止要覆盖进程组和临时文件，不只取消 Go context。库及依赖版本随 worker 镜像锁定。
 
@@ -188,7 +188,7 @@ Linux 下在受控子进程 exec vips 之前设置其 `oom_score_adj=1000`，不
 
 发布顺序：新增 schema 与根支持 → 兼容 edit 读取的 API / worker / 清理代码和依赖镜像 → 编解码自检及样张 → 开功能。回滚先停受理、明确取消候选并清理；有 edit 数据时保留兼容的读取 / GC 版本，不直接 down migration 或让旧 GC 清未知根。
 
-1. 编解码穿刺：创意空间尚未上生产，仓库也还没有 creative-worker 镜像。先补一个带 libvips 的 worker 镜像构建目标（固定发行版本），在该镜像内验证 JPEG/PNG/WebP、透明、全部方向、ICC、动画拒绝，测 12/24/60 MP 全链路 RSS / 时延 / 磁盘；生产资源实测随创意空间发布补做。
+1. 编解码穿刺（2026-10-12 已完成，见[穿刺记录](../../../../.codestable/features/2026-10-12-image-editing/image-editing-spike.md)）：补带 libvips 的 worker 镜像构建目标（固定发行版本），在该镜像内验证 JPEG/PNG/WebP、透明、全部方向、ICC、动画拒绝，测 12/24/60 MP 全链路 RSS / 时延 / 磁盘；生产资源实测随创意空间发布补做。
 2. 候选闭环：预览 blob 写入、预览票据、后到替换、重复 job、被替代后的 blob 由 GC 回收、队列并发。
 3. 同步 apply：绑定与计额度、版本 / fitMediaSize / persistGraph / 回执 / 撤销；测试来源冲突、超额、active execution、并发取消，以及 apply 与 GC 标记竞争。
 4. UI 和 Agent 有界等待：页面关闭不后台采用；工具超时与 apply 提交未知区别；补现有 GenerateNode 的 apply_state 返回和展示判断。
