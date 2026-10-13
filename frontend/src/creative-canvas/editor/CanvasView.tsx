@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MutableRefObject,
   type ReactNode,
 } from 'react'
@@ -64,6 +65,9 @@ import {
   Upload,
   Sparkles,
   LoaderCircle,
+  Crop,
+  Minimize2,
+  ChevronDown,
 } from 'lucide-react'
 import {
   localMedia,
@@ -96,6 +100,18 @@ import {
   InlineNodeText,
   type InlineContentEditing,
 } from './InlineNodeEditor.tsx'
+import { CompressPanel, CropControls, CropStage } from './ImageEditor.tsx'
+import {
+  useImageCrop,
+  useImageEditCapabilities,
+  type CropSession,
+} from './imageEdit.ts'
+import {
+  imageEditGate,
+  originalOf,
+  sourceSize,
+  type Box,
+} from './imageEditModel.ts'
 
 type FlowNode = Node<
   {
@@ -136,6 +152,9 @@ type FlowNode = Node<
     fillEmpty: (id: string, kind: MediaKind, via: 'upload' | 'library') => void
     /** 本机预览读出的尺寸；变化时按比例重算高度。 */
     localSize: string
+    /** 正在画布内裁切这张图；其余节点为空。 */
+    crop?: CropSession
+    cropChange: (box: Box) => void
   },
   'content'
 >
@@ -281,6 +300,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
           data.solo &&
           !group &&
           !data.disabled &&
+          !data.crop &&
           n.capabilities.actions.includes('resize')
         }
         minWidth={nodeSizeLimits.minWidth}
@@ -334,6 +354,13 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
         <div className="cc-node-content cc-node-media">
           {!known || n.status.content_state === 'unavailable' ? (
             <p>{!known ? '此节点类型当前只读' : '当前无权展示此内容'}</p>
+          ) : data.crop ? (
+            // 裁切期间拖动只作用于选区，不移动节点、不连线（产品稿 §3.2）。
+            <CropStage
+              session={data.crop}
+              title={n.metadata.title || untitled(n.metadata.type_key)}
+              onChange={data.cropChange}
+            />
           ) : n.content ? (
             <>
               <MediaFigure
@@ -457,6 +484,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
         </div>
       )}
       {!group &&
+        !data.crop &&
         connectableTypes.includes(n.metadata.type_key) &&
         (['input', 'output'] as const).map((side) => (
           <Handle
@@ -794,11 +822,14 @@ export default function CanvasView({
   /** 画布内操作的说明提示，例如连线被拒的原因、双击断线可撤销。 */
   onNotice: (message: string) => void
 }) {
+  // 裁切期间画布快捷键（撤销、删除、移动等）都不生效，避免误改别的东西。
+  const croppingRef = useRef(false)
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       const target = event.target
       if (
         disabled ||
+        croppingRef.current ||
         event.defaultPrevented ||
         event.isComposing ||
         !(event.metaKey || event.ctrlKey) ||
@@ -1070,6 +1101,71 @@ export default function CanvasView({
     if (element.current) observer.observe(element.current)
     return () => observer.disconnect()
   }, [])
+  // 图片编辑（V6-076）：压缩面板与画布内裁切。部署没开时能力为空，入口不展示。
+  const editCaps = useImageEditCapabilities()
+  const [compressing, setCompressing] = useState<string | null>(null)
+  const dataRevisionOf = useCallback(
+    (id: string) =>
+      callbacks.current.canvasNodes.find((n) => n.id === id)?.data_revision ??
+      '0',
+    [],
+  )
+  const crop = useImageCrop({
+    account,
+    canvasID: canvas.id,
+    dataRevision: dataRevisionOf,
+    onNotice,
+  })
+  const { session: cropping, exit: exitCrop, setBox: setCropBox } = crop
+  croppingRef.current = !!cropping
+  // 工具条「图片编辑 ▾」展开的菜单。
+  const [editMenu, setEditMenu] = useState<{ x: number; y: number; nodeID: string } | null>(null)
+  // 裁切中的图片被别处换掉、清空或删掉：选区已对不上，退出且不应用。
+  useEffect(() => {
+    if (!cropping || cropping.phase) return
+    const n = canvas.nodes.find((x) => x.id === cropping.nodeID)
+    if (n?.content?.id === cropping.source.id) return
+    exitCrop()
+    onNotice('图片已变化，裁切已取消')
+  }, [canvas.nodes, cropping, exitCrop, onNotice])
+  const editGate = (n: CanvasNode) =>
+    imageEditGate({
+      capabilities: editCaps,
+      typeKey: n.metadata.type_key,
+      hasContent: !!n.content,
+      single: true,
+      preparing: !!localMedia.get(n.id),
+      readOnly: disabled || !n.capabilities.actions.includes('replace'),
+      generating: !!n.status.active_execution_id,
+      sourceMime: originalOf(n.content)?.mime ?? null,
+      unavailable:
+        n.status.content_state === 'unavailable' || !sourceSize(n.content),
+    })
+  const imageEditItems = (n: CanvasNode): CanvasMenuItem[] => {
+    const gate = editGate(n)
+    if (gate.hidden) return []
+    const reason = gate.disabled ? gate.reason : undefined
+    return [
+      { section: '图片编辑' },
+      {
+        label: '裁切',
+        icon: <Crop size={16} />,
+        disabled: gate.disabled,
+        sub: reason,
+        action: () => {
+          callbacks.current.onSelection([n.id])
+          crop.start(n)
+        },
+      },
+      {
+        label: '压缩',
+        icon: <Minimize2 size={16} />,
+        disabled: gate.disabled,
+        sub: reason,
+        action: () => setCompressing(n.id),
+      },
+    ]
+  }
   // 单版本节点显示模型名：用工作区共享的模型目录，没读到时直接显示模型 key。
   const { catalog: generationCatalog } = useGenerationCatalog()
   const modelLabels = useMemo(
@@ -1119,7 +1215,9 @@ export default function CanvasView({
                     n.metadata.height,
                   )
               : n.metadata.height,
+          cropFor = cropping?.nodeID === n.id ? cropping : undefined,
           draggable =
+            !cropFor &&
             !moveDisabled &&
             !panMode &&
             !panHeld &&
@@ -1136,6 +1234,7 @@ export default function CanvasView({
           old.data.solo === (isSelected && selection.length === 1) &&
           old.data.meta === meta &&
           old.data.ratio === ratio &&
+          old.data.crop === cropFor &&
           old.data.renaming === (renamingNode === n.id) &&
           old.data.inlineContent ===
             (inlineContent?.nodeID === n.id ? inlineContent : undefined) &&
@@ -1190,6 +1289,8 @@ export default function CanvasView({
             ratio,
             fillEmpty,
             localSize,
+            crop: cropFor,
+            cropChange: setCropBox,
           },
           selected: isSelected,
           draggable,
@@ -1221,6 +1322,8 @@ export default function CanvasView({
     modelLabels,
     localVersion,
     draftRatios,
+    cropping,
+    setCropBox,
   ])
   const pointerDown = useRef<{ x: number; y: number } | null>(null)
   const selectionStart = useRef<{ x: number; y: number } | null>(null)
@@ -1248,11 +1351,14 @@ export default function CanvasView({
     }
   }, [])
   const active = nodes.find((n) => n.id === selected),
+    cropNode = cropping ? nodes.find((n) => n.id === cropping.nodeID) : undefined,
+    // 裁切时工具条跟着被裁的图，不随选中变化。
+    anchor = cropNode ?? active,
     viewNodes = nodes.map((n) => ({
       ...n.data.item,
       metadata: { ...n.data.item.metadata, x: n.position.x, y: n.position.y },
     })),
-    point = active ? worldPoint(viewNodes, active.id) : { x: 0, y: 0 },
+    point = anchor ? worldPoint(viewNodes, anchor.id) : { x: 0, y: 0 },
     selectionReadOnly = selection.some(
       (id) =>
         !nodes
@@ -1271,7 +1377,7 @@ export default function CanvasView({
       Math.min(
         size.width - 340,
         viewport.x +
-          (point.x + (active?.width ?? NODE_W) / 2) * viewport.zoom -
+          (point.x + (anchor?.width ?? NODE_W) / 2) * viewport.zoom -
           160,
       ),
     ),
@@ -1684,6 +1790,10 @@ export default function CanvasView({
           action: () => onDownload(target.id),
         })
     }
+    if (target.metadata.type_key === 'core.image') {
+      const edits = imageEditItems(target)
+      if (edits.length) items.push(...edits, 'separator')
+    }
     if (isMediaKind(kind) && target.capabilities.actions.includes('replace'))
       items.push({
         label: target.content ? '替换媒体' : '上传媒体',
@@ -1768,6 +1878,8 @@ export default function CanvasView({
     <div
       className="cc-flow"
       ref={element}
+      // 裁切把手按屏幕尺寸绘制，需要知道当前缩放。
+      style={{ '--cc-zoom': viewport.zoom } as CSSProperties}
       // 点画布空白时焦点落到画布上，⇧1、⌘± 等画布快捷键才收得到。
       tabIndex={-1}
       onPointerDownCapture={(e) => {
@@ -1786,6 +1898,10 @@ export default function CanvasView({
       }}
       onContextMenu={(event) => {
         const hit = event.target instanceof Element ? event.target : null
+        if (cropping) {
+          event.preventDefault()
+          return
+        }
         if (
           !hit ||
           hit.closest(
@@ -1832,6 +1948,18 @@ export default function CanvasView({
           return
         const command = e.metaKey || e.ctrlKey,
           key = e.key.toLowerCase()
+        // 裁切中只保留缩放视图；Esc 取消裁切，其余画布快捷键不生效。
+        if (
+          cropping &&
+          !(command && !e.altKey && ['=', '+', '-', '0'].includes(e.key)) &&
+          !(e.shiftKey && e.code === 'Digit1')
+        ) {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            exitCrop()
+          }
+          return
+        }
         if (command && key === 'g') {
           e.preventDefault()
           if (e.shiftKey && singleGroupSelected && active)
@@ -1986,7 +2114,7 @@ export default function CanvasView({
         onNodeClick={() => setSelectedEdge(null)}
         onNodeDoubleClick={(_, n) => {
           const item = n.data.item
-          if (item.metadata.type_key === 'core.group') return
+          if (item.metadata.type_key === 'core.group' || n.data.crop) return
           // v6：双击有内容的媒体全屏查看，文字就地编辑。
           if (
             isMediaKind(nodeKind(item.metadata.type_key)) &&
@@ -2229,7 +2357,23 @@ export default function CanvasView({
         )}
       </ReactFlow>
       {/* 文字编辑期间隐藏工具条，结束编辑后恢复（PRD CV-60）。按选区显示 CV-70 规定的按钮。 */}
-      {active && !inlineContent && (
+      {cropping && cropNode ? (
+        <div
+          className="cc-selection-tools cc-surface cc-crop-tools"
+          role="toolbar"
+          aria-label="裁切"
+          style={{ left: toolbarX, top: toolbarY }}
+        >
+          <CropControls
+            session={cropping}
+            onCancel={exitCrop}
+            onRatio={crop.setRatio}
+            onReset={crop.reset}
+            onApply={crop.apply}
+            onDiscardBusy={crop.discardBusy}
+          />
+        </div>
+      ) : active && !inlineContent && (
         <div
           className="cc-selection-tools cc-surface"
           role="toolbar"
@@ -2301,9 +2445,29 @@ export default function CanvasView({
                 sep('s0'),
                 more,
               ]
+            const edit = type === 'core.image' ? editGate(one) : { hidden: true as const }
             if (media && one.content)
               return [
                 type === 'core.image' && tool('生成视频', <Film size={16} />, () => derive([one.id], 'video')),
+                !edit.hidden && (
+                  <button
+                    key="image-edit"
+                    className="cc-tool"
+                    aria-haspopup="menu"
+                    aria-expanded={editMenu?.nodeID === one.id}
+                    disabled={edit.disabled}
+                    title={edit.disabled ? edit.reason : '裁切或压缩这张图片'}
+                    onClick={(e) => {
+                      const b = e.currentTarget.getBoundingClientRect()
+                      setContextMenu(null)
+                      setEditMenu({ x: b.left, y: b.bottom + 6, nodeID: one.id })
+                    }}
+                  >
+                    <Crop size={16} />
+                    图片编辑
+                    <ChevronDown size={14} />
+                  </button>
+                ),
                 type === 'core.image' && sep('s0'),
                 one.capabilities.actions.includes('maximize') &&
                   icon('全屏查看', <Maximize2 size={16} />, () => onPreview(one.id, cardPreviews[one.id]?.id), '全屏查看 · Space'),
@@ -2338,6 +2502,38 @@ export default function CanvasView({
           onClose={() => setContextMenu(null)}
         />
       )}
+      {editMenu && (() => {
+        const n = canvas.nodes.find((x) => x.id === editMenu.nodeID)
+        const items = n ? imageEditItems(n).filter((i) => i === 'separator' || !('section' in i)) : []
+        return (
+          items.length > 0 && (
+            <CanvasContextMenu
+              key={`${editMenu.x}:${editMenu.y}`}
+              x={editMenu.x}
+              y={editMenu.y}
+              label="图片编辑"
+              items={items}
+              onClose={() => setEditMenu(null)}
+            />
+          )
+        )
+      })()}
+      {compressing && (() => {
+        const n = canvas.nodes.find((x) => x.id === compressing)
+        return (
+          n && (
+            <CompressPanel
+              key={compressing}
+              node={n}
+              account={account}
+              canvasID={canvas.id}
+              dataRevision={() => dataRevisionOf(n.id)}
+              onClose={() => setCompressing(null)}
+              onNotice={onNotice}
+            />
+          )
+        )
+      })()}
       {addMenu && (
         <CanvasContextMenu
           key={`${addMenu.screen.x}:${addMenu.screen.y}:${addMenu.link?.id ?? ''}`}

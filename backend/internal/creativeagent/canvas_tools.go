@@ -160,10 +160,12 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 				"parameters": {Type: schema.Object, Required: true, Desc: "该模型的参数，键和取值见工具说明；不指定的参数省略，全部用默认时给空对象"},
 			}),
 		}, nil
+	case compressImageTool:
+		return compressImageInfo(), nil
 	default:
 		return &schema.ToolInfo{
 			Name: generateNodeTool,
-			Desc: "按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗摄影师的生成额度，只在对方明确要生成时调用。调用会等待结果：succeeded 时返回新版本的内容修订 ID，可用 read_asset 查看；running 表示仍在生成，结果稍后出现在画布上，不要重复调用。",
+			Desc: "按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗摄影师的生成额度，只在对方明确要生成时调用。调用会等待结果：state 说生成本身，apply_state 说结果是否放到了节点上。只有 apply_state 为 applied 才表示节点已切换到新版本，此时返回新版本的内容修订 ID，可用 read_asset 查看；conflicted、discarded、expired 表示生成完成但没有采用（期间节点被改动、清空或删除），如实告诉摄影师；state 为 running 或 apply_state 为 pending 表示仍在进行，结果稍后出现在画布上，不要重复调用。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"node_id":        {Type: schema.String, Required: true, Desc: "要生成的节点 ID"},
 				"draft_revision": {Type: schema.Integer, Required: true, Desc: "set_node_prompt 返回或 read_canvas 读到的提示词版本；节点被别人改过时拒绝"},
@@ -190,6 +192,8 @@ func (t *canvasTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opt
 		out, err = h.editCanvas(ctx, canvasID, seed, raw)
 	case setNodePromptTool:
 		out, err = h.setNodePrompt(ctx, canvasID, seed, raw)
+	case compressImageTool:
+		out, err = h.compressImage(ctx, canvasID, seed, raw)
 	default:
 		out, err = h.generateNode(ctx, canvasID, seed, raw)
 	}
@@ -526,5 +530,5 @@ func (h *runtimeHandler) generateNode(ctx context.Context, canvasID, seed, raw s
 	return struct {
 		Success bool `json:"success"`
 		creativegeneration.AgentGenerationResult
-	}{result.State != "failed", result}, nil
+	}{result.Adopted(), result}, nil
 }

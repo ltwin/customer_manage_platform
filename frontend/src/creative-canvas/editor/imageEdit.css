@@ -1,0 +1,250 @@
+/* 图片编辑一期（V6-076）：画布内裁切与压缩面板。颜色、圆角沿用 v6 变量。 */
+
+/* ---- 裁切：盖在节点的图片区域上 ---- */
+.cc-crop-stage {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--s1);
+  cursor: default;
+}
+.cc-crop-frame {
+  position: relative;
+  overflow: hidden;
+}
+.cc-crop-frame > .cc-media {
+  width: 100%;
+  height: 100%;
+}
+.cc-crop-box {
+  position: absolute;
+  outline: 1px solid rgba(255, 255, 255, 0.92);
+  /* 选区外加深：一圈足够大的阴影，被 frame 裁掉。 */
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.58);
+  cursor: move;
+  touch-action: none;
+}
+.cc-crop-box:focus-visible {
+  outline: 2px solid var(--primary);
+}
+.cc-crop-thirds {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms var(--ease);
+  background:
+    linear-gradient(to right, transparent calc(33.333% - 0.5px), rgba(255, 255, 255, 0.45) calc(33.333% - 0.5px), rgba(255, 255, 255, 0.45) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), rgba(255, 255, 255, 0.45) calc(66.666% - 0.5px), rgba(255, 255, 255, 0.45) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(33.333% - 0.5px), rgba(255, 255, 255, 0.45) calc(33.333% - 0.5px), rgba(255, 255, 255, 0.45) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px), transparent calc(66.666% - 0.5px), rgba(255, 255, 255, 0.45) calc(66.666% - 0.5px), rgba(255, 255, 255, 0.45) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px));
+}
+.cc-crop-box.is-dragging .cc-crop-thirds {
+  opacity: 1;
+}
+/* 把手按屏幕尺寸画：画布缩放时大小不变，仍然好抓。把手画在选区内侧，
+   选区贴着图片边缘时也不会被裁掉。 */
+.cc-crop-handle {
+  --size: calc(12px / var(--cc-zoom, 1));
+  position: absolute;
+  width: var(--size);
+  height: var(--size);
+  border-radius: calc(2px / var(--cc-zoom, 1));
+  background: #fff;
+  box-shadow: 0 0 0 calc(1px / var(--cc-zoom, 1)) rgba(0, 0, 0, 0.5);
+  touch-action: none;
+}
+.cc-crop-handle.is-nw { left: 0; top: 0; cursor: nwse-resize; }
+.cc-crop-handle.is-n { left: 50%; top: 0; transform: translateX(-50%); cursor: ns-resize; }
+.cc-crop-handle.is-ne { right: 0; top: 0; cursor: nesw-resize; }
+.cc-crop-handle.is-e { right: 0; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+.cc-crop-handle.is-se { right: 0; bottom: 0; cursor: nwse-resize; }
+.cc-crop-handle.is-s { left: 50%; bottom: 0; transform: translateX(-50%); cursor: ns-resize; }
+.cc-crop-handle.is-sw { left: 0; bottom: 0; cursor: nesw-resize; }
+.cc-crop-handle.is-w { left: 0; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
+@media (pointer: coarse) {
+  .cc-crop-handle { --size: calc(22px / var(--cc-zoom, 1)); }
+}
+
+.cc-crop-tools {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.cc-crop-ratio select {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--s3);
+  color: var(--fg);
+  font-size: 12px;
+}
+.cc-crop-tools .cc-crop-size {
+  min-width: 84px;
+  text-align: center;
+  color: var(--fg-2);
+}
+.cc-crop-tools .cc-crop-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+  white-space: normal;
+  max-width: 280px;
+}
+.cc-selection-tools .cc-tool.cc-crop-apply {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+.cc-selection-tools .cc-tool.cc-crop-apply:hover:not(:disabled) {
+  background: var(--primary);
+  color: var(--on-primary);
+  opacity: 0.9;
+}
+.cc-selection-tools .cc-tool.cc-crop-apply:disabled {
+  background: var(--s3);
+  color: var(--fg-3);
+}
+
+/* ---- 压缩面板 ---- */
+.cc-editor-dialog.cc-compress-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+.cc-compress {
+  display: grid;
+  gap: 16px;
+}
+.cc-compress-source {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+.cc-compress-source div {
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--s3);
+}
+.cc-compress-source dt {
+  font-size: 11px;
+  color: var(--fg-3);
+}
+.cc-compress-source dd {
+  margin: 2px 0 0;
+  color: var(--fg);
+}
+.cc-compress-format,
+.cc-compress-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+.cc-compress-quality {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.cc-compress-quality legend {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--fg);
+}
+.cc-compress-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cc-compress-presets button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-2);
+  font-size: 12px;
+}
+.cc-compress-presets button[aria-pressed='true'] {
+  border-color: var(--line-3);
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-compress-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cc-compress-slider input[type='range'] {
+  flex: 1;
+  accent-color: var(--primary);
+}
+.cc-compress-slider input[type='number'] {
+  width: 64px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-compress-result {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--r-sm);
+  background: var(--s3);
+}
+.cc-compress-result strong {
+  font-size: 15px;
+  font-weight: 500;
+}
+.cc-compress-result span,
+.cc-compress-result small {
+  color: var(--fg-2);
+}
+.cc-compress-result.is-problem span {
+  color: var(--warning);
+}
+.cc-compress-result .btn {
+  justify-self: start;
+  margin-top: 4px;
+}
+.cc-compress-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.cc-compress-actions .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 110px;
+  justify-content: center;
+}
+/* 窄屏：压缩改为全屏面板，底部按钮始终可达（产品稿 §3.2）。 */
+@media (max-width: 760px) {
+  .cc-compress-overlay {
+    padding: 0;
+  }
+  .cc-editor-dialog.cc-compress-dialog {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh !important;
+    border: 0;
+    border-radius: 0;
+  }
+  .cc-compress-dialog .cc-dialog-body {
+    flex: 1;
+    align-content: start;
+  }
+  .cc-compress-source {
+    grid-template-columns: 1fr 1fr;
+  }
+  .cc-compress-actions {
+    position: sticky;
+    bottom: 0;
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
+    background: var(--s2);
+  }
+}

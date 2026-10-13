@@ -11,29 +11,6 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// ImageEditSourceInTx locks the project and canvas for writing and returns the
-// image node's current revision, the only source an edit may start from. A
-// node with an active execution is refused: its content is about to change.
-func ImageEditSourceInTx(ctx context.Context, tx store.TxAccountScope, canvasID, nodeID string) (string, error) {
-	if canvasID == "" || !validNodeID(nodeID) {
-		return "", creativeops.ErrValidation
-	}
-	if _, err := lockCanvas(ctx, tx, canvasID, true); err != nil {
-		return "", err
-	}
-	n, err := scanNode(tx.QueryRowForUpdate(ctx, "creative_nodes", nodeColumns, "id=$2 AND canvas_id=$3", nodeID, canvasID))
-	if err != nil {
-		return "", err
-	}
-	if n.TypeKey != MediaTypeKey("image") || n.TypeVersion != 1 || n.ContentRevisionID == nil {
-		return "", creativeops.ErrValidation
-	}
-	if n.ActiveExecutionID != nil {
-		return "", ErrVersionConflict
-	}
-	return *n.ContentRevisionID, nil
-}
-
 var (
 	ErrImageEditSourceChanged = errors.New("creative image edit source changed")
 	ErrImageEditNodeBusy      = errors.New("creative image edit active execution")
@@ -49,26 +26,46 @@ type ImageEditTarget struct {
 	source string
 }
 
+// CheckImageEditSourceInTx is the guard for accepting an edit: it locks the
+// project, canvas and node for writing and refuses unless the node is an image
+// still showing source with no execution about to replace it. It reports the
+// same errors as PrepareImageEditInTx, so accepting and adopting agree.
+func CheckImageEditSourceInTx(ctx context.Context, tx store.TxAccountScope, canvasID, nodeID, source string) error {
+	_, _, err := lockImageEditNode(ctx, tx, canvasID, nodeID, source)
+	return err
+}
+
+func lockImageEditNode(ctx context.Context, tx store.TxAccountScope, canvasID, nodeID, source string) (Canvas, Node, error) {
+	if canvasID == "" || !validNodeID(nodeID) || source == "" {
+		return Canvas{}, Node{}, creativeops.ErrValidation
+	}
+	c, err := lockCanvas(ctx, tx, canvasID, true)
+	if err != nil {
+		return Canvas{}, Node{}, err
+	}
+	n, err := scanNode(tx.QueryRowForUpdate(ctx, "creative_nodes", nodeColumns, "id=$2 AND canvas_id=$3", nodeID, canvasID))
+	if err != nil {
+		return Canvas{}, Node{}, err
+	}
+	if n.TypeKey != MediaTypeKey("image") || n.TypeVersion != 1 || n.ContentRevisionID == nil || *n.ContentRevisionID != source {
+		return Canvas{}, Node{}, ErrImageEditSourceChanged
+	}
+	if n.ActiveExecutionID != nil {
+		return Canvas{}, Node{}, ErrImageEditNodeBusy
+	}
+	return c, n, nil
+}
+
 // PrepareImageEditInTx is the single adoption guard. Source changes take
 // precedence over data conflicts, so a cleared/replaced image is not mistaken
 // for a title edit. A pure metadata conflict can retry the same ready render.
 func PrepareImageEditInTx(ctx context.Context, tx store.TxAccountScope, target NodeTarget, source string) (*ImageEditTarget, error) {
-	if target.CanvasID == "" || !validNodeID(target.NodeID) || target.ExpectedDataRevision < 1 || source == "" {
+	if target.ExpectedDataRevision < 1 {
 		return nil, creativeops.ErrValidation
 	}
-	c, err := lockCanvas(ctx, tx, target.CanvasID, true)
+	c, n, err := lockImageEditNode(ctx, tx, target.CanvasID, target.NodeID, source)
 	if err != nil {
 		return nil, err
-	}
-	n, err := scanNode(tx.QueryRowForUpdate(ctx, "creative_nodes", nodeColumns, "id=$2 AND canvas_id=$3", target.NodeID, target.CanvasID))
-	if err != nil {
-		return nil, err
-	}
-	if n.TypeKey != MediaTypeKey("image") || n.TypeVersion != 1 || n.ContentRevisionID == nil || *n.ContentRevisionID != source {
-		return nil, ErrImageEditSourceChanged
-	}
-	if n.ActiveExecutionID != nil {
-		return nil, ErrImageEditNodeBusy
 	}
 	if n.DataRevision != target.ExpectedDataRevision {
 		return nil, ErrVersionConflict

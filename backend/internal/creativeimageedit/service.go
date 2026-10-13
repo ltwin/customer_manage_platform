@@ -184,15 +184,8 @@ func (s *Service) Create(ctx context.Context, scope store.AccountScope, in Creat
 		if !errors.Is(err, ErrNotFound) {
 			return err
 		}
-		current, err := creativecanvas.ImageEditSourceInTx(ctx, tx, in.CanvasID, in.NodeID)
-		if errors.Is(err, creativecanvas.ErrVersionConflict) {
-			return ErrNodeBusy
-		}
-		if err != nil {
+		if err := sourceError(creativecanvas.CheckImageEditSourceInTx(ctx, tx, in.CanvasID, in.NodeID, in.SourceRevisionID)); err != nil {
 			return err
-		}
-		if current != in.SourceRevisionID {
-			return ErrSourceChanged
 		}
 		if _, err := creativecontent.RequireUsable(ctx, tx, in.SourceRevisionID, "display"); err != nil {
 			return err

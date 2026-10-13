@@ -138,6 +138,9 @@ func (h *runtimeHandler) allowed(name string) bool {
 	if name == setNodePromptTool || name == generateNodeTool {
 		return len(h.service.generationModels()) > 0
 	}
+	if name == compressImageTool {
+		return h.service.compressor != nil
+	}
 	if name != loadSkillTool && name != readSkillTool && name != readResultTool {
 		return false
 	}
@@ -162,7 +165,7 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: name})
 	}
 	config.Tools = append(config.Tools, planTool{})
-	for _, name := range []string{editCanvasTool, setNodePromptTool, generateNodeTool} {
+	for _, name := range []string{editCanvasTool, setNodePromptTool, generateNodeTool, compressImageTool} {
 		if h.allowed(name) {
 			config.Tools = append(config.Tools, &canvasTool{handler: h, name: name})
 		}

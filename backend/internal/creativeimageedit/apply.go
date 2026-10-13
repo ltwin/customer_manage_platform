@@ -62,17 +62,23 @@ func (s *Service) Apply(ctx context.Context, scope store.AccountScope, command c
 	}, command)
 }
 
+// sourceError maps the canvas guard onto this package's errors, so accepting
+// and adopting an edit refuse a changed or busy node the same way.
+func sourceError(err error) error {
+	switch {
+	case errors.Is(err, creativecanvas.ErrImageEditSourceChanged):
+		return ErrSourceChanged
+	case errors.Is(err, creativecanvas.ErrImageEditNodeBusy):
+		return ErrNodeBusy
+	}
+	return err
+}
+
 func (s *Service) applyInTx(ctx context.Context, tx store.TxAccountScope, in ApplyInput, operation string) (ApplyResult, error) {
 	fail := func(err error) (ApplyResult, error) { return ApplyResult{}, err }
 	sourceID := in.ExpectedSourceRevisionID
 	target, err := creativecanvas.PrepareImageEditInTx(ctx, tx, creativecanvas.NodeTarget{CanvasID: in.CanvasID, NodeID: in.NodeID, ExpectedDataRevision: in.ExpectedDataRevision}, sourceID)
-	if errors.Is(err, creativecanvas.ErrImageEditSourceChanged) {
-		return fail(ErrSourceChanged)
-	}
-	if errors.Is(err, creativecanvas.ErrImageEditNodeBusy) {
-		return fail(ErrNodeBusy)
-	}
-	if err != nil {
+	if err = sourceError(err); err != nil {
 		return fail(err)
 	}
 	r, err := readRender(ctx, tx, true, "id=$2", in.RenderID)

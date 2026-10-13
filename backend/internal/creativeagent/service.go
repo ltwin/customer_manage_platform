@@ -168,9 +168,12 @@ type Service struct {
 	// generator is nil until composition binds node generation.
 	generator      Generator
 	generationWait time.Duration
-	gateway        *llmgateway.Service
-	models         *llmgateway.Catalog
-	skills         SkillDirectory
+	// compressor is nil while image editing is switched off.
+	compressor   ImageCompressor
+	compressWait time.Duration
+	gateway      *llmgateway.Service
+	models       *llmgateway.Catalog
+	skills       SkillDirectory
 	// tools lists deployed runtime capabilities; canvas tools remain in FND-08.
 	tools  []ToolEntry
 	limits Limits
@@ -189,7 +192,7 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 	if gateway == nil || models == nil || skills == nil {
 		return nil, errors.New("creative agent needs a gateway, a model catalog and a skill directory")
 	}
-	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), generationWait: generationWait, logger: slog.Default()}, nil
+	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default()}, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.

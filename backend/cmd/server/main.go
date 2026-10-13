@@ -255,6 +255,9 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	if generation.Service != nil {
 		creativeAgent.SetGenerator(generation.Product)
 	}
+	if imageEdit != nil {
+		creativeAgent.SetImageCompressor(imageEdit)
+	}
 	creativeGeneration := generation.Product
 	handlers := append(creativeMedia.Handlers(), creativeAgent.Handlers()...)
 	if generation.Service != nil {

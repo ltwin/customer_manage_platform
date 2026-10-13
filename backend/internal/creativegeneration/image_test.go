@@ -233,7 +233,7 @@ func TestAgentGenerateNodeSubmitsOnce(t *testing.T) {
 	in.DraftRevision = 1
 	first, err := f.product.GenerateNode(t.Context(), f.scope, in)
 	must(t, err)
-	if first.State != "running" || first.NodeID != node {
+	if first.State != "running" || first.ApplyState != "pending" || !first.Adopted() || first.NodeID != node {
 		t.Fatalf("first %+v", first)
 	}
 	f.target.ExecutionID = first.ExecutionID
@@ -242,7 +242,7 @@ func TestAgentGenerateNodeSubmitsOnce(t *testing.T) {
 	}
 	again, err := f.product.GenerateNode(t.Context(), f.scope, in)
 	must(t, err)
-	if again.State != "succeeded" || again.ExecutionID != first.ExecutionID || len(again.ContentRevisionIDs) != 2 || len(f.relay.sent) != 1 {
+	if again.State != "succeeded" || again.ApplyState != "applied" || again.ExecutionID != first.ExecutionID || len(again.ContentRevisionIDs) != 2 || len(f.relay.sent) != 1 {
 		t.Fatalf("replay %+v, submitted %d times", again, len(f.relay.sent))
 	}
 	if sent := f.relay.sent[0]; sent["model"] != "gpt-image-2.5-sunburst" || sent["size"] != "2:3" || sent["n"] != float64(2) {

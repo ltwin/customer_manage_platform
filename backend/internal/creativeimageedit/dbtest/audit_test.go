@@ -65,6 +65,25 @@ func TestApplyClearedSourceIsSourceConflict(t *testing.T) {
 	}
 }
 
+// Accepting an edit refuses a cleared or busy node with the same errors as
+// adopting one, so callers handle both with one branch.
+func TestCreateSharesApplySourceErrors(t *testing.T) {
+	f := setup(t)
+	// Both nodes exist before either is altered behind the canvas's back.
+	cleared, clearedSource := f.imageNode(t, "create-cleared")
+	busy, busySource := f.imageNode(t, "create-busy")
+	execSQL(t, f, `UPDATE creative_nodes SET content_id=NULL,content_revision_id=NULL,selected_version_id=NULL,data_revision=data_revision+1 WHERE id=$1`, cleared)
+	if _, err := f.create(t, cleared, clearedSource, 60); !errors.Is(err, creativeimageedit.ErrSourceChanged) {
+		t.Fatalf("cleared node: %v", err)
+	}
+	execSQL(t, f, `UPDATE creative_nodes SET active_execution_id='ccec_busy' WHERE id=$1`, busy)
+	_, err := f.create(t, busy, busySource, 60)
+	var candidate creativeimageedit.BusyError
+	if !errors.Is(err, creativeimageedit.ErrNodeBusy) || errors.As(err, &candidate) {
+		t.Fatalf("executing node: %v", err)
+	}
+}
+
 func TestOversizedCropRejectedBeforeQueue(t *testing.T) {
 	f := setup(t)
 	node, source := f.imageNode(t, "oversized")

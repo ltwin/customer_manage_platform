@@ -82,7 +82,7 @@ Agent 写入与现有 `edit_canvas` / `generate_node` 对齐：工具只在存�
 
 同一 render 被当前工具处理时只允许一个 apply 命令效果。重放先找回执，再看候选；超时丢弃的旧调用不能凭同一身份重新排队。真正重试是新的明确调用。
 
-**现有生成工具的修正范围**：仍保留 GenerateNode 的有界等待；返回 execution_state 与 apply_state。succeeded/pending 继续等到预算耗尽，conflicted/discarded/expired 明确「未采用」，只有 applied 可以表达当时已更新。查询 / 展示还需区分后来人工切换版本；不能把历史已应用说成现在仍选中。此项目前仅列入实施，不声称已经修复。
+**现有生成工具的修正范围**：仍保留 GenerateNode 的有界等待；返回 execution_state 与 apply_state。succeeded/pending 继续等到预算耗尽，conflicted/discarded/expired 明确「未采用」，只有 applied 可以表达当时已更新。查询 / 展示还需区分后来人工切换版本；不能把历史已应用说成现在仍选中。第 4 步已实现 apply_state 的返回与等待（2026-10-13）；「后来人工切换版本」的区分属于查询 / 展示侧，尚未处理。
 
 ## 6. 候选表与状态
 

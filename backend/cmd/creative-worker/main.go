@@ -101,6 +101,9 @@ func run() error {
 	if generation.Service != nil {
 		agent.SetGenerator(generation.Product)
 	}
+	if imageEdit != nil {
+		agent.SetImageCompressor(imageEdit)
+	}
 	trashExpiry := creativelibrary.NewTrashExpiry(nil)
 	handlers := append(media.Handlers(), agent.Handlers()...)
 	handlers = append(handlers, trashExpiry.Handler())

@@ -26,7 +26,23 @@
 - `Apply` 使用 `creativeops.Executor`：先恢复已有回执，再检查当前权限、可写画布、来源和数据修订、执行槽、候选期限。`BindEditBlobsInTx` 只绑定已经校验的原始/展示 blob 并计入额度，不做对象读写、复制或重新编码；复用来源声明并通过 `RetainDerivativeRights` 保留传递授权。`PrepareImageEditInTx` 一次性锁定并检查目标，返回与事务绑定的目标；其 `ApplyInTx` 经 `makeVersion(edit)`、`fitMediaSize` 和 `persistGraph` 保存可撤销变更；最后与候选 applied、操作回执一起提交。
 - 结果返回 `version_id/content_revision_id/change_id/result_revision` 及标准画布变更字段（节点最新数据修订在 `object_results`）。来源冲突、节点忙或未 ready 返回 409；只有数据修订变化（如标题/意图改变）时返回 `creative_revision_conflict`，刷新修订后可重试原候选；图片被清空或替换才返回 `creative_image_edit_source_changed`。由候选占用节点时，忙错误的 `details.render_id` 指向现有候选。过期/丢弃返回 410；额度不足返回既有 429，候选保持 ready。取消或失败的事务不留下版本、额度或成功回执。原请求即使在撤销后重放也只返回原回执，不重新采用。
 
-机器契约在 `api/openapi.yaml`；手工注册的认证路由与 Go/TypeScript 生成物同时维护。数据库测试 `creativeimageedit/dbtest/apply_test.go`、`http_test.go` 覆盖额度回滚、字节身份、尺寸与撤销/重做、来源/权限/归档/修订/执行槽守卫、采用与回收/丢弃/重复请求竞争，以及 HTTP 鉴权、账号隔离、参数边界和功能关闭。UI 与 Agent 的实际接入仍属于第 4 步。
+机器契约在 `api/openapi.yaml`；手工注册的认证路由与 Go/TypeScript 生成物同时维护。数据库测试 `creativeimageedit/dbtest/apply_test.go`、`http_test.go` 覆盖额度回滚、字节身份、尺寸与撤销/重做、来源/权限/归档/修订/执行槽守卫、采用与回收/丢弃/重复请求竞争，以及 HTTP 鉴权、账号隔离、参数边界和功能关闭。
+
+受理与采用用同一组来源守卫：`creativecanvas.CheckImageEditSourceInTx`（受理）和 `PrepareImageEditInTx`（采用）共用节点检查，节点被清空或换图都返回 `ErrSourceChanged`（409 `creative_image_edit_source_changed`），节点正在执行返回 `ErrNodeBusy`（409，无 `render_id`）；只有候选占着节点时才是带 `render_id` 的 `BusyError`。
+
+## UI
+
+- 入口：单选、有图片内容的图片节点，在工具条「图片编辑 ▾」和右键 / 更多菜单的「图片编辑」分组里提供「裁切」「压缩」。能力接口 `available=false` 或读取失败时不展示；只读、上传中、原文件不可读、格式不在 `input_mime_types`、节点正在生成时禁用并在提示里说明原因（`imageEditModel.imageEditGate`）。
+- 流程：`imageEditModel.runImageEdit` 是点击「应用」后的唯一流程——创建候选 → 每秒查询 → ready 后同步采用。等待中取消（关面板、取消裁切、离开页面）只丢弃候选；采用一旦发出就不能取消，响应丢失时只读候选状态并原样重发同一请求体（含 `client_created_at`），不重新编码。标题等元数据变化导致的 `creative_revision_conflict` 会带上新数据修订重试同一候选；其他明确拒绝会丢弃候选，不占着节点。节点上留有别处未完成的候选时，界面提供「放弃那项编辑并重试」。
+- 压缩面板（`ImageEditor.CompressPanel`）：打开时固定源修订；显示原始大小、格式、像素尺寸和输出格式规则；调质量不发请求，输入框里 Enter 不触发应用；应用后显示真实的原始 → 输出大小、减少比例和输出格式。窄屏（≤ 760px）为全屏面板。
+- 裁切（`ImageEditor.CropStage` / `CropControls`，会话在 `imageEdit.useImageCrop`）：在节点内覆盖图片，选区始终以方向校正后的源像素表示，屏幕位移按图片实际显示宽度换算，画布缩放和高 DPI 不影响范围；应用时四边各自取整。裁切期间节点不能拖动，连线端口、缩放把手、右键菜单和画布快捷键都停用，只保留缩放视图；Esc 或「取消」退出且不发请求；源图在别处被换掉时自动退出。工具条跟着被裁的节点，取代选区工具条。
+- 采用成功后画布经事件流刷新，撤销 / 重做走服务端变更历史，前端不另记。
+
+## Agent
+
+- 工具 `compress_image`（`creativeagent/image_tools.go`）只在 `CREATIVE_IMAGE_EDIT=on` 时注册，参数为 `node_id`、可选 `quality`（缺省 80）和可选 `content_revision_id`（固定要压的版本）。
+- 实际流程在 `creativeimageedit.CompressForAgent`，与面板走同一个 `Create` / `Apply`：操作标识由 `run_id + tool step` 派生，重放先按操作标识找到原候选，不重新读取节点当来源；在一次调用内每 2 秒查询，等待上限 90 秒且不超过运行期限。结果 `state` 只有 `applied` 表示节点已更新；`not_reduced` / `failed` / `not_applied` 都没有改动并给出原因；等待到期还没发出采用就丢弃候选；采用已发出但结果未知时只读候选状态，返回 `unconfirmed`，不会重发也不会说成未应用。拒绝原因（来源已变、节点忙、额度不足等）与 HTTP 错误一一对应。
+- `generate_node` 同时返回 `apply_state`：生成成功后继续等到结果落到节点上；`conflicted` / `discarded` / `expired` 明确是「没有采用」，只有 `applied` 才算节点已更新（`AgentGenerationResult.Adopted`）。
 
 ## 部署开关预检
 
@@ -40,6 +56,8 @@
 
 ## 验证
 
+- 前端：`scripts/creative-image-edit.test.ts`（几何、入口状态、应用流程各分支）进入 `make check-frontend`；浏览器回归 `scripts/creative-image-edit.e2e.mjs` 是纯 mock，只需 Vite（`npx vite --port 5173`），`CREATIVE_QA_CHECK=<名称片段>` 可只跑部分检查。
+- 后端：`creativeimageedit/dbtest/agent_test.go`（Agent 压缩只采用一次、超时丢弃、拒绝），`creativeagent/image_tools_test.go`（工具只在开启时提供、结果与拒绝如实转述）。
 - `make check-image-codec`：在同版本 vips 的容器里跑样张测试（方向 1–8、格式策略、透明、16 位、灰度、P3 / CMYK / 损坏 ICC、APNG / 动画 WebP、取消清理、SelfCheck）。本机没有 vips 时这些测试直接跳过，`make check` 不会覆盖它们。
 - 资源穿刺（测量，不是门禁）：
 

@@ -35,11 +35,20 @@ type AgentGeneration struct {
 type AgentGenerationResult struct {
 	NodeID      string `json:"node_id"`
 	ExecutionID string `json:"execution_id"`
-	// State 取 succeeded / failed / running。
+	// State 取 succeeded / failed / running，只说生成本身。
 	State string `json:"state"`
-	Error string `json:"error,omitempty"`
-	// ContentRevisionIDs 是本次落下的作品版本，可用 read_asset 查看。
+	// ApplyState 说结果有没有放到节点上：pending 还没放；applied 已切换显示；
+	// conflicted / discarded / expired 没有采用（期间节点被改动、清空或删除）。
+	// 只有 applied 能说节点已更新；之后摄影师切回别的版本不在这里反映。
+	ApplyState string `json:"apply_state"`
+	Error      string `json:"error,omitempty"`
+	// ContentRevisionIDs 是本次登记的作品版本，可用 read_asset 查看。
 	ContentRevisionIDs []string `json:"content_revision_ids,omitempty"`
+}
+
+// Adopted 表示结果已经放到节点上，或者仍可能放上去；生成失败和没有采用的结果都不算。
+func (r AgentGenerationResult) Adopted() bool {
+	return r.State != "failed" && (r.ApplyState == "" || r.ApplyState == "pending" || r.ApplyState == "applied")
 }
 
 // Refusal 是可以原样告诉模型的拒绝原因，不是系统故障。
@@ -125,7 +134,7 @@ func (p *Product) DraftParameters(modelKey, nodeType string, given map[string]an
 func (p *Product) GenerateNode(ctx context.Context, scope store.AccountScope, in AgentGeneration) (AgentGenerationResult, error) {
 	operation := agentOperation(in.Seed, "generate")
 	execution := "cwexec_" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(scope.AccountID()+"/"+operation)).String()
-	result := AgentGenerationResult{NodeID: in.NodeID, ExecutionID: execution, State: "running"}
+	result := AgentGenerationResult{NodeID: in.NodeID, ExecutionID: execution, State: "running", ApplyState: "pending"}
 	target := creativecanvas.ExecutionTarget{CanvasID: in.CanvasID, ExecutionID: execution}
 	// 重放时执行已经存在，只等结果。
 	if _, err := creativecanvas.GetNodeExecution(ctx, scope, target); errors.Is(err, creativecanvas.ErrNotFound) {
@@ -141,12 +150,16 @@ func (p *Product) GenerateNode(ctx context.Context, scope store.AccountScope, in
 		if err != nil {
 			return result, err
 		}
-		if e.State == "succeeded" || e.State == "failed" || e.State == "cancelled" {
-			result.State, result.Error = e.State, e.Error
+		// 生成成功只是一半：结果还要落到节点上，等到采用有了结论。
+		if e.State == "failed" || e.State == "cancelled" || (e.State == "succeeded" && e.ApplyState != "pending") {
+			result.State, result.ApplyState, result.Error = e.State, e.ApplyState, e.Error
 			if e.State == "cancelled" {
 				result.State = "failed"
 			}
 			break
+		}
+		if e.State == "succeeded" {
+			result.State = e.State
 		}
 		if !time.Now().Before(deadline) {
 			return result, nil
