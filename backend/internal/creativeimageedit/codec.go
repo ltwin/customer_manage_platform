@@ -30,8 +30,9 @@ const (
 
 	// cropJPEGQuality re-encodes a cropped JPEG once at a quality that keeps
 	// the crop from visibly costing detail; PNG and WebP crops are lossless.
-	cropJPEGQuality = 95
-	tempPrefix      = "render-"
+	cropJPEGQuality  = 95
+	tempPrefix       = "render-"
+	sourceTempPrefix = "source-"
 	// oomScoreAdj makes the kernel pick the vips child before the worker when
 	// the container runs out of memory. It lowers the risk, it does not
 	// isolate: the verifier still decodes in the worker afterwards.
@@ -123,7 +124,7 @@ func NewCodec(cfg CodecConfig) (*Codec, error) {
 	return &Codec{cfg: cfg}, nil
 }
 
-// SweepTemp removes render directories a killed process left behind. Only
+// SweepTemp removes render directories and staged sources a killed process left behind. Only
 // the single worker that owns TempRoot may call it, before it renders.
 func (c *Codec) SweepTemp() error {
 	entries, err := os.ReadDir(c.cfg.TempRoot)
@@ -131,7 +132,7 @@ func (c *Codec) SweepTemp() error {
 		return err
 	}
 	for _, e := range entries {
-		if e.IsDir() && strings.HasPrefix(e.Name(), tempPrefix) {
+		if e.IsDir() && strings.HasPrefix(e.Name(), tempPrefix) || !e.IsDir() && strings.HasPrefix(e.Name(), sourceTempPrefix) {
 			if err := os.RemoveAll(filepath.Join(c.cfg.TempRoot, e.Name())); err != nil {
 				return err
 			}

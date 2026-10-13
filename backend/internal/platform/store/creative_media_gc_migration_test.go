@@ -9,6 +9,7 @@ import (
 
 func rollbackMediaGC(t *testing.T, url string) {
 	t.Helper()
+	rollbackImageEdit(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-media-gc", err)
 	}

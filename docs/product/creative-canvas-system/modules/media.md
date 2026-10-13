@@ -142,6 +142,7 @@ Local 与 OSS 各提供适配器。Local 的分片由鉴权 API 写本地受控�
 | `creative_egress_consent_contents` | 不持有 | 迁移 0044 已声明它是授权记录而非保留根。前提是修正 `admitDispatchInTx`：现在它对授权批准过的全部修订（最多 200 个）逐个 `RequireUsable`，任何一个被回收都会让该授权下后续的所有运行失败；改为只复核本次实际发送的修订 |
 | `llm_generation_outputs` | 不持有 | `content_revision_id` 只在导入成功的同一事务里写入，此时修订已由执行保留持有；之后无读取 |
 | `creative_generation_imports` | 修订列不持有；写入中 / 已存储时持有其 blob 与 `reserved_bytes` | ready 时修订已由执行保留持有。未提交的导入可能被生成恢复（每次续 24 小时）再次拾起，不能按 blob 年龄回收；陈旧者由 GC 按 Prepare 已有的过期重置路径处理，之后的重试会重新拉取 |
+| `creative_image_edit_renders`（V6-076，2026-10-13） | queued / running / ready 且未过期时持有源修订与结果 blob；`result_revision_id` 不持有 | 结果 blob 从未计额度，候选终结后由 GC 按 15 分钟宽限回收；写到一半的 verifying blob 由候选终结（丢弃、过期、写入失败）转为 deleting。采用时结果修订与持有它的节点版本同事务写入 |
 
 新增 schema 守卫测试：枚举创意表中所有引用修订或 blob 的列，每列必须登记为「持有」或「不持有」，漏登记即失败，防止以后新表静默漏引用。
 

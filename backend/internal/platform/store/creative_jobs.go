@@ -61,7 +61,7 @@ func (s *Store) NewJobRuntime(handlers []JobHandler, logger *slog.Logger) (jobs.
 	}
 	runtime := &creativeJobRuntime{store: s, handlers: make(map[string]func(context.Context, AccountScope, jobs.Request) error), timeouts: map[string]time.Duration{}, maintenance: map[string]bool{}, queues: map[string]string{}}
 	for _, h := range handlers {
-		if h.Kind == "" || h.Work == nil || h.Timeout < 0 || (h.Queue != "" && h.Queue != "maintenance") {
+		if h.Kind == "" || h.Work == nil || h.Timeout < 0 || (h.Queue != "" && h.Queue != "maintenance" && h.Queue != "image_edit") {
 			return nil, jobs.ErrInvalidTask
 		}
 		if _, exists := runtime.handlers[h.Kind]; exists {
@@ -78,7 +78,8 @@ func (s *Store) NewJobRuntime(handlers []JobHandler, logger *slog.Logger) (jobs.
 	river.AddWorker(workers, &creativeDispatcher{runtime: runtime})
 	client, err := river.NewClient(riverpgxv5.New(s.pool), &river.Config{
 		Schema: creativeQueueSchema, Workers: workers, Logger: logger,
-		Queues: map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, "maintenance": {MaxWorkers: 1}},
+		// image_edit runs one libvips encode at a time (V6-076 backend design §10).
+		Queues: map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: 4}, "maintenance": {MaxWorkers: 1}, "image_edit": {MaxWorkers: 1}},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create creative jobs: %w", err)

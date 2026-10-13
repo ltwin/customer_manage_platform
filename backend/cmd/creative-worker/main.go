@@ -17,6 +17,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeagent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
@@ -61,6 +62,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	imageEdit, err := composeImageEdit(ctx, media, gcMode)
+	if err != nil {
+		return err
+	}
 	// The worker is the process that actually executes a run, so it needs the
 	// same gateway and skill directory the API composed — not a second, quietly
 	// different one. Both read the deployment's own configuration.
@@ -99,6 +104,9 @@ func run() error {
 	trashExpiry := creativelibrary.NewTrashExpiry(nil)
 	handlers := append(media.Handlers(), agent.Handlers()...)
 	handlers = append(handlers, trashExpiry.Handler())
+	if imageEdit != nil {
+		handlers = append(handlers, imageEdit.Handlers()...)
+	}
 	if generation.Service != nil {
 		handlers = append(handlers, generation.Service.Handlers()...)
 	}
@@ -108,6 +116,9 @@ func run() error {
 	}
 	media.SetRuntime(runtime)
 	trashExpiry.SetRuntime(runtime)
+	if imageEdit != nil {
+		imageEdit.SetRuntime(runtime)
+	}
 	agent.SetRuntime(runtime)
 	if generation.Service != nil {
 		generation.Service.SetRuntime(runtime)
@@ -122,6 +133,13 @@ func run() error {
 	go func() { defer close(gcDone); media.RunGC(ctx, db, gcMode, slog.Default()) }()
 	trashDone := make(chan struct{})
 	go func() { defer close(trashDone); trashExpiry.Run(ctx, db, slog.Default()) }()
+	imageEditDone := make(chan struct{})
+	go func() {
+		defer close(imageEditDone)
+		if imageEdit != nil {
+			imageEdit.RunSweep(ctx, db, slog.Default())
+		}
+	}()
 	// Recovery needs no provider credentials or catalog: it only reconciles
 	// persisted dispatches through account-scoped transactions.
 	agentDone := make(chan struct{})
@@ -143,11 +161,39 @@ func run() error {
 	<-agentDone
 	<-generationDone
 	<-trashDone
+	<-imageEditDone
 	<-gcDone
 	<-paletteDone
 	stopCtx, stop := context.WithTimeout(context.Background(), 30*time.Second)
 	defer stop()
 	return runtime.Stop(stopCtx)
+}
+
+// composeImageEdit returns nil when image editing is off. When on, the
+// worker refuses to start without GC deletion (unapplied results would only
+// accumulate) or without a codec that passes its self-check.
+func composeImageEdit(ctx context.Context, media *creativemedia.Service, gcMode creativemedia.GCMode) (*creativeimageedit.Service, error) {
+	on, err := creativeimageedit.ParseSwitch(strings.TrimSpace(os.Getenv("CREATIVE_IMAGE_EDIT")))
+	if err != nil || !on {
+		return nil, err
+	}
+	if gcMode != creativemedia.GCDelete {
+		return nil, errors.New("CREATIVE_IMAGE_EDIT=on requires CREATIVE_MEDIA_GC_MODE=delete: unapplied edit results are only reclaimed by media GC")
+	}
+	codecConfig := creativeimageedit.DefaultCodecConfig()
+	codec, err := creativeimageedit.NewCodec(codecConfig)
+	if err != nil {
+		return nil, fmt.Errorf("creative image edit: %w", err)
+	}
+	if err := codec.SweepTemp(); err != nil {
+		return nil, fmt.Errorf("creative image edit: %w", err)
+	}
+	version, err := codec.SelfCheck(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("creative image edit self-check: %w", err)
+	}
+	slog.Info("creative image edit enabled", slog.String("vips", version), slog.String("policy", creativeimageedit.PolicyVersion))
+	return creativeimageedit.NewService(media, codec, codecConfig.TempRoot), nil
 }
 
 // deriveTicketKey must match cmd/server so tickets issued by the API and

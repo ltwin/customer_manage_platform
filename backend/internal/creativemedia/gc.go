@@ -66,7 +66,8 @@ const unheldMediaRevision = `state='ready' AND content_id IN (SELECT id FROM cre
 const blobHolders = `EXISTS (SELECT 1 FROM creative_content_objects o JOIN creative_content_revisions ON creative_content_revisions.account_id=o.account_id AND creative_content_revisions.id=o.content_revision_id WHERE o.account_id=$1 AND o.blob_id=creative_blobs.id AND creative_content_revisions.state<>'deleted' AND (` + creativereference.LiveOwnerCondition + `))
 OR EXISTS (SELECT 1 FROM creative_uploads WHERE account_id=$1 AND blob_id=creative_blobs.id AND state IN ('created','uploading','verifying'))
 OR EXISTS (SELECT 1 FROM creative_generation_imports WHERE account_id=$1 AND state IN ('writing','stored') AND creative_blobs.id IN (original_blob,display_blob))
-OR EXISTS (SELECT 1 FROM creative_blob_read_pins WHERE account_id=$1 AND blob_id=creative_blobs.id AND expires_at>clock_timestamp())`
+OR EXISTS (SELECT 1 FROM creative_blob_read_pins WHERE account_id=$1 AND blob_id=creative_blobs.id AND expires_at>clock_timestamp())
+OR EXISTS (SELECT 1 FROM creative_image_edit_renders WHERE account_id=$1 AND state IN ('queued','running','ready') AND expires_at>clock_timestamp() AND creative_blobs.id IN (original_blob_id,display_blob_id))`
 
 const unheldBlob = `state='ready' AND NOT (` + blobHolders + `)`
 

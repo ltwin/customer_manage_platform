@@ -53,4 +53,5 @@ OR EXISTS (SELECT 1 FROM creative_execution_refs WHERE account_id=$1 AND content
 OR EXISTS (SELECT 1 FROM creative_documents WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id)
 OR EXISTS (SELECT 1 FROM creative_upload_candidates WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND state='pending' AND expires_at>clock_timestamp())
 OR EXISTS (SELECT 1 FROM creative_revision_holds WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND (expires_at IS NULL OR expires_at>clock_timestamp()))
-OR EXISTS (SELECT 1 FROM creative_run_inputs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND run_id IN (SELECT id FROM creative_agent_runs WHERE account_id=$1 AND finished_at IS NULL))`
+OR EXISTS (SELECT 1 FROM creative_run_inputs WHERE account_id=$1 AND content_revision_id=creative_content_revisions.id AND run_id IN (SELECT id FROM creative_agent_runs WHERE account_id=$1 AND finished_at IS NULL))
+OR EXISTS (SELECT 1 FROM creative_image_edit_renders WHERE account_id=$1 AND source_revision_id=creative_content_revisions.id AND state IN ('queued','running','ready') AND expires_at>clock_timestamp())`
