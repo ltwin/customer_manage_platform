@@ -49,26 +49,25 @@ type VersionPage struct {
 
 func ListNodeVersions(ctx context.Context, scope store.AccountScope, canvas, node string) (VersionPage, error) {
 	var page VersionPage
-	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
+	// 只读快照：不拿创作写锁，也不锁画布，生成或编辑进行中时版本条不排队。
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		if err := tx.RequireCreativeRead(ctx); err != nil {
 			return err
 		}
-		if _, err := lockCanvas(ctx, tx, canvas, false); err != nil {
+		if _, err := readCanvas(ctx, tx, canvas); err != nil {
 			return err
 		}
 		n, err := scanNode(tx.QueryRow(ctx, "creative_nodes", nodeColumns, "id=$2 AND canvas_id=$3", node, canvas))
 		if err != nil {
 			return err
 		}
-		versions, err := loadVersions(ctx, tx, canvas)
+		versions, err := loadVersionsWhere(ctx, tx, "canvas_id=$2 AND node_id=$3 AND deleted_at IS NULL", canvas, node)
 		if err != nil {
 			return err
 		}
 		page = VersionPage{Items: []NodeVersion{}, SelectedVersionID: n.SelectedVersionID, DataRevision: n.DataRevision}
 		for _, v := range versions {
-			if v.NodeID == node {
-				page.Items = append(page.Items, v)
-			}
+			page.Items = append(page.Items, v)
 		}
 		sort.Slice(page.Items, func(i, j int) bool { return page.Items[i].Number > page.Items[j].Number })
 		return nil
@@ -76,8 +75,11 @@ func ListNodeVersions(ctx context.Context, scope store.AccountScope, canvas, nod
 	return page, err
 }
 func loadVersions(ctx context.Context, tx canvasReader, canvas string) (map[string]NodeVersion, error) {
+	return loadVersionsWhere(ctx, tx, "canvas_id=$2 AND deleted_at IS NULL", canvas)
+}
+func loadVersionsWhere(ctx context.Context, tx canvasReader, where string, args ...any) (map[string]NodeVersion, error) {
 	out := map[string]NodeVersion{}
-	rows, err := tx.QueryPage(ctx, "creative_node_versions", "id,node_id,version_no,origin_kind,content_revision_id,execution_id_snapshot,output_ordinal,generation_provenance,created_at,revision", "canvas_id=$2 AND deleted_at IS NULL", []store.OrderBy{{Column: "id"}}, 10001, 0, canvas)
+	rows, err := tx.QueryPage(ctx, "creative_node_versions", "id,node_id,version_no,origin_kind,content_revision_id,execution_id_snapshot,output_ordinal,generation_provenance,created_at,revision", where, []store.OrderBy{{Column: "id"}}, 10001, 0, args...)
 	if err != nil {
 		return nil, err
 	}

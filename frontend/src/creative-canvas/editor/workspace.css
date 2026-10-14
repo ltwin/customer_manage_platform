@@ -1504,3 +1504,47 @@ button.cc-project-name:hover,
   .cc-generating,
   .cc-generating-state i { animation: none; }
 }
+
+/* 多版本节点：卡片下方露出错开的底卡，像一叠照片；2 个版本一层，3 个及以上两层。
+   不用颜色，版本数仍由卡片上方标签「主版本 i/N」给出。 */
+.cc-node.has-versions::before,
+.cc-node.has-versions.is-stack-deep::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  transition: translate 0.18s var(--ease), scale 0.18s var(--ease);
+}
+.cc-node.has-versions::before {
+  background: #2a2a2d;
+  box-shadow: 0 0 0 1px var(--line-3);
+  translate: 0 6px;
+  scale: 0.93 1;
+}
+.cc-node.has-versions.is-stack-deep::after {
+  z-index: -2;
+  background: #1e1e20;
+  box-shadow: 0 0 0 1px var(--line-2);
+  translate: 0 12px;
+  scale: 0.86 1;
+}
+/* 悬停时这叠照片微微散开，提示「里面还有」。 */
+.cc-node.has-versions:hover::before { translate: 0 8px; }
+.cc-node.has-versions.is-stack-deep:hover::after { translate: 0 15px; }
+.cc-versions.is-loading { pointer-events: none; }
+.cc-version-placeholder {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--s3);
+  animation: cc-version-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cc-version-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) {
+  .cc-node.has-versions::before,
+  .cc-node.has-versions.is-stack-deep::after { transition: none; }
+  .cc-version-placeholder { animation: none; }
+}

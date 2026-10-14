@@ -88,6 +88,7 @@ import { libraryDropZone, markLibraryDrop } from './libraryDrop.ts'
 import type { Content } from './api.ts'
 import { generationPhase, nodeLabelMeta } from './labelMeta.ts'
 import { GeneratingVeil } from './GeneratingVeil.tsx'
+import { prefetchVersions } from './versionCache.ts'
 import {
   fitViewport,
   nodeBounds,
@@ -282,6 +283,8 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     group = n.metadata.type_key === 'core.group',
     proportional = kind === 'image' || kind === 'video',
     phase = group ? null : generationPhase(n.status.generation_state),
+    versionCount = media ? (n.version_summary?.count ?? 0) : 0,
+    versionKey = `${n.data_revision}:${n.status.status_revision}`,
     known = [
       'core.text',
       'core.link',
@@ -293,7 +296,13 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     ].includes(n.metadata.type_key)
   return (
     <article
-      className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : ['core.text', 'core.link'].includes(n.metadata.type_key) ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''} ${phase ? 'is-generating' : ''}`}
+      className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : ['core.text', 'core.link'].includes(n.metadata.type_key) ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''} ${phase ? 'is-generating' : ''} ${versionCount > 1 ? `has-versions ${versionCount > 2 ? 'is-stack-deep' : ''}` : ''}`}
+      // 悬停时预取版本条数据，点下去即可出图。
+      onPointerEnter={
+        versionCount > 1
+          ? () => prefetchVersions(data.canvasID, n.id, versionKey)
+          : undefined
+      }
     >
       {/* 只有单选的普通节点能缩放（PRD CV-17）；组由子节点撑开。 */}
       <NodeResizer
@@ -384,7 +393,8 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
                   canvasID={data.canvasID}
                   nodeID={n.id}
                   kind={kind}
-                  dataRevision={`${n.data_revision}:${n.status.status_revision}`}
+                  count={versionCount}
+                  dataRevision={versionKey}
                   viewing={preview?.id ?? null}
                   disabled={data.disabled}
                   pinned={n.data.config.main_version_mode === 'pinned'}
