@@ -2,6 +2,7 @@ package llmgateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -108,6 +109,131 @@ func (s *Service) RecoverExpired(ctx context.Context, scope store.AccountScope, 
 	return count, nil
 }
 
+// unverifiableAfter is how long after dispatch an attempt whose outcome is still
+// unknown gets closed with an estimate. The transport ended long before; the
+// window leaves room for a late result or an operator verification first.
+const unverifiableAfter = 10 * time.Minute
+
+// estimateMarker ends the measurement keys of an unverifiable estimate.
+const estimateMarker = ":unverified_estimate"
+
+// SettleUnverifiable closes chat attempts whose outcome can no longer be
+// learned: a dropped stream, or a dispatch fenced as orphaned. Without it the
+// money hold — sized for the maximum output — would stay forever. The input is
+// booked at its reserved upper bound and the output at zero (owner
+// 2026-10-14); a provider bill or a verified rejection outranks the estimate.
+func (s *Service) SettleUnverifiable(ctx context.Context, scope store.AccountScope, batch int) (int, error) {
+	if batch < 1 || batch > 1000 {
+		return 0, ErrValidation
+	}
+	cutoff := s.now().UTC().Add(-unverifiableAfter)
+	type candidate struct{ attempt, request string }
+	var found []candidate
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		rows, err := tx.QueryPage(ctx, "llm_attempts", "id,request_id",
+			"dispatch_state='unknown' AND dispatched_at<=$2 AND request_id IN (SELECT id FROM llm_requests WHERE account_id=$1 AND request_kind='chat')"+
+				" AND NOT EXISTS (SELECT 1 FROM llm_usage_measurements m WHERE m.account_id=$1 AND m.attempt_id=llm_attempts.id AND m.measurement_key=$3)",
+			[]store.OrderBy{{Column: "dispatched_at"}, {Column: "id"}}, batch, 0, cutoff, estimateKey(ComponentBudgetTokens))
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var c candidate
+			if err := rows.Scan(&c.attempt, &c.request); err != nil {
+				return err
+			}
+			found = append(found, c)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, c := range found {
+		settled := false
+		err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			var err error
+			settled, err = s.settleUnverifiableInTx(ctx, tx, c.request, c.attempt, cutoff)
+			return err
+		})
+		if err != nil {
+			return count, err
+		}
+		if settled {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func estimateKey(component CostComponent) string { return string(component) + estimateMarker }
+
+func (s *Service) settleUnverifiableInTx(ctx context.Context, tx store.TxAccountScope, requestID, attemptID string, cutoff time.Time) (bool, error) {
+	now := s.now().UTC()
+	// Same order as every other settlement: month bucket, request, attempt.
+	if err := s.lockBudgetForRequest(ctx, tx, requestID, now); err != nil {
+		return false, err
+	}
+	request, err := scanRequest(tx.QueryRowForUpdate(ctx, "llm_requests", requestColumns, "id=$2", requestID))
+	if err != nil {
+		return false, err
+	}
+	if request.kind != requestKindChat || request.state != StateUnknown && request.state != StateFailed {
+		return false, nil
+	}
+	var state string
+	var dispatched time.Time
+	if err = tx.QueryRowForUpdate(ctx, "llm_attempts", "dispatch_state,dispatched_at", "id=$2 AND request_id=$3", attemptID, requestID).
+		Scan(&state, &dispatched); err != nil {
+		return false, err
+	}
+	if state != "unknown" || dispatched.After(cutoff) {
+		return false, nil
+	}
+	reservation, err := scanReservation(tx.QueryRow(ctx, "llm_usage_reservations", reservationColumns, "request_id=$2", requestID))
+	if err != nil {
+		return false, err
+	}
+	// The reservation was sized as input bound + output limit, both at the
+	// schedule's upper bound; the input half is what the estimate books.
+	inputMicros := max(reservation.initialMicros-CostMicros(int64(request.outputLimit), request.priceSnapshot.UpperBound().Output), 0)
+	inputTokens := max(reservation.initialTokens-int64(request.outputLimit), 0)
+	zero := int64(0)
+	payload, _ := json.Marshal(struct {
+		Attempt     string `json:"attempt_id"`
+		InputTokens int64  `json:"input_tokens"`
+		InputMicros int64  `json:"input_micros"`
+	}{attemptID, inputTokens, inputMicros})
+	evidence := digest(payload)
+	dimensions := map[string]any{"basis": "reserved_input_upper_bound", "input_tokens": inputTokens}
+	for _, part := range []struct {
+		component CostComponent
+		cost      *int64
+		tokens    *int64
+	}{
+		{ComponentInputCached, &zero, &zero},
+		{ComponentInputUncached, &inputMicros, &inputTokens},
+		{ComponentOutput, &zero, &zero},
+		{ComponentBudgetTokens, nil, &inputTokens},
+	} {
+		m := Measurement{AttemptID: attemptID, Key: estimateKey(part.component), Component: part.component,
+			Currency: reservation.currency, Dimensions: dimensions, CostMicros: part.cost, TokenCount: part.tokens,
+			Certainty: "known", Kind: EvidenceOperatorAttested, EvidenceDigest: evidence}
+		if _, err := s.applyMeasurement(ctx, tx, requestID, m, now); err != nil {
+			return false, err
+		}
+	}
+	if request.state == StateUnknown {
+		if _, err := tx.Update(ctx, "llm_requests", "state='failed',retry_eligible=FALSE,revision=revision+1,updated_at=$3",
+			"id=$2 AND state='unknown'", requestID, now); err != nil {
+			return false, err
+		}
+	}
+	return true, s.refreshSettlement(ctx, tx, requestID, now)
+}
+
 // lockFinishingAttempt allows a late complete result to resolve a recovered
 // unknown, but never lets an old attempt overwrite a verified/rearmed request.
 // Caller holds shared admission and budget locks before entering here.
@@ -140,7 +266,11 @@ func (s *Service) SweepExpiredDispatches(ctx context.Context, db *store.Store, a
 	}
 	var errs []error
 	for _, id := range ids {
-		if _, err := s.RecoverExpired(ctx, db.ScopeFor(auth.AccountContext{AccountID: id}), batch); err != nil {
+		scope := db.ScopeFor(auth.AccountContext{AccountID: id})
+		if _, err := s.RecoverExpired(ctx, scope, batch); err != nil {
+			errs = append(errs, fmt.Errorf("account %s: %w", id, err))
+		}
+		if _, err := s.SettleUnverifiable(ctx, scope, batch); err != nil {
 			errs = append(errs, fmt.Errorf("account %s: %w", id, err))
 		}
 	}

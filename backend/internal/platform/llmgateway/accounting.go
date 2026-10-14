@@ -829,8 +829,10 @@ func (s *Service) refreshSettlement(ctx context.Context, tx store.TxAccountScope
 			state = SettlementPartial
 		}
 	}
+	// An unknown attempt closed with an estimate no longer keeps the money open.
 	unknown, err := tx.Exists(ctx, "llm_attempts",
-		"request_id=$2 AND dispatch_state='unknown'", requestID)
+		"request_id=$2 AND dispatch_state='unknown' AND NOT EXISTS (SELECT 1 FROM llm_usage_measurements m WHERE m.account_id=$1 AND m.attempt_id=llm_attempts.id AND m.measurement_key=$3)",
+		requestID, estimateKey(ComponentBudgetTokens))
 	if err != nil {
 		return err
 	}

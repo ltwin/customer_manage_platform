@@ -51,7 +51,7 @@
 - **预留必须覆盖请求**：`PrepareInTx` 用与预留同一套配方重算上界（含**工具 schema** 字节），超出 `initial_reserved_micros` 直接 `ErrBudget`——请求变大只能走新准入。
 - **计价**：三个不重叠分量 `input_cached` / `input_uncached` / `output`，`input_uncached = prompt_tokens − cached`，reasoning 已含在 output 不重复计。费率按**派发时刻**所在时段取，预留按 peak/off-peak 的较大者取保守上界。金额为整数 micros，`CostMicros` 用 `big.Int` 有理数向上取整。**token 与费用两个预算各自结算**：token 总量只需要输入/输出两个总数，缓存明细缺失或不自洽只让费用留疑问、不拖住 token 额度。
 - **余额与超支**：`spent + reserved <= limit` 只约束**新准入**；实际超支全额入账并从此拒绝新准入，不把 spent 截断到 limit。
-- **unknown 出口**：DeepSeek 无请求状态查询与取消 API（目录记 `query=none` / `cancel=none`），unknown 只能由受信运维入口 `VerifyUnacceptedInTx(requestID, evidenceSource)` 带来源核实后清除；没有「过几天算零」的自动出口。
+- **unknown 出口**：DeepSeek 无请求状态查询与取消 API（目录记 `query=none` / `cancel=none`），unknown 可由受信运维入口 `VerifyUnacceptedInTx(requestID, evidenceSource)` 带来源核实后清除（记零费用）；派发满 10 分钟仍无结论的 Chat attempt 由巡检 `SettleUnverifiable` 按估算结清：输入按预留时的输入上界（1 字节 1 token、未命中缓存的上界单价）、输出记 0，证据为 `operator_attested`、键后缀 `:unverified_estimate`，请求置 `failed`，hold 全部释放（owner 2026-10-14）。估算不是「算零」；供应商账单、用量推导或核实未受理的证据等级更高，之后到达会替换估算。
 
 ## Eino 模型出口
 
@@ -185,7 +185,7 @@ KRILL_AI_LIVE=1 go test ./internal/platform/llmgateway/ -run '^TestLiveKrill' -c
 - 耗尽有两种可区分的原因，错误同时包裹 `ErrProvidersExhausted` 与具体原因：后续尝试因月度额度放不下新预留而无法准入（包裹 `ErrBudget`，先尝试下一家，仍不行即结束，Agent 显示 `creative_llm_budget_exceeded`）；模型的所有部署都已禁用或从目录撤下、一次也没准入（包裹 `ErrUnavailable`，Agent 显示 `creative_model_unavailable`）。已撤下或禁用的部署在准入前跳过，不会让进行中的路线在重放时永久冲突。
 - **额度算术（默认配置下的已知限制）**：每次尝试按上界独立预留（输入上界 256K token、输出上界 128K token），未知结果的预留在核实前不释放。GPT-6 Astra 每次约 9–9.7 USD，Sol 经 Krill 每次约 3.2 USD，每次约 39 万 token；默认月度上限 20 USD / 500 万 token 下，连续 5xx 时 Astra 约第 3 次、Sol 约第 6 次就会因额度停止，到不了“每家 6 次再切换”。收紧预留和核实释放由计费整改 issue 处理。
 - `Build` 启用 `Config.ChatRetry`，低层 `New`/阶段端口仍可使用原有单请求协议。`llm_chat_routes` 冻结本轮部署顺序并指向最终成功请求；后续尝试采用由首请求和序号派生的稳定绑定。一次完整结果最多消费一次；已结束的对话调用重放不会重新购买尝试。
-- 每次网络尝试独立准入、冻结部署/价格、预留和记账。未知结果的请求在已确认本地传输结束后标为响应失败，原 attempt 的 unknown 和预算预留继续保留；`VerifyUnacceptedInTx` 接受这类“failed 但仍有 unknown attempt”的请求，核实后只释放预留，不会把它恢复成可派发。Agent 的运行结算按整个调用组汇总，重试后成功的运行仍会因被取代的 unknown 尝试显示待核实。重试可能重复产生上游费用，这是 owner 授权的新可用性策略；不会伪造“未受理”来释放旧预留。计费核实与清理仍由独立整改 issue 跟踪。
+- 每次网络尝试独立准入、冻结部署/价格、预留和记账。未知结果的请求在已确认本地传输结束后标为响应失败，原 attempt 的 unknown 和预算预留继续保留；`VerifyUnacceptedInTx` 接受这类“failed 但仍有 unknown attempt”的请求，核实后只释放预留，不会把它恢复成可派发。Agent 的运行结算按整个调用组汇总，重试后成功的运行会因被取代的 unknown 尝试显示待核实，直到核实或 10 分钟后按估算结清。重试可能重复产生上游费用，这是 owner 授权的新可用性策略；不会伪造“未受理”来释放旧预留。计费核实与清理仍由独立整改 issue 跟踪。
 - 仅有明确的本地传输结束记录才进入额外尝试。进程中断、正在派发的并发调用、无结束证据的历史 unknown 请求保持原有核实路径，不因升级自动重发。
 - 流式重试会清除失败尝试的正文预览；只有完整验证并落库的工具调用才交给 Agent 执行。跨部署时仍不传递另一家产生的加密推理。
 - 新增迁移 `0058_chat_failover`，以及请求的 `failure_http_status` 字段，用于保留具体 HTTP 错误码；没有 HTTP 应答的失败（超时、断连）记为 NULL。部署时先启动 API 完成迁移，再启动 creative-worker。
@@ -223,4 +223,4 @@ AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转�
 
 完整结果的首个落库事务失败后，同样通过此路径解除阻塞；进程仍持有的迟到完整结果允许归并到同一 unknown attempt，已被核实或重试替换的旧 attempt 不得覆写当前请求。核实未受理仍必须走受信 `VerifyUnacceptedInTx`，扫到过期不等于供应商未收费。
 
-供应商适配器必须遵守传入 context 的硬截止时间。首次部署此修复须停止旧版执行器后再启动新版，旧代码没有这个传输上限，不能与回收器并行运行。没有新增数据库迁移，仍要求已有 0043；恢复依赖运行中的 `creative-worker`。持久化彻底失败且供应商无查询能力时，丢失的回答无法凭空重建，状态保留 unknown，费用交由核实。
+供应商适配器必须遵守传入 context 的硬截止时间。首次部署此修复须停止旧版执行器后再启动新版，旧代码没有这个传输上限，不能与回收器并行运行。没有新增数据库迁移，仍要求已有 0043；恢复依赖运行中的 `creative-worker`。持久化彻底失败且供应商无查询能力时，丢失的回答无法凭空重建；10 分钟内保留 unknown 等待迟到结果或核实，之后由同一巡检按输入上界估算结清（见上方「unknown 出口」），不再永久占用 hold。

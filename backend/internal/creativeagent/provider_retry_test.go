@@ -111,4 +111,22 @@ func TestRetriedSuccessKeepsSupersededAttemptUnsettled(t *testing.T) {
 	if after.State != RunSucceeded || after.SettlementState != "unknown" || f.vendor.calls() != 2 {
 		t.Fatalf("retried success hid the superseded attempt: %+v calls=%d", after, f.vendor.calls())
 	}
+
+	// Nobody can learn that attempt's outcome any more. Once the gateway closes
+	// it with an estimate, the run's money question closes too.
+	if _, err := f.db.Exec(`UPDATE llm_attempts SET dispatched_at=dispatched_at-interval '11 minutes'`); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := f.service.gateway.SettleUnverifiable(t.Context(), f.alice, 10); err != nil || n != 1 {
+		t.Fatalf("settled %d %v", n, err)
+	}
+	if _, err := f.service.SweepRuns(t.Context(), f.alice, 20); err != nil {
+		t.Fatal(err)
+	}
+	if after, err = f.service.ReadRun(t.Context(), f.alice, run.ID); err != nil || after.SettlementState != "settled" {
+		t.Fatalf("run still unsettled: %+v %v", after, err)
+	}
+	if n := f.count("llm_usage_reservations", "remaining_hold_micros>0 OR remaining_hold_tokens>0"); n != 0 {
+		t.Fatalf("holds left: %d", n)
+	}
 }

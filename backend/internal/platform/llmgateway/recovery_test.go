@@ -168,3 +168,55 @@ func TestRecoverySweepPagesThroughInactiveAccounts(t *testing.T) {
 		t.Fatalf("page wrap=%q %v", cursor, e)
 	}
 }
+
+// An attempt nobody can ever learn the outcome of is closed with an estimate:
+// the reserved input upper bound, no output. The hold no longer stays forever,
+// and a later verification still outranks the estimate.
+func TestUnverifiableAttemptSettlesAtTheInputBound(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	p, _ := f.recoveryTurn(t, f.a)
+	f.now = f.now.Add(4 * time.Minute)
+	if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 1 {
+		t.Fatalf("recovery=%d %v", n, e)
+	}
+	held, e := f.gateway.GetUsage(t.Context(), f.a, p.RequestID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if n, e := f.gateway.SettleUnverifiable(t.Context(), f.a, 100); e != nil || n != 0 {
+		t.Fatalf("settled before the window closed=%d %v", n, e)
+	}
+	f.now = f.now.Add(7 * time.Minute)
+	if n, e := f.gateway.SettleUnverifiable(t.Context(), f.b, 100); e != nil || n != 0 {
+		t.Fatalf("other account=%d %v", n, e)
+	}
+	if _, e = f.gateway.SweepExpiredDispatches(t.Context(), f.database, "", 100); e != nil {
+		t.Fatal(e)
+	}
+	u, e := f.gateway.GetUsage(t.Context(), f.a, p.RequestID)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if u.Settlement != llmgateway.SettlementSettled || u.HoldMicros != 0 || u.HoldTokens != 0 {
+		t.Fatalf("still open: %+v", u)
+	}
+	if u.BookedMicros <= 0 || u.BookedMicros >= held.HoldMicros || u.BookedTokens <= 0 || u.BookedTokens >= held.HoldTokens {
+		t.Fatalf("estimate %+v outside (0, %+v)", u, held)
+	}
+	v, e := f.gateway.Get(t.Context(), f.a, p.RequestID)
+	if e != nil || v.State != llmgateway.StateFailed {
+		t.Fatalf("request left %s %v", v.State, e)
+	}
+	if n, e := f.gateway.SettleUnverifiable(t.Context(), f.a, 100); e != nil || n != 0 {
+		t.Fatalf("settled twice=%d %v", n, e)
+	}
+	if e = f.a.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		_, e := f.gateway.VerifyUnacceptedInTx(t.Context(), tx, p.RequestID, "operator-confirmed-no-send")
+		return e
+	}); e != nil {
+		t.Fatal(e)
+	}
+	if u, e = f.gateway.GetUsage(t.Context(), f.a, p.RequestID); e != nil || u.BookedMicros != 0 {
+		t.Fatalf("verification did not replace the estimate: %+v %v", u, e)
+	}
+}
