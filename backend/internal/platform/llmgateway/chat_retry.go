@@ -292,7 +292,9 @@ func (f chatAttemptFailure) next() routeStep {
 		return routeFailover
 	}
 	switch f.Class {
-	case "timeout", "transport", "server_error", "stream_error", "incomplete_stream", "response_failed", "admission_refused":
+	// response_status: a stream that ended on a status other than completed,
+	// failed or incomplete. Relays answer an upstream drop this way.
+	case "timeout", "transport", "server_error", "stream_error", "incomplete_stream", "response_failed", "response_status", "admission_refused":
 		return routeRetry
 	case "insufficient_balance", "model_routing_changed":
 		return routeFailover

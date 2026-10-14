@@ -24,6 +24,13 @@ import (
 )
 
 const (
+	// Finishing retries persistence only, within its own bounded cleanup window.
+	finishTimeout  = 30 * time.Second
+	finishAttempts = 3
+)
+
+// Lease timing is variable only so tests need not wait it out.
+var (
 	// leaseDuration is how long a worker's ownership stays valid without being
 	// renewed. It is short on purpose: the rescue path that reads it judges a
 	// silent worker by this, not by how long the run has been going.
@@ -32,9 +39,9 @@ const (
 	// is allowed to take the whole run window, so the lease cannot simply be set
 	// to the deadline — then it would say nothing about whether anyone is there.
 	leaseRenewal = 10 * time.Second
-	// Finishing retries persistence only, within its own bounded cleanup window.
-	finishTimeout  = 30 * time.Second
-	finishAttempts = 3
+	// leaseRetry is the pace after a failed renewal, so a short outage is
+	// bridged well before the lease lapses.
+	leaseRetry = 2 * time.Second
 )
 
 var errEmptyAnswer = errors.New("model returned no deliverable answer")
@@ -260,42 +267,68 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 // renewLease keeps the claim visibly alive while a turn is in flight and
 // returns the function that stops it. It never extends the run's deadline: the
 // lease says a worker is present, the deadline says the work may still happen.
+//
+// A failed renewal is not a lost claim: the lease still covers the run until it
+// lapses, so a network blip is retried rather than ending the turn. The attempt
+// stops once the claim is provably gone or the lease has run out locally.
 func (s *Service) renewLease(ctx context.Context, scope store.AccountScope, held claim, cancelAttempt context.CancelFunc) func() {
 	done := make(chan struct{})
 	exited := make(chan struct{})
 	var once sync.Once
+	renew := func(limit time.Duration) error {
+		ctx, cancel := context.WithTimeout(ctx, limit)
+		defer cancel()
+		return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			now, err := tx.CreativeNow(ctx)
+			if err != nil {
+				return err
+			}
+			// Only the holder renews. A worker whose claim was taken over
+			// must not keep a lease alive for somebody else's epoch.
+			updated, err := tx.Update(ctx, "creative_agent_runs", "lease_until=$4, updated_at=$5",
+				"id=$2 AND claim_token=$3 AND state='running' AND execution_epoch=$6 AND lease_until>$5 AND cancel_requested_at IS NULL", held.RunID, held.Token,
+				now.Add(leaseDuration), now, held.Epoch)
+			if err == nil && updated == 0 {
+				return ErrRunState
+			}
+			return err
+		})
+	}
 	go func() {
 		defer close(exited)
-		ticker := time.NewTicker(leaseRenewal)
-		defer ticker.Stop()
+		// The database decides expiry; this local bound only stops a worker
+		// from spending on a run it can no longer show it still holds.
+		expires := time.Now().Add(leaseDuration)
+		timer := time.NewTimer(leaseRenewal)
+		defer timer.Stop()
 		for {
 			select {
 			case <-done:
 				return
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-					now, err := tx.CreativeNow(ctx)
-					if err != nil {
-						return err
-					}
-					// Only the holder renews. A worker whose claim was taken over
-					// must not keep a lease alive for somebody else's epoch.
-					updated, err := tx.Update(ctx, "creative_agent_runs", "lease_until=$4, updated_at=$5",
-						"id=$2 AND claim_token=$3 AND state='running' AND execution_epoch=$6 AND lease_until>$5 AND cancel_requested_at IS NULL", held.RunID, held.Token,
-						now.Add(leaseDuration), now, held.Epoch)
-					if err == nil && updated == 0 {
-						return ErrRunState
-					}
-					return err
-				}); err != nil {
-					s.logger.WarnContext(ctx, "creative agent could not renew a run lease",
-						slog.String("run_id", held.RunID), slog.String("error", err.Error()))
-					cancelAttempt()
-					return
-				}
+			case <-timer.C:
 			}
+			// No renewal may outlive the lease it is trying to extend.
+			started := time.Now()
+			err := ErrRunState
+			if remaining := expires.Sub(started); remaining > 0 {
+				err = renew(min(leaseRenewal, remaining))
+			}
+			if err == nil {
+				expires = started.Add(leaseDuration)
+				timer.Reset(leaseRenewal)
+				continue
+			}
+			if errors.Is(err, ErrRunState) || !time.Now().Add(leaseRetry).Before(expires) {
+				s.logger.WarnContext(ctx, "creative agent lost its run lease",
+					slog.String("run_id", held.RunID), slog.String("error", err.Error()))
+				cancelAttempt()
+				return
+			}
+			s.logger.WarnContext(ctx, "creative agent could not renew a run lease; retrying",
+				slog.String("run_id", held.RunID), slog.String("error", err.Error()))
+			timer.Reset(leaseRetry)
 		}
 	}()
 	return func() { once.Do(func() { close(done); cancelAttempt() }); <-exited }

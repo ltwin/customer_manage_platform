@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ErrCommitOutcomeUnknown means a COMMIT acknowledgement failed. Callers must
@@ -56,7 +59,7 @@ func (sc AccountScope) WithReadSnapshot(ctx context.Context, fn func(ReadTxAccou
 	if fn == nil {
 		return errors.New("AccountScope 只读快照 callback 不能为空")
 	}
-	tx, err := sc.pool.BeginTx(ctx, pgx.TxOptions{
+	tx, err := beginTx(ctx, sc.pool, pgx.TxOptions{
 		IsoLevel:   pgx.RepeatableRead,
 		AccessMode: pgx.ReadOnly,
 	})
@@ -84,6 +87,58 @@ func (sc AccountScope) WithReadSnapshot(ctx context.Context, fn func(ReadTxAccou
 	return nil
 }
 
+// A short network drop should stall a request, not fail it. beginBudget bounds
+// the whole wait, connecting included; the backoff's last step repeats.
+// Variable only so tests need not wait it out.
+var (
+	beginBudget  = 10 * time.Second
+	beginBackoff = []time.Duration{250 * time.Millisecond, 500 * time.Millisecond, time.Second, 2 * time.Second}
+)
+
+// beginTx retries only failures that sent nothing to the server, so no
+// statement can run twice.
+func beginTx(ctx context.Context, pool *pgxpool.Pool, opts pgx.TxOptions) (pgx.Tx, error) {
+	deadline := time.Now().Add(beginBudget)
+	tx, err := pool.BeginTx(ctx, opts)
+	for attempt := 0; err != nil && unreachable(err); attempt++ {
+		wait := beginBackoff[min(attempt, len(beginBackoff)-1)]
+		if !time.Now().Add(wait).Before(deadline) {
+			break
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, fmt.Errorf("%w: %w", ctx.Err(), err)
+		case <-timer.C:
+		}
+		attemptCtx, cancel := context.WithDeadline(ctx, deadline)
+		next, nextErr := pool.BeginTx(attemptCtx, opts)
+		budgetCut := attemptCtx.Err() != nil && ctx.Err() == nil
+		cancel()
+		if nextErr != nil && budgetCut {
+			// Cut short by the budget, not by the caller: report the outage
+			// rather than a deadline the caller never set.
+			break
+		}
+		tx, err = next, nextErr
+	}
+	return tx, err
+}
+
+// unreachable reports a failure of the network rather than of the request or
+// the configuration: nothing was sent, and the server did not refuse.
+func unreachable(err error) bool {
+	var refused *pgconn.PgError
+	if errors.As(err, &refused) {
+		// Only refusals that pass on their own: too many connections, or a
+		// server still starting up.
+		return refused.Code == "53300" || refused.Code == "57P03"
+	}
+	var connect *pgconn.ConnectError
+	return errors.As(err, &connect) || pgconn.SafeToRetry(err)
+}
+
 func (sc AccountScope) withinTx(ctx context.Context, fn func(AccountScope) error) error {
 	if sc.accountID == "" {
 		return ErrEmptyAccountScope
@@ -91,7 +146,7 @@ func (sc AccountScope) withinTx(ctx context.Context, fn func(AccountScope) error
 	if sc.pool == nil {
 		return errors.New("AccountScope 缺连接池，无法开启事务")
 	}
-	tx, err := sc.pool.Begin(ctx)
+	tx, err := beginTx(ctx, sc.pool, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin scoped tx: %w", err)
 	}

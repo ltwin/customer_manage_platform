@@ -63,6 +63,7 @@ func TestChatRetryPriorityAndIndependentAccounting(t *testing.T) {
 		{name: "all deployments exhausted", failures: 12, calls: 12, status: 500, outcome: llmgateway.OutcomeUnknown, class: "server_error", wantErr: llmgateway.ErrProvidersExhausted},
 		{name: "timeout retries", failures: 1, calls: 2, outcome: llmgateway.OutcomeUnknown, class: "timeout"},
 		{name: "rate limit retries", failures: 1, calls: 2, status: 429, outcome: llmgateway.OutcomeUnaccepted, class: "admission_refused"},
+		{name: "unexpected terminal status retries", failures: 1, calls: 2, outcome: llmgateway.OutcomeProtocol, class: "response_status"},
 		{name: "credential skips vendor", failures: 1, calls: 2, status: 401, outcome: llmgateway.OutcomeRejected, class: "invalid_request"},
 		{name: "bad request stops", failures: 1, calls: 1, status: 400, outcome: llmgateway.OutcomeRejected, class: "invalid_request", wantErr: llmgateway.ErrRejected},
 	} {
