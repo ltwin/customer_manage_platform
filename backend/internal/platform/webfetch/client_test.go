@@ -175,3 +175,47 @@ func TestFromEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchSendsFixedOptions(t *testing.T) {
+	var got map[string]any
+	var path string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		_, _ = io.WriteString(w, `{"success":true,"data":{"web":[{"url":" https://a.example/1 ","title":" 森系外景 ","description":"## 片段","position":1},{"url":"","title":"无链接"},{"url":"https://b.example/2","title":"第二条"}]}}`)
+	}))
+	defer srv.Close()
+	results, err := newClient(srv.URL, "fc-test", srv.Client()).Search(t.Context(), "森系 外景", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/v2/search" || mustJSON(got) != `{"ignoreInvalidURLs":true,"limit":10,"query":"森系 外景","sources":["web"],"timeout":25000}` {
+		t.Fatalf("path=%s request=%s", path, mustJSON(got))
+	}
+	if len(results) != 2 || results[0] != (SearchResult{Title: "森系外景", URL: "https://a.example/1", Description: "## 片段"}) || results[1].URL != "https://b.example/2" {
+		t.Fatalf("results %+v", results)
+	}
+}
+
+func TestSearchMapsAnswers(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		body   string
+		want   error
+	}{
+		{401, `{}`, ErrProviderAuth}, {402, `{}`, ErrQuota}, {408, `{}`, ErrTimeout}, {429, `{}`, ErrRateLimited},
+	} {
+		if _, err := serve(t, tc.status, tc.body).Search(t.Context(), "q", 30*time.Second); !errors.Is(err, tc.want) {
+			t.Fatalf("%d: err = %v, want %v", tc.status, err, tc.want)
+		}
+	}
+	results, err := serve(t, 200, `{"success":true,"data":{"web":[]}}`).Search(t.Context(), "q", 30*time.Second)
+	if err != nil || len(results) != 0 {
+		t.Fatalf("empty: %v %v", results, err)
+	}
+	for _, body := range []string{`{"success":false,"code":"UNKNOWN_ERROR"}`, `{oops`} {
+		if _, err := serve(t, 200, body).Search(t.Context(), "q", 30*time.Second); err == nil || errors.Is(err, ErrTimeout) || errors.Is(err, ErrUnreachable) {
+			t.Fatalf("%s: err = %v", body, err)
+		}
+	}
+}

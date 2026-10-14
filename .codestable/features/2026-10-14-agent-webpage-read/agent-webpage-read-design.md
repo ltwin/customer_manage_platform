@@ -245,9 +245,9 @@ func (s *Service) SetWebFetcher(f WebFetcher) {
 | `ErrTimeout` | 网页加载超时，可能页面过大或访问缓慢 |
 | `ErrUnreachable` | 无法打开这个网页，可能链接失效或站点拒绝访问 |
 | `ErrUnsupported` | 没有读到网页正文，可能是文件、需要登录或依赖交互的页面 |
-| `ErrRateLimited` | 网页读取服务繁忙，请稍后再试 |
-| `ErrQuota` | 网页读取额度已用完，请联系平台 |
-| `ErrProviderAuth` | 网页读取服务暂不可用，请联系平台（同时记 Error 日志） |
+| `ErrRateLimited` | 网页服务繁忙，请稍后再试（与 `search_web` 共用） |
+| `ErrQuota` | 网页服务额度已用完，请联系平台 |
+| `ErrProviderAuth` | 网页服务暂不可用，请联系平台（同时记 Error 日志） |
 | 其他 | 不拦截，交给 `unexpected` |
 
 ### 3.3 结果截断

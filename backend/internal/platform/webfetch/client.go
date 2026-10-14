@@ -130,37 +130,111 @@ type metadata struct {
 // page was slow, the caller's run was not. A caller whose own context ended
 // gets that context's error back unchanged.
 func (c *Client) Scrape(ctx context.Context, rawURL string, wait time.Duration) (Page, error) {
-	body, err := json.Marshal(scrapeRequest{
+	status, raw, err := c.post(ctx, "/v2/scrape", scrapeRequest{
 		URL:     rawURL,
 		Formats: []string{"markdown"}, OnlyMainContent: true,
 		MaxAge:  maxAge.Milliseconds(),
-		Timeout: max(wait-providerHeadroom, time.Second).Milliseconds(),
+		Timeout: providerTimeout(wait),
 		Parsers: []string{},
-	})
+	}, wait)
 	if err != nil {
 		return Page{}, err
 	}
+	return decode(status, raw, rawURL)
+}
+
+// SearchResult is one web hit. Description is the vendor's snippet, which may
+// carry Markdown.
+type SearchResult struct {
+	Title       string
+	URL         string
+	Description string
+}
+
+type searchRequest struct {
+	Query             string   `json:"query"`
+	Limit             int      `json:"limit"`
+	Sources           []string `json:"sources"`
+	IgnoreInvalidURLs bool     `json:"ignoreInvalidURLs"`
+	Timeout           int64    `json:"timeout"`
+}
+
+// searchLimit is fixed: Firecrawl bills per started ten results, so fewer
+// would cost the same.
+const searchLimit = 10
+
+// Search runs one web search within wait, with the same timeout semantics as
+// Scrape. It returns titles, links and snippets only; reading a hit is a
+// separate, separately billed Scrape.
+func (c *Client) Search(ctx context.Context, query string, wait time.Duration) ([]SearchResult, error) {
+	status, raw, err := c.post(ctx, "/v2/search", searchRequest{
+		Query: query, Limit: searchLimit, Sources: []string{"web"}, IgnoreInvalidURLs: true,
+		Timeout: providerTimeout(wait),
+	}, wait)
+	if err != nil {
+		return nil, err
+	}
+	if status != http.StatusOK {
+		return nil, providerStatus(status)
+	}
+	var out struct {
+		Success bool   `json:"success"`
+		Code    string `json:"code"`
+		Data    struct {
+			Web []struct {
+				Title       string `json:"title"`
+				URL         string `json:"url"`
+				Description string `json:"description"`
+			} `json:"web"`
+		} `json:"data"`
+	}
+	if err = json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("webfetch: malformed provider answer: %w", err)
+	}
+	if !out.Success {
+		return nil, fmt.Errorf("webfetch: search failed (code %s)", out.Code)
+	}
+	results := make([]SearchResult, 0, len(out.Data.Web))
+	for _, w := range out.Data.Web {
+		if strings.TrimSpace(w.URL) == "" {
+			continue
+		}
+		results = append(results, SearchResult{Title: strings.TrimSpace(w.Title), URL: strings.TrimSpace(w.URL), Description: strings.TrimSpace(w.Description)})
+	}
+	return results, nil
+}
+
+func providerTimeout(wait time.Duration) int64 {
+	return max(wait-providerHeadroom, time.Second).Milliseconds()
+}
+
+// post sends one request and reads a bounded answer.
+func (c *Client) post(ctx context.Context, path string, payload any, wait time.Duration) (int, []byte, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return 0, nil, err
+	}
 	sub, cancel := context.WithTimeout(ctx, wait)
 	defer cancel()
-	req, err := http.NewRequestWithContext(sub, http.MethodPost, c.baseURL+"/v2/scrape", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(sub, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
-		return Page{}, err
+		return 0, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return Page{}, interrupted(ctx, sub, err)
+		return 0, nil, interrupted(ctx, sub, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
-		return Page{}, interrupted(ctx, sub, err)
+		return 0, nil, interrupted(ctx, sub, err)
 	}
 	if len(raw) > maxResponseBytes {
-		return Page{}, fmt.Errorf("%w: response over %d bytes", ErrUnsupported, maxResponseBytes)
+		return 0, nil, fmt.Errorf("%w: response over %d bytes", ErrUnsupported, maxResponseBytes)
 	}
-	return decode(resp.StatusCode, raw, rawURL)
+	return resp.StatusCode, raw, nil
 }
 
 // interrupted tells the caller's own end from our sub-deadline.
@@ -174,20 +248,25 @@ func interrupted(ctx, sub context.Context, err error) error {
 	return fmt.Errorf("webfetch: request failed: %w", err)
 }
 
+// providerStatus names the HTTP answers every endpoint shares.
+func providerStatus(status int) error {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return ErrProviderAuth
+	case http.StatusPaymentRequired:
+		return ErrQuota
+	case http.StatusRequestTimeout:
+		return ErrTimeout
+	case http.StatusTooManyRequests:
+		return ErrRateLimited
+	}
+	return fmt.Errorf("webfetch: provider answered %d", status)
+}
+
 func decode(status int, raw []byte, rawURL string) (Page, error) {
 	var out scrapeResponse
 	jsonErr := json.Unmarshal(raw, &out)
-	switch {
-	case status == http.StatusOK:
-	case status == http.StatusUnauthorized || status == http.StatusForbidden:
-		return Page{}, ErrProviderAuth
-	case status == http.StatusPaymentRequired:
-		return Page{}, ErrQuota
-	case status == http.StatusRequestTimeout:
-		return Page{}, ErrTimeout
-	case status == http.StatusTooManyRequests:
-		return Page{}, ErrRateLimited
-	case status == http.StatusInternalServerError && jsonErr == nil:
+	if status == http.StatusInternalServerError && jsonErr == nil {
 		switch out.Code {
 		case "SCRAPE_SITE_ERROR", "SCRAPE_DNS_RESOLUTION_ERROR", "SCRAPE_SSL_ERROR", "SCRAPE_ALL_ENGINES_FAILED":
 			return Page{}, fmt.Errorf("%w (code %s)", ErrUnreachable, out.Code)
@@ -195,8 +274,9 @@ func decode(status int, raw []byte, rawURL string) (Page, error) {
 			return Page{}, fmt.Errorf("%w (code %s)", ErrUnsupported, out.Code)
 		}
 		return Page{}, fmt.Errorf("webfetch: provider answered %d (code %s)", status, out.Code)
-	default:
-		return Page{}, fmt.Errorf("webfetch: provider answered %d", status)
+	}
+	if status != http.StatusOK {
+		return Page{}, providerStatus(status)
 	}
 	if jsonErr != nil {
 		return Page{}, fmt.Errorf("webfetch: malformed provider answer: %w", jsonErr)

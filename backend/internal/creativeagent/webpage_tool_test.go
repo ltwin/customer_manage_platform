@@ -18,8 +18,25 @@ import (
 
 // stubFetcher stands in for Firecrawl; webfetch's own tests cover the wire.
 type stubFetcher struct {
-	calls []string
-	waits []time.Duration
+	calls   []string
+	waits   []time.Duration
+	queries []string
+}
+
+func (s *stubFetcher) Search(_ context.Context, query string, wait time.Duration) ([]webfetch.SearchResult, error) {
+	s.queries = append(s.queries, query)
+	s.waits = append(s.waits, wait)
+	switch {
+	case strings.Contains(query, "慢"):
+		return nil, webfetch.ErrTimeout
+	case strings.Contains(query, "长"):
+		hits := make([]webfetch.SearchResult, 10)
+		for i := range hits {
+			hits[i] = webfetch.SearchResult{Title: "结果", URL: fmt.Sprintf("https://example.com/long/%d", i), Description: strings.Repeat("摘要<b>&", 400)}
+		}
+		return hits, nil
+	}
+	return []webfetch.SearchResult{{Title: "森系外景攻略", URL: "https://example.com/guide", Description: "## 机位"}}, nil
 }
 
 func (s *stubFetcher) Scrape(_ context.Context, rawURL string, wait time.Duration) (webfetch.Page, error) {

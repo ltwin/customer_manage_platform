@@ -158,7 +158,7 @@ func (h *runtimeHandler) allowed(name string) bool {
 	if name == compressImageTool {
 		return h.service.compressor != nil
 	}
-	if name == readWebpageTool {
+	if name == readWebpageTool || name == searchWebTool {
 		return h.service.fetcher != nil
 	}
 	if name != loadSkillTool && name != readSkillTool && name != readResultTool {
@@ -206,7 +206,7 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		}
 	}
 	if h.allowed(readWebpageTool) {
-		config.Tools = append(config.Tools, &webpageTool{handler: h})
+		config.Tools = append(config.Tools, &searchTool{handler: h}, &webpageTool{handler: h})
 	}
 	if h.allowed(readSkillTool) {
 		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: readSkillTool})
