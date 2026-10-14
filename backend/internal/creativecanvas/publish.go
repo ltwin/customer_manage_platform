@@ -162,16 +162,9 @@ func publishExecution(ctx context.Context, scope store.AccountScope, target Exec
 			result.RegisteredVersionIDs = append(result.RegisteredVersionIDs, version.ID)
 			lastVersion = version.ID
 		}
+		// 只有本节点在生成期间被改过才不采用，免得覆盖摄影师的修改；上游节点
+		// 改了无关，版本里记着这次用的参考修订。
 		applied := n.DataRevision == execution.TargetData && equalValue(creativegraph.Canonical(n.SelectedVersionID), creativegraph.Canonical(execution.Selected))
-		for _, r := range execution.ReadSet {
-			if r.Kind != "node" || r.DataRevision < 1 {
-				continue
-			}
-			i, ok := ids[r.ID]
-			if !ok || !i.Live || i.D != r.DataRevision {
-				applied = false
-			}
-		}
 		if applied {
 			if !mainVersionPinned(n) {
 				n.Config = mainVersionConfig(n.Config, false)

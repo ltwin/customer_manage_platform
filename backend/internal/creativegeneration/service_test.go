@@ -361,6 +361,35 @@ func TestGenerationEditedTargetRegistersUnselectedVersions(t *testing.T) {
 		t.Fatal(e.ApplyState)
 	}
 }
+
+// 生成期间上游节点改了（比如上游也重新生成），本节点没动：照常派发，结果照常采用。
+func TestGenerationUpstreamChangeStillDispatchesAndApplies(t *testing.T) {
+	f := setup(t, gw.GenerationText)
+	canvas, err := creativecanvas.GetCanvas(t.Context(), f.scope, f.target.CanvasID)
+	must(t, err)
+	upstream := "cwnode_" + uuid.NewString()
+	_, err = creativecanvas.AddNode(t.Context(), f.scope, cmd(creativecanvas.AddNodeInput{CanvasID: f.target.CanvasID, NodeID: upstream, TypeKey: "core.text", ExpectedTopologyRevision: canvas.TopologyRevision}))
+	must(t, err)
+	f.admit(t)
+	// 受理时记下上游的版本号，之后上游被改。
+	_, err = f.db.Exec(`UPDATE creative_node_executions SET read_set=read_set||jsonb_build_array(jsonb_build_object('kind','node','id',$2::text,'data_revision','1')) WHERE id=$1`, f.target.ExecutionID, upstream)
+	must(t, err)
+	_, err = f.db.Exec(`UPDATE creative_nodes SET data_revision=data_revision+1 WHERE id=$1`, upstream)
+	must(t, err)
+	for range 4 {
+		f.step(t)
+	}
+	if f.a.calls.Load() != 1 {
+		t.Fatal("upstream change blocked dispatch", f.a.calls.Load())
+	}
+	e, err := creativecanvas.GetNodeExecution(t.Context(), f.scope, f.target)
+	must(t, err)
+	versions, err := creativecanvas.ListNodeVersions(t.Context(), f.scope, f.target.CanvasID, f.node)
+	must(t, err)
+	if e.ApplyState != "applied" || versions.SelectedVersionID == nil {
+		t.Fatal("upstream change kept the result off the node", e.ApplyState, versions)
+	}
+}
 func TestGenerationConcurrentCancellationAndPublication(t *testing.T) {
 	f := setup(t, gw.GenerationText)
 	f.admit(t)

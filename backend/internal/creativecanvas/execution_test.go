@@ -188,9 +188,14 @@ func TestExecutionPreservesEditsAndContributorRights(t *testing.T) {
 			if err := svc.Work(t.Context(), scope, jobs.Request{Kind: "canvas.node_execution", OperationID: cmd.OperationID, CreatedAt: time.Now(), Payload: raw}); err != nil {
 				t.Fatal(err)
 			}
+			// 改的是本节点就不覆盖；只改了上游，结果照常放到（原本空的）节点上。
+			want := "conflicted"
+			if editSource {
+				want = "applied"
+			}
 			finished, err := creativecanvas.GetNodeExecution(t.Context(), scope, target)
-			if err != nil || finished.ApplyState != "conflicted" {
-				t.Fatal("late result adopted", finished, err)
+			if err != nil || finished.ApplyState != want {
+				t.Fatal("apply state", want, finished, err)
 			}
 			versions, err := creativecanvas.ListNodeVersions(t.Context(), scope, p.CanvasID, ids[2])
 			if err != nil || len(versions.Items) == 0 {
@@ -204,6 +209,9 @@ func TestExecutionPreservesEditsAndContributorRights(t *testing.T) {
 			}
 			if generated.ID == "" {
 				t.Fatal("missing generated version")
+			}
+			if selected := versions.SelectedVersionID; editSource != (selected != nil && *selected == generated.ID) {
+				t.Fatal("selected version", editSource, selected, generated.ID)
 			}
 			if _, err = creativecontent.Read(t.Context(), scope, generated.ContentRevisionID); err != nil {
 				t.Fatal(err)

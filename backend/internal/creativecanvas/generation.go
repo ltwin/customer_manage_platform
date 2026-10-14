@@ -174,18 +174,7 @@ func GuardGenerationInTx(ctx context.Context, tx store.TxAccountScope, target Ex
 	if canvas.Archived || !now.Before(e.Deadline) || e.ActionKey != GenerationAction || e.State != "queued" && e.State != "running" && e.State != "reconciling" || n.ActiveExecutionID == nil || *n.ActiveExecutionID != e.ID || n.DataRevision != e.TargetData {
 		return ErrVersionConflict
 	}
-	for _, ref := range e.ReadSet {
-		if ref.Kind != "node" {
-			return ErrGraphIntegrity
-		}
-		var revision int64
-		if err = tx.QueryRow(ctx, "creative_nodes", "data_revision", "id=$2 AND canvas_id=$3", ref.ID, e.CanvasID).Scan(&revision); err != nil {
-			return err
-		}
-		if revision != int64(ref.DataRevision) {
-			return ErrVersionConflict
-		}
-	}
+	// 上游节点之后改了不拦：请求用的是受理时锁定的参考修订，下面逐个复核仍可用。
 	rows, err := tx.QueryPage(ctx, "creative_execution_refs", "content_revision_id", "execution_id=$2 AND direction='input'", []store.OrderBy{{Column: "content_revision_id"}}, 51, 0, e.ID)
 	if err != nil {
 		return err

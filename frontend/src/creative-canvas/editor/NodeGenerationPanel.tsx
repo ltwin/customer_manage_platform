@@ -921,7 +921,7 @@ export default function NodeGenerationPanel({
         </p>
       )}
       {execution?.apply_state === 'conflicted' && (
-        <p>节点或参考已变化，结果已保留为未采用版本。</p>
+        <p>生成期间这个节点被改过，结果已保留为未采用版本。</p>
       )}
     </aside>,
     document.querySelector('.cc-layout') ?? document.body,
