@@ -246,6 +246,31 @@ func RetainGenerationOutputInTx(ctx context.Context, tx store.TxAccountScope, ta
 	return creativecontent.RetainDerivativeRights(ctx, tx, r.ID, inputs)
 }
 
+// StartGenerationInTx 在 worker 领到生成任务时把执行从排队切到生成中；其他状态不动。
+func StartGenerationInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) error {
+	canvas, err := lockCanvas(ctx, tx, target.CanvasID, false)
+	if err != nil {
+		return err
+	}
+	e, err := readExecution(ctx, tx, target)
+	if err != nil {
+		return err
+	}
+	if e.ActionKey != GenerationAction {
+		return creativeops.ErrValidation
+	}
+	if e.State != "queued" {
+		return nil
+	}
+	if _, err = tx.Update(ctx, "creative_node_executions", "state='running'", "id=$2", e.ID); err != nil {
+		return err
+	}
+	if _, err = tx.Update(ctx, "creative_nodes", "status_revision=status_revision+1", "id=$2 AND active_execution_id=$3", e.NodeID, e.ID); err != nil {
+		return err
+	}
+	return advanceCanvas(ctx, tx, canvas, false)
+}
+
 func CompleteGenerationInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget, failed bool) error {
 	canvas, err := lockCanvas(ctx, tx, target.CanvasID, false)
 	if err != nil {

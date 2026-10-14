@@ -241,6 +241,19 @@ func (s *Service) Work(ctx context.Context, scope store.AccountScope, job jobs.R
 	if err != nil {
 		return err
 	}
+	// 领到任务即进入生成中；锁顺序与收尾一致（账号写锁 → 绑定 → 画布）。
+	err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := tx.LockCreativeWrite(ctx); err != nil {
+			return err
+		}
+		if err := checkEpoch(ctx, tx, target, b); err != nil {
+			return err
+		}
+		return creativecanvas.StartGenerationInTx(ctx, tx, target)
+	})
+	if err != nil {
+		return err
+	}
 	// 取件可能较慢，给持久收尾留出独立时间；lease晚于网络截止。
 	stepCtx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 	done, stepErr := s.step(stepCtx, scope, target, b)

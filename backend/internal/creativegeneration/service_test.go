@@ -229,6 +229,28 @@ func TestGenerationMediaPartialFailureNeverResubmits(t *testing.T) {
 	}
 }
 
+func TestGenerationClaimMovesQueuedToRunning(t *testing.T) {
+	f := setup(t, gw.GenerationImage)
+	// 取件失败让执行停在非终态，才能看到「生成中」。
+	f.f.fail.Store(true)
+	f.admit(t)
+	state := func() (string, int) {
+		var s string
+		var revision int
+		must(t, f.db.QueryRow(`SELECT e.state, n.status_revision FROM creative_node_executions e JOIN creative_nodes n ON n.id=e.node_id WHERE e.id=$1`, f.target.ExecutionID).Scan(&s, &revision))
+		return s, revision
+	}
+	before, revision := state()
+	if before != "queued" {
+		t.Fatalf("admitted state = %q, want queued", before)
+	}
+	f.step(t)
+	after, next := state()
+	if after != "running" || next <= revision {
+		t.Fatalf("claimed state = %q revision %d→%d, want running with a bumped status revision", after, revision, next)
+	}
+}
+
 func TestGenerationAdmissionRollbackAndSameKeyConcurrency(t *testing.T) {
 	f := setup(t, gw.GenerationText)
 	_, err := f.db.Exec(`CREATE FUNCTION g4_fail_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.operation_type='canvas.request_generation' THEN RAISE EXCEPTION 'receipt injected'; END IF; RETURN NEW; END $$;CREATE TRIGGER g4_receipt BEFORE INSERT ON creative_operation_receipts FOR EACH ROW EXECUTE FUNCTION g4_fail_receipt()`)
