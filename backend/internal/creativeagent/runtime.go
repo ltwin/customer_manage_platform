@@ -52,10 +52,15 @@ func runtimeToolEntries() []ToolEntry {
 		{Key: loadSkillTool, Version: 1, DisplayName: "加载固定 Skill", EffectClass: "read_only"},
 		{Key: readSkillTool, Version: 1, DisplayName: "读取 Skill 资源", EffectClass: "read_only"},
 		{Key: readResultTool, Version: 1, DisplayName: "读取运行结果", EffectClass: "read_only"},
-		{Key: searchAssetsTool, Version: 1, DisplayName: "查找资产库", EffectClass: "read_only"},
-		{Key: readLibraryTool, Version: 1, DisplayName: "读取资产库结构", EffectClass: "read_only"},
+		{Key: searchAssetsTool, Version: 2, DisplayName: "查找资产库", EffectClass: "read_only"},
+		{Key: readLibraryTool, Version: 2, DisplayName: "读取资产库结构", EffectClass: "read_only"},
+		{Key: organizeAssetsTool, Version: 1, DisplayName: "整理素材", EffectClass: "write", MaxImpact: 50},
+		{Key: manageLibraryTool, Version: 1, DisplayName: "管理资产库结构", EffectClass: "write", MaxImpact: 20},
+		{Key: trashAssetsTool, Version: 1, DisplayName: "移入回收站", EffectClass: "write", MaxImpact: 50},
+		{Key: restoreAssetsTool, Version: 1, DisplayName: "从回收站恢复", EffectClass: "write", MaxImpact: 50},
+		{Key: readLibraryResultTool, Version: 1, DisplayName: "读取整理结果", EffectClass: "read_only"},
 		{Key: conversationAssetsTool, Version: 1, DisplayName: "找回对话内容", EffectClass: "read_only"},
-		{Key: saveLibraryTool, Version: 1, DisplayName: "存入资产库", EffectClass: "write", MaxImpact: 1},
+		{Key: saveLibraryTool, Version: 2, DisplayName: "存入资产库", EffectClass: "write", MaxImpact: 1},
 		{Key: readAssetTool, Version: 1, DisplayName: "读取引用素材", EffectClass: "read_only"},
 		{Key: readCanvasTool, Version: 1, DisplayName: "读取画布", EffectClass: "read_only"},
 		{Key: readHistoryTool, Version: 1, DisplayName: "读取对话历史", EffectClass: "read_only"},
@@ -135,10 +140,10 @@ func (h *runtimeHandler) AfterModelRewriteState(ctx context.Context, state *adk.
 	return ctx, state, h.resultErr
 }
 func (h *runtimeHandler) allowed(name string) bool {
-	if name == searchAssetsTool || name == readLibraryTool {
+	if name == searchAssetsTool || name == readLibraryTool || name == readLibraryResultTool || libraryWriteTool(name) {
 		return h.libraryEnabled
 	}
-	if name == conversationAssetsTool || name == saveLibraryTool {
+	if name == conversationAssetsTool {
 		return true
 	}
 	if name == readAssetTool || name == readCanvasTool || name == readHistoryTool || name == updatePlanTool {
@@ -178,12 +183,12 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		if err != nil {
 			return err
 		}
-		h.libraryEnabled = consent.Scope.Mode == ScopeAccountLibrary
+		h.libraryEnabled = consent.Scope.Mode == ScopeAccountLibrary && consentHas(consent, "media_metadata")
 		return nil
 	}); err != nil {
 		return config, handlers, err
 	}
-	for _, name := range []string{searchAssetsTool, readLibraryTool, conversationAssetsTool} {
+	for _, name := range []string{searchAssetsTool, readLibraryTool, conversationAssetsTool, organizeAssetsTool, manageLibraryTool, trashAssetsTool, restoreAssetsTool, readLibraryResultTool} {
 		if h.allowed(name) {
 			config.Tools = append(config.Tools, &libraryTool{handler: h, name: name})
 		}
@@ -317,7 +322,7 @@ func (h *runtimeHandler) planInTx(ctx context.Context, tx store.TxAccountScope, 
 		}
 		// The blocks for these plans are written after the answer's text, in
 		// consumeInTx, so the order on screen is the order the model spoke in.
-		if err = tx.Insert(ctx, "creative_agent_steps", []string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "tool_key", "tool_version", "parent_model_step_id", "tool_call_index", "input_hash", "input", "error_code", "started_at", "finished_at"}, id, h.held.RunID, ordinal+int64(index), "tool", state, h.held.Epoch, c.Name, 1, modelStep, index, hex.EncodeToString(sum[:]), input, nullableText(code), now, finished); err != nil {
+		if err = tx.Insert(ctx, "creative_agent_steps", []string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "tool_key", "tool_version", "parent_model_step_id", "tool_call_index", "input_hash", "input", "error_code", "started_at", "finished_at"}, id, h.held.RunID, ordinal+int64(index), "tool", state, h.held.Epoch, c.Name, runtimeToolVersion(c.Name), modelStep, index, hex.EncodeToString(sum[:]), input, nullableText(code), now, finished); err != nil {
 			return err
 		}
 	}
@@ -452,7 +457,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 			return err
 		}
 		projection = result
-		if len(result) > inlineResultBytes && name != loadSkillTool && name != readResultTool && h.allowed(readResultTool) {
+		if len(result) > inlineResultBytes && name != loadSkillTool && name != readResultTool && !libraryWriteTool(name) && name != searchAssetsTool && name != readLibraryTool && name != readLibraryResultTool && h.allowed(readResultTool) {
 			raw, err := json.Marshal(map[string]any{"success": true, "item_id": item, "byte_size": len(result), "read_tool": readResultTool, "preview": utf8Prefix(result, 512)})
 			if err != nil {
 				return err
@@ -537,6 +542,8 @@ func (h *runtimeHandler) unexpected(ctx context.Context, name, stepID string, er
 	message := fmt.Sprintf("「%s」因系统内部错误失败，原因已记录（编号 %s）。", title, stepID)
 	if effect == "none" {
 		message += "这次调用没有改动任何内容。"
+	} else if libraryWriteTool(name) {
+		message += "请用 read_library_result 或资产库查询核对后再继续。"
 	} else {
 		message += "改动可能已生效也可能没有，继续之前请先读取画布核对。"
 	}
@@ -762,4 +769,13 @@ func (h *runtimeHandler) persistContextInTx(ctx context.Context, tx store.TxAcco
 		}
 	}
 	return id, nil
+}
+
+func runtimeToolVersion(name string) int {
+	for _, t := range runtimeToolEntries() {
+		if t.Key == name {
+			return t.Version
+		}
+	}
+	return 1
 }

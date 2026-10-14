@@ -6059,6 +6059,11 @@ components:
       - hierarchy_revision
       - library_revision
       properties:
+        affected_asset_count: {type: integer, format: int64, minimum: 0}
+        affected_tag_count: {type: integer, format: int64, minimum: 0}
+        existing: {type: boolean}
+        tag: {$ref: '#/components/schemas/CreativeLibraryTagFact'}
+        deletion_id: {type: string}
         id:
           type: string
         revision:
@@ -6089,6 +6094,16 @@ components:
           minimum: 0
         revision:
           $ref: '#/components/schemas/CreativeRevision'
+    CreativeLibraryTagFact:
+      type: object
+      additionalProperties: false
+      required: [id, name, color, category_id, revision]
+      properties:
+        id: {type: string}
+        name: {type: string, maxLength: 80}
+        color: {type: string}
+        category_id: {type: string, nullable: true}
+        revision: {$ref: '#/components/schemas/CreativeRevision'}
     CreativeLibraryTag:
       type: object
       additionalProperties: false
@@ -6388,7 +6403,7 @@ components:
           maxLength: 200
         description:
           type: string
-          maxLength: 2000
+          maxLength: 1000
         is_favorite:
           type: boolean
     CreativeAssetStatePayload:
@@ -7223,7 +7238,7 @@ components:
           maxLength: 200
         description:
           type: string
-          maxLength: 2000
+          maxLength: 1000
         content:
           $ref: '#/components/schemas/CreativeContentDraft'
         group_ids:
@@ -7251,6 +7266,10 @@ components:
       - library_revision
       - tag_mapping
       properties:
+        title: {type: string, maxLength: 200}
+        description: {type: string, maxLength: 2000, description: 读取兼容存量长描述，写入最多 1000 个 Unicode 码点}
+        tags_created: {type: array, items: {$ref: '#/components/schemas/CreativeLibraryTagFact'}}
+        tags_reused: {type: array, items: {$ref: '#/components/schemas/CreativeLibraryTagFact'}}
         asset_id:
           type: string
         revision:
@@ -7954,7 +7973,7 @@ components:
         key: {type: string}
         version: {type: integer}
         display_name: {type: string}
-        effect_class: {type: string, enum: [read, create, update, layout]}
+        effect_class: {type: string, enum: [read_only, write, generate]}
         max_impact: {type: integer}
     CreativeAgentCatalog:
       type: object
@@ -13872,7 +13891,7 @@ components:
       required: [title]
       properties:
         title: {type: string, minLength: 1, maxLength: 200}
-        description: {type: string, maxLength: 2000}
+        description: {type: string, maxLength: 1000}
         group_ids: {type: array, maxItems: 100, items: {type: string}}
         tag_ids: {type: array, maxItems: 50, items: {type: string}}
         new_tags: {type: array, maxItems: 50, items: {$ref: "#/components/schemas/CreativeNewTag"}}

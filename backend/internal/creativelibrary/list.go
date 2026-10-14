@@ -36,6 +36,9 @@ type TagCount struct {
 	Count int64  `json:"count"`
 }
 type Search struct {
+	AssetID     string   `json:"asset_id,omitempty"`
+	Untagged    bool     `json:"untagged,omitempty"`
+	Snapshot    bool     `json:"snapshot,omitempty"`
 	Shape       string   `json:"shape,omitempty"`
 	Color       string   `json:"color,omitempty"`
 	View        string   `json:"view"`
@@ -54,18 +57,20 @@ type Search struct {
 	Cursor        string `json:"-"`
 }
 type searchCursor struct {
-	Account string    `json:"account"`
-	Query   string    `json:"query"`
-	ID      string    `json:"id"`
-	Name    string    `json:"name"`
-	Created time.Time `json:"created"`
-	Rating  *int16    `json:"rating,omitempty"`
+	Account  string               `json:"account"`
+	Query    string               `json:"query"`
+	ID       string               `json:"id"`
+	Name     string               `json:"name"`
+	Created  time.Time            `json:"created"`
+	Rating   *int16               `json:"rating,omitempty"`
+	Revision creativeops.Revision `json:"library_revision,omitempty"`
 }
 
 var assetKinds = []string{"text", "link", "image", "video", "audio"}
 
 func searchKey(q Search) (string, error) {
 	q.Cursor = ""
+	q.Limit = 0
 	raw, err := json.Marshal(q)
 	return textindex.Version + ":" + string(raw), err
 }
@@ -132,6 +137,12 @@ func (f searchFilter) condition(withKind, withTags bool, args *sqlArgs) string {
 	case "unclassified":
 		cond += " AND NOT EXISTS(SELECT 1 FROM creative_asset_group_members m WHERE m.account_id=$1 AND m.asset_id=creative_assets.id)"
 	}
+	if q.AssetID != "" {
+		cond += " AND id=" + args.bind(q.AssetID)
+	}
+	if q.Untagged {
+		cond += " AND NOT EXISTS(SELECT 1 FROM creative_asset_tags t WHERE t.account_id=$1 AND t.asset_id=creative_assets.id)"
+	}
 	if len(f.groups) > 0 {
 		cond += " AND EXISTS(SELECT 1 FROM creative_asset_group_members m WHERE m.account_id=$1 AND m.asset_id=creative_assets.id AND m.group_id=ANY(" + args.bind(f.groups) + "::text[]))"
 	}
@@ -188,6 +199,10 @@ func ListAssets(ctx context.Context, s store.AccountScope, limit int, cursor str
 	return SearchAssets(ctx, s, Search{Limit: limit, Cursor: cursor})
 }
 func SearchAssets(ctx context.Context, sc store.AccountScope, query Search) (AssetPage, error) {
+	return searchAssets(ctx, sc, query, nil)
+}
+
+func searchAssets(ctx context.Context, sc store.AccountScope, query Search, project func(store.ReadTxAccountScope, *AssetPage, Search, string) error) (AssetPage, error) {
 	q, err := query.normalized()
 	if err != nil {
 		return AssetPage{}, err
@@ -197,7 +212,7 @@ func SearchAssets(ctx context.Context, sc store.AccountScope, query Search) (Ass
 		return AssetPage{}, err
 	}
 	var cursor searchCursor
-	if q.Cursor != "" {
+	if q.Cursor != "" && !q.Snapshot {
 		if len(q.Cursor) > 8192 {
 			return AssetPage{}, creativeops.ErrValidation
 		}
@@ -216,6 +231,17 @@ func SearchAssets(ctx context.Context, sc store.AccountScope, query Search) (Ass
 			return err
 		}
 		result.LibraryRevision = settings.LibraryRevision
+		if q.Snapshot && q.Cursor != "" {
+			if err := decodeLibraryCursor(ctx, tx, q.Cursor, &cursor); err != nil {
+				return err
+			}
+			if cursor.Account != sc.AccountID() || cursor.Query != key || cursor.ID == "" || cursor.Created.IsZero() {
+				return creativeops.ErrValidation
+			}
+			if cursor.Revision != settings.LibraryRevision {
+				return ErrCursorStale
+			}
+		}
 		filter, err := resolveFilter(ctx, tx, q)
 		if err != nil {
 			return err
@@ -299,7 +325,13 @@ func SearchAssets(ctx context.Context, sc store.AccountScope, query Search) (Ass
 			preview := creativecontent.Preview(r)
 			a.Content = &preview
 		}
-		return attachPalettes(ctx, tx, result.Items)
+		if err := attachPalettes(ctx, tx, result.Items); err != nil {
+			return err
+		}
+		if project != nil {
+			return project(tx, &result, q, key)
+		}
+		return nil
 	})
 	return result, err
 }

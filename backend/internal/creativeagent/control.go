@@ -285,6 +285,9 @@ func (s *Service) SweepRuns(ctx context.Context, scope store.AccountScope, batch
 	if batch < 1 || batch > 1000 {
 		return 0, creativeops.ErrValidation
 	}
+	if err := pruneLibraryResults(ctx, scope, batch); err != nil {
+		return 0, err
+	}
 	rows, err := scope.QueryPage(ctx, "creative_agent_runs", "id", "(state='running' AND lease_until<clock_timestamp()) OR (state='queued' AND updated_at<clock_timestamp()-interval '30 seconds') OR state='reconciling' OR (state IN ('waiting_input','waiting_apply') AND deadline_at<=clock_timestamp()) OR (finished_at IS NOT NULL AND settlement_state IN ('unknown','pending'))", []store.OrderBy{{Column: "updated_at"}, {Column: "id"}}, batch, 0)
 	if err != nil {
 		return 0, err

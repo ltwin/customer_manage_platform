@@ -1,6 +1,6 @@
 # 创意空间 v6 · 逐项迭代需求 List
 
-这是后续逐项 **design → 实现 → 验收** 的入口。共 **76 个稳定需求条目**：38 个差距工作包拆出 V6-001–054；2026-10-05 PRD 全量追踪补登 V6-055–060，承接原来没有归属的 36 个 PRD 编号；2026-10-11 首页与资产库改版新增 V6-061–073（来源是 v6 原型和 owner 拍板，不对应 PRD 编号，不进追踪表）；2026-10-12 新增 V6-074 音频真实波形、V6-075 媒体 GC、V6-076 图片编辑一期（同样不对应 PRD 编号）。条目数不代表新增功能数，也不表示它们全都未实现。已有底座的项做补齐，验证项先验证，候选项先决定范围。
+这是后续逐项 **design → 实现 → 验收** 的入口。共 **77 个稳定需求条目**：38 个差距工作包拆出 V6-001–054；2026-10-05 PRD 全量追踪补登 V6-055–060，承接原来没有归属的 36 个 PRD 编号；2026-10-11 首页与资产库改版新增 V6-061–073（来源是 v6 原型和 owner 拍板，不对应 PRD 编号，不进追踪表）；2026-10-12 新增 V6-074 音频真实波形、V6-075 媒体 GC、V6-076 图片编辑一期（同样不对应 PRD 编号）。2026-10-13 新增 V6-078 助手整理资产库（独立新增需求）。条目数不代表新增功能数，也不表示它们全都未实现。已有底座的项做补齐，验证项先验证，候选项先决定范围。
 
 - 需求基线：[v6 PRD v0.2](../../../docs/product/creative-canvas-system/v6-workspace-prd.md)、[基础需求](../creative-canvas-foundation.md)、[v6 原型](../../../docs/prototypes/creative-workspace/v6/README.md)。
 - 代码依据：[2026-10-05 差距分析及 E01–E15 证据](../../../docs/product/creative-canvas-system/v6-implementation-gap-list.md)，代码基线 `057e46c`。该报告作为调查快照保留，后续进度只更新本清单。
@@ -108,6 +108,7 @@
 |---|---|---|---|---|---|
 | [V6-034 · 助手创建节点、连线与写入提示词](items/V6-034.md) | P0 | 交付 | 进行中 | V6-028、V6-032、V6-038 |`read_canvas` / `edit_canvas` / `set_node_prompt` 已交付（[design §3.10](../../features/2026-10-09-image-generation/image-generation-design.md)），写操作不确认、靠画布撤销；提案与归属（V6-032/038）未做 |
 | [V6-035 · 助手个人资产库精确检索](items/V6-035.md) | P0 | 交付 | 待设计 | V6-029 | — |
+| [V6-078 · 助手整理资产库](items/V6-078.md) | P1 | 交付 | 已完成 | V6-035 | [design](../../features/2026-10-13-agent-library-organize/agent-library-organize-design.md) · [implementation](../../work/feat-agent-library-organize.md) · [verification](../../features/2026-10-13-agent-library-organize/agent-library-organize-verification.md)；四写工具、完整分页/结果核对、1000码点与旧描述兼容；独立审查通过，真实20图5m33s/20次读取，确认行为通过；全库容器启动失败包独立重跑全绿，详情见验收；确认交互仍归V6-033 |
 | [V6-036 · 助手发起生成并核对结果](items/V6-036.md) | P0 | 交付 | 进行中 | V6-023、V6-027、V6-033、V6-034 | 消费 V6-038.1 改动归属契约（经 V6-034 传递）；`generate_node` 已交付（[design §3.10](../../features/2026-10-09-image-generation/image-generation-design.md)）：只生成、等待并取回结果，无确认卡片 |
 | [V6-037 · 助手组织已有节点](items/V6-037.md) | P0；组织说明 P1 | 交付 | 待设计 | V6-005、V6-028、V6-032、V6-034、V6-038 | — |
 | [V6-038 · 本轮改动归属与保留人工修改的撤销](items/V6-038.md) | P0 | 交付 | 待设计 | V6-030 | 预拆 038.1 归属与改动卡 / 038.2 无冲突撤销 / 038.3 冲突选择性撤销 |

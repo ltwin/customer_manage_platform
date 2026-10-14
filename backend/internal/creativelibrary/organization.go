@@ -28,10 +28,14 @@ type Settings struct {
 	LibraryRevision   creativeops.Revision `json:"library_revision"`
 }
 type LibraryResult struct {
-	ID                string               `json:"id"`
-	Revision          creativeops.Revision `json:"revision"`
-	HierarchyRevision creativeops.Revision `json:"hierarchy_revision"`
-	LibraryRevision   creativeops.Revision `json:"library_revision"`
+	AffectedAssetCount *int64               `json:"affected_asset_count,omitempty"`
+	AffectedTagCount   *int64               `json:"affected_tag_count,omitempty"`
+	Existing           *bool                `json:"existing,omitempty"`
+	Tag                *TagFact             `json:"tag,omitempty"`
+	ID                 string               `json:"id"`
+	Revision           creativeops.Revision `json:"revision"`
+	HierarchyRevision  creativeops.Revision `json:"hierarchy_revision"`
+	LibraryRevision    creativeops.Revision `json:"library_revision"`
 	// DeletionID is set by a group delete; it names the snapshot an undo restores.
 	DeletionID string `json:"deletion_id,omitempty"`
 }
@@ -241,6 +245,7 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 			return LibraryResult{}, err
 		}
 		var deletion groupDeletion
+		var affectedAssetCount *int64
 		original := map[string]Group{}
 		for id, g := range byID {
 			original[id] = g
@@ -327,7 +332,9 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 			if deletion, err = snapshotGroup(ctx, tx, target, groups); err != nil {
 				return LibraryResult{}, err
 			}
-			if err := removeRelations(ctx, tx, "creative_asset_group_members", "group_id", target.ID); err != nil {
+			count, err := removeRelations(ctx, tx, "creative_asset_group_members", "group_id", target.ID)
+			affectedAssetCount = &count
+			if err != nil {
 				return LibraryResult{}, err
 			}
 			delete(byID, target.ID)
@@ -378,6 +385,7 @@ func groupCommand(ctx context.Context, sc store.AccountScope, c creativeops.Comm
 		if err != nil || action != "delete" {
 			return result, err
 		}
+		result.AffectedAssetCount = affectedAssetCount
 		result.DeletionID, err = deletion.save(ctx, tx, result.HierarchyRevision)
 		return result, err
 	})
@@ -410,14 +418,15 @@ func MoveGroup(ctx context.Context, s store.AccountScope, c creativeops.Command)
 func DeleteGroup(ctx context.Context, s store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
 	return groupCommand(ctx, s, c, "delete")
 }
-func removeRelations(ctx context.Context, tx store.TxAccountScope, table, column, id string) error {
+func removeRelations(ctx context.Context, tx store.TxAccountScope, table, column, id string) (int64, error) {
 	// table/column are application constants, never request-derived identifiers.
-	if _, err := tx.Update(ctx, "creative_assets", "revision=revision+1,updated_at=clock_timestamp()", "id IN (SELECT asset_id FROM "+table+" WHERE account_id=$1 AND "+column+"=$2)", id); err != nil {
-		return err
+	count, err := tx.Update(ctx, "creative_assets", "revision=revision+1,updated_at=clock_timestamp()", "id IN (SELECT asset_id FROM "+table+" WHERE account_id=$1 AND "+column+"=$2)", id)
+	if err != nil {
+		return 0, err
 	}
 	if _, err := tx.Update(ctx, "creative_asset_search", "asset_revision=(SELECT a.revision FROM creative_assets a WHERE a.account_id=$1 AND a.id=creative_asset_search.asset_id)", "asset_id IN (SELECT asset_id FROM "+table+" WHERE account_id=$1 AND "+column+"=$2)", id); err != nil {
-		return err
+		return 0, err
 	}
-	_, err := tx.Delete(ctx, table, column+"=$2", id)
-	return err
+	_, err = tx.Delete(ctx, table, column+"=$2", id)
+	return count, err
 }

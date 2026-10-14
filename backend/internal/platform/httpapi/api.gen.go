@@ -925,22 +925,19 @@ func (e CreativeAgentStepSummaryState) Valid() bool {
 
 // Defines values for CreativeAgentToolEffectClass.
 const (
-	Create CreativeAgentToolEffectClass = "create"
-	Layout CreativeAgentToolEffectClass = "layout"
-	Read   CreativeAgentToolEffectClass = "read"
-	Update CreativeAgentToolEffectClass = "update"
+	Generate CreativeAgentToolEffectClass = "generate"
+	ReadOnly CreativeAgentToolEffectClass = "read_only"
+	Write    CreativeAgentToolEffectClass = "write"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAgentToolEffectClass enum.
 func (e CreativeAgentToolEffectClass) Valid() bool {
 	switch e {
-	case Create:
+	case Generate:
 		return true
-	case Layout:
+	case ReadOnly:
 		return true
-	case Read:
-		return true
-	case Update:
+	case Write:
 		return true
 	default:
 		return false
@@ -4270,6 +4267,9 @@ type CreativeAssetCreateResult struct {
 	AssetId           string `json:"asset_id"`
 	ContentRevisionId string `json:"content_revision_id"`
 
+	// Description 读取兼容存量长描述，写入最多 1000 个 Unicode 码点
+	Description *string `json:"description,omitempty"`
+
 	// LibraryRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	LibraryRevision CreativeRevision `json:"library_revision"`
 
@@ -4277,8 +4277,11 @@ type CreativeAssetCreateResult struct {
 	Reused *bool `json:"reused,omitempty"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	Revision   CreativeRevision  `json:"revision"`
-	TagMapping map[string]string `json:"tag_mapping"`
+	Revision    CreativeRevision          `json:"revision"`
+	TagMapping  map[string]string         `json:"tag_mapping"`
+	TagsCreated *[]CreativeLibraryTagFact `json:"tags_created,omitempty"`
+	TagsReused  *[]CreativeLibraryTagFact `json:"tags_reused,omitempty"`
+	Title       *string                   `json:"title,omitempty"`
 }
 
 // CreativeAssetFacets 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
@@ -4972,6 +4975,11 @@ type CreativeLibraryAssetKind string
 
 // CreativeLibraryResult defines model for CreativeLibraryResult.
 type CreativeLibraryResult struct {
+	AffectedAssetCount *int64  `json:"affected_asset_count,omitempty"`
+	AffectedTagCount   *int64  `json:"affected_tag_count,omitempty"`
+	DeletionId         *string `json:"deletion_id,omitempty"`
+	Existing           *bool   `json:"existing,omitempty"`
+
 	// HierarchyRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	HierarchyRevision CreativeRevision `json:"hierarchy_revision"`
 	Id                string           `json:"id"`
@@ -4980,7 +4988,8 @@ type CreativeLibraryResult struct {
 	LibraryRevision CreativeRevision `json:"library_revision"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	Revision CreativeRevision `json:"revision"`
+	Revision CreativeRevision        `json:"revision"`
+	Tag      *CreativeLibraryTagFact `json:"tag,omitempty"`
 }
 
 // CreativeLibrarySettings defines model for CreativeLibrarySettings.
@@ -5013,6 +5022,17 @@ type CreativeLibrarySettingsPayloadRetentionDays int
 type CreativeLibraryTag struct {
 	// AssetCount 打了这个标签的素材数，含回收站；删除标签会从这些素材上移除它
 	AssetCount int64                     `json:"asset_count"`
+	CategoryId nullable.Nullable[string] `json:"category_id"`
+	Color      string                    `json:"color"`
+	Id         string                    `json:"id"`
+	Name       string                    `json:"name"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeLibraryTagFact defines model for CreativeLibraryTagFact.
+type CreativeLibraryTagFact struct {
 	CategoryId nullable.Nullable[string] `json:"category_id"`
 	Color      string                    `json:"color"`
 	Id         string                    `json:"id"`

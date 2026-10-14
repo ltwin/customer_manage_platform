@@ -89,6 +89,16 @@ func asRefusal(err error) error {
 	case errors.As(err, &public):
 		// Explained where it happened; that is better than any guess from here.
 		return err
+	case errors.Is(err, creativelibrary.ErrCursorStale):
+		return refuseTool("cursor_stale：资产库已变化，请保持筛选重新从第一页读取")
+	case errors.Is(err, creativelibrary.ErrReadBudget):
+		return refuseTool("完整单项超过读取预算，请缩小查询或调整读取预算")
+	case errors.Is(err, creativelibrary.ErrGroupNameTaken):
+		return refuseTool("同一层已有同名分组")
+	case errors.Is(err, creativelibrary.ErrGroupDepth):
+		return refuseTool("分组最多两层")
+	case errors.Is(err, creativelibrary.ErrTrashed):
+		return refuseTool("素材在回收站里")
 	case errors.Is(err, errToolArguments):
 		return refuseTool("参数不符合工具说明：须是一个 JSON 对象，且只能使用说明里列出的字段")
 	case errors.Is(err, creativelibrary.ErrNotFound), errors.Is(err, creativecanvas.ErrNotFound):
@@ -200,7 +210,7 @@ func (t *canvasTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opt
 	var out any
 	switch t.name {
 	case saveLibraryTool:
-		out, err = h.saveToLibrary(ctx, canvasID, seed, raw)
+		return h.runLibraryWrite(ctx, saveLibraryTool, raw)
 	case editCanvasTool:
 		out, err = h.editCanvas(ctx, canvasID, seed, raw)
 	case setNodePromptTool:

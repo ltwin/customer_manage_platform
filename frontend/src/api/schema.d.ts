@@ -2533,6 +2533,13 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         CreativeLibraryResult: {
+            /** Format: int64 */
+            affected_asset_count?: number;
+            /** Format: int64 */
+            affected_tag_count?: number;
+            existing?: boolean;
+            tag?: components["schemas"]["CreativeLibraryTagFact"];
+            deletion_id?: string;
             id: string;
             revision: components["schemas"]["CreativeRevision"];
             hierarchy_revision: components["schemas"]["CreativeRevision"];
@@ -2543,6 +2550,13 @@ export interface components {
             parent_id: string | null;
             name: string;
             position: number;
+            revision: components["schemas"]["CreativeRevision"];
+        };
+        CreativeLibraryTagFact: {
+            id: string;
+            name: string;
+            color: string;
+            category_id: string | null;
             revision: components["schemas"]["CreativeRevision"];
         };
         CreativeLibraryTag: {
@@ -2977,6 +2991,11 @@ export interface components {
             new_tags?: components["schemas"]["CreativeNewTag"][];
         };
         CreativeAssetCreateResult: {
+            title?: string;
+            /** @description 读取兼容存量长描述，写入最多 1000 个 Unicode 码点 */
+            description?: string;
+            tags_created?: components["schemas"]["CreativeLibraryTagFact"][];
+            tags_reused?: components["schemas"]["CreativeLibraryTagFact"][];
             asset_id: string;
             revision: components["schemas"]["CreativeRevision"];
             content_revision_id: string;
@@ -3296,7 +3315,7 @@ export interface components {
             version: number;
             display_name: string;
             /** @enum {string} */
-            effect_class: "read" | "create" | "update" | "layout";
+            effect_class: "read_only" | "write" | "generate";
             max_impact: number;
         };
         CreativeAgentCatalog: {

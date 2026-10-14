@@ -527,10 +527,11 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 	return messages, revisions, nil
 }
 
-// admitDispatchInTx is the last gate, run inside the dispatch transaction. The
-// run is read before the consent and the consent before the content, matching
-// the global order.
-func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope, held claim, revisions []string) error {
+// admitRunInTx fences new work against cancellation, stale claims and withdrawn
+// permission. Call before domain locks and keep the transaction open through
+// the effects. Content checks stay with the caller so library/canvas writes can
+// acquire their domain locks before locking content.
+func (s *Service) admitRunInTx(ctx context.Context, tx store.TxAccountScope, held claim) error {
 	if err := tx.RequireCreativeCapability(ctx, "agent_start"); err != nil {
 		return err
 	}
@@ -571,7 +572,14 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	// The content refs were matched against this consent when the run was
 	// created and a consent's scope never changes afterwards, so what is
 	// re-checked here is whether it still stands at all.
-	if err := coversRun(consent, held.ConversationID, nil); err != nil {
+	return coversRun(consent, held.ConversationID, nil)
+}
+
+// admitDispatchInTx is the last gate, run inside the dispatch transaction. The
+// run is read before the consent and the consent before the content, matching
+// the global order.
+func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope, held claim, revisions []string) error {
+	if err := s.admitRunInTx(ctx, tx, held); err != nil {
 		return err
 	}
 	// Include content read by tools in this run, including restored checkpoints.

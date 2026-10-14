@@ -1,0 +1,83 @@
+cd backend && go build ./...
+cd backend && golangci-lint run ./...
+0 issues.
+/Library/Developer/CommandLineTools/usr/bin/make test-go PKG=./...
+cd backend && go test -p=4 ./... -count=1 -parallel=4
+ok  	github.com/samson/customer-manage-platform/backend/cmd/accountctl	0.693s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/avatar-manifest	1.155s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/creative-palette	1.699s
+?   	github.com/samson/customer-manage-platform/backend/cmd/creative-tool-schema-gen	[no test files]
+?   	github.com/samson/customer-manage-platform/backend/cmd/creative-worker	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/cmd/creativectl	1.886s
+?   	github.com/samson/customer-manage-platform/backend/cmd/migrate	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/cmd/planning-media-manifest	1.991s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/planningctl	1.992s
+ok  	github.com/samson/customer-manage-platform/backend/cmd/server	1.417s
+ok  	github.com/samson/customer-manage-platform/backend/internal/accountprofile	5.962s
+ok  	github.com/samson/customer-manage-platform/backend/internal/avatarmedia	2.222s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeagent	54.406s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativecanvas	16.238s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativecontent	5.548s
+storetest: start postgres container: run postgres: generic container: start container: started hook: wait until ready: mapped port: check target: retries: 9, port: "invalid port", last err: get state: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.53/containers/b5fcf0e3222ca0b2ee646472e2cc2e8704c7b232f800e6e7658d75e844149460/json": context deadline exceeded
+FAIL	github.com/samson/customer-manage-platform/backend/internal/creativegeneration	64.381s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeimageedit	11.537s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeimageedit/dbtest	15.783s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativelibrary	9.282s
+?   	github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex	[no test files]
+storetest: start postgres container: run postgres: generic container: start container: started hook: wait until ready: mapped port: check target: retries: 9, port: "invalid port", last err: get state: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.53/containers/a688370e69a69c62f52c7bd8a166a3e6df85ca85d97b14d51739ca81d5049bbb/json": context deadline exceeded
+FAIL	github.com/samson/customer-manage-platform/backend/internal/creativemedia	64.805s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativepalette	0.584s
+storetest: start postgres container: run postgres: generic container: start container: started hook: wait until ready: mapped port: check target: retries: 9, port: "invalid port", last err: get state: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.53/containers/cae1ee8e0562adaecb41d91ce3161d941f1347a55da8beb88dec1b0383e7c6a0/json": context deadline exceeded
+FAIL	github.com/samson/customer-manage-platform/backend/internal/creativereference	64.232s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativeskill	5.245s
+?   	github.com/samson/customer-manage-platform/backend/internal/creativestaging	[no test files]
+storetest: start postgres container: run postgres: generic container: start container: started hook: wait until ready: mapped port: check target: retries: 9, port: "invalid port", last err: get state: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.53/containers/2e91dda265872e3a801f46f2b4b77b002c8e141c10bb88a46ecd94137d6dee60/json": context deadline exceeded
+FAIL	github.com/samson/customer-manage-platform/backend/internal/customer	63.720s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarbackup	0.466s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer/avatarimage	0.530s
+?   	github.com/samson/customer-manage-platform/backend/internal/customer/avatarstore	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/dashboard	2.657s
+storetest: start postgres container: run postgres: generic container: start container: started hook: wait until ready: mapped port: check target: retries: 9, port: "invalid port", last err: get state: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.53/containers/ba0ccf3dd2b5e3fb7a994c475e9bc1b017d09bb930f898d2a2cf9ac670b92eda/json": context deadline exceeded
+FAIL	github.com/samson/customer-manage-platform/backend/internal/dataexport	63.726s
+ok  	github.com/samson/customer-manage-platform/backend/internal/order	3.933s
+storetest: start postgres container: run postgres: generic container: start container: started hook: wait until ready: mapped port: check target: retries: 9, port: "invalid port", last err: get state: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.53/containers/fbe52d74c063b70dc1b060f7fb24e5b505a0e56a37aa0b60c8f3796bca0ba5a1/json": context deadline exceeded
+FAIL	github.com/samson/customer-manage-platform/backend/internal/package	63.708s
+ok  	github.com/samson/customer-manage-platform/backend/internal/planningmedia	3.628s
+ok  	github.com/samson/customer-manage-platform/backend/internal/planshare	4.204s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/auth	0.781s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/authevent	0.451s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/authmail	0.486s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/clock	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/config	0.578s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/creativeops	4.966s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/creativeops/einoadapter	[no test files]
+storetest: start postgres container: run postgres: generic container: start container: started hook: wait until ready: mapped port: check target: retries: 9, port: "invalid port", last err: get state: Get "http://%2Fvar%2Frun%2Fdocker.sock/v1.53/containers/ccacd8508575098deecbb250097e27ba582c9f3ef31fc2c2232d095674fb2e4b/json": context deadline exceeded
+FAIL	github.com/samson/customer-manage-platform/backend/internal/platform/httpapi	63.952s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/idempotency	2.558s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/immutablefs	0.731s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/jobs	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway	20.411s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/realtime	0.737s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/securitybudget	0.431s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/store	83.450s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/store/storetest	[no test files]
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/txcap	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs	0.514s
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/versionedfs/versionedfstest	[no test files]
+?   	github.com/samson/customer-manage-platform/backend/internal/platform/webui	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder	15.241s
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest	12.521s
+ok  	github.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram	0.458s
+ok  	github.com/samson/customer-manage-platform/backend/internal/schedule	3.091s
+ok  	github.com/samson/customer-manage-platform/backend/internal/settings	2.759s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning	5.005s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/business	3.045s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/crm	0.473s
+?   	github.com/samson/customer-manage-platform/backend/internal/shootplanning/httpcontract	[no test files]
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/ingestion	2.893s
+ok  	github.com/samson/customer-manage-platform/backend/internal/shootplanning/planningreminder	0.723s
+FAIL
+make[1]: *** [test-go] Error 1
+make: *** [check-go] Error 2

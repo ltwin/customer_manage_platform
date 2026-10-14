@@ -10,6 +10,9 @@ import (
 func rollbackImageEdit(t *testing.T, url string) {
 	t.Helper()
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("rollback agent-library-organize", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-image-edit", err)
 	}
 }

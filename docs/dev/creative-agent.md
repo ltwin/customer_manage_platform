@@ -431,13 +431,48 @@ Gateway 未结费用；数据库锁阻塞至扫描超时后分页不跳账号。
 
 | 工具 | 行为 |
 |---|---|
-| search_assets | 复用资产库精确检索；每页 1–20；禁止 trash；返回资产和内容修订、名称、描述、分类、评分、尺寸，不返回图片。超出工具字节预算时缩减标签/分组列表，tags_omitted/groups_omitted 标明省略数量；保留整页素材、总数和原游标 |
-| read_library | 返回分组、分类及标签，最多 500 项，超过数量或工具字节预算标 truncated；素材数排除回收站 |
+| search_assets@2 | 完整描述及 revision，支持 asset_id、untagged、trash 元数据；条数与字节双预算分页，按实际页尾签名游标。单项关系过大时明确 relations_complete=false 并提供 read_library 继续入口 |
+| read_library@2 | 分组、分类、标签的平铺筛选分页，含 revision 与删除影响；支持 asset_relations 完整关系明细，库变化显式报游标失效 |
 | list_conversation_assets | 只查本对话，按 kind/source/query 筛选，先按来源和消息文字筛选，再对同修订保留匹配的最新一次；同时回传 next_before_ordinal 与 next_before_revision_id 才能无遗漏翻页 |
 | read_asset | 共用的内容读取器，参数是 content_revision_id，不要求 asset_id；沿用文字分页和图片预算，未增加音视频解码或链接抓取 |
 | edit_canvas | add_node 支持库素材或会话内容；fill_node 用素材填同类型空节点；库素材必须校验当前修订 |
-| save_to_library | 保存节点当前内容；操作身份来自工具步骤，重放相同回执；相同修订复用并追加已有归类，拒绝 new_tags |
+| save_to_library@2 | 必填标题与非空描述，冻结节点内容版本；相同修订复用并追加归类；可创建最多 10 个标签，返回真正 created/reused 事实，完整结果通过 read_library_result |
 
 成功采用的 generate_node（apply_state=applied）记录全部 content_revision_ids；compress_image（state=applied）记录 content_revision_id。拒绝、未采用结果不登记。消息引用是无时间期限的 GC 保留根。
 
 首页与画布助手支持粘贴图片；画布助手也支持文件上传和拖入。使用媒体 `target.kind=staged`，只创建内容与暂存引用，不自动入库或建节点。上传回执返回 content_revision_id；发送后在事务内建立消息引用。未发送暂存受媒体候选有效期约束；成功发送的内容只要消息引用存在，就不会仅因时间久被 GC 清理。切换会话会取消尚在准备的附件，避免异步摘要完成后把图片加入另一会话。
+
+
+## V6-078：助手整理资产库
+
+本节覆盖此前里程碑中关于资产库写工具未交付的描述。运行时注册四个写工具：
+`organize_assets`、`manage_library`、`trash_assets`、`restore_assets`，以及只读
+`read_library_result`。它们和 `save_to_library@2`、`search_assets@2`、`read_library@2`
+均要求 account_library 范围及 media_metadata；每次调用重新检查许可。写入复用 manual_write。
+
+`search_assets` 返回完整描述、素材 revision，支持 asset_id、untagged 和 trash 元数据查询。
+`read_library` 是平铺筛选分页，kind 支持 group/category/tag/asset_relations；没有前 500 项截断。
+两者按条数和 JSON 实际字节分页，签名游标绑定账号、筛选和库版本；变化返回 cursor_stale。
+大关系集提供 relations_query，明确 relations_complete=false，所有明细继续可达。
+删除预览计全部关联素材（含回收站），分组只计直接成员；分类计标签，父组另计上提子组。
+
+整理写入先保存整批不可变计划及原值，再执行独立命令；每个命令身份、参数和 CreatedAt 固定。
+Migration 0064 的账号/会话隔离执行记录保存短摘要和完整明细，正文保留 90 天。
+事务顺序是操作锁、账号写锁、运行/Skill/许可锁、执行记录行、领域锁；既有回执优先于执行守卫。
+每个尚未提交的子命令在同一事务内复核运行状态、执行 epoch、claim token、租约、期限及许可，
+锁保持到业务提交。取消或许可撤销先提交后，剩余阶段不得继续写入；已提交阶段仍可按原回执核对。
+部分成功不会伪装成回滚：Metadata 成功但归类失败时返回 partial。
+未知结果返回前把调用改为 settling，禁止迟到执行者继续写入。
+read_library_result 在操作锁内核对回执，将已提交/未执行的事实收口；它不补做写命令。
+同会话后续运行可读取；撤销许可、跨会话/账号会拒绝；过期报 result_expired。
+救援扫描清理到期正文，保留小型过期标识；删除会话会级联清理这些记录。
+记录不是内容引用根，不改变图片 GC。
+
+资产描述新建/显式更新最多 1000 Unicode 码点；存量 1001–2000 字仍完整可读。
+只改标题/收藏/归类时不提交 description，因此不受存量长度影响。
+save_to_library 必须给非空描述，可创建最多 10 个标签；同名复用的分类和颜色不变。
+相同内容修订重复入库只追加关系，回执保存实际文字与真正 created/reused 标签事实。
+
+基础提示词在 `backend/internal/creativeagent/instructions/base.md`，用 go:embed 编译；
+Skill 仍追加在其后。覆盖已有文字及新入库前的确认目前由模型提示词约束，未宣称服务端强制。
+registry 版本变化使旧 checkpoint 明确不兼容，已提交回执与整理结果仍可核对。

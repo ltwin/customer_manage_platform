@@ -1,3 +1,4 @@
+import { assetDescriptionError } from "./AssetDescriptionInput.tsx"
 import { useState } from 'react'
 import { Folder, Plus, X } from 'lucide-react'
 import type { components } from '../../api/schema'
@@ -76,6 +77,10 @@ export function useOrganization({
     asset: api.Asset,
     patch: { title?: string; description?: string },
   ) {
+    if (patch.description !== undefined) {
+      const error = assetDescriptionError(patch.description)
+      if (error) { actions.setToast({ text: error }); return }
+    }
     actions.mutate(
       [asset],
       `/assets/${encodeURIComponent(asset.id)}/metadata`,

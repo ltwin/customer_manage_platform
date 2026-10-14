@@ -16,6 +16,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
+// DescriptionLimit counts Unicode code points for new or explicitly updated descriptions.
+const DescriptionLimit = 1000
+
 var (
 	ErrNotFound        = errors.New("creative asset not found")
 	ErrVersionConflict = errors.New("creative asset version conflict")
@@ -35,6 +38,10 @@ type CreateAssetInput struct {
 	Content     creativecontent.Draft `json:"content"`
 }
 type AssetResult struct {
+	Title             string               `json:"title"`
+	Description       string               `json:"description"`
+	TagsCreated       []TagFact            `json:"tags_created"`
+	TagsReused        []TagFact            `json:"tags_reused"`
 	TagMapping        map[string]string    `json:"tag_mapping"`
 	ID                string               `json:"asset_id"`
 	Revision          creativeops.Revision `json:"revision"`
@@ -75,7 +82,7 @@ func CreateAsset(ctx context.Context, scope store.AccountScope, command creative
 			if err := creativeops.Decode(raw, &in); err != nil {
 				return err
 			}
-			if strings.TrimSpace(in.Title) == "" || utf8.RuneCountInString(in.Title) > 200 || utf8.RuneCountInString(in.Description) > 2000 {
+			if strings.TrimSpace(in.Title) == "" || utf8.RuneCountInString(in.Title) > 200 || utf8.RuneCountInString(in.Description) > DescriptionLimit {
 				return creativeops.ErrValidation
 			}
 			return creativecontent.Validate(in.Content)
@@ -106,7 +113,7 @@ func CreateAsset(ctx context.Context, scope store.AccountScope, command creative
 			if _, err := tx.Update(ctx, "creative_library_settings", "library_revision=library_revision+1", ""); err != nil {
 				return creativeops.Outcome{}, err
 			}
-			body, err := json.Marshal(AssetResult{TagMapping: mapping, ID: id, Revision: 1, ContentRevisionID: content.ID, LibraryRevision: revision + 1})
+			body, err := json.Marshal(AssetResult{TagMapping: mapping.Mapping, TagsCreated: mapping.Created, TagsReused: mapping.Reused, Title: in.Title, Description: in.Description, ID: id, Revision: 1, ContentRevisionID: content.ID, LibraryRevision: revision + 1})
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
@@ -151,7 +158,7 @@ type ImportTarget struct {
 
 // ValidateImportTarget checks static field rules before any lock is taken.
 func ValidateImportTarget(t ImportTarget) error {
-	if strings.TrimSpace(t.Title) == "" || utf8.RuneCountInString(t.Title) > 200 || utf8.RuneCountInString(t.Description) > 2000 || len(t.NewTags) > 50 {
+	if strings.TrimSpace(t.Title) == "" || utf8.RuneCountInString(t.Title) > 200 || utf8.RuneCountInString(t.Description) > DescriptionLimit || len(t.NewTags) > 50 {
 		return creativeops.ErrValidation
 	}
 	if _, err := uniqueIDs(t.GroupIDs, 100); err != nil {
@@ -208,7 +215,7 @@ func CreateFromRevisionInTx(ctx context.Context, tx store.TxAccountScope, r crea
 	if _, err := tx.Update(ctx, "creative_library_settings", "library_revision=library_revision+1", ""); err != nil {
 		return AssetResult{}, err
 	}
-	return AssetResult{TagMapping: mapping, ID: id, Revision: 1, ContentRevisionID: r.ID, LibraryRevision: revision + 1}, nil
+	return AssetResult{TagMapping: mapping.Mapping, TagsCreated: mapping.Created, TagsReused: mapping.Reused, Title: t.Title, Description: t.Description, ID: id, Revision: 1, ContentRevisionID: r.ID, LibraryRevision: revision + 1}, nil
 }
 
 // SaveRevisionInTx files a canvas revision into the library. A live asset
@@ -254,7 +261,7 @@ func SaveRevisionInTx(ctx context.Context, tx store.TxAccountScope, r creativeco
 		}
 		revision++
 	}
-	return AssetResult{TagMapping: mapping, ID: a.ID, Revision: a.Revision, ContentRevisionID: r.ID, LibraryRevision: revision, Reused: true}, nil
+	return AssetResult{TagMapping: mapping.Mapping, TagsCreated: mapping.Created, TagsReused: mapping.Reused, Title: a.Title, Description: a.Description, ID: a.ID, Revision: a.Revision, ContentRevisionID: r.ID, LibraryRevision: revision, Reused: true}, nil
 }
 
 // ResolveAssetsInTx locks the library and selected asset before canvas locks.

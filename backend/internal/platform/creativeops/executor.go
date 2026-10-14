@@ -30,24 +30,10 @@ func (Executor) Run(ctx context.Context, scope store.AccountScope, op Operation,
 	if !ValidOperationID(command.OperationID) || command.CreatedAt.IsZero() || op.Key == "" || op.Validate == nil || op.Apply == nil {
 		return receipt, ErrValidation
 	}
-	var payload map[string]any
-	if err := Decode(command.Payload, &payload); err != nil {
+	canonicalPayload, hash, err := normalizeCommand(op.Key, command)
+	if err != nil {
 		return receipt, err
 	}
-	canonicalPayload, err := json.Marshal(payload)
-	if err != nil {
-		return receipt, ErrValidation
-	}
-	normalized, err := json.Marshal(struct {
-		Type      string         `json:"type"`
-		CreatedAt string         `json:"client_created_at"`
-		Payload   map[string]any `json:"payload"`
-	}{op.Key, command.CreatedAt.UTC().Format(time.RFC3339Nano), payload})
-	if err != nil {
-		return receipt, ErrValidation
-	}
-	sum := sha256.Sum256(normalized)
-	hash := hex.EncodeToString(sum[:])
 	err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if err := tx.LockCreativeOperation(ctx, command.OperationID); err != nil {
 			return err
@@ -82,6 +68,11 @@ func (Executor) Run(ctx context.Context, scope store.AccountScope, op Operation,
 		if err := op.Validate(append(json.RawMessage(nil), canonicalPayload...)); err != nil {
 			return err
 		}
+		if command.Guard != nil {
+			if err := command.Guard(ctx, tx, op.Key, command); err != nil {
+				return err
+			}
+		}
 		outcome, err := op.Apply(ctx, tx, append(json.RawMessage(nil), canonicalPayload...))
 		if err != nil {
 			return err
@@ -89,7 +80,7 @@ func (Executor) Run(ctx context.Context, scope store.AccountScope, op Operation,
 		if err := validateOutcome(outcome); err != nil {
 			return err
 		}
-		receipt = Receipt{OperationID: command.OperationID, OperationType: op.Key, CreatedAt: now, RetainedUntil: now.Add(retention), Outcome: outcome}
+		receipt = Receipt{requestHash: hash, OperationID: command.OperationID, OperationType: op.Key, CreatedAt: now, RetainedUntil: now.Add(retention), Outcome: outcome}
 		return tx.Insert(ctx, "creative_operation_receipts", []string{"operation_id", "operation_type", "client_created_at", "request_hash", "http_status", "response", "result_kind", "result_id", "result_revision", "created_at", "retained_until"}, command.OperationID, op.Key, command.CreatedAt, hash, outcome.HTTPStatus, outcome.Response, outcome.ResultKind, outcome.ResultID, outcome.ResultRevision, now, receipt.RetainedUntil)
 	})
 	// Even a populated callback result is not proof that COMMIT succeeded.
@@ -99,34 +90,94 @@ func (Executor) Run(ctx context.Context, scope store.AccountScope, op Operation,
 	return receipt, nil
 }
 
-func (Executor) Lookup(ctx context.Context, scope store.AccountScope, id string) (Receipt, error) {
+func (e Executor) Lookup(ctx context.Context, scope store.AccountScope, id string) (Receipt, error) {
+	return e.lookup(ctx, scope, id, false)
+}
+
+// LookupLocked waits for in-flight execution of this operation before reading.
+// Absence is final only when the caller has also fenced future execution.
+func (e Executor) LookupLocked(ctx context.Context, scope store.AccountScope, id string) (Receipt, error) {
+	return e.lookup(ctx, scope, id, true)
+}
+
+// LookupCommandLocked proves that a receipt belongs to this exact frozen
+// request, not merely to an operation ID that another command claimed.
+func (e Executor) LookupCommandLocked(ctx context.Context, scope store.AccountScope, key string, command Command) (Receipt, error) {
+	var receipt Receipt
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		receipt, err = e.LookupCommandInTx(ctx, tx, key, command)
+		return err
+	})
+	if err != nil {
+		return Receipt{}, err
+	}
+	return receipt, nil
+}
+
+// LookupCommandInTx locks the operation and verifies the exact frozen request.
+// The lock remains held even on ErrNotFound until the caller's transaction
+// ends, allowing absence to be atomically followed by a future-execution fence.
+// Call it before taking the guard's row locks, matching Run's lock order.
+func (Executor) LookupCommandInTx(ctx context.Context, tx store.TxAccountScope, key string, command Command) (Receipt, error) {
+	if !ValidOperationID(command.OperationID) || key == "" || command.CreatedAt.IsZero() {
+		return Receipt{}, ErrValidation
+	}
+	_, hash, err := normalizeCommand(key, command)
+	if err != nil {
+		return Receipt{}, err
+	}
+	if err := tx.LockCreativeOperation(ctx, command.OperationID); err != nil {
+		return Receipt{}, err
+	}
+	receipt, err := lookupReceiptInTx(ctx, tx, command.OperationID)
+	if err != nil {
+		return Receipt{}, err
+	}
+	if receipt.OperationType != key || receipt.requestHash != hash {
+		return Receipt{}, ErrConflict
+	}
+	return receipt, nil
+}
+
+func (Executor) lookup(ctx context.Context, scope store.AccountScope, id string, lock bool) (Receipt, error) {
 	var receipt Receipt
 	if !ValidOperationID(id) {
 		return receipt, ErrValidation
 	}
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-		if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
-			return err
+		if lock {
+			if err := tx.LockCreativeOperation(ctx, id); err != nil {
+				return err
+			}
 		}
 		var err error
-		receipt, _, err = readReceipt(ctx, tx, id)
-		if errors.Is(err, store.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		now, err := tx.CreativeNow(ctx)
-		if err != nil {
-			return err
-		}
-		if !now.Before(receipt.RetainedUntil) {
-			return ErrExpired
-		}
-		return nil
+		receipt, err = lookupReceiptInTx(ctx, tx, id)
+		return err
 	})
 	if err != nil {
 		return Receipt{}, err
+	}
+	return receipt, nil
+}
+
+func lookupReceiptInTx(ctx context.Context, tx store.TxAccountScope, id string) (Receipt, error) {
+	if err := tx.RequireCreativeCapability(ctx, "creative_read"); err != nil {
+		return Receipt{}, err
+	}
+	receipt, _, err := readReceipt(ctx, tx, id)
+	if errors.Is(err, store.ErrNoRows) {
+		return Receipt{}, ErrNotFound
+	}
+	if err != nil {
+		return Receipt{}, err
+	}
+	now, err := tx.CreativeNow(ctx)
+	if err != nil {
+		return Receipt{}, err
+	}
+	if !now.Before(receipt.RetainedUntil) {
+		return Receipt{}, ErrExpired
 	}
 	return receipt, nil
 }
@@ -140,6 +191,7 @@ func readReceipt(ctx context.Context, tx store.TxAccountScope, id string) (Recei
 		v := Revision(*revision)
 		r.Outcome.ResultRevision = &v
 	}
+	r.requestHash = hash
 	return r, hash, err
 }
 
@@ -158,4 +210,25 @@ func validateOutcome(out Outcome) error {
 		return ErrValidation
 	}
 	return nil
+}
+
+func normalizeCommand(key string, command Command) ([]byte, string, error) {
+	var payload map[string]any
+	if err := Decode(command.Payload, &payload); err != nil {
+		return nil, "", err
+	}
+	canonicalPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", ErrValidation
+	}
+	normalized, err := json.Marshal(struct {
+		Type      string         `json:"type"`
+		CreatedAt string         `json:"client_created_at"`
+		Payload   map[string]any `json:"payload"`
+	}{key, command.CreatedAt.UTC().Format(time.RFC3339Nano), payload})
+	if err != nil {
+		return nil, "", ErrValidation
+	}
+	sum := sha256.Sum256(normalized)
+	return canonicalPayload, hex.EncodeToString(sum[:]), nil
 }

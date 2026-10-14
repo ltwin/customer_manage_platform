@@ -172,7 +172,7 @@ func TestLargeAssetSearchKeepsPaginationAndRunAlive(t *testing.T) {
 	}
 	req := skillRequest("platform", "large-library-search", "查找素材")
 	req.Activate = true
-	req.Manifest.ToolAllowlist = []string{"search_assets@1"}
+	req.Manifest.ToolAllowlist = []string{"search_assets@2"}
 	skill := f.runImport(f.platform, req)
 	if err := f.work(f.alice, h.held.RunID); err != nil {
 		t.Fatal(err)
@@ -268,20 +268,51 @@ func TestAssetSearchBudgetIncludesEscapedClassificationNames(t *testing.T) {
 	}
 	var out struct {
 		Items []struct {
-			Tags          []libraryName `json:"tags"`
-			Groups        []libraryName `json:"groups"`
-			TagsOmitted   int           `json:"tags_omitted"`
-			GroupsOmitted int           `json:"groups_omitted"`
+			Complete bool                         `json:"relations_complete"`
+			Tags     int                          `json:"tag_count"`
+			Groups   int                          `json:"group_count"`
+			Query    creativelibrary.LibraryQuery `json:"relations_query"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal([]byte(result), &out); err != nil {
 		t.Fatal(err)
 	}
-	if len(out.Items) != 1 {
-		t.Fatalf("lost asset: %s", result)
+	if len(out.Items) != 1 || out.Items[0].Complete || out.Items[0].Tags != 50 || out.Items[0].Groups != 100 {
+		t.Fatal("missing relation continuation", result)
 	}
-	item := out.Items[0]
-	if item.TagsOmitted == 0 || item.GroupsOmitted == 0 || len(item.Tags)+item.TagsOmitted != 50 || len(item.Groups)+item.GroupsOmitted != 100 {
-		t.Fatalf("incorrect omissions: %s", result)
+	query := out.Items[0].Query
+	seen := map[string]bool{}
+	for {
+		raw, err := json.Marshal(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		page, err := h.readLibrary(t.Context(), string(raw))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page) > f.service.limits.ToolResultBytes {
+			t.Fatal("detail exceeds budget")
+		}
+		var details struct {
+			Items []creativelibrary.LibraryItem
+			Next  string `json:"next_cursor"`
+		}
+		if err := json.Unmarshal([]byte(page), &details); err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range details.Items {
+			if seen[item.ID] {
+				t.Fatal("duplicate relation")
+			}
+			seen[item.ID] = true
+		}
+		if details.Next == "" {
+			break
+		}
+		query.Cursor = details.Next
+	}
+	if len(seen) != 150 {
+		t.Fatal("missing relations", len(seen))
 	}
 }

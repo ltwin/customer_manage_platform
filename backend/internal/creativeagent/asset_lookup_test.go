@@ -211,8 +211,8 @@ func TestLibraryToolsAndCanvasRoundTrip(t *testing.T) {
 	if _, err := h.readLibrary(t.Context(), `{}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.searchAssets(t.Context(), `{"view":"trash","limit":10}`); err == nil {
-		t.Fatal("trash allowed")
+	if _, err := h.searchAssets(t.Context(), `{"view":"trash","limit":10}`); err != nil {
+		t.Fatal("trash metadata refused", err)
 	}
 	if _, err := h.editCanvas(t.Context(), f.canvasID, "wrong", fmt.Sprintf(`{"actions":[{"type":"add_node","key":"a","node_type":"text","asset_id":%q,"content_revision_id":"stale"}]}`, asset.ID)); err == nil {
 		t.Fatal("stale asset allowed")
@@ -236,18 +236,27 @@ func TestLibraryToolsAndCanvasRoundTrip(t *testing.T) {
 			t.Fatal("wrong placed content")
 		}
 	}
+	h.step = "save-step"
+	held, err := f.service.claimRun(t.Context(), f.alice, h.held.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.held = held
 	for range 2 {
-		result, err := h.saveToLibrary(t.Context(), f.canvasID, "save", fmt.Sprintf(`{"node_id":%q,"title":"已收藏"}`, canvas.Nodes[0].ID))
+		result, err := h.runLibraryWrite(t.Context(), saveLibraryTool, fmt.Sprintf(`{"node_id":%q,"title":"已收藏","description":"素材描述"}`, canvas.Nodes[0].ID))
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, _ := result.(map[string]any)
-		if out["asset_id"] != asset.ID || out["reused"] != true {
+		var out struct{ Items []map[string]any }
+		if err := json.Unmarshal([]byte(result), &out); err != nil {
+			t.Fatal(err)
+		}
+		if len(out.Items) != 1 || out.Items[0]["asset_id"] != asset.ID || out.Items[0]["reused"] != true {
 			t.Fatalf("save %+v", out)
 		}
 	}
-	if _, err := h.saveToLibrary(t.Context(), f.canvasID, "tags", fmt.Sprintf(`{"node_id":%q,"title":"新标签","new_tags":[]}`, canvas.Nodes[0].ID)); err == nil {
-		t.Fatal("new_tags accepted")
+	if _, err := h.prepareLibrarySave(t.Context(), fmt.Sprintf(`{"node_id":%q,"title":"新标签","new_tags":[]}`, canvas.Nodes[0].ID)); err == nil {
+		t.Fatal("missing description accepted")
 	}
 	if _, err := creativelibrary.Trash(t.Context(), f.alice, command(t, creativelibrary.AssetVersion{ID: asset.ID, Revision: asset.Revision})); err != nil {
 		t.Fatal(err)
@@ -377,7 +386,7 @@ func TestAssistantFindsReadsPlacesAndSavesLibraryContent(t *testing.T) {
 				t.Fatal(err)
 			}
 			node = placed.Created["ref"]
-			return scriptedResult(r, call("save", 0, saveLibraryTool, fmt.Sprintf(`{"node_id":%q,"title":"参考"}`, node))), nil
+			return scriptedResult(r, call("save", 0, saveLibraryTool, fmt.Sprintf(`{"node_id":%q,"title":"参考","description":"素材参考"}`, node))), nil
 		case 5:
 			if !strings.Contains(toolResult(r, 0), `"reused":true`) {
 				t.Fatalf("save %s", toolResult(r, 0))

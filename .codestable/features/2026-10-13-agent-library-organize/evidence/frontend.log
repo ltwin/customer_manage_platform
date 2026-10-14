@@ -1,0 +1,1131 @@
+cd frontend && npm run lint
+
+> frontend@0.0.0 lint
+> oxlint
+
+scripts/creative-node-toolbar.e2e.mjs:128:7: warning eslint(no-unused-vars): Variable 'textEditor' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-toolbar.e2e.mjs:150:7: warning eslint(no-unused-vars): Variable 'activeLabel' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-toolbar.e2e.mjs:151:7: warning eslint(no-unused-vars): Variable 'selectedIDs' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-create.e2e.mjs:97:7: warning eslint(no-unused-vars): Variable 'waitNew' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-resize.e2e.mjs:109:7: warning eslint(no-unused-vars): Variable 'meta' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-resize.e2e.mjs:118:7: warning eslint(no-unused-vars): Variable 'title' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-resize.e2e.mjs:120:7: warning eslint(no-unused-vars): Variable 'waitNew' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-projects.e2e.mjs:129:7: warning eslint(no-unused-vars): Variable 'cards' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/account/AccountCenterContext.tsx:116:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/account/AccountCenterContext.tsx:124:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/CanvasView.tsx:171:14: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/CanvasView.tsx:188:14: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/assets/AssetDescriptionInput.tsx:4:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/MediaView.tsx:7:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/MediaView.tsx:48:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/MediaView.tsx:194:23: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+cd frontend && npm run build
+
+> frontend@0.0.0 build
+> tsc -b && vite build
+
+vite v8.1.3 building client environment for production...
+[2K
+transforming...✓ 4850 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                         1.01 kB │ gzip:   0.51 kB
+dist/assets/KaTeX_Size3-Regular-CTq5MqoE.woff           4.42 kB
+dist/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2          4.92 kB
+dist/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2          5.20 kB
+dist/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2          5.46 kB
+dist/assets/KaTeX_Size4-Regular-BF-4gkZK.woff           5.98 kB
+dist/assets/KaTeX_Size2-Regular-oD1tc_U0.woff           6.18 kB
+dist/assets/KaTeX_Size1-Regular-C195tn64.woff           6.49 kB
+dist/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2    6.90 kB
+dist/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2       6.91 kB
+dist/assets/KaTeX_Size3-Regular-DgpXs0kz.ttf            7.58 kB
+dist/assets/KaTeX_Caligraphic-Regular-CTRA-rTL.woff     7.65 kB
+dist/assets/KaTeX_Caligraphic-Bold-BEiXGLvX.woff        7.71 kB
+dist/assets/KaTeX_Script-Regular-D3wIWfF6.woff2         9.64 kB
+dist/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2     10.34 kB
+dist/assets/KaTeX_Size4-Regular-DWFBv043.ttf           10.36 kB
+dist/assets/KaTeX_Script-Regular-D5yQViql.woff         10.58 kB
+dist/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2       11.31 kB
+dist/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2          11.34 kB
+dist/assets/KaTeX_Size2-Regular-B7gKUWhC.ttf           11.50 kB
+dist/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2      12.02 kB
+dist/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2        12.21 kB
+dist/assets/KaTeX_Size1-Regular-Dbsnue_I.ttf           12.22 kB
+dist/assets/KaTeX_SansSerif-Regular-CS6fqUqJ.woff      12.31 kB
+dist/assets/KaTeX_Caligraphic-Regular-wX97UBjC.ttf     12.34 kB
+dist/assets/KaTeX_Caligraphic-Bold-ATXxdsX0.ttf        12.36 kB
+dist/assets/KaTeX_Fraktur-Regular-Dxdc4cR9.woff        13.20 kB
+dist/assets/KaTeX_Fraktur-Bold-BsDP51OF.woff           13.29 kB
+dist/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2    13.56 kB
+dist/assets/KaTeX_SansSerif-Italic-DN2j7dab.woff       14.11 kB
+dist/assets/KaTeX_SansSerif-Bold-DbIhKOiC.woff         14.40 kB
+dist/assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff     16.02 kB
+dist/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2       16.40 kB
+dist/assets/KaTeX_Math-Italic-t53AETM-.woff2           16.44 kB
+dist/assets/KaTeX_Script-Regular-C5JkGWo-.ttf          16.64 kB
+dist/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2       16.78 kB
+dist/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2           16.98 kB
+dist/assets/KaTeX_Math-BoldItalic-iY-2wyZ7.woff        18.66 kB
+dist/assets/KaTeX_Math-Italic-DA0__PXp.woff            18.74 kB
+dist/assets/KaTeX_Main-BoldItalic-SpSLRI95.woff        19.41 kB
+dist/assets/KaTeX_SansSerif-Regular-BNo7hRIc.ttf       19.43 kB
+dist/assets/KaTeX_Fraktur-Regular-CB_wures.ttf         19.57 kB
+dist/assets/KaTeX_Fraktur-Bold-BdnERNNW.ttf            19.58 kB
+dist/assets/KaTeX_Main-Italic-BMLOBm91.woff            19.67 kB
+dist/assets/KaTeX_SansSerif-Italic-YYjJ1zSn.ttf        22.36 kB
+dist/assets/KaTeX_SansSerif-Bold-CFMepnvq.ttf          24.50 kB
+dist/assets/KaTeX_Main-Bold-Cx986IdX.woff2             25.32 kB
+dist/assets/KaTeX_Main-Regular-B22Nviop.woff2          26.27 kB
+dist/assets/KaTeX_Typewriter-Regular-D3Ib7_Hf.ttf      27.55 kB
+dist/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2           28.07 kB
+dist/assets/KaTeX_Main-Bold-Jm3AIy58.woff              29.91 kB
+dist/assets/KaTeX_Main-Regular-Dr94JaBh.woff           30.77 kB
+dist/assets/KaTeX_Math-BoldItalic-B3XSjfu4.ttf         31.19 kB
+dist/assets/KaTeX_Math-Italic-flOr_0UB.ttf             31.30 kB
+dist/assets/KaTeX_Main-BoldItalic-DzxPMmG6.ttf         32.96 kB
+dist/assets/KaTeX_AMS-Regular-DMm9YOAa.woff            33.51 kB
+dist/assets/KaTeX_Main-Italic-3WenGoN9.ttf             33.58 kB
+dist/assets/KaTeX_Main-Bold-waoOVXN0.ttf               51.33 kB
+dist/assets/KaTeX_Main-Regular-ypZvNtVU.ttf            53.58 kB
+dist/assets/KaTeX_AMS-Regular-DRggAlZN.ttf             63.63 kB
+dist/assets/ProjectCover-Cf9YMTHk.css                   1.78 kB │ gzip:   0.76 kB
+dist/assets/AppSidebar-B-nUddcz.css                     3.60 kB │ gzip:   1.10 kB
+dist/assets/Picker-BuBw1kiy.css                         3.69 kB │ gzip:   1.09 kB
+dist/assets/ProjectsPage-C-nV44u3.css                   4.17 kB │ gzip:   1.44 kB
+dist/assets/HomePage-D4B88aRx.css                       5.50 kB │ gzip:   1.61 kB
+dist/assets/agent-B2HExWmq.css                         16.68 kB │ gzip:   3.74 kB
+dist/assets/workspace-6ieDkrOM.css                     25.46 kB │ gzip:   5.90 kB
+dist/assets/markdownMath-DEcVZfaU.css                  28.83 kB │ gzip:   7.92 kB
+dist/assets/WorkspacePage-BM7rFwSj.css                 33.56 kB │ gzip:   6.40 kB
+dist/assets/assets-B8w_uJPL.css                        33.93 kB │ gzip:   7.06 kB
+dist/assets/index-IBGI1L4-.css                        146.54 kB │ gzip:  25.71 kB
+dist/assets/mermaid-MCJ5UELQ-Az-N25y2.js                0.07 kB │ gzip:   0.08 kB
+dist/assets/array-BifhSqXX.js                           0.10 kB │ gzip:   0.11 kB
+dist/assets/channel-DiXqn5F5.js                         0.11 kB │ gzip:   0.12 kB
+dist/assets/pie-WAS4IAKB-CTPcgwlw.js                    0.12 kB │ gzip:   0.12 kB
+dist/assets/info-A6RAGUB7-Bnd1nqW4.js                   0.12 kB │ gzip:   0.13 kB
+dist/assets/radar-RG4KPBEZ-BstmCspB.js                  0.12 kB │ gzip:   0.12 kB
+dist/assets/packet-AYTQ26CC-DiXa57xT.js                 0.12 kB │ gzip:   0.12 kB
+dist/assets/cynefin-OW5HDTMX-BvSo1u8z.js                0.12 kB │ gzip:   0.13 kB
+dist/assets/treemap-WGGIJYW6-6WWTe0dg.js                0.12 kB │ gzip:   0.13 kB
+dist/assets/wardley-WFR3VGLG-B8_K05up.js                0.12 kB │ gzip:   0.13 kB
+dist/assets/gitGraph-4MIJSDKK-BQ7pi1LO.js               0.12 kB │ gzip:   0.13 kB
+dist/assets/railroad-74A4TZTK-TY_Euwjm.js               0.12 kB │ gzip:   0.13 kB
+dist/assets/treeView-Q6P3EWNA-Dzne8qno.js               0.12 kB │ gzip:   0.13 kB
+dist/assets/railroad-peg-WCYAUIDC-BxmjEuQk.js           0.13 kB │ gzip:   0.13 kB
+dist/assets/architecture-7GRP2DOG-DzetW72M.js           0.13 kB │ gzip:   0.13 kB
+dist/assets/railroad-abnf-HS5TGJTU-CA1RVZBF.js          0.13 kB │ gzip:   0.13 kB
+dist/assets/railroad-ebnf-LZEXJU2U-C2fQwISw.js          0.13 kB │ gzip:   0.13 kB
+dist/assets/eventmodeling-NTZA5JFV-GNFilfB5.js          0.13 kB │ gzip:   0.13 kB
+dist/assets/init-D6jRqBbL.js                            0.14 kB │ gzip:   0.12 kB
+dist/assets/chunk-Y2CYZVJY-DsF7k-Jl.js                  0.15 kB │ gzip:   0.14 kB
+dist/assets/chunk-2Q5K7J3B-C1jixKkw.js                  0.19 kB │ gzip:   0.16 kB
+dist/assets/chunk-JWPE2WC7-DVXcaiue.js                  0.22 kB │ gzip:   0.17 kB
+dist/assets/chunk-XXDRQBXY-28_f2YT0.js                  0.28 kB │ gzip:   0.24 kB
+dist/assets/pencil-line-C3LbbbUL.js                     0.30 kB │ gzip:   0.23 kB
+dist/assets/chunk-CLGD4ZFX-DGtFJw77.js                  0.34 kB │ gzip:   0.27 kB
+dist/assets/chunk-5VM5RSS4-ZNzvKenW.js                  0.36 kB │ gzip:   0.27 kB
+dist/assets/codeowners-C8r90Shi.js                      0.54 kB │ gzip:   0.31 kB
+dist/assets/chunk-POPQ4Y6H-DmoW63MY.js                  0.56 kB │ gzip:   0.40 kB
+dist/assets/projectName-CY3cdq1-.js                     0.57 kB │ gzip:   0.44 kB
+dist/assets/flowDiagram-HODETNUW-Cjta4_Tu.js            0.61 kB │ gzip:   0.32 kB
+dist/assets/infoDiagram-27XIBGKW-Waw9mAzh.js            0.65 kB │ gzip:   0.42 kB
+dist/assets/highlighted-body-KQOG7T2V-CsFnfjSg.js       0.65 kB │ gzip:   0.41 kB
+dist/assets/rolldown-runtime-QTnfLwEv.js                0.69 kB │ gzip:   0.42 kB
+dist/assets/shellsession-CPZkydE6.js                    0.71 kB │ gzip:   0.43 kB
+dist/assets/tsv-sltzmVWM.js                             0.73 kB │ gzip:   0.33 kB
+dist/assets/lib-ChZm1Q2G.js                             0.77 kB │ gzip:   0.46 kB
+dist/assets/classDiagram-ZZMXUADV-D5xXiquM.js           0.78 kB │ gzip:   0.45 kB
+dist/assets/classDiagram-v2-VYDZK3BY-D5xXiquM.js        0.78 kB │ gzip:   0.45 kB
+dist/assets/stateDiagram-v2-MP3YSRHH-mE5KAu7A.js        0.78 kB │ gzip:   0.45 kB
+dist/assets/html-derivative-C52tUdFk.js                 0.84 kB │ gzip:   0.45 kB
+dist/assets/swimlanesDiagram-VR7AAH4N-ChvUFhNH.js       0.87 kB │ gzip:   0.49 kB
+dist/assets/sizeCapture-INFHLROL-B0uUizjq.js            0.87 kB │ gzip:   0.51 kB
+dist/assets/line-DpMR-7ob.js                            0.94 kB │ gzip:   0.47 kB
+dist/assets/git-rebase-B44mJPta.js                      0.98 kB │ gzip:   0.44 kB
+dist/assets/qmldir-DCQb3MpD.js                          0.99 kB │ gzip:   0.44 kB
+dist/assets/value-B8Mig86R.js                           1.04 kB │ gzip:   0.55 kB
+dist/assets/csv-Dx-8-gkx.js                             1.13 kB │ gzip:   0.36 kB
+dist/assets/ordinal-hYBb2elL.js                         1.17 kB │ gzip:   0.56 kB
+dist/assets/git-commit-BSykSTBG.js                      1.22 kB │ gzip:   0.52 kB
+dist/assets/preload-helper-CZgWQFsJ.js                  1.25 kB │ gzip:   0.70 kB
+dist/assets/useJournal-Dr6rmL7r.js                      1.28 kB │ gzip:   0.84 kB
+dist/assets/xsl-Ct_-YIAy.js                             1.36 kB │ gzip:   0.50 kB
+dist/assets/chunk-GVQU2GXP-V16Nda89.js                  1.41 kB │ gzip:   0.79 kB
+dist/assets/sparql-D_iOobhT.js                          1.47 kB │ gzip:   0.81 kB
+dist/assets/ini-B5eOa1yu.js                             1.51 kB │ gzip:   0.49 kB
+dist/assets/railroadDiagram-O6MQD6OU-C7qK4Qlr.js        1.66 kB │ gzip:   0.77 kB
+dist/assets/fortran-fixed-form-DEKoE2YW.js              1.66 kB │ gzip:   0.68 kB
+dist/assets/docker-IyjqRm3v.js                          1.73 kB │ gzip:   0.59 kB
+dist/assets/dotenv-CuH5my32.js                          1.74 kB │ gzip:   0.60 kB
+dist/assets/desktop-Dlh5hvp9.js                         1.82 kB │ gzip:   0.75 kB
+dist/assets/abnfDiagram-VCTEODGH-DJF4inA-.js            1.84 kB │ gzip:   0.90 kB
+dist/assets/hxml-Dcm88srW.js                            1.89 kB │ gzip:   0.89 kB
+dist/assets/chunk-P2QGCYS3-FUCPcn3O.js                  1.94 kB │ gzip:   0.95 kB
+dist/assets/chunk-F27PBJKO-v9DkvAV1.js                  1.99 kB │ gzip:   0.91 kB
+dist/assets/pegDiagram-XKGWAZYB-DLmhMz1K.js             2.01 kB │ gzip:   0.94 kB
+dist/assets/ebnfDiagram-PWID7BFC-CsypW2oW.js            2.06 kB │ gzip:   0.89 kB
+dist/assets/erb-wokCcSUC.js                             2.13 kB │ gzip:   0.62 kB
+dist/assets/wenyan-C8pVoKbM.js                          2.15 kB │ gzip:   1.08 kB
+dist/assets/dist-D9sYb5Oa.js                            2.17 kB │ gzip:   0.97 kB
+dist/assets/jssm-DXw9l8Rf.js                            2.23 kB │ gzip:   0.61 kB
+dist/assets/edge-CL728IkI.js                            2.30 kB │ gzip:   0.67 kB
+dist/assets/path-BWPyau1x.js                            2.31 kB │ gzip:   0.99 kB
+dist/assets/reg-CRGYupPL.js                             2.33 kB │ gzip:   0.69 kB
+dist/assets/ProjectCover-B1hDVu1i.js                    2.41 kB │ gzip:   1.22 kB
+dist/assets/diff-woXpYk--.js                            2.56 kB │ gzip:   0.68 kB
+dist/assets/gleam-CSRkHgEL.js                           2.57 kB │ gzip:   0.81 kB
+dist/assets/hy-CZbG8q4J.js                              2.64 kB │ gzip:   1.17 kB
+dist/assets/openscad-BUDT5pXO.js                        2.81 kB │ gzip:   1.00 kB
+dist/assets/log-BNLmms1o.js                             2.84 kB │ gzip:   0.89 kB
+dist/assets/json-Bg9ijW3F.js                            2.89 kB │ gzip:   0.82 kB
+dist/assets/cairo-DLTphjLi.js                           2.93 kB │ gzip:   0.80 kB
+dist/assets/berry-DKpUyyne.js                           2.99 kB │ gzip:   0.80 kB
+dist/assets/jsonl-CmCQp5Yx.js                           3.00 kB │ gzip:   0.78 kB
+dist/assets/jsonc-CYpm1nAK.js                           3.10 kB │ gzip:   0.78 kB
+dist/assets/logo-Cluzi2Zq.js                            3.12 kB │ gzip:   1.46 kB
+dist/assets/po-BiJDBrnU.js                              3.23 kB │ gzip:   0.90 kB
+dist/assets/json5-BR5RXkoi.js                           3.24 kB │ gzip:   0.82 kB
+dist/assets/mipsasm-BMqwQI7S.js                         3.25 kB │ gzip:   1.17 kB
+dist/assets/tasl-DMoTqEGO.js                            3.28 kB │ gzip:   0.84 kB
+dist/assets/rbs-C0MpOrj4.js                             3.30 kB │ gzip:   0.72 kB
+dist/assets/genie-CV2tkWYe.js                           3.34 kB │ gzip:   1.20 kB
+dist/assets/rel-BtDbiS_P.js                             3.36 kB │ gzip:   1.10 kB
+dist/assets/vala-zf12oZj6.js                            3.36 kB │ gzip:   1.18 kB
+dist/assets/splunk-BC2Px7Mm.js                          3.42 kB │ gzip:   1.51 kB
+dist/assets/arc-BjSQqbzd.js                             3.47 kB │ gzip:   1.46 kB
+dist/assets/hurl-CWPsiEpf.js                            3.51 kB │ gzip:   1.09 kB
+dist/assets/fluent-C03EYrpw.js                          3.60 kB │ gzip:   0.89 kB
+dist/assets/ssh-config-BgfXC-Er.js                      3.61 kB │ gzip:   1.59 kB
+dist/assets/jsonnet-CJTPZ8u_.js                         3.61 kB │ gzip:   1.03 kB
+dist/assets/kdl-CsD5j6eV.js                             3.62 kB │ gzip:   1.03 kB
+dist/assets/narrat-_X_XdTYD.js                          3.66 kB │ gzip:   1.09 kB
+dist/assets/turtle-ByJddavk.js                          3.69 kB │ gzip:   0.96 kB
+dist/assets/glsl-Dv5r7kPw.js                            3.69 kB │ gzip:   1.45 kB
+dist/assets/chunk-TLUHSLCS-CBIje8Ee.js                  3.77 kB │ gzip:   1.55 kB
+dist/assets/zenscript-BnlCZFoB.js                       3.90 kB │ gzip:   1.28 kB
+dist/assets/ron-VUp2lXgN.js                             3.90 kB │ gzip:   0.97 kB
+dist/assets/gn-CAXYAgV-.js                              4.01 kB │ gzip:   1.48 kB
+dist/assets/pascal-4ZHwLPI5.js                          4.14 kB │ gzip:   1.67 kB
+dist/assets/diagram-Z3DM3KII-TZyDXmHQ.js                4.28 kB │ gzip:   1.85 kB
+dist/assets/http-Cyd7bS_S.js                            4.41 kB │ gzip:   1.06 kB
+dist/assets/tcl-CZd0xW_V.js                             4.42 kB │ gzip:   1.50 kB
+dist/assets/nextflow-CSgcYZcx.js                        4.50 kB │ gzip:   1.16 kB
+dist/assets/rosmsg-CAekHB0j.js                          4.51 kB │ gzip:   1.05 kB
+dist/assets/linear-BOLaQb82.js                          4.57 kB │ gzip:   1.85 kB
+dist/assets/defaultLocale-C8Fc0cco.js                   4.64 kB │ gzip:   2.12 kB
+dist/assets/polar-C7UOKdEL.js                           4.66 kB │ gzip:   1.12 kB
+dist/assets/sdbl-bTVj8UrX.js                            4.69 kB │ gzip:   2.00 kB
+dist/assets/fennel-DQxkIbk2.js                          4.76 kB │ gzip:   1.53 kB
+dist/assets/bibtex-Ci_nEsc7.js                          4.78 kB │ gzip:   0.83 kB
+dist/assets/Picker-DQP80thL.js                          4.81 kB │ gzip:   2.06 kB
+dist/assets/llvm-DqHOMS-s.js                            5.03 kB │ gzip:   2.01 kB
+dist/assets/wgsl-BsKzXJz4.js                            5.13 kB │ gzip:   1.38 kB
+dist/assets/gdresource-xMC7jr7x.js                      5.28 kB │ gzip:   1.33 kB
+dist/assets/zig-CMLA9XwU.js                             5.33 kB │ gzip:   1.55 kB
+dist/assets/qml-BdUV3aTS.js                             5.33 kB │ gzip:   1.38 kB
+dist/assets/dax-BkyTk9wS.js                             5.35 kB │ gzip:   2.21 kB
+dist/assets/bicep-CUHmPFLl.js                           5.37 kB │ gzip:   1.14 kB
+dist/assets/xml-DIqSwXR3.js                             5.44 kB │ gzip:   1.25 kB
+dist/assets/awk-BWXHIvNe.js                             5.45 kB │ gzip:   1.37 kB
+dist/assets/jinja-EacCcsub.js                           5.62 kB │ gzip:   1.36 kB
+dist/assets/lean-CewbzKMR.js                            5.77 kB │ gzip:   1.91 kB
+dist/assets/micromark-factory-space-DUywGypS.js         5.79 kB │ gzip:   2.52 kB
+dist/assets/chunk-PWAF6VOD-DAsnyJC1.js                  5.82 kB │ gzip:   2.68 kB
+dist/assets/powerquery-DNMTfnFr.js                      5.89 kB │ gzip:   1.51 kB
+dist/assets/shaderlab-TOUzSsQk.js                       5.91 kB │ gzip:   2.08 kB
+dist/assets/cypher-ClKdZ_lG.js                          5.94 kB │ gzip:   1.71 kB
+dist/assets/coq-CGaSfhwR.js                             6.04 kB │ gzip:   1.95 kB
+dist/assets/diagram-UQ7AKVKN-8f0tCZ3_.js                6.06 kB │ gzip:   2.56 kB
+dist/assets/vb-DOwzaHZ0.js                              6.06 kB │ gzip:   2.32 kB
+dist/assets/moonbit-D9W784E_.js                         6.07 kB │ gzip:   1.70 kB
+dist/assets/pieDiagram-E7YTZNPT-FqLZNQI-.js             6.24 kB │ gzip:   2.60 kB
+dist/assets/min-dark-BSWPekZh.js                        6.28 kB │ gzip:   1.70 kB
+dist/assets/gdshader-CBce3t8t.js                        6.31 kB │ gzip:   1.72 kB
+dist/assets/ara-4CJ0cIlV.js                             6.35 kB │ gzip:   1.80 kB
+dist/assets/verilog-B2gwz-sJ.js                         6.40 kB │ gzip:   1.92 kB
+dist/assets/clojure-DqKBuwfJ.js                         6.40 kB │ gzip:   1.41 kB
+dist/assets/postcss-BXeXVLqQ.js                         6.41 kB │ gzip:   1.90 kB
+dist/assets/toml-CcmNWLt0.js                            6.41 kB │ gzip:   1.28 kB
+dist/assets/proto-DB4EqR-F.js                           6.54 kB │ gzip:   1.41 kB
+dist/assets/chapel-DoMyKQo9.js                          6.62 kB │ gzip:   1.85 kB
+dist/assets/red-CYlAq2b0.js                             6.73 kB │ gzip:   1.70 kB
+dist/assets/talonscript-CohzipZa.js                     6.75 kB │ gzip:   1.48 kB
+dist/assets/r-DUSWWpJH.js                               6.80 kB │ gzip:   1.89 kB
+dist/assets/riscv-Ckw8ddFX.js                           6.90 kB │ gzip:   1.97 kB
+dist/assets/soy-BLlgxDtN.js                             6.92 kB │ gzip:   1.62 kB
+dist/assets/solarized-light-DFPxpIYQ.js                 6.93 kB │ gzip:   1.79 kB
+dist/assets/min-light-DDpmG2fV.js                       6.96 kB │ gzip:   1.88 kB
+dist/assets/scheme-DQCgrYNe.js                          7.16 kB │ gzip:   2.04 kB
+dist/assets/hlsl-Cvrh5tZx.js                            7.25 kB │ gzip:   2.18 kB
+dist/assets/solarized-dark-b97czJOk.js                  7.39 kB │ gzip:   1.89 kB
+dist/assets/qss-Fe1Jh2GI.js                             7.46 kB │ gzip:   2.57 kB
+dist/assets/prisma-DMgNhnYS.js                          7.73 kB │ gzip:   1.48 kB
+dist/assets/systemd-BxMlprV5.js                         7.86 kB │ gzip:   2.54 kB
+dist/assets/jsx-runtime-CIxEorsV.js                     7.89 kB │ gzip:   2.98 kB
+dist/assets/regexp-Omp9DhTb.js                          8.05 kB │ gzip:   1.47 kB
+dist/assets/diagram-S7CK7UJ4-ZkkREA5U.js                8.19 kB │ gzip:   3.65 kB
+dist/assets/monokai-BscAjiQZ.js                         8.24 kB │ gzip:   1.97 kB
+dist/assets/AppSidebar-ChTEKH4I.js                      8.28 kB │ gzip:   3.44 kB
+dist/assets/AgentMarkdownRenderer-SGkJUvej.js           8.33 kB │ gzip:   3.48 kB
+dist/assets/haml-BIlEYn0N.js                            8.33 kB │ gzip:   1.86 kB
+dist/assets/vue-html-BeluIYX0.js                        8.47 kB │ gzip:   1.68 kB
+dist/assets/plsql-DGHpHOYJ.js                           8.50 kB │ gzip:   2.99 kB
+dist/assets/dart-CHZY9Xhz.js                            8.60 kB │ gzip:   1.99 kB
+dist/assets/src-kyLzO7pq.js                             8.75 kB │ gzip:   3.64 kB
+dist/assets/horizon-CE9ld1lL.js                         8.77 kB │ gzip:   1.94 kB
+dist/assets/kotlin-DhhofPvG.js                          8.77 kB │ gzip:   2.12 kB
+dist/assets/horizon-bright-DSNQnXHK.js                  8.78 kB │ gzip:   1.96 kB
+dist/assets/make-Dixweg8N.js                            8.95 kB │ gzip:   1.76 kB
+dist/assets/andromeeda-vGVdxbeo.js                      9.01 kB │ gzip:   2.35 kB
+dist/assets/sas-D84WI1f9.js                             9.06 kB │ gzip:   3.82 kB
+dist/assets/dark-plus-Cs2F2srj.js                       9.09 kB │ gzip:   2.10 kB
+dist/assets/slack-dark-DnToyrRv.js                      9.11 kB │ gzip:   1.96 kB
+dist/assets/smithy-Dgaz7aur.js                          9.12 kB │ gzip:   1.51 kB
+dist/assets/sass-DXrisJhu.js                            9.28 kB │ gzip:   2.48 kB
+dist/assets/plastic-DQwYfKfQ.js                         9.29 kB │ gzip:   1.96 kB
+dist/assets/slack-ochin-B2OO5cIa.js                     9.42 kB │ gzip:   2.08 kB
+dist/assets/jison-imPNup1l.js                           9.69 kB │ gzip:   1.86 kB
+dist/assets/tex-C-omBgW9.js                             9.73 kB │ gzip:   3.10 kB
+dist/assets/chunk-L3NEJ4N5-8K-p2kDl.js                  9.74 kB │ gzip:   2.94 kB
+dist/assets/cmake-Bj61d0ZC.js                           9.84 kB │ gzip:   3.37 kB
+dist/assets/cynefinDiagram-5FMLGOSQ-BcYjTNcn.js         9.91 kB │ gzip:   3.51 kB
+dist/assets/light-plus-DVQuIRkW.js                      9.93 kB │ gzip:   2.27 kB
+dist/assets/hcl-Dh228itO.js                            10.04 kB │ gzip:   1.93 kB
+dist/assets/rst-CDRWRjY1.js                            10.31 kB │ gzip:   2.24 kB
+dist/assets/ProjectsPage-BLEhtZ0C.js                   10.33 kB │ gzip:   3.89 kB
+dist/assets/pkl-ot-7Btpt.js                            10.36 kB │ gzip:   1.37 kB
+dist/assets/chunk-2E4U76K2-Bn8mGBjd.js                 10.39 kB │ gzip:   4.15 kB
+dist/assets/dream-maker-DW3nJb8Q.js                    10.46 kB │ gzip:   2.25 kB
+dist/assets/raku-B3gFvitq.js                           10.46 kB │ gzip:   2.94 kB
+dist/assets/nextflow-groovy-D7IRt6Pp.js                10.52 kB │ gzip:   2.16 kB
+dist/assets/yaml-DTtCYNlS.js                           10.57 kB │ gzip:   2.32 kB
+dist/assets/stateDiagram-D77RDMKH-BftrrPhH.js          10.66 kB │ gzip:   3.75 kB
+dist/assets/diagram-VSXAHHWV-DtmyPZGg.js               10.69 kB │ gzip:   4.13 kB
+dist/assets/just-Boye7RRF.js                           10.84 kB │ gzip:   2.61 kB
+dist/assets/elm-dREJmIFz.js                            10.94 kB │ gzip:   2.09 kB
+dist/assets/dagre-GXQ25YYZ-CRrjEZ6q.js                 10.96 kB │ gzip:   4.14 kB
+dist/assets/github-light-EUqPIrTm.js                   11.18 kB │ gzip:   2.49 kB
+dist/assets/prolog-iXnhIJG7.js                         11.34 kB │ gzip:   3.84 kB
+dist/assets/terraform-DswuEJGm.js                      11.38 kB │ gzip:   2.51 kB
+dist/assets/github-dark-C-LZuMrd.js                    11.40 kB │ gzip:   2.53 kB
+dist/assets/puppet-CDv2pdJW.js                         11.43 kB │ gzip:   2.10 kB
+dist/assets/laserwave-C_8bwKvT.js                      11.49 kB │ gzip:   2.57 kB
+dist/assets/markdownMath-KgNWVuOR.js                   11.89 kB │ gzip:   4.55 kB
+dist/assets/gherkin-DExj1W_8.js                        11.93 kB │ gzip:   5.04 kB
+dist/assets/wasm-ByWQv1Qj.js                           12.00 kB │ gzip:   2.17 kB
+dist/assets/hjson-CxZEssPk.js                          12.04 kB │ gzip:   1.64 kB
+dist/assets/surrealql-BQeetSul.js                      12.06 kB │ gzip:   3.29 kB
+dist/assets/apache-U0d_L8uA.js                         12.44 kB │ gzip:   3.71 kB
+dist/assets/handlebars-Ck2aRoP7.js                     12.48 kB │ gzip:   2.43 kB
+dist/assets/vesper-DdrHHSXu.js                         12.73 kB │ gzip:   1.99 kB
+dist/assets/beancount-C2IN4Vk8.js                      12.84 kB │ gzip:   2.21 kB
+dist/assets/bat-qdxAdBWQ.js                            12.88 kB │ gzip:   3.23 kB
+dist/assets/fish-BJitypiv.js                           13.03 kB │ gzip:   1.73 kB
+dist/assets/nsis-CjNLYCLg.js                           13.11 kB │ gzip:   4.06 kB
+dist/assets/v-DBj4K9d_.js                              13.32 kB │ gzip:   2.75 kB
+dist/assets/vitesse-light-VbXTXTou.js                  13.61 kB │ gzip:   3.03 kB
+dist/assets/aurora-x-CDeNXAV0.js                       13.65 kB │ gzip:   2.28 kB
+dist/assets/vitesse-black-fwtXNY1n.js                  13.67 kB │ gzip:   3.05 kB
+dist/assets/vitesse-dark-BZCL-v6S.js                   13.75 kB │ gzip:   3.06 kB
+dist/assets/pug-Cr6wcthQ.js                            13.84 kB │ gzip:   2.58 kB
+dist/assets/synthwave-84-nFMaYfgc.js                   14.03 kB │ gzip:   2.85 kB
+dist/assets/smalltalk-BHpQb5nM.js                      14.11 kB │ gzip:   2.14 kB
+dist/assets/github-light-default-BXViO-2h.js           14.15 kB │ gzip:   3.02 kB
+dist/assets/github-light-high-contrast-B68TUdTA.js     14.27 kB │ gzip:   3.00 kB
+dist/assets/clarity-CtfBBspg.js                        14.35 kB │ gzip:   2.50 kB
+dist/assets/github-dark-dimmed-Bx1FflLF.js             14.43 kB │ gzip:   3.11 kB
+dist/assets/github-dark-default-DXG-b-1a.js            14.43 kB │ gzip:   3.12 kB
+dist/assets/github-dark-high-contrast-B_tTalzw.js      14.59 kB │ gzip:   3.07 kB
+dist/assets/gnuplot-7GGW24-e.js                        14.77 kB │ gzip:   3.27 kB
+dist/assets/AssetsPage-BdURgCTE.js                     14.83 kB │ gzip:   5.95 kB
+dist/assets/rust-DpiIf5JO.js                           15.16 kB │ gzip:   2.72 kB
+dist/assets/kusto-C7mF5XQf.js                          15.16 kB │ gzip:   3.92 kB
+dist/assets/HomePage-2ze49Gua.js                       15.42 kB │ gzip:   6.01 kB
+dist/assets/nix-IvuFDN5E.js                            15.50 kB │ gzip:   2.47 kB
+dist/assets/actionscript-3-Cs6JJXT5.js                 15.53 kB │ gzip:   2.70 kB
+dist/assets/lua-BjLEUjKY.js                            15.60 kB │ gzip:   3.19 kB
+dist/assets/chunk-SVP7TREG-BtlfJj1W.js                 15.64 kB │ gzip:   4.35 kB
+dist/assets/diagram-VX7I27RA-HfbteVWd.js               15.77 kB │ gzip:   5.52 kB
+dist/assets/abap-CLvhMVsD.js                           15.84 kB │ gzip:   5.93 kB
+dist/assets/matlab-D7qyCx1q.js                         16.07 kB │ gzip:   3.06 kB
+dist/assets/cue-CE9AQfxI.js                            16.19 kB │ gzip:   2.04 kB
+dist/assets/elixir-BqukCY_3.js                         16.26 kB │ gzip:   2.76 kB
+dist/assets/luau-VGWVLoqX.js                           16.29 kB │ gzip:   3.56 kB
+dist/assets/solidity-Bj7E1mRn.js                       16.40 kB │ gzip:   3.14 kB
+dist/assets/odin-B1RWQWA5.js                           16.50 kB │ gzip:   2.92 kB
+dist/assets/ts-tags-BGSBcSl8.js                        16.54 kB │ gzip:   2.06 kB
+dist/assets/mermaid-parser.core-CCFkQUbs.js            16.59 kB │ gzip:   3.93 kB
+dist/assets/agent-Dp__vMgv.js                          16.97 kB │ gzip:   7.13 kB
+dist/assets/kanagawa-wave-BML5mF2J.js                  17.11 kB │ gzip:   2.90 kB
+dist/assets/kanagawa-lotus-BmuOG9ZW.js                 17.11 kB │ gzip:   2.91 kB
+dist/assets/kanagawa-dragon-Bozd7klA.js                17.12 kB │ gzip:   2.92 kB
+dist/assets/ishikawaDiagram-5VMMS53U-BKYOeiWJ.js       17.34 kB │ gzip:   6.54 kB
+dist/assets/move-BYnGhZoM.js                           17.65 kB │ gzip:   3.06 kB
+dist/assets/graphql-CB4jsw2E.js                        18.08 kB │ gzip:   2.54 kB
+dist/assets/liquid-CWC12iap.js                         18.10 kB │ gzip:   3.14 kB
+dist/assets/svelte-BsVANd24.js                         18.25 kB │ gzip:   3.15 kB
+dist/assets/material-theme-Bm3Qr25_.js                 18.61 kB │ gzip:   3.10 kB
+dist/assets/material-theme-darker-2IIEA8gg.js          18.62 kB │ gzip:   3.10 kB
+dist/assets/material-theme-ocean-CHQ94UKr.js           18.62 kB │ gzip:   3.12 kB
+dist/assets/material-theme-lighter-uhdI0v04.js         18.63 kB │ gzip:   3.10 kB
+dist/assets/material-theme-palenight-B5W6OYN7.js       18.63 kB │ gzip:   3.11 kB
+dist/assets/space-separated-tokens-C3oKQwd_.js         18.74 kB │ gzip:   6.31 kB
+dist/assets/gdscript-DYvRD3hg.js                       19.08 kB │ gzip:   3.76 kB
+dist/assets/groovy-CacY0gHj.js                         19.17 kB │ gzip:   3.59 kB
+dist/assets/ayu-dark-DluEY0Gj.js                       20.07 kB │ gzip:   3.93 kB
+dist/assets/ayu-mirage-Bqwy1Gya.js                     20.08 kB │ gzip:   3.91 kB
+dist/assets/glimmer-js-BNF16SLF.js                     20.08 kB │ gzip:   2.94 kB
+dist/assets/glimmer-ts-MztbMuod.js                     20.08 kB │ gzip:   2.93 kB
+dist/assets/mdc-CdqKe8KR.js                            20.08 kB │ gzip:   6.80 kB
+dist/assets/powershell-QtSnmXcu.js                     20.14 kB │ gzip:   4.05 kB
+dist/assets/ayu-light-C3h-C4tm.js                      20.14 kB │ gzip:   3.89 kB
+dist/assets/kanban-definition-UXKFOSKX-C-JccfsH.js     20.34 kB │ gzip:   7.18 kB
+dist/assets/viml-DvXPmvsu.js                           20.35 kB │ gzip:   6.73 kB
+dist/assets/snazzy-light-4G7pJPwS.js                   20.77 kB │ gzip:   3.80 kB
+dist/assets/dracula-BHWKrbxM.js                        21.06 kB │ gzip:   3.99 kB
+dist/assets/dracula-soft-5eyTD99u.js                   21.07 kB │ gzip:   4.02 kB
+dist/assets/wit-DdvCle-K.js                            21.46 kB │ gzip:   2.87 kB
+dist/assets/rose-pine-aMsaMD1D.js                      21.73 kB │ gzip:   3.88 kB
+dist/assets/rose-pine-moon-DO-qXg-I.js                 21.74 kB │ gzip:   3.89 kB
+dist/assets/rose-pine-dawn-8PwUyIlP.js                 21.74 kB │ gzip:   3.89 kB
+dist/assets/nushell--0fT3PI1.js                        21.76 kB │ gzip:   5.44 kB
+dist/assets/nim-BxJ0Umma.js                            22.45 kB │ gzip:   3.15 kB
+dist/assets/common-lisp-Cv5bFMCO.js                    22.57 kB │ gzip:   6.07 kB
+dist/assets/gruvbox-dark-hard-C820rvS2.js              22.63 kB │ gzip:   4.15 kB
+dist/assets/gruvbox-dark-soft-MrdJrrXF.js              22.63 kB │ gzip:   4.15 kB
+dist/assets/gruvbox-light-hard-BC_s9l72.js             22.63 kB │ gzip:   4.16 kB
+dist/assets/gruvbox-light-soft-BSMLrYjP.js             22.63 kB │ gzip:   4.16 kB
+dist/assets/gruvbox-dark-medium-BPjhmG05.js            22.63 kB │ gzip:   4.15 kB
+dist/assets/gruvbox-light-medium-BAWPOn9u.js           22.63 kB │ gzip:   4.16 kB
+dist/assets/sankeyDiagram-P5KCCOFB-PjwYX_vK.js         22.84 kB │ gzip:   8.27 kB
+dist/assets/journeyDiagram-3NMN7TZE-Ctdggmz3.js        23.24 kB │ gzip:   8.19 kB
+dist/assets/mindmap-definition-YA3MSWOX-BaWLkYwn.js    23.48 kB │ gzip:   8.03 kB
+dist/assets/cadence-CQ2zXKGN.js                        23.66 kB │ gzip:   3.65 kB
+dist/assets/sql-BhY586nv.js                            23.73 kB │ gzip:   7.57 kB
+dist/assets/graphlib-B8gBHxth.js                       23.90 kB │ gzip:   8.31 kB
+dist/assets/astro-Cod8X5aH.js                          24.02 kB │ gzip:   7.60 kB
+dist/assets/apl-CjaJDXMt.js                            24.02 kB │ gzip:   4.17 kB
+dist/assets/templ-HzS3ie9W.js                          24.06 kB │ gzip:   5.41 kB
+dist/assets/angular-html-BZIJuIjc.js                   24.24 kB │ gzip:   3.99 kB
+dist/assets/vhdl-BroJfC0k.js                           24.25 kB │ gzip:   3.86 kB
+dist/assets/purescript-9MfHhQsQ.js                     24.67 kB │ gzip:   3.24 kB
+dist/assets/twig-qJmSpYeo.js                           24.85 kB │ gzip:   4.00 kB
+dist/assets/vue-mbSI0jRw.js                            24.96 kB │ gzip:   3.03 kB
+dist/assets/wardleyDiagram-VM6X3IG4-C6KnOTty.js        25.22 kB │ gzip:   6.55 kB
+dist/assets/one-light-D7Lr4KcI.js                      25.29 kB │ gzip:   3.63 kB
+dist/assets/fsharp-D13ZGOAj.js                         25.30 kB │ gzip:   4.12 kB
+dist/assets/marko-CPR5rmtd.js                          25.72 kB │ gzip:   3.66 kB
+dist/assets/night-owl-light-eJ-hLW7d.js                25.89 kB │ gzip:   4.23 kB
+dist/assets/c3-D0apG41V.js                             26.37 kB │ gzip:   3.97 kB
+dist/assets/system-verilog-Dh5ihWbf.js                 26.54 kB │ gzip:   4.85 kB
+dist/assets/nord-Cb4Vim4T.js                           26.72 kB │ gzip:   4.35 kB
+dist/assets/codeql-oeQT6MSM.js                         26.87 kB │ gzip:   3.79 kB
+dist/assets/typespec-BGhR2SqG.js                       26.99 kB │ gzip:   2.75 kB
+dist/assets/rough.esm-CSKSodPl.js                      27.10 kB │ gzip:   8.85 kB
+dist/assets/scss-BxECZGo_.js                           27.26 kB │ gzip:   4.23 kB
+dist/assets/java-CGc3VwQr.js                           27.28 kB │ gzip:   4.31 kB
+dist/assets/coffee-CThvmt4R.js                         27.42 kB │ gzip:   6.35 kB
+dist/assets/razor-B5ds0ZTl.js                          27.45 kB │ gzip:   3.54 kB
+dist/assets/scala-BiFt_7mu.js                          28.88 kB │ gzip:   3.93 kB
+dist/assets/night-owl-DhmEMT88.js                      28.91 kB │ gzip:   5.14 kB
+dist/assets/gitGraphDiagram-WWUBYQGX-DnKLMBNf.js       29.04 kB │ gzip:   8.56 kB
+dist/assets/crystal-ChwPeaRt.js                        29.41 kB │ gzip:   4.44 kB
+dist/assets/applescript-CCn79oCD.js                    29.56 kB │ gzip:   5.94 kB
+dist/assets/timeline-definition-24CTP7MA-BhdtU2kO.js   30.45 kB │ gzip:   9.97 kB
+dist/assets/erDiagram-RLTQ6QDP-D9StUUad.js             30.75 kB │ gzip:  10.58 kB
+dist/assets/chunk-75Z2AOVW-CAKJ-4NW.js                 30.91 kB │ gzip:   8.54 kB
+dist/assets/requirementDiagram-BXWQKSXE-B0ArpuXh.js    31.03 kB │ gzip:   9.78 kB
+dist/assets/stylus-B6D30XZt.js                         31.06 kB │ gzip:   8.01 kB
+dist/assets/julia-C6LMQYTh.js                          31.22 kB │ gzip:   4.34 kB
+dist/assets/workspace-CAkCSHda.js                      31.32 kB │ gzip:  10.62 kB
+dist/assets/ahk-DwADkxyd.js                            31.44 kB │ gzip:   7.83 kB
+dist/assets/poimandres-DRFjx7u4.js                     33.49 kB │ gzip:   5.49 kB
+dist/assets/quadrantDiagram-AXDQQJYC-JfWF_30P.js       33.58 kB │ gzip:   9.76 kB
+dist/assets/bsl-_VjlB9mv.js                            33.94 kB │ gzip:   8.35 kB
+dist/assets/nginx-Bhc82uuv.js                          35.35 kB │ gzip:   4.45 kB
+dist/assets/houston-CsvMBhTu.js                        35.41 kB │ gzip:   5.76 kB
+dist/assets/tokyo-night-oM2G3aXe.js                    35.66 kB │ gzip:   6.22 kB
+dist/assets/haxe-C8oCnwJJ.js                           35.94 kB │ gzip:   6.00 kB
+dist/assets/dist-C1qZerEE.js                           35.95 kB │ gzip:  12.01 kB
+dist/assets/org-B-Fm8-Yq.js                            36.26 kB │ gzip:   3.67 kB
+dist/assets/chunk-OSK3NFVY-DnToycnv.js                 36.49 kB │ gzip:   7.96 kB
+dist/assets/dagre-BJJUWK_n.js                          36.85 kB │ gzip:  13.22 kB
+dist/assets/one-dark-pro-C6YyR8OD.js                   37.05 kB │ gzip:   6.10 kB
+dist/assets/erlang-Cphh6RMH.js                         37.47 kB │ gzip:   4.36 kB
+dist/assets/chunk-IMKFNOWR-Dn1xcJHt.js                 37.74 kB │ gzip:  12.29 kB
+dist/assets/bird2-CYIUgYqB.js                          38.67 kB │ gzip:   8.49 kB
+dist/assets/cobol-D0SkQ4RW.js                          39.07 kB │ gzip:  10.89 kB
+dist/assets/asm-Cmm7eHzH.js                            40.71 kB │ gzip:   8.16 kB
+dist/assets/vennDiagram-4TSXK5OY-GjyKhEpX.js           41.22 kB │ gzip:  15.13 kB
+dist/assets/haskell-D8IpX4py.js                        41.48 kB │ gzip:   6.41 kB
+dist/assets/blockDiagram-I7D4REHJ-hfnYxOGw.js          41.49 kB │ gzip:  13.35 kB
+dist/assets/shellscript-DwcUjJBL.js                    41.54 kB │ gzip:   6.13 kB
+dist/assets/perl-Bhbqtac8.js                           43.14 kB │ gzip:   4.64 kB
+dist/assets/d-qD-0Kul2.js                              43.78 kB │ gzip:   8.43 kB
+dist/assets/xychartDiagram-S5SC5T6Z-AUdXO3uC.js        44.18 kB │ gzip:  12.23 kB
+dist/assets/ahk2-_6rzW9BS.js                           45.05 kB │ gzip:   9.87 kB
+dist/assets/chunk-LNGE3PJU-DNNNwF8Y.js                 46.38 kB │ gzip:  15.54 kB
+dist/assets/ruby-DLIizYEI.js                           46.63 kB │ gzip:   5.71 kB
+dist/assets/go-rLFTqkRN.js                             46.81 kB │ gzip:   5.14 kB
+dist/assets/src-BAYS5Rki.js                            47.13 kB │ gzip:  15.91 kB
+dist/assets/apex-KFGFyKwG.js                           47.88 kB │ gzip:   6.85 kB
+dist/assets/ada-X3Y2mlq2.js                            48.07 kB │ gzip:   5.96 kB
+dist/assets/chunk-TICWLB2K-Bt8o82fx.js                 48.87 kB │ gzip:  15.77 kB
+dist/assets/imba-DsUTQ-LC.js                           49.92 kB │ gzip:   9.47 kB
+dist/assets/catppuccin-mocha-DjuaAJKi.js               50.84 kB │ gzip:   8.47 kB
+dist/assets/catppuccin-latte-CtsyrtPq.js               50.84 kB │ gzip:   8.48 kB
+dist/assets/catppuccin-frappe-C9Q5zVZY.js              50.85 kB │ gzip:   8.48 kB
+dist/assets/catppuccin-macchiato-R8nAf1vR.js           50.85 kB │ gzip:   8.48 kB
+dist/assets/chunk-GMAD6QVW-DJTuCjmf.js                 51.90 kB │ gzip:  16.71 kB
+dist/assets/css-BDXWrC42.js                            53.43 kB │ gzip:  12.53 kB
+dist/assets/everforest-dark-sB-x3p7T.js                53.74 kB │ gzip:   8.37 kB
+dist/assets/everforest-light-Df2xbC6M.js               53.74 kB │ gzip:   8.36 kB
+dist/assets/mermaid-BxpfTIzt.js                        54.80 kB │ gzip:   4.79 kB
+dist/assets/wikitext-ClFFjSW2.js                       55.87 kB │ gzip:   4.81 kB
+dist/assets/stata-9uJHUC7l.js                          56.99 kB │ gzip:  12.39 kB
+dist/assets/html-A0caJ24Z.js                           57.32 kB │ gzip:  11.78 kB
+dist/assets/ballerina-B7ZEbQpA.js                      58.68 kB │ gzip:   8.10 kB
+dist/assets/markdown-BYOwaDjH.js                       59.32 kB │ gzip:   5.66 kB
+dist/assets/chunk-SHT3W25Y-CO4uxoWb.js                 61.31 kB │ gzip:  19.85 kB
+dist/assets/ocaml-O90oeIOV.js                          62.44 kB │ gzip:   5.04 kB
+dist/assets/c4Diagram-7LVT6UL2-BcTVUoVx.js             64.79 kB │ gzip:  18.56 kB
+dist/assets/ganttDiagram-EL5Y4UJY-Dnfav42n.js          69.46 kB │ gzip:  22.82 kB
+dist/assets/mojo-fg40_ntQ.js                           69.51 kB │ gzip:   9.20 kB
+dist/assets/python-gzcpVVnB.js                         69.94 kB │ gzip:   9.09 kB
+dist/assets/c-Wt1voDr2.js                              72.17 kB │ gzip:  10.55 kB
+dist/assets/latex-DiQ7WzeR.js                          73.24 kB │ gzip:   6.78 kB
+dist/assets/vyper-CgoNMtux.js                          74.64 kB │ gzip:  10.69 kB
+dist/assets/hack-BvbPGNuV.js                           81.07 kB │ gzip:  26.45 kB
+dist/assets/cose-bilkent-JH36ORCC-BemCJ59W.js          81.47 kB │ gzip:  21.60 kB
+dist/assets/swift-CyEgAFGc.js                          87.22 kB │ gzip:  14.79 kB
+dist/assets/fortran-free-form-CYNrtFtB.js              88.96 kB │ gzip:  11.18 kB
+dist/assets/csharp-dmMxLVLW.js                         91.43 kB │ gzip:  10.79 kB
+dist/assets/racket-DcIDlBhZ.js                         92.38 kB │ gzip:  15.07 kB
+dist/assets/assets-BE-uoG5N.js                         95.84 kB │ gzip:  30.36 kB
+dist/assets/less-DVTAwKKz.js                           97.62 kB │ gzip:  14.84 kB
+dist/assets/chunk-4HAMMTFA-BEA16qs-.js                104.88 kB │ gzip:  25.63 kB
+dist/assets/blade-Ke099u_R.js                         104.97 kB │ gzip:  28.30 kB
+dist/assets/objective-c-D1A_Heim.js                   105.40 kB │ gzip:  23.63 kB
+dist/assets/swimlanes-42K2YHIH-Dq-OiH7Z.js            111.16 kB │ gzip:  38.02 kB
+dist/assets/php-vNL9npGH.js                           113.12 kB │ gzip:  28.84 kB
+dist/assets/sequenceDiagram-WJ2MYXX4-Czth3N5Z.js      115.89 kB │ gzip:  30.63 kB
+dist/assets/asciidoc-SCjQUq34.js                      136.04 kB │ gzip:   9.45 kB
+dist/assets/mdx-DQZ5AkYe.js                           136.10 kB │ gzip:  23.54 kB
+dist/assets/architectureDiagram-5GKGNRK7-DDlxrb6_.js  149.36 kB │ gzip:  41.22 kB
+dist/assets/typst-CBIbE_UF.js                         163.48 kB │ gzip:  10.96 kB
+dist/assets/objective-cpp-BsSzOQcm.js                 171.96 kB │ gzip:  30.98 kB
+dist/assets/javascript-CUt1pgmJ.js                    174.89 kB │ gzip:  16.68 kB
+dist/assets/tsx-5Eka4NBX.js                           175.60 kB │ gzip:  16.68 kB
+dist/assets/jsx-CY6oMTks.js                           177.85 kB │ gzip:  16.77 kB
+dist/assets/typescript-DOu2WMV5.js                    181.14 kB │ gzip:  16.29 kB
+dist/assets/angular-ts-CSjWfjSL.js                    183.73 kB │ gzip:  16.78 kB
+dist/assets/vue-vine-OoWqonP1.js                      190.05 kB │ gzip:  18.07 kB
+dist/assets/markdownCode-BgE542Ze.js                  192.22 kB │ gzip:  60.87 kB
+dist/assets/chunk-DU6HZSFF-DrvWKSfj.js                237.08 kB │ gzip:  38.81 kB
+dist/assets/katex-LsK-_T9i.js                         259.24 kB │ gzip:  77.49 kB
+dist/assets/wolfram-DLL8P-h_.js                       262.38 kB │ gzip:  77.63 kB
+dist/assets/WorkspacePage-B-ypxHcX.js                 319.89 kB │ gzip: 103.98 kB
+dist/assets/cytoscape.esm-C6l5MXxu.js                 435.47 kB │ gzip: 137.92 kB
+dist/assets/chunk-D32TOXHM-B5rhMeNk.js                475.76 kB │ gzip: 145.45 kB
+dist/assets/wasm-BnjxR4X6.js                          622.32 kB │ gzip: 232.09 kB
+dist/assets/chunk-FOHPRMQF-CyTuVbu3.js                662.71 kB │ gzip: 143.24 kB
+dist/assets/cpp-OW3-dqfU.js                           785.54 kB │ gzip:  58.27 kB
+dist/assets/emacs-lisp-DR2vtWaj.js                    790.01 kB │ gzip: 200.31 kB
+dist/assets/index-BsLX71QI.js                         897.83 kB │ gzip: 256.85 kB
+
+✓ built in 843ms
+[plugin builtin:vite-reporter]
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+/Library/Developer/CommandLineTools/usr/bin/make test-frontend
+cd frontend && node --test --experimental-transform-types "scripts/*.test.ts" "scripts/*.test.mjs"
+(node:34610) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ A8 menu model exposes six actions pointing at final /account URLs (1.426625ms)
+✔ A8 dual-slot CSS hides the inactive slot with display:none (0.236125ms)
+✔ A18 auth generation change clears account avatar media cache (26.0615ms)
+✔ A4b grapheme fallback keeps emoji sequences intact (7.189334ms)
+✔ A10 account settings page no longer embeds security or export cards (0.284083ms)
+✔ final /account/* routes are mounted without placeholder dead links (0.383416ms)
+✔ hardening A1/A2: fixed replace redirects discard search/hash via pathname-only from (0.154ms)
+✔ hardening A3/A13: navItems drop settings; floating theme-toggle removed (0.386417ms)
+✔ hardening A4: AccountMenu cycles ArrowUp/Down/Home/End via nextMenuIndex (0.137542ms)
+✔ STEP-000b seams: layout forwards ShellContext; theme via AccountCenterContext (0.179625ms)
+✔ A1–A4 body builders emit only owned fields (0.451917ms)
+✔ A5 dirty section keeps draft and gets server-updated banner when peer saves (0.608125ms)
+✔ A5b failed PATCH keeps section draft/error and does not pollute snapshot (0.158125ms)
+✔ A6 stale blocks submit; refresh hydrates only clean sections (0.128167ms)
+✔ A5c settingsSaveQueue serializes patches and RMW double keeps both fields (35.394875ms)
+✔ A11 account settings sections expose labelledby, alerts, and disabled fieldsets (0.251625ms)
+✔ A7 Telegram bind uses button + openTelegramDeepLink without href/storage (0.13025ms)
+✔ A8/A13 appearance uses AccountCenterContext; od-crm-theme single write in AppShell (0.057834ms)
+✔ CHK-008 account settings does not own security/export final surface (0.040625ms)
+✔ STEP-000b baseline: security surface, shared form, settings stripped, test harness registered (0.080625ms)
+✔ CHK-001 identity card consumes AccountCenterContext and static verified label (0.056333ms)
+✔ CHK-002 changePassword keeps requestWithoutAuthRetry; wrong password never refreshes (0.637458ms)
+✔ CHK-003 password-changed notice survives RequireAuth race via queue (0.059958ms)
+✔ CHK-004/A6 export copy matches schema v3 metadata-only avatar contract (0.034625ms)
+✔ CHK-005/CHK-006 final IA boundary vocabulary without re-adding settings security card (0.045166ms)
+✔ CHK-008/A12 legacy paths redirect; password page keeps security footer (0.02725ms)
+✔ hardening A12: HTTP /settings API retained after old page delete (0.034375ms)
+✔ CHK-009 privacy-security does not claim device center or universal security API (0.054083ms)
+(node:34611) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ optional renderers follow syntax, including nested fences (10.369458ms)
+✔ diagram fence closure uses original syntax, never run completion (0.277125ms)
+✔ closing markers inside code are not container fences (0.271ms)
+(node:34612) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ media links use the path extension, preserving signed queries and fragments (0.488542ms)
+✔ embeds reject non-web schemes, credentials and missing destinations (0.092875ms)
+(node:34613) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ ApiError preserves generated typed details (21.11225ms)
+✔ password recovery clients follow public/protected transport boundaries (0.7055ms)
+✔ wrong current password never refreshes and replays the credential mutation (0.205ms)
+✔ order client sends schedulable_at and Idempotency-Key (0.426458ms)
+✔ schedule client sends range and per-attempt key (0.463292ms)
+✔ schedule client reads one account-scoped slot for deep-link location (0.205834ms)
+✔ a protected 401 refreshes once and becomes anonymous when refresh also fails (0.352291ms)
+✔ content column centers horizontally instead of hugging the left edge on wide viewports (0.854417ms)
+✔ content-wide variant fills the main area with a bounded ceiling (0.120959ms)
+(node:34616) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ startup restore moves restoring to authenticated through refresh then /me without storage (22.569583ms)
+✔ failed startup refresh becomes anonymous and keeps access out of storage (0.149292ms)
+✔ JSON, multipart, avatar Blob, and export share one refresh flight and replay once (14.531792ms)
+✔ a late 401 from the old access generation replays without opening a second refresh flight (0.473083ms)
+✔ a late account-A 401 cannot replay its payload with account-B credentials (0.43ms)
+✔ logout invalidates an in-flight refresh before it can restore authentication (2.064125ms)
+✔ a late auth action cannot overwrite the newer session action (44.109667ms)
+✔ network, 403, 429, and 5xx failures never start refresh (0.367375ms)
+✔ a replayed 401 does not refresh twice and returns to anonymous (0.197375ms)
+✔ verification action token is consumed from fragment and removed before use (0.85525ms)
+✔ auth routes and pages are mounted without the legacy storage token contract (3.392833ms)
+✔ customer profile flex growth excludes the avatar (0.48425ms)
+(node:34618) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ 悬停卡默认贴在事项右侧 (0.584916ms)
+✔ 右侧放不下时翻到左侧 (0.063333ms)
+✔ 两侧都放不下时对齐事项左缘并夹回视口内 (0.06625ms)
+✔ 贴近视口底部时上移，不越界 (0.047334ms)
+✔ 目标已完整可见时不滚动 (0.0615ms)
+✔ 目标在下方时滚到容器中间 (0.043ms)
+✔ 滚动位置夹在 [0, scrollHeight - viewportHeight] (0.048916ms)
+✔ 缓动函数覆盖端点并且单调递增 (0.073917ms)
+✔ 内容短于容器时不产生负偏移 (0.050333ms)
+(node:34619) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ events rebuild the list the snapshot would return (0.737417ms)
+✔ an untouched block keeps its identity so only the changed one re-renders (0.103542ms)
+✔ a gap, a skipped revision or an unknown block asks for the snapshot (0.080042ms)
+✔ run events move the state; a late snapshot fills in the rest (0.109625ms)
+✔ adjacent process blocks form one segment; a conclusion block ends it (0.129333ms)
+✔ a folded segment reports its own time, operations and failures (0.45125ms)
+✔ only what this page understands is rendered as itself (0.085916ms)
+✔ the status row names the step in progress (0.09275ms)
+(node:34620) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ uncertain submissions retain the exact operation and bytes across refresh (0.836459ms)
+✔ legacy records become a chain that replays the original bytes (0.247416ms)
+✔ a chain carries the new conversation and grant into the later steps (27.454917ms)
+✔ an uncertain step keeps the chain; a retry replays the same identities (0.990708ms)
+✔ a refusal clears the chain and a stale owner touches nothing (0.987958ms)
+✔ home refusals name the reason (0.171042ms)
+✔ terminal execution and unresolved money remain separate (0.133916ms)
+✔ returning to a conversation picks up the model its last run used (0.328292ms)
+✔ material references preserve order, immutable revisions and retry identity (44.87575ms)
+✔ a refused request says what to do next (0.144833ms)
+✔ the first-send notice is remembered per account and per notice version (0.1485ms)
+✔ the notice version moves together with the backend egress policy version (0.220708ms)
+(node:34621) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ shape shares the server 1.1 boundary, with no classification for missing dimensions (0.310042ms)
+✔ colors accept exactly six hex digits and normalize casing (0.114209ms)
+(node:34628) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ paste distinguishes a complete safe URL from prose, markup and unsafe schemes (0.994ms)
+✔ creation freezes destination and preserves text without title deduplication (1.094167ms)
+✔ trash countdown uses each asset deadline, rounds up and does not invent expired days (1.1585ms)
+✔ import bounds match content validation and reject credentials in URLs (29.922833ms)
+✔ link authority validation preserves @ in query and fragment (0.218667ms)
+(node:34629) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ selection follows visible order, preserves range anchor and toggles modifiers (1.249458ms)
+✔ marquee intersects cards and additive selection retains its base (0.105292ms)
+✔ rating halves, keyboard bounds and clearing use nullable ratings (0.061875ms)
+✔ placement uses world bounds of nested nodes and origin for empty canvas (0.104375ms)
+(node:34633) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ unknown values fall back to defaults and a group forces the all view (0.762292ms)
+✔ the address only carries non-default conditions and round-trips (0.114917ms)
+✔ changing view or group clears filters but keeps the sort (0.083708ms)
+✔ the first page asks for facets, later pages only carry the cursor (0.210958ms)
+✔ display preferences survive bad data and blocked storage (0.175417ms)
+✔ groups nest two levels and tags list by category with uncategorized last (0.159208ms)
+✔ tag tree keeps empty categories and builds tag commands (0.793125ms)
+✔ card helpers format durations, sizes and domains (0.196709ms)
+✔ audio bars are decided by the asset id (0.164292ms)
+✔ appearance filters round-trip through URL, bind pagination and clear with other filters (0.20675ms)
+(node:34635) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ SSE decodes fragmented delimiters and ignores heartbeats/unknown/incomplete events (4.055375ms)
+✔ SSE reconnects after EOF and resyncs instead of assuming event replay (1143.40475ms)
+✔ SSE stops retrying terminal auth errors and revocation events (0.893334ms)
+✔ SSE cancels an active connection when the canvas unmounts (0.627708ms)
+(node:34636) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ group movement keeps relative child positions and fixed references (0.729375ms)
+✔ references reject cycles, duplicate edges, group endpoints and wrong handles (0.134167ms)
+✔ performance fixture is deterministic and has no dangling endpoints (0.946125ms)
+(node:34637) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ zoom range is 10%–400% (4.9675ms)
+✔ bounds use roots only and include the 28px label (0.490083ms)
+✔ fit centres in the visible area and clamps zoom to 20%–110% (0.292958ms)
+✔ panel insets follow the open drawers (0.197875ms)
+(node:34638) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ expired access refreshes once and resends the original body and operation (11.311375ms)
+✔ account switch during refresh never resends an old account operation (1.141041ms)
+✔ receipt reads also recover expired credentials (0.548083ms)
+✔ same revision authorization projection is accepted; wrong canvas is never writable (0.155042ms)
+(node:34640) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ an import batch and its late bindings undo as one step (0.647375ms)
+✔ the group inverse pops the whole batch and becomes the redo target (0.08125ms)
+✔ a group with a single change undoes by change id (0.051625ms)
+✔ a group split by another edit falls back to per-change undo (0.053167ms)
+✔ import plan keeps order, explains each rejection and the batch limit (0.324458ms)
+✔ nodes line up 330 apart, the first centred on the drop point (0.068375ms)
+✔ titles drop only the last extension (0.08875ms)
+(node:34641) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ 并发预取只发一次请求，读到后不再请求 (0.687959ms)
+✔ 会话一变立即清空，旧会话的结果和失败都不写入 (0.192958ms)
+✔ 刷新失败保留旧目录；没有旧目录时才报错 (0.122ms)
+✔ 回到前台只在目录过期时重读 (0.103542ms)
+✔ 节点不可用原因按版本、归档、账号、类型的顺序判断 (0.095459ms)
+(node:34642) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ 生成必须固定保存后的草稿revision与点击时作品读集 (0.608ms)
+✔ 草稿参数与引用拷贝，编辑不修改服务端快照 (0.109041ms)
+✔ 整数不允许悄悄丢精度，零和false不会变为默认值 (0.083458ms)
+✔ 明确的生成配置冲突可解除队列，失联后的原操作仍保持身份 (64.602792ms)
+(node:34643) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ attachments cap at six and at what the catalog allows (0.326ms)
+✔ duplicates are skipped; a batch past the cap is refused whole (0.382792ms)
+✔ only finished attachments are kept for refresh (0.08075ms)
+✔ the project is named after the first line, cut at 30 characters (0.07275ms)
+✔ the home record is read back strictly (0.159917ms)
+✔ four recoveries after a refresh (30.758791ms)
+✔ the home chain matches the canvas assistant and keeps a draft (0.375ms)
+✔ upload digests survive storage; older attachments without digests still load (0.082583ms)
+(node:34644) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ 切换比例保持中心并取图内最大选区 (0.680709ms)
+✔ 移动选区不越出图片 (0.066375ms)
+✔ 拖边角：自由比例对边不动，固定比例保持比例且限制在图内 (0.119833ms)
+✔ 取整后的框在图内、至少 1 像素，整图判定按取整结果 (0.089375ms)
+✔ 编辑入口：不适用时隐藏，适用但受限时禁用并说明 (0.175042ms)
+✔ 应用：编码完成后同步采用一次 (10.762083ms)
+✔ 未减小与编码失败：不采用 (0.333417ms)
+✔ 等待中取消：丢弃候选，不发采用 (21.020125ms)
+✔ 采用响应丢失：只查原候选并原样重发，不重新编码 (0.274333ms)
+✔ 采用被明确拒绝：说明原因并释放候选；元数据冲突换新数据版本重试 (0.232166ms)
+✔ 节点上已有未完成的编辑：带出候选标识，交给界面选择放弃 (0.415083ms)
+(node:34645) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ files are classified by enabled formats and per-kind size limits (0.802166ms)
+✔ failure codes map to actionable messages and ready uploads have none (0.116334ms)
+✔ media payloads keep captions separate from text and link bodies (0.081916ms)
+✔ rendition choice prefers display for viewing and original when absent (0.069167ms)
+✔ node uploads reject other media kinds and metadata conflicts before uploading (0.220167ms)
+✔ common MIME aliases, uppercase extensions and missing MIME stay supported (0.090083ms)
+✔ node file pickers expose only server-enabled formats of the selected kind (0.072542ms)
+(node:34646) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ label meta follows PRD CV-10 (0.41475ms)
+✔ default sizes match the server table (0.313209ms)
+✔ copy title adds suffix within 200 characters (0.099875ms)
+✔ resize limits and media height fallback (V6-004) (0.145833ms)
+(node:34649) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ blank or unchanged names keep the original (0.545709ms)
+✔ a new name is submitted trimmed (0.055583ms)
+✔ the limit counts code points like the server (0.069959ms)
+(node:34650) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ persist before dispatch, unknown replay keeps exact operation and body (10.408083ms)
+✔ a recovered receipt never dispatches again and clears only the submitted draft (2.252208ms)
+✔ conflict blocks subsequent commands and keeps draft; only explicit dismissal releases queue (0.428375ms)
+✔ storage failure prevents any dispatch (0.142375ms)
+✔ access denied during recovery cannot erase an uncertain operation (0.1945ms)
+✔ SPA teardown stops an old response from overwriting the next editor journal (0.220083ms)
+✔ completion returns the committed result for creation and recovered navigation (6.279ms)
+✔ drops during an in-flight move merge into one following command with the latest targets (22.916458ms)
+✔ an unchanged drop stages nothing; dragging back after a receipt is a real move (2.712292ms)
+✔ a group drop moves only selection roots (0.548291ms)
+✔ a move of a node that only exists locally follows its creation in order (2.570375ms)
+✔ an unsynced drag from a journal written before moves joined the outbox is replayed (2.200875ms)
+✔ normal graph reads exclude unrelated permanent identities (1.43425ms)
+✔ copy and remove read only the versions owned by their selected subtree (0.203042ms)
+✔ a staged edit paints at once, sends in order and stays painted until the snapshot includes it (1.86775ms)
+✔ the read set of an edit comes from the state before it, including earlier receipts (1.436708ms)
+✔ layout bursts merge into one command; delete then undo cancels locally without a request (2.465917ms)
+✔ a rejected edit and everything after it on that canvas are withdrawn from the projection (1.028292ms)
+✔ an unsent intent survives reload and is sent by the next session (0.625042ms)
+✔ media nodes from assets take the picture aspect ratio at the default width (0.098792ms)
+✔ group preview preserves world positions and ungroup restores the layout before any request (0.374292ms)
+✔ duplicate preview copies the subtree and internal references immediately, then remaps later moves (1.218833ms)
+✔ redo cancellation cannot drop an unrelated pending action; undo cannot cancel an undo (0.121542ms)
+✔ group receipt remaps an immediate ungroup and rejects the entire dependent preview on conflict (0.362625ms)
+✔ successive copies resolve nested provisional identities even when receipts share a render (0.057208ms)
+✔ duplicate without optional offsets preserves coordinates instead of producing NaN (0.055584ms)
+✔ receipt handoff is durable before the original operation is cleared, including lookup recovery (0.170583ms)
+✔ group restore capacity refusal is definitive even after unknown dispatch (0.132958ms)
+(node:34651) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ no edits yet shows nothing; never claims saved before a receipt (0.400458ms)
+✔ other canvases and non-canvas requests do not affect this canvas (0.060542ms)
+✔ offline keeps local edits and says so; idle stays quiet (0.055291ms)
+✔ conflicts and refusals never read as saved (0.055833ms)
+✔ queue marks revision conflicts on the rejected job only (27.482208ms)
+(node:34652) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ viewer zoom preserves the pointer anchor and clamps scale and pan to visible bounds (0.582708ms)
+✔ viewer distinguishes mouse wheel / pinch from trackpad panning using the prototype rule (0.090833ms)
+(node:34653) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ grapheme fallback keeps emoji sequences intact (23.351792ms)
+✔ media cache deduplicates consumers and revokes only after the final release (27.412666ms)
+✔ revision and auth generation changes do not reuse prior media (2.000584ms)
+✔ picker sends the caller status matrix and removes merged candidates (1.355083ms)
+✔ picker continues after a raw page is entirely excluded (1.136917ms)
+✔ picker keeps a selected non-active customer pinned outside current candidates (0.092541ms)
+(node:34654) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ customer total spend displays cents as a precise CNY amount (26.677125ms)
+✔ dashboard v2 exposes the three-layer structural blocks (0.662959ms)
+✔ waterfall segments and matrix types carry distinct tone classes (0.281459ms)
+✔ dashboard v2 narrows within the 430px mobile breakpoint (0.155458ms)
+✔ dashboard v2 uses the wide content modifier and pairs list cards in two-col rows (0.232875ms)
+✔ customer health card pairs with the channel matrix and discloses its criteria (2.4225ms)
+✔ receivable sheet queries the delivered-unsettled scope matching the card count (0.232875ms)
+✔ schedule utilization renders the backend percent value directly (0.63375ms)
+(node:34657) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ formatYuan formats cents into zh-CN yuan display (2.112667ms)
+✔ channel and delivery stage labels cover contract enums (0.056458ms)
+✔ localMinutesOfInstant converts instant minutes in account timezone (0.549ms)
+✔ focus model reports in-progress countdown for today shoot (0.464667ms)
+✔ focus model reports later date for non-today next shoot (0.314333ms)
+✔ focus model falls back to empty state without next shoot (0.05225ms)
+✔ timeline model orders items and includes server openings (0.62225ms)
+✔ timeline model expands bounds beyond working window for early slots (0.202333ms)
+✔ waterfall model builds segments, trend and kpis from contract data (0.359458ms)
+✔ waterfall model handles zero-previous trend and missing derived metrics (0.096417ms)
+✔ delivery rows map stage labels, overdue copy and gauge progress (0.211083ms)
+✔ matrix model maps labels, per-type segments and grand total percent (0.125834ms)
+✔ upcomingLocalDates steps date-only days without timezone drift (0.046625ms)
+✔ computeUpcomingOpenings reuses calendar model openings for future days (24.422083ms)
+✔ v2HealthTierOrder exposes the five cohort tiers in display order (11.904375ms)
+✔ v2HealthTierHint reflects the effective thresholds instead of hardcoded defaults (0.176958ms)
+✔ v2HealthRows renders personal-baseline rows with dual money columns (3.826958ms)
+✔ v2HealthRows marks fallback-baseline rows and renders new-customer rows without ratio (3.040083ms)
+✔ v2HealthCounts derives cohort bar shares from tier counts (0.117833ms)
+✔ healthCopyText speaks the tier language with concrete facts (0.08925ms)
+(node:34659) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ fetchDataExport sends Bearer and returns a complete JSON Blob with the exact server filename (39.448125ms)
+✔ fetchDataExport accepts only application/json base media type with legal parameters (2.719708ms)
+✔ fetchDataExport accepts only the whole fixed filename and otherwise uses a safe UTC fallback (4.133875ms)
+✔ fetchDataExport reuses ApiError for 500 and 401 responses (0.704791ms)
+✔ body/blob rejection returns no result and download collaboration creates no object URL (0.632584ms)
+✔ download collaboration triggers once and always releases its object URL (0.997875ms)
+✔ DataExportCard exposes loading, retry, 401, PII, avatar, and persistence-safe contracts (2.150791ms)
+✔ DataExportCard relies on native button keyboard behavior and shared mobile-safe styles (0.583708ms)
+(node:34661) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ openings golden fixtures 与当前 TS 实现逐字段一致（DEC-9） (127.188209ms)
+(node:34662) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ hydratePaymentDraft seeds yuan inputs and dates from the order (0.805333ms)
+✔ hydratePaymentDraft tolerates missing payment facts (0.066875ms)
+✔ yuanInputToCents converts decimal yuan input to cents (0.10075ms)
+✔ validatePaymentDraft rejects negative or over-precision amounts (0.121667ms)
+✔ buildPaymentPatch sends amount, paid_at and due override (6.924834ms)
+✔ buildPaymentPatch clears override when due date emptied on overridden order (0.118167ms)
+✔ buildPaymentPatch omits unchanged fields (0.359167ms)
+✔ buildPaymentPatch resets amount to zero when input cleared to 0 (0.086875ms)
+✔ buildPaymentPatch sends paid_at only when date entered (4.900375ms)
+(node:34663) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ package price input accepts cents precision only (0.418792ms)
+✔ package price validation rejects unsupported precision (0.127ms)
+✔ package price conversion does not round invalid precision (0.204208ms)
+✔ package price cents display preserves editable decimal text (0.061916ms)
+(node:34668) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ OpenAPI exposes GET assignment-reminders with required read-model fields (1.3285ms)
+✔ frontend types come from schema.d.ts and never hand-write DTO shapes (0.087083ms)
+✔ workspace v2 card covers empty / unscheduled / status copy without customer delivery claims (0.168875ms)
+✔ Reminders and Dashboard type label + plan deep link (0.117375ms)
+✔ optional prototype readiness-reminder contract still present (34.050125ms)
+(node:34669) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ plan ingestion route and API use generated contract types (0.818542ms)
+✔ plan ingestion has no internal timer, AI, provider, or engineering note in formal UI (0.249125ms)
+✔ plan ingestion responsive and keyboard contracts are present (0.213208ms)
+✔ restoring a dropped candidate inherits the duplicate winner kind instead of hardcoding shot (0.222542ms)
+✔ ingestion candidates expose taxonomy and readiness field edits that persist through preview and commit (0.477875ms)
+✔ reference link candidates support label and target editing instead of a disabled select (0.14225ms)
+✔ reparse requires an explicit ConfirmDialog that documents edited-candidate retention (0.401416ms)
+✔ ingestion transient success feedback goes through the shell toast, not inline status (0.258667ms)
+✔ shot taxonomy values render in Chinese from a single mapping source (0.210292ms)
+✔ taxonomy render points read the shared mapping instead of hardcoding enum values (0.901584ms)
+✔ dropped candidates classify parser reasons instead of showing raw reason strings (0.639583ms)
+✔ dropped excerpts fold whitespace and truncate long originals (0.32975ms)
+✔ dropped legend covers all parser reasons plus manual discard (0.12125ms)
+✔ ingestion dropped section is collapsible and renders labels, excerpts, and winner hints (1.213292ms)
+✔ candidates discarded by the photographer show a manual-discard tag (0.151833ms)
+✔ ingestion stale conflict exposes a diff panel between local edits and server session (0.235833ms)
+✔ ingestion review step offers select-all and a kept-count chip in the topbar (0.13025ms)
+✔ ingestion commit summary breaks down candidates and pins the base plan revision (0.241834ms)
+(node:34670) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ anonymous share route skips session restore and never mounts AnonymousEntry or AppShell (0.590584ms)
+✔ proposal view source never renders shots or assignment structures (0.231375ms)
+✔ token stays in route component memory and never touches Web Storage or console (0.215667ms)
+✔ sharedRequest and moodboard content fetch omit credentials (0.214209ms)
+✔ WebCrypto unavailable disables claim and share secret actions without weak fallback (1.052459ms)
+✔ formal UI does not copy prototype “full replaces proposal / revoke invalidates all” copy (0.133375ms)
+✔ share adapters only consume generated schema types and never accept account_id (0.129583ms)
+✔ workspace mounts an independent share collaboration tab (0.102791ms)
+✔ Makefile and package.json expose mandatory plan-share runners (0.126709ms)
+✔ customers can self-revoke an active assignment with the one-time receipt (0.195417ms)
+✔ submitted feedback stays visible to its author within the same visit (0.119375ms)
+✔ claim section explains photographer-side checks, no customer messaging, and receipt use (0.07825ms)
+✔ share 409s split into stale-refresh, eligibility, and server-domain messages (0.068125ms)
+✔ share panel keeps eligibility errors distinct and explains full view eligibility upfront (0.122458ms)
+✔ anonymous moodboard figures render server-provided caption and usage note (5.778ms)
+✔ anonymous share page title tracks view level and expiry; footer explains link lifecycle (0.235292ms)
+✔ share expiry input is expressed in the photographer local timezone and still serialized as UTC (0.177125ms)
+✔ expiry converters round-trip local wall time against UTC ISO on both sides of UTC (7.634208ms)
+(node:34671) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ planning media API keeps multipart upload separate from JSON request helper (0.419917ms)
+✔ planning media UI exposes staged, active, corrupt and retryable states (0.073875ms)
+✔ planning media upload accepts only declared supported image types (0.059208ms)
+✔ run mode renders read-only reference sheet without blocking capture (0.053334ms)
+✔ media rights matrix mirror matches the server decision table (0.376375ms)
+✔ media panel picks purpose with matrix hints and binds assets to shots (0.072625ms)
+✔ ingestion upload declares a selectable source instead of a hardcoded one (0.069666ms)
+✔ media panel uses two panels (upload card + gallery card) with compact bind controls (0.207375ms)
+✔ v2 language and hierarchy: no prototype controls or contract comment chrome (0.524833ms)
+✔ 375 / coarse pointer targets stay at least 44px in source CSS contract (0.115ms)
+✔ focus visibility and 200% / narrow width avoid bidirectional scroll traps (0.134583ms)
+✔ anonymous and workspace share surfaces expose keyboard-reachable primary actions (0.167417ms)
+✔ screen-reader oriented landmarks exist without relying on browser screenshots (0.11ms)
+✔ evidence gap note: real browser screenshots are out of scope for this runner (0.080125ms)
+✔ prototype routes are mounted in the React app (4.439833ms)
+✔ migrated design system exposes shell, dashboard, list, detail, calendar, and package styles (1.473958ms)
+✔ new customer referral picks from active customers instead of manual id input (1.765042ms)
+(node:34675) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ planning schedule prefill accepts only the versioned one-shot payload (2.572458ms)
+✔ business duration prefill adds elapsed minutes in the account timezone (6.67225ms)
+✔ business duration stays linked to the draft until the end is edited (0.615334ms)
+✔ month grid starts Monday and always contains 42 days (1.207334ms)
+✔ calendar query dates require a real calendar date, not only a matching shape (0.204041ms)
+✔ slot projection preserves half-open local day membership (1.098375ms)
+✔ account natural day follows 23 and 25 hour DST transitions (1.6135ms)
+✔ nonexistent local time is rejected and repeated time requires occurrence (1.779334ms)
+✔ account dates convert without browser timezone assumptions (0.274083ms)
+✔ calendar model sorts stably and counts unique conflicts inside each local day (1.995084ms)
+✔ calendar v2 excludes cancelled shoots from conflicts and openings without hiding them (2.701291ms)
+✔ conflict preview excludes cancelled shoots with the shared occupancy rule (0.072792ms)
+✔ openings limits and copy text count distinct dates rather than interval rows (0.248084ms)
+✔ fall-fold week timeline preserves elapsed duration and distinguishes repeated wall times (1.186459ms)
+✔ mixed DST weeks keep the shared axis on an ordinary local day (3.787709ms)
+✔ non-hour DST days retain real intermediate minutes and an exact terminal tick (1.316625ms)
+✔ short endpoint-touching week events use visual lanes without becoming conflicts (4.328292ms)
+✔ deleting the current deep-link target replaces only the latest matching slot state (10.592625ms)
+✔ delete completion canonicalizes URL date and range as one latest-timezone state (1.713625ms)
+✔ delete completion remains bounded while Settings is pending and safely accepts a late timezone (5.453709ms)
+✔ deferred delete refresh never restarts an obsolete calendar range (5.347042ms)
+✔ cancelled events join only the final visible set visual lanes (3.326416ms)
+✔ calendar UI consumes turnaround warnings and keeps preview loading separate from mutation lock (0.534042ms)
+✔ business duration linkage is owned by the editable schedule draft (0.175417ms)
+✔ calendar delete flow has a synchronous mutation lock, stable focus, and date-bound notice (0.8155ms)
+✔ calendar dialogs and date controls retain safe close and keyboard fallbacks (0.446625ms)
+✔ week lanes are cluster-local and endpoint touching is a zero-minute turnaround, not a conflict (2.343333ms)
+✔ calendar v2 keeps cross-week and all-day projections deterministic (3.553083ms)
+✔ month overview follows shoot, hold, conflict, opening, and utilization rules (34.2015ms)
+✔ recurring availability uses Temporal compatible DST mapping and fails closed on reversal (1.444292ms)
+✔ calendar date arrow navigation moves focus without selecting a date (0.091375ms)
+✔ calendar workspace layout mode has one content-width breakpoint (0.03075ms)
+✔ calendar still projects slots when availability settings are unavailable (0.506583ms)
+✔ calendar and conflict preview responses only apply to their latest range generation (0.058084ms)
+✔ pending journal and handoff draft use separate expiry boundaries (0.400792ms)
+✔ a sent backfill request preserves its draft between the 2 and 24 hour boundaries (0.113916ms)
+✔ an unrelated pending flow does not extend an expired backfill draft (0.040792ms)
+✔ order_in_use details produce an account-timezone calendar deep link (0.112875ms)
+✔ known slot recovery links include the account-local date for cross-month navigation (0.068208ms)
+✔ status sync recovery derives the known slot date from its source draft (0.049167ms)
+✔ malformed order_in_use details fall back to the calendar without guessing a date (0.138375ms)
+✔ pending storage failure prevents the create request (0.179959ms)
+✔ an existing tab flow blocks a second flow without overwriting it (0.05275ms)
+✔ automatic replay keeps the original normalized body and attempt key (0.056791ms)
+✔ expired pending flow cannot replay automatically (0.088375ms)
+✔ request result knowledge follows the persisted phase facts (0.055792ms)
+✔ create failure classification never treats an idempotency binding conflict as a new attempt (0.033125ms)
+✔ deterministic failure rotates only the changed current step attempt (0.191333ms)
+✔ backfill completion persists pending id, then draft id, then clears pending (0.121083ms)
+✔ backfill local persistence retries do not repeat a known order request (0.194166ms)
+✔ schedule backfill timestamps are pruned by the final order status (0.056458ms)
+✔ completed handoff restores the original local range, note, customer, and order (0.085042ms)
+✔ schedule dialog stays closed during backfill handoff and reopens on return (0.027833ms)
+✔ calendar detail panel cannot cover an open schedule dialog (0.024125ms)
+✔ recovery actions distinguish unknown, customer change, and status sync (0.067084ms)
+✔ only path A can compensate its created order and expired recovery only abandons (0.032459ms)
+✔ editing keeps the current scheduled order visible when it is excluded from candidates (0.030667ms)
+✔ editing shows the slot customer immediately without opening the picker (0.273166ms)
+✔ status sync searches refreshed customer pages before stable unfiltered fallback (0.121167ms)
+✔ scheduled and later non-cancelled states satisfy status sync (0.025333ms)
+✔ delete refresh waits for an available account timezone instead of deriving a date from null (0.099792ms)
+(node:34676) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ business rule draft preserves inherit, explicit unknown, zero, and money precision (0.7665ms)
+✔ business rule draft validates count range and cent precision (0.145ms)
+✔ availability draft hydrates all seven days and does not mutate server settings (0.117167ms)
+✔ availability draft validates HH:MM windows and requires end after start (0.142041ms)
+✔ availability draft enforces opening and turnaround minute bounds (0.077042ms)
+✔ availability serializer replaces only availability in the current writable settings snapshot (0.116209ms)
+✔ reminders draft carries delivery SLA days through hydrate, edit and patch body (0.22925ms)
+✔ reminders body keeps snapshot SLA when draft untouched by other fields (0.06675ms)
+✔ hydrate + buildRemindersBody round-trips health_tiers (0.084875ms)
+✔ validateHealthTiersDraft enforces strict ascending ratios and fallback range (0.102958ms)
+(node:34677) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ CRM mutation request uses generated union types and never accepts account scope from callers (1.219916ms)
+✔ workbench CRM card keeps customer then order then future shoot slot and weak-coupling copy (3.992208ms)
+✔ order_deleted tombstone does not depend on order_id and still offers relink (0.131334ms)
+✔ unlink confirmation states full share invalidation, reminder withdrawal, and no order or slot side effects (0.099333ms)
+✔ CRM pages omit planning summary DOM when there is no plan and never invent an empty-state prompt (0.422125ms)
+✔ CRM association conflict copy and CSS contracts stay aligned with the generated 409 codes (0.178416ms)
+(node:34678) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ business draft absolute target price preserves empty, explicit zero, and exact positive cents (0.65925ms)
+✔ business draft generation reports generated and unavailable kinds separately (0.112834ms)
+✔ business draft unavailable reasons all have user-facing labels (0.060709ms)
+✔ shot history acknowledgement is based on retained execution facts, not the current outcome projection (0.0545ms)
+✔ shoot time defaults to an automatic two-hour live recognition buffer (5.444542ms)
+✔ custom live recognition range must contain the complete shoot time (0.919458ms)
+✔ saved two-hour buffers reopen in automatic mode while adjusted buffers remain custom (0.197208ms)
+✔ shoot time keeps system-level live recognition settings in a collapsed advanced section (0.358917ms)
+✔ planning API reuses generated OpenAPI types and never accepts account scope or capture mode from callers (0.13625ms)
+✔ planning workspace stays in AppShell while Run Mode is independently authenticated outside it (0.217875ms)
+✔ workspace exposes the approved core sections, share collaboration, and private business workbench (0.257833ms)
+✔ business workbench keeps facts, drafts, and destructive acknowledgement on private generated APIs (0.216083ms)
+✔ shared plan and planning list surfaces contain no private business signal (1.656167ms)
+✔ calendar consumes the planning prefill once and submits only the ordinary schedule body (0.461167ms)
+✔ business settings submit a complete replacement map with inherit, unknown, and explicit zero modes (1.823125ms)
+✔ business draft generation response is a kind-specific closed union (3.971875ms)
+✔ business mutation retries retain canonical keys until 2xx and do not misreport reload failures (0.56825ms)
+✔ archive confirmation submits the exact server projection instead of reconstructing effects (0.10875ms)
+✔ revision conflicts refresh server state while dirty brief, scale, and window drafts remain local (0.176667ms)
+✔ planning mutations always carry an idempotency key and retain scoped retry keys (0.139042ms)
+✔ Run Mode updates saved state only after a successful response and keeps failed actions retryable (0.174708ms)
+✔ Run Mode DOM is execution-only and exposes captured, skipped, cleared, and navigation controls (0.143208ms)
+✔ Run Mode has mobile, coarse-pointer, focus, and high-contrast light contracts (0.136084ms)
+✔ Run Mode keeps optional per-shot field notes that are submitted with captured and skipped results (0.087542ms)
+✔ Run Mode skips require an explicit reason and a supplementary note for other (0.091916ms)
+✔ Run Mode shot states map outcomes to segment states and counts (0.072542ms)
+✔ Run Mode progress is a clickable segmented bar opening the shot list sheet (0.203167ms)
+✔ planning responsive contract avoids dense tables and preserves coarse-pointer targets (0.753334ms)
+✔ transition guidance derives what is missing from fresh plan data (0.088958ms)
+✔ transition guidance falls back to retry when fresh data no longer shows the blocker (0.035042ms)
+✔ transition guidance codes are exactly the two server rejection codes (0.025583ms)
+✔ workspace transition rejections render guidance cards with jump actions instead of bare errors (0.083792ms)
+✔ readiness panel warns which required items block marking ready while the action stays in the topbar (0.051791ms)
+✔ feedback go-edit-shot focuses, highlights, and opens the referenced shot in the shots tab (0.296542ms)
+✔ shot reference labels use two-digit positions with titles (0.076167ms)
+✔ plan list card summaries derive CRM, window, and progress lines from enriched list fields (0.645792ms)
+✔ plan list page renders the enriched three-line card structure (0.153583ms)
+✔ Run Mode main action is stateful for one-step undo and re-judge (0.220417ms)
+✔ Run Mode shot card renders all five taxonomy tags with unfilled placeholders (0.096833ms)
+✔ Run Mode completion card shows split stats and end-of-session actions (0.084041ms)
+✔ outcome labels map skip reasons, capture modes, and readiness requirement states (0.080625ms)
+✔ preparation-missing site flags derive only from linked skipped shots (0.076417ms)
+✔ workspace shot cards show full taxonomy, capture-mode badges, capture time, and duplicate action (0.0925ms)
+✔ readiness list groups by category with claimant names and on-site missing flags (0.069917ms)
+✔ ConfirmDialog unifies destructive confirmations with dialog a11y and busy guards (0.227709ms)
+✔ planning pages contain no native confirm/prompt dialogs (0.476875ms)
+✔ destructive actions route through ConfirmDialog with danger tone and specific copy (0.775958ms)
+✔ workspace success feedback toasts through the shell while recovery warnings stay inline (0.270708ms)
+✔ run header shows session meta with plan revision tag and a low-frequency clock (0.149ms)
+✔ run reference sheet explains empty state and compare-only usage; skip reasons match prototype wording (0.076375ms)
+✔ workspace window editor states the execution-window source three ways (0.103083ms)
+✔ business draft lines carry a basis column, suggested total, and amount comparison in apply confirm (0.113833ms)
+✔ assignment claims show readiness state tags and revoke confirm explains reminder cancellation (0.134417ms)
+✔ public scale hints and the four-step progression panel match the prototype copy (0.100833ms)
+✔ plan list creates a blank plan in one click instead of a required-fields modal (0.069042ms)
+✔ plan list offers ingestion as the primary create path with blank creation kept as secondary (0.104292ms)
+✔ plan list pages through the ledger instead of capping at one fixed page (0.094084ms)
+✔ plan list搜索与排序走生成契约，过滤与排序都在服务端 (0.715666ms)
+✔ planning UI copy uses 现场模式 and 从聊天整理 instead of Run Mode and 摄取工作台 (0.588541ms)
+(node:34679) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ bind-token API wrapper posts to the generated contract and never persists response (10.146166ms)
+✔ deep-link opener uses noopener,noreferrer and reports popup blocking (0.102792ms)
+✔ Account settings page exposes binding states without rendering secrets or storage/log sinks (10.670417ms)
+✔ Telegram binding card keeps mobile wrapping and keyboard focus contracts (10.243ms)
+✔ application compiler keeps all effective strict checks enabled (7.871792ms)
+(node:34681) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ page read states have one observable presentation in the fixed priority order (5.39875ms)
+✔ page-owned data becomes stale on refresh failure without becoming empty (0.12725ms)
+✔ initial failure and successful empty remain mutually exclusive (0.065292ms)
+✔ customer results keep one page-owned query across the 768/769 responsive boundary (0.828291ms)
+✔ note keyboard actions separate submit, IME composition, multiline, and cancel (0.094667ms)
+✔ note submission gate rejects a repeated submit until the active request settles (0.068667ms)
+✔ empty customer picker keyboard navigation never exposes an invalid active option (0.085167ms)
+✔ mobile calendar keeps v2 write actions reachable while dense detail content stays bounded (0.466042ms)
+✔ mobile shell keeps Customers and Calendar direct with safe-area and touch-size contracts (0.323875ms)
+(node:34682) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ frames keep their id, type and multi-line data (14.533292ms)
+✔ reconnects resume from the caller cursor (1008.345667ms)
+✔ a cursor the server cannot serve asks for a snapshot, then resumes from it (2286.769125ms)
+(node:34683) ExperimentalWarning: Transform Types is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ empty week without availability stays fully expanded (12.889083ms)
+✔ working windows count as active; idle hours around them collapse (6.372166ms)
+✔ overnight slots keep their hours active before the working window (9.93975ms)
+✔ short slots extend visually to the 30-minute minimum and stay active (3.796042ms)
+✔ filtered-out slot types do not count as active (4.297083ms)
+✔ cancelled shoots are ignored unless explicitly shown (3.563417ms)
+✔ idle runs shorter than two hours do not collapse (3.913584ms)
+✔ segments cover the timeline and honour expanded keys (0.1725ms)
+✔ weekCollapseBandKey is stable across weeks (0.063292ms)
+✔ scale maps minutes through collapsed bands (0.197583ms)
+✔ snapDragMinute rounds to half hours within the timeline (0.056375ms)
+✔ dragRangeFromMinutes renders local times and rolls to next day at 24:00 (0.557625ms)
+✔ dragRangeFromMinutes follows the local clock across DST fall back (0.697083ms)
+✔ dragged October range is the authoritative create date over stale September selection (0.04275ms)
+✔ cross-month week headings disclose the month of each date (0.050708ms)
+✔ schedule dialog resets the draft before paint and tracks drag range changes (0.415333ms)
+ℹ tests 486
+ℹ suites 0
+ℹ pass 486
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4227.305333

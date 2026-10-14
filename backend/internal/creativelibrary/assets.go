@@ -88,24 +88,29 @@ func relationCount(ctx context.Context, tx store.TxAccountScope, id string) (int
 
 // organizeExisting adds relations an asset does not have yet and keeps the
 // per-asset limits; existing relations are left as they are.
-func organizeExisting(ctx context.Context, tx store.TxAccountScope, id string, groups, tags []string, drafts []NewTag) (map[string]string, error) {
+type organizationFacts struct {
+	Mapping         map[string]string
+	Created, Reused []TagFact
+}
+
+func organizeExisting(ctx context.Context, tx store.TxAccountScope, id string, groups, tags []string, drafts []NewTag) (organizationFacts, error) {
 	var have []string
 	for _, rel := range []struct{ table, column string }{{"creative_asset_group_members", "group_id"}, {"creative_asset_tags", "tag_id"}} {
 		rows, err := tx.Query(ctx, rel.table, rel.column, "asset_id=$2", id)
 		if err != nil {
-			return nil, err
+			return organizationFacts{}, err
 		}
 		for rows.Next() {
 			var v string
 			if err = rows.Scan(&v); err != nil {
 				rows.Close()
-				return nil, err
+				return organizationFacts{}, err
 			}
 			have = append(have, v)
 		}
 		rows.Close()
 		if err = rows.Err(); err != nil {
-			return nil, err
+			return organizationFacts{}, err
 		}
 	}
 	missing := func(ids []string) []string {
@@ -119,7 +124,7 @@ func organizeExisting(ctx context.Context, tx store.TxAccountScope, id string, g
 	}
 	mapping, err := organizeNew(ctx, tx, id, missing(groups), missing(tags), drafts, have)
 	if err != nil {
-		return nil, err
+		return organizationFacts{}, err
 	}
 	for _, limit := range []struct {
 		table string
@@ -127,50 +132,55 @@ func organizeExisting(ctx context.Context, tx store.TxAccountScope, id string, g
 	}{{"creative_asset_group_members", 100}, {"creative_asset_tags", 50}} {
 		count, err := tx.Count(ctx, limit.table, "asset_id=$2", id)
 		if err != nil {
-			return nil, err
+			return organizationFacts{}, err
 		}
 		if count > limit.max {
-			return nil, creativeops.ErrValidation
+			return organizationFacts{}, creativeops.ErrValidation
 		}
 	}
 	return mapping, nil
 }
-func organizeNew(ctx context.Context, tx store.TxAccountScope, id string, groups, tags []string, drafts []NewTag, existing ...[]string) (map[string]string, error) {
+func organizeNew(ctx context.Context, tx store.TxAccountScope, id string, groups, tags []string, drafts []NewTag, existing ...[]string) (organizationFacts, error) {
 	groups, err := uniqueIDs(groups, 100)
 	if err != nil {
-		return nil, err
+		return organizationFacts{}, err
 	}
 	tags, err = uniqueIDs(tags, 50)
 	if err != nil || len(drafts) > 50 {
-		return nil, creativeops.ErrValidation
+		return organizationFacts{}, creativeops.ErrValidation
 	}
 	for _, g := range groups {
 		if err = requireEntity(ctx, tx, "creative_asset_groups", g); err != nil {
-			return nil, err
+			return organizationFacts{}, err
 		}
 	}
 	for _, t := range tags {
 		if err = requireEntity(ctx, tx, "creative_tags", t); err != nil {
-			return nil, err
+			return organizationFacts{}, err
 		}
 	}
-	mapping := map[string]string{}
+	mapping := organizationFacts{Mapping: map[string]string{}, Created: []TagFact{}, Reused: []TagFact{}}
 	structural := false
 	for _, d := range drafts {
-		if d.ClientKey == "" || mapping[d.ClientKey] != "" {
-			return nil, creativeops.ErrValidation
+		if d.ClientKey == "" || mapping.Mapping[d.ClientKey] != "" {
+			return organizationFacts{}, creativeops.ErrValidation
 		}
 		tag, created, e := createTag(ctx, tx, d)
 		if e != nil {
-			return nil, e
+			return organizationFacts{}, e
 		}
-		mapping[d.ClientKey] = tag.ID
+		mapping.Mapping[d.ClientKey] = tag.ID
+		if created {
+			mapping.Created = append(mapping.Created, tagFact(tag))
+		} else {
+			mapping.Reused = append(mapping.Reused, tagFact(tag))
+		}
 		tags = append(tags, tag.ID)
 		structural = structural || created
 	}
 	tags, err = uniqueIDs(tags, 50)
 	if err != nil {
-		return nil, err
+		return organizationFacts{}, err
 	}
 	// A new draft may resolve to a tag the existing asset already carries.
 	for _, have := range existing {
@@ -178,12 +188,12 @@ func organizeNew(ctx context.Context, tx store.TxAccountScope, id string, groups
 	}
 	for _, g := range groups {
 		if err = tx.Insert(ctx, "creative_asset_group_members", []string{"asset_id", "group_id"}, id, g); err != nil {
-			return nil, err
+			return organizationFacts{}, err
 		}
 	}
 	for _, t := range tags {
 		if err = tx.Insert(ctx, "creative_asset_tags", []string{"asset_id", "tag_id"}, id, t); err != nil {
-			return nil, err
+			return organizationFacts{}, err
 		}
 	}
 	if structural {
@@ -213,7 +223,7 @@ func Metadata(ctx context.Context, sc store.AccountScope, c creativeops.Command)
 	}
 
 	return libraryRun(ctx, sc, c, "asset_metadata", func(v MetadataInput) error {
-		if v.ID == "" || v.ExpectedRevision < 1 || (v.Title == nil && v.Description == nil && v.Favorite == nil) || (v.Title != nil && (strings.TrimSpace(*v.Title) == "" || utf8.RuneCountInString(*v.Title) > 200)) || (v.Description != nil && utf8.RuneCountInString(*v.Description) > 2000) {
+		if v.ID == "" || v.ExpectedRevision < 1 || (v.Title == nil && v.Description == nil && v.Favorite == nil) || (v.Title != nil && (strings.TrimSpace(*v.Title) == "" || utf8.RuneCountInString(*v.Title) > 200)) || (v.Description != nil && utf8.RuneCountInString(*v.Description) > DescriptionLimit) {
 			return creativeops.ErrValidation
 		}
 		return nil

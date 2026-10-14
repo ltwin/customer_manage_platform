@@ -1,0 +1,23 @@
+cd backend && golangci-lint run ./...
+0 issues.
+cd frontend && npm run lint
+
+> frontend@0.0.0 lint
+> oxlint
+
+scripts/creative-node-toolbar.e2e.mjs:128:7: warning eslint(no-unused-vars): Variable 'textEditor' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-toolbar.e2e.mjs:150:7: warning eslint(no-unused-vars): Variable 'activeLabel' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-toolbar.e2e.mjs:151:7: warning eslint(no-unused-vars): Variable 'selectedIDs' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/account/AccountCenterContext.tsx:116:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/account/AccountCenterContext.tsx:124:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/CanvasView.tsx:171:14: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/CanvasView.tsx:188:14: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+scripts/creative-projects.e2e.mjs:129:7: warning eslint(no-unused-vars): Variable 'cards' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/creative-canvas/editor/MediaView.tsx:7:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/MediaView.tsx:48:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/creative-canvas/editor/MediaView.tsx:194:23: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+scripts/creative-node-create.e2e.mjs:97:7: warning eslint(no-unused-vars): Variable 'waitNew' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-resize.e2e.mjs:109:7: warning eslint(no-unused-vars): Variable 'meta' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-resize.e2e.mjs:118:7: warning eslint(no-unused-vars): Variable 'title' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+scripts/creative-node-resize.e2e.mjs:120:7: warning eslint(no-unused-vars): Variable 'waitNew' is declared but never used. Unused variables should start with a '_'. help: Consider removing this declaration.
+src/creative-canvas/assets/AssetDescriptionInput.tsx:4:17: warning react(only-export-components): Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.

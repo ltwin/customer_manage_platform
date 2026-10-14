@@ -137,3 +137,19 @@ attached节点输出成功但apply_state=pending仍按queued持有原slot等待�
 普通节点Prompt直接走execution应用边界，不创建伪Agent会话；组Prompt走同一Harness的明确组范围任务。FND-08新增查/改Prompt、查版本/采用版本工具并接入FND-13真实生成，沿用attached期限/slot/恢复/效果承接。生成所需期限超过父run剩余期限时不得偷偷延长或脱离任务，按[node-generation](../node-generation.md)拒绝并允许摄影师从节点独立发起。
 
 组Prompt的SubmitGroupPrompt须同事务创建消息/run_inputs/run/job和group_prompt_submission受理关联，active_agent_run_id保证组级幂等/单活动任务，状态与停止直接路由真实run。删除/解组提前按slot/run→canvas顺序预锁并复核，取消写入资格与结构修改同事务，不能在canvas锁内回头取run。具体草稿授权、状态投影与恢复不重启语义见[node-generation](../node-generation.md#组prompt的任务身份与停止)。
+
+
+## V6-078 工具实现补充（2026-10-13）
+
+当前实现的 effect_class 为 read_only、write、generate。资产库新增 write 工具
+organize_assets（最多 50 项）、manage_library（最多 20 个结构动作，失败后停止）、
+trash_assets、restore_assets（各最多 50 项）；read_library_result 是 read_only，分页读取
+同账号同会话 90 天内的完整前后值及关系明细，遇 settling 只核对回执，不补写。
+这些工具以及 save_to_library@2 在 account_library + media_metadata 范围内开放。
+search_assets@2 与 read_library@2 支持筛选及签名游标分页，不再通过静默截断限制可达数据；
+库版本变化需重新查询。asset_relations 提供大关系集的完整读取入口。
+
+库写入执行计划、原值与命令身份在写前持久化。事务内执行守卫阻止 unknown 返回后的迟到写入，
+回执查询取得操作锁后才能把不存在认定为未执行。分页结果不是图片引用根。
+基础提示词独立于 Skill，负责整理指派、覆盖已有文字与新入库前的确认；现阶段确认是模型行为，
+后续手动确认交互仍由 V6-033 负责。实现细节见 [开发说明](../../../dev/creative-agent.md)。

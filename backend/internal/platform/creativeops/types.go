@@ -4,6 +4,7 @@ package creativeops
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 var (
@@ -178,7 +180,13 @@ func validateJSONValue(dec *json.Decoder, depth int) error {
 	return err
 }
 
+// CommandGuard is server-injected and runs under the operation lock, before
+// domain effects. Receipt replay precedes the guard. It must hold any fencing
+// locks until the enclosing transaction commits.
+type CommandGuard func(context.Context, store.TxAccountScope, string, Command) error
+
 type Command struct {
+	Guard       CommandGuard `json:"-"`
 	OperationID string
 	CreatedAt   time.Time
 	Payload     json.RawMessage
@@ -193,6 +201,7 @@ type Outcome struct {
 }
 
 type Receipt struct {
+	requestHash   string
 	OperationID   string
 	OperationType string
 	CreatedAt     time.Time

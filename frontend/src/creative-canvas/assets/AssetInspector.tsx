@@ -1,3 +1,4 @@
+import AssetDescriptionInput from "./AssetDescriptionInput.tsx"
 import { SHAPES, shapeOf } from './appearance.ts'
 import { Plus, X } from 'lucide-react'
 import type * as api from '../editor/api.ts'
@@ -89,17 +90,10 @@ export default function AssetInspector({
                 disabled={disabled}
                 onChange={onRate}
               />
-              <textarea
-                className="al-ins-note-input"
-                aria-label="备注"
-                placeholder="备注：为什么收藏它、准备用在哪…"
-                defaultValue={single.description}
-                maxLength={2000}
+              <AssetDescriptionInput
+                description={single.description}
                 disabled={disabled}
-                onBlur={(e) => {
-                  if (e.currentTarget.value !== single.description)
-                    onMetadata(single, { description: e.currentTarget.value })
-                }}
+                onSave={(description) => onMetadata(single, { description })}
               />
             </div>
           </>

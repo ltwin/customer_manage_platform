@@ -1,3 +1,4 @@
+import AssetDescriptionInput from "../assets/AssetDescriptionInput.tsx"
 import { ArrowUpRight, Download, Plus, Trash2, Undo2, X } from 'lucide-react'
 import type { Asset } from '../editor/api.ts'
 import {
@@ -137,27 +138,11 @@ export default function AssetInfoPanel({
         })}
         <section className="v-sec">
           <header>备注</header>
-          <textarea
+          <AssetDescriptionInput
             key={`${asset.id}:${asset.description}`}
-            className="al-ins-note-input"
-            aria-label="备注"
-            defaultValue={asset.description}
-            placeholder="为什么收藏它、准备用在哪…"
-            maxLength={2000}
+            description={asset.description}
             disabled={disabled}
-            onBlur={(e) => {
-              if (e.currentTarget.value !== asset.description)
-                organization.metadata(asset, {
-                  description: e.currentTarget.value,
-                })
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') {
-                e.stopPropagation()
-                e.currentTarget.value = asset.description
-                e.currentTarget.blur()
-              }
-            }}
+            onSave={(description) => organization.metadata(asset, { description })}
           />
         </section>
       </div>

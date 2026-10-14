@@ -23,7 +23,7 @@ func TestCanvasMigrationSeedsOnceAndRefusesLossyRollback(t *testing.T) {
 	// bare count silently stops short once another migration is stacked above,
 	// and the test keeps passing while no longer reaching what it is about.
 	for _, label := range []string{
-		"0063 creative-image-edit", "0062 creative-media-gc", "0061 creative-asset-library", "0060 creative-project-home", "0059 agent-conversation-manage", "0058 chat-failover", "0057 creative-agent-reasoning", "0056 creative-agent-blocks", "0055 creative-staged-uploads", "0054 generation-handoff", "0053 generation-lifecycle", "0052 generation-admission", "0051 generation-media-facts", "0050 execution-continuations", "0049 agent-controls", "0048 agent-checkpoints", "0047 agent-context", "0046 agent-runs", "0045 skill-foundation", "0044 agent-conversations",
+		"0064 agent-library-organize", "0063 creative-image-edit", "0062 creative-media-gc", "0061 creative-asset-library", "0060 creative-project-home", "0059 agent-conversation-manage", "0058 chat-failover", "0057 creative-agent-reasoning", "0056 creative-agent-blocks", "0055 creative-staged-uploads", "0054 generation-handoff", "0053 generation-lifecycle", "0052 generation-admission", "0051 generation-media-facts", "0050 execution-continuations", "0049 agent-controls", "0048 agent-checkpoints", "0047 agent-context", "0046 agent-runs", "0045 skill-foundation", "0044 agent-conversations",
 		"0043 llm-gateway",
 		"0042 creative-canvas-events", "0041 creative-media", "0040 creative-canvas-commands",
 	} {

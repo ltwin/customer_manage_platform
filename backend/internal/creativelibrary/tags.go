@@ -22,6 +22,21 @@ type Tag struct {
 	// AssetCount 是打了这个标签的素材数，含回收站；删除标签会从这些素材上移除它。
 	AssetCount int64 `json:"asset_count"`
 }
+
+// TagFact records the immutable classification returned by a write receipt.
+// Browse-only asset counts are deliberately not part of a creation/reuse fact.
+type TagFact struct {
+	ID         string               `json:"id"`
+	Name       string               `json:"name"`
+	Color      string               `json:"color"`
+	CategoryID *string              `json:"category_id"`
+	Revision   creativeops.Revision `json:"revision"`
+}
+
+func tagFact(t Tag) TagFact {
+	return TagFact{ID: t.ID, Name: t.Name, Color: t.Color, CategoryID: t.CategoryID, Revision: t.Revision}
+}
+
 type TagCategory struct {
 	ID       string               `json:"id"`
 	Name     string               `json:"name"`
@@ -189,6 +204,7 @@ func tagCommand(ctx context.Context, s store.AccountScope, c creativeops.Command
 			return LibraryResult{}, err
 		}
 		changed := true
+		var affected *int64
 		switch action {
 		case "create":
 			t, changed, err = createTag(ctx, tx, NewTag{Name: v.Name, Color: v.Color, CategoryID: v.CategoryID})
@@ -214,14 +230,25 @@ func tagCommand(ctx context.Context, s store.AccountScope, c creativeops.Command
 				t.Revision++
 			}
 		case "delete":
-			if err = removeRelations(ctx, tx, "creative_asset_tags", "tag_id", v.ID); err == nil {
+			var count int64
+			count, err = removeRelations(ctx, tx, "creative_asset_tags", "tag_id", v.ID)
+			affected = &count
+			if err == nil {
 				_, err = tx.Delete(ctx, "creative_tags", "id=$2", v.ID)
 			}
 		}
 		if err != nil {
 			return LibraryResult{}, err
 		}
-		return libraryResult(ctx, tx, t.ID, t.Revision, changed, true)
+		result, err := libraryResult(ctx, tx, t.ID, t.Revision, changed, true)
+		result.AffectedAssetCount = affected
+		if action == "create" {
+			existing := !changed
+			result.Existing = &existing
+			fact := tagFact(t)
+			result.Tag = &fact
+		}
+		return result, err
 	})
 }
 func CreateTag(ctx context.Context, s store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
@@ -258,6 +285,7 @@ func categoryCommand(ctx context.Context, s store.AccountScope, c creativeops.Co
 			return LibraryResult{}, err
 		}
 		changed := true
+		var affected *int64
 		switch action {
 		case "create":
 			count, e := tx.Count(ctx, "creative_tag_categories", "")
@@ -276,14 +304,19 @@ func categoryCommand(ctx context.Context, s store.AccountScope, c creativeops.Co
 				old.Revision++
 			}
 		case "delete":
-			if _, err = tx.Update(ctx, "creative_tags", "category_id=NULL,revision=revision+1", "category_id=$2", v.ID); err == nil {
+			var count int64
+			count, err = tx.Update(ctx, "creative_tags", "category_id=NULL,revision=revision+1", "category_id=$2", v.ID)
+			affected = &count
+			if err == nil {
 				_, err = tx.Delete(ctx, "creative_tag_categories", "id=$2", v.ID)
 			}
 		}
 		if err != nil {
 			return LibraryResult{}, err
 		}
-		return libraryResult(ctx, tx, old.ID, old.Revision, changed, true)
+		result, err := libraryResult(ctx, tx, old.ID, old.Revision, changed, true)
+		result.AffectedTagCount = affected
+		return result, err
 	})
 }
 func CreateCategory(ctx context.Context, s store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {

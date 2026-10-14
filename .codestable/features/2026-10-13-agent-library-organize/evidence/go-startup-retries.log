@@ -1,0 +1,7 @@
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativegeneration	7.963s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativemedia	21.521s
+ok  	github.com/samson/customer-manage-platform/backend/internal/creativereference	2.604s
+ok  	github.com/samson/customer-manage-platform/backend/internal/customer	24.282s
+ok  	github.com/samson/customer-manage-platform/backend/internal/dataexport	4.982s
+ok  	github.com/samson/customer-manage-platform/backend/internal/package	2.977s
+ok  	github.com/samson/customer-manage-platform/backend/internal/platform/httpapi	27.010s
