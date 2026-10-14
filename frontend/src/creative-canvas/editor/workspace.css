@@ -1444,3 +1444,63 @@ button.cc-project-name:hover,
 .cc-spin { animation: cc-spin 0.9s linear infinite; }
 @keyframes cc-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .cc-spin { animation-duration: 2.4s; } }
+
+/* 生成中：毛玻璃压住旧内容 + 半调网点里的几何轮廓（GeneratingVeil 画在 canvas 上）。
+   琥珀只出现在轮廓上的一段彗尾和左下状态点；卡片描边不变色，多张同时生成也不会整排发黄。 */
+.cc-generating {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 90% at 50% 40%, rgba(255, 255, 255, 0.035), transparent 70%),
+    rgba(17, 17, 18, 0.62);
+  -webkit-backdrop-filter: blur(18px) saturate(0.6);
+  backdrop-filter: blur(18px) saturate(0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  animation: cc-generating-in 0.45s var(--ease) both;
+}
+.cc-generating canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  -webkit-mask-image: radial-gradient(ellipse 75% 75% at 50% 50%, #000 45%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 75% at 50% 50%, #000 45%, transparent 100%);
+}
+.cc-generating.is-queued canvas { opacity: 0.6; }
+.cc-generating-state {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(11, 11, 12, 0.55);
+  color: var(--fg-2);
+  font: 11px/1 var(--font-body);
+  white-space: nowrap;
+}
+.cc-generating-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--run);
+  animation: cc-generating-dot 1.2s ease-in-out infinite;
+}
+.cc-generating.is-queued .cc-generating-state i { background: var(--fg-3); }
+/* 文本节点太矮时状态标签让位给网点。 */
+.cc-text-node .cc-generating-state { left: 8px; bottom: 8px; }
+@keyframes cc-generating-in { from { opacity: 0; } }
+@keyframes cc-generating-dot { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) {
+  .cc-generating,
+  .cc-generating-state i { animation: none; }
+}

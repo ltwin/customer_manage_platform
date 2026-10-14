@@ -86,7 +86,8 @@ import NodeVersionStrip from './NodeVersionStrip.tsx'
 import { defaultNodeSize, fitMediaHeight, nodeSizeLimits } from './outbox.ts'
 import { libraryDropZone, markLibraryDrop } from './libraryDrop.ts'
 import type { Content } from './api.ts'
-import { nodeLabelMeta } from './labelMeta.ts'
+import { generationPhase, nodeLabelMeta } from './labelMeta.ts'
+import { GeneratingVeil } from './GeneratingVeil.tsx'
 import {
   fitViewport,
   nodeBounds,
@@ -280,6 +281,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     media = isMediaKind(kind),
     group = n.metadata.type_key === 'core.group',
     proportional = kind === 'image' || kind === 'video',
+    phase = group ? null : generationPhase(n.status.generation_state),
     known = [
       'core.text',
       'core.link',
@@ -291,7 +293,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     ].includes(n.metadata.type_key)
   return (
     <article
-      className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : ['core.text', 'core.link'].includes(n.metadata.type_key) ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''}`}
+      className={`cc-node ${group ? 'cc-group-node' : media ? `cc-media-node cc-${kind}-node` : ['core.text', 'core.link'].includes(n.metadata.type_key) ? 'cc-text-node' : 'cc-link-node'} ${selected ? 'is-selected' : ''} ${phase ? 'is-generating' : ''}`}
     >
       {/* 只有单选的普通节点能缩放（PRD CV-17）；组由子节点撑开。 */}
       <NodeResizer
@@ -414,7 +416,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
                   或拖入{kindLabel[kind]}
                 </span>
               )}
-              {!data.disabled && n.capabilities.actions.includes('replace') && (
+              {!phase && !data.disabled && n.capabilities.actions.includes('replace') && (
                 <span className="cc-empty-actions nodrag">
                   <button
                     type="button"
@@ -483,6 +485,7 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
           )}
         </div>
       )}
+      {phase && !data.crop && <GeneratingVeil phase={phase} />}
       {!group &&
         !data.crop &&
         connectableTypes.includes(n.metadata.type_key) &&

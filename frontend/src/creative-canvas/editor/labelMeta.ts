@@ -8,12 +8,20 @@ export function nodeLabelMeta(
 ): string {
   const kind = node.metadata.type_key
   if (!['core.image', 'core.video', 'core.audio'].includes(kind)) return ''
-  if (['queued', 'running', 'reconciling'].includes(node.status.generation_state))
-    return ''
+  if (generationPhase(node.status.generation_state)) return ''
   const summary = node.version_summary
   if (!summary) return ''
   if (summary.count > 1)
     return `主版本 ${summary.main_ordinal}/${summary.count}`
   const key = summary.main_model_key
   return key ? (modelLabels[key] ?? key) : ''
+}
+
+export type GenerationPhase = 'queued' | 'running' | 'reconciling'
+
+// 节点生成进行中的阶段；空闲或已结束时为 null。
+export function generationPhase(state: string): GenerationPhase | null {
+  return state === 'queued' || state === 'running' || state === 'reconciling'
+    ? state
+    : null
 }
