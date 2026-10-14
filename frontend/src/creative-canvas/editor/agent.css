@@ -481,6 +481,18 @@
   color: var(--fg-3);
   font-size: 12px;
 }
+/* 占住一行：读取中、失败、读完消失，下面的对话都不跟着跳。 */
+.cc-agent-older {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 32px;
+  margin-bottom: 8px;
+  color: var(--fg-3);
+  font-size: 12px;
+}
+.cc-agent-panel .cc-agent-older button,
 .cc-agent-panel .cc-agent-read-failed button {
   padding: 5px 12px;
   border: 0;

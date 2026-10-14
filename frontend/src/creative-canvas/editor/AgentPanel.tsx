@@ -54,6 +54,15 @@ import {
 import { RunTurn, TurnLoading } from './AgentBlocks.tsx'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
 import { useAgentScroll } from './useAgentScroll.ts'
+import {
+  joinLatest,
+  openWindow,
+  prependTurns,
+  readSince,
+  readTurns,
+  type PageReader,
+  type ThreadWindow,
+} from './agentThread.ts'
 import { currentStep } from './agentBlocks.ts'
 import {
   AgentTurnContext,
@@ -95,6 +104,17 @@ const starters: { icon: LucideIcon; label: string; text?: string }[] = [
   },
   { icon: Paperclip, label: '引用素材开始讨论' },
 ]
+
+function messageReader(conversation: string, signal: AbortSignal): PageReader {
+  return (before, limit) => {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (before) query.set('before_ordinal', before)
+    return api.read<MessagePage>(
+      `/conversations/${conversation}/messages?${query}`,
+      signal,
+    )
+  }
+}
 
 // 只有一步的待确认链：补充、取消、结束核实、重试。
 function single(
@@ -181,7 +201,12 @@ function AgentConversation({
   const [renaming, setRenaming] = useState<string | null>(null)
   const cancelRename = useRef(false)
   const [conversation, setConversation] = useState('')
-  const [messages, setMessages] = useState<MessagePage['items']>([])
+  // 从最新一轮往前读到哪里，往上滚时再接上更早的。
+  const [threadWindow, setThreadWindow] = useState<ThreadWindow | null>(null)
+  const windowRef = useRef<ThreadWindow | null>(null)
+  windowRef.current = threadWindow
+  const [older, setOlder] = useState<'idle' | 'loading' | 'failed'>('idle')
+  const olderAbort = useRef<AbortController | null>(null)
   const [runs, setRuns] = useState<AgentRun[]>([])
   const [model, setModel] = useState('')
   const [skill, setSkill] = useState('')
@@ -205,12 +230,16 @@ function AgentConversation({
   const pendingRef = useRef<PendingAgentChain | null>(null)
   const mounted = useRef(false)
   const performing = useRef(false)
+  const thread =
+    threadWindow?.conversation === conversation ? threadWindow.items : []
   const {
     history,
     content: historyContent,
     onScroll: onHistoryScroll,
     follow: followLatest,
-  } = useAgentScroll(conversation)
+    hold: holdPosition,
+    nearTop,
+  } = useAgentScroll(conversation, thread[0]?.id ?? '')
   // The list is read once; what a run is doing now comes from its stream.
   const followed = useAgentRuns(
     useShallow((store) => runs.map((run) => store.runs[run.id]?.run)),
@@ -307,20 +336,29 @@ function AgentConversation({
   useEffect(() => {
     if (!conversation) return
     const abort = new AbortController()
+    const read = messageReader(conversation, abort.signal)
+    // 已经读过这个会话就只补新的一段，往前翻出来的历史留着；否则从最新一轮读起。
+    const known = windowRef.current
+    const update: Promise<(old: ThreadWindow | null) => ThreadWindow | null> =
+      known?.conversation === conversation && known.newest
+        ? readSince(read, known.newest).then(
+            (fresh) => (old) =>
+              old?.conversation === conversation ? joinLatest(old, fresh) : old,
+          )
+        : readTurns(read).then(
+            (turns) => () => openWindow(conversation, turns),
+          )
     void Promise.all([
       api.read<components['schemas']['CreativeAgentRunPage']>(
         `/conversations/${conversation}/runs`,
         abort.signal,
       ),
-      api.read<MessagePage>(
-        `/conversations/${conversation}/messages`,
-        abort.signal,
-      ),
+      update,
     ])
-      .then(([page, thread]) => {
+      .then(([page, apply]) => {
         if (abort.signal.aborted) return
         setRuns(page.items)
-        setMessages(thread.items)
+        setThreadWindow(apply)
         setThreadRead({ id: conversation, failed: false })
       })
       .catch((e: unknown) => {
@@ -523,9 +561,55 @@ function AgentConversation({
   )
   const triggers = new Map(runs.map((run) => [run.trigger_message_id, run.id]))
   const followedRuns = new Set(triggers.values())
-  const thread = [...messages].sort((a, b) =>
-    BigInt(a.ordinal) < BigInt(b.ordinal) ? -1 : 1,
-  )
+  // 往前接上整轮。同时只读一次；读的过程中换了会话或刷新换掉了窗口，结果作废。
+  function loadOlder() {
+    const from = windowRef.current
+    if (
+      !from ||
+      from.conversation !== conversation ||
+      !from.before ||
+      olderAbort.current
+    )
+      return
+    const abort = new AbortController()
+    olderAbort.current = abort
+    setOlder('loading')
+    readTurns(messageReader(from.conversation, abort.signal), from)
+      .then((turns) => {
+        if (abort.signal.aborted) return
+        holdPosition()
+        setThreadWindow((old) =>
+          old?.conversation === from.conversation && old.before === from.before
+            ? prependTurns(old, turns)
+            : old,
+        )
+        setOlder('idle')
+      })
+      .catch(() => {
+        if (!abort.signal.aborted) setOlder('failed')
+      })
+      .finally(() => {
+        if (olderAbort.current === abort) olderAbort.current = null
+      })
+  }
+  // 换会话时丢掉还在读的更早内容。
+  useEffect(() => {
+    setOlder('idle')
+    return () => {
+      olderAbort.current?.abort()
+      olderAbort.current = null
+    }
+  }, [conversation])
+  // 内容还没铺满或停在顶部附近时，接着往前读，不用摄影师再滚一下。
+  useEffect(() => {
+    if (older === 'idle' && threadWindow?.before && nearTop()) loadOlder()
+    // loadOlder 只读 ref 和当前会话；按窗口变化判断即可。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadWindow, older])
+  function onThreadScroll() {
+    onHistoryScroll()
+    if (older === 'idle' && nearTop()) loadOlder()
+  }
   // 刚发出的运行已经在列表里，它的消息还在路上：同样算在读。
   const reading: 'loading' | 'failed' | null =
     listRead !== 'ready'
@@ -553,7 +637,7 @@ function AgentConversation({
   function show(id: string) {
     attachments.clear()
     setConversation(id)
-    setMessages([])
+    setThreadWindow(null)
     setRuns([])
     setRenaming(null)
   }
@@ -785,9 +869,23 @@ function AgentConversation({
         role="log"
         ref={history}
         aria-busy={reading === 'loading'}
-        onScroll={onHistoryScroll}
+        onScroll={onThreadScroll}
       >
         <div ref={historyContent} className="cc-agent-history-content">
+          {!reading && threadWindow?.before && (
+            <div className="cc-agent-older" role="status">
+              {older === 'failed' ? (
+                <>
+                  <span>更早的对话没有读出来。</span>
+                  <button type="button" onClick={loadOlder}>
+                    重新读取
+                  </button>
+                </>
+              ) : (
+                <span>正在读取更早的对话…</span>
+              )}
+            </div>
+          )}
           {reading === 'loading' && <ThreadLoading />}
           {reading === 'failed' && (
             <div className="cc-agent-read-failed" role="status">
