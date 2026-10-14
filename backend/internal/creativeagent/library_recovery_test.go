@@ -14,7 +14,7 @@ import (
 func TestLibrarySettledFirstPageCursorContinues(t *testing.T) {
 	f, h, a := organizeFixture(t)
 	raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"已提交标题"}]}`, a.ID)
-	c, err := h.startLibraryCall(t.Context(), organizeAssetsTool, raw)
+	c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestLibrarySettledFirstPageCursorContinues(t *testing.T) {
 
 func TestLibraryRetryObservesConcurrentSettlement(t *testing.T) {
 	_, h, _ := organizeFixture(t)
-	c, err := h.startLibraryCall(t.Context(), manageLibraryTool, `{"actions":[{"action":"create_group","name":"待创建"}]}`)
+	c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), manageLibraryTool, `{"actions":[{"action":"create_group","name":"待创建"}]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestLibraryOldAttemptCannotOverwriteCommittedRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw := fmt.Sprintf(`{"actions":[{"action":"rename_group","group_id":%q,"expected_revision":"1","name":"新组"}]}`, group.ID)
-	old, err := h.startLibraryCall(t.Context(), manageLibraryTool, raw)
+	old, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), manageLibraryTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -294,6 +294,27 @@ func CompleteGenerationInTx(ctx context.Context, tx store.TxAccountScope, target
 	return advanceCanvas(ctx, tx, canvas, false)
 }
 
+// CancelUndispatchedGenerationInTx 收起一次没发给供应商就被终止的生成：执行置为
+// cancelled / discarded，节点回到生成前。调用方必须已在同一事务里关闭网关请求；
+// 已发出的生成不能取消（owner 2026-10-14），不走这里。
+func CancelUndispatchedGenerationInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) error {
+	canvas, err := lockCanvas(ctx, tx, target.CanvasID, false)
+	if err != nil {
+		return err
+	}
+	e, err := readExecution(ctx, tx, target)
+	if err != nil {
+		return err
+	}
+	if e.ActionKey != GenerationAction {
+		return creativeops.ErrValidation
+	}
+	if e.ApplyState != "pending" || e.State != "queued" && e.State != "running" {
+		return nil
+	}
+	return finishExecution(ctx, tx, canvas, e, "cancelled", "discarded", "")
+}
+
 // LockGenerationHandoffInTx 在内容写入前固定业务锁顺序，取消不阻止候选保留。
 func LockGenerationHandoffInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) error {
 	if _, err := lockCanvas(ctx, tx, target.CanvasID, false); err != nil {

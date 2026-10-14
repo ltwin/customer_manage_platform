@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -99,7 +100,71 @@ func runOutcome(run Run, status int) (creativeops.Outcome, error) {
 
 // CancelRun targets the run identity, not a stale revision from a polling tab.
 func (s *Service) CancelRun(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
-	return s.controlCommand(ctx, scope, command, false)
+	receipt, err := s.controlCommand(ctx, scope, command, false)
+	if err != nil {
+		return receipt, err
+	}
+	var in struct {
+		RunID string `json:"run_id"`
+	}
+	if creativeops.Decode(command.Payload, &in) == nil {
+		s.stopQueuedGenerations(ctx, scope, in.RunID)
+	}
+	return receipt, nil
+}
+
+// stopQueuedGenerations ends what a stopped run asked to generate but the
+// gateway has not sent yet; generations already sent finish and are charged
+// (owner 2026-10-14). Only a photographer's stop does this: a run that times
+// out or fails leaves its generations to finish. It is best effort after the
+// stop committed. A generation dispatched first, or one a crash leaves
+// behind, is generated as it was asked for.
+func (s *Service) stopQueuedGenerations(ctx context.Context, scope store.AccountScope, runID string) {
+	if s.generator == nil {
+		return
+	}
+	var canvasID *string
+	var steps []string
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		var conversation string
+		var cancelled *time.Time
+		if err := tx.QueryRow(ctx, "creative_agent_runs", "conversation_id,cancel_requested_at", "id=$2", runID).Scan(&conversation, &cancelled); err != nil {
+			return err
+		}
+		if cancelled == nil {
+			// Finished before the stop arrived; nothing it asked for is withdrawn.
+			return nil
+		}
+		if err := tx.QueryRow(ctx, "creative_agent_conversations", "canvas_id", "id=$2", conversation).Scan(&canvasID); err != nil {
+			return err
+		}
+		rows, err := tx.Query(ctx, "creative_agent_steps", "id", "run_id=$2 AND kind='tool' AND tool_key=$3", runID, generateNodeTool)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id string
+			if err = rows.Scan(&id); err != nil {
+				return err
+			}
+			steps = append(steps, id)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		s.logger.WarnContext(ctx, "creative agent could not list generations to stop", slog.String("run_id", runID), slog.String("error", err.Error()))
+		return
+	}
+	if canvasID == nil {
+		return
+	}
+	for _, step := range steps {
+		// The seed is the one canvasTool gave the generation.
+		if _, err := s.generator.StopAgentGeneration(ctx, scope, *canvasID, runID+"/"+step); err != nil {
+			s.logger.WarnContext(ctx, "creative agent could not stop a queued generation", slog.String("run_id", runID), slog.String("step_id", step), slog.String("error", err.Error()))
+		}
+	}
 }
 func (s *Service) CloseReconciliation(ctx context.Context, scope store.AccountScope, command creativeops.Command) (creativeops.Receipt, error) {
 	return s.controlCommand(ctx, scope, command, true)

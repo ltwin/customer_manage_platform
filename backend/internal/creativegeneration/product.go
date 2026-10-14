@@ -105,6 +105,10 @@ func (p *Product) Catalog(ctx context.Context, scope store.AccountScope) (Catalo
 }
 
 func (p *Product) Request(ctx context.Context, scope store.AccountScope, c creativeops.Command) (creativeops.Receipt, error) {
+	return p.request(ctx, scope, c, nil)
+}
+
+func (p *Product) request(ctx context.Context, scope store.AccountScope, c creativeops.Command, admit func(context.Context, store.TxAccountScope) error) (creativeops.Receipt, error) {
 	if p != nil && p.runtime != nil {
 		for _, m := range p.models {
 			if ensure := p.registrations[m.Key].Ensure; ensure != nil {
@@ -155,6 +159,6 @@ func (p *Product) Request(ctx context.Context, scope store.AccountScope, c creat
 		if admission.Prepared.PolicyDefinition().Version != r.Model.ConfigurationRevision || revision < 1 || request.ModelKey != key || string(request.Kind) != r.Model.Kind {
 			return creativeops.Outcome{}, gw.ErrConflict
 		}
-		return p.runtime.requestInTx(ctx, tx, in, c.OperationID, admission, revision)
+		return p.runtime.requestInTx(ctx, tx, in, c.OperationID, admission, revision, admit)
 	}}, c)
 }

@@ -204,7 +204,9 @@ func (s *Service) executeRecordedRetry(ctx context.Context, scope store.AccountS
 		return turnOutcome{}, ErrRecoveryEvidence
 	}
 	e.runtime.current.set(parent, "")
-	result, err := e.runtime.callTool(ctx, call.Name, runtimeCallID(parent, index), string(call.Arguments), func() (string, error) { return e.runtime.readSkillResource(ctx, string(call.Arguments)) })
+	result, err := e.runtime.callTool(ctx, call.Name, runtimeCallID(parent, index), string(call.Arguments), func(ctx context.Context) (string, error) {
+		return e.runtime.readSkillResource(ctx, string(call.Arguments))
+	})
 	if err != nil {
 		return turnOutcome{StepID: id}, err
 	}

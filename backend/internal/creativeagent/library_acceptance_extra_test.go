@@ -28,7 +28,7 @@ func TestLibraryBatchLimitsRejectBeforeEffects(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err = h.runLibraryWrite(t.Context(), tc.tool, string(raw)); err == nil {
+		if _, err = h.runLibraryWrite(withToolStep(t.Context(), organizeStep), tc.tool, string(raw)); err == nil {
 			t.Fatal("oversized batch accepted", tc.tool)
 		}
 	}
@@ -59,15 +59,15 @@ func TestLibrarySaveFreezesContentAndReportsActualTagFacts(t *testing.T) {
 	}
 	node := nodes.Created["ref"]
 	raw := fmt.Sprintf(`{"node_id":%q,"title":"planned","description":"planned description"}`, node)
-	h.step = "save-interrupted"
-	if _, err = h.startLibraryCall(t.Context(), saveLibraryTool, raw); err != nil {
+	interrupted := withToolStep(t.Context(), "save-interrupted")
+	if _, err = h.startLibraryCall(interrupted, saveLibraryTool, raw); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = h.editCanvas(t.Context(), f.canvasID, "changed-node", fmt.Sprintf(`{"actions":[{"type":"set_text","node_id":%q,"text":"new content"}]}`, node)); err != nil {
 		t.Fatal(err)
 	}
 	before := f.count("creative_assets", `account_id='agent-a'`)
-	out, err := h.runLibraryWrite(t.Context(), saveLibraryTool, raw)
+	out, err := h.runLibraryWrite(interrupted, saveLibraryTool, raw)
 	if err != nil || !strings.Contains(out, `"status":"conflict"`) {
 		t.Fatal(out, err)
 	}
@@ -82,8 +82,7 @@ func TestLibrarySaveFreezesContentAndReportsActualTagFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw = fmt.Sprintf(`{"node_id":%q,"title":"actual","description":"actual description","new_tags":[{"name":"existing"},{"name":"created"}]}`, node)
-	h.step = "save-current"
-	out, err = h.runLibraryWrite(t.Context(), saveLibraryTool, raw)
+	out, err = h.runLibraryWrite(withToolStep(t.Context(), "save-current"), saveLibraryTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,8 +127,7 @@ func TestLibrarySaveFreezesContentAndReportsActualTagFacts(t *testing.T) {
 	if !found {
 		t.Fatal("missing save facts")
 	}
-	h.step = "save-reuse"
-	_, err = h.runLibraryWrite(t.Context(), saveLibraryTool, fmt.Sprintf(`{"node_id":%q,"title":"must not replace","description":"must not replace"}`, node))
+	_, err = h.runLibraryWrite(withToolStep(t.Context(), "save-reuse"), saveLibraryTool, fmt.Sprintf(`{"node_id":%q,"title":"must not replace","description":"must not replace"}`, node))
 	if err != nil {
 		t.Fatal(err)
 	}

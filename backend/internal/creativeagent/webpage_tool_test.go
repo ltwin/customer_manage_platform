@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -18,14 +20,17 @@ import (
 
 // stubFetcher stands in for Firecrawl; webfetch's own tests cover the wire.
 type stubFetcher struct {
+	mu      sync.Mutex
 	calls   []string
 	waits   []time.Duration
 	queries []string
 }
 
 func (s *stubFetcher) Search(_ context.Context, query string, wait time.Duration) ([]webfetch.SearchResult, error) {
+	s.mu.Lock()
 	s.queries = append(s.queries, query)
 	s.waits = append(s.waits, wait)
+	s.mu.Unlock()
 	switch {
 	case strings.Contains(query, "慢"):
 		return nil, webfetch.ErrTimeout
@@ -40,8 +45,10 @@ func (s *stubFetcher) Search(_ context.Context, query string, wait time.Duration
 }
 
 func (s *stubFetcher) Scrape(_ context.Context, rawURL string, wait time.Duration) (webfetch.Page, error) {
+	s.mu.Lock()
 	s.calls = append(s.calls, rawURL)
 	s.waits = append(s.waits, wait)
+	s.mu.Unlock()
 	switch {
 	case strings.HasSuffix(rawURL, "/missing"):
 		return webfetch.Page{}, &webfetch.PageStatusError{StatusCode: 404}
@@ -134,6 +141,8 @@ func TestAssistantReadsWebpages(t *testing.T) {
 			t.Fatalf("result %d = %q, want %q", i, results[i], want)
 		}
 	}
+	// Different pages are read together, so only the set is fixed.
+	slices.Sort(fetcher.calls)
 	if strings.Join(fetcher.calls, " ") != "https://Example.com:443/a#intro https://example.com/missing https://example.com/slow" {
 		t.Fatalf("fetched %v", fetcher.calls)
 	}

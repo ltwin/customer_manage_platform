@@ -82,20 +82,14 @@ type runtimeHandler struct {
 	current   *currentStep
 	mu        sync.Mutex
 	resultErr error
-	// step is the journal row of the tool call in flight. Calls run one at a
-	// time, so a tool that writes can take its identity from here.
-	step string
+	// pending is the dispatch plan of the answer whose calls are running.
+	pending *pendingBatch
 	// failures counts unexplained failures per tool in this execution.
 	failures map[string]int
 }
 
 var _ adk.ChatModelAgentMiddleware = (*runtimeHandler)(nil)
 
-func (h *runtimeHandler) toolStep() string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.step
-}
 func (h *runtimeHandler) setResultError(err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -176,7 +170,9 @@ func (h *runtimeHandler) allowed(name string) bool {
 }
 
 func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.ChatModelAgentMiddleware, error) {
-	config := adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{ExecuteSequentially: true}}
+	// Calls of one answer run together; dispatch keeps the order of those
+	// that touch the same thing.
+	config := adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{ExecuteSequentially: false}}
 	handlers := []adk.ChatModelAgentMiddleware{h}
 	if !h.held.Model.Capability.ToolCalling {
 		return config, handlers, nil
@@ -338,11 +334,11 @@ func (h *runtimeHandler) planInTx(ctx context.Context, tx store.TxAccountScope, 
 
 func (h *runtimeHandler) WrapInvokableToolCall(_ context.Context, next adk.InvokableToolCallEndpoint, info *adk.ToolContext) (adk.InvokableToolCallEndpoint, error) {
 	return func(ctx context.Context, args string, opts ...tool.Option) (string, error) {
-		return h.callTool(ctx, info.Name, info.CallID, args, func() (string, error) { return next(ctx, args, opts...) })
+		return h.dispatch(ctx, info.Name, info.CallID, args, func(ctx context.Context) (string, error) { return next(ctx, args, opts...) })
 	}, nil
 }
 
-func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string, read func() (string, error)) (string, error) {
+func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string, read func(context.Context) (string, error)) (string, error) {
 	if !h.allowed(name) {
 		return "", errToolDenied
 	}
@@ -408,10 +404,7 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 		readErr = strictArguments(args, &request)
 	}
 	if readErr == nil {
-		h.mu.Lock()
-		h.step = stepID
-		h.mu.Unlock()
-		result, readErr = read()
+		result, readErr = read(withToolStep(ctx, stepID))
 	}
 	code := ""
 	var public creativeops.Public

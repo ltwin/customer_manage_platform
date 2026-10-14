@@ -95,7 +95,10 @@ func (h *runtimeHandler) readWebpage(ctx context.Context, raw string) (string, e
 	if err != nil || target.Scheme != "http" && target.Scheme != "https" || target.Host == "" || target.User != nil {
 		return "", refuseTool("只能读取公开的 http/https 网页")
 	}
-	stepID := h.toolStep()
+	stepID := toolStepFrom(ctx)
+	if stepID == "" {
+		return "", ErrRunState
+	}
 	key := webpageKey(target)
 	prior, reads, err := h.priorCalls(ctx, stepID, readWebpageTool, func(raw json.RawMessage) bool {
 		var args struct {

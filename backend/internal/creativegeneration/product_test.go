@@ -136,3 +136,33 @@ func TestProductModelKindsAreExact(t *testing.T) {
 		}
 	}
 }
+
+// 助手的复核在受理事务里：拒绝时什么都不落库，也就不会派发；放行时照常受理。
+func TestAgentGenerationAdmitGuardsAcceptance(t *testing.T) {
+	f := setup(t, gw.GenerationText)
+	p, err := creativegeneration.NewProduct(f.svc, []creativegeneration.Registration{{Model: creativegeneration.Model{ConfigurationRevision: "1", Key: "test-model", Label: "受控文字模型", Kind: "text"}, PrepareInTx: func(context.Context, store.TxAccountScope, creativecanvas.RequestExecutionInput) (gw.GenerationAdmission, int64, error) {
+		return f.admission, 1, nil
+	}}})
+	must(t, err)
+	canvas, err := creativecanvas.GetCanvas(t.Context(), f.scope, f.target.CanvasID)
+	must(t, err)
+	in := creativegeneration.AgentGeneration{Seed: "run/step-stopped", CanvasID: f.target.CanvasID, NodeID: f.node, DraftRevision: int64(canvas.Nodes[0].Prompt.Revision)}
+	stopped := errors.New("run stopped")
+	in.Admit = func(context.Context, store.TxAccountScope) error { return stopped }
+	if _, err = p.GenerateNode(t.Context(), f.scope, in); !errors.Is(err, stopped) {
+		t.Fatalf("refused admission: %v", err)
+	}
+	for _, table := range []string{"llm_requests", "creative_node_executions", "creative_generation_bindings"} {
+		if count(t, f.db, "SELECT count(*) FROM "+table) != 0 {
+			t.Fatal("refused generation recorded", table)
+		}
+	}
+	var admitted atomic.Int64
+	in.Seed = "run/step-running"
+	in.Admit = func(context.Context, store.TxAccountScope) error { admitted.Add(1); return nil }
+	result, err := p.GenerateNode(t.Context(), f.scope, in)
+	must(t, err)
+	if admitted.Load() != 1 || result.State != "running" || count(t, f.db, "SELECT count(*) FROM llm_requests WHERE state='prepared'") != 1 {
+		t.Fatalf("admitted generation %+v", result)
+	}
+}

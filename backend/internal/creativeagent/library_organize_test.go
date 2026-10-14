@@ -13,6 +13,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 )
 
+// organizeStep is the journal row the organize fixtures' calls run as.
+const organizeStep = "organize-test-step"
+
 func organizeFixture(t *testing.T) (*fixture, *runtimeHandler, creativelibrary.AssetResult) {
 	t.Helper()
 	f := setup(t)
@@ -24,7 +27,6 @@ func organizeFixture(t *testing.T) (*fixture, *runtimeHandler, creativelibrary.A
 		t.Fatal(err)
 	}
 	h.held = held
-	h.step = "organize-test-step"
 	body := "原始正文"
 	r, err := creativelibrary.CreateAsset(t.Context(), f.alice, command(t, creativelibrary.CreateAssetInput{Title: "原图", Content: creativecontent.Draft{Kind: "text", Payload: creativecontent.Payload{Body: &body}}}))
 	if err != nil {
@@ -40,7 +42,7 @@ func TestOrganizeLibraryReplayAndFullDetails(t *testing.T) {
 	f, h, a := organizeFixture(t)
 	description := strings.Repeat("新", 1000)
 	raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"新标题","description":%q}]}`, a.ID, description)
-	output, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw)
+	output, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +55,7 @@ func TestOrganizeLibraryReplayAndFullDetails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw)
+	again, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func TestOrganizeLibraryReplayAndFullDetails(t *testing.T) {
 	if string(one) != string(two) {
 		t.Fatal("replay changed")
 	}
-	c, err := h.loadLibraryCall(t.Context(), toolOperation(h.held.RunID+"/"+h.step+"/library-result"))
+	c, err := h.loadLibraryCall(t.Context(), toolOperation(h.held.RunID+"/"+organizeStep+"/library-result"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +83,7 @@ func TestOrganizeLibraryReplayAndFullDetails(t *testing.T) {
 func TestLibraryUnknownFencesAndQueryOnlySettles(t *testing.T) {
 	f, h, a := organizeFixture(t)
 	raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"计划标题"}]}`, a.ID)
-	c, err := h.startLibraryCall(t.Context(), organizeAssetsTool, raw)
+	c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +112,7 @@ func TestLibraryUnknownFencesAndQueryOnlySettles(t *testing.T) {
 func TestLibraryCommittedBeforeJournalUpdateRecovers(t *testing.T) {
 	f, h, a := organizeFixture(t)
 	raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"已提交"}]}`, a.ID)
-	c, err := h.startLibraryCall(t.Context(), organizeAssetsTool, raw)
+	c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +125,7 @@ func TestLibraryCommittedBeforeJournalUpdateRecovers(t *testing.T) {
 	if _, err = executeLibraryPhase(t.Context(), f.alice, "metadata", command); err != nil {
 		t.Fatal(err)
 	}
-	output, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw)
+	output, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil || !strings.Contains(output, `"status":"applied"`) {
 		t.Fatal(output, err)
 	}
@@ -171,7 +173,7 @@ func TestLibraryBatchDetailsPaginationAndPreflight(t *testing.T) {
 	if len(raw) > f.service.limits.ToolArgumentBytes {
 		t.Fatal("test input too large", len(raw))
 	}
-	output, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, string(raw))
+	output, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,9 +228,8 @@ func TestLibraryBatchDetailsPaginationAndPreflight(t *testing.T) {
 	if f.count("creative_operation_receipts", "account_id='agent-a'") != before {
 		t.Fatal("reading wrote commands")
 	}
-	h.step = "small-budget"
 	f.service.limits.ToolResultBytes = 300
-	if _, err = h.runLibraryWrite(t.Context(), trashAssetsTool, fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"2"}]}`, items[0].ID)); err == nil {
+	if _, err = h.runLibraryWrite(withToolStep(t.Context(), "small-budget"), trashAssetsTool, fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"2"}]}`, items[0].ID)); err == nil {
 		t.Fatal("tiny budget accepted")
 	}
 	a, err := creativelibrary.GetAsset(t.Context(), f.alice, items[0].ID)
@@ -239,10 +240,11 @@ func TestLibraryBatchDetailsPaginationAndPreflight(t *testing.T) {
 
 func TestLibraryStructureActionsTrashAndRetention(t *testing.T) {
 	f, h, a := organizeFixture(t)
+	step := organizeStep
 	run := func(name, raw string) map[string]any {
 		t.Helper()
-		h.step += "x"
-		out, err := h.runLibraryWrite(t.Context(), name, raw)
+		step += "x"
+		out, err := h.runLibraryWrite(withToolStep(t.Context(), step), name, raw)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -275,7 +277,7 @@ func TestLibraryStructureActionsTrashAndRetention(t *testing.T) {
 	run(manageLibraryTool, fmt.Sprintf(`{"actions":[{"action":"delete_category","category_id":%q,"expected_revision":"2"}]}`, cat["id"]))
 	run(manageLibraryTool, fmt.Sprintf(`{"actions":[{"action":"delete_group","group_id":%q,"expected_revision":"2"}]}`, group["id"]))
 	run(restoreAssetsTool, fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"5"}]}`, a.ID))
-	id := toolOperation(h.held.RunID + "/" + h.step + "/library-result")
+	id := toolOperation(h.held.RunID + "/" + step + "/library-result")
 	if _, err := f.db.Exec("UPDATE creative_agent_library_calls SET retained_until=now()-interval '1 day' WHERE account_id='agent-a' AND id=$1", id); err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +366,7 @@ func TestTwoPhaseRecoveryAndConcurrentMetadataConflict(t *testing.T) {
 				t.Fatal(err)
 			}
 			raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"新标题","add_tag_ids":[%q]}]}`, a.ID, tag.ID)
-			c, err := h.startLibraryCall(t.Context(), organizeAssetsTool, raw)
+			c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -389,7 +391,7 @@ func TestTwoPhaseRecoveryAndConcurrentMetadataConflict(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			output, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw)
+			output, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -410,7 +412,7 @@ func TestTwoPhaseRecoveryAndConcurrentMetadataConflict(t *testing.T) {
 func TestLibraryResultsStayWithinConversationAndConsent(t *testing.T) {
 	f, h, a := organizeFixture(t)
 	raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"确认过的新标题"}]}`, a.ID)
-	output, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw)
+	output, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

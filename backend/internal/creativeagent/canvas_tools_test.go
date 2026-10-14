@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativegeneration"
@@ -17,7 +18,13 @@ import (
 // stubGenerator stands in for node generation; the canvas writes before it are
 // the real commands.
 type stubGenerator struct {
-	calls []creativegeneration.AgentGeneration
+	mu      sync.Mutex
+	calls   []creativegeneration.AgentGeneration
+	stopped []string
+	// submitted counts generations admission accepted.
+	submitted int
+	// generate, when set, stands in for the generation itself.
+	generate func(context.Context, creativegeneration.AgentGeneration) error
 }
 
 func (s *stubGenerator) Models() []creativegeneration.Model {
@@ -29,9 +36,33 @@ func (s *stubGenerator) DraftParameters(model, nodeType string, given map[string
 	}
 	return json.Marshal(given)
 }
-func (s *stubGenerator) GenerateNode(_ context.Context, _ store.AccountScope, in creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error) {
+func (s *stubGenerator) GenerateNode(ctx context.Context, scope store.AccountScope, in creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error) {
+	s.mu.Lock()
 	s.calls = append(s.calls, in)
+	s.mu.Unlock()
+	if s.generate != nil {
+		if err := s.generate(ctx, in); err != nil {
+			return creativegeneration.AgentGenerationResult{}, err
+		}
+	}
+	// Admission runs the caller's check in its own transaction, as the real
+	// one does before the request is recorded.
+	if in.Admit != nil {
+		if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error { return in.Admit(ctx, tx) }); err != nil {
+			return creativegeneration.AgentGenerationResult{}, err
+		}
+	}
+	s.mu.Lock()
+	s.submitted++
+	s.mu.Unlock()
 	return creativegeneration.AgentGenerationResult{NodeID: in.NodeID, ExecutionID: "cwexec_1", State: "succeeded", ContentRevisionIDs: []string{"ccrv_out"}}, nil
+}
+
+func (s *stubGenerator) StopAgentGeneration(_ context.Context, _ store.AccountScope, _, seed string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stopped = append(s.stopped, seed)
+	return true, nil
 }
 
 // toolResult returns what the k-th call of the latest tool round returned.

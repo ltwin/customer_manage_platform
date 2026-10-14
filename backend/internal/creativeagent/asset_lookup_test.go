@@ -236,14 +236,13 @@ func TestLibraryToolsAndCanvasRoundTrip(t *testing.T) {
 			t.Fatal("wrong placed content")
 		}
 	}
-	h.step = "save-step"
 	held, err := f.service.claimRun(t.Context(), f.alice, h.held.RunID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	h.held = held
 	for range 2 {
-		result, err := h.runLibraryWrite(t.Context(), saveLibraryTool, fmt.Sprintf(`{"node_id":%q,"title":"已收藏","description":"素材描述"}`, canvas.Nodes[0].ID))
+		result, err := h.runLibraryWrite(withToolStep(t.Context(), "save-step"), saveLibraryTool, fmt.Sprintf(`{"node_id":%q,"title":"已收藏","description":"素材描述"}`, canvas.Nodes[0].ID))
 		if err != nil {
 			t.Fatal(err)
 		}

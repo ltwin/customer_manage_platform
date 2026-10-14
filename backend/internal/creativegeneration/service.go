@@ -86,10 +86,10 @@ func (s *Service) Request(ctx context.Context, scope store.AccountScope, c creat
 	// operation身份覆盖全部受信控制输入；重放先查回执，不重新执行预检、准入或入队。
 	c.Payload = creativegraph.Canonical(map[string]any{"target": in, "fingerprint": admission.Prepared.Fingerprint(), "control_revision": controlRevision, "deadline": admission.Deadline, "group_deadline": admission.GroupDeadline, "group_limit": admission.GroupLimitMicros, "account_limit": admission.AccountLimitMicros, "group_tokens": admission.GroupTokenLimit, "account_tokens": admission.AccountTokenLimit})
 	return (creativeops.Executor{}).Run(ctx, scope, creativeops.Operation{Key: "canvas.request_generation", Capability: "node_generate", Validate: func(json.RawMessage) error { return nil }, Apply: func(ctx context.Context, tx store.TxAccountScope, _ json.RawMessage) (creativeops.Outcome, error) {
-		return s.requestInTx(ctx, tx, in, c.OperationID, admission, controlRevision)
+		return s.requestInTx(ctx, tx, in, c.OperationID, admission, controlRevision, nil)
 	}}, c)
 }
-func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in creativecanvas.RequestExecutionInput, operation string, admission gw.GenerationAdmission, controlRevision int64) (creativeops.Outcome, error) {
+func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in creativecanvas.RequestExecutionInput, operation string, admission gw.GenerationAdmission, controlRevision int64, admit func(context.Context, store.TxAccountScope) error) (creativeops.Outcome, error) {
 	execution := "cwexec_" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(tx.AccountID()+"/"+operation)).String()
 	admission.CallerService = caller
 	admission.CallerOperationID = operation
@@ -112,6 +112,12 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	request, err := s.gateway.PrepareGenerationInTx(ctx, tx, admission)
 	if err != nil {
 		return creativeops.Outcome{}, err
+	}
+	// 发起方复核在额度之后、画布之前：与助手停止的 额度 → 运行 顺序一致。
+	if admit != nil {
+		if err = admit(ctx, tx); err != nil {
+			return creativeops.Outcome{}, err
+		}
 	}
 	snapshot := admission.Prepared.Generation().Snapshot().Request
 	spec := creativecanvas.GenerationSpec{Kind: string(snapshot.Kind), Prompt: snapshot.Input.Prompt, ModelKey: snapshot.ModelKey, Parameters: snapshot.Input.Parameters}
@@ -391,6 +397,30 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 	})
 	return false, err
 }
+
+// StopUndispatched 终止还没发给供应商的生成：网关请求仍在排队时关闭它、退回预留，
+// 节点回到生成前。已发出的照常完成、采用并计费（owner 2026-10-14）。与派发并发时
+// 谁先锁到请求行谁说了算。返回是否终止了；执行不存在或已发出时为 false。
+func (s *Service) StopUndispatched(ctx context.Context, scope store.AccountScope, target creativecanvas.ExecutionTarget) (bool, error) {
+	stopped := false
+	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var request string
+		err := tx.QueryRow(ctx, "creative_generation_bindings", "request_id", "execution_id=$2 AND canvas_id=$3", target.ExecutionID, target.CanvasID).Scan(&request)
+		if errors.Is(err, store.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		// 锁顺序与派发、收尾一致：账号写锁 → 额度 → 请求 → 画布。
+		if stopped, err = s.generation.StopUndispatchedInTx(ctx, tx, request); err != nil || !stopped {
+			return err
+		}
+		return creativecanvas.CancelUndispatchedGenerationInTx(ctx, tx, target)
+	})
+	return stopped, err
+}
+
 func (s *Service) complete(ctx context.Context, scope store.AccountScope, target creativecanvas.ExecutionTarget, b binding, partial bool) error {
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if _, err := s.generation.LockPublicationInTx(ctx, tx, b.request); err != nil {

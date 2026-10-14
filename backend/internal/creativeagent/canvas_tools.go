@@ -47,6 +47,9 @@ type Generator interface {
 	Models() []creativegeneration.Model
 	DraftParameters(modelKey, nodeType string, given map[string]any) (json.RawMessage, error)
 	GenerateNode(context.Context, store.AccountScope, creativegeneration.AgentGeneration) (creativegeneration.AgentGenerationResult, error)
+	// StopAgentGeneration ends the generation a call with this seed submitted,
+	// if the gateway has not sent it yet. Sent ones cannot be stopped.
+	StopAgentGeneration(ctx context.Context, scope store.AccountScope, canvasID, seed string) (bool, error)
 }
 
 // SetGenerator binds generation at composition time. Without it, or while no
@@ -186,7 +189,7 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 	default:
 		return &schema.ToolInfo{
 			Name: generateNodeTool,
-			Desc: "按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗摄影师的生成额度，只在对方明确要生成时调用。调用会等待结果：state 说生成本身，apply_state 说结果是否放到了节点上。只有 apply_state 为 applied 才表示节点已切换到新版本，此时返回新版本的内容修订 ID，可用 read_asset 查看；conflicted、discarded、expired 表示生成完成但没有采用（期间节点被改动、清空或删除），如实告诉摄影师；state 为 running 或 apply_state 为 pending 表示仍在进行，结果稍后出现在画布上，不要重复调用。",
+			Desc: "按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗摄影师的生成额度，只在对方明确要生成时调用。调用会等待结果：state 说生成本身，apply_state 说结果是否放到了节点上。只有 apply_state 为 applied 才表示节点已切换到新版本，此时返回新版本的内容修订 ID，可用 read_asset 查看；conflicted、discarded、expired 表示生成完成但没有采用（期间节点被改动、清空或删除），如实告诉摄影师；state 为 running 或 apply_state 为 pending 表示仍在进行，结果稍后出现在画布上，不要重复调用。多个节点要生成时，在同一次回复里一起调用：互不相连的节点会同时生成，连在一起的按先后顺序生成。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"node_id":        {Type: schema.String, Required: true, Desc: "要生成的节点 ID"},
 				"draft_revision": {Type: schema.Integer, Required: true, Desc: "set_node_prompt 返回或 read_canvas 读到的提示词版本；节点被别人改过时拒绝"},
@@ -197,6 +200,10 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 
 func (t *canvasTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Option) (string, error) {
 	h := t.handler
+	step := toolStepFrom(ctx)
+	if step == "" {
+		return "", ErrRunState
+	}
 	var canvasID string
 	err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		return tx.QueryRow(ctx, "creative_agent_conversations", "canvas_id", "id=$2", h.held.ConversationID).Scan(&canvasID)
@@ -206,7 +213,7 @@ func (t *canvasTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Opt
 	}
 	// The step is this call's identity, so a recovered call finds what it
 	// already did instead of doing it, or paying for it, twice.
-	seed := h.held.RunID + "/" + h.toolStep()
+	seed := h.held.RunID + "/" + step
 	var out any
 	switch t.name {
 	case saveLibraryTool:
@@ -560,7 +567,12 @@ func (h *runtimeHandler) generateNode(ctx context.Context, canvasID, seed, raw s
 	}
 	// The wait never outlives the run: the answer still has to be written.
 	wait := min(h.service.generationWait, time.Until(h.held.Deadline)-45*time.Second)
-	result, err := h.service.generator.GenerateNode(ctx, h.scope, creativegeneration.AgentGeneration{Seed: seed, CanvasID: canvasID, NodeID: args.NodeID, DraftRevision: args.DraftRevision, Wait: wait})
+	result, err := h.service.generator.GenerateNode(ctx, h.scope, creativegeneration.AgentGeneration{Seed: seed, CanvasID: canvasID, NodeID: args.NodeID, DraftRevision: args.DraftRevision, Wait: wait,
+		// A stop that commits first keeps the generation from being accepted;
+		// one that commits after finds it and withdraws it while it is queued.
+		Admit: func(ctx context.Context, tx store.TxAccountScope) error {
+			return h.service.admitRunInTx(ctx, tx, h.held)
+		}})
 	if err != nil {
 		return nil, err
 	}

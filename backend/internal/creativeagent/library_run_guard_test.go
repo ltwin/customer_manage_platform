@@ -18,7 +18,7 @@ func TestLibraryPhaseRechecksRunAdmission(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			f, h, a := organizeFixture(t)
 			raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"late write"}]}`, a.ID)
-			c, err := h.startLibraryCall(t.Context(), organizeAssetsTool, raw)
+			c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -71,7 +71,7 @@ func TestLibraryCancellationKeepsCommittedPhaseAndStopsRemainingWrites(t *testin
 		t.Fatal(err)
 	}
 	raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","title":"已提交标题","add_tag_ids":[%q]}]}`, a.ID, tag.ID)
-	c, err := h.startLibraryCall(t.Context(), organizeAssetsTool, raw)
+	c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestLibraryCancellationKeepsCommittedPhaseAndStopsRemainingWrites(t *testin
 	}
 	// This is the still-running tool resuming after CancelRun, before its local
 	// context observes the lease-renewal cancellation. New phases must stop.
-	if _, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw); err != nil {
+	if _, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw); err != nil {
 		t.Fatal(err)
 	}
 	out, err := h.readLibraryResult(t.Context(), fmt.Sprintf(`{"result_id":%q}`, c.ID))

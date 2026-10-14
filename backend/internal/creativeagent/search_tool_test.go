@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,7 +68,11 @@ func TestAssistantSearchesTheWeb(t *testing.T) {
 	if len(results[5]) > inlineResultBytes || strings.Contains(results[5], "item_id") || !strings.Contains(results[5], "https://example.com/long/9") || !strings.Contains(results[5], "<b>&") {
 		t.Fatalf("long result %d bytes: %.200q", len(results[5]), results[5])
 	}
-	if strings.Join(fetcher.queries, "|") != "森系 外景|慢|长摘要" {
+	// Different queries run together, so only the set is fixed.
+	want := []string{"森系 外景", "慢", "长摘要"}
+	slices.Sort(want)
+	slices.Sort(fetcher.queries)
+	if !slices.Equal(fetcher.queries, want) {
 		t.Fatalf("searched %q", fetcher.queries)
 	}
 }

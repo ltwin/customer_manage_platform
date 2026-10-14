@@ -2,9 +2,9 @@
 doc_type: feature-design
 feature: 2026-10-14-agent-parallel-tools
 requirement: 无编号（owner 2026-10-14 提出：互不相连的节点批量生成要能并行，批量出创意图、后续视频分镜都需要）
-status: draft
+status: implemented
 date: 2026-10-14
-revision: 3（按 S1 设计审计与自审修订，见 §10、§11）
+revision: 5（第 3 稿按 S1 审计与自审修订；第 4 稿按实现核对修正 §4.6，见 §12；第 5 稿按 S2 代码审计修订，见 §13）
 ---
 
 # 助手工具按资源并行执行
@@ -92,11 +92,10 @@ key 的形式：
 
 ### 2.2 依赖规则
 
-同一批调用按 `tool_call_index` 排序。调用 j 依赖排在它前面的调用 i，条件是两者有一对 key 相交，且其中至少一方是独占。相交的定义：
+同一批调用按 `tool_call_index` 排序。调用 j 依赖排在它前面的调用 i，条件是：任一方独占 `run`（即使另一方没有声明任何资源）；或两者有一对 key 相交，且其中至少一方是独占。相交的定义：
 
 - 两个 key 相同；或
-- 一方是 `node:*`、另一方以 `node:` 开头；或
-- 任一方是 `run`。
+- 一方是 `node:*`、另一方以 `node:` 开头。
 
 每个调用只等自己依赖的那些结束，其余立即开始。
 
@@ -120,7 +119,8 @@ key 的形式：
 | 工具 | 声明 | 说明 |
 |---|---|---|
 | `read_canvas` | `canvas` 共享 + `node:*` 共享 | 读整张画布：排在同批生成、压缩之后时，等它们结束，与串行一致 |
-| `read_asset`、`read_history`、`read_run_result`、`read_skill_resource`、`load_skill` | 无 | 读不可变内容或本运行自己的记录 |
+| `read_history`、`read_skill_resource`、`load_skill` | 无 | 读触发消息之前的历史，或本次固定的 Skill |
+| `read_asset`、`read_run_result` | `canvas` 共享 + `node:*` 共享 + `library` 共享 | 内容不可变，但能否读取取决于画布节点与素材是否在回收站（`readableInTx`） |
 | `search_assets`、`read_library`、`read_library_result` | `library` 共享 | |
 | `list_conversation_assets` | `run` 独占 | 它读同批前面调用产生的生成结果与读取记录，而生成之间要并行，无法用更细的资源表达。这个工具用于找回旧内容，频率低，保守串行 |
 | `organize_assets`、`manage_library`、`trash_assets`、`restore_assets` | `library` 独占 | |
@@ -128,7 +128,8 @@ key 的形式：
 | `search_web` | `search:<规范化搜索词>` 独占 | 同一搜索词排队，后一个回放前一个的结果 |
 | `read_webpage` | `webpage:<规范化链接>` 独占 | 保住「同一链接只外发一次」 |
 | `update_plan` | `plan` 独占 | |
-| `edit_canvas`、`set_node_prompt` | `canvas` 独占 | 整张画布判冲突，串行 |
+| `edit_canvas` | `canvas` 独占 + `library` 共享 | 整张画布判冲突，串行；放置素材读取素材的当前修订与回收站状态 |
+| `set_node_prompt` | `canvas` 独占 | |
 | `compress_image` | `canvas` 共享 + `node:<node_id>` 独占 | 读写目标节点；实现时核对 `creativeimageedit` 只依赖目标节点 |
 | `generate_node` | `canvas` 共享 + `node:<node_id>` 独占 + 每个上游节点 `node:<上游 id>` 共享 | 上游节点见 §3.1 |
 
@@ -257,20 +258,20 @@ type batch struct {
 - 节点生成有自己的执行和网关调用组（组 ID = 执行 ID，`creativegeneration/service.go`）。停止 Agent 不会碰它们，生成会全部跑完。
 - 生成因通道并发上限在网关排队时，请求停在 `prepared`（`generation_dispatch.go` 拿不到许可时返回 `ErrRateLimited`，不改变状态）。
 - 网关 `CancelInTx` 已经符合这条规则：`prepared` 的请求直接终止并释放预留；已发出或结果未知的，只记录取消意图，费用事实照常。
-- 画布层的生成取消 `cancelNodeExecution(..., generation=true)` 不看是否已发出，一律把执行置为 `cancelled / discarded`。前端没有入口，但画布命令 API 能调到；调用后会丢掉已付费的结果，与规则不符。
+- 摄影师的画布取消入口 `CancelPhotographerExecution` 对生成一律拒绝（owner 2026-10-09），已发出的生成本来就取消不了。不看是否已发出的 `CancelNodeExecution` 没有生产调用方，只在测试里用来模拟内部撤销。
 
 **改动：**
 
-1. **收紧画布层取消**：生成执行的取消，只在网关请求仍为 `prepared` 时生效。
-   - 生效时，在同一事务里依次：锁网关请求 → `CancelInTx` → 锁画布 → 执行置为 `cancelled / discarded`，节点的生成遮罩随之消失。加锁顺序与发布一致：先网关，再画布。
-   - 已发出的生成，取消返回业务拒绝「生成已经开始，无法取消，结果会照常出现在画布上」。不改变任何状态。
-   - 执行已建、网关请求还没受理的窗口，实现时核对受理流程：如果两者不在同一事务里建立，就把这种情况也视为「未发出」并终止。
+1. **终止未发出的生成**（`creativegeneration.Service.StopUndispatched`）：一个事务里，账号写锁 → 额度 → 网关请求行；请求仍为 `prepared` 才关闭它并退回预留，再锁画布、把执行置为 `cancelled / discarded`，节点的生成遮罩随之消失。加锁顺序与派发、收尾一致。已发出的不改任何状态。
+   - 执行、网关请求和绑定在受理时同一事务建立（`requestInTx`），不存在「执行已建、请求未受理」的窗口。
+   - 画布层取消入口不变（见上文现状）。
 2. **摄影师停止 Agent 时，终止本次运行尚未发出的生成。**
    - 只针对摄影师主动停止（取消请求）。运行超时、出错、撤权结束时不处理：这些生成是摄影师要的，照常完成。
    - 找到本次运行所有 `generate_node` 步骤。执行 ID 由步骤 ID 确定性派生（`seed = RunID/stepID` → `agentOperation` → 执行 ID），由 `creativegeneration` 提供派生函数，不在 Agent 包里重写一遍规则。
    - 对每个执行，按上一条的规则逐个取消：没发出的终止；已发出的跳过；查不到执行的（调用还没提交）跳过。
    - 放在停止事务提交之后，每个执行单独一个事务，尽力而为。与派发并发时，谁先锁到请求行谁说了算：派发先拿到就算已发出，照常完成。进程恰好在这之间退出时，未终止的生成会照常发出并计费；这只损失一次「省钱」的机会，不会出错。
 3. **并行批次自身**：停止时还没开始的工具调用，本来就不会提交生成（§4.4）。
+4. **停止与受理互斥**：`generate_node` 通过运行准入后、生成请求落库前，停止可能先提交。生成受理事务在网关预留之后、锁画布之前调用助手传入的 `Admit`，复核运行（锁运行行，检查取消请求、epoch、租约）。加锁顺序 额度 → 运行，与停止的 调用组 → 额度 → 运行 一致。停止先提交，受理被拒、不落库；受理先提交，停止事务在运行行上排队，之后的扫描能找到它。
 
 **摄影师看到的效果**：比如并行 6 张图时停止 Agent，生图通道限 4 路，那么 4 张已发出的照常出图并计费；2 张排队中的被终止，节点回到生成前的样子，预留的额度退回。
 
@@ -302,7 +303,7 @@ type batch struct {
 | 找回对话内容 | 同批「`generate_node(N)`、`list_conversation_assets`」：列表里有 N 的新结果 |
 | 连接池 | 连接池上限设为 2，跑一批 8 个并行读调用加 2 个生成，在超时前全部完成 |
 | 停止与未发出的生成 | 6 个生成中 4 个已发出、2 个在网关排队时，摄影师停止 Agent：2 个请求为 `cancelled`、预留释放、执行为 `cancelled / discarded`；4 个照常完成、采用、结算；运行超时结束时 6 个都不受影响 |
-| 画布层取消 | 对已发出的生成执行 `cancel_execution`：返回拒绝，执行与网关请求状态都不变；对排队中的生成：终止并释放预留 |
+| 终止未发出的生成 | 排队中的生成：请求 `cancelled`、预留归零、执行 `cancelled / discarded`、之后不再派发；已发出的：不终止，照常完成并采用；调用还没提交：什么也不做 |
 | 恢复 | 检查点中 A 已完成、B 依赖 A 尚未执行：重建批次后 B 不等待，直接执行；两个生成在执行中时中断，续跑后各自只生成一次 |
 | 收尾并发 | 8 个读调用同时收尾，无错误，会话消息序号连续（`-count=20`） |
 | 竞态 | `go test -race ./internal/creativeagent/...` |
@@ -366,3 +367,21 @@ type batch struct {
 - `read_history` 只读触发消息之前的历史，与同批调用无关。
 - `read_asset`、`read_run_result` 需要的 ID 只能来自之前的返回，同一次回复里拿不到同批调用的结果。
 - `set_node_prompt` 能改变生成的上游（输入里的 `source_node_id`），已在 §3.1 的「前面有 `canvas` 独占调用则退回串行」里覆盖。
+
+## 12. 实现核对（2026-10-14，第 4 稿）
+
+| 项 | 结论 |
+|---|---|
+| §4.6 第 1 条「收紧画布层取消」 | 前提有误：摄影师入口早已拒绝取消生成，`CancelNodeExecution` 无生产调用方。不改画布取消，只新增 `StopUndispatched` |
+| 执行与网关请求之间的窗口 | 不存在，二者同一事务建立 |
+| 停止钩子 | `CancelRun` 提交后、仅当运行带有 `cancel_requested_at` 时执行；运行已先结束的迟到停止不撤回任何生成 |
+| 连接池 | 连接池上限 2 的测试通过，事务回调里没有向池再取连接 |
+| 测试落点 | 依赖表与恢复时的已完成信号为单元测试（`batch_test.go`）；并行与上游顺序、停止派发、等待中取消、迟到停止、小连接池与消息序号为集成测试；终止未发出的生成在 `creativegeneration/service_test.go`。`errToolFailing` 与 `ErrLimit` 走同一条停止路径，只测后者；「两个生成在执行中时中断、续跑」未单独做集成测试，由已完成信号的单元测试和现有检查点测试覆盖 |
+
+## 13. 代码审计处理记录（S2，2026-10-14）
+
+| 编号 | 结论 | 处理 |
+|---|---|---|
+| S2-1（P1）停止扫描漏掉正在受理的生成 | 成立：准入通过后、请求落库前停止，扫描查不到绑定，受理不复核运行 | `AgentGeneration.Admit`，在受理事务里复核运行（§4.6 第 4 条）；助手层「准入后、受理前停止」与生成层「复核拒绝不落库」两个测试 |
+| S2-2（P2）`run` 独占不覆盖资源为空的调用 | 成立 | 依赖规则先判 `run` 独占（§2.2）；补两个方向的用例 |
+| S2-3（P2）放置素材没有声明素材库读取 | 成立；同类问题还有 `read_asset`、`read_run_result`，读取许可取决于画布节点与回收站状态 | `edit_canvas` 加 `library` 共享；两个读取工具声明 `canvas`、`node:*`、`library` 共享（§3）；补恢复后放置、移入回收站后读取、放置后移入回收站等用例 |

@@ -66,7 +66,10 @@ func (h *runtimeHandler) searchWeb(ctx context.Context, raw string) (string, err
 	if utf8.RuneCountInString(query) > searchQueryRunes {
 		return "", refuseTool("搜索词过长，请精简到 %d 个字符以内", searchQueryRunes)
 	}
-	stepID := h.toolStep()
+	stepID := toolStepFrom(ctx)
+	if stepID == "" {
+		return "", ErrRunState
+	}
 	key := searchKey(query)
 	prior, searches, err := h.priorCalls(ctx, stepID, searchWebTool, func(raw json.RawMessage) bool {
 		var args struct {

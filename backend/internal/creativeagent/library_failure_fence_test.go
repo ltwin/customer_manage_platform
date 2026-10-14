@@ -28,7 +28,7 @@ func testLibraryFailureCommitOrder(t *testing.T, committedFirst bool) {
 		t.Fatal(err)
 	}
 	raw := fmt.Sprintf(`{"items":[{"asset_id":%q,"expected_revision":"1","add_group_ids":[%q]}]}`, a.ID, group.ID)
-	c, err := h.startLibraryCall(t.Context(), organizeAssetsTool, raw)
+	c, err := h.startLibraryCall(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func testLibraryFailureCommitOrder(t *testing.T, committedFirst bool) {
 		if readErr != nil || len(actual.GroupIDs) != 0 {
 			t.Fatal("late effect committed", readErr)
 		}
-		out, readErr := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw)
+		out, readErr := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 		if readErr != nil || !strings.Contains(out, `"status":"not_found"`) {
 			t.Fatal(out, readErr)
 		}
@@ -91,7 +91,7 @@ func testLibraryFailureCommitOrder(t *testing.T, committedFirst bool) {
 	if current.Progress[0][0].Status != "applied" {
 		t.Errorf("committed same-attempt receipt hidden by %s", current.Progress[0][0].Status)
 	}
-	out, err := h.runLibraryWrite(t.Context(), organizeAssetsTool, raw)
+	out, err := h.runLibraryWrite(withToolStep(t.Context(), organizeStep), organizeAssetsTool, raw)
 	if err != nil {
 		t.Fatal(err)
 	}

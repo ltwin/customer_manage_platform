@@ -96,7 +96,7 @@ func (h *runtimeHandler) changeLibraryCallInTx(ctx context.Context, tx store.TxA
 }
 
 func (h *runtimeHandler) startLibraryCall(ctx context.Context, name, raw string) (libraryCall, error) {
-	step := h.toolStep()
+	step := toolStepFrom(ctx)
 	if step == "" {
 		return libraryCall{}, ErrRunState
 	}

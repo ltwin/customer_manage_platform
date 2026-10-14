@@ -73,6 +73,44 @@ func orderedGenerationRefs(g graphState, node string) ([]generationPromptRef, ma
 	return refs, required, nil
 }
 
+// GenerationUpstream 给出生成每个节点时会读取哪些上游节点的当前内容，规则与受理
+// 相同。节点不在画布上时没有上游；引用对不上、算不出的节点不出现在结果里。
+func GenerationUpstream(ctx context.Context, scope store.AccountScope, canvasID string, nodeIDs []string) (map[string][]string, error) {
+	out := map[string][]string{}
+	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
+		if err := tx.RequireCreativeRead(ctx); err != nil {
+			return err
+		}
+		if _, err := readCanvas(ctx, tx, canvasID); err != nil {
+			return err
+		}
+		g, _, err := loadGraph(ctx, tx, canvasID)
+		if err != nil {
+			return err
+		}
+		for _, id := range nodeIDs {
+			if _, ok := g.Nodes[id]; !ok {
+				out[id] = []string{}
+				continue
+			}
+			_, required, err := orderedGenerationRefs(g, id)
+			if err != nil {
+				continue
+			}
+			sources := []string{}
+			for source := range required {
+				if source != id {
+					sources = append(sources, source)
+				}
+			}
+			sort.Strings(sources)
+			out[id] = sources
+		}
+		return nil
+	})
+	return out, err
+}
+
 type CompiledPrompt struct{ Raw, Text string }
 
 // CompileGenerationPromptInTx 只读账号范围内的快照。最终准入取得业务锁后再次编译，

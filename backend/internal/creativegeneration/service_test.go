@@ -289,6 +289,52 @@ func TestGenerationCancelKeepsCandidates(t *testing.T) {
 		t.Fatal("cancel lost candidates or published")
 	}
 }
+
+// 已发给供应商的生成不能取消；还在排队的可以终止并退回预留（owner 2026-10-14）。
+func TestStopUndispatchedOnlyStopsQueuedGeneration(t *testing.T) {
+	f := setup(t, gw.GenerationImage)
+	f.admit(t)
+	stopped, err := f.svc.StopUndispatched(t.Context(), f.scope, f.target)
+	must(t, err)
+	if !stopped {
+		t.Fatal("queued generation was not stopped")
+	}
+	if count(t, f.db, "SELECT count(*) FROM llm_requests WHERE state='cancelled'") != 1 ||
+		count(t, f.db, "SELECT count(*) FROM llm_usage_reservations WHERE remaining_hold_micros<>0") != 0 ||
+		count(t, f.db, "SELECT count(*) FROM creative_node_executions WHERE state='cancelled' AND apply_state='discarded'") != 1 ||
+		count(t, f.db, "SELECT count(*) FROM creative_nodes WHERE active_execution_id IS NOT NULL") != 0 {
+		t.Fatal("stop left the request, hold or node open")
+	}
+	f.step(t)
+	if f.a.calls.Load() != 0 {
+		t.Fatal("stopped generation was dispatched")
+	}
+	stopped, err = f.svc.StopUndispatched(t.Context(), f.scope, f.target)
+	must(t, err)
+	if stopped {
+		t.Fatal("repeated stop reported a second stop")
+	}
+
+	g := setup(t, gw.GenerationImage)
+	g.admit(t)
+	g.step(t)
+	stopped, err = g.svc.StopUndispatched(t.Context(), g.scope, g.target)
+	must(t, err)
+	if stopped || count(t, g.db, "SELECT count(*) FROM llm_requests WHERE state='cancelled'") != 0 {
+		t.Fatal("dispatched generation was cancelled")
+	}
+	for range 3 {
+		g.step(t)
+	}
+	if count(t, g.db, "SELECT count(*) FROM creative_node_executions WHERE state='succeeded' AND apply_state='applied'") != 1 {
+		t.Fatal("dispatched generation did not finish")
+	}
+
+	missing := creativecanvas.ExecutionTarget{CanvasID: g.target.CanvasID, ExecutionID: "cwexec_" + uuid.NewString()}
+	if stopped, err = g.svc.StopUndispatched(t.Context(), g.scope, missing); err != nil || stopped {
+		t.Fatal("stop of an unsubmitted call", stopped, err)
+	}
+}
 func TestGenerationImportCommitFailureReusesStoredObjects(t *testing.T) {
 	f := setup(t, gw.GenerationImage)
 	f.admit(t)

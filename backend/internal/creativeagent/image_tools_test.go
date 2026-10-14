@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeimageedit"
@@ -15,11 +16,14 @@ import (
 // stubCompressor stands in for image editing; its own database tests cover
 // the candidate and the adoption.
 type stubCompressor struct {
+	mu    sync.Mutex
 	calls []creativeimageedit.AgentCompress
 }
 
 func (s *stubCompressor) CompressForAgent(_ context.Context, _ store.AccountScope, in creativeimageedit.AgentCompress) (creativeimageedit.AgentCompressResult, error) {
+	s.mu.Lock()
 	s.calls = append(s.calls, in)
+	s.mu.Unlock()
 	if in.NodeID == "cwnode_busy" {
 		return creativeimageedit.AgentCompressResult{}, &creativeimageedit.Refusal{Message: "这个节点正在生成，完成后再试"}
 	}

@@ -30,6 +30,9 @@ type AgentGeneration struct {
 	DraftRevision int64
 	// Wait 是提交后等待结果的最长时间；到时仍未完成则返回进行中。
 	Wait time.Duration
+	// Admit 可选，在受理事务里（网关预留之后、锁画布之前）复核发起方仍可提交；
+	// 返回错误则不受理。助手用它让停止与受理互斥，停止后不会再有新的生成落库。
+	Admit func(context.Context, store.TxAccountScope) error
 }
 
 type AgentGenerationResult struct {
@@ -77,6 +80,16 @@ func (p *Product) model(key string) (Model, bool) {
 
 func agentOperation(seed, step string) string {
 	return uuid.NewSHA1(uuid.NameSpaceOID, []byte("creative-agent/"+seed+"/"+step)).String()
+}
+
+func agentExecution(scope store.AccountScope, seed string) string {
+	return "cwexec_" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(scope.AccountID()+"/"+agentOperation(seed, "generate"))).String()
+}
+
+// StopAgentGeneration 在摄影师停止助手时，终止 Seed 那次调用发起、还没发给供应商
+// 的生成；调用还没提交或已经发出时什么也不做。
+func (p *Product) StopAgentGeneration(ctx context.Context, scope store.AccountScope, canvasID, seed string) (bool, error) {
+	return p.runtime.StopUndispatched(ctx, scope, creativecanvas.ExecutionTarget{CanvasID: canvasID, ExecutionID: agentExecution(scope, seed)})
 }
 
 // DraftParameters 按模型的参数定义校验并规整取值，未给出的参数沿用规则默认值。
@@ -133,7 +146,7 @@ func (p *Product) DraftParameters(modelKey, nodeType string, given map[string]an
 // Wait 内等待结果。节点的创建与编辑由画布工具负责，这里只生成。
 func (p *Product) GenerateNode(ctx context.Context, scope store.AccountScope, in AgentGeneration) (AgentGenerationResult, error) {
 	operation := agentOperation(in.Seed, "generate")
-	execution := "cwexec_" + uuid.NewSHA1(uuid.NameSpaceOID, []byte(scope.AccountID()+"/"+operation)).String()
+	execution := agentExecution(scope, in.Seed)
 	result := AgentGenerationResult{NodeID: in.NodeID, ExecutionID: execution, State: "running", ApplyState: "pending"}
 	target := creativecanvas.ExecutionTarget{CanvasID: in.CanvasID, ExecutionID: execution}
 	// 重放时执行已经存在，只等结果。
@@ -219,7 +232,7 @@ func (p *Product) submitNode(ctx context.Context, scope store.AccountScope, in A
 	if err != nil {
 		return err
 	}
-	_, err = p.Request(ctx, scope, creativeops.Command{OperationID: operation, CreatedAt: time.Now().UTC(), Payload: raw})
+	_, err = p.request(ctx, scope, creativeops.Command{OperationID: operation, CreatedAt: time.Now().UTC(), Payload: raw}, in.Admit)
 	return err
 }
 
