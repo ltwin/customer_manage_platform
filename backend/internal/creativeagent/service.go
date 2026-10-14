@@ -171,9 +171,11 @@ type Service struct {
 	// compressor is nil while image editing is switched off.
 	compressor   ImageCompressor
 	compressWait time.Duration
-	gateway      *llmgateway.Service
-	models       *llmgateway.Catalog
-	skills       SkillDirectory
+	// fetcher is nil while web page reading is switched off.
+	fetcher WebFetcher
+	gateway *llmgateway.Service
+	models  *llmgateway.Catalog
+	skills  SkillDirectory
 	// tools lists deployed runtime capabilities; canvas tools remain in FND-08.
 	tools  []ToolEntry
 	limits Limits

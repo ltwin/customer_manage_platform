@@ -24,6 +24,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/webfetch"
 )
 
 func run() error {
@@ -103,6 +104,13 @@ func run() error {
 	}
 	if imageEdit != nil {
 		agent.SetImageCompressor(imageEdit)
+	}
+	webFetcher, err := webfetch.FromEnv(os.Getenv)
+	if err != nil {
+		return err
+	}
+	if webFetcher != nil {
+		agent.SetWebFetcher(webFetcher)
 	}
 	trashExpiry := creativelibrary.NewTrashExpiry(nil)
 	handlers := append(media.Handlers(), agent.Handlers()...)

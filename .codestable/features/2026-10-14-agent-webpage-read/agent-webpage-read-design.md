@@ -224,9 +224,10 @@ func (s *Service) SetWebFetcher(f WebFetcher) {
 `readWebpage` 执行顺序：
 
 1. `strictArguments` 解析入参；规范化 URL（见下）。
-2. 读本运行其他 `read_webpage` 步骤（`creative_agent_steps`，`run_id` + `tool_key`，排除当前步骤）：
-   - 有已结束（成功或失败）的步骤，其 `url` 规范化后与本次相同 → 直接返回那一步保存的 `output.result`，不外发。
+2. 读本运行序号（`ordinal`）在当前步骤之前的 `read_webpage` 步骤（`creative_agent_steps`，`run_id` + `tool_key`）：
+   - 有已结束（成功或失败）的步骤，其 `url` 规范化后与本次相同 → 回放那一步保存的 `output.result`，不外发；上次是拒绝的，以同样的拒绝说明返回，步骤照样记为失败。
    - 步骤总数（任何状态，含中断未完成的）达到 20 → 拒绝。
+   - 只数序号在前的：一次模型回答里的多个调用会先全部以 `prepared` 写入，排在后面的还没执行，不能提前计数。
 3. 前置校验（§2.1）。
 4. `wait = min(readWebpageWait, time.Until(h.held.Deadline) - 45*time.Second)`，不足 10 秒拒绝。
 5. `h.service.fetcher.Scrape(ctx, args.URL, wait)`，传模型给的原始 URL。
@@ -252,7 +253,7 @@ func (s *Service) SetWebFetcher(f WebFetcher) {
 ### 3.3 结果截断
 
 - 先按 UTF-8 边界把 markdown 截到 32 KiB（复用 `utf8Prefix`），截了就 `truncated: true`。
-- 用 `json.Encoder` 且 `SetEscapeHTML(false)` 编码，避免 `<>&` 被转成 6 字节的 `<`。
+- 用 `json.Encoder` 且 `SetEscapeHTML(false)` 编码，避免 `<>&` 被转成 6 字节的 `\u003c`。
 - 编码后仍超过 60 KiB（换行、引号转义多的极端情况）就把 markdown 预算减半重来，最多 3 次；仍超则拒绝"网页正文过长，无法读取"。这保证永远不会触发 `ToolResultBytes` 的 `ErrLimit`。
 - 32 KiB 大于内联上限 8 KiB，结果会走现有 `item_id` + `read_run_result` 分页，不改这套机制。
 
@@ -265,7 +266,7 @@ func (s *Service) SetWebFetcher(f WebFetcher) {
 | 同一步骤恢复执行，且已结束 | `callTool` 回放，不外发（现有行为） |
 | 同一运行里再次读同一链接（上次成功或失败） | §3.2 第 2 步回放上次结果，不外发；摄影师想重试就再发一条消息，开新运行 |
 | 外发后、写结果前 worker 中断 | 恢复后同一步骤重新外发；重发次数受运行任务最多 5 次执行及续跑次数约束，每次重发最多 1 次 Firecrawl 请求 |
-| 单运行上限 | 20 次读取步骤（任何状态都计数），重复链接的回放也占名额 |
+| 单运行上限 | 20 次读取步骤（按调用顺序，任何状态都计数），重复链接的回放也占名额 |
 | 跨运行再读同一链接 | 重新外发；Firecrawl 的 10 分钟缓存只提速不省钱；接受 |
 | 账号总量 | 试点期不做账号级配额；靠 Firecrawl 控制台给专用 key 设月度 credit 上限 |
 

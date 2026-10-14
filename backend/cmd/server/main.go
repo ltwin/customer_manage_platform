@@ -41,6 +41,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/planningcapability"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/webfetch"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder"
 	"github.com/samson/customer-manage-platform/backend/internal/reminder/digest"
 	telegramapi "github.com/samson/customer-manage-platform/backend/internal/reminder/digest/telegram"
@@ -257,6 +258,13 @@ func run(ctx context.Context, logger *slog.Logger) error {
 	}
 	if imageEdit != nil {
 		creativeAgent.SetImageCompressor(imageEdit)
+	}
+	webFetcher, err := webfetch.FromEnv(os.Getenv)
+	if err != nil {
+		return newStartupFailure("creative-webpage-init", "FIRECRAWL_BASE_URL", "configuration", err)
+	}
+	if webFetcher != nil {
+		creativeAgent.SetWebFetcher(webFetcher)
 	}
 	creativeGeneration := generation.Product
 	handlers := append(creativeMedia.Handlers(), creativeAgent.Handlers()...)
