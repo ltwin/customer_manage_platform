@@ -5690,6 +5690,75 @@ paths:
         schema:
           type: string
           format: uuid
+  /creative/assets/digest-matches:
+    get:
+      operationId: findCreativeAssetDigestMatches
+      tags:
+      - creative-foundation
+      description: 导入前查重：按文件 SHA-256 找本账号资产库里已有的同内容素材，回收站也算。每个摘要最多给一条，未进回收站的优先，其次是最新添加的；没有匹配的摘要不出现在结果里。
+      parameters:
+      - name: digests
+        in: query
+        required: true
+        schema:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            type: string
+            pattern: '^[a-f0-9]{64}$'
+        style: form
+        explode: false
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeAssetDigestMatches'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/assets/{id}/import-replace:
+    post:
+      operationId: replaceCreativeAssetByImport
+      tags:
+      - creative-foundation
+      description: 导入的文件与这条素材内容相同时，用这次导入替换它：在回收站里就先恢复，标题改为导入的标题，并加入导入的分组；评分、标签、描述、收藏和原有分组保留。
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeLibraryResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplaceCreativeAssetByImportRequest'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
   /creative/assets/batch-restore:
     post:
       operationId: batchRestoreCreativeAssets
@@ -6714,6 +6783,62 @@ components:
           format: date-time
         payload:
           $ref: '#/components/schemas/CreativeAssetBatchPayload'
+    ReplaceCreativeAssetByImportRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeAssetImportReplacePayload'
+    CreativeAssetImportReplacePayload:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      - title
+      - group_ids
+      properties:
+        expected_revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        group_ids:
+          type: array
+          maxItems: 100
+          items:
+            type: string
+    CreativeAssetDigestMatches:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeAssetDigestMatch'
+    CreativeAssetDigestMatch:
+      type: object
+      additionalProperties: false
+      required:
+      - digest
+      - asset
+      properties:
+        digest:
+          type: string
+        asset:
+          $ref: '#/components/schemas/CreativeLibraryAsset'
     RestoreCreativeAssetRequest:
       type: object
       additionalProperties: false

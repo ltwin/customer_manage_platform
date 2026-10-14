@@ -4284,6 +4284,17 @@ type CreativeAssetCreateResult struct {
 	Title       *string                   `json:"title,omitempty"`
 }
 
+// CreativeAssetDigestMatch defines model for CreativeAssetDigestMatch.
+type CreativeAssetDigestMatch struct {
+	Asset  CreativeLibraryAsset `json:"asset"`
+	Digest string               `json:"digest"`
+}
+
+// CreativeAssetDigestMatches defines model for CreativeAssetDigestMatches.
+type CreativeAssetDigestMatches struct {
+	Items []CreativeAssetDigestMatch `json:"items"`
+}
+
 // CreativeAssetFacets 类型计数忽略 kind 条件；标签计数在 all 模式下是「再勾上该标签后剩几项」，any 模式下忽略已选标签。数量为 0 的标签照常列出
 type CreativeAssetFacets struct {
 	Kinds struct {
@@ -4318,6 +4329,14 @@ type CreativeAssetGroup struct {
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision CreativeRevision `json:"revision"`
+}
+
+// CreativeAssetImportReplacePayload defines model for CreativeAssetImportReplacePayload.
+type CreativeAssetImportReplacePayload struct {
+	// ExpectedRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	ExpectedRevision CreativeRevision `json:"expected_revision"`
+	GroupIds         []string         `json:"group_ids"`
+	Title            string           `json:"title"`
 }
 
 // CreativeAssetMetadataPayload defines model for CreativeAssetMetadataPayload.
@@ -6588,6 +6607,13 @@ type RenameCreativeProjectRequest struct {
 	Payload         CreativeProjectRenamePayload `json:"payload"`
 }
 
+// ReplaceCreativeAssetByImportRequest defines model for ReplaceCreativeAssetByImportRequest.
+type ReplaceCreativeAssetByImportRequest struct {
+	ClientCreatedAt time.Time                         `json:"client_created_at"`
+	OperationId     openapi_types.UUID                `json:"operation_id"`
+	Payload         CreativeAssetImportReplacePayload `json:"payload"`
+}
+
 // RestoreCreativeAssetRequest defines model for RestoreCreativeAssetRequest.
 type RestoreCreativeAssetRequest struct {
 	ClientCreatedAt time.Time                 `json:"client_created_at"`
@@ -7308,8 +7334,18 @@ type BatchTrashCreativeAssetsParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// FindCreativeAssetDigestMatchesParams defines parameters for FindCreativeAssetDigestMatches.
+type FindCreativeAssetDigestMatchesParams struct {
+	Digests []string `form:"digests" json:"digests"`
+}
+
 // CreateCreativeAssetFromNodeParams defines parameters for CreateCreativeAssetFromNode.
 type CreateCreativeAssetFromNodeParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// ReplaceCreativeAssetByImportParams defines parameters for ReplaceCreativeAssetByImport.
+type ReplaceCreativeAssetByImportParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
@@ -7931,6 +7967,9 @@ type BatchTrashCreativeAssetsJSONRequestBody = BatchTrashCreativeAssetsRequest
 
 // CreateCreativeAssetFromNodeJSONRequestBody defines body for CreateCreativeAssetFromNode for application/json ContentType.
 type CreateCreativeAssetFromNodeJSONRequestBody = CreateCreativeAssetFromNodeRequest
+
+// ReplaceCreativeAssetByImportJSONRequestBody defines body for ReplaceCreativeAssetByImport for application/json ContentType.
+type ReplaceCreativeAssetByImportJSONRequestBody = ReplaceCreativeAssetByImportRequest
 
 // UpdateCreativeAssetMetadataJSONRequestBody defines body for UpdateCreativeAssetMetadata for application/json ContentType.
 type UpdateCreativeAssetMetadataJSONRequestBody = UpdateCreativeAssetMetadataRequest
@@ -9701,12 +9740,18 @@ type ServerInterface interface {
 
 	// (POST /creative/assets/batch-trash)
 	BatchTrashCreativeAssets(c *gin.Context, params BatchTrashCreativeAssetsParams)
+
+	// (GET /creative/assets/digest-matches)
+	FindCreativeAssetDigestMatches(c *gin.Context, params FindCreativeAssetDigestMatchesParams)
 	// 把画布节点当前内容固定为个人库资产；同一内容修订已在库中时只追加归类
 	// (POST /creative/assets/from-canvas-node)
 	CreateCreativeAssetFromNode(c *gin.Context, params CreateCreativeAssetFromNodeParams)
 
 	// (GET /creative/assets/{id})
 	GetCreativeTextAsset(c *gin.Context, id string)
+
+	// (POST /creative/assets/{id}/import-replace)
+	ReplaceCreativeAssetByImport(c *gin.Context, id string, params ReplaceCreativeAssetByImportParams)
 
 	// (POST /creative/assets/{id}/metadata)
 	UpdateCreativeAssetMetadata(c *gin.Context, id string, params UpdateCreativeAssetMetadataParams)
@@ -11531,6 +11576,35 @@ func (siw *ServerInterfaceWrapper) BatchTrashCreativeAssets(c *gin.Context) {
 	siw.Handler.BatchTrashCreativeAssets(c, params)
 }
 
+// FindCreativeAssetDigestMatches operation middleware
+func (siw *ServerInterfaceWrapper) FindCreativeAssetDigestMatches(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FindCreativeAssetDigestMatchesParams
+
+	// ------------- Required query parameter "digests" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, true, "digests", c.Request.URL.Query(), &params.Digests, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter digests: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.FindCreativeAssetDigestMatches(c, params)
+}
+
 // CreateCreativeAssetFromNode operation middleware
 func (siw *ServerInterfaceWrapper) CreateCreativeAssetFromNode(c *gin.Context) {
 
@@ -11601,6 +11675,60 @@ func (siw *ServerInterfaceWrapper) GetCreativeTextAsset(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeTextAsset(c, id)
+}
+
+// ReplaceCreativeAssetByImport operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceCreativeAssetByImport(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReplaceCreativeAssetByImportParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ReplaceCreativeAssetByImport(c, id, params)
 }
 
 // UpdateCreativeAssetMetadata operation middleware
@@ -15774,8 +15902,10 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/assets/batch-rate", wrapper.BatchRateCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-restore", wrapper.BatchRestoreCreativeAssets)
 	router.POST(options.BaseURL+"/creative/assets/batch-trash", wrapper.BatchTrashCreativeAssets)
+	router.GET(options.BaseURL+"/creative/assets/digest-matches", wrapper.FindCreativeAssetDigestMatches)
 	router.POST(options.BaseURL+"/creative/assets/from-canvas-node", wrapper.CreateCreativeAssetFromNode)
 	router.GET(options.BaseURL+"/creative/assets/:id", wrapper.GetCreativeTextAsset)
+	router.POST(options.BaseURL+"/creative/assets/:id/import-replace", wrapper.ReplaceCreativeAssetByImport)
 	router.POST(options.BaseURL+"/creative/assets/:id/metadata", wrapper.UpdateCreativeAssetMetadata)
 	router.POST(options.BaseURL+"/creative/assets/:id/purge", wrapper.PurgeCreativeAsset)
 	router.POST(options.BaseURL+"/creative/assets/:id/restore", wrapper.RestoreCreativeAsset)

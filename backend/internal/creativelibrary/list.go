@@ -297,35 +297,7 @@ func searchAssets(ctx context.Context, sc store.AccountScope, query Search, proj
 			}
 			result.NextCursor = base64.RawURLEncoding.EncodeToString(data)
 		}
-		if err = attachPageRelations(ctx, tx, result.Items); err != nil {
-			return err
-		}
-		revisionIDs := make([]string, 0, len(result.Items))
-		for _, a := range result.Items {
-			revisionIDs = append(revisionIDs, a.ContentRevisionID)
-		}
-		content, err := creativecontent.ReadDisplayBatch(ctx, tx, revisionIDs)
-		if err != nil {
-			return err
-		}
-		for i := range result.Items {
-			a := &result.Items[i]
-			item := content[a.ContentRevisionID]
-			r, e := item.Revision, item.Err
-			if errors.Is(e, creativecontent.ErrUsageDenied) {
-				a.Unavailable = true
-				continue
-			}
-			if e != nil {
-				return e
-			}
-			if r.ContentID != a.ContentID || r.Kind != a.Kind {
-				return creativecontent.ErrMissingRoot
-			}
-			preview := creativecontent.Preview(r)
-			a.Content = &preview
-		}
-		if err := attachPalettes(ctx, tx, result.Items); err != nil {
+		if err = projectAssets(ctx, tx, result.Items); err != nil {
 			return err
 		}
 		if project != nil {
@@ -334,6 +306,40 @@ func searchAssets(ctx context.Context, sc store.AccountScope, query Search, proj
 		return nil
 	})
 	return result, err
+}
+
+// projectAssets fills in what a listed asset shows: relations, a content
+// preview where it may be displayed, and the palette.
+func projectAssets(ctx context.Context, tx store.ReadTxAccountScope, items []Asset) error {
+	if err := attachPageRelations(ctx, tx, items); err != nil {
+		return err
+	}
+	revisionIDs := make([]string, 0, len(items))
+	for _, a := range items {
+		revisionIDs = append(revisionIDs, a.ContentRevisionID)
+	}
+	content, err := creativecontent.ReadDisplayBatch(ctx, tx, revisionIDs)
+	if err != nil {
+		return err
+	}
+	for i := range items {
+		a := &items[i]
+		item := content[a.ContentRevisionID]
+		r, e := item.Revision, item.Err
+		if errors.Is(e, creativecontent.ErrUsageDenied) {
+			a.Unavailable = true
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		if r.ContentID != a.ContentID || r.Kind != a.Kind {
+			return creativecontent.ErrMissingRoot
+		}
+		preview := creativecontent.Preview(r)
+		a.Content = &preview
+	}
+	return attachPalettes(ctx, tx, items)
 }
 
 // resolveFilter checks the referenced group and tags and expands the subtree.

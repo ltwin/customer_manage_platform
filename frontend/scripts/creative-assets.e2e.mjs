@@ -3,6 +3,7 @@
 // and counts like the server; each check runs in a fresh context.
 // Run against the Vite dev server: node scripts/creative-assets.e2e.mjs.
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
@@ -79,7 +80,7 @@ const fixture = () => [
 
 const key = (s) => s.normalize('NFKC').toLowerCase().trim()
 function mockServer(assets) {
-  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), failNext: null, loseNext: null, revision: '1', hold: null, pendingRelease: 0 }
+  const s = { settings:{revision:'1',hierarchy_revision:'1',library_revision:'1',retention_days:30}, uploads:new Map(), assets, reads: [], other: [], writes: [], receipts: new Map(), groups: structuredClone(groups), tags: structuredClone(tags), categories: structuredClone(categories), hierarchy: '1', deletions: new Map(), projects: [], canvases: new Map(), digests: new Map(), failNext: null, loseNext: null, revision: '1', hold: null, pendingRelease: 0 }
   const live = () => s.assets.filter((a) => !a.deleted_at)
   const descendants = (id) => [id, ...s.groups.filter((g) => g.parent_id === id).map((g) => g.id)]
   function scope(q, { kind = true, tagFilter = true } = {}) {
@@ -178,6 +179,13 @@ function mockServer(assets) {
       }
       return json({ items: items.slice(offset, offset + limit), next_cursor: offset + limit < items.length ? String(offset + limit) : '', total_count: items.length, library_revision: s.revision, ...(facets ? { facets } : {}) })
     }
+    if (path.endsWith('/creative/assets/digest-matches')) {
+      const items = (url.searchParams.get('digests') ?? '').split(',').flatMap((digest) => {
+        const a = s.assets.find((a) => a.id === s.digests.get(digest))
+        return a ? [{ digest, asset: a }] : []
+      })
+      return json({ items })
+    }
     if (/\/creative\/assets\/[^/]+$/.test(path) && request.method() === 'GET') {
       const a = s.assets.find((a) => a.id === path.split('/').at(-1))
       return a ? json(a) : json({ error: { code: 'not_found', message: '素材不存在' } }, 404)
@@ -219,6 +227,9 @@ function mockServer(assets) {
         for (const v of payload.assets) { const a = s.assets.find((a) => a.id === v.asset_id); for (const field of ['group_ids', 'tag_ids']) a[field] = [...new Set([...a[field].filter((id) => !(payload['remove_' + field] ?? []).includes(id)), ...(payload['add_' + field] ?? [])])]; a.revision = String(Number(a.revision) + 1) }
       } else if (path.endsWith('/assets/batch-trash')) {
         for (const v of payload.assets) { const a = s.assets.find((a) => a.id === v.asset_id); a.deleted_at = new Date().toISOString(); a.revision = String(Number(a.revision) + 1) }
+      } else if (/\/assets\/[^/]+\/import-replace$/.test(path)) {
+        const a = s.assets.find((a) => a.id === path.split('/').at(-2)); a.deleted_at = null; a.purge_after = null; a.title = payload.title
+        a.group_ids = [...new Set([...a.group_ids, ...payload.group_ids])]; a.revision = String(Number(a.revision) + 1); result.id = a.id; result.revision = a.revision
       } else if (/\/assets\/[^/]+\/restore$/.test(path)) {
         const a = s.assets.find((a) => a.id === path.split('/').at(-2)); a.deleted_at = null; a.purge_after = null; a.revision = String(Number(a.revision) + 1)
       } else if (path.endsWith('/creative/asset-groups')) {
@@ -1191,6 +1202,77 @@ await check('step5-import-files-same-name-and-skips',async()=>{
  assert(server.assets.filter(a=>a.title==='same').every(a=>a.group_ids.includes('g-out')))
  const text=await page.locator('.cc-upload-tray').innerText();assert(text.includes('暂不支持此文件格式'));assert(text.includes('超过'))
  await page.screenshot({path:output+'/step5-import.png'})
+})
+await check('import-duplicates',async()=>{
+ const digest=(text)=>createHash('sha256').update(text).digest('hex')
+ const file=(name,text)=>({name,mimeType:'image/png',buffer:Buffer.from(text)})
+ const uploaded=()=>server.writes.filter(w=>w.path.endsWith('/creative/uploads')).map(w=>w.body.payload.file_name)
+ const replaces=()=>server.writes.filter(w=>w.path.endsWith('/import-replace'))
+ await fresh();server.digests.set(digest('sea'),'f-sea');server.digests.set(digest('old'),'f-old');await open('?group=g-in')
+ const dialog=page.getByRole('dialog')
+ // 不重复的照常上传；重复的逐个问，先问资产库里的，再问回收站里的。
+ await page.getByLabel('上传素材文件').setInputFiles([file('sea_final.png','sea'),file('fresh.png','fresh'),file('old.png','old')])
+ await dialog.getByRole('heading',{name:'资产库里已有相同内容'}).waitFor()
+ assert((await dialog.innerText()).includes('「sea_final.png」与资产库里的「海边逆光」内容完全相同'))
+ await until(()=>server.assets.some(a=>a.title==='fresh'),'fresh file imported while asking')
+ assert.deepEqual(uploaded(),['fresh.png'])
+ await page.screenshot({path:output+'/import-duplicates.png'})
+ await dialog.getByRole('button',{name:'替换'}).click()
+ await dialog.getByRole('heading',{name:'回收站里有相同内容'}).waitFor()
+ const sea=server.assets.find(a=>a.id==='f-sea')
+ assert.equal(sea.title,'sea_final');assert.deepEqual(sea.group_ids.sort(),['g-in','g-out']);assert.equal(sea.rating,5)
+ assert.deepEqual(replaces()[0].body.payload,{expected_revision:'1',title:'sea_final',group_ids:['g-in']})
+ await dialog.getByRole('button',{name:'新增'}).click()
+ await dialog.waitFor({state:'detached'})
+ await until(()=>server.assets.some(a=>a.title==='old'&&!a.deleted_at),'added copy imported')
+ assert(server.assets.find(a=>a.id==='f-old').deleted_at,'adding left the trashed one alone')
+ assert.deepEqual(uploaded(),['fresh.png','old.png']);assert.equal(replaces().length,1)
+
+ // 其余也这样处理：一次跳过全部，不上传也不替换。
+ await page.getByLabel('上传素材文件').setInputFiles([file('a.png','sea'),file('b.png','old')])
+ await dialog.getByText('其余 1 个重复文件也这样处理').click()
+ await dialog.getByRole('button',{name:'跳过'}).click()
+ await dialog.waitFor({state:'detached'})
+ assert.deepEqual(uploaded(),['fresh.png','old.png']);assert.equal(replaces().length,1)
+
+ // 替换失败留在弹窗里，重试沿用原操作身份；Esc 等于跳过。
+ server.failNext={path:'/import-replace',status:503,code:'temporary',message:'网络暂时不可用'}
+ await page.getByLabel('上传素材文件').setInputFiles([file('c.png','sea')])
+ await dialog.getByRole('button',{name:'替换'}).click()
+ await dialog.getByRole('alert').filter({hasText:'网络暂时不可用'}).waitFor()
+ await dialog.getByRole('button',{name:'重试替换'}).click()
+ await dialog.waitFor({state:'detached'})
+ const [failed,retried]=replaces().slice(-2)
+ assert.equal(failed.key,retried.key);assert.equal(server.assets.find(a=>a.id==='f-sea').title,'c')
+ await page.getByLabel('上传素材文件').setInputFiles([file('d.png','old')])
+ await dialog.waitFor();await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'})
+ assert.deepEqual(uploaded(),['fresh.png','old.png'])
+
+ // 同批两个相同文件逐个处理：替换第一个后，第二个已并进同一份素材，不再询问，也不带过期版本重发。
+ const before=replaces().length
+ await page.getByLabel('上传素材文件').setInputFiles([file('s1.png','sea'),file('s2.png','sea')])
+ await dialog.getByText('其余 1 个重复文件也这样处理').waitFor()
+ await dialog.getByRole('button',{name:'替换'}).click()
+ await dialog.waitFor({state:'detached'})
+ await page.getByText('同批 1 个相同文件一并处理').waitFor()
+ assert.equal(replaces().length,before+1);assert.equal(server.assets.find(a=>a.id==='f-sea').title,'s1')
+
+ // 素材在别处改过：冲突后读回最新版本，再替换用新请求而不是重放旧请求。
+ await page.getByLabel('上传素材文件').setInputFiles([file('s3.png','sea')])
+ await dialog.waitFor()
+ const sea2=server.assets.find(a=>a.id==='f-sea');sea2.revision=String(Number(sea2.revision)+1);const edited=sea2.revision
+ await dialog.getByRole('button',{name:'替换'}).click()
+ await dialog.getByRole('alert').filter({hasText:'刚在别处改过'}).waitFor()
+ await dialog.getByRole('button',{name:'重试替换'}).click()
+ await dialog.waitFor({state:'detached'})
+ const [stale,renewed]=replaces().slice(-2)
+ assert.notEqual(stale.key,renewed.key);assert.equal(renewed.body.payload.expected_revision,edited)
+ assert.equal(server.assets.find(a=>a.id==='f-sea').title,'s3')
+
+ // 查重请求失败不拦导入。
+ await page.route('**/creative/assets/digest-matches*',route=>route.fulfill({status:503,json:{error:{code:'temporary',message:'x'}}}))
+ await page.getByLabel('上传素材文件').setInputFiles([file('e.png','sea')])
+ await until(()=>uploaded().includes('e.png'),'import continues when the check fails')
 })
 await check('step5-trash-restore-purge',async()=>{
  await fresh();await open('?view=trash')

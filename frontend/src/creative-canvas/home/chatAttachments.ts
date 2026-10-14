@@ -3,6 +3,7 @@
 // 消息发出后修订由消息引用保留。从资产库选的直接用素材的内容修订。
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { read } from '../editor/api.ts'
+import { fileDigest } from '../assets/importDuplicates.ts'
 import {
   cancelUpload,
   classifyFile,
@@ -91,13 +92,6 @@ export function savedAttachments(items: readonly ChatAttachment[]) {
         ]
       : [],
   )
-}
-
-async function sha256(file: File): Promise<string> {
-  const hash = await crypto.subtle.digest('SHA-256', await file.arrayBuffer())
-  return Array.from(new Uint8Array(hash), (byte) =>
-    byte.toString(16).padStart(2, '0'),
-  ).join('')
 }
 
 export function useChatAttachments(cap: number) {
@@ -194,7 +188,7 @@ export function useChatAttachments(cap: number) {
     const epoch = draftEpoch.current
     setPreparing((count) => count + 1)
     try {
-      const digests = await Promise.all(files.map(sha256))
+      const digests = await Promise.all(files.map(fileDigest))
       if (!mounted.current || epoch !== draftEpoch.current) return
       // 算摘要期间列表可能变了，以当时的列表为准。
       const { accepted, message: note } = admitAttachments(

@@ -28,10 +28,12 @@ func registerCreativeLibrary(r *gin.RouterGroup, h *handlers) {
 	r.POST("/creative/assets/batch-trash", w.BatchTrashCreativeAssets)
 	r.POST("/creative/assets/:id/restore", w.RestoreCreativeAsset)
 	r.POST("/creative/assets/batch-restore", w.BatchRestoreCreativeAssets)
+	r.POST("/creative/assets/:id/import-replace", w.ReplaceCreativeAssetByImport)
 	r.POST("/creative/assets/:id/purge", w.PurgeCreativeAsset)
 	r.POST("/creative/assets/batch-purge", w.BatchPurgeCreativeAssets)
 	r.POST("/creative/assets/batch-rate", w.BatchRateCreativeAssets)
 	r.POST("/creative/library/empty-trash", w.EmptyCreativeTrash)
+	r.GET("/creative/assets/digest-matches", w.FindCreativeAssetDigestMatches)
 	r.GET("/creative/asset-groups", w.ListCreativeGroups)
 	r.GET("/creative/tags", w.ListCreativeTags)
 	r.GET("/creative/tag-categories", w.ListCreativeCategories)
@@ -91,6 +93,18 @@ func (h *handlers) RestoreCreativeAsset(c *gin.Context, id string, _ RestoreCrea
 }
 func (h *handlers) BatchRestoreCreativeAssets(c *gin.Context, _ BatchRestoreCreativeAssetsParams) {
 	h.creativeWrite(c, "", "", creativelibrary.BatchRestore)
+}
+func (h *handlers) ReplaceCreativeAssetByImport(c *gin.Context, id string, _ ReplaceCreativeAssetByImportParams) {
+	h.creativeWrite(c, "asset_id", id, creativelibrary.ReplaceByImport)
+}
+func (h *handlers) FindCreativeAssetDigestMatches(c *gin.Context, p FindCreativeAssetDigestMatchesParams) {
+	scope, ok := h.creativeScope(c)
+	if !ok {
+		return
+	}
+	creativeRead(c, func() (creativelibrary.DigestMatches, error) {
+		return creativelibrary.FindByDigest(c.Request.Context(), scope, p.Digests)
+	})
 }
 func (h *handlers) PurgeCreativeAsset(c *gin.Context, id string, _ PurgeCreativeAssetParams) {
 	h.creativeWrite(c, "asset_id", id, creativelibrary.Purge)

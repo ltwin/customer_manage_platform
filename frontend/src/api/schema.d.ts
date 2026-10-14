@@ -2412,6 +2412,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/assets/digest-matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 导入前查重：按文件 SHA-256 找本账号资产库里已有的同内容素材，回收站也算。每个摘要最多给一条，未进回收站的优先，其次是最新添加的；没有匹配的摘要不出现在结果里。 */
+        get: operations["findCreativeAssetDigestMatches"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/assets/{id}/import-replace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 导入的文件与这条素材内容相同时，用这次导入替换它：在回收站里就先恢复，标题改为导入的标题，并加入导入的分组；评分、标签、描述、收藏和原有分组保留。 */
+        post: operations["replaceCreativeAssetByImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/assets/batch-restore": {
         parameters: {
             query?: never;
@@ -2781,6 +2815,25 @@ export interface components {
             /** Format: date-time */
             client_created_at: string;
             payload: components["schemas"]["CreativeAssetBatchPayload"];
+        };
+        ReplaceCreativeAssetByImportRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeAssetImportReplacePayload"];
+        };
+        CreativeAssetImportReplacePayload: {
+            expected_revision: components["schemas"]["CreativeRevision"];
+            title: string;
+            group_ids: string[];
+        };
+        CreativeAssetDigestMatches: {
+            items: components["schemas"]["CreativeAssetDigestMatch"][];
+        };
+        CreativeAssetDigestMatch: {
+            digest: string;
+            asset: components["schemas"]["CreativeLibraryAsset"];
         };
         RestoreCreativeAssetRequest: {
             /** Format: uuid */
@@ -12877,6 +12930,74 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RestoreCreativeAssetRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeLibraryResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    findCreativeAssetDigestMatches: {
+        parameters: {
+            query: {
+                digests: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeAssetDigestMatches"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    replaceCreativeAssetByImport: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceCreativeAssetByImportRequest"];
             };
         };
         responses: {

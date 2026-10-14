@@ -28,6 +28,7 @@ func TestAgentLibraryMigrationRetainsResultsAndAccountOwnership(t *testing.T) {
 	if _, err = db.Exec(`UPDATE creative_agent_library_calls SET account_id='journal-b'`); err == nil {
 		t.Fatal("cross-account conversation accepted")
 	}
+	rollbackAssetDigestLookup(t, url)
 	if err := store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "must be retained") {
 		t.Fatal("lossy rollback", err)
 	}
@@ -46,6 +47,7 @@ func TestAgentLibraryEmptyMigrationCanRollbackAndReapply(t *testing.T) {
 	if err := store.MigrateUp(url); err != nil {
 		t.Fatal(err)
 	}
+	rollbackAssetDigestLookup(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal(err)
 	}
