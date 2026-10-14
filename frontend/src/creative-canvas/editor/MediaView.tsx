@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { AudioLines, Film, ImageOff } from 'lucide-react'
 import type { Content } from './api.ts'
-import { mediaTicket, pickRendition, type MediaObject } from './media.ts'
+import {
+  cachedMediaTicket,
+  invalidateMediaTicket,
+  mediaTicket,
+  pickRendition,
+  type MediaObject,
+} from './media.ts'
+import { getAuthSnapshot } from '../../auth/session.ts'
 
 // useMediaURL resolves a ticketed URL for one revision/rendition lazily.
 export function useMediaURL(
@@ -17,11 +24,18 @@ export function useMediaURL(
   }>({ key: '', url: null, error: null })
   const [attempt, setAttempt] = useState(0)
   const rendition = pickRendition(media, prefer)
-  const key = revision && rendition ? `${revision}:${rendition.role}` : ''
+  const key =
+    revision && rendition
+      ? `${getAuthSnapshot().sessionEpoch}:${revision}:${rendition.role}`
+      : ''
   useEffect(() => {
     if (!active || !key || !revision || !rendition) return
     let live = true
-    void mediaTicket(revision, rendition.role as 'original' | 'display', 'display')
+    void mediaTicket(
+      revision,
+      rendition.role as 'original' | 'display',
+      'display',
+    )
       .then((ticket) => {
         if (live) setState({ key, url: ticket.url, error: null })
       })
@@ -38,9 +52,25 @@ export function useMediaURL(
     }
   }, [active, key, revision, rendition, attempt])
   return {
-    url: state.key === key ? state.url : null,
+    url:
+      state.key === key
+        ? state.url
+        : active && revision && rendition
+          ? (cachedMediaTicket(
+              revision,
+              rendition.role as 'original' | 'display',
+            )?.url ?? null)
+          : null,
     error: state.key === key ? state.error : null,
-    retry: () => setAttempt((n) => n + 1),
+    retry: () => {
+      if (revision && rendition)
+        invalidateMediaTicket(
+          revision,
+          rendition.role as 'original' | 'display',
+        )
+      setState({ key: '', url: null, error: null })
+      setAttempt((n) => n + 1)
+    },
   }
 }
 
@@ -132,7 +162,11 @@ export function MediaFigure({
         </button>
       ) : !url ? (
         <span className="cc-media-placeholder" aria-hidden="true">
-          {kind === 'video' ? <Film size={22} /> : kind === 'audio' ? <AudioLines size={22} /> : null}
+          {kind === 'video' ? (
+            <Film size={22} />
+          ) : kind === 'audio' ? (
+            <AudioLines size={22} />
+          ) : null}
         </span>
       ) : kind === 'image' ? (
         <img
@@ -178,7 +212,14 @@ export function MediaFigure({
       ) : controls ? (
         <div className="cc-audio nodrag">
           <AudioLines size={26} />
-          <audio src={url} aria-label={title} controls preload="metadata" onLoadedMetadata={onReady} onError={() => setFailed(true)} />
+          <audio
+            src={url}
+            aria-label={title}
+            controls
+            preload="metadata"
+            onLoadedMetadata={onReady}
+            onError={() => setFailed(true)}
+          />
         </div>
       ) : (
         <span className="cc-audio" aria-hidden="true">

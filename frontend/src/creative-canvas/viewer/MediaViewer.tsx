@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   AudioLines,
@@ -11,8 +11,10 @@ import {
 import type { Content } from '../editor/api.ts'
 import { useFocusTrap } from '../../components/useFocusTrap'
 import { useMediaURL } from '../editor/MediaView.tsx'
+import { cachedMediaTicket } from '../editor/media.ts'
 import { contentText } from '../editor/content.ts'
 import { clampPan, zoomAt, wheelZoom, type Zoom } from './zoom.ts'
+import { ViewerImageCache } from './imageCache.ts'
 import './viewer.css'
 
 export type ViewerItem = {
@@ -54,6 +56,8 @@ export default function MediaViewer({
 }) {
   const ref = useFocusTrap<HTMLDivElement>(true, onClose, !blocked)
   const media = useRef<HTMLMediaElement | null>(null)
+  const [images] = useState(() => new ViewerImageCache())
+  useEffect(() => () => images.clear(), [images])
   // 背景媒体不与浮窗同时播放；卸载当前项的原生媒体会停止播放。
   useEffect(() => {
     document
@@ -129,7 +133,8 @@ export default function MediaViewer({
                 重试
               </button>
             </div>
-          ) : loading ? (
+          ) : loading &&
+            (item.kind !== 'image' || !item.content?.media?.length) ? (
             <div className="v-state" role="status">
               正在读取素材…
             </div>
@@ -138,13 +143,21 @@ export default function MediaViewer({
               素材当前不可用
             </div>
           ) : (
-            <MediaStage
-              key={`${item.id}:${item.content?.id ?? ''}`}
-              item={item}
-              mediaRef={(el) => {
-                media.current = el
-              }}
-            />
+            <>
+              <MediaStage
+                key={`${item.id}:${item.content?.id ?? ''}`}
+                item={item}
+                images={images}
+                mediaRef={(el) => {
+                  media.current = el
+                }}
+              />
+              {loading && (
+                <div className="v-detail-loading" role="status">
+                  正在读取素材…
+                </div>
+              )}
+            </>
           )}
           <button
             className="v-nav prev"
@@ -188,9 +201,11 @@ export default function MediaViewer({
 function MediaStage({
   item,
   mediaRef,
+  images,
 }: {
   item: ViewerItem
   mediaRef: (el: HTMLMediaElement | null) => void
+  images: ViewerImageCache
 }) {
   const isMedia = ['image', 'video', 'audio'].includes(item.kind)
   // 浮窗用于看清细节，图片也取原图；列表与画布仍用展示图。
@@ -201,6 +216,7 @@ function MediaStage({
     isMedia,
   )
   const [failed, setFailed] = useState(false)
+  const fail = useCallback(() => setFailed(true), [])
   const text = contentText(item.content?.payload)
   if (isMedia) {
     if (ticket.error || failed)
@@ -218,20 +234,25 @@ function MediaStage({
           </button>
         </div>
       )
+    const preview =
+      item.kind === 'image' && item.content?.id
+        ? cachedMediaTicket(item.content.id, 'display')?.url
+        : undefined
+    if (item.kind === 'image' && (ticket.url || preview))
+      return (
+        <ImageStage
+          url={ticket.url}
+          preview={preview}
+          images={images}
+          title={item.title}
+          onError={fail}
+        />
+      )
     if (!ticket.url)
       return (
         <div className="v-state" role="status">
           正在加载媒体…
         </div>
-      )
-    if (item.kind === 'image')
-      return (
-        <ImageStage
-          key={ticket.url}
-          url={ticket.url}
-          title={item.title}
-          onError={() => setFailed(true)}
-        />
       )
     return (
       <>
@@ -323,10 +344,14 @@ function MediaStage({
 
 function ImageStage({
   url,
+  preview,
+  images,
   title,
   onError,
 }: {
-  url: string
+  url: string | null
+  preview?: string
+  images: ViewerImageCache
   title: string
   onError: () => void
 }) {
@@ -336,6 +361,49 @@ function ImageStage({
   const current = useRef(zoom)
   const drag = useRef<{ pointer: number; x: number; y: number } | null>(null)
   const [panning, setPanning] = useState(false)
+  const [decoded, setDecoded] = useState<{
+    source: string
+    url: string
+  } | null>(() => {
+    const ready = url && images.peek(url)
+    return url && ready ? { source: url, url: ready } : null
+  })
+  const [previewFailed, setPreviewFailed] = useState(false)
+  // 原图在后台解码；升级清晰度保留当前缩放，翻项由上层 key 复位。
+  useEffect(() => {
+    if (!url) return
+    let live = true
+    const controller = new AbortController()
+    let release: (() => void) | undefined
+    const original = new Image()
+    void images
+      .load(url, controller)
+      .then(async (lease) => {
+        if (!live) {
+          lease.release()
+          return
+        }
+        release = lease.release
+        original.src = lease.url
+        await original.decode()
+        if (live) setDecoded({ source: url, url: lease.url })
+      })
+      .catch(() => {
+        if (live) {
+          images.invalidate(url)
+          onError()
+        }
+      })
+    return () => {
+      live = false
+      controller.abort()
+      original.src = ''
+      release?.()
+    }
+  }, [url, images, onError])
+  const availablePreview = previewFailed ? undefined : preview
+  const originalReady = !!url && decoded?.source === url
+  const visibleURL = originalReady ? decoded.url : availablePreview
   const bounds = () => ({
     width: surface.current?.clientWidth ?? 0,
     height: surface.current?.clientHeight ?? 0,
@@ -411,9 +479,19 @@ function ImageStage({
     <>
       <div
         className="v-backdrop"
-        style={{ backgroundImage: `url(${JSON.stringify(url)})` }}
+        style={{
+          backgroundImage:
+            availablePreview || visibleURL
+              ? `url(${JSON.stringify(availablePreview || visibleURL)})`
+              : undefined,
+        }}
         aria-hidden="true"
       />
+      {!visibleURL && (
+        <div className="v-state" role="status">
+          正在加载媒体…
+        </div>
+      )}
       <div
         className={`v-media v-image${zoom.s > 1 ? ' zoomed' : ''}${panning ? ' panning' : ''}`}
         ref={surface}
@@ -452,10 +530,15 @@ function ImageStage({
       >
         <img
           ref={image}
-          src={url}
+          src={visibleURL ?? undefined}
+          data-quality={originalReady ? 'original' : 'preview'}
           alt={title}
           draggable={false}
-          onError={onError}
+          onError={() => {
+            // 展示图只是占位；它失败时继续等原图，不能卸载解码任务。
+            if (originalReady) onError()
+            else setPreviewFailed(true)
+          }}
           style={{
             transform: `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.s})`,
           }}

@@ -913,6 +913,110 @@ await check('viewer-opening', async () => {
 
 const viewer = () => page.locator('.viewer')
 const viewerReady = async () => { await viewer().waitFor(); await until(async () => await viewer().getByRole('textbox', { name: '标题', exact: true }).isEnabled(), 'viewer detail') }
+await check('viewer-performance-revisit', async () => {
+  await fresh()
+  let originalReads = 0
+  await page.route('**/creative/media-access-tickets', route => {
+    const b = route.request().postDataJSON()
+    if (b.role === 'original' && ['r-f-sea', 'r-f-veil'].includes(b.content_revision_id))
+      return route.fulfill({ json: { url: `${base}/__qa_perf/${b.content_revision_id}.svg`, expires_at: new Date(Date.now() + 3600000).toISOString(), mime: 'image/svg+xml', byte_size: 200 } })
+    return route.fallback()
+  })
+  await page.route('**/__qa_perf/*', route => {
+    originalReads++
+    return route.fulfill({ contentType: 'image/svg+xml', headers: { 'Cache-Control': 'private, no-store' }, body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800"><rect width="100%" height="100%" fill="blue"/></svg>' })
+  })
+  await open()
+  const reads = []
+  page.on('request', r => { if (r.method() === 'GET' && /\/creative\/assets\/f-(sea|veil)$/.test(r.url())) reads.push(r.url()) })
+  await tile('海边逆光').dblclick(); await viewerReady()
+  await page.waitForFunction(() => document.querySelector('.v-image img')?.dataset.quality === 'original')
+  await viewer().getByRole('button', { name: '下一项' }).click(); await viewerReady()
+  await page.waitForFunction(() => document.querySelector('.v-image img')?.dataset.quality === 'original')
+  const initialReads = reads.length
+  assert.equal(originalReads, 2, '两张原图各读取一次，后台解码与显示复用同一份字节')
+  for (let i = 0; i < 3; i++) {
+    await viewer().getByRole('button', { name: '上一项' }).click(); await viewerReady()
+    await viewer().getByRole('button', { name: '下一项' }).click(); await viewerReady()
+  }
+  assert.equal(reads.length, initialReads, `往返三次应复用详情，额外读取 ${reads.length - initialReads} 次`)
+  assert.equal(originalReads, 2, '媒体接口 no-store 时，往返仍不得再次下载原图')
+  const immediate = await viewer().evaluate(async el => {
+    el.querySelector('.v-nav.prev').click()
+    await new Promise(requestAnimationFrame)
+    return { image: !!el.querySelector('.v-image img'), loading: el.textContent.includes('正在读取素材…') }
+  })
+  assert(immediate.image && !immediate.loading, '翻回已看图片应直接显示，不能重新进入整屏加载态')
+  // 写入后的 refresh 必须让详情缓存失效。
+  await viewerReady(); await viewer().getByRole('button', { name: '关闭查看' }).focus(); await page.keyboard.press('2'); await saved()
+  await viewerReady()
+  assert.equal(await viewer().getByRole('slider', { name: '评分', exact: true }).getAttribute('aria-valuenow'), '2')
+  assert(reads.length > initialReads, '写入后应重新校验详情')
+  console.log(JSON.stringify({ performance: { initialReads, revisits: 6, repeatReads: 0, originalReads, repeatOriginalReads: 0 } }))
+})
+await check('viewer-performance-progressive', async () => {
+  await fresh(); await open()
+  await tile('海边逆光').locator('img').evaluate(img => img.decode())
+  let detailRelease, imageRelease
+  const detailWait = new Promise(r => { detailRelease = r })
+  const imageWait = new Promise(r => { imageRelease = r })
+  await page.route('**/creative/assets/f-sea', async route => { await detailWait; await route.fulfill({ json: server.assets[0] }).catch(() => {}) })
+  await page.route('**/creative/media-access-tickets', route => {
+    const b = route.request().postDataJSON()
+    if (b.content_revision_id === 'r-f-sea' && b.role === 'original')
+      return route.fulfill({ json: { url: `${base}/__qa_original.svg`, expires_at: new Date(Date.now() + 3600000).toISOString(), mime: 'image/svg+xml', byte_size: 200 } })
+    return route.fallback()
+  })
+  await page.route('**/__qa_original.svg', async route => {
+    await imageWait
+    await route.fulfill({ contentType: 'image/svg+xml', headers: { 'Cache-Control': 'private, max-age=3600' }, body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800"><rect width="100%" height="100%" fill="blue"/></svg>' }).catch(() => {})
+  })
+  try {
+    await tile('海边逆光').dblclick()
+    await page.waitForFunction(() => document.querySelector('.v-image img')?.naturalWidth > 0)
+    assert(await viewer().getByRole('textbox', { name: '标题', exact: true }).isDisabled(), '详情尚未返回时禁止编辑')
+    assert.match(await viewer().locator('.v-image img').getAttribute('src'), /^data:/, '先显示列表已加载的展示图')
+    detailRelease(); await viewerReady()
+    const surface = viewer().locator('.v-image'), box = await surface.boundingBox()
+    await surface.dispatchEvent('wheel', { deltaY: -100, deltaX: 0, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 })
+    await viewer().getByRole('button', { name: '还原缩放' }).waitFor()
+    const zoom = await viewer().getByRole('button', { name: '还原缩放' }).innerText()
+    imageRelease()
+    await page.waitForFunction(() => document.querySelector('.v-image img')?.dataset.quality === 'original')
+    assert.equal(await viewer().getByRole('button', { name: '还原缩放' }).innerText(), zoom, '原图替换展示图不重置缩放')
+    await viewer().getByRole('button', { name: '下一项' }).click(); await viewerReady()
+    assert.equal(await viewer().getByRole('button', { name: '还原缩放' }).count(), 0, '翻项仍重置缩放')
+  } finally { detailRelease(); imageRelease() }
+})
+await check('viewer-performance-preview-failure', async () => {
+  await fresh()
+  let release, originalRequests = 0
+  const wait = new Promise(r => { release = r })
+  await page.route('**/creative/media-access-tickets', route => {
+    const b = route.request().postDataJSON()
+    if (b.content_revision_id === 'r-f-sea')
+      return route.fulfill({ json: { url: `${base}/__qa_${b.role}.svg`, expires_at: new Date(Date.now() + 3600000).toISOString(), mime: 'image/svg+xml', byte_size: 200 } })
+    return route.fallback()
+  })
+  await page.route('**/__qa_display.svg', route => route.fulfill({ status: 404, body: 'missing preview' }))
+  await page.route('**/__qa_original.svg', async route => {
+    originalRequests++
+    await wait
+    await route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1800"><rect width="100%" height="100%" fill="blue"/></svg>' }).catch(() => {})
+  })
+  try {
+    await open(); await tile('海边逆光').dblclick(); await viewerReady()
+    await until(() => originalRequests > 0, 'original started')
+    await until(async () => await viewer().getByText('正在加载媒体…', { exact: true }).count() > 0 || await viewer().getByText('媒体加载失败', { exact: true }).count() > 0, 'preview settled')
+    assert.equal(await viewer().getByText('媒体加载失败', { exact: true }).count(), 0, '展示图失败不能中断正在读取的原图')
+    release()
+    await page.waitForFunction(() => {
+      const img = document.querySelector('.v-image img')
+      return img?.dataset.quality === 'original' && img.naturalWidth > 0
+    })
+    assert.equal(originalRequests, 1, '无需人工重试即可显示原图')
+  } finally { release() }
+})
 await check('viewer-image-zoom', async () => {
   await fresh(); await open()
   // 卡片取展示图；浮窗必须另取原图，不能沿用卡片那张。

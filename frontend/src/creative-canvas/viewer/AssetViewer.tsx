@@ -39,14 +39,27 @@ export default function AssetViewer({
     ),
   )
   const seed = items[index]!
-  const [detail, setDetail] = useState<{
-    asset?: api.Asset
-    id: string
-    error: string
-  } | null>(null)
-  const [retry, setRetry] = useState(0)
+  // 只在这次浮窗内缓存最近读过的详情；保存刷新和关闭都会使缓存失效。
+  const [details, setDetails] = useState<{
+    refresh: number
+    items: Map<string, { asset?: api.Asset; error: string; readAt: number }>
+  }>(() => ({ refresh, items: new Map() }))
+  const cached = details.items.get(seed.id)
+  const loaded =
+    cached && Date.now() - cached.readAt < 30_000 ? cached : undefined
   useEffect(() => {
+    if (loaded && details.refresh === refresh) return
     const controller = new AbortController()
+    function remember(value: { asset?: api.Asset; error: string }) {
+      if (controller.signal.aborted) return
+      setDetails((old) => {
+        const items = old.refresh === refresh ? new Map(old.items) : new Map()
+        items.delete(seed.id)
+        items.set(seed.id, { ...value, readAt: Date.now() })
+        if (items.size > 20) items.delete(items.keys().next().value!)
+        return { refresh, items }
+      })
+    }
     void api
       .read<api.Asset>(
         `/assets/${encodeURIComponent(seed.id)}`,
@@ -61,16 +74,13 @@ export default function AssetViewer({
           )
           asset = { ...asset, content }
         }
-        if (!controller.signal.aborted)
-          setDetail({ id: seed.id, asset, error: '' })
+        remember({ asset, error: '' })
       })
       .catch((e: unknown) => {
-        if (!controller.signal.aborted)
-          setDetail({ id: seed.id, error: errorMessage(e) })
+        remember({ error: errorMessage(e) })
       })
     return () => controller.abort()
-  }, [seed.id, refresh, retry])
-  const loaded = detail?.id === seed.id ? detail : null
+  }, [seed.id, refresh, loaded, details.refresh])
   const full = loaded?.asset ?? seed
   const override = actions.overrides.get(seed.id)
   const asset =
@@ -87,7 +97,13 @@ export default function AssetViewer({
       blocked={locked}
       loading={!loaded}
       error={loaded?.error ?? ''}
-      onRetry={() => setRetry((n) => n + 1)}
+      onRetry={() =>
+        setDetails((old) => {
+          const items = new Map(old.items)
+          items.delete(seed.id)
+          return { ...old, items }
+        })
+      }
       onStep={(delta) => {
         if (!locked)
           setIndex((i) => Math.max(0, Math.min(items.length - 1, i + delta)))

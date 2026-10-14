@@ -1,5 +1,6 @@
 import type { components } from '../../api/schema'
 import { request } from '../../api/transport.ts'
+import { getAuthSnapshot } from '../../auth/session.ts'
 import { read } from './api.ts'
 
 export type MediaCapabilities =
@@ -162,7 +163,9 @@ export async function uploadFile(
               credentials: 'omit',
             })
             if (!res.ok)
-              throw new Error(`分片 ${part.part_number} 上传失败（${res.status}）`)
+              throw new Error(
+                `分片 ${part.part_number} 上传失败（${res.status}）`,
+              )
             break
           } catch (e) {
             if (attempt >= 2 || signal?.aborted) throw e
@@ -170,7 +173,12 @@ export async function uploadFile(
           }
         }
         sent += chunk.size
-        onProgress({ stage: 'uploading', sent, total: file.size, upload: session })
+        onProgress({
+          stage: 'uploading',
+          sent,
+          total: file.size,
+          upload: session,
+        })
       }),
     )
   }
@@ -196,7 +204,13 @@ export async function uploadFile(
   )
   if (upload.state !== 'ready') {
     const message = describeFailure(upload) ?? '上传失败'
-    onProgress({ stage: 'failed', sent: file.size, total: file.size, upload, message })
+    onProgress({
+      stage: 'failed',
+      sent: file.size,
+      total: file.size,
+      upload,
+      message,
+    })
     throw new Error(message)
   }
   onProgress({ stage: 'done', sent: file.size, total: file.size, upload })
@@ -297,13 +311,40 @@ export function readableFileName(name: string): string {
 
 // Tickets are cached per revision/role/purpose until shortly before expiry.
 const tickets = new Map<string, Promise<MediaTicket>>()
+const readyTickets = new Map<string, MediaTicket>()
+function ticketKey(
+  revision: string,
+  role: string,
+  purpose: string,
+  fileName = '',
+) {
+  return `${getAuthSnapshot().sessionEpoch}:${revision}:${role}:${purpose}:${fileName}`
+}
+/** 已取得且未过期的展示票据可同步复用，避免组件重挂载时闪回加载态。 */
+export function cachedMediaTicket(
+  revision: string,
+  role: 'original' | 'display',
+) {
+  const ticket = readyTickets.get(ticketKey(revision, role, 'display'))
+  return ticket && new Date(ticket.expires_at).getTime() > Date.now() + 30000
+    ? ticket
+    : undefined
+}
+export function invalidateMediaTicket(
+  revision: string,
+  role: 'original' | 'display',
+) {
+  const key = ticketKey(revision, role, 'display')
+  tickets.delete(key)
+  readyTickets.delete(key)
+}
 export function mediaTicket(
   revision: string,
   role: 'original' | 'display',
   purpose: 'display' | 'download',
   fileName?: string,
 ): Promise<MediaTicket> {
-  const key = `${revision}:${role}:${purpose}:${fileName ?? ''}`
+  const key = ticketKey(revision, role, purpose, fileName)
   const cached = tickets.get(key)
   if (cached) return cached
   const promise = request<MediaTicket>('/creative/media-access-tickets', {
@@ -315,14 +356,39 @@ export function mediaTicket(
       ...(fileName ? { file_name: fileName } : {}),
     }),
   }).then((ticket) => {
+    // clear 或重试之后，旧请求不能重新填回缓存或清掉新请求。
+    if (tickets.get(key) !== promise) return ticket
+    readyTickets.set(key, ticket)
     const ttl = new Date(ticket.expires_at).getTime() - Date.now() - 30000
-    setTimeout(() => tickets.delete(key), Math.max(1000, ttl))
+    setTimeout(
+      () => {
+        if (tickets.get(key) === promise) {
+          tickets.delete(key)
+          readyTickets.delete(key)
+        }
+      },
+      Math.max(1000, ttl),
+    )
     return ticket
   })
-  promise.catch(() => tickets.delete(key))
+  promise.catch(() => {
+    if (tickets.get(key) === promise) tickets.delete(key)
+  })
   tickets.set(key, promise)
   return promise
 }
 export function clearMediaTickets() {
   tickets.clear()
+  readyTickets.clear()
+}
+
+/** 图片票据已包含读取授权；仅在浮窗内存中持有字节，不持久化。 */
+export async function readMediaImage(url: string, signal: AbortSignal) {
+  const response = await fetch(url, {
+    signal,
+    credentials: 'same-origin',
+    cache: 'no-store',
+  })
+  if (!response.ok) throw new Error('媒体加载失败')
+  return response.blob()
 }
