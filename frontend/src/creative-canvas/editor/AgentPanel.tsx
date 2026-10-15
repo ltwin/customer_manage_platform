@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { useShallow } from 'zustand/react/shallow'
 import {
   ArrowRight,
@@ -573,12 +574,17 @@ function AgentConversation({
       void perform(chain, keepDraft)
     })
   }
+  // 补全命令后光标立刻落到末尾：编辑器应用新文本时会把光标放回原处，
+  // 留到下一帧再移，紧跟着敲的字会插进命令中间。
+  function completeDraft(text: string) {
+    flushSync(() => setDraft(text))
+    editor.current?.focus()
+  }
   function sendDraft() {
     // 只敲了命令的开头时，回车补全命令，不当文字发出去。
     const completed = waiting ? null : completeCommand(draft)
     if (completed) {
-      setDraft(completed)
-      requestAnimationFrame(() => editor.current?.focus())
+      completeDraft(completed)
       return
     }
     if (command) {
@@ -1186,10 +1192,7 @@ function AgentConversation({
                     <button
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => {
-                        setDraft(`/${item.name} `)
-                        requestAnimationFrame(() => editor.current?.focus())
-                      }}
+                      onClick={() => completeDraft(`/${item.name} `)}
                     >
                       <code>/{item.name}</code>
                       <span>{item.description}</span>
