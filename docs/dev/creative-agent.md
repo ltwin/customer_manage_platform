@@ -22,8 +22,9 @@ SSE、最小 Agent 面板。自动模型摘要仍默认关闭，达到上下文�
 
 `GET /creative/agent/catalog` 的 `tools` 注册 `load_skill@1`、`read_skill_resource@1`、
 `read_run_result@1`。声明其他尚未注册工具（如画布/素材业务工具）的 Skill 仍报
-`available: false` 并附不可用原因。运行时仅开放本次固定 Skill 许可的工具；普通对话只开放
-`read_run_result`，无 Skill 目录和包资源读取权限。
+`available: false` 并附不可用原因。Skill 的 `tool_allowlist` 只管 `load_skill` 与
+`read_skill_resource`；业务工具按部署能力开放，`read_run_result` 对所有运行开放（2026-10-15 起：
+它只读回本运行已有的结果，按 Skill 收紧只会让大结果整段进上下文）。按 Skill 只暴露指定工具留待以后设计。
 
 **S3 起 Skill 不再随二进制发布**：目录读 `creativeskill`（数据库 + 对象存储）。内置 Skill 由服务启动时从
 `deploy/creative-skills/` 自动同步；没配包目录的部署，`skills` 就是空数组、`skill_catalog_revision`
@@ -261,8 +262,8 @@ limits_snapshot；旧版本记录不按新部署参数静默重算。此前 `-3`
   拒绝未登记路径、越界路径及非 UTF-8 内容。`read_run_result` 只读同账号同 run 的未过期 item，
   offset/limit 按 UTF-8 字节且必须从字符边界开始，一页最多 8 KiB；重新检查执行权、Skill、同意及来源用途。
 - **卸载与来源**：完整工具结果先入 `creative_agent_context_items`，单项最多 64 KiB；超过 8 KiB
-  的资源结果在具备 `read_run_result` 权限时向模型返回定位符、字节数和有界预览；没有读回权限时
-  保留完整 inline 结果，仍执行单项/总输入上限。Skill 正文及已分页的读取结果不再递归卸载。
+  的结果向模型返回定位符、字节数和有界预览，模型用 `read_run_result` 分页读回；
+  仍执行单项/总输入上限。Skill 正文及已分页的读取结果不再递归卸载。
   source_manifest 保留工具参数、固定 Skill/version/digest 和来源修订；来源修订另入显式 refs，
   供内容根查询使用；重复指令引用保留正文，授权来源及 refs 去重。保留期 90 天，清理扫描仍由 FND-10 落地。回滚有内容的 0047 会要求先导出。
 - **交付与退出**：只读工具成功不是最终交付；只有持久 assistant 答复才可成功。中途撤回同意时

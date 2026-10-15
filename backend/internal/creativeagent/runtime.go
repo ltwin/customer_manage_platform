@@ -183,7 +183,13 @@ func (h *runtimeHandler) allowed(name string) bool {
 	if name == readWebpageTool || name == searchWebTool {
 		return h.service.fetcher != nil
 	}
-	if name != loadSkillTool && name != readSkillTool && name != readResultTool {
+	// Reading back this run's own offloaded results reaches nothing the tools
+	// that produced them did not. Gating it by skill only forced large results
+	// inline (owner 2026-10-15); scoping tools per skill is a later design.
+	if name == readResultTool {
+		return true
+	}
+	if name != loadSkillTool && name != readSkillTool {
 		return false
 	}
 	// A skill the conversation used before may be loaded again for its method
@@ -192,7 +198,7 @@ func (h *runtimeHandler) allowed(name string) bool {
 		return true
 	}
 	if h.held.Skill == nil {
-		return name == readResultTool
+		return false
 	}
 	for _, ref := range h.held.Skill.Manifest.ToolAllowlist {
 		if ref == toolRef(name, 1) {

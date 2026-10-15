@@ -463,7 +463,9 @@ func resourceArgumentsFromRequest(t *testing.T, r llmgateway.ProviderRequest) js
 	return nil
 }
 
-func TestRuntimeResourceWithoutReadbackPermissionStaysInline(t *testing.T) {
+// A skill that does not name read_run_result still pages its large results
+// back instead of carrying them inline: readback is open to every run.
+func TestRuntimeLargeResultPagesBackUnderASkillThatDoesNotNameReadback(t *testing.T) {
 	f := setup(t)
 	f.queue()
 	body := []byte(strings.Repeat("完整资料", 2500))
@@ -491,13 +493,15 @@ func TestRuntimeResourceWithoutReadbackPermissionStaysInline(t *testing.T) {
 			return scriptedResult(r, llmgateway.ToolCall{ID: "resource", Name: readSkillTool, Arguments: resourceArgumentsFromRequest(t, r)}), nil
 		}
 		last := r.Chat.Messages[len(r.Chat.Messages)-1]
-		if len(last.Blocks) != 1 || last.Blocks[0].Text != string(body) {
-			t.Error("resource cannot be read back and was not kept inline")
+		if len(last.Blocks) != 1 || strings.Contains(last.Blocks[0].Text, string(body)) || !strings.Contains(last.Blocks[0].Text, readResultTool) {
+			t.Error("a large result must arrive as a preview that names the readback tool")
 		}
+		offered := false
 		for _, tool := range r.Chat.Tools {
-			if tool.Name == readResultTool {
-				t.Error("readback was granted without permission")
-			}
+			offered = offered || tool.Name == readResultTool
+		}
+		if !offered {
+			t.Error("readback was not offered under a skill")
 		}
 		return scriptedResult(r), nil
 	}
