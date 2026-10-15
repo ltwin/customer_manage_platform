@@ -102,7 +102,10 @@ try {
             {
               skill_id: 'skill',
               skill_version_id: 'version',
+              origin: 'platform',
+              slug: 'test-skill',
               display_name: 'Test skill',
+              description: 'A built-in skill',
               available: true,
             },
           ],
@@ -123,13 +126,22 @@ try {
     const metrics=await page.getByRole('complementary',{name:'创作助手'}).evaluate(el=>{const s=getComputedStyle(el),b=el.querySelector('.cc-agent-send'),r=b.getBoundingClientRect();return {width:el.getBoundingClientRect().width,background:s.backgroundColor,send:[r.width,r.height,getComputedStyle(b).borderRadius]}})
     assert.deepEqual(metrics,{width:380,background:'rgb(27, 27, 29)',send:[30,30,'50%']})
     if(order==='old-first') await page.screenshot({path:'/tmp/creative-v6-agent-desktop.png'})
-    await pick(page, 'Skill', 'Test skill')
+    // The toolbar panel lists built-in skills; picking one puts its tag in the composer.
+    await page.getByRole('button', { name: 'Skill', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Skill' }).getByRole('option', { name: /Test skill/ }).click()
+    assert.equal(await page.locator('.cc-agent-box .cc-skill-tag').textContent(), 'Test skill')
     assert.equal(await page.getByRole('checkbox').count(), 0, 'sending needs no consent tick')
     await page.getByLabel('创作问题').press('Enter')
     await page.waitForFunction(
       (k) => JSON.parse(sessionStorage.getItem(k))?.steps?.length === 2,
       key,
     )
+    assert.equal(
+      await page.evaluate((k) => JSON.parse(sessionStorage.getItem(k)).steps.at(-1).payload.instruction.instruction_segments[0].skill_version_id, key),
+      'version',
+      'the picked skill rides on this message',
+    )
+    assert.equal(await page.locator('.cc-agent-box .cc-skill-tag').count(), 0, 'the skill goes out with the message')
     await page.getByRole('button', { name: '收起创作助手' }).click()
     await page.getByRole('button', { name: '打开创作助手' }).click()
     await page.getByRole('button', { name: '重新发送' }).click()
@@ -186,7 +198,10 @@ try {
           {
             skill_id: 'skill',
             skill_version_id: 'version',
+            origin: 'platform',
+            slug: 'test-skill',
             display_name: 'Test skill',
+            description: 'A built-in skill',
             available: true,
           },
         ],
@@ -203,8 +218,13 @@ try {
   await page.goto(url)
   await page.getByRole('button', { name: '打开创作助手' }).click()
   await pick(page, '历史对话', 'Other')
+  // A slash lists the built-in skills too; Enter takes the highlighted one.
+  await page.getByLabel('创作问题').fill('/te')
+  await page.getByRole('listbox', { name: '命令与 Skill' }).getByRole('option', { name: /Test skill/ }).waitFor()
+  await page.getByLabel('创作问题').press('Enter')
+  assert.equal(await page.locator('.cc-agent-box .cc-skill-tag').textContent(), 'Test skill')
+  assert.equal(await page.getByLabel('创作问题').textContent(), '')
   await page.getByLabel('创作问题').fill('刷新后仍然保留的原文')
-  await pick(page, 'Skill', 'Test skill')
   await page.getByRole('button', { name: '发送', exact: true }).click()
   await page.getByRole('alert').waitFor()
   await page.reload()
@@ -222,8 +242,9 @@ try {
     'Test model',
   )
   assert.equal(
-    await page.getByRole('combobox', { name: 'Skill', exact: true }).textContent(),
+    await page.locator('.cc-agent-box .cc-skill-tag').textContent(),
     'Test skill',
+    'the skill comes back with the draft',
   )
   assert.equal(runPosts, 2)
   await page.setViewportSize({width:390,height:844})

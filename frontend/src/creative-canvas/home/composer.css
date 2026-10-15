@@ -122,6 +122,25 @@
 .hc-ref-remove:disabled {
   display: none;
 }
+.hc-skill {
+  margin-bottom: 6px;
+}
+/* 首页输入框靠近页面顶部，Skill 面板和斜杠菜单改向下展开，盖在下方内容之上。 */
+.hc-ask :is(.cc-skill-panel, .cc-slash) {
+  top: calc(100% + 6px);
+  bottom: auto;
+  z-index: 20;
+}
+.hc-ask .cc-skill-panel {
+  transform-origin: top center;
+  animation-name: cc-skill-down;
+}
+@keyframes cc-skill-down {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
 .hc-foot {
   display: flex;
   align-items: center;

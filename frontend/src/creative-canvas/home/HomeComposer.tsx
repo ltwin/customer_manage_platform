@@ -26,11 +26,15 @@ import {
   sendRefusal,
   type PendingAgentChain,
 } from '../editor/agentState.ts'
+import { agentModelOptions, defaultAgentModel } from '../editor/agentOptions.tsx'
 import {
-  agentModelOptions,
-  agentSkillOptions,
-  defaultAgentModel,
-} from '../editor/agentOptions.tsx'
+  builtinSkills,
+  slashSuggestions,
+  typedSkill,
+  type SlashItem,
+} from '../editor/agentContext.ts'
+import { SkillPanel, SkillTag, SlashMenu } from '../editor/AgentSkills.tsx'
+import { useSlashMenu } from '../editor/useSlashMenu.ts'
 import LibraryPicker from '../assets/LibraryPicker.tsx'
 import { useEgressNotice } from '../editor/EgressNotice.tsx'
 import Picker from '../editor/Picker.tsx'
@@ -119,6 +123,7 @@ export default function HomeComposer({
   const [picking, setPicking] = useState(false)
   const [dragging, setDragging] = useState(false)
   const files = useRef<HTMLInputElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
   const alive = useRef(false)
   useEffect(() => {
     alive.current = true
@@ -451,6 +456,28 @@ export default function HomeComposer({
     if (match) setSkill(match.skill_version_id)
   }
 
+  // 首页没有命令，斜杠只列内置 Skill。
+  const skills = builtinSkills(catalog?.skills ?? [])
+  const selectedSkill = catalog?.skills.find(
+    (item) => item.skill_version_id === skill,
+  )
+  function chooseSkill(value: string) {
+    setSkill(value)
+    input.current?.focus()
+  }
+  function chooseSlash(item: SlashItem) {
+    if (item.kind !== 'skill') return
+    setText('')
+    chooseSkill(item.skill.skill_version_id)
+  }
+  const slash = useSlashMenu(
+    text,
+    locked
+      ? []
+      : slashSuggestions(text, skills).filter((item) => item.kind === 'skill'),
+    chooseSlash,
+  )
+
   const name = start?.name ?? ''
   return (
     <div className="hc">
@@ -497,14 +524,36 @@ export default function HomeComposer({
             ))}
           </ul>
         )}
+        <SlashMenu
+          items={slash.items}
+          active={slash.active}
+          onHover={slash.hover}
+          onChoose={chooseSlash}
+        />
+        {selectedSkill && (
+          <div className="hc-skill">
+            <SkillTag
+              skill={selectedSkill}
+              disabled={locked}
+              onRemove={() => chooseSkill('')}
+            />
+          </div>
+        )}
         <textarea
+          ref={input}
           aria-label="创作想法"
           rows={2}
           placeholder="说说这次拍摄的想法，助手会在新画布上帮你展开…"
           value={text}
           readOnly={locked}
-          onChange={(event) => edit(event.target.value)}
+          onChange={(event) => {
+            const typed = typedSkill(event.target.value, skills)
+            if (typed) setSkill(typed.skill.skill_version_id)
+            edit(typed ? typed.text : event.target.value)
+          }}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return
+            if (slash.onKey(event)) return
             if (
               event.key === 'Enter' &&
               !event.shiftKey &&
@@ -543,14 +592,12 @@ export default function HomeComposer({
           >
             <Plus size={16} />
           </Picker>
-          <Picker
-            className="hc-chip"
-            label="Skill"
+          <SkillPanel
+            skills={skills}
+            loading={!catalog && !catalogError}
             value={skill}
-            options={agentSkillOptions(catalog)}
-            minWidth={260}
-            disabled={locked || !catalog}
-            onChange={setSkill}
+            disabled={locked}
+            onChange={chooseSkill}
           />
           <Picker
             className="hc-chip"

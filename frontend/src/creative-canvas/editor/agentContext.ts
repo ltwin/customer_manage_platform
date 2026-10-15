@@ -3,8 +3,9 @@ import type { components } from '../../api/schema'
 export type ContextUsage = components['schemas']['CreativeAgentContextUsage']
 type Model = components['schemas']['CreativeAgentModel']
 type Segment = components['schemas']['CreativeAgentInstructionSegment']
+export type Skill = components['schemas']['CreativeAgentSkill']
 
-// 输入框里以 / 开头的命令。本期只有 compact。
+// 输入框里以 / 开头的命令。本期只有 compact；内置 Skill 也从斜杠调出。
 export interface AgentCommand {
   name: 'compact'
   description: string
@@ -40,6 +41,49 @@ export function completeCommand(draft: string): string | null {
   const options = commandSuggestions(draft)
   if (options.length !== 1 || draft === `/${options[0].name}`) return null
   return `/${options[0].name} `
+}
+
+// 首版只开放内置 Skill（平台目录）；账号自建的随创建入口一起开。
+export function builtinSkills(skills: Skill[]): Skill[] {
+  return skills.filter((item) => item.origin === 'platform' && item.available)
+}
+
+export function skillMatches(skill: Skill, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  return (
+    !q ||
+    [skill.display_name, skill.slug, skill.description].some((value) =>
+      value.toLowerCase().includes(q),
+    )
+  )
+}
+
+export type SlashItem =
+  | ({ kind: 'command' } & AgentCommand)
+  | { kind: 'skill'; skill: Skill }
+
+// 斜杠菜单：命令在前，内置 Skill 在后；Skill 按名称、slug 或说明匹配。
+export function slashSuggestions(draft: string, skills: Skill[]): SlashItem[] {
+  const match = /^\/(\S*)$/.exec(draft)
+  if (!match) return []
+  return [
+    ...commandSuggestions(draft).map(
+      (command): SlashItem => ({ kind: 'command', ...command }),
+    ),
+    ...skills
+      .filter((skill) => skillMatches(skill, match[1]))
+      .map((skill): SlashItem => ({ kind: 'skill', skill })),
+  ]
+}
+
+// 打全 slug 再敲空格，就当选了这个 Skill，后面的字留在输入框里。
+export function typedSkill(
+  draft: string,
+  skills: Skill[],
+): { skill: Skill; text: string } | null {
+  const match = /^\/(\S+)\s([\s\S]*)$/.exec(draft)
+  const skill = match && skills.find((item) => item.slug === match[1])
+  return skill ? { skill, text: match[2].trimStart() } : null
 }
 
 export function commandSegment(command: {

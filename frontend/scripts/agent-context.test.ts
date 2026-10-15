@@ -7,8 +7,13 @@ import {
   latestUsage,
   parseCommand,
   ringView,
+  builtinSkills,
+  skillMatches,
+  slashSuggestions,
   tokenLabel,
+  typedSkill,
   type ContextUsage,
+  type Skill,
 } from '../src/creative-canvas/editor/agentContext.ts'
 import {
   applyEvent,
@@ -73,6 +78,76 @@ test('a slash opens the menu, and Enter completes a partial name', () => {
   // Already whole: Enter sends it rather than completing it again.
   assert.equal(completeCommand('/compact'), null)
   assert.equal(completeCommand('/compact 配色'), null)
+})
+
+const skill = (over: Partial<Skill> = {}): Skill => ({
+  skill_id: 'sk',
+  skill_version_id: 'skv',
+  origin: 'platform',
+  slug: 'reference-direction',
+  display_name: '参考整理与创作方向',
+  description: '检索参考、比较候选，给出创作方向',
+  version_number: 1,
+  digest: 'd',
+  max_inputs: 20,
+  available: true,
+  ...over,
+})
+
+test('only available platform skills are offered for now', () => {
+  const skills = builtinSkills([
+    skill(),
+    skill({ skill_id: 'mine', origin: 'account', slug: 'mine' }),
+    skill({ skill_id: 'off', slug: 'off', available: false }),
+  ])
+  assert.deepEqual(
+    skills.map((s) => s.skill_id),
+    ['sk'],
+  )
+})
+
+test('skills match by name, slug or description', () => {
+  assert.equal(skillMatches(skill(), ''), true)
+  assert.equal(skillMatches(skill(), '参考'), true)
+  assert.equal(skillMatches(skill(), 'REFERENCE'), true)
+  assert.equal(skillMatches(skill(), '候选'), true)
+  assert.equal(skillMatches(skill(), '视频'), false)
+})
+
+test('a slash lists commands first, then skills', () => {
+  const skills = [skill()]
+  assert.deepEqual(
+    slashSuggestions('/', skills).map((item) =>
+      item.kind === 'command' ? item.name : item.skill.slug,
+    ),
+    ['compact', 'reference-direction'],
+  )
+  assert.deepEqual(
+    slashSuggestions('/ref', skills).map((item) => item.kind),
+    ['skill'],
+  )
+  assert.deepEqual(
+    slashSuggestions('/创作', skills).map((item) => item.kind),
+    ['skill'],
+  )
+  assert.deepEqual(slashSuggestions('/ref 春季', skills), [])
+  assert.deepEqual(slashSuggestions('请 /ref', skills), [])
+})
+
+test('typing a whole skill slug and a space turns it into that skill', () => {
+  const skills = [skill()]
+  assert.deepEqual(typedSkill('/reference-direction 春季 Lookbook', skills), {
+    skill: skills[0],
+    text: '春季 Lookbook',
+  })
+  assert.deepEqual(typedSkill('/reference-direction ', skills), {
+    skill: skills[0],
+    text: '',
+  })
+  // Still typing the name, or a name that is not a skill: leave the words alone.
+  assert.equal(typedSkill('/reference-direction', skills), null)
+  assert.equal(typedSkill('/reference 春季', skills), null)
+  assert.equal(typedSkill('/compact 配色', skills), null)
 })
 
 test('a conversation that never sent anything shows an empty ring, not a guess', () => {

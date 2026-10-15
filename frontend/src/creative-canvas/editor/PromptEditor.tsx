@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
 } from 'react'
 import { createPortal } from 'react-dom'
 import { Library } from 'lucide-react'
@@ -45,6 +46,8 @@ type Props = {
   onGenerate: () => void
   onFiles?: (files: File[]) => void
   onLibrary: () => void
+  /** 外层的浮动菜单（如斜杠菜单）先看按键；返回 true 表示已处理。 */
+  onKey?: (event: KeyboardEvent<HTMLDivElement>) => boolean
 }
 
 export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
@@ -57,6 +60,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
     onGenerate,
     onLibrary,
     onFiles,
+    onKey,
     referenceTitle,
     label = '提示词',
     placeholder = '描述你想创作的内容，@ 引用已连接的参考…',
@@ -306,6 +310,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
         onKeyDown={(e) => {
           e.stopPropagation()
           if (e.nativeEvent.isComposing || composing.current) return
+          if (query === null && onKey?.(e)) return
           if (query !== null) {
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
               e.preventDefault()

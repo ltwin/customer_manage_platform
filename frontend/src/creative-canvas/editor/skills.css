@@ -1,0 +1,312 @@
+/* Skill 入口、输入框里的 Skill 标签和斜杠菜单；画布助手与首页输入框共用。
+   面板和菜单都浮在输入框（定位容器）正上方，与输入框同宽。 */
+.cc-skill-trigger {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition:
+    background-color 0.12s var(--ease),
+    color 0.12s var(--ease);
+}
+.cc-skill-trigger:hover:not(:disabled),
+.cc-skill-trigger[aria-expanded='true'] {
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-skill-trigger.is-on {
+  color: var(--fg);
+}
+.cc-skill-trigger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.cc-skill-trigger:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.cc-skill-panel {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  max-height: min(380px, 60vh);
+  border-radius: var(--r-lg);
+  background: var(--s2);
+  box-shadow:
+    var(--shadow),
+    inset 0 0 0 1px var(--line-2);
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  transform-origin: bottom center;
+  animation: cc-skill-in 0.14s var(--ease);
+}
+@keyframes cc-skill-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cc-skill-panel {
+    animation: none;
+  }
+}
+.cc-skill-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 8px;
+}
+.cc-skill-head h3 {
+  flex: none;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cc-skill-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 240px;
+  margin-left: auto;
+  padding: 0 10px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--s1);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--fg-3);
+}
+.cc-skill-search:focus-within {
+  box-shadow: inset 0 0 0 1px var(--line-3);
+}
+.cc-skill-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+}
+/* 搜索框的焦点由外圈表示，盖过面板对输入框的统一描边。 */
+.cc-skill-panel .cc-skill-search input:focus-visible {
+  outline: none;
+}
+.cc-skill-search input::placeholder {
+  color: var(--fg-3);
+}
+.cc-skill-group,
+.cc-slash-group {
+  padding: 4px 14px;
+  color: var(--fg-3);
+  font-size: 11.5px;
+}
+.cc-skill-panel ul {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 0 6px 6px;
+  list-style: none;
+  scrollbar-width: thin;
+}
+.cc-skill-panel li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.cc-skill-panel li.is-active {
+  background: var(--s3);
+}
+.cc-skill-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--s3);
+  color: var(--fg-2);
+}
+.cc-skill-panel li.is-active .cc-skill-icon {
+  background: var(--s1);
+  color: var(--fg);
+}
+.cc-skill-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cc-skill-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 500;
+}
+.cc-skill-name code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+.cc-skill-desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--fg-3);
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.cc-skill-panel li code,
+.cc-slash code {
+  flex: none;
+  color: var(--fg-3);
+  font-size: 11.5px;
+}
+.cc-skill-check {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fg);
+}
+.cc-skill-empty {
+  margin: 0;
+  padding: 24px 12px 32px;
+  color: var(--fg-3);
+  font-size: 12.5px;
+  text-align: center;
+}
+.cc-skill-foot {
+  margin: 0;
+  padding: 8px 14px 10px;
+  border-top: 1px solid var(--line-2);
+  color: var(--fg-3);
+  font-size: 11.5px;
+}
+
+/* 输入框里这条消息要用的 Skill */
+.cc-skill-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 2px 0 8px;
+  border-radius: 7px;
+  background: var(--s3);
+  color: var(--fg);
+  font-size: 12px;
+}
+.cc-skill-tag > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cc-skill-tag > svg {
+  flex: none;
+  color: var(--fg-2);
+}
+.cc-skill-tag > button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-3);
+  cursor: pointer;
+}
+.cc-skill-tag > button:hover:not(:disabled) {
+  background: var(--s1);
+  color: var(--fg);
+}
+.cc-skill-tag > button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 0;
+}
+
+.cc-slash {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 3;
+  max-height: min(320px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: var(--r);
+  background: var(--s2);
+  box-shadow:
+    var(--shadow),
+    inset 0 0 0 1px var(--line-2);
+  color: var(--fg-2);
+  font-size: 12px;
+  text-align: left;
+}
+.cc-slash .cc-slash-group {
+  padding: 6px 8px 2px;
+}
+.cc-slash li[role='option'] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.cc-slash li.is-active {
+  background: var(--s3);
+  color: var(--fg);
+}
+.cc-slash li[role='option'] > code:first-child,
+.cc-slash-name {
+  flex: none;
+  color: var(--fg);
+  font-size: 12.5px;
+}
+.cc-slash li[role='option'] > svg {
+  flex: none;
+  color: var(--fg-2);
+}
+.cc-slash-desc {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

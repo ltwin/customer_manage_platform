@@ -53,11 +53,9 @@ import {
 import LibraryPicker from '../assets/LibraryPicker.tsx'
 import { useThumbnails } from './MediaView.tsx'
 import { useEgressNotice } from './EgressNotice.tsx'
-import {
-  agentModelOptions,
-  agentSkillOptions,
-  defaultAgentModel,
-} from './agentOptions.tsx'
+import { agentModelOptions, defaultAgentModel } from './agentOptions.tsx'
+import { SkillPanel, SkillTag, SlashMenu } from './AgentSkills.tsx'
+import { useSlashMenu } from './useSlashMenu.ts'
 import { RunTurn, TurnLoading } from './AgentBlocks.tsx'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
 import { useAgentScroll } from './useAgentScroll.ts'
@@ -80,13 +78,16 @@ import {
 } from './agentRuns.ts'
 import { attachmentCap, useChatAttachments } from '../home/chatAttachments.ts'
 import {
+  builtinSkills,
   commandSegment,
-  commandSuggestions,
   completeCommand,
   latestUsage,
   parseCommand,
   ringView,
+  slashSuggestions,
+  typedSkill,
   type ContextUsage,
+  type SlashItem,
 } from './agentContext.ts'
 import { AgentContextRing } from './AgentContextRing.tsx'
 import {
@@ -690,6 +691,7 @@ function AgentConversation({
     setOutgoing({ conversation, parts })
     if (clear) {
       setDraft('')
+      setSkill('')
       setMaterials([])
       attachments.clear()
     }
@@ -798,7 +800,10 @@ function AgentConversation({
     setRefresh((value) => value + 1)
   }
   const modelOptions = agentModelOptions(catalog)
-  const skillOptions = agentSkillOptions(catalog)
+  const skills = builtinSkills(catalog?.skills ?? [])
+  const selectedSkill = catalog?.skills.find(
+    (item) => item.skill_version_id === skill,
+  )
   const conversationOptions: PickerOption[] = listed.map((item) => ({
     value: item.id,
     label: item.title,
@@ -923,7 +928,23 @@ function AgentConversation({
     setDraft(starter.text)
     requestAnimationFrame(() => editor.current?.focus())
   }
-  const suggestions = waiting || locked || active ? [] : commandSuggestions(draft)
+  // Skill 跟着这一条消息走：选好后标签留在输入框，发出即清空。
+  function chooseSkill(value: string) {
+    setSkill(value)
+    editor.current?.focus()
+  }
+  function chooseSlash(item: SlashItem) {
+    if (item.kind === 'command') completeDraft(`/${item.name} `)
+    else {
+      setSkill(item.skill.skill_version_id)
+      completeDraft('')
+    }
+  }
+  const slash = useSlashMenu(
+    draft,
+    waiting || locked || active ? [] : slashSuggestions(draft, skills),
+    chooseSlash,
+  )
   const compactBlocked = !conversation
     ? '新对话还没有可以整理的内容'
     : active
@@ -1229,21 +1250,20 @@ function AgentConversation({
             />
           )}
           <div className="cc-agent-box">
-            {suggestions.length > 0 && (
-              <ul className="cc-agent-commands" aria-label="命令">
-                {suggestions.map((item) => (
-                  <li key={item.name}>
-                    <button
-                      type="button"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => completeDraft(`/${item.name} `)}
-                    >
-                      <code>/{item.name}</code>
-                      <span>{item.description}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            <SlashMenu
+              items={slash.items}
+              active={slash.active}
+              onHover={slash.hover}
+              onChoose={chooseSlash}
+            />
+            {!waiting && selectedSkill && (
+              <div className="cc-agent-skill">
+                <SkillTag
+                  skill={selectedSkill}
+                  disabled={locked || !!active}
+                  onRemove={() => chooseSkill('')}
+                />
+              </div>
             )}
             <label className="sr-only" htmlFor="creative-agent-draft">
               {waiting ? '补充内容' : '创作问题'}
@@ -1280,8 +1300,13 @@ function AgentConversation({
                 placeholder="想讨论什么创作方向？输入 @ 引用画布素材…"
                 onChange={(text) => {
                   setMaterials(referencedMaterials(text, materialRefs))
-                  setDraft(text)
+                  const typed = typedSkill(text, skills)
+                  if (typed) {
+                    setSkill(typed.skill.skill_version_id)
+                    completeDraft(typed.text)
+                  } else setDraft(text)
                 }}
+                onKey={slash.onKey}
                 onGenerate={() => sendDraft()}
                 onLibrary={() => setPickingMaterial(true)}
                 onFiles={addFiles}
@@ -1328,14 +1353,12 @@ function AgentConversation({
                     <Plus size={15} />
                   </Picker>
                   <input ref={uploadInput} type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; addFiles(files) }} />
-                  <Picker
-                    className="cc-agent-mode"
-                    label="Skill"
+                  <SkillPanel
+                    skills={skills}
+                    loading={!catalog}
                     value={skill}
-                    options={skillOptions}
-                    minWidth={260}
                     disabled={locked || !!active}
-                    onChange={setSkill}
+                    onChange={chooseSkill}
                   />
                   <Picker
                     className="cc-agent-model"

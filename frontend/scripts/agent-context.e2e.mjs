@@ -190,7 +190,7 @@ try {
     const editor = page.getByRole('textbox', { name: '创作问题' })
     await editor.click()
     await page.keyboard.type('/co')
-    const menu = page.getByRole('list', { name: '命令' })
+    const menu = page.getByRole('listbox', { name: '命令与 Skill' })
     await menu.getByText('/compact').waitFor()
     await page.screenshot({ path: '/tmp/creative-agent-context-menu.png' })
     await page.keyboard.press('Enter')

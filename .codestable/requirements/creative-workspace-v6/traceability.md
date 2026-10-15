@@ -210,7 +210,7 @@ PRD v0.2 共 222 个编号（§2–§9），每个编号都有且只有一个**�
 | AS-60 | P0 | 上下文 chip 默认跟随画布选中 | [V6-028](items/V6-028.md) | — |  |  |
 | AS-61 | P0 | 发送时冻结上下文 | [V6-028](items/V6-028.md) | — |  |  |
 | AS-62 | P0 | 模型 chip | [V6-042](items/V6-042.md) | — |  |  |
-| AS-63 | P0 | Skill 选择 | [V6-042](items/V6-042.md) | — |  |  |
+| AS-63 | P0 | Skill 选择 | [V6-042](items/V6-042.md) | — | 输入框内 Skill 面板与 `/` 调用已交付（2026-10-15，仅内置 Skill）；与执行模式并列待 V6-033 | `frontend/scripts/creative-agent.e2e.mjs`（面板选择、斜杠选择、随消息发出 skill_ref、刷新随草稿恢复）、`creative-home.e2e.mjs` 062-AC-02/04、`agent-context.test.ts` |
 | AS-64 | P0 | 首次外发授权 | [V6-029](items/V6-029.md) | — |  |  |
 | AS-65 | P0 | 会话管理 | [V6-042](items/V6-042.md) | — |  |  |
 | AS-66 | P1 | 空状态 | [V6-042](items/V6-042.md) | — |  |  |
