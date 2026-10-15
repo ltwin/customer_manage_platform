@@ -158,8 +158,13 @@ async function startRoutes(route, url, json) {
     }
     const made = replay(server.posts.projects, () => {
       const n = ++server.created.projects
-      return { id: `pn${n}`, name: body.payload.name, default_canvas_id: `cn${n}`, revision: '1', archived: false, updated_at: '2026-10-11T00:00:00Z', edited_at: '2026-10-11T00:00:00Z', running: false, waiting: false, cover: { nodes: [], edges: [], more: false } }
+      // POST 的回执是 CreativeProjectCreateResult，不是 GET 列表的 CreativeProject。
+      return { project_id: `pn${n}`, default_canvas_id: `cn${n}`, revision: '1' }
     })
+    if (server.fault.projectLost) {
+      server.fault.projectLost = false
+      return route.abort('failed')
+    }
     return typeof made.then === 'function' ? made : json(made, 201)
   }
   if (method === 'POST' && /^\/canvases\/[^/]+\/conversations$/.test(path)) {
@@ -995,6 +1000,25 @@ try {
     assert.equal(projectReads.length, before, 'waiting alone does not poll')
   })
 
+
+  await record('062-fix-project-receipt-recovery', async () => {
+    await fresh()
+    server.fault.projectLost = true
+    await page.goto(`${base}/creative`)
+    await prompt().fill('开始')
+    await sendButton().click()
+    await page.getByText('新项目还没确认建好，查询后会接着发出这条消息。').waitFor()
+    assert.equal(server.created.projects, 1, 'project is already committed')
+    assert.equal(server.posts.conversations.length, 0, 'message waits for the project receipt')
+    await page.reload()
+    await page.getByRole('button', { name: '查询并恢复原保存' }).click()
+    assert.equal(await openedWithAgent(), true)
+    assert.equal(server.posts.projects.length, 1, 'recovery uses the stored receipt without creating again')
+    assert.equal(server.created.projects, 1)
+    assert.equal(server.created.conversations, 1)
+    assert.equal(server.created.runs, 1)
+    assert.equal(await page.evaluate(() => sessionStorage.getItem('creative-home-start:qa-home')), null)
+  })
 
   await record('062-fix-project-handoff', async () => {
     for (const recovering of [false, true]) {

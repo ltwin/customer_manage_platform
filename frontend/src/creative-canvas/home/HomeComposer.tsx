@@ -73,22 +73,23 @@ const scenes = [
 
 function createdProject(
   result: unknown,
-): { id: string; canvasID: string; name: string } | null {
+): Pick<
+  components['schemas']['CreativeProjectCreateResult'],
+  'project_id' | 'default_canvas_id'
+> | null {
   if (
     result &&
     typeof result === 'object' &&
-    'id' in result &&
-    typeof result.id === 'string' &&
+    'project_id' in result &&
+    typeof result.project_id === 'string' &&
+    result.project_id &&
     'default_canvas_id' in result &&
     typeof result.default_canvas_id === 'string' &&
-    result.default_canvas_id &&
-    'name' in result &&
-    typeof result.name === 'string'
+    result.default_canvas_id
   )
     return {
-      id: result.id,
-      canvasID: result.default_canvas_id,
-      name: result.name,
+      project_id: result.project_id,
+      default_canvas_id: result.default_canvas_id,
     }
   return null
 }
@@ -236,10 +237,11 @@ export default function HomeComposer({
     if (!project) throw new Error('项目回执暂不可读，请恢复原保存')
     const next = {
       ...current,
-      projectID: project.id,
+      projectID: project.project_id,
       projectOperation: operation,
-      canvasID: project.canvasID,
-      name: project.name,
+      canvasID: project.default_canvas_id,
+      // 创建回执不带名称，沿用这次提交的项目名；旧待确认记录从原输入恢复。
+      name: current.name ?? projectNameFrom(current.text),
     }
     try {
       sessionStorage.setItem(storeKey, JSON.stringify(next))
@@ -403,7 +405,7 @@ export default function HomeComposer({
       if (!homeProject) {
         // 不是这次一句话开始建的项目（例如项目页的新建），直接打开它。
         void navigate(
-          `/creative/canvases/${encodeURIComponent(project.canvasID)}`,
+          `/creative/canvases/${encodeURIComponent(project.default_canvas_id)}`,
         )
         return
       }
@@ -428,7 +430,7 @@ export default function HomeComposer({
       const project = createdProject(result)
       if (project)
         void navigate(
-          `/creative/canvases/${encodeURIComponent(project.canvasID)}`,
+          `/creative/canvases/${encodeURIComponent(project.default_canvas_id)}`,
         )
     } catch (e) {
       if (alive.current) setNotice(errorMessage(e))
