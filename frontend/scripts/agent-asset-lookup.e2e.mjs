@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { readFile, writeFile, rm } from 'node:fs/promises'
 import { chromium } from 'playwright'
-const base = process.env.CREATIVE_AGENT_URL || 'http://127.0.0.1:5193'
+const base = process.env.CREATIVE_AGENT_URL || 'http://localhost:5179'
 const fixture = new URL('../.asset-lookup-qa.html', import.meta.url)
 const version = /egressNoticeVersion = '([^']+)'/.exec(await readFile(new URL('../src/creative-canvas/editor/agentState.ts', import.meta.url), 'utf8'))[1]
 await writeFile(fixture, `<html><body><div id="root" class="cc-workspace"></div><script type="module">

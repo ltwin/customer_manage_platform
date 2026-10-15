@@ -43,7 +43,7 @@ try {
     })
   })
   await page.goto(
-    `${process.env.CREATIVE_AGENT_URL || 'http://127.0.0.1:5179'}/.markdown-qa.html`,
+    `${process.env.CREATIVE_AGENT_URL || 'http://localhost:5179'}/.markdown-qa.html`,
   )
   await page.locator('.cc-agent-text').waitFor()
   async function show(source, streaming = false) {
@@ -235,7 +235,7 @@ try {
     route.abort('failed'),
   )
   await failedPage.goto(
-    `${process.env.CREATIVE_AGENT_URL || 'http://127.0.0.1:5179'}/.markdown-qa.html`,
+    `${process.env.CREATIVE_AGENT_URL || 'http://localhost:5179'}/.markdown-qa.html`,
   )
   await failedPage.locator('.cc-agent-text').waitFor()
   await failedPage.evaluate(

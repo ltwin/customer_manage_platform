@@ -8,5 +8,10 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
     },
+    // 浏览器回归在测试开始时才写入 .*-qa.html 夹具；冷启动时监听到这次写入
+    // 会把正在测的页面整页刷新，测试随之丢掉状态。夹具照常可访问，只是不监听。
+    watch: {
+      ignored: ['**/.*-qa.html'],
+    },
   },
 })
