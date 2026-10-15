@@ -517,7 +517,6 @@ function openEditor(n) {
   previewRev = null
   shotPick = null
   side = null
-  if (!panel.draft.text.trim()) panel.draft.skill = true // 在策划里发消息默认带模板对应的 Skill
   canvasAgent.innerHTML = '' // 面板状态随之进入编辑视图右栏
   const r = document.querySelector(`[data-node="${n.id}"]`)?.getBoundingClientRect()
   if (r) { editor.style.setProperty('--ox', `${r.left + r.width / 2}px`); editor.style.setProperty('--oy', `${r.top + r.height / 2}px`) }
@@ -1340,12 +1339,12 @@ let convs = [] // 本画布的全部会话，最近使用的在前
 const panel = { open: false, viewId: null, running: false, draft: { text: '', units: [], skill: false } }
 function sampleConvs() {
   return [
-    { id: 'conv_plan', title: '拍摄策划 · 芙宁娜', turns: [
+    { id: 'conv_plan', title: '拍摄策划 · 芙宁娜', skillLoaded: true, turns: [
       { role: 'sys', text: '更早的 14 条消息已压缩为摘要，进度以策划文档为准' },
-      { role: 'user', text: '芙宁娜，歌剧院主题的合成片，想和常见的审判庭构图拉开差别', skill: true, units: [] },
-      { role: 'proc', items: [{ verb: '调研角色', obj: '芙宁娜 官方设定与立绘' }, { verb: '搜索参考', obj: 'ArtStation · 歌剧院 舞台顶光' }, { verb: '写入策划', obj: 'IP 拆解、情绪板' }] },
+      { role: 'user', text: '芙宁娜，歌剧院主题的合成片，想和常见的审判庭构图拉开差别', skill: false, units: [] },
+      { role: 'proc', items: [{ verb: '加载 Skill', obj: SKILL_NAME }, { verb: '调研角色', obj: '芙宁娜 官方设定与立绘' }, { verb: '搜索参考', obj: 'ArtStation · 歌剧院 舞台顶光' }, { verb: '写入策划', obj: 'IP 拆解、情绪板' }] },
       { role: 'ai', html: '<p>给了三个方向，你选了 <b>B · 空剧院谢幕</b>：观众席全空，只留一束舞台顶光。</p><p>IP 拆解和情绪板已写进策划，看过后在章节里确认。</p>' },
-      { role: 'user', text: '就 B。剧院正门那张参考太常见了，去掉', skill: true, units: [{ kind: 'section', key: 'moodboard', docId: 'doc_furina', label: '情绪板 #14' }] },
+      { role: 'user', text: '就 B。剧院正门那张参考太常见了，去掉', skill: false, units: [{ kind: 'section', key: 'moodboard', docId: 'doc_furina', label: '情绪板 #14' }] },
       { role: 'proc', items: [{ verb: '读取策划', obj: '情绪板' }, { verb: '写入策划', obj: '创意方向、情绪板' }] },
       { role: 'ai', html: '<p>已去掉正门参考。后面的光源和分镜都按「空剧院、唯一顶光」来；人设三视图和主场景图也生成好了，等你确认。</p>' },
     ] },
@@ -1498,7 +1497,6 @@ function setPanelOpen(open) {
 // 章节 / 设定 / 镜头入口：打开面板，带上这一处（可带选中的文字或某张参考图）的标签；摄影师补一句要求再发送
 function askAgent(units, text = '') {
   panel.draft.units = [].concat(units).map((u) => ({ ...u, docId: current.id }))
-  panel.draft.skill = true
   if (text) panel.draft.text = text
   if (!agentInEditor()) setPanelOpen(true)
   else { rerenderAgent(); focusAgent() }
@@ -1513,8 +1511,11 @@ function goUnit(docId, sel) {
 function logAgent(p, user, procItems) {
   if (!convOf(panel.viewId)) panel.viewId = workOf(p)
   const c = convOf(panel.viewId)
-  if (user) c.turns.push({ role: 'user', skill: true, ...user })
-  const proc = { role: 'proc', items: procItems.map((it) => ({ ...it, run: true })) }
+  if (user) c.turns.push({ role: 'user', skill: false, ...user })
+  // 不默认挂 Skill：会话里第一次碰策划时助手自己加载配套 Skill，加载过的留在上下文里，不再重复加载
+  const load = c.skillLoaded || user?.skill ? [] : [{ verb: '加载 Skill', obj: SKILL_NAME }]
+  c.skillLoaded = true
+  const proc = { role: 'proc', items: [...load, ...procItems].map((it) => ({ ...it, run: true })) }
   c.turns.push(proc)
   panel.running = true
   rerenderAgent()
@@ -1558,7 +1559,7 @@ function sendAgent(where) {
   const docIds = new Set(units.map((u) => u.docId))
   if (where === 'editor') docIds.add(current.id)
   docIds.forEach((d) => { const p = plans.get(d); if (p) p.workId = panel.viewId })
-  panel.draft = { text: '', units: [], skill: where === 'editor' }
+  panel.draft = { text: '', units: [], skill: false }
   const u = units[0]
   const p = plans.get(u?.docId ?? (where === 'editor' ? current.id : '')) ?? plans.get('doc_furina')
   const run = logAgent(p, { text, units, skill }, [{ verb: '读取策划', obj: units.map((x) => x.label).join('、') || (where === 'editor' ? '全文' : '画布') }])
@@ -1728,7 +1729,7 @@ document.addEventListener('click', (e) => {
     ], { rect: e.target.closest('button').getBoundingClientRect() })
   }
   if (ag === 'add-unit') {
-    const pick = (u) => () => { if (!panel.draft.units.some((x) => sameUnit(x, u))) panel.draft.units.push(u); if (u.kind === 'doc') panel.draft.skill = true; rerenderAgent(); focusAgent() }
+    const pick = (u) => () => { if (!panel.draft.units.some((x) => sameUnit(x, u))) panel.draft.units.push(u); rerenderAgent(); focusAgent() }
     const skillItem = panel.draft.skill ? [] : [{ label: `带上 Skill · ${SKILL_NAME}`, icon: 'sparkles', run: () => { panel.draft.skill = true; rerenderAgent() } }, 'sep']
     if (where === 'canvas') {
       return openMenu([...skillItem, { section: '画布上的策划' }, ...nodes.filter((n) => n.kind === 'plan').map((n) => ({ label: plans.get(n.doc).title, icon: 'clapper', run: pick({ kind: 'doc', docId: n.doc }) }))], { rect: e.target.closest('button').getBoundingClientRect() })
@@ -1782,7 +1783,7 @@ function ensureOpen(sel = '#sec-lighting') {
 function scenarioDraft() {
   if (editor.hidden) openEditor(nodes.find((n) => n.doc === 'doc_furina'))
   setTimeout(() => {
-    panel.draft = { text: SCENARIO_TEXT, units: [{ kind: 'doc', docId: current.id }], skill: true }
+    panel.draft = { text: SCENARIO_TEXT, units: [{ kind: 'doc', docId: current.id }], skill: false }
     if (!agentInEditor()) setPanelOpen(true)
     else { rerenderAgent(); focusAgent() }
     toast('已填好要求，按 Enter 发送')
