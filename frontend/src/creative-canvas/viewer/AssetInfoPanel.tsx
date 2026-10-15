@@ -18,6 +18,7 @@ export default function AssetInfoPanel({
   blocked,
   onRate,
   onPlace,
+  foot,
 }: {
   asset: Asset
   catalog: LibraryCatalog | null
@@ -25,6 +26,8 @@ export default function AssetInfoPanel({
   blocked: boolean
   onRate: (rating: number | null) => void
   onPlace?: () => void
+  /** 带着任务打开时（挑素材引用），底部换成任务自己的操作。 */
+  foot?: React.ReactNode
 }) {
   const original = asset.content?.media?.find((m) => m.role === 'original')
   const duration = mediaDuration(asset)
@@ -147,7 +150,7 @@ export default function AssetInfoPanel({
         </section>
       </div>
       <div className="v-foot">
-        {asset.deleted_at ? (
+        {foot ?? (asset.deleted_at ? (
           <>
             <p className="v-trashed">已移到回收站</p>
             <button
@@ -220,7 +223,7 @@ export default function AssetInfoPanel({
               </button>
             )}
           </>
-        )}
+        ))}
       </div>
     </>
   )

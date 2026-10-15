@@ -94,6 +94,15 @@ export function savedAttachments(items: readonly ChatAttachment[]) {
   )
 }
 
+// 从网页拖进来的图片，文件名常是百分号编码的，显示前还原。
+export function fileTitle(name: string): string {
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
+  }
+}
+
 export function useChatAttachments(cap: number) {
   const [items, setItems] = useState<ChatAttachment[]>([])
   const [message, setMessage] = useState('')
@@ -170,18 +179,19 @@ export function useChatAttachments(cap: number) {
     },
     [patch],
   )
-  async function addFiles(files: File[]) {
+  // 返回这次实际加进来的附件 key，输入框据此在光标处放引用。
+  async function addFiles(files: File[]): Promise<string[]> {
     setMessage('')
-    if (!files.length) return
+    if (!files.length) return []
     if (!capabilities) {
       setMessage(attachmentMessages.preparing)
-      return
+      return []
     }
     for (const file of files) {
       const checked = classifyFile(file, capabilities, 'image')
       if ('error' in checked) {
         setMessage(checked.error)
-        return
+        return []
       }
     }
     // 读文件和计算摘要也属于发送前的准备，不能等上传开始才锁住发送。
@@ -189,7 +199,7 @@ export function useChatAttachments(cap: number) {
     setPreparing((count) => count + 1)
     try {
       const digests = await Promise.all(files.map(fileDigest))
-      if (!mounted.current || epoch !== draftEpoch.current) return
+      if (!mounted.current || epoch !== draftEpoch.current) return []
       // 算摘要期间列表可能变了，以当时的列表为准。
       const { accepted, message: note } = admitAttachments(
         itemsRef.current,
@@ -199,22 +209,24 @@ export function useChatAttachments(cap: number) {
       setMessage(note)
       const added = accepted.map((index) => ({
         key: crypto.randomUUID(),
-        title: files[index].name,
+        title: fileTitle(files[index].name),
         source: 'upload' as const,
         state: 'uploading' as const,
         digest: digests[index],
         file: files[index],
         preview: URL.createObjectURL(files[index]),
       }))
-      if (!added.length) return
+      if (!added.length) return []
       itemsRef.current = [...itemsRef.current, ...added]
       setItems(itemsRef.current)
       for (const item of added) upload(item.key, item.file, capabilities)
+      return added.map((item) => item.key)
     } catch (error) {
       if (mounted.current && epoch === draftEpoch.current)
         setMessage(
           error instanceof Error ? error.message : '无法读取参考图，请重新添加',
         )
+      return []
     } finally {
       if (mounted.current && epoch === draftEpoch.current) setPreparing((count) => count - 1)
     }

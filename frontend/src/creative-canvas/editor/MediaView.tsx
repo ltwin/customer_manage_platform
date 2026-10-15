@@ -10,6 +10,46 @@ import {
 } from './media.ts'
 import { getAuthSnapshot } from '../../auth/session.ts'
 
+// 引用 chip 的缩略图：每份图片内容取一张展示图的地址，按内容 id 索引。
+export function useThumbnails(
+  contents: readonly (Content | undefined)[],
+): Record<string, string> {
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
+  const images = contents.filter(
+    (c): c is Content => c?.kind === 'image' && !!pickRendition(c.media, 'display'),
+  )
+  const key = images.map((c) => c.id).join(',')
+  const latest = useRef(images)
+  latest.current = images
+  useEffect(() => {
+    let live = true
+    void Promise.all(
+      latest.current.map(async (content) => {
+        const media = pickRendition(content.media, 'display')!
+        try {
+          const ticket = await mediaTicket(
+            content.id,
+            media.role === 'original' ? 'original' : 'display',
+            'display',
+          )
+          return { id: content.id, url: ticket.url }
+        } catch {
+          return null
+        }
+      }),
+    ).then((values) => {
+      if (live)
+        setThumbnails(
+          Object.fromEntries(values.flatMap((v) => (v ? [[v.id, v.url]] : []))),
+        )
+    })
+    return () => {
+      live = false
+    }
+  }, [key])
+  return thumbnails
+}
+
 // useMediaURL resolves a ticketed URL for one revision/rendition lazily.
 export function useMediaURL(
   revision: string | null | undefined,

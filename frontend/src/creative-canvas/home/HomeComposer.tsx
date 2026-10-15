@@ -31,7 +31,7 @@ import {
   agentSkillOptions,
   defaultAgentModel,
 } from '../editor/agentOptions.tsx'
-import { AgentMaterialPicker } from '../editor/AgentMaterials.tsx'
+import LibraryPicker from '../assets/LibraryPicker.tsx'
 import { useEgressNotice } from '../editor/EgressNotice.tsx'
 import Picker from '../editor/Picker.tsx'
 import { errorMessage } from '../editor/queue.ts'
@@ -105,7 +105,8 @@ export default function HomeComposer({
   const [text, setText] = useState('')
   const [model, setModel] = useState('')
   const [skill, setSkill] = useState('')
-  const attachments = useChatAttachments(attachmentCap(catalog?.limits))
+  const cap = attachmentCap(catalog?.limits)
+  const attachments = useChatAttachments(cap)
   const { restore } = attachments
   // 本机记录的镜像：项目建好之后再发送都用这个项目。
   const [start, setStart] = useState<HomeStart | null>(null)
@@ -679,11 +680,17 @@ export default function HomeComposer({
         ))}
       </div>
       {picking && (
-        <AgentMaterialPicker
-          imagesOnly
+        <LibraryPicker
+          title="选择参考图"
+          note="只显示图片，引用固定版本；需要支持识图的模型"
+          confirm="添加"
+          kind="image"
+          max={cap - attachments.items.length}
+          accept={(asset) => asset.content?.kind === 'image'}
           onClose={() => setPicking(false)}
-          onPick={(item) => {
-            attachments.addRevision(item.id, item.title)
+          onPick={(assets) => {
+            for (const asset of assets)
+              attachments.addRevision(asset.content_revision_id, asset.title)
             setPicking(false)
           }}
         />

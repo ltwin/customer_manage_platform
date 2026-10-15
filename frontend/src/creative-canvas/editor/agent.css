@@ -345,58 +345,6 @@
   color: var(--muted);
   font-size: 12px;
 }
-.cc-agent-material-dialog {
-  width: min(440px, calc(100vw - 32px));
-  max-height: 75vh;
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  background: var(--s2);
-  color: var(--fg);
-  padding: 20px;
-}
-.cc-agent-material-dialog::backdrop {
-  background: rgb(0 0 0 / 55%);
-}
-.cc-agent-material-dialog header {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-.cc-agent-material-dialog input {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: var(--s3);
-  color: var(--fg);
-}
-.cc-agent-material-dialog p {
-  font-size: 12px;
-  color: var(--muted);
-}
-.cc-agent-material-dialog button {
-  background: var(--s3);
-  color: var(--fg);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  padding: 6px 10px;
-  cursor: pointer;
-}
-.cc-agent-material-list {
-  display: grid;
-  gap: 8px;
-  margin: 16px 0;
-}
-.cc-agent-material-list button {
-  text-align: left;
-  overflow-wrap: anywhere;
-}
-.cc-agent-material-list span {
-  display: inline-block;
-  margin-right: 10px;
-  font-size: 11px;
-  color: var(--muted);
-}
 
 /* v6 对话区：过程（思考 / 计划 / 工具）压成一列细行，结论（正文）是正文。
    琥珀 = 正在运行，白色 = 在等你。 */
@@ -1025,11 +973,12 @@
   }
 }
 
-.cc-agent-uploads { list-style: none; padding: 0; margin: 8px 0; }
-.cc-agent-uploads li { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
-.cc-agent-uploads img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; }
-.cc-agent-uploads span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
-.cc-agent-uploads button { flex-shrink: 0; font-size: 12px; }
+/* 图片以 chip 落在输入框里，这里只列上传失败的，给出重试和移除。 */
+.cc-agent-uploads { list-style: none; padding: 0; margin: 4px 12px; }
+.cc-agent-uploads li { display: flex; align-items: center; gap: 4px; min-height: 26px; color: var(--danger); font-size: 12px; }
+.cc-agent-uploads span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-agent-uploads button { flex: none; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: none; color: var(--fg-2); font: inherit; cursor: pointer; }
+.cc-agent-uploads button:hover:not(:disabled) { background: var(--s3); color: var(--fg); }
 
 /* 上下文压缩分隔条：较早的对话在这里被整理成交接摘要 */
 .cc-agent-compaction {

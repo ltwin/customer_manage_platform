@@ -402,6 +402,35 @@ test('material references preserve order, immutable revisions and retry identity
   ])
 })
 
+test('pasted images sit in the text by their local key until uploaded', async () => {
+  const { agentReferences, agentSegments, referencedMaterials, revisionText, uploadReferences } =
+    await import('../src/creative-canvas/editor/agentReferences.ts')
+  const library = { id: 'ccrv_lib', title: '样片', kind: 'image' as const, content: { id: 'ccc_lib' } as never }
+  const uploading = { key: 'k-1', title: '草图.png', source: 'upload' as const, state: 'uploading' as const, preview: 'blob:1' }
+  const ready = { key: 'k-2', title: '参考.png', source: 'upload' as const, state: 'ready' as const, revisionID: 'ccrv_up', preview: 'blob:2' }
+  const refs = [...agentReferences(null, [library]), ...uploadReferences([uploading, ready])]
+  // A library pick keeps its content, so the chip can show a thumbnail and preview.
+  assert.equal(refs[0]!.content, library.content)
+  assert.deepEqual(refs.slice(1).map((r) => [r.sourceID, r.revisionID, r.thumbnail, r.state]), [
+    ['k-1', null, 'blob:1', 'uploading'],
+    ['k-2', 'ccrv_up', 'blob:2', undefined],
+  ])
+  // Still uploading: cannot be sent, and says why.
+  assert.throws(() => agentSegments('看 @[k-1]', refs), /还没上传好/)
+  // Uploaded: sent as its revision, wherever it sits in the sentence.
+  assert.deepEqual(agentSegments('把 @[k-2] 的光用到 @[ccrv_lib]', refs), [
+    { type: 'text', text: '把 ' },
+    { type: 'content_ref', content_revision_id: 'ccrv_up' },
+    { type: 'text', text: ' 的光用到 ' },
+    { type: 'content_ref', content_revision_id: 'ccrv_lib' },
+  ])
+  assert.equal(revisionText('把 @[k-2] 用到 @[k-1]', refs), '把 @[ccrv_up] 用到 @[k-1]')
+  assert.deepEqual(referencedMaterials('@[k-2] @[ccrv_lib]', refs), [
+    library,
+    { id: 'ccrv_up', title: '参考.png', kind: 'image' },
+  ])
+})
+
 test('a refused request says what to do next', () => {
   assert.equal(runFailure('creative_model_providers_exhausted'), '当前负载较高，请稍后尝试')
   assert.equal(runFailure('creative_model_unavailable'), '当前模型暂无可用的服务渠道，请换一个模型')

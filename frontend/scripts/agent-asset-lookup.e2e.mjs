@@ -44,15 +44,20 @@ try {
   const data=new DataTransfer();data.items.add(new File([new Uint8Array([137,80,78,71,13,10,26,10])],'clipboard.png',{type:'image/png'}));
   el.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData:data}))
  })
- await page.getByRole('list',{name:'上传的参考图'}).waitFor()
+ // The pasted image lands as a chip at the caret, spinning until the upload finishes.
+ const chip=page.locator('.cc-agent-box [data-ref]')
+ await chip.waitFor()
+ assert.equal(await chip.locator('.cc-mention-title').innerText(),'clipboard.png')
  await page.waitForFunction(()=>document.querySelector('button[aria-label="发送"]')?.disabled===false)
+ assert.equal(await chip.evaluate(el=>el.classList.contains('is-uploading')),false)
+ assert.equal(await page.getByRole('list',{name:'上传失败的图片'}).count(),0)
  assert.equal(posts.find(p=>p.path.endsWith('/uploads')).body.payload.target.kind,'staged')
  assert.equal(posts.some(p=>p.path.endsWith('/assets')),false,'pasting must not save to library')
  await page.getByRole('button',{name:'发送',exact:true}).click()
  await page.getByRole('heading',{name:'发送前说明'}).waitFor()
  assert.match(await page.getByText(/助手还会按需查找资产库/).innerText(),/按需查找资产库/)
  await page.getByRole('button',{name:'知道了，发送'}).click()
- await page.waitForFunction(()=>document.querySelectorAll('.cc-agent-uploads li').length===0)
+ await page.waitForFunction(()=>document.querySelectorAll('.cc-agent-box [data-ref]').length===0)
  // The composer clears on send now, before the requests go out: wait for the run itself.
  for(let i=0;i<50&&!posts.some(p=>p.path.endsWith('/runs'));i++)await page.waitForTimeout(100)
  const consent=posts.find(p=>p.path.endsWith('/egress-consents')).body.payload

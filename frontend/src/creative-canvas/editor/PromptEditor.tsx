@@ -187,6 +187,7 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
         const next = promptChip(item, thumbnails[item.content?.id ?? ''])
         if (chip.innerHTML !== next.innerHTML)
           chip.replaceChildren(...Array.from(next.childNodes))
+        chip.className = next.className
         chip.title = next.title
         chip.dataset.label = item.label
       }
@@ -433,6 +434,8 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
                 kind={preview.kind}
                 title={preview.title}
               />
+            ) : preview.thumbnail ? (
+              <img src={preview.thumbnail} alt={preview.title} />
             ) : (
               <p>
                 {preview.content
@@ -443,9 +446,13 @@ export default forwardRef<PromptEditorHandle, Props>(function PromptEditor(
             <div>
               <b>{preview.title}</b>
               <span>
-                {preview.kind === 'text'
-                  ? '文本参考 · 引用处展开为原文'
-                  : `发送时记为 [${preview.label}]`}
+                {preview.state === 'uploading'
+                  ? '上传中，完成后才能发送'
+                  : preview.state === 'failed'
+                    ? '上传失败'
+                    : preview.kind === 'text'
+                      ? '文本参考 · 引用处展开为原文'
+                      : `发送时记为 [${preview.label}]`}
               </span>
             </div>
           </div>,

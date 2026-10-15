@@ -13,6 +13,9 @@ export type PromptReference = {
   connected: boolean
   edgeID?: string
   draftIndex?: number
+  // 还没有内容修订的本机图片（助手里刚粘贴或上传的）：用本机预览，上传完才能发送。
+  thumbnail?: string
+  state?: 'uploading' | 'failed'
 }
 const mention = () => /@\[([\w-]+)\]/g
 export function cleanMentions(text: string, ids: ReadonlySet<string>) {

@@ -46,9 +46,12 @@ import {
   agentReferences,
   agentSegments,
   referencedMaterials,
+  revisionText,
+  uploadReferences,
   type AgentMaterial,
 } from './agentReferences.ts'
-import { AgentMaterialPicker } from './AgentMaterials.tsx'
+import LibraryPicker from '../assets/LibraryPicker.tsx'
+import { useThumbnails } from './MediaView.tsx'
 import { useEgressNotice } from './EgressNotice.tsx'
 import {
   agentModelOptions,
@@ -252,7 +255,35 @@ function AgentConversation({
   const attachments = useChatAttachments(attachmentCap(catalog?.limits))
   const uploadInput = useRef<HTMLInputElement>(null)
   const [pickingMaterial, setPickingMaterial] = useState(false)
-  const references = agentReferences(canvas, materials)
+  const materialRefs = agentReferences(canvas, materials)
+  // 粘贴、上传的图片和资产库、画布引用一样，以 chip 落在输入框的光标处。
+  const references = [
+    ...materialRefs,
+    ...uploadReferences(attachments.items),
+  ]
+  const thumbnails = useThumbnails(
+    references
+      .filter((item) => draft.includes(`@[${item.sourceID}]`))
+      .map((item) => item.content),
+  )
+  // 新加的图片和素材等这一轮渲染进引用列表后，再插到光标处。
+  const [inserting, setInserting] = useState<string[] | null>(null)
+  useEffect(() => {
+    if (!inserting) return
+    setInserting(null)
+    editor.current?.insertReferences(inserting)
+  }, [inserting])
+  // 输入框里删掉了图片的 chip，就撤掉这张图，上传中的一并中止。
+  const placed = useRef(new Set<string>())
+  useEffect(() => {
+    const present = new Set(
+      [...draft.matchAll(/@\[([\w-]+)\]/g)].map((match) => match[1]),
+    )
+    for (const item of attachments.items) {
+      if (present.has(item.key)) placed.current.add(item.key)
+      else if (placed.current.delete(item.key)) attachments.remove(item.key)
+    }
+  })
   const mentioned = referencedMaterials(draft, references)
   const uploaded: AgentMaterial[] = attachments.items.flatMap((item) =>
     item.state === 'ready' && item.revisionID ? [{id:item.revisionID, title:item.title, kind:'image' as const}] : [],
@@ -596,7 +627,7 @@ function AgentConversation({
       conversation,
       model,
       skill,
-      text: [draft, ...uploaded.filter((item) => !mentioned.some((m) => m.id === item.id)).map((item) => `@[${item.id}]`)].filter(Boolean).join(' '),
+      text: [revisionText(draft, references), ...uploaded.filter((item) => !mentioned.some((m) => m.id === item.id)).map((item) => `@[${item.id}]`)].filter(Boolean).join(' '),
       materials: referenced,
     }
     if (waiting) {
@@ -937,6 +968,19 @@ function AgentConversation({
       disabled: !!compactBlocked,
     },
   ]
+  const failedUploads = attachments.items.filter(
+    (item) => item.state === 'failed',
+  )
+  function addFiles(files: File[]) {
+    if (locked || active || waiting) return
+    void attachments.addFiles(files).then((keys) => {
+      if (keys.length) setInserting(keys)
+    })
+  }
+  function dropUpload(key: string) {
+    setDraft((old) => old.replace(`@[${key}]`, ''))
+    attachments.remove(key)
+  }
   function add(value: string) {
     if (value === 'upload') uploadInput.current?.click()
     else if (value === 'library') setPickingMaterial(true)
@@ -1162,7 +1206,7 @@ function AgentConversation({
           onDrop={(event) => {
             if (!event.dataTransfer.files.length) return
             event.preventDefault()
-            if (!locked && !active && !waiting) void attachments.addFiles(Array.from(event.dataTransfer.files))
+            addFiles(Array.from(event.dataTransfer.files))
           }}
           noValidate
           onSubmit={(event) => {
@@ -1229,27 +1273,26 @@ function AgentConversation({
                 ref={editor}
                 text={draft}
                 references={references}
-                thumbnails={{}}
+                thumbnails={thumbnails}
                 disabled={locked || !!active}
                 label="创作问题"
                 referenceTitle="可引用的画布素材"
                 placeholder="想讨论什么创作方向？输入 @ 引用画布素材…"
                 onChange={(text) => {
-                  setMaterials(referencedMaterials(text, references))
+                  setMaterials(referencedMaterials(text, materialRefs))
                   setDraft(text)
                 }}
                 onGenerate={() => sendDraft()}
                 onLibrary={() => setPickingMaterial(true)}
-                onFiles={(files) => { if (!locked && !active) void attachments.addFiles(files) }}
+                onFiles={addFiles}
               />
             )}
-            {!waiting && attachments.items.length > 0 && (
-              <ul className="cc-agent-uploads" aria-label="上传的参考图">
-                {attachments.items.map((item) => <li key={item.key}>
-                  {item.preview && <img src={item.preview} alt={item.title} />}
-                  <span>{item.title}{item.state === 'uploading' ? ' · 上传中' : ''}{item.error ? ` · ${item.error}` : ''}</span>
-                  {item.state === 'failed' && <button type="button" disabled={locked || !!active} onClick={() => attachments.retry(item.key)}>重试</button>}
-                  <button type="button" disabled={locked || !!active} onClick={() => attachments.remove(item.key)}>移除</button>
+            {!waiting && failedUploads.length > 0 && (
+              <ul className="cc-agent-uploads" aria-label="上传失败的图片">
+                {failedUploads.map((item) => <li key={item.key}>
+                  <span>「{item.title}」上传失败{item.error ? `：${item.error}` : ''}</span>
+                  <button type="button" disabled={locked || !!active} onClick={() => attachments.retry(item.key)}>重试</button>
+                  <button type="button" disabled={locked || !!active} onClick={() => dropUpload(item.key)}>移除</button>
                 </li>)}
               </ul>
             )}
@@ -1284,7 +1327,7 @@ function AgentConversation({
                   >
                     <Plus size={15} />
                   </Picker>
-                  <input ref={uploadInput} type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (!locked && !active) void attachments.addFiles(files) }} />
+                  <input ref={uploadInput} type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; addFiles(files) }} />
                   <Picker
                     className="cc-agent-mode"
                     label="Skill"
@@ -1328,18 +1371,33 @@ function AgentConversation({
         </form>
       )}
       {pickingMaterial && (
-        <AgentMaterialPicker
+        <LibraryPicker
+          title="引用资产库素材"
+          note="文本和图片引用固定版本；图片需要支持识图的模型"
+          accept={(asset) =>
+            asset.content?.kind === 'text' || asset.content?.kind === 'image'
+          }
           onClose={() => setPickingMaterial(false)}
-          onPick={(item) => {
+          onPick={(assets) => {
+            const picked = assets.flatMap((asset): AgentMaterial[] => {
+              const kind = asset.content?.kind
+              return kind === 'text' || kind === 'image'
+                ? [
+                    {
+                      id: asset.content_revision_id,
+                      title: asset.title,
+                      kind,
+                      content: asset.content,
+                    },
+                  ]
+                : []
+            })
             setMaterials((old) => [
-              ...old.filter((m) => m.id !== item.id),
-              item,
+              ...old.filter((m) => !picked.some((p) => p.id === m.id)),
+              ...picked,
             ])
-            setDraft(
-              (old) =>
-                `${old}${old && !old.endsWith(' ') ? ' ' : ''}@[${item.id}] `,
-            )
             setPickingMaterial(false)
+            setInserting(picked.map((m) => m.id))
           }}
         />
       )}

@@ -32,12 +32,22 @@ export function promptChip(
   chip.dataset.ref = ref.sourceID ?? ''
   chip.dataset.label = ref.label
   chip.title =
-    ref.kind === 'text'
-      ? '文本参考 · 引用处展开为原文'
-      : `发送时记为 [${ref.label}]`
-  if (url && ref.kind === 'image') {
+    ref.state === 'uploading'
+      ? '上传中'
+      : ref.state === 'failed'
+        ? '上传失败'
+        : ref.kind === 'text'
+          ? '文本参考 · 引用处展开为原文'
+          : `发送时记为 [${ref.label}]`
+  if (ref.state) chip.classList.add(`is-${ref.state}`)
+  const src = url || ref.thumbnail
+  if (ref.state === 'uploading') {
+    const spin = document.createElement('span')
+    spin.className = 'cc-mention-spin'
+    chip.append(spin)
+  } else if (src && ref.kind === 'image') {
     const img = document.createElement('img')
-    img.src = url
+    img.src = src
     img.alt = ''
     img.draggable = false
     chip.append(img)

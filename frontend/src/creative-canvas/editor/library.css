@@ -75,3 +75,27 @@
 }
 .cl-head button.cl-icon, .cl-foot button.cl-icon { border: 0; background: none; font: inherit; cursor: pointer; }
 .cl-head button.cl-icon:disabled, .cl-foot button.cl-icon:disabled { cursor: default; opacity: 0.45; }
+
+/* 引用素材弹窗：和抽屉同一套浏览区，居中铺开；看大图用快速查看浮窗。 */
+.cl-picker-overlay { z-index: 88; }
+.cl-picker {
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, 100%);
+  height: min(760px, calc(100vh - 40px));
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--s2);
+  box-shadow: var(--shadow);
+  color: var(--fg);
+  font-size: 13px;
+  outline: none;
+}
+.cl-picker .al-tile { cursor: pointer; }
+.cl-picker .al-sec header .al-icon-btn { display: none; }
+.cl-picker .al-usage { display: none; }
+@media (max-width: 760px) {
+  .cl-picker-overlay { padding: 8px; align-items: flex-end; }
+  .cl-picker { height: 86vh; }
+  .cl-picker .cl-foot.is-task { flex-wrap: nowrap; }
+}

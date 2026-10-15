@@ -20,6 +20,7 @@ export default function AssetViewer({
   blocked = false,
   onPlace,
   label,
+  foot,
 }: {
   items: api.Asset[]
   initialID: string
@@ -31,6 +32,8 @@ export default function AssetViewer({
   blocked?: boolean
   onPlace?: (asset: api.Asset) => void
   label?: string
+  /** 底部换成调用方的操作，按当前看的那一项给出。 */
+  foot?: (asset: api.Asset) => React.ReactNode
 }) {
   const [index, setIndex] = useState(() =>
     Math.max(
@@ -129,6 +132,7 @@ export default function AssetViewer({
                 }
               : undefined
           }
+          foot={foot?.(asset)}
         />
       }
       overlays={organization.overlays}

@@ -24,7 +24,7 @@ import {
   type Prompt,
   type Versions,
 } from './generation.ts'
-import { MediaFigure } from './MediaView.tsx'
+import { MediaFigure, useThumbnails } from './MediaView.tsx'
 import {
   generationUnavailable,
   modelsForNode,
@@ -53,7 +53,6 @@ import {
   connectedReferences,
   promptReferences,
 } from './promptReferences.ts'
-import { mediaTicket, pickRendition } from './media.ts'
 import './generation.css'
 
 type Props = {
@@ -130,7 +129,6 @@ export default function NodeGenerationPanel({
   }
   const editor = useRef<PromptEditorHandle>(null)
   const insertedRequest = useRef(0)
-  const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   const mediaRefs = useMemo(
     () =>
       canvas.nodes.filter((n) =>
@@ -140,33 +138,7 @@ export default function NodeGenerationPanel({
       ),
     [canvas, node.id],
   )
-  useEffect(() => {
-    let live = true
-    void Promise.all(
-      mediaRefs.map(async (ref) => {
-        const media = pickRendition(ref.content?.media, 'display')
-        if (ref.content?.kind !== 'image' || !media) return null
-        try {
-          const ticket = await mediaTicket(
-            ref.content.id,
-            media.role === 'original' ? 'original' : 'display',
-            'display',
-          )
-          return { id: ref.content.id, url: ticket.url }
-        } catch {
-          return null
-        }
-      }),
-    ).then((values) => {
-      if (live)
-        setThumbnails(
-          Object.fromEntries(values.flatMap((v) => (v ? [[v.id, v.url]] : []))),
-        )
-    })
-    return () => {
-      live = false
-    }
-  }, [mediaRefs])
+  const thumbnails = useThumbnails(mediaRefs.map((n) => n.content))
   const { catalog, error: catalogError } = useGenerationCatalog()
   const [versions, setVersions] = useState<Versions | null>(null)
   const [execution, setExecution] = useState<Execution | null>(null)

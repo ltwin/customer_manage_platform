@@ -40,6 +40,13 @@ const runBase = {
   deadline_at: '2099-01-01T00:00:00Z',
   created_at: '2026-10-15T00:00:00Z',
 }
+const asset = (i, title) => ({
+  id: `a${i}`, title, description: '', palette: [], rating: null, kind: 'image', revision: '1',
+  content_id: `c${i}`, content_revision_id: `ccrv_${i}`, unavailable: false, is_favorite: false,
+  created_at: '2026-10-15T00:00:00Z', deleted_at: null, purge_after: null, group_ids: [], tag_ids: [],
+  content: { id: `ccrv_${i}`, kind: 'image', media: ['original', 'display'].map((role) => ({ role, blob_id: 'b', mime: 'image/svg+xml', byte_size: 1, width: 300, height: 300, duration_ms: null })) },
+})
+const assets = [asset(0, '秋日样片'), asset(1, '海边逆光'), asset(2, '棚拍布光')]
 const message = (id, ordinal, run, role, text) => ({
   id,
   ordinal: String(ordinal),
@@ -63,10 +70,20 @@ async function open(browser, { refuse = false } = {}) {
   const gate = new Promise((resolve) => (release = resolve))
   const runs = [{ ...runBase, id: 'run1', trigger_message_id: 'm1', state: 'succeeded', finished_at: '2026-10-15T00:00:10Z' }]
   const messages = [message('m1', 1, 'run1', 'user', '第一轮'), message('m2', 2, 'run1', 'assistant', '第一轮的回答')]
+  await page.route('**/qa-img/**', (route) =>
+    route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="#a86"/></svg>' }),
+  )
   await page.route('**/api/v1/creative/**', async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
     const json = (body, status = 200) => route.fulfill({ status, json: body })
+    if (path.endsWith('/media-access-tickets'))
+      return json({ url: `${new URL(url).origin}/qa-img/${request.postDataJSON().content_revision_id}`, expires_at: '2099-01-01T00:00:00Z' })
+    if (path.endsWith('/assets'))
+      return json({ items: assets, next_cursor: '', total_count: assets.length, library_revision: '1', facets: { kinds: { image: 3, text: 0, link: 0, video: 0, audio: 0 }, tags: [] } })
+    const one = /\/assets\/([^/]+)$/.exec(path)?.[1]
+    if (one) return json(assets.find((a) => a.id === one))
+    if (path.endsWith('/asset-groups')) return json({ items: [], asset_counts: {}, hierarchy_revision: '1' })
     if (request.method() === 'POST') {
       if (path.endsWith('/egress-consents'))
         return json({ id: 'consent-new', conversation_id: 'c', revision: '1', purpose: 'creative_assistance', policy_version: noticeVersion, scope: {}, granted_at: '2026-10-15T00:00:00Z' }, 201)
@@ -163,7 +180,34 @@ try {
     await chooser
     await page.getByRole('combobox', { name: '添加', exact: true }).click()
     await menu().getByRole('option', { name: /从资产库选/ }).click()
-    await page.getByRole('dialog', { name: '引用素材库' }).getByRole('button', { name: '关闭' }).click()
+    // 勾选不挤压浏览区，取消勾选不留痕；放大按钮打开只读的快速查看，不改勾选。
+    const library = page.getByRole('dialog', { name: '引用资产库素材' })
+    const tile = library.getByRole('button', { name: '海边逆光', exact: true })
+    await tile.locator('img').waitFor()
+    const board = library.locator('.al-board')
+    const width = (await board.boundingBox()).width
+    await tile.click()
+    assert.equal(await tile.getAttribute('aria-pressed'), 'true')
+    assert.equal((await board.boundingBox()).width, width, 'picking keeps the layout')
+    await library.getByRole('button', { name: '引用 1 项' }).waitFor()
+    await tile.click()
+    assert.equal(await tile.getAttribute('aria-pressed'), 'false')
+    assert.equal((await board.boundingBox()).width, width)
+    await library.getByRole('button', { name: '查看：秋日样片' }).click()
+    const quick = page.getByRole('dialog', { name: '快速查看：秋日样片' })
+    await quick.locator('img').first().waitFor()
+    await page.screenshot({ path: '/tmp/creative-agent-library-quicklook.png' })
+    assert.equal(await library.locator('.al-tile[aria-pressed="true"]').count(), 0, 'looking does not pick')
+    // The quick look offers only the picker's own action, not library edits.
+    assert.equal(await quick.getByRole('button', { name: /移到回收站|放入项目/ }).count(), 0)
+    await quick.getByRole('button', { name: '选用', exact: true }).click()
+    await quick.getByRole('button', { name: '取消选用', exact: true }).waitFor()
+    assert.equal(await library.getByRole('button', { name: '秋日样片', exact: true }).getAttribute('aria-pressed'), 'true')
+    await page.keyboard.press('Escape')
+    await quick.waitFor({ state: 'detached' })
+    assert.ok(await library.isVisible(), 'Escape closes only the quick look')
+    await library.getByRole('button', { name: '引用 1 项' }).waitFor()
+    await library.getByRole('button', { name: '关闭', exact: true }).click()
     await page.getByRole('combobox', { name: '添加', exact: true }).click()
     await menu().getByRole('option', { name: /引用画布节点/ }).click()
     await page.getByText('先连接画布上的节点，或从资产库添加参考').waitFor()
