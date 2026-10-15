@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -59,7 +60,8 @@ func TestSyncPlatformLeavesAHandImportedSeedAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(synced.Published) != 0 || countVersions(t, f) != 1 {
+	// Other built-in packages publish beside it; only the seed must be left alone.
+	if slices.Contains(synced.Published, pkg.Slug) || synced.Unchanged != 1 || countVersions(t, f) != 1+len(synced.Published) {
 		t.Fatalf("the sync republished content already current: %+v", synced)
 	}
 }
@@ -177,8 +179,12 @@ func TestSyncPlatformRecoversFromAnExpiredAttempt(t *testing.T) {
 			t.Fatalf("run %d after recovery: %+v", run+1, synced)
 		}
 	}
-	if n := countVersions(t, f); n != 1 {
-		t.Fatalf("recovery froze %d versions", n)
+	entries, err := os.ReadDir(seedPackagesDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countVersions(t, f); n != len(entries) {
+		t.Fatalf("recovery froze %d versions for %d packages", n, len(entries))
 	}
 }
 
