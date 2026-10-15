@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0b0c" />
+    <title>拍摄策划节点 · 原型</title>
+    <link rel="icon" href="../v4/mark.svg" />
+    <link rel="stylesheet" href="tokens.css" />
+    <link rel="stylesheet" href="shell.css" />
+    <link rel="stylesheet" href="panels.css" />
+    <link rel="stylesheet" href="agent.css" />
+    <link rel="stylesheet" href="plan.css" />
+  </head>
+  <body class="plan-proto">
+    <!-- 画布：只为展示策划节点在画布上的样子，不是完整画布 -->
+    <main class="pc-canvas" id="canvas" aria-label="画布">
+      <div class="pc-world" id="world"></div>
+    </main>
+
+    <div class="pc-topleft cc-float">
+      <button class="icon-btn" aria-label="返回"><span class="pi" data-pi="arrow-left"></span></button>
+      <span class="pc-project">芙宁娜 · 歌剧院</span>
+    </div>
+
+    <nav class="pc-rail cc-float" aria-label="工具">
+      <button class="pc-rail-add" id="railAdd" aria-label="添加节点" aria-expanded="false"><span class="pi" data-pi="plus"></span></button>
+      <button class="icon-btn" aria-label="选择" aria-pressed="true"><span class="pi" data-pi="pointer"></span></button>
+      <button class="icon-btn" aria-label="资产库"><span class="pi" data-pi="library"></span></button>
+      <button class="icon-btn pc-rail-agent" id="railAgent" aria-label="助手" aria-pressed="false"><span class="pi" data-pi="sparkles"></span></button>
+    </nav>
+
+    <!-- 画布上的助手面板：与编辑视图右栏共用一份状态 -->
+    <div id="canvasAgent"></div>
+
+    <div class="pc-hint cc-float" id="hint">
+      <strong>原型说明</strong>
+      <span>双击策划卡片展开编辑；左侧「+」新建策划并选择类型；工具轨「✦」和编辑视图顶栏「✦」打开的是同一个助手：画布上聊到一半打开策划，对话接着在右栏继续；右下角「演示」模拟助手写入与冲突。</span>
+    </div>
+
+    <button class="pc-demo cc-float" id="demo" aria-expanded="false"><span class="pi" data-pi="sparkles"></span>演示</button>
+
+    <!-- 最大化编辑视图 -->
+    <section class="pe" id="editor" hidden aria-label="拍摄策划"></section>
+
+    <script type="module" src="plan.mjs"></script>
+  </body>
+</html>
