@@ -2,6 +2,7 @@ import { memo, useContext, useEffect, useState, type ReactNode } from 'react'
 import {
   Check,
   ChevronRight,
+  FoldVertical,
   Lightbulb,
   ListChecks,
   Scan,
@@ -25,6 +26,7 @@ import {
 import { AgentTurnContext, setOpen, useAgentRuns } from './agentRuns.ts'
 import { hasUnsettledCost, runFailure } from './agentState.ts'
 import { AgentMarkdown } from './AgentMarkdown.tsx'
+import { tokenLabel } from './agentContext.ts'
 import { MediaFigure } from './MediaView.tsx'
 import { isMediaKind } from './media.ts'
 
@@ -247,6 +249,62 @@ function PlanCard({ block }: { block: AgentBlock }) {
   )
 }
 
+// Where earlier turns became a summary. The conversation above it is still
+// all there; what changed is what the assistant carries from here on.
+function CompactionDivider({ block }: { block: AgentBlock }) {
+  const open = useOpen(block.id) ?? false
+  const manual = block.payload.trigger === 'manual'
+  const before = Number(block.payload.tokens_before) || 0
+  const after = Number(block.payload.tokens_after) || 0
+  const summary = text(block.payload.summary)
+  if (block.state === 'running')
+    return (
+      <div className="cc-agent-compaction is-running" role="status">
+        <span className="cc-agent-compaction-label cc-agent-shimmer">
+          正在整理上下文…
+        </span>
+      </div>
+    )
+  if (block.state !== 'complete')
+    return (
+      <div className="cc-agent-compaction is-quiet" role="status">
+        <span className="cc-agent-compaction-label">
+          {text(block.payload.message) || '上下文整理未完成'}
+        </span>
+      </div>
+    )
+  return (
+    <div className="cc-agent-compaction">
+      <button
+        className="cc-agent-compaction-label"
+        aria-expanded={open}
+        onClick={() => setOpen(block.id, !open)}
+        title="展开查看交接摘要"
+      >
+        <FoldVertical size={13} />
+        <span>
+          上下文已压缩 · {manual ? '手动' : '自动'}
+          {before > 0 && after > 0 && (
+            <> · 约 {tokenLabel(before)} → {tokenLabel(after)} token</>
+          )}
+        </span>
+        <Chevron open={open} />
+      </button>
+      {open && (
+        <div className="cc-agent-compaction-summary">
+          {text(block.payload.focus) && (
+            <p className="cc-agent-peek">保留重点：{text(block.payload.focus)}</p>
+          )}
+          <AgentMarkdown source={summary} />
+          <p className="cc-agent-peek">
+            对话很长时，较早的细节可能不准确；助手需要时会回看原文。
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // One block. A block object is replaced only when it changes, so a streamed
 // answer re-renders its own block and nothing else.
 export const BlockView = memo(function BlockView({
@@ -267,6 +325,7 @@ export const BlockView = memo(function BlockView({
   else if (block.type === 'thinking') body = <ThinkingRow block={block} />
   else if (block.type === 'tool') body = <ToolRow block={block} />
   else if (block.type === 'plan') body = <PlanCard block={block} />
+  else if (block.type === 'compaction') body = <CompactionDivider block={block} />
   else body = <p className="cc-agent-note">{text(block.payload.message)}</p>
   return (
     <div

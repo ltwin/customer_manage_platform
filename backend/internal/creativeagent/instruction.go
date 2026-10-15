@@ -3,6 +3,7 @@ package creativeagent
 import (
 	"context"
 	"errors"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
@@ -47,6 +48,9 @@ type InstructionSegment struct {
 	SkillID           string `json:"skill_id,omitempty"`
 	SkillVersionID    string `json:"skill_version_id,omitempty"`
 	ContentRevisionID string `json:"content_revision_id,omitempty"`
+	// Command asks the assistant to act on the conversation itself. Text is
+	// then the command's optional argument, never words for the model.
+	Command string `json:"command,omitempty"`
 }
 
 // ResolvedSkill is the one skill a submission fixed, with the position it was
@@ -73,6 +77,10 @@ type ResolvedInstruction struct {
 	// Bytes is what the projection actually costs against the body budget,
 	// reported rather than recomputed by every caller.
 	Bytes int
+	// Command is set when the submission is a command, and CommandArgs is its
+	// argument; a command submission has no other segment.
+	Command     string
+	CommandArgs string
 }
 
 // ResolveInstruction turns a submission into something that can be stored and
@@ -103,6 +111,9 @@ func (s *Service) ResolveInstruction(ctx context.Context, scope store.AccountSco
 				return ResolvedInstruction{}, err
 			}
 			out.Body.Blocks = append(out.Body.Blocks, Block{Type: "content_ref", RefID: segment.ContentRevisionID})
+		case "command":
+			out.Command, out.CommandArgs = segment.Command, strings.TrimSpace(segment.Text)
+			out.Body.Blocks = append(out.Body.Blocks, Block{Type: "command", Command: segment.Command, Text: out.CommandArgs})
 		}
 	}
 	// The projection is checked against the same rule that will store it, so a
@@ -126,6 +137,9 @@ func validSegments(segments []InstructionSegment) error {
 	}
 	skills := 0
 	for _, segment := range segments {
+		if segment.Command != "" && segment.Type != "command" {
+			return creativeops.ErrValidation
+		}
 		switch segment.Type {
 		case "text":
 			if segment.Text == "" || !utf8.ValidString(segment.Text) ||
@@ -141,6 +155,14 @@ func validSegments(segments []InstructionSegment) error {
 		case "content_ref":
 			if segment.ContentRevisionID == "" ||
 				segment.Text != "" || segment.SkillID != "" || segment.SkillVersionID != "" {
+				return creativeops.ErrValidation
+			}
+		case "command":
+			// A command stands alone: mixing it with words would leave the
+			// model a request nobody can tell apart from the command.
+			if len(segments) != 1 || segment.Command != compactCommand || !utf8.ValidString(segment.Text) ||
+				utf8.RuneCountInString(strings.TrimSpace(segment.Text)) > compactFocusRunes ||
+				segment.SkillID != "" || segment.SkillVersionID != "" || segment.ContentRevisionID != "" {
 				return creativeops.ErrValidation
 			}
 		default:

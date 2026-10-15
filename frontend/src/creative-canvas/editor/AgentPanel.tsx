@@ -72,6 +72,16 @@ import {
   type TurnContext,
 } from './agentRuns.ts'
 import { attachmentCap, useChatAttachments } from '../home/chatAttachments.ts'
+import {
+  commandSegment,
+  commandSuggestions,
+  completeCommand,
+  latestUsage,
+  parseCommand,
+  ringView,
+  type ContextUsage,
+} from './agentContext.ts'
+import { AgentContextRing } from './AgentContextRing.tsx'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
@@ -105,14 +115,21 @@ const starters: { icon: LucideIcon; label: string; text?: string }[] = [
   { icon: Paperclip, label: '引用素材开始讨论' },
 ]
 
-function messageReader(conversation: string, signal: AbortSignal): PageReader {
+// onUsage hears the context usage the newest page carries; older pages have none.
+function messageReader(
+  conversation: string,
+  signal: AbortSignal,
+  onUsage?: (usage: ContextUsage | null) => void,
+): PageReader {
   return (before, limit) => {
     const query = new URLSearchParams({ limit: String(limit) })
     if (before) query.set('before_ordinal', before)
-    return api.read<MessagePage>(
-      `/conversations/${conversation}/messages?${query}`,
-      signal,
-    )
+    return api
+      .read<MessagePage>(`/conversations/${conversation}/messages?${query}`, signal)
+      .then((page) => {
+        if (!before) onUsage?.(page.context_usage ?? null)
+        return page
+      })
   }
 }
 
@@ -208,6 +225,11 @@ function AgentConversation({
   const [older, setOlder] = useState<'idle' | 'loading' | 'failed'>('idle')
   const olderAbort = useRef<AbortController | null>(null)
   const [runs, setRuns] = useState<AgentRun[]>([])
+  // 会话最新一页带回的上下文用量；运行中的每次请求另由事件更新。
+  const [pageUsage, setPageUsage] = useState<{
+    conversation: string
+    usage: ContextUsage | null
+  } | null>(null)
   const [model, setModel] = useState('')
   const [skill, setSkill] = useState('')
   const [draft, setDraft] = useState('')
@@ -244,12 +266,24 @@ function AgentConversation({
   const followed = useAgentRuns(
     useShallow((store) => runs.map((run) => store.runs[run.id]?.run)),
   )
+  const runUsages = useAgentRuns(
+    useShallow((store) => runs.map((run) => store.runs[run.id]?.usage)),
+  )
   const live = runs.map((run, index) => followed[index] ?? run)
   const active = live.find(isActiveRun)
   const waiting = live.find((run) => run.state === 'waiting_input')
   const latest = active ?? waiting
   const approvedIDs = referenced.map((item) => item.id)
   const chosenModel = catalog?.models.find((item) => item.model_key === model)
+  const usage = conversation
+    ? latestUsage([
+        pageUsage?.conversation === conversation ? pageUsage.usage : null,
+        ...runUsages,
+      ])
+    : null
+  const compactPercent = catalog?.limits.auto_compact_percent ?? 0
+  const ring = ringView(usage, chosenModel, compactPercent)
+  const command = waiting ? null : parseCommand(draft)
   const locked = busy || !!pending || storageBroken
   const unsupportedImage =
     referenced.some((item) => item.kind === 'image') &&
@@ -336,7 +370,9 @@ function AgentConversation({
   useEffect(() => {
     if (!conversation) return
     const abort = new AbortController()
-    const read = messageReader(conversation, abort.signal)
+    const read = messageReader(conversation, abort.signal, (value) => {
+      if (!abort.signal.aborted) setPageUsage({ conversation, usage: value })
+    })
     // 已经读过这个会话就只补新的一段，往前翻出来的历史留着；否则从最新一轮读起。
     const known = windowRef.current
     const update: Promise<(old: ThreadWindow | null) => ThreadWindow | null> =
@@ -437,7 +473,9 @@ function AgentConversation({
       mounted.current && ownsPendingChain(sessionStorage, storageKey, chain)
     )
   }
-  async function perform(command: PendingAgentChain) {
+  // keepDraft leaves the composer alone: compacting from the ring is not
+  // sending what the creator is still writing.
+  async function perform(command: PendingAgentChain, keepDraft = false) {
     if (performing.current || !mounted.current) return
     performing.current = true
     setBusy(true)
@@ -455,9 +493,11 @@ function AgentConversation({
         const reply = outcome.reply as Reply
         if ('trigger_message_id' in reply) {
           setConversation(reply.conversation_id)
-          setDraft('')
-          setMaterials([])
-          attachments.clear()
+          if (!keepDraft) {
+            setDraft('')
+            setMaterials([])
+            attachments.clear()
+          }
           setRuns((old) => [reply, ...old.filter((run) => run.id !== reply.id)])
           followLatest()
         }
@@ -476,7 +516,44 @@ function AgentConversation({
       if (mounted.current) setBusy(false)
     }
   }
+  // /compact: the whole submission is the command, with its focus if any.
+  function sendCommand(
+    value: NonNullable<ReturnType<typeof parseCommand>>,
+    keepDraft = false,
+  ) {
+    if (locked || active || waiting) return
+    if (!conversation) {
+      setError('新对话还没有可以整理的内容')
+      return
+    }
+    if (!chosenModel?.available) return
+    const chain: PendingAgentChain = {
+      steps: messageSteps(conversation, {
+        model,
+        imageInput: chosenModel.capability.image_input,
+        revisionIDs: [],
+        segments: [commandSegment(value)],
+      }),
+      ...(keepDraft
+        ? {}
+        : { draft: { conversation, model, skill, text: draft, materials: [] } }),
+    }
+    void notice.confirm().then((ok) => {
+      if (ok) void perform(chain, keepDraft)
+    })
+  }
   function sendDraft() {
+    // 只敲了命令的开头时，回车补全命令，不当文字发出去。
+    const completed = waiting ? null : completeCommand(draft)
+    if (completed) {
+      setDraft(completed)
+      requestAnimationFrame(() => editor.current?.focus())
+      return
+    }
+    if (command) {
+      sendCommand(command)
+      return
+    }
     if ((!draft.trim() && !uploaded.length) || locked || active || attachments.uploading || attachments.failed) return
     const saved = {
       conversation,
@@ -753,6 +830,18 @@ function AgentConversation({
     setDraft(starter.text)
     requestAnimationFrame(() => editor.current?.focus())
   }
+  const suggestions = waiting || locked || active ? [] : commandSuggestions(draft)
+  const compactBlocked = !conversation
+    ? '新对话还没有可以整理的内容'
+    : active
+      ? '这次运行结束后才能压缩'
+      : waiting
+        ? '补充完成后才能压缩'
+        : locked
+          ? '请稍候'
+          : !chosenModel?.available
+            ? '当前模型不可用'
+            : undefined
   const sendable =
     !locked &&
     !active &&
@@ -988,6 +1077,25 @@ function AgentConversation({
             />
           )}
           <div className="cc-agent-box">
+            {suggestions.length > 0 && (
+              <ul className="cc-agent-commands" aria-label="命令">
+                {suggestions.map((item) => (
+                  <li key={item.name}>
+                    <button
+                      type="button"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setDraft(`/${item.name} `)
+                        requestAnimationFrame(() => editor.current?.focus())
+                      }}
+                    >
+                      <code>/{item.name}</code>
+                      <span>{item.description}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             <label className="sr-only" htmlFor="creative-agent-draft">
               {waiting ? '补充内容' : '创作问题'}
             </label>
@@ -1041,6 +1149,11 @@ function AgentConversation({
               </ul>
             )}
             {!waiting && attachments.message && <p role="status">{attachments.message}</p>}
+            {command && (
+              <p className="cc-agent-hint" role="status">
+                发送后会把较早的对话整理成交接摘要，最近两轮保持原样；可以接着写要特别保留的内容。
+              </p>
+            )}
             {!waiting && unsupportedImage && (
               <p className="cc-agent-hint" role="status">
                 当前模型不支持图片理解，请切换视觉模型或移除图片引用。
@@ -1086,6 +1199,14 @@ function AgentConversation({
                     onChange={setModel}
                   />
                 </div>
+              )}
+              {!waiting && (
+                <AgentContextRing
+                  view={ring}
+                  compactPercent={compactPercent}
+                  compactDisabled={compactBlocked}
+                  onCompact={() => sendCommand({ name: 'compact', args: '' }, true)}
+                />
               )}
               <button
                 className="cc-agent-send"
@@ -1139,7 +1260,12 @@ function UserMessage({
   return (
     <div className="cc-agent-user">
       {message.body.blocks.map((block, index) =>
-        block.type === 'text' ? (
+        block.type === 'command' ? (
+          <span key={index}>
+            <span className="cc-agent-command">/{block.command}</span>
+            {block.text && ` ${block.text}`}
+          </span>
+        ) : block.type === 'text' ? (
           <span key={index}>{block.text}</span>
         ) : (
           <span className="cc-agent-chip" key={index}>

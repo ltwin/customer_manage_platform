@@ -644,6 +644,39 @@ func (e CreativeAddNodePayloadTypeKey) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentContextUsagePartKey.
+const (
+	CreativeAgentContextUsagePartKeyImages      CreativeAgentContextUsagePartKey = "images"
+	CreativeAgentContextUsagePartKeyMessages    CreativeAgentContextUsagePartKey = "messages"
+	CreativeAgentContextUsagePartKeySkill       CreativeAgentContextUsagePartKey = "skill"
+	CreativeAgentContextUsagePartKeySummary     CreativeAgentContextUsagePartKey = "summary"
+	CreativeAgentContextUsagePartKeySystem      CreativeAgentContextUsagePartKey = "system"
+	CreativeAgentContextUsagePartKeyToolResults CreativeAgentContextUsagePartKey = "tool_results"
+	CreativeAgentContextUsagePartKeyTools       CreativeAgentContextUsagePartKey = "tools"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentContextUsagePartKey enum.
+func (e CreativeAgentContextUsagePartKey) Valid() bool {
+	switch e {
+	case CreativeAgentContextUsagePartKeyImages:
+		return true
+	case CreativeAgentContextUsagePartKeyMessages:
+		return true
+	case CreativeAgentContextUsagePartKeySkill:
+		return true
+	case CreativeAgentContextUsagePartKeySummary:
+		return true
+	case CreativeAgentContextUsagePartKeySystem:
+		return true
+	case CreativeAgentContextUsagePartKeyToolResults:
+		return true
+	case CreativeAgentContextUsagePartKeyTools:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentConversationTitleSource.
 const (
 	CreativeAgentConversationTitleSourceDefault   CreativeAgentConversationTitleSource = "default"
@@ -680,8 +713,24 @@ func (e CreativeAgentInstructionSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentInstructionSegmentCommand.
+const (
+	CreativeAgentInstructionSegmentCommandCompact CreativeAgentInstructionSegmentCommand = "compact"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentInstructionSegmentCommand enum.
+func (e CreativeAgentInstructionSegmentCommand) Valid() bool {
+	switch e {
+	case CreativeAgentInstructionSegmentCommandCompact:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentInstructionSegmentType.
 const (
+	CreativeAgentInstructionSegmentTypeCommand    CreativeAgentInstructionSegmentType = "command"
 	CreativeAgentInstructionSegmentTypeContentRef CreativeAgentInstructionSegmentType = "content_ref"
 	CreativeAgentInstructionSegmentTypeSkillRef   CreativeAgentInstructionSegmentType = "skill_ref"
 	CreativeAgentInstructionSegmentTypeText       CreativeAgentInstructionSegmentType = "text"
@@ -690,6 +739,8 @@ const (
 // Valid indicates whether the value is a known member of the CreativeAgentInstructionSegmentType enum.
 func (e CreativeAgentInstructionSegmentType) Valid() bool {
 	switch e {
+	case CreativeAgentInstructionSegmentTypeCommand:
+		return true
 	case CreativeAgentInstructionSegmentTypeContentRef:
 		return true
 	case CreativeAgentInstructionSegmentTypeSkillRef:
@@ -746,8 +797,24 @@ func (e CreativeAgentMessageStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentMessageBlockCommand.
+const (
+	CreativeAgentMessageBlockCommandCompact CreativeAgentMessageBlockCommand = "compact"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentMessageBlockCommand enum.
+func (e CreativeAgentMessageBlockCommand) Valid() bool {
+	switch e {
+	case CreativeAgentMessageBlockCommandCompact:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentMessageBlockType.
 const (
+	CreativeAgentMessageBlockTypeCommand    CreativeAgentMessageBlockType = "command"
 	CreativeAgentMessageBlockTypeContentRef CreativeAgentMessageBlockType = "content_ref"
 	CreativeAgentMessageBlockTypeNotice     CreativeAgentMessageBlockType = "notice"
 	CreativeAgentMessageBlockTypeReference  CreativeAgentMessageBlockType = "reference"
@@ -759,6 +826,8 @@ const (
 // Valid indicates whether the value is a known member of the CreativeAgentMessageBlockType enum.
 func (e CreativeAgentMessageBlockType) Valid() bool {
 	switch e {
+	case CreativeAgentMessageBlockTypeCommand:
+		return true
 	case CreativeAgentMessageBlockTypeContentRef:
 		return true
 	case CreativeAgentMessageBlockTypeNotice:
@@ -770,6 +839,24 @@ func (e CreativeAgentMessageBlockType) Valid() bool {
 	case CreativeAgentMessageBlockTypeText:
 		return true
 	case CreativeAgentMessageBlockTypeToolResult:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentRunKind.
+const (
+	Chat    CreativeAgentRunKind = "chat"
+	Compact CreativeAgentRunKind = "compact"
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentRunKind enum.
+func (e CreativeAgentRunKind) Valid() bool {
+	switch e {
+	case Chat:
+		return true
+	case Compact:
 		return true
 	default:
 		return false
@@ -877,19 +964,22 @@ func (e CreativeAgentSkillVersionOrigin) Valid() bool {
 
 // Defines values for CreativeAgentStepSummaryKind.
 const (
-	CreativeAgentStepSummaryKindCheck CreativeAgentStepSummaryKind = "check"
-	CreativeAgentStepSummaryKindModel CreativeAgentStepSummaryKind = "model"
-	CreativeAgentStepSummaryKindTool  CreativeAgentStepSummaryKind = "tool"
+	Check      CreativeAgentStepSummaryKind = "check"
+	Compaction CreativeAgentStepSummaryKind = "compaction"
+	Model      CreativeAgentStepSummaryKind = "model"
+	Tool       CreativeAgentStepSummaryKind = "tool"
 )
 
 // Valid indicates whether the value is a known member of the CreativeAgentStepSummaryKind enum.
 func (e CreativeAgentStepSummaryKind) Valid() bool {
 	switch e {
-	case CreativeAgentStepSummaryKindCheck:
+	case Check:
 		return true
-	case CreativeAgentStepSummaryKindModel:
+	case Compaction:
 		return true
-	case CreativeAgentStepSummaryKindTool:
+	case Model:
+		return true
+	case Tool:
 		return true
 	default:
 		return false
@@ -3798,7 +3888,7 @@ type CreativeAgentBlock struct {
 	// State 类型自身的状态，另有通用终态 interrupted。
 	State string `json:"state"`
 
-	// Type 本期 text、thinking、tool、plan、notice；question、confirm、proposal、changes、suggestions 由后续条目登记。
+	// Type 本期 text、thinking、tool、plan、notice、compaction；question、confirm、proposal、changes、suggestions 由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。
 	Type string `json:"type"`
 }
 
@@ -3832,6 +3922,29 @@ type CreativeAgentCatalog struct {
 	Skills               []CreativeAgentSkill `json:"skills"`
 	Tools                []CreativeAgentTool  `json:"tools"`
 }
+
+// CreativeAgentContextUsage 会话最近一次请求的上下文用量。used_tokens 是供应商实际计数，除非 estimated 为 true （压缩之后、下一次请求之前的估算）。parts 一律是按字节比例分摊的估算，之和等于 used_tokens。
+type CreativeAgentContextUsage struct {
+	// CompactAtTokens 达到它时下一轮先自动压缩；0 表示不自动压缩
+	CompactAtTokens int       `json:"compact_at_tokens"`
+	Estimated       bool      `json:"estimated"`
+	MeasuredAt      time.Time `json:"measured_at"`
+
+	// ModelKey 这次用量对应的模型；与输入框当前所选不同时，前端按估算显示
+	ModelKey     string                          `json:"model_key"`
+	Parts        []CreativeAgentContextUsagePart `json:"parts"`
+	UsedTokens   int64                           `json:"used_tokens"`
+	WindowTokens int                             `json:"window_tokens"`
+}
+
+// CreativeAgentContextUsagePart defines model for CreativeAgentContextUsagePart.
+type CreativeAgentContextUsagePart struct {
+	Key    CreativeAgentContextUsagePartKey `json:"key"`
+	Tokens int64                            `json:"tokens"`
+}
+
+// CreativeAgentContextUsagePartKey defines model for CreativeAgentContextUsagePart.Key.
+type CreativeAgentContextUsagePartKey string
 
 // CreativeAgentControlPayload defines model for CreativeAgentControlPayload.
 type CreativeAgentControlPayload = map[string]interface{}
@@ -3897,26 +4010,52 @@ type CreativeAgentInstructionSchemaVersion int
 
 // CreativeAgentInstructionSegment 一次提交的一个有序片段，是判别联合：每种 type 只允许自身字段，写了别的字段 会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID， ID 本身不授予任何读取权限，服务端一律重新核对。
 type CreativeAgentInstructionSegment struct {
-	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+	Command           *CreativeAgentInstructionSegmentCommand `json:"command,omitempty"`
+	ContentRevisionId *string                                 `json:"content_revision_id,omitempty"`
 
 	// SkillId 与 skill_version_id 必须同时出现；只给版本会让服务端替客户端挑 Skill。
-	SkillId        *string                             `json:"skill_id,omitempty"`
-	SkillVersionId *string                             `json:"skill_version_id,omitempty"`
-	Text           *string                             `json:"text,omitempty"`
-	Type           CreativeAgentInstructionSegmentType `json:"type"`
+	SkillId        *string `json:"skill_id,omitempty"`
+	SkillVersionId *string `json:"skill_version_id,omitempty"`
+	Text           *string `json:"text,omitempty"`
+
+	// Type command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。
+	Type CreativeAgentInstructionSegmentType `json:"type"`
 }
 
-// CreativeAgentInstructionSegmentType defines model for CreativeAgentInstructionSegment.Type.
+// CreativeAgentInstructionSegmentCommand defines model for CreativeAgentInstructionSegment.Command.
+type CreativeAgentInstructionSegmentCommand string
+
+// CreativeAgentInstructionSegmentType command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。
 type CreativeAgentInstructionSegmentType string
 
 // CreativeAgentLimits defines model for CreativeAgentLimits.
 type CreativeAgentLimits struct {
-	Attachments            int   `json:"attachments"`
+	Attachments int `json:"attachments"`
+
+	// AutoCompactPercent 输入达到模型有效窗口的这个百分比时，下一轮先压缩上下文；0 表示不自动压缩。
+	AutoCompactPercent int `json:"auto_compact_percent"`
+
+	// BytesPerWindowToken 由 token 窗口推导字节上限的换算系数。
+	BytesPerWindowToken int `json:"bytes_per_window_token"`
+
+	// CompactRecentTurns 压缩时保留不进摘要的最近完整轮数。
+	CompactRecentTurns int `json:"compact_recent_turns"`
+
+	// CompactSummaryBytes 一份交接摘要的字节上限。
+	CompactSummaryBytes int `json:"compact_summary_bytes"`
+
+	// CompactUserTokens 压缩后原样保留的创作者原话预算（token）。
+	CompactUserTokens int `json:"compact_user_tokens"`
+
+	// HistoryMessages 一次运行向前扫描到最新压缩检查点为止的消息行数上限，只防失控，不是上下文预算。
+	HistoryMessages        int   `json:"history_messages"`
 	ImagePreviewBytes      int64 `json:"image_preview_bytes"`
 	ImagePreviewCount      int   `json:"image_preview_count"`
 	ImagePreviewTotalBytes int64 `json:"image_preview_total_bytes"`
 	InputNodes             int   `json:"input_nodes"`
-	InputTextBytes         int   `json:"input_text_bytes"`
+
+	// InputTextBytes 单次请求字节上限的全局封顶。实际上限取它与 模型 context_window_tokens × bytes_per_window_token 中的较小者：网关按每字节最多 1 token 预留额度，这是花费上限而不是上下文上限。
+	InputTextBytes int `json:"input_text_bytes"`
 
 	// InstructionSegments 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。
 	InstructionSegments int `json:"instruction_segments"`
@@ -3969,6 +4108,9 @@ type CreativeAgentMessageBlock struct {
 	// Code notice 的稳定机器原因
 	Code *string `json:"code,omitempty"`
 
+	// Command command 块的命令名
+	Command *CreativeAgentMessageBlockCommand `json:"command,omitempty"`
+
 	// RefId 定位一个内容修订或工具结果；本身不授予任何权限
 	RefId *string `json:"ref_id,omitempty"`
 
@@ -3976,11 +4118,14 @@ type CreativeAgentMessageBlock struct {
 	Skill *CreativeAgentMessageSkill `json:"skill,omitempty"`
 	Text  *string                    `json:"text,omitempty"`
 
-	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
+	// Type reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。
 	Type CreativeAgentMessageBlockType `json:"type"`
 }
 
-// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
+// CreativeAgentMessageBlockCommand command 块的命令名
+type CreativeAgentMessageBlockCommand string
+
+// CreativeAgentMessageBlockType reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。
 type CreativeAgentMessageBlockType string
 
 // CreativeAgentMessageBody defines model for CreativeAgentMessageBody.
@@ -3999,6 +4144,9 @@ type CreativeAgentMessageBody struct {
 
 // CreativeAgentMessagePage defines model for CreativeAgentMessagePage.
 type CreativeAgentMessagePage struct {
+	// ContextUsage 只在最新一页出现；从未发过请求的会话没有它，前端显示空环。
+	ContextUsage *CreativeAgentContextUsage `json:"context_usage,omitempty"`
+
 	// ConversationRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	ConversationRevision CreativeRevision       `json:"conversation_revision"`
 	Items                []CreativeAgentMessage `json:"items"`
@@ -4018,14 +4166,17 @@ type CreativeAgentMessageSkill struct {
 
 // CreativeAgentModel 摄影师可选的模型。由哪家服务商、经哪个部署提供属于平台路由，不对外暴露。
 type CreativeAgentModel struct {
-	Available         bool                         `json:"available"`
-	Capability        CreativeAgentModelCapability `json:"capability"`
-	CatalogVersion    string                       `json:"catalog_version"`
-	ContextTokens     int                          `json:"context_tokens"`
-	DisplayName       string                       `json:"display_name"`
-	MaxOutputTokens   int                          `json:"max_output_tokens"`
-	ModelKey          string                       `json:"model_key"`
-	UnavailableReason *string                      `json:"unavailable_reason,omitempty"`
+	Available      bool                         `json:"available"`
+	Capability     CreativeAgentModelCapability `json:"capability"`
+	CatalogVersion string                       `json:"catalog_version"`
+	ContextTokens  int                          `json:"context_tokens"`
+
+	// ContextWindowTokens 平台每轮实际发送的输入窗口（token），是运营策略，小于等于 context_tokens 减去输出上限。 上下文用量小环按它计算占比，达到 limits.auto_compact_percent 时下一轮先压缩。
+	ContextWindowTokens int     `json:"context_window_tokens"`
+	DisplayName         string  `json:"display_name"`
+	MaxOutputTokens     int     `json:"max_output_tokens"`
+	ModelKey            string  `json:"model_key"`
+	UnavailableReason   *string `json:"unavailable_reason,omitempty"`
 }
 
 // CreativeAgentModelCapability defines model for CreativeAgentModelCapability.
@@ -4071,6 +4222,9 @@ type CreativeAgentRun struct {
 	FinishedAt      *time.Time `json:"finished_at,omitempty"`
 	Id              string     `json:"id"`
 
+	// Kind chat 是普通的一轮对话（可能先自动压缩）；compact 由 /compact 创建，只压缩上下文、不回答。
+	Kind CreativeAgentRunKind `json:"kind"`
+
 	// LastEventSeq 非负BIGINT十进制字符串；不可转为JS Number。与 CreativeRevision 的区别是 0 合法：它表示「还没有记录」，而修订号为 0 表示一行从未写入过。
 	LastEventSeq  CreativeSequence `json:"last_event_seq"`
 	LimitsVersion string           `json:"limits_version"`
@@ -4098,6 +4252,9 @@ type CreativeAgentRun struct {
 	WaitReason       *string               `json:"wait_reason,omitempty"`
 	WaitingToken     *string               `json:"waiting_token,omitempty"`
 }
+
+// CreativeAgentRunKind chat 是普通的一轮对话（可能先自动压缩）；compact 由 /compact 创建，只压缩上下文、不回答。
+type CreativeAgentRunKind string
 
 // CreativeAgentRunSettlementState 费用是另一个问题：未知的账单不阻止已交付的运行进入终态，终态也不关闭核算。 这是投影，允许短暂滞后。
 type CreativeAgentRunSettlementState string

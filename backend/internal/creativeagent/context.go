@@ -204,7 +204,13 @@ func (h *runtimeHandler) bindMessages(ctx context.Context, source []*schema.Mess
 			messages[i].Blocks = append(messages[i].Blocks, block)
 		}
 	}
-	return append(messages, delayed...), nil
+	messages = append(messages, delayed...)
+	skillBytes := 0
+	if h.held.Skill != nil {
+		skillBytes = len(h.held.Skill.Instructions)
+	}
+	h.setComposition(composeMessages(source, messages, skillBytes, toolNames))
+	return messages, nil
 }
 
 type promptContext struct {
@@ -478,17 +484,13 @@ func (h *runtimeHandler) readHistory(ctx context.Context, raw string) (string, e
 	return string(out), err
 }
 
-// contextBudget leaves room for the output and obeys both deployment limits.
-func contextBudget(limits Limits, model llmgateway.ModelConfig) int {
-	return min(limits.InputTextBytes, model.Capability.ContextTokens-model.Capability.MaxOutputTokens)
-}
-
 func marshalContext(v any) (string, error) { b, err := json.Marshal(v); return string(b), err }
 
 // Compact old tool payloads and whole history turns, preserving call/result
 // pairs and the current instruction. This is explicit lossy reduction, not an
 // invented semantic summary; read_history/read_asset can recover source data.
 func compactMessages(messages []*schema.Message, budget int) []*schema.Message {
+	over := func(size int) bool { return size > budget || len(messages) > requestMessageCap }
 	size := func() int {
 		n := 0
 		for _, m := range messages {
@@ -502,13 +504,13 @@ func compactMessages(messages []*schema.Message, budget int) []*schema.Message {
 		}
 		return n
 	}
-	if size() <= budget {
+	if !over(size()) {
 		return messages
 	}
 	for _, m := range messages {
 		if group, _ := m.Extra["creative_history_group"].(string); group != "" && messageImageID(m) != "" {
 			omitImage(m)
-			if size() <= budget {
+			if !over(size()) {
 				return messages
 			}
 		}
@@ -517,12 +519,12 @@ func compactMessages(messages []*schema.Message, budget int) []*schema.Message {
 		if group, _ := m.Extra["creative_history_group"].(string); group != "" && m.Role == schema.Tool && len(m.Content) > 1024 {
 			m.Content = utf8Prefix(m.Content, 768) + "\n[omitted: 旧工具结果正文已缩减；按来源重新读取]"
 		}
-		if size() <= budget {
+		if !over(size()) {
 			return messages
 		}
 	}
 	// Only messages from earlier turns carry this tag. Remove complete turns.
-	for size() > budget {
+	for over(size()) {
 		group := ""
 		for _, m := range messages {
 			if g, _ := m.Extra["creative_history_group"].(string); g != "" {
@@ -544,6 +546,10 @@ func compactMessages(messages []*schema.Message, budget int) []*schema.Message {
 	}
 	return messages
 }
+
+// requestMessageCap keeps a request under the gateway's 400 messages with
+// room for the turn's own answer.
+const requestMessageCap = 380
 
 func joinInstruction(skill string) string {
 	return strings.TrimSpace(assistantInstruction + "\n\n" + skill)

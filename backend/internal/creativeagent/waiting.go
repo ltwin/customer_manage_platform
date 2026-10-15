@@ -13,6 +13,7 @@ import (
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
@@ -173,6 +174,18 @@ func (h *runtimeHandler) BeforeModelRewriteState(ctx context.Context, state *adk
 		return ctx, state, err
 	}
 	limitHistoryImages(state.Messages, h.service.limits.ImagePreviewCount)
-	state.Messages = compactMessages(state.Messages, contextBudget(h.service.limits, h.held.Model)-8192)
+	// The in-run guard: a run whose own turns outgrow the window sheds old
+	// payloads and whole earlier turns, never the summary (design §5).
+	// Tools can change with the current consent or model. Count the current
+	// normalized schemas, exactly as the gateway does. System messages and
+	// expanded inputs are already in state.Messages, so do not charge them or
+	// admission's assembly margin a second time.
+	definitions, err := llmgateway.EinoToolDefinitions(state.ToolInfos)
+	if err != nil {
+		return ctx, state, err
+	}
+	fixed := toolDefinitionBytes(definitions)
+	budget := min(requestByteCeiling(h.service.limits, h.held.Model), h.measure.Ratio.bytesFor(h.held.Model.InputWindowTokens())) - fixed
+	state.Messages = compactMessages(state.Messages, budget)
 	return ctx, state, nil
 }

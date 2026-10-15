@@ -19,32 +19,170 @@ type historyItem struct {
 	Group string
 	// Reasoning is kept only for a thinking model, which needs it back.
 	Reasoning string
+	Ordinal   int64
 }
 
 const perMessageOverhead = 16
 
-// Freeze recent messages, including tool calls and results. Whole run groups
-// are retained together so no orphan tool response reaches the model.
-// withReasoning keeps each assistant turn's reasoning for a thinking model; it
-// spends the same input budget as the words around it.
-func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, budget int, withReasoning bool) ([]historyItem, error) {
-	if budget <= 0 || s.limits.HistoryMessages <= 0 {
-		return nil, nil
+// historyMessageCap bounds how many messages the frozen history may become,
+// counting each located reference as its own message. The gateway accepts at
+// most 400 per request, and the submission and the run's own turns need room.
+const historyMessageCap = 240
+
+// historyBudget is what history may spend of one request: tokens against the
+// model's window and bytes against the gateway's hold, both at once.
+type historyBudget struct {
+	Tokens int
+	Bytes  int
+	Ratio  tokenRatio
+}
+
+func (b historyBudget) without(bytes int) historyBudget {
+	b.Tokens -= b.Ratio.tokens(bytes)
+	b.Bytes -= bytes
+	return b
+}
+
+func (b historyBudget) availableBytes() int {
+	return max(0, min(b.Bytes, b.Ratio.bytesFor(b.Tokens)))
+}
+
+// historyTurn is one complete turn after the checkpoint, oldest first.
+type historyTurn struct {
+	Items  []historyItem
+	Last   int64
+	Bytes  int
+	Tokens int
+	Refs   int
+}
+
+// historyProjection is what a run will carry instead of the conversation
+// itself: the latest checkpoint's summary, the creator's own words from before
+// it, the index of skills used, and the newest whole turns that fit.
+type historyProjection struct {
+	Checkpoint *compactionCheckpoint
+	// Originals are the creator's words before the checkpoint, oldest first.
+	Originals []string
+	// OriginalsCut says the oldest kept original was shortened to fit.
+	OriginalsCut bool
+	SkillIndex   []skillIndexEntry
+	// Turns are every complete turn after the checkpoint, before the budget.
+	Turns []historyTurn
+	// Kept is how many of the newest Turns fit the budget.
+	Kept int
+	// Unscanned says the scan bound stopped before the checkpoint, so older
+	// turns exist that Turns does not show.
+	Unscanned bool
+}
+
+// Items are the retained turns flattened, oldest first.
+func (p historyProjection) Items() []historyItem {
+	var out []historyItem
+	for _, turn := range p.Turns[len(p.Turns)-p.Kept:] {
+		out = append(out, turn.Items...)
 	}
-	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body,run_id,id,reasoning", "conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool')", []store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID)
+	return out
+}
+
+// isCommand reports a message that asked the assistant to do something to the
+// conversation rather than said something in it. It never becomes history.
+func isCommand(b Body) bool {
+	for _, block := range b.Blocks {
+		if block.Type == "command" {
+			return true
+		}
+	}
+	return false
+}
+
+func itemBytes(item historyItem) int {
+	return bodyBytes(item.Body) + len(item.Reasoning) + perMessageOverhead
+}
+
+// projectionQuery asks what one run would carry as history.
+type projectionQuery struct {
+	ConversationID string
+	// Before bounds the messages considered (exclusive), so a worker freezing
+	// history after its own trigger was appended still sees the conversation
+	// as the creator left it; zero means everything.
+	Before int64
+	Budget historyBudget
+	// WithReasoning keeps each assistant turn's reasoning for a thinking
+	// model; it spends the same budget as the words around it.
+	WithReasoning bool
+	// CurrentSkill is the version the run fixes itself, left out of the index.
+	CurrentSkill string
+	// Checkpoint, when set, stands in for the latest stored one: a consumer
+	// projects from the checkpoint it is about to insert.
+	Checkpoint *compactionCheckpoint
+}
+
+func runProjectionQuery(held claim, before int64, budget historyBudget) projectionQuery {
+	q := projectionQuery{ConversationID: held.ConversationID, Before: before, Budget: budget, WithReasoning: held.Model.HandsBackReasoning()}
+	if held.Skill != nil {
+		q.CurrentSkill = held.Skill.ID
+	}
+	return q
+}
+
+// projectHistoryInTx reads what a run would carry instead of the
+// conversation. Whole run groups are retained together so no orphan tool
+// response reaches the model.
+func (s *Service) projectHistoryInTx(ctx context.Context, tx store.TxAccountScope, q projectionQuery) (historyProjection, error) {
+	var out historyProjection
+	if s.limits.HistoryMessages <= 0 {
+		return out, nil
+	}
+	conversationID, before, budget, withReasoning := q.ConversationID, q.Before, q.Budget, q.WithReasoning
+	checkpoint := q.Checkpoint
+	if checkpoint == nil {
+		var err error
+		if checkpoint, err = latestCompactionInTx(ctx, tx, conversationID); err != nil {
+			return out, err
+		}
+	}
+	if checkpoint != nil && before > 0 && checkpoint.CoversThrough >= before {
+		checkpoint = nil // A checkpoint can never cover the turn being asked.
+	}
+	out.Checkpoint = checkpoint
+	// A smaller model or a larger submission may leave no room even for the
+	// summary. Fall back to original turns for this projection, without changing
+	// the stored checkpoint. Never freeze an untrimmable input that cannot fit.
+	if out.fixedBytes() > budget.availableBytes() {
+		checkpoint, out.Checkpoint = nil, nil
+	}
+	var err error
+	if out.SkillIndex, err = skillIndexInTx(ctx, tx, conversationID, q.CurrentSkill); err != nil {
+		return out, err
+	}
+	for len(out.SkillIndex) > 0 && out.fixedBytes() > budget.availableBytes() {
+		out.SkillIndex = out.SkillIndex[:len(out.SkillIndex)-1]
+	}
+	from := int64(0)
+	if checkpoint != nil {
+		from = checkpoint.CoversThrough
+	}
+	if before <= 0 {
+		before = 1<<62 - 1
+	}
+	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "role,body,run_id,id,reasoning,ordinal",
+		"conversation_id=$2 AND status='complete' AND role IN ('user','assistant','tool') AND ordinal>$3 AND ordinal<$4",
+		[]store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID, from, before)
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	var items []historyItem
+	read := 0
 	for rows.Next() {
+		read++
 		var item historyItem
 		var payload []byte
 		var runID *string
 		var messageID string
 		var reasoning *string
-		if err = rows.Scan(&item.Role, &payload, &runID, &messageID, &reasoning); err != nil {
+		if err = rows.Scan(&item.Role, &payload, &runID, &messageID, &reasoning, &item.Ordinal); err != nil {
 			rows.Close()
-			return nil, err
+			return out, err
 		}
 		item.Group = messageID
 		if reasoning != nil && withReasoning {
@@ -55,7 +193,10 @@ func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope
 		}
 		if err = json.Unmarshal(payload, &item.Body); err != nil {
 			rows.Close()
-			return nil, err
+			return out, err
+		}
+		if isCommand(item.Body) {
+			continue
 		}
 		item.Text = renderedText(payload)
 		items = append(items, item)
@@ -63,53 +204,205 @@ func (s *Service) freezeHistoryInTx(ctx context.Context, tx store.TxAccountScope
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return nil, err
+		return out, err
 	}
+	out.Unscanned = read == s.limits.HistoryMessages
 	slices.Reverse(items)
 	// Drop the leading partial run when the row bound starts inside a tool pair.
 	for len(items) > 0 && items[0].Role != "user" {
 		items = items[1:]
 	}
-	var retained []historyItem
-	for end := len(items); end > 0; {
-		start := end - 1
-		for start > 0 && items[start-1].Group == items[end-1].Group {
-			start--
+	for begin := 0; begin < len(items); {
+		end := begin + 1
+		for end < len(items) && items[end].Group == items[begin].Group {
+			end++
 		}
-		group := items[start:end]
-		cost := 0
+		group := items[begin:end]
+		begin = end
+		turn := historyTurn{Items: group, Last: group[len(group)-1].Ordinal}
 		calls := map[string]bool{}
 		results := map[string]bool{}
 		for _, item := range group {
-			cost += bodyBytes(item.Body) + len(item.Reasoning) + perMessageOverhead
+			turn.Bytes += itemBytes(item)
 			for _, call := range item.Body.ToolCalls {
 				calls[call.ID] = true
 			}
 			if item.Body.ToolCallID != "" {
 				results[item.Body.ToolCallID] = true
 			}
+			turn.Refs++
+			if item.Role != "tool" {
+				for _, block := range item.Body.Blocks {
+					if block.Type == "content_ref" {
+						turn.Refs++
+					}
+				}
+			}
 		}
-		valid := true
+		valid := len(calls) == len(results)
 		for id := range calls {
-			if !results[id] {
-				valid = false
-			}
+			valid = valid && results[id]
 		}
-		for id := range results {
-			if !calls[id] {
-				valid = false
-			}
+		if !valid {
+			continue
 		}
-		if cost > budget {
+		turn.Tokens = budget.Ratio.tokens(turn.Bytes)
+		out.Turns = append(out.Turns, turn)
+	}
+	if checkpoint != nil {
+		// The turns deliberately left out of the summary take precedence over
+		// duplicate creator originals. Reserve the newest complete suffix that
+		// fits, before originals compete for the remaining room.
+		originalBudget := budget
+		recent := budget.without(out.fixedBytes())
+		messages := historyMessageCap
+		for i := len(out.Turns) - 1; i >= max(0, len(out.Turns)-s.limits.CompactRecentTurns); i-- {
+			turn := out.Turns[i]
+			if turn.Tokens > recent.Tokens || turn.Bytes > recent.Bytes || turn.Refs > messages {
+				break
+			}
+			recent.Tokens, recent.Bytes, messages = recent.Tokens-turn.Tokens, recent.Bytes-turn.Bytes, messages-turn.Refs
+			originalBudget.Tokens -= turn.Tokens
+			originalBudget.Bytes -= turn.Bytes
+		}
+		// Reserve the rendered heading (including the truncation notice) before
+		// filling the rest with originals. Newlines also cost indentation bytes.
+		headed := out
+		headed.Originals, headed.OriginalsCut = []string{""}, true
+		room := originalBudget.availableBytes() - headed.fixedBytes() + originalBytes("")
+		if out.Originals, out.OriginalsCut, err = s.creatorOriginalsInTx(ctx, tx, conversationID, checkpoint.CoversThrough, budget.Ratio, room); err != nil {
+			return out, err
+		}
+	}
+	// What the fixed parts cost is taken before any turn competes for the rest.
+	fixed := out.fixedBytes()
+	tokens, bytes, messages := budget.Tokens-budget.Ratio.tokens(fixed), budget.Bytes-fixed, historyMessageCap
+	for i := len(out.Turns) - 1; i >= 0; i-- {
+		turn := out.Turns[i]
+		if turn.Tokens > tokens || turn.Bytes > bytes || turn.Refs > messages {
 			break
 		}
-		if valid {
-			budget -= cost
-			retained = append(append([]historyItem(nil), group...), retained...)
-		}
-		end = start
+		tokens, bytes, messages = tokens-turn.Tokens, bytes-turn.Bytes, messages-turn.Refs
+		out.Kept++
 	}
-	return retained, nil
+	return out, nil
+}
+
+// fixedBytes is what the summary, the originals and the skill index cost.
+func (p historyProjection) fixedBytes() int {
+	total := 0
+	if p.Checkpoint != nil {
+		total += len(compactionText(p)) + perMessageOverhead
+		if len(p.Originals) > 0 {
+			total += perMessageOverhead // Originals are a separately trimmable message.
+		}
+	}
+	if len(p.SkillIndex) > 0 {
+		total += len(skillIndexText(p.SkillIndex)) + perMessageOverhead
+	}
+	return total
+}
+
+// estimatedTokens is the whole projection, every turn included, as the
+// trigger sees it: what the conversation would cost if nothing were dropped.
+func (p historyProjection) estimatedTokens(ratio tokenRatio) int {
+	total := ratio.tokens(p.fixedBytes())
+	for _, turn := range p.Turns {
+		total += turn.Tokens
+	}
+	return total
+}
+
+// composition is the projection's share of a request, by part.
+func (p historyProjection) composition() contextComposition {
+	c := contextComposition{Bytes: map[string]int{}}
+	if p.Checkpoint != nil {
+		c.Bytes[partSummary] += len(compactionText(p)) + perMessageOverhead
+		if len(p.Originals) > 0 {
+			c.Bytes[partSummary] += perMessageOverhead
+		}
+	}
+	if len(p.SkillIndex) > 0 {
+		c.Bytes[partSkill] += len(skillIndexText(p.SkillIndex)) + perMessageOverhead
+	}
+	for _, item := range p.Items() {
+		part := partMessages
+		if item.Role == "tool" {
+			part = partToolResults
+		}
+		c.Bytes[part] += itemBytes(item)
+	}
+	return c
+}
+
+// creatorOriginalsInTx keeps the creator's own words from before a checkpoint,
+// newest first within the budget, so a preference is never only known
+// through the summary's paraphrase of it (Codex keeps the same 20k).
+func (s *Service) creatorOriginalsInTx(ctx context.Context, tx store.TxAccountScope, conversationID string, through int64, ratio tokenRatio, maxBytes int) ([]string, bool, error) {
+	budget := s.limits.CompactUserTokens
+	if budget <= 0 || maxBytes <= originalBytes("") {
+		return nil, false, nil
+	}
+	rows, err := tx.QueryPage(ctx, "creative_agent_messages", "body",
+		"conversation_id=$2 AND status='complete' AND role='user' AND ordinal<=$3",
+		[]store.OrderBy{{Column: "ordinal", Desc: true}}, s.limits.HistoryMessages, 0, conversationID, through)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+	var out []string
+	cut := false
+	for rows.Next() && budget > 0 && maxBytes > originalBytes("") {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, false, err
+		}
+		var body Body
+		if json.Unmarshal(payload, &body) != nil || isCommand(body) {
+			continue
+		}
+		text := strings.TrimSpace(renderedText(payload))
+		if text == "" {
+			continue
+		}
+		original := text
+		text = utf8Prefix(text, ratio.bytesFor(budget))
+		text = fitOriginal(text, maxBytes)
+		if text == "" {
+			break
+		}
+		cut = cut || text != original
+		budget -= ratio.tokens(len(text))
+		maxBytes -= originalBytes(text)
+		out = append(out, text)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	slices.Reverse(out)
+	return out, cut, nil
+}
+
+// originalBytes matches the bullet and continuation indentation in
+// compactionText. Budgeting just raw text misses the cost of multiline input.
+func originalBytes(text string) int {
+	return len(text) + 2*strings.Count(text, "\n") + 3
+}
+
+func fitOriginal(text string, bytes int) string {
+	if originalBytes(text) <= bytes {
+		return text
+	}
+	lo, hi := 0, len(text)
+	for lo < hi {
+		mid := lo + (hi-lo+1)/2
+		if originalBytes(utf8Prefix(text, mid)) <= bytes {
+			lo = mid
+		} else {
+			hi = mid - 1
+		}
+	}
+	return utf8Prefix(text, lo)
 }
 
 func renderedText(payload []byte) string {
@@ -126,14 +419,66 @@ func renderedText(payload []byte) string {
 	return strings.Join(pieces, "\n")
 }
 
-func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, history []historyItem, blocks []Block) error {
-	ordinal := 0
-	insert := func(role, level string, body, id *string, snapshot any) error {
-		defer func() { ordinal++ }()
-		return tx.Insert(ctx, "creative_run_inputs", []string{"run_id", "batch_ordinal", "ordinal", "input_role", "read_level", "body", "content_revision_id", "source_revision_snapshot"}, runID, initialInputBatch, ordinal, role, level, body, id, snapshot)
+// deferredHistoryOrdinal is where a run's own inputs start when its history
+// is frozen later, by the worker, after compacting. The history then takes the
+// ordinals below, so the frozen inputs still read in conversation order.
+const deferredHistoryOrdinal = 1 << 20
+
+// inputWriter appends one run's frozen inputs from a starting ordinal.
+type inputWriter struct {
+	tx      store.TxAccountScope
+	runID   string
+	ordinal int
+}
+
+func (w *inputWriter) insert(ctx context.Context, role, level string, body, id *string, snapshot any) error {
+	defer func() { w.ordinal++ }()
+	return w.tx.Insert(ctx, "creative_run_inputs", []string{"run_id", "batch_ordinal", "ordinal", "input_role", "read_level", "body", "content_revision_id", "source_revision_snapshot"}, w.runID, initialInputBatch, w.ordinal, role, level, body, id, snapshot)
+}
+
+// freezeHistoryInputsInTx writes a projection as the run's history: the skill
+// index, the checkpoint's summary with the creator's words before it, then the
+// retained turns. History ordinals start at zero; the next free one is
+// returned for whatever the run freezes after it.
+func freezeHistoryInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, p historyProjection) (int, error) {
+	w := &inputWriter{tx: tx, runID: runID}
+	err := w.history(ctx, p)
+	return w.ordinal, err
+}
+
+func (w *inputWriter) history(ctx context.Context, p historyProjection) error {
+	if len(p.SkillIndex) > 0 {
+		text := skillIndexText(p.SkillIndex)
+		snapshot, err := jsonValue(map[string]any{"entries": p.SkillIndex})
+		if err != nil {
+			return err
+		}
+		if err := w.insert(ctx, inputSkillIndex, "text", &text, nil, snapshot); err != nil {
+			return err
+		}
+	}
+	if p.Checkpoint != nil {
+		if len(p.Originals) > 0 {
+			text := compactionOriginalsText(p)
+			snapshot, err := jsonValue(map[string]any{"compaction_id": p.Checkpoint.ID, "originals": true})
+			if err != nil {
+				return err
+			}
+			if err := w.insert(ctx, inputCompaction, "text", &text, nil, snapshot); err != nil {
+				return err
+			}
+		}
+		text := compactionText(historyProjection{Checkpoint: p.Checkpoint})
+		snapshot, err := jsonValue(map[string]any{"compaction_id": p.Checkpoint.ID})
+		if err != nil {
+			return err
+		}
+		if err := w.insert(ctx, inputCompaction, "text", &text, nil, snapshot); err != nil {
+			return err
+		}
 	}
 	refs := map[string]bool{}
-	for _, item := range history {
+	for _, item := range p.Items() {
 		frozen := map[string]any{"role": item.Role, "body": item.Body, "group": item.Group}
 		if item.Reasoning != "" {
 			frozen["reasoning"] = item.Reasoning
@@ -142,24 +487,35 @@ func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope,
 		if err != nil {
 			return err
 		}
-		if err = insert("history", "text", &item.Text, nil, snapshot); err != nil {
+		if err = w.insert(ctx, "history", "text", &item.Text, nil, snapshot); err != nil {
 			return err
 		}
 		for _, block := range item.Body.Blocks {
 			if block.Type == "content_ref" && !refs[block.RefID] {
 				id := block.RefID
-				if err = insert("attachment", "metadata_only", nil, &id, nil); err != nil {
+				if err = w.insert(ctx, "attachment", "metadata_only", nil, &id, nil); err != nil {
 					return err
 				}
 				refs[id] = true
 			}
 		}
 	}
+	if w.ordinal >= deferredHistoryOrdinal {
+		return ErrLimit
+	}
+	return nil
+}
+
+// freezeRequestInputsInTx writes the submission itself and the canvas line,
+// from start: directly after the history when it was frozen first, or
+// deferredHistoryOrdinal when the worker will freeze it after compacting.
+func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, blocks []Block, start int) error {
+	w := &inputWriter{tx: tx, runID: runID, ordinal: start}
 	for _, block := range blocks {
 		switch block.Type {
 		case "text":
 			text := block.Text
-			if err := insert("instruction", "text", &text, nil, nil); err != nil {
+			if err := w.insert(ctx, "instruction", "text", &text, nil, nil); err != nil {
 				return err
 			}
 		case "content_ref":
@@ -172,7 +528,7 @@ func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope,
 			if revision.Kind == "image" {
 				level = "image_preview"
 			}
-			if err := insert("instruction", level, nil, &id, nil); err != nil {
+			if err := w.insert(ctx, "instruction", level, nil, &id, nil); err != nil {
 				return err
 			}
 		}
@@ -194,7 +550,7 @@ func (s *Service) freezeInputsInTx(ctx context.Context, tx store.TxAccountScope,
 		if err != nil {
 			return err
 		}
-		return insert("selection", "metadata_only", &text, nil, nil)
+		return w.insert(ctx, "selection", "metadata_only", &text, nil, nil)
 	}
 	return nil
 }

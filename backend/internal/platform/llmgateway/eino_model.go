@@ -69,7 +69,7 @@ func (s *Service) NewEinoModel(session ModelSession) (*GatewayModelAdapter, erro
 // instance, as the Eino contract requires.
 func (a *GatewayModelAdapter) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	next := &GatewayModelAdapter{gateway: a.gateway, session: a.session, tools: append([]*schema.ToolInfo(nil), tools...)}
-	if _, err := next.toolDefinitions(); err != nil {
+	if _, err := EinoToolDefinitions(next.tools); err != nil {
 		return nil, err
 	}
 	return next, nil
@@ -131,7 +131,7 @@ func (a *GatewayModelAdapter) call(ctx context.Context, input []*schema.Message,
 			return Result{}, err
 		}
 	}
-	tools, err := a.toolDefinitions()
+	tools, err := EinoToolDefinitions(a.tools)
 	if err != nil {
 		return Result{}, err
 	}
@@ -162,9 +162,12 @@ func (a *GatewayModelAdapter) call(ctx context.Context, input []*schema.Message,
 	return outcome.Result, nil
 }
 
-func (a *GatewayModelAdapter) toolDefinitions() ([]ToolDefinition, error) {
-	definitions := make([]ToolDefinition, 0, len(a.tools))
-	for _, t := range a.tools {
+// EinoToolDefinitions projects the framework's tools into the normalized
+// definitions sent by the gateway. Callers budgeting a request use this same
+// projection so schema structure and normalization count toward their limit.
+func EinoToolDefinitions(tools []*schema.ToolInfo) ([]ToolDefinition, error) {
+	definitions := make([]ToolDefinition, 0, len(tools))
+	for _, t := range tools {
 		if t == nil || t.ParamsOneOf == nil {
 			return nil, fmt.Errorf("%w: tool %q has no parameter schema", ErrValidation, safeToolName(t))
 		}

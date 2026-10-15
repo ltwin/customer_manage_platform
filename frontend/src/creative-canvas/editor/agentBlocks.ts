@@ -1,4 +1,5 @@
 import type { components } from '../../api/schema'
+import type { ContextUsage } from './agentContext.ts'
 import { runLabels, type AgentRun } from './agentState.ts'
 
 export type AgentBlock = components['schemas']['CreativeAgentBlock']
@@ -17,6 +18,8 @@ export interface RunView {
   runSeq: string
   // The server speaks an envelope this page does not know.
   outdated: boolean
+  // The context this run's last model request carried, from its events.
+  usage?: ContextUsage
 }
 
 // 'resync': the local copy cannot absorb this event; re-read the snapshot.
@@ -29,6 +32,7 @@ const supported: Record<string, number> = {
   tool: 1,
   plan: 1,
   notice: 1,
+  compaction: 1,
 }
 const processTypes = new Set(['thinking', 'tool', 'plan'])
 
@@ -49,7 +53,9 @@ export function mergeSnapshot(
   snapshot: AgentRun,
 ): RunView {
   const next = fromSnapshot(snapshot)
-  if (!old || BigInt(next.seq) >= BigInt(old.seq)) return next
+  // Usage arrives only as events; a snapshot never carries it.
+  if (!old || BigInt(next.seq) >= BigInt(old.seq))
+    return old?.usage ? { ...next, usage: old.usage } : next
   if (BigInt(next.seq) >= BigInt(old.runSeq))
     return { ...old, run: next.run, runSeq: next.seq }
   return old
@@ -96,6 +102,8 @@ export function applyEvent(view: RunView, event: RunEvent): Applied {
     blocks[index] = block
     return { ...view, seq: event.seq, blocks }
   }
+  if (event.type === 'context.usage')
+    return { ...view, seq: event.seq, usage: event.payload as ContextUsage }
   // Run-level events name only what changed; the caller re-reads the snapshot
   // for the rest (revision, waiting token, timestamps).
   const { state, error_code: code, settlement_state: settlement } =
@@ -219,5 +227,6 @@ export function currentStep(view: RunView): string {
   )
   if (open?.type === 'tool') return text(open.payload.title) || '正在处理'
   if (open?.type === 'text') return '正在回复'
+  if (open?.type === 'compaction') return '正在整理上下文'
   return view.run.state === 'running' ? '正在思考' : runLabels[view.run.state]
 }

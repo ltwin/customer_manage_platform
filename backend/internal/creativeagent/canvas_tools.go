@@ -111,7 +111,7 @@ func asRefusal(err error) error {
 	case errors.Is(err, creativecontent.ErrUsageDenied), errors.Is(err, creativecontent.ErrMissingRoot), errors.Is(err, creativecontent.ErrNotFound):
 		return refuseTool("内容已删除、失去引用或不可展示，请重新选择")
 	case errors.Is(err, creativecanvas.ErrGraphIntegrity):
-		return refuseTool("画布数据校验未通过，本次修改没有生效。这不是参数问题，重试也不会成功；请如实告诉摄影师，并请其联系我们处理")
+		return refuseTool("画布数据校验未通过，本次修改没有生效。这不是参数问题，重试也不会成功；请如实告诉创作者，并请其联系我们处理")
 	}
 	var generation *creativegeneration.Refusal
 	if errors.As(creativegeneration.AgentRefusal(err), &generation) {
@@ -155,7 +155,7 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 		}
 		return &schema.ToolInfo{
 			Name: editCanvasTool,
-			Desc: "按顺序执行一组画布修改，全部成功或全部不生效：新建节点、改标题、移动、缩放、改写文字节点正文、连接或断开参考、删除节点。连接参考表示 target 生成时把 source 的内容作为参考。修改会进入画布历史，摄影师可以撤销。改动前先用 read_canvas 了解现状。",
+			Desc: "按顺序执行一组画布修改，全部成功或全部不生效：新建节点、改标题、移动、缩放、改写文字节点正文、连接或断开参考、删除节点。连接参考表示 target 生成时把 source 的内容作为参考。修改会进入画布历史，创作者可以撤销。改动前先用 read_canvas 了解现状。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"actions": {Type: schema.Array, Required: true, Desc: "1 到 100 个动作", ElemInfo: &schema.ParameterInfo{Type: schema.Object, SubParams: action}},
 			}),
@@ -189,7 +189,7 @@ func (t *canvasTool) Info(context.Context) (*schema.ToolInfo, error) {
 	default:
 		return &schema.ToolInfo{
 			Name: generateNodeTool,
-			Desc: "按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗摄影师的生成额度，只在对方明确要生成时调用。调用会等待结果：state 说生成本身，apply_state 说结果是否放到了节点上。只有 apply_state 为 applied 才表示节点已切换到新版本，此时返回新版本的内容修订 ID，可用 read_asset 查看；conflicted、discarded、expired 表示生成完成但没有采用（期间节点被改动、清空或删除），如实告诉摄影师；state 为 running 或 apply_state 为 pending 表示仍在进行，结果稍后出现在画布上，不要重复调用。多个节点要生成时，在同一次回复里一起调用：互不相连的节点会同时生成，连在一起的按先后顺序生成。",
+			Desc: "按节点上已写好的提示词、模型和参数生成，结果作为该节点的新版本并切换显示，原有内容保留在版本列表里。生成不参考节点自己当前的内容：要修改或优化一张已有的图，用 edit_canvas 新建节点并把原节点连为参考，在新节点上生成，不要在原节点上直接生成。会消耗创作者的生成额度，只在对方明确要生成时调用。调用会等待结果：state 说生成本身，apply_state 说结果是否放到了节点上。只有 apply_state 为 applied 才表示节点已切换到新版本，此时返回新版本的内容修订 ID，可用 read_asset 查看；conflicted、discarded、expired 表示生成完成但没有采用（期间节点被改动、清空或删除），如实告诉创作者；state 为 running 或 apply_state 为 pending 表示仍在进行，结果稍后出现在画布上，不要重复调用。多个节点要生成时，在同一次回复里一起调用：互不相连的节点会同时生成，连在一起的按先后顺序生成。",
 			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 				"node_id":        {Type: schema.String, Required: true, Desc: "要生成的节点 ID"},
 				"draft_revision": {Type: schema.Integer, Required: true, Desc: "set_node_prompt 返回或 read_canvas 读到的提示词版本；节点被别人改过时拒绝"},

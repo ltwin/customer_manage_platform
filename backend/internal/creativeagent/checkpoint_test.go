@@ -36,7 +36,7 @@ func TestB3ExistingJournalDoesNotRestartWithoutCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	chat := llmgateway.ChatRequest{ContractVersion: llmgateway.ContractVersion, ModelKey: held.Model.ModelKey, Messages: []llmgateway.Message{{Role: llmgateway.RoleUser, Blocks: []llmgateway.Block{{Kind: llmgateway.BlockText, Text: "整理"}}}}, OutputLimit: 100}
-	if _, _, err = f.service.prepareModelStep(t.Context(), f.alice, held, "", chat); err != nil {
+	if _, _, err = f.service.prepareModelStep(t.Context(), f.alice, held, "", chat, contextComposition{Bytes: map[string]int{}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = f.service.executeTurn(t.Context(), f.alice, held); !errors.Is(err, errCheckpointMissing) || f.vendor.calls() != 0 {

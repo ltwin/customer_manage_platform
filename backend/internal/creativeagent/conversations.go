@@ -76,6 +76,8 @@ type Block struct {
 	RefID string `json:"ref_id,omitempty"`
 	// Code is a stable machine reason on a notice, e.g. a refusal.
 	Code string `json:"code,omitempty"`
+	// Command names what a command block asked for; its Text is the argument.
+	Command string `json:"command,omitempty"`
 	// Skill is the server's own reading of a skill_ref segment. It is a nested
 	// value rather than five more flat fields, because it is one fact — which
 	// frozen version this message showed — and a half-filled one means nothing.
@@ -123,6 +125,10 @@ type MessagePage struct {
 	// conversation starts here.
 	PrevCursor           string               `json:"prev_cursor"`
 	ConversationRevision creativeops.Revision `json:"conversation_revision"`
+	// ContextUsage is what the conversation's context looked like at its last
+	// measured request. Only the newest page carries it, and a conversation
+	// that has never sent a request has none (owner 2026-10-14).
+	ContextUsage *ContextUsage `json:"context_usage,omitempty"`
 }
 
 // messageSchemaVersion is the persisted body format. v2 names skill and content
@@ -207,9 +213,17 @@ func validBody(b Body, limits Limits) error {
 		return creativeops.ErrValidation
 	}
 	for _, block := range b.Blocks {
+		if block.Command != "" && block.Type != "command" {
+			return creativeops.ErrValidation
+		}
 		switch block.Type {
 		case "text":
 			if block.Text == "" || block.RefID != "" || block.Code != "" || block.Skill != nil {
+				return creativeops.ErrValidation
+			}
+		case "command":
+			if block.Command != compactCommand || block.RefID != "" || block.Code != "" || block.Skill != nil ||
+				utf8.RuneCountInString(block.Text) > compactFocusRunes {
 				return creativeops.ErrValidation
 			}
 		case "content_ref", "tool_result":
@@ -259,7 +273,7 @@ func bodyBytes(b Body) int {
 		total += len(call.ID) + len(call.Name) + len(call.Arguments)
 	}
 	for _, block := range b.Blocks {
-		total += len(block.Text) + len(block.RefID) + len(block.Code)
+		total += len(block.Text) + len(block.RefID) + len(block.Code) + len(block.Command)
 		if block.Skill != nil {
 			total += len(block.Skill.SkillID) + len(block.Skill.VersionID) +
 				len(block.Skill.Digest) + len(block.Skill.DisplayName)
@@ -593,7 +607,11 @@ func (s *Service) ListMessages(ctx context.Context, scope store.AccountScope, co
 		for i, j := 0, len(page.Items)-1; i < j; i, j = i+1, j-1 {
 			page.Items[i], page.Items[j] = page.Items[j], page.Items[i]
 		}
-		return nil
+		if before > 0 {
+			return nil
+		}
+		page.ContextUsage, err = s.conversationUsageInTx(ctx, tx, conversationID)
+		return err
 	})
 	if err != nil {
 		return MessagePage{}, err

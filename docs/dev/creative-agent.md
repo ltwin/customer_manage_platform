@@ -476,3 +476,73 @@ save_to_library 必须给非空描述，可创建最多 10 个标签；同名复
 基础提示词在 `backend/internal/creativeagent/instructions/base.md`，用 go:embed 编译；
 Skill 仍追加在其后。覆盖已有文字及新入库前的确认目前由模型提示词约束，未宣称服务端强制。
 registry 版本变化使旧 checkpoint 明确不兼容，已提交回执与整理结果仍可核对。
+
+## 2026-10-14：上下文压缩、/compact 与上下文用量
+
+本节取代上文关于「每次运行冻结最近 20 行历史」「单次请求 256 KiB 上限」的描述。设计见
+`.codestable/features/2026-10-14-agent-context-compaction/agent-context-compaction-design.md`。
+
+**窗口与上限**
+
+- 模型目录的 `context_window_tokens` 是平台每轮发送的输入窗口（token），属于运营策略；
+  `capability.context_tokens` 仍是供应商硬上限。校验：窗口 + `max_output_tokens` ≤ `context_tokens`；
+  不配时取二者之差。内置模型统一 128k（`defaultContextWindowTokens`），窗口不进请求哈希，也不升目录版本号。
+  worker 领取和接管运行时从 `model_snapshot` 恢复窗口；目录可用性仍实时检查，目录调窗不改已有运行。
+  旧快照没有显式窗口时，使用其冻结的 `context_tokens - max_output_tokens`。
+- 单次请求字节上限 = `min(Limits.InputTextBytes, 窗口 × Limits.BytesPerWindowToken)`，默认 `min(1 MiB, 窗口 × 4)`。
+  网关按「1 字节 ≤ 1 token」预留额度并拒绝超出预留的请求，所以这是花费上限；首轮预留按它计算（`reserveInTx`）。
+- `Limits.AutoCompactPercent`（默认 80）是触发线；旧版本 limits 快照里这些字段为 0，即不压缩、字节上限退回 `InputTextBytes`。
+
+**token 计量**：不接分词器。每个模型步骤记录请求文字字节（与网关同口径，不含图片）、图片数、
+按部分划分的组成（`context_composition`），消费结果时回填供应商的 `InputTotalTokens`。
+会话最近一次有效的「token ÷ 字节」比例（`[1/8, 1]` 以外不采用，缺省 1/3）用来估算整份历史投影；图片按每张 1600 token。
+固定开销不沿用历史测量：`currentMeasureInTx` 使用本轮授权、模型能力和 Skill 元数据，经与运行时共用的
+`configureTools` 及网关 schema 投影计量指令和工具（不执行工具）。提交、压缩结果验收与失败兜底均使用这个本轮预算；
+授权扩大后，旧摘要若放不下会直接退回原始历史，避免把不可裁摘要冻结到一个必然超限的请求里。
+
+**历史投影**（`projectHistoryInTx`）：从最新的有效检查点之后扫描（上限 `HistoryMessages = 500` 行），
+保留能放进窗口与字节上限的最新完整轮次（且历史消息数不超过 240）；另带 Skill 索引、
+检查点摘要和压缩前创作者原话（`CompactUserTokens = 20000` 是上限，实际受剩余窗口限制）。
+先为摘要未覆盖、且能容纳的最近 `CompactRecentTurns` 轮预留预算，再放原话；原话预算计入列表前缀、换行缩进和截断提示。
+摘要本身放不下时，本次投影退回原始轮次，不改写已存检查点；重新压缩相同覆盖位置时，以创建时间较新的摘要为准。
+Skill 索引按最近使用顺序保留能放下的条目。命令消息（`/compact`）不进入历史。
+运行内 `BeforeModelRewriteState` 仍用 `compactMessages` 兜底，按窗口与字节较小者及 380 条消息裁剪带历史标记的内容，
+工具开销通过网关的 `EinoToolDefinitions` 投影计量本轮规范化 schema，授权或模型变化后不会沿用旧工具大小；
+系统消息和展开的输入已在运行内消息中，投影预留的 4096 字节余量不重复扣除。
+原话单独冻结为可裁剪输入；本轮工具扩大或展开输入超出预留时，先舍弃这份补充，再裁剪最近完整轮次。
+摘要正文与 Skill 索引不带历史标记，不会被裁掉；旧的合并输入没有 `originals` 标记，仍按原样读取。
+
+**触发与执行**
+
+- 提交时（`planHistoryInTx`）估算本次请求；达到触发线、扫描未覆盖全部历史，或窗口/消息条数上限将丢弃完整轮次时，
+  若有可压缩的早期轮次（通常保留最近 `CompactRecentTurns = 2` 轮），
+  运行记为 `compaction_state=pending`，压缩范围（`compaction_plan`）在此固定，历史推迟到 worker 冻结：
+  本次提交的输入从 `deferredHistoryOrdinal` 起写，历史之后补在其前面；计划同时冻结提交和当前 Skill 的
+  `request_bytes`，压缩成功与失败兜底都先扣掉这部分预算。
+- `/compact [关注点]`：提交协议 `command` 段（只能单独出现）创建 `kind=compact` 的运行，只压缩、不回答；
+  可压缩的内容不足时直接以 `skipped` 结束，不调用模型。
+- worker（`executeWithCompaction` → `compactInRun`）：压缩步骤 `kind='compaction'` 占用运行的首个步骤序号，
+  接住运行创建时的首轮预留；用会话当前模型、`gateway.Call` 按 `turnBindingKey` 幂等回放。
+  请求只含压缩指令、上一份摘要和范围内消息的纯文本记录：读取内容类工具结果写成占位，不发图片、
+  Skill 正文和推理内容；`load_skill` 与 `read_skill_resource` 的结果只留重新加载提示，
+  版本和资源定位仍由调用记录保留。超出字节上限时从最早的消息删起。
+- 消费事务里校验摘要（至少 6 个规定小节、不超过 `CompactSummaryBytes`，且固定投影能放进剩余预算），写检查点、冻结历史、
+  写 `compaction` 块与 `context.usage` 事件；摘要不合格、供应商失败时 chat 运行退回旧截断继续回答（`fallback`），
+  `/compact` 运行失败（`creative_compaction_failed`）。运行状态以 `compaction_state` 为准，回放不会把已判为兜底的结果变成检查点。
+- `runExecution.run` 和 `SweepRuns` 判断「有步骤却没有框架 checkpoint」时都不计压缩步骤。
+  压缩准备后、供应商完成但尚未消费、消费成功但模型循环尚未开始时，均按原 binding 接管；
+  已完成的调用不重新收费。手动压缩的 `fallback` 恢复后仍按失败结束，不报告成功。
+
+**授权撤销**：撤销外发授权的事务里，该会话全部检查点 `invalidated_reason='consent_revoked'`；
+消费摘要时若授权已撤销，同样不写检查点。
+
+**Skill 索引与按需加载**：投影带一份由 `creative_agent_runs.skill_snapshot` 确定性生成的索引
+（本会话用过的其他固定版本，最多 20 条，不含正文）。索引不为空时注册 `load_skill`，后端可加载本轮固定版本或索引版本；
+索引版本每次重查可用性与 digest，只提供正文，不增加工具，`read_skill_resource` 仍只读本轮固定 Skill 的资源。
+
+**上下文用量**：消息分页的最新一页带 `context_usage`（最近一次测量；检查点更新之后、下一次请求之前为估算）；
+从未发过请求的会话没有它，前端显示空环。运行事件 `context.usage` 在每次模型请求（及压缩完成时）推送。
+分项按字节比例分摊到真实总数，前端一律标「约」。
+
+**称谓**：模型可见文字（基础指令、工具描述、拒绝说明、标题生成）用「创作者」；
+`TestModelVisibleTextNamesNoProfession` 用语法树扫描包内全部字符串字面量。

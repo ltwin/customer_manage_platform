@@ -5,6 +5,12 @@ package llmgateway
 // never rewrites an in-flight call.
 const DefaultCatalogVersion = "deepseek-aicodewith-krill-2026-10-10"
 
+// defaultContextWindowTokens is the input window every built-in model uses.
+// The providers read far more, but each turn resends the whole window and the
+// first turn's hold is priced from it (see creativeagent's request ceiling),
+// so the window is a cost decision, not a capability (owner 2026-10-14).
+const defaultContextWindowTokens = 128_000
+
 // priceSourceDeepSeek records where the rates came from and when, because a
 // price recipe without a provenance cannot be reconciled against an invoice.
 const priceSourceDeepSeek = "https://api-docs.deepseek.com/quick_start/pricing (read 2026-09-11)"
@@ -146,9 +152,9 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 	// Each model lists its deployments in priority order. A second vendor for
 	// the same model is one more deployment appended to its list.
 	models := []Model{
-		{ModelKey: "deepseek-flash", DisplayName: "DeepSeek Flash", Capability: flash.Capability, Deployments: []string{flash.DeploymentKey}},
-		{ModelKey: "deepseek-flash-thinking", DisplayName: "DeepSeek Flash（思考模式）", Capability: flashThinking.Capability, Deployments: []string{flashThinking.DeploymentKey}},
-		{ModelKey: "deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro", Capability: pro.Capability, Deployments: []string{pro.DeploymentKey}},
+		{ModelKey: "deepseek-flash", DisplayName: "DeepSeek Flash", Capability: flash.Capability, ContextWindowTokens: defaultContextWindowTokens, Deployments: []string{flash.DeploymentKey}},
+		{ModelKey: "deepseek-flash-thinking", DisplayName: "DeepSeek Flash（思考模式）", Capability: flashThinking.Capability, ContextWindowTokens: defaultContextWindowTokens, Deployments: []string{flashThinking.DeploymentKey}},
+		{ModelKey: "deepseek-v4-pro", DisplayName: "DeepSeek V4 Pro", Capability: pro.Capability, ContextWindowTokens: defaultContextWindowTokens, Deployments: []string{pro.DeploymentKey}},
 	}
 	deployments := []Deployment{flash, flashThinking, pro}
 	gptModels, gptDeployments := aicodewithModels(credential)
@@ -226,7 +232,7 @@ func aicodewithModels(credential func(string) (string, bool)) ([]Model, []Deploy
 	names := []string{"GPT-6.1 Sol", "GPT-6 Sol", "GPT-6 Astra"}
 	models := make([]Model, len(deployments))
 	for i, d := range deployments {
-		models[i] = Model{ModelKey: d.RequestModelID, DisplayName: names[i], Capability: d.Capability, Deployments: []string{d.DeploymentKey}}
+		models[i] = Model{ModelKey: d.RequestModelID, DisplayName: names[i], Capability: d.Capability, ContextWindowTokens: defaultContextWindowTokens, Deployments: []string{d.DeploymentKey}}
 	}
 	return models, deployments
 }

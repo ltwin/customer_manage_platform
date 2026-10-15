@@ -148,7 +148,7 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if err = s.freezeInputsInTx(ctx, tx, id, nil, body.Blocks); err != nil {
+		if err = s.freezeRequestInputsInTx(ctx, tx, id, body.Blocks, 0); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		if err = tx.Insert(ctx, "creative_run_skill_refs", []string{"run_id", "segment_ordinal", "skill_id", "skill_version_id", "skill_owner_account_id", "digest"}, id, 0, skill.SkillID, skill.ID, skill.OwnerAccountID, skill.Digest); err != nil {

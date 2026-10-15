@@ -32,6 +32,16 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 	execution := &runExecution{prompt: prompt}
 	var current currentStep
 	runtime := &runtimeHandler{BaseChatModelAgentMiddleware: &adk.BaseChatModelAgentMiddleware{}, service: s, scope: scope, held: held, revisions: revisions, current: &current}
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		if runtime.measure, err = conversationMeasureInTx(ctx, tx, held.ConversationID); err != nil {
+			return err
+		}
+		runtime.skillIndex, err = frozenSkillIndexInTx(ctx, tx, held.RunID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
 	adapter, err := s.gateway.NewEinoModel(llmgateway.ModelSession{
 		CallSession: llmgateway.CallSession{
 			Scope:         scope,
@@ -58,7 +68,7 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 		// the request it already paid for instead of buying a second one.
 		TurnKey: func(ctx context.Context, chat llmgateway.ChatRequest) (string, error) {
 			previous, _ := current.get()
-			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat)
+			stepID, bindingKey, err := s.prepareModelStep(ctx, scope, held, previous, chat, runtime.takeComposition())
 			if err != nil {
 				return "", err
 			}
@@ -114,6 +124,9 @@ func (e *runExecution) consumeInTx(ctx context.Context, tx store.TxAccountScope,
 	if err != nil {
 		return err
 	}
+	if err := h.recordMeasureInTx(ctx, tx, stepID, result.Usage); err != nil {
+		return err
+	}
 	if err := h.service.writeToolBlocksForModelStepInTx(ctx, tx, h.held.RunID, stepID); err != nil {
 		return err
 	}
@@ -128,7 +141,9 @@ func (e *runExecution) run(ctx context.Context) (turnOutcome, error) {
 		return e.outcome, err
 	}
 	if !found {
-		count, err := h.scope.Count(ctx, "creative_agent_steps", "run_id=$2", h.held.RunID)
+		// A compaction step precedes the framework's first checkpoint; it is
+		// the run's own journal, not a turn the framework lost.
+		count, err := h.scope.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind<>'compaction'", h.held.RunID)
 		if err != nil {
 			return e.outcome, err
 		}

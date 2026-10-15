@@ -168,7 +168,12 @@ type Model struct {
 	ModelKey    string     `json:"model_key"`
 	DisplayName string     `json:"display_name"`
 	Capability  Capability `json:"capability"`
-	Deployments []string   `json:"deployments"`
+	// ContextWindowTokens is how much input one request may carry. The
+	// provider's ContextTokens is what the model can read; this is what the
+	// platform is willing to send and pay for every turn. Zero means the hard
+	// limit less the output bound.
+	ContextWindowTokens int      `json:"context_window_tokens,omitempty"`
+	Deployments         []string `json:"deployments"`
 }
 
 // ModelConfig is a model as served by one of its deployments: the model's
@@ -177,7 +182,19 @@ type Model struct {
 type ModelConfig struct {
 	ModelKey    string
 	DisplayName string
+	// ContextWindowTokens is the model's configured input window; read it
+	// through InputWindowTokens, which supplies the default.
+	ContextWindowTokens int
 	Deployment
+}
+
+// InputWindowTokens is the input one request may carry: the configured window,
+// or the hard limit less the output bound when none is configured.
+func (m ModelConfig) InputWindowTokens() int {
+	if m.ContextWindowTokens > 0 {
+		return m.ContextWindowTokens
+	}
+	return max(1, m.Capability.ContextTokens-m.Capability.MaxOutputTokens)
 }
 
 // ModelSnapshot is the credential-free projection stored with every request.
@@ -193,9 +210,12 @@ type ModelSnapshot struct {
 	Currency         string      `json:"currency"`
 	MaxOutputTokens  int         `json:"max_output_tokens"`
 	ContextTokens    int         `json:"context_tokens"`
-	LimitKey         string      `json:"limit_key"`
-	QueryCapability  string      `json:"query_capability"`
-	CancelCapability string      `json:"cancel_capability"`
+	// ContextWindowTokens is the input window the platform chose to use, which
+	// is policy over the provider's hard ContextTokens. Not part of the hash.
+	ContextWindowTokens int    `json:"context_window_tokens,omitempty"`
+	LimitKey            string `json:"limit_key"`
+	QueryCapability     string `json:"query_capability"`
+	CancelCapability    string `json:"cancel_capability"`
 	// How the deployment reasoned when the request was prepared. Both are
 	// deployment configuration, so a later edit must not rewrite what an old
 	// request is remembered to have asked for.
@@ -214,6 +234,9 @@ type CatalogEntry struct {
 	UnavailableWhy  string     `json:"unavailable_reason,omitempty"`
 	ContextTokens   int        `json:"context_tokens"`
 	MaxOutputTokens int        `json:"max_output_tokens"`
+	// ContextWindowTokens is the effective input window (see
+	// ModelConfig.InputWindowTokens), never the provider's hard limit.
+	ContextWindowTokens int `json:"context_window_tokens"`
 }
 
 // Catalog is the immutable, versioned model directory of one deployment.
@@ -266,7 +289,8 @@ func NewCatalog(version, currency string, models []ModelConfig) (*Catalog, error
 	for _, m := range models {
 		routed = append(routed, Model{
 			ModelKey: m.ModelKey, DisplayName: m.DisplayName,
-			Capability: m.Capability, Deployments: []string{m.DeploymentKey},
+			Capability: m.Capability, ContextWindowTokens: m.ContextWindowTokens,
+			Deployments: []string{m.DeploymentKey},
 		})
 		deployments = append(deployments, m.Deployment)
 	}
@@ -304,6 +328,12 @@ func NewRoutedCatalog(version, currency string, models []Model, deployments []De
 		}
 		if m.Capability.ContextTokens <= 0 || m.Capability.MaxOutputTokens <= 0 {
 			return nil, fmt.Errorf("%w: model %q capability bounds", ErrValidation, m.ModelKey)
+		}
+		// The window is input only; it and the output bound must both fit
+		// inside what the provider can read.
+		if m.ContextWindowTokens < 0 || m.ContextWindowTokens > 0 &&
+			m.ContextWindowTokens+m.Capability.MaxOutputTokens > m.Capability.ContextTokens {
+			return nil, fmt.Errorf("%w: model %q context window exceeds its capability", ErrValidation, m.ModelKey)
 		}
 		for _, key := range m.Deployments {
 			d, ok := c.deployments[key]
@@ -455,6 +485,8 @@ func (c *Catalog) List() []CatalogEntry {
 			Available:       err == nil,
 			ContextTokens:   m.Capability.ContextTokens,
 			MaxOutputTokens: m.Capability.MaxOutputTokens,
+			ContextWindowTokens: ModelConfig{ContextWindowTokens: m.ContextWindowTokens,
+				Deployment: Deployment{Capability: m.Capability}}.InputWindowTokens(),
 		}
 		if err != nil {
 			entry.UnavailableWhy = c.deployments[m.Deployments[0]].DisabledReason
@@ -523,7 +555,7 @@ func (c *Catalog) enabledDeployments() []Deployment {
 // capability is the model's: that is what requests are admitted against.
 func serve(m Model, d Deployment) ModelConfig {
 	d.Capability = m.Capability
-	return ModelConfig{ModelKey: m.ModelKey, DisplayName: m.DisplayName, Deployment: d}
+	return ModelConfig{ModelKey: m.ModelKey, DisplayName: m.DisplayName, ContextWindowTokens: m.ContextWindowTokens, Deployment: d}
 }
 
 // Snapshot freezes the credential-free identity persisted with a request.
@@ -531,21 +563,22 @@ func (c *Catalog) Snapshot(m ModelConfig) ModelSnapshot {
 	accepted := append([]string(nil), m.AcceptedModelIDs...)
 	sort.Strings(accepted)
 	return ModelSnapshot{
-		ModelKey:         m.ModelKey,
-		CatalogVersion:   c.version,
-		DeploymentKey:    m.DeploymentKey,
-		Provider:         m.Provider,
-		RequestModelID:   m.RequestModelID,
-		AcceptedModelIDs: accepted,
-		PriceVersion:     m.Price.Version,
-		Currency:         m.Price.Currency,
-		MaxOutputTokens:  m.Capability.MaxOutputTokens,
-		ContextTokens:    m.Capability.ContextTokens,
-		LimitKey:         m.LimitKey,
-		QueryCapability:  m.QueryCapability,
-		CancelCapability: m.CancelCapability,
-		Thinking:         m.Thinking,
-		ReasoningEffort:  m.ReasoningEffort,
+		ModelKey:            m.ModelKey,
+		CatalogVersion:      c.version,
+		DeploymentKey:       m.DeploymentKey,
+		Provider:            m.Provider,
+		RequestModelID:      m.RequestModelID,
+		AcceptedModelIDs:    accepted,
+		PriceVersion:        m.Price.Version,
+		Currency:            m.Price.Currency,
+		MaxOutputTokens:     m.Capability.MaxOutputTokens,
+		ContextTokens:       m.Capability.ContextTokens,
+		ContextWindowTokens: m.InputWindowTokens(),
+		LimitKey:            m.LimitKey,
+		QueryCapability:     m.QueryCapability,
+		CancelCapability:    m.CancelCapability,
+		Thinking:            m.Thinking,
+		ReasoningEffort:     m.ReasoningEffort,
 	}
 }
 

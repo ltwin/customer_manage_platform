@@ -202,6 +202,11 @@ func (s *Service) RevokeConsent(ctx context.Context, scope store.AccountScope, c
 				return creativeops.Outcome{}, err
 			}
 			consent.RevokedAt, consent.Revision = &now, consent.Revision+1
+			// A summary was written from what this authorisation let leave;
+			// it is not carried into the conversation's later runs.
+			if err := invalidateCompactionsInTx(ctx, tx, consent.ConversationID, now); err != nil {
+				return creativeops.Outcome{}, err
+			}
 			response, err := json.Marshal(consent)
 			if err != nil {
 				return creativeops.Outcome{}, err

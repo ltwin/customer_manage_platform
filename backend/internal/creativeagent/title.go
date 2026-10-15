@@ -40,8 +40,8 @@ const (
 // but the task still hands back whatever an earlier delivery's call left.
 var errTitleSettled = errors.New("creative agent conversation already titled")
 
-const titleInstruction = "你负责给一段创作对话起标题。根据对话内容，用不超过 12 个字概括摄影师在讨论的主题。" +
-	"只输出标题本身，不加引号、书名号、句末标点或任何解释；使用摄影师所用的语言。"
+const titleInstruction = "你负责给一段创作对话起标题。根据对话内容，用不超过 12 个字概括创作者在讨论的主题。" +
+	"只输出标题本身，不加引号、书名号、句末标点或任何解释；使用创作者所用的语言。"
 
 type titleTask struct {
 	ConversationID string `json:"conversation_id"`
@@ -59,11 +59,13 @@ type titleTask struct {
 // answer to be named after. Later runs keep whatever name it got. A service
 // without a queue skips naming rather than failing the run it is closing.
 func (s *Service) queueTitleInTx(ctx context.Context, tx store.TxAccountScope, held claim, now time.Time) error {
-	if s.runtime == nil {
+	// A /compact run says nothing to be named after, and must not use up the
+	// conversation's one naming either.
+	if s.runtime == nil || held.Kind == runKindCompact {
 		return nil
 	}
 	earlier, err := tx.Count(ctx, "creative_agent_runs",
-		"conversation_id=$2 AND id<>$3 AND state IN ('succeeded','partial')", held.ConversationID, held.RunID)
+		"conversation_id=$2 AND id<>$3 AND state IN ('succeeded','partial') AND kind='chat'", held.ConversationID, held.RunID)
 	if err != nil || earlier > 0 {
 		return err
 	}
@@ -242,7 +244,7 @@ func titleSource(ctx context.Context, scope store.AccountScope, conversationID s
 		}
 		speaker := "助手"
 		if role == "user" {
-			speaker = "摄影师"
+			speaker = "创作者"
 		}
 		b.WriteString(speaker + "：" + runePrefix(line, titleSourceRunes) + "\n")
 		if utf8.RuneCountInString(b.String()) >= titleSourceTotal {

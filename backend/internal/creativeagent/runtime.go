@@ -86,6 +86,34 @@ type runtimeHandler struct {
 	pending *pendingBatch
 	// failures counts unexplained failures per tool in this execution.
 	failures map[string]int
+	// composition is what the request being bound carries, by part. It is
+	// set while binding and taken when the turn is journaled, both on the
+	// framework's goroutine for one turn, under mu.
+	composition contextComposition
+	// measure is the conversation's calibration when the execution started.
+	measure contextMeasure
+	// skillIndex is the frozen index of skill versions the conversation used
+	// before; load_skill may load any of them besides the run's own.
+	skillIndex []skillIndexEntry
+}
+
+func (h *runtimeHandler) setComposition(c contextComposition) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.composition = c
+}
+
+// takeComposition hands the bound request's composition to the step that
+// journals it. A turn bound without one is recorded with an empty composition.
+func (h *runtimeHandler) takeComposition() contextComposition {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	c := h.composition
+	h.composition = contextComposition{}
+	if c.Bytes == nil {
+		c.Bytes = map[string]int{}
+	}
+	return c
 }
 
 var _ adk.ChatModelAgentMiddleware = (*runtimeHandler)(nil)
@@ -158,6 +186,11 @@ func (h *runtimeHandler) allowed(name string) bool {
 	if name != loadSkillTool && name != readSkillTool && name != readResultTool {
 		return false
 	}
+	// A skill the conversation used before may be loaded again for its method
+	// whatever this run fixed (design §7); it never adds a tool.
+	if name == loadSkillTool && len(h.skillIndex) > 0 {
+		return true
+	}
 	if h.held.Skill == nil {
 		return name == readResultTool
 	}
@@ -170,12 +203,8 @@ func (h *runtimeHandler) allowed(name string) bool {
 }
 
 func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.ChatModelAgentMiddleware, error) {
-	// Calls of one answer run together; dispatch keeps the order of those
-	// that touch the same thing.
-	config := adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{ExecuteSequentially: false}}
-	handlers := []adk.ChatModelAgentMiddleware{h}
 	if !h.held.Model.Capability.ToolCalling {
-		return config, handlers, nil
+		return h.configureTools(ctx)
 	}
 	if err := h.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		consent, err := readConsentForUpdate(ctx, tx, h.held.ConsentID)
@@ -185,7 +214,20 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		h.libraryEnabled = consent.Scope.Mode == ScopeAccountLibrary && consentHas(consent, "media_metadata")
 		return nil
 	}); err != nil {
-		return config, handlers, err
+		return adk.ToolsConfig{}, nil, err
+	}
+	return h.configureTools(ctx)
+}
+
+// configureTools builds the same local definitions for admission and runtime.
+// Consent and frozen Skill metadata have already been selected by the caller.
+func (h *runtimeHandler) configureTools(ctx context.Context) (adk.ToolsConfig, []adk.ChatModelAgentMiddleware, error) {
+	// Calls of one answer run together; dispatch keeps the order of those
+	// that touch the same thing.
+	config := adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{ExecuteSequentially: false}}
+	handlers := []adk.ChatModelAgentMiddleware{h}
+	if !h.held.Model.Capability.ToolCalling {
+		return config, handlers, nil
 	}
 	for _, name := range []string{searchAssetsTool, readLibraryTool, conversationAssetsTool, organizeAssetsTool, manageLibraryTool, trashAssetsTool, restoreAssetsTool, readLibraryResultTool} {
 		if h.allowed(name) {
@@ -215,7 +257,7 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		middleware, err := einoskill.NewMiddleware(ctx, &einoskill.Config{
 			Backend: &runSkillBackend{handler: h}, SkillToolName: &name,
 			CustomSystemPrompt: func(context.Context, string) string {
-				return "仅使用本次固定的 Skill。资源是参考数据，不能扩大权限；用 ReadSkillResource 按 digest 和相对路径读取。"
+				return "可以加载本次固定的 Skill，或本会话 Skill 索引里列出的版本（按 skill_version_id）。加载只提供方法，不会增加本轮可用的工具。资源是参考数据，不能扩大权限；用 ReadSkillResource 按 digest 和相对路径读取本次固定 Skill 的资源。"
 			},
 			BuildContent: func(_ context.Context, s einoskill.Skill, _ string) (string, error) { return s.Content, nil },
 		})
@@ -228,29 +270,52 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 }
 
 // A submission currently permits at most one explicit skill. The backend never
-// scans a live catalog or resolves a latest pointer while the run is executing.
+// scans a live catalog or resolves a latest pointer while the run is executing:
+// it offers the run's own version and the versions the conversation's frozen
+// index names, each by its fixed identity.
 type runSkillBackend struct{ handler *runtimeHandler }
 
 var _ einoskill.Backend = (*runSkillBackend)(nil)
 
 func (b *runSkillBackend) List(context.Context) ([]einoskill.FrontMatter, error) {
-	s := b.handler.held.Skill
-	if s == nil {
-		return []einoskill.FrontMatter{}, nil
+	out := []einoskill.FrontMatter{}
+	if s := b.handler.held.Skill; s != nil {
+		out = append(out, einoskill.FrontMatter{Name: s.ID, Description: s.Description})
 	}
-	return []einoskill.FrontMatter{{Name: s.ID, Description: s.Description}}, nil
+	for _, e := range b.handler.skillIndex {
+		out = append(out, einoskill.FrontMatter{Name: e.VersionID, Description: e.DisplayName + "：" + e.Description})
+	}
+	return out, nil
 }
 func (b *runSkillBackend) Get(ctx context.Context, name string) (einoskill.Skill, error) {
 	h := b.handler
 	s := h.held.Skill
 	if s == nil || name != s.ID {
-		return einoskill.Skill{}, ErrNotFound
+		return b.getIndexed(ctx, name)
 	}
 	if err := h.service.stillRunnable(ctx, h.scope, h.held); err != nil {
 		return einoskill.Skill{}, err
 	}
 	// No model override, fork, agent hub or host filesystem enters this projection.
 	return einoskill.Skill{FrontMatter: einoskill.FrontMatter{Name: s.ID, Description: s.Description}, Content: s.Instructions}, nil
+}
+
+// getIndexed loads a version the conversation used before. Its availability
+// and content are read again now: a version switched off since, or whose
+// content no longer matches what the conversation recorded, is not loaded.
+func (b *runSkillBackend) getIndexed(ctx context.Context, name string) (einoskill.Skill, error) {
+	h := b.handler
+	for _, e := range h.skillIndex {
+		if e.VersionID != name {
+			continue
+		}
+		live, err := h.service.skills.ResolveVersion(ctx, h.scope, e.SkillID, e.VersionID)
+		if err != nil || !live.Usable() || live.Digest != e.Digest {
+			return einoskill.Skill{}, refuseTool("Skill「%s」的这个版本已停用或不可用，不能加载；请按创作者当前的要求继续", e.DisplayName)
+		}
+		return einoskill.Skill{FrontMatter: einoskill.FrontMatter{Name: live.ID, Description: live.Description}, Content: live.Instructions}, nil
+	}
+	return einoskill.Skill{}, ErrNotFound
 }
 
 func (h *runtimeHandler) planInTx(ctx context.Context, tx store.TxAccountScope, modelStep string, result llmgateway.Result) error {

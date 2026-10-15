@@ -7937,15 +7937,39 @@ components:
         input_nodes, upstream_depth,
         attachments, model_result_bytes, tool_argument_bytes, tool_result_bytes,
         tool_calls_per_turn, run_duration_seconds,
-        image_preview_bytes, image_preview_count, image_preview_total_bytes]
+        image_preview_bytes, image_preview_count, image_preview_total_bytes,
+        history_messages, auto_compact_percent, bytes_per_window_token,
+        compact_user_tokens, compact_recent_turns, compact_summary_bytes]
       properties:
         version:
           type: string
           description: >-
             本次判定所依据的整套上限。新增一个维度同样要换号：按旧版本创建的运行
             从未被某条上限判定过，用新集合重放它等于套用它没有同意过的规则。
-        input_text_bytes: {type: integer}
+        input_text_bytes:
+          type: integer
+          description: >-
+            单次请求字节上限的全局封顶。实际上限取它与 模型 context_window_tokens × bytes_per_window_token
+            中的较小者：网关按每字节最多 1 token 预留额度，这是花费上限而不是上下文上限。
         message_body_bytes: {type: integer}
+        history_messages:
+          type: integer
+          description: 一次运行向前扫描到最新压缩检查点为止的消息行数上限，只防失控，不是上下文预算。
+        auto_compact_percent:
+          type: integer
+          description: 输入达到模型有效窗口的这个百分比时，下一轮先压缩上下文；0 表示不自动压缩。
+        bytes_per_window_token:
+          type: integer
+          description: 由 token 窗口推导字节上限的换算系数。
+        compact_user_tokens:
+          type: integer
+          description: 压缩后原样保留的创作者原话预算（token）。
+        compact_recent_turns:
+          type: integer
+          description: 压缩时保留不进摘要的最近完整轮数。
+        compact_summary_bytes:
+          type: integer
+          description: 一份交接摘要的字节上限。
         instruction_segments:
           type: integer
           description: 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。
@@ -7991,7 +8015,7 @@ components:
       additionalProperties: false
       description: 摄影师可选的模型。由哪家服务商、经哪个部署提供属于平台路由，不对外暴露。
       required: [model_key, display_name, capability,
-        catalog_version, available, context_tokens, max_output_tokens]
+        catalog_version, available, context_tokens, max_output_tokens, context_window_tokens]
       properties:
         model_key: {type: string}
         display_name: {type: string}
@@ -8001,6 +8025,11 @@ components:
         unavailable_reason: {type: string}
         context_tokens: {type: integer}
         max_output_tokens: {type: integer}
+        context_window_tokens:
+          type: integer
+          description: >-
+            平台每轮实际发送的输入窗口（token），是运营策略，小于等于 context_tokens 减去输出上限。
+            上下文用量小环按它计算占比，达到 limits.auto_compact_percent 时下一轮先压缩。
     CreativeAgentSkill:
       type: object
       additionalProperties: false
@@ -8173,8 +8202,11 @@ components:
       properties:
         type:
           type: string
-          enum: [text, skill_ref, content_ref, tool_result, notice, reference]
-          description: reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
+          enum: [text, skill_ref, content_ref, tool_result, notice, reference, command]
+          description: >-
+            reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
+            command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。
+        command: {type: string, enum: [compact], description: command 块的命令名}
         text: {type: string}
         ref_id: {type: string, description: 定位一个内容修订或工具结果；本身不授予任何权限}
         code: {type: string, description: notice 的稳定机器原因}
@@ -8209,8 +8241,14 @@ components:
         会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID，
         ID 本身不授予任何读取权限，服务端一律重新核对。
       properties:
-        type: {type: string, enum: [text, skill_ref, content_ref]}
+        type:
+          type: string
+          enum: [text, skill_ref, content_ref, command]
+          description: >-
+            command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行；
+            text 是可选的保留关注点，最多 500 个字符。
         text: {type: string}
+        command: {type: string, enum: [compact]}
         skill_id:
           type: string
           description: 与 skill_version_id 必须同时出现；只给版本会让服务端替客户端挑 Skill。
@@ -8297,7 +8335,7 @@ components:
       required: [id, kind, state]
       properties:
         id: {type: string}
-        kind: {type: string, enum: [model, tool, check]}
+        kind: {type: string, enum: [model, tool, check, compaction]}
         state: {type: string, enum: [prepared, dispatched, succeeded, failed, unknown]}
         tool_key: {type: string}
         error_code: {type: string}
@@ -8354,10 +8392,14 @@ components:
       type: object
       additionalProperties: false
       required: [id, conversation_id, canvas_id, trigger_message_id, egress_consent_id,
-                 model_key, state, settlement_state, limits_version, revision,
+                 model_key, kind, state, settlement_state, limits_version, revision,
                  last_event_seq, pruned_through_seq, deadline_at, created_at]
       properties:
         id: {type: string}
+        kind:
+          type: string
+          enum: [chat, compact]
+          description: chat 是普通的一轮对话（可能先自动压缩）；compact 由 /compact 创建，只压缩上下文、不回答。
         conversation_id: {type: string}
         canvas_id:
           type: string
@@ -8416,7 +8458,9 @@ components:
         ordinal: {$ref: '#/components/schemas/CreativeRevision'}
         type:
           type: string
-          description: 本期 text、thinking、tool、plan、notice；question、confirm、proposal、changes、suggestions 由后续条目登记。
+          description: >-
+            本期 text、thinking、tool、plan、notice、compaction；question、confirm、proposal、changes、suggestions
+            由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。
         state:
           type: string
           description: 类型自身的状态，另有通用终态 interrupted。
@@ -8484,6 +8528,42 @@ components:
               key: {type: string}
               title: {type: string}
               state: {type: string, enum: [todo, doing, done, skipped]}
+    CreativeAgentCompactionPayload:
+      type: object
+      additionalProperties: false
+      required: [trigger, tokens_before]
+      description: 会话里「上下文已压缩」的分隔条。summary 只在 complete 时出现，可展开查看。
+      properties:
+        trigger: {type: string, enum: [auto, manual]}
+        focus: {type: string, description: /compact 带的保留关注点}
+        tokens_before: {type: integer, format: int64, description: 压缩前的输入 token（估算）}
+        tokens_after: {type: integer, format: int64, description: 压缩后下一轮的输入 token（估算）}
+        summary: {type: string}
+        message: {type: string, description: skipped、fallback、failed 时给创作者看的说明}
+    CreativeAgentContextUsage:
+      type: object
+      additionalProperties: false
+      required: [model_key, window_tokens, compact_at_tokens, used_tokens, estimated, parts, measured_at]
+      description: >-
+        会话最近一次请求的上下文用量。used_tokens 是供应商实际计数，除非 estimated 为 true
+        （压缩之后、下一次请求之前的估算）。parts 一律是按字节比例分摊的估算，之和等于 used_tokens。
+      properties:
+        model_key: {type: string, description: 这次用量对应的模型；与输入框当前所选不同时，前端按估算显示}
+        window_tokens: {type: integer}
+        compact_at_tokens: {type: integer, description: 达到它时下一轮先自动压缩；0 表示不自动压缩}
+        used_tokens: {type: integer, format: int64}
+        estimated: {type: boolean}
+        parts:
+          type: array
+          items: {$ref: '#/components/schemas/CreativeAgentContextUsagePart'}
+        measured_at: {type: string, format: date-time}
+    CreativeAgentContextUsagePart:
+      type: object
+      additionalProperties: false
+      required: [key, tokens]
+      properties:
+        key: {type: string, enum: [system, tools, skill, summary, messages, tool_results, images]}
+        tokens: {type: integer, format: int64}
     CreativeAgentNoticePayload:
       type: object
       additionalProperties: false
@@ -8533,7 +8613,7 @@ components:
       description: >-
         事件信封。schema_version 只在信封或合并规则变化时升级；未知版本停止增量合并并回读快照。
         block.created 的 payload 是完整 CreativeAgentBlock；block.updated 的是 CreativeAgentBlockUpdated；
-        run.state_changed 可带 current_block_id。
+        run.state_changed 可带 current_block_id；context.usage 的是 CreativeAgentContextUsage。
       properties:
         schema_version: {type: integer, enum: [1]}
         run_id: {type: string}
@@ -8582,6 +8662,9 @@ components:
           items: {$ref: '#/components/schemas/CreativeAgentMessage'}
         prev_cursor: {type: string, description: 继续往回翻；留空表示会话从这里开始}
         conversation_revision: {$ref: '#/components/schemas/CreativeRevision'}
+        context_usage:
+          allOf: [{$ref: '#/components/schemas/CreativeAgentContextUsage'}]
+          description: 只在最新一页出现；从未发过请求的会话没有它，前端显示空环。
     CreativeAgentConversationCreatePayload:
       type: object
       additionalProperties: false

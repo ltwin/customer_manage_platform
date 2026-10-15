@@ -203,3 +203,52 @@ func TestReorderingNeverMovesAPreparedCall(t *testing.T) {
 		t.Fatalf("sent to %v", sentTo)
 	}
 }
+
+// The window is input only: it and the output bound together must fit what the
+// provider can read, and an unset window falls back to exactly that remainder.
+func TestAContextWindowFitsTheModelsCapability(t *testing.T) {
+	wide := routedModel("a")
+	wide.ContextWindowTokens = 501 // 501 + 500 output > 1000
+	if _, err := llmgateway.NewRoutedCatalog("cat-1", "USD", []llmgateway.Model{wide}, []llmgateway.Deployment{routedDeployment("a", "a")}); !errors.Is(err, llmgateway.ErrValidation) {
+		t.Fatalf("a window beyond the capability was accepted: %v", err)
+	}
+	set := routedModel("a")
+	set.ContextWindowTokens = 400
+	unset := routedModel("b")
+	unset.ModelKey = "other"
+	catalog, err := llmgateway.NewRoutedCatalog("cat-1", "USD", []llmgateway.Model{set, unset},
+		[]llmgateway.Deployment{routedDeployment("a", "a"), routedDeployment("b", "b")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, want := range map[string]int{"chat": 400, "other": 500} {
+		m, err := catalog.Model(key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := m.InputWindowTokens(); got != want {
+			t.Fatalf("%s window %d, want %d", key, got, want)
+		}
+		if got := catalog.Snapshot(m).ContextWindowTokens; got != want {
+			t.Fatalf("%s snapshot window %d, want %d", key, got, want)
+		}
+	}
+	for _, entry := range catalog.List() {
+		if entry.ModelKey == "chat" && entry.ContextWindowTokens != 400 || entry.ModelKey == "other" && entry.ContextWindowTokens != 500 {
+			t.Fatalf("listed window %+v", entry)
+		}
+	}
+}
+
+// Every built-in model chooses its window rather than inheriting the 1M limit.
+func TestBuiltInModelsUseTheDefaultWindow(t *testing.T) {
+	catalog, err := llmgateway.DefaultCatalog(func(string) (string, bool) { return "x", true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range catalog.List() {
+		if entry.ContextWindowTokens != 128_000 {
+			t.Fatalf("%s window %d", entry.ModelKey, entry.ContextWindowTokens)
+		}
+	}
+}

@@ -3258,8 +3258,21 @@ export interface components {
         CreativeAgentLimits: {
             /** @description 本次判定所依据的整套上限。新增一个维度同样要换号：按旧版本创建的运行 从未被某条上限判定过，用新集合重放它等于套用它没有同意过的规则。 */
             version: string;
+            /** @description 单次请求字节上限的全局封顶。实际上限取它与 模型 context_window_tokens × bytes_per_window_token 中的较小者：网关按每字节最多 1 token 预留额度，这是花费上限而不是上下文上限。 */
             input_text_bytes: number;
             message_body_bytes: number;
+            /** @description 一次运行向前扫描到最新压缩检查点为止的消息行数上限，只防失控，不是上下文预算。 */
+            history_messages: number;
+            /** @description 输入达到模型有效窗口的这个百分比时，下一轮先压缩上下文；0 表示不自动压缩。 */
+            auto_compact_percent: number;
+            /** @description 由 token 窗口推导字节上限的换算系数。 */
+            bytes_per_window_token: number;
+            /** @description 压缩后原样保留的创作者原话预算（token）。 */
+            compact_user_tokens: number;
+            /** @description 压缩时保留不进摘要的最近完整轮数。 */
+            compact_recent_turns: number;
+            /** @description 一份交接摘要的字节上限。 */
+            compact_summary_bytes: number;
             /** @description 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。 */
             instruction_segments: number;
             /** @description 本阶段为 1。两个 Skill 会被拒绝而不是拼接：把两份指令接在一起产生的是 第三份，两位作者都没写过。 */
@@ -3301,6 +3314,8 @@ export interface components {
             unavailable_reason?: string;
             context_tokens: number;
             max_output_tokens: number;
+            /** @description 平台每轮实际发送的输入窗口（token），是运营策略，小于等于 context_tokens 减去输出上限。 上下文用量小环按它计算占比，达到 limits.auto_compact_percent 时下一轮先压缩。 */
+            context_window_tokens: number;
         };
         CreativeAgentSkill: {
             skill_id: string;
@@ -3412,10 +3427,15 @@ export interface components {
         /** @description `schema_version=2` 起 skill_ref 与 content_ref 是明确的块类型； v1 写下的 `reference` 仍按原样读出，不会被重新猜成 Skill。 */
         CreativeAgentMessageBlock: {
             /**
-             * @description reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。
+             * @description reference 只出现在 schema_version=1 的历史消息里，新消息不再写它。 command 是创作者输入的命令（如 /compact），text 是命令参数；它不进入之后运行的历史。
              * @enum {string}
              */
-            type: "text" | "skill_ref" | "content_ref" | "tool_result" | "notice" | "reference";
+            type: "text" | "skill_ref" | "content_ref" | "tool_result" | "notice" | "reference" | "command";
+            /**
+             * @description command 块的命令名
+             * @enum {string}
+             */
+            command?: "compact";
             text?: string;
             /** @description 定位一个内容修订或工具结果；本身不授予任何权限 */
             ref_id?: string;
@@ -3436,9 +3456,14 @@ export interface components {
         };
         /** @description 一次提交的一个有序片段，是判别联合：每种 type 只允许自身字段，写了别的字段 会被拒绝而不是忽略——丢掉它等于把另一条指令发给模型。引用类只带 ID， ID 本身不授予任何读取权限，服务端一律重新核对。 */
         CreativeAgentInstructionSegment: {
-            /** @enum {string} */
-            type: "text" | "skill_ref" | "content_ref";
+            /**
+             * @description command 必须是整个提交的唯一片段：command 为 compact 时创建一次只压缩上下文、不回答的运行； text 是可选的保留关注点，最多 500 个字符。
+             * @enum {string}
+             */
+            type: "text" | "skill_ref" | "content_ref" | "command";
             text?: string;
+            /** @enum {string} */
+            command?: "compact";
             /** @description 与 skill_version_id 必须同时出现；只给版本会让服务端替客户端挑 Skill。 */
             skill_id?: string;
             skill_version_id?: string;
@@ -3500,7 +3525,7 @@ export interface components {
         CreativeAgentStepSummary: {
             id: string;
             /** @enum {string} */
-            kind: "model" | "tool" | "check";
+            kind: "model" | "tool" | "check" | "compaction";
             /** @enum {string} */
             state: "prepared" | "dispatched" | "succeeded" | "failed" | "unknown";
             tool_key?: string;
@@ -3541,6 +3566,11 @@ export interface components {
         };
         CreativeAgentRun: {
             id: string;
+            /**
+             * @description chat 是普通的一轮对话（可能先自动压缩）；compact 由 /compact 创建，只压缩上下文、不回答。
+             * @enum {string}
+             */
+            kind: "chat" | "compact";
             conversation_id: string;
             /** @description 由服务端从会话读出；客户端给的对不上也不采信。 */
             canvas_id: string;
@@ -3588,7 +3618,7 @@ export interface components {
             id: string;
             run_id: string;
             ordinal: components["schemas"]["CreativeRevision"];
-            /** @description 本期 text、thinking、tool、plan、notice；question、confirm、proposal、changes、suggestions 由后续条目登记。 */
+            /** @description 本期 text、thinking、tool、plan、notice、compaction；question、confirm、proposal、changes、suggestions 由后续条目登记。compaction 的状态为 running、complete、skipped、fallback、failed。 */
             type: string;
             /** @description 类型自身的状态，另有通用终态 interrupted。 */
             state: string;
@@ -3640,6 +3670,46 @@ export interface components {
                 state: "todo" | "doing" | "done" | "skipped";
             }[];
         };
+        /** @description 会话里「上下文已压缩」的分隔条。summary 只在 complete 时出现，可展开查看。 */
+        CreativeAgentCompactionPayload: {
+            /** @enum {string} */
+            trigger: "auto" | "manual";
+            /** @description /compact 带的保留关注点 */
+            focus?: string;
+            /**
+             * Format: int64
+             * @description 压缩前的输入 token（估算）
+             */
+            tokens_before: number;
+            /**
+             * Format: int64
+             * @description 压缩后下一轮的输入 token（估算）
+             */
+            tokens_after?: number;
+            summary?: string;
+            /** @description skipped、fallback、failed 时给创作者看的说明 */
+            message?: string;
+        };
+        /** @description 会话最近一次请求的上下文用量。used_tokens 是供应商实际计数，除非 estimated 为 true （压缩之后、下一次请求之前的估算）。parts 一律是按字节比例分摊的估算，之和等于 used_tokens。 */
+        CreativeAgentContextUsage: {
+            /** @description 这次用量对应的模型；与输入框当前所选不同时，前端按估算显示 */
+            model_key: string;
+            window_tokens: number;
+            /** @description 达到它时下一轮先自动压缩；0 表示不自动压缩 */
+            compact_at_tokens: number;
+            /** Format: int64 */
+            used_tokens: number;
+            estimated: boolean;
+            parts: components["schemas"]["CreativeAgentContextUsagePart"][];
+            /** Format: date-time */
+            measured_at: string;
+        };
+        CreativeAgentContextUsagePart: {
+            /** @enum {string} */
+            key: "system" | "tools" | "skill" | "summary" | "messages" | "tool_results" | "images";
+            /** Format: int64 */
+            tokens: number;
+        };
         CreativeAgentNoticePayload: {
             code: string;
             message: string;
@@ -3668,7 +3738,7 @@ export interface components {
             finished_at?: string;
             patch?: components["schemas"]["CreativeAgentBlockPatch"];
         };
-        /** @description 事件信封。schema_version 只在信封或合并规则变化时升级；未知版本停止增量合并并回读快照。 block.created 的 payload 是完整 CreativeAgentBlock；block.updated 的是 CreativeAgentBlockUpdated； run.state_changed 可带 current_block_id。 */
+        /** @description 事件信封。schema_version 只在信封或合并规则变化时升级；未知版本停止增量合并并回读快照。 block.created 的 payload 是完整 CreativeAgentBlock；block.updated 的是 CreativeAgentBlockUpdated； run.state_changed 可带 current_block_id；context.usage 的是 CreativeAgentContextUsage。 */
         CreativeAgentRunEvent: {
             /** @enum {integer} */
             schema_version: 1;
@@ -3711,6 +3781,8 @@ export interface components {
             /** @description 继续往回翻；留空表示会话从这里开始 */
             prev_cursor: string;
             conversation_revision: components["schemas"]["CreativeRevision"];
+            /** @description 只在最新一页出现；从未发过请求的会话没有它，前端显示空环。 */
+            context_usage?: components["schemas"]["CreativeAgentContextUsage"];
         };
         CreativeAgentConversationCreatePayload: {
             title: string;

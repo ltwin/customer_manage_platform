@@ -9,6 +9,7 @@ import (
 
 func rollbackAssetDigestLookup(t *testing.T, url string) {
 	t.Helper()
+	rollbackContextCompaction(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback asset-digest-lookup", err)
 	}

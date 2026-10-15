@@ -42,7 +42,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-7"
+const limitsVersion = "creative-agent-8"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -60,9 +60,11 @@ const consentRecipient = "platform"
 // as a paragraph on the wire.
 type Limits struct {
 	Version string `json:"version"`
-	// InputTextBytes bounds everything sent to the model in one request:
-	// photographer text, frozen inputs, history, skill instructions and tool
-	// definitions together.
+	// InputTextBytes caps the bytes of everything sent to the model in one
+	// request: the creator's text, frozen inputs, history, skill instructions
+	// and tool definitions together. A request's own ceiling is derived from
+	// its model's window (requestByteCeiling); this only caps that derivation,
+	// because the gateway prices the first hold at one token per byte.
 	InputTextBytes   int `json:"input_text_bytes"`
 	MessageBodyBytes int `json:"message_body_bytes"`
 	// InstructionSegments bounds one submission's ordered pieces. It is the
@@ -77,17 +79,33 @@ type Limits struct {
 	// published here because a run is judged by the limits it was created under.
 	SkillResourceFiles int `json:"skill_resource_files"`
 	SkillPackageBytes  int `json:"skill_package_bytes"`
-	// HistoryMessages bounds how many earlier turns one run freezes. The real
-	// cap is InputTextBytes; this only bounds the number of rows written, since
-	// a thousand one-word turns would fit the byte budget and still be a
-	// thousand rows.
-	HistoryMessages   int `json:"history_messages"`
-	InputNodes        int `json:"input_nodes"`
-	UpstreamDepth     int `json:"upstream_depth"`
-	Attachments       int `json:"attachments"`
-	ModelResultBytes  int `json:"model_result_bytes"`
-	ToolArgumentBytes int `json:"tool_argument_bytes"`
-	ToolResultBytes   int `json:"tool_result_bytes"`
+	// HistoryMessages bounds how many rows one run scans back to the latest
+	// compaction checkpoint. The real cap is the model's window; this only
+	// stops a runaway scan, since a thousand one-word turns would fit the
+	// window and still be a thousand rows.
+	HistoryMessages int `json:"history_messages"`
+	// AutoCompactPercent is how full the input window may get before the next
+	// run first compacts the conversation. Zero, as in runs created before
+	// compaction existed, means never.
+	AutoCompactPercent int `json:"auto_compact_percent"`
+	// BytesPerWindowToken turns a model's token window into the byte ceiling
+	// the gateway is held against. One token is three to four bytes of text,
+	// so four keeps the byte line behind the token line for ordinary writing.
+	BytesPerWindowToken int `json:"bytes_per_window_token"`
+	// CompactUserTokens is how much of the creator's own wording before a
+	// checkpoint is carried verbatim, newest first (Codex keeps 20k).
+	CompactUserTokens int `json:"compact_user_tokens"`
+	// CompactRecentTurns is how many latest turns a checkpoint leaves out of
+	// its summary, so "that one" still has something to point at.
+	CompactRecentTurns int `json:"compact_recent_turns"`
+	// CompactSummaryBytes bounds one checkpoint's summary.
+	CompactSummaryBytes int `json:"compact_summary_bytes"`
+	InputNodes          int `json:"input_nodes"`
+	UpstreamDepth       int `json:"upstream_depth"`
+	Attachments         int `json:"attachments"`
+	ModelResultBytes    int `json:"model_result_bytes"`
+	ToolArgumentBytes   int `json:"tool_argument_bytes"`
+	ToolResultBytes     int `json:"tool_result_bytes"`
 	// ToolCallsPerTurn bounds one model answer's parallel calls. It is a
 	// storage page, not a policy: how many tools a run uses is the model's
 	// call. creative-agent-6 dropped the total call and model turn counts; a
@@ -109,7 +127,7 @@ func (l Limits) RunDuration() time.Duration {
 func DefaultLimits() Limits {
 	return Limits{
 		Version:          limitsVersion,
-		InputTextBytes:   256 << 10,
+		InputTextBytes:   1 << 20,
 		MessageBodyBytes: 32 << 10,
 		// Projected, never retyped. Two spellings of one bound is how a package
 		// that imports cleanly starts failing at execution.
@@ -117,7 +135,12 @@ func DefaultLimits() Limits {
 		SkillRefsPerInstruction: maxSkillRefs,
 		SkillResourceFiles:      creativeskill.MaxResourceCount,
 		SkillPackageBytes:       creativeskill.MaxPackageBytes,
-		HistoryMessages:         20,
+		HistoryMessages:         500,
+		AutoCompactPercent:      80,
+		BytesPerWindowToken:     4,
+		CompactUserTokens:       20_000,
+		CompactRecentTurns:      2,
+		CompactSummaryBytes:     32 << 10,
 		InputNodes:              50,
 		UpstreamDepth:           2,
 		Attachments:             10,

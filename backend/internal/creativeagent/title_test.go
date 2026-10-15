@@ -48,7 +48,7 @@ func TestTheFirstAnsweredRunNamesItsConversation(t *testing.T) {
 	if f.vendor.calls() != 2 {
 		t.Fatalf("a redelivered title task must replay the paid call, provider calls: %d", f.vendor.calls())
 	}
-	if prompt := f.vendor.prompt(); !strings.Contains(prompt, "摄影师：帮我想一组雪山婚纱的布光方案") || !strings.Contains(prompt, "助手：") {
+	if prompt := f.vendor.prompt(); !strings.Contains(prompt, "创作者：帮我想一组雪山婚纱的布光方案") || !strings.Contains(prompt, "助手：") {
 		t.Fatalf("title source:\n%s", prompt)
 	}
 	page, err := f.service.ListConversations(t.Context(), f.alice, f.canvasID, false, 10, "")

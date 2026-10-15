@@ -188,10 +188,13 @@ func TestAModelTheWorkerCannotServeEndsTheRunRatherThanStranding(t *testing.T) {
 // checked again, after expansion and before anything leaves.
 func TestAnExpandedReferenceIsMeasuredAgainstTheInputCeiling(t *testing.T) {
 	f := setup(t)
+	// The ceiling is the smaller of the deployment cap and the model window in
+	// bytes; capping it here keeps one content revision able to exceed it.
+	f.service.limits.InputTextBytes = 256 << 10
 	f.queue()
 	c := f.conversation(f.alice, f.canvasID)
 	// 90,000 Chinese runes is 270,000 UTF-8 bytes: a revision the content store
-	// accepts, and more than the 256 KiB one request may carry.
+	// accepts, and more than the 256 KiB one request may carry here.
 	huge := f.revision(f.alice, strings.Repeat("参", 90_000))
 	consent := f.consent(f.alice, c.ID, huge)
 
@@ -208,7 +211,7 @@ func TestAnExpandedReferenceIsMeasuredAgainstTheInputCeiling(t *testing.T) {
 	}
 	if f.vendor.calls() != 0 {
 		t.Fatalf("a prompt of %d bytes was sent past the %d byte ceiling",
-			len(f.vendor.prompt()), DefaultLimits().InputTextBytes)
+			len(f.vendor.prompt()), f.service.limits.InputTextBytes)
 	}
 	// The error code is what separates enforcing this contract from getting the
 	// same outcome by accident. The hold a run takes is sized to this very

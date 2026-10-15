@@ -372,6 +372,7 @@ const failures: Record<string, string> = {
   creative_input_unavailable: '引用的内容已不可读',
   creative_canvas_integrity: '画布数据校验未通过，已停止修改，请联系我们处理',
   creative_tool_failing: '同一工具多次出错，已停止执行，请稍后再试',
+  creative_compaction_failed: '上下文整理没有完成，会话保持原样',
 }
 export function runFailure(code?: string): string {
   if (!code) return ''

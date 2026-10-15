@@ -75,6 +75,8 @@ type claim struct {
 	Skill          *creativeskill.Snapshot
 	Deadline       time.Time
 	Limits         Limits
+	// Kind is the run's kind: chat answers, compact only compacts.
+	Kind string
 }
 
 // turnOutcome is what one attempt produced, independent of whether it failed.
@@ -117,7 +119,7 @@ func (s *Service) workRun(ctx context.Context, scope store.AccountScope, request
 	} else if source != nil {
 		outcome, turnErr = s.executeRecordedRetry(attemptCtx, scope, held)
 	} else {
-		outcome, turnErr = s.executeTurn(attemptCtx, scope, held)
+		outcome, turnErr = s.executeWithCompaction(attemptCtx, scope, held)
 	}
 	stop()
 	// The run reaches a terminal state inside the attempt that claimed it. The
@@ -176,12 +178,12 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		}
 		var epoch int64
 		var modelKey string
-		var skillSnapshot, limitsSnapshot []byte
+		var skillSnapshot, limitsSnapshot, modelSnapshot []byte
 		var deadline time.Time
 		err := tx.QueryRowForUpdate(ctx, "creative_agent_runs",
-			"state,execution_epoch,claim_token,model_key,egress_consent_id,conversation_id,skill_snapshot,deadline_at,limits_snapshot",
+			"state,execution_epoch,claim_token,model_key,egress_consent_id,conversation_id,skill_snapshot,deadline_at,limits_snapshot,kind,model_snapshot",
 			"id=$2", runID).Scan(&state, &epoch, &token, &modelKey, &held.ConsentID,
-			&held.ConversationID, &skillSnapshot, &deadline, &limitsSnapshot)
+			&held.ConversationID, &skillSnapshot, &deadline, &limitsSnapshot, &held.Kind, &modelSnapshot)
 		if errors.Is(err, store.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -223,6 +225,16 @@ func (s *Service) claimRun(ctx context.Context, scope store.AccountScope, runID 
 		}
 		if err := json.Unmarshal(limitsSnapshot, &held.Limits); err != nil {
 			return err
+		}
+		var frozen llmgateway.ModelSnapshot
+		if err := json.Unmarshal(modelSnapshot, &frozen); err != nil {
+			return err
+		}
+		// Availability is live, but the input policy belongs to the run. Old
+		// snapshots predate the explicit window and used the capability remainder.
+		model.ContextWindowTokens = frozen.ContextWindowTokens
+		if model.ContextWindowTokens <= 0 {
+			model.ContextWindowTokens = max(1, frozen.ContextTokens-frozen.MaxOutputTokens)
 		}
 		held.Model = model
 		next, err := randomClaimToken()
@@ -332,6 +344,32 @@ func (s *Service) renewLease(ctx context.Context, scope store.AccountScope, held
 		}
 	}()
 	return func() { once.Do(func() { close(done); cancelAttempt() }); <-exited }
+}
+
+// executeWithCompaction compacts first when the run was planned to, then runs
+// the turn. A compact run does nothing else: its compaction block is what it
+// delivers, so a summary made or honestly skipped is a success.
+func (s *Service) executeWithCompaction(ctx context.Context, scope store.AccountScope, held claim) (turnOutcome, error) {
+	ctx, cancel := context.WithDeadline(ctx, held.Deadline)
+	defer cancel()
+	run, err := readCompactionRun(ctx, scope, held.RunID)
+	if err != nil {
+		return turnOutcome{}, err
+	}
+	if run.State == compactionPending {
+		compacted, err := s.compactInRun(ctx, scope, held, run)
+		if err != nil {
+			return turnOutcome{RequestID: compacted.RequestID}, err
+		}
+		run.State = compacted.State
+	}
+	if run.Kind == runKindCompact {
+		if run.State != compactionCompleted && run.State != compactionSkipped {
+			return turnOutcome{}, s.failCompaction(ctx, scope, held, "")
+		}
+		return turnOutcome{Delivered: true}, nil
+	}
+	return s.executeTurn(ctx, scope, held)
 }
 
 // executeTurn runs the bounded model/tool loop through the framework. Everything the
@@ -461,6 +499,28 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 		}
 		for _, item := range items {
 			if item.role == "attachment" {
+				continue
+			}
+			if item.role == inputCompaction || item.role == inputSkillIndex {
+				// The summary and skill index stay protected. Only the optional
+				// verbatim originals may yield before recent complete turns.
+				if item.body != nil {
+					m := schema.UserMessage(*item.body)
+					m.Extra = map[string]any{inputKindKey: item.role}
+					if item.role == inputCompaction {
+						var meta struct {
+							CompactionID string `json:"compaction_id"`
+							Originals    bool   `json:"originals"`
+						}
+						if err := json.Unmarshal(item.snapshot, &meta); err != nil {
+							return err
+						}
+						if meta.Originals {
+							historyTag(m, "compaction-originals:"+meta.CompactionID)
+						}
+					}
+					messages = append(messages, m)
+				}
 				continue
 			}
 			if item.role == "history" {
@@ -655,7 +715,7 @@ func (s *Service) admitDispatchInTx(ctx context.Context, tx store.TxAccountScope
 // The ordinal comes from the run's own counter under its row lock, so two
 // workers cannot hand out the same position.
 func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope, held claim, previousModel string,
-	chat llmgateway.ChatRequest) (stepID, bindingKey string, err error) {
+	chat llmgateway.ChatRequest, composition contextComposition) (stepID, bindingKey string, err error) {
 	// The 256 KiB input contract, checked on the request as assembled — the
 	// system prompt the skill contributed, the history, the quoted bodies, the
 	// separators and the tool definitions, all of it.
@@ -670,8 +730,16 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 	// EstimateInputTokens is the gateway's own accounting, borrowed rather than
 	// reproduced: measuring the hold one way and the ceiling another is how a
 	// request passes one and fails the other.
-	if bytes := llmgateway.EstimateInputTokens(chat); bytes > int64(contextBudget(s.limits, held.Model)) {
-		return "", "", fmt.Errorf("%w: 本次请求 %d 字节，上限 %d", ErrLimit, bytes, s.limits.InputTextBytes)
+	ceiling := requestByteCeiling(s.limits, held.Model)
+	if bytes := llmgateway.EstimateInputTokens(chat); bytes > int64(ceiling) {
+		return "", "", fmt.Errorf("%w: 本次请求 %d 字节，上限 %d", ErrLimit, bytes, ceiling)
+	}
+	// What the request carries, recorded so the provider's count can calibrate
+	// the next estimate and show the creator where the context went.
+	composition.Bytes[partTools] = toolDefinitionBytes(chat.Tools)
+	measured, err := json.Marshal(composition)
+	if err != nil {
+		return "", "", err
 	}
 	hash, err := llmgateway.RequestHash(chat, s.models.Snapshot(held.Model))
 	if err != nil {
@@ -743,8 +811,10 @@ func (s *Service) prepareModelStep(ctx context.Context, scope store.AccountScope
 			return err
 		}
 		if err := tx.Insert(ctx, "creative_agent_steps",
-			[]string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "input_hash", "input", "started_at"},
-			stepID, held.RunID, ordinal, "model", "prepared", held.Epoch, hash, payload, now); err != nil {
+			[]string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "input_hash", "input", "started_at",
+				"input_text_bytes", "input_image_count", "context_composition"},
+			stepID, held.RunID, ordinal, "model", "prepared", held.Epoch, hash, payload, now,
+			composition.textBytes(), composition.Images, measured); err != nil {
 			return err
 		}
 		// A model step has no block of its own: its text block appears with the
@@ -1121,6 +1191,8 @@ func failureCode(err error) string {
 		return "creative_tool_failing"
 	case errors.Is(err, errEmptyAnswer):
 		return "creative_model_empty_result"
+	case errors.Is(err, errCompactionFailed):
+		return "creative_compaction_failed"
 	case errors.Is(err, ErrConsentRevoked):
 		return "creative_egress_revoked"
 	case errors.Is(err, ErrEgressRequired):

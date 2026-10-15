@@ -113,8 +113,10 @@ async function follow(id: string, signal: AbortSignal) {
         }
         if (next === 'resync') return 'snapshot'
         if (next !== old) put(id, next)
-        // Run-level events name only what changed; read the rest.
-        if (!event.type.startsWith('block.')) void refresh()
+        // Run-level events name only what changed; read the rest. Usage is
+        // whole in its event and changes nothing a snapshot would show.
+        if (!event.type.startsWith('block.') && event.type !== 'context.usage')
+          void refresh()
       },
       onSnapshotRequired: load,
       onError: (error) => {

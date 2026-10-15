@@ -421,7 +421,10 @@ func (s *Service) sweepRun(ctx context.Context, scope store.AccountScope, id str
 				return s.endControlledRun(ctx, tx, c, RunFailed, "creative_run_failed", now)
 			}
 		}
-		count, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2", c.ID)
+		// Compaction has its own durable journal and may finish before the
+		// framework ever creates a checkpoint. It must remain resumable here,
+		// just as it is at the execution entry point.
+		count, err := tx.Count(ctx, "creative_agent_steps", "run_id=$2 AND kind<>'compaction'", c.ID)
 		if err != nil {
 			return err
 		}

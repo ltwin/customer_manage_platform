@@ -32,7 +32,7 @@ var _ tool.InvokableTool = planTool{}
 func (planTool) Info(context.Context) (*schema.ToolInfo, error) {
 	step := map[string]*schema.ParameterInfo{
 		"key":   {Type: schema.String, Required: true, Desc: "本步骤稳定标识，更新时保持不变"},
-		"title": {Type: schema.String, Required: true, Desc: "给摄影师看的一句话步骤名"},
+		"title": {Type: schema.String, Required: true, Desc: "给创作者看的一句话步骤名"},
 		"state": {Type: schema.String, Required: true, Desc: "步骤状态", Enum: []string{PlanTodo, PlanDoing, PlanDone, PlanSkipped}},
 	}
 	return &schema.ToolInfo{

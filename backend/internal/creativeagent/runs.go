@@ -108,17 +108,20 @@ func (s *Seq) UnmarshalJSON(data []byte) error {
 // Run is what a reader is told about one execution. Sequence counters cross the
 // API as decimal strings for the same reason ordinals do.
 type Run struct {
-	ID               string               `json:"id"`
-	WaitingToken     string               `json:"waiting_token,omitempty"`
-	WaitReason       string               `json:"wait_reason,omitempty"`
-	SourceRunID      string               `json:"source_run_id,omitempty"`
-	ConversationID   string               `json:"conversation_id"`
-	CanvasID         string               `json:"canvas_id"`
-	TriggerMessageID string               `json:"trigger_message_id"`
-	EgressConsentID  string               `json:"egress_consent_id"`
-	ModelKey         string               `json:"model_key"`
-	SkillID          string               `json:"skill_id,omitempty"`
-	SkillVersionID   string               `json:"skill_version_id,omitempty"`
+	ID               string `json:"id"`
+	WaitingToken     string `json:"waiting_token,omitempty"`
+	WaitReason       string `json:"wait_reason,omitempty"`
+	SourceRunID      string `json:"source_run_id,omitempty"`
+	ConversationID   string `json:"conversation_id"`
+	CanvasID         string `json:"canvas_id"`
+	TriggerMessageID string `json:"trigger_message_id"`
+	EgressConsentID  string `json:"egress_consent_id"`
+	ModelKey         string `json:"model_key"`
+	SkillID          string `json:"skill_id,omitempty"`
+	SkillVersionID   string `json:"skill_version_id,omitempty"`
+	// Kind is chat for an ordinary turn and compact for a /compact request,
+	// which only summarises the conversation and never answers.
+	Kind             string               `json:"kind"`
 	State            string               `json:"state"`
 	SettlementState  string               `json:"settlement_state"`
 	ErrorCode        string               `json:"error_code,omitempty"`
@@ -134,7 +137,7 @@ type Run struct {
 
 const runColumns = "id,conversation_id,canvas_id,trigger_message_id,egress_consent_id,model_key," +
 	"skill_id,skill_version_id,state,settlement_state,error_code,limits_version,revision," +
-	"last_event_seq,pruned_through_seq,deadline_at,created_at,started_at,finished_at,waiting_token,wait_reason,source_run_id"
+	"last_event_seq,pruned_through_seq,deadline_at,created_at,started_at,finished_at,waiting_token,wait_reason,source_run_id,kind"
 
 func scanRun(row interface{ Scan(...any) error }) (Run, error) {
 	var r Run
@@ -142,7 +145,7 @@ func scanRun(row interface{ Scan(...any) error }) (Run, error) {
 	var revision, lastSeq, prunedSeq int64
 	if err := row.Scan(&r.ID, &r.ConversationID, &r.CanvasID, &r.TriggerMessageID, &r.EgressConsentID,
 		&r.ModelKey, &skillID, &versionID, &r.State, &r.SettlementState, &errorCode, &r.LimitsVersion,
-		&revision, &lastSeq, &prunedSeq, &r.DeadlineAt, &r.CreatedAt, &r.StartedAt, &r.FinishedAt, &waiting, &reason, &source); err != nil {
+		&revision, &lastSeq, &prunedSeq, &r.DeadlineAt, &r.CreatedAt, &r.StartedAt, &r.FinishedAt, &waiting, &reason, &source, &r.Kind); err != nil {
 		return Run{}, err
 	}
 	if waiting != nil {
@@ -322,15 +325,6 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 				}
 			}
 
-			// What is left of one request's input ceiling after the submission
-			// and the skill's own instructions have taken their share. History
-			// fills the remainder rather than competing for a second budget.
-			history, err := s.freezeHistoryInTx(ctx, tx, input.ConversationID,
-				s.limits.InputTextBytes-resolved.Bytes-skillInstructionBytes(resolved.Skill),
-				model.HandsBackReasoning())
-			if err != nil {
-				return creativeops.Outcome{}, err
-			}
 			trigger, err := s.appendMessageInTx(ctx, tx, input.ConversationID, newMessage{
 				Role: "user", Status: "complete", Body: resolved.Body, RunID: runID,
 				ContentRefs: resolved.ContentRefs, SkillRefs: resolved.SkillRefs(),
@@ -338,16 +332,20 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
+			history, err := s.planHistoryInTx(ctx, tx, input.ConversationID, consent.ID, int64(trigger.Ordinal), model, resolved)
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
 			run, err := s.insertRunInTx(ctx, tx, runInsert{
 				ID: runID, ConversationID: input.ConversationID, CanvasID: canvasID,
 				TriggerMessageID: trigger.ID, ConsentID: consent.ID, Model: model,
 				Skill: resolved.Skill, ClaimToken: claim, ReservationID: reservation.ID,
-				Deadline: deadline, Now: now,
+				Deadline: deadline, Now: now, Kind: history.Kind, Compaction: history.Plan,
 			})
 			if err != nil {
 				return creativeops.Outcome{}, err
 			}
-			if err := s.freezeInputsInTx(ctx, tx, runID, history, resolved.Body.Blocks); err != nil {
+			if err := s.freezePlannedInputsInTx(ctx, tx, runID, history, resolved.Body.Blocks); err != nil {
 				return creativeops.Outcome{}, err
 			}
 			if resolved.Skill != nil {
@@ -388,10 +386,85 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 	}, command)
 }
 
+// plannedHistory is what a new run will carry as history and whether it
+// compacts first. A run that compacts freezes its history in the worker, from
+// the checkpoint the compaction leaves; every other run freezes it here.
+type plannedHistory struct {
+	Kind       string
+	Projection historyProjection
+	Plan       *compactionPlan
+}
+
+// planHistoryInTx projects the conversation for a new run and decides whether
+// the run compacts first: when the request it would send reaches the
+// compaction line of the model's window (design §8.1), or when the creator
+// asked with /compact.
+func (s *Service) planHistoryInTx(ctx context.Context, tx store.TxAccountScope, conversationID, consentID string, before int64,
+	model llmgateway.ModelConfig, resolved ResolvedInstruction) (plannedHistory, error) {
+	var skill *creativeskill.Snapshot
+	if resolved.Skill != nil {
+		skill = &resolved.Skill.Snapshot
+	}
+	measure, err := s.currentMeasureInTx(ctx, tx, conversationID, consentID, model, skill)
+	if err != nil {
+		return plannedHistory{}, err
+	}
+	// What is left of one request after the submission and the skill's own
+	// instructions have taken their share. History fills the remainder rather
+	// than competing for a second budget: instructions the creator chose
+	// outrank turns they can still scroll back to.
+	own := resolved.Bytes + skillInstructionBytes(resolved.Skill)
+	budget := s.historyBudget(model, measure).without(own)
+	query := projectionQuery{ConversationID: conversationID, Before: before, Budget: budget, WithReasoning: model.HandsBackReasoning()}
+	if resolved.Skill != nil {
+		query.CurrentSkill = resolved.Skill.Snapshot.ID
+	}
+	projection, err := s.projectHistoryInTx(ctx, tx, query)
+	if err != nil {
+		return plannedHistory{}, err
+	}
+	out := plannedHistory{Kind: runKindChat, Projection: projection}
+	tokens := measure.Ratio.tokens(measure.Fixed+own) + projection.estimatedTokens(measure.Ratio)
+	// What the provider last counted, unless a checkpoint has changed what
+	// the conversation carries since.
+	if measure.Last > 0 && (projection.Checkpoint == nil || projection.Checkpoint.CreatedAt.Before(measure.LastAt)) {
+		tokens = max(tokens, int(measure.Last)+measure.Ratio.tokens(own))
+	}
+	if resolved.Command == compactCommand {
+		plan := s.planCompaction(projection, compactTriggerManual, resolved.CommandArgs, before, tokens)
+		out.Kind, out.Plan = runKindCompact, &plan
+		return out, nil
+	}
+	if line := compactAt(s.limits, model); line > 0 && (tokens >= line || projection.Unscanned || projection.Kept < len(projection.Turns)) {
+		if plan := s.planCompaction(projection, compactTrigger, "", before, tokens); plan.CoversThrough > plan.From {
+			plan.RequestBytes = own
+			out.Plan = &plan
+		}
+	}
+	return out, nil
+}
+
+// freezePlannedInputsInTx writes what the run was planned to carry. A compact
+// run carries nothing; a run that compacts first leaves room for the history
+// its worker will freeze.
+func (s *Service) freezePlannedInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, planned plannedHistory, blocks []Block) error {
+	switch {
+	case planned.Kind == runKindCompact:
+		return nil
+	case planned.Plan != nil:
+		return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, deferredHistoryOrdinal)
+	}
+	next, err := freezeHistoryInputsInTx(ctx, tx, runID, planned.Projection)
+	if err != nil {
+		return err
+	}
+	return s.freezeRequestInputsInTx(ctx, tx, runID, blocks, next)
+}
+
 // skillInstructionBytes is what the chosen skill will cost in every request. It
 // is charged against the input ceiling before history is allowed to fill the
-// rest, because instructions the photographer chose outrank turns they can
-// still scroll back to.
+// rest, because instructions the creator chose outrank turns they can still
+// scroll back to.
 func skillInstructionBytes(skill *ResolvedSkill) int {
 	if skill == nil {
 		return 0
@@ -474,7 +547,7 @@ func (s *Service) reserveInTx(ctx context.Context, tx store.TxAccountScope, runI
 		// No group ceiling of its own: the account's monthly budget bounds it.
 		GroupDeadline:        deadline,
 		ModelKey:             model.ModelKey,
-		InputTokenUpperBound: int64(s.limits.InputTextBytes),
+		InputTokenUpperBound: int64(requestByteCeiling(s.limits, model)),
 		OutputLimit:          model.Capability.MaxOutputTokens,
 		ExpiresAt:            deadline,
 	})
@@ -532,6 +605,10 @@ type runInsert struct {
 	Skill                        *ResolvedSkill
 	ClaimToken, ReservationID    string
 	Deadline, Now                time.Time
+	// Kind defaults to chat. Compaction, when set, is the plan the worker
+	// carries out before (or, for a compact run, instead of) the turn.
+	Kind       string
+	Compaction *compactionPlan
 }
 
 func (s *Service) insertRunInTx(ctx context.Context, tx store.TxAccountScope, in runInsert) (Run, error) {
@@ -542,6 +619,17 @@ func (s *Service) insertRunInTx(ctx context.Context, tx store.TxAccountScope, in
 	limitsSnapshot, err := json.Marshal(s.limits)
 	if err != nil {
 		return Run{}, err
+	}
+	if in.Kind == "" {
+		in.Kind = runKindChat
+	}
+	var compactionState, compactionPlanJSON any
+	if in.Compaction != nil {
+		raw, err := json.Marshal(in.Compaction)
+		if err != nil {
+			return Run{}, err
+		}
+		compactionState, compactionPlanJSON = compactionPending, raw
 	}
 	var skillID, versionID *string
 	var skillSnapshot []byte
@@ -558,17 +646,19 @@ func (s *Service) insertRunInTx(ctx context.Context, tx store.TxAccountScope, in
 		[]string{"id", "conversation_id", "canvas_id", "trigger_message_id", "egress_consent_id",
 			"model_key", "model_snapshot", "skill_id", "skill_version_id", "skill_snapshot",
 			"state", "claim_token", "next_step_ordinal", "last_event_seq", "limits_version",
-			"limits_snapshot", "initial_llm_reservation_id", "deadline_at", "created_at", "updated_at"},
+			"limits_snapshot", "initial_llm_reservation_id", "deadline_at", "created_at", "updated_at",
+			"kind", "compaction_state", "compaction_plan"},
 		in.ID, in.ConversationID, in.CanvasID, in.TriggerMessageID, in.ConsentID,
 		in.Model.ModelKey, modelSnapshot, skillID, versionID, nullableJSON(skillSnapshot),
 		RunQueued, in.ClaimToken, 1, 0, limitsVersion,
-		limitsSnapshot, in.ReservationID, in.Deadline, in.Now, in.Now); err != nil {
+		limitsSnapshot, in.ReservationID, in.Deadline, in.Now, in.Now,
+		in.Kind, compactionState, compactionPlanJSON); err != nil {
 		return Run{}, err
 	}
 	run := Run{
 		ID: in.ID, ConversationID: in.ConversationID, CanvasID: in.CanvasID,
 		TriggerMessageID: in.TriggerMessageID, EgressConsentID: in.ConsentID,
-		ModelKey: in.Model.ModelKey, State: RunQueued, SettlementState: "not_started",
+		ModelKey: in.Model.ModelKey, Kind: in.Kind, State: RunQueued, SettlementState: "not_started",
 		LimitsVersion: limitsVersion, Revision: 1,
 		DeadlineAt: in.Deadline, CreatedAt: in.Now,
 	}
