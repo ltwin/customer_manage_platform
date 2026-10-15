@@ -157,6 +157,59 @@ func TestAnUnusableSummaryFallsBackAndTheTurnGoesOn(t *testing.T) {
 	}
 }
 
+// The headings are asked for, not enforced. A model that renamed them or wrote
+// them in bold still summarised the conversation (gpt-6-astra, 2026-10-15),
+// and refusing that would throw away a paid, usable handoff.
+func TestASummaryInTheModelsOwnHeadingsIsKept(t *testing.T) {
+	summary := "**项目目标与创作方向**\n秋日人像，整体偏暖，逆光为主\n\n**已经确定的内容**\n暖色调；胶片质感\n\n**接下来要做的**\n按已定方向出三版"
+	f := newCompactionFixture(t, summary)
+	f.threeTurns()
+	run := f.say(InstructionSegment{Type: "command", Command: compactCommand})
+	if run.State != RunSucceeded {
+		t.Fatalf("run=%+v", run)
+	}
+	if n := f.count("creative_agent_compactions", "summary=$1", summary); n != 1 {
+		t.Fatalf("checkpoints with the model's summary=%d", n)
+	}
+}
+
+// What makes a summary unusable is substance, not shape: nothing, a refusal,
+// more than the stored bound, or bytes that are not text.
+func TestSummaryValidityIsAboutSubstanceNotShape(t *testing.T) {
+	const limit = 32 << 10
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"the asked-for sections", testSummary, true},
+		{"its own headings", "**目标**\n秋日人像，整体偏暖，逆光为主，胶片质感\n**下一步**\n按已定方向出三版，每版换一种构图", true},
+		{"empty", "", false},
+		{"a refusal", "抱歉，我无法完成这个请求。", false},
+		{"over the bound", strings.Repeat("长", limit), false},
+		{"not text", "\xff" + strings.Repeat("a", 200), false},
+	}
+	for _, c := range cases {
+		if got := validSummary(c.text, limit); got != c.want {
+			t.Errorf("%s: validSummary=%v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// A /compact whose summary is refused says so on its divider, rather than
+// the generic failure that hides why nothing changed.
+func TestARefusedSummaryTellsTheCreatorWhy(t *testing.T) {
+	f := newCompactionFixture(t, "随便写写")
+	f.threeTurns()
+	run := f.say(InstructionSegment{Type: "command", Command: compactCommand})
+	if run.State != RunFailed || run.ErrorCode != "creative_compaction_failed" {
+		t.Fatalf("run=%+v", run)
+	}
+	if n := f.count("creative_agent_blocks", "run_id=$1 AND type='compaction' AND state='failed' AND payload->>'message' LIKE '%摘要%'", run.ID); n != 1 {
+		t.Fatalf("divider did not explain the refused summary: %d", n)
+	}
+}
+
 // /compact summarises on request, keeps what the creator asked to keep, and
 // answers nothing; the next turn then carries the summary.
 func TestTheCompactCommandSummarisesOnRequest(t *testing.T) {

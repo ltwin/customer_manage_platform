@@ -526,9 +526,9 @@ Skill 索引按最近使用顺序保留能放下的条目。命令消息（`/com
   请求只含压缩指令、上一份摘要和范围内消息的纯文本记录：读取内容类工具结果写成占位，不发图片、
   Skill 正文和推理内容；`load_skill` 与 `read_skill_resource` 的结果只留重新加载提示，
   版本和资源定位仍由调用记录保留。超出字节上限时从最早的消息删起。
-- 消费事务里校验摘要（至少 6 个规定小节、不超过 `CompactSummaryBytes`，且固定投影能放进剩余预算），写检查点、冻结历史、
+- 消费事务里校验摘要（正常结束、至少 32 个字符、不超过 `CompactSummaryBytes`，且固定投影能放进剩余预算；小节标题只在指令里要求，不作校验，模型改写标题或用加粗仍算合格），写检查点、冻结历史、
   写 `compaction` 块与 `context.usage` 事件；摘要不合格、供应商失败时 chat 运行退回旧截断继续回答（`fallback`），
-  `/compact` 运行失败（`creative_compaction_failed`）。运行状态以 `compaction_state` 为准，回放不会把已判为兜底的结果变成检查点。
+  `/compact` 运行失败（`creative_compaction_failed`）；摘要被拒时步骤记 `creative_compaction_invalid`，分隔条写明「模型返回的摘要不可用」，并输出带结束原因和长度的 warn 日志。运行状态以 `compaction_state` 为准，回放不会把已判为兜底的结果变成检查点。
 - `runExecution.run` 和 `SweepRuns` 判断「有步骤却没有框架 checkpoint」时都不计压缩步骤。
   压缩准备后、供应商完成但尚未消费、消费成功但模型循环尚未开始时，均按原 binding 接管；
   已完成的调用不重新收费。手动压缩的 `fallback` 恢复后仍按失败结束，不报告成功。
