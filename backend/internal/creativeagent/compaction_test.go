@@ -289,7 +289,7 @@ func TestContextUsageIsMeasuredNotGuessed(t *testing.T) {
 		t.Fatal(err)
 	}
 	usage := page.ContextUsage
-	if usage == nil || usage.Estimated || usage.UsedTokens != 120 || usage.WindowTokens != 128_000 || usage.CompactAtTokens != 0 {
+	if usage == nil || usage.Estimated || usage.UsedTokens != 120 || usage.WindowTokens != 256_000 || usage.CompactAtTokens != 0 {
 		t.Fatalf("usage %+v", usage)
 	}
 	var sum int64

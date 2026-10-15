@@ -8,8 +8,9 @@ const DefaultCatalogVersion = "deepseek-aicodewith-krill-2026-10-10"
 // defaultContextWindowTokens is the input window every built-in model uses.
 // The providers read far more, but each turn resends the whole window and the
 // first turn's hold is priced from it (see creativeagent's request ceiling),
-// so the window is a cost decision, not a capability (owner 2026-10-14).
-const defaultContextWindowTokens = 128_000
+// so the window is a cost decision, not a capability (owner 2026-10-14; raised
+// from 128k to 256k by owner 2026-10-15).
+const defaultContextWindowTokens = 256_000
 
 // priceSourceDeepSeek records where the rates came from and when, because a
 // price recipe without a provenance cannot be reconciled against an invoice.

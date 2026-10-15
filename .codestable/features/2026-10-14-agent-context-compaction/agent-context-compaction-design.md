@@ -61,7 +61,7 @@ revision: 4（第 4 稿按 owner 2026-10-14 确认改 §2：窗口指输入窗�
 
 - **`context_window_tokens` 指单次请求的输入窗口**，不含输出。
   - 校验：`MaxOutputTokens + context_window_tokens ≤ capability.context_tokens`。
-  - 内置模型默认 128k（owner 2026-10-14 同意按窗口推导）。
+  - 内置模型默认 128k（owner 2026-10-14 同意按窗口推导）；2026-10-15 owner 调为 256k，此时字节上限为 1,024,000 字节，仍低于 `InputTextBytes` 的 1 MiB。
 - 触发线 `compactAt = floor(context_window_tokens × AutoCompactRatio)`，比较对象是真实（或估算）的输入 token 数。
 - 单轮可发送的历史预算 = `context_window_tokens − 指令、工具定义与本次提交的估算`，替代现在的 `contextBudget`。
 - 要分两层，是因为所有模型的硬上限都是 1M，按 80% 算就是每轮重发 80 万 token，成本扛不住。

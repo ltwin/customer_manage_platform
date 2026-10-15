@@ -15,7 +15,7 @@ branch: feat/creative-workspace-redesign（worktree .worktrees/creative-workspac
 - 基线 commit `47f9ae6`。Owner 于 2026-10-15 明确批准提交本批功能与后端评审修复。
 - 已完成：
   - **后端**
-    - 模型窗口 `context_window_tokens`，内置模型 128k。
+    - 模型窗口 `context_window_tokens`，内置模型 256k（2026-10-15 由 128k 调整）。
     - Limits 升到 `creative-agent-8`。
     - 迁移 0066。
     - 压缩核心：`compaction.go`。

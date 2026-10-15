@@ -486,7 +486,7 @@ registry 版本变化使旧 checkpoint 明确不兼容，已提交回执与整�
 
 - 模型目录的 `context_window_tokens` 是平台每轮发送的输入窗口（token），属于运营策略；
   `capability.context_tokens` 仍是供应商硬上限。校验：窗口 + `max_output_tokens` ≤ `context_tokens`；
-  不配时取二者之差。内置模型统一 128k（`defaultContextWindowTokens`），窗口不进请求哈希，也不升目录版本号。
+  不配时取二者之差。内置模型统一 256k（`defaultContextWindowTokens`，2026-10-15 由 128k 调整），窗口不进请求哈希，也不升目录版本号。
   worker 领取和接管运行时从 `model_snapshot` 恢复窗口；目录可用性仍实时检查，目录调窗不改已有运行。
   旧快照没有显式窗口时，使用其冻结的 `context_tokens - max_output_tokens`。
 - 单次请求字节上限 = `min(Limits.InputTextBytes, 窗口 × Limits.BytesPerWindowToken)`，默认 `min(1 MiB, 窗口 × 4)`。

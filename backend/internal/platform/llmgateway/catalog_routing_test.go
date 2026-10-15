@@ -247,7 +247,7 @@ func TestBuiltInModelsUseTheDefaultWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range catalog.List() {
-		if entry.ContextWindowTokens != 128_000 {
+		if entry.ContextWindowTokens != 256_000 {
 			t.Fatalf("%s window %d", entry.ModelKey, entry.ContextWindowTokens)
 		}
 	}
