@@ -29,7 +29,7 @@ func TestReadSnapshotUsesRepeatableReadAndReadOnlyTransaction(t *testing.T) {
 
 	readType := reflect.TypeOf(ReadTxAccountScope{})
 	for _, forbidden := range []string{
-		"Insert", "InsertReturningID", "InsertOnConflictDoNothingReturning", "Upsert",
+		"Insert", "InsertRows", "InsertReturningID", "InsertOnConflictDoNothingReturning", "Upsert",
 		"Update", "Delete", "QueryRowForUpdate", "WithinTx", "WithTxScope",
 	} {
 		if _, exists := readType.MethodByName(forbidden); exists {

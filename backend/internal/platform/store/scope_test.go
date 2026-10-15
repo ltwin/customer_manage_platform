@@ -461,3 +461,47 @@ func TestAccountScopeGroupCount(t *testing.T) {
 		t.Fatal("non-identifier column accepted")
 	}
 }
+
+// InsertRows 一条语句写多行：每行都落在当前账号，另一账号看不到；
+// 超过单条语句参数上限时分批，仍全部写入。
+func TestAccountScopeInsertRows(t *testing.T) {
+	url := startPostgres(t)
+	s := openMigrated(t, url)
+	if err := store.MigrateProbeUpForTest(url); err != nil {
+		t.Fatalf("migrate probe table: %v", err)
+	}
+	ctx := context.Background()
+	for _, id := range []string{"acct-a", "acct-b"} {
+		if err := s.CreateAccount(ctx, id, "test-hash"); err != nil {
+			t.Fatalf("create account %s: %v", id, err)
+		}
+	}
+	scopeA := s.ScopeFor(auth.AccountContext{AccountID: "acct-a"})
+	scopeB := s.ScopeFor(auth.AccountContext{AccountID: "acct-b"})
+
+	rows := make([][]any, 0, 40000)
+	for i := range 40000 {
+		rows = append(rows, []any{fmt.Sprintf("p-%d", i), fmt.Sprintf("note-%d", i)})
+	}
+	if err := scopeA.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		return tx.InsertRows(ctx, "probe_items", []string{"id", "note"}, rows)
+	}); err != nil {
+		t.Fatalf("insert rows: %v", err)
+	}
+	if n, err := scopeA.Count(ctx, "probe_items", ""); err != nil || n != 40000 {
+		t.Fatalf("A sees %d rows (%v), want 40000", n, err)
+	}
+	if n, err := scopeB.Count(ctx, "probe_items", ""); err != nil || n != 0 {
+		t.Fatalf("B sees %d of A's rows (%v)", n, err)
+	}
+	if err := scopeA.InsertRows(ctx, "probe_items", []string{"id", "note"}, nil); err != nil {
+		t.Fatalf("no rows is a no-op: %v", err)
+	}
+	if err := scopeA.InsertRows(ctx, "probe_items", []string{"id", "note"}, [][]any{{"short"}}); err == nil {
+		t.Fatal("a row with the wrong number of values was accepted")
+	}
+	var empty store.AccountScope
+	if err := empty.InsertRows(ctx, "probe_items", []string{"id", "note"}, [][]any{{"x", "y"}}); !errors.Is(err, store.ErrEmptyAccountScope) {
+		t.Fatalf("want ErrEmptyAccountScope, got: %v", err)
+	}
+}

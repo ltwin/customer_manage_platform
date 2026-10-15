@@ -317,6 +317,50 @@ func (sc AccountScope) Insert(ctx context.Context, table string, cols []string, 
 	return nil
 }
 
+// maxStatementParams 是 PostgreSQL 单条语句可绑定的参数上限。
+const maxStatementParams = 65535
+
+// InsertRows 向业务表一次写入多行，account_id 由 scope 统一注入。行多时按
+// 参数上限分批，每批一条语句：成批冻结的数据不必一行一次往返。
+func (sc AccountScope) InsertRows(ctx context.Context, table string, cols []string, rows [][]any) error {
+	if sc.accountID == "" {
+		return ErrEmptyAccountScope
+	}
+	if err := validateIdents(table, cols...); err != nil {
+		return err
+	}
+	if len(cols) == 0 {
+		return fmt.Errorf("scoped insert rows %s: no columns", table)
+	}
+	for i, row := range rows {
+		if len(row) != len(cols) {
+			return fmt.Errorf("scoped insert rows %s: row %d has %d values for %d columns", table, i, len(row), len(cols))
+		}
+	}
+	batch := (maxStatementParams - 1) / len(cols)
+	for start := 0; start < len(rows); start += batch {
+		chunk := rows[start:min(start+batch, len(rows))]
+		args := make([]any, 1, 1+len(chunk)*len(cols))
+		args[0] = sc.accountID
+		values := make([]string, 0, len(chunk))
+		placeholders := make([]string, len(cols)+1)
+		placeholders[0] = "$1"
+		for _, row := range chunk {
+			for j := range cols {
+				placeholders[j+1] = fmt.Sprintf("$%d", len(args)+j+1)
+			}
+			values = append(values, "("+strings.Join(placeholders, ", ")+")")
+			args = append(args, row...)
+		}
+		sql := fmt.Sprintf(`INSERT INTO %s (account_id, %s) VALUES %s`,
+			table, strings.Join(cols, ", "), strings.Join(values, ", "))
+		if _, err := sc.execRunner().Exec(ctx, sql, args...); err != nil {
+			return fmt.Errorf("scoped insert rows %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
 // InsertReturningID 向业务表插入一行并返回服务端生成或调用方提供的 id。
 func (sc AccountScope) InsertReturningID(ctx context.Context, table string, cols []string, args ...any) (string, error) {
 	if sc.accountID == "" {

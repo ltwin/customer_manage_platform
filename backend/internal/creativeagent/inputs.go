@@ -424,16 +424,30 @@ func renderedText(payload []byte) string {
 // ordinals below, so the frozen inputs still read in conversation order.
 const deferredHistoryOrdinal = 1 << 20
 
-// inputWriter appends one run's frozen inputs from a starting ordinal.
+// inputWriter collects one run's frozen inputs from a starting ordinal and
+// writes them in one statement: a long history is hundreds of rows, and one
+// round trip each made starting a run slow wherever the database is not
+// next door.
 type inputWriter struct {
 	tx      store.TxAccountScope
 	runID   string
 	ordinal int
+	rows    [][]any
 }
 
-func (w *inputWriter) insert(ctx context.Context, role, level string, body, id *string, snapshot any) error {
-	defer func() { w.ordinal++ }()
-	return w.tx.Insert(ctx, "creative_run_inputs", []string{"run_id", "batch_ordinal", "ordinal", "input_role", "read_level", "body", "content_revision_id", "source_revision_snapshot"}, w.runID, initialInputBatch, w.ordinal, role, level, body, id, snapshot)
+var inputColumns = []string{"run_id", "batch_ordinal", "ordinal", "input_role", "read_level", "body", "content_revision_id", "source_revision_snapshot"}
+
+func (w *inputWriter) insert(_ context.Context, role, level string, body, id *string, snapshot any) error {
+	w.rows = append(w.rows, []any{w.runID, initialInputBatch, w.ordinal, role, level, body, id, snapshot})
+	w.ordinal++
+	return nil
+}
+
+// flush writes what was collected. Nothing is stored until it runs.
+func (w *inputWriter) flush(ctx context.Context) error {
+	rows := w.rows
+	w.rows = nil
+	return w.tx.InsertRows(ctx, "creative_run_inputs", inputColumns, rows)
 }
 
 // freezeHistoryInputsInTx writes a projection as the run's history: the skill
@@ -442,8 +456,10 @@ func (w *inputWriter) insert(ctx context.Context, role, level string, body, id *
 // returned for whatever the run freezes after it.
 func freezeHistoryInputsInTx(ctx context.Context, tx store.TxAccountScope, runID string, p historyProjection) (int, error) {
 	w := &inputWriter{tx: tx, runID: runID}
-	err := w.history(ctx, p)
-	return w.ordinal, err
+	if err := w.history(ctx, p); err != nil {
+		return w.ordinal, err
+	}
+	return w.ordinal, w.flush(ctx)
 }
 
 func (w *inputWriter) history(ctx context.Context, p historyProjection) error {
@@ -550,9 +566,11 @@ func (s *Service) freezeRequestInputsInTx(ctx context.Context, tx store.TxAccoun
 		if err != nil {
 			return err
 		}
-		return w.insert(ctx, "selection", "metadata_only", &text, nil, nil)
+		if err := w.insert(ctx, "selection", "metadata_only", &text, nil, nil); err != nil {
+			return err
+		}
 	}
-	return nil
+	return w.flush(ctx)
 }
 
 func bodyMessage(body Body, role string) *schema.Message {

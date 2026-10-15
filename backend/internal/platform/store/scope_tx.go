@@ -206,6 +206,10 @@ func (sc TxAccountScope) Insert(ctx context.Context, table string, cols []string
 	return sc.scope.Insert(ctx, table, cols, args...)
 }
 
+func (sc TxAccountScope) InsertRows(ctx context.Context, table string, cols []string, rows [][]any) error {
+	return sc.scope.InsertRows(ctx, table, cols, rows)
+}
+
 func (sc TxAccountScope) InsertReturningID(ctx context.Context, table string, cols []string, args ...any) (string, error) {
 	return sc.scope.InsertReturningID(ctx, table, cols, args...)
 }
