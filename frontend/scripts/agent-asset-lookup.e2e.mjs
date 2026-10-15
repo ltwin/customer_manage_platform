@@ -53,6 +53,8 @@ try {
  assert.match(await page.getByText(/助手还会按需查找资产库/).innerText(),/按需查找资产库/)
  await page.getByRole('button',{name:'知道了，发送'}).click()
  await page.waitForFunction(()=>document.querySelectorAll('.cc-agent-uploads li').length===0)
+ // The composer clears on send now, before the requests go out: wait for the run itself.
+ for(let i=0;i<50&&!posts.some(p=>p.path.endsWith('/runs'));i++)await page.waitForTimeout(100)
  const consent=posts.find(p=>p.path.endsWith('/egress-consents')).body.payload
  assert.equal(consent.mode,'account_library')
  assert.deepEqual(consent.selected_revision_ids,['ccrv_pasted'],'old message references must not enter new grant')

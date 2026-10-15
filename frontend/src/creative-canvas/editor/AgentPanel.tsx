@@ -82,6 +82,15 @@ import {
   type ContextUsage,
 } from './agentContext.ts'
 import { AgentContextRing } from './AgentContextRing.tsx'
+import {
+  acceptOutgoing,
+  messageParts,
+  outgoingIn,
+  outgoingParts,
+  refreshAfterSend,
+  type MessagePart,
+  type Outgoing,
+} from './agentOutgoing.ts'
 import './agent.css'
 
 type Catalog = components['schemas']['CreativeAgentCatalog']
@@ -90,6 +99,8 @@ type MessagePage = components['schemas']['CreativeAgentMessagePage']
 type Consent = components['schemas']['CreativeEgressConsent']
 type Message = MessagePage['items'][number]
 type Reply = AgentRun | Conversation | Consent
+// One empty list, so an empty thread is the same value from render to render.
+const noMessages: Message[] = []
 
 // 自动命名在回答结束后异步完成，期间按这个间隔重读几次会话列表。
 const namingPolls = 4
@@ -248,12 +259,16 @@ function AgentConversation({
   const [storageBroken, setStorageBroken] = useState(false)
   const [pending, setPending] = useState<PendingAgentChain | null>(null)
   const [refresh, setRefresh] = useState(0)
+  // 只重读当前会话的消息和运行：往已有会话里发一条，用不着连目录和列表一起读。
+  const [threadRefresh, setThreadRefresh] = useState(0)
+  // 刚发出的一条：点发送就画出来，不等两次请求和重读走完。
+  const [outgoing, setOutgoing] = useState<Outgoing | null>(null)
   const [naming, setNaming] = useState(0)
   const pendingRef = useRef<PendingAgentChain | null>(null)
   const mounted = useRef(false)
   const performing = useRef(false)
   const thread =
-    threadWindow?.conversation === conversation ? threadWindow.items : []
+    threadWindow?.conversation === conversation ? threadWindow.items : noMessages
   const {
     history,
     content: historyContent,
@@ -406,7 +421,7 @@ function AgentConversation({
         )
       })
     return () => abort.abort()
-  }, [conversation, refresh])
+  }, [conversation, refresh, threadRefresh])
   useEffect(() => {
     for (const run of runs) followRun(run.id)
   }, [runs])
@@ -488,10 +503,14 @@ function AgentConversation({
         (path, body, operation) =>
           api.send<Reply>(account, path, body, operation),
       )
-      if (outcome.kind === 'lost') return
+      if (outcome.kind === 'lost') {
+        if (mounted.current) setOutgoing(null)
+        return
+      }
       if (outcome.kind === 'done') {
         const reply = outcome.reply as Reply
         if ('trigger_message_id' in reply) {
+          setOutgoing((old) => old && acceptOutgoing(old, reply))
           setConversation(reply.conversation_id)
           if (!keepDraft) {
             setDraft('')
@@ -507,10 +526,17 @@ function AgentConversation({
             ? outcome.error.message
             : '提交结果暂不确定，请确认原操作',
         )
-        // 明确被拒：链已清掉，原文回到输入框；建好的对话照样留着。
-        if (outcome.kind === 'rejected') restoreDraft(outcome.chain.draft)
+        // 原文回到输入框：明确被拒时链已清掉，可以改了再发；结果未知时链还在，
+        // 输入框随链锁着，等确认送达或重新发送。建好的对话照样留着。
+        setOutgoing(null)
+        restoreDraft(outcome.chain.draft)
       }
-      setRefresh((value) => value + 1)
+      if (
+        outcome.kind === 'done' &&
+        refreshAfterSend(command, outcome.reply) === 'thread'
+      )
+        setThreadRefresh((value) => value + 1)
+      else setRefresh((value) => value + 1)
     } finally {
       performing.current = false
       if (mounted.current) setBusy(false)
@@ -539,7 +565,9 @@ function AgentConversation({
         : { draft: { conversation, model, skill, text: draft, materials: [] } }),
     }
     void notice.confirm().then((ok) => {
-      if (ok) void perform(chain, keepDraft)
+      if (!ok) return
+      showOutgoing(outgoingParts([commandSegment(value)], titleOf), !keepDraft)
+      void perform(chain, keepDraft)
     })
   }
   function sendDraft() {
@@ -612,8 +640,27 @@ function AgentConversation({
     }
     // 新消息才会带出新内容，先过首次外发说明；取消时草稿原样留在输入框。
     void notice.confirm().then((ok) => {
-      if (ok) void perform(chain)
+      if (!ok) return
+      showOutgoing(outgoingParts(segments, titleOf, selected?.display_name))
+      void perform(chain)
     })
+  }
+  // 点发送就把这条画进对话、清空输入框；草稿已记在待确认链里，没送达会放回来。
+  function showOutgoing(parts: MessagePart[], clear = true) {
+    setOutgoing({ conversation, parts })
+    if (clear) {
+      setDraft('')
+      setMaterials([])
+      attachments.clear()
+    }
+    followLatest()
+  }
+  // 引用的标题：画布或素材库里选的，或者刚上传的附件。
+  function titleOf(revisionID: string) {
+    return (
+      references.find((item) => item.revisionID === revisionID)?.title ??
+      uploaded.find((item) => item.id === revisionID)?.title
+    )
   }
   const turn = useMemo<TurnContext>(
     () => ({
@@ -698,6 +745,12 @@ function AgentConversation({
           : !thread.length && runs.length
             ? 'loading'
             : null
+  const sending = outgoingIn(outgoing, conversation, thread)
+  // 读回了真消息，刚发出的那条就功成身退。
+  useEffect(() => {
+    if (outgoing?.trigger && !outgoingIn(outgoing, outgoing.conversation, thread))
+      setOutgoing(null)
+  }, [outgoing, thread])
   function reread() {
     setError('')
     if (listRead === 'failed') setListRead('loading')
@@ -975,7 +1028,7 @@ function AgentConversation({
               )}
             </div>
           )}
-          {reading === 'loading' && <ThreadLoading />}
+          {reading === 'loading' && !sending && <ThreadLoading />}
           {reading === 'failed' && (
             <div className="cc-agent-read-failed" role="status">
               <span>对话没有读出来。</span>
@@ -984,7 +1037,7 @@ function AgentConversation({
               </button>
             </div>
           )}
-          {!reading && !thread.length && !archivedView && (
+          {!reading && !thread.length && !archivedView && !sending && (
             <div className="cc-agent-empty">
               <span className="cc-agent-empty-mark" aria-hidden="true">
                 <Sparkles size={22} />
@@ -1016,7 +1069,7 @@ function AgentConversation({
               if (message.role === 'user')
                 return (
                   <div className="cc-agent-exchange" key={message.id}>
-                    <UserMessage message={message} references={references} />
+                    <UserMessage parts={messageParts(message.body.blocks, titleOf)} />
                     {runID && <RunTurn runID={runID} />}
                   </div>
                 )
@@ -1029,6 +1082,12 @@ function AgentConversation({
                 />
               ) : null
             })}
+            {sending && (
+              <div className="cc-agent-exchange is-sending">
+                <UserMessage parts={sending.parts} sending />
+                {sending.run && <RunTurn runID={sending.run} />}
+              </div>
+            )}
           </AgentTurnContext.Provider>
         </div>
       </div>
@@ -1249,33 +1308,32 @@ function shortTime(value: string): string {
     : date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
-// What the photographer sent: their words, with what they referenced as chips.
+// What the creator sent: their words, with what they referenced as chips. A
+// message still on its way is drawn the same, only fainter.
 function UserMessage({
-  message,
-  references,
+  parts,
+  sending = false,
 }: {
-  message: Message
-  references: { revisionID?: string | null; title: string }[]
+  parts: MessagePart[]
+  sending?: boolean
 }) {
   return (
-    <div className="cc-agent-user">
-      {message.body.blocks.map((block, index) =>
-        block.type === 'command' ? (
+    <div className="cc-agent-user" aria-busy={sending || undefined}>
+      {parts.map((part, index) =>
+        part.kind === 'command' ? (
           <span key={index}>
-            <span className="cc-agent-command">/{block.command}</span>
-            {block.text && ` ${block.text}`}
+            <span className="cc-agent-command">/{part.command}</span>
+            {part.text && ` ${part.text}`}
           </span>
-        ) : block.type === 'text' ? (
-          <span key={index}>{block.text}</span>
+        ) : part.kind === 'text' ? (
+          <span key={index}>{part.text}</span>
         ) : (
           <span className="cc-agent-chip" key={index}>
-            {block.skill?.display_name ??
-              references.find((item) => item.revisionID === block.ref_id)
-                ?.title ??
-              '引用素材'}
+            {part.title}
           </span>
         ),
       )}
+      {sending && <span className="sr-only">发送中</span>}
     </div>
   )
 }
