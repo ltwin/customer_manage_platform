@@ -147,6 +147,28 @@ try {
     await page.waitForFunction(() => document.querySelector('[aria-label="创作问题"]')?.textContent?.includes('会被拒的一句'))
     await page.close()
   }
+  // 「+」一处收齐：上传、资产库、画布引用和命令，不再另有回形针。
+  {
+    const { page, release } = await open(browser)
+    release()
+    assert.equal(await page.getByRole('button', { name: '上传参考图' }).count(), 0)
+    const menu = () => page.getByRole('listbox', { name: '添加', exact: true })
+    await page.getByRole('combobox', { name: '添加', exact: true }).click()
+    const names = await menu().getByRole('option').evaluateAll((items) => items.map((item) => item.querySelector('.cc-picker-label')?.textContent))
+    assert.deepEqual(names, ['上传图片', '从资产库选', '引用画布节点', '压缩上下文'])
+    assert.deepEqual(await menu().locator('.cc-picker-group').allTextContents(), ['添加', '命令'])
+    await page.screenshot({ path: '/tmp/creative-agent-add-menu.png' })
+    const chooser = page.waitForEvent('filechooser')
+    await menu().getByRole('option', { name: /上传图片/ }).click()
+    await chooser
+    await page.getByRole('combobox', { name: '添加', exact: true }).click()
+    await menu().getByRole('option', { name: /从资产库选/ }).click()
+    await page.getByRole('dialog', { name: '引用素材库' }).getByRole('button', { name: '关闭' }).click()
+    await page.getByRole('combobox', { name: '添加', exact: true }).click()
+    await menu().getByRole('option', { name: /引用画布节点/ }).click()
+    await page.getByText('先连接画布上的节点，或从资产库添加参考').waitFor()
+    await page.close()
+  }
   console.log('agent send e2e passed')
 } finally {
   await browser.close()

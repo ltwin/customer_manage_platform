@@ -203,3 +203,41 @@
   background: var(--primary);
   box-shadow: none;
 }
+
+/* 分组名：安静的小字，第一组之后留出间隔。 */
+.cc-picker-list .cc-picker-group {
+  padding: 6px 10px 4px;
+  color: var(--fg-3);
+  font-size: 11.5px;
+  user-select: none;
+}
+.cc-picker-list .cc-picker-option + .cc-picker-group {
+  margin-top: 6px;
+}
+
+/* 动作菜单：行更紧凑，图标不加底，说明跟在名称后面。 */
+.cc-picker-list.is-action .cc-picker-option {
+  min-height: 34px;
+  padding: 4px 10px;
+}
+.cc-picker-list.is-action .cc-picker-icon,
+.cc-picker-list.is-action .cc-picker-option.is-active .cc-picker-icon {
+  width: 18px;
+  height: 18px;
+  background: none;
+  color: var(--fg-2);
+}
+.cc-picker-list.is-action .cc-picker-text {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+.cc-picker-list.is-action .cc-picker-label {
+  flex: none;
+}
+.cc-picker-list.is-action .cc-picker-desc {
+  overflow: hidden;
+  margin-top: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

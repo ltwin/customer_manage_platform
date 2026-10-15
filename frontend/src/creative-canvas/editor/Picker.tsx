@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useId,
   useLayoutEffect,
@@ -21,6 +22,8 @@ export type PickerOption = {
   meta?: string
   /** 层级缩进，用于子分组。 */
   depth?: number
+  /** 所在分组；相邻同组的项归在一个组名下。 */
+  group?: string
   disabled?: boolean
 }
 
@@ -38,6 +41,8 @@ type Common = {
   minWidth?: number
   align?: 'start' | 'end'
   empty?: string
+  /** 动作菜单：每次选择都触发 onChange、不标选中，说明常显在名称右侧。 */
+  action?: boolean
 }
 type Single = Common & {
   value: string
@@ -76,12 +81,15 @@ export default function Picker(props: Single | Multiple) {
     minWidth = 0,
     align = 'start',
     empty = '暂无可选项',
+    action = false,
   } = props
   const multiple = props.values !== undefined
   const isSelected = (option: PickerOption) =>
-    props.values !== undefined
-      ? props.values.includes(option.value)
-      : option.value === props.value
+    action
+      ? false
+      : props.values !== undefined
+        ? props.values.includes(option.value)
+        : option.value === props.value
   const id = useId()
   const trigger = useRef<HTMLButtonElement>(null)
   const list = useRef<HTMLDivElement>(null)
@@ -118,7 +126,7 @@ export default function Picker(props: Single | Multiple) {
       return
     }
     close()
-    if (option.value !== props.value) props.onChange(option.value)
+    if (action || option.value !== props.value) props.onChange(option.value)
   }
 
   useEffect(() => {
@@ -254,7 +262,7 @@ export default function Picker(props: Single | Multiple) {
           <div
             ref={list}
             id={id}
-            className="cc-picker-list"
+            className={`cc-picker-list${action ? ' is-action' : ''}`}
             role="listbox"
             aria-label={label}
             aria-multiselectable={multiple || undefined}
@@ -266,52 +274,60 @@ export default function Picker(props: Single | Multiple) {
             )}
             {options.map((option, index) => {
               const on = isSelected(option)
+              const heading =
+                option.group && option.group !== options[index - 1]?.group
               return (
-                <div
-                  key={option.value}
-                  id={`${id}-${index}`}
-                  role="option"
-                  aria-selected={on}
-                  aria-disabled={option.disabled || undefined}
-                  className={`cc-picker-option${index === active ? ' is-active' : ''}${on ? ' is-selected' : ''}`}
-                  style={
-                    option.depth
-                      ? { paddingLeft: 5 + option.depth * 18 }
-                      : undefined
-                  }
-                  // 用 pointermove 而不是 enter：说明展开会推动下方各项，
-                  // 指针不动时不该因此换高亮。
-                  onPointerMove={() => {
-                    if (!option.disabled && index !== active) setActive(index)
-                  }}
-                  onClick={() => {
-                    setActive(index)
-                    choose(option)
-                  }}
-                >
-                  {multiple && (
-                    <span className="cc-picker-box" aria-hidden="true">
-                      {on && <Check size={12} />}
-                    </span>
+                <Fragment key={option.value}>
+                  {heading && (
+                    <div className="cc-picker-group" role="presentation">
+                      {option.group}
+                    </div>
                   )}
-                  {option.icon && (
-                    <span className="cc-picker-icon">{option.icon}</span>
-                  )}
-                  <span className="cc-picker-text">
-                    <span className="cc-picker-label">{option.label}</span>
-                    {option.description && index === active && (
-                      <span className="cc-picker-desc">
-                        {option.description}
+                  <div
+                    id={`${id}-${index}`}
+                    role="option"
+                    aria-selected={on}
+                    aria-disabled={option.disabled || undefined}
+                    className={`cc-picker-option${index === active ? ' is-active' : ''}${on ? ' is-selected' : ''}`}
+                    style={
+                      option.depth
+                        ? { paddingLeft: 5 + option.depth * 18 }
+                        : undefined
+                    }
+                    // 用 pointermove 而不是 enter：说明展开会推动下方各项，
+                    // 指针不动时不该因此换高亮。
+                    onPointerMove={() => {
+                      if (!option.disabled && index !== active) setActive(index)
+                    }}
+                    onClick={() => {
+                      setActive(index)
+                      choose(option)
+                    }}
+                  >
+                    {multiple && (
+                      <span className="cc-picker-box" aria-hidden="true">
+                        {on && <Check size={12} />}
                       </span>
                     )}
-                  </span>
-                  {option.meta && (
-                    <span className="cc-picker-meta">{option.meta}</span>
-                  )}
-                  {on && !multiple && !option.meta && (
-                    <Check size={14} className="cc-picker-check" />
-                  )}
-                </div>
+                    {option.icon && (
+                      <span className="cc-picker-icon">{option.icon}</span>
+                    )}
+                    <span className="cc-picker-text">
+                      <span className="cc-picker-label">{option.label}</span>
+                      {option.description && (action || index === active) && (
+                        <span className="cc-picker-desc">
+                          {option.description}
+                        </span>
+                      )}
+                    </span>
+                    {option.meta && (
+                      <span className="cc-picker-meta">{option.meta}</span>
+                    )}
+                    {on && !multiple && !option.meta && (
+                      <Check size={14} className="cc-picker-check" />
+                    )}
+                  </div>
+                </Fragment>
               )
             })}
           </div>,

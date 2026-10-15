@@ -3,9 +3,12 @@ import { useShallow } from 'zustand/react/shallow'
 import {
   ArrowRight,
   ArrowUp,
+  AtSign,
   ClipboardList,
   History,
+  Library,
   MessageCircle,
+  Minimize2,
   Minus,
   MoreHorizontal,
   Paperclip,
@@ -895,6 +898,46 @@ function AgentConversation({
           : !chosenModel?.available
             ? '当前模型不可用'
             : undefined
+  // 输入框的「+」：把素材带进来的几种方式，加上平时藏在斜杠后面的命令。
+  const addOptions: PickerOption[] = [
+    {
+      value: 'upload',
+      label: '上传图片',
+      description: '也可以粘贴或拖进来，不存入资产库',
+      icon: <Paperclip size={15} />,
+      group: '添加',
+    },
+    {
+      value: 'library',
+      label: '从资产库选',
+      description: '文本或图片，引用固定版本',
+      icon: <Library size={15} />,
+      group: '添加',
+    },
+    {
+      value: 'canvas',
+      label: '引用画布节点',
+      description: '同输入 @',
+      icon: <AtSign size={15} />,
+      group: '添加',
+    },
+    {
+      value: 'compact',
+      label: '压缩上下文',
+      description: compactBlocked ?? '把较早的对话整理成摘要',
+      icon: <Minimize2 size={15} />,
+      meta: '/compact',
+      group: '命令',
+      disabled: !!compactBlocked,
+    },
+  ]
+  function add(value: string) {
+    if (value === 'upload') uploadInput.current?.click()
+    else if (value === 'library') setPickingMaterial(true)
+    else if (value === 'canvas') editor.current?.openPicker()
+    else if (value === 'compact')
+      sendCommand({ name: 'compact', args: '' }, true)
+  }
   const sendable =
     !locked &&
     !active &&
@@ -1226,17 +1269,18 @@ function AgentConversation({
             <div className="cc-agent-composer-foot">
               {!waiting && (
                 <div className="cc-agent-options">
-                  <button
-                    className="cc-agent-attach"
-                    type="button"
-                    aria-label="引用素材"
-                    title="引用素材库里的文本或图片"
+                  <Picker
+                    className="cc-agent-add"
+                    label="添加"
+                    value=""
+                    options={addOptions}
+                    minWidth={300}
                     disabled={locked || !!active}
-                    onClick={() => setPickingMaterial(true)}
+                    action
+                    onChange={add}
                   >
                     <Plus size={15} />
-                  </button>
-                  <button type="button" className="cc-agent-attach" aria-label="上传参考图" title="上传或粘贴图片，不会自动存入资产库" disabled={locked || !!active} onClick={() => uploadInput.current?.click()}><Paperclip size={15} /></button>
+                  </Picker>
                   <input ref={uploadInput} type="file" accept="image/*" multiple hidden onChange={(event) => { const files = Array.from(event.target.files ?? []); event.target.value = ''; if (!locked && !active) void attachments.addFiles(files) }} />
                   <Picker
                     className="cc-agent-mode"

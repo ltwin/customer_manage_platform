@@ -6,7 +6,15 @@ import {
   type Ref,
 } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, Plus, RotateCw, Sparkles, X } from 'lucide-react'
+import {
+  ArrowUp,
+  Library,
+  Paperclip,
+  Plus,
+  RotateCw,
+  Sparkles,
+  X,
+} from 'lucide-react'
 import type { components } from '../../api/schema'
 import * as api from '../editor/api.ts'
 import {
@@ -511,11 +519,21 @@ export default function HomeComposer({
             className="hc-tool"
             label="添加参考图"
             value=""
-            minWidth={160}
+            minWidth={260}
             disabled={locked}
+            action
             options={[
-              { value: 'upload', label: '上传图片' },
-              { value: 'library', label: '从资产库选' },
+              {
+                value: 'upload',
+                label: '上传图片',
+                description: '也可以粘贴或拖进来',
+                icon: <Paperclip size={15} />,
+              },
+              {
+                value: 'library',
+                label: '从资产库选',
+                icon: <Library size={15} />,
+              },
             ]}
             onChange={(value) => {
               if (value === 'upload') files.current?.click()

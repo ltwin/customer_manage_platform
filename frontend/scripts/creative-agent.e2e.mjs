@@ -265,7 +265,7 @@ try {
   await materialPage.getByText('当前模型不支持图片理解，请切换视觉模型或移除图片引用。').waitFor()
   assert(await materialPage.getByRole('button',{name:'发送',exact:true}).isDisabled())
   await pick(materialPage, '模型', '视觉模型')
-  await materialPage.getByRole('button',{name:'引用素材',exact:true}).click()
+  await pick(materialPage, '添加', /从资产库选/)
   await materialPage.getByRole('dialog',{name:'引用素材库'}).getByRole('button',{name:/拍摄方案/}).click()
   assert.equal(await materialPage.locator('.cc-agent-box [data-ref]').count(),2)
   await materialPage.getByRole('button',{name:'发送',exact:true}).click()

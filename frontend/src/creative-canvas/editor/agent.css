@@ -969,21 +969,13 @@
 .cc-agent-box {
   position: relative;
 }
-.cc-agent-panel button.cc-agent-attach {
-  display: inline-grid;
-  place-items: center;
+.cc-agent-options .cc-agent-add {
   flex: none;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--fg-2);
 }
-.cc-agent-panel button.cc-agent-attach:hover:not(:disabled) {
-  background: var(--s3);
-  color: var(--fg);
+.cc-agent-options .cc-agent-add > .cc-picker-trigger {
+  justify-content: center;
+  width: 28px;
+  padding: 0;
 }
 
 /* 面板收起时，入口上的点说明助手还在跑（琥珀）或在等你（白） */
