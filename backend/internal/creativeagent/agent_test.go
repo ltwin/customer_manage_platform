@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -776,10 +777,21 @@ func TestTheCatalogIsEmptyUntilSomethingIsImported(t *testing.T) {
 
 func TestASkillIsUnavailableUntilItsToolsAreRegistered(t *testing.T) {
 	f := setup(t)
+	var logs bytes.Buffer
+	f.service.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
 	published := f.publishSkill("reference-direction", "参考整理与创作方向")
 	view, err := f.service.Catalog(t.Context(), f.alice)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The picker hides it; the operator has to be told why, once.
+	if _, err := f.service.Catalog(t.Context(), f.alice); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(logs.String(), "creative skill unavailable"); got != 1 ||
+		!strings.Contains(logs.String(), "slug=reference-direction") ||
+		!strings.Contains(logs.String(), "尚未在本部署注册") {
+		t.Fatalf("the reason must be logged once with the skill: %q", logs.String())
 	}
 	if len(view.Skills) != 1 {
 		t.Fatalf("the published skill is missing from the catalog: %+v", view.Skills)

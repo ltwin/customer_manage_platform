@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativeskill"
@@ -208,6 +209,11 @@ type Service struct {
 	// nobody will ever execute.
 	runtime jobs.Runtime
 	logger  *slog.Logger
+	// unavailableLogged remembers which skill versions were already reported
+	// as unavailable, so the reason is logged once per process, not on every
+	// catalog read. A pointer, because a run executes on a copy of the service
+	// and every copy should share one record.
+	unavailableLogged *sync.Map
 }
 
 // NewService takes the gateway as well as its catalog. The two must be the same
@@ -217,7 +223,7 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 	if gateway == nil || models == nil || skills == nil {
 		return nil, errors.New("creative agent needs a gateway, a model catalog and a skill directory")
 	}
-	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default()}, nil
+	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default(), unavailableLogged: &sync.Map{}}, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.

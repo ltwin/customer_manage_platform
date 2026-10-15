@@ -35,6 +35,7 @@ type fixture struct {
 	// build a second service on the same deployment facts.
 	platform store.AccountScope
 	a, b     store.AccountScope
+	store    *store.Store
 }
 
 func setup(t *testing.T) *fixture {
@@ -71,7 +72,7 @@ func setup(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	return &fixture{
-		db: db, svc: svc, objects: local, platform: platform,
+		db: db, svc: svc, objects: local, platform: platform, store: st,
 		a: st.ScopeFor(auth.AccountContext{AccountID: "skill-a"}),
 		b: st.ScopeFor(auth.AccountContext{AccountID: "skill-b"}),
 	}

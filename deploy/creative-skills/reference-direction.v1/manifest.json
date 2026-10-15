@@ -7,11 +7,10 @@
   "input_kinds": ["text", "canvas_selection"],
   "max_inputs": 20,
   "tool_allowlist": [
-    "search_assets@1",
-    "read_nodes@1",
-    "add_asset_nodes@1",
-    "create_text_nodes@1",
-    "arrange_selection@1"
+    "search_assets@2",
+    "read_canvas@1",
+    "edit_canvas@1",
+    "read_skill_resource@1"
   ],
   "required_model_capabilities": ["tool_calling"],
   "output_contract": "一组来自真实检索结果的参考节点，加一个说明取舍的文字节点；数量不足时如实交付已有结果并说明缺口。",

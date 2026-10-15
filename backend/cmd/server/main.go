@@ -143,6 +143,29 @@ func classifyConfigStartupFailure(err error) error {
 	return newStartupFailure("config-load", key, errorClass, err)
 }
 
+// syncPlatformSkills 把镜像里带的内置 Skill 包同步进平台目录：内容没变的跳过，
+// 变了的追加新版本并设为当前版本。失败只记日志不阻断启动——目录里已有的版本照常可用，
+// 下次启动用同一个 operation id 重放。
+func syncPlatformSkills(ctx context.Context, cfg config.Config, skills *creativeskill.Service, logger *slog.Logger) {
+	if cfg.CreativeSkillPackagesDir == "" {
+		logger.Info("platform skill sync skipped", slog.String("reason", "CREATIVE_SKILL_PACKAGES_DIR unset"))
+		return
+	}
+	syncCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	synced, err := skills.SyncPlatform(syncCtx, os.DirFS(cfg.CreativeSkillPackagesDir))
+	attrs := []any{
+		slog.Any("published", synced.Published),
+		slog.Int("unchanged", synced.Unchanged),
+		slog.Int("failed", synced.Failed),
+	}
+	if err != nil {
+		logger.Warn("platform skill sync incomplete", append(attrs, slog.String("error", err.Error()))...)
+		return
+	}
+	logger.Info("platform skills synced", attrs...)
+}
+
 // composeObjectStores 按 AVATAR_STORAGE_DRIVER 装配对象存储：local 双根目录，
 // 或共享 OSS bucket（头像 avatars/ 与策划素材 planning/ 键前缀天然分区）。
 func composeObjectStores(ctx context.Context, cfg config.Config) (immutablefs.ObjectStore, avatarmedia.ObjectStore, error) {
@@ -232,13 +255,13 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return newStartupFailure("creative-agent-init", "CREATIVE_LLM_CATALOG", "model-catalog", err)
 	}
 	// Skills come from the database and the object store, not from this binary.
-	// A deployment that has not run `creativectl skill import` yet starts fine
-	// and reports an empty skill catalog; ordinary conversation does not depend
-	// on it.
+	// A deployment with no platform skills yet starts fine and reports an empty
+	// skill catalog; ordinary conversation does not depend on it.
 	creativeSkills, err := creativeskill.Compose(cfg, s)
 	if err != nil {
 		return newStartupFailure("creative-skill-init", "CREATIVE_SKILL_LOCAL_ROOT", "object-storage", err)
 	}
+	syncPlatformSkills(ctx, cfg, creativeSkills, logger)
 	creativeAgent, err := creativeagent.NewService(creativeGateway, gatewayOptions.Catalog, creativeSkills)
 	if err != nil {
 		return newStartupFailure("creative-agent-init", "skill-directory", "model-catalog", err)

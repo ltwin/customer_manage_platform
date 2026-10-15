@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -141,6 +142,9 @@ func (s *Service) listSkills(ctx context.Context, scope store.AccountScope, quer
 	items := make([]SkillEntry, 0, len(page.Items))
 	for _, entry := range page.Items {
 		available, why := runnableHere(registered, entry.ToolAllowlist)
+		if !available {
+			s.logUnavailableSkill(entry.Slug, entry.SkillID, entry.VersionID, entry.Origin, why)
+		}
 		items = append(items, SkillEntry{
 			SkillID: entry.SkillID, VersionID: entry.VersionID, Origin: entry.Origin,
 			Slug: entry.Slug, DisplayName: entry.DisplayName, Description: entry.Description,
@@ -185,6 +189,20 @@ func withdrawnReason(snapshot creativeskill.Snapshot) string {
 		return snapshot.DisabledReason
 	}
 	return "该 Skill 版本已停用"
+}
+
+// logUnavailableSkill tells the operator why a skill is unavailable. The
+// browser leaves such a skill out of the picker without a word, because the
+// cause is this deployment's, not something a creator can act on; the log is
+// where it has to be explained.
+func (s *Service) logUnavailableSkill(slug, skillID, versionID, origin, why string) {
+	if _, seen := s.unavailableLogged.LoadOrStore(versionID, struct{}{}); seen {
+		return
+	}
+	s.logger.Warn("creative skill unavailable",
+		slog.String("slug", slug), slog.String("skill_id", skillID),
+		slog.String("version_id", versionID), slog.String("origin", origin),
+		slog.String("reason", why))
 }
 
 // runnableHere reports whether this deployment can actually dispatch what a

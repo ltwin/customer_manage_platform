@@ -34,18 +34,25 @@ type ObjectPort interface {
 // entry points; no HTTP handler may reach them.
 type Service struct {
 	objects ObjectPort
-	// platform is the scope of the one account allowed to publish platform
-	// skills, and the only way this package reads them. It lives here rather
-	// than in whichever command calls today, because the rule is about which
-	// account owns the platform catalog, not about which binary is running.
+	// platform is the scope of the platform catalog's owner — PlatformOwner in
+	// every composed service — and the only way this package reads or publishes
+	// platform skills.
 	//
 	// It is a scope rather than an identifier so that both halves — "may this
 	// caller publish as platform" and "read the platform catalog" — come from
 	// one value that cannot disagree with itself. The zero scope carries an
-	// empty account id and means this deployment has no platform catalog; it
-	// can never run a query, because the store refuses an empty scope.
+	// empty owner and means there is no platform catalog; it can never run a
+	// query, because the store refuses an empty scope.
 	platform store.AccountScope
 }
+
+// PlatformOwner holds the platform catalog in the owner column of the skill
+// tables. It is not an account: nothing can sign in as it, generated account
+// ids are hex or UUIDs so none can collide with it, and it is named here rather than in
+// configuration because which owner holds built-in skills is not something a
+// deployment gets to choose. Who may publish into it is decided by the entry
+// point — the startup sync and creativectl today, an administrator later.
+const PlatformOwner = "platform"
 
 func NewService(objects ObjectPort, platform store.AccountScope) (*Service, error) {
 	if objects == nil {

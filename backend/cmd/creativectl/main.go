@@ -1,7 +1,8 @@
 // Command creativectl is the trusted administrative entry point for creative
 // skills. Publishing is a deployment act, not a photographer's request: there
-// is no HTTP surface for it, and this command is the only way a skill version
-// comes into existence or its objects are reclaimed.
+// is no HTTP surface for it. Besides the server's startup sync of built-in
+// packages, this command is the only way a skill version comes into existence,
+// and the only way its objects are reclaimed.
 package main
 
 import (
@@ -133,8 +134,25 @@ func runImport(ctx context.Context, args []string, deps commandDeps) int {
 	in.packageDir = strings.TrimSpace(in.packageDir)
 	in.account = strings.TrimSpace(in.account)
 	in.operationID = strings.TrimSpace(in.operationID)
-	if in.packageDir == "" || in.account == "" {
-		return fail(deps.stderr, "import", exitInvalidInput, "--package-dir 与 --account 必填")
+	if in.packageDir == "" {
+		return fail(deps.stderr, "import", exitInvalidInput, "--package-dir 必填")
+	}
+	// A platform skill belongs to no account, so naming one is a mistake rather
+	// than a choice; an account skill must name its account, and that account
+	// can never be the reserved platform owner.
+	owner := in.account
+	switch in.origin {
+	case "platform":
+		if in.account != "" {
+			return fail(deps.stderr, "import", exitInvalidInput, "平台 Skill 不属于任何账号：去掉 --account")
+		}
+		owner = creativeskill.PlatformOwner
+	case "account":
+		if in.account == "" || in.account == creativeskill.PlatformOwner {
+			return fail(deps.stderr, "import", exitInvalidInput, "--account 必填，且不能是平台归属")
+		}
+	default:
+		return fail(deps.stderr, "import", exitInvalidInput, "--origin 只能是 account 或 platform")
 	}
 	// The operation id is required rather than generated, because it is what
 	// makes rerunning this command a replay instead of a second publication.
@@ -149,26 +167,11 @@ func runImport(ctx context.Context, args []string, deps commandDeps) int {
 	if err != nil {
 		return fail(deps.stderr, "import", exitInternal, "检查 creativectl 运行配置")
 	}
-	switch in.origin {
-	case "account":
-	case "platform":
-		// Which account owns the platform catalog is a deployment fact. Letting
-		// the flag decide would make a typo enough to mint a platform skill that
-		// every account can see.
-		if cfg.CreativePlatformAccountID == "" {
-			return fail(deps.stderr, "import", exitNotReady, "未配置 CREATIVE_PLATFORM_ACCOUNT_ID：本部署没有平台发布账号")
-		}
-		if cfg.CreativePlatformAccountID != in.account {
-			return fail(deps.stderr, "import", exitInvalidInput, "--account 必须是配置里的平台发布账号")
-		}
-	default:
-		return fail(deps.stderr, "import", exitInvalidInput, "--origin 只能是 account 或 platform")
-	}
 	pkg, err := creativeskill.ReadPackage(os.DirFS(in.packageDir))
 	if err != nil {
 		return fail(deps.stderr, "import", exitInvalidInput, "包目录不合法："+err.Error())
 	}
-	app, scope, closeApp, err := deps.open(ctx, cfg, in.account)
+	app, scope, closeApp, err := deps.open(ctx, cfg, owner)
 	if err != nil {
 		return fail(deps.stderr, "import", exitInternal, "检查 creativectl 运行配置")
 	}
@@ -193,15 +196,25 @@ func runReclaim(ctx context.Context, args []string, deps commandDeps) int {
 	flags := flag.NewFlagSet("creativectl-skill-reclaim", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	account := flags.String("account", "", "")
+	platform := flags.Bool("platform", false, "")
 	limit := flags.Int("limit", 50, "")
-	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || strings.TrimSpace(*account) == "" || *limit < 1 {
-		return fail(deps.stderr, "reclaim", exitInvalidInput, "只允许 --account（必填）与 --limit（正整数）")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *limit < 1 {
+		return fail(deps.stderr, "reclaim", exitInvalidInput, "只允许 --account 或 --platform（二选一）与 --limit（正整数）")
+	}
+	owner := strings.TrimSpace(*account)
+	if *platform {
+		if owner != "" {
+			return fail(deps.stderr, "reclaim", exitInvalidInput, "--account 与 --platform 只能二选一")
+		}
+		owner = creativeskill.PlatformOwner
+	} else if owner == "" || owner == creativeskill.PlatformOwner {
+		return fail(deps.stderr, "reclaim", exitInvalidInput, "--account 必填（平台导入用 --platform）")
 	}
 	cfg, err := deps.loadConfig()
 	if err != nil {
 		return fail(deps.stderr, "reclaim", exitInternal, "检查 creativectl 运行配置")
 	}
-	app, scope, closeApp, err := deps.open(ctx, cfg, strings.TrimSpace(*account))
+	app, scope, closeApp, err := deps.open(ctx, cfg, owner)
 	if err != nil {
 		return fail(deps.stderr, "reclaim", exitInternal, "检查 creativectl 运行配置")
 	}
@@ -262,7 +275,7 @@ func report(output io.Writer, r any, exitCode int) int {
 	return exitCode
 }
 
-func openStore(ctx context.Context, cfg config.Config, accountID string) (application, store.AccountScope, func(), error) {
+func openStore(ctx context.Context, cfg config.Config, owner string) (application, store.AccountScope, func(), error) {
 	database, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, store.AccountScope{}, nil, err
@@ -272,5 +285,5 @@ func openStore(ctx context.Context, cfg config.Config, accountID string) (applic
 		database.Close()
 		return nil, store.AccountScope{}, nil, err
 	}
-	return svc, database.ScopeFor(auth.AccountContext{AccountID: accountID}), database.Close, nil
+	return svc, database.ScopeFor(auth.AccountContext{AccountID: owner}), database.Close, nil
 }

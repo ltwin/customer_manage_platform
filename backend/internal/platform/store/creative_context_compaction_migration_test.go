@@ -8,10 +8,11 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackContextCompaction is the head of the rollback chain: every older
-// migration's rollback helper undoes this one first.
+// rollbackContextCompaction undoes the newer migrations first, then this one;
+// every older migration's rollback helper starts here.
 func rollbackContextCompaction(t *testing.T, url string) {
 	t.Helper()
+	rollbackPlatformSkillOwner(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback agent-context-compaction", err)
 	}
@@ -57,6 +58,7 @@ func TestContextCompactionMigrationKeepsCheckpointsOwned(t *testing.T) {
 	if _, err = db.Exec(`UPDATE creative_agent_compactions SET invalidated_at=now()`); err == nil {
 		t.Fatal("an invalidation without a reason was accepted")
 	}
+	rollbackPlatformSkillOwner(t, url)
 	if err := store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "must be retained") {
 		t.Fatal("lossy rollback", err)
 	}

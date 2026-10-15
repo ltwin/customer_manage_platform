@@ -200,7 +200,7 @@ type createRun struct {
 // would each be a way for work to disappear.
 //
 // The skill is resolved before this transaction opens. A platform skill belongs
-// to the publishing account, so reading it needs that account's scope and can
+// to the platform owner, so reading it needs that owner's scope and can
 // never happen inside this one; what makes the pre-read sound is that a version
 // is immutable. Its availability is the mutable part, and that is re-checked
 // before dispatch, which is where the invariant actually has to hold.

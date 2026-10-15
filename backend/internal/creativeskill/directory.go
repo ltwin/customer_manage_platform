@@ -33,9 +33,9 @@ const maxCatalogQuery = 64
 type CatalogEntry struct {
 	SkillID   string
 	VersionID string
-	// OwnerAccountID is the publishing account. A platform skill is owned by the
-	// trusted publisher, not by the account reading it, and a message that
-	// records this reference has to keep that fact.
+	// OwnerAccountID is the owner: an account, or PlatformOwner for a platform
+	// skill. It is not the account reading it, and a message that records this
+	// reference has to keep that fact.
 	OwnerAccountID string
 	Origin         string
 	Slug           string
@@ -59,7 +59,7 @@ type CatalogPage struct {
 // skills and the deployment's trusted platform catalog, merged into one page.
 //
 // The cross-account half happens here and nowhere else. A caller hands in its
-// own scope and receives value objects; the platform publisher's AccountScope
+// own scope and receives value objects; the platform owner's AccountScope
 // never leaves this package, so no consumer can turn "read the platform
 // catalog" into "read another account's rows" (§5). Every query underneath is
 // still account-scoped — there is no unscoped "find any version" read.
@@ -88,8 +88,8 @@ func (s *Service) ListAccessibleSkills(ctx context.Context, scope store.AccountS
 	if err != nil {
 		return CatalogPage{}, err
 	}
-	// The viewer may itself be the platform publisher, in which case its own
-	// listing already contains the platform skills.
+	// A scope that is the platform owner itself already lists the platform
+	// skills as its own.
 	if platform := s.platform.AccountID(); platform != "" && platform != scope.AccountID() {
 		trusted, err := s.listSkillRows(ctx, s.platform, true, query, cursor != "", key, limit+1)
 		if err != nil {
@@ -139,9 +139,8 @@ const listSkillCond = "current_version_id IS NOT NULL AND availability='active'"
 	" AND ($2::timestamptz IS NULL OR (updated_at,id)<($2::timestamptz,$3::text))" +
 	" AND ($4::text='' OR slug LIKE $4::text||'%' OR display_name ILIKE '%'||$4::text||'%')"
 
-// listPlatformSkillCond additionally excludes the trusted publisher's private
-// skills. Being the platform account does not make everything it owns platform;
-// only what it published as such is shared.
+// listPlatformSkillCond shares only what the platform owner published as
+// platform; anything else filed under it is not part of the catalog.
 const listPlatformSkillCond = listSkillCond + " AND origin='platform'"
 
 func (s *Service) listSkillRows(ctx context.Context, scope store.AccountScope, platformOnly bool,

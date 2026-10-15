@@ -16,17 +16,13 @@ import (
 // owns an expiry sweep over its root, and a frozen skill version is retained
 // until something is entitled to decide otherwise.
 //
-// The platform publisher's scope is built once, here, from the configured
-// account. Composition is where a deployment fact belongs; a request can never
-// name that account, and no caller is ever handed the scope.
+// The platform catalog's scope is built once, here, for the reserved owner. A
+// request can never name that owner, and no caller is ever handed the scope.
 func Compose(cfg config.Config, db *store.Store) (*Service, error) {
 	if db == nil {
 		return nil, fmt.Errorf("creative skill service requires a database")
 	}
-	var platform store.AccountScope
-	if cfg.CreativePlatformAccountID != "" {
-		platform = db.ScopeFor(auth.AccountContext{AccountID: cfg.CreativePlatformAccountID})
-	}
+	platform := db.ScopeFor(auth.AccountContext{AccountID: PlatformOwner})
 	switch cfg.AvatarStorageDriver {
 	case config.StorageDriverOSS:
 		client, err := immutablefs.NewOSSClient(immutablefs.OSSConfig{

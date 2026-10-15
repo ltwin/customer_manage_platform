@@ -18,6 +18,7 @@ import (
 // what it should before it ever reaches a database or an object store.
 type recorder struct {
 	intent creativeskill.PublishIntent
+	owner  string
 	calls  int
 }
 
@@ -41,7 +42,8 @@ func harness(t *testing.T, cfg config.Config) (*recorder, *bytes.Buffer, command
 	return app, out, commandDeps{
 		stdout: out, stderr: out,
 		loadConfig: func() (config.Config, error) { return cfg, nil },
-		open: func(context.Context, config.Config, string) (application, store.AccountScope, func(), error) {
+		open: func(_ context.Context, _ config.Config, owner string) (application, store.AccountScope, func(), error) {
+			app.owner = owner
 			return app, store.AccountScope{}, func() {}, nil
 		},
 	}
@@ -97,30 +99,32 @@ func TestImportPublishesTheDirectoryItWasPointedAt(t *testing.T) {
 	}
 }
 
-// Which account owns the platform catalog is a deployment fact. A flag that
-// could mint a platform skill by naming any account would make every photographer's
-// catalog reachable by a typo.
-func TestPlatformOriginIsBoundToTheConfiguredPublisher(t *testing.T) {
+// A platform skill belongs to the reserved owner, never to an account: naming
+// one is refused, and an account skill cannot be filed under the platform owner.
+func TestPlatformOriginPublishesUnderThePlatformOwner(t *testing.T) {
 	dir := packageDir(t)
+	app, out, deps := harness(t, config.Config{})
+	if code := run(t.Context(), []string{"skill", "import", "--package-dir", dir,
+		"--operation-id", operationID, "--origin", "platform"}, deps); code != exitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if app.owner != creativeskill.PlatformOwner || app.intent.Origin != "platform" {
+		t.Fatalf("published as %q/%q", app.owner, app.intent.Origin)
+	}
 	for _, tc := range []struct {
-		name    string
-		cfg     config.Config
-		account string
-		want    int
+		name string
+		args []string
 	}{
-		{"配置的发布账号", config.Config{CreativePlatformAccountID: "platform-1"}, "platform-1", exitOK},
-		{"别的账号", config.Config{CreativePlatformAccountID: "platform-1"}, "acct-1", exitInvalidInput},
-		{"未配置发布账号", config.Config{}, "platform-1", exitNotReady},
+		{"平台 Skill 指定了账号", []string{"--account", "acct-1", "--origin", "platform"}},
+		{"账号 Skill 用平台归属", []string{"--account", creativeskill.PlatformOwner}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			app, out, deps := harness(t, tc.cfg)
-			code := run(t.Context(), []string{"skill", "import",
-				"--package-dir", dir, "--account", tc.account,
-				"--operation-id", operationID, "--origin", "platform"}, deps)
-			if code != tc.want {
-				t.Fatalf("exit %d, want %d: %s", code, tc.want, out)
+			app, out, deps := harness(t, config.Config{})
+			args := append([]string{"skill", "import", "--package-dir", dir, "--operation-id", operationID}, tc.args...)
+			if code := run(t.Context(), args, deps); code != exitInvalidInput {
+				t.Fatalf("exit %d: %s", code, out)
 			}
-			if tc.want != exitOK && app.calls != 0 {
+			if app.calls != 0 {
 				t.Fatal("a refused import still reached the service")
 			}
 		})
@@ -147,6 +151,7 @@ func TestBadInvocationsAreRefusedBeforeAnythingIsPublished(t *testing.T) {
 		{"包目录不存在", []string{"skill", "import", "--package-dir", filepath.Join(dir, "missing"),
 			"--account", "a", "--operation-id", operationID}, exitInvalidInput},
 		{"reclaim 缺少 account", []string{"skill", "reclaim"}, exitInvalidInput},
+		{"reclaim account 与 platform 并用", []string{"skill", "reclaim", "--account", "a", "--platform"}, exitInvalidInput},
 		{"reclaim limit 非正", []string{"skill", "reclaim", "--account", "a", "--limit", "0"}, exitInvalidInput},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -174,5 +179,15 @@ func TestReclaimReportsWhatOneSweepDid(t *testing.T) {
 	// to whoever reads this output.
 	if report.Imports != 2 || report.Objects != 3 || report.Status != "swept" {
 		t.Fatalf("report %+v", report)
+	}
+}
+
+func TestReclaimSweepsThePlatformOwnerOnRequest(t *testing.T) {
+	app, out, deps := harness(t, config.Config{})
+	if code := run(t.Context(), []string{"skill", "reclaim", "--platform"}, deps); code != exitOK {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if app.owner != creativeskill.PlatformOwner {
+		t.Fatalf("swept %q", app.owner)
 	}
 }

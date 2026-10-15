@@ -37,8 +37,8 @@ var (
 	// can never work, because nothing about their request is racing anyone.
 	ErrSkillIntent = errors.New("creative skill import intent does not match the existing skill")
 	// ErrOriginNotPermitted means this account may not publish under the origin
-	// it asked for. Which account owns the platform catalog is a deployment
-	// fact, so the answer does not depend on which entry point is calling.
+	// it asked for. Only the platform owner's scope publishes platform skills,
+	// so the answer does not depend on which entry point is calling.
 	ErrOriginNotPermitted = errors.New("creative skill origin not permitted for this account")
 	// ErrImportConflict means one operation id arrived carrying two different
 	// requests. Replaying an import is safe; redefining one is not.

@@ -42,7 +42,7 @@ type Config struct {
 	CreativeFFProbe               string // CREATIVE_FFPROBE（可选；空则默认 ffprobe，找不到时视频/音频不开放）
 	CreativeMediaQuotaBytes       int64  // CREATIVE_MEDIA_QUOTA_BYTES（每账号媒体额度；默认 20GiB）
 	CreativeSkillLocalRoot        string // CREATIVE_SKILL_LOCAL_ROOT（local driver；缺省 AvatarLocalRoot 同级 creative-skills）
-	CreativePlatformAccountID     string // CREATIVE_PLATFORM_ACCOUNT_ID（受信平台 Skill 发布账号；未配置则不存在平台目录）
+	CreativeSkillPackagesDir      string // CREATIVE_SKILL_PACKAGES_DIR（内置 Skill 包目录，启动时同步进平台目录；留空不同步）
 }
 
 // AccountAuthConfig 是 server/accountctl 共享的认证 composition 配置。
@@ -120,7 +120,7 @@ func Load() (Config, error) {
 	// one: media owns an expiry sweep over its root, and frozen skill versions
 	// are retained until a general collection exists to decide otherwise.
 	cfg.CreativeSkillLocalRoot = strings.TrimSpace(os.Getenv("CREATIVE_SKILL_LOCAL_ROOT"))
-	cfg.CreativePlatformAccountID = strings.TrimSpace(os.Getenv("CREATIVE_PLATFORM_ACCOUNT_ID"))
+	cfg.CreativeSkillPackagesDir = strings.TrimSpace(os.Getenv("CREATIVE_SKILL_PACKAGES_DIR"))
 	cfg.CreativeFFProbe = strings.TrimSpace(os.Getenv("CREATIVE_FFPROBE"))
 	if cfg.CreativeFFProbe == "" {
 		cfg.CreativeFFProbe = "ffprobe"

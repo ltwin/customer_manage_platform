@@ -25,9 +25,9 @@ SSE、最小 Agent 面板。自动模型摘要仍默认关闭，达到上下文�
 `available: false` 并附不可用原因。运行时仅开放本次固定 Skill 许可的工具；普通对话只开放
 `read_run_result`，无 Skill 目录和包资源读取权限。
 
-**S3 起 Skill 不再随二进制发布**：目录读 `creativeskill`（数据库 + 对象存储）。没跑过
-`creativectl skill import` 的部署，`skills` 就是空数组、`skill_catalog_revision` 是空摘要的哈希；
-普通对话不依赖它。导入见 [Skill 受信导入与回收](creative-skill-import.md)。
+**S3 起 Skill 不再随二进制发布**：目录读 `creativeskill`（数据库 + 对象存储）。内置 Skill 由服务启动时从
+`deploy/creative-skills/` 自动同步；没配包目录的部署，`skills` 就是空数组、`skill_catalog_revision`
+是空摘要的哈希；普通对话不依赖它。同步与手动导入见 [Skill 受信导入与回收](creative-skill-import.md)。
 
 `skills` 为空还有第二种成因：catalog 只带**有界**摘要（20 条，按 `updated_at` 倒序），如果最靠前的
 20 条 Skill 的推荐版本都被停用，摘要就是空的而目录里仍有内容。完整目录走 `GET /creative/agent/skills`，
