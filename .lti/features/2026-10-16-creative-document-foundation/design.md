@@ -153,7 +153,7 @@ k 不存在或大于等于 N 时返回 400。
 - **新建**：`add_node` 的节点 `type_key` 经注册表映射到可新建的文档类型、可选的 `title` 和 `document_options`。`creativedocument.CreateInTx` 调 `Type.Empty` → 写内容修订 → 文档行（修订号 1、`unit_revs` 全为 1）→ 修订行（写入者为调用者）→ 引用行；画布再写节点（`document_id` 指向它）。撤销这次画布改动只移除节点。
 - **放回**：`add_node` 带 `document_id`（与内容、素材互斥），节点类型必须等于该文档类型注册的 `NodeTypeKey`；回收站中的文档不能放回（409）。
 - **节点快照**：对所有带 `document_id` 的节点，批量读文档头，调 `Type.Summary`。
-  - 文档不存在（已彻底删除）→ 节点 `unavailable = true`。
+  - 文档不存在（已彻底删除）→ 节点 `status.content_state = "unavailable"`。
   - 在回收站 → `document_trashed = true`，摘要照常返回。
   - 类型未注册（例如回滚到旧版本）→ 不可用。
   - `internal.document` 的摘要保持现在的 `content` 预览字段，前端不变。

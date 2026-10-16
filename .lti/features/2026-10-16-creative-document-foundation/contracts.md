@@ -14,7 +14,7 @@
 ## patterns: ADD 文档类型端口
 
 - **约定**：
-  - 新的文档类型实现 `creativedocument.Type`（`Key`、`ContentKind`、`NodeTypeKey`、`Creatable`、`Empty`、`Units`、`Touched`、`Apply`、`RestoreTouched`、`RestoreUnits`、`View`、`Summary`），按需实现 `RestoreHook`，在组合根（`backend/cmd/server/main.go`，需要时也在 `backend/cmd/creative-worker/main.go`）启动时 `Register`。
+  - 新的文档类型实现 `creativedocument.Type`（`Key`、`ContentKind`、`NodeTypeKey`、`Creatable`、`Empty`、`Units`、`Touched`、`Apply`、`RestoreTouched`、`RestoreUnits`、`View`、`Summary`），按需实现 `RestoreHook`，在类型所在包的 `init()` 中 `Register`，并保证 server 与 creative-worker 两个进程都导入该包（内置的 `internal.document` 在 `creativedocument` 包里注册）。重复的类型 key 或节点类型注册时直接 panic。
   - 类型不得自行写 `creative_documents` 及修订、引用、会话表，所有写入都经命令外壳。
   - `Touched` 不得写库；`Apply` 可以在同一事务里写类型自己的附属数据。
   - 单元的存在性发生变化时（新增、删除，或恢复一个当前不存在的单元），`Touched` / `RestoreTouched` 必须同时返回类型声明的集合单元（如场景的 `objects`、策划的 `shots`）。这样，「不存在 → 新增 → 删除」之后再提交的旧请求也会冲突。
@@ -49,7 +49,7 @@
 | `trashed_at` | timestamptz | 否 | null 表示不在回收站 |
 | `unit_revs` | jsonb | 是 | 对象，键为单元名，值为正整数修订号；必须含 `meta`；键 ≤ 4096；CHECK `jsonb_typeof='object'` |
 
-索引：`(account_id, type_key, updated_at DESC, id)`、`(account_id, updated_at DESC, id)`。
+索引：`(account_id, type_key, updated_at DESC, id DESC)`、`(account_id, updated_at DESC, id DESC)`。
 
 `creative_document_revisions`：
 
@@ -63,10 +63,11 @@
 | `restored_from` | bigint | 否 | 由恢复产生时为来源修订号 |
 | `changed_units` | text[] | 是 | 本修订推进了修订号的单元；整份恢复记为 `{'*'}`；新建记为 `{'*'}` |
 | `annotated_units` | text[] | 是 | 本修订只做标注、未推进修订号的单元（如确认），缺省 `{}` |
+| `removed_units` | text[] | 是 | 本修订删除的单元，缺省 `{}`；整份恢复记为空，由 `changed_units = {'*'}` 表示全部重置（实施审计补充） |
 | `unit_revs` | jsonb | 是 | 本修订写入**之后**的完整单元修订号映射（与当时的文档头一致）；供旧版本读取、恢复钩子判断「当时是否已确认」等使用 |
 | `created_at` | timestamptz | 是 | — |
 
-索引：`(account_id, document_id, run_id, revision DESC)`。
+索引：`(account_id, document_id, run_id, revision DESC)`；`(account_id, content_revision_id)`（GC 按快照判定持有时用）。
 
 `creative_document_content_refs`：主键 `(account_id, document_id, revision, content_revision_id)`，索引 `(account_id, content_revision_id)`。每个修订登记一次它快照引用的全部内容修订。
 
@@ -301,7 +302,7 @@ Content-Type: application/json
 | 409 | `creative_state_conflict` | 文档不在回收站 | 先进回收站 |
 | 409 | `idempotency_conflict` | 公共约定 | — |
 
-- **交互**：同一事务删除会话指针、引用行、修订行和文档行；挂它的节点之后读取为 `unavailable`；快照内容的物理保留见 `data: 通用文档`。
+- **交互**：同一事务删除会话指针、引用行、修订行和文档行；挂它的节点之后读取为不可用（`status.content_state = "unavailable"`）；快照内容的物理保留见 `data: 通用文档`。
 - **示例**：
 ```http
 POST /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/purge
@@ -451,7 +452,7 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/conver
 
 - **新建**：同一事务创建文档（修订号 1）、修订行和节点；节点标题取文档标题。撤销画布改动只移除节点。
 - **放回**：文档必须存在、属于当前账号且不在回收站。
-- **节点快照扩展**：带 `document_id` 的节点新增 `document_summary`（类型摘要或 null）、`document_trashed`（boolean）；文档已彻底删除或类型未注册时 `unavailable = true`。`internal.document` 继续返回现有的 `content` 预览。
+- **节点快照扩展**：带 `document_id` 的节点新增 `document_summary`（类型摘要或 null）、`document_trashed`（boolean）；文档已彻底删除、类型未注册或快照内容不可展示时，节点 `status.content_state = "unavailable"`（沿用现有的不可用表示）、`document_summary` 为 null。两个新字段只出现在文档节点上。`internal.document` 继续返回现有的 `content` 预览。
 - **失败响应**（在画布命令现有错误之上）：
 
 | 状态码 | 错误码 | 触发条件 |
