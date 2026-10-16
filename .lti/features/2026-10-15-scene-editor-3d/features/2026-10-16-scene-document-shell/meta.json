@@ -1,0 +1,62 @@
+{
+  "uid": "32c90485-2ed7-497a-9411-b09fb0608521",
+  "revision": 4,
+  "id": "scene-document-shell",
+  "kind": "feature",
+  "assurance": "governed",
+  "epic": "scene-editor-3d",
+  "designBinding": {
+    "version": 2,
+    "uses": [
+      "design:设计上下文",
+      "design:领域模型与业务规则",
+      "design:架构设计",
+      "design:技术选型",
+      "design:关键机制",
+      "design:接口设计",
+      "design:数据与存储设计",
+      "design:验证与交付",
+      "design:未决事项",
+      "architecture:场景模块",
+      "data:场景文档",
+      "api:读取场景",
+      "api:提交场景命令"
+    ],
+    "delivers": [
+      "architecture:场景模块",
+      "data:场景文档",
+      "api:读取场景",
+      "api:提交场景命令"
+    ]
+  },
+  "state": "approved",
+  "createdAt": "2026-10-16T18:52:18.536Z",
+  "updatedAt": "2026-10-16T20:12:44.592Z",
+  "risk": {
+    "factors": [
+      "data-migration",
+      "concurrency",
+      "perf-sensitive",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-16T20:12:44.552Z",
+      "contentHash": "0c79869bcb8ef867"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-16T20:12:44.552Z",
+      "contentHash": "989263c14404fb6e",
+      "deltaHash": "304aaf5ac9da58c0"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

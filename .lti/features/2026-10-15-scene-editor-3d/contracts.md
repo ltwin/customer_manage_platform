@@ -81,7 +81,7 @@ export default function build({ params, THREE, lib, rng }) {
 - **所有权**：只有 `creativescene` 写入，摄影师和助手都经场景命令；画布命令层只在新建 `core.scene` 节点时同事务创建文档。读取方是场景接口、画布节点视图和助手工具。
 
 ### 结构与身份
-- 文档 ID 形如 `cwdoc_<uuid>`，账号内唯一。对象 ID 形如 `sobj_<21位 nanoid>`，由客户端生成，场景内唯一，删除后不复用。
+- 文档 ID 形如 `cwdoc_<uuid>`，账号内唯一。对象 ID 形如 `sobj_<21位 nanoid>`，由客户端生成，场景内唯一，删除后不复用。不复用由客户端随机生成来保证；服务端只拒绝与当前快照重复的 ID，不查历史。
 - 快照载荷（`creative_content_revisions.payload`，`schema_version = 1`，≤ 512 KiB）：
 
 | 路径 | 类型 | 必须 | 缺省 / 约束 |
@@ -108,7 +108,7 @@ export default function build({ params, THREE, lib, rng }) {
 | `objects[].material_slots` | `{<slot_id>:{preset, params}}` | 否 | 缺省 `{}`；`preset` 匹配 `^[a-z0-9_]+@[1-9][0-9]*$`；`params` 是平铺对象，≤ 32 键，值为 number/string(≤80)/boolean |
 | `objects[].light` | `{type:"directional"\|"point"\|"spot", color, intensity:0…1000, range_m:null\|>0, angle_deg:null\|1…179, penumbra:null\|0…1, cast_shadow:boolean}` | `kind=light` 时 | `spot` 时 `angle_deg` 必填 |
 | `objects[].camera` | `{focal_mm:8…800, sensor_mm:[w,h]（各 1…100）, aspect:"<w>:<h>"（各 1…32 的整数）, near_m>0, far_m>near_m, label≤40}` | `kind=camera` 时 | 新建为 `{35,[36,24],"3:2",0.1,1000,""}` |
-| 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`、`parent_id`、`order` 的对象侧值）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。层级和兄弟顺序的整体结构由 `objects` 管 |
+| 单元（存于底座的 `creative_documents.unit_revs`，不在载荷里） | — | — | 场景的单元为 `environment`、`render`、`objects`，以及每个对象的两个单元：摆放 `object:<id>`（`name`、`transform`、`visible`、`locked`）和内容 `object:<id>:content`（`primitive`、`model`、`material_slots`、`light`、`camera`）；`meta` 由底座保留。`parent_id` 和 `order` 由 `objects` 管：它负责对象的存在性、层级和兄弟顺序 |
 
 - **引用表**：`creative_document_content_refs` 记录每个修订引用的所有模型 `content_revision_id`。
 
@@ -307,7 +307,7 @@ Authorization: Bearer <token>
 GET /api/v1/creative/documents/cwdoc_not_mine
 ```
 ```json
-{"error": {"code": "not_found", "message": "场景不存在"}}
+{"error": {"code": "not_found", "message": "文档不存在"}}
 ```
 
 ### 兼容与变更
@@ -327,21 +327,21 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 | 字段 | 类型 | 必传 | 说明 |
 |---|---|---|---|
 | `expected` | object（单元 → CreativeRevision 或 null，见底座） | 非 `restore` 批次必传 | 本批涉及的每个单元及其预期 `rev`，null 表示预期该单元不存在；缺少涉及单元时返回 400。`restore` 批次改用底座的 `expected_revision` |
-| `operations` | array，1–200 项 | 是 | 按顺序应用；每个单元最多出现一次（同一对象的多处改动合并成一个 `update_object`） |
+| `operations` | array，1–200 项 | 是 | 按顺序应用；每个单元最多出现一次（同一对象的多处改动合并成 `update_objects` 里的一项）。批量操作的条目上限与物件上限一致（2000），一次多选操作因此始终是一个操作、一个修订 |
 
 `operations[]` 按 `op` 区分：
 
 | op | 字段 | 涉及单元 |
 |---|---|---|
 | `rename` | `title`（1–200） | `meta` |
-| `add_object` | `object`（完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`） | `objects`（新对象的两个单元以 N+1 出现在 `changed_units` 中） |
-| `update_object` | `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera` 中任选（省略即不改；`material_slots` 整体替换） | 只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
-| `remove_objects` | `object_ids`（1–200；分组连同后代一起删除） | `objects`，以及每个被删对象的 `object:<id>` 和 `object:<id>:content` |
-| `reparent_object` | `object_id`、`parent_id`（null 为根）、`order` | `objects` |
+| `add_objects` | `objects`（1–2000 个完整对象，见数据契约；`kind` 本条目允许 `primitive`/`light`/`camera`/`group`；`primitive.params` 缺省的键补成默认值） | `objects`（一次；新对象的两个单元以 N+1 出现在 `changed_units` 中） |
+| `update_objects` | `updates`（1–2000 项）；每项 `object_id`，以及 `name`/`transform`/`visible`/`locked`/`primitive.params`/`material_slots`/`light`/`camera` 中任选，至少一项（省略即不改；`primitive.params` 按键合并；`material_slots`、`light`、`camera` 整体替换；字段必须与对象的 `kind` 相符）；同一物件只能出现一次 | 每项：只改摆放字段时为 `object:<id>`；只改内容字段时为 `object:<id>:content`；两类都改时两个单元都涉及 |
+| `remove_objects` | `object_ids`（1–2000；分组连同后代一起删除） | `objects`，以及每个被删对象的 `object:<id>` 和 `object:<id>:content` |
+| `reparent_objects` | `moves`（1–2000 项 `{object_id, parent_id（null 为根）, order}`） | `objects`（一次） |
 | `set_environment` | `environment`（整体替换） | `environment` |
 | `set_render` | `render`（整体替换） | `render` |
 | `restore` | `revision`（旧修订号）；**必须单独成批**，带 `expected_revision` | 全部单元；按文档修订号检查（底座规则） |
-| `restore_units` | `units`（1–200 个单元名）、`from_revision` | 列出的单元；对象在旧修订中不存在则删除，现在不存在则按旧位置加回，此时额外涉及 `objects`；**必须单独成批**；当前不存在的对象单元在 `expected` 中写 null |
+| `restore_units` | `units`（1–4096 个单元名，随底座放宽；不能含 `objects`）、`from_revision` | 列出的单元；**必须单独成批**，删除大分组后的撤销也是一个请求，整体成功或整体失败。对象两边都存在时只换列出单元的字段，`parent_id`、`order` 保持现状。存在性会变化时，该对象的两个单元都必须列出，并额外涉及 `objects`，当前不存在的单元在 `expected` 中写 null。服务端先算出恢复后的完整对象集合，再统一解析层级：每个对象沿来源快照（加回的取旧修订，保留的取当前）的祖先链，挂到第一个仍在最终集合中且是分组的祖先下，没有就放到根；父对象同在本次加回的集合里时层级保持不变；旧修订中不存在的对象被删除时，它的后代按同一规则上移，不连带删除。顺序：父对象没变的保留原 `order`，其余按来源快照的层级和顺序依次放入，原 `order` 被占用时排到末尾。结果与 `units` 的排列顺序无关 |
 
 ### 成功响应
 200（同一 operation 回放原回执）：
@@ -353,8 +353,8 @@ GET /api/v1/creative/documents/cwdoc_not_mine
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界等） | 修正，不可原样重试 |
-| 404 | `not_found` | 场景不存在或不属于当前账号；引用的对象不存在 | 重读场景 |
+| 400 | `validation_failed` | 外形非法、单元重复、`expected` 缺单元、对象违反数据契约（父子成环、未知内置体、数值越界、ID 与当前对象重复等）、引用的物件不存在、`restore_units` 列了 `objects` 或只列了存在性会变化的对象的一个单元 | 修正，不可原样重试 |
+| 404 | `not_found` | 场景不存在或不属于当前账号 | 关闭编辑视图 |
 | 409 | `creative_document_conflict` | 任一单元的 `rev` 与 `expected` 不符。`details.conflicts` 为数组：`[{unit, expected_rev, current_rev}]` | 重读，按冲突界面处理后再提交 |
 | 409 | `creative_state_conflict` | 场景在回收站 | 先恢复场景 |
 | 409 | `idempotency_conflict` | 同一 key 用于不同请求体 | 换新 key 前先查原回执 |
@@ -380,13 +380,13 @@ Content-Type: application/json
   "payload": {
     "expected": {"object:sobj_3kTMd9Qp2xLw7nB0cR5yZ": "4", "objects": "4"},
     "operations": [
-      {"op": "update_object", "object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ",
-       "transform": {"position": [1.5, 1.4, 7], "rotation": [0, 0.0998, 0, 0.995], "scale": [1, 1, 1]}},
-      {"op": "add_object", "object": {
+      {"op": "update_objects", "updates": [{"object_id": "sobj_3kTMd9Qp2xLw7nB0cR5yZ",
+       "transform": {"position": [1.5, 1.4, 7], "rotation": [0, 0.0998, 0, 0.995], "scale": [1, 1, 1]}}]},
+      {"op": "add_objects", "objects": [{
         "id": "sobj_Q9w8E7r6T5y4U3i2O1p0a", "kind": "primitive", "name": "石台", "parent_id": null, "order": 2,
         "transform": {"position": [0, 0, -3], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
         "visible": true, "locked": false,
-        "primitive": {"builtin": "box@1", "params": {"width": 2, "height": 0.8, "depth": 1}}, "material_slots": {}}}
+        "primitive": {"builtin": "box@1", "params": {"width": 2, "height": 0.8, "depth": 1}}, "material_slots": {}}]}
     ]
   }
 }
@@ -402,10 +402,10 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_object` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
+在通用命令接口上新增 `scene` 类型的操作集合，其他类型不受影响。`api: 场景模型命令` 会在此基础上增加操作，并放开 `add_objects` 的 `model_instance`，属于兼容扩展。旧客户端不会发送新操作。
 
 ### 补充说明
-新建场景不经本接口，而是走画布命令 `add_node`（`type_key = "core.scene"`）。底座的文档类型端口负责在同一事务里创建文档；场景类型提供初始快照（一个内置地面加一台摄像机）和卡片摘要。
+新建场景不经本接口，而是走画布命令 `add_node`（`type_key = "core.scene"`）。底座的文档类型端口负责在同一事务里创建文档；场景类型提供初始快照（一块内置地面 `ground@1`，摄像机随 C4 的放置 UI 出现）和卡片摘要。
 
 ## api: ADD 场景模型命令
 
@@ -417,7 +417,7 @@ Content-Type: application/json
 | op | 字段 | 涉及单元 |
 |---|---|---|
 | `commit_model` | `ref`（本批内的临时名，`^[a-z0-9_]{1,32}$`）、`glb_upload_id`、`thumbnail_upload_id`（均为就绪且未消费的暂存上传）、`generator`（完整的 `model.generator`，含代码）、`manifest`、`name_hint`、`base_content_id`（可选，有则作为该模型内容的新修订，否则新建模型内容） | 无场景单元（不改快照） |
-| `add_object` 放开 `kind=model_instance` | `object.model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
+| `add_objects` 放开 `kind=model_instance` | `objects[].model` 写 `{content_revision_id}` 或 `{ref}`（引用本批的 `commit_model`） | `objects` |
 | `set_instance_model` | `object_id`、`model`（`{content_revision_id}` 或 `{ref}`）、`scope`（`"this"` 或 `"all_instances"`，缺省 `"this"`） | `object:<id>:content`（只动内容单元，所以摄影师同时移动这个物件不会冲突）；`all_instances` 时还涉及所有引用同一旧修订的对象的内容单元 |
 
 - **分叉规则（I4）**：
@@ -452,10 +452,10 @@ Content-Type: application/json
                      "params": {"height": 6}, "mount": "floor"},
        "manifest": {"bounds": {"min": [-0.5, 0, -0.5], "max": [0.5, 6, 0.5]}, "triangles": 64,
                     "slots": [{"id": "stone", "hint": "stone"}], "parts": [], "anchors": []}},
-      {"op": "add_object", "object": {
+      {"op": "add_objects", "objects": [{
         "id": "sobj_Z1x2C3v4B5n6M7a8S9d0f", "kind": "model_instance", "name": "左侧柱 1", "parent_id": null, "order": 3,
         "transform": {"position": [-3, 0, -2], "rotation": [0, 0, 0, 1], "scale": [1, 1, 1]},
-        "visible": true, "locked": false, "model": {"ref": "pillar"}, "material_slots": {}}}
+        "visible": true, "locked": false, "model": {"ref": "pillar"}, "material_slots": {}}]}
     ]
   }
 }
@@ -568,7 +568,7 @@ Content-Type: application/json
 | `claim_token` | string | 是 | — |
 | `outcome` | `"succeeded"` \| `"failed"` | 是 | — |
 | `error` | `{code, message}` | 失败时 | `code` 取值：`compile_error`、`compile_timeout`、`limit_exceeded`、`render_error`；`message` ≤ 4000 字符，会原样交给助手 |
-| `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest}`。服务端据任务 `request` 组装 `commit_model` 和 `add_object` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id` |
+| `bake` | object | `kind=bake_model` 且成功时 | `{glb_upload_id, thumbnail_upload_id, manifest}`。服务端据任务 `request` 组装 `commit_model` 和 `add_objects` / `set_instance_model`，经场景命令写入，写入者记为助手的 `run_id` |
 | `render` | object | `kind=render_view` 且成功时 | `{image_upload_id}`（暂存图片，长边 1024） |
 | `export` | object | `kind=export_shots` 且成功时 | `{export_operation_id}`：渲染端已调用 `api: 导出分镜` 时的操作 ID，服务端据此读回执 |
 
@@ -706,4 +706,4 @@ Content-Type: application/json
 ```
 
 ### 兼容与变更
-首次定义。**从资产库放入场景**不新增接口：编辑器用资产的 `content_revision_id` 调 `add_object`（`kind=model_instance`）。之后编辑时按 I4 分叉，资产不受影响。示例按 2026-10-16 的 `CreativeAssetCreateResult` 编写；C6 实施前再核对一次。
+首次定义。**从资产库放入场景**不新增接口：编辑器用资产的 `content_revision_id` 调 `add_objects`（`kind=model_instance`）。之后编辑时按 I4 分叉，资产不受影响。示例按 2026-10-16 的 `CreativeAssetCreateResult` 编写；C6 实施前再核对一次。
