@@ -254,6 +254,13 @@ func (s *Service) RecordMeasurementInTx(ctx context.Context, tx store.TxAccountS
 	if !owned {
 		return SettlementReceipt{}, fmt.Errorf("%w: attempt does not belong to this request", ErrConflict)
 	}
+	state, err := settlementOf(ctx, tx, requestID)
+	if err != nil {
+		return SettlementReceipt{}, err
+	}
+	if state == SettlementNotApplicable {
+		return SettlementReceipt{}, fmt.Errorf("%w: supplier billing is not enabled", ErrState)
+	}
 	now := s.now().UTC()
 	// 生成账单与用量核算共用部署门，且都在月桶之前取得；直接到达的账单
 	// 也可能超出冻结上界，必须与跨月新准入的阻断检查串行。
@@ -591,7 +598,7 @@ func (s *Service) lockReservationAfterBudget(
 	if err != nil {
 		return reservationRow{}, err
 	}
-	if err := s.lockBudget(ctx, tx, peek.period, peek.currency); err != nil {
+	if err := s.lockReservationBudget(ctx, tx, peek); err != nil {
 		return reservationRow{}, err
 	}
 	return scanReservation(tx.QueryRowForUpdate(ctx, "llm_usage_reservations", reservationColumns, cond, key))
@@ -602,16 +609,26 @@ func (s *Service) lockReservationAfterBudget(
 // yet has no bucket to order against.
 func (s *Service) lockBudgetForRequest(ctx context.Context, tx store.TxAccountScope, requestID string, now time.Time) error {
 	var period time.Time
-	var currency string
-	err := tx.QueryRow(ctx, "llm_usage_reservations", "budget_period,currency", "request_id=$2", requestID).
-		Scan(&period, &currency)
+	var currency, state string
+	err := tx.QueryRow(ctx, "llm_usage_reservations", "budget_period,currency,settlement_state", "request_id=$2", requestID).
+		Scan(&period, &currency, &state)
 	if errors.Is(err, store.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+	if SettlementState(state) == SettlementNotApplicable {
+		return nil
+	}
 	return s.lockBudget(ctx, tx, period, currency)
+}
+
+func (s *Service) lockReservationBudget(ctx context.Context, tx store.TxAccountScope, row reservationRow) error {
+	if row.state == SettlementNotApplicable {
+		return nil
+	}
+	return s.lockBudget(ctx, tx, row.period, row.currency)
 }
 
 // lockBudget takes the month bucket row lock without changing any value. Every
@@ -800,7 +817,7 @@ func (s *Service) refreshSettlement(ctx context.Context, tx store.TxAccountScope
 	if err != nil {
 		return err
 	}
-	if reservation.state == SettlementReleased {
+	if reservation.state == SettlementReleased || reservation.state == SettlementNotApplicable {
 		return nil
 	}
 	state := SettlementPartial

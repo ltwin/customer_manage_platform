@@ -86,8 +86,13 @@ import NodeVersionStrip from './NodeVersionStrip.tsx'
 import { defaultNodeSize, fitMediaHeight, nodeSizeLimits } from './outbox.ts'
 import { libraryDropZone, markLibraryDrop } from './libraryDrop.ts'
 import type { Content } from './api.ts'
-import { generationPhase, nodeLabelMeta } from './labelMeta.ts'
+import {
+  generationFailure,
+  generationPhase,
+  nodeLabelMeta,
+} from './labelMeta.ts'
 import { GeneratingVeil } from './GeneratingVeil.tsx'
+import { GenerationFailure } from './GenerationFailure.tsx'
 import { prefetchVersions } from './versionCache.ts'
 import {
   fitViewport,
@@ -152,6 +157,8 @@ type FlowNode = Node<
     ratio: string
     /** 空媒体节点里的两个入口都填充这个节点本身。 */
     fillEmpty: (id: string, kind: MediaKind, via: 'upload' | 'library') => void
+    /** 最近一次生成失败后重试：选中节点，由生成面板按当前提示词再生成一次。 */
+    retry: (id: string) => void
     /** 本机预览读出的尺寸；变化时按比例重算高度。 */
     localSize: string
     /** 正在画布内裁切这张图；其余节点为空。 */
@@ -258,6 +265,12 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     [changePreview, previewNodeID],
   )
   const showVersions = !!selected && data.solo
+  // 失败态默认跟随主版本模式：跟随最新时卡片显示失败，固定主版本时只在版本条标出；
+  // 摄影师在版本条里切换后按这次执行记住，下一次生成开始即失效。
+  const [failureView, setFailureView] = useState<{
+    execution: string
+    open: boolean
+  } | null>(null)
   // 拖动缩放时的实时尺寸提示，只是卡片内显示用。
   const [resizing, setResizing] = useState<{
     width: number
@@ -283,6 +296,13 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
     group = n.metadata.type_key === 'core.group',
     proportional = kind === 'image' || kind === 'video',
     phase = group ? null : generationPhase(n.status.generation_state),
+    failure = group || phase ? null : generationFailure(n.status),
+    pinned = n.data.config.main_version_mode === 'pinned',
+    latestExecution = n.status.latest_execution_id ?? '',
+    failureOpen =
+      !!failure &&
+      (failureView?.execution === latestExecution ? failureView.open : !pinned),
+    showFailure = failureOpen && !preview && !data.crop,
     versionCount = media ? (n.version_summary?.count ?? 0) : 0,
     versionKey = `${n.data_revision}:${n.status.status_revision}`,
     known = [
@@ -397,10 +417,16 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
                   dataRevision={versionKey}
                   viewing={preview?.id ?? null}
                   disabled={data.disabled}
-                  pinned={n.data.config.main_version_mode === 'pinned'}
+                  pinned={pinned}
+                  failure={
+                    failure ? { code: failure, open: failureOpen } : null
+                  }
                   onPreview={setPreview}
                   onSelectVersion={(versionID, followLatest) =>
                     data.selectVersion(n.id, versionID, followLatest)
+                  }
+                  onShowFailure={(open) =>
+                    setFailureView({ execution: latestExecution, open })
                   }
                 />
               )}
@@ -496,6 +522,13 @@ const Card = memo(function Card({ data, selected }: NodeProps<FlowNode>) {
         </div>
       )}
       {phase && !data.crop && <GeneratingVeil phase={phase} />}
+      {failure && showFailure && (
+        <GenerationFailure
+          code={failure}
+          disabled={data.disabled}
+          onRetry={() => data.retry(n.id)}
+        />
+      )}
       {!group &&
         !data.crop &&
         connectableTypes.includes(n.metadata.type_key) &&
@@ -789,8 +822,9 @@ export default function CanvasView({
   onEdit: (id: string) => void
   /** 新建节点后：文本进入编辑，媒体把焦点交给生成输入框（PRD CV-53）。 */
   onCreated: (id: string, kind: 'text' | MediaKind, prompt?: string) => void
-  /** 双击空媒体节点：只聚焦生成输入框，不上传也不生成（PRD CV-54）。 */
-  onFocusPrompt: (id: string) => void
+  /** 双击空媒体节点：只聚焦生成输入框，不上传也不生成（PRD CV-54）；
+   * generate 为真时是失败后的重试，面板解锁后按当前提示词再生成一次。 */
+  onFocusPrompt: (id: string, generate?: boolean) => void
   /** 节点生成面板里尚未保存的比例，按节点ID。 */
   draftRatios?: Record<string, string>
   inlineContent?: InlineContentEditing
@@ -868,6 +902,7 @@ export default function CanvasView({
     onSelect,
     onSelection,
     onActions,
+    onFocusPrompt,
     canvasNodes: canvas.nodes,
     selection,
   })
@@ -875,6 +910,7 @@ export default function CanvasView({
     onSelect,
     onSelection,
     onActions,
+    onFocusPrompt,
     canvasNodes: canvas.nodes,
     selection,
   }
@@ -1090,6 +1126,10 @@ export default function CanvasView({
     },
     [],
   )
+  const retry = useCallback((id: string) => {
+    callbacks.current.onSelection([id])
+    callbacks.current.onFocusPrompt(id, true)
+  }, [])
   const resize = useCallback(
     (id: string, width: number, height: number, x: number, y: number) => {
       const source = callbacks.current.canvasNodes.find((n) => n.id === id)
@@ -1301,6 +1341,7 @@ export default function CanvasView({
             meta,
             ratio,
             fillEmpty,
+            retry,
             localSize,
             crop: cropFor,
             cropChange: setCropBox,
@@ -1330,6 +1371,7 @@ export default function CanvasView({
     disabled,
     selectVersion,
     fillEmpty,
+    retry,
     cardPreviews,
     previewVersion,
     modelLabels,

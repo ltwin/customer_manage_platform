@@ -56,7 +56,7 @@ func TestGenerationRuntimeRestartUsesOriginalAdapterAndTask(t *testing.T) {
 		}
 		return generationCompleted(f), nil
 	}}
-	rebuilt, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "generation-test", Concurrency: 2, RateLimit: 100, Adapter: b}}, Guard: func(context.Context, store.TxAccountScope, gw.RequestView, gw.PreparedPolicyGeneration) error {
+	rebuilt, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: b}}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 		return gw.ErrCancelled
 	}})
 	if err != nil {
@@ -222,7 +222,7 @@ func TestGenerationRuntimeCancellationKeepsFeeRecovery(t *testing.T) {
 			if a.submitCalls != 1 || a.cancelCalls != 1 {
 				t.Fatalf("calls: submit=%d cancel=%d", a.submitCalls, a.cancelCalls)
 			}
-			if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 0 {
+			if n := queryCount(t, f.db, `SELECT count(*) FROM platform_llm_limits`); n != 0 {
 				t.Fatalf("terminal capacity not released: %d", n)
 			}
 		})
@@ -260,6 +260,42 @@ func TestGenerationRuntimeVerifiedRejectionRearmsOnce(t *testing.T) {
 	}
 }
 
+func TestGenerationRuntimeRateLimitedRejectionBacksOff(t *testing.T) {
+	for _, tc := range []struct {
+		code  string
+		delay time.Duration
+	}{{"rate_limited", time.Minute}, {"not_accepted", 15 * time.Second}} {
+		t.Run(tc.code, func(t *testing.T) {
+			f := setupGateway(t, defaultBudget())
+			a := &generationAdapter{}
+			a.submit = func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+				if a.submitCalls == 1 {
+					return gw.GenerationEvent{EventKey: "rejected", ProviderRevision: "1", Observation: gw.GenerationObservation{State: gw.GenerationRejected, ErrorCode: tc.code}}, nil
+				}
+				return generationCompleted(f), nil
+			}
+			r, p, _ := generationRuntime(t, f, a)
+			view := admitRuntime(t, f, r, p)
+			result, err := r.AdvanceGeneration(t.Context(), f.a, view.ID)
+			if err != nil || !result.Request.RetryEligible || result.VerificationRequired {
+				t.Fatalf("rejection: %+v %v", result, err)
+			}
+			var next time.Time
+			if err := f.db.QueryRow(`SELECT next_advance_at FROM llm_generation_requests WHERE request_id=$1`, view.ID).Scan(&next); err != nil {
+				t.Fatal(err)
+			}
+			if got := next.Sub(f.now); got < tc.delay-time.Second || got > tc.delay+time.Second {
+				t.Fatalf("retry delay %v, want %v", got, tc.delay)
+			}
+			f.now = f.now.Add(tc.delay)
+			result, err = r.AdvanceGeneration(t.Context(), f.a, view.ID)
+			if err != nil || result.Request.State != gw.StateSucceeded || a.submitCalls != 2 {
+				t.Fatalf("retry: %+v %v calls=%d", result, err, a.submitCalls)
+			}
+		})
+	}
+}
+
 func TestGenerationRuntimeDeploymentStopAndConsentGuard(t *testing.T) {
 	for _, stop := range []bool{true, false} {
 		name := "consent revoked"
@@ -280,7 +316,7 @@ func TestGenerationRuntimeDeploymentStopAndConsentGuard(t *testing.T) {
 				}
 			} else {
 				var err error
-				r, err = gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "generation-test", Concurrency: 2, RateLimit: 100, Adapter: a}}, Guard: func(context.Context, store.TxAccountScope, gw.RequestView, gw.PreparedPolicyGeneration) error {
+				r, err = gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: a}}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 					return gw.ErrCancelled
 				}})
 				if err != nil {
@@ -369,7 +405,9 @@ func TestGenerationRuntimeDueScanRepairsDiscardedDelivery(t *testing.T) {
 	}
 }
 
-func TestGenerationRuntimeObserveRetryBudgetAndChatRecoveryIsolation(t *testing.T) {
+// 已知任务身份的查询失败只退避不判核实，直到恢复窗口用尽；任务跑得久、
+// 查询接口偶发抖动都不能把生成永久停住。
+func TestGenerationRuntimeObserveRetriesKnownTaskAndChatRecoveryIsolation(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	a := &generationAdapter{submit: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) { return acceptedGeneration(), nil }, observe: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
 		return gw.GenerationEvent{}, errors.New("temporary")
@@ -390,17 +428,51 @@ func TestGenerationRuntimeObserveRetryBudgetAndChatRecoveryIsolation(t *testing.
 		}
 	}
 	progress, err := r.GetGeneration(t.Context(), f.a, view.ID)
-	if err != nil || !progress.VerificationRequired || a.observeCalls != 5 {
-		t.Fatalf("retry budget: calls=%d %+v %v", a.observeCalls, progress, err)
+	if err != nil || progress.VerificationRequired || a.observeCalls != 6 {
+		t.Fatalf("known task stopped retrying: calls=%d %+v %v", a.observeCalls, progress, err)
 	}
-	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 1 {
+	if next := progress.NextAdvanceAt; next == nil || next.Sub(f.now) > time.Minute {
+		t.Fatalf("backoff not capped: %v", next)
+	}
+	if n := queryCount(t, f.db, `SELECT count(*) FROM platform_llm_limits`); n != 0 {
 		t.Fatalf("unresolved task lost capacity: %d", n)
 	}
 	a.observe = func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
 		return generationCompleted(f), nil
 	}
-	resumeGeneration(t, f, r, view.ID)
+	f.now = f.now.Add(2 * time.Minute)
 	if progress, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil || progress.Request.State != gw.StateSucceeded {
+		t.Fatalf("recovered provider not observed: %+v %v", progress, err)
+	}
+}
+
+// 恢复窗口用尽后才转人工核实，受信恢复可以继续查询同一任务。
+func TestGenerationRuntimeObserveRecoveryWindowRequiresVerification(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	a := &generationAdapter{submit: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) { return acceptedGeneration(), nil }, observe: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+		return gw.GenerationEvent{}, errors.New("temporary")
+	}}
+	// 与真实适配器一致：取消只是再查一次同一任务。
+	a.cancel = func(ctx context.Context, c gw.GenerationCall) (gw.GenerationEvent, error) { return a.observe(ctx, c) }
+	r, p, _ := generationRuntime(t, f, a)
+	view := admitRuntime(t, f, r, p)
+	if _, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(25 * time.Hour)
+	if _, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil {
+		t.Fatal(err)
+	}
+	progress, err := r.GetGeneration(t.Context(), f.a, view.ID)
+	if err != nil || !progress.VerificationRequired {
+		t.Fatalf("expired recovery window kept polling: %+v %v", progress, err)
+	}
+	a.observe = func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+		return generationCompleted(f), nil
+	}
+	resumeGeneration(t, f, r, view.ID)
+	// 生成期限已过，迟到的完成只作终态与费用证据，不再作为可交付结果。
+	if progress, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil || !progress.Request.Terminal() {
 		t.Fatalf("manual recovery: %+v %v", progress, err)
 	}
 }

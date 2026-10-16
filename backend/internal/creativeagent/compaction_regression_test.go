@@ -405,7 +405,6 @@ func TestCompactionRecoversBeforeFrameworkStarts(t *testing.T) {
 
 func TestCompactionPrecedesHistoryMessageLimit(t *testing.T) {
 	f := newCompactionFixture(t, testSummary)
-	useModel(t, f.fixture, func(m *llmgateway.ModelConfig) { m.RateLimitPerMin = 1000 })
 	f.queue()
 	f.service.limits.AutoCompactPercent = 80
 	f.text("first-original-constraint")

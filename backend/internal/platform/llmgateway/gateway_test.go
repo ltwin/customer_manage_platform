@@ -772,11 +772,17 @@ func TestResultConsumptionIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestProviderConcurrencyIsSharedAcrossAccounts(t *testing.T) {
+func TestProviderPlatformLimitsDoNotBlockAccounts(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
-	// The test deployment allows two concurrent transports.
-	var permits []llmgateway.Permit
-	for _, scope := range []store.AccountScope{f.a, f.b, f.a} {
+	// A historical exhausted platform row must not gate either account.
+	if _, err := f.db.Exec(`INSERT INTO platform_llm_limits (limit_key,capacity,active_count,rate_limit,window_seconds,window_start,window_count) VALUES ('dep-1',1,1,1,60,now(),1)`); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 12 {
+		scope := f.a
+		if i%2 != 0 {
+			scope = f.b
+		}
 		reservation := f.reserve(t, scope, uuid.NewString(), turnOptions{})
 		view, _, err := f.prepare(t, scope, reservation.ID, uuid.NewString(), turnOptions{})
 		if err != nil {
@@ -784,14 +790,18 @@ func TestProviderConcurrencyIsSharedAcrossAccounts(t *testing.T) {
 		}
 		permit, err := f.begin(t, scope, view.ID)
 		if err != nil {
-			if len(permits) == 2 && errors.Is(err, llmgateway.ErrRateLimited) {
-				return
-			}
-			t.Fatalf("dispatch %d: %v", len(permits), err)
+			t.Fatalf("dispatch %d: %v", i, err)
 		}
-		permits = append(permits, permit)
+		if permit.LimitKey != "" {
+			t.Fatalf("new attempt acquired legacy slot: %q", permit.LimitKey)
+		}
+		if _, err := f.begin(t, scope, view.ID); !errors.Is(err, llmgateway.ErrState) {
+			t.Fatalf("duplicate dispatch: %v", err)
+		}
 	}
-	t.Fatal("the shared provider limit must stop the third concurrent dispatch")
+	if n := f.count(t, `SELECT active_count FROM platform_llm_limits WHERE limit_key='dep-1'`); n != 1 {
+		t.Fatalf("new dispatch changed historical count: %d", n)
+	}
 }
 
 func TestRequestPayloadMismatchNeverDispatches(t *testing.T) {
@@ -1176,6 +1186,14 @@ func TestCancelledTurnStillReleasesTheSharedSlot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Simulate a permit persisted by the previous binary, before quota retirement.
+	permit.LimitKey = "dep-1"
+	if _, err := f.db.Exec(`INSERT INTO platform_llm_limits (limit_key,capacity,active_count,rate_limit,window_seconds,window_start) VALUES ('dep-1',1,1,1,60,now())`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE llm_attempts SET limit_key='dep-1' WHERE id=$1`, permit.AttemptID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.gateway.Execute(ctx, f.a, limitsOf, permit, chat, false); err == nil {
 		t.Fatal("a cancelled call must surface an error")
 	}
@@ -1233,9 +1251,6 @@ func TestCatalogChangeNeverRedirectsAPreparedRequest(t *testing.T) {
 		AcceptedModelIDs: []string{"different-paid-model"},
 		Capability:       llmgateway.Capability{ToolCalling: true, ContextTokens: 1000, MaxOutputTokens: 500},
 		Price:            usablePrice(),
-		LimitKey:         "dep-1",
-		Concurrency:      2,
-		RateLimitPerMin:  10,
 		QueryCapability:  "none",
 		CancelCapability: "none",
 		Enabled:          true,

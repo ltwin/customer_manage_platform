@@ -78,7 +78,7 @@ func TestLiveAssistantBuildsAndGenerates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gateway, err := llmgateway.Build(llmgateway.Options{Catalog: catalog, MonthlyLimitMicros: 20_000_000, MonthlyTokenLimit: 5_000_000, Timeout: 2 * time.Minute})
+	gateway, err := llmgateway.Build(llmgateway.Options{Catalog: catalog, MonthlyLimitMicros: 20_000_000, MonthlyTokenLimit: 5_000_000, Timeout: 15 * time.Minute})
 	if err != nil {
 		t.Fatal(err)
 	}

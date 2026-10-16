@@ -11,6 +11,13 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
+// The gateway's transport lifetime is 15 minutes and recovery waits one more
+// minute of grace, so these clock steps land just past each boundary.
+const (
+	pastPermitExpiry = 16 * time.Minute
+	pastRecovery     = 17 * time.Minute
+)
+
 func (f *fixture) recoveryTurn(t *testing.T, scope store.AccountScope) (llmgateway.Permit, llmgateway.ChatRequest) {
 	t.Helper()
 	r := f.reserve(t, scope, uuid.NewString(), turnOptions{})
@@ -22,12 +29,20 @@ func (f *fixture) recoveryTurn(t *testing.T, scope store.AccountScope) (llmgatew
 	if err != nil {
 		t.Fatal(err)
 	}
+	// These recovery fixtures represent in-flight attempts from the previous binary.
+	p.LimitKey = "dep-1"
+	if _, err := f.db.Exec(`INSERT INTO platform_llm_limits (limit_key,capacity,active_count,rate_limit,window_seconds,window_start) VALUES ('dep-1',100,1,100,60,now()) ON CONFLICT(limit_key) DO UPDATE SET active_count=platform_llm_limits.active_count+1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE llm_attempts SET limit_key='dep-1' WHERE id=$1`, p.AttemptID); err != nil {
+		t.Fatal(err)
+	}
 	return p, c
 }
 func (f *fixture) activeLLMSlots(t *testing.T) int {
 	t.Helper()
 	var n int
-	if err := f.db.QueryRow(`SELECT active_count FROM platform_llm_limits WHERE limit_key='dep-1'`).Scan(&n); err != nil {
+	if err := f.db.QueryRow(`SELECT COALESCE((SELECT active_count FROM platform_llm_limits WHERE limit_key='dep-1'),0)`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n
@@ -39,7 +54,7 @@ func TestOrphanedDispatchRecoveryFencesPermitsAndRestoresCapacity(t *testing.T) 
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 0 {
 		t.Fatalf("live=%d %v", n, e)
 	}
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.b, 100); e != nil || n != 0 {
 		t.Fatalf("other account=%d %v", n, e)
 	}
@@ -78,7 +93,7 @@ func TestOrphanedDispatchRecoveryFencesPermitsAndRestoresCapacity(t *testing.T) 
 func TestExpiredPermitCannotStartBeforeSweep(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	p, c := f.recoveryTurn(t, f.a)
-	f.now = f.now.Add(2 * time.Minute)
+	f.now = f.now.Add(pastPermitExpiry)
 	if _, e := f.gateway.Execute(t.Context(), f.a, limitsOf, p, c, false); !errors.Is(e, llmgateway.ErrConflict) {
 		t.Fatal(e)
 	}
@@ -101,7 +116,7 @@ func TestResultPersistenceFailureBecomesRecoverableUnknown(t *testing.T) {
 	if _, e = f.db.Exec(`DROP TRIGGER reject_llm_success ON llm_requests`); e != nil {
 		t.Fatal(e)
 	}
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 1 {
 		t.Fatalf("recovery=%d %v", n, e)
 	}
@@ -120,7 +135,7 @@ func TestLateResultAfterRecoveryDoesNotReleaseAnotherSlot(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	p, c := f.recoveryTurn(t, f.a)
 	f.provider.observe = func(llmgateway.ProviderRequest) {
-		f.now = f.now.Add(4 * time.Minute)
+		f.now = f.now.Add(pastRecovery)
 		if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 1 {
 			t.Fatalf("recovery=%d %v", n, e)
 		}
@@ -148,7 +163,7 @@ func TestRecoverySweepPagesThroughInactiveAccounts(t *testing.T) {
 	if _, e := f.db.Exec(`UPDATE accounts SET status='pending_verification' WHERE id='gw-b'`); e != nil {
 		t.Fatal(e)
 	}
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	cursor, e := f.gateway.SweepExpiredDispatches(t.Context(), f.database, "", 1)
 	if e != nil {
 		t.Fatal(e)
@@ -175,7 +190,7 @@ func TestRecoverySweepPagesThroughInactiveAccounts(t *testing.T) {
 func TestUnverifiableAttemptSettlesAtTheInputBound(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	p, _ := f.recoveryTurn(t, f.a)
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 1 {
 		t.Fatalf("recovery=%d %v", n, e)
 	}

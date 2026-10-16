@@ -104,6 +104,12 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	if preparedPrompt != prompt.Raw && preparedPrompt != prompt.Text {
 		return creativeops.Outcome{}, creativecanvas.ErrVersionConflict
 	}
+	for i := range admission.Route {
+		admission.Route[i].Prepared, err = admission.Route[i].Prepared.WithPrompt(prompt.Text)
+		if err != nil {
+			return creativeops.Outcome{}, err
+		}
+	}
 	admission.Prepared, err = admission.Prepared.WithPrompt(prompt.Text)
 	if err != nil {
 		return creativeops.Outcome{}, err
@@ -136,7 +142,7 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	if err = tx.Insert(ctx, "creative_generation_bindings", []string{"execution_id", "request_id", "canvas_id", "next_step_at", "recovery_until"}, e.ID, request.ID, e.CanvasID, e.CreatedAt, e.CreatedAt.Add(24*time.Hour)); err != nil {
 		return creativeops.Outcome{}, err
 	}
-	if _, err = s.generation.PrepareInTx(ctx, tx, admission, controlRevision); err != nil {
+	if _, err = s.generation.PrepareRouteInTx(ctx, tx, admission, controlRevision); err != nil {
 		return creativeops.Outcome{}, err
 	}
 	target := creativecanvas.ExecutionTarget{CanvasID: e.CanvasID, ExecutionID: e.ID}
@@ -147,12 +153,12 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	return creativeops.Outcome{HTTPStatus: 202, ResultKind: "node_execution", ResultID: &e.ID, Response: body}, err
 }
 
-func (s *Service) guard(ctx context.Context, tx store.TxAccountScope, request gw.RequestView, p gw.PreparedPolicyGeneration) error {
-	if request.CallerService != caller {
+func (s *Service) guard(ctx context.Context, tx store.TxAccountScope, request gw.GenerationGuardRequest, p gw.PreparedPolicyGeneration) error {
+	if request.Call.CallerService != caller {
 		return gw.ErrValidation
 	}
 	var target creativecanvas.ExecutionTarget
-	if err := tx.QueryRow(ctx, "creative_generation_bindings", "execution_id,canvas_id", "request_id=$2", request.ID).Scan(&target.ExecutionID, &target.CanvasID); err != nil {
+	if err := tx.QueryRow(ctx, "creative_generation_bindings", "execution_id,canvas_id", "request_id=$2", request.RootRequestID).Scan(&target.ExecutionID, &target.CanvasID); err != nil {
 		return err
 	}
 	if err := creativecanvas.GuardGenerationInTx(ctx, tx, target); err != nil {
@@ -205,10 +211,19 @@ func (s *Service) claim(ctx context.Context, scope store.AccountScope, target cr
 		if err != nil {
 			return err
 		}
-		if verify || next == nil {
+		if verify {
+			// 旧版本把收尾失败的生成停在 reconciling 且不再调度；重新领取一次，由 step 收为失败。
+			stuck, err := tx.Exists(ctx, "creative_node_executions", "id=$2 AND state='reconciling'", target.ExecutionID)
+			if err != nil {
+				return err
+			}
+			if !stuck {
+				return gw.ErrState
+			}
+		} else if next == nil {
 			return gw.ErrState
 		}
-		if lease != nil && now.Before(*lease) || now.Before(*next) {
+		if lease != nil && now.Before(*lease) || next != nil && now.Before(*next) {
 			return ErrBusy
 		}
 		b.epoch++
@@ -269,14 +284,14 @@ func (s *Service) Work(ctx context.Context, scope store.AccountScope, job jobs.R
 	cancel()
 	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer finishCancel()
-	failures := b.failures
+	// 只数连续失败：任务跑得久不能让零星抖动累积成停驻。
+	failures := 0
 	if stepErr != nil {
-		failures++
+		failures = b.failures + 1
 	}
-	parked := failures >= 5 || time.Now().After(b.until)
-	// 达到重试边界时保留所有未交接项，已有作品仍可作为部分成功发布。
-	var completionErr error
-	if parked && !done {
+	parked := !done && (failures >= 5 || time.Now().After(b.until))
+	// 达到重试边界时节点收为失败；已交接的作品仍按部分成功发布。
+	if parked {
 		// 先撤回未派发请求资格；已派发/unknown保留原费用恢复，绝不伪装零费。
 		err = scope.WithTxScope(finishCtx, func(tx store.TxAccountScope) error {
 			if _, err := s.generation.StopUndispatchedInTx(finishCtx, tx, b.request); err != nil {
@@ -287,7 +302,8 @@ func (s *Service) Work(ctx context.Context, scope store.AccountScope, job jobs.R
 		if err != nil {
 			return err
 		}
-		completionErr = s.complete(finishCtx, scope, target, b, true)
+		// 收尾失败不留无人推进的状态：保持调度，下一轮再收。
+		done = s.complete(finishCtx, scope, target, b, true, creativecanvas.GenerationFailureGeneric) == nil
 	}
 	err = scope.WithTxScope(finishCtx, func(tx store.TxAccountScope) error {
 		if err := tx.LockCreativeWrite(finishCtx); err != nil {
@@ -296,26 +312,20 @@ func (s *Service) Work(ctx context.Context, scope store.AccountScope, job jobs.R
 		if err := checkEpoch(finishCtx, tx, target, b); err != nil {
 			return err
 		}
-		if parked && completionErr != nil {
-			if err := creativecanvas.MarkGenerationVerificationInTx(finishCtx, tx, target); err != nil {
-				return err
-			}
-		}
 		var next *time.Time
-		if !done && !parked {
+		if !done {
 			v := time.Now().Add(30 * time.Second)
 			next = &v
 		}
-		_, err := tx.Update(finishCtx, "creative_generation_bindings", "lease_until=NULL,next_step_at=$3,failures=$4,verification_required=$5", "execution_id=$2", target.ExecutionID, next, min(failures, 5), parked)
+		_, err := tx.Update(finishCtx, "creative_generation_bindings", "lease_until=NULL,next_step_at=$3,failures=$4,verification_required=FALSE", "execution_id=$2", target.ExecutionID, next, min(failures, 5))
 		return err
 	})
 	if err != nil {
 		return err
 	}
-	if !done && !parked {
+	if !done {
 		return jobs.Defer(30 * time.Second)
 	}
-	// 错误以持久verification状态呈现，不打印可能包含供应商定位的底层错误。
 	return nil
 }
 func (s *Service) step(ctx context.Context, scope store.AccountScope, target creativecanvas.ExecutionTarget, b binding) (bool, error) {
@@ -323,8 +333,12 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 	if err != nil && !errors.Is(err, store.ErrCreativeAccessDenied) {
 		return false, err
 	}
-	if err != nil || e.State == "cancelled" || !e.Deadline.After(time.Now()) {
-		if err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error { _, err := s.gateway.CancelInTx(ctx, tx, b.request); return err }); err != nil {
+	expired := !e.Deadline.After(time.Now())
+	if err != nil || e.State == "cancelled" || expired {
+		if err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			_, err := s.generation.CancelRouteInTx(ctx, tx, b.request)
+			return err
+		}); err != nil {
 			return false, err
 		}
 	}
@@ -332,19 +346,28 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 	if err != nil {
 		return false, err
 	}
+	// 网关判为待核实后不会自动推进，节点直接收为失败；费用核实仍由网关维护。
 	if progress.ResultVerificationRequired || progress.VerificationRequired && !progress.Request.Terminal() {
-		return false, gw.ErrState
+		return true, s.complete(ctx, scope, target, b, true, creativecanvas.GenerationFailureUnverified)
 	}
 	outputs, err := s.generation.ImportableOutputs(ctx, scope, b.request, caller, target.ExecutionID)
 	if err != nil {
 		return false, err
 	}
 	if len(outputs) == 0 {
-		if !progress.Request.Terminal() {
+		reason := failureReason(progress.Request.FailureClass)
+		if expired {
+			reason = creativecanvas.GenerationFailureTimeout
+		}
+		if !progress.Terminal() {
+			// 过了截止的结果不再采用，节点不必陪供应商等下去；网关自行跑完并核算。
+			if expired {
+				return true, s.complete(ctx, scope, target, b, true, reason)
+			}
 			return false, nil
 		}
 		// 已经交接或终态无作品：都不再生成。费用核实仍由G3维护。
-		return true, s.complete(ctx, scope, target, b, progress.Request.State != gw.StateSucceeded)
+		return true, s.complete(ctx, scope, target, b, progress.Request.State != gw.StateSucceeded, reason)
 	}
 	// 失败时轮换下一个未交接输出，单个坏结果不挡住其余作品。
 	item := outputs[b.failures%len(outputs)]
@@ -355,7 +378,7 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 			return false, gw.ErrUnavailable
 		}
 		m := item.Output.Media
-		media, err = s.media.PrepareGeneratedMedia(ctx, scope, b.request+"/"+item.AttemptID+"/"+item.Output.ID, string(item.Output.Kind), m.MIME, m.ByteSize, !m.SizeIsLimit, func(ctx context.Context) (io.ReadCloser, error) {
+		media, err = s.media.PrepareGeneratedMedia(ctx, scope, item.RequestID+"/"+item.AttemptID+"/"+item.Output.ID, string(item.Output.Kind), m.MIME, m.ByteSize, !m.SizeIsLimit, func(ctx context.Context) (io.ReadCloser, error) {
 			if !m.ExpiresAt.After(time.Now()) {
 				refreshed, err := s.generation.RefreshImportLocation(ctx, scope, item)
 				if err != nil {
@@ -421,7 +444,7 @@ func (s *Service) StopUndispatched(ctx context.Context, scope store.AccountScope
 	return stopped, err
 }
 
-func (s *Service) complete(ctx context.Context, scope store.AccountScope, target creativecanvas.ExecutionTarget, b binding, partial bool) error {
+func (s *Service) complete(ctx context.Context, scope store.AccountScope, target creativecanvas.ExecutionTarget, b binding, partial bool, reason string) error {
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		if _, err := s.generation.LockPublicationInTx(ctx, tx, b.request); err != nil {
 			return err
@@ -429,10 +452,15 @@ func (s *Service) complete(ctx context.Context, scope store.AccountScope, target
 		if err := checkEpoch(ctx, tx, target, b); err != nil {
 			return err
 		}
-		if err := creativecanvas.CompleteGenerationInTx(ctx, tx, target, partial); err != nil {
+		if err := creativecanvas.CompleteGenerationInTx(ctx, tx, target, partial, reason); err != nil {
 			return err
 		}
-		return s.generation.ReleaseEmptyGenerationInTx(ctx, tx, b.request, caller, target.ExecutionID)
+		// 网关请求未到终态时没有可释放的空结果；节点照常收尾，后续结果由网关保留与核算。
+		err := s.generation.ReleaseEmptyGenerationInTx(ctx, tx, b.request, caller, target.ExecutionID)
+		if partial && errors.Is(err, gw.ErrState) {
+			return nil
+		}
+		return err
 	})
 	if err != nil {
 		return err
@@ -453,4 +481,19 @@ func (s *Service) complete(ctx context.Context, scope store.AccountScope, target
 		return allowed, nil
 	})
 	return err
+}
+
+// failureReason 把网关记录的供应商失败分类收敛为节点可展示的原因。
+// 额度、凭证、限流、部署不可用等平台侧问题统一归为通用失败。
+func failureReason(class string) string {
+	switch class {
+	case "content_rejected", "content_policy_violation":
+		return creativecanvas.GenerationFailureContentRejected
+	case "invalid_parameter":
+		return creativecanvas.GenerationFailureInvalidInput
+	case "execution_timeout", "generation_timeout":
+		return creativecanvas.GenerationFailureTimeout
+	default:
+		return creativecanvas.GenerationFailureGeneric
+	}
 }

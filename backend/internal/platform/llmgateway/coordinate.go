@@ -342,7 +342,6 @@ func (s CallSession) admit(tx store.TxAccountScope) error {
 // is, because cancelling would destroy a step that was still recoverable inside
 // its deadline:
 //
-//   - ErrRateLimited — shared provider admission, clears on its own.
 //   - ErrBudget — a ceiling another caller is occupying right now, or a month
 //     bucket that a settlement below its hold will free again. The Harness
 //     surfaces this as something the account can act on, so the gateway must not

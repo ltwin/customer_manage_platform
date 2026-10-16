@@ -43,7 +43,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-9"
+const limitsVersion = "creative-agent-10"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -151,10 +151,12 @@ func DefaultLimits() Limits {
 		ToolArgumentBytes:       64 << 10,
 		ToolResultBytes:         64 << 10,
 		ToolCallsPerTurn:        64,
-		RunDurationSeconds:      1800,
-		ImagePreviewBytes:       20 << 20,
-		ImagePreviewCount:       8,
-		ImagePreviewTotalBytes:  20 << 20,
+		// A large task runs two hours and more; the budget, not the clock, is
+		// what bounds its cost. Crash recovery follows the lease, not this.
+		RunDurationSeconds:     6 * 60 * 60,
+		ImagePreviewBytes:      20 << 20,
+		ImagePreviewCount:      8,
+		ImagePreviewTotalBytes: 20 << 20,
 	}
 }
 

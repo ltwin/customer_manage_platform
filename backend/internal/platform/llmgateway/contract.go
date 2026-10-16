@@ -36,7 +36,6 @@ var (
 	// left for the provider, so nothing can have been accepted or charged.
 	ErrNotDispatched = errors.New("generation request was not sent")
 	ErrUnavailable   = errors.New("model deployment unavailable")
-	ErrRateLimited   = errors.New("provider admission unavailable")
 	ErrDeadline      = errors.New("gateway deadline exceeded")
 	ErrCancelled     = errors.New("gateway request cancelled")
 	ErrAttemptsUsed  = errors.New("gateway attempts exhausted")

@@ -86,6 +86,13 @@ func (s *Service) RecordGenerationUsageInTx(
 	if !owned {
 		return SettlementReceipt{}, fmt.Errorf("%w: attempt does not belong to this request", ErrConflict)
 	}
+	state, err := settlementOf(ctx, tx, requestID)
+	if err != nil {
+		return SettlementReceipt{}, err
+	}
+	if state == SettlementNotApplicable {
+		return SettlementReceipt{}, fmt.Errorf("%w: supplier billing is not enabled", ErrState)
+	}
 	now := s.now().UTC()
 	// 快照事实先读（受理后不可变列，无需锁）：部署门需要部署身份。随后与该
 	// 部署的新准入在同一把门上串行——超界争议的阻断写入未提交时，新准入必须
@@ -338,6 +345,9 @@ func (s *Service) refreshGenerationAfterEvidence(ctx context.Context, tx store.T
 	}
 	if err != nil {
 		return err
+	}
+	if reservation.state == SettlementNotApplicable {
+		return nil
 	}
 	if _, err := s.recomputeGenerationHold(ctx, tx, requestID, reservation, now); err != nil {
 		if errors.Is(err, ErrBudget) {

@@ -36,7 +36,7 @@ func CompileGenerationPolicy(raw []byte, target GenerationPolicyTarget) (*Compil
 	if len(d.Modes) == 0 || len(d.Modes) > 64 || d.EngineVersion != GenerationPolicyEngineVersion || !generationToken(d.Version) || !generationToken(d.DeploymentID) || !generationToken(d.AdapterVersion) || len(d.Currency) != 3 || strings.Trim(d.Currency, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") != "" {
 		return nil, fmt.Errorf("%w: generation policy identity", ErrValidation)
 	}
-	if d.Profile.ModelKey != target.ModelKey || d.Profile.ModelRevision != target.ModelRevision || d.DeploymentID != target.DeploymentID || d.AdapterVersion != target.AdapterVersion || len(target.Modes) > 64 || len(target.Usage) > 64 {
+	if (d.Billing != "" && d.Billing != GenerationBillingDisabled) || d.Billing != target.Billing || d.Profile.ModelKey != target.ModelKey || d.Profile.ModelRevision != target.ModelRevision || d.DeploymentID != target.DeploymentID || d.AdapterVersion != target.AdapterVersion || len(target.Modes) > 64 || len(target.Usage) > 64 {
 		return nil, fmt.Errorf("%w: generation adapter binding", ErrCapability)
 	}
 	for i, key := range target.Modes {
@@ -59,6 +59,9 @@ func CompileGenerationPolicy(raw []byte, target GenerationPolicyTarget) (*Compil
 			if !ok || spec.Unit != price.Unit {
 				return nil, fmt.Errorf("%w: generation adapter usage binding", ErrCapability)
 			}
+		}
+		if (d.Billing == GenerationBillingDisabled && len(m.Pricing) != 0) || (d.Billing == "" && len(m.Pricing) == 0) {
+			return nil, fmt.Errorf("%w: generation billing policy", ErrValidation)
 		}
 		if err := compileGenerationPolicyMode(m); err != nil {
 			return nil, err
@@ -107,7 +110,7 @@ func compileGenerationPolicyMode(m GenerationPolicyMode) error {
 	if err := m.Output.validate(); err != nil {
 		return err
 	}
-	if m.Output.Kind != m.Definition.Kind || len(m.Parameters) > 128 || len(m.Defaults) > 128 || len(m.Rules) > 128 || len(m.Pricing) == 0 || len(m.Pricing) > 16 {
+	if m.Output.Kind != m.Definition.Kind || len(m.Parameters) > 128 || len(m.Defaults) > 128 || len(m.Rules) > 128 || len(m.Pricing) > 16 {
 		return fmt.Errorf("%w: generation policy mode bounds", ErrValidation)
 	}
 	properties, _ := schema.definition["properties"].(map[string]any)

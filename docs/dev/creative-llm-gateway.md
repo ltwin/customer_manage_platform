@@ -1,5 +1,6 @@
 # 统一 LLM Gateway 开发说明（FND-06）
 
+> 2026-10-16 更新：平台供应商并发和频率限制已移除，账号级限制以后实现。下文涉及共享名额的原设计仅适用于历史在途记录清理；新派发不申请平台名额，Redispatch 从分组和预算锁开始。现有计费与预算不变。兼容迁移与部署顺序见 [生成路由接入](creative-generation-routing.md#2026-10-16退役平台供应商配额)。
 实现 Epic `creative-workspace-system` 的 FND-06 / 切片 GH-01 与 GH-04 的 Gateway 部分。契约权威源是
 [modules/gateway.md](../product/creative-canvas-system/modules/gateway.md)、
 [gateway-harness-data.md](../product/creative-canvas-system/modules/gateway-harness-data.md)
@@ -51,7 +52,7 @@
 - **预留必须覆盖请求**：`PrepareInTx` 用与预留同一套配方重算上界（含**工具 schema** 字节），超出 `initial_reserved_micros` 直接 `ErrBudget`——请求变大只能走新准入。
 - **计价**：三个不重叠分量 `input_cached` / `input_uncached` / `output`，`input_uncached = prompt_tokens − cached`，reasoning 已含在 output 不重复计。费率按**派发时刻**所在时段取，预留按 peak/off-peak 的较大者取保守上界。金额为整数 micros，`CostMicros` 用 `big.Int` 有理数向上取整。**token 与费用两个预算各自结算**：token 总量只需要输入/输出两个总数，缓存明细缺失或不自洽只让费用留疑问、不拖住 token 额度。
 - **余额与超支**：`spent + reserved <= limit` 只约束**新准入**；实际超支全额入账并从此拒绝新准入，不把 spent 截断到 limit。
-- **unknown 出口**：DeepSeek 无请求状态查询与取消 API（目录记 `query=none` / `cancel=none`），unknown 可由受信运维入口 `VerifyUnacceptedInTx(requestID, evidenceSource)` 带来源核实后清除（记零费用）；派发满 10 分钟仍无结论的 Chat attempt 由巡检 `SettleUnverifiable` 按估算结清：输入按预留时的输入上界（1 字节 1 token、未命中缓存的上界单价）、输出记 0，证据为 `operator_attested`、键后缀 `:unverified_estimate`，请求置 `failed`，hold 全部释放（owner 2026-10-14）。估算不是「算零」；供应商账单、用量推导或核实未受理的证据等级更高，之后到达会替换估算。
+- **unknown 出口**：DeepSeek 无请求状态查询与取消 API（目录记 `query=none` / `cancel=none`），unknown 可由受信运维入口 `VerifyUnacceptedInTx(requestID, evidenceSource)` 带来源核实后清除（记零费用）；派发满 23 分钟（传输上限 15 分钟 + 8 分钟等待窗口）仍无结论的 Chat attempt 由巡检 `SettleUnverifiable` 按估算结清：输入按预留时的输入上界（1 字节 1 token、未命中缓存的上界单价）、输出记 0，证据为 `operator_attested`、键后缀 `:unverified_estimate`，请求置 `failed`，hold 全部释放（owner 2026-10-14）。估算不是「算零」；供应商账单、用量推导或核实未受理的证据等级更高，之后到达会替换估算。
 
 ## Eino 模型出口
 
@@ -74,8 +75,9 @@
 | 环境变量 | 作用 |
 |---|---|
 | `DEEPSEEK_API_KEY` | DeepSeek 凭证；**只经环境变量注入**，不入库不入 git |
-| `AICODEWITH_API_KEY` | AiCodeWith 中转凭证（GPT-6 系列）；同上 |
+| `AICODEWITH_API_KEY` | AiCodeWith 中转凭证（GPT-6 系列与 Claude 5.5 系列）；同上 |
 | `KRILL_AI_API_KEY` | Krill AI Openai 官渠凭证；配置后 GPT-6 对话优先走 Krill |
+| `FOUR_ROUTER_API_KEY` | 4Router 中转凭证；配置后 Claude 5.5 对话优先走 4Router |
 | `CREATIVE_LLM_CATALOG` | 可选，覆盖内置目录的 JSON 文件路径 |
 | `CREATIVE_LLM_MONTHLY_LIMIT_MICROS` | 每账号月度费用上限（micros，默认 20_000_000 = 20 USD） |
 | `CREATIVE_LLM_MONTHLY_TOKEN_LIMIT` | 每账号月度 token 上限（默认 5_000_000） |
@@ -108,7 +110,7 @@
 
 ### 内置目录
 
-内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-krill-2026-10-10`，GPT-6 模型依次尝试选择已配置凭证的 Krill、AiCodeWith 部署，DeepSeek 保持单部署。DeepSeek 价格来源见
+内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-krill-claude-4router-2026-10-16`，GPT-6 模型依次尝试选择已配置凭证的 Krill、AiCodeWith 部署，Claude 模型依次尝试 4Router、AiCodeWith 部署，DeepSeek 保持单部署。DeepSeek 价格来源见
 <https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个模型：
 
 | model_key | 供应商模型 | 思考模式 | tool_choice | 图片输入 |
@@ -129,9 +131,39 @@ GPT-6 系列原有 AiCodeWith 部署经 AiCodeWith 中转（`vendor_key=aicodewi
 
 **中转注入的系统提示**（2026-10-09 实测）：请求不带 `instructions` 时，AiCodeWith 会塞入约 2.2 万字符、约 4300 token 的 Codex 编程助手提示词，模型会自称 Codex，每次调用也多出这部分输入。所以适配器把**开头的纯文字系统消息合并进顶层 `instructions`**（对话中途的系统消息仍留在 `input` 原位）；带上自己的指令后，一句话提问的输入从约 4300 token 降到约 120。中转仍会在指令末尾追加一段 `<gateway_time_context>`，时区写的是 `America/Los_Angeles`，并声明它优先于其他来源的当前时间——北京上午时它给出的「今天」是前一天，涉及日期的提示词要注意这一点。
 
-其他实测：三个模型回包的模型名与请求 ID 完全一致；400 px 图片约 200 个输入 token 且描述正确；加密推理连续三轮跨轮交回都被接受；medium 强度下一轮 3–8 秒，远低于 2 分钟传输上限；medium 下简单步骤经常不产生推理（推理 token 为 0），这是模型自己的选择。真实接口测试为保证产生推理，工具循环用 high 强度。
+其他实测：三个模型回包的模型名与请求 ID 完全一致；400 px 图片约 200 个输入 token 且描述正确；加密推理连续三轮跨轮交回都被接受；medium 强度下一轮 3–8 秒，远低于传输上限；medium 下简单步骤经常不产生推理（推理 token 为 0），这是模型自己的选择。真实接口测试为保证产生推理，工具循环用 high 强度。
 
 价格是 OpenAI 官方价（经 Artificial Analysis 2026-10-09 读取）。AiCodeWith 按「官方价 × 渠道折扣」扣费（订阅渠道约 1 折），便宜渠道被风控时自动切到更贵的渠道，所以目录按官方价记账，作为始终成立的上界；账面费用会高于中转实扣。中转未公开任何「处理前拒绝」的状态码，`UnacceptedStatuses` 为空。三个部署共用 `aicodewith/api` 限流键。
+
+### Claude 5.5 系列（AiCodeWith，2026-10-16）
+
+`claude-opus-5-5`（Claude Opus 5.5）与 `claude-sonnet-5-5`（Claude Sonnet 5.5）经 AiCodeWith 中转，走 **Anthropic Messages 协议**（`anthropic_messages` 适配器），Base URL 是根地址 `https://api.aicodewith.ai`（**不带** `/v1`，适配器自己拼 `/v1/messages`），复用 `AICODEWITH_API_KEY`，与 GPT-6 共用 `aicodewith/api` 限流键（同一个中转账号）。
+
+| model_key | 推理强度 | 输入（含缓存写入）/ 缓存读取 / 输出（USD 每百万） | 上下文 / 最大输出 | tool_choice / temperature / json_object |
+|---|---|---|---|---|
+| `claude-opus-5-5` | medium | 5 / 0.2 / 20 | 1M / 128K | ✗ / ✗ / ✗ |
+| `claude-sonnet-5-5` | medium | 2.5 / 0.2 / 10 | 1M / 128K | ✗ / ✗ / ✗ |
+
+- **思考不可关闭**：两个模型都只接受自适应思考（`thinking: {type: "adaptive"}`），`disabled` 与 `budget_tokens` 都是 400；强度只能用 `output_config.effort` 控制，部署固定为 medium（Opus 5.5 的 API 默认也是 medium，Sonnet 5.5 默认 high）。
+- **强制工具调用不可用**：`tool_choice` 的 `any`/`tool` 被中转直接 400（2026-10-16 实测），目录关闭 `ToolChoice`，由 `CheckCapability` 派发前拒绝。官方 API 在这两个模型上拒绝 `temperature`（中转实测会忽略），Messages 协议没有 `json_object` 模式，二者同样关闭。
+- **thinking 回传**：响应里的 thinking 块带签名（默认 `display: omitted`，文本为空），适配器把整轮 content 数组原样封存进 `reasoning` 列（`format: anthropic_messages`，记录部署与模型）。只在**当前工具循环**内交回——即最后一条创作者消息之后的助手轮次，且部署、模型一致、正文与工具调用 ID 未变时才原样回放；更早轮次与对不上的轮次按正文和工具调用重建、不带 thinking。原因：thinking 块只在它之前的全部内容逐字节不变时有效，而历史在两次运行之间会被裁剪和压缩；循环内历史只增不改。按同一规则丢弃早轮 thinking，回放块产生时看到的前缀也一致。工具参数按模型原文回放，不经解码重编码，避免键序变化改动 prompt。DeepSeek 思考部署与 Responses 适配器都不会读取这种封存记录。
+- **提示缓存**：每个请求带顶层 `cache_control: {type: "ephemeral"}`（自动缓存到最后一个可缓存块）。实测同一约 6900 token 前缀第二次调用读到 6936 token 缓存。缓存写入按 1.25× 输入价计费，而合同只有「缓存读取 / 未命中输入」两个分量，所以写入并入未命中输入、目录的未命中单价直接取 5 分钟缓存写入价（与 Krill 节同一做法）：不会少计，普通输入多记 25%，仍是上界。
+- **中转渠道**：AiCodeWith 按「价格优先、自动兜底」在渠道间切换，渠道开关在控制台按账号设置，请求侧不能指定。开着特价渠道时实测落到转换渠道：注入一段 Kiro 身份提示（我们的 system 提示写明身份时仍以我们为准）、thinking 明文返回、usage 只有 `input_tokens_details.cached_tokens`、伪造签名也被接受；owner 2026-10-16 关闭特价渠道后返回官方形状（`msg_011C…`、`cache_read/creation_input_tokens`、`output_tokens_details.thinking_tokens`）。适配器两种 usage 形状都读；转换渠道的 `cached_tokens` 按「不含在 input_tokens 内」累加，最坏只会多计。
+- **流式 usage**：`message_start` 带缓存计数、`message_delta` 只带 input/output，适配器逐字段合并后再换算，不会丢掉开头的缓存读取。
+- 价格为 Anthropic 官方价（AiCodeWith 模型页标注同一官方价，渠道折扣 1.9–6.5 折）。中转未公开「处理前拒绝」状态码，`UnacceptedStatuses` 为空。每次尝试按上界预留：Opus 约 256K×5 + 128K×20 ≈ 3.84 USD，Sonnet 约 1.92 USD。
+- 尚未处理：Opus/Sonnet 5.5 把工具调用之间较长的说明放进 thinking 块（omitted 下为空），长工具循环里正文提示会变少；如需展示进度，可用 `display: "updates"`（beta `thinking-display-updates-2026-08-18`），但与「推理不展示给任何人」的合同约定冲突，需另行决策。拒答（`stop_reason: refusal`）映射为 `refused`，未接服务端 fallback。
+
+### 4Router 接入（2026-10-16）
+
+AiCodeWith 的 Claude 渠道对智能体任务太慢（owner 2026-10-16），新增 4Router 作为 Claude 5.5 的首选部署，AiCodeWith 退为兜底。依据 [手动配置](https://docs.4router.net/guides/manual-config/) 与 [模型分组](https://docs.4router.net/guides/model-groups/)：
+
+- `vendor_key=fourrouter`（厂商标识须以字母开头），部署键为 `4router/api/<model_key>`，Base URL 为根地址 `https://4router.net`，同样由适配器拼 `/v1/messages`；`x-api-key` 鉴权（无效令牌返回 401 `4router_error`），凭证环境变量 `FOUR_ROUTER_API_KEY`。
+- 接入 `claude-opus-5-5` 与 `claude-sonnet-5-5`，同名发送；推理强度、能力开关、提示缓存与 thinking 回传规则都与 AiCodeWith 部署相同。thinking 封存记录带部署键，跨部署切换时按正文重建、不交回对方的签名。
+- 两个密钥都配置时，新请求优先 4Router；超时、429、5xx 先在 4Router 上按对话容灾策略重试，401/402/403 直接切到 AiCodeWith。已冻结的 AiCodeWith 请求仍使用原部署。外发同意从 `egress-2026-10-1` 起按「平台签约的模型供应商」整体授权，换供应商不需要重新同意。
+- 4Router 的 key 绑定控制台里的分组，能访问哪些模型、倍率多少都看分组；文档只列出可接第三方软件的分组（`ClaudeApi`、`ClaudeApiV`、`OfficialClaude`、`cheapClaude`、`ClaudeExtern`），`ClaudeMax`、`ccMax-sale`、`AppClaude` 不允许第三方接入。价格按 Anthropic 官方价做保守上界（与 AiCodeWith 同一套，缓存写入并入未命中输入），版本 `4router-<model>-upper-bound-2026-10-16`。
+- 文档的分组表只写到 `claude-opus-5` / `claude-sonnet-5`，但我们的 key 在 `/v1/models` 里能看到 `claude-opus-5-5` 与 `claude-sonnet-5-5`。
+- 2026-10-16 实测（`TestLiveClaude*` 的 `FOUR_ROUTER_API_KEY` 子测试全部通过）：回包全是官方形状（`msg_011C…`、`cache_read/creation_input_tokens`、`output_tokens_details.thinking_tokens`、流里有 `ping`、thinking 文本省略但带签名），没有身份注入；带签名 thinking 在工具循环内交回被接受；强制 `tool_choice` 与 `temperature` 和官方一样返回 400；自动提示缓存第二次读回。同一套验收 4Router 65 秒、AiCodeWith 136 秒，其中工具循环 47 秒对 106 秒；TLS 建连 0.1 秒，吐字 80–99 token/s。
+- 4Router 的 thinking 是真正的 adaptive：步骤简单、或 system 提示要求「回答尽量简短」时，Sonnet 完全不思考；AiCodeWith 的渠道每次都思考。所以同一步换路由后思考量可能不同，真实接口工具循环测试为此改用较难的乘法、并去掉「简短」提示。
 
 ### Krill AI 接入（2026-10-10）
 
@@ -141,7 +173,7 @@ GPT-6 系列原有 AiCodeWith 部署经 AiCodeWith 中转（`vendor_key=aicodewi
 - 接入现有 `gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-astra` 模型，同名发送；复用 Responses 适配器，POST `/codex/v1/responses`，medium 推理、`store:false`、加密推理回传。`reasoning_context` 是部署可选扩展，Krill 留空不发送，AiCodeWith 继续设置 `all_turns`。
 - 模型广场给出 1.05M 上下文、128K 输出，目录沿用保守的 1M/128K；教程 OpenCode 示例统一写 272K，不用该客户端示例覆盖模型广场的能力表。
 - 两个密钥都配置时，新请求优先 Krill；没有 Krill 密钥时继续使用 AiCodeWith。已冻结的 AiCodeWith 请求仍使用原部署。超时、429、5xx 按下述对话容灾策略重试和切换，每次单独记账。历史文本与工具结果保留，其他部署的加密推理不发给 Krill。
-- 三个模型共享 `krill-ai/codex` 限流键（并发 4、每分钟 60）；查询、取消能力暂不声明。生图仍使用 AiCodeWith。
+- Krill 模型不设置平台共享并发/频率门禁；查询、取消能力暂不声明。
 
 平台费用继续采用**保守上界**，不是 Krill 钱包扣款镜像。登录价格表显示 Standard 渠道倍率 0.15，且钱包有单独的充值换算；平台不把折扣或钱包单位直接当 USD 结算。按未打折价格、Sol 的 >272K 长上下文档，以及非缓存输入可能包含的缓存写入上界记账：
 
@@ -168,9 +200,9 @@ KRILL_AI_LIVE=1 go test ./internal/platform/llmgateway/ -run '^TestLiveKrill' -c
 
 真实测试覆盖三个模型、图片与流式工具回合；仅有密钥不会触发，必须显式设置 `KRILL_AI_LIVE=1`。AiCodeWith 的真实测试固定选用其自身部署，不因 Krill 优先级而误测另一家。
 
-共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则目录加载直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
+2026-10-16 起平台供应商并发与频率门禁退役。旧目录的 `limit_key` / `concurrency` / `rate_limit_per_minute` 仅兼容读取，不再参与校验或派发。内置目录不再声明这些字段；账号级限制以后单独实现。
 
-**启用真实 Anthropic 部署前的前置项**：`provider_anthropic.go` 的 usage 映射没有独立的 cache-write 分量，而 Anthropic 对写入缓存单独计价——直接开一个真实部署会系统性少计该笔费用。必须先补第四个不重叠分量（及其价格配方）再启用；目录里当前没有任何 Anthropic 部署，`CREATIVE_LLM_CATALOG` 覆盖时也不要自行加。
+**Anthropic 部署的缓存写入计价**：`provider_anthropic.go` 的 usage 映射没有独立的 cache-write 分量，缓存写入计入未命中输入。任何 `anthropic_messages` 部署（包括 `CREATIVE_LLM_CATALOG` 自定义目录）的 `input_uncached` 必须取该模型的缓存写入价（5 分钟缓存为 1.25× 输入），否则每次写入都会少计。要精确计价需另补第四个不重叠分量。
 
 思考模式是**固定的部署参数**而非调用方参数：2026-09-11 实测确认，思考模式下带 `tool_choice` 会被供应商以 400 `Thinking mode does not support this tool_choice` 拒绝，因此该能力在目录里关掉、由 `CheckCapability` 在派发前拒绝，不浪费一次尝试去换这个结论。同时思考模式会把输出预算大量用在 reasoning 上，小 `max_tokens` 会直接 `finish_reason=length` 且正文为空。
 
@@ -185,7 +217,7 @@ KRILL_AI_LIVE=1 go test ./internal/platform/llmgateway/ -run '^TestLiveKrill' -c
 - 耗尽有两种可区分的原因，错误同时包裹 `ErrProvidersExhausted` 与具体原因：后续尝试因月度额度放不下新预留而无法准入（包裹 `ErrBudget`，先尝试下一家，仍不行即结束，Agent 显示 `creative_llm_budget_exceeded`）；模型的所有部署都已禁用或从目录撤下、一次也没准入（包裹 `ErrUnavailable`，Agent 显示 `creative_model_unavailable`）。已撤下或禁用的部署在准入前跳过，不会让进行中的路线在重放时永久冲突。
 - **额度算术（默认配置下的已知限制）**：每次尝试按上界独立预留（输入上界 256K token、输出上界 128K token），未知结果的预留在核实前不释放。GPT-6 Astra 每次约 9–9.7 USD，Sol 经 Krill 每次约 3.2 USD，每次约 39 万 token；默认月度上限 20 USD / 500 万 token 下，连续 5xx 时 Astra 约第 3 次、Sol 约第 6 次就会因额度停止，到不了“每家 6 次再切换”。收紧预留和核实释放由计费整改 issue 处理。
 - `Build` 启用 `Config.ChatRetry`，低层 `New`/阶段端口仍可使用原有单请求协议。`llm_chat_routes` 冻结本轮部署顺序并指向最终成功请求；后续尝试采用由首请求和序号派生的稳定绑定。一次完整结果最多消费一次；已结束的对话调用重放不会重新购买尝试。
-- 每次网络尝试独立准入、冻结部署/价格、预留和记账。未知结果的请求在已确认本地传输结束后标为响应失败，原 attempt 的 unknown 和预算预留继续保留；`VerifyUnacceptedInTx` 接受这类“failed 但仍有 unknown attempt”的请求，核实后只释放预留，不会把它恢复成可派发。Agent 的运行结算按整个调用组汇总，重试后成功的运行会因被取代的 unknown 尝试显示待核实，直到核实或 10 分钟后按估算结清。重试可能重复产生上游费用，这是 owner 授权的新可用性策略；不会伪造“未受理”来释放旧预留。计费核实与清理仍由独立整改 issue 跟踪。
+- 每次网络尝试独立准入、冻结部署/价格、预留和记账。未知结果的请求在已确认本地传输结束后标为响应失败，原 attempt 的 unknown 和预算预留继续保留；`VerifyUnacceptedInTx` 接受这类“failed 但仍有 unknown attempt”的请求，核实后只释放预留，不会把它恢复成可派发。Agent 的运行结算按整个调用组汇总，重试后成功的运行会因被取代的 unknown 尝试显示待核实，直到核实或派发满 23 分钟后按估算结清。重试可能重复产生上游费用，这是 owner 授权的新可用性策略；不会伪造“未受理”来释放旧预留。计费核实与清理仍由独立整改 issue 跟踪。
 - 仅有明确的本地传输结束记录才进入额外尝试。进程中断、正在派发的并发调用、无结束证据的历史 unknown 请求保持原有核实路径，不因升级自动重发。
 - 流式重试会清除失败尝试的正文预览；只有完整验证并落库的工具调用才交给 Agent 执行。跨部署时仍不传递另一家产生的加密推理。
 - 新增迁移 `0058_chat_failover`，以及请求的 `failure_http_status` 字段，用于保留具体 HTTP 错误码；没有 HTTP 应答的失败（超时、断连）记为 NULL。部署时先启动 API 完成迁移，再启动 creative-worker。
@@ -201,9 +233,10 @@ make check-go PKG=./internal/platform/llmgateway/...
 ```bash
 set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveDeepSeek -count=1 -v
 set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveAICodeWith -count=1 -v
+set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveClaude -count=1 -v
 ```
 
-AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次（并断言输入没有被注入提示词撑大）、加密推理跨轮交回的流式工具循环（连跑三轮）、看图。中转的 Cloudflare 会以 403「error code: 1010」拦截 Python urllib 默认 UA，手工探测时需要带 `User-Agent`；Go 客户端不受影响。
+AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次（并断言输入没有被注入提示词撑大）、加密推理跨轮交回的流式工具循环（连跑三轮）、看图。`TestLiveClaude*` 对每个配置了凭证的 Claude 供应商（4Router、AiCodeWith，各自单独成目录）分别覆盖两个 Claude 模型各答一次（断言自称以我们的 system 提示为准）、带签名 thinking 跨轮交回的流式工具循环（每模型两轮）、提示缓存读回、看图；2026-10-16 两家各自全部通过（4Router 约 65 秒，AiCodeWith 约 136 秒）。中转的 Cloudflare 会以 403「error code: 1010」拦截 Python urllib 默认 UA，手工探测时需要带 `User-Agent`；Go 客户端不受影响。
 
 真实调用测试自带 0.05 USD 的月度上限，三个用例覆盖非流式、流式重组与真实工具调用；它不进入默认 `make check-go` 的必跑路径。默认 `-run` 全跑时是 60 个非 live 用例通过 + 3 个 live 用例按凭证缺失 skip。
 
@@ -219,8 +252,10 @@ AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转�
 
 `creative-worker` 启动立即运行恢复巡检，此后每 15 秒扫描一页账号（每页 100 个、每账号最多 100 个 attempt，单轮 10 秒超时）。账号采用 keyset 游标，包含非 active 账号，错误会记录并在后续轮次重试。恢复不依赖模型目录或供应商凭证。
 
-每次派发从已持久的 `dispatched_at` 起最多允许 120 秒本地传输，且不超过请求 deadline；HTTP client 配置只能进一步缩短该时间。过期许可不能被领取。派发满 180 秒后，巡检按平台限流→预算→请求→attempt 的锁序，将未收尾的 dispatching/streaming 转为 unknown，并以 `permit_released_at IS NULL` 幂等归还名额。额度 hold 不释放，也不生成零费用证据。`transport_finished_at` 不伪填为观测时间，恢复只记录自己的状态与名额回收时间。
+每次派发从已持久的 `dispatched_at` 起最多允许 15 分钟本地传输（`transportLifetime`），且不超过请求 deadline；HTTP client 的默认总超时与它相同，配置只能进一步缩短。过期许可不能被领取。派发满 16 分钟后，巡检按平台限流→预算→请求→attempt 的锁序，将未收尾的 dispatching/streaming 转为 unknown，并以 `permit_released_at IS NULL` 幂等归还名额。额度 hold 不释放，也不生成零费用证据。`transport_finished_at` 不伪填为观测时间，恢复只记录自己的状态与名额回收时间。
 
 完整结果的首个落库事务失败后，同样通过此路径解除阻塞；进程仍持有的迟到完整结果允许归并到同一 unknown attempt，已被核实或重试替换的旧 attempt 不得覆写当前请求。核实未受理仍必须走受信 `VerifyUnacceptedInTx`，扫到过期不等于供应商未收费。
 
 供应商适配器必须遵守传入 context 的硬截止时间。首次部署此修复须停止旧版执行器后再启动新版，旧代码没有这个传输上限，不能与回收器并行运行。没有新增数据库迁移，仍要求已有 0043；恢复依赖运行中的 `creative-worker`。持久化彻底失败且供应商无查询能力时，丢失的回答无法凭空重建；10 分钟内保留 unknown 等待迟到结果或核实，之后由同一巡检按输入上界估算结清（见上方「unknown 出口」），不再永久占用 hold。
+
+**2026-10-16 传输上限 2 分钟 → 15 分钟**：上限管的是单次模型调用，不是整轮。thinking 模型在难步骤上会先想很久才出第一个可见字节，HTTP client 的总超时又覆盖整个流式响应体，所以流还在正常进行也会被掐断。当晚 Claude 智能体调用有 26 次正好在 120 秒处超时，每次都原样重发，最多连续 6 次（约 12 分钟）。同一份请求有一次在 112.7 秒跑完，输出 4733 token，其中可见内容只有约 500 字节，其余是隐藏的 thinking。用工具参数写长文档的时间更长（中转实测 45–75 token/s）。代价是孤立名额要等 16 分钟才回收，unknown 估算结清的时间点也随之从派发后 10 分钟推到 23 分钟。按本节开头的要求，部署时仍须先停旧执行器：旧回收器按 3 分钟判定孤立，会误收新执行器还在进行的调用。同日智能体单次运行上限从 30 分钟放宽到 6 小时（`RunDurationSeconds`，`limits_version` 升到 `creative-agent-10`），运行费用由预算约束；崩溃恢复看租约，不看这个期限。

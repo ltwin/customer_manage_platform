@@ -25,7 +25,7 @@ func (s *Service) LockCallerGroupInTx(ctx context.Context, tx store.TxAccountSco
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.QueryPage(ctx, "llm_usage_reservations", "request_id,budget_period,currency", "caller_service=$2 AND caller_group_id=$3", []store.OrderBy{{Column: "budget_period"}, {Column: "currency"}, {Column: "id"}}, 1000, 0, caller, group)
+	rows, err := tx.QueryPage(ctx, "llm_usage_reservations", "request_id,budget_period,currency,settlement_state", "caller_service=$2 AND caller_group_id=$3", []store.OrderBy{{Column: "budget_period"}, {Column: "currency"}, {Column: "id"}}, 1000, 0, caller, group)
 	if err != nil {
 		return nil, err
 	}
@@ -33,11 +33,12 @@ func (s *Service) LockCallerGroupInTx(ctx context.Context, tx store.TxAccountSco
 		request  *string
 		period   time.Time
 		currency string
+		state    SettlementState
 	}
 	var entries []entry
 	for rows.Next() {
 		var e entry
-		if err = rows.Scan(&e.request, &e.period, &e.currency); err != nil {
+		if err = rows.Scan(&e.request, &e.period, &e.currency, &e.state); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -52,6 +53,9 @@ func (s *Service) LockCallerGroupInTx(ctx context.Context, tx store.TxAccountSco
 		return nil, fmt.Errorf("%w: caller group bound", ErrValidation)
 	}
 	for _, e := range entries {
+		if e.state == SettlementNotApplicable {
+			continue
+		}
 		if err = s.lockBudget(ctx, tx, e.period, e.currency); err != nil {
 			return nil, err
 		}
