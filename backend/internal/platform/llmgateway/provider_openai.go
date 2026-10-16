@@ -181,7 +181,7 @@ func (a *OpenAICompatible) encode(ctx context.Context, p ProviderRequest) ([]byt
 			// Another protocol's reasoning is not this model's thought; the
 			// field still has to be present, so it goes back empty.
 			reasoning := m.Reasoning
-			if _, foreign := decodeResponsesReasoning(reasoning); foreign {
+			if sealedReasoning(reasoning) {
 				reasoning = ""
 			}
 			encoded.ReasoningContent = &reasoning

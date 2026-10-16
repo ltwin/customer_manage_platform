@@ -139,8 +139,10 @@ type Deployment struct {
 	// Thinking fixes the deployment's reasoning mode ("", "enabled",
 	// "disabled"). It is deployment configuration, never a caller parameter.
 	Thinking string `json:"thinking,omitempty"`
-	// ReasoningEffort fixes how hard a Responses reasoning model thinks
-	// ("low", "medium", "high"). Empty means the deployment does not reason.
+	// ReasoningEffort fixes how hard a reasoning model thinks ("low",
+	// "medium", "high", "xhigh"): Responses' reasoning effort, or Claude's
+	// output_config.effort with adaptive thinking. Empty means the deployment
+	// does not reason.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`
 	// ReasoningContext is an optional relay extension; empty omits it.
 	ReasoningContext string        `json:"reasoning_context,omitempty"`
@@ -420,8 +422,8 @@ func validateDeployment(m Deployment, currency string) error {
 	}
 	switch {
 	case m.ReasoningEffort == "":
-	case m.Provider != ProviderOpenAIResponses:
-		return fmt.Errorf("%w: deployment %q reasoning effort needs the responses protocol", ErrValidation, m.DeploymentKey)
+	case m.Provider != ProviderOpenAIResponses && m.Provider != ProviderAnthropicMessage:
+		return fmt.Errorf("%w: deployment %q reasoning effort needs the responses or anthropic protocol", ErrValidation, m.DeploymentKey)
 	case !slices.Contains([]string{"low", "medium", "high", "xhigh"}, m.ReasoningEffort):
 		return fmt.Errorf("%w: deployment %q reasoning effort", ErrValidation, m.DeploymentKey)
 	}

@@ -140,6 +140,17 @@ func readImage(ctx context.Context, in *ImageInput) (string, error) {
 	return base64.StdEncoding.EncodeToString(raw), nil
 }
 
+// sealedReasoning reports whether reasoning is another adapter's sealed record
+// (GPT's encrypted items, Claude's signed content) rather than plain thought
+// text. A sealed record is never anyone else's to send.
+func sealedReasoning(raw string) bool {
+	if _, ok := decodeResponsesReasoning(raw); ok {
+		return true
+	}
+	_, ok := decodeAnthropicReasoning(raw)
+	return ok
+}
+
 // validateResult applies the contract rules every adapter must satisfy.
 func validateResult(r Result, snapshot ModelSnapshot) error {
 	if !snapshot.AcceptsModelID(r.Model) {

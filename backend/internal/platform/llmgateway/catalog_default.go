@@ -3,7 +3,7 @@ package llmgateway
 // DefaultCatalogVersion changes whenever a deployment entry, capability or
 // price recipe below changes. It is persisted with every request, so an edit
 // never rewrites an in-flight call.
-const DefaultCatalogVersion = "deepseek-aicodewith-krill-2026-10-10"
+const DefaultCatalogVersion = "deepseek-aicodewith-krill-claude-2026-10-16"
 
 // defaultContextWindowTokens is the input window every built-in model uses.
 // The providers read far more, but each turn resends the whole window and the
@@ -21,6 +21,10 @@ const priceSourceDeepSeek = "https://api-docs.deepseek.com/quick_start/pricing (
 // channels), and falls back to a dearer channel when a cheap one is throttled,
 // so the official rate is the only bound that always holds.
 const priceSourceOpenAI = "https://artificialanalysis.ai/models (official OpenAI rates, read 2026-10-09); https://docs.aicodewith.ai/zh/docs/subscription-package-selection"
+
+// priceSourceAnthropic records the official Claude rates AiCodeWith bills
+// against, times a channel discount (1.9–6.5 of 10 on 2026-10-16).
+const priceSourceAnthropic = "official Anthropic rates as of 2026-10-16 (Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, cache reads $0.20, five-minute writes 1.25x input); https://aicodewith.ai/zh/models quotes the same base rates"
 
 // deepSeekPeakWindows are the published UTC peak hours, Monday through Friday.
 // Off-peak is half of peak, so every reservation is bounded by the peak rate.
@@ -167,7 +171,10 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 			gptDeployments = append(gptDeployments, d)
 		}
 	}
-	return NewRoutedCatalog(DefaultCatalogVersion, "USD", append(models, gptModels...), append(deployments, gptDeployments...))
+	claudeModels, claudeDeployments := aicodewithClaudeModels(credential)
+	models = append(append(models, gptModels...), claudeModels...)
+	deployments = append(append(deployments, gptDeployments...), claudeDeployments...)
+	return NewRoutedCatalog(DefaultCatalogVersion, "USD", models, deployments)
 }
 
 // aicodewithModels are OpenAI's GPT-6 line, reached through the AiCodeWith
@@ -231,6 +238,87 @@ func aicodewithModels(credential func(string) (string, bool)) ([]Model, []Deploy
 		deployment("gpt-6-astra", Rate{InputCached: 1_000_000, InputUncached: 10_000_000, Output: 50_000_000}),
 	}
 	names := []string{"GPT-6.1 Sol", "GPT-6 Sol", "GPT-6 Astra"}
+	models := make([]Model, len(deployments))
+	for i, d := range deployments {
+		models[i] = Model{ModelKey: d.RequestModelID, DisplayName: names[i], Capability: d.Capability, ContextWindowTokens: defaultContextWindowTokens, Deployments: []string{d.DeploymentKey}}
+	}
+	return models, deployments
+}
+
+// aicodewithClaudeModels are Anthropic's Claude 5.5 line, reached through the
+// AiCodeWith relay over the Anthropic Messages protocol (its root URL, without
+// /v1).
+//
+// Measured 2026-10-16 against the relay:
+//   - Each model answers under exactly its own id, with signed thinking blocks
+//     that are accepted when handed back on the next step of a tool loop.
+//   - Thinking cannot be turned off on either model, so effort is fixed per
+//     deployment, at medium like the GPT line. A forced tool_choice (any/tool)
+//     is a 400, so the capability is refused before dispatch. The relay
+//     ignored temperature, but the official API rejects it on these models.
+//   - Automatic prompt caching works: the second call read the cached prefix.
+//   - The relay mixes channels per request ("price first, automatic
+//     fallback"): with its discount channel enabled, a converted channel
+//     injected a Kiro identity prompt (our system prompt still won when it said
+//     who the assistant is) and returned a non-standard usage shape; with the
+//     discount channel off, official responses came back. The adapter reads
+//     both shapes.
+//
+// Prices are the official rates. The uncached rate is the five-minute
+// cache-write rate (1.25x input), because the adapter caches every request and
+// the contract books cache writes as uncached input (see mapAnthropicUsage).
+func aicodewithClaudeModels(credential func(string) (string, bool)) ([]Model, []Deployment) {
+	_, enabled := credential("AICODEWITH_API_KEY")
+	disabled := ""
+	if !enabled {
+		disabled = "未配置 AICODEWITH_API_KEY"
+	}
+	deployment := func(id string, rate Rate) Deployment {
+		return Deployment{
+			Provider:         ProviderAnthropicMessage,
+			VendorKey:        "aicodewith",
+			DeploymentKey:    "aicodewith/api/" + id,
+			BaseURL:          "https://api.aicodewith.ai",
+			CredentialEnv:    "AICODEWITH_API_KEY",
+			RequestModelID:   id,
+			ReasoningEffort:  "medium",
+			AcceptedModelIDs: []string{id},
+			Capability: Capability{
+				ImageInput:  true,
+				ToolCalling: true,
+				ToolChoice:  false,
+				// Messages has no json_object mode; asking for one would be
+				// silently ignored.
+				JSONObject:      false,
+				Temperature:     false,
+				ContextTokens:   1_000_000,
+				MaxOutputTokens: 128_000,
+			},
+			Price: PriceSchedule{
+				Version:  id + "-2026-10-16",
+				Currency: "USD",
+				Source:   priceSourceAnthropic,
+				Peak:     rate,
+				OffPeak:  rate,
+			},
+			// The relay documents no status as refused before processing. One
+			// limit key with the GPT line: it is one relay account.
+			LimitKey:         "aicodewith/api",
+			Concurrency:      4,
+			RateLimitPerMin:  60,
+			QueryCapability:  "none",
+			CancelCapability: "none",
+			Enabled:          enabled,
+			DisabledReason:   disabled,
+		}
+	}
+	deployments := []Deployment{
+		// $4 / $20, cache reads $0.20, five-minute cache writes $5.
+		deployment("claude-opus-5-5", Rate{InputCached: 200_000, InputUncached: 5_000_000, Output: 20_000_000}),
+		// $2 / $10, cache reads $0.20, five-minute cache writes $2.50.
+		deployment("claude-sonnet-5-5", Rate{InputCached: 200_000, InputUncached: 2_500_000, Output: 10_000_000}),
+	}
+	names := []string{"Claude Opus 5.5", "Claude Sonnet 5.5"}
 	models := make([]Model, len(deployments))
 	for i, d := range deployments {
 		models[i] = Model{ModelKey: d.RequestModelID, DisplayName: names[i], Capability: d.Capability, ContextWindowTokens: defaultContextWindowTokens, Deployments: []string{d.DeploymentKey}}

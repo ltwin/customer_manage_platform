@@ -8,12 +8,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 )
 
-// AnthropicMessages adapts the Anthropic Messages protocol. It exists so the
-// internal contract is provably independent of the first vendor's wire format;
-// enabling a real Anthropic deployment still needs its own admission evidence.
+// AnthropicMessages adapts the Anthropic Messages protocol. Claude models are
+// served through it; a thinking deployment hands its signed thinking blocks
+// back on the turns of the same tool loop.
+//
+// Every request asks for automatic prompt caching: an agent loop resends the
+// whole window each step, and a cache read costs a twentieth of fresh input.
+// Cache writes cost more than fresh input, which the deployment's uncached
+// rate has to cover (see mapAnthropicUsage).
 type AnthropicMessages struct {
 	client  *http.Client
 	version string
@@ -29,15 +35,83 @@ func NewAnthropicMessages(client *http.Client, apiVersion string) *AnthropicMess
 
 func (a *AnthropicMessages) Key() ProviderKey { return ProviderAnthropicMessage }
 
+// anthropicReasoningFormat marks thinking this adapter recorded. The record is
+// the assistant turn's whole content array, verbatim: a thinking block is only
+// valid next to the exact text and tool calls it was produced with, and only
+// for the model that produced it.
+const anthropicReasoningFormat = "anthropic_messages"
+
+type anthropicReasoning struct {
+	Format     string            `json:"format"`
+	Deployment string            `json:"deployment"`
+	Model      string            `json:"model"`
+	Content    []json.RawMessage `json:"content"`
+}
+
+func decodeAnthropicReasoning(raw string) (anthropicReasoning, bool) {
+	if !strings.HasPrefix(raw, "{") {
+		return anthropicReasoning{}, false
+	}
+	var r anthropicReasoning
+	if json.Unmarshal([]byte(raw), &r) != nil || r.Format != anthropicReasoningFormat || len(r.Content) == 0 {
+		return anthropicReasoning{}, false
+	}
+	return r, true
+}
+
+// matches reports whether the recorded content is still the message the caller
+// hands back. Anything else would replay a signature beside words it was not
+// produced with.
+func (r anthropicReasoning) matches(m Message) bool {
+	var text strings.Builder
+	var ids []string
+	for _, raw := range r.Content {
+		var b anthropicBlock
+		if json.Unmarshal(raw, &b) != nil {
+			return false
+		}
+		switch b.Type {
+		case "text":
+			text.WriteString(b.Text)
+		case "tool_use":
+			ids = append(ids, b.ID)
+		}
+	}
+	var want strings.Builder
+	for _, b := range m.Blocks {
+		want.WriteString(b.Text)
+	}
+	wantIDs := make([]string, len(m.ToolCalls))
+	for i, c := range m.ToolCalls {
+		wantIDs[i] = c.ID
+	}
+	return text.String() == want.String() && slices.Equal(ids, wantIDs)
+}
+
 type anthropicRequest struct {
-	Model       string             `json:"model"`
-	System      string             `json:"system,omitempty"`
-	Messages    []anthropicMessage `json:"messages"`
-	MaxTokens   int                `json:"max_tokens"`
-	Stream      bool               `json:"stream,omitempty"`
-	Temperature *float64           `json:"temperature,omitempty"`
-	Tools       []anthropicTool    `json:"tools,omitempty"`
-	ToolChoice  map[string]string  `json:"tool_choice,omitempty"`
+	Model        string                `json:"model"`
+	System       string                `json:"system,omitempty"`
+	Messages     []anthropicMessage    `json:"messages"`
+	MaxTokens    int                   `json:"max_tokens"`
+	Stream       bool                  `json:"stream,omitempty"`
+	Temperature  *float64              `json:"temperature,omitempty"`
+	Tools        []anthropicTool       `json:"tools,omitempty"`
+	ToolChoice   map[string]string     `json:"tool_choice,omitempty"`
+	Thinking     *anthropicThinking    `json:"thinking,omitempty"`
+	OutputConfig *anthropicOutput      `json:"output_config,omitempty"`
+	CacheControl *anthropicCacheMarker `json:"cache_control,omitempty"`
+}
+
+type anthropicThinking struct {
+	Type string `json:"type"`
+}
+
+type anthropicOutput struct {
+	Effort string `json:"effort"`
+}
+
+type anthropicCacheMarker struct {
+	Type string `json:"type"`
 }
 
 type anthropicMessage struct {
@@ -51,27 +125,62 @@ type anthropicTool struct {
 	InputSchema json.RawMessage `json:"input_schema"`
 }
 
+// anthropicUsage reads both shapes the relay answers with: the official one,
+// with cache reads and writes, and a converted channel's, which reports only
+// input_tokens_details.cached_tokens (measured 2026-10-16).
 type anthropicUsage struct {
 	InputTokens              *int64 `json:"input_tokens"`
 	OutputTokens             *int64 `json:"output_tokens"`
 	CacheReadInputTokens     *int64 `json:"cache_read_input_tokens"`
 	CacheCreationInputTokens *int64 `json:"cache_creation_input_tokens"`
+	InputDetails             *struct {
+		CachedTokens *int64 `json:"cached_tokens"`
+	} `json:"input_tokens_details"`
+	OutputDetails *struct {
+		ThinkingTokens *int64 `json:"thinking_tokens"`
+	} `json:"output_tokens_details"`
+}
+
+// merge lets a later report overwrite only the fields it actually carries; a
+// stream's closing usage may omit the cache counts its opening one had.
+func (u *anthropicUsage) merge(next *anthropicUsage) {
+	if next == nil {
+		return
+	}
+	pick := func(dst **int64, src *int64) {
+		if src != nil {
+			*dst = src
+		}
+	}
+	pick(&u.InputTokens, next.InputTokens)
+	pick(&u.OutputTokens, next.OutputTokens)
+	pick(&u.CacheReadInputTokens, next.CacheReadInputTokens)
+	pick(&u.CacheCreationInputTokens, next.CacheCreationInputTokens)
+	if next.InputDetails != nil {
+		u.InputDetails = next.InputDetails
+	}
+	if next.OutputDetails != nil {
+		u.OutputDetails = next.OutputDetails
+	}
 }
 
 type anthropicBlock struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text"`
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	Input     json.RawMessage `json:"input"`
+	Thinking  string          `json:"thinking"`
+	Signature string          `json:"signature"`
+	Data      string          `json:"data"`
 }
 
 type anthropicResponse struct {
-	ID         string           `json:"id"`
-	Model      string           `json:"model"`
-	StopReason string           `json:"stop_reason"`
-	Content    []anthropicBlock `json:"content"`
-	Usage      *anthropicUsage  `json:"usage"`
+	ID         string            `json:"id"`
+	Model      string            `json:"model"`
+	StopReason string            `json:"stop_reason"`
+	Content    []json.RawMessage `json:"content"`
+	Usage      *anthropicUsage   `json:"usage"`
 }
 
 // Invoke performs exactly one attempt against the deployment.
@@ -100,9 +209,9 @@ func (a *AnthropicMessages) Invoke(ctx context.Context, p ProviderRequest) (Resu
 	}
 	var result Result
 	if p.Stream {
-		result, err = a.readStream(resp.Body, p.Sink)
+		result, err = a.readStream(resp.Body, p.Sink, p.Model.DeploymentKey)
 	} else {
-		result, err = a.readSingle(resp.Body)
+		result, err = a.readSingle(resp.Body, p.Model.DeploymentKey)
 	}
 	if err != nil {
 		return Result{}, err
@@ -115,10 +224,16 @@ func (a *AnthropicMessages) Invoke(ctx context.Context, p ProviderRequest) (Resu
 
 func (a *AnthropicMessages) encode(ctx context.Context, p ProviderRequest) ([]byte, error) {
 	out := anthropicRequest{
-		Model:       p.Snapshot.RequestModelID,
-		MaxTokens:   p.Chat.OutputLimit,
-		Stream:      p.Stream,
-		Temperature: p.Chat.Temperature,
+		Model:        p.Snapshot.RequestModelID,
+		MaxTokens:    p.Chat.OutputLimit,
+		Stream:       p.Stream,
+		Temperature:  p.Chat.Temperature,
+		CacheControl: &anthropicCacheMarker{Type: "ephemeral"},
+	}
+	if p.Model.ReasoningEffort != "" {
+		// Claude 5.5 models cannot turn thinking off; effort is the control.
+		out.Thinking = &anthropicThinking{Type: "adaptive"}
+		out.OutputConfig = &anthropicOutput{Effort: p.Model.ReasoningEffort}
 	}
 	switch p.Chat.ToolChoice {
 	case "auto", "none":
@@ -129,55 +244,96 @@ func (a *AnthropicMessages) encode(ctx context.Context, p ProviderRequest) ([]by
 	for _, t := range p.Chat.Tools {
 		out.Tools = append(out.Tools, anthropicTool{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
 	}
+	// Thinking travels back only within the current tool loop: the turns after
+	// the last thing the creator said. A block is valid only while everything
+	// before it is byte-identical to when it was produced, and history ahead of
+	// the loop is trimmed and compacted between runs; inside one loop the
+	// history only grows. Earlier turns lose their thinking the same way on
+	// every request, so the prefix the loop's blocks were produced with holds.
+	loopStart := -1
+	for i, m := range p.Chat.Messages {
+		if m.Role == RoleUser {
+			loopStart = i
+		}
+	}
 	var system strings.Builder
-	for _, m := range p.Chat.Messages {
-		if m.Role == RoleSystem {
+	for i, m := range p.Chat.Messages {
+		switch m.Role {
+		case RoleSystem:
 			for _, b := range m.Blocks {
 				system.WriteString(b.Text)
 			}
-			continue
+		case RoleAssistant:
+			replay := i > loopStart && p.Model.ReasoningEffort != ""
+			encoded, err := encodeAnthropicAssistant(m, replay, p.Model.DeploymentKey, p.Snapshot.RequestModelID)
+			if err != nil {
+				return nil, err
+			}
+			if len(encoded.Content) > 0 {
+				out.Messages = append(out.Messages, encoded)
+			}
+		case RoleTool:
+			result, err := encodeAnthropicToolResult(ctx, m)
+			if err != nil {
+				return nil, err
+			}
+			// Every result of one parallel step goes back in a single message;
+			// splitting them teaches the model to stop calling in parallel.
+			if n := len(out.Messages); n > 0 && out.Messages[n-1].Role == "user" && isToolResults(out.Messages[n-1]) {
+				out.Messages[n-1].Content = append(out.Messages[n-1].Content, result)
+				continue
+			}
+			out.Messages = append(out.Messages, anthropicMessage{Role: "user", Content: []any{result}})
+		default:
+			content, err := anthropicContent(ctx, m.Blocks)
+			if err != nil {
+				return nil, err
+			}
+			out.Messages = append(out.Messages, anthropicMessage{Role: string(m.Role), Content: content})
 		}
-		encoded, err := encodeAnthropicMessage(ctx, m)
-		if err != nil {
-			return nil, err
-		}
-		out.Messages = append(out.Messages, encoded)
 	}
 	out.System = system.String()
 	return json.Marshal(out)
 }
 
-func encodeAnthropicMessage(ctx context.Context, m Message) (anthropicMessage, error) {
-	out := anthropicMessage{Role: string(m.Role)}
-	if m.Role == RoleTool {
-		out.Role = "user"
-		var text strings.Builder
-		for _, b := range m.Blocks {
-			text.WriteString(b.Text)
+func isToolResults(m anthropicMessage) bool {
+	for _, c := range m.Content {
+		block, ok := c.(map[string]any)
+		if !ok || block["type"] != "tool_result" {
+			return false
 		}
-		out.Content = append(out.Content, map[string]any{
-			"type": "tool_result", "tool_use_id": m.ToolCallID, "content": text.String(),
-		})
-		return out, nil
 	}
-	for _, b := range m.Blocks {
-		switch b.Kind {
-		case BlockText:
-			out.Content = append(out.Content, map[string]any{"type": "text", "text": b.Text})
-		case BlockImageInput:
-			encoded, err := readImage(ctx, b.Image)
-			if err != nil {
-				return anthropicMessage{}, err
+	return len(m.Content) > 0
+}
+
+// encodeAnthropicAssistant replays the recorded content when it belongs to this
+// deployment and model and still matches the message; otherwise the turn is
+// rebuilt from its words and calls, without thinking.
+func encodeAnthropicAssistant(m Message, replay bool, deployment, model string) (anthropicMessage, error) {
+	out := anthropicMessage{Role: "assistant"}
+	if replay {
+		if r, ok := decodeAnthropicReasoning(m.Reasoning); ok && r.Deployment == deployment && r.Model == model && r.matches(m) {
+			for _, block := range r.Content {
+				out.Content = append(out.Content, block)
 			}
-			out.Content = append(out.Content, map[string]any{
-				"type":   "image",
-				"source": map[string]any{"type": "base64", "media_type": b.Image.MIME, "data": encoded},
-			})
+			return out, nil
 		}
+	}
+	var text strings.Builder
+	for _, b := range m.Blocks {
+		text.WriteString(b.Text)
+	}
+	if text.Len() > 0 {
+		out.Content = append(out.Content, map[string]any{"type": "text", "text": text.String()})
 	}
 	for _, c := range m.ToolCalls {
-		var input any
-		if err := json.Unmarshal(c.Arguments, &input); err != nil {
+		input := c.Arguments
+		if len(input) == 0 {
+			input = json.RawMessage("{}")
+		}
+		// The arguments go back as the model wrote them; a decode and
+		// re-encode would reorder their keys and change the prompt.
+		if !json.Valid(input) {
 			return anthropicMessage{}, fmt.Errorf("%w: assistant tool call arguments", ErrValidation)
 		}
 		out.Content = append(out.Content, map[string]any{
@@ -187,7 +343,45 @@ func encodeAnthropicMessage(ctx context.Context, m Message) (anthropicMessage, e
 	return out, nil
 }
 
-func (a *AnthropicMessages) readSingle(body io.Reader) (Result, error) {
+func encodeAnthropicToolResult(ctx context.Context, m Message) (map[string]any, error) {
+	result := map[string]any{"type": "tool_result", "tool_use_id": m.ToolCallID}
+	if onlyText(m.Blocks) {
+		var text strings.Builder
+		for _, b := range m.Blocks {
+			text.WriteString(b.Text)
+		}
+		result["content"] = text.String()
+		return result, nil
+	}
+	content, err := anthropicContent(ctx, m.Blocks)
+	if err != nil {
+		return nil, err
+	}
+	result["content"] = content
+	return result, nil
+}
+
+func anthropicContent(ctx context.Context, blocks []Block) ([]any, error) {
+	content := make([]any, 0, len(blocks))
+	for _, b := range blocks {
+		switch b.Kind {
+		case BlockText:
+			content = append(content, map[string]any{"type": "text", "text": b.Text})
+		case BlockImageInput:
+			encoded, err := readImage(ctx, b.Image)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, map[string]any{
+				"type":   "image",
+				"source": map[string]any{"type": "base64", "media_type": b.Image.MIME, "data": encoded},
+			})
+		}
+	}
+	return content, nil
+}
+
+func (a *AnthropicMessages) readSingle(body io.Reader, deployment string) (Result, error) {
 	raw, err := io.ReadAll(io.LimitReader(body, maxResultBytes))
 	if err != nil {
 		return Result{}, classifyTransport(err)
@@ -203,7 +397,12 @@ func (a *AnthropicMessages) readSingle(body io.Reader) (Result, error) {
 		Usage:             mapAnthropicUsage(payload.Usage),
 	}
 	var text strings.Builder
-	for i, block := range payload.Content {
+	thought := false
+	for i, raw := range payload.Content {
+		var block anthropicBlock
+		if err := json.Unmarshal(raw, &block); err != nil {
+			return Result{}, &ProviderError{Outcome: OutcomeProtocol, Class: "malformed_block", Detail: err.Error()}
+		}
 		switch block.Type {
 		case "text":
 			text.WriteString(block.Text)
@@ -213,10 +412,26 @@ func (a *AnthropicMessages) readSingle(body io.Reader) (Result, error) {
 				arguments = json.RawMessage("{}")
 			}
 			result.ToolCalls = append(result.ToolCalls, ToolCall{ID: block.ID, Index: i, Name: block.Name, Arguments: arguments})
+		case "thinking", "redacted_thinking":
+			thought = true
 		}
 	}
 	result.Text = text.String()
+	if thought {
+		result.Reasoning = recordAnthropicReasoning(deployment, payload.Model, payload.Content)
+	}
 	return result, nil
+}
+
+// recordAnthropicReasoning seals a turn's content for its own later replay. A
+// record too large to travel back as a message is dropped: the next turn loses
+// this step's thinking, which the model tolerates, instead of failing.
+func recordAnthropicReasoning(deployment, model string, content []json.RawMessage) string {
+	encoded, err := json.Marshal(anthropicReasoning{Format: anthropicReasoningFormat, Deployment: deployment, Model: model, Content: content})
+	if err != nil || len(encoded) > maxTextBytes {
+		return ""
+	}
+	return string(encoded)
 }
 
 type anthropicEvent struct {
@@ -226,6 +441,8 @@ type anthropicEvent struct {
 		Type        string `json:"type"`
 		Text        string `json:"text"`
 		PartialJSON string `json:"partial_json"`
+		Thinking    string `json:"thinking"`
+		Signature   string `json:"signature"`
 		StopReason  string `json:"stop_reason"`
 	} `json:"delta"`
 	ContentBlock anthropicBlock     `json:"content_block"`
@@ -233,16 +450,49 @@ type anthropicEvent struct {
 	Usage        *anthropicUsage    `json:"usage"`
 }
 
+// streamBlock is one content block being reassembled from its deltas.
+type streamBlock struct {
+	block    anthropicBlock
+	text     strings.Builder
+	thinking strings.Builder
+	args     strings.Builder
+}
+
+// raw renders the reassembled block the way a single response would carry it.
+func (s *streamBlock) raw() (json.RawMessage, bool) {
+	var v any
+	switch s.block.Type {
+	case "text":
+		v = map[string]any{"type": "text", "text": s.text.String()}
+	case "thinking":
+		v = map[string]any{"type": "thinking", "thinking": s.thinking.String(), "signature": s.block.Signature}
+	case "redacted_thinking":
+		v = map[string]any{"type": "redacted_thinking", "data": s.block.Data}
+	case "tool_use":
+		input := json.RawMessage(s.args.String())
+		if len(input) == 0 {
+			input = json.RawMessage("{}")
+		}
+		if !json.Valid(input) {
+			return nil, false
+		}
+		v = map[string]any{"type": "tool_use", "id": s.block.ID, "name": s.block.Name, "input": input}
+	default:
+		return nil, false
+	}
+	encoded, err := json.Marshal(v)
+	return encoded, err == nil
+}
+
 // readStream reassembles Anthropic events into the same complete result shape.
-func (a *AnthropicMessages) readStream(body io.Reader, sink Sink) (Result, error) {
+func (a *AnthropicMessages) readStream(body io.Reader, sink Sink, deployment string) (Result, error) {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64<<10), maxResultBytes)
 	var (
 		result   Result
-		text     strings.Builder
-		calls    []*ToolCall
-		args     = map[int]*strings.Builder{}
-		byIndex  = map[int]*ToolCall{}
+		usage    anthropicUsage
+		blocks   []*streamBlock
+		byIndex  = map[int]*streamBlock{}
 		finished bool
 		stopped  bool
 	)
@@ -259,32 +509,36 @@ func (a *AnthropicMessages) readStream(body io.Reader, sink Sink) (Result, error
 		case "message_start":
 			if event.Message != nil {
 				result.Model, result.ProviderRequestID = event.Message.Model, event.Message.ID
-				result.Usage = mapAnthropicUsage(event.Message.Usage)
+				usage.merge(event.Message.Usage)
 			}
 		case "content_block_start":
-			if event.ContentBlock.Type == "tool_use" {
-				call := &ToolCall{ID: event.ContentBlock.ID, Index: event.Index, Name: event.ContentBlock.Name}
-				byIndex[event.Index], args[event.Index] = call, &strings.Builder{}
-				calls = append(calls, call)
-			}
+			block := &streamBlock{block: event.ContentBlock}
+			block.text.WriteString(event.ContentBlock.Text)
+			block.thinking.WriteString(event.ContentBlock.Thinking)
+			byIndex[event.Index] = block
+			blocks = append(blocks, block)
 		case "content_block_delta":
+			block, ok := byIndex[event.Index]
+			if !ok {
+				return Result{}, &ProviderError{Outcome: OutcomeProtocol, Class: "orphan_delta", Detail: line}
+			}
 			switch event.Delta.Type {
 			case "text_delta":
-				text.WriteString(event.Delta.Text)
+				block.text.WriteString(event.Delta.Text)
 				emit(sink, DeltaText, event.Delta.Text)
 			case "input_json_delta":
-				if builder, ok := args[event.Index]; ok {
-					builder.WriteString(event.Delta.PartialJSON)
-				}
+				block.args.WriteString(event.Delta.PartialJSON)
+			case "thinking_delta":
+				block.thinking.WriteString(event.Delta.Thinking)
+			case "signature_delta":
+				block.block.Signature += event.Delta.Signature
 			}
 		case "message_delta":
 			if event.Delta.StopReason != "" {
 				result.FinishReason = mapAnthropicStop(event.Delta.StopReason)
 				finished = true
 			}
-			if event.Usage != nil {
-				result.Usage = mergeAnthropicUsage(result.Usage, event.Usage)
-			}
+			usage.merge(event.Usage)
 		case "message_stop":
 			stopped = true
 		case "error":
@@ -300,14 +554,39 @@ func (a *AnthropicMessages) readStream(body io.Reader, sink Sink) (Result, error
 	if !finished || !stopped {
 		return Result{}, &ProviderError{Outcome: OutcomeUnknown, Class: "incomplete_stream", Detail: "stream ended before message_stop"}
 	}
-	result.Text = text.String()
-	for _, call := range calls {
-		complete := *call
-		complete.Arguments = json.RawMessage(args[call.Index].String())
-		if len(complete.Arguments) == 0 {
-			complete.Arguments = json.RawMessage("{}")
+	result.Usage = mapAnthropicUsage(&usage)
+	var text strings.Builder
+	thought := false
+	for i, block := range blocks {
+		switch block.block.Type {
+		case "text":
+			text.WriteString(block.text.String())
+		case "tool_use":
+			arguments := json.RawMessage(block.args.String())
+			if len(arguments) == 0 {
+				arguments = json.RawMessage("{}")
+			}
+			result.ToolCalls = append(result.ToolCalls, ToolCall{ID: block.block.ID, Index: i, Name: block.block.Name, Arguments: arguments})
+		case "thinking", "redacted_thinking":
+			thought = true
 		}
-		result.ToolCalls = append(result.ToolCalls, complete)
+	}
+	result.Text = text.String()
+	if thought {
+		content := make([]json.RawMessage, 0, len(blocks))
+		for _, block := range blocks {
+			raw, ok := block.raw()
+			if !ok {
+				// Truncated arguments cannot be replayed; neither can the
+				// thinking that led to them.
+				content = nil
+				break
+			}
+			content = append(content, raw)
+		}
+		if content != nil {
+			result.Reasoning = recordAnthropicReasoning(deployment, result.Model, content)
+		}
 	}
 	return result, nil
 }
@@ -327,40 +606,45 @@ func mapAnthropicStop(reason string) FinishReason {
 	}
 }
 
+// mapAnthropicUsage converts usage into the contract's disjoint parts. Here
+// input_tokens excludes cache reads and writes, so both are added back.
+//
+// Cache writes are billed above fresh input (1.25x for the five-minute cache)
+// but the contract has only cached and uncached input, so they count as
+// uncached: a deployment of this adapter must set its uncached rate to the
+// cache-write rate, or every write is undercharged. Fresh input is then booked
+// a quarter high — an upper bound, as the relay bills less anyway.
+//
+// A converted relay channel reports only input_tokens_details.cached_tokens.
+// It is read the same way, as excluded from input_tokens, which can only
+// overstate the input if the channel meant it otherwise.
 func mapAnthropicUsage(u *anthropicUsage) UsageEvidence {
 	if u == nil {
 		return UsageEvidence{}
 	}
 	evidence := UsageEvidence{OutputTokens: u.OutputTokens}
-	if u.InputTokens != nil {
-		total := *u.InputTokens
-		if u.CacheReadInputTokens != nil {
-			total += *u.CacheReadInputTokens
-			cached := *u.CacheReadInputTokens
-			evidence.InputCachedTokens = &cached
-		}
-		if u.CacheCreationInputTokens != nil {
-			// Cache writes are billed above ordinary input by this vendor, but
-			// the contract only has cached/uncached components today, so they
-			// are counted as uncached. Enabling a real Anthropic deployment
-			// requires its own price component first, or this undercounts.
-			total += *u.CacheCreationInputTokens
-		}
-		evidence.InputTotalTokens = &total
+	if u.OutputDetails != nil {
+		evidence.ReasoningTokens = u.OutputDetails.ThinkingTokens
 	}
+	if u.InputTokens == nil {
+		return evidence
+	}
+	total := *u.InputTokens
+	var cached *int64
+	switch {
+	case u.CacheReadInputTokens != nil:
+		cached = u.CacheReadInputTokens
+	case u.InputDetails != nil:
+		cached = u.InputDetails.CachedTokens
+	}
+	if cached != nil {
+		read := *cached
+		total += read
+		evidence.InputCachedTokens = &read
+	}
+	if u.CacheCreationInputTokens != nil {
+		total += *u.CacheCreationInputTokens
+	}
+	evidence.InputTotalTokens = &total
 	return evidence
-}
-
-func mergeAnthropicUsage(base UsageEvidence, u *anthropicUsage) UsageEvidence {
-	next := mapAnthropicUsage(u)
-	if next.InputTotalTokens == nil {
-		next.InputTotalTokens = base.InputTotalTokens
-	}
-	if next.InputCachedTokens == nil {
-		next.InputCachedTokens = base.InputCachedTokens
-	}
-	if next.OutputTokens == nil {
-		next.OutputTokens = base.OutputTokens
-	}
-	return next
 }

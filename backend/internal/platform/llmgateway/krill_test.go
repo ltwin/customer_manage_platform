@@ -30,7 +30,7 @@ func TestKrillRoutingPreservesExistingDeployments(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(catalog.List()) != 6 || !slices.Contains(catalog.Vendors(), "krill-ai") {
+			if len(catalog.List()) != 8 || !slices.Contains(catalog.Vendors(), "krill-ai") {
 				t.Fatal("model identities or vendors changed")
 			}
 			for _, key := range []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-6-astra"} {

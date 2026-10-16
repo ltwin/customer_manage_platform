@@ -74,7 +74,7 @@
 | 环境变量 | 作用 |
 |---|---|
 | `DEEPSEEK_API_KEY` | DeepSeek 凭证；**只经环境变量注入**，不入库不入 git |
-| `AICODEWITH_API_KEY` | AiCodeWith 中转凭证（GPT-6 系列）；同上 |
+| `AICODEWITH_API_KEY` | AiCodeWith 中转凭证（GPT-6 系列与 Claude 5.5 系列）；同上 |
 | `KRILL_AI_API_KEY` | Krill AI Openai 官渠凭证；配置后 GPT-6 对话优先走 Krill |
 | `CREATIVE_LLM_CATALOG` | 可选，覆盖内置目录的 JSON 文件路径 |
 | `CREATIVE_LLM_MONTHLY_LIMIT_MICROS` | 每账号月度费用上限（micros，默认 20_000_000 = 20 USD） |
@@ -108,7 +108,7 @@
 
 ### 内置目录
 
-内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-krill-2026-10-10`，GPT-6 模型依次尝试选择已配置凭证的 Krill、AiCodeWith 部署，DeepSeek 保持单部署。DeepSeek 价格来源见
+内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-krill-claude-2026-10-16`，GPT-6 模型依次尝试选择已配置凭证的 Krill、AiCodeWith 部署，DeepSeek 与 Claude 保持单部署。DeepSeek 价格来源见
 <https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个模型：
 
 | model_key | 供应商模型 | 思考模式 | tool_choice | 图片输入 |
@@ -132,6 +132,24 @@ GPT-6 系列原有 AiCodeWith 部署经 AiCodeWith 中转（`vendor_key=aicodewi
 其他实测：三个模型回包的模型名与请求 ID 完全一致；400 px 图片约 200 个输入 token 且描述正确；加密推理连续三轮跨轮交回都被接受；medium 强度下一轮 3–8 秒，远低于 2 分钟传输上限；medium 下简单步骤经常不产生推理（推理 token 为 0），这是模型自己的选择。真实接口测试为保证产生推理，工具循环用 high 强度。
 
 价格是 OpenAI 官方价（经 Artificial Analysis 2026-10-09 读取）。AiCodeWith 按「官方价 × 渠道折扣」扣费（订阅渠道约 1 折），便宜渠道被风控时自动切到更贵的渠道，所以目录按官方价记账，作为始终成立的上界；账面费用会高于中转实扣。中转未公开任何「处理前拒绝」的状态码，`UnacceptedStatuses` 为空。三个部署共用 `aicodewith/api` 限流键。
+
+### Claude 5.5 系列（AiCodeWith，2026-10-16）
+
+`claude-opus-5-5`（Claude Opus 5.5）与 `claude-sonnet-5-5`（Claude Sonnet 5.5）经 AiCodeWith 中转，走 **Anthropic Messages 协议**（`anthropic_messages` 适配器），Base URL 是根地址 `https://api.aicodewith.ai`（**不带** `/v1`，适配器自己拼 `/v1/messages`），复用 `AICODEWITH_API_KEY`，与 GPT-6 共用 `aicodewith/api` 限流键（同一个中转账号）。
+
+| model_key | 推理强度 | 输入（含缓存写入）/ 缓存读取 / 输出（USD 每百万） | 上下文 / 最大输出 | tool_choice / temperature / json_object |
+|---|---|---|---|---|
+| `claude-opus-5-5` | medium | 5 / 0.2 / 20 | 1M / 128K | ✗ / ✗ / ✗ |
+| `claude-sonnet-5-5` | medium | 2.5 / 0.2 / 10 | 1M / 128K | ✗ / ✗ / ✗ |
+
+- **思考不可关闭**：两个模型都只接受自适应思考（`thinking: {type: "adaptive"}`），`disabled` 与 `budget_tokens` 都是 400；强度只能用 `output_config.effort` 控制，部署固定为 medium（Opus 5.5 的 API 默认也是 medium，Sonnet 5.5 默认 high）。
+- **强制工具调用不可用**：`tool_choice` 的 `any`/`tool` 被中转直接 400（2026-10-16 实测），目录关闭 `ToolChoice`，由 `CheckCapability` 派发前拒绝。官方 API 在这两个模型上拒绝 `temperature`（中转实测会忽略），Messages 协议没有 `json_object` 模式，二者同样关闭。
+- **thinking 回传**：响应里的 thinking 块带签名（默认 `display: omitted`，文本为空），适配器把整轮 content 数组原样封存进 `reasoning` 列（`format: anthropic_messages`，记录部署与模型）。只在**当前工具循环**内交回——即最后一条创作者消息之后的助手轮次，且部署、模型一致、正文与工具调用 ID 未变时才原样回放；更早轮次与对不上的轮次按正文和工具调用重建、不带 thinking。原因：thinking 块只在它之前的全部内容逐字节不变时有效，而历史在两次运行之间会被裁剪和压缩；循环内历史只增不改。按同一规则丢弃早轮 thinking，回放块产生时看到的前缀也一致。工具参数按模型原文回放，不经解码重编码，避免键序变化改动 prompt。DeepSeek 思考部署与 Responses 适配器都不会读取这种封存记录。
+- **提示缓存**：每个请求带顶层 `cache_control: {type: "ephemeral"}`（自动缓存到最后一个可缓存块）。实测同一约 6900 token 前缀第二次调用读到 6936 token 缓存。缓存写入按 1.25× 输入价计费，而合同只有「缓存读取 / 未命中输入」两个分量，所以写入并入未命中输入、目录的未命中单价直接取 5 分钟缓存写入价（与 Krill 节同一做法）：不会少计，普通输入多记 25%，仍是上界。
+- **中转渠道**：AiCodeWith 按「价格优先、自动兜底」在渠道间切换，渠道开关在控制台按账号设置，请求侧不能指定。开着特价渠道时实测落到转换渠道：注入一段 Kiro 身份提示（我们的 system 提示写明身份时仍以我们为准）、thinking 明文返回、usage 只有 `input_tokens_details.cached_tokens`、伪造签名也被接受；owner 2026-10-16 关闭特价渠道后返回官方形状（`msg_011C…`、`cache_read/creation_input_tokens`、`output_tokens_details.thinking_tokens`）。适配器两种 usage 形状都读；转换渠道的 `cached_tokens` 按「不含在 input_tokens 内」累加，最坏只会多计。
+- **流式 usage**：`message_start` 带缓存计数、`message_delta` 只带 input/output，适配器逐字段合并后再换算，不会丢掉开头的缓存读取。
+- 价格为 Anthropic 官方价（AiCodeWith 模型页标注同一官方价，渠道折扣 1.9–6.5 折）。中转未公开「处理前拒绝」状态码，`UnacceptedStatuses` 为空。每次尝试按上界预留：Opus 约 256K×5 + 128K×20 ≈ 3.84 USD，Sonnet 约 1.92 USD。
+- 尚未处理：Opus/Sonnet 5.5 把工具调用之间较长的说明放进 thinking 块（omitted 下为空），长工具循环里正文提示会变少；如需展示进度，可用 `display: "updates"`（beta `thinking-display-updates-2026-08-18`），但与「推理不展示给任何人」的合同约定冲突，需另行决策。拒答（`stop_reason: refusal`）映射为 `refused`，未接服务端 fallback。
 
 ### Krill AI 接入（2026-10-10）
 
@@ -170,7 +188,7 @@ KRILL_AI_LIVE=1 go test ./internal/platform/llmgateway/ -run '^TestLiveKrill' -c
 
 共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则目录加载直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
 
-**启用真实 Anthropic 部署前的前置项**：`provider_anthropic.go` 的 usage 映射没有独立的 cache-write 分量，而 Anthropic 对写入缓存单独计价——直接开一个真实部署会系统性少计该笔费用。必须先补第四个不重叠分量（及其价格配方）再启用；目录里当前没有任何 Anthropic 部署，`CREATIVE_LLM_CATALOG` 覆盖时也不要自行加。
+**Anthropic 部署的缓存写入计价**：`provider_anthropic.go` 的 usage 映射没有独立的 cache-write 分量，缓存写入计入未命中输入。任何 `anthropic_messages` 部署（包括 `CREATIVE_LLM_CATALOG` 自定义目录）的 `input_uncached` 必须取该模型的缓存写入价（5 分钟缓存为 1.25× 输入），否则每次写入都会少计。要精确计价需另补第四个不重叠分量。
 
 思考模式是**固定的部署参数**而非调用方参数：2026-09-11 实测确认，思考模式下带 `tool_choice` 会被供应商以 400 `Thinking mode does not support this tool_choice` 拒绝，因此该能力在目录里关掉、由 `CheckCapability` 在派发前拒绝，不浪费一次尝试去换这个结论。同时思考模式会把输出预算大量用在 reasoning 上，小 `max_tokens` 会直接 `finish_reason=length` 且正文为空。
 
@@ -203,7 +221,7 @@ set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgat
 set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveAICodeWith -count=1 -v
 ```
 
-AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次（并断言输入没有被注入提示词撑大）、加密推理跨轮交回的流式工具循环（连跑三轮）、看图。中转的 Cloudflare 会以 403「error code: 1010」拦截 Python urllib 默认 UA，手工探测时需要带 `User-Agent`；Go 客户端不受影响。
+AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次（并断言输入没有被注入提示词撑大）、加密推理跨轮交回的流式工具循环（连跑三轮）、看图。`TestLiveAICodeWithClaude*` 覆盖两个 Claude 模型各答一次（断言自称以我们的 system 提示为准）、带签名 thinking 跨轮交回的流式工具循环（每模型两轮）、提示缓存读回、看图；2026-10-16 全部通过（约 90 秒）。中转的 Cloudflare 会以 403「error code: 1010」拦截 Python urllib 默认 UA，手工探测时需要带 `User-Agent`；Go 客户端不受影响。
 
 真实调用测试自带 0.05 USD 的月度上限，三个用例覆盖非流式、流式重组与真实工具调用；它不进入默认 `make check-go` 的必跑路径。默认 `-run` 全跑时是 60 个非 live 用例通过 + 3 个 live 用例按凭证缺失 skip。
 
