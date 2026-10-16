@@ -1,19 +1,19 @@
 {
   "uid": "d04f6c6d-5e57-41d1-8e19-62777ff4d5fb",
-  "revision": 2,
+  "revision": 5,
   "id": "creative-document-foundation",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-16T08:37:12.590Z",
-  "updatedAt": "2026-10-16T10:41:36.181Z",
+  "updatedAt": "2026-10-16T13:32:54.257Z",
   "risk": {
     "factors": [
-      "data-migration",
+      "broad-impact",
       "concurrency",
-      "trust-boundary",
+      "data-migration",
       "irreversible",
-      "broad-impact"
+      "trust-boundary"
     ]
   },
   "approvals": {
@@ -30,9 +30,35 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
+  "revisions": [
+    {
+      "at": "2026-10-16T12:09:02.330Z",
+      "summary": "实施完成后回写：类型改为在所在包 init() 注册；端口 Touched 带 actor、View 带 units、载荷用 creativecontent.Payload；放回检查命名 RequirePlaceable；新增夹具专用 CreateInternalInTx；add_node 新建文档写入者记为摄影师；单元名允许大写；修订列表项加 annotated_units、读旧修订加 annotated_units 与 unit_revs（契约只加字段，待 owner 确认）；能力测试改为非 active 账号；挂载点按实际改动更新。",
+      "contentHash": "7640e5a66632d5c9",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-10-16T13:32:54.093Z",
+      "summary": "处置实施审计：修订表加 removed_units 并在历史接口返回；SummaryBatch 与 List 改为批量读引用并加查询次数守卫；新增 ErrRevisionNotFound，恢复缺失历史返回 400、读旧修订返回 404 修订不存在。契约只加字段与区分错误文案，待 owner 确认。",
+      "contentHash": "7640e5a66632d5c9",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "d0eac8ae8d1ccadff2767c9951cb15cbc3f908f9",
+    "at": "2026-10-16T11:05:25.168Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b05ba84fb1a5fe7163600425e720a0ac38f0993f5cdff04e81266f046caf99fc"
+    },
+    "preExisting": [
+      ".lti/snapshots/b05ba84fb1a5fe7163600425e720a0ac38f0993f5cdff04e81266f046caf99fc.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }

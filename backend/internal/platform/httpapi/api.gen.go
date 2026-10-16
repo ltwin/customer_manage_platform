@@ -244,12 +244,13 @@ func (e CreativeActionAddNodeType) Valid() bool {
 
 // Defines values for CreativeActionAddNodeTypeKey.
 const (
-	CreativeActionAddNodeTypeKeyCoreAudio CreativeActionAddNodeTypeKey = "core.audio"
-	CreativeActionAddNodeTypeKeyCoreGroup CreativeActionAddNodeTypeKey = "core.group"
-	CreativeActionAddNodeTypeKeyCoreImage CreativeActionAddNodeTypeKey = "core.image"
-	CreativeActionAddNodeTypeKeyCoreLink  CreativeActionAddNodeTypeKey = "core.link"
-	CreativeActionAddNodeTypeKeyCoreText  CreativeActionAddNodeTypeKey = "core.text"
-	CreativeActionAddNodeTypeKeyCoreVideo CreativeActionAddNodeTypeKey = "core.video"
+	CreativeActionAddNodeTypeKeyCoreAudio        CreativeActionAddNodeTypeKey = "core.audio"
+	CreativeActionAddNodeTypeKeyCoreGroup        CreativeActionAddNodeTypeKey = "core.group"
+	CreativeActionAddNodeTypeKeyCoreImage        CreativeActionAddNodeTypeKey = "core.image"
+	CreativeActionAddNodeTypeKeyCoreLink         CreativeActionAddNodeTypeKey = "core.link"
+	CreativeActionAddNodeTypeKeyCoreText         CreativeActionAddNodeTypeKey = "core.text"
+	CreativeActionAddNodeTypeKeyCoreVideo        CreativeActionAddNodeTypeKey = "core.video"
+	CreativeActionAddNodeTypeKeyInternalDocument CreativeActionAddNodeTypeKey = "internal.document"
 )
 
 // Valid indicates whether the value is a known member of the CreativeActionAddNodeTypeKey enum.
@@ -266,6 +267,8 @@ func (e CreativeActionAddNodeTypeKey) Valid() bool {
 	case CreativeActionAddNodeTypeKeyCoreText:
 		return true
 	case CreativeActionAddNodeTypeKeyCoreVideo:
+		return true
+	case CreativeActionAddNodeTypeKeyInternalDocument:
 		return true
 	default:
 		return false
@@ -1148,6 +1151,42 @@ func (e CreativeContentRevisionKind) Valid() bool {
 	}
 }
 
+// Defines values for CreativeDocumentActorKind.
+const (
+	Agent        CreativeDocumentActorKind = "agent"
+	Photographer CreativeDocumentActorKind = "photographer"
+	System       CreativeDocumentActorKind = "system"
+)
+
+// Valid indicates whether the value is a known member of the CreativeDocumentActorKind enum.
+func (e CreativeDocumentActorKind) Valid() bool {
+	switch e {
+	case Agent:
+		return true
+	case Photographer:
+		return true
+	case System:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeDocumentPurgeResultPurged.
+const (
+	True CreativeDocumentPurgeResultPurged = true
+)
+
+// Valid indicates whether the value is a known member of the CreativeDocumentPurgeResultPurged enum.
+func (e CreativeDocumentPurgeResultPurged) Valid() bool {
+	switch e {
+	case True:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeEgressConsentPurpose.
 const (
 	CreativeEgressConsentPurposeCreativeAssistance CreativeEgressConsentPurpose = "creative_assistance"
@@ -1469,6 +1508,21 @@ const (
 func (e CreativeInputSourceSlot) Valid() bool {
 	switch e {
 	case CreativeInputSourceSlotReference:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeInternalDocumentTypeKey.
+const (
+	InternalDocument CreativeInternalDocumentTypeKey = "internal.document"
+)
+
+// Valid indicates whether the value is a known member of the CreativeInternalDocumentTypeKey enum.
+func (e CreativeInternalDocumentTypeKey) Valid() bool {
+	switch e {
+	case InternalDocument:
 		return true
 	default:
 		return false
@@ -3657,20 +3711,28 @@ type CreativeActionAddNode struct {
 	Content *CreativeContentDraft   `json:"content,omitempty"`
 
 	// ContentRevisionId 引用已有内容修订，与 asset、content 互斥；按账号和可展示性校验。
-	ContentRevisionId *string                      `json:"content_revision_id,omitempty"`
-	NodeId            string                       `json:"node_id"`
-	ParentId          nullable.Nullable[string]    `json:"parent_id,omitempty"`
-	Title             *string                      `json:"title,omitempty"`
-	Type              CreativeActionAddNodeType    `json:"type"`
-	TypeKey           CreativeActionAddNodeTypeKey `json:"type_key"`
-	X                 float32                      `json:"x"`
-	Y                 float32                      `json:"y"`
+	ContentRevisionId *string `json:"content_revision_id,omitempty"`
+
+	// DocumentId 把已有文档放到画布上；与 asset、content、content_revision_id、document_options 互斥，文档不能在回收站。
+	DocumentId *string `json:"document_id,omitempty"`
+
+	// DocumentOptions 新建文档时交给文档类型，结构由类型定义。
+	DocumentOptions *map[string]interface{}   `json:"document_options,omitempty"`
+	NodeId          string                    `json:"node_id"`
+	ParentId        nullable.Nullable[string] `json:"parent_id,omitempty"`
+	Title           *string                   `json:"title,omitempty"`
+	Type            CreativeActionAddNodeType `json:"type"`
+
+	// TypeKey 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
+	TypeKey CreativeActionAddNodeTypeKey `json:"type_key"`
+	X       float32                      `json:"x"`
+	Y       float32                      `json:"y"`
 }
 
 // CreativeActionAddNodeType defines model for CreativeActionAddNode.Type.
 type CreativeActionAddNodeType string
 
-// CreativeActionAddNodeTypeKey defines model for CreativeActionAddNode.TypeKey.
+// CreativeActionAddNodeTypeKey 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
 type CreativeActionAddNodeTypeKey string
 
 // CreativeActionClearContent defines model for CreativeActionClearContent.
@@ -4709,10 +4771,16 @@ type CreativeCanvasNode struct {
 	Data         CreativeNodeData         `json:"data"`
 
 	// DataRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
-	DataRevision CreativeRevision          `json:"data_revision"`
-	Id           string                    `json:"id"`
-	Metadata     CreativeNodeMetadata      `json:"metadata"`
-	ParentId     nullable.Nullable[string] `json:"parent_id"`
+	DataRevision CreativeRevision `json:"data_revision"`
+
+	// DocumentSummary 只出现在文档节点上；文档已删除、类型未注册或内容不可展示时为 null，同时 status.content_state 为 unavailable。
+	DocumentSummary nullable.Nullable[CreativeDocumentSummary] `json:"document_summary,omitempty"`
+
+	// DocumentTrashed 只出现在文档节点上；文档在回收站时为 true，摘要照常返回。
+	DocumentTrashed *bool                     `json:"document_trashed,omitempty"`
+	Id              string                    `json:"id"`
+	Metadata        CreativeNodeMetadata      `json:"metadata"`
+	ParentId        nullable.Nullable[string] `json:"parent_id"`
 
 	// PlacementRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	PlacementRevision CreativeRevision                      `json:"placement_revision"`
@@ -4840,17 +4908,167 @@ type CreativeContentRights struct {
 	SourceClass     string  `json:"source_class"`
 }
 
-// CreativeDocument defines model for CreativeDocument.
+// CreativeDocument 按 type_key 判别；各文档类型在自己的契约里加分支。
 type CreativeDocument struct {
-	Content           CreativeContentRevision `json:"content"`
-	ContentRevisionId string                  `json:"content_revision_id"`
-	Id                string                  `json:"id"`
+	union json.RawMessage
+}
+
+// CreativeDocumentActorKind defines model for CreativeDocumentActorKind.
+type CreativeDocumentActorKind string
+
+// CreativeDocumentCommandPayload defines model for CreativeDocumentCommandPayload.
+type CreativeDocumentCommandPayload struct {
+	// Expected 本批涉及的每个单元都要给出；值为修订号表示预期存在且相同，null 表示预期当前不存在。
+	Expected *CreativeDocumentExpectedUnits `json:"expected,omitempty"`
+
+	// ExpectedRevision 只用于整份 restore，预期的文档当前修订号；其他批次不得出现。
+	ExpectedRevision *CreativeRevision           `json:"expected_revision,omitempty"`
+	Operations       []CreativeDocumentOperation `json:"operations"`
+}
+
+// CreativeDocumentCommandRequest defines model for CreativeDocumentCommandRequest.
+type CreativeDocumentCommandRequest struct {
+	ClientCreatedAt time.Time                      `json:"client_created_at"`
+	OperationId     openapi_types.UUID             `json:"operation_id"`
+	Payload         CreativeDocumentCommandPayload `json:"payload"`
+}
+
+// CreativeDocumentCommandResult changed_units 里每个单元的新修订号都等于 revision；reset_required 为 true 时三个列表为空，调用方重新读取文档。
+type CreativeDocumentCommandResult struct {
+	AnnotatedUnits []string `json:"annotated_units"`
+	ChangedUnits   []string `json:"changed_units"`
+	RemovedUnits   []string `json:"removed_units"`
+	ResetRequired  bool     `json:"reset_required"`
 
 	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
 	Revision CreativeRevision `json:"revision"`
-	Title    string           `json:"title"`
-	TypeKey  string           `json:"type_key"`
 }
+
+// CreativeDocumentConflict defines model for CreativeDocumentConflict.
+type CreativeDocumentConflict struct {
+	CurrentRev  nullable.Nullable[CreativeRevision] `json:"current_rev"`
+	ExpectedRev nullable.Nullable[CreativeRevision] `json:"expected_rev"`
+
+	// Unit 冲突的单元；整份恢复冲突时为 "*"，两个值都是文档修订号。
+	Unit string `json:"unit"`
+}
+
+// CreativeDocumentConflictDetails defines model for CreativeDocumentConflictDetails.
+type CreativeDocumentConflictDetails struct {
+	Conflicts []CreativeDocumentConflict `json:"conflicts"`
+}
+
+// CreativeDocumentConversation defines model for CreativeDocumentConversation.
+type CreativeDocumentConversation struct {
+	ConversationId nullable.Nullable[string] `json:"conversation_id"`
+}
+
+// CreativeDocumentExpectedUnits 本批涉及的每个单元都要给出；值为修订号表示预期存在且相同，null 表示预期当前不存在。
+type CreativeDocumentExpectedUnits map[string]*CreativeRevision
+
+// CreativeDocumentListItem defines model for CreativeDocumentListItem.
+type CreativeDocumentListItem struct {
+	Id string `json:"id"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision `json:"revision"`
+
+	// Summary 类型未注册时为 null。
+	Summary   nullable.Nullable[CreativeDocumentSummary] `json:"summary"`
+	Title     string                                     `json:"title"`
+	TrashedAt nullable.Nullable[time.Time]               `json:"trashed_at"`
+	TypeKey   string                                     `json:"type_key"`
+	UpdatedAt time.Time                                  `json:"updated_at"`
+}
+
+// CreativeDocumentOperation 通用操作为 rename、restore、restore_units；其余由文档类型定义。restore 与 restore_units 必须单独成批。
+type CreativeDocumentOperation struct {
+	Op                   string                 `json:"op"`
+	AdditionalProperties map[string]interface{} `json:"-"`
+}
+
+// CreativeDocumentPage defines model for CreativeDocumentPage.
+type CreativeDocumentPage struct {
+	Items      []CreativeDocumentListItem `json:"items"`
+	NextCursor nullable.Nullable[string]  `json:"next_cursor"`
+}
+
+// CreativeDocumentPurgeResult defines model for CreativeDocumentPurgeResult.
+type CreativeDocumentPurgeResult struct {
+	Id     string                            `json:"id"`
+	Purged CreativeDocumentPurgeResultPurged `json:"purged"`
+}
+
+// CreativeDocumentPurgeResultPurged defines model for CreativeDocumentPurgeResult.Purged.
+type CreativeDocumentPurgeResultPurged bool
+
+// CreativeDocumentRevisionItem defines model for CreativeDocumentRevisionItem.
+type CreativeDocumentRevisionItem struct {
+	ActorKind CreativeDocumentActorKind `json:"actor_kind"`
+
+	// AnnotatedUnits 只做了标注、修订号不变的单元。
+	AnnotatedUnits []string `json:"annotated_units"`
+
+	// ChangedUnits 推进了修订号的单元；新建与整份恢复为 ["*"]。
+	ChangedUnits []string  `json:"changed_units"`
+	CreatedAt    time.Time `json:"created_at"`
+
+	// RemovedUnits 这个修订删除的单元；整份恢复为空，以 changed_units 的 "*" 表示全部重置。
+	RemovedUnits []string                            `json:"removed_units"`
+	RestoredFrom nullable.Nullable[CreativeRevision] `json:"restored_from"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision          `json:"revision"`
+	RunId    nullable.Nullable[string] `json:"run_id"`
+	Title    string                    `json:"title"`
+}
+
+// CreativeDocumentRevisionPage defines model for CreativeDocumentRevisionPage.
+type CreativeDocumentRevisionPage struct {
+	Items      []CreativeDocumentRevisionItem `json:"items"`
+	NextCursor nullable.Nullable[string]      `json:"next_cursor"`
+}
+
+// CreativeDocumentRevisionView defines model for CreativeDocumentRevisionView.
+type CreativeDocumentRevisionView struct {
+	ActorKind      CreativeDocumentActorKind           `json:"actor_kind"`
+	AnnotatedUnits []string                            `json:"annotated_units"`
+	ChangedUnits   []string                            `json:"changed_units"`
+	CreatedAt      time.Time                           `json:"created_at"`
+	RemovedUnits   []string                            `json:"removed_units"`
+	RestoredFrom   nullable.Nullable[CreativeRevision] `json:"restored_from"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision CreativeRevision          `json:"revision"`
+	RunId    nullable.Nullable[string] `json:"run_id"`
+	Title    string                    `json:"title"`
+
+	// UnitRevs 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。
+	UnitRevs CreativeDocumentUnitRevisions `json:"unit_revs"`
+
+	// View 类型的读取分支，按该修订的快照计算；给了 units 时由类型裁剪。
+	View map[string]interface{} `json:"view"`
+}
+
+// CreativeDocumentSummary 文档类型给出的摘要，结构由类型定义。
+type CreativeDocumentSummary map[string]interface{}
+
+// CreativeDocumentTargetRequest defines model for CreativeDocumentTargetRequest.
+type CreativeDocumentTargetRequest struct {
+	ClientCreatedAt time.Time            `json:"client_created_at"`
+	OperationId     openapi_types.UUID   `json:"operation_id"`
+	Payload         CreativeEmptyPayload `json:"payload"`
+}
+
+// CreativeDocumentTrashResult defines model for CreativeDocumentTrashResult.
+type CreativeDocumentTrashResult struct {
+	Id        string                       `json:"id"`
+	TrashedAt nullable.Nullable[time.Time] `json:"trashed_at"`
+	UpdatedAt time.Time                    `json:"updated_at"`
+}
+
+// CreativeDocumentUnitRevisions 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。
+type CreativeDocumentUnitRevisions map[string]CreativeRevision
 
 // CreativeEgressConsent 本会话内容可发送给平台签约的模型服务商；不对摄影师列出具体服务商，每次调用实际发往哪家记录在调用证据上。
 type CreativeEgressConsent struct {
@@ -5181,6 +5399,27 @@ type CreativeInputSourceRole string
 
 // CreativeInputSourceSlot defines model for CreativeInputSource.Slot.
 type CreativeInputSourceSlot string
+
+// CreativeInternalDocument defines model for CreativeInternalDocument.
+type CreativeInternalDocument struct {
+	Content           CreativeContentRevision `json:"content"`
+	ContentRevisionId string                  `json:"content_revision_id"`
+	CreatedAt         time.Time               `json:"created_at"`
+	Id                string                  `json:"id"`
+
+	// Revision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+	Revision  CreativeRevision                `json:"revision"`
+	Title     string                          `json:"title"`
+	TrashedAt nullable.Nullable[time.Time]    `json:"trashed_at"`
+	TypeKey   CreativeInternalDocumentTypeKey `json:"type_key"`
+
+	// UnitRevs 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。
+	UnitRevs  CreativeDocumentUnitRevisions `json:"unit_revs"`
+	UpdatedAt time.Time                     `json:"updated_at"`
+}
+
+// CreativeInternalDocumentTypeKey defines model for CreativeInternalDocument.TypeKey.
+type CreativeInternalDocumentTypeKey string
 
 // CreativeLibraryAsset defines model for CreativeLibraryAsset.
 type CreativeLibraryAsset struct {
@@ -7657,6 +7896,53 @@ type CreateCreativeAgentRunParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
 }
 
+// ListCreativeDocumentsParams defines parameters for ListCreativeDocuments.
+type ListCreativeDocumentsParams struct {
+	Type    *string `form:"type,omitempty" json:"type,omitempty"`
+	Q       *string `form:"q,omitempty" json:"q,omitempty"`
+	Trashed *bool   `form:"trashed,omitempty" json:"trashed,omitempty"`
+	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor  *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CommandCreativeDocumentParams defines parameters for CommandCreativeDocument.
+type CommandCreativeDocumentParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// GetCreativeDocumentConversationParams defines parameters for GetCreativeDocumentConversation.
+type GetCreativeDocumentConversationParams struct {
+	CanvasId string `form:"canvas_id" json:"canvas_id"`
+}
+
+// PurgeCreativeDocumentParams defines parameters for PurgeCreativeDocument.
+type PurgeCreativeDocumentParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// ListCreativeDocumentRevisionsParams defines parameters for ListCreativeDocumentRevisions.
+type ListCreativeDocumentRevisionsParams struct {
+	RunId         *string           `form:"run_id,omitempty" json:"run_id,omitempty"`
+	SinceRevision *CreativeRevision `form:"since_revision,omitempty" json:"since_revision,omitempty"`
+	Limit         *int              `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor        *string           `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetCreativeDocumentRevisionParams defines parameters for GetCreativeDocumentRevision.
+type GetCreativeDocumentRevisionParams struct {
+	Units *string `form:"units,omitempty" json:"units,omitempty"`
+}
+
+// TrashCreativeDocumentParams defines parameters for TrashCreativeDocument.
+type TrashCreativeDocumentParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
+// UntrashCreativeDocumentParams defines parameters for UntrashCreativeDocument.
+type UntrashCreativeDocumentParams struct {
+	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
+}
+
 // RevokeCreativeEgressConsentParams defines parameters for RevokeCreativeEgressConsent.
 type RevokeCreativeEgressConsentParams struct {
 	IdempotencyKey openapi_types.UUID `json:"Idempotency-Key"`
@@ -8233,6 +8519,18 @@ type RestoreCreativeAgentConversationJSONRequestBody = CreativeAgentConversation
 // CreateCreativeAgentRunJSONRequestBody defines body for CreateCreativeAgentRun for application/json ContentType.
 type CreateCreativeAgentRunJSONRequestBody = CreateCreativeAgentRunRequest
 
+// CommandCreativeDocumentJSONRequestBody defines body for CommandCreativeDocument for application/json ContentType.
+type CommandCreativeDocumentJSONRequestBody = CreativeDocumentCommandRequest
+
+// PurgeCreativeDocumentJSONRequestBody defines body for PurgeCreativeDocument for application/json ContentType.
+type PurgeCreativeDocumentJSONRequestBody = CreativeDocumentTargetRequest
+
+// TrashCreativeDocumentJSONRequestBody defines body for TrashCreativeDocument for application/json ContentType.
+type TrashCreativeDocumentJSONRequestBody = CreativeDocumentTargetRequest
+
+// UntrashCreativeDocumentJSONRequestBody defines body for UntrashCreativeDocument for application/json ContentType.
+type UntrashCreativeDocumentJSONRequestBody = CreativeDocumentTargetRequest
+
 // RevokeCreativeEgressConsentJSONRequestBody defines body for RevokeCreativeEgressConsent for application/json ContentType.
 type RevokeCreativeEgressConsentJSONRequestBody = RevokeCreativeEgressConsentRequest
 
@@ -8358,6 +8656,72 @@ type CreateShootPlanAssetBindingJSONRequestBody = CreateAssetBindingInput
 
 // ReleaseShootPlanAssetBindingJSONRequestBody defines body for ReleaseShootPlanAssetBinding for application/json ContentType.
 type ReleaseShootPlanAssetBindingJSONRequestBody = ReleaseAssetBindingInput
+
+// Getter for additional properties for CreativeDocumentOperation. Returns the specified
+// element and whether it was found
+func (a CreativeDocumentOperation) Get(fieldName string) (value interface{}, found bool) {
+	if a.AdditionalProperties != nil {
+		value, found = a.AdditionalProperties[fieldName]
+	}
+	return
+}
+
+// Setter for additional properties for CreativeDocumentOperation
+func (a *CreativeDocumentOperation) Set(fieldName string, value interface{}) {
+	if a.AdditionalProperties == nil {
+		a.AdditionalProperties = make(map[string]interface{})
+	}
+	a.AdditionalProperties[fieldName] = value
+}
+
+// Override default JSON handling for CreativeDocumentOperation to handle AdditionalProperties
+func (a *CreativeDocumentOperation) UnmarshalJSON(b []byte) error {
+	object := make(map[string]json.RawMessage)
+	err := json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["op"]; found {
+		err = json.Unmarshal(raw, &a.Op)
+		if err != nil {
+			return fmt.Errorf("error reading 'op': %w", err)
+		}
+		delete(object, "op")
+	}
+
+	if len(object) != 0 {
+		a.AdditionalProperties = make(map[string]interface{})
+		for fieldName, fieldBuf := range object {
+			var fieldVal interface{}
+			err := json.Unmarshal(fieldBuf, &fieldVal)
+			if err != nil {
+				return fmt.Errorf("error unmarshaling field %s: %w", fieldName, err)
+			}
+			a.AdditionalProperties[fieldName] = fieldVal
+		}
+	}
+	return nil
+}
+
+// Override default JSON handling for CreativeDocumentOperation to handle AdditionalProperties
+func (a CreativeDocumentOperation) MarshalJSON() ([]byte, error) {
+	var err error
+	object := make(map[string]json.RawMessage)
+
+	object["op"], err = json.Marshal(a.Op)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'op': %w", err)
+	}
+
+	for fieldName, field := range a.AdditionalProperties {
+		object[fieldName], err = json.Marshal(field)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling '%s': %w", fieldName, err)
+		}
+	}
+	return json.Marshal(object)
+}
 
 // AsCoreArchiveAcknowledgement returns the union data inside the ArchiveAcknowledgement as a CoreArchiveAcknowledgement
 func (t ArchiveAcknowledgement) AsCoreArchiveAcknowledgement() (CoreArchiveAcknowledgement, error) {
@@ -8842,6 +9206,65 @@ func (t CreativeContentPayload) MarshalJSON() ([]byte, error) {
 }
 
 func (t *CreativeContentPayload) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeInternalDocument returns the union data inside the CreativeDocument as a CreativeInternalDocument
+func (t CreativeDocument) AsCreativeInternalDocument() (CreativeInternalDocument, error) {
+	var body CreativeInternalDocument
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeInternalDocument overwrites any union data inside the CreativeDocument as the provided CreativeInternalDocument
+func (t *CreativeDocument) FromCreativeInternalDocument(v CreativeInternalDocument) error {
+	v.TypeKey = "internal.document"
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeInternalDocument performs a merge with any union data inside the CreativeDocument, using the provided CreativeInternalDocument
+func (t *CreativeDocument) MergeCreativeInternalDocument(v CreativeInternalDocument) error {
+	v.TypeKey = "internal.document"
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeDocument) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"type_key"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t CreativeDocument) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "internal.document":
+		return t.AsCreativeInternalDocument()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t CreativeDocument) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeDocument) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -9594,6 +10017,32 @@ func (t *ErrorDetails) MergeStaleBusinessDraftDetails(v StaleBusinessDraftDetail
 	return err
 }
 
+// AsCreativeDocumentConflictDetails returns the union data inside the ErrorDetails as a CreativeDocumentConflictDetails
+func (t ErrorDetails) AsCreativeDocumentConflictDetails() (CreativeDocumentConflictDetails, error) {
+	var body CreativeDocumentConflictDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeDocumentConflictDetails overwrites any union data inside the ErrorDetails as the provided CreativeDocumentConflictDetails
+func (t *ErrorDetails) FromCreativeDocumentConflictDetails(v CreativeDocumentConflictDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeDocumentConflictDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeDocumentConflictDetails
+func (t *ErrorDetails) MergeCreativeDocumentConflictDetails(v CreativeDocumentConflictDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
 func (t ErrorDetails) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
@@ -10104,8 +10553,32 @@ type ServerInterface interface {
 	// (POST /creative/conversations/{id}/runs)
 	CreateCreativeAgentRun(c *gin.Context, id string, params CreateCreativeAgentRunParams)
 
+	// (GET /creative/documents)
+	ListCreativeDocuments(c *gin.Context, params ListCreativeDocumentsParams)
+
 	// (GET /creative/documents/{id})
 	GetCreativeDocument(c *gin.Context, id string)
+
+	// (POST /creative/documents/{id}/commands)
+	CommandCreativeDocument(c *gin.Context, id string, params CommandCreativeDocumentParams)
+
+	// (GET /creative/documents/{id}/conversation)
+	GetCreativeDocumentConversation(c *gin.Context, id string, params GetCreativeDocumentConversationParams)
+
+	// (POST /creative/documents/{id}/purge)
+	PurgeCreativeDocument(c *gin.Context, id string, params PurgeCreativeDocumentParams)
+
+	// (GET /creative/documents/{id}/revisions)
+	ListCreativeDocumentRevisions(c *gin.Context, id string, params ListCreativeDocumentRevisionsParams)
+
+	// (GET /creative/documents/{id}/revisions/{revision})
+	GetCreativeDocumentRevision(c *gin.Context, id string, revision CreativeRevision, params GetCreativeDocumentRevisionParams)
+
+	// (POST /creative/documents/{id}/trash)
+	TrashCreativeDocument(c *gin.Context, id string, params TrashCreativeDocumentParams)
+
+	// (POST /creative/documents/{id}/untrash)
+	UntrashCreativeDocument(c *gin.Context, id string, params UntrashCreativeDocumentParams)
 	// 阻止后续外发；不承诺召回已发出的内容
 	// (POST /creative/egress-consents/{id}/revoke)
 	RevokeCreativeEgressConsent(c *gin.Context, id string, params RevokeCreativeEgressConsentParams)
@@ -13022,6 +13495,67 @@ func (siw *ServerInterfaceWrapper) CreateCreativeAgentRun(c *gin.Context) {
 	siw.Handler.CreateCreativeAgentRun(c, id, params)
 }
 
+// ListCreativeDocuments operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeDocuments(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreativeDocumentsParams
+
+	// ------------- Optional query parameter "type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "type", c.Request.URL.Query(), &params.Type, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter type: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", c.Request.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter q: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "trashed" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "trashed", c.Request.URL.Query(), &params.Trashed, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter trashed: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeDocuments(c, params)
+}
+
 // GetCreativeDocument operation middleware
 func (siw *ServerInterfaceWrapper) GetCreativeDocument(c *gin.Context) {
 
@@ -13047,6 +13581,369 @@ func (siw *ServerInterfaceWrapper) GetCreativeDocument(c *gin.Context) {
 	}
 
 	siw.Handler.GetCreativeDocument(c, id)
+}
+
+// CommandCreativeDocument operation middleware
+func (siw *ServerInterfaceWrapper) CommandCreativeDocument(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CommandCreativeDocumentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.CommandCreativeDocument(c, id, params)
+}
+
+// GetCreativeDocumentConversation operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeDocumentConversation(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCreativeDocumentConversationParams
+
+	// ------------- Required query parameter "canvas_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "canvas_id", c.Request.URL.Query(), &params.CanvasId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter canvas_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeDocumentConversation(c, id, params)
+}
+
+// PurgeCreativeDocument operation middleware
+func (siw *ServerInterfaceWrapper) PurgeCreativeDocument(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PurgeCreativeDocumentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.PurgeCreativeDocument(c, id, params)
+}
+
+// ListCreativeDocumentRevisions operation middleware
+func (siw *ServerInterfaceWrapper) ListCreativeDocumentRevisions(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreativeDocumentRevisionsParams
+
+	// ------------- Optional query parameter "run_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "run_id", c.Request.URL.Query(), &params.RunId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter run_id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "since_revision" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "since_revision", c.Request.URL.Query(), &params.SinceRevision, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter since_revision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", c.Request.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", c.Request.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter cursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.ListCreativeDocumentRevisions(c, id, params)
+}
+
+// GetCreativeDocumentRevision operation middleware
+func (siw *ServerInterfaceWrapper) GetCreativeDocumentRevision(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Path parameter "revision" -------------
+	var revision CreativeRevision
+
+	err = runtime.BindStyledParameterWithOptions("simple", "revision", c.Param("revision"), &revision, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter revision: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetCreativeDocumentRevisionParams
+
+	// ------------- Optional query parameter "units" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "units", c.Request.URL.Query(), &params.Units, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter units: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.GetCreativeDocumentRevision(c, id, revision, params)
+}
+
+// TrashCreativeDocument operation middleware
+func (siw *ServerInterfaceWrapper) TrashCreativeDocument(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params TrashCreativeDocumentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.TrashCreativeDocument(c, id, params)
+}
+
+// UntrashCreativeDocument operation middleware
+func (siw *ServerInterfaceWrapper) UntrashCreativeDocument(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UntrashCreativeDocumentParams
+
+	headers := c.Request.Header
+
+	// ------------- Required header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandler(c, fmt.Errorf("Expected one value for Idempotency-Key, got %d", n), http.StatusBadRequest)
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter Idempotency-Key: %w", err), http.StatusBadRequest)
+			return
+		}
+
+		params.IdempotencyKey = IdempotencyKey
+
+	} else {
+		siw.ErrorHandler(c, fmt.Errorf("Header parameter Idempotency-Key is required, but not found"), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.UntrashCreativeDocument(c, id, params)
 }
 
 // RevokeCreativeEgressConsent operation middleware
@@ -16213,7 +17110,15 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.POST(options.BaseURL+"/creative/conversations/:id/restore", wrapper.RestoreCreativeAgentConversation)
 	router.GET(options.BaseURL+"/creative/conversations/:id/runs", wrapper.ListCreativeAgentRuns)
 	router.POST(options.BaseURL+"/creative/conversations/:id/runs", wrapper.CreateCreativeAgentRun)
+	router.GET(options.BaseURL+"/creative/documents", wrapper.ListCreativeDocuments)
 	router.GET(options.BaseURL+"/creative/documents/:id", wrapper.GetCreativeDocument)
+	router.POST(options.BaseURL+"/creative/documents/:id/commands", wrapper.CommandCreativeDocument)
+	router.GET(options.BaseURL+"/creative/documents/:id/conversation", wrapper.GetCreativeDocumentConversation)
+	router.POST(options.BaseURL+"/creative/documents/:id/purge", wrapper.PurgeCreativeDocument)
+	router.GET(options.BaseURL+"/creative/documents/:id/revisions", wrapper.ListCreativeDocumentRevisions)
+	router.GET(options.BaseURL+"/creative/documents/:id/revisions/:revision", wrapper.GetCreativeDocumentRevision)
+	router.POST(options.BaseURL+"/creative/documents/:id/trash", wrapper.TrashCreativeDocument)
+	router.POST(options.BaseURL+"/creative/documents/:id/untrash", wrapper.UntrashCreativeDocument)
 	router.POST(options.BaseURL+"/creative/egress-consents/:id/revoke", wrapper.RevokeCreativeEgressConsent)
 	router.GET(options.BaseURL+"/creative/generation/catalog", wrapper.GetCreativeGenerationCatalog)
 	router.GET(options.BaseURL+"/creative/image-edit-capabilities", wrapper.GetCreativeImageEditCapabilities)

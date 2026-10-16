@@ -65,13 +65,15 @@ export default function DocumentView({
               重新读取
             </button>
           </div>
-        ) : document ? (
+        ) : document?.type_key === 'internal.document' ? (
           <>
             <small>独立文档 · 开发验证</small>
             <p>
               {contentText(document.content.payload)}
             </p>
           </>
+        ) : document ? (
+          <p>这类文档暂不能在这里查看</p>
         ) : (
           <p>正在读取文档…</p>
         )}

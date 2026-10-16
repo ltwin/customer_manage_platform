@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -32,14 +32,11 @@ func CreateInternalDocument(ctx context.Context, scope store.AccountScope, c cre
 		}
 		return creativecontent.Validate(v.Content)
 	}, func(ctx context.Context, tx store.TxAccountScope, v CreateDocumentInput) (creativeops.Outcome, error) {
-		d := Document{ID: "cwdoc_" + uuid.NewString(), Title: v.Title, TypeKey: "internal.document", Revision: 1}
-		r, err := creativecontent.WriteAndRetain(ctx, tx, v.Content, "", nil, func(r creativecontent.Revision) error {
-			return tx.Insert(ctx, "creative_documents", []string{"id", "type_key", "title", "content_revision_id"}, d.ID, d.TypeKey, d.Title, r.ID)
-		})
+		created, err := creativedocument.CreateInternalInTx(ctx, tx, v.Title, v.Content, creativedocument.Photographer)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}
-		d.ContentRevisionID = r.ID
+		d := Document{ID: created.ID, Title: created.Title, TypeKey: created.TypeKey, ContentRevisionID: created.ContentRevisionID, Revision: creativeops.Revision(created.Revision)}
 		return outcome(201, "document", d.ID, d.Revision, d)
 	})
 }
@@ -94,7 +91,7 @@ func ReferenceInternalDocument(ctx context.Context, scope store.AccountScope, c 
 		if canvas.TopologyRevision != v.ExpectedTopologyRevision {
 			return creativeops.Outcome{}, ErrVersionConflict
 		}
-		doc, err := readDocument(ctx, tx, v.DocumentID)
+		doc, err := creativedocument.RequirePlaceable(ctx, tx, v.DocumentID, creativedocument.InternalTypeKey)
 		if err != nil {
 			return creativeops.Outcome{}, err
 		}

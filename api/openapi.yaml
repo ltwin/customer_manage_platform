@@ -577,6 +577,51 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents:
+    get:
+      tags:
+      - creative-foundation
+      operationId: listCreativeDocuments
+      description: 按更新时间倒序列出本账号的文档；游标绑定账号与过滤条件。
+      parameters:
+      - in: query
+        name: type
+        schema:
+          type: string
+      - in: query
+        name: q
+        schema:
+          type: string
+          maxLength: 100
+      - in: query
+        name: trashed
+        schema:
+          type: boolean
+          default: false
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
   /creative/documents/{id}:
     get:
       tags:
@@ -595,6 +640,262 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreativeDocument'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}/commands:
+    post:
+      tags:
+      - creative-foundation
+      operationId: commandCreativeDocument
+      description: 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreativeDocumentCommandRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentCommandResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}/trash:
+    post:
+      tags:
+      - creative-foundation
+      operationId: trashCreativeDocument
+      description: 把文档放进回收站，之后只读；已在回收站时保持原时间。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreativeDocumentTargetRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentTrashResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}/untrash:
+    post:
+      tags:
+      - creative-foundation
+      operationId: untrashCreativeDocument
+      description: 把文档移出回收站；不在回收站时原样返回。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreativeDocumentTargetRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentTrashResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}/purge:
+    post:
+      tags:
+      - creative-foundation
+      operationId: purgeCreativeDocument
+      description: 彻底删除回收站中的文档及其全部历史；挂它的节点之后读取为不可用。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: header
+        name: Idempotency-Key
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreativeDocumentTargetRequest'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentPurgeResult'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}/revisions:
+    get:
+      tags:
+      - creative-foundation
+      operationId: listCreativeDocumentRevisions
+      description: 按修订号倒序列出文档历史，可只看某次运行或某个修订之后的写入；游标绑定文档与过滤条件。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: run_id
+        schema:
+          type: string
+      - in: query
+        name: since_revision
+        schema:
+          $ref: '#/components/schemas/CreativeRevision'
+      - in: query
+        name: limit
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - in: query
+        name: cursor
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentRevisionPage'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}/revisions/{revision}:
+    get:
+      tags:
+      - creative-foundation
+      operationId: getCreativeDocumentRevision
+      description: 读取一个旧修订；units 逗号分隔、最多 200 个，只返回这些单元，由类型裁剪。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: revision
+        required: true
+        schema:
+          $ref: '#/components/schemas/CreativeRevision'
+      - in: query
+        name: units
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentRevisionView'
+        default:
+          description: 请求失败
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+  /creative/documents/{id}/conversation:
+    get:
+      tags:
+      - creative-foundation
+      operationId: getCreativeDocumentConversation
+      description: 文档在某个画布上的助手工作会话；没有或已删除时为 null。
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: canvas_id
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreativeDocumentConversation'
         default:
           description: 请求失败
           content:
@@ -7609,6 +7910,14 @@ components:
           $ref: '#/components/schemas/CreativeContentRevision'
         version_summary:
           $ref: '#/components/schemas/CreativeNodeVersionSummary'
+        document_summary:
+          allOf:
+          - $ref: '#/components/schemas/CreativeDocumentSummary'
+          nullable: true
+          description: 只出现在文档节点上；文档已删除、类型未注册或内容不可展示时为 null，同时 status.content_state 为 unavailable。
+        document_trashed:
+          type: boolean
+          description: 只出现在文档节点上；文档在回收站时为 true，摘要照常返回。
     CreativeNodeVersionSummary:
       type: object
       additionalProperties: false
@@ -9197,6 +9506,7 @@ components:
         - $ref: "#/components/schemas/ExpiryQuoteExpiredDetails"
         - $ref: "#/components/schemas/BusinessDraftUnavailableDetails"
         - $ref: "#/components/schemas/StaleBusinessDraftDetails"
+        - $ref: "#/components/schemas/CreativeDocumentConflictDetails"
 
     OrderBusinessDraftUnavailableReason:
       type: string
@@ -13251,6 +13561,8 @@ components:
           - core.video
           - core.audio
           - core.group
+          - internal.document
+          description: 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
         title:
           type: string
           maxLength: 200
@@ -13268,6 +13580,13 @@ components:
           description: 引用已有内容修订，与 asset、content 互斥；按账号和可展示性校验。
         content:
           $ref: '#/components/schemas/CreativeContentDraft'
+        document_id:
+          type: string
+          description: 把已有文档放到画布上；与 asset、content、content_revision_id、document_options 互斥，文档不能在回收站。
+        document_options:
+          type: object
+          additionalProperties: true
+          description: 新建文档时交给文档类型，结构由类型定义。
     CreativeActionMoveNodes:
       type: object
       additionalProperties: false
@@ -14074,6 +14393,14 @@ components:
         execution_id:
           type: string
     CreativeDocument:
+      description: 按 type_key 判别；各文档类型在自己的契约里加分支。
+      oneOf:
+      - $ref: '#/components/schemas/CreativeInternalDocument'
+      discriminator:
+        propertyName: type_key
+        mapping:
+          internal.document: '#/components/schemas/CreativeInternalDocument'
+    CreativeInternalDocument:
       type: object
       additionalProperties: false
       required:
@@ -14082,6 +14409,10 @@ components:
       - type_key
       - content_revision_id
       - revision
+      - unit_revs
+      - trashed_at
+      - created_at
+      - updated_at
       - content
       properties:
         id:
@@ -14090,12 +14421,359 @@ components:
           type: string
         type_key:
           type: string
+          enum:
+          - internal.document
         content_revision_id:
           type: string
         revision:
           $ref: '#/components/schemas/CreativeRevision'
+        unit_revs:
+          $ref: '#/components/schemas/CreativeDocumentUnitRevisions'
+        trashed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
         content:
           $ref: '#/components/schemas/CreativeContentRevision'
+    CreativeDocumentUnitRevisions:
+      type: object
+      description: 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。
+      additionalProperties:
+        $ref: '#/components/schemas/CreativeRevision'
+    CreativeDocumentExpectedUnits:
+      type: object
+      maxProperties: 4096
+      description: 本批涉及的每个单元都要给出；值为修订号表示预期存在且相同，null 表示预期当前不存在。
+      additionalProperties:
+        allOf:
+        - $ref: '#/components/schemas/CreativeRevision'
+        nullable: true
+    CreativeDocumentOperation:
+      type: object
+      description: 通用操作为 rename、restore、restore_units；其余由文档类型定义。restore 与 restore_units 必须单独成批。
+      required:
+      - op
+      properties:
+        op:
+          type: string
+      additionalProperties: true
+    CreativeDocumentCommandPayload:
+      type: object
+      additionalProperties: false
+      required:
+      - operations
+      properties:
+        expected:
+          $ref: '#/components/schemas/CreativeDocumentExpectedUnits'
+        expected_revision:
+          allOf:
+          - $ref: '#/components/schemas/CreativeRevision'
+          description: 只用于整份 restore，预期的文档当前修订号；其他批次不得出现。
+        operations:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/CreativeDocumentOperation'
+    CreativeDocumentCommandRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeDocumentCommandPayload'
+    CreativeDocumentTargetRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - operation_id
+      - client_created_at
+      - payload
+      properties:
+        operation_id:
+          type: string
+          format: uuid
+        client_created_at:
+          type: string
+          format: date-time
+        payload:
+          $ref: '#/components/schemas/CreativeEmptyPayload'
+    CreativeDocumentCommandResult:
+      type: object
+      additionalProperties: false
+      description: changed_units 里每个单元的新修订号都等于 revision；reset_required 为 true 时三个列表为空，调用方重新读取文档。
+      required:
+      - revision
+      - changed_units
+      - annotated_units
+      - removed_units
+      - reset_required
+      properties:
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        changed_units:
+          type: array
+          items:
+            type: string
+        annotated_units:
+          type: array
+          items:
+            type: string
+        removed_units:
+          type: array
+          items:
+            type: string
+        reset_required:
+          type: boolean
+    CreativeDocumentConflict:
+      type: object
+      additionalProperties: false
+      required:
+      - unit
+      - expected_rev
+      - current_rev
+      properties:
+        unit:
+          type: string
+          description: 冲突的单元；整份恢复冲突时为 "*"，两个值都是文档修订号。
+        expected_rev:
+          allOf:
+          - $ref: '#/components/schemas/CreativeRevision'
+          nullable: true
+        current_rev:
+          allOf:
+          - $ref: '#/components/schemas/CreativeRevision'
+          nullable: true
+    CreativeDocumentConflictDetails:
+      type: object
+      additionalProperties: false
+      required:
+      - conflicts
+      properties:
+        conflicts:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CreativeDocumentConflict'
+    CreativeDocumentTrashResult:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - trashed_at
+      - updated_at
+      properties:
+        id:
+          type: string
+        trashed_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+    CreativeDocumentPurgeResult:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - purged
+      properties:
+        id:
+          type: string
+        purged:
+          type: boolean
+          enum:
+          - true
+    CreativeDocumentSummary:
+      type: object
+      description: 文档类型给出的摘要，结构由类型定义。
+      additionalProperties: true
+    CreativeDocumentListItem:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - type_key
+      - title
+      - revision
+      - trashed_at
+      - updated_at
+      - summary
+      properties:
+        id:
+          type: string
+        type_key:
+          type: string
+        title:
+          type: string
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        trashed_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+        summary:
+          allOf:
+          - $ref: '#/components/schemas/CreativeDocumentSummary'
+          nullable: true
+          description: 类型未注册时为 null。
+    CreativeDocumentPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeDocumentListItem'
+        next_cursor:
+          type: string
+          nullable: true
+    CreativeDocumentActorKind:
+      type: string
+      enum:
+      - photographer
+      - agent
+      - system
+    CreativeDocumentRevisionItem:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - actor_kind
+      - run_id
+      - restored_from
+      - changed_units
+      - annotated_units
+      - removed_units
+      - title
+      - created_at
+      properties:
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        actor_kind:
+          $ref: '#/components/schemas/CreativeDocumentActorKind'
+        run_id:
+          type: string
+          nullable: true
+        restored_from:
+          allOf:
+          - $ref: '#/components/schemas/CreativeRevision'
+          nullable: true
+        changed_units:
+          type: array
+          description: 推进了修订号的单元；新建与整份恢复为 ["*"]。
+          items:
+            type: string
+        annotated_units:
+          type: array
+          description: 只做了标注、修订号不变的单元。
+          items:
+            type: string
+        removed_units:
+          type: array
+          description: 这个修订删除的单元；整份恢复为空，以 changed_units 的 "*" 表示全部重置。
+          items:
+            type: string
+        title:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreativeDocumentRevisionPage:
+      type: object
+      additionalProperties: false
+      required:
+      - items
+      - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreativeDocumentRevisionItem'
+        next_cursor:
+          type: string
+          nullable: true
+    CreativeDocumentRevisionView:
+      type: object
+      additionalProperties: false
+      required:
+      - revision
+      - title
+      - actor_kind
+      - run_id
+      - restored_from
+      - changed_units
+      - annotated_units
+      - removed_units
+      - unit_revs
+      - created_at
+      - view
+      properties:
+        revision:
+          $ref: '#/components/schemas/CreativeRevision'
+        title:
+          type: string
+        actor_kind:
+          $ref: '#/components/schemas/CreativeDocumentActorKind'
+        run_id:
+          type: string
+          nullable: true
+        restored_from:
+          allOf:
+          - $ref: '#/components/schemas/CreativeRevision'
+          nullable: true
+        changed_units:
+          type: array
+          items:
+            type: string
+        annotated_units:
+          type: array
+          items:
+            type: string
+        removed_units:
+          type: array
+          items:
+            type: string
+        unit_revs:
+          $ref: '#/components/schemas/CreativeDocumentUnitRevisions'
+        created_at:
+          type: string
+          format: date-time
+        view:
+          type: object
+          description: 类型的读取分支，按该修订的快照计算；给了 units 时由类型裁剪。
+          additionalProperties: true
+    CreativeDocumentConversation:
+      type: object
+      additionalProperties: false
+      required:
+      - conversation_id
+      properties:
+        conversation_id:
+          type: string
+          nullable: true
     CreativeMediaFormat:
       type: object
       additionalProperties: false

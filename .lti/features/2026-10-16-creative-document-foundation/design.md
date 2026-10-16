@@ -47,7 +47,7 @@ flowchart LR
   DOC --> STORE[platform/store]
   REF[creativereference<br/>LiveOwnerCondition] -. 读修订与引用表 .-> DOC
   TYPES[类型实现<br/>internal.document（本包内）<br/>photo.shoot_plan（V6-079）<br/>scene（epic C1）] -->|Register| DOC
-  ROOT[组合根 cmd/server、cmd/creative-worker] -->|启动时注册| TYPES
+  ROOT[类型所在包的 init()] -->|进程导入时注册| TYPES
 ```
 
 - **`backend/internal/creativedocument`（新）**：
@@ -55,12 +55,12 @@ flowchart LR
   - 非职责：具体类型的载荷、校验与操作；渲染卡片；画布拓扑。
   - 不 import gin（ADR-003），不 import `creativecanvas`。
 - **`creativecanvas`**：
-  - `add_node` 对已注册且可新建的类型调 `creativedocument.CreateInTx`；带 `document_id` 时调 `creativedocument.RequireReadable` 后放回。
+  - `add_node` 对已注册且可新建的类型调 `creativedocument.CreateInTx`；带 `document_id` 时调 `creativedocument.RequirePlaceable`（检查存在、节点类型匹配、不在回收站）后放回。
   - 节点快照对所有带 `document_id` 的节点调 `creativedocument.SummaryBatch`，取摘要和回收站状态。
   - 夹具 `CreateInternalDocument` 改为经 `creativedocument` 创建。
 - **`creativereference`**：`LiveOwnerCondition` 增加修订表和引用表两行；`projection_roles_test.go` 登记新表的持有角色。
 - **`httpapi`**：新增文档路由，`GetCreativeDocument` 改为调 `creativedocument.Read`。
-- **类型注册表**：`creativedocument.Register(Type)` 是包级注册表，只在组合根启动时调用，重复注册同一 key 直接 panic；测试用 `RegisterForTest` 注册并在清理时注销。不用注入：`creativecanvas` 的命令都是包级函数，沿用这种风格。
+- **类型注册表**：`creativedocument.Register(Type)` 是包级注册表，在类型所在包的 `init()` 中调用（内置的 `internal.document` 就在 `creativedocument` 包里注册，任何导入该包的进程都能看到），重复注册同一 key 或同一节点类型直接 panic；测试用 `RegisterForTest` 注册并在清理时注销。不用注入：`creativecanvas` 的命令都是包级函数，沿用这种风格。
 
 ### 类型端口
 
@@ -74,10 +74,10 @@ type Type interface {
     // 新建时的初始快照；opts 来自 add_node 的 document_options（类型自定义，可为空）
     Empty(ctx context.Context, tx store.TxAccountScope, title string, opts json.RawMessage) (Snapshot, error)
     // 载荷当前包含的全部单元（不含 meta）；用于恢复后重置版本、校验 expected
-    Units(payload json.RawMessage) ([]string, error)
+    Units(payload creativecontent.Payload) ([]string, error)
     // 第一阶段：只读地判定每个操作涉及哪些单元，并做外形校验；不得写库。
     // 单元存在性变化时必须同时返回集合单元（如 objects、shots）
-    Touched(ctx context.Context, tx store.TxAccountScope, cur Current, ops []json.RawMessage) ([]string, error)
+    Touched(ctx context.Context, tx store.TxAccountScope, cur Current, actor Actor, ops []json.RawMessage) ([]string, error)
     // 第二阶段：版本检查通过后应用；可以在 tx 内写类型自己的附属数据（如场景提交模型）
     Apply(ctx context.Context, tx store.TxAccountScope, cur Current, actor Actor, retain Retain, ops []json.RawMessage) (Snapshot, Changes, error)
     // restore_units 涉及的单元：列出的单元，加上存在性变化时的集合单元；只读
@@ -85,17 +85,18 @@ type Type interface {
     // restore_units：用旧快照的这些单元替换当前快照对应部分；返回的 Refs 中新增的部分视为「带回的引用」
     RestoreUnits(ctx context.Context, tx store.TxAccountScope, old, cur Current, retain Retain, units []string) (Snapshot, Changes, error)
     // 读取分支：附加在通用字段旁的类型字段（JSON 对象）
-    View(ctx context.Context, tx store.ReadTxAccountScope, cur Current) (json.RawMessage, error)
+    // units 为 nil 时返回完整读取分支；读旧修订指定 units 时由类型裁剪
+    View(ctx context.Context, tx store.ReadTxAccountScope, cur Current, units []string) (json.RawMessage, error)
     // 卡片摘要；批量读取时逐个调用
     Summary(ctx context.Context, tx store.ReadTxAccountScope, cur Current) (json.RawMessage, error)
 }
 
-type Snapshot struct { Payload json.RawMessage; Refs []string } // Refs：本快照引用的内容修订
+type Snapshot struct { Payload creativecontent.Payload; Refs []string } // Refs：本快照引用的内容修订
 type Changes  struct { Changed, Annotated, Removed []string }    // 推进修订号的单元、只做标注的单元、被删除的单元
 // Retain 由通用层提供：把类型在事务内新建的内容修订预登记到修订 N+1 的引用行，
 // 直接作为 creativecontent.WriteAndRetain 的 retain 参数使用
 type Retain   func(creativecontent.Revision) error
-type Current  struct { Document Document; Payload json.RawMessage; UnitRevs map[string]int64 } // 旧修订的 UnitRevs 取自修订行
+type Current  struct { Document Document; Revision int64; Title string; Content creativecontent.Revision; UnitRevs map[string]int64; Refs []string } // 旧修订的各字段取自修订行
 type Actor    struct { Kind string; RunID *string }
 ```
 
@@ -206,20 +207,21 @@ k 不存在或大于等于 N 时返回 400。
 - `backend/internal/platform/store/migrations/0069_creative_document_foundation.down.sql`
 - `backend/internal/platform/store/creative_document_foundation_migration_test.go`（新回滚链头 `rollbackDocumentFoundation`，先回滚 0069 再调 `rollbackPlatformSkillOwner`）
 - `backend/internal/platform/store/creative_graph_migration_test.go`、`backend/internal/platform/store/creative_library_migration_test.go`（迁移标签列表）
-- `backend/internal/creativedocument/`（新包：`document.go`、`registry.go`、`command.go`、`restore.go`、`history.go`、`trash.go`、`list.go`、`conversation.go`、`internal_type.go` 及测试）
+- 同目录下其余带回滚标签列表的迁移测试：`auth_legacy_cutover_harness_test.go`、`auth_limiter_test.go`、`auth_migration_test.go`、`creative_platform_skill_owner_migration_test.go`、`planning_migration_test.go`、`settings_availability_migration_test.go`、`store_test.go`、`telegram_digest_migration_test.go`（实施时发现，回滚链加了 0069 就要同步）
+- `backend/internal/creativedocument/`（新包：`document.go`、`registry.go`、`command.go`（含恢复）、`history.go`、`trash.go`、`list.go`、`conversation.go`、`internal_type.go` 及测试）
 - `backend/internal/creativecanvas/graph_commands.go`：`editGraph.add`
 - `backend/internal/creativecanvas/graph_model.go`：`Action`（新增 `DocumentID`、`DocumentOptions`）
 - `backend/internal/creativecanvas/node_snapshot.go`
 - `backend/internal/creativecanvas/node_view.go`（`document_summary`、`document_trashed`）
+- `backend/internal/creativecanvas/service.go`：`Node` 加两个只读展示字段（实施时发现，结构体定义在这里）
 - `backend/internal/creativecanvas/definitions.go`：`NodeDefinitions`（文档类型节点由注册表提供定义）
 - `backend/internal/creativecanvas/document_fixture.go`
 - `backend/internal/creativereference/projection.go`：`LiveOwnerCondition`
-- `backend/internal/creativereference/projection_roles_test.go`
+- `backend/internal/creativereference/projection_roles_test.go`、`document_holder_test.go`（历史引用持有测试）
 - `backend/internal/platform/httpapi/creative_canvas.go`：`GetCreativeDocument`
 - `backend/internal/platform/httpapi/creative_documents.go`（新路由）
-- `backend/cmd/server/main.go`、`backend/cmd/creative-worker/main.go`（启动时注册内置类型）
-- `api/openapi.yaml` 及生成物 `frontend/src/api/schema.d.ts`、后端生成代码
-- `frontend/src/creative-canvas/editor/api.ts`、`frontend/src/creative-canvas/editor/DocumentView.tsx`、`frontend/src/creative-canvas/editor/WorkspacePage.tsx`（类型收窄）
+- `api/openapi.yaml` 及生成物 `frontend/src/api/schema.d.ts`、后端生成代码（含 `creativecanvas/tool_schemas.gen.go`）
+- `frontend/src/creative-canvas/editor/DocumentView.tsx`（类型收窄）。`api.ts`、`WorkspacePage.tsx` 不用改：`CreativeDocument` 目前只有一个分支，`WorkspacePage` 打开视图前本来就按 `type_key` 判断
 
 ## 验证与交付
 
@@ -256,6 +258,35 @@ GC 部署顺序：`LiveOwnerCondition` 编译进 server 和 creative-worker 两�
 |---|---|---|---|
 | 组合根的实际文件（server 和 worker 是否都需要注册类型） | 挂载点 | 实施第一步读 `backend/cmd/` 确认；worker 若不读文档就不注册 | 实施开始时 |
 | `q` 标题搜索是否需要索引 | 列表性能 | 首版用 `ILIKE`，账号内文档量小；超过 1 万份再加 trigram 索引 | 不阻塞 |
+
+## 实施记录（2026-10-16）
+
+实施中与本设计原文不同的地方，都已改回正文；这里集中列出，供 verify 对照。
+
+| 项 | 原设计 | 实施 | 理由 |
+|---|---|---|---|
+| 类型注册 | 组合根 `cmd/server`、`cmd/creative-worker` 启动时注册 | 类型所在包的 `init()` 注册 | 任何导入包的进程都看得到，测试和两个进程不会漏注册；两个 `main.go` 不用改 |
+| 端口签名 | `Touched` 无 `actor`；`View` 无 `units`；载荷为 `json.RawMessage` | `Touched` 带 `actor`；`View` 带 `units`；载荷为 `creativecontent.Payload` | 助手和摄影师可涉及的单元可能不同；读旧修订按单元裁剪由类型做；载荷直接复用内容层类型 |
+| 放回检查 | `RequireReadable` | `RequirePlaceable` | 同时检查节点类型匹配和回收站，名字按用途取 |
+| 内部文档夹具 | 经 `creativedocument` 创建 | 新增 `CreateInternalInTx`，保留草稿自带的权利声明；`ReferenceInternalDocument` 也改用 `RequirePlaceable` | `internal.document` 不可新建，`CreateInTx` 走不通；夹具原来就带权利声明 |
+| `add_node` 写入者 | 写入者为调用者 | 记为摄影师 | 画布命令没有执行者信息；助手的画布工具在 Go 里自己构造动作，目前走不到新建文档的路径。助手需要新建文档时再传入执行者 |
+| 文档节点尺寸 | 未规定 | 380×260 | 沿用夹具原来的 `internal.document` 节点尺寸 |
+| 节点快照 | `internal.document` 继续返回 `content` 预览 | 只有 `internal.document` 返回 `content` 预览，其他类型只给 `document_summary` | 其他类型的快照可能很大（场景），卡片用摘要 |
+| 单元名 | `[a-z0-9_:.-]` | `[A-Za-z0-9_:.-]` | 场景物件 ID 是含大写的 nanoid |
+| 修订列表 / 旧修订 | 不含 `annotated_units`、`removed_units`；旧修订不含 `unit_revs` | 都补上，修订表加 `removed_units` 列 | 「本轮改动」清单要区分改动、确认和删除；按单元恢复前要知道该修订的单元修订号。契约同步补充，需 owner 确认 |
+| 能力检查测试 | 去掉 `manual_write` 后 403 | 账号非 active 时读写都 403 | 创意能力现在只由账号状态决定，`creative_account_capabilities` 不再参与，无法单独关闭写能力 |
+| `add_node` 的 `type_key` | 开放已注册文档类型 | OpenAPI 枚举加 `internal.document`；以后的类型在各自 change 里加 | 保持枚举，前端类型不变宽 |
+| 修订缺失 | 未区分 | 新增 `ErrRevisionNotFound`：读旧修订返回 404「修订不存在」，两种恢复返回 400 | 迁移只回填当前修订，旧文档的更早修订号不存在，不能报成「文档不存在」 |
+| 摘要批量读取 | 未规定 | `SummaryBatch` 与 `List` 共用 `summarize`，内容和引用各一次批量查询 | 画布刷新和文档列表不能随文档数线性增加查询 |
+| 测试顺序 | 2.2 测试先行 | 2.x 的测试写在实现之后 | 补做了变异检查：7 处关键判断改坏后对应测试都失败，另补了类型诚实性检查的测试 |
+
+## 实施审计处置（2026-10-16）
+
+| 问题 | 结论 | 处理 |
+|---|---|---|
+| P2 修订历史丢失被删除单元 | 成立，已复现：删除 `item:a` 后历史只记 `items` | 修订表加 `removed_units` 列（0069 尚未合并，直接改迁移），持久化并在修订列表、读旧修订返回；补删除和按单元恢复到不存在两个场景的测试 |
+| P2 摘要批量读取 N+1 | 成立，已复现：5 份文档 5 次引用查询 | 抽出 `summarize` / `currentRefs`，按 `(document_id, revision)` 一次取回；守卫测试用 `pg_stat_xact_user_tables` 在同一事务内数引用表扫描次数，1、5、20 份文档都为 1 |
+| P3 恢复缺失历史误报文档不存在 | 成立，已复现 | 区分 `ErrRevisionNotFound`：恢复入口转为 400「第 k 版没有保存历史」，读旧修订为 404「修订不存在」 |
 
 ## 评审处置（2026-10-16 第 1 轮）
 

@@ -28,6 +28,7 @@ func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	registerCreativeLibrary(r, h)
 	registerCreativeMedia(r, h)
 	registerCreativeImageEdit(r, h)
+	registerCreativeDocuments(r, h)
 	w := ServerInterfaceWrapper{Handler: h, ErrorHandler: func(c *gin.Context, _ error, status int) {
 		abortError(c, status, CodeValidationFailed, "请求参数不合法")
 	}}
@@ -43,7 +44,6 @@ func registerCreativeCanvas(r *gin.RouterGroup, h *handlers) {
 	r.GET("/creative/canvases/:id/events", w.WatchCreativeCanvas)
 	r.POST("/creative/canvases/:id/commands", w.CommandCreativeCanvas)
 	r.GET("/creative/content-revisions/:id", w.GetCreativeContentRevision)
-	r.GET("/creative/documents/:id", w.GetCreativeDocument)
 	r.GET("/creative/canvases/:id/nodes/:node_id/versions", w.ListCreativeNodeVersions)
 	r.GET("/creative/generation/catalog", w.GetCreativeGenerationCatalog)
 	r.GET("/creative/canvases/:id/executions/:execution_id", w.GetCreativeNodeExecution)
@@ -62,7 +62,7 @@ func (h *handlers) creativeScope(c *gin.Context) (store.AccountScope, bool) {
 	return h.scopeFactory.ScopeFor(ac), true
 }
 func creativeError(c *gin.Context, err error) {
-	if imageEditError(c, err) {
+	if imageEditError(c, err) || creativeDocumentError(c, err) {
 		return
 	}
 	switch {
@@ -350,15 +350,6 @@ func (h *handlers) ListCreativeNodeVersions(c *gin.Context, id string, nodeID st
 	h.creativeToolRead(c, creativecanvas.ReadNodeVersionsTool, map[string]string{"id": id, "node_id": nodeID})
 }
 
-func (h *handlers) GetCreativeDocument(c *gin.Context, id string) {
-	scope, ok := h.creativeScope(c)
-	if !ok {
-		return
-	}
-	creativeRead(c, func() (creativecanvas.Document, error) {
-		return creativecanvas.ReadDocument(c.Request.Context(), scope, id)
-	})
-}
 func (h *handlers) GetCreativeNodeExecution(c *gin.Context, id string, executionID string) {
 	h.creativeToolRead(c, creativecanvas.ReadNodeExecutionTool, map[string]string{"id": id, "execution_id": executionID})
 }

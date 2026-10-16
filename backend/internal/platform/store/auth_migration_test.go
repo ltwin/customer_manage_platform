@@ -87,7 +87,7 @@ func TestAccountAuthMigrationPreservesLegacyAccountAndRollsBack(t *testing.T) {
 		t.Fatalf("close before auth down migration: %v", err)
 	}
 	for index, label := range []string{
-		"agent-skill-runtime", "creative-platform-skill-owner", "agent-context-compaction", "asset-digest-lookup", "agent-library-organize", "creative-image-edit", "creative-media-gc", "creative-asset-library", "creative-project-home", "agent-conversation-manage", "chat-failover", "creative-agent-reasoning", "creative-agent-blocks", "creative-staged-uploads", "generation-handoff", "generation-lifecycle", "generation-admission", "generation-media-facts", "execution-continuations", "agent-controls", "agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
+		"creative-document-foundation", "agent-skill-runtime", "creative-platform-skill-owner", "agent-context-compaction", "asset-digest-lookup", "agent-library-organize", "creative-image-edit", "creative-media-gc", "creative-asset-library", "creative-project-home", "agent-conversation-manage", "chat-failover", "creative-agent-reasoning", "creative-agent-blocks", "creative-staged-uploads", "generation-handoff", "generation-lifecycle", "generation-admission", "generation-media-facts", "execution-continuations", "agent-controls", "agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
 		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",
@@ -149,7 +149,7 @@ func TestAccountAuthDownMigrationRejectsNewStyleAccount(t *testing.T) {
 	}
 
 	for index, label := range []string{
-		"agent-skill-runtime", "creative-platform-skill-owner", "agent-context-compaction", "asset-digest-lookup", "agent-library-organize", "creative-image-edit", "creative-media-gc", "creative-asset-library", "creative-project-home", "agent-conversation-manage", "chat-failover", "creative-agent-reasoning", "creative-agent-blocks", "creative-staged-uploads", "generation-handoff", "generation-lifecycle", "generation-admission", "generation-media-facts", "execution-continuations", "agent-controls", "agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
+		"creative-document-foundation", "agent-skill-runtime", "creative-platform-skill-owner", "agent-context-compaction", "asset-digest-lookup", "agent-library-organize", "creative-image-edit", "creative-media-gc", "creative-asset-library", "creative-project-home", "agent-conversation-manage", "chat-failover", "creative-agent-reasoning", "creative-agent-blocks", "creative-staged-uploads", "generation-handoff", "generation-lifecycle", "generation-admission", "generation-media-facts", "execution-continuations", "agent-controls", "agent-checkpoints", "agent-context", "agent-runs", "skill-foundation", "agent-conversations", "llm-gateway",
 		"creative-canvas-events",
 		"creative-media",
 		"creative-canvas-commands",
