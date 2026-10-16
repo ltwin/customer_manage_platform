@@ -75,3 +75,65 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 可以引用可读的已有示例，不要求每类都写一套，不强制执行样例或提供真实生产数据。
 
 -->
+
+## 通用文档
+
+### 用途与存储角色
+- **用途**：画布文档的头、修订历史、引用登记和工作会话指针。类型载荷存放在内容修订里（`creative_content_revisions`），不在这些表中。
+- **存储**：PostgreSQL。扩展 `creative_documents`，新增 `creative_document_revisions`、`creative_document_content_refs`、`creative_document_conversations`，迁移 `0069_creative_document_foundation`。
+- **角色**：
+  - 文档行：权威主数据（当前修订、标题、单元修订号、回收站状态）。
+  - 修订表：历史的唯一顺序来源。
+  - 引用表：GC 持有登记。
+  - 会话表：指针，不参与版本。
+- **所有权**：只有 `creativedocument` 写入；`creativereference` 只读修订表和引用表来判定持有。
+
+### 结构与身份
+
+`creative_documents`（扩展，原有列不变）：
+
+| 列 | 类型 | 必须 | 缺省 / 约束 |
+|---|---|---|---|
+| `created_at` / `updated_at` | timestamptz | 是 | `clock_timestamp()`；每次写命令、进出回收站都更新 `updated_at` |
+| `trashed_at` | timestamptz | 否 | null 表示不在回收站 |
+| `unit_revs` | jsonb | 是 | 对象，键为单元名，值为正整数修订号；必须含 `meta`；键 ≤ 4096；CHECK `jsonb_typeof='object'` |
+
+索引：`(account_id, type_key, updated_at DESC, id DESC)`、`(account_id, updated_at DESC, id DESC)`。
+
+`creative_document_revisions`：
+
+| 列 | 类型 | 必须 | 约束 |
+|---|---|---|---|
+| `account_id`, `document_id`, `revision` | text, text, bigint > 0 | 是 | 主键 `(account_id, document_id, revision)` |
+| `content_revision_id` | text | 是 | 该修订的快照；GC 持有方 |
+| `title` | text ≤ 200 | 是 | 该修订时的标题，供整份恢复 |
+| `actor_kind` | text | 是 | `photographer` / `agent` / `system`（CHECK） |
+| `run_id` | text | 否 | `actor_kind = 'agent'` 时必填（CHECK） |
+| `restored_from` | bigint | 否 | 由恢复产生时为来源修订号 |
+| `changed_units` | text[] | 是 | 本修订推进了修订号的单元；整份恢复记为 `{'*'}`；新建记为 `{'*'}` |
+| `annotated_units` | text[] | 是 | 本修订只做标注、未推进修订号的单元（如确认），缺省 `{}` |
+| `removed_units` | text[] | 是 | 本修订删除的单元，缺省 `{}`；整份恢复记为空，由 `changed_units = {'*'}` 表示全部重置（实施审计补充） |
+| `unit_revs` | jsonb | 是 | 本修订写入**之后**的完整单元修订号映射（与当时的文档头一致）；供旧版本读取、恢复钩子判断「当时是否已确认」等使用 |
+| `created_at` | timestamptz | 是 | — |
+
+索引：`(account_id, document_id, run_id, revision DESC)`；`(account_id, content_revision_id)`（GC 按快照判定持有时用）。
+
+`creative_document_content_refs`：主键 `(account_id, document_id, revision, content_revision_id)`，索引 `(account_id, content_revision_id)`。每个修订登记一次它快照引用的全部内容修订。
+
+`creative_document_conversations`：主键 `(account_id, document_id, canvas_id)`，列 `conversation_id text not null`、`updated_at`。
+
+### 访问模式与保证
+- **写命令**：锁文档行 → 版本检查 → 写内容修订、修订行、引用行 → 更新文档头，在一个事务里完成（design「一次命令的处理顺序」）。
+- **读当前**：按 ID 读文档行和当前快照。
+- **列表**：按 `(updated_at, id)` 倒序加过滤。
+- **历史**：按 `revision` 倒序，可按 `run_id` 过滤。
+- **保证方**：
+  - 由数据库保证：修订号主键唯一、写入者 CHECK、`agent` 必带 `run_id`、`unit_revs` 为对象。
+  - 由应用保证：每个修订行的 `unit_revs` 等于该修订提交时文档头的 `unit_revs`。
+  - 由应用保证：修订号连续递增、单元修订号规则（D-I2）、回收站只读、文档行和最新修订行一致（D-I1）。
+
+### 生命周期与演进
+- **回填**：迁移为每份存量文档补一行修订（`actor_kind='system'`，`changed_units='{*}'`，标题和快照取当前值），并把文档头与这一行的 `unit_revs` 设为 `{"meta": revision}`。`internal.document` 再补 `body`，与 `meta` 相同。
+- **彻底删除**：删除会话指针、引用行、修订行和文档行。快照内容修订（`text`、`plan`、`scene` 等非媒体类型）不在现有媒体 GC 的回收范围内（`backend/internal/creativemedia/gc.go` 的 `unheldMediaRevision` 只处理 `image` / `video` / `audio`），首版保留为无入口数据，**不承诺物理回收**。被快照引用的媒体在失去全部持有方后，照常由媒体 GC 回收。
+- **回滚**：存在 `system` 以外写入者的修订行，或存在 `trashed_at` 时拒绝回滚，前向修复。
+- **GC**：`LiveOwnerCondition` 增加修订表的 `content_revision_id` 和引用表两行，只扩大持有范围。
