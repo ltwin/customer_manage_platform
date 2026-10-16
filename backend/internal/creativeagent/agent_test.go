@@ -634,18 +634,6 @@ func (f *fixture) mediaRevision(scope store.AccountScope, kind, mime string) str
 	return id
 }
 
-// registerSkillTools gives this deployment the tool the fixture's skills
-// declare. Without it every skill is correctly unavailable — FND-08 registers
-// the real ones — and a test about anything else would pass for that reason
-// instead of its own.
-func (f *fixture) registerSkillTools() {
-	f.t.Helper()
-	f.service.tools = []ToolEntry{{
-		Key: "fixture_reference_search", Version: 1, DisplayName: "检索素材",
-		EffectClass: "read_only", MaxImpact: 0,
-	}}
-}
-
 // publishOwnSkill publishes under an ordinary account rather than the platform
 // publisher, which is what a test needs to ask "can someone else reach this".
 func (f *fixture) publishOwnSkill(slug, displayName string) creativeskill.Version {
@@ -677,7 +665,7 @@ func skillRequest(origin, slug, displayName string) creativeskill.ImportRequest 
 		Instructions: "先检索，再比较，最后写方向。",
 		Manifest: creativeskill.Manifest{
 			ManifestSchemaVersion: 1, InputKinds: []string{"text"}, MaxInputs: 20,
-			ToolAllowlist: []string{"fixture_reference_search@1"}, RequiredModelCapabilities: []string{"tool_calling"},
+			ToolAllowlist: []string{"read_canvas@1"}, RequiredModelCapabilities: []string{"tool_calling"},
 			OutputContract: "一组参考节点加一段创作方向文字。", CompletionCheckKey: "reference_direction_v1",
 		},
 		Resources: []creativeskill.ResourceDeclaration{{
@@ -779,7 +767,10 @@ func TestASkillIsUnavailableUntilItsToolsAreRegistered(t *testing.T) {
 	f := setup(t)
 	var logs bytes.Buffer
 	f.service.SetLogger(slog.New(slog.NewTextHandler(&logs, nil)))
-	published := f.publishSkill("reference-direction", "参考整理与创作方向")
+	req := skillRequest("platform", "reference-direction", "参考整理与创作方向")
+	req.Activate = true
+	req.Manifest.ToolAllowlist = []string{"set_node_prompt@1"}
+	published := f.runImport(f.platform, req)
 	view, err := f.service.Catalog(t.Context(), f.alice)
 	if err != nil {
 		t.Fatal(err)
@@ -889,25 +880,17 @@ func TestACatalogReportsTheFrozenLimitsAndOnlyModels(t *testing.T) {
 	}
 }
 
-// Every array the catalog declares is required and non-nullable, and a Go nil
-// slice marshals as null. A client looping over one would fault — so the
-// deployment with nothing registered, which is every deployment today, is
-// exactly the case that has to hold.
-//
-// This asserts the wire bytes rather than the Go values: a nil slice and an
-// empty one are indistinguishable at a length check, and the difference only
-// appears after encoding.
+// Required catalog arrays stay arrays on the wire. Core tools are always
+// registered; a fresh deployment still has an empty skill list.
 func TestEveryCatalogArrayIsAnArrayOnTheWire(t *testing.T) {
 	f := setup(t)
-	f.service.tools = nil // Explicitly exercise a deployment without tools.
 	view, err := f.service.Catalog(t.Context(), f.alice)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The premise: nothing is registered and nothing is imported, so every list
-	// below is empty. A populated catalog would pass for the wrong reason.
-	if len(view.Tools) != 0 || len(view.Skills) != 0 {
-		t.Fatalf("this deployment has something registered, so the empty case is untested: %+v", view)
+	// Exercise the real deployment shape: core tools and no imported skills.
+	if len(view.Tools) == 0 || len(view.Skills) != 0 {
+		t.Fatalf("expected core tools and an empty skill catalog: %+v", view)
 	}
 	encoded, err := json.Marshal(view)
 	if err != nil {

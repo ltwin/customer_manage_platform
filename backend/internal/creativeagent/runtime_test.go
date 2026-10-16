@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -121,7 +122,7 @@ func TestRuntimeLoadsOnlyFrozenSkillAndReadsDeclaredResource(t *testing.T) {
 	f.vendor.script = func(_ context.Context, r llmgateway.ProviderRequest, n int) (llmgateway.Result, error) {
 		switch n {
 		case 1:
-			return scriptedResult(r, llmgateway.ToolCall{ID: "load", Name: "load_skill", Arguments: json.RawMessage(fmt.Sprintf(`{"skill":%q}`, v.ID))}), nil
+			return scriptedResult(r, llmgateway.ToolCall{ID: "load", Name: "load_skill", Arguments: json.RawMessage(fmt.Sprintf(`{"skill_version_id":%q}`, v.ID))}), nil
 		case 2:
 			return scriptedResult(r, llmgateway.ToolCall{ID: "read", Name: "read_skill_resource", Arguments: resourceArgumentsFromRequest(t, r)}), nil
 		default:
@@ -273,38 +274,38 @@ func TestRuntimeContextUnloadsAndReadsOnlyThisRun(t *testing.T) {
 
 func TestRuntimeResourceAccessStaysInsideFrozenPackage(t *testing.T) {
 	f := setup(t)
+	f.queue()
 	req := skillRequest("platform", "fixed", "固定版本")
 	req.Activate = true
-	req.Manifest.ToolAllowlist = []string{"read_skill_resource@1"}
 	v := f.runImport(f.platform, req)
-	snap, err := f.skills.ResolveVersion(t.Context(), f.alice, v.SkillID, v.ID)
+	c := f.conversation(f.alice, f.canvasID)
+	run, err := f.startRun(f.alice, c.ID, f.consent(f.alice, c.ID).ID, InstructionSegment{Type: "skill_ref", SkillID: v.SkillID, SkillVersionID: v.ID}, InstructionSegment{Type: "text", Text: "继续"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	model, err := f.service.models.Model(testModelKey)
+	held, err := f.service.claimRun(t.Context(), f.alice, run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &runtimeHandler{service: f.service, scope: f.alice, held: claim{Skill: &snap, Model: model}}
-	for _, raw := range []string{fmt.Sprintf(`{"digest":%q,"path":"../references/comparison-checklist.md"}`, v.Digest), `{"digest":"wrong","path":"references/comparison-checklist.md"}`, fmt.Sprintf(`{"digest":%q,"path":"not-registered"}`, v.Digest)} {
-		if _, err = h.readSkillResource(t.Context(), raw); !errors.Is(err, ErrNotFound) {
-			t.Fatalf("invalid resource: %v", err)
+	h := &runtimeHandler{service: f.service, scope: f.alice, held: held}
+	if _, err := h.initializeSkills(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"../references/comparison-checklist.md", "not-registered"} {
+		_, err := h.readSkillResource(t.Context(), fmt.Sprintf(`{"skill_version_id":%q,"path":%q}`, v.ID, path))
+		if !errors.Is(err, ErrNotFound) {
+			t.Fatalf("path %s: %v", path, err)
 		}
 	}
-	backend := &runSkillBackend{handler: h}
-	list, err := backend.List(t.Context())
-	if err != nil || len(list) != 1 || list[0].Name != v.ID {
-		t.Fatalf("list=%+v err=%v", list, err)
-	}
-	if _, err = backend.Get(t.Context(), "latest"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("resolved latest: %v", err)
+	if _, err := h.activateSkill(t.Context(), "latest"); err == nil {
+		t.Fatal("resolved latest")
 	}
 	req.OperationID = uuid.NewString()
 	req.ExpectedSkillRevision = v.SkillRevision
 	req.Instructions = "新版正文"
 	f.runImport(f.platform, req)
-	fixed, err := backend.Get(t.Context(), v.ID)
-	if err != nil || fixed.Content != snap.Instructions || fixed.Model != "" || fixed.Context != "" {
+	fixed, err := h.activateSkill(t.Context(), v.ID)
+	if err != nil || fixed.Instructions != held.Skill.Instructions {
 		t.Fatalf("fixed=%+v err=%v", fixed, err)
 	}
 }
@@ -437,30 +438,19 @@ func TestRuntimeRepeatedContentRefsRemainUsable(t *testing.T) {
 
 func resourceArgumentsFromRequest(t *testing.T, r llmgateway.ProviderRequest) json.RawMessage {
 	t.Helper()
-	for _, tool := range r.Chat.Tools {
-		if tool.Name != readSkillTool {
-			continue
-		}
-		var schema struct {
-			Properties map[string]struct {
-				Enum []string `json:"enum"`
-			} `json:"properties"`
-		}
-		if err := json.Unmarshal(tool.InputSchema, &schema); err != nil {
-			t.Fatal(err)
-		}
-		digests, paths := schema.Properties["digest"].Enum, schema.Properties["path"].Enum
-		if len(digests) != 1 || len(paths) == 0 {
-			t.Fatal("model has no fixed digest/resource paths")
-		}
-		raw, err := json.Marshal(map[string]string{"digest": digests[0], "path": paths[0]})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return raw
+	raw, err := json.Marshal(r.Chat.Messages)
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("read_skill_resource absent from actual model request")
-	return nil
+	version := regexp.MustCompile(`ccsv_[0-9a-f-]{36}`).FindString(string(raw))
+	if version == "" {
+		t.Fatal("no fixed skill version in prompt")
+	}
+	out, err := json.Marshal(map[string]string{"skill_version_id": version, "path": "references/comparison-checklist.md"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // A skill that does not name read_run_result still pages its large results

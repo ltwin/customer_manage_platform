@@ -944,6 +944,36 @@ func (e CreativeAgentSkillOrigin) Valid() bool {
 	}
 }
 
+// Defines values for CreativeAgentSkillManifestV1ManifestSchemaVersion.
+const (
+	CreativeAgentSkillManifestV1ManifestSchemaVersionN1 CreativeAgentSkillManifestV1ManifestSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentSkillManifestV1ManifestSchemaVersion enum.
+func (e CreativeAgentSkillManifestV1ManifestSchemaVersion) Valid() bool {
+	switch e {
+	case CreativeAgentSkillManifestV1ManifestSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreativeAgentSkillManifestV2ManifestSchemaVersion.
+const (
+	N2 CreativeAgentSkillManifestV2ManifestSchemaVersion = 2
+)
+
+// Valid indicates whether the value is a known member of the CreativeAgentSkillManifestV2ManifestSchemaVersion enum.
+func (e CreativeAgentSkillManifestV2ManifestSchemaVersion) Valid() bool {
+	switch e {
+	case N2:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreativeAgentSkillVersionOrigin.
 const (
 	CreativeAgentSkillVersionOriginAccount  CreativeAgentSkillVersionOrigin = "account"
@@ -2347,13 +2377,13 @@ func (e PlanAssetRenditionKind) Valid() bool {
 
 // Defines values for PlanAssetRightsDeclarationMatrixVersion.
 const (
-	PlanAssetRightsDeclarationMatrixVersionN1 PlanAssetRightsDeclarationMatrixVersion = 1
+	N1 PlanAssetRightsDeclarationMatrixVersion = 1
 )
 
 // Valid indicates whether the value is a known member of the PlanAssetRightsDeclarationMatrixVersion enum.
 func (e PlanAssetRightsDeclarationMatrixVersion) Valid() bool {
 	switch e {
-	case PlanAssetRightsDeclarationMatrixVersionN1:
+	case N1:
 		return true
 	default:
 		return false
@@ -4030,7 +4060,9 @@ type CreativeAgentInstructionSegmentType string
 
 // CreativeAgentLimits defines model for CreativeAgentLimits.
 type CreativeAgentLimits struct {
-	Attachments int `json:"attachments"`
+	// ActivatedSkillsPerRun 每轮最多激活的不同 Skill 版本数
+	ActivatedSkillsPerRun int `json:"activated_skills_per_run"`
+	Attachments           int `json:"attachments"`
 
 	// AutoCompactPercent 输入达到模型有效窗口的这个百分比时，下一轮先压缩上下文；0 表示不自动压缩。
 	AutoCompactPercent int `json:"auto_compact_percent"`
@@ -4285,7 +4317,10 @@ type CreativeAgentSkill struct {
 	Description string `json:"description"`
 	Digest      string `json:"digest"`
 	DisplayName string `json:"display_name"`
-	MaxInputs   int    `json:"max_inputs"`
+
+	// MaxInputs 仅 v1 历史声明，不代表运行时限制
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	MaxInputs *int `json:"max_inputs,omitempty"`
 
 	// Origin 平台目录还是账号自建；两边的 slug 可以重名
 	Origin  CreativeAgentSkillOrigin `json:"origin"`
@@ -4303,16 +4338,47 @@ type CreativeAgentSkillOrigin string
 
 // CreativeAgentSkillManifest defines model for CreativeAgentSkillManifest.
 type CreativeAgentSkillManifest struct {
-	CompletionCheckKey        string   `json:"completion_check_key"`
-	InputKinds                []string `json:"input_kinds"`
-	ManifestSchemaVersion     int      `json:"manifest_schema_version"`
+	union json.RawMessage
+}
+
+// CreativeAgentSkillManifestV1 defines model for CreativeAgentSkillManifestV1.
+type CreativeAgentSkillManifestV1 struct {
+	// CompletionCheckKey 历史字段，没有运行时完成检查语义
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
+	CompletionCheckKey    string                                            `json:"completion_check_key"`
+	InputKinds            []string                                          `json:"input_kinds"`
+	ManifestSchemaVersion CreativeAgentSkillManifestV1ManifestSchemaVersion `json:"manifest_schema_version"`
+
+	// MaxInputs 仅 v1 历史声明，不代表运行时限制
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	MaxInputs                 int      `json:"max_inputs"`
 	OutputContract            string   `json:"output_contract"`
 	RequiredModelCapabilities []string `json:"required_model_capabilities"`
 
-	// ToolAllowlist 上界，执行时与账号自身的操作范围取交集；Skill 永远不能扩权
+	// ToolAllowlist v1 依赖声明，不授予或限制业务权限
 	ToolAllowlist []string `json:"tool_allowlist"`
 }
+
+// CreativeAgentSkillManifestV1ManifestSchemaVersion defines model for CreativeAgentSkillManifestV1.ManifestSchemaVersion.
+type CreativeAgentSkillManifestV1ManifestSchemaVersion int
+
+// CreativeAgentSkillManifestV2 defines model for CreativeAgentSkillManifestV2.
+type CreativeAgentSkillManifestV2 struct {
+	ManifestSchemaVersion CreativeAgentSkillManifestV2ManifestSchemaVersion `json:"manifest_schema_version"`
+
+	// Metadata 标准可选 frontmatter 元数据，allowed-tools 不授予执行权限。
+	Metadata *map[string]interface{} `json:"metadata,omitempty"`
+
+	// OutputGuidance 交付指导，不是自动完成判定。
+	OutputGuidance            *string  `json:"output_guidance,omitempty"`
+	RequiredModelCapabilities []string `json:"required_model_capabilities"`
+
+	// RequiredTools 执行方法所需的工具及版本，不授予或限制业务权限；可以为空。
+	RequiredTools []string `json:"required_tools"`
+}
+
+// CreativeAgentSkillManifestV2ManifestSchemaVersion defines model for CreativeAgentSkillManifestV2.ManifestSchemaVersion.
+type CreativeAgentSkillManifestV2ManifestSchemaVersion int
 
 // CreativeAgentSkillPage items 为空而 next_cursor 非空是合法且可达的一页：游标定位在 Skill 行上， 而整页 Skill 的推荐版本都被停用时就没有条目可返回。客户端必须按 next_cursor 继续翻，不能把空页当作目录结束。
 type CreativeAgentSkillPage struct {
@@ -8408,6 +8474,68 @@ func (t ArchiveAcknowledgement) MarshalJSON() ([]byte, error) {
 }
 
 func (t *ArchiveAcknowledgement) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsCreativeAgentSkillManifestV1 returns the union data inside the CreativeAgentSkillManifest as a CreativeAgentSkillManifestV1
+func (t CreativeAgentSkillManifest) AsCreativeAgentSkillManifestV1() (CreativeAgentSkillManifestV1, error) {
+	var body CreativeAgentSkillManifestV1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeAgentSkillManifestV1 overwrites any union data inside the CreativeAgentSkillManifest as the provided CreativeAgentSkillManifestV1
+func (t *CreativeAgentSkillManifest) FromCreativeAgentSkillManifestV1(v CreativeAgentSkillManifestV1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeAgentSkillManifestV1 performs a merge with any union data inside the CreativeAgentSkillManifest, using the provided CreativeAgentSkillManifestV1
+func (t *CreativeAgentSkillManifest) MergeCreativeAgentSkillManifestV1(v CreativeAgentSkillManifestV1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeAgentSkillManifestV2 returns the union data inside the CreativeAgentSkillManifest as a CreativeAgentSkillManifestV2
+func (t CreativeAgentSkillManifest) AsCreativeAgentSkillManifestV2() (CreativeAgentSkillManifestV2, error) {
+	var body CreativeAgentSkillManifestV2
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeAgentSkillManifestV2 overwrites any union data inside the CreativeAgentSkillManifest as the provided CreativeAgentSkillManifestV2
+func (t *CreativeAgentSkillManifest) FromCreativeAgentSkillManifestV2(v CreativeAgentSkillManifestV2) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeAgentSkillManifestV2 performs a merge with any union data inside the CreativeAgentSkillManifest, using the provided CreativeAgentSkillManifestV2
+func (t *CreativeAgentSkillManifest) MergeCreativeAgentSkillManifestV2(v CreativeAgentSkillManifestV2) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t CreativeAgentSkillManifest) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *CreativeAgentSkillManifest) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }

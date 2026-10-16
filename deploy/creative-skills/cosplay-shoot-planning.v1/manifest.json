@@ -1,19 +1,17 @@
 {
-  "manifest_schema_version": 1,
-  "key": "cosplay-shoot-planning",
-  "version": 1,
+  "manifest_schema_version": 2,
   "display_name": "Cosplay 拍摄策划",
-  "description": "和摄影师一起做 cosplay 拍摄策划：角色调研、创意方向、情绪板、视觉设定、拍摄与后期方案、2+4+3 镜头表与分镜。做 cosplay 策划或操作拍摄策划文档时使用。",
-  "input_kinds": ["text", "canvas_selection"],
-  "max_inputs": 20,
-  "tool_allowlist": [
+  "required_tools": [
     "read_canvas@1",
     "edit_canvas@1",
     "read_asset@1",
     "update_plan@1",
-    "read_skill_resource@1"
+    "read_skill_resource@2",
+    "search_web@1",
+    "read_webpage@1"
   ],
-  "required_model_capabilities": ["tool_calling"],
-  "output_contract": "一份按 cosplay SOP 模板组织的拍摄策划：带来源的角色调研、摄影师选定的创意方向、情绪板、视觉设定、拍摄与后期方案、2+4+3 镜头表与分镜；未确认的假设标「待确认」，查不到的资料标为缺口。",
-  "completion_check_key": "cosplay_shoot_planning_v1"
+  "required_model_capabilities": [
+    "tool_calling"
+  ],
+  "output_guidance": "一份按 cosplay SOP 模板组织的拍摄策划：带来源的角色调研、摄影师选定的创意方向、情绪板、视觉设定、拍摄与后期方案、2+4+3 镜头表与分镜；未确认的假设标「待确认」，查不到的资料标为缺口。"
 }

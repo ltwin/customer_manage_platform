@@ -7933,7 +7933,7 @@ components:
       type: object
       additionalProperties: false
       required: [version, input_text_bytes, message_body_bytes, instruction_segments,
-        skill_refs_per_instruction, skill_resource_files, skill_package_bytes,
+        skill_refs_per_instruction, activated_skills_per_run, skill_resource_files, skill_package_bytes,
         input_nodes, upstream_depth,
         attachments, model_result_bytes, tool_argument_bytes, tool_result_bytes,
         tool_calls_per_turn, run_duration_seconds,
@@ -7973,6 +7973,7 @@ components:
         instruction_segments:
           type: integer
           description: 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。
+        activated_skills_per_run: {type: integer, minimum: 1, description: 每轮最多激活的不同 Skill 版本数}
         skill_refs_per_instruction:
           type: integer
           description: >-
@@ -8033,7 +8034,7 @@ components:
     CreativeAgentSkill:
       type: object
       additionalProperties: false
-      required: [skill_id, skill_version_id, origin, slug, display_name, description, version_number, digest, max_inputs, available]
+      required: [skill_id, skill_version_id, origin, slug, display_name, description, version_number, digest, available]
       properties:
         skill_id: {type: string}
         skill_version_id:
@@ -8048,7 +8049,7 @@ components:
         description: {type: string}
         version_number: {type: integer}
         digest: {type: string}
-        max_inputs: {type: integer}
+        max_inputs: {type: integer, deprecated: true, description: 仅 v1 历史声明，不代表运行时限制}
         available: {type: boolean}
         unavailable_reason: {type: string}
     CreativeAgentSkillPage:
@@ -8067,24 +8068,46 @@ components:
           type: string
           description: 留空表示目录到此为止
     CreativeAgentSkillManifest:
+      oneOf:
+        - {$ref: '#/components/schemas/CreativeAgentSkillManifestV1'}
+        - {$ref: '#/components/schemas/CreativeAgentSkillManifestV2'}
+    CreativeAgentSkillManifestV2:
+      type: object
+      additionalProperties: false
+      required: [manifest_schema_version, required_tools, required_model_capabilities]
+      properties:
+        manifest_schema_version: {type: integer, enum: [2]}
+        required_tools:
+          type: array
+          items: {type: string}
+          description: 执行方法所需的工具及版本，不授予或限制业务权限；可以为空。
+        required_model_capabilities:
+          type: array
+          items: {type: string}
+        output_guidance: {type: string, description: 交付指导，不是自动完成判定。}
+        metadata:
+          type: object
+          additionalProperties: true
+          description: 标准可选 frontmatter 元数据，allowed-tools 不授予执行权限。
+    CreativeAgentSkillManifestV1:
       type: object
       additionalProperties: false
       required: [manifest_schema_version, input_kinds, max_inputs, tool_allowlist, required_model_capabilities, output_contract, completion_check_key]
       properties:
-        manifest_schema_version: {type: integer}
+        manifest_schema_version: {type: integer, enum: [1]}
         input_kinds:
           type: array
           items: {type: string}
-        max_inputs: {type: integer}
+        max_inputs: {type: integer, deprecated: true, description: 仅 v1 历史声明，不代表运行时限制}
         tool_allowlist:
           type: array
           items: {type: string}
-          description: 上界，执行时与账号自身的操作范围取交集；Skill 永远不能扩权
+          description: v1 依赖声明，不授予或限制业务权限
         required_model_capabilities:
           type: array
           items: {type: string}
         output_contract: {type: string}
-        completion_check_key: {type: string}
+        completion_check_key: {type: string, deprecated: true, description: 历史字段，没有运行时完成检查语义}
     CreativeAgentSkillResource:
       type: object
       additionalProperties: false

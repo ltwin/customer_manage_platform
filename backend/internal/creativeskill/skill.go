@@ -14,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -96,14 +97,16 @@ type Manifest struct {
 	ManifestSchemaVersion int      `json:"manifest_schema_version"`
 	InputKinds            []string `json:"input_kinds"`
 	MaxInputs             int      `json:"max_inputs"`
-	// ToolAllowlist is an upper bound intersected with the photographer's own
-	// action scope at execution time. A skill can never widen it.
+	// ToolAllowlist is the legacy v1 dependency declaration, never authority.
 	ToolAllowlist             []string `json:"tool_allowlist"`
 	RequiredModelCapabilities []string `json:"required_model_capabilities"`
 	OutputContract            string   `json:"output_contract"`
 	// CompletionCheckKey selects a registered checker. A package cannot ship
 	// code, so this can only ever name something the deployment already has.
-	CompletionCheckKey string `json:"completion_check_key"`
+	CompletionCheckKey string         `json:"completion_check_key"`
+	RequiredTools      []string       `json:"required_tools,omitempty"`
+	OutputGuidance     string         `json:"output_guidance,omitempty"`
+	Metadata           map[string]any `json:"metadata,omitempty"`
 }
 
 // Resource is one declared file of a version: what a caller may ask for and
@@ -232,6 +235,22 @@ func validResourcePath(name string) bool {
 }
 
 func (m Manifest) validate() error {
+	if m.ManifestSchemaVersion == 2 {
+		if len(m.InputKinds) > 0 || m.MaxInputs != 0 || len(m.ToolAllowlist) > 0 || m.OutputContract != "" || m.CompletionCheckKey != "" {
+			return creativeops.ErrValidation
+		}
+		for _, list := range [][]string{m.RequiredTools, m.RequiredModelCapabilities} {
+			seen := map[string]bool{}
+			for _, value := range list {
+				if value == "" || !utf8.ValidString(value) || seen[value] {
+					return creativeops.ErrValidation
+				}
+				seen[value] = true
+			}
+		}
+		return nil
+	}
+
 	if m.ManifestSchemaVersion != manifestSchemaVersion || m.MaxInputs < 1 {
 		return creativeops.ErrValidation
 	}
@@ -252,6 +271,36 @@ func (m Manifest) validate() error {
 		}
 	}
 	return nil
+}
+
+// Dependencies returns requirements, not an authorization grant.
+func (m Manifest) Dependencies() []string {
+	if m.ManifestSchemaVersion == 2 {
+		return append([]string(nil), m.RequiredTools...)
+	}
+	return append([]string(nil), m.ToolAllowlist...)
+}
+
+// MarshalJSON preserves the exact v1 encoding: import hashes are durable.
+func (m Manifest) MarshalJSON() ([]byte, error) {
+	if m.ManifestSchemaVersion != 2 {
+		type legacy Manifest
+		return json.Marshal(legacy(m))
+	}
+	tools, capabilities := m.RequiredTools, m.RequiredModelCapabilities
+	if tools == nil {
+		tools = []string{}
+	}
+	if capabilities == nil {
+		capabilities = []string{}
+	}
+	return json.Marshal(struct {
+		Version      int            `json:"manifest_schema_version"`
+		Tools        []string       `json:"required_tools"`
+		Capabilities []string       `json:"required_model_capabilities"`
+		Guidance     string         `json:"output_guidance,omitempty"`
+		Metadata     map[string]any `json:"metadata,omitempty"`
+	}{2, tools, capabilities, m.OutputGuidance, m.Metadata})
 }
 
 // normalized replaces absent lists with empty ones. A manifest that omits
@@ -315,13 +364,13 @@ func (r ImportRequest) validate() error {
 	if r.Origin != "platform" && r.Origin != "account" {
 		return creativeops.ErrValidation
 	}
-	if !validSlug(r.Slug) {
+	if (r.Manifest.ManifestSchemaVersion == 2 && !validStandardSlug(r.Slug)) || (r.Manifest.ManifestSchemaVersion != 2 && !validSlug(r.Slug)) {
 		return creativeops.ErrValidation
 	}
 	if n := utf8.RuneCountInString(r.DisplayName); n < 1 || n > 120 {
 		return creativeops.ErrValidation
 	}
-	if n := utf8.RuneCountInString(r.Description); n < 1 || n > 500 {
+	if n := utf8.RuneCountInString(r.Description); n < 1 || n > 1024 {
 		return creativeops.ErrValidation
 	}
 	if r.Instructions == "" || !utf8.ValidString(r.Instructions) {
@@ -371,6 +420,18 @@ func validHex64(s string) bool {
 	for i := range len(s) {
 		c := s[i]
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+func validStandardSlug(s string) bool {
+	if !utf8.ValidString(s) || utf8.RuneCountInString(s) < 1 || utf8.RuneCountInString(s) > 64 || strings.HasPrefix(s, "-") || strings.HasSuffix(s, "-") || strings.Contains(s, "--") {
+		return false
+	}
+	for _, r := range s {
+		if r != '-' && !unicode.IsLower(r) && !unicode.IsDigit(r) {
 			return false
 		}
 	}

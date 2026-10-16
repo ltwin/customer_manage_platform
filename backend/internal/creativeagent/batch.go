@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -86,80 +85,6 @@ func stringArgument(args, field string) string {
 		return ""
 	}
 	return strings.TrimSpace(s)
-}
-
-// toolResources names what one call touches. A call nobody can prove
-// independent holds the whole run: a tool that forgot to say is slow, never
-// wrong. upstream maps a node to the nodes its generation reads, as the
-// canvas stood when the batch was planned; rewired says an earlier call of
-// the answer may have changed the canvas since.
-func toolResources(name, args string, upstream map[string][]string, rewired bool) []resource {
-	whole := []resource{{keyRun, true}}
-	node := stringArgument(args, "node_id")
-	switch name {
-	case readHistoryTool, readSkillTool, loadSkillTool:
-		// History before the trigger message, or the run's pinned skill.
-		return nil
-	case readAssetTool, readResultTool:
-		// Content is immutable, but whether the run may read it is not: a
-		// node on the canvas, or an asset out of the trash, grants it.
-		return []resource{{keyCanvas, false}, {keyNodes, false}, {keyLibrary, false}}
-	case readCanvasTool:
-		return []resource{{keyCanvas, false}, {keyNodes, false}}
-	case searchAssetsTool, readLibraryTool, readLibraryResultTool:
-		return []resource{{keyLibrary, false}}
-	case organizeAssetsTool, manageLibraryTool, trashAssetsTool, restoreAssetsTool:
-		return []resource{{keyLibrary, true}}
-	case saveLibraryTool:
-		// Saves the node's content as it is when the call runs.
-		if node == "" {
-			return whole
-		}
-		return []resource{{keyLibrary, true}, {keyCanvas, false}, {nodeKey(node), false}}
-	case searchWebTool:
-		// The same query waits, then replays the first answer.
-		query := searchKey(stringArgument(args, "query"))
-		if query == "" {
-			return whole
-		}
-		return []resource{{"search:" + query, true}}
-	case readWebpageTool:
-		// The same page is fetched once; later reads replay it.
-		raw := stringArgument(args, "url")
-		u, err := url.Parse(raw)
-		if raw == "" || err != nil {
-			return whole
-		}
-		return []resource{{"webpage:" + webpageKey(u), true}}
-	case updatePlanTool:
-		return []resource{{keyPlan, true}}
-	case editCanvasTool:
-		// Canvas writes check the whole canvas, so they go one at a time.
-		// Placing an asset reads its current revision and trash state.
-		return []resource{{keyCanvas, true}, {keyLibrary, false}}
-	case setNodePromptTool:
-		return []resource{{keyCanvas, true}}
-	case compressImageTool:
-		if node == "" {
-			return whole
-		}
-		return []resource{{keyCanvas, false}, {nodeKey(node), true}}
-	case generateNodeTool:
-		// A generation reads its upstream nodes when it is admitted. Known
-		// only from the canvas, and only while nothing earlier may rewire it.
-		sources, ok := upstream[node]
-		if node == "" || !ok || rewired {
-			return whole
-		}
-		out := []resource{{keyCanvas, false}, {nodeKey(node), true}}
-		for _, source := range sources {
-			out = append(out, resource{nodeKey(source), false})
-		}
-		return out
-	}
-	// list_conversation_assets reads results earlier calls of the answer
-	// publish; it is rare enough to wait for all of them.
-	return whole
 }
 
 // plannedCall is one call of an answer as the journal recorded it.

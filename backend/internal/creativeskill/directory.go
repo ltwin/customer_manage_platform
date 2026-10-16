@@ -47,7 +47,8 @@ type CatalogEntry struct {
 	// ToolAllowlist is the version's declared upper bound. The directory reports
 	// it rather than judging it: whether this deployment has registered those
 	// tools is not something the skill store knows.
-	ToolAllowlist []string
+	ToolAllowlist             []string
+	RequiredModelCapabilities []string
 }
 
 type CatalogPage struct {
@@ -137,7 +138,7 @@ type skillRow struct {
 // front, a name is recognised anywhere inside it.
 const listSkillCond = "current_version_id IS NOT NULL AND availability='active'" +
 	" AND ($2::timestamptz IS NULL OR (updated_at,id)<($2::timestamptz,$3::text))" +
-	" AND ($4::text='' OR slug LIKE $4::text||'%' OR display_name ILIKE '%'||$4::text||'%')"
+	" AND ($4::text='' OR slug LIKE $4::text||'%' OR display_name ILIKE '%'||$4::text||'%' OR description ILIKE '%'||$4::text||'%')"
 
 // listPlatformSkillCond shares only what the platform owner published as
 // platform; anything else filed under it is not part of the catalog.
@@ -244,7 +245,8 @@ func (s *Service) attachVersions(ctx context.Context, scope store.AccountScope, 
 			SkillID: r.id, VersionID: r.versionID, OwnerAccountID: r.ownerAccountID,
 			Origin: r.origin, Slug: r.slug, DisplayName: r.displayName, Description: r.description,
 			VersionNumber: version.number, Digest: version.digest,
-			MaxInputs: version.manifest.MaxInputs, ToolAllowlist: version.manifest.ToolAllowlist,
+			MaxInputs: version.manifest.MaxInputs, ToolAllowlist: version.manifest.Dependencies(),
+			RequiredModelCapabilities: version.manifest.RequiredModelCapabilities,
 		})
 	}
 	return items, nil

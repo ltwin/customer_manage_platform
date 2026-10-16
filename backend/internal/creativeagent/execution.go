@@ -24,7 +24,7 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 	if err := s.stillRunnable(ctx, scope, held); err != nil {
 		return nil, err
 	}
-	prompt, revisions, err := s.assemble(ctx, scope, held)
+	prompt, revisions, history, err := s.assemble(ctx, scope, held)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +85,18 @@ func (s *Service) newRunExecution(ctx context.Context, scope store.AccountScope,
 	toolsConfig, handlers, err := runtime.configure(ctx)
 	if err != nil {
 		return nil, err
+	}
+	discovery, err := runtime.initializeSkills(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.carrySkills(ctx, history); err != nil {
+		return nil, err
+	}
+	if discovery != "" {
+		message := schema.UserMessage(discovery)
+		message.Extra = map[string]any{inputKindKey: inputSkillIndex, "creative_history_group": "skill-discovery"}
+		execution.prompt = append([]*schema.Message{message}, execution.prompt...)
 	}
 	execution.config = adk.ChatModelAgentConfig{
 		Name:        agentName,

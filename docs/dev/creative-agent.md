@@ -1,5 +1,7 @@
 # 创作助手（Harness）开发说明
 
+> 2026-10-15：Skills/Tools 的现行实现以 [运行契约](agent-skills-tools.md) 为准。下文按里程碑保留实现历史；旧的工具白名单、单 Skill 资源读取及未接入自动发现的描述已由新契约替代。
+
 归属 `backend/internal/creativeagent`。设计权威源是
 [modules/harness.md](../product/creative-canvas-system/modules/harness.md)、
 [modules/gateway-harness-data.md](../product/creative-canvas-system/modules/gateway-harness-data.md)、

@@ -43,7 +43,7 @@ var (
 // created under -1 was never judged against a segment count or a skill package
 // bound; replaying it against -2's set would apply rules it never agreed to.
 // What is frozen is the whole judgement, not the individual numbers.
-const limitsVersion = "creative-agent-8"
+const limitsVersion = "creative-agent-9"
 
 // policyVersion identifies the egress disclosure a photographer agreed to.
 // A new disclosure needs a new consent, never a silent rewrite of an old row.
@@ -76,6 +76,7 @@ type Limits struct {
 	// refused rather than concatenated — stitching two sets of instructions
 	// together produces a third that neither author wrote.
 	SkillRefsPerInstruction int `json:"skill_refs_per_instruction"`
+	ActivatedSkillsPerRun   int `json:"activated_skills_per_run"`
 	// SkillResourceFiles and SkillPackageBytes are the skill store's own bounds,
 	// published here because a run is judged by the limits it was created under.
 	SkillResourceFiles int `json:"skill_resource_files"`
@@ -134,6 +135,7 @@ func DefaultLimits() Limits {
 		// that imports cleanly starts failing at execution.
 		InstructionSegments:     maxBlocks,
 		SkillRefsPerInstruction: maxSkillRefs,
+		ActivatedSkillsPerRun:   20,
 		SkillResourceFiles:      creativeskill.MaxResourceCount,
 		SkillPackageBytes:       creativeskill.MaxPackageBytes,
 		HistoryMessages:         500,
@@ -200,9 +202,7 @@ type Service struct {
 	gateway *llmgateway.Service
 	models  *llmgateway.Catalog
 	skills  SkillDirectory
-	// tools lists deployed runtime capabilities; canvas tools remain in FND-08.
-	tools  []ToolEntry
-	limits Limits
+	limits  Limits
 	// runtime is the queue this service enqueues into inside its own
 	// transaction. A deployment whose queue schema is absent leaves it nil, and
 	// creating a run then fails in the transaction rather than leaving a run
@@ -223,7 +223,10 @@ func NewService(gateway *llmgateway.Service, models *llmgateway.Catalog, skills 
 	if gateway == nil || models == nil || skills == nil {
 		return nil, errors.New("creative agent needs a gateway, a model catalog and a skill directory")
 	}
-	return &Service{gateway: gateway, models: models, skills: skills, tools: runtimeToolEntries(), limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default(), unavailableLogged: &sync.Map{}}, nil
+	if err := validateToolDefinitions(agentToolDefinitions()); err != nil {
+		return nil, err
+	}
+	return &Service{gateway: gateway, models: models, skills: skills, limits: DefaultLimits(), generationWait: generationWait, compressWait: compressWait, logger: slog.Default(), unavailableLogged: &sync.Map{}}, nil
 }
 
 // SetRuntime binds the queue used for same-transaction enqueue.

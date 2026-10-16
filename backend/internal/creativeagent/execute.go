@@ -437,7 +437,7 @@ func (s *Service) stillRunnable(ctx context.Context, scope store.AccountScope, h
 	if !live.Usable() {
 		return ErrUnsupportedSegment
 	}
-	if available, _ := runnableHere(s.registeredToolRefs(), live.Manifest.ToolAllowlist); !available {
+	if available, _ := runnableHere(s.registeredToolRefs(), live.Manifest.Dependencies()); !available {
 		return ErrUnsupportedSegment
 	}
 	if live.Digest != held.Skill.Digest {
@@ -457,9 +457,12 @@ func (s *Service) stillRunnable(ctx context.Context, scope store.AccountScope, h
 //
 // Nothing here re-reads the conversation: the inputs were fixed when the run
 // was created, and a message appended since belongs to the next run.
-func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held claim) ([]*schema.Message, []string, error) {
+func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held claim) ([]*schema.Message, []string, []historySkill, error) {
 	var messages []*schema.Message
 	var revisions []string
+	var skills []historySkill
+	// Skill results name their version only in the call that produced them.
+	skillCalls := map[string]string{}
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		consent, err := readConsentForUpdate(ctx, tx, held.ConsentID)
 		if err != nil {
@@ -542,6 +545,19 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 					continue
 				}
 				m := bodyMessage(*meta.Body, meta.Role)
+				for _, c := range meta.Body.ToolCalls {
+					if c.Name == loadSkillTool || c.Name == readSkillTool {
+						skillCalls[c.ID] = stringArgument(c.Arguments, "skill_version_id")
+					}
+				}
+				if meta.Role == "tool" && skillHistoryTool(meta.Body.ToolName) {
+					// Kept only if the run can carry the version on; see carrySkills.
+					if v := skillCalls[meta.Body.ToolCallID]; v != "" {
+						skills = append(skills, historySkill{message: m, version: v})
+					} else {
+						m.Content = skillHistoryUnloaded
+					}
+				}
 				// Historical read results contain content bytes, not just locators.
 				// Recheck them just like ordinary content references.
 				if meta.Role == "tool" && contentReadTool(meta.Body.ToolName) {
@@ -612,12 +628,12 @@ func (s *Service) assemble(ctx context.Context, scope store.AccountScope, held c
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if len(messages) == 0 {
-		return nil, nil, creativeops.ErrValidation
+		return nil, nil, nil, creativeops.ErrValidation
 	}
-	return messages, revisions, nil
+	return messages, revisions, skills, nil
 }
 
 // admitRunInTx fences new work against cancellation, stale claims and withdrawn
@@ -653,10 +669,8 @@ func (s *Service) admitRunInTx(ctx context.Context, tx store.TxAccountScope, hel
 	// the skill control row after operation/account/slot/budget/conversation/run
 	// and before the resource locks, and the dispatch intent this transaction is
 	// about to record must not be able to overtake a withdrawal.
-	if held.Skill != nil {
-		if err := s.skills.RequireRunnableInTx(ctx, tx, held.Skill.SkillID, held.Skill.ID); err != nil {
-			return translateSkill(err)
-		}
+	if err := s.requireActiveSkillsInTx(ctx, tx, held); err != nil {
+		return err
 	}
 	consent, err := readConsentForUpdate(ctx, tx, held.ConsentID)
 	if err != nil {

@@ -26,9 +26,6 @@ type ImageCompressor interface {
 // with editing switched off passes nil and never offers the tool.
 func (s *Service) SetImageCompressor(c ImageCompressor) {
 	s.compressor = c
-	if c != nil {
-		s.tools = append(s.tools, ToolEntry{Key: compressImageTool, Version: 1, DisplayName: "压缩图片", EffectClass: "write", MaxImpact: 1})
-	}
 }
 
 func compressImageInfo() *schema.ToolInfo {

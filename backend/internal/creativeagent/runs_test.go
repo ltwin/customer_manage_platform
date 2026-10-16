@@ -337,7 +337,6 @@ func TestASkillWithdrawnAfterSubmissionStopsTheDispatch(t *testing.T) {
 	f := setup(t)
 	f.queue()
 	published := f.publishSkill("reference-direction", "参考整理与创作方向")
-	f.registerSkillTools()
 	c := f.conversation(f.alice, f.canvasID)
 	consent := f.consent(f.alice, c.ID)
 	run, err := f.startRun(f.alice, c.ID, consent.ID,

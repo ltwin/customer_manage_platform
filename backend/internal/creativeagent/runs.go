@@ -291,6 +291,16 @@ func (s *Service) CreateRun(ctx context.Context, scope store.AccountScope, comma
 			if err := coversRun(consent, input.ConversationID, resolved.ContentRefs); err != nil {
 				return creativeops.Outcome{}, err
 			}
+			if resolved.Skill != nil {
+				if modelSupportsSkill(resolved.Skill.Snapshot.Manifest, model.Capability) != "" {
+					return creativeops.Outcome{}, ErrModelCapability
+				}
+				h := runtimeHandler{service: s, libraryEnabled: consent.Scope.Mode == ScopeAccountLibrary && consentHas(consent, "media_metadata")}
+				h.held.Model = model
+				if h.skillUnavailable(resolved.Skill.Snapshot) != "" {
+					return creativeops.Outcome{}, ErrUnsupportedSegment
+				}
+			}
 			// The second read of every named revision, inside the transaction
 			// that creates the run. The first one happened before this function
 			// and could have been overtaken by a withdrawal; this one cannot.

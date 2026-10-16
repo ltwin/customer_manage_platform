@@ -102,7 +102,6 @@ func TestPlainWordsResolveWithoutAnyReference(t *testing.T) {
 func TestASkillSegmentIsAnsweredEntirelyFromTheServersOwnRead(t *testing.T) {
 	f := setup(t)
 	published := f.publishSkill("reference-direction", "参考整理与创作方向")
-	f.registerSkillTools()
 
 	resolved, err := f.service.ResolveInstruction(t.Context(), f.alice, []InstructionSegment{
 		{Type: "text", Text: "按这个来。"},
@@ -161,7 +160,6 @@ func TestAWithdrawnVersionCannotBeSubmittedAgain(t *testing.T) {
 	f := setup(t)
 	published := f.publishSkill("reference-direction", "参考整理与创作方向")
 	// Registered first, so the withdrawal is the only thing left to refuse it.
-	f.registerSkillTools()
 	if err := f.skills.DisableVersion(t.Context(), f.platform, published.ID, "首版描述有误"); err != nil {
 		t.Fatal(err)
 	}
@@ -186,14 +184,13 @@ func TestAnotherAccountsSkillIsAbsentFromASubmission(t *testing.T) {
 	}
 }
 
-// This deployment has registered no tools yet, so every skill that declares one
-// is refused at submission — the same fact the catalog reports as
-// available: false. The refusal is what stops a photographer from starting work
-// the deployment cannot finish, and it disappears on its own once FND-08
-// registers the tools rather than needing this code to change.
+// A skill requiring generation remains unavailable until generation is bound.
 func TestASkillWhoseToolsAreNotRegisteredCannotBeSubmitted(t *testing.T) {
 	f := setup(t)
-	published := f.publishSkill("reference-direction", "参考整理与创作方向")
+	req := skillRequest("platform", "reference-direction", "参考整理与创作方向")
+	req.Activate = true
+	req.Manifest.ToolAllowlist = []string{"set_node_prompt@1"}
+	published := f.runImport(f.platform, req)
 
 	_, err := f.service.ResolveInstruction(t.Context(), f.alice, []InstructionSegment{
 		{Type: "skill_ref", SkillID: published.SkillID, SkillVersionID: published.ID},
@@ -203,7 +200,7 @@ func TestASkillWhoseToolsAreNotRegisteredCannotBeSubmitted(t *testing.T) {
 	}
 	// The same skill resolves once the tool it declares is registered, so the
 	// refusal is about this deployment's capability and not about the skill.
-	f.registerSkillTools()
+	f.service.SetGenerator(&stubGenerator{})
 	if _, err := f.service.ResolveInstruction(t.Context(), f.alice, []InstructionSegment{
 		{Type: "skill_ref", SkillID: published.SkillID, SkillVersionID: published.ID},
 	}); err != nil {
@@ -274,7 +271,6 @@ func TestTheSameRevisionNamedTwiceIsKeptOnce(t *testing.T) {
 func TestAMessageRegistersTheSkillItShowed(t *testing.T) {
 	f := setup(t)
 	published := f.publishSkill("reference-direction", "参考整理与创作方向")
-	f.registerSkillTools()
 	c := f.conversation(f.alice, f.canvasID)
 
 	resolved, err := f.service.ResolveInstruction(t.Context(), f.alice, []InstructionSegment{

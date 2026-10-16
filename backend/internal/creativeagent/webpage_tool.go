@@ -49,11 +49,6 @@ type WebFetcher interface {
 // deployment without a Firecrawl key passes nil and offers neither tool.
 func (s *Service) SetWebFetcher(f WebFetcher) {
 	s.fetcher = f
-	if f != nil {
-		s.tools = append(s.tools,
-			ToolEntry{Key: searchWebTool, Version: 1, DisplayName: "搜索网页", EffectClass: "read_only"},
-			ToolEntry{Key: readWebpageTool, Version: 1, DisplayName: "读取网页", EffectClass: "read_only"})
-	}
 }
 
 // Sites Firecrawl reaches only through its premium provider route, at about

@@ -275,7 +275,6 @@ func TestSkillAvailabilityIsCheckedInsideTheDispatchTransaction(t *testing.T) {
 	f := setup(t)
 	f.queue()
 	published := f.publishSkill("reference-direction", "参考整理与创作方向")
-	f.registerSkillTools()
 	counting := &countingDirectory{SkillDirectory: f.service.skills}
 	f.service.skills = counting
 

@@ -3275,6 +3275,8 @@ export interface components {
             compact_summary_bytes: number;
             /** @description 一次提交的片段数上限，与消息正文的块数是同一个数字——能解析的提交必须能渲染。 */
             instruction_segments: number;
+            /** @description 每轮最多激活的不同 Skill 版本数 */
+            activated_skills_per_run: number;
             /** @description 本阶段为 1。两个 Skill 会被拒绝而不是拼接：把两份指令接在一起产生的是 第三份，两位作者都没写过。 */
             skill_refs_per_instruction: number;
             /** @description 一个 Skill 版本的声明文件数上限，与导入侧同源，不是另写一份数字。 */
@@ -3331,7 +3333,11 @@ export interface components {
             description: string;
             version_number: number;
             digest: string;
-            max_inputs: number;
+            /**
+             * @deprecated
+             * @description 仅 v1 历史声明，不代表运行时限制
+             */
+            max_inputs?: number;
             available: boolean;
             unavailable_reason?: string;
         };
@@ -3341,14 +3347,37 @@ export interface components {
             /** @description 留空表示目录到此为止 */
             next_cursor: string;
         };
-        CreativeAgentSkillManifest: {
-            manifest_schema_version: number;
+        CreativeAgentSkillManifest: components["schemas"]["CreativeAgentSkillManifestV1"] | components["schemas"]["CreativeAgentSkillManifestV2"];
+        CreativeAgentSkillManifestV2: {
+            /** @enum {integer} */
+            manifest_schema_version: 2;
+            /** @description 执行方法所需的工具及版本，不授予或限制业务权限；可以为空。 */
+            required_tools: string[];
+            required_model_capabilities: string[];
+            /** @description 交付指导，不是自动完成判定。 */
+            output_guidance?: string;
+            /** @description 标准可选 frontmatter 元数据，allowed-tools 不授予执行权限。 */
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        CreativeAgentSkillManifestV1: {
+            /** @enum {integer} */
+            manifest_schema_version: 1;
             input_kinds: string[];
+            /**
+             * @deprecated
+             * @description 仅 v1 历史声明，不代表运行时限制
+             */
             max_inputs: number;
-            /** @description 上界，执行时与账号自身的操作范围取交集；Skill 永远不能扩权 */
+            /** @description v1 依赖声明，不授予或限制业务权限 */
             tool_allowlist: string[];
             required_model_capabilities: string[];
             output_contract: string;
+            /**
+             * @deprecated
+             * @description 历史字段，没有运行时完成检查语义
+             */
             completion_check_key: string;
         };
         CreativeAgentSkillResource: {

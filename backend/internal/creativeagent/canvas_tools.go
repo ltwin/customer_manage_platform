@@ -56,11 +56,6 @@ type Generator interface {
 // model is configured, the prompt and generate tools are not offered.
 func (s *Service) SetGenerator(g Generator) {
 	s.generator = g
-	if g != nil {
-		s.tools = append(s.tools,
-			ToolEntry{Key: setNodePromptTool, Version: 1, DisplayName: "写入提示词", EffectClass: "write", MaxImpact: 1},
-			ToolEntry{Key: generateNodeTool, Version: 1, DisplayName: "生成", EffectClass: "generate", MaxImpact: 1})
-	}
 }
 
 func (s *Service) generationModels() []creativegeneration.Model {

@@ -4,7 +4,13 @@ Skill 的权威正文与资源现在落在 PostgreSQL 与平台对象存储里�
 
 语义权威源：`docs/product/creative-canvas-system/modules/skill-foundation.md` §6（导入协议）、§9（保留与回收）。本文只讲怎么运行。
 
-## 包目录格式
+## 当前包格式（2026-10-15）
+
+新包使用标准 `SKILL.md` frontmatter；`manifest.json` 可选，有则使用 v2 平台扩展。标准身份字段只从 frontmatter 读取，工具清单改为依赖声明，取消未实现的完成检查键。详细格式、支持范围及历史兼容见 [Agent Skills 与 Tools 运行契约](agent-skills-tools.md)。内置 reference-direction 与 cosplay-shoot-planning 已采用 v2。
+
+下面的 v1 格式与编码说明保留用于旧包导入和幂等回放，不能用旧 operation id 导入已改成 v2 的新内容；启动同步会以新 digest 发布新版本。
+
+## v1 包目录格式（兼容）
 
 一个包就是一个目录，操作者能看到什么，导入就发布什么：
 
@@ -21,7 +27,7 @@ reference-direction.v1/
 - 本阶段**只收 UTF-8 文本**。判定看字节，不看扩展名也不看 mime——两者都由导入方自己写，靠它们把关等于没关。图片、视频等资源类型按 `skill-foundation.md` §4.3 留给后续媒体能力。
 - 上限：单文件 64 KiB、至多 20 个文件、整包 256 KiB。读取时按目录报告的大小先判再读，所以 `--package-dir` 指错地方的代价是一次 stat，不是把那个目录读进内存。
 
-内置 Skill 包放在仓库根的 `deploy/creative-skills/`，一个子目录一个包（现在只有 `reference-direction.v1/`）。它在 Go 模块之外，因为已经没有任何代码编译它——服务端从数据库读 Skill，这个目录只给同步和导入读。镜像里这份目录在 `/usr/local/share/creative-skills/`：包不再随二进制发布之后，它必须作为数据被显式带进镜像。
+内置 Skill 包放在仓库根的 `deploy/creative-skills/`，一个子目录一个包（包含 `reference-direction.v1/` 与 `cosplay-shoot-planning.v1/`；目录名后缀不决定 manifest schema）。它在 Go 模块之外，因为已经没有任何代码编译它——服务端从数据库读 Skill，这个目录只给同步和导入读。镜像里这份目录在 `/usr/local/share/creative-skills/`：包不再随二进制发布之后，它必须作为数据被显式带进镜像。
 
 ## 内置 Skill 自动同步
 

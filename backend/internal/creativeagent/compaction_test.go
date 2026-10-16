@@ -331,7 +331,7 @@ func TestAnEarlierSkillIsIndexedAndLoadedOnDemand(t *testing.T) {
 			for _, tool := range r.Chat.Tools {
 				tools = append(tools, tool.Name)
 			}
-			return scriptedResult(r, llmgateway.ToolCall{ID: "load", Name: "load_skill", Arguments: json.RawMessage(fmt.Sprintf(`{"skill":%q}`, v.ID))}), nil
+			return scriptedResult(r, llmgateway.ToolCall{ID: "load", Name: "load_skill", Arguments: json.RawMessage(fmt.Sprintf(`{"skill_version_id":%q}`, v.ID))}), nil
 		}
 		return scriptedResult(r), nil
 	}
@@ -347,8 +347,8 @@ func TestAnEarlierSkillIsIndexedAndLoadedOnDemand(t *testing.T) {
 		t.Fatal("load_skill did not load the indexed version")
 	}
 	for _, name := range tools {
-		if name == readSkillTool {
-			t.Fatalf("an indexed skill added a tool: %v", tools)
+		if name == generateNodeTool {
+			t.Fatalf("an indexed skill added a business tool: %v", tools)
 		}
 	}
 }

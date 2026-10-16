@@ -117,16 +117,23 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 		if recovered {
 			return creativeops.Outcome{}, ErrRecoveryEvidence
 		}
-		var snapshot []byte
-		if err = tx.QueryRow(ctx, "creative_agent_runs", "skill_snapshot", "id=$2", source.ID).Scan(&snapshot); err != nil {
-			return creativeops.Outcome{}, err
-		}
-		var skill creativeskill.Snapshot
-		if len(snapshot) == 0 || json.Unmarshal(snapshot, &skill) != nil {
-			return creativeops.Outcome{}, ErrRecoveryEvidence
-		}
 		var call llmgateway.ToolCall
 		if json.Unmarshal(raw, &call) != nil || call.Name != readSkillTool {
+			return creativeops.Outcome{}, ErrRecoveryEvidence
+		}
+		var args struct {
+			Version string `json:"skill_version_id"`
+			Path    string `json:"path"`
+		}
+		if strictArguments(string(call.Arguments), &args) != nil || args.Version == "" {
+			return creativeops.Outcome{}, ErrRecoveryEvidence
+		}
+		var snapshot []byte
+		if err = tx.QueryRow(ctx, "creative_run_skills", "snapshot", "run_id=$2 AND skill_version_id=$3 AND activated_at IS NOT NULL", source.ID, args.Version).Scan(&snapshot); err != nil {
+			return creativeops.Outcome{}, ErrRecoveryEvidence
+		}
+		var skill creativeskill.Snapshot
+		if json.Unmarshal(snapshot, &skill) != nil {
 			return creativeops.Outcome{}, ErrRecoveryEvidence
 		}
 		consent, err := readConsentForUpdate(ctx, tx, in.ConsentID)
@@ -169,7 +176,7 @@ func (s *Service) RetryRun(ctx context.Context, scope store.AccountScope, comman
 		if err = tx.Insert(ctx, "creative_agent_steps", []string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "input_hash", "input"}, parent, id, 1, "check", "succeeded", 1, digestBytes(summary), summary); err != nil {
 			return creativeops.Outcome{}, err
 		}
-		if err = tx.Insert(ctx, "creative_agent_steps", []string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "tool_key", "tool_version", "parent_model_step_id", "tool_call_index", "input_hash", "input", "retry_of_step_id"}, step, id, 2, "tool", "prepared", 1, key, 1, parent, 0, hash, raw, root); err != nil {
+		if err = tx.Insert(ctx, "creative_agent_steps", []string{"id", "run_id", "ordinal", "kind", "state", "execution_epoch", "tool_key", "tool_version", "parent_model_step_id", "tool_call_index", "input_hash", "input", "retry_of_step_id"}, step, id, 2, "tool", "prepared", 1, key, runtimeToolVersion(key), parent, 0, hash, raw, root); err != nil {
 			return creativeops.Outcome{}, err
 		}
 		c := controlledRun{Run: run, token: token, epoch: 1}

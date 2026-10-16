@@ -436,7 +436,7 @@ func (s *Service) writeToolBlockInTx(ctx context.Context, tx store.TxAccountScop
 	if started == nil {
 		started = &created
 	}
-	payload := toolPayload{StepID: stepID, ToolKey: toolKey, Title: s.toolTitle(toolKey), StartedAt: *started, DetailRef: stepID, NodeRefs: []NodeRef{}}
+	payload := toolPayload{StepID: stepID, ToolKey: toolKey, Title: toolTitle(toolKey), StartedAt: *started, DetailRef: stepID, NodeRefs: []NodeRef{}}
 	if code != nil {
 		payload.ErrorCode = *code
 	}
@@ -483,10 +483,11 @@ func (s *Service) writeToolBlocksForModelStepInTx(ctx context.Context, tx store.
 	return nil
 }
 
-func (s *Service) toolTitle(key string) string {
-	for _, entry := range s.registeredTools() {
-		if entry.Key == key {
-			return entry.DisplayName
+// Presentation metadata remains available when a capability is not deployed.
+func toolTitle(key string) string {
+	for _, definition := range agentToolDefinitions() {
+		if definition.entry.Key == key {
+			return definition.entry.DisplayName
 		}
 	}
 	return key

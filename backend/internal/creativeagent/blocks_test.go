@@ -409,3 +409,63 @@ func TestBlockRegistryRefusesWhatItDoesNotDescribe(t *testing.T) {
 		t.Fatal("plan step state outside the set")
 	}
 }
+
+func TestToolTitlesDoNotDependOnDeploymentAvailability(t *testing.T) {
+	for _, tc := range []struct{ key, title string }{
+		{setNodePromptTool, "写入提示词"}, {generateNodeTool, "生成"},
+		{compressImageTool, "压缩图片"}, {searchWebTool, "搜索网页"},
+	} {
+		if got := toolTitle(tc.key); got != tc.title {
+			t.Errorf("%s title=%q, want %q", tc.key, got, tc.title)
+		}
+	}
+	if got := toolTitle("future_tool"); got != "future_tool" {
+		t.Fatalf("unknown tool: %q", got)
+	}
+}
+
+func TestHistoricalToolTitlesProjectWithoutRewritingRecords(t *testing.T) {
+	f := setup(t)
+	f.queue()
+	c := f.conversation(f.alice, f.canvasID)
+	run, err := f.startRun(f.alice, c.ID, f.consent(f.alice, c.ID).ID, InstructionSegment{Type: "text", Text: "查看历史"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.alice.WithTxScope(t.Context(), func(tx store.TxAccountScope) error {
+		for _, state := range []string{"running", "succeeded"} {
+			_, err := writeBlockInTx(t.Context(), tx, run.ID, "call:old-step", blockChange{Type: BlockTool, State: state, Set: toolPayload{StepID: "old-step", ToolKey: setNodePromptTool, Title: setNodePromptTool, StartedAt: time.Now(), DetailRef: "old-step", NodeRefs: []NodeRef{}}})
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := f.service.ReadRunSnapshot(t.Context(), f.alice, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range snapshot.Blocks {
+		if b.Type == BlockTool && !strings.Contains(string(b.Payload), "写入提示词") {
+			t.Errorf("snapshot title: %s", b.Payload)
+		}
+	}
+	events, _, err := (RunEventSource{}).ReadAfter(t.Context(), f.alice, run.ID, "0", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range events {
+		if (event.Type == "block.created" || event.Type == "block.updated") && strings.Contains(string(event.Data), "old-step") && !strings.Contains(string(event.Data), "写入提示词") {
+			t.Errorf("event title: %s", event.Data)
+		}
+	}
+	var stored string
+	if err := f.db.QueryRow(`SELECT payload->>'title' FROM creative_agent_blocks WHERE run_id=$1 AND type='tool'`, run.ID).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != setNodePromptTool {
+		t.Fatalf("historical record rewritten: %s", stored)
+	}
+}

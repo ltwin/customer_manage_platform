@@ -10,15 +10,17 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/adk"
+	"github.com/cloudwego/eino/schema"
 
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
+	"github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
 const (
 	checkpointRuntime    = "eino/v0.9.19"
 	checkpointSerializer = "adk-gob/creative-1"
-	checkpointRegistry   = "creative-runtime/3"
+	checkpointRegistry   = "creative-runtime/4"
 	checkpointMaxBytes   = 1 << 20
 )
 
@@ -45,14 +47,31 @@ var _ adk.CheckPointStore = (*runCheckpoint)(nil)
 var _ adk.CheckPointDeleter = (*runCheckpoint)(nil)
 
 func newRunCheckpoint(h *runtimeHandler) (*runCheckpoint, error) {
+	var infos []*schema.ToolInfo
+	for _, d := range agentToolDefinitions() {
+		if h.allowed(d.entry.Key) {
+			info, err := d.bind(h).Info(context.Background())
+			if err != nil {
+				return nil, err
+			}
+			infos = append(infos, info)
+		}
+	}
+	schemas, err := llmgateway.EinoToolDefinitions(infos)
+	if err != nil {
+		return nil, err
+	}
+
 	registry, err := json.Marshal(struct {
-		Version string      `json:"version"`
-		Tools   []ToolEntry `json:"tools"`
-		Limits  Limits      `json:"limits"`
-		Model   any         `json:"model"`
+		Version string                      `json:"version"`
+		Tools   []ToolEntry                 `json:"tools"`
+		Schemas []llmgateway.ToolDefinition `json:"schemas"`
+		Limits  Limits                      `json:"limits"`
+		Model   any                         `json:"model"`
 	}{
 		Version: checkpointRegistry,
 		Tools:   h.service.registeredTools(),
+		Schemas: schemas,
 		Limits:  h.service.limits,
 		Model:   h.service.models.Snapshot(h.held.Model),
 	})

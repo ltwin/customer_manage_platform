@@ -34,7 +34,7 @@ type SkillEntry struct {
 	Description   string `json:"description"`
 	VersionNumber int    `json:"version_number"`
 	Digest        string `json:"digest"`
-	MaxInputs     int    `json:"max_inputs"`
+	MaxInputs     int    `json:"max_inputs,omitempty"`
 	Available     bool   `json:"available"`
 	// UnavailableWhy keeps a skill this deployment cannot yet run visible with
 	// its reason rather than letting it silently disappear from the picker.
@@ -142,6 +142,9 @@ func (s *Service) listSkills(ctx context.Context, scope store.AccountScope, quer
 	items := make([]SkillEntry, 0, len(page.Items))
 	for _, entry := range page.Items {
 		available, why := runnableHere(registered, entry.ToolAllowlist)
+		if available {
+			available, why = s.modelsSupportSkill(entry.RequiredModelCapabilities)
+		}
 		if !available {
 			s.logUnavailableSkill(entry.Slug, entry.SkillID, entry.VersionID, entry.Origin, why)
 		}
@@ -168,7 +171,10 @@ func (s *Service) SkillVersion(ctx context.Context, scope store.AccountScope, sk
 	if err != nil {
 		return SkillVersionView{}, err
 	}
-	available, why := runnableHere(s.registeredToolRefs(), snapshot.Manifest.ToolAllowlist)
+	available, why := runnableHere(s.registeredToolRefs(), snapshot.Manifest.Dependencies())
+	if available {
+		available, why = s.modelsSupportSkill(snapshot.Manifest.RequiredModelCapabilities)
+	}
 	if !snapshot.Usable() {
 		// The author's own switch comes first: a version nobody may start is not
 		// made available by the fact that its tools happen to be registered.
@@ -211,6 +217,7 @@ func (s *Service) logUnavailableSkill(slug, skillID, versionID, origin, why stri
 // discover it halfway through and stop as partial.
 func runnableHere(registered map[string]bool, allowlist []string) (bool, string) {
 	for _, tool := range allowlist {
+		tool = dependencyRef(tool)
 		if !registered[tool] {
 			return false, "所需工具尚未在本部署注册：" + tool
 		}
@@ -253,11 +260,25 @@ func (s *Service) registeredToolRefs() map[string]bool {
 	return refs
 }
 
-// registeredTools returns the deployment registry, preserving the API's array
-// shape even when a deployment explicitly registers nothing.
+// registeredTools projects readiness when read, matching runtime admission.
+// Generator.Models is empty until its queue is bound after SetGenerator.
+// Caching this projection during composition would freeze that empty state.
 func (s *Service) registeredTools() []ToolEntry {
-	if s.tools == nil {
-		return []ToolEntry{}
+	return deployedToolEntries(s)
+}
+
+func (s *Service) modelsSupportSkill(required []string) (bool, string) {
+	if len(required) == 0 {
+		return true, ""
 	}
-	return s.tools
+	reason := "没有可用模型满足 Skill 依赖"
+	for _, m := range s.models.List() {
+		if m.Available {
+			reason = modelSupportsSkill(creativeskill.Manifest{RequiredModelCapabilities: required}, m.Capability)
+			if reason == "" {
+				return true, ""
+			}
+		}
+	}
+	return false, reason
 }

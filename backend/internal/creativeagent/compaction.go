@@ -151,11 +151,50 @@ type skillIndexEntry struct {
 	DisplayName   string `json:"display_name"`
 	Description   string `json:"description"`
 	Uses          int    `json:"uses"`
+	Origin        string `json:"origin,omitempty"`
 }
 
 // skillIndexInTx lists the skill versions earlier runs of the conversation
 // fixed, newest use first, leaving out the one this run fixes itself.
 func skillIndexInTx(ctx context.Context, tx store.TxAccountScope, conversationID, current string) ([]skillIndexEntry, error) {
+	out := []skillIndexEntry{}
+	at := map[string]int{}
+	active, err := tx.QueryPage(ctx, "creative_run_skills", "snapshot", "activated_at IS NOT NULL AND run_id IN (SELECT id FROM creative_agent_runs WHERE account_id=$1 AND conversation_id=$2)", []store.OrderBy{{Column: "activated_at", Desc: true}}, 200, 0, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	for active.Next() {
+		var raw []byte
+		if err := active.Scan(&raw); err != nil {
+			active.Close()
+			return nil, err
+		}
+		var snapshot creativeskill.Snapshot
+		if err := json.Unmarshal(raw, &snapshot); err != nil {
+			active.Close()
+			return nil, err
+		}
+		if snapshot.ID == current {
+			continue
+		}
+		if i, ok := at[snapshot.ID]; ok {
+			out[i].Uses++
+			continue
+		}
+		if len(out) >= skillIndexEntries {
+			continue
+		}
+		e := skillEntry(snapshot)
+		e.Uses = 1
+		at[e.VersionID] = len(out)
+		out = append(out, e)
+	}
+	err = active.Err()
+	active.Close()
+	if err != nil {
+		return nil, err
+	}
+
 	rows, err := tx.QueryPage(ctx, "creative_agent_runs", "skill_snapshot",
 		"conversation_id=$2 AND skill_snapshot IS NOT NULL AND kind='chat'",
 		[]store.OrderBy{{Column: "created_at", Desc: true}}, 200, 0, conversationID)
@@ -163,8 +202,6 @@ func skillIndexInTx(ctx context.Context, tx store.TxAccountScope, conversationID
 		return nil, err
 	}
 	defer rows.Close()
-	var out []skillIndexEntry
-	at := map[string]int{}
 	for rows.Next() {
 		var raw []byte
 		if err := rows.Scan(&raw); err != nil {

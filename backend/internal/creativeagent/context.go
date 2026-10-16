@@ -471,6 +471,9 @@ func (h *runtimeHandler) readHistory(ctx context.Context, raw string) (string, e
 			}
 		}
 		text := utf8Prefix(renderedText(body), 1024)
+		if skillHistoryTool(b.ToolName) {
+			text = skillHistoryUnloaded
+		}
 		if contentReadTool(b.ToolName) {
 			text = "曾读取内容；正文请用 read_asset 重新读取"
 		}

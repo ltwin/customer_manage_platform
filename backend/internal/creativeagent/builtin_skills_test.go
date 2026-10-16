@@ -19,7 +19,8 @@ func TestBuiltInSkillPackagesOnlyNameRegisteredTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	registered := map[string]bool{}
-	for _, tool := range runtimeToolEntries() {
+	for _, definition := range agentToolDefinitions() {
+		tool := definition.entry
 		registered[toolRef(tool.Key, tool.Version)] = true
 	}
 	for _, entry := range entries {
@@ -34,7 +35,7 @@ func TestBuiltInSkillPackagesOnlyNameRegisteredTools(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", entry.Name(), err)
 		}
-		if ok, why := runnableHere(registered, pkg.Manifest.ToolAllowlist); !ok {
+		if ok, why := runnableHere(registered, pkg.Manifest.Dependencies()); !ok {
 			t.Errorf("%s: %s", entry.Name(), why)
 		}
 	}

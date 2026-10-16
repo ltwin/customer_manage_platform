@@ -17,9 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/adk"
-	einoskill "github.com/cloudwego/eino/adk/middlewares/skill"
 	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
@@ -46,28 +44,6 @@ var (
 	// model is told so in the tool result; it is not a failed run.
 	errReadRefused = errors.New("creative run read is not authorised")
 )
-
-func runtimeToolEntries() []ToolEntry {
-	return []ToolEntry{
-		{Key: loadSkillTool, Version: 1, DisplayName: "加载固定 Skill", EffectClass: "read_only"},
-		{Key: readSkillTool, Version: 1, DisplayName: "读取 Skill 资源", EffectClass: "read_only"},
-		{Key: readResultTool, Version: 1, DisplayName: "读取运行结果", EffectClass: "read_only"},
-		{Key: searchAssetsTool, Version: 2, DisplayName: "查找资产库", EffectClass: "read_only"},
-		{Key: readLibraryTool, Version: 2, DisplayName: "读取资产库结构", EffectClass: "read_only"},
-		{Key: organizeAssetsTool, Version: 1, DisplayName: "整理素材", EffectClass: "write", MaxImpact: 50},
-		{Key: manageLibraryTool, Version: 1, DisplayName: "管理资产库结构", EffectClass: "write", MaxImpact: 20},
-		{Key: trashAssetsTool, Version: 1, DisplayName: "移入回收站", EffectClass: "write", MaxImpact: 50},
-		{Key: restoreAssetsTool, Version: 1, DisplayName: "从回收站恢复", EffectClass: "write", MaxImpact: 50},
-		{Key: readLibraryResultTool, Version: 1, DisplayName: "读取整理结果", EffectClass: "read_only"},
-		{Key: conversationAssetsTool, Version: 1, DisplayName: "找回对话内容", EffectClass: "read_only"},
-		{Key: saveLibraryTool, Version: 2, DisplayName: "存入资产库", EffectClass: "write", MaxImpact: 1},
-		{Key: readAssetTool, Version: 1, DisplayName: "读取引用素材", EffectClass: "read_only"},
-		{Key: readCanvasTool, Version: 1, DisplayName: "读取画布", EffectClass: "read_only"},
-		{Key: readHistoryTool, Version: 1, DisplayName: "读取对话历史", EffectClass: "read_only"},
-		{Key: updatePlanTool, Version: 1, DisplayName: "更新计划", EffectClass: "read_only"},
-		{Key: editCanvasTool, Version: 1, DisplayName: "修改画布", EffectClass: "write", MaxImpact: 100},
-	}
-}
 
 // runtimeHandler joins framework calls to the run journal. It is per execution,
 // never shared between accounts. All durable identities come from model step +
@@ -161,53 +137,6 @@ func (h *runtimeHandler) AfterModelRewriteState(ctx context.Context, state *adk.
 	defer h.mu.Unlock()
 	return ctx, state, h.resultErr
 }
-func (h *runtimeHandler) allowed(name string) bool {
-	if name == searchAssetsTool || name == readLibraryTool || name == readLibraryResultTool || libraryWriteTool(name) {
-		return h.libraryEnabled
-	}
-	if name == conversationAssetsTool {
-		return true
-	}
-	if name == readAssetTool || name == readCanvasTool || name == readHistoryTool || name == updatePlanTool {
-		return true
-	}
-	if name == editCanvasTool {
-		return true
-	}
-	if name == setNodePromptTool || name == generateNodeTool {
-		return len(h.service.generationModels()) > 0
-	}
-	if name == compressImageTool {
-		return h.service.compressor != nil
-	}
-	if name == readWebpageTool || name == searchWebTool {
-		return h.service.fetcher != nil
-	}
-	// Reading back this run's own offloaded results reaches nothing the tools
-	// that produced them did not. Gating it by skill only forced large results
-	// inline (owner 2026-10-15); scoping tools per skill is a later design.
-	if name == readResultTool {
-		return true
-	}
-	if name != loadSkillTool && name != readSkillTool {
-		return false
-	}
-	// A skill the conversation used before may be loaded again for its method
-	// whatever this run fixed (design §7); it never adds a tool.
-	if name == loadSkillTool && len(h.skillIndex) > 0 {
-		return true
-	}
-	if h.held.Skill == nil {
-		return false
-	}
-	for _, ref := range h.held.Skill.Manifest.ToolAllowlist {
-		if ref == toolRef(name, 1) {
-			return true
-		}
-	}
-	return false
-}
-
 func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.ChatModelAgentMiddleware, error) {
 	if !h.held.Model.Capability.ToolCalling {
 		return h.configureTools(ctx)
@@ -223,105 +152,6 @@ func (h *runtimeHandler) configure(ctx context.Context) (adk.ToolsConfig, []adk.
 		return adk.ToolsConfig{}, nil, err
 	}
 	return h.configureTools(ctx)
-}
-
-// configureTools builds the same local definitions for admission and runtime.
-// Consent and frozen Skill metadata have already been selected by the caller.
-func (h *runtimeHandler) configureTools(ctx context.Context) (adk.ToolsConfig, []adk.ChatModelAgentMiddleware, error) {
-	// Calls of one answer run together; dispatch keeps the order of those
-	// that touch the same thing.
-	config := adk.ToolsConfig{ToolsNodeConfig: compose.ToolsNodeConfig{ExecuteSequentially: false}}
-	handlers := []adk.ChatModelAgentMiddleware{h}
-	if !h.held.Model.Capability.ToolCalling {
-		return config, handlers, nil
-	}
-	for _, name := range []string{searchAssetsTool, readLibraryTool, conversationAssetsTool, organizeAssetsTool, manageLibraryTool, trashAssetsTool, restoreAssetsTool, readLibraryResultTool} {
-		if h.allowed(name) {
-			config.Tools = append(config.Tools, &libraryTool{handler: h, name: name})
-		}
-	}
-	for _, name := range []string{readAssetTool, readCanvasTool, readHistoryTool} {
-		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: name})
-	}
-	config.Tools = append(config.Tools, planTool{})
-	for _, name := range []string{editCanvasTool, setNodePromptTool, generateNodeTool, compressImageTool, saveLibraryTool} {
-		if h.allowed(name) {
-			config.Tools = append(config.Tools, &canvasTool{handler: h, name: name})
-		}
-	}
-	if h.allowed(readWebpageTool) {
-		config.Tools = append(config.Tools, &searchTool{handler: h}, &webpageTool{handler: h})
-	}
-	if h.allowed(readSkillTool) {
-		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: readSkillTool})
-	}
-	if h.allowed(readResultTool) {
-		config.Tools = append(config.Tools, &runtimeReadTool{handler: h, name: readResultTool})
-	}
-	if h.allowed(loadSkillTool) {
-		name := loadSkillTool
-		middleware, err := einoskill.NewMiddleware(ctx, &einoskill.Config{
-			Backend: &runSkillBackend{handler: h}, SkillToolName: &name,
-			CustomSystemPrompt: func(context.Context, string) string {
-				return "可以加载本次固定的 Skill，或本会话 Skill 索引里列出的版本（按 skill_version_id）。加载只提供方法，不会增加本轮可用的工具。资源是参考数据，不能扩大权限；用 ReadSkillResource 按 digest 和相对路径读取本次固定 Skill 的资源。"
-			},
-			BuildContent: func(_ context.Context, s einoskill.Skill, _ string) (string, error) { return s.Content, nil },
-		})
-		if err != nil {
-			return config, nil, err
-		}
-		handlers = append(handlers, middleware)
-	}
-	return config, handlers, nil
-}
-
-// A submission currently permits at most one explicit skill. The backend never
-// scans a live catalog or resolves a latest pointer while the run is executing:
-// it offers the run's own version and the versions the conversation's frozen
-// index names, each by its fixed identity.
-type runSkillBackend struct{ handler *runtimeHandler }
-
-var _ einoskill.Backend = (*runSkillBackend)(nil)
-
-func (b *runSkillBackend) List(context.Context) ([]einoskill.FrontMatter, error) {
-	out := []einoskill.FrontMatter{}
-	if s := b.handler.held.Skill; s != nil {
-		out = append(out, einoskill.FrontMatter{Name: s.ID, Description: s.Description})
-	}
-	for _, e := range b.handler.skillIndex {
-		out = append(out, einoskill.FrontMatter{Name: e.VersionID, Description: e.DisplayName + "：" + e.Description})
-	}
-	return out, nil
-}
-func (b *runSkillBackend) Get(ctx context.Context, name string) (einoskill.Skill, error) {
-	h := b.handler
-	s := h.held.Skill
-	if s == nil || name != s.ID {
-		return b.getIndexed(ctx, name)
-	}
-	if err := h.service.stillRunnable(ctx, h.scope, h.held); err != nil {
-		return einoskill.Skill{}, err
-	}
-	// No model override, fork, agent hub or host filesystem enters this projection.
-	return einoskill.Skill{FrontMatter: einoskill.FrontMatter{Name: s.ID, Description: s.Description}, Content: s.Instructions}, nil
-}
-
-// getIndexed loads a version the conversation used before. Its availability
-// and content are read again now: a version switched off since, or whose
-// content no longer matches what the conversation recorded, is not loaded.
-func (b *runSkillBackend) getIndexed(ctx context.Context, name string) (einoskill.Skill, error) {
-	h := b.handler
-	for _, e := range h.skillIndex {
-		if e.VersionID != name {
-			continue
-		}
-		live, err := h.service.skills.ResolveVersion(ctx, h.scope, e.SkillID, e.VersionID)
-		if err != nil || !live.Usable() || live.Digest != e.Digest {
-			return einoskill.Skill{}, refuseTool("Skill「%s」的这个版本已停用或不可用，不能加载；请按创作者当前的要求继续", e.DisplayName)
-		}
-		return einoskill.Skill{FrontMatter: einoskill.FrontMatter{Name: live.ID, Description: live.Description}, Content: live.Instructions}, nil
-	}
-	return einoskill.Skill{}, ErrNotFound
 }
 
 func (h *runtimeHandler) planInTx(ctx context.Context, tx store.TxAccountScope, modelStep string, result llmgateway.Result) error {
@@ -468,12 +298,6 @@ func (h *runtimeHandler) callTool(ctx context.Context, name, callID, args string
 	// publishing its result to the model, in the same transaction as the journal.
 	var result string
 	var readErr error
-	if name == loadSkillTool {
-		var request struct {
-			Skill string `json:"skill"`
-		}
-		readErr = strictArguments(args, &request)
-	}
 	if readErr == nil {
 		result, readErr = read(withToolStep(ctx, stepID))
 	}
@@ -664,23 +488,10 @@ func (t *runtimeReadTool) Info(context.Context) (*schema.ToolInfo, error) {
 	}
 	params := map[string]*schema.ParameterInfo{}
 	desc := "读取本次运行已登记的结果片段；offset/limit 为 UTF-8 字节范围，limit 最多 8192。"
-	if t.name == readSkillTool {
-		desc = "读取本次固定 Skill 包内登记的文字资源。"
-		snapshot := t.handler.held.Skill
-		if snapshot == nil {
-			return nil, ErrNotFound
-		}
-		paths := make([]string, 0, len(snapshot.Resources))
-		for _, resource := range snapshot.Resources {
-			paths = append(paths, resource.Path)
-		}
-		params["digest"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "本次固定包 digest", Enum: []string{snapshot.Digest}}
-		params["path"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "已登记的包内相对路径", Enum: paths}
-	} else {
-		params["item_id"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "本 run 的结果定位符"}
-		params["offset"] = &schema.ParameterInfo{Type: schema.Integer, Required: true, Desc: "起始字节，从 0 开始"}
-		params["limit"] = &schema.ParameterInfo{Type: schema.Integer, Required: true, Desc: "最多 8192 字节"}
-	}
+	params["item_id"] = &schema.ParameterInfo{Type: schema.String, Required: true, Desc: "本 run 的结果定位符"}
+	params["offset"] = &schema.ParameterInfo{Type: schema.Integer, Required: true, Desc: "起始字节，从 0 开始"}
+	params["limit"] = &schema.ParameterInfo{Type: schema.Integer, Required: true, Desc: "最多 8192 字节"}
+
 	return &schema.ToolInfo{Name: t.name, Desc: desc, ParamsOneOf: schema.NewParamsOneOfByParams(params)}, nil
 }
 func (t *runtimeReadTool) InvokableRun(ctx context.Context, raw string, _ ...tool.Option) (string, error) {
@@ -692,44 +503,7 @@ func (t *runtimeReadTool) InvokableRun(ctx context.Context, raw string, _ ...too
 	case readHistoryTool:
 		return t.handler.readHistory(ctx, raw)
 	}
-	if t.name == readSkillTool {
-		return t.handler.readSkillResource(ctx, raw)
-	}
 	return t.handler.readRunResult(ctx, raw)
-}
-func (h *runtimeHandler) readSkillResource(ctx context.Context, raw string) (string, error) {
-	var args struct {
-		Digest string `json:"digest"`
-		Path   string `json:"path"`
-	}
-	if err := strictArguments(raw, &args); err != nil {
-		return "", err
-	}
-	s := h.held.Skill
-	if s == nil || args.Digest != s.Digest {
-		return "", ErrNotFound
-	}
-	var expected string
-	for _, r := range s.Resources {
-		if r.Path == args.Path {
-			expected = r.SHA256
-		}
-	}
-	if expected == "" {
-		return "", ErrNotFound
-	}
-	body, err := h.service.skills.ReadResource(ctx, h.scope, s.SkillID, s.ID, args.Path)
-	if err != nil {
-		return "", err
-	}
-	sum := sha256.Sum256(body)
-	if hex.EncodeToString(sum[:]) != expected {
-		return "", ErrRunState
-	}
-	if !utf8.Valid(body) {
-		return "", creativeops.ErrValidation
-	}
-	return string(body), nil
 }
 func (h *runtimeHandler) readRunResult(ctx context.Context, raw string) (string, error) {
 	var args struct {
@@ -818,9 +592,21 @@ func (h *runtimeHandler) persistContextInTx(ctx context.Context, tx store.TxAcco
 	}
 	revisions := toolContentRevisions(call.Name, payload)
 	manifest := map[string]any{"content_revision_ids": revisions, "input_revision_ids": h.revisions, "tool_input": toolInput}
-	if h.held.Skill != nil {
-		manifest["skill_version_id"] = h.held.Skill.ID
-		manifest["skill_digest"] = h.held.Skill.Digest
+	if call.Name == readSkillTool || call.Name == loadSkillTool {
+		var args struct {
+			Version string `json:"skill_version_id"`
+		}
+		if err := json.Unmarshal(call.Arguments, &args); err == nil && args.Version != "" {
+			var digest string
+			err := tx.QueryRow(ctx, "creative_run_skills", "digest", "run_id=$2 AND skill_version_id=$3", h.held.RunID, args.Version).Scan(&digest)
+			if err != nil && !errors.Is(err, store.ErrNoRows) {
+				return "", err
+			}
+			if err == nil {
+				manifest["skill_version_id"] = args.Version
+				manifest["skill_digest"] = digest
+			}
+		}
 	}
 	source, err := json.Marshal(manifest)
 	if err != nil {
@@ -839,13 +625,4 @@ func (h *runtimeHandler) persistContextInTx(ctx context.Context, tx store.TxAcco
 		}
 	}
 	return id, nil
-}
-
-func runtimeToolVersion(name string) int {
-	for _, t := range runtimeToolEntries() {
-		if t.Key == name {
-			return t.Version
-		}
-	}
-	return 1
 }

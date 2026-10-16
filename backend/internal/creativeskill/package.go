@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -97,31 +98,44 @@ type packageManifest struct {
 // change the content digest and turn the pinned seed operation id into a
 // conflict that can never be replayed. Failing here costs one `rm`.
 func ReadPackage(fsys fs.FS) (Package, error) {
-	manifestBody, err := readPackageFile(fsys, packageManifestName, maxManifestBytes)
-	if err != nil {
-		return Package{}, err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(manifestBody))
-	decoder.DisallowUnknownFields()
-	var declared packageManifest
-	if err := decoder.Decode(&declared); err != nil {
-		return Package{}, fmt.Errorf("%w: %s: %v", creativeops.ErrValidation, packageManifestName, err)
+	manifestBody, manifestErr := readPackageFile(fsys, packageManifestName, maxManifestBytes)
+	if manifestErr != nil && !errors.Is(manifestErr, fs.ErrNotExist) {
+		return Package{}, manifestErr
 	}
 	instructions, err := readPackageFile(fsys, packageBodyName, maxInstructionBytes)
 	if err != nil {
 		return Package{}, err
 	}
-	pkg := Package{
-		Slug: declared.Key, DisplayName: declared.DisplayName, Description: declared.Description,
-		Instructions: string(instructions),
-		Manifest: Manifest{
-			ManifestSchemaVersion: declared.ManifestSchemaVersion, InputKinds: declared.InputKinds,
-			MaxInputs: declared.MaxInputs, ToolAllowlist: declared.ToolAllowlist,
-			RequiredModelCapabilities: declared.RequiredModelCapabilities,
-			OutputContract:            declared.OutputContract, CompletionCheckKey: declared.CompletionCheckKey,
-		},
-		bodies: map[string][]byte{},
+	var version struct {
+		Version int `json:"manifest_schema_version"`
 	}
+	if len(manifestBody) > 0 {
+		if err := json.Unmarshal(manifestBody, &version); err != nil {
+			return Package{}, fmt.Errorf("%w: manifest: %v", creativeops.ErrValidation, err)
+		}
+	}
+	var pkg Package
+	if version.Version == 1 {
+		decoder := json.NewDecoder(bytes.NewReader(manifestBody))
+		decoder.DisallowUnknownFields()
+		var declared packageManifest
+		if err := decoder.Decode(&declared); err != nil {
+			return Package{}, fmt.Errorf("%w: manifest: %v", creativeops.ErrValidation, err)
+		}
+		pkg = Package{Slug: declared.Key, DisplayName: declared.DisplayName, Description: declared.Description, Instructions: string(instructions), Manifest: Manifest{
+			ManifestSchemaVersion: 1, InputKinds: declared.InputKinds, MaxInputs: declared.MaxInputs, ToolAllowlist: declared.ToolAllowlist,
+			RequiredModelCapabilities: declared.RequiredModelCapabilities, OutputContract: declared.OutputContract, CompletionCheckKey: declared.CompletionCheckKey,
+		}}
+	} else {
+		if len(manifestBody) > 0 && version.Version != 2 {
+			return Package{}, fmt.Errorf("%w: unknown manifest version", creativeops.ErrValidation)
+		}
+		pkg, err = standardPackage(instructions, manifestBody)
+		if err != nil {
+			return Package{}, err
+		}
+	}
+	pkg.bodies = map[string][]byte{}
 	// The package total is checked against the same budget BeginImport enforces,
 	// and starts from the two files already read. This is a fail-fast guard, not
 	// a second authority: the manifest is re-encoded before the real check, so
@@ -141,6 +155,9 @@ func ReadPackage(fsys fs.FS) (Package, error) {
 		// bytes would be published under an innocent relative path.
 		if !entry.Type().IsRegular() {
 			return fmt.Errorf("%w: %q is not a regular file", creativeops.ErrValidation, name)
+		}
+		if pkg.Manifest.ManifestSchemaVersion == 2 && (strings.HasPrefix(name, "scripts/") || executableResource(name)) {
+			return fmt.Errorf("%w: executable resources are not supported: %s", creativeops.ErrValidation, name)
 		}
 		if name == packageManifestName || name == packageBodyName {
 			return nil
@@ -166,7 +183,7 @@ func ReadPackage(fsys fs.FS) (Package, error) {
 		// decide that, never the extension: a declared mime is a claim about a
 		// file, and a package that could widen the accepted types by renaming
 		// one would make the limit decorative.
-		if !utf8.Valid(body) {
+		if !utf8.Valid(body) || (pkg.Manifest.ManifestSchemaVersion == 2 && !plainTextResource(body)) {
 			return fmt.Errorf("%w: %q is not UTF-8 text", creativeops.ErrValidation, name)
 		}
 		if budget += len(body); budget > MaxPackageBytes {
@@ -196,14 +213,14 @@ func ReadPackage(fsys fs.FS) (Package, error) {
 func readPackageFile(fsys fs.FS, name string, limit int64) ([]byte, error) {
 	info, err := fs.Stat(fsys, name)
 	if err != nil {
-		return nil, fmt.Errorf("%w: read %s: %v", creativeops.ErrValidation, name, err)
+		return nil, fmt.Errorf("%w: read %s: %w", creativeops.ErrValidation, name, err)
 	}
 	if info.Size() > limit {
 		return nil, fmt.Errorf("%w: %q is %d bytes, over the %d limit", ErrLimit, name, info.Size(), limit)
 	}
 	body, err := fs.ReadFile(fsys, name)
 	if err != nil {
-		return nil, fmt.Errorf("%w: read %s: %v", creativeops.ErrValidation, name, err)
+		return nil, fmt.Errorf("%w: read %s: %w", creativeops.ErrValidation, name, err)
 	}
 	// The stat above is advice, not a guarantee: the file may have grown between
 	// the two calls. BeginImport re-checks the declaration it is handed, and this

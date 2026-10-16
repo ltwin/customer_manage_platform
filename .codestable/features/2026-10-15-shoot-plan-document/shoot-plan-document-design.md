@@ -446,6 +446,8 @@ type DocumentType interface {
 
 ### 6.6 Skill 加载
 
+> 2026-10-15 实现修订：Skill 运行时已按 [Agent Skills 与 Tools 运行契约](../../../docs/dev/agent-skills-tools.md) 改造。「平台内置 Skill 进索引」由每轮的 Skill 目录摘要（平台与账号自己的 Skill，另有 `search_skills`）实现，账号自己的 Skill 也会出现；「加载一次、之后几轮不重复加载」由跨轮沿用激活实现，版本停用时不再发送历史正文。下文其余约定不变。
+
 不给每条消息挂 Skill：消息上挂的 Skill，正文只进那一轮，每轮都要重付一份，打招呼也一样。改为**需要时加载一次，留在上下文里**：`load_skill` 的结果本来就留在历史中，后面几轮都能用，压缩后摘要会提示按原版本重新加载。
 
 现在 `load_skill` 只能加载本会话用过的 Skill，助手没法主动加载一个从没出现过的 Skill，所以补两处：

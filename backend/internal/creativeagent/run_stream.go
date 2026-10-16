@@ -1,6 +1,7 @@
 package creativeagent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -51,6 +52,9 @@ func (s *Service) ReadRunSnapshot(ctx context.Context, scope store.AccountScope,
 			block, err := scanBlock(rows)
 			if err != nil {
 				return err
+			}
+			if block.Type == BlockTool && block.PayloadVersion == 1 {
+				block.Payload = projectToolTitle(block.Payload)
 			}
 			snapshot.Blocks = append(snapshot.Blocks, block)
 		}
@@ -152,6 +156,16 @@ func (RunEventSource) ReadAfter(ctx context.Context, scope store.AccountScope, i
 			if err := rows.Scan(&seq, &event.SchemaVersion, &event.Type, &event.Payload, &event.CreatedAt); err != nil {
 				return err
 			}
+			// Apply the same title projection as snapshots, including replayed
+			// events. Stored payloads, revisions and sequence numbers stay intact.
+			if event.SchemaVersion == 1 {
+				switch event.Type {
+				case "block.created":
+					event.Payload = projectToolTitle(event.Payload, "payload")
+				case "block.updated":
+					event.Payload = projectToolTitle(event.Payload, "patch", "set")
+				}
+			}
 			event.Seq = Seq(seq)
 			data, err := json.Marshal(event)
 			if err != nil {
@@ -240,4 +254,48 @@ func (s *Service) ReadBlockDetail(ctx context.Context, scope store.AccountScope,
 		return nil
 	})
 	return detail, err
+}
+
+// Repair only missing/raw-key labels on the read projection. Keep historical
+// custom titles, unknown tools and unknown JSON fields exactly as supplied.
+func projectToolTitle(raw json.RawMessage, path ...string) json.RawMessage {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		return raw
+	}
+	if len(path) > 0 {
+		child, ok := fields[path[0]]
+		if !ok {
+			return raw
+		}
+		projected := projectToolTitle(child, path[1:]...)
+		if bytes.Equal(child, projected) {
+			return raw
+		}
+		fields[path[0]] = projected
+	} else {
+		var key, title string
+		if err := json.Unmarshal(fields["tool_key"], &key); err != nil {
+			return raw
+		}
+		if value, ok := fields["title"]; ok {
+			if err := json.Unmarshal(value, &title); err != nil {
+				return raw
+			}
+		}
+		name := toolTitle(key)
+		if name == key || (title != "" && title != key) {
+			return raw
+		}
+		encoded, err := json.Marshal(name)
+		if err != nil {
+			return raw
+		}
+		fields["title"] = encoded
+	}
+	projected, err := json.Marshal(fields)
+	if err != nil {
+		return raw
+	}
+	return projected
 }

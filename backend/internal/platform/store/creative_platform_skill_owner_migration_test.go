@@ -13,6 +13,9 @@ import (
 func rollbackPlatformSkillOwner(t *testing.T, url string) {
 	t.Helper()
 	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("rollback agent-skill-runtime", err)
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback creative-platform-skill-owner", err)
 	}
 }
@@ -76,6 +79,9 @@ func TestPlatformSkillOwnerMigrationMovesOnlyThePlatformCatalog(t *testing.T) {
 		if got != check.want {
 			t.Fatalf("%s = %q, want %q", check.query, got, check.want)
 		}
+	}
+	if err := store.MigrateDownOneForTest(url); err != nil {
+		t.Fatal("rollback agent-skill-runtime", err)
 	}
 	// Nothing records which account held the catalog before, so going back
 	// would be a guess.

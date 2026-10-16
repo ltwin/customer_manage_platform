@@ -194,7 +194,7 @@ func (s *Service) resolveSkillSegment(ctx context.Context, scope store.AccountSc
 		// but cannot start new work.
 		return Block{}, ErrUnsupportedSegment
 	}
-	if available, _ := runnableHere(s.registeredToolRefs(), snapshot.Manifest.ToolAllowlist); !available {
+	if available, _ := runnableHere(s.registeredToolRefs(), snapshot.Manifest.Dependencies()); !available {
 		return Block{}, ErrUnsupportedSegment
 	}
 	out.Skill = &ResolvedSkill{SegmentOrdinal: ordinal, Snapshot: snapshot}
