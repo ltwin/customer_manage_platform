@@ -25,7 +25,7 @@ const (
 const (
 	aicodewithOutputTokensPerImage = 16000
 	aicodewithInputTokensPerImage  = 2000
-	aicodewithMaxPromptChars       = 16000
+	aicodewithMaxPromptChars       = imagePromptLimit
 	aicodewithMaxTextTokens        = 3 * aicodewithMaxPromptChars
 )
 
@@ -40,12 +40,8 @@ var (
 // AICodeWithImageRatios 是中转接受的全部比例；auto由模型决定画幅。
 var AICodeWithImageRatios = []string{"auto", "1:1", "1:2", "2:1", "1:3", "3:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9", "9:21"}
 
-// AICodeWithImagePolicy 是一个模型的已编译规则及其Adapter注册信息。
-type AICodeWithImagePolicy struct {
-	Definition GenerationPolicyDefinition
-	Target     GenerationPolicyTarget
-	Policy     *CompiledGenerationPolicy
-}
+// AICodeWithImagePolicy 保留旧调用方类型名；新部署共用供应商无关的策略绑定。
+type AICodeWithImagePolicy = ImagePolicy
 
 // AICodeWithImageDeploymentID 是模型在当前账号控制面中的部署身份。
 func AICodeWithImageDeploymentID(model string) string { return "aicodewith-images-" + model }
@@ -85,28 +81,7 @@ func aicodewithImagePolicy(model, currency string) (GenerationPolicyDefinition, 
 			"background":   map[string]any{"type": "string", "enum": []string{"auto", "opaque", "transparent"}},
 		},
 	}
-	reference := map[string]any{
-		"type": "object", "additionalProperties": false,
-		"required": []string{"role", "revision_id", "digest", "kind", "mime", "byte_size"},
-		"properties": map[string]any{
-			"role": map[string]any{"type": "string", "enum": []string{"reference"}},
-			// 文字参考通过句内引用编入提示词；视频和音频这些模型读不了。
-			"kind":        map[string]any{"type": "string", "enum": []string{"image", "text"}},
-			"revision_id": map[string]any{"type": "string"},
-			"digest":      map[string]any{"type": "string"},
-			"mime":        map[string]any{"type": "string"},
-			"byte_size":   map[string]any{"type": "integer"},
-		},
-	}
-	schema, err := json.Marshal(map[string]any{
-		"type": "object", "additionalProperties": false,
-		"required": []string{"prompt", "parameters"},
-		"properties": map[string]any{
-			"prompt":     map[string]any{"type": "string", "minLength": 1, "maxLength": aicodewithMaxPromptChars},
-			"parameters": parameters,
-			"references": map[string]any{"type": "array", "maxItems": 50, "items": reference},
-		},
-	})
+	schema, err := imageGenerationInputSchema(parameters)
 	if err != nil {
 		return GenerationPolicyDefinition{}, GenerationPolicyTarget{}, err
 	}

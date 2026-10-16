@@ -144,6 +144,8 @@ const (
 	SettlementSettled   SettlementState = "settled"
 	SettlementUnknown   SettlementState = "unknown"
 	SettlementReleased  SettlementState = "released"
+	// 无供应商计费；不代表免费、已结算或账单待核实。
+	SettlementNotApplicable SettlementState = "not_applicable"
 )
 
 // RequestView is what a trusted caller may read back.

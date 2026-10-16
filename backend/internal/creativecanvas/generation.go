@@ -17,6 +17,16 @@ import (
 const GenerationAction = "gateway.generation"
 const GenerationDriverVersion = "1"
 
+// 生成失败写入节点状态 error 的原因码，前端据此显示失败原因。供应商额度、凭证、
+// 部署等平台侧问题一律归为 Generic，不向创作者暴露。
+const (
+	GenerationFailureGeneric         = "generation_failed"
+	GenerationFailureContentRejected = "generation_content_rejected"
+	GenerationFailureInvalidInput    = "generation_invalid_input"
+	GenerationFailureTimeout         = "generation_timeout"
+	GenerationFailureUnverified      = "generation_unverified"
+)
+
 // GenerationSpec 是driver已预检的输入，不携带模型价格或供应商定位。
 type GenerationSpec struct {
 	ParameterDefaults map[string]json.RawMessage
@@ -260,7 +270,9 @@ func StartGenerationInTx(ctx context.Context, tx store.TxAccountScope, target Ex
 	return advanceCanvas(ctx, tx, canvas, false)
 }
 
-func CompleteGenerationInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget, failed bool) error {
+// CompleteGenerationInTx 收尾生成执行。failed 且没有任何作品时执行记为失败，
+// reason 写入节点状态的 error，取值见 GenerationFailure*。
+func CompleteGenerationInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget, failed bool, reason string) error {
 	canvas, err := lockCanvas(ctx, tx, target.CanvasID, false)
 	if err != nil {
 		return err
@@ -281,7 +293,10 @@ func CompleteGenerationInTx(ctx context.Context, tx store.TxAccountScope, target
 	}
 	if !has {
 		if failed {
-			return finishExecution(ctx, tx, canvas, e, "failed", "discarded", "generation_failed")
+			if reason == "" {
+				reason = GenerationFailureGeneric
+			}
+			return finishExecution(ctx, tx, canvas, e, "failed", "discarded", reason)
 		}
 		return ErrVersionConflict
 	}
@@ -358,26 +373,4 @@ func generationSourceIdentities(ctx context.Context, tx store.TxAccountScope, id
 		sources = append(sources, r)
 	}
 	return sources, nil
-}
-
-// MarkGenerationVerificationInTx 标记仍非终态的执行；不释放输入根或当前执行资格。
-func MarkGenerationVerificationInTx(ctx context.Context, tx store.TxAccountScope, target ExecutionTarget) error {
-	canvas, err := lockCanvas(ctx, tx, target.CanvasID, false)
-	if err != nil {
-		return err
-	}
-	e, err := readExecution(ctx, tx, target)
-	if err != nil {
-		return err
-	}
-	if e.State != "queued" && e.State != "running" && e.State != "reconciling" {
-		return nil
-	}
-	if _, err = tx.Update(ctx, "creative_node_executions", "state='reconciling',error='generation_verification_required'", "id=$2", e.ID); err != nil {
-		return err
-	}
-	if _, err = tx.Update(ctx, "creative_nodes", "status_revision=status_revision+1", "id=$2 AND active_execution_id=$3", e.NodeID, e.ID); err != nil {
-		return err
-	}
-	return advanceCanvas(ctx, tx, canvas, false)
 }

@@ -42,7 +42,6 @@ func krillDeployments(credential func(string) (string, bool)) map[string]Deploym
 				Source: priceSourceKrill, Peak: m.rate, OffPeak: m.rate,
 			},
 			// No documented evidence of pre-processing refusal, query or cancel.
-			LimitKey: "krill-ai/codex", Concurrency: 4, RateLimitPerMin: 60,
 			QueryCapability: "none", CancelCapability: "none",
 			Enabled: enabled, DisabledReason: disabled,
 		}

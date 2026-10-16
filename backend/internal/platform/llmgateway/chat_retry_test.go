@@ -15,7 +15,6 @@ import (
 func retryFixture(t *testing.T) (*fixture, *llmgateway.Catalog, *[]time.Duration) {
 	t.Helper()
 	primary, backup := routedDeployment("primary", "first"), routedDeployment("backup", "second")
-	primary.RateLimitPerMin, backup.RateLimitPerMin = 100, 100
 	backup.Price.Peak.Output *= 2
 	backup.Price.OffPeak.Output *= 2
 	backup.Price.Version = "backup-price"
@@ -288,7 +287,6 @@ func TestChatRouteReplaySkipsWithdrawnDeployment(t *testing.T) {
 	f, catalog, _ := retryFixture(t)
 	session, in := startInterruptedRoute(t, f, catalog)
 	backup := routedDeployment("backup", "second")
-	backup.RateLimitPerMin = 100
 	backup.Price.Peak.Output *= 2
 	backup.Price.OffPeak.Output *= 2
 	backup.Price.Version = "backup-price"

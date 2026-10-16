@@ -32,7 +32,9 @@ type Options struct {
 const (
 	defaultMonthlyLimitMicros = 20_000_000 // 20 USD
 	defaultMonthlyTokenLimit  = 5_000_000
-	defaultDispatchTimeout    = 120 * time.Second
+	// The HTTP client's own bound covers the whole streamed body, so it must
+	// not be shorter than the protocol bound it sits under.
+	defaultDispatchTimeout = transportLifetime
 )
 
 // OptionsFromEnv reads the deployment configuration. Credentials are never read

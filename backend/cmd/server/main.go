@@ -274,7 +274,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return newStartupFailure("creative-generation-init", "CREATIVE_GENERATION_PROTECTION_KEY", "model-catalog", err)
 	}
 	if generation.Disabled != "" {
-		logger.Info("creative generation disabled", slog.String("reason", generation.Disabled))
+		logger.Info("creative generation configuration", slog.String("reason", generation.Disabled))
 	}
 	if generation.Service != nil {
 		creativeAgent.SetGenerator(generation.Product)

@@ -63,6 +63,22 @@ func (r *GenerationRuntime) RecordGenerationObservationInTx(ctx context.Context,
 		return err
 	}
 	hash := digest(raw)
+	if e.RefreshableMedia {
+		stable := e
+		stable.Observation.Outputs = append([]GenerationOutput(nil), e.Observation.Outputs...)
+		for i, out := range stable.Observation.Outputs {
+			if out.Media != nil {
+				media := *out.Media
+				media.FetchURL, media.ExpiresAt = "", time.Time{}
+				stable.Observation.Outputs[i].Media = &media
+			}
+		}
+		canonical, err := encodeGenerationEvent(stable)
+		if err != nil {
+			return err
+		}
+		hash = digest(canonical)
+	}
 	now := r.gateway.now().UTC()
 	current := c.Epoch == task.epoch
 	var attemptNo int
@@ -99,6 +115,11 @@ func (r *GenerationRuntime) RecordGenerationObservationInTx(ctx context.Context,
 	// 永久钉在stale。账本仍由事件身份保证只记一次。
 	if duplicate && (!current || !olderClaim || conflict) {
 		if current && !conflict && !recordedConflict {
+			if e.RefreshableMedia && e.Observation.State == GenerationCompleted {
+				if err := r.refreshGenerationLocations(ctx, tx, task, e.Observation.Outputs); err != nil {
+					return err
+				}
+			}
 			return r.finishGenerationStage(ctx, tx, task, now)
 		}
 		return nil
@@ -122,8 +143,10 @@ func (r *GenerationRuntime) RecordGenerationObservationInTx(ctx context.Context,
 		if len(e.Usage) > 0 {
 			// rejected只能证明明确未受理且零费用。事件本身带正价、非法或缺失
 			// 维度的用量时也是矛盾证据，不能先写零费再授权第二次Submit。
-			price, err := prepared.PriceUsage(e.Usage)
-			conflict = conflict || err != nil || price.TotalMicros != 0
+			if prepared.PolicyDefinition().Billing != GenerationBillingDisabled {
+				price, err := prepared.PriceUsage(e.Usage)
+				conflict = conflict || err != nil || price.TotalMicros != 0
+			}
 			for _, value := range e.Usage {
 				conflict = conflict || value != 0
 			}
@@ -180,7 +203,7 @@ func (r *GenerationRuntime) RecordGenerationObservationInTx(ctx context.Context,
 		}
 		// 未受理结论被反驳即失去零费依据；缺少用量也必须重开费用争议，
 		// 不能让此前released的预留继续冒充没有风险敞口。
-		if len(e.Usage) > 0 || task.state == GenerationRejected {
+		if prepared.PolicyDefinition().Billing != GenerationBillingDisabled && (len(e.Usage) > 0 || task.state == GenerationRejected) {
 			if _, err := r.gateway.disputeGenerationUsage(ctx, tx, c.RequestID, c.AttemptID, e.EventKey, e.Usage, adm.currency, task.deploymentID, e.ProviderRevision, "conflicting generation observation", false, now); err != nil {
 				return err
 			}
@@ -219,7 +242,11 @@ func (r *GenerationRuntime) RecordGenerationObservationInTx(ctx context.Context,
 		return err
 	}
 	if e.Observation.State == GenerationRejected {
-		retry := request.attemptsUsed < maxAttempts && request.cancelAt == nil && request.closedAt == nil && request.deadline.After(now)
+		routed, err := tx.Exists(ctx, "llm_generation_route_calls", "request_id=$2", c.RequestID)
+		if err != nil {
+			return err
+		}
+		retry := !routed && request.attemptsUsed < maxAttempts && request.cancelAt == nil && request.closedAt == nil && request.deadline.After(now)
 		if err := r.gateway.releaseHoldForRetry(ctx, tx, c.RequestID, retry, now); err != nil {
 			return err
 		}
@@ -227,7 +254,7 @@ func (r *GenerationRuntime) RecordGenerationObservationInTx(ctx context.Context,
 		if retry {
 			state = StatePrepared
 		}
-		if _, err := tx.Update(ctx, "llm_requests", "state=$3,retry_eligible=$4,failure_class='generation_rejected',revision=revision+1,updated_at=$5", "id=$2", c.RequestID, string(state), retry, now); err != nil {
+		if _, err := tx.Update(ctx, "llm_requests", "state=$3,retry_eligible=$4,failure_class=$6,revision=revision+1,updated_at=$5", "id=$2", c.RequestID, string(state), retry, now, e.Observation.ErrorCode); err != nil {
 			return err
 		}
 	}
@@ -358,6 +385,14 @@ func (r *GenerationRuntime) compatibleGenerationOutputs(ctx context.Context, tx 
 	return count == 0 || count == len(outs), rows.Err()
 }
 func (r *GenerationRuntime) recordGenerationEventUsage(ctx context.Context, tx store.TxAccountScope, c GenerationClaim, e GenerationEvent, now time.Time) error {
+	state, err := settlementOf(ctx, tx, c.RequestID)
+	if err != nil {
+		return err
+	}
+	if state == SettlementNotApplicable {
+		// 原始用量已随观察证据保存；不生成金额或账单待核实状态。
+		return nil
+	}
 	if e.Observation.State == GenerationRejected {
 		adm, err := generationAdmissionOf(ctx, tx, c.RequestID)
 		if err != nil {
@@ -370,7 +405,7 @@ func (r *GenerationRuntime) recordGenerationEventUsage(ctx context.Context, tx s
 	if len(e.Usage) == 0 {
 		return r.gateway.refreshSettlement(ctx, tx, c.RequestID, now)
 	}
-	_, err := r.gateway.RecordGenerationUsageInTx(ctx, tx, c.RequestID, c.AttemptID, e.EventKey, e.Usage, e.ProviderRevision)
+	_, err = r.gateway.RecordGenerationUsageInTx(ctx, tx, c.RequestID, c.AttemptID, e.EventKey, e.Usage, e.ProviderRevision)
 	if errors.Is(err, ErrGenerationFactsUnavailable) {
 		return nil
 	}
@@ -395,8 +430,9 @@ func (r *GenerationRuntime) finishGenerationStage(ctx context.Context, tx store.
 		return err
 	}
 	var state string
+	var failure *string
 	var retry bool
-	if err := tx.QueryRow(ctx, "llm_requests", "state,retry_eligible", "id=$2", task.requestID).Scan(&state, &retry); err != nil {
+	if err := tx.QueryRow(ctx, "llm_requests", "state,retry_eligible,failure_class", "id=$2", task.requestID).Scan(&state, &retry, &failure); err != nil {
 		return err
 	}
 	settlement, err := settlementOf(ctx, tx, task.requestID)
@@ -407,9 +443,16 @@ func (r *GenerationRuntime) finishGenerationStage(ctx context.Context, tx store.
 	verify := false
 	switch {
 	case retry && state == string(StatePrepared):
-		n := now.Add(generationPoll)
+		delay := generationPoll
+		if failure != nil && *failure == "rate_limited" {
+			delay = generationRateLimitBackoff
+		}
+		n := now.Add(delay)
 		next = &n
-	case generationTerminal(task.state) && (settlement == SettlementSettled || settlement == SettlementReleased):
+	case generationTerminal(task.state) && (settlement == SettlementSettled || settlement == SettlementReleased || settlement == SettlementNotApplicable):
+	case generationTerminal(task.state) && r.externalGenerationBilling(task):
+		// 任务终态已确认，查询接口不能提供费用。保留hold及原失败分类，
+		// 独立等待账单证据；不进入异常核实队列，也不继续轮询。
 	case len(task.taskCipher) == 0:
 		verify = true
 	default:
@@ -422,15 +465,31 @@ func (r *GenerationRuntime) finishGenerationStage(ctx context.Context, tx store.
 	return err
 }
 
-// GenerationProgress 不含task定位/签名URL，结果就绪与费用、人工核实状态分别呈现。
-type GenerationProgress struct {
-	ResultVerificationRequired bool
-	Request                    RequestView
-	Outputs                    []GenerationOutput
-	VerificationRequired       bool
-	NextAdvanceAt              *time.Time
+// GenerationRouteProgress独立表达路由状态，不覆盖当前调用的持久事实。
+type GenerationRouteProgress struct {
+	RootRequestID    string
+	CurrentRequestID string
+	FinalRequestID   string
+	State            string // active / finished / cancelled
 }
 
+// GenerationProgress将账单待对账与受理/结果异常核实分开，不含临时定位。
+type GenerationProgress struct {
+	BillingReconciliationRequired bool
+	Route                         *GenerationRouteProgress
+	ResultVerificationRequired    bool
+	Request                       RequestView
+	Outputs                       []GenerationOutput
+	VerificationRequired          bool
+	NextAdvanceAt                 *time.Time
+}
+
+// Terminal只表示业务生成已结束，不表示费用已经核清。
+func (p GenerationProgress) Terminal() bool {
+	return (p.Route == nil || p.Route.State != "active") && p.Request.Terminal()
+}
+
+// GetGeneration读取指定调用的真实账本事实，供诊断和费用恢复使用。
 func (r *GenerationRuntime) GetGeneration(ctx context.Context, scope store.AccountScope, id string) (GenerationProgress, error) {
 	var out GenerationProgress
 	err := scope.WithReadSnapshot(ctx, func(tx store.ReadTxAccountScope) error {
@@ -446,9 +505,11 @@ func (r *GenerationRuntime) GetGeneration(ctx context.Context, scope store.Accou
 			return err
 		}
 		out.Request = request.view(settlement)
-		if err := tx.QueryRow(ctx, "llm_generation_requests", "verification_required,result_verification_required,next_advance_at", "request_id=$2", id).Scan(&out.VerificationRequired, &out.ResultVerificationRequired, &out.NextAdvanceAt); err != nil {
+		var deployment, version string
+		if err := tx.QueryRow(ctx, "llm_generation_requests", "verification_required,result_verification_required,next_advance_at,deployment_id,adapter_version", "request_id=$2", id).Scan(&out.VerificationRequired, &out.ResultVerificationRequired, &out.NextAdvanceAt, &deployment, &version); err != nil {
 			return err
 		}
+		out.BillingReconciliationRequired = out.Request.Terminal() && settlement != SettlementSettled && settlement != SettlementReleased && settlement != SettlementNotApplicable && r.externalGenerationBilling(generationTask{deploymentID: deployment, adapterVersion: version})
 		rows, err := tx.QueryPage(ctx, "llm_generation_outputs", "projection", "request_id=$2 AND attempt_id IN (SELECT id FROM llm_attempts WHERE account_id=$1 AND request_id=$2 AND attempt_number=$3)", []store.OrderBy{{Column: "ordinal"}}, 64, 0, id, request.attemptsUsed)
 		if err != nil {
 			return err
@@ -468,4 +529,25 @@ func (r *GenerationRuntime) GetGeneration(ctx context.Context, scope store.Accou
 		return rows.Err()
 	})
 	return out, err
+}
+
+// 相同业务证据只刷新传输信息，不增加结果版本、记账或发布。
+func (r *GenerationRuntime) refreshGenerationLocations(ctx context.Context, tx store.TxAccountScope, task generationTask, outputs []GenerationOutput) error {
+	for _, out := range outputs {
+		if out.Media == nil {
+			continue
+		}
+		projection, err := json.Marshal(out)
+		if err != nil {
+			return err
+		}
+		location, err := r.seal(tx.AccountID(), task.attemptID, "output:"+out.ID, []byte(out.Media.FetchURL))
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Update(ctx, "llm_generation_outputs", "projection=$4,location_cipher=$5", "attempt_id=$2 AND output_id=$3", task.attemptID, out.ID, projection, location); err != nil {
+			return err
+		}
+	}
+	return nil
 }

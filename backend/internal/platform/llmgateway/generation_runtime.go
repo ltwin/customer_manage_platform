@@ -15,9 +15,23 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
+// generationCallLifetime 限制生图的单次外部操作（提交、查询、取消）。它必须短于
+// generationLease：调用还没结束租约就到期，另一个 worker 会接手同一任务。对话的
+// transportLifetime 为长时间 thinking 放宽到 15 分钟，生图不能跟着用。
+const generationCallLifetime = 2 * time.Minute
 const generationLease = 3 * time.Minute
 const generationPoll = 15 * time.Second
 const generationRecoveryWindow = 24 * time.Hour
+
+// maxBlindFailures 限制受理与否尚未确定时的连续失败；已知任务的查询不受此限。
+const maxBlindFailures = 5
+
+// maxGenerationBackoff 是已知任务查询连续失败时的最长退避。
+const maxGenerationBackoff = time.Minute
+
+// generationRateLimitBackoff 是供应商以限流明确拒收后的重试间隔。平台不再设
+// 共享名额，供应商账号的并发上限只能靠这次等待避开（RunningHub建议30–120秒）。
+const generationRateLimitBackoff = time.Minute
 
 // GenerationCall 只由已提交的派发/观察许可构建；TaskID和输入不进入普通API或日志。
 // Adapter必须服从ctx期限。Submit的错误一律表示受理未知，绝不授权再次Submit。
@@ -39,6 +53,9 @@ type GenerationReferenceOpener interface {
 // GenerationEvent 是受信Adapter归一化的单份证据。EventKey在attempt内稳定；
 // 修订号是供应商单调整数，没有可比较顺序的矛盾证据必须隔离。
 type GenerationEvent struct {
+	// RefreshableMedia 将临时取件位置与期限排除在业务证据摘要之外。
+	// 只由明确支持查询刷新位置的适配器设置；内容身份及费用仍参与去重。
+	RefreshableMedia bool                  `json:"refreshable_media,omitempty"`
 	EventKey         string                `json:"event_key"`
 	ProviderRevision string                `json:"provider_revision,omitempty"`
 	Observation      GenerationObservation `json:"observation"`
@@ -59,15 +76,18 @@ type GenerationSubmissionLookup interface {
 type GenerationAdapterRegistration struct {
 	DeploymentID string
 	Version      string
-	LimitKey     string
-	Concurrency  int
-	RateLimit    int
 	Adapter      GenerationAdapter
+	// Available 在新派发前检查凭证和配置有效期，已有任务观察不受影响。
+	Available func() bool
 }
 
 // GenerationGuard 在最终许可事务内复核素材用途/外发同意和调用方执行资格。
 // 只允许数据库操作；组合根必须提供真实守卫，缺省时禁止构造可派发runtime。
-type GenerationGuard func(context.Context, store.TxAccountScope, RequestView, PreparedPolicyGeneration) error
+type GenerationGuardRequest struct {
+	RootRequestID string
+	Call          RequestView
+}
+type GenerationGuard func(context.Context, store.TxAccountScope, GenerationGuardRequest, PreparedPolicyGeneration) error
 
 type GenerationRuntimeConfig struct {
 	Gateway       *Service
@@ -105,7 +125,7 @@ func NewGenerationRuntime(cfg GenerationRuntimeConfig) (*GenerationRuntime, erro
 	r := &GenerationRuntime{gateway: cfg.Gateway, guard: cfg.Guard, prelock: cfg.Prelock, refs: cfg.References, cipher: aead, adapters: make(map[string]GenerationAdapterRegistration)}
 	for _, a := range cfg.Adapters {
 		key := a.DeploymentID + "/" + a.Version
-		if !generationToken(a.DeploymentID) || !generationToken(a.Version) || a.LimitKey == "" || len(a.LimitKey) > 120 || a.Concurrency < 1 || a.RateLimit < 1 || a.Adapter == nil {
+		if !generationToken(a.DeploymentID) || !generationToken(a.Version) || a.Adapter == nil {
 			return nil, ErrValidation
 		}
 		if _, ok := r.adapters[key]; ok {
@@ -204,6 +224,11 @@ func (r *GenerationRuntime) EnsureDeploymentInTx(ctx context.Context, tx store.T
 	if rev > 0 && (!enabled || hash == generationPolicyDigest(d) && version == d.AdapterVersion && until.After(now.Add(validFor/4))) {
 		return rev, nil
 	}
+	if rev > 0 && enabled && hash == generationPolicyDigest(d) && version == d.AdapterVersion {
+		// 仅延长同一策略的租期，不撤销在途请求已经冻结的派发修订号。
+		_, err := tx.Update(ctx, "llm_generation_deployments", "valid_until=$3", "deployment_id=$2", d.DeploymentID, now.Add(validFor))
+		return rev, err
+	}
 	return r.ConfigureDeploymentInTx(ctx, tx, d, true, now.Add(validFor), rev)
 }
 
@@ -219,6 +244,9 @@ func (r *GenerationRuntime) DeploymentRevisionInTx(ctx context.Context, tx store
 }
 
 func (r *GenerationRuntime) checkDeployment(ctx context.Context, tx store.TxAccountScope, d GenerationPolicyDefinition, expected int64) error {
+	if a, ok := r.adapters[d.DeploymentID+"/"+d.AdapterVersion]; !ok || a.Available != nil && !a.Available() {
+		return ErrUnavailable
+	}
 	var rev int64
 	var enabled bool
 	var hash, version string
@@ -240,7 +268,7 @@ func (r *GenerationRuntime) checkDeployment(ctx context.Context, tx store.TxAcco
 	if err != nil {
 		return err
 	}
-	if blocked {
+	if blocked && d.Billing != GenerationBillingDisabled {
 		return ErrUnavailable
 	}
 	return nil
@@ -282,7 +310,7 @@ func (r *GenerationRuntime) PrepareInTx(ctx context.Context, tx store.TxAccountS
 	if err := r.checkDeployment(ctx, tx, in.Prepared.PolicyDefinition(), expectedRevision); err != nil {
 		return RequestView{}, err
 	}
-	if err := r.guard(ctx, tx, view, in.Prepared); err != nil {
+	if err := r.authorizeGeneration(ctx, tx, view, in.Prepared); err != nil {
 		return RequestView{}, err
 	}
 	if _, err := tx.Update(ctx, "llm_generation_requests", "control_revision=$3,next_advance_at=$4", "request_id=$2", view.ID, expectedRevision, r.gateway.now().UTC()); err != nil {
@@ -332,4 +360,17 @@ func (r *GenerationRuntime) prelockCaller(ctx context.Context, tx store.TxAccoun
 		return r.prelock(ctx, tx)
 	}
 	return nil
+}
+
+// CheckDeploymentInTx 是受理前的只读候选筛选；最终派发仍在部署门内复核。
+func (r *GenerationRuntime) CheckDeploymentInTx(ctx context.Context, tx store.TxAccountScope, d GenerationPolicyDefinition, revision int64) error {
+	return r.checkDeployment(ctx, tx, d, revision)
+}
+
+func (r *GenerationRuntime) authorizeGeneration(ctx context.Context, tx store.TxAccountScope, call RequestView, prepared PreparedPolicyGeneration) error {
+	root, err := generationRootInTx(ctx, tx, call.ID)
+	if err != nil {
+		return err
+	}
+	return r.guard(ctx, tx, GenerationGuardRequest{RootRequestID: root, Call: call}, prepared)
 }

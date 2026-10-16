@@ -12,7 +12,7 @@ import (
 // this one; every older migration's rollback helper starts here.
 func rollbackPlatformSkillOwner(t *testing.T, url string) {
 	t.Helper()
-	rollbackDocumentFoundation(t, url)
+	rollbackGenerationRoutes(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback agent-skill-runtime", err)
 	}
@@ -81,7 +81,7 @@ func TestPlatformSkillOwnerMigrationMovesOnlyThePlatformCatalog(t *testing.T) {
 			t.Fatalf("%s = %q, want %q", check.query, got, check.want)
 		}
 	}
-	rollbackDocumentFoundation(t, url)
+	rollbackGenerationRoutes(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback agent-skill-runtime", err)
 	}

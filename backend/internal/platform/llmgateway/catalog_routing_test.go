@@ -20,8 +20,7 @@ func routedDeployment(key, vendor string) llmgateway.Deployment {
 		BaseURL: "https://example.invalid", CredentialEnv: "TEST_KEY", RequestModelID: "vendor-model",
 		AcceptedModelIDs: []string{"vendor-model"},
 		Capability:       llmgateway.Capability{ImageInput: true, ToolCalling: true, ContextTokens: 1000, MaxOutputTokens: 500},
-		Price:            usablePrice(), LimitKey: key, Concurrency: 2, RateLimitPerMin: 10,
-		QueryCapability: "none", CancelCapability: "none", Enabled: true,
+		Price:            usablePrice(), QueryCapability: "none", CancelCapability: "none", Enabled: true,
 	}
 }
 

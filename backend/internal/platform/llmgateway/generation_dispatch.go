@@ -51,7 +51,7 @@ type generationAction struct {
 
 // AdvanceGeneration 每次至多调用一个Submit/Observe/Cancel/Lookup；恢复只从数据库
 // 重建身份。提交许可在同一事务内登记为已领取，进程丢失后不存在再次消费的路径。
-func (r *GenerationRuntime) AdvanceGeneration(ctx context.Context, scope store.AccountScope, requestID string) (GenerationProgress, error) {
+func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.AccountScope, requestID string) (GenerationProgress, error) {
 	var action *generationAction
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		var err error
@@ -68,7 +68,7 @@ func (r *GenerationRuntime) AdvanceGeneration(ctx context.Context, scope store.A
 		if action.kind == "submit" && r.refs != nil {
 			action.call.References = r.refs(scope)
 		}
-		callCtx, cancel := context.WithTimeout(ctx, transportLifetime)
+		callCtx, cancel := context.WithTimeout(ctx, generationCallLifetime)
 		var event GenerationEvent
 		var callErr error
 		switch action.kind {
@@ -87,7 +87,7 @@ func (r *GenerationRuntime) AdvanceGeneration(ctx context.Context, scope store.A
 			}
 		}
 		cancel()
-		// 确定没有发出的提交与明确拒绝等价：释放预留与名额，按拒绝规则重试。
+		// 确定没有发出的提交与明确拒绝等价：释放预留，按拒绝规则重试。
 		if action.kind == "submit" && errors.Is(callErr, ErrNotDispatched) {
 			event, callErr = GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: "not_dispatched"}}, nil
 		}
@@ -95,7 +95,7 @@ func (r *GenerationRuntime) AdvanceGeneration(ctx context.Context, scope store.A
 		defer finish()
 		err = scope.WithTxScope(finishCtx, func(tx store.TxAccountScope) error {
 			if callErr != nil {
-				return r.failGenerationStage(finishCtx, tx, action.claim)
+				return r.failGenerationStage(finishCtx, tx, action.claim, action.kind, callErr)
 			}
 			return r.RecordGenerationObservationInTx(finishCtx, tx, action.claim, event)
 		})
@@ -136,8 +136,8 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 		if err != nil {
 			return nil, err
 		}
-		// 未提交的截止/取消/账号停用收尾不需要供应商名额，即使名额被未知任务
-		// 占满也能释放未使用的预算。当前请求状态在预算/请求锁内再次核对。
+		// 未提交的截止/取消/账号停用直接收尾，释放未使用的预算。当前请求状态在
+		// 预算/请求锁内再次核对。
 		if !active || !peek.deadline.After(now) || peek.cancelAt != nil || peek.closedAt != nil {
 			return nil, r.cancelUnsubmittedGeneration(ctx, tx, requestID)
 		}
@@ -157,7 +157,7 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 	reg, registered := r.adapters[def.DeploymentID+"/"+def.AdapterVersion]
 	if fresh {
 		// 只用无锁预读选择禁止派发的分支，进入部署门后再次确认；恢复启用则
-		// 本轮退回，由下一轮按名额优先的正常锁序重新判断。
+		// 本轮退回，由下一轮按正常锁序重新判断。
 		if err := r.checkDeployment(ctx, tx, def, control); err != nil {
 			if !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrConflict) {
 				return nil, err
@@ -170,10 +170,14 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 			} else if !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrConflict) {
 				return nil, err
 			}
-			return nil, r.cancelUnsubmittedGeneration(ctx, tx, requestID)
+			if err := r.cancelUnsubmittedGeneration(ctx, tx, requestID); err != nil {
+				return nil, err
+			}
+			_, err := tx.Update(ctx, "llm_requests", "failure_class='deployment_unavailable'", "id=$2 AND state='cancelled'", requestID)
+			return nil, err
 		}
 	}
-	// 固定锁序：账号状态（仅提交）→供应商名额→组→部署门→预算桶→请求→task。
+	// 固定锁序：账号状态（仅提交）→旧供应商名额（仅历史在途task）→组→部署门→预算桶→请求→task。
 	var task generationTask
 	if !fresh {
 		task, err = scanGenerationTask(tx.QueryRow(ctx, "llm_generation_tasks", generationTaskColumns, "request_id=$2 AND attempt_id IN (SELECT id FROM llm_attempts WHERE account_id=$1 AND request_id=$2 AND attempt_number=$3)", requestID, peek.attemptsUsed))
@@ -195,13 +199,6 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 				return nil, err
 			}
 			return nil, r.markGenerationVerification(ctx, tx, requestID, "adapter_version_unavailable", now)
-		}
-		granted, err := tx.LLMLimitView().Acquire(ctx, reg.LimitKey, reg.Concurrency, reg.RateLimit, 60, now)
-		if err != nil {
-			return nil, err
-		}
-		if !granted {
-			return nil, ErrRateLimited
 		}
 		var groupID string
 		if err := tx.QueryRowForUpdate(ctx, "llm_call_groups", "caller_group_id", "caller_service=$2 AND caller_group_id=$3", peek.callerService, peek.groupID).Scan(&groupID); err != nil {
@@ -238,7 +235,13 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 	if task.leaseUntil != nil && task.leaseUntil.After(now) {
 		return nil, errGenerationBusy
 	}
-	if !registered || task.failures >= 5 || !task.recoveryUntil.After(now) {
+	// 兼容旧Worker留下的终态due：无需再查询一次就能转账单核实。
+	if generationTerminal(task.state) && r.externalGenerationBilling(task) {
+		return nil, r.finishGenerationStage(ctx, tx, task, now)
+	}
+	// 已知任务身份的查询是幂等的，连续失败只退避、查到恢复窗口为止；
+	// 失败次数上限只约束受理与否尚未确定的提交。
+	if !registered || len(task.taskCipher) == 0 && task.failures >= maxBlindFailures || !task.recoveryUntil.After(now) {
 		return nil, r.markGenerationVerification(ctx, tx, requestID, "recovery_requires_verification", now)
 	}
 	action := "observe"
@@ -265,7 +268,7 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 	}
 	epoch := task.epoch + 1
 	until := now.Add(generationLease)
-	if _, err := tx.Update(ctx, "llm_generation_tasks", "epoch=$3,lease_until=$4,action=$5,failures=failures+1,cancel_sent=cancel_sent OR $6", "attempt_id=$2", task.attemptID, epoch, until, action, action == "cancel"); err != nil {
+	if _, err := tx.Update(ctx, "llm_generation_tasks", "epoch=$3,lease_until=$4,action=$5,failures=LEAST(failures+1,5),cancel_sent=cancel_sent OR $6", "attempt_id=$2", task.attemptID, epoch, until, action, action == "cancel"); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Update(ctx, "llm_generation_requests", "next_advance_at=$3", "request_id=$2", requestID, until); err != nil {
@@ -277,25 +280,32 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAccountScope, request requestRow, p PreparedPolicyGeneration, reg GenerationAdapterRegistration, control int64, now time.Time) (*generationAction, error) {
 	s := r.gateway
 	guardErr := r.checkDeployment(ctx, tx, p.PolicyDefinition(), control)
+	failure := "generation_guard_rejected"
+	if errors.Is(guardErr, ErrUnavailable) || errors.Is(guardErr, ErrConflict) {
+		failure = "deployment_unavailable"
+	}
 	if request.cancelAt != nil || request.closedAt != nil {
 		guardErr = ErrCancelled
+		failure = "generation_guard_rejected"
 	} else if !request.deadline.After(now) {
 		guardErr = ErrDeadline
+		failure = "generation_guard_rejected"
 	}
 	if guardErr == nil {
-		guardErr = r.guard(ctx, tx, request.view(SettlementReserved), p)
+		settlement, err := settlementOf(ctx, tx, request.id)
+		if err != nil {
+			return nil, err
+		}
+		guardErr = r.authorizeGeneration(ctx, tx, request.view(settlement), p)
 	}
 	if guardErr != nil {
 		if !errors.Is(guardErr, ErrCancelled) && !errors.Is(guardErr, ErrDeadline) && !errors.Is(guardErr, ErrUnavailable) && !errors.Is(guardErr, ErrConflict) && !errors.Is(guardErr, ErrCapability) {
 			return nil, guardErr
 		}
-		if _, err := tx.Update(ctx, "llm_requests", "state='cancelled',cancel_requested_at=$3,closed_at=$3,failure_class='generation_guard_rejected',revision=revision+1,updated_at=$3", "id=$2", request.id, now); err != nil {
+		if _, err := tx.Update(ctx, "llm_requests", "state='cancelled',cancel_requested_at=$3,closed_at=$3,failure_class=$4,revision=revision+1,updated_at=$3", "id=$2", request.id, now, failure); err != nil {
 			return nil, err
 		}
 		if err := s.releaseReservation(ctx, tx, request.id, now); err != nil {
-			return nil, err
-		}
-		if err := tx.LLMLimitView().Release(ctx, reg.LimitKey); err != nil {
 			return nil, err
 		}
 		_, err := tx.Update(ctx, "llm_generation_requests", "next_advance_at=NULL", "request_id=$2", request.id)
@@ -305,7 +315,7 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	if err != nil {
 		return nil, err
 	}
-	if request.retryEligible {
+	if request.retryEligible && reservation.state != SettlementNotApplicable {
 		if _, err := s.RearmInTx(ctx, tx, request.id, reservation.generation, 0, 0); err != nil {
 			return nil, err
 		}
@@ -317,7 +327,7 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	if request.attemptsUsed >= maxAttempts {
 		return nil, ErrAttemptsUsed
 	}
-	if reservation.state != SettlementReserved || reservation.holdMicros != reservation.initialMicros {
+	if reservation.state != SettlementNotApplicable && (reservation.state != SettlementReserved || reservation.holdMicros != reservation.initialMicros) {
 		return nil, ErrBudget
 	}
 	if err := s.assertNoLiveAttempt(ctx, tx, request.id); err != nil {
@@ -329,10 +339,10 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	}
 	attempt := newID("llma")
 	until := now.Add(generationLease)
-	if err := tx.Insert(ctx, "llm_attempts", []string{"id", "request_id", "attempt_number", "reservation_id", "reservation_generation", "dispatch_state", "dispatch_epoch", "permit_digest", "limit_key", "dispatched_at", "permit_claimed_at"}, attempt, request.id, request.attemptsUsed+1, reservation.id, reservation.generation, "dispatching", reservation.generation, digest([]byte(token)), reg.LimitKey, now, now); err != nil {
+	if err := tx.Insert(ctx, "llm_attempts", []string{"id", "request_id", "attempt_number", "reservation_id", "reservation_generation", "dispatch_state", "dispatch_epoch", "permit_digest", "limit_key", "dispatched_at", "permit_claimed_at"}, attempt, request.id, request.attemptsUsed+1, reservation.id, reservation.generation, "dispatching", reservation.generation, digest([]byte(token)), "", now, now); err != nil {
 		return nil, err
 	}
-	if err := tx.Insert(ctx, "llm_generation_tasks", []string{"request_id", "attempt_id", "deployment_id", "adapter_version", "limit_key", "lease_until", "action", "failures", "created_at", "recovery_until"}, request.id, attempt, reg.DeploymentID, reg.Version, reg.LimitKey, until, "submit", 1, now, now.Add(generationRecoveryWindow)); err != nil {
+	if err := tx.Insert(ctx, "llm_generation_tasks", []string{"request_id", "attempt_id", "deployment_id", "adapter_version", "limit_key", "lease_until", "action", "failures", "created_at", "recovery_until"}, request.id, attempt, reg.DeploymentID, reg.Version, "", until, "submit", 1, now, now.Add(generationRecoveryWindow)); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Update(ctx, "llm_requests", "state='dispatching',attempts_used=attempts_used+1,retry_eligible=FALSE,revision=revision+1,updated_at=$3", "id=$2", request.id, now); err != nil {
@@ -344,7 +354,7 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	return &generationAction{claim: GenerationClaim{RequestID: request.id, AttemptID: attempt, Epoch: 1}, kind: "submit", call: GenerationCall{RequestID: request.id, AttemptID: attempt, Prepared: p}, adapter: reg.Adapter}, nil
 }
 
-// lockObservation 延续名额→部署门→预算→请求→task，核验attempt归属之后才写任何费用。
+// lockObservation 延续旧名额（仅历史task）→部署门→预算→请求→task，核验attempt归属之后才写任何费用。
 func (r *GenerationRuntime) lockObservation(ctx context.Context, tx store.TxAccountScope, c GenerationClaim) (generationTask, requestRow, error) {
 	task, err := scanGenerationTask(tx.QueryRow(ctx, "llm_generation_tasks", generationTaskColumns, "attempt_id=$2 AND request_id=$3", c.AttemptID, c.RequestID))
 	if err != nil {
@@ -366,7 +376,7 @@ func (r *GenerationRuntime) lockObservation(ctx context.Context, tx store.TxAcco
 	task, err = scanGenerationTask(tx.QueryRowForUpdate(ctx, "llm_generation_tasks", generationTaskColumns, "attempt_id=$2", c.AttemptID))
 	return task, request, err
 }
-func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.TxAccountScope, c GenerationClaim) error {
+func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.TxAccountScope, c GenerationClaim, kind string, cause error) error {
 	task, _, err := r.lockObservation(ctx, tx, c)
 	if err != nil {
 		return err
@@ -374,6 +384,8 @@ func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.Tx
 	if task.epoch != c.Epoch {
 		return nil
 	}
+	// 适配器错误已脱敏（不含地址与凭证），只记分类，供排查供应商抖动。
+	r.gateway.logger.WarnContext(ctx, "generation provider call failed", "request_id", c.RequestID, "deployment_id", task.deploymentID, "action", kind, "failures", task.failures, "error", cause.Error())
 	now := r.gateway.now().UTC()
 	if _, err := tx.Update(ctx, "llm_generation_tasks", "lease_until=NULL", "attempt_id=$2", c.AttemptID); err != nil {
 		return err
@@ -388,10 +400,10 @@ func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.Tx
 	}
 	reg := r.adapters[task.deploymentID+"/"+task.adapterVersion]
 	_, canLookup := reg.Adapter.(GenerationSubmissionLookup)
-	if task.failures >= 5 || len(task.taskCipher) == 0 && !canLookup {
+	if len(task.taskCipher) == 0 && (task.failures >= maxBlindFailures || !canLookup) {
 		return r.markGenerationVerification(ctx, tx, c.RequestID, "recovery_requires_verification", now)
 	}
-	_, err = tx.Update(ctx, "llm_generation_requests", "next_advance_at=$3", "request_id=$2", c.RequestID, now.Add(generationPoll*time.Duration(task.failures)))
+	_, err = tx.Update(ctx, "llm_generation_requests", "next_advance_at=$3", "request_id=$2", c.RequestID, now.Add(min(generationPoll*time.Duration(task.failures), maxGenerationBackoff)))
 	return err
 }
 func (r *GenerationRuntime) markGenerationVerification(ctx context.Context, tx store.TxAccountScope, id, reason string, now time.Time) error {
@@ -418,11 +430,11 @@ func (r *GenerationRuntime) CancelGenerationInTx(ctx context.Context, tx store.T
 	if kind != requestKindGeneration {
 		return RequestView{}, fmt.Errorf("%w: generation request required", ErrState)
 	}
-	return r.gateway.CancelInTx(ctx, tx, requestID)
+	return r.CancelRouteInTx(ctx, tx, requestID)
 }
 
 // cancelUnsubmittedGeneration 只关闭仍未派发的请求；并发先取得许可时本轮不
-// 改动它的费用或名额，由正常观察/取消流程处理。
+// 改动它的费用，由正常观察/取消流程处理。
 func (r *GenerationRuntime) cancelUnsubmittedGeneration(ctx context.Context, tx store.TxAccountScope, requestID string) error {
 	if err := r.gateway.lockBudgetForRequest(ctx, tx, requestID, r.gateway.now()); err != nil {
 		return err

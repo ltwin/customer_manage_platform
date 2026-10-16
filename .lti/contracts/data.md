@@ -80,7 +80,7 @@ MODIFY 给出完整新章节。REMOVE 使用退役说明：原对象、原因、
 
 ### 用途与存储角色
 - **用途**：画布文档的头、修订历史、引用登记和工作会话指针。类型载荷存放在内容修订里（`creative_content_revisions`），不在这些表中。
-- **存储**：PostgreSQL。扩展 `creative_documents`，新增 `creative_document_revisions`、`creative_document_content_refs`、`creative_document_conversations`，迁移 `0069_creative_document_foundation`。
+- **存储**：PostgreSQL。扩展 `creative_documents`，新增 `creative_document_revisions`、`creative_document_content_refs`、`creative_document_conversations`，迁移 `0072_creative_document_foundation`（合入 develop 时与 `0069`–`0071` 的生成路由迁移撞号，改号为 0072）。
 - **角色**：
   - 文档行：权威主数据（当前修订、标题、单元修订号、回收站状态）。
   - 修订表：历史的唯一顺序来源。

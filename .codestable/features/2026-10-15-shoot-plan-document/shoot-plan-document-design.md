@@ -41,7 +41,7 @@ revision: 5（按 2026-10-15 设计评审修订，处置见 §13；按同日交�
 
 | 方面 | 由底座提供 | 策划这边 |
 |---|---|---|
-| 存储 | `creative_documents` 补列、修订表（含 `unit_revs`、`annotated_units`）、引用表、工作会话指针表，迁移 0069 | 只加内容类型 `plan`（§3.1） |
+| 存储 | `creative_documents` 补列、修订表（含 `unit_revs`、`annotated_units`）、引用表、工作会话指针表，迁移 0072 | 只加内容类型 `plan`（§3.1） |
 | 单元版本 | 文档头和修订行的 `unit_revs`；标题单元固定为 `meta` | 载荷不再存 `title` 和各单元 `rev`；读取时把 `unit_revs` 合并进视图；`confirmed_rev` 仍在载荷里 |
 | 命令外壳 | `POST /creative/documents/{id}/commands`：`expected`（值可为 null，表示预期不存在）、整批原子、409 `creative_document_conflict`（只列单元和修订号，客户端重读后进冲突界面）、有界回执（`reset_required`） | 策划的操作集合（§4.1） |
 | 通用操作 | `rename`（单元 `meta`）、`restore`（带 `expected_revision`，按文档修订号检查）、`restore_units`（单独成批，可列多个单元；存在性变化时同时检查集合单元） | 「恢复后仍为已确认」用恢复钩子实现：读旧修订行的 `unit_revs` 判断 `confirmed_rev == rev`，是则把 `confirmed_rev` 设为新修订号 |
@@ -80,7 +80,7 @@ revision: 5（按 2026-10-15 设计评审修订，处置见 §13；按同日交�
 | 助手面板组件 | `frontend/src/creative-canvas/editor/AgentPanel.tsx` | 编辑视图里复用，不另写 |
 | 资产库浏览选择弹窗 | `frontend/src/creative-canvas/assets/LibraryPicker.tsx` | 复用为「添加参考图 › 资产库」（§7.2） |
 | 旧 `shootplanning` 的 `CreativeBrief`、`Shot` 字段 | `shootplanning/model.go` | 借鉴字段名与含义，不复用表 |
-| 回滚链头 `rollbackPlatformSkillOwner`（0067）；0068 已被 Skill 运行时占用 | `store/creative_platform_skill_owner_migration_test.go` | 底座迁移 0069 之后，策划迁移顺延成为新链头（§0.1） |
+| 回滚链头 `rollbackPlatformSkillOwner`（0067）；0068 已被 Skill 运行时占用 | `store/creative_platform_skill_owner_migration_test.go` | 底座迁移 0072 之后，策划迁移顺延成为新链头（§0.1）；当前链头为 `rollbackDocumentFoundation` |
 
 ## 2. 文档模型
 
@@ -224,9 +224,9 @@ revision: 5（按 2026-10-15 设计评审修订，处置见 §13；按同日交�
 
 ## 3. 存储
 
-### 3.1 迁移（编号接在底座 0069 之后）
+### 3.1 迁移（编号接在底座 0072 之后）
 
-通用的表和列（`creative_documents` 的时间、回收站、`unit_revs` 列，修订表、引用表、工作会话指针表）由底座迁移 0069 提供，见 `.lti/features/2026-10-16-creative-document-foundation/contracts.md` 的 `data: 通用文档`。策划只需要：
+通用的表和列（`creative_documents` 的时间、回收站、`unit_revs` 列，修订表、引用表、工作会话指针表）由底座迁移 0072 提供，见 `.lti/features/2026-10-16-creative-document-foundation/contracts.md` 的 `data: 通用文档`。策划只需要：
 
 ```sql
 ALTER TABLE creative_contents DROP CONSTRAINT creative_contents_kind_check;

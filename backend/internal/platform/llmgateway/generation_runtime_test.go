@@ -36,7 +36,7 @@ func (a *generationAdapter) Cancel(ctx context.Context, c gw.GenerationCall) (gw
 func generationRuntime(t *testing.T, f *fixture, a gw.GenerationAdapter) (*gw.GenerationRuntime, gw.PreparedPolicyGeneration, gw.GenerationPolicyDefinition) {
 	t.Helper()
 	p, d, _ := genPolicyFixture(t, nil)
-	r, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "generation-test", Concurrency: 2, RateLimit: 100, Adapter: a}}, Guard: func(context.Context, store.TxAccountScope, gw.RequestView, gw.PreparedPolicyGeneration) error {
+	r, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: a}}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 		return nil
 	}})
 	if err != nil {
@@ -153,7 +153,7 @@ func TestGenerationRuntimeLostSubmitNeverResends(t *testing.T) {
 	if held, spent := f.reservedMicros(t); held != 1250000 || spent != 0 {
 		t.Fatalf("unknown ledger: %d %d", held, spent)
 	}
-	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 1 {
+	if n := queryCount(t, f.db, `SELECT count(*) FROM platform_llm_limits`); n != 0 {
 		t.Fatalf("unknown released supplier capacity: %d", n)
 	}
 }
@@ -174,7 +174,75 @@ func TestGenerationRuntimeUnsentSubmitReleasesHoldAndSlot(t *testing.T) {
 	if held, spent := f.reservedMicros(t); held != 0 || spent != 0 {
 		t.Fatalf("unsent ledger: %d %d", held, spent)
 	}
-	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 0 {
+	if n := queryCount(t, f.db, `SELECT count(*) FROM platform_llm_limits`); n != 0 {
 		t.Fatalf("unsent submit kept supplier capacity: %d", n)
+	}
+}
+
+func TestGenerationRefreshableSuccessKeepsStableEvidence(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	a := &generationAdapter{}
+	completed := func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+		e := generationCompleted(f)
+		e.RefreshableMedia = true
+		e.Usage = nil
+		e.Observation.Outputs[0].Media.FetchURL = "https://example.invalid/refreshed"
+		return e, nil
+	}
+	a.submit = completed
+	a.observe = completed
+	r, p, _ := generationRuntime(t, f, a)
+	root := admitRuntime(t, f, r, p)
+	for range 3 {
+		progress, err := r.AdvanceGeneration(t.Context(), f.a, root.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if progress.VerificationRequired {
+			t.Fatal("refreshed expiry treated as conflicting evidence")
+		}
+		if progress.Request.State != gw.StateSucceeded {
+			t.Fatalf("state %s", progress.Request.State)
+		}
+		f.now = f.now.Add(time.Minute)
+	}
+	if a.observeCalls < 2 {
+		t.Fatal("cost recovery did not observe again")
+	}
+	if f.count(t, "SELECT count(*) FROM llm_generation_observations WHERE disposition='conflict'") != 0 {
+		t.Fatal("false conflict")
+	}
+	if f.count(t, "SELECT result_revision FROM llm_requests WHERE id='"+root.ID+"'") != 1 {
+		t.Fatal("refresh changed result version")
+	}
+}
+
+func TestGenerationIgnoresExhaustedPlatformQuota(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	if _, err := f.db.Exec(`INSERT INTO platform_llm_limits (limit_key,capacity,active_count,rate_limit,window_seconds,window_start,window_count) VALUES ('generation-test',1,1,1,60,now(),1)`); err != nil {
+		t.Fatal(err)
+	}
+	a := &generationAdapter{submit: func(_ context.Context, c gw.GenerationCall) (gw.GenerationEvent, error) {
+		return gw.GenerationEvent{EventKey: "accepted", Observation: gw.GenerationObservation{State: gw.GenerationAccepted, TaskID: c.RequestID}}, nil
+	}}
+	r, p, _ := generationRuntime(t, f, a)
+	for range 3 {
+		request := admitRuntime(t, f, r, p)
+		progress, err := r.AdvanceGeneration(t.Context(), f.a, request.ID)
+		if err != nil || progress.VerificationRequired {
+			t.Fatalf("dispatch blocked: %v %+v", err, progress)
+		}
+		if _, err = r.AdvanceGeneration(t.Context(), f.a, request.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a.submitCalls != 3 {
+		t.Fatalf("submissions=%d", a.submitCalls)
+	}
+	if n := queryCount(t, f.db, `SELECT count(*) FROM llm_attempts WHERE limit_key<>''`); n != 0 {
+		t.Fatalf("new quota claims=%d", n)
+	}
+	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 1 {
+		t.Fatalf("historical count=%d", n)
 	}
 }

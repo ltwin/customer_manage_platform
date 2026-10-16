@@ -23,7 +23,8 @@ func (s *Service) SweepDue(ctx context.Context, db *store.Store, after string, b
 	for _, id := range accounts {
 		scope := db.ScopeFor(auth.AccountContext{AccountID: id})
 		if err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-			rows, err := tx.QueryPage(ctx, "creative_generation_bindings", "execution_id,canvas_id", "next_step_at<=clock_timestamp() AND verification_required=FALSE", []store.OrderBy{{Column: "next_step_at"}, {Column: "execution_id"}}, batch, 0)
+			// 第二个分支补投旧版本停在 reconciling 的执行，收为失败后不再命中。
+			rows, err := tx.QueryPage(ctx, "creative_generation_bindings", "execution_id,canvas_id", "(next_step_at<=clock_timestamp() AND verification_required=FALSE) OR (verification_required=TRUE AND execution_id IN (SELECT id FROM creative_node_executions WHERE account_id=$1 AND state='reconciling'))", []store.OrderBy{{Column: "next_step_at", NullsLast: true}, {Column: "execution_id"}}, batch, 0)
 			if err != nil {
 				return err
 			}

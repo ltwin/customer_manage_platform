@@ -97,7 +97,7 @@ func run() error {
 		return err
 	}
 	if generation.Disabled != "" {
-		slog.Info("creative generation disabled", slog.String("reason", generation.Disabled))
+		slog.Info("creative generation configuration", slog.String("reason", generation.Disabled))
 	}
 	if generation.Service != nil {
 		agent.SetGenerator(generation.Product)
