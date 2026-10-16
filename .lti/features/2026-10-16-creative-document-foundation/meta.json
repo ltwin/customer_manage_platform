@@ -1,12 +1,26 @@
 {
   "uid": "d04f6c6d-5e57-41d1-8e19-62777ff4d5fb",
-  "revision": 8,
+  "revision": 9,
   "id": "creative-document-foundation",
   "kind": "feature",
   "assurance": "governed",
   "state": "archived",
   "createdAt": "2026-10-16T08:37:12.590Z",
-  "updatedAt": "2026-10-16T18:07:31.905Z",
+  "updatedAt": "2026-10-16T18:35:10.535Z",
+  "integration": {
+    "by": "samson",
+    "at": "2026-10-16T18:35:10.506Z",
+    "summary": "已合入 develop（b1fe961，--no-ff）。合并前在功能分支合入 develop（6c4137b），解决迁移撞号：底座迁移改为 0072、回滚链头改为 rollbackDocumentFoundation；在与集成 HEAD 树完全相同的 6c4137b 上跑 make check，退出码 0（后端 54 包、lint 0 issues、前端 521 测试、generate-check）。",
+    "method": "manual",
+    "limitations": "项目未配置 lti checks，make check 由 agent 在 worktree 中手动执行；Playwright e2e 未执行；未推送远端。",
+    "sourceCommit": "6c4137bdc137a64db4d7b3481238a1df79df63df",
+    "targetCommit": "b1fe961e66b7df35388a1be52c12805c60168102",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "2da53017c5035d815facd6aec47f8f2f036d703b4d04957c9ab961e605b0f5c2"
+    },
+    "runs": []
+  },
   "risk": {
     "factors": [
       "broad-impact",
