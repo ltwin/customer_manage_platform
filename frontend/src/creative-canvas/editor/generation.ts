@@ -77,7 +77,7 @@ export const executionLabel = (state: string) =>
     queued: '等待生成',
     running: '正在生成',
     succeeded: '生成已完成',
-    failed: '生成未全部完成',
+    failed: '生成失败',
     cancelled: '已停止',
     reconciling: '结果待核实',
   })[state] ?? '状态待确认'

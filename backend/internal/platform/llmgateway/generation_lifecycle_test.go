@@ -369,7 +369,9 @@ func TestGenerationRuntimeDueScanRepairsDiscardedDelivery(t *testing.T) {
 	}
 }
 
-func TestGenerationRuntimeObserveRetryBudgetAndChatRecoveryIsolation(t *testing.T) {
+// 已知任务身份的查询失败只退避不判核实，直到恢复窗口用尽；任务跑得久、
+// 查询接口偶发抖动都不能把生成永久停住。
+func TestGenerationRuntimeObserveRetriesKnownTaskAndChatRecoveryIsolation(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	a := &generationAdapter{submit: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) { return acceptedGeneration(), nil }, observe: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
 		return gw.GenerationEvent{}, errors.New("temporary")
@@ -390,8 +392,11 @@ func TestGenerationRuntimeObserveRetryBudgetAndChatRecoveryIsolation(t *testing.
 		}
 	}
 	progress, err := r.GetGeneration(t.Context(), f.a, view.ID)
-	if err != nil || !progress.VerificationRequired || a.observeCalls != 5 {
-		t.Fatalf("retry budget: calls=%d %+v %v", a.observeCalls, progress, err)
+	if err != nil || progress.VerificationRequired || a.observeCalls != 6 {
+		t.Fatalf("known task stopped retrying: calls=%d %+v %v", a.observeCalls, progress, err)
+	}
+	if next := progress.NextAdvanceAt; next == nil || next.Sub(f.now) > time.Minute {
+		t.Fatalf("backoff not capped: %v", next)
 	}
 	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 1 {
 		t.Fatalf("unresolved task lost capacity: %d", n)
@@ -399,8 +404,39 @@ func TestGenerationRuntimeObserveRetryBudgetAndChatRecoveryIsolation(t *testing.
 	a.observe = func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
 		return generationCompleted(f), nil
 	}
-	resumeGeneration(t, f, r, view.ID)
+	f.now = f.now.Add(2 * time.Minute)
 	if progress, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil || progress.Request.State != gw.StateSucceeded {
+		t.Fatalf("recovered provider not observed: %+v %v", progress, err)
+	}
+}
+
+// 恢复窗口用尽后才转人工核实，受信恢复可以继续查询同一任务。
+func TestGenerationRuntimeObserveRecoveryWindowRequiresVerification(t *testing.T) {
+	f := setupGateway(t, defaultBudget())
+	a := &generationAdapter{submit: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) { return acceptedGeneration(), nil }, observe: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+		return gw.GenerationEvent{}, errors.New("temporary")
+	}}
+	// 与真实适配器一致：取消只是再查一次同一任务。
+	a.cancel = func(ctx context.Context, c gw.GenerationCall) (gw.GenerationEvent, error) { return a.observe(ctx, c) }
+	r, p, _ := generationRuntime(t, f, a)
+	view := admitRuntime(t, f, r, p)
+	if _, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.now = f.now.Add(25 * time.Hour)
+	if _, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil {
+		t.Fatal(err)
+	}
+	progress, err := r.GetGeneration(t.Context(), f.a, view.ID)
+	if err != nil || !progress.VerificationRequired {
+		t.Fatalf("expired recovery window kept polling: %+v %v", progress, err)
+	}
+	a.observe = func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+		return generationCompleted(f), nil
+	}
+	resumeGeneration(t, f, r, view.ID)
+	// 生成期限已过，迟到的完成只作终态与费用证据，不再作为可交付结果。
+	if progress, err := r.AdvanceGeneration(t.Context(), f.a, view.ID); err != nil || !progress.Request.Terminal() {
 		t.Fatalf("manual recovery: %+v %v", progress, err)
 	}
 }

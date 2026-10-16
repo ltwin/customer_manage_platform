@@ -121,13 +121,15 @@ function Workspace({ account }: { account: string }) {
     anchor?: { x: number; y: number }
   }>({ seq: 0 })
   // 把焦点交给某个节点的生成输入框；面板解锁并聚焦后清掉（PRD CV-53/54）。
+  // generate 为真时是失败卡片上的重试：面板解锁后直接按当前提示词生成。
   const [promptFocus, setPromptFocus] = useState<{
     seq: number
     nodeID: string
+    generate?: boolean
   } | null>(null)
   const focusPrompt = useCallback(
-    (nodeID: string) =>
-      setPromptFocus((v) => ({ seq: (v?.seq ?? 0) + 1, nodeID })),
+    (nodeID: string, generate = false) =>
+      setPromptFocus((v) => ({ seq: (v?.seq ?? 0) + 1, nodeID, generate })),
     [],
   )
   const clearPromptFocus = useCallback(() => setPromptFocus(null), [])

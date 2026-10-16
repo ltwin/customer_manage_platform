@@ -14,8 +14,9 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// 生图通常1–3分钟完成，中转给出的预计时间最长10分钟；截止留出排队与取件余量。
-const imageDeadline = 30 * time.Minute
+// 生图通常1–3分钟完成，中转给出的预计时间最长10分钟。截止含供应商排队与路由
+// 切换，超过即判超时（owner 2026-10-16：30分钟太长，10分钟足矣）。
+const imageDeadline = 10 * time.Minute
 
 // 内置部署在账号控制面里的有效期；剩余不足四分之一时由下一次生成续期。
 const imageDeploymentValidity = 30 * 24 * time.Hour

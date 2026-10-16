@@ -53,6 +53,7 @@ import {
   connectedReferences,
   promptReferences,
 } from './promptReferences.ts'
+import { generationFailure, generationFailureText } from './labelMeta.ts'
 import './generation.css'
 
 type Props = {
@@ -68,8 +69,9 @@ type Props = {
   onDisconnect: (edgeID: string) => void
   referenceRequest: { seq: number; targetID: string; ids: string[] } | null
   onReferencesInserted: () => void
-  /** 待处理的聚焦请求：面板解锁后才真正聚焦，随后由 onFocused 清掉。 */
-  focusRequest: { seq: number; nodeID: string } | null
+  /** 待处理的聚焦请求：面板解锁后才真正聚焦，随后由 onFocused 清掉。
+   * generate 为真时是失败卡片上的重试，见下方重试 effect。 */
+  focusRequest: { seq: number; nodeID: string; generate?: boolean } | null
   onFocused: () => void
 }
 
@@ -274,7 +276,13 @@ export default function NodeGenerationPanel({
   const locked = disabled || busy || queue.busy || !!queue.value.job
   // 新建节点在服务端确认前是锁定的；请求一直保留，解锁后再把焦点交给输入框。
   useEffect(() => {
-    if (!focusRequest || focusRequest.nodeID !== node.id || locked) return
+    if (
+      !focusRequest ||
+      focusRequest.generate ||
+      focusRequest.nodeID !== node.id ||
+      locked
+    )
+      return
     editor.current?.focus()
     onFocused()
   }, [focusRequest, node.id, locked, onFocused])
@@ -390,6 +398,7 @@ export default function NodeGenerationPanel({
     execution?.execution_id === executionID
       ? execution.state
       : node.status.generation_state
+  const failure = generationFailure(node.status)
   const canGenerate =
     !locked &&
     !conflict &&
@@ -400,6 +409,20 @@ export default function NodeGenerationPanel({
       prompt.references.length > 0 ||
       canvas.edges.some((e) => e.target_node_id === node.id) ||
       canvas.node_inputs.some((r) => r.node_id === node.id))
+  // 失败卡片上的重试：等面板解锁、模型目录到达后按当前提示词与连线再生成一次
+  // （owner 2026-10-16）。生成不了（模型下架、提示词为空等）时只聚焦输入框，原因在面板里。
+  useEffect(() => {
+    if (
+      !focusRequest?.generate ||
+      focusRequest.nodeID !== node.id ||
+      locked ||
+      (!catalog && !catalogError)
+    )
+      return
+    onFocused()
+    if (canGenerate && !node.status.active_execution_id) void act(generate)
+    else editor.current?.focus()
+  })
   const imageFields =
     model?.parameters.filter(
       (f) =>
@@ -883,15 +906,12 @@ export default function NodeGenerationPanel({
           )}
         </>
       )}
-      {execution?.error && (
-        <p role="status">
-          {execution.error === 'partial_import'
-            ? '部分结果未能入库，已成功的作品仍可查看。'
-            : execution.error === 'generation_verification_required'
-              ? '生成结果待核实，现有作品已保留。'
-              : '生成未完成，现有作品已保留，请稍后重试或联系管理员核实。'}
-        </p>
-      )}
+      {execution?.execution_id === executionID &&
+        (execution.error === 'partial_import' ? (
+          <p role="status">部分结果未能入库，已成功的作品仍可查看。</p>
+        ) : (
+          failure && <p role="status">{generationFailureText(failure)}</p>
+        ))}
       {execution?.apply_state === 'conflicted' && (
         <p>生成期间这个节点被改过，结果已保留为未采用版本。</p>
       )}

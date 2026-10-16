@@ -95,7 +95,7 @@ func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.A
 		defer finish()
 		err = scope.WithTxScope(finishCtx, func(tx store.TxAccountScope) error {
 			if callErr != nil {
-				return r.failGenerationStage(finishCtx, tx, action.claim)
+				return r.failGenerationStage(finishCtx, tx, action.claim, action.kind, callErr)
 			}
 			return r.RecordGenerationObservationInTx(finishCtx, tx, action.claim, event)
 		})
@@ -246,7 +246,9 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 	if generationTerminal(task.state) && r.externalGenerationBilling(task) {
 		return nil, r.finishGenerationStage(ctx, tx, task, now)
 	}
-	if !registered || task.failures >= 5 || !task.recoveryUntil.After(now) {
+	// 已知任务身份的查询是幂等的，连续失败只退避、查到恢复窗口为止；
+	// 失败次数上限只约束受理与否尚未确定的提交。
+	if !registered || len(task.taskCipher) == 0 && task.failures >= maxBlindFailures || !task.recoveryUntil.After(now) {
 		return nil, r.markGenerationVerification(ctx, tx, requestID, "recovery_requires_verification", now)
 	}
 	action := "observe"
@@ -273,7 +275,7 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 	}
 	epoch := task.epoch + 1
 	until := now.Add(generationLease)
-	if _, err := tx.Update(ctx, "llm_generation_tasks", "epoch=$3,lease_until=$4,action=$5,failures=failures+1,cancel_sent=cancel_sent OR $6", "attempt_id=$2", task.attemptID, epoch, until, action, action == "cancel"); err != nil {
+	if _, err := tx.Update(ctx, "llm_generation_tasks", "epoch=$3,lease_until=$4,action=$5,failures=LEAST(failures+1,5),cancel_sent=cancel_sent OR $6", "attempt_id=$2", task.attemptID, epoch, until, action, action == "cancel"); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Update(ctx, "llm_generation_requests", "next_advance_at=$3", "request_id=$2", requestID, until); err != nil {
@@ -384,7 +386,7 @@ func (r *GenerationRuntime) lockObservation(ctx context.Context, tx store.TxAcco
 	task, err = scanGenerationTask(tx.QueryRowForUpdate(ctx, "llm_generation_tasks", generationTaskColumns, "attempt_id=$2", c.AttemptID))
 	return task, request, err
 }
-func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.TxAccountScope, c GenerationClaim) error {
+func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.TxAccountScope, c GenerationClaim, kind string, cause error) error {
 	task, _, err := r.lockObservation(ctx, tx, c)
 	if err != nil {
 		return err
@@ -392,6 +394,8 @@ func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.Tx
 	if task.epoch != c.Epoch {
 		return nil
 	}
+	// 适配器错误已脱敏（不含地址与凭证），只记分类，供排查供应商抖动。
+	r.gateway.logger.WarnContext(ctx, "generation provider call failed", "request_id", c.RequestID, "deployment_id", task.deploymentID, "action", kind, "failures", task.failures, "error", cause.Error())
 	now := r.gateway.now().UTC()
 	if _, err := tx.Update(ctx, "llm_generation_tasks", "lease_until=NULL", "attempt_id=$2", c.AttemptID); err != nil {
 		return err
@@ -406,10 +410,10 @@ func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.Tx
 	}
 	reg := r.adapters[task.deploymentID+"/"+task.adapterVersion]
 	_, canLookup := reg.Adapter.(GenerationSubmissionLookup)
-	if task.failures >= 5 || len(task.taskCipher) == 0 && !canLookup {
+	if len(task.taskCipher) == 0 && (task.failures >= maxBlindFailures || !canLookup) {
 		return r.markGenerationVerification(ctx, tx, c.RequestID, "recovery_requires_verification", now)
 	}
-	_, err = tx.Update(ctx, "llm_generation_requests", "next_advance_at=$3", "request_id=$2", c.RequestID, now.Add(generationPoll*time.Duration(task.failures)))
+	_, err = tx.Update(ctx, "llm_generation_requests", "next_advance_at=$3", "request_id=$2", c.RequestID, now.Add(min(generationPoll*time.Duration(task.failures), maxGenerationBackoff)))
 	return err
 }
 func (r *GenerationRuntime) markGenerationVerification(ctx context.Context, tx store.TxAccountScope, id, reason string, now time.Time) error {

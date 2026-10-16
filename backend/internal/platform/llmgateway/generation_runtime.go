@@ -19,6 +19,12 @@ const generationLease = 3 * time.Minute
 const generationPoll = 15 * time.Second
 const generationRecoveryWindow = 24 * time.Hour
 
+// maxBlindFailures 限制受理与否尚未确定时的连续失败；已知任务的查询不受此限。
+const maxBlindFailures = 5
+
+// maxGenerationBackoff 是已知任务查询连续失败时的最长退避。
+const maxGenerationBackoff = time.Minute
+
 // GenerationCall 只由已提交的派发/观察许可构建；TaskID和输入不进入普通API或日志。
 // Adapter必须服从ctx期限。Submit的错误一律表示受理未知，绝不授权再次Submit。
 type GenerationCall struct {

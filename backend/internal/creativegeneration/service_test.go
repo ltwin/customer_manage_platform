@@ -31,12 +31,17 @@ func TestMain(m *testing.M) { storetest.Main(m, store.MigrateUp) }
 
 type adapter struct {
 	noUsage bool
-	calls   atomic.Int64
-	outputs []gw.GenerationOutput
+	// failCode 非空时供应商受理后直接报告失败。
+	failCode string
+	calls    atomic.Int64
+	outputs  []gw.GenerationOutput
 }
 
 func (a *adapter) Submit(_ context.Context, call gw.GenerationCall) (gw.GenerationEvent, error) {
 	a.calls.Add(1)
+	if a.failCode != "" {
+		return gw.GenerationEvent{EventKey: "failed", Observation: gw.GenerationObservation{State: gw.GenerationFailed, TaskID: "task-" + call.RequestID, ErrorCode: a.failCode}}, nil
+	}
 	if a.noUsage {
 		return gw.GenerationEvent{EventKey: "done", Observation: gw.GenerationObservation{State: gw.GenerationCompleted, TaskID: "task-" + call.RequestID, Outputs: a.outputs}}, nil
 	}
@@ -360,7 +365,8 @@ func TestGenerationPartialSuccessAndExplicitImportResume(t *testing.T) {
 	for range 6 {
 		f.step(t)
 	}
-	if count(t, f.db, "SELECT count(*) FROM creative_generation_bindings WHERE verification_required") != 1 || count(t, f.db, "SELECT count(*) FROM creative_node_versions") != 1 || count(t, f.db, "SELECT count(*) FROM llm_result_consumers WHERE state='pending'") != 1 {
+	// 停驻即收尾：已交接的作品按部分成功发布，驱动停止，不留待核实标记。
+	if count(t, f.db, "SELECT count(*) FROM creative_generation_bindings WHERE NOT verification_required AND next_step_at IS NULL") != 1 || count(t, f.db, "SELECT count(*) FROM creative_node_executions WHERE state='succeeded' AND error='partial_import'") != 1 || count(t, f.db, "SELECT count(*) FROM creative_node_versions") != 1 || count(t, f.db, "SELECT count(*) FROM llm_result_consumers WHERE state='pending'") != 1 {
 		t.Fatal("partial failure not retained")
 	}
 	f.f.fail.Store(false)
@@ -543,30 +549,37 @@ func TestGenerationReviewUnknownBillingDoesNotBlockKnownOutputs(t *testing.T) {
 
 }
 
-func TestGenerationReviewSaturatedProviderParksAfterBound(t *testing.T) {
+// 供应商名额占满是排队：不计连续失败、节点不提前失败；到截止才收为超时，
+// 未派发的请求被取消并退回预留。
+func TestGenerationSaturatedProviderQueuesUntilDeadline(t *testing.T) {
 	f := setup(t, gw.GenerationText)
 	f.admit(t)
 	_, err := f.db.Exec(`INSERT INTO platform_llm_limits(limit_key,capacity,active_count,rate_limit,window_seconds,window_start) VALUES('g4-limit',2,2,100,60,now())`)
 	must(t, err)
-	for range 6 {
-		_, err = f.db.Exec(`UPDATE creative_generation_bindings SET next_step_at=clock_timestamp()-interval '1 second',lease_until=NULL`)
+	work := func() {
+		t.Helper()
+		_, err := f.db.Exec(`UPDATE creative_generation_bindings SET next_step_at=clock_timestamp()-interval '1 second',lease_until=NULL`)
 		must(t, err)
 		err = f.svc.Work(t.Context(), f.scope, jobs.Request{Payload: creativegraph.Canonical(f.target)})
 		t.Logf("work result: %v", err)
 	}
+	for range 6 {
+		work()
+	}
 	var failures int
 	var parked bool
 	must(t, f.db.QueryRow(`SELECT failures,verification_required FROM creative_generation_bindings`).Scan(&failures, &parked))
-	t.Logf("failures=%d parked=%v calls=%d", failures, parked, f.a.calls.Load())
-	if !parked {
-		t.Fatal("driver cannot durably park nonterminal request")
+	if failures != 0 || parked || count(t, f.db, "SELECT count(*) FROM creative_node_executions WHERE state='running'") != 1 {
+		t.Fatal("queued generation counted as failing", failures, parked)
 	}
-	_, err = f.db.Exec(`UPDATE platform_llm_limits SET active_count=0 WHERE limit_key='g4-limit'`)
+	_, err = f.db.Exec(`UPDATE creative_node_executions SET deadline=created_at+interval '1 millisecond'`)
 	must(t, err)
-	var request string
-	must(t, f.db.QueryRow(`SELECT request_id FROM creative_generation_bindings`).Scan(&request))
-	_, err = f.svc.GatewayRuntime().AdvanceGeneration(t.Context(), f.scope, request)
-	must(t, err)
+	work()
+	if count(t, f.db, "SELECT count(*) FROM creative_node_executions WHERE state='failed' AND error='generation_timeout'") != 1 ||
+		count(t, f.db, "SELECT count(*) FROM creative_nodes WHERE active_execution_id IS NOT NULL") != 0 ||
+		count(t, f.db, "SELECT count(*) FROM creative_generation_bindings WHERE next_step_at IS NULL") != 1 {
+		t.Fatal("expired queued generation not failed as timeout")
+	}
 	var hold int64
 	must(t, f.db.QueryRow(`SELECT remaining_hold_micros FROM llm_usage_reservations`).Scan(&hold))
 	if hold != 0 || f.a.calls.Load() != 0 {
@@ -626,5 +639,51 @@ func TestMainVersionPinnedSurvivesNewGenerationAndCanFollowLatest(t *testing.T) 
 	versions = readVersions()
 	if len(versions.Items) != 6 || versions.SelectedVersionID == nil || *versions.SelectedVersionID != versions.Items[0].ID {
 		t.Fatal("follow latest did not advance")
+	}
+}
+
+// 供应商的审核拒绝作为可展示原因写到节点上；平台侧问题不外露。
+func TestGenerationFailureReasonReachesNode(t *testing.T) {
+	for code, want := range map[string]string{"content_policy_violation": "generation_content_rejected", "insufficient_balance": "generation_failed"} {
+		f := setup(t, gw.GenerationText)
+		f.a.failCode = code
+		f.admit(t)
+		for range 3 {
+			f.step(t)
+		}
+		var state, reason string
+		must(t, f.db.QueryRow(`SELECT state,error FROM creative_node_executions`).Scan(&state, &reason))
+		if state != "failed" || reason != want {
+			t.Fatalf("%s: state=%s error=%s", code, state, reason)
+		}
+		if count(t, f.db, "SELECT count(*) FROM creative_nodes WHERE active_execution_id IS NULL AND latest_execution_id IS NOT NULL") != 1 {
+			t.Fatalf("%s: failed execution not kept as the node's latest", code)
+		}
+	}
+}
+
+// 旧版本停在 reconciling 且不再调度的执行由恢复扫描补投，收为失败后不再命中。
+func TestGenerationLegacyReconcilingIsResolvedAsFailure(t *testing.T) {
+	f := setup(t, gw.GenerationText)
+	f.admit(t)
+	_, err := f.db.Exec(`UPDATE creative_node_executions SET state='reconciling',error='generation_verification_required';
+UPDATE creative_generation_bindings SET verification_required=TRUE,next_step_at=NULL,failures=5;
+UPDATE llm_generation_requests SET verification_required=TRUE;
+UPDATE creative_jobs.river_job SET state='discarded',finalized_at=now()`)
+	must(t, err)
+	if _, err = f.svc.SweepDue(t.Context(), f.st, "", 100); err != nil {
+		t.Fatal(err)
+	}
+	if count(t, f.db, "SELECT count(*) FROM creative_jobs.river_job WHERE state='available'") != 1 {
+		t.Fatal("legacy reconciling execution not re-enqueued")
+	}
+	f.step(t)
+	var state, reason string
+	must(t, f.db.QueryRow(`SELECT state,error FROM creative_node_executions`).Scan(&state, &reason))
+	if state != "failed" || reason != "generation_unverified" || f.a.calls.Load() != 0 {
+		t.Fatalf("legacy execution: state=%s error=%s calls=%d", state, reason, f.a.calls.Load())
+	}
+	if count(t, f.db, "SELECT count(*) FROM creative_generation_bindings WHERE NOT verification_required AND next_step_at IS NULL") != 1 {
+		t.Fatal("resolved legacy execution still scheduled")
 	}
 }
