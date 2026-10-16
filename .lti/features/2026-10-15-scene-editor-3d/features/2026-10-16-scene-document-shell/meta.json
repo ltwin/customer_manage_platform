@@ -1,6 +1,6 @@
 {
   "uid": "32c90485-2ed7-497a-9411-b09fb0608521",
-  "revision": 4,
+  "revision": 5,
   "id": "scene-document-shell",
   "kind": "feature",
   "assurance": "governed",
@@ -29,9 +29,9 @@
       "api:提交场景命令"
     ]
   },
-  "state": "approved",
+  "state": "in-progress",
   "createdAt": "2026-10-16T18:52:18.536Z",
-  "updatedAt": "2026-10-16T20:12:44.592Z",
+  "updatedAt": "2026-10-16T20:15:10.791Z",
   "risk": {
     "factors": [
       "data-migration",
@@ -55,8 +55,19 @@
   },
   "approvalHistory": [],
   "revisions": [],
+  "baseline": {
+    "commit": "2a883f44b1555f3699ebd8894d593fd0665c93be",
+    "at": "2026-10-16T20:15:09.898Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "28416c74abd7b31888ee4ed3e50dbd5ae314d4df379fa5046a2ac1c447f2970a"
+    },
+    "preExisting": [
+      ".lti/snapshots/28416c74abd7b31888ee4ed3e50dbd5ae314d4df379fa5046a2ac1c447f2970a.json"
+    ]
+  },
   "verify": [],
   "checkRuns": [],
   "type": "feature",
-  "stage": "define"
+  "stage": "develop"
 }

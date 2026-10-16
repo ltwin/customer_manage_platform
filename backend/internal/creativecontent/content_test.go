@@ -3,9 +3,11 @@ package creativecontent_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -218,5 +220,34 @@ func TestRevisionSequenceDoesNotRewindAfterUnreferencedRevisionIsRemoved(t *test
 	}
 	if third.ContentID != first.ContentID || third.Sequence != 3 {
 		t.Fatalf("sequence reused: %+v", third)
+	}
+}
+
+func TestSceneKindCarriesOnlyAJSONObject(t *testing.T) {
+	scene := func(raw string) creativecontent.Draft {
+		d := textDraft("")
+		d.Kind = "scene"
+		d.Payload = creativecontent.Payload{Scene: json.RawMessage(raw)}
+		return d
+	}
+	if err := creativecontent.Validate(scene(` {"objects":[]}`)); err != nil {
+		t.Fatalf("scene object rejected: %v", err)
+	}
+	body := "x"
+	withBody := scene(`{}`)
+	withBody.Payload.Body = &body
+	text := textDraft("说明")
+	text.Payload.Scene = json.RawMessage(`{}`)
+	for name, d := range map[string]creativecontent.Draft{
+		"missing":   scene(""),
+		"array":     scene(`[]`),
+		"malformed": scene(`{"objects":`),
+		"too large": scene(`{"pad":"` + strings.Repeat("x", 512<<10) + `"}`),
+		"with body": withBody,
+		"on text":   text,
+	} {
+		if creativecontent.Validate(d) == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }

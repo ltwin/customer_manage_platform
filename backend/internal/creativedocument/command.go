@@ -14,7 +14,7 @@ import (
 
 const (
 	maxOperations      = 200
-	maxRestoreUnits    = 200
+	maxRestoreUnits    = maxUnits // undoing a large delete must fit in one request
 	receiptListBudget  = 48 << 10
 	opRename           = "rename"
 	opRestore          = "restore"

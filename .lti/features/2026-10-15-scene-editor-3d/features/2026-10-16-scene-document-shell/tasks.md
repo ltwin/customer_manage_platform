@@ -4,8 +4,8 @@
 
 ## 1. 底座放宽与内容类型
 
-- [ ] 1.1 底座 `restore_units` 上限 200 → 4096：`creativedocument/document_test.go` 先加边界用例（4096 个单元恢复成功，4097 返回 400 `validation_failed`）确认失败，再改 `command.go:maxRestoreUnits`；`make check-go PKG=./internal/creativedocument/...` 通过
-- [ ] 1.2 内容类型 `scene`：`creativecontent.Payload` 加 `Scene json.RawMessage` 和 `Validate` 的 `scene` 分支；迁移 `0073_creative_scene_document` up/down（内容类型 CHECK 加 `scene`，存在 `scene` 内容时拒绝回滚）；`creative_scene_document_migration_test.go` 新增回滚链头 `rollbackSceneDocument`，`rollbackDocumentFoundation` 先调用它，各迁移测试的回滚标签列表最前面加 `creative-scene-document`；迁移与内容测试通过
+- [x] 1.1 底座 `restore_units` 上限 200 → 4096：`creativedocument/document_test.go` 先加边界用例（4096 个单元恢复成功，4097 返回 400 `validation_failed`）确认失败，再改 `command.go:maxRestoreUnits`；`make check-go PKG=./internal/creativedocument/...` 通过
+- [x] 1.2 内容类型 `scene`：`creativecontent.Payload` 加 `Scene json.RawMessage` 和 `Validate` 的 `scene` 分支；迁移 `0073_creative_scene_document` up/down（内容类型 CHECK 加 `scene`，存在 `scene` 内容时拒绝回滚）；`creative_scene_document_migration_test.go` 新增回滚链头 `rollbackSceneDocument`，`rollbackDocumentFoundation` 先调用它，各迁移测试的回滚标签列表最前面加 `creative-scene-document`；迁移与内容测试通过
 
 ## 2. 场景文档类型（后端）
 

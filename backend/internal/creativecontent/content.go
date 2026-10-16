@@ -2,6 +2,7 @@
 package creativecontent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -29,7 +30,13 @@ type Payload struct {
 	Title       *string `json:"title,omitempty"`
 	Description *string `json:"description,omitempty"`
 	Caption     *string `json:"caption,omitempty"`
+	// Scene is a scene document snapshot. Only its outer shape is checked
+	// here; creativescene validates the structure before every write.
+	Scene json.RawMessage `json:"scene,omitempty"`
 }
+
+// maxScenePayload matches the document snapshot limit.
+const maxScenePayload = 512 << 10
 
 // MediaObject is an authorized description of one stored rendition. It never
 // carries storage keys or versions; bytes are read through access tickets.
@@ -94,6 +101,9 @@ type Revision struct {
 }
 
 func Validate(d Draft) error {
+	if d.Kind != "scene" && len(d.Payload.Scene) != 0 {
+		return creativeops.ErrValidation
+	}
 	switch d.Kind {
 	case "text":
 		if d.Payload.Body == nil || strings.TrimSpace(*d.Payload.Body) == "" || utf8.RuneCountInString(*d.Payload.Body) > 100000 || d.Payload.URL != nil || d.Payload.Title != nil || d.Payload.Description != nil || d.Payload.Caption != nil {
@@ -114,10 +124,20 @@ func Validate(d Draft) error {
 		if d.Payload.Title != nil && utf8.RuneCountInString(*d.Payload.Title) > 200 || d.Payload.Description != nil && utf8.RuneCountInString(*d.Payload.Description) > 2000 {
 			return creativeops.ErrValidation
 		}
+	case "scene":
+		p := d.Payload
+		if p.Body != nil || p.URL != nil || p.Title != nil || p.Description != nil || p.Caption != nil || len(p.Scene) > maxScenePayload || !isJSONObject(p.Scene) {
+			return creativeops.ErrValidation
+		}
 	default:
 		return creativeops.ErrValidation
 	}
 	return nil
+}
+
+func isJSONObject(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && trimmed[0] == '{' && json.Valid(trimmed)
 }
 
 func newID(prefix string) string { return prefix + "_" + uuid.NewString() }
