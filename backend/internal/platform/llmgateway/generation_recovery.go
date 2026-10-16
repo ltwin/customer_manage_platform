@@ -28,7 +28,7 @@ func (r *GenerationRuntime) enqueue(ctx context.Context, tx store.TxAccountScope
 	return err
 }
 func (r *GenerationRuntime) Handlers() []store.JobHandler {
-	return []store.JobHandler{{Kind: generationJobKind, AllowInactiveAccount: true, Timeout: transportLifetime + finishTimeout + time.Minute, Work: func(ctx context.Context, scope store.AccountScope, job jobs.Request) error {
+	return []store.JobHandler{{Kind: generationJobKind, AllowInactiveAccount: true, Timeout: generationCallLifetime + finishTimeout + time.Minute, Work: func(ctx context.Context, scope store.AccountScope, job jobs.Request) error {
 		var in generationJob
 		if err := json.Unmarshal(job.Payload, &in); err != nil || in.RequestID == "" {
 			return jobs.ErrInvalidTask

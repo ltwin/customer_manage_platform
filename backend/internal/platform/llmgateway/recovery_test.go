@@ -11,6 +11,13 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
+// The gateway's transport lifetime is 15 minutes and recovery waits one more
+// minute of grace, so these clock steps land just past each boundary.
+const (
+	pastPermitExpiry = 16 * time.Minute
+	pastRecovery     = 17 * time.Minute
+)
+
 func (f *fixture) recoveryTurn(t *testing.T, scope store.AccountScope) (llmgateway.Permit, llmgateway.ChatRequest) {
 	t.Helper()
 	r := f.reserve(t, scope, uuid.NewString(), turnOptions{})
@@ -47,7 +54,7 @@ func TestOrphanedDispatchRecoveryFencesPermitsAndRestoresCapacity(t *testing.T) 
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 0 {
 		t.Fatalf("live=%d %v", n, e)
 	}
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.b, 100); e != nil || n != 0 {
 		t.Fatalf("other account=%d %v", n, e)
 	}
@@ -86,7 +93,7 @@ func TestOrphanedDispatchRecoveryFencesPermitsAndRestoresCapacity(t *testing.T) 
 func TestExpiredPermitCannotStartBeforeSweep(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	p, c := f.recoveryTurn(t, f.a)
-	f.now = f.now.Add(2 * time.Minute)
+	f.now = f.now.Add(pastPermitExpiry)
 	if _, e := f.gateway.Execute(t.Context(), f.a, limitsOf, p, c, false); !errors.Is(e, llmgateway.ErrConflict) {
 		t.Fatal(e)
 	}
@@ -109,7 +116,7 @@ func TestResultPersistenceFailureBecomesRecoverableUnknown(t *testing.T) {
 	if _, e = f.db.Exec(`DROP TRIGGER reject_llm_success ON llm_requests`); e != nil {
 		t.Fatal(e)
 	}
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 1 {
 		t.Fatalf("recovery=%d %v", n, e)
 	}
@@ -128,7 +135,7 @@ func TestLateResultAfterRecoveryDoesNotReleaseAnotherSlot(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	p, c := f.recoveryTurn(t, f.a)
 	f.provider.observe = func(llmgateway.ProviderRequest) {
-		f.now = f.now.Add(4 * time.Minute)
+		f.now = f.now.Add(pastRecovery)
 		if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 1 {
 			t.Fatalf("recovery=%d %v", n, e)
 		}
@@ -156,7 +163,7 @@ func TestRecoverySweepPagesThroughInactiveAccounts(t *testing.T) {
 	if _, e := f.db.Exec(`UPDATE accounts SET status='pending_verification' WHERE id='gw-b'`); e != nil {
 		t.Fatal(e)
 	}
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	cursor, e := f.gateway.SweepExpiredDispatches(t.Context(), f.database, "", 1)
 	if e != nil {
 		t.Fatal(e)
@@ -183,7 +190,7 @@ func TestRecoverySweepPagesThroughInactiveAccounts(t *testing.T) {
 func TestUnverifiableAttemptSettlesAtTheInputBound(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
 	p, _ := f.recoveryTurn(t, f.a)
-	f.now = f.now.Add(4 * time.Minute)
+	f.now = f.now.Add(pastRecovery)
 	if n, e := f.gateway.RecoverExpired(t.Context(), f.a, 100); e != nil || n != 1 {
 		t.Fatalf("recovery=%d %v", n, e)
 	}

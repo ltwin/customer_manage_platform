@@ -228,7 +228,7 @@ func (r *GenerationRuntime) RefreshImportLocation(ctx context.Context, scope sto
 	if err != nil {
 		return item, err
 	}
-	callCtx, cancel := context.WithTimeout(ctx, transportLifetime)
+	callCtx, cancel := context.WithTimeout(ctx, generationCallLifetime)
 	defer cancel()
 	event, err := a.Adapter.Observe(callCtx, GenerationCall{RequestID: item.RequestID, AttemptID: item.AttemptID, TaskID: string(taskID), Prepared: prepared})
 	if err != nil {

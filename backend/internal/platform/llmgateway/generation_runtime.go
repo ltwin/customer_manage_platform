@@ -15,6 +15,10 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
+// generationCallLifetime 限制生图的单次外部操作（提交、查询、取消）。它必须短于
+// generationLease：调用还没结束租约就到期，另一个 worker 会接手同一任务。对话的
+// transportLifetime 为长时间 thinking 放宽到 15 分钟，生图不能跟着用。
+const generationCallLifetime = 2 * time.Minute
 const generationLease = 3 * time.Minute
 const generationPoll = 15 * time.Second
 const generationRecoveryWindow = 24 * time.Hour

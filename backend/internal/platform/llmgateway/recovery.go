@@ -14,7 +14,16 @@ import (
 // transportLifetime is a fixed protocol bound measured from the committed
 // dispatch timestamp, not from a worker's eventual start. Changing it requires
 // draining old executors first. Both shipped HTTP adapters honor cancellation.
-const transportLifetime = 2 * time.Minute
+//
+// It bounds one model call, not one turn, and a thinking model spends most of
+// a hard step before its first visible byte. On 2026-10-16 the old two-minute
+// bound cut 26 Claude agent calls in one evening, every one at exactly 120 s:
+// the same request, resent unchanged, once finished in 112.7 s with 4733
+// output tokens of which about 500 bytes were visible. A long document written
+// as tool arguments takes longer still at the relay's 45-75 tokens a second.
+// The cost of a longer bound is recovery: an orphaned slot is reclaimed this
+// much later.
+const transportLifetime = 15 * time.Minute
 const recoveryGrace = time.Minute
 
 // NewRecoveryService constructs the database-only maintenance surface. It cannot
@@ -112,7 +121,7 @@ func (s *Service) RecoverExpired(ctx context.Context, scope store.AccountScope, 
 // unverifiableAfter is how long after dispatch an attempt whose outcome is still
 // unknown gets closed with an estimate. The transport ended long before; the
 // window leaves room for a late result or an operator verification first.
-const unverifiableAfter = 10 * time.Minute
+const unverifiableAfter = transportLifetime + 8*time.Minute
 
 // estimateMarker ends the measurement keys of an unverifiable estimate.
 const estimateMarker = ":unverified_estimate"

@@ -52,7 +52,7 @@
 - **预留必须覆盖请求**：`PrepareInTx` 用与预留同一套配方重算上界（含**工具 schema** 字节），超出 `initial_reserved_micros` 直接 `ErrBudget`——请求变大只能走新准入。
 - **计价**：三个不重叠分量 `input_cached` / `input_uncached` / `output`，`input_uncached = prompt_tokens − cached`，reasoning 已含在 output 不重复计。费率按**派发时刻**所在时段取，预留按 peak/off-peak 的较大者取保守上界。金额为整数 micros，`CostMicros` 用 `big.Int` 有理数向上取整。**token 与费用两个预算各自结算**：token 总量只需要输入/输出两个总数，缓存明细缺失或不自洽只让费用留疑问、不拖住 token 额度。
 - **余额与超支**：`spent + reserved <= limit` 只约束**新准入**；实际超支全额入账并从此拒绝新准入，不把 spent 截断到 limit。
-- **unknown 出口**：DeepSeek 无请求状态查询与取消 API（目录记 `query=none` / `cancel=none`），unknown 可由受信运维入口 `VerifyUnacceptedInTx(requestID, evidenceSource)` 带来源核实后清除（记零费用）；派发满 10 分钟仍无结论的 Chat attempt 由巡检 `SettleUnverifiable` 按估算结清：输入按预留时的输入上界（1 字节 1 token、未命中缓存的上界单价）、输出记 0，证据为 `operator_attested`、键后缀 `:unverified_estimate`，请求置 `failed`，hold 全部释放（owner 2026-10-14）。估算不是「算零」；供应商账单、用量推导或核实未受理的证据等级更高，之后到达会替换估算。
+- **unknown 出口**：DeepSeek 无请求状态查询与取消 API（目录记 `query=none` / `cancel=none`），unknown 可由受信运维入口 `VerifyUnacceptedInTx(requestID, evidenceSource)` 带来源核实后清除（记零费用）；派发满 23 分钟（传输上限 15 分钟 + 8 分钟等待窗口）仍无结论的 Chat attempt 由巡检 `SettleUnverifiable` 按估算结清：输入按预留时的输入上界（1 字节 1 token、未命中缓存的上界单价）、输出记 0，证据为 `operator_attested`、键后缀 `:unverified_estimate`，请求置 `failed`，hold 全部释放（owner 2026-10-14）。估算不是「算零」；供应商账单、用量推导或核实未受理的证据等级更高，之后到达会替换估算。
 
 ## Eino 模型出口
 
@@ -130,7 +130,7 @@ GPT-6 系列原有 AiCodeWith 部署经 AiCodeWith 中转（`vendor_key=aicodewi
 
 **中转注入的系统提示**（2026-10-09 实测）：请求不带 `instructions` 时，AiCodeWith 会塞入约 2.2 万字符、约 4300 token 的 Codex 编程助手提示词，模型会自称 Codex，每次调用也多出这部分输入。所以适配器把**开头的纯文字系统消息合并进顶层 `instructions`**（对话中途的系统消息仍留在 `input` 原位）；带上自己的指令后，一句话提问的输入从约 4300 token 降到约 120。中转仍会在指令末尾追加一段 `<gateway_time_context>`，时区写的是 `America/Los_Angeles`，并声明它优先于其他来源的当前时间——北京上午时它给出的「今天」是前一天，涉及日期的提示词要注意这一点。
 
-其他实测：三个模型回包的模型名与请求 ID 完全一致；400 px 图片约 200 个输入 token 且描述正确；加密推理连续三轮跨轮交回都被接受；medium 强度下一轮 3–8 秒，远低于 2 分钟传输上限；medium 下简单步骤经常不产生推理（推理 token 为 0），这是模型自己的选择。真实接口测试为保证产生推理，工具循环用 high 强度。
+其他实测：三个模型回包的模型名与请求 ID 完全一致；400 px 图片约 200 个输入 token 且描述正确；加密推理连续三轮跨轮交回都被接受；medium 强度下一轮 3–8 秒，远低于传输上限；medium 下简单步骤经常不产生推理（推理 token 为 0），这是模型自己的选择。真实接口测试为保证产生推理，工具循环用 high 强度。
 
 价格是 OpenAI 官方价（经 Artificial Analysis 2026-10-09 读取）。AiCodeWith 按「官方价 × 渠道折扣」扣费（订阅渠道约 1 折），便宜渠道被风控时自动切到更贵的渠道，所以目录按官方价记账，作为始终成立的上界；账面费用会高于中转实扣。中转未公开任何「处理前拒绝」的状态码，`UnacceptedStatuses` 为空。三个部署共用 `aicodewith/api` 限流键。
 
@@ -204,7 +204,7 @@ KRILL_AI_LIVE=1 go test ./internal/platform/llmgateway/ -run '^TestLiveKrill' -c
 - 耗尽有两种可区分的原因，错误同时包裹 `ErrProvidersExhausted` 与具体原因：后续尝试因月度额度放不下新预留而无法准入（包裹 `ErrBudget`，先尝试下一家，仍不行即结束，Agent 显示 `creative_llm_budget_exceeded`）；模型的所有部署都已禁用或从目录撤下、一次也没准入（包裹 `ErrUnavailable`，Agent 显示 `creative_model_unavailable`）。已撤下或禁用的部署在准入前跳过，不会让进行中的路线在重放时永久冲突。
 - **额度算术（默认配置下的已知限制）**：每次尝试按上界独立预留（输入上界 256K token、输出上界 128K token），未知结果的预留在核实前不释放。GPT-6 Astra 每次约 9–9.7 USD，Sol 经 Krill 每次约 3.2 USD，每次约 39 万 token；默认月度上限 20 USD / 500 万 token 下，连续 5xx 时 Astra 约第 3 次、Sol 约第 6 次就会因额度停止，到不了“每家 6 次再切换”。收紧预留和核实释放由计费整改 issue 处理。
 - `Build` 启用 `Config.ChatRetry`，低层 `New`/阶段端口仍可使用原有单请求协议。`llm_chat_routes` 冻结本轮部署顺序并指向最终成功请求；后续尝试采用由首请求和序号派生的稳定绑定。一次完整结果最多消费一次；已结束的对话调用重放不会重新购买尝试。
-- 每次网络尝试独立准入、冻结部署/价格、预留和记账。未知结果的请求在已确认本地传输结束后标为响应失败，原 attempt 的 unknown 和预算预留继续保留；`VerifyUnacceptedInTx` 接受这类“failed 但仍有 unknown attempt”的请求，核实后只释放预留，不会把它恢复成可派发。Agent 的运行结算按整个调用组汇总，重试后成功的运行会因被取代的 unknown 尝试显示待核实，直到核实或 10 分钟后按估算结清。重试可能重复产生上游费用，这是 owner 授权的新可用性策略；不会伪造“未受理”来释放旧预留。计费核实与清理仍由独立整改 issue 跟踪。
+- 每次网络尝试独立准入、冻结部署/价格、预留和记账。未知结果的请求在已确认本地传输结束后标为响应失败，原 attempt 的 unknown 和预算预留继续保留；`VerifyUnacceptedInTx` 接受这类“failed 但仍有 unknown attempt”的请求，核实后只释放预留，不会把它恢复成可派发。Agent 的运行结算按整个调用组汇总，重试后成功的运行会因被取代的 unknown 尝试显示待核实，直到核实或派发满 23 分钟后按估算结清。重试可能重复产生上游费用，这是 owner 授权的新可用性策略；不会伪造“未受理”来释放旧预留。计费核实与清理仍由独立整改 issue 跟踪。
 - 仅有明确的本地传输结束记录才进入额外尝试。进程中断、正在派发的并发调用、无结束证据的历史 unknown 请求保持原有核实路径，不因升级自动重发。
 - 流式重试会清除失败尝试的正文预览；只有完整验证并落库的工具调用才交给 Agent 执行。跨部署时仍不传递另一家产生的加密推理。
 - 新增迁移 `0058_chat_failover`，以及请求的 `failure_http_status` 字段，用于保留具体 HTTP 错误码；没有 HTTP 应答的失败（超时、断连）记为 NULL。部署时先启动 API 完成迁移，再启动 creative-worker。
@@ -238,8 +238,10 @@ AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转�
 
 `creative-worker` 启动立即运行恢复巡检，此后每 15 秒扫描一页账号（每页 100 个、每账号最多 100 个 attempt，单轮 10 秒超时）。账号采用 keyset 游标，包含非 active 账号，错误会记录并在后续轮次重试。恢复不依赖模型目录或供应商凭证。
 
-每次派发从已持久的 `dispatched_at` 起最多允许 120 秒本地传输，且不超过请求 deadline；HTTP client 配置只能进一步缩短该时间。过期许可不能被领取。派发满 180 秒后，巡检按平台限流→预算→请求→attempt 的锁序，将未收尾的 dispatching/streaming 转为 unknown，并以 `permit_released_at IS NULL` 幂等归还名额。额度 hold 不释放，也不生成零费用证据。`transport_finished_at` 不伪填为观测时间，恢复只记录自己的状态与名额回收时间。
+每次派发从已持久的 `dispatched_at` 起最多允许 15 分钟本地传输（`transportLifetime`），且不超过请求 deadline；HTTP client 的默认总超时与它相同，配置只能进一步缩短。过期许可不能被领取。派发满 16 分钟后，巡检按平台限流→预算→请求→attempt 的锁序，将未收尾的 dispatching/streaming 转为 unknown，并以 `permit_released_at IS NULL` 幂等归还名额。额度 hold 不释放，也不生成零费用证据。`transport_finished_at` 不伪填为观测时间，恢复只记录自己的状态与名额回收时间。
 
 完整结果的首个落库事务失败后，同样通过此路径解除阻塞；进程仍持有的迟到完整结果允许归并到同一 unknown attempt，已被核实或重试替换的旧 attempt 不得覆写当前请求。核实未受理仍必须走受信 `VerifyUnacceptedInTx`，扫到过期不等于供应商未收费。
 
 供应商适配器必须遵守传入 context 的硬截止时间。首次部署此修复须停止旧版执行器后再启动新版，旧代码没有这个传输上限，不能与回收器并行运行。没有新增数据库迁移，仍要求已有 0043；恢复依赖运行中的 `creative-worker`。持久化彻底失败且供应商无查询能力时，丢失的回答无法凭空重建；10 分钟内保留 unknown 等待迟到结果或核实，之后由同一巡检按输入上界估算结清（见上方「unknown 出口」），不再永久占用 hold。
+
+**2026-10-16 传输上限 2 分钟 → 15 分钟**：上限管的是单次模型调用，不是整轮。thinking 模型在难步骤上会先想很久才出第一个可见字节，HTTP client 的总超时又覆盖整个流式响应体，所以流还在正常进行也会被掐断。当晚 Claude 智能体调用有 26 次正好在 120 秒处超时，每次都原样重发，最多连续 6 次（约 12 分钟）。同一份请求有一次在 112.7 秒跑完，输出 4733 token，其中可见内容只有约 500 字节，其余是隐藏的 thinking。用工具参数写长文档的时间更长（中转实测 45–75 token/s）。代价是孤立名额要等 16 分钟才回收，unknown 估算结清的时间点也随之从派发后 10 分钟推到 23 分钟。按本节开头的要求，部署时仍须先停旧执行器：旧回收器按 3 分钟判定孤立，会误收新执行器还在进行的调用。同日智能体单次运行上限从 30 分钟放宽到 6 小时（`RunDurationSeconds`，`limits_version` 升到 `creative-agent-10`），运行费用由预算约束；崩溃恢复看租约，不看这个期限。

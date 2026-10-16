@@ -68,7 +68,7 @@ func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.A
 		if action.kind == "submit" && r.refs != nil {
 			action.call.References = r.refs(scope)
 		}
-		callCtx, cancel := context.WithTimeout(ctx, transportLifetime)
+		callCtx, cancel := context.WithTimeout(ctx, generationCallLifetime)
 		var event GenerationEvent
 		var callErr error
 		switch action.kind {
