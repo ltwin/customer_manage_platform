@@ -82,9 +82,11 @@ func (a *RunningHubImages) Submit(ctx context.Context, call GenerationCall) (Gen
 		return GenerationEvent{}, ErrProtocol
 	}
 	// 只有明确的未受理错误才归零；5xx、空任务和未知错误保留受理未知。
+	// 限流类（415实例占满、421共享并发、1003频率、1011繁忙）官方要求客户端排队
+	// 重试，且没有任务ID；已受理的排队/运行中是813/804，不在此列。
 	if t.TaskID == "" {
 		code := runningHubError(t.ErrorCode)
-		if code == "credential_refused" || code == "insufficient_balance" || code == "invalid_parameter" || code == "content_rejected" {
+		if code == "credential_refused" || code == "insufficient_balance" || code == "invalid_parameter" || code == "content_rejected" || code == "rate_limited" {
 			return GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: code}}, nil
 		}
 		return GenerationEvent{}, fmt.Errorf("%w: runninghub submission outcome", ErrProtocol)

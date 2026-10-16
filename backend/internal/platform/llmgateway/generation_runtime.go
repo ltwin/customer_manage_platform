@@ -25,6 +25,10 @@ const maxBlindFailures = 5
 // maxGenerationBackoff 是已知任务查询连续失败时的最长退避。
 const maxGenerationBackoff = time.Minute
 
+// generationRateLimitBackoff 是供应商以限流明确拒收后的重试间隔。平台不再设
+// 共享名额，供应商账号的并发上限只能靠这次等待避开（RunningHub建议30–120秒）。
+const generationRateLimitBackoff = time.Minute
+
 // GenerationCall 只由已提交的派发/观察许可构建；TaskID和输入不进入普通API或日志。
 // Adapter必须服从ctx期限。Submit的错误一律表示受理未知，绝不授权再次Submit。
 type GenerationCall struct {

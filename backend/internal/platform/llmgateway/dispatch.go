@@ -235,20 +235,6 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	if limits == nil {
 		return Permit{}, fmt.Errorf("%w: platform admission view required", ErrValidation)
 	}
-	peek, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns, "id=$2", requestID))
-	if err != nil {
-		return Permit{}, err
-	}
-	if peek.kind != requestKindChat {
-		// Immutable on a request; a generation request has no chat deployment.
-		return Permit{}, fmt.Errorf("%w: chat dispatch received a %s request", ErrState, peek.kind)
-	}
-	_, err = s.catalog.Deployment(peek.modelKey, peek.modelSnapshot.DeploymentKey)
-	if err != nil {
-		return Permit{}, err
-	}
-	now := s.now().UTC()
-
 	request, err := scanRequest(tx.QueryRowForUpdate(ctx, "llm_requests", requestColumns, "id=$2", requestID))
 	if err != nil {
 		return Permit{}, err
@@ -258,6 +244,10 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 	if request.kind != requestKindChat {
 		return Permit{}, fmt.Errorf("%w: chat dispatch received a %s request", ErrState, request.kind)
 	}
+	if _, err := s.catalog.Deployment(request.modelKey, request.modelSnapshot.DeploymentKey); err != nil {
+		return Permit{}, err
+	}
+	now := s.now().UTC()
 	if request.state != StatePrepared {
 		return Permit{}, fmt.Errorf("%w: request state %s cannot dispatch", ErrState, request.state)
 	}
@@ -316,8 +306,8 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 //
 // Re-arming in a transaction of its own is never correct. Between the two
 // commits the reservation is held again while the request still says it is
-// waiting to be re-admitted, so a crash — or simply a dispatch the shared
-// caller admission refuses — strands the identity: every later attempt fails
+// waiting to be re-admitted, so a crash — or simply a dispatch the caller
+// admission refuses — strands the identity: every later attempt fails
 // RearmInTx with "reservation is not released for retry" and the hold stays
 // occupied until it expires.
 func (s *Service) RedispatchInTx(
@@ -432,8 +422,8 @@ func sameDeployment(frozen, live ModelSnapshot) error {
 
 // finishContext detaches persistence from the caller's own cancellation. A turn
 // the caller stopped waiting for still has to record what the attempt proved and
-// give the shared provider slot back; on the caller's context both would fail
-// and leave the attempt dispatching with the slot taken.
+// release its permit; on the caller's context both would fail and leave the
+// attempt dispatching with the permit open.
 func finishContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 }
@@ -613,7 +603,8 @@ func (s *Service) finishFailure(
 // account-scoped row of the same transaction, which is the first level of the
 // global lock order. Without it a finishing transaction would take that record
 // after the request it already holds, and could deadlock against a dispatching
-// one that takes them in the documented order.
+// one that takes them in the documented order. Only permits written before the
+// platform quota was retired carry a key; new permits make this a no-op.
 func lockSharedAdmission(
 	ctx context.Context,
 	tx store.TxAccountScope,

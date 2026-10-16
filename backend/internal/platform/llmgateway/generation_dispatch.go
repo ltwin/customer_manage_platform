@@ -87,7 +87,7 @@ func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.A
 			}
 		}
 		cancel()
-		// 确定没有发出的提交与明确拒绝等价：释放预留与名额，按拒绝规则重试。
+		// 确定没有发出的提交与明确拒绝等价：释放预留，按拒绝规则重试。
 		if action.kind == "submit" && errors.Is(callErr, ErrNotDispatched) {
 			event, callErr = GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: "not_dispatched"}}, nil
 		}
@@ -136,8 +136,8 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 		if err != nil {
 			return nil, err
 		}
-		// 未提交的截止/取消/账号停用收尾不需要供应商名额，即使名额被未知任务
-		// 占满也能释放未使用的预算。当前请求状态在预算/请求锁内再次核对。
+		// 未提交的截止/取消/账号停用直接收尾，释放未使用的预算。当前请求状态在
+		// 预算/请求锁内再次核对。
 		if !active || !peek.deadline.After(now) || peek.cancelAt != nil || peek.closedAt != nil {
 			return nil, r.cancelUnsubmittedGeneration(ctx, tx, requestID)
 		}
@@ -157,7 +157,7 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 	reg, registered := r.adapters[def.DeploymentID+"/"+def.AdapterVersion]
 	if fresh {
 		// 只用无锁预读选择禁止派发的分支，进入部署门后再次确认；恢复启用则
-		// 本轮退回，由下一轮按名额优先的正常锁序重新判断。
+		// 本轮退回，由下一轮按正常锁序重新判断。
 		if err := r.checkDeployment(ctx, tx, def, control); err != nil {
 			if !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrConflict) {
 				return nil, err
@@ -177,7 +177,7 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 			return nil, err
 		}
 	}
-	// 固定锁序：账号状态（仅提交）→供应商名额→组→部署门→预算桶→请求→task。
+	// 固定锁序：账号状态（仅提交）→旧供应商名额（仅历史在途task）→组→部署门→预算桶→请求→task。
 	var task generationTask
 	if !fresh {
 		task, err = scanGenerationTask(tx.QueryRow(ctx, "llm_generation_tasks", generationTaskColumns, "request_id=$2 AND attempt_id IN (SELECT id FROM llm_attempts WHERE account_id=$1 AND request_id=$2 AND attempt_number=$3)", requestID, peek.attemptsUsed))
@@ -354,7 +354,7 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	return &generationAction{claim: GenerationClaim{RequestID: request.id, AttemptID: attempt, Epoch: 1}, kind: "submit", call: GenerationCall{RequestID: request.id, AttemptID: attempt, Prepared: p}, adapter: reg.Adapter}, nil
 }
 
-// lockObservation 延续名额→部署门→预算→请求→task，核验attempt归属之后才写任何费用。
+// lockObservation 延续旧名额（仅历史task）→部署门→预算→请求→task，核验attempt归属之后才写任何费用。
 func (r *GenerationRuntime) lockObservation(ctx context.Context, tx store.TxAccountScope, c GenerationClaim) (generationTask, requestRow, error) {
 	task, err := scanGenerationTask(tx.QueryRow(ctx, "llm_generation_tasks", generationTaskColumns, "attempt_id=$2 AND request_id=$3", c.AttemptID, c.RequestID))
 	if err != nil {
@@ -434,7 +434,7 @@ func (r *GenerationRuntime) CancelGenerationInTx(ctx context.Context, tx store.T
 }
 
 // cancelUnsubmittedGeneration 只关闭仍未派发的请求；并发先取得许可时本轮不
-// 改动它的费用或名额，由正常观察/取消流程处理。
+// 改动它的费用，由正常观察/取消流程处理。
 func (r *GenerationRuntime) cancelUnsubmittedGeneration(ctx context.Context, tx store.TxAccountScope, requestID string) error {
 	if err := r.gateway.lockBudgetForRequest(ctx, tx, requestID, r.gateway.now()); err != nil {
 		return err

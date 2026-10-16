@@ -430,8 +430,9 @@ func (r *GenerationRuntime) finishGenerationStage(ctx context.Context, tx store.
 		return err
 	}
 	var state string
+	var failure *string
 	var retry bool
-	if err := tx.QueryRow(ctx, "llm_requests", "state,retry_eligible", "id=$2", task.requestID).Scan(&state, &retry); err != nil {
+	if err := tx.QueryRow(ctx, "llm_requests", "state,retry_eligible,failure_class", "id=$2", task.requestID).Scan(&state, &retry, &failure); err != nil {
 		return err
 	}
 	settlement, err := settlementOf(ctx, tx, task.requestID)
@@ -442,7 +443,11 @@ func (r *GenerationRuntime) finishGenerationStage(ctx context.Context, tx store.
 	verify := false
 	switch {
 	case retry && state == string(StatePrepared):
-		n := now.Add(generationPoll)
+		delay := generationPoll
+		if failure != nil && *failure == "rate_limited" {
+			delay = generationRateLimitBackoff
+		}
+		n := now.Add(delay)
 		next = &n
 	case generationTerminal(task.state) && (settlement == SettlementSettled || settlement == SettlementReleased || settlement == SettlementNotApplicable):
 	case generationTerminal(task.state) && r.externalGenerationBilling(task):

@@ -260,6 +260,42 @@ func TestGenerationRuntimeVerifiedRejectionRearmsOnce(t *testing.T) {
 	}
 }
 
+func TestGenerationRuntimeRateLimitedRejectionBacksOff(t *testing.T) {
+	for _, tc := range []struct {
+		code  string
+		delay time.Duration
+	}{{"rate_limited", time.Minute}, {"not_accepted", 15 * time.Second}} {
+		t.Run(tc.code, func(t *testing.T) {
+			f := setupGateway(t, defaultBudget())
+			a := &generationAdapter{}
+			a.submit = func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
+				if a.submitCalls == 1 {
+					return gw.GenerationEvent{EventKey: "rejected", ProviderRevision: "1", Observation: gw.GenerationObservation{State: gw.GenerationRejected, ErrorCode: tc.code}}, nil
+				}
+				return generationCompleted(f), nil
+			}
+			r, p, _ := generationRuntime(t, f, a)
+			view := admitRuntime(t, f, r, p)
+			result, err := r.AdvanceGeneration(t.Context(), f.a, view.ID)
+			if err != nil || !result.Request.RetryEligible || result.VerificationRequired {
+				t.Fatalf("rejection: %+v %v", result, err)
+			}
+			var next time.Time
+			if err := f.db.QueryRow(`SELECT next_advance_at FROM llm_generation_requests WHERE request_id=$1`, view.ID).Scan(&next); err != nil {
+				t.Fatal(err)
+			}
+			if got := next.Sub(f.now); got < tc.delay-time.Second || got > tc.delay+time.Second {
+				t.Fatalf("retry delay %v, want %v", got, tc.delay)
+			}
+			f.now = f.now.Add(tc.delay)
+			result, err = r.AdvanceGeneration(t.Context(), f.a, view.ID)
+			if err != nil || result.Request.State != gw.StateSucceeded || a.submitCalls != 2 {
+				t.Fatalf("retry: %+v %v calls=%d", result, err, a.submitCalls)
+			}
+		})
+	}
+}
+
 func TestGenerationRuntimeDeploymentStopAndConsentGuard(t *testing.T) {
 	for _, stop := range []bool{true, false} {
 		name := "consent revoked"

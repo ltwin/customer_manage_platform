@@ -217,10 +217,12 @@ type ModelSnapshot struct {
 	ContextTokens    int         `json:"context_tokens"`
 	// ContextWindowTokens is the input window the platform chose to use, which
 	// is policy over the provider's hard ContextTokens. Not part of the hash.
-	ContextWindowTokens int    `json:"context_window_tokens,omitempty"`
-	LimitKey            string `json:"limit_key"`
-	QueryCapability     string `json:"query_capability"`
-	CancelCapability    string `json:"cancel_capability"`
+	ContextWindowTokens int `json:"context_window_tokens,omitempty"`
+	// LimitKey is only present in snapshots frozen before the platform quota
+	// was retired; new snapshots leave it empty. Kept so stored rows still read.
+	LimitKey         string `json:"limit_key"`
+	QueryCapability  string `json:"query_capability"`
+	CancelCapability string `json:"cancel_capability"`
 	// How the deployment reasoned when the request was prepared. Both are
 	// deployment configuration, so a later edit must not rewrite what an old
 	// request is remembered to have asked for.
