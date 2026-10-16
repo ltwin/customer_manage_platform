@@ -4,7 +4,7 @@ feature: 2026-10-15-shoot-plan-document
 requirement: V6-079
 status: draft
 date: 2026-10-15
-revision: 4（按 2026-10-15 设计评审修订，处置见 §13；按同日交互走查修订，处置见 §14；按同日 Skill 加载与读取讨论修订，处置见 §15）
+revision: 5（按 2026-10-15 设计评审修订，处置见 §13；按同日交互走查修订，处置见 §14；按同日 Skill 加载与读取讨论修订，处置见 §15；2026-10-16 与通用文档底座对齐，见 §0.1）
 ---
 
 # 策划文档与拍摄策划节点
@@ -35,6 +35,25 @@ revision: 4（按 2026-10-15 设计评审修订，处置见 §13；按同日交�
 
 本期不做：PDF 导出（结构为它保留，§8）、发布到订单、现场模式、分享给客户、复制为新方案、摄影师自定义模板、整轮一键撤销（随 V6-038；本期可按单元恢复，§7.7）、历史版本清理、从电脑直接上传图片进策划、文本级自动合并。
 
+## 0.1 与通用文档底座对齐（2026-10-16）
+
+通用部分抽成独立 change `creative-document-foundation`（`.lti/features/2026-10-16-creative-document-foundation/`，owner 2026-10-16 批准），策划和 3D 场景（epic `scene-editor-3d`）都复用。**本设计只实现 `photo.shoot_plan` 文档类型**；以下各节中与底座重复的部分改为引用底座，冲突时以底座的 design 和 contracts 为准。
+
+| 方面 | 由底座提供 | 策划这边 |
+|---|---|---|
+| 存储 | `creative_documents` 补列、修订表（含 `unit_revs`、`annotated_units`）、引用表、工作会话指针表，迁移 0069 | 只加内容类型 `plan`（§3.1） |
+| 单元版本 | 文档头和修订行的 `unit_revs`；标题单元固定为 `meta` | 载荷不再存 `title` 和各单元 `rev`；读取时把 `unit_revs` 合并进视图；`confirmed_rev` 仍在载荷里 |
+| 命令外壳 | `POST /creative/documents/{id}/commands`：`expected`（值可为 null，表示预期不存在）、整批原子、409 `creative_document_conflict`（只列单元和修订号，客户端重读后进冲突界面）、有界回执（`reset_required`） | 策划的操作集合（§4.1） |
+| 通用操作 | `rename`（单元 `meta`）、`restore`（带 `expected_revision`，按文档修订号检查）、`restore_units`（单独成批，可列多个单元；存在性变化时同时检查集合单元） | 「恢复后仍为已确认」用恢复钩子实现：读旧修订行的 `unit_revs` 判断 `confirmed_rev == rev`，是则把 `confirmed_rev` 设为新修订号 |
+| 确认类操作 | 端口的 `Changes.Annotated`：载荷变化、修订号不推进 | `confirm_section` / `unconfirm_section` / `confirm_setting` / `unconfirm_setting` 都是标注操作 |
+| 类型端口 | `creativedocument.Type`（含 `NodeTypeKey`、`Touched` / `Apply`、`RestoreTouched` / `RestoreUnits`、`Retain`、`View`、`Summary`） | `creativeplan` 实现，节点类型 `photo.shoot_plan` ↔ 文档类型 `photo.shoot_plan`（§5.4） |
+| 画布接入 | `add_node` 建档与 `document_id` 放回、节点快照的 `document_summary` / `document_trashed` | 模板参数 `template_key` 经 `document_options` 传入 |
+| 回收站与删除 | `trash` / `untrash` / `POST /purge`、文档列表、修订列表（`run_id`、`since_revision`）、读旧修订（可选 `units`） | 「引用已有策划」选择框、回收站入口等前端 |
+| 权限 | 读 `creative_read`，摄影师写 `manual_write`；助手沿用运行授权检查 | 「仅摄影师」的操作由类型按写入者拒绝 |
+| 引用校验 | 普通批次新增的引用查展示授权；恢复带回的引用只查历史登记，失效的照常恢复、显示占位 | 与 §3.3 原语义一致 |
+
+**协同原则**（owner 2026-10-16，适用于画布、策划、场景）：Cmd+Z 只管自己的操作；历史版本列表和本轮改动清单可以明确地回退任何人的改动（「恢复这一处」保留）；助手总会被告知变化。策划的 `read_plan` / `write_plan` 要用底座修订列表的 `since_revision` 汇总「自你上次写入后的变化」，交给助手。
+
 ## 1. 现状
 
 2026-10-15 核对，代码基线 `d25709d`（`feat/creative-workspace-redesign`）。
@@ -61,7 +80,7 @@ revision: 4（按 2026-10-15 设计评审修订，处置见 §13；按同日交�
 | 助手面板组件 | `frontend/src/creative-canvas/editor/AgentPanel.tsx` | 编辑视图里复用，不另写 |
 | 资产库浏览选择弹窗 | `frontend/src/creative-canvas/assets/LibraryPicker.tsx` | 复用为「添加参考图 › 资产库」（§7.2） |
 | 旧 `shootplanning` 的 `CreativeBrief`、`Shot` 字段 | `shootplanning/model.go` | 借鉴字段名与含义，不复用表 |
-| 回滚链头 `rollbackPlatformSkillOwner`（0067） | `store/creative_platform_skill_owner_migration_test.go` | 新迁移 0068 成为新链头 |
+| 回滚链头 `rollbackPlatformSkillOwner`（0067）；0068 已被 Skill 运行时占用 | `store/creative_platform_skill_owner_migration_test.go` | 底座迁移 0069 之后，策划迁移顺延成为新链头（§0.1） |
 
 ## 2. 文档模型
 
@@ -131,13 +150,15 @@ revision: 4（按 2026-10-15 设计评审修订，处置见 §13；按同日交�
 
 `creative_documents.title` 是当前标题的查询投影（列表、搜索、卡片），权威值在快照里。
 
+> 2026-10-16：标题和各单元的 `rev` 改由底座承载（标题在文档头与修订行，`rev` 在 `unit_revs`），载荷里不再存这两项；上面示例中的 `title`、`rev` 字段由读取视图合并给出（§0.1）。
+
 ### 2.2 冲突单元
 
 文档由以下冲突单元组成，每个单元有自己的 `rev`：
 
 | 单元 | 内容 | 读者 |
 |---|---|---|
-| 标题 `title` | 方案名 | 卡片、列表、历史 |
+| 标题 `meta`（底座保留单元） | 方案名 | 卡片、列表、历史 |
 | 基本信息 `brief` | 作品、角色、版本/形态、拍摄形式（棚拍 / 外景 / 合成，可多选）、地点、约束 | 卡片、助手每轮开头、以后的发布到订单 |
 | 每个章节 | `headline`（≤ 80 字）、`body`（Markdown）、`refs[]`、`not_applicable`；另有 `confirmed_rev`（§4.4） | 编辑视图、助手按章节读写 |
 | 设定列表 `settings` | 设定的成员与顺序 | 编辑视图、卡片 |
@@ -203,52 +224,18 @@ revision: 4（按 2026-10-15 设计评审修订，处置见 §13；按同日交�
 
 ## 3. 存储
 
-### 3.1 迁移 0068
+### 3.1 迁移（编号接在底座 0069 之后）
+
+通用的表和列（`creative_documents` 的时间、回收站、`unit_revs` 列，修订表、引用表、工作会话指针表）由底座迁移 0069 提供，见 `.lti/features/2026-10-16-creative-document-foundation/contracts.md` 的 `data: 通用文档`。策划只需要：
 
 ```sql
 ALTER TABLE creative_contents DROP CONSTRAINT creative_contents_kind_check;
 ALTER TABLE creative_contents ADD CONSTRAINT creative_contents_kind_check
   CHECK (kind IN ('text','link','image','video','audio','plan'));
-
-ALTER TABLE creative_documents
-  ADD COLUMN created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-  ADD COLUMN updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-  ADD COLUMN trashed_at TIMESTAMPTZ;
-CREATE INDEX creative_documents_list ON creative_documents(account_id, type_key, updated_at DESC, id);
-
--- 文档的每个修订：谁在什么时候存的，对应哪个内容修订
-CREATE TABLE creative_document_revisions (
-  account_id TEXT NOT NULL, document_id TEXT NOT NULL, revision BIGINT NOT NULL CHECK (revision > 0),
-  content_revision_id TEXT NOT NULL,
-  actor_kind TEXT NOT NULL CHECK (actor_kind IN ('photographer','agent')),
-  run_id TEXT, restored_from BIGINT,
-  changed_units TEXT[] NOT NULL DEFAULT '{}',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-  PRIMARY KEY (account_id, document_id, revision)
-);
-
--- 每个修订引用的图片
-CREATE TABLE creative_document_content_refs (
-  account_id TEXT NOT NULL, document_id TEXT NOT NULL, revision BIGINT NOT NULL,
-  content_revision_id TEXT NOT NULL,
-  PRIMARY KEY (account_id, document_id, revision, content_revision_id)
-);
-CREATE INDEX creative_document_content_refs_root ON creative_document_content_refs(account_id, content_revision_id);
-
--- 文档在每张画布上的工作会话：编辑视图打开助手面板时进入它（§7.6）
-CREATE TABLE creative_document_conversations (
-  account_id TEXT NOT NULL, document_id TEXT NOT NULL, canvas_id TEXT NOT NULL,
-  conversation_id TEXT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-  PRIMARY KEY (account_id, document_id, canvas_id)
-);
 ```
 
-- `creative_documents.revision` 与最新的 `creative_document_revisions.revision` 一致，`content_revision_id` 指向当前修订。
-- `changed_units` 记录本修订改了哪些单元（如 `title`、`brief`、`section:lighting`、`shot:pshot_…`），历史列表直接读，不再比对快照。
-- 已有的 `internal.document` 行不补历史行。
-- `creative_document_conversations` 只是指针：不进快照，恢复历史版本不改它；指向的会话被删除后，读取时当作没有。
-- 回滚：三张新表直接删；内容类型约束退回前要求不存在 `plan` 内容，否则拒绝回滚。测试新增链头 `rollbackShootPlanDocument`，先调 `rollbackPlatformSkillOwner`，并更新各迁移测试的标签列表。
+- 回滚：内容类型约束退回前要求不存在 `plan` 内容，否则拒绝回滚。测试新增链头 `rollbackShootPlanDocument`，先回滚本迁移再调底座的 `rollbackDocumentFoundation`，并更新各迁移测试的标签列表。
+- `changed_units` 的写法沿用（如 `meta`、`brief`、`section:lighting`、`shot:pshot_…`），确认操作记在 `annotated_units`。
 
 ### 3.2 内容层
 
@@ -267,15 +254,15 @@ CREATE TABLE creative_document_conversations (
 
 ### 4.1 命令
 
-`POST /creative/documents/{id}/commands`，沿用 `creativeops` 的 operation id 幂等与回执。一次请求是一组操作，全部成功或全部不生效，成功产生一个新修订。
+`POST /creative/documents/{id}/commands`，外壳由底座定义（§0.1）：沿用 `creativeops` 的 operation id 幂等与回执，一次请求是一组操作，全部成功或全部不生效，成功产生一个新修订。下表的「版本检查」即该操作涉及的单元；`rename`、`restore`、`restore_units` 是底座的通用操作，其余由 `creativeplan` 实现。
 
 | 操作 | 参数 | 版本检查 | 谁能调 |
 |---|---|---|---|
-| `rename` | `title` | `title.rev` | 摄影师、助手 |
+| `rename` | `title` | `meta`（底座） | 摄影师、助手 |
 | `set_brief` | brief 字段 | `brief.rev` | 摄影师、助手 |
 | `set_section` | `key`；`headline` / `body` / `refs` / `not_applicable` 任选 | 该章 `rev` | 摄影师、助手 |
-| `confirm_section` | `key` | 该章 `rev` | 仅摄影师 |
-| `unconfirm_section` | `key` | 不检查 | 仅摄影师 |
+| `confirm_section` | `key` | 该章 `rev`；标注操作，不推进 `rev` | 仅摄影师 |
+| `unconfirm_section` | `key` | 不检查；标注操作 | 仅摄影师 |
 | `add_shot` | `shot_id`、`slot`、`after_id`（可空）、字段 | `shots.rev` | 摄影师、助手 |
 | `update_shot` | `shot_id`、字段 | 该镜头 `rev` | 摄影师、助手 |
 | `move_shot` | `shot_id`、`slot`、`after_id` | `shots.rev` | 摄影师、助手 |
@@ -283,19 +270,21 @@ CREATE TABLE creative_document_conversations (
 | `add_setting` | `setting_id`、`kind`、`name`、`after_id`、字段 | `settings.rev` | 摄影师、助手 |
 | `update_setting` | `setting_id`、`name` / `notes` / `views` / `basis` 任选 | 该设定 `rev` | 摄影师、助手 |
 | `remove_setting` | `setting_id` | `settings.rev` **且**该设定 `rev` | 摄影师、助手 |
-| `confirm_setting` / `unconfirm_setting` | `setting_id` | 该设定 `rev` / 不检查 | 仅摄影师 |
-| `restore` | `revision`（要恢复的旧修订号） | 文档 `revision`；**必须单独成批** | 仅摄影师 |
-| `restore_unit` | `unit`（`changed_units` 写法）、`from_revision` | 该单元 `rev`；镜头在旧修订里不存在或现在不存在时另查 `shots.rev` | 摄影师、助手 |
+| `confirm_setting` / `unconfirm_setting` | `setting_id` | 该设定 `rev` / 不检查；标注操作 | 仅摄影师 |
+| `restore` | `revision`（要恢复的旧修订号），请求带 `expected_revision` | 文档修订号（底座）；**必须单独成批** | 仅摄影师 |
+| `restore_units` | `units`（`changed_units` 写法，可多个）、`from_revision` | 列出的单元；镜头 / 设定在旧修订里不存在或现在不存在时另查 `shots` / `settings`（底座的集合单元规则）；当前不存在的单元预期写 null；**必须单独成批** | 摄影师、助手 |
 
 - 删除镜头同时检查列表与镜头本身：助手刚改完镜头 A，摄影师基于旧内容删除 A 会冲突，而不是悄悄删掉新内容。移动不丢正文，只检查列表。
 - 节点改名、编辑器改名、助手改名都走 `rename`，统一进入历史与回执（§5.1）。
 - 回收站与彻底删除是独立接口（§5.5），不在命令里。
-- `restore_unit` 把一个单元的内容改回旧修订 k 里的样子，其余单元不动，产生新修订 N+1，该单元 `rev` 设为 N+1：
+- `restore_units` 把列出的单元改回旧修订 k 里的样子，其余单元不动，产生新修订 N+1，这些单元的 `rev` 设为 N+1（下文与 §7.7 中的「恢复这一处」即只列一个单元的 `restore_units`）：
   - 镜头在 k 里不存在（是之后新增的）则删除；现在不存在而 k 里有则加回原位置。
-  - 若该单元在 k 里处于「已确认」（`confirmed_rev == rev`），恢复后仍为已确认，`confirmed_rev` 设为 N+1，因为内容正是当时被确认的那一份；否则确认状态按 §4.4 照常失效。
+  - 若该单元在 k 里处于「已确认」（`confirmed_rev` 等于修订 k 的 `unit_revs` 中该单元的值），恢复后仍为已确认，`confirmed_rev` 设为 N+1，因为内容正是当时被确认的那一份；否则确认状态按 §4.4 照常失效。
   - 修订记 `restored_from = k` 与该单元，供改动清单判断「已恢复」（§7.7）。
 
 ### 4.2 版本令牌
+
+> 2026-10-16：本节规则由底座统一实现（单元修订号存于 `unit_revs`；整份恢复带 `expected_revision`；冲突详情只列单元与修订号，客户端重读后进入冲突界面）。以下保留为策划视角的说明。
 
 - **单元的 `rev` = 该单元最后一次被改动时的文档修订号。** 文档修订号单调递增、永不复用，所以任何单元的 `rev` 都不会回退或重复。
 - 成功写入产生文档修订 N+1：被改动的单元 `rev` 设为 N+1，其余不变。`shots.rev` 只在增、删、移动时更新；改单个镜头只更新该镜头。
@@ -375,6 +364,8 @@ CREATE TABLE creative_document_conversations (
 
 ### 5.4 文档类型端口
 
+> 2026-10-16：改用底座的 `creativedocument.Type`（§0.1），下面的接口草稿作废，仅保留「`creativecanvas` 不 import `creativeplan`」与「未注册的类型可读不可新建」两条约定。
+
 `creativecanvas` 不 import `creativeplan`。在组合根注册：
 
 ```go
@@ -390,7 +381,7 @@ type DocumentType interface {
 ### 5.5 回收站与彻底删除
 
 - `POST /creative/documents/{id}/trash`、`/untrash`：设置或清除 `trashed_at`。回收站中的文档可读、不可写，不出现在「引用已有策划」里；选择框有「回收站」分页，可恢复。
-- `DELETE /creative/documents/{id}`：只允许删除回收站中的文档，删除文档行、修订行、引用行与工作会话指针（会话本身保留）；指向它的节点变为不可用。删除前确认框写明「历史版本一并删除，不可恢复」。
+- `POST /creative/documents/{id}/purge`（底座，2026-10-16 由 `DELETE` 改为标准命令封套）：只允许删除回收站中的文档，删除文档行、修订行、引用行与工作会话指针（会话本身保留）；指向它的节点变为不可用。删除前确认框写明「历史版本一并删除，不可恢复」。
 - 只有摄影师能操作；助手没有对应工具。
 - 首版不做到期自动清理回收站，也不做单个历史版本的清理。
 
@@ -560,10 +551,10 @@ type DocumentType interface {
   - 一句话概括与镜头、设定等短字段逐项对比，删去的划线变灰，新增的提亮底色。不用红绿，沿用中性色加单一锚点色。
   - 正文按段落对齐：未改动的段落折叠成「N 段未改动」并保留小标题定位；一段被改时标出字符级差别；整段新增或删除单独标出。
   - 参考图、设定图、分镜图按 ID 列出新增和去掉的缩略图。
-  - 操作：「看过了，重新确认」、「恢复到确认时的内容」（`restore_unit`，恢复后仍为已确认）、「在历史版本里看」。
+  - 操作：「看过了，重新确认」、「恢复到确认时的内容」（`restore_units`，恢复后仍为已确认）、「在历史版本里看」。
 - **本轮改动清单**：一轮运行写过策划后，对话里在助手回复下方出现「本轮改了 N 处」卡片，数据来自本轮修订的 `changed_units`（§4.5）。每处一行：
   - 状态：待确认 / 已确认（章节、设定），待看 / 看过了（基本信息、镜头），已恢复。前两类与「已恢复」从文档与修订记录派生；「看过了」只记在本机浏览器，不入库。
-  - 「看改动」：打开策划并定位到这一处，展开「本轮之前 → 现在」的对照，操作是「确认」或「看过了」，以及「恢复这一处」（`restore_unit` 到本轮之前那一版）。
+  - 「看改动」：打开策划并定位到这一处，展开「本轮之前 → 现在」的对照，操作是「确认」或「看过了」，以及「恢复这一处」（`restore_units` 到本轮之前那一版）。
   - 卡片在画布面板和编辑视图里一样可用；点击时编辑视图没开就先打开。
 - 这样「棚拍只剩两小时、两盏灯、不能洒水」这类要求一次改动多处时，摄影师逐处看、确认或恢复，不用自己翻历史版本找差别。整轮一键撤销仍随 V6-038。
 
@@ -597,7 +588,7 @@ type DocumentType interface {
 |---|---|
 | `GET /creative/documents/{id}` | 响应按 `type_key` 判别：`photo.shoot_plan` 返回 `plan`、`revision`、`trashed`、`template`（章节标题与提示）、`media`（引用图的展示信息，不可展示的标明） |
 | `POST /creative/documents/{id}/commands` | 新增，§4.1 |
-| `POST /creative/documents/{id}/trash`、`/untrash`，`DELETE /creative/documents/{id}` | 新增，§5.5 |
+| `POST /creative/documents/{id}/trash`、`/untrash`、`/purge` | 由底座提供，§5.5 |
 | `GET /creative/documents` | 新增，`type`、`q`、`trashed`、`cursor`、`limit`；给「引用已有策划」用 |
 | `GET /creative/documents/{id}/revisions` | 新增，分页列出修订 |
 | `GET /creative/documents/{id}/revisions/{revision}` | 新增，读取旧修订；可选 `units=` 只返回指定单元，供对照面板取基准版本 |
@@ -607,15 +598,16 @@ type DocumentType interface {
 | 修订列表项 | 带 `actor_kind`、`run_id`、`changed_units`、`restored_from`，按 `run_id` 过滤（`?run_id=`），供改动清单使用（§7.7） |
 | `GET /creative/documents/{id}/conversation?canvas_id=` | 新增，返回当前画布上的工作会话（可为空）；写入由发消息与 `write_plan` 顺带完成，不单独开放 |
 
-OpenAPI 先改，`make generate` 后提交 Go / TS 两份生成物。读写分别要求 `creative_read` / `creative_write`，按账号范围过滤。
+OpenAPI 先改，`make generate` 后提交 Go / TS 两份生成物。读写分别要求 `creative_read` / `manual_write`（现有能力名），按账号范围过滤。读取、命令外壳、回收站、列表、修订、会话这些通用接口由底座提供，本表只是列出策划依赖它们的哪些部分；策划新增的是 `photo.shoot_plan` 的读取分支、操作集合与 `document_ref` 片段。
 
 ## 10. 实施步骤
 
 一步一提交：
 
-1. **存储**：迁移 0068、内容类型 `plan`、新表与列、`LiveOwnerCondition` 与守卫测试、回滚链。
-2. **`creativeplan` 核心**：模板 v1、载荷校验与不变量、Markdown 子集校验、操作应用与版本令牌、恢复与按单元恢复、派生状态、摘要（含已规划数与可用分镜图数）。单测覆盖版本令牌（删除遇并发修改冲突、恢复后旧令牌全部失效、重新出现的镜头令牌失效、同单元重复操作拒绝）与 `restore_unit`（新增镜头恢复即删除、恢复到已确认版本保持确认）；真实库测试覆盖并发写不同章节都成功、GC 保留、彻底删除后可回收、账号隔离。
-3. **通用层接入**：文档类型端口、`add_node` 建档与放回、快照摘要、节点定义、改名路由、回收站与删除、HTTP 与 OpenAPI。
+0. **前置**：通用文档底座 `creative-document-foundation` 归档并合回 develop。
+1. **存储**：内容类型 `plan` 的迁移与回滚链（通用表、列和 GC 持有方由底座提供）。
+2. **`creativeplan` 核心**：模板 v1、载荷校验与不变量、Markdown 子集校验、操作应用与版本令牌、恢复与按单元恢复、派生状态、摘要（含已规划数与可用分镜图数）。单测覆盖版本令牌（删除遇并发修改冲突、恢复后旧令牌全部失效、重新出现的镜头令牌失效、同单元重复操作拒绝）与 `restore_units`（新增镜头恢复即删除、恢复到已确认版本保持确认）；真实库测试覆盖并发写不同章节都成功、GC 保留、彻底删除后可回收、账号隔离。
+3. **类型注册**：实现底座的 `Type`、注册 `photo.shoot_plan`、卡片摘要、改名路由（节点改名走 `rename`）；通用接入（`add_node`、回收站、HTTP）由底座提供。
 4. **助手工具**：`read_plan` / `write_plan`、`edit_canvas` 节点类型与改名拒绝、资源声明、读图范围、`document_ref` 片段与工作会话记录、平台内置 Skill 进索引与配套 Skill 提示（§6.6）；真实模型记录，含「打招呼不加载、第一次操作策划加载一次、之后不重复加载、压缩后再操作会重新加载」。
 5. **前端**：先用 Context7 核对所见即所得编辑器候选库（以 Markdown 往返和自定义 `ref:` 节点为准）的当前版本与用法；再做节点卡片、编辑视图（含窄窗口目录、空白策划首屏）、助手面板状态上提（画布与编辑视图共用）与「请助手修改」入口（章节、选中文字、参考图、镜头）、保存状态机、冲突界面（含合并后保存）、看改动对照面板与本轮改动清单、镜头总览与分镜图生成范围选择、添加参考图选择器、历史版本、回收站与引用已有策划；mock e2e 覆盖保存状态机的每条规则与断网后重开显示本机内容。
 6. **验证**：逐条对照 V6-079 AC，写验证记录。

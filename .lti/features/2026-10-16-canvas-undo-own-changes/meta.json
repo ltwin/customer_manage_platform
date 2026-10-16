@@ -1,0 +1,17 @@
+{
+  "uid": "82e24b1f-b48c-48ea-8949-c8b7eb8950c5",
+  "revision": 1,
+  "id": "canvas-undo-own-changes",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "draft",
+  "createdAt": "2026-10-16T10:01:13.680Z",
+  "updatedAt": "2026-10-16T10:01:13.695Z",
+  "approvals": {},
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}

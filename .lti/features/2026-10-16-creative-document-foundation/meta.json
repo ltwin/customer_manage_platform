@@ -1,0 +1,38 @@
+{
+  "uid": "d04f6c6d-5e57-41d1-8e19-62777ff4d5fb",
+  "revision": 2,
+  "id": "creative-document-foundation",
+  "kind": "feature",
+  "assurance": "governed",
+  "state": "approved",
+  "createdAt": "2026-10-16T08:37:12.590Z",
+  "updatedAt": "2026-10-16T10:41:36.181Z",
+  "risk": {
+    "factors": [
+      "data-migration",
+      "concurrency",
+      "trust-boundary",
+      "irreversible",
+      "broad-impact"
+    ]
+  },
+  "approvals": {
+    "proposal": {
+      "by": "samson",
+      "at": "2026-10-16T10:41:36.140Z",
+      "contentHash": "7640e5a66632d5c9"
+    },
+    "design": {
+      "by": "samson",
+      "at": "2026-10-16T10:41:36.140Z",
+      "contentHash": "5ced74ee3885f508",
+      "deltaHash": "1eb8f8426e808912"
+    }
+  },
+  "approvalHistory": [],
+  "revisions": [],
+  "verify": [],
+  "checkRuns": [],
+  "type": "feature",
+  "stage": "define"
+}
