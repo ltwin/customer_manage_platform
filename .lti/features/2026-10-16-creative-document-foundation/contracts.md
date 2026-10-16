@@ -14,7 +14,7 @@
 ## patterns: ADD 文档类型端口
 
 - **约定**：
-  - 新的文档类型实现 `creativedocument.Type`（`Key`、`ContentKind`、`NodeTypeKey`、`Creatable`、`Empty`、`Units`、`Touched`、`Apply`、`RestoreTouched`、`RestoreUnits`、`View`、`Summary`），按需实现 `RestoreHook`，在组合根（`backend/cmd/server/main.go`，需要时也在 `backend/cmd/creative-worker/main.go`）启动时 `Register`。
+  - 新的文档类型实现 `creativedocument.Type`（`Key`、`ContentKind`、`NodeTypeKey`、`Creatable`、`Empty`、`Units`、`Touched`、`Apply`、`RestoreTouched`、`RestoreUnits`、`View`、`Summary`），按需实现 `RestoreHook`，在类型所在包的 `init()` 中 `Register`，并保证 server 与 creative-worker 两个进程都导入该包（内置的 `internal.document` 在 `creativedocument` 包里注册）。重复的类型 key 或节点类型注册时直接 panic。
   - 类型不得自行写 `creative_documents` 及修订、引用、会话表，所有写入都经命令外壳。
   - `Touched` 不得写库；`Apply` 可以在同一事务里写类型自己的附属数据。
   - 单元的存在性发生变化时（新增、删除，或恢复一个当前不存在的单元），`Touched` / `RestoreTouched` 必须同时返回类型声明的集合单元（如场景的 `objects`、策划的 `shots`）。这样，「不存在 → 新增 → 删除」之后再提交的旧请求也会冲突。
@@ -22,7 +22,7 @@
   - **节点类型映射**：每个文档类型声明且只声明一个画布节点类型（`NodeTypeKey`），两边都唯一，例如 `scene` ↔ `core.scene`、`photo.shoot_plan` ↔ `photo.shoot_plan`、`internal.document` ↔ `internal.document`。画布按注册表查映射，不写死任何类型。
   - **类型内新建内容的持有方交接**：`Apply` / `RestoreUnits` 收到通用层传入的 `Retain` 回调。类型在事务内新建内容（如场景的 `commit_model`）时，调用 `creativecontent.WriteAndRetain` 并把这个回调作为 retain 参数；回调会把该内容修订预登记到本次即将产生的修订（N+1）的引用行上，使内容层返回前的持有方检查通过。通用层在写入前核对：预登记的引用必须全部出现在最终快照的引用里，否则整个事务回滚。
   - **推进版本与只做标注**：`Changes.Changed` 中的单元推进到新修订号；`Changes.Annotated` 中的单元载荷有变化，但单元修订号**不**推进。用于「确认」这类操作：策划的 `confirm_section` 把 `confirmed_rev` 设为当前 `rev`，本身不改 `rev`。两类都写入修订行，供历史显示。
-- **单元命名**：`meta` 保留给标题；其余单元由类型定义，形如 `<kind>` 或 `<kind>:<id>`，≤ 120 字符，`[a-z0-9_:.-]`。
+- **单元命名**：`meta` 保留给标题；其余单元由类型定义，形如 `<kind>` 或 `<kind>:<id>`，≤ 120 字符，`[A-Za-z0-9_:.-]`（场景物件 ID 是含大写的 nanoid，实施时放宽）。
 - **为什么**：策划和场景共享修订、并发、恢复、回收站和画布接入的全部机制，避免两套实现分叉。
 - **不适用于**：不挂在画布节点上的业务对象（例如资产库素材），以及不需要修订历史的配置数据。
 - **例子**：`internal.document` 的实现在 `backend/internal/creativedocument/internal_type.go`，单元 `body`，操作 `set_body`，不可新建。
@@ -49,7 +49,7 @@
 | `trashed_at` | timestamptz | 否 | null 表示不在回收站 |
 | `unit_revs` | jsonb | 是 | 对象，键为单元名，值为正整数修订号；必须含 `meta`；键 ≤ 4096；CHECK `jsonb_typeof='object'` |
 
-索引：`(account_id, type_key, updated_at DESC, id)`、`(account_id, updated_at DESC, id)`。
+索引：`(account_id, type_key, updated_at DESC, id DESC)`、`(account_id, updated_at DESC, id DESC)`。
 
 `creative_document_revisions`：
 
@@ -63,10 +63,11 @@
 | `restored_from` | bigint | 否 | 由恢复产生时为来源修订号 |
 | `changed_units` | text[] | 是 | 本修订推进了修订号的单元；整份恢复记为 `{'*'}`；新建记为 `{'*'}` |
 | `annotated_units` | text[] | 是 | 本修订只做标注、未推进修订号的单元（如确认），缺省 `{}` |
+| `removed_units` | text[] | 是 | 本修订删除的单元，缺省 `{}`；整份恢复记为空，由 `changed_units = {'*'}` 表示全部重置（实施审计补充） |
 | `unit_revs` | jsonb | 是 | 本修订写入**之后**的完整单元修订号映射（与当时的文档头一致）；供旧版本读取、恢复钩子判断「当时是否已确认」等使用 |
 | `created_at` | timestamptz | 是 | — |
 
-索引：`(account_id, document_id, run_id, revision DESC)`。
+索引：`(account_id, document_id, run_id, revision DESC)`；`(account_id, content_revision_id)`（GC 按快照判定持有时用）。
 
 `creative_document_content_refs`：主键 `(account_id, document_id, revision, content_revision_id)`，索引 `(account_id, content_revision_id)`。每个修订登记一次它快照引用的全部内容修订。
 
@@ -196,7 +197,7 @@ Authorization: Bearer <token>
 ### 失败响应
 | 状态码 | 错误码 | 触发条件 | 调用方处理 |
 |---|---|---|---|
-| 400 | `validation_failed` | 外形非法；单元重复；`expected` 缺少涉及单元；`restore` 或 `restore_units` 未单独成批；`restore` 缺少 `expected_revision`，或非 `restore` 批次带了它；恢复的修订号越界；恢复带回的引用不在该修订的引用登记中；类型校验失败 | 修正，不可原样重试 |
+| 400 | `validation_failed` | 外形非法；单元重复；`expected` 缺少涉及单元；`restore` 或 `restore_units` 未单独成批；`restore` 缺少 `expected_revision`，或非 `restore` 批次带了它；恢复的修订号越界，或该修订没有保存历史（迁移只回填了当前修订）；恢复带回的引用不在该修订的引用登记中；类型校验失败 | 修正，不可原样重试 |
 | 403 | `creative_usage_denied` | 普通批次新增的引用没有有效的展示授权（沿用现有映射） | 换用其他内容 |
 | 404 | `not_found` | 文档不存在或不属于当前账号；普通批次新增的引用不存在 | 关闭视图或修正引用 |
 | 409 | `creative_document_conflict` | 任一涉及单元的当前状态与 `expected` 不符（修订号不同；预期存在但已不存在；预期不存在但已存在），或 `restore` 的 `expected_revision` ≠ 当前文档修订号。`details`（`CreativeDocumentConflictDetails`）为 `{conflicts:[{unit, expected_rev, current_rev}]}`：`expected_rev` / `current_rev` 为 null 表示预期 / 当前不存在；`restore` 冲突时 `unit` 为 `"*"`，两个值都是文档修订号 | 重读文档，在冲突界面处理后再提交 |
@@ -301,7 +302,7 @@ Content-Type: application/json
 | 409 | `creative_state_conflict` | 文档不在回收站 | 先进回收站 |
 | 409 | `idempotency_conflict` | 公共约定 | — |
 
-- **交互**：同一事务删除会话指针、引用行、修订行和文档行；挂它的节点之后读取为 `unavailable`；快照内容的物理保留见 `data: 通用文档`。
+- **交互**：同一事务删除会话指针、引用行、修订行和文档行；挂它的节点之后读取为不可用（`status.content_state = "unavailable"`）；快照内容的物理保留见 `data: 通用文档`。
 - **示例**：
 ```http
 POST /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/purge
@@ -371,7 +372,7 @@ GET /api/v1/creative/documents?type=internal.document&limit=2
   - `since_revision`（可选，CreativeRevision，只列修订号大于它的修订；可与 `run_id` 同时使用）
   - `limit`（1–100，缺省 50）
   - `cursor`（上一页的 `next_cursor`，绑定文档、`run_id` 与 `since_revision`）
-- **成功响应**：200，`{items:[{revision, actor_kind, run_id, restored_from, changed_units, title, created_at}], next_cursor}`。按 `revision` 倒序；`run_id` 和 `restored_from` 可为 null；不含快照内容。
+- **成功响应**：200，`{items:[{revision, actor_kind, run_id, restored_from, changed_units, annotated_units, removed_units, title, created_at}], next_cursor}`。按 `revision` 倒序；`run_id` 和 `restored_from` 可为 null；不含快照内容。`annotated_units` 是这个修订只做了标注、修订号没变的单元；`removed_units` 是这个修订删除的单元，删除时 `changed_units` 只含集合单元，具体删了什么要看它；整份恢复的 `removed_units` 为空，由 `changed_units = ["*"]` 表示全部重置（这两个字段实施时补充，「本轮改动」清单和告知助手需要区分改动、确认和删除）。
 - **失败响应**：
   - 400 `validation_failed`：参数或游标非法。
   - 404 `not_found`：文档不存在或不属于当前账号。
@@ -396,12 +397,13 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/revisi
 - **调用**：`GET /api/v1/creative/documents/{id}/revisions/{revision}`，query 可选 `units`（逗号分隔，最多 200 个，只返回这些单元的内容）。
 - **权限**：`creative_read`。
 - **成功响应**：200。
-  - 字段：`{revision, title, actor_kind, run_id, restored_from, changed_units, created_at, view}`。
+  - 字段：`{revision, title, actor_kind, run_id, restored_from, changed_units, annotated_units, removed_units, unit_revs, created_at, view}`。
+  - `unit_revs` 是该修订提交时的单元修订号（实施时补充，按单元恢复前判断哪些单元在此之后被改过要用到）。
   - `view` 是类型的读取分支，结构与「读取文档」的类型字段相同，按该修订的快照计算。
   - 给了 `units` 时，`view` 只包含这些单元；`units` 的裁剪由类型实现，不支持裁剪的类型返回全部。
 - **失败响应**：
   - 400 `validation_failed`：`revision` 非法，或 `units` 超过 200 个。
-  - 404 `not_found`：文档或修订不存在。
+  - 404 `not_found`：文档不存在（「文档不存在」），或文档存在但没有这个修订（「修订不存在」，例如迁移前的旧修订号）。
 - **示例**：
 ```http
 GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/revisions/3?units=body
@@ -450,7 +452,7 @@ GET /api/v1/creative/documents/cwdoc_0f8e2a6c-1d3b-4e5f-9a7b-2c4d6e8f0a1b/conver
 
 - **新建**：同一事务创建文档（修订号 1）、修订行和节点；节点标题取文档标题。撤销画布改动只移除节点。
 - **放回**：文档必须存在、属于当前账号且不在回收站。
-- **节点快照扩展**：带 `document_id` 的节点新增 `document_summary`（类型摘要或 null）、`document_trashed`（boolean）；文档已彻底删除或类型未注册时 `unavailable = true`。`internal.document` 继续返回现有的 `content` 预览。
+- **节点快照扩展**：带 `document_id` 的节点新增 `document_summary`（类型摘要或 null）、`document_trashed`（boolean）；文档已彻底删除、类型未注册或快照内容不可展示时，节点 `status.content_state = "unavailable"`（沿用现有的不可用表示）、`document_summary` 为 null。两个新字段只出现在文档节点上。`internal.document` 继续返回现有的 `content` 预览。
 - **失败响应**（在画布命令现有错误之上）：
 
 | 状态码 | 错误码 | 触发条件 |

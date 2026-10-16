@@ -8,8 +8,8 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
 
-// rollbackPlatformSkillOwner is the head of the rollback chain: every older
-// migration's rollback helper undoes this one first.
+// rollbackPlatformSkillOwner undoes the newer migrations first, then 0068 and
+// this one; every older migration's rollback helper starts here.
 func rollbackPlatformSkillOwner(t *testing.T, url string) {
 	t.Helper()
 	rollbackGenerationRoutes(t, url)

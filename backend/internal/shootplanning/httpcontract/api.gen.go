@@ -2658,10 +2658,27 @@ type CreativeBriefPatch struct {
 	WorkTitle      nullable.Nullable[string]   `json:"work_title,omitempty"`
 }
 
+// CreativeDocumentConflict defines model for CreativeDocumentConflict.
+type CreativeDocumentConflict struct {
+	CurrentRev  nullable.Nullable[CreativeRevision] `json:"current_rev"`
+	ExpectedRev nullable.Nullable[CreativeRevision] `json:"expected_rev"`
+
+	// Unit 冲突的单元；整份恢复冲突时为 "*"，两个值都是文档修订号。
+	Unit string `json:"unit"`
+}
+
+// CreativeDocumentConflictDetails defines model for CreativeDocumentConflictDetails.
+type CreativeDocumentConflictDetails struct {
+	Conflicts []CreativeDocumentConflict `json:"conflicts"`
+}
+
 // CreativeImageEditBusyDetails defines model for CreativeImageEditBusyDetails.
 type CreativeImageEditBusyDetails struct {
 	RenderId string `json:"render_id"`
 }
+
+// CreativeRevision 正BIGINT十进制字符串，最大9223372036854775807；不可转为JS Number
+type CreativeRevision = string
 
 // DefaultQuoteV1 defines model for DefaultQuoteV1.
 type DefaultQuoteV1 struct {
@@ -4328,6 +4345,32 @@ func (t *ErrorDetails) FromStaleBusinessDraftDetails(v StaleBusinessDraftDetails
 
 // MergeStaleBusinessDraftDetails performs a merge with any union data inside the ErrorDetails, using the provided StaleBusinessDraftDetails
 func (t *ErrorDetails) MergeStaleBusinessDraftDetails(v StaleBusinessDraftDetails) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsCreativeDocumentConflictDetails returns the union data inside the ErrorDetails as a CreativeDocumentConflictDetails
+func (t ErrorDetails) AsCreativeDocumentConflictDetails() (CreativeDocumentConflictDetails, error) {
+	var body CreativeDocumentConflictDetails
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromCreativeDocumentConflictDetails overwrites any union data inside the ErrorDetails as the provided CreativeDocumentConflictDetails
+func (t *ErrorDetails) FromCreativeDocumentConflictDetails(v CreativeDocumentConflictDetails) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeCreativeDocumentConflictDetails performs a merge with any union data inside the ErrorDetails, using the provided CreativeDocumentConflictDetails
+func (t *ErrorDetails) MergeCreativeDocumentConflictDetails(v CreativeDocumentConflictDetails) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err

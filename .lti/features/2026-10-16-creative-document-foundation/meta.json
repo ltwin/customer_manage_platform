@@ -1,19 +1,19 @@
 {
   "uid": "d04f6c6d-5e57-41d1-8e19-62777ff4d5fb",
-  "revision": 2,
+  "revision": 8,
   "id": "creative-document-foundation",
   "kind": "feature",
   "assurance": "governed",
-  "state": "approved",
+  "state": "archived",
   "createdAt": "2026-10-16T08:37:12.590Z",
-  "updatedAt": "2026-10-16T10:41:36.181Z",
+  "updatedAt": "2026-10-16T18:07:31.905Z",
   "risk": {
     "factors": [
-      "data-migration",
+      "broad-impact",
       "concurrency",
-      "trust-boundary",
+      "data-migration",
       "irreversible",
-      "broad-impact"
+      "trust-boundary"
     ]
   },
   "approvals": {
@@ -30,9 +30,380 @@
     }
   },
   "approvalHistory": [],
-  "revisions": [],
-  "verify": [],
+  "revisions": [
+    {
+      "at": "2026-10-16T12:09:02.330Z",
+      "summary": "实施完成后回写：类型改为在所在包 init() 注册；端口 Touched 带 actor、View 带 units、载荷用 creativecontent.Payload；放回检查命名 RequirePlaceable；新增夹具专用 CreateInternalInTx；add_node 新建文档写入者记为摄影师；单元名允许大写；修订列表项加 annotated_units、读旧修订加 annotated_units 与 unit_revs（契约只加字段，待 owner 确认）；能力测试改为非 active 账号；挂载点按实际改动更新。",
+      "contentHash": "7640e5a66632d5c9",
+      "added": [],
+      "removed": []
+    },
+    {
+      "at": "2026-10-16T13:32:54.093Z",
+      "summary": "处置实施审计：修订表加 removed_units 并在历史接口返回；SummaryBatch 与 List 改为批量读引用并加查询次数守卫；新增 ErrRevisionNotFound，恢复缺失历史返回 400、读旧修订返回 404 修订不存在。契约只加字段与区分错误文案，待 owner 确认。",
+      "contentHash": "7640e5a66632d5c9",
+      "added": [],
+      "removed": []
+    }
+  ],
+  "baseline": {
+    "commit": "d0eac8ae8d1ccadff2767c9951cb15cbc3f908f9",
+    "at": "2026-10-16T11:05:25.168Z",
+    "snapshotRef": {
+      "version": 2,
+      "digest": "b05ba84fb1a5fe7163600425e720a0ac38f0993f5cdff04e81266f046caf99fc"
+    },
+    "preExisting": [
+      ".lti/snapshots/b05ba84fb1a5fe7163600425e720a0ac38f0993f5cdff04e81266f046caf99fc.json"
+    ]
+  },
+  "verify": [
+    {
+      "by": "claude",
+      "at": "2026-10-16T14:52:42.892Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "Playwright e2e 只能手动跑，未执行；迁移只在测试库的种子数据上验证，未在生产数据副本上跑；同一账号的创意写入被执行器的账号级咨询锁串行化，并发测试验证的是到达顺序与版本检查，不是真正同时执行的事务交错；List 的批量读取靠与 SummaryBatch 共用实现保证，未单独计数。",
+        "followUp": "失效引用的读取占位（AC-2724073cf666）由第一个写图片引用的文档类型（V6-079 策划或场景 C1）在其验收中验证；Playwright e2e 由 owner 在合回 develop 前或下次 e2e 回归时手动跑。",
+        "coverage": [
+          {
+            "criterionId": "AC-5de89638c15d",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentNodes：新建后文档修订号 1、photographer 修订行 1 条、节点挂 document_id；子测试 later action fails / bad options 文档数不变（creativecanvas/graph_commands.go editGraph.attachDocument → creativedocument.CreateInTx 同事务）"
+          },
+          {
+            "criterionId": "AC-b159203be4a2",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentNodes：Undo 后节点 0 个、creativedocument.Read 成功、add_node 带 document_id 放回成功"
+          },
+          {
+            "criterionId": "AC-9a85c5adc68a",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentNodes 子测试 type not creatable / type not registered：ErrValidation，文档数不变；HTTP 映射 400 validation_failed（creativeError）"
+          },
+          {
+            "criterionId": "AC-b282033eee03",
+            "status": "verified",
+            "evidence": "backend/internal/platform/httpapi/creative_documents_test.go TestCreativeDocumentHTTP 逐个检查 id/title/type_key/content_revision_id/revision/content/unit_revs/trashed_at/created_at/updated_at；backend/internal/creativedocument/internal_type_test.go TestInternalDocument；前端 tsc -b 与 make check-frontend 通过。Playwright e2e 未跑（只能手动）"
+          },
+          {
+            "criterionId": "AC-01312937461a",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestCreateAndRead（ErrNotFound）；backend/internal/platform/httpapi/creative_documents_test.go read another account's → 404 not_found"
+          },
+          {
+            "criterionId": "AC-70c5b5c1069b",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestExpectedExistence（修订 2、changed 单元修订号）、TestHistory（agent 修订带 run_id、changed_units）；迁移 CHECK agent 必带 run_id（TestDocumentFoundationMigrationRequiresRunForAgentRevision）"
+          },
+          {
+            "criterionId": "AC-acae1bdeda4f",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWritesToDifferentUnitsBothLand：屏障并发 20 轮，修订号 base+1/base+2，两处改动和单元修订号都对，历史连续"
+          },
+          {
+            "criterionId": "AC-45e8d33c2542",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWritesToSameUnitExactlyOneWins：20 轮恰一方成功，另一方冲突明细 item:a expected/current；backend/internal/platform/httpapi/creative_documents_test.go stale → 409 creative_document_conflict 带 details.conflicts"
+          },
+          {
+            "criterionId": "AC-8dde7ed7c123",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestExpectedExistence 子测试 missing expected unit / unit touched twice / bad unit name / no expected / unknown op → ErrValidation；backend/internal/creativedocument/internal_type_test.go twice / empty body"
+          },
+          {
+            "criterionId": "AC-b45f4547f6fa",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWholeRestore：恢复到 3 产生修订 7、所有单元修订号 7、restored_from=3、changed_units [*]；之后旧修订号提交冲突由单元修订号全部变为 7 保证"
+          },
+          {
+            "criterionId": "AC-67c086b4fa13",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWholeRestore / TestRestoreUnits 子测试 batched → ErrValidation"
+          },
+          {
+            "criterionId": "AC-52ba07549762",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWholeRestore：只改 note 后以 expected_revision 5 恢复 → 冲突 unit * expected 5 current 6，内容不变"
+          },
+          {
+            "criterionId": "AC-1a447f7f7a13",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestRestoreUnits（expected item:a null + items 当前修订号恢复成功）；TestExpectedExistence（新增→删除后原请求只在 items 冲突）"
+          },
+          {
+            "criterionId": "AC-2724073cf666",
+            "status": "deferred",
+            "evidence": "底座部分已验证：backend/internal/creativedocument/document_test.go TestRestoreReferences（授权撤销后 restore_units 与整份恢复都成功，普通 add_ref → ErrUsageDenied / HTTP 403）。「读取时这张图标为不可用」由各类型 View 实现，本 change 只有不写引用的 internal.document，待第一个写图片引用的类型（V6-079 策划或场景 C1）验证"
+          },
+          {
+            "criterionId": "AC-5583ef1f76af",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestRestoreUnits：只恢复 item:a，item:b 修订号保持 2"
+          },
+          {
+            "criterionId": "AC-3e8287fcb35f",
+            "status": "verified",
+            "evidence": "backend/internal/platform/httpapi/creative_documents_test.go 命令重放返回同一回执、same key other payload → 409 idempotency_conflict；backend/internal/creativedocument/document_test.go TestReceiptStaysBounded 重放后修订号不变"
+          },
+          {
+            "criterionId": "AC-85fc4e3225bf",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestReceiptStaysBounded：2000 单元整份恢复回执 < 64 KiB、reset_required，重放语义一致；长 ID 批量删除触发 reset_required"
+          },
+          {
+            "criterionId": "AC-ea788629ddff",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestContentCreatedInsideWrite：create_ref 成功无 ErrMissingRoot；fail_after_create / create_orphan 后内容修订数、引用行、文档修订号都不变"
+          },
+          {
+            "criterionId": "AC-a849af13592d",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestHistory：run-1 过滤得 [4,2]；limit 2 分页 [5,4]/[3,2]/[1]；换条件复用游标 → ErrValidation"
+          },
+          {
+            "criterionId": "AC-2b892401bdec",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestHistory since 3 → [5,4]；每项 actor_kind/run_id/changed_units；backend/internal/platform/httpapi/creative_documents_test.go since_revision=1"
+          },
+          {
+            "criterionId": "AC-8da30ba38bab",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestHistory ReadRevision(2, [note]) → view 只有 note；backend/internal/creativedocument/internal_type_test.go body；backend/internal/platform/httpapi/creative_documents_test.go revisions/1?units=body"
+          },
+          {
+            "criterionId": "AC-ec278063a8da",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge（回收站中命令 ErrTrashed、可读、untrash 后可写）、TestList（默认不列、trashed=true 才列）；backend/internal/platform/httpapi/creative_documents_test.go command in trash → 409 creative_state_conflict"
+          },
+          {
+            "criterionId": "AC-08c3147dea91",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge ErrNotTrashed；backend/internal/platform/httpapi/creative_documents_test.go purge before trash → 409 creative_state_conflict"
+          },
+          {
+            "criterionId": "AC-ddb366806763",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge 同 operation 重放返回同一回执；backend/internal/platform/httpapi/creative_documents_test.go purge 重放 200 同回执，之后新 purge → 404"
+          },
+          {
+            "criterionId": "AC-6d87bc48281d",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge / TestConversation：四张表计数为 0；backend/internal/creativecanvas/document_node_test.go TestDocumentNodes purge 后 content_state=unavailable；backend/internal/creativereference/document_holder_test.go 删行后不再持有"
+          },
+          {
+            "criterionId": "AC-bb4e76dcfb26",
+            "status": "verified",
+            "evidence": "backend/internal/creativereference/document_holder_test.go TestDocumentHistoryHoldsReferencedRevisions；backend/internal/creativereference/projection_roles_test.go 登记两列为 revisionHolder；make test-go 含 creativemedia GC 测试"
+          },
+          {
+            "criterionId": "AC-9d6a62b222af",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentOnTwoCanvases：两张画布节点都看到 set_body 的新内容，删一个节点后另一个与文档不受影响"
+          },
+          {
+            "criterionId": "AC-02e33098f210",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestConversation：会话行删除后 ReadConversation 返回 nil 无错误"
+          }
+        ]
+      },
+      "kind": "technical",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "irreversible",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "项目未配置 lti checks，验证由 agent 手动执行：make check（build、lint 0 issues、后端 54 包与前端 521 测试、generate-check）在 d176dd9 上退出码 0；并发测试 -count=10 共 200 轮通过；28 条验收 27 条有测试证据，1 条（失效引用读取占位）属类型职责延期；设计偏差与审计处置已回写 design；契约漂移 3 处（removed_units 列与索引、不可用表示、注册方式）已修正并提交 bed49d3。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "5d53a1ddc5f4ab49281f2ea4a41fb702a3d61420740a4748a1c779590f648fca"
+      }
+    },
+    {
+      "by": "samson",
+      "at": "2026-10-16T18:07:17.452Z",
+      "assessment": {
+        "method": "manual",
+        "limitations": "Playwright e2e 未执行；迁移只在测试库种子数据上验证；同一账号写入由执行器账号级锁串行化；AC-2724073cf666 的读取占位属类型职责，本次未验证。",
+        "followUp": "失效引用的读取占位由第一个写图片引用的文档类型（V6-079 策划或场景 C1）在其验收中验证；Playwright e2e 由 owner 在合回 develop 前或下次 e2e 回归时手动跑。",
+        "coverage": [
+          {
+            "criterionId": "AC-5de89638c15d",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentNodes：新建后文档修订号 1、photographer 修订行 1 条、节点挂 document_id；子测试 later action fails / bad options 文档数不变（creativecanvas/graph_commands.go editGraph.attachDocument → creativedocument.CreateInTx 同事务）"
+          },
+          {
+            "criterionId": "AC-b159203be4a2",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentNodes：Undo 后节点 0 个、creativedocument.Read 成功、add_node 带 document_id 放回成功"
+          },
+          {
+            "criterionId": "AC-9a85c5adc68a",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentNodes 子测试 type not creatable / type not registered：ErrValidation，文档数不变；HTTP 映射 400 validation_failed（creativeError）"
+          },
+          {
+            "criterionId": "AC-b282033eee03",
+            "status": "verified",
+            "evidence": "backend/internal/platform/httpapi/creative_documents_test.go TestCreativeDocumentHTTP 逐个检查 id/title/type_key/content_revision_id/revision/content/unit_revs/trashed_at/created_at/updated_at；backend/internal/creativedocument/internal_type_test.go TestInternalDocument；前端 tsc -b 与 make check-frontend 通过。Playwright e2e 未跑（只能手动）"
+          },
+          {
+            "criterionId": "AC-01312937461a",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestCreateAndRead（ErrNotFound）；backend/internal/platform/httpapi/creative_documents_test.go read another account's → 404 not_found"
+          },
+          {
+            "criterionId": "AC-70c5b5c1069b",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestExpectedExistence（修订 2、changed 单元修订号）、TestHistory（agent 修订带 run_id、changed_units）；迁移 CHECK agent 必带 run_id（TestDocumentFoundationMigrationRequiresRunForAgentRevision）"
+          },
+          {
+            "criterionId": "AC-acae1bdeda4f",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWritesToDifferentUnitsBothLand：屏障并发 20 轮，修订号 base+1/base+2，两处改动和单元修订号都对，历史连续"
+          },
+          {
+            "criterionId": "AC-45e8d33c2542",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWritesToSameUnitExactlyOneWins：20 轮恰一方成功，另一方冲突明细 item:a expected/current；backend/internal/platform/httpapi/creative_documents_test.go stale → 409 creative_document_conflict 带 details.conflicts"
+          },
+          {
+            "criterionId": "AC-8dde7ed7c123",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestExpectedExistence 子测试 missing expected unit / unit touched twice / bad unit name / no expected / unknown op → ErrValidation；backend/internal/creativedocument/internal_type_test.go twice / empty body"
+          },
+          {
+            "criterionId": "AC-b45f4547f6fa",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWholeRestore：恢复到 3 产生修订 7、所有单元修订号 7、restored_from=3、changed_units [*]；之后旧修订号提交冲突由单元修订号全部变为 7 保证"
+          },
+          {
+            "criterionId": "AC-67c086b4fa13",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWholeRestore / TestRestoreUnits 子测试 batched → ErrValidation"
+          },
+          {
+            "criterionId": "AC-52ba07549762",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestWholeRestore：只改 note 后以 expected_revision 5 恢复 → 冲突 unit * expected 5 current 6，内容不变"
+          },
+          {
+            "criterionId": "AC-1a447f7f7a13",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestRestoreUnits（expected item:a null + items 当前修订号恢复成功）；TestExpectedExistence（新增→删除后原请求只在 items 冲突）"
+          },
+          {
+            "criterionId": "AC-2724073cf666",
+            "status": "deferred",
+            "evidence": "底座部分已验证：backend/internal/creativedocument/document_test.go TestRestoreReferences（授权撤销后 restore_units 与整份恢复都成功，普通 add_ref → ErrUsageDenied / HTTP 403）。「读取时这张图标为不可用」由各类型 View 实现，本 change 只有不写引用的 internal.document，待第一个写图片引用的类型（V6-079 策划或场景 C1）验证"
+          },
+          {
+            "criterionId": "AC-5583ef1f76af",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestRestoreUnits：只恢复 item:a，item:b 修订号保持 2"
+          },
+          {
+            "criterionId": "AC-3e8287fcb35f",
+            "status": "verified",
+            "evidence": "backend/internal/platform/httpapi/creative_documents_test.go 命令重放返回同一回执、same key other payload → 409 idempotency_conflict；backend/internal/creativedocument/document_test.go TestReceiptStaysBounded 重放后修订号不变"
+          },
+          {
+            "criterionId": "AC-85fc4e3225bf",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestReceiptStaysBounded：2000 单元整份恢复回执 < 64 KiB、reset_required，重放语义一致；长 ID 批量删除触发 reset_required"
+          },
+          {
+            "criterionId": "AC-ea788629ddff",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestContentCreatedInsideWrite：create_ref 成功无 ErrMissingRoot；fail_after_create / create_orphan 后内容修订数、引用行、文档修订号都不变"
+          },
+          {
+            "criterionId": "AC-a849af13592d",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestHistory：run-1 过滤得 [4,2]；limit 2 分页 [5,4]/[3,2]/[1]；换条件复用游标 → ErrValidation"
+          },
+          {
+            "criterionId": "AC-2b892401bdec",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestHistory since 3 → [5,4]；每项 actor_kind/run_id/changed_units；backend/internal/platform/httpapi/creative_documents_test.go since_revision=1"
+          },
+          {
+            "criterionId": "AC-8da30ba38bab",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestHistory ReadRevision(2, [note]) → view 只有 note；backend/internal/creativedocument/internal_type_test.go body；backend/internal/platform/httpapi/creative_documents_test.go revisions/1?units=body"
+          },
+          {
+            "criterionId": "AC-ec278063a8da",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge（回收站中命令 ErrTrashed、可读、untrash 后可写）、TestList（默认不列、trashed=true 才列）；backend/internal/platform/httpapi/creative_documents_test.go command in trash → 409 creative_state_conflict"
+          },
+          {
+            "criterionId": "AC-08c3147dea91",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge ErrNotTrashed；backend/internal/platform/httpapi/creative_documents_test.go purge before trash → 409 creative_state_conflict"
+          },
+          {
+            "criterionId": "AC-ddb366806763",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge 同 operation 重放返回同一回执；backend/internal/platform/httpapi/creative_documents_test.go purge 重放 200 同回执，之后新 purge → 404"
+          },
+          {
+            "criterionId": "AC-6d87bc48281d",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestTrashAndPurge / TestConversation：四张表计数为 0；backend/internal/creativecanvas/document_node_test.go TestDocumentNodes purge 后 content_state=unavailable；backend/internal/creativereference/document_holder_test.go 删行后不再持有"
+          },
+          {
+            "criterionId": "AC-bb4e76dcfb26",
+            "status": "verified",
+            "evidence": "backend/internal/creativereference/document_holder_test.go TestDocumentHistoryHoldsReferencedRevisions；backend/internal/creativereference/projection_roles_test.go 登记两列为 revisionHolder；make test-go 含 creativemedia GC 测试"
+          },
+          {
+            "criterionId": "AC-9d6a62b222af",
+            "status": "verified",
+            "evidence": "backend/internal/creativecanvas/document_node_test.go TestDocumentOnTwoCanvases：两张画布节点都看到 set_body 的新内容，删一个节点后另一个与文档不受影响"
+          },
+          {
+            "criterionId": "AC-02e33098f210",
+            "status": "verified",
+            "evidence": "backend/internal/creativedocument/document_test.go TestConversation：会话行删除后 ReadConversation 返回 nil 无错误"
+          }
+        ]
+      },
+      "kind": "owner",
+      "result": "pass",
+      "checks": [
+        "blast-radius",
+        "concurrency",
+        "contracts",
+        "design",
+        "irreversible",
+        "living-specs",
+        "migration",
+        "spec",
+        "tests",
+        "trust"
+      ],
+      "summary": "owner 验收通过：接受批准后的 design 与契约改动（端口签名、init 注册、修订接口加 annotated_units/removed_units/unit_revs、404 区分文档与修订、缺失历史恢复返回 400）；复用技术验证（make check 退出码 0、并发 200 轮）。",
+      "snapshotRef": {
+        "version": 2,
+        "digest": "5d53a1ddc5f4ab49281f2ea4a41fb702a3d61420740a4748a1c779590f648fca"
+      }
+    }
+  ],
   "checkRuns": [],
+  "archive": {
+    "at": "2026-10-16T18:07:31.795Z",
+    "incomplete": false
+  },
   "type": "feature",
-  "stage": "define"
+  "stage": "archived"
 }

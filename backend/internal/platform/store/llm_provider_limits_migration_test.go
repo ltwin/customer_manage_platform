@@ -12,6 +12,7 @@ import (
 
 func rollbackProviderLimits(t *testing.T, url string) {
 	t.Helper()
+	rollbackDocumentFoundation(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback provider quota retirement", err)
 	}

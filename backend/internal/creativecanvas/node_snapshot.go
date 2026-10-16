@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/store"
 )
@@ -38,7 +39,7 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 		if n.ContentRevisionID != nil && knownType(n.TypeKey) {
 			revisionIDs = append(revisionIDs, *n.ContentRevisionID)
 		}
-		if n.DocumentID != nil && n.TypeKey == "internal.document" {
+		if n.DocumentID != nil {
 			documentIDs = append(documentIDs, *n.DocumentID)
 		}
 		if n.LatestExecutionID != nil {
@@ -114,20 +115,9 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 			}
 		}
 	}
-	documents := map[string]string{}
-	if len(documentIDs) > 0 {
-		err = snapshotRows(ctx, tx, "creative_documents", "id,content_revision_id", "id=ANY($2::text[])", func(row store.Row) error {
-			var id, revision string
-			if err := row.Scan(&id, &revision); err != nil {
-				return err
-			}
-			documents[id] = revision
-			revisionIDs = append(revisionIDs, revision)
-			return nil
-		}, documentIDs)
-		if err != nil {
-			return err
-		}
+	documents, err := creativedocument.SummaryBatch(ctx, tx, documentIDs)
+	if err != nil {
+		return err
 	}
 	content, err := creativecontent.ReadDisplayBatch(ctx, tx, revisionIDs)
 	if err != nil {
@@ -135,22 +125,9 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 	}
 	for i := range c.Nodes {
 		n := &c.Nodes[i]
-		if n.DocumentID != nil && n.TypeKey == "internal.document" {
-			revision, ok := documents[*n.DocumentID]
-			if !ok {
-				n.Unavailable = true
-				continue
-			}
-			result := content[revision]
-			if errors.Is(result.Err, creativecontent.ErrUsageDenied) {
-				n.Unavailable = true
-				continue
-			}
-			if result.Err != nil {
-				return result.Err
-			}
-			preview := creativecontent.Preview(result.Revision)
-			n.Content = &preview
+		if n.DocumentID != nil {
+			fillDocument(n, documents[*n.DocumentID])
+			continue
 		}
 		if n.ContentRevisionID == nil || !knownType(n.TypeKey) {
 			continue
@@ -171,6 +148,24 @@ func fillNodeViews(ctx context.Context, tx store.ReadTxAccountScope, c *Canvas) 
 		n.Content = &preview
 	}
 	return nil
+}
+
+// fillDocument shows the document behind a node. A purged document, an
+// unregistered type or content no longer allowed for display reads as
+// unavailable; a trashed document still shows its summary.
+func fillDocument(n *Node, s creativedocument.NodeSummary) {
+	trashed := s.Trashed
+	n.DocumentTrashed = &trashed
+	if !s.Usable {
+		n.Unavailable = true
+		return
+	}
+	n.DocumentSummary = s.Summary
+	// The internal document card keeps its content preview.
+	if s.TypeKey == creativedocument.InternalTypeKey {
+		preview := creativecontent.Preview(s.Content)
+		n.Content = &preview
+	}
 }
 
 // versionRow 是汇总版本元信息所需的最少字段。

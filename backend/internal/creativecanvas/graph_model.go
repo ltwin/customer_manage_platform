@@ -70,6 +70,10 @@ type Action struct {
 	FollowLatest      bool                                    `json:"follow_latest,omitempty"`
 	VersionID         string                                  `json:"version_id,omitempty"`
 	UploadID          string                                  `json:"upload_id,omitempty"`
+	// DocumentID puts an existing document on the canvas; DocumentOptions go
+	// to the document type when add_node creates a new one.
+	DocumentID      string          `json:"document_id,omitempty"`
+	DocumentOptions json.RawMessage `json:"document_options,omitempty"`
 }
 type BatchInput struct {
 	CanvasID                 string               `json:"canvas_id"`
@@ -329,7 +333,7 @@ func (a *Action) UnmarshalJSON(raw []byte) error {
 		return creativeops.Explain(creativeops.ErrValidation, "动作缺少字符串类型的 type")
 	}
 	allowedByType := map[string]string{
-		"add_node":  "node_id type_key title x y parent_id asset content content_revision_id",
+		"add_node":  "node_id type_key title x y parent_id asset content content_revision_id document_id document_options",
 		"move_node": "node_id x y", "move_nodes": "node_ids dx dy", "resize_node": "node_id width height",
 		"update_metadata": "node_id title intent", "clear_content": "node_id", "replace_content": "node_id payload rights",
 		"connect_reference": "source_node_id target_node_id source_port target_port role", "disconnect_reference": "edge_id",

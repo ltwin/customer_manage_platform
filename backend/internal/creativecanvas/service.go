@@ -112,6 +112,9 @@ type Node struct {
 	Unavailable       bool                      `json:"unavailable"`
 	// 只读展示：快照读取时填，不进持久化投影和撤销链。
 	Versions *VersionSummary `json:"-"`
+	// 文档节点的只读展示：快照读取时填；DocumentTrashed 为 nil 表示没有读过文档。
+	DocumentSummary json.RawMessage `json:"-"`
+	DocumentTrashed *bool           `json:"-"`
 }
 
 // VersionSummary 是卡片外标签的版本元信息（PRD CV-10）。

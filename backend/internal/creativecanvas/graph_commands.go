@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary"
 	"github.com/samson/customer-manage-platform/backend/internal/creativestaging"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativegraph"
@@ -435,13 +436,22 @@ func copyTitle(title string) string {
 }
 
 func (e *editGraph) add(a Action) error {
+	docType, isDocument := documentType(a.TypeKey)
 	switch {
 	case !validNodeID(a.NodeID):
 		return creativeops.Explain(creativeops.ErrValidation, "新节点 ID %q 格式不对，须是 cwnode_ 加 UUID", a.NodeID)
-	case !knownType(a.TypeKey) || a.TypeKey == "internal.document":
+	case !knownType(a.TypeKey):
 		return creativeops.Explain(creativeops.ErrValidation, "不能新建 %q 类型的节点", a.TypeKey)
 	case a.Asset != nil && a.Content != nil || a.ContentRevisionID != "" && (a.Asset != nil || a.Content != nil):
 		return creativeops.Explain(creativeops.ErrValidation, "新建节点时素材、已有内容修订和正文只能选一项")
+	case !isDocument && (a.DocumentID != "" || len(a.DocumentOptions) != 0):
+		return creativeops.Explain(creativeops.ErrValidation, "%q 节点不能挂文档", a.TypeKey)
+	case isDocument && (a.Asset != nil || a.Content != nil || a.ContentRevisionID != ""):
+		return creativeops.Explain(creativeops.ErrValidation, "文档节点不能带素材、内容修订或正文")
+	case a.DocumentID != "" && len(a.DocumentOptions) != 0:
+		return creativeops.Explain(creativeops.ErrValidation, "放回已有文档时不能带 document_options")
+	case isDocument && a.DocumentID == "" && !docType.Creatable():
+		return creativeops.Explain(creativeops.ErrValidation, "不能新建 %q 类型的节点", a.TypeKey)
 	}
 	exists, err := e.tx.Exists(e.ctx, "creative_graph_identities", "id=$2", a.NodeID)
 	if err != nil {
@@ -464,6 +474,11 @@ func (e *editGraph) add(a Action) error {
 			return notGroup(p)
 		}
 		if err = e.ancestors(p); err != nil {
+			return err
+		}
+	}
+	if isDocument {
+		if err := e.attachDocument(&n, docType, a); err != nil {
 			return err
 		}
 	}
@@ -512,6 +527,32 @@ func (e *editGraph) add(a Action) error {
 		n.ContentRevisionID = &r.ID
 	}
 	e.g.Nodes[n.ID] = n
+	return nil
+}
+
+// attachDocument creates the node's document in this transaction, or checks
+// that an existing one may go on the canvas. Undoing the change later removes
+// only the node; the document keeps its own history.
+func (e *editGraph) attachDocument(n *Node, t creativedocument.Type, a Action) error {
+	var (
+		doc creativedocument.Document
+		err error
+	)
+	if a.DocumentID != "" {
+		doc, err = creativedocument.RequirePlaceable(e.ctx, e.tx, a.DocumentID, a.TypeKey)
+	} else {
+		// Canvas commands carry no actor; agent tools build their own actions
+		// and cannot reach this branch yet.
+		doc, err = creativedocument.CreateInTx(e.ctx, e.tx, t, a.Title, a.DocumentOptions, creativedocument.Photographer)
+	}
+	if err != nil {
+		return err
+	}
+	n.DocumentID = &doc.ID
+	if a.DocumentID == "" || n.Title == "" {
+		n.Title = doc.Title
+	}
+	n.Width, n.Height = 380, 260
 	return nil
 }
 

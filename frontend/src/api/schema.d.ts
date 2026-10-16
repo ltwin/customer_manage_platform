@@ -182,6 +182,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/creative/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 按更新时间倒序列出本账号的文档；游标绑定账号与过滤条件。 */
+        get: operations["listCreativeDocuments"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/creative/documents/{id}": {
         parameters: {
             query?: never;
@@ -190,6 +207,125 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getCreativeDocument"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 对文档提交一批原子编辑；普通批次按单元乐观并发，整份恢复按文档修订号检查。 */
+        post: operations["commandCreativeDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 把文档放进回收站，之后只读；已在回收站时保持原时间。 */
+        post: operations["trashCreativeDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/untrash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 把文档移出回收站；不在回收站时原样返回。 */
+        post: operations["untrashCreativeDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/purge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 彻底删除回收站中的文档及其全部历史；挂它的节点之后读取为不可用。 */
+        post: operations["purgeCreativeDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 按修订号倒序列出文档历史，可只看某次运行或某个修订之后的写入；游标绑定文档与过滤条件。 */
+        get: operations["listCreativeDocumentRevisions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/revisions/{revision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 读取一个旧修订；units 逗号分隔、最多 200 个，只返回这些单元，由类型裁剪。 */
+        get: operations["getCreativeDocumentRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/creative/documents/{id}/conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 文档在某个画布上的助手工作会话；没有或已删除时为 null。 */
+        get: operations["getCreativeDocumentConversation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3143,6 +3279,10 @@ export interface components {
             data_revision: components["schemas"]["CreativeRevision"];
             content?: components["schemas"]["CreativeContentRevision"];
             version_summary?: components["schemas"]["CreativeNodeVersionSummary"];
+            /** @description 只出现在文档节点上；文档已删除、类型未注册或内容不可展示时为 null，同时 status.content_state 为 unavailable。 */
+            document_summary?: components["schemas"]["CreativeDocumentSummary"] | null;
+            /** @description 只出现在文档节点上；文档在回收站时为 true，摘要照常返回。 */
+            document_trashed?: boolean;
         };
         /** @description 只读展示信息，节点至少有一个未删除版本时才出现。主版本为 selected_version_id 指向的版本，为空时为最新一版。 */
         CreativeNodeVersionSummary: {
@@ -4186,7 +4326,7 @@ export interface components {
         CreativeImageEditBusyDetails: {
             render_id: string;
         };
-        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"];
+        ErrorDetails: components["schemas"]["CreativeImageEditBusyDetails"] | components["schemas"]["CreativeAgentBusyDetails"] | components["schemas"]["ScheduleConflictDetails"] | components["schemas"]["ArchiveAcknowledgementRequiredDetails"] | components["schemas"]["ExpiryQuoteExpiredDetails"] | components["schemas"]["BusinessDraftUnavailableDetails"] | components["schemas"]["StaleBusinessDraftDetails"] | components["schemas"]["CreativeDocumentConflictDetails"];
         /** @enum {string} */
         OrderBusinessDraftUnavailableReason: "order_required" | "order_cancelled" | "business_calculation_overflow";
         /** @enum {string} */
@@ -6385,8 +6525,11 @@ export interface components {
             /** @enum {string} */
             type: "add_node";
             node_id: string;
-            /** @enum {string} */
-            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio" | "core.group";
+            /**
+             * @description 文档节点类型（如 internal.document）新建时须可新建，放回时须等于文档类型注册的节点类型。
+             * @enum {string}
+             */
+            type_key: "core.text" | "core.link" | "core.image" | "core.video" | "core.audio" | "core.group" | "internal.document";
             title?: string;
             x: number;
             y: number;
@@ -6395,6 +6538,12 @@ export interface components {
             /** @description 引用已有内容修订，与 asset、content 互斥；按账号和可展示性校验。 */
             content_revision_id?: string;
             content?: components["schemas"]["CreativeContentDraft"];
+            /** @description 把已有文档放到画布上；与 asset、content、content_revision_id、document_options 互斥，文档不能在回收站。 */
+            document_id?: string;
+            /** @description 新建文档时交给文档类型，结构由类型定义。 */
+            document_options?: {
+                [key: string]: unknown;
+            };
         };
         CreativeActionMoveNodes: {
             /** @enum {string} */
@@ -6680,13 +6829,150 @@ export interface components {
             type: "cancel_execution";
             execution_id: string;
         };
-        CreativeDocument: {
+        /** @description 按 type_key 判别；各文档类型在自己的契约里加分支。 */
+        CreativeDocument: components["schemas"]["CreativeInternalDocument"];
+        CreativeInternalDocument: {
             id: string;
             title: string;
-            type_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type_key: "internal.document";
             content_revision_id: string;
             revision: components["schemas"]["CreativeRevision"];
+            unit_revs: components["schemas"]["CreativeDocumentUnitRevisions"];
+            /** Format: date-time */
+            trashed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
             content: components["schemas"]["CreativeContentRevision"];
+        };
+        /** @description 单元 → 该单元最后一次改动时的文档修订号；meta 是标题。 */
+        CreativeDocumentUnitRevisions: {
+            [key: string]: components["schemas"]["CreativeRevision"];
+        };
+        /** @description 本批涉及的每个单元都要给出；值为修订号表示预期存在且相同，null 表示预期当前不存在。 */
+        CreativeDocumentExpectedUnits: {
+            [key: string]: components["schemas"]["CreativeRevision"] | null;
+        };
+        /** @description 通用操作为 rename、restore、restore_units；其余由文档类型定义。restore 与 restore_units 必须单独成批。 */
+        CreativeDocumentOperation: {
+            op: string;
+        } & {
+            [key: string]: unknown;
+        };
+        CreativeDocumentCommandPayload: {
+            expected?: components["schemas"]["CreativeDocumentExpectedUnits"];
+            /** @description 只用于整份 restore，预期的文档当前修订号；其他批次不得出现。 */
+            expected_revision?: components["schemas"]["CreativeRevision"];
+            operations: components["schemas"]["CreativeDocumentOperation"][];
+        };
+        CreativeDocumentCommandRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeDocumentCommandPayload"];
+        };
+        CreativeDocumentTargetRequest: {
+            /** Format: uuid */
+            operation_id: string;
+            /** Format: date-time */
+            client_created_at: string;
+            payload: components["schemas"]["CreativeEmptyPayload"];
+        };
+        /** @description changed_units 里每个单元的新修订号都等于 revision；reset_required 为 true 时三个列表为空，调用方重新读取文档。 */
+        CreativeDocumentCommandResult: {
+            revision: components["schemas"]["CreativeRevision"];
+            changed_units: string[];
+            annotated_units: string[];
+            removed_units: string[];
+            reset_required: boolean;
+        };
+        CreativeDocumentConflict: {
+            /** @description 冲突的单元；整份恢复冲突时为 "*"，两个值都是文档修订号。 */
+            unit: string;
+            expected_rev: components["schemas"]["CreativeRevision"] | null;
+            current_rev: components["schemas"]["CreativeRevision"] | null;
+        };
+        CreativeDocumentConflictDetails: {
+            conflicts: components["schemas"]["CreativeDocumentConflict"][];
+        };
+        CreativeDocumentTrashResult: {
+            id: string;
+            /** Format: date-time */
+            trashed_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CreativeDocumentPurgeResult: {
+            id: string;
+            /** @enum {boolean} */
+            purged: true;
+        };
+        /** @description 文档类型给出的摘要，结构由类型定义。 */
+        CreativeDocumentSummary: {
+            [key: string]: unknown;
+        };
+        CreativeDocumentListItem: {
+            id: string;
+            type_key: string;
+            title: string;
+            revision: components["schemas"]["CreativeRevision"];
+            /** Format: date-time */
+            trashed_at: string | null;
+            /** Format: date-time */
+            updated_at: string;
+            /** @description 类型未注册时为 null。 */
+            summary: components["schemas"]["CreativeDocumentSummary"] | null;
+        };
+        CreativeDocumentPage: {
+            items: components["schemas"]["CreativeDocumentListItem"][];
+            next_cursor: string | null;
+        };
+        /** @enum {string} */
+        CreativeDocumentActorKind: "photographer" | "agent" | "system";
+        CreativeDocumentRevisionItem: {
+            revision: components["schemas"]["CreativeRevision"];
+            actor_kind: components["schemas"]["CreativeDocumentActorKind"];
+            run_id: string | null;
+            restored_from: components["schemas"]["CreativeRevision"] | null;
+            /** @description 推进了修订号的单元；新建与整份恢复为 ["*"]。 */
+            changed_units: string[];
+            /** @description 只做了标注、修订号不变的单元。 */
+            annotated_units: string[];
+            /** @description 这个修订删除的单元；整份恢复为空，以 changed_units 的 "*" 表示全部重置。 */
+            removed_units: string[];
+            title: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreativeDocumentRevisionPage: {
+            items: components["schemas"]["CreativeDocumentRevisionItem"][];
+            next_cursor: string | null;
+        };
+        CreativeDocumentRevisionView: {
+            revision: components["schemas"]["CreativeRevision"];
+            title: string;
+            actor_kind: components["schemas"]["CreativeDocumentActorKind"];
+            run_id: string | null;
+            restored_from: components["schemas"]["CreativeRevision"] | null;
+            changed_units: string[];
+            annotated_units: string[];
+            removed_units: string[];
+            unit_revs: components["schemas"]["CreativeDocumentUnitRevisions"];
+            /** Format: date-time */
+            created_at: string;
+            /** @description 类型的读取分支，按该修订的快照计算；给了 units 时由类型裁剪。 */
+            view: {
+                [key: string]: unknown;
+            };
+        };
+        CreativeDocumentConversation: {
+            conversation_id: string | null;
         };
         CreativeMediaFormat: {
             /** @enum {string} */
@@ -7526,6 +7812,41 @@ export interface operations {
             };
         };
     };
+    listCreativeDocuments: {
+        parameters: {
+            query?: {
+                type?: string;
+                q?: string;
+                trashed?: boolean;
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentPage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     getCreativeDocument: {
         parameters: {
             query?: never;
@@ -7544,6 +7865,257 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreativeDocument"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    commandCreativeDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeDocumentCommandRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentCommandResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    trashCreativeDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeDocumentTargetRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentTrashResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    untrashCreativeDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeDocumentTargetRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentTrashResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    purgeCreativeDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreativeDocumentTargetRequest"];
+            };
+        };
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentPurgeResult"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCreativeDocumentRevisions: {
+        parameters: {
+            query?: {
+                run_id?: string;
+                since_revision?: components["schemas"]["CreativeRevision"];
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentRevisionPage"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeDocumentRevision: {
+        parameters: {
+            query?: {
+                units?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+                revision: components["schemas"]["CreativeRevision"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentRevisionView"];
+                };
+            };
+            /** @description 请求失败 */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getCreativeDocumentConversation: {
+        parameters: {
+            query: {
+                canvas_id: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description 成功 */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreativeDocumentConversation"];
                 };
             };
             /** @description 请求失败 */
