@@ -200,13 +200,6 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 			}
 			return nil, r.markGenerationVerification(ctx, tx, requestID, "adapter_version_unavailable", now)
 		}
-		granted, err := tx.LLMLimitView().Acquire(ctx, reg.LimitKey, reg.Concurrency, reg.RateLimit, 60, now)
-		if err != nil {
-			return nil, err
-		}
-		if !granted {
-			return nil, ErrRateLimited
-		}
 		var groupID string
 		if err := tx.QueryRowForUpdate(ctx, "llm_call_groups", "caller_group_id", "caller_service=$2 AND caller_group_id=$3", peek.callerService, peek.groupID).Scan(&groupID); err != nil {
 			return nil, err
@@ -315,9 +308,6 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 		if err := s.releaseReservation(ctx, tx, request.id, now); err != nil {
 			return nil, err
 		}
-		if err := tx.LLMLimitView().Release(ctx, reg.LimitKey); err != nil {
-			return nil, err
-		}
 		_, err := tx.Update(ctx, "llm_generation_requests", "next_advance_at=NULL", "request_id=$2", request.id)
 		return nil, err
 	}
@@ -349,10 +339,10 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	}
 	attempt := newID("llma")
 	until := now.Add(generationLease)
-	if err := tx.Insert(ctx, "llm_attempts", []string{"id", "request_id", "attempt_number", "reservation_id", "reservation_generation", "dispatch_state", "dispatch_epoch", "permit_digest", "limit_key", "dispatched_at", "permit_claimed_at"}, attempt, request.id, request.attemptsUsed+1, reservation.id, reservation.generation, "dispatching", reservation.generation, digest([]byte(token)), reg.LimitKey, now, now); err != nil {
+	if err := tx.Insert(ctx, "llm_attempts", []string{"id", "request_id", "attempt_number", "reservation_id", "reservation_generation", "dispatch_state", "dispatch_epoch", "permit_digest", "limit_key", "dispatched_at", "permit_claimed_at"}, attempt, request.id, request.attemptsUsed+1, reservation.id, reservation.generation, "dispatching", reservation.generation, digest([]byte(token)), "", now, now); err != nil {
 		return nil, err
 	}
-	if err := tx.Insert(ctx, "llm_generation_tasks", []string{"request_id", "attempt_id", "deployment_id", "adapter_version", "limit_key", "lease_until", "action", "failures", "created_at", "recovery_until"}, request.id, attempt, reg.DeploymentID, reg.Version, reg.LimitKey, until, "submit", 1, now, now.Add(generationRecoveryWindow)); err != nil {
+	if err := tx.Insert(ctx, "llm_generation_tasks", []string{"request_id", "attempt_id", "deployment_id", "adapter_version", "limit_key", "lease_until", "action", "failures", "created_at", "recovery_until"}, request.id, attempt, reg.DeploymentID, reg.Version, "", until, "submit", 1, now, now.Add(generationRecoveryWindow)); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Update(ctx, "llm_requests", "state='dispatching',attempts_used=attempts_used+1,retry_eligible=FALSE,revision=revision+1,updated_at=$3", "id=$2", request.id, now); err != nil {

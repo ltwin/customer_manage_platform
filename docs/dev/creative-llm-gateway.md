@@ -1,5 +1,6 @@
 # 统一 LLM Gateway 开发说明（FND-06）
 
+> 2026-10-16 更新：平台供应商并发和频率限制已移除，账号级限制以后实现。下文涉及共享名额的原设计仅适用于历史在途记录清理；新派发不申请平台名额，Redispatch 从分组和预算锁开始。现有计费与预算不变。兼容迁移与部署顺序见 [生成路由接入](creative-generation-routing.md#2026-10-16退役平台供应商配额)。
 实现 Epic `creative-workspace-system` 的 FND-06 / 切片 GH-01 与 GH-04 的 Gateway 部分。契约权威源是
 [modules/gateway.md](../product/creative-canvas-system/modules/gateway.md)、
 [gateway-harness-data.md](../product/creative-canvas-system/modules/gateway-harness-data.md)
@@ -159,7 +160,7 @@ GPT-6 系列原有 AiCodeWith 部署经 AiCodeWith 中转（`vendor_key=aicodewi
 - 接入现有 `gpt-6.1-sol`、`gpt-6-sol`、`gpt-6-astra` 模型，同名发送；复用 Responses 适配器，POST `/codex/v1/responses`，medium 推理、`store:false`、加密推理回传。`reasoning_context` 是部署可选扩展，Krill 留空不发送，AiCodeWith 继续设置 `all_turns`。
 - 模型广场给出 1.05M 上下文、128K 输出，目录沿用保守的 1M/128K；教程 OpenCode 示例统一写 272K，不用该客户端示例覆盖模型广场的能力表。
 - 两个密钥都配置时，新请求优先 Krill；没有 Krill 密钥时继续使用 AiCodeWith。已冻结的 AiCodeWith 请求仍使用原部署。超时、429、5xx 按下述对话容灾策略重试和切换，每次单独记账。历史文本与工具结果保留，其他部署的加密推理不发给 Krill。
-- 三个模型共享 `krill-ai/codex` 限流键（并发 4、每分钟 60）；查询、取消能力暂不声明。生图仍使用 AiCodeWith。
+- Krill 模型不设置平台共享并发/频率门禁；查询、取消能力暂不声明。
 
 平台费用继续采用**保守上界**，不是 Krill 钱包扣款镜像。登录价格表显示 Standard 渠道倍率 0.15，且钱包有单独的充值换算；平台不把折扣或钱包单位直接当 USD 结算。按未打折价格、Sol 的 >272K 长上下文档，以及非缓存输入可能包含的缓存写入上界记账：
 
@@ -186,7 +187,7 @@ KRILL_AI_LIVE=1 go test ./internal/platform/llmgateway/ -run '^TestLiveKrill' -c
 
 真实测试覆盖三个模型、图片与流式工具回合；仅有密钥不会触发，必须显式设置 `KRILL_AI_LIVE=1`。AiCodeWith 的真实测试固定选用其自身部署，不因 Krill 优先级而误测另一家。
 
-共用同一 `limit_key` 的部署必须声明相同的 `Concurrency` / `RateLimitPerMin`，否则目录加载直接拒绝——它们共享一条平台准入记录，参数不一致会让每次派发互相改写对方的容量。运行期调小 `Concurrency` 不会把容量压到在飞许可数以下（`GREATEST(新容量, active_count)`），缩容随在飞许可自然回落生效，不会因为表上的 `capacity` 约束把该 key 的派发全部打成约束错误。
+2026-10-16 起平台供应商并发与频率门禁退役。旧目录的 `limit_key` / `concurrency` / `rate_limit_per_minute` 仅兼容读取，不再参与校验或派发。内置目录不再声明这些字段；账号级限制以后单独实现。
 
 **Anthropic 部署的缓存写入计价**：`provider_anthropic.go` 的 usage 映射没有独立的 cache-write 分量，缓存写入计入未命中输入。任何 `anthropic_messages` 部署（包括 `CREATIVE_LLM_CATALOG` 自定义目录）的 `input_uncached` 必须取该模型的缓存写入价（5 分钟缓存为 1.25× 输入），否则每次写入都会少计。要精确计价需另补第四个不重叠分量。
 

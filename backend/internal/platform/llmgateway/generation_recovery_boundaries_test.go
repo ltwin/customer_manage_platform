@@ -50,7 +50,7 @@ func TestGenerationRuntimeRejectedUsageCannotAuthorizeRetry(t *testing.T) {
 				if err != nil || !result.VerificationRequired || result.Request.RetryEligible || held != 1250000 || spent != 0 {
 					t.Fatalf("contradiction: %+v %v money=%d/%d", result, err, held, spent)
 				}
-				if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 1 {
+				if n := queryCount(t, f.db, `SELECT count(*) FROM platform_llm_limits`); n != 0 {
 					t.Fatalf("contradiction released capacity: %d", n)
 				}
 				if n := queryCount(t, f.db, `SELECT count(*) FROM llm_usage_measurements WHERE account_id='gw-a' AND certainty='known'`); n != 0 {

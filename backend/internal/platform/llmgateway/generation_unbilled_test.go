@@ -30,7 +30,7 @@ func unbilledRuntime(t *testing.T, f *fixture, a gw.GenerationAdapter, policies 
 	var registrations []gw.GenerationAdapterRegistration
 	for _, p := range policies {
 		d := p.PolicyDefinition()
-		registrations = append(registrations, gw.GenerationAdapterRegistration{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "unbilled-test", Concurrency: 4, RateLimit: 100, Adapter: a})
+		registrations = append(registrations, gw.GenerationAdapterRegistration{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: a})
 	}
 	r, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: registrations, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 		return nil

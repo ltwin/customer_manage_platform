@@ -126,7 +126,7 @@ func setup(t *testing.T, kind gw.GenerationKind) *fixture {
 	}
 	s, err := creativegeneration.New(creativegeneration.Config{Authorization: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 		return nil
-	}, Gateway: gateway, Media: media, ProtectionKey: bytes.Repeat([]byte{2}, 32), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: "test-deployment", Version: "1", LimitKey: "g4-limit", Concurrency: 2, RateLimit: 100, Adapter: f.a}}, Fetchers: map[string]creativemedia.GenerationFetcher{"test-deployment": f.f}})
+	}, Gateway: gateway, Media: media, ProtectionKey: bytes.Repeat([]byte{2}, 32), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: "test-deployment", Version: "1", Adapter: f.a}}, Fetchers: map[string]creativemedia.GenerationFetcher{"test-deployment": f.f}})
 	must(t, err)
 	f.svc = s
 	q, err := st.NewJobRuntime(s.Handlers(), nil)
@@ -549,43 +549,48 @@ func TestGenerationReviewUnknownBillingDoesNotBlockKnownOutputs(t *testing.T) {
 
 }
 
-// 供应商名额占满是排队：不计连续失败、节点不提前失败；到截止才收为超时，
-// 未派发的请求被取消并退回预留。
-func TestGenerationSaturatedProviderQueuesUntilDeadline(t *testing.T) {
-	f := setup(t, gw.GenerationText)
-	f.admit(t)
-	_, err := f.db.Exec(`INSERT INTO platform_llm_limits(limit_key,capacity,active_count,rate_limit,window_seconds,window_start) VALUES('g4-limit',2,2,100,60,now())`)
-	must(t, err)
-	work := func() {
-		t.Helper()
-		_, err := f.db.Exec(`UPDATE creative_generation_bindings SET next_step_at=clock_timestamp()-interval '1 second',lease_until=NULL`)
-		must(t, err)
-		err = f.svc.Work(t.Context(), f.scope, jobs.Request{Payload: creativegraph.Canonical(f.target)})
-		t.Logf("work result: %v", err)
+// 历史平台配额不再阻塞派发；业务截止仍禁止提交。
+func TestGenerationIgnoresPlatformQuotaButHonorsDeadline(t *testing.T) {
+	for _, expired := range []bool{false, true} {
+		name := "dispatches despite exhausted quota"
+		if expired {
+			name = "expired request never dispatches"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := setup(t, gw.GenerationText)
+			f.admit(t)
+			_, err := f.db.Exec(`INSERT INTO platform_llm_limits(limit_key,capacity,active_count,rate_limit,window_seconds,window_start,window_count) VALUES('g4-limit',2,2,1,60,now(),1)`)
+			must(t, err)
+			if expired {
+				_, err = f.db.Exec(`UPDATE creative_node_executions SET deadline=created_at+interval '1 millisecond'`)
+				must(t, err)
+			}
+			steps := 4
+			if expired {
+				steps = 1
+			}
+			for range steps {
+				f.step(t)
+			}
+			var hold int64
+			must(t, f.db.QueryRow(`SELECT remaining_hold_micros FROM llm_usage_reservations`).Scan(&hold))
+			if hold != 0 || count(t, f.db, `SELECT count(*) FROM creative_generation_bindings WHERE verification_required OR next_step_at IS NOT NULL`) != 0 {
+				t.Fatal("generation did not finish")
+			}
+			if expired {
+				if f.a.calls.Load() != 0 || count(t, f.db, `SELECT count(*) FROM creative_node_executions WHERE state='failed' AND error='generation_timeout'`) != 1 {
+					t.Fatal("expired generation dispatched or wrong failure")
+				}
+			} else {
+				if f.a.calls.Load() != 1 || count(t, f.db, `SELECT count(*) FROM creative_node_versions`) != 2 {
+					t.Fatal("platform quota blocked or duplicated generation")
+				}
+			}
+			if count(t, f.db, `SELECT count(*) FROM llm_attempts WHERE limit_key<>''`) != 0 || count(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='g4-limit'`) != 2 {
+				t.Fatal("new generation changed historical quota")
+			}
+		})
 	}
-	for range 6 {
-		work()
-	}
-	var failures int
-	var parked bool
-	must(t, f.db.QueryRow(`SELECT failures,verification_required FROM creative_generation_bindings`).Scan(&failures, &parked))
-	if failures != 0 || parked || count(t, f.db, "SELECT count(*) FROM creative_node_executions WHERE state='running'") != 1 {
-		t.Fatal("queued generation counted as failing", failures, parked)
-	}
-	_, err = f.db.Exec(`UPDATE creative_node_executions SET deadline=created_at+interval '1 millisecond'`)
-	must(t, err)
-	work()
-	if count(t, f.db, "SELECT count(*) FROM creative_node_executions WHERE state='failed' AND error='generation_timeout'") != 1 ||
-		count(t, f.db, "SELECT count(*) FROM creative_nodes WHERE active_execution_id IS NOT NULL") != 0 ||
-		count(t, f.db, "SELECT count(*) FROM creative_generation_bindings WHERE next_step_at IS NULL") != 1 {
-		t.Fatal("expired queued generation not failed as timeout")
-	}
-	var hold int64
-	must(t, f.db.QueryRow(`SELECT remaining_hold_micros FROM llm_usage_reservations`).Scan(&hold))
-	if hold != 0 || f.a.calls.Load() != 0 {
-		t.Fatal("parked undispatched generation retained permit", hold, f.a.calls.Load())
-	}
-
 }
 
 func TestMainVersionPinnedSurvivesNewGenerationAndCanFollowLatest(t *testing.T) {

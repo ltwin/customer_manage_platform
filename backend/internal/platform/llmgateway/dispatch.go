@@ -229,15 +229,12 @@ type Permit struct {
 }
 
 // BeginDispatchInTx records the single dispatch intent together with the
-// provider admission permit. The caller must already have completed its own
+// one-shot dispatch permit. The caller must already have completed its own
 // business, consent and purpose checks.
 func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope, limits LimitView, requestID string) (Permit, error) {
 	if limits == nil {
 		return Permit{}, fmt.Errorf("%w: platform admission view required", ErrValidation)
 	}
-	// Global lock order: the shared provider admission record comes before any
-	// account-scoped row. The model key is immutable on a request, so reading
-	// it without a lock first is safe.
 	peek, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns, "id=$2", requestID))
 	if err != nil {
 		return Permit{}, err
@@ -246,18 +243,11 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 		// Immutable on a request; a generation request has no chat deployment.
 		return Permit{}, fmt.Errorf("%w: chat dispatch received a %s request", ErrState, peek.kind)
 	}
-	model, err := s.catalog.Deployment(peek.modelKey, peek.modelSnapshot.DeploymentKey)
+	_, err = s.catalog.Deployment(peek.modelKey, peek.modelSnapshot.DeploymentKey)
 	if err != nil {
 		return Permit{}, err
 	}
 	now := s.now().UTC()
-	granted, err := limits.Acquire(ctx, model.LimitKey, model.Concurrency, model.RateLimitPerMin, 60, now)
-	if err != nil {
-		return Permit{}, err
-	}
-	if !granted {
-		return Permit{}, fmt.Errorf("%w: %s", ErrRateLimited, model.LimitKey)
-	}
 
 	request, err := scanRequest(tx.QueryRowForUpdate(ctx, "llm_requests", requestColumns, "id=$2", requestID))
 	if err != nil {
@@ -304,14 +294,13 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 		Price:       request.priceSnapshot,
 		RequestHash: request.requestHash,
 		Deadline:    request.deadline,
-		LimitKey:    model.LimitKey,
 		DispatchAt:  now,
 	}
 	if err := tx.Insert(ctx, "llm_attempts",
 		[]string{"id", "request_id", "attempt_number", "reservation_id", "reservation_generation",
 			"dispatch_state", "dispatch_epoch", "permit_digest", "limit_key", "dispatched_at", "created_at", "updated_at"},
 		permit.AttemptID, requestID, permit.AttemptNo, reservation.id, reservation.generation,
-		"dispatching", reservation.generation, permit.Digest, model.LimitKey, now, now, now); err != nil {
+		"dispatching", reservation.generation, permit.Digest, "", now, now, now); err != nil {
 		return Permit{}, err
 	}
 	if _, err := tx.Update(ctx, "llm_requests",
@@ -328,7 +317,7 @@ func (s *Service) BeginDispatchInTx(ctx context.Context, tx store.TxAccountScope
 // Re-arming in a transaction of its own is never correct. Between the two
 // commits the reservation is held again while the request still says it is
 // waiting to be re-admitted, so a crash — or simply a dispatch the shared
-// provider limit refuses — strands the identity: every later attempt fails
+// caller admission refuses — strands the identity: every later attempt fails
 // RearmInTx with "reservation is not released for retry" and the hold stays
 // occupied until it expires.
 func (s *Service) RedispatchInTx(
@@ -341,24 +330,6 @@ func (s *Service) RedispatchInTx(
 ) (Permit, Reservation, error) {
 	if limits == nil {
 		return Permit{}, Reservation{}, fmt.Errorf("%w: platform admission view required", ErrValidation)
-	}
-	// Global lock order: the shared provider record comes before the group and
-	// budget rows re-admission is about to take. The model key is immutable on a
-	// request, so the unlocked read that resolves the limit key is safe.
-	peek, err := scanRequest(tx.QueryRow(ctx, "llm_requests", requestColumns, "id=$2", requestID))
-	if err != nil {
-		return Permit{}, Reservation{}, err
-	}
-	model, err := s.catalog.Deployment(peek.modelKey, peek.modelSnapshot.DeploymentKey)
-	if err != nil {
-		return Permit{}, Reservation{}, err
-	}
-	// The row exists: this request has dispatched at least once already, which is
-	// what made it re-admissible. Without it lockSharedAdmission would silently do
-	// nothing and the Acquire below would create the row after the level 2 and 4
-	// locks — exactly the inversion this ordering exists to prevent.
-	if err := lockSharedAdmission(ctx, tx, limits, model.LimitKey); err != nil {
-		return Permit{}, Reservation{}, err
 	}
 	reservation, err := s.RearmInTx(ctx, tx, requestID, expectedGeneration, accountLimitMicros, accountTokenLimit)
 	if err != nil {
@@ -659,7 +630,7 @@ func lockSharedAdmission(
 	return view.Lock(ctx, limitKey)
 }
 
-// releasePermit frees the shared provider slot once local transport ended. It
+// releasePermit marks the one-shot permit released and frees a legacy slot, if any. It
 // never asserts that the provider stopped working on the remote side.
 func (s *Service) releasePermit(
 	ctx context.Context,
@@ -673,7 +644,7 @@ func (s *Service) releasePermit(
 	if err != nil {
 		return err
 	}
-	if affected == 0 || limits == nil {
+	if affected == 0 || limits == nil || permit.LimitKey == "" {
 		return nil
 	}
 	view := limits(tx)

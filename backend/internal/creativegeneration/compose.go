@@ -69,7 +69,7 @@ func Compose(gateway *gw.Service, currency string, media *creativemedia.Service,
 			return Composed{}, err
 		}
 		for _, p := range list {
-			cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, LimitKey: "aicodewith/images", Concurrency: 4, RateLimit: 30, Adapter: adapter, Available: func() bool { k, ok := credential("AICODEWITH_API_KEY"); return ok && k != "" }})
+			cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, Adapter: adapter, Available: func() bool { k, ok := credential("AICODEWITH_API_KEY"); return ok && k != "" }})
 			cfg.Fetchers[p.Definition.DeploymentID] = fetcher
 		}
 		policies = append(policies, list...)
@@ -89,7 +89,7 @@ func Compose(gateway *gw.Service, currency string, media *creativemedia.Service,
 		}
 		for _, model := range gw.RunningHubImageModels() {
 			deployment := "runninghub-images-" + model
-			cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: deployment, Version: gw.RunningHubImageAdapterVersion, LimitKey: "runninghub/images", Concurrency: 1, RateLimit: 10, Adapter: adapter, Available: func() bool {
+			cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: deployment, Version: gw.RunningHubImageAdapterVersion, Adapter: adapter, Available: func() bool {
 				k, ok := credential("RUNNINGHUB_API_KEY")
 				return ok && k != ""
 			}})

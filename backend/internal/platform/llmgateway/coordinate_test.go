@@ -203,78 +203,38 @@ func TestAnUnsettledStepIsNeverSentAgain(t *testing.T) {
 	}
 }
 
-func TestATransientAdmissionRefusalKeepsTheStepResumable(t *testing.T) {
+func TestInFlightRequestsDoNotBlockOtherSteps(t *testing.T) {
 	f := setupGateway(t, defaultBudget())
-	// Occupy both shared transports of the test deployment without finishing them.
-	var (
-		permits []llmgateway.Permit
-		chats   []llmgateway.ChatRequest
-	)
+	// Leave two transports in flight; neither may block another step.
 	for range 2 {
 		reservation := f.reserve(t, f.a, uuid.NewString(), turnOptions{})
-		view, chat, err := f.prepare(t, f.a, reservation.ID, uuid.NewString(), turnOptions{})
+		view, _, err := f.prepare(t, f.a, reservation.ID, uuid.NewString(), turnOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		permit, err := f.begin(t, f.a, view.ID)
+		_, err = f.begin(t, f.a, view.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		permits, chats = append(permits, permit), append(chats, chat)
 	}
 
 	session := f.callSession(f.a, "run-busy")
 	in := llmgateway.CallInput{BindingKey: "run-busy:step-1", Chat: textRequest("chat")}
-	if _, err := f.gateway.Call(t.Context(), session, in); !errors.Is(err, llmgateway.ErrRateLimited) {
-		t.Fatalf("a busy deployment must refuse admission, got %v", err)
-	}
-	requestID := f.requestID(t, "run-busy")
-	if state, attempts := f.requestState(t, requestID); state != "prepared" || attempts != 0 {
-		t.Fatalf("a transient refusal ended the step as %q after %d attempts", state, attempts)
-	}
-
-	// One transport finishes, so the same binding key runs the step it prepared
-	// instead of having been cancelled by a condition that clears on its own.
-	if _, err := f.gateway.Execute(t.Context(), f.a, limitsOf, permits[0], chats[0], false); err != nil {
-		t.Fatal(err)
-	}
 	outcome, err := f.gateway.Call(t.Context(), session, in)
 	if err != nil {
-		t.Fatalf("the step must run once admission frees up: %v", err)
+		t.Fatalf("other in-flight requests blocked dispatch: %v", err)
 	}
+	requestID := outcome.RequestID
+	if _, err := f.gateway.Call(t.Context(), session, in); err != nil {
+		t.Fatal(err)
+	}
+
 	if outcome.RequestID != requestID {
 		t.Fatalf("the retry opened a new identity: %s then %s", requestID, outcome.RequestID)
 	}
 	if n := f.count(t, `SELECT count(*) FROM llm_requests WHERE account_id='gw-a' AND caller_group_id='run-busy'`); n != 1 {
 		t.Fatalf("one step produced %d request identities", n)
 	}
-}
-
-// oneCallPerMinuteCatalog lets exactly one dispatch through per window, so the
-// re-dispatch of a proven-unaccepted attempt is refused deterministically.
-func oneCallPerMinuteCatalog(t *testing.T) *llmgateway.Catalog {
-	t.Helper()
-	c, err := llmgateway.NewCatalog("cat-1", "USD", []llmgateway.ModelConfig{{ModelKey: "chat", DisplayName: "Chat", Deployment: llmgateway.Deployment{
-		Provider:         llmgateway.ProviderOpenAICompatible,
-		VendorKey:        "testvendor",
-		DeploymentKey:    "dep-1",
-		BaseURL:          "https://example.invalid",
-		CredentialEnv:    "TEST_KEY",
-		RequestModelID:   "vendor-model",
-		AcceptedModelIDs: []string{"vendor-model"},
-		Capability:       llmgateway.Capability{ToolCalling: true, ContextTokens: 1000, MaxOutputTokens: 500},
-		Price:            usablePrice(),
-		LimitKey:         "dep-1",
-		Concurrency:      2,
-		RateLimitPerMin:  1,
-		QueryCapability:  "none",
-		CancelCapability: "none",
-		Enabled:          true,
-	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return c
 }
 
 func TestARefusedPreparationLeavesTheBindingKeyUsable(t *testing.T) {
@@ -351,16 +311,22 @@ func TestATerminalRefusalEndsTheRequestAndReturnsTheHold(t *testing.T) {
 }
 
 func TestARefusedRedispatchLeavesTheStepResumable(t *testing.T) {
-	f := setupGatewayWith(t, defaultBudget(), oneCallPerMinuteCatalog(t))
+	f := setupGateway(t, defaultBudget())
 	session := f.callSession(f.a, "run-redispatch")
 	in := llmgateway.CallInput{BindingKey: "run-redispatch:step-1", Chat: textRequest("chat")}
 
 	// The first attempt is provably unaccepted, which puts the step back in line
-	// for re-admission — but the deployment's one call per window is now spent,
-	// so the re-dispatch is refused.
+	// for re-admission; the caller temporarily pauses the next dispatch.
+	admissionPaused := errors.New("caller admission temporarily paused")
+	session.Admit = func(store.TxAccountScope) error {
+		if f.provider.attempts() > 0 {
+			return admissionPaused
+		}
+		return nil
+	}
 	f.provider.err = &llmgateway.ProviderError{Outcome: llmgateway.OutcomeUnaccepted, Class: "connect_refused"}
-	if _, err := f.gateway.Call(t.Context(), session, in); !errors.Is(err, llmgateway.ErrRateLimited) {
-		t.Fatalf("the re-dispatch must be refused by the shared limit, got %v", err)
+	if _, err := f.gateway.Call(t.Context(), session, in); !errors.Is(err, admissionPaused) {
+		t.Fatalf("the re-dispatch must preserve the caller admission refusal, got %v", err)
 	}
 
 	// Re-admission and the dispatch intent rolled back together, so the step is
@@ -381,8 +347,9 @@ func TestARefusedRedispatchLeavesTheStepResumable(t *testing.T) {
 			reservationState, retryEligible)
 	}
 
-	// The window rolls over and the same step runs, instead of failing forever on
+	// The caller resumes and the same step runs, instead of failing forever on
 	// "reservation is not released for retry".
+	session.Admit = nil
 	f.provider.err = nil
 	f.now = f.now.Add(2 * time.Minute)
 	outcome, err := f.gateway.Call(t.Context(), session, in)
@@ -401,7 +368,7 @@ func TestARefusedRedispatchLeavesTheStepResumable(t *testing.T) {
 }
 
 func TestACeilingRefusalLeavesTheStepRecoverable(t *testing.T) {
-	f := setupGatewayWith(t, defaultBudget(), oneCallPerMinuteCatalog(t))
+	f := setupGateway(t, defaultBudget())
 	chat := textRequest("chat")
 	// The hold is derived with the same recipe the coordinator uses, so a group
 	// ceiling of exactly one hold leaves room for this step and nothing else.
@@ -414,15 +381,23 @@ func TestACeilingRefusalLeavesTheStepRecoverable(t *testing.T) {
 	in := llmgateway.CallInput{BindingKey: "run-budget:step-1", Chat: chat}
 
 	// One proven-unaccepted attempt gives the hold back; the re-dispatch is
-	// refused by the one call per window, which leaves the step waiting.
+	// paused by caller admission, which leaves the step waiting.
+	admissionPaused := errors.New("caller admission temporarily paused")
+	session.Admit = func(store.TxAccountScope) error {
+		if f.provider.attempts() > 0 {
+			return admissionPaused
+		}
+		return nil
+	}
 	f.provider.err = &llmgateway.ProviderError{Outcome: llmgateway.OutcomeUnaccepted, Class: "connect_refused"}
-	if _, err := f.gateway.Call(t.Context(), session, in); !errors.Is(err, llmgateway.ErrRateLimited) {
+	if _, err := f.gateway.Call(t.Context(), session, in); !errors.Is(err, admissionPaused) {
 		t.Fatalf("setup: %v", err)
 	}
 	requestID := f.requestID(t, "run-budget")
 
 	// Another task of the same group takes the freed ceiling in the meantime.
 	competitor := f.reserve(t, f.a, uuid.NewString(), turnOptions{group: "run-budget", inputBound: 1, outputLimit: 256})
+	session.Admit = nil
 	f.provider.err = nil
 	f.now = f.now.Add(2 * time.Minute)
 	if _, err := f.gateway.Call(t.Context(), session, in); !errors.Is(err, llmgateway.ErrBudget) {

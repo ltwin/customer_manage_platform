@@ -56,7 +56,7 @@ func TestGenerationRuntimeRestartUsesOriginalAdapterAndTask(t *testing.T) {
 		}
 		return generationCompleted(f), nil
 	}}
-	rebuilt, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "generation-test", Concurrency: 2, RateLimit: 100, Adapter: b}}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
+	rebuilt, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: b}}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 		return gw.ErrCancelled
 	}})
 	if err != nil {
@@ -222,7 +222,7 @@ func TestGenerationRuntimeCancellationKeepsFeeRecovery(t *testing.T) {
 			if a.submitCalls != 1 || a.cancelCalls != 1 {
 				t.Fatalf("calls: submit=%d cancel=%d", a.submitCalls, a.cancelCalls)
 			}
-			if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 0 {
+			if n := queryCount(t, f.db, `SELECT count(*) FROM platform_llm_limits`); n != 0 {
 				t.Fatalf("terminal capacity not released: %d", n)
 			}
 		})
@@ -280,7 +280,7 @@ func TestGenerationRuntimeDeploymentStopAndConsentGuard(t *testing.T) {
 				}
 			} else {
 				var err error
-				r, err = gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "generation-test", Concurrency: 2, RateLimit: 100, Adapter: a}}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
+				r, err = gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: a}}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 					return gw.ErrCancelled
 				}})
 				if err != nil {
@@ -398,7 +398,7 @@ func TestGenerationRuntimeObserveRetriesKnownTaskAndChatRecoveryIsolation(t *tes
 	if next := progress.NextAdvanceAt; next == nil || next.Sub(f.now) > time.Minute {
 		t.Fatalf("backoff not capped: %v", next)
 	}
-	if n := queryCount(t, f.db, `SELECT active_count FROM platform_llm_limits WHERE limit_key='generation-test'`); n != 1 {
+	if n := queryCount(t, f.db, `SELECT count(*) FROM platform_llm_limits`); n != 0 {
 		t.Fatalf("unresolved task lost capacity: %d", n)
 	}
 	a.observe = func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {

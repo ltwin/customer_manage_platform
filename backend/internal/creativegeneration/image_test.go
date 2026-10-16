@@ -117,7 +117,7 @@ func setupImages(t *testing.T, fallback ...bool) *imageFixture {
 	c := creativegeneration.Config{Gateway: gateway, Media: media, ProtectionKey: bytes.Repeat([]byte{3}, 32), Fetchers: map[string]creativemedia.GenerationFetcher{},
 		References: func(s store.AccountScope) gw.GenerationReferenceOpener { return media.GenerationReferenceOpenerFor(s) }}
 	for _, p := range policies {
-		c.Adapters = append(c.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, LimitKey: "aicodewith/images", Concurrency: 4, RateLimit: 30, Adapter: adapter})
+		c.Adapters = append(c.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, Adapter: adapter})
 		c.Fetchers[p.Definition.DeploymentID] = &fetcher{data: png}
 	}
 	if relay.fallback {
@@ -126,7 +126,7 @@ func setupImages(t *testing.T, fallback ...bool) *imageFixture {
 		rhPolicies, err := gw.RunningHubImagePolicies(catalog.Currency())
 		must(t, err)
 		for _, p := range rhPolicies {
-			c.Adapters = append(c.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, LimitKey: "runninghub/images", Concurrency: 1, RateLimit: 10, Adapter: rh})
+			c.Adapters = append(c.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, Adapter: rh})
 			c.Fetchers[p.Definition.DeploymentID] = &fetcher{data: png}
 		}
 		policies = append(policies, rhPolicies...)

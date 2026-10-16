@@ -22,12 +22,20 @@ func (f *fixture) recoveryTurn(t *testing.T, scope store.AccountScope) (llmgatew
 	if err != nil {
 		t.Fatal(err)
 	}
+	// These recovery fixtures represent in-flight attempts from the previous binary.
+	p.LimitKey = "dep-1"
+	if _, err := f.db.Exec(`INSERT INTO platform_llm_limits (limit_key,capacity,active_count,rate_limit,window_seconds,window_start) VALUES ('dep-1',100,1,100,60,now()) ON CONFLICT(limit_key) DO UPDATE SET active_count=platform_llm_limits.active_count+1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.Exec(`UPDATE llm_attempts SET limit_key='dep-1' WHERE id=$1`, p.AttemptID); err != nil {
+		t.Fatal(err)
+	}
 	return p, c
 }
 func (f *fixture) activeLLMSlots(t *testing.T) int {
 	t.Helper()
 	var n int
-	if err := f.db.QueryRow(`SELECT active_count FROM platform_llm_limits WHERE limit_key='dep-1'`).Scan(&n); err != nil {
+	if err := f.db.QueryRow(`SELECT COALESCE((SELECT active_count FROM platform_llm_limits WHERE limit_key='dep-1'),0)`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n

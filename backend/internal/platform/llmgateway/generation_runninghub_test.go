@@ -61,7 +61,7 @@ func TestRunningHubUploadAndTaskProtocol(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"taskId":"task-1","status":"RUNNING"}`))
 		case "/openapi/v2/query":
-			_, _ = w.Write([]byte(`{"taskId":"task-1","status":"SUCCESS","results":[{"url":"https://rh-images-1252422369.cos.ap-beijing.myqcloud.com/output/image.jpg","outputType":"jpg"}]}`))
+			_, _ = w.Write([]byte(`{"taskId":"task-1","status":"SUCCESS","results":[{"url":"https://rh-hk-images-1252422369.cos.ap-hongkong.myqcloud.com/output/image.jpg","outputType":"jpg"}]}`))
 		default:
 			t.Errorf("unexpected path %s", r.URL.Path)
 		}
@@ -202,6 +202,8 @@ func TestRunningHubFailureAndOutputValidation(t *testing.T) {
 		{"terminated", `{"taskId":"t","status":"FAILED","errorCode":"1006"}`, 200, gw.GenerationFailed, "execution_timeout", false},
 		{"upload_host_not_output", `{"taskId":"t","status":"SUCCESS","results":[{"url":"https://rh-hk-images-switch.xiaoyaoyou.com/result.png","outputType":"png"}]}`, 200, "", "", true},
 		{"unsafe_result", `{"taskId":"t","status":"SUCCESS","results":[{"url":"https://evil.invalid/x.png","outputType":"png"}]}`, 200, "", "", true},
+		{"hk_suffix_attack", `{"taskId":"t","status":"SUCCESS","results":[{"url":"https://rh-hk-images-1252422369.cos.ap-hongkong.myqcloud.com.evil.invalid/x.png","outputType":"png"}]}`, 200, "", "", true},
+		{"upload_only_host", `{"taskId":"t","status":"SUCCESS","results":[{"url":"https://rh-hk-images-switch.xiaoyaoyou.com/x.png","outputType":"png"}]}`, 200, "", "", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

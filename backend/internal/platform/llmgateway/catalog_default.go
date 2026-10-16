@@ -95,11 +95,8 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 		// charge, so nothing is added without a documented pre-processing
 		// refusal.
 		UnacceptedStatuses: []int{429},
-		LimitKey:           "deepseek/api",
 		// Our own conservative admission, well below the vendor's concurrency
 		// allowance: this platform is one small deployment, not a fleet.
-		Concurrency:      4,
-		RateLimitPerMin:  60,
 		QueryCapability:  "none",
 		CancelCapability: "none",
 		Enabled:          hasDeepSeek,
@@ -145,9 +142,6 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 			PeakWindows: deepSeekPeakWindows(),
 		},
 		UnacceptedStatuses: []int{429},
-		LimitKey:           "deepseek/api",
-		Concurrency:        4,
-		RateLimitPerMin:    60,
 		QueryCapability:    "none",
 		CancelCapability:   "none",
 		Enabled:            hasDeepSeek,
@@ -222,9 +216,6 @@ func aicodewithModels(credential func(string) (string, bool)) ([]Model, []Deploy
 				OffPeak:  rate,
 			},
 			// The relay documents no status as refused before processing.
-			LimitKey:         "aicodewith/api",
-			Concurrency:      4,
-			RateLimitPerMin:  60,
 			QueryCapability:  "none",
 			CancelCapability: "none",
 			Enabled:          enabled,
@@ -303,9 +294,6 @@ func aicodewithClaudeModels(credential func(string) (string, bool)) ([]Model, []
 			},
 			// The relay documents no status as refused before processing. One
 			// limit key with the GPT line: it is one relay account.
-			LimitKey:         "aicodewith/api",
-			Concurrency:      4,
-			RateLimitPerMin:  60,
 			QueryCapability:  "none",
 			CancelCapability: "none",
 			Enabled:          enabled,

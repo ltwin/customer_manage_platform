@@ -68,9 +68,6 @@ type GenerationSubmissionLookup interface {
 type GenerationAdapterRegistration struct {
 	DeploymentID string
 	Version      string
-	LimitKey     string
-	Concurrency  int
-	RateLimit    int
 	Adapter      GenerationAdapter
 	// Available 在新派发前检查凭证和配置有效期，已有任务观察不受影响。
 	Available func() bool
@@ -120,7 +117,7 @@ func NewGenerationRuntime(cfg GenerationRuntimeConfig) (*GenerationRuntime, erro
 	r := &GenerationRuntime{gateway: cfg.Gateway, guard: cfg.Guard, prelock: cfg.Prelock, refs: cfg.References, cipher: aead, adapters: make(map[string]GenerationAdapterRegistration)}
 	for _, a := range cfg.Adapters {
 		key := a.DeploymentID + "/" + a.Version
-		if !generationToken(a.DeploymentID) || !generationToken(a.Version) || a.LimitKey == "" || len(a.LimitKey) > 120 || a.Concurrency < 1 || a.RateLimit < 1 || a.Adapter == nil {
+		if !generationToken(a.DeploymentID) || !generationToken(a.Version) || a.Adapter == nil {
 			return nil, ErrValidation
 		}
 		if _, ok := r.adapters[key]; ok {

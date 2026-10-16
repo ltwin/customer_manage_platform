@@ -32,7 +32,7 @@ func NewRunningHubImages(client *http.Client, baseURL string, credential func() 
 	return &RunningHubImages{client: &c, baseURL: strings.TrimRight(baseURL, "/"), credential: credential}, nil
 }
 func RunningHubImageHosts() []string {
-	return []string{"rh-images-1252422369.cos.ap-beijing.myqcloud.com", "rh-images-switch-1252422369.cos.ap-guangzhou.myqcloud.com", "rh-images.xiaoyaoyou.com"}
+	return []string{"rh-hk-images-1252422369.cos.ap-hongkong.myqcloud.com", "rh-images-1252422369.cos.ap-beijing.myqcloud.com", "rh-images-switch-1252422369.cos.ap-guangzhou.myqcloud.com", "rh-images.xiaoyaoyou.com"}
 }
 func runningHubURL(raw string, hosts []string) bool {
 	u, err := url.Parse(raw)

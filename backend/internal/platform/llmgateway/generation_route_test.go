@@ -47,8 +47,8 @@ func TestGenerationRoutePriorityAndRecovery(t *testing.T) {
 			d2.DeploymentID, target.DeploymentID = "deployment-2", "deployment-2"
 			p2 := genPrepared(t, compilePolicy(t, d2, target), newInt64(1000))
 			r, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{
-				{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "route", Concurrency: 2, RateLimit: 100, Adapter: a},
-				{DeploymentID: d2.DeploymentID, Version: d2.AdapterVersion, LimitKey: "route", Concurrency: 2, RateLimit: 100, Adapter: a},
+				{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: a},
+				{DeploymentID: d2.DeploymentID, Version: d2.AdapterVersion, Adapter: a},
 			}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
 				return nil
 			}})
@@ -98,7 +98,7 @@ func TestGenerationRoutePriorityAndRecovery(t *testing.T) {
 	}
 }
 
-func routeFixture(t *testing.T, a gw.GenerationAdapter, limit int64) (*fixture, *gw.GenerationRuntime, gw.RequestView) {
+func routeFixture(t *testing.T, a gw.GenerationAdapter, limit int64, guards ...gw.GenerationGuard) (*fixture, *gw.GenerationRuntime, gw.RequestView) {
 	t.Helper()
 	f := setupGateway(t, defaultBudget())
 	_, p, d := generationRuntime(t, f, a)
@@ -107,9 +107,12 @@ func routeFixture(t *testing.T, a gw.GenerationAdapter, limit int64) (*fixture, 
 		target.DeploymentID = d.DeploymentID
 	})
 	r, err := gw.NewGenerationRuntime(gw.GenerationRuntimeConfig{Gateway: f.gateway, ProtectionKey: []byte(strings.Repeat("k", 32)), Adapters: []gw.GenerationAdapterRegistration{
-		{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, LimitKey: "route", Concurrency: 4, RateLimit: 100, Adapter: a},
-		{DeploymentID: d2.DeploymentID, Version: d2.AdapterVersion, LimitKey: "route", Concurrency: 4, RateLimit: 100, Adapter: a},
-	}, Guard: func(context.Context, store.TxAccountScope, gw.GenerationGuardRequest, gw.PreparedPolicyGeneration) error {
+		{DeploymentID: d.DeploymentID, Version: d.AdapterVersion, Adapter: a},
+		{DeploymentID: d2.DeploymentID, Version: d2.AdapterVersion, Adapter: a},
+	}, Guard: func(ctx context.Context, tx store.TxAccountScope, request gw.GenerationGuardRequest, prepared gw.PreparedPolicyGeneration) error {
+		if len(guards) > 0 {
+			return guards[0](ctx, tx, request, prepared)
+		}
 		return nil
 	}})
 	if err != nil {
@@ -263,17 +266,25 @@ func TestGenerationRouteStopAfterSwitch(t *testing.T) {
 	a := &generationAdapter{submit: func(context.Context, gw.GenerationCall) (gw.GenerationEvent, error) {
 		return gw.GenerationEvent{EventKey: "submit", Observation: gw.GenerationObservation{State: gw.GenerationRejected, ErrorCode: "credential_refused"}}, nil
 	}}
-	f, r, root := routeFixture(t, a, 5_000_000)
+	pause := errors.New("caller paused")
+	f, r, root := routeFixture(t, a, 5_000_000, func(ctx context.Context, tx store.TxAccountScope, call gw.GenerationGuardRequest, p gw.PreparedPolicyGeneration) error {
+		if p.PolicyDefinition().DeploymentID == "deployment-2" {
+			selected, err := tx.Exists(ctx, "llm_generation_routes", "root_request_id=$2 AND current_request_id=$3", call.RootRequestID, call.Call.ID)
+			if err != nil {
+				return err
+			}
+			if selected {
+				return pause
+			}
+		}
+		return nil
+	})
 	if _, err := r.AdvanceGeneration(t.Context(), f.a, root.ID); err != nil {
 		t.Fatal(err)
 	}
 	f.now = f.now.Add(6 * time.Second)
-	// Keep the newly created backup prepared by exhausting its shared dispatch rate.
-	if _, err := f.db.Exec("UPDATE platform_llm_limits SET window_start=$1,window_count=100 WHERE limit_key='route'", f.now); err != nil {
-		t.Fatal(err)
-	}
 	_, err := r.AdvanceGeneration(t.Context(), f.a, root.ID)
-	if !errors.Is(err, gw.ErrRateLimited) {
+	if !errors.Is(err, pause) {
 		t.Fatalf("expected queued backup: %v", err)
 	}
 	var current string

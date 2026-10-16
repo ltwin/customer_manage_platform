@@ -122,7 +122,7 @@ func CostMicros(tokens int64, ratePerMillion int64) int64 {
 }
 
 // Deployment is one vendor's way of serving a model: where to send, under
-// what name, at what price and within which admission limits. It is deployment
+// what name and at what price. It is deployment
 // configuration, not an editable admin screen, and holds no credential value.
 // The photographer never sees it; it exists for dispatch, billing and audit.
 type Deployment struct {
@@ -149,9 +149,12 @@ type Deployment struct {
 	AcceptedModelIDs []string      `json:"accepted_model_ids"`
 	Capability       Capability    `json:"capability"`
 	Price            PriceSchedule `json:"price"`
-	LimitKey         string        `json:"limit_key"`
-	Concurrency      int           `json:"concurrency"`
-	RateLimitPerMin  int           `json:"rate_limit_per_minute"`
+	// Legacy quota fields are accepted only to read existing catalog files.
+	// They have no effect on admission and built-in deployments never set them.
+	LegacyLimitKey        string `json:"limit_key,omitempty"`
+	LegacyConcurrency     int    `json:"concurrency,omitempty"`
+	LegacyRateLimitPerMin int    `json:"rate_limit_per_minute,omitempty"`
+
 	// UnacceptedStatuses lists the HTTP statuses this deployment was verified
 	// to return *before* processing, i.e. with no charge. Anything not listed
 	// stays unknown, because a retry of a possibly billed call is the most
@@ -361,21 +364,6 @@ func NewRoutedCatalog(version, currency string, models []Model, deployments []De
 		}
 	}
 	sort.Strings(c.keys)
-	// Deployments that share one credential share one admission record, so they
-	// must agree on its shape; otherwise every dispatch would rewrite the
-	// capacity of the previous one.
-	shared := make(map[string]Deployment, len(deployments))
-	for _, d := range deployments {
-		first, seen := shared[d.LimitKey]
-		if !seen {
-			shared[d.LimitKey] = d
-			continue
-		}
-		if first.Concurrency != d.Concurrency || first.RateLimitPerMin != d.RateLimitPerMin {
-			return nil, fmt.Errorf("%w: deployments %q and %q share limit key %q with different limits",
-				ErrValidation, first.DeploymentKey, d.DeploymentKey, d.LimitKey)
-		}
-	}
 	return c, nil
 }
 
@@ -394,7 +382,7 @@ func validateDeployment(m Deployment, currency string) error {
 	default:
 		return fmt.Errorf("%w: deployment %q unknown provider", ErrValidation, m.DeploymentKey)
 	}
-	if m.DeploymentKey == "" || m.RequestModelID == "" || m.LimitKey == "" {
+	if m.DeploymentKey == "" || m.RequestModelID == "" {
 		return fmt.Errorf("%w: deployment %q identity", ErrValidation, m.DeploymentKey)
 	}
 	if !vendorKeyPattern.MatchString(m.VendorKey) {
@@ -411,9 +399,6 @@ func validateDeployment(m Deployment, currency string) error {
 	}
 	if m.Capability.ContextTokens <= 0 || m.Capability.MaxOutputTokens <= 0 {
 		return fmt.Errorf("%w: deployment %q capability bounds", ErrValidation, m.DeploymentKey)
-	}
-	if m.Concurrency <= 0 || m.RateLimitPerMin <= 0 {
-		return fmt.Errorf("%w: deployment %q admission limits", ErrValidation, m.DeploymentKey)
 	}
 	switch m.Thinking {
 	case "", "enabled", "disabled":
@@ -576,7 +561,6 @@ func (c *Catalog) Snapshot(m ModelConfig) ModelSnapshot {
 		MaxOutputTokens:     m.Capability.MaxOutputTokens,
 		ContextTokens:       m.Capability.ContextTokens,
 		ContextWindowTokens: m.InputWindowTokens(),
-		LimitKey:            m.LimitKey,
 		QueryCapability:     m.QueryCapability,
 		CancelCapability:    m.CancelCapability,
 		Thinking:            m.Thinking,

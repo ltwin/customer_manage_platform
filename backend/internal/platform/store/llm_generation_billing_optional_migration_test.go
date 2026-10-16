@@ -11,6 +11,7 @@ import (
 
 func rollbackGenerationBillingOptional(t *testing.T, url string) {
 	t.Helper()
+	rollbackProviderLimits(t, url)
 	if err := store.MigrateDownOneForTest(url); err != nil {
 		t.Fatal("rollback generation-billing-optional", err)
 	}
@@ -37,6 +38,7 @@ func TestGenerationBillingOptionalMigration(t *testing.T) {
 			t.Fatalf("unbilled record accepted %s", assignment)
 		}
 	}
+	rollbackProviderLimits(t, url)
 	if err = store.MigrateDownOneForTest(url); err == nil || !strings.Contains(err.Error(), "unbilled generation calls exist") {
 		t.Fatalf("lossy downgrade allowed: %v", err)
 	}

@@ -343,10 +343,6 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 		}
 	}
 	progress, err := s.generation.AdvanceGeneration(ctx, scope, b.request)
-	// 供应商名额占满是排队，不是失败：等到截止为止，不计入连续失败。
-	if errors.Is(err, gw.ErrRateLimited) {
-		return false, nil
-	}
 	if err != nil {
 		return false, err
 	}
