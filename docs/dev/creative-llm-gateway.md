@@ -77,6 +77,7 @@
 | `DEEPSEEK_API_KEY` | DeepSeek 凭证；**只经环境变量注入**，不入库不入 git |
 | `AICODEWITH_API_KEY` | AiCodeWith 中转凭证（GPT-6 系列与 Claude 5.5 系列）；同上 |
 | `KRILL_AI_API_KEY` | Krill AI Openai 官渠凭证；配置后 GPT-6 对话优先走 Krill |
+| `FOUR_ROUTER_API_KEY` | 4Router 中转凭证；配置后 Claude 5.5 对话优先走 4Router |
 | `CREATIVE_LLM_CATALOG` | 可选，覆盖内置目录的 JSON 文件路径 |
 | `CREATIVE_LLM_MONTHLY_LIMIT_MICROS` | 每账号月度费用上限（micros，默认 20_000_000 = 20 USD） |
 | `CREATIVE_LLM_MONTHLY_TOKEN_LIMIT` | 每账号月度 token 上限（默认 5_000_000） |
@@ -109,7 +110,7 @@
 
 ### 内置目录
 
-内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-krill-claude-2026-10-16`，GPT-6 模型依次尝试选择已配置凭证的 Krill、AiCodeWith 部署，DeepSeek 与 Claude 保持单部署。DeepSeek 价格来源见
+内置目录 `DefaultCatalog` 版本 `deepseek-aicodewith-krill-claude-4router-2026-10-16`，GPT-6 模型依次尝试选择已配置凭证的 Krill、AiCodeWith 部署，Claude 模型依次尝试 4Router、AiCodeWith 部署，DeepSeek 保持单部署。DeepSeek 价格来源见
 <https://api-docs.deepseek.com/quick_start/pricing>（2026-09-11 读取），三个模型：
 
 | model_key | 供应商模型 | 思考模式 | tool_choice | 图片输入 |
@@ -151,6 +152,18 @@ GPT-6 系列原有 AiCodeWith 部署经 AiCodeWith 中转（`vendor_key=aicodewi
 - **流式 usage**：`message_start` 带缓存计数、`message_delta` 只带 input/output，适配器逐字段合并后再换算，不会丢掉开头的缓存读取。
 - 价格为 Anthropic 官方价（AiCodeWith 模型页标注同一官方价，渠道折扣 1.9–6.5 折）。中转未公开「处理前拒绝」状态码，`UnacceptedStatuses` 为空。每次尝试按上界预留：Opus 约 256K×5 + 128K×20 ≈ 3.84 USD，Sonnet 约 1.92 USD。
 - 尚未处理：Opus/Sonnet 5.5 把工具调用之间较长的说明放进 thinking 块（omitted 下为空），长工具循环里正文提示会变少；如需展示进度，可用 `display: "updates"`（beta `thinking-display-updates-2026-08-18`），但与「推理不展示给任何人」的合同约定冲突，需另行决策。拒答（`stop_reason: refusal`）映射为 `refused`，未接服务端 fallback。
+
+### 4Router 接入（2026-10-16）
+
+AiCodeWith 的 Claude 渠道对智能体任务太慢（owner 2026-10-16），新增 4Router 作为 Claude 5.5 的首选部署，AiCodeWith 退为兜底。依据 [手动配置](https://docs.4router.net/guides/manual-config/) 与 [模型分组](https://docs.4router.net/guides/model-groups/)：
+
+- `vendor_key=fourrouter`（厂商标识须以字母开头），部署键为 `4router/api/<model_key>`，Base URL 为根地址 `https://4router.net`，同样由适配器拼 `/v1/messages`；`x-api-key` 鉴权（无效令牌返回 401 `4router_error`），凭证环境变量 `FOUR_ROUTER_API_KEY`。
+- 接入 `claude-opus-5-5` 与 `claude-sonnet-5-5`，同名发送；推理强度、能力开关、提示缓存与 thinking 回传规则都与 AiCodeWith 部署相同。thinking 封存记录带部署键，跨部署切换时按正文重建、不交回对方的签名。
+- 两个密钥都配置时，新请求优先 4Router；超时、429、5xx 先在 4Router 上按对话容灾策略重试，401/402/403 直接切到 AiCodeWith。已冻结的 AiCodeWith 请求仍使用原部署。外发同意从 `egress-2026-10-1` 起按「平台签约的模型供应商」整体授权，换供应商不需要重新同意。
+- 4Router 的 key 绑定控制台里的分组，能访问哪些模型、倍率多少都看分组；文档只列出可接第三方软件的分组（`ClaudeApi`、`ClaudeApiV`、`OfficialClaude`、`cheapClaude`、`ClaudeExtern`），`ClaudeMax`、`ccMax-sale`、`AppClaude` 不允许第三方接入。价格按 Anthropic 官方价做保守上界（与 AiCodeWith 同一套，缓存写入并入未命中输入），版本 `4router-<model>-upper-bound-2026-10-16`。
+- 文档的分组表只写到 `claude-opus-5` / `claude-sonnet-5`，但我们的 key 在 `/v1/models` 里能看到 `claude-opus-5-5` 与 `claude-sonnet-5-5`。
+- 2026-10-16 实测（`TestLiveClaude*` 的 `FOUR_ROUTER_API_KEY` 子测试全部通过）：回包全是官方形状（`msg_011C…`、`cache_read/creation_input_tokens`、`output_tokens_details.thinking_tokens`、流里有 `ping`、thinking 文本省略但带签名），没有身份注入；带签名 thinking 在工具循环内交回被接受；强制 `tool_choice` 与 `temperature` 和官方一样返回 400；自动提示缓存第二次读回。同一套验收 4Router 65 秒、AiCodeWith 136 秒，其中工具循环 47 秒对 106 秒；TLS 建连 0.1 秒，吐字 80–99 token/s。
+- 4Router 的 thinking 是真正的 adaptive：步骤简单、或 system 提示要求「回答尽量简短」时，Sonnet 完全不思考；AiCodeWith 的渠道每次都思考。所以同一步换路由后思考量可能不同，真实接口工具循环测试为此改用较难的乘法、并去掉「简短」提示。
 
 ### Krill AI 接入（2026-10-10）
 
@@ -220,9 +233,10 @@ make check-go PKG=./internal/platform/llmgateway/...
 ```bash
 set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveDeepSeek -count=1 -v
 set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveAICodeWith -count=1 -v
+set -a && . ./.env && set +a && cd backend && go test ./internal/platform/llmgateway/ -run TestLiveClaude -count=1 -v
 ```
 
-AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次（并断言输入没有被注入提示词撑大）、加密推理跨轮交回的流式工具循环（连跑三轮）、看图。`TestLiveAICodeWithClaude*` 覆盖两个 Claude 模型各答一次（断言自称以我们的 system 提示为准）、带签名 thinking 跨轮交回的流式工具循环（每模型两轮）、提示缓存读回、看图；2026-10-16 全部通过（约 90 秒）。中转的 Cloudflare 会以 403「error code: 1010」拦截 Python urllib 默认 UA，手工探测时需要带 `User-Agent`；Go 客户端不受影响。
+AiCodeWith 的真实调用测试按官方价自带 1 USD 月度上限（中转实扣约其一折），覆盖三个模型各答一次（并断言输入没有被注入提示词撑大）、加密推理跨轮交回的流式工具循环（连跑三轮）、看图。`TestLiveClaude*` 对每个配置了凭证的 Claude 供应商（4Router、AiCodeWith，各自单独成目录）分别覆盖两个 Claude 模型各答一次（断言自称以我们的 system 提示为准）、带签名 thinking 跨轮交回的流式工具循环（每模型两轮）、提示缓存读回、看图；2026-10-16 两家各自全部通过（4Router 约 65 秒，AiCodeWith 约 136 秒）。中转的 Cloudflare 会以 403「error code: 1010」拦截 Python urllib 默认 UA，手工探测时需要带 `User-Agent`；Go 客户端不受影响。
 
 真实调用测试自带 0.05 USD 的月度上限，三个用例覆盖非流式、流式重组与真实工具调用；它不进入默认 `make check-go` 的必跑路径。默认 `-run` 全跑时是 60 个非 live 用例通过 + 3 个 live 用例按凭证缺失 skip。
 

@@ -3,7 +3,7 @@ package llmgateway
 // DefaultCatalogVersion changes whenever a deployment entry, capability or
 // price recipe below changes. It is persisted with every request, so an edit
 // never rewrites an in-flight call.
-const DefaultCatalogVersion = "deepseek-aicodewith-krill-claude-2026-10-16"
+const DefaultCatalogVersion = "deepseek-aicodewith-krill-claude-4router-2026-10-16"
 
 // defaultContextWindowTokens is the input window every built-in model uses.
 // The providers read far more, but each turn resends the whole window and the
@@ -166,6 +166,14 @@ func DefaultCatalog(credential func(string) (string, bool)) (*Catalog, error) {
 		}
 	}
 	claudeModels, claudeDeployments := aicodewithClaudeModels(credential)
+	fourRouter := fourRouterClaudeDeployments(credential)
+	for i := range claudeModels {
+		if d, ok := fourRouter[claudeModels[i].ModelKey]; ok {
+			// 4Router leads when configured; AiCodeWith stays the fallback.
+			claudeModels[i].Deployments = append([]string{d.DeploymentKey}, claudeModels[i].Deployments...)
+			claudeDeployments = append(claudeDeployments, d)
+		}
+	}
 	models = append(append(models, gptModels...), claudeModels...)
 	deployments = append(append(deployments, gptDeployments...), claudeDeployments...)
 	return NewRoutedCatalog(DefaultCatalogVersion, "USD", models, deployments)
