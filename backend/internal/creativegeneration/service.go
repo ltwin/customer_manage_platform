@@ -104,6 +104,12 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	if preparedPrompt != prompt.Raw && preparedPrompt != prompt.Text {
 		return creativeops.Outcome{}, creativecanvas.ErrVersionConflict
 	}
+	for i := range admission.Route {
+		admission.Route[i].Prepared, err = admission.Route[i].Prepared.WithPrompt(prompt.Text)
+		if err != nil {
+			return creativeops.Outcome{}, err
+		}
+	}
 	admission.Prepared, err = admission.Prepared.WithPrompt(prompt.Text)
 	if err != nil {
 		return creativeops.Outcome{}, err
@@ -136,7 +142,7 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	if err = tx.Insert(ctx, "creative_generation_bindings", []string{"execution_id", "request_id", "canvas_id", "next_step_at", "recovery_until"}, e.ID, request.ID, e.CanvasID, e.CreatedAt, e.CreatedAt.Add(24*time.Hour)); err != nil {
 		return creativeops.Outcome{}, err
 	}
-	if _, err = s.generation.PrepareInTx(ctx, tx, admission, controlRevision); err != nil {
+	if _, err = s.generation.PrepareRouteInTx(ctx, tx, admission, controlRevision); err != nil {
 		return creativeops.Outcome{}, err
 	}
 	target := creativecanvas.ExecutionTarget{CanvasID: e.CanvasID, ExecutionID: e.ID}
@@ -147,12 +153,12 @@ func (s *Service) requestInTx(ctx context.Context, tx store.TxAccountScope, in c
 	return creativeops.Outcome{HTTPStatus: 202, ResultKind: "node_execution", ResultID: &e.ID, Response: body}, err
 }
 
-func (s *Service) guard(ctx context.Context, tx store.TxAccountScope, request gw.RequestView, p gw.PreparedPolicyGeneration) error {
-	if request.CallerService != caller {
+func (s *Service) guard(ctx context.Context, tx store.TxAccountScope, request gw.GenerationGuardRequest, p gw.PreparedPolicyGeneration) error {
+	if request.Call.CallerService != caller {
 		return gw.ErrValidation
 	}
 	var target creativecanvas.ExecutionTarget
-	if err := tx.QueryRow(ctx, "creative_generation_bindings", "execution_id,canvas_id", "request_id=$2", request.ID).Scan(&target.ExecutionID, &target.CanvasID); err != nil {
+	if err := tx.QueryRow(ctx, "creative_generation_bindings", "execution_id,canvas_id", "request_id=$2", request.RootRequestID).Scan(&target.ExecutionID, &target.CanvasID); err != nil {
 		return err
 	}
 	if err := creativecanvas.GuardGenerationInTx(ctx, tx, target); err != nil {
@@ -324,7 +330,10 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 		return false, err
 	}
 	if err != nil || e.State == "cancelled" || !e.Deadline.After(time.Now()) {
-		if err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error { _, err := s.gateway.CancelInTx(ctx, tx, b.request); return err }); err != nil {
+		if err = scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+			_, err := s.generation.CancelRouteInTx(ctx, tx, b.request)
+			return err
+		}); err != nil {
 			return false, err
 		}
 	}
@@ -340,7 +349,7 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 		return false, err
 	}
 	if len(outputs) == 0 {
-		if !progress.Request.Terminal() {
+		if !progress.Terminal() {
 			return false, nil
 		}
 		// 已经交接或终态无作品：都不再生成。费用核实仍由G3维护。
@@ -355,7 +364,7 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 			return false, gw.ErrUnavailable
 		}
 		m := item.Output.Media
-		media, err = s.media.PrepareGeneratedMedia(ctx, scope, b.request+"/"+item.AttemptID+"/"+item.Output.ID, string(item.Output.Kind), m.MIME, m.ByteSize, !m.SizeIsLimit, func(ctx context.Context) (io.ReadCloser, error) {
+		media, err = s.media.PrepareGeneratedMedia(ctx, scope, item.RequestID+"/"+item.AttemptID+"/"+item.Output.ID, string(item.Output.Kind), m.MIME, m.ByteSize, !m.SizeIsLimit, func(ctx context.Context) (io.ReadCloser, error) {
 			if !m.ExpiresAt.After(time.Now()) {
 				refreshed, err := s.generation.RefreshImportLocation(ctx, scope, item)
 				if err != nil {

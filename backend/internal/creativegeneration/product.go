@@ -156,7 +156,7 @@ func (p *Product) request(ctx context.Context, scope store.AccountScope, c creat
 			return creativeops.Outcome{}, err
 		}
 		request := admission.Prepared.Generation().Snapshot().Request
-		if admission.Prepared.PolicyDefinition().Version != r.Model.ConfigurationRevision || revision < 1 || request.ModelKey != key || string(request.Kind) != r.Model.Kind {
+		if (len(admission.Route) == 0 && admission.Prepared.PolicyDefinition().Version != r.Model.ConfigurationRevision) || revision < 1 || request.ModelKey != key || string(request.Kind) != r.Model.Kind {
 			return creativeops.Outcome{}, gw.ErrConflict
 		}
 		return p.runtime.requestInTx(ctx, tx, in, c.OperationID, admission, revision, admit)

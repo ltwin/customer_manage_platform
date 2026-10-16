@@ -16,6 +16,7 @@ const generationJobKind = "llm_generation_advance"
 
 type generationJob struct {
 	RequestID string `json:"request_id"`
+	Route     bool   `json:"route,omitempty"`
 }
 
 func (r *GenerationRuntime) enqueue(ctx context.Context, tx store.TxAccountScope, id string) error {
@@ -32,7 +33,13 @@ func (r *GenerationRuntime) Handlers() []store.JobHandler {
 		if err := json.Unmarshal(job.Payload, &in); err != nil || in.RequestID == "" {
 			return jobs.ErrInvalidTask
 		}
-		progress, err := r.AdvanceGeneration(ctx, scope, in.RequestID)
+		var progress GenerationProgress
+		var err error
+		if in.Route {
+			progress, err = r.AdvanceGeneration(ctx, scope, in.RequestID)
+		} else {
+			progress, err = r.advanceGeneration(ctx, scope, in.RequestID)
+		}
 		if err != nil {
 			return err
 		}
@@ -75,6 +82,29 @@ func (r *GenerationRuntime) SweepGenerationDue(ctx context.Context, db *store.St
 			if err != nil {
 				return err
 			}
+			routeRows, err := tx.QueryPage(ctx, "llm_generation_routes", "root_request_id", "state='active' AND next_advance_at<=$2", []store.OrderBy{{Column: "next_advance_at"}, {Column: "root_request_id"}}, batch, 0, r.gateway.now().UTC())
+			if err != nil {
+				return err
+			}
+			var roots []string
+			for routeRows.Next() {
+				var root string
+				if err := routeRows.Scan(&root); err != nil {
+					routeRows.Close()
+					return err
+				}
+				roots = append(roots, root)
+			}
+			err = routeRows.Err()
+			routeRows.Close()
+			if err != nil {
+				return err
+			}
+			for _, root := range roots {
+				if err := r.enqueueRoute(ctx, tx, root); err != nil {
+					return err
+				}
+			}
 			for _, request := range ids {
 				if err := r.enqueue(ctx, tx, request); err != nil {
 					return err
@@ -112,4 +142,13 @@ func (r *GenerationRuntime) RunRecovery(ctx context.Context, db *store.Store) er
 		case <-ticker.C:
 		}
 	}
+}
+
+func (r *GenerationRuntime) enqueueRoute(ctx context.Context, tx store.TxAccountScope, id string) error {
+	payload, err := json.Marshal(generationJob{RequestID: id, Route: true})
+	if err != nil {
+		return err
+	}
+	_, err = jobs.EnqueueInTx(ctx, tx.Jobs(r.runtime), jobs.Request{Kind: generationJobKind, OperationID: uuid.NewString(), CreatedAt: r.gateway.now().UTC(), Payload: payload, UniqueByArgs: true})
+	return err
 }

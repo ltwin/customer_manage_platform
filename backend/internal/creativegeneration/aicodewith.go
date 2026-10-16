@@ -3,6 +3,8 @@ package creativegeneration
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
@@ -22,9 +24,12 @@ var imageLabels = map[string]string{
 	"gpt-image-2":            "GPT Image 2",
 	"gpt-image-2.5-sunburst": "GPT Image 2.5 Sunburst",
 	"gpt-image-2.5-flare":    "GPT Image 2.5 Flare",
+	"nano-banana-pro":        "Nano Banana Pro",
+	"nano-banana-2":          "Nano Banana 2",
+	"nano-banana-2.1":        "Nano Banana 2.1",
 }
 
-// 三个模型参数与能力相同；说明只讲摄影师能用它做什么，不写未核实的差异。
+// 共同描述只表达生成用途；各模型的参数与能力由各自策略投影。
 const imageDescription = "文生图；连上参考图即按参考生成"
 
 // ImageParameters 是GPT Image面板的表单投影，取值与规则schema一致。
@@ -40,28 +45,120 @@ func ImageParameters() []Parameter {
 
 // ImageRegistrations 为内置GPT Image规则构建产品注册。每次生成前先在当前账号
 // 控制面登记部署（独立短事务），准入事务里只读取修订号，避免反转网关锁序。
-func ImageRegistrations(svc *Service, policies []gw.AICodeWithImagePolicy) []Registration {
-	out := make([]Registration, 0, len(policies))
+func ImageRegistrations(svc *Service, policies []gw.ImagePolicy) []Registration {
+	groups := map[string][]gw.ImagePolicy{}
+	var keys []string
 	for _, p := range policies {
-		policy := p
-		model := policy.Target.ModelKey
+		model := p.Target.ModelKey
+		if len(groups[model]) == 0 {
+			keys = append(keys, model)
+		}
+		groups[model] = append(groups[model], p)
+	}
+	out := make([]Registration, 0, len(keys))
+	for _, key := range keys {
+		candidates := groups[key]
+		first := candidates[0]
 		out = append(out, Registration{
-			Model: Model{ConfigurationRevision: policy.Definition.Version, Key: model, Label: imageLabels[model], Description: imageDescription, Kind: "image", Parameters: ImageParameters()},
+			Model: Model{ConfigurationRevision: first.Definition.Version, Key: key, Label: imageLabels[key], Description: imageDescription, Kind: "image", Parameters: imagePolicyParameters(first)},
 			Ensure: func(ctx context.Context, scope store.AccountScope) error {
-				return scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
-					_, err := svc.generation.EnsureDeploymentInTx(ctx, tx, policy.Definition, imageDeploymentValidity)
-					return err
-				})
+				for _, p := range candidates {
+					if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+						_, err := svc.generation.EnsureDeploymentInTx(ctx, tx, p.Definition, imageDeploymentValidity)
+						return err
+					}); err != nil {
+						return err
+					}
+				}
+				return nil
 			},
 			PrepareInTx: func(ctx context.Context, tx store.TxAccountScope, in creativecanvas.RequestExecutionInput) (gw.GenerationAdmission, int64, error) {
-				return svc.prepareImage(ctx, tx, in, policy)
+				return svc.prepareImageRoute(ctx, tx, in, candidates)
 			},
 		})
 	}
 	return out
 }
 
-func (s *Service) prepareImage(ctx context.Context, tx store.TxAccountScope, in creativecanvas.RequestExecutionInput, p gw.AICodeWithImagePolicy) (gw.GenerationAdmission, int64, error) {
+// 参数表单来自部署schema，避免Nano Banana继承GPT专属参数。
+func imagePolicyParameters(p gw.ImagePolicy) []Parameter {
+	mode := p.Definition.Modes[0]
+	var schema struct {
+		Properties struct {
+			Parameters struct {
+				Properties map[string]struct {
+					Type string            `json:"type"`
+					Enum []json.RawMessage `json:"enum"`
+				} `json:"properties"`
+			} `json:"parameters"`
+		} `json:"properties"`
+	}
+	// 已编译schema由可信构造器产生；解析失败只返回空目录参数，准入仍会校验。
+	if json.Unmarshal(mode.Definition.InputSchema, &schema) != nil {
+		return nil
+	}
+	var out []Parameter
+	for _, base := range ImageParameters() {
+		field, ok := schema.Properties.Parameters.Properties[base.Key]
+		if !ok {
+			continue
+		}
+		base.Options = nil
+		for _, v := range field.Enum {
+			var text string
+			if json.Unmarshal(v, &text) != nil {
+				text = string(v)
+			}
+			base.Options = append(base.Options, text)
+		}
+		v := mode.Defaults[base.Key]
+		if json.Unmarshal(v, &base.Default) != nil {
+			base.Default = string(v)
+		}
+		out = append(out, base)
+	}
+	return out
+}
+
+func (s *Service) prepareImageRoute(ctx context.Context, tx store.TxAccountScope, in creativecanvas.RequestExecutionInput, policies []gw.ImagePolicy) (gw.GenerationAdmission, int64, error) {
+	var selected gw.GenerationAdmission
+	var revision int64
+	var compatible bool
+	var frozenParameters json.RawMessage
+	for _, p := range policies {
+		admission, rev, err := s.prepareImage(ctx, tx, in, p, frozenParameters)
+		if errors.Is(err, gw.ErrCapability) || errors.Is(err, creativeops.ErrValidation) {
+			continue
+		}
+		if err != nil {
+			return gw.GenerationAdmission{}, 0, err
+		}
+		compatible = true
+		if frozenParameters == nil {
+			frozenParameters = admission.Prepared.Generation().Snapshot().Request.Input.Parameters
+		}
+		if err = s.generation.CheckDeploymentInTx(ctx, tx, p.Definition, rev); err != nil {
+			if errors.Is(err, gw.ErrUnavailable) || errors.Is(err, gw.ErrConflict) {
+				continue
+			}
+			return gw.GenerationAdmission{}, 0, err
+		}
+		if len(selected.Route) == 0 {
+			selected = admission
+			revision = rev
+		}
+		selected.Route = append(selected.Route, gw.GenerationRouteCandidate{Prepared: admission.Prepared, ControlRevision: rev})
+	}
+	if len(selected.Route) == 0 {
+		if compatible {
+			return gw.GenerationAdmission{}, 0, gw.ErrUnavailable
+		}
+		return gw.GenerationAdmission{}, 0, fmt.Errorf("%w: no image deployment supports this input", creativeops.ErrValidation)
+	}
+	return selected, revision, nil
+}
+
+func (s *Service) prepareImage(ctx context.Context, tx store.TxAccountScope, in creativecanvas.RequestExecutionInput, p gw.ImagePolicy, frozenParameters json.RawMessage) (gw.GenerationAdmission, int64, error) {
 	draft, err := creativecanvas.GenerationDraftInTx(ctx, tx, in)
 	if err != nil {
 		return gw.GenerationAdmission{}, 0, err
@@ -78,6 +175,9 @@ func (s *Service) prepareImage(ctx context.Context, tx store.TxAccountScope, in 
 		return gw.GenerationAdmission{}, 0, err
 	}
 	parameters := draft.Parameters
+	if frozenParameters != nil {
+		parameters = frozenParameters
+	}
 	if len(parameters) == 0 || string(parameters) == "null" {
 		parameters = json.RawMessage(`{}`)
 	}

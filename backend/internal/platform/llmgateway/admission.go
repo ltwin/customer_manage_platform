@@ -356,7 +356,7 @@ func (s *Service) LockReservationBudgetInTx(ctx context.Context, tx store.TxAcco
 	if err != nil {
 		return err
 	}
-	return s.lockBudget(ctx, tx, row.period, row.currency)
+	return s.lockReservationBudget(ctx, tx, row)
 }
 
 // ReleaseReservationInTx drops an unclaimed hold whose turn never reached a
@@ -395,6 +395,9 @@ func (s *Service) releaseHold(
 	retryEligible bool,
 	now time.Time,
 ) error {
+	if row.state == SettlementNotApplicable {
+		return nil
+	}
 	if err := s.applyBudgetDelta(ctx, tx, row.period, row.currency, budgetDelta{
 		reservedMicros: -row.holdMicros,
 		reservedTokens: -row.holdTokens,
@@ -567,7 +570,7 @@ func maxPositive(value, fallback int64) int64 {
 // requests, including runs that crossed a month boundary. Dispatched/unknown
 // requests keep their accounting and are never treated as unused reservations.
 func (s *Service) ReleaseUnusedGroupInTx(ctx context.Context, tx store.TxAccountScope, caller, group string) error {
-	rows, err := tx.QueryPage(ctx, "llm_usage_reservations", "id,request_id,budget_period,currency",
+	rows, err := tx.QueryPage(ctx, "llm_usage_reservations", "id,request_id,budget_period,currency,settlement_state",
 		"caller_service=$2 AND caller_group_id=$3", []store.OrderBy{{Column: "budget_period"}, {Column: "currency"}, {Column: "id"}}, 1000, 0, caller, group)
 	if err != nil {
 		return err
@@ -577,11 +580,12 @@ func (s *Service) ReleaseUnusedGroupInTx(ctx context.Context, tx store.TxAccount
 		request  *string
 		period   time.Time
 		currency string
+		state    SettlementState
 	}
 	var entries []entry
 	for rows.Next() {
 		var e entry
-		if err = rows.Scan(&e.id, &e.request, &e.period, &e.currency); err != nil {
+		if err = rows.Scan(&e.id, &e.request, &e.period, &e.currency, &e.state); err != nil {
 			rows.Close()
 			return err
 		}
@@ -596,6 +600,9 @@ func (s *Service) ReleaseUnusedGroupInTx(ctx context.Context, tx store.TxAccount
 		return fmt.Errorf("%w: caller group exceeds cleanup bound", ErrValidation)
 	}
 	for _, e := range entries {
+		if e.state == SettlementNotApplicable {
+			continue
+		}
 		if err = s.lockBudget(ctx, tx, e.period, e.currency); err != nil {
 			return err
 		}

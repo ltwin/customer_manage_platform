@@ -145,6 +145,9 @@ func (p *CompiledGenerationPolicy) freeze(g PreparedGeneration, m GenerationPoli
 		return PreparedPolicyGeneration{}, err
 	}
 	quote := GenerationQuote{Currency: price.Currency, EstimateMicros: price.TotalMicros, UpperBoundMicros: upper, Lines: price.Lines}
+	if p.definition.Billing == GenerationBillingDisabled {
+		quote = GenerationQuote{Currency: p.definition.Currency, Billing: GenerationBillingDisabled, Lines: []GenerationPriceLine{}}
+	}
 	snapshot := generationPolicySnapshot{Policy: p.raw, Target: p.target, Generation: g.Snapshot(), GenerationFingerprint: g.Fingerprint(), Media: facts.media, Quote: quote}
 	raw, err := json.Marshal(snapshot)
 	if err != nil {
@@ -211,6 +214,9 @@ func (p PreparedPolicyGeneration) MarshalSnapshot() ([]byte, error) {
 func (p PreparedPolicyGeneration) PriceUsage(usage map[string]int64) (GenerationPrice, error) {
 	if p.policy == nil {
 		return GenerationPrice{}, fmt.Errorf("%w: unprepared generation policy", ErrValidation)
+	}
+	if p.policy.definition.Billing == GenerationBillingDisabled {
+		return GenerationPrice{}, fmt.Errorf("%w: generation billing disabled", ErrState)
 	}
 	if err := generationCheckUsage(p.mode, p.policy.target, usage); err != nil {
 		return GenerationPrice{}, err

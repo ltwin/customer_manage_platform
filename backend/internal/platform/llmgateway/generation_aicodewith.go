@@ -227,10 +227,10 @@ func (a *AICodeWithImages) do(ctx context.Context, method, route string, body []
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := a.client.Do(req)
+	resp, err := generationHTTPDo(a.client, req)
 	if err != nil {
 		// 不回传底层错误：其中可能带有请求地址。
-		return 0, nil, fmt.Errorf("%w: aicodewith transport", ErrUnavailable)
+		return 0, nil, fmt.Errorf("%w: aicodewith transport", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxAICodeWithTaskBytes+1))

@@ -35,6 +35,8 @@ type GenerationAdmission struct {
 	ConsumerKey        string
 	Deadline           time.Time
 	Prepared           PreparedPolicyGeneration
+	// Route 只由受信模型目录提供；为空时保留旧单部署生命周期。
+	Route []GenerationRouteCandidate
 }
 
 // generationAdmissionControl 保存首次调用的控制输入，独立于可演进的组预算与
@@ -95,7 +97,7 @@ func (s *Service) PrepareGenerationInTx(ctx context.Context, tx store.TxAccountS
 	}
 	quote := in.Prepared.Quote()
 	// 没有可靠费用上界就不准入；不允许以0预留冒充上界（§19.5 T0）。
-	if quote.UpperBoundMicros == nil {
+	if def.Billing != GenerationBillingDisabled && quote.UpperBoundMicros == nil {
 		return RequestView{}, fmt.Errorf("%w: generation quote has no reliable upper bound", ErrBudget)
 	}
 	// 预算桶只有一种币种；不同币种的生成报价必须拒绝，不做汇率换算（§19.6）。
@@ -114,7 +116,10 @@ func (s *Service) PrepareGenerationInTx(ctx context.Context, tx store.TxAccountS
 	if !in.Deadline.After(now) {
 		return RequestView{}, fmt.Errorf("%w: deadline already passed", ErrDeadline)
 	}
-	hold := *quote.UpperBoundMicros
+	var hold int64
+	if def.Billing != GenerationBillingDisabled {
+		hold = *quote.UpperBoundMicros
+	}
 	currency := s.catalog.Currency()
 	period := monthStart(now)
 
@@ -141,18 +146,21 @@ func (s *Service) PrepareGenerationInTx(ctx context.Context, tx store.TxAccountS
 	if err != nil {
 		return RequestView{}, err
 	}
-	if blocked {
+	if blocked && def.Billing != GenerationBillingDisabled {
 		return RequestView{}, fmt.Errorf("%w: generation deployment %s is paused for admission pending verification",
 			ErrUnavailable, def.DeploymentID)
 	}
-	// 生成的token维度不适用：组token上限按0增量检查，不生成伪token证据。
-	if err := s.checkGroupCeiling(ctx, tx, in.CallerService, in.CallerGroupID, group, hold, 0); err != nil {
-		return RequestView{}, err
-	}
-	if err := s.applyBudgetDelta(ctx, tx, period, currency, budgetDelta{
-		reservedMicros: hold,
-	}, in.AccountLimitMicros, in.AccountTokenLimit, now); err != nil {
-		return RequestView{}, err
+	if def.Billing != GenerationBillingDisabled {
+		// 生成的token维度不适用：组token上限按0增量检查，不生成伪token证据。
+		if err := s.checkGroupCeiling(ctx, tx, in.CallerService, in.CallerGroupID, group, hold, 0); err != nil {
+			return RequestView{}, err
+		}
+		if err := s.applyBudgetDelta(ctx, tx, period, currency, budgetDelta{
+			reservedMicros: hold,
+		}, in.AccountLimitMicros, in.AccountTokenLimit, now); err != nil {
+			return RequestView{}, err
+		}
+
 	}
 
 	reservationID := newID("llmv")
@@ -287,11 +295,16 @@ func (s *Service) insertGenerationRequest(
 		return RequestView{}, err
 	}
 
+	// 未计费部署保留调用许可身份行，不占预算且实际金额保持NULL。
+	settlement := SettlementReserved
+	if def.Billing == GenerationBillingDisabled {
+		settlement = SettlementNotApplicable
+	}
 	// 预留只能被一个请求认领一次；失败则整个受理事务回滚。
 	claimed, err := tx.Update(ctx, "llm_usage_reservations",
 		"request_id=$3,settlement_state=$4,revision=revision+1,updated_at=$5",
 		"id=$2 AND request_id IS NULL AND settlement_state=$6",
-		reservationID, id, string(SettlementReserved), now, string(SettlementUnclaimed))
+		reservationID, id, string(settlement), now, string(SettlementUnclaimed))
 	if err != nil {
 		return RequestView{}, err
 	}
@@ -323,7 +336,7 @@ func (s *Service) insertGenerationRequest(
 		RequestHash:   "sha256-" + fingerprint,
 		State:         StatePrepared,
 		Deadline:      in.Deadline.UTC(),
-		Settlement:    SettlementReserved,
+		Settlement:    settlement,
 		RetainedUntil: now.Add(s.retention),
 		Revision:      1,
 	}, nil

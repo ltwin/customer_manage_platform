@@ -23,7 +23,7 @@ const (
 type Composed struct {
 	Service *Service
 	Product *Product
-	// Disabled 说明未启用的原因，供启动日志使用；启用时为空。
+	// Disabled 汇总未启用供应商或模型的原因；部分能力启用时也可能非空。
 	Disabled string
 }
 
@@ -38,9 +38,10 @@ func Compose(gateway *gw.Service, currency string, media *creativemedia.Service,
 	if credential == nil {
 		credential = os.LookupEnv
 	}
-	key, ok := credential("AICODEWITH_API_KEY")
-	if !ok || key == "" {
-		return Composed{Product: empty, Disabled: "未配置 AICODEWITH_API_KEY"}, nil
+	aiKey, _ := credential("AICODEWITH_API_KEY")
+	rhKey, _ := credential("RUNNINGHUB_API_KEY")
+	if aiKey == "" && rhKey == "" {
+		return Composed{Product: empty, Disabled: "未配置 AICODEWITH_API_KEY 或 RUNNINGHUB_API_KEY"}, nil
 	}
 	encoded := os.Getenv("CREATIVE_GENERATION_PROTECTION_KEY")
 	if encoded == "" {
@@ -50,26 +51,51 @@ func Compose(gateway *gw.Service, currency string, media *creativemedia.Service,
 	if err != nil || len(protection) != 32 {
 		return Composed{}, fmt.Errorf("CREATIVE_GENERATION_PROTECTION_KEY must be 32 bytes in base64")
 	}
-	policies, err := gw.AICodeWithImagePolicies(currency)
-	if err != nil {
-		return Composed{}, err
+	cfg := Config{Gateway: gateway, Media: media, ProtectionKey: protection, Fetchers: map[string]creativemedia.GenerationFetcher{}, References: func(scope store.AccountScope) gw.GenerationReferenceOpener {
+		return media.GenerationReferenceOpenerFor(scope)
+	}}
+	var policies []gw.ImagePolicy
+	if aiKey != "" {
+		list, err := gw.AICodeWithImagePolicies(currency)
+		if err != nil {
+			return Composed{}, err
+		}
+		adapter, err := gw.NewAICodeWithImages(gw.NewHTTPClient(aicodewithHTTPTimeout), aicodewithBaseURL, aiKey)
+		if err != nil {
+			return Composed{}, err
+		}
+		fetcher, err := creativemedia.NewGenerationHTTPFetcher([]string{aicodewithFilesHost})
+		if err != nil {
+			return Composed{}, err
+		}
+		for _, p := range list {
+			cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, LimitKey: "aicodewith/images", Concurrency: 4, RateLimit: 30, Adapter: adapter, Available: func() bool { k, ok := credential("AICODEWITH_API_KEY"); return ok && k != "" }})
+			cfg.Fetchers[p.Definition.DeploymentID] = fetcher
+		}
+		policies = append(policies, list...)
 	}
-	adapter, err := gw.NewAICodeWithImages(gw.NewHTTPClient(aicodewithHTTPTimeout), aicodewithBaseURL, key)
-	if err != nil {
-		return Composed{}, err
-	}
-	fetcher, err := creativemedia.NewGenerationHTTPFetcher([]string{aicodewithFilesHost})
-	if err != nil {
-		return Composed{}, err
-	}
-	cfg := Config{Gateway: gateway, Media: media, ProtectionKey: protection, Fetchers: map[string]creativemedia.GenerationFetcher{},
-		References: func(scope store.AccountScope) gw.GenerationReferenceOpener {
-			return media.GenerationReferenceOpenerFor(scope)
-		}}
-	for _, p := range policies {
-		// 三个模型共用一个中转账号，限流键相同。
-		cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: p.Definition.DeploymentID, Version: p.Definition.AdapterVersion, LimitKey: "aicodewith/images", Concurrency: 4, RateLimit: 30, Adapter: adapter})
-		cfg.Fetchers[p.Definition.DeploymentID] = fetcher
+	if rhKey != "" {
+		list, err := gw.RunningHubImagePolicies(currency)
+		if err != nil {
+			return Composed{}, err
+		}
+		adapter, err := gw.NewRunningHubImages(gw.NewHTTPClient(aicodewithHTTPTimeout), "https://www.runninghub.ai", func() (string, bool) { return credential("RUNNINGHUB_API_KEY") })
+		if err != nil {
+			return Composed{}, err
+		}
+		fetcher, err := creativemedia.NewGenerationHTTPFetcher(gw.RunningHubImageHosts())
+		if err != nil {
+			return Composed{}, err
+		}
+		for _, model := range gw.RunningHubImageModels() {
+			deployment := "runninghub-images-" + model
+			cfg.Adapters = append(cfg.Adapters, gw.GenerationAdapterRegistration{DeploymentID: deployment, Version: gw.RunningHubImageAdapterVersion, LimitKey: "runninghub/images", Concurrency: 1, RateLimit: 10, Adapter: adapter, Available: func() bool {
+				k, ok := credential("RUNNINGHUB_API_KEY")
+				return ok && k != ""
+			}})
+			cfg.Fetchers[deployment] = fetcher
+		}
+		policies = append(policies, list...)
 	}
 	svc, err := New(cfg)
 	if err != nil {
@@ -79,5 +105,5 @@ func Compose(gateway *gw.Service, currency string, media *creativemedia.Service,
 	if err != nil {
 		return Composed{}, err
 	}
-	return Composed{Service: svc, Product: product}, nil
+	return Composed{Service: svc, Product: product, Disabled: ""}, nil
 }

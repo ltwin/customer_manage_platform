@@ -18,7 +18,12 @@ type GenerationRatio struct {
 // GenerationPolicyTarget 来自受信Adapter注册，不从外部请求或规则源反向生成。
 // Usage声明实际计量维度和单位；没有硬上限保证的维度将UpperBound留空。
 // 规则编译与报价不是派发许可，运行时仍须通过Gateway最终准入。
+// GenerationBillingDisabled 表示当前不接入供应商账本，并不表示免费。
+// 空值保留历史计费语义；该模式只由服务端部署策略声明并冻结。
+const GenerationBillingDisabled = "disabled"
+
 type GenerationPolicyTarget struct {
+	Billing        string                               `json:"billing,omitempty"`
 	ModelKey       string                               `json:"model_key"`
 	ModelRevision  string                               `json:"model_revision"`
 	DeploymentID   string                               `json:"deployment_id"`
@@ -35,6 +40,7 @@ type GenerationUsageDefinition struct {
 }
 
 type GenerationPolicyDefinition struct {
+	Billing        string                      `json:"billing,omitempty"`
 	EngineVersion  string                      `json:"engine_version"`
 	Version        string                      `json:"version"`
 	Profile        GenerationProfileDefinition `json:"profile"`
@@ -158,6 +164,7 @@ type GenerationPrice struct {
 }
 
 type GenerationQuote struct {
+	Billing          string                `json:"billing,omitempty"`
 	Currency         string                `json:"currency"`
 	EstimateMicros   int64                 `json:"estimate_micros"`
 	UpperBoundMicros *int64                `json:"upper_bound_micros,omitempty"`

@@ -51,7 +51,7 @@ type generationAction struct {
 
 // AdvanceGeneration 每次至多调用一个Submit/Observe/Cancel/Lookup；恢复只从数据库
 // 重建身份。提交许可在同一事务内登记为已领取，进程丢失后不存在再次消费的路径。
-func (r *GenerationRuntime) AdvanceGeneration(ctx context.Context, scope store.AccountScope, requestID string) (GenerationProgress, error) {
+func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.AccountScope, requestID string) (GenerationProgress, error) {
 	var action *generationAction
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		var err error
@@ -170,7 +170,11 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 			} else if !errors.Is(err, ErrUnavailable) && !errors.Is(err, ErrConflict) {
 				return nil, err
 			}
-			return nil, r.cancelUnsubmittedGeneration(ctx, tx, requestID)
+			if err := r.cancelUnsubmittedGeneration(ctx, tx, requestID); err != nil {
+				return nil, err
+			}
+			_, err := tx.Update(ctx, "llm_requests", "failure_class='deployment_unavailable'", "id=$2 AND state='cancelled'", requestID)
+			return nil, err
 		}
 	}
 	// 固定锁序：账号状态（仅提交）→供应商名额→组→部署门→预算桶→请求→task。
@@ -238,6 +242,10 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 	if task.leaseUntil != nil && task.leaseUntil.After(now) {
 		return nil, errGenerationBusy
 	}
+	// 兼容旧Worker留下的终态due：无需再查询一次就能转账单核实。
+	if generationTerminal(task.state) && r.externalGenerationBilling(task) {
+		return nil, r.finishGenerationStage(ctx, tx, task, now)
+	}
 	if !registered || task.failures >= 5 || !task.recoveryUntil.After(now) {
 		return nil, r.markGenerationVerification(ctx, tx, requestID, "recovery_requires_verification", now)
 	}
@@ -277,19 +285,29 @@ func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAcco
 func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAccountScope, request requestRow, p PreparedPolicyGeneration, reg GenerationAdapterRegistration, control int64, now time.Time) (*generationAction, error) {
 	s := r.gateway
 	guardErr := r.checkDeployment(ctx, tx, p.PolicyDefinition(), control)
+	failure := "generation_guard_rejected"
+	if errors.Is(guardErr, ErrUnavailable) || errors.Is(guardErr, ErrConflict) {
+		failure = "deployment_unavailable"
+	}
 	if request.cancelAt != nil || request.closedAt != nil {
 		guardErr = ErrCancelled
+		failure = "generation_guard_rejected"
 	} else if !request.deadline.After(now) {
 		guardErr = ErrDeadline
+		failure = "generation_guard_rejected"
 	}
 	if guardErr == nil {
-		guardErr = r.guard(ctx, tx, request.view(SettlementReserved), p)
+		settlement, err := settlementOf(ctx, tx, request.id)
+		if err != nil {
+			return nil, err
+		}
+		guardErr = r.authorizeGeneration(ctx, tx, request.view(settlement), p)
 	}
 	if guardErr != nil {
 		if !errors.Is(guardErr, ErrCancelled) && !errors.Is(guardErr, ErrDeadline) && !errors.Is(guardErr, ErrUnavailable) && !errors.Is(guardErr, ErrConflict) && !errors.Is(guardErr, ErrCapability) {
 			return nil, guardErr
 		}
-		if _, err := tx.Update(ctx, "llm_requests", "state='cancelled',cancel_requested_at=$3,closed_at=$3,failure_class='generation_guard_rejected',revision=revision+1,updated_at=$3", "id=$2", request.id, now); err != nil {
+		if _, err := tx.Update(ctx, "llm_requests", "state='cancelled',cancel_requested_at=$3,closed_at=$3,failure_class=$4,revision=revision+1,updated_at=$3", "id=$2", request.id, now, failure); err != nil {
 			return nil, err
 		}
 		if err := s.releaseReservation(ctx, tx, request.id, now); err != nil {
@@ -305,7 +323,7 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	if err != nil {
 		return nil, err
 	}
-	if request.retryEligible {
+	if request.retryEligible && reservation.state != SettlementNotApplicable {
 		if _, err := s.RearmInTx(ctx, tx, request.id, reservation.generation, 0, 0); err != nil {
 			return nil, err
 		}
@@ -317,7 +335,7 @@ func (r *GenerationRuntime) beginGeneration(ctx context.Context, tx store.TxAcco
 	if request.attemptsUsed >= maxAttempts {
 		return nil, ErrAttemptsUsed
 	}
-	if reservation.state != SettlementReserved || reservation.holdMicros != reservation.initialMicros {
+	if reservation.state != SettlementNotApplicable && (reservation.state != SettlementReserved || reservation.holdMicros != reservation.initialMicros) {
 		return nil, ErrBudget
 	}
 	if err := s.assertNoLiveAttempt(ctx, tx, request.id); err != nil {
@@ -418,7 +436,7 @@ func (r *GenerationRuntime) CancelGenerationInTx(ctx context.Context, tx store.T
 	if kind != requestKindGeneration {
 		return RequestView{}, fmt.Errorf("%w: generation request required", ErrState)
 	}
-	return r.gateway.CancelInTx(ctx, tx, requestID)
+	return r.CancelRouteInTx(ctx, tx, requestID)
 }
 
 // cancelUnsubmittedGeneration 只关闭仍未派发的请求；并发先取得许可时本轮不

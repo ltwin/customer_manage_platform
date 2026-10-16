@@ -22,6 +22,18 @@ type GenerationImport struct {
 func (r *GenerationRuntime) ImportableOutputs(ctx context.Context, scope store.AccountScope, id, caller, consumer string) ([]GenerationImport, error) {
 	var out []GenerationImport
 	err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		if err := r.prelockCaller(ctx, tx); err != nil {
+			return err
+		}
+		var err error
+		id, err = currentGenerationInTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		allowed, err := generationRouteAllowsOutput(ctx, tx, id)
+		if err != nil || !allowed {
+			return err
+		}
 		if _, err := r.lockGenerationConsumer(ctx, tx, id, caller, consumer); err != nil {
 			return err
 		}
@@ -93,6 +105,13 @@ func (r *GenerationRuntime) HandoffOutputInTx(ctx context.Context, tx store.TxAc
 	if err := r.prelockCaller(ctx, tx); err != nil {
 		return err
 	}
+	allowed, err := generationRouteAllowsOutput(ctx, tx, item.RequestID)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrState
+	}
 	if item.account != tx.AccountID() || save == nil {
 		return ErrValidation
 	}
@@ -144,6 +163,15 @@ func sameGenerationOutput(a, b GenerationOutput) bool {
 // 取消/费用不参与此事务；停用与发布通过持久部署门线性化。
 func (r *GenerationRuntime) LockPublicationInTx(ctx context.Context, tx store.TxAccountScope, id string) (bool, error) {
 	if err := r.prelockCaller(ctx, tx); err != nil {
+		return false, err
+	}
+	var err error
+	id, err = currentGenerationInTx(ctx, tx, id)
+	if err != nil {
+		return false, err
+	}
+	allowed, err := generationRouteAllowsOutput(ctx, tx, id)
+	if err != nil || !allowed {
 		return false, err
 	}
 	adm, err := generationAdmissionOf(ctx, tx, id)
@@ -229,6 +257,21 @@ func (r *GenerationRuntime) RefreshImportLocation(ctx context.Context, scope sto
 
 // ReleaseEmptyGenerationInTx只释放已经终态且没有输出的结果保留，费用核实不变。
 func (r *GenerationRuntime) ReleaseEmptyGenerationInTx(ctx context.Context, tx store.TxAccountScope, id, caller, consumer string) error {
+	if err := r.prelockCaller(ctx, tx); err != nil {
+		return err
+	}
+	var err error
+	id, err = currentGenerationInTx(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	allowed, err := generationRouteAllowsOutput(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return ErrState
+	}
 	state, err := r.lockGenerationConsumer(ctx, tx, id, caller, consumer)
 	if errors.Is(err, ErrState) {
 		return nil
@@ -258,6 +301,17 @@ func (r *GenerationRuntime) StopUndispatchedInTx(ctx context.Context, tx store.T
 	if err := r.prelockCaller(ctx, tx); err != nil {
 		return false, err
 	}
+	if err := requireGenerationRoot(ctx, tx, id); err != nil {
+		return false, err
+	}
+	root := id
+	route, routeErr := scanGenerationRoute(tx.QueryRowForUpdate(ctx, "llm_generation_routes", generationRouteColumns, "root_request_id=$2", root))
+	if routeErr != nil && !errors.Is(routeErr, store.ErrNoRows) {
+		return false, routeErr
+	}
+	if routeErr == nil {
+		id = route.current
+	}
 	if err := r.gateway.lockBudgetForRequest(ctx, tx, id, r.gateway.now()); err != nil {
 		return false, err
 	}
@@ -268,9 +322,18 @@ func (r *GenerationRuntime) StopUndispatchedInTx(ctx context.Context, tx store.T
 	if row.kind != requestKindGeneration {
 		return false, ErrState
 	}
-	if row.state != StatePrepared {
+	if !generationCanStopBeforeDispatch(row.state, routeErr == nil && route.state == "active") {
 		return false, nil
+	}
+	if routeErr == nil {
+		if _, err := tx.Update(ctx, "llm_generation_routes", "state='cancelled',next_advance_at=NULL", "root_request_id=$2", root); err != nil {
+			return false, err
+		}
 	}
 	_, err = r.gateway.CancelInTx(ctx, tx, id)
 	return err == nil, err
+}
+
+func generationCanStopBeforeDispatch(state RequestState, activeRoute bool) bool {
+	return state == StatePrepared || (activeRoute && (state == StateFailed || state == StateCancelled))
 }
