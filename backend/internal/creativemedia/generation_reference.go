@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"strings"
 
@@ -104,17 +105,17 @@ type referenceOpener struct {
 
 func (o *referenceOpener) OpenGenerationReference(ctx context.Context, ref llmgateway.GenerationReference) (io.ReadCloser, error) {
 	if err := validGenerationReference(ref); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reference identity: %w", err)
 	}
 	var key, version string
 	err := o.scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
 		rev, err := creativecontent.RequireGenerationReferenceRow(ctx, tx, tx.QueryRow, ref.RevisionID)
 		if err != nil {
-			return err
+			return fmt.Errorf("revision or generation grant: %w", err)
 		}
 		meta, err := resolveGenerationMedia(ctx, tx, rev, ref)
 		if err != nil {
-			return err
+			return fmt.Errorf("media facts: %w", err)
 		}
 		blobID := ""
 		for _, m := range rev.Media {
@@ -124,28 +125,31 @@ func (o *referenceOpener) OpenGenerationReference(ctx context.Context, ref llmga
 		}
 		var objectVersion *string
 		if err := tx.QueryRow(ctx, "creative_blobs", "object_key,object_version", "id=$2 AND state='ready'", blobID).Scan(&key, &objectVersion); err != nil {
-			return err
+			return fmt.Errorf("blob %s not ready: %w", blobID, err)
 		}
 		if objectVersion == nil || meta.ByteSize != ref.ByteSize {
-			return creativecontent.ErrNotFound
+			return fmt.Errorf("%w: blob %s version=%t size %d != frozen %d", creativecontent.ErrNotFound, blobID, objectVersion != nil, meta.ByteSize, ref.ByteSize)
 		}
 		version = *objectVersion
 		now, err := tx.CreativeNow(ctx)
 		if err != nil {
 			return err
 		}
-		return tx.Insert(ctx, "creative_blob_read_pins", []string{"id", "blob_id", "owner_kind", "expires_at"}, "ccpn_"+uuid.NewString(), blobID, "processing", now.Add(o.svc.cfg.ReadPinTTL))
+		if err := tx.Insert(ctx, "creative_blob_read_pins", []string{"id", "blob_id", "owner_kind", "expires_at"}, "ccpn_"+uuid.NewString(), blobID, "processing", now.Add(o.svc.cfg.ReadPinTTL)); err != nil {
+			return fmt.Errorf("read pin: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	body, stat, err := o.svc.adapter.OpenVersion(ctx, key, version, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("object storage open: %w", err)
 	}
 	if stat.Size != ref.ByteSize {
 		_ = body.Close()
-		return nil, creativecontent.ErrNotFound
+		return nil, fmt.Errorf("%w: stored object size %d != frozen %d", creativecontent.ErrNotFound, stat.Size, ref.ByteSize)
 	}
 	return body, nil
 }

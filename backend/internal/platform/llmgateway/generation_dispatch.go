@@ -69,6 +69,7 @@ func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.A
 			action.call.References = r.refs(scope)
 		}
 		callCtx, cancel := context.WithTimeout(ctx, generationCallLifetime)
+		started := time.Now()
 		var event GenerationEvent
 		var callErr error
 		switch action.kind {
@@ -87,9 +88,16 @@ func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.A
 			}
 		}
 		cancel()
+		elapsed := time.Since(started)
 		// 确定没有发出的提交与明确拒绝等价：释放预留，按拒绝规则重试。
+		// 未派发原因不入证据，只在这里留一条日志，否则读图/上传/凭证故障无从区分。
+		var notDispatched error
 		if action.kind == "submit" && errors.Is(callErr, ErrNotDispatched) {
+			notDispatched = callErr
 			event, callErr = GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: "not_dispatched"}}, nil
+		}
+		if callErr == nil {
+			r.logGenerationOutcome(ctx, action, event, notDispatched, elapsed)
 		}
 		finishCtx, finish := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 		defer finish()
@@ -106,6 +114,31 @@ func (r *GenerationRuntime) advanceGeneration(ctx context.Context, scope store.A
 	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), finishTimeout)
 	defer cancel()
 	return r.GetGeneration(readCtx, scope, requestID)
+}
+
+// logGenerationOutcome 只记非正常结论（拒绝、失败、未知、未派发）；受理与运行中不刷日志。
+// 调用直接出错的情况由 failGenerationStage 记录。
+func (r *GenerationRuntime) logGenerationOutcome(ctx context.Context, action *generationAction, event GenerationEvent, notDispatched error, elapsed time.Duration) {
+	state := event.Observation.State
+	if state != GenerationRejected && state != GenerationFailed && state != GenerationUnknown {
+		return
+	}
+	attrs := []any{
+		"request_id", action.claim.RequestID,
+		"attempt_id", action.claim.AttemptID,
+		"deployment_id", action.call.Prepared.PolicyDefinition().DeploymentID,
+		"action", action.kind,
+		"state", string(state),
+		"error_code", event.Observation.ErrorCode,
+		"elapsed_ms", elapsed.Milliseconds(),
+	}
+	if event.Diagnostic != "" {
+		attrs = append(attrs, "provider", event.Diagnostic)
+	}
+	if notDispatched != nil {
+		attrs = append(attrs, "cause", notDispatched.Error())
+	}
+	r.gateway.logger.WarnContext(ctx, "generation provider outcome", attrs...)
 }
 
 func (r *GenerationRuntime) claimGeneration(ctx context.Context, tx store.TxAccountScope, requestID string) (*generationAction, error) {
@@ -385,7 +418,7 @@ func (r *GenerationRuntime) failGenerationStage(ctx context.Context, tx store.Tx
 		return nil
 	}
 	// 适配器错误已脱敏（不含地址与凭证），只记分类，供排查供应商抖动。
-	r.gateway.logger.WarnContext(ctx, "generation provider call failed", "request_id", c.RequestID, "deployment_id", task.deploymentID, "action", kind, "failures", task.failures, "error", cause.Error())
+	r.gateway.logger.WarnContext(ctx, "generation provider call failed", "request_id", c.RequestID, "attempt_id", c.AttemptID, "deployment_id", task.deploymentID, "action", kind, "failures", task.failures, "error", cause.Error())
 	now := r.gateway.now().UTC()
 	if _, err := tx.Update(ctx, "llm_generation_tasks", "lease_until=NULL", "attempt_id=$2", c.AttemptID); err != nil {
 		return err

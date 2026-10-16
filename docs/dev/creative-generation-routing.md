@@ -74,3 +74,18 @@ Chat 与 Generation 不再设置或检查平台共享并发数、每分钟请求
 新 attempt/task 的 `limit_key` 为空，不创建、锁定或递增 `platform_llm_limits`。0071 迁移允许 attempt 的空键；旧在途任务仍按原键幂等释放历史名额。旧表暂留用于兼容清理，已移除 Acquire 能力。API/Worker 一起升级；先迁移再启服务。回退不收紧空键约束，以免破坏新格式记录；旧 Worker 只适合处理它原先拥有的旧格式任务。
 
 RunningHub 结果域名增加精确的 `rh-hk-images-1252422369.cos.ap-hongkong.myqcloud.com`（真实 `/openapi/v2/query` 成功任务核实）。适配器和受控取件使用同一列表，不放开 COS 通配符；上传专用域名不因此成为结果域名。
+
+## 生成失败排查（2026-10-16）
+
+节点上只显示收敛后的原因码（`generation_failed` 等），供应商与平台侧细节一律不展示给创作者，只写入日志。排查时先在日志里按 ID 往下追：
+
+1. **`creative generation node failed`**（画布侧，节点收为失败时）：`execution_id`（即 `cwexec_*`）、`request_id`（路由根请求）、`current_request_id`（最后一次尝试）、`request_state`、`failure_class`、`reason`。拿 `current_request_id` 进入下一步。
+2. **`generation provider outcome`**（网关侧，每次供应商调用的非成功结论：rejected / failed / unknown）：`request_id`、`attempt_id`、`deployment_id`、`action`、`error_code`、`elapsed_ms`，以及：
+   - `provider`：HTTP 状态与供应商原始错误码（如 `http_status=200 provider_error=1007`），用于对照供应商文档；
+   - `cause`：仅 `error_code=not_dispatched` 时出现，说明提交前具体哪一步失败。例如 `reference 1 (ccrv_…) read: open: revision or generation grant: …`、`reference 0 (ccrv_…, image/png, 9584430 bytes) upload after 10.2s: runninghub upload: … timeout connected=true`、`runninghub upload answer code=…`、`runninghub credential unavailable`。
+3. **`generation provider call failed`**：调用本身出错、结果未知（受理与否无法证明）时记录 `error`，其中只有传输分类（`timeout` / `connection_reset` / `eof` / `dns` / `tls` 等），不含地址。
+4. **`creative generation step failed`** / **`creative generation parked`**：画布推进本身出错（网关、取件、交接），以及连续 5 次出错或租约到期后被收为通用失败。
+
+日志约定：不写提示词、取件地址的路径与查询（只保留 scheme 和主机）、凭证；供应商给出的错误码经 `providerToken` 收敛为短标记。适配器的 `GenerationEvent.Diagnostic` 只进日志，不参与证据摘要，也不入库。
+
+没有日志时，库里只能看到粗粒度分类：`creative_node_executions.error`（节点原因码）→ `llm_generation_requests.admission_control->>'consumer_key'` 等于 `cwexec_*` 的请求 → `llm_requests.failure_class`（如 `not_dispatched`）。证据表 `llm_generation_observations.evidence_cipher` 是加密的，而且不含上面的诊断细节。

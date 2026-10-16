@@ -119,6 +119,14 @@ func osCredential(env string) (string, bool) {
 // Models lists the selectable directory. Callers only ever choose a model key.
 func (s *Service) Models() []CatalogEntry { return s.catalog.List() }
 
+// Logger 供同进程装配的上层服务复用网关的日志出口，便于按 request_id 串联排查。
+func (s *Service) Logger() *slog.Logger {
+	if s.logger == nil {
+		return slog.Default()
+	}
+	return s.logger
+}
+
 // RequestState is the gateway's own fact about obtaining a complete result.
 // It never stands in for a run state.
 type RequestState string

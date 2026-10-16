@@ -64,35 +64,36 @@ func (a *RunningHubImages) Submit(ctx context.Context, call GenerationCall) (Gen
 	}
 	// 上传共用有界阶段，但最终创建任务至少保留15秒；不足时尚未创建生成任务。
 	if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) < 15*time.Second {
-		return GenerationEvent{}, fmt.Errorf("%w: insufficient submission time", ErrNotDispatched)
+		return GenerationEvent{}, fmt.Errorf("%w: insufficient submission time after uploads (%s left)", ErrNotDispatched, time.Until(deadline).Round(time.Second))
 	}
 	status, raw, err := a.do(ctx, path, "application/json", body)
 	if err != nil {
-		return GenerationEvent{}, err
+		return GenerationEvent{}, fmt.Errorf("runninghub submit: %w", err)
 	}
 	if status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusPaymentRequired {
 		code := "credential_refused"
 		if status == http.StatusPaymentRequired {
 			code = "insufficient_balance"
 		}
-		return GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: code}}, nil
+		return GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: code}, Diagnostic: fmt.Sprintf("http_status=%d", status)}, nil
 	}
 	var t runningHubTask
 	if err = json.Unmarshal(raw, &t); err != nil {
-		return GenerationEvent{}, ErrProtocol
+		return GenerationEvent{}, fmt.Errorf("%w: runninghub submit answer status=%d not decodable", ErrProtocol, status)
 	}
+	diagnostic := fmt.Sprintf("http_status=%d provider_error=%s", status, providerToken(t.ErrorCode))
 	// 只有明确的未受理错误才归零；5xx、空任务和未知错误保留受理未知。
 	// 限流类（415实例占满、421共享并发、1003频率、1011繁忙）官方要求客户端排队
 	// 重试，且没有任务ID；已受理的排队/运行中是813/804，不在此列。
 	if t.TaskID == "" {
 		code := runningHubError(t.ErrorCode)
 		if code == "credential_refused" || code == "insufficient_balance" || code == "invalid_parameter" || code == "content_rejected" || code == "rate_limited" {
-			return GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: code}}, nil
+			return GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: code}, Diagnostic: diagnostic}, nil
 		}
-		return GenerationEvent{}, fmt.Errorf("%w: runninghub submission outcome", ErrProtocol)
+		return GenerationEvent{}, fmt.Errorf("%w: runninghub submission outcome %s", ErrProtocol, diagnostic)
 	}
 	if status != http.StatusOK {
-		return GenerationEvent{}, ErrProtocol
+		return GenerationEvent{}, fmt.Errorf("%w: runninghub submit %s", ErrProtocol, diagnostic)
 	}
 	return a.event(t)
 }
@@ -106,11 +107,11 @@ func (a *RunningHubImages) Observe(ctx context.Context, call GenerationCall) (Ge
 	}
 	status, raw, err := a.do(ctx, "/openapi/v2/query", "application/json", raw)
 	if err != nil {
-		return GenerationEvent{}, err
+		return GenerationEvent{}, fmt.Errorf("runninghub query: %w", err)
 	}
 	var t runningHubTask
 	if status != http.StatusOK || json.Unmarshal(raw, &t) != nil || t.TaskID != call.TaskID {
-		return GenerationEvent{}, fmt.Errorf("%w: runninghub query answer", ErrProtocol)
+		return GenerationEvent{}, fmt.Errorf("%w: runninghub query answer status=%d task_matches=%t", ErrProtocol, status, t.TaskID == call.TaskID)
 	}
 	return a.event(t)
 }
@@ -129,9 +130,10 @@ func (a *RunningHubImages) event(t runningHubTask) (GenerationEvent, error) {
 		e.EventKey = "failed"
 		e.Observation.State = GenerationFailed
 		e.Observation.ErrorCode = runningHubError(t.ErrorCode)
+		e.Diagnostic = "provider_error=" + providerToken(t.ErrorCode)
 	case "SUCCESS":
 		if len(t.Results) != 1 {
-			return GenerationEvent{}, ErrProtocol
+			return GenerationEvent{}, fmt.Errorf("%w: runninghub result count %d", ErrProtocol, len(t.Results))
 		}
 		e.EventKey = "completed"
 		e.RefreshableMedia = true
@@ -142,14 +144,14 @@ func (a *RunningHubImages) event(t runningHubTask) (GenerationEvent, error) {
 			}
 			mime := map[string]string{"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}[strings.ToLower(out.OutputType)]
 			if mime == "" {
-				return GenerationEvent{}, ErrProtocol
+				return GenerationEvent{}, fmt.Errorf("%w: runninghub output type %s", ErrProtocol, providerToken(out.OutputType))
 			}
 			// 一次任务单张输出；身份不依赖可轮换的签名URL。
 			id := fmt.Sprintf("image-%d", i)
 			e.Observation.Outputs = append(e.Observation.Outputs, GenerationOutput{ID: id, Index: i, Kind: GenerationImage, Media: &GeneratedMedia{MIME: mime, ByteSize: 25 << 20, SizeIsLimit: true, FetchURL: out.URL, ExpiresAt: time.Now().Add(15 * time.Minute)}})
 		}
 	default:
-		return GenerationEvent{}, fmt.Errorf("%w: runninghub task state", ErrProtocol)
+		return GenerationEvent{}, fmt.Errorf("%w: runninghub task state %s", ErrProtocol, providerToken(t.Status))
 	}
 	// 官方query没有费用维度：保持Usage为空，由真实账单完成核算。
 	return e, nil
@@ -187,7 +189,7 @@ func (a *RunningHubImages) requestBody(ctx context.Context, call GenerationCall)
 		Background  string `json:"background"`
 	}
 	if json.Unmarshal(req.Input.Parameters, &p) != nil || p.Count != 1 || p.Background != "auto" {
-		return nil, "", ErrCapability
+		return nil, "", fmt.Errorf("%w: runninghub image parameters", ErrCapability)
 	}
 	modelPath, edit := "", "image-to-image"
 	switch req.ModelKey {
@@ -201,24 +203,25 @@ func (a *RunningHubImages) requestBody(ctx context.Context, call GenerationCall)
 	case "nano-banana-2.1":
 		modelPath = "rhart-image-n-nb21"
 	default:
-		return nil, "", ErrCapability
+		return nil, "", fmt.Errorf("%w: runninghub model %s", ErrCapability, req.ModelKey)
 	}
 	body := map[string]any{"prompt": req.Input.Prompt, "aspectRatio": p.AspectRatio, "resolution": strings.ToLower(p.Resolution)}
 	if req.ModelKey == "gpt-image-2" {
 		body["quality"] = p.Quality
 	}
 	var urls []string
-	for _, ref := range req.Input.References {
+	for i, ref := range req.Input.References {
 		if ref.Kind == GenerationText {
 			continue
 		}
 		data, err := readGenerationReference(ctx, call.References, ref)
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("reference %d (%s) read: %w", i, ref.RevisionID, err)
 		}
+		started := time.Now()
 		location, err := a.upload(ctx, data, ref.MIME)
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("reference %d (%s, %s, %d bytes) upload after %s: %w", i, ref.RevisionID, ref.MIME, len(data), time.Since(started).Round(time.Millisecond), err)
 		}
 		urls = append(urls, location)
 	}
@@ -233,7 +236,7 @@ func (a *RunningHubImages) requestBody(ctx context.Context, call GenerationCall)
 func (a *RunningHubImages) upload(ctx context.Context, data []byte, mime string) (string, error) {
 	ext := map[string]string{"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}[mime]
 	if ext == "" || len(data) > 25<<20 {
-		return "", ErrCapability
+		return "", fmt.Errorf("%w: runninghub upload format", ErrCapability)
 	}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -249,7 +252,7 @@ func (a *RunningHubImages) upload(ctx context.Context, data []byte, mime string)
 	}
 	status, raw, err := a.do(ctx, "/openapi/v2/media/upload/binary", writer.FormDataContentType(), body.Bytes())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("runninghub upload: %w", err)
 	}
 	var out struct {
 		Code *int `json:"code"`
@@ -260,8 +263,18 @@ func (a *RunningHubImages) upload(ctx context.Context, data []byte, mime string)
 	}
 	// 香港区上传地址已实测；不据此扩展生成结果的取件白名单。
 	uploadHosts := append(RunningHubImageHosts(), "rh-hk-images-switch.xiaoyaoyou.com")
-	if status != http.StatusOK || json.Unmarshal(raw, &out) != nil || out.Code == nil || *out.Code != 0 || out.Data.Type != "image" || !runningHubURL(out.Data.URL, uploadHosts) {
-		return "", fmt.Errorf("%w: runninghub upload answer", ErrProtocol)
+	if status != http.StatusOK || json.Unmarshal(raw, &out) != nil {
+		return "", fmt.Errorf("%w: runninghub upload answer status=%d", ErrProtocol, status)
+	}
+	if out.Code == nil || *out.Code != 0 {
+		code := "none"
+		if out.Code != nil {
+			code = fmt.Sprint(*out.Code)
+		}
+		return "", fmt.Errorf("%w: runninghub upload answer code=%s", ErrProtocol, code)
+	}
+	if out.Data.Type != "image" || !runningHubURL(out.Data.URL, uploadHosts) {
+		return "", fmt.Errorf("%w: runninghub upload answer type=%s location=%s", ErrProtocol, providerToken(out.Data.Type), locationOrigin(out.Data.URL))
 	}
 	return out.Data.URL, nil
 }
@@ -283,7 +296,20 @@ func (a *RunningHubImages) do(ctx context.Context, path, contentType string, bod
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
 	if err != nil || len(raw) > 1<<20 {
-		return 0, nil, ErrProtocol
+		return 0, nil, fmt.Errorf("%w: runninghub answer body status=%d unreadable or too large", ErrProtocol, resp.StatusCode)
 	}
 	return resp.StatusCode, raw, nil
+}
+
+// locationOrigin 只保留供应商地址的scheme与主机，路径和查询可能含签名，不进日志。
+func locationOrigin(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "unparseable"
+	}
+	origin := u.Scheme + "://" + u.Host
+	if len(origin) > 128 {
+		return origin[:128]
+	}
+	return origin
 }

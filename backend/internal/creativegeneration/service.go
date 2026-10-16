@@ -280,6 +280,7 @@ func (s *Service) Work(ctx context.Context, scope store.AccountScope, job jobs.R
 	done, stepErr := s.step(stepCtx, scope, target, b)
 	if stepErr != nil {
 		done = false
+		s.gateway.Logger().WarnContext(ctx, "creative generation step failed", "execution_id", target.ExecutionID, "canvas_id", target.CanvasID, "request_id", b.request, "consecutive_failures", b.failures+1, "error", stepErr.Error())
 	}
 	cancel()
 	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
@@ -302,6 +303,7 @@ func (s *Service) Work(ctx context.Context, scope store.AccountScope, job jobs.R
 		if err != nil {
 			return err
 		}
+		s.gateway.Logger().WarnContext(ctx, "creative generation parked", "execution_id", target.ExecutionID, "canvas_id", target.CanvasID, "request_id", b.request, "consecutive_failures", failures, "lease_expired", time.Now().After(b.until), "reason", creativecanvas.GenerationFailureGeneric)
 		// 收尾失败不留无人推进的状态：保持调度，下一轮再收。
 		done = s.complete(finishCtx, scope, target, b, true, creativecanvas.GenerationFailureGeneric) == nil
 	}
@@ -348,6 +350,7 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 	}
 	// 网关判为待核实后不会自动推进，节点直接收为失败；费用核实仍由网关维护。
 	if progress.ResultVerificationRequired || progress.VerificationRequired && !progress.Request.Terminal() {
+		s.logNodeFailure(ctx, target, b, progress, creativecanvas.GenerationFailureUnverified)
 		return true, s.complete(ctx, scope, target, b, true, creativecanvas.GenerationFailureUnverified)
 	}
 	outputs, err := s.generation.ImportableOutputs(ctx, scope, b.request, caller, target.ExecutionID)
@@ -362,9 +365,13 @@ func (s *Service) step(ctx context.Context, scope store.AccountScope, target cre
 		if !progress.Terminal() {
 			// 过了截止的结果不再采用，节点不必陪供应商等下去；网关自行跑完并核算。
 			if expired {
+				s.logNodeFailure(ctx, target, b, progress, reason)
 				return true, s.complete(ctx, scope, target, b, true, reason)
 			}
 			return false, nil
+		}
+		if progress.Request.State != gw.StateSucceeded {
+			s.logNodeFailure(ctx, target, b, progress, reason)
 		}
 		// 已经交接或终态无作品：都不再生成。费用核实仍由G3维护。
 		return true, s.complete(ctx, scope, target, b, progress.Request.State != gw.StateSucceeded, reason)
@@ -481,6 +488,22 @@ func (s *Service) complete(ctx context.Context, scope store.AccountScope, target
 		return allowed, nil
 	})
 	return err
+}
+
+// logNodeFailure 把节点失败与网关请求串起来：节点只显示收敛后的原因码，
+// 具体的供应商/未派发原因按 current_request_id 去网关日志 "generation provider outcome" 查。
+func (s *Service) logNodeFailure(ctx context.Context, target creativecanvas.ExecutionTarget, b binding, progress gw.GenerationProgress, reason string) {
+	s.gateway.Logger().WarnContext(ctx, "creative generation node failed",
+		"execution_id", target.ExecutionID,
+		"canvas_id", target.CanvasID,
+		"request_id", b.request,
+		"current_request_id", progress.Request.ID,
+		"request_state", string(progress.Request.State),
+		"failure_class", progress.Request.FailureClass,
+		"verification_required", progress.VerificationRequired,
+		"result_verification_required", progress.ResultVerificationRequired,
+		"reason", reason,
+	)
 }
 
 // failureReason 把网关记录的供应商失败分类收敛为节点可展示的原因。
