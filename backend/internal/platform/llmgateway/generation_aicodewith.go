@@ -92,7 +92,7 @@ func (a *AICodeWithImages) Submit(ctx context.Context, call GenerationCall) (Gen
 	}
 	status, raw, err := a.do(ctx, http.MethodPost, "/v1/images/generations", body)
 	if err != nil {
-		return GenerationEvent{}, err
+		return GenerationEvent{}, fmt.Errorf("aicodewith submit: %w", err)
 	}
 	// 这些状态在创建时同步返回、没有任务ID，中转明确没有受理。
 	if code, ok := map[int]string{
@@ -101,7 +101,7 @@ func (a *AICodeWithImages) Submit(ctx context.Context, call GenerationCall) (Gen
 		http.StatusPaymentRequired:    "insufficient_balance",
 		http.StatusServiceUnavailable: "no_available_channel",
 	}[status]; ok {
-		return GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: code}}, nil
+		return GenerationEvent{EventKey: "submit", Observation: GenerationObservation{State: GenerationRejected, ErrorCode: code}, Diagnostic: fmt.Sprintf("http_status=%d", status)}, nil
 	}
 	if status != http.StatusOK {
 		// 其他状态无法证明未受理；交给运行时按受理未知处理，绝不重新提交。
@@ -120,7 +120,7 @@ func (a *AICodeWithImages) Observe(ctx context.Context, call GenerationCall) (Ge
 	}
 	status, raw, err := a.do(ctx, http.MethodGet, "/v1/tasks/"+url.PathEscape(call.TaskID), nil)
 	if err != nil {
-		return GenerationEvent{}, err
+		return GenerationEvent{}, fmt.Errorf("aicodewith query: %w", err)
 	}
 	if status == http.StatusNotFound {
 		return GenerationEvent{EventKey: "not_found", Observation: GenerationObservation{State: GenerationUnknown, ErrorCode: "task_not_found"}}, nil
@@ -150,9 +150,9 @@ func (a *AICodeWithImages) Observe(ctx context.Context, call GenerationCall) (Ge
 		}
 		return GenerationEvent{EventKey: "completed", Observation: GenerationObservation{State: GenerationCompleted, TaskID: task.ID, Outputs: outputs}, Usage: usage}, nil
 	case "failed":
-		return GenerationEvent{EventKey: "failed", Observation: GenerationObservation{State: GenerationFailed, TaskID: task.ID, ErrorCode: task.errorCode()}, Usage: usage}, nil
+		return GenerationEvent{EventKey: "failed", Observation: GenerationObservation{State: GenerationFailed, TaskID: task.ID, ErrorCode: task.errorCode()}, Usage: usage, Diagnostic: "provider_error=" + task.providerErrorCode()}, nil
 	default:
-		return GenerationEvent{}, fmt.Errorf("%w: aicodewith task state", ErrProtocol)
+		return GenerationEvent{}, fmt.Errorf("%w: aicodewith task state %s", ErrProtocol, providerToken(task.Status))
 	}
 }
 
@@ -179,14 +179,14 @@ func (a *AICodeWithImages) requestBody(ctx context.Context, call GenerationCall)
 	if p.Background != "" && p.Background != "auto" {
 		body.Background = p.Background
 	}
-	for _, ref := range r.Input.References {
+	for i, ref := range r.Input.References {
 		// 文字参考已经通过句内引用编进提示词，只外发图片字节。
 		if ref.Kind != GenerationImage {
 			continue
 		}
 		data, err := readGenerationReference(ctx, call.References, ref)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("reference %d (%s) read: %w", i, ref.RevisionID, err)
 		}
 		body.ImageURLs = append(body.ImageURLs, "data:"+ref.MIME+";base64,"+base64.StdEncoding.EncodeToString(data))
 	}
@@ -200,16 +200,16 @@ func readGenerationReference(ctx context.Context, opener GenerationReferenceOpen
 	}
 	reader, err := opener.OpenGenerationReference(ctx, ref)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open: %w", err)
 	}
 	defer func() { _ = reader.Close() }()
 	data, err := io.ReadAll(io.LimitReader(reader, ref.ByteSize+1))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read after %d bytes: %w", len(data), err)
 	}
 	sum := sha256.Sum256(data)
 	if int64(len(data)) != ref.ByteSize || hex.EncodeToString(sum[:]) != ref.Digest {
-		return nil, fmt.Errorf("%w: generation reference bytes", ErrConflict)
+		return nil, fmt.Errorf("%w: generation reference bytes (read %d, frozen %d, digest_match=%t)", ErrConflict, len(data), ref.ByteSize, hex.EncodeToString(sum[:]) == ref.Digest)
 	}
 	return data, nil
 }
@@ -268,6 +268,18 @@ func (t aicodewithTask) usage() map[string]int64 {
 		"image_input_tokens":  *t.Usage.ImageInputTokens,
 		"image_output_tokens": *t.Usage.ImageOutputTokens,
 	}
+}
+
+// providerErrorCode 给日志用：结构化code或字符串错误的有界标记，不含原文。
+func (t aicodewithTask) providerErrorCode() string {
+	var structured struct {
+		Code json.RawMessage `json:"code"`
+		Type string          `json:"type"`
+	}
+	if json.Unmarshal(t.Error, &structured) == nil {
+		return "code=" + providerToken(strings.Trim(string(structured.Code), `"`)) + " type=" + providerToken(structured.Type)
+	}
+	return "unstructured"
 }
 
 // errorCode 只保留中转给出的有界错误码；原文可能含提示词片段，不进入证据。

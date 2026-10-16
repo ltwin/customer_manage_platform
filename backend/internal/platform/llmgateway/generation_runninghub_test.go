@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	gw "github.com/samson/customer-manage-platform/backend/internal/platform/llmgateway"
@@ -231,6 +232,60 @@ func TestRunningHubFailureAndOutputValidation(t *testing.T) {
 			event, err := adapter.Submit(t.Context(), gw.GenerationCall{Prepared: prepared.Prepared})
 			if (err != nil) != tc.invalid || !tc.invalid && (event.Observation.State != tc.state || event.Observation.ErrorCode != tc.code) {
 				t.Fatalf("event %+v error %v", event, err)
+			}
+			// 拒绝/失败须带上可排查的HTTP状态或原始错误码，且不进入证据JSON。
+			if !tc.invalid && event.Diagnostic == "" {
+				t.Fatalf("missing diagnostic: %+v", event)
+			}
+			if raw, _ := json.Marshal(event); strings.Contains(string(raw), "provider_error") || strings.Contains(string(raw), "http_status") {
+				t.Fatalf("diagnostic leaked into evidence: %s", raw)
+			}
+		})
+	}
+}
+
+func TestRunningHubDiagnosticsNameFailingStep(t *testing.T) {
+	for _, tc := range []struct {
+		name, uploadBody string
+		uploadStatus     int
+		want             []string
+	}{
+		{"upload_code", `{"code":500,"data":{"type":"image","download_url":"https://rh-hk-images-switch.xiaoyaoyou.com/r.png"}}`, 200, []string{"reference 0 (rev-ref, image/png, 6 bytes) upload", "code=500"}},
+		{"upload_status", `{}`, 502, []string{"reference 0", "status=502"}},
+		{"upload_host", `{"code":0,"data":{"type":"image","download_url":"https://new-host.invalid/sig/r.png?token=secret"}}`, 200, []string{"location=https://new-host.invalid"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.uploadStatus)
+				_, _ = io.WriteString(w, tc.uploadBody)
+			}))
+			defer server.Close()
+			refs := imageReferences{"rev-ref": []byte("pixels")}
+			ref := refs.ref("rev-ref", "image/png", gw.GenerationImage)
+			req := gw.GenerationRequest{Version: gw.GenerationContractVersion, ModelKey: "nano-banana-2.1", Kind: gw.GenerationImage, Mode: "image", Input: gw.GenerationInput{Prompt: "p", References: []gw.GenerationReference{ref}, Parameters: json.RawMessage(`{}`)}}
+			facts, err := gw.ReadGenerationFacts(t.Context(), req, refs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prepared, err := runningHubPolicy(t, req.ModelKey).Policy.Prepare(req, facts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			adapter, err := gw.NewRunningHubImages(server.Client(), server.URL, func() (string, bool) { return "key", true })
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = adapter.Submit(t.Context(), gw.GenerationCall{Prepared: prepared.Prepared, References: refs})
+			if !errors.Is(err, gw.ErrNotDispatched) {
+				t.Fatalf("want not dispatched, got %v", err)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error %q missing %q", err, want)
+				}
+			}
+			if strings.Contains(err.Error(), "secret") || strings.Contains(err.Error(), "/sig/") {
+				t.Fatalf("error leaks provider location: %v", err)
 			}
 		})
 	}

@@ -60,6 +60,27 @@ type GenerationEvent struct {
 	ProviderRevision string                `json:"provider_revision,omitempty"`
 	Observation      GenerationObservation `json:"observation"`
 	Usage            map[string]int64      `json:"usage,omitempty"`
+	// Diagnostic 是供应商回答的有界摘要（HTTP状态、原始错误码），只进运维日志，
+	// 不参与证据摘要与持久化；不得放入提示词、取件地址或凭证。
+	Diagnostic string `json:"-"`
+}
+
+// providerToken 把供应商给出的错误码/状态收敛为可安全写日志的短标记。
+func providerToken(s string) string {
+	if s == "" {
+		return "none"
+	}
+	if len(s) > 32 {
+		return "invalid"
+	}
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-', r == '.':
+		default:
+			return "invalid"
+		}
+	}
+	return s
 }
 
 type GenerationAdapter interface {
