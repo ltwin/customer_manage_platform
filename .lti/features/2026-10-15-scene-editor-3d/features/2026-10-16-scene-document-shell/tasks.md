@@ -20,7 +20,7 @@
 
 ## 4. 前端准备
 
-- [ ] 4.1 浏览器输入穿刺（未决事项 2）：做一个录制页，记录 wheel（`deltaMode`、`deltaX/Y`、`ctrlKey` 等修饰键、时间间隔）、Safari `gesture*`、按键的 `code` / `key` / `metaKey` / `isComposing`，以及 `preventDefault` 能否拦下 Cmd/Ctrl + S、Cmd/Ctrl + D、捏合缩放页面；owner 在 macOS Chrome / Safari / Edge（触控板与鼠标）和 Windows Chrome（鼠标）上录制；事件序列存为 `frontend/scripts/fixtures/scene-input/*.json`，结论（`classifyWheel` 规则、各浏览器可拦截的组合键）写入 verification 草稿。录制页本身不入库
+- [x] 4.1 浏览器输入穿刺（未决事项 2）：**owner 2026-10-17 决定不做真机录制**，改为在日常使用中体验，发现滚轮或快捷键问题再反馈修正（verify 记为后续安排）；`classifyWheel` 保持推测规则，推测错时在「视图」菜单手动选择并记住。原计划：做一个录制页，记录 wheel（`deltaMode`、`deltaX/Y`、`ctrlKey` 等修饰键、时间间隔）、Safari `gesture*`、按键的 `code` / `key` / `metaKey` / `isComposing`，以及 `preventDefault` 能否拦下 Cmd/Ctrl + S、Cmd/Ctrl + D、捏合缩放页面；owner 在 macOS Chrome / Safari / Edge（触控板与鼠标）和 Windows Chrome（鼠标）上录制；事件序列存为 `frontend/scripts/fixtures/scene-input/*.json`，结论（`classifyWheel` 规则、各浏览器可拦截的组合键）写入 verification 草稿。录制页本身不入库
 - [x] 4.2 依赖与懒加载入口：`frontend/package.json` 加 `three@0.186.1`、`@types/three@0.186.0`、`@react-three/fiber@9.8.1`、`@react-three/drei@10.7.9` 和新测试脚本；`SceneEditor.tsx` 空壳（`React.lazy`、WebGL2 检测、读取文档、只读占位）；`WorkspacePage.tsx` 按类型分派最大化；`CanvasView.tsx` 创建菜单「3D 场景」、`KindIcon`、`known`、未命名标签「未命名场景」、卡片物件数、最大化按钮；`outbox.ts` 的 `defaultActions` / `defaultNodeSize` 认识 `core.scene`；`make check-frontend` 通过，构建产物中画布入口块不含 three（AC-10）
 
 ## 5. 前端状态与同步
@@ -32,7 +32,7 @@
 ## 6. 前端视口与交互
 
 - [x] 6.1 键位表与分发：`input/keymap.ts`（键位表是状态栏、菜单、速查的唯一来源；按 `event.code` 分发；macOS 认 `metaKey`、`Backspace` 视作 Delete；输入框内与组字中不分发；命中后 `preventDefault` + `stopPropagation`；Esc 的处理顺序且永不关闭视图；Ctrl/Cmd + S 拦下并提示已自动保存）；`creative-scene-interaction.test.ts` 先写，覆盖 AC-2c
-- [ ] 6.2 视口与导航（依赖 4.1）：`Viewport.tsx`（R3F Canvas、`Grid`、天空、clay 光照、`GizmoHelper`）、`objects/*`（基础体、灯光图标、摄像机视锥、分组）、`input/navigation.ts`（`CameraControls` 配置；中键与 Alt + 左键并存；鼠标 / 触控板两套滚轮映射，`ctrlKey` 一律推拉；`classifyWheel` 推测加「视图」菜单手动选择并持久化；数字行视图、`.` 聚焦选中、Home 全部显示、反引号视图菜单）；单测覆盖 AC-2a，`classifyWheel` 用 4.1 的夹具
+- [x] 6.2 视口与导航（依赖 4.1）：`Viewport.tsx`（R3F Canvas、`Grid`、天空、clay 光照、`GizmoHelper`）、`objects/*`（基础体、灯光图标、摄像机视锥、分组）、`input/navigation.ts`（`CameraControls` 配置；中键与 Alt + 左键并存；鼠标 / 触控板两套滚轮映射，`ctrlKey` 一律推拉；`classifyWheel` 推测加「视图」菜单手动选择并持久化；数字行视图、`.` 聚焦选中、Home 全部显示、反引号视图菜单）；单测覆盖 AC-2a，`classifyWheel` 用合成的滚轮样本（4.1 未录制真机夹具）
 - [x] 6.3 选择与变换：`input/selection.ts`（单击、Shift + 单击三态、`SelectionBox` 框选及 Shift 加选 / 修饰键减选、A / Alt + A、锁定与隐藏排除、只变换最上层选中物件）、`transform/modal.ts` + `numeric.ts`（G / R / S；X/Y/Z 全局 → 自身 → 取消循环、Shift + 轴锁平面；Ctrl 吸附 1 m / 5° / 0.1，Ctrl + Shift 精细吸附，Shift 精细从按下时起算；数字输入含小数、负号、Backspace、Tab 换轴；多物件以中点为枢轴；父对象下换算回局部变换；一次确认一个 `update_objects`）、gizmo 工具（`TransformControls` 挂在枢轴代理上）、W 切换工具、Shift + D、X / Delete、H / Shift + H / Alt + H、Alt + G/R/S、F2；单测覆盖 AC-2 模态变换与 AC-2b
 - [x] 6.4 面板与样式：工具栏、菜单栏（含 Shift + A 添加菜单，新物件落在鼠标所指的地面点）、物件列表、属性栏（左侧）、状态栏（当前工具或变换的轴向与数值、保存状态）、快捷键速查、右键菜单、首次提示、冲突提示（重新应用 / 放弃 / 仍然删除）、历史版本面板（分组列表、只读预览、确认后整份恢复）、关闭视图时 `blocked` 意图的确认；`scene.css`；在助手面板展开时让出空间；菜单与状态栏的按键标注全部取自键位表；`make check-frontend` 通过
 
