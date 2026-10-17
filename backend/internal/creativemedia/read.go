@@ -102,7 +102,7 @@ func (s *Service) WriteLocalPart(ctx context.Context, token string, body io.Read
 
 // IssueTicket authorizes browser media tags for one revision/role/purpose.
 func (s *Service) IssueTicket(ctx context.Context, scope store.AccountScope, in TicketInput) (Ticket, error) {
-	if in.ContentRevisionID == "" || in.Role != "original" && in.Role != "display" || in.Purpose != "display" && in.Purpose != "download" || len(in.FileName) > 255 {
+	if in.ContentRevisionID == "" || in.Role != "original" && in.Role != "display" && in.Role != "thumbnail" || in.Purpose != "display" && in.Purpose != "download" || len(in.FileName) > 255 {
 		return Ticket{}, creativeops.ErrValidation
 	}
 	var media creativecontent.MediaObject

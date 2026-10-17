@@ -19,6 +19,7 @@ import (
 
 	"github.com/disintegration/imaging"
 	"github.com/gabriel-vasile/mimetype"
+	"github.com/samson/customer-manage-platform/backend/internal/creativeglb"
 	"github.com/samson/customer-manage-platform/backend/internal/creativepalette"
 	_ "golang.org/x/image/webp"
 )
@@ -48,6 +49,12 @@ func avFormats() []Format {
 	}
 }
 
+// modelFormats are uploaded only by the scene editor into staged targets. They
+// are verifiable but not listed in Formats, so file pickers never offer them.
+func modelFormats() []Format {
+	return []Format{{Kind: "model", Mime: "model/gltf-binary", Extensions: []string{".glb"}}}
+}
+
 // Verified is the trusted result of a full-content check.
 type Verified struct {
 	Palette    creativepalette.Result
@@ -61,6 +68,8 @@ type Verified struct {
 	Codecs     json.RawMessage
 	// Display is an optional derived rendition (images only).
 	Display *Rendition
+	// Manifest is computed from the GLB's vertex data (models only).
+	Manifest *creativeglb.Manifest
 }
 type Rendition struct {
 	Path   string
@@ -99,7 +108,7 @@ func (v *Verifier) Formats() []Format {
 	return result
 }
 func (v *Verifier) format(mime string) (Format, bool) {
-	for _, f := range v.Formats() {
+	for _, f := range append(v.Formats(), modelFormats()...) {
 		if f.Mime == mime {
 			return f, true
 		}
@@ -107,8 +116,11 @@ func (v *Verifier) format(mime string) (Format, bool) {
 	return Format{}, false
 }
 func (v *Verifier) MaxBytes(kind string) int64 {
-	if kind == "image" {
+	switch kind {
+	case "image":
 		return v.cfg.ImageMaxBytes
+	case "model":
+		return int64(creativeglb.DefaultLimits().MaxBytes)
 	}
 	return v.cfg.AVMaxBytes
 }
@@ -185,6 +197,13 @@ func (v *Verifier) Verify(ctx context.Context, body io.Reader, declaredKind, dec
 	}
 	result.Mime = mime
 	result.Kind = f2.Kind
+	if f2.Kind == "model" {
+		if err := verifyModel(path, &result); err != nil {
+			_ = os.Remove(path)
+			return Verified{}, "", err
+		}
+		return result, path, nil
+	}
 	if f2.Kind == "image" {
 		if err := v.verifyImage(path, &result); err != nil {
 			_ = os.Remove(path)
@@ -197,6 +216,29 @@ func (v *Verifier) Verify(ctx context.Context, body io.Reader, declaredKind, dec
 		return Verified{}, "", err
 	}
 	return result, path, nil
+}
+
+// stagedModel is the payload of a model's staged form (data: 模型内容).
+type stagedModel struct {
+	Format   string               `json:"format"`
+	Manifest creativeglb.Manifest `json:"manifest"`
+}
+
+// verifyModel accepts only the static GLB subset and records the manifest the
+// server derived from the vertex data; anything outside the subset is an
+// unsupported upload.
+func verifyModel(path string, out *Verified) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	manifest, err := creativeglb.Inspect(raw, creativeglb.DefaultLimits())
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnsupported, err)
+	}
+	out.Manifest = &manifest
+	out.Codecs = json.RawMessage(`{"format":"glb"}`)
+	return nil
 }
 
 func (v *Verifier) verifyImage(path string, out *Verified) error {

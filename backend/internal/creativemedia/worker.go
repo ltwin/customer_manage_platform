@@ -2,6 +2,7 @@ package creativemedia
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -374,6 +375,15 @@ func (s *Service) publish(ctx context.Context, scope store.AccountScope, u uploa
 			return creativeops.Outcome{}, err
 		}
 		draft := creativecontent.Draft{Kind: current.Kind, DeclarationID: current.DeclarationID}
+		if verified.Manifest != nil {
+			// The staged form of a model carries the manifest the server
+			// computed; commit_model compares the client's against it.
+			model, err := json.Marshal(stagedModel{Format: "glb", Manifest: *verified.Manifest})
+			if err != nil {
+				return creativeops.Outcome{}, err
+			}
+			draft.Payload.Model = model
+		}
 		publication, err := s.bindOrCandidate(ctx, tx, current, target, draft, objects, command.OperationID, now)
 		if err != nil {
 			return creativeops.Outcome{}, err

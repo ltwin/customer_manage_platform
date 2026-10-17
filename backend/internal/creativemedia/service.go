@@ -155,6 +155,11 @@ func (s *Service) validateCreate(v CreateUploadInput) error {
 	if !ok || f.Kind != v.Kind {
 		return ErrUnsupported
 	}
+	// A model is only an input to a scene command, never a library asset or
+	// canvas node content.
+	if v.Kind == "model" && v.Target.Kind != "staged" {
+		return creativeops.ErrValidation
+	}
 	if v.Size > s.verifier.MaxBytes(v.Kind) || s.partCount(v.Size) > s.cfg.MaxParts {
 		return ErrSizeLimit
 	}
