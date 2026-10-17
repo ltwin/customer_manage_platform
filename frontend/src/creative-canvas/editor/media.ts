@@ -107,6 +107,30 @@ export async function uploadFile(
 ): Promise<Upload> {
   const classified = classifyFile(file, capabilities)
   if ('error' in classified) throw new Error(classified.error)
+  return uploadAs(file, classified, target, onProgress, signal)
+}
+
+/**
+ * Uploads bytes the editor produced itself, such as a baked model GLB and its
+ * thumbnail. Model files are never offered in file pickers: capabilities do
+ * not list them, so only this path declares kind model.
+ */
+export function uploadGenerated(
+  file: File,
+  declared: { kind: 'model'; mime: 'model/gltf-binary' } | { kind: 'image'; mime: 'image/png' },
+  target: UploadTarget,
+  signal?: AbortSignal,
+): Promise<Upload> {
+  return uploadAs(file, declared, target, () => {}, signal)
+}
+
+async function uploadAs(
+  file: File,
+  classified: { kind: MediaKind | 'model'; mime: string },
+  target: UploadTarget,
+  onProgress: (p: UploadProgress) => void,
+  signal?: AbortSignal,
+): Promise<Upload> {
   onProgress({ stage: 'creating', sent: 0, total: file.size })
   const operation = crypto.randomUUID()
   // 建会话不随撤销中止：请求一旦发出，服务器可能已经建好会话，
@@ -321,9 +345,11 @@ function ticketKey(
   return `${getAuthSnapshot().sessionEpoch}:${revision}:${role}:${purpose}:${fileName}`
 }
 /** 已取得且未过期的展示票据可同步复用，避免组件重挂载时闪回加载态。 */
+export type TicketRole = 'original' | 'display' | 'thumbnail'
+
 export function cachedMediaTicket(
   revision: string,
-  role: 'original' | 'display',
+  role: TicketRole,
 ) {
   const ticket = readyTickets.get(ticketKey(revision, role, 'display'))
   return ticket && new Date(ticket.expires_at).getTime() > Date.now() + 30000
@@ -332,7 +358,7 @@ export function cachedMediaTicket(
 }
 export function invalidateMediaTicket(
   revision: string,
-  role: 'original' | 'display',
+  role: TicketRole,
 ) {
   const key = ticketKey(revision, role, 'display')
   tickets.delete(key)
@@ -340,7 +366,7 @@ export function invalidateMediaTicket(
 }
 export function mediaTicket(
   revision: string,
-  role: 'original' | 'display',
+  role: TicketRole,
   purpose: 'display' | 'download',
   fileName?: string,
 ): Promise<MediaTicket> {

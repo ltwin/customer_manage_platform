@@ -1,6 +1,7 @@
 import { onCanvasInvalidate } from '../creative-canvas/editor/canvasEvents.ts'
 import { currentAccount } from '../creative-canvas/editor/api.ts'
 import { commandScene, readScene } from './api.ts'
+import { modelCache } from './models/cache.ts'
 import { SceneSession, sessionFor, type Clock, type Transport } from './state/sync.ts'
 
 const browserClock: Clock = {
@@ -31,6 +32,8 @@ export function openScene(documentID: string): SceneSession {
   return sessionFor(documentID, () => {
     const session = new SceneSession(documentID, transportFor(currentAccount()), browserClock)
     session.onDispose.push(onCanvasInvalidate(() => session.invalidate()))
+    // Baked models stay drawable under their real IDs once a receipt names them.
+    session.onDispose.push(modelCache.follow(session))
     void session.start()
     return session
   })

@@ -23,6 +23,7 @@ import {
   type Manifest,
 } from '../src/creative-scene/sandbox/inspect.ts'
 import { createLib1 } from '../src/creative-scene/sandbox/lib.ts'
+import { ModelCache, modelSummaries, type SceneModel } from '../src/creative-scene/models/cache.ts'
 import {
   localContent,
   localRevision,
@@ -579,4 +580,49 @@ test('model placeholders: format, projection and rewriting', () => {
 
   const confirmed = asConfirmed(a, models)
   assert.deepEqual(applyIntent(emptyScene, confirmed).scene.objects.map((o) => o.model?.content_revision_id), ['ccrv_1', 'ccrv_1'])
+})
+
+test('the model cache downloads, inspects and parses each revision once', async () => {
+  const downloads: string[] = []
+  let failNext = false
+  const cache = new ModelCache(async (revision) => {
+    downloads.push(revision)
+    if (failNext) {
+      failNext = false
+      throw new Error('ticket expired')
+    }
+    return revision === 'ccrv_bad' ? fixture('bad-lines.glb') : templateGLB()
+  })
+  const [a, b] = await Promise.all([cache.load('ccrv_1'), cache.load('ccrv_1')])
+  assert.equal(a, b)
+  assert.deepEqual(downloads, ['ccrv_1'], 'one download for any number of instances')
+  assert.equal(a.meshes.length, 3, 'base, shaft and capital')
+  const top = a.meshes.map((m) => m.matrix.elements[13])
+  assert.ok(top.some((y) => Math.abs(y - 2.9375) < 1e-6), 'parts keep their place inside the model')
+
+  await assert.rejects(cache.load('ccrv_bad'), (e: Error) => e instanceof GLBError && e.reason === 'unsupported_feature', 'server bytes are inspected too')
+  assert.equal(cache.failed.getState()['ccrv_bad'], true)
+
+  failNext = true
+  await assert.rejects(cache.load('ccrv_2'))
+  assert.equal(cache.failed.getState()['ccrv_2'], true)
+  await cache.load('ccrv_2')
+  assert.equal(cache.failed.getState()['ccrv_2'], undefined, 'a failed load is retried and clears its mark')
+
+  const summary: SceneModel = { content_id: 'local-content:i1:m', usable: true, manifest: null, generator: null, name_hint: '柱' }
+  cache.register('local:i1:m', { glb: templateGLB(), summary })
+  const before = downloads.length
+  const local = await cache.load('local:i1:m')
+  assert.equal(downloads.length, before, 'a local bake needs no download')
+  cache.alias('local:i1:m', 'ccrv_9', 'ccnt_9')
+  assert.equal(await cache.load('ccrv_9'), local, 'the receipt\'s revision reuses the parsed model')
+  assert.equal(cache.local.getState()['ccrv_9'].summary.content_id, 'ccnt_9')
+  await assert.rejects(cache.load('local:gone:m'), /本机模型已不在/)
+
+  const server: Record<string, SceneModel> = { ccrv_9: { ...summary, content_id: 'ccnt_9', name_hint: '服务端' } }
+  const merged = modelSummaries(server, cache.local.getState())
+  assert.equal(merged.ccrv_9.name_hint, '服务端', 'the server summary wins')
+  assert.equal(merged['local:i1:m'].name_hint, '柱')
+  cache.unregister('local:i1:m')
+  assert.equal(cache.local.getState()['local:i1:m'], undefined)
 })

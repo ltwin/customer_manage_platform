@@ -12,6 +12,7 @@ import { boxSelect, click, emptySelection, listClick, prune, selectAll, topmost 
 import { ContextMenu, type MenuItem } from './panels/ContextMenu.tsx'
 import { ConflictPrompt } from './panels/ConflictPrompt.tsx'
 import { FirstRunHint } from './panels/FirstRunHint.tsx'
+import { modelCache, modelSummaries } from './models/cache.ts'
 import { HistoryPanel } from './panels/HistoryPanel.tsx'
 import { MenuBar } from './panels/MenuBar.tsx'
 import { Outliner } from './panels/Outliner.tsx'
@@ -78,10 +79,15 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
 
   const objects = useMemo(() => s.view?.scene.objects ?? [], [s.view])
   const shown: Scene | undefined = u.preview?.scene ?? s.view?.scene
+  const localModels = useStore(modelCache.local)
+  const failedModels = useStore(modelCache.failed)
+  const models = useMemo(() => u.preview?.models ?? modelSummaries(s.base?.models, localModels), [u.preview, s.base, localModels])
   const readOnly = s.trashed || s.missing || !!u.preview || !s.base
   const byID = useMemo(() => new Map(objects.map((o) => [o.id, o])), [objects])
   const selected = u.selection.selected
   const active = u.selection.active ? (byID.get(u.selection.active) ?? null) : null
+  const shownActive = u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active
+  const shownModel = shownActive?.model?.content_revision_id
 
   useEffect(() => {
     const previous = window.document.activeElement
@@ -417,9 +423,11 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                   onToggle={(id, field, value) => edit([{ op: 'update_objects', updates: [{ object_id: id, [field]: value }] }], `${value ? (field === 'visible' ? '显示' : '锁定') : field === 'visible' ? '隐藏' : '解锁'}「${byID.get(id)?.name || '物件'}」`)}
                 />
                 <Properties
-                  object={u.preview ? (u.preview.scene.objects.find((o) => o.id === active?.id) ?? null) : active}
+                  object={shownActive}
                   count={selected.length}
                   readOnly={readOnly}
+                  model={shownModel ? models[shownModel] : undefined}
+                  modelFailed={!!shownModel && !!failedModels[shownModel]}
                   onUpdate={(update: ObjectUpdate, text, merge) => edit([{ op: 'update_objects', updates: [update] }], text, merge ? { merge } : undefined)}
                 />
               </aside>
@@ -444,6 +452,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
               <ConflictPrompt groups={s.conflicts} trashed={s.trashed} onReapply={(id) => session.reapply(id)} onDiscard={(id) => session.discard(id)} />
               <Viewport
                 scene={shown}
+                models={models}
                 readOnly={readOnly}
                 ui={ui}
                 mac={mac}
@@ -471,7 +480,7 @@ export default function SceneEditor({ documentID, onClose }: { documentID: strin
                 documentID={documentID}
                 revision={s.base.revision}
                 previewing={u.preview?.revision ?? null}
-                onPreview={(revision, scene) => ui.setState({ preview: { revision, scene }, selection: emptySelection })}
+                onPreview={(revision, scene, models) => ui.setState({ preview: { revision, scene, models }, selection: emptySelection })}
                 onClose={() => ui.setState({ history: false, preview: null })}
               />
             )}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Euler, MathUtils, Quaternion } from 'three'
 import type { ObjectUpdate, SceneObject } from '../api.ts'
 import { builtinSpec, type ParamSpec } from '../builtins/catalog.ts'
+import type { SceneModel } from '../models/cache.ts'
 import { transformToDoc, transformToView } from '../space.ts'
 
 /**
@@ -156,7 +157,16 @@ function ParamField({ name, spec, value, disabled, onCommit }: { name: string; s
  * Field commits carry a merge key, so typing in one field is one undo step
  * even when its commits wait to be sent together.
  */
-export function Properties({ object, count, readOnly, onUpdate }: { object: SceneObject | null; count: number; readOnly: boolean; onUpdate: (u: ObjectUpdate, label: string, merge?: string) => void }) {
+export function Properties({ object, count, readOnly, model, modelFailed = false, onUpdate }: {
+  object: SceneObject | null
+  count: number
+  readOnly: boolean
+  /** The model a model instance shows, when known. */
+  model?: SceneModel
+  /** Its GLB could not be loaded. */
+  modelFailed?: boolean
+  onUpdate: (u: ObjectUpdate, label: string, merge?: string) => void
+}) {
   if (!object) return <div className="cc-scene-props is-empty">{count > 1 ? `已选中 ${count} 个物件` : '选中物件后在这里调整'}</div>
   // Shown and typed in Blender's axes (Z up); stored in the document's.
   const t = transformToView(object.transform)
@@ -220,6 +230,12 @@ export function Properties({ object, count, readOnly, onUpdate }: { object: Scen
             />
           ))}
         </fieldset>
+      )}
+      {object.kind === 'model_instance' && (
+        <div className="cc-scene-model-info">
+          <span>代码模型{model?.name_hint ? `：${model.name_hint}` : ''}</span>
+          {(model?.usable === false || modelFailed) && <strong role="status">模型不可用</strong>}
+        </div>
       )}
       {object.light && <small>灯光：{object.light.type} · 强度 {object.light.intensity}（灯光设置随后续版本开放）</small>}
       {object.camera && <small>摄像机：{object.camera.focal_mm} mm · {object.camera.aspect}（机位设置随后续版本开放）</small>}

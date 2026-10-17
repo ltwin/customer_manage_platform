@@ -1,6 +1,7 @@
 import { createStore } from 'zustand/vanilla'
 import type { Scene } from '../api.ts'
 import type { Context } from '../input/keymap.ts'
+import type { SceneModel } from '../models/cache.ts'
 import type { Device, DevicePreference } from '../input/navigation.ts'
 import { emptySelection, type Selection } from '../input/selection.ts'
 import type { SavedView } from '../viewState.ts'
@@ -19,7 +20,8 @@ export type Popup =
   | { kind: 'delete'; x: number; y: number; ids: string[] }
   | { kind: 'rename'; x: number; y: number; id: string }
 
-export type Preview = { revision: string; scene: Scene }
+/** A revision from the history list, with the models its snapshot names. */
+export type Preview = { revision: string; scene: Scene; models: Record<string, SceneModel> }
 
 export type EditorUI = {
   selection: Selection
