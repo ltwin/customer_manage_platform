@@ -12,6 +12,8 @@ import {
   CircleHelp,
 } from 'lucide-react'
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -46,6 +48,25 @@ import {
 } from './outbox.ts'
 import { saveStatus, saveStatusText } from './saveStatus.ts'
 import DocumentView from './DocumentView.tsx'
+
+type SceneEditorProps = { documentID: string; onClose: () => void }
+// three 和 R3F 只在打开场景时加载（AC-10）；加载失败给出关闭入口，不让画布卡住。
+const SceneEditor = lazy(() =>
+  import('../../creative-scene/SceneEditor.tsx').catch(() => ({
+    default: function SceneEditorUnavailable({ onClose }: SceneEditorProps) {
+      return (
+        <section className="cc-maximized-document cc-surface" aria-label="3D 场景">
+          <div className="cc-document-body" role="alert">
+            <p>3D 编辑器加载失败，请检查网络后刷新页面</p>
+            <button className="btn" onClick={onClose}>
+              回到画布
+            </button>
+          </div>
+        </section>
+      )
+    },
+  })),
+)
 import CanvasView from './CanvasView.tsx'
 import NodeGenerationPanel from './NodeGenerationPanel.tsx'
 import ContentForm from './ContentForm.tsx'
@@ -112,6 +133,7 @@ function Workspace({ account }: { account: string }) {
   const [projectMenu, setProjectMenu] = useState(false)
   const [maximized, setMaximized] = useState<{
     id: string
+    typeKey: string
     libraryOpen: boolean
   } | null>(null)
   const [editing, setEditing] = useState(false)
@@ -1484,10 +1506,17 @@ function Workspace({ account }: { account: string }) {
                     setSelected(id)
                     const n = view.nodes.find((n) => n.id === id)
                     if (
-                      n?.metadata.type_key === 'internal.document' &&
+                      n &&
+                      ['internal.document', 'core.scene'].includes(
+                        n.metadata.type_key,
+                      ) &&
                       n.data.document_id
                     ) {
-                      setMaximized({ id: n.data.document_id, libraryOpen })
+                      setMaximized({
+                        id: n.data.document_id,
+                        typeKey: n.metadata.type_key,
+                        libraryOpen,
+                      })
                       setLibraryOpen(false)
                       return
                     }
@@ -1703,14 +1732,34 @@ function Workspace({ account }: { account: string }) {
           </StudioDialog>
         )}
       </div>
-      {maximized && (
-        <DocumentView
-          id={maximized.id}
-          onClose={() => {
-            setLibraryOpen(maximized.libraryOpen)
-            setMaximized(null)
-          }}
-        />
+      {maximized?.typeKey === 'core.scene' ? (
+        <Suspense
+          fallback={
+            <section className="cc-maximized-document cc-surface" aria-label="3D 场景">
+              <div className="cc-document-body" role="status">
+                <p>正在加载 3D 编辑器…</p>
+              </div>
+            </section>
+          }
+        >
+          <SceneEditor
+            documentID={maximized.id}
+            onClose={() => {
+              setLibraryOpen(maximized.libraryOpen)
+              setMaximized(null)
+            }}
+          />
+        </Suspense>
+      ) : (
+        maximized && (
+          <DocumentView
+            id={maximized.id}
+            onClose={() => {
+              setLibraryOpen(maximized.libraryOpen)
+              setMaximized(null)
+            }}
+          />
+        )
       )}
       <input
         ref={nodeFileInput}

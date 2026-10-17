@@ -1,0 +1,10 @@
+/* 场景编辑视图：沿用 .cc-maximized-document 的覆盖层定位，中间是视口。 */
+.cc-scene-editor { outline: none; }
+.cc-scene-editor > header { padding: 10px 16px; }
+.cc-scene-editor h2 { font-size: 17px; }
+.cc-scene-body { position: relative; flex: 1; min-height: 0; display: flex; }
+.cc-scene-viewport { flex: 1; min-width: 0; }
+.cc-scene-message { margin: auto; padding: 24px; text-align: center; color: var(--muted); }
+/* 助手面板打开时让出右侧，不读取面板内部状态。 */
+.cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: calc(min(380px, 100vw - 16px) + 24px); }
+@media (max-width: 620px) { .cc-workspace:has(.cc-agent-panel) .cc-scene-editor { right: 8px; } }

@@ -21,7 +21,7 @@
 ## 4. 前端准备
 
 - [ ] 4.1 浏览器输入穿刺（未决事项 2）：做一个录制页，记录 wheel（`deltaMode`、`deltaX/Y`、`ctrlKey` 等修饰键、时间间隔）、Safari `gesture*`、按键的 `code` / `key` / `metaKey` / `isComposing`，以及 `preventDefault` 能否拦下 Cmd/Ctrl + S、Cmd/Ctrl + D、捏合缩放页面；owner 在 macOS Chrome / Safari / Edge（触控板与鼠标）和 Windows Chrome（鼠标）上录制；事件序列存为 `frontend/scripts/fixtures/scene-input/*.json`，结论（`classifyWheel` 规则、各浏览器可拦截的组合键）写入 verification 草稿。录制页本身不入库
-- [ ] 4.2 依赖与懒加载入口：`frontend/package.json` 加 `three@0.186.1`、`@types/three@0.186.0`、`@react-three/fiber@9.8.1`、`@react-three/drei@10.7.9` 和新测试脚本；`SceneEditor.tsx` 空壳（`React.lazy`、WebGL2 检测、读取文档、只读占位）；`WorkspacePage.tsx` 按类型分派最大化；`CanvasView.tsx` 创建菜单「3D 场景」、`KindIcon`、`known`、未命名标签「未命名场景」、卡片物件数、最大化按钮；`outbox.ts` 的 `defaultActions` / `defaultNodeSize` 认识 `core.scene`；`make check-frontend` 通过，构建产物中画布入口块不含 three（AC-10）
+- [x] 4.2 依赖与懒加载入口：`frontend/package.json` 加 `three@0.186.1`、`@types/three@0.186.0`、`@react-three/fiber@9.8.1`、`@react-three/drei@10.7.9` 和新测试脚本；`SceneEditor.tsx` 空壳（`React.lazy`、WebGL2 检测、读取文档、只读占位）；`WorkspacePage.tsx` 按类型分派最大化；`CanvasView.tsx` 创建菜单「3D 场景」、`KindIcon`、`known`、未命名标签「未命名场景」、卡片物件数、最大化按钮；`outbox.ts` 的 `defaultActions` / `defaultNodeSize` 认识 `core.scene`；`make check-frontend` 通过，构建产物中画布入口块不含 three（AC-10）
 
 ## 5. 前端状态与同步
 
