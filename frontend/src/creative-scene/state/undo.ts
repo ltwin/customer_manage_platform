@@ -71,25 +71,36 @@ export class UndoStack {
   private inFlight = new Map<string, Step>()
   private readonly session: SceneSession
   private listeners = new Set<() => void>()
-  private readonly stop: () => void
+  private stop: (() => void) | null = null
   notice = ''
 
   constructor(session: SceneSession) {
     this.session = session
-    this.stop = session.observe({
-      confirmed: (intent, receipt, before) => this.confirmed(intent, receipt, before),
-      read: (doc) => this.observe(doc),
-      sending: (intent) => this.sending(intent),
-      restored: () => this.clear(),
-    })
-    const base = session.state.base
-    if (base) this.observe(base)
+    this.connect()
+  }
+
+  /**
+   * Follows the session; returns the disconnect. An effect calls it, so
+   * StrictMode's disconnect and reconnect keep the steps and keep tracking.
+   */
+  connect(): () => void {
+    if (!this.stop) {
+      this.stop = this.session.observe({
+        confirmed: (intent, receipt, before) => this.confirmed(intent, receipt, before),
+        read: (doc) => this.observe(doc),
+        sending: (intent) => this.sending(intent),
+        restored: () => this.clear(),
+      })
+      const base = this.session.state.base
+      if (base) this.observe(base)
+    }
+    return () => this.dispose()
   }
 
   /** Stops following the session; the editor closed. */
   dispose() {
-    this.stop()
-    this.listeners.clear()
+    this.stop?.()
+    this.stop = null
   }
 
   subscribe(listener: () => void): () => void {

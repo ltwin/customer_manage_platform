@@ -9,8 +9,8 @@
 | `go test -count=1`：`creativescene`、`creativecontent`、`creativedocument`、`creativecanvas`、`platform/store`、`platform/httpapi` | 通过 |
 | `golangci-lint run`：上述包与 `cmd/server`、`cmd/creative-worker` | 0 issues |
 | `make generate-check`（OpenAPI 两份生成物、`builtins.gen.json`） | 通过，无漂移 |
-| `make check-frontend`（oxlint、`tsc -b` + vite build、581 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
-| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 17/17 通过 |
+| `make check-frontend`（oxlint、`tsc -b` + vite build、583 个 node 测试） | 通过；lint 只有既有警告，没有本次新增的 |
+| `frontend/scripts/creative-scene.e2e.mjs`（Playwright Chromium，mock 路由） | 18/18 通过；夹具与 `main.tsx` 一样用 StrictMode 渲染 |
 | `make check`（合回 `develop` 前的门禁） | 未跑，合并点执行一次 |
 
 e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收站、修订列表和整份恢复都按契约模拟，操作语义复用前端的 `state/apply.ts`。服务端真实语义由 Go 测试负责，e2e 验证的是编辑器在真实浏览器里的交互、请求次数和请求内容。运行方式：在 `frontend/` 起 Vite（`npx vite --port 5179`），再执行 `node scripts/creative-scene.e2e.mjs`；`SCENE_E2E_ONLY=<名称片段>` 只跑一项，`SCENE_E2E_SHOTS=<目录>` 保存关键步骤截图。
@@ -29,6 +29,7 @@ e2e 的服务端是脚本里的内存实现：冲突检查、修订号、回收�
 | 新建修订与随后两分钟内的编辑并成一组，回不到刚建好时 | 新建单独成组，标为「新建场景」 | 单测「history groups…」；e2e「history」 |
 | 属性栏只在回车 / 失焦时提交，与 AC-2「停下 300ms 后提交」不符；聚焦再离开会写回舍入值 | 300ms 防抖 + 回车 / 失焦立即提交，只提交改动过的文本；属性栏按物件重建 | e2e「properties commit 300 ms…」 |
 | 字段内回车后焦点落到页面 body，快捷键全部失效 | 焦点交还编辑器根元素；点击视口也取回焦点 | e2e「key boundaries」 |
+| owner 测试：新建方块后退出编辑器再进来，方块不见了（数据库里只有第 1 版） | 开发模式的 StrictMode 挂载后会多跑一轮 effect 清理：会话的 `attach` 写在 `useMemo`、`detach` 写在清理里，模拟卸载时立刻判定没人使用并销毁会话，之后的编辑只在本地显示、再也不发送。撤销栈同理会断开监听。改为 effect 里成对 `attach` / `detach`、按计数并推迟一拍判定；撤销栈可重连。生产构建不受影响，但写法本身不符合 React 的 effect 约定。原 e2e 夹具没开 StrictMode，所以没测出来 | 单测「StrictMode detaches and attaches…」（改回立即判定时失败）、「the undo stack reconnects…」；e2e「closing the editor right after adding…」修复前失败 |
 | owner 测试：触控板双指滑动、捏合后视图要点一下才更新 | 视口按需渲染，滚轮 / 手势调用 camera-controls 时不带过渡、不发事件，没有触发重绘；每次程序化移动相机后显式重绘 | e2e「trackpad swipes and pinches…」修复前失败 |
 | owner 测试：坐标轴与 Blender 不一致（`G Z` 是前后） | 编辑器层换成 Blender 坐标（Z 向上），文档数据仍 Y 向上，见 design「局部设计与偏差」 | 单测「the editor speaks Blender…」等 4 条；e2e `G Z 2` 抬高、属性栏按 Blender 轴、数字键与坐标轴部件 |
 | 点击坐标轴部件会取消选中；drei 的转视角动画转到顶视后画面歪 90° | 控制器自己命中轴头，走数字键的视图切换，拦下这次点击 | e2e「number keys and the axis widget…」 |

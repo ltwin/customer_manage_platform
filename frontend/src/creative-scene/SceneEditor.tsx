@@ -46,9 +46,14 @@ const modifierKeys = new Set(['ShiftLeft', 'ShiftRight', 'ControlLeft', 'Control
 
 export default function SceneEditor({ documentID, onClose }: { documentID: string; onClose: () => void }) {
   const session = useMemo(() => openScene(documentID), [documentID])
-  useEffect(() => () => session.detach(), [session])
+  // Attach and connect in effects, paired with their cleanup: StrictMode
+  // runs cleanup and setup once more after mounting.
+  useEffect(() => {
+    session.attach()
+    return () => session.detach()
+  }, [session])
   const undo = useMemo(() => new UndoStack(session), [session])
-  useEffect(() => () => undo.dispose(), [undo])
+  useEffect(() => undo.connect(), [undo])
   useSyncExternalStore(
     useCallback((cb) => undo.subscribe(cb), [undo]),
     () => `${undo.canUndo}:${undo.canRedo}:${undo.notice}`,

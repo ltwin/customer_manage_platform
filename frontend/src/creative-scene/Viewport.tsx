@@ -676,15 +676,13 @@ function Gizmo({
     proxy.updateMatrixWorld(true)
     invalidate()
   })
-  useEffect(() => () => {
-    gizmo.current = null
-  }, [])
   if (!movable.length) return null
   const mode = tool === 'move' ? 'translate' : tool === 'rotate' ? 'rotate' : 'scale'
   return (
     <>
       <primitive object={proxy} />
       <TransformControls
+        // React calls this with null on unmount, which clears it.
         ref={(c) => {
           gizmo.current = c as unknown as { axis: string | null } | null
         }}

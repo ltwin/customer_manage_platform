@@ -112,8 +112,11 @@ export class SceneSession {
   private rebased = new Set<string>()
   private observers = new Set<SessionObserver>()
   private disposed = false
-  /** The editor closed; the session goes away once everything is saved. */
+  /** Editors showing this session. */
+  private views = 0
+  /** No editor shows it; the session goes away once everything is saved. */
   private closing = false
+  private closeTimer: unknown = null
 
   readonly documentID: string
   private readonly transport: Transport
@@ -512,15 +515,30 @@ export class SceneSession {
     this.maybeDispose()
   }
 
-  /** An editor shows this session again. */
+  /** An editor shows this session; call from an effect, paired with detach. */
   attach() {
+    this.views++
     this.closing = false
+    if (this.closeTimer !== null) this.clock.clearTimeout(this.closeTimer)
+    this.closeTimer = null
   }
 
-  /** The editor closed; saving continues, then the session goes away. */
+  /**
+   * An editor stopped showing it; saving continues, then the session goes
+   * away. React detaches and attaches again within one commit (StrictMode in
+   * development, remounts), so whether anyone still shows it is decided on
+   * the next tick; deciding at once disposed the session under an open
+   * editor, whose edits then never went out.
+   */
   detach() {
-    this.closing = true
-    this.maybeDispose()
+    this.views = Math.max(0, this.views - 1)
+    if (this.views > 0 || this.closeTimer !== null) return
+    this.closeTimer = this.clock.setTimeout(() => {
+      this.closeTimer = null
+      if (this.views > 0) return
+      this.closing = true
+      this.maybeDispose()
+    }, 0)
   }
 
   private maybeDispose() {
@@ -529,6 +547,7 @@ export class SceneSession {
 
   dispose() {
     this.disposed = true
+    if (this.closeTimer !== null) this.clock.clearTimeout(this.closeTimer)
     if (this.readTimer) this.clock.clearTimeout(this.readTimer)
     if (this.retryTimer) this.clock.clearTimeout(this.retryTimer)
     for (const cb of this.onDispose) cb()

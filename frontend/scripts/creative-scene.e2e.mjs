@@ -16,7 +16,7 @@ const canvasFixture = new URL('../.scene-canvas-qa.html', import.meta.url)
 await writeFile(
   fixture,
   `<html><body style="margin:0"><div id="root" class="cc-workspace" style="width:100vw;height:100vh"></div><script type="module">
-import React from 'react';
+import React, {StrictMode, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import '/src/index.css';
 import '/src/creative-canvas/editor/workspace.css';
@@ -27,7 +27,16 @@ setAuthenticated({access_token:'local-test',expires_in:3600,token_type:'Bearer'}
 try { localStorage.setItem('creative-scene:first-run-seen', '1') } catch {}
 window.__invalidate = notifyCanvasInvalidate;
 window.__closed = 0;
-createRoot(document.getElementById('root')).render(React.createElement(SceneEditor,{documentID:'${DOC}',onClose:()=>{window.__closed++}}));
+// Like main.tsx: StrictMode mounts, unmounts and mounts again in development.
+// 「还原节点」 closes the editor; window.__reopen() opens it again in the same page.
+function App() {
+  const [open, setOpen] = useState(true);
+  window.__reopen = () => setOpen(true);
+  return open
+    ? React.createElement(SceneEditor, {documentID:'${DOC}', onClose:()=>{window.__closed++; setOpen(false)}})
+    : React.createElement('p', {id:'closed'}, 'closed');
+}
+createRoot(document.getElementById('root')).render(React.createElement(StrictMode, null, React.createElement(App)));
 </script></body></html>`,
 )
 // The canvas page module graph, without the editor: three must not load.
@@ -403,6 +412,35 @@ await check('new objects go where the menu opened, not where its item is', async
   assert.ok(cylinder.every(Number.isFinite) && cylinder[1] === 0, 'the menu bar adds at the view centre on the ground')
   await saved(page)
   await shot(page, '0-placed')
+  assert.deepEqual(errors, [])
+  await context.close()
+})
+
+await check('closing the editor right after adding and opening it again keeps the box', async () => {
+  const server = new SceneServer()
+  const { context, page, errors } = await open(server)
+  const { x, y } = await viewportCenter(page)
+  await page.mouse.move(x, y)
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '方块' }).click()
+  // Close at once, as a photographer would, without waiting for 「已保存」.
+  await page.getByRole('button', { name: '还原节点' }).click()
+  await page.locator('#closed').waitFor()
+  await waitFor(() => server.commands.length === 1, 'the add is saved after the editor closed')
+  await page.evaluate(() => window.__reopen())
+  await page.getByRole('treeitem', { name: /方块/ }).waitFor()
+  assert.equal(server.scene.objects.length, 2)
+  // Undo still follows the session after StrictMode's remount.
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await page.locator('.cc-scene-editor canvas').click({ position: { x: 20, y: 20 } })
+  await page.keyboard.press('Shift+KeyA')
+  await page.getByRole('menuitem', { name: '球体' }).click()
+  await waitFor(() => server.commands.length === 2, 'second add')
+  await saved(page)
+  await page.keyboard.press(`${mod}+KeyZ`)
+  await waitFor(() => server.commands.length === 3, 'undo')
+  assert.equal(server.commands[2].payload.operations[0].op, 'restore_units')
+  assert.equal(server.scene.objects.length, 2, 'the sphere is undone, the box stays')
   assert.deepEqual(errors, [])
   await context.close()
 })

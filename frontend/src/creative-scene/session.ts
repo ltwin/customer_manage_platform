@@ -22,17 +22,16 @@ function transportFor(account: string | null): Transport {
 }
 
 /**
- * The session for a scene document, shared by every view of it. Call
- * detach() when the view closes; saving continues until the queue is empty.
- * It re-reads on the canvas page's notifications.
+ * The session for a scene document, shared by every view of it. A view
+ * calls attach() and detach() from an effect; after the last detach saving
+ * continues until the queue is empty. It re-reads on the canvas page's
+ * notifications.
  */
 export function openScene(documentID: string): SceneSession {
-  const session = sessionFor(documentID, () => {
+  return sessionFor(documentID, () => {
     const session = new SceneSession(documentID, transportFor(currentAccount()), browserClock)
     session.onDispose.push(onCanvasInvalidate(() => session.invalidate()))
     void session.start()
     return session
   })
-  session.attach()
-  return session
 }
