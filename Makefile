@@ -78,7 +78,7 @@ check-frontend: frontend/node_modules
 check-go:
 	cd backend && go build ./...
 	cd backend && golangci-lint run $(PKG)
-	$(MAKE) test-go PKG=$(PKG)
+	$(MAKE) test-go PKG="$(PKG)"
 
 # 部署脚本 / ops 契约改动
 check-ops: test-ops
