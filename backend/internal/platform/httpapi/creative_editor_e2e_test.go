@@ -15,8 +15,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
 	"github.com/samson/customer-manage-platform/backend/internal/creativelibrary/textindex"
 	"github.com/samson/customer-manage-platform/backend/internal/creativemedia"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/config"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/httpapi"
@@ -109,6 +111,28 @@ func TestCreativeEditorBrowser(t *testing.T) {
 			}
 			return
 		}
+		if r.URL.Path == "/__test/scene" {
+			if r.Method != http.MethodPost {
+				w.WriteHeader(405)
+				return
+			}
+			typ, _ := creativedocument.Lookup(creativescene.TypeKey)
+			var doc creativedocument.Document
+			err := db.ScopeFor(auth.AccountContext{AccountID: account.ID}).WithTxScope(r.Context(), func(tx store.TxAccountScope) error {
+				var err error
+				doc, err = creativedocument.CreateInTx(r.Context(), tx, typ, "时延测量", nil, creativedocument.Photographer)
+				return err
+			})
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if err = json.NewEncoder(w).Encode(map[string]string{"document_id": doc.ID}); err != nil {
+				t.Error(err)
+			}
+			return
+		}
 		if r.URL.Path != "/__test/library-scale" {
 			handler.ServeHTTP(w, r)
 			return
@@ -168,9 +192,11 @@ func TestCreativeEditorBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	scripts := []string{"creative-text-canvas.e2e.mjs", "creative-canvas-commands.e2e.mjs", "creative-media.e2e.mjs"}
+	// Measurements run only when named: they take a while and assert no budget.
+	measurements := []string{"creative-scene-latency.e2e.mjs"}
 	if selected := os.Getenv("CREATIVE_EDITOR_SCRIPT"); selected != "" {
 		known := false
-		for _, name := range scripts {
+		for _, name := range append(scripts, measurements...) {
 			known = known || name == selected
 		}
 		if !known {

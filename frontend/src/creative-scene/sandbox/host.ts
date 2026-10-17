@@ -7,6 +7,7 @@ import {
   SANDBOX_PAGE,
   compileError,
   isRecord,
+  measureStage,
   readSandboxMessage,
   utf8Length,
   type CompileError,
@@ -142,6 +143,7 @@ export class SandboxHost {
       return failure('timeout', '代码沙箱没有启动')
     }
     const id = ++this.#seq
+    const posted = performance.now()
     const reply = await new Promise<CompileResultOrTimeout>((resolve) => {
       const timer = setTimeout(() => {
         this.#pending = null
@@ -163,6 +165,8 @@ export class SandboxHost {
       return failure('timeout', `编译超过 ${Math.round(this.#timeoutMs / 1000)} 秒，已中止`)
     }
     if (!reply.ok) return { ok: false, error: reply.error }
+    measureStage('sandbox', posted)
+    const checking = performance.now()
     let module: ModuleInfo
     try {
       module = checkModule(reply.module)
@@ -178,7 +182,9 @@ export class SandboxHost {
         ? failure('limit', `模型超出上限：${err.detail}`)
         : failure('invalid', `模型不符合要求（${err.reason}）：${err.detail}`)
     }
-    return { ok: true, glb: reply.glb, manifest, module, codeSHA256: await codeSHA256(code) }
+    const hash = await codeSHA256(code)
+    measureStage('validate', checking)
+    return { ok: true, glb: reply.glb, manifest, module, codeSHA256: hash }
   }
 }
 

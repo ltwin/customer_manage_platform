@@ -21,6 +21,18 @@ export type ModuleInfo = Pick<
   'contract_version' | 'lib_version' | 'mount' | 'params_schema' | 'params'
 >
 
+/**
+ * Records how long a model-edit stage took as a User Timing measure named
+ * `scene-model <stage>`, for the latency measurement and the profiler.
+ */
+export function measureStage(stage: string, start: number): void {
+  try {
+    performance.measure(`scene-model ${stage}`, { start, end: performance.now() })
+  } catch {
+    // No User Timing: nothing to record.
+  }
+}
+
 export type CompileErrorKind = 'syntax' | 'runtime' | 'invalid' | 'timeout' | 'limit'
 export type CompileError = {
   kind: CompileErrorKind

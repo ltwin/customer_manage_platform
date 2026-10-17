@@ -7,7 +7,7 @@ import { newIntentID, newObjectID } from './ids.ts'
 import { modelSummaries, type ModelCache, type SceneModel } from './models/cache.ts'
 import type { CompileInput, CompileResult } from './sandbox/host.ts'
 import type { Manifest } from './sandbox/inspect.ts'
-import type { CompileError } from './sandbox/protocol.ts'
+import { measureStage, type CompileError } from './sandbox/protocol.ts'
 import { contentUnit, localContent, localRevision, type WireOp } from './state/apply.ts'
 import type { Intent } from './state/intents.ts'
 import type { SceneSession } from './state/sync.ts'
@@ -277,6 +277,7 @@ export class ModelEdits {
     if (!baseline) return failed('commit', '场景还没有加载完')
 
     this.setStatus(plan.key, { state: 'baking' })
+    let started = performance.now()
     const compiled = await this.deps.compile(plan.compile)
     if (!live()) return superseded()
     if (!compiled.ok) return failed('compile', compiled.error.message, compiled.error)
@@ -297,7 +298,9 @@ export class ModelEdits {
     cache.register(previewKey, { glb, summary: summary('') })
     this.showPreview(plan, previewKey)
 
+    measureStage('compile', started)
     let png: Blob
+    started = performance.now()
     try {
       png = await this.deps.thumbnail(glb, manifest)
     } catch {
@@ -305,7 +308,9 @@ export class ModelEdits {
     }
     if (!live()) return superseded()
 
+    measureStage('thumbnail', started)
     this.setStatus(plan.key, { state: 'uploading' })
+    started = performance.now()
     const signal = me.abort.signal
     const results = await Promise.allSettled([
       this.deps.upload(new File([glb], 'model.glb', { type: 'model/gltf-binary' }), { kind: 'model', mime: 'model/gltf-binary' }, signal),
@@ -314,6 +319,7 @@ export class ModelEdits {
     for (const r of results) if (r.status === 'fulfilled') me.uploads.push(r.value)
     if (!live()) return superseded()
     if (results.some((r) => r.status === 'rejected')) return failed('upload', '模型保存失败，可以重试')
+    measureStage('upload', started)
     const [model, thumbnail] = me.uploads
 
     const frozen = session.baselineOf(baseline.id)
