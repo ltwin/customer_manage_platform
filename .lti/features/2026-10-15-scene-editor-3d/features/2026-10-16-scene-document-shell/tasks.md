@@ -16,7 +16,7 @@
 ## 3. 契约、生成物与集成测试（后端）
 
 - [x] 3.1 OpenAPI 与生成：`api/openapi.yaml` 加 `CreativeSceneDocument`（并入 `CreativeDocument` 的 `oneOf`）、`CreativeScene`、`CreativeSceneObject` 等 schema 和按 `op` 判别的 `CreativeSceneOperation`，画布 `add_node` 的 `type_key` 枚举加 `core.scene`；`Makefile` 的 `generate` / `generate-check` 复制并比对 `frontend/src/creative-scene/builtins.gen.json`；运行 `make generate`，`make generate-check` 通过
-- [ ] 3.2 HTTP、并发与基线：`httpapi/creative_documents_test.go` 加场景读取、命令、409 冲突明细、跨账号 404、回收站 409（AC-9）；屏障并发测试每组 20 轮（摆放与内容并发两边都成功；同一单元并发恰好一方成功、明细指向 `object:<id>`）（AC-5）；基线测试 `-run Baseline`（不进默认测试集，300 个物件，记录 p50/p95 和每修订新增字节）；`make check-go PKG=./internal/creativescene/... ./internal/creativecontent/... ./internal/platform/store/... ./internal/platform/httpapi/...` 通过
+- [x] 3.2 HTTP、并发与基线：`httpapi/creative_documents_test.go` 加场景读取、命令、409 冲突明细、跨账号 404、回收站 409（AC-9）；屏障并发测试每组 20 轮（摆放与内容并发两边都成功；同一单元并发恰好一方成功、明细指向 `object:<id>`）（AC-5）；基线测试 `-run Baseline`（不进默认测试集，300 个物件，记录 p50/p95 和每修订新增字节）；`make check-go PKG=./internal/creativescene/... ./internal/creativecontent/... ./internal/platform/store/... ./internal/platform/httpapi/...` 通过
 
 ## 4. 前端准备
 

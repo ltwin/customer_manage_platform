@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/samson/customer-manage-platform/backend/internal/creativecanvas"
 	"github.com/samson/customer-manage-platform/backend/internal/creativecontent"
 	"github.com/samson/customer-manage-platform/backend/internal/creativedocument"
+	"github.com/samson/customer-manage-platform/backend/internal/creativescene"
 	"github.com/samson/customer-manage-platform/backend/internal/planningmedia"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/auth"
 	"github.com/samson/customer-manage-platform/backend/internal/platform/creativeops"
@@ -294,4 +296,131 @@ func TestCreativeDocumentHTTP(t *testing.T) {
 	for _, path := range []string{"/commands", "/trash", "/untrash", "/purge"} {
 		want(path+" when inactive", post(token, base+path, map[string]any{}), 403, "forbidden")
 	}
+}
+
+// TestCreativeSceneDocumentHTTP walks the scene branch through the generic
+// document routes: read, commands, conflict details, isolation, trash and the
+// size limit. Scene rules themselves are covered in creativescene.
+func TestCreativeSceneDocumentHTTP(t *testing.T) {
+	ctx := context.Background()
+	router, st, tokens, url := newCustomerAPIRouterWithURL(t)
+	db, err := sql.Open("pgx", url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(`UPDATE accounts SET status='active' WHERE id='` + testAcctID + `'; INSERT INTO accounts(id,password_hash,status) VALUES ('acct-scene-b','test','active')`); err != nil {
+		t.Fatal(err)
+	}
+	token, other := issueToken(t, tokens, testAcctID), issueToken(t, tokens, "acct-scene-b")
+	scope := st.ScopeFor(auth.AccountContext{AccountID: testAcctID})
+	typ, ok := creativedocument.Lookup(creativescene.TypeKey)
+	if !ok {
+		t.Fatal("scene type is not registered")
+	}
+	var doc creativedocument.Document
+	if err := scope.WithTxScope(ctx, func(tx store.TxAccountScope) error {
+		var err error
+		doc, err = creativedocument.CreateInTx(ctx, tx, typ, "黄昏教堂", nil, creativedocument.Photographer)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	base := "/api/v1/creative/documents/" + doc.ID
+	post := func(tok, path string, payload any) *httptest.ResponseRecorder {
+		t.Helper()
+		key := uuid.NewString()
+		raw, err := json.Marshal(map[string]any{"operation_id": key, "client_created_at": time.Now().UTC(), "payload": payload})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return shootPlanningRequest(t, router, "POST", path, tok, key, string(raw))
+	}
+	want := func(name string, w *httptest.ResponseRecorder, status int, code string) {
+		t.Helper()
+		if w.Code != status || code != "" && documentErrorCode(t, w) != code {
+			t.Fatalf("%s: %d %s, want %d %s", name, w.Code, w.Body.String(), status, code)
+		}
+	}
+	type sceneRead struct {
+		TypeKey   string            `json:"type_key"`
+		Revision  string            `json:"revision"`
+		UnitRevs  map[string]string `json:"unit_revs"`
+		TrashedAt *time.Time        `json:"trashed_at"`
+		Scene     struct {
+			Objects []struct {
+				ID        string `json:"id"`
+				Primitive struct {
+					Builtin string `json:"builtin"`
+				} `json:"primitive"`
+			} `json:"objects"`
+		} `json:"scene"`
+		Models map[string]any `json:"models"`
+	}
+	read := func(tok string) (sceneRead, *httptest.ResponseRecorder) {
+		t.Helper()
+		var v sceneRead
+		w := shootPlanningRequest(t, router, "GET", base, tok, "", "")
+		if w.Code == 200 {
+			if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return v, w
+	}
+
+	v, w := read(token)
+	want("read", w, 200, "")
+	if v.TypeKey != "scene" || v.Revision != "1" || len(v.Scene.Objects) != 1 || v.Scene.Objects[0].Primitive.Builtin != "ground@1" || v.Models == nil {
+		t.Fatalf("read %s", w.Body.String())
+	}
+	_, w = read(other)
+	want("read another account's", w, 404, "not_found")
+
+	a := "sobj_A00000000000000000001"
+	boxObject := func(id string, order int) map[string]any {
+		return map[string]any{"id": id, "kind": "primitive", "name": "石台", "parent_id": nil, "order": order,
+			"transform": map[string]any{"position": []float64{0, 0, -3}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}},
+			"visible":   true, "locked": false, "primitive": map[string]any{"builtin": "box@1"}}
+	}
+	w = post(token, base+"/commands", map[string]any{"expected": map[string]any{"objects": "1"}, "operations": []any{map[string]any{"op": "add_objects", "objects": []any{boxObject(a, 1)}}}})
+	want("add", w, 200, "")
+	if !sameBody(t, w.Body.Bytes(), []byte(`{"revision":"2","changed_units":["object:`+a+`","object:`+a+`:content","objects"],"annotated_units":[],"removed_units":[],"reset_required":false}`)) {
+		t.Fatalf("add receipt %s", w.Body.String())
+	}
+	move := func(expected string) map[string]any {
+		return map[string]any{"expected": map[string]any{"object:" + a: expected}, "operations": []any{map[string]any{"op": "update_objects", "updates": []any{
+			map[string]any{"object_id": a, "transform": map[string]any{"position": []float64{1, 0, -3}, "rotation": []float64{0, 0, 0, 1}, "scale": []float64{1, 1, 1}}}}}}}
+	}
+	want("move", post(token, base+"/commands", move("2")), 200, "")
+	w = post(token, base+"/commands", move("2"))
+	want("stale move", w, 409, "creative_document_conflict")
+	var e docErr
+	if err := json.Unmarshal(w.Body.Bytes(), &e); err != nil || len(e.Error.Details.Conflicts) != 1 || *e.Error.Details.Conflicts[0]["unit"] != "object:"+a || *e.Error.Details.Conflicts[0]["current_rev"] != "3" {
+		t.Fatalf("conflict details %s", w.Body.String())
+	}
+	missing := "sobj_Z00000000000000000009"
+	want("missing object is not a missing document", post(token, base+"/commands", map[string]any{"expected": map[string]any{"object:" + missing: nil},
+		"operations": []any{map[string]any{"op": "update_objects", "updates": []any{map[string]any{"object_id": missing, "visible": false}}}}}), 400, "validation_failed")
+	want("command on another account's", post(other, base+"/commands", move("3")), 404, "not_found")
+
+	cameras := make([]any, 33)
+	for i := range cameras {
+		c := boxObject(fmt.Sprintf("sobj_C%020d", i), 10+i)
+		c["kind"] = "camera"
+		delete(c, "primitive")
+		c["camera"] = map[string]any{"focal_mm": 35, "sensor_mm": []float64{36, 24}, "aspect": "3:2", "near_m": 0.1, "far_m": 1000, "label": ""}
+		cameras[i] = c
+	}
+	want("too many cameras", post(token, base+"/commands", map[string]any{"expected": map[string]any{"objects": "2"}, "operations": []any{map[string]any{"op": "add_objects", "objects": cameras}}}), 413, "creative_size_limit")
+
+	want("trash", post(token, base+"/trash", map[string]any{}), 200, "")
+	v, w = read(token)
+	want("read in trash", w, 200, "")
+	if v.TrashedAt == nil {
+		t.Fatalf("trashed read %s", w.Body.String())
+	}
+	want("command in trash", post(token, base+"/commands", move("3")), 409, "creative_state_conflict")
+	want("untrash", post(token, base+"/untrash", map[string]any{}), 200, "")
+	want("command after untrash", post(token, base+"/commands", move("3")), 200, "")
 }
